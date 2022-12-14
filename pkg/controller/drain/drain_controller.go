@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
@@ -30,28 +31,55 @@ import (
 	"k8s.io/kubectl/pkg/drain"
 )
 
-const (
-	// maxRetries is the number of times a machineconfig pool will be retried before it is dropped out of the queue.
-	// With the current rate-limiter in use (5ms*2^(maxRetries-1)) the following numbers represent the times
+type Config struct {
+	// MaxRetries is the number of times a machineconfig pool will be retried before it is dropped out of the queue.
+	// With the current rate-limiter in use (5ms*2^(MaxRetries-1)) the following numbers represent the times
 	// a machineconfig pool is going to be requeued:
 	//
 	// 5ms, 10ms, 20ms, 40ms, 80ms, 160ms, 320ms, 640ms, 1.3s, 2.6s, 5.1s, 10.2s, 20.4s, 41s, 82s
-	maxRetries = 15
+	MaxRetries int
 
-	updateDelay = 5 * time.Second
+	UpdateDelay time.Duration
 
-	// drainTimeoutDuration specifies when we should error
-	drainTimeoutDuration = 1 * time.Hour
+	// DrainTimeoutDuration specifies when we should error
+	DrainTimeoutDuration time.Duration
 
-	// drainRequeueDelay specifies the delay before we retry the drain
-	drainRequeueDelay = 1 * time.Minute
+	// DrainRequeueDelay specifies the delay before we retry the drain
+	DrainRequeueDelay time.Duration
 
-	// drainRequeueFailingThreshold specifies the time after which we slow down retries
-	drainRequeueFailingThreshold = 10 * time.Minute
-	// drainRequeueFailingDelay specifies the delay before we retry the drain,
-	// if a node drain has been failing for > drainRequeueFailingThreshold time
-	drainRequeueFailingDelay = 5 * time.Minute
-)
+	// DrainRequeueFailingThreshold specifies the time after which we slow down retries
+	DrainRequeueFailingThreshold time.Duration
+
+	// DrainRequeueFailingDelay specifies the delay before we retry the drain,
+	// if a node drain has been failing for > DrainRequeueFailingThreshold time
+	DrainRequeueFailingDelay time.Duration
+
+	// Drain helper timeout
+	DrainHelperTimeout time.Duration
+
+	// How long before backing off during the cordon uncordon operation
+	CordonOrUncordonBackoff wait.Backoff
+
+	WaitUntil time.Duration
+}
+
+func DefaultConfig() Config {
+	return Config{
+		MaxRetries:                   15,
+		UpdateDelay:                  5 * time.Second,
+		DrainTimeoutDuration:         1 * time.Hour,
+		DrainRequeueDelay:            1 * time.Minute,
+		DrainRequeueFailingThreshold: 10 * time.Minute,
+		DrainRequeueFailingDelay:     5 * time.Minute,
+		DrainHelperTimeout:           90 * time.Second,
+		CordonOrUncordonBackoff: wait.Backoff{
+			Steps:    5,
+			Duration: 10 * time.Second,
+			Factor:   2,
+		},
+		WaitUntil: time.Second,
+	}
+}
 
 // Controller defines the node controller.
 type Controller struct {
@@ -67,10 +95,13 @@ type Controller struct {
 
 	queue         workqueue.RateLimitingInterface
 	ongoingDrains map[string]time.Time
+
+	cfg Config
 }
 
 // New returns a new node controller.
 func New(
+	cfg Config,
 	nodeInformer coreinformersv1.NodeInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
@@ -84,6 +115,7 @@ func New(
 		kubeClient:    kubeClient,
 		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-nodecontroller"}),
 		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-nodecontroller"),
+		cfg:           cfg,
 	}
 
 	nodeInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -127,7 +159,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer glog.Info("Shutting down MachineConfigController-DrainController")
 
 	for i := 0; i < workers; i++ {
-		go wait.Until(ctrl.worker, time.Second, stopCh)
+		go wait.Until(ctrl.worker, ctrl.cfg.WaitUntil, stopCh)
 	}
 
 	<-stopCh
@@ -178,7 +210,7 @@ func (ctrl *Controller) enqueueAfter(node *corev1.Node, after time.Duration) {
 
 // enqueueDefault calls a default enqueue function
 func (ctrl *Controller) enqueueDefault(node *corev1.Node) {
-	ctrl.enqueueAfter(node, updateDelay)
+	ctrl.enqueueAfter(node, ctrl.cfg.UpdateDelay)
 }
 
 // worker runs a worker thread that just dequeues items, processes them, and marks them done.
@@ -207,7 +239,7 @@ func (ctrl *Controller) handleErr(err error, key interface{}) {
 		return
 	}
 
-	if ctrl.queue.NumRequeues(key) < maxRetries {
+	if ctrl.queue.NumRequeues(key) < ctrl.cfg.MaxRetries {
 		glog.V(2).Infof("Error syncing node %v: %v", key, err)
 		ctrl.queue.AddRateLimited(key)
 		return
@@ -253,7 +285,7 @@ func (ctrl *Controller) syncNode(key string) error {
 		IgnoreAllDaemonSets: true,
 		DeleteEmptyDirData:  true,
 		GracePeriodSeconds:  -1,
-		Timeout:             90 * time.Second,
+		Timeout:             ctrl.cfg.DrainHelperTimeout,
 		OnPodDeletedOrEvicted: func(pod *corev1.Pod, usingEviction bool) {
 			verbStr := "Deleted"
 			if usingEviction {
@@ -275,58 +307,12 @@ func (ctrl *Controller) syncNode(key string) error {
 			return fmt.Errorf("failed to uncordon node %v: %w", node.Name, err)
 		}
 	case daemonconsts.DrainerStateDrain:
-		// First check if we have an ongoing drain
-		// This is currently stored in the object itself as a map but,
-		// Practically during upgrades the control plane node this controller
-		// pod is running on will also be terminated (the drainer will skip it).
-		// This is a bit problematic in practice since we don't really have a previous state.
-		// TODO (jerzhang) consider using a new CRD for coordination
-
-		ongoingDrain := false
-		var duration time.Duration
-		for k, v := range ctrl.ongoingDrains {
-			if k != node.Name {
-				continue
-			}
-			ongoingDrain = true
-			duration = time.Now().Sub(v)
-			glog.Infof("Previous node drain found. Drain has been going on for %v hours", duration.Hours())
-			if duration > drainTimeoutDuration {
-				// TODO right now the daemon will alert to match previous behaviour. Consider having controller do so instead.
-				glog.Errorf("node %s: drain exceeded timeout: %v. Will continue to retry.", node.Name, drainTimeoutDuration)
-			}
-			break
-		}
-		if !ongoingDrain {
-			ctrl.logNode(node, "cordoning")
-			// perform cordon
-			if err := ctrl.cordonOrUncordonNode(true, node, drainer); err != nil {
-				return fmt.Errorf("node %s: failed to cordon: %w", node.Name, err)
-			}
-			ctrl.ongoingDrains[node.Name] = time.Now()
-		}
-
-		// Attempt drain
-		ctrl.logNode(node, "initiating drain")
-		if err := drain.RunNodeDrain(drainer, node.Name); err != nil {
-			// To mimic our old daemon logic, we should probably have a more nuanced backoff.
-			// However since the controller is processing all drains, it is less deterministic how soon the next drain will retry,
-			// Anywhere between instant (if a node change happened) or up to hours (if there are many nodes competing for resources)
-			// For now, let's say if a node has been trying for a set amount of time, we make it less prioritized.
-			if duration > drainRequeueFailingThreshold {
-				ctrl.logNode(node, "Drain failed. Drain has been failing for more than %v minutes. Waiting %v minutes then retrying. "+
-					"Error message from drain: %v", drainRequeueFailingThreshold.Minutes(), drainRequeueFailingDelay.Minutes(), err)
-				ctrl.enqueueAfter(node, drainRequeueFailingDelay)
-			} else {
-				ctrl.logNode(node, "Drain failed. Waiting %v minute then retrying. Error message from drain: %v",
-					drainRequeueDelay.Minutes(), err)
-				ctrl.enqueueAfter(node, drainRequeueDelay)
-			}
+		if err := ctrl.drainNode(node, drainer); err != nil {
+			// If we get an error from drainNode, that means the drain failed.
+			// However, we want to requeue and try again. So we need to return nil
+			// from here so that we can requeue.
 			return nil
 		}
-
-		// Drain was successful. Delete the ongoing drain, then set the annotation
-		delete(ctrl.ongoingDrains, node.Name)
 	default:
 		return fmt.Errorf("node %s: non-recognized drain verb detected %s", node.Name, desiredVerb)
 	}
@@ -339,6 +325,69 @@ func (ctrl *Controller) syncNode(key string) error {
 	if err := ctrl.setNodeAnnotations(node.Name, annotations); err != nil {
 		return fmt.Errorf("node %s: failed to set node uncordoned annotation: %w", node.Name, err)
 	}
+
+	return nil
+}
+
+func (ctrl *Controller) drainNode(node *corev1.Node, drainer *drain.Helper) error {
+	// First check if we have an ongoing drain
+	// This is currently stored in the object itself as a map but,
+	// Practically during upgrades the control plane node this controller
+	// pod is running on will also be terminated (the drainer will skip it).
+	// This is a bit problematic in practice since we don't really have a previous state.
+	// TODO (jerzhang) consider using a new CRD for coordination
+	isOngoingDrain := false
+	var duration time.Duration
+
+	for k, v := range ctrl.ongoingDrains {
+		if k != node.Name {
+			continue
+		}
+		isOngoingDrain = true
+		duration = time.Now().Sub(v)
+		glog.Infof("Previous node drain found. Drain has been going on for %v hours", duration.Hours())
+		if duration > ctrl.cfg.DrainTimeoutDuration {
+			glog.Errorf("node %s: drain exceeded timeout: %v. Will continue to retry.", node.Name, ctrl.cfg.DrainTimeoutDuration)
+			ctrlcommon.MCCDrainErr.Set(1)
+		}
+		break
+	}
+
+	if !isOngoingDrain {
+		ctrl.logNode(node, "cordoning")
+		// perform cordon
+		if err := ctrl.cordonOrUncordonNode(true, node, drainer); err != nil {
+			return fmt.Errorf("node %s: failed to cordon: %w", node.Name, err)
+		}
+		ctrl.ongoingDrains[node.Name] = time.Now()
+	}
+
+	// Attempt drain
+	ctrl.logNode(node, "initiating drain")
+	if err := drain.RunNodeDrain(drainer, node.Name); err != nil {
+		// To mimic our old daemon logic, we should probably have a more nuanced backoff.
+		// However since the controller is processing all drains, it is less deterministic how soon the next drain will retry,
+		// Anywhere between instant (if a node change happened) or up to hours (if there are many nodes competing for resources)
+		// For now, let's say if a node has been trying for a set amount of time, we make it less prioritized.
+		if duration > ctrl.cfg.DrainRequeueFailingThreshold {
+			ctrl.logNode(node, "Drain failed. Drain has been failing for more than %v minutes. Waiting %v minutes then retrying. "+
+				"Error message from drain: %v", ctrl.cfg.DrainRequeueFailingThreshold.Minutes(), ctrl.cfg.DrainRequeueFailingDelay.Minutes(), err)
+			ctrl.enqueueAfter(node, ctrl.cfg.DrainRequeueFailingDelay)
+		} else {
+			ctrl.logNode(node, "Drain failed. Waiting %v minute then retrying. Error message from drain: %v",
+				ctrl.cfg.DrainRequeueDelay.Minutes(), err)
+			ctrl.enqueueAfter(node, ctrl.cfg.DrainRequeueDelay)
+		}
+
+		// Return early without deleting the ongoing drain.
+		return err
+	}
+
+	// Drain was successful. Delete the ongoing drain.
+	delete(ctrl.ongoingDrains, node.Name)
+
+	// Clear the MCCDrainErr, if any.
+	ctrlcommon.MCCDrainErr.Set(0)
 
 	return nil
 }
@@ -387,13 +436,8 @@ func (ctrl *Controller) cordonOrUncordonNode(desired bool, node *corev1.Node, dr
 		verb = "uncordon"
 	}
 
-	backoff := wait.Backoff{
-		Steps:    5,
-		Duration: 10 * time.Second,
-		Factor:   2,
-	}
 	var lastErr error
-	if err := wait.ExponentialBackoff(backoff, func() (bool, error) {
+	if err := wait.ExponentialBackoff(ctrl.cfg.CordonOrUncordonBackoff, func() (bool, error) {
 		// Log has been added to ensure that MCO is correctly performing cordon/uncordon.
 		// This should help us with debugging bugs like https://bugzilla.redhat.com/show_bug.cgi?id=2022387
 		ctrl.logNode(node, "initiating %s (currently schedulable: %t)", verb, !node.Spec.Unschedulable)
@@ -423,7 +467,7 @@ func (ctrl *Controller) cordonOrUncordonNode(desired bool, node *corev1.Node, dr
 	}); err != nil {
 		if err == wait.ErrWaitTimeout {
 			errs := kubeErrs.NewAggregate([]error{err, lastErr})
-			return fmt.Errorf("node %s: failed to %s (%d tries): %w", node.Name, verb, backoff.Steps, errs)
+			return fmt.Errorf("node %s: failed to %s (%d tries): %w", node.Name, verb, ctrl.cfg.CordonOrUncordonBackoff.Steps, errs)
 		}
 		return fmt.Errorf("node %s: failed to %s: %w", node.Name, verb, err)
 	}

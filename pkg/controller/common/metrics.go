@@ -2,6 +2,7 @@ package common
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
 	"github.com/golang/glog"
@@ -14,6 +15,7 @@ const (
 	DefaultBindAddress = ":8797"
 )
 
+// MCC Metrics
 var (
 	// MachineConfigControllerPausedPoolKubeletCA logs when a certificate rotation is being held up by pause
 	MachineConfigControllerPausedPoolKubeletCA = prometheus.NewGaugeVec(
@@ -29,14 +31,32 @@ var (
 			Help: "state of OS image override",
 		}, []string{"pool"})
 
-	metricsList = []prometheus.Collector{
-		MachineConfigControllerPausedPoolKubeletCA,
-		OSImageURLOverride,
-	}
+	// MCCDrainErr logs failed drain
+	MCCDrainErr = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "mcc_drain_err",
+			Help: "logs failed drain",
+		})
 )
 
 func RegisterMCCMetrics() error {
-	for _, metric := range metricsList {
+	err := RegisterMetrics([]prometheus.Collector{
+		MachineConfigControllerPausedPoolKubeletCA,
+		OSImageURLOverride,
+		MCCDrainErr,
+	})
+
+	if err != nil {
+		return fmt.Errorf("could not register machine-config-controller metrics: %w", err)
+	}
+
+	MCCDrainErr.Set(0)
+
+	return nil
+}
+
+func RegisterMetrics(metrics []prometheus.Collector) error {
+	for _, metric := range metrics {
 		err := prometheus.Register(metric)
 		if err != nil {
 			return err
@@ -47,13 +67,13 @@ func RegisterMCCMetrics() error {
 }
 
 // StartMetricsListener is metrics listener via http on localhost
-func StartMetricsListener(addr string, stopCh <-chan struct{}) {
+func StartMetricsListener(addr string, stopCh <-chan struct{}, registerFunc func() error) {
 	if addr == "" {
 		addr = DefaultBindAddress
 	}
 
 	glog.Info("Registering Prometheus metrics")
-	if err := RegisterMCCMetrics(); err != nil {
+	if err := registerFunc(); err != nil {
 		glog.Errorf("unable to register metrics: %v", err)
 		// No sense in continuing starting the listener if this fails
 		return
@@ -77,5 +97,4 @@ func StartMetricsListener(addr string, stopCh <-chan struct{}) {
 	} else {
 		glog.Infof("Metrics listener successfully stopped")
 	}
-
 }
