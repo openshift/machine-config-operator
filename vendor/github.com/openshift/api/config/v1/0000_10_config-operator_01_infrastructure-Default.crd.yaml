@@ -172,6 +172,7 @@ spec:
                                     required:
                                       - asn
                                       - peers
+                                      - subnetCIDR
                                     properties:
                                       asn:
                                         description: asn specifies the local autonomous system number that will be used to peer with remote routers.

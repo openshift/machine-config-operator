@@ -536,6 +536,7 @@ type BGPSpeaker struct {
 	// subnetCIDR is the CIDR which this BGP configuration applies to.
 	//
 	// + Validation is applied via a patch, we validate the format as cidr
+	// +kubebuilder:validation:Required
 	// +required
 	SubnetCIDR string `json:"subnetCIDR"`
 
@@ -589,9 +590,6 @@ type ControlPlaneLoadBalancer struct {
 	// speaker configuration for every subnet where we want to peer.
 	// The list must contain at least one item.
 	//
-	// +kubebuilder:validation:MinItems:=1
-	// +listType=map
-	// +listMapKey=subnetCIDR
 	// +optional
 	BGP *ControlPlaneBGPConfiguration `json:"bgp,omitempty"`
 }

@@ -310,4 +310,4 @@ require (
 )
 
 // https://github.com/openshift/api/pull/1243
-replace github.com/openshift/api => github.com/shiftstack/api v0.0.0-20221213013249-fdd8720e65c0
+replace github.com/openshift/api => github.com/shiftstack/api v0.0.0-20221214020534-aa181038a087
