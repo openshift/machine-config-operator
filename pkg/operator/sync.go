@@ -245,11 +245,49 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 		return err
 	}
 
-	// This is the ca-bundle published by the kube-apiserver that is used terminate client-certificates in the kube cluster.
-	// If the kubelet has a flag to check the in-cluster published ca bundle, that would be ideal.
-	kubeAPIServerServingCABytes, err := optr.getCAsFromConfigMap("openshift-config-managed", "kube-apiserver-client-ca", "ca-bundle.crt")
-	if err != nil {
+	bootstrapComplete := false
+	_, err = optr.clusterCmLister.ConfigMaps("kube-system").Get("bootstrap")
+	switch {
+	case err == nil:
+		bootstrapComplete = true
+	case apierrors.IsNotFound(err):
+		bootstrapComplete = false
+	case err != nil:
 		return err
+	default:
+		panic("math broke")
+	}
+
+	var kubeAPIServerServingCABytes []byte
+	if bootstrapComplete {
+		// This is the ca-bundle published by the kube-apiserver that is used terminate client-certificates in the kube cluster.
+		// If the kubelet has a flag to check the in-cluster published ca bundle, that would be ideal.
+		kubeAPIServerServingCABytes, err = optr.getCAsFromConfigMap("openshift-config-managed", "kube-apiserver-client-ca", "ca-bundle.crt")
+		if err != nil {
+			return err
+		}
+
+	} else {
+		// this else block exists to find a way to match the rendering hash of the machineconfig that the installer creates.
+		// it seems that if the MCO cannot find an existing machineconfig, the operator and machines perma-wedge and it cannot
+		// install a new machineconfig.  This is an unfortunate behavior that should be fixed eventually, but we need the kubelet
+		// to be able to trust the monitoring stack and this, combined with the no-reboot behavior, is enough to get us unstuck.
+
+		// as described by the name this is essentially static, but it no worse than what was here before.  Since changes disrupt workloads
+		// and since must perfectly match what the installer creates, this is effectively frozen in time.
+		initialKubeAPIServerServingCABytes, err := optr.getCAsFromConfigMap("openshift-config", "initial-kube-apiserver-server-ca", "ca-bundle.crt")
+		if err != nil {
+			return err
+		}
+
+		// Fetch the following configmap and merge into the the initial CA. The CA is the same for the first year, and will rotate
+		// automatically afterwards.
+		kubeAPIServerServingCABytes, err = optr.getCAsFromConfigMap("openshift-kube-apiserver-operator", "kube-apiserver-to-kubelet-client-ca", "ca-bundle.crt")
+		if err != nil {
+			kubeAPIServerServingCABytes = initialKubeAPIServerServingCABytes
+		} else {
+			kubeAPIServerServingCABytes = mergeCertWithCABundle(initialKubeAPIServerServingCABytes, kubeAPIServerServingCABytes, "kube-apiserver-to-kubelet-signer")
+		}
 	}
 
 	bundle := make([]byte, 0)
