@@ -22,9 +22,12 @@ export GOLANGCI_LINT_CACHE=$(shell echo $${GOLANGCI_LINT_CACHE:-$$GOPATH/cache})
 
 GOTAGS = "containers_image_openpgp exclude_graphdriver_devicemapper exclude_graphdriver_btrfs containers_image_ostree_stub"
 
+UNITTEST_OPTS = -tags=$(GOTAGS) -count=1 -v ./cmd/... ./pkg/... ./lib/...
+
 all: binaries
 
 .PHONY: clean test test-unit test-e2e verify update install-tools
+
 # Remove build artifaces
 # Example:
 #    make clean
@@ -46,8 +49,19 @@ image:
 test: test-unit test-e2e
 
 # Unit tests only (no active cluster required)
-test-unit:
-	CGO_ENABLED=0 go test -tags=$(GOTAGS) -count=1 -v ./cmd/... ./pkg/... ./lib/...
+test-unit: install-go-junit-report
+ifdef ARTIFACT_DIR
+	CGO_ENABLED=0 go test -coverprofile=mco-unit-test-coverage.out $(UNITTEST_OPTS) | ./hack/test-with-junit.sh $(@)
+	go tool cover -html=mco-unit-test-coverage.out -o mco-unit-test-coverage.html
+	# Move the test coverage report into ARTIFACT_DIR only when it is not the same as our current dir
+	# This enables test coverage analysis to be collected locally by running:
+	# $ ARTIFACT_DIR="$PWD" make test-unit
+	if [[ "${PWD}" != "${ARTIFACT_DIR}" ]]; then \
+		mv mco-unit-test-coverage.out mco-unit-test-coverage.html "${ARTIFACT_DIR}"; \
+	fi
+else
+	CGO_ENABLED=0 go test $(UNITTEST_OPTS)
+endif
 
 # Run the code generation tasks.
 # Example:
@@ -55,7 +69,7 @@ test-unit:
 update:
 	hack/update-codegen.sh
 	hack/update-templates.sh
-
+ 
 go-deps:
 	go mod tidy
 	go mod vendor
@@ -64,14 +78,42 @@ go-deps:
 	chmod +x ./vendor/k8s.io/code-generator/generate-groups.sh
 	chmod +x ./vendor/k8s.io/code-generator/generate-internal-groups.sh
 
-install-tools:
+SETUP_ENVTEST := $(shell command -v setup-envtest 2> /dev/null)
+install-setup-envtest:
+ifdef SETUP_ENVTEST
+	@echo "Found setup-envtest"
+else
+	@echo "Installing setup-envtest"
+	go install -mod= sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
+endif
+
+GO_JUNIT_REPORT := $(shell command -v go-junit-report 2> /dev/null)
+install-go-junit-report:
+ifdef GO_JUNIT_REPORT
+	@echo "Found go-junit-report"
+	go-junit-report --version
+else
+	@echo "Installing go-junit-report"
+	go install -mod= github.com/jstemmer/go-junit-report@latest
+endif
+
+GOLANGCI_LINT := $(shell command -v golangci-lint 2> /dev/null)
+install-golangci-lint:
+ifdef GOLANGCI_LINT
+	@echo "Found golangci-lint"
+	golangci-lint --version
+else
+	@echo "Installing golangci-lint"
 	GO111MODULE=on go build -o $(GOPATH)/bin/golangci-lint ./vendor/github.com/golangci/golangci-lint/cmd/golangci-lint
+endif
+
+install-tools: install-golangci-lint install-setup-envtest install-go-junit-report
 
 # Run verification steps
 # Example:
 #    make verify
 verify: install-tools
-	golangci-lint run --build-tags=$(GOTAGS)
+	./hack/golangci-lint.sh $(GOTAGS)
 	hack/verify-codegen.sh
 	hack/verify-templates.sh
 
@@ -101,16 +143,11 @@ Dockerfile.rhel7: Dockerfile Makefile
 	 sed -e s,org/openshift/release,org/ocp/builder, -e s,/openshift/origin-v4.0:base,/ocp/4.0:base, < $<) > $@.tmp && mv $@.tmp $@
 
 # This was copied from https://github.com/openshift/cluster-image-registry-operator
-test-e2e:
-	go test -tags=$(GOTAGS) -failfast -timeout 110m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e/
+test-e2e: install-go-junit-report
+	go test -tags=$(GOTAGS) -failfast -timeout 110m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e/ | ./hack/test-with-junit.sh $(@)
 
-test-e2e-single-node:
-	go test -tags=$(GOTAGS) -failfast -timeout 110m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-single-node/
+test-e2e-single-node: install-go-junit-report
+	go test -tags=$(GOTAGS) -failfast -timeout 110m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-single-node/ | ./hack/test-with-junit.sh $(@)
 
-bootstrap-e2e:
-	./hack/bootstrap-e2e-test.sh
-
-bootstrap-e2e-local:
-	# Use GOTAGS to exclude the default CGO implementation of signatures, which is not used by MCO
-	# but dragged in by containers/image/signature
-	CGO_ENABLED=0 go test -tags=$(GOTAGS) -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-bootstrap/
+bootstrap-e2e: install-go-junit-report install-setup-envtest
+	CGO_ENABLED=0 go test -tags=$(GOTAGS) -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-bootstrap/ | ./hack/test-with-junit.sh $(@)
