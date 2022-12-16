@@ -112,3 +112,5 @@ linters-settings:
     confidence: medium
     excludes:
       - G204
+output:
+  format: "checkstyle:checkstyle-golangci-lint.xml,junit-xml:junit-golangci-lint.xml,colored-line-number"
