@@ -77,6 +77,13 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 		err := fmt.Errorf("could not fetch Node: %w", err)
 		return err
 	}
+	/*
+		// Set the Cgroups version explicitly to "v1"
+		if nodeConfig.Spec.CgroupMode == emptyInput {
+			nodeConfig.Spec.CgroupMode = osev1.CgroupModeV1
+			ctrl.configClient.ConfigV1().Nodes().Update(context.TODO(), nodeConfig, metav1.UpdateOptions{})
+		}
+	*/
 	// checking if the Node spec is empty and accordingly returning from here.
 	if reflect.DeepEqual(nodeConfig.Spec, osev1.NodeSpec{}) {
 		glog.V(2).Info("empty Node resource found")
@@ -125,19 +132,31 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 				return err
 			}
 		}
-		if isTechPreviewNoUpgradeEnabled(features) {
-			if nodeConfig.Spec.CgroupMode == "" && nodeConfig.Spec.WorkerLatencyProfile != "" && role == ctrlcommon.MachineConfigPoolMaster {
-				continue
+		// Setting the CGroups version to "v1" explicitly
+		if nodeConfig.Spec.CgroupMode == osev1.CgroupModeV1 {
+			err := updateMachineConfigwithCgroup(nodeConfig, mc)
+			if err != nil {
+				return err
 			}
+		}
+		// The following code updates the CGroups version to "v2"
+		// only if the "TechPreviewNoUpgrade" featureset is enabled
+		if isTechPreviewNoUpgradeEnabled(features) {
 			// updating the machine config resource with the relevant cgroup configuration
 			err := updateMachineConfigwithCgroup(nodeConfig, mc)
 			if err != nil {
 				return err
 			}
-		} else if nodeConfig.Spec.WorkerLatencyProfile == "" {
-			return nil
-		} else if role == ctrlcommon.MachineConfigPoolMaster {
-			continue
+		} else if nodeConfig.Spec.CgroupMode == osev1.CgroupModeV2 {
+			if nodeConfig.Spec.WorkerLatencyProfile == emptyInput {
+				// avoid the unnecessary creation/update of the machine config object (so the reboot)
+				// as the "TechPreviewNoUpgrade" featureSet is not enabled
+				return nil
+			} else if role == ctrlcommon.MachineConfigPoolMaster {
+				// "TechPreviewNoUpgrade" not enabled, "cgroupMode" set to "v2" isn't effective
+				// "WorkerLatencyProfile" is relevant only to the worker mcp and hence returning from here
+				continue
+			}
 		}
 		// Encode the new config into raw JSON
 		cfgIgn, err := kubeletConfigToIgnFile(originalKubeConfig)
@@ -167,6 +186,7 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 			return fmt.Errorf("Could not Create/Update MachineConfig, error: %w", err)
 		}
 		glog.Infof("Applied Node configuration %v on MachineConfigPool %v", key, pool.Name)
+		fmt.Println("------------------------------>Controller MC", mc.Name, nodeConfig.Spec)
 	}
 	// fetch the kubeletconfigs
 	kcs, err := ctrl.mckLister.List(labels.Everything())
@@ -270,8 +290,16 @@ func (ctrl *Controller) deleteNodeConfig(obj interface{}) {
 }
 
 func RunNodeConfigBootstrap(templateDir string, features *osev1.FeatureGate, cconfig *mcfgv1.ControllerConfig, nodeConfig *osev1.Node, mcpPools []*mcfgv1.MachineConfigPool) ([]*mcfgv1.MachineConfig, error) {
+	if nodeConfig == nil {
+		return nil, fmt.Errorf("nodes.config.openshift.io resource not found")
+	}
 	configs := []*mcfgv1.MachineConfig{}
-
+	/*
+		// Set the Cgroups version explicitly to "v1"
+		if nodeConfig.Spec.CgroupMode == emptyInput {
+			nodeConfig.Spec.CgroupMode = osev1.CgroupModeV1
+		}
+	*/
 	for _, pool := range mcpPools {
 		role := pool.Name
 		// Get MachineConfig
@@ -295,20 +323,32 @@ func RunNodeConfigBootstrap(templateDir string, features *osev1.FeatureGate, cco
 				return nil, err
 			}
 		}
-		// updating the machine config resource with the relevant cgroup configuration
-		if isTechPreviewNoUpgradeEnabled(features) {
-			if nodeConfig.Spec.CgroupMode == "" && nodeConfig.Spec.WorkerLatencyProfile != "" && role == ctrlcommon.MachineConfigPoolMaster {
-				continue
+		// Setting the CGroups version to "v1" explicitly
+		if nodeConfig.Spec.CgroupMode == osev1.CgroupModeV1 {
+			err := updateMachineConfigwithCgroup(nodeConfig, mc)
+			if err != nil {
+				return nil, err
 			}
+		}
+
+		// The following code updates the CGroups version to "v2"
+		// only if the "TechPreviewNoUpgrade" featureset is enabled
+		if isTechPreviewNoUpgradeEnabled(features) {
 			// updating the machine config resource with the relevant cgroup configuration
 			err := updateMachineConfigwithCgroup(nodeConfig, mc)
 			if err != nil {
 				return nil, err
 			}
-		} else if nodeConfig.Spec.WorkerLatencyProfile == "" {
-			return nil, nil
-		} else if role == ctrlcommon.MachineConfigPoolMaster {
-			continue
+		} else if nodeConfig.Spec.CgroupMode == osev1.CgroupModeV2 {
+			if nodeConfig.Spec.WorkerLatencyProfile == emptyInput {
+				// avoid the unnecessary creation/update of the machine config object (so the reboot)
+				// as the "TechPreviewNoUpgrade" featureSet is not enabled
+				return nil, nil
+			} else if role == ctrlcommon.MachineConfigPoolMaster {
+				// "TechPreviewNoUpgrade" not enabled, "cgroupMode" set to "v2" isn't effective
+				// "WorkerLatencyProfile" is relevant only to the worker mcp
+				continue
+			}
 		}
 		// Encode the new config into raw JSON
 		cfgIgn, err := kubeletConfigToIgnFile(originalKubeConfig)
@@ -326,7 +366,7 @@ func RunNodeConfigBootstrap(templateDir string, features *osev1.FeatureGate, cco
 			ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,
 		}
 		configs = append(configs, mc)
+		fmt.Println("------------------------------>Bootstrap MC", mc.Name, nodeConfig.Spec)
 	}
-
 	return configs, nil
 }
