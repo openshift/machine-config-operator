@@ -77,13 +77,11 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 		err := fmt.Errorf("could not fetch Node: %w", err)
 		return err
 	}
-	/*
-		// Set the Cgroups version explicitly to "v1"
-		if nodeConfig.Spec.CgroupMode == emptyInput {
-			nodeConfig.Spec.CgroupMode = osev1.CgroupModeV1
-			ctrl.configClient.ConfigV1().Nodes().Update(context.TODO(), nodeConfig, metav1.UpdateOptions{})
-		}
-	*/
+	// Set the Cgroups version explicitly to "v1"
+	if nodeConfig.Spec.CgroupMode == emptyInput {
+		nodeConfig.Spec.CgroupMode = osev1.CgroupModeV1
+		ctrl.configClient.ConfigV1().Nodes().Update(context.TODO(), nodeConfig, metav1.UpdateOptions{})
+	}
 	// checking if the Node spec is empty and accordingly returning from here.
 	if reflect.DeepEqual(nodeConfig.Spec, osev1.NodeSpec{}) {
 		glog.V(2).Info("empty Node resource found")
@@ -294,12 +292,10 @@ func RunNodeConfigBootstrap(templateDir string, features *osev1.FeatureGate, cco
 		return nil, fmt.Errorf("nodes.config.openshift.io resource not found")
 	}
 	configs := []*mcfgv1.MachineConfig{}
-	/*
-		// Set the Cgroups version explicitly to "v1"
-		if nodeConfig.Spec.CgroupMode == emptyInput {
-			nodeConfig.Spec.CgroupMode = osev1.CgroupModeV1
-		}
-	*/
+	// Set the Cgroups version explicitly to "v1"
+	if nodeConfig.Spec.CgroupMode == emptyInput {
+		nodeConfig.Spec.CgroupMode = osev1.CgroupModeV1
+	}
 	for _, pool := range mcpPools {
 		role := pool.Name
 		// Get MachineConfig
