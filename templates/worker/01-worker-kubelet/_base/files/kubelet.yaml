@@ -27,8 +27,6 @@ contents:
       APIPriorityAndFairness: true
       RotateKubeletServerCertificate: true
       DownwardAPIHugePages: true
-      CSIMigrationAzureFile: false
-      CSIMigrationvSphere: false
     serverTLSBootstrap: true
     tlsMinVersion: VersionTLS12
     tlsCipherSuites:
