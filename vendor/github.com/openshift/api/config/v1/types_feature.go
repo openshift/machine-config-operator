@@ -109,16 +109,17 @@ var FeatureSets = map[FeatureSet]*FeatureGateEnabledDisabled{
 		Disabled: []string{},
 	},
 	TechPreviewNoUpgrade: newDefaultFeatures().
-		with("CSIMigrationAzureFile").       // sig-storage, fbertina, Kubernetes feature gate
-		with("CSIMigrationvSphere").         // sig-storage, fbertina, Kubernetes feature gate
-		with("ExternalCloudProvider").       // sig-cloud-provider, jspeed, OCP specific
-		with("CSIDriverSharedResource").     // sig-build, adkaplan, OCP specific
-		with("BuildCSIVolumes").             // sig-build, adkaplan, OCP specific
-		with("NodeSwap").                    // sig-node, ehashman, Kubernetes feature gate
-		with("MachineAPIProviderOpenStack"). // openstack, egarcia (#forum-openstack), OCP specific
-		with("CGroupsV2").                   // sig-node, harche, OCP specific
-		with("Crun").                        // sig-node, haircommander, OCP specific
-		with("InsightsConfigAPI").           // insights, tremes (#ccx), OCP specific
+		with("ExternalCloudProvider").             // sig-cloud-provider, jspeed, OCP specific
+		with("CSIDriverSharedResource").           // sig-build, adkaplan, OCP specific
+		with("BuildCSIVolumes").                   // sig-build, adkaplan, OCP specific
+		with("NodeSwap").                          // sig-node, ehashman, Kubernetes feature gate
+		with("MachineAPIProviderOpenStack").       // openstack, egarcia (#forum-openstack), OCP specific
+		with("CGroupsV2").                         // sig-node, harche, OCP specific
+		with("Crun").                              // sig-node, haircommander, OCP specific
+		with("InsightsConfigAPI").                 // insights, tremes (#ccx), OCP specific
+		with("CSIInlineVolumeAdmission").          // sig-storage, jdobson, OCP specific
+		with("MatchLabelKeysInPodTopologySpread"). // sig-scheduling, ingvagabund (#forum-workloads), Kubernetes feature gate
+		with("OpenShiftPodSecurityAdmission").     // bz-auth, standa, OCP specific
 		toFeatures(),
 	LatencySensitive: newDefaultFeatures().
 		with(
@@ -133,10 +134,7 @@ var defaultFeatures = &FeatureGateEnabledDisabled{
 		"RotateKubeletServerCertificate", // sig-pod, sjenning
 		"DownwardAPIHugePages",           // sig-node, rphillips
 	},
-	Disabled: []string{
-		"CSIMigrationAzureFile", // sig-storage, jsafrane
-		"CSIMigrationvSphere",   // sig-storage, jsafrane
-	},
+	Disabled: []string{},
 }
 
 type featureSetBuilder struct {
