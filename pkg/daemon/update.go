@@ -1925,7 +1925,17 @@ func (dn *Daemon) InplaceUpdateViaNewContainer(target string) error {
 		glog.Info("SELinux is not enforcing")
 	}
 
-	err = runCmdSync("systemd-run", "--unit", "machine-config-daemon-update-rpmostree-via-container", "-p", "EnvironmentFile=-/etc/mco/proxy.env", "--collect", "--wait", "--", "podman", "run", "--env-file", "/etc/mco/proxy.env", "--authfile", "/var/lib/kubelet/config.json", "--privileged", "--pid=host", "--net=host", "--rm", "-v", "/:/run/host", target, "rpm-ostree", "ex", "deploy-from-self", "/run/host")
+	systemdPodmanArgs := []string{"--unit", "machine-config-daemon-update-rpmostree-via-container", "-p", "EnvironmentFile=-/etc/mco/proxy.env", "--collect", "--wait", "--", "podman"}
+	pullArgs := append([]string{}, systemdPodmanArgs...)
+	pullArgs = append(pullArgs, "pull", "--authfile", "/var/lib/kubelet/config.json", target)
+	err = runCmdSync("systemd-run", pullArgs...)
+	if err != nil {
+		return err
+	}
+
+	runArgs := append([]string{}, systemdPodmanArgs...)
+	runArgs = append(runArgs, "run", "--env-file", "/etc/mco/proxy.env", "--authfile", "/var/lib/kubelet/config.json", "--privileged", "--pid=host", "--net=host", "--rm", "-v", "/:/run/host", target, "rpm-ostree", "ex", "deploy-from-self", "/run/host")
+	err = runCmdSync("systemd-run", runArgs...)
 	if err != nil {
 		return err
 	}
