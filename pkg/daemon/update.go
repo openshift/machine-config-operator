@@ -686,6 +686,9 @@ func (dn *Daemon) removeRollback() error {
 		// do not attempt to rollback on non-RHCOS/FCOS machines
 		return nil
 	}
+	if err := bug2111817Workaround(); err != nil {
+		return err
+	}
 	return runRpmOstree("cleanup", "-r")
 }
 
