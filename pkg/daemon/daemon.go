@@ -1400,6 +1400,17 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 		return fmt.Errorf("error detecting previous SSH accesses: %w", err)
 	}
 
+	if dn.NodeUpdaterClient != nil {
+		// Forcibly re-initialize here because a prior failure may have left
+		// a stale transaction - xref https://issues.redhat.com/browse/OCPBUGS-2866
+		// this will be fixed in a newer rpm-ostree, but we want to be able to un-stick
+		// existing nodes too.
+		err := dn.NodeUpdaterClient.Initialize()
+		if err != nil {
+			return fmt.Errorf("error initializing rpm-ostree: %w", err)
+		}
+	}
+
 	if err := dn.removeRollback(); err != nil {
 		return fmt.Errorf("Failed to remove rollback: %w", err)
 	}
