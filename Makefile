@@ -49,7 +49,7 @@ image:
 test: test-unit test-e2e
 
 # Unit tests only (no active cluster required)
-test-unit: install-go-junit-report
+test-unit: install-go-junit-report install-setup-envtest
 ifdef ARTIFACT_DIR
 	CGO_ENABLED=0 go test -coverprofile=mco-unit-test-coverage.out $(UNITTEST_OPTS) | ./hack/test-with-junit.sh $(@)
 	go tool cover -html=mco-unit-test-coverage.out -o mco-unit-test-coverage.html
