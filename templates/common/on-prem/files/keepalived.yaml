@@ -61,6 +61,23 @@ contents:
         - name: nodeip-configuration
           mountPath: "/run/nodeip-configuration"
         imagePullPolicy: IfNotPresent
+      - name: create-on-prem-log-path
+        image: {{ .Images.baremetalRuntimeCfgImage }}
+        command:
+        - "/bin/bash"
+        - "-c"
+        - |
+          #/bin/bash
+          mkdir -p /host/var/log/on-prem-networking
+          # The unprivileged haproxy container needs write access too
+          chmod 775 /host/var/log/on-prem-networking
+        resources: {}
+        volumeMounts:
+        - name: chroot-host
+          mountPath: "/host"
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          privileged: true
       containers:
       - name: keepalived
         securityContext:
@@ -111,33 +128,38 @@ contents:
             fi
           }
 
+          run_keepalived() {
+            # Ensure that we don't have stale VIPs configured
+            # See https://bugzilla.redhat.com/show_bug.cgi?id=1931505
+            {{- range onPremPlatformAPIServerInternalIPs . }}
+            remove_vip "{{.}}"
+            {{- end }}
+            {{- range onPremPlatformIngressIPs . }}
+            remove_vip "{{.}}"
+            {{- end }}
+            declare -r keepalived_sock="/var/run/keepalived/keepalived.sock"
+            export -f msg_handler
+            export -f reload_keepalived
+            export -f sigterm_handler
+
+            # in remote worker case sleep forever
+            if [ -f "/run/nodeip-configuration/remote-worker" ]; then
+              sleep infinity
+              exit 0
+            fi
+
+            trap sigterm_handler SIGTERM
+            if [ -s "/etc/keepalived/keepalived.conf" ]; then
+                /usr/sbin/keepalived -f /etc/keepalived/keepalived.conf --dont-fork --vrrp --log-detail --log-console &
+            fi
+
+            rm -f "$keepalived_sock"
+            socat UNIX-LISTEN:${keepalived_sock},fork system:'bash -c msg_handler'
+          }
+
           set -ex
-          # Ensure that we don't have stale VIPs configured
-          # See https://bugzilla.redhat.com/show_bug.cgi?id=1931505
-          {{- range onPremPlatformAPIServerInternalIPs . }}
-          remove_vip "{{.}}"
-          {{- end }}
-          {{- range onPremPlatformIngressIPs . }}
-          remove_vip "{{.}}"
-          {{- end }}
-          declare -r keepalived_sock="/var/run/keepalived/keepalived.sock"
-          export -f msg_handler
-          export -f reload_keepalived
-          export -f sigterm_handler
-
-          # in remote worker case sleep forever
-          if [ -f "/run/nodeip-configuration/remote-worker" ]; then
-             sleep infinity
-             exit 0
-          fi
-
-          trap sigterm_handler SIGTERM
-          if [ -s "/etc/keepalived/keepalived.conf" ]; then
-              /usr/sbin/keepalived -f /etc/keepalived/keepalived.conf --dont-fork --vrrp --log-detail --log-console &
-          fi
-
-          rm -f "$keepalived_sock"
-          socat UNIX-LISTEN:${keepalived_sock},fork system:'bash -c msg_handler'
+          mv -f /host/var/log/on-prem-networking/keepalived.log /host/var/log/on-prem-networking/keepalived.previous.log || :
+          run_keepalived 2>&1 | tee /host/var/log/on-prem-networking/keepalived.log
         resources:
           requests:
             cpu: 100m
@@ -178,6 +200,7 @@ contents:
         - -c
         - |
           #/bin/bash
+          mv -f /host/var/log/on-prem-networking/keepalived-monitor.log /host/var/log/on-prem-networking/keepalived-monitor.previous.log
           # in remote worker case sleep forever
           if [ -f "/run/nodeip-configuration/remote-worker" ]; then
               sleep infinity
@@ -185,7 +208,7 @@ contents:
           fi
           api_vips={{- range $index, $ip := onPremPlatformAPIServerInternalIPs . }}{{ if gt $index 0 }},{{end}}{{$ip}}{{end}}
           ingress_vips={{- range $index, $ip := onPremPlatformIngressIPs . }}{{ if gt $index 0 }},{{end}}{{$ip}}{{end}}
-          dynkeepalived /var/lib/kubelet/kubeconfig /config/keepalived.conf.tmpl /etc/keepalived/keepalived.conf --api-vips "${api_vips}" --ingress-vips "${ingress_vips}"
+          dynkeepalived /var/lib/kubelet/kubeconfig /config/keepalived.conf.tmpl /etc/keepalived/keepalived.conf --api-vips "${api_vips}" --ingress-vips "${ingress_vips}" 2>&1 | tee /host/var/log/on-prem-networking/keepalived-monitor.log
         resources:
           requests:
             cpu: 100m

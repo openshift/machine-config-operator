@@ -43,6 +43,23 @@ contents:
         - name: kubeconfigvarlib
           mountPath: "/var/lib/kubelet"
         imagePullPolicy: IfNotPresent
+      - name: create-on-prem-log-path
+        image: {{ .Images.baremetalRuntimeCfgImage }}
+        command:
+        - "/bin/bash"
+        - "-c"
+        - |
+          #/bin/bash
+          mkdir -p /host/var/log/on-prem-networking
+          # The unprivileged haproxy container needs write access too
+          chmod 775 /host/var/log/on-prem-networking
+        resources: {}
+        volumeMounts:
+        - name: chroot-host
+          mountPath: "/host"
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          privileged: true
       containers:
       - name: haproxy
         image: {{.Images.haproxyImage}}
@@ -53,7 +70,8 @@ contents:
         - "/bin/bash"
         - "-c"
         - |
-          #/bin/bash
+          #!/bin/bash
+          mv -f /host/var/log/on-prem-networking/haproxy.log /host/var/log/on-prem-networking/haproxy.previous.log
           verify_old_haproxy_ps_being_deleted()
           {
             local prev_pids
@@ -99,7 +117,7 @@ contents:
           export -f reload_haproxy
           export -f verify_old_haproxy_ps_being_deleted
           rm -f "$haproxy_sock" "$haproxy_log_sock"
-          socat UNIX-RECV:${haproxy_log_sock} STDOUT &
+          socat UNIX-RECV:${haproxy_log_sock} STDOUT | tee /host/var/log/on-prem-networking/haproxy.log &
           if [ -s "/etc/haproxy/haproxy.cfg" ]; then
               /usr/sbin/haproxy -W -db -f /etc/haproxy/haproxy.cfg  -p /var/lib/haproxy/run/haproxy.pid &
           fi
@@ -113,6 +131,8 @@ contents:
           mountPath: "/etc/haproxy"
         - name: run-dir
           mountPath: "/var/run/haproxy"
+        - name: chroot-host
+          mountPath: "/host"
         livenessProbe:
           initialDelaySeconds: 50
           httpGet:
@@ -125,12 +145,12 @@ contents:
           privileged: true
         image: {{ .Images.baremetalRuntimeCfgImage }}
         command:
-        - monitor
-        - "/var/lib/kubelet/kubeconfig"
-        - "/config/haproxy.cfg.tmpl"
-        - "/etc/haproxy/haproxy.cfg"
-        - "--api-vips"
-        - "{{- range $index, $ip := onPremPlatformAPIServerInternalIPs . }}{{ if gt $index 0 }},{{end}}{{$ip}}{{end}}"
+        - "/bin/bash"
+        - "-c"
+        - |
+          #!/bin/bash
+          mv -f /host/var/log/on-prem-networking/haproxy-monitor.log /host/var/log/on-prem-networking/haproxy-monitor.previous.log
+          monitor "/var/lib/kubelet/kubeconfig" "/config/haproxy.cfg.tmpl" "/etc/haproxy/haproxy.cfg" "--api-vips" "{{- range $index, $ip := onPremPlatformAPIServerInternalIPs . }}{{ if gt $index 0 }},{{end}}{{$ip}}{{end}}" 2>&1 | tee /host/var/log/on-prem-networking/haproxy-monitor.log
         resources:
           requests:
             cpu: 100m

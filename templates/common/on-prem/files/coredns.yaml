@@ -25,6 +25,9 @@ contents:
       - name: nm-resolv
         hostPath:
           path: "/var/run/NetworkManager"
+      - name: host
+        hostPath:
+          path: "/"
       initContainers:
       - name: render-config-coredns
         image: {{ .Images.baremetalRuntimeCfgImage }}
@@ -52,14 +55,34 @@ contents:
         - name: nm-resolv
           mountPath: "/var/run/NetworkManager"
         imagePullPolicy: IfNotPresent
+      - name: create-on-prem-log-path
+        image: {{ .Images.baremetalRuntimeCfgImage }}
+        command:
+        - "/bin/bash"
+        - "-c"
+        - |
+          #/bin/bash
+          mkdir -p /host/var/log/on-prem-networking
+          # The unprivileged haproxy container needs write access too
+          chmod 775 /host/var/log/on-prem-networking
+        resources: {}
+        volumeMounts:
+        - name: host
+          mountPath: "/host"
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          privileged: true
       containers:
       - name: coredns
         securityContext:
           privileged: true
         image: {{.Images.corednsImage}}
-        args:
-        - "--conf"
-        - "/etc/coredns/Corefile"
+        command:
+        - /bin/bash
+        - -c
+        - |
+          mv -f /host/var/log/on-prem-networking/coredns.log /host/var/log/on-prem-networking/coredns.previous.log
+          /usr/bin/coredns --conf /etc/coredns/Corefile | tee /host/var/log/on-prem-networking/coredns.log
         resources:
           requests:
             cpu: 100m
@@ -67,6 +90,8 @@ contents:
         volumeMounts:
         - name: conf-dir
           mountPath: "/etc/coredns"
+        - name: host
+          mountPath: "/host"
         livenessProbe:
           httpGet:
             path: /health
@@ -83,14 +108,11 @@ contents:
           privileged: true
         image: {{ .Images.baremetalRuntimeCfgImage }}
         command:
-        - corednsmonitor
-        - "/var/lib/kubelet/kubeconfig"
-        - "/config/Corefile.tmpl"
-        - "/etc/coredns/Corefile"
-        - "--api-vips"
-        - "{{- range $index, $ip := onPremPlatformAPIServerInternalIPs . }}{{ if gt $index 0 }},{{end}}{{$ip}}{{end}}"
-        - "--ingress-vips"
-        - "{{- range $index, $ip := onPremPlatformIngressIPs . }}{{ if gt $index 0 }},{{end}}{{$ip}}{{end}}"
+        - /bin/bash
+        - -c
+        - |
+          mv -f /host/var/log/on-prem-networking/coredns-monitor.log /host/var/log/on-prem-networking/coredns-monitor.previous.log
+          corednsmonitor "/var/lib/kubelet/kubeconfig" "/config/Corefile.tmpl" "/etc/coredns/Corefile" "--api-vips" "{{- range $index, $ip := onPremPlatformAPIServerInternalIPs . }}{{ if gt $index 0 }},{{end}}{{$ip}}{{end}}" "--ingress-vips" "{{- range $index, $ip := onPremPlatformIngressIPs . }}{{ if gt $index 0 }},{{end}}{{$ip}}{{end}}" 2>&1 | tee /host/var/log/on-prem-networking/coredns-monitor.log
         resources:
           requests:
             cpu: 100m
@@ -104,6 +126,8 @@ contents:
           mountPath: "/etc/coredns"
         - name: nm-resolv
           mountPath: "/var/run/NetworkManager"
+        - name: host
+          mountPath: "/host"
         imagePullPolicy: IfNotPresent        
       hostNetwork: true
       tolerations:
