@@ -48,7 +48,7 @@ spec:
             namespace: openshift-machine-config-operator
             severity: warning
           annotations:
-            message: "Drain failed on {{ $labels.node }} , updates may be blocked. For more details check MachineConfigController pod logs: oc logs -f -n {{ $labels.namespace }} -l k8s-app=machine-config-controller -c machine-config-controller"
+            message: "Drain failed on {{ $labels.exported_node }} , updates may be blocked. For more details check MachineConfigController pod logs: oc logs -f -n {{ $labels.namespace }} machine-config-controller-xxxxx -c machine-config-controller"
 ---
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
