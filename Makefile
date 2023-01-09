@@ -22,8 +22,6 @@ export GOLANGCI_LINT_CACHE=$(shell echo $${GOLANGCI_LINT_CACHE:-$$GOPATH/cache})
 
 GOTAGS = "containers_image_openpgp exclude_graphdriver_devicemapper exclude_graphdriver_btrfs containers_image_ostree_stub"
 
-UNITTEST_OPTS = -tags=$(GOTAGS) -count=1 -v ./cmd/... ./pkg/... ./lib/...
-
 all: binaries
 
 .PHONY: clean test test-unit test-e2e verify update install-tools
@@ -50,18 +48,7 @@ test: test-unit test-e2e
 
 # Unit tests only (no active cluster required)
 test-unit: install-go-junit-report
-ifdef ARTIFACT_DIR
-	CGO_ENABLED=0 go test -coverprofile=mco-unit-test-coverage.out $(UNITTEST_OPTS) | ./hack/test-with-junit.sh $(@)
-	go tool cover -html=mco-unit-test-coverage.out -o mco-unit-test-coverage.html
-	# Move the test coverage report into ARTIFACT_DIR only when it is not the same as our current dir
-	# This enables test coverage analysis to be collected locally by running:
-	# $ ARTIFACT_DIR="$PWD" make test-unit
-	if [[ "${PWD}" != "${ARTIFACT_DIR}" ]]; then \
-		mv mco-unit-test-coverage.out mco-unit-test-coverage.html "${ARTIFACT_DIR}"; \
-	fi
-else
-	CGO_ENABLED=0 go test $(UNITTEST_OPTS)
-endif
+	./hack/test-unit.sh $(@) $(GOTAGS)
 
 # Run the code generation tasks.
 # Example:
@@ -69,7 +56,7 @@ endif
 update:
 	hack/update-codegen.sh
 	hack/update-templates.sh
- 
+
 go-deps:
 	go mod tidy
 	go mod vendor
