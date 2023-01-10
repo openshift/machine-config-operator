@@ -2,8 +2,6 @@ package e2e_shared_test
 
 import (
 	"context"
-	"fmt"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -13,11 +11,9 @@ import (
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/require"
-	kubeErrs "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func waitForConfigDriftMonitorStart(t *testing.T, cs *framework.ClientSet, node corev1.Node) {
@@ -77,47 +73,6 @@ func waitForConfigDriftMonitorStart(t *testing.T, cs *framework.ClientSet, node 
 	require.Nil(t, err, "expected config drift monitor to start (waited %v)", end)
 }
 
-func assertNodeAndMCPIsDegraded(t *testing.T, cs *framework.ClientSet, node corev1.Node, mcp mcfgv1.MachineConfigPool, filename string) {
-	t.Helper()
-
-	logEntry := fmt.Sprintf("content mismatch for file \"%s\"", filename)
-
-	// Assert that the node eventually reaches a Degraded state and has the
-	// config mismatch as the reason
-	t.Log("Verifying node becomes degraded due to config mismatch")
-
-	assertNodeReachesState(t, cs, node, func(n corev1.Node) bool {
-		isDegraded := n.Annotations[constants.MachineConfigDaemonStateAnnotationKey] == string(constants.MachineConfigDaemonStateDegraded)
-		hasReason := strings.Contains(n.Annotations[constants.MachineConfigDaemonReasonAnnotationKey], logEntry)
-		return isDegraded && hasReason
-	})
-
-	mcdPod, err := helpers.MCDForNode(cs, &node)
-	require.Nil(t, err)
-
-	assertLogsContain(t, cs, mcdPod, logEntry)
-
-	// Assert that the MachineConfigPool eventually reaches a degraded state and has the config mismatch as the reason.
-	t.Log("Verifying MachineConfigPool becomes degraded due to config mismatch")
-
-	assertPoolReachesState(t, cs, mcp, func(m mcfgv1.MachineConfigPool) bool {
-		trueConditions := []mcfgv1.MachineConfigPoolConditionType{
-			mcfgv1.MachineConfigPoolDegraded,
-			mcfgv1.MachineConfigPoolNodeDegraded,
-			mcfgv1.MachineConfigPoolUpdating,
-		}
-
-		falseConditions := []mcfgv1.MachineConfigPoolConditionType{
-			mcfgv1.MachineConfigPoolRenderDegraded,
-			mcfgv1.MachineConfigPoolUpdated,
-		}
-
-		return m.Status.DegradedMachineCount == 1 &&
-			allMCPConditionsTrue(trueConditions, m) &&
-			allMCPConditionsFalse(falseConditions, m)
-	})
-}
-
 func assertLogsContain(t *testing.T, cs *framework.ClientSet, mcdPod *corev1.Pod, expectedContents string) {
 	t.Helper()
 
@@ -167,103 +122,6 @@ func assertNodeAndMCPIsRecovered(t *testing.T, cs *framework.ClientSet, node cor
 			allMCPConditionsTrue(trueConditions, m) &&
 			allMCPConditionsFalse(falseConditions, m)
 	})
-}
-
-func assertNodeReachesState(t *testing.T, cs *framework.ClientSet, target corev1.Node, stateFunc func(corev1.Node) bool) {
-	t.Helper()
-
-	maxWait := 5 * time.Minute
-
-	end, err := pollForResourceState(maxWait, func() (bool, error) {
-		node, err := cs.CoreV1Interface.Nodes().Get(context.TODO(), target.Name, metav1.GetOptions{})
-		return stateFunc(*node), err
-	})
-
-	if err != nil {
-		t.Fatalf("Node %s did not reach expected state (took %v): %s", target.Name, end, err)
-	}
-
-	t.Logf("Node %s reached expected state (took %v)", target.Name, end)
-}
-
-func assertPoolReachesState(t *testing.T, cs *framework.ClientSet, target mcfgv1.MachineConfigPool, stateFunc func(mcfgv1.MachineConfigPool) bool) {
-	t.Helper()
-
-	maxWait := 5 * time.Minute
-
-	end, err := pollForResourceState(maxWait, func() (bool, error) {
-		mcp, err := cs.MachineConfigPools().Get(context.TODO(), target.Name, metav1.GetOptions{})
-		return stateFunc(*mcp), err
-	})
-
-	if err != nil {
-		t.Fatalf("MachineConfigPool %s did not reach expected state (took %v): %s", target.Name, end, err)
-	}
-
-	t.Logf("MachineConfigPool %s reached expected state (took %v)", target.Name, end)
-}
-
-func pollForResourceState(timeout time.Duration, pollFunc func() (bool, error)) (time.Duration, error) {
-	// This wraps wait.PollImmediate() for the following reason:
-	//
-	// If the control plane is temporarily unavailable (e.g., when running in a
-	// single-node OpenShift (SNO) context and the node reboots), this error will
-	// not be nil, but *should* go back to nil once the control-plane becomes
-	// available again. To handle that, we:
-	//
-	// 1. Store the error within the pollForResourceState scope.
-	// 2. Run the clock out.
-	// 3. Handle the error (if it does not go back to nil) when the timeout is reached.
-	//
-	// This was inspired by and is a more generic implementation of:
-	// https://github.com/openshift/machine-config-operator/blob/master/test/e2e-single-node/sno_mcd_test.go#L355-L374
-	start := time.Now()
-
-	var lastErr error
-
-	waitErr := wait.PollImmediate(1*time.Second, timeout, func() (bool, error) {
-		result, err := pollFunc()
-		lastErr = err
-		return result, nil
-	})
-
-	return time.Since(start), kubeErrs.NewAggregate([]error{
-		lastErr,
-		waitErr,
-	})
-}
-
-func mutateFileOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, filename, contents string) {
-	t.Helper()
-
-	if !strings.HasPrefix(filename, "/rootfs") {
-		filename = filepath.Join("/rootfs", filename)
-	}
-
-	bashCmd := fmt.Sprintf("printf '%s' > %s", contents, filename)
-	t.Logf("Setting contents of %s on %s to %s", filename, node.Name, contents)
-
-	helpers.ExecCmdOnNode(t, cs, node, "/bin/bash", "-c", bashCmd)
-}
-
-func allMCPConditionsTrue(conditions []mcfgv1.MachineConfigPoolConditionType, mcp mcfgv1.MachineConfigPool) bool {
-	for _, condition := range conditions {
-		if !mcfgv1.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, condition) {
-			return false
-		}
-	}
-
-	return true
-}
-
-func allMCPConditionsFalse(conditions []mcfgv1.MachineConfigPoolConditionType, mcp mcfgv1.MachineConfigPool) bool {
-	for _, condition := range conditions {
-		if !mcfgv1.IsMachineConfigPoolConditionFalse(mcp.Status.Conditions, condition) {
-			return false
-		}
-	}
-
-	return true
 }
 
 func timeIt(t *testing.T, info string, timedFunc func()) {
