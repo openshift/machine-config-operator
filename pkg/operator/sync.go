@@ -395,7 +395,11 @@ func getIgnitionHost(infraStatus *configv1.InfrastructureStatus) (string, error)
 		case configv1.BareMetalPlatformType:
 			ignitionHost = net.JoinHostPort(infraStatus.PlatformStatus.BareMetal.APIServerInternalIPs[0], securePortStr)
 		case configv1.OpenStackPlatformType:
-			ignitionHost = net.JoinHostPort(infraStatus.PlatformStatus.OpenStack.APIServerInternalIPs[0], securePortStr)
+			if infraStatus.PlatformStatus.OpenStack != nil {
+				if len(infraStatus.PlatformStatus.OpenStack.APIServerInternalIPs) > 0 {
+					ignitionHost = net.JoinHostPort(infraStatus.PlatformStatus.OpenStack.APIServerInternalIPs[0], securePortStr)
+				}
+			}
 		case configv1.OvirtPlatformType:
 			ignitionHost = net.JoinHostPort(infraStatus.PlatformStatus.Ovirt.APIServerInternalIPs[0], securePortStr)
 		case configv1.VSpherePlatformType:
