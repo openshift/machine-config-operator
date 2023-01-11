@@ -8,12 +8,13 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/Masterminds/sprig"
 	"github.com/apparentlymart/go-cidr/cidr"
 	"github.com/ghodss/yaml"
 	"github.com/golang/glog"
 
 	configv1 "github.com/openshift/api/config/v1"
+
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 
 	"github.com/openshift/machine-config-operator/manifests"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -57,7 +58,7 @@ func (a *assetRenderer) read() error {
 }
 
 func (a *assetRenderer) addTemplateFuncs() {
-	funcs := sprig.TxtFuncMap()
+	funcs := ctrlcommon.GetTemplateFuncMap()
 	funcs["toYAML"] = toYAML
 	funcs["onPremPlatformAPIServerInternalIP"] = onPremPlatformAPIServerInternalIP
 	funcs["onPremPlatformAPIServerInternalIPs"] = onPremPlatformAPIServerInternalIPs
