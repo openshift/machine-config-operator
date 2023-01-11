@@ -7,11 +7,17 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
+	mcfgv1resourceread "github.com/openshift/machine-config-operator/lib/resourceread"
+	"github.com/openshift/machine-config-operator/manifests"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/apimachinery/pkg/util/yaml"
 )
 
 func TestClusterDNSIP(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		Range  string
 		Output string
@@ -27,7 +33,10 @@ func TestClusterDNSIP(t *testing.T) {
 		Error: true,
 	}}
 	for idx, test := range tests {
+		idx := idx
+		test := test
 		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
+			t.Parallel()
 			desc := fmt.Sprintf("clusterDNSIP(%#v)", test.Range)
 			gotIP, err := clusterDNSIP(test.Range)
 			if err != nil {
@@ -43,6 +52,7 @@ func TestClusterDNSIP(t *testing.T) {
 }
 
 func TestIPFamilies(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		Ranges []string
 		Output mcfgv1.IPFamiliesType
@@ -64,7 +74,10 @@ func TestIPFamilies(t *testing.T) {
 		Error:  true,
 	}}
 	for idx, test := range tests {
+		idx := idx
+		test := test
 		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
+			t.Parallel()
 			desc := fmt.Sprintf("ipFamilies(%#v)", test.Ranges)
 			families, err := ipFamilies(test.Ranges)
 			if err != nil {
@@ -79,7 +92,123 @@ func TestIPFamilies(t *testing.T) {
 	}
 }
 
+// Smoke test to render all manifests to validate if they can be rendered or
+// not and if they can be read into the appropriate structs.
+// TODO: Consolidate this and the TestRenderAsset tests
+func TestRenderAllManifests(t *testing.T) {
+	t.Parallel()
+
+	allManifests, err := manifests.AllManifests()
+	require.NoError(t, err)
+
+	renderConfig := &renderConfig{
+		TargetNamespace: "testing-namespace",
+		Images: &RenderConfigImages{
+			MachineConfigOperator: "mco-operator-image",
+			OauthProxy:            "oauth-proxy-image",
+			KeepalivedBootstrap:   "keepalived-bootstrap-image",
+		},
+		ControllerConfig: mcfgv1.ControllerConfigSpec{
+			DNS: &configv1.DNS{
+				Spec: configv1.DNSSpec{
+					BaseDomain: "local",
+				},
+			},
+			Proxy: &configv1.ProxyStatus{
+				HTTPSProxy: "https://i.am.a.proxy.server",
+				NoProxy:    "*",
+			},
+			Infra: &configv1.Infrastructure{
+				Status: configv1.InfrastructureStatus{
+					PlatformStatus: &configv1.PlatformStatus{
+						BareMetal: &configv1.BareMetalPlatformStatus{
+							APIServerInternalIPs: []string{
+								"1.1.1.1",
+							},
+						},
+						Type: configv1.BareMetalPlatformType,
+					},
+				},
+			},
+		},
+	}
+
+	// Some of the templates accept a different schema type that doesn't have a
+	// known type, but contains elements of the above renderConfig.
+	untypedRenderConfig := struct {
+		Role             string
+		PointerConfig    string
+		ControllerConfig mcfgv1.ControllerConfigSpec
+		Images           *RenderConfigImages
+	}{
+		Role:             "control-plane",
+		PointerConfig:    "cG9pbnRlci1jb25maWctZGF0YQo=", // This must be Base64-encoded
+		ControllerConfig: renderConfig.ControllerConfig,
+		Images:           renderConfig.Images,
+	}
+
+	// These manifest templates are rendered with the untypedRenderConfig above.
+	untypedCases := sets.NewString(
+		"userdata_secret.yaml",
+		"on-prem/coredns.yaml",
+		"on-prem/keepalived.yaml",
+		"on-prem/coredns-corefile.tmpl")
+
+	// These are files in the manifest directory that we should ignore in this test.
+	ignored := sets.NewString("manifests.go")
+
+	for _, manifestPath := range allManifests {
+		manifestPath := manifestPath
+		// Skip files that we should ignore for this test.
+		if ignored.Has(manifestPath) {
+			continue
+		}
+
+		t.Run(manifestPath, func(t *testing.T) {
+			t.Parallel()
+
+			var buf []byte
+			var err error
+			var desc string
+
+			// Determine if this manifest is rendered with the renderConfig or the untypedConfig.
+			if untypedCases.Has(manifestPath) {
+				desc = fmt.Sprintf("Path(%#v), UntypedRenderData(%#v)", manifestPath, untypedRenderConfig)
+				buf, err = renderUntypedAsset(untypedRenderConfig, manifestPath)
+			} else {
+				desc = fmt.Sprintf("Path(%#v), RenderConfig(%#v)", manifestPath, renderConfig)
+				buf, err = renderAsset(renderConfig, manifestPath)
+			}
+
+			// The template lib will throw an err if a template field is missing
+			if err != nil {
+				t.Logf("%s failed: %s", desc, err.Error())
+				t.Fail()
+			}
+			if buf == nil || len(buf) == 0 {
+				t.Log("Buffer is empty!")
+				t.Fail()
+			}
+			// Verify that the buf can be converted back into a string safely
+			str := fmt.Sprintf("%s", buf)
+			if str == "" || len(str) == 0 {
+				t.Log("Buffer is not a valid string!")
+				t.Fail()
+			}
+
+			// If we have a .yaml extension, we have a kube manifest. We should
+			// ensure that it can be read into the appropriate data structure to
+			// ensure there are no rendering errors.
+			if strings.HasSuffix(manifestPath, ".yaml") {
+				assertRenderedCanBeRead(t, buf)
+			}
+		})
+	}
+}
+
 func TestRenderAsset(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		Path         string
 		RenderConfig *renderConfig
@@ -138,20 +267,12 @@ func TestRenderAsset(t *testing.T) {
 		Error: true,
 	}}
 
-	readers := map[string]func([]byte){
-		"manifests/machineconfigcontroller/deployment.yaml": func(objBytes []byte) {
-			resourceread.ReadDeploymentV1OrDie(objBytes)
-		},
-		"manifests/machineconfigcontroller/clusterrolebinding.yaml": func(objBytes []byte) {
-			resourceread.ReadClusterRoleBindingV1OrDie(objBytes)
-		},
-		"manifests/machineconfigdaemon/daemonset.yaml": func(objBytes []byte) {
-			resourceread.ReadDaemonSetV1OrDie(objBytes)
-		},
-	}
-
 	for idx, test := range tests {
+		idx := idx
+		test := test
+
 		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
+			t.Parallel()
 			desc := fmt.Sprintf("Path(%#v), RenderConfig(%#v)", test.Path, test.RenderConfig)
 			buf, err := renderAsset(test.RenderConfig, test.Path)
 			// The template lib will throw an err if a template field is missing
@@ -180,14 +301,14 @@ func TestRenderAsset(t *testing.T) {
 			}
 			// Verify that the rendered template can be read.
 			// This aims to prevent bugs similar to https://bugzilla.redhat.com/show_bug.cgi?id=1947066
-			assert.NotPanics(t, func() {
-				readers[test.Path](buf)
-			})
+			assertRenderedCanBeRead(t, buf)
 		})
 	}
 }
 
 func TestCreateDiscoveredControllerConfigSpec(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		Infra   *configv1.Infrastructure
 		Network *configv1.Network
@@ -260,7 +381,10 @@ func TestCreateDiscoveredControllerConfigSpec(t *testing.T) {
 	}}
 
 	for idx, test := range tests {
+		idx := idx
+		test := test
 		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
+			t.Parallel()
 			desc := fmt.Sprintf("Infra(%#v), Network(%#v)", test.Infra, test.Network)
 			controllerConfigSpec, err := createDiscoveredControllerConfigSpec(test.Infra, test.Network, test.Proxy, test.DNS)
 			if err != nil {
@@ -290,5 +414,55 @@ func TestCreateDiscoveredControllerConfigSpec(t *testing.T) {
 			}
 		})
 	}
+}
 
+func assertRenderedCanBeRead(t *testing.T, rendered []byte) {
+	assert.NotPanics(t, func() {
+		// Do a trial decoding into an untyped struct so we can look up the object
+		// kind. There is probably a more efficient and straightforward way to do
+		// this that I am unaware of.
+		initialDecoded := map[string]interface{}{}
+		require.NoError(t, yaml.Unmarshal(rendered, &initialDecoded))
+		kind := initialDecoded["kind"].(string)
+
+		switch kind {
+		case "ClusterRole":
+			resourceread.ReadClusterRoleV1OrDie(rendered)
+		case "ClusterRoleBinding":
+			resourceread.ReadClusterRoleBindingV1OrDie(rendered)
+		case "ConfigMap":
+			resourceread.ReadConfigMapV1OrDie(rendered)
+		case "ControllerConfig":
+			mcfgv1resourceread.ReadControllerConfigV1OrDie(rendered)
+		case "CustomResourceDefinition":
+			resourceread.ReadCustomResourceDefinitionV1OrDie(rendered)
+		case "DaemonSet":
+			resourceread.ReadDaemonSetV1OrDie(rendered)
+		case "Deployment":
+			resourceread.ReadDeploymentV1OrDie(rendered)
+		case "MachineConfigPool":
+			mcfgv1resourceread.ReadMachineConfigPoolV1OrDie(rendered)
+		case "Pod":
+			resourceread.ReadPodV1OrDie(rendered)
+		case "RoleBinding":
+			resourceread.ReadRoleBindingV1OrDie(rendered)
+		case "Secret":
+			resourceread.ReadSecretV1OrDie(rendered)
+		case "ServiceAccount":
+			resourceread.ReadServiceAccountV1OrDie(rendered)
+		}
+	})
+}
+
+// Renders an asset which takes an untyped render config.
+func renderUntypedAsset(data interface{}, path string) ([]byte, error) {
+	ar := newAssetRenderer(path)
+
+	if err := ar.read(); err != nil {
+		return nil, err
+	}
+
+	ar.addTemplateFuncs()
+
+	return ar.render(data)
 }
