@@ -8,8 +8,8 @@ Layering lets you "layer" additional content on top of a Base OS Image using "co
 
 As of 4.12:
 
-- The MCO uses the `rhel-coreos-8` [native format](https://coreos.github.io/rpm-ostree/container/) base OS image by default instead of `machine-os-content`
-- You can "layer" user content on top of that `rhel-coreos-8` image using a container build, and that content will be applied during a rebase
+- The MCO uses the `rhel-coreos-8` [native format](https://coreos.github.io/rpm-ostree/container/) base OS image by default instead of `machine-os-content` (and in 4.13+, the image is `rhel-coreos`)
+- You can "layer" user content on top of that `rhel-coreos` image using a container build, and that content will be applied during a rebase
 - The MCO will allow `OSImageURL` to be overridden *on a per-pool basis* with such an layered image
 
 While layering is powerful, it's also an "advanced" use of the MCO, and it comes with some trade-offs.
@@ -36,13 +36,13 @@ Nothing will stop you at this point from using a completely arbitrary image, but
 #### On an existing cluster
 
 ```bash
-oc adm release info --image-for rhel-coreos-8
+oc adm release info --image-for rhel-coreos
 ```
 
 #### Or before you build your cluster
 
 ```bash
-oc adm release info --image-for rhel-coreos-8 quay.io/openshift-release-dev/ocp-release:your_release_here
+oc adm release info --image-for rhel-coreos quay.io/openshift-release-dev/ocp-release:your_release_here
 ```
 
 ### 2. "Layer" Some Content On Top Of It
