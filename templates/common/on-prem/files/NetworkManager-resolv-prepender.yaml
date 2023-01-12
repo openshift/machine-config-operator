@@ -20,6 +20,42 @@ contents:
     {{end -}}
     {{end -}}
 
+    function retry {
+        attempts=5
+        interval=1
+
+        local OPTIND
+        while getopts "a:i:" opt ; do
+        case "${opt}" in
+            a )
+                attempts="${OPTARG}"
+                ;;
+            i )
+                interval="${OPTARG}"
+                ;;
+            * )
+                ;;
+        esac
+        done
+        shift $((OPTIND-1))
+
+        rc=0
+        for attempt in $(seq "${attempts}")
+        do
+            >&2 echo "NM resolv-prepender: Attempt ${attempt}/${attempts} to execute \"$*\"..."
+
+            if "$@"; then
+                return 0
+            else
+                rc=$?
+                >&2 echo "NM resolv-prepender: Failed with exit code ${rc}, retrying \"$*\"..."
+                sleep "${interval}"
+            fi
+        done
+
+        return ${rc}
+    }
+
     # If $DHCP6_FQDN_FQDN is not empty and is not localhost.localdomain and static hostname was not already set
     if [[ -n "$DHCP6_FQDN_FQDN" && "$DHCP6_FQDN_FQDN" != "localhost.localdomain" && "$DHCP6_FQDN_FQDN" =~ "." ]] ; then
        STATIC_HOSTNAME="$(test ! -e /etc/hostname && echo -n || cat /etc/hostname | xargs)"
@@ -52,7 +88,7 @@ contents:
         # Pull container image outside of the timeout to workaround possible
         # image corruption
         # https://github.com/containers/podman/issues/14003
-        /usr/bin/podman pull --authfile /var/lib/kubelet/config.json {{ .Images.baremetalRuntimeCfgImage }}
+        retry -- /usr/bin/podman pull --authfile /var/lib/kubelet/config.json {{ .Images.baremetalRuntimeCfgImage }}
 
         NAMESERVER_IP=$(timeout 20s /usr/bin/podman run --rm \
             --authfile /var/lib/kubelet/config.json \
