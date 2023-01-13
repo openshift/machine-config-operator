@@ -77,19 +77,40 @@ contents:
     function dynamic_pid_sizing {
         echo "Not implemented yet"
     }
+    function set_memory {
+        SYSTEM_RESERVED_MEMORY=$1
+        if [ -z "${SYSTEM_RESERVED_MEMORY}" ]; then
+            SYSTEM_RESERVED_MEMORY="1Gi"
+        fi
+        echo "SYSTEM_RESERVED_MEMORY=${SYSTEM_RESERVED_MEMORY}" >> ${NODE_SIZES_ENV}
+    }
+    function set_cpu {
+        SYSTEM_RESERVED_CPU=$1
+        if [ -z "${SYSTEM_RESERVED_CPU}" ]; then
+            SYSTEM_RESERVED_CPU="500m"
+        fi
+        echo "SYSTEM_RESERVED_CPU=${SYSTEM_RESERVED_CPU}" >> ${NODE_SIZES_ENV}
+    }
+    function set_es {
+        SYSTEM_RESERVED_ES=$1
+        if [ -z "${SYSTEM_RESERVED_ES}" ]; then
+            SYSTEM_RESERVED_ES="1Gi"
+        fi
+        echo "SYSTEM_RESERVED_ES=${SYSTEM_RESERVED_ES}" >> ${NODE_SIZES_ENV}
+    }
     function dynamic_node_sizing {
         rm -f ${NODE_SIZES_ENV}
         dynamic_memory_sizing
         dynamic_cpu_sizing
-        echo "SYSTEM_RESERVED_ES=$1" >> ${NODE_SIZES_ENV}
+        set_es $1
         #dynamic_ephemeral_sizing
         #dynamic_pid_sizing
     }
     function static_node_sizing {
         rm -f ${NODE_SIZES_ENV}
-        echo "SYSTEM_RESERVED_MEMORY=$1" >> ${NODE_SIZES_ENV}
-        echo "SYSTEM_RESERVED_CPU=$2" >> ${NODE_SIZES_ENV}
-        echo "SYSTEM_RESERVED_ES=$3" >> ${NODE_SIZES_ENV}
+        set_memory $1
+        set_cpu $2
+        set_es $3
     }
 
     if [ $1 == "true" ]; then

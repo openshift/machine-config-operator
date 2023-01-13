@@ -37,19 +37,19 @@ func createNewKubeletDynamicSystemReservedIgnition(autoSystemReserved *bool, use
 		autoNodeSizing = strconv.FormatBool(*autoSystemReserved)
 	}
 
-	if val, ok := userDefinedSystemReserved["memory"]; ok {
+	if val, ok := userDefinedSystemReserved["memory"]; ok && val != "" {
 		systemReservedMemory = val
 	} else {
 		systemReservedMemory = "1Gi"
 	}
 
-	if val, ok := userDefinedSystemReserved["cpu"]; ok {
+	if val, ok := userDefinedSystemReserved["cpu"]; ok && val != "" {
 		systemReservedCPU = val
 	} else {
 		systemReservedCPU = "500m"
 	}
 
-	if val, ok := userDefinedSystemReserved["ephemeral-storage"]; ok {
+	if val, ok := userDefinedSystemReserved["ephemeral-storage"]; ok && val != "" {
 		systemReservedEphemeralStorage = val
 	} else {
 		systemReservedEphemeralStorage = "1Gi"
