@@ -323,10 +323,10 @@ func ExtractOSImage(imgURL string) (osImageContentDir string, err error) {
 	}
 
 	// Extract the image
-	args := []string{"image", "extract", "--path", "/:" + osImageContentDir}
+	args := []string{"20m", "oc", "image", "extract", "--v", "10", "--path", "/:" + osImageContentDir}
 	args = append(args, registryConfig...)
 	args = append(args, imgURL)
-	if _, err = pivotutils.RunExtBackground(cmdRetriesCount, "oc", args...); err != nil {
+	if _, err = pivotutils.RunExtBackground(cmdRetriesCount, "timeout", args...); err != nil {
 		// Workaround fixes for the environment where oc image extract fails.
 		// See https://bugzilla.redhat.com/show_bug.cgi?id=1862979
 		glog.Infof("Falling back to using podman cp to fetch OS image content")
@@ -355,10 +355,10 @@ func ExtractExtensionsImage(imgURL string) (osExtensionsImageContentDir string, 
 	}
 
 	// Extract the image
-	args := []string{"image", "extract", "--path", "/:" + osExtensionsImageContentDir}
+	args := []string{"20m", "oc", "image", "extract", "--v", "10", "--path", "/:" + osExtensionsImageContentDir}
 	args = append(args, registryConfig...)
 	args = append(args, imgURL)
-	if _, err = pivotutils.RunExtBackground(cmdRetriesCount, "oc", args...); err != nil {
+	if _, err = pivotutils.RunExtBackground(cmdRetriesCount, "timeout", args...); err != nil {
 		// Workaround fixes for the environment where oc image extract fails.
 		// See https://bugzilla.redhat.com/show_bug.cgi?id=1862979
 		glog.Infof("Falling back to using podman cp to fetch OS image content")
