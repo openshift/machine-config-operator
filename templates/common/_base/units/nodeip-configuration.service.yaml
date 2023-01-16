@@ -28,6 +28,7 @@ contents: |
     --prefer-ipv6 \
     {{end -}}
     --retry-on-failure \
+    --network-type {{.NetworkType}} \
     ${NODEIP_HINT:-${KUBELET_NODEIP_HINT:-}}; \
     do \
     sleep 5; \
