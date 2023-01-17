@@ -26,7 +26,7 @@ contents:
         # [1] https://github.com/containers/podman/issues/14003
         trap "" SIGTERM
         >&2 echo "NM resolv-prepender: Starting download of baremetal runtime cfg image"
-        /usr/bin/podman pull --authfile /var/lib/kubelet/config.json {{ .Images.baremetalRuntimeCfgImage }}
+        while ! /usr/bin/podman pull --authfile /var/lib/kubelet/config.json {{ .Images.baremetalRuntimeCfgImage }}; do sleep 1; done
         >&2 echo "NM resolv-prepender: Download of baremetal runtime cfg image completed"
         trap - SIGTERM
     }
