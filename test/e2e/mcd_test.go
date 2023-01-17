@@ -54,30 +54,29 @@ func TestMCDToken(t *testing.T) {
 func TestMCDeployed(t *testing.T) {
 	cs := framework.NewClientSet("")
 
-	// TODO: bring this back to 10
-	for i := 0; i < 3; i++ {
-		startTime := time.Now()
-		mcadd := createMCToAddFile("add-a-file", fmt.Sprintf("/etc/mytestconf%d", i), "test")
+	ctx := context.Background()
 
-		// create the dummy MC now
-		_, err := cs.MachineConfigs().Create(context.TODO(), mcadd, metav1.CreateOptions{})
-		if err != nil {
-			t.Errorf("failed to create machine config %v", err)
-		}
+	startTime := time.Now()
+	mcadd := createMCToAddFile("add-a-file", "/etc/mytestconf", "test")
 
-		t.Logf("Created %s", mcadd.Name)
-		renderedConfig, err := helpers.WaitForRenderedConfig(t, cs, "worker", mcadd.Name)
-		require.Nil(t, err)
-		err = helpers.WaitForPoolComplete(t, cs, "worker", renderedConfig)
-		require.Nil(t, err)
-		nodes, err := helpers.GetNodesByRole(cs, "worker")
-		require.Nil(t, err)
-		for _, node := range nodes {
-			assert.Equal(t, renderedConfig, node.Annotations[constants.CurrentMachineConfigAnnotationKey])
-			assert.Equal(t, constants.MachineConfigDaemonStateDone, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey])
-		}
-		t.Logf("All nodes updated with %s (%s elapsed)", mcadd.Name, time.Since(startTime))
+	// create the dummy MC now
+	_, err := cs.MachineConfigs().Create(ctx, mcadd, metav1.CreateOptions{})
+	if err != nil {
+		t.Errorf("failed to create machine config %v", err)
 	}
+
+	t.Logf("Created %s", mcadd.Name)
+	renderedConfig, err := helpers.WaitForRenderedConfig(t, cs, "worker", mcadd.Name)
+	require.Nil(t, err)
+	err = helpers.WaitForPoolComplete(t, cs, "worker", renderedConfig)
+	require.Nil(t, err)
+	nodes, err := helpers.GetNodesByRole(cs, "worker")
+	require.Nil(t, err)
+	for _, node := range nodes {
+		assert.Equal(t, renderedConfig, node.Annotations[constants.CurrentMachineConfigAnnotationKey])
+		assert.Equal(t, constants.MachineConfigDaemonStateDone, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey])
+	}
+	t.Logf("All nodes updated with %s (%s elapsed)", mcadd.Name, time.Since(startTime))
 }
 
 func TestRunShared(t *testing.T) {
