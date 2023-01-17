@@ -352,8 +352,10 @@ func TestGetPrimaryPoolForNode(t *testing.T) {
 		},
 		nodeLabel: map[string]string{"node-role/master": "", "node-role/infra": ""},
 
-		expected: nil,
-		err:      true,
+		// https://issues.redhat.com/browse/OCPBUGS-2177 a user should
+		// be able to label something as infra but retain master if it exists
+		expected: helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
+		err:      false,
 	}, {
 		pools: []*mcfgv1.MachineConfigPool{
 			helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
