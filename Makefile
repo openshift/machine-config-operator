@@ -131,10 +131,10 @@ Dockerfile.rhel7: Dockerfile Makefile
 
 # This was copied from https://github.com/openshift/cluster-image-registry-operator
 test-e2e: install-go-junit-report
-	go test -tags=$(GOTAGS) -failfast -timeout 110m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e/ | ./hack/test-with-junit.sh $(@)
+	set -o pipefail; go test -tags=$(GOTAGS) -failfast -timeout 150m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e/ | ./hack/test-with-junit.sh $(@)
 
 test-e2e-single-node: install-go-junit-report
-	go test -tags=$(GOTAGS) -failfast -timeout 110m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-single-node/ | ./hack/test-with-junit.sh $(@)
+	set -o pipefail; go test -tags=$(GOTAGS) -failfast -timeout 120m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-single-node/ | ./hack/test-with-junit.sh $(@)
 
 bootstrap-e2e: install-go-junit-report install-setup-envtest
-	CGO_ENABLED=0 go test -tags=$(GOTAGS) -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-bootstrap/ | ./hack/test-with-junit.sh $(@)
+	set -o pipefail; CGO_ENABLED=0 go test -tags=$(GOTAGS) -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-bootstrap/ | ./hack/test-with-junit.sh $(@)
