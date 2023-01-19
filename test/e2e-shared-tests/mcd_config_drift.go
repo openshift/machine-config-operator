@@ -129,6 +129,7 @@ func (c configDriftTest) getMachineConfig(t *testing.T) *mcfgv1.MachineConfig {
 	return helpers.NewMachineConfigExtended(
 		fmt.Sprintf("%s-%s", configDriftMCPrefix, string(uuid.NewUUID())),
 		helpers.MCLabelForRole(c.MCPName),
+		nil,
 		[]ign3types.File{
 			helpers.CreateEncodedIgn3File(configDriftFilename, configDriftFileContents, 420),
 			compressedFile,

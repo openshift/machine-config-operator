@@ -578,8 +578,8 @@ func TestCalculatePostConfigChangeAction(t *testing.T) {
 		},
 		{
 			// test that a SSH key change is none
-			oldConfig:      helpers.NewMachineConfigExtended("00-test", nil, []ign3types.File{}, []ign3types.Unit{}, []ign3types.SSHAuthorizedKey{"key1"}, []string{}, false, []string{}, "default", "dummy://"),
-			newConfig:      helpers.NewMachineConfigExtended("01-test", nil, []ign3types.File{}, []ign3types.Unit{}, []ign3types.SSHAuthorizedKey{"key2"}, []string{}, false, []string{}, "default", "dummy://"),
+			oldConfig:      helpers.NewMachineConfigExtended("00-test", nil, nil, []ign3types.File{}, []ign3types.Unit{}, []ign3types.SSHAuthorizedKey{"key1"}, []string{}, false, []string{}, "default", "dummy://"),
+			newConfig:      helpers.NewMachineConfigExtended("01-test", nil, nil, []ign3types.File{}, []ign3types.Unit{}, []ign3types.SSHAuthorizedKey{"key2"}, []string{}, false, []string{}, "default", "dummy://"),
 			expectedAction: []string{postConfigChangeActionNone},
 		},
 		{
@@ -602,26 +602,26 @@ func TestCalculatePostConfigChangeAction(t *testing.T) {
 		},
 		{
 			// test that a osImage change (reboot) overwrites registries (reload) and SSH keys (none)
-			oldConfig:      helpers.NewMachineConfigExtended("00-test", nil, []ign3types.File{files["registries1"]}, []ign3types.Unit{}, []ign3types.SSHAuthorizedKey{"key1"}, []string{}, false, []string{}, "default", "dummy://"),
-			newConfig:      helpers.NewMachineConfigExtended("01-test", nil, []ign3types.File{files["registries2"]}, []ign3types.Unit{}, []ign3types.SSHAuthorizedKey{"key2"}, []string{}, false, []string{}, "default", "dummy1://"),
+			oldConfig:      helpers.NewMachineConfigExtended("00-test", nil, nil, []ign3types.File{files["registries1"]}, []ign3types.Unit{}, []ign3types.SSHAuthorizedKey{"key1"}, []string{}, false, []string{}, "default", "dummy://"),
+			newConfig:      helpers.NewMachineConfigExtended("01-test", nil, nil, []ign3types.File{files["registries2"]}, []ign3types.Unit{}, []ign3types.SSHAuthorizedKey{"key2"}, []string{}, false, []string{}, "default", "dummy1://"),
 			expectedAction: []string{postConfigChangeActionReboot},
 		},
 		{
 			// test that adding a pull secret is none
-			oldConfig:      helpers.NewMachineConfigExtended("00-test", nil, []ign3types.File{files["registries1"]}, []ign3types.Unit{}, []ign3types.SSHAuthorizedKey{"key1"}, []string{}, false, []string{}, "default", "dummy://"),
-			newConfig:      helpers.NewMachineConfigExtended("01-test", nil, []ign3types.File{files["registries1"], files["pullsecret2"]}, []ign3types.Unit{}, []ign3types.SSHAuthorizedKey{"key1"}, []string{}, false, []string{}, "default", "dummy://"),
+			oldConfig:      helpers.NewMachineConfigExtended("00-test", nil, nil, []ign3types.File{files["registries1"]}, []ign3types.Unit{}, []ign3types.SSHAuthorizedKey{"key1"}, []string{}, false, []string{}, "default", "dummy://"),
+			newConfig:      helpers.NewMachineConfigExtended("01-test", nil, nil, []ign3types.File{files["registries1"], files["pullsecret2"]}, []ign3types.Unit{}, []ign3types.SSHAuthorizedKey{"key1"}, []string{}, false, []string{}, "default", "dummy://"),
 			expectedAction: []string{postConfigChangeActionNone},
 		},
 		{
 			// test that removing a registries is crio reload
-			oldConfig:      helpers.NewMachineConfigExtended("00-test", nil, []ign3types.File{files["randomfile1"], files["registries1"]}, []ign3types.Unit{}, []ign3types.SSHAuthorizedKey{"key1"}, []string{}, false, []string{}, "default", "dummy://"),
-			newConfig:      helpers.NewMachineConfigExtended("01-test", nil, []ign3types.File{files["randomfile1"]}, []ign3types.Unit{}, []ign3types.SSHAuthorizedKey{"key1"}, []string{}, false, []string{}, "default", "dummy://"),
+			oldConfig:      helpers.NewMachineConfigExtended("00-test", nil, nil, []ign3types.File{files["randomfile1"], files["registries1"]}, []ign3types.Unit{}, []ign3types.SSHAuthorizedKey{"key1"}, []string{}, false, []string{}, "default", "dummy://"),
+			newConfig:      helpers.NewMachineConfigExtended("01-test", nil, nil, []ign3types.File{files["randomfile1"]}, []ign3types.Unit{}, []ign3types.SSHAuthorizedKey{"key1"}, []string{}, false, []string{}, "default", "dummy://"),
 			expectedAction: []string{postConfigChangeActionReloadCrio},
 		},
 		{
 			// mixed test - final should be reboot due to kargs changes
-			oldConfig:      helpers.NewMachineConfigExtended("00-test", nil, []ign3types.File{files["registries1"]}, []ign3types.Unit{}, []ign3types.SSHAuthorizedKey{"key1"}, []string{}, false, []string{}, "default", "dummy://"),
-			newConfig:      helpers.NewMachineConfigExtended("01-test", nil, []ign3types.File{files["pullsecret2"], files["kubeletCA1"]}, []ign3types.Unit{}, []ign3types.SSHAuthorizedKey{"key2"}, []string{}, false, []string{"karg1"}, "default", "dummy://"),
+			oldConfig:      helpers.NewMachineConfigExtended("00-test", nil, nil, []ign3types.File{files["registries1"]}, []ign3types.Unit{}, []ign3types.SSHAuthorizedKey{"key1"}, []string{}, false, []string{}, "default", "dummy://"),
+			newConfig:      helpers.NewMachineConfigExtended("01-test", nil, nil, []ign3types.File{files["pullsecret2"], files["kubeletCA1"]}, []ign3types.Unit{}, []ign3types.SSHAuthorizedKey{"key2"}, []string{}, false, []string{"karg1"}, "default", "dummy://"),
 			expectedAction: []string{postConfigChangeActionReboot},
 		},
 		{
