@@ -188,6 +188,16 @@ func TestKernelType(t *testing.T) {
 		t.Skip("skipping test on OKD")
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	initialMC, err := cs.MachineConfigs().Get(ctx, helpers.GetMcName(t, cs, "worker"), metav1.GetOptions{})
+	require.NoError(t, err)
+
+	if initialMC.Spec.KernelType == ctrlcommon.KernelTypeRealtime {
+		t.Skip("Realtime kernel detected; skipping test")
+	}
+
 	unlabelFunc := helpers.LabelRandomNodeFromPool(t, cs, "worker", "node-role.kubernetes.io/infra")
 
 	oldInfraRenderedConfig := helpers.GetMcName(t, cs, "infra")
@@ -206,7 +216,7 @@ func TestKernelType(t *testing.T) {
 		},
 	}
 
-	_, err = cs.MachineConfigs().Create(context.TODO(), kernelType, metav1.CreateOptions{})
+	_, err = cs.MachineConfigs().Create(ctx, kernelType, metav1.CreateOptions{})
 	require.Nil(t, err)
 	t.Logf("Created %s", kernelType.Name)
 	renderedConfig, err := helpers.WaitForRenderedConfig(t, cs, "infra", kernelType.Name)
@@ -250,10 +260,10 @@ func TestKernelType(t *testing.T) {
 
 	unlabelFunc()
 
-	workerMCP, err := cs.MachineConfigPools().Get(context.TODO(), "worker", metav1.GetOptions{})
+	workerMCP, err := cs.MachineConfigPools().Get(ctx, "worker", metav1.GetOptions{})
 	require.Nil(t, err)
 	if err := wait.Poll(2*time.Second, 5*time.Minute, func() (bool, error) {
-		node, err := cs.CoreV1Interface.Nodes().Get(context.TODO(), infraNode.Name, metav1.GetOptions{})
+		node, err := cs.CoreV1Interface.Nodes().Get(ctx, infraNode.Name, metav1.GetOptions{})
 		require.Nil(t, err)
 		if node.Annotations[constants.DesiredMachineConfigAnnotationKey] != workerMCP.Spec.Configuration.Name {
 			return false, nil
@@ -264,7 +274,6 @@ func TestKernelType(t *testing.T) {
 	}
 	err = helpers.WaitForPoolComplete(t, cs, "infra", oldInfraRenderedConfig)
 	require.Nil(t, err)
-
 }
 
 func TestExtensions(t *testing.T) {
