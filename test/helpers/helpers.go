@@ -39,6 +39,24 @@ func NewMachineConfig(name string, labels map[string]string, osurl string, files
 	return NewMachineConfigExtended(
 		name,
 		labels,
+		nil,
+		files,
+		[]ign3types.Unit{},
+		[]ign3types.SSHAuthorizedKey{},
+		[]string{},
+		false,
+		[]string{},
+		"",
+		osurl,
+	)
+}
+
+// NewMachineConfig returns a basic machine config with supplied labels, osurl & files added
+func NewMachineConfigWithAnnotation(name string, labels, annotations map[string]string, osurl string, files []ign3types.File) *mcfgv1.MachineConfig {
+	return NewMachineConfigExtended(
+		name,
+		labels,
+		annotations,
 		files,
 		[]ign3types.Unit{},
 		[]ign3types.SSHAuthorizedKey{},
@@ -54,6 +72,7 @@ func NewMachineConfig(name string, labels map[string]string, osurl string, files
 func NewMachineConfigExtended(
 	name string,
 	labels map[string]string,
+	annotations map[string]string,
 	files []ign3types.File,
 	units []ign3types.Unit,
 	sshkeys []ign3types.SSHAuthorizedKey,
@@ -64,6 +83,9 @@ func NewMachineConfigExtended(
 ) *mcfgv1.MachineConfig {
 	if labels == nil {
 		labels = map[string]string{}
+	}
+	if annotations == nil {
+		annotations = map[string]string{}
 	}
 	rawIgnition := MarshalOrDie(
 		&ign3types.Config{
@@ -92,9 +114,10 @@ func NewMachineConfigExtended(
 			APIVersion: mcfgv1.SchemeGroupVersion.String(),
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:   name,
-			Labels: labels,
-			UID:    types.UID(utilrand.String(5)),
+			Name:        name,
+			Labels:      labels,
+			Annotations: annotations,
+			UID:         types.UID(utilrand.String(5)),
 		},
 		Spec: mcfgv1.MachineConfigSpec{
 			Config: runtime.RawExtension{
