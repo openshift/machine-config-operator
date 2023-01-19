@@ -18,6 +18,7 @@ spec:
              max by (namespace,pool) (last_over_time(machine_config_controller_paused_pool_kubelet_ca[5m])) > 0
           for: 60m
           labels:
+            namespace: openshift-machine-config-operator
             severity: warning
           annotations:
             summary: "Paused machine configuration pool '{{$labels.pool}}' is blocking a necessary certificate rotation and must be unpaused before the current kube-apiserver-to-kubelet-signer certificate expires on {{ $value | humanizeTimestamp }}."
@@ -28,6 +29,7 @@ spec:
              max by (namespace,pool) (last_over_time(machine_config_controller_paused_pool_kubelet_ca[5m]) - time()) < (86400 * 14) AND max by (namespace,pool) (last_over_time(machine_config_controller_paused_pool_kubelet_ca[5m])) > 0
           for: 60m
           labels:
+            namespace: openshift-machine-config-operator
             severity: critical
           annotations:
             summary: "Paused machine configuration pool '{{$labels.pool}}' is blocking a necessary certificate rotation and must be unpaused before the current kube-apiserver-to-kubelet-signer certificate expires in {{ $value | humanizeDuration }}."
@@ -43,6 +45,7 @@ spec:
           expr: |
             mcc_drain_err > 0
           labels:
+            namespace: openshift-machine-config-operator
             severity: warning
           annotations:
             message: "Drain failed on {{ $labels.node }} , updates may be blocked. For more details check MachineConfigController pod logs: oc logs -f -n {{ $labels.namespace }} -l k8s-app=machine-config-controller -c machine-config-controller"
@@ -66,6 +69,7 @@ spec:
           expr: |
             max by(namespace, node, pod) (increase(mcd_reboots_failed_total[15m])) > 0
           labels:
+            namespace: openshift-machine-config-operator                   
             severity: critical
           annotations:
             message: "Reboot failed on {{ $labels.node }} , update may be blocked. For more details:  oc logs -f -n {{ $labels.namespace }} {{ $labels.pod }} -c machine-config-daemon "
@@ -75,6 +79,7 @@ spec:
           expr: |
             max by(namespace, node, pod) (increase(mcd_pivot_errors_total[15m])) > 0
           labels:
+            namespace: openshift-machine-config-operator
             severity: warning
           annotations:
             message: "Error detected in pivot logs on {{ $labels.node }} , upgrade may be blocked. For more details:  oc logs -f -n {{ $labels.namespace }} {{ $labels.pod }} -c machine-config-daemon "
@@ -84,6 +89,7 @@ spec:
           expr: |
             mcd_kubelet_state > 2
           labels:
+            namespace: openshift-machine-config-operator
             severity: warning
           annotations:
             message: "Kubelet health failure threshold reached"
@@ -94,6 +100,7 @@ spec:
             sum by (node) (container_memory_rss{id="/system.slice"}) > ((sum by (node) (kube_node_status_capacity{resource="memory"} - kube_node_status_allocatable{resource="memory"})) * 0.95)
           for: 15m
           labels:
+            namespace: openshift-machine-config-operator
             severity: warning
           annotations:
             message: "System memory usage of {{ $value | humanize }} on {{ $labels.node }} exceeds 95% of the reservation. Reserved memory ensures system processes can function even when the node is fully allocated and protects against workload out of memory events impacting the proper functioning of the node. The default reservation is expected to be sufficient for most configurations and should be increased (https://docs.openshift.com/container-platform/latest/nodes/nodes/nodes-nodes-managing.html) when running nodes with high numbers of pods (either due to rate of change or at steady state)."
@@ -118,6 +125,7 @@ spec:
             ) * 100 > 60
           for: 1h
           labels:
+            namespace: openshift-machine-config-operator
             severity: warning
           annotations:
             summary: >-
@@ -147,6 +155,7 @@ spec:
             ) * 100 > 90
           for: 45m
           labels:
+            namespace: openshift-machine-config-operator
             severity: critical
           annotations:
             summary: >-
