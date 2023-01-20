@@ -405,6 +405,25 @@ func TestVersionSkew(t *testing.T) {
 	require.NotNil(t, gmc)
 }
 
+func TestGenerateRenderedConfigOnLatestControllerVersionOnly(t *testing.T) {
+	mcp := helpers.NewMachineConfigPool("test-cluster-master", helpers.MasterSelector, nil, "")
+	mcs := []*mcfgv1.MachineConfig{
+		helpers.NewMachineConfigWithAnnotation("00-updated-conf", map[string]string{"node-role/master": ""}, map[string]string{ctrlcommon.GeneratedByControllerVersionAnnotationKey: "2"}, "dummy-test-1", []ign3types.File{}),
+		helpers.NewMachineConfigWithAnnotation("00-old-conf", map[string]string{"node-role/master": ""}, map[string]string{ctrlcommon.GeneratedByControllerVersionAnnotationKey: "1"}, "dummy-change", []ign3types.File{}),
+	}
+	version.Hash = "2"
+	cc := newControllerConfig(ctrlcommon.ControllerConfigName)
+	_, err := generateRenderedMachineConfig(mcp, mcs, cc)
+	require.NotNil(t, err)
+
+	mcs = []*mcfgv1.MachineConfig{
+		helpers.NewMachineConfigWithAnnotation("00-updated-conf", map[string]string{"node-role/master": ""}, map[string]string{ctrlcommon.GeneratedByControllerVersionAnnotationKey: "2"}, "dummy-test-1", []ign3types.File{}),
+		helpers.NewMachineConfigWithAnnotation("99-user-conf", map[string]string{"node-role/master": ""}, map[string]string{ctrlcommon.GeneratedByControllerVersionAnnotationKey: ""}, "user-data", []ign3types.File{}),
+	}
+	_, err = generateRenderedMachineConfig(mcp, mcs, cc)
+	require.Nil(t, err)
+}
+
 func TestDoNothing(t *testing.T) {
 	f := newFixture(t)
 	mcp := helpers.NewMachineConfigPool("test-cluster-master", helpers.MasterSelector, nil, "")
