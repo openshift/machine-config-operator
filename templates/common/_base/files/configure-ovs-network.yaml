@@ -158,6 +158,11 @@ contents:
       # store old conn for later
       old_conn=$(nmcli --fields UUID,DEVICE conn show --active | awk "/\s${iface}\s*\$/ {print \$1}")
 
+      if [[ -z "$old_conn" ]]; then
+        echo "ERROR: cannot find connection for interface: ${iface}"
+        exit 1
+      fi
+
       # create bridge
       if ! nmcli connection show "$bridge_name" &> /dev/null; then
         ovs-vsctl --timeout=30 --if-exists del-br "$bridge_name"
@@ -347,9 +352,7 @@ contents:
       echo "Reverting any previous OVS configuration"
       
       remove_ovn_bridges br-ex phys0
-      if [ -d "/sys/class/net/br-ex1" ]; then
-        remove_ovn_bridges br-ex1 phys1
-      fi
+      remove_ovn_bridges br-ex1 phys1
       
       echo "OVS configuration successfully reverted"
     }
