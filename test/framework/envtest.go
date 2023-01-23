@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"k8s.io/apimachinery/pkg/api/errors"
+
 	"github.com/stretchr/testify/require"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
@@ -350,7 +352,12 @@ func CreateObjects(t *testing.T, clientSet *ClientSet, objs ...runtime.Object) {
 			_, err := clientSet.FeatureGates().Create(ctx, tObj, metav1.CreateOptions{})
 			require.NoError(t, err)
 		case *configv1.Node:
-			_, err := clientSet.ConfigV1Interface.Nodes().Create(ctx, tObj, metav1.CreateOptions{})
+			_, err := clientSet.ConfigV1Interface.Nodes().Get(ctx, "cluster", metav1.GetOptions{})
+			if errors.IsNotFound(err) {
+				_, err = clientSet.ConfigV1Interface.Nodes().Create(ctx, tObj, metav1.CreateOptions{})
+			} else {
+				clientSet.ConfigV1Interface.Nodes().Update(ctx, tObj, metav1.UpdateOptions{})
+			}
 			require.NoError(t, err)
 		default:
 			t.Errorf("Unknown object type %T", obj)
