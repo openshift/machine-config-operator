@@ -85,7 +85,7 @@ spec:
                   defaultRuntime:
                     description: defaultRuntime is the name of the OCI runtime to be used as the default.
                     type: string
-                    pattern: ^$|^runc$
+                    pattern: ^$|^(runc|crun)$
               machineConfigPoolSelector:
                 description: A label selector is a label query over a set of resources.
                   The result of matchLabels and matchExpressions are ANDed. An empty
