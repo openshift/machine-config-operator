@@ -105,7 +105,21 @@ spec:
 			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries", "98-worker-generated-kubelet"},
 		},
 		{
-			name: "With a node config manifest",
+			name: "With a node config manifest empty spec",
+			manifests: [][]byte{
+				[]byte(`apiVersion: config.openshift.io/v1
+kind: Node
+metadata:
+  name: cluster`),
+			},
+			// "CgroupMode" field in the nodes.config resource is empty
+			// Internally it gets updated to "v1" explicitly
+			// Hence, 97-{master/worker}-generated-kubelet are expected
+			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries", "97-master-generated-kubelet"},
+			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries", "97-worker-generated-kubelet"},
+		},
+		{
+			name: "With a node config manifest empty \"cgroupMode\"",
 			manifests: [][]byte{
 				[]byte(`apiVersion: config.openshift.io/v1
 kind: Node
@@ -114,7 +128,10 @@ metadata:
 spec:
   workerLatencyProfile: MediumUpdateAverageReaction`),
 			},
-			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries"},
+			// "CgroupMode" field in the nodes.config resource is empty
+			// Internally it gets updated to "v1" explicitly
+			// Hence, 97-{master/worker}-generated-kubelet are expected
+			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries", "97-master-generated-kubelet"},
 			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries", "97-worker-generated-kubelet"},
 		},
 		{
@@ -164,8 +181,8 @@ metadata:
 spec:
   cgroupMode: "v2"`),
 			},
-			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries", "98-master-generated-kubelet"},
-			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries", "98-worker-generated-kubelet"},
+			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries", "98-master-generated-kubelet", "97-master-generated-kubelet"},
+			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries", "98-worker-generated-kubelet", "97-worker-generated-kubelet"},
 		},
 		{
 			name: "With a config node manifest and without a featuregate manifest",
@@ -181,14 +198,15 @@ spec:
 			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries"},
 		},
 		{
-			name: "With a node config manifest and master kubelet config manifest",
+			name: "With a node config manifest(CGroupv2, WLP) and master kubelet config manifest",
 			manifests: [][]byte{
 				[]byte(`apiVersion: config.openshift.io/v1
 kind: Node
 metadata:
   name: cluster
 spec:
-  workerLatencyProfile: MediumUpdateAverageReaction`),
+  workerLatencyProfile: MediumUpdateAverageReaction
+  cgroupMode: "v2"`),
 				[]byte(`apiVersion: machineconfiguration.openshift.io/v1
 kind: KubeletConfig
 metadata:
@@ -208,11 +226,46 @@ spec:
       memory: 500Mi
 `),
 			},
+			// "TechPreviewNoUpgrade" featureset not enabled, hence "CGroupsV2" is not applied
+			// "97-worker-generated-kubelet" is expected to be created to apply the workerlatencyprofile
+			// "97-master-generated-kubelet" is not expected
 			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries", "99-master-generated-kubelet"},
 			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries", "97-worker-generated-kubelet"},
 		},
 		{
-			name: "With a node config manifest and worker kubelet config manifest",
+			name: "With a node config manifest(CGroupv1, WLP) and master kubelet config manifest",
+			manifests: [][]byte{
+				[]byte(`apiVersion: config.openshift.io/v1
+kind: Node
+metadata:
+  name: cluster
+spec:
+  workerLatencyProfile: MediumUpdateAverageReaction
+  cgroupMode: "v1"`),
+				[]byte(`apiVersion: machineconfiguration.openshift.io/v1
+kind: KubeletConfig
+metadata:
+  name: master-kubelet-config
+spec:
+  machineConfigPoolSelector:
+    matchLabels:
+      pools.operator.machineconfiguration.openshift.io/master: ""
+  kubeletConfig:
+    podsPerCore: 10
+    maxPods: 250
+    systemReserved:
+      cpu: 1000m
+      memory: 500Mi
+    kubeReserved:
+      cpu: 1000m
+      memory: 500Mi
+`),
+			},
+			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries", "99-master-generated-kubelet", "97-master-generated-kubelet"},
+			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries", "97-worker-generated-kubelet"},
+		},
+		{
+			name: "With a node config manifest(empty cgroupMode) and worker kubelet config manifest",
 			manifests: [][]byte{
 				[]byte(`apiVersion: config.openshift.io/v1
 kind: Node
@@ -239,8 +292,10 @@ spec:
       memory: 500Mi
 `),
 			},
-			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries"},
-			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries", "99-worker-generated-kubelet"},
+			// 97-{master/worker}-generated-kubelet are expected to be created as the empty "cgroupMode"
+			// internally translates to "v1"
+			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries", "97-master-generated-kubelet"},
+			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries", "99-worker-generated-kubelet", "97-worker-generated-kubelet"},
 		},
 		{
 			name: "With a worker kubelet config manifest",
@@ -291,6 +346,13 @@ spec:
 		t.Run(tc.name, func(t *testing.T) {
 			objs := append([]runtime.Object{}, baseTestManifests...)
 			objs = append(objs, loadRawManifests(t, tc.manifests)...)
+			nodeConfigManifest := [][]byte{
+				[]byte(`apiVersion: config.openshift.io/v1
+kind: Node
+metadata:
+  name: cluster`),
+			}
+			objs = append(objs, loadRawManifests(t, nodeConfigManifest)...)
 
 			fixture := newTestFixture(t, cfg, objs)
 			// Defer stop after cleanup so that the cleanup happens after the stop (defer unwrapping order)
