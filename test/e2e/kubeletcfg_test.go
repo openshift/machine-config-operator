@@ -49,14 +49,14 @@ func TestKubeletConfigMaxPods(t *testing.T) {
 		},
 	}
 
-	runTestWithKubeletCfg(t, "max-pods", `"maxPods": (\S+)`, "100,", "200,", kc1, kc2)
+	runTestWithKubeletCfg(t, "max-pods", `["]maxPods["]: (\S+)`, "100,", "200,", kc1, kc2)
 }
 
 // runTestWithKubeletCfg creates a kubelet config and checks whether the expected updates were applied, then deletes the kubelet config and makes
 // sure the node rolled back as expected
 // testName is a string to identify the objects created (MCP, MC, kubeletConfig)
 // regex key is the searching critera in the kubelet.conf. It is expected that a single field is in a capture group, and this field
-//   should equal expectedConfValue upon update
+// should equal expectedConfValue upon update
 // kc1 and kc2 are the kubelet configs to update to and rollback from
 func runTestWithKubeletCfg(t *testing.T, testName, regexKey, expectedConfVal1, expectedConfVal2 string, kc1, kc2 *mcfgv1.KubeletConfig) {
 	cs := framework.NewClientSet("")
@@ -90,7 +90,7 @@ func runTestWithKubeletCfg(t *testing.T, testName, regexKey, expectedConfVal1, e
 	// cache the old configuration value to check against later
 	node := helpers.GetSingleNodeByRole(t, cs, poolName)
 	// the kubelet.conf format is yaml when in the default state and becomes a json when we apply a kubelet config CR
-	defaultConfVal := getValueFromKubeletConfig(t, cs, node, `maxPods: (\S+)`, kubeletPath) + ","
+	defaultConfVal := getValueFromKubeletConfig(t, cs, node, `["]maxPods["]: (\S+)`, kubeletPath) + ","
 	if defaultConfVal == expectedConfVal1 || defaultConfVal == expectedConfVal2 {
 		t.Logf("default configuration value %s same as values being tested against. Consider updating the test", defaultConfVal)
 		return
@@ -155,7 +155,7 @@ func runTestWithKubeletCfg(t *testing.T, testName, regexKey, expectedConfVal1, e
 	// ensure config rolls back as expected
 	helpers.WaitForPoolComplete(t, cs, poolName, defaultTarget)
 	// verify that the config value rolled back to the default value
-	restoredConfValue := getValueFromKubeletConfig(t, cs, node, `maxPods: (\S+)`, kubeletPath) + ","
+	restoredConfValue := getValueFromKubeletConfig(t, cs, node, `["]maxPods["]: (\S+)`, kubeletPath) + ","
 	require.Equal(t, restoredConfValue, defaultConfVal, "kubelet config deletion didn't cause node to roll back to default config")
 }
 
