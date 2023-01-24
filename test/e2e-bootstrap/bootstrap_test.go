@@ -3,7 +3,6 @@ package e2e_bootstrap_test
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -316,11 +315,11 @@ spec:
 			t.Logf("Controller rendered worker config as %q", controllerRenderedWorkerConfigName)
 
 			// Set up the output and input directories
-			destDir, err := ioutil.TempDir("", "controller-bootstrap")
+			destDir, err := os.MkdirTemp("", "controller-bootstrap")
 			require.NoError(t, err)
 			defer os.RemoveAll(destDir)
 
-			srcDir, err := ioutil.TempDir("", "controller-bootstrap-source")
+			srcDir, err := os.MkdirTemp("", "controller-bootstrap-source")
 			require.NoError(t, err)
 			defer os.RemoveAll(srcDir)
 
@@ -746,7 +745,7 @@ func copyDir(src string, dest string) error {
 		return fmt.Errorf("Source " + file.Name() + " is not a directory!")
 	}
 
-	files, err := ioutil.ReadDir(src)
+	files, err := ctrlcommon.ReadDir(src)
 	if err != nil {
 		return err
 	}
@@ -756,12 +755,12 @@ func copyDir(src string, dest string) error {
 			continue
 		}
 
-		content, err := ioutil.ReadFile(src + "/" + f.Name())
+		content, err := os.ReadFile(src + "/" + f.Name())
 		if err != nil {
 			return err
 		}
 
-		err = ioutil.WriteFile(dest+"/"+f.Name(), content, 0755)
+		err = os.WriteFile(dest+"/"+f.Name(), content, 0755)
 		if err != nil {
 			return err
 		}

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -375,12 +374,12 @@ func useKubeletConfigSecrets() error {
 
 			// Short term workaround for https://issues.redhat.com/browse/OKD-63
 			if runningos.IsFCOS() || runningos.IsSCOS() {
-				contents, err := ioutil.ReadFile(kubeletAuthFile)
+				contents, err := os.ReadFile(kubeletAuthFile)
 				if err != nil {
 					return err
 				}
 				// Note 0644 perms for now
-				if err := ioutil.WriteFile("/run/ostree/auth.json", contents, 0o644); err != nil {
+				if err := os.WriteFile("/run/ostree/auth.json", contents, 0o644); err != nil {
 					return err
 				}
 			} else {

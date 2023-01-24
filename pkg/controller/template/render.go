@@ -3,7 +3,6 @@ package template
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -45,18 +44,17 @@ const (
 // All files from platform _base are always included, and may be overridden or
 // supplemented by platform-specific templates.
 //
-//  ex:
-//       templates/worker/00-worker/_base/units/kubelet.conf.tmpl
-//                                    /files/hostname.tmpl
-//                              /aws/units/kubelet-dropin.conf.tmpl
-//                       /01-worker-kubelet/_base/files/random.conf.tmpl
-//                /master/00-master/_base/units/kubelet.tmpl
-//                                    /files/hostname.tmpl
-//
+//	ex:
+//	     templates/worker/00-worker/_base/units/kubelet.conf.tmpl
+//	                                  /files/hostname.tmpl
+//	                            /aws/units/kubelet-dropin.conf.tmpl
+//	                     /01-worker-kubelet/_base/files/random.conf.tmpl
+//	              /master/00-master/_base/units/kubelet.tmpl
+//	                                  /files/hostname.tmpl
 func generateTemplateMachineConfigs(config *RenderConfig, templateDir string) ([]*mcfgv1.MachineConfig, error) {
-	infos, err := ioutil.ReadDir(templateDir)
+	infos, err := ctrlcommon.ReadDir(templateDir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read dir %q: %w", templateDir, err)
+		return nil, err
 	}
 
 	cfgs := []*mcfgv1.MachineConfig{}
@@ -100,9 +98,9 @@ func GenerateMachineConfigsForRole(config *RenderConfig, role, templateDir strin
 	}
 
 	path := filepath.Join(templateDir, rolePath)
-	infos, err := ioutil.ReadDir(path)
+	infos, err := ctrlcommon.ReadDir(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read dir %q: %w", path, err)
+		return nil, err
 	}
 
 	cfgs := []*mcfgv1.MachineConfig{}
@@ -173,7 +171,7 @@ func filterTemplates(toFilter map[string]string, path string, config *RenderConf
 			return nil
 		}
 
-		filedata, err := ioutil.ReadFile(path)
+		filedata, err := os.ReadFile(path)
 		if err != nil {
 			return fmt.Errorf("failed to read file %q: %w", path, err)
 		}
@@ -432,6 +430,7 @@ func onPremPlatformShortName(cfg RenderConfig) interface{} {
 
 // This function should be removed in 4.13 when we no longer have to worry
 // about upgrades from releases that still use it.
+//
 //nolint:dupl
 func onPremPlatformIngressIP(cfg RenderConfig) (interface{}, error) {
 	if cfg.Infra.Status.PlatformStatus != nil {
@@ -491,6 +490,7 @@ func onPremPlatformIngressIPs(cfg RenderConfig) (interface{}, error) {
 
 // This function should be removed in 4.13 when we no longer have to worry
 // about upgrades from releases that still use it.
+//
 //nolint:dupl
 func onPremPlatformAPIServerInternalIP(cfg RenderConfig) (interface{}, error) {
 	if cfg.Infra.Status.PlatformStatus != nil {

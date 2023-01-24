@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"io/ioutil"
 	"os"
 	"reflect"
 	"testing"
@@ -197,7 +196,7 @@ func TestUpdateRegistriesConfig(t *testing.T) {
 				t.Errorf("updateRegistriesConfig() Diff:\n %s", diff.ObjectGoPrintDiff(tt.want, gotConf))
 			}
 			// Ensure that the generated configuration is actually valid.
-			registriesConf, err := ioutil.TempFile("", "registries.conf")
+			registriesConf, err := os.CreateTemp("", "registries.conf")
 			require.NoError(t, err)
 			_, err = registriesConf.Write(got)
 			require.NoError(t, err)

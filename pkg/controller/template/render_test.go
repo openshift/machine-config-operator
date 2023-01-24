@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -447,7 +446,7 @@ func TestGenerateMachineConfigs(t *testing.T) {
 }
 
 func controllerConfigFromFile(path string) (*mcfgv1.ControllerConfig, error) {
-	data, err := ioutil.ReadFile(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
@@ -493,7 +492,7 @@ func verifyIgn(actual [][]byte, dir string, t *testing.T) {
 			}
 			return nil
 		}
-		data, err := ioutil.ReadFile(path)
+		data, err := os.ReadFile(path)
 		if err != nil {
 			return err
 		}
