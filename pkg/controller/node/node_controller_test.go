@@ -243,6 +243,7 @@ func (f *fixture) expectPatchNodeAction(node *corev1.Node, patch []byte) {
 }
 
 func TestGetNodesForPool(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		pool  *mcfgv1.MachineConfigPool
 		nodes []*corev1.Node
@@ -285,7 +286,10 @@ func TestGetNodesForPool(t *testing.T) {
 	}
 
 	for idx, test := range tests {
+		idx := idx
+		test := test
 		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
+			t.Parallel()
 			f := newFixture(t)
 
 			f.nodeLister = append(f.nodeLister, test.nodes...)
@@ -303,6 +307,7 @@ func TestGetNodesForPool(t *testing.T) {
 }
 
 func TestGetPrimaryPoolForNode(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		pools     []*mcfgv1.MachineConfigPool
 		nodeLabel map[string]string
@@ -389,7 +394,10 @@ func TestGetPrimaryPoolForNode(t *testing.T) {
 	}
 
 	for idx, test := range tests {
+		idx := idx
+		test := test
 		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
+			t.Parallel()
 			f := newFixture(t)
 			node := newNode("node-0", "v0", "v0")
 			node.Labels = test.nodeLabel
@@ -448,6 +456,7 @@ func newNodeSet(len int) []*corev1.Node {
 }
 
 func TestMaxUnavailable(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		poolName   string
 		maxUnavail *intstr.IntOrString
@@ -499,7 +508,10 @@ func TestMaxUnavailable(t *testing.T) {
 	}
 
 	for idx, test := range tests {
+		idx := idx
+		test := test
 		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
+			t.Parallel()
 			pool := &mcfgv1.MachineConfigPool{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: test.poolName,
@@ -519,6 +531,7 @@ func TestMaxUnavailable(t *testing.T) {
 }
 
 func TestGetCandidateMachines(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		nodes    []*corev1.Node
 		progress int
@@ -652,7 +665,10 @@ func TestGetCandidateMachines(t *testing.T) {
 	}}
 
 	for idx, test := range tests {
+		idx := idx
+		test := test
 		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
+			t.Parallel()
 			pool := &mcfgv1.MachineConfigPool{
 				Spec: mcfgv1.MachineConfigPoolSpec{
 					Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{ObjectReference: corev1.ObjectReference{Name: "v1"}},
@@ -698,6 +714,7 @@ func assertPatchesNode0ToV1(t *testing.T, actions []core.Action) {
 }
 
 func TestSetDesiredMachineConfigAnnotation(t *testing.T) {
+	t.Parallel()
 
 	tests := []struct {
 		node       *corev1.Node
@@ -763,7 +780,10 @@ func TestSetDesiredMachineConfigAnnotation(t *testing.T) {
 	}}
 
 	for idx, test := range tests {
+		idx := idx
+		test := test
 		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
+			t.Parallel()
 			f := newFixture(t)
 			if test.extraannos != nil {
 				if test.node.Annotations == nil {
@@ -789,6 +809,7 @@ func TestSetDesiredMachineConfigAnnotation(t *testing.T) {
 }
 
 func TestShouldMakeProgress(t *testing.T) {
+	t.Parallel()
 	// nodeWithDesiredConfigTaints is at desired config, so need to do a get on the nodeWithDesiredConfigTaints to check for the taint status
 	nodeWithDesiredConfigTaints := newNodeWithLabel("nodeWithDesiredConfigTaints", "v1", "v1", map[string]string{"node-role/worker": "", "node-role/infra": ""})
 	// Update nodeWithDesiredConfigTaints to have the needed taint and some dummy taint, UpdateInProgress taint should be removed
@@ -833,7 +854,9 @@ func TestShouldMakeProgress(t *testing.T) {
 		},
 	}
 	for _, test := range tests {
+		test := test
 		t.Run(test.description, func(t *testing.T) {
+			t.Parallel()
 			f := newFixture(t)
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, configv1.TopologyMode(""))
 			mcp := helpers.NewMachineConfigPool("test-cluster-infra", nil, helpers.InfraSelector, "v1")
@@ -917,6 +940,7 @@ func TestShouldMakeProgress(t *testing.T) {
 }
 
 func TestEmptyCurrentMachineConfig(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	cc := newControllerConfig(ctrlcommon.ControllerConfigName, configv1.TopologyMode(""))
 	mcp := helpers.NewMachineConfigPool("test-cluster-master", nil, helpers.MasterSelector, "")
@@ -929,6 +953,7 @@ func TestEmptyCurrentMachineConfig(t *testing.T) {
 }
 
 func TestPaused(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	mcp := helpers.NewMachineConfigPool("test-cluster-infra", nil, helpers.InfraSelector, "v1")
 	mcpWorker := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v1")
@@ -955,6 +980,7 @@ func TestPaused(t *testing.T) {
 }
 
 func TestAlertOnPausedKubeletCA(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	mcp := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v1")
 
@@ -1004,6 +1030,7 @@ func TestAlertOnPausedKubeletCA(t *testing.T) {
 }
 
 func TestShouldUpdateStatusOnlyUpdated(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	cc := newControllerConfig(ctrlcommon.ControllerConfigName, configv1.TopologyMode(""))
 	mcp := helpers.NewMachineConfigPool("test-cluster-infra", nil, helpers.InfraSelector, "v1")
@@ -1031,6 +1058,7 @@ func TestShouldUpdateStatusOnlyUpdated(t *testing.T) {
 }
 
 func TestShouldUpdateStatusOnlyNoProgress(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	cc := newControllerConfig(ctrlcommon.ControllerConfigName, configv1.TopologyMode(""))
 	mcp := helpers.NewMachineConfigPool("test-cluster-infra", nil, helpers.InfraSelector, "v1")
@@ -1058,6 +1086,7 @@ func TestShouldUpdateStatusOnlyNoProgress(t *testing.T) {
 }
 
 func TestShouldDoNothing(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	cc := newControllerConfig(ctrlcommon.ControllerConfigName, configv1.TopologyMode(""))
 	mcp := helpers.NewMachineConfigPool("test-cluster-infra", nil, helpers.InfraSelector, "v1")
@@ -1082,6 +1111,7 @@ func TestShouldDoNothing(t *testing.T) {
 }
 
 func TestSortNodeList(t *testing.T) {
+	t.Parallel()
 	node_zoneQQQ := newNodeWithLabel("node-1", "v1", "v1", map[string]string{"topology.kubernetes.io/zone": "QQQ"})
 	node_zoneQQQ.CreationTimestamp = metav1.NewTime(time.Unix(0, 42))
 
@@ -1141,6 +1171,7 @@ func TestSortNodeList(t *testing.T) {
 }
 
 func TestControlPlaneTopology(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	cc := newControllerConfig(ctrlcommon.ControllerConfigName, configv1.SingleReplicaTopologyMode)
 	mcp := helpers.NewMachineConfigPool("test-cluster-infra", nil, helpers.InfraSelector, "v1")

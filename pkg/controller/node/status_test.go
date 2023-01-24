@@ -12,6 +12,7 @@ import (
 )
 
 func TestIsNodeReady(t *testing.T) {
+	t.Parallel()
 	nodeList := &corev1.NodeList{
 		Items: []corev1.Node{
 			// node1 considered
@@ -119,6 +120,7 @@ func newNodeWithReadyAndDaemonState(name string, currentConfig, desiredConfig st
 }
 
 func TestGetUpdatedMachines(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		nodes         []*corev1.Node
 		currentConfig string
@@ -158,7 +160,10 @@ func TestGetUpdatedMachines(t *testing.T) {
 	}}
 
 	for idx, test := range tests {
+		idx := idx
+		test := test
 		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
+			t.Parallel()
 			updated := getUpdatedMachines(test.currentConfig, test.nodes)
 			if !reflect.DeepEqual(updated, test.updated) {
 				t.Fatalf("mismatch expected: %v got %v", test.updated, updated)
@@ -168,6 +173,7 @@ func TestGetUpdatedMachines(t *testing.T) {
 }
 
 func TestGetReadyMachines(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		nodes         []*corev1.Node
 		currentConfig string
@@ -216,7 +222,10 @@ func TestGetReadyMachines(t *testing.T) {
 	}}
 
 	for idx, test := range tests {
+		idx := idx
+		test := test
 		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
+			t.Parallel()
 			ready := getReadyMachines(test.currentConfig, test.nodes)
 			if !reflect.DeepEqual(ready, test.ready) {
 				t.Fatalf("mismatch expected: %v got %v", test.ready, ready)
@@ -226,6 +235,7 @@ func TestGetReadyMachines(t *testing.T) {
 }
 
 func TestGetUnavailableMachines(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		nodes         []*corev1.Node
 		currentConfig string
@@ -292,7 +302,10 @@ func TestGetUnavailableMachines(t *testing.T) {
 	}}
 
 	for idx, test := range tests {
+		idx := idx
+		test := test
 		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
+			t.Parallel()
 			fmt.Printf("Starting case %d\n", idx)
 			unavail := getUnavailableMachines(test.nodes)
 			var unavailNames []string
@@ -307,6 +320,7 @@ func TestGetUnavailableMachines(t *testing.T) {
 }
 
 func TestCalculateStatus(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		nodes         []*corev1.Node
 		currentConfig string
@@ -634,7 +648,10 @@ func TestCalculateStatus(t *testing.T) {
 		},
 	}}
 	for idx, test := range tests {
+		idx := idx
+		test := test
 		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
+			t.Parallel()
 			pool := &mcfgv1.MachineConfigPool{
 				Spec: mcfgv1.MachineConfigPoolSpec{
 					Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{ObjectReference: corev1.ObjectReference{Name: test.currentConfig}},

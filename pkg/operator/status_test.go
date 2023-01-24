@@ -28,6 +28,7 @@ import (
 )
 
 func TestIsMachineConfigPoolConfigurationValid(t *testing.T) {
+	t.Parallel()
 	configNotFound := errors.New("Config Not Found")
 	type config struct {
 		name                 string
@@ -158,7 +159,10 @@ func TestIsMachineConfigPoolConfigurationValid(t *testing.T) {
 		}}
 
 	for idx, test := range tests {
+		idx := idx
+		test := test
 		t.Run(fmt.Sprintf("case #%d", idx), func(t *testing.T) {
+			t.Parallel()
 			getter := func(name string) (*mcfgv1.MachineConfig, error) {
 				for _, c := range test.knownConfigs {
 					if c.name == name {
@@ -228,6 +232,7 @@ func (mcpl *mockMCPLister) Get(name string) (ret *mcfgv1.MachineConfigPool, err 
 }
 
 func TestOperatorSyncStatus(t *testing.T) {
+	t.Parallel()
 	type syncCase struct {
 		syncFuncs          []syncFunc
 		expectOperatorFail bool
@@ -695,6 +700,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 }
 
 func TestInClusterBringUpStayOnErr(t *testing.T) {
+	t.Parallel()
 	optr := &Operator{
 		eventRecorder: &record.FakeRecorder{},
 	}
@@ -749,6 +755,7 @@ func TestInClusterBringUpStayOnErr(t *testing.T) {
 }
 
 func TestKubeletSkewUnSupported(t *testing.T) {
+	t.Parallel()
 	kasOperator := &configv1.ClusterOperator{
 		ObjectMeta: metav1.ObjectMeta{Name: "kube-apiserver"},
 		Status: configv1.ClusterOperatorStatus{
@@ -835,6 +842,7 @@ func TestKubeletSkewUnSupported(t *testing.T) {
 }
 
 func TestCustomPoolKubeletSkewUnSupported(t *testing.T) {
+	t.Parallel()
 	customSelector := metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/custom", "")
 	kasOperator := &configv1.ClusterOperator{
 		ObjectMeta: metav1.ObjectMeta{Name: "kube-apiserver"},
@@ -923,6 +931,7 @@ func TestCustomPoolKubeletSkewUnSupported(t *testing.T) {
 }
 
 func TestKubeletSkewSupported(t *testing.T) {
+	t.Parallel()
 	kasOperator := &configv1.ClusterOperator{
 		ObjectMeta: metav1.ObjectMeta{Name: "kube-apiserver"},
 		Status: configv1.ClusterOperatorStatus{
@@ -1009,6 +1018,7 @@ func TestKubeletSkewSupported(t *testing.T) {
 }
 
 func TestGetMinorKubeletVersion(t *testing.T) {
+	t.Parallel()
 	tcs := []struct {
 		version      string
 		minor        int

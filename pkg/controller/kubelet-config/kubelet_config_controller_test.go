@@ -440,8 +440,11 @@ func TestKubeletConfigCreate(t *testing.T) {
 }
 
 func TestKubeletConfigMultiCreate(t *testing.T) {
+	t.Parallel()
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
+		platform := platform
 		t.Run(string(platform), func(t *testing.T) {
+			t.Parallel()
 			f := newFixture(t)
 			f.newController()
 
@@ -489,8 +492,11 @@ func generateManagedKey(kcfg *mcfgv1.KubeletConfig, generation uint64) string {
 }
 
 func TestKubeletConfigAutoSizingReserved(t *testing.T) {
+	t.Parallel()
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
+		platform := platform
 		t.Run(string(platform), func(t *testing.T) {
+			t.Parallel()
 			f := newFixture(t)
 			f.newController()
 
@@ -532,8 +538,11 @@ func TestKubeletConfigAutoSizingReserved(t *testing.T) {
 }
 
 func TestKubeletConfigLogFile(t *testing.T) {
+	t.Parallel()
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
+		platform := platform
 		t.Run(string(platform), func(t *testing.T) {
+			t.Parallel()
 			f := newFixture(t)
 			f.newController()
 
@@ -574,8 +583,11 @@ func TestKubeletConfigLogFile(t *testing.T) {
 }
 
 func TestKubeletConfigUpdates(t *testing.T) {
+	t.Parallel()
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
+		platform := platform
 		t.Run(string(platform), func(t *testing.T) {
+			t.Parallel()
 			f := newFixture(t)
 			f.newController()
 
@@ -660,6 +672,7 @@ func TestKubeletConfigUpdates(t *testing.T) {
 }
 
 func TestKubeletConfigDenylistedOptions(t *testing.T) {
+	t.Parallel()
 	failureTests := []struct {
 		name   string
 		config *kubeletconfigv1beta1.KubeletConfiguration
@@ -712,26 +725,36 @@ func TestKubeletConfigDenylistedOptions(t *testing.T) {
 
 	// Failure Tests
 	for _, test := range failureTests {
-		kc := newKubeletConfig(test.name, test.config, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "", ""))
-		err := validateUserKubeletConfig(kc)
-		if err == nil {
-			t.Errorf("%s: failed", test.name)
-		}
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			kc := newKubeletConfig(test.name, test.config, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "", ""))
+			err := validateUserKubeletConfig(kc)
+			if err == nil {
+				t.Errorf("%s: failed", test.name)
+			}
+		})
 	}
 
 	// Successful Tests
 	for _, test := range successTests {
-		kc := newKubeletConfig(test.name, test.config, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "", ""))
-		err := validateUserKubeletConfig(kc)
-		if err != nil {
-			t.Errorf("%s: failed with %v. should have succeeded", test.name, err)
-		}
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			kc := newKubeletConfig(test.name, test.config, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "", ""))
+			err := validateUserKubeletConfig(kc)
+			if err != nil {
+				t.Errorf("%s: failed with %v. should have succeeded", test.name, err)
+			}
+		})
 	}
 }
 
 func TestKubeletFeatureExists(t *testing.T) {
+	t.Parallel()
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "Unrecognized"} {
+		platform := platform
 		t.Run(string(platform), func(t *testing.T) {
+			t.Parallel()
 			f := newFixture(t)
 			f.newController()
 
@@ -794,6 +817,7 @@ func getKeyFromConfigNode(node *osev1.Node, t *testing.T) string {
 }
 
 func TestCleanUpStatusConditions(t *testing.T) {
+	t.Parallel()
 	type status struct {
 		curtStatus   []mcfgv1.KubeletConfigCondition
 		newStatus    mcfgv1.KubeletConfigCondition
@@ -863,18 +887,25 @@ func TestCleanUpStatusConditions(t *testing.T) {
 	}
 
 	for _, tc := range conditionsTest {
-		cleanUpStatusConditions(&tc.curtStatus, tc.newStatus)
-		for i := 0; i < len(tc.expectStatus); i++ {
-			if tc.curtStatus[i].Message != tc.expectStatus[i].Message {
-				t.Fatal("expect: ", tc.expectStatus, "actual: ", tc.curtStatus[i])
+		tc := tc
+		t.Run("", func(t *testing.T) {
+			t.Parallel()
+			cleanUpStatusConditions(&tc.curtStatus, tc.newStatus)
+			for i := 0; i < len(tc.expectStatus); i++ {
+				if tc.curtStatus[i].Message != tc.expectStatus[i].Message {
+					t.Fatal("expect: ", tc.expectStatus, "actual: ", tc.curtStatus[i])
+				}
 			}
-		}
+		})
 	}
 }
 
 func TestKubeletConfigResync(t *testing.T) {
+	t.Parallel()
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
+		platform := platform
 		t.Run(string(platform), func(t *testing.T) {
+			t.Parallel()
 			f := newFixture(t)
 			f.newController()
 

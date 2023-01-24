@@ -14,6 +14,7 @@ import (
 )
 
 func TestSyncCloudConfig(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name                        string
 		infra                       *configv1.Infrastructure
@@ -70,7 +71,9 @@ func TestSyncCloudConfig(t *testing.T) {
 		},
 	}
 	for _, tc := range cases {
+		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			client := fake.NewSimpleClientset()
 			sharedInformer := informers.NewSharedInformerFactory(client, 0)
 			cmInformer := sharedInformer.Core().V1().ConfigMaps()

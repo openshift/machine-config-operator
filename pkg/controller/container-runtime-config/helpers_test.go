@@ -21,6 +21,7 @@ import (
 )
 
 func TestUpdateRegistriesConfig(t *testing.T) {
+	t.Parallel()
 	templateConfig := sysregistriesv2.V2RegistriesConf{ // This matches templates/*/01-*-container-runtime/_base/files/container-registries.yaml
 		UnqualifiedSearchRegistries: []string{"registry.access.redhat.com", "docker.io"},
 	}
@@ -356,7 +357,9 @@ func TestUpdateRegistriesConfig(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got, err := updateRegistriesConfig(templateBytes, tt.insecure, tt.blocked, tt.icspRules, tt.idmsRules, tt.itmsRules)
 			if err != nil {
 				t.Errorf("updateRegistriesConfig() error = %v", err)
@@ -385,6 +388,7 @@ func TestUpdateRegistriesConfig(t *testing.T) {
 }
 
 func TestUpdatePolicyJSON(t *testing.T) {
+	t.Parallel()
 	templateConfig := signature.Policy{
 		Default: signature.PolicyRequirements{signature.NewPRInsecureAcceptAnything()},
 		Transports: map[string]signature.PolicyTransportScopes{
@@ -505,7 +509,9 @@ func TestUpdatePolicyJSON(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got, err := updatePolicyJSON(templateBytes, tt.blocked, tt.allowed, "release-reg.io/image/release")
 			if err == nil && tt.errorExpected {
 				t.Errorf("updatePolicyJSON() error = %v", err)
@@ -534,6 +540,7 @@ func TestUpdatePolicyJSON(t *testing.T) {
 }
 
 func TestValidateRegistriesConfScopes(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		insecure    []string
 		blocked     []string
@@ -779,7 +786,9 @@ func TestGetValidBlockAndAllowedRegistries(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			gotRegistries, gotPolicy, gotAllowed, err := getValidBlockedAndAllowedRegistries(tt.releaseImg, tt.imgSpec, nil, tt.idmsRules)
 			if (err != nil && !tt.expectedErr) || (err == nil && tt.expectedErr) {
 				t.Errorf("getValidBlockedRegistries() error = %v", err)

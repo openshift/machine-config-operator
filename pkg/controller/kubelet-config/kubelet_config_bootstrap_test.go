@@ -15,10 +15,13 @@ import (
 )
 
 func TestRunKubeletBootstrap(t *testing.T) {
+	t.Parallel()
 	customSelector := metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/custom", "")
 
 	for _, platform := range []configv1.PlatformType{configv1.AWSPlatformType, configv1.NonePlatformType, "unrecognized"} {
+		platform := platform
 		t.Run(string(platform), func(t *testing.T) {
+			t.Parallel()
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			pools := []*mcfgv1.MachineConfigPool{
 				helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
@@ -96,6 +99,7 @@ func verifyKubeletConfigJSONContents(t *testing.T, mc *mcfgv1.MachineConfig, mcN
 }
 
 func TestGenerateDefaultManagedKeyKubelet(t *testing.T) {
+	t.Parallel()
 	workerPool := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 	masterPool := helpers.NewMachineConfigPool("master", nil, helpers.WorkerSelector, "v0")
 	kcRaw, err := EncodeKubeletConfig(&kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, kubeletconfigv1beta1.SchemeGroupVersion)
@@ -188,15 +192,21 @@ func TestGenerateDefaultManagedKeyKubelet(t *testing.T) {
 			fmt.Errorf("Error found multiple KubeletConfigs targeting MachineConfigPool master. Please apply only one KubeletConfig manifest for each pool during installation"),
 		},
 	} {
-		res, err := generateBootstrapManagedKeyKubelet(tc.pool, managedKeyExist)
-		require.Equal(t, tc.expectedErr, err)
-		require.Equal(t, tc.expectedManagedKey, res)
+		tc := tc
+		t.Run("", func(t *testing.T) {
+			res, err := generateBootstrapManagedKeyKubelet(tc.pool, managedKeyExist)
+			require.Equal(t, tc.expectedErr, err)
+			require.Equal(t, tc.expectedManagedKey, res)
+		})
 	}
 }
 
 func TestAddKubeletCfgAfterBootstrapKubeletCfg(t *testing.T) {
+	t.Parallel()
 	for _, platform := range []configv1.PlatformType{configv1.AWSPlatformType, configv1.NonePlatformType, "unrecognized"} {
+		platform := platform
 		t.Run(string(platform), func(t *testing.T) {
+			t.Parallel()
 			f := newFixture(t)
 			f.newController()
 
