@@ -3,7 +3,6 @@ package daemon
 import (
 	"bufio"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"strings"
@@ -48,7 +47,7 @@ func isArgInUse(arg, cmdLinePath string) (bool, error) {
 	if cmdLinePath == "" {
 		cmdLinePath = CmdLineFile
 	}
-	content, err := ioutil.ReadFile(cmdLinePath)
+	content, err := os.ReadFile(cmdLinePath)
 	if err != nil {
 		return false, err
 	}

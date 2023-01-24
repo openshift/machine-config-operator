@@ -11,7 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
+	"io/fs"
 	"net/url"
 	"os"
 	"reflect"
@@ -225,7 +225,7 @@ func WriteTerminationError(err error) {
 	// Disable gosec here to avoid throwing
 	// G306: Expect WriteFile permissions to be 0600 or less
 	// #nosec
-	ioutil.WriteFile("/dev/termination-log", []byte(msg), 0o644)
+	os.WriteFile("/dev/termination-log", []byte(msg), 0o644)
 	glog.Fatal(msg)
 }
 
@@ -614,7 +614,7 @@ func decompressPayload(r io.Reader) ([]byte, error) {
 
 	defer gz.Close()
 
-	data, err := ioutil.ReadAll(gz)
+	data, err := io.ReadAll(gz)
 	if err != nil {
 		return nil, fmt.Errorf("decompression failed: %w", err)
 	}
@@ -1035,4 +1035,24 @@ func strval(v interface{}) string {
 func indent(spaces int, v string) string {
 	pad := strings.Repeat(" ", spaces)
 	return pad + strings.ReplaceAll(v, "\n", "\n"+pad)
+}
+
+// ioutil.ReadDir has been deprecated with os.ReadDir.
+// ioutil.ReadDir() used to return []fs.FileInfo but os.ReadDir() returns []fs.DirEntry.
+// Making it helper function so that we can reuse coversion of []fs.DirEntry into []fs.FileInfo
+// Implementation to fetch fileInfo is taken from https://pkg.go.dev/io/ioutil#ReadDir
+func ReadDir(path string) ([]fs.FileInfo, error) {
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read dir %q: %w", path, err)
+	}
+	infos := make([]fs.FileInfo, 0, len(entries))
+	for _, entry := range entries {
+		info, err := entry.Info()
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch fileInfo of %q in %q: %w", entry.Name(), path, err)
+		}
+		infos = append(infos, info)
+	}
+	return infos, nil
 }
