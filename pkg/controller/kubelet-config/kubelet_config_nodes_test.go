@@ -78,18 +78,19 @@ func TestBootstrapNodeConfigDefault(t *testing.T) {
 		t.Run(string(platform), func(t *testing.T) {
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
-			mcp := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
+			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
+			mcp1 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			mcps := []*mcfgv1.MachineConfigPool{mcp}
+			mcps = append(mcps, mcp1)
 
 			features := createNewDefaultFeatureGate()
 			configNode := createNewDefaultNodeconfig()
-			configNode.Spec.WorkerLatencyProfile = osev1.DefaultUpdateDefaultReaction
 
 			mcs, err := RunNodeConfigBootstrap("../../../templates", features, cc, configNode, mcps)
 			if err != nil {
 				t.Errorf("could not run node config bootstrap: %v", err)
 			}
-			if len(mcs) == 0 {
+			if len(mcs) != 2 {
 				t.Errorf("expected a machine config generated with the default node config, got 0 machine configs")
 			}
 		})

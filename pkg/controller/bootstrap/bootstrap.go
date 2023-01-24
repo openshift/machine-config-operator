@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	"github.com/golang/glog"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -174,6 +176,14 @@ func (b *Bootstrap) Run(destDir string) error {
 		configs = append(configs, featureConfigs...)
 	}
 
+	if nodeConfig == nil {
+		nodeConfig = &apicfgv1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: ctrlcommon.ClusterNodeInstanceName,
+			},
+			Spec: apicfgv1.NodeSpec{},
+		}
+	}
 	if nodeConfig != nil {
 		nodeConfigs, err := kubeletconfig.RunNodeConfigBootstrap(b.templatesDir, featureGate, cconfig, nodeConfig, pools)
 		if err != nil {
