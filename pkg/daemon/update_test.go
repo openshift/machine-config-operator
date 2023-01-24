@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"fmt"
-	"io/ioutil"
 	"math/rand"
 	"os"
 	"os/user"
@@ -706,7 +705,7 @@ func TestOriginalFileBackupRestore(t *testing.T) {
 
 	// Write a normal file as a control to make sure normal case works
 	controlFile := filepath.Join(testDir, "control-file")
-	err := ioutil.WriteFile(controlFile, []byte("control file contents"), 0755)
+	err := os.WriteFile(controlFile, []byte("control file contents"), 0755)
 	assert.Nil(t, err)
 
 	// Back up that normal file
@@ -723,7 +722,7 @@ func TestOriginalFileBackupRestore(t *testing.T) {
 
 	// The normal file worked, try it with a symlink
 	// Write a file we can point a symlink at
-	err = ioutil.WriteFile(filepath.Join(testDir, "target-file"), []byte("target file contents"), 0755)
+	err = os.WriteFile(filepath.Join(testDir, "target-file"), []byte("target file contents"), 0755)
 	assert.Nil(t, err)
 
 	// Make a relative symlink
@@ -740,7 +739,7 @@ func TestOriginalFileBackupRestore(t *testing.T) {
 	fileOverSymlink := filepath.Join(testDir, "etc", "relative-symlink-to-target-file")
 	err = os.Remove(fileOverSymlink)
 	assert.Nil(t, err)
-	err = ioutil.WriteFile(fileOverSymlink, []byte("replacement contents"), 0755)
+	err = os.WriteFile(fileOverSymlink, []byte("replacement contents"), 0755)
 	assert.Nil(t, err)
 
 	// Try to back it up again make sure it knows it's already backed up

@@ -3,7 +3,6 @@ package daemon
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 
 	"github.com/golang/glog"
@@ -23,7 +22,7 @@ func (dn *Daemon) loadNodeAnnotations(node *corev1.Node) (*corev1.Node, error) {
 
 	glog.Infof("No %s annotation on node %s: %v, in cluster bootstrap, loading initial node annotation from %s", constants.CurrentMachineConfigAnnotationKey, node.Name, node.Annotations, constants.InitialNodeAnnotationsFilePath)
 
-	d, err := ioutil.ReadFile(constants.InitialNodeAnnotationsFilePath)
+	d, err := os.ReadFile(constants.InitialNodeAnnotationsFilePath)
 	if err != nil && !os.IsNotExist(err) {
 		return nil, fmt.Errorf("failed to read initial annotations from %q: %w", constants.InitialNodeAnnotationsFilePath, err)
 	}

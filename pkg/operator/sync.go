@@ -7,9 +7,9 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
-	"io/ioutil"
 	"net"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -225,7 +225,7 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 	}
 
 	// sync up the images used by operands.
-	imgsRaw, err := ioutil.ReadFile(optr.imagesFile)
+	imgsRaw, err := os.ReadFile(optr.imagesFile)
 	if err != nil {
 		return err
 	}
