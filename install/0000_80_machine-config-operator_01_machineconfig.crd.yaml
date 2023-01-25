@@ -153,6 +153,9 @@ spec:
                               type: array
                               items:
                                 type: string
+                            passwordHash:
+                              description: Password hash to set for the core user.
+                              type: string
                   storage:
                     description: Storage describes the desired state of the system's
                       storage devices.
