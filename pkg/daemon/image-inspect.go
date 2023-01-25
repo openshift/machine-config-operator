@@ -39,6 +39,7 @@ func newDockerImageSource(ctx context.Context, sys *types.SystemContext, name st
 // We can use skopeo inspect directly once fetching RepoTags becomes optional in skopeo.
 // TODO(jkyros): I know we said we eventually wanted to use skopeo inspect directly, but it is really great being able
 // to know what the error is by using the libraries directly :)
+//
 //nolint:unparam
 func imageInspect(imageName string) (*types.ImageInspectInfo, *digest.Digest, error) {
 	var (
