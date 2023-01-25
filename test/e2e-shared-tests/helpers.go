@@ -2,6 +2,7 @@ package e2e_shared_test
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +16,12 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 )
+
+func MutateNodeAndWait(t *testing.T, cs *framework.ClientSet, node *corev1.Node, pool *mcfgv1.MachineConfigPool) {
+	bashCmd := fmt.Sprintf("printf '%s' >> %s", "wrong-data-here", "/rootfs/etc/containers/storage.conf")
+	helpers.ExecCmdOnNode(t, cs, *node, "/bin/bash", "-c", bashCmd)
+	assertNodeAndMCPIsDegraded(t, cs, *node, *pool, "/etc/containers/storage.conf")
+}
 
 func waitForConfigDriftMonitorStart(t *testing.T, cs *framework.ClientSet, node corev1.Node) {
 	t.Helper()

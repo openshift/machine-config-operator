@@ -3,13 +3,17 @@ package e2e_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/golang/glog"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/controller/node"
+	e2e_shared_test "github.com/openshift/machine-config-operator/test/e2e-shared-tests"
 	"github.com/openshift/machine-config-operator/test/framework"
+	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -131,4 +135,73 @@ func TestClusterOperatorStatusExtension(t *testing.T) {
 	v, ok := coExt["test"]
 	require.True(t, ok)
 	require.Equal(t, "extension", v)
+}
+
+func TestMetrics(t *testing.T) {
+	cs := framework.NewClientSet("")
+
+	delete := helpers.CreateMCP(t, cs, "infra")
+	// Create infra pool to roll out MC changes
+	workerOldMc := helpers.GetMcName(t, cs, "worker")
+	unlabelFunc := helpers.LabelRandomNodeFromPool(t, cs, "worker", "node-role.kubernetes.io/infra")
+	oldInfraConfig := helpers.CreateMC("old-infra", "infra")
+
+	t.Cleanup(func() {
+		node := helpers.GetSingleNodeByRole(t, cs, "infra")
+		helpers.ExecCmdOnNode(t, cs, node, "/bin/bash", "-c", "sed -e s/wrong-data-here//g -i /rootfs/etc/containers/storage.conf")
+		unlabelFunc()
+		// wait for the mcp to go back to previous config
+		if err := helpers.WaitForPoolComplete(t, cs, "worker", workerOldMc); err != nil {
+			t.Fatal(err)
+		}
+		delete()
+		require.Nil(t, cs.MachineConfigs().Delete(context.TODO(), oldInfraConfig.Name, metav1.DeleteOptions{}))
+
+	})
+
+	_, err := cs.ClusterOperators().Get(context.TODO(), "machine-config", metav1.GetOptions{})
+	require.Nil(t, err)
+
+	// create old mc to have something to verify we successfully rolled back
+	_, err = cs.MachineConfigs().Create(context.TODO(), oldInfraConfig, metav1.CreateOptions{})
+	require.Nil(t, err)
+	oldInfraRenderedConfig, err := helpers.WaitForRenderedConfig(t, cs, "infra", oldInfraConfig.Name)
+	err = helpers.WaitForPoolComplete(t, cs, "infra", oldInfraRenderedConfig)
+	require.Nil(t, err)
+
+	node := helpers.GetSingleNodeByRole(t, cs, "infra")
+
+	// Get the machine config pool
+	mcp, err := cs.MachineConfigPools().Get(context.TODO(), "infra", metav1.GetOptions{})
+	require.Nil(t, err)
+
+	e2e_shared_test.MutateNodeAndWait(t, cs, &node, mcp)
+
+	node = helpers.GetSingleNodeByRole(t, cs, "infra")
+
+	if err := wait.Poll(5*time.Second, 5*time.Minute, func() (bool, error) {
+		svc, err := cs.Services("openshift-machine-config-operator").Get(context.TODO(), "machine-config-operator", metav1.GetOptions{})
+		require.Nil(t, err)
+
+		// Extract the IP and port and build the URL
+		requestTarget := svc.Spec.ClusterIP
+		requestPort := svc.Spec.Ports[0].Port
+		url := fmt.Sprintf("https://%s:%d/metrics", requestTarget, requestPort)
+
+		t.Logf("Getting monitoring token")
+		token, err := helpers.GetMonitoringToken(t, cs)
+		require.Nil(t, err)
+
+		out := helpers.ExecCmdOnNode(t, cs, node, []string{"curl", "-s", "-k", "-H", "Authorization: Bearer " + string(token), url}...)
+
+		// The /metrics output will contain the metric if it works
+		if !strings.Contains(out, `mco_unavailable_machine_count{pool="infra"} 1`) {
+			t.Logf("%s: Metric should have been set, but were NOT", out)
+			return false, nil
+		}
+		t.Log("Metric successfully set")
+		return true, nil
+	}); err != nil {
+		t.Errorf("error getting metrics: %q", err)
+	}
 }

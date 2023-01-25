@@ -40,6 +40,29 @@ spec:
           mountPath: /etc/ssl/kubernetes/ca.crt
         - name: images
           mountPath: /etc/mco/images
+      - name: kube-rbac-proxy
+        image: placeholder.url.oc.will.replace.this.org/placeholdernamespace:kube-rbac-proxy
+        ports:
+        - containerPort: 9001
+          name: metrics
+          protocol: TCP
+        args:
+        - --secure-listen-address=0.0.0.0:9001
+        - --config-file=/etc/kube-rbac-proxy/config-file.yaml
+        - --upstream=http://127.0.0.1:8797
+        - --logtostderr=true
+        - --tls-cert-file=/etc/tls/private/tls.crt
+        - --tls-private-key-file=/etc/tls/private/tls.key
+        resources:
+          requests:
+            cpu: 20m
+            memory: 50Mi
+        volumeMounts:
+        - mountPath: /etc/tls/private
+          name: proxy-tls
+        - mountPath: /etc/kube-rbac-proxy
+          name: auth-proxy-config
+      serviceAccountName: default
       nodeSelector:
         node-role.kubernetes.io/master: ""
       priorityClassName: "system-cluster-critical"
@@ -66,3 +89,10 @@ spec:
       - name: root-ca
         hostPath:
           path: /etc/kubernetes/ca.crt
+      - name: proxy-tls
+        secret:
+          secretName: mco-proxy-tls
+      - configMap:
+          name: kube-rbac-proxy
+        name: auth-proxy-config
+

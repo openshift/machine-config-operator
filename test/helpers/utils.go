@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	authenticationv1 "k8s.io/api/authentication/v1"
+
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
@@ -24,6 +26,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
@@ -324,6 +327,25 @@ func WaitForPausedConfig(t *testing.T, cs *framework.ClientSet, pool string) err
 	return nil
 }
 
+// GetMonitoringToken retrieves the token from the openshift-monitoring secrets in the prometheus-k8s namespace.
+// It is equivalent to "oc sa get-token prometheus-k8s -n openshift-monitoring"
+func GetMonitoringToken(t *testing.T, cs *framework.ClientSet) (string, error) {
+	token, err := cs.
+		ServiceAccounts("openshift-monitoring").
+		CreateToken(
+			context.TODO(),
+			"prometheus-k8s",
+			&authenticationv1.TokenRequest{
+				Spec: authenticationv1.TokenRequestSpec{},
+			},
+			metav1.CreateOptions{},
+		)
+	if err != nil {
+		return "", fmt.Errorf("Could not request openshift-monitoring token")
+	}
+	return token.Status.Token, nil
+}
+
 // WaitForMCDToSyncCert waits for the MCD to write annotation on the latest controllerconfig resourceVersion,
 // to indicate that is has completed the certificate write
 func WaitForMCDToSyncCert(t *testing.T, cs *framework.ClientSet, node corev1.Node, resourceVersion string) error {
@@ -380,7 +402,8 @@ func LabelNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, label st
 
 	require.Nil(t, err, "unable to label %s node %s with infra: %s", label, node.Name, err)
 
-	return func() {
+	return MakeIdempotent(func() {
+
 		err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 			n, err := cs.CoreV1Interface.Nodes().Get(ctx, node.Name, metav1.GetOptions{})
 			if err != nil {
@@ -391,7 +414,7 @@ func LabelNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, label st
 			return err
 		})
 		require.Nil(t, err, "unable to remove label %q from node %q: %s", label, node.Name, err)
-	}
+	})
 }
 
 // Gets a random node from a given pool
@@ -455,7 +478,11 @@ func CreateMCP(t *testing.T, cs *framework.ClientSet, mcpName string) func() {
 	infraMCP.ObjectMeta.Labels = make(map[string]string)
 	infraMCP.ObjectMeta.Labels[mcpName] = ""
 	_, err := cs.MachineConfigPools().Create(context.TODO(), infraMCP, metav1.CreateOptions{})
-	require.Nil(t, err)
+	if err != nil {
+		if !errors.IsAlreadyExists(err) {
+			require.Nil(t, err)
+		}
+	}
 	return func() {
 		err := cs.MachineConfigPools().Delete(context.TODO(), mcpName, metav1.DeleteOptions{})
 		require.Nil(t, err)
