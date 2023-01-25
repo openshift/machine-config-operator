@@ -245,6 +245,7 @@ func onPremPlatformShortName(cfg mcfgv1.ControllerConfigSpec) interface{} {
 
 // This function should be removed in 4.13 when we no longer have to worry
 // about upgrades from releases that still use it.
+//
 //nolint:dupl
 func onPremPlatformIngressIP(cfg mcfgv1.ControllerConfigSpec) (interface{}, error) {
 	if cfg.Infra.Status.PlatformStatus != nil {
@@ -295,6 +296,7 @@ func onPremPlatformIngressIPs(cfg mcfgv1.ControllerConfigSpec) (interface{}, err
 
 // This function should be removed in 4.13 when we no longer have to worry
 // about upgrades from releases that still use it.
+//
 //nolint:dupl
 func onPremPlatformAPIServerInternalIP(cfg mcfgv1.ControllerConfigSpec) (interface{}, error) {
 	if cfg.Infra.Status.PlatformStatus != nil {
