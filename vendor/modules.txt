@@ -846,7 +846,7 @@ github.com/openshift/client-go/operator/informers/externalversions/operator/v1
 github.com/openshift/client-go/operator/informers/externalversions/operator/v1alpha1
 github.com/openshift/client-go/operator/listers/operator/v1
 github.com/openshift/client-go/operator/listers/operator/v1alpha1
-# github.com/openshift/library-go v0.0.0-20220915130036-73d5a4a82865
+# github.com/openshift/library-go v0.0.0-20221128185631-a28fc69e674a
 ## explicit; go 1.18
 github.com/openshift/library-go/pkg/cloudprovider
 github.com/openshift/library-go/pkg/config/clusteroperator/v1helpers
