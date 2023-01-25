@@ -28,6 +28,12 @@ metadata:
     include.release.openshift.io/single-node-developer: "true"
 rules:
   - apiGroups:
+      - ""
+    resources:
+      - namespace/metrics
+    verbs:
+      - get
+  - apiGroups:
     - ""
     resources:
     - services

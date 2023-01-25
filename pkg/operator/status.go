@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/golang/glog"
 	configv1 "github.com/openshift/api/config/v1"
@@ -297,6 +298,7 @@ func (optr *Operator) syncUpgradeableStatus() error {
 		Status: configv1.ConditionTrue,
 		Reason: asExpectedReason,
 	}
+
 	var updating, degraded bool
 	for _, pool := range pools {
 		// collect updating status but continue to check each pool to see if any pool is degraded
@@ -353,6 +355,32 @@ func (optr *Operator) syncUpgradeableStatus() error {
 		}
 	}
 	return optr.updateStatus(co, coStatus)
+}
+
+func (optr *Operator) syncMetrics() error {
+	pools, err := optr.mcpLister.List(labels.Everything())
+	if err != nil {
+		return err
+	}
+	// set metrics per pool, we need to get the latest condition to log for the state
+	var latestTime metav1.Time
+	latestTime.Time = time.Time{}
+	var cond v1.MachineConfigPoolCondition
+	for _, pool := range pools {
+		for _, condition := range pool.Status.Conditions {
+			if condition.Status == corev1.ConditionTrue && condition.LastTransitionTime.After(latestTime.Time) {
+				cond = condition
+				latestTime = cond.LastTransitionTime
+			}
+		}
+		glog.Infof("Condition: %s, Machines: %d, UpdatedMachines: %d, DegradedMachines: %d, UnavailableMachines: %d", string(cond.Type), pool.Status.MachineCount, pool.Status.UpdatedMachineCount, pool.Status.DegradedMachineCount, pool.Status.UnavailableMachineCount)
+		mcoState.WithLabelValues(pool.Name, string(cond.Type), cond.Reason).SetToCurrentTime()
+		mcoMachineCount.WithLabelValues(pool.Name).Set(float64(pool.Status.MachineCount))
+		mcoUpdatedMachineCount.WithLabelValues(pool.Name).Set(float64(pool.Status.UpdatedMachineCount))
+		mcoDegradedMachineCount.WithLabelValues(pool.Name).Set(float64(pool.Status.DegradedMachineCount))
+		mcoUnavailableMachineCount.WithLabelValues(pool.Name).Set(float64(pool.Status.UnavailableMachineCount))
+	}
+	return nil
 }
 
 // isKubeletSkewSupported checks the version skew of kube-apiserver and node kubelet version.

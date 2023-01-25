@@ -107,12 +107,22 @@ func TestRunShared(t *testing.T) {
 func TestKernelArguments(t *testing.T) {
 	cs := framework.NewClientSet("")
 
-	// Create infra pool to roll out MC changes
-	unlabelFunc := helpers.LabelRandomNodeFromPool(t, cs, "worker", "node-role.kubernetes.io/infra")
-	helpers.CreateMCP(t, cs, "infra")
+	delete := helpers.CreateMCP(t, cs, "infra")
+	workerOldMc := helpers.GetMcName(t, cs, "worker")
 
-	// create old mc to have something to verify we successfully rolled back
+	unlabelFunc := helpers.LabelRandomNodeFromPool(t, cs, "worker", "node-role.kubernetes.io/infra")
 	oldInfraConfig := helpers.CreateMC("old-infra", "infra")
+
+	t.Cleanup(func() {
+		unlabelFunc()
+		// wait for the mcp to go back to previous config
+		if err := helpers.WaitForPoolComplete(t, cs, "worker", workerOldMc); err != nil {
+			t.Fatal(err)
+		}
+		delete()
+		require.Nil(t, cs.MachineConfigs().Delete(context.TODO(), oldInfraConfig.Name, metav1.DeleteOptions{}))
+	})
+	// create old mc to have something to verify we successfully rolled back
 	_, err := cs.MachineConfigs().Create(context.TODO(), oldInfraConfig, metav1.CreateOptions{})
 	require.Nil(t, err)
 	oldInfraRenderedConfig, err := helpers.WaitForRenderedConfig(t, cs, "infra", oldInfraConfig.Name)
@@ -189,10 +199,26 @@ func TestKernelType(t *testing.T) {
 		t.Skip("skipping test on OKD")
 	}
 
+	delete := helpers.CreateMCP(t, cs, "infra")
+	workerOldMc := helpers.GetMcName(t, cs, "worker")
+
 	unlabelFunc := helpers.LabelRandomNodeFromPool(t, cs, "worker", "node-role.kubernetes.io/infra")
+	oldInfraConfig := helpers.CreateMC("old-infra", "infra")
 
-	oldInfraRenderedConfig := helpers.GetMcName(t, cs, "infra")
+	t.Cleanup(func() {
+		unlabelFunc()
+		// wait for the mcp to go back to previous config
+		if err := helpers.WaitForPoolComplete(t, cs, "worker", workerOldMc); err != nil {
+			t.Fatal(err)
+		}
+		delete()
+		require.Nil(t, cs.MachineConfigs().Delete(context.TODO(), oldInfraConfig.Name, metav1.DeleteOptions{}))
 
+	})
+
+	_, err = cs.MachineConfigs().Create(context.TODO(), oldInfraConfig, metav1.CreateOptions{})
+	require.Nil(t, err)
+	oldInfraRenderedConfig, err := helpers.WaitForRenderedConfig(t, cs, "infra", oldInfraConfig.Name)
 	// create kernel type MC and roll out
 	kernelType := &mcfgv1.MachineConfig{
 		ObjectMeta: metav1.ObjectMeta{
@@ -271,10 +297,26 @@ func TestKernelType(t *testing.T) {
 func TestExtensions(t *testing.T) {
 	cs := framework.NewClientSet("")
 
+	delete := helpers.CreateMCP(t, cs, "infra")
+	workerOldMc := helpers.GetMcName(t, cs, "worker")
+
 	unlabelFunc := helpers.LabelRandomNodeFromPool(t, cs, "worker", "node-role.kubernetes.io/infra")
+	oldInfraConfig := helpers.CreateMC("old-infra", "infra")
 
-	oldInfraRenderedConfig := helpers.GetMcName(t, cs, "infra")
+	t.Cleanup(func() {
+		unlabelFunc()
+		// wait for the mcp to go back to previous config
+		if err := helpers.WaitForPoolComplete(t, cs, "worker", workerOldMc); err != nil {
+			t.Fatal(err)
+		}
+		delete()
+		require.Nil(t, cs.MachineConfigs().Delete(context.TODO(), oldInfraConfig.Name, metav1.DeleteOptions{}))
 
+	})
+
+	_, err := cs.MachineConfigs().Create(context.TODO(), oldInfraConfig, metav1.CreateOptions{})
+	require.Nil(t, err)
+	oldInfraRenderedConfig, err := helpers.WaitForRenderedConfig(t, cs, "infra", oldInfraConfig.Name)
 	// Apply extensions
 	extensions := &mcfgv1.MachineConfig{
 		ObjectMeta: metav1.ObjectMeta{
@@ -289,7 +331,7 @@ func TestExtensions(t *testing.T) {
 		},
 	}
 
-	_, err := cs.MachineConfigs().Create(context.TODO(), extensions, metav1.CreateOptions{})
+	_, err = cs.MachineConfigs().Create(context.TODO(), extensions, metav1.CreateOptions{})
 	require.Nil(t, err)
 	t.Logf("Created %s", extensions.Name)
 	renderedConfig, err := helpers.WaitForRenderedConfig(t, cs, "infra", extensions.Name)
@@ -379,9 +421,25 @@ func TestExtensions(t *testing.T) {
 
 func TestNoReboot(t *testing.T) {
 	cs := framework.NewClientSet("")
-	unlabelFunc := helpers.LabelRandomNodeFromPool(t, cs, "worker", "node-role.kubernetes.io/infra")
-	oldInfraRenderedConfig := helpers.GetMcName(t, cs, "infra")
+	delete := helpers.CreateMCP(t, cs, "infra")
+	workerOldMc := helpers.GetMcName(t, cs, "worker")
 
+	unlabelFunc := helpers.LabelRandomNodeFromPool(t, cs, "worker", "node-role.kubernetes.io/infra")
+	oldInfraConfig := helpers.CreateMC("old-infra", "infra")
+
+	t.Cleanup(func() {
+		unlabelFunc()
+		// wait for the mcp to go back to previous config
+		if err := helpers.WaitForPoolComplete(t, cs, "worker", workerOldMc); err != nil {
+			t.Fatal(err)
+		}
+		delete()
+		require.Nil(t, cs.MachineConfigs().Delete(context.TODO(), oldInfraConfig.Name, metav1.DeleteOptions{}))
+
+	})
+	_, err := cs.MachineConfigs().Create(context.TODO(), oldInfraConfig, metav1.CreateOptions{})
+	require.Nil(t, err)
+	oldInfraRenderedConfig, err := helpers.WaitForRenderedConfig(t, cs, "infra", oldInfraConfig.Name)
 	infraNode := helpers.GetSingleNodeByRole(t, cs, "infra")
 
 	sshKeyContent := "test adding authorized key without node reboot"
@@ -434,7 +492,7 @@ func TestNoReboot(t *testing.T) {
 		},
 	}
 
-	_, err := cs.MachineConfigs().Create(context.TODO(), addAuthorizedKey, metav1.CreateOptions{})
+	_, err = cs.MachineConfigs().Create(context.TODO(), addAuthorizedKey, metav1.CreateOptions{})
 	require.Nil(t, err, "failed to create MC")
 	t.Logf("Created %s", addAuthorizedKey.Name)
 
@@ -707,14 +765,31 @@ func TestReconcileAfterBadMC(t *testing.T) {
 func TestDontDeleteRPMFiles(t *testing.T) {
 	cs := framework.NewClientSet("")
 
-	unlabelFunc := helpers.LabelRandomNodeFromPool(t, cs, "worker", "node-role.kubernetes.io/infra")
+	delete := helpers.CreateMCP(t, cs, "infra")
+	workerOldMc := helpers.GetMcName(t, cs, "worker")
 
-	oldInfraRenderedConfig := helpers.GetMcName(t, cs, "infra")
+	unlabelFunc := helpers.LabelRandomNodeFromPool(t, cs, "worker", "node-role.kubernetes.io/infra")
+	oldInfraConfig := helpers.CreateMC("old-infra", "infra")
+
+	t.Cleanup(func() {
+		unlabelFunc()
+		// wait for the mcp to go back to previous config
+		if err := helpers.WaitForPoolComplete(t, cs, "worker", workerOldMc); err != nil {
+			t.Fatal(err)
+		}
+		delete()
+		require.Nil(t, cs.MachineConfigs().Delete(context.TODO(), oldInfraConfig.Name, metav1.DeleteOptions{}))
+
+	})
+
+	_, err := cs.MachineConfigs().Create(context.TODO(), oldInfraConfig, metav1.CreateOptions{})
+	require.Nil(t, err)
+	oldInfraRenderedConfig, err := helpers.WaitForRenderedConfig(t, cs, "infra", oldInfraConfig.Name)
 
 	mcHostFile := createMCToAddFileForRole("modify-host-file", "infra", "/etc/motd", "mco-test")
 
 	// create the dummy MC now
-	_, err := cs.MachineConfigs().Create(context.TODO(), mcHostFile, metav1.CreateOptions{})
+	_, err = cs.MachineConfigs().Create(context.TODO(), mcHostFile, metav1.CreateOptions{})
 	if err != nil {
 		t.Errorf("failed to create machine config %v", err)
 	}
@@ -765,8 +840,19 @@ func TestDontDeleteRPMFiles(t *testing.T) {
 func TestIgn3Cfg(t *testing.T) {
 	cs := framework.NewClientSet("")
 
+	delete := helpers.CreateMCP(t, cs, "infra")
+	workerOldMc := helpers.GetMcName(t, cs, "worker")
+
 	unlabelFunc := helpers.LabelRandomNodeFromPool(t, cs, "worker", "node-role.kubernetes.io/infra")
 
+	t.Cleanup(func() {
+		unlabelFunc()
+		// wait for the mcp to go back to previous config
+		if err := helpers.WaitForPoolComplete(t, cs, "worker", workerOldMc); err != nil {
+			t.Fatal(err)
+		}
+		delete()
+	})
 	// create a dummy MC with an sshKey for user Core
 	mcName := fmt.Sprintf("99-ign3cfg-infra-%s", uuid.NewUUID())
 	mcadd := &mcfgv1.MachineConfig{}

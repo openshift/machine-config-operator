@@ -17,5 +17,6 @@ data:
       "corednsImage": "placeholder.url.oc.will.replace.this.org/placeholdernamespace:coredns",
       "haproxyImage": "placeholder.url.oc.will.replace.this.org/placeholdernamespace:haproxy-router",
       "baremetalRuntimeCfgImage": "placeholder.url.oc.will.replace.this.org/placeholdernamespace:baremetal-runtimecfg",
-      "oauthProxy": "placeholder.url.oc.will.replace.this.org/placeholdernamespace:oauth-proxy"
+      "oauthProxy": "placeholder.url.oc.will.replace.this.org/placeholdernamespace:oauth-proxy",
+      "kubeRbacProxy": "placeholder.url.oc.will.replace.this.org/placeholdernamespace:kube-rbac-proxy"
     }
