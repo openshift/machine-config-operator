@@ -32,11 +32,11 @@ var (
 		}, []string{"pool"})
 
 	// MCCDrainErr logs failed drain
-	MCCDrainErr = prometheus.NewGauge(
+	MCCDrainErr = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "mcc_drain_err",
 			Help: "logs failed drain",
-		})
+		}, []string{"node"})
 )
 
 func RegisterMCCMetrics() error {
@@ -50,7 +50,7 @@ func RegisterMCCMetrics() error {
 		return fmt.Errorf("could not register machine-config-controller metrics: %w", err)
 	}
 
-	MCCDrainErr.Set(0)
+	MCCDrainErr.Reset()
 
 	return nil
 }

@@ -348,7 +348,7 @@ func (ctrl *Controller) drainNode(node *corev1.Node, drainer *drain.Helper) erro
 		glog.Infof("Previous node drain found. Drain has been going on for %v hours", duration.Hours())
 		if duration > ctrl.cfg.DrainTimeoutDuration {
 			glog.Errorf("node %s: drain exceeded timeout: %v. Will continue to retry.", node.Name, ctrl.cfg.DrainTimeoutDuration)
-			ctrlcommon.MCCDrainErr.Set(1)
+			ctrlcommon.MCCDrainErr.WithLabelValues(node.Name).Set(1)
 		}
 		break
 	}
@@ -387,7 +387,7 @@ func (ctrl *Controller) drainNode(node *corev1.Node, drainer *drain.Helper) erro
 	delete(ctrl.ongoingDrains, node.Name)
 
 	// Clear the MCCDrainErr, if any.
-	ctrlcommon.MCCDrainErr.Set(0)
+	ctrlcommon.MCCDrainErr.WithLabelValues(node.Name).Set(0)
 
 	return nil
 }
