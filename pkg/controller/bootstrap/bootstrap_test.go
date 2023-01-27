@@ -2,7 +2,6 @@ package bootstrap
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -160,7 +159,7 @@ spec:
 }
 
 func TestBootstrapRun(t *testing.T) {
-	destDir, err := ioutil.TempDir("", "controller-bootstrap")
+	destDir, err := os.MkdirTemp("", "controller-bootstrap")
 	require.NoError(t, err)
 	defer os.RemoveAll(destDir)
 
@@ -173,7 +172,7 @@ func TestBootstrapRun(t *testing.T) {
 			paths, err := filepath.Glob(filepath.Join(destDir, "machine-configs", fmt.Sprintf("rendered-%s-*.yaml", poolName)))
 			require.NoError(t, err)
 			require.Len(t, paths, 1)
-			mcBytes, err := ioutil.ReadFile(paths[0])
+			mcBytes, err := os.ReadFile(paths[0])
 			require.NoError(t, err)
 			mc, err := mcoResourceRead.ReadMachineConfigV1(mcBytes)
 			require.NoError(t, err)

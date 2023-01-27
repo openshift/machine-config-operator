@@ -3,7 +3,6 @@ package server
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path"
 
@@ -47,12 +46,12 @@ func NewBootstrapServer(dir, kubeconfig string) (Server, error) {
 //
 // The method does the following:
 //
-// 1. Read the machine config pool by using the following path template:
-// 		"<serverBaseDir>/machine-pools/<machineConfigPoolName>.yaml"
+//  1. Read the machine config pool by using the following path template:
+//     "<serverBaseDir>/machine-pools/<machineConfigPoolName>.yaml"
 //
-// 2. Read the currentConfig field from the Status and read the config file
-//    using the following path template:
-// 		"<serverBaseDir>/machine-configs/<currentConfig>.yaml"
+//  2. Read the currentConfig field from the Status and read the config file
+//     using the following path template:
+//     "<serverBaseDir>/machine-configs/<currentConfig>.yaml"
 //
 // 3. Load the machine config.
 // 4. Append the machine annotations file.
@@ -64,7 +63,7 @@ func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*runtime.RawExtension, er
 	// 1. Read the Machine Config Pool object.
 	fileName := path.Join(bsc.serverBaseDir, "machine-pools", cr.machineConfigPool+".yaml")
 	glog.Infof("reading file %q", fileName)
-	data, err := ioutil.ReadFile(fileName)
+	data, err := os.ReadFile(fileName)
 	if os.IsNotExist(err) {
 		glog.Errorf("could not find file: %s", fileName)
 		return nil, nil
@@ -84,7 +83,7 @@ func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*runtime.RawExtension, er
 	// 2. Read the Machine Config object.
 	fileName = path.Join(bsc.serverBaseDir, "machine-configs", currConf+".yaml")
 	glog.Infof("reading file %q", fileName)
-	data, err = ioutil.ReadFile(fileName)
+	data, err = os.ReadFile(fileName)
 	if os.IsNotExist(err) {
 		glog.Errorf("could not find file: %s", fileName)
 		return nil, nil
@@ -118,7 +117,7 @@ func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*runtime.RawExtension, er
 }
 
 func kubeconfigFromFile(path string) ([]byte, []byte, error) {
-	kcData, err := ioutil.ReadFile(path)
+	kcData, err := os.ReadFile(path)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error getting kubeconfig from disk: %w", err)
 	}

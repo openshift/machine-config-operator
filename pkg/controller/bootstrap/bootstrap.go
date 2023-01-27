@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 
@@ -52,12 +51,12 @@ func New(templatesDir, manifestDir, pullSecretFile string) *Bootstrap {
 // It writes all the assets to destDir
 // nolint:gocyclo
 func (b *Bootstrap) Run(destDir string) error {
-	infos, err := ioutil.ReadDir(b.manifestDir)
+	infos, err := ctrlcommon.ReadDir(b.manifestDir)
 	if err != nil {
 		return err
 	}
 
-	psfraw, err := ioutil.ReadFile(b.pullSecretFile)
+	psfraw, err := os.ReadFile(b.pullSecretFile)
 	if err != nil {
 		return err
 	}
@@ -221,7 +220,7 @@ func (b *Bootstrap) Run(destDir string) error {
 		// Disable gosec here to avoid throwing
 		// G306: Expect WriteFile permissions to be 0600 or less
 		// #nosec
-		if err := ioutil.WriteFile(path, buf.Bytes(), 0o664); err != nil {
+		if err := os.WriteFile(path, buf.Bytes(), 0o664); err != nil {
 			return err
 		}
 	}
@@ -240,7 +239,7 @@ func (b *Bootstrap) Run(destDir string) error {
 		// Disable gosec here to avoid throwing
 		// G306: Expect WriteFile permissions to be 0600 or less
 		// #nosec
-		if err := ioutil.WriteFile(path, buf.Bytes(), 0o664); err != nil {
+		if err := os.WriteFile(path, buf.Bytes(), 0o664); err != nil {
 			return err
 		}
 	}

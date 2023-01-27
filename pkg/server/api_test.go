@@ -3,7 +3,7 @@ package server
 import (
 	"crypto/tls"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -750,7 +750,7 @@ func checkContentLength(t *testing.T, response *http.Response, l int) {
 }
 
 func checkBodyLength(t *testing.T, response *http.Response, l int) {
-	body, err := ioutil.ReadAll(response.Body)
+	body, err := io.ReadAll(response.Body)
 	if err != nil {
 		t.Fatal(err)
 	}

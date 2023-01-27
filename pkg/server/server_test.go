@@ -4,8 +4,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/url"
+	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -47,7 +47,7 @@ func TestStringEncode(t *testing.T) {
 
 func TestEncapsulated(t *testing.T) {
 	mcPath := filepath.Join(testDir, "machine-configs", testConfig+".yaml")
-	mcData, err := ioutil.ReadFile(mcPath)
+	mcData, err := os.ReadFile(mcPath)
 	assert.Nil(t, err)
 	mc := new(mcfgv1.MachineConfig)
 	err = yaml.Unmarshal([]byte(mcData), mc)
@@ -134,7 +134,7 @@ func TestBootstrapServer(t *testing.T) {
 	}
 
 	mcPath := filepath.Join(testDir, "machine-configs", testConfig+".yaml")
-	mcData, err := ioutil.ReadFile(mcPath)
+	mcData, err := os.ReadFile(mcPath)
 	if err != nil {
 		t.Fatalf("unexpected error while reading machine-config: %s, err: %v", mcPath, err)
 	}
@@ -264,7 +264,7 @@ func TestClusterServer(t *testing.T) {
 	}
 
 	mcPath := filepath.Join(testDir, "machine-configs", testConfig+".yaml")
-	mcData, err := ioutil.ReadFile(mcPath)
+	mcData, err := os.ReadFile(mcPath)
 	if err != nil {
 		t.Fatalf("unexpected error while reading machine-config: %s, err: %v", mcPath, err)
 	}
@@ -289,7 +289,7 @@ func TestClusterServer(t *testing.T) {
 	// machineClient:  cs.MachineconfigurationV1(),
 	csc := &clusterServer{
 		machineConfigPoolLister: mcpLister,
-		machineConfigLister: mcLister,
+		machineConfigLister:     mcLister,
 		kubeconfigFunc: func() ([]byte, []byte, error) {
 			return getKubeConfigContent(t)
 		},
@@ -416,7 +416,7 @@ func createFileMap(files []ign3types.File) map[string]ign3types.File {
 
 func getTestMachineConfigPool() (*mcfgv1.MachineConfigPool, error) {
 	mpPath := path.Join(testDir, "machine-pools", testPool+".yaml")
-	mpData, err := ioutil.ReadFile(mpPath)
+	mpData, err := os.ReadFile(mpPath)
 	if err != nil {
 		return nil, fmt.Errorf("unexpected error while reading machine-pool: %s, err: %w", mpPath, err)
 	}
@@ -469,7 +469,7 @@ func TestKubeconfigFromSecret(t *testing.T) {
 				t.Fatalf("Error converting kubeconfig yaml to string")
 			}
 
-			mockCAData, err := ioutil.ReadFile(test.SecretPath + "/" + corev1.ServiceAccountRootCAKey)
+			mockCAData, err := os.ReadFile(test.SecretPath + "/" + corev1.ServiceAccountRootCAKey)
 			if err != nil {
 				t.Fatalf("Error reading test certificate file: %s", err.Error())
 			}

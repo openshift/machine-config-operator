@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"io/ioutil"
 	"os"
 	"reflect"
 	"testing"
@@ -371,7 +370,7 @@ func TestUpdateRegistriesConfig(t *testing.T) {
 			// sort the two arrays before comparing, but right now hard-coding the order works well enough.
 			assert.Equal(t, tt.want, gotConf, "updateRegistriesConfig() Diff")
 			// Ensure that the generated configuration is actually valid.
-			registriesConf, err := ioutil.TempFile("", "registries.conf")
+			registriesConf, err := os.CreateTemp("", "registries.conf")
 			require.NoError(t, err)
 			_, err = registriesConf.Write(got)
 			require.NoError(t, err)

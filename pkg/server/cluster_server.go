@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"math/rand"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -129,11 +129,11 @@ func (cs *clusterServer) GetConfig(cr poolRequest) (*runtime.RawExtension, error
 func kubeconfigFromSecret(secretDir, apiserverURL string) ([]byte, []byte, error) {
 	caFile := filepath.Join(secretDir, corev1.ServiceAccountRootCAKey)
 	tokenFile := filepath.Join(secretDir, corev1.ServiceAccountTokenKey)
-	caData, err := ioutil.ReadFile(caFile)
+	caData, err := os.ReadFile(caFile)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to read %s: %w", caFile, err)
 	}
-	token, err := ioutil.ReadFile(tokenFile)
+	token, err := os.ReadFile(tokenFile)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to read %s: %w", tokenFile, err)
 	}
