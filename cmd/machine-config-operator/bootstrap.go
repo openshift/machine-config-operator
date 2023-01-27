@@ -3,7 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"os"
 
 	"github.com/golang/glog"
 	"github.com/spf13/cobra"
@@ -122,7 +122,7 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 	}
 
 	if bootstrapOpts.imageReferences != "" {
-		imageRefData, err := ioutil.ReadFile(bootstrapOpts.imageReferences)
+		imageRefData, err := os.ReadFile(bootstrapOpts.imageReferences)
 		if err != nil {
 			glog.Fatalf("failed to read %s: %v", bootstrapOpts.imageReferences, err)
 		}

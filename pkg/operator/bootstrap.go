@@ -2,7 +2,6 @@ package operator
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 
@@ -51,7 +50,7 @@ func RenderBootstrap(
 		files = append(files, cloudProviderCAFile)
 	}
 	for _, file := range files {
-		data, err := ioutil.ReadFile(file)
+		data, err := os.ReadFile(file)
 		if err != nil {
 			return err
 		}
@@ -100,7 +99,7 @@ func RenderBootstrap(
 		return err
 	}
 
-	additionalTrustBundleData, err := ioutil.ReadFile(additionalTrustBundleFile)
+	additionalTrustBundleData, err := os.ReadFile(additionalTrustBundleFile)
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
@@ -205,7 +204,7 @@ func RenderBootstrap(
 		// Disable gosec here to avoid throwing
 		// G306: Expect WriteFile permissions to be 0600 or less
 		// #nosec
-		if err := ioutil.WriteFile(path, b, 0o644); err != nil {
+		if err := os.WriteFile(path, b, 0o644); err != nil {
 			return err
 		}
 	}
@@ -324,7 +323,7 @@ func appendManifestsByPlatform(manifests []manifest, infra configv1.Infrastructu
 
 // loadBootstrapCloudProviderConfig reads the cloud provider config from cloudConfigFile based on infra object.
 func loadBootstrapCloudProviderConfig(infra *configv1.Infrastructure, cloudConfigFile string) (string, error) {
-	data, err := ioutil.ReadFile(cloudConfigFile)
+	data, err := os.ReadFile(cloudConfigFile)
 	if err != nil {
 		return "", err
 	}

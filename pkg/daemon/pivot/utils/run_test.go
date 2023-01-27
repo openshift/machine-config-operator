@@ -1,7 +1,6 @@
 package utils
 
 import (
-	"io/ioutil"
 	"os"
 	"testing"
 	"time"
@@ -15,7 +14,7 @@ import (
 func TestRunExt(t *testing.T) {
 	RunExt(0, "echo", "echo", "from", "TestRunExt")
 
-	tmpdir, err := ioutil.TempDir("", "run_test")
+	tmpdir, err := os.MkdirTemp("", "run_test")
 	assert.Nil(t, err)
 	defer os.RemoveAll(tmpdir)
 	tmpf := tmpdir + "/t"

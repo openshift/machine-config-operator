@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"os/user"
@@ -318,7 +317,7 @@ func ExtractOSImage(imgURL string) (osImageContentDir string, err error) {
 		return
 	}
 
-	if osImageContentDir, err = ioutil.TempDir(osImageContentBaseDir, "os-content-"); err != nil {
+	if osImageContentDir, err = os.MkdirTemp(osImageContentBaseDir, "os-content-"); err != nil {
 		return
 	}
 
@@ -350,7 +349,7 @@ func ExtractExtensionsImage(imgURL string) (osExtensionsImageContentDir string, 
 		return
 	}
 
-	if osExtensionsImageContentDir, err = ioutil.TempDir(osExtensionsContentBaseDir, "os-extensions-content-"); err != nil {
+	if osExtensionsImageContentDir, err = os.MkdirTemp(osExtensionsContentBaseDir, "os-extensions-content-"); err != nil {
 		return
 	}
 
@@ -951,7 +950,7 @@ func verifyUserFields(pwdUser ign3types.PasswdUser) error {
 // `oc debug node` and run the disable command by hand, then reboot.
 // If we detect that FIPS has been changed, we reject the update.
 func checkFIPS(current, desired *mcfgv1.MachineConfig) error {
-	content, err := ioutil.ReadFile(fipsFile)
+	content, err := os.ReadFile(fipsFile)
 	if err != nil {
 		if os.IsNotExist(err) {
 			// we just exit cleanly if we're not even on linux
@@ -1871,7 +1870,7 @@ func (dn *Daemon) updateSSHKeys(newUsers []ign3types.PasswdUser) error {
 			}
 
 			// Ensure authorized_keys.d/ignition is the only fragment that exists
-			keyFragmentsDir, err := ioutil.ReadDir(authKeyFragmentDirPath)
+			keyFragmentsDir, err := ctrlcommon.ReadDir(authKeyFragmentDirPath)
 			if err == nil {
 				for _, fragment := range keyFragmentsDir {
 					if fragment.Name() != "ignition" {
@@ -1916,7 +1915,7 @@ func (dn *Daemon) InplaceUpdateViaNewContainer(target string) error {
 	// here when run from a container image.
 	// xref https://issues.redhat.com/browse/MCO-396
 	enforceFile := "/sys/fs/selinux/enforce"
-	enforcingBuf, err := ioutil.ReadFile(enforceFile)
+	enforcingBuf, err := os.ReadFile(enforceFile)
 	var enforcing bool
 	if err != nil {
 		if os.IsNotExist(err) {

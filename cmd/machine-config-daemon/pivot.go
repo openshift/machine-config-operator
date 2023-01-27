@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"strings"
 
@@ -46,7 +45,7 @@ func run(_ *cobra.Command, args []string) (retErr error) {
 	var container string
 	if fromEtcPullSpec || len(args) == 0 {
 		fromEtcPullSpec = true
-		data, err := ioutil.ReadFile(etcPivotFile)
+		data, err := os.ReadFile(etcPivotFile)
 		if err != nil {
 			if os.IsNotExist(err) {
 				return fmt.Errorf("no container specified")

@@ -2,7 +2,6 @@ package daemon
 
 import (
 	"encoding/json"
-	"io/ioutil"
 	"os"
 	"reflect"
 	"strconv"
@@ -320,7 +319,7 @@ func newNode(annotations map[string]string) *corev1.Node {
 }
 
 func TestPrepUpdateFromClusterOnDiskDrift(t *testing.T) {
-	tmpCurrentConfig, err := ioutil.TempFile("", "currentconfig")
+	tmpCurrentConfig, err := os.CreateTemp("", "currentconfig")
 	require.Nil(t, err)
 	defer os.Remove(tmpCurrentConfig.Name())
 

@@ -3,7 +3,6 @@ package daemon
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -200,7 +199,7 @@ func checkFileContentsAndMode(filePath string, expectedContent []byte, mode os.F
 	if fi.Mode() != mode {
 		return fmt.Errorf("mode mismatch for file: %q; expected: %[2]v/%[2]d/%#[2]o; received: %[3]v/%[3]d/%#[3]o", filePath, mode, fi.Mode())
 	}
-	contents, err := ioutil.ReadFile(filePath)
+	contents, err := os.ReadFile(filePath)
 	if err != nil {
 		return fmt.Errorf("could not read file %q: %w", filePath, err)
 	}
