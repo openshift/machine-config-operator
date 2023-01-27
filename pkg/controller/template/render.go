@@ -316,6 +316,7 @@ func renderTemplate(config RenderConfig, path string, b []byte) ([]byte, error) 
 	funcs["onPremPlatformShortName"] = onPremPlatformShortName
 	funcs["urlHost"] = urlHost
 	funcs["urlPort"] = urlPort
+	funcs["isOpenShiftManagedDefaultLB"] = isOpenShiftManagedDefaultLB
 	tmpl, err := template.New(path).Funcs(funcs).Parse(string(b))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse template %s: %w", path, err)
@@ -605,4 +606,57 @@ func urlPort(u string) (interface{}, error) {
 	default:
 		return "", fmt.Errorf("unknown scheme in %s", u)
 	}
+}
+
+func isOpenShiftManagedDefaultLB(cfg RenderConfig) bool {
+	if cfg.Infra.Status.PlatformStatus != nil {
+		lbType := configv1.LoadBalancerTypeOpenShiftManagedDefault
+		switch cfg.Infra.Status.PlatformStatus.Type {
+		case configv1.BareMetalPlatformType:
+			if cfg.Infra.Status.PlatformStatus.BareMetal != nil {
+				if cfg.Infra.Status.PlatformStatus.BareMetal.LoadBalancer != nil {
+					lbType = cfg.Infra.Status.PlatformStatus.BareMetal.LoadBalancer.Type
+				}
+				return lbType == configv1.LoadBalancerTypeOpenShiftManagedDefault
+			}
+		case configv1.OvirtPlatformType:
+			if cfg.Infra.Status.PlatformStatus.Ovirt != nil {
+				if cfg.Infra.Status.PlatformStatus.Ovirt.LoadBalancer != nil {
+					lbType = cfg.Infra.Status.PlatformStatus.Ovirt.LoadBalancer.Type
+				}
+				return lbType == configv1.LoadBalancerTypeOpenShiftManagedDefault
+			}
+		case configv1.OpenStackPlatformType:
+			if cfg.Infra.Status.PlatformStatus.OpenStack != nil {
+				if cfg.Infra.Status.PlatformStatus.OpenStack.LoadBalancer != nil {
+					lbType = cfg.Infra.Status.PlatformStatus.OpenStack.LoadBalancer.Type
+				}
+				return lbType == configv1.LoadBalancerTypeOpenShiftManagedDefault
+			}
+		case configv1.VSpherePlatformType:
+			if cfg.Infra.Status.PlatformStatus.VSphere != nil {
+				// vSphere allows to use a user managed load balancer by not setting the VIPs in PlatformStatus.
+				// We will maintain backward compatibility by checking if the VIPs are not set, we will
+				// not deploy HAproxy, Keepalived and CoreDNS.
+				if len(cfg.Infra.Status.PlatformStatus.VSphere.APIServerInternalIPs) == 0 {
+					return false
+				}
+				if cfg.Infra.Status.PlatformStatus.VSphere.LoadBalancer != nil {
+					lbType = cfg.Infra.Status.PlatformStatus.VSphere.LoadBalancer.Type
+				}
+				return lbType == configv1.LoadBalancerTypeOpenShiftManagedDefault
+			}
+		case configv1.NutanixPlatformType:
+			if cfg.Infra.Status.PlatformStatus.Nutanix != nil {
+				if cfg.Infra.Status.PlatformStatus.Nutanix.LoadBalancer != nil {
+					lbType = cfg.Infra.Status.PlatformStatus.Nutanix.LoadBalancer.Type
+				}
+				return lbType == configv1.LoadBalancerTypeOpenShiftManagedDefault
+			}
+		default:
+			// If a new on-prem platform is newly supported, the default value of LoadBalancerType is internal.
+			return true
+		}
+	}
+	return true
 }
