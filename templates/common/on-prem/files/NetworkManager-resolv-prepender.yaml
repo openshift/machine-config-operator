@@ -87,6 +87,9 @@ contents:
                 {{ .Images.baremetalRuntimeCfgImage }} \
                 node-ip \
                 show \
+                {{if not (isOpenShiftManagedDefaultLB .) -}}
+                --user-managed-lb \
+                {{end -}}
                 --retry-on-failure \
                 {{range onPremPlatformAPIServerInternalIPs . }}"{{.}}" {{end}} \
                 {{range onPremPlatformIngressIPs . }}"{{.}}" {{end}})"

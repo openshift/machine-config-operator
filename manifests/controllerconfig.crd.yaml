@@ -579,6 +579,19 @@ spec:
                                 type: array
                                 items:
                                   type: string
+                              loadBalancer:
+                                default:
+                                  type: OpenShiftManagedDefault
+                                description: loadBalancer defines how the load balancer used by the cluster is configured.
+                                properties:
+                                  type:
+                                    default: OpenShiftManagedDefault
+                                    description: type defines the type of load balancer used by the cluster on BareMetal platform which can be a user-managed or openshift-managed load balancer that is to be used for the OpenShift API and Ingress endpoints. When set to OpenShiftManagedDefault the static pods in charge of API and Ingress traffic load-balancing defined in the machine config operator will be deployed. When set to UserManaged these static pods will not be deployed and it is expected that the load balancer is configured out of band by the deployer. When omitted, this means no opinion and the platform is left to choose a reasonable default. The default value is OpenShiftManagedDefault.
+                                    enum:
+                                      - OpenShiftManagedDefault
+                                      - UserManaged
+                                    type: string
+                                type: object
                               nodeDNSIP:
                                 description: nodeDNSIP is the IP address for the internal
                                   DNS used by the nodes. Unlike the one managed by
@@ -699,6 +712,19 @@ spec:
                                 type: array
                                 items:
                                   type: string
+                              loadBalancer:
+                                default:
+                                  type: OpenShiftManagedDefault
+                                description: loadBalancer defines how the load balancer used by the cluster is configured.
+                                properties:
+                                  type:
+                                    default: OpenShiftManagedDefault
+                                    description: type defines the type of load balancer used by the cluster on OpenStack platform which can be a user-managed or openshift-managed load balancer that is to be used for the OpenShift API and Ingress endpoints. When set to OpenShiftManagedDefault the static pods in charge of API and Ingress traffic load-balancing defined in the machine config operator will be deployed. When set to UserManaged these static pods will not be deployed and it is expected that the load balancer is configured out of band by the deployer. When omitted, this means no opinion and the platform is left to choose a reasonable default. The default value is OpenShiftManagedDefault.
+                                    enum:
+                                      - OpenShiftManagedDefault
+                                      - UserManaged
+                                    type: string
+                                type: object
                               nodeDNSIP:
                                 description: nodeDNSIP is the IP address for the internal
                                   DNS used by the nodes. Unlike the one managed by
@@ -739,6 +765,19 @@ spec:
                                 type: array
                                 items:
                                   type: string
+                              loadBalancer:
+                                default:
+                                  type: OpenShiftManagedDefault
+                                description: loadBalancer defines how the load balancer used by the cluster is configured.
+                                properties:
+                                  type:
+                                    default: OpenShiftManagedDefault
+                                    description: type defines the type of load balancer used by the cluster on Ovirt platform which can be a user-managed or openshift-managed load balancer that is to be used for the OpenShift API and Ingress endpoints. When set to OpenShiftManagedDefault the static pods in charge of API and Ingress traffic load-balancing defined in the machine config operator will be deployed. When set to UserManaged these static pods will not be deployed and it is expected that the load balancer is configured out of band by the deployer. When omitted, this means no opinion and the platform is left to choose a reasonable default. The default value is OpenShiftManagedDefault.
+                                    enum:
+                                      - OpenShiftManagedDefault
+                                      - UserManaged
+                                    type: string
+                                type: object
                               nodeDNSIP:
                                 description: 'deprecated: as of 4.6, this field is
                                   no longer set or honored.  It will be removed in
@@ -777,6 +816,19 @@ spec:
                                 type: array
                                 items:
                                   type: string
+                              loadBalancer:
+                                default:
+                                  type: OpenShiftManagedDefault
+                                description: loadBalancer defines how the load balancer used by the cluster is configured.
+                                properties:
+                                  type:
+                                    default: OpenShiftManagedDefault
+                                    description: type defines the type of load balancer used by the cluster on Nutanix platform which can be a user-managed or openshift-managed load balancer that is to be used for the OpenShift API and Ingress endpoints. When set to OpenShiftManagedDefault the static pods in charge of API and Ingress traffic load-balancing defined in the machine config operator will be deployed. When set to UserManaged these static pods will not be deployed and it is expected that the load balancer is configured out of band by the deployer. When omitted, this means no opinion and the platform is left to choose a reasonable default. The default value is OpenShiftManagedDefault.
+                                    enum:
+                                      - OpenShiftManagedDefault
+                                      - UserManaged
+                                    type: string
+                                type: object
                             type: object
                           powervs:
                             description: PowerVS contains settings specific to the
@@ -885,6 +937,19 @@ spec:
                                 type: array
                                 items:
                                   type: string
+                              loadBalancer:
+                                default:
+                                  type: OpenShiftManagedDefault
+                                description: loadBalancer defines how the load balancer used by the cluster is configured.
+                                properties:
+                                  type:
+                                    default: OpenShiftManagedDefault
+                                    description: type defines the type of load balancer used by the cluster on Vsphere platform which can be a user-managed or openshift-managed load balancer that is to be used for the OpenShift API and Ingress endpoints. When set to OpenShiftManagedDefault the static pods in charge of API and Ingress traffic load-balancing defined in the machine config operator will be deployed. When set to UserManaged these static pods will not be deployed and it is expected that the load balancer is configured out of band by the deployer. When omitted, this means no opinion and the platform is left to choose a reasonable default. The default value is OpenShiftManagedDefault.
+                                    enum:
+                                      - OpenShiftManagedDefault
+                                      - UserManaged
+                                    type: string
+                                type: object
                               nodeDNSIP:
                                 description: nodeDNSIP is the IP address for the internal
                                   DNS used by the nodes. Unlike the one managed by
