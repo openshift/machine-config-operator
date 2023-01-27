@@ -1,0 +1,25 @@
+[connection]
+id=con bond99
+type=bond
+interface-name=bond99
+autoconnect=true
+autoconnect-priority=98
+connection.autoconnect-slaves=1
+
+[ethernet]
+mtu=1500
+
+[bond]
+mode=802.3ad
+miimon=100
+
+[ipv4]
+method=auto
+may-fail=false
+dhcp-timeout=2147483647
+route-metric=50
+
+[ipv6]
+method=disabled
+may-fail=true
+ra-timeout=2147483647

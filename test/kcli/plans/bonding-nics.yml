@@ -1,0 +1,46 @@
+
+parameters:
+  output_dir: ../_output/test
+
+vm3:
+  image: fedora37
+  numcpus: 2
+  memory: 2048
+  # output logs from following commands can be found in guest path /var/log/cloud-init-output.log
+  cmds:
+  - dnf -y install openvswitch NetworkManager-ovs jq nmstate
+  - systemctl start openvswitch
+  - nmcli connection down "cloud-init eth1"
+  - nmcli connection down "cloud-init eth2"
+  - nmcli connection delete "cloud-init eth1"
+  - nmcli connection delete "cloud-init eth2"
+  - nmcli connection add type ethernet slave-type bond con-name bond99-eth1 ifname eth1 master bond99
+  - nmcli connection add type ethernet slave-type bond con-name bond99-eth2 ifname eth2 master bond99
+  - nmcli connection reload "con bond99"
+  - timeout 30 bash -xc 'until nmcli -g GENERAL.STATE conn show "con bond99" | grep activated; do sleep 1; done'
+  - systemctl restart NetworkManager
+  - /root/configure-ovs.sh OVNKubernetes  > /tmp/configure-ovs-output.txt 2>&1
+  - nmstatectl show > /tmp/nmstate.txt
+  finishfiles:
+  - origin: /tmp/configure-ovs-output.txt
+    path: {{ output_dir }}/configure-ovs-output.txt
+  - origin: /tmp/nmstate.txt
+    path: {{ output_dir }}/nmstate.txt
+  - origin: /var/log/cloud-init-output.log
+    path: {{ output_dir }}/cloud-init-output.log
+  files:
+    - origin: ../_output/configure-ovs.sh
+      path: /root/configure-ovs.sh
+      render: False
+      mode: 755
+    - origin: bond99.nmconnection
+      path: /etc/NetworkManager/system-connections/bond99.nmconnection
+
+  wait: true
+  user: root
+  nets:
+    - default
+    - name: default
+      noconf: true
+    - name: default
+      noconf: true
