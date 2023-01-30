@@ -763,7 +763,7 @@ contents:
       # Managing key files is outside of the scope of this script
 
       # if the interface is of type vmxnet3 add multicast capability for that driver
-      # REMOVEME: Once BZ:1854355 is fixed, this needs to get removed.
+      # History: BZ:1854355 
       function configure_driver_options {
         intf=$1
         if [ ! -f "/sys/class/net/${intf}/device/uevent" ]; then
@@ -772,7 +772,7 @@ contents:
           driver=$(cat "/sys/class/net/${intf}/device/uevent" | grep DRIVER | awk -F "=" '{print $2}')
           echo "Driver name is" $driver
           if [ "$driver" = "vmxnet3" ]; then
-            ifconfig "$intf" allmulti
+            ip link set dev "${intf}" allmulticast on
           fi
         fi
       }
