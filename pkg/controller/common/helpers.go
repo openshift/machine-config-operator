@@ -17,7 +17,6 @@ import (
 	"reflect"
 	"sort"
 	"strings"
-	"text/template"
 
 	"github.com/clarketm/json"
 	fcctbase "github.com/coreos/fcct/base/v0_1"
@@ -1001,40 +1000,6 @@ func GetDefaultBaseImageContainer(cconfigspec *mcfgv1.ControllerConfigSpec) stri
 		return cconfigspec.BaseOSContainerImage
 	}
 	return cconfigspec.OSImageURL
-}
-
-// Configures common template FuncMaps used across all renderers.
-func GetTemplateFuncMap() template.FuncMap {
-	return template.FuncMap{
-		"toString": strval,
-		"indent":   indent,
-	}
-}
-
-// Converts an interface to a string.
-// Copied from: https://github.com/Masterminds/sprig/blob/master/strings.go
-// Copied to remove the dependency on the Masterminds/sprig library.
-func strval(v interface{}) string {
-	switch v := v.(type) {
-	case string:
-		return v
-	case []byte:
-		return string(v)
-	case error:
-		return v.Error()
-	case fmt.Stringer:
-		return v.String()
-	default:
-		return fmt.Sprintf("%v", v)
-	}
-}
-
-// Indents a string n spaces.
-// Copied from: https://github.com/Masterminds/sprig/blob/master/strings.go
-// Copied to remove the dependency on the Masterminds/sprig library.
-func indent(spaces int, v string) string {
-	pad := strings.Repeat(" ", spaces)
-	return pad + strings.ReplaceAll(v, "\n", "\n"+pad)
 }
 
 // ioutil.ReadDir has been deprecated with os.ReadDir.

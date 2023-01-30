@@ -11,6 +11,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/Masterminds/sprig"
 	"github.com/golang/glog"
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/library-go/pkg/cloudprovider"
@@ -305,7 +306,7 @@ func generateMachineConfigForName(config *RenderConfig, role, name, templateDir,
 // renderTemplate renders a template file with values from a RenderConfig
 // returns the rendered file data
 func renderTemplate(config RenderConfig, path string, b []byte) ([]byte, error) {
-	funcs := ctrlcommon.GetTemplateFuncMap()
+	funcs := sprig.TxtFuncMap()
 	funcs["skip"] = skipMissing
 	funcs["cloudProvider"] = cloudProvider
 	funcs["cloudConfigFlag"] = cloudConfigFlag
