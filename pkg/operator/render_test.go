@@ -68,7 +68,7 @@ func TestIPFamilies(t *testing.T) {
 		Output: mcfgv1.IPFamiliesDualStack,
 	}, {
 		Ranges: []string{"2001:db8::/32", "192.168.2.0/20"},
-		Output: mcfgv1.IPFamiliesDualStack,
+		Output: mcfgv1.IPFamiliesDualStackIPv6Primary,
 	}, {
 		Ranges: []string{},
 		Error:  true,

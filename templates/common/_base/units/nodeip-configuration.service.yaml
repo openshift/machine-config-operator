@@ -24,7 +24,7 @@ contents: |
     {{ .Images.baremetalRuntimeCfgImage }} \
     node-ip \
     set \
-    {{if eq .IPFamilies "IPv6" -}}
+    {{if or (eq .IPFamilies "IPv6") (eq .IPFamilies "DualStackIPv6Primary") -}}
     --prefer-ipv6 \
     {{end -}}
     --retry-on-failure \
