@@ -196,10 +196,13 @@ func clusterDNSIP(iprange string) (string, error) {
 }
 
 func ipFamilies(serviceCIDRs []string) (mcfgv1.IPFamiliesType, error) {
-	var ipv4, ipv6 bool
-	for _, cidr := range serviceCIDRs {
+	var ipv4, ipv6, v6primary bool
+	for i, cidr := range serviceCIDRs {
 		if utilnet.IsIPv6CIDRString(cidr) {
 			ipv6 = true
+			if i == 0 {
+				v6primary = true
+			}
 		} else {
 			ipv4 = true
 		}
@@ -207,6 +210,9 @@ func ipFamilies(serviceCIDRs []string) (mcfgv1.IPFamiliesType, error) {
 
 	switch {
 	case ipv4 && ipv6:
+		if v6primary {
+			return mcfgv1.IPFamiliesDualStackIPv6Primary, nil
+		}
 		return mcfgv1.IPFamiliesDualStack, nil
 	case ipv4:
 		return mcfgv1.IPFamiliesIPv4, nil

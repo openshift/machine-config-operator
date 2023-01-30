@@ -31,6 +31,9 @@ contents: |
     {{if not (isOpenShiftManagedDefaultLB .) -}}
     --user-managed-lb \
     {{end -}}
+    {{if or (eq .IPFamilies "IPv6") (eq .IPFamilies "DualStackIPv6Primary") -}}
+    --prefer-ipv6 \
+    {{end -}}
     --retry-on-failure \
     {{ range onPremPlatformAPIServerInternalIPs . }}{{.}} {{end}}; \
     do \
