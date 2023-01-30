@@ -136,24 +136,10 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 				return err
 			}
 		}
-		// The following code updates the CGroups version to "v2"
-		// only if the "TechPreviewNoUpgrade" featureset is enabled
-		if isTechPreviewNoUpgradeEnabled(features) {
-			// updating the machine config resource with the relevant cgroup configuration
-			err := updateMachineConfigwithCgroup(nodeConfig, mc)
-			if err != nil {
-				return err
-			}
-		} else if nodeConfig.Spec.CgroupMode == osev1.CgroupModeV2 {
-			if nodeConfig.Spec.WorkerLatencyProfile == emptyInput {
-				// avoid the unnecessary creation/update of the machine config object (so the reboot)
-				// as the "TechPreviewNoUpgrade" featureSet is not enabled
-				return nil
-			} else if role == ctrlcommon.MachineConfigPoolMaster {
-				// "TechPreviewNoUpgrade" not enabled, "cgroupMode" set to "v2" isn't effective
-				// "WorkerLatencyProfile" is relevant only to the worker mcp and hence returning from here
-				continue
-			}
+		// The following code updates the MC with the relevant CGroups version
+		err = updateMachineConfigwithCgroup(nodeConfig, mc)
+		if err != nil {
+			return err
 		}
 		// Encode the new config into raw JSON
 		cfgIgn, err := kubeletConfigToIgnFile(originalKubeConfig)
@@ -326,24 +312,10 @@ func RunNodeConfigBootstrap(templateDir string, features *osev1.FeatureGate, cco
 			}
 		}
 
-		// The following code updates the CGroups version to "v2"
-		// only if the "TechPreviewNoUpgrade" featureset is enabled
-		if isTechPreviewNoUpgradeEnabled(features) {
-			// updating the machine config resource with the relevant cgroup configuration
-			err := updateMachineConfigwithCgroup(nodeConfig, mc)
-			if err != nil {
-				return nil, err
-			}
-		} else if nodeConfig.Spec.CgroupMode == osev1.CgroupModeV2 {
-			if nodeConfig.Spec.WorkerLatencyProfile == emptyInput {
-				// avoid the unnecessary creation/update of the machine config object (so the reboot)
-				// as the "TechPreviewNoUpgrade" featureSet is not enabled
-				return nil, nil
-			} else if role == ctrlcommon.MachineConfigPoolMaster {
-				// "TechPreviewNoUpgrade" not enabled, "cgroupMode" set to "v2" isn't effective
-				// "WorkerLatencyProfile" is relevant only to the worker mcp
-				continue
-			}
+		// The following code updates the MC with the relevant CGroups version
+		err = updateMachineConfigwithCgroup(nodeConfig, mc)
+		if err != nil {
+			return nil, err
 		}
 		// Encode the new config into raw JSON
 		cfgIgn, err := kubeletConfigToIgnFile(originalKubeConfig)
