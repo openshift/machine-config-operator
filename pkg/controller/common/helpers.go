@@ -57,6 +57,11 @@ func strToPtr(s string) *string {
 	return &s
 }
 
+// bootToPtr converts the input boolean to a pointer to itself
+func boolToPtr(b bool) *bool {
+	return &b
+}
+
 // MergeMachineConfigs combines multiple machineconfig objects into one object.
 // It sorts all the configs in increasing order of their name.
 // It uses the Ignition config from first object as base and appends all the rest.
@@ -95,6 +100,17 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.Contro
 			outIgn = ign3.Merge(outIgn, mergedIgn)
 		}
 	}
+
+	// For file entries without a default overwrite, set it to true
+	// The MCO will always overwrite any files, but Ignition will not,
+	// Causing a difference in behaviour and failures when scaling new nodes into the cluster.
+	// This was a default change from ign spec2->spec3 which users don't often specify.
+	for idx := range outIgn.Storage.Files {
+		if outIgn.Storage.Files[idx].Overwrite == nil {
+			outIgn.Storage.Files[idx].Overwrite = boolToPtr(true)
+		}
+	}
+
 	rawOutIgn, err := json.Marshal(outIgn)
 	if err != nil {
 		return nil, err
