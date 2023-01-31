@@ -11,7 +11,6 @@ import (
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -200,13 +199,24 @@ func TestConfigDriftMonitor(t *testing.T) {
 		},
 	}
 
+	// Create a mutex for our test cases The mutex is needed because we now
+	// overwrite the origParentDirPath and noOrigParentDirPath global variables
+	// so that our filesystem mutations are confined to a tempdir created by the
+	// test case. However, since this is a global value, we need to be sure that
+	// only one testcase can use it at a time. Other than that, the test suite
+	// does a good job of keeping each individual test case isolated in its own
+	// tempdir.
+	testMutex := &sync.Mutex{}
+
 	for _, testCase := range testCases {
+		// Wire up the mutex to each test case before executing so they don't stomp
+		// on each other.
+		testCase.testMutex = testMutex
 		testCase := testCase
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
 			tmpDir := t.TempDir()
-			defer os.RemoveAll(tmpDir)
 
 			testCase.tmpDir = tmpDir
 			testCase.systemdPath = filepath.Join(tmpDir, pathSystemd)
@@ -235,6 +245,8 @@ type configDriftMonitorTestCase struct {
 	mutateUnit func(string) error
 	// The mutation to apply to the systemd dropin file
 	mutateDropin func(string) error
+	// Mutex to ensure that parallel tests do not stomp on one another
+	testMutex *sync.Mutex
 }
 
 // Runs the test case
@@ -310,6 +322,8 @@ func (tc configDriftMonitorTestCase) run(t *testing.T) {
 	// Mutate the filesystem
 	require.Nil(t, tc.mutate(ignConfig))
 
+	// TODO: Figure out a value to make this work on Macs because they take
+	// longer to report the filesystem activity.
 	timeout := 100 * time.Millisecond
 	start := time.Now()
 
@@ -348,6 +362,19 @@ func (tc configDriftMonitorTestCase) run(t *testing.T) {
 	}
 }
 
+// Permissions in CI are a bit more complicated than they are on an end-user
+// machine since we're running in a container with an unknown username and
+// unknown UID / GID. However, the defaults (-1 / -1) seem to work without
+// issue as evidenced by writeFileAtomicallyWithDefaults() being able to write
+// successfully.
+func setDefaultUIDandGID(file ign3types.File) ign3types.File {
+	file.Node.User.Name = nil
+	file.Node.Group.Name = nil
+	file.User.ID = helpers.IntToPtr(-1)
+	file.Group.ID = helpers.IntToPtr(-1)
+	return file
+}
+
 // Creates the Ignition Config test fixture
 func (tc configDriftMonitorTestCase) getIgnConfig(t *testing.T) ign3types.Config {
 	compressedFile, err := helpers.CreateGzippedIgn3File("/etc/a-compressed-file", "thefilecontents", int(defaultFilePermissions))
@@ -359,8 +386,8 @@ func (tc configDriftMonitorTestCase) getIgnConfig(t *testing.T) ign3types.Config
 		},
 		Storage: ign3types.Storage{
 			Files: []ign3types.File{
-				helpers.CreateEncodedIgn3File("/etc/a-config-file", "thefilecontents", int(defaultFilePermissions)),
-				compressedFile,
+				setDefaultUIDandGID(helpers.CreateEncodedIgn3File("/etc/a-config-file", "thefilecontents", int(defaultFilePermissions))),
+				setDefaultUIDandGID(compressedFile),
 			},
 		},
 		Systemd: ign3types.Systemd{
@@ -377,6 +404,13 @@ func (tc configDriftMonitorTestCase) getIgnConfig(t *testing.T) ign3types.Config
 							Name: "20-unittest-service.conf",
 						},
 					},
+				},
+				// Add a masked systemd unit to ensure that we don't inadvertantly drift.
+				// See: https://issues.redhat.com/browse/OCPBUGS-3909
+				{
+					Name:     "mask-and-contents.service",
+					Contents: helpers.StrToPtr("[Unit]\nDescription=Just random content"),
+					Mask:     helpers.BoolToPtr(true),
 				},
 			},
 		},
@@ -413,28 +447,61 @@ func (tc configDriftMonitorTestCase) getFixtures(t *testing.T) (ign3types.Config
 
 	ignConfig := tc.getIgnConfig(t)
 
-	// Prefix all the ignition files with the temp directory and write to disk.
+	// Prefix all the ignition files with the temp directory.
 	for i, file := range ignConfig.Storage.Files {
 		file.Path = filepath.Join(tc.tmpDir, file.Path)
 		ignConfig.Storage.Files[i] = file
-		tc.writeIgn3FileForTest(t, file)
 	}
 
-	// Prefix all the systemd files with the temp dir and write them.
-	for _, unit := range ignConfig.Systemd.Units {
-		unitPath := getIgn3SystemdUnitPath(tc.systemdPath, unit)
-		tc.writeFileForTest(t, unitPath, unit.Contents)
-		for _, dropin := range unit.Dropins {
-			dropinPath := getIgn3SystemdDropinPath(tc.systemdPath, unit, dropin)
-			tc.writeFileForTest(t, dropinPath, dropin.Contents)
-		}
-	}
+	// Separate the disk write process so that we can be sure that the deferred
+	// functions are run even when we encounter an error.
+	require.NoError(t, tc.writeIgnitionConfig(t, ignConfig))
 
 	// Create a MachineConfig from our Ignition Config
 	mc := helpers.CreateMachineConfigFromIgnition(ignConfig)
 	mc.Name = "config-drift-monitor" + string(uuid.NewUUID())
 
 	return ignConfig, mc
+}
+
+// This needs to be a pointer receiver so we can lock / unlock the mutex.
+func (tc *configDriftMonitorTestCase) writeIgnitionConfig(t *testing.T, ignConfig ign3types.Config) error {
+	t.Helper()
+
+	// This is the only place where this mutex is used throughout this test
+	// suite. We need a mutex because the origParentDirPath and
+	// noOrigParentDirPath variables are global and our individual test cases
+	// execute in parallel.
+	tc.testMutex.Lock()
+	defer tc.testMutex.Unlock()
+
+	// For the purposes of our test, we want all of our filesystem mutations to
+	// be contained within our test temp dir. With this in mind, we temporarily
+	// override these globals with our temp dir.
+	globals := map[string]*string{
+		"usrPath":             &usrPath,
+		"origParentDirPath":   &origParentDirPath,
+		"noOrigParentDirPath": &noOrigParentDirPath,
+	}
+
+	for name := range globals {
+		cleanup := helpers.OverrideGlobalPathVar(t, name, globals[name])
+		defer cleanup()
+	}
+
+	// Write files the same way the MCD does.
+	// NOTE: We manually handle the errors here because using require.Nil or
+	// require.NoError will skip the deferred functions, which is undesirable.
+	if err := writeFiles(ignConfig.Storage.Files); err != nil {
+		return fmt.Errorf("could not write ignition config files: %w", err)
+	}
+
+	// Write systemd units the same way the MCD does.
+	if err := writeUnits(ignConfig.Systemd.Units, tc.systemdPath, true); err != nil {
+		return fmt.Errorf("could not write systemd units: %w", err)
+	}
+
+	return nil
 }
 
 func (tc configDriftMonitorTestCase) onDriftFunc(t *testing.T, err error) {
@@ -459,24 +526,4 @@ func (tc configDriftMonitorTestCase) onDriftFunc(t *testing.T, err error) {
 	if errors.As(tc.expectedErr, &uErr) {
 		assert.ErrorAs(t, err, &uErr)
 	}
-}
-
-func (tc configDriftMonitorTestCase) writeIgn3FileForTest(t *testing.T, file ign3types.File) {
-	t.Helper()
-
-	decodedContents, err := ctrlcommon.DecodeIgnitionFileContents(file.Contents.Source, file.Contents.Compression)
-	require.Nil(t, err)
-
-	require.Nil(t, writeFileAtomicallyWithDefaults(file.Path, decodedContents))
-}
-
-func (tc configDriftMonitorTestCase) writeFileForTest(t *testing.T, path string, contents *string) {
-	t.Helper()
-
-	out := ""
-	if contents != nil {
-		out = *contents
-	}
-
-	require.Nil(t, writeFileAtomicallyWithDefaults(path, []byte(out)))
 }

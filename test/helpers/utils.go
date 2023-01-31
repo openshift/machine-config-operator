@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -556,6 +557,31 @@ func AssertNodeReboot(t *testing.T, cs *framework.ClientSet, node corev1.Node, i
 func AssertNodeNotReboot(t *testing.T, cs *framework.ClientSet, node corev1.Node, initialUptime float64) bool {
 	current := GetNodeUptime(t, cs, node)
 	return assert.Greater(t, current, initialUptime, "node %s rebooted unexpectedly; initial uptime: %d, current uptime: %d", node.Name, initialUptime, current)
+}
+
+// Overrides a global path variable by appending its original value onto a
+// tempdir created by t.TempDir(). Returns a function that reverts it back. If
+// you wanted to override the origParentDirPath, you would do something like
+// this:
+//
+// cleanupFunc := OverrideGlobalPathVar(t, "origParentDirPath", &origParentDirPath)
+// defer cleanupFunc()
+//
+// NOTE: testing.T will clean up any tempdirs it creates after each test, so
+// there is no need to do something like defer os.RemoveAll().
+func OverrideGlobalPathVar(t *testing.T, name string, val *string) func() {
+	oldValue := *val
+
+	newValue := filepath.Join(t.TempDir(), oldValue)
+
+	*val = newValue
+
+	t.Logf("original value of %s (%s) overridden with %s", name, oldValue, newValue)
+
+	return func() {
+		t.Logf("original value of %s restored to %s", name, oldValue)
+		*val = oldValue
+	}
 }
 
 func mcdForNode(cs *framework.ClientSet, node *corev1.Node) (*corev1.Pod, error) {
