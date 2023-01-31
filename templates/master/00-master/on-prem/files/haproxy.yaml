@@ -34,8 +34,7 @@ contents:
         - "/bin/bash"
         - "-c"
         - |
-          #/bin/bash
-          /host/bin/oc --kubeconfig /var/lib/kubelet/kubeconfig get nodes
+          /usr/bin/curl -o /dev/null -kLfs https://api-int.{{ .DNS.Spec.BaseDomain }}:6443/healthz
         resources: {}
         volumeMounts:
         - name: chroot-host
