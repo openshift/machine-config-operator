@@ -77,7 +77,8 @@ spec:
       rules:
         - alert: MCDPivotError
           expr: |
-            max by(namespace, node, pod) (increase(mcd_pivot_errors_total[15m])) > 0
+            mcd_pivot_errors_total > 0
+          for: 2m
           labels:
             namespace: openshift-machine-config-operator
             severity: warning
