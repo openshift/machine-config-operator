@@ -1,6 +1,8 @@
 package osrelease
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/ashcrow/osrelease"
@@ -15,7 +17,6 @@ const (
 // OS IDs
 const (
 	coreos string = "coreos"
-	fcos   string = "fcos"
 	fedora string = "fedora"
 	rhcos  string = "rhcos"
 	scos   string = "scos"
@@ -30,6 +31,29 @@ type OperatingSystem struct {
 	variantID string
 	// version is the VERSION, RHEL_VERSION, or VERSION_ID field from the os-release
 	version string
+	// osrelease is the underlying struct from github.com/ashcrow/osrelease
+	osrelease osrelease.OSRelease
+}
+
+func newOperatingSystem(etcPath, libPath string) (OperatingSystem, error) {
+	ret := OperatingSystem{}
+
+	or, err := osrelease.NewWithOverrides(etcPath, libPath)
+	if err != nil {
+		return ret, err
+	}
+
+	ret.id = or.ID
+	ret.variantID = or.VARIANT_ID
+	ret.version = getOSVersion(or)
+	ret.osrelease = or
+
+	return ret, nil
+}
+
+// Returns the underlying OSRelease struct if additional parameters are needed.
+func (os OperatingSystem) OSRelease() osrelease.OSRelease {
+	return os.osrelease
 }
 
 // IsEL is true if the OS is an Enterprise Linux variant,
@@ -78,24 +102,34 @@ func (os OperatingSystem) ToPrometheusLabel() string {
 
 // GetHostRunningOS reads os-release to generate the OperatingSystem data.
 func GetHostRunningOS() (OperatingSystem, error) {
-	return GetNodeRunningOS(EtcOSReleasePath, LibOSReleasePath)
+	return newOperatingSystem(EtcOSReleasePath, LibOSReleasePath)
 }
 
-func GetNodeRunningOS(etcPath, libPath string) (OperatingSystem, error) {
-	ret := OperatingSystem{}
-
-	or, err := osrelease.NewWithOverrides(etcPath, libPath)
+// Generates the OperatingSystem data from strings which contain the desired
+// content. Mostly useful for testing purposes.
+func LoadOSRelease(etcOSReleaseContent, libOSReleaseContent string) (OperatingSystem, error) {
+	tempDir, err := os.MkdirTemp("", "")
 	if err != nil {
-		return ret, err
+		return OperatingSystem{}, err
 	}
 
-	ret.id = or.ID
-	ret.variantID = or.VARIANT_ID
-	ret.version = getOSVersion(or)
+	defer os.RemoveAll(tempDir)
 
-	return ret, nil
+	etcOSReleasePath := filepath.Join(tempDir, "etc-os-release")
+	libOSReleasePath := filepath.Join(tempDir, "lib-os-release")
+
+	if err := os.WriteFile(etcOSReleasePath, []byte(etcOSReleaseContent), 0o644); err != nil {
+		return OperatingSystem{}, err
+	}
+
+	if err := os.WriteFile(libOSReleasePath, []byte(libOSReleaseContent), 0o644); err != nil {
+		return OperatingSystem{}, err
+	}
+
+	return newOperatingSystem(etcOSReleasePath, libOSReleasePath)
 }
 
+// Determines the OS version based upon the contents of the RHEL_VERSION, VERSION or VERSION_ID fields.
 func getOSVersion(or osrelease.OSRelease) string {
 	// If we have the RHEL_VERSION field, we should use that value instead.
 	if rhelVersion, ok := or.ADDITIONAL_FIELDS["RHEL_VERSION"]; ok {

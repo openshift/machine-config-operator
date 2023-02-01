@@ -1,8 +1,6 @@
 package osrelease
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -206,16 +204,7 @@ OSTREE_VERSION='37.20230126.20.0'`
 		testCase := testCase
 		t.Run(testCase.Name, func(t *testing.T) {
 			t.Parallel()
-
-			tempDir := t.TempDir()
-
-			etcOSReleasePath := filepath.Join(tempDir, "etc-os-release")
-			libOSReleasePath := filepath.Join(tempDir, "lib-os-release")
-
-			require.NoError(t, os.WriteFile(etcOSReleasePath, []byte(testCase.OSReleaseContents), 0644))
-			require.NoError(t, os.WriteFile(libOSReleasePath, []byte(testCase.OSReleaseContents), 0644))
-
-			osRelease, err := GetNodeRunningOS(etcOSReleasePath, libOSReleasePath)
+			os, err := LoadOSRelease(testCase.OSReleaseContents, testCase.OSReleaseContents)
 			require.NoError(t, err)
 
 			assert.Equal(t, testCase.IsEL, os.IsEL(), "expected IsEL() to be %v", testCase.IsEL)
