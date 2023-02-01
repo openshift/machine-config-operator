@@ -306,6 +306,8 @@ func getFilePathsFromMachineConfig(mc *mcfgv1.MachineConfig, systemdPath string)
 }
 
 // Extracts all unique directories from a given Ignition 3 config.
+//
+//nolint:dupl
 func getFilePathsFromIgn3Config(ignConfig ign3types.Config, systemdPath string) sets.Set[string] {
 	files := sets.Set[string]{}
 
@@ -335,6 +337,8 @@ func getFilePathsFromIgn3Config(ignConfig ign3types.Config, systemdPath string) 
 }
 
 // Extracts all unique directories from a given Ignition 2 config.
+//
+//nolint:dupl
 func getFilePathsFromIgn2Config(ignConfig ign2types.Config, systemdPath string) sets.Set[string] {
 	files := sets.Set[string]{}
 
