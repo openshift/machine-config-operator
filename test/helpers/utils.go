@@ -17,6 +17,7 @@ import (
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
+	"github.com/openshift/machine-config-operator/pkg/daemon/osrelease"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -581,6 +582,31 @@ func OverrideGlobalPathVar(t *testing.T, name string, val *string) func() {
 	return func() {
 		t.Logf("original value of %s restored to %s", name, oldValue)
 		*val = oldValue
+	}
+}
+
+type NodeOSRelease struct {
+	// The contents of the /etc/os-release file
+	EtcContent string
+	// The contents of the /usr/lib/os-release file
+	LibContent string
+	// The parsed contents
+	OS osrelease.OperatingSystem
+}
+
+// Retrieves the /etc/os-release and /usr/lib/os-release file contents on a
+// given node and parses it through the OperatingSystem code.
+func GetOSReleaseForNode(t *testing.T, cs *framework.ClientSet, node corev1.Node) NodeOSRelease {
+	etcOSReleaseContent := ExecCmdOnNode(t, cs, node, "cat", filepath.Join("/rootfs", osrelease.EtcOSReleasePath))
+	libOSReleaseContent := ExecCmdOnNode(t, cs, node, "cat", filepath.Join("/rootfs", osrelease.LibOSReleasePath))
+
+	os, err := osrelease.LoadOSRelease(etcOSReleaseContent, libOSReleaseContent)
+	require.NoError(t, err)
+
+	return NodeOSRelease{
+		EtcContent: etcOSReleaseContent,
+		LibContent: libOSReleaseContent,
+		OS:         os,
 	}
 }
 
