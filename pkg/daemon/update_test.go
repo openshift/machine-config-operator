@@ -16,6 +16,7 @@ import (
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/daemon/osrelease"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -29,7 +30,7 @@ func newMockDaemon() Daemon {
 	return Daemon{
 		mock:             true,
 		name:             "nodeName",
-		os:               OperatingSystem{},
+		os:               osrelease.OperatingSystem{},
 		kubeClient:       k8sfake.NewSimpleClientset(),
 		bootedOSImageURL: "test",
 	}

@@ -11,6 +11,7 @@ import (
 	_ "crypto/sha256"
 
 	"github.com/golang/glog"
+	"github.com/openshift/machine-config-operator/pkg/daemon/osrelease"
 	"github.com/openshift/machine-config-operator/pkg/daemon/pivot/types"
 )
 
@@ -29,7 +30,7 @@ var tuneableRHCOSArgsAllowlist = map[string]bool{
 
 // isArgTuneable returns if the argument provided is allowed to be modified
 func isArgTunable(arg string) (bool, error) {
-	os, err := GetHostRunningOS()
+	os, err := osrelease.GetHostRunningOS()
 	if err != nil {
 		return false, fmt.Errorf("failed to get OS for determining whether kernel arg is tuneable: %w", err)
 	}
