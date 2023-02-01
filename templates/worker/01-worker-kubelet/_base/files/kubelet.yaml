@@ -27,6 +27,9 @@ contents:
       APIPriorityAndFairness: true
       RotateKubeletServerCertificate: true
       DownwardAPIHugePages: true
+      OpenShiftPodSecurityAdmission: true
+      RetroactiveDefaultStorageClass: false
+      RotateKubeletServerCertificate: true
     serverTLSBootstrap: true
     tlsMinVersion: VersionTLS12
     tlsCipherSuites:
