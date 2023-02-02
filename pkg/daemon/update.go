@@ -1304,6 +1304,7 @@ func (dn *Daemon) isPathInDropins(path string, systemd *ign3types.Systemd) bool 
 // all the files, units that are present in the old config but not in the new one.
 // this function will error out if it fails to delete a file (with the exception
 // of simply warning if the error is ENOENT since that's the desired state).
+//
 //nolint:gocyclo
 func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig ign3types.Config) error {
 	glog.Info("Deleting stale data")

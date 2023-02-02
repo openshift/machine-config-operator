@@ -56,7 +56,9 @@ func TestKubeletConfigMaxPods(t *testing.T) {
 // sure the node rolled back as expected
 // testName is a string to identify the objects created (MCP, MC, kubeletConfig)
 // regex key is the searching critera in the kubelet.conf. It is expected that a single field is in a capture group, and this field
-//   should equal expectedConfValue upon update
+//
+//	should equal expectedConfValue upon update
+//
 // kc1 and kc2 are the kubelet configs to update to and rollback from
 func runTestWithKubeletCfg(t *testing.T, testName, regexKey, expectedConfVal1, expectedConfVal2 string, kc1, kc2 *mcfgv1.KubeletConfig) {
 	cs := framework.NewClientSet("")

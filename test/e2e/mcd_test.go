@@ -558,7 +558,7 @@ func TestReconcileAfterBadMC(t *testing.T) {
 	ignCfg, err := ctrlcommon.ParseAndConvertConfig(mcadd.Spec.Config.Raw)
 	require.Nil(t, err, "failed to parse ignition config")
 	ignCfg.Storage.Disks = []ign3types.Disk{
-		ign3types.Disk{
+		{
 			Device: "/one",
 		},
 	}

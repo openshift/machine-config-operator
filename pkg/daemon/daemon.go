@@ -1428,6 +1428,7 @@ func removeIgnitionArtifacts() error {
 // the daemon took over.
 //
 // Some more background in this PR: https://github.com/openshift/machine-config-operator/pull/245
+//
 //nolint:gocyclo
 func (dn *Daemon) checkStateOnFirstRun() error {
 	node, err := dn.loadNodeAnnotations(dn.node)

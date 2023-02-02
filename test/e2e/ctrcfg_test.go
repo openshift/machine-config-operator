@@ -49,7 +49,9 @@ func TestContainerRuntimeConfigLogLevel(t *testing.T) {
 // sure the node rolled back as expected
 // testName is a string to identify the objects created (MCP, MC, ctrcfg)
 // regex key is the searching critera in the crio.conf. It is expected that a single field is in a capture group, and this field
-//   should equal expectedConfValue upon update
+//
+//	should equal expectedConfValue upon update
+//
 // cfg is the ctrcfg config to update to and rollback from
 func runTestWithCtrcfg(t *testing.T, testName, regexKey, expectedConfVal1, expectedConfVal2 string, cfg1, cfg2 *mcfgv1.ContainerRuntimeConfig) {
 	cs := framework.NewClientSet("")

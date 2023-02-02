@@ -461,6 +461,7 @@ func (ctrl *Controller) addAnnotation(cfg *mcfgv1.KubeletConfig, annotationKey, 
 
 // syncKubeletConfig will sync the kubeletconfig with the given key.
 // This function is not meant to be invoked concurrently with the same key.
+//
 //nolint:gocyclo
 func (ctrl *Controller) syncKubeletConfig(key string) error {
 	startTime := time.Now()
