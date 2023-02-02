@@ -7,7 +7,15 @@ contents:
     # This file is not needed anymore in 4.7+, but when rolling back to 4.6
     # the ovs pod needs it to know ovs is running on the host.
     touch /var/run/ovs-config-executed
-    NM_CONN_PATH="/etc/NetworkManager/system-connections"
+
+    # These are well knwon NM default paths
+    NM_CONN_ETC_PATH="/etc/NetworkManager/system-connections"
+    NM_CONN_RUN_PATH="/run/NetworkManager/system-connections"
+
+    # This is the path where NM is known to be configured to store user keyfiles 
+    NM_CONN_CONF_PATH="$NM_CONN_ETC_PATH"
+    # This is where we want our keyfiles to finally reside
+    NM_CONN_SET_PATH="${NM_CONN_SET_PATH:-$NM_CONN_RUN_PATH}"
 
     # this flag tracks if any config change was made
     nm_config_changed=0
@@ -36,18 +44,42 @@ contents:
       done
     }
 
-    update_nm_conn_files() {
-      bridge_name=${1}
-      port_name=${2}
+    update_nm_conn_files_base() {
+      base_path=${1}
+      bridge_name=${2}
+      port_name=${3}
       ovs_port="ovs-port-${bridge_name}"
       ovs_interface="ovs-if-${bridge_name}"
       default_port_name="ovs-port-${port_name}" # ovs-port-phys0
       bridge_interface_name="ovs-if-${port_name}" # ovs-if-phys0
       # In RHEL7 files in /{etc,run}/NetworkManager/system-connections end without the suffix '.nmconnection', whereas in RHCOS they end with the suffix.
-      MANAGED_NM_CONN_FILES=($(echo "${NM_CONN_PATH}"/{"$bridge_name","$ovs_interface","$ovs_port","$bridge_interface_name","$default_port_name"}{,.nmconnection}))
+      MANAGED_NM_CONN_FILES=($(echo "${base_path}"/{"$bridge_name","$ovs_interface","$ovs_port","$bridge_interface_name","$default_port_name"}{,.nmconnection}))
       shopt -s nullglob
-      MANAGED_NM_CONN_FILES+=(${NM_CONN_PATH}/*${MANAGED_NM_CONN_SUFFIX}.nmconnection ${NM_CONN_PATH}/*${MANAGED_NM_CONN_SUFFIX})
+      MANAGED_NM_CONN_FILES+=(${base_path}/*${MANAGED_NM_CONN_SUFFIX}.nmconnection ${base_path}/*${MANAGED_NM_CONN_SUFFIX})
       shopt -u nullglob
+    }
+
+    update_nm_conn_conf_files() {
+      update_nm_conn_files_base "${NM_CONN_CONF_PATH}" "${1}" "${2}"
+    }
+
+    update_nm_conn_set_files() {
+      update_nm_conn_files_base "${NM_CONN_SET_PATH}" "${1}" "${2}"
+    }
+
+    # Move and reload keyfiles at their final destination
+    set_nm_conn_files() {
+      if [ "$NM_CONN_CONF_PATH" != "$NM_CONN_SET_PATH" ]; then
+        update_nm_conn_conf_files br-ex phys0
+        copy_nm_conn_files "$NM_CONN_SET_PATH"
+        rm_nm_conn_files
+        update_nm_conn_conf_files br-ex1 phys1
+        copy_nm_conn_files "$NM_CONN_SET_PATH"
+        rm_nm_conn_files
+
+        # reload keyfiles
+        nmcli connection reload
+      fi
     }
 
     # Used to remove files managed by configure-ovs
@@ -184,7 +216,7 @@ contents:
 
       extra_phys_args=()
       # check if this interface is a vlan, bond, team, or ethernet type
-      if [ $(nmcli --get-values connection.type conn show ${old_conn}) == "vlan" ]; then
+      if [ "$(nmcli --get-values connection.type conn show ${old_conn})" == "vlan" ]; then
         iface_type=vlan
         vlan_id=$(nmcli --get-values vlan.id conn show ${old_conn})
         if [ -z "$vlan_id" ]; then
@@ -197,7 +229,7 @@ contents:
           exit 1
         fi
         extra_phys_args=( dev "${vlan_parent}" id "${vlan_id}" )
-      elif [ $(nmcli --get-values connection.type conn show ${old_conn}) == "bond" ]; then
+      elif [ "$(nmcli --get-values connection.type conn show ${old_conn})" == "bond" ]; then
         iface_type=bond
         # check bond options
         bond_opts=$(nmcli --get-values bond.options conn show ${old_conn})
@@ -209,7 +241,7 @@ contents:
             clone_mac=0
           fi
         fi
-      elif [ $(nmcli --get-values connection.type conn show ${old_conn}) == "team" ]; then
+      elif [ "$(nmcli --get-values connection.type conn show ${old_conn})" == "team" ]; then
         iface_type=team
         # check team config options
         team_config_opts=$(nmcli --get-values team.config -e no conn show ${old_conn})
@@ -274,7 +306,7 @@ contents:
           # prefer cloning vs copying the connection file to avoid problems with selinux
           nmcli conn clone "${old_conn}" "${ovs_interface}"
           shopt -s nullglob
-          new_conn_files=(${NM_CONN_PATH}/"${ovs_interface}"*)
+          new_conn_files=(${NM_CONN_CONF_PATH}/"${ovs_interface}"*)
           shopt -u nullglob
           if [ ${#new_conn_files[@]} -ne 1 ] || [ ! -f "${new_conn_files[0]}" ]; then
             echo "ERROR: could not find ${ovs_interface} conn file after cloning from ${old_conn}"
@@ -340,7 +372,6 @@ contents:
       fi
 
       configure_driver_options "${iface}"
-      update_nm_conn_files "$bridge_name" "$port_name"
     }
 
     # Used to remove a bridge
@@ -348,9 +379,10 @@ contents:
       bridge_name=${1}
       port_name=${2}
 
-      # Reload configuration, after reload the preferred connection profile
-      # should be auto-activated
-      update_nm_conn_files ${bridge_name} ${port_name}
+      # Remove the keyfiles from known configuration paths
+      update_nm_conn_conf_files ${bridge_name} ${port_name}
+      rm_nm_conn_files
+      update_nm_conn_set_files ${bridge_name} ${port_name}
       rm_nm_conn_files
 
       # NetworkManager will not remove ${bridge_name} if it has the patch port created by ovn-kubernetes
@@ -393,7 +425,7 @@ contents:
         if [[ "$connected_state" =~ "disconnected" ]]; then
           # keep track if a profile by the same name as the device existed 
           # before we attempt activation
-          local named_profile_existed=$([ -f "${NM_CONN_PATH}/${dev}" ] || [ -f "${NM_CONN_PATH}/${dev}.nmconnection" ] && echo "yes")
+          local named_profile_existed=$([ -f "${NM_CONN_CONF_PATH}/${dev}" ] || [ -f "${NM_CONN_CONF_PATH}/${dev}.nmconnection" ] && echo "yes")
           
           for i in {1..10}; do
               echo "Attempt $i to connect device $dev"
@@ -404,9 +436,8 @@ contents:
           # if a profile did not exist before but does now, it was generated
           # but we want it to be ephemeral, so move it back to /run
           if [ ! "$named_profile_existed" = "yes" ]; then
-            local dst="/run/NetworkManager/system-connections/"
-            MANAGED_NM_CONN_FILES=("${NM_CONN_PATH}/${dev}" "${NM_CONN_PATH}/${dev}.nmconnection")
-            copy_nm_conn_files "${dst}"
+            MANAGED_NM_CONN_FILES=("${NM_CONN_CONF_PATH}/${dev}" "${NM_CONN_CONF_PATH}/${dev}.nmconnection")
+            copy_nm_conn_files "${NM_CONN_RUN_PATH}"
             rm_nm_conn_files
             # reload profiles so that NM notices that some might have been moved
             nmcli connection reload
@@ -727,9 +758,9 @@ contents:
 
       # copy configuration to tmp
       dir=$(mktemp -d -t "configure-ovs-$(date +%Y-%m-%d-%H-%M-%S)-XXXXXXXXXX")
-      update_nm_conn_files br-ex phys0
+      update_nm_conn_conf_files br-ex phys0
       copy_nm_conn_files "$dir"
-      update_nm_conn_files br-ex1 phys1
+      update_nm_conn_conf_files br-ex1 phys1
       copy_nm_conn_files "$dir"
       echo "Copied OVS configuration to $dir for troubleshooting"
 
@@ -741,6 +772,12 @@ contents:
       exit $e
     }
     trap "handle_exit" EXIT
+
+    # Check that we are provided a valid NM connection path
+    if [ "$NM_CONN_SET_PATH" != "$NM_CONN_CONF_PATH" ] && [ "$NM_CONN_SET_PATH" != "$NM_CONN_RUN_PATH" ]; then
+      echo "Error: Incorrect NM connection path: $NM_CONN_SET_PATH is not $NM_CONN_CONF_PATH nor $NM_CONN_RUN_PATH"
+      exit 1
+    fi
 
     # Clean up old config on behalf of mtu-migration
     if [ ! -f /etc/cno/mtu-migration/config ]; then
@@ -848,8 +885,7 @@ contents:
 
       # Check if we need to remove the second bridge
       if [ ! -f "$extra_bridge_file" ] && (nmcli connection show br-ex1 &> /dev/null || nmcli connection show ovs-if-phys1 &> /dev/null); then
-        update_nm_conn_files br-ex1 phys1
-        rm_nm_conn_files
+        remove_ovn_bridges br-ex1 phys1
       fi
 
       # Remove bridges created by openshift-sdn
@@ -880,6 +916,7 @@ contents:
       fi
       activate_nm_connections "${connections[@]}"
       try_to_bind_ipv6_address
+      set_nm_conn_files
     elif [ "$1" == "OpenShiftSDN" ]; then
       # Revert changes made by /usr/local/bin/configure-ovs.sh during SDN migration.
       rollback_nm
