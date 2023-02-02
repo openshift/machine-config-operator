@@ -31,6 +31,7 @@ import (
 	"k8s.io/client-go/util/retry"
 
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
@@ -382,6 +383,28 @@ func CreateMCP(t *testing.T, cs *framework.ClientSet, mcpName string) func() {
 	}
 }
 
+type SSHPaths struct {
+	// The path where SSH keys are expected to be found.
+	Expected string
+	// The path where SSH keys are *not* expected to be found.
+	NotExpected string
+}
+
+// Determines where to expect SSH keys for the core user on a given node based upon the node's OS.
+func GetSSHPaths(os osrelease.OperatingSystem) SSHPaths {
+	if os.IsEL9() || os.IsSCOS() || os.IsFCOS() {
+		return SSHPaths{
+			Expected:    constants.RHCOS9SSHKeyPath,
+			NotExpected: constants.RHCOS8SSHKeyPath,
+		}
+	}
+
+	return SSHPaths{
+		Expected:    constants.RHCOS8SSHKeyPath,
+		NotExpected: constants.RHCOS9SSHKeyPath,
+	}
+}
+
 // MCPNameToRole converts a mcpName to a node role label
 func MCPNameToRole(mcpName string) string {
 	return fmt.Sprintf("node-role.kubernetes.io/%s", mcpName)
@@ -392,23 +415,87 @@ func CreateMC(name, role string) *mcfgv1.MachineConfig {
 	return NewMachineConfig(name, MCLabelForRole(role), "", nil)
 }
 
+// Asserts that a given file is present on the underlying node.
+func AssertFileOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, path string) bool {
+	t.Helper()
+
+	path = canonicalizeNodeFilePath(path)
+
+	out, err := ExecCmdOnNodeWithError(cs, node, "stat", path)
+
+	return assert.NoError(t, err, "expected to find file %s on %s, got:\n%s\nError: %s", path, node.Name, out, err)
+}
+
+// Asserts that a given file is *not* present on the underlying node.
+func AssertFileNotOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, path string) bool {
+	t.Helper()
+
+	path = canonicalizeNodeFilePath(path)
+
+	out, err := ExecCmdOnNodeWithError(cs, node, "stat", path)
+
+	return assert.Error(t, err, "expected not to find file %s on %s, got:\n%s", path, node.Name, out) &&
+		assert.Contains(t, out, "No such file or directory", "expected command output to contain 'No such file or directory', got: %s", out)
+}
+
+// Adds the /rootfs onto a given file path, if not already present.
+func canonicalizeNodeFilePath(path string) string {
+	rootfs := "/rootfs"
+
+	if !strings.HasPrefix(path, rootfs) {
+		return filepath.Join(rootfs, path)
+	}
+
+	return path
+}
+
 // ExecCmdOnNode finds a node's mcd, and oc rsh's into it to execute a command on the node
 // all commands should use /rootfs as root
 func ExecCmdOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, subArgs ...string) string {
+	t.Helper()
+
+	cmd, err := execCmdOnNode(cs, node, subArgs...)
+	require.Nil(t, err, "could not prepare to exec cmd %v on node %s: %s", subArgs, node.Name, err)
+	cmd.Stderr = os.Stderr
+
+	out, err := cmd.Output()
+	require.Nil(t, err, "failed to exec cmd %v on node %s: %s", subArgs, node.Name, string(out))
+	return string(out)
+}
+
+// ExecCmdOnNodeWithError behaves like ExecCmdOnNode, with the exception that
+// any errors are returned to the caller for inspection. This allows one to
+// execute a command that is expected to fail; e.g., stat /nonexistant/file.
+func ExecCmdOnNodeWithError(cs *framework.ClientSet, node corev1.Node, subArgs ...string) (string, error) {
+	cmd, err := execCmdOnNode(cs, node, subArgs...)
+	if err != nil {
+		return "", err
+	}
+
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
+// ExecCmdOnNode finds a node's mcd, and oc rsh's into it to execute a command on the node
+// all commands should use /rootfs as root
+func execCmdOnNode(cs *framework.ClientSet, node corev1.Node, subArgs ...string) (*exec.Cmd, error) {
 	// Check for an oc binary in $PATH.
 	path, err := exec.LookPath("oc")
 	if err != nil {
-		t.Fatalf("could not locate oc command: %s", err)
+		return nil, fmt.Errorf("could not locate oc command: %w", err)
 	}
 
 	// Get the kubeconfig file path
 	kubeconfig, err := cs.GetKubeconfig()
 	if err != nil {
-		t.Fatalf("could not get kubeconfig: %s", err)
+		return nil, fmt.Errorf("could not get kubeconfig: %w", err)
 	}
 
 	mcd, err := mcdForNode(cs, &node)
-	require.Nil(t, err)
+	if err != nil {
+		return nil, fmt.Errorf("could not get MCD for node %s: %w", node.Name, err)
+	}
+
 	mcdName := mcd.ObjectMeta.Name
 
 	entryPoint := path
@@ -423,23 +510,19 @@ func ExecCmdOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, subA
 	// $KUBECONFIG, oc will be unaware of it. To remedy, we explicitly set
 	// KUBECONFIG to the value held by the clientset.
 	cmd.Env = append(cmd.Env, "KUBECONFIG="+kubeconfig)
-	cmd.Stderr = os.Stderr
-
-	out, err := cmd.Output()
-	require.Nil(t, err, "failed to exec cmd %v on node %s: %s", subArgs, node.Name, string(out))
-	return string(out)
+	return cmd, nil
 }
 
-// IsOKDCluster checks whether the Upstream field on the CV spec references OKD's update server
+// IsOKDCluster checks whether the Upstream field on the CV spec references an OKD release controller
 func IsOKDCluster(cs *framework.ClientSet) (bool, error) {
 	cv, err := cs.ClusterVersions().Get(context.TODO(), "version", metav1.GetOptions{})
 	if err != nil {
 		return false, err
 	}
-	if cv.Spec.Upstream == "https://origin-release.svc.ci.openshift.org/graph" {
-		return true, nil
-	}
-	return false, nil
+
+	// TODO: Adjust this as OKD becomes available for different platforms, e.g., arm64.
+	okdReleaseControllers := sets.NewString("https://amd64.origin.releases.ci.openshift.org/graph")
+	return okdReleaseControllers.Has(string(cv.Spec.Upstream)), nil
 }
 
 func MCLabelForRole(role string) map[string]string {
