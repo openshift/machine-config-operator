@@ -3,6 +3,7 @@ package e2e_sno_test
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -246,6 +247,7 @@ func TestExtensions(t *testing.T) {
 	t.Logf("Node %s has successfully rolled back", node.Name)
 }
 
+// TODO: Can this test be moved to e2e-shared since it is very similar to the one in e2e/mcd_test.go?
 func TestNoReboot(t *testing.T) {
 	cs := framework.NewClientSet("")
 
@@ -259,14 +261,34 @@ func TestNoReboot(t *testing.T) {
 	oldTime := strings.Split(output, " ")[0]
 	t.Logf("Node %s initial uptime: %s", node.Name, oldTime)
 
+	sshKeyContent := "test adding authorized key without node reboot"
+
+	nodeOS := helpers.GetOSReleaseForNode(t, cs, node).OS
+
+	sshPaths := helpers.GetSSHPaths(nodeOS)
+
+	t.Logf("Expecting SSH keys to be in %s", sshPaths.Expected)
+
+	if sshPaths.Expected == constants.RHCOS9SSHKeyPath {
+		// Write an SSH key to the old location on the node because the update process should remove this file.
+		t.Logf("Writing SSH key to %s to ensure that it will be removed later", sshPaths.NotExpected)
+		bashCmd := fmt.Sprintf("printf '%s' > %s", sshKeyContent, filepath.Join("/rootfs", sshPaths.NotExpected))
+		helpers.ExecCmdOnNode(t, cs, node, "/bin/bash", "-c", bashCmd)
+	}
+
+	// Delete the expected SSH keys directory to ensure that the directories are
+	// (re)created correctly by the MCD. This targets the upgrade case where that
+	// directory may not previously exist.
+	helpers.ExecCmdOnNode(t, cs, node, "rm", "-rf", filepath.Join("/rootfs", filepath.Dir(sshPaths.Expected)))
+
 	// Adding authorized key for user core
 	testIgnConfig := ctrlcommon.NewIgnConfig()
-	testSSHKey := ign3types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"test adding authorized key without node reboot"}}
+	testSSHKey := ign3types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{ign3types.SSHAuthorizedKey(sshKeyContent)}}
 	testIgnConfig.Passwd.Users = append(testIgnConfig.Passwd.Users, testSSHKey)
 
 	addAuthorizedKey := &mcfgv1.MachineConfig{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:   fmt.Sprintf("authorzied-key-%s", uuid.NewUUID()),
+			Name:   fmt.Sprintf("authorized-key-%s", uuid.NewUUID()),
 			Labels: helpers.MCLabelForRole("master"),
 		},
 		Spec: mcfgv1.MachineConfigSpec{
@@ -292,8 +314,13 @@ func TestNoReboot(t *testing.T) {
 	assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
 	assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
 
-	foundSSHKey := helpers.ExecCmdOnNode(t, cs, node, "cat", "/rootfs/home/core/.ssh/authorized_keys")
-	if !strings.Contains(foundSSHKey, "test adding authorized key without node reboot") {
+	t.Logf("Expecting SSH keys to be in %s", sshPaths.Expected)
+
+	helpers.AssertFileOnNode(t, cs, node, sshPaths.Expected)
+	helpers.AssertFileNotOnNode(t, cs, node, sshPaths.NotExpected)
+
+	foundSSHKey := helpers.ExecCmdOnNode(t, cs, node, "cat", filepath.Join("/rootfs", sshPaths.Expected))
+	if !strings.Contains(foundSSHKey, sshKeyContent) {
 		t.Fatalf("updated ssh keys not found in authorized_keys, got %s", foundSSHKey)
 	}
 	t.Logf("Node %s has SSH key", node.Name)
@@ -332,10 +359,13 @@ func TestNoReboot(t *testing.T) {
 	assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], oldMasterRenderedConfig)
 	assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
 
-	foundSSHKey = helpers.ExecCmdOnNode(t, cs, node, "cat", "/rootfs/home/core/.ssh/authorized_keys")
-	if strings.Contains(foundSSHKey, "test adding authorized key without node reboot") {
+	foundSSHKey = helpers.ExecCmdOnNode(t, cs, node, "cat", filepath.Join("/rootfs", sshPaths.Expected))
+	if strings.Contains(foundSSHKey, sshKeyContent) {
 		t.Fatalf("Node %s did not rollback successfully", node.Name)
 	}
+
+	helpers.AssertFileOnNode(t, cs, node, sshPaths.Expected)
+	helpers.AssertFileNotOnNode(t, cs, node, sshPaths.NotExpected)
 
 	t.Logf("Node %s has successfully rolled back", node.Name)
 

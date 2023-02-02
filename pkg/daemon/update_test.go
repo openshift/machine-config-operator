@@ -493,6 +493,9 @@ func TestWriteFiles(t *testing.T) {
 	}
 }
 
+// This test provides a false sense of security. Given the combination of the
+// mock mode in the MCD coupled with the inputs into this test, it effectively
+// no-ops and does not test what we think it tests.
 func TestUpdateSSHKeys(t *testing.T) {
 	d := newMockDaemon()
 
