@@ -1,0 +1,6 @@
+name:  NetworkManager-wait-online.service
+dropins:
+  - name: 10-increase-timeout.conf
+    contents: |
+      [Service]
+      Environment=NM_ONLINE_TIMEOUT=180
