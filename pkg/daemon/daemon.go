@@ -913,7 +913,10 @@ func (dn *Daemon) RunFirstbootCompleteMachineconfig() error {
 			dn.logSystem("failed to run reboot: %v", err)
 			return err
 		}
-		// wait to be killed via SIGTERM
+		// Wait to be killed via SIGTERM; we want to ensure the firstboot process completes before e.g. kubelet.service
+		// has a chance to start.  Now, a better way to handle all this would be to use a systemd generator
+		// to e.g. mask kubelet if we detect the firstboot scenario - or better, only *enable* kubelet on the non-firstboot
+		// setup.
 		time.Sleep(defaultRebootTimeout)
 		return fmt.Errorf("failed to reboot for secondary in-place update")
 	}
