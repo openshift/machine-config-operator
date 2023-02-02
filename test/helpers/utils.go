@@ -31,6 +31,7 @@ import (
 	"k8s.io/client-go/util/retry"
 
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
@@ -512,16 +513,16 @@ func execCmdOnNode(cs *framework.ClientSet, node corev1.Node, subArgs ...string)
 	return cmd, nil
 }
 
-// IsOKDCluster checks whether the Upstream field on the CV spec references OKD's update server
+// IsOKDCluster checks whether the Upstream field on the CV spec references an OKD release controller
 func IsOKDCluster(cs *framework.ClientSet) (bool, error) {
 	cv, err := cs.ClusterVersions().Get(context.TODO(), "version", metav1.GetOptions{})
 	if err != nil {
 		return false, err
 	}
-	if cv.Spec.Upstream == "https://origin-release.svc.ci.openshift.org/graph" {
-		return true, nil
-	}
-	return false, nil
+
+	// TODO: Adjust this as OKD becomes available for different platforms, e.g., arm64.
+	okdReleaseControllers := sets.NewString("https://amd64.origin.releases.ci.openshift.org/graph")
+	return okdReleaseControllers.Has(string(cv.Spec.Upstream)), nil
 }
 
 func MCLabelForRole(role string) map[string]string {
