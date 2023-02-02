@@ -382,29 +382,42 @@ func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newC
 		dn.nodeWriter.Eventf(corev1.EventTypeNormal, "OSUpdateStarted", mcDiff.osChangesString())
 	}
 
+	// We previously did not emit this event when kargs changed, so we still don't
 	if mcDiff.osUpdate || mcDiff.extensions || mcDiff.kernelType {
 		// We emitted this event before, so keep it
 		if dn.nodeWriter != nil {
 			dn.nodeWriter.Eventf(corev1.EventTypeNormal, "InClusterUpgrade", fmt.Sprintf("Updating from oscontainer %s", newConfig.Spec.OSImageURL))
 		}
-
 	}
 
-	// The steps from here on are different depending on the image type, so check the image type
-	isLayeredImage, err := dn.NodeUpdaterClient.IsBootableImage(newConfig.Spec.OSImageURL)
-	if err != nil {
-		return fmt.Errorf("Error checking type of update image: %w", err)
-	}
+	// Only check the image type and excute OS changes if:
+	// - machineconfig changed
+	// - we're staying on a realtime kernel ( need to run rpm-ostree update )
+	// - we have extensions ( need to run rpm-ostree update )
+	// We have at least one customer that removes the pull secret from the cluster to "shrinkwrap" it for distribution and we want
+	// to make sure we don't break that use case, but realtime kernel update and extensions update always ran
+	// if they were in use, so we also need to preserve that behavior.
+	// https://issues.redhat.com/browse/OCPBUGS-4049
+	if mcDiff.osUpdate || mcDiff.extensions || mcDiff.kernelType || mcDiff.kargs ||
+		canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelTypeRealtime || len(newConfig.Spec.Extensions) > 0 {
 
-	if isLayeredImage {
-		// If it's a layered/bootable image, then apply it the "new" way
-		if err := dn.applyLayeredOSChanges(mcDiff, oldConfig, newConfig); err != nil {
-			return err
+		// The steps from here on are different depending on the image type, so check the image type
+		isLayeredImage, err := dn.NodeUpdaterClient.IsBootableImage(newConfig.Spec.OSImageURL)
+		if err != nil {
+			return fmt.Errorf("Error checking type of update image: %w", err)
 		}
-	} else {
-		// Otherwise fall back to the old way -- we can take this out someday when it goes away
-		if err := dn.applyLegacyOSChanges(mcDiff, oldConfig, newConfig); err != nil {
-			return err
+
+		// TODO(jkyros): we can remove the format check and simplify this once we retire the "old format" images
+		if isLayeredImage {
+			// If it's a layered/bootable image, then apply it the "new" way
+			if err := dn.applyLayeredOSChanges(mcDiff, oldConfig, newConfig); err != nil {
+				return err
+			}
+		} else {
+			// Otherwise fall back to the old way -- we can take this out someday when it goes away
+			if err := dn.applyLegacyOSChanges(mcDiff, oldConfig, newConfig); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -442,6 +455,7 @@ func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newC
 			glog.Errorf("Failed to create event with reason 'OSUpdateStaged': %v", err)
 		}
 	}
+
 	return nil
 }
 
