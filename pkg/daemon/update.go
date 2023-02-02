@@ -2138,8 +2138,8 @@ func (dn *Daemon) cancelSIGTERM() {
 }
 
 // reboot is the final step. it tells systemd-logind to reboot the machine,
-// cleans up the agent's connections, and then sleeps for 7 days. if it wakes up
-// and manages to return, it returns a scary error message.
+// cleans up the agent's connections
+// on failure to reboot, it throws an error and waits for the operator to try again
 func (dn *Daemon) reboot(rationale string) error {
 	// Now that everything is done, avoid delaying shutdown.
 	dn.cancelSIGTERM()
@@ -2155,24 +2155,20 @@ func (dn *Daemon) reboot(rationale string) error {
 	}
 	dn.logSystem("initiating reboot: %s", rationale)
 
-	rebootCmd := rebootCommand(rationale)
-
 	// reboot, executed async via systemd-run so that the reboot command is executed
 	// in the context of the host asynchronously from us
 	// We're not returning the error from the reboot command as it can be terminated by
 	// the system itself with signal: terminated. We can't catch the subprocess termination signal
 	// either, we just have one for the MCD itself.
+	rebootCmd := rebootCommand(rationale)
 	if err := rebootCmd.Run(); err != nil {
 		dn.logSystem("failed to run reboot: %v", err)
 		mcdRebootErr.Inc()
+		return fmt.Errorf("reboot command failed, something is seriously wrong")
 	}
-
-	// wait to be killed via SIGTERM from the kubelet shutting down
-	time.Sleep(defaultRebootTimeout)
-
-	// if everything went well, this should be unreachable.
-	mcdRebootErr.Inc()
-	return fmt.Errorf("reboot failed; this error should be unreachable, something is seriously wrong")
+	// if we're here, reboot went through successfully
+	dn.logSystem("reboot successful")
+	return nil
 }
 
 func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
