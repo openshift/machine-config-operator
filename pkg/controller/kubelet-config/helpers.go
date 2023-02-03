@@ -28,6 +28,7 @@ func createNewKubeletDynamicSystemReservedIgnition(autoSystemReserved *bool, use
 	var autoNodeSizing string
 	var systemReservedMemory string
 	var systemReservedCPU string
+	var systemReservedEphemeralStorage string
 
 	if autoSystemReserved == nil {
 		autoNodeSizing = "false"
@@ -35,19 +36,26 @@ func createNewKubeletDynamicSystemReservedIgnition(autoSystemReserved *bool, use
 		autoNodeSizing = strconv.FormatBool(*autoSystemReserved)
 	}
 
-	if val, ok := userDefinedSystemReserved["memory"]; ok {
+	if val, ok := userDefinedSystemReserved["memory"]; ok && val != "" {
 		systemReservedMemory = val
 	} else {
 		systemReservedMemory = "1Gi"
 	}
 
-	if val, ok := userDefinedSystemReserved["cpu"]; ok {
+	if val, ok := userDefinedSystemReserved["cpu"]; ok && val != "" {
 		systemReservedCPU = val
 	} else {
 		systemReservedCPU = "500m"
 	}
 
-	config := fmt.Sprintf("NODE_SIZING_ENABLED=%s\nSYSTEM_RESERVED_MEMORY=%s\nSYSTEM_RESERVED_CPU=%s\n", autoNodeSizing, systemReservedMemory, systemReservedCPU)
+	if val, ok := userDefinedSystemReserved["ephemeral-storage"]; ok && val != "" {
+		systemReservedEphemeralStorage = val
+	} else {
+		systemReservedEphemeralStorage = "1Gi"
+	}
+
+	config := fmt.Sprintf("NODE_SIZING_ENABLED=%s\nSYSTEM_RESERVED_MEMORY=%s\nSYSTEM_RESERVED_CPU=%s\nSYSTEM_RESERVED_ES=%s\n",
+		autoNodeSizing, systemReservedMemory, systemReservedCPU, systemReservedEphemeralStorage)
 
 	mode := 0644
 	overwrite := true
