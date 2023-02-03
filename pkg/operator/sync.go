@@ -259,7 +259,12 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 	}
 
 	var kubeAPIServerServingCABytes []byte
-	if bootstrapComplete {
+	// We only want to switch to the proper certificate bundle *after* we've generated our first controllerconfig.
+	// we need to make sure we generate a rendered-config that matches the "day 1" config that our nodes bootstrapped with and
+	// if bootstrapComplete happens while inClusterBringup == true, that matching MachineConfig will never get rendered and
+	// our pools will degrade (because the machine-config-daemon checks for it).
+	// See: https://issues.redhat.com/browse/OCPBUGS-5888
+	if bootstrapComplete && !optr.inClusterBringup {
 		// This is the ca-bundle published by the kube-apiserver that is used terminate client-certificates in the kube cluster.
 		// If the kubelet has a flag to check the in-cluster published ca bundle, that would be ideal.
 		kubeAPIServerServingCABytes, err = optr.getCAsFromConfigMap("openshift-config-managed", "kube-apiserver-client-ca", "ca-bundle.crt")
