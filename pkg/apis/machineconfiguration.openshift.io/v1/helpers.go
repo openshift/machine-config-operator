@@ -20,13 +20,16 @@ func NewMachineConfigPoolCondition(condType MachineConfigPoolConditionType, stat
 
 // GetMachineConfigPoolCondition returns the condition with the provided type.
 func GetMachineConfigPoolCondition(status MachineConfigPoolStatus, condType MachineConfigPoolConditionType) *MachineConfigPoolCondition {
+	// in case of sync errors, return the last condition that matches, not the first
+	// this exists for redundancy and potential race conditions.
+	var LatestState *MachineConfigPoolCondition
 	for i := range status.Conditions {
 		c := status.Conditions[i]
 		if c.Type == condType {
-			return &c
+			LatestState = &c
 		}
 	}
-	return nil
+	return LatestState
 }
 
 // SetMachineConfigPoolCondition updates the MachineConfigPool to include the provided condition. If the condition that

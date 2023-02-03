@@ -4,15 +4,20 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/openshift/machine-config-operator/test/helpers"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	kubeErrs "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/uuid"
+	"k8s.io/apimachinery/pkg/util/wait"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -26,6 +31,9 @@ const (
 	configDriftCompressedFilename        string = "/etc/compressed-file"
 	configDriftFilename                  string = "/etc/etc-file"
 	configDriftFileContents              string = "expected-file-data"
+	configDriftCompressedFilenameTwo     string = "/etc/compressed-file-two"
+	configDriftFilenameTwo               string = "/etc/etc-file-two"
+	configDriftFileContentsTwo           string = "expected-file-data-two"
 	configDriftMCPrefix                  string = "mcd-config-drift"
 	configDriftMonitorStartupMsg         string = "Config Drift Monitor started"
 	configDriftMonitorShutdownMsg        string = "Config Drift Monitor has shut down"
@@ -126,6 +134,9 @@ func (c configDriftTest) getMachineConfig(t *testing.T) *mcfgv1.MachineConfig {
 	compressedFile, err := helpers.CreateGzippedIgn3File(configDriftCompressedFilename, configDriftFileContents, 420)
 	require.Nil(t, err)
 
+	compressedFileTwo, err := helpers.CreateGzippedIgn3File(configDriftCompressedFilenameTwo, configDriftFileContentsTwo, 420)
+	require.Nil(t, err)
+
 	return helpers.NewMachineConfigExtended(
 		fmt.Sprintf("%s-%s", configDriftMCPrefix, string(uuid.NewUUID())),
 		helpers.MCLabelForRole(c.MCPName),
@@ -133,6 +144,8 @@ func (c configDriftTest) getMachineConfig(t *testing.T) *mcfgv1.MachineConfig {
 		[]ign3types.File{
 			helpers.CreateEncodedIgn3File(configDriftFilename, configDriftFileContents, 420),
 			compressedFile,
+			helpers.CreateEncodedIgn3File(configDriftFilenameTwo, configDriftFileContentsTwo, 420),
+			compressedFileTwo,
 		},
 		[]ign3types.Unit{
 			{
@@ -235,6 +248,52 @@ func (c configDriftTest) Run(t *testing.T) {
 				assertNodeIsInDoneState(t, c.ClientSet, c.node)
 			},
 		},
+		// Test the ability of the mcd to change the degraded state message if it updated.
+		// 1. Mutate a file on the node.
+		// 2. Recover from Degradation by reverting the change.
+		// 3. Mutate a second file on the node with different content.
+		// 4. While still degraded, mutate the first file again. The degradation message should be due to the most recent change (the first file).
+		// 5. Revert all files.
+		// https://bugzilla.redhat.com/show_bug.cgi?id=2104978
+		{
+			name:           "update degraded reason on drift",
+			rebootExpected: false,
+			testFunc: func(t *testing.T) {
+				ctx, cancel := context.WithCancel(context.Background())
+				t.Cleanup(cancel)
+				mutateFileOnNode(t, c.ClientSet, c.node, configDriftFilename, "not-the-data")
+				assertNodeAndMCPIsDegraded(t, c.ClientSet, c.node, c.mcp, configDriftFilename)
+
+				expectedReason := "content mismatch for file \"/etc/etc-file\""
+
+				mutateFileOnNode(t, c.ClientSet, c.node, configDriftFilename, configDriftFileContents)
+				assertNodeAndMCPIsRecovered(t, c.ClientSet, c.node, c.mcp)
+
+				mutateFileOnNode(t, c.ClientSet, c.node, configDriftFilenameTwo, "incorrect data 2")
+
+				mutateFileOnNode(t, c.ClientSet, c.node, configDriftFilename, "not-the-data")
+				assertNodeAndMCPIsDegraded(t, c.ClientSet, c.node, c.mcp, configDriftFilename)
+
+				node, err := c.ClientSet.CoreV1Interface.Nodes().Get(ctx, c.node.Name, metav1.GetOptions{})
+				require.Nil(t, err)
+
+				assert.Equal(t, node.Annotations[constants.MachineConfigDaemonReasonAnnotationKey], expectedReason)
+
+				assertPoolReachesState(t, c.ClientSet, c.mcp, isPoolDegraded)
+
+				mcp, err := c.ClientSet.MachineConfigPools().Get(ctx, c.mcp.Name, metav1.GetOptions{})
+				require.Nil(t, err)
+				for _, condition := range mcp.Status.Conditions {
+					if condition.Type == mcfgv1.MachineConfigPoolNodeDegraded {
+						assert.Contains(t, condition.Message, configDriftFilename)
+					}
+				}
+
+				mutateFileOnNode(t, c.ClientSet, c.node, configDriftFilename, configDriftFileContents)
+				mutateFileOnNode(t, c.ClientSet, c.node, configDriftFilenameTwo, configDriftFileContentsTwo)
+				assertNodeAndMCPIsRecovered(t, c.ClientSet, c.node, c.mcp)
+			},
+		},
 	}
 
 	for _, testCase := range testCases {
@@ -259,6 +318,23 @@ func (c configDriftTest) Run(t *testing.T) {
 	}
 }
 
+func isPoolDegraded(m mcfgv1.MachineConfigPool) bool {
+	trueConditions := []mcfgv1.MachineConfigPoolConditionType{
+		mcfgv1.MachineConfigPoolDegraded,
+		mcfgv1.MachineConfigPoolNodeDegraded,
+		mcfgv1.MachineConfigPoolUpdating,
+	}
+
+	falseConditions := []mcfgv1.MachineConfigPoolConditionType{
+		mcfgv1.MachineConfigPoolRenderDegraded,
+		mcfgv1.MachineConfigPoolUpdated,
+	}
+
+	return m.Status.DegradedMachineCount == 1 &&
+		allMCPConditionsTrue(trueConditions, m) &&
+		allMCPConditionsFalse(falseConditions, m)
+}
+
 func (c configDriftTest) runDegradeAndRecoverContentRevert(t *testing.T, filename, expectedContents string) {
 	c.runDegradeAndRecover(t, filename, expectedContents, func() {
 		t.Logf("Reverting %s to expected contents to initiate recovery", filename)
@@ -278,4 +354,127 @@ func (c configDriftTest) runDegradeAndRecover(t *testing.T, filename, expectedFi
 
 	// Verify that the node and MCP recover.
 	assertNodeAndMCPIsRecovered(t, c.ClientSet, c.node, c.mcp)
+}
+
+func mutateFileOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, filename, contents string) {
+	t.Helper()
+
+	if !strings.HasPrefix(filename, "/rootfs") {
+		filename = filepath.Join("/rootfs", filename)
+	}
+
+	bashCmd := fmt.Sprintf("printf '%s' > %s", contents, filename)
+	t.Logf("Setting contents of %s on %s to %s", filename, node.Name, contents)
+
+	helpers.ExecCmdOnNode(t, cs, node, "/bin/bash", "-c", bashCmd)
+}
+
+func assertNodeAndMCPIsDegraded(t *testing.T, cs *framework.ClientSet, node corev1.Node, mcp mcfgv1.MachineConfigPool, filename string) {
+	t.Helper()
+
+	logEntry := fmt.Sprintf("content mismatch for file \"%s\"", filename)
+
+	// Assert that the node eventually reaches a Degraded state and has the
+	// config mismatch as the reason
+	t.Log("Verifying node becomes degraded due to config mismatch")
+
+	assertNodeReachesState(t, cs, node, func(n corev1.Node) bool {
+		isDegraded := n.Annotations[constants.MachineConfigDaemonStateAnnotationKey] == string(constants.MachineConfigDaemonStateDegraded)
+		hasReason := strings.Contains(n.Annotations[constants.MachineConfigDaemonReasonAnnotationKey], logEntry)
+		return isDegraded && hasReason
+	})
+
+	mcdPod, err := helpers.MCDForNode(cs, &node)
+	require.Nil(t, err)
+
+	assertLogsContain(t, cs, mcdPod, logEntry)
+
+	// Assert that the MachineConfigPool eventually reaches a degraded state and has the config mismatch as the reason.
+	t.Log("Verifying MachineConfigPool becomes degraded due to config mismatch")
+
+	assertPoolReachesState(t, cs, mcp, isPoolDegraded)
+}
+
+func assertNodeReachesState(t *testing.T, cs *framework.ClientSet, target corev1.Node, stateFunc func(corev1.Node) bool) {
+	t.Helper()
+
+	maxWait := 5 * time.Minute
+
+	end, err := pollForResourceState(maxWait, func() (bool, error) {
+		node, err := cs.CoreV1Interface.Nodes().Get(context.TODO(), target.Name, metav1.GetOptions{})
+		return stateFunc(*node), err
+	})
+
+	if err != nil {
+		t.Fatalf("Node %s did not reach expected state (took %v): %s", target.Name, end, err)
+	}
+
+	t.Logf("Node %s reached expected state (took %v)", target.Name, end)
+}
+
+func assertPoolReachesState(t *testing.T, cs *framework.ClientSet, target mcfgv1.MachineConfigPool, stateFunc func(mcfgv1.MachineConfigPool) bool) {
+	t.Helper()
+
+	maxWait := 5 * time.Minute
+
+	end, err := pollForResourceState(maxWait, func() (bool, error) {
+		mcp, err := cs.MachineConfigPools().Get(context.TODO(), target.Name, metav1.GetOptions{})
+		return stateFunc(*mcp), err
+	})
+
+	if err != nil {
+		t.Fatalf("MachineConfigPool %s did not reach expected state (took %v): %s", target.Name, end, err)
+	}
+
+	t.Logf("MachineConfigPool %s reached expected state (took %v)", target.Name, end)
+}
+
+func pollForResourceState(timeout time.Duration, pollFunc func() (bool, error)) (time.Duration, error) {
+	// This wraps wait.PollImmediate() for the following reason:
+	//
+	// If the control plane is temporarily unavailable (e.g., when running in a
+	// single-node OpenShift (SNO) context and the node reboots), this error will
+	// not be nil, but *should* go back to nil once the control-plane becomes
+	// available again. To handle that, we:
+	//
+	// 1. Store the error within the pollForResourceState scope.
+	// 2. Run the clock out.
+	// 3. Handle the error (if it does not go back to nil) when the timeout is reached.
+	//
+	// This was inspired by and is a more generic implementation of:
+	// https://github.com/openshift/machine-config-operator/blob/master/test/e2e-single-node/sno_mcd_test.go#L355-L374
+	start := time.Now()
+
+	var lastErr error
+
+	waitErr := wait.PollImmediate(1*time.Second, timeout, func() (bool, error) {
+		result, err := pollFunc()
+		lastErr = err
+		return result, nil
+	})
+
+	return time.Since(start), kubeErrs.NewAggregate([]error{
+		lastErr,
+		waitErr,
+	})
+}
+
+func allMCPConditionsTrue(conditions []mcfgv1.MachineConfigPoolConditionType, mcp mcfgv1.MachineConfigPool) bool {
+	for _, condition := range conditions {
+		if !mcfgv1.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, condition) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func allMCPConditionsFalse(conditions []mcfgv1.MachineConfigPoolConditionType, mcp mcfgv1.MachineConfigPool) bool {
+	for _, condition := range conditions {
+		if !mcfgv1.IsMachineConfigPoolConditionFalse(mcp.Status.Conditions, condition) {
+			return false
+		}
+	}
+
+	return true
 }

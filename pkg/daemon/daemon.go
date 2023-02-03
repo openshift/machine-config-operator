@@ -412,7 +412,9 @@ func (dn *Daemon) handleErr(err error, key interface{}) {
 		glog.Fatalf("Error handling node sync: %v", err)
 	}
 
-	dn.updateErrorState(err)
+	if err := dn.updateErrorState(err); err != nil {
+		glog.Errorf("Could not update annotation: %v", err)
+	}
 	// This is at V(2) since the updateErrorState() call above ends up logging too
 	glog.V(2).Infof("Error syncing node %v (retries %d): %v", key, dn.queue.NumRequeues(key), err)
 	dn.queue.AddRateLimited(key)
@@ -422,13 +424,16 @@ type unreconcilableErr struct {
 	error
 }
 
-func (dn *Daemon) updateErrorState(err error) {
+func (dn *Daemon) updateErrorState(err error) error {
 	var uErr *unreconcilableErr
 	if errors.As(err, &uErr) {
 		dn.nodeWriter.SetUnreconcilable(err)
 	} else {
-		dn.nodeWriter.SetDegraded(err)
+		if err := dn.nodeWriter.SetDegraded(err); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 func (dn *Daemon) updateErrorStateHypershift(err error) {
@@ -506,10 +511,15 @@ func (dn *Daemon) syncNode(key string) error {
 		// Log state transitions here
 		oldState := dn.node.Annotations[constants.MachineConfigDaemonStateAnnotationKey]
 		newState := node.Annotations[constants.MachineConfigDaemonStateAnnotationKey]
+		oldReason := dn.node.Annotations[constants.MachineConfigDaemonReasonAnnotationKey]
+		newReason := node.Annotations[constants.MachineConfigDaemonReasonAnnotationKey]
 		if oldState != newState {
 			glog.Infof("Transitioned from state: %v -> %v", oldState, newState)
 		}
-
+		if oldReason != newReason {
+			glog.Infof("Transitioned from degraded/unreconcilable reason %v -> %v", oldReason, newReason)
+		}
+		glog.Infof("State and Reason: %v %v", newState, newReason)
 		dn.node = node
 	}
 
@@ -1078,7 +1088,9 @@ func (dn *Daemon) applySSHAccessedAnnotation() error {
 func (dn *Daemon) onConfigDrift(err error) {
 	dn.nodeWriter.Eventf(corev1.EventTypeWarning, "ConfigDriftDetected", err.Error())
 	glog.Error(err)
-	dn.updateErrorState(err)
+	if err := dn.updateErrorState(err); err != nil {
+		glog.Errorf("Could not update annotation: %v", err)
+	}
 }
 
 func (dn *Daemon) startConfigDriftMonitor() {
@@ -1722,7 +1734,9 @@ func (dn *Daemon) runOnceFromMachineConfig(machineConfig mcfgv1.MachineConfig, c
 		// NOTE: This case expects a cluster to exists already.
 		current, desired, err := dn.prepUpdateFromCluster()
 		if err != nil {
-			dn.nodeWriter.SetDegraded(err)
+			if err := dn.nodeWriter.SetDegraded(err); err != nil {
+				return err
+			}
 			return err
 		}
 		if current == nil || desired == nil {

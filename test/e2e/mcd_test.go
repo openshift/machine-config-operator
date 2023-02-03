@@ -13,16 +13,16 @@ import (
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+
+	e2eShared "github.com/openshift/machine-config-operator/test/e2e-shared-tests"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
-	e2eShared "github.com/openshift/machine-config-operator/test/e2e-shared-tests"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/openshift/machine-config-operator/test/helpers"
 )

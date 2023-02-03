@@ -7,6 +7,7 @@ import (
 
 	"github.com/golang/glog"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -103,6 +104,9 @@ func calculateStatus(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv
 	}
 
 	var nodeDegraded bool
+	for _, m := range degradedMachines {
+		glog.Infof("Degraded Machine: %v and Degraded Reason: %v", m.Name, m.Annotations[constants.MachineConfigDaemonReasonAnnotationKey])
+	}
 	if degradedMachineCount > 0 {
 		nodeDegraded = true
 		sdegraded := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolNodeDegraded, corev1.ConditionTrue, fmt.Sprintf("%d nodes are reporting degraded status on sync", len(degradedMachines)), strings.Join(degradedReasons, ", "))
