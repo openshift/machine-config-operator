@@ -14,6 +14,7 @@ import (
 	rpmostreeclient "github.com/coreos/rpmostree-client-go/pkg/client"
 	"github.com/golang/glog"
 	"github.com/opencontainers/go-digest"
+	"github.com/openshift/machine-config-operator/pkg/daemon/osrelease"
 	pivotutils "github.com/openshift/machine-config-operator/pkg/daemon/pivot/utils"
 	"gopkg.in/yaml.v2"
 )
@@ -355,7 +356,7 @@ func useKubeletConfigSecrets() error {
 				return err
 			}
 
-			runningos, err := GetHostRunningOS()
+			runningos, err := osrelease.GetHostRunningOS()
 			if err != nil {
 				return err
 			}

@@ -37,6 +37,7 @@ import (
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
+	"github.com/openshift/machine-config-operator/pkg/daemon/osrelease"
 	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
 	mcfglistersv1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
 )
@@ -49,7 +50,7 @@ type Daemon struct {
 	name string
 
 	// os the operating system the MCD is running on
-	os OperatingSystem
+	os osrelease.OperatingSystem
 
 	// mock is set if we're running as non-root, probably under unit tests
 	mock bool
@@ -219,9 +220,9 @@ func New(
 		err        error
 	)
 
-	hostos := OperatingSystem{}
+	hostos := osrelease.OperatingSystem{}
 	if !mock {
-		hostos, err = GetHostRunningOS()
+		hostos, err = osrelease.GetHostRunningOS()
 		if err != nil {
 			hostOS.WithLabelValues("unsupported", "").Set(1)
 			return nil, fmt.Errorf("checking operating system: %w", err)
