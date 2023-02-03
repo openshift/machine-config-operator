@@ -42,6 +42,17 @@ import (
 	mcfglistersv1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
 )
 
+type osRelease interface {
+	IsEL9() bool
+	IsEL() bool
+	IsFCOS() bool
+	IsSCOS() bool
+	IsCoreOSVariant() bool
+	IsLikeTraditionalRHEL7() bool
+}
+
+var _ osRelease = osrelease.OperatingSystem{}
+
 // Daemon is the dispatch point for the functions of the agent on the
 // machine. it keeps track of connections and the current state of the update
 // process.
@@ -50,7 +61,7 @@ type Daemon struct {
 	name string
 
 	// os the operating system the MCD is running on
-	os osrelease.OperatingSystem
+	os osRelease
 
 	// mock is set if we're running as non-root, probably under unit tests
 	mock bool
@@ -125,6 +136,9 @@ type Daemon struct {
 
 	// Used for Hypershift
 	hypershiftConfigMap string
+
+	// Used for pathing
+	validationPaths ValidationPaths
 }
 
 // CoreOSDaemon protects the methods that should only be called on CoreOS variants
@@ -269,6 +283,11 @@ func New(
 	// report OS & version (if RHCOS or FCOS) to prometheus
 	hostOS.WithLabelValues(hostos.ToPrometheusLabel(), osVersion).Set(1)
 
+	vp, err := GetValidationPaths(hostos)
+	if err != nil {
+		return nil, fmt.Errorf("could not create validation paths: %w", err)
+	}
+
 	return &Daemon{
 		mock:                  mock,
 		booting:               true,
@@ -281,6 +300,7 @@ func New(
 		currentConfigPath:     currentConfigPath,
 		loggerSupportsJournal: loggerSupportsJournal,
 		configDriftMonitor:    NewConfigDriftMonitor(),
+		validationPaths:       vp,
 	}, nil
 }
 
@@ -1111,10 +1131,10 @@ func (dn *Daemon) startConfigDriftMonitor() {
 	}
 
 	opts := ConfigDriftMonitorOpts{
-		OnDrift:       dn.onConfigDrift,
-		SystemdPath:   pathSystemd,
-		ErrChan:       dn.exitCh,
-		MachineConfig: currentConfig,
+		OnDrift:         dn.onConfigDrift,
+		ValidationPaths: dn.validationPaths,
+		ErrChan:         dn.exitCh,
+		MachineConfig:   currentConfig,
 	}
 
 	if err := dn.configDriftMonitor.Start(opts); err != nil {
@@ -1951,7 +1971,7 @@ func (dn *Daemon) validateOnDiskStateImpl(currentConfig *mcfgv1.MachineConfig) e
 		}
 	}
 
-	return validateOnDiskState(currentConfig, pathSystemd)
+	return validateOnDiskState(currentConfig, dn.validationPaths)
 }
 
 // validateOnDiskState compares the on-disk state against what a configuration

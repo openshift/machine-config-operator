@@ -2,7 +2,9 @@ package daemon
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -12,10 +14,16 @@ import (
 	"github.com/google/go-cmp/cmp"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	aggerrors "k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 // Validates that the on-disk state matches a given MachineConfig.
-func validateOnDiskState(currentConfig *mcfgv1.MachineConfig, systemdPath string) error {
+func validateOnDiskState(currentConfig *mcfgv1.MachineConfig, vp ValidationPaths) error {
+	if err := vp.validate(); err != nil {
+		return fmt.Errorf("failed to validate ValidationPaths: %w", err)
+	}
+
 	// And the rest of the disk state
 	// We want to verify the disk state in the spec version that it was created with,
 	// to remove possibilities of behaviour changes due to translation
@@ -29,26 +37,80 @@ func validateOnDiskState(currentConfig *mcfgv1.MachineConfig, systemdPath string
 		if err := checkV3Files(ignconfigi.(ign3types.Config).Storage.Files); err != nil {
 			return &fileConfigDriftErr{err}
 		}
-		if err := checkV3Units(ignconfigi.(ign3types.Config).Systemd.Units, systemdPath); err != nil {
+		if err := checkV3Units(ignconfigi.(ign3types.Config).Systemd.Units, vp); err != nil {
 			return &unitConfigDriftErr{err}
 		}
+
+		if err := checkV3SSHKeys(ignconfigi.(ign3types.Config).Passwd.Users, vp); err != nil {
+			return &sshConfigDriftErr{err}
+		}
+
 		return nil
 	case ign2types.Config:
 		if err := checkV2Files(ignconfigi.(ign2types.Config).Storage.Files); err != nil {
 			return &fileConfigDriftErr{err}
 		}
-		if err := checkV2Units(ignconfigi.(ign2types.Config).Systemd.Units, systemdPath); err != nil {
+		if err := checkV2Units(ignconfigi.(ign2types.Config).Systemd.Units, vp); err != nil {
 			return &unitConfigDriftErr{err}
 		}
+		// TODO: Do we need to check for Ign V2 SSH keys too?
 		return nil
 	default:
 		return fmt.Errorf("unexpected type for ignition config: %v", typedConfig)
 	}
 }
 
+// Checks if SSH keys match the expected state and check that unexpected SSH
+// key path fragments are not present.
+func checkV3SSHKeys(users []ign3types.PasswdUser, vp ValidationPaths) error {
+	// Checks the expected key path for the following conditions:
+	// 1. The dir mode differs from what we expect. (TODO: Should we also verify ownership?)
+	// 2. The file contents and mode differ from what is expected.
+	expected := vp.ExpectedSSHKeyPath()
+	checkExpectedKeyPath := func() error {
+		return aggerrors.NewAggregate([]error{
+			checkDirMode(filepath.Dir(expected), os.FileMode(0o700)),
+			checkFileContentsAndMode(expected, []byte(concatSSHKeys(users)), os.FileMode(0o600)),
+		})
+	}
+
+	// To find unexpected files, walk the directory structure under
+	// /home/core/.ssh and do the following:
+	// 1. Ignore any expected path fragments.
+	// 2. If any unexpected path fragments are found, return an error.
+	// 3. If we cannot verify that an unexpected path fragment is found, return an error.
+	checkUnexpectedKeyPath := func() error {
+		expectedFragments := sets.NewString(vp.ExpectedSSHPathFragments()...)
+
+		return filepath.WalkDir(vp.SSHKeyRoot(), func(path string, _ os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+
+			if expectedFragments.Has(path) {
+				return nil
+			}
+
+			if _, err := os.Lstat(path); err == nil {
+				return fmt.Errorf("expected not to find SSH keys in %s", path)
+			} else if !errors.Is(err, fs.ErrNotExist) {
+				return err
+			}
+
+			return nil
+		})
+	}
+
+	// We want to return an error if either (or both) of these closures returns an error
+	return aggerrors.Flatten(aggerrors.NewAggregate([]error{
+		checkExpectedKeyPath(),
+		checkUnexpectedKeyPath(),
+	}))
+}
+
 // Checks that the ondisk state for a systemd dropin matches the expected state.
-func checkV3Dropin(systemdPath string, unit ign3types.Unit, dropin ign3types.Dropin) error {
-	path := getIgn3SystemdDropinPath(systemdPath, unit, dropin)
+func checkV3Dropin(vp ValidationPaths, unit ign3types.Unit, dropin ign3types.Dropin) error {
+	path := vp.SystemdDropinPath(unit.Name, dropin.Name)
 
 	var content string
 	if dropin.Contents == nil {
@@ -72,9 +134,9 @@ func checkV3Dropin(systemdPath string, unit ign3types.Unit, dropin ign3types.Dro
 
 // checkV3Units validates the contents of an individual unit in the
 // target config and returns nil if they match.
-func checkV3Unit(unit ign3types.Unit, systemdPath string) error {
+func checkV3Unit(unit ign3types.Unit, vp ValidationPaths) error {
 	for _, dropin := range unit.Dropins {
-		if err := checkV3Dropin(systemdPath, unit, dropin); err != nil {
+		if err := checkV3Dropin(vp, unit, dropin); err != nil {
 			return err
 		}
 	}
@@ -84,7 +146,7 @@ func checkV3Unit(unit ign3types.Unit, systemdPath string) error {
 		return nil
 	}
 
-	path := getIgn3SystemdUnitPath(systemdPath, unit)
+	path := vp.SystemdUnitPath(unit.Name)
 	if unit.Mask != nil && *unit.Mask {
 		link, err := filepath.EvalSymlinks(path)
 		if err != nil {
@@ -109,9 +171,9 @@ func checkV3Unit(unit ign3types.Unit, systemdPath string) error {
 
 // checkV3Units validates the contents of all the units in the
 // target config and returns nil if they match.
-func checkV3Units(units []ign3types.Unit, systemdPath string) error {
+func checkV3Units(units []ign3types.Unit, vp ValidationPaths) error {
 	for _, unit := range units {
-		if err := checkV3Unit(unit, systemdPath); err != nil {
+		if err := checkV3Unit(unit, vp); err != nil {
 			return err
 		}
 	}
@@ -121,9 +183,9 @@ func checkV3Units(units []ign3types.Unit, systemdPath string) error {
 
 // checkV2Units validates the contents of a given unit in the
 // target config and returns nil if they match.
-func checkV2Unit(unit ign2types.Unit, systemdPath string) error {
+func checkV2Unit(unit ign2types.Unit, vp ValidationPaths) error {
 	for _, dropin := range unit.Dropins {
-		path := getIgn2SystemdDropinPath(systemdPath, unit, dropin)
+		path := vp.SystemdDropinPath(unit.Name, dropin.Name)
 		if err := checkFileContentsAndMode(path, []byte(dropin.Contents), defaultFilePermissions); err != nil {
 			return err
 		}
@@ -134,7 +196,7 @@ func checkV2Unit(unit ign2types.Unit, systemdPath string) error {
 		return nil
 	}
 
-	path := getIgn2SystemdUnitPath(systemdPath, unit)
+	path := vp.SystemdUnitPath(unit.Name)
 	if unit.Mask {
 		link, err := filepath.EvalSymlinks(path)
 		if err != nil {
@@ -159,9 +221,9 @@ func checkV2Unit(unit ign2types.Unit, systemdPath string) error {
 
 // checkV2Units validates the contents of all the units in the
 // target config and returns nil if they match.
-func checkV2Units(units []ign2types.Unit, systemdPath string) error {
+func checkV2Units(units []ign2types.Unit, vp ValidationPaths) error {
 	for _, unit := range units {
-		if err := checkV2Unit(unit, systemdPath); err != nil {
+		if err := checkV2Unit(unit, vp); err != nil {
 			return err
 		}
 	}
@@ -243,31 +305,26 @@ func checkFileContentsAndMode(filePath string, expectedContent []byte, mode os.F
 	return nil
 }
 
-// Gets the absolute path for a systemd unit and dropin, given a root path.
-func getIgn2SystemdDropinPath(systemdPath string, unit ign2types.Unit, dropin ign2types.SystemdDropin) string {
-	return filepath.Join(getSystemdPath(systemdPath), unit.Name+".d", dropin.Name)
-}
+// checkDirMode checks a given directory path and compares its mode to what is
+// expected. It logs an error in the event of a mismatch.
+func checkDirMode(dirPath string, expectedMode os.FileMode) error {
+	fi, err := os.Lstat(dirPath)
 
-// Gets the absolute path for a systemd unit and dropin, given a root path.
-func getIgn3SystemdDropinPath(systemdPath string, unit ign3types.Unit, dropin ign3types.Dropin) string {
-	return filepath.Join(getSystemdPath(systemdPath), unit.Name+".d", dropin.Name)
-}
-
-// Computes the absolute path for a given system unit file.
-func getIgn2SystemdUnitPath(systemdPath string, unit ign2types.Unit) string {
-	return filepath.Join(getSystemdPath(systemdPath), unit.Name)
-}
-
-// Computes the absolute path for a given system unit file.
-func getIgn3SystemdUnitPath(systemdPath string, unit ign3types.Unit) string {
-	return filepath.Join(getSystemdPath(systemdPath), unit.Name)
-}
-
-// Gets the systemd path. Defaults to pathSystemd, if empty.
-func getSystemdPath(systemdPath string) string {
-	if systemdPath == "" {
-		systemdPath = pathSystemd
+	if err != nil {
+		return fmt.Errorf("could not stat dir: %q: %w", dirPath, err)
 	}
 
-	return systemdPath
+	if !fi.IsDir() {
+		return fmt.Errorf("expected %q to be a dir", dirPath)
+	}
+
+	// We've already checked for the presence of the Dir mode bit above, so we
+	// subtract it from the actual mode since it will cause a false negative otherwise.
+	actualMode := fi.Mode() - os.ModeDir
+
+	if actualMode != expectedMode {
+		return fmt.Errorf("mode mismatch for dir: %q; expected: %[2]v/%[2]d/%#[2]o; received: %[3]v/%[3]d/%#[3]o", dirPath, expectedMode, actualMode)
+	}
+
+	return nil
 }

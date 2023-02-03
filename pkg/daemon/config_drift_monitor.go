@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	ign2types "github.com/coreos/ignition/config/v2_2/types"
@@ -13,6 +14,7 @@ import (
 	"github.com/golang/glog"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
@@ -31,6 +33,11 @@ type unitConfigDriftErr struct {
 	error
 }
 
+// Error type for SSH key config drifts
+type sshConfigDriftErr struct {
+	error
+}
+
 type ConfigDriftMonitor interface {
 	Start(ConfigDriftMonitorOpts) error
 	Done() <-chan struct{}
@@ -43,9 +50,7 @@ type ConfigDriftMonitorOpts struct {
 	OnDrift func(error)
 	// The currently applied MachineConfig.
 	MachineConfig *mcfgv1.MachineConfig
-	// The Systemd dropin path location.
-	// Defaults to /etc/systemd/system
-	SystemdPath string
+	ValidationPaths
 	// Channel to report unknown errors
 	ErrChan chan<- error
 }
@@ -153,8 +158,8 @@ func newConfigDriftWatcher(opts ConfigDriftMonitorOpts) (*configDriftWatcher, er
 		return nil, fmt.Errorf("no machine config provided")
 	}
 
-	if opts.SystemdPath == "" {
-		opts.SystemdPath = pathSystemd
+	if err := opts.ValidationPaths.validate(); err != nil {
+		return nil, fmt.Errorf("could not validate ValidationPaths: %w", err)
 	}
 
 	c := &configDriftWatcher{
@@ -190,9 +195,22 @@ func (c *configDriftWatcher) initialize() error {
 	// This is useful when, for example, someone places a file in /etc using a
 	// MachineConfig (e.g., /etc/foo), but an unknown (to the MachineConfig) file
 	// in /etc (e.g., /etc/bar) is written to.
-	c.filePaths, err = getFilePathsFromMachineConfig(c.MachineConfig, c.SystemdPath)
+	c.filePaths, err = getFilePathsFromMachineConfig(c.MachineConfig, c.ValidationPaths)
 	if err != nil {
 		return fmt.Errorf("could not get file paths from machine config: %w", err)
+	}
+
+	// We want to watch all of the path fragments for expected SSH keys as well
+	// as unexpected SSH keys. However, fsnotify cannot watch for files and
+	// directories that do not exist, and fsnotify cannot recurse into
+	// directories. So the way we monitor for both expected and unexpected SSH
+	// key paths is we look for any filesystem events under /home/core/.ssh
+	// through a combination of watching any subdirectories as well as performing
+	// a fuzzy-match on the filesystem events. For any filesystem event that has
+	// a fuzzy-match to /home/core/.ssh, we run validateOnDiskState, which knows
+	// how to check both the expected and unexpected SSH key directories.
+	for _, path := range c.ValidationPaths.ExpectedSSHPathFragments() {
+		c.filePaths.Insert(path)
 	}
 
 	// fsnotify (presently) uses inotify instead of fanotify on Linux.
@@ -210,7 +228,7 @@ func (c *configDriftWatcher) initialize() error {
 	for _, path := range dirPaths {
 		glog.V(4).Infof("Watching dir: \"%s\"", path)
 		if err := c.watcher.Add(path); err != nil {
-			return fmt.Errorf("could not add fsnotify watcher to dir \"%s\": %w", path, err)
+			return fmt.Errorf("could not add fsnotify watcher to dir %q: %w", path, err)
 		}
 	}
 
@@ -274,14 +292,23 @@ func (c *configDriftWatcher) handleFileEvent(event fsnotify.Event) error {
 	return fmt.Errorf("unknown config drift error: %w", err)
 }
 
+func (c *configDriftWatcher) shouldValidateOnDiskState(event fsnotify.Event) bool {
+	// If the filename is not in the MachineConfig to us or it doesn't contain /home/core/.ssh, we ignore it.
+	// We do a fuzzy match of /home/core/.ssh for two reasons:
+	// 1. For testing purposes, we write to a temp dir for isolation (e.g., /tmp/1234/home/core/.ssh)
+	// 2. We want to cover any events which occur within /home/core/.ssh and/or
+	// within /home/core/.ssh/authorized_keys.d.
+	return c.filePaths.Has(event.Name) || strings.Contains(event.Name, constants.CoreUserSSH)
+}
+
 // Validates on disk state for potential config drift.
 func (c *configDriftWatcher) checkMachineConfigForEvent(event fsnotify.Event) error {
 	// Ignore events for files not found in the MachineConfig.
-	if !c.filePaths.Has(event.Name) {
+	if !c.shouldValidateOnDiskState(event) {
 		return nil
 	}
 
-	if err := validateOnDiskState(c.MachineConfig, c.SystemdPath); err != nil {
+	if err := validateOnDiskState(c.MachineConfig, c.ValidationPaths); err != nil {
 		return &configDriftErr{err}
 	}
 
@@ -289,7 +316,7 @@ func (c *configDriftWatcher) checkMachineConfigForEvent(event fsnotify.Event) er
 }
 
 // Finds the paths for all files in a given MachineConfig.
-func getFilePathsFromMachineConfig(mc *mcfgv1.MachineConfig, systemdPath string) (sets.String, error) {
+func getFilePathsFromMachineConfig(mc *mcfgv1.MachineConfig, vp ValidationPaths) (sets.String, error) {
 	ignConfig, err := ctrlcommon.IgnParseWrapper(mc.Spec.Config.Raw)
 	if err != nil {
 		return sets.String{}, fmt.Errorf("could not get dirs from ignition config: %w", err)
@@ -297,16 +324,16 @@ func getFilePathsFromMachineConfig(mc *mcfgv1.MachineConfig, systemdPath string)
 
 	switch typedConfig := ignConfig.(type) {
 	case ign3types.Config:
-		return getFilePathsFromIgn3Config(ignConfig.(ign3types.Config), systemdPath), nil
+		return getFilePathsFromIgn3Config(ignConfig.(ign3types.Config), vp), nil
 	case ign2types.Config:
-		return getFilePathsFromIgn2Config(ignConfig.(ign2types.Config), systemdPath), nil
+		return getFilePathsFromIgn2Config(ignConfig.(ign2types.Config), vp), nil
 	default:
 		return sets.String{}, fmt.Errorf("unexpected type for ignition config: %v", typedConfig)
 	}
 }
 
 // Extracts all unique directories from a given Ignition 3 config.
-func getFilePathsFromIgn3Config(ignConfig ign3types.Config, systemdPath string) sets.String {
+func getFilePathsFromIgn3Config(ignConfig ign3types.Config, vp ValidationPaths) sets.String {
 	files := sets.NewString()
 
 	// Get all the file paths from the ignition config
@@ -318,13 +345,13 @@ func getFilePathsFromIgn3Config(ignConfig ign3types.Config, systemdPath string) 
 
 	// Get all the file paths for systemd dropins from the ignition config
 	for _, unit := range ignConfig.Systemd.Units {
-		unitPath := getIgn3SystemdUnitPath(systemdPath, unit)
+		unitPath := vp.SystemdUnitPath(unit.Name)
 		if _, err := os.Stat(unitPath); err == nil && !os.IsNotExist(err) {
 			files.Insert(unitPath)
 		}
 
 		for _, dropin := range unit.Dropins {
-			dropinPath := getIgn3SystemdDropinPath(systemdPath, unit, dropin)
+			dropinPath := vp.SystemdDropinPath(unit.Name, dropin.Name)
 			if _, err := os.Stat(dropinPath); err == nil && !os.IsNotExist(err) {
 				files.Insert(dropinPath)
 			}
@@ -335,7 +362,7 @@ func getFilePathsFromIgn3Config(ignConfig ign3types.Config, systemdPath string) 
 }
 
 // Extracts all unique directories from a given Ignition 2 config.
-func getFilePathsFromIgn2Config(ignConfig ign2types.Config, systemdPath string) sets.String {
+func getFilePathsFromIgn2Config(ignConfig ign2types.Config, vp ValidationPaths) sets.String {
 	files := sets.NewString()
 
 	// Get all the file paths from the ignition config
@@ -347,13 +374,13 @@ func getFilePathsFromIgn2Config(ignConfig ign2types.Config, systemdPath string) 
 
 	// Get all the file paths for systemd dropins from the ignition config
 	for _, unit := range ignConfig.Systemd.Units {
-		unitPath := getIgn2SystemdUnitPath(systemdPath, unit)
+		unitPath := vp.SystemdUnitPath(unit.Name)
 		if _, err := os.Stat(unitPath); err == nil && !os.IsNotExist(err) {
 			files.Insert(unitPath)
 		}
 
 		for _, dropin := range unit.Dropins {
-			dropinPath := getIgn2SystemdDropinPath(systemdPath, unit, dropin)
+			dropinPath := vp.SystemdDropinPath(unit.Name, dropin.Name)
 			if _, err := os.Stat(dropinPath); err == nil && !os.IsNotExist(err) {
 				files.Insert(dropinPath)
 			}

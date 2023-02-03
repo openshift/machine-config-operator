@@ -57,6 +57,46 @@ const (
 	GPGNoRebootPath = "/etc/machine-config-daemon/no-reboot/containers-gpg.pub"
 )
 
+// Used to hold options for writing SSH keys to disk and allow overrides for testing.
+type sshKeyOpts struct {
+	// The system user to use. Defaults to "core".
+	systemuser string
+	// The Ignition users to write.
+	ign3Users []ign3types.PasswdUser
+	// The SSH key validation paths which contain the expected paths to write the
+	// SSH keys and any unexpected SSH keys.
+	vp ValidationPaths
+	// The user ID of the system user (defaults to the "core" uid)
+	uid int
+	// The group ID for the system user (defaults to the "core" gid)
+	gid int
+}
+
+// Populates sshKeyOpts with its defaults and validates ValidationPaths.
+func (s *sshKeyOpts) populate() error {
+	if s.systemuser == "" {
+		s.systemuser = constants.CoreUserSSH
+	}
+
+	if s.uid == 0 {
+		uid, err := lookupUID(s.systemuser)
+		if err != nil {
+			return err
+		}
+		s.uid = uid
+	}
+
+	if s.gid == 0 {
+		gid, err := lookupGID(s.systemuser)
+		if err != nil {
+			return err
+		}
+		s.gid = gid
+	}
+
+	return s.vp.validate()
+}
+
 func getNodeRef(node *corev1.Node) *corev1.ObjectReference {
 	return &corev1.ObjectReference{
 		Kind: "Node",
@@ -545,13 +585,19 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		}
 	}()
 
-	if err := dn.updateSSHKeys(newIgnConfig.Passwd.Users); err != nil {
+	sshOpts := sshKeyOpts{
+		ign3Users: newIgnConfig.Passwd.Users,
+		vp:        dn.validationPaths,
+	}
+
+	if err := dn.updateSSHKeys(sshOpts); err != nil {
 		return err
 	}
 
 	defer func() {
 		if retErr != nil {
-			if err := dn.updateSSHKeys(oldIgnConfig.Passwd.Users); err != nil {
+			sshOpts.ign3Users = newIgnConfig.Passwd.Users
+			if err := dn.updateSSHKeys(sshOpts); err != nil {
 				errs := kubeErrs.NewAggregate([]error{err, retErr})
 				retErr = fmt.Errorf("error rolling back SSH keys updates: %w", errs)
 				return
@@ -634,13 +680,19 @@ func (dn *Daemon) updateHypershift(oldConfig, newConfig *mcfgv1.MachineConfig, d
 		}
 	}()
 
-	if err := dn.updateSSHKeys(newIgnConfig.Passwd.Users); err != nil {
+	sshOpts := sshKeyOpts{
+		ign3Users: newIgnConfig.Passwd.Users,
+		vp:        dn.validationPaths,
+	}
+
+	if err := dn.updateSSHKeys(sshOpts); err != nil {
 		return err
 	}
 
 	defer func() {
 		if retErr != nil {
-			if err := dn.updateSSHKeys(oldIgnConfig.Passwd.Users); err != nil {
+			sshOpts.ign3Users = oldIgnConfig.Passwd.Users
+			if err := dn.updateSSHKeys(sshOpts); err != nil {
 				errs := kubeErrs.NewAggregate([]error{err, retErr})
 				retErr = fmt.Errorf("error rolling back SSH keys updates: %w", errs)
 				return
@@ -1529,16 +1581,12 @@ func (dn *Daemon) writeFiles(files []ign3types.File) error {
 	return writeFiles(files)
 }
 
-func (dn *Daemon) atomicallyWriteSSHKey(authKeyPath, keys string) error {
-	uid, err := lookupUID(constants.CoreUserName)
-	if err != nil {
-		return err
+func (dn *Daemon) atomicallyWriteSSHKey(opts sshKeyOpts) error {
+	if err := opts.populate(); err != nil {
+		return fmt.Errorf("could not populate sshKeyOpts: %w", err)
 	}
 
-	gid, err := lookupGID(constants.CoreGroupName)
-	if err != nil {
-		return err
-	}
+	authKeyPath := opts.vp.ExpectedSSHKeyPath()
 
 	// Keys should only be written to "/home/core/.ssh"
 	// Once Users are supported fully this should be writing to PasswdUser.HomeDir
@@ -1549,37 +1597,54 @@ func (dn *Daemon) atomicallyWriteSSHKey(authKeyPath, keys string) error {
 	authKeyDir := filepath.Dir(authKeyPath)
 	if _, err := os.Stat(authKeyDir); os.IsNotExist(err) {
 		glog.Infof("Creating missing SSH key dir at %s", authKeyDir)
-		mkdirCoreCommand := exec.Command("runuser", "-u", constants.CoreUserName, "--", "mkdir", "-m", "0700", "-p", authKeyDir)
+		mkdirCoreCommand := exec.Command("runuser", "-u", opts.systemuser, "--", "mkdir", "-m", "0700", "-p", authKeyDir)
 		if err := mkdirCoreCommand.Run(); err != nil {
 			return err
 		}
 	}
 
-	if err := writeFileAtomically(authKeyPath, []byte(keys), os.FileMode(0o700), os.FileMode(0o600), uid, gid); err != nil {
+	keys := []byte(concatSSHKeys(opts.ign3Users))
+	if err := writeFileAtomically(authKeyPath, keys, os.FileMode(0o700), os.FileMode(0o600), opts.uid, opts.gid); err != nil {
 		return err
 	}
 
-	glog.V(2).Infof("Wrote SSH keys to %s", authKeyPath)
+	glog.V(2).Infof("Wrote SSH keys to %q", authKeyPath)
 
 	return nil
 }
 
 // Update a given PasswdUser's SSHKey
-func (dn *Daemon) updateSSHKeys(newUsers []ign3types.PasswdUser) error {
-	if len(newUsers) == 0 {
+func (dn *Daemon) updateSSHKeys(opts sshKeyOpts) error {
+	if len(opts.ign3Users) == 0 {
 		return nil
 	}
 
 	var uErr user.UnknownUserError
-	switch _, err := user.Lookup(constants.CoreUserName); {
+	switch _, err := user.Lookup(opts.systemuser); {
 	case err == nil:
 	case errors.As(err, &uErr):
-		glog.Info("core user does not exist, and creating users is not supported, so ignoring configuration specified for core user")
+		glog.Infof("%s user does not exist, and creating users is not supported, so ignoring configuration specified for %s user", opts.systemuser, opts.systemuser)
 		return nil
 	default:
-		return fmt.Errorf("failed to check if user core exists: %w", err)
+		return fmt.Errorf("failed to check if user %s exists: %w", opts.systemuser, err)
 	}
 
+	// In RHCOS 8.6 or lower, the keys were written to `/home/core/.ssh/authorized_keys`.
+	// RHCOS 9.0+, FCOS, and SCOS will however expect the keys at `/home/core/.ssh/authorized_keys.d/ignition`.
+	// Check if the authorized_keys file at the legacy path exists. If it does, remove it.
+	// It will be recreated at the new fragment path by the atomicallyWriteSSHKey function
+	// that is called right after.
+	if dn.os.IsEL9() || dn.os.IsSCOS() || dn.os.IsFCOS() {
+		if err := cleanSSHKeyPaths(opts); err != nil {
+			return err
+		}
+	}
+
+	// Note we write keys only for the core user and so this ignores the user list
+	return dn.atomicallyWriteSSHKey(opts)
+}
+
+func concatSSHKeys(newUsers []ign3types.PasswdUser) string {
 	// we're also appending all keys for any user to core, so for now
 	// we pass this to atomicallyWriteSSHKeys to write.
 	// we know these users are "core" ones also cause this slice went through Reconcilable
@@ -1590,51 +1655,34 @@ func (dn *Daemon) updateSSHKeys(newUsers []ign3types.PasswdUser) error {
 		}
 	}
 
-	authKeyPath := constants.RHCOS8SSHKeyPath
-
-	if !dn.mock {
-		// In RHCOS 8.6 or lower, the keys were written to `/home/core/.ssh/authorized_keys`.
-		// RHCOS 9.0+, FCOS, and SCOS will however expect the keys at `/home/core/.ssh/authorized_keys.d/ignition`.
-		// Check if the authorized_keys file at the legacy path exists. If it does, remove it.
-		// It will be recreated at the new fragment path by the atomicallyWriteSSHKey function
-		// that is called right after.
-		if dn.os.IsEL9() || dn.os.IsSCOS() || dn.os.IsFCOS() {
-			authKeyPath = constants.RHCOS9SSHKeyPath
-
-			if err := cleanSSHKeyPaths(); err != nil {
-				return err
-			}
-		}
-
-		// Note we write keys only for the core user and so this ignores the user list
-		return dn.atomicallyWriteSSHKey(authKeyPath, concatSSHKeys)
-	}
-
-	return nil
+	return concatSSHKeys
 }
 
 // Removes the old SSH key path (/home/core/.ssh/authorized_keys), if found.
-func cleanSSHKeyPaths() error {
-	_, err := os.Stat(constants.RHCOS8SSHKeyPath)
+func cleanSSHKeyPaths(opts sshKeyOpts) error {
+	oldAuthKeyPath := opts.vp.UnexpectedSSHKeyPath()
+	_, err := os.Stat(oldAuthKeyPath)
 	if err == nil {
-		err := os.RemoveAll(constants.RHCOS8SSHKeyPath)
+		err := os.RemoveAll(oldAuthKeyPath)
 		if err != nil {
-			return fmt.Errorf("failed to remove path '%s': %w", constants.RHCOS8SSHKeyPath, err)
+			return fmt.Errorf("failed to remove path '%s': %w", oldAuthKeyPath, err)
 		}
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		// This shouldn't ever happen
-		return fmt.Errorf("unexpectedly failed to get info for path '%s': %w", constants.RHCOS8SSHKeyPath, err)
+		return fmt.Errorf("unexpectedly failed to get info for path '%s': %w", oldAuthKeyPath, err)
 	}
 
-	return removeNonIgnitionKeyPathFragments()
+	return removeNonIgnitionKeyPathFragments(opts)
 }
 
 // Ensures authorized_keys.d/ignition is the only fragment that exists within the /home/core/.ssh dir.
-func removeNonIgnitionKeyPathFragments() error {
+func removeNonIgnitionKeyPathFragments(opts sshKeyOpts) error {
+	// /home/core/.ssh/authorized_keys.d/ignition
+	authKeyPath := opts.vp.ExpectedSSHKeyPath()
 	// /home/core/.ssh/authorized_keys.d
-	authKeyFragmentDirPath := filepath.Dir(constants.RHCOS9SSHKeyPath)
+	authKeyFragmentDirPath := filepath.Dir(authKeyPath)
 	// ignition
-	authKeyFragmentBasename := filepath.Base(constants.RHCOS9SSHKeyPath)
+	authKeyFragmentBasename := filepath.Base(authKeyPath)
 
 	keyFragmentsDir, err := ctrlcommon.ReadDir(authKeyFragmentDirPath)
 	if err == nil {
@@ -1649,7 +1697,7 @@ func removeNonIgnitionKeyPathFragments() error {
 		}
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		// This shouldn't ever happen
-		return fmt.Errorf("unexpectedly failed to get info for path '%s': %w", constants.RHCOS9SSHKeyPath, err)
+		return fmt.Errorf("unexpectedly failed to get info for path '%s': %w", authKeyPath, err)
 	}
 
 	return nil

@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -23,6 +25,7 @@ func TestConfigDriftMonitor(t *testing.T) {
 	// their types.
 	fileErr := &configDriftErr{&fileConfigDriftErr{fmt.Errorf("file error")}}
 	unitErr := &configDriftErr{&unitConfigDriftErr{fmt.Errorf("unit error")}}
+	sshErr := &configDriftErr{&sshConfigDriftErr{fmt.Errorf("ssh error")}}
 
 	// Filesystem Mutators
 	// These are closures to avoid namespace collisions and pollution since
@@ -197,9 +200,68 @@ func TestConfigDriftMonitor(t *testing.T) {
 			expectedErr:  unitErr,
 			mutateDropin: chmodFile,
 		},
+		// SSH authorized keys
+		// These target the SSH authorized keys which can be located in
+		// /home/core/.ssh/authorized_keys (for RHCOS 8) or
+		// /home/core/.ssh/authorized_keys.d/ignition (for RHCOS 9 / FCOS / SCOS)
+		// (but not both!)
+		{
+			name:        "ign SSH content drift",
+			expectedErr: sshErr,
+			mutateSSH:   changeFileContent,
+		},
+		{
+			name:      "ign SSH touch",
+			mutateSSH: touchFile,
+		},
+		{
+			name:        "ign SSH rename",
+			expectedErr: sshErr,
+			mutateSSH:   renameFile,
+		},
+		{
+			name:        "ign SSH delete",
+			expectedErr: sshErr,
+			mutateSSH:   os.Remove,
+		},
+		{
+			name:        "ign SSH overwrite",
+			expectedErr: sshErr,
+			mutateSSH:   overwriteFile,
+		},
+		{
+			name:        "ign SSH chmod",
+			expectedErr: sshErr,
+			mutateSSH:   chmodFile,
+		},
+		// This targets the SSH key directory for mode changes.
+		{
+			name:        "ign SSH unexpected dir mode",
+			expectedErr: sshErr,
+			mutateSSH: func(path string) error {
+				return chmodFile(filepath.Dir(path))
+			},
+		},
+		// For this test, we write to the unexpected SSH key path on disk which
+		// should cause a drift.
+		{
+			name:        "ign SSH unexpected key path",
+			expectedErr: sshErr,
+			mutateSSHUnexpected: func(path string) error {
+				// For SSH, we want to monitor /home/core/.ssh and anything beneath it.
+				// Assuming /home/core/.ssh/authorized_keys.d/ignition is present, we
+				// also want to monitor /home/core/.ssh/authorized_keys. We do this so
+				// we can degrade if SSH keys are written to the old location.
+				if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+					return err
+				}
+
+				return os.WriteFile(path, []byte("ssh-rsa 1...\nssh-rsa 2..."), 0o600)
+			},
+		},
 	}
 
-	// Create a mutex for our test cases The mutex is needed because we now
+	// Create a mutex for our test cases. The mutex is needed because we now
 	// overwrite the origParentDirPath and noOrigParentDirPath global variables
 	// so that our filesystem mutations are confined to a tempdir created by the
 	// test case. However, since this is a global value, we need to be sure that
@@ -208,22 +270,50 @@ func TestConfigDriftMonitor(t *testing.T) {
 	// tempdir.
 	testMutex := &sync.Mutex{}
 
-	for _, testCase := range testCases {
+	for _, testCase := range append(testCases, getRHCOS9TestCases(testCases)...) {
 		// Wire up the mutex to each test case before executing so they don't stomp
 		// on each other.
 		testCase.testMutex = testMutex
 		testCase := testCase
+
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			tmpDir := t.TempDir()
+			testCase.tmpDir = t.TempDir()
+			os := mockOS{}
+			if testCase.os == os {
+				os = rhcos8()
+			} else {
+				os = testCase.os
+			}
 
-			testCase.tmpDir = tmpDir
-			testCase.systemdPath = filepath.Join(tmpDir, pathSystemd)
+			vp, err := GetValidationPathsWithPrefix(os, testCase.tmpDir)
+			require.NoError(t, err)
+
+			testCase.ValidationPaths = vp
 
 			testCase.run(t)
 		})
 	}
+}
+
+// Generates RHCOS 9 test cases from a subset of our test cases. This is
+// because the setup for those testcases is identical. However, the expected
+// SSH key paths are different. These are inferred by the ValidationPaths
+// constructor.
+func getRHCOS9TestCases(testCases []configDriftMonitorTestCase) []configDriftMonitorTestCase {
+	rhcos9TestCases := []configDriftMonitorTestCase{}
+
+	for i := range testCases {
+		testCase := testCases[i]
+		if strings.Contains(testCase.name, "SSH") {
+			testCase.name = testCase.name + " rhcos9"
+			testCase.os = rhcos9()
+			rhcos9TestCases = append(rhcos9TestCases, testCase)
+		}
+	}
+
+	return rhcos9TestCases
 }
 
 // Holds a testcase and its associated helper funcs
@@ -234,8 +324,8 @@ type configDriftMonitorTestCase struct {
 	expectedErr error
 	// The tmpdir for the test case (assigned at runtime)
 	tmpDir string
-	// The systemdroot for the test case (assigned at runtime)
-	systemdPath string
+	// The validation paths for the test case (assigned at runtime)
+	ValidationPaths
 	// Only one of these may be used per testcase:
 	// The mutation to apply to the Ignition file
 	mutateFile func(string) error
@@ -245,6 +335,12 @@ type configDriftMonitorTestCase struct {
 	mutateUnit func(string) error
 	// The mutation to apply to the systemd dropin file
 	mutateDropin func(string) error
+	// The mutation to apply to the SSH authorized key file
+	mutateSSH func(string) error
+	// The mutation to apply to the SSH authorized key file in the unexpected location
+	mutateSSHUnexpected func(string) error
+	// The OS to target
+	os mockOS
 	// Mutex to ensure that parallel tests do not stomp on one another
 	testMutex *sync.Mutex
 }
@@ -302,7 +398,6 @@ func (tc configDriftMonitorTestCase) run(t *testing.T) {
 	// Configure the config drift monitor
 	opts := ConfigDriftMonitorOpts{
 		ErrChan:       errChan,
-		SystemdPath:   tc.systemdPath,
 		MachineConfig: mc,
 		OnDrift: func(err error) {
 			go func() {
@@ -311,6 +406,7 @@ func (tc configDriftMonitorTestCase) run(t *testing.T) {
 			onDriftCalled = true
 			tc.onDriftFunc(t, err)
 		},
+		ValidationPaths: tc.ValidationPaths,
 	}
 
 	// Start the config drift monitor
@@ -390,6 +486,17 @@ func (tc configDriftMonitorTestCase) getIgnConfig(t *testing.T) ign3types.Config
 				setDefaultUIDandGID(compressedFile),
 			},
 		},
+		Passwd: ign3types.Passwd{
+			Users: []ign3types.PasswdUser{
+				{
+					Name: constants.CoreUserName,
+					SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{
+						"ssh-rsa key1",
+						"ssh-rsa key2",
+					},
+				},
+			},
+		},
 		Systemd: ign3types.Systemd{
 			Units: []ign3types.Unit{
 				{
@@ -428,13 +535,21 @@ func (tc configDriftMonitorTestCase) mutate(ignConfig ign3types.Config) error {
 	}
 
 	if tc.mutateDropin != nil {
-		dropinPath := getIgn3SystemdDropinPath(tc.systemdPath, ignConfig.Systemd.Units[0], ignConfig.Systemd.Units[0].Dropins[0])
+		dropinPath := tc.SystemdDropinPath(ignConfig.Systemd.Units[0].Name, ignConfig.Systemd.Units[0].Dropins[0].Name)
 		return tc.mutateDropin(dropinPath)
 	}
 
 	if tc.mutateUnit != nil {
-		unitPath := getIgn3SystemdUnitPath(tc.systemdPath, ignConfig.Systemd.Units[0])
+		unitPath := tc.SystemdUnitPath(ignConfig.Systemd.Units[0].Name)
 		return tc.mutateUnit(unitPath)
+	}
+
+	if tc.mutateSSH != nil {
+		return tc.mutateSSH(tc.ExpectedSSHKeyPath())
+	}
+
+	if tc.mutateSSHUnexpected != nil {
+		return tc.mutateSSHUnexpected(tc.UnexpectedSSHKeyPath())
 	}
 
 	return fmt.Errorf("no file mutator provided")
@@ -460,6 +575,8 @@ func (tc configDriftMonitorTestCase) getFixtures(t *testing.T) (ign3types.Config
 	// Create a MachineConfig from our Ignition Config
 	mc := helpers.CreateMachineConfigFromIgnition(ignConfig)
 	mc.Name = "config-drift-monitor" + string(uuid.NewUUID())
+
+	require.NoError(t, validateOnDiskState(mc, tc.ValidationPaths))
 
 	return ignConfig, mc
 }
@@ -497,8 +614,12 @@ func (tc *configDriftMonitorTestCase) writeIgnitionConfig(t *testing.T, ignConfi
 	}
 
 	// Write systemd units the same way the MCD does.
-	if err := writeUnits(ignConfig.Systemd.Units, tc.systemdPath, true); err != nil {
+	if err := writeUnits(ignConfig.Systemd.Units, tc.SystemdPath(), true); err != nil {
 		return fmt.Errorf("could not write systemd units: %w", err)
+	}
+
+	if err := writeFileAtomically(tc.ExpectedSSHKeyPath(), []byte(concatSSHKeys(ignConfig.Passwd.Users)), 0o700, 0o600, -1, -1); err != nil {
+		return err
 	}
 
 	return nil
@@ -508,6 +629,8 @@ func (tc configDriftMonitorTestCase) onDriftFunc(t *testing.T, err error) {
 	// If we're not expecting a configDriftErr, we should not end up here.
 	if tc.expectedErr == nil {
 		t.Errorf("expected no config drift error, but got one anyway: %s", err)
+	} else {
+		t.Logf("got expected error: %s", err)
 	}
 
 	// Make sure that we get specific error types based upon the expected
@@ -525,5 +648,11 @@ func (tc configDriftMonitorTestCase) onDriftFunc(t *testing.T, err error) {
 	var uErr *unitConfigDriftErr
 	if errors.As(tc.expectedErr, &uErr) {
 		assert.ErrorAs(t, err, &uErr)
+	}
+
+	// If the testcase asks for an sshConfigDriftErr, be sure we got one.
+	var sErr *sshConfigDriftErr
+	if errors.As(tc.expectedErr, &sErr) {
+		assert.ErrorAs(t, err, &sErr)
 	}
 }

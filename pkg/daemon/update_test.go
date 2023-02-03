@@ -10,12 +10,14 @@ import (
 	"path/filepath"
 	"reflect"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/daemon/osrelease"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/assert"
@@ -24,6 +26,59 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 )
+
+// Mock of osrelease.OperatingSystem. Useful for exercising OS-dependent
+// codepaths within the MCD.
+type mockOS struct {
+	isEL                   bool
+	isEL9                  bool
+	isFCOS                 bool
+	isSCOS                 bool
+	isLikeTraditionalRHEL7 bool
+	isCoreOSVariant        bool
+}
+
+func (m mockOS) IsEL() bool {
+	return m.isEL
+}
+
+func (m mockOS) IsEL9() bool {
+	return m.isEL9
+}
+
+func (m mockOS) IsFCOS() bool {
+	return m.isFCOS
+}
+
+func (m mockOS) IsSCOS() bool {
+	return m.isSCOS
+}
+
+func (m mockOS) IsLikeTraditionalRHEL7() bool {
+	return m.isLikeTraditionalRHEL7
+}
+
+func (m mockOS) IsCoreOSVariant() bool {
+	return m.isCoreOSVariant
+}
+
+// Creates a mockOS instance that will evaluate to RHCOS 8 for code paths that
+// require it.
+func rhcos8() mockOS {
+	return mockOS{
+		isEL9: false,
+		isEL:  true,
+	}
+}
+
+// Creates a mockOS instance that will evaluate to RHCOS 9 for code paths that
+// require it.
+func rhcos9() mockOS {
+	return mockOS{
+		isEL9: true,
+		isEL:  true,
+	}
+}
 
 func newMockDaemon() Daemon {
 	// Create a Daemon instance with mocked clients
@@ -427,25 +482,231 @@ func TestWriteFiles(t *testing.T) {
 	}
 }
 
-func TestUpdateSSHKeys(t *testing.T) {
-	d := newMockDaemon()
+// Writes SSH keys to the temp directory and then ensures that they match the
+// expected on-disk state by calling the appropriate on-disk validator.
+func TestCheckSSHDiskState(t *testing.T) {
+	t.Parallel()
 
-	// Set up machineconfigs that are identical except for SSH keys
-	tempUser := ign3types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"1234", "4567"}}
-	newIgnCfg := ctrlcommon.NewIgnConfig()
-	newIgnCfg.Passwd.Users = []ign3types.PasswdUser{tempUser}
-	err := d.updateSSHKeys(newIgnCfg.Passwd.Users)
-	if err != nil {
-		t.Errorf("Expected no error. Got %s.", err)
-
+	testCases := []struct {
+		name           string
+		fileMode       os.FileMode
+		dirMode        os.FileMode
+		errExpected    bool
+		fileContents   string
+		unexpectedPath string
+		os             mockOS
+	}{
+		{
+			name: "Happy path - RHCOS8",
+			os:   rhcos8(),
+		},
+		{
+			name: "Happy path - RHCOS9",
+			os:   rhcos9(),
+		},
+		{
+			name:        "Wrong file mode - RHCOS8",
+			fileMode:    os.FileMode(0o700),
+			errExpected: true,
+			os:          rhcos8(),
+		},
+		{
+			name:        "Wrong file mode - RHCOS9",
+			fileMode:    os.FileMode(0o700),
+			errExpected: true,
+			os:          rhcos9(),
+		},
+		{
+			name:        "Wrong dir mode - RHCOS8",
+			dirMode:     os.FileMode(0o755),
+			errExpected: true,
+			os:          rhcos8(),
+		},
+		{
+			name:        "Wrong dir mode - RHCOS9",
+			dirMode:     os.FileMode(0o755),
+			errExpected: true,
+			os:          rhcos9(),
+		},
+		{
+			name:         "Unexpected file contents - RHCOS8",
+			errExpected:  true,
+			fileContents: "not-the-expected-contents",
+			os:           rhcos8(),
+		},
+		{
+			name:         "Unexpected file contents - RHCOS9",
+			errExpected:  true,
+			fileContents: "not-the-expected-contents",
+			os:           rhcos9(),
+		},
+		{
+			name:        "Unexpected path - RHCOS8",
+			errExpected: true,
+			os:          rhcos8(),
+		},
+		{
+			name:        "Unexpected path - RHCOS9",
+			errExpected: true,
+			os:          rhcos9(),
+		},
+		{
+			name:        "Unexpected path fragment - RHCOS9",
+			errExpected: true,
+			os:          rhcos9(),
+		},
 	}
 
-	// if Users is empty, nothing should happen and no error should ever be generated
-	newIgnCfg2 := ctrlcommon.NewIgnConfig()
-	newIgnCfg2.Passwd.Users = []ign3types.PasswdUser{}
-	err = d.updateSSHKeys(newIgnCfg2.Passwd.Users)
-	if err != nil {
-		t.Errorf("Expected no error. Got: %s", err)
+	for _, testCase := range testCases {
+		testCase := testCase
+
+		t.Run(testCase.name, func(t *testing.T) {
+			vp, err := GetValidationPathsWithPrefix(testCase.os, t.TempDir())
+			require.NoError(t, err)
+
+			populatedSSHKeys := []ign3types.PasswdUser{{Name: constants.CoreUserName, SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"1234", "4567"}}}
+
+			contents := []byte{}
+			if testCase.fileContents != "" {
+				contents = []byte(testCase.fileContents)
+			} else {
+				contents = []byte(concatSSHKeys(populatedSSHKeys))
+			}
+
+			if testCase.fileMode == 0 {
+				testCase.fileMode = os.FileMode(0o600)
+			}
+
+			if testCase.dirMode == 0 {
+				testCase.dirMode = os.FileMode(0o700)
+			}
+
+			expectedKeyPath := vp.ExpectedSSHKeyPath()
+			unexpectedKeyPath := vp.UnexpectedSSHKeyPath()
+
+			if strings.Contains(testCase.name, "Unexpected path fragment") {
+				fragmentPath := filepath.Join(filepath.Dir(expectedKeyPath), "unexpected-fragment")
+				require.NoError(t, os.MkdirAll(filepath.Dir(fragmentPath), testCase.dirMode))
+				require.NoError(t, os.WriteFile(fragmentPath, contents, testCase.fileMode))
+			} else if strings.Contains(testCase.name, "Unexpected path") {
+				require.NoError(t, os.MkdirAll(filepath.Dir(unexpectedKeyPath), testCase.dirMode))
+				require.NoError(t, os.WriteFile(unexpectedKeyPath, contents, testCase.fileMode))
+			}
+
+			require.NoError(t, os.MkdirAll(filepath.Dir(expectedKeyPath), testCase.dirMode))
+			require.NoError(t, os.WriteFile(expectedKeyPath, contents, testCase.fileMode))
+
+			if testCase.errExpected {
+				assert.Error(t, checkV3SSHKeys(populatedSSHKeys, vp))
+			} else {
+				assert.NoError(t, checkV3SSHKeys(populatedSSHKeys, vp))
+			}
+		})
+	}
+}
+
+// Tests writing keys via the updateSSHKeys() method attached to the MCD as
+// well as the on-disk validation to ensure that the writes performed will not
+// degrade the MCD.
+func TestUpdateSSHKeys(t *testing.T) {
+	t.Parallel()
+
+	populatedSSHKeys := []ign3types.PasswdUser{{Name: constants.CoreUserName, SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"1234", "4567"}}}
+	populatedContents := "1234\n4567\n"
+
+	emptySSHKeys := []ign3types.PasswdUser{{Name: constants.CoreUserName, SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{}}}
+	emptyContents := ""
+
+	testCases := []struct {
+		name                 string
+		os                   mockOS
+		ignUsers             []ign3types.PasswdUser
+		expectedFileContents string
+	}{
+		{
+			name:                 "RHCOS 8 - with SSH keys",
+			os:                   rhcos8(),
+			ignUsers:             populatedSSHKeys,
+			expectedFileContents: populatedContents,
+		},
+		{
+			name:                 "RHCOS 8 - with empty SSH keys",
+			os:                   rhcos8(),
+			ignUsers:             emptySSHKeys,
+			expectedFileContents: emptyContents,
+		},
+		{
+			name:                 "RHCOS 9 - with SSH keys",
+			os:                   rhcos9(),
+			ignUsers:             populatedSSHKeys,
+			expectedFileContents: populatedContents,
+		},
+		{
+			name:                 "RHCOS 9 - with empty SSH keys",
+			os:                   rhcos9(),
+			ignUsers:             emptySSHKeys,
+			expectedFileContents: emptyContents,
+		},
+	}
+
+	// Use the current user so we can ensure that user lookups are successful.
+	currentUser, err := user.Current()
+	assert.Nil(t, err)
+
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			d := newMockDaemon()
+			// Override the daemon osrelease object with our mock object.
+			d.os = testCase.os
+
+			vp, err := GetValidationPathsWithPrefix(testCase.os, t.TempDir())
+			require.NoError(t, err)
+
+			// Create the SSH key directory to avoid calling "runuser" in this test since doing that requires root.
+			require.NoError(t, os.MkdirAll(filepath.Dir(vp.ExpectedSSHKeyPath()), os.FileMode(0o700)))
+
+			if testCase.os == rhcos9() {
+				unexpectedPaths := []string{vp.UnexpectedSSHKeyPath()}
+
+				// Create additional path fragments (e.g.,
+				// /home/core/.ssh/authorized_keys.d/fragment-{0,5}) under the expected
+				// path for RHCOS 9 so we can ensure they're deleted.
+				for i := 0; i < 5; i++ {
+					fragmentPath := filepath.Join(filepath.Dir(vp.ExpectedSSHKeyPath()), fmt.Sprintf("fragment-%d", i))
+					unexpectedPaths = append(unexpectedPaths, fragmentPath)
+				}
+
+				// Write SSH key contents to all the unexpected paths as we expect them
+				// to not be present after we write the SSH keys.
+				for _, unexpectedPath := range unexpectedPaths {
+					require.NoError(t, os.MkdirAll(filepath.Dir(unexpectedPath), os.FileMode(0o700)))
+					require.NoError(t, os.WriteFile(unexpectedPath, []byte(testCase.expectedFileContents), os.FileMode(0o600)))
+				}
+			}
+
+			newIgnCfg := ctrlcommon.NewIgnConfig()
+			newIgnCfg.Passwd.Users = testCase.ignUsers
+
+			// Ensure that we get a disk state validation error because we've
+			// purposely ensured that we will by writing to the unexpected paths
+			// above.
+			assert.Error(t, checkV3SSHKeys(newIgnCfg.Passwd.Users, vp))
+
+			// Write the SSH key to disk using the updateSSHKeys method.
+			sshKeyErr := d.updateSSHKeys(sshKeyOpts{
+				systemuser: currentUser.Username,
+				ign3Users:  newIgnCfg.Passwd.Users,
+				uid:        -1,
+				gid:        -1,
+				vp:         vp,
+			})
+			assert.NoError(t, sshKeyErr)
+
+			// Ensure that writing the SSH keys clears up the invalid on-disk state.
+			assert.NoError(t, checkV3SSHKeys(newIgnCfg.Passwd.Users, vp))
+		})
 	}
 }
 
