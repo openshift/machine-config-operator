@@ -24,8 +24,8 @@ var (
 		})
 
 	// mcdPivotErr flags error encountered during pivot
-	mcdPivotErr = prometheus.NewCounter(
-		prometheus.CounterOpts{
+	mcdPivotErr = prometheus.NewGauge(
+		prometheus.GaugeOpts{
 			Name: "mcd_pivot_errors_total",
 			Help: "Total number of errors encountered during pivot.",
 		})

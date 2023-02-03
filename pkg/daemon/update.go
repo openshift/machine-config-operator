@@ -1980,6 +1980,9 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 		}
 	}
 
+	// if we're here, we've successfully pivoted, or pivoting wasn't necessary, so we reset the error gauge
+	mcdPivotErr.Set(0)
+
 	defer func() {
 		// Operations performed by rpm-ostree on the booted system are available
 		// as staged deployment. It gets applied only when we reboot the system.
@@ -2047,6 +2050,9 @@ func (dn *CoreOSDaemon) applyLegacyOSChanges(mcDiff machineConfigDiff, oldConfig
 			dn.nodeWriter.Eventf(corev1.EventTypeNormal, "OSUpgradeSkipped", "OS upgrade skipped; new MachineConfig (%s) has same OS image (%s) as old MachineConfig (%s)", newConfig.Name, newConfig.Spec.OSImageURL, oldConfig.Name)
 		}
 	}
+
+	// if we're here, we've successfully pivoted, or pivoting wasn't necessary, so we reset the error gauge
+	mcdPivotErr.Set(0)
 
 	defer func() {
 		// Operations performed by rpm-ostree on the booted system are available
