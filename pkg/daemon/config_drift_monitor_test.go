@@ -3,7 +3,6 @@ package daemon
 import (
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sync"
@@ -30,7 +29,7 @@ func TestConfigDriftMonitor(t *testing.T) {
 	// These are closures to avoid namespace collisions and pollution since
 	// they're not useful outside of this test.
 	changeFileContent := func(path string) error {
-		return ioutil.WriteFile(path, []byte("notthecontents"), defaultFilePermissions)
+		return os.WriteFile(path, []byte("notthecontents"), defaultFilePermissions)
 	}
 
 	touchFile := func(path string) error {

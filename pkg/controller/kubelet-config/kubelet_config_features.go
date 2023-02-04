@@ -179,8 +179,9 @@ func (ctrl *Controller) deleteFeature(obj interface{}) {
 	glog.V(4).Infof("Deleted Feature %s and restored default config", features.Name)
 }
 
-//nolint:gocritic
 // generateFeatureMap returns a map of enabled/disabled feature gate selection with exclusion list
+//
+//nolint:gocritic
 func generateFeatureMap(features *osev1.FeatureGate, exclusions ...string) (*map[string]bool, error) {
 	rv := make(map[string]bool)
 	if features == nil {

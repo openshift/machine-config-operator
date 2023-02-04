@@ -128,6 +128,7 @@ func isDrainRequired(actions, diffFileSet []string, oldIgnConfig, newIgnConfig i
 // 1. A new mirror is added to an existing registry that has `mirror-by-digest-only=true`
 // 2. A new registry has been added that has `mirror-by-digest-only=true`
 // See https://bugzilla.redhat.com/show_bug.cgi?id=1943315
+//
 //nolint:gocyclo
 func isSafeContainerRegistryConfChanges(oldIgnConfig, newIgnConfig ign3types.Config) (bool, error) {
 	// /etc/containers/registries.conf contains config in toml format. Parse the file

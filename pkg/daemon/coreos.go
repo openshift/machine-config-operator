@@ -6,7 +6,7 @@ package daemon
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"os"
 
 	"github.com/golang/glog"
@@ -43,7 +43,7 @@ func logAlephInformation() error {
 	if err != nil {
 		return err
 	}
-	contents, err := ioutil.ReadAll(f)
+	contents, err := io.ReadAll(f)
 	if err != nil {
 		return err
 	}
@@ -56,7 +56,7 @@ func logAlephInformation() error {
 }
 
 func logInitionProvisioning() error {
-	contents, err := ioutil.ReadFile(ignitionProvisioningPath)
+	contents, err := os.ReadFile(ignitionProvisioningPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			fmt.Printf("No %s found", ignitionProvisioningPath)
