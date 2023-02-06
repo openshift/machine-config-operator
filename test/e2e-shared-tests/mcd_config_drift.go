@@ -3,7 +3,6 @@ package e2e_shared_test
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -24,19 +23,20 @@ import (
 )
 
 const (
-	configDriftSystemdUnitFilename       string = "/etc/systemd/system/e2etest.service"
-	configDriftSystemdUnitFileContents   string = "e2etest-service-unit-contents"
-	configDriftSystemdDropinFilename     string = "/etc/systemd/system/e2etest.service.d/10-e2etest-service.conf"
-	configDriftSystemdDropinFileContents string = "e2etest-service-dropin-contents"
-	configDriftCompressedFilename        string = "/etc/compressed-file"
-	configDriftFilename                  string = "/etc/etc-file"
-	configDriftFileContents              string = "expected-file-data"
-	configDriftCompressedFilenameTwo     string = "/etc/compressed-file-two"
-	configDriftFilenameTwo               string = "/etc/etc-file-two"
-	configDriftFileContentsTwo           string = "expected-file-data-two"
-	configDriftMCPrefix                  string = "mcd-config-drift"
-	configDriftMonitorStartupMsg         string = "Config Drift Monitor started"
-	configDriftMonitorShutdownMsg        string = "Config Drift Monitor has shut down"
+	configDriftSSHKey                    ign3types.SSHAuthorizedKey = "abc"
+	configDriftSystemdUnitFilename       string                     = "/etc/systemd/system/e2etest.service"
+	configDriftSystemdUnitFileContents   string                     = "e2etest-service-unit-contents"
+	configDriftSystemdDropinFilename     string                     = "/etc/systemd/system/e2etest.service.d/10-e2etest-service.conf"
+	configDriftSystemdDropinFileContents string                     = "e2etest-service-dropin-contents"
+	configDriftCompressedFilename        string                     = "/etc/compressed-file"
+	configDriftFilename                  string                     = "/etc/etc-file"
+	configDriftFileContents              string                     = "expected-file-data"
+	configDriftCompressedFilenameTwo     string                     = "/etc/compressed-file-two"
+	configDriftFilenameTwo               string                     = "/etc/etc-file-two"
+	configDriftFileContentsTwo           string                     = "expected-file-data-two"
+	configDriftMCPrefix                  string                     = "mcd-config-drift"
+	configDriftMonitorStartupMsg         string                     = "Config Drift Monitor started"
+	configDriftMonitorShutdownMsg        string                     = "Config Drift Monitor has shut down"
 )
 
 // This test does the following:
@@ -169,7 +169,7 @@ func (c configDriftTest) getMachineConfig(t *testing.T) *mcfgv1.MachineConfig {
 				Mask:     helpers.BoolToPtr(true),
 			},
 		},
-		[]ign3types.SSHAuthorizedKey{},
+		[]ign3types.SSHAuthorizedKey{configDriftSSHKey},
 		[]string{},
 		false,
 		[]string{},
@@ -223,6 +223,32 @@ func (c configDriftTest) Run(t *testing.T) {
 				c.runDegradeAndRecoverContentRevert(t, configDriftCompressedFilename, configDriftFileContents)
 			},
 		},
+		{
+			name:           "revert file content recovery for SSH key",
+			rebootExpected: false,
+			testFunc: func(t *testing.T) {
+				nodeOS := helpers.GetOSReleaseForNode(t, c.ClientSet, c.node).OS
+				sshPaths := helpers.GetSSHPaths(nodeOS)
+				t.Run("expected SSH key contents is mutated", func(t *testing.T) {
+					c.runDegradeAndRecoverContentRevert(t, sshPaths.Expected, string(configDriftSSHKey))
+				})
+
+				unexpectedSSHPaths := []string{sshPaths.NotExpected}
+
+				if sshPaths.Expected == constants.RHCOS9SSHKeyPath {
+					unexpectedSSHPaths = append(unexpectedSSHPaths, "/home/core/.ssh/authorized_keys.d/should-degrade")
+				}
+
+				for _, unexpectedSSHPath := range unexpectedSSHPaths {
+					t.Run("adding unexpected SSH key path causes degradation "+unexpectedSSHPath, func(t *testing.T) {
+						c.runDegradeAndRecover(t, unexpectedSSHPath, string(configDriftSSHKey), func() {
+							t.Logf("Deleting %s to initiate recovery", unexpectedSSHPath)
+							helpers.ExecCmdOnNode(t, c.ClientSet, c.node, "rm", helpers.CanonicalizeNodeFilePath(unexpectedSSHPath))
+						})
+					})
+				}
+			},
+		},
 		// 1. Mutates a file on the node.
 		// 2. Creates the forcefile to cause recovery.
 		{
@@ -235,7 +261,7 @@ func (c configDriftTest) Run(t *testing.T) {
 
 				c.runDegradeAndRecover(t, configDriftFilename, configDriftFileContents, func() {
 					t.Logf("Setting forcefile to initiate recovery (%s)", constants.MachineConfigDaemonForceFile)
-					helpers.ExecCmdOnNode(t, c.ClientSet, c.node, "touch", filepath.Join("/rootfs", constants.MachineConfigDaemonForceFile))
+					helpers.ExecCmdOnNode(t, c.ClientSet, c.node, "touch", helpers.CanonicalizeNodeFilePath(constants.MachineConfigDaemonForceFile))
 				})
 			},
 		},
@@ -292,6 +318,16 @@ func (c configDriftTest) Run(t *testing.T) {
 				mutateFileOnNode(t, c.ClientSet, c.node, configDriftFilename, configDriftFileContents)
 				mutateFileOnNode(t, c.ClientSet, c.node, configDriftFilenameTwo, configDriftFileContentsTwo)
 				assertNodeAndMCPIsRecovered(t, c.ClientSet, c.node, c.mcp)
+			},
+		},
+		{
+			name:           "SSH keys degrade state",
+			rebootExpected: false,
+			testFunc: func(t *testing.T) {
+				nodeOS := helpers.GetOSReleaseForNode(t, c.ClientSet, c.node).OS
+				sshPaths := helpers.GetSSHPaths(nodeOS)
+
+				c.runDegradeAndRecoverContentRevert(t, sshPaths.Expected, string(configDriftSSHKey))
 			},
 		},
 	}
@@ -359,9 +395,7 @@ func (c configDriftTest) runDegradeAndRecover(t *testing.T, filename, expectedFi
 func mutateFileOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, filename, contents string) {
 	t.Helper()
 
-	if !strings.HasPrefix(filename, "/rootfs") {
-		filename = filepath.Join("/rootfs", filename)
-	}
+	filename = helpers.CanonicalizeNodeFilePath(filename)
 
 	bashCmd := fmt.Sprintf("printf '%s' > %s", contents, filename)
 	t.Logf("Setting contents of %s on %s to %s", filename, node.Name, contents)
@@ -372,7 +406,7 @@ func mutateFileOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, f
 func assertNodeAndMCPIsDegraded(t *testing.T, cs *framework.ClientSet, node corev1.Node, mcp mcfgv1.MachineConfigPool, filename string) {
 	t.Helper()
 
-	logEntry := fmt.Sprintf("content mismatch for file \"%s\"", filename)
+	logEntry := fmt.Sprintf("content mismatch for file %q", filename)
 
 	// Assert that the node eventually reaches a Degraded state and has the
 	// config mismatch as the reason

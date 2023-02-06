@@ -419,7 +419,7 @@ func CreateMC(name, role string) *mcfgv1.MachineConfig {
 func AssertFileOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, path string) bool {
 	t.Helper()
 
-	path = canonicalizeNodeFilePath(path)
+	path = CanonicalizeNodeFilePath(path)
 
 	out, err := ExecCmdOnNodeWithError(cs, node, "stat", path)
 
@@ -430,7 +430,7 @@ func AssertFileOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, p
 func AssertFileNotOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, path string) bool {
 	t.Helper()
 
-	path = canonicalizeNodeFilePath(path)
+	path = CanonicalizeNodeFilePath(path)
 
 	out, err := ExecCmdOnNodeWithError(cs, node, "stat", path)
 
@@ -439,7 +439,7 @@ func AssertFileNotOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node
 }
 
 // Adds the /rootfs onto a given file path, if not already present.
-func canonicalizeNodeFilePath(path string) string {
+func CanonicalizeNodeFilePath(path string) string {
 	rootfs := "/rootfs"
 
 	if !strings.HasPrefix(path, rootfs) {
