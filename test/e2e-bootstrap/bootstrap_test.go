@@ -193,46 +193,12 @@ metadata:
 spec:
   cgroupMode: "v2"`),
 			},
-			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries"},
-			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries"},
-		},
-		{
-			name: "With a node config manifest(CGroupv2, WLP) and master kubelet config manifest",
-			manifests: [][]byte{
-				[]byte(`apiVersion: config.openshift.io/v1
-kind: Node
-metadata:
-  name: cluster
-spec:
-  workerLatencyProfile: MediumUpdateAverageReaction
-  cgroupMode: "v2"`),
-				[]byte(`apiVersion: machineconfiguration.openshift.io/v1
-kind: KubeletConfig
-metadata:
-  name: master-kubelet-config
-spec:
-  machineConfigPoolSelector:
-    matchLabels:
-      pools.operator.machineconfiguration.openshift.io/master: ""
-  kubeletConfig:
-    podsPerCore: 10
-    maxPods: 250
-    systemReserved:
-      cpu: 1000m
-      memory: 500Mi
-    kubeReserved:
-      cpu: 1000m
-      memory: 500Mi
-`),
-			},
-			// "TechPreviewNoUpgrade" featureset not enabled, hence "CGroupsV2" is not applied
-			// "97-worker-generated-kubelet" is expected to be created to apply the workerlatencyprofile
-			// "97-master-generated-kubelet" is not expected
-			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries", "99-master-generated-kubelet"},
+			// As the CGroupsV2 feature is GA, 97-{master/worker}-generated-kubelet mcs are expected even without a Techpreview featuregate
+			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries", "97-master-generated-kubelet"},
 			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries", "97-worker-generated-kubelet"},
 		},
 		{
-			name: "With a node config manifest(CGroupv1, WLP) and master kubelet config manifest",
+			name: "With a node config manifest and a master kubelet config manifest",
 			manifests: [][]byte{
 				[]byte(`apiVersion: config.openshift.io/v1
 kind: Node
@@ -264,7 +230,7 @@ spec:
 			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries", "97-worker-generated-kubelet"},
 		},
 		{
-			name: "With a node config manifest(empty cgroupMode) and worker kubelet config manifest",
+			name: "With a node config manifest and a worker kubelet config manifest",
 			manifests: [][]byte{
 				[]byte(`apiVersion: config.openshift.io/v1
 kind: Node
