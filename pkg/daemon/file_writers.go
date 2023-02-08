@@ -16,37 +16,20 @@ import (
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 )
 
-var (
-	origParentDirPath   = filepath.Join("/etc", "machine-config-daemon", "orig")
-	noOrigParentDirPath = filepath.Join("/etc", "machine-config-daemon", "noorig")
-	usrPath             = "/usr"
-)
-
-func origParentDir() string {
-	return origParentDirPath
+type fileWriters struct {
+	paths Paths
+	os    osRelease
 }
 
-func noOrigParentDir() string {
-	return noOrigParentDirPath
+func newFileWriters(paths Paths, os osRelease) fileWriters {
+	return fileWriters{
+		paths: paths,
+		os:    os,
+	}
 }
 
-func origFileName(fpath string) string {
-	return filepath.Join(origParentDir(), fpath+".mcdorig")
-}
-
-// We use this to create a file that indicates that no original file existed on disk
-// when we write a file via a MachineConfig. Otherwise the MCD does not differentiate
-// between "a file existed due to a previous machineconfig" vs "a file existed on disk
-// before the MCD took over". Also see deleteStaleData() above.
-//
-// The "stamp" part of the name indicates it is not an actual backup file, just an
-// empty file to indicate lack of previous existence.
-func noOrigFileStampName(fpath string) string {
-	return filepath.Join(noOrigParentDir(), fpath+".mcdnoorig")
-}
-
-func createOrigFile(fromPath, fpath string) error {
-	if _, err := os.Stat(noOrigFileStampName(fpath)); err == nil {
+func (fw *fileWriters) CreateOrigFile(fromPath, fpath string) error {
+	if _, err := os.Stat(fw.paths.NoOrigFileStampName(fpath)); err == nil {
 		// we already created the no orig file for this default file
 		return nil
 	}
@@ -54,29 +37,154 @@ func createOrigFile(fromPath, fpath string) error {
 		// create a noorig file that tells the MCD that the file wasn't present on disk before MCD
 		// took over so it can just remove it when deleting stale data, as opposed as restoring a file
 		// that was shipped _with_ the underlying OS (e.g. a default chrony config).
-		if makeErr := os.MkdirAll(filepath.Dir(noOrigFileStampName(fpath)), 0o755); makeErr != nil {
+		if makeErr := os.MkdirAll(filepath.Dir(fw.paths.NoOrigFileStampName(fpath)), 0o755); makeErr != nil {
 			return fmt.Errorf("creating no orig parent dir: %w", makeErr)
 		}
-		return writeFileAtomicallyWithDefaults(noOrigFileStampName(fpath), nil)
+		return writeFileAtomicallyWithDefaults(fw.paths.NoOrigFileStampName(fpath), nil)
 	}
 
 	// https://bugzilla.redhat.com/show_bug.cgi?id=1970959
 	// orig file might exist, but be a relative/dangling symlink
-	if symlinkTarget, err := os.Readlink(origFileName(fpath)); err == nil {
+	if symlinkTarget, err := os.Readlink(fw.paths.OrigFileName(fpath)); err == nil {
 		if symlinkTarget != "" {
 			return nil
 		}
 	}
-	if _, err := os.Stat(origFileName(fpath)); err == nil {
+	if _, err := os.Stat(fw.paths.OrigFileName(fpath)); err == nil {
 		// the orig file is already there and we avoid creating a new one to preserve the real default
 		return nil
 	}
-	if err := os.MkdirAll(filepath.Dir(origFileName(fpath)), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(fw.paths.OrigFileName(fpath)), 0o755); err != nil {
 		return fmt.Errorf("creating orig parent dir: %w", err)
 	}
-	if out, err := exec.Command("cp", "-a", "--reflink=auto", fromPath, origFileName(fpath)).CombinedOutput(); err != nil {
+	if out, err := exec.Command("cp", "-a", "--reflink=auto", fromPath, fw.paths.OrigFileName(fpath)).CombinedOutput(); err != nil {
 		return fmt.Errorf("creating orig file for %q: %s: %w", fpath, string(out), err)
 	}
+	return nil
+}
+
+// write dropins to disk
+func (fw *fileWriters) WriteDropins(u ign3types.Unit) error {
+	for i := range u.Dropins {
+		dpath := fw.paths.SystemdDropinPath(u.Name, u.Dropins[i].Name)
+		if u.Dropins[i].Contents == nil || *u.Dropins[i].Contents == "" {
+			glog.Infof("Dropin for %s has no content, skipping write", u.Dropins[i].Name)
+			if _, err := os.Stat(dpath); err != nil {
+				if os.IsNotExist(err) {
+					continue
+				}
+				return err
+			}
+			glog.Infof("Removing %q, updated file has zero length", dpath)
+			if err := os.Remove(dpath); err != nil {
+				return err
+			}
+			continue
+		}
+
+		glog.Infof("Writing systemd unit dropin %q", u.Dropins[i].Name)
+		if _, err := os.Stat(fw.paths.WithUsrPath(dpath)); err == nil && fw.os.IsCoreOSVariant() {
+			if err := fw.CreateOrigFile(fw.paths.WithUsrPath(dpath), dpath); err != nil {
+				return err
+			}
+		}
+		if err := writeFileAtomicallyWithDefaults(dpath, []byte(*u.Dropins[i].Contents)); err != nil {
+			return fmt.Errorf("failed to write systemd unit dropin %q: %w", u.Dropins[i].Name, err)
+		}
+
+		glog.V(2).Infof("Wrote systemd unit dropin at %s", dpath)
+	}
+
+	return nil
+}
+
+// writeFiles writes the given files to disk.
+// it doesn't fetch remote files and expects a flattened config file.
+func (fw *fileWriters) WriteFiles(files []ign3types.File) error {
+	for _, file := range files {
+		glog.Infof("Writing file %q", file.Path)
+
+		// We don't support appends in the file section, so instead of waiting to fail validation,
+		// let's explicitly fail here.
+		if len(file.Append) > 0 {
+			return fmt.Errorf("found an append section when writing files. Append is not supported")
+		}
+
+		decodedContents, err := ctrlcommon.DecodeIgnitionFileContents(file.Contents.Source, file.Contents.Compression)
+		if err != nil {
+			return fmt.Errorf("could not decode file %q: %w", file.Path, err)
+		}
+
+		mode := defaultFilePermissions
+		if file.Mode != nil {
+			mode = os.FileMode(*file.Mode)
+		}
+
+		// set chown if file information is provided
+		uid, gid, err := getFileOwnership(file)
+		if err != nil {
+			return fmt.Errorf("failed to retrieve file ownership for file %q: %w", file.Path, err)
+		}
+		if err := fw.CreateOrigFile(file.Path, file.Path); err != nil {
+			return err
+		}
+		if err := writeFileAtomically(file.Path, decodedContents, defaultDirectoryPermissions, mode, uid, gid); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// writeUnit writes a systemd unit and its dropins to disk
+func (fw *fileWriters) WriteUnit(u ign3types.Unit) error {
+	if err := fw.WriteDropins(u); err != nil {
+		return err
+	}
+
+	// write (or cleanup) path in /etc/systemd/system
+	fpath := fw.paths.SystemdUnitPath(u.Name)
+	if u.Mask != nil && *u.Mask {
+		// if the unit is masked, symlink fpath to /dev/null and return early.
+
+		glog.V(2).Info("Systemd unit masked")
+		if err := os.RemoveAll(fpath); err != nil {
+			return fmt.Errorf("failed to remove unit %q: %w", u.Name, err)
+		}
+		glog.V(2).Infof("Removed unit %q", u.Name)
+
+		if err := renameio.Symlink(pathDevNull, fpath); err != nil {
+			return fmt.Errorf("failed to symlink unit %q to %s: %w", u.Name, pathDevNull, err)
+		}
+		glog.V(2).Infof("Created symlink unit %q to %s", u.Name, pathDevNull)
+
+		// Return early since we don't need to write the file contents in this case.
+		return nil
+	}
+
+	if u.Contents != nil && *u.Contents != "" {
+		glog.Infof("Writing systemd unit %q", u.Name)
+		if _, err := os.Stat(fw.paths.WithUsrPath(fpath)); err == nil && fw.os.IsCoreOSVariant() {
+			if err := fw.CreateOrigFile(fw.paths.WithUsrPath(fpath), fpath); err != nil {
+				return err
+			}
+		}
+		if err := writeFileAtomicallyWithDefaults(fpath, []byte(*u.Contents)); err != nil {
+			return fmt.Errorf("failed to write systemd unit %q: %w", u.Name, err)
+		}
+
+		glog.V(2).Infof("Successfully wrote systemd unit %q: ", u.Name)
+	} else if u.Mask != nil && !*u.Mask {
+		// if mask is explicitly set to false, make sure to remove a previous mask
+		// see https://bugzilla.redhat.com/show_bug.cgi?id=1966445
+		// Note that this does not catch all cleanup cases; for example, if the previous machine config specified
+		// Contents, and the current one does not, the previous content will not get cleaned up. For now we're ignoring some
+		// of those edge cases rather than introducing more complexity.
+		glog.V(2).Infof("Ensuring systemd unit %q has no mask at %q", u.Name, fpath)
+		if err := os.RemoveAll(fpath); err != nil {
+			return fmt.Errorf("failed to cleanup %s: %w", fpath, err)
+		}
+	}
+
 	return nil
 }
 
@@ -115,137 +223,10 @@ func writeFileAtomically(fpath string, b []byte, dirMode, fileMode os.FileMode, 
 	return t.CloseAtomicallyReplace()
 }
 
-// write dropins to disk
-func writeDropins(u ign3types.Unit, systemdRoot string, isCoreOSVariant bool) error {
-	for i := range u.Dropins {
-		dpath := filepath.Join(systemdRoot, u.Name+".d", u.Dropins[i].Name)
-		if u.Dropins[i].Contents == nil || *u.Dropins[i].Contents == "" {
-			glog.Infof("Dropin for %s has no content, skipping write", u.Dropins[i].Name)
-			if _, err := os.Stat(dpath); err != nil {
-				if os.IsNotExist(err) {
-					continue
-				}
-				return err
-			}
-			glog.Infof("Removing %q, updated file has zero length", dpath)
-			if err := os.Remove(dpath); err != nil {
-				return err
-			}
-			continue
-		}
-
-		glog.Infof("Writing systemd unit dropin %q", u.Dropins[i].Name)
-		if _, err := os.Stat(withUsrPath(dpath)); err == nil &&
-			isCoreOSVariant {
-			if err := createOrigFile(withUsrPath(dpath), dpath); err != nil {
-				return err
-			}
-		}
-		if err := writeFileAtomicallyWithDefaults(dpath, []byte(*u.Dropins[i].Contents)); err != nil {
-			return fmt.Errorf("failed to write systemd unit dropin %q: %w", u.Dropins[i].Name, err)
-		}
-
-		glog.V(2).Infof("Wrote systemd unit dropin at %s", dpath)
-	}
-
-	return nil
-}
-
-// writeFiles writes the given files to disk.
-// it doesn't fetch remote files and expects a flattened config file.
-func writeFiles(files []ign3types.File) error {
-	for _, file := range files {
-		glog.Infof("Writing file %q", file.Path)
-
-		// We don't support appends in the file section, so instead of waiting to fail validation,
-		// let's explicitly fail here.
-		if len(file.Append) > 0 {
-			return fmt.Errorf("found an append section when writing files. Append is not supported")
-		}
-
-		decodedContents, err := ctrlcommon.DecodeIgnitionFileContents(file.Contents.Source, file.Contents.Compression)
-		if err != nil {
-			return fmt.Errorf("could not decode file %q: %w", file.Path, err)
-		}
-
-		mode := defaultFilePermissions
-		if file.Mode != nil {
-			mode = os.FileMode(*file.Mode)
-		}
-
-		// set chown if file information is provided
-		uid, gid, err := getFileOwnership(file)
-		if err != nil {
-			return fmt.Errorf("failed to retrieve file ownership for file %q: %w", file.Path, err)
-		}
-		if err := createOrigFile(file.Path, file.Path); err != nil {
-			return err
-		}
-		if err := writeFileAtomically(file.Path, decodedContents, defaultDirectoryPermissions, mode, uid, gid); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// writeUnit writes a systemd unit and its dropins to disk
-func writeUnit(u ign3types.Unit, systemdRoot string, isCoreOSVariant bool) error {
-	if err := writeDropins(u, systemdRoot, isCoreOSVariant); err != nil {
-		return err
-	}
-
-	// write (or cleanup) path in /etc/systemd/system
-	fpath := filepath.Join(systemdRoot, u.Name)
-	if u.Mask != nil && *u.Mask {
-		// if the unit is masked, symlink fpath to /dev/null and return early.
-
-		glog.V(2).Info("Systemd unit masked")
-		if err := os.RemoveAll(fpath); err != nil {
-			return fmt.Errorf("failed to remove unit %q: %w", u.Name, err)
-		}
-		glog.V(2).Infof("Removed unit %q", u.Name)
-
-		if err := renameio.Symlink(pathDevNull, fpath); err != nil {
-			return fmt.Errorf("failed to symlink unit %q to %s: %w", u.Name, pathDevNull, err)
-		}
-		glog.V(2).Infof("Created symlink unit %q to %s", u.Name, pathDevNull)
-
-		// Return early since we don't need to write the file contents in this case.
-		return nil
-	}
-
-	if u.Contents != nil && *u.Contents != "" {
-		glog.Infof("Writing systemd unit %q", u.Name)
-		if _, err := os.Stat(withUsrPath(fpath)); err == nil &&
-			isCoreOSVariant {
-			if err := createOrigFile(withUsrPath(fpath), fpath); err != nil {
-				return err
-			}
-		}
-		if err := writeFileAtomicallyWithDefaults(fpath, []byte(*u.Contents)); err != nil {
-			return fmt.Errorf("failed to write systemd unit %q: %w", u.Name, err)
-		}
-
-		glog.V(2).Infof("Successfully wrote systemd unit %q: ", u.Name)
-	} else if u.Mask != nil && !*u.Mask {
-		// if mask is explicitly set to false, make sure to remove a previous mask
-		// see https://bugzilla.redhat.com/show_bug.cgi?id=1966445
-		// Note that this does not catch all cleanup cases; for example, if the previous machine config specified
-		// Contents, and the current one does not, the previous content will not get cleaned up. For now we're ignoring some
-		// of those edge cases rather than introducing more complexity.
-		glog.V(2).Infof("Ensuring systemd unit %q has no mask at %q", u.Name, fpath)
-		if err := os.RemoveAll(fpath); err != nil {
-			return fmt.Errorf("failed to cleanup %s: %w", fpath, err)
-		}
-	}
-
-	return nil
-}
-
 // writeUnits writes systemd units and their dropins to disk
-func writeUnits(units []ign3types.Unit, systemdRoot string, isCoreOSVariant bool) error {
+func (fw *fileWriters) WriteUnits(units []ign3types.Unit) error {
 	for _, u := range units {
-		if err := writeUnit(u, systemdRoot, isCoreOSVariant); err != nil {
+		if err := fw.WriteUnit(u); err != nil {
 			return err
 		}
 	}
@@ -294,9 +275,4 @@ func getFileOwnership(file ign3types.File) (int, int, error) {
 		}
 	}
 	return uid, gid, nil
-}
-
-// Appends the usrPath variable (/usr) to a given path
-func withUsrPath(path string) string {
-	return filepath.Join(usrPath, path)
 }

@@ -65,14 +65,14 @@ type sshKeyOpts struct {
 	ign3Users []ign3types.PasswdUser
 	// The SSH key validation paths which contain the expected paths to write the
 	// SSH keys and any unexpected SSH keys.
-	vp ValidationPaths
+	paths Paths
 	// The user ID of the system user (defaults to the "core" uid)
 	uid int
 	// The group ID for the system user (defaults to the "core" gid)
 	gid int
 }
 
-// Populates sshKeyOpts with its defaults and validates ValidationPaths.
+// Populates sshKeyOpts with its defaults and validates Paths.
 func (s *sshKeyOpts) populate() error {
 	if s.systemuser == "" {
 		s.systemuser = constants.CoreUserSSH
@@ -94,7 +94,7 @@ func (s *sshKeyOpts) populate() error {
 		s.gid = gid
 	}
 
-	return s.vp.validate()
+	return s.paths.validate()
 }
 
 func getNodeRef(node *corev1.Node) *corev1.ObjectReference {
@@ -587,7 +587,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 
 	sshOpts := sshKeyOpts{
 		ign3Users: newIgnConfig.Passwd.Users,
-		vp:        dn.validationPaths,
+		paths:     dn.paths,
 	}
 
 	if err := dn.updateSSHKeys(sshOpts); err != nil {
@@ -682,7 +682,7 @@ func (dn *Daemon) updateHypershift(oldConfig, newConfig *mcfgv1.MachineConfig, d
 
 	sshOpts := sshKeyOpts{
 		ign3Users: newIgnConfig.Passwd.Users,
-		vp:        dn.validationPaths,
+		paths:     dn.paths,
 	}
 
 	if err := dn.updateSSHKeys(sshOpts); err != nil {
@@ -1263,12 +1263,12 @@ func (dn *Daemon) updateFiles(oldIgnConfig, newIgnConfig ign3types.Config) error
 	return nil
 }
 
-func restorePath(path string) error {
-	if out, err := exec.Command("cp", "-a", "--reflink=auto", origFileName(path), path).CombinedOutput(); err != nil {
-		return fmt.Errorf("restoring %q from orig file %q: %s: %w", path, origFileName(path), string(out), err)
+func restorePath(path string, paths Paths) error {
+	if out, err := exec.Command("cp", "-a", "--reflink=auto", paths.OrigFileName(path), path).CombinedOutput(); err != nil {
+		return fmt.Errorf("restoring %q from orig file %q: %s: %w", path, paths.OrigFileName(path), string(out), err)
 	}
-	if err := os.Remove(origFileName(path)); err != nil {
-		return fmt.Errorf("deleting orig file %q: %w", origFileName(path), err)
+	if err := os.Remove(paths.OrigFileName(path)); err != nil {
+		return fmt.Errorf("deleting orig file %q: %w", paths.OrigFileName(path), err)
 	}
 	return nil
 }
@@ -1326,12 +1326,12 @@ func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig ign3types.Config) e
 		if _, ok := newFileSet[f.Path]; ok {
 			continue
 		}
-		if _, err := os.Stat(noOrigFileStampName(f.Path)); err == nil {
-			if delErr := os.Remove(noOrigFileStampName(f.Path)); delErr != nil {
-				return fmt.Errorf("deleting noorig file stamp %q: %w", noOrigFileStampName(f.Path), delErr)
+		if _, err := os.Stat(dn.paths.NoOrigFileStampName(f.Path)); err == nil {
+			if delErr := os.Remove(dn.paths.NoOrigFileStampName(f.Path)); delErr != nil {
+				return fmt.Errorf("deleting noorig file stamp %q: %w", dn.paths.NoOrigFileStampName(f.Path), delErr)
 			}
 			glog.V(2).Infof("Removing file %q completely", f.Path)
-		} else if _, err := os.Stat(origFileName(f.Path)); err == nil {
+		} else if _, err := os.Stat(dn.paths.OrigFileName(f.Path)); err == nil {
 			// Add a check for backwards compatibility: basically if the file doesn't exist in /usr/etc (on FCOS/RHCOS)
 			// and no rpm is claiming it, we assume that the orig file came from a wrongful backup of a MachineConfig
 			// file instead of a file originally on disk. See https://bugzilla.redhat.com/show_bug.cgi?id=1814397
@@ -1340,7 +1340,7 @@ func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig ign3types.Config) e
 				// File is owned by an rpm
 				restore = true
 			} else if strings.HasPrefix(f.Path, "/etc") && dn.os.IsCoreOSVariant() {
-				if _, err := os.Stat(withUsrPath(f.Path)); err != nil {
+				if _, err := os.Stat(dn.paths.WithUsrPath(f.Path)); err != nil {
 					if !os.IsNotExist(err) {
 						return err
 					}
@@ -1352,15 +1352,15 @@ func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig ign3types.Config) e
 			}
 
 			if restore {
-				if err := restorePath(f.Path); err != nil {
+				if err := restorePath(f.Path, dn.paths); err != nil {
 					return err
 				}
 				glog.V(2).Infof("Restored file %q", f.Path)
 				continue
 			}
 
-			if delErr := os.Remove(origFileName(f.Path)); delErr != nil {
-				return fmt.Errorf("deleting orig file %q: %w", origFileName(f.Path), delErr)
+			if delErr := os.Remove(dn.paths.OrigFileName(f.Path)); delErr != nil {
+				return fmt.Errorf("deleting orig file %q: %w", dn.paths.OrigFileName(f.Path), delErr)
 			}
 		}
 
@@ -1397,13 +1397,13 @@ func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig ign3types.Config) e
 		for j := range u.Dropins {
 			path := filepath.Join(pathSystemd, u.Name+".d", u.Dropins[j].Name)
 			if _, ok := newDropinSet[path]; !ok {
-				if _, err := os.Stat(noOrigFileStampName(path)); err == nil {
-					if delErr := os.Remove(noOrigFileStampName(path)); delErr != nil {
-						return fmt.Errorf("deleting noorig file stamp %q: %w", noOrigFileStampName(path), delErr)
+				if _, err := os.Stat(dn.paths.NoOrigFileStampName(path)); err == nil {
+					if delErr := os.Remove(dn.paths.NoOrigFileStampName(path)); delErr != nil {
+						return fmt.Errorf("deleting noorig file stamp %q: %w", dn.paths.NoOrigFileStampName(path), delErr)
 					}
 					glog.V(2).Infof("Removing file %q completely", path)
-				} else if _, err := os.Stat(origFileName(path)); err == nil {
-					if err := restorePath(path); err != nil {
+				} else if _, err := os.Stat(dn.paths.OrigFileName(path)); err == nil {
+					if err := restorePath(path, dn.paths); err != nil {
 						return err
 					}
 					glog.V(2).Infof("Restored file %q", path)
@@ -1430,13 +1430,13 @@ func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig ign3types.Config) e
 			if err := dn.presetUnit(u); err != nil {
 				glog.Infof("Did not restore preset for %s (may not exist): %s", u.Name, err)
 			}
-			if _, err := os.Stat(noOrigFileStampName(path)); err == nil {
-				if delErr := os.Remove(noOrigFileStampName(path)); delErr != nil {
-					return fmt.Errorf("deleting noorig file stamp %q: %w", noOrigFileStampName(path), delErr)
+			if _, err := os.Stat(dn.paths.NoOrigFileStampName(path)); err == nil {
+				if delErr := os.Remove(dn.paths.NoOrigFileStampName(path)); delErr != nil {
+					return fmt.Errorf("deleting noorig file stamp %q: %w", dn.paths.NoOrigFileStampName(path), delErr)
 				}
 				glog.V(2).Infof("Removing file %q completely", path)
-			} else if _, err := os.Stat(origFileName(path)); err == nil {
-				if err := restorePath(path); err != nil {
+			} else if _, err := os.Stat(dn.paths.OrigFileName(path)); err == nil {
+				if err := restorePath(path, dn.paths); err != nil {
 					return err
 				}
 				glog.V(2).Infof("Restored file %q", path)
@@ -1529,10 +1529,8 @@ func (dn *Daemon) writeUnits(units []ign3types.Unit) error {
 	var enabledUnits []string
 	var disabledUnits []string
 
-	isCoreOSVariant := dn.os.IsCoreOSVariant()
-
 	for _, u := range units {
-		if err := writeUnit(u, pathSystemd, isCoreOSVariant); err != nil {
+		if err := dn.fileWriters.WriteUnit(u); err != nil {
 			return fmt.Errorf("daemon could not write systemd unit: %w", err)
 		}
 		// if the unit doesn't note if it should be enabled or disabled then
@@ -1578,7 +1576,7 @@ func (dn *Daemon) writeUnits(units []ign3types.Unit) error {
 // writeFiles writes the given files to disk.
 // it doesn't fetch remote files and expects a flattened config file.
 func (dn *Daemon) writeFiles(files []ign3types.File) error {
-	return writeFiles(files)
+	return dn.fileWriters.WriteFiles(files)
 }
 
 func (dn *Daemon) atomicallyWriteSSHKey(opts sshKeyOpts) error {
@@ -1586,7 +1584,7 @@ func (dn *Daemon) atomicallyWriteSSHKey(opts sshKeyOpts) error {
 		return fmt.Errorf("could not populate sshKeyOpts: %w", err)
 	}
 
-	authKeyPath := opts.vp.ExpectedSSHKeyPath()
+	authKeyPath := opts.paths.ExpectedSSHKeyPath()
 
 	// Keys should only be written to "/home/core/.ssh"
 	// Once Users are supported fully this should be writing to PasswdUser.HomeDir
@@ -1660,7 +1658,7 @@ func concatSSHKeys(newUsers []ign3types.PasswdUser) string {
 
 // Removes the old SSH key path (/home/core/.ssh/authorized_keys), if found.
 func cleanSSHKeyPaths(opts sshKeyOpts) error {
-	oldAuthKeyPath := opts.vp.UnexpectedSSHKeyPath()
+	oldAuthKeyPath := opts.paths.UnexpectedSSHKeyPath()
 	_, err := os.Stat(oldAuthKeyPath)
 	if err == nil {
 		err := os.RemoveAll(oldAuthKeyPath)
@@ -1678,7 +1676,7 @@ func cleanSSHKeyPaths(opts sshKeyOpts) error {
 // Ensures authorized_keys.d/ignition is the only fragment that exists within the /home/core/.ssh dir.
 func removeNonIgnitionKeyPathFragments(opts sshKeyOpts) error {
 	// /home/core/.ssh/authorized_keys.d/ignition
-	authKeyPath := opts.vp.ExpectedSSHKeyPath()
+	authKeyPath := opts.paths.ExpectedSSHKeyPath()
 	// /home/core/.ssh/authorized_keys.d
 	authKeyFragmentDirPath := filepath.Dir(authKeyPath)
 	// ignition

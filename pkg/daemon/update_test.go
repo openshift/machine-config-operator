@@ -18,7 +18,6 @@ import (
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
-	"github.com/openshift/machine-config-operator/pkg/daemon/osrelease"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -80,18 +79,22 @@ func rhcos9() mockOS {
 	}
 }
 
-func newMockDaemon() Daemon {
+func newMockDaemon(t *testing.T) Daemon {
 	// Create a Daemon instance with mocked clients
+	_, paths, fw := setupTempDirWithEtc(t)
+
 	return Daemon{
 		mock:             true,
 		name:             "nodeName",
-		os:               osrelease.OperatingSystem{},
+		os:               rhcos8(),
 		kubeClient:       k8sfake.NewSimpleClientset(),
 		bootedOSImageURL: "test",
+		paths:            paths,
+		fileWriters:      fw,
 	}
 }
 
-func setupTempDirWithEtc(t *testing.T) (string, func()) {
+func setupTempDirWithEtc(t *testing.T) (string, Paths, fileWriters) {
 	t.Helper()
 
 	// Make a temp dir to put the testing files in, and make sure we clean it up
@@ -102,21 +105,16 @@ func setupTempDirWithEtc(t *testing.T) (string, func()) {
 	err := os.MkdirAll(etcDir, 0755)
 	require.Nil(t, err)
 
-	oldOrigParentDirPath := origParentDirPath
-	oldNoOrigParentDirPath := noOrigParentDirPath
+	paths, err := GetPathsWithPrefix(rhcos8(), testDir)
+	require.NoError(t, err)
 
-	// Override these package variables so files get written to our testing location
-	origParentDirPath = filepath.Join(testDir, origParentDirPath)
-	noOrigParentDirPath = filepath.Join(testDir, noOrigParentDirPath)
+	fw := newFileWriters(paths, rhcos8())
 
-	return testDir, func() {
-		// Make sure path variables get put back for other tests
-		origParentDirPath = oldOrigParentDirPath
-		noOrigParentDirPath = oldNoOrigParentDirPath
-	}
+	return testDir, paths, fw
 }
 
 func TestTruncate(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, truncate("", 10), "")
 	assert.Equal(t, truncate("", 1), "")
 	assert.Equal(t, truncate("a", 1), "a")
@@ -127,6 +125,8 @@ func TestTruncate(t *testing.T) {
 }
 
 func TestRunCmdSync(t *testing.T) {
+	t.Parallel()
+
 	err := runCmdSync("echo", "hello", "world")
 	assert.Nil(t, err)
 
@@ -137,6 +137,8 @@ func TestRunCmdSync(t *testing.T) {
 // TestReconcilable attempts to verify the conditions in which configs would and would not be
 // reconcilable. Welcome to the longest unittest you've ever read.
 func TestReconcilable(t *testing.T) {
+	t.Parallel()
+
 	oldIgnCfg := ctrlcommon.NewIgnConfig()
 	// oldConfig is the current config of the fake system
 	oldConfig := helpers.CreateMachineConfigFromIgnition(oldIgnCfg)
@@ -226,6 +228,8 @@ func TestReconcilable(t *testing.T) {
 }
 
 func TestMachineConfigDiff(t *testing.T) {
+	t.Parallel()
+
 	oldIgnCfg := ctrlcommon.NewIgnConfig()
 	oldConfig := helpers.CreateMachineConfigFromIgnition(oldIgnCfg)
 	oldConfig.ObjectMeta = metav1.ObjectMeta{Name: "oldconfig"}
@@ -265,6 +269,8 @@ func newMachineConfigFromFiles(files []ign3types.File) *mcfgv1.MachineConfig {
 }
 
 func TestReconcilableDiff(t *testing.T) {
+	t.Parallel()
+
 	var oldFiles []ign3types.File
 	nOldFiles := uint(10)
 	for i := uint(0); i < nOldFiles; i++ {
@@ -299,6 +305,8 @@ func TestReconcilableDiff(t *testing.T) {
 }
 
 func TestKernelAguments(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		oldKargs []string
 		newKargs []string
@@ -341,7 +349,10 @@ func TestKernelAguments(t *testing.T) {
 
 	rand.Seed(time.Now().UnixNano())
 	for idx, test := range tests {
+		idx := idx
+		test := test
 		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
+			t.Parallel()
 			res := generateKargs(test.oldKargs, test.newKargs)
 
 			if !reflect.DeepEqual(test.out, res) {
@@ -402,10 +413,10 @@ func TestReconcilableSSH(t *testing.T) {
 }
 
 func TestWriteFiles(t *testing.T) {
-	testDir, cleanup := setupTempDirWithEtc(t)
-	defer cleanup()
+	t.Parallel()
+	testDir, _, _ := setupTempDirWithEtc(t)
 
-	d := newMockDaemon()
+	d := newMockDaemon(t)
 
 	contents := []byte("hello world\n")
 	encodedContents := dataurl.EncodeBytes(contents)
@@ -469,7 +480,9 @@ func TestWriteFiles(t *testing.T) {
 	}
 
 	for _, test := range tests {
+		test := test
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			err := d.writeFiles(test.files)
 			assert.Equal(t, test.expectedErr, err)
 			if test.expectedContents != nil {
@@ -561,7 +574,7 @@ func TestCheckSSHDiskState(t *testing.T) {
 		testCase := testCase
 
 		t.Run(testCase.name, func(t *testing.T) {
-			vp, err := GetValidationPathsWithPrefix(testCase.os, t.TempDir())
+			paths, err := GetPathsWithPrefix(testCase.os, t.TempDir())
 			require.NoError(t, err)
 
 			populatedSSHKeys := []ign3types.PasswdUser{{Name: constants.CoreUserName, SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"1234", "4567"}}}
@@ -581,8 +594,8 @@ func TestCheckSSHDiskState(t *testing.T) {
 				testCase.dirMode = os.FileMode(0o700)
 			}
 
-			expectedKeyPath := vp.ExpectedSSHKeyPath()
-			unexpectedKeyPath := vp.UnexpectedSSHKeyPath()
+			expectedKeyPath := paths.ExpectedSSHKeyPath()
+			unexpectedKeyPath := paths.UnexpectedSSHKeyPath()
 
 			if strings.Contains(testCase.name, "Unexpected path fragment") {
 				fragmentPath := filepath.Join(filepath.Dir(expectedKeyPath), "unexpected-fragment")
@@ -597,9 +610,9 @@ func TestCheckSSHDiskState(t *testing.T) {
 			require.NoError(t, os.WriteFile(expectedKeyPath, contents, testCase.fileMode))
 
 			if testCase.errExpected {
-				assert.Error(t, checkV3SSHKeys(populatedSSHKeys, vp))
+				assert.Error(t, checkV3SSHKeys(populatedSSHKeys, paths))
 			} else {
-				assert.NoError(t, checkV3SSHKeys(populatedSSHKeys, vp))
+				assert.NoError(t, checkV3SSHKeys(populatedSSHKeys, paths))
 			}
 		})
 	}
@@ -657,24 +670,24 @@ func TestUpdateSSHKeys(t *testing.T) {
 		testCase := testCase
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
-			d := newMockDaemon()
+			d := newMockDaemon(t)
 			// Override the daemon osrelease object with our mock object.
 			d.os = testCase.os
 
-			vp, err := GetValidationPathsWithPrefix(testCase.os, t.TempDir())
+			paths, err := GetPathsWithPrefix(testCase.os, t.TempDir())
 			require.NoError(t, err)
 
 			// Create the SSH key directory to avoid calling "runuser" in this test since doing that requires root.
-			require.NoError(t, os.MkdirAll(filepath.Dir(vp.ExpectedSSHKeyPath()), os.FileMode(0o700)))
+			require.NoError(t, os.MkdirAll(filepath.Dir(paths.ExpectedSSHKeyPath()), os.FileMode(0o700)))
 
 			if testCase.os == rhcos9() {
-				unexpectedPaths := []string{vp.UnexpectedSSHKeyPath()}
+				unexpectedPaths := []string{paths.UnexpectedSSHKeyPath()}
 
 				// Create additional path fragments (e.g.,
 				// /home/core/.ssh/authorized_keys.d/fragment-{0,5}) under the expected
 				// path for RHCOS 9 so we can ensure they're deleted.
 				for i := 0; i < 5; i++ {
-					fragmentPath := filepath.Join(filepath.Dir(vp.ExpectedSSHKeyPath()), fmt.Sprintf("fragment-%d", i))
+					fragmentPath := filepath.Join(filepath.Dir(paths.ExpectedSSHKeyPath()), fmt.Sprintf("fragment-%d", i))
 					unexpectedPaths = append(unexpectedPaths, fragmentPath)
 				}
 
@@ -692,7 +705,7 @@ func TestUpdateSSHKeys(t *testing.T) {
 			// Ensure that we get a disk state validation error because we've
 			// purposely ensured that we will by writing to the unexpected paths
 			// above.
-			assert.Error(t, checkV3SSHKeys(newIgnCfg.Passwd.Users, vp))
+			assert.Error(t, checkV3SSHKeys(newIgnCfg.Passwd.Users, paths))
 
 			// Write the SSH key to disk using the updateSSHKeys method.
 			sshKeyErr := d.updateSSHKeys(sshKeyOpts{
@@ -700,12 +713,12 @@ func TestUpdateSSHKeys(t *testing.T) {
 				ign3Users:  newIgnCfg.Passwd.Users,
 				uid:        -1,
 				gid:        -1,
-				vp:         vp,
+				paths:      paths,
 			})
 			assert.NoError(t, sshKeyErr)
 
 			// Ensure that writing the SSH keys clears up the invalid on-disk state.
-			assert.NoError(t, checkV3SSHKeys(newIgnCfg.Passwd.Users, vp))
+			assert.NoError(t, checkV3SSHKeys(newIgnCfg.Passwd.Users, paths))
 		})
 	}
 }
@@ -713,6 +726,8 @@ func TestUpdateSSHKeys(t *testing.T) {
 // This test should fail until Ignition validation enabled.
 // Ignition validation does not permit writing files to relative paths.
 func TestInvalidIgnConfig(t *testing.T) {
+	t.Parallel()
+
 	oldIgnConfig := ctrlcommon.NewIgnConfig()
 	oldMcfg := helpers.CreateMachineConfigFromIgnition(oldIgnConfig)
 
@@ -737,6 +752,8 @@ func TestInvalidIgnConfig(t *testing.T) {
 }
 
 func TestDropinCheck(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		service  string
 		dropin   string
@@ -769,10 +786,13 @@ func TestDropinCheck(t *testing.T) {
 		},
 	}
 
-	d := newMockDaemon()
+	d := newMockDaemon(t)
 
 	for idx, test := range tests {
+		idx := idx
+		test := test
 		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
+			t.Parallel()
 			ignCfg := ctrlcommon.NewIgnConfig()
 			ignCfg.Systemd.Units = []ign3types.Unit{
 				{
@@ -805,6 +825,8 @@ func TestDropinCheck(t *testing.T) {
 // Test to see if the correct action is calculated given a machineconfig diff
 // i.e. whether we need to reboot and what actions need to be taken if no reboot is needed
 func TestCalculatePostConfigChangeAction(t *testing.T) {
+	t.Parallel()
+
 	files := map[string]ign3types.File{
 		"pullsecret1":     ctrlcommon.NewIgnFile("/var/lib/kubelet/config.json", "kubelet conf 1\n"),
 		"pullsecret2":     ctrlcommon.NewIgnFile("/var/lib/kubelet/config.json", "kubelet conf 2\n"),
@@ -900,7 +922,10 @@ func TestCalculatePostConfigChangeAction(t *testing.T) {
 	}
 
 	for idx, test := range tests {
+		idx := idx
+		test := test
 		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
+			t.Parallel()
 			oldIgnConfig, err := ctrlcommon.ParseAndConvertConfig(test.oldConfig.Spec.Config.Raw)
 			if err != nil {
 				t.Errorf("parsing old Ignition config failed: %v", err)
@@ -938,6 +963,8 @@ func checkIrreconcilableResults(t *testing.T, key string, reconcilableError erro
 }
 
 func TestRunGetOut(t *testing.T) {
+	t.Parallel()
+
 	o, err := runGetOut("true")
 	assert.Nil(t, err)
 	assert.Equal(t, len(o), 0)
@@ -962,8 +989,9 @@ func TestRunGetOut(t *testing.T) {
 // TestOriginalFileBackupRestore tests backikg up and restoring original files (files that are present in the base image and
 // get overwritten by a machine configuration)
 func TestOriginalFileBackupRestore(t *testing.T) {
-	testDir, cleanup := setupTempDirWithEtc(t)
-	defer cleanup()
+	t.Parallel()
+
+	testDir, paths, fw := setupTempDirWithEtc(t)
 
 	// Write a normal file as a control to make sure normal case works
 	controlFile := filepath.Join(testDir, "control-file")
@@ -971,15 +999,15 @@ func TestOriginalFileBackupRestore(t *testing.T) {
 	assert.Nil(t, err)
 
 	// Back up that normal file
-	err = createOrigFile(controlFile, controlFile)
+	err = fw.CreateOrigFile(controlFile, controlFile)
 	assert.Nil(t, err)
 
 	// Now try again and make sure it knows it's already backed up
-	err = createOrigFile(controlFile, controlFile)
+	err = fw.CreateOrigFile(controlFile, controlFile)
 	assert.Nil(t, err)
 
 	// Restore the normal file
-	err = restorePath(controlFile)
+	err = restorePath(controlFile, paths)
 	assert.Nil(t, err)
 
 	// The normal file worked, try it with a symlink
@@ -994,7 +1022,7 @@ func TestOriginalFileBackupRestore(t *testing.T) {
 	assert.Nil(t, err)
 
 	// Back up the relative symlink
-	err = createOrigFile(relativeSymlink, relativeSymlink)
+	err = fw.CreateOrigFile(relativeSymlink, relativeSymlink)
 	assert.Nil(t, err)
 
 	// Remove the symlink and write a file over it
@@ -1005,11 +1033,10 @@ func TestOriginalFileBackupRestore(t *testing.T) {
 	assert.Nil(t, err)
 
 	// Try to back it up again make sure it knows it's already backed up
-	err = createOrigFile(relativeSymlink, relativeSymlink)
+	err = fw.CreateOrigFile(relativeSymlink, relativeSymlink)
 	assert.Nil(t, err)
 
 	// Finally, make sure we can restore the relative symlink if we rollback
-	err = restorePath(relativeSymlink)
+	err = restorePath(relativeSymlink, paths)
 	assert.Nil(t, err)
-
 }

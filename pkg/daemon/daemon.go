@@ -138,7 +138,10 @@ type Daemon struct {
 	hypershiftConfigMap string
 
 	// Used for pathing
-	validationPaths ValidationPaths
+	paths Paths
+
+	// Holds the fileWriters funcs
+	fileWriters fileWriters
 }
 
 // CoreOSDaemon protects the methods that should only be called on CoreOS variants
@@ -283,7 +286,7 @@ func New(
 	// report OS & version (if RHCOS or FCOS) to prometheus
 	hostOS.WithLabelValues(hostos.ToPrometheusLabel(), osVersion).Set(1)
 
-	vp, err := GetValidationPaths(hostos)
+	vp, err := GetPaths(hostos)
 	if err != nil {
 		return nil, fmt.Errorf("could not create validation paths: %w", err)
 	}
@@ -300,7 +303,8 @@ func New(
 		currentConfigPath:     currentConfigPath,
 		loggerSupportsJournal: loggerSupportsJournal,
 		configDriftMonitor:    NewConfigDriftMonitor(),
-		validationPaths:       vp,
+		paths:                 vp,
+		fileWriters:           newFileWriters(vp, hostos),
 	}, nil
 }
 
@@ -1131,10 +1135,10 @@ func (dn *Daemon) startConfigDriftMonitor() {
 	}
 
 	opts := ConfigDriftMonitorOpts{
-		OnDrift:         dn.onConfigDrift,
-		ValidationPaths: dn.validationPaths,
-		ErrChan:         dn.exitCh,
-		MachineConfig:   currentConfig,
+		OnDrift:       dn.onConfigDrift,
+		Paths:         dn.paths,
+		ErrChan:       dn.exitCh,
+		MachineConfig: currentConfig,
 	}
 
 	if err := dn.configDriftMonitor.Start(opts); err != nil {
@@ -1971,7 +1975,7 @@ func (dn *Daemon) validateOnDiskStateImpl(currentConfig *mcfgv1.MachineConfig) e
 		}
 	}
 
-	return validateOnDiskState(currentConfig, dn.validationPaths)
+	return validateOnDiskState(currentConfig, dn.paths)
 }
 
 // validateOnDiskState compares the on-disk state against what a configuration

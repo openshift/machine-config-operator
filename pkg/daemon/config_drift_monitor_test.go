@@ -287,10 +287,10 @@ func TestConfigDriftMonitor(t *testing.T) {
 				os = testCase.os
 			}
 
-			vp, err := GetValidationPathsWithPrefix(os, testCase.tmpDir)
+			paths, err := GetPathsWithPrefix(os, testCase.tmpDir)
 			require.NoError(t, err)
 
-			testCase.ValidationPaths = vp
+			testCase.Paths = paths
 
 			testCase.run(t)
 		})
@@ -299,7 +299,7 @@ func TestConfigDriftMonitor(t *testing.T) {
 
 // Generates RHCOS 9 test cases from a subset of our test cases. This is
 // because the setup for those testcases is identical. However, the expected
-// SSH key paths are different. These are inferred by the ValidationPaths
+// SSH key paths are different. These are inferred by the Paths
 // constructor.
 func getRHCOS9TestCases(testCases []configDriftMonitorTestCase) []configDriftMonitorTestCase {
 	rhcos9TestCases := []configDriftMonitorTestCase{}
@@ -325,7 +325,7 @@ type configDriftMonitorTestCase struct {
 	// The tmpdir for the test case (assigned at runtime)
 	tmpDir string
 	// The validation paths for the test case (assigned at runtime)
-	ValidationPaths
+	Paths
 	// Only one of these may be used per testcase:
 	// The mutation to apply to the Ignition file
 	mutateFile func(string) error
@@ -406,7 +406,7 @@ func (tc configDriftMonitorTestCase) run(t *testing.T) {
 			onDriftCalled = true
 			tc.onDriftFunc(t, err)
 		},
-		ValidationPaths: tc.ValidationPaths,
+		Paths: tc.Paths,
 	}
 
 	// Start the config drift monitor
@@ -576,7 +576,7 @@ func (tc configDriftMonitorTestCase) getFixtures(t *testing.T) (ign3types.Config
 	mc := helpers.CreateMachineConfigFromIgnition(ignConfig)
 	mc.Name = "config-drift-monitor" + string(uuid.NewUUID())
 
-	require.NoError(t, validateOnDiskState(mc, tc.ValidationPaths))
+	require.NoError(t, validateOnDiskState(mc, tc.Paths))
 
 	return ignConfig, mc
 }
@@ -585,36 +585,17 @@ func (tc configDriftMonitorTestCase) getFixtures(t *testing.T) (ign3types.Config
 func (tc *configDriftMonitorTestCase) writeIgnitionConfig(t *testing.T, ignConfig ign3types.Config) error {
 	t.Helper()
 
-	// This is the only place where this mutex is used throughout this test
-	// suite. We need a mutex because the origParentDirPath and
-	// noOrigParentDirPath variables are global and our individual test cases
-	// execute in parallel.
-	tc.testMutex.Lock()
-	defer tc.testMutex.Unlock()
-
-	// For the purposes of our test, we want all of our filesystem mutations to
-	// be contained within our test temp dir. With this in mind, we temporarily
-	// override these globals with our temp dir.
-	globals := map[string]*string{
-		"usrPath":             &usrPath,
-		"origParentDirPath":   &origParentDirPath,
-		"noOrigParentDirPath": &noOrigParentDirPath,
-	}
-
-	for name := range globals {
-		cleanup := helpers.OverrideGlobalPathVar(t, name, globals[name])
-		defer cleanup()
-	}
+	fw := newFileWriters(tc.Paths, tc.os)
 
 	// Write files the same way the MCD does.
 	// NOTE: We manually handle the errors here because using require.Nil or
 	// require.NoError will skip the deferred functions, which is undesirable.
-	if err := writeFiles(ignConfig.Storage.Files); err != nil {
+	if err := fw.WriteFiles(ignConfig.Storage.Files); err != nil {
 		return fmt.Errorf("could not write ignition config files: %w", err)
 	}
 
 	// Write systemd units the same way the MCD does.
-	if err := writeUnits(ignConfig.Systemd.Units, tc.SystemdPath(), true); err != nil {
+	if err := fw.WriteUnits(ignConfig.Systemd.Units); err != nil {
 		return fmt.Errorf("could not write systemd units: %w", err)
 	}
 

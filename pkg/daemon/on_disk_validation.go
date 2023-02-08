@@ -19,9 +19,9 @@ import (
 )
 
 // Validates that the on-disk state matches a given MachineConfig.
-func validateOnDiskState(currentConfig *mcfgv1.MachineConfig, vp ValidationPaths) error {
-	if err := vp.validate(); err != nil {
-		return fmt.Errorf("failed to validate ValidationPaths: %w", err)
+func validateOnDiskState(currentConfig *mcfgv1.MachineConfig, paths Paths) error {
+	if err := paths.validate(); err != nil {
+		return fmt.Errorf("failed to validate Paths: %w", err)
 	}
 
 	// And the rest of the disk state
@@ -37,11 +37,11 @@ func validateOnDiskState(currentConfig *mcfgv1.MachineConfig, vp ValidationPaths
 		if err := checkV3Files(ignconfigi.(ign3types.Config).Storage.Files); err != nil {
 			return &fileConfigDriftErr{err}
 		}
-		if err := checkV3Units(ignconfigi.(ign3types.Config).Systemd.Units, vp); err != nil {
+		if err := checkV3Units(ignconfigi.(ign3types.Config).Systemd.Units, paths); err != nil {
 			return &unitConfigDriftErr{err}
 		}
 
-		if err := checkV3SSHKeys(ignconfigi.(ign3types.Config).Passwd.Users, vp); err != nil {
+		if err := checkV3SSHKeys(ignconfigi.(ign3types.Config).Passwd.Users, paths); err != nil {
 			return &sshConfigDriftErr{err}
 		}
 
@@ -50,7 +50,7 @@ func validateOnDiskState(currentConfig *mcfgv1.MachineConfig, vp ValidationPaths
 		if err := checkV2Files(ignconfigi.(ign2types.Config).Storage.Files); err != nil {
 			return &fileConfigDriftErr{err}
 		}
-		if err := checkV2Units(ignconfigi.(ign2types.Config).Systemd.Units, vp); err != nil {
+		if err := checkV2Units(ignconfigi.(ign2types.Config).Systemd.Units, paths); err != nil {
 			return &unitConfigDriftErr{err}
 		}
 		// TODO: Do we need to check for Ign V2 SSH keys too?
@@ -62,11 +62,11 @@ func validateOnDiskState(currentConfig *mcfgv1.MachineConfig, vp ValidationPaths
 
 // Checks if SSH keys match the expected state and check that unexpected SSH
 // key path fragments are not present.
-func checkV3SSHKeys(users []ign3types.PasswdUser, vp ValidationPaths) error {
+func checkV3SSHKeys(users []ign3types.PasswdUser, paths Paths) error {
 	// Checks the expected key path for the following conditions:
 	// 1. The dir mode differs from what we expect. (TODO: Should we also verify ownership?)
 	// 2. The file contents and mode differ from what is expected.
-	expected := vp.ExpectedSSHKeyPath()
+	expected := paths.ExpectedSSHKeyPath()
 	checkExpectedKeyPath := func() error {
 		return aggerrors.NewAggregate([]error{
 			checkDirMode(filepath.Dir(expected), os.FileMode(0o700)),
@@ -80,9 +80,9 @@ func checkV3SSHKeys(users []ign3types.PasswdUser, vp ValidationPaths) error {
 	// 2. If any unexpected path fragments are found, return an error.
 	// 3. If we cannot verify that an unexpected path fragment is found, return an error.
 	checkUnexpectedKeyPath := func() error {
-		expectedFragments := sets.NewString(vp.ExpectedSSHPathFragments()...)
+		expectedFragments := sets.NewString(paths.ExpectedSSHPathFragments()...)
 
-		return filepath.WalkDir(vp.SSHKeyRoot(), func(path string, _ os.DirEntry, err error) error {
+		return filepath.WalkDir(paths.SSHKeyRoot(), func(path string, _ os.DirEntry, err error) error {
 			if err != nil {
 				return err
 			}
@@ -109,8 +109,8 @@ func checkV3SSHKeys(users []ign3types.PasswdUser, vp ValidationPaths) error {
 }
 
 // Checks that the ondisk state for a systemd dropin matches the expected state.
-func checkV3Dropin(vp ValidationPaths, unit ign3types.Unit, dropin ign3types.Dropin) error {
-	path := vp.SystemdDropinPath(unit.Name, dropin.Name)
+func checkV3Dropin(paths Paths, unit ign3types.Unit, dropin ign3types.Dropin) error {
+	path := paths.SystemdDropinPath(unit.Name, dropin.Name)
 
 	var content string
 	if dropin.Contents == nil {
@@ -134,9 +134,9 @@ func checkV3Dropin(vp ValidationPaths, unit ign3types.Unit, dropin ign3types.Dro
 
 // checkV3Units validates the contents of an individual unit in the
 // target config and returns nil if they match.
-func checkV3Unit(unit ign3types.Unit, vp ValidationPaths) error {
+func checkV3Unit(unit ign3types.Unit, paths Paths) error {
 	for _, dropin := range unit.Dropins {
-		if err := checkV3Dropin(vp, unit, dropin); err != nil {
+		if err := checkV3Dropin(paths, unit, dropin); err != nil {
 			return err
 		}
 	}
@@ -146,7 +146,7 @@ func checkV3Unit(unit ign3types.Unit, vp ValidationPaths) error {
 		return nil
 	}
 
-	path := vp.SystemdUnitPath(unit.Name)
+	path := paths.SystemdUnitPath(unit.Name)
 	if unit.Mask != nil && *unit.Mask {
 		link, err := filepath.EvalSymlinks(path)
 		if err != nil {
@@ -171,9 +171,9 @@ func checkV3Unit(unit ign3types.Unit, vp ValidationPaths) error {
 
 // checkV3Units validates the contents of all the units in the
 // target config and returns nil if they match.
-func checkV3Units(units []ign3types.Unit, vp ValidationPaths) error {
+func checkV3Units(units []ign3types.Unit, paths Paths) error {
 	for _, unit := range units {
-		if err := checkV3Unit(unit, vp); err != nil {
+		if err := checkV3Unit(unit, paths); err != nil {
 			return err
 		}
 	}
@@ -183,9 +183,9 @@ func checkV3Units(units []ign3types.Unit, vp ValidationPaths) error {
 
 // checkV2Units validates the contents of a given unit in the
 // target config and returns nil if they match.
-func checkV2Unit(unit ign2types.Unit, vp ValidationPaths) error {
+func checkV2Unit(unit ign2types.Unit, paths Paths) error {
 	for _, dropin := range unit.Dropins {
-		path := vp.SystemdDropinPath(unit.Name, dropin.Name)
+		path := paths.SystemdDropinPath(unit.Name, dropin.Name)
 		if err := checkFileContentsAndMode(path, []byte(dropin.Contents), defaultFilePermissions); err != nil {
 			return err
 		}
@@ -196,7 +196,7 @@ func checkV2Unit(unit ign2types.Unit, vp ValidationPaths) error {
 		return nil
 	}
 
-	path := vp.SystemdUnitPath(unit.Name)
+	path := paths.SystemdUnitPath(unit.Name)
 	if unit.Mask {
 		link, err := filepath.EvalSymlinks(path)
 		if err != nil {
@@ -221,9 +221,9 @@ func checkV2Unit(unit ign2types.Unit, vp ValidationPaths) error {
 
 // checkV2Units validates the contents of all the units in the
 // target config and returns nil if they match.
-func checkV2Units(units []ign2types.Unit, vp ValidationPaths) error {
+func checkV2Units(units []ign2types.Unit, paths Paths) error {
 	for _, unit := range units {
-		if err := checkV2Unit(unit, vp); err != nil {
+		if err := checkV2Unit(unit, paths); err != nil {
 			return err
 		}
 	}
