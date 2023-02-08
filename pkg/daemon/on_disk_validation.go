@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	ign2types "github.com/coreos/ignition/config/v2_2/types"
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
@@ -14,16 +15,12 @@ import (
 	"github.com/google/go-cmp/cmp"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	aggerrors "k8s.io/apimachinery/pkg/util/errors"
+	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 // Validates that the on-disk state matches a given MachineConfig.
 func validateOnDiskState(currentConfig *mcfgv1.MachineConfig, paths Paths) error {
-	if err := paths.validate(); err != nil {
-		return fmt.Errorf("failed to validate Paths: %w", err)
-	}
-
 	// And the rest of the disk state
 	// We want to verify the disk state in the spec version that it was created with,
 	// to remove possibilities of behaviour changes due to translation
@@ -60,52 +57,98 @@ func validateOnDiskState(currentConfig *mcfgv1.MachineConfig, paths Paths) error
 	}
 }
 
+// Checks the expected key path for the following conditions:
+// 1. The dir mode differs from what we expect. (TODO: Should we also verify ownership?)
+// 2. The file contents and mode differ from what is expected, while ignoring
+// newlines at the end of the file. Ignition seems ot add a trailing newline
+// ("\n") onto the end of the file, which breaks this check.
+func checkExpectedSSHKeyPath(users []ign3types.PasswdUser, paths Paths) error {
+	authKeyPath := paths.ExpectedSSHKeyPath()
+
+	if err := checkDirMode(filepath.Dir(authKeyPath), os.FileMode(0o700)); err != nil {
+		return err
+	}
+
+	if err := checkFileMode(authKeyPath, os.FileMode(0o600)); err != nil {
+		return err
+	}
+
+	contents, err := os.ReadFile(authKeyPath)
+	if err != nil {
+		return err
+	}
+
+	// Trim newlines from the end of the expected file contents as well as the
+	// actual file contents to avoid a false positive caused by Ignition adding
+	// newlines when it applies the initial config.
+	contents = []byte(strings.TrimRight(string(contents), "\n"))
+	expectedContent := []byte(strings.TrimRight(concatSSHKeys(users), "\n"))
+
+	if !bytes.Equal(contents, expectedContent) {
+		glog.Errorf("content mismatch for file %q (-want +got):\n%s", authKeyPath, cmp.Diff(expectedContent, contents))
+		return fmt.Errorf("content mismatch for file: %q", authKeyPath)
+	}
+
+	return nil
+}
+
+func errIfFileIsFound(path string) error {
+	if _, err := os.Lstat(path); err == nil {
+		return &unexpectedSSHFileErr{
+			filename: path,
+			error:    fmt.Errorf("expected not to find SSH keys in %s", path),
+		}
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+
+	return nil
+}
+
+// Checks the old (unexpected) SSH key path for the presence of unexpected SSH
+// keys or other files.
+func checkUnexpectedSSHKeyPath(paths Paths) error {
+	expectedSSHKeyPath := paths.ExpectedSSHKeyPath()
+
+	// First, check if we have any unexpected path fragments.
+	for _, path := range paths.UnexpectedSSHPathFragments() {
+		if err := errIfFileIsFound(path); err != nil {
+			return err
+		}
+	}
+
+	// If we haven't found any unexpected key paths and we're on RHCOS 8, we're all done.
+	if strings.HasSuffix(expectedSSHKeyPath, constants.RHCOS8SSHKeyPath) {
+		return nil
+	}
+
+	// Next, we walk the directory path of /home/core/.ssh/authorized_keys.d and
+	// scan for any unknonwn path fragments.
+	keyDir := filepath.Dir(expectedSSHKeyPath)
+	ignored := sets.NewString(keyDir, expectedSSHKeyPath)
+	return filepath.WalkDir(keyDir, func(path string, _ os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Ignore /home/core/.ssh/authoried_keys.d/ignition and
+		// /home/core/.ssh/authorized_keys.d
+		if ignored.Has(path) {
+			return nil
+		}
+
+		return errIfFileIsFound(path)
+	})
+}
+
 // Checks if SSH keys match the expected state and check that unexpected SSH
 // key path fragments are not present.
 func checkV3SSHKeys(users []ign3types.PasswdUser, paths Paths) error {
-	// Checks the expected key path for the following conditions:
-	// 1. The dir mode differs from what we expect. (TODO: Should we also verify ownership?)
-	// 2. The file contents and mode differ from what is expected.
-	expected := paths.ExpectedSSHKeyPath()
-	checkExpectedKeyPath := func() error {
-		return aggerrors.NewAggregate([]error{
-			checkDirMode(filepath.Dir(expected), os.FileMode(0o700)),
-			checkFileContentsAndMode(expected, []byte(concatSSHKeys(users)), os.FileMode(0o600)),
-		})
+	if err := checkExpectedSSHKeyPath(users, paths); err != nil {
+		return err
 	}
 
-	// To find unexpected files, walk the directory structure under
-	// /home/core/.ssh and do the following:
-	// 1. Ignore any expected path fragments.
-	// 2. If any unexpected path fragments are found, return an error.
-	// 3. If we cannot verify that an unexpected path fragment is found, return an error.
-	checkUnexpectedKeyPath := func() error {
-		expectedFragments := sets.NewString(paths.ExpectedSSHPathFragments()...)
-
-		return filepath.WalkDir(paths.SSHKeyRoot(), func(path string, _ os.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-
-			if expectedFragments.Has(path) {
-				return nil
-			}
-
-			if _, err := os.Lstat(path); err == nil {
-				return fmt.Errorf("expected not to find SSH keys in %s", path)
-			} else if !errors.Is(err, fs.ErrNotExist) {
-				return err
-			}
-
-			return nil
-		})
-	}
-
-	// We want to return an error if either (or both) of these closures returns an error
-	return aggerrors.Flatten(aggerrors.NewAggregate([]error{
-		checkExpectedKeyPath(),
-		checkUnexpectedKeyPath(),
-	}))
+	return checkUnexpectedSSHKeyPath(paths)
 }
 
 // Checks that the ondisk state for a systemd dropin matches the expected state.
@@ -282,11 +325,8 @@ func checkV2Files(files []ign2types.File) error {
 	return nil
 }
 
-// checkFileContentsAndMode reads the file from the filepath and compares its
-// contents and mode with the expectedContent and mode parameters. It logs an
-// error in case of an error or mismatch and returns the status of the
-// evaluation.
-func checkFileContentsAndMode(filePath string, expectedContent []byte, mode os.FileMode) error {
+// Checks the mode of a given file.
+func checkFileMode(filePath string, mode os.FileMode) error {
 	fi, err := os.Lstat(filePath)
 	if err != nil {
 		return fmt.Errorf("could not stat file %q: %w", filePath, err)
@@ -294,14 +334,29 @@ func checkFileContentsAndMode(filePath string, expectedContent []byte, mode os.F
 	if fi.Mode() != mode {
 		return fmt.Errorf("mode mismatch for file: %q; expected: %[2]v/%[2]d/%#[2]o; received: %[3]v/%[3]d/%#[3]o", filePath, mode, fi.Mode())
 	}
+
+	return nil
+}
+
+// checkFileContentsAndMode reads the file from the filepath and compares its
+// contents and mode with the expectedContent and mode parameters. It logs an
+// error in case of an error or mismatch and returns the status of the
+// evaluation.
+func checkFileContentsAndMode(filePath string, expectedContent []byte, mode os.FileMode) error {
+	if err := checkFileMode(filePath, mode); err != nil {
+		return err
+	}
+
 	contents, err := os.ReadFile(filePath)
 	if err != nil {
 		return fmt.Errorf("could not read file %q: %w", filePath, err)
 	}
+
 	if !bytes.Equal(contents, expectedContent) {
 		glog.Errorf("content mismatch for file %q (-want +got):\n%s", filePath, cmp.Diff(expectedContent, contents))
-		return fmt.Errorf("content mismatch for file %q", filePath)
+		return fmt.Errorf("content mismatch for file: %q", filePath)
 	}
+
 	return nil
 }
 

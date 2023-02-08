@@ -23,9 +23,17 @@ type configDriftErr struct {
 	error
 }
 
+func (c *configDriftErr) Unwrap() error {
+	return c.error
+}
+
 // Error type for file config drifts
 type fileConfigDriftErr struct {
 	error
+}
+
+func (f *fileConfigDriftErr) Unwrap() error {
+	return f.error
 }
 
 // Error type for systemd unit config drifts
@@ -33,9 +41,27 @@ type unitConfigDriftErr struct {
 	error
 }
 
+func (u *unitConfigDriftErr) Unwrap() error {
+	return u.error
+}
+
 // Error type for SSH key config drifts
 type sshConfigDriftErr struct {
 	error
+}
+
+func (s *sshConfigDriftErr) Unwrap() error {
+	return s.error
+}
+
+// Error type for unexpected SSH key config drift
+type unexpectedSSHFileErr struct {
+	filename string
+	error
+}
+
+func (u *unexpectedSSHFileErr) Unwrap() error {
+	return u.error
 }
 
 type ConfigDriftMonitor interface {
@@ -156,10 +182,6 @@ func newConfigDriftWatcher(opts ConfigDriftMonitorOpts) (*configDriftWatcher, er
 
 	if opts.MachineConfig == nil {
 		return nil, fmt.Errorf("no machine config provided")
-	}
-
-	if err := opts.Paths.validate(); err != nil {
-		return nil, fmt.Errorf("could not validate Paths: %w", err)
 	}
 
 	c := &configDriftWatcher{

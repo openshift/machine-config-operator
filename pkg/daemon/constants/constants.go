@@ -92,4 +92,7 @@ const (
 
 	// SSH keys in RHCOS 9 / FCOS / SCOS will be written to /home/core/.ssh/authorized_keys.d/ignition
 	RHCOS9SSHKeyPath = CoreUserSSH + "/authorized_keys.d/ignition"
+
+	// Core user SSH config
+	CoreUserSSHConfig = CoreUserSSH + "/config"
 )

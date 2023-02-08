@@ -26,6 +26,7 @@ func TestConfigDriftMonitor(t *testing.T) {
 	fileErr := &configDriftErr{&fileConfigDriftErr{fmt.Errorf("file error")}}
 	unitErr := &configDriftErr{&unitConfigDriftErr{fmt.Errorf("unit error")}}
 	sshErr := &configDriftErr{&sshConfigDriftErr{fmt.Errorf("ssh error")}}
+	unexpectedSSHErr := &configDriftErr{&sshConfigDriftErr{&unexpectedSSHFileErr{error: fmt.Errorf("unexpected ssh error")}}}
 
 	// Filesystem Mutators
 	// These are closures to avoid namespace collisions and pollution since
@@ -246,7 +247,7 @@ func TestConfigDriftMonitor(t *testing.T) {
 		// should cause a drift.
 		{
 			name:        "ign SSH unexpected key path",
-			expectedErr: sshErr,
+			expectedErr: unexpectedSSHErr,
 			mutateSSHUnexpected: func(path string) error {
 				// For SSH, we want to monitor /home/core/.ssh and anything beneath it.
 				// Assuming /home/core/.ssh/authorized_keys.d/ignition is present, we
@@ -261,21 +262,8 @@ func TestConfigDriftMonitor(t *testing.T) {
 		},
 	}
 
-	// Create a mutex for our test cases. The mutex is needed because we now
-	// overwrite the origParentDirPath and noOrigParentDirPath global variables
-	// so that our filesystem mutations are confined to a tempdir created by the
-	// test case. However, since this is a global value, we need to be sure that
-	// only one testcase can use it at a time. Other than that, the test suite
-	// does a good job of keeping each individual test case isolated in its own
-	// tempdir.
-	testMutex := &sync.Mutex{}
-
 	for _, testCase := range append(testCases, getRHCOS9TestCases(testCases)...) {
-		// Wire up the mutex to each test case before executing so they don't stomp
-		// on each other.
-		testCase.testMutex = testMutex
 		testCase := testCase
-
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -287,10 +275,7 @@ func TestConfigDriftMonitor(t *testing.T) {
 				os = testCase.os
 			}
 
-			paths, err := GetPathsWithPrefix(os, testCase.tmpDir)
-			require.NoError(t, err)
-
-			testCase.Paths = paths
+			testCase.Paths = GetPathsWithPrefix(os, testCase.tmpDir)
 
 			testCase.run(t)
 		})
@@ -341,8 +326,6 @@ type configDriftMonitorTestCase struct {
 	mutateSSHUnexpected func(string) error
 	// The OS to target
 	os mockOS
-	// Mutex to ensure that parallel tests do not stomp on one another
-	testMutex *sync.Mutex
 }
 
 // Runs the test case
@@ -581,7 +564,6 @@ func (tc configDriftMonitorTestCase) getFixtures(t *testing.T) (ign3types.Config
 	return ignConfig, mc
 }
 
-// This needs to be a pointer receiver so we can lock / unlock the mutex.
 func (tc *configDriftMonitorTestCase) writeIgnitionConfig(t *testing.T, ignConfig ign3types.Config) error {
 	t.Helper()
 
@@ -610,8 +592,6 @@ func (tc configDriftMonitorTestCase) onDriftFunc(t *testing.T, err error) {
 	// If we're not expecting a configDriftErr, we should not end up here.
 	if tc.expectedErr == nil {
 		t.Errorf("expected no config drift error, but got one anyway: %s", err)
-	} else {
-		t.Logf("got expected error: %s", err)
 	}
 
 	// Make sure that we get specific error types based upon the expected
@@ -635,5 +615,12 @@ func (tc configDriftMonitorTestCase) onDriftFunc(t *testing.T, err error) {
 	var sErr *sshConfigDriftErr
 	if errors.As(tc.expectedErr, &sErr) {
 		assert.ErrorAs(t, err, &sErr)
+	}
+
+	// If the testcase askss for an unexpectedConfigDriftErr, be sure we got one.
+	var usErr *unexpectedSSHFileErr
+	if errors.As(tc.expectedErr, &usErr) {
+		assert.ErrorAs(t, err, &usErr)
+		assert.NotEmpty(t, usErr.filename)
 	}
 }

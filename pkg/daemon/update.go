@@ -72,7 +72,7 @@ type sshKeyOpts struct {
 	gid int
 }
 
-// Populates sshKeyOpts with its defaults and validates Paths.
+// Populates sshKeyOpts with its defaults.
 func (s *sshKeyOpts) populate() error {
 	if s.systemuser == "" {
 		s.systemuser = constants.CoreUserSSH
@@ -94,7 +94,7 @@ func (s *sshKeyOpts) populate() error {
 		s.gid = gid
 	}
 
-	return s.paths.validate()
+	return nil
 }
 
 func getNodeRef(node *corev1.Node) *corev1.ObjectReference {
@@ -1386,16 +1386,16 @@ func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig ign3types.Config) e
 	newDropinSet := make(map[string]struct{})
 	for _, u := range newIgnConfig.Systemd.Units {
 		for j := range u.Dropins {
-			path := filepath.Join(pathSystemd, u.Name+".d", u.Dropins[j].Name)
+			path := dn.paths.SystemdDropinPath(u.Name, u.Dropins[j].Name)
 			newDropinSet[path] = struct{}{}
 		}
-		path := filepath.Join(pathSystemd, u.Name)
+		path := dn.paths.SystemdUnitPath(u.Name)
 		newUnitSet[path] = struct{}{}
 	}
 
 	for _, u := range oldIgnConfig.Systemd.Units {
 		for j := range u.Dropins {
-			path := filepath.Join(pathSystemd, u.Name+".d", u.Dropins[j].Name)
+			path := dn.paths.SystemdDropinPath(u.Name, u.Dropins[j].Name)
 			if _, ok := newDropinSet[path]; !ok {
 				if _, err := os.Stat(dn.paths.NoOrigFileStampName(path)); err == nil {
 					if delErr := os.Remove(dn.paths.NoOrigFileStampName(path)); delErr != nil {
@@ -1421,7 +1421,7 @@ func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig ign3types.Config) e
 				glog.Infof("Removed stale systemd dropin %q", path)
 			}
 		}
-		path := filepath.Join(pathSystemd, u.Name)
+		path := dn.paths.SystemdUnitPath(u.Name)
 		if _, ok := newUnitSet[path]; !ok {
 			// since the unit doesn't exist anymore within the MachineConfig,
 			// look to restore defaults here, so that symlinks are removed first

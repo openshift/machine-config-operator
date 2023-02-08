@@ -14,12 +14,14 @@ func TestPaths(t *testing.T) {
 
 	rhcos8PathFragments := []string{
 		constants.RHCOS8SSHKeyPath,
-		constants.CoreUserSSH,
 	}
 
 	rhcos9PathFragments := []string{
 		constants.RHCOS9SSHKeyPath,
 		"/home/core/.ssh/authorized_keys.d",
+	}
+
+	commonExpectedFragments := []string{
 		constants.CoreUserSSH,
 	}
 
@@ -42,7 +44,7 @@ func TestPaths(t *testing.T) {
 			name:                        "RHCOS 8",
 			os:                          rhcos8(),
 			expectedSSHRoot:             constants.CoreUserSSH,
-			expectedSSHFragments:        rhcos8PathFragments,
+			expectedSSHFragments:        append(commonExpectedFragments, rhcos8PathFragments...),
 			unexpectedSSHFragments:      rhcos9PathFragments,
 			expectedSystemdRootPath:     pathSystemd,
 			expectedSystemdUnitPath:     filepath.Join(pathSystemd, systemdUnitName),
@@ -57,7 +59,7 @@ func TestPaths(t *testing.T) {
 			name:                        "RHCOS 9",
 			os:                          rhcos9(),
 			expectedSSHRoot:             constants.CoreUserSSH,
-			expectedSSHFragments:        rhcos9PathFragments,
+			expectedSSHFragments:        append(commonExpectedFragments, rhcos9PathFragments...),
 			unexpectedSSHFragments:      rhcos8PathFragments,
 			expectedSystemdRootPath:     pathSystemd,
 			expectedSystemdUnitPath:     filepath.Join(pathSystemd, systemdUnitName),
@@ -73,14 +75,14 @@ func TestPaths(t *testing.T) {
 	for _, testCase := range testCases {
 		testCase := testCase
 		t.Run(testCase.name+" Defaults", func(t *testing.T) {
-			paths, err := GetPaths(testCase.os)
-			assert.NoError(t, err)
+			paths := GetPaths(testCase.os)
 			assert.Equal(t, testCase.expectedSSHRoot, paths.SSHKeyRoot())
 			assert.Equal(t, testCase.expectedSSHFragments, paths.ExpectedSSHPathFragments())
 			assert.Equal(t, testCase.unexpectedSSHFragments, paths.UnexpectedSSHPathFragments())
 			assert.Equal(t, testCase.expectedSystemdRootPath, paths.SystemdPath())
 			assert.Equal(t, testCase.expectedSystemdUnitPath, paths.SystemdUnitPath(systemdUnitName))
 			assert.Equal(t, testCase.expectedSystemdDropinPath, paths.SystemdDropinPath(systemdUnitName, systemdDropinName))
+			assert.Equal(t, testCase.expectedSystemdDropinPath, paths.SystemdDropinPath(systemdUnitName+".d", systemdDropinName))
 			assert.Equal(t, testCase.expectedOrigFileName, paths.OrigFileName("something"))
 			assert.Equal(t, testCase.expectedNoOrigFileStampName, paths.NoOrigFileStampName("something"))
 			assert.Equal(t, testCase.expectedOrigParentDir, paths.OrigParentDir())
@@ -105,20 +107,19 @@ func TestPaths(t *testing.T) {
 				return out
 			}
 
-			paths, err := GetPathsWithPrefix(testCase.os, prefix)
-			assert.NoError(t, err)
+			paths := GetPathsWithPrefix(testCase.os, prefix)
 			assert.Equal(t, apply(testCase.expectedSSHRoot), paths.SSHKeyRoot())
 			assert.Equal(t, applyToAll(testCase.expectedSSHFragments), paths.ExpectedSSHPathFragments())
 			assert.Equal(t, applyToAll(testCase.unexpectedSSHFragments), paths.UnexpectedSSHPathFragments())
 			assert.Equal(t, apply(testCase.expectedSystemdRootPath), paths.SystemdPath())
 			assert.Equal(t, apply(testCase.expectedSystemdUnitPath), paths.SystemdUnitPath(systemdUnitName))
 			assert.Equal(t, apply(testCase.expectedSystemdDropinPath), paths.SystemdDropinPath(systemdUnitName, systemdDropinName))
+			assert.Equal(t, apply(testCase.expectedSystemdDropinPath), paths.SystemdDropinPath(systemdUnitName+".d", systemdDropinName))
 			assert.Equal(t, apply(testCase.expectedOrigFileName), paths.OrigFileName("something"))
 			assert.Equal(t, apply(testCase.expectedNoOrigFileStampName), paths.NoOrigFileStampName("something"))
 			assert.Equal(t, apply(testCase.expectedOrigParentDir), paths.OrigParentDir())
 			assert.Equal(t, apply(testCase.expectedNoOrigParentDir), paths.NoOrigParentDir())
 			assert.Equal(t, apply(testCase.expectedWithUsrPath), paths.WithUsrPath("something"))
-
 		})
 	}
 }

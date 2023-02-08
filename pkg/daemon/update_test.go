@@ -105,8 +105,7 @@ func setupTempDirWithEtc(t *testing.T) (string, Paths, fileWriters) {
 	err := os.MkdirAll(etcDir, 0755)
 	require.Nil(t, err)
 
-	paths, err := GetPathsWithPrefix(rhcos8(), testDir)
-	require.NoError(t, err)
+	paths := GetPathsWithPrefix(rhcos8(), testDir)
 
 	fw := newFileWriters(paths, rhcos8())
 
@@ -518,6 +517,40 @@ func TestCheckSSHDiskState(t *testing.T) {
 			os:   rhcos9(),
 		},
 		{
+			name:         "Ignores trailing newlines - RHCOS8",
+			fileContents: "1234\n5678\n\n\n\n\n",
+			os:           rhcos8(),
+		},
+		{
+			name:         "Ignores trailing newlines - RHCOS9",
+			fileContents: "1234\n5678\n\n\n\n\n",
+			os:           rhcos9(),
+		},
+		{
+			name:         "Enforces order - RHCOS8",
+			fileContents: "5678\n1234\n",
+			os:           rhcos8(),
+			errExpected:  true,
+		},
+		{
+			name:         "Enforces order - RHCOS9",
+			fileContents: "5678\n1234\n",
+			os:           rhcos9(),
+			errExpected:  true,
+		},
+		{
+			name:         "Enforces no newlines in middle - RHCOS8",
+			fileContents: "1234\n\n\n5678",
+			os:           rhcos8(),
+			errExpected:  true,
+		},
+		{
+			name:         "Enforces no newlines in middle - RHCOS9",
+			fileContents: "1234\n\n\n5678",
+			os:           rhcos9(),
+			errExpected:  true,
+		},
+		{
 			name:        "Wrong file mode - RHCOS8",
 			fileMode:    os.FileMode(0o700),
 			errExpected: true,
@@ -574,10 +607,11 @@ func TestCheckSSHDiskState(t *testing.T) {
 		testCase := testCase
 
 		t.Run(testCase.name, func(t *testing.T) {
-			paths, err := GetPathsWithPrefix(testCase.os, t.TempDir())
-			require.NoError(t, err)
+			t.Parallel()
 
-			populatedSSHKeys := []ign3types.PasswdUser{{Name: constants.CoreUserName, SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"1234", "4567"}}}
+			paths := GetPathsWithPrefix(testCase.os, t.TempDir())
+
+			populatedSSHKeys := []ign3types.PasswdUser{{Name: constants.CoreUserName, SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"1234", "5678"}}}
 
 			contents := []byte{}
 			if testCase.fileContents != "" {
@@ -674,8 +708,7 @@ func TestUpdateSSHKeys(t *testing.T) {
 			// Override the daemon osrelease object with our mock object.
 			d.os = testCase.os
 
-			paths, err := GetPathsWithPrefix(testCase.os, t.TempDir())
-			require.NoError(t, err)
+			paths := GetPathsWithPrefix(testCase.os, t.TempDir())
 
 			// Create the SSH key directory to avoid calling "runuser" in this test since doing that requires root.
 			require.NoError(t, os.MkdirAll(filepath.Dir(paths.ExpectedSSHKeyPath()), os.FileMode(0o700)))

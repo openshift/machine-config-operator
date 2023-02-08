@@ -1,7 +1,6 @@
 package daemon
 
 import (
-	"fmt"
 	"path/filepath"
 	"strings"
 
@@ -19,14 +18,18 @@ type Paths struct {
 	origParentDirPath    string
 	noOrigParentDirPath  string
 	usrPath              string
+
+	// The prefix to append to all paths for testing.
+	pathPrefix string
 }
 
-func GetPaths(os osRelease) (Paths, error) {
+func GetPaths(os osRelease) Paths {
 	p := Paths{
 		systemdPath:         pathSystemd,
 		origParentDirPath:   filepath.Join("/etc", "machine-config-daemon", "orig"),
 		noOrigParentDirPath: filepath.Join("/etc", "machine-config-daemon", "noorig"),
 		usrPath:             "/usr",
+		pathPrefix:          "",
 	}
 
 	if os.IsEL9() || os.IsSCOS() || os.IsFCOS() {
@@ -37,37 +40,26 @@ func GetPaths(os osRelease) (Paths, error) {
 		p.unexpectedSSHKeyPath = constants.RHCOS9SSHKeyPath
 	}
 
-	return p, p.validate()
+	return p
 }
 
-func GetPathsWithPrefix(os osRelease, pathPrefix string) (Paths, error) {
-	p, err := GetPaths(os)
-	if err != nil {
-		return p, err
-	}
-
-	p.systemdPath = filepath.Join(pathPrefix, p.systemdPath)
-	p.expectedSSHKeyPath = filepath.Join(pathPrefix, p.expectedSSHKeyPath)
-	p.unexpectedSSHKeyPath = filepath.Join(pathPrefix, p.unexpectedSSHKeyPath)
-	p.origParentDirPath = filepath.Join(pathPrefix, p.origParentDirPath)
-	p.noOrigParentDirPath = filepath.Join(pathPrefix, p.noOrigParentDirPath)
-	p.usrPath = filepath.Join(pathPrefix, p.usrPath)
-
-	return p, p.validate()
+func GetPathsWithPrefix(os osRelease, pathPrefix string) Paths {
+	p := GetPaths(os)
+	p.pathPrefix = pathPrefix
+	return p
 }
 
 // Gets the root SSH key path dir for a given SSH path; e.g., /home/core/.ssh
 func (p *Paths) SSHKeyRoot() string {
-	fragments := p.ExpectedSSHPathFragments()
-	return fragments[len(fragments)-1]
+	return p.appendPrefix(constants.CoreUserSSH)
 }
 
 func (p *Paths) ExpectedSSHKeyPath() string {
-	return p.expectedSSHKeyPath
+	return p.appendPrefix(p.expectedSSHKeyPath)
 }
 
 func (p *Paths) UnexpectedSSHKeyPath() string {
-	return p.unexpectedSSHKeyPath
+	return p.appendPrefix(p.unexpectedSSHKeyPath)
 }
 
 // Returns all of the path fragments for the expected SSH path. If expected SSH key
@@ -75,23 +67,49 @@ func (p *Paths) UnexpectedSSHKeyPath() string {
 // /home/core/.ssh/authorized_keys.d/ignition,
 // /home/core/.ssh/authorized_keys.d, /home/core/.ssh
 func (p *Paths) ExpectedSSHPathFragments() []string {
-	return p.getSSHPathFragments(p.expectedSSHKeyPath)
+	out := []string{constants.CoreUserSSH}
+
+	if p.ExpectedSSHKeyPath() == p.appendPrefix(constants.RHCOS8SSHKeyPath) {
+		out = append(out, p.rhcos8KeyPathFragments()...)
+	} else {
+		out = append(out, p.rhcos9KeyPathFragments()...)
+	}
+
+	return p.appendToAll(out)
 }
 
 // Returns all of the path fragments for the unexpected SSH path. If the
 // unexpected SSH key path is /home/core/.ssh/authorized_keys, it
 // will return /home/core/.ssh/authorized_keys, /home/core/.ssh
 func (p *Paths) UnexpectedSSHPathFragments() []string {
-	return p.getSSHPathFragments(p.unexpectedSSHKeyPath)
-}
+	var out []string
 
-// Gets the systemd root path. Defaults to pathSystemd, if empty.
-func (p *Paths) SystemdPath() string {
-	if p.systemdPath == "" {
-		return pathSystemd
+	if p.UnexpectedSSHKeyPath() == p.appendPrefix(constants.RHCOS9SSHKeyPath) {
+		out = p.rhcos9KeyPathFragments()
+	} else {
+		out = p.rhcos8KeyPathFragments()
 	}
 
-	return p.systemdPath
+	return p.appendToAll(out)
+}
+
+func (p *Paths) rhcos8KeyPathFragments() []string {
+	// /home/core/.ssh/authorized_keys
+	return []string{constants.RHCOS8SSHKeyPath}
+}
+
+func (p *Paths) rhcos9KeyPathFragments() []string {
+	return []string{
+		// /home/core/.ssh/authorized_keys.d/ignition
+		constants.RHCOS9SSHKeyPath,
+		// /home/core/.ssh/authorized_keys.d
+		filepath.Dir(constants.RHCOS9SSHKeyPath),
+	}
+}
+
+// Gets the systemd root path.
+func (p *Paths) SystemdPath() string {
+	return p.appendPrefix(p.systemdPath)
 }
 
 // Gets the absolute path for a systemd unit, given the unit name.
@@ -101,6 +119,7 @@ func (p *Paths) SystemdUnitPath(unitName string) string {
 
 // Gets the absolute path for a systemd unit and dropin, given the unit and dropin names.
 func (p *Paths) SystemdDropinPath(unitName, dropinName string) string {
+	// Idempotently adds the ".d" suffix onto the unit name.
 	if !strings.HasSuffix(unitName, ".d") {
 		unitName += ".d"
 	}
@@ -124,54 +143,31 @@ func (p *Paths) NoOrigFileStampName(fpath string) string {
 }
 
 func (p *Paths) OrigParentDir() string {
-	return p.origParentDirPath
+	return p.appendPrefix(p.origParentDirPath)
 }
 
 func (p *Paths) NoOrigParentDir() string {
-	return p.noOrigParentDirPath
+	return p.appendPrefix(p.noOrigParentDirPath)
 }
 
 func (p *Paths) WithUsrPath(fpath string) string {
-	return filepath.Join(p.usrPath, fpath)
+	return filepath.Join(p.appendPrefix(p.usrPath), fpath)
 }
 
-// Returns all of the path fragments for a given SSH path. If
-// given /home/core/.ssh/authorized_keys.d/ignition, it will return
-// /home/core/.ssh/authorized_keys.d/ignition,
-// /home/core/.ssh/authorized_keys.d, /home/core/.ssh
-func (p *Paths) getSSHPathFragments(path string) []string {
-	out := []string{path}
-
-	sshFragment := filepath.Base(constants.CoreUserSSH)
-
-	if strings.HasSuffix(path, sshFragment) {
-		return out
+// Idempotently appends the path prefix onto a given path.
+func (p *Paths) appendPrefix(path string) string {
+	if p.pathPrefix == "" || strings.HasPrefix(path, p.pathPrefix) {
+		return path
 	}
 
-	tmp := path
-	for {
-		tmp = filepath.Dir(tmp)
-		out = append(out, tmp)
-		if strings.HasSuffix(tmp, sshFragment) {
-			break
-		}
-	}
-
-	return out
+	return filepath.Join(p.pathPrefix, path)
 }
 
-func (p *Paths) validate() error {
-	if p.systemdPath == "" {
-		p.systemdPath = pathSystemd
+// Idempotently appends the path prefix to all items in a given string slice.
+func (p *Paths) appendToAll(paths []string) []string {
+	for i := range paths {
+		paths[i] = p.appendPrefix(paths[i])
 	}
 
-	if p.expectedSSHKeyPath == "" {
-		return fmt.Errorf("ExpectedSSHKeyPath not set")
-	}
-
-	if p.unexpectedSSHKeyPath == "" {
-		return fmt.Errorf("UnexpectedSSHKeyPath not set")
-	}
-
-	return nil
+	return paths
 }

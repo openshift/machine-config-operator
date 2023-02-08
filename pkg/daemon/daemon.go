@@ -286,10 +286,7 @@ func New(
 	// report OS & version (if RHCOS or FCOS) to prometheus
 	hostOS.WithLabelValues(hostos.ToPrometheusLabel(), osVersion).Set(1)
 
-	vp, err := GetPaths(hostos)
-	if err != nil {
-		return nil, fmt.Errorf("could not create validation paths: %w", err)
-	}
+	paths := GetPaths(hostos)
 
 	return &Daemon{
 		mock:                  mock,
@@ -303,8 +300,8 @@ func New(
 		currentConfigPath:     currentConfigPath,
 		loggerSupportsJournal: loggerSupportsJournal,
 		configDriftMonitor:    NewConfigDriftMonitor(),
-		paths:                 vp,
-		fileWriters:           newFileWriters(vp, hostos),
+		paths:                 paths,
+		fileWriters:           newFileWriters(paths, hostos),
 	}, nil
 }
 
@@ -620,6 +617,9 @@ func (dn *Daemon) runPreflightConfigDriftCheck() error {
 	start := time.Now()
 
 	if err := dn.validateOnDiskState(currentOnDisk); err != nil {
+		if err := dn.shouldDiskStateDegrade(err); err == nil {
+			return nil
+		}
 		dn.nodeWriter.Eventf(corev1.EventTypeWarning, "PreflightConfigDriftCheckFailed", err.Error())
 		glog.Errorf("Preflight config drift check failed: %v", err)
 		return &configDriftErr{err}
@@ -1111,6 +1111,11 @@ func (dn *Daemon) applySSHAccessedAnnotation() error {
 
 // Called whenever the on-disk config has drifted from the current machineconfig.
 func (dn *Daemon) onConfigDrift(err error) {
+	// We only want to warn, but not degrade on a subset of Config Drift.
+	if err := dn.shouldDiskStateDegrade(err); err == nil {
+		return
+	}
+
 	dn.nodeWriter.Eventf(corev1.EventTypeWarning, "ConfigDriftDetected", err.Error())
 	glog.Error(err)
 	if err := dn.updateErrorState(err); err != nil {
@@ -1960,6 +1965,20 @@ func (dn *CoreOSDaemon) validateKernelArguments(currentConfig *mcfgv1.MachineCon
 	return nil
 }
 
+func (dn *Daemon) shouldDiskStateDegrade(err error) error {
+	// If we've found an unexpected SSH key, we should warn, but not degrade.
+	var uErr *unexpectedSSHFileErr
+	if errors.As(err, &uErr) {
+		deleteCmd := fmt.Sprintf("$ oc debug node/%s -- rm %s", dn.node.Name, filepath.Join("/host", uErr.filename))
+		warnMsg := fmt.Sprintf("Unexpected SSH file found: %s. Run: %q.", uErr.filename, deleteCmd)
+		glog.Warning(warnMsg)
+		dn.nodeWriter.Eventf(corev1.EventTypeWarning, "UnexpectedSSHFileFound", warnMsg)
+		return nil
+	}
+
+	return err
+}
+
 // Implementation of validateOnDiskState which checks a few conditions
 func (dn *Daemon) validateOnDiskStateImpl(currentConfig *mcfgv1.MachineConfig) error {
 	// Be sure we're booted into the OS we expect
@@ -1975,7 +1994,7 @@ func (dn *Daemon) validateOnDiskStateImpl(currentConfig *mcfgv1.MachineConfig) e
 		}
 	}
 
-	return validateOnDiskState(currentConfig, dn.paths)
+	return dn.shouldDiskStateDegrade(validateOnDiskState(currentConfig, dn.paths))
 }
 
 // validateOnDiskState compares the on-disk state against what a configuration
