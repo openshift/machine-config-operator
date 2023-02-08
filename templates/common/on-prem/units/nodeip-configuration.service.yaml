@@ -36,6 +36,9 @@ contents: |
   {{if .Proxy -}}
   EnvironmentFile=/etc/mco/proxy.env
   {{end -}}
+  # Allow 5 minutes for this service to startup. This should be ample time to
+  # determine if we're going to work, or if we need to fail and address problems.
+  TimeoutSec=300
 
   [Install]
   WantedBy=multi-user.target
