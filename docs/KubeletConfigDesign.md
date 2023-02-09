@@ -90,7 +90,7 @@ uses more IO, CPU, and resources on all the machines within the pool.
 Save your `kubeletconfig` locally, for example as maxpods.yaml
 
 The label in the above example corresponds to the worker MachineConfigPool. By default the master/worker
-MachineConfigPool has labels pools.operator.machineconfiguration.openshift.io/{worker|master}: "" in OCP 4.6 and later. If you have a custom pool, or have an earlier OCP version, you can instead create a label youself as follows:
+MachineConfigPool has labels pools.operator.machineconfiguration.openshift.io/{worker|master}: "" in OCP 4.6 and later. If you have a custom pool, or have an earlier OCP version, you can instead create a label yourself as follows:
 
 ```
 apiVersion: machineconfiguration.openshift.io/v1
