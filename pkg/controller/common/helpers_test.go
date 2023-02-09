@@ -456,6 +456,62 @@ func TestRemoveIgnDuplicateFilesAndUnits(t *testing.T) {
 	assert.Equal(t, expectedIgn2Config, convertedIgn2Config)
 }
 
+// TestSetDefaultFileOverwrite ensures that if no default overwrite is provided, MergeMachineConfigs defaults it to true
+// Otherwise, the user-provided value is preserved.
+func TestSetDefaultFileOverwrite(t *testing.T) {
+	// Set up Files entries
+	mode := 420
+	testfiledata := "data:,test"
+	tempFileNoDefault := ign3types.File{Node: ign3types.Node{Path: "/etc/testfileconfig1"},
+		FileEmbedded1: ign3types.FileEmbedded1{Contents: ign3types.Resource{Source: &testfiledata}, Mode: &mode}}
+	tempFileOvewriteTrue := ign3types.File{Node: ign3types.Node{Path: "/etc/testfileconfig1", Overwrite: boolToPtr(true)},
+		FileEmbedded1: ign3types.FileEmbedded1{Contents: ign3types.Resource{Source: &testfiledata}, Mode: &mode}}
+	tempFileOverwriteFalse := ign3types.File{Node: ign3types.Node{Path: "/etc/testfileconfig2", Overwrite: boolToPtr(false)},
+		FileEmbedded1: ign3types.FileEmbedded1{Contents: ign3types.Resource{Source: &testfiledata}, Mode: &mode}}
+
+	// Set up two Ignition configs, one with overwrite: no default, overwrite: false (to be passed to MergeMachineConfigs)
+	// and one with a overwrite: true, overwrite: false (the expected output)
+	testIgn3ConfigPreMerge := ign3types.Config{}
+	testIgn3ConfigPreMerge.Ignition.Version = "3.2.0"
+	testIgn3ConfigPreMerge.Storage.Files = append(testIgn3ConfigPreMerge.Storage.Files, tempFileNoDefault)
+	testIgn3ConfigPreMerge.Storage.Files = append(testIgn3ConfigPreMerge.Storage.Files, tempFileOverwriteFalse)
+
+	testIgn3ConfigPostMerge := ign3types.Config{}
+	testIgn3ConfigPostMerge.Ignition.Version = "3.2.0"
+	testIgn3ConfigPostMerge.Storage.Files = append(testIgn3ConfigPostMerge.Storage.Files, tempFileOvewriteTrue)
+	testIgn3ConfigPostMerge.Storage.Files = append(testIgn3ConfigPostMerge.Storage.Files, tempFileOverwriteFalse)
+
+	// Convert and create the expected pre-merge config
+	rawOutIgnPreMerge, err := json.Marshal(testIgn3ConfigPreMerge)
+	machineConfigPreMerge := &mcfgv1.MachineConfig{
+		Spec: mcfgv1.MachineConfigSpec{
+			Config: runtime.RawExtension{
+				Raw: rawOutIgnPreMerge,
+			},
+		},
+	}
+	require.Nil(t, err)
+
+	cconfig := &mcfgv1.ControllerConfig{}
+	mergedMachineConfig, err := MergeMachineConfigs([]*mcfgv1.MachineConfig{machineConfigPreMerge}, cconfig)
+	require.Nil(t, err)
+
+	// Convert and create the expected post-merge config
+	rawOutIgnPostMerge, err := json.Marshal(testIgn3ConfigPostMerge)
+	require.Nil(t, err)
+	expectedMachineConfig := &mcfgv1.MachineConfig{
+		Spec: mcfgv1.MachineConfigSpec{
+			KernelArguments: []string{},
+			KernelType:      KernelTypeDefault,
+			Extensions:      []string{},
+			Config: runtime.RawExtension{
+				Raw: rawOutIgnPostMerge,
+			},
+		},
+	}
+	assert.Equal(t, *mergedMachineConfig, *expectedMachineConfig)
+}
+
 // TestIgnitionMergeCompressed tests https://github.com/coreos/butane/issues/332
 func TestIgnitionMergeCompressed(t *testing.T) {
 	testIgn3Config := ign3types.Config{}
