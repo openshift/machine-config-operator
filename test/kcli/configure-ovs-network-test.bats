@@ -16,27 +16,27 @@ teardown() {
 }
 
 @test "Single NIC" {
-    output_dir=${DIR}/_output/single-nic
+    output_dir="${DIR}/_output/single-nic"
     rm -rf -- "${output_dir}"
     mkdir -p "${output_dir}"
 
-    run kcli create plan -f plans/single-nic.yml -P output_dir=${output_dir}
+    run kcli create plan -f plans/single-nic.yml -P output_dir="${output_dir}"
     cleanUpCmd="kcli delete -y vm vm3"
 
-    output_file=${output_dir}/configure-ovs-output.txt
+    output_file="${output_dir}/configure-ovs-output.txt"
     assert_file_contains "${output_file}" "Brought up connection br-ex successfully"
     assert_file_contains "${output_file}" "Brought up connection ovs-if-br-ex successfully"
 }
 
 @test "Bonding NICs" {
-    output_dir=${DIR}/_output/bonding-nics/
+    output_dir="${DIR}/_output/bonding-nics/"
     rm -rf -- "${output_dir}"
     mkdir -p "${output_dir}"
 
-    run kcli create plan -f plans/bonding-nics.yml -P output_dir=${output_dir}
+    run kcli create plan -f plans/bonding-nics.yml -P output_dir="${output_dir}"
     cleanUpCmd="kcli delete -y vm vm3"
 
-    output_file=${output_dir}/configure-ovs-output.txt
+    output_file="${output_dir}/configure-ovs-output.txt"
     assert_file_contains "${output_file}" "Brought up connection br-ex successfully"
     assert_file_contains "${output_file}" "Brought up connection ovs-if-br-ex successfully"
     assert_file_contains "${output_file}" "convert_to_bridge bond99 br-ex phys0 48"

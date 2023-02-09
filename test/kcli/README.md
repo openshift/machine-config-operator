@@ -10,7 +10,7 @@ The following tools need to be installed on the host machine:
 
 ## Run tests
 
-The following command cna be used to run all test in `configure-ovs-test.bats` suite
+The following command can be used to run all test in `configure-ovs-test.bats` suite
 
 ```sh
 make runtest
@@ -24,7 +24,7 @@ WHAT="Bonding NICs" make runtest
 
 ## Run a sample VM
 
-To inspect virtual machines manually, run the following `kcli` commands:
+To create and destroy a test environment using a virtual machine, run the following `kcli` commands:
 
 ```sh
 kcli create plan -f plans/single-nic.yml
