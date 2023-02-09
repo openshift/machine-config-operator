@@ -14,7 +14,6 @@ import (
 	"github.com/golang/glog"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
@@ -222,15 +221,7 @@ func (c *configDriftWatcher) initialize() error {
 		return fmt.Errorf("could not get file paths from machine config: %w", err)
 	}
 
-	// We want to watch all of the path fragments for expected SSH keys as well
-	// as unexpected SSH keys. However, fsnotify cannot watch for files and
-	// directories that do not exist, and fsnotify cannot recurse into
-	// directories. So the way we monitor for both expected and unexpected SSH
-	// key paths is we look for any filesystem events under /home/core/.ssh
-	// through a combination of watching any subdirectories as well as performing
-	// a fuzzy-match on the filesystem events. For any filesystem event that has
-	// a fuzzy-match to /home/core/.ssh, we run validateOnDiskState, which knows
-	// how to check both the expected and unexpected SSH key directories.
+	// Add all of the SSH key path fragments to our watch list.
 	for _, path := range c.Paths.ExpectedSSHPathFragments() {
 		c.filePaths.Insert(path)
 	}
@@ -315,12 +306,16 @@ func (c *configDriftWatcher) handleFileEvent(event fsnotify.Event) error {
 }
 
 func (c *configDriftWatcher) shouldValidateOnDiskState(event fsnotify.Event) bool {
-	// If the filename is not in the MachineConfig to us or it doesn't contain /home/core/.ssh, we ignore it.
-	// We do a fuzzy match of /home/core/.ssh for two reasons:
-	// 1. For testing purposes, we write to a temp dir for isolation (e.g., /tmp/1234/home/core/.ssh)
-	// 2. We want to cover any events which occur within /home/core/.ssh and/or
-	// within /home/core/.ssh/authorized_keys.d.
-	return c.filePaths.Has(event.Name) || strings.Contains(event.Name, constants.CoreUserSSH)
+	// If the filename is not in the MachineConfig or it doesn't contain
+	// /home/core/.ssh, we ignore it.
+	//
+	// We do a fuzzy match of /home/core/.ssh because we want to cover any events
+	// in /home/core/.ssh and/or within /home/core/.ssh/authorized_keys.d. We
+	// can't watch for those events directly using fsnotify because:
+	//
+	// 1. fsnotify cannot recurse into a subdirectories.
+	// 2. fsnotify cannot alert on files that do not exist.
+	return c.filePaths.Has(event.Name) || strings.Contains(event.Name, c.Paths.SSHKeyRoot())
 }
 
 // Validates on disk state for potential config drift.
