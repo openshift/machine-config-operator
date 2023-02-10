@@ -1,6 +1,6 @@
 
 WHAT ?= .*
-runtest: bats _output/configure-ovs.
+runtest: bats _output/configure-ovs.sh
 	kcli download image fedora37
 	./bats/bats-core/bin/bats -T --verbose-run --filter "$(WHAT)" configure-ovs-network-test.bats
 
