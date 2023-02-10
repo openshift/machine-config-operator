@@ -105,10 +105,13 @@ type ClusterCSIDriverSpec struct {
 }
 
 // CSIDriverType indicates type of CSI driver being configured.
-// +kubebuilder:validation:Enum="";vSphere
+// +kubebuilder:validation:Enum="";AWS;Azure;GCP;vSphere
 type CSIDriverType string
 
 const (
+	AWSDriverType     CSIDriverType = "AWS"
+	AzureDriverType   CSIDriverType = "Azure"
+	GCPDriverType     CSIDriverType = "GCP"
 	VSphereDriverType CSIDriverType = "vSphere"
 )
 
@@ -118,23 +121,113 @@ const (
 type CSIDriverConfigSpec struct {
 	// driverType indicates type of CSI driver for which the
 	// driverConfig is being applied to.
-	//
-	// Valid values are:
-	//
-	// * vSphere
-	//
-	// Allows configuration of vsphere CSI driver topology.
-	//
-	// ---
+	// Valid values are: AWS, Azure, GCP, vSphere
 	// Consumers should treat unknown values as a NO-OP.
-	//
 	// +kubebuilder:validation:Required
 	// +unionDiscriminator
 	DriverType CSIDriverType `json:"driverType"`
 
+	// AWS is used to configure the AWS CSI driver.
+	// +optional
+	AWS *AWSCSIDriverConfigSpec `json:"aws,omitempty"`
+
+	// Azure is used to configure the Azure CSI driver.
+	// +optional
+	Azure *AzureCSIDriverConfigSpec `json:"azure,omitempty"`
+
+	// GCP is used to configure the GCP CSI driver.
+	// +optional
+	GCP *GCPCSIDriverConfigSpec `json:"gcp,omitempty"`
+
 	// vsphere is used to configure the vsphere CSI driver.
 	// +optional
 	VSphere *VSphereCSIDriverConfigSpec `json:"vSphere,omitempty"`
+}
+
+// AWSCSIDriverConfigSpec defines properties that can be configured for the AWS CSI driver.
+type AWSCSIDriverConfigSpec struct {
+	// kmsKeyARN sets the cluster default storage class to encrypt volumes with a user-defined KMS key,
+	// rather than the default KMS key used by AWS.
+	// The value may be either the ARN or Alias ARN of a KMS key.
+	// +kubebuilder:validation:Pattern:=arn:(aws|aws-cn|aws-us-gov):kms:[a-z0-9]+(-[a-z0-9]+)*:[0-9]{12}:(key|alias)/.*
+	// +optional
+	KMSKeyARN string `json:"kmsKeyARN,omitempty"`
+}
+
+// AzureDiskEncryptionSet defines the configuration for a disk encryption set.
+type AzureDiskEncryptionSet struct {
+	// subscriptionID defines the Azure subscription that contains the disk encryption set.
+	// When omitted, the subscription from the authenticating credentials of the CSI driver
+	// will be used.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern:=^[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}$
+	SubscriptionID string `json:"subscriptionID"`
+
+	// resourceGroup defines the Azure resource group that contains the disk encryption set.
+	// When omitted, the cluster resource group from the cluster infrastructure object
+	// will be used.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern=^[-\w\._\(\)]+$
+	ResourceGroup string `json:"resourceGroup"`
+
+	//name is the name of the disk encryption set that will be set on the default storage class.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MaxLength:=80
+	// +kubebuilder:validation:Pattern:=[a-zA-Z0-9_-]
+	Name string `json:"name"`
+}
+
+// AzureCSIDriverConfigSpec defines properties that can be configured for the Azure CSI driver.
+type AzureCSIDriverConfigSpec struct {
+	// diskEncryptionSet sets the cluster default storage class to encrypt volumes with a
+	// customer-managed encryption set, rather than the default platform-managed keys.
+	// +optional
+	DiskEncryptionSet *AzureDiskEncryptionSet `json:"diskEncryptionSet,omitempty"`
+}
+
+// GCPKMSKeyReference gathers required fields for looking up a GCP KMS Key
+type GCPKMSKeyReference struct {
+	// name is the name of the customer-managed encryption key to be used for disk encryption.
+	// The value should correspond to an existing KMS key
+	// and input should match the regular expression: [a-zA-Z0-9_-]{1,63}.
+	// +kubebuilder:validation:Pattern:=^[a-zA-Z0-9_-]$
+	// +kubebuilder:validation:MinLength:=1
+	// +kubebuilder:validation:MaxLength:=63
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+
+	// keyRing is the name of the KMS Key Ring which the KMS Key belongs to.
+	// The value should correspond to an existing KMS key ring
+	// and input should match the regular expression: [a-zA-Z0-9_-]{1,63}.
+	// +kubebuilder:validation:Pattern:=^[a-zA-Z0-9_-]$
+	// +kubebuilder:validation:MinLength:=1
+	// +kubebuilder:validation:MaxLength:=63
+	// +kubebuilder:validation:Required
+	KeyRing string `json:"keyRing"`
+
+	// projectID is the ID of the Project in which the KMS Key Ring exists.
+	// It must be 6 to 30 lowercase letters, digits, or hyphens.
+	// It must start with a letter. Trailing hyphens are prohibited.
+	// +kubebuilder:validation:Pattern:=^[a-z][a-z0-9-]+[a-z0-9]$
+	// +kubebuilder:validation:MinLength:=6
+	// +kubebuilder:validation:MaxLength:=30
+	// +kubebuilder:validation:Required
+	ProjectID string `json:"projectID"`
+
+	// location is the GCP location in which the Key Ring exists.
+	// The input must match an existing GCP location, or "global".
+	// Defaults to global, if not set.
+	// +kubebuilder:validation:Pattern:=[a-zA-Z0-9_-]
+	// +optional
+	Location string `json:"location,omitempty"`
+}
+
+// GCPCSIDriverConfigSpec defines properties that can be configured for the GCP CSI driver.
+type GCPCSIDriverConfigSpec struct {
+	// kmsKey sets the cluster default storage class to encrypt volumes with customer-supplied
+	// encryption keys, rather than the default keys managed by GCP.
+	// +optional
+	KMSKey *GCPKMSKeyReference `json:"kmsKey,omitempty"`
 }
 
 // VSphereCSIDriverConfigSpec defines properties that
