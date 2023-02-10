@@ -12,6 +12,12 @@
 # machine-config-daemon-klclf     ip-10-0-152-65.ec2.internal     master
 # machine-config-daemon-kml9h     ip-10-0-171-232.ec2.internal    master
 # machine-config-daemon-t6v5j     ip-10-0-155-187.ec2.internal    worker
+#
+# Note: This script defaults to using the 'oc' binary. If you are debugging a
+# must-gather, this script may be combined with the the 'omc' tool
+# (https://github.com/gmeghnag/omc), by passing 'omc' as a CLI flag, like so:
+#
+# $ ./hack/get-mcd-nodes.py omc
 
 import json
 import os
@@ -19,13 +25,13 @@ import shutil
 import subprocess
 import sys
 
-def run_oc_cmd_json(oc_cmd):
-    """Runs an arbitrary oc command and returns a dictionary with JSON from the
-    output.
+def run_cmd_json(cmd):
+    """Runs an arbitrary oc or omc command and returns a dictionary with JSON
+    from the output.
     """
-    oc_cmd = oc_cmd.split(" ")
-    oc_cmd.append("--output=json")
-    cmd = subprocess.run(oc_cmd, capture_output=True)
+    cmd = cmd.split(" ")
+    cmd.append("--output=json")
+    cmd = subprocess.run(cmd, capture_output=True)
     return json.loads(cmd.stdout)
 
 def get_max_len(in_string, max_len):
@@ -37,7 +43,17 @@ def get_max_len(in_string, max_len):
         return curr_len
     return max_len
 
-def can_run():
+def is_cmd_in_path(cmd):
+    """Determines if a given command is found via the $PATH variable."""
+    if not shutil.which(cmd):
+        print("ERROR: '%s' command missing from your $PATH")
+        return False
+
+    return True
+
+def can_run_oc():
+    """Determines if one can run the oc binary based upon whether the binary is
+    on ones machine and the KUBECONFIG env var is set."""
     kubeconfig = os.environ.get("KUBECONFIG")
     if not kubeconfig:
         print("ERROR: Expected to find $KUBECONFIG")
@@ -47,21 +63,37 @@ def can_run():
         print("ERROR: No kubeconfig found at", kubeconfig)
         return False
 
-    if not shutil.which("oc"):
-        print("ERROR: 'oc' command missing from your $PATH")
+    return is_cmd_in_path("oc")
 
-    return True
+def can_run_omc():
+    """Determines if one can run the omc binary based upon whether the binary
+    is in ones PATH."""
+    return is_cmd_in_path("omc")
 
-def main():
-    if not can_run():
+def can_run(binary):
+    """Determines whether omc or oc can be run."""
+    known_binaries = {
+        "omc": can_run_omc,
+        "oc": can_run_oc,
+    }
+
+    validator = known_binaries.get(binary)
+    if not validator:
+        print("ERROR: unknown command '%s'", binary)
+        return False
+
+    return validator()
+
+def main(binary="oc"):
+    if not can_run(binary):
         sys.exit(1)
 
     # Get all the MCD pods
-    mcd_pods = run_oc_cmd_json("oc get pods -n openshift-machine-config-operator -l k8s-app=machine-config-daemon")
+    mcd_pods = run_cmd_json("%s get pods -n openshift-machine-config-operator -l k8s-app=machine-config-daemon" % binary)
 
     # Get our nodes and group by node name
     nodes_by_name = {node["metadata"]["name"]: node
-                    for node in run_oc_cmd_json("oc get nodes")["items"]}
+                    for node in run_cmd_json("%s get nodes" % binary)["items"]}
 
     out = []
     node_name_max_len = 0
@@ -95,4 +127,7 @@ def main():
         print(tmpl.format(*item))
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) > 1:
+        main(sys.argv[1])
+    else:
+        main()
