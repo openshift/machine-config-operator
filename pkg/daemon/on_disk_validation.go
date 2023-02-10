@@ -57,6 +57,20 @@ func validateOnDiskState(currentConfig *mcfgv1.MachineConfig, paths Paths) error
 	}
 }
 
+func stripNewlines(lines string) string {
+	out := []string{}
+
+	for _, line := range strings.Split(lines, "\n") {
+		if line == "" {
+			continue
+		}
+
+		out = append(out, strings.TrimSpace(line))
+	}
+
+	return strings.Join(out, "\n")
+}
+
 // Checks the expected key path for the following conditions:
 // 1. The dir mode differs from what we expect. (TODO: Should we also verify ownership?)
 // 2. The file contents and mode differ from what is expected, while ignoring
@@ -81,8 +95,8 @@ func checkExpectedSSHKeyPath(users []ign3types.PasswdUser, paths Paths) error {
 	// Trim newlines from the end of the expected file contents as well as the
 	// actual file contents to avoid a false positive caused by Ignition adding
 	// newlines when it applies the initial config.
-	contents = []byte(strings.TrimRight(string(contents), "\n"))
-	expectedContent := []byte(strings.TrimRight(concatSSHKeys(users), "\n"))
+	contents = []byte(stripNewlines(string(contents)))
+	expectedContent := []byte(concatSSHKeys(users))
 
 	if !bytes.Equal(contents, expectedContent) {
 		glog.Errorf("content mismatch for file %q (-want +got):\n%s", authKeyPath, cmp.Diff(expectedContent, contents))

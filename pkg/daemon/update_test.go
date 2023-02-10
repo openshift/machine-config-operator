@@ -26,6 +26,29 @@ import (
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 )
 
+type osTestCase struct {
+	name string
+	os   mockOS
+}
+
+func (o *osTestCase) multiply() []osTestCase {
+	emptyOS := mockOS{}
+	if o.os != emptyOS {
+		return []osTestCase{*o}
+	}
+
+	return []osTestCase{
+		{
+			name: "RHCOS8 - " + o.name,
+			os:   rhcos8(),
+		},
+		{
+			name: "RHCOS9 - " + o.name,
+			os:   rhcos9(),
+		},
+	}
+}
+
 // Mock of osrelease.OperatingSystem. Useful for exercising OS-dependent
 // codepaths within the MCD.
 type mockOS struct {
@@ -481,7 +504,6 @@ func TestWriteFiles(t *testing.T) {
 	for _, test := range tests {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
 			err := d.writeFiles(test.files)
 			assert.Equal(t, test.expectedErr, err)
 			if test.expectedContents != nil {
@@ -499,156 +521,115 @@ func TestWriteFiles(t *testing.T) {
 func TestCheckSSHDiskState(t *testing.T) {
 	t.Parallel()
 
-	testCases := []struct {
-		name           string
+	type testCase struct {
+		osTestCase
 		fileMode       os.FileMode
 		dirMode        os.FileMode
 		errExpected    bool
 		fileContents   string
 		unexpectedPath string
-		os             mockOS
-	}{
+	}
+
+	testCases := []testCase{
 		{
-			name: "Happy path - RHCOS8",
-			os:   rhcos8(),
+			osTestCase:   osTestCase{name: "Happy path"},
+			fileContents: "1234\n5678",
 		},
 		{
-			name: "Happy path - RHCOS9",
-			os:   rhcos9(),
-		},
-		{
-			name:         "Ignores trailing newlines - RHCOS8",
+			osTestCase:   osTestCase{name: "Ignores trailing newlines"},
 			fileContents: "1234\n5678\n\n\n\n\n",
-			os:           rhcos8(),
 		},
 		{
-			name:         "Ignores trailing newlines - RHCOS9",
-			fileContents: "1234\n5678\n\n\n\n\n",
-			os:           rhcos9(),
-		},
-		{
-			name:         "Enforces order - RHCOS8",
-			fileContents: "5678\n1234\n",
-			os:           rhcos8(),
+			osTestCase:   osTestCase{name: "Enforces key order"},
+			fileContents: "5678\n1234",
 			errExpected:  true,
 		},
 		{
-			name:         "Enforces order - RHCOS9",
-			fileContents: "5678\n1234\n",
-			os:           rhcos9(),
-			errExpected:  true,
-		},
-		{
-			name:         "Enforces no newlines in middle - RHCOS8",
+			osTestCase:   osTestCase{name: "Ignores unnecessary newlines"},
 			fileContents: "1234\n\n\n5678",
-			os:           rhcos8(),
-			errExpected:  true,
 		},
 		{
-			name:         "Enforces no newlines in middle - RHCOS9",
-			fileContents: "1234\n\n\n5678",
-			os:           rhcos9(),
-			errExpected:  true,
-		},
-		{
-			name:        "Wrong file mode - RHCOS8",
+			osTestCase:  osTestCase{name: "Wrong file mode"},
 			fileMode:    os.FileMode(0o700),
 			errExpected: true,
-			os:          rhcos8(),
 		},
 		{
-			name:        "Wrong file mode - RHCOS9",
-			fileMode:    os.FileMode(0o700),
-			errExpected: true,
-			os:          rhcos9(),
-		},
-		{
-			name:        "Wrong dir mode - RHCOS8",
-			dirMode:     os.FileMode(0o755),
-			errExpected: true,
-			os:          rhcos8(),
-		},
-		{
-			name:        "Wrong dir mode - RHCOS9",
-			dirMode:     os.FileMode(0o755),
-			errExpected: true,
-			os:          rhcos9(),
-		},
-		{
-			name:         "Unexpected file contents - RHCOS8",
+			osTestCase:   osTestCase{name: "Unexpected file contents"},
 			errExpected:  true,
 			fileContents: "not-the-expected-contents",
-			os:           rhcos8(),
 		},
 		{
-			name:         "Unexpected file contents - RHCOS9",
-			errExpected:  true,
-			fileContents: "not-the-expected-contents",
-			os:           rhcos9(),
-		},
-		{
-			name:        "Unexpected path - RHCOS8",
+			osTestCase:  osTestCase{name: "Unexpected path"},
 			errExpected: true,
-			os:          rhcos8(),
 		},
 		{
-			name:        "Unexpected path - RHCOS9",
+			osTestCase: osTestCase{
+				name: "RHCOS9 - Unexpected path fragment",
+				os:   rhcos9(),
+			},
 			errExpected: true,
-			os:          rhcos9(),
 		},
-		{
-			name:        "Unexpected path fragment - RHCOS9",
-			errExpected: true,
-			os:          rhcos9(),
-		},
+	}
+
+	testFunc := func(t *testing.T, testCase testCase) {
+		paths := GetPathsWithPrefix(testCase.os, t.TempDir())
+
+		populatedSSHKeys := []ign3types.PasswdUser{
+			{
+				Name: constants.CoreUserName,
+				SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{
+					"1234",
+					"5678",
+				},
+			},
+		}
+
+		contents := []byte{}
+		if testCase.fileContents != "" {
+			contents = []byte(testCase.fileContents)
+		} else {
+			contents = []byte(concatSSHKeys(populatedSSHKeys))
+		}
+
+		if testCase.fileMode == 0 {
+			testCase.fileMode = os.FileMode(0o600)
+		}
+
+		if testCase.dirMode == 0 {
+			testCase.dirMode = os.FileMode(0o700)
+		}
+
+		expectedKeyPath := paths.ExpectedSSHKeyPath()
+		unexpectedKeyPath := paths.UnexpectedSSHKeyPath()
+
+		if strings.Contains(testCase.name, "Unexpected path fragment") {
+			fragmentPath := filepath.Join(filepath.Dir(expectedKeyPath), "unexpected-fragment")
+			require.NoError(t, os.MkdirAll(filepath.Dir(fragmentPath), testCase.dirMode))
+			require.NoError(t, os.WriteFile(fragmentPath, contents, testCase.fileMode))
+		} else if strings.Contains(testCase.name, "Unexpected path") {
+			require.NoError(t, os.MkdirAll(filepath.Dir(unexpectedKeyPath), testCase.dirMode))
+			require.NoError(t, os.WriteFile(unexpectedKeyPath, contents, testCase.fileMode))
+		}
+
+		require.NoError(t, os.MkdirAll(filepath.Dir(expectedKeyPath), testCase.dirMode))
+		require.NoError(t, os.WriteFile(expectedKeyPath, contents, testCase.fileMode))
+
+		if testCase.errExpected {
+			assert.Error(t, checkV3SSHKeys(populatedSSHKeys, paths))
+		} else {
+			assert.NoError(t, checkV3SSHKeys(populatedSSHKeys, paths))
+		}
 	}
 
 	for _, testCase := range testCases {
 		testCase := testCase
-
-		t.Run(testCase.name, func(t *testing.T) {
-			t.Parallel()
-
-			paths := GetPathsWithPrefix(testCase.os, t.TempDir())
-
-			populatedSSHKeys := []ign3types.PasswdUser{{Name: constants.CoreUserName, SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"1234", "5678"}}}
-
-			contents := []byte{}
-			if testCase.fileContents != "" {
-				contents = []byte(testCase.fileContents)
-			} else {
-				contents = []byte(concatSSHKeys(populatedSSHKeys))
-			}
-
-			if testCase.fileMode == 0 {
-				testCase.fileMode = os.FileMode(0o600)
-			}
-
-			if testCase.dirMode == 0 {
-				testCase.dirMode = os.FileMode(0o700)
-			}
-
-			expectedKeyPath := paths.ExpectedSSHKeyPath()
-			unexpectedKeyPath := paths.UnexpectedSSHKeyPath()
-
-			if strings.Contains(testCase.name, "Unexpected path fragment") {
-				fragmentPath := filepath.Join(filepath.Dir(expectedKeyPath), "unexpected-fragment")
-				require.NoError(t, os.MkdirAll(filepath.Dir(fragmentPath), testCase.dirMode))
-				require.NoError(t, os.WriteFile(fragmentPath, contents, testCase.fileMode))
-			} else if strings.Contains(testCase.name, "Unexpected path") {
-				require.NoError(t, os.MkdirAll(filepath.Dir(unexpectedKeyPath), testCase.dirMode))
-				require.NoError(t, os.WriteFile(unexpectedKeyPath, contents, testCase.fileMode))
-			}
-
-			require.NoError(t, os.MkdirAll(filepath.Dir(expectedKeyPath), testCase.dirMode))
-			require.NoError(t, os.WriteFile(expectedKeyPath, contents, testCase.fileMode))
-
-			if testCase.errExpected {
-				assert.Error(t, checkV3SSHKeys(populatedSSHKeys, paths))
-			} else {
-				assert.NoError(t, checkV3SSHKeys(populatedSSHKeys, paths))
-			}
-		})
+		for _, multiplied := range testCase.multiply() {
+			testCase.osTestCase = multiplied
+			t.Run(testCase.name, func(t *testing.T) {
+				t.Parallel()
+				testFunc(t, testCase)
+			})
+		}
 	}
 }
 
@@ -658,100 +639,230 @@ func TestCheckSSHDiskState(t *testing.T) {
 func TestUpdateSSHKeys(t *testing.T) {
 	t.Parallel()
 
-	populatedSSHKeys := []ign3types.PasswdUser{{Name: constants.CoreUserName, SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"1234", "4567"}}}
-	populatedContents := "1234\n4567\n"
-
-	emptySSHKeys := []ign3types.PasswdUser{{Name: constants.CoreUserName, SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{}}}
-	emptyContents := ""
-
-	testCases := []struct {
-		name                 string
-		os                   mockOS
+	type testCase struct {
+		osTestCase
 		ignUsers             []ign3types.PasswdUser
 		expectedFileContents string
-	}{
+	}
+
+	expectedContents := "1234\n4567\n"
+
+	testCases := []testCase{
 		{
-			name:                 "RHCOS 8 - with SSH keys",
-			os:                   rhcos8(),
-			ignUsers:             populatedSSHKeys,
-			expectedFileContents: populatedContents,
+			osTestCase: osTestCase{
+				name: "SSH keys",
+			},
+			ignUsers: []ign3types.PasswdUser{
+				{
+					Name:              constants.CoreUserName,
+					SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"1234", "4567"},
+				},
+			},
+			expectedFileContents: expectedContents,
 		},
 		{
-			name:                 "RHCOS 8 - with empty SSH keys",
-			os:                   rhcos8(),
-			ignUsers:             emptySSHKeys,
-			expectedFileContents: emptyContents,
+			osTestCase: osTestCase{
+				name: "multiple core users",
+			},
+			ignUsers: []ign3types.PasswdUser{
+				{
+					Name:              constants.CoreUserName,
+					SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"1234"},
+				},
+				{
+					Name:              constants.CoreUserName,
+					SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"4567"},
+				},
+			},
+			expectedFileContents: expectedContents,
 		},
 		{
-			name:                 "RHCOS 9 - with SSH keys",
-			os:                   rhcos9(),
-			ignUsers:             populatedSSHKeys,
-			expectedFileContents: populatedContents,
+			osTestCase: osTestCase{
+				name: "gapped SSH keys",
+			},
+			ignUsers: []ign3types.PasswdUser{
+				{
+					Name: constants.CoreUserName,
+					SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{
+						"", // Purposely left blank.
+						"1234",
+						"\n",
+						"4567",
+						"", // Purposely left blank.
+					},
+				},
+			},
+			expectedFileContents: expectedContents,
 		},
 		{
-			name:                 "RHCOS 9 - with empty SSH keys",
-			os:                   rhcos9(),
-			ignUsers:             emptySSHKeys,
-			expectedFileContents: emptyContents,
+			osTestCase: osTestCase{
+				name: "empty SSH keys",
+			},
+			ignUsers: []ign3types.PasswdUser{
+				{
+					Name:              constants.CoreUserName,
+					SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{},
+				},
+			},
+			expectedFileContents: "",
 		},
+		{
+			osTestCase: osTestCase{
+				name: "ignored non-core user",
+			},
+			ignUsers: []ign3types.PasswdUser{
+				{
+					Name:              constants.CoreUserName,
+					SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"1234", "4567"},
+				},
+				{
+					Name:              "not-a-real-user-go-away",
+					SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"7890"},
+				},
+			},
+			expectedFileContents: expectedContents,
+		},
+	}
+
+	multipliedTestCases := []testCase{}
+	for _, testCase := range testCases {
+		testCase := testCase
+		for _, multiplied := range testCase.multiply() {
+			testCase.osTestCase = multiplied
+			multipliedTestCases = append(multipliedTestCases, testCase)
+		}
 	}
 
 	// Use the current user so we can ensure that user lookups are successful.
 	currentUser, err := user.Current()
 	assert.Nil(t, err)
 
+	testFunc := func(t *testing.T, testCase testCase) {
+		d := newMockDaemon(t)
+		// Override the daemon osrelease object with our mock object.
+		d.os = testCase.os
+
+		paths := GetPathsWithPrefix(testCase.os, t.TempDir())
+
+		// Create the SSH key directory to avoid calling "runuser" in this test since doing that requires root.
+		require.NoError(t, os.MkdirAll(filepath.Dir(paths.ExpectedSSHKeyPath()), os.FileMode(0o700)))
+
+		if testCase.os == rhcos9() {
+			unexpectedPaths := []string{paths.UnexpectedSSHKeyPath()}
+
+			// Create additional path fragments (e.g.,
+			// /home/core/.ssh/authorized_keys.d/fragment-{0,5}) under the expected
+			// path for RHCOS 9 so we can ensure they're deleted.
+			for i := 0; i < 5; i++ {
+				fragmentPath := filepath.Join(filepath.Dir(paths.ExpectedSSHKeyPath()), fmt.Sprintf("fragment-%d", i))
+				unexpectedPaths = append(unexpectedPaths, fragmentPath)
+			}
+
+			// Write SSH key contents to all the unexpected paths as we expect them
+			// to not be present after we write the SSH keys.
+			for _, unexpectedPath := range unexpectedPaths {
+				require.NoError(t, os.MkdirAll(filepath.Dir(unexpectedPath), os.FileMode(0o700)))
+				require.NoError(t, os.WriteFile(unexpectedPath, []byte(testCase.expectedFileContents), os.FileMode(0o600)))
+			}
+		}
+
+		newIgnCfg := ctrlcommon.NewIgnConfig()
+		newIgnCfg.Passwd.Users = testCase.ignUsers
+
+		// Ensure that we get a disk state validation error because we've
+		// purposely ensured that we will by writing to the unexpected paths
+		// above.
+		assert.Error(t, checkV3SSHKeys(newIgnCfg.Passwd.Users, paths))
+
+		// Write the SSH key to disk using the updateSSHKeys method.
+		sshKeyErr := d.updateSSHKeys(sshKeyOpts{
+			systemuser: currentUser.Username,
+			ign3Users:  newIgnCfg.Passwd.Users,
+			uid:        -1,
+			gid:        -1,
+			paths:      paths,
+		})
+		assert.NoError(t, sshKeyErr)
+
+		// Ensure that writing the SSH keys clears up the invalid on-disk state.
+		assert.NoError(t, checkV3SSHKeys(newIgnCfg.Passwd.Users, paths))
+	}
+
+	for _, testCase := range multipliedTestCases {
+		testCase := testCase
+		for _, multiplied := range testCase.multiply() {
+			testCase.osTestCase = multiplied
+			t.Run(testCase.name, func(t *testing.T) {
+				t.Parallel()
+				testFunc(t, testCase)
+			})
+		}
+	}
+}
+
+func TestSSHKeyOpts(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name     string
+		testFunc func(t *testing.T)
+	}{
+		{
+			name: "Defaults to " + constants.CoreUserName,
+			testFunc: func(t *testing.T) {
+				opts := &sshKeyOpts{}
+
+				assert.NotEqual(t, opts.systemuser, constants.CoreUserName)
+
+				// If we cannot look up the core user here, we should expect the lookup
+				// to fail in the populate function. However, that should not affect
+				// the behavior of what we're trying to discern here (which is that the
+				// core username gets set).
+				_, err := user.Lookup(constants.CoreUserName)
+				if err != nil {
+
+					assert.Error(t, opts.populate())
+				} else {
+					assert.NoError(t, opts.populate())
+				}
+
+				assert.Equal(t, opts.systemuser, constants.CoreUserName)
+			},
+		},
+		{
+			name: "UID / GID overrides",
+			testFunc: func(t *testing.T) {
+				opts := &sshKeyOpts{
+					systemuser: "nobody",
+					uid:        -1,
+					gid:        -1,
+				}
+
+				assert.NoError(t, opts.populate())
+				assert.Equal(t, "nobody", opts.systemuser)
+				assert.Equal(t, -1, opts.uid)
+				assert.Equal(t, -1, opts.gid)
+			},
+		},
+		{
+			name: "Invalid user fails lookup",
+			testFunc: func(t *testing.T) {
+				opts := &sshKeyOpts{
+					systemuser: "not-a-real-user-go-away",
+				}
+
+				assert.Error(t, opts.populate())
+				assert.Equal(t, 0, opts.uid)
+				assert.Equal(t, 0, opts.gid)
+			},
+		},
+	}
+
 	for _, testCase := range testCases {
 		testCase := testCase
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
-			d := newMockDaemon(t)
-			// Override the daemon osrelease object with our mock object.
-			d.os = testCase.os
-
-			paths := GetPathsWithPrefix(testCase.os, t.TempDir())
-
-			// Create the SSH key directory to avoid calling "runuser" in this test since doing that requires root.
-			require.NoError(t, os.MkdirAll(filepath.Dir(paths.ExpectedSSHKeyPath()), os.FileMode(0o700)))
-
-			if testCase.os == rhcos9() {
-				unexpectedPaths := []string{paths.UnexpectedSSHKeyPath()}
-
-				// Create additional path fragments (e.g.,
-				// /home/core/.ssh/authorized_keys.d/fragment-{0,5}) under the expected
-				// path for RHCOS 9 so we can ensure they're deleted.
-				for i := 0; i < 5; i++ {
-					fragmentPath := filepath.Join(filepath.Dir(paths.ExpectedSSHKeyPath()), fmt.Sprintf("fragment-%d", i))
-					unexpectedPaths = append(unexpectedPaths, fragmentPath)
-				}
-
-				// Write SSH key contents to all the unexpected paths as we expect them
-				// to not be present after we write the SSH keys.
-				for _, unexpectedPath := range unexpectedPaths {
-					require.NoError(t, os.MkdirAll(filepath.Dir(unexpectedPath), os.FileMode(0o700)))
-					require.NoError(t, os.WriteFile(unexpectedPath, []byte(testCase.expectedFileContents), os.FileMode(0o600)))
-				}
-			}
-
-			newIgnCfg := ctrlcommon.NewIgnConfig()
-			newIgnCfg.Passwd.Users = testCase.ignUsers
-
-			// Ensure that we get a disk state validation error because we've
-			// purposely ensured that we will by writing to the unexpected paths
-			// above.
-			assert.Error(t, checkV3SSHKeys(newIgnCfg.Passwd.Users, paths))
-
-			// Write the SSH key to disk using the updateSSHKeys method.
-			sshKeyErr := d.updateSSHKeys(sshKeyOpts{
-				systemuser: currentUser.Username,
-				ign3Users:  newIgnCfg.Passwd.Users,
-				uid:        -1,
-				gid:        -1,
-				paths:      paths,
-			})
-			assert.NoError(t, sshKeyErr)
-
-			// Ensure that writing the SSH keys clears up the invalid on-disk state.
-			assert.NoError(t, checkV3SSHKeys(newIgnCfg.Passwd.Users, paths))
+			testCase.testFunc(t)
 		})
 	}
 }

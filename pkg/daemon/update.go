@@ -75,7 +75,7 @@ type sshKeyOpts struct {
 // Populates sshKeyOpts with its defaults.
 func (s *sshKeyOpts) populate() error {
 	if s.systemuser == "" {
-		s.systemuser = constants.CoreUserSSH
+		s.systemuser = constants.CoreUserName
 	}
 
 	if s.uid == 0 {
@@ -1617,6 +1617,10 @@ func (dn *Daemon) updateSSHKeys(opts sshKeyOpts) error {
 		return nil
 	}
 
+	if err := opts.populate(); err != nil {
+		return fmt.Errorf("could not populate sshKeyOpts: %w", err)
+	}
+
 	var uErr user.UnknownUserError
 	switch _, err := user.Lookup(opts.systemuser); {
 	case err == nil:
@@ -1647,13 +1651,14 @@ func concatSSHKeys(newUsers []ign3types.PasswdUser) string {
 	// we pass this to atomicallyWriteSSHKeys to write.
 	// we know these users are "core" ones also cause this slice went through Reconcilable
 	var concatSSHKeys string
+
 	for _, u := range newUsers {
 		for _, k := range u.SSHAuthorizedKeys {
 			concatSSHKeys = concatSSHKeys + string(k) + "\n"
 		}
 	}
 
-	return concatSSHKeys
+	return stripNewlines(concatSSHKeys)
 }
 
 // Removes the old SSH key path (/home/core/.ssh/authorized_keys), if found.
