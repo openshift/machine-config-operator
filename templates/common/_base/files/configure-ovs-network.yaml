@@ -25,6 +25,7 @@ contents:
     # https://bugzilla.redhat.com/show_bug.cgi?id=1888017
     copy_nm_conn_files() {
       local dst_path="$1"
+      mkdir -p ${dst_path}
       for src in "${MANAGED_NM_CONN_FILES[@]}"; do
         src_path=$(dirname "$src")
         file=$(basename "$src")
