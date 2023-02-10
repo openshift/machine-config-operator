@@ -596,7 +596,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 
 	defer func() {
 		if retErr != nil {
-			sshOpts.ign3Users = newIgnConfig.Passwd.Users
+			sshOpts.ign3Users = oldIgnConfig.Passwd.Users
 			if err := dn.updateSSHKeys(sshOpts); err != nil {
 				errs := kubeErrs.NewAggregate([]error{err, retErr})
 				retErr = fmt.Errorf("error rolling back SSH keys updates: %w", errs)
