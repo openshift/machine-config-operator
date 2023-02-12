@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
@@ -442,6 +444,50 @@ func TestGenerateMachineConfigs(t *testing.T) {
 				t.Errorf("Found mtu-migration files for worker")
 			}
 		}
+	}
+}
+
+func TestGetPaths(t *testing.T) {
+	cases := []struct {
+		platform configv1.PlatformType
+		topology configv1.TopologyMode
+		res      []string
+	}{{
+		platform: configv1.AWSPlatformType,
+		res:      []string{strings.ToLower(string(configv1.AWSPlatformType))},
+		topology: configv1.HighlyAvailableTopologyMode,
+	}, {
+		platform: configv1.BareMetalPlatformType,
+		res:      []string{strings.ToLower(string(configv1.BareMetalPlatformType)), "on-prem"},
+		topology: configv1.HighlyAvailableTopologyMode,
+	}, {
+		platform: configv1.NonePlatformType,
+		res:      []string{strings.ToLower(string(configv1.NonePlatformType)), sno},
+		topology: configv1.SingleReplicaTopologyMode,
+	}}
+	for idx, c := range cases {
+		name := fmt.Sprintf("case #%d", idx)
+		t.Run(name, func(t *testing.T) {
+			config := &mcfgv1.ControllerConfig{
+				Spec: mcfgv1.ControllerConfigSpec{
+					Infra: &configv1.Infrastructure{
+						Status: configv1.InfrastructureStatus{
+							Platform: c.platform,
+							PlatformStatus: &configv1.PlatformStatus{
+								Type: c.platform,
+							},
+							ControlPlaneTopology: c.topology,
+						},
+					},
+				},
+			}
+			c.res = append(c.res, platformBase)
+
+			got := getPaths(&RenderConfig{&config.Spec, `{"dummy":"dummy"}`, nil, nil}, config.Spec.Platform)
+			if reflect.DeepEqual(got, c.res) {
+				t.Fatalf("mismatch got: %s want: %s", got, c.res)
+			}
+		})
 	}
 }
 
