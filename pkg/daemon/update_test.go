@@ -16,7 +16,6 @@ import (
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	"github.com/openshift/machine-config-operator/pkg/daemon/osrelease"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -25,12 +24,79 @@ import (
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 )
 
+type fakeOS struct {
+	isEL                   bool
+	isEL9                  bool
+	isFCOS                 bool
+	isSCOS                 bool
+	isCoreOSVariant        bool
+	isLikeTraditionalRHEL7 bool
+}
+
+func (f fakeOS) IsEL() bool {
+	return f.isEL
+}
+
+func (f fakeOS) IsEL9() bool {
+	return f.isEL9
+}
+
+func (f fakeOS) IsFCOS() bool {
+	return f.isFCOS
+}
+
+func (f fakeOS) IsSCOS() bool {
+	return f.isSCOS
+}
+
+func (f fakeOS) IsCoreOSVariant() bool {
+	return f.isCoreOSVariant
+}
+
+func (f fakeOS) IsLikeTraditionalRHEL7() bool {
+	return f.isLikeTraditionalRHEL7
+}
+
+func rhcos8() fakeOS {
+	return fakeOS{
+		isEL:            true,
+		isEL9:           false,
+		isCoreOSVariant: true,
+	}
+}
+
+func rhcos9() fakeOS {
+	return fakeOS{
+		isEL:            true,
+		isEL9:           true,
+		isCoreOSVariant: true,
+	}
+}
+
+func fcos() fakeOS {
+	return fakeOS{
+		isFCOS:          true,
+		isCoreOSVariant: true,
+	}
+}
+
+func scos() fakeOS {
+	return fakeOS{
+		isEL:            true,
+		isEL9:           true,
+		isSCOS:          true,
+		isCoreOSVariant: true,
+	}
+}
+
+var _ osRelease = fakeOS{}
+
 func newMockDaemon() Daemon {
 	// Create a Daemon instance with mocked clients
 	return Daemon{
 		mock:             true,
 		name:             "nodeName",
-		os:               osrelease.OperatingSystem{},
+		os:               fakeOS{},
 		kubeClient:       k8sfake.NewSimpleClientset(),
 		bootedOSImageURL: "test",
 	}
@@ -751,4 +817,56 @@ func TestOriginalFileBackupRestore(t *testing.T) {
 	err = restorePath(relativeSymlink)
 	assert.Nil(t, err)
 
+}
+
+func TestRHCOS8to9Update(t *testing.T) {
+	testCases := []struct {
+		name            string
+		nodeOS          osRelease
+		imageOS         osRelease
+		isRHCOS9Upgrade bool
+	}{
+		{
+			name:            "With FCOS base",
+			nodeOS:          fcos(),
+			imageOS:         fcos(),
+			isRHCOS9Upgrade: false,
+		},
+		{
+			name:            "With SCOS base",
+			nodeOS:          scos(),
+			imageOS:         scos(),
+			isRHCOS9Upgrade: false,
+		},
+		{
+			name:            "With RHCOS8 base",
+			nodeOS:          rhcos8(),
+			imageOS:         rhcos9(),
+			isRHCOS9Upgrade: true,
+		},
+		{
+			name:            "With RHCOS8 base to RHCOS8 new OS",
+			nodeOS:          rhcos8(),
+			imageOS:         rhcos8(),
+			isRHCOS9Upgrade: false,
+		},
+		{
+			name:            "With RHCOS9 base",
+			nodeOS:          rhcos9(),
+			imageOS:         rhcos9(),
+			isRHCOS9Upgrade: false,
+		},
+	}
+
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			d := newMockDaemon()
+			d.os = testCase.nodeOS
+
+			assert.Equal(t, d.isRHCOS9Upgrade(testCase.imageOS), testCase.isRHCOS9Upgrade)
+		})
+	}
 }

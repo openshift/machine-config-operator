@@ -42,6 +42,18 @@ import (
 	mcfglistersv1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
 )
 
+// Make this an interface so that we can easily inject mock versions of this.
+type osRelease interface {
+	IsEL() bool
+	IsEL9() bool
+	IsCoreOSVariant() bool
+	IsFCOS() bool
+	IsSCOS() bool
+	IsLikeTraditionalRHEL7() bool
+}
+
+var _ osRelease = osrelease.OperatingSystem{}
+
 // Daemon is the dispatch point for the functions of the agent on the
 // machine. it keeps track of connections and the current state of the update
 // process.
@@ -50,7 +62,7 @@ type Daemon struct {
 	name string
 
 	// os the operating system the MCD is running on
-	os osrelease.OperatingSystem
+	os osRelease
 
 	// mock is set if we're running as non-root, probably under unit tests
 	mock bool

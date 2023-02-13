@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/clarketm/json"
+	"github.com/containers/image/v5/types"
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/golang/glog"
 	corev1 "k8s.io/api/core/v1"
@@ -27,6 +28,7 @@ import (
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
+	"github.com/openshift/machine-config-operator/pkg/daemon/osrelease"
 	pivottypes "github.com/openshift/machine-config-operator/pkg/daemon/pivot/types"
 	pivotutils "github.com/openshift/machine-config-operator/pkg/daemon/pivot/utils"
 )
@@ -1644,9 +1646,86 @@ func (dn *Daemon) updateSSHKeys(newUsers []ign3types.PasswdUser) error {
 	return nil
 }
 
+// Gets the labels attached to the OS image and uses that to infer the OS version.
+func (dn *Daemon) getNewOSVersion(imgURL string) (osr osrelease.OperatingSystem, err error) {
+	glog.Infof("Looking up image labels for new OS %q to infer new OS version", imgURL)
+
+	// The image inspection code is copy / pasted from the Rebase() method in rpm-ostree.go.
+	var imageData *types.ImageInspectInfo
+	if imageData, _, err = imageInspect(imgURL); err != nil {
+		if err != nil {
+			var podmanImgData *imageInspection
+			glog.Infof("Falling back to using podman inspect")
+			if podmanImgData, err = podmanInspect(imgURL); err != nil {
+				return
+			}
+			defer exec.Command("podman", "rmi", imgURL).Run()
+
+			osr, err = osrelease.InferFromOSImageLabels(podmanImgData.Labels)
+			return
+		}
+	}
+
+	osr, err = osrelease.InferFromOSImageLabels(imageData.Labels)
+	return
+}
+
+// Returns true if we're updating from RHCOS8 -> RHCOS9. Returns false for all
+// other cases.
+func (dn *Daemon) isRHCOS9Upgrade(newImageOS osRelease) bool {
+	return dn.os.IsEL() && !dn.os.IsEL9() && newImageOS.IsEL() && newImageOS.IsEL9()
+}
+
+// Prepares for an upgrade from RHCOS 8 to RHCOS 9 by doing the following:
+// - Installing a newer version of rpm-ostree from the extensions container.
+// - Restarting rpm-ostree.service.
+//
+// Assumes:
+// - We've called ExtractExtensionsImage
+// - We've called addExtensionsRepo or addLayeredExtensionsRepo.
+func (dn *Daemon) prepForRHCOS9(newImageURL string) error {
+	// Gets the image labels for the new OS image and infers what the OS version
+	// is based upon their contents.
+	newOSInfo, err := dn.getNewOSVersion(newImageURL)
+	if err != nil {
+		return fmt.Errorf("could not get new OS version info: %w", err)
+	}
+
+	// If we don't have an RHCOS 8 -> RHCOS 9 upgrade, return early.
+	if !dn.isRHCOS9Upgrade(newOSInfo) {
+		return nil
+	}
+
+	glog.Infof("Detected RHCOS 8 -> RHCOS 9 upgrade, upgrading rpm-ostree first")
+
+	// Ensures that the extensions repo is available first.
+	if _, err := os.Stat(extensionsRepo); err != nil {
+		return fmt.Errorf("extensions repo not found: %w", err)
+	}
+
+	// Upgrades rpm-ostree.
+	// TODO(zzlotnik): Is this the right command to upgrade rpm-ostree?
+	if _, err := runGetOut("rpm", "-Uvh", "rpm-ostree"); err != nil {
+		return fmt.Errorf("could not install updated rpm-ostree: %w", err)
+	}
+
+	// Restarts the rpm-ostreed service.
+	glog.Info("Restarting rpm-ostree service")
+	if _, err := runGetOut("systemd", "restart", "rpm-ostreed.service"); err != nil {
+		return fmt.Errorf("could not restart rpm-ostreed: %w", err)
+	}
+
+	return nil
+}
+
 // updateOS updates the system OS to the one specified in newConfig
 func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig, osImageContentDir string) error {
 	newURL := config.Spec.OSImageURL
+
+	if err := dn.prepForRHCOS9(newURL); err != nil {
+		return fmt.Errorf("could not prepare for RHCOS 9 upgrade: %w", err)
+	}
+
 	glog.Infof("Updating OS to %s", newURL)
 	if _, err := dn.NodeUpdaterClient.Rebase(newURL, osImageContentDir); err != nil {
 		return fmt.Errorf("failed to update OS to %s : %w", newURL, err)
@@ -1719,6 +1798,7 @@ func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 	if err != nil {
 		return err
 	}
+
 	// If the host isn't new enough to understand the new container model natively, run as a privileged container.
 	// See https://github.com/coreos/rpm-ostree/pull/3961 and https://issues.redhat.com/browse/MCO-356
 	// This currently will incur a double reboot; see https://github.com/coreos/rpm-ostree/issues/4018
@@ -1727,7 +1807,13 @@ func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 		if err := dn.InplaceUpdateViaNewContainer(newURL); err != nil {
 			return err
 		}
-	} else if err := dn.NodeUpdaterClient.RebaseLayered(newURL); err != nil {
+	}
+
+	if err := dn.prepForRHCOS9(newURL); err != nil {
+		return fmt.Errorf("could not prepare for RHCOS 9 upgrade: %w", err)
+	}
+
+	if err := dn.NodeUpdaterClient.RebaseLayered(newURL); err != nil {
 		return fmt.Errorf("failed to update OS to %s : %w", newURL, err)
 	}
 
