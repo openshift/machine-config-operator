@@ -1,11 +1,22 @@
 package osrelease
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/ashcrow/osrelease"
+)
+
+// Source of the OS release information
+type InfoSource string
+
+const (
+	// From the /etc/os-release / /usr/lib/os-release files.
+	OSReleaseInfoSource InfoSource = "OS Release"
+	// From the OS image labels.
+	ImageLabelInfoSource InfoSource = "OS Image Label"
 )
 
 // OS Release Paths
@@ -14,7 +25,7 @@ const (
 	LibOSReleasePath string = "/usr/lib/os-release"
 )
 
-// OS IDs
+// OS IDs - only used internally
 const (
 	coreos string = "coreos"
 	fedora string = "fedora"
@@ -22,20 +33,34 @@ const (
 	scos   string = "scos"
 )
 
+// Full OS names
+const (
+	FCOS  string = "Fedora CoreOS"
+	RHCOS string = "Red Hat Enterprise Linux CoreOS"
+	SCOS  string = "CentOS Stream CoreOS"
+)
+
 // OperatingSystem is a wrapper around a subset of the os-release fields
 // and also tracks whether ostree is in use.
 type OperatingSystem struct {
-	// id is the ID field from the os-release
+	// id is the ID field from the os-release or inferred from the OS image
+	// label.
 	id string
-	// variantID is the VARIANT_ID field from the os-release
+	// variantID is the VARIANT_ID field from the os-release or inferred from the
+	// OS image label.
 	variantID string
-	// version is the VERSION, RHEL_VERSION, or VERSION_ID field from the os-release
+	// version is the VERSION, RHEL_VERSION, or VERSION_ID field from the
+	// os-release or image label.
 	version string
-	// osrelease is the underlying struct from github.com/ashcrow/osrelease
-	osrelease osrelease.OSRelease
+	// values is a map of all the values we uncovered either via the
+	// /etc/os-release / /usr/lib/os-release files *or* the labels attached
+	// to an OS image.
+	values map[string]string
+	// source identifies whether this came from the OSRelease file or from image labels.
+	source InfoSource
 }
 
-func newOperatingSystem(etcPath, libPath string) (OperatingSystem, error) {
+func newOperatingSystemFromOSRelease(etcPath, libPath string) (OperatingSystem, error) {
 	ret := OperatingSystem{}
 
 	or, err := osrelease.NewWithOverrides(etcPath, libPath)
@@ -45,15 +70,47 @@ func newOperatingSystem(etcPath, libPath string) (OperatingSystem, error) {
 
 	ret.id = or.ID
 	ret.variantID = or.VARIANT_ID
+
 	ret.version = getOSVersion(or)
-	ret.osrelease = or
+
+	// Store all of the values identified by the osrelease library.
+	ret.values = or.ADDITIONAL_FIELDS
+	ret.values["NAME"] = or.NAME
+	ret.values["VERSION"] = or.VERSION
+	ret.values["ID"] = or.ID
+	ret.values["ID_LIKE"] = or.ID_LIKE
+	ret.values["VERSION_ID"] = or.VERSION_ID
+	ret.values["VERSION_CODENAME"] = or.VERSION_CODENAME
+	ret.values["PRETTY_NAME"] = or.PRETTY_NAME
+	ret.values["ANSI_COLOR"] = or.ANSI_COLOR
+	ret.values["CPE_NAME"] = or.CPE_NAME
+	ret.values["HOME_URL"] = or.HOME_URL
+	ret.values["BUG_REPORT_URL"] = or.BUG_REPORT_URL
+	ret.values["PRIVACY_POLICY_URL"] = or.PRIVACY_POLICY_URL
+	ret.values["VARIANT"] = or.VARIANT
+	ret.values["VARIANT_ID"] = or.VARIANT_ID
+
+	ret.source = OSReleaseInfoSource
+
+	if ret.id == rhcos && ret.version[0:1] != "8" && ret.version[0:1] != "9" {
+		return ret, fmt.Errorf("unknown RHCOS version: %q, got: %v", ret.version, ret.values)
+	}
+
+	if ret.id == scos && ret.version[0:1] != "9" {
+		return ret, fmt.Errorf("unknown SCOS version: %q, got: %v", ret.version, ret.values)
+	}
 
 	return ret, nil
 }
 
-// Returns the underlying OSRelease struct if additional parameters are needed.
-func (os OperatingSystem) OSRelease() osrelease.OSRelease {
-	return os.osrelease
+// Returns the source of where this info came from.
+func (os OperatingSystem) Source() InfoSource {
+	return os.source
+}
+
+// Returns the values map if cdditional ontext is needed.
+func (os OperatingSystem) Values() map[string]string {
+	return os.values
 }
 
 // IsEL is true if the OS is an Enterprise Linux variant,
@@ -64,7 +121,7 @@ func (os OperatingSystem) IsEL() bool {
 
 // IsEL9 is true if the OS is RHCOS 9 or SCOS 9
 func (os OperatingSystem) IsEL9() bool {
-	return os.IsEL() && strings.HasPrefix(os.version, "9.") || os.version == "9"
+	return os.IsEL() && strings.HasPrefix(os.version, "9") || os.version == "9"
 }
 
 // IsFCOS is true if the OS is Fedora CoreOS
@@ -102,7 +159,7 @@ func (os OperatingSystem) ToPrometheusLabel() string {
 
 // GetHostRunningOS reads os-release to generate the OperatingSystem data.
 func GetHostRunningOS() (OperatingSystem, error) {
-	return newOperatingSystem(EtcOSReleasePath, LibOSReleasePath)
+	return newOperatingSystemFromOSRelease(EtcOSReleasePath, LibOSReleasePath)
 }
 
 // Generates the OperatingSystem data from strings which contain the desired
@@ -126,7 +183,7 @@ func LoadOSRelease(etcOSReleaseContent, libOSReleaseContent string) (OperatingSy
 		return OperatingSystem{}, err
 	}
 
-	return newOperatingSystem(etcOSReleasePath, libOSReleasePath)
+	return newOperatingSystemFromOSRelease(etcOSReleasePath, libOSReleasePath)
 }
 
 // Determines the OS version based upon the contents of the RHEL_VERSION, VERSION or VERSION_ID fields.
@@ -138,11 +195,10 @@ func getOSVersion(or osrelease.OSRelease) string {
 
 	// If we have the OPENSHIFT_VERSION field, we can compute the OS version.
 	if openshiftVersion, ok := or.ADDITIONAL_FIELDS["OPENSHIFT_VERSION"]; ok {
-		// Move the "." from the middle of the OpenShift version to the end; e.g., 4.12 becomes 412.
-		openshiftVersion := strings.ReplaceAll(openshiftVersion, ".", "") + "."
-		if strings.HasPrefix(or.VERSION, openshiftVersion) {
-			// Strip the OpenShift Version prefix from the VERSION field, if it is found.
-			return strings.ReplaceAll(or.VERSION, openshiftVersion, "")
+		// Strip the "." from the middle of the OpenShift version; e.g., 4.12 becomes 412.
+		stripped := strings.ReplaceAll(openshiftVersion, ".", "")
+		if strings.HasPrefix(or.VERSION, stripped) {
+			return getSCOSversion(or.VERSION)
 		}
 	}
 

@@ -1,10 +1,10 @@
 package osrelease
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestIsLikeTraditionalRHEL7(t *testing.T) {
@@ -142,6 +142,9 @@ OSTREE_VERSION='37.20230126.20.0'`
 		IsCoreOSVariant        bool
 		IsLikeTraditionalRHEL7 bool
 		ToPrometheusLabel      string
+		ExpectedVersion        string
+		ExpectedID             string
+		ErrorExpected          bool
 	}{
 		{
 			Name:                   "RHCOS 8.6",
@@ -153,6 +156,8 @@ OSTREE_VERSION='37.20230126.20.0'`
 			IsCoreOSVariant:        true,
 			IsLikeTraditionalRHEL7: false,
 			ToPrometheusLabel:      "RHCOS",
+			ExpectedVersion:        "8.6",
+			ExpectedID:             rhcos,
 		},
 		{
 			Name:                   "RHCOS 9.0",
@@ -164,6 +169,8 @@ OSTREE_VERSION='37.20230126.20.0'`
 			IsCoreOSVariant:        true,
 			IsLikeTraditionalRHEL7: false,
 			ToPrometheusLabel:      "RHCOS",
+			ExpectedVersion:        "9.0",
+			ExpectedID:             rhcos,
 		},
 		{
 			Name:                   "Fedora 37 Server",
@@ -175,6 +182,8 @@ OSTREE_VERSION='37.20230126.20.0'`
 			IsCoreOSVariant:        false,
 			IsLikeTraditionalRHEL7: false,
 			ToPrometheusLabel:      "FEDORA",
+			ExpectedVersion:        "37",
+			ExpectedID:             fedora,
 		},
 		{
 			Name:                   "SCOS",
@@ -186,6 +195,8 @@ OSTREE_VERSION='37.20230126.20.0'`
 			IsCoreOSVariant:        true,
 			IsLikeTraditionalRHEL7: false,
 			ToPrometheusLabel:      "SCOS",
+			ExpectedVersion:        "9.202211241749-0",
+			ExpectedID:             scos,
 		},
 		{
 			Name:                   "FCOS",
@@ -197,6 +208,18 @@ OSTREE_VERSION='37.20230126.20.0'`
 			IsCoreOSVariant:        true,
 			IsLikeTraditionalRHEL7: false,
 			ToPrometheusLabel:      "FEDORA",
+			ExpectedVersion:        "37",
+			ExpectedID:             fedora,
+		},
+		{
+			Name:              "Unknown RHEL version",
+			OSReleaseContents: strings.ReplaceAll(rhcos90OSReleaseContents, "RHEL_VERSION=\"9.0\"", "RHEL_VERSION=\"10.0\""),
+			ErrorExpected:     true,
+		},
+		{
+			Name:              "Unknown SCOS version",
+			OSReleaseContents: strings.ReplaceAll(scosOSReleaseContents, "VERSION=\"412.9.202211241749-0\"", "VERSION=\"412.10.202211241749-0\""),
+			ErrorExpected:     true,
 		},
 	}
 
@@ -205,7 +228,12 @@ OSTREE_VERSION='37.20230126.20.0'`
 		t.Run(testCase.Name, func(t *testing.T) {
 			t.Parallel()
 			os, err := LoadOSRelease(testCase.OSReleaseContents, testCase.OSReleaseContents)
-			require.NoError(t, err)
+			if testCase.ErrorExpected {
+				assert.Error(t, err)
+				return
+			} else {
+				assert.NoError(t, err)
+			}
 
 			assert.Equal(t, testCase.IsEL, os.IsEL(), "expected IsEL() to be %v", testCase.IsEL)
 			assert.Equal(t, testCase.IsEL9, os.IsEL9(), "expected IsEL9() to be %v", testCase.IsEL9)
@@ -214,6 +242,16 @@ OSTREE_VERSION='37.20230126.20.0'`
 			assert.Equal(t, testCase.IsSCOS, os.IsSCOS(), "expected IsSCOS() to be %v", testCase.IsSCOS)
 			assert.Equal(t, testCase.IsLikeTraditionalRHEL7, os.IsLikeTraditionalRHEL7(), "expected IsLikeTraditionalRHEL7() to be %v", testCase.IsLikeTraditionalRHEL7)
 			assert.Equal(t, testCase.ToPrometheusLabel, os.ToPrometheusLabel(), "expected ToPrometheusLabel() to be %s, got %s", testCase.ToPrometheusLabel, os.ToPrometheusLabel())
+			assert.Equal(t, OSReleaseInfoSource, os.Source())
+			assert.Equal(t, testCase.ExpectedID, os.id)
+			assert.Equal(t, testCase.ExpectedVersion, os.version)
+
+			for key, value := range os.Values() {
+				if value != "" {
+					assert.Contains(t, testCase.OSReleaseContents, key)
+					assert.Contains(t, testCase.OSReleaseContents, value)
+				}
+			}
 		})
 	}
 }
