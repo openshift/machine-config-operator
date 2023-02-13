@@ -91,7 +91,7 @@ spec:
 Save your `ctrcfg` locally, for example as highpids.yaml
 
 The label in the above example corresponds to the worker MachineConfigPool. By default the master/worker
-MachineConfigPool has labels pools.operator.machineconfiguration.openshift.io/{worker|master}: "" in OCP 4.6 and later. If you have a custom pool, or have an earlier OCP version, you can instead create a label youself as follows:
+MachineConfigPool has labels pools.operator.machineconfiguration.openshift.io/{worker|master}: "" in OCP 4.6 and later. If you have a custom pool, or have an earlier OCP version, you can instead create a label yourself as follows:
 
 ```
 apiVersion: machineconfiguration.openshift.io/v1
@@ -175,6 +175,6 @@ The ContainerRuntimeConfigController would perform the following steps:
 
 5. Serialize the ContainerRuntimeConfig to the respective toml files: storage.conf, and crio.conf
 
-5. Create or Update the ignition /etc/containers/storage.conf and /etc/crio/crio.conf files within a 99-[role]-containerruntime-managed MachineConfig
+6. Create or Update the ignition /etc/containers/storage.conf and /etc/crio/crio.conf files within a 99-[role]-containerruntime-managed MachineConfig
 
 After deletion of the ContainerRuntimeConfig instance the config will be reverted to the original storage and crio config.
