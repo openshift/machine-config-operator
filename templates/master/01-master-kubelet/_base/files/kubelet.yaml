@@ -21,6 +21,8 @@ contents:
     podPidsLimit: 4096
     rotateCertificates: true
     serializeImagePulls: false
+    shutdownGracePeriod: 10m
+    shutdownGracePeriodCriticalPods: 5m
     staticPodPath: /etc/kubernetes/manifests
     systemCgroups: /system.slice
     featureGates:
