@@ -88,7 +88,7 @@ func TestTemplateShellcheck(t *testing.T) {
 						// We're only interested in script files for this test. In the
 						// future, we could potentially hook in other static analysis tools
 						// to handle systemd units and others.
-						if !bytes.Contains(decoded, []byte("#!/bin/bash")) {
+						if !bytes.HasPrefix(decoded, []byte("#!/bin/bash")) {
 							continue
 						}
 
