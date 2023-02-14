@@ -55,6 +55,7 @@ func TestAcceptHeaders(t *testing.T) {
 	v2_4 := semver.New("2.4.0")
 	v3_1 := semver.New("3.1.0")
 	v3_2 := semver.New("3.2.0")
+	v3_3 := semver.New("3.3.0")
 	headers := []acceptHeaderScenario{
 		{
 			name:  "IgnV0",
@@ -82,7 +83,26 @@ func TestAcceptHeaders(t *testing.T) {
 			versionOut: v2_2,
 		},
 		{
-			name:  "IgnV2",
+			name:  "IgnV2_33",
+			input: "application/vnd.coreos.ignition+json;version=3.3.0, */*;q=0.1",
+			headerVals: []acceptHeaderValue{
+				{
+					MIMEType:    "application",
+					MIMESubtype: "vnd.coreos.ignition+json",
+					SemVer:      v3_3,
+					QValue:      float32ToPtr(1.0),
+				},
+				{
+					MIMEType:    "*",
+					MIMESubtype: "*",
+					SemVer:      nil,
+					QValue:      float32ToPtr(0.1),
+				},
+			},
+			versionOut: v3_3,
+		},
+		{
+			name:  "IgnV2_32",
 			input: "application/vnd.coreos.ignition+json;version=3.2.0, */*;q=0.1",
 			headerVals: []acceptHeaderValue{
 				{
@@ -174,8 +194,13 @@ func setV3_1AcceptHeaderOnReq(req *http.Request) *http.Request {
 	return req
 }
 
-func setV3AcceptHeaderOnReq(req *http.Request) *http.Request {
+func setV3_2AcceptHeaderOnReq(req *http.Request) *http.Request {
 	req.Header.Set("Accept", "application/vnd.coreos.ignition+json;version=3.2.0, */*;q=0.1")
+	return req
+}
+
+func setV3_3AcceptHeaderOnReq(req *http.Request) *http.Request {
+	req.Header.Set("Accept", "application/vnd.coreos.ignition+json;version=3.3.0, */*;q=0.1")
 	return req
 }
 
@@ -255,8 +280,23 @@ func TestAPIHandler(t *testing.T) {
 			},
 		},
 		{
-			name:    "get spec v3 config path that exists",
-			request: setV3AcceptHeaderOnReq(httptest.NewRequest(http.MethodGet, "http://testrequest/config/master", nil)),
+			name:    "get spec v3_2 config path that exists",
+			request: setV3_2AcceptHeaderOnReq(httptest.NewRequest(http.MethodGet, "http://testrequest/config/master", nil)),
+			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
+				return &runtime.RawExtension{
+					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
+				}, nil
+			},
+			checkResponse: func(t *testing.T, response *http.Response) {
+				checkStatus(t, response, http.StatusOK)
+				checkContentType(t, response, "application/json")
+				checkContentLength(t, response, expectedContentLength)
+				checkBodyLength(t, response, expectedContentLength)
+			},
+		},
+		{
+			name:    "get spec v3_3 config path that exists",
+			request: setV3_3AcceptHeaderOnReq(httptest.NewRequest(http.MethodGet, "http://testrequest/config/master", nil)),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
 					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
