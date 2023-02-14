@@ -50,6 +50,7 @@ func TestTemplateShellcheck(t *testing.T) {
 	for configName, config := range configs {
 		// Run each config as a subtest so we can parallelize them.
 		t.Run(configName, func(t *testing.T) {
+			t.Parallel()
 			controllerConfig, err := controllerConfigFromFile(config)
 			if err != nil {
 				t.Fatalf("failed to get controllerconfig config: %v", err)
@@ -78,6 +79,7 @@ func TestTemplateShellcheck(t *testing.T) {
 					t.Parallel()
 
 					for _, ignFile := range ign.Storage.Files {
+						ignFile := ignFile
 						decoded, err := ctrlcommon.DecodeIgnitionFileContents(ignFile.Contents.Source, ignFile.Contents.Compression)
 						if err != nil {
 							t.Errorf("could not decode ignition file contents: %s", err)
@@ -103,7 +105,23 @@ func TestTemplateShellcheck(t *testing.T) {
 							decoded = inner
 						}
 
+						t.Run("Syntax Check"+ignFile.Path, func(t *testing.T) {
+							t.Parallel()
+							tmpDir := t.TempDir()
+							filename := filepath.Join(tmpDir, filepath.Base(ignFile.Path))
+							require.NoError(t, os.WriteFile(filename, []byte(decoded), 0o755))
+
+							cmd := exec.Command("/bin/bash", "-n", filename)
+							cmd.Stdout = os.Stdout
+							cmd.Stderr = os.Stderr
+
+							if err := cmd.Run(); err != nil {
+								t.Fail()
+							}
+						})
+
 						t.Run("Shellcheck"+ignFile.Path, func(t *testing.T) {
+							t.Parallel()
 							shellcheckArgs := []string{
 								"--color=always", // Colors are nice and look great in CI output.
 								"--shell=bash",   // Specify the shell dialect for shellcheck.
