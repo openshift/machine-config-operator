@@ -75,7 +75,7 @@ func TestEncapsulated(t *testing.T) {
 	assert.Equal(t, mcIgnCfg.Storage.Files[0].Path, "/etc/coreos/update.conf")
 	assert.Equal(t, mcIgnCfg.Storage.Files[1].Path, daemonconsts.MachineConfigEncapsulatedPath)
 
-	vers := []*semver.Version{semver.New("3.2.0"), semver.New("3.1.0"), semver.New("2.2.0")}
+	vers := []*semver.Version{semver.New("3.3.0"), semver.New("3.2.0"), semver.New("3.1.0"), semver.New("2.2.0")}
 	t.Logf("vers: %v\n", vers)
 	for _, v := range vers {
 		major := v.Slice()[0]
@@ -102,7 +102,12 @@ func TestEncapsulated(t *testing.T) {
 		var mc mcfgv1.MachineConfig
 		err = json.Unmarshal(encapData, &mc)
 		assert.Nil(t, err)
-		if major == 3 && minor == 2 {
+		if major == 3 && minor == 3 {
+			// TODO(jkyros): this parses to 3.2 now because it's still the default and we're down-translating,
+			// but we will need to change this when we move the default to a later version
+			_, _, err := ign3.Parse(mc.Spec.Config.Raw)
+			assert.Nil(t, err)
+		} else if major == 3 && minor == 2 {
 			_, _, err := ign3.Parse(mc.Spec.Config.Raw)
 			assert.Nil(t, err)
 		} else if major == 3 && minor == 1 {
