@@ -19,6 +19,7 @@ contents:
     kubeAPIQPS: 50
     kubeAPIBurst: 100
     podPidsLimit: 4096
+    protectKernelDefaults: true
     rotateCertificates: true
     serializeImagePulls: false
     staticPodPath: /etc/kubernetes/manifests
