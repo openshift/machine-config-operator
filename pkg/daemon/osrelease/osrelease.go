@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/ashcrow/osrelease"
-	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 // Source of the OS release information
@@ -55,58 +54,36 @@ type OperatingSystem struct {
 }
 
 func newOperatingSystemFromImageLabels(imageLabels map[string]string) (OperatingSystem, error) {
+	if err := hasRequiredLabels(imageLabels); err != nil {
+		return OperatingSystem{}, err
+	}
+
 	os := OperatingSystem{
 		values: imageLabels,
 		source: ImageLabelInfoSource,
+		// If we've made it this far, we know we have a CoreOS variant.
+		variantID: coreos,
+		version:   imageLabels["version"],
 	}
 
-	if isCoreOSVariant(imageLabels) {
-		os.variantID = coreos
-	} else {
-		return os, fmt.Errorf("unable to identify coreos variant from labels: %v", imageLabels)
-	}
-
-	version := ""
-	versionOK := false
-	if version, versionOK = imageLabels["version"]; !versionOK {
-		return os, fmt.Errorf("missing 'version' label: %v", imageLabels)
-	}
-
-	// Only FCOS and SCOS set this field.
+	// Only FCOS and SCOS set this label, which is why it's not required.
 	if osName, osNameOK := imageLabels["io.openshift.build.version-display-names"]; osNameOK {
-		osName = strings.ReplaceAll(osName, "machine-os=", "")
-		switch osName {
-		case "CentOS Stream CoreOS":
-			os.id = scos
-			// Grab the middle value from the version number (e.g.,
-			// 413.9.202302130811-0 becomes 9)
-			os.version = strings.Split(version, ".")[1]
-		case "Fedora CoreOS":
-			os.id = fedora
-			// FCOS doesn't have the OCP / OKD version number encoded in it (e.g.,
-			// 37.20230211.20.0) so we use it as-is.
-			os.version = version
-		}
-
-		// We've been able to infer the necessary fields for FCOS and SCOS.
-		return os, nil
+		return inferNonRHCOS(os, osName)
 	}
 
-	// RHCOS has the version number in the middle position of the version ID
-	// (e.g., 413.92.202302081904-0, becomes 92; which is 9.2 though we don't
-	// care about the missing decimal here)
-	version = strings.Split(version, ".")[1]
+	// Like SCOS, RHCOS has the version number in the middle position of the OCP
+	// / OKD version ID (e.g., 413.92.202302081904-0, becomes 92; which is 9.2
+	// though we don't care about the missing decimal here)
+	os.version = strings.Split(os.version, ".")[1]
 
 	// If we've made it this far and the first character is either 8 or 9, we
 	// most likely have an RHCOS image.
-	if version[0:1] == "8" || version[0:1] == "9" {
-		os.version = version
+	if os.version[0:1] == "8" || os.version[0:1] == "9" {
 		os.id = rhcos
 		return os, nil
 	}
 
 	return os, fmt.Errorf("unable to infer OS version from image labels: %v", imageLabels)
-
 }
 
 func newOperatingSystemFromOSRelease(etcPath, libPath string) (OperatingSystem, error) {
@@ -231,21 +208,54 @@ func InferFromOSImageLabels(imageLabels map[string]string) (OperatingSystem, err
 	return newOperatingSystemFromImageLabels(imageLabels)
 }
 
-// Infers that we have a CoreOS variant by the presence of image labels.
-func isCoreOSVariant(imageLabels map[string]string) bool {
-	knownCoreOSLabels := sets.NewString(
+// Determines if an OS image has the labels that are required to infer what OS
+// it contains.
+func hasRequiredLabels(imageLabels map[string]string) error {
+	requiredLabels := []string{
 		"coreos-assembler.image-input-checksum",
 		"coreos-assembler.image-config-checksum",
-	)
+		"org.opencontainers.image.revision",
+		"org.opencontainers.image.source",
+		"version",
+	}
 
-	// Checks that we have one of the above labels.
-	for label := range imageLabels {
-		if knownCoreOSLabels.Has(label) {
-			return true
+	for _, reqLabel := range requiredLabels {
+		if _, ok := imageLabels[reqLabel]; !ok {
+			return fmt.Errorf("labels %v missing required key %q", imageLabels, reqLabel)
 		}
 	}
 
-	return false
+	return nil
+}
+
+// Infers that a given oeprating system is either FCOS or SCOS.
+func inferNonRHCOS(os OperatingSystem, osName string) (OperatingSystem, error) {
+	osName = strings.ReplaceAll(osName, "machine-os=", "")
+
+	switch osName {
+	case "CentOS Stream CoreOS":
+		os.id = scos
+		// Grab the middle value from the version number (e.g.,
+		// 413.9.202302130811-0 becomes 9)
+		os.version = strings.Split(os.version, ".")[1]
+	case "Fedora CoreOS":
+		// FCOS doesn't have the OCP / OKD version number encoded in it (e.g.,
+		// 37.20230211.20.0) so we don't need to mutate it or inspect it.
+		os.id = fedora
+	default:
+		// Catch-all if we have an unknown OS name.
+		return os, fmt.Errorf("unknown OS %q", osName)
+	}
+
+	// Currently, SCOS is at major version 9. This will probably change in the
+	// distant future. Additionally, this provides a guard in the event that
+	// the version number schema changes.
+	if os.id == scos && os.version != "9" {
+		return os, fmt.Errorf("unknown SCOS version %q", os.version)
+	}
+
+	// We've been able to infer the necessary fields for FCOS and SCOS.
+	return os, nil
 }
 
 // Determines the OS version based upon the contents of the RHEL_VERSION, VERSION or VERSION_ID fields.
