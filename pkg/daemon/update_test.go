@@ -16,7 +16,6 @@ import (
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	"github.com/openshift/machine-config-operator/pkg/daemon/osrelease"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -25,12 +24,86 @@ import (
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 )
 
+// Fake implementation of osrelease.OperatingSystem to easily allow
+// OS-dependent code paths to be reached in unit tests.
+type fakeOS struct {
+	isEL                   bool
+	isEL9                  bool
+	isFCOS                 bool
+	isSCOS                 bool
+	isCoreOSVariant        bool
+	isLikeTraditionalRHEL7 bool
+}
+
+func (f fakeOS) IsEL() bool {
+	return f.isEL
+}
+
+func (f fakeOS) IsEL9() bool {
+	return f.isEL9
+}
+
+func (f fakeOS) IsFCOS() bool {
+	return f.isFCOS
+}
+
+func (f fakeOS) IsSCOS() bool {
+	return f.isSCOS
+}
+
+func (f fakeOS) IsCoreOSVariant() bool {
+	return f.isCoreOSVariant
+}
+
+func (f fakeOS) IsLikeTraditionalRHEL7() bool {
+	return f.isLikeTraditionalRHEL7
+}
+
+// Returns a fakeOS instance that would emulate RHCOS 8.
+func rhcos8() fakeOS {
+	return fakeOS{
+		isEL:            true,
+		isEL9:           false,
+		isCoreOSVariant: true,
+	}
+}
+
+// Returns a fakeOS instance that would emulate RHCOS 9.
+func rhcos9() fakeOS {
+	return fakeOS{
+		isEL:            true,
+		isEL9:           true,
+		isCoreOSVariant: true,
+	}
+}
+
+// Returns a fakeOS instance that would emulate FCOS.
+func fcos() fakeOS {
+	return fakeOS{
+		isFCOS:          true,
+		isCoreOSVariant: true,
+	}
+}
+
+// Returns a fakeOS instance that would emulate SCOS.
+func scos() fakeOS {
+	return fakeOS{
+		isEL:            true,
+		isEL9:           true,
+		isSCOS:          true,
+		isCoreOSVariant: true,
+	}
+}
+
+// Compile-time check to ensure that fakeOS implements the osRelease interface.
+var _ osRelease = fakeOS{}
+
 func newMockDaemon() Daemon {
 	// Create a Daemon instance with mocked clients
 	return Daemon{
 		mock:             true,
 		name:             "nodeName",
-		os:               osrelease.OperatingSystem{},
+		os:               rhcos8(),
 		kubeClient:       k8sfake.NewSimpleClientset(),
 		bootedOSImageURL: "test",
 	}
@@ -59,6 +132,36 @@ func setupTempDirWithEtc(t *testing.T) (string, func()) {
 		origParentDirPath = oldOrigParentDirPath
 		noOrigParentDirPath = oldNoOrigParentDirPath
 	}
+}
+
+func TestFakeOS(t *testing.T) {
+	assert.True(t, rhcos8().IsEL())
+	assert.True(t, rhcos8().IsCoreOSVariant())
+	assert.False(t, rhcos8().IsEL9())
+	assert.False(t, rhcos8().IsFCOS())
+	assert.False(t, rhcos8().IsSCOS())
+	assert.False(t, rhcos8().IsLikeTraditionalRHEL7())
+
+	assert.True(t, rhcos9().IsEL())
+	assert.True(t, rhcos9().IsCoreOSVariant())
+	assert.True(t, rhcos9().IsEL9())
+	assert.False(t, rhcos9().IsFCOS())
+	assert.False(t, rhcos9().IsSCOS())
+	assert.False(t, rhcos9().IsLikeTraditionalRHEL7())
+
+	assert.True(t, fcos().IsCoreOSVariant())
+	assert.True(t, fcos().IsFCOS())
+	assert.False(t, fcos().IsEL())
+	assert.False(t, fcos().IsEL9())
+	assert.False(t, fcos().IsSCOS())
+	assert.False(t, fcos().IsLikeTraditionalRHEL7())
+
+	assert.True(t, scos().IsEL())
+	assert.True(t, scos().IsCoreOSVariant())
+	assert.True(t, scos().IsEL9())
+	assert.True(t, scos().IsSCOS())
+	assert.False(t, scos().IsFCOS())
+	assert.False(t, scos().IsLikeTraditionalRHEL7())
 }
 
 func TestTruncate(t *testing.T) {
