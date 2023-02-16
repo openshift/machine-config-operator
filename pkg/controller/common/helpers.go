@@ -23,6 +23,7 @@ import (
 	"github.com/coreos/ign-converter/translate/v32tov22"
 	"github.com/coreos/ign-converter/translate/v32tov31"
 	"github.com/coreos/ign-converter/translate/v33tov32"
+	"github.com/coreos/ign-converter/translate/v34tov33"
 	ign2error "github.com/coreos/ignition/config/shared/errors"
 	ign2 "github.com/coreos/ignition/config/v2_2"
 	ign2types "github.com/coreos/ignition/config/v2_2/types"
@@ -36,6 +37,7 @@ import (
 	translate3 "github.com/coreos/ignition/v2/config/v3_2/translate"
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	ign3_3 "github.com/coreos/ignition/v2/config/v3_3"
+	ign3_4 "github.com/coreos/ignition/v2/config/v3_4"
 	validate3 "github.com/coreos/ignition/v2/config/validate"
 	"github.com/ghodss/yaml"
 	"github.com/golang/glog"
@@ -280,6 +282,28 @@ func ConvertRawExtIgnitionToV3(inRawExtIgn *runtime.RawExtension) (runtime.RawEx
 	return outRawExt, nil
 }
 
+// ConvertRawExtIgnitionToV3_4 ensures that the Ignition config in
+// the RawExtension is spec v3.4, or translates to it.
+func ConvertRawExtIgnitionToV3_4(inRawExtIgn *runtime.RawExtension) (runtime.RawExtension, error) {
+	// TODO(jkyros): since 3.4 is "ahead" of our current default 3.2, we're going "up" not down, which is
+	// why we can use ParseCompatibleVersion. Once we bump to 3.4 this will be briefly obsolete, but once we
+	// bump the default past 3.4 we will have to come back and "downconvert".
+	ignCfgV34, rptV3, errV3 := ign3_4.ParseCompatibleVersion(inRawExtIgn.Raw)
+	if errV3 != nil || rptV3.IsFatal() {
+		return runtime.RawExtension{}, fmt.Errorf("parsing Ignition config failed with error: %w\nReport: %v", errV3, rptV3)
+	}
+
+	outIgnV34, err := json.Marshal(ignCfgV34)
+	if err != nil {
+		return runtime.RawExtension{}, fmt.Errorf("failed to marshal converted config: %w", err)
+	}
+
+	outRawExt := runtime.RawExtension{}
+	outRawExt.Raw = outIgnV34
+
+	return outRawExt, nil
+}
+
 // ConvertRawExtIgnitionToV3_3 ensures that the Ignition config in
 // the RawExtension is spec v3.3, or translates to it.
 func ConvertRawExtIgnitionToV3_3(inRawExtIgn *runtime.RawExtension) (runtime.RawExtension, error) {
@@ -291,13 +315,13 @@ func ConvertRawExtIgnitionToV3_3(inRawExtIgn *runtime.RawExtension) (runtime.Raw
 		return runtime.RawExtension{}, fmt.Errorf("parsing Ignition config failed with error: %w\nReport: %v", errV3, rptV3)
 	}
 
-	outIgnV31, err := json.Marshal(ignCfgV33)
+	outIgnV33, err := json.Marshal(ignCfgV33)
 	if err != nil {
 		return runtime.RawExtension{}, fmt.Errorf("failed to marshal converted config: %w", err)
 	}
 
 	outRawExt := runtime.RawExtension{}
-	outRawExt.Raw = outIgnV31
+	outRawExt.Raw = outIgnV33
 
 	return outRawExt, nil
 }
@@ -517,11 +541,19 @@ func ValidateMachineConfig(cfg mcfgv1.MachineConfigSpec) error {
 // a V2 or V3 Config or an error. This wrapper is necessary since V2 and V3 use different parsers.
 func IgnParseWrapper(rawIgn []byte) (interface{}, error) {
 	// ParseCompatibleVersion will parse any config <= N to version N
-	ignCfgV3, rptV3, errV3 := ign3_3.ParseCompatibleVersion(rawIgn)
+	ignCfgV3, rptV3, errV3 := ign3_4.ParseCompatibleVersion(rawIgn)
 	if errV3 == nil && !rptV3.IsFatal() {
+		// Regardless of the input version it has now been translated to a 3.4 config, downtranslate to 3.3 so we
+		// can get down to 3.2
+		ignCfgV3_3, errV3_3 := v34tov33.Translate(ignCfgV3)
+		if errV3_3 != nil {
+			// This case should only be hit if fields that only exist in v3_4 are being used which are not
+			// currently supported by the MCO
+			return ign3types.Config{}, fmt.Errorf("translating Ignition config failed with error %v", errV3_3)
+		}
 		// Regardless of the input version it has now been translated to a 3.3 config, downtranslate to 3.2 to match
 		// what is used internally
-		ignCfgV3_2, errV3_2 := v33tov32.Translate(ignCfgV3)
+		ignCfgV3_2, errV3_2 := v33tov32.Translate(ignCfgV3_3)
 		if errV3_2 != nil {
 			// This case should only be hit if fields that only exist in v3_3 are being used which are not
 			// currently supported by the MCO
@@ -538,7 +570,7 @@ func IgnParseWrapper(rawIgn []byte) (interface{}, error) {
 
 		// If the error is still UnknownVersion it's not a 3.3/3.2/3.1/3.0 or 2.x config, thus unsupported
 		if errV2.Error() == ign2error.ErrUnknownVersion.Error() {
-			return ign3types.Config{}, fmt.Errorf("parsing Ignition config failed: unknown version. Supported spec versions: 2.2, 3.0, 3.1, 3.2, 3.3")
+			return ign3types.Config{}, fmt.Errorf("parsing Ignition config failed: unknown version. Supported spec versions: 2.2, 3.0, 3.1, 3.2, 3.3, 3.4")
 		}
 		return ign3types.Config{}, fmt.Errorf("parsing Ignition spec v2 failed with error: %v\nReport: %v", errV2, rptV2)
 	}

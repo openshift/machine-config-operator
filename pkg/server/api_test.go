@@ -56,6 +56,7 @@ func TestAcceptHeaders(t *testing.T) {
 	v3_1 := semver.New("3.1.0")
 	v3_2 := semver.New("3.2.0")
 	v3_3 := semver.New("3.3.0")
+	v3_4 := semver.New("3.4.0")
 	headers := []acceptHeaderScenario{
 		{
 			name:  "IgnV0",
@@ -81,6 +82,25 @@ func TestAcceptHeaders(t *testing.T) {
 				},
 			},
 			versionOut: v2_2,
+		},
+		{
+			name:  "IgnV2_34",
+			input: "application/vnd.coreos.ignition+json;version=3.4.0, */*;q=0.1",
+			headerVals: []acceptHeaderValue{
+				{
+					MIMEType:    "application",
+					MIMESubtype: "vnd.coreos.ignition+json",
+					SemVer:      v3_4,
+					QValue:      float32ToPtr(1.0),
+				},
+				{
+					MIMEType:    "*",
+					MIMESubtype: "*",
+					SemVer:      nil,
+					QValue:      float32ToPtr(0.1),
+				},
+			},
+			versionOut: v3_4,
 		},
 		{
 			name:  "IgnV2_33",
@@ -204,6 +224,11 @@ func setV3_3AcceptHeaderOnReq(req *http.Request) *http.Request {
 	return req
 }
 
+func setV3_4AcceptHeaderOnReq(req *http.Request) *http.Request {
+	req.Header.Set("Accept", "application/vnd.coreos.ignition+json;version=3.4.0, */*;q=0.1")
+	return req
+}
+
 func TestAPIHandler(t *testing.T) {
 	scenarios := []scenario{
 		{
@@ -297,6 +322,21 @@ func TestAPIHandler(t *testing.T) {
 		{
 			name:    "get spec v3_3 config path that exists",
 			request: setV3_3AcceptHeaderOnReq(httptest.NewRequest(http.MethodGet, "http://testrequest/config/master", nil)),
+			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
+				return &runtime.RawExtension{
+					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
+				}, nil
+			},
+			checkResponse: func(t *testing.T, response *http.Response) {
+				checkStatus(t, response, http.StatusOK)
+				checkContentType(t, response, "application/json")
+				checkContentLength(t, response, expectedContentLength)
+				checkBodyLength(t, response, expectedContentLength)
+			},
+		},
+		{
+			name:    "get spec v3_4 config path that exists",
+			request: setV3_4AcceptHeaderOnReq(httptest.NewRequest(http.MethodGet, "http://testrequest/config/master", nil)),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
 					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
