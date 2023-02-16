@@ -223,6 +223,26 @@ func TestParseAndConvert(t *testing.T) {
 	testIgn3Config.Ignition.Version = "3.2.0"
 	assert.Equal(t, testIgn3Config, convertedIgn)
 
+	// Make a valid Ign 3.3 cfg
+	testIgn3Config.Ignition.Version = "3.3.0"
+	// turn it into a raw []byte
+	rawIgn = helpers.MarshalOrDie(testIgn3Config)
+	// check that it was parsed successfully back to 3.2
+	convertedIgn, err = ParseAndConvertConfig(rawIgn)
+	require.Nil(t, err)
+	testIgn3Config.Ignition.Version = "3.2.0"
+	assert.Equal(t, testIgn3Config, convertedIgn)
+
+	// Make a valid Ign 3.4 cfg
+	testIgn3Config.Ignition.Version = "3.4.0"
+	// turn it into a raw []byte
+	rawIgn = helpers.MarshalOrDie(testIgn3Config)
+	// check that it was parsed successfully back to 3.2
+	convertedIgn, err = ParseAndConvertConfig(rawIgn)
+	require.Nil(t, err)
+	testIgn3Config.Ignition.Version = "3.2.0"
+	assert.Equal(t, testIgn3Config, convertedIgn)
+
 	// Make a bad Ign3 cfg
 	testIgn3Config.Ignition.Version = "21.0.0"
 	rawIgn = helpers.MarshalOrDie(testIgn3Config)
