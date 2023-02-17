@@ -1605,6 +1605,13 @@ func (dn *Daemon) SetPasswordHash(newUsers []ign3types.PasswdUser) error {
 	return nil
 }
 
+// Determines if we should use the new SSH key path
+// (/home/core/.ssh/authorized_keys.d/ignition) or the old SSH key path
+// (/home/core/.ssh/authorized_keys)
+func (dn *Daemon) useNewSSHKeyPath() bool {
+	return dn.os.IsEL9() || dn.os.IsFCOS() || dn.os.IsSCOS()
+}
+
 // Update a given PasswdUser's SSHKey
 func (dn *Daemon) updateSSHKeys(newUsers []ign3types.PasswdUser) error {
 	if len(newUsers) == 0 {
@@ -1639,7 +1646,7 @@ func (dn *Daemon) updateSSHKeys(newUsers []ign3types.PasswdUser) error {
 		// Check if the authorized_keys file at the legacy path exists. If it does, remove it.
 		// It will be recreated at the new fragment path by the atomicallyWriteSSHKey function
 		// that is called right after.
-		if dn.os.IsEL9() || dn.os.IsSCOS() || dn.os.IsFCOS() {
+		if dn.useNewSSHKeyPath() {
 			authKeyPath = constants.RHCOS9SSHKeyPath
 
 			if err := cleanSSHKeyPaths(); err != nil {
@@ -1654,17 +1661,37 @@ func (dn *Daemon) updateSSHKeys(newUsers []ign3types.PasswdUser) error {
 	return nil
 }
 
+// Determines if a file exists by checking for the presence or lack thereof of
+// an error when stat'ing the file. Returns any other error.
+func fileExists(path string) (bool, error) {
+	_, err := os.Stat(path)
+	// If there is no error, the file definitely exists.
+	if err == nil {
+		return true, nil
+	}
+
+	// If the error matches fs.ErrNotExist, the file definitely does not exist.
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+
+	// An unexpected error occurred.
+	return false, fmt.Errorf("cannot stat file: %w", err)
+}
+
 // Removes the old SSH key path (/home/core/.ssh/authorized_keys), if found.
 func cleanSSHKeyPaths() error {
-	_, err := os.Stat(constants.RHCOS8SSHKeyPath)
-	if err == nil {
-		err := os.RemoveAll(constants.RHCOS8SSHKeyPath)
-		if err != nil {
-			return fmt.Errorf("failed to remove path '%s': %w", constants.RHCOS8SSHKeyPath, err)
-		}
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		// This shouldn't ever happen
-		return fmt.Errorf("unexpectedly failed to get info for path '%s': %w", constants.RHCOS8SSHKeyPath, err)
+	oldKeyExists, err := fileExists(constants.RHCOS8SSHKeyPath)
+	if err != nil {
+		return err
+	}
+
+	if !oldKeyExists {
+		return nil
+	}
+
+	if err := os.RemoveAll(constants.RHCOS8SSHKeyPath); err != nil {
+		return fmt.Errorf("failed to remove path '%s': %w", constants.RHCOS8SSHKeyPath, err)
 	}
 
 	return removeNonIgnitionKeyPathFragments()
