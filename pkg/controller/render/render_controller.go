@@ -435,7 +435,8 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	}
 
 	if err := ctrl.syncGeneratedMachineConfig(pool, mcs); err != nil {
-		return ctrl.syncFailingStatus(pool, err)
+		ctrl.syncFailingStatus(pool, err)
+		return err
 	}
 
 	return ctrl.syncAvailableStatus(pool)
