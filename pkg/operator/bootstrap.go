@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/golang/glog"
 
@@ -212,110 +213,68 @@ func RenderBootstrap(
 }
 
 func appendManifestsByPlatform(manifests []manifest, infra configv1.Infrastructure) []manifest {
-
+	lbType := configv1.LoadBalancerTypeOpenShiftManagedDefault
 	if infra.Status.PlatformStatus.BareMetal != nil {
-		manifests = append(manifests,
-			manifest{
-				name:     "manifests/on-prem/coredns.yaml",
-				filename: "baremetal/manifests/coredns.yaml",
-			},
-			manifest{
-				name:     "manifests/on-prem/coredns-corefile.tmpl",
-				filename: "baremetal/static-pod-resources/coredns/Corefile.tmpl",
-			},
-			manifest{
-				name:     "manifests/on-prem/keepalived.yaml",
-				filename: "baremetal/manifests/keepalived.yaml",
-			},
-			manifest{
-				name:     "manifests/on-prem/keepalived.conf.tmpl",
-				filename: "baremetal/static-pod-resources/keepalived/keepalived.conf.tmpl",
-			},
-		)
+		if infra.Status.PlatformStatus.BareMetal.LoadBalancer != nil {
+			lbType = infra.Status.PlatformStatus.BareMetal.LoadBalancer.Type
+		}
+		manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.BareMetalPlatformType)), lbType)
 	}
 
 	if infra.Status.PlatformStatus.OpenStack != nil {
-		manifests = append(manifests,
-			manifest{
-				name:     "manifests/on-prem/coredns.yaml",
-				filename: "openstack/manifests/coredns.yaml",
-			},
-			manifest{
-				name:     "manifests/on-prem/coredns-corefile.tmpl",
-				filename: "openstack/static-pod-resources/coredns/Corefile.tmpl",
-			},
-			manifest{
-				name:     "manifests/on-prem/keepalived.yaml",
-				filename: "openstack/manifests/keepalived.yaml",
-			},
-			manifest{
-				name:     "manifests/on-prem/keepalived.conf.tmpl",
-				filename: "openstack/static-pod-resources/keepalived/keepalived.conf.tmpl",
-			},
-		)
+		if infra.Status.PlatformStatus.OpenStack.LoadBalancer != nil {
+			lbType = infra.Status.PlatformStatus.OpenStack.LoadBalancer.Type
+		}
+		manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.OpenStackPlatformType)), lbType)
 	}
 
 	if infra.Status.PlatformStatus.Ovirt != nil {
-		manifests = append(manifests,
-			manifest{
-				name:     "manifests/on-prem/coredns.yaml",
-				filename: "ovirt/manifests/coredns.yaml",
-			},
-			manifest{
-				name:     "manifests/on-prem/coredns-corefile.tmpl",
-				filename: "ovirt/static-pod-resources/coredns/Corefile.tmpl",
-			},
-			manifest{
-				name:     "manifests/on-prem/keepalived.yaml",
-				filename: "ovirt/manifests/keepalived.yaml",
-			},
-			manifest{
-				name:     "manifests/on-prem/keepalived.conf.tmpl",
-				filename: "ovirt/static-pod-resources/keepalived/keepalived.conf.tmpl",
-			},
-		)
+		if infra.Status.PlatformStatus.Ovirt.LoadBalancer != nil {
+			lbType = infra.Status.PlatformStatus.Ovirt.LoadBalancer.Type
+		}
+		manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.OvirtPlatformType)), lbType)
 	}
 
-	if infra.Status.PlatformStatus.VSphere != nil && len(infra.Status.PlatformStatus.VSphere.APIServerInternalIPs) > 0 {
-		manifests = append(manifests,
-			manifest{
-				name:     "manifests/on-prem/coredns.yaml",
-				filename: "vsphere/manifests/coredns.yaml",
-			},
-			manifest{
-				name:     "manifests/on-prem/coredns-corefile.tmpl",
-				filename: "vsphere/static-pod-resources/coredns/Corefile.tmpl",
-			},
-			manifest{
-				name:     "manifests/on-prem/keepalived.yaml",
-				filename: "vsphere/manifests/keepalived.yaml",
-			},
-			manifest{
-				name:     "manifests/on-prem/keepalived.conf.tmpl",
-				filename: "vsphere/static-pod-resources/keepalived/keepalived.conf.tmpl",
-			},
-		)
+	if infra.Status.PlatformStatus.VSphere != nil {
+		deployInternalLB := true
+		// vSphere allows to use a user managed load balancer by not setting the VIPs in PlatformStatus.
+		// We will maintain backward compatibility by checking if the VIPs are not set, we will not deploy
+		// Keepalived and CoreDNS.
+		if len(infra.Status.PlatformStatus.VSphere.APIServerInternalIPs) == 0 {
+			deployInternalLB = false
+		}
+
+		if infra.Status.PlatformStatus.VSphere.LoadBalancer != nil {
+			deployInternalLB = configv1.LoadBalancerTypeOpenShiftManagedDefault == infra.Status.PlatformStatus.VSphere.LoadBalancer.Type
+		}
+
+		if deployInternalLB {
+			manifests = append(manifests,
+				manifest{
+					name:     "manifests/on-prem/coredns.yaml",
+					filename: "vsphere/manifests/coredns.yaml",
+				},
+				manifest{
+					name:     "manifests/on-prem/coredns-corefile.tmpl",
+					filename: "vsphere/static-pod-resources/coredns/Corefile.tmpl",
+				},
+				manifest{
+					name:     "manifests/on-prem/keepalived.yaml",
+					filename: "vsphere/manifests/keepalived.yaml",
+				},
+				manifest{
+					name:     "manifests/on-prem/keepalived.conf.tmpl",
+					filename: "vsphere/static-pod-resources/keepalived/keepalived.conf.tmpl",
+				},
+			)
+		}
 	}
 
 	if infra.Status.PlatformStatus.Nutanix != nil {
-		manifests = append(manifests,
-			manifest{
-				name:     "manifests/on-prem/coredns.yaml",
-				filename: "nutanix/manifests/coredns.yaml",
-			},
-			manifest{
-				name:     "manifests/on-prem/coredns-corefile.tmpl",
-				filename: "nutanix/static-pod-resources/coredns/Corefile.tmpl",
-			},
-			manifest{
-				name:     "manifests/on-prem/keepalived.yaml",
-				filename: "nutanix/manifests/keepalived.yaml",
-			},
-			manifest{
-				name:     "manifests/on-prem/keepalived.conf.tmpl",
-				filename: "nutanix/static-pod-resources/keepalived/keepalived.conf.tmpl",
-			},
-		)
+		if infra.Status.PlatformStatus.Nutanix.LoadBalancer != nil {
+			lbType = infra.Status.PlatformStatus.Nutanix.LoadBalancer.Type
+		}
+		manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.NutanixPlatformType)), lbType)
 	}
 
 	return manifests
@@ -341,4 +300,31 @@ func loadBootstrapCloudProviderConfig(infra *configv1.Infrastructure, cloudConfi
 		cloudConf = cm.Data[infra.Spec.CloudConfig.Key]
 	}
 	return cloudConf, nil
+}
+
+func getPlatformManifests(manifests []manifest, platformName string, lbType configv1.PlatformLoadBalancerType) []manifest {
+	platformManifests := append(manifests,
+		manifest{
+			name:     "manifests/on-prem/coredns.yaml",
+			filename: platformName + "/manifests/coredns.yaml",
+		},
+		manifest{
+			name:     "manifests/on-prem/coredns-corefile.tmpl",
+			filename: platformName + "/static-pod-resources/coredns/Corefile.tmpl",
+		},
+	)
+
+	if lbType == configv1.LoadBalancerTypeOpenShiftManagedDefault || lbType == "" {
+		platformManifests = append(platformManifests,
+			manifest{
+				name:     "manifests/on-prem/keepalived.yaml",
+				filename: platformName + "/manifests/keepalived.yaml",
+			},
+			manifest{
+				name:     "manifests/on-prem/keepalived.conf.tmpl",
+				filename: platformName + "/static-pod-resources/keepalived/keepalived.conf.tmpl",
+			},
+		)
+	}
+	return platformManifests
 }

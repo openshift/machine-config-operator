@@ -62,7 +62,7 @@ type configDriftMonitor struct {
 type configDriftWatcher struct {
 	ConfigDriftMonitorOpts
 	watcher   *fsnotify.Watcher
-	filePaths sets.String
+	filePaths sets.Set[string]
 	wg        sync.WaitGroup
 	stopCh    chan struct{}
 }
@@ -289,10 +289,10 @@ func (c *configDriftWatcher) checkMachineConfigForEvent(event fsnotify.Event) er
 }
 
 // Finds the paths for all files in a given MachineConfig.
-func getFilePathsFromMachineConfig(mc *mcfgv1.MachineConfig, systemdPath string) (sets.String, error) {
+func getFilePathsFromMachineConfig(mc *mcfgv1.MachineConfig, systemdPath string) (sets.Set[string], error) {
 	ignConfig, err := ctrlcommon.IgnParseWrapper(mc.Spec.Config.Raw)
 	if err != nil {
-		return sets.String{}, fmt.Errorf("could not get dirs from ignition config: %w", err)
+		return sets.Set[string]{}, fmt.Errorf("could not get dirs from ignition config: %w", err)
 	}
 
 	switch typedConfig := ignConfig.(type) {
@@ -301,13 +301,15 @@ func getFilePathsFromMachineConfig(mc *mcfgv1.MachineConfig, systemdPath string)
 	case ign2types.Config:
 		return getFilePathsFromIgn2Config(ignConfig.(ign2types.Config), systemdPath), nil
 	default:
-		return sets.String{}, fmt.Errorf("unexpected type for ignition config: %v", typedConfig)
+		return sets.Set[string]{}, fmt.Errorf("unexpected type for ignition config: %v", typedConfig)
 	}
 }
 
 // Extracts all unique directories from a given Ignition 3 config.
-func getFilePathsFromIgn3Config(ignConfig ign3types.Config, systemdPath string) sets.String {
-	files := sets.NewString()
+//
+//nolint:dupl
+func getFilePathsFromIgn3Config(ignConfig ign3types.Config, systemdPath string) sets.Set[string] {
+	files := sets.Set[string]{}
 
 	// Get all the file paths from the ignition config
 	for _, ignFile := range ignConfig.Storage.Files {
@@ -335,8 +337,10 @@ func getFilePathsFromIgn3Config(ignConfig ign3types.Config, systemdPath string) 
 }
 
 // Extracts all unique directories from a given Ignition 2 config.
-func getFilePathsFromIgn2Config(ignConfig ign2types.Config, systemdPath string) sets.String {
-	files := sets.NewString()
+//
+//nolint:dupl
+func getFilePathsFromIgn2Config(ignConfig ign2types.Config, systemdPath string) sets.Set[string] {
+	files := sets.Set[string]{}
 
 	// Get all the file paths from the ignition config
 	for _, ignFile := range ignConfig.Storage.Files {
@@ -365,7 +369,7 @@ func getFilePathsFromIgn2Config(ignConfig ign2types.Config, systemdPath string) 
 
 // Gets the directories for all the MachineConfig file paths while
 // deduplicating them.
-func getDirPathsFromFilePaths(filePaths sets.String) []string {
+func getDirPathsFromFilePaths(filePaths sets.Set[string]) []string {
 	dirPaths := sets.NewString()
 
 	for filePath := range filePaths {

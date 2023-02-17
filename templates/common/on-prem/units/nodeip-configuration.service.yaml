@@ -26,8 +26,12 @@ contents: |
     --volume /run/nodeip-configuration:/run/nodeip-configuration \
     {{ .Images.baremetalRuntimeCfgImage }} \
     node-ip \
-    set --retry-on-failure \
+    set \
     --platform {{ .Infra.Status.PlatformStatus.Type }} \
+    {{if not (isOpenShiftManagedDefaultLB .) -}}
+    --user-managed-lb \
+    {{end -}}
+    --retry-on-failure \
     {{ range onPremPlatformAPIServerInternalIPs . }}{{.}} {{end}}; \
     do \
     sleep 5; \
