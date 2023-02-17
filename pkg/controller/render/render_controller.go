@@ -3,6 +3,8 @@ package render
 import (
 	"context"
 	"fmt"
+	"github.com/openshift/machine-config-operator/pkg/constants"
+	"k8s.io/client-go/util/retry"
 	"reflect"
 	"time"
 
@@ -385,6 +387,26 @@ func (ctrl *Controller) handleErr(err error, key interface{}) {
 	ctrl.queue.AddAfter(key, 1*time.Minute)
 }
 
+func (ctrl *Controller) getLatestMcpAndMcs(name string) (*mcfgv1.MachineConfigPool, []*mcfgv1.MachineConfig, error) {
+	machineconfigpool, err := ctrl.mcpLister.Get(name)
+	if err != nil {
+		glog.Errorf("get latest pool %s failed: %v", name, err)
+		return nil, nil, err
+	}
+	pool := machineconfigpool.DeepCopy()
+	selector, err := metav1.LabelSelectorAsSelector(pool.Spec.MachineConfigSelector)
+	if err != nil {
+		glog.Errorf("get latest pool LabelSelector %s failed", name)
+		return nil, nil, err
+	}
+	mcs, err := ctrl.mcLister.List(selector)
+	if err != nil {
+		glog.Errorf("get latest machineconfigs of pool %s failed", name)
+		return nil, nil, err
+	}
+	return pool, mcs, nil
+}
+
 // syncMachineConfigPool will sync the machineconfig pool with the given key.
 // This function is not meant to be invoked concurrently with the same key.
 func (ctrl *Controller) syncMachineConfigPool(key string) error {
@@ -434,9 +456,15 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		return ctrl.syncFailingStatus(pool, fmt.Errorf("no MachineConfigs found matching selector %v", selector))
 	}
 
-	if err := ctrl.syncGeneratedMachineConfig(pool, mcs); err != nil {
-		ctrl.syncFailingStatus(pool, err)
-		return err
+	if err = retry.RetryOnConflict(constants.RenderBackoff, func() error {
+		pool, mcs, err := ctrl.getLatestMcpAndMcs(pool.Name)
+		if err != nil {
+			return err
+		}
+		return ctrl.syncGeneratedMachineConfig(pool, mcs)
+	}); err != nil {
+		glog.Errorf("retry syncGeneratedMachineConfig pool: %s error: %v", pool.Name, err)
+		return ctrl.syncFailingStatus(pool, err)
 	}
 
 	return ctrl.syncAvailableStatus(pool)

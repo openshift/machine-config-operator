@@ -24,6 +24,11 @@ var (
 		Duration: 100 * time.Millisecond,
 		Jitter:   1.0,
 	}
+	RenderBackoff = wait.Backoff{
+		Steps:    5,
+		Duration: time.Second,
+		Jitter:   1.0,
+	}
 	// NodeUpdateInProgressTaint is a taint applied by MCC when the update of node starts.
 	NodeUpdateInProgressTaint = &corev1.Taint{
 		Key:    "UpdateInProgress",
