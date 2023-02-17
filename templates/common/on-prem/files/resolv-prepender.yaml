@@ -1,0 +1,155 @@
+mode: 0755
+path: "/usr/local/bin/resolv-prepender.sh"
+contents:
+  inline: |
+    #!/bin/bash
+    set -eo pipefail
+
+    {{if .Proxy -}}
+    {{if .Proxy.HTTPProxy -}}
+    export HTTP_PROXY={{.Proxy.HTTPProxy}}
+    {{end -}}
+    {{if .Proxy.HTTPSProxy -}}
+    export HTTPS_PROXY={{.Proxy.HTTPSProxy}}
+    {{end -}}
+    {{if .Proxy.NoProxy -}}
+    export NO_PROXY={{.Proxy.NoProxy}}
+    {{end -}}
+    {{end -}}
+
+    function pull_baremetal_runtime_cfg_image {
+        # This function must be executed as a background process and therefore the trap will only apply to this background
+        # process. Do not let SIGTERM interrupt image pull due to image corruption issue [1]. Remove when issue is resolved.
+        # [1] https://github.com/containers/podman/issues/14003
+        trap "" SIGTERM
+        >&2 echo "NM resolv-prepender: Starting download of baremetal runtime cfg image"
+        while ! /usr/bin/podman pull --authfile /var/lib/kubelet/config.json {{ .Images.baremetalRuntimeCfgImage }}; do sleep 1; done
+        >&2 echo "NM resolv-prepender: Download of baremetal runtime cfg image completed"
+        trap - SIGTERM
+    }
+
+    function resolv_prepender {
+        # If $DHCP6_FQDN_FQDN is not empty and is not localhost.localdomain and static hostname was not already set
+        if [[ -n "$DHCP6_FQDN_FQDN" && "$DHCP6_FQDN_FQDN" != "localhost.localdomain" && "$DHCP6_FQDN_FQDN" =~ "." ]] ; then
+           STATIC_HOSTNAME="$(test ! -e /etc/hostname && echo -n || cat /etc/hostname | xargs)"
+
+           if [[ -z "$STATIC_HOSTNAME" || "$STATIC_HOSTNAME" == "localhost.localdomain" ]] ; then
+              # run with systemd-run to avoid selinux problems
+              systemd-run --property=Type=oneshot --unit resolve-prepender-hostnamectl -Pq \
+                  hostnamectl set-hostname --static --transient $DHCP6_FQDN_FQDN
+           fi
+        fi
+
+            # In DHCP connections, the resolv.conf content may be late, thus we wait for nameservers
+            while ! grep nameserver /var/run/NetworkManager/resolv.conf; do
+                >&2 echo  "NM resolv-prepender: NM resolv.conf still empty of nameserver"
+                sleep 0.5
+            done
+
+            # Ensure resolv.conf exists and contains nameservers before we try to pull image or run podman
+            if [[ ! -e /etc/resolv.conf ]] || ! grep -q nameserver /etc/resolv.conf; then
+                cp /var/run/NetworkManager/resolv.conf /etc/resolv.conf
+            fi
+
+            # If the overall script ends before the NM timeout and before this image pull is done, this image pull will be orphaned from
+            # the parent and continue running without NM being aware of it.
+            # As long as this script ends by itself before the NM timeout, the image pull will continue in the background without being
+            # killed by NM or interupted by SIGTERM due to timeout.
+            # Once the image corruption issue is resolved, remove sending to background and ensure it respects NM
+            # timeout.
+            # [1] https://github.com/containers/podman/issues/14003
+            if ! /usr/bin/podman image exists {{ .Images.baremetalRuntimeCfgImage }}; then
+                # Multiple image pulls may occur in parallel wasting bandwidth therefore this
+                # needs to be removed when podman image corruption issue is resolved.
+                pull_baremetal_runtime_cfg_image &
+            fi
+
+            # This function is subject to a timeout. The timeout may interrupt podman run's image pull if the image is
+            # not available and cause image corruption [1]. Image should be available or being pulled before we reach
+            # this point. Wait until its available.
+            # [1] https://github.com/containers/podman/issues/14003
+            until /usr/bin/podman image exists {{ .Images.baremetalRuntimeCfgImage }}; do
+                >&2 echo "NM resolv-prepender: Waiting for baremetal runtime cfg image to be available"
+                sleep 1
+            done
+
+            # Image must exist before reaching this point otherwise timeout may cause image corruption.
+            NAMESERVER_IP="$(/usr/bin/podman run --rm \
+                --authfile /var/lib/kubelet/config.json \
+                --net=host \
+                {{ .Images.baremetalRuntimeCfgImage }} \
+                node-ip \
+                show \
+                {{if not (isOpenShiftManagedDefaultLB .) -}}
+                --user-managed-lb \
+                {{end -}}
+                --retry-on-failure \
+                {{range onPremPlatformAPIServerInternalIPs . }}"{{.}}" {{end}} \
+                {{range onPremPlatformIngressIPs . }}"{{.}}" {{end}})"
+            DOMAINS="${IP4_DOMAINS} ${IP6_DOMAINS} {{.DNS.Spec.BaseDomain}}"
+            if [[ -n "$NAMESERVER_IP" ]]; then
+                KNICONFDONEPATH="/run/resolv-prepender-kni-conf-done"
+                if systemctl -q is-enabled systemd-resolved; then
+                    >&2 echo "NM resolv-prepender: Configure for OKD domain and local IP"
+                    mkdir -p /etc/systemd/resolved.conf.d
+                    KNICONFTMPPATH="$(mktemp)"
+                    KNICONFPATH="/etc/systemd/resolved.conf.d/60-kni.conf"
+                    echo "[Resolve]" > "${KNICONFTMPPATH}"
+                    echo "DNS=$NAMESERVER_IP" >> "${KNICONFTMPPATH}"
+                    echo "Domains=${DOMAINS}" >> "${KNICONFTMPPATH}"
+
+                    # If KNI conf is not created or doesn't match what is generated or
+                    # if we haven't completed a full update - create or update it
+                    if [[ ! -f "${KNICONFPATH}" ]] || [[ ! -f "${KNICONFDONEPATH}" ]] || ! cmp --silent "${KNICONFPATH}" "${KNICONFTMPPATH}"; then
+                        >&2 echo "NM resolv-prepender: Creating/updating /etc/systemd/resolved.conf.d/60-kni.conf"
+                        # Remove the done file flag before writing the config
+                        # This would guard against interruptions and
+                        # prevent double restart of systemd-resolved
+                        rm -f "${KNICONFDONEPATH}"
+                        # Copy tmp file contents to preserve permissions and SELinux label
+                        cat "${KNICONFTMPPATH}" > "${KNICONFPATH}"
+                        rm -rf "${KNICONFTMPPATH}"
+                    fi
+
+                    if [[ ! -f "${KNICONFDONEPATH}" ]]; then
+                        if systemctl -q is-active systemd-resolved; then
+                            >&2 echo "NM resolv-prepender: Restarting systemd-resolved"
+                            systemctl restart systemd-resolved
+                        fi
+                        touch "${KNICONFDONEPATH}"
+                    fi
+                else
+                    >&2 echo "NM resolv-prepender: Prepending 'nameserver $NAMESERVER_IP' to /etc/resolv.conf (other nameservers from /var/run/NetworkManager/resolv.conf)"
+                    RESOLVCONFTMPPATH="$(mktemp)"
+                    sed -e "/Generated by/c# Generated by KNI resolv prepender NM dispatcher script" \
+                        /var/run/NetworkManager/resolv.conf > "${RESOLVCONFTMPPATH}"
+                    sed -i "0,/^nameserver.*/s//nameserver $NAMESERVER_IP\n\0/" "${RESOLVCONFTMPPATH}"
+                    if ! grep -q search "${RESOLVCONFTMPPATH}"; then
+                        # Make sure we have a search entry
+                        echo "search {{.DNS.Spec.BaseDomain}}" >> "${RESOLVCONFTMPPATH}"
+                    else
+                        # Make sure cluster domain is first in the search list
+                        sed -i "s/^search \(.*\)/search {{.DNS.Spec.BaseDomain}} \1/" "${RESOLVCONFTMPPATH}"
+                        # Remove duplicate cluster domain entries
+                        sed -i "s/\(search {{.DNS.Spec.BaseDomain}}.*\) {{.DNS.Spec.BaseDomain}}\( .*\|$\)/\1\2/" "${RESOLVCONFTMPPATH}"
+                    fi
+                    # Only leave the first 3 nameservers in /etc/resolv.conf
+                    sed -i ':a $!{N; ba}; s/\(^\|\n\)nameserver/\n# nameserver/4g' "${RESOLVCONFTMPPATH}"
+                    mv -f "${RESOLVCONFTMPPATH}" /etc/resolv.conf
+                    # Workaround for bz 1929160. Reload NetworkManager to force it to
+                    # re-run the lookup of the hostname now that we know we have DNS
+                    # servers configured correctly in resolv.conf.
+                    nmcli general reload dns-rc
+                    touch "${KNICONFDONEPATH}"
+                fi
+            fi
+    }
+
+    export DHCP6_FQDN_FQDN IP4_DOMAINS IP6_DOMAINS
+    export -f resolv_prepender pull_baremetal_runtime_cfg_image
+    # Given an overall Network Manager dispatcher timeout of 90 seconds, and 3 events which may occur within
+    # this time period (up, dhcp4, dhcp6), we must enforce a time limit for each event.
+    if ! timeout 30s bash -c resolv_prepender; then
+        >&2 echo "NM resolv-prepender: Timeout occurred"
+        exit 1
+    fi
