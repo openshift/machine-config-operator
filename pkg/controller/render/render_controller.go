@@ -456,7 +456,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		return ctrl.syncFailingStatus(pool, fmt.Errorf("no MachineConfigs found matching selector %v", selector))
 	}
 
-	if err = retry.RetryOnConflict(constants.RenderBackoff, func() error {
+	if err = RetryOnErr(constants.RenderBackoff, func() error {
 		pool, mcs, err := ctrl.getLatestMcpAndMcs(pool.Name)
 		if err != nil {
 			return err
@@ -690,4 +690,12 @@ func getMachineConfigsForPool(pool *mcfgv1.MachineConfigPool, configs []*mcfgv1.
 		return nil, fmt.Errorf("couldn't find any MachineConfigs for pool: %v", pool.Name)
 	}
 	return out, nil
+}
+
+func RetryOnErr(bacoff wait.Backoff, fn func() error) error {
+	return retry.OnError(bacoff, IsError, fn)
+}
+
+func IsError(err error) bool {
+	return err != nil
 }
