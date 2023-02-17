@@ -1,0 +1,10 @@
+name: on-prem-resolv-prepender.service
+# This service is started on-demand by a NetworkManager dispatcher script
+enabled: false
+contents: |
+  [Unit]
+  Description=Populates resolv.conf according to on-prem IPI needs
+  [Service]
+  Type=oneshot
+  ExecStart=/usr/local/bin/resolv-prepender.sh
+  EnvironmentFile=/run/resolv-prepender/env
