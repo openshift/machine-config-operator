@@ -1541,6 +1541,29 @@ func (dn *Daemon) writeFiles(files []ign3types.File) error {
 	return writeFiles(files)
 }
 
+// Ensures that both the SSH root directory (/home/core/.ssh) as well as any
+// subdirectories are created with the correct (0700) permissions.
+func createSSHKeyDir(authKeyDir string) error {
+	glog.Infof("Creating missing SSH key dir at %s", authKeyDir)
+
+	mkdir := func(dir string) error {
+		return exec.Command("runuser", "-u", constants.CoreUserName, "--", "mkdir", "-m", "0700", "-p", dir).Run()
+	}
+
+	// Create the root SSH key directory (/home/core/.ssh) first.
+	if err := mkdir(filepath.Dir(constants.RHCOS8SSHKeyPath)); err != nil {
+		return err
+	}
+
+	// For RHCOS 8, creating /home/core/.ssh is all that is needed.
+	if authKeyDir == constants.RHCOS8SSHKeyPath {
+		return nil
+	}
+
+	// Create the next level of the SSH key directory (/home/core/.ssh/authorized_keys.d) for RHCOS 9 cases.
+	return mkdir(filepath.Dir(constants.RHCOS9SSHKeyPath))
+}
+
 func (dn *Daemon) atomicallyWriteSSHKey(authKeyPath, keys string) error {
 	uid, err := lookupUID(constants.CoreUserName)
 	if err != nil {
@@ -1560,9 +1583,7 @@ func (dn *Daemon) atomicallyWriteSSHKey(authKeyPath, keys string) error {
 	// See https://bugzilla.redhat.com/show_bug.cgi?id=2107113
 	authKeyDir := filepath.Dir(authKeyPath)
 	if _, err := os.Stat(authKeyDir); os.IsNotExist(err) {
-		glog.Infof("Creating missing SSH key dir at %s", authKeyDir)
-		mkdirCoreCommand := exec.Command("runuser", "-u", constants.CoreUserName, "--", "mkdir", "-m", "0700", "-p", authKeyDir)
-		if err := mkdirCoreCommand.Run(); err != nil {
+		if err := createSSHKeyDir(authKeyDir); err != nil {
 			return err
 		}
 	}
@@ -1571,7 +1592,7 @@ func (dn *Daemon) atomicallyWriteSSHKey(authKeyPath, keys string) error {
 		return err
 	}
 
-	glog.V(2).Infof("Wrote SSH keys to %s", authKeyPath)
+	glog.V(2).Infof("Wrote SSH keys to %q", authKeyPath)
 
 	return nil
 }
@@ -1609,6 +1630,13 @@ func (dn *Daemon) SetPasswordHash(newUsers []ign3types.PasswdUser) error {
 	return nil
 }
 
+// Determines if we should use the new SSH key path
+// (/home/core/.ssh/authorized_keys.d/ignition) or the old SSH key path
+// (/home/core/.ssh/authorized_keys)
+func (dn *Daemon) useNewSSHKeyPath() bool {
+	return dn.os.IsEL9() || dn.os.IsFCOS() || dn.os.IsSCOS()
+}
+
 // Update a given PasswdUser's SSHKey
 func (dn *Daemon) updateSSHKeys(newUsers []ign3types.PasswdUser) error {
 	if len(newUsers) == 0 {
@@ -1643,10 +1671,14 @@ func (dn *Daemon) updateSSHKeys(newUsers []ign3types.PasswdUser) error {
 		// Check if the authorized_keys file at the legacy path exists. If it does, remove it.
 		// It will be recreated at the new fragment path by the atomicallyWriteSSHKey function
 		// that is called right after.
-		if dn.os.IsEL9() || dn.os.IsSCOS() || dn.os.IsFCOS() {
+		if dn.useNewSSHKeyPath() {
 			authKeyPath = constants.RHCOS9SSHKeyPath
 
 			if err := cleanSSHKeyPaths(); err != nil {
+				return err
+			}
+
+			if err := removeNonIgnitionKeyPathFragments(); err != nil {
 				return err
 			}
 		}
@@ -1658,20 +1690,40 @@ func (dn *Daemon) updateSSHKeys(newUsers []ign3types.PasswdUser) error {
 	return nil
 }
 
-// Removes the old SSH key path (/home/core/.ssh/authorized_keys), if found.
-func cleanSSHKeyPaths() error {
-	_, err := os.Stat(constants.RHCOS8SSHKeyPath)
+// Determines if a file exists by checking for the presence or lack thereof of
+// an error when stat'ing the file. Returns any other error.
+func fileExists(path string) (bool, error) {
+	_, err := os.Stat(path)
+	// If there is no error, the file definitely exists.
 	if err == nil {
-		err := os.RemoveAll(constants.RHCOS8SSHKeyPath)
-		if err != nil {
-			return fmt.Errorf("failed to remove path '%s': %w", constants.RHCOS8SSHKeyPath, err)
-		}
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		// This shouldn't ever happen
-		return fmt.Errorf("unexpectedly failed to get info for path '%s': %w", constants.RHCOS8SSHKeyPath, err)
+		return true, nil
 	}
 
-	return removeNonIgnitionKeyPathFragments()
+	// If the error matches fs.ErrNotExist, the file definitely does not exist.
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+
+	// An unexpected error occurred.
+	return false, fmt.Errorf("cannot stat file: %w", err)
+}
+
+// Removes the old SSH key path (/home/core/.ssh/authorized_keys), if found.
+func cleanSSHKeyPaths() error {
+	oldKeyExists, err := fileExists(constants.RHCOS8SSHKeyPath)
+	if err != nil {
+		return err
+	}
+
+	if !oldKeyExists {
+		return nil
+	}
+
+	if err := os.RemoveAll(constants.RHCOS8SSHKeyPath); err != nil {
+		return fmt.Errorf("failed to remove path '%s': %w", constants.RHCOS8SSHKeyPath, err)
+	}
+
+	return nil
 }
 
 // Ensures authorized_keys.d/ignition is the only fragment that exists within the /home/core/.ssh dir.
