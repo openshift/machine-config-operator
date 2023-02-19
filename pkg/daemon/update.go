@@ -309,7 +309,7 @@ func ExtractOSImage(imgURL string) (osImageContentDir string, err error) {
 	}
 
 	// Extract the image
-	args := []string{"image", "extract", "--path", "/:" + osImageContentDir}
+	args := []string{"image", "extract", "-v", "10", "--path", "/:" + osImageContentDir}
 	args = append(args, registryConfig...)
 	args = append(args, imgURL)
 	if _, err = pivotutils.RunExtBackground(cmdRetriesCount, "oc", args...); err != nil {
