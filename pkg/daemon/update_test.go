@@ -194,6 +194,72 @@ func TestMachineConfigDiff(t *testing.T) {
 	diff, err = newMachineConfigDiff(emptyMc, otherEmptyMc)
 	assert.Nil(t, err)
 	assert.True(t, diff.isEmpty())
+
+	passwdTestCases := []struct {
+		name        string
+		passwdUsers []ign3types.PasswdUser
+		baseMC      *mcfgv1.MachineConfig
+	}{
+		{
+			name: "SSH key changes recognized - Empty MC",
+			passwdUsers: []ign3types.PasswdUser{
+				{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"1234"}},
+			},
+			baseMC: canonicalizeEmptyMC(nil),
+		},
+		{
+			name: "SSH key changes recognized - New Key",
+			passwdUsers: []ign3types.PasswdUser{
+				{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"1234"}},
+			},
+			baseMC: helpers.CreateMachineConfigFromIgnition(ign3types.Config{
+				Ignition: ign3types.Ignition{
+					Version: ign3types.MaxVersion.String(),
+				},
+				Passwd: ign3types.Passwd{
+					Users: []ign3types.PasswdUser{
+						{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"5678"}},
+					},
+				},
+			}),
+		},
+		{
+			name: "PasswordHash changes recognized - Empty MC",
+			passwdUsers: []ign3types.PasswdUser{
+				{Name: "core", PasswordHash: helpers.StrToPtr("testpass")},
+			},
+			baseMC: canonicalizeEmptyMC(nil),
+		},
+		{
+			name: "PasswordHash changes recognized - Password Change",
+			passwdUsers: []ign3types.PasswdUser{
+				{Name: "core", PasswordHash: helpers.StrToPtr("testpass")},
+			},
+			baseMC: helpers.CreateMachineConfigFromIgnition(ign3types.Config{
+				Ignition: ign3types.Ignition{
+					Version: ign3types.MaxVersion.String(),
+				},
+				Passwd: ign3types.Passwd{
+					Users: []ign3types.PasswdUser{
+						{Name: "core", PasswordHash: helpers.StrToPtr("newtestpass")},
+					},
+				},
+			}),
+		},
+	}
+
+	for _, testCase := range passwdTestCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			newIgnCfg := ctrlcommon.NewIgnConfig()
+			newIgnCfg.Passwd.Users = testCase.passwdUsers
+			newMC := helpers.CreateMachineConfigFromIgnition(newIgnCfg)
+
+			diff, err = newMachineConfigDiff(testCase.baseMC, newMC)
+			assert.Nil(t, err)
+			assert.False(t, diff.isEmpty())
+			assert.True(t, diff.passwd)
+		})
+	}
 }
 
 func newTestIgnitionFile(i uint) ign3types.File {
