@@ -382,14 +382,20 @@ func TestNoReboot(t *testing.T) {
 	oldInfraRenderedConfig := helpers.GetMcName(t, cs, "infra")
 
 	infraNode := helpers.GetSingleNodeByRole(t, cs, "infra")
-
 	output := helpers.ExecCmdOnNode(t, cs, infraNode, "cat", "/rootfs/proc/uptime")
 	oldTime := strings.Split(output, " ")[0]
 	t.Logf("Node %s initial uptime: %s", infraNode.Name, oldTime)
+	initialEtcShadowContents := helpers.ExecCmdOnNode(t, cs, infraNode, "grep", "^core:", "/rootfs/etc/shadow")
 
 	// Adding authorized key for user core
 	testIgnConfig := ctrlcommon.NewIgnConfig()
-	testSSHKey := ign3types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"test adding authorized key without node reboot"}}
+	testPasswdHash := "testpass"
+	testSSHKey := ign3types.PasswdUser{
+		Name:              "core",
+		SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"test adding authorized key without node reboot"},
+		PasswordHash:      &testPasswdHash,
+	}
+
 	testIgnConfig.Passwd.Users = append(testIgnConfig.Passwd.Users, testSSHKey)
 
 	addAuthorizedKey := &mcfgv1.MachineConfig{
@@ -425,6 +431,13 @@ func TestNoReboot(t *testing.T) {
 		t.Fatalf("updated ssh keys not found in authorized_keys, got %s", foundSSHKey)
 	}
 	t.Logf("Node %s has SSH key", infraNode.Name)
+
+	currentEtcShadowContents := helpers.ExecCmdOnNode(t, cs, infraNode, "grep", "^core:", "/rootfs/etc/shadow")
+
+	if currentEtcShadowContents == initialEtcShadowContents {
+		t.Fatalf("updated password hash not found in etc/shadow, got %s", currentEtcShadowContents)
+	}
+	t.Logf("Node %s has Password Hash", infraNode.Name)
 
 	usernameAndGroup := strings.Split(strings.TrimSuffix(helpers.ExecCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "stat", "--format=%U %G", "/home/core/.ssh/authorized_keys"), "\n"), " ")
 	assert.Equal(t, usernameAndGroup, []string{constants.CoreUserName, constants.CoreGroupName})
@@ -499,6 +512,9 @@ func TestNoReboot(t *testing.T) {
 	}
 	err = helpers.WaitForPoolComplete(t, cs, "infra", oldInfraRenderedConfig)
 	require.Nil(t, err)
+
+	rollbackEtcShadowContents := helpers.ExecCmdOnNode(t, cs, infraNode, "grep", "^core:", "/rootfs/etc/shadow")
+	assert.Equal(t, initialEtcShadowContents, rollbackEtcShadowContents)
 }
 
 func TestPoolDegradedOnFailToRender(t *testing.T) {
