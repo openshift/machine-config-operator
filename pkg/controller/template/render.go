@@ -642,6 +642,7 @@ func isOpenShiftManagedDefaultLB(cfg RenderConfig) bool {
 				return lbType == configv1.LoadBalancerTypeOpenShiftManagedDefault
 			}
 		case configv1.VSpherePlatformType:
+			glog.Infof("Platform is %s, platform status is %+v", configv1.VSpherePlatformType, cfg.Infra.Status.PlatformStatus.VSphere)
 			if cfg.Infra.Status.PlatformStatus.VSphere != nil {
 				// vSphere allows to use a user managed load balancer by not setting the VIPs in PlatformStatus.
 				// We will maintain backward compatibility by checking if the VIPs are not set, we will
@@ -654,6 +655,9 @@ func isOpenShiftManagedDefaultLB(cfg RenderConfig) bool {
 				}
 				return lbType == configv1.LoadBalancerTypeOpenShiftManagedDefault
 			}
+
+			// VSphere UPI doesn't populate VSphere field. In that case we should return false
+			return false
 		case configv1.NutanixPlatformType:
 			if cfg.Infra.Status.PlatformStatus.Nutanix != nil {
 				if cfg.Infra.Status.PlatformStatus.Nutanix.LoadBalancer != nil {
