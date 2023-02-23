@@ -1928,7 +1928,9 @@ func (dn *Daemon) reboot(rationale string) error {
 		mcdRebootErr.Inc()
 		return fmt.Errorf("reboot command failed, something is seriously wrong")
 	}
-	// if we're here, reboot went through successfully
+	// if we're here, reboot went through successfully, so we set rebootQueued
+	// and we wait for GracefulNodeShutdown
+	dn.rebootQueued = true
 	dn.logSystem("reboot successful")
 	return nil
 }

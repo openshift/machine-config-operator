@@ -115,6 +115,8 @@ type Daemon struct {
 	// booting is true when all initial synchronization to the target
 	// machineconfig is done
 	booting bool
+	// rebootQueued is true when the node is waiting for graceful shutdown
+	rebootQueued bool
 
 	currentConfigPath string
 
@@ -272,6 +274,7 @@ func New(
 	return &Daemon{
 		mock:                  mock,
 		booting:               true,
+		rebootQueued:          false,
 		os:                    hostos,
 		NodeUpdaterClient:     nodeUpdaterClient,
 		bootedOSImageURL:      osImageURL,
@@ -498,6 +501,13 @@ func (dn *Daemon) syncNode(key string) error {
 	// Check for Deleted Node
 	if node.DeletionTimestamp != nil {
 		glog.Infof("Node %s was deleted!", node.Name)
+		return nil
+	}
+
+	// Check for queued reboot. If we attempt to sync while waiting for a reboot,
+	// it will cause the update to start again, so we skip the sync.
+	if dn.rebootQueued {
+		glog.Infof("Node %s is queued for a reboot, skipping sync.", node.Name)
 		return nil
 	}
 
