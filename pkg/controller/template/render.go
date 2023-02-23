@@ -646,6 +646,8 @@ func isOpenShiftManagedDefaultLB(cfg RenderConfig) bool {
 				}
 				return lbType == configv1.LoadBalancerTypeOpenShiftManagedDefault
 			}
+			glog.Info("VSphere UPI doesn't populate VSphere PlatformStatus field. In that case we should return false")
+			return false
 		case configv1.NutanixPlatformType:
 			if cfg.Infra.Status.PlatformStatus.Nutanix != nil {
 				if cfg.Infra.Status.PlatformStatus.Nutanix.LoadBalancer != nil {
@@ -658,5 +660,5 @@ func isOpenShiftManagedDefaultLB(cfg RenderConfig) bool {
 			return true
 		}
 	}
-	return true
+	return false
 }
