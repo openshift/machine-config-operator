@@ -101,8 +101,8 @@ contents:
                     fi
                     # Only leave the first 3 nameservers in /etc/resolv.conf
                     sed -i ':a $!{N; ba}; s/\(^\|\n\)nameserver/\n# nameserver/4g' "${RESOLVCONFTMPPATH}"
-                    mv -f "${RESOLVCONFTMPPATH}" /etc/resolv.conf
-                    chmod 644 /etc/resolv.conf
+                    chmod 644 "${RESOLVCONFTMPPATH}"
+                    mv -Zf "${RESOLVCONFTMPPATH}" /etc/resolv.conf
                     # Workaround for bz 1929160. Reload NetworkManager to force it to
                     # re-run the lookup of the hostname now that we know we have DNS
                     # servers configured correctly in resolv.conf.
