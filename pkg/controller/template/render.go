@@ -36,6 +36,7 @@ const (
 	unitsDir       = "units"
 	platformBase   = "_base"
 	platformOnPrem = "on-prem"
+	sno            = "sno"
 )
 
 // generateTemplateMachineConfigs returns MachineConfig objects from the templateDir and a config object
@@ -196,6 +197,19 @@ func filterTemplates(toFilter map[string]string, path string, config *RenderConf
 	return filepath.Walk(path, walkFn)
 }
 
+func getPaths(config *RenderConfig, platformString string) []string {
+	platformBasedPaths := []string{platformBase, platformString}
+	if onPremPlatform(config.Infra.Status.PlatformStatus.Type) {
+		platformBasedPaths = append(platformBasedPaths, platformOnPrem)
+	}
+
+	if config.Infra.Status.ControlPlaneTopology == configv1.SingleReplicaTopologyMode {
+		platformBasedPaths = append(platformBasedPaths, sno)
+	}
+
+	return platformBasedPaths
+}
+
 func generateMachineConfigForName(config *RenderConfig, role, name, templateDir, path string, commonAdded *bool) (*mcfgv1.MachineConfig, error) {
 	platformString, err := platformStringFromControllerConfigSpec(config.ControllerConfigSpec)
 	if err != nil {
@@ -203,12 +217,10 @@ func generateMachineConfigForName(config *RenderConfig, role, name, templateDir,
 	}
 
 	platformDirs := []string{}
+	platformBasedPaths := getPaths(config, platformString)
 	if !*commonAdded {
 		// Loop over templates/common which applies everywhere
-		for _, dir := range []string{platformBase, platformOnPrem, platformString} {
-			if dir == platformOnPrem && !onPremPlatform(config.Infra.Status.PlatformStatus.Type) {
-				continue
-			}
+		for _, dir := range platformBasedPaths {
 			basePath := filepath.Join(templateDir, "common", dir)
 			exists, err := existsDir(basePath)
 			if err != nil {
@@ -221,12 +233,8 @@ func generateMachineConfigForName(config *RenderConfig, role, name, templateDir,
 		}
 		*commonAdded = true
 	}
-
 	// And now over the target e.g. templates/master/00-master,01-master-container-runtime,01-master-kubelet
-	for _, dir := range []string{platformBase, platformOnPrem, platformString} {
-		if dir == platformOnPrem && !onPremPlatform(config.Infra.Status.PlatformStatus.Type) {
-			continue
-		}
+	for _, dir := range platformBasedPaths {
 		platformPath := filepath.Join(path, dir)
 		exists, err := existsDir(platformPath)
 		if err != nil {
