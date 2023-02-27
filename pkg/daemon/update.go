@@ -463,6 +463,8 @@ func calculatePostConfigChangeAction(diff *machineConfigDiff, diffFileSet []stri
 }
 
 // update the node to the provided node configuration.
+//
+//nolint:gocyclo
 func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
 	oldConfig = canonicalizeEmptyMC(oldConfig)
 
@@ -555,6 +557,21 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 			if err := dn.updateSSHKeys(oldIgnConfig.Passwd.Users); err != nil {
 				errs := kubeErrs.NewAggregate([]error{err, retErr})
 				retErr = fmt.Errorf("error rolling back SSH keys updates: %w", errs)
+				return
+			}
+		}
+	}()
+
+	// Set password hash
+	if err := dn.SetPasswordHash(newIgnConfig.Passwd.Users); err != nil {
+		return err
+	}
+
+	defer func() {
+		if retErr != nil {
+			if err := dn.SetPasswordHash(oldIgnConfig.Passwd.Users); err != nil {
+				errs := kubeErrs.NewAggregate([]error{err, retErr})
+				retErr = fmt.Errorf("error rolling back password hash updates: %w", errs)
 				return
 			}
 		}
@@ -801,6 +818,7 @@ func reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineConfigDif
 	// for setting/updating SSHAuthorizedKeys for the only allowed user "core".
 	// otherwise we can't fix it if something changed here.
 	passwdChanged := !reflect.DeepEqual(oldIgn.Passwd, newIgn.Passwd)
+
 	if passwdChanged {
 		if !reflect.DeepEqual(oldIgn.Passwd.Groups, newIgn.Passwd.Groups) {
 			return nil, fmt.Errorf("ignition Passwd Groups section contains changes")
@@ -816,6 +834,7 @@ func reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineConfigDif
 					return nil, fmt.Errorf("ignition passwd user section contains unsupported changes: non-core user")
 				}
 			}
+
 			glog.Infof("user data to be verified before ssh update: %v", newIgn.Passwd.Users[len(newIgn.Passwd.Users)-1])
 			if err := verifyUserFields(newIgn.Passwd.Users[len(newIgn.Passwd.Users)-1]); err != nil {
 				return nil, err
@@ -879,19 +898,20 @@ func reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineConfigDif
 	return mcDiff, nil
 }
 
-// verifyUserFields returns nil if the user Name = "core", if 1 or more SSHKeys exist for
-// this user and if all other fields in User are empty.
+// verifyUserFields returns nil for the user Name = "core" if 1 or more SSHKeys exist for
+// this user or if a password exists for this user and if all other fields in User are empty.
 // Otherwise, an error will be returned and the proposed config will not be reconcilable.
 // At this time we do not support non-"core" users or any changes to the "core" user
-// outside of SSHAuthorizedKeys.
+// outside of SSHAuthorizedKeys and passwordHash.
 func verifyUserFields(pwdUser ign3types.PasswdUser) error {
 	emptyUser := ign3types.PasswdUser{}
 	tempUser := pwdUser
-	if tempUser.Name == constants.CoreUserName && len(tempUser.SSHAuthorizedKeys) >= 1 {
+	if tempUser.Name == constants.CoreUserName && ((tempUser.PasswordHash) != nil || len(tempUser.SSHAuthorizedKeys) >= 1) {
 		tempUser.Name = ""
 		tempUser.SSHAuthorizedKeys = nil
+		tempUser.PasswordHash = nil
 		if !reflect.DeepEqual(emptyUser, tempUser) {
-			return fmt.Errorf("ignition passwd user section contains unsupported changes: non-sshKey changes")
+			return fmt.Errorf("SSH keys and password hash are not reconcilable")
 		}
 		glog.Info("SSH Keys reconcilable")
 	} else {
@@ -1568,6 +1588,39 @@ func (dn *Daemon) atomicallyWriteSSHKey(keys string) error {
 	}
 
 	glog.V(2).Infof("Wrote SSHKeys at %s", authKeyPath)
+
+	return nil
+}
+
+// Set a given PasswdUser's Password Hash
+func (dn *Daemon) SetPasswordHash(newUsers []ign3types.PasswdUser) error {
+	// confirm that user exits
+	if len(newUsers) == 0 {
+		return nil
+	}
+
+	var uErr user.UnknownUserError
+	switch _, err := user.Lookup(constants.CoreUserName); {
+	case err == nil:
+	case errors.As(err, &uErr):
+		glog.Info("core user does not exist, and creating users is not supported, so ignoring configuration specified for core user")
+		return nil
+	default:
+		return fmt.Errorf("failed to check if user core exists: %w", err)
+	}
+
+	// SetPasswordHash sets the password hash of the specified user.
+	for _, u := range newUsers {
+		pwhash := "*"
+		if u.PasswordHash != nil && *u.PasswordHash != "" {
+			pwhash = *u.PasswordHash
+		}
+
+		if out, err := exec.Command("usermod", "-p", pwhash, u.Name).CombinedOutput(); err != nil {
+			return fmt.Errorf("Failed to change password for %s: %s:%w", u.Name, out, err)
+		}
+		glog.Info("Password has been configured")
+	}
 
 	return nil
 }
