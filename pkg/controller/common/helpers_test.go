@@ -300,7 +300,8 @@ func TestMergeMachineConfigs(t *testing.T) {
 			Extensions: extensions,
 		},
 	}
-	outIgn = ign3types.Config{
+
+	machineConfigIgnSSHUser := helpers.CreateMachineConfigFromIgnition(ign3types.Config{
 		Ignition: ign3types.Ignition{
 			Version: ign3types.MaxVersion.String(),
 		},
@@ -309,15 +310,29 @@ func TestMergeMachineConfigs(t *testing.T) {
 				{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"1234"}},
 			},
 		},
-	}
-	rawOutIgn, err = json.Marshal(outIgn)
-	machineConfigIgn := &mcfgv1.MachineConfig{
-		Spec: mcfgv1.MachineConfigSpec{
-			Config: runtime.RawExtension{
-				Raw: rawOutIgn,
+	})
+
+	machineConfigIgnPasswdHashUser := helpers.CreateMachineConfigFromIgnition(ign3types.Config{
+		Ignition: ign3types.Ignition{
+			Version: ign3types.MaxVersion.String(),
+		},
+		Passwd: ign3types.Passwd{
+			Users: []ign3types.PasswdUser{
+				{Name: "core", PasswordHash: helpers.StrToPtr("testpass")},
 			},
 		},
-	}
+	})
+
+	machineConfigIgn := helpers.CreateMachineConfigFromIgnition(ign3types.Config{
+		Ignition: ign3types.Ignition{
+			Version: ign3types.MaxVersion.String(),
+		},
+		Passwd: ign3types.Passwd{
+			Users: []ign3types.PasswdUser{
+				{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"5678"}},
+			},
+		},
+	})
 
 	// Now merge all of the above
 	inMachineConfigs = []*mcfgv1.MachineConfig{
@@ -327,7 +342,10 @@ func TestMergeMachineConfigs(t *testing.T) {
 		machineConfigExtensions,
 		machineConfigIgn,
 		machineConfigFIPS,
+		machineConfigIgnPasswdHashUser,
+		machineConfigIgnSSHUser,
 	}
+
 	mergedMachineConfig, err = MergeMachineConfigs(inMachineConfigs, cconfig)
 	require.Nil(t, err)
 
@@ -336,7 +354,16 @@ func TestMergeMachineConfigs(t *testing.T) {
 			OSImageURL:      "overriddenURL",
 			KernelArguments: kargs,
 			Config: runtime.RawExtension{
-				Raw: rawOutIgn,
+				Raw: helpers.MarshalOrDie(ign3types.Config{
+					Ignition: ign3types.Ignition{
+						Version: ign3types.MaxVersion.String(),
+					},
+					Passwd: ign3types.Passwd{
+						Users: []ign3types.PasswdUser{
+							{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"5678", "1234"}, PasswordHash: helpers.StrToPtr("testpass")},
+						},
+					},
+				}),
 			},
 			FIPS:       true,
 			KernelType: KernelTypeRealtime,
@@ -344,7 +371,6 @@ func TestMergeMachineConfigs(t *testing.T) {
 		},
 	}
 	assert.Equal(t, *mergedMachineConfig, *expectedMachineConfig)
-
 }
 
 func TestRemoveIgnDuplicateFilesAndUnits(t *testing.T) {
