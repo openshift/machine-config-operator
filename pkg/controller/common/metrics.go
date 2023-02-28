@@ -17,13 +17,6 @@ const (
 
 // MCC Metrics
 var (
-	// MachineConfigControllerPausedPoolKubeletCA logs when a certificate rotation is being held up by pause
-	MachineConfigControllerPausedPoolKubeletCA = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "machine_config_controller_paused_pool_kubelet_ca",
-			Help: "Set to the unix timestamp in utc of the current certificate expiry date if a certificate rotation is pending in specified paused pool",
-		}, []string{"pool"})
-
 	// OSImageURLOverride tells whether cluster is using default OS image or has been overridden by user
 	OSImageURLOverride = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
@@ -41,7 +34,6 @@ var (
 
 func RegisterMCCMetrics() error {
 	err := RegisterMetrics([]prometheus.Collector{
-		MachineConfigControllerPausedPoolKubeletCA,
 		OSImageURLOverride,
 		MCCDrainErr,
 	})
