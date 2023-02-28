@@ -418,7 +418,7 @@ func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newC
 
 func calculatePostConfigChangeActionFromFileDiffs(diffFileSet []string) (actions []string) {
 	filesPostConfigChangeActionNone := []string{
-		"/etc/kubernetes/kubelet-ca.crt",
+		caBundleFilePath,
 		"/var/lib/kubelet/config.json",
 	}
 	filesPostConfigChangeActionReloadCrio := []string{
