@@ -267,6 +267,25 @@ func WaitForPausedConfig(t *testing.T, cs *framework.ClientSet, pool string) err
 	return nil
 }
 
+// WaitForMCDToSyncCert waits for the MCD to write annotation on the latest controllerconfig resourceVersion,
+// to indicate that is has completed the certificate write
+func WaitForMCDToSyncCert(t *testing.T, cs *framework.ClientSet, node corev1.Node, resourceVersion string) error {
+	if err := wait.PollImmediate(2*time.Second, 2*time.Minute, func() (bool, error) {
+		n, err := cs.CoreV1Interface.Nodes().Get(context.TODO(), node.Name, metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+
+		if n.Annotations[constants.ControllerConfigResourceVersionKey] == resourceVersion {
+			return true, nil
+		}
+		return false, nil
+	}); err != nil {
+		t.Errorf("Machine config daemon never wrote updated controllerconfig resourceVersion annotation: %v", err)
+	}
+	return nil
+}
+
 // ForceKubeApiserverCertificateRotation sets the kube-apiserver-to-kubelet-signer's not-after date to nil, which causes the
 // apiserver to rotate it
 func ForceKubeApiserverCertificateRotation(cs *framework.ClientSet) error {
@@ -274,6 +293,18 @@ func ForceKubeApiserverCertificateRotation(cs *framework.ClientSet) error {
 	certPatch := fmt.Sprintf(`[{"op":"replace","path":"/metadata/annotations/auth.openshift.io~1certificate-not-after","value": null }]`)
 	_, err := cs.Secrets("openshift-kube-apiserver-operator").Patch(context.TODO(), "kube-apiserver-to-kubelet-signer", types.JSONPatchType, []byte(certPatch), metav1.PatchOptions{})
 	return err
+}
+
+// GetKubeletCABundleFromConfigmap fetches the latest kubelet ca bundle data from
+func GetKubeletCABundleFromConfigmap(cs *framework.ClientSet) (string, error) {
+	certBundle, err := cs.ConfigMaps("openshift-config-managed").Get(context.TODO(), "kube-apiserver-client-ca", metav1.GetOptions{})
+	if err != nil {
+		return "", fmt.Errorf("Could not get in-cluster kube-apiserver-client-ca configmap")
+	}
+	if cert, ok := certBundle.Data["ca-bundle.crt"]; ok {
+		return cert, nil
+	}
+	return "", fmt.Errorf("Could not find ca-bundle")
 }
 
 // LabelRandomNodeFromPool gets all nodes in pool and chooses one at random to label
