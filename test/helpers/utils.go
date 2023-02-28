@@ -23,7 +23,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/vincent-petithory/dataurl"
-	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
@@ -265,25 +264,6 @@ func WaitForPausedConfig(t *testing.T, cs *framework.ClientSet, pool string) err
 		t.Errorf("Machine config pool never entered the state where configuration was waiting behind pause: %v", err)
 	}
 	return nil
-}
-
-// GetMonitoringToken retrieves the token from the openshift-monitoring secrets in the prometheus-k8s namespace.
-// It is equivalent to "oc sa get-token prometheus-k8s -n openshift-monitoring"
-func GetMonitoringToken(t *testing.T, cs *framework.ClientSet) (string, error) {
-	token, err := cs.
-		ServiceAccounts("openshift-monitoring").
-		CreateToken(
-			context.TODO(),
-			"prometheus-k8s",
-			&authenticationv1.TokenRequest{
-				Spec: authenticationv1.TokenRequestSpec{},
-			},
-			metav1.CreateOptions{},
-		)
-	if err != nil {
-		return "", fmt.Errorf("Could not request openshift-monitoring token")
-	}
-	return token.Status.Token, nil
 }
 
 // ForceKubeApiserverCertificateRotation sets the kube-apiserver-to-kubelet-signer's not-after date to nil, which causes the
