@@ -779,6 +779,74 @@ func TestIgn3Cfg(t *testing.T) {
 	require.Nil(t, err)
 }
 
+// Test case for correct certificate rotation, even if a pool is paused
+func TestMCDRotatesCertsOnPausedPool(t *testing.T) {
+	var testPool = "master"
+
+	cs := framework.NewClientSet("")
+
+	// Get the machine config pool
+	mcp, err := cs.MachineConfigPools().Get(context.TODO(), testPool, metav1.GetOptions{})
+	require.Nil(t, err)
+
+	// Update our copy of the pool
+	newMcp := mcp.DeepCopy()
+	newMcp.Spec.Paused = true
+
+	t.Logf("Pausing pool")
+
+	// Update the pool to be paused
+	_, err = cs.MachineConfigPools().Update(context.TODO(), newMcp, metav1.UpdateOptions{})
+	require.Nil(t, err)
+	t.Logf("Paused")
+
+	// Rotate the certificates
+	t.Logf("Patching certificate")
+	err = helpers.ForceKubeApiserverCertificateRotation(cs)
+	require.Nil(t, err)
+	t.Logf("Patched")
+
+	// Verify the pool is paused and the config is pending but not rolling out
+	t.Logf("Waiting for rendered config to get stuck behind pause")
+	err = helpers.WaitForPausedConfig(t, cs, testPool)
+	require.Nil(t, err)
+	t.Logf("Certificate stuck behind paused (as expected)")
+
+	// Get the latest certificate from the configmap
+	inClusterCert, err := helpers.GetKubeletCABundleFromConfigmap(cs)
+	require.Nil(t, err)
+
+	// Get the on-disk state for the cert
+	nodes, err := helpers.GetNodesByRole(cs, testPool)
+	selectedNode := nodes[0]
+	controllerConfig, err := cs.ControllerConfigs().Get(context.TODO(), "machine-config-controller", metav1.GetOptions{})
+	require.Nil(t, err)
+	err = helpers.WaitForMCDToSyncCert(t, cs, selectedNode, controllerConfig.ResourceVersion)
+	require.Nil(t, err)
+	require.NotEmpty(t, nodes)
+	onDiskCert := helpers.ExecCmdOnNode(t, cs, selectedNode, "cat", "/rootfs/etc/kubernetes/kubelet-ca.crt")
+
+	assert.Equal(t, inClusterCert, onDiskCert)
+	t.Logf("The cert was properly rotated behind pause\n")
+
+	// Set the pool back to unpaused
+	mcp2, err := cs.MachineConfigPools().Get(context.TODO(), testPool, metav1.GetOptions{})
+	require.Nil(t, err)
+
+	newMcp2 := mcp2.DeepCopy()
+	newMcp2.Spec.Paused = false
+
+	t.Logf("Unpausing pool\n")
+	_, err = cs.MachineConfigPools().Update(context.TODO(), newMcp2, metav1.UpdateOptions{})
+	require.Nil(t, err)
+	t.Logf("Waiting for config to sync after unpause...")
+
+	// Wait for the pools to settle again, and see that we ran into no errors due to the cert rotation
+	err = helpers.WaitForPoolCompleteAny(t, cs, testPool)
+	require.Nil(t, err)
+
+}
+
 func createMCToAddFileForRole(name, role, filename, data string) *mcfgv1.MachineConfig {
 	mcadd := helpers.CreateMC(fmt.Sprintf("%s-%s", name, uuid.NewUUID()), role)
 
