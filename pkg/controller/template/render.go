@@ -198,11 +198,16 @@ func filterTemplates(toFilter map[string]string, path string, config *RenderConf
 }
 
 func getPaths(config *RenderConfig, platformString string) []string {
-	platformBasedPaths := []string{platformBase, platformString}
+	platformBasedPaths := []string{platformBase}
 	if onPremPlatform(config.Infra.Status.PlatformStatus.Type) {
 		platformBasedPaths = append(platformBasedPaths, platformOnPrem)
 	}
 
+	// specific platform should be the last one in order
+	// to override on-prem files in case needed
+	platformBasedPaths = append(platformBasedPaths, platformString)
+
+	// sno is specific case and it should override even specific platform files
 	if config.Infra.Status.ControlPlaneTopology == configv1.SingleReplicaTopologyMode {
 		platformBasedPaths = append(platformBasedPaths, sno)
 	}
