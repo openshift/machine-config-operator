@@ -24,6 +24,7 @@ import (
 const (
 	//nolint:gosec
 	bootstrapTokenDir = "/etc/mcs/bootstrap-token"
+	caBundleFilePath  = "/etc/kubernetes/kubelet-ca.crt"
 )
 
 // ensure clusterServer implements the
@@ -33,6 +34,7 @@ var _ = Server(&clusterServer{})
 type clusterServer struct {
 	machineConfigPoolLister v1.MachineConfigPoolLister
 	machineConfigLister     v1.MachineConfigLister
+	controllerConfigLister  v1.ControllerConfigLister
 
 	kubeconfigFunc kubeconfigFunc
 }
@@ -64,20 +66,27 @@ func NewClusterServer(kubeConfig, apiserverURL string) (Server, error) {
 	machineConfigClient := clientsBuilder.MachineConfigClientOrDie("machine-config-shared-informer")
 	sharedInformerFactory := mcfginformers.NewSharedInformerFactory(machineConfigClient, resyncPeriod()())
 
-	mcpInformer, mcInformer := sharedInformerFactory.Machineconfiguration().V1().MachineConfigPools(), sharedInformerFactory.Machineconfiguration().V1().MachineConfigs()
-	mcpLister, mcLister := mcpInformer.Lister(), mcInformer.Lister()
-	mcpListerHasSynced, mcListerHasSynced := mcpInformer.Informer().HasSynced, mcInformer.Informer().HasSynced
+	mcpInformer, mcInformer, ccInformer :=
+		sharedInformerFactory.Machineconfiguration().V1().MachineConfigPools(),
+		sharedInformerFactory.Machineconfiguration().V1().MachineConfigs(),
+		sharedInformerFactory.Machineconfiguration().V1().ControllerConfigs()
+	mcpLister, mcLister, ccLister := mcpInformer.Lister(), mcInformer.Lister(), ccInformer.Lister()
+	mcpListerHasSynced, mcListerHasSynced, ccListerHasSynced :=
+		mcpInformer.Informer().HasSynced,
+		mcInformer.Informer().HasSynced,
+		ccInformer.Informer().HasSynced
 
 	var informerStopCh chan struct{}
 	go sharedInformerFactory.Start(informerStopCh)
 
-	if !cache.WaitForCacheSync(informerStopCh, mcpListerHasSynced, mcListerHasSynced) {
+	if !cache.WaitForCacheSync(informerStopCh, mcpListerHasSynced, mcListerHasSynced, ccListerHasSynced) {
 		return nil, errors.New("failed to wait for cache sync")
 	}
 
 	return &clusterServer{
 		machineConfigPoolLister: mcpLister,
 		machineConfigLister:     mcLister,
+		controllerConfigLister:  ccLister,
 		kubeconfigFunc:          func() ([]byte, []byte, error) { return kubeconfigFromSecret(bootstrapTokenDir, apiserverURL) },
 	}, nil
 }
@@ -108,6 +117,23 @@ func (cs *clusterServer) GetConfig(cr poolRequest) (*runtime.RawExtension, error
 	ignConf, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
 	if err != nil {
 		return nil, fmt.Errorf("parsing Ignition config failed with error: %w", err)
+	}
+
+	// Update the kubelet cert bundle to the latest in the controllerconfig, in case the pool was paused
+	// This also means that the /etc/mcs-machine-config-content.json written to disk will be a lie
+	// TODO(jerzhang): improve this process once we have a proper cert management model
+	cc, err := cs.controllerConfigLister.Get(ctrlcommon.ControllerConfigName)
+	if err != nil {
+		return nil, fmt.Errorf("could not get controllerconfig: %w", err)
+	}
+	kubeAPIServerServingCABytes := cc.Spec.KubeAPIServerServingCAData
+
+	for idx, file := range ignConf.Storage.Files {
+		if file.Path == caBundleFilePath {
+			source := getEncodedContent(string(kubeAPIServerServingCABytes))
+			ignConf.Storage.Files[idx].Contents.Source = &source
+			break
+		}
 	}
 
 	appenders := getAppenders(currConf, cr.version, cs.kubeconfigFunc)
