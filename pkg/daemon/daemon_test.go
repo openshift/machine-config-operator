@@ -151,6 +151,7 @@ func (f *fixture) newController() *Daemon {
 		f.kubeclient,
 		i.Machineconfiguration().V1().MachineConfigs(),
 		k8sI.Core().V1().Nodes(),
+		i.Machineconfiguration().V1().ControllerConfigs(),
 		false,
 		"",
 	)
