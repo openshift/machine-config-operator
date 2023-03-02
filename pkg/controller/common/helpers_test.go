@@ -9,6 +9,8 @@ import (
 	ign2types "github.com/coreos/ignition/config/v2_2/types"
 	ign3 "github.com/coreos/ignition/v2/config/v3_2"
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
+	ign3_4 "github.com/coreos/ignition/v2/config/v3_4"
+	ign3_4types "github.com/coreos/ignition/v2/config/v3_4/types"
 	validate3 "github.com/coreos/ignition/v2/config/validate"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -243,6 +245,29 @@ func TestParseAndConvert(t *testing.T) {
 	testIgn3Config.Ignition.Version = "3.2.0"
 	assert.Equal(t, testIgn3Config, convertedIgn)
 
+	// Make a an Ign 3.4 cfg with kargs
+	testIgn3Config.Ignition.Version = "3.4.0"
+
+	var ign34 ign3_4types.Config
+	// Parse this up to 3.4 specifically so we can test a downgrade that
+	// is using kargs
+	ign34, _, err = ign3_4.ParseCompatibleVersion(rawIgn)
+	require.Nil(t, err)
+	ign34.KernelArguments = ign3_4types.KernelArguments{
+		ShouldExist:    []ign3_4types.KernelArgument{"one", "two", "three"},
+		ShouldNotExist: []ign3_4types.KernelArgument{"four", "five", "six"},
+	}
+	// turn it into a raw []byte
+	rawIgn = helpers.MarshalOrDie(ign34)
+
+	// check that it was parsed successfully back to 3.2
+	// this should strip out the kernel args
+	convertedIgn, err = ParseAndConvertConfig(rawIgn)
+	require.Nil(t, err)
+	testIgn3Config.Ignition.Version = "3.2.0"
+	// we compare to testign3Config because kargs should get stripped out
+	assert.Equal(t, testIgn3Config, convertedIgn)
+
 	// Make a bad Ign3 cfg
 	testIgn3Config.Ignition.Version = "21.0.0"
 	rawIgn = helpers.MarshalOrDie(testIgn3Config)
@@ -258,7 +283,7 @@ func TestMergeMachineConfigs(t *testing.T) {
 	cconfig.Spec.OSImageURL = "testURL"
 	cconfig.Spec.BaseOSContainerImage = "newformatURL"
 	fips := true
-	kargs := []string{"testKarg"}
+	kargs := []string{"testKarg", "kargFromIgnitionDowngrade"}
 	extensions := []string{"testExtensions"}
 
 	// Test that a singular base config that sets FIPS also sets other defaults correctly
@@ -343,6 +368,24 @@ func TestMergeMachineConfigs(t *testing.T) {
 		},
 	})
 
+	// TODO(jkyros): remove this when we raise the ignition default to 3.4
+	machineConfigIgnKernelArgsDowngrade := helpers.CreateMachineConfigFromIgnition(ign3_4types.Config{
+		Ignition: ign3_4types.Ignition{
+			Version: ign3_4types.MaxVersion.String(),
+		},
+		KernelArguments: ign3_4types.KernelArguments{
+			ShouldExist:    []ign3_4types.KernelArgument{"kargFromIgnitionDowngrade"},
+			ShouldNotExist: []ign3_4types.KernelArgument{},
+		},
+	})
+
+	// we added some v3 specific logic for kargs, make sure we didn't break the v2 path
+	machineConfigIgnV2Merge := helpers.CreateMachineConfigFromIgnition(ign2types.Config{
+		Ignition: ign2types.Ignition{
+			Version: ign2types.MaxVersion.String(),
+		},
+	})
+
 	machineConfigIgn := helpers.CreateMachineConfigFromIgnition(ign3types.Config{
 		Ignition: ign3types.Ignition{
 			Version: ign3types.MaxVersion.String(),
@@ -364,6 +407,8 @@ func TestMergeMachineConfigs(t *testing.T) {
 		machineConfigFIPS,
 		machineConfigIgnPasswdHashUser,
 		machineConfigIgnSSHUser,
+		machineConfigIgnKernelArgsDowngrade,
+		machineConfigIgnV2Merge,
 	}
 
 	mergedMachineConfig, err = MergeMachineConfigs(inMachineConfigs, cconfig)
