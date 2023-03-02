@@ -796,7 +796,9 @@ func TestIgn3Cfg(t *testing.T) {
 	assert.Equal(t, infraNode.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
 	assert.Equal(t, infraNode.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
 
-	foundSSH := helpers.ExecCmdOnNode(t, cs, infraNode, "grep", "1234_test_ign3", "/rootfs/home/core/.ssh/authorized_keys")
+	sshPaths := helpers.GetSSHPaths(helpers.GetOSReleaseForNode(t, cs, infraNode).OS)
+
+	foundSSH := helpers.ExecCmdOnNode(t, cs, infraNode, "grep", "1234_test_ign3", filepath.Join("/rootfs", sshPaths.Expected))
 	if !strings.Contains(foundSSH, "1234_test_ign3") {
 		t.Fatalf("updated ssh keys not found in authorized_keys, got %s", foundSSH)
 	}
