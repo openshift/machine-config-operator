@@ -1167,7 +1167,7 @@ func (dn *CoreOSDaemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig)
 	}
 
 	// TODO: Drop this code and use https://github.com/coreos/rpm-ostree/issues/2542 instead
-	defaultKernel := []string{"kernel", "kernel-core", "kernel-modules", "kernel-modules-extra"}
+	defaultKernel := []string{"kernel", "kernel-core", "kernel-modules", "kernel-modules-core", "kernel-modules-extra"}
 	// Note this list explicitly does *not* include kernel-rt as that is a meta-package that tries to pull in a lot
 	// of other dependencies we don't want for historical reasons.
 	// kernel-rt also has a split off kernel-rt-kvm subpackage because it's in a separate subscription in RHEL.
