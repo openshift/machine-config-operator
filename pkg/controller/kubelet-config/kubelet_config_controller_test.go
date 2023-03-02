@@ -1,6 +1,7 @@
 package kubeletconfig
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"testing"
@@ -10,6 +11,7 @@ import (
 	osev1 "github.com/openshift/api/config/v1"
 	oseconfigfake "github.com/openshift/client-go/config/clientset/versioned/fake"
 	oseinformersv1 "github.com/openshift/client-go/config/informers/externalversions"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -30,6 +32,7 @@ import (
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
 	informers "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions"
+	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/openshift/machine-config-operator/test/helpers"
 )
 
@@ -932,6 +935,86 @@ func TestKubeletConfigResync(t *testing.T) {
 			}
 			val = kc2.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
 			require.Equal(t, "1", val)
+		})
+	}
+}
+
+// TestCleanUpDuplicatedMC test the function removes the MC from the MC list
+// if the MC is of old GeneratedByControllerVersionAnnotationKey.
+func TestCleanUpDuplicatedMC(t *testing.T) {
+	v := version.Hash
+	version.Hash = "3.2.0"
+	versionDegrade := "3.1.0"
+	defer func() {
+		version.Hash = v
+	}()
+	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
+		t.Run(string(platform), func(t *testing.T) {
+			f := newFixture(t)
+			f.newController()
+			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
+			f.ccLister = append(f.ccLister, cc)
+			f.mcpLister = append(f.mcpLister, mcp)
+
+			// test case: kubeletconfig kc1, two machine config was generated from it: 99-master-generated-kubelet, 99-master-generated-kubelet-1
+			// action: upgrade, only 99-master-generated-kubelet-1 will update GeneratedByControllerVersionAnnotationKey
+			// expect result: 99-master-generated-kubelet will be deleted
+			kc1 := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
+			kc1.SetAnnotations(map[string]string{
+				ctrlcommon.MCNameSuffixAnnotationKey: "1",
+			})
+			f.mckLister = append(f.mckLister, kc1)
+			f.objects = append(f.objects, kc1)
+
+			ctrl := f.newController()
+
+			// machineconfig with wrong version needs to be removed
+			machineConfigDegrade := mcfgv1.MachineConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "99-master-generated-kubelet", UID: types.UID(utilrand.String(5))},
+			}
+			machineConfigDegrade.Annotations = make(map[string]string)
+			machineConfigDegrade.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey] = versionDegrade
+			ctrl.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), &machineConfigDegrade, metav1.CreateOptions{})
+
+			// MC will be upgraded
+			machineConfigUpgrade := mcfgv1.MachineConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "99-master-generated-kubelet-1", UID: types.UID(utilrand.String(5))},
+			}
+			machineConfigUpgrade.Annotations = make(map[string]string)
+			machineConfigUpgrade.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey] = versionDegrade
+			ctrl.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), &machineConfigUpgrade, metav1.CreateOptions{})
+
+			// machine config has no substring "generated-xxx" will stay
+			machineConfigDegradeNotGen := mcfgv1.MachineConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "custom-kubelet", UID: types.UID(utilrand.String(5))},
+			}
+			machineConfigDegradeNotGen.Annotations = make(map[string]string)
+			machineConfigDegradeNotGen.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey] = versionDegrade
+			ctrl.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), &machineConfigDegradeNotGen, metav1.CreateOptions{})
+
+			// before the upgrade, 3 machine config exist
+			mcList, err := ctrl.client.MachineconfigurationV1().MachineConfigs().List(context.TODO(), metav1.ListOptions{})
+			require.NoError(t, err)
+			require.Len(t, mcList.Items, 3)
+
+			if err := ctrl.syncHandler(getKey(kc1, t)); err != nil {
+				t.Errorf("syncHandler returned: %v", err)
+			}
+
+			// successful test: only custom and upgraded MCs stay
+			mcList, err = ctrl.client.MachineconfigurationV1().MachineConfigs().List(context.TODO(), metav1.ListOptions{})
+			require.NoError(t, err)
+			assert.Equal(t, 2, len(mcList.Items))
+			actual := make(map[string]mcfgv1.MachineConfig)
+			for _, mc := range mcList.Items {
+				require.GreaterOrEqual(t, len(mc.Annotations), 1)
+				actual[mc.Name] = mc
+			}
+			_, ok := actual[machineConfigDegradeNotGen.Name]
+			require.True(t, ok, "expect custom-kubelet in the list, but got false")
+			_, ok = actual[machineConfigUpgrade.Name]
+			require.True(t, ok, "expect 99-master-generated-kubelet-1 in the list, but got false")
 		})
 	}
 }
