@@ -146,7 +146,7 @@ func (nw *clusterNodeWriter) SetDone(dcAnnotation string) error {
 		// clear out any Degraded/Unreconcilable reason
 		constants.MachineConfigDaemonReasonAnnotationKey: "",
 	}
-	mcdState.WithLabelValues(constants.MachineConfigDaemonStateDone, "").SetToCurrentTime()
+	UpdateStateMetric(mcdState, constants.MachineConfigDaemonStateDone, "")
 	respChan := make(chan response, 1)
 	nw.writer <- message{
 		annos:           annos,
@@ -161,7 +161,7 @@ func (nw *clusterNodeWriter) SetWorking() error {
 	annos := map[string]string{
 		constants.MachineConfigDaemonStateAnnotationKey: constants.MachineConfigDaemonStateWorking,
 	}
-	mcdState.WithLabelValues(constants.MachineConfigDaemonStateWorking, "").SetToCurrentTime()
+	UpdateStateMetric(mcdState, constants.MachineConfigDaemonStateWorking, "")
 	respChan := make(chan response, 1)
 	nw.writer <- message{
 		annos:           annos,
@@ -181,7 +181,7 @@ func (nw *clusterNodeWriter) SetUnreconcilable(err error) error {
 		constants.MachineConfigDaemonStateAnnotationKey:  constants.MachineConfigDaemonStateUnreconcilable,
 		constants.MachineConfigDaemonReasonAnnotationKey: truncatedErr,
 	}
-	mcdState.WithLabelValues(constants.MachineConfigDaemonStateUnreconcilable, truncatedErr).SetToCurrentTime()
+	UpdateStateMetric(mcdState, constants.MachineConfigDaemonStateUnreconcilable, truncatedErr)
 	respChan := make(chan response, 1)
 	nw.writer <- message{
 		annos:           annos,
@@ -205,7 +205,7 @@ func (nw *clusterNodeWriter) SetDegraded(err error) error {
 		constants.MachineConfigDaemonStateAnnotationKey:  constants.MachineConfigDaemonStateDegraded,
 		constants.MachineConfigDaemonReasonAnnotationKey: truncatedErr,
 	}
-	mcdState.WithLabelValues(constants.MachineConfigDaemonStateDegraded, truncatedErr).SetToCurrentTime()
+	UpdateStateMetric(mcdState, constants.MachineConfigDaemonStateDegraded, truncatedErr)
 	respChan := make(chan response, 1)
 	nw.writer <- message{
 		annos:           annos,
