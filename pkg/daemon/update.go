@@ -1151,18 +1151,18 @@ func (dn *CoreOSDaemon) applyExtensions(oldConfig, newConfig *mcfgv1.MachineConf
 
 // switchKernel updates kernel on host with the kernelType specified in MachineConfig.
 // Right now it supports default (traditional) and realtime kernel
-func (dn *CoreOSDaemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig) error {
+func (dn *CoreOSDaemon) switchKernel(newConfig *mcfgv1.MachineConfig) error {
 	// We support Kernel update only on RHCOS and SCOS nodes
 	if !dn.os.IsEL() {
 		glog.Info("updating kernel on non-RHCOS nodes is not supported")
 		return nil
 	}
 
-	oldKtype := canonicalizeKernelType(oldConfig.Spec.KernelType)
 	newKtype := canonicalizeKernelType(newConfig.Spec.KernelType)
 
-	// Do nothing if both old and new KernelType are of type default
-	if oldKtype == ctrlcommon.KernelTypeDefault && newKtype == ctrlcommon.KernelTypeDefault {
+	// In the OS update path, we removed overrides for kernel-rt.  So if the target (new) config
+	// is also default (i.e. throughput) then we have nothing to do.
+	if newKtype == ctrlcommon.KernelTypeDefault {
 		return nil
 	}
 
@@ -1173,21 +1173,9 @@ func (dn *CoreOSDaemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig)
 	// kernel-rt also has a split off kernel-rt-kvm subpackage because it's in a separate subscription in RHEL.
 	realtimeKernel := []string{"kernel-rt-core", "kernel-rt-modules", "kernel-rt-modules-extra", "kernel-rt-kvm"}
 
-	dn.logSystem("Initiating switch from kernel %s to %s", oldKtype, newKtype)
+	dn.logSystem("Initiating switch to kernel %s", newKtype)
 
-	switchingToThroughput := oldKtype == ctrlcommon.KernelTypeRealtime && newKtype == ctrlcommon.KernelTypeDefault
-	if switchingToThroughput {
-		args := []string{"override", "reset"}
-		args = append(args, defaultKernel...)
-		for _, pkg := range realtimeKernel {
-			args = append(args, "--uninstall", pkg)
-		}
-		dn.logSystem("Switching to kernelType=%s, invoking rpm-ostree %+q", newConfig.Spec.KernelType, args)
-		return runRpmOstree(args...)
-	}
-
-	switchingToRealtime := oldKtype == ctrlcommon.KernelTypeDefault && newKtype == ctrlcommon.KernelTypeRealtime
-	if switchingToRealtime {
+	if newKtype == ctrlcommon.KernelTypeRealtime {
 		// Switch to RT kernel
 		args := []string{"override", "remove"}
 		args = append(args, defaultKernel...)
@@ -1198,16 +1186,7 @@ func (dn *CoreOSDaemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig)
 		dn.logSystem("Switching to kernelType=%s, invoking rpm-ostree %+q", newConfig.Spec.KernelType, args)
 		return runRpmOstree(args...)
 	}
-
-	if oldKtype == ctrlcommon.KernelTypeRealtime && newKtype == ctrlcommon.KernelTypeRealtime {
-		if oldConfig.Spec.OSImageURL != newConfig.Spec.OSImageURL {
-			args := []string{"update"}
-			dn.logSystem("Updating rt-kernel packages on host: %+q", args)
-			return runRpmOstree(args...)
-		}
-	}
-
-	return nil
+	return fmt.Errorf("Unhandled kernel type %s", newKtype)
 }
 
 // updateFiles writes files specified by the nodeconfig to disk. it also writes
@@ -1772,6 +1751,56 @@ func (dn *Daemon) InplaceUpdateViaNewContainer(target string) error {
 	return nil
 }
 
+// queueRevertRTKernel undoes the layering of the RT kernel
+func (dn *Daemon) queueRevertRTKernel() error {
+	booted, _, err := dn.NodeUpdaterClient.GetBootedAndStagedDeployment()
+	if err != nil {
+		return err
+	}
+
+	// Before we attempt to do an OS update, we must remove the kernel-rt switch
+	// because in the case of updating from RHEL8 to RHEL9, the kernel packages are
+	// OS version dependent.  See also https://github.com/coreos/rpm-ostree/issues/2542
+	// (Now really what we want to do here is something more like rpm-ostree override reset --kernel
+	//  i.e. the inverse of https://github.com/coreos/rpm-ostree/pull/4322 so that
+	//  we're again not hardcoding even the prefix of kernel packages)
+	kernelOverrides := []string{}
+	kernelRtLayers := []string{}
+	for _, removal := range booted.RequestedBaseRemovals {
+		if removal == "kernel" || strings.HasPrefix(removal, "kernel-") {
+			kernelOverrides = append(kernelOverrides, removal)
+		}
+	}
+	for _, pkg := range booted.RequestedPackages {
+		if strings.HasPrefix(pkg, "kernel-rt-") {
+			kernelRtLayers = append(kernelRtLayers, pkg)
+		}
+	}
+	// We *only* do this switch if the node has done a switch from kernel -> kernel-rt.
+	// We don't want to override any machine-local hotfixes for the kernel package.
+	// Implicitly in this we don't really support machine-local hotfixes for kernel-rt.
+	// The only sane way to handle that is declarative drop-ins, but really we want to
+	// just go to deploying pre-built images and not doing per-node mutation with rpm-ostree
+	// at all.
+	if len(kernelOverrides) > 0 && len(kernelRtLayers) > 0 {
+		args := []string{"override", "reset"}
+		args = append(args, kernelOverrides...)
+		for _, pkg := range kernelRtLayers {
+			args = append(args, "--uninstall", pkg)
+		}
+		err := runRpmOstree(args...)
+		if err != nil {
+			return err
+		}
+	} else if len(kernelOverrides) > 0 || len(kernelRtLayers) > 0 {
+		glog.Infof("notice: detected %d overrides and %d kernel-rt layers", len(kernelOverrides), len(kernelRtLayers))
+	} else {
+		glog.Infof("No kernel overrides or replacement detected")
+	}
+
+	return nil
+}
+
 // updateLayeredOS updates the system OS to the one specified in newConfig
 func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 	newURL := config.Spec.OSImageURL
@@ -2024,6 +2053,15 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 		defer os.Remove(extensionsRepo)
 	}
 
+	// If we have an OS update *or* a kernel type change, then we must undo the RT kernel
+	// enablement.
+	if mcDiff.osUpdate || mcDiff.kernelType {
+		if err := dn.queueRevertRTKernel(); err != nil {
+			mcdPivotErr.Inc()
+			return err
+		}
+	}
+
 	// Update OS
 	if mcDiff.osUpdate {
 		if err := dn.updateLayeredOS(newConfig); err != nil {
@@ -2066,7 +2104,7 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 	}
 
 	// Switch to real time kernel
-	if err := dn.switchKernel(oldConfig, newConfig); err != nil {
+	if err := dn.switchKernel(newConfig); err != nil {
 		return err
 	}
 
@@ -2138,7 +2176,7 @@ func (dn *CoreOSDaemon) applyLegacyOSChanges(mcDiff machineConfigDiff, oldConfig
 	}
 
 	// Switch to real time kernel
-	if err := dn.switchKernel(oldConfig, newConfig); err != nil {
+	if err := dn.switchKernel(newConfig); err != nil {
 		return err
 	}
 
