@@ -1158,17 +1158,25 @@ func (dn *CoreOSDaemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig)
 		return nil
 	}
 
+	oldKtype := canonicalizeKernelType(oldConfig.Spec.KernelType)
+	newKtype := canonicalizeKernelType(newConfig.Spec.KernelType)
+
 	// Do nothing if both old and new KernelType are of type default
-	if canonicalizeKernelType(oldConfig.Spec.KernelType) == ctrlcommon.KernelTypeDefault && canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelTypeDefault {
+	if oldKtype == ctrlcommon.KernelTypeDefault && newKtype == ctrlcommon.KernelTypeDefault {
 		return nil
 	}
 
+	// TODO: Drop this code and use https://github.com/coreos/rpm-ostree/issues/2542 instead
 	defaultKernel := []string{"kernel", "kernel-core", "kernel-modules", "kernel-modules-extra"}
+	// Note this list explicitly does *not* include kernel-rt as that is a meta-package that tries to pull in a lot
+	// of other dependencies we don't want for historical reasons.
+	// kernel-rt also has a split off kernel-rt-kvm subpackage because it's in a separate subscription in RHEL.
 	realtimeKernel := []string{"kernel-rt-core", "kernel-rt-modules", "kernel-rt-modules-extra", "kernel-rt-kvm"}
 
-	dn.logSystem("Initiating switch from kernel %s to %s", canonicalizeKernelType(oldConfig.Spec.KernelType), canonicalizeKernelType(newConfig.Spec.KernelType))
+	dn.logSystem("Initiating switch from kernel %s to %s", oldKtype, newKtype)
 
-	if canonicalizeKernelType(oldConfig.Spec.KernelType) == ctrlcommon.KernelTypeRealtime && canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelTypeDefault {
+	switchingToThroughput := oldKtype == ctrlcommon.KernelTypeRealtime && newKtype == ctrlcommon.KernelTypeDefault
+	if switchingToThroughput {
 		args := []string{"override", "reset"}
 		args = append(args, defaultKernel...)
 		for _, pkg := range realtimeKernel {
@@ -1178,7 +1186,8 @@ func (dn *CoreOSDaemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig)
 		return runRpmOstree(args...)
 	}
 
-	if canonicalizeKernelType(oldConfig.Spec.KernelType) == ctrlcommon.KernelTypeDefault && canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelTypeRealtime {
+	switchingToRealtime := oldKtype == ctrlcommon.KernelTypeDefault && newKtype == ctrlcommon.KernelTypeRealtime
+	if switchingToRealtime {
 		// Switch to RT kernel
 		args := []string{"override", "remove"}
 		args = append(args, defaultKernel...)
@@ -1190,7 +1199,7 @@ func (dn *CoreOSDaemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig)
 		return runRpmOstree(args...)
 	}
 
-	if canonicalizeKernelType(oldConfig.Spec.KernelType) == ctrlcommon.KernelTypeRealtime && canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelTypeRealtime {
+	if oldKtype == ctrlcommon.KernelTypeRealtime && newKtype == ctrlcommon.KernelTypeRealtime {
 		if oldConfig.Spec.OSImageURL != newConfig.Spec.OSImageURL {
 			args := []string{"update"}
 			dn.logSystem("Updating rt-kernel packages on host: %+q", args)
