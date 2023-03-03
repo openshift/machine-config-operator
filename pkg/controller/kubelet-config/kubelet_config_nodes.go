@@ -77,6 +77,9 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 		err := fmt.Errorf("could not fetch Node: %w", err)
 		return err
 	}
+	if err := ctrl.cleanUpDuplicatedMC(managedNodeConfigKeyPrefix); err != nil {
+		return err
+	}
 	// checking if the Node spec is empty and accordingly returning from here.
 	if reflect.DeepEqual(nodeConfig.Spec, osev1.NodeSpec{}) {
 		glog.V(2).Info("empty Node resource found")
@@ -158,9 +161,6 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 			return fmt.Errorf("Could not Create/Update MachineConfig, error: %w", err)
 		}
 		glog.Infof("Applied Node configuration %v on MachineConfigPool %v", key, pool.Name)
-	}
-	if err := ctrl.cleanUpDuplicatedMC(managedNodeConfigKeyPrefix); err != nil {
-		return err
 	}
 	// fetch the kubeletconfigs
 	kcs, err := ctrl.mckLister.List(labels.Everything())
