@@ -36,6 +36,8 @@ type Deployment struct {
 	Origin                  string   `json:"origin"`
 	CustomOrigin            []string `json:"custom-origin"`
 	ContainerImageReference string   `json:"container-image-reference"`
+	RequestedPackages       []string `json:"requested-packages"`
+	RequestedBaseRemovals   []string `json:"requested-base-removals"`
 }
 
 // Client is a handle for interacting with an rpm-ostree based system.
