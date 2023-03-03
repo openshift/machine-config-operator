@@ -1357,7 +1357,7 @@ func (dn *Daemon) getStateAndConfigs(pendingConfigName string) (*stateAndConfigs
 		}
 	}
 
-	mcdState.WithLabelValues(state, degradedReason).SetToCurrentTime()
+	UpdateStateMetric(mcdState, state, degradedReason)
 
 	return &stateAndConfigs{
 		bootstrapping: bootstrapping,
@@ -1700,7 +1700,7 @@ func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, error) {
 			// let's mark it done!
 			glog.Infof("Completing pending config %s", state.pendingConfig.GetName())
 			if err := dn.completeUpdate(state.pendingConfig.GetName()); err != nil {
-				mcdUpdateState.WithLabelValues("", err.Error()).SetToCurrentTime()
+				UpdateStateMetric(mcdUpdateState, "", err.Error())
 				return inDesiredConfig, err
 			}
 
@@ -1721,13 +1721,13 @@ func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, error) {
 		if state.state == constants.MachineConfigDaemonStateDegraded {
 			if err := dn.nodeWriter.SetDone(state.currentConfig.GetName()); err != nil {
 				errLabelStr := fmt.Sprintf("error setting node's state to Done: %v", err)
-				mcdUpdateState.WithLabelValues("", errLabelStr).SetToCurrentTime()
+				UpdateStateMetric(mcdUpdateState, "", errLabelStr)
 				return inDesiredConfig, fmt.Errorf("error setting node's state to Done: %w", err)
 			}
 		}
 
 		glog.Infof("In desired config %s", state.currentConfig.GetName())
-		mcdUpdateState.WithLabelValues(state.currentConfig.GetName(), "").SetToCurrentTime()
+		UpdateStateMetric(mcdUpdateState, state.currentConfig.GetName(), "")
 	}
 
 	// No errors have occurred. Returns true if currentConfig == desiredConfig, false otherwise (needs update)
