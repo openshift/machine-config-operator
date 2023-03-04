@@ -1677,30 +1677,10 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 		if !osMatch {
 			logSystem("Bootstrap pivot required to: %s", targetOSImageURL)
 
-			// Check to see if we have a layered/new format image
-			isLayeredImage, err := dn.NodeUpdaterClient.IsBootableImage(targetOSImageURL)
-			if err != nil {
-				return fmt.Errorf("error checking type of target image: %w", err)
+			if err := dn.updateLayeredOS(state.currentConfig); err != nil {
+				return err
 			}
 
-			if isLayeredImage {
-				// If this is a new format image, we don't have to extract it,
-				// we can just update it the proper way
-				if err := dn.updateLayeredOS(state.currentConfig); err != nil {
-					return err
-				}
-			} else {
-				osImageContentDir, err := ExtractOSImage(targetOSImageURL)
-				if err != nil {
-					return err
-				}
-				if err := dn.updateOS(state.currentConfig, osImageContentDir); err != nil {
-					return err
-				}
-				if err := os.RemoveAll(osImageContentDir); err != nil {
-					return err
-				}
-			}
 			return dn.reboot(fmt.Sprintf("Node will reboot into config %v", state.currentConfig.GetName()))
 		}
 		logSystem("No bootstrap pivot required; unlinking bootstrap node annotations")
