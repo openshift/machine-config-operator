@@ -282,20 +282,6 @@ func (r *RpmOstreeClient) Rebase(imgURL, osImageContentDir string) (changed bool
 	return
 }
 
-// IsBootableImage determines if the image is a bootable (new container formet) image, or a wrapper (old container format)
-func (r *RpmOstreeClient) IsBootableImage(imgURL string) (bool, error) {
-
-	var isBootableImage string
-	var imageData *types.ImageInspectInfo
-	var err error
-	if imageData, _, err = imageInspect(imgURL); err != nil {
-		return false, err
-	}
-	isBootableImage = imageData.Labels["ostree.bootable"]
-
-	return isBootableImage == "true", nil
-}
-
 // RpmOstreeIsNewEnoughForLayering returns true if the version of rpm-ostree on the
 // host system is new enough for layering.
 // VersionData represents the static information about rpm-ostree.
