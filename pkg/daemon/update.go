@@ -25,6 +25,7 @@ import (
 	kubeErrs "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/uuid"
 
+	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
@@ -512,6 +513,17 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 	}
 
 	dn.logSystem("Starting update from %s to %s: %+v", oldConfigName, newConfigName, diff)
+
+	// On a high availabilty setup (standalone OCP, not hypershift or SNO), insert an arbitrary delay to
+	// give a greater chance for any *previously* updated control plane nodes to fully rejoin and
+	// have their etcd instance fully get back up to speed, all containers land on the node etc.
+	// TODO: replace this sleep with something that has a more reliable metric for control plane
+	// node health.
+	if dn.getControlPlaneTopology() == configv1.HighlyAvailableTopologyMode {
+		delay := fmt.Sprintf("%v", controlPlaneUpdateDelay)
+		dn.nodeWriter.Eventf(corev1.EventTypeNormal, "High availablity control plane node; delaying %s for other control plane nodes to quiecese", delay)
+		time.Sleep(controlPlaneUpdateDelay)
+	}
 
 	diffFileSet := ctrlcommon.CalculateConfigFileDiffs(&oldIgnConfig, &newIgnConfig)
 	actions, err := calculatePostConfigChangeAction(diff, diffFileSet)
