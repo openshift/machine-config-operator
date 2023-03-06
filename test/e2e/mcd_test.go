@@ -459,6 +459,15 @@ func TestNoReboot(t *testing.T) {
 	}
 	t.Logf("Node %s has SSH key", infraNode.Name)
 
+	assertExpectedPerms(t, cs, infraNode, "/home/core/.ssh", []string{constants.CoreUserName, constants.CoreGroupName, "700"})
+
+	if sshPaths.Expected == constants.RHCOS9SSHKeyPath {
+		// /home/core/.ssh/authorized_keys.d
+		assertExpectedPerms(t, cs, infraNode, filepath.Dir(constants.RHCOS9SSHKeyPath), []string{constants.CoreUserName, constants.CoreGroupName, "700"})
+	}
+
+	assertExpectedPerms(t, cs, infraNode, sshPaths.Expected, []string{constants.CoreUserName, constants.CoreGroupName, "600"})
+
 	currentEtcShadowContents := helpers.ExecCmdOnNode(t, cs, infraNode, "grep", "^core:", "/rootfs/etc/shadow")
 
 	if currentEtcShadowContents == initialEtcShadowContents {
@@ -466,9 +475,6 @@ func TestNoReboot(t *testing.T) {
 	}
 
 	t.Logf("Node %s has Password Hash", infraNode.Name)
-
-	usernameAndGroup := strings.Split(strings.TrimSuffix(helpers.ExecCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "stat", "--format=%U %G", sshPaths.Expected), "\n"), " ")
-	assert.Equal(t, usernameAndGroup, []string{constants.CoreUserName, constants.CoreGroupName})
 
 	output = helpers.ExecCmdOnNode(t, cs, infraNode, "cat", "/rootfs/proc/uptime")
 	newTime := strings.Split(output, " ")[0]
@@ -841,4 +847,13 @@ func createMCToAddFileForRole(name, role, filename, data string) *mcfgv1.Machine
 
 func createMCToAddFile(name, filename, data string) *mcfgv1.MachineConfig {
 	return createMCToAddFileForRole(name, "worker", filename, data)
+}
+
+// Checks that a file or directory on a given node matches the expected
+// permissions in the form of [username, groupname, octal file permissions].
+func assertExpectedPerms(t *testing.T, cs *framework.ClientSet, node corev1.Node, path string, expectedPerms []string) {
+	t.Helper()
+
+	actualPerms := strings.Split(strings.TrimSuffix(helpers.ExecCmdOnNode(t, cs, node, "chroot", "/rootfs", "stat", "--format=%U %G %a", path), "\n"), " ")
+	assert.Equal(t, expectedPerms, actualPerms, "expected %s to have perms %v, got: %v", path, expectedPerms, actualPerms)
 }
