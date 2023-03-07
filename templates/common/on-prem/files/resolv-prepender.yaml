@@ -17,6 +17,12 @@ contents:
     {{end -}}
     {{end -}}
 
+    function pull_baremetal_runtime_cfg_image {
+        >&2 echo "NM resolv-prepender: Starting download of baremetal runtime cfg image"
+        while ! /usr/bin/podman pull --authfile /var/lib/kubelet/config.json {{ .Images.baremetalRuntimeCfgImage }}; do sleep 1; done
+        >&2 echo "NM resolv-prepender: Download of baremetal runtime cfg image completed"
+    }
+
     function resolv_prepender {
         # If $DHCP6_FQDN_FQDN is not empty and is not localhost.localdomain and static hostname was not already set
         if [[ -n "$DHCP6_FQDN_FQDN" && "$DHCP6_FQDN_FQDN" != "localhost.localdomain" && "$DHCP6_FQDN_FQDN" =~ "." ]] ; then
@@ -39,6 +45,10 @@ contents:
             if [[ ! -e /etc/resolv.conf ]] || ! grep -q nameserver /etc/resolv.conf; then
                 cp /var/run/NetworkManager/resolv.conf /etc/resolv.conf
             fi
+
+            # Ensure baremetalRuntimeCfgImage is pulled in a reliable way before trying to use it
+            # in the subsequent code
+            pull_baremetal_runtime_cfg_image
 
             NAMESERVER_IP="$(/usr/bin/podman run --rm \
                 --authfile /var/lib/kubelet/config.json \
