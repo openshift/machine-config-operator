@@ -530,7 +530,6 @@ func (dn *Daemon) syncNode(key string) error {
 		if oldReason != newReason {
 			glog.Infof("Transitioned from degraded/unreconcilable reason %v -> %v", oldReason, newReason)
 		}
-		glog.Infof("State and Reason: %v %v", newState, newReason)
 		dn.node = node
 	}
 
