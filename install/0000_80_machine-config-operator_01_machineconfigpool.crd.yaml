@@ -317,8 +317,8 @@ spec:
                         'Failed').
                       type: string
               configuration:
-                description: configuration represents the current MachineConfig object
-                  for the machine config pool.
+                description: configuration represents the MachineConfig object
+                  that last successfully rolled out to all nodes.
                 type: object
                 properties:
                   apiVersion:
