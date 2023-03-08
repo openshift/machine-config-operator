@@ -1158,27 +1158,29 @@ func (dn *CoreOSDaemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig)
 		return nil
 	}
 
-	// Do nothing if both old and new KernelType are of type default
-	if canonicalizeKernelType(oldConfig.Spec.KernelType) == ctrlcommon.KernelTypeDefault && canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelTypeDefault {
+	oldKtype := canonicalizeKernelType(oldConfig.Spec.KernelType)
+	newKtype := canonicalizeKernelType(newConfig.Spec.KernelType)
+
+	// In the OS update path, we removed overrides for kernel-rt.  So if the target (new) config
+	// is also default (i.e. throughput) then we have nothing to do.
+	if newKtype == ctrlcommon.KernelTypeDefault {
 		return nil
 	}
 
+	// TODO: Drop this code and use https://github.com/coreos/rpm-ostree/issues/2542 instead
 	defaultKernel := []string{"kernel", "kernel-core", "kernel-modules", "kernel-modules-extra"}
+	// Note this list explicitly does *not* include kernel-rt as that is a meta-package that tries to pull in a lot
+	// of other dependencies we don't want for historical reasons.
+	// kernel-rt also has a split off kernel-rt-kvm subpackage because it's in a separate subscription in RHEL.
 	realtimeKernel := []string{"kernel-rt-core", "kernel-rt-modules", "kernel-rt-modules-extra", "kernel-rt-kvm"}
 
-	dn.logSystem("Initiating switch from kernel %s to %s", canonicalizeKernelType(oldConfig.Spec.KernelType), canonicalizeKernelType(newConfig.Spec.KernelType))
-
-	if canonicalizeKernelType(oldConfig.Spec.KernelType) == ctrlcommon.KernelTypeRealtime && canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelTypeDefault {
-		args := []string{"override", "reset"}
-		args = append(args, defaultKernel...)
-		for _, pkg := range realtimeKernel {
-			args = append(args, "--uninstall", pkg)
-		}
-		dn.logSystem("Switching to kernelType=%s, invoking rpm-ostree %+q", newConfig.Spec.KernelType, args)
-		return runRpmOstree(args...)
+	if oldKtype != newKtype {
+		dn.logSystem("Initiating switch to kernel %s", newKtype)
+	} else {
+		dn.logSystem("Re-applying kernel type %s", newKtype)
 	}
 
-	if canonicalizeKernelType(oldConfig.Spec.KernelType) == ctrlcommon.KernelTypeDefault && canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelTypeRealtime {
+	if newKtype == ctrlcommon.KernelTypeRealtime {
 		// Switch to RT kernel
 		args := []string{"override", "remove"}
 		args = append(args, defaultKernel...)
@@ -1186,19 +1188,9 @@ func (dn *CoreOSDaemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig)
 			args = append(args, "--install", pkg)
 		}
 
-		dn.logSystem("Switching to kernelType=%s, invoking rpm-ostree %+q", newConfig.Spec.KernelType, args)
 		return runRpmOstree(args...)
 	}
-
-	if canonicalizeKernelType(oldConfig.Spec.KernelType) == ctrlcommon.KernelTypeRealtime && canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelTypeRealtime {
-		if oldConfig.Spec.OSImageURL != newConfig.Spec.OSImageURL {
-			args := []string{"update"}
-			dn.logSystem("Updating rt-kernel packages on host: %+q", args)
-			return runRpmOstree(args...)
-		}
-	}
-
-	return nil
+	return fmt.Errorf("Unhandled kernel type %s", newKtype)
 }
 
 // updateFiles writes files specified by the nodeconfig to disk. it also writes
@@ -1763,6 +1755,56 @@ func (dn *Daemon) InplaceUpdateViaNewContainer(target string) error {
 	return nil
 }
 
+// queueRevertRTKernel undoes the layering of the RT kernel
+func (dn *Daemon) queueRevertRTKernel() error {
+	booted, _, err := dn.NodeUpdaterClient.GetBootedAndStagedDeployment()
+	if err != nil {
+		return err
+	}
+
+	// Before we attempt to do an OS update, we must remove the kernel-rt switch
+	// because in the case of updating from RHEL8 to RHEL9, the kernel packages are
+	// OS version dependent.  See also https://github.com/coreos/rpm-ostree/issues/2542
+	// (Now really what we want to do here is something more like rpm-ostree override reset --kernel
+	//  i.e. the inverse of https://github.com/coreos/rpm-ostree/pull/4322 so that
+	//  we're again not hardcoding even the prefix of kernel packages)
+	kernelOverrides := []string{}
+	kernelRtLayers := []string{}
+	for _, removal := range booted.RequestedBaseRemovals {
+		if removal == "kernel" || strings.HasPrefix(removal, "kernel-") {
+			kernelOverrides = append(kernelOverrides, removal)
+		}
+	}
+	for _, pkg := range booted.RequestedPackages {
+		if strings.HasPrefix(pkg, "kernel-rt-") {
+			kernelRtLayers = append(kernelRtLayers, pkg)
+		}
+	}
+	// We *only* do this switch if the node has done a switch from kernel -> kernel-rt.
+	// We don't want to override any machine-local hotfixes for the kernel package.
+	// Implicitly in this we don't really support machine-local hotfixes for kernel-rt.
+	// The only sane way to handle that is declarative drop-ins, but really we want to
+	// just go to deploying pre-built images and not doing per-node mutation with rpm-ostree
+	// at all.
+	if len(kernelOverrides) > 0 && len(kernelRtLayers) > 0 {
+		args := []string{"override", "reset"}
+		args = append(args, kernelOverrides...)
+		for _, pkg := range kernelRtLayers {
+			args = append(args, "--uninstall", pkg)
+		}
+		err := runRpmOstree(args...)
+		if err != nil {
+			return err
+		}
+	} else if len(kernelOverrides) > 0 || len(kernelRtLayers) > 0 {
+		glog.Infof("notice: detected %d overrides and %d kernel-rt layers", len(kernelOverrides), len(kernelRtLayers))
+	} else {
+		glog.Infof("No kernel overrides or replacement detected")
+	}
+
+	return nil
+}
+
 // updateLayeredOS updates the system OS to the one specified in newConfig
 func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 	newURL := config.Spec.OSImageURL
@@ -2013,6 +2055,15 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 			return err
 		}
 		defer os.Remove(extensionsRepo)
+	}
+
+	// If we have an OS update *or* a kernel type change, then we must undo the RT kernel
+	// enablement.
+	if mcDiff.osUpdate || mcDiff.kernelType {
+		if err := dn.queueRevertRTKernel(); err != nil {
+			mcdPivotErr.Inc()
+			return err
+		}
 	}
 
 	// Update OS
