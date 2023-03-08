@@ -84,4 +84,13 @@ const (
 
 	// changes to registries.conf will cause a crio reload and require extra logic about whether to drain
 	ContainerRegistryConfPath = "/etc/containers/registries.conf"
+
+	// SSH Keys for user "core" will only be written at /home/core/.ssh
+	CoreUserSSHPath = "/home/" + CoreUserName + "/.ssh"
+
+	// SSH keys in RHCOS 8 will be written to /home/core/.ssh/authorized_keys
+	RHCOS8SSHKeyPath = CoreUserSSHPath + "/authorized_keys"
+
+	// SSH keys in RHCOS 9 / FCOS / SCOS will be written to /home/core/.ssh/authorized_keys.d/ignition
+	RHCOS9SSHKeyPath = CoreUserSSHPath + "/authorized_keys.d/ignition"
 )

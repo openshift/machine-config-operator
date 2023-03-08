@@ -3,6 +3,7 @@ package e2e_test
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -382,6 +383,28 @@ func TestNoReboot(t *testing.T) {
 	oldInfraRenderedConfig := helpers.GetMcName(t, cs, "infra")
 
 	infraNode := helpers.GetSingleNodeByRole(t, cs, "infra")
+
+	sshKeyContent := "test adding authorized key without node reboot"
+
+	nodeOS := helpers.GetOSReleaseForNode(t, cs, infraNode).OS
+
+	sshPaths := helpers.GetSSHPaths(nodeOS)
+
+	t.Logf("Expecting SSH keys to be in %s", sshPaths.Expected)
+
+	if sshPaths.Expected == constants.RHCOS9SSHKeyPath {
+		// Write an SSH key to the old location on the node because the update process should remove this file.
+		t.Logf("Writing SSH key to %s to ensure that it will be removed later", sshPaths.NotExpected)
+		bashCmd := fmt.Sprintf("printf '%s' > %s", sshKeyContent, filepath.Join("/rootfs", sshPaths.NotExpected))
+		helpers.ExecCmdOnNode(t, cs, infraNode, "/bin/bash", "-c", bashCmd)
+	}
+
+	// Delete the expected SSH keys directory to ensure that the directories are
+	// (re)created correctly by the MCD. This targets the upgrade case where that
+	// directory may not previously exist. Note: This will need to be revisited
+	// once Config Drift Monitor is aware of SSH keys.
+	helpers.ExecCmdOnNode(t, cs, infraNode, "rm", "-rf", filepath.Join("/rootfs", filepath.Dir(sshPaths.Expected)))
+
 	output := helpers.ExecCmdOnNode(t, cs, infraNode, "cat", "/rootfs/proc/uptime")
 	oldTime := strings.Split(output, " ")[0]
 	t.Logf("Node %s initial uptime: %s", infraNode.Name, oldTime)
@@ -390,17 +413,18 @@ func TestNoReboot(t *testing.T) {
 	// Adding authorized key for user core
 	testIgnConfig := ctrlcommon.NewIgnConfig()
 	testPasswdHash := "testpass"
-	testSSHKey := ign3types.PasswdUser{
-		Name:              "core",
-		SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"test adding authorized key without node reboot"},
-		PasswordHash:      &testPasswdHash,
-	}
 
-	testIgnConfig.Passwd.Users = append(testIgnConfig.Passwd.Users, testSSHKey)
+	testIgnConfig.Passwd.Users = []ign3types.PasswdUser{
+		{
+			Name:              "core",
+			SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{ign3types.SSHAuthorizedKey(sshKeyContent)},
+			PasswordHash:      &testPasswdHash,
+		},
+	}
 
 	addAuthorizedKey := &mcfgv1.MachineConfig{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:   fmt.Sprintf("authorzied-key-infra-%s", uuid.NewUUID()),
+			Name:   fmt.Sprintf("authorized-key-infra-%s", uuid.NewUUID()),
 			Labels: helpers.MCLabelForRole("infra"),
 		},
 		Spec: mcfgv1.MachineConfigSpec{
@@ -426,21 +450,31 @@ func TestNoReboot(t *testing.T) {
 	assert.Equal(t, infraNode.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
 	assert.Equal(t, infraNode.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
 
-	foundSSHKey := helpers.ExecCmdOnNode(t, cs, infraNode, "cat", "/rootfs/home/core/.ssh/authorized_keys")
-	if !strings.Contains(foundSSHKey, "test adding authorized key without node reboot") {
+	helpers.AssertFileOnNode(t, cs, infraNode, sshPaths.Expected)
+	helpers.AssertFileNotOnNode(t, cs, infraNode, sshPaths.NotExpected)
+
+	foundSSHKey := helpers.ExecCmdOnNode(t, cs, infraNode, "cat", filepath.Join("/rootfs", sshPaths.Expected))
+	if !strings.Contains(foundSSHKey, sshKeyContent) {
 		t.Fatalf("updated ssh keys not found in authorized_keys, got %s", foundSSHKey)
 	}
 	t.Logf("Node %s has SSH key", infraNode.Name)
+
+	assertExpectedPerms(t, cs, infraNode, "/home/core/.ssh", []string{constants.CoreUserName, constants.CoreGroupName, "700"})
+
+	if sshPaths.Expected == constants.RHCOS9SSHKeyPath {
+		// /home/core/.ssh/authorized_keys.d
+		assertExpectedPerms(t, cs, infraNode, filepath.Dir(constants.RHCOS9SSHKeyPath), []string{constants.CoreUserName, constants.CoreGroupName, "700"})
+	}
+
+	assertExpectedPerms(t, cs, infraNode, sshPaths.Expected, []string{constants.CoreUserName, constants.CoreGroupName, "600"})
 
 	currentEtcShadowContents := helpers.ExecCmdOnNode(t, cs, infraNode, "grep", "^core:", "/rootfs/etc/shadow")
 
 	if currentEtcShadowContents == initialEtcShadowContents {
 		t.Fatalf("updated password hash not found in etc/shadow, got %s", currentEtcShadowContents)
 	}
-	t.Logf("Node %s has Password Hash", infraNode.Name)
 
-	usernameAndGroup := strings.Split(strings.TrimSuffix(helpers.ExecCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "stat", "--format=%U %G", "/home/core/.ssh/authorized_keys"), "\n"), " ")
-	assert.Equal(t, usernameAndGroup, []string{constants.CoreUserName, constants.CoreGroupName})
+	t.Logf("Node %s has Password Hash", infraNode.Name)
 
 	output = helpers.ExecCmdOnNode(t, cs, infraNode, "cat", "/rootfs/proc/uptime")
 	newTime := strings.Split(output, " ")[0]
@@ -476,10 +510,13 @@ func TestNoReboot(t *testing.T) {
 	assert.Equal(t, infraNode.Annotations[constants.CurrentMachineConfigAnnotationKey], oldInfraRenderedConfig)
 	assert.Equal(t, infraNode.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
 
-	foundSSHKey = helpers.ExecCmdOnNode(t, cs, infraNode, "cat", "/rootfs/home/core/.ssh/authorized_keys")
-	if strings.Contains(foundSSHKey, "test adding authorized key without node reboot") {
+	foundSSHKey = helpers.ExecCmdOnNode(t, cs, infraNode, "cat", filepath.Join("/rootfs", sshPaths.Expected))
+	if strings.Contains(foundSSHKey, sshKeyContent) {
 		t.Fatalf("Node %s did not rollback successfully", infraNode.Name)
 	}
+
+	helpers.AssertFileOnNode(t, cs, infraNode, sshPaths.Expected)
+	helpers.AssertFileNotOnNode(t, cs, infraNode, sshPaths.NotExpected)
 
 	t.Logf("Node %s has successfully rolled back", infraNode.Name)
 
@@ -765,7 +802,9 @@ func TestIgn3Cfg(t *testing.T) {
 	assert.Equal(t, infraNode.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
 	assert.Equal(t, infraNode.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
 
-	foundSSH := helpers.ExecCmdOnNode(t, cs, infraNode, "grep", "1234_test_ign3", "/rootfs/home/core/.ssh/authorized_keys")
+	sshPaths := helpers.GetSSHPaths(helpers.GetOSReleaseForNode(t, cs, infraNode).OS)
+
+	foundSSH := helpers.ExecCmdOnNode(t, cs, infraNode, "grep", "1234_test_ign3", filepath.Join("/rootfs", sshPaths.Expected))
 	if !strings.Contains(foundSSH, "1234_test_ign3") {
 		t.Fatalf("updated ssh keys not found in authorized_keys, got %s", foundSSH)
 	}
@@ -808,4 +847,13 @@ func createMCToAddFileForRole(name, role, filename, data string) *mcfgv1.Machine
 
 func createMCToAddFile(name, filename, data string) *mcfgv1.MachineConfig {
 	return createMCToAddFileForRole(name, "worker", filename, data)
+}
+
+// Checks that a file or directory on a given node matches the expected
+// permissions in the form of [username, groupname, octal file permissions].
+func assertExpectedPerms(t *testing.T, cs *framework.ClientSet, node corev1.Node, path string, expectedPerms []string) {
+	t.Helper()
+
+	actualPerms := strings.Split(strings.TrimSuffix(helpers.ExecCmdOnNode(t, cs, node, "chroot", "/rootfs", "stat", "--format=%U %G %a", path), "\n"), " ")
+	assert.Equal(t, expectedPerms, actualPerms, "expected %s to have perms %v, got: %v", path, expectedPerms, actualPerms)
 }
