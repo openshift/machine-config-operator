@@ -69,7 +69,7 @@ func TestCloudProvider(t *testing.T) {
 		res:         "external",
 	}, {
 		platform: configv1.AWSPlatformType,
-		res:      "aws",
+		res:      "external",
 	}, {
 		platform: configv1.OpenStackPlatformType,
 		res:      "external",
@@ -151,7 +151,7 @@ func TestCloudConfigFlag(t *testing.T) {
 [dummy-config]
     option = a
 `,
-		res: "--cloud-config=/etc/kubernetes/cloud.conf",
+		res: "",
 	}, {
 		platform: configv1.LibvirtPlatformType,
 		content: `
@@ -220,7 +220,7 @@ func TestCloudConfigFlag(t *testing.T) {
     option = a
 `,
 		featureGate: newFeatures("cluster", "CustomNoUpgrade", nil, []string{cloudprovider.ExternalCloudProviderFeature}),
-		res:         "--cloud-config=/etc/kubernetes/cloud.conf",
+		res:         "",
 	}, {
 		platform: configv1.NutanixPlatformType,
 		content: `
