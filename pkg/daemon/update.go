@@ -2057,6 +2057,12 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 		defer os.Remove(extensionsRepo)
 	}
 
+	// Always clean up pending, because the RT kernel switch logic below operates on booted,
+	// not pending.
+	if err := removePendingDeployment(); err != nil {
+		return fmt.Errorf("failed to remove pending deployment: %w", err)
+	}
+
 	defer func() {
 		// Operations performed by rpm-ostree on the booted system are available
 		// as staged deployment. It gets applied only when we reboot the system.
