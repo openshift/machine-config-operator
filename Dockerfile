@@ -14,7 +14,7 @@ COPY install /manifests
 
 RUN if [[ "${TAGS}" == "fcos" ]] || [[ "${TAGS}" == "scos" ]]; then \
     # comment out non-base/extensions image-references entirely for fcos/scos
-    sed -i '/- name: rhel-coreos-[89]-/,+3 s/^/#/' /manifests/image-references && \
+    sed -i '/- name: rhel-coreos-/,+3 s/^/#/' /manifests/image-references && \
     # also remove extensions from the osimageurl configmap (if we don't, oc won't rewrite it, and the placeholder value will survive and get used)
     sed -i '/baseOSExtensionsContainerImage:/ s/^/#/' /manifests/0000_80_machine-config-operator_05_osimageurl.yaml; fi && \
     # rewrite image names for fcos/scos
