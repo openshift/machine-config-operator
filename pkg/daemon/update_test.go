@@ -409,7 +409,7 @@ func TestReconcilableSSH(t *testing.T) {
 	newIgnCfg.Passwd.Users = nil
 	newMcfg = helpers.CreateMachineConfigFromIgnition(newIgnCfg)
 	_, errMsg = reconcilable(oldMcfg, newMcfg)
-	checkIrreconcilableResults(t, "SSH", errMsg)
+	checkReconcilableResults(t, "SSH", errMsg)
 }
 
 func TestWriteFiles(t *testing.T) {
@@ -502,8 +502,9 @@ func TestUpdateSSHKeys(t *testing.T) {
 	// Set up machineconfigs that are identical except for SSH keys
 	tempUser := ign3types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"1234", "4567"}}
 	newIgnCfg := ctrlcommon.NewIgnConfig()
+	oldIgnConfig := ctrlcommon.NewIgnConfig()
 	newIgnCfg.Passwd.Users = []ign3types.PasswdUser{tempUser}
-	err := d.updateSSHKeys(newIgnCfg.Passwd.Users)
+	err := d.updateSSHKeys(newIgnCfg.Passwd.Users, oldIgnConfig.Passwd.Users)
 	if err != nil {
 		t.Errorf("Expected no error. Got %s.", err)
 
@@ -512,7 +513,7 @@ func TestUpdateSSHKeys(t *testing.T) {
 	// if Users is empty, nothing should happen and no error should ever be generated
 	newIgnCfg2 := ctrlcommon.NewIgnConfig()
 	newIgnCfg2.Passwd.Users = []ign3types.PasswdUser{}
-	err = d.updateSSHKeys(newIgnCfg2.Passwd.Users)
+	err = d.updateSSHKeys(newIgnCfg2.Passwd.Users, oldIgnConfig.Passwd.Users)
 	if err != nil {
 		t.Errorf("Expected no error. Got: %s", err)
 	}
