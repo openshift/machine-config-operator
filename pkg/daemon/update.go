@@ -823,9 +823,7 @@ func reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineConfigDif
 			return nil, fmt.Errorf("ignition Passwd Groups section contains changes")
 		}
 		if !reflect.DeepEqual(oldIgn.Passwd.Users, newIgn.Passwd.Users) {
-			if len(oldIgn.Passwd.Users) > 0 && len(newIgn.Passwd.Users) == 0 {
-				return nil, fmt.Errorf("ignition passwd user section contains unsupported changes: user core may not be deleted")
-			}
+			newEmpty := len(newIgn.Passwd.Users) == 0
 			// there is an update to Users, we must verify that it is ONLY making an acceptable
 			// change to the SSHAuthorizedKeys for the user "core"
 			for _, user := range newIgn.Passwd.Users {
@@ -833,11 +831,13 @@ func reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineConfigDif
 					return nil, fmt.Errorf("ignition passwd user section contains unsupported changes: non-core user")
 				}
 			}
-
-			glog.Infof("user data to be verified before ssh update: %v", newIgn.Passwd.Users[len(newIgn.Passwd.Users)-1])
-			if err := verifyUserFields(newIgn.Passwd.Users[len(newIgn.Passwd.Users)-1]); err != nil {
-				return nil, err
+			if !newEmpty {
+				glog.Infof("user data to be verified before ssh update: %v", newIgn.Passwd.Users[len(newIgn.Passwd.Users)-1])
+				if err := verifyUserFields(newIgn.Passwd.Users[len(newIgn.Passwd.Users)-1]); err != nil {
+					return nil, err
+				}
 			}
+
 		}
 	}
 
