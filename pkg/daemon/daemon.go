@@ -1617,7 +1617,7 @@ func (dn *Daemon) updateSSHKeyLocation(cfg *mcfgv1.MachineConfig) error {
 		return fmt.Errorf("ignition failure when updating SSH key location: %w", err)
 	}
 
-	if err := dn.updateSSHKeys(ignConfig.Passwd.Users); err != nil {
+	if err := dn.updateSSHKeys(ignConfig.Passwd.Users, ignConfig.Passwd.Users); err != nil {
 		return fmt.Errorf("could not write SSH keys to new location: %w", err)
 	}
 
