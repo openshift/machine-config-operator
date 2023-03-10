@@ -2177,8 +2177,10 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 	}
 
 	// Switch to real time kernel
-	if err := dn.switchKernel(oldConfig, newConfig); err != nil {
-		return err
+	if mcDiff.osUpdate || mcDiff.kernelType {
+		if err := dn.switchKernel(oldConfig, newConfig); err != nil {
+			return err
+		}
 	}
 
 	// Apply extensions
