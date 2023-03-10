@@ -11,12 +11,24 @@ contents:
         echo "Not replacing existing ${NODECONF}"
         exit 0
     fi
+    
+    # afterburn service is expected to be used for metadata retrival, see respective systemd unit.
+    # However, on older OCP boot images does not contain afterburn service, check if afterburn variables are there
+    # otherwise try to communicate IMDS here.
+    # metadata related afterburn doc: https://coreos.github.io/afterburn/usage/attributes/
+    
+    HOSTNAME=${AFTERBURN_AWS_HOSTNAME:-}
+    if [[ -z "${HOSTNAME}" ]]; then
+      HOSTNAME=$(curl -fSs http://169.254.169.254/2022-09-24/meta-data/local-hostname)
+      if [[ -z "${HOSTNAME}" ]]; then
+        echo "Can not obtain hostname from the metadata service."
+        exit 1
+      fi 
+    fi
 
     # For compatibility with the AWS in-tree provider
     # Set node name to be instance name instead of the default FQDN hostname
-    # afterburn service is using for metadata retrival, see respective systemd unit
-    # metadata related afterburn doc: https://coreos.github.io/afterburn/usage/attributes/
     cat > "${NODECONF}" <<EOF
     [Service]
-    Environment="KUBELET_NODE_NAME=${AFTERBURN_AWS_HOSTNAME}"
+    Environment="KUBELET_NODE_NAME=${HOSTNAME}"
     EOF
