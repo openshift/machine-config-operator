@@ -77,9 +77,8 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 		err := fmt.Errorf("could not fetch Node: %w", err)
 		return err
 	}
-	// Set the Cgroups version explicitly to "v1"
-	if nodeConfig.Spec.CgroupMode == emptyInput {
-		nodeConfig.Spec.CgroupMode = osev1.CgroupModeV1
+	if err := ctrl.cleanUpDuplicatedMC(managedNodeConfigKeyPrefix); err != nil {
+		return err
 	}
 	// checking if the Node spec is empty and accordingly returning from here.
 	if reflect.DeepEqual(nodeConfig.Spec, osev1.NodeSpec{}) {
@@ -129,13 +128,6 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 				return err
 			}
 		}
-		// Setting the CGroups version to "v1" explicitly
-		if nodeConfig.Spec.CgroupMode == osev1.CgroupModeV1 {
-			err := updateMachineConfigwithCgroup(nodeConfig, mc)
-			if err != nil {
-				return err
-			}
-		}
 		// The following code updates the MC with the relevant CGroups version
 		err = updateMachineConfigwithCgroup(nodeConfig, mc)
 		if err != nil {
@@ -169,9 +161,6 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 			return fmt.Errorf("Could not Create/Update MachineConfig, error: %w", err)
 		}
 		glog.Infof("Applied Node configuration %v on MachineConfigPool %v", key, pool.Name)
-	}
-	if err := ctrl.cleanUpDuplicatedMC(managedNodeConfigKeyPrefix); err != nil {
-		return err
 	}
 	// fetch the kubeletconfigs
 	kcs, err := ctrl.mckLister.List(labels.Everything())
@@ -278,12 +267,13 @@ func RunNodeConfigBootstrap(templateDir string, features *osev1.FeatureGate, cco
 	if nodeConfig == nil {
 		return nil, fmt.Errorf("nodes.config.openshift.io resource not found")
 	}
+	// checking if the Node spec is empty and accordingly returning from here.
+	if reflect.DeepEqual(nodeConfig.Spec, osev1.NodeSpec{}) {
+		glog.V(2).Info("empty Node resource found")
+		return nil, nil
+	}
 	configs := []*mcfgv1.MachineConfig{}
 
-	// Set the Cgroups version explicitly to "v1"
-	if nodeConfig.Spec.CgroupMode == emptyInput {
-		nodeConfig.Spec.CgroupMode = osev1.CgroupModeV1
-	}
 	for _, pool := range mcpPools {
 		role := pool.Name
 		// Get MachineConfig
@@ -307,14 +297,6 @@ func RunNodeConfigBootstrap(templateDir string, features *osev1.FeatureGate, cco
 				return nil, err
 			}
 		}
-		// Setting the CGroups version to "v1" explicitly
-		if nodeConfig.Spec.CgroupMode == osev1.CgroupModeV1 {
-			err := updateMachineConfigwithCgroup(nodeConfig, mc)
-			if err != nil {
-				return nil, err
-			}
-		}
-
 		// The following code updates the MC with the relevant CGroups version
 		err = updateMachineConfigwithCgroup(nodeConfig, mc)
 		if err != nil {
