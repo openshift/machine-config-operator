@@ -12,15 +12,29 @@ contents:
         exit 0
     fi
 
+    # afterburn service is expected to be used for metadata retrival, see respective systemd unit.
+    # However, on older OCP boot images does not contain afterburn service, check if afterburn variables are there
+    # otherwise try to communicate IMDS here.
+    # metadata related afterburn doc: https://coreos.github.io/afterburn/usage/attributes/
+    
+    INSTANCE_ID=${AFTERBURN_AWS_INSTANCE_ID:-}
+    AVAILABILITY_ZONE=${AFTERBURN_AWS_AVAILABILITY_ZONE:-}
+    if [[ -z "${INSTANCE_ID}" ]] || [[ -z "${AVAILABILITY_ZONE}" ]]; then
+      INSTANCE_ID=$(curl -fSs http://169.254.169.254/2022-09-24/meta-data/instance-id)
+      AVAILABILITY_ZONE=$(curl -fSs http://169.254.169.254/2022-09-24/meta-data/placement/availability-zone)
+      if [[ -z "${INSTANCE_ID}" ]] || [[ -z "${AVAILABILITY_ZONE}" ]]; then
+        echo "Can not obtain instance-id and availability zone info from the metadata service."
+        exit 1
+      fi 
+    fi
+
     # Due to a potential mismatch between Hostname and PrivateDNSName with clusters that use custom DHCP Option Sets
     # which can cause issues in cloud controller manager node syncing
     # (see: https://github.com/kubernetes/cloud-provider-aws/issues/384),
     # set KUBELET_PROVIDERID to be a fully qualified AWS instace provider id.
     # This new variable is later used to populate the kubelet's `provider-id` flag, later set on the Node .spec
     # and used by the cloud controller manager's node controller to retrieve the Node's backing instance.
-    # This is obtained by using afterburn service variables, in turn obtained from metadata retrival.
-    # See respective systemd unit metadata related afterburn doc: https://coreos.github.io/afterburn/usage/attributes/
     cat > "${NODECONF}" <<EOF
     [Service]
-    Environment="KUBELET_PROVIDERID=aws:///${AFTERBURN_AWS_AVAILABILITY_ZONE}/${AFTERBURN_AWS_INSTANCE_ID}"
+    Environment="KUBELET_PROVIDERID=aws:///${AVAILABILITY_ZONE}/${INSTANCE_ID}"
     EOF
