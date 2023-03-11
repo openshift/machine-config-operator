@@ -367,26 +367,9 @@ func useKubeletConfigSecrets() error {
 				return err
 			}
 
-			runningos, err := GetHostRunningOS()
+			err = os.Symlink(kubeletAuthFile, "/run/ostree/auth.json")
 			if err != nil {
 				return err
-			}
-
-			// Short term workaround for https://issues.redhat.com/browse/OKD-63
-			if runningos.IsFCOS() || runningos.IsSCOS() {
-				contents, err := os.ReadFile(kubeletAuthFile)
-				if err != nil {
-					return err
-				}
-				// Note 0644 perms for now
-				if err := os.WriteFile("/run/ostree/auth.json", contents, 0o644); err != nil {
-					return err
-				}
-			} else {
-				err = os.Symlink(kubeletAuthFile, "/run/ostree/auth.json")
-				if err != nil {
-					return err
-				}
 			}
 		}
 	}
