@@ -79,8 +79,8 @@ func init() {
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.haproxyImage, "haproxy-image", "", "Image for haproxy.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.baremetalRuntimeCfgImage, "baremetal-runtimecfg-image", "", "Image for baremetal-runtimecfg.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.oauthProxyImage, "oauth-proxy-image", "", "Image for origin oauth proxy.")
-	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.baseOSContainerImage, "baseos-image", "", "Image for rhel-coreos-8")
-	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.baseOSExtensionsContainerImage, "baseos-extensions-image", "", "Image for rhel-coreos-8-extensions")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.baseOSContainerImage, "baseos-image", "", "ostree-bootable container image reference")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.baseOSExtensionsContainerImage, "baseos-extensions-image", "", "Image with extensions")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.imageReferences, "image-references", "", "File containing imagestreams (from cluster-version-operator)")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.cloudProviderCAFile, "cloud-provider-ca-file", "", "path to cloud provider CA certificate")
 
@@ -114,7 +114,7 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 	// To help debugging, immediately log version
 	glog.Infof("Version: %+v (%s)", version.Raw, version.Hash)
 
-	baseOSContainerImageTag := "rhel-coreos-8"
+	baseOSContainerImageTag := "rhel-coreos"
 	if version.IsFCOS() {
 		baseOSContainerImageTag = "fedora-coreos"
 	} else if version.IsSCOS() {
