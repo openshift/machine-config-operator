@@ -39,12 +39,10 @@ aliases:
     - jcpowermac
     - patrickdillon
     - rvanderp3
-    - jstuever
   vsphere-reviewers:
     - jcpowermac
     - patrickdillon
     - rvanderp3
-    - jstuever
   alibaba-reviewers:
     - kwoodson
     - fabianofranz
