@@ -6,7 +6,9 @@ contents: |
 
   # Run afterburn service for collect info from metadata server
   # see: https://coreos.github.io/afterburn/usage/attributes/
-  Requires=afterburn.service
+  # Not required due to OCP 4.1 boot image does not contain afterburn service
+  # see: https://issues.redhat.com/browse/OCPBUGS-7559
+  Wants=afterburn.service
   After=afterburn.service
 
   # Wait for NetworkManager to report it's online
@@ -15,7 +17,8 @@ contents: |
   Before=kubelet.service
 
   [Service]
-  EnvironmentFile=/run/metadata/afterburn
+  # Mark afterburn environment file optional, due to it is possible that afterburn service was not executed
+  EnvironmentFile=-/run/metadata/afterburn
   ExecStart=/usr/local/bin/aws-kubelet-nodename
   Type=oneshot
 
