@@ -1805,7 +1805,7 @@ func (dn *Daemon) InplaceUpdateViaNewContainer(target string) error {
 	}
 
 	runArgs := append([]string{}, systemdPodmanArgs...)
-	runArgs = append(runArgs, "run", "--env-file", "/etc/mco/proxy.env", "--authfile", "/var/lib/kubelet/config.json", "--privileged", "--pid=host", "--net=host", "--rm", "-v", "/:/run/host", target, "rpm-ostree", "ex", "deploy-from-self", "/run/host")
+	runArgs = append(runArgs, "run", "--env-file", "/etc/mco/proxy.env", "--privileged", "--pid=host", "--net=host", "--rm", "-v", "/:/run/host", target, "rpm-ostree", "ex", "deploy-from-self", "/run/host")
 	err = runCmdSync("systemd-run", runArgs...)
 	if err != nil {
 		return err
