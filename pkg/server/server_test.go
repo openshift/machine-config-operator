@@ -19,6 +19,7 @@ import (
 	yaml "github.com/ghodss/yaml"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -243,6 +244,26 @@ func (mcpl *mockMCLister) Get(name string) (ret *mcfgv1.MachineConfig, err error
 	return nil, nil
 }
 
+type mockCCLister struct {
+	configs []*mcfgv1.ControllerConfig
+}
+
+func (mcpl *mockCCLister) List(selector labels.Selector) (ret []*mcfgv1.ControllerConfig, err error) {
+	return mcpl.configs, nil
+}
+func (mcpl *mockCCLister) Get(name string) (ret *mcfgv1.ControllerConfig, err error) {
+	if mcpl.configs == nil {
+		return nil, nil
+	}
+	for _, config := range mcpl.configs {
+		if config.Name == name {
+			return config, nil
+		}
+
+	}
+	return nil, nil
+}
+
 // TestClusterServer tests the behavior of the machine config server
 // when it's running within the cluster.
 // The test does the following:
@@ -274,6 +295,8 @@ func TestClusterServer(t *testing.T) {
 		t.Fatalf("unexpected error while unmarshaling machine-config: %s, err: %v", mcPath, err)
 	}
 
+	controllerConfig := getTestControllerConfig()
+
 	mcpLister := &mockMCPLister{
 		pools: []*mcfgv1.MachineConfigPool{
 			mp,
@@ -286,10 +309,17 @@ func TestClusterServer(t *testing.T) {
 		},
 	}
 
+	ccLister := &mockCCLister{
+		configs: []*mcfgv1.ControllerConfig{
+			controllerConfig,
+		},
+	}
+
 	// machineClient:  cs.MachineconfigurationV1(),
 	csc := &clusterServer{
 		machineConfigPoolLister: mcpLister,
 		machineConfigLister:     mcLister,
+		controllerConfigLister:  ccLister,
 		kubeconfigFunc: func() ([]byte, []byte, error) {
 			return getKubeConfigContent(t)
 		},
@@ -426,6 +456,15 @@ func getTestMachineConfigPool() (*mcfgv1.MachineConfigPool, error) {
 		return nil, fmt.Errorf("unexpected error while unmarshaling machine-pool: %s, err: %w", mpPath, err)
 	}
 	return mp, nil
+}
+
+func getTestControllerConfig() *mcfgv1.ControllerConfig {
+	return &mcfgv1.ControllerConfig{
+		ObjectMeta: metav1.ObjectMeta{Generation: 1, Name: "machine-config-controller"},
+		Spec: mcfgv1.ControllerConfigSpec{
+			KubeAPIServerServingCAData: []byte("Testdata"),
+		},
+	}
 }
 
 func TestKubeconfigFromSecret(t *testing.T) {

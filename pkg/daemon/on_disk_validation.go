@@ -174,6 +174,11 @@ func checkV2Units(units []ign2types.Unit, systemdPath string) error {
 // check for overwrites.
 func checkV3Files(files []ign3types.File) error {
 	for _, f := range files {
+		if f.Path == caBundleFilePath {
+			// TODO remove this special case once we have a better way to do this
+			glog.V(4).Infof("Skipping file %s during checkV3Files", caBundleFilePath)
+			continue
+		}
 		if len(f.Append) > 0 {
 			return fmt.Errorf("found an append section when checking files. Append is not supported")
 		}

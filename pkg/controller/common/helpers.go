@@ -5,9 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"crypto/x509"
 	"encoding/base64"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -961,53 +959,6 @@ func GetIgnitionFileDataByPath(config *ign3types.Config, path string) ([]byte, e
 		}
 	}
 	return nil, nil
-}
-
-// GetNewestCertificatesFromPEMBundle breaks a pem-encoded bundle out into its component certificates
-func GetCertificatesFromPEMBundle(pemBytes []byte) ([]*x509.Certificate, error) {
-	var certs []*x509.Certificate
-	// There can be multiple certificates in the file
-	for {
-		// Decode a block to parse
-		block, rest := pem.Decode(pemBytes)
-		// Once we get no more blocks, we've read all the certs
-		if block == nil {
-			break
-		}
-		// Right now we just care about certificates, not keys
-		if block.Type == "CERTIFICATE" {
-			cert, err := x509.ParseCertificate(block.Bytes)
-			if err != nil {
-				// This isn't fatal, *this* cert could just be junk, next one could be okay
-				glog.Warningf("Failed to parse certificate: %v", err.Error())
-			} else {
-				certs = append(certs, cert)
-			}
-		}
-		// Keep reading from where we left off
-		pemBytes = rest
-	}
-	return certs, nil
-}
-
-// GetLongestValidCertificate returns the latest-expiring certificate from a given list of certificates
-// whose Subject.CommonName also matches any of the given common-name prefixes
-func GetLongestValidCertificate(certificateList []*x509.Certificate, subjectPrefixes []string) *x509.Certificate {
-	// Sort is smallest-to-largest, so we're putting the cert with the latest expiry date at the top
-	sort.Slice(certificateList, func(i, j int) bool {
-		return certificateList[i].NotAfter.After(certificateList[j].NotAfter)
-	})
-	// For each certificate in our list
-	for _, certificate := range certificateList {
-		// Check it against our prefixes
-		for _, prefix := range subjectPrefixes {
-			// If it matches, this is the latest-expiring one since it's closest to the "top"
-			if strings.HasPrefix(certificate.Subject.CommonName, prefix) {
-				return certificate
-			}
-		}
-	}
-	return nil
 }
 
 // GetDefaultBaseImageContainer is kind of a "soft feature gate" for using the "new format" image by default, its behavior
