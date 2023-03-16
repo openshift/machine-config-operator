@@ -649,9 +649,9 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 	return ctrl.syncStatusOnly(cfg, nil)
 }
 
-// cleanUpDuplicatedMC removes the MC of uncorrected version if format of its name contains 'generated-xxx'.
-// BZ 1955517: upgrade when there are more than one configs, these generated MC will be duplicated
-// by upgraded MC with number suffixed name (func getManagedKeyCtrCfg()) and fails the upgrade.
+// cleanUpDuplicatedMC removes the MC of non-updated GeneratedByControllerVersionKey if its name contains 'generated-containerruntimeconfig'.
+// BZ 1955517: upgrade when there are more than one configs, the duplicated and upgraded MC will be generated (func getManagedKubeletConfigKey())
+// MC with old GeneratedByControllerVersionKey fails the upgrade.
 func (ctrl *Controller) cleanUpDuplicatedMC() error {
 	generatedCtrCfg := "generated-containerruntime"
 	// Get all machine configs
@@ -665,7 +665,7 @@ func (ctrl *Controller) cleanUpDuplicatedMC() error {
 		}
 		// delete the containerruntime mc if its degraded
 		if mc.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey] != version.Hash {
-			if err := ctrl.client.MachineconfigurationV1().MachineConfigs().Delete(context.TODO(), mc.Name, metav1.DeleteOptions{}); err != nil {
+			if err := ctrl.client.MachineconfigurationV1().MachineConfigs().Delete(context.TODO(), mc.Name, metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
 				return fmt.Errorf("error deleting degraded containerruntime machine config %s: %w", mc.Name, err)
 			}
 
