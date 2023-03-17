@@ -373,6 +373,16 @@ func TestReconcilableSSH(t *testing.T) {
 	_, errMsg := reconcilable(oldMcfg, newMcfg)
 	checkReconcilableResults(t, "SSH", errMsg)
 
+	// 	Check that updating User with User that is not core is not supported
+	tempUser2 := ign3types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"1234"}}
+	oldIgnCfg.Passwd.Users = append(oldIgnCfg.Passwd.Users, tempUser2)
+	oldMcfg = helpers.CreateMachineConfigFromIgnition(oldIgnCfg)
+	tempUser3 := ign3types.PasswdUser{Name: "another user", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"5678"}}
+	newIgnCfg.Passwd.Users[0] = tempUser3
+	newMcfg = helpers.CreateMachineConfigFromIgnition(newIgnCfg)
+	_, errMsg = reconcilable(oldMcfg, newMcfg)
+	checkIrreconcilableResults(t, "SSH", errMsg)
+
 	// check that we cannot make updates if any other Passwd.User field is changed.
 	tempUser4 := ign3types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"5678"}, HomeDir: helpers.StrToPtr("somedir")}
 	newIgnCfg.Passwd.Users[0] = tempUser4
