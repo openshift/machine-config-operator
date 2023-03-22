@@ -2,7 +2,6 @@
 
 approvers:
   - cdoern
-  - cgwalters
   - djoshy
   - dkhater-redhat
   - sinnykumari
@@ -11,7 +10,6 @@ approvers:
   - jkyros
 reviewers:
   - cdoern
-  - cgwalters
   - djoshy
   - dkhater-redhat
   - sinnykumari
