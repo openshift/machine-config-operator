@@ -228,6 +228,13 @@ contents:
           echo "ERROR: unable to determine vlan_parent for vlan connection: ${old_conn}"
           exit 1
         fi
+
+        if nmcli connection show "$vlan_parent" &> /dev/null; then
+          # if the VLAN connection is configured with a connection UUID as parent, we need to find the underlying device
+          # and create the bridge against it, as the parent connection can be replaced by another bridge.
+          vlan_parent=$(nmcli --get-values GENERAL.DEVICES conn show ${vlan_parent})
+        fi
+
         extra_phys_args=( dev "${vlan_parent}" id "${vlan_id}" )
       elif [ "$(nmcli --get-values connection.type conn show ${old_conn})" == "bond" ]; then
         iface_type=bond
