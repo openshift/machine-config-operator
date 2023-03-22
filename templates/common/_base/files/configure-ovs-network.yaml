@@ -3,7 +3,7 @@ path: "/usr/local/bin/configure-ovs.sh"
 contents:
   inline: |
     #!/bin/bash
-    set -eux
+    set -x
 
     # This file is not needed anymore in 4.7+, but when rolling back to 4.6
     # the ovs pod needs it to know ovs is running on the host.
@@ -784,6 +784,7 @@ contents:
 
     # main function
     configure_ovs() {
+      set -eu
       trap "handle_exit" EXIT
 
       # this flag tracks if any config change was made
@@ -950,9 +951,9 @@ contents:
     # infrastructure problems.
     RETRY="${RETRY-15m}"
     while true; do
-      e=0
       # Run configure_ovs in a sub-shell
-      ( configure_ovs "$@" ) || e=$?
+      ( configure_ovs "$@" )
+      e=$?
       [ "$e" -eq 0 ] || [ -z "$RETRY" ] && exit "$e"
       echo "configure_ovs failed, will retry after $RETRY"
       # flag that a retry has happened
