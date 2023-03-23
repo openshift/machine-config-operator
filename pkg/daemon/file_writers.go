@@ -155,6 +155,11 @@ func writeDropins(u ign3types.Unit, systemdRoot string, isCoreOSVariant bool) er
 // it doesn't fetch remote files and expects a flattened config file.
 func writeFiles(files []ign3types.File) error {
 	for _, file := range files {
+		if file.Path == caBundleFilePath {
+			// TODO remove this special case once we have a better way to do this
+			glog.V(4).Infof("Skipping file %s during writeFiles", caBundleFilePath)
+			continue
+		}
 		glog.Infof("Writing file %q", file.Path)
 
 		// We don't support appends in the file section, so instead of waiting to fail validation,

@@ -81,6 +81,9 @@ type Daemon struct {
 	mcLister       mcfglistersv1.MachineConfigLister
 	mcListerSynced cache.InformerSynced
 
+	ccLister       mcfglistersv1.ControllerConfigLister
+	ccListerSynced cache.InformerSynced
+
 	// skipReboot skips the reboot after a sync, only valid with onceFrom != ""
 	skipReboot bool
 
@@ -103,6 +106,7 @@ type Daemon struct {
 	node *corev1.Node
 
 	queue       workqueue.RateLimitingInterface
+	ccQueue     workqueue.RateLimitingInterface
 	enqueueNode func(*corev1.Node)
 	syncHandler func(node string) error
 
@@ -171,6 +175,9 @@ const (
 	hypershiftCurrentConfigPath = "/etc/mcd-currentconfig.json"
 	configMapConfigKey          = "config"
 	configMapHashKey            = "hash"
+
+	// used for certificate syncing
+	caBundleFilePath = "/etc/kubernetes/kubelet-ca.crt"
 )
 
 type onceFromOrigin int
@@ -294,6 +301,7 @@ func (dn *Daemon) ClusterConnect(
 	kubeClient kubernetes.Interface,
 	mcInformer mcfginformersv1.MachineConfigInformer,
 	nodeInformer coreinformersv1.NodeInformer,
+	ccInformer mcfginformersv1.ControllerConfigInformer,
 	kubeletHealthzEnabled bool,
 	kubeletHealthzEndpoint string,
 ) error {
@@ -315,6 +323,16 @@ func (dn *Daemon) ClusterConnect(
 	dn.nodeListerSynced = nodeInformer.Informer().HasSynced
 	dn.mcLister = mcInformer.Lister()
 	dn.mcListerSynced = mcInformer.Informer().HasSynced
+
+	dn.ccQueue = workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter())
+	ccInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    dn.handleControllerConfigEvent,
+		UpdateFunc: func(oldObj, newObj interface{}) { dn.handleControllerConfigEvent(newObj) },
+		// In theory the configmap we care about shouldn't get deleted
+		DeleteFunc: dn.handleControllerConfigEvent,
+	})
+	dn.ccLister = ccInformer.Lister()
+	dn.ccListerSynced = ccInformer.Informer().HasSynced
 
 	nw, err := newNodeWriter(dn.name, dn.stopCh)
 	if err != nil {
@@ -1025,12 +1043,14 @@ func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error) error {
 
 	defer utilruntime.HandleCrash()
 	defer dn.queue.ShutDown()
+	defer dn.ccQueue.ShutDown()
 
-	if !cache.WaitForCacheSync(stopCh, dn.nodeListerSynced, dn.mcListerSynced) {
+	if !cache.WaitForCacheSync(stopCh, dn.nodeListerSynced, dn.mcListerSynced, dn.ccListerSynced) {
 		return fmt.Errorf("failed to sync initial listers cache")
 	}
 
 	go wait.Until(dn.worker, time.Second, stopCh)
+	go wait.Until(dn.controllerConfigWorker, time.Second, stopCh)
 
 	for {
 		select {
