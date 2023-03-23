@@ -2,16 +2,15 @@ mode: 0644
 path: "/etc/systemd/system/crio-wipe.service"
 contents:
   inline: |
-[Unit]
-Description=CRI-O Auto Update Script
-Before=crio.service
-RequiresMountsFor=/var/lib/containers
-         
-[Service]
-ExecStart=/usr/bin/true
+    [Unit]
+    Description=CRI-O Auto Update Script
+    Before=crio.service
+    RequiresMountsFor=/var/lib/containers
+    
+    [Service]
+    ExecStart=/usr/bin/true         
+    Type=oneshot
           
-Type=oneshot
-          
-[Install]
-WantedBy=multi-user.target
+    [Install]
+    WantedBy=multi-user.target
 
