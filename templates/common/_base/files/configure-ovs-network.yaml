@@ -13,7 +13,7 @@ contents:
     NM_CONN_ETC_PATH="/etc/NetworkManager/system-connections"
     NM_CONN_RUN_PATH="/run/NetworkManager/system-connections"
 
-    # This is the path where NM is known to be configured to store user keyfiles 
+    # This is the path where NM is known to be configured to store user keyfiles
     NM_CONN_CONF_PATH="$NM_CONN_ETC_PATH"
     # This is where we want our keyfiles to finally reside
     NM_CONN_SET_PATH="${NM_CONN_SET_PATH:-$NM_CONN_RUN_PATH}"
@@ -263,8 +263,8 @@ contents:
         # br-ex has a different mac address than the bond which might be
         # troublesome on some platforms where the nic won't accept packets with
         # a different destination mac. But nobody has complained so far so go on
-        # with what we got. 
-        
+        # with what we got.
+
         # Do set it though for other link aggregation configurations where the
         # mac address would otherwise depend on enslave order for which we have
         # no control going forward.
@@ -391,10 +391,10 @@ contents:
     # Removes any previous ovs configuration
     remove_all_ovn_bridges() {
       echo "Reverting any previous OVS configuration"
-      
+
       remove_ovn_bridges br-ex phys0
       remove_ovn_bridges br-ex1 phys1
-      
+
       echo "OVS configuration successfully reverted"
     }
 
@@ -421,10 +421,10 @@ contents:
         # Only attempt to connect a disconnected device
         local connected_state=$(nmcli -g GENERAL.STATE device show "$dev" || echo "")
         if [[ "$connected_state" =~ "disconnected" ]]; then
-          # keep track if a profile by the same name as the device existed 
+          # keep track if a profile by the same name as the device existed
           # before we attempt activation
           local named_profile_existed=$([ -f "${NM_CONN_CONF_PATH}/${dev}" ] || [ -f "${NM_CONN_CONF_PATH}/${dev}.nmconnection" ] && echo "yes")
-          
+
           for i in {1..10}; do
               echo "Attempt $i to connect device $dev"
               nmcli device connect "$dev" && break
@@ -455,10 +455,10 @@ contents:
     rollback_nm() {
       phys0=$(get_bridge_physical_interface ovs-if-phys0)
       phys1=$(get_bridge_physical_interface ovs-if-phys1)
-      
+
       # Revert changes made by /usr/local/bin/configure-ovs.sh during SDN migration.
       remove_all_ovn_bridges
-      
+
       # reload profiles so that NM notices that some were removed
       reload_profiles_nm "$phys0" "$phys1"
     }
@@ -500,7 +500,7 @@ contents:
         local is_slave=false
         if [ "$slave_type" = "team" ] || [ "$slave_type" = "bond" ]; then
           is_slave=true
-        fi 
+        fi
 
         # For slave interfaces, initialize the master interface to false if the key is not yet in the array
         local master_interface
@@ -589,7 +589,10 @@ contents:
 
     # This function waits for ip address of br-ex to be bindable only in case of ipv6
     # This is workaround for OCPBUGS-673 as it will not allow starting crio
-    # before address is bindable
+    # before address is bindable.
+    # Because IPv4-mapped-on-IPv6 addresses are not usable as simple AF_INET6 sockets
+    # but either as AF_INET or AF_INET6 with additional IPV6_ADDRFORM option, we are
+    # ignoring them from the test.
     try_to_bind_ipv6_address() {
       # Retry for 1 minute
       retries=60
@@ -598,6 +601,8 @@ contents:
         if [[ "${ip}" == "" ]]; then
           echo "No ipv6 ip to bind was found"
           break
+        elif [[ "${ip}" = ::ffff* ]]; then
+          echo "IPv4-mapped-on-IPv6 address detected; ignoring binding test"
         fi
         random_port=$(shuf -i 50000-60000 -n 1)
         echo "Trying to bind ${ip} on port ${random_port}"
@@ -750,7 +755,7 @@ contents:
     handle_exit() {
       e=$?
       tdir=$(mktemp -u -d -t "configure-ovs-$(date +%Y-%m-%d-%H-%M-%S)-XXXXXXXXXX")
-      
+
       if [ $e -eq 0 ]; then
         print_state
         # remove previous troubleshooting information
@@ -936,7 +941,7 @@ contents:
       elif [ "$1" == "OpenShiftSDN" ]; then
         # Revert changes made by /usr/local/bin/configure-ovs.sh during SDN migration.
         rollback_nm
-        
+
         # Remove bridges created by ovn-kubernetes
         ovs-vsctl --timeout=30 --if-exists del-br br-int -- --if-exists del-br br-local
       fi
