@@ -8,8 +8,7 @@ contents: |
 
   [Path]
   PathExistsGlob=/run/cloud-routes/*
-  PathChanged=/run/cloud-routes/*.up
-  PathChanged=/run/cloud-routes/*.down
+  PathChanged=/run/cloud-routes/
   MakeDirectory=true
 
   [Install]
