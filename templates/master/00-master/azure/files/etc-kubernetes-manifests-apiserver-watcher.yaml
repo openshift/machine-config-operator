@@ -16,7 +16,7 @@ contents:
           - --verbose
           - --exclusive
           - --timeout=300
-          - /rootfs/run/cloud-routes/apiserver-watcher.lock
+          - /rootfs/run/apiserver-watcher.lock
           - apiserver-watcher
         args:
         - "run"
