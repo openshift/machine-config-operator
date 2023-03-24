@@ -63,6 +63,63 @@ func ApplyMC(t *testing.T, cs *framework.ClientSet, mc *mcfgv1.MachineConfig) fu
 	}
 }
 
+// Ensures that a given cleanup function only runs once; even if called
+// multiple times.
+func MakeIdempotent(f func()) func() {
+	hasRun := false
+
+	return func() {
+		if !hasRun {
+			f()
+			hasRun = true
+		}
+	}
+}
+
+// Creates a pool, adds the provided node to it, applies the MachineConfig,
+// waits for the rollout. Returns an idempotent function which can be used both
+// for reverting and cleanup purposes.
+func CreatePoolAndApplyMCToNode(t *testing.T, cs *framework.ClientSet, poolName string, node corev1.Node, mc *mcfgv1.MachineConfig) func() {
+	workerMCPName := "worker"
+
+	t.Logf("Setting up pool %s", poolName)
+
+	unlabelFunc := LabelNode(t, cs, node, MCPNameToRole(poolName))
+	deleteMCPFunc := CreateMCP(t, cs, poolName)
+
+	t.Logf("Target Node: %s", node.Name)
+
+	mcDeleteFunc := ApplyMC(t, cs, mc)
+
+	WaitForConfigAndPoolComplete(t, cs, poolName, mc.Name)
+
+	mcpMCName := GetMcName(t, cs, poolName)
+	require.Nil(t, WaitForNodeConfigChange(t, cs, node, mcpMCName))
+
+	return MakeIdempotent(func() {
+		t.Logf("Cleaning up MCP %s", poolName)
+		t.Logf("Removing label %s from node %s", MCPNameToRole(poolName), node.Name)
+		unlabelFunc()
+
+		workerMC := GetMcName(t, cs, workerMCPName)
+
+		// Wait for the worker pool to catch up with the deleted label
+		time.Sleep(5 * time.Second)
+
+		t.Logf("Waiting for %s pool to finish applying %s", workerMCPName, workerMC)
+		require.Nil(t, WaitForPoolComplete(t, cs, workerMCPName, workerMC))
+
+		t.Logf("Ensuring node has %s pool config before deleting pool %s", workerMCPName, poolName)
+		require.Nil(t, WaitForNodeConfigChange(t, cs, node, workerMC))
+
+		t.Logf("Deleting MCP %s", poolName)
+		deleteMCPFunc()
+
+		t.Logf("Deleting MachineConfig %s", mc.Name)
+		mcDeleteFunc()
+	})
+}
+
 func CreatePoolAndApplyMC(t *testing.T, cs *framework.ClientSet, poolName string, mc *mcfgv1.MachineConfig) func() {
 	workerMCPName := "worker"
 
@@ -307,8 +364,38 @@ func GetKubeletCABundleFromConfigmap(cs *framework.ClientSet) (string, error) {
 	return "", fmt.Errorf("Could not find ca-bundle")
 }
 
-// LabelRandomNodeFromPool gets all nodes in pool and chooses one at random to label
-func LabelRandomNodeFromPool(t *testing.T, cs *framework.ClientSet, pool, label string) func() {
+// Applies a given label to a node and returns an unlabel function.
+func LabelNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, label string) func() {
+	ctx := context.Background()
+
+	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		n, err := cs.CoreV1Interface.Nodes().Get(ctx, node.Name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		n.Labels[label] = ""
+		_, err = cs.CoreV1Interface.Nodes().Update(ctx, n, metav1.UpdateOptions{})
+		return err
+	})
+
+	require.Nil(t, err, "unable to label %s node %s with infra: %s", label, node.Name, err)
+
+	return func() {
+		err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+			n, err := cs.CoreV1Interface.Nodes().Get(ctx, node.Name, metav1.GetOptions{})
+			if err != nil {
+				return err
+			}
+			delete(n.Labels, label)
+			_, err = cs.CoreV1Interface.Nodes().Update(ctx, n, metav1.UpdateOptions{})
+			return err
+		})
+		require.Nil(t, err, "unable to remove label %q from node %q: %s", label, node.Name, err)
+	}
+}
+
+// Gets a random node from a given pool
+func GetRandomNode(t *testing.T, cs *framework.ClientSet, pool string) corev1.Node {
 	nodes, err := GetNodesByRole(cs, pool)
 	require.Nil(t, err)
 	require.NotEmpty(t, nodes)
@@ -317,32 +404,13 @@ func LabelRandomNodeFromPool(t *testing.T, cs *framework.ClientSet, pool, label 
 	// Disable gosec here to avoid throwing
 	// G404: Use of weak random number generator (math/rand instead of crypto/rand)
 	// #nosec
-	infraNode := nodes[rand.Intn(len(nodes))]
-	infraNodeName := infraNode.Name
+	return nodes[rand.Intn(len(nodes))]
+}
 
-	err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		infraNode, err := cs.CoreV1Interface.Nodes().Get(context.TODO(), infraNodeName, metav1.GetOptions{})
-		if err != nil {
-			return err
-		}
-		infraNode.Labels[label] = ""
-		_, err = cs.CoreV1Interface.Nodes().Update(context.TODO(), infraNode, metav1.UpdateOptions{})
-		return err
-	})
-	require.Nil(t, err, "unable to label %s node %s with infra: %s", pool, infraNode.Name, err)
-
-	return func() {
-		err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-			infraNode, err := cs.CoreV1Interface.Nodes().Get(context.TODO(), infraNodeName, metav1.GetOptions{})
-			if err != nil {
-				return err
-			}
-			delete(infraNode.Labels, label)
-			_, err = cs.CoreV1Interface.Nodes().Update(context.TODO(), infraNode, metav1.UpdateOptions{})
-			return err
-		})
-		require.Nil(t, err, "unable to remove label from node %s: %s", infraNode.Name, err)
-	}
+// LabelRandomNodeFromPool gets all nodes in pool and chooses one at random to label
+func LabelRandomNodeFromPool(t *testing.T, cs *framework.ClientSet, pool, label string) func() {
+	infraNode := GetRandomNode(t, cs, pool)
+	return LabelNode(t, cs, infraNode, label)
 }
 
 // GetSingleNodeByRoll gets all nodes by role pool, and asserts there should only be one
