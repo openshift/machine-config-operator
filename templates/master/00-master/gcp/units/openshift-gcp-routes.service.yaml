@@ -14,6 +14,7 @@ contents: |
   User=root
   RestartSec=30
   Restart=always
+  SyslogIdentifier=openshift-gcp-routes
 
   [Install]
   WantedBy=multi-user.target

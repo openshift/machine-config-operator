@@ -169,6 +169,8 @@ contents:
 
     case "$1" in
         start)
+            echo "RUN_DIR: ${RUN_DIR}"
+            echo "$(ls -al ${RUN_DIR})"
             initialize
             list_lb_ips
             remove_stale
@@ -179,6 +181,7 @@ contents:
             # to every change.  Most crucially we want to be sure we don't trip over the
             # default systemd StartLimitBurst/StartLimitIterval settings which are 5 and 10s
             # respectively.
+            echo "$(ls -al ${RUN_DIR})"
             sleep 3
             ;;
         cleanup)

@@ -177,10 +177,13 @@ contents:
       start)
         initialize
         while :; do
+          echo "RUN_DIR: ${RUN_DIR}"
+          echo "$(ls -al ${RUN_DIR})"
           list_lb_ips
           remove_stale
           add_rules
           echo "done applying vip rules"
+          echo "$(ls -al ${RUN_DIR})"
           sleep_or_watch
         done
         ;;
