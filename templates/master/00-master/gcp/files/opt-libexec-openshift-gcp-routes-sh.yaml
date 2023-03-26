@@ -179,11 +179,19 @@ contents:
         while :; do
           echo "RUN_DIR: ${RUN_DIR}"
           echo "$(ls -al ${RUN_DIR})"
-          list_lb_ips
-          remove_stale
-          add_rules
-          echo "done applying vip rules"
-          echo "$(ls -al ${RUN_DIR})"
+          dirModified=$(stat -c %Y ${RUN_DIR})
+          timeNow=$(date +%s)  
+          timeDif=$(($timeNow - $dirModified))
+          difBuffer=$(($timeDif - 10))
+          if (("$difBuffer" < 0)); then
+            list_lb_ips
+            remove_stale
+            add_rules
+            echo "done applying vip rules"
+            echo "$(ls -al ${RUN_DIR})"
+          else
+           echo "processing noop"
+          fi
           sleep_or_watch
         done
         ;;

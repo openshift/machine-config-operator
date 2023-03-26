@@ -171,17 +171,25 @@ contents:
         start)
             echo "RUN_DIR: ${RUN_DIR}"
             echo "$(ls -al ${RUN_DIR})"
-            initialize
-            list_lb_ips
-            remove_stale
-            add_rules
-            echo "done applying vip rules"
-            # Arbitrary delay to avoid synchronizing too quickly on file changes; the VIP
-            # file could change multiple times quickly, but we don't need to react instantly
-            # to every change.  Most crucially we want to be sure we don't trip over the
-            # default systemd StartLimitBurst/StartLimitIterval settings which are 5 and 10s
-            # respectively.
-            echo "$(ls -al ${RUN_DIR})"
+            dirModified=$(stat -c %Y ${RUN_DIR})
+            timeNow=$(date +%s)  
+            timeDif=$(($timeNow - $dirModified))
+            difBuffer=$(($timeDif - 10))
+            if (("$difBuffer" < 0)); then
+              initialize
+              list_lb_ips
+              remove_stale
+              add_rules
+              echo "done applying vip rules"
+              # Arbitrary delay to avoid synchronizing too quickly on file changes; the VIP
+              # file could change multiple times quickly, but we don't need to react instantly
+              # to every change.  Most crucially we want to be sure we don't trip over the
+              # default systemd StartLimitBurst/StartLimitIterval settings which are 5 and 10s
+              # respectively.
+              echo "$(ls -al ${RUN_DIR})"
+            else
+              echo "processing noop"
+            fi
             sleep 3
             ;;
         cleanup)
