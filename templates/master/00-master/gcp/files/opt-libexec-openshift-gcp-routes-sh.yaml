@@ -189,6 +189,7 @@ contents:
             add_rules
             echo "done applying vip rules"
             echo "$(ls -al ${RUN_DIR})"
+            sleep 5 # add an additional 5 second sleep after we update
           else
            echo "processing noop"
           fi

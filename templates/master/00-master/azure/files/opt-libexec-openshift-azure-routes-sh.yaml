@@ -187,6 +187,7 @@ contents:
               # default systemd StartLimitBurst/StartLimitIterval settings which are 5 and 10s
               # respectively.
               echo "$(ls -al ${RUN_DIR})"
+              sleep 5 # add an additional 5 second sleep after we update
             else
               echo "processing noop"
             fi
