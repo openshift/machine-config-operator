@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
+	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/assert"
@@ -87,7 +88,7 @@ func applyCustomOSToNode(t *testing.T, cs *framework.ClientSet, node corev1.Node
 
 	t.Logf("Applying custom OS image %q to node %q", osImageURL, node.Name)
 
-	undoFunc := helpers.CreatePoolAndApplyMCToNode(t, cs, poolName, node, mc)
+	undoFunc := helpers.CreatePoolAndApplyMCToNode(t, cs, poolName, node, []*mcfgv1.MachineConfig{mc})
 
 	// Assert that we've booted into the new custom OS image.
 	assert.Contains(t, getRpmOstreeStatus(), osImageURL, fmt.Sprintf("node %q did not boot into %q", node.Name, osImageURL))

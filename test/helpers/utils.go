@@ -79,7 +79,7 @@ func MakeIdempotent(f func()) func() {
 // Creates a pool, adds the provided node to it, applies the MachineConfig,
 // waits for the rollout. Returns an idempotent function which can be used both
 // for reverting and cleanup purposes.
-func CreatePoolAndApplyMCToNode(t *testing.T, cs *framework.ClientSet, poolName string, node corev1.Node, mc *mcfgv1.MachineConfig) func() {
+func CreatePoolAndApplyMCToNode(t *testing.T, cs *framework.ClientSet, poolName string, node corev1.Node, mcs []*mcfgv1.MachineConfig) func() {
 	workerMCPName := "worker"
 
 	t.Logf("Setting up pool %s", poolName)
@@ -89,9 +89,18 @@ func CreatePoolAndApplyMCToNode(t *testing.T, cs *framework.ClientSet, poolName 
 
 	t.Logf("Target Node: %s", node.Name)
 
-	mcDeleteFunc := ApplyMC(t, cs, mc)
+	mcDeleteFuncs := []func(){}
+	mcNames := []string{}
 
-	WaitForConfigAndPoolComplete(t, cs, poolName, mc.Name)
+	for _, mc := range mcs {
+		mcDeleteFuncs = append(mcDeleteFuncs, ApplyMC(t, cs, mc))
+		mcNames = append(mcNames, mc.Name)
+	}
+
+	renderedMCName, err := WaitForRenderedConfigs(t, cs, poolName, mcNames...)
+	require.NoError(t, err)
+
+	require.NoError(t, WaitForPoolComplete(t, cs, poolName, renderedMCName), "pool %s did not update to config %s", poolName, renderedMCName)
 
 	mcpMCName := GetMcName(t, cs, poolName)
 	require.Nil(t, WaitForNodeConfigChange(t, cs, node, mcpMCName))
@@ -115,12 +124,14 @@ func CreatePoolAndApplyMCToNode(t *testing.T, cs *framework.ClientSet, poolName 
 		t.Logf("Deleting MCP %s", poolName)
 		deleteMCPFunc()
 
-		t.Logf("Deleting MachineConfig %s", mc.Name)
-		mcDeleteFunc()
+		for i, mcDeleteFunc := range mcDeleteFuncs {
+			t.Logf("Deleting MachineConfig %s", mcNames[i])
+			mcDeleteFunc()
+		}
 	})
 }
 
-func CreatePoolAndApplyMC(t *testing.T, cs *framework.ClientSet, poolName string, mc *mcfgv1.MachineConfig) func() {
+func CreatePoolAndApplyMC(t *testing.T, cs *framework.ClientSet, poolName string, mcs []*mcfgv1.MachineConfig) func() {
 	workerMCPName := "worker"
 
 	t.Logf("Setting up pool %s", poolName)
@@ -132,14 +143,23 @@ func CreatePoolAndApplyMC(t *testing.T, cs *framework.ClientSet, poolName string
 
 	t.Logf("Target Node: %s", node.Name)
 
-	mcDeleteFunc := ApplyMC(t, cs, mc)
+	mcDeleteFuncs := []func(){}
+	mcNames := []string{}
 
-	WaitForConfigAndPoolComplete(t, cs, poolName, mc.Name)
+	for _, mc := range mcs {
+		mcDeleteFuncs = append(mcDeleteFuncs, ApplyMC(t, cs, mc))
+		mcNames = append(mcNames, mc.Name)
+	}
+
+	renderedMCName, err := WaitForRenderedConfigs(t, cs, poolName, mcNames...)
+	require.NoError(t, err)
+
+	require.NoError(t, WaitForPoolComplete(t, cs, poolName, renderedMCName), "pool %s did not update to config %s", poolName, renderedMCName)
 
 	mcpMCName := GetMcName(t, cs, poolName)
 	require.Nil(t, WaitForNodeConfigChange(t, cs, node, mcpMCName))
 
-	return func() {
+	return MakeIdempotent(func() {
 		t.Logf("Cleaning up MCP %s", poolName)
 		t.Logf("Removing label %s from node %s", MCPNameToRole(poolName), node.Name)
 		unlabelFunc()
@@ -158,9 +178,11 @@ func CreatePoolAndApplyMC(t *testing.T, cs *framework.ClientSet, poolName string
 		t.Logf("Deleting MCP %s", poolName)
 		deleteMCPFunc()
 
-		t.Logf("Deleting MachineConfig %s", mc.Name)
-		mcDeleteFunc()
-	}
+		for i, mcDeleteFunc := range mcDeleteFuncs {
+			t.Logf("Deleting MachineConfig %s", mcNames[i])
+			mcDeleteFunc()
+		}
+	})
 }
 
 // GetMcName returns the current configuration name of the machine config pool poolName
