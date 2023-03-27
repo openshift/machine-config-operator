@@ -23,6 +23,7 @@ spec:
         memory: 50Mi
     securityContext:
       privileged: true
+      readOnlyRootFilesystem: false
     terminationMessagePolicy: FallbackToLogsOnError
     volumeMounts:
     - name: bootstrap-manifests
@@ -45,6 +46,7 @@ spec:
       mountPath: /etc/mcs/bootstrap
     securityContext:
       privileged: true
+      readOnlyRootFilesystem: false
   hostNetwork: true
   tolerations:
     - key: node-role.kubernetes.io/master
