@@ -17,10 +17,15 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
-func MutateNodeAndWait(t *testing.T, cs *framework.ClientSet, node *corev1.Node, pool *mcfgv1.MachineConfigPool) {
+func MutateNodeAndWait(t *testing.T, cs *framework.ClientSet, node *corev1.Node, pool *mcfgv1.MachineConfigPool) func() {
 	bashCmd := fmt.Sprintf("printf '%s' >> %s", "wrong-data-here", "/rootfs/etc/containers/storage.conf")
 	helpers.ExecCmdOnNode(t, cs, *node, "/bin/bash", "-c", bashCmd)
 	assertNodeAndMCPIsDegraded(t, cs, *node, *pool, "/etc/containers/storage.conf")
+
+	return helpers.ToCleanupFunc(t, func() {
+		helpers.ExecCmdOnNode(t, cs, *node, "/bin/bash", "-c", "sed -e s/wrong-data-here//g -i /rootfs/etc/containers/storage.conf")
+		assertNodeAndMCPIsRecovered(t, cs, *node, *pool)
+	})
 }
 
 func waitForConfigDriftMonitorStart(t *testing.T, cs *framework.ClientSet, node corev1.Node) {

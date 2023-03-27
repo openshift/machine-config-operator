@@ -82,8 +82,10 @@ func runTestWithCtrcfg(t *testing.T, testName, regexKey, expectedConfVal1, expec
 		}
 	}()
 
+	node := helpers.GetRandomNode(t, cs, "worker")
+
 	// label one node from the pool to specify which worker to update
-	cleanupFuncs = append(cleanupFuncs, helpers.LabelRandomNodeFromPool(t, cs, "worker", helpers.MCPNameToRole(poolName)))
+	cleanupFuncs = append(cleanupFuncs, helpers.LabelNode(t, cs, node, helpers.MCPNameToRole(poolName)))
 	// upon cleaning up, we need to wait for the pool to reconcile after unlabelling
 	cleanupFuncs = append(cleanupFuncs, func() {
 		// the sleep allows the unlabelling to take effect
@@ -95,7 +97,6 @@ func runTestWithCtrcfg(t *testing.T, testName, regexKey, expectedConfVal1, expec
 	})
 
 	// cache the old configuration value to check against later
-	node := helpers.GetSingleNodeByRole(t, cs, poolName)
 	defaultConfVal := getValueFromCrioConfig(t, cs, node, regexKey, defaultPath)
 	if defaultConfVal == expectedConfVal1 || defaultConfVal == expectedConfVal2 {
 		t.Logf("default configuration value %s same as values being tested against. Consider updating the test", defaultConfVal)
@@ -263,8 +264,10 @@ func runTestWithICSP(t *testing.T, testName, expectedVal string, icspRule *apiop
 		}
 	}()
 
+	node := helpers.GetRandomNode(t, cs, "worker")
+
 	// label one node from the pool to specify which worker to update
-	cleanupFuncs = append(cleanupFuncs, helpers.LabelRandomNodeFromPool(t, cs, "worker", helpers.MCPNameToRole(labelName)))
+	cleanupFuncs = append(cleanupFuncs, helpers.LabelNode(t, cs, node, helpers.MCPNameToRole(labelName)))
 	// upon cleaning up, we need to wait for the pool to reconcile after unlabelling
 	cleanupFuncs = append(cleanupFuncs, func() {
 		// the sleep allows the unlabelling to take effect
@@ -275,8 +278,6 @@ func runTestWithICSP(t *testing.T, testName, expectedVal string, icspRule *apiop
 		}
 	})
 
-	// cache the old configuration value to check against later
-	node := helpers.GetSingleNodeByRole(t, cs, labelName)
 	// cache the old configuration value to check against later
 	defaultConfVal := getValueFromRegistriesConfig(t, cs, node, searchKey, registriesConfigPath)
 	if defaultConfVal == expectedVal {

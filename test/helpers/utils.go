@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"os"
@@ -16,8 +17,10 @@ import (
 	"time"
 
 	authenticationv1 "k8s.io/api/authentication/v1"
+	kubeErrs "k8s.io/apimachinery/pkg/util/errors"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
+	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/daemon/osrelease"
@@ -26,7 +29,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
@@ -61,9 +63,9 @@ func ApplyMC(t *testing.T, cs *framework.ClientSet, mc *mcfgv1.MachineConfig) fu
 	_, err := cs.MachineConfigs().Create(context.TODO(), mc, metav1.CreateOptions{})
 	require.Nil(t, err)
 
-	return func() {
+	return ToCleanupFunc(t, func() {
 		require.Nil(t, cs.MachineConfigs().Delete(context.TODO(), mc.Name, metav1.DeleteOptions{}))
-	}
+	})
 }
 
 // Ensures that a given cleanup function only runs once; even if called
@@ -79,10 +81,31 @@ func MakeIdempotent(f func()) func() {
 	}
 }
 
+// Ensures that a given cleanup function is registered with the test suite and
+// is run only once; even if called multiple times.
+func ToCleanupFunc(t *testing.T, f func()) func() {
+	f = MakeIdempotent(f)
+	t.Cleanup(f)
+	return f
+}
+
+func IsSNO(node corev1.Node) bool {
+	controlPlaneTopology := node.Annotations[constants.ClusterControlPlaneTopologyAnnotationKey]
+	switch configv1.TopologyMode(controlPlaneTopology) {
+	case configv1.SingleReplicaTopologyMode:
+		return true
+	case configv1.HighlyAvailableTopologyMode:
+		return false
+	default:
+		// for any unhandled case, default to HighlyAvailableTopologyMode
+		return false
+	}
+}
+
 // Creates a pool, adds the provided node to it, applies the MachineConfig,
 // waits for the rollout. Returns an idempotent function which can be used both
 // for reverting and cleanup purposes.
-func CreatePoolAndApplyMCToNode(t *testing.T, cs *framework.ClientSet, poolName string, node corev1.Node, mc *mcfgv1.MachineConfig) func() {
+func CreatePoolAndApplyMCToNode(t *testing.T, cs *framework.ClientSet, poolName string, node corev1.Node, mcs []*mcfgv1.MachineConfig) func() {
 	workerMCPName := "worker"
 
 	t.Logf("Setting up pool %s", poolName)
@@ -90,19 +113,31 @@ func CreatePoolAndApplyMCToNode(t *testing.T, cs *framework.ClientSet, poolName 
 	unlabelFunc := LabelNode(t, cs, node, MCPNameToRole(poolName))
 	deleteMCPFunc := CreateMCP(t, cs, poolName)
 
-	t.Logf("Target Node: %s", node.Name)
+	updatedNode, err := cs.CoreV1Interface.Nodes().Get(context.TODO(), node.Name, metav1.GetOptions{})
+	require.NoError(t, err)
 
-	mcDeleteFunc := ApplyMC(t, cs, mc)
+	node = *updatedNode
 
-	WaitForConfigAndPoolComplete(t, cs, poolName, mc.Name)
+	t.Logf("Target node %s now has role(s): %v", node.Name, getNodeRoles(node))
+
+	renderedMCName, deleteMCs := applyMCsAndWaitForRenderedConfigs(t, cs, poolName, mcs)
+
+	require.NoError(t, WaitForPoolComplete(t, cs, poolName, renderedMCName), "pool %s did not update to config %s", poolName, renderedMCName)
 
 	mcpMCName := GetMcName(t, cs, poolName)
 	require.Nil(t, WaitForNodeConfigChange(t, cs, node, mcpMCName))
 
-	return MakeIdempotent(func() {
+	return ToCleanupFunc(t, func() {
 		t.Logf("Cleaning up MCP %s", poolName)
 		t.Logf("Removing label %s from node %s", MCPNameToRole(poolName), node.Name)
 		unlabelFunc()
+
+		updatedNode, err := cs.CoreV1Interface.Nodes().Get(context.TODO(), node.Name, metav1.GetOptions{})
+
+		node = *updatedNode
+
+		require.NoError(t, err)
+		t.Logf("Target node %s now has role(s): %v", node.Name, getNodeRoles(node))
 
 		workerMC := GetMcName(t, cs, workerMCPName)
 
@@ -118,52 +153,65 @@ func CreatePoolAndApplyMCToNode(t *testing.T, cs *framework.ClientSet, poolName 
 		t.Logf("Deleting MCP %s", poolName)
 		deleteMCPFunc()
 
-		t.Logf("Deleting MachineConfig %s", mc.Name)
-		mcDeleteFunc()
+		deleteMCs()
 	})
 }
 
-func CreatePoolAndApplyMC(t *testing.T, cs *framework.ClientSet, poolName string, mc *mcfgv1.MachineConfig) func() {
-	workerMCPName := "worker"
+func applyMCsAndWaitForRenderedConfigs(t *testing.T, cs *framework.ClientSet, poolName string, mcs []*mcfgv1.MachineConfig) (string, func()) {
+	mcDeleteFuncs := []func(){}
+	mcNames := []string{}
 
-	t.Logf("Setting up pool %s", poolName)
-
-	unlabelFunc := LabelRandomNodeFromPool(t, cs, workerMCPName, MCPNameToRole(poolName))
-	deleteMCPFunc := CreateMCP(t, cs, poolName)
-
-	node := GetSingleNodeByRole(t, cs, poolName)
-
-	t.Logf("Target Node: %s", node.Name)
-
-	mcDeleteFunc := ApplyMC(t, cs, mc)
-
-	WaitForConfigAndPoolComplete(t, cs, poolName, mc.Name)
-
-	mcpMCName := GetMcName(t, cs, poolName)
-	require.Nil(t, WaitForNodeConfigChange(t, cs, node, mcpMCName))
-
-	return func() {
-		t.Logf("Cleaning up MCP %s", poolName)
-		t.Logf("Removing label %s from node %s", MCPNameToRole(poolName), node.Name)
-		unlabelFunc()
-
-		workerMC := GetMcName(t, cs, workerMCPName)
-
-		// Wait for the worker pool to catch up with the deleted label
-		time.Sleep(5 * time.Second)
-
-		t.Logf("Waiting for %s pool to finish applying %s", workerMCPName, workerMC)
-		require.Nil(t, WaitForPoolComplete(t, cs, workerMCPName, workerMC))
-
-		t.Logf("Ensuring node has %s pool config before deleting pool %s", workerMCPName, poolName)
-		require.Nil(t, WaitForNodeConfigChange(t, cs, node, workerMC))
-
-		t.Logf("Deleting MCP %s", poolName)
-		deleteMCPFunc()
-
-		t.Logf("Deleting MachineConfig %s", mc.Name)
-		mcDeleteFunc()
+	for _, mc := range mcs {
+		mcDeleteFuncs = append(mcDeleteFuncs, ApplyMC(t, cs, mc))
+		mcNames = append(mcNames, mc.Name)
 	}
+
+	renderedMCName, err := WaitForRenderedConfigs(t, cs, poolName, mcNames...)
+	require.NoError(t, err)
+
+	return renderedMCName, ToCleanupFunc(t, func() {
+		for i, mcDeleteFunc := range mcDeleteFuncs {
+			t.Logf("Deleting MachineConfig %s", mcNames[i])
+			mcDeleteFunc()
+		}
+	})
+}
+
+func ApplyMCToSNO(t *testing.T, cs *framework.ClientSet, mcs []*mcfgv1.MachineConfig) func() {
+	mcpName := "master"
+
+	originalMCName := GetMcName(t, cs, mcpName)
+
+	renderedMCName, deleteMCs := applyMCsAndWaitForRenderedConfigs(t, cs, mcpName, mcs)
+
+	require.Nil(t, WaitForSingleNodePoolComplete(t, cs, mcpName, renderedMCName))
+
+	return ToCleanupFunc(t, func() {
+		deleteMCs()
+		require.NoError(t, WaitForSingleNodePoolComplete(t, cs, mcpName, originalMCName))
+	})
+}
+
+func WaitForSingleNodePoolComplete(t *testing.T, cs *framework.ClientSet, pool, target string) error {
+	var lastErr error
+	startTime := time.Now()
+	if err := wait.Poll(2*time.Second, 20*time.Minute, func() (bool, error) {
+		err := WaitForPoolComplete(t, cs, pool, target)
+		if err != nil {
+			lastErr = err
+			return false, nil
+		}
+		return true, nil
+	}); err != nil {
+		errs := kubeErrs.NewAggregate([]error{lastErr, err})
+		if errors.Is(err, wait.ErrWaitTimeout) {
+			return fmt.Errorf("pool %s is still not updated, waited %v: %w", pool, time.Since(startTime), errs)
+		}
+
+		return fmt.Errorf("unknown error occurred: %w", errs)
+	}
+
+	return nil
 }
 
 // GetMcName returns the current configuration name of the machine config pool poolName
@@ -246,8 +294,12 @@ func notFoundNames(foundNames map[string]bool) []string {
 // WaitForPoolComplete polls a pool until it has completed an update to target
 func WaitForPoolComplete(t *testing.T, cs *framework.ClientSet, pool, target string) error {
 	startTime := time.Now()
-	if err := wait.Poll(2*time.Second, 20*time.Minute, func() (bool, error) {
-		mcp, err := cs.MachineConfigPools().Get(context.TODO(), pool, metav1.GetOptions{})
+
+	var mcp *mcfgv1.MachineConfigPool
+	var err error
+
+	pollErr := wait.Poll(2*time.Second, 20*time.Minute, func() (bool, error) {
+		mcp, err = cs.MachineConfigPools().Get(context.TODO(), pool, metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
@@ -258,11 +310,36 @@ func WaitForPoolComplete(t *testing.T, cs *framework.ClientSet, pool, target str
 			return true, nil
 		}
 		return false, nil
-	}); err != nil {
-		return fmt.Errorf("pool %s didn't report %s to updated (waited %s): %w", pool, target, time.Since(startTime), err)
+	})
+
+	if pollErr != nil {
+		return fmt.Errorf("pool %s didn't report %s to updated (waited %s): %w", pool, target, time.Since(startTime), appendMCPState(mcp, pollErr))
 	}
+
 	t.Logf("Pool %s has completed %s (waited %v)", pool, target, time.Since(startTime))
 	return nil
+}
+
+func appendMCPState(mcp *mcfgv1.MachineConfigPool, err error) error {
+	outErrs := []error{err}
+
+	conditionTypes := []mcfgv1.MachineConfigPoolConditionType{
+		mcfgv1.MachineConfigPoolDegraded,
+		mcfgv1.MachineConfigPoolNodeDegraded,
+		mcfgv1.MachineConfigPoolRenderDegraded,
+	}
+
+	for _, conditionType := range conditionTypes {
+		if mcfgv1.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, conditionType) {
+			condition := mcfgv1.GetMachineConfigPoolCondition(mcp.Status, conditionType)
+			if condition.Message != "" || condition.Reason != "" {
+				outErr := fmt.Errorf("%s: Message: %s. Reason: %s", conditionType, condition.Message, condition.Reason)
+				outErrs = append(outErrs, outErr)
+			}
+		}
+	}
+
+	return kubeErrs.NewAggregate(outErrs)
 }
 
 func WaitForNodeConfigChange(t *testing.T, cs *framework.ClientSet, node corev1.Node, mcName string) error {
@@ -291,8 +368,11 @@ func WaitForNodeConfigChange(t *testing.T, cs *framework.ClientSet, node corev1.
 
 // WaitForPoolComplete polls a pool until it has completed any update
 func WaitForPoolCompleteAny(t *testing.T, cs *framework.ClientSet, pool string) error {
-	if err := wait.PollImmediate(2*time.Second, 2*time.Minute, func() (bool, error) {
-		mcp, err := cs.MachineConfigPools().Get(context.TODO(), pool, metav1.GetOptions{})
+	var mcp *mcfgv1.MachineConfigPool
+	var err error
+
+	pollErr := wait.PollImmediate(2*time.Second, 2*time.Minute, func() (bool, error) {
+		mcp, err = cs.MachineConfigPools().Get(context.TODO(), pool, metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
@@ -301,9 +381,14 @@ func WaitForPoolCompleteAny(t *testing.T, cs *framework.ClientSet, pool string) 
 			return true, nil
 		}
 		return false, nil
-	}); err != nil {
-		t.Errorf("Machine config pool did not complete an update: %v", err)
+	})
+
+	if pollErr != nil {
+		outErr := fmt.Errorf("machine config pool did not complete an update: %w", appendMCPState(mcp, pollErr))
+		t.Error(outErr)
+		return outErr
 	}
+
 	return nil
 }
 
@@ -402,8 +487,7 @@ func LabelNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, label st
 
 	require.Nil(t, err, "unable to label %s node %s with infra: %s", label, node.Name, err)
 
-	return MakeIdempotent(func() {
-
+	return ToCleanupFunc(t, func() {
 		err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 			n, err := cs.CoreV1Interface.Nodes().Get(ctx, node.Name, metav1.GetOptions{})
 			if err != nil {
@@ -478,15 +562,11 @@ func CreateMCP(t *testing.T, cs *framework.ClientSet, mcpName string) func() {
 	infraMCP.ObjectMeta.Labels = make(map[string]string)
 	infraMCP.ObjectMeta.Labels[mcpName] = ""
 	_, err := cs.MachineConfigPools().Create(context.TODO(), infraMCP, metav1.CreateOptions{})
-	if err != nil {
-		if !errors.IsAlreadyExists(err) {
-			require.Nil(t, err)
-		}
-	}
-	return func() {
+	require.Nil(t, err)
+	return ToCleanupFunc(t, func() {
 		err := cs.MachineConfigPools().Delete(context.TODO(), mcpName, metav1.DeleteOptions{})
 		require.Nil(t, err)
-	}
+	})
 }
 
 type SSHPaths struct {
@@ -519,6 +599,52 @@ func MCPNameToRole(mcpName string) string {
 // CreateMC creates a machine config object with name and role
 func CreateMC(name, role string) *mcfgv1.MachineConfig {
 	return NewMachineConfig(name, MCLabelForRole(role), "", nil)
+}
+
+func AssertFileOnNodeEmpty(t *testing.T, cs *framework.ClientSet, node corev1.Node, path string) bool {
+	t.Helper()
+
+	if !AssertFileOnNode(t, cs, node, path) {
+		return false
+	}
+
+	contents := getFileContents(t, cs, node, path)
+	return assert.Empty(t, contents, "expected file %q on %q to be empty: got %q", path, node.Name, contents)
+}
+
+func AssertFileOnNodeNotEmpty(t *testing.T, cs *framework.ClientSet, node corev1.Node, path string) bool {
+	t.Helper()
+
+	if !AssertFileOnNode(t, cs, node, path) {
+		return false
+	}
+
+	contents := getFileContents(t, cs, node, path)
+	return assert.NotEmpty(t, contents, "expected file %q on %q to not to be empty: got %q", path, node.Name, contents)
+}
+
+func AssertFileOnNodeContains(t *testing.T, cs *framework.ClientSet, node corev1.Node, path, expectedContents string) bool {
+	t.Helper()
+
+	exists := AssertFileOnNode(t, cs, node, path)
+	if !exists {
+		return false
+	}
+
+	contents := getFileContents(t, cs, node, path)
+	return assert.Contains(t, contents, expectedContents, "expected file %q on %q to contain %q: got %q", path, node.Name, expectedContents, contents)
+}
+
+func AssertFileOnNodeNotContains(t *testing.T, cs *framework.ClientSet, node corev1.Node, path, unexpectedContents string) bool {
+	t.Helper()
+
+	exists := AssertFileOnNode(t, cs, node, path)
+	if !exists {
+		return false
+	}
+
+	contents := getFileContents(t, cs, node, path)
+	return assert.NotContains(t, contents, unexpectedContents, "expected file %q on %q not to contain %q: got %q", path, node.Name, unexpectedContents, contents)
 }
 
 // Asserts that a given file is present on the underlying node.
@@ -555,6 +681,10 @@ func canonicalizeNodeFilePath(path string) string {
 	return path
 }
 
+func getFileContents(t *testing.T, cs *framework.ClientSet, node corev1.Node, path string) string {
+	return ExecCmdOnNode(t, cs, node, "cat", canonicalizeNodeFilePath(path))
+}
+
 // ExecCmdOnNode finds a node's mcd, and oc rsh's into it to execute a command on the node
 // all commands should use /rootfs as root
 func ExecCmdOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, subArgs ...string) string {
@@ -579,6 +709,10 @@ func ExecCmdOnNodeWithError(cs *framework.ClientSet, node corev1.Node, subArgs .
 	}
 
 	out, err := cmd.CombinedOutput()
+	if err != nil {
+		err = fmt.Errorf("failed to exec cmd %v on node %s: %s: %w", subArgs, node.Name, string(out), err)
+	}
+
 	return string(out), err
 }
 
@@ -769,10 +903,10 @@ func OverrideGlobalPathVar(t *testing.T, name string, val *string) func() {
 
 	t.Logf("original value of %s (%s) overridden with %s", name, oldValue, newValue)
 
-	return func() {
+	return ToCleanupFunc(t, func() {
 		t.Logf("original value of %s restored to %s", name, oldValue)
 		*val = oldValue
-	}
+	})
 }
 
 type NodeOSRelease struct {
@@ -818,4 +952,16 @@ func mcdForNode(cs *framework.ClientSet, node *corev1.Node) (*corev1.Pod, error)
 		return nil, fmt.Errorf("too many (%d) MCDs for node %s", len(mcdList.Items), node.Name)
 	}
 	return &mcdList.Items[0], nil
+}
+
+func getNodeRoles(node corev1.Node) []string {
+	nodeRoles := []string{}
+
+	for labelKey := range node.Labels {
+		if strings.Contains(labelKey, "node-role.kubernetes.io") {
+			nodeRoles = append(nodeRoles, labelKey)
+		}
+	}
+
+	return nodeRoles
 }

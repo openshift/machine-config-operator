@@ -75,8 +75,10 @@ func runTestWithKubeletCfg(t *testing.T, testName, regexKey, expectedConfVal1, e
 		}
 	}()
 
+	node := helpers.GetRandomNode(t, cs, "worker")
+
 	// label one node from the pool to specify which worker to update
-	cleanupFuncs = append(cleanupFuncs, helpers.LabelRandomNodeFromPool(t, cs, "worker", helpers.MCPNameToRole(poolName)))
+	cleanupFuncs = append(cleanupFuncs, helpers.LabelNode(t, cs, node, helpers.MCPNameToRole(poolName)))
 	// upon cleaning up, we need to wait for the pool to reconcile after unlabelling
 	cleanupFuncs = append(cleanupFuncs, func() {
 		// the sleep allows the unlabelling to take effect
@@ -88,7 +90,6 @@ func runTestWithKubeletCfg(t *testing.T, testName, regexKey, expectedConfVal1, e
 	})
 
 	// cache the old configuration value to check against later
-	node := helpers.GetSingleNodeByRole(t, cs, poolName)
 	// the kubelet.conf format is yaml when in the default state and becomes a json when we apply a kubelet config CR
 	defaultConfVal := getValueFromKubeletConfig(t, cs, node, `"?maxPods"?: (\S+)`, kubeletPath) + ","
 	if defaultConfVal == expectedConfVal1 || defaultConfVal == expectedConfVal2 {

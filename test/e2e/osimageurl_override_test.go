@@ -1,4 +1,4 @@
-package e2e
+package e2e_test
 
 import (
 	"fmt"
@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
+	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/assert"
@@ -36,6 +37,8 @@ func TestOSImageURLOverride(t *testing.T) {
 
 	cs := framework.NewClientSet("")
 
+	mcpName := "test-custom-os-image"
+
 	node := helpers.GetRandomNode(t, cs, "worker")
 
 	binaries := []string{
@@ -48,8 +51,7 @@ func TestOSImageURLOverride(t *testing.T) {
 
 	assertNodeDoesNotHaveBinaries(t, cs, node, binaries)
 
-	undoFunc := applyCustomOSToNode(t, cs, node, osImageURL, "infra")
-	t.Cleanup(undoFunc)
+	undoFunc := applyCustomOSToNode(t, cs, node, osImageURL, mcpName)
 
 	assertNodeHasBinaries(t, cs, node, binaries)
 
@@ -87,14 +89,14 @@ func applyCustomOSToNode(t *testing.T, cs *framework.ClientSet, node corev1.Node
 
 	t.Logf("Applying custom OS image %q to node %q", osImageURL, node.Name)
 
-	undoFunc := helpers.CreatePoolAndApplyMCToNode(t, cs, poolName, node, mc)
+	undoFunc := helpers.CreatePoolAndApplyMCToNode(t, cs, poolName, node, []*mcfgv1.MachineConfig{mc})
 
 	// Assert that we've booted into the new custom OS image.
 	assert.Contains(t, getRpmOstreeStatus(), osImageURL, fmt.Sprintf("node %q did not boot into %q", node.Name, osImageURL))
 
 	t.Logf("Node %q has booted into %q", node.Name, osImageURL)
 
-	return helpers.MakeIdempotent(func() {
+	return helpers.ToCleanupFunc(t, func() {
 		// Roll back the MachineConfig that introduced the custom OS image.
 		undoFunc()
 
