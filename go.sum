@@ -809,8 +809,6 @@ github.com/opencontainers/runc v1.1.4/go.mod h1:1J5XiS+vdZ3wCyZybsuxXZWGrgSr8fFJ
 github.com/opencontainers/runtime-spec v1.0.3-0.20210326190908-1c3f411f0417 h1:3snG66yBm59tKhhSPQrQ/0bCrv1LQbKt40LnUPiUxdc=
 github.com/opencontainers/runtime-spec v1.0.3-0.20210326190908-1c3f411f0417/go.mod h1:jwyrGlmzljRJv/Fgzds9SsS/C5hL+LL3ko9hs6T5lQ0=
 github.com/opencontainers/selinux v1.10.0/go.mod h1:2i0OySw99QjzBBQByd1Gr9gSjvuho1lHsJxIJ3gGbJI=
-github.com/openshift/api v0.0.0-20230221095031-69130006bb23 h1:6hkSewbomhxN9+WQhT1ABANfZOJCjAzvBPSQe1OMbRs=
-github.com/openshift/api v0.0.0-20230221095031-69130006bb23/go.mod h1:ctXNyWanKEjGj8sss1KjjHQ3ENKFm33FFnS5BKaIPh4=
 github.com/openshift/client-go v0.0.0-20230120202327-72f107311084 h1:66uaqNwA+qYyQDwsMWUfjjau8ezmg1dzCqub13KZOcE=
 github.com/openshift/client-go v0.0.0-20230120202327-72f107311084/go.mod h1:M3h9m001PWac3eAudGG3isUud6yBjr5XpzLYLLTlHKo=
 github.com/openshift/library-go v0.0.0-20230307165833-3e3a8a28de0c h1:eNr188/2KoXgFhiCuOEpi28/q4y1JjD7wrBRRgern/g=

@@ -115,25 +115,23 @@ var FeatureSets = map[FeatureSet]*FeatureGateEnabledDisabled{
 		with("NodeSwap").                          // sig-node, ehashman, Kubernetes feature gate
 		with("MachineAPIProviderOpenStack").       // openstack, egarcia (#forum-openstack), OCP specific
 		with("InsightsConfigAPI").                 // insights, tremes (#ccx), OCP specific
-		with("CSIInlineVolumeAdmission").          // sig-storage, jdobson, OCP specific
 		with("MatchLabelKeysInPodTopologySpread"). // sig-scheduling, ingvagabund (#forum-workloads), Kubernetes feature gate
 		with("RetroactiveDefaultStorageClass").    // sig-storage, RomanBednar, Kubernetes feature gate
 		with("PDBUnhealthyPodEvictionPolicy").     // sig-apps, atiratree (#forum-workloads), Kubernetes feature gate
 		with("DynamicResourceAllocation").         // sig-scheduling, jchaloup (#forum-workloads), Kubernetes feature gate
-		toFeatures(),
+		with("ValidatingAdmissionPolicy").         // sig-api-machinery, benluddy
+		with("AdmissionWebhookMatchConditions").   // sig-api-machinery, benluddy
+		toFeatures(defaultFeatures),
 	LatencySensitive: newDefaultFeatures().
 		with(
 			"TopologyManager", // sig-pod, sjenning
 		).
-		toFeatures(),
+		toFeatures(defaultFeatures),
 }
 
 var defaultFeatures = &FeatureGateEnabledDisabled{
 	Enabled: []string{
-		"APIPriorityAndFairness",         // sig-apimachinery, deads2k
-		"RotateKubeletServerCertificate", // sig-pod, sjenning
-		"DownwardAPIHugePages",           // sig-node, rphillips
-		"OpenShiftPodSecurityAdmission",  // bz-auth, stlaz, OCP specific
+		"OpenShiftPodSecurityAdmission", // bz-auth, stlaz, OCP specific
 	},
 	Disabled: []string{
 		"RetroactiveDefaultStorageClass", // sig-storage, RomanBednar, Kubernetes feature gate
@@ -177,7 +175,7 @@ func (f *featureSetBuilder) isForcedOn(needle string) bool {
 	return false
 }
 
-func (f *featureSetBuilder) toFeatures() *FeatureGateEnabledDisabled {
+func (f *featureSetBuilder) toFeatures(defaultFeatures *FeatureGateEnabledDisabled) *FeatureGateEnabledDisabled {
 	finalOn := []string{}
 	finalOff := []string{}
 

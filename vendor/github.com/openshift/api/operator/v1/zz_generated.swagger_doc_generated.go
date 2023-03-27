@@ -63,7 +63,7 @@ var map_OperatorSpec = map[string]string{
 	"managementState":            "managementState indicates whether and how the operator should manage the component",
 	"logLevel":                   "logLevel is an intent based logging for an overall component.  It does not give fine grained control, but it is a simple way to manage coarse grained logging choices that operators have to interpret for their operands.\n\nValid values are: \"Normal\", \"Debug\", \"Trace\", \"TraceAll\". Defaults to \"Normal\".",
 	"operatorLogLevel":           "operatorLogLevel is an intent based logging for the operator itself.  It does not give fine grained control, but it is a simple way to manage coarse grained logging choices that operators have to interpret for themselves.\n\nValid values are: \"Normal\", \"Debug\", \"Trace\", \"TraceAll\". Defaults to \"Normal\".",
-	"unsupportedConfigOverrides": "unsupportedConfigOverrides holds a sparse config that will override any previously set options.  It only needs to be the fields to override it will end up overlaying in the following order: 1. hardcoded defaults 2. observedConfig 3. unsupportedConfigOverrides",
+	"unsupportedConfigOverrides": "unsupportedConfigOverrides overrides the final configuration that was computed by the operator. Red Hat does not support the use of this field. Misuse of this field could lead to unexpected behavior or conflict with other configuration options. Seek guidance from the Red Hat support before using this field. Use of this property blocks cluster upgrades, it must be removed before upgrading your cluster.",
 	"observedConfig":             "observedConfig holds a sparse config that controller has observed from the cluster state.  It exists in spec because it is an input to the level for the operator",
 }
 
@@ -380,9 +380,41 @@ func (StatuspageProvider) SwaggerDoc() map[string]string {
 	return map_StatuspageProvider
 }
 
+var map_AWSCSIDriverConfigSpec = map[string]string{
+	"":          "AWSCSIDriverConfigSpec defines properties that can be configured for the AWS CSI driver.",
+	"kmsKeyARN": "kmsKeyARN sets the cluster default storage class to encrypt volumes with a user-defined KMS key, rather than the default KMS key used by AWS. The value may be either the ARN or Alias ARN of a KMS key.",
+}
+
+func (AWSCSIDriverConfigSpec) SwaggerDoc() map[string]string {
+	return map_AWSCSIDriverConfigSpec
+}
+
+var map_AzureCSIDriverConfigSpec = map[string]string{
+	"":                  "AzureCSIDriverConfigSpec defines properties that can be configured for the Azure CSI driver.",
+	"diskEncryptionSet": "diskEncryptionSet sets the cluster default storage class to encrypt volumes with a customer-managed encryption set, rather than the default platform-managed keys.",
+}
+
+func (AzureCSIDriverConfigSpec) SwaggerDoc() map[string]string {
+	return map_AzureCSIDriverConfigSpec
+}
+
+var map_AzureDiskEncryptionSet = map[string]string{
+	"":               "AzureDiskEncryptionSet defines the configuration for a disk encryption set.",
+	"subscriptionID": "subscriptionID defines the Azure subscription that contains the disk encryption set. The value should meet the following conditions: 1. It should be a 128-bit number. 2. It should be 36 characters (32 hexadecimal characters and 4 hyphens) long. 3. It should be displayed in five groups separated by hyphens (-). 4. The first group should be 8 characters long. 5. The second, third, and fourth groups should be 4 characters long. 6. The fifth group should be 12 characters long. An Example SubscrionID: f2007bbf-f802-4a47-9336-cf7c6b89b378",
+	"resourceGroup":  "resourceGroup defines the Azure resource group that contains the disk encryption set. The value should consist of only alphanumberic characters, underscores (_), parentheses, hyphens and periods. The value should not end in a period and be at most 90 characters in length.",
+	"name":           "name is the name of the disk encryption set that will be set on the default storage class. The value should consist of only alphanumberic characters, underscores (_), hyphens, and be at most 80 characters in length.",
+}
+
+func (AzureDiskEncryptionSet) SwaggerDoc() map[string]string {
+	return map_AzureDiskEncryptionSet
+}
+
 var map_CSIDriverConfigSpec = map[string]string{
 	"":           "CSIDriverConfigSpec defines configuration spec that can be used to optionally configure a specific CSI Driver.",
-	"driverType": "driverType indicates type of CSI driver for which the driverConfig is being applied to.\n\nValid values are:\n\n* vSphere\n\nAllows configuration of vsphere CSI driver topology.",
+	"driverType": "driverType indicates type of CSI driver for which the driverConfig is being applied to. Valid values are: AWS, Azure, GCP, vSphere and omitted. Consumers should treat unknown values as a NO-OP.",
+	"aws":        "aws is used to configure the AWS CSI driver.",
+	"azure":      "azure is used to configure the Azure CSI driver.",
+	"gcp":        "gcp is used to configure the GCP CSI driver.",
 	"vSphere":    "vsphere is used to configure the vsphere CSI driver.",
 }
 
@@ -424,6 +456,27 @@ var map_ClusterCSIDriverStatus = map[string]string{
 
 func (ClusterCSIDriverStatus) SwaggerDoc() map[string]string {
 	return map_ClusterCSIDriverStatus
+}
+
+var map_GCPCSIDriverConfigSpec = map[string]string{
+	"":       "GCPCSIDriverConfigSpec defines properties that can be configured for the GCP CSI driver.",
+	"kmsKey": "kmsKey sets the cluster default storage class to encrypt volumes with customer-supplied encryption keys, rather than the default keys managed by GCP.",
+}
+
+func (GCPCSIDriverConfigSpec) SwaggerDoc() map[string]string {
+	return map_GCPCSIDriverConfigSpec
+}
+
+var map_GCPKMSKeyReference = map[string]string{
+	"":          "GCPKMSKeyReference gathers required fields for looking up a GCP KMS Key",
+	"name":      "name is the name of the customer-managed encryption key to be used for disk encryption. The value should correspond to an existing KMS key and should consist of only alphanumeric characters, hyphens (-) and underscores (_), and be at most 63 characters in length.",
+	"keyRing":   "keyRing is the name of the KMS Key Ring which the KMS Key belongs to. The value should correspond to an existing KMS key ring and should consist of only alphanumeric characters, hyphens (-) and underscores (_), and be at most 63 characters in length.",
+	"projectID": "projectID is the ID of the Project in which the KMS Key Ring exists. It must be 6 to 30 lowercase letters, digits, or hyphens. It must start with a letter. Trailing hyphens are prohibited.",
+	"location":  "location is the GCP location in which the Key Ring exists. The value must match an existing GCP location, or \"global\". Defaults to global, if not set.",
+}
+
+func (GCPKMSKeyReference) SwaggerDoc() map[string]string {
+	return map_GCPKMSKeyReference
 }
 
 var map_VSphereCSIDriverConfigSpec = map[string]string{
@@ -1557,7 +1610,8 @@ func (StorageList) SwaggerDoc() map[string]string {
 }
 
 var map_StorageSpec = map[string]string{
-	"": "StorageSpec is the specification of the desired behavior of the cluster storage operator.",
+	"":             "StorageSpec is the specification of the desired behavior of the cluster storage operator.",
+	"csiMigration": "CSIMigration enables CSI migration for drivers where it is optional. This field is immutable once it is set and can not be undone.",
 }
 
 func (StorageSpec) SwaggerDoc() map[string]string {

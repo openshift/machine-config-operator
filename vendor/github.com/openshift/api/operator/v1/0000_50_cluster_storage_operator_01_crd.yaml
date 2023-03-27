@@ -35,6 +35,14 @@ spec:
               description: spec holds user settable values for configuration
               type: object
               properties:
+                csiMigration:
+                  description: CSIMigration enables CSI migration for drivers where it is optional. This field is immutable once it is set and can not be undone.
+                  type: string
+                  enum:
+                    - Enabled
+                  x-kubernetes-validations:
+                    - rule: self == oldSelf
+                      message: CSIMigration is immutable
                 logLevel:
                   description: "logLevel is an intent based logging for an overall component.  It does not give fine grained control, but it is a simple way to manage coarse grained logging choices that operators have to interpret for their operands. \n Valid values are: \"Normal\", \"Debug\", \"Trace\", \"TraceAll\". Defaults to \"Normal\"."
                   type: string
@@ -65,10 +73,13 @@ spec:
                     - Trace
                     - TraceAll
                 unsupportedConfigOverrides:
-                  description: 'unsupportedConfigOverrides holds a sparse config that will override any previously set options.  It only needs to be the fields to override it will end up overlaying in the following order: 1. hardcoded defaults 2. observedConfig 3. unsupportedConfigOverrides'
+                  description: unsupportedConfigOverrides overrides the final configuration that was computed by the operator. Red Hat does not support the use of this field. Misuse of this field could lead to unexpected behavior or conflict with other configuration options. Seek guidance from the Red Hat support before using this field. Use of this property blocks cluster upgrades, it must be removed before upgrading your cluster.
                   type: object
                   nullable: true
                   x-kubernetes-preserve-unknown-fields: true
+              x-kubernetes-validations:
+                - rule: '!has(oldSelf.csiMigration) || has(self.csiMigration)'
+                  message: CSIMigration is required once set
             status:
               description: status holds observed values from the cluster. They may not be overridden.
               type: object

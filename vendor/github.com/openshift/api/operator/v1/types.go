@@ -70,11 +70,11 @@ type OperatorSpec struct {
 	// +kubebuilder:default=Normal
 	OperatorLogLevel LogLevel `json:"operatorLogLevel,omitempty"`
 
-	// unsupportedConfigOverrides holds a sparse config that will override any previously set options.  It only needs to be the fields to override
-	// it will end up overlaying in the following order:
-	// 1. hardcoded defaults
-	// 2. observedConfig
-	// 3. unsupportedConfigOverrides
+	// unsupportedConfigOverrides overrides the final configuration that was computed by the operator.
+	// Red Hat does not support the use of this field.
+	// Misuse of this field could lead to unexpected behavior or conflict with other configuration options.
+	// Seek guidance from the Red Hat support before using this field.
+	// Use of this property blocks cluster upgrades, it must be removed before upgrading your cluster.
 	// +optional
 	// +nullable
 	// +kubebuilder:pruning:PreserveUnknownFields
