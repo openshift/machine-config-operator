@@ -90,7 +90,7 @@ func TestCloudProvider(t *testing.T) {
 		res:      "",
 	}, {
 		platform: configv1.VSpherePlatformType,
-		res:      "external",
+		res:      "vsphere",
 	}, {
 		platform: configv1.AlibabaCloudPlatformType,
 		res:      "external",

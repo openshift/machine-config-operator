@@ -14,6 +14,7 @@ import (
 	"github.com/golang/glog"
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/library-go/pkg/cloudprovider"
+	"k8s.io/apimachinery/pkg/util/sets"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/constants"
@@ -393,7 +394,7 @@ func skipMissing(key string) (interface{}, error) {
 
 func cloudProvider(cfg RenderConfig) (interface{}, error) {
 	if cfg.Infra.Status.PlatformStatus != nil {
-		external, err := cloudprovider.IsCloudProviderExternal(cfg.Infra.Status.PlatformStatus, cfg.FeatureGate)
+		external, err := isCloudProviderExternal(cfg.Infra.Status.PlatformStatus, cfg.FeatureGate)
 		if err != nil {
 			glog.Error(err)
 		} else if external {
@@ -707,4 +708,43 @@ func isOpenShiftManagedDefaultLB(cfg RenderConfig) bool {
 		}
 	}
 	return false
+}
+
+// isCloudProviderExternal determines whether the cloud provider is external based on the platform and feature gate.
+// We use the library-go logic for all platforms apart from vSphere which must not remove the kubelet cloud-provider flag
+// yet.
+func isCloudProviderExternal(platformStatus *configv1.PlatformStatus, featureGate *configv1.FeatureGate) (bool, error) {
+	if platformStatus == nil {
+		return false, fmt.Errorf("platformStatus is required")
+	}
+	switch platformStatus.Type {
+	case configv1.VSpherePlatformType:
+		// Platforms that are external based on feature gate presence
+		return isExternalFeatureGateEnabled(featureGate)
+	default:
+		return cloudprovider.IsCloudProviderExternal(platformStatus, featureGate)
+	}
+}
+
+// isExternalFeatureGateEnabled determines whether the ExternalCloudProvider feature gate is present in the current
+// feature set.
+func isExternalFeatureGateEnabled(featureGate *configv1.FeatureGate) (bool, error) {
+	if featureGate == nil {
+		// If no featureGate is present, then the user hasn't opted in to the external cloud controllers
+		return false, nil
+	}
+	featureSet, ok := configv1.FeatureSets[featureGate.Spec.FeatureSet]
+	if !ok {
+		return false, fmt.Errorf(".spec.featureSet %q not found", featureGate.Spec.FeatureSet)
+	}
+
+	enabledFeatureGates := sets.NewString(featureSet.Enabled...)
+	disabledFeatureGates := sets.NewString(featureSet.Disabled...)
+	// CustomNoUpgrade will override the deafult enabled feature gates.
+	if featureGate.Spec.FeatureSet == configv1.CustomNoUpgrade && featureGate.Spec.CustomNoUpgrade != nil {
+		enabledFeatureGates = sets.NewString(featureGate.Spec.CustomNoUpgrade.Enabled...)
+		disabledFeatureGates = sets.NewString(featureGate.Spec.CustomNoUpgrade.Disabled...)
+	}
+
+	return !disabledFeatureGates.Has(cloudprovider.ExternalCloudProviderFeature) && enabledFeatureGates.Has(cloudprovider.ExternalCloudProviderFeature), nil
 }
