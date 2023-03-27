@@ -342,29 +342,73 @@ func TestMCDToken(t *testing.T) {
 func TestMCDeployed(t *testing.T) {
 	cs := framework.NewClientSet("")
 
-	ctx := context.Background()
+	runPoolTest := func(t *testing.T, poolName string) {
+		sshKeyContents := "ssh-rsa 123"
 
-	startTime := time.Now()
-	mcadd := createMCToAddFile("add-a-file", "/etc/mytestconf", "test")
+		startTime := time.Now()
+		mcName := fmt.Sprintf("%s-custom-ssh-key", poolName)
+		mcadd := getSSHMachineConfig(mcName, poolName, sshKeyContents)
 
-	// create the dummy MC now
-	_, err := cs.MachineConfigs().Create(ctx, mcadd, metav1.CreateOptions{})
-	if err != nil {
-		t.Errorf("failed to create machine config %v", err)
+		initialMCName := helpers.GetMcName(t, cs, poolName)
+
+		undoFunc := helpers.MakeIdempotent(helpers.ApplyMC(t, cs, mcadd))
+		t.Cleanup(undoFunc)
+
+		t.Logf("Created %s", mcadd.Name)
+		renderedConfig, err := helpers.WaitForRenderedConfig(t, cs, poolName, mcadd.Name)
+		require.Nil(t, err)
+		err = helpers.WaitForPoolComplete(t, cs, poolName, renderedConfig)
+		require.Nil(t, err)
+		nodes, err := helpers.GetNodesByRole(cs, poolName)
+		require.Nil(t, err)
+		for _, node := range nodes {
+			assert.Equal(t, renderedConfig, node.Annotations[constants.CurrentMachineConfigAnnotationKey])
+			assert.Equal(t, constants.MachineConfigDaemonStateDone, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey])
+			osrelease := helpers.GetOSReleaseForNode(t, cs, node)
+			sshPaths := helpers.GetSSHPaths(osrelease.OS)
+			contents := helpers.ExecCmdOnNode(t, cs, node, "cat", filepath.Join("/rootfs", sshPaths.Expected))
+			assert.Contains(t, contents, sshKeyContents)
+		}
+
+		t.Logf("All nodes updated with %s (%s elapsed)", mcadd.Name, time.Since(startTime))
+
+		t.Logf("Rolling back nodes to %s", initialMCName)
+
+		undoFunc()
+
+		startTime = time.Now()
+
+		err = helpers.WaitForPoolComplete(t, cs, poolName, initialMCName)
+		require.Nil(t, err)
+		nodes, err = helpers.GetNodesByRole(cs, poolName)
+		require.Nil(t, err)
+
+		for _, node := range nodes {
+			assert.Equal(t, initialMCName, node.Annotations[constants.CurrentMachineConfigAnnotationKey])
+			assert.Equal(t, constants.MachineConfigDaemonStateDone, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey])
+			osrelease := helpers.GetOSReleaseForNode(t, cs, node)
+			sshPaths := helpers.GetSSHPaths(osrelease.OS)
+			contents := helpers.ExecCmdOnNode(t, cs, node, "cat", filepath.Join("/rootfs", sshPaths.Expected))
+			assert.NotContains(t, contents, sshKeyContents)
+		}
+
+		t.Logf("All nodes rolled back to %s (%s elapsed)", initialMCName, time.Since(startTime))
 	}
 
-	t.Logf("Created %s", mcadd.Name)
-	renderedConfig, err := helpers.WaitForRenderedConfig(t, cs, "worker", mcadd.Name)
-	require.Nil(t, err)
-	err = helpers.WaitForPoolComplete(t, cs, "worker", renderedConfig)
-	require.Nil(t, err)
-	nodes, err := helpers.GetNodesByRole(cs, "worker")
-	require.Nil(t, err)
-	for _, node := range nodes {
-		assert.Equal(t, renderedConfig, node.Annotations[constants.CurrentMachineConfigAnnotationKey])
-		assert.Equal(t, constants.MachineConfigDaemonStateDone, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey])
+	mcp, err := cs.MachineconfigurationV1Interface.MachineConfigPools().List(context.TODO(), metav1.ListOptions{})
+	require.NoError(t, err)
+
+	for _, mcp := range mcp.Items {
+		if mcp.Status.MachineCount == 0 {
+			continue
+		}
+
+		poolName := mcp.Name
+		t.Run(poolName, func(t *testing.T) {
+			t.Parallel()
+			runPoolTest(t, poolName)
+		})
 	}
-	t.Logf("All nodes updated with %s (%s elapsed)", mcadd.Name, time.Since(startTime))
 }
 
 func TestRunShared(t *testing.T) {
@@ -877,4 +921,28 @@ func assertExpectedPerms(t *testing.T, cs *framework.ClientSet, node corev1.Node
 
 	actualPerms := strings.Split(strings.TrimSuffix(helpers.ExecCmdOnNode(t, cs, node, "chroot", "/rootfs", "stat", "--format=%U %G %a", path), "\n"), " ")
 	assert.Equal(t, expectedPerms, actualPerms, "expected %s to have perms %v, got: %v", path, expectedPerms, actualPerms)
+}
+
+func getSSHMachineConfig(mcName, mcpName, sshKeyContent string) *mcfgv1.MachineConfig {
+	// Adding authorized key for user core
+	testIgnConfig := ctrlcommon.NewIgnConfig()
+
+	testIgnConfig.Passwd.Users = []ign3types.PasswdUser{
+		{
+			Name:              "core",
+			SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{ign3types.SSHAuthorizedKey(sshKeyContent)},
+		},
+	}
+
+	return &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   mcName,
+			Labels: helpers.MCLabelForRole(mcpName),
+		},
+		Spec: mcfgv1.MachineConfigSpec{
+			Config: runtime.RawExtension{
+				Raw: helpers.MarshalOrDie(testIgnConfig),
+			},
+		},
+	}
 }
