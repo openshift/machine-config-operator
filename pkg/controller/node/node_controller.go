@@ -603,7 +603,7 @@ func (ctrl *Controller) getPoolsForNode(node *corev1.Node) ([]*mcfgv1.MachineCon
 	for _, pool := range pools {
 		if pool.Name == ctrlcommon.MachineConfigPoolMaster {
 			master = pool
-		} else if pool.Name == "worker" {
+		} else if pool.Name == ctrlcommon.MachineConfigPoolWorker {
 			worker = pool
 		} else {
 			custom = append(custom, pool)
