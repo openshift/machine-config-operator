@@ -1610,8 +1610,8 @@ func (StorageList) SwaggerDoc() map[string]string {
 }
 
 var map_StorageSpec = map[string]string{
-	"":             "StorageSpec is the specification of the desired behavior of the cluster storage operator.",
-	"csiMigration": "CSIMigration enables CSI migration for drivers where it is optional. This field is immutable once it is set and can not be undone.",
+	"":                    "StorageSpec is the specification of the desired behavior of the cluster storage operator.",
+	"csiMigrationVSphere": "CSIMigrationVSphere enables CSI migration for VSphere. This field is immutable once it is set and can not be undone. If this is empty, the platform will choose a good default, which may change over time without notice. DEPRECATED: This field will be removed in a future release.",
 }
 
 func (StorageSpec) SwaggerDoc() map[string]string {

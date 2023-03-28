@@ -27,7 +27,7 @@ type Storage struct {
 }
 
 // CSIMigrationToggle indicates whether CSI migration should be enabled for drivers where it is optional.
-// +kubebuilder:validation:Enum=Enabled
+// +kubebuilder:validation:Enum="";Enabled
 type CSIMigrationToggle string
 
 const (
@@ -35,15 +35,18 @@ const (
 )
 
 // StorageSpec is the specification of the desired behavior of the cluster storage operator.
-// +kubebuilder:validation:XValidation:rule="!has(oldSelf.csiMigration) || has(self.csiMigration)", message="CSIMigration is required once set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.csiMigrationVSphere) || has(self.csiMigrationVSphere)", message="CSIMigrationVSphere is required once set"
 type StorageSpec struct {
 	OperatorSpec `json:",inline"`
 
-	// CSIMigration enables CSI migration for drivers where it is optional.
+	// CSIMigrationVSphere enables CSI migration for VSphere.
 	// This field is immutable once it is set and can not be undone.
-	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="CSIMigration is immutable"
+	// If this is empty, the platform will choose a good default,
+	// which may change over time without notice.
+	// DEPRECATED: This field will be removed in a future release.
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="CSIMigrationVSphere is immutable"
 	// +optional
-	CSIMigration CSIMigrationToggle `json:"csiMigration,omitempty"`
+	CSIMigrationVSphere CSIMigrationToggle `json:"csiMigrationVSphere"`
 }
 
 // StorageStatus defines the observed status of the cluster storage operator.
