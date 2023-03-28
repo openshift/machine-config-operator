@@ -38,7 +38,7 @@ type assertObjects struct {
 type machineConfigTestCase struct {
 	name           string
 	mc             *mcfgv1.MachineConfig
-	assert         func(*testing.T, assertObjects)
+	applyAssert    func(*testing.T, assertObjects)
 	rollbackAssert func(*testing.T, assertObjects)
 	skipOnOKD      bool
 }
@@ -93,7 +93,7 @@ func (m machineConfigTestCases) run(t *testing.T, cs *framework.ClientSet, node 
 	for _, testCase := range testCasesToRun {
 		testCase := testCase
 		t.Run(testCase.name+"/Applied", func(t *testing.T) {
-			testCase.assert(t, assertObjects{
+			testCase.applyAssert(t, assertObjects{
 				mc:         *testCase.mc,
 				node:       *updatedNode,
 				mcp:        *targetMCP,
@@ -118,6 +118,9 @@ func (m machineConfigTestCases) run(t *testing.T, cs *framework.ClientSet, node 
 			testCase.rollbackAssert(t, prerunAssertObjects)
 		})
 	}
+
+	assert.Equal(t, workerMC.Name, updatedNode.Annotations[constants.CurrentMachineConfigAnnotationKey])
+	assert.Equal(t, constants.MachineConfigDaemonStateDone, updatedNode.Annotations[constants.MachineConfigDaemonStateAnnotationKey])
 }
 
 func testKernelArguments(cs *framework.ClientSet) machineConfigTestCase {
@@ -138,8 +141,7 @@ func testKernelArguments(cs *framework.ClientSet) machineConfigTestCase {
 
 	assert := func(t *testing.T, obj assertObjects) {
 		kargs := helpers.ExecCmdOnNode(t, cs, obj.node, "cat", "/rootfs/proc/cmdline")
-		expectedKernelArgs := []string{"nosmt", "foo=bar", "foo=baz", "baz=test", "bar=hello world"}
-		for _, v := range expectedKernelArgs {
+		for _, v := range kernelArgs {
 			if !strings.Contains(kargs, v) {
 				t.Fatalf("Missing %q in kargs: %q", v, kargs)
 			}
@@ -160,7 +162,7 @@ func testKernelArguments(cs *framework.ClientSet) machineConfigTestCase {
 	return machineConfigTestCase{
 		name:           "Kernel Arguments",
 		mc:             mc,
-		assert:         assert,
+		applyAssert:    assert,
 		rollbackAssert: rollbackAssert,
 	}
 }
@@ -198,13 +200,24 @@ func testKernelType(cs *framework.ClientSet) machineConfigTestCase {
 	return machineConfigTestCase{
 		mc:             mc,
 		name:           "Kernel Type",
-		assert:         assert,
+		applyAssert:    assert,
 		rollbackAssert: rollbackAssert,
 		skipOnOKD:      true,
 	}
 }
 
 func testExtensions(cs *framework.ClientSet, isOKD bool) machineConfigTestCase {
+	var expectedPackages []string
+
+	if isOKD {
+		// OKD does not support grouped extensions yet, so installing kernel-devel will not also pull in kernel-headers
+		// "sandboxed-containers" extension is not available on OKD
+		// "kerberos" extension is not available on OKD
+		expectedPackages = []string{"usbguard", "kernel-devel"}
+	} else {
+		expectedPackages = []string{"usbguard", "kernel-devel", "kernel-headers", "kata-containers", "krb5-workstation", "libkadm5"}
+	}
+
 	mc := &mcfgv1.MachineConfig{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   fmt.Sprintf("extensions-%s", uuid.NewUUID()),
@@ -214,29 +227,13 @@ func testExtensions(cs *framework.ClientSet, isOKD bool) machineConfigTestCase {
 			Config: runtime.RawExtension{
 				Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
 			},
-			Extensions: []string{"usbguard", "kerberos", "sandboxed-containers"},
+			Extensions: []string{"usbguard", "kerberos", "kernel-devel", "sandboxed-containers"},
 		},
 	}
 
-	getPackages := func(t *testing.T, cs *framework.ClientSet, obj assertObjects) (string, []string) {
-		var installedPackages string
-		var expectedPackages []string
-		if isOKD {
-			// OKD does not support grouped extensions yet, so installing kernel-devel will not also pull in kernel-headers
-			// "sandboxed-containers" extension is not available on OKD
-			installedPackages = helpers.ExecCmdOnNode(t, cs, obj.node, "chroot", "/rootfs", "rpm", "-q", "usbguard")
-			// "kerberos" extension is not available on OKD
-			expectedPackages = []string{"usbguard"}
-		} else {
-			installedPackages = helpers.ExecCmdOnNode(t, cs, obj.node, "chroot", "/rootfs", "rpm", "-q", "usbguard", "kata-containers", "krb5-workstation", "libkadm5")
-			expectedPackages = []string{"usbguard", "kata-containers", "krb5-workstation", "libkadm5"}
-		}
-
-		return installedPackages, expectedPackages
-	}
-
 	assert := func(t *testing.T, obj assertObjects) {
-		installedPackages, expectedPackages := getPackages(t, cs, obj)
+		args := append([]string{"chroot", "/rootfs", "rpm", "-q"}, expectedPackages...)
+		installedPackages := helpers.ExecCmdOnNode(t, cs, obj.node, args...)
 
 		for _, v := range expectedPackages {
 			if !strings.Contains(installedPackages, v) {
@@ -248,7 +245,8 @@ func testExtensions(cs *framework.ClientSet, isOKD bool) machineConfigTestCase {
 	}
 
 	rollbackAssert := func(t *testing.T, obj assertObjects) {
-		installedPackages, expectedPackages := getPackages(t, cs, obj)
+		args := append([]string{"chroot", "/rootfs", "rpm", "-qa"}, expectedPackages...)
+		installedPackages := helpers.ExecCmdOnNode(t, cs, obj.node, args...)
 
 		for _, v := range expectedPackages {
 			if strings.Contains(installedPackages, v) {
@@ -262,7 +260,7 @@ func testExtensions(cs *framework.ClientSet, isOKD bool) machineConfigTestCase {
 	return machineConfigTestCase{
 		mc:             mc,
 		name:           "Extensions",
-		assert:         assert,
+		applyAssert:    assert,
 		rollbackAssert: rollbackAssert,
 	}
 }
@@ -279,7 +277,7 @@ func testDontDeleteRPMFiles(cs *framework.ClientSet) machineConfigTestCase {
 	return machineConfigTestCase{
 		name: "Don't Delete RPM Files", // This name doesn't make sense for what this tests...
 		mc:   createMCToAddFileForRole("modify-host-file", "infra", motdPath, expectedContents),
-		assert: func(t *testing.T, obj assertObjects) {
+		applyAssert: func(t *testing.T, obj assertObjects) {
 			actualContents := getFileContents(t, cs, obj.node, motdPath)
 			assert.Contains(t, actualContents, expectedContents)
 		},
@@ -299,20 +297,36 @@ func TestConsolidatedMachineConfigs(t *testing.T) {
 
 	t.Logf("Are we on OKD? %v", isOKD)
 
-	testCases := machineConfigTestCases{
-		testKernelArguments(cs),
-		testKernelType(cs),
-		testExtensions(cs, isOKD),
-		testDontDeleteRPMFiles(cs),
-	}
-
 	nodes, err := helpers.GetNodesByRole(cs, "worker")
 	require.NoError(t, err)
 
-	for i, node := range nodes {
-		poolName := fmt.Sprintf("infra-%d", i)
-		testCases.run(t, cs, node, poolName)
-	}
+	t.Run("", func(t *testing.T) {
+		t.Parallel()
+
+		testCases := machineConfigTestCases{
+			testKernelType(cs),
+		}
+
+		testCases.run(t, cs, nodes[0], "infra-1")
+	})
+
+	t.Run("", func(t *testing.T) {
+		t.Parallel()
+
+		testCases := machineConfigTestCases{
+			testKernelArguments(cs),
+			testExtensions(cs, isOKD),
+			testDontDeleteRPMFiles(cs),
+		}
+
+		testCases.run(t, cs, nodes[1], "infra-2")
+	})
+
+	t.Run("Shared", func(t *testing.T) {
+		t.Parallel()
+
+		testRunShared(t, "infra-3")
+	})
 }
 
 // Test case for https://github.com/openshift/machine-config-operator/issues/358
@@ -342,59 +356,6 @@ func TestMCDToken(t *testing.T) {
 func TestMCDeployed(t *testing.T) {
 	cs := framework.NewClientSet("")
 
-	runPoolTest := func(t *testing.T, poolName string) {
-		sshKeyContents := "ssh-rsa 123"
-
-		startTime := time.Now()
-		mcName := fmt.Sprintf("%s-custom-ssh-key", poolName)
-		mcadd := getSSHMachineConfig(mcName, poolName, sshKeyContents)
-
-		initialMCName := helpers.GetMcName(t, cs, poolName)
-
-		undoFunc := helpers.MakeIdempotent(helpers.ApplyMC(t, cs, mcadd))
-		t.Cleanup(undoFunc)
-
-		t.Logf("Created %s", mcadd.Name)
-		renderedConfig, err := helpers.WaitForRenderedConfig(t, cs, poolName, mcadd.Name)
-		require.Nil(t, err)
-		err = helpers.WaitForPoolComplete(t, cs, poolName, renderedConfig)
-		require.Nil(t, err)
-		nodes, err := helpers.GetNodesByRole(cs, poolName)
-		require.Nil(t, err)
-		for _, node := range nodes {
-			assert.Equal(t, renderedConfig, node.Annotations[constants.CurrentMachineConfigAnnotationKey])
-			assert.Equal(t, constants.MachineConfigDaemonStateDone, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey])
-			osrelease := helpers.GetOSReleaseForNode(t, cs, node)
-			sshPaths := helpers.GetSSHPaths(osrelease.OS)
-			contents := helpers.ExecCmdOnNode(t, cs, node, "cat", filepath.Join("/rootfs", sshPaths.Expected))
-			assert.Contains(t, contents, sshKeyContents)
-		}
-
-		t.Logf("All nodes updated with %s (%s elapsed)", mcadd.Name, time.Since(startTime))
-
-		t.Logf("Rolling back nodes to %s", initialMCName)
-
-		undoFunc()
-
-		startTime = time.Now()
-
-		err = helpers.WaitForPoolComplete(t, cs, poolName, initialMCName)
-		require.Nil(t, err)
-		nodes, err = helpers.GetNodesByRole(cs, poolName)
-		require.Nil(t, err)
-
-		for _, node := range nodes {
-			assert.Equal(t, initialMCName, node.Annotations[constants.CurrentMachineConfigAnnotationKey])
-			assert.Equal(t, constants.MachineConfigDaemonStateDone, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey])
-			osrelease := helpers.GetOSReleaseForNode(t, cs, node)
-			sshPaths := helpers.GetSSHPaths(osrelease.OS)
-			contents := helpers.ExecCmdOnNode(t, cs, node, "cat", filepath.Join("/rootfs", sshPaths.Expected))
-			assert.NotContains(t, contents, sshKeyContents)
-		}
-
-		t.Logf("All nodes rolled back to %s (%s elapsed)", initialMCName, time.Since(startTime))
-	}
-
 	mcp, err := cs.MachineconfigurationV1Interface.MachineConfigPools().List(context.TODO(), metav1.ListOptions{})
 	require.NoError(t, err)
 
@@ -406,26 +367,76 @@ func TestMCDeployed(t *testing.T) {
 		poolName := mcp.Name
 		t.Run(poolName, func(t *testing.T) {
 			t.Parallel()
-			runPoolTest(t, poolName)
+			testMCDeployedToPool(t, poolName)
 		})
 	}
 }
 
-func TestRunShared(t *testing.T) {
-	mcpName := "infra"
+func testMCDeployedToPool(t *testing.T, poolName string) {
+	cs := framework.NewClientSet("")
 
-	cleanupFuncs := helpers.NewCleanupFuncs()
+	sshKeyContents := "ssh-rsa 123"
+
+	startTime := time.Now()
+	mcName := fmt.Sprintf("%s-custom-ssh-key", poolName)
+	mcadd := getSSHMachineConfig(mcName, poolName, sshKeyContents)
+
+	initialMCName := helpers.GetMcName(t, cs, poolName)
+
+	undoFunc := helpers.MakeIdempotent(helpers.ApplyMC(t, cs, mcadd))
+	t.Cleanup(undoFunc)
+
+	t.Logf("Created %s", mcadd.Name)
+	renderedConfig, err := helpers.WaitForRenderedConfig(t, cs, poolName, mcadd.Name)
+	require.Nil(t, err)
+	err = helpers.WaitForPoolComplete(t, cs, poolName, renderedConfig)
+	require.Nil(t, err)
+	nodes, err := helpers.GetNodesByRole(cs, poolName)
+	require.Nil(t, err)
+	for _, node := range nodes {
+		assert.Equal(t, renderedConfig, node.Annotations[constants.CurrentMachineConfigAnnotationKey])
+		assert.Equal(t, constants.MachineConfigDaemonStateDone, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey])
+		osrelease := helpers.GetOSReleaseForNode(t, cs, node)
+		sshPaths := helpers.GetSSHPaths(osrelease.OS)
+		contents := helpers.ExecCmdOnNode(t, cs, node, "cat", filepath.Join("/rootfs", sshPaths.Expected))
+		assert.Contains(t, contents, sshKeyContents)
+	}
+
+	t.Logf("All nodes updated with %s (%s elapsed)", mcadd.Name, time.Since(startTime))
+
+	t.Logf("Rolling back nodes to %s", initialMCName)
+
+	undoFunc()
+
+	startTime = time.Now()
+
+	err = helpers.WaitForPoolComplete(t, cs, poolName, initialMCName)
+	require.Nil(t, err)
+	nodes, err = helpers.GetNodesByRole(cs, poolName)
+	require.Nil(t, err)
+
+	for _, node := range nodes {
+		assert.Equal(t, initialMCName, node.Annotations[constants.CurrentMachineConfigAnnotationKey])
+		assert.Equal(t, constants.MachineConfigDaemonStateDone, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey])
+		osrelease := helpers.GetOSReleaseForNode(t, cs, node)
+		sshPaths := helpers.GetSSHPaths(osrelease.OS)
+		contents := helpers.ExecCmdOnNode(t, cs, node, "cat", filepath.Join("/rootfs", sshPaths.Expected))
+		assert.NotContains(t, contents, sshKeyContents)
+	}
+
+	t.Logf("All nodes rolled back to %s (%s elapsed)", initialMCName, time.Since(startTime))
+}
+
+func testRunShared(t *testing.T, mcpName string) {
 	cs := framework.NewClientSet("")
 
 	configOpts := e2eShared.ConfigDriftTestOpts{
 		ClientSet: cs,
 		MCPName:   mcpName,
 		SetupFunc: func(mc *mcfgv1.MachineConfig) {
-			cleanupFuncs.Add(helpers.CreatePoolAndApplyMC(t, cs, mcpName, []*mcfgv1.MachineConfig{mc}))
+			t.Cleanup(helpers.CreatePoolAndApplyMC(t, cs, mcpName, []*mcfgv1.MachineConfig{mc}))
 		},
-		TeardownFunc: func() {
-			cleanupFuncs.Run()
-		},
+		TeardownFunc: func() {},
 	}
 
 	sharedOpts := e2eShared.SharedTestOpts{
