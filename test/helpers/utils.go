@@ -516,6 +516,52 @@ func CreateMC(name, role string) *mcfgv1.MachineConfig {
 	return NewMachineConfig(name, MCLabelForRole(role), "", nil)
 }
 
+func AssertFileOnNodeEmpty(t *testing.T, cs *framework.ClientSet, node corev1.Node, path string) bool {
+	t.Helper()
+
+	if !AssertFileOnNode(t, cs, node, path) {
+		return false
+	}
+
+	contents := getFileContents(t, cs, node, path)
+	return assert.Empty(t, contents, "expected file %q on %q to be empty: got %q", path, node.Name, contents)
+}
+
+func AssertFileOnNodeNotEmpty(t *testing.T, cs *framework.ClientSet, node corev1.Node, path string) bool {
+	t.Helper()
+
+	if !AssertFileOnNode(t, cs, node, path) {
+		return false
+	}
+
+	contents := getFileContents(t, cs, node, path)
+	return assert.NotEmpty(t, contents, "expected file %q on %q to not to be empty: got %q", path, node.Name, contents)
+}
+
+func AssertFileOnNodeContains(t *testing.T, cs *framework.ClientSet, node corev1.Node, path, expectedContents string) bool {
+	t.Helper()
+
+	exists := AssertFileOnNode(t, cs, node, path)
+	if !exists {
+		return false
+	}
+
+	contents := getFileContents(t, cs, node, path)
+	return assert.Contains(t, contents, expectedContents, "expected file %q on %q to contain %q: got %q", path, node.Name, expectedContents, contents)
+}
+
+func AssertFileOnNodeNotContains(t *testing.T, cs *framework.ClientSet, node corev1.Node, path, unexpectedContents string) bool {
+	t.Helper()
+
+	exists := AssertFileOnNode(t, cs, node, path)
+	if !exists {
+		return false
+	}
+
+	contents := getFileContents(t, cs, node, path)
+	return assert.NotContains(t, contents, unexpectedContents, "expected file %q on %q not to contain %q: got %q", path, node.Name, unexpectedContents, contents)
+}
+
 // Asserts that a given file is present on the underlying node.
 func AssertFileOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, path string) bool {
 	t.Helper()
@@ -548,6 +594,10 @@ func canonicalizeNodeFilePath(path string) string {
 	}
 
 	return path
+}
+
+func getFileContents(t *testing.T, cs *framework.ClientSet, node corev1.Node, path string) string {
+	return ExecCmdOnNode(t, cs, node, "cat", canonicalizeNodeFilePath(path))
 }
 
 // ExecCmdOnNode finds a node's mcd, and oc rsh's into it to execute a command on the node

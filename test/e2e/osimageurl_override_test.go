@@ -1,4 +1,4 @@
-package e2e
+package e2e_test
 
 import (
 	"fmt"
@@ -24,7 +24,7 @@ import (
 // 5. Revert back to the previous state.
 // 6. Wait for the node to roll back.
 // 7. Assert that the binaries are no longer present.
-func TestOSImageURLOverride(t *testing.T) {
+func testOSImageURLOverride(t *testing.T, node corev1.Node, mcpName string) {
 	envVarName := "MCO_OS_IMAGE_URL"
 
 	osImageURL, ok := os.LookupEnv(envVarName)
@@ -37,8 +37,6 @@ func TestOSImageURLOverride(t *testing.T) {
 
 	cs := framework.NewClientSet("")
 
-	node := helpers.GetRandomNode(t, cs, "worker")
-
 	binaries := []string{
 		"/usr/bin/tailscale",
 		"/usr/bin/rg",
@@ -49,7 +47,7 @@ func TestOSImageURLOverride(t *testing.T) {
 
 	assertNodeDoesNotHaveBinaries(t, cs, node, binaries)
 
-	undoFunc := applyCustomOSToNode(t, cs, node, osImageURL, "infra")
+	undoFunc := applyCustomOSToNode(t, cs, node, osImageURL, mcpName)
 	t.Cleanup(undoFunc)
 
 	assertNodeHasBinaries(t, cs, node, binaries)

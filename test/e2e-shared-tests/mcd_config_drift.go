@@ -65,6 +65,8 @@ const (
 
 // Holds the options used to configure the Config Drift Test
 type ConfigDriftTestOpts struct {
+	// The target node
+	Node corev1.Node
 	// The target MachineConfigPool name
 	MCPName string
 	// The setup function
@@ -83,9 +85,6 @@ type configDriftTest struct {
 
 	// The Machine Config generated for this test
 	mc *mcfgv1.MachineConfig
-
-	// This is the node this test will target
-	node corev1.Node
 
 	// This is the pod this test will target
 	pod corev1.Pod
@@ -120,11 +119,8 @@ func (c *configDriftTest) Setup(t *testing.T) {
 	require.Nil(t, err)
 	c.mcp = *mcp
 
-	// Get the target node
-	c.node = helpers.GetSingleNodeByRole(t, c.ClientSet, c.MCPName)
-
 	// Get the MCD pod
-	pod, err := helpers.MCDForNode(c.ClientSet, &c.node)
+	pod, err := helpers.MCDForNode(c.ClientSet, &c.Node)
 	require.Nil(t, err)
 
 	c.pod = *pod
@@ -235,7 +231,7 @@ func (c configDriftTest) Run(t *testing.T) {
 
 				c.runDegradeAndRecover(t, configDriftFilename, configDriftFileContents, func() {
 					t.Logf("Setting forcefile to initiate recovery (%s)", constants.MachineConfigDaemonForceFile)
-					helpers.ExecCmdOnNode(t, c.ClientSet, c.node, "touch", filepath.Join("/rootfs", constants.MachineConfigDaemonForceFile))
+					helpers.ExecCmdOnNode(t, c.ClientSet, c.Node, "touch", filepath.Join("/rootfs", constants.MachineConfigDaemonForceFile))
 				})
 			},
 		},
@@ -245,7 +241,7 @@ func (c configDriftTest) Run(t *testing.T) {
 			name:           "masked systemd unit does not degrade",
 			rebootExpected: false,
 			testFunc: func(t *testing.T) {
-				assertNodeIsInDoneState(t, c.ClientSet, c.node)
+				assertNodeIsInDoneState(t, c.ClientSet, c.Node)
 			},
 		},
 		// Test the ability of the mcd to change the degraded state message if it updated.
@@ -261,20 +257,20 @@ func (c configDriftTest) Run(t *testing.T) {
 			testFunc: func(t *testing.T) {
 				ctx, cancel := context.WithCancel(context.Background())
 				t.Cleanup(cancel)
-				mutateFileOnNode(t, c.ClientSet, c.node, configDriftFilename, "not-the-data")
-				assertNodeAndMCPIsDegraded(t, c.ClientSet, c.node, c.mcp, configDriftFilename)
+				mutateFileOnNode(t, c.ClientSet, c.Node, configDriftFilename, "not-the-data")
+				assertNodeAndMCPIsDegraded(t, c.ClientSet, c.Node, c.mcp, configDriftFilename)
 
 				expectedReason := "content mismatch for file \"/etc/etc-file\""
 
-				mutateFileOnNode(t, c.ClientSet, c.node, configDriftFilename, configDriftFileContents)
-				assertNodeAndMCPIsRecovered(t, c.ClientSet, c.node, c.mcp)
+				mutateFileOnNode(t, c.ClientSet, c.Node, configDriftFilename, configDriftFileContents)
+				assertNodeAndMCPIsRecovered(t, c.ClientSet, c.Node, c.mcp)
 
-				mutateFileOnNode(t, c.ClientSet, c.node, configDriftFilenameTwo, "incorrect data 2")
+				mutateFileOnNode(t, c.ClientSet, c.Node, configDriftFilenameTwo, "incorrect data 2")
 
-				mutateFileOnNode(t, c.ClientSet, c.node, configDriftFilename, "not-the-data")
-				assertNodeAndMCPIsDegraded(t, c.ClientSet, c.node, c.mcp, configDriftFilename)
+				mutateFileOnNode(t, c.ClientSet, c.Node, configDriftFilename, "not-the-data")
+				assertNodeAndMCPIsDegraded(t, c.ClientSet, c.Node, c.mcp, configDriftFilename)
 
-				node, err := c.ClientSet.CoreV1Interface.Nodes().Get(ctx, c.node.Name, metav1.GetOptions{})
+				node, err := c.ClientSet.CoreV1Interface.Nodes().Get(ctx, c.Node.Name, metav1.GetOptions{})
 				require.Nil(t, err)
 
 				assert.Equal(t, node.Annotations[constants.MachineConfigDaemonReasonAnnotationKey], expectedReason)
@@ -289,9 +285,9 @@ func (c configDriftTest) Run(t *testing.T) {
 					}
 				}
 
-				mutateFileOnNode(t, c.ClientSet, c.node, configDriftFilename, configDriftFileContents)
-				mutateFileOnNode(t, c.ClientSet, c.node, configDriftFilenameTwo, configDriftFileContentsTwo)
-				assertNodeAndMCPIsRecovered(t, c.ClientSet, c.node, c.mcp)
+				mutateFileOnNode(t, c.ClientSet, c.Node, configDriftFilename, configDriftFileContents)
+				mutateFileOnNode(t, c.ClientSet, c.Node, configDriftFilenameTwo, configDriftFileContentsTwo)
+				assertNodeAndMCPIsRecovered(t, c.ClientSet, c.Node, c.mcp)
 			},
 		},
 	}
@@ -299,20 +295,20 @@ func (c configDriftTest) Run(t *testing.T) {
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
 			// Get the node's uptime to check for reboots.
-			initialUptime := helpers.GetNodeUptime(t, c.ClientSet, c.node)
+			initialUptime := helpers.GetNodeUptime(t, c.ClientSet, c.Node)
 
 			// With the way that the Config Drift Monitor is wired into the MCD,
 			// "machineconfiguration.openshift.io/state" gets set to "Done" before the
 			// Config Drift Monitor is started.
-			waitForConfigDriftMonitorStart(t, c.ClientSet, c.node)
+			waitForConfigDriftMonitorStart(t, c.ClientSet, c.Node)
 
 			testCase.testFunc(t)
 
 			// Verify our reboot expectations
 			if testCase.rebootExpected {
-				helpers.AssertNodeReboot(t, c.ClientSet, c.node, initialUptime)
+				helpers.AssertNodeReboot(t, c.ClientSet, c.Node, initialUptime)
 			} else {
-				helpers.AssertNodeNotReboot(t, c.ClientSet, c.node, initialUptime)
+				helpers.AssertNodeNotReboot(t, c.ClientSet, c.Node, initialUptime)
 			}
 		})
 	}
@@ -338,22 +334,22 @@ func isPoolDegraded(m mcfgv1.MachineConfigPool) bool {
 func (c configDriftTest) runDegradeAndRecoverContentRevert(t *testing.T, filename, expectedContents string) {
 	c.runDegradeAndRecover(t, filename, expectedContents, func() {
 		t.Logf("Reverting %s to expected contents to initiate recovery", filename)
-		mutateFileOnNode(t, c.ClientSet, c.node, filename, expectedContents)
+		mutateFileOnNode(t, c.ClientSet, c.Node, filename, expectedContents)
 	})
 }
 
 func (c configDriftTest) runDegradeAndRecover(t *testing.T, filename, expectedFileContents string, recoverFunc func()) {
-	mutateFileOnNode(t, c.ClientSet, c.node, filename, "not-the-data")
-	defer mutateFileOnNode(t, c.ClientSet, c.node, filename, expectedFileContents)
+	mutateFileOnNode(t, c.ClientSet, c.Node, filename, "not-the-data")
+	defer mutateFileOnNode(t, c.ClientSet, c.Node, filename, expectedFileContents)
 
 	// Ensure that the node and MCP reach a degraded state before we recover.
-	assertNodeAndMCPIsDegraded(t, c.ClientSet, c.node, c.mcp, filename)
+	assertNodeAndMCPIsDegraded(t, c.ClientSet, c.Node, c.mcp, filename)
 
 	// Run the recovery function.
 	recoverFunc()
 
 	// Verify that the node and MCP recover.
-	assertNodeAndMCPIsRecovered(t, c.ClientSet, c.node, c.mcp)
+	assertNodeAndMCPIsRecovered(t, c.ClientSet, c.Node, c.mcp)
 }
 
 func mutateFileOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, filename, contents string) {

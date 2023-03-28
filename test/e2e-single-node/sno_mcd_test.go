@@ -395,6 +395,7 @@ func TestRunShared(t *testing.T) {
 	configOpts := e2eShared.ConfigDriftTestOpts{
 		MCPName:       mcpName,
 		ClientSet:     cs,
+		Node:          helpers.GetSingleNodeByRole(t, cs, mcpName),
 		SkipForcefile: true,
 		SetupFunc: func(mc *mcfgv1.MachineConfig) {
 			// Apply our MachineConfig and store the returned cleanup func
