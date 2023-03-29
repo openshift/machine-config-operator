@@ -21,7 +21,7 @@ contents:
     # exists, then we redirect traffic destined for that vip to ourselves via iptables.
     # A systemd unit watches the directory for changes.
 
-    set -euo pipefail
+    set -xeuo pipefail
 
     # the list of load balancer IPs that are assigned to this node
     declare -A v4vips
@@ -29,6 +29,7 @@ contents:
 
     CHAIN_NAME="azure-vips"
     RUN_DIR="/run/cloud-routes"
+    stat -c "%n %y" /run/cloud-routes/*
 
     # Create a chan if it doesn't exist
     ensure_chain4() {
