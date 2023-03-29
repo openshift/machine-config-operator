@@ -36,6 +36,7 @@ contents:
         local chain="${2}"
 
         if ! iptables -w -t "${table}" -S "${chain}" &> /dev/null ; then
+            echo "creating ${chain} chain in ${table} table"
             iptables -w -t "${table}" -N "${chain}";
         fi;
     }
@@ -49,6 +50,7 @@ contents:
         local chain="${2}"
 
         if ! ip6tables -w -t "${table}" -S "${chain}" &> /dev/null ; then
+            echo "creating ${chain} chain in ${table} table"
             ip6tables -w -t "${table}" -N "${chain}";
         fi;
     }
@@ -60,6 +62,7 @@ contents:
         shift 2
 
         if ! iptables -w -t "${table}" -C "${chain}" "$@" &> /dev/null; then
+            echo "adding \"$@\" to ${chain} chain in ${table} table"
             iptables -w -t "${table}" -A "${chain}" "$@"
         fi
     }
@@ -74,6 +77,7 @@ contents:
         shift 2
 
         if ! ip6tables -w -t "${table}" -C "${chain}" "$@" &> /dev/null; then
+            echo "adding \"$@\" to ${chain} chain in ${table} table"
             ip6tables -w -t "${table}" -A "${chain}" "$@"
         fi
     }
@@ -136,6 +140,7 @@ contents:
     }
 
     clear_rules() {
+        echo "clearing rules from ${CHAIN_NAME} chain in nat table"
         iptables -t nat -F "${CHAIN_NAME}" || true
     }
 
