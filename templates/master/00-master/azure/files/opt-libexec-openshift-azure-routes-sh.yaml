@@ -61,6 +61,7 @@ contents:
 
         if ! iptables -w -t "${table}" -C "${chain}" "$@" &> /dev/null; then
             iptables -w -t "${table}" -A "${chain}" "$@"
+            echo "updating iptables ${table} ${chain} $@"
         fi
     }
 
@@ -75,6 +76,7 @@ contents:
 
         if ! ip6tables -w -t "${table}" -C "${chain}" "$@" &> /dev/null; then
             ip6tables -w -t "${table}" -A "${chain}" "$@"
+            echo "updating iptables6 ${table} ${chain} $@"
         fi
     }
 
@@ -137,6 +139,7 @@ contents:
 
     clear_rules() {
         iptables -t nat -F "${CHAIN_NAME}" || true
+        echo "clearing iptable rules ${CHAIN_NAME}"
     }
 
     # out paramaters: v4vips v6vips
