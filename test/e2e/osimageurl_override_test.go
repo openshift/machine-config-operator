@@ -10,6 +10,7 @@ import (
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 )
 
@@ -24,7 +25,9 @@ import (
 // 5. Revert back to the previous state.
 // 6. Wait for the node to roll back.
 // 7. Assert that the binaries are no longer present.
-func testOSImageURLOverride(t *testing.T, node corev1.Node, mcpName string) {
+func TestOSImageURLOverride(t *testing.T) {
+	t.Parallel()
+
 	envVarName := "MCO_OS_IMAGE_URL"
 
 	osImageURL, ok := os.LookupEnv(envVarName)
@@ -36,6 +39,14 @@ func testOSImageURLOverride(t *testing.T, node corev1.Node, mcpName string) {
 	}
 
 	cs := framework.NewClientSet("")
+
+	mcpName := "test-custom-os-image"
+
+	n, releaseFunc, err := nodeLeaser.GetNode(t, cs)
+	require.NoError(t, err)
+	t.Cleanup(releaseFunc)
+
+	node := *n
 
 	binaries := []string{
 		"/usr/bin/tailscale",

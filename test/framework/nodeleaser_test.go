@@ -38,9 +38,9 @@ func TestNodeLeaser(t *testing.T) {
 		{
 			name: "Single node lock acquired and released",
 			testFunc: func(t *testing.T, nl *NodeLeaser) {
-				node := nl.GetNode()
+				node := nl.GetNodeName()
 				assert.False(t, nl.nodes[node])
-				nl.ReleaseNode(node)
+				nl.ReleaseNodeName(node)
 				assert.True(t, nl.nodes[node])
 			},
 		},
@@ -48,12 +48,12 @@ func TestNodeLeaser(t *testing.T) {
 			name: "Multiple node locks acquired and released in single goroutine",
 			testFunc: func(t *testing.T, nl *NodeLeaser) {
 				for i := 0; i < len(nl.nodes); i++ {
-					node := nl.GetNode()
+					node := nl.GetNodeName()
 					assert.False(t, nl.nodes[node])
 				}
 
 				for nodeName := range nl.nodes {
-					nl.ReleaseNode(nodeName)
+					nl.ReleaseNodeName(nodeName)
 					assert.True(t, nl.nodes[nodeName])
 				}
 			},
@@ -67,9 +67,9 @@ func TestNodeLeaser(t *testing.T) {
 				for i := 0; i <= 100; i++ {
 					go func() {
 						defer wg.Done()
-						node := nl.GetNode()
+						node := nl.GetNodeName()
 						assert.NotEmpty(t, node)
-						defer nl.ReleaseNode(node)
+						defer nl.ReleaseNodeName(node)
 						randomDelay()
 					}()
 				}

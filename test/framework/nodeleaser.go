@@ -1,7 +1,13 @@
 package framework
 
 import (
+	"context"
 	"sync"
+	"testing"
+	"time"
+
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // NodeLeaser is a way to ensure node exclusivity across multiple e2e test
@@ -30,9 +36,26 @@ func NewNodeLeaser(nodes []string) *NodeLeaser {
 	}
 }
 
+func (n *NodeLeaser) GetNode(t *testing.T, cs *ClientSet) (*corev1.Node, func(), error) {
+	now := time.Now()
+	nodeName := n.GetNodeName()
+	t.Logf("Waited for node %s for %s", nodeName, time.Since(now))
+
+	node, err := cs.CoreV1Interface.Nodes().Get(context.TODO(), n.GetNodeName(), metav1.GetOptions{})
+
+	now = time.Now()
+
+	releaseFunc := func() {
+		n.ReleaseNode(t, node)
+		t.Logf("Node %s released; test run time: %s", node.Name, time.Since(now))
+	}
+
+	return node, releaseFunc, err
+}
+
 // Acquires the first available node. If no nodes are available, this will
 // block until a node becomse available.
-func (n *NodeLeaser) GetNode() string {
+func (n *NodeLeaser) GetNodeName() string {
 	for {
 		node, found := n.findFreeNode()
 		if found {
@@ -43,8 +66,13 @@ func (n *NodeLeaser) GetNode() string {
 	}
 }
 
+func (n *NodeLeaser) ReleaseNode(t *testing.T, node *corev1.Node) {
+	t.Logf("Released node %s", node.Name)
+	n.ReleaseNodeName(node.Name)
+}
+
 // Releases the provided node.
-func (n *NodeLeaser) ReleaseNode(node string) {
+func (n *NodeLeaser) ReleaseNodeName(node string) {
 	n.mux.Lock()
 	defer n.mux.Unlock()
 	n.nodes[node] = true

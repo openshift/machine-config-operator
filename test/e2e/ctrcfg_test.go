@@ -28,6 +28,7 @@ const (
 )
 
 func TestContainerRuntimeConfigLogLevel(t *testing.T) {
+	t.Parallel()
 	ctrcfg1 := &mcfgv1.ContainerRuntimeConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-debug"},
 		Spec: mcfgv1.ContainerRuntimeConfigSpec{
@@ -48,6 +49,7 @@ func TestContainerRuntimeConfigLogLevel(t *testing.T) {
 }
 
 func TestICSPConfigMirror(t *testing.T) {
+	t.Parallel()
 	icspRule := &apioperatorsv1alpha1.ImageContentSourcePolicy{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-digest-only"},
 		Spec: apioperatorsv1alpha1.ImageContentSourcePolicySpec{
@@ -82,8 +84,14 @@ func runTestWithCtrcfg(t *testing.T, testName, regexKey, expectedConfVal1, expec
 		}
 	}()
 
+	n, releaseFunc, err := nodeLeaser.GetNode(t, cs)
+	require.NoError(t, err)
+	t.Cleanup(releaseFunc)
+
+	node := *n
+
 	// label one node from the pool to specify which worker to update
-	cleanupFuncs = append(cleanupFuncs, helpers.LabelRandomNodeFromPool(t, cs, "worker", helpers.MCPNameToRole(poolName)))
+	cleanupFuncs = append(cleanupFuncs, helpers.LabelNode(t, cs, node, helpers.MCPNameToRole(poolName)))
 	// upon cleaning up, we need to wait for the pool to reconcile after unlabelling
 	cleanupFuncs = append(cleanupFuncs, func() {
 		// the sleep allows the unlabelling to take effect
@@ -95,7 +103,6 @@ func runTestWithCtrcfg(t *testing.T, testName, regexKey, expectedConfVal1, expec
 	})
 
 	// cache the old configuration value to check against later
-	node := helpers.GetSingleNodeByRole(t, cs, poolName)
 	defaultConfVal := getValueFromCrioConfig(t, cs, node, regexKey, defaultPath)
 	if defaultConfVal == expectedConfVal1 || defaultConfVal == expectedConfVal2 {
 		t.Logf("default configuration value %s same as values being tested against. Consider updating the test", defaultConfVal)
@@ -107,7 +114,7 @@ func runTestWithCtrcfg(t *testing.T, testName, regexKey, expectedConfVal1, expec
 
 	// create default mc to have something to verify we successfully rolled back
 	defaultMCConfig := helpers.CreateMC(mcName, poolName)
-	_, err := cs.MachineConfigs().Create(context.TODO(), defaultMCConfig, metav1.CreateOptions{})
+	_, err = cs.MachineConfigs().Create(context.TODO(), defaultMCConfig, metav1.CreateOptions{})
 	require.Nil(t, err)
 	cleanupFuncs = append(cleanupFuncs, func() {
 		err := cs.MachineConfigs().Delete(context.TODO(), defaultMCConfig.Name, metav1.DeleteOptions{})
@@ -263,8 +270,14 @@ func runTestWithICSP(t *testing.T, testName, expectedVal string, icspRule *apiop
 		}
 	}()
 
+	n, releaseFunc, err := nodeLeaser.GetNode(t, cs)
+	require.NoError(t, err)
+	t.Cleanup(releaseFunc)
+
+	node := *n
+
 	// label one node from the pool to specify which worker to update
-	cleanupFuncs = append(cleanupFuncs, helpers.LabelRandomNodeFromPool(t, cs, "worker", helpers.MCPNameToRole(labelName)))
+	cleanupFuncs = append(cleanupFuncs, helpers.LabelNode(t, cs, node, helpers.MCPNameToRole(labelName)))
 	// upon cleaning up, we need to wait for the pool to reconcile after unlabelling
 	cleanupFuncs = append(cleanupFuncs, func() {
 		// the sleep allows the unlabelling to take effect
@@ -275,8 +288,6 @@ func runTestWithICSP(t *testing.T, testName, expectedVal string, icspRule *apiop
 		}
 	})
 
-	// cache the old configuration value to check against later
-	node := helpers.GetSingleNodeByRole(t, cs, labelName)
 	// cache the old configuration value to check against later
 	defaultConfVal := getValueFromRegistriesConfig(t, cs, node, searchKey, registriesConfigPath)
 	if defaultConfVal == expectedVal {
@@ -291,7 +302,7 @@ func runTestWithICSP(t *testing.T, testName, expectedVal string, icspRule *apiop
 	cleanupICSPFunc := createICSPWithConfig(t, cs, icspObjName, icspRule.Spec.RepositoryDigestMirrors)
 	// wait for the icsp to show up
 	// ensure the first icsp update rolls out to the cluster
-	err := helpers.WaitForPoolCompleteAny(t, cs, poolName)
+	err = helpers.WaitForPoolCompleteAny(t, cs, poolName)
 	require.Nil(t, err)
 	// verify value was changed to match that of the icsp
 	confVal := getValueFromRegistriesConfig(t, cs, node, searchKey, registriesConfigPath)

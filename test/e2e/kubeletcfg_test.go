@@ -26,6 +26,7 @@ const (
 )
 
 func TestKubeletConfigMaxPods(t *testing.T) {
+	t.Parallel()
 	kcRaw1, err := kcfg.EncodeKubeletConfig(&kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, kubeletconfigv1beta1.SchemeGroupVersion)
 	require.Nil(t, err, "failed to encode kubelet config")
 	autoNodeSizing := true
@@ -75,8 +76,14 @@ func runTestWithKubeletCfg(t *testing.T, testName, regexKey, expectedConfVal1, e
 		}
 	}()
 
+	n, releaseFunc, err := nodeLeaser.GetNode(t, cs)
+	require.NoError(t, err)
+	t.Cleanup(releaseFunc)
+
+	node := *n
+
 	// label one node from the pool to specify which worker to update
-	cleanupFuncs = append(cleanupFuncs, helpers.LabelRandomNodeFromPool(t, cs, "worker", helpers.MCPNameToRole(poolName)))
+	cleanupFuncs = append(cleanupFuncs, helpers.LabelNode(t, cs, node, helpers.MCPNameToRole(poolName)))
 	// upon cleaning up, we need to wait for the pool to reconcile after unlabelling
 	cleanupFuncs = append(cleanupFuncs, func() {
 		// the sleep allows the unlabelling to take effect
@@ -88,7 +95,6 @@ func runTestWithKubeletCfg(t *testing.T, testName, regexKey, expectedConfVal1, e
 	})
 
 	// cache the old configuration value to check against later
-	node := helpers.GetSingleNodeByRole(t, cs, poolName)
 	// the kubelet.conf format is yaml when in the default state and becomes a json when we apply a kubelet config CR
 	defaultConfVal := getValueFromKubeletConfig(t, cs, node, `"?maxPods"?: (\S+)`, kubeletPath) + ","
 	if defaultConfVal == expectedConfVal1 || defaultConfVal == expectedConfVal2 {
@@ -101,7 +107,7 @@ func runTestWithKubeletCfg(t *testing.T, testName, regexKey, expectedConfVal1, e
 
 	// create default mc to have something to verify we successfully rolled back
 	defaultMCConfig := helpers.CreateMC(mcName, poolName)
-	_, err := cs.MachineConfigs().Create(context.TODO(), defaultMCConfig, metav1.CreateOptions{})
+	_, err = cs.MachineConfigs().Create(context.TODO(), defaultMCConfig, metav1.CreateOptions{})
 	require.Nil(t, err)
 	cleanupFuncs = append(cleanupFuncs, func() {
 		err := cs.MachineConfigs().Delete(context.TODO(), defaultMCConfig.Name, metav1.DeleteOptions{})

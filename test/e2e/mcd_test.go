@@ -191,64 +191,59 @@ func testDontDeleteRPMFiles(cs *framework.ClientSet) machineConfigTestCase {
 }
 
 func TestRunMachineConfigTestCases(t *testing.T) {
-	cs := framework.NewClientSet("")
+	t.Parallel()
 
-	nodes, err := helpers.GetNodesByRole(cs, "worker")
-	require.NoError(t, err)
+	cs := framework.NewClientSet("")
 
 	t.Run("", func(t *testing.T) {
 		t.Parallel()
+
+		n, releaseFunc, err := nodeLeaser.GetNode(t, cs)
+		require.NoError(t, err)
+		t.Cleanup(releaseFunc)
 
 		testCases := machineConfigTestCases{
 			// The kernel type test must be run separately from the extensions test.
 			testKernelType(cs),
 		}
 
-		testCases.run(t, cs, nodes[0], "infra-1")
+		testCases.run(t, cs, *n, "mc-testcase-1")
 	})
 
 	t.Run("", func(t *testing.T) {
 		t.Parallel()
+
+		n, releaseFunc, err := nodeLeaser.GetNode(t, cs)
+		require.NoError(t, err)
+		t.Cleanup(releaseFunc)
 
 		testCases := machineConfigTestCases{
 			testKernelArguments(cs),
-			testExtensions(t, cs),
 			testDontDeleteRPMFiles(cs),
 		}
 
-		testCases.run(t, cs, nodes[1], "infra-2")
+		testCases.run(t, cs, *n, "mc-testcase-2")
 	})
 
 	t.Run("", func(t *testing.T) {
 		t.Parallel()
 
+		n, releaseFunc, err := nodeLeaser.GetNode(t, cs)
+		require.NoError(t, err)
+		t.Cleanup(releaseFunc)
+
 		testCases := machineConfigTestCases{
 			testIgn3Config(cs),
+			testExtensions(t, cs),
 		}
 
-		testCases.run(t, cs, nodes[2], "infra-3")
-	})
-}
-
-func TestRunSlowerTestsInParallel(t *testing.T) {
-	cs := framework.NewClientSet("")
-
-	nodes, err := helpers.GetNodesByRole(cs, "worker")
-	require.NoError(t, err)
-
-	t.Run("Shared", func(t *testing.T) {
-		t.Parallel()
-		testRunShared(t, nodes[0], "infra-1")
-	})
-
-	t.Run("OS Image Override", func(t *testing.T) {
-		t.Parallel()
-		testOSImageURLOverride(t, nodes[1], "infra-2")
+		testCases.run(t, cs, *n, "mc-testcase-3")
 	})
 }
 
 // Test case for https://github.com/openshift/machine-config-operator/issues/358
 func TestMCDToken(t *testing.T) {
+	t.Parallel()
 	cs := framework.NewClientSet("")
 
 	listOptions := metav1.ListOptions{
@@ -345,15 +340,23 @@ func testMCDeployedToPool(t *testing.T, poolName string) {
 	t.Logf("All nodes rolled back to %s (%s elapsed)", initialMCName, time.Since(startTime))
 }
 
-func testRunShared(t *testing.T, node corev1.Node, mcpName string) {
+func TestRunShared(t *testing.T) {
+	t.Parallel()
+
 	cs := framework.NewClientSet("")
+
+	mcpName := "test-shared"
+
+	node, releaseFunc, err := nodeLeaser.GetNode(t, cs)
+	require.NoError(t, err)
+	t.Cleanup(releaseFunc)
 
 	configOpts := e2eShared.ConfigDriftTestOpts{
 		ClientSet: cs,
 		MCPName:   mcpName,
-		Node:      node,
+		Node:      *node,
 		SetupFunc: func(mc *mcfgv1.MachineConfig) {
-			t.Cleanup(helpers.CreatePoolAndApplyMCToNode(t, cs, mcpName, node, []*mcfgv1.MachineConfig{mc}))
+			t.Cleanup(helpers.CreatePoolAndApplyMCToNode(t, cs, mcpName, *node, []*mcfgv1.MachineConfig{mc}))
 		},
 		TeardownFunc: func() {},
 	}
@@ -491,16 +494,21 @@ func testSSHNoReboot(t *testing.T, cs *framework.ClientSet, node corev1.Node) ma
 }
 
 func TestNoReboot(t *testing.T) {
+	t.Parallel()
 	cs := framework.NewClientSet("")
 
-	targetNode := helpers.GetRandomNode(t, cs, "worker")
+	n, releaseFunc, err := nodeLeaser.GetNode(t, cs)
+	require.NoError(t, err)
+	t.Cleanup(releaseFunc)
+
+	node := *n
 
 	testCases := machineConfigTestCases{
-		testSSHNoReboot(t, cs, targetNode),
-		testPasswordNoReboot(t, cs, targetNode),
+		testSSHNoReboot(t, cs, node),
+		testPasswordNoReboot(t, cs, node),
 	}
 
-	testCases.run(t, cs, targetNode, "infra")
+	testCases.run(t, cs, node, "test-noreboot")
 }
 
 func TestPoolDegradedOnFailToRender(t *testing.T) {
