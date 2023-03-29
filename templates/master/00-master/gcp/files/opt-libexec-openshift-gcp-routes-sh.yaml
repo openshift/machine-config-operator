@@ -182,14 +182,14 @@ contents:
           dirModified=$(stat -c %Y ${RUN_DIR})
           timeNow=$(date +%s)  
           timeDif=$(($timeNow - $dirModified))
-          difBuffer=$(($timeDif - 10))
+          difBuffer=$(($timeDif - 6))
           if (("$difBuffer" < 0)); then
             list_lb_ips
             remove_stale
             add_rules
             echo "done applying vip rules"
             echo "$(ls -al ${RUN_DIR})"
-            sleep 5 # add an additional 5 second sleep after we update
+            #sleep 5 # add an additional 5 second sleep after we update
           else
            echo "processing noop"
           fi

@@ -174,7 +174,7 @@ contents:
             dirModified=$(stat -c %Y ${RUN_DIR})
             timeNow=$(date +%s)  
             timeDif=$(($timeNow - $dirModified))
-            difBuffer=$(($timeDif - 10))
+            difBuffer=$(($timeDif - 6))
             if (("$difBuffer" < 0)); then
               initialize
               list_lb_ips
@@ -187,7 +187,7 @@ contents:
               # default systemd StartLimitBurst/StartLimitIterval settings which are 5 and 10s
               # respectively.
               echo "$(ls -al ${RUN_DIR})"
-              sleep 5 # add an additional 5 second sleep after we update
+              sleep 2 # add an additional 2 second sleep after we update
             else
               echo "processing noop"
             fi
