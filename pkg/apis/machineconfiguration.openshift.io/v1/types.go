@@ -16,6 +16,19 @@ const MachineConfigRoleLabelKey = "machineconfiguration.openshift.io/role"
 // KubeletConfigRoleLabelPrefix is the label that must be present in the KubeletConfig CR
 const KubeletConfigRoleLabelPrefix = "pools.operator.machineconfiguration.openshift.io/"
 
+// MachineConfigPoolStatusMap holds the node states for a pool
+type MachineConfigPoolStatusMap struct {
+	DegradedNodes    []MachineConfigPoolNodeState `json:"degradedNodes,omitempty"`
+	UpdatingNodes    []MachineConfigPoolNodeState `json:"updatingNodes,omitempty"`
+	UnavailableNodes []MachineConfigPoolNodeState `json:"unavailableNodes,omitempty"`
+}
+
+// MachineConfigPoolNodeState holds the node name and state reason
+type MachineConfigPoolNodeState struct {
+	Node   string `json:"node,omitempty"`
+	Reason string `json:"state,omitempty"`
+}
+
 // +genclient
 // +genclient:nonNamespaced
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -303,6 +316,9 @@ type MachineConfigPoolStatus struct {
 	// conditions represents the latest available observations of current state.
 	// +optional
 	Conditions []MachineConfigPoolCondition `json:"conditions"`
+
+	// nodeStates contains each node in a pool and its conditons
+	NodeStates MachineConfigPoolStatusMap `json:"nodeStates"`
 }
 
 // MachineConfigPoolStatusConfiguration stores the current configuration for the pool, and

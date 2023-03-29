@@ -427,3 +427,46 @@ spec:
                   targeted by the pool that have the CurrentMachineConfig as their config.
                 type: integer
                 format: int32
+              nodeStates:
+                description: nodeStates describes the nodes of a pool and their states.
+                type: object
+                properties:
+                  degradesNodes:
+                    description: degraded nodes and their reasons
+                    type: array
+                    items:
+                      description: machineconfigpoolnodestate contains a node and its state
+                      type: object
+                      properties:
+                        node:
+                          type: string
+                          description: the node
+                        state:
+                          type: string
+                          description: the degraded reason
+                  updatingNodes:
+                    description: updating nodes and their reasons
+                    type: array
+                    items:
+                      description: machineconfigpoolnodestate contains a node and its state
+                      type: object
+                      properties:
+                        node:
+                          type: string
+                          description: the node
+                        state:
+                          type: string
+                          description: the updating reason
+                  unavailableNodes:
+                    description: unavailable nodes and their reasons
+                    type: array
+                    items:
+                      description: machineconfigpoolnodestate contains a node and its state
+                      type: object
+                      properties:
+                        node:
+                          type: string
+                          description: the node
+                        state:
+                          type: string
+                          description: the unavailable reason

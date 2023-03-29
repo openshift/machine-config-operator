@@ -40,7 +40,7 @@ func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
 func calculateStatus(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv1.MachineConfigPoolStatus {
 	machineCount := int32(len(nodes))
 
-	updatedMachines := getUpdatedMachines(pool.Spec.Configuration.Name, nodes)
+	updatedMachines, notUpdatedMachines := getUpdatedMachines(pool.Spec.Configuration.Name, nodes)
 	updatedMachineCount := int32(len(updatedMachines))
 
 	readyMachines := getReadyMachines(pool.Spec.Configuration.Name, nodes)
@@ -59,6 +59,33 @@ func calculateStatus(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv
 	}
 	degradedMachineCount := int32(len(degradedMachines))
 
+	statusMap := mcfgv1.MachineConfigPoolStatusMap{}
+	degradedNodeStates := []mcfgv1.MachineConfigPoolNodeState{}
+	for _, node := range degradedMachines {
+		degradedNodeStates = append(degradedNodeStates, mcfgv1.MachineConfigPoolNodeState{
+			Node:   node.Name,
+			Reason: node.Annotations[daemonconsts.MachineConfigDaemonReasonAnnotationKey],
+		})
+	}
+	statusMap.DegradedNodes = degradedNodeStates
+	unavailableNodeStates := []mcfgv1.MachineConfigPoolNodeState{}
+	for _, node := range unavailableMachines {
+		unavailableNodeStates = append(unavailableNodeStates, mcfgv1.MachineConfigPoolNodeState{
+			Node:   node.Name,
+			Reason: node.Annotations[daemonconsts.MachineConfigDaemonReasonAnnotationKey],
+		})
+	}
+	statusMap.UnavailableNodes = unavailableNodeStates
+
+	updatingNodeStates := []mcfgv1.MachineConfigPoolNodeState{}
+	for _, node := range notUpdatedMachines {
+		updatingNodeStates = append(updatingNodeStates, mcfgv1.MachineConfigPoolNodeState{
+			Node:   node.Name,
+			Reason: node.Annotations[daemonconsts.MachineConfigDaemonReasonAnnotationKey],
+		})
+	}
+	statusMap.UpdatingNodes = updatingNodeStates
+
 	status := mcfgv1.MachineConfigPoolStatus{
 		ObservedGeneration:      pool.Generation,
 		MachineCount:            machineCount,
@@ -66,6 +93,7 @@ func calculateStatus(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv
 		ReadyMachineCount:       readyMachineCount,
 		UnavailableMachineCount: unavailableMachineCount,
 		DegradedMachineCount:    degradedMachineCount,
+		NodeStates:              statusMap,
 	}
 	status.Configuration = pool.Status.Configuration
 
@@ -191,20 +219,23 @@ func isNodeMCDFailing(node *corev1.Node) bool {
 // getUpdatedMachines filters the provided nodes to return the nodes whose
 // current config matches the desired config, which also matches the target config,
 // and the "done" flag is set.
-func getUpdatedMachines(poolTargetConfig string, nodes []*corev1.Node) []*corev1.Node {
+func getUpdatedMachines(poolTargetConfig string, nodes []*corev1.Node) ([]*corev1.Node, []*corev1.Node) {
 	var updated []*corev1.Node
+	var notUpdated []*corev1.Node
 	for _, node := range nodes {
 		if isNodeDoneAt(node, poolTargetConfig) {
 			updated = append(updated, node)
+		} else if !isNodeUnavailable(node) {
+			notUpdated = append(notUpdated, node)
 		}
 	}
-	return updated
+	return updated, notUpdated
 }
 
 // getReadyMachines filters the provided nodes to return the nodes
 // that are updated and marked ready
 func getReadyMachines(currentConfig string, nodes []*corev1.Node) []*corev1.Node {
-	updated := getUpdatedMachines(currentConfig, nodes)
+	updated, _ := getUpdatedMachines(currentConfig, nodes)
 	var ready []*corev1.Node
 	for _, node := range updated {
 		if isNodeReady(node) {

@@ -159,7 +159,7 @@ func TestGetUpdatedMachines(t *testing.T) {
 
 	for idx, test := range tests {
 		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
-			updated := getUpdatedMachines(test.currentConfig, test.nodes)
+			updated, _ := getUpdatedMachines(test.currentConfig, test.nodes)
 			if !reflect.DeepEqual(updated, test.updated) {
 				t.Fatalf("mismatch expected: %v got %v", test.updated, updated)
 			}

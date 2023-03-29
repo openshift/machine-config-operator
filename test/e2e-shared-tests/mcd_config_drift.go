@@ -294,6 +294,27 @@ func (c configDriftTest) Run(t *testing.T) {
 				assertNodeAndMCPIsRecovered(t, c.ClientSet, c.node, c.mcp)
 			},
 		},
+		{
+			name:           "check node status",
+			rebootExpected: false,
+			testFunc: func(t *testing.T) {
+				mutateFileOnNode(t, c.ClientSet, c.node, configDriftFilename, "not-the-data")
+				assertNodeAndMCPIsDegraded(t, c.ClientSet, c.node, c.mcp, configDriftFilename)
+				maxWait := 5 * time.Minute
+
+				end, err := pollForResourceState(maxWait, func() (bool, error) {
+					mcp, err := c.ClientSet.MachineConfigPools().Get(context.TODO(), c.MCPName, metav1.GetOptions{})
+					return poolStatusMapContains(*mcp, 0, 0, 1), err
+				})
+				if err != nil {
+					t.Fatalf("MachineConfigPool %s did not reach expected state (took %v): %s", c.MCPName, end, err)
+				}
+
+				t.Logf("MachineConfigPool %s reached expected state (took %v)", c.MCPName, end)
+				mutateFileOnNode(t, c.ClientSet, c.node, configDriftFilename, configDriftFileContents)
+				assertNodeAndMCPIsRecovered(t, c.ClientSet, c.node, c.mcp)
+			},
+		},
 	}
 
 	for _, testCase := range testCases {
@@ -333,6 +354,10 @@ func isPoolDegraded(m mcfgv1.MachineConfigPool) bool {
 	return m.Status.DegradedMachineCount == 1 &&
 		allMCPConditionsTrue(trueConditions, m) &&
 		allMCPConditionsFalse(falseConditions, m)
+}
+
+func poolStatusMapContains(m mcfgv1.MachineConfigPool, degraded, updating, unavailable int) bool {
+	return len(m.Status.NodeStates.DegradedNodes) == degraded && len(m.Status.NodeStates.UpdatingNodes) == updating && len(m.Status.NodeStates.UnavailableNodes) == unavailable
 }
 
 func (c configDriftTest) runDegradeAndRecoverContentRevert(t *testing.T, filename, expectedContents string) {
