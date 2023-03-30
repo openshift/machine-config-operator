@@ -6,6 +6,12 @@ package daemon
 import (
 	"fmt"
 	"os/exec"
+	"time"
+)
+
+const (
+	// controlPlaneUpdateDelay is a time period we wait to quiece for control plane node updates
+	controlPlaneUpdateDelay = 15 * time.Minute
 )
 
 // updateOstreeObjectSync enables "per-object-fsync" which helps avoid
