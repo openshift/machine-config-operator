@@ -13,6 +13,7 @@ import (
 
 	"github.com/golang/glog"
 	configv1 "github.com/openshift/api/config/v1"
+	operatorv1 "github.com/openshift/api/operator/v1"
 	"github.com/openshift/library-go/pkg/cloudprovider"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -26,6 +27,10 @@ type RenderConfig struct {
 	*mcfgv1.ControllerConfigSpec
 	PullSecret  string
 	FeatureGate *configv1.FeatureGate
+
+	// for making decision about vSphere cloud provider kubelet flag
+	// for more info see: https://issues.redhat.com/browse/STOR-1265
+	StorageConfig *operatorv1.Storage
 
 	// no need to set this, will be automatically configured
 	Constants map[string]string
@@ -362,6 +367,7 @@ func renderTemplate(config RenderConfig, path string, b []byte) ([]byte, error) 
 	funcs["onPremPlatformShortName"] = onPremPlatformShortName
 	funcs["urlHost"] = urlHost
 	funcs["urlPort"] = urlPort
+	funcs["vSphereCSIMigration"] = isVSphereCSIMigrationEnabled
 	funcs["isOpenShiftManagedDefaultLB"] = isOpenShiftManagedDefaultLB
 	tmpl, err := template.New(path).Funcs(funcs).Parse(string(b))
 	if err != nil {
@@ -391,9 +397,38 @@ func skipMissing(key string) (interface{}, error) {
 	return fmt.Sprintf("{{.%s}}", key), nil
 }
 
+// isCloudProviderExternal is a wrapper for the library-go IsCloudProviderExternal function, it is needed
+// to address an issue related to the vSphere in-tree storage driver and the CSI migration feature gate.
+// On vSphere, this function will check the storage operator configuration to determine if the in-tree
+// driver is in use, if it is this function will return false. Adding this function in the MCO allows
+// us to have a configuration whereby the kubelet can use the in-tree cloud controller logic to configure
+// itself, while allowing the kube-apiserver and kube-controller-manager to use the external cloud controllers.
+// For more information about the root issue, please see the following links:
+// https://github.com/kubernetes/kubernetes/pull/116342
+// https://issues.redhat.com/browse/STOR-1265
+func isCloudProviderExternal(platformStatus *configv1.PlatformStatus, featureGate *configv1.FeatureGate, storageConfig *operatorv1.Storage) (bool, error) {
+	if platformStatus == nil {
+		return false, fmt.Errorf("platformStatus is required")
+	}
+	switch platformStatus.Type {
+	case configv1.VSpherePlatformType:
+		// Platforms that are external based on feature gate presence
+		external, err := cloudprovider.IsCloudProviderExternal(platformStatus, featureGate)
+		if err != nil {
+			return external, nil
+		}
+		isexternal := external && (storageConfig == nil || storageConfig.Spec.VSphereStorageDriver == operatorv1.CSIWithMigrationDriver)
+		return isexternal, nil
+	default:
+		return cloudprovider.IsCloudProviderExternal(platformStatus, featureGate)
+	}
+}
+
 func cloudProvider(cfg RenderConfig) (interface{}, error) {
 	if cfg.Infra.Status.PlatformStatus != nil {
-		external, err := cloudprovider.IsCloudProviderExternal(cfg.Infra.Status.PlatformStatus, cfg.FeatureGate)
+		// check to see if the external cloud controller manager should be specified on the command line --cloud-provider flag,
+		// see the comments for isCloudProviderExternal for more information about the reasons for this wrapper function.
+		external, err := isCloudProviderExternal(cfg.Infra.Status.PlatformStatus, cfg.FeatureGate, cfg.StorageConfig)
 		if err != nil {
 			glog.Error(err)
 		} else if external {
@@ -438,7 +473,7 @@ func cloudConfigFlag(cfg RenderConfig) interface{} {
 		}
 	}
 
-	external, err := cloudprovider.IsCloudProviderExternal(cfg.Infra.Status.PlatformStatus, cfg.FeatureGate)
+	external, err := isCloudProviderExternal(cfg.Infra.Status.PlatformStatus, cfg.FeatureGate, cfg.StorageConfig)
 	if err != nil {
 		glog.Error(err)
 	} else if external {
@@ -707,4 +742,24 @@ func isOpenShiftManagedDefaultLB(cfg RenderConfig) bool {
 		}
 	}
 	return false
+}
+
+func isVSphereCSIMigrationEnabled(cfg RenderConfig) interface{} {
+	const enabled = "enabled"
+	const disabled = "disabled"
+
+	// The only time we expect this to be nil is during bootstrap when the
+	// Storage CR doesn't exist yet, and it should enabled for new installs.
+	if cfg.StorageConfig == nil {
+		return enabled
+	}
+
+	// If the Storage CR exists and migration is enabled, set that in the template.
+	if cfg.StorageConfig.Spec.VSphereStorageDriver == operatorv1.CSIWithMigrationDriver {
+		return enabled
+	}
+
+	// Upgraded clusters will default to disabled, until the Storage CR is modified
+	// to explicitly opt-in to the migration on vSphere.
+	return disabled
 }

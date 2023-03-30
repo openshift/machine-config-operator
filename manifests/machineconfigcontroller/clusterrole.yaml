@@ -55,3 +55,11 @@ rules:
   - leases
   verbs:
   - "*"
+- apiGroups:
+  - operator.openshift.io
+  resources:
+  - storages
+  verbs:
+  - get
+  - list
+  - watch

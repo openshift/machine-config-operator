@@ -111,6 +111,7 @@ func NewTestEnv(t *testing.T) *envtest.Environment {
 				filepath.Join("..", "..", "manifests", "controllerconfig.crd.yaml"),
 				filepath.Join("..", "..", "vendor", "github.com", "openshift", "api", "config", "v1"),
 				filepath.Join("..", "..", "vendor", "github.com", "openshift", "api", "operator", "v1alpha1"),
+				filepath.Join("..", "..", "vendor", "github.com", "openshift", "api", "operator", "v1"),
 			},
 			CleanUpAfterUse: true,
 		},

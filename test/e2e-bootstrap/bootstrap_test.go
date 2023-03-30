@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	configv1 "github.com/openshift/api/config/v1"
+	apioperatorsv1 "github.com/openshift/api/operator/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	"github.com/openshift/machine-config-operator/internal/clients"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -61,6 +62,7 @@ func TestE2EBootstrap(t *testing.T) {
 	configv1.Install(scheme.Scheme)
 	mcfgv1.Install(scheme.Scheme)
 	apioperatorsv1alpha1.Install(scheme.Scheme)
+	apioperatorsv1.Install(scheme.Scheme)
 
 	baseTestManifests := loadBaseTestManifests(t)
 
@@ -427,6 +429,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
 			ctx.OpenShiftConfigKubeNamespacedInformerFactory.Core().V1().Secrets(),
 			ctx.ConfigInformerFactory.Config().V1().FeatureGates(),
+			ctx.OperatorInformerFactory.Operator().V1().Storages(),
 			ctx.ClientBuilder.KubeClientOrDie("template-controller"),
 			ctx.ClientBuilder.MachineConfigClientOrDie("template-controller"),
 		),
