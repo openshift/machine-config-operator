@@ -41,7 +41,7 @@ func (n *NodeLeaser) GetNode(t *testing.T, cs *ClientSet) (*corev1.Node, func(),
 	nodeName := n.GetNodeName()
 	t.Logf("Waited for node %s for %s", nodeName, time.Since(now))
 
-	node, err := cs.CoreV1Interface.Nodes().Get(context.TODO(), n.GetNodeName(), metav1.GetOptions{})
+	node, err := cs.CoreV1Interface.Nodes().Get(context.TODO(), nodeName, metav1.GetOptions{})
 
 	now = time.Now()
 
