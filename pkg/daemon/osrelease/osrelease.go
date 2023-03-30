@@ -62,6 +62,11 @@ func (os OperatingSystem) IsEL() bool {
 	return os.id == rhcos || os.id == scos
 }
 
+// IsEL8 is true if the OS is RHCOS 8 or SCOS 8
+func (os OperatingSystem) IsEL8() bool {
+	return os.IsEL() && strings.HasPrefix(os.version, "8.") || os.version == "8"
+}
+
 // IsEL9 is true if the OS is RHCOS 9 or SCOS 9
 func (os OperatingSystem) IsEL9() bool {
 	return os.IsEL() && strings.HasPrefix(os.version, "9.") || os.version == "9"
@@ -103,6 +108,13 @@ func (os OperatingSystem) ToPrometheusLabel() string {
 // GetHostRunningOS reads os-release to generate the OperatingSystem data.
 func GetHostRunningOS() (OperatingSystem, error) {
 	return newOperatingSystem(EtcOSReleasePath, LibOSReleasePath)
+}
+
+// GetHostRunningOSFromRoot reads the os-release data from an alternative root
+func GetHostRunningOSFromRoot(root string) (OperatingSystem, error) {
+	etcPath := filepath.Join(root, EtcOSReleasePath)
+	libPath := filepath.Join(root, LibOSReleasePath)
+	return newOperatingSystem(etcPath, libPath)
 }
 
 // Generates the OperatingSystem data from strings which contain the desired
