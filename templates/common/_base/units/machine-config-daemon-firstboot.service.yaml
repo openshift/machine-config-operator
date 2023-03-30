@@ -15,6 +15,10 @@ contents: |
   RemainAfterExit=yes
   # Disable existing repos (if any) so that OS extensions would use embedded RPMs only
   ExecStartPre=-/usr/bin/sh -c "sed -i 's/enabled=1/enabled=0/' /etc/yum.repos.d/*.repo"
+  # Run this via podman because we want to use the nmstatectl binary in our container
+  ExecStart=/usr/bin/podman run --rm --privileged --net=host -v /:/rootfs  --entrypoint machine-config-daemon '{{ .Images.machineConfigOperator }}' firstboot-complete-machineconfig --maybe-persist-nics
+  # This one was copied out to the host...but actually I'm not sure why we didn't
+  # run it via podman to start
   ExecStart=/run/bin/machine-config-daemon firstboot-complete-machineconfig
   {{if .Proxy -}}
   EnvironmentFile=/etc/mco/proxy.env

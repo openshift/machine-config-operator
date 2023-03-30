@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"syscall"
 
@@ -58,21 +57,6 @@ func init() {
 	startCmd.PersistentFlags().StringVar(&startOpts.promMetricsURL, "metrics-url", "127.0.0.1:8797", "URL for prometheus metrics listener")
 }
 
-// bindPodMounts ensures that the daemon can still see e.g. /run/secrets/kubernetes.io
-// service account tokens after chrooting.  This function must be called before chroot.
-func bindPodMounts(rootMount string) error {
-	targetSecrets := filepath.Join(rootMount, "/run/secrets")
-	if err := os.MkdirAll(targetSecrets, 0o755); err != nil {
-		return err
-	}
-	// This will only affect our mount namespace, not the host
-	output, err := exec.Command("mount", "--rbind", "/run/secrets", targetSecrets).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("failed to mount /run/secrets to %s: %s: %w", targetSecrets, string(output), err)
-	}
-	return nil
-}
-
 func selfCopyToHost() error {
 	selfExecutableFd, err := os.Open("/proc/self/exe")
 	if err != nil {
@@ -117,7 +101,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	onceFromMode := startOpts.onceFrom != ""
 	if !onceFromMode {
 		// in the daemon case
-		if err := bindPodMounts(startOpts.rootMount); err != nil {
+		if err := daemon.PrepareNamespace(startOpts.rootMount); err != nil {
 			glog.Fatalf("Binding pod mounts: %+v", err)
 		}
 	}

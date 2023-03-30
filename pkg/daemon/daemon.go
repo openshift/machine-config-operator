@@ -156,6 +156,11 @@ const (
 	// also retrieve the pending config after a reboot
 	pendingStateMessageID = "machine-config-daemon-pending-state"
 
+	// originalContainerBin is the path at which we've stashed the MCD container's /usr/bin
+	// in the host namespace.  We use this for executing any extra binaries we have in our
+	// container image.
+	originalContainerBin = "/run/machine-config-daemon-bin"
+
 	kubeletHealthzPollingInterval = 30 * time.Second
 	kubeletHealthzTimeout         = 30 * time.Second
 
@@ -391,6 +396,32 @@ func (dn *Daemon) HypershiftConnect(
 	return nil
 }
 
+// PrepareNamespace is invoked before chrooting into the target root
+func PrepareNamespace(target string) error {
+	// This contains the /run/secrets/kubernetes.io service account tokens that we still need
+	secretsMount := "/run/secrets"
+	targetSecrets := filepath.Join(target, secretsMount)
+	if err := os.MkdirAll(targetSecrets, 0o755); err != nil {
+		return err
+	}
+	// This will only affect our mount namespace, not the host
+	if err := runCmdSync("mount", "--rbind", secretsMount, targetSecrets); err != nil {
+		return fmt.Errorf("failed to mount %s to %s: %w", secretsMount, targetSecrets, err)
+	}
+
+	targetSavedBin := filepath.Join(target, originalContainerBin)
+	if err := os.MkdirAll(targetSavedBin, 0o755); err != nil {
+		return fmt.Errorf("failed to create %s: %w", targetSavedBin, err)
+	}
+
+	usrbin := "/usr/bin"
+	if err := runCmdSync("mount", "--rbind", usrbin, targetSavedBin); err != nil {
+		return fmt.Errorf("failed to mount %s to %s: %w", usrbin, targetSavedBin, err)
+	}
+
+	return nil
+}
+
 // writer implements io.Writer interface as a pass-through for klog.
 type writer struct {
 	logFunc func(args ...interface{})
@@ -561,6 +592,9 @@ func (dn *Daemon) syncNode(key string) error {
 			return err
 		}
 		if err := removeIgnitionArtifacts(); err != nil {
+			return err
+		}
+		if err := MaybePersistNetworkInterfaces("/"); err != nil {
 			return err
 		}
 		if err := dn.checkStateOnFirstRun(); err != nil {
@@ -1516,6 +1550,44 @@ func removeIgnitionArtifacts() error {
 	if err := os.Remove(constants.IgnitionSystemdPresetFile); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to remove Ignition-written systemd preset file: %w", err)
 	}
+	return nil
+}
+
+// MaybePersistNetworkInterfaces runs if the host is RHEL8, which can happen
+// when scaling up older bootimages and targeting 4.13+ (rhel9).  In this case,
+// we may want to pin NIC interface names that reference static IP addresses.
+// More information in https://issues.redhat.com/browse/OCPBUGS-10787
+func MaybePersistNetworkInterfaces(osRoot string) error {
+	hostos, err := osrelease.GetHostRunningOSFromRoot(osRoot)
+	if err != nil {
+		return fmt.Errorf("checking operating system: %w", err)
+	}
+
+	nmstateBinary := "/usr/bin/nmstatectl"
+	// If we're already chrooted into the host / in the MCD case, then we
+	// need to find the binary in our saved copy of /usr/bin from the host.
+	if osRoot == "/" {
+		nmstateBinary = filepath.Join(originalContainerBin, "nmstatectl")
+	}
+
+	cmd := exec.Command(nmstateBinary, "persist-nic-names", "--root", osRoot)
+
+	if hostos.IsEL8() {
+		glog.Info("Persisting NIC names for RHEL8 host system")
+	} else {
+		// If we're not on RHEL, just output the current state.  We don't strictly need to do
+		// this but it will greatly help debugging and validation.
+		cmd.Args = append(cmd.Args, "--inspect")
+	}
+
+	// nmstate always logs to stderr, so we need to capture/forward that too
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	glog.Infof("Running: %s", strings.Join(cmd.Args, " "))
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to run nmstatectl: %w", err)
+	}
+
 	return nil
 }
 
