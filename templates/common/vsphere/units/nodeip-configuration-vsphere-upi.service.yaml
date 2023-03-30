@@ -1,7 +1,18 @@
-# NOTE: When making changes to this service, be sure they are replicated in the
-# VSphere-specific service in templates/common/vsphere/units.
-name: nodeip-configuration.service
-enabled: {{if eq .Infra.Status.PlatformStatus.Type "None"}}true{{else}}false{{end}}
+# This is a VSphere UPI-specific version of nodeip-configuration, which is
+# needed because of the way template precedence works in MCO. Most UPI
+# platforms get this from the _base directory because their platform is set
+# to None. However, VSphere UPI sets platform to VSphere and determines
+# whether it should be IPI or UPI based on whether the API VIPs field is
+# populated. Because platform is set to VSphere, we instead get the IPI
+# version of nodeip-configuration in the on-prem directory. This is disabled
+# for UPI deployments because it relies on the existence of a VIP to help with
+# IP selection.
+# This all means we don't have a good way to keep the _base version of the
+# service unless we put some platform-specific logic in the template processing
+# code. Instead, we create this duplicate version of the service that will
+# only be enabled for VSphere UPI deployments.
+name: nodeip-configuration-vsphere-upi.service
+enabled: {{if eq (len (onPremPlatformAPIServerInternalIPs .)) 0}}true{{else}}false{{end}}
 contents: |
   [Unit]
   Description=Writes IP address configuration so that kubelet and crio services select a valid node IP
@@ -26,11 +37,10 @@ contents: |
     {{ .Images.baremetalRuntimeCfgImage }} \
     node-ip \
     set \
-    {{if or (eq .IPFamilies "IPv6") (eq .IPFamilies "DualStackIPv6Primary") -}}
+    {{if eq .IPFamilies "IPv6" -}}
     --prefer-ipv6 \
     {{end -}}
     --retry-on-failure \
-    --network-type {{.NetworkType}} \
     ${NODEIP_HINT:-${KUBELET_NODEIP_HINT:-}}; \
     do \
     sleep 5; \
