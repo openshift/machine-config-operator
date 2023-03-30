@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/openshift/machine-config-operator/test/framework"
-	"github.com/openshift/machine-config-operator/test/helpers"
 )
 
 var nodeLeaser *framework.NodeLeaser
@@ -18,16 +17,10 @@ func TestMain(m *testing.M) {
 
 func getNodeLeaser() *framework.NodeLeaser {
 	cs := framework.NewClientSet("")
-	nodeList, err := helpers.GetNodesByRole(cs, "worker")
+	nl, err := framework.NewNodeLeaser(cs.CoreV1Interface, "worker")
 	if err != nil {
 		log.Fatalln(err)
 	}
 
-	nodeNames := []string{}
-
-	for _, node := range nodeList {
-		nodeNames = append(nodeNames, node.Name)
-	}
-
-	return framework.NewNodeLeaser(nodeNames)
+	return nl
 }

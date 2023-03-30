@@ -42,7 +42,7 @@ func TestOSImageURLOverride(t *testing.T) {
 
 	mcpName := "test-custom-os-image"
 
-	n, releaseFunc, err := nodeLeaser.GetNode(t, cs)
+	n, releaseFunc, err := nodeLeaser.GetNodeWithReleaseFunc(t)
 	require.NoError(t, err)
 	t.Cleanup(releaseFunc)
 

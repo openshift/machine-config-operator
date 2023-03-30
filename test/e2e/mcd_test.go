@@ -132,7 +132,7 @@ func TestRunShared(t *testing.T) {
 
 	mcpName := "test-shared"
 
-	node, releaseFunc, err := nodeLeaser.GetNode(t, cs)
+	node, releaseFunc, err := nodeLeaser.GetNodeWithReleaseFunc(t)
 	require.NoError(t, err)
 	t.Cleanup(releaseFunc)
 

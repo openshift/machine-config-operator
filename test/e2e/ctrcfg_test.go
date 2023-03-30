@@ -84,7 +84,7 @@ func runTestWithCtrcfg(t *testing.T, testName, regexKey, expectedConfVal1, expec
 		}
 	}()
 
-	n, releaseFunc, err := nodeLeaser.GetNode(t, cs)
+	n, releaseFunc, err := nodeLeaser.GetNodeWithReleaseFunc(t)
 	require.NoError(t, err)
 	t.Cleanup(releaseFunc)
 
@@ -270,7 +270,7 @@ func runTestWithICSP(t *testing.T, testName, expectedVal string, icspRule *apiop
 		}
 	}()
 
-	n, releaseFunc, err := nodeLeaser.GetNode(t, cs)
+	n, releaseFunc, err := nodeLeaser.GetNodeWithReleaseFunc(t)
 	require.NoError(t, err)
 	t.Cleanup(releaseFunc)
 

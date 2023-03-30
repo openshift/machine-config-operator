@@ -28,7 +28,7 @@ func TestRunMachineConfigTestCases(t *testing.T) {
 	t.Run("", func(t *testing.T) {
 		t.Parallel()
 
-		n, releaseFunc, err := nodeLeaser.GetNode(t, cs)
+		n, releaseFunc, err := nodeLeaser.GetNodeWithReleaseFunc(t)
 		require.NoError(t, err)
 		t.Cleanup(releaseFunc)
 
@@ -43,7 +43,7 @@ func TestRunMachineConfigTestCases(t *testing.T) {
 	t.Run("", func(t *testing.T) {
 		t.Parallel()
 
-		n, releaseFunc, err := nodeLeaser.GetNode(t, cs)
+		n, releaseFunc, err := nodeLeaser.GetNodeWithReleaseFunc(t)
 		require.NoError(t, err)
 		t.Cleanup(releaseFunc)
 
@@ -58,7 +58,7 @@ func TestRunMachineConfigTestCases(t *testing.T) {
 	t.Run("", func(t *testing.T) {
 		t.Parallel()
 
-		n, releaseFunc, err := nodeLeaser.GetNode(t, cs)
+		n, releaseFunc, err := nodeLeaser.GetNodeWithReleaseFunc(t)
 		require.NoError(t, err)
 		t.Cleanup(releaseFunc)
 
@@ -75,7 +75,7 @@ func TestNoReboot(t *testing.T) {
 	t.Parallel()
 	cs := framework.NewClientSet("")
 
-	n, releaseFunc, err := nodeLeaser.GetNode(t, cs)
+	n, releaseFunc, err := nodeLeaser.GetNodeWithReleaseFunc(t)
 	require.NoError(t, err)
 	t.Cleanup(releaseFunc)
 

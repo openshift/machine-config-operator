@@ -76,7 +76,7 @@ func runTestWithKubeletCfg(t *testing.T, testName, regexKey, expectedConfVal1, e
 		}
 	}()
 
-	n, releaseFunc, err := nodeLeaser.GetNode(t, cs)
+	n, releaseFunc, err := nodeLeaser.GetNodeWithReleaseFunc(t)
 	require.NoError(t, err)
 	t.Cleanup(releaseFunc)
 
