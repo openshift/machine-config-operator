@@ -25,13 +25,9 @@ func IsCloudProviderExternal(platformStatus *configv1.PlatformStatus, featureGat
 	case configv1.GCPPlatformType:
 		// Platforms that are external based on feature gate presence
 		return isExternalFeatureGateEnabled(featureGate)
-	case configv1.AzurePlatformType:
-		if isAzureStackHub(platformStatus) {
-			return true, nil
-		}
-		return isExternalFeatureGateEnabled(featureGate)
 	case configv1.AlibabaCloudPlatformType,
 		configv1.AWSPlatformType,
+		configv1.AzurePlatformType,
 		configv1.IBMCloudPlatformType,
 		configv1.KubevirtPlatformType,
 		configv1.NutanixPlatformType,
@@ -43,10 +39,6 @@ func IsCloudProviderExternal(platformStatus *configv1.PlatformStatus, featureGat
 		// Platforms that do not have external cloud providers implemented
 		return false, nil
 	}
-}
-
-func isAzureStackHub(platformStatus *configv1.PlatformStatus) bool {
-	return platformStatus.Azure != nil && platformStatus.Azure.CloudName == configv1.AzureStackCloud
 }
 
 // isExternalFeatureGateEnabled determines whether the ExternalCloudProvider feature gate is present in the current

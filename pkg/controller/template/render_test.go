@@ -71,6 +71,9 @@ func TestCloudProvider(t *testing.T) {
 		platform: configv1.AWSPlatformType,
 		res:      "external",
 	}, {
+		platform: configv1.AzurePlatformType,
+		res:      "external",
+	}, {
 		platform: configv1.OpenStackPlatformType,
 		res:      "external",
 	}, {
@@ -165,7 +168,7 @@ func TestCloudConfigFlag(t *testing.T) {
 [dummy-config]
     option = a
 `,
-		res: "--cloud-config=/etc/kubernetes/cloud.conf",
+		res: "",
 	}, {
 		platform: configv1.OpenStackPlatformType,
 		content: `
