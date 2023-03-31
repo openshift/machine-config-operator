@@ -837,7 +837,6 @@ func reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineConfigDif
 					return nil, err
 				}
 			}
-
 		}
 	}
 
