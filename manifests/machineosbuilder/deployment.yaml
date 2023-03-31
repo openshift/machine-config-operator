@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: machine-os-builder
+  namespace: {{.TargetNamespace}}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      k8s-app: machine-os-builder
+  template:
+    metadata:
+      labels:
+        k8s-app: machine-os-builder
+    spec:
+      containers:
+      - name: machine-os-builder
+        image: {{.Images.MachineConfigOperator}}
+        command: ["/usr/bin/machine-os-builder"]

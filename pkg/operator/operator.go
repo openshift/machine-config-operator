@@ -362,6 +362,7 @@ func (optr *Operator) sync(key string) error {
 		{"MachineConfigDaemon", optr.syncMachineConfigDaemon},
 		{"MachineConfigController", optr.syncMachineConfigController},
 		{"MachineConfigServer", optr.syncMachineConfigServer},
+		{"MachineOSBuilder", optr.syncMachineOSBuilder},
 		// this check must always run last since it makes sure the pools are in sync/upgrading correctly
 		{"RequiredPools", optr.syncRequiredMachineConfigPools},
 	}

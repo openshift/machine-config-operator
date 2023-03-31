@@ -600,6 +600,9 @@ func (ctrl *Controller) getPoolsForNode(node *corev1.Node) ([]*mcfgv1.MachineCon
 		}
 
 		pools = append(pools, p)
+
+		fmt.Printf("Found MachineConfigPool: %s\n", p.Name)
+
 	}
 
 	if len(pools) == 0 {
@@ -1186,4 +1189,26 @@ func getErrorString(err error) string {
 		return err.Error()
 	}
 	return ""
+}
+
+// shouldApplyConfigToPool checks if the node-controller should apply configurations to the given pool.
+// If a pool is labeled with 'LayeringEnabledPoolLabel', it returns false indicating that no action should be taken.
+// Otherwise, it returns true indicating that the node-controller can proceed with applying configurations to the pool.
+func shouldApplyConfigToPool(pool *mcfgv1.MachineConfigPool) bool {
+	klog.Info("Checking if node-controller should apply configurations to on-cluster-build pool")
+	labels := pool.GetLabels()
+	_, exists := labels[ctrlcommon.LayeringEnabledPoolLabel]
+	return !exists
+}
+
+func updateCandidateMachines(pool *mcfgv1.MachineConfigPool, candidates []*corev1.Node, capacity uint) error {
+	if !shouldApplyConfigToPool(pool) {
+		// Pool is labeled with 'LayeringEnabledPoolLabel', don't do anything.
+		klog.Info("Pool is labeled with 'LayeringEnabledPoolLabel', don't do anything.")
+		return nil
+	}
+
+	// Continue with the rest of the update logic for the pool
+	klog.Info("Continue with the rest of the update logic for the pool")
+	return nil
 }

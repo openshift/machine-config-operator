@@ -39,6 +39,10 @@ const (
 
 	// MachineConfigPoolMaster is the MachineConfigPool name given to the master
 	MachineConfigPoolMaster = "master"
+
 	// MachineConfigPoolWorker is the MachineConfigPool name given to the worker
 	MachineConfigPoolWorker = "worker"
+
+	// LayeringEnabledPoolLabel is the label that enables the "layered" workflow path for a pool.
+	LayeringEnabledPoolLabel = "machineconfiguration.openshift.io/layering-enabled"
 )
