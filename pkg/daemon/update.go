@@ -831,7 +831,8 @@ func reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineConfigDif
 					return nil, fmt.Errorf("ignition passwd user section contains unsupported changes: non-core user")
 				}
 			}
-			if !newEmpty {
+                        // We don't want to panic if the "new" users is empty, and it's still reconcilable because the absence of a user here does not mean "remove the user from the system"
+			if len(newIgn.Passwd.Users) != 0 {
 				glog.Infof("user data to be verified before ssh update: %v", newIgn.Passwd.Users[len(newIgn.Passwd.Users)-1])
 				if err := verifyUserFields(newIgn.Passwd.Users[len(newIgn.Passwd.Users)-1]); err != nil {
 					return nil, err
