@@ -481,7 +481,7 @@ func TestWriteFiles(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			err := d.writeFiles(test.files)
+			err := d.writeFiles(test.files, true)
 			assert.Equal(t, test.expectedErr, err)
 			if test.expectedContents != nil {
 				fileContents, err := os.ReadFile(filePath)
