@@ -29,14 +29,23 @@ type NodeLeaser struct {
 	// The CoreV1Client (can be real or fake). Used for retrieving the actual
 	// node object from the K8s API.
 	client corev1client.CoreV1Interface
-
 	// The default node role name (e.g., "worker")
 	nodeRole string
 }
 
+const (
+	nodeRoleLabelKey string = "node-role.kubernetes.io"
+)
+
 // Returns a new NodeLeaser populated with the names of nodes belonging to a
 // single node role.
 func NewNodeLeaser(client corev1client.CoreV1Interface, nodeRole string) (*NodeLeaser, error) {
+	nodeRole = stripNodeRoleLabelKey(nodeRole)
+
+	if nodeRole == "master" || nodeRole == "control-plane" {
+		return nil, fmt.Errorf("only roles other than \"master\" or \"control-plane\" are supported, got: %s", nodeRole)
+	}
+
 	n := &NodeLeaser{
 		mux:      &sync.Mutex{},
 		client:   client,
@@ -65,8 +74,9 @@ func (n *NodeLeaser) GetNodeWithReleaseFunc(t *testing.T) (*corev1.Node, func(),
 
 	releaseFunc := func() {
 		// Since we already know the node name (and we have a *testing.T
-		// available), we can require that there be no error here.
-		require.NoError(t, n.releaseNodeName(node.Name))
+		// available), we can require that there be no error here. This will cause
+		// the suite to fail should this condition be met.
+		require.NoError(t, n.ReleaseNode(t, node))
 		t.Logf("Node %s released; test run time: %s", node.Name, time.Since(now))
 	}
 
@@ -96,6 +106,7 @@ func (n *NodeLeaser) GetNode(t *testing.T) (*corev1.Node, error) {
 	return node, err
 }
 
+// Releases the node only if it does not have any additional roles attached to it.
 func (n *NodeLeaser) ReleaseNode(t *testing.T, node *corev1.Node) error {
 	updatedNode, err := n.client.Nodes().Get(context.TODO(), node.Name, metav1.GetOptions{})
 	if err != nil {
@@ -119,7 +130,7 @@ func (n *NodeLeaser) getNodeName() (string, error) {
 			return nodeName, nil
 		}
 
-		// Sleep so we don't use a ton of CPU.
+		// Sleep between checks so we don't use a ton of CPU.
 		time.Sleep(time.Millisecond)
 	}
 }
@@ -142,7 +153,11 @@ func (n *NodeLeaser) nodeHasAdditionalRoles(node *corev1.Node) ([]string, bool) 
 	keysToDelete := []string{}
 
 	for labelKey := range node.Labels {
-		if strings.Contains(labelKey, "node-role.kubernetes.io") && !strings.Contains(labelKey, n.nodeRole) {
+		if !strings.HasPrefix(labelKey, nodeRoleLabelKey) {
+			continue
+		}
+
+		if n.nodeRole != stripNodeRoleLabelKey(labelKey) {
 			keysToDelete = append(keysToDelete, labelKey)
 		}
 	}
@@ -150,7 +165,7 @@ func (n *NodeLeaser) nodeHasAdditionalRoles(node *corev1.Node) ([]string, bool) 
 	return keysToDelete, len(keysToDelete) != 0
 }
 
-// Releases the provided node.
+// Releases the provided node, if it exists.
 func (n *NodeLeaser) releaseNodeName(node string) error {
 	n.mux.Lock()
 	defer n.mux.Unlock()
@@ -181,7 +196,7 @@ func (n *NodeLeaser) findFreeNode() (string, bool) {
 func (n *NodeLeaser) getNodeNamesForPool() (map[string]bool, error) {
 	nodeList, err := n.client.Nodes().List(context.TODO(), metav1.ListOptions{
 		LabelSelector: labels.SelectorFromSet(labels.Set{
-			fmt.Sprintf("node-role.kubernetes.io/%s", n.nodeRole): "",
+			addNodeRoleLabelKey(n.nodeRole): "",
 		}).String(),
 	})
 
@@ -195,4 +210,20 @@ func (n *NodeLeaser) getNodeNamesForPool() (map[string]bool, error) {
 	}
 
 	return nodeMap, nil
+}
+
+func addNodeRoleLabelKey(in string) string {
+	if !strings.HasPrefix(in, nodeRoleLabelKey) {
+		return fmt.Sprintf("%s/%s", nodeRoleLabelKey, in)
+	}
+
+	return in
+}
+
+func stripNodeRoleLabelKey(in string) string {
+	if !strings.HasPrefix(in, nodeRoleLabelKey) {
+		return in
+	}
+
+	return strings.ReplaceAll(in, nodeRoleLabelKey+"/", "")
 }

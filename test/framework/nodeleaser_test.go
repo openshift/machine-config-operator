@@ -34,7 +34,7 @@ func getNodes(num int, role string) []runtime.Object {
 			ObjectMeta: metav1.ObjectMeta{
 				Name: name,
 				Labels: map[string]string{
-					fmt.Sprintf("node-role.kubernetes.io/%s", role): "",
+					fmt.Sprintf("%s/%s", nodeRoleLabelKey, role): "",
 				},
 			},
 		})
@@ -99,11 +99,28 @@ func TestNodeLeaser(t *testing.T) {
 				node, err := nl.GetNode(t)
 				assert.NoError(t, err)
 
-				node.Labels["node-role.kubernetes.io/additionalrole"] = ""
+				otherRole := addNodeRoleLabelKey("other-role")
+
+				node.Labels[otherRole] = ""
 				_, err = client.Nodes().Update(context.TODO(), node, metav1.UpdateOptions{})
 				require.NoError(t, err)
 
 				assert.Error(t, nl.ReleaseNode(t, node))
+
+				// If a node has another role and it was never released, we should get
+				// an error upon attempted retrieval.
+				allNodes, err := client.Nodes().List(context.TODO(), metav1.ListOptions{})
+				require.NoError(t, err)
+
+				for _, node := range allNodes.Items {
+					node := node
+					node.Labels[otherRole] = ""
+					_, err = client.Nodes().Update(context.TODO(), &node, metav1.UpdateOptions{})
+					require.NoError(t, err)
+				}
+
+				_, err = nl.GetNode(t)
+				assert.Error(t, err)
 			},
 		},
 		{
@@ -119,6 +136,40 @@ func TestNodeLeaser(t *testing.T) {
 						assert.NoError(t, err)
 						assert.NotNil(t, node)
 						randomDelay()
+						releaseFunc()
+					}()
+				}
+
+				wg.Wait()
+			},
+		},
+		{
+			name: "Multiple node locks acquired and released across multiple goroutines",
+			testFunc: func(t *testing.T, client corev1client.CoreV1Interface, nl *NodeLeaser) {
+				wg := sync.WaitGroup{}
+				wg.Add(100)
+
+				for i := 0; i < 100; i++ {
+					i := i
+					go func() {
+						defer wg.Done()
+						node, releaseFunc, err := nl.GetNodeWithReleaseFunc(t)
+						assert.NoError(t, err)
+						assert.NotNil(t, node)
+
+						otherrole := addNodeRoleLabelKey("other-role-" + fmt.Sprint(i))
+						node.Labels[otherrole] = ""
+
+						_, err = client.Nodes().Update(context.TODO(), node, metav1.UpdateOptions{})
+						require.NoError(t, err)
+
+						randomDelay()
+
+						delete(node.Labels, otherrole)
+
+						_, err = client.Nodes().Update(context.TODO(), node, metav1.UpdateOptions{})
+						require.NoError(t, err)
+
 						releaseFunc()
 					}()
 				}
