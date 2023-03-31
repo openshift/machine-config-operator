@@ -192,6 +192,35 @@ var (
 	defaultRebootTimeout = 24 * time.Hour
 )
 
+// originalRoot if non-nil is the original container root before we did a pivot_root
+var originalRoot string
+
+// PivotRoot swaps our root filesystem with the target (usually the host rootfs),
+// while keeping our original / as a subdirectory so we can still access it if needed
+// for e.g. any additional binaries.
+func PivotRoot(target string) error {
+	originalRootSaved := "/run/mco-original-root"
+	tmpOrig := filepath.Join(target, originalRootSaved)
+	if err := os.MkdirAll(tmpOrig, 0o755); err != nil {
+		return fmt.Errorf("failed to create %s: %w", tmpOrig, err)
+	}
+	if err := os.Chdir(target); err != nil {
+		return fmt.Errorf("unable to change directory to %s: %w", tmpOrig, err)
+	}
+	if err := runCmdSync("pivot_root", ".", tmpOrig); err != nil {
+		return err
+	}
+	originalRoot = originalRootSaved
+	if err := os.Chdir("/"); err != nil {
+		return fmt.Errorf("unable to change directory to /: %s", err)
+	}
+	glog.Infof("Pivoted root to %s (original %s)", target, originalRoot)
+	if _, err := os.Stat(filepath.Join(originalRoot, "/usr/bin/machine-config-daemon")); err != nil {
+		return fmt.Errorf("failed to access our binary in original root: %w", err)
+	}
+	return nil
+}
+
 // rebootCommand creates a new transient systemd unit to reboot the system.
 // With the upstream implementation of kubelet graceful shutdown feature,
 // we don't explicitly stop the kubelet so that kubelet can gracefully shutdown

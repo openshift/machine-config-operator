@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"syscall"
 
 	"github.com/google/renameio"
 	"k8s.io/client-go/tools/clientcmd"
@@ -122,14 +121,8 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		}
 	}
 
-	glog.Infof(`Calling chroot("%s")`, startOpts.rootMount)
-	if err := syscall.Chroot(startOpts.rootMount); err != nil {
-		glog.Fatalf("Unable to chroot to %s: %s", startOpts.rootMount, err)
-	}
-
-	glog.V(2).Infof("Moving to / inside the chroot")
-	if err := os.Chdir("/"); err != nil {
-		glog.Fatalf("Unable to change directory to /: %s", err)
+	if err := daemon.PivotRoot(startOpts.rootMount); err != nil {
+		glog.Fatalf("Pivoting root: %s", err)
 	}
 
 	if startOpts.nodeName == "" {

@@ -760,8 +760,8 @@ type NodeOSRelease struct {
 // Retrieves the /etc/os-release and /usr/lib/os-release file contents on a
 // given node and parses it through the OperatingSystem code.
 func GetOSReleaseForNode(t *testing.T, cs *framework.ClientSet, node corev1.Node) NodeOSRelease {
-	etcOSReleaseContent := ExecCmdOnNode(t, cs, node, "cat", filepath.Join("/rootfs", osrelease.EtcOSReleasePath))
-	libOSReleaseContent := ExecCmdOnNode(t, cs, node, "cat", filepath.Join("/rootfs", osrelease.LibOSReleasePath))
+	etcOSReleaseContent := ExecCmdOnNode(t, cs, node, "cat", filepath.Join(osrelease.EtcOSReleasePath))
+	libOSReleaseContent := ExecCmdOnNode(t, cs, node, "cat", filepath.Join(osrelease.LibOSReleasePath))
 
 	os, err := osrelease.LoadOSRelease(etcOSReleaseContent, libOSReleaseContent)
 	require.NoError(t, err)
