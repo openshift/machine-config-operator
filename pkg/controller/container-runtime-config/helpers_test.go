@@ -502,6 +502,50 @@ func TestUpdatePolicyJSON(t *testing.T) {
 			allowed:       []string{"allow.io"},
 			errorExpected: true,
 		},
+		{
+			name:    "allowed registries: atomic does not allow deep namespaces",
+			allowed: []string{"allow.io", "allow.io/namespace1/namespace2", "allowed-example.com/namespace1/namespace2/namespace3"},
+			want: signature.Policy{
+				Default: signature.PolicyRequirements{signature.NewPRReject()},
+				Transports: map[string]signature.PolicyTransportScopes{
+					"atomic": map[string]signature.PolicyRequirements{
+						"allow.io":                       {signature.NewPRInsecureAcceptAnything()},
+						"allow.io/namespace1/namespace2": {signature.NewPRInsecureAcceptAnything()},
+					},
+					"docker": map[string]signature.PolicyRequirements{
+						"allow.io":                       {signature.NewPRInsecureAcceptAnything()},
+						"allow.io/namespace1/namespace2": {signature.NewPRInsecureAcceptAnything()},
+						"allowed-example.com/namespace1/namespace2/namespace3": {signature.NewPRInsecureAcceptAnything()},
+					},
+					"docker-daemon": map[string]signature.PolicyRequirements{
+						"": {signature.NewPRInsecureAcceptAnything()},
+					},
+				},
+			},
+			errorExpected: false,
+		},
+		{
+			name:    "blocked registries: atomic does not allow deep namespaces",
+			blocked: []string{"block.com", "block.com/namespace1/namespace2", "blocked-example.com/namespace1/namespace2/namespace3"},
+			want: signature.Policy{
+				Default: signature.PolicyRequirements{signature.NewPRInsecureAcceptAnything()},
+				Transports: map[string]signature.PolicyTransportScopes{
+					"atomic": map[string]signature.PolicyRequirements{
+						"block.com":                       {signature.NewPRReject()},
+						"block.com/namespace1/namespace2": {signature.NewPRReject()},
+					},
+					"docker": map[string]signature.PolicyRequirements{
+						"block.com":                       {signature.NewPRReject()},
+						"block.com/namespace1/namespace2": {signature.NewPRReject()},
+						"blocked-example.com/namespace1/namespace2/namespace3": {signature.NewPRReject()},
+					},
+					"docker-daemon": map[string]signature.PolicyRequirements{
+						"": {signature.NewPRInsecureAcceptAnything()},
+					},
+				},
+			},
+			errorExpected: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
