@@ -404,6 +404,12 @@ func TestReconcilableSSH(t *testing.T) {
 	newMcfg = helpers.CreateMachineConfigFromIgnition(newIgnCfg)
 	_, errMsg = reconcilable(oldMcfg, newMcfg)
 	checkIrreconcilableResults(t, "SSH", errMsg)
+
+	//check that empty Users does not cause panic
+	newIgnCfg.Passwd.Users = nil
+	newMcfg = helpers.CreateMachineConfigFromIgnition(newIgnCfg)
+	_, errMsg = reconcilable(oldMcfg, newMcfg)
+	checkReconcilableResults(t, "SSH", errMsg)
 }
 
 func TestWriteFiles(t *testing.T) {
