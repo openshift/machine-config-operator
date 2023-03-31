@@ -153,9 +153,9 @@ func writeDropins(u ign3types.Unit, systemdRoot string, isCoreOSVariant bool) er
 
 // writeFiles writes the given files to disk.
 // it doesn't fetch remote files and expects a flattened config file.
-func writeFiles(files []ign3types.File) error {
+func writeFiles(files []ign3types.File, skipCertificateWrite bool) error {
 	for _, file := range files {
-		if file.Path == caBundleFilePath {
+		if skipCertificateWrite && file.Path == caBundleFilePath {
 			// TODO remove this special case once we have a better way to do this
 			glog.V(4).Infof("Skipping file %s during writeFiles", caBundleFilePath)
 			continue

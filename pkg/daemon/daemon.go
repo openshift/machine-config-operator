@@ -597,7 +597,7 @@ func (dn *Daemon) syncNode(key string) error {
 			return err
 		}
 
-		if err := dn.triggerUpdateWithMachineConfig(current, desired); err != nil {
+		if err := dn.triggerUpdateWithMachineConfig(current, desired, true); err != nil {
 			return err
 		}
 	}
@@ -981,7 +981,7 @@ func (dn *Daemon) RunFirstbootCompleteMachineconfig() error {
 	}
 
 	dn.skipReboot = true
-	err = dn.update(nil, &mc)
+	err = dn.update(nil, &mc, true)
 	if err != nil {
 		return err
 	}
@@ -1733,7 +1733,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 
 	if forceFileExists() {
 		dn.logSystem("Skipping on-disk validation; %s present", constants.MachineConfigDaemonForceFile)
-		return dn.triggerUpdateWithMachineConfig(state.currentConfig, state.desiredConfig)
+		return dn.triggerUpdateWithMachineConfig(state.currentConfig, state.desiredConfig, true)
 	}
 
 	// When upgrading the OS, it is possible that the SSH key location will
@@ -1765,7 +1765,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 	}
 	// currentConfig != desiredConfig, and we're not booting up into the desiredConfig.
 	// Kick off an update.
-	return dn.triggerUpdateWithMachineConfig(state.currentConfig, state.desiredConfig)
+	return dn.triggerUpdateWithMachineConfig(state.currentConfig, state.desiredConfig, true)
 }
 
 // updateConfigAndState updates node to desired state, labels nodes as done and uncordon
@@ -1845,7 +1845,7 @@ func (dn *Daemon) runOnceFromMachineConfig(machineConfig mcfgv1.MachineConfig, c
 			return nil
 		}
 		// At this point we have verified we need to update
-		if err := dn.triggerUpdateWithMachineConfig(current, &machineConfig); err != nil {
+		if err := dn.triggerUpdateWithMachineConfig(current, &machineConfig, false); err != nil {
 			dn.nodeWriter.SetDegraded(err)
 			return err
 		}
@@ -1853,7 +1853,7 @@ func (dn *Daemon) runOnceFromMachineConfig(machineConfig mcfgv1.MachineConfig, c
 	}
 	if contentFrom == onceFromLocalConfig {
 		// Execute update without hitting the cluster
-		return dn.update(nil, &machineConfig)
+		return dn.update(nil, &machineConfig, false)
 	}
 	// Otherwise return an error as the input format is unsupported
 	return fmt.Errorf("%v is not a path nor url; can not run once", contentFrom)
@@ -1862,7 +1862,7 @@ func (dn *Daemon) runOnceFromMachineConfig(machineConfig mcfgv1.MachineConfig, c
 // runOnceFromIgnition executes MCD's subset of Ignition functionality in onceFrom mode
 func (dn *Daemon) runOnceFromIgnition(ignConfig ign3types.Config) error {
 	// Execute update without hitting the cluster
-	if err := dn.writeFiles(ignConfig.Storage.Files); err != nil {
+	if err := dn.writeFiles(ignConfig.Storage.Files, false); err != nil {
 		return err
 	}
 	if err := dn.writeUnits(ignConfig.Systemd.Units); err != nil {
@@ -1972,7 +1972,7 @@ func (dn *Daemon) completeUpdate(desiredConfigName string) error {
 
 // triggerUpdateWithMachineConfig starts the update. It queries the cluster for
 // the current and desired config if they weren't passed.
-func (dn *Daemon) triggerUpdateWithMachineConfig(currentConfig, desiredConfig *mcfgv1.MachineConfig) error {
+func (dn *Daemon) triggerUpdateWithMachineConfig(currentConfig, desiredConfig *mcfgv1.MachineConfig, skipCertificateWrite bool) error {
 	if currentConfig == nil {
 		ccAnnotation, err := getNodeAnnotation(dn.node, constants.CurrentMachineConfigAnnotationKey)
 		if err != nil {
@@ -2000,7 +2000,7 @@ func (dn *Daemon) triggerUpdateWithMachineConfig(currentConfig, desiredConfig *m
 	dn.stopConfigDriftMonitor()
 
 	// run the update process. this function doesn't currently return.
-	return dn.update(currentConfig, desiredConfig)
+	return dn.update(currentConfig, desiredConfig, skipCertificateWrite)
 }
 
 // validateKernelArguments checks that the current boot has all arguments specified
