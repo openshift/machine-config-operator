@@ -12,12 +12,12 @@ contents:
         cache 30
         reload
         template IN {{`{{ .Cluster.IngressVIPRecordType }}`}} {{ .DNS.Spec.BaseDomain }} {
-            match .*.apps.{{ .DNS.Spec.BaseDomain }}
+            match .*[.]apps.{{ .DNS.Spec.BaseDomain }}
             answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ if gt (len (onPremPlatformIngressIPs .)) 0 }}{{ index (onPremPlatformIngressIPs .) 0 }}{{ end }}"
             fallthrough
         }
         template IN {{`{{ .Cluster.IngressVIPEmptyType }}`}} {{ .DNS.Spec.BaseDomain }} {
-            match .*.apps.{{ .DNS.Spec.BaseDomain }}
+            match .*[.]apps.{{ .DNS.Spec.BaseDomain }}
             {{ if gt (len (onPremPlatformIngressIPs .)) 1 }}answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ index (onPremPlatformIngressIPs .) 1 }}"{{ end }}
             fallthrough
         }
