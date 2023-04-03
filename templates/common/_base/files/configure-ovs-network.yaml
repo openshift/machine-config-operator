@@ -260,6 +260,8 @@ contents:
             clone_mac=0
           fi
         fi
+      elif [ "$(nmcli --get-values connection.type conn show ${old_conn})" == "dummy" ]; then
+        iface_type=dummy
       else
         iface_type=802-3-ethernet
       fi
