@@ -462,8 +462,16 @@ func updatePolicyJSON(data []byte, internalBlocked, internalAllowed []string, re
 		}
 	}
 
-	policyObj.Transports["atomic"] = transportScopes
 	policyObj.Transports["docker"] = transportScopes
+	// The “atomic” policy is the same as the “docker” policy, but “atomic” does not support three or more
+	// scope segments, so filter those scopes out.
+	policyObj.Transports["atomic"] = make(signature.PolicyTransportScopes)
+	for reg, config := range transportScopes {
+		if strings.Count(reg, "/") >= 3 {
+			continue
+		}
+		policyObj.Transports["atomic"][reg] = config
+	}
 
 	policyJSON, err := json.Marshal(policyObj)
 	if err != nil {
