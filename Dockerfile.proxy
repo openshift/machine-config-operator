@@ -1,4 +1,4 @@
-FROM registry.ci.openshift.org/ocp/4.13:base
+FROM registry.ci.openshift.org/ocp/4.14:base
 WORKDIR /go/src/github.com/openshift/machine-config-operator
 COPY docs/openshift-proxy-pull-test.md .
 LABEL io.openshift.release.operator true
