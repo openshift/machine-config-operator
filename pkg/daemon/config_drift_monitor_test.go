@@ -492,7 +492,7 @@ func (tc *configDriftMonitorTestCase) writeIgnitionConfig(t *testing.T, ignConfi
 	// Write files the same way the MCD does.
 	// NOTE: We manually handle the errors here because using require.Nil or
 	// require.NoError will skip the deferred functions, which is undesirable.
-	if err := writeFiles(ignConfig.Storage.Files); err != nil {
+	if err := writeFiles(ignConfig.Storage.Files, true); err != nil {
 		return fmt.Errorf("could not write ignition config files: %w", err)
 	}
 
