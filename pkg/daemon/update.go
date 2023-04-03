@@ -121,7 +121,7 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 	}
 
 	// currentConfig != desiredConfig, kick off an update
-	return dn.triggerUpdateWithMachineConfig(state.currentConfig, state.desiredConfig)
+	return dn.triggerUpdateWithMachineConfig(state.currentConfig, state.desiredConfig, true)
 }
 
 // finalizeBeforeReboot is the last step in an update() and then we take appropriate postConfigChangeAction.
@@ -464,7 +464,7 @@ func calculatePostConfigChangeAction(diff *machineConfigDiff, diffFileSet []stri
 // update the node to the provided node configuration.
 //
 //nolint:gocyclo
-func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
+func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertificateWrite bool) (retErr error) {
 	oldConfig = canonicalizeEmptyMC(oldConfig)
 
 	if dn.nodeWriter != nil {
@@ -533,13 +533,13 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 	}
 
 	// update files on disk that need updating
-	if err := dn.updateFiles(oldIgnConfig, newIgnConfig); err != nil {
+	if err := dn.updateFiles(oldIgnConfig, newIgnConfig, skipCertificateWrite); err != nil {
 		return err
 	}
 
 	defer func() {
 		if retErr != nil {
-			if err := dn.updateFiles(newIgnConfig, oldIgnConfig); err != nil {
+			if err := dn.updateFiles(newIgnConfig, oldIgnConfig, skipCertificateWrite); err != nil {
 				errs := kubeErrs.NewAggregate([]error{err, retErr})
 				retErr = fmt.Errorf("error rolling back files writes: %w", errs)
 				return
@@ -637,13 +637,14 @@ func (dn *Daemon) updateHypershift(oldConfig, newConfig *mcfgv1.MachineConfig, d
 	}
 
 	// update files on disk that need updating
-	if err := dn.updateFiles(oldIgnConfig, newIgnConfig); err != nil {
+	// We should't skip the certificate write in HyperShift since it does not run the extra daemon process
+	if err := dn.updateFiles(oldIgnConfig, newIgnConfig, false); err != nil {
 		return err
 	}
 
 	defer func() {
 		if retErr != nil {
-			if err := dn.updateFiles(newIgnConfig, oldIgnConfig); err != nil {
+			if err := dn.updateFiles(newIgnConfig, oldIgnConfig, false); err != nil {
 				errs := kubeErrs.NewAggregate([]error{err, retErr})
 				retErr = fmt.Errorf("error rolling back files writes: %w", errs)
 				return
@@ -1209,9 +1210,9 @@ func (dn *CoreOSDaemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig)
 // whatever has been written is picked up by the appropriate daemons, if
 // required. in particular, a daemon-reload and restart for any unit files
 // touched.
-func (dn *Daemon) updateFiles(oldIgnConfig, newIgnConfig ign3types.Config) error {
+func (dn *Daemon) updateFiles(oldIgnConfig, newIgnConfig ign3types.Config, skipCertificateWrite bool) error {
 	glog.Info("Updating files")
-	if err := dn.writeFiles(newIgnConfig.Storage.Files); err != nil {
+	if err := dn.writeFiles(newIgnConfig.Storage.Files, skipCertificateWrite); err != nil {
 		return err
 	}
 	if err := dn.writeUnits(newIgnConfig.Systemd.Units); err != nil {
@@ -1537,8 +1538,8 @@ func (dn *Daemon) writeUnits(units []ign3types.Unit) error {
 
 // writeFiles writes the given files to disk.
 // it doesn't fetch remote files and expects a flattened config file.
-func (dn *Daemon) writeFiles(files []ign3types.File) error {
-	return writeFiles(files)
+func (dn *Daemon) writeFiles(files []ign3types.File, skipCertificateWrite bool) error {
+	return writeFiles(files, skipCertificateWrite)
 }
 
 // Ensures that both the SSH root directory (/home/core/.ssh) as well as any
