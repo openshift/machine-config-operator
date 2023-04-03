@@ -155,7 +155,9 @@ func TestRenderAllManifests(t *testing.T) {
 		"on-prem/coredns-corefile.tmpl")
 
 	// These are files in the manifest directory that we should ignore in this test.
-	ignored := sets.NewString("manifests.go")
+	ignored := sets.NewString(
+		"manifests.go",
+		"machineosbuilder/deployment.yaml")
 
 	for _, manifestPath := range allManifests {
 		manifestPath := manifestPath
