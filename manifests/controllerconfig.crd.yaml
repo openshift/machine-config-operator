@@ -159,6 +159,7 @@ spec:
                 required:
                 - spec
                 type: object
+                x-kubernetes-embedded-resource: true
               etcdDiscoveryDomain:
                 description: etcdDiscoveryDomain is deprecated, use Infra.Status.EtcdDiscoveryDomain
                   instead
@@ -1632,6 +1633,7 @@ spec:
                 required:
                 - spec
                 type: object
+                x-kubernetes-embedded-resource: true
               ipFamilies:
                 description: ipFamilies indicates the IP families in use by the cluster
                   network
@@ -1713,6 +1715,7 @@ spec:
                       CIDRs for which the proxy should not be used.
                     type: string
                 type: object
+                x-kubernetes-embedded-resource: true
               pullSecret:
                 description: pullSecret is the default pull secret that needs to be
                   installed on all machines.
