@@ -7,7 +7,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const componentName = "machine-config"
+const componentName = "machine-os-builder"
 
 var (
 	rootCmd = &cobra.Command{
