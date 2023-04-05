@@ -155,6 +155,10 @@ func (optr *Operator) syncAll(syncFuncs []syncFunc) error {
 		return fmt.Errorf("error syncing relatedObjects: %w", err)
 	}
 
+	if err := optr.syncMetrics(); err != nil {
+		return fmt.Errorf("error syncing metrics: %w", err)
+	}
+
 	if optr.inClusterBringup && syncErr.err == nil {
 		glog.Infof("Initialization complete")
 		optr.inClusterBringup = false
@@ -728,6 +732,9 @@ func (optr *Operator) syncMachineConfigServer(config *renderConfig) error {
 func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
 	var lastErr error
 	if err := wait.Poll(time.Second, 10*time.Minute, func() (bool, error) {
+		if err := optr.syncMetrics(); err != nil {
+			return false, err
+		}
 		if lastErr != nil {
 			co, err := optr.fetchClusterOperator()
 			if err != nil {

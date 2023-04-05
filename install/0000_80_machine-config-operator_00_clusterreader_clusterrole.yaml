@@ -10,6 +10,19 @@ metadata:
     include.release.openshift.io/single-node-developer: "true"
 rules:
   - apiGroups:
+      - authentication.k8s.io
+    resources:
+      - tokenreviews
+      - subjectaccessreviews
+    verbs:
+      - create
+  - apiGroups:
+      - authorization.k8s.io
+    resources:
+      - subjectaccessreviews
+    verbs:
+      - create
+  - apiGroups:
       - machineconfiguration.openshift.io
     resources:
       - containerruntimeconfigs

@@ -38,6 +38,7 @@ var (
 		kubeCAFile                     string
 		mcoImage                       string
 		oauthProxyImage                string
+		kubeRbacProxyImage             string
 		networkConfigFile              string
 		oscontentImage                 string
 		pullSecretFile                 string
@@ -81,6 +82,7 @@ func init() {
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.oauthProxyImage, "oauth-proxy-image", "", "Image for origin oauth proxy.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.baseOSContainerImage, "baseos-image", "", "ostree-bootable container image reference")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.baseOSExtensionsContainerImage, "baseos-extensions-image", "", "Image with extensions")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.kubeRbacProxyImage, "kube-rbac-proxy-image", "", "Image for origin kube-rbac proxy.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.imageReferences, "image-references", "", "File containing imagestreams (from cluster-version-operator)")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.cloudProviderCAFile, "cloud-provider-ca-file", "", "path to cloud provider CA certificate")
 
@@ -136,6 +138,7 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 		bootstrapOpts.baremetalRuntimeCfgImage = findImageOrDie(imgstream, "baremetal-runtimecfg")
 		// TODO: Hmm, this one doesn't actually seem to be passed right now at bootstrap time by the installer
 		bootstrapOpts.oauthProxyImage = findImageOrDie(imgstream, "oauth-proxy")
+		bootstrapOpts.kubeRbacProxyImage = findImageOrDie(imgstream, "kube-rbac-proxy")
 		bootstrapOpts.infraImage = findImageOrDie(imgstream, "pod")
 		bootstrapOpts.haproxyImage = findImageOrDie(imgstream, "haproxy-router")
 		bootstrapOpts.baseOSContainerImage, err = findImage(imgstream, baseOSContainerImageTag)
