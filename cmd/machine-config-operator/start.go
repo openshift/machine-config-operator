@@ -24,8 +24,9 @@ var (
 	}
 
 	startOpts struct {
-		kubeconfig string
-		imagesFile string
+		kubeconfig     string
+		imagesFile     string
+		promMetricsURL string
 	}
 )
 
@@ -33,6 +34,7 @@ func init() {
 	rootCmd.AddCommand(startCmd)
 	startCmd.PersistentFlags().StringVar(&startOpts.kubeconfig, "kubeconfig", "", "Kubeconfig file to access a remote cluster (testing only)")
 	startCmd.PersistentFlags().StringVar(&startOpts.imagesFile, "images-json", "", "images.json file for MCO.")
+	startCmd.PersistentFlags().StringVar(&startOpts.promMetricsURL, "metrics-listen-address", "127.0.0.1:8797", "Listen address for prometheus metrics listener")
 }
 
 func runStartCmd(cmd *cobra.Command, args []string) {
@@ -54,6 +56,13 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	if err != nil {
 		glog.Fatalf("error creating clients: %v", err)
 	}
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	// start metrics listener
+	go ctrlcommon.StartMetricsListener(startOpts.promMetricsURL, stopCh, operator.RegisterMCOMetrics)
+
 	run := func(ctx context.Context) {
 		go common.SignalHandler(runCancel)
 

@@ -67,7 +67,6 @@ func calculateStatus(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv
 		UnavailableMachineCount: unavailableMachineCount,
 		DegradedMachineCount:    degradedMachineCount,
 	}
-
 	status.Configuration = pool.Status.Configuration
 
 	conditions := pool.Status.Conditions
@@ -123,6 +122,7 @@ func calculateStatus(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv
 	if nodeDegraded || renderDegraded {
 		sdegraded := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolDegraded, corev1.ConditionTrue, "", "")
 		mcfgv1.SetMachineConfigPoolCondition(&status, *sdegraded)
+
 	} else {
 		sdegraded := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolDegraded, corev1.ConditionFalse, "", "")
 		mcfgv1.SetMachineConfigPoolCondition(&status, *sdegraded)
