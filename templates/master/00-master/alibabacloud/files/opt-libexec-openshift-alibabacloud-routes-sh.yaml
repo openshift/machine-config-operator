@@ -14,6 +14,11 @@ contents:
     # We check /run/cloud-routes/ for files $VIP.up and $VIP.down. If the .up file
     # exists, then we redirect traffic destined for that vip to ourselves via iptables.
     # A systemd unit watches the directory for changes.
+    #
+    # TODO: Address the potential issue where apiserver-watcher could create multiple files
+    # and openshift-alibabacloud-routes doesn't detect all of them because file change events
+    # are not queued when the service is already running.
+    # https://github.com/openshift/machine-config-operator/pull/3643#issuecomment-1497234369
 
     set -euo pipefail
 
