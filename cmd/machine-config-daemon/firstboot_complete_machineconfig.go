@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"time"
 
 	"github.com/golang/glog"
@@ -18,9 +19,12 @@ var firstbootCompleteMachineconfig = &cobra.Command{
 	Run:                   executeFirstbootCompleteMachineConfig,
 }
 
+var maybePersistNics bool
+
 // init executes upon import
 func init() {
 	rootCmd.AddCommand(firstbootCompleteMachineconfig)
+	firstbootCompleteMachineconfig.PersistentFlags().BoolVar(&maybePersistNics, "maybe-persist-nics", false, "Run nmstatectl persist-nic-names")
 	pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
 }
 
@@ -30,6 +34,19 @@ func runFirstBootCompleteMachineConfig(_ *cobra.Command, _ []string) error {
 
 	exitCh := make(chan error)
 	defer close(exitCh)
+
+	if maybePersistNics {
+		// If asked, before we try an OS update, persist NIC names (if applicable) so that
+		// we handle the reprovision case with old disk images and Ignition configs
+		// that provide static IP addresses.
+		if err := daemon.MaybePersistNetworkInterfaces("/rootfs"); err != nil {
+			return fmt.Errorf("failed to persist network interfaces: %w", err)
+		}
+		// We're done; this logic is distinct from the *non-containerized* /run/bin/machine-config-daemon
+		// for what I believe is historical reasons; we could shift everything to happening inside
+		// podman actually.
+		return nil
+	}
 
 	dn, err := daemon.New(exitCh)
 	if err != nil {
