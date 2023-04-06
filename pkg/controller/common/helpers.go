@@ -1130,19 +1130,8 @@ func ReadDir(path string) ([]fs.FileInfo, error) {
 	return infos, nil
 }
 
-func GetPoolImageStream(pool *mcfgv1.MachineConfigPool) (string, error) {
-	if imagestream, ok := pool.Labels[ExperimentalLayeringPoolImageStreamLabel]; ok {
-		return imagestream, nil
-	}
-	return "", fmt.Errorf("No ImageStream found for pool %s", pool.Name)
-}
-
-func SetPoolImageStream(pool *mcfgv1.MachineConfigPool, imageStreamName string) {
-	pool.Labels[ExperimentalLayeringPoolImageStreamLabel] = imageStreamName
-}
-
 func IsLayeredPool(pool *mcfgv1.MachineConfigPool) bool {
-	if _, ok := pool.Labels[ExperimentalLayeringPoolLabel]; ok {
+	if _, ok := pool.Labels[LayeringEnabledPoolLabel]; ok {
 		return true
 	}
 	return false

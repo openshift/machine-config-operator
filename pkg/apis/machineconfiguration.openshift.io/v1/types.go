@@ -358,6 +358,14 @@ const (
 
 	// MachineConfigPoolDegraded is the overall status of the pool based, today, on whether we fail with NodeDegraded or RenderDegraded
 	MachineConfigPoolDegraded MachineConfigPoolConditionType = "Degraded"
+
+	MachineConfigPoolBuildPending MachineConfigPoolConditionType = "BuildPending"
+
+	MachineConfigPoolBuilding MachineConfigPoolConditionType = "Building"
+
+	MachineConfigPoolBuildSuccess MachineConfigPoolConditionType = "BuildSuccess"
+
+	MachineConfigPoolBuildFailed MachineConfigPoolConditionType = "BuildFailed"
 )
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
