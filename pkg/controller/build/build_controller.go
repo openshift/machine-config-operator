@@ -983,7 +983,7 @@ func (ctrl *Controller) ensureCoreOSImageStream() (*imagev1.ImageStream, error) 
 						Name: "latest",
 						From: &corev1.ObjectReference{
 							Kind: "DockerImage",
-							Name: controllerConfig.Spec.BaseOperatingSystemContainer,
+							Name: controllerConfig.Spec.OSImageURL,
 						},
 					},
 				},
