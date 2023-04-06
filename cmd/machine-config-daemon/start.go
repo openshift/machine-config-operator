@@ -173,7 +173,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	// Use kubelet kubeconfig file to get the URL to kube-api-server
 	kubeconfig, err := clientcmd.LoadFromFile("/etc/kubernetes/kubeconfig")
 	if err != nil {
-		glog.Errorf("failed to load kubelet kubeconfig: %v", err)
+		glog.Fatalf("failed to load kubelet kubeconfig: %v", err)
 	}
 	clusterName := kubeconfig.Contexts[kubeconfig.CurrentContext].Cluster
 	apiURL := kubeconfig.Clusters[clusterName].Server
