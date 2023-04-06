@@ -20,7 +20,7 @@ RUN if [[ "${TAGS}" == "fcos" ]] || [[ "${TAGS}" == "scos" ]]; then \
     # rewrite image names for fcos/scos
     if [[ "${TAGS}" == "fcos" ]]; then sed -i 's/rhel-coreos/fedora-coreos/g' /manifests/*; \
     elif [[ "${TAGS}" == "scos" ]]; then sed -i 's/rhel-coreos/centos-stream-coreos-9/g' /manifests/*; fi && \
-    if ! rpm -q util-linux; then yum install -y util-linux && yum clean all && rm -rf /var/cache/yum/*; fi
+    if ! rpm -q util-linux; then dnf install -y util-linux; fi && dnf -y install 'nmstate > 2.2' && dnf clean all && rm -rf /var/cache/dnf/*
 COPY templates /etc/mcc/templates
 ENTRYPOINT ["/usr/bin/machine-config-operator"]
 LABEL io.openshift.release.operator true
