@@ -55,22 +55,20 @@ spec:
             value: "{{.ControllerConfig.Proxy.NoProxy}}"
           {{end}}
           {{end}}
-      - name: oauth-proxy
-        image: {{.Images.OauthProxy}}
+      - name: kube-rbac-proxy
+        image: {{.Images.KubeRbacProxy}}
         ports:
         - containerPort: 9001
           name: metrics
           protocol: TCP
         args:
-        - --https-address=:9001
-        - --provider=openshift
-        - --openshift-service-account=machine-config-daemon
+        - --secure-listen-address=0.0.0.0:9001
+        - --config-file=/etc/kube-rbac-proxy/config-file.yaml
+        - --tls-cipher-suites=TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305
         - --upstream=http://127.0.0.1:8797
-        - --tls-cert=/etc/tls/private/tls.crt
-        - --tls-key=/etc/tls/private/tls.key
-        - --cookie-secret-file=/etc/tls/cookie-secret/cookie-secret
-        - '--openshift-sar={"resource": "namespaces", "verb": "get"}'
-        - '--openshift-delegate-urls={"/": {"resource": "namespaces", "verb": "get"}}'
+        - --logtostderr=true
+        - --tls-cert-file=/etc/tls/private/tls.crt
+        - --tls-private-key-file=/etc/tls/private/tls.key
         resources:
           requests:
             cpu: 20m
@@ -78,8 +76,8 @@ spec:
         volumeMounts:
         - mountPath: /etc/tls/private
           name: proxy-tls
-        - mountPath: /etc/tls/cookie-secret
-          name: cookie-secret
+        - mountPath: /etc/kube-rbac-proxy
+          name: mcd-auth-proxy-config
       hostNetwork: true
       hostPID: true
       serviceAccountName: machine-config-daemon
@@ -94,9 +92,9 @@ spec:
         - name: proxy-tls
           secret:
             secretName: proxy-tls
-        - name: cookie-secret
-          secret:
-            secretName: cookie-secret
+        - configMap:
+             name: kube-rbac-proxy
+          name: mcd-auth-proxy-config
       tolerations:
       # MCD needs to run everywhere. Tolerate all taints.
       - operator: Exists
