@@ -2,18 +2,14 @@ package build
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"sort"
+	"strings"
 	"time"
 
 	"github.com/golang/glog"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/selection"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	clientset "k8s.io/client-go/kubernetes"
@@ -22,12 +18,8 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-
-	imageinformersv1 "github.com/openshift/client-go/image/informers/externalversions/image/v1"
 	imagelistersv1 "github.com/openshift/client-go/image/listers/image/v1"
 
-	buildinformersv1 "github.com/openshift/client-go/build/informers/externalversions/build/v1"
 	buildlistersv1 "github.com/openshift/client-go/build/listers/build/v1"
 
 	buildclientset "github.com/openshift/client-go/build/clientset/versioned"
@@ -37,71 +29,43 @@ import (
 	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
 	mcfglistersv1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
 
-	buildv1 "github.com/openshift/api/build/v1"
-	imagev1 "github.com/openshift/api/image/v1"
+	coreinformersv1 "k8s.io/client-go/informers/core/v1"
+
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
-	"github.com/vincent-petithory/dataurl"
+	corelistersv1 "k8s.io/client-go/listers/core/v1"
+
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
 const (
+	targetMachineConfigPoolLabel = "machineconfiguration.openshift.io/targetMachineConfigPool"
+	// TODO(zzlotnik): Is there a constant for this someplace else?
+	desiredConfigLabel = "machineconfiguration.openshift.io/desiredConfig"
+)
+
+var (
+	// controllerKind contains the schema.GroupVersionKind for this controller type.
+	//nolint:varcheck,deadcode // This will be used eventually
+	controllerKind = mcfgv1.SchemeGroupVersion.WithKind("MachineConfigPool")
+)
+
+//nolint:revive // If I name this ControllerConfig, that name will be overloaded :P
+type BuildControllerConfig struct {
+	// updateDelay is a pause to deal with churn in MachineConfigs; see
+	// https://github.com/openshift/machine-config-operator/issues/301
+	// Default: 5 seconds
+	UpdateDelay time.Duration
 
 	// maxRetries is the number of times a machineconfig pool will be retried before it is dropped out of the queue.
 	// With the current rate-limiter in use (5ms*2^(maxRetries-1)) the following numbers represent the times
 	// a machineconfig pool is going to be requeued:
 	//
 	// 5ms, 10ms, 20ms, 40ms, 80ms, 160ms, 320ms, 640ms, 1.3s, 2.6s, 5.1s, 10.2s, 20.4s, 41s, 82s
-	maxRetries = 15
-
-	// updateDelay is a pause to deal with churn in MachineConfigs; see
-	// https://github.com/openshift/machine-config-operator/issues/301
-	updateDelay = 5 * time.Second
-
-	machineConfigContentDockerfile = `
-	# Multistage build, we need to grab the files from our config imagestream 
-	FROM image-registry.openshift-image-registry.svc:5000/openshift-machine-config-operator/{{.RenderedConfig }} AS machineconfig
-	
-	# We're actually basing on the "new format" image from the coreos base image stream 
-	FROM image-registry.openshift-image-registry.svc:5000/openshift-machine-config-operator/coreos
-
-	# Pull in the files from our machineconfig stage 
-	COPY --from=machineconfig /machine-config-ignition.json /etc/machine-config-ignition.json
-
-	# Make the config drift checker happy
-	COPY --from=machineconfig /machine-config.json /etc/machine-config-daemon/currentconfig 
-
-	# Apply the config to the image 
-	ENV container=1
-	RUN exec -a ignition-apply  /usr/lib/dracut/modules.d/30ignition/ignition --ignore-unsupported /etc/machine-config-ignition.json
-
-	# Rebuild origin.d (I included an /etc/yum.repos.d/ file in my machineconfig so it could find the RPMS, that's why this works)
-	RUN rpm-ostree ex rebuild && rm -rf /var/cache /etc/rpm-ostree/origin.d
-
-	# clean up. We want to be particularly strict so that live apply works
-	RUN rm /etc/machine-config-ignition.json
-	# TODO remove these hacks once we have
-	# https://github.com/coreos/rpm-ostree/pull/3544
-	# and
-	# https://github.com/coreos/ignition/issues/1339 is fixed
-	# don't fail if wildcard has no matches
-	RUN bash -c "rm /usr/share/rpm/__db.*"; true
-	# to keep live apply working
-	RUN bash -c "if [[ -e /etc/systemd/system-preset/20-ignition.preset ]]; then sort /etc/systemd/system-preset/20-ignition.preset -o /etc/systemd/system-preset/20-ignition.preset; fi"
-
-	# This is so we can get the machineconfig injected
-	ARG machineconfig=unknown
-	# Apply the injected machineconfig name as a label so node_controller can check it
-	LABEL machineconfig=$machineconfig
-	`
-	dummyDockerfile = `FROM dummy`
-)
-
-var (
-	// controllerKind contains the schema.GroupVersionKind for this controller type.
-	controllerKind = mcfgv1.SchemeGroupVersion.WithKind("MachineConfigPool")
-)
+	// Default: 5
+	MaxRetries int
+}
 
 // Controller defines the build controller.
 type Controller struct {
@@ -120,27 +84,32 @@ type Controller struct {
 	bLister   buildlistersv1.BuildLister
 	bcLister  buildlistersv1.BuildConfigLister
 	isLister  imagelistersv1.ImageStreamLister
+	podLister corelistersv1.PodLister
 
 	ccListerSynced  cache.InformerSynced
 	mcpListerSynced cache.InformerSynced
-	bListerSynced   cache.InformerSynced
-	bcListerSynced  cache.InformerSynced
-	isListerSynced  cache.InformerSynced
+	podListerSynced cache.InformerSynced
 
 	queue workqueue.RateLimitingInterface
+
+	config BuildControllerConfig
+}
+
+func DefaultBuildControllerConfig() BuildControllerConfig {
+	return BuildControllerConfig{
+		MaxRetries:  5,
+		UpdateDelay: time.Second * 5,
+	}
 }
 
 // New returns a new node controller.
 func New(
+	ctrlConfig BuildControllerConfig,
+	podInformer coreinformersv1.PodInformer,
 	ccInformer mcfginformersv1.ControllerConfigInformer,
 	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
-	isInformer imageinformersv1.ImageStreamInformer,
-	bcInformer buildinformersv1.BuildConfigInformer,
-	bInformer buildinformersv1.BuildInformer,
 	mcfgClient mcfgclientset.Interface,
 	kubeClient clientset.Interface,
-	imageClient imageclientset.Interface,
-	buildClient buildclientset.Interface,
 ) *Controller {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(glog.Infof)
@@ -148,32 +117,23 @@ func New(
 
 	ctrl := &Controller{
 		client:        mcfgClient,
-		imageclient:   imageClient,
 		kubeclient:    kubeClient,
-		buildclient:   buildClient,
-		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-buildcontroller"}),
-		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-buildcontroller"),
+		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineosbuilder-buildcontroller"}),
+		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineosbuilder-buildcontroller"),
+		config:        ctrlConfig,
 	}
+
+	// As an aside, why doesn't the constructor here set up all the informers?
+	podInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.addPod,
+		UpdateFunc: ctrl.updatePod,
+		DeleteFunc: ctrl.deletePod,
+	})
 
 	mcpInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.addMachineConfigPool,
 		UpdateFunc: ctrl.updateMachineConfigPool,
 		DeleteFunc: ctrl.deleteMachineConfigPool,
-	})
-	bInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    ctrl.addBuild,
-		UpdateFunc: ctrl.updateBuild,
-		DeleteFunc: ctrl.deleteBuild,
-	})
-	bcInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    ctrl.addBuildConfig,
-		UpdateFunc: ctrl.updateBuildConfig,
-		DeleteFunc: ctrl.deleteBuildConfig,
-	})
-	isInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    ctrl.addImageStream,
-		UpdateFunc: ctrl.updateImageStream,
-		DeleteFunc: ctrl.deleteImageStream,
 	})
 
 	ctrl.syncHandler = ctrl.syncMachineConfigPool
@@ -181,17 +141,72 @@ func New(
 
 	ctrl.ccLister = ccInformer.Lister()
 	ctrl.mcpLister = mcpInformer.Lister()
-	ctrl.isLister = isInformer.Lister()
-	ctrl.bcLister = bcInformer.Lister()
-	ctrl.bLister = bInformer.Lister()
+	ctrl.podLister = podInformer.Lister()
 
 	ctrl.ccListerSynced = ccInformer.Informer().HasSynced
 	ctrl.mcpListerSynced = mcpInformer.Informer().HasSynced
-	ctrl.isListerSynced = isInformer.Informer().HasSynced
-	ctrl.bcListerSynced = bcInformer.Informer().HasSynced
-	ctrl.bListerSynced = bInformer.Informer().HasSynced
+	ctrl.podListerSynced = podInformer.Informer().HasSynced
 
 	return ctrl
+}
+
+func (ctrl *Controller) addPod(obj interface{}) {
+	pod := obj.(*corev1.Pod)
+	glog.V(4).Infof("Adding Pod %s. Is build pod? %v", pod.Name, isBuildPod(pod))
+}
+
+func (ctrl *Controller) updatePod(oldObj, curObj interface{}) {
+	curPod := curObj.(*corev1.Pod).DeepCopy()
+
+	// Ignore non-build pods.
+	// TODO: Figure out if we can add the filter criteria onto the lister.
+	if !isBuildPod(curPod) {
+		return
+	}
+
+	pool, err := ctrl.client.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), curPod.Labels[targetMachineConfigPoolLabel], metav1.GetOptions{})
+	if err != nil {
+		ctrl.handleErr(err, curPod.Name)
+		return
+	}
+
+	switch curPod.Status.Phase {
+	case corev1.PodPending:
+		glog.Infof("Build pod (%s) is pending", curPod.Name)
+		if !mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolBuildPending) {
+			err = ctrl.markBuildPending(pool)
+		}
+	case corev1.PodRunning:
+		// If we're running, then there's nothing to do right now.
+		glog.Infof("Build pod (%s) is running", curPod.Name)
+		if !mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolBuilding) {
+			err = ctrl.markBuildInProgress(pool)
+		}
+	case corev1.PodSucceeded:
+		// If we've succeeded, we need to update the pool to indicate that.
+		glog.Infof("Build pod (%s) has succeeded", curPod.Name)
+		if !mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolBuildSuccess) {
+			err = ctrl.markBuildSucceeded(pool)
+		}
+	case corev1.PodFailed:
+		// If we've failed, we need to update the pool to indicate that.
+		glog.Infof("Build pod (%s) failed", curPod.Name)
+		if !mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolBuildFailed) {
+			err = ctrl.markBuildFailed(pool)
+		}
+	}
+
+	if err != nil {
+		ctrl.handleErr(err, pool.Name)
+		return
+	}
+
+	ctrl.enqueueMachineConfigPool(pool)
+}
+
+func (ctrl *Controller) deletePod(obj interface{}) {
+	pod := obj.(*corev1.Pod)
+	glog.V(4).Infof("Deleting Pod %s. Is build pod? %v", pod.Name, isBuildPod(pod))
 }
 
 // Run executes the render controller.
@@ -199,12 +214,12 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.mcpListerSynced, ctrl.ccListerSynced, ctrl.bListerSynced, ctrl.bcListerSynced, ctrl.isListerSynced) {
+	if !cache.WaitForCacheSync(stopCh, ctrl.mcpListerSynced, ctrl.ccListerSynced, ctrl.podListerSynced) {
 		return
 	}
 
-	glog.Info("Starting MachineConfigController-BuildController")
-	defer glog.Info("Shutting down MachineConfigController-BuildController")
+	glog.Info("Starting MachineOSBuilder-BuildController")
+	defer glog.Info("Shutting down MachineOSBuilder-BuildController")
 
 	for i := 0; i < workers; i++ {
 		go wait.Until(ctrl.worker, time.Second, stopCh)
@@ -246,7 +261,7 @@ func (ctrl *Controller) enqueueAfter(pool *mcfgv1.MachineConfigPool, after time.
 
 // enqueueDefault calls a default enqueue function
 func (ctrl *Controller) enqueueDefault(pool *mcfgv1.MachineConfigPool) {
-	ctrl.enqueueAfter(pool, updateDelay)
+	ctrl.enqueueAfter(pool, ctrl.config.UpdateDelay)
 }
 
 // worker runs a worker thread that just dequeues items, processes them, and marks them done.
@@ -275,7 +290,7 @@ func (ctrl *Controller) handleErr(err error, key interface{}) {
 		return
 	}
 
-	if ctrl.queue.NumRequeues(key) < maxRetries {
+	if ctrl.queue.NumRequeues(key) < ctrl.config.MaxRetries {
 		glog.V(2).Infof("Error syncing machineconfigpool %v: %v", key, err)
 		ctrl.queue.AddRateLimited(key)
 		return
@@ -286,8 +301,6 @@ func (ctrl *Controller) handleErr(err error, key interface{}) {
 	ctrl.queue.Forget(key)
 	ctrl.queue.AddAfter(key, 1*time.Minute)
 }
-
-// TODO(jkyros): the question we're trying to answer is "is there any content that has changed that is not reflected in the current image for the pool"
 
 // syncMachineConfigPool will sync the machineconfig pool with the given key.
 // This function is not meant to be invoked concurrently with the same key.
@@ -303,7 +316,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		return err
 	}
 	machineconfigpool, err := ctrl.mcpLister.Get(name)
-	if errors.IsNotFound(err) {
+	if k8serrors.IsNotFound(err) {
 		glog.V(2).Infof("MachineConfigPool %v has been deleted", key)
 		return nil
 	}
@@ -311,194 +324,307 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		return err
 	}
 
-	// Make sure the shared base CoreOS imagestream exists
-	// TODO(jkyros): There seems to be a delay (probably the time it takes to pull the image) before the image tag shows up. As a result,
-	// when we create our base imagestream later, it's empty until this gets populated and triggers it.
-	_, err = ctrl.ensureCoreOSImageStream()
+	// TODO: Doing a deep copy of this pool object from our cache and using it to
+	// determine our next course of action sometimes causes a race condition. I'm
+	// not sure if it's better to get a current copy from the API server or what.
+	// pool := machineconfigpool.DeepCopy()
+	pool, err := ctrl.client.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), machineconfigpool.Name, metav1.GetOptions{})
 	if err != nil {
 		return err
 	}
 
-	pool := machineconfigpool.DeepCopy()
-
-	// TODO(jkyros): take this out when we decide actual UX, this just forces the layered label on to
-	// the pool if its name is the string "layered"
-	if pool.Name == "layered" {
-		if pool.Labels == nil {
-			pool.Labels = map[string]string{}
-		}
-		// TODO(jkyros): we'll see if we like this, but we need a way to specify which imagestream it should use
-		pool.Labels[ctrlcommon.ExperimentalLayeringPoolLabel] = ""
-
-		// TODO(jkyros): Don't update this here. We're just doing this now to "steal" the pool from render_controller
-		_, err = ctrl.client.MachineconfigurationV1().MachineConfigPools().Update(context.TODO(), pool, metav1.UpdateOptions{})
-		if err != nil {
-			return err
-		}
-	}
-
-	// If this pool isn't managed by us, the render controller will handle it
+	// Not a layered pool, so stop here.
 	if !ctrlcommon.IsLayeredPool(pool) {
+		glog.V(4).Infof("MachineConfigPool %s is not opted-in for layering, ignoring", pool.Name)
 		return nil
 	}
 
-	// TODO(jkyros): I *could* have the build controller do the config rendering here for the pools
-	// that the build controller manages, but there is no escaping at least some modification to the render
-	// controller telling it to ignore the pools the build controller is managing.
+	// If we need to do a build, we let updateMachineConfigPool() handle that
+	// determination. It registers its intent to build by setting
+	// ctrlcommon.MachineCnofigPoolBuildPending on the MachineConfigPool.
+	//
+	// We look for ctrlcommon.MachineConfigPoolBuildPending and if found, we
+	// start the build and set the condition to
+	// ctrlcommon.MachineConfigPoolBuilding.
+	//
+	// We use the PodInformer to determine whether the build is complete. The
+	// PodInformer will set either MachineConfigPoolBuildSuccess or
+	// MachineConfigPoolBuildFailed.
 
-	// Stuff an entitlements machineconfig into the pool
-
-	ctrl.experimentalAddEntitlements(pool)
-
-	glog.V(2).Infof("Ensuring image streams exist for pool %s", pool.Name)
-
-	// Get the mapping/list of resources this pool should ensure and own
-	pbr := PoolBuildResources(pool)
-
-	// Our list of imagestreams we need to ensure exists
-	var ensureImageStreams = []string{
-		pbr.ImageStream.Base,
-		pbr.ImageStream.ExternalBase,
-		pbr.ImageStream.RenderedConfig,
-		pbr.ImageStream.Content,
-		pbr.ImageStream.CustomContent,
-		pbr.ImageStream.External,
+	switch {
+	case mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolDegraded):
+		glog.V(4).Infof("MachineConfigPool %s is degraded, requeueing", pool.Name)
+		ctrl.enqueueMachineConfigPool(pool)
+		return nil
+	case mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolRenderDegraded):
+		glog.V(4).Infof("MachineConfigPool %s is render degraded, requeueing", pool.Name)
+		ctrl.enqueueMachineConfigPool(pool)
+		return nil
+	case mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolBuildPending):
+		glog.V(4).Infof("MachineConfigPool %s needs a build, starting", pool.Name)
+		return ctrl.startBuildForMachineConfigPool(pool)
+	case mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolBuilding):
+		glog.V(4).Infof("MachineConfigPool %s is building", pool.Name)
+		return nil
+	case mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolBuildSuccess):
+		glog.V(4).Infof("MachineConfigPool %s has successfully built", pool.Name)
+		return nil
+	default:
+		glog.V(4).Infof("Nothing to do for pool %q", pool.Name)
 	}
 
-	// Make sure the imagestreams exist so we can populate them with our image builds
-	for _, imageStreamName := range ensureImageStreams {
-		_, err := ctrl.ensureImageStreamForPool(pool, imageStreamName, pbr)
-		if err != nil {
-			// I don't know if it existed or not, I couldn't get it
-			return fmt.Errorf("Failed to ensure ImageStream %s: %w", imageStreamName, err)
-		}
+	// For everything else
+	return ctrl.syncAvailableStatus(pool)
+}
 
-	}
+// Marks a given MachineConfigPool as a failed build.
+func (ctrl *Controller) markBuildFailed(pool *mcfgv1.MachineConfigPool) error {
+	glog.Errorf("Build failed for pool %s", pool.Name)
 
-	// Magically switch imagestreams if custom/external end up with images in them
-	err = ctrl.ensureImageStreamPrecedenceIfPopulated(pool)
-	if err != nil {
-		return fmt.Errorf("Could not ensure proper imagestream was selected for pool %s: %w", pool.Name, err)
-	}
+	setMCPBuildConditions(pool, []mcfgv1.MachineConfigPoolCondition{
+		{
+			Type:   mcfgv1.MachineConfigPoolBuildFailed,
+			Reason: "BuildFailed",
+			Status: corev1.ConditionTrue,
+		},
+		{
+			Type:   mcfgv1.MachineConfigPoolBuildSuccess,
+			Status: corev1.ConditionFalse,
+		},
+		{
+			Type:   mcfgv1.MachineConfigPoolBuilding,
+			Status: corev1.ConditionFalse,
+		},
+		{
+			Type:   mcfgv1.MachineConfigPoolBuildPending,
+			Status: corev1.ConditionFalse,
+		},
+		{
+			Type:   mcfgv1.MachineConfigPoolDegraded,
+			Status: corev1.ConditionTrue,
+		},
+	})
 
-	// TODO(jkyros): we could have just now set our imagestream based on changes, but we might not have a build yet
+	return ctrl.syncFailingStatus(pool, fmt.Errorf("build failed"))
+}
 
-	// Figure out which imagestream the pool is deploying from
-	poolImageStreamName, err := ctrlcommon.GetPoolImageStream(pool)
-	if err != nil {
-		return err
-	}
+// Marks a given MachineConfigPool as the build is in progress.
+func (ctrl *Controller) markBuildInProgress(pool *mcfgv1.MachineConfigPool) error {
+	glog.Infof("Build in progress for MachineConfigPool %s, config %s", pool.Name, pool.Spec.Configuration.Name)
 
-	// Get the actual image stream object for that imagestream
-	poolImageStream, err := ctrl.isLister.ImageStreams(ctrlcommon.MCONamespace).Get(poolImageStreamName)
-	if err != nil {
-		return err
-	}
-
-	// Get the most recent image from that stream if it exists
-	// TODO(jkyros): this can be nil
-	mostRecentPoolImage := ctrl.getMostRecentImageTagForImageStream(poolImageStream, "latest")
-
-	// Our list of imagestreams we need to ensure exists
-	var ensureBuildConfigs = []PoolBuildConfig{
-		pbr.BuildConfig.Content,
-		pbr.BuildConfig.CustomContent,
-	}
-
-	for num, pbc := range ensureBuildConfigs {
-
-		checkBuildConfig, err := ctrl.ensureBuildConfigForPool(pool, &ensureBuildConfigs[num])
-		if err != nil {
-			// I don't know if it existed or not, I couldn't get it
-			return fmt.Errorf("Failed to ensure BuildConfig %s: %w", pbc.Name, err)
-		}
-
-		// We're looking for builds that belong to this buildconfig, so craft a filter
-		ourBuildReq, err := labels.NewRequirement("buildconfig", selection.In, []string{checkBuildConfig.Name})
-		if err != nil {
-			return err
-		}
-		// Make a selector based on our requirement
-		ourBuildSelector := labels.NewSelector().Add(*ourBuildReq)
-
-		// Retrieve those builds that belong to this buildconfig
-		builds, err := ctrl.bLister.Builds(ctrlcommon.MCONamespace).List(ourBuildSelector)
-		if err != nil {
-			return err
-		}
-
-		// If builds exist for this buildconfig
-		if len(builds) > 0 {
-			// Sort the builds in descending order, we want the newest first
-			sort.Slice(builds, func(i, j int) bool {
-				return builds[i].CreationTimestamp.After(builds[j].CreationTimestamp.Time)
-			})
-
-			// This is the newest, and we know it can't be outof bounds because of how we got here
-			// TODO(jkyros): If a newer build has been queued, should we terminate the old one?
-			mostRecentBuild := builds[0]
-
-			// TODO(jkyros): We need to find a "level triggered" way to figure out if the image we have is representative
-			// of the state of our "build ladder" so we know if a failed build is a problem or not. Ultimately a metadata problem.
-			if mostRecentPoolImage == nil || mostRecentPoolImage.Created.Before(&mostRecentBuild.CreationTimestamp) {
-				// If they failed/are in bad phase, we're probably in trouble
-				switch mostRecentBuild.Status.Phase {
-				case buildv1.BuildPhaseError:
-					glog.Errorf("Need to degrade, build %s is %s", mostRecentBuild.Name, mostRecentBuild.Status.Phase)
-				case buildv1.BuildPhaseFailed:
-					glog.Errorf("Need to degrade, build %s is %s", mostRecentBuild.Name, mostRecentBuild.Status.Phase)
-				case buildv1.BuildPhaseCancelled:
-					glog.Errorf("Need to degrade, build %s is %s", mostRecentBuild.Name, mostRecentBuild.Status.Phase)
-				case buildv1.BuildPhaseComplete:
-					glog.Errorf("A build %s has completed for pool %s", mostRecentBuild.Name, mostRecentBuild.Status.Phase)
-				default:
-					// If they worked okay, we're building, we can update our status?
-					glog.Infof("A build %s is in progress (%s) for pool %s", mostRecentBuild.Name, mostRecentBuild.Status.Phase, pool.Name)
-				}
-
-			}
-		}
-
-	}
-
-	// Do we have an image stream for this pool? We should if we got here.
-	is, err := ctrl.isLister.ImageStreams(ctrlcommon.MCONamespace).Get(poolImageStream.Name)
-	if apierrors.IsNotFound(err) {
-		// TODO(jkyros): As cgwalters points out, this should probably degrade because it should exist
-		glog.Warningf("ImageStream for %s does not exist (yet?): %s", pool.Name, err)
-	} else {
-		// If there is an image ready, annotate the pool with it so node controller can use it if it's the right one
-		err := ctrl.annotatePoolWithNewestImage(is, pool)
-		if err != nil {
-			return err
-		}
-	}
-
-	// TODO(jkyros): Only update if we changed, don't always update. Also, if we update here and then update status again, that seems
-	// wasteful.
-	_, err = ctrl.client.MachineconfigurationV1().MachineConfigPools().Update(context.TODO(), pool, metav1.UpdateOptions{})
-	if err != nil {
-		return err
-	}
+	setMCPBuildConditions(pool, []mcfgv1.MachineConfigPoolCondition{
+		{
+			Type:   mcfgv1.MachineConfigPoolBuildFailed,
+			Status: corev1.ConditionFalse,
+		},
+		{
+			Type:   mcfgv1.MachineConfigPoolBuildSuccess,
+			Status: corev1.ConditionFalse,
+		},
+		{
+			Type:   mcfgv1.MachineConfigPoolBuilding,
+			Reason: "BuildRunning",
+			Status: corev1.ConditionTrue,
+		},
+		{
+			Type:   mcfgv1.MachineConfigPoolBuildPending,
+			Status: corev1.ConditionFalse,
+		},
+	})
 
 	return ctrl.syncAvailableStatus(pool)
+}
 
+// Marks a given MachineConfigPool as build successful and cleans up after itself.
+func (ctrl *Controller) markBuildSucceeded(pool *mcfgv1.MachineConfigPool) error {
+	glog.Infof("Build succeeded for MachineConfigPool %s, config %s", pool.Name, pool.Spec.Configuration.Name)
+
+	if err := ctrl.kubeclient.CoreV1().Pods(ctrlcommon.MCONamespace).Delete(context.TODO(), getBuildPodName(pool), metav1.DeleteOptions{}); err != nil {
+		return fmt.Errorf("unable to delete build pod: %w", err)
+	}
+
+	// Set the annotation or field to point to the newly-built container image.
+	// TODO: Figure out how to get that from the build interface.
+	deleteBuildPodRefFromMachineConfigPool(pool)
+	pool.Labels[ctrlcommon.ExperimentalNewestLayeredImageEquivalentConfigAnnotationKey] = "new-image-pullspec"
+
+	setMCPBuildConditions(pool, []mcfgv1.MachineConfigPoolCondition{
+		{
+			Type:   mcfgv1.MachineConfigPoolBuildFailed,
+			Status: corev1.ConditionFalse,
+		},
+		{
+			Type:   mcfgv1.MachineConfigPoolBuildSuccess,
+			Reason: "BuildSucceeded",
+			Status: corev1.ConditionTrue,
+		},
+		{
+			Type:   mcfgv1.MachineConfigPoolBuilding,
+			Status: corev1.ConditionFalse,
+		},
+		{
+			Type:   mcfgv1.MachineConfigPoolDegraded,
+			Status: corev1.ConditionFalse,
+		},
+	})
+
+	// We need to do an API server round-trip to ensure all of our mutations get
+	// propagated.
+	updatedPool, err := ctrl.client.MachineconfigurationV1().MachineConfigPools().Update(context.TODO(), pool, metav1.UpdateOptions{})
+	if err != nil {
+		return fmt.Errorf("could not update MachineConfigPool %q: %w", pool.Name, err)
+	}
+
+	return ctrl.syncAvailableStatus(updatedPool)
+}
+
+// Marks a given MachineConfigPool as build pending.
+func (ctrl *Controller) markBuildPending(pool *mcfgv1.MachineConfigPool) error {
+	glog.Infof("Build for %s marked pending", pool.Name)
+
+	setMCPBuildConditions(pool, []mcfgv1.MachineConfigPoolCondition{
+		{
+			Type:   mcfgv1.MachineConfigPoolBuildFailed,
+			Status: corev1.ConditionFalse,
+		},
+		{
+			Type:   mcfgv1.MachineConfigPoolBuildSuccess,
+			Status: corev1.ConditionFalse,
+		},
+		{
+			Type:   mcfgv1.MachineConfigPoolBuilding,
+			Status: corev1.ConditionFalse,
+		},
+		{
+			Type:   mcfgv1.MachineConfigPoolBuildPending,
+			Reason: "BuildPending",
+			Status: corev1.ConditionTrue,
+		},
+	})
+
+	return ctrl.syncAvailableStatus(pool)
 }
 
 // Machine Config Pools
 
 func (ctrl *Controller) addMachineConfigPool(obj interface{}) {
-	pool := obj.(*mcfgv1.MachineConfigPool)
+	pool := obj.(*mcfgv1.MachineConfigPool).DeepCopy()
 	glog.V(4).Infof("Adding MachineConfigPool %s", pool.Name)
 	ctrl.enqueueMachineConfigPool(pool)
+}
 
+func (ctrl *Controller) isBuildRunningForPool(pool *mcfgv1.MachineConfigPool) (bool, error) {
+	// First check if we have a build in progress for this MachineConfigPool and rendered config.
+	_, err := ctrl.kubeclient.CoreV1().Pods(ctrlcommon.MCONamespace).Get(context.TODO(), getBuildPodName(pool), metav1.GetOptions{})
+	if err != nil && !k8serrors.IsNotFound(err) {
+		return false, err
+	}
+
+	return err == nil, nil
+}
+
+// Determines if we should run a build, then starts a build pod to perform the
+// build, and updates the MachineConfigPool with an object reference for the
+// build pod.
+func (ctrl *Controller) startBuildForMachineConfigPool(pool *mcfgv1.MachineConfigPool) error {
+	targetMC := pool.Spec.Configuration.Name
+
+	// TODO: Find a constant for this:
+	if !strings.HasPrefix(targetMC, "rendered-") {
+		return fmt.Errorf("%s is not a rendered MachineConfig", targetMC)
+	}
+
+	isBuildRunning, err := ctrl.isBuildRunningForPool(pool)
+	if err != nil {
+		return fmt.Errorf("could not determine if a preexisting build is running for %s: %w", pool.Name, err)
+	}
+
+	if isBuildRunning {
+		return nil
+	}
+
+	glog.Infof("Starting build for pool %s", pool.Name)
+	glog.Infof("Build pod name: %s", getBuildPodName(pool))
+
+	// TODO: Figure out how to use the Builder interface for starting the build instead of this.
+	pod, err := ctrl.kubeclient.CoreV1().Pods(ctrlcommon.MCONamespace).Create(context.TODO(), newBuildPod(pool), metav1.CreateOptions{})
+	if err != nil {
+		return fmt.Errorf("could not create build pod: %w", err)
+	}
+
+	if !machineConfigPoolHasBuildPodRef(pool) {
+		ref := corev1.ObjectReference{
+			Kind:      "Pod",
+			Name:      pod.Name,
+			Namespace: pod.Namespace,
+			UID:       pod.UID,
+		}
+
+		pool.Spec.Configuration.Source = append(pool.Spec.Configuration.Source, ref)
+
+		pool.Status.Configuration.Source = append(pool.Status.Configuration.Source, ref)
+	}
+
+	return ctrl.syncAvailableStatus(pool)
+}
+
+// If one wants to opt out, this removes all of the statuses and object
+// references from a given MachineConfigPool.
+func (ctrl *Controller) finalizeOptOut(pool *mcfgv1.MachineConfigPool) error {
+	deleteBuildPodRefFromMachineConfigPool(pool)
+
+	conditions := []mcfgv1.MachineConfigPoolCondition{}
+
+	for _, condition := range pool.Status.Conditions {
+		buildConditionFound := false
+		for _, buildConditionType := range getMachineConfigPoolBuildConditions() {
+			if condition.Type == buildConditionType {
+				buildConditionFound = true
+				break
+			}
+		}
+
+		if !buildConditionFound {
+			conditions = append(conditions, condition)
+		}
+	}
+
+	pool.Status.Conditions = conditions
+	return ctrl.syncAvailableStatus(pool)
 }
 
 func (ctrl *Controller) updateMachineConfigPool(old, cur interface{}) {
-	oldPool := old.(*mcfgv1.MachineConfigPool)
-	curPool := cur.(*mcfgv1.MachineConfigPool)
+	oldPool := old.(*mcfgv1.MachineConfigPool).DeepCopy()
+	curPool := cur.(*mcfgv1.MachineConfigPool).DeepCopy()
 
 	glog.V(4).Infof("Updating MachineConfigPool %s", oldPool.Name)
+
+	doABuild, err := shouldWeDoABuild(ctrl.kubeclient, oldPool, curPool)
+	if err != nil {
+		glog.Errorln(err)
+		ctrl.handleErr(err, curPool.Name)
+		return
+	}
+
+	switch {
+	case ctrlcommon.IsLayeredPool(oldPool) && !ctrlcommon.IsLayeredPool(curPool):
+		glog.V(4).Infof("MachineConfigPool %s has opted out of layering", curPool.Name)
+		if err := ctrl.finalizeOptOut(curPool); err != nil {
+			glog.Errorln(err)
+			ctrl.handleErr(err, curPool.Name)
+			return
+		}
+	case doABuild:
+		glog.V(4).Infof("MachineConfigPool %s has changed, requiring a build", curPool.Name)
+		if err := ctrl.markBuildPending(curPool); err != nil {
+			glog.Errorln(err)
+			ctrl.handleErr(err, curPool.Name)
+			return
+		}
+	default:
+		glog.V(4).Infof("MachineConfigPool %s up-to-date", curPool.Name)
+	}
+
 	ctrl.enqueueMachineConfigPool(curPool)
 }
 
@@ -519,428 +645,26 @@ func (ctrl *Controller) deleteMachineConfigPool(obj interface{}) {
 	glog.V(4).Infof("Deleting MachineConfigPool %s", pool.Name)
 }
 
-// ImagStreams
-
-func (ctrl *Controller) addImageStream(obj interface{}) {
-
-}
-
-func (ctrl *Controller) updateImageStream(old, cur interface{}) {
-	imagestream := cur.(*imagev1.ImageStream)
-	controllerRef := metav1.GetControllerOf(imagestream)
-
-	if controllerRef != nil {
-
-		if pool := ctrl.resolveControllerRef(controllerRef); pool != nil {
-
-			glog.Infof("ImageStream %s changed for pool %s", imagestream.Name, pool.Name)
-
-			// TODO(jkyros): This is a race I usually win, but I won't always, and we need a better
-			// way to get this metadata in
-			if imagestream.Name == pool.Name+ctrlcommon.ImageStreamSuffixRenderedConfig {
-				ctrl.cheatMachineConfigLabelIntoBuildConfig(imagestream, pool)
-			}
-
-			ctrl.enqueueMachineConfigPool(pool)
-
-		}
-
-	}
-}
-
-func (ctrl *Controller) deleteImageStream(obj interface{}) {
-	// TODO(jkyros):  probably worth enqueueing the pool again here just so
-	// our sync can figure out that this newly-deleted stream is now empty and update the mappings ?
-}
-
-// Builds
-
-func (ctrl *Controller) addBuild(obj interface{}) {
-	build := obj.(*buildv1.Build)
-
-	glog.Infof("Added a build: %s", build.Name)
-
-	// TODO(jkyros):  Is this one of our builds that belongs to our imagestream?
-	// If it is, we should mark that somewhere so we know the pool is "building"
-
-}
-
-func (ctrl *Controller) updateBuild(old, cur interface{}) {
-	build := old.(*buildv1.Build)
-
-	glog.Infof("Updated a build: %s", build.Name)
-	// Builds will move through phases which cause them to change
-	// Most of those phases are standard/good, but some of them are bad
-	// We want to know if we end up in a bad phase and need to retry
-	ctrl.enqueuePoolIfBuildProblems(build)
-
-}
-
-func (ctrl *Controller) deleteBuild(obj interface{}) {
-	build := obj.(*buildv1.Build)
-
-	glog.Infof("Deleted a build: %s", build.Name)
-
-}
-
-// Buildconfigs
-
-func (ctrl *Controller) addBuildConfig(obj interface{}) {
-	buildconfig := obj.(*buildv1.BuildConfig)
-
-	glog.Infof("Added a buildconfig: %s", buildconfig.Name)
-
-}
-
-func (ctrl *Controller) updateBuildConfig(old, cur interface{}) {
-	buildconfig := old.(*buildv1.BuildConfig)
-	newbuildconfig := cur.(*buildv1.BuildConfig)
-
-	glog.Infof("Updated a buildconfig: %s", buildconfig.Name)
-
-	// Every time a buildconfig is instantiated it bumps the generation, so it always looks like it's changing
-	// For now we really only care if the user edited the dockerfile, and that string is a pointer
-	if buildconfig.Spec.Source.Dockerfile != nil && newbuildconfig.Spec.Source.Dockerfile != nil {
-		if *buildconfig.Spec.Source.Dockerfile != *newbuildconfig.Spec.Source.Dockerfile {
-
-			glog.Infof("The dockerfile for buildconfig %s changed, triggering a build", buildconfig.Name)
-			// TODO(jkyros); If this is the mco content, we need the machineconfig name
-			// so go get the image from that imagestream and put the name in. Otherwise just start it.
-
-			br := &buildv1.BuildRequest{
-				//TypeMeta:    metav1.TypeMeta{},
-				ObjectMeta: metav1.ObjectMeta{Name: buildconfig.Name},
-				//Env: []corev1.EnvVar{whichConfig},
-				TriggeredBy: []buildv1.BuildTriggerCause{
-					{Message: "The machine config controller"},
-				},
-				DockerStrategyOptions: &buildv1.DockerStrategyOptions{
-					//BuildArgs: []corev1.EnvVar{whichConfig},
-					//NoCache:   new(bool),
-				},
-			}
-
-			_, err := ctrl.buildclient.BuildV1().BuildConfigs(ctrlcommon.MCONamespace).Instantiate(context.TODO(), br.Name, br, metav1.CreateOptions{})
-			if err != nil {
-				glog.Errorf("Failed to trigger image build: %s", err)
-			}
-		}
-	}
-
-}
-
-func (ctrl *Controller) deleteBuildConfig(obj interface{}) {
-	buildconfig := obj.(*buildv1.BuildConfig)
-
-	glog.Infof("Deleted a buildconfig: %s", buildconfig.Name)
-
-}
-
-// experimentalAddEntitlements grabs the cluster entitlement certificates out of the openshift-config-managed namespace and
-// stuffs them into a machineconfig for our layered pool, so we can have entitled builds. This is a terrible practice, and
-// we should probably just sync the secrets into our namespace so our builds can use them directly rather than expose them via machineconfig.
-func (ctrl *Controller) experimentalAddEntitlements(pool *mcfgv1.MachineConfigPool) {
-
-	var entitledConfigName = fmt.Sprintf("99-%s-entitled-build", pool.Name)
-
-	// If it's not there, put it there, otherwise do nothing
-	_, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), entitledConfigName, metav1.GetOptions{})
-	if errors.IsNotFound(err) {
-
-		// Repo configuration for redhat package entitlements ( I just added base and appstream)
-		// TODO(jkyros): do this right once subscription-manager is included in RHCOS
-		redhatRepo := `[rhel-8-for-x86_64-baseos-rpms]
-name = Red Hat Enterprise Linux 8 for x86_64 - BaseOS (RPMs)
-baseurl = https://cdn.redhat.com/content/dist/rhel8/8/x86_64/baseos/os
-enabled = 1
-gpgcheck = 0
-sslverify = 0
-sslclientkey = /etc/pki/entitlement/entitlement-key.pem
-sslclientcert = /etc/pki/entitlement/entitlement.pem
-metadata_expire = 86400
-enabled_metadata = 1
-
-[rhel-8-for-x86_64-appstream-rpms]
-name = Red Hat Enterprise Linux 8 for x86_64 - AppStream (RPMs)
-baseurl = https://cdn.redhat.com/content/dist/rhel8/8/x86_64/appstream/os
-enabled = 1
-gpgcheck = 0
-sslverify = 0
-sslclientkey = /etc/pki/entitlement/entitlement-key.pem
-sslclientcert = /etc/pki/entitlement/entitlement.pem
-metadata_expire = 86400
-enabled_metadata = 1
-`
-
-		// Make an ignition to stuff into our machineconfig
-		ignConfig := ctrlcommon.NewIgnConfig()
-		ignConfig.Storage.Files = append(ignConfig.Storage.Files, NewIgnFile("/etc/yum.repos.d/redhat.repo", redhatRepo))
-
-		// Get our entitlement secrets out of the managed namespace
-		entitlements, err := ctrl.kubeclient.CoreV1().Secrets("openshift-config-managed").Get(context.TODO(), "etc-pki-entitlement", metav1.GetOptions{})
-		if err != nil {
-			glog.Warningf("Could not retrieve entitlement secret: %s", err)
-			return
-		}
-
-		// Add the key to the file list
-		if key, ok := entitlements.Data["entitlement-key.pem"]; ok {
-			ignConfig.Storage.Files = append(ignConfig.Storage.Files, NewIgnFile("/etc/pki/entitlement/entitlement-key.pem", string(key)))
-		}
-
-		// Add the public key to the file list
-		if pub, ok := entitlements.Data["entitlement.pem"]; ok {
-			ignConfig.Storage.Files = append(ignConfig.Storage.Files, NewIgnFile("/etc/pki/entitlement/entitlement.pem", string(pub)))
-		}
-
-		// Now it's a machineconfig
-		mc, err := ctrlcommon.MachineConfigFromIgnConfig(pool.Name, entitledConfigName, ignConfig)
-		if err != nil {
-			glog.Warningf("Could not create machineconfig for entitlements: %s", err)
-		}
-
-		// Add it to the list for this pool
-		_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), mc, metav1.CreateOptions{})
-		if err != nil {
-			glog.Warningf("Failed to add entitlements to layered pool: %s", err)
-		}
-	}
-
-}
-
-// annotatePoolWithNewestImage looks in the corresponding image stream for a pool and annotates the name of the image, and it's
-// corresponding rendered-config, which it retrieves from the image's docker metadata labels that we added during our build
-func (ctrl *Controller) annotatePoolWithNewestImage(imageStream *imagev1.ImageStream, pool *mcfgv1.MachineConfigPool) error {
-
-	// We don't want to crash if these are empty
-	if pool.Annotations == nil {
-		pool.Annotations = map[string]string{}
-	}
-
-	// Grab the latest tag from the imagestream. If we don't have one, nothing happens
-	for _, tag := range imageStream.Status.Tags {
-		if len(tag.Items) == 0 {
-			continue
-		}
-
-		// I might have an older image that has right machine config content, but some
-		// other content might have changed (like, I dunno, base image) so we shouldn't go back
-		// to older images
-		image := tag.Items[0]
-
-		// If this is different than our current tag, grab it and annotate the pool
-		glog.Infof("imagestream %s newest is: %s (%s)", imageStream.Name, image.DockerImageReference, image.Image)
-		if pool.Spec.Configuration.Name == image.Image {
-			// We're already theer, don't touch it
+func (ctrl *Controller) syncAvailableStatus(pool *mcfgv1.MachineConfigPool) error {
+	// I'm not sure what the consequences are of not doing this.
+	//nolint:gocritic // Leaving this here for review purposes.
+	/*
+		if mcfgv1.IsMachineConfigPoolConditionFalse(pool.Status.Conditions, mcfgv1.MachineConfigPoolRenderDegraded) {
 			return nil
 		}
-
-		// get the actual image so we can read its labels
-		fullImage, err := ctrl.imageclient.ImageV1().Images().Get(context.TODO(), image.Image, metav1.GetOptions{})
-		if err != nil {
-			return fmt.Errorf("Could not retrieve image %s: %w", image.Image, err)
-		}
-
-		// We need the labels out of the docker image but it's a raw extension
-		dockerLabels := struct {
-			Config struct {
-				Labels map[string]string `json:"Labels"`
-			} `json:"Config"`
-		}{}
-
-		// Get the labels out and see what config this is
-		err = json.Unmarshal(fullImage.DockerImageMetadata.Raw, &dockerLabels)
-		if err != nil {
-			return fmt.Errorf("Could not get labels from docker image metadata: %w", err)
-		}
-
-		// Tag what config this came from so we know it's the right image
-		if machineconfig, ok := dockerLabels.Config.Labels["machineconfig"]; ok {
-			pool.Annotations[ctrlcommon.ExperimentalNewestLayeredImageEquivalentConfigAnnotationKey] = machineconfig
-			pool.Spec.Configuration.ObjectReference = corev1.ObjectReference{
-				Kind: "Image",
-				Name: image.Image,
-			}
-			// TODO(jkyros): Kind of cheating using this as metadata showback for the user until we figure out our "level triggering" strategy
-			pool.Spec.Configuration.Source = []corev1.ObjectReference{
-				// What machine config was the assigned image build using
-				{Kind: "MachineConfig", Name: machineconfig, Namespace: ctrlcommon.MCONamespace},
-				// What imagestream did it come out of
-				{Kind: "ImageStream", Name: imageStream.Name, Namespace: ctrlcommon.MCONamespace},
-				// The non-sha image reference just for convenience
-				{Kind: "DockerImageReference", Name: image.DockerImageReference, Namespace: ctrlcommon.MCONamespace},
-			}
-
-		}
-
-		// TODO(jkyros): Probably need to go through our eventing "state machine" to make sure our steps make sense
-		ctrl.eventRecorder.Event(pool, corev1.EventTypeNormal, "Updated", "Moved pool "+pool.Name+" to layered image "+image.DockerImageReference)
-
-	}
-
-	return nil
-}
-
-func (ctrl *Controller) CreateBuildConfigForImageStream(pool *mcfgv1.MachineConfigPool, buildConfigName, sourceImageStreamName string, targetImageStream *imagev1.ImageStream, dockerFile string, triggerOnImageTags ...string) (*buildv1.BuildConfig, error) {
-	// Construct a buildconfig for this pool if it doesn't exist
-
-	skipLayers := buildv1.ImageOptimizationSkipLayers
-	buildConfig := &buildv1.BuildConfig{
-
-		TypeMeta: metav1.TypeMeta{},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      buildConfigName,
-			Namespace: ctrlcommon.MCONamespace,
-			Annotations: map[string]string{
-				"machineconfiguration.openshift.io/pool": pool.Name,
-			},
-		},
-		Spec: buildv1.BuildConfigSpec{
-			RunPolicy: "Serial",
-			// Simple dockerfile build, just the text from the dockerfile
-			CommonSpec: buildv1.CommonSpec{
-				Source: buildv1.BuildSource{
-					Type:       "Dockerfile",
-					Dockerfile: &dockerFile,
-				},
-				Strategy: buildv1.BuildStrategy{
-					DockerStrategy: &buildv1.DockerBuildStrategy{
-						// This will override the last FROM in our builds, but we want that
-						From: &corev1.ObjectReference{
-							Kind: "ImageStreamTag",
-							Name: sourceImageStreamName + ":latest",
-						},
-						// Squashing layers is good as long as it doesn't cause problems with what
-						// the users want to do. It says "some syntax is not supported"
-						ImageOptimizationPolicy: &skipLayers,
-					},
-					Type: "Docker",
-				},
-				// Output to the imagestreams we made before
-				Output: buildv1.BuildOutput{
-					To: &corev1.ObjectReference{
-						Kind: "ImageStreamTag",
-						Name: targetImageStream.Name + ":latest",
-					},
-					ImageLabels: []buildv1.ImageLabel{
-						// The pool that this image was built for
-						{Name: "io.openshift.machineconfig.pool", Value: pool.Name},
-					},
-					// TODO(jkyros): I want to label these images with which rendered config they were built from
-					// but there doesn't seem to be a way to get it in there easily
-				},
-			},
-
-			Triggers: []buildv1.BuildTriggerPolicy{
-				{
-					// This blank one signifies "just trigger on the from image specified in the strategy"
-					Type:        "ImageChange",
-					ImageChange: &buildv1.ImageChangeTrigger{},
-				},
-			},
-		},
-	}
-
-	// Pause the custom build config by default so it doesn't build automatically unless we enable it
-	if buildConfigName == pool.Name+"-build"+ctrlcommon.ImageStreamSuffixMCOContentCustom {
-		buildConfig.Spec.Triggers[0].ImageChange.Paused = true
-	}
-
-	// TODO(jkyros): pull this out if we handle these triggers ourselves, because we might need the control
-	// If additional triggers, add them to the config
-
-	for _, tag := range triggerOnImageTags {
-		buildConfig.Spec.Triggers = append(buildConfig.Spec.Triggers, buildv1.BuildTriggerPolicy{
-			Type: "ImageChange",
-			ImageChange: &buildv1.ImageChangeTrigger{
-				LastTriggeredImageID: "",
-				From: &corev1.ObjectReference{
-					Kind: "ImageStreamTag",
-					Name: tag,
-				},
-			},
-		})
-
-	}
-
-	// Set the owner references so these get cleaned up if the pool gets deleted
-	poolKind := mcfgv1.SchemeGroupVersion.WithKind("MachineConfigPool")
-	oref := metav1.NewControllerRef(pool, poolKind)
-	buildConfig.SetOwnerReferences([]metav1.OwnerReference{*oref})
-
-	// Create the buildconfig
-	return ctrl.buildclient.BuildV1().BuildConfigs(ctrlcommon.MCONamespace).Create(context.TODO(), buildConfig, metav1.CreateOptions{})
-
-}
-
-// TODO(jkyros): don't leave this here, expose it properly if you're gonna use it
-// StrToPtr returns a pointer to a string
-func StrToPtr(s string) *string {
-	return &s
-}
-
-// TODO(jkyros): don't leave this here, expose it properly if you're gonna use it
-// NewIgnFile returns a simple ignition3 file from just path and file contents
-func NewIgnFile(path, contents string) ign3types.File {
-	return ign3types.File{
-		Node: ign3types.Node{
-			Path: path,
-		},
-		FileEmbedded1: ign3types.FileEmbedded1{
-			Contents: ign3types.Resource{
-				Source: StrToPtr(dataurl.EncodeBytes([]byte(contents)))},
-		},
-	}
-}
-
-// TODO(jkyros): some quick functions to go with our image stream informer so we can watch imagestream update
-func (ctrl *Controller) resolveControllerRef(controllerRef *metav1.OwnerReference) *mcfgv1.MachineConfigPool {
-	// We can't look up by UID, so look up by Name and then verify UID.
-	// Don't even try to look up by Name if it's the wrong Kind.
-	if controllerRef.Kind != controllerKind.Kind {
-		return nil
-	}
-	pool, err := ctrl.mcpLister.Get(controllerRef.Name)
-	if err != nil {
-		return nil
-	}
-
-	if pool.UID != controllerRef.UID {
-		// The controller we found with this Name is not the same one that the
-		// ControllerRef points to.
-		return nil
-	}
-	return pool
-}
-
-//nolint:unparam
-func (ctrl *Controller) getMostRecentImageTagForImageStream(poolImageStream *imagev1.ImageStream, desiredTag string) *imagev1.TagEvent {
-	// Get the most recent image
-	for _, tag := range poolImageStream.Status.Tags {
-		if tag.Tag == desiredTag {
-			// TODO(jkyros): don't crash if this is empty
-			if len(tag.Items) > 0 {
-				return &tag.Items[0]
-			}
-		}
-	}
-	return nil
-}
-
-func (ctrl *Controller) syncAvailableStatus(pool *mcfgv1.MachineConfigPool) error {
-	if mcfgv1.IsMachineConfigPoolConditionFalse(pool.Status.Conditions, mcfgv1.MachineConfigPoolRenderDegraded) {
-		return nil
-	}
+	*/
 	sdegraded := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolRenderDegraded, corev1.ConditionFalse, "", "")
 	mcfgv1.SetMachineConfigPoolCondition(&pool.Status, *sdegraded)
+
 	if _, err := ctrl.client.MachineconfigurationV1().MachineConfigPools().UpdateStatus(context.TODO(), pool, metav1.UpdateOptions{}); err != nil {
 		return err
 	}
+
 	return nil
 }
 
 func (ctrl *Controller) syncFailingStatus(pool *mcfgv1.MachineConfigPool, err error) error {
-	sdegraded := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolRenderDegraded, corev1.ConditionTrue, "", fmt.Sprintf("Failed to render configuration for pool %s: %v", pool.Name, err))
+	sdegraded := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolRenderDegraded, corev1.ConditionTrue, "", fmt.Sprintf("Failed to build configuration for pool %s: %v", pool.Name, err))
 	mcfgv1.SetMachineConfigPoolCondition(&pool.Status, *sdegraded)
 	if _, updateErr := ctrl.client.MachineconfigurationV1().MachineConfigPools().UpdateStatus(context.TODO(), pool, metav1.UpdateOptions{}); updateErr != nil {
 		glog.Errorf("Error updating MachineConfigPool %s: %v", pool.Name, updateErr)
@@ -948,387 +672,159 @@ func (ctrl *Controller) syncFailingStatus(pool *mcfgv1.MachineConfigPool, err er
 	return err
 }
 
-func (ctrl *Controller) updateBuildConfigWithLabels(buildConfig *buildv1.BuildConfig, labels map[string]string) (*buildv1.BuildConfig, error) {
+// Determines if a MachineConfigPool has a build pod reference.
+func machineConfigPoolHasBuildPodRef(pool *mcfgv1.MachineConfigPool) bool {
+	buildPodName := getBuildPodName(pool)
 
-	newBuildConfig := buildConfig.DeepCopy()
-	for labelKey, labelValue := range labels {
-		il := buildv1.ImageLabel{Name: labelKey, Value: labelValue}
-		newBuildConfig.Spec.Output.ImageLabels = append(newBuildConfig.Spec.Output.ImageLabels, il)
-	}
-
-	return ctrl.buildclient.BuildV1().BuildConfigs(ctrlcommon.MCONamespace).Update(context.TODO(), newBuildConfig, metav1.UpdateOptions{})
-}
-
-// ensureCoreOSImageStream creates the base CoreOS imagestream that is owned by no pool and serves as the default source of the
-// base images for the layered pools' base image streams
-func (ctrl *Controller) ensureCoreOSImageStream() (*imagev1.ImageStream, error) {
-
-	checkImageStream, err := ctrl.isLister.ImageStreams(ctrlcommon.MCONamespace).Get(ctrlcommon.CoreOSImageStreamName)
-	if apierrors.IsNotFound(err) {
-		controllerConfig, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
-		if err != nil {
-			return nil, fmt.Errorf("could not get ControllerConfig %w", err)
+	searchFunc := func(cfg mcfgv1.MachineConfigPoolStatusConfiguration) bool {
+		for _, src := range cfg.Source {
+			if src.Name == buildPodName && src.Kind == "Pod" {
+				return true
+			}
 		}
 
-		newImageStream := &imagev1.ImageStream{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      ctrlcommon.CoreOSImageStreamName,
-				Namespace: ctrlcommon.MCONamespace,
+		return false
+	}
+
+	return searchFunc(pool.Spec.Configuration) && searchFunc(pool.Status.Configuration)
+}
+
+// Computes the build pod name based upon the MachineConfigPool name and the
+// current rendered config.
+func getBuildPodName(pool *mcfgv1.MachineConfigPool) string {
+	return fmt.Sprintf("build-%s-%s", pool.Name, pool.Spec.Configuration.Name)
+}
+
+// Deletes the build pod references from the MachineConfigPool.
+func deleteBuildPodRefFromMachineConfigPool(pool *mcfgv1.MachineConfigPool) {
+	buildPodName := getBuildPodName(pool)
+
+	deleteFunc := func(cfg mcfgv1.MachineConfigPoolStatusConfiguration) []corev1.ObjectReference {
+		configSources := []corev1.ObjectReference{}
+
+		for _, src := range cfg.Source {
+			if src.Name != buildPodName {
+				configSources = append(configSources, src)
+			}
+		}
+
+		return configSources
+	}
+
+	pool.Spec.Configuration.Source = deleteFunc(pool.Spec.Configuration)
+	pool.Status.Configuration.Source = deleteFunc(pool.Status.Configuration)
+}
+
+// Determines if two conditions are equal. Note: I purposely do not include the
+// timestamp in the equality test, since we do not directly set it.
+func isConditionEqual(cond1, cond2 mcfgv1.MachineConfigPoolCondition) bool {
+	return cond1.Type == cond2.Type &&
+		cond1.Status == cond2.Status &&
+		cond1.Message == cond2.Message &&
+		cond1.Reason == cond2.Reason
+}
+
+// Sets MCP build conditions on a given MachineConfigPool.
+func setMCPBuildConditions(pool *mcfgv1.MachineConfigPool, conditions []mcfgv1.MachineConfigPoolCondition) {
+	for _, condition := range conditions {
+		condition := condition
+		currentCondition := mcfgv1.GetMachineConfigPoolCondition(pool.Status, condition.Type)
+		if currentCondition != nil && isConditionEqual(*currentCondition, condition) {
+			continue
+		}
+
+		mcpCondition := mcfgv1.NewMachineConfigPoolCondition(condition.Type, condition.Status, condition.Reason, condition.Message)
+		mcfgv1.SetMachineConfigPoolCondition(&pool.Status, *mcpCondition)
+	}
+}
+
+// Determine if we have a config change.
+func isPoolConfigChange(oldPool, curPool *mcfgv1.MachineConfigPool) bool {
+	return oldPool.Spec.Configuration.Name != curPool.Spec.Configuration.Name
+}
+
+// Determine if we have an image pullspec label.
+func hasImagePullspecLabel(pool *mcfgv1.MachineConfigPool) bool {
+	imagePullspecLabel, ok := pool.Labels[ctrlcommon.ExperimentalNewestLayeredImageEquivalentConfigAnnotationKey]
+	return imagePullspecLabel != "" && ok
+}
+
+// Check our pool state to see if we have a build in progress or a failed build.
+func isPoolConditionBuild(pool *mcfgv1.MachineConfigPool) bool {
+	return !mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolBuilding) &&
+		!mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolBuildPending) &&
+		!mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolBuildFailed)
+}
+
+// Determines if we should do a build based upon the state of our
+// MachineConfigPool, the presence of a build pod, etc.
+func shouldWeDoABuild(kubeclient clientset.Interface, oldPool, curPool *mcfgv1.MachineConfigPool) (bool, error) {
+	// If we don't have a layered pool, we should not build.
+	poolStateSuggestsBuild := ctrlcommon.IsLayeredPool(curPool) &&
+		// If our pool state indicates that we do not have a build in progress, then
+		// we should do a build.
+		isPoolConditionBuild(curPool) &&
+		// If we have a config change or we're missing an image pullspec label, we
+		// should do a build.
+		(isPoolConfigChange(oldPool, curPool) || !hasImagePullspecLabel(curPool)) &&
+		// If we're missing a build pod reference, it likely means we don't need to
+		// do a build.
+		!machineConfigPoolHasBuildPodRef(curPool)
+
+	if !poolStateSuggestsBuild {
+		return false, nil
+	}
+
+	// Look for a build pod.
+	_, err := kubeclient.CoreV1().Pods(ctrlcommon.MCONamespace).Get(context.TODO(), getBuildPodName(curPool), metav1.GetOptions{})
+
+	// If we have an error and it's not because the build pod was not found, return said error.
+	if err != nil && !k8serrors.IsNotFound(err) {
+		return false, err
+	}
+
+	return k8serrors.IsNotFound(err), nil
+}
+
+// Enumerates all of the build-related MachineConfigPool condition types.
+func getMachineConfigPoolBuildConditions() []mcfgv1.MachineConfigPoolConditionType {
+	return []mcfgv1.MachineConfigPoolConditionType{
+		mcfgv1.MachineConfigPoolBuildFailed,
+		mcfgv1.MachineConfigPoolBuildPending,
+		mcfgv1.MachineConfigPoolBuildSuccess,
+		mcfgv1.MachineConfigPoolBuilding,
+	}
+}
+
+// Creates a new build pod object.
+func newBuildPod(pool *mcfgv1.MachineConfigPool) *corev1.Pod {
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      getBuildPodName(pool),
+			Namespace: ctrlcommon.MCONamespace,
+			Labels: map[string]string{
+				ctrlcommon.OSImageBuildPodLabel: "",
+				targetMachineConfigPoolLabel:    pool.Name,
+				desiredConfigLabel:              pool.Spec.Configuration.Name,
 			},
-			Spec: imagev1.ImageStreamSpec{
-				LookupPolicy:          imagev1.ImageLookupPolicy{Local: false},
-				DockerImageRepository: "",
-				Tags: []imagev1.TagReference{
-					{
-						Name: "latest",
-						From: &corev1.ObjectReference{
-							Kind: "DockerImage",
-							Name: controllerConfig.Spec.OSImageURL,
-						},
-					},
-				},
-			},
-		}
-		checkImageStream, err = ctrl.imageclient.ImageV1().ImageStreams(ctrlcommon.MCONamespace).Create(context.TODO(), newImageStream, metav1.CreateOptions{})
-		if err != nil {
-			return nil, fmt.Errorf("Attempted to create ImageStream %s but failed: %w", newImageStream, err)
-		}
-		glog.Infof("Created image stream %s", ctrlcommon.CoreOSImageStreamName)
-	} else if err != nil {
-		return nil, err
-	}
-
-	return checkImageStream, nil
-
-}
-
-func (ctrl *Controller) ensureImageStreamForPool(pool *mcfgv1.MachineConfigPool, imageStreamName string, pbr *PoolResourceNames) (*imagev1.ImageStream, error) {
-	// Check to see if we have the imagestream already
-	checkImageStream, err := ctrl.isLister.ImageStreams(ctrlcommon.MCONamespace).Get(imageStreamName)
-	if apierrors.IsNotFound(err) {
-		// Create the imagestream if it doesn't already exist
-		// It doesn't exist, so we need to make it, otherwise our builds will fail
-		newImageStream := &imagev1.ImageStream{
-			ObjectMeta: metav1.ObjectMeta{
-				Annotations: map[string]string{
-					"machineconfiguration.openshift.io/pool": pool.Name,
-				},
-			},
-		}
-		newImageStream.Name = imageStreamName
-		newImageStream.Namespace = ctrlcommon.MCONamespace
-		newImageStream.Spec.LookupPolicy.Local = false
-
-		// Set ownerships so these get cleaned up if we delete the pool
-		// TODO(jkyros): I have no idea if this actually cleans the images out of the stream if we delete it?
-		poolKind := mcfgv1.SchemeGroupVersion.WithKind("MachineConfigPool")
-		oref := metav1.NewControllerRef(pool, poolKind)
-		newImageStream.SetOwnerReferences([]metav1.OwnerReference{*oref})
-
-		// coreos imagestream is base, it's special, it needs to pull that image
-		if imageStreamName == pbr.ImageStream.Base {
-
-			newImageStream.Spec = imagev1.ImageStreamSpec{
-				LookupPolicy:          imagev1.ImageLookupPolicy{Local: false},
-				DockerImageRepository: "",
-				Tags: []imagev1.TagReference{
-					{
-						Name: "latest",
-						From: &corev1.ObjectReference{
-							Kind: "DockerImage",
-							Name: "image-registry.openshift-image-registry.svc:5000/openshift-machine-config-operator/coreos",
-						},
-					},
-				},
-			}
-
-		}
-
-		// TODO(jkyros): your data structure for this is clearly inelegant, fix it
-		if imageStreamName == pbr.ImageStream.Base || imageStreamName == pbr.ImageStream.RenderedConfig {
-			newImageStream.Annotations["machineconfig.openshift.io/buildconfig"] = pbr.BuildConfig.Content.Name
-		}
-		if imageStreamName == pbr.ImageStream.Content {
-			newImageStream.Annotations["machineconfig.openshift.io/buildconfig"] = pbr.BuildConfig.CustomContent.Name
-		}
-
-		// It didn't exist, put the imagestream in the cluster
-		checkImageStream, err = ctrl.imageclient.ImageV1().ImageStreams(ctrlcommon.MCONamespace).Create(context.TODO(), newImageStream, metav1.CreateOptions{})
-		if err != nil {
-			return nil, fmt.Errorf("Attempted to create ImageStream %s but failed: %w", newImageStream, err)
-		}
-		glog.Infof("Created image stream %s", imageStreamName)
-	}
-	return checkImageStream, nil
-}
-
-func (ctrl *Controller) ensureBuildConfigForPool(pool *mcfgv1.MachineConfigPool, pbc *PoolBuildConfig) (*buildv1.BuildConfig, error) {
-	checkBuildConfig, err := ctrl.bcLister.BuildConfigs(ctrlcommon.MCONamespace).Get(pbc.Name)
-	if apierrors.IsNotFound(err) {
-
-		// We are making this buildconfig owned by the imagestream it's building to
-		// TODO(jkyros): I really do feel like the buildconfig belongs to the stream because it populates the stream
-		ownerStream, err := ctrl.isLister.ImageStreams(ctrlcommon.MCONamespace).Get(pbc.Target)
-		if err != nil {
-			return nil, fmt.Errorf("Failed to retrieve owner imagestream: %w", err)
-		}
-		// Make the build since it doesn't exist, and set checkBuildConfig so we can use it below
-		checkBuildConfig, err = ctrl.CreateBuildConfigForImageStream(pool, pbc.Name, pbc.Source, ownerStream, pbc.DockerfileContent, pbc.TriggeredByStreams...)
-		if err != nil {
-			return nil, err
-		}
-		glog.Infof("BuildConfig %s has been created for pool %s", pbc.Name, pool.Name)
-	} else if err != nil {
-		// some other error happened
-		return nil, err
-	}
-	return checkBuildConfig, nil
-}
-
-func (ctrl *Controller) enqueuePoolIfBuildProblems(build *buildv1.Build) {
-	// If it's in a good state, save the suffering and move on
-	if isGoodBuildPhase(build.Status.Phase) {
-		return
-	}
-
-	// TODO(jkyros): sequester this in a function somewhere
-
-	// If it's in a bad phase, our pool might care if it's one of ours
-
-	// See who owns the build
-	controllerRef := metav1.GetControllerOf(build)
-
-	// If the build is owned by a buildconfig, see if it's one of ours
-	if controllerRef.Kind == "BuildConfig" {
-		buildConfig, err := ctrl.bcLister.BuildConfigs(ctrlcommon.MCONamespace).Get(controllerRef.Name)
-		if err != nil {
-			glog.Errorf("Failed to retrieve controlling buildconfig %s for build %s: %s", controllerRef.Name, build.Name, err)
-		}
-
-		// See if the buildconfig is controlled by our pool
-		buildConfigControllerRef := metav1.GetControllerOf(buildConfig)
-		if controllerRef != nil {
-			pool := ctrl.resolveControllerRef(buildConfigControllerRef)
-			// If it is our pool, then enqueue it
-			if pool != nil {
-				ctrl.enqueueMachineConfigPool(pool)
-			}
-
-		}
-
+		},
+		Spec: corev1.PodSpec{},
 	}
 }
 
-// isGoodBuildPhase determines whether a build is okay, or if it had a problem that we potentially need to take action on. This is used to decide
-// whether or not re-queue a machineconfig pool to check on its builds if the build came from one of its build controllers.
-func isGoodBuildPhase(buildPhase buildv1.BuildPhase) bool {
-
-	if buildPhase != buildv1.BuildPhaseFailed && buildPhase != buildv1.BuildPhaseCancelled && buildPhase != buildv1.BuildPhaseError {
-		return true
-	}
-	return false
-}
-
-func (ctrl *Controller) getLabelsForImageRef(imageRef string) (map[string]string, error) {
-	fullImage, err := ctrl.imageclient.ImageV1().Images().Get(context.TODO(), imageRef, metav1.GetOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("Could not retrieve image %s: %w", imageRef, err)
+// Determines if a pod is a build pod by examining its labels.
+func isBuildPod(pod *corev1.Pod) bool {
+	requiredLabels := []string{
+		ctrlcommon.OSImageBuildPodLabel,
+		targetMachineConfigPoolLabel,
+		desiredConfigLabel,
 	}
 
-	// We need the labels out of the docker image but it's a raw extension
-	dockerLabels := struct {
-		Config struct {
-			Labels map[string]string `json:"Labels"`
-		} `json:"Config"`
-	}{}
-
-	// Get the labels out and see what config this is
-	err = json.Unmarshal(fullImage.DockerImageMetadata.Raw, &dockerLabels)
-	if err != nil {
-		return nil, fmt.Errorf("Could not get labels from docker image metadata: %w", err)
-	}
-	return dockerLabels.Config.Labels, nil
-}
-
-// ensureImageStreamPrecedenceIfPopulated tries to make the UX cleaner by automatically switching the pool to use custom/external imagestreams
-// if it looks like the user has populated them. It will switch back if those imagestreams get cleared out. This is really just to save the user from
-// having to update the pool annotations themselves.
-func (ctrl *Controller) ensureImageStreamPrecedenceIfPopulated(pool *mcfgv1.MachineConfigPool) error {
-	glog.Infof("Ensuring imagestreams are populated for %s", pool.Name)
-	// Get the list of what resources should exist for this pool
-	pbr := PoolBuildResources(pool)
-
-	// Get the imagestream object for the external base imagestream
-	coreosImageStream, err := ctrl.isLister.ImageStreams(ctrlcommon.MCONamespace).Get(ctrlcommon.CoreOSImageStreamName)
-	if err != nil {
-		return err
-	}
-
-	// Get the imagestream object for the external base imagestream
-	baseImageStream, err := ctrl.isLister.ImageStreams(ctrlcommon.MCONamespace).Get(pbr.ImageStream.Base)
-	if err != nil {
-		return err
-	}
-
-	// Get the imagestream object for the external base imagestream
-	externalBaseImageStream, err := ctrl.isLister.ImageStreams(ctrlcommon.MCONamespace).Get(pbr.ImageStream.ExternalBase)
-	if err != nil {
-		return err
-	}
-
-	// Get the imagestream object for the external imagestream
-	externalImageStream, err := ctrl.isLister.ImageStreams(ctrlcommon.MCONamespace).Get(pbr.ImageStream.External)
-	if err != nil {
-		return err
-	}
-
-	// Get the imagestream objects for the custom imagestream, too
-	customImageStream, err := ctrl.isLister.ImageStreams(ctrlcommon.MCONamespace).Get(pbr.ImageStream.CustomContent)
-	if err != nil {
-		return err
-	}
-
-	// Retrieve the name of the imagestream we're currently using
-	poolImageStreamName, _ := ctrlcommon.GetPoolImageStream(pool)
-
-	// This is the place where we set the pool image stream if it's not set, so it's not an error here
-	if poolImageStreamName == "" {
-		ctrlcommon.SetPoolImageStream(pool, pbr.ImageStream.Content)
-	}
-
-	// Get the latest tag from external base
-	latestExternalBaseImageTag := ctrl.getMostRecentImageTagForImageStream(externalBaseImageStream, "latest")
-	latestBaseImageTag := ctrl.getMostRecentImageTagForImageStream(baseImageStream, "latest")
-	latestCoreOSImageTag := ctrl.getMostRecentImageTagForImageStream(coreosImageStream, "latest")
-
-	// If there is something in external base, we need to tag it into our base
-	if latestExternalBaseImageTag != nil {
-
-		if latestBaseImageTag == nil || latestBaseImageTag.Image != latestExternalBaseImageTag.Image {
-			if latestBaseImageTag != nil {
-				glog.Infof("Latest base: %s Latest external: %s", latestBaseImageTag.Image, latestExternalBaseImageTag.Image)
-			} else {
-				glog.Infof("Latest base image tag was empty, assigning external")
-			}
-			err := ctrl.tagImageIntoStream(externalBaseImageStream.Name, baseImageStream.Name, latestExternalBaseImageTag.Image, "latest")
-			if err != nil {
-				return err
-			}
+	for _, label := range requiredLabels {
+		if _, ok := pod.Labels[label]; !ok {
+			return false
 		}
-	} else {
-		// If there is nothing in external base, we should use coreos as our base
-		if latestBaseImageTag == nil {
-			if latestCoreOSImageTag == nil {
-				return fmt.Errorf("we don't have a CoreOS image yet -- probably still downloading, need to wait")
-			}
-		} else {
-			glog.Infof("Latest base: %s Latest coreos: %s", latestBaseImageTag.Image, latestCoreOSImageTag.Image)
-
-			// If what we have is different than what coreos has, we should use what coreos has instead
-			if latestBaseImageTag.Image != latestCoreOSImageTag.Image {
-				err := ctrl.tagImageIntoStream(coreosImageStream.Name, baseImageStream.Name, latestCoreOSImageTag.Image, "latest")
-				if err != nil {
-					return err
-				}
-			}
-		}
-
 	}
 
-	// If we aren't using the external image stream, and it is populated, we should switch to it
-	if poolImageStreamName != externalImageStream.Name && ctrl.getMostRecentImageTagForImageStream(externalImageStream, "latest") != nil {
-		// TODO(jkyros): Technically I event here before the update happens down below later, that seems dishonest for the user since
-		// at this point what I say happened hasn't happened yet
-		ctrl.eventRecorder.Event(pool, corev1.EventTypeNormal, "ImageStreamChange", "Image stream for pool "+pool.Name+" changed to "+externalImageStream.Name+
-			" because it takes precedence and an image is present in it")
-		ctrlcommon.SetPoolImageStream(pool, pbr.ImageStream.External)
-
-		// External isn't populated, see if we shuold fall back to custom if it has an image or an updated buildconfig
-	} else if poolImageStreamName != customImageStream.Name && ctrl.getMostRecentImageTagForImageStream(customImageStream, "latest") != nil {
-		ctrl.eventRecorder.Event(pool, corev1.EventTypeNormal, "ImageStreamChange", "Image stream for pool  "+pool.Name+" changed to "+customImageStream.Name+
-			" because it takes precedence and an image is present in it")
-		ctrlcommon.SetPoolImageStream(pool, pbr.ImageStream.CustomContent)
-
-	} else if poolImageStreamName != pbr.ImageStream.Content {
-		// If we didn't catch one of the previous if blocks, we should be using the default MCO content stream. This lets us fall back
-		// if/when someone cleans out or deletes one of the imagestreams
-		// TODO(jkyros): This self-healing behavior does keep people from assigning arbitrary imagstreams (whether that's good or
-		// bad is up to us)
-		ctrl.eventRecorder.Event(pool, corev1.EventTypeNormal, "ImageStreamChange", "Image stream for pool  "+pool.Name+" falling back to "+pbr.ImageStream.Content+
-			" as others are unpopulated")
-		ctrlcommon.SetPoolImageStream(pool, pbr.ImageStream.Content)
-	}
-	return nil
-}
-
-func (ctrl *Controller) tagImageIntoStream(sourceImageStreamName, targetImageStreamName, imageName, tagName string) error {
-
-	var internalRegistry = "image-registry.openshift-image-registry.svc:5000/"
-	fullTargetTagName := targetImageStreamName + ":" + tagName
-	//  If you don't get the namespace prefix on there, it tries to pull it from docker.io and fails
-	fullSourceName := internalRegistry + ctrlcommon.MCONamespace + "/" + sourceImageStreamName + "@" + imageName
-
-	var tag *imagev1.ImageStreamTag
-	tag, err := ctrl.imageclient.ImageV1().ImageStreamTags(ctrlcommon.MCONamespace).Get(context.TODO(), fullTargetTagName, metav1.GetOptions{})
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-
-			it := &imagev1.ImageStreamTag{
-
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      fullTargetTagName,
-					Namespace: ctrlcommon.MCONamespace,
-				},
-				Tag: &imagev1.TagReference{
-					Name: tagName,
-					From: &corev1.ObjectReference{
-						Kind:      "ImageStreamImage",
-						Namespace: ctrlcommon.MCONamespace,
-						Name:      fullSourceName,
-					},
-					ReferencePolicy: imagev1.TagReferencePolicy{
-						Type: imagev1.SourceTagReferencePolicy,
-					},
-				},
-			}
-			glog.Infof("Tagging image %s from %s into imagestream %s", imageName+":"+tagName, sourceImageStreamName, targetImageStreamName)
-			_, err = ctrl.imageclient.ImageV1().ImageStreamTags(ctrlcommon.MCONamespace).Create(context.TODO(), it, metav1.CreateOptions{})
-			return err
-
-		}
-		return err
-
-	}
-	tag.Tag.From.Name = fullSourceName
-	glog.Infof("Updating image tag %s from %s into imagestream %s", imageName+":"+tagName, sourceImageStreamName, targetImageStreamName)
-
-	_, err = ctrl.imageclient.ImageV1().ImageStreamTags(ctrlcommon.MCONamespace).Update(context.TODO(), tag, metav1.UpdateOptions{})
-	return err
-
-}
-
-func (ctrl *Controller) cheatMachineConfigLabelIntoBuildConfig(imageStream *imagev1.ImageStream, pool *mcfgv1.MachineConfigPool) error {
-	// This is the mco content imagestream
-	latestImageTag := ctrl.getMostRecentImageTagForImageStream(imageStream, "latest")
-	if latestImageTag == nil {
-		return fmt.Errorf("No 'latest' image tag in imagestream %s: ", imageStream.Name)
-
-	}
-	labels, err := ctrl.getLabelsForImageRef(latestImageTag.Image)
-	if err != nil {
-		return fmt.Errorf("Failed to retrieve labels for imagestream tag %s: %w", latestImageTag.DockerImageReference, err)
-	}
-
-	buildConfig, err := ctrl.bcLister.BuildConfigs(ctrlcommon.MCONamespace).Get(pool.Name + "-build" + ctrlcommon.ImageStreamSuffixMCOContent)
-	if err != nil {
-		return fmt.Errorf("Failed to retrieve corresponding buildconfig: %w", err)
-	}
-
-	// Get buildconfig
-	_, err = ctrl.updateBuildConfigWithLabels(buildConfig, labels)
-	if err != nil {
-		return fmt.Errorf("Failed to update buildconfig %s with labels: %w", buildConfig.Name, err)
-	}
-
-	return nil
+	return true
 }

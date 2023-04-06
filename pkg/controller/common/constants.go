@@ -42,37 +42,12 @@ const (
 	// MachineConfigPoolWorker is the MachineConfigPool name given to the worker
 	MachineConfigPoolWorker = "worker"
 
-	// ExperimentalLayeringPoolLabel is the label that enables the "layered" workflow path for a pool
-	ExperimentalLayeringPoolLabel = "machineconfiguration.openshift.io/layered"
+	// LayeringEnabledPoolLabel is the label that enables the "layered" workflow path for a pool.
+	LayeringEnabledPoolLabel = "machineconfiguration.openshift.io/layering-enabled"
 
-	// ExperimentalLayeringPoolImageStreamLabel is the label that enables tells the pool which imagestream to grab images out of
-	ExperimentalLayeringPoolImageStreamLabel = "machineconfiguration.openshift.io/selected-image-stream"
-
-	// ExperimentalNewestLayeredImageAnnotationKey is the annotation that signifies the newest image that has been pushed to a machine
-	// config pool's imagestream
-	ExperimentalNewestLayeredImageAnnotationKey = "machineconfiguration.openshift.io/newestImage"
 	// ExperimentalNewestLayeredImageEquivalentConfigAnnotationKey is the annotation that signifies which rendered config
-	// the latest image in the pool's imagestream is equivalent to
+	// TODO(zzlotnik): Determine if we should use this still.
 	ExperimentalNewestLayeredImageEquivalentConfigAnnotationKey = "machineconfiguration.openshift.io/newestImageEquivalentConfig"
 
-	// CoreOSImageStreamName is the name of the global (non-pool-specific) default base image stream name that pools will draw from if they
-	// do not have any other base image specified
-	CoreOSImageStreamName = "coreos"
-
-	// ImageStreamSuffixCoreOS is the suffix for the imagestream holding the base coreos image
-	ImageStreamSuffixCoreOS = "-base"
-	// ImageStreamSuffixExternalBase is the suffix for a pool imagestream  where the base image comes from outside the cluster
-	ImageStreamSuffixExternalBase = "-external-base"
-
-	// ImageStreamSuffixRenderedConfig is the suffix for a pool imagestream where the mco also writes its rendered machineconfig
-	ImageStreamSuffixRenderedConfig = "-rendered-config"
-	// ImageStreamSuffixMCOContent  is the suffix for a pool imagestream where the mco has applied its rendered-config to the base image
-	ImageStreamSuffixMCOContent = "-mco-content"
-	// ImageStreamSuffixMcoContentCustom is the suffix for a pool imagestream where content has been customized by a user
-	ImageStreamSuffixMCOContentCustom = "-mco-content-custom"
-	// ImageStreamSuffixMCOContentExternal is the suffix for a pool imagestream  where content comes from outside the cluster
-	ImageStreamSuffixMCOContentExternal = "-mco-content-external"
-
-	// ImageStreamSuffixMCOContentPerNode is the suffix for a pool imagestream containing any per-node images
-	ImageStreamSuffixMCOContentPerNode = "-mco-content-per-node"
+	OSImageBuildPodLabel = "machineconfiguration.openshift.io/buildPod"
 )
