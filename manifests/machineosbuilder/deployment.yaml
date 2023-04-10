@@ -1,1 +1,13 @@
-//TODO (dkhater) implement me!
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: machine-os-builder
+  namespace: {{.TargetNamespace}}
+spec:
+  selector:
+    matchLabels:
+      k8s-app: machine-os-builder
+  template:
+    metadata:
+      labels:
+        k8s-app: machine-os-builder
