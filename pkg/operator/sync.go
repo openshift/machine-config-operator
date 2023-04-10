@@ -73,6 +73,14 @@ const (
 	mccClusterRoleBindingManifestPath       = "manifests/machineconfigcontroller/clusterrolebinding.yaml"
 	mccServiceAccountManifestPath           = "manifests/machineconfigcontroller/sa.yaml"
 
+	// Machine OS Builder manifest paths
+	mobClusterRoleManifestPath              = "manifests/machineosbuilder/clusterrole.yaml"
+	mobEventsClusterRoleManifestPath        = "manifests/machineosbuilder/events-clusterrole.yaml"
+	mobEventsRoleBindingDefaultManifestPath = "manifests/machineosbuilder/events-rolebinding-default.yaml"
+	mobEventsRoleBindingTargetManifestPath  = "manifests/machineosbuilder/events-rolebinding-target.yaml"
+	mobClusterRoleBindingManifestPath       = "manifests/machineosbuilder/clusterrolebinding.yaml"
+	mobServiceAccountManifestPath           = "manifests/machineosbuilder/sa.yaml"
+
 	// Machine Config Daemon manifest paths
 	mcdClusterRoleManifestPath              = "manifests/machineconfigdaemon/clusterrole.yaml"
 	mcdEventsClusterRoleManifestPath        = "manifests/machineconfigdaemon/events-clusterrole.yaml"
@@ -662,6 +670,45 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig) error {
 	}
 	if updated {
 		if err := optr.waitForDeploymentRollout(mcc); err != nil {
+			return err
+		}
+	}
+	return optr.syncControllerConfig(config)
+}
+
+func (optr *Operator) syncMachineOSBuilder(config *renderConfig) error {
+	paths := manifestPaths{
+		clusterRoles: []string{
+			mobClusterRoleManifestPath,
+			mobEventsClusterRoleManifestPath,
+		},
+		roleBindings: []string{
+			mobEventsRoleBindingDefaultManifestPath,
+			mobEventsRoleBindingTargetManifestPath,
+		},
+		clusterRoleBindings: []string{
+			mobClusterRoleBindingManifestPath,
+		},
+		serviceAccounts: []string{
+			mobServiceAccountManifestPath,
+		},
+	}
+	if err := optr.applyManifests(config, paths); err != nil {
+		return fmt.Errorf("failed to apply machine os builder manifests: %w", err)
+	}
+
+	mobBytes, err := renderAsset(config, "manifests/machineosbuilder/deployment.yaml")
+	if err != nil {
+		return err
+	}
+	mob := resourceread.ReadDeploymentV1OrDie(mobBytes)
+
+	_, updated, err := mcoResourceApply.ApplyDeployment(optr.kubeClient.AppsV1(), mob)
+	if err != nil {
+		return err
+	}
+	if updated {
+		if err := optr.waitForDeploymentRollout(mob); err != nil {
 			return err
 		}
 	}
