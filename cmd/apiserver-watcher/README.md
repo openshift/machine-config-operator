@@ -21,7 +21,7 @@ plane is hosted as part of the cluster, we rely on hairpin extensively.
  +---------------+
 ```
 
-We have iptables workarounds to fix these scenarios, but they need to know when
+We have nftables workarounds to fix these scenarios, but they need to know when
 the local apiserver is up or down. Hence, the apiserver-watcher.
 
 ### GCP
@@ -29,7 +29,7 @@ the local apiserver is up or down. Hence, the apiserver-watcher.
 Google cloud load balancer is a L3LB that is special. It doesn't do DNAT; instead, it
 just redirects traffic to backends and preserves the VIP as the destination IP.
 
-So, an agent exists on the node. It programs the node (either via iptables or routing tables) to
+So, an agent exists on the node. It programs the node (either via nftables or routing tables) to
 accept traffic destined for the VIP. However, this has a problem: all hairpin traffic
 to the balanced servce is *always* handled by that backend, even if it is down
 or otherwise out of rotation.
@@ -69,7 +69,7 @@ The apiserver-watcher is installed on all the masters and monitors the
 apiserver process /readyz.
 
 When /readyz fails,  write `/run/cloud-routes/$VIP.down`, which tells the
-provider-specific service to update iptables rules. When it is up, write `$VIP.up`.
+provider-specific service to update nftables rules. When it is up, write `$VIP.up`.
 
 Separately, a provider-specific process watches that directory and, as necessary,
-updates iptables rules accordingly.
+updates nftables rules accordingly.
