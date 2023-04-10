@@ -177,7 +177,7 @@ contents:
             # Arbitrary delay to avoid synchronizing too quickly on file changes; the VIP
             # file could change multiple times quickly, but we don't need to react instantly
             # to every change.  Most crucially we want to be sure we don't trip over the
-            # default systemd StartLimitBurst/StartLimitIterval settings which are 5 and 10s
+            # default systemd StartLimitBurst/StartLimitInterval settings which are 5 and 10s
             # respectively.
             sleep 3
             ;;
