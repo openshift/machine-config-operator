@@ -557,8 +557,7 @@ func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.Co
 		ControllerConfigSpec: &config.Spec,
 		PullSecret:           string(buf.Bytes()),
 		FeatureGate:          featureGate,
-
-		StorageConfig: storageConfig,
+		StorageConfig:        storageConfig,
 	}
 	mcs, err := generateTemplateMachineConfigs(rc, templatesDir)
 	if err != nil {

@@ -16,6 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
 	configv1 "github.com/openshift/api/config/v1"
+	apioperatorsv1 "github.com/openshift/api/operator/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -29,7 +30,7 @@ const (
 
 	// TODO: Figure out how to obtain this value programmatically so we don't
 	// have to remember to increment it.
-	k8sVersion string = "1.22.1"
+	k8sVersion string = "1.26.1"
 )
 
 // This is needed because both setup-envtest and the kubebuilder tools assume
@@ -190,6 +191,16 @@ func CheckCleanEnvironment(t *testing.T, clientSet *ClientSet) {
 	// END: operator.openshift.io/v1alpha1
 	// #####################################
 
+	// #####################################
+	// BEGIN: operator.openshift.io/v1
+	// #####################################
+	storagesList, err := clientSet.Storages().List(ctx, metav1.ListOptions{})
+	require.NoError(t, err)
+	require.Len(t, storagesList.Items, 0)
+	// #####################################
+	// END: operator.openshift.io/v1
+	// #####################################
+
 	// #############################
 	// BEGIN: config.openshift.io/v1
 	// #############################
@@ -286,6 +297,15 @@ func CleanEnvironment(t *testing.T, clientSet *ClientSet) {
 	// END: operator.openshift.io/v1alpha1
 	// #####################################
 
+	// #####################################
+	// BEGIN: operator.openshift.io/v1
+	// #####################################
+	err = clientSet.Storages().DeleteCollection(ctx, metav1.DeleteOptions{}, metav1.ListOptions{})
+	require.NoError(t, err)
+	// #####################################
+	// END: operator.openshift.io/v1
+	// #####################################
+
 	// #############################
 	// BEGIN: config.openshift.io/v1
 	// #############################
@@ -345,6 +365,9 @@ func CreateObjects(t *testing.T, clientSet *ClientSet, objs ...runtime.Object) {
 			require.NoError(t, err)
 		case *apioperatorsv1alpha1.ImageContentSourcePolicy:
 			_, err := clientSet.ImageContentSourcePolicies().Create(ctx, tObj, metav1.CreateOptions{})
+			require.NoError(t, err)
+		case *apioperatorsv1.Storage:
+			_, err := clientSet.Storages().Create(ctx, tObj, metav1.CreateOptions{})
 			require.NoError(t, err)
 		case *configv1.Image:
 			_, err := clientSet.ConfigV1Interface.Images().Create(ctx, tObj, metav1.CreateOptions{})
