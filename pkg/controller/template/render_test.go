@@ -313,18 +313,20 @@ const templateDir = "../../../templates"
 
 var (
 	configs = map[string]string{
-		"alibaba":       "./test_data/controller_config_alibaba.yaml",
-		"aws":           "./test_data/controller_config_aws.yaml",
-		"baremetal":     "./test_data/controller_config_baremetal.yaml",
-		"gcp":           "./test_data/controller_config_gcp.yaml",
-		"openstack":     "./test_data/controller_config_openstack.yaml",
-		"libvirt":       "./test_data/controller_config_libvirt.yaml",
-		"mtu-migration": "./test_data/controller_config_mtu_migration.yaml",
-		"none":          "./test_data/controller_config_none.yaml",
-		"vsphere":       "./test_data/controller_config_vsphere.yaml",
-		"kubevirt":      "./test_data/controller_config_kubevirt.yaml",
-		"powervs":       "./test_data/controller_config_powervs.yaml",
-		"nutanix":       "./test_data/controller_config_nutanix.yaml",
+		"alibaba":                "./test_data/controller_config_alibaba.yaml",
+		"aws":                    "./test_data/controller_config_aws.yaml",
+		"baremetal":              "./test_data/controller_config_baremetal.yaml",
+		"gcp":                    "./test_data/controller_config_gcp.yaml",
+		"openstack":              "./test_data/controller_config_openstack.yaml",
+		"libvirt":                "./test_data/controller_config_libvirt.yaml",
+		"mtu-migration":          "./test_data/controller_config_mtu_migration.yaml",
+		"none":                   "./test_data/controller_config_none.yaml",
+		"vsphere":                "./test_data/controller_config_vsphere.yaml",
+		"kubevirt":               "./test_data/controller_config_kubevirt.yaml",
+		"powervs":                "./test_data/controller_config_powervs.yaml",
+		"nutanix":                "./test_data/controller_config_nutanix.yaml",
+		"network-forwarding-sdn": "./test_data/controller_config_forwarding_sdn.yaml",
+		"network-forwarding-ovn": "./test_data/controller_config_forwarding_ovn.yaml",
 	}
 )
 
@@ -375,6 +377,7 @@ func TestGenerateMachineConfigs(t *testing.T) {
 		foundKubeletUnitWorker := false
 		foundMTUMigrationMaster := false
 		foundMTUMigrationWorker := false
+		foundIPForwarding := false
 
 		for _, cfg := range cfgs {
 			if cfg.Labels == nil {
@@ -388,7 +391,7 @@ func TestGenerateMachineConfigs(t *testing.T) {
 
 			ign, err := ctrlcommon.ParseAndConvertConfig(cfg.Spec.Config.Raw)
 			if err != nil {
-				t.Errorf("Failed to parse Ignition config")
+				t.Errorf("Failed to parse Ignition config for %s, %s, error: %v", config, cfg.Name, err)
 			}
 			if role == "master" {
 				if !foundPullSecretMaster {
@@ -415,6 +418,8 @@ func TestGenerateMachineConfigs(t *testing.T) {
 			} else {
 				t.Fatalf("Unknown role %s", role)
 			}
+
+			foundIPForwarding = foundIPForwarding || findIgnFile(ign.Storage.Files, "/etc/sysctl.d/forward.conf", t)
 		}
 
 		if !foundPullSecretMaster {
@@ -429,6 +434,11 @@ func TestGenerateMachineConfigs(t *testing.T) {
 		if !foundKubeletUnitWorker {
 			t.Errorf("Failed to find kubelet unit for worker")
 		}
+		if foundIPForwarding && controllerConfig.Spec.NetworkType != "OpenShiftSDN" {
+			t.Errorf("IP forwarding file mismatch. Was rendered: %t for network type: %s",
+				foundIPForwarding, controllerConfig.Spec.NetworkType)
+		}
+
 		if test == "mtu-migration" {
 			if !foundMTUMigrationMaster {
 				t.Errorf("Failed to find mtu-migration files for master")
