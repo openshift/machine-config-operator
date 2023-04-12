@@ -283,6 +283,23 @@ spec:
 			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries", "99-worker-generated-kubelet"},
 		},
 		{
+			name: "With a storage manifest",
+			manifests: [][]byte{
+				[]byte(`apiVersion: operator.openshift.io/v1
+kind: Storage
+metadata:
+  name: cluster
+spec:
+  managementState: Managed
+  logLevel: Normal
+  operatorLogLevel: Normal
+  vsphereStorageDriver: CSIWithMigrationDriver
+`),
+			},
+			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries"},
+			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries"},
+		},
+		{
 			name: "With a container runtime config",
 			manifests: [][]byte{
 				[]byte(`apiVersion: machineconfiguration.openshift.io/v1
@@ -532,7 +549,7 @@ func loadBaseTestManifests(t *testing.T) []runtime.Object {
 
 func loadRawManifests(t *testing.T, rawObjs [][]byte) []runtime.Object {
 	codecFactory := serializer.NewCodecFactory(scheme.Scheme)
-	decoder := codecFactory.UniversalDecoder(corev1GroupVersion, mcfgv1.GroupVersion, apioperatorsv1alpha1.GroupVersion, configv1.GroupVersion)
+	decoder := codecFactory.UniversalDecoder(corev1GroupVersion, mcfgv1.GroupVersion, apioperatorsv1.GroupVersion, apioperatorsv1alpha1.GroupVersion, configv1.GroupVersion)
 
 	objs := []runtime.Object{}
 	for _, raw := range rawObjs {

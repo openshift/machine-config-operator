@@ -72,7 +72,7 @@ func (b *Bootstrap) Run(destDir string) error {
 	apioperatorsv1alpha1.Install(scheme)
 	apicfgv1.Install(scheme)
 	codecFactory := serializer.NewCodecFactory(scheme)
-	decoder := codecFactory.UniversalDecoder(mcfgv1.GroupVersion, apioperatorsv1alpha1.GroupVersion, apicfgv1.GroupVersion)
+	decoder := codecFactory.UniversalDecoder(mcfgv1.GroupVersion, apioperatorsv1.GroupVersion, apioperatorsv1alpha1.GroupVersion, apicfgv1.GroupVersion)
 
 	var cconfig *mcfgv1.ControllerConfig
 	var featureGate *apicfgv1.FeatureGate
