@@ -525,7 +525,7 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 		return ctrl.syncFailingStatus(cfg, err)
 	}
 	storageConfig, err := ctrl.storageConfLister.Get(ctrlcommon.ClusterFeatureInstanceName)
-	if err != nil && !errors.IsNotFound(err) {
+	if err != nil {
 		err := fmt.Errorf("could not fetch Storage config CR: %w", err)
 		glog.V(2).Infof("%v", err)
 		return ctrl.syncFailingStatus(cfg, err)
