@@ -175,6 +175,7 @@ func (h *handler) onSuccess() error {
 		if err := writeVipStateFile(vip, "up"); err != nil {
 			return err
 		}
+		glog.Infof("healthcheck succeeded, created upfile %s.up", vip)
 	}
 	return nil
 }
