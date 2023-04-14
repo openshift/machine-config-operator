@@ -5,7 +5,7 @@ contents:
     #!/bin/bash
     set -ex -o pipefail
 
-    if [ -z $DHCP6_IP6_ADDRESS ]
+    if [ -z "$DHCP6_IP6_ADDRESS" ]
     then
         >&2 echo "Not a DHCP6 address. Ignoring."
         exit 0
