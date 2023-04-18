@@ -93,7 +93,7 @@ import (
 // Instead, they are replaced by the Unicode replacement
 // character U+FFFD.
 //
-func Unmarshal(data []byte, v interface{}) error {
+func Unmarshal(data []byte, v any) error {
 	// Check for well-formedness.
 	// Avoids filling out half a data structure
 	// before discovering a JSON syntax error.
@@ -161,7 +161,7 @@ func (e *InvalidUnmarshalError) Error() string {
 		return "json: Unmarshal(nil)"
 	}
 
-	if e.Type.Kind() != reflect.Ptr {
+	if e.Type.Kind() != reflect.Pointer {
 		return "json: Unmarshal(non-pointer " + e.Type.String() + ")"
 	}
 	return "json: Unmarshal(nil " + e.Type.String() + ")"
@@ -172,21 +172,21 @@ type Node struct {
 	End      int
 	KeyStart int // Only value if a member of a struct
 	KeyEnd   int
-	Value    interface{}
+	Value    any
 }
 
 // Recursively disintermediate any Nodes in the argument.
-func unwrapNode(in interface{}) interface{} {
+func unwrapNode(in any) any {
 	if node, ok := in.(Node); ok {
 		return unwrapNode(node.Value)
 	} else if arr, ok := in.([]Node); ok {
-		ret := make([]interface{}, len(arr))
+		ret := make([]any, len(arr))
 		for i, ent := range arr {
 			ret[i] = unwrapNode(ent.Value)
 		}
 		return ret
 	} else if obj, ok := in.(map[string]Node); ok {
-		ret := make(map[string]interface{})
+		ret := make(map[string]any)
 		for k, v := range obj {
 			ret[k] = unwrapNode(v.Value)
 		}
@@ -196,9 +196,9 @@ func unwrapNode(in interface{}) interface{} {
 	}
 }
 
-func (d *decodeState) unmarshal(v interface{}) error {
+func (d *decodeState) unmarshal(v any) error {
 	rv := reflect.ValueOf(v)
-	if rv.Kind() != reflect.Ptr || rv.IsNil() {
+	if rv.Kind() != reflect.Pointer || rv.IsNil() {
 		return &InvalidUnmarshalError{reflect.TypeOf(v)}
 	}
 
@@ -229,16 +229,19 @@ func (n Number) Int64() (int64, error) {
 	return strconv.ParseInt(string(n), 10, 64)
 }
 
+// An errorContext provides context for type errors during decoding.
+type errorContext struct {
+	Struct     reflect.Type
+	FieldStack []string
+}
+
 // decodeState represents the state while decoding a JSON value.
 type decodeState struct {
-	data         []byte
-	off          int // next read offset in data
-	opcode       int // last read result
-	scan         scanner
-	errorContext struct { // provides context for type errors
-		Struct     reflect.Type
-		FieldStack []string
-	}
+	data                  []byte
+	off                   int // next read offset in data
+	opcode                int // last read result
+	scan                  scanner
+	errorContext          *errorContext
 	savedError            error
 	useNumber             bool
 	disallowUnknownFields bool
@@ -258,10 +261,11 @@ func (d *decodeState) init(data []byte) *decodeState {
 	d.data = data
 	d.off = 0
 	d.savedError = nil
-	d.errorContext.Struct = nil
-
-	// Reuse the allocated space for the FieldStack slice.
-	d.errorContext.FieldStack = d.errorContext.FieldStack[:0]
+	if d.errorContext != nil {
+		d.errorContext.Struct = nil
+		// Reuse the allocated space for the FieldStack slice.
+		d.errorContext.FieldStack = d.errorContext.FieldStack[:0]
+	}
 	return d
 }
 
@@ -275,12 +279,11 @@ func (d *decodeState) saveError(err error) {
 
 // addErrorContext returns a new error enhanced with information from d.errorContext
 func (d *decodeState) addErrorContext(err error) error {
-	if d.errorContext.Struct != nil || len(d.errorContext.FieldStack) > 0 {
+	if d.errorContext != nil && (d.errorContext.Struct != nil || len(d.errorContext.FieldStack) > 0) {
 		switch err := err.(type) {
 		case *UnmarshalTypeError:
 			err.Struct = d.errorContext.Struct.Name()
 			err.Field = strings.Join(d.errorContext.FieldStack, ".")
-			return err
 		}
 	}
 	return err
@@ -424,7 +427,7 @@ type unquotedValue struct{}
 // quoted string literal or literal null into an interface value.
 // If it finds anything other than a quoted string literal or null,
 // valueQuoted returns unquotedValue{}.
-func (d *decodeState) valueQuoted() interface{} {
+func (d *decodeState) valueQuoted() any {
 	switch d.opcode {
 	default:
 		panic(phasePanicMsg)
@@ -466,7 +469,7 @@ func indirect(v reflect.Value, decodingNull bool) (Unmarshaler, encoding.TextUnm
 	// If v is a named type and is addressable,
 	// start with its address, so that if the type has pointer methods,
 	// we find them.
-	if v.Kind() != reflect.Ptr && v.Type().Name() != "" && v.CanAddr() {
+	if v.Kind() != reflect.Pointer && v.Type().Name() != "" && v.CanAddr() {
 		haveAddr = true
 		v = v.Addr()
 	}
@@ -475,14 +478,14 @@ func indirect(v reflect.Value, decodingNull bool) (Unmarshaler, encoding.TextUnm
 		// usefully addressable.
 		if v.Kind() == reflect.Interface && !v.IsNil() {
 			e := v.Elem()
-			if e.Kind() == reflect.Ptr && !e.IsNil() && (!decodingNull || e.Elem().Kind() == reflect.Ptr) {
+			if e.Kind() == reflect.Pointer && !e.IsNil() && (!decodingNull || e.Elem().Kind() == reflect.Pointer) {
 				haveAddr = false
 				v = e
 				continue
 			}
 		}
 
-		if v.Kind() != reflect.Ptr {
+		if v.Kind() != reflect.Pointer {
 			break
 		}
 
@@ -491,7 +494,7 @@ func indirect(v reflect.Value, decodingNull bool) (Unmarshaler, encoding.TextUnm
 		}
 
 		// Prevent infinite loop if v is an interface pointing to its own address:
-		//     var v interface{}
+		//     var v any
 		//     v = &v
 		if v.Elem().Kind() == reflect.Interface && v.Elem().Elem() == v {
 			v = v.Elem()
@@ -676,7 +679,7 @@ func (d *decodeState) object(v reflect.Value) error {
 			reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
 			reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
 		default:
-			if !reflect.PtrTo(t.Key()).Implements(textUnmarshalerType) {
+			if !reflect.PointerTo(t.Key()).Implements(textUnmarshalerType) {
 				d.saveError(&UnmarshalTypeError{Value: "object", Type: t, Offset: int64(d.off)})
 				d.skip()
 				return nil
@@ -695,7 +698,10 @@ func (d *decodeState) object(v reflect.Value) error {
 	}
 
 	var mapElem reflect.Value
-	origErrorContext := d.errorContext
+	var origErrorContext errorContext
+	if d.errorContext != nil {
+		origErrorContext = *d.errorContext
+	}
 
 	for {
 		// Read opening " of string key or closing }.
@@ -749,7 +755,7 @@ func (d *decodeState) object(v reflect.Value) error {
 				subv = v
 				destring = f.quoted
 				for _, i := range f.index {
-					if subv.Kind() == reflect.Ptr {
+					if subv.Kind() == reflect.Pointer {
 						if subv.IsNil() {
 							// If a struct embeds a pointer to an unexported type,
 							// it is not possible to set a newly allocated value
@@ -769,6 +775,9 @@ func (d *decodeState) object(v reflect.Value) error {
 						subv = subv.Elem()
 					}
 					subv = subv.Field(i)
+				}
+				if d.errorContext == nil {
+					d.errorContext = new(errorContext)
 				}
 				d.errorContext.FieldStack = append(d.errorContext.FieldStack, f.name)
 				d.errorContext.Struct = t
@@ -811,7 +820,7 @@ func (d *decodeState) object(v reflect.Value) error {
 			kt := t.Key()
 			var kv reflect.Value
 			switch {
-			case reflect.PtrTo(kt).Implements(textUnmarshalerType):
+			case reflect.PointerTo(kt).Implements(textUnmarshalerType):
 				kv = reflect.New(kt)
 				if err := d.literalStore(item, kv, true); err != nil {
 					return err
@@ -850,11 +859,13 @@ func (d *decodeState) object(v reflect.Value) error {
 		if d.opcode == scanSkipSpace {
 			d.scanWhile(scanSkipSpace)
 		}
-		// Reset errorContext to its original state.
-		// Keep the same underlying array for FieldStack, to reuse the
-		// space and avoid unnecessary allocs.
-		d.errorContext.FieldStack = d.errorContext.FieldStack[:len(origErrorContext.FieldStack)]
-		d.errorContext.Struct = origErrorContext.Struct
+		if d.errorContext != nil {
+			// Reset errorContext to its original state.
+			// Keep the same underlying array for FieldStack, to reuse the
+			// space and avoid unnecessary allocs.
+			d.errorContext.FieldStack = d.errorContext.FieldStack[:len(origErrorContext.FieldStack)]
+			d.errorContext.Struct = origErrorContext.Struct
+		}
 		if d.opcode == scanEndObject {
 			break
 		}
@@ -867,7 +878,7 @@ func (d *decodeState) object(v reflect.Value) error {
 
 // convertNumber converts the number literal s to a float64 or a Number
 // depending on the setting of d.useNumber.
-func (d *decodeState) convertNumber(s string) (interface{}, error) {
+func (d *decodeState) convertNumber(s string) (any, error) {
 	if d.useNumber {
 		return Number(s), nil
 	}
@@ -934,7 +945,7 @@ func (d *decodeState) literalStore(item []byte, v reflect.Value, fromQuoted bool
 			break
 		}
 		switch v.Kind() {
-		case reflect.Interface, reflect.Ptr, reflect.Map, reflect.Slice:
+		case reflect.Interface, reflect.Pointer, reflect.Map, reflect.Slice:
 			v.Set(reflect.Zero(v.Type()))
 			// otherwise, ignore null for primitives/string
 		}
@@ -1064,7 +1075,7 @@ func (d *decodeState) literalStore(item []byte, v reflect.Value, fromQuoted bool
 // but they avoid the weight of reflection in this common case.
 
 // valueInterface is like value but returns interface{}
-func (d *decodeState) valueInterface() interface{} {
+func (d *decodeState) valueInterface() any {
 	return unwrapNode(d.valueNode())
 }
 
@@ -1087,8 +1098,8 @@ func (d *decodeState) valueNode() (val Node) {
 }
 
 // arrayInterface is like array but returns []interface{}.
-func (d *decodeState) arrayInterface() []interface{} {
-	return unwrapNode(d.arrayNode()).([]interface{})
+func (d *decodeState) arrayInterface() []any {
+	return unwrapNode(d.arrayNode()).([]any)
 }
 
 // arrayNode is like arrayInterface but returns Node.
@@ -1124,8 +1135,8 @@ func (d *decodeState) arrayNode() Node {
 }
 
 // objectInterface is like object but returns map[string]interface{}.
-func (d *decodeState) objectInterface() map[string]interface{} {
-	return unwrapNode(d.objectNode()).(map[string]interface{})
+func (d *decodeState) objectInterface() map[string]any {
+	return unwrapNode(d.objectNode()).(map[string]any)
 }
 
 // objectNode is like object but returns Node.
@@ -1189,7 +1200,7 @@ func (d *decodeState) objectNode() Node {
 // literalInterface consumes and returns a literal from d.data[d.off-1:] and
 // it reads the following byte ahead. The first byte of the literal has been
 // read already (that's how the caller knows it's a literal).
-func (d *decodeState) literalInterface() interface{} {
+func (d *decodeState) literalInterface() any {
 	// All bytes inside literal return scanContinue op code.
 	start := d.readIndex()
 	d.rescanLiteral()
