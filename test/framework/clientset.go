@@ -8,6 +8,7 @@ import (
 	clientbuildv1 "github.com/openshift/client-go/build/clientset/versioned/typed/build/v1"
 	clientconfigv1 "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
 	clientimagev1 "github.com/openshift/client-go/image/clientset/versioned/typed/image/v1"
+	clientoperatorsv1 "github.com/openshift/client-go/operator/clientset/versioned/typed/operator/v1"
 	clientoperatorsv1alpha1 "github.com/openshift/client-go/operator/clientset/versioned/typed/operator/v1alpha1"
 	clientmachineconfigv1 "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/typed/machineconfiguration.openshift.io/v1"
 	clientapiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/typed/apiextensions/v1"
@@ -23,6 +24,7 @@ type ClientSet struct {
 	clientconfigv1.ConfigV1Interface
 	clientmachineconfigv1.MachineconfigurationV1Interface
 	clientapiextensionsv1.ApiextensionsV1Interface
+	clientoperatorsv1.OperatorV1Interface
 	clientoperatorsv1alpha1.OperatorV1alpha1Interface
 	clientbuildv1.BuildV1Interface
 	clientimagev1.ImageV1Interface
@@ -71,6 +73,7 @@ func NewClientSetFromConfig(config *rest.Config) *ClientSet {
 		MachineconfigurationV1Interface: clientmachineconfigv1.NewForConfigOrDie(config),
 		ApiextensionsV1Interface:        clientapiextensionsv1.NewForConfigOrDie(config),
 		OperatorV1alpha1Interface:       clientoperatorsv1alpha1.NewForConfigOrDie(config),
+		OperatorV1Interface:             clientoperatorsv1.NewForConfigOrDie(config),
 		BuildV1Interface:                clientbuildv1.NewForConfigOrDie(config),
 		ImageV1Interface:                clientimagev1.NewForConfigOrDie(config),
 	}

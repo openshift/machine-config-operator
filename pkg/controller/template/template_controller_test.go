@@ -11,6 +11,8 @@ import (
 	osev1 "github.com/openshift/api/config/v1"
 	oseconfigfake "github.com/openshift/client-go/config/clientset/versioned/fake"
 	oseinformersv1 "github.com/openshift/client-go/config/informers/externalversions"
+	oseoperatorfake "github.com/openshift/client-go/operator/clientset/versioned/fake"
+	operatorinformers "github.com/openshift/client-go/operator/informers/externalversions"
 	"github.com/openshift/library-go/pkg/cloudprovider"
 
 	corev1 "k8s.io/api/core/v1"
@@ -41,9 +43,10 @@ var (
 type fixture struct {
 	t *testing.T
 
-	client     *fake.Clientset
-	kubeclient *k8sfake.Clientset
-	oseclient  *oseconfigfake.Clientset
+	client           *fake.Clientset
+	kubeclient       *k8sfake.Clientset
+	oseclient        *oseconfigfake.Clientset
+	osoperatorclient *oseoperatorfake.Clientset
 
 	ccLister   []*mcfgv1.ControllerConfig
 	mcLister   []*mcfgv1.MachineConfig
@@ -103,13 +106,22 @@ func (f *fixture) newController() *Controller {
 	f.client = fake.NewSimpleClientset(f.objects...)
 	f.kubeclient = k8sfake.NewSimpleClientset(f.kubeobjects...)
 	f.oseclient = oseconfigfake.NewSimpleClientset(f.oseobjects...)
+	f.osoperatorclient = oseoperatorfake.NewSimpleClientset([]runtime.Object{}...)
 	featinformer := oseinformersv1.NewSharedInformerFactory(f.oseclient, 0)
 
 	cinformer := coreinformersv1.NewSharedInformerFactory(f.kubeclient, noResyncPeriodFunc())
+	opinfromer := operatorinformers.NewSharedInformerFactory(f.osoperatorclient, noResyncPeriodFunc())
 	i := informers.NewSharedInformerFactory(f.client, noResyncPeriodFunc())
-	c := New(templateDir,
-		i.Machineconfiguration().V1().ControllerConfigs(), i.Machineconfiguration().V1().MachineConfigs(), cinformer.Core().V1().Secrets(), featinformer.Config().V1().FeatureGates(),
-		f.kubeclient, f.client)
+	c := New(
+		templateDir,
+		i.Machineconfiguration().V1().ControllerConfigs(),
+		i.Machineconfiguration().V1().MachineConfigs(),
+		cinformer.Core().V1().Secrets(),
+		featinformer.Config().V1().FeatureGates(),
+		opinfromer.Operator().V1().Storages(),
+		f.kubeclient,
+		f.client,
+	)
 
 	c.ccListerSynced = alwaysReady
 	c.mcListerSynced = alwaysReady
@@ -304,7 +316,7 @@ func TestCreatesMachineConfigs(t *testing.T) {
 	f.objects = append(f.objects, cc)
 	f.kubeobjects = append(f.kubeobjects, ps)
 
-	expMCs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil)
+	expMCs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -341,7 +353,7 @@ func TestCreatesMachineConfigsWithFeatureGate(t *testing.T) {
 	f.objects = append(f.objects, cc)
 	f.kubeobjects = append(f.kubeobjects, ps)
 
-	expMCs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), feat)
+	expMCs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), feat, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -374,7 +386,7 @@ func TestDoNothing(t *testing.T) {
 	feat := newFeatures("cluster", "CustomNoUpgrade", []string{cloudprovider.ExternalCloudProviderFeature}, nil)
 	f.featLister = append(f.featLister, feat)
 
-	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), feat)
+	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), feat, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -414,7 +426,7 @@ func TestRecreateMachineConfig(t *testing.T) {
 	feat := newFeatures("cluster", "CustomNoUpgrade", []string{cloudprovider.ExternalCloudProviderFeature}, nil)
 	f.featLister = append(f.featLister, feat)
 
-	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), feat)
+	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), feat, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -455,7 +467,7 @@ func TestUpdateMachineConfig(t *testing.T) {
 	feat := newFeatures("cluster", "CustomNoUpgrade", []string{cloudprovider.ExternalCloudProviderFeature}, nil)
 	f.featLister = append(f.featLister, feat)
 
-	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), feat)
+	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), feat, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -475,7 +487,7 @@ func TestUpdateMachineConfig(t *testing.T) {
 		f.objects = append(f.objects, mcs[idx])
 	}
 
-	expmcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), feat)
+	expmcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), feat, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

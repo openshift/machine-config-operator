@@ -19,6 +19,7 @@ import (
 	kscheme "k8s.io/client-go/kubernetes/scheme"
 
 	apicfgv1 "github.com/openshift/api/config/v1"
+	apioperatorsv1 "github.com/openshift/api/operator/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -68,14 +69,16 @@ func (b *Bootstrap) Run(destDir string) error {
 
 	scheme := runtime.NewScheme()
 	mcfgv1.Install(scheme)
+	apioperatorsv1.Install(scheme)
 	apioperatorsv1alpha1.Install(scheme)
 	apicfgv1.Install(scheme)
 	codecFactory := serializer.NewCodecFactory(scheme)
-	decoder := codecFactory.UniversalDecoder(mcfgv1.GroupVersion, apioperatorsv1alpha1.GroupVersion, apicfgv1.GroupVersion)
+	decoder := codecFactory.UniversalDecoder(mcfgv1.GroupVersion, apioperatorsv1.GroupVersion, apioperatorsv1alpha1.GroupVersion, apicfgv1.GroupVersion)
 
 	var cconfig *mcfgv1.ControllerConfig
 	var featureGate *apicfgv1.FeatureGate
 	var nodeConfig *apicfgv1.Node
+	var storageConfig *apioperatorsv1.Storage
 	var kconfigs []*mcfgv1.KubeletConfig
 	var pools []*mcfgv1.MachineConfigPool
 	var configs []*mcfgv1.MachineConfig
@@ -138,6 +141,10 @@ func (b *Bootstrap) Run(destDir string) error {
 				if obj.GetName() == ctrlcommon.ClusterNodeInstanceName {
 					nodeConfig = obj
 				}
+			case *apioperatorsv1.Storage:
+				if obj.GetName() == ctrlcommon.ClusterStorageInstanceName {
+					storageConfig = obj
+				}
 			default:
 				glog.Infof("skipping %q [%d] manifest because of unhandled %T", file.Name(), idx+1, obji)
 			}
@@ -147,7 +154,7 @@ func (b *Bootstrap) Run(destDir string) error {
 	if cconfig == nil {
 		return fmt.Errorf("error: no controllerconfig found in dir: %q", destDir)
 	}
-	iconfigs, err := template.RunBootstrap(b.templatesDir, cconfig, psraw, featureGate)
+	iconfigs, err := template.RunBootstrap(b.templatesDir, cconfig, psraw, featureGate, storageConfig)
 	if err != nil {
 		return err
 	}

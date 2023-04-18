@@ -16,6 +16,9 @@ contents: |
 {{- if eq .IPFamilies "IPv6"}}
   Environment="KUBELET_NODE_IP=::"
 {{- end}}
+{{- if eq (vSphereCSIMigration .) "enabled"}}
+  Environment="OPENSHIFT_DO_VSPHERE_MIGRATION=true"
+{{- end}}
   EnvironmentFile=/etc/os-release
   EnvironmentFile=-/etc/kubernetes/kubelet-workaround
   EnvironmentFile=-/etc/kubernetes/kubelet-env

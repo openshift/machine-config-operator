@@ -12,8 +12,11 @@ import (
 	"github.com/golang/glog"
 	configv1 "github.com/openshift/api/config/v1"
 	osev1 "github.com/openshift/api/config/v1"
+	operatorv1 "github.com/openshift/api/operator/v1"
 	oseinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
 	oselistersv1 "github.com/openshift/client-go/config/listers/config/v1"
+	osoperatorinformersv1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1"
+	osoperatorlistersv1 "github.com/openshift/client-go/operator/listers/operator/v1"
 	mcoResourceApply "github.com/openshift/machine-config-operator/lib/resourceapply"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -58,14 +61,16 @@ type Controller struct {
 	syncHandler             func(ccKey string) error
 	enqueueControllerConfig func(*mcfgv1.ControllerConfig)
 
-	ccLister   mcfglistersv1.ControllerConfigLister
-	mcLister   mcfglistersv1.MachineConfigLister
-	featLister oselistersv1.FeatureGateLister
+	ccLister          mcfglistersv1.ControllerConfigLister
+	mcLister          mcfglistersv1.MachineConfigLister
+	featLister        oselistersv1.FeatureGateLister
+	storageConfLister osoperatorlistersv1.StorageLister
 
 	ccListerSynced        cache.InformerSynced
 	mcListerSynced        cache.InformerSynced
 	secretsInformerSynced cache.InformerSynced
 	featListerSynced      cache.InformerSynced
+	storageConfSynced     cache.InformerSynced
 
 	queue workqueue.RateLimitingInterface
 }
@@ -77,6 +82,7 @@ func New(
 	mcInformer mcfginformersv1.MachineConfigInformer,
 	secretsInformer coreinformersv1.SecretInformer,
 	featureInformer oseinformersv1.FeatureGateInformer,
+	storageInformer osoperatorinformersv1.StorageInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
 ) *Controller {
@@ -117,16 +123,24 @@ func New(
 		DeleteFunc: ctrl.deleteFeature,
 	})
 
+	storageInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.addStorage,
+		UpdateFunc: ctrl.updateStorage,
+		DeleteFunc: ctrl.deleteStorage,
+	})
+
 	ctrl.syncHandler = ctrl.syncControllerConfig
 	ctrl.enqueueControllerConfig = ctrl.enqueue
 
 	ctrl.ccLister = ccInformer.Lister()
 	ctrl.mcLister = mcInformer.Lister()
 	ctrl.featLister = featureInformer.Lister()
+	ctrl.storageConfLister = storageInformer.Lister()
 	ctrl.ccListerSynced = ccInformer.Informer().HasSynced
 	ctrl.mcListerSynced = mcInformer.Informer().HasSynced
 	ctrl.secretsInformerSynced = secretsInformer.Informer().HasSynced
 	ctrl.featListerSynced = featureInformer.Informer().HasSynced
+	ctrl.storageConfSynced = storageInformer.Informer().HasSynced
 
 	return ctrl
 }
@@ -231,7 +245,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.secretsInformerSynced, ctrl.featListerSynced) {
+	if !cache.WaitForCacheSync(stopCh, ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.secretsInformerSynced, ctrl.featListerSynced, ctrl.storageConfSynced) {
 		return
 	}
 
@@ -339,6 +353,36 @@ func (ctrl *Controller) deleteMachineConfig(obj interface{}) {
 	}
 	glog.V(4).Infof("MachineConfig %s deleted.", mc.Name)
 	ctrl.enqueueControllerConfig(cfg)
+}
+
+func (ctrl *Controller) addStorage(obj interface{}) {
+	storage := obj.(*operatorv1.Storage)
+	glog.V(4).Infof("Adding Storage %s", storage.Name)
+	ctrl.enqueueController()
+}
+
+func (ctrl *Controller) updateStorage(old, cur interface{}) {
+	oldStorage := old.(*operatorv1.Storage)
+	glog.V(4).Infof("Updating Storage %s", oldStorage.Name)
+	ctrl.enqueueController()
+}
+
+func (ctrl *Controller) deleteStorage(obj interface{}) {
+	storage, ok := obj.(*operatorv1.Storage)
+	if !ok {
+		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("couldn't get object from tombstone %#v", obj))
+			return
+		}
+		storage, ok = tombstone.Obj.(*operatorv1.Storage)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not a Storage %#v", obj))
+			return
+		}
+	}
+	glog.V(4).Infof("Deleting Storage %s", storage.Name)
+	ctrl.enqueueController()
 }
 
 func (ctrl *Controller) resolveControllerRef(controllerRef *metav1.OwnerReference) *mcfgv1.ControllerConfig {
@@ -480,7 +524,13 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 		glog.V(2).Infof("%v", err)
 		return ctrl.syncFailingStatus(cfg, err)
 	}
-	mcs, err := getMachineConfigsForControllerConfig(ctrl.templatesDir, cfg, pullSecretRaw, fg)
+	storageConfig, err := ctrl.storageConfLister.Get(ctrlcommon.ClusterFeatureInstanceName)
+	if err != nil && !errors.IsNotFound(err) {
+		err := fmt.Errorf("could not fetch Storage config CR: %w", err)
+		glog.V(2).Infof("%v", err)
+		return ctrl.syncFailingStatus(cfg, err)
+	}
+	mcs, err := getMachineConfigsForControllerConfig(ctrl.templatesDir, cfg, pullSecretRaw, fg, storageConfig)
 	if err != nil {
 		return ctrl.syncFailingStatus(cfg, err)
 	}
@@ -498,7 +548,7 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 	return ctrl.syncCompletedStatus(cfg)
 }
 
-func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.ControllerConfig, pullSecretRaw []byte, featureGate *configv1.FeatureGate) ([]*mcfgv1.MachineConfig, error) {
+func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.ControllerConfig, pullSecretRaw []byte, featureGate *configv1.FeatureGate, storageConfig *operatorv1.Storage) ([]*mcfgv1.MachineConfig, error) {
 	buf := &bytes.Buffer{}
 	if err := json.Compact(buf, pullSecretRaw); err != nil {
 		return nil, fmt.Errorf("couldn't compact pullsecret %q: %w", string(pullSecretRaw), err)
@@ -507,6 +557,7 @@ func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.Co
 		ControllerConfigSpec: &config.Spec,
 		PullSecret:           string(buf.Bytes()),
 		FeatureGate:          featureGate,
+		StorageConfig:        storageConfig,
 	}
 	mcs, err := generateTemplateMachineConfigs(rc, templatesDir)
 	if err != nil {
@@ -523,6 +574,6 @@ func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.Co
 }
 
 // RunBootstrap runs the tempate controller in boostrap mode.
-func RunBootstrap(templatesDir string, config *mcfgv1.ControllerConfig, pullSecretRaw []byte, featureGate *configv1.FeatureGate) ([]*mcfgv1.MachineConfig, error) {
-	return getMachineConfigsForControllerConfig(templatesDir, config, pullSecretRaw, featureGate)
+func RunBootstrap(templatesDir string, config *mcfgv1.ControllerConfig, pullSecretRaw []byte, featureGate *configv1.FeatureGate, storageConfig *operatorv1.Storage) ([]*mcfgv1.MachineConfig, error) {
+	return getMachineConfigsForControllerConfig(templatesDir, config, pullSecretRaw, featureGate, storageConfig)
 }

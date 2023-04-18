@@ -12,6 +12,7 @@ import (
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	configv1 "github.com/openshift/api/config/v1"
+	operatorv1 "github.com/openshift/api/operator/v1"
 	"github.com/openshift/library-go/pkg/cloudprovider"
 	"k8s.io/client-go/kubernetes/scheme"
 
@@ -30,6 +31,7 @@ func TestCloudProvider(t *testing.T) {
 	cases := []struct {
 		platform    configv1.PlatformType
 		featureGate *configv1.FeatureGate
+		storageConf *operatorv1.Storage
 		res         string
 	}{{
 		platform:    configv1.AWSPlatformType,
@@ -50,7 +52,13 @@ func TestCloudProvider(t *testing.T) {
 	}, {
 		platform:    configv1.VSpherePlatformType,
 		featureGate: newFeatures("cluster", "CustomNoUpgrade", []string{cloudprovider.ExternalCloudProviderFeature}, nil),
+		storageConf: &operatorv1.Storage{Spec: operatorv1.StorageSpec{VSphereStorageDriver: operatorv1.CSIWithMigrationDriver}},
 		res:         "external",
+	}, {
+		platform:    configv1.VSpherePlatformType,
+		featureGate: newFeatures("cluster", "CustomNoUpgrade", []string{cloudprovider.ExternalCloudProviderFeature}, nil),
+		storageConf: &operatorv1.Storage{Spec: operatorv1.StorageSpec{VSphereStorageDriver: operatorv1.LegacyDeprecatedInTreeDriver}},
+		res:         "vsphere",
 	}, {
 		platform:    configv1.OpenStackPlatformType,
 		featureGate: newFeatures("cluster", "CustomNoUpgrade", []string{cloudprovider.ExternalCloudProviderFeature}, nil),
@@ -89,8 +97,13 @@ func TestCloudProvider(t *testing.T) {
 		platform: configv1.NonePlatformType,
 		res:      "",
 	}, {
-		platform: configv1.VSpherePlatformType,
-		res:      "external",
+		platform:    configv1.VSpherePlatformType,
+		storageConf: &operatorv1.Storage{Spec: operatorv1.StorageSpec{VSphereStorageDriver: operatorv1.CSIWithMigrationDriver}},
+		res:         "external",
+	}, {
+		platform:    configv1.VSpherePlatformType,
+		storageConf: &operatorv1.Storage{Spec: operatorv1.StorageSpec{VSphereStorageDriver: operatorv1.LegacyDeprecatedInTreeDriver}},
+		res:         "vsphere",
 	}, {
 		platform: configv1.AlibabaCloudPlatformType,
 		res:      "external",
@@ -113,7 +126,7 @@ func TestCloudProvider(t *testing.T) {
 					},
 				},
 			}
-			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, c.featureGate, nil}, name, dummyTemplate)
+			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, c.featureGate, c.storageConf, nil}, name, dummyTemplate)
 			if err != nil {
 				t.Fatalf("expected nil error %v", err)
 			}
@@ -132,6 +145,7 @@ func TestCloudConfigFlag(t *testing.T) {
 		platform    configv1.PlatformType
 		content     string
 		featureGate *configv1.FeatureGate
+		storageConf *operatorv1.Storage
 		res         string
 	}{{
 		platform: configv1.AWSPlatformType,
@@ -188,7 +202,17 @@ func TestCloudConfigFlag(t *testing.T) {
     option = a
 `,
 		featureGate: newFeatures("cluster", "CustomNoUpgrade", []string{cloudprovider.ExternalCloudProviderFeature}, nil),
+		storageConf: &operatorv1.Storage{Spec: operatorv1.StorageSpec{VSphereStorageDriver: operatorv1.CSIWithMigrationDriver}},
 		res:         "",
+	}, {
+		platform: configv1.VSpherePlatformType,
+		content: `
+[dummy-config]
+    option = a
+`,
+		featureGate: newFeatures("cluster", "CustomNoUpgrade", []string{cloudprovider.ExternalCloudProviderFeature}, nil),
+		storageConf: &operatorv1.Storage{Spec: operatorv1.StorageSpec{VSphereStorageDriver: operatorv1.LegacyDeprecatedInTreeDriver}},
+		res:         "--cloud-config=/etc/kubernetes/cloud.conf",
 	}, {
 		platform: configv1.AzurePlatformType,
 		content: `
@@ -255,7 +279,7 @@ func TestCloudConfigFlag(t *testing.T) {
 					CloudProviderConfig: c.content,
 				},
 			}
-			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, c.featureGate, nil}, name, dummyTemplate)
+			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, c.featureGate, c.storageConf, nil}, name, dummyTemplate)
 			if err != nil {
 				t.Fatalf("expected nil error %v", err)
 			}
@@ -346,14 +370,14 @@ func TestInvalidPlatform(t *testing.T) {
 
 	// we must treat unrecognized constants as "none"
 	controllerConfig.Spec.Infra.Status.PlatformStatus.Type = "_bad_"
-	_, err = generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, nil, nil}, templateDir)
+	_, err = generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, nil, nil, nil}, templateDir)
 	if err != nil {
 		t.Errorf("expect nil error, got: %v", err)
 	}
 
 	// explicitly blocked
 	controllerConfig.Spec.Infra.Status.PlatformStatus.Type = "_base"
-	_, err = generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, nil, nil}, templateDir)
+	_, err = generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, nil, nil, nil}, templateDir)
 	expectErr(err, "failed to create MachineConfig for role master: platform _base unsupported")
 }
 
@@ -364,7 +388,7 @@ func TestGenerateMachineConfigs(t *testing.T) {
 			t.Fatalf("failed to get controllerconfig config: %v", err)
 		}
 
-		cfgs, err := generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, nil, nil}, templateDir)
+		cfgs, err := generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, nil, nil, nil}, templateDir)
 		if err != nil {
 			t.Fatalf("failed to generate machine configs: %v", err)
 		}
@@ -483,7 +507,7 @@ func TestGetPaths(t *testing.T) {
 			}
 			c.res = append(c.res, platformBase)
 
-			got := getPaths(&RenderConfig{&config.Spec, `{"dummy":"dummy"}`, nil, nil}, config.Spec.Platform)
+			got := getPaths(&RenderConfig{&config.Spec, `{"dummy":"dummy"}`, nil, nil, nil}, config.Spec.Platform)
 			if reflect.DeepEqual(got, c.res) {
 				t.Fatalf("mismatch got: %s want: %s", got, c.res)
 			}

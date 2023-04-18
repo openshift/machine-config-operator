@@ -32,6 +32,9 @@ spec:
       controlPlaneTopology: HighlyAvailable
       platformStatus:
         type: None
+  dns:
+    spec:
+      baseDomain: domain.example.com
   kubeAPIServerServingCAData: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCktVQkUgQVBJIFNFUlZFUiBTRVJWSU5HIENBIERBVEEKLS0tLS1FTkQgQ0VSVElGSUNBVEUtLS0tLQo=
   osImageURL: registry.product.example.org/ocp/4.2-DATE-VERSION@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
   releaseImage: release-registry.product.example.org/ocp/4.2-date-version@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff

@@ -766,7 +766,7 @@ github.com/opencontainers/runc/libcontainer/user
 # github.com/opencontainers/runtime-spec v1.0.3-0.20210326190908-1c3f411f0417
 ## explicit
 github.com/opencontainers/runtime-spec/specs-go
-# github.com/openshift/api v0.0.0-20230221095031-69130006bb23
+# github.com/openshift/api v0.0.0-20230330150608-05635858d40f
 ## explicit; go 1.19
 github.com/openshift/api
 github.com/openshift/api/apiserver
@@ -923,7 +923,6 @@ github.com/proglottis/gpgme
 github.com/prometheus/client_golang/prometheus
 github.com/prometheus/client_golang/prometheus/internal
 github.com/prometheus/client_golang/prometheus/promhttp
-github.com/prometheus/client_golang/prometheus/testutil
 github.com/prometheus/client_golang/prometheus/testutil/promlint
 # github.com/prometheus/client_model v0.3.0
 ## explicit; go 1.9
