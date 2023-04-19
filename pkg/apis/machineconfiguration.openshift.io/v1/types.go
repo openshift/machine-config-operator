@@ -85,7 +85,6 @@ type ControllerConfigSpec struct {
 	ReleaseImage string `json:"releaseImage"`
 
 	// proxy holds the current proxy configuration for the nodes
-	// +kubebuilder:validation:EmbeddedResource
 	// +nullable
 	Proxy *configv1.ProxyStatus `json:"proxy"`
 
