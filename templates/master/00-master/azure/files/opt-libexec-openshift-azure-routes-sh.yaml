@@ -20,6 +20,11 @@ contents:
     # We check /run/cloud-routes/ for files $VIP.up and $VIP.down. If the .up file
     # exists, then we redirect traffic destined for that vip to ourselves via iptables.
     # A systemd unit watches the directory for changes.
+    #
+    # TODO: Address the potential issue where apiserver-watcher could create multiple files
+    # and openshift-azure-routes doesn't detect all of them because file change events are not queued
+    # when the service is already running.
+    # https://github.com/openshift/machine-config-operator/pull/3643#issuecomment-1497234369
 
     set -euo pipefail
 
@@ -36,6 +41,7 @@ contents:
         local chain="${2}"
 
         if ! iptables -w -t "${table}" -S "${chain}" &> /dev/null ; then
+            echo "creating ${chain} chain in ${table} table"
             iptables -w -t "${table}" -N "${chain}";
         fi;
     }
@@ -49,6 +55,7 @@ contents:
         local chain="${2}"
 
         if ! ip6tables -w -t "${table}" -S "${chain}" &> /dev/null ; then
+            echo "creating ${chain} chain in ${table} table"
             ip6tables -w -t "${table}" -N "${chain}";
         fi;
     }
@@ -60,6 +67,7 @@ contents:
         shift 2
 
         if ! iptables -w -t "${table}" -C "${chain}" "$@" &> /dev/null; then
+            echo "adding \"$@\" to ${chain} chain in ${table} table"
             iptables -w -t "${table}" -A "${chain}" "$@"
         fi
     }
@@ -74,6 +82,7 @@ contents:
         shift 2
 
         if ! ip6tables -w -t "${table}" -C "${chain}" "$@" &> /dev/null; then
+            echo "adding \"$@\" to ${chain} chain in ${table} table"
             ip6tables -w -t "${table}" -A "${chain}" "$@"
         fi
     }
@@ -136,6 +145,7 @@ contents:
     }
 
     clear_rules() {
+        echo "clearing rules from ${CHAIN_NAME} chain in nat table"
         iptables -t nat -F "${CHAIN_NAME}" || true
     }
 
@@ -174,12 +184,6 @@ contents:
             remove_stale
             add_rules
             echo "done applying vip rules"
-            # Arbitrary delay to avoid synchronizing too quickly on file changes; the VIP
-            # file could change multiple times quickly, but we don't need to react instantly
-            # to every change.  Most crucially we want to be sure we don't trip over the
-            # default systemd StartLimitBurst/StartLimitIterval settings which are 5 and 10s
-            # respectively.
-            sleep 3
             ;;
         cleanup)
             clear_rules
