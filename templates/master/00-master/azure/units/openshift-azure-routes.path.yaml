@@ -7,7 +7,6 @@ contents: |
   ConditionPathExists=!/etc/ignition-machine-config-encapsulated.json
 
   [Path]
-  PathExistsGlob=/run/cloud-routes/*
   PathChanged=/run/cloud-routes/
   MakeDirectory=true
 
