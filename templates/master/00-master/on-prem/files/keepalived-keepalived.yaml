@@ -88,7 +88,7 @@ contents:
             auth_pass {{`{{ .Cluster.Name }}`}}_api_vip
         }
         virtual_ipaddress {
-            {{`{{ .Cluster.APIVIP }}`}}/{{`{{ .Cluster.VIPNetmask }}`}}
+            {{`{{ .Cluster.APIVIP }}`}}/{{`{{ .Cluster.VIPNetmask }}`}} label {{`{{ .VRRPInterface }}`}}:vip
         }
         track_script {
             chk_ocp_lb
@@ -128,7 +128,7 @@ contents:
             auth_pass {{`{{ .Cluster.Name }}`}}_ingress_vip
         }
         virtual_ipaddress {
-            {{`{{ .Cluster.IngressVIP }}`}}/{{`{{ .Cluster.VIPNetmask }}`}}
+            {{`{{ .Cluster.IngressVIP }}`}}/{{`{{ .Cluster.VIPNetmask }}`}} label {{`{{ .VRRPInterface }}`}}:vip
         }
         track_script {
             chk_ingress
