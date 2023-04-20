@@ -1574,18 +1574,14 @@ func MaybePersistNetworkInterfaces(osRoot string) error {
 
 	if hostos.IsEL8() {
 		glog.Info("Persisting NIC names for RHEL8 host system")
-	} else {
-		// If we're not on RHEL, just output the current state.  We don't strictly need to do
-		// this but it will greatly help debugging and validation.
-		cmd.Args = append(cmd.Args, "--inspect")
-	}
 
-	// nmstate always logs to stderr, so we need to capture/forward that too
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	glog.Infof("Running: %s", strings.Join(cmd.Args, " "))
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to run nmstatectl: %w", err)
+		// nmstate always logs to stderr, so we need to capture/forward that too
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		glog.Infof("Running: %s", strings.Join(cmd.Args, " "))
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("failed to run nmstatectl: %w", err)
+		}
 	}
 
 	return nil
