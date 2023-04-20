@@ -594,7 +594,7 @@ func (dn *Daemon) syncNode(key string) error {
 		if err := removeIgnitionArtifacts(); err != nil {
 			return err
 		}
-		if err := MaybePersistNetworkInterfaces("/"); err != nil {
+		if err := PersistNetworkInterfaces("/"); err != nil {
 			return err
 		}
 		if err := dn.checkStateOnFirstRun(); err != nil {
@@ -1553,11 +1553,11 @@ func removeIgnitionArtifacts() error {
 	return nil
 }
 
-// MaybePersistNetworkInterfaces runs if the host is RHEL8, which can happen
+// PersistNetworkInterfaces runs if the host is RHEL8, which can happen
 // when scaling up older bootimages and targeting 4.13+ (rhel9).  In this case,
 // we may want to pin NIC interface names that reference static IP addresses.
 // More information in https://issues.redhat.com/browse/OCPBUGS-10787
-func MaybePersistNetworkInterfaces(osRoot string) error {
+func PersistNetworkInterfaces(osRoot string) error {
 	hostos, err := osrelease.GetHostRunningOSFromRoot(osRoot)
 	if err != nil {
 		return fmt.Errorf("checking operating system: %w", err)
