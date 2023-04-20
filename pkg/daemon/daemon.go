@@ -599,9 +599,6 @@ func (dn *Daemon) syncNode(key string) error {
 		if err := removeIgnitionArtifacts(); err != nil {
 			return err
 		}
-		if err := PersistNetworkInterfaces("/"); err != nil {
-			return err
-		}
 		if err := dn.checkStateOnFirstRun(); err != nil {
 			return err
 		}
