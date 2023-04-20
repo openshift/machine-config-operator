@@ -19,12 +19,12 @@ var firstbootCompleteMachineconfig = &cobra.Command{
 	Run:                   executeFirstbootCompleteMachineConfig,
 }
 
-var maybePersistNics bool
+var persistNics bool
 
 // init executes upon import
 func init() {
 	rootCmd.AddCommand(firstbootCompleteMachineconfig)
-	firstbootCompleteMachineconfig.PersistentFlags().BoolVar(&maybePersistNics, "maybe-persist-nics", false, "Run nmstatectl persist-nic-names")
+	firstbootCompleteMachineconfig.PersistentFlags().BoolVar(&persistNics, "persist-nics", false, "Run nmstatectl persist-nic-names")
 	pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
 }
 
@@ -35,11 +35,11 @@ func runFirstBootCompleteMachineConfig(_ *cobra.Command, _ []string) error {
 	exitCh := make(chan error)
 	defer close(exitCh)
 
-	if maybePersistNics {
-		// If asked, before we try an OS update, persist NIC names (if applicable) so that
+	if persistNics {
+		// If asked, before we try an OS update, persist NIC names so that
 		// we handle the reprovision case with old disk images and Ignition configs
 		// that provide static IP addresses.
-		if err := daemon.MaybePersistNetworkInterfaces("/rootfs"); err != nil {
+		if err := daemon.PersistNetworkInterfaces("/rootfs"); err != nil {
 			return fmt.Errorf("failed to persist network interfaces: %w", err)
 		}
 		// We're done; this logic is distinct from the *non-containerized* /run/bin/machine-config-daemon
