@@ -1612,6 +1612,17 @@ func PersistNetworkInterfaces(osRoot string) error {
 		return nil
 	}
 
+	// they're equivalent, but it's probably easier down there to call it this way
+	pinning := !stampExists
+
+	var ifnames map[string]string
+	if !pinning {
+		// we're cleaning up; snapshot the state before link files are removed
+		if ifnames, err = getIfnamesFromLinkFiles(osRoot); err != nil {
+			return err
+		}
+	}
+
 	// nmstate always logs to stderr, so we need to capture/forward that too
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -1620,6 +1631,61 @@ func PersistNetworkInterfaces(osRoot string) error {
 		return fmt.Errorf("failed to run nmstatectl: %w", err)
 	}
 
+	// If the node is using networking in the initrd (e.g. for Tang pinning), then
+	// it's possible that the network configuration there also relies on specific
+	// network names. To be safe, we'll add kargs to have the names also apply in
+	// the initrd, and then possibly remove them afterwards as part of cleanup.
+
+	if usesInitrdNetworking, err := HostUsesNetworkingInInitrd(); err != nil {
+		return err
+	} else if !usesInitrdNetworking {
+		glog.Info("Not modifying ifname= kargs; host doesn't use initrd networking")
+		return nil // nothing more to do!
+	}
+
+	var args []string
+	if pinning {
+		if ifnames, err = getIfnamesFromLinkFiles(osRoot); err != nil {
+			return err
+		}
+
+		// we just persisted NIC names; we'll need to add kargs
+		for ifname, mac := range ifnames {
+			args = append(args, "--append", "ifname="+ifname+":"+mac)
+		}
+	} else {
+		// We just cleaned up NIC names. For the links that remain, we want to keep
+		// their corresponding kargs. Note that `--delete` will only delete one instance
+		// of the kargs. So this is safe even if the user previously added those same
+		// kargs.
+		remainingIfnames, err := getIfnamesFromLinkFiles(osRoot)
+		if err != nil {
+			return err
+		}
+		for ifname, mac := range ifnames {
+			if _, exists := remainingIfnames[ifname]; !exists {
+				args = append(args, "--delete", "ifname="+ifname+":"+mac)
+			}
+		}
+	}
+
+	if len(args) == 0 {
+		return nil // no change necessary (e.g. all pins were needed)
+	}
+
+	if osRoot != "/" {
+		cmd = exec.Command("chroot", osRoot, "rpm-ostree", "kargs")
+	} else {
+		cmd = exec.Command("rpm-ostree", "kargs")
+	}
+	cmd.Args = append(cmd.Args, args...)
+
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	glog.Infof("Running: %s", strings.Join(cmd.Args, " "))
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to run rpm-ostree kargs: %w", err)
+	}
 	return nil
 }
 

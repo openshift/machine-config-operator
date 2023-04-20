@@ -60,6 +60,18 @@ func isArgInUse(arg, cmdLinePath string) (bool, error) {
 	return false, nil
 }
 
+func HostUsesNetworkingInInitrd() (bool, error) {
+	inUse, err := isArgInUse("rd.neednet=1", "")
+	if err != nil {
+		return false, err
+	}
+	if inUse {
+		return true, nil
+	}
+	// this variant isn't injected by any CoreOS tool, but users may have
+	return isArgInUse("rd.neednet", "")
+}
+
 // parseTuningFile parses the kernel argument tuning file
 func parseTuningFile(tuningFilePath, cmdLinePath string) ([]types.TuneArgument, []types.TuneArgument, error) {
 	addArguments := []types.TuneArgument{}
