@@ -186,7 +186,8 @@ const (
 
 	// Where nmstate writes the link files if it persisted ifnames.
 	// https://github.com/nmstate/nmstate/blob/03c7b03bd4c9b0067d3811dbbf72635201519356/rust/src/cli/persist_nic.rs#L32-L36
-	systemdNetworkDir = "etc/systemd/network"
+	systemdNetworkDir   = "etc/systemd/network"
+	nmstatePersistStamp = ".nmstate-persist.stamp"
 )
 
 type onceFromOrigin int
@@ -1576,16 +1577,14 @@ func PersistNetworkInterfaces(osRoot string) error {
 
 	cmd := exec.Command(nmstateBinary, "persist-nic-names", "--root", osRoot)
 
-	if hostos.IsEL8() {
-		logSystem("Persisting NIC names for RHEL8 host system")
+	stampFullPath := filepath.Join(osRoot, systemdNetworkDir, nmstatePersistStamp)
+	stampExists, err := fileExists(stampFullPath)
+	if err != nil {
+		return err
+	}
 
-		// nmstate always logs to stderr, so we need to capture/forward that too
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		glog.Infof("Running: %s", strings.Join(cmd.Args, " "))
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("failed to run nmstatectl: %w", err)
-		}
+	if hostos.IsEL8() && !stampExists {
+		glog.Info("Persisting NIC names for RHEL8 host system")
 	} else if hostos.IsEL9() {
 		ifnames, err := getIfnamesFromLinkFiles(osRoot)
 		if err != nil {
@@ -1600,6 +1599,25 @@ func PersistNetworkInterfaces(osRoot string) error {
 		if len(ifnamesKeys) > 0 {
 			logSystem("Have persisted ifnames for %s", strings.Join(ifnamesKeys, ", "))
 		}
+
+		if !stampExists {
+			// this el9 host has already been cleaned up, so we're done!
+			return nil
+		}
+
+		glog.Info("Cleaning NIC names post-RHEL8 upgrade")
+		cmd.Args = append(cmd.Args, "--cleanup")
+	} else {
+		// nothing to do
+		return nil
+	}
+
+	// nmstate always logs to stderr, so we need to capture/forward that too
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	glog.Infof("Running: %s", strings.Join(cmd.Args, " "))
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to run nmstatectl: %w", err)
 	}
 
 	return nil
