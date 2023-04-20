@@ -53,8 +53,8 @@ func isArgInUse(arg, cmdLinePath string) (bool, error) {
 		return false, err
 	}
 
-	checkable := string(content)
-	if strings.Contains(checkable, arg) {
+	checkable := strings.TrimSpace(string(content))
+	if strings.Contains(" "+checkable+" ", " "+arg+" ") {
 		return true, nil
 	}
 	return false, nil
