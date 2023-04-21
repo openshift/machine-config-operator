@@ -61,15 +61,16 @@ func isArgInUse(arg, cmdLinePath string) (bool, error) {
 }
 
 func HostUsesNetworkingInInitrd() (bool, error) {
-	inUse, err := isArgInUse("rd.neednet=1", "")
-	if err != nil {
-		return false, err
-	}
-	if inUse {
-		return true, nil
-	}
-	// this variant isn't injected by any CoreOS tool, but users may have
-	return isArgInUse("rd.neednet", "")
+	return true, nil
+	// inUse, err := isArgInUse("rd.neednet=1", "")
+	// if err != nil {
+	// 	return false, err
+	// }
+	// if inUse {
+	// 	return true, nil
+	// }
+	// // this variant isn't injected by any CoreOS tool, but users may have
+	// return isArgInUse("rd.neednet", "")
 }
 
 func HostDisablesPredictableNicNames() (bool, error) {
