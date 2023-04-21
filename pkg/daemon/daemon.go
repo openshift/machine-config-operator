@@ -1560,6 +1560,15 @@ func removeIgnitionArtifacts() error {
 // we may want to pin NIC interface names that reference static IP addresses.
 // More information in https://issues.redhat.com/browse/OCPBUGS-10787
 func PersistNetworkInterfaces(osRoot string) error {
+
+	// If the host disables persistent NIC names, then there's no need to persist.
+	if disablesPredictableNames, err := HostDisablesPredictableNicNames(); err != nil {
+		return err
+	} else if disablesPredictableNames {
+		glog.Info("Not persisting NIC names; host has net.ifnames=0")
+		return nil // nothing more to do!
+	}
+
 	hostos, err := osrelease.GetHostRunningOSFromRoot(osRoot)
 	if err != nil {
 		return fmt.Errorf("checking operating system: %w", err)

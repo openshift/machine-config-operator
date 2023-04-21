@@ -72,6 +72,10 @@ func HostUsesNetworkingInInitrd() (bool, error) {
 	return isArgInUse("rd.neednet", "")
 }
 
+func HostDisablesPredictableNicNames() (bool, error) {
+	return isArgInUse("net.ifnames=0", "")
+}
+
 // parseTuningFile parses the kernel argument tuning file
 func parseTuningFile(tuningFilePath, cmdLinePath string) ([]types.TuneArgument, []types.TuneArgument, error) {
 	addArguments := []types.TuneArgument{}
