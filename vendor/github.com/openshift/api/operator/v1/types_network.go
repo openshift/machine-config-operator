@@ -15,7 +15,10 @@ import (
 // +k8s:openapi-gen=true
 // +openshift:compatibility-gen:level=1
 type Network struct {
-	metav1.TypeMeta   `json:",inline"`
+	metav1.TypeMeta `json:",inline"`
+
+	// metadata is the standard object's metadata.
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	Spec   NetworkSpec   `json:"spec,omitempty"`
@@ -36,8 +39,12 @@ type NetworkStatus struct {
 // +openshift:compatibility-gen:level=1
 type NetworkList struct {
 	metav1.TypeMeta `json:",inline"`
+
+	// metadata is the standard list's metadata.
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []Network `json:"items"`
+
+	Items []Network `json:"items"`
 }
 
 // NetworkSpec is the top-level network configuration object.
@@ -535,6 +542,11 @@ type PolicyAuditConfig struct {
 	// +kubebuilder:validation:Minimum=1
 	// +optional
 	MaxFileSize *uint32 `json:"maxFileSize,omitempty"`
+
+	// maxLogFiles specifies the maximum number of ACL_audit log files that can be present.
+	// Default: 5
+	// +optional
+	MaxLogFiles *int32 `json:"maxLogFiles,omitempty"`
 
 	// destination is the location for policy log messages.
 	// Regardless of this config, persistent logs will always be dumped to the host

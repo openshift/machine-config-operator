@@ -1,0 +1,9 @@
+# https://github.com/openshift/installer/blob/75738a342c1973121eedda7d91096d21c19194c9/OWNERS_ALIASES#L47-L50
+
+reviewers:
+- deads2k
+- joelspeed
+approvers:
+# these are the api-approvers from openshift/api
+- deads2k
+- joelspeed
