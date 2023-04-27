@@ -387,7 +387,9 @@ func (ctrl *Controller) drainNode(node *corev1.Node, drainer *drain.Helper) erro
 	delete(ctrl.ongoingDrains, node.Name)
 
 	// Clear the MCCDrainErr, if any.
-	ctrlcommon.MCCDrainErr.WithLabelValues(node.Name).Set(0)
+	if ctrlcommon.MCCDrainErr.DeleteLabelValues(node.Name) {
+		glog.Infof("Cleaning up MCCDrain error for node(%s) as drain was completed", node.Name)
+	}
 
 	return nil
 }
