@@ -9,6 +9,7 @@ import (
 	"github.com/clarketm/json"
 	"github.com/golang/glog"
 	osev1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/version"
@@ -66,11 +67,6 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 		glog.V(4).Infof("Finished syncing nodeConfig handler %q (%v)", key, time.Since(startTime))
 	}()
 
-	// Fetch the Feature Gates
-	features, err := getFeatures(ctrl)
-	if err != nil {
-		return err
-	}
 	// Fetch the Node
 	nodeConfig, err := getConfigNode(ctrl, key)
 	if err != nil {
@@ -116,7 +112,7 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 				return err
 			}
 		}
-		originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, role, features)
+		originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, role, ctrl.featureGateAccess)
 		if err != nil {
 			return err
 		}
@@ -263,7 +259,7 @@ func (ctrl *Controller) deleteNodeConfig(obj interface{}) {
 	glog.V(4).Infof("Deleted node config %s and restored default config", nodeConfig.Name)
 }
 
-func RunNodeConfigBootstrap(templateDir string, features *osev1.FeatureGate, cconfig *mcfgv1.ControllerConfig, nodeConfig *osev1.Node, mcpPools []*mcfgv1.MachineConfigPool) ([]*mcfgv1.MachineConfig, error) {
+func RunNodeConfigBootstrap(templateDir string, featureGateAccess featuregates.FeatureGateAccess, cconfig *mcfgv1.ControllerConfig, nodeConfig *osev1.Node, mcpPools []*mcfgv1.MachineConfigPool) ([]*mcfgv1.MachineConfig, error) {
 	if nodeConfig == nil {
 		return nil, fmt.Errorf("nodes.config.openshift.io resource not found")
 	}
@@ -286,7 +282,7 @@ func RunNodeConfigBootstrap(templateDir string, features *osev1.FeatureGate, cco
 		if err != nil {
 			return nil, err
 		}
-		originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cconfig, templateDir, role, features)
+		originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cconfig, templateDir, role, featureGateAccess)
 		if err != nil {
 			return nil, err
 		}
