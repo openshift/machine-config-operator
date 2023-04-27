@@ -30,7 +30,7 @@ const (
 
 	// TODO: Figure out how to obtain this value programmatically so we don't
 	// have to remember to increment it.
-	k8sVersion string = "1.22.1"
+	k8sVersion string = "1.26.1"
 )
 
 // This is needed because both setup-envtest and the kubebuilder tools assume
