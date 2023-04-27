@@ -21,6 +21,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
@@ -349,7 +350,21 @@ func CreateObjects(t *testing.T, clientSet *ClientSet, objs ...runtime.Object) {
 			_, err := clientSet.ConfigV1Interface.Images().Create(ctx, tObj, metav1.CreateOptions{})
 			require.NoError(t, err)
 		case *configv1.FeatureGate:
-			_, err := clientSet.FeatureGates().Create(ctx, tObj, metav1.CreateOptions{})
+			originalStatus := tObj.Status
+			cObj, err := clientSet.FeatureGates().Create(ctx, tObj, metav1.CreateOptions{})
+			if !apierrors.IsAlreadyExists(err) {
+				require.NoError(t, err)
+			} else {
+				// If the test specificed a feature gate, override the existing one.
+				cObj, err = clientSet.FeatureGates().Get(ctx, tObj.Name, metav1.GetOptions{})
+				require.NoError(t, err)
+				cObj.Spec = tObj.Spec
+				cObj, err = clientSet.FeatureGates().Update(ctx, cObj, metav1.UpdateOptions{})
+				require.NoError(t, err)
+			}
+
+			cObj.Status = originalStatus
+			_, err = clientSet.FeatureGates().UpdateStatus(ctx, cObj, metav1.UpdateOptions{})
 			require.NoError(t, err)
 		case *configv1.Node:
 			_, err := clientSet.ConfigV1Interface.Nodes().Get(ctx, "cluster", metav1.GetOptions{})

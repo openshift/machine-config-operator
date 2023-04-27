@@ -11,6 +11,7 @@ import (
 	osev1 "github.com/openshift/api/config/v1"
 	oseconfigfake "github.com/openshift/client-go/config/clientset/versioned/fake"
 	oseinformersv1 "github.com/openshift/client-go/config/informers/externalversions"
+	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -184,12 +185,16 @@ func newKubeletConfig(name string, kubeconf *kubeletconfigv1beta1.KubeletConfigu
 	}
 }
 
-func (f *fixture) newController() *Controller {
+func (f *fixture) newController(fgAccess featuregates.FeatureGateAccess) *Controller {
 	f.client = fake.NewSimpleClientset(f.objects...)
 	f.oseclient = oseconfigfake.NewSimpleClientset(f.oseobjects...)
 
 	i := informers.NewSharedInformerFactory(f.client, 0)
 	featinformer := oseinformersv1.NewSharedInformerFactory(f.oseclient, 0)
+
+	if fgAccess == nil {
+		fgAccess = featuregates.NewHardcodedFeatureGateAccess(nil, nil)
+	}
 
 	c := New(templateDir,
 		i.Machineconfiguration().V1().MachineConfigPools(),
@@ -201,6 +206,7 @@ func (f *fixture) newController() *Controller {
 		k8sfake.NewSimpleClientset(),
 		f.client,
 		f.oseclient,
+		fgAccess,
 	)
 	c.mcpListerSynced = alwaysReady
 	c.mckListerSynced = alwaysReady
@@ -241,8 +247,8 @@ func (f *fixture) run(mcpname string) {
 	f.runController(mcpname, false)
 }
 
-func (f *fixture) runFeature(featname string) {
-	f.runFeatureController(featname, false)
+func (f *fixture) runFeature(featname string, fgAccess featuregates.FeatureGateAccess) {
+	f.runFeatureController(featname, false, fgAccess)
 }
 
 func (f *fixture) runNode(nodename string) {
@@ -254,7 +260,7 @@ func (f *fixture) runExpectError(mcpname string) {
 }
 
 func (f *fixture) runController(mcpname string, expectError bool) {
-	c := f.newController()
+	c := f.newController(nil)
 
 	err := c.syncHandler(mcpname)
 	if !expectError && err != nil {
@@ -266,8 +272,8 @@ func (f *fixture) runController(mcpname string, expectError bool) {
 	f.validateActions()
 }
 
-func (f *fixture) runFeatureController(featname string, expectError bool) {
-	c := f.newController()
+func (f *fixture) runFeatureController(featname string, expectError bool, fgAccess featuregates.FeatureGateAccess) {
+	c := f.newController(fgAccess)
 
 	err := c.syncFeatureHandler(featname)
 	if !expectError && err != nil {
@@ -280,7 +286,7 @@ func (f *fixture) runFeatureController(featname string, expectError bool) {
 }
 
 func (f *fixture) runNodeController(nodename string, expectError bool) {
-	c := f.newController()
+	c := f.newController(nil)
 	err := c.syncNodeConfigHandler(nodename)
 	if !expectError && err != nil {
 		f.t.Errorf("error syncing node configs: %v", err)
@@ -412,7 +418,8 @@ func TestKubeletConfigCreate(t *testing.T) {
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
-			f.newController()
+			fgAccess := createNewDefaultFeatureGateAccess()
+			f.newController(fgAccess)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
@@ -446,7 +453,8 @@ func TestKubeletConfigMultiCreate(t *testing.T) {
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
-			f.newController()
+			fgAccess := createNewDefaultFeatureGateAccess()
+			f.newController(fgAccess)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			f.ccLister = append(f.ccLister, cc)
@@ -495,7 +503,8 @@ func TestKubeletConfigAutoSizingReserved(t *testing.T) {
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
-			f.newController()
+			fgAccess := createNewDefaultFeatureGateAccess()
+			f.newController(fgAccess)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
@@ -538,7 +547,8 @@ func TestKubeletConfigLogFile(t *testing.T) {
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
-			f.newController()
+			fgAccess := createNewDefaultFeatureGateAccess()
+			f.newController(fgAccess)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
@@ -580,7 +590,8 @@ func TestKubeletConfigUpdates(t *testing.T) {
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
-			f.newController()
+			fgAccess := createNewDefaultFeatureGateAccess()
+			f.newController(fgAccess)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
@@ -605,7 +616,7 @@ func TestKubeletConfigUpdates(t *testing.T) {
 			f.expectPatchKubeletConfig(kc1, []uint8{0x7b, 0x22, 0x6d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0x22, 0x3a, 0x7b, 0x22, 0x66, 0x69, 0x6e, 0x61, 0x6c, 0x69, 0x7a, 0x65, 0x72, 0x73, 0x22, 0x3a, 0x5b, 0x22, 0x39, 0x39, 0x2d, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x2d, 0x68, 0x35, 0x35, 0x32, 0x6d, 0x2d, 0x73, 0x6d, 0x61, 0x6c, 0x6c, 0x65, 0x72, 0x2d, 0x6d, 0x61, 0x78, 0x2d, 0x70, 0x6f, 0x64, 0x73, 0x2d, 0x6b, 0x75, 0x62, 0x65, 0x6c, 0x65, 0x74, 0x22, 0x5d, 0x7d, 0x7d})
 			f.expectUpdateKubeletConfig(kc1)
 
-			c := f.newController()
+			c := f.newController(fgAccess)
 			stopCh := make(chan struct{})
 
 			err := c.syncHandler(getKey(kc1, t))
@@ -638,7 +649,7 @@ func TestKubeletConfigUpdates(t *testing.T) {
 			f.mckLister = append(f.mckLister, kc1)
 			f.objects = append(f.objects, mcs, kcUpdate) // MachineConfig exists
 
-			c = f.newController()
+			c = f.newController(fgAccess)
 			stopCh = make(chan struct{})
 
 			glog.Info("Applying update")
@@ -736,7 +747,8 @@ func TestKubeletFeatureExists(t *testing.T) {
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "Unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
-			f.newController()
+			fgAccess := createNewDefaultFeatureGateAccess()
+			f.newController(fgAccess)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
@@ -879,7 +891,8 @@ func TestKubeletConfigResync(t *testing.T) {
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
-			f.newController()
+			fgAccess := createNewDefaultFeatureGateAccess()
+			f.newController(fgAccess)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
@@ -898,7 +911,7 @@ func TestKubeletConfigResync(t *testing.T) {
 			f.mckLister = append(f.mckLister, kc1)
 			f.objects = append(f.objects, kc1)
 
-			c := f.newController()
+			c := f.newController(fgAccess)
 			err := c.syncHandler(getKey(kc1, t))
 			if err != nil {
 				t.Errorf("syncHandler returned: %v", err)
@@ -907,7 +920,7 @@ func TestKubeletConfigResync(t *testing.T) {
 			f.mckLister = append(f.mckLister, kc2)
 			f.objects = append(f.objects, kc2)
 
-			c = f.newController()
+			c = f.newController(fgAccess)
 			err = c.syncHandler(getKey(kc2, t))
 			if err != nil {
 				t.Errorf("syncHandler returned: %v", err)
@@ -920,7 +933,7 @@ func TestKubeletConfigResync(t *testing.T) {
 			require.Equal(t, "", val)
 
 			// resync kc1 and kc2
-			c = f.newController()
+			c = f.newController(fgAccess)
 			err = c.syncHandler(getKey(kc1, t))
 			if err != nil {
 				t.Errorf("syncHandler returned: %v", err)
@@ -928,7 +941,7 @@ func TestKubeletConfigResync(t *testing.T) {
 			val = kc1.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
 			require.Equal(t, "", val)
 
-			c = f.newController()
+			c = f.newController(fgAccess)
 			err = c.syncHandler(getKey(kc2, t))
 			if err != nil {
 				t.Errorf("syncHandler returned: %v", err)
@@ -951,7 +964,8 @@ func TestCleanUpDuplicatedMC(t *testing.T) {
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
-			f.newController()
+			fgAccess := createNewDefaultFeatureGateAccess()
+			f.newController(fgAccess)
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			f.ccLister = append(f.ccLister, cc)
@@ -967,7 +981,7 @@ func TestCleanUpDuplicatedMC(t *testing.T) {
 			f.mckLister = append(f.mckLister, kc1)
 			f.objects = append(f.objects, kc1)
 
-			ctrl := f.newController()
+			ctrl := f.newController(fgAccess)
 
 			// machineconfig with wrong version needs to be removed
 			machineConfigDegrade := mcfgv1.MachineConfig{

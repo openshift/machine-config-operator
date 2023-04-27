@@ -18,6 +18,7 @@ import (
 	cligolistersv1 "github.com/openshift/client-go/config/listers/config/v1"
 	operatorinformersv1alpha1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1alpha1"
 	operatorlistersv1alpha1 "github.com/openshift/client-go/operator/listers/operator/v1alpha1"
+	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	runtimeutils "github.com/openshift/runtime-utils/pkg/registries"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -104,6 +105,8 @@ type Controller struct {
 	clusterVersionLister       cligolistersv1.ClusterVersionLister
 	clusterVersionListerSynced cache.InformerSynced
 
+	featureGateAccess featuregates.FeatureGateAccess
+
 	queue    workqueue.RateLimitingInterface
 	imgQueue workqueue.RateLimitingInterface
 }
@@ -122,6 +125,7 @@ func New(
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
 	configClient configclientset.Interface,
+	featureGateAccess featuregates.FeatureGateAccess,
 ) *Controller {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(glog.Infof)
@@ -193,6 +197,8 @@ func New(
 
 	ctrl.clusterVersionLister = clusterVersionInformer.Lister()
 	ctrl.clusterVersionListerSynced = clusterVersionInformer.Informer().HasSynced
+
+	ctrl.featureGateAccess = featureGateAccess
 
 	return ctrl
 }
@@ -424,9 +430,12 @@ func (ctrl *Controller) handleImgErr(err error, key interface{}) {
 }
 
 // generateOriginalContainerRuntimeConfigs returns rendered default storage, registries and policy config files
-func generateOriginalContainerRuntimeConfigs(templateDir string, cc *mcfgv1.ControllerConfig, role string) (*ign3types.File, *ign3types.File, *ign3types.File, error) {
+func generateOriginalContainerRuntimeConfigs(templateDir string, cc *mcfgv1.ControllerConfig, role string, featureGateAccess featuregates.FeatureGateAccess) (*ign3types.File, *ign3types.File, *ign3types.File, error) {
 	// Render the default templates
-	rc := &mtmpl.RenderConfig{ControllerConfigSpec: &cc.Spec}
+	rc := &mtmpl.RenderConfig{
+		ControllerConfigSpec: &cc.Spec,
+		FeatureGateAccess:    featureGateAccess,
+	}
 	generatedConfigs, err := mtmpl.GenerateMachineConfigsForRole(rc, role, templateDir)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("generateMachineConfigsforRole failed with error %w", err)
@@ -598,7 +607,7 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 			}
 		}
 		// Generate the original ContainerRuntimeConfig
-		originalStorageIgn, _, _, err := generateOriginalContainerRuntimeConfigs(ctrl.templatesDir, controllerConfig, role)
+		originalStorageIgn, _, _, err := generateOriginalContainerRuntimeConfigs(ctrl.templatesDir, controllerConfig, role, ctrl.featureGateAccess)
 		if err != nil {
 			return ctrl.syncStatusOnly(cfg, err, "could not generate origin ContainerRuntime Configs: %v", err)
 		}
@@ -832,7 +841,7 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 		if err := retry.RetryOnConflict(updateBackoff, func() error {
 			registriesIgn, err := registriesConfigIgnition(ctrl.templatesDir, controllerConfig, role, releaseImage,
 				imgcfg.Spec.RegistrySources.InsecureRegistries, registriesBlocked, policyBlocked, allowedRegs,
-				imgcfg.Spec.RegistrySources.ContainerRuntimeSearchRegistries, icspRules, idmsRules, itmsRules)
+				imgcfg.Spec.RegistrySources.ContainerRuntimeSearchRegistries, icspRules, idmsRules, itmsRules, ctrl.featureGateAccess)
 			if err != nil {
 				return err
 			}
@@ -894,7 +903,7 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 
 func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.ControllerConfig, role, releaseImage string,
 	insecureRegs, registriesBlocked, policyBlocked, allowedRegs, searchRegs []string,
-	icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy, idmsRules []*apicfgv1.ImageDigestMirrorSet, itmsRules []*apicfgv1.ImageTagMirrorSet) (*ign3types.Config, error) {
+	icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy, idmsRules []*apicfgv1.ImageDigestMirrorSet, itmsRules []*apicfgv1.ImageTagMirrorSet, featureGateAccess featuregates.FeatureGateAccess) (*ign3types.Config, error) {
 
 	var (
 		registriesTOML []byte
@@ -902,7 +911,7 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 	)
 
 	// Generate the original registries config
-	_, originalRegistriesIgn, originalPolicyIgn, err := generateOriginalContainerRuntimeConfigs(templateDir, controllerConfig, role)
+	_, originalRegistriesIgn, originalPolicyIgn, err := generateOriginalContainerRuntimeConfigs(templateDir, controllerConfig, role, featureGateAccess)
 	if err != nil {
 		return nil, fmt.Errorf("could not generate original ContainerRuntime Configs: %w", err)
 	}
@@ -948,7 +957,7 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 // RunImageBootstrap generates MachineConfig objects for mcpPools that would have been generated by syncImageConfig,
 // except that mcfgv1.Image is not available.
 func RunImageBootstrap(templateDir string, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy,
-	idmsRules []*apicfgv1.ImageDigestMirrorSet, itmsRules []*apicfgv1.ImageTagMirrorSet, imgCfg *apicfgv1.Image) ([]*mcfgv1.MachineConfig, error) {
+	idmsRules []*apicfgv1.ImageDigestMirrorSet, itmsRules []*apicfgv1.ImageTagMirrorSet, imgCfg *apicfgv1.Image, featureGateAccess featuregates.FeatureGateAccess) ([]*mcfgv1.MachineConfig, error) {
 
 	var (
 		insecureRegs, registriesBlocked, policyBlocked, allowedRegs, searchRegs []string
@@ -980,7 +989,7 @@ func RunImageBootstrap(templateDir string, controllerConfig *mcfgv1.ControllerCo
 			return nil, err
 		}
 		registriesIgn, err := registriesConfigIgnition(templateDir, controllerConfig, role, controllerConfig.Spec.ReleaseImage,
-			insecureRegs, registriesBlocked, policyBlocked, allowedRegs, searchRegs, icspRules, idmsRules, itmsRules)
+			insecureRegs, registriesBlocked, policyBlocked, allowedRegs, searchRegs, icspRules, idmsRules, itmsRules, featureGateAccess)
 		if err != nil {
 			return nil, err
 		}

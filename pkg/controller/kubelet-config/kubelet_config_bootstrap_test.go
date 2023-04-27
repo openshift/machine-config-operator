@@ -74,7 +74,8 @@ func TestRunKubeletBootstrap(t *testing.T) {
 				},
 			}
 
-			mcs, err := RunKubeletBootstrap("../../../templates", cfgs, cc, nil, nil, pools)
+			fgAccess := createNewDefaultFeatureGateAccess()
+			mcs, err := RunKubeletBootstrap("../../../templates", cfgs, cc, fgAccess, nil, pools)
 			require.NoError(t, err)
 			require.Len(t, mcs, len(cfgs))
 
@@ -198,7 +199,9 @@ func TestAddKubeletCfgAfterBootstrapKubeletCfg(t *testing.T) {
 	for _, platform := range []configv1.PlatformType{configv1.AWSPlatformType, configv1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
-			f.newController()
+
+			fgAccess := createNewDefaultFeatureGateAccess()
+			f.newController(fgAccess)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			pools := []*mcfgv1.MachineConfigPool{
@@ -212,7 +215,7 @@ func TestAddKubeletCfgAfterBootstrapKubeletCfg(t *testing.T) {
 			f.mckLister = append(f.mckLister, kc)
 			f.objects = append(f.objects, kc)
 
-			mcs, err := RunKubeletBootstrap("../../../templates", []*mcfgv1.KubeletConfig{kc}, cc, nil, nil, pools)
+			mcs, err := RunKubeletBootstrap("../../../templates", []*mcfgv1.KubeletConfig{kc}, cc, fgAccess, nil, pools)
 			require.NoError(t, err)
 			require.Len(t, mcs, 1)
 
@@ -221,14 +224,14 @@ func TestAddKubeletCfgAfterBootstrapKubeletCfg(t *testing.T) {
 
 			f.mckLister = append(f.mckLister, kc1)
 			f.objects = append(f.objects, kc1)
-			c := f.newController()
+			c := f.newController(fgAccess)
 			err = c.syncHandler(getKey(kc1, t))
 			if err != nil {
 				t.Errorf("syncHandler returned: %v", err)
 			}
 
 			// resync kc and check the managedKey
-			c = f.newController()
+			c = f.newController(fgAccess)
 			err = c.syncHandler(getKey(kc, t))
 			if err != nil {
 				t.Errorf("syncHandler returned: %v", err)
