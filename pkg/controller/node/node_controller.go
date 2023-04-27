@@ -556,6 +556,12 @@ func (ctrl *Controller) deleteNode(obj interface{}) {
 	if pools == nil {
 		return
 	}
+
+	// Clear any associated MCCDrainErr, if any.
+	if ctrlcommon.MCCDrainErr.DeleteLabelValues(node.Name) {
+		glog.Infof("Cleaning up MCCDrain error for node(%s) as it is being deleted", node.Name)
+	}
+
 	glog.V(4).Infof("Node %s delete", node.Name)
 	for _, pool := range pools {
 		ctrl.enqueueMachineConfigPool(pool)
