@@ -977,13 +977,13 @@ func (dn *Daemon) RunFirstbootCompleteMachineconfig() error {
 	// See https://github.com/coreos/rpm-ostree/pull/3961 and https://issues.redhat.com/browse/MCO-356
 	// This currently will incur a double reboot; see https://github.com/coreos/rpm-ostree/issues/4018
 	if !newEnough {
-		dn.logSystem("rpm-ostree is not new enough for new-format image; forcing an update via container and queuing immediate reboot")
+		logSystem("rpm-ostree is not new enough for new-format image; forcing an update via container and queuing immediate reboot")
 		if err := dn.InplaceUpdateViaNewContainer(mc.Spec.OSImageURL); err != nil {
 			return err
 		}
 		rebootCmd := rebootCommand("extra reboot for in-place update")
 		if err := rebootCmd.Run(); err != nil {
-			dn.logSystem("failed to run reboot: %v", err)
+			logSystem("failed to run reboot: %v", err)
 			return err
 		}
 		// Wait to be killed via SIGTERM; we want to ensure the firstboot process completes before e.g. kubelet.service
@@ -1061,7 +1061,7 @@ func (dn *Daemon) InstallSignalHandler(signaled chan struct{}) {
 // responsible for triggering callbacks to handle updates. Successful
 // updates shouldn't return, and should just reboot the node.
 func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error) error {
-	dn.logSystem("Starting to manage node: %s", dn.name)
+	logSystem("Starting to manage node: %s", dn.name)
 	dn.LogSystemData()
 
 	glog.Info("Starting MachineConfigDaemon")
@@ -1574,7 +1574,7 @@ func PersistNetworkInterfaces(osRoot string) error {
 	cmd := exec.Command(nmstateBinary, "persist-nic-names", "--root", osRoot)
 
 	if hostos.IsEL8() {
-		glog.Info("Persisting NIC names for RHEL8 host system")
+		logSystem("Persisting NIC names for RHEL8 host system")
 
 		// nmstate always logs to stderr, so we need to capture/forward that too
 		cmd.Stdout = os.Stdout
@@ -1701,7 +1701,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 	// and if we still have a pendingConfig it means we've been killed by kube after 600s
 	// take a stab at that and re-run the drain+reboot routine
 	if state.pendingConfig != nil && bootID == dn.bootID {
-		dn.logSystem("drain interrupted, retrying")
+		logSystem("drain interrupted, retrying")
 		if err := dn.performDrain(); err != nil {
 			return err
 		}
@@ -1724,7 +1724,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 		targetOSImageURL := state.currentConfig.Spec.OSImageURL
 		osMatch := dn.checkOS(targetOSImageURL)
 		if !osMatch {
-			dn.logSystem("Bootstrap pivot required to: %s", targetOSImageURL)
+			logSystem("Bootstrap pivot required to: %s", targetOSImageURL)
 
 			// Check to see if we have a layered/new format image
 			isLayeredImage, err := dn.NodeUpdaterClient.IsBootableImage(targetOSImageURL)
@@ -1755,7 +1755,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 			}
 			return dn.reboot(fmt.Sprintf("Node will reboot into config %v", state.currentConfig.GetName()))
 		}
-		dn.logSystem("No bootstrap pivot required; unlinking bootstrap node annotations")
+		logSystem("No bootstrap pivot required; unlinking bootstrap node annotations")
 
 		// Rename the bootstrap node annotations; the
 		// currentConfig's osImageURL should now be *truth*.
@@ -1778,7 +1778,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 	if currentOnDisk != nil && state.currentConfig.GetName() != currentOnDisk.GetName() {
 		// The on disk state (if available) is always considered truth.
 		// We want to handle the case where etcd state was restored from a backup.
-		dn.logSystem("Disk currentConfig %s overrides node's currentConfig annotation %s", currentOnDisk.GetName(), state.currentConfig.GetName())
+		logSystem("Disk currentConfig %s overrides node's currentConfig annotation %s", currentOnDisk.GetName(), state.currentConfig.GetName())
 		state.currentConfig = currentOnDisk
 	}
 
@@ -1801,7 +1801,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 	}
 
 	if forceFileExists() {
-		dn.logSystem("Skipping on-disk validation; %s present", constants.MachineConfigDaemonForceFile)
+		logSystem("Skipping on-disk validation; %s present", constants.MachineConfigDaemonForceFile)
 		return dn.triggerUpdateWithMachineConfig(state.currentConfig, state.desiredConfig, true)
 	}
 
@@ -1818,7 +1818,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 		return wErr
 	}
 
-	dn.logSystem("Validated on-disk state")
+	logSystem("Validated on-disk state")
 
 	// We've validated state. Now, ensure that node is in desired state
 	var inDesiredConfig bool
@@ -2033,7 +2033,7 @@ func (dn *Daemon) completeUpdate(desiredConfigName string) error {
 		return fmt.Errorf("Something went wrong while attempting to uncordon node: %v", err)
 	}
 
-	dn.logSystem("Update completed for config %s and node has been successfully uncordoned", desiredConfigName)
+	logSystem("Update completed for config %s and node has been successfully uncordoned", desiredConfigName)
 	dn.nodeWriter.Eventf(corev1.EventTypeNormal, "Uncordon", fmt.Sprintf("Update completed for config %s and node has been uncordoned", desiredConfigName))
 
 	return nil
