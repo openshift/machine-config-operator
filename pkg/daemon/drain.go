@@ -33,7 +33,7 @@ func (dn *Daemon) performDrain() error {
 	}
 
 	if !dn.drainRequired() {
-		dn.logSystem("Drain not required, skipping")
+		logSystem("Drain not required, skipping")
 		dn.nodeWriter.Eventf(corev1.EventTypeNormal, "Drain", "Drain not required, skipping")
 		return nil
 	}
@@ -51,12 +51,12 @@ func (dn *Daemon) performDrain() error {
 		// In either case, we just assume the drain we want has been completed
 		// A third case we can hit this is that the node fails validation upon reboot, and then we use
 		// the forcefile. But in that case, since we never uncordoned, skipping the drain should be fine
-		dn.logSystem("drain is already completed on this node")
+		logSystem("drain is already completed on this node")
 		return nil
 	}
 
 	// We are here, that means we need to cordon and drain node
-	dn.logSystem("Update prepared; requesting cordon and drain via annotation to controller")
+	logSystem("Update prepared; requesting cordon and drain via annotation to controller")
 	startTime := time.Now()
 
 	// We probably don't need to separate out cordon and drain, but we sort of do it today for various scenarios
@@ -88,7 +88,7 @@ func (dn *Daemon) performDrain() error {
 		return fmt.Errorf("Something went wrong while attempting to drain node: %v", err)
 	}
 
-	dn.logSystem("drain complete")
+	logSystem("drain complete")
 	t := time.Since(startTime).Seconds()
 	glog.Infof("Successful drain took %v seconds", t)
 
