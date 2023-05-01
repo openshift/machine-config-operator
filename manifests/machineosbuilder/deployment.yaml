@@ -2,8 +2,8 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: machine-os-builder
-  namespace: {{.TargetNamespace}}
 spec:
+  replicas: 1
   selector:
     matchLabels:
       k8s-app: machine-os-builder
@@ -11,3 +11,9 @@ spec:
     metadata:
       labels:
         k8s-app: machine-os-builder
+    spec:
+      containers:
+      - name: hello-openshift
+        image: openshift/hello-openshift:latest
+        ports:
+        - containerPort: 80
