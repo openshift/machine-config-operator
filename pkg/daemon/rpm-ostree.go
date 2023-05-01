@@ -358,7 +358,7 @@ func (r *RpmOstreeClient) RebaseLayered(imgURL string) (err error) {
 // useKubeletConfigSecrets gives the rpm-ostree client access to secrets in the kubelet config.json by symlinking so that
 // rpm-ostree can use those secrets to pull images. It does this by symlinking the kubelet's config.json into /run/ostree.
 func useKubeletConfigSecrets() error {
-	if _, err := os.Stat("/run/ostree/auth.json"); err != nil {
+	if _, err := os.Lstat("/run/ostree/auth.json"); err != nil {
 
 		if errors.Is(err, os.ErrNotExist) {
 
