@@ -183,6 +183,10 @@ const (
 
 	// used for certificate syncing
 	caBundleFilePath = "/etc/kubernetes/kubelet-ca.crt"
+
+	// Where nmstate writes the link files if it persisted ifnames.
+	// https://github.com/nmstate/nmstate/blob/03c7b03bd4c9b0067d3811dbbf72635201519356/rust/src/cli/persist_nic.rs#L32-L36
+	systemdNetworkDir = "etc/systemd/network"
 )
 
 type onceFromOrigin int
@@ -1583,9 +1587,60 @@ func PersistNetworkInterfaces(osRoot string) error {
 		if err := cmd.Run(); err != nil {
 			return fmt.Errorf("failed to run nmstatectl: %w", err)
 		}
+	} else if hostos.IsEL9() {
+		ifnames, err := getIfnamesFromLinkFiles(osRoot)
+		if err != nil {
+			glog.Warningf("Failed to persist NIC names: %v", err)
+			return nil
+		}
+
+		ifnamesKeys := []string{}
+		for ifname := range ifnames {
+			ifnamesKeys = append(ifnamesKeys, ifname)
+		}
+		if len(ifnamesKeys) > 0 {
+			logSystem("Have persisted ifnames for %s", strings.Join(ifnamesKeys, ", "))
+		}
 	}
 
 	return nil
+}
+
+// getIfnamesFromLinkFiles scans /etc/systemd/network for nmstate link files and
+// extracts the pinned network interface names and MAC addresses.
+func getIfnamesFromLinkFiles(osRoot string) (map[string]string, error) {
+	entries, err := os.ReadDir(filepath.Join(osRoot, systemdNetworkDir))
+	if err != nil {
+		return nil, err
+	}
+	ifnames := make(map[string]string)
+	for _, entry := range entries {
+		if !strings.HasPrefix(entry.Name(), "98-nmstate") || !strings.HasSuffix(entry.Name(), ".link") {
+			continue
+		}
+		f, err := os.Open(filepath.Join(osRoot, systemdNetworkDir, entry.Name()))
+		if err != nil {
+			return nil, err
+		}
+		var ifname, mac string
+		scanner := bufio.NewScanner(f)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if strings.HasPrefix(line, "MACAddress=") {
+				mac = strings.TrimPrefix(line, "MACAddress=")
+			} else if strings.HasPrefix(line, "Name=") {
+				ifname = strings.TrimPrefix(line, "Name=")
+			}
+		}
+		if err = scanner.Err(); err != nil {
+			return nil, fmt.Errorf("failed to read link file %s: %w", entry.Name(), err)
+		}
+		if ifname == "" || mac == "" {
+			return nil, fmt.Errorf("link file %s missing Name or MACAddress field", entry.Name())
+		}
+		ifnames[ifname] = strings.ToLower(mac)
+	}
+	return ifnames, nil
 }
 
 // When we move from RHCOS 8 -> RHCOS 9, the SSH keys do not get written to the
