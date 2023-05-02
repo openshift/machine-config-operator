@@ -214,7 +214,7 @@ func (f *fixture) newController() *Controller {
 		ci.Config().V1().ImageTagMirrorSets(),
 		oi.Operator().V1alpha1().ImageContentSourcePolicies(),
 		ci.Config().V1().ClusterVersions(),
-		k8sfake.NewSimpleClientset(), f.client, f.imgClient)
+		k8sfake.NewSimpleClientset(), f.client, f.imgClient, f.operatorClient)
 
 	c.mcpListerSynced = alwaysReady
 	c.mccrListerSynced = alwaysReady

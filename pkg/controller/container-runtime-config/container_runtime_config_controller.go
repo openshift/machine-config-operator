@@ -14,6 +14,8 @@ import (
 	apicfgv1 "github.com/openshift/api/config/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
+	operatorclientset "github.com/openshift/client-go/operator/clientset/versioned"
+
 	cligoinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
 	cligolistersv1 "github.com/openshift/client-go/config/listers/config/v1"
 	operatorinformersv1alpha1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1alpha1"
@@ -72,9 +74,10 @@ var updateBackoff = wait.Backoff{
 type Controller struct {
 	templatesDir string
 
-	client        mcfgclientset.Interface
-	configClient  configclientset.Interface
-	eventRecorder record.EventRecorder
+	client         mcfgclientset.Interface
+	configClient   configclientset.Interface
+	operatorClient operatorclientset.Interface
+	eventRecorder  record.EventRecorder
 
 	syncHandler                   func(mcp string) error
 	syncImgHandler                func(mcp string) error
@@ -122,18 +125,20 @@ func New(
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
 	configClient configclientset.Interface,
+	operatorClient operatorclientset.Interface,
 ) *Controller {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(glog.Infof)
 	eventBroadcaster.StartRecordingToSink(&coreclientsetv1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 
 	ctrl := &Controller{
-		templatesDir:  templatesDir,
-		client:        mcfgClient,
-		configClient:  configClient,
-		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-containerruntimeconfigcontroller"}),
-		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-containerruntimeconfigcontroller"),
-		imgQueue:      workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
+		templatesDir:   templatesDir,
+		client:         mcfgClient,
+		configClient:   configClient,
+		operatorClient: operatorClient,
+		eventRecorder:  eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-containerruntimeconfigcontroller"}),
+		queue:          workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-containerruntimeconfigcontroller"),
+		imgQueue:       workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
 	}
 
 	mcrInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -197,6 +202,35 @@ func New(
 	return ctrl
 }
 
+func migrationICSPToIDMS(configClient configclientset.Interface, operatorClient operatorclientset.Interface,
+	icspLister operatorlistersv1alpha1.ImageContentSourcePolicyLister) {
+	glog.Info("Migrating ImageContentSourcePolicy to ImageDigestMirrorSet")
+	icspRules, err := icspLister.List(labels.Everything())
+	if err != nil && !errors.IsNotFound(err) {
+		glog.Errorf("Error listing ImageContentSourcePolicy: %v", err)
+		return
+	}
+	if len(icspRules) == 0 {
+		glog.Info("No ImageContentSourcePolicy found")
+		return
+	}
+	glog.Infof(" =================== number of ImageContentSourcePolicy found %s", len(icspRules))
+	var idmsRules []*apicfgv1.ImageDigestMirrorSet
+	for _, icspRule := range icspRules {
+		idmsRules = append(idmsRules, convertICSPToIDMS(icspRule))
+		if err := operatorClient.OperatorV1alpha1().ImageContentSourcePolicies().Delete(context.Background(), icspRule.Name, metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
+			glog.Errorf("Error deleting ImageContentSourcePolicy %s: %v", icspRule.Name, err)
+			return
+		}
+	}
+	for _, idmsRule := range idmsRules {
+		if _, err := configClient.ConfigV1().ImageDigestMirrorSets().Create(context.Background(), idmsRule, metav1.CreateOptions{}); err != nil && !errors.IsAlreadyExists(err) {
+			glog.Errorf("Error creating ImageDigestMirrorSet %s: %v", idmsRule.Name, err)
+			return
+		}
+	}
+}
+
 // Run executes the container runtime config controller.
 func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
@@ -210,6 +244,8 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 
 	glog.Info("Starting MachineConfigController-ContainerRuntimeConfigController")
 	defer glog.Info("Shutting down MachineConfigController-ContainerRuntimeConfigController")
+
+	migrationICSPToIDMS(ctrl.configClient, ctrl.operatorClient, ctrl.icspLister)
 
 	for i := 0; i < workers; i++ {
 		go wait.Until(ctrl.worker, time.Second, stopCh)
@@ -767,6 +803,7 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 	} else if err != nil {
 		return err
 	}
+
 	// Find all ImageDigestMirrorSet objects
 	idmsRules, err := ctrl.idmsLister.List(labels.Everything())
 	if err != nil && errors.IsNotFound(err) {
@@ -774,6 +811,8 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 	} else if err != nil {
 		return err
 	}
+
+	glog.Infof("=============== idmslist: %d, ==================== icsplist: %d", len(idmsRules), len(icspRules))
 
 	// Find all ImageTagMirrorSet objects
 	itmsRules, err := ctrl.itmsLister.List(labels.Everything())
