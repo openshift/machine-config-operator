@@ -106,6 +106,7 @@ func isDrainRequired(actions, diffFileSet []string, oldIgnConfig, newIgnConfig i
 		// Drain may or may not be necessary in case of container registry config changes.
 		if ctrlcommon.InSlice(constants.ContainerRegistryConfPath, diffFileSet) {
 			isSafe, err := isSafeContainerRegistryConfChanges(oldIgnConfig, newIgnConfig)
+			glog.Info("================= isSafeContainerRegistryConfChanges: ", isSafe)
 			if err != nil {
 				return false, err
 			}

@@ -45,6 +45,7 @@ const (
 	crioDropInFilePathPidsLimit      = "/etc/crio/crio.conf.d/01-ctrcfg-pidsLimit"
 	crioDropInFilePathLogSizeMax     = "/etc/crio/crio.conf.d/01-ctrcfg-logSizeMax"
 	CRIODropInFilePathDefaultRuntime = "/etc/crio/crio.conf.d/01-ctrcfg-defaultRuntime"
+	idmsKind                         = "ImageDigestMirrorSet"
 )
 
 var errParsingReference = errors.New("error parsing reference of release image")
@@ -744,9 +745,26 @@ func convertICSPToIDMS(icsp *apioperatorsv1alpha1.ImageContentSourcePolicy) *api
 		}
 		imageDigestMirrors = append(imageDigestMirrors, imageDigestMirror)
 	}
-	return &apicfgv1.ImageDigestMirrorSet{
+	idms := &apicfgv1.ImageDigestMirrorSet{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       idmsKind,
+			APIVersion: apicfgv1.SchemeGroupVersion.String(),
+		},
 		Spec: apicfgv1.ImageDigestMirrorSetSpec{
 			ImageDigestMirrors: imageDigestMirrors,
 		},
 	}
+	idms.ObjectMeta = icsp.DeepCopy().ObjectMeta
+	idms.ObjectMeta.UID = ""
+	idms.ObjectMeta.ResourceVersion = ""
+	idms.ObjectMeta.Generation = 0
+	idms.ObjectMeta.DeletionGracePeriodSeconds = nil
+	if !idms.ObjectMeta.CreationTimestamp.IsZero() {
+		idms.ObjectMeta.CreationTimestamp.Reset()
+	}
+	if !idms.ObjectMeta.DeletionTimestamp.IsZero() {
+		idms.ObjectMeta.DeletionTimestamp.Reset()
+	}
+
+	return idms
 }
