@@ -24,6 +24,7 @@ spec:
         command: ["/usr/bin/machine-config-daemon"]
         args:
           - "start"
+          - "--payload-version={{.ReleaseVersion}}"
         resources:
           requests:
             cpu: 20m

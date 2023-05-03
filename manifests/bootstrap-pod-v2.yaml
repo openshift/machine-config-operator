@@ -15,6 +15,7 @@ spec:
     - "--manifest-dir=/etc/mcc/bootstrap"
     - "--dest-dir=/etc/mcs/bootstrap"
     - "--pull-secret=/etc/mcc/bootstrap/machineconfigcontroller-pull-secret"
+    - "--payload-version={{.ReleaseVersion}}"
     resources:
       limits:
         memory: 50Mi
@@ -36,6 +37,7 @@ spec:
     command: ["/usr/bin/machine-config-server"]
     args:
       - "bootstrap"
+      - "--payload-version={{.ReleaseVersion}}"
     terminationMessagePolicy: FallbackToLogsOnError
     volumeMounts:
     - name: server-certs

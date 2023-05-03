@@ -23,6 +23,7 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/controller/node"
 	"github.com/openshift/machine-config-operator/pkg/controller/render"
 	"github.com/openshift/machine-config-operator/pkg/controller/template"
+	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/openshift/machine-config-operator/test/helpers"
 
@@ -502,6 +503,7 @@ func createClusterVersion(t *testing.T, clientSet *framework.ClientSet, objs ...
 	cv, err := clientSet.ClusterVersions().Create(ctx, cv, metav1.CreateOptions{})
 	require.NoError(t, err)
 
+	cv.Status.Desired.Version = version.ReleaseVersion
 	cv.Status.Desired.Image = controllerConfig.Spec.ReleaseImage
 	cv, err = clientSet.ClusterVersions().UpdateStatus(ctx, cv, metav1.UpdateOptions{})
 	require.NoError(t, err)

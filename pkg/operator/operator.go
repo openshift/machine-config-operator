@@ -3,13 +3,13 @@ package operator
 import (
 	"context"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/golang/glog"
 
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/version"
 	corev1 "k8s.io/api/core/v1"
 	apiextclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	apiextinformersv1 "k8s.io/apiextensions-apiserver/pkg/client/informers/externalversions/apiextensions/v1"
@@ -220,7 +220,7 @@ func New(
 	optr.dnsLister = dnsInformer.Lister()
 	optr.dnsListerSynced = dnsInformer.Informer().HasSynced
 
-	optr.vStore.Set("operator", os.Getenv("RELEASE_VERSION"))
+	optr.vStore.Set("operator", version.ReleaseVersion)
 
 	return optr
 }
