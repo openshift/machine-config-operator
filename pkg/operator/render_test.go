@@ -226,11 +226,15 @@ func TestRenderAsset(t *testing.T) {
 		Path: "manifests/machineconfigcontroller/deployment.yaml",
 		RenderConfig: &renderConfig{
 			TargetNamespace: "testing-namespace",
+			ReleaseVersion:  "4.8.0-rc.0",
 			Images: &RenderConfigImages{
 				MachineConfigOperator: "mco-operator-image",
 			},
 		},
-		FindExpected: []string{"image: mco-operator-image"},
+		FindExpected: []string{
+			"image: mco-operator-image",
+			"--payload-version=4.8.0-rc.0",
+		},
 	}, {
 		// Render same template as previous test
 		// But with a template field missing
@@ -244,6 +248,7 @@ func TestRenderAsset(t *testing.T) {
 		Path: "manifests/machineconfigdaemon/daemonset.yaml",
 		RenderConfig: &renderConfig{
 			TargetNamespace: "testing-namespace",
+			ReleaseVersion:  "4.8.0-rc.0",
 			Images: &RenderConfigImages{
 				MachineConfigOperator: "mco-operator-image",
 				OauthProxy:            "oauth-proxy-image",
@@ -260,11 +265,24 @@ func TestRenderAsset(t *testing.T) {
 			"image: oauth-proxy-image",
 			"- name: HTTPS_PROXY\n            value: https://i.am.a.proxy.server",
 			"- name: NO_PROXY\n            value: \"*\"", // Ensure the * is quoted: "*": https://bugzilla.redhat.com/show_bug.cgi?id=1947066
+			"--payload-version=4.8.0-rc.0",
 		},
 	}, {
 		// Bad path, will cause asset error
 		Path:  "BAD PATH",
 		Error: true,
+	}, {
+		Path: "manifests/bootstrap-pod-v2.yaml",
+		RenderConfig: &renderConfig{
+			TargetNamespace: "testing-namespace",
+			ReleaseVersion:  "4.8.0-rc.0",
+			Images: &RenderConfigImages{
+				MachineConfigOperator: "mco-operator-image",
+			},
+		},
+		FindExpected: []string{
+			"--payload-version=4.8.0-rc.0",
+		},
 	}}
 
 	for idx, test := range tests {

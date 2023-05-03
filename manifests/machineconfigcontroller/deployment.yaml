@@ -22,6 +22,7 @@ spec:
         - "start"
         - "--resourcelock-namespace={{.TargetNamespace}}"
         - "--v=2"
+        - "--payload-version={{.ReleaseVersion}}"
         resources:
           requests:
             cpu: 20m
