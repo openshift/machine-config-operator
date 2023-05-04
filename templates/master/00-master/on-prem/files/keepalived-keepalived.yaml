@@ -41,7 +41,6 @@ contents:
     vrrp_script chk_ingress {
         script "/usr/bin/timeout 0.9 /usr/bin/curl -o /dev/null -Lfs http://localhost:1936/healthz/ready"
         interval 1
-        weight 20
         rise 3
         fall 2
     }
