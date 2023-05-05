@@ -26,7 +26,6 @@ contents:
     systemCgroups: /system.slice
     featureGates:
       APIPriorityAndFairness: true
-      RotateKubeletServerCertificate: true
       DownwardAPIHugePages: true
       OpenShiftPodSecurityAdmission: true
       RetroactiveDefaultStorageClass: false
