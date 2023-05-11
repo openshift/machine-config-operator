@@ -331,13 +331,8 @@ func removePendingDeployment() error {
 	return runRpmOstree("cleanup", "-p")
 }
 
+// applyOSChanges extracts the OS image and adds coreos-extensions repo if we have either OS update or package layering to perform
 func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
-	// Extract image and add coreos-extensions repo if we have either OS update or package layering to perform
-
-	if dn.nodeWriter != nil {
-		dn.nodeWriter.Eventf(corev1.EventTypeNormal, "OSUpdateStarted", mcDiff.osChangesString())
-	}
-
 	// We previously did not emit this event when kargs changed, so we still don't
 	if mcDiff.osUpdate || mcDiff.extensions || mcDiff.kernelType {
 		// We emitted this event before, so keep it
@@ -357,6 +352,11 @@ func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newC
 	if mcDiff.osUpdate || mcDiff.extensions || mcDiff.kernelType || mcDiff.kargs ||
 		canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelTypeRealtime || len(newConfig.Spec.Extensions) > 0 {
 
+		// Throw started/staged events only if there is any update required for the OS
+		if dn.nodeWriter != nil {
+			dn.nodeWriter.Eventf(corev1.EventTypeNormal, "OSUpdateStarted", mcDiff.osChangesString())
+		}
+
 		// The steps from here on are different depending on the image type, so check the image type
 		isLayeredImage, err := dn.NodeUpdaterClient.IsBootableImage(newConfig.Spec.OSImageURL)
 		if err != nil {
@@ -375,40 +375,39 @@ func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newC
 				return err
 			}
 		}
-	}
-
-	if dn.nodeWriter != nil {
-		var nodeName string
-		var nodeObjRef corev1.ObjectReference
-		if dn.node != nil {
-			nodeName = dn.node.ObjectMeta.GetName()
-			nodeObjRef = corev1.ObjectReference{
-				Kind: "Node",
-				Name: dn.node.GetName(),
-				UID:  dn.node.GetUID(),
+		if dn.nodeWriter != nil {
+			var nodeName string
+			var nodeObjRef corev1.ObjectReference
+			if dn.node != nil {
+				nodeName = dn.node.ObjectMeta.GetName()
+				nodeObjRef = corev1.ObjectReference{
+					Kind: "Node",
+					Name: dn.node.GetName(),
+					UID:  dn.node.GetUID(),
+				}
 			}
-		}
-		// We send out the event OSUpdateStaged synchronously to ensure it is recorded.
-		// Remove this when we can ensure all events are sent before exiting.
-		t := metav1.NewTime(time.Now())
-		event := &corev1.Event{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      fmt.Sprintf("%v.%x", nodeName, t.UnixNano()),
-				Namespace: metav1.NamespaceDefault,
-			},
-			InvolvedObject: nodeObjRef,
-			Reason:         "OSUpdateStaged",
-			Type:           corev1.EventTypeNormal,
-			Message:        "Changes to OS staged",
-			FirstTimestamp: t,
-			LastTimestamp:  t,
-			Count:          1,
-			Source:         corev1.EventSource{Component: "machineconfigdaemon", Host: dn.name},
-		}
-		// its ok to create a unique event for this low volume event
-		if _, err := dn.kubeClient.CoreV1().Events(metav1.NamespaceDefault).Create(context.TODO(),
-			event, metav1.CreateOptions{}); err != nil {
-			glog.Errorf("Failed to create event with reason 'OSUpdateStaged': %v", err)
+			// We send out the event OSUpdateStaged synchronously to ensure it is recorded.
+			// Remove this when we can ensure all events are sent before exiting.
+			t := metav1.NewTime(time.Now())
+			event := &corev1.Event{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fmt.Sprintf("%v.%x", nodeName, t.UnixNano()),
+					Namespace: metav1.NamespaceDefault,
+				},
+				InvolvedObject: nodeObjRef,
+				Reason:         "OSUpdateStaged",
+				Type:           corev1.EventTypeNormal,
+				Message:        "Changes to OS staged",
+				FirstTimestamp: t,
+				LastTimestamp:  t,
+				Count:          1,
+				Source:         corev1.EventSource{Component: "machineconfigdaemon", Host: dn.name},
+			}
+			// its ok to create a unique event for this low volume event
+			if _, err := dn.kubeClient.CoreV1().Events(metav1.NamespaceDefault).Create(context.TODO(),
+				event, metav1.CreateOptions{}); err != nil {
+				glog.Errorf("Failed to create event with reason 'OSUpdateStaged': %v", err)
+			}
 		}
 	}
 
