@@ -183,6 +183,10 @@ const (
 
 	// used for certificate syncing
 	caBundleFilePath = "/etc/kubernetes/kubelet-ca.crt"
+
+	// Where nmstate writes the link files if it persisted ifnames.
+	// https://github.com/nmstate/nmstate/blob/03c7b03bd4c9b0067d3811dbbf72635201519356/rust/src/cli/persist_nic.rs#L32-L36
+	systemdNetworkDir = "etc/systemd/network"
 )
 
 type onceFromOrigin int
@@ -594,7 +598,7 @@ func (dn *Daemon) syncNode(key string) error {
 		if err := removeIgnitionArtifacts(); err != nil {
 			return err
 		}
-		if err := MaybePersistNetworkInterfaces("/"); err != nil {
+		if err := PersistNetworkInterfaces("/"); err != nil {
 			return err
 		}
 		if err := dn.checkStateOnFirstRun(); err != nil {
@@ -976,13 +980,13 @@ func (dn *Daemon) RunFirstbootCompleteMachineconfig() error {
 	// See https://github.com/coreos/rpm-ostree/pull/3961 and https://issues.redhat.com/browse/MCO-356
 	// This currently will incur a double reboot; see https://github.com/coreos/rpm-ostree/issues/4018
 	if !newEnough {
-		dn.logSystem("rpm-ostree is not new enough for new-format image; forcing an update via container and queuing immediate reboot")
+		logSystem("rpm-ostree is not new enough for new-format image; forcing an update via container and queuing immediate reboot")
 		if err := dn.InplaceUpdateViaNewContainer(mc.Spec.OSImageURL); err != nil {
 			return err
 		}
 		rebootCmd := rebootCommand("extra reboot for in-place update")
 		if err := rebootCmd.Run(); err != nil {
-			dn.logSystem("failed to run reboot: %v", err)
+			logSystem("failed to run reboot: %v", err)
 			return err
 		}
 		// Wait to be killed via SIGTERM; we want to ensure the firstboot process completes before e.g. kubelet.service
@@ -1063,7 +1067,7 @@ func (dn *Daemon) InstallSignalHandler(signaled chan struct{}) {
 // responsible for triggering callbacks to handle updates. Successful
 // updates shouldn't return, and should just reboot the node.
 func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error) error {
-	dn.logSystem("Starting to manage node: %s", dn.name)
+	logSystem("Starting to manage node: %s", dn.name)
 	dn.LogSystemData()
 
 	glog.Info("Starting MachineConfigDaemon")
@@ -1556,11 +1560,11 @@ func removeIgnitionArtifacts() error {
 	return nil
 }
 
-// MaybePersistNetworkInterfaces runs if the host is RHEL8, which can happen
+// PersistNetworkInterfaces runs if the host is RHEL8, which can happen
 // when scaling up older bootimages and targeting 4.13+ (rhel9).  In this case,
 // we may want to pin NIC interface names that reference static IP addresses.
 // More information in https://issues.redhat.com/browse/OCPBUGS-10787
-func MaybePersistNetworkInterfaces(osRoot string) error {
+func PersistNetworkInterfaces(osRoot string) error {
 	hostos, err := osrelease.GetHostRunningOSFromRoot(osRoot)
 	if err != nil {
 		return fmt.Errorf("checking operating system: %w", err)
@@ -1576,22 +1580,69 @@ func MaybePersistNetworkInterfaces(osRoot string) error {
 	cmd := exec.Command(nmstateBinary, "persist-nic-names", "--root", osRoot)
 
 	if hostos.IsEL8() {
-		glog.Info("Persisting NIC names for RHEL8 host system")
-	} else {
-		// If we're not on RHEL, just output the current state.  We don't strictly need to do
-		// this but it will greatly help debugging and validation.
-		cmd.Args = append(cmd.Args, "--inspect")
-	}
+		logSystem("Persisting NIC names for RHEL8 host system")
 
-	// nmstate always logs to stderr, so we need to capture/forward that too
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	glog.Infof("Running: %s", strings.Join(cmd.Args, " "))
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to run nmstatectl: %w", err)
+		// nmstate always logs to stderr, so we need to capture/forward that too
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		glog.Infof("Running: %s", strings.Join(cmd.Args, " "))
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("failed to run nmstatectl: %w", err)
+		}
+	} else if hostos.IsEL9() {
+		ifnames, err := getIfnamesFromLinkFiles(osRoot)
+		if err != nil {
+			glog.Warningf("Failed to persist NIC names: %v", err)
+			return nil
+		}
+
+		ifnamesKeys := []string{}
+		for ifname := range ifnames {
+			ifnamesKeys = append(ifnamesKeys, ifname)
+		}
+		if len(ifnamesKeys) > 0 {
+			logSystem("Have persisted ifnames for %s", strings.Join(ifnamesKeys, ", "))
+		}
 	}
 
 	return nil
+}
+
+// getIfnamesFromLinkFiles scans /etc/systemd/network for nmstate link files and
+// extracts the pinned network interface names and MAC addresses.
+func getIfnamesFromLinkFiles(osRoot string) (map[string]string, error) {
+	entries, err := os.ReadDir(filepath.Join(osRoot, systemdNetworkDir))
+	if err != nil {
+		return nil, err
+	}
+	ifnames := make(map[string]string)
+	for _, entry := range entries {
+		if !strings.HasPrefix(entry.Name(), "98-nmstate") || !strings.HasSuffix(entry.Name(), ".link") {
+			continue
+		}
+		f, err := os.Open(filepath.Join(osRoot, systemdNetworkDir, entry.Name()))
+		if err != nil {
+			return nil, err
+		}
+		var ifname, mac string
+		scanner := bufio.NewScanner(f)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if strings.HasPrefix(line, "MACAddress=") {
+				mac = strings.TrimPrefix(line, "MACAddress=")
+			} else if strings.HasPrefix(line, "Name=") {
+				ifname = strings.TrimPrefix(line, "Name=")
+			}
+		}
+		if err = scanner.Err(); err != nil {
+			return nil, fmt.Errorf("failed to read link file %s: %w", entry.Name(), err)
+		}
+		if ifname == "" || mac == "" {
+			return nil, fmt.Errorf("link file %s missing Name or MACAddress field", entry.Name())
+		}
+		ifnames[ifname] = strings.ToLower(mac)
+	}
+	return ifnames, nil
 }
 
 // When we move from RHCOS 8 -> RHCOS 9, the SSH keys do not get written to the
@@ -1707,7 +1758,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 	// and if we still have a pendingConfig it means we've been killed by kube after 600s
 	// take a stab at that and re-run the drain+reboot routine
 	if state.pendingConfig != nil && bootID == dn.bootID {
-		dn.logSystem("drain interrupted, retrying")
+		logSystem("drain interrupted, retrying")
 		if err := dn.performDrain(); err != nil {
 			return err
 		}
@@ -1730,7 +1781,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 		targetOSImageURL := state.currentConfig.Spec.OSImageURL
 		osMatch := dn.checkOS(targetOSImageURL)
 		if !osMatch {
-			dn.logSystem("Bootstrap pivot required to: %s", targetOSImageURL)
+			logSystem("Bootstrap pivot required to: %s", targetOSImageURL)
 
 			// Check to see if we have a layered/new format image
 			isLayeredImage, err := dn.NodeUpdaterClient.IsBootableImage(targetOSImageURL)
@@ -1761,7 +1812,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 			}
 			return dn.reboot(fmt.Sprintf("Node will reboot into config %v", state.currentConfig.GetName()))
 		}
-		dn.logSystem("No bootstrap pivot required; unlinking bootstrap node annotations")
+		logSystem("No bootstrap pivot required; unlinking bootstrap node annotations")
 
 		// Rename the bootstrap node annotations; the
 		// currentConfig's osImageURL should now be *truth*.
@@ -1784,7 +1835,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 	if currentOnDisk != nil && state.currentConfig.GetName() != currentOnDisk.GetName() {
 		// The on disk state (if available) is always considered truth.
 		// We want to handle the case where etcd state was restored from a backup.
-		dn.logSystem("Disk currentConfig %s overrides node's currentConfig annotation %s", currentOnDisk.GetName(), state.currentConfig.GetName())
+		logSystem("Disk currentConfig %s overrides node's currentConfig annotation %s", currentOnDisk.GetName(), state.currentConfig.GetName())
 		state.currentConfig = currentOnDisk
 	}
 
@@ -1807,7 +1858,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 	}
 
 	if forceFileExists() {
-		dn.logSystem("Skipping on-disk validation; %s present", constants.MachineConfigDaemonForceFile)
+		logSystem("Skipping on-disk validation; %s present", constants.MachineConfigDaemonForceFile)
 		return dn.triggerUpdateWithMachineConfig(state.currentConfig, state.desiredConfig, true)
 	}
 
@@ -1824,7 +1875,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 		return wErr
 	}
 
-	dn.logSystem("Validated on-disk state")
+	logSystem("Validated on-disk state")
 
 	// We've validated state. Now, ensure that node is in desired state
 	var inDesiredConfig bool
@@ -2039,7 +2090,7 @@ func (dn *Daemon) completeUpdate(desiredConfigName string) error {
 		return fmt.Errorf("Something went wrong while attempting to uncordon node: %v", err)
 	}
 
-	dn.logSystem("Update completed for config %s and node has been successfully uncordoned", desiredConfigName)
+	logSystem("Update completed for config %s and node has been successfully uncordoned", desiredConfigName)
 	dn.nodeWriter.Eventf(corev1.EventTypeNormal, "Uncordon", fmt.Sprintf("Update completed for config %s and node has been uncordoned", desiredConfigName))
 
 	return nil

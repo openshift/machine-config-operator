@@ -75,7 +75,7 @@ func reloadService(name string) error {
 // If at any point an error occurs, we reboot the node so that node has correct configuration.
 func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string, configName string) error {
 	if ctrlcommon.InSlice(postConfigChangeActionReboot, postConfigChangeActions) {
-		dn.logSystem("Rebooting node")
+		logSystem("Rebooting node")
 		return dn.reboot(fmt.Sprintf("Node will reboot into config %s", configName))
 	}
 
@@ -83,7 +83,7 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 		if dn.nodeWriter != nil {
 			dn.nodeWriter.Eventf(corev1.EventTypeNormal, "SkipReboot", "Config changes do not require reboot.")
 		}
-		dn.logSystem("Node has Desired Config %s, skipping reboot", configName)
+		logSystem("Node has Desired Config %s, skipping reboot", configName)
 	}
 
 	if ctrlcommon.InSlice(postConfigChangeActionReloadCrio, postConfigChangeActions) {
@@ -99,7 +99,7 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 		if dn.nodeWriter != nil {
 			dn.nodeWriter.Eventf(corev1.EventTypeNormal, "SkipReboot", "Config changes do not require reboot. Service %s was reloaded.", serviceName)
 		}
-		dn.logSystem("%s config reloaded successfully! Desired config %s has been applied, skipping reboot", serviceName, configName)
+		logSystem("%s config reloaded successfully! Desired config %s has been applied, skipping reboot", serviceName, configName)
 	}
 
 	// We are here, which means reboot was not needed to apply the configuration.
@@ -510,7 +510,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		return &unreconcilableErr{wrappedErr}
 	}
 
-	dn.logSystem("Starting update from %s to %s: %+v", oldConfigName, newConfigName, diff)
+	logSystem("Starting update from %s to %s: %+v", oldConfigName, newConfigName, diff)
 
 	diffFileSet := ctrlcommon.CalculateConfigFileDiffs(&oldIgnConfig, &newIgnConfig)
 	actions, err := calculatePostConfigChangeAction(diff, diffFileSet)
@@ -1037,7 +1037,7 @@ func (dn *CoreOSDaemon) updateKernelArguments(oldKernelArguments, newKernelArgum
 	}
 
 	args := append([]string{"kargs"}, kargs...)
-	dn.logSystem("Running rpm-ostree %v", args)
+	logSystem("Running rpm-ostree %v", args)
 	return runRpmOstree(args...)
 }
 
@@ -1174,9 +1174,9 @@ func (dn *CoreOSDaemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig)
 	realtimeKernel := []string{"kernel-rt-core", "kernel-rt-modules", "kernel-rt-modules-extra", "kernel-rt-kvm"}
 
 	if oldKtype != newKtype {
-		dn.logSystem("Initiating switch to kernel %s", newKtype)
+		logSystem("Initiating switch to kernel %s", newKtype)
 	} else {
-		dn.logSystem("Re-applying kernel type %s", newKtype)
+		logSystem("Re-applying kernel type %s", newKtype)
 	}
 
 	if newKtype == ctrlcommon.KernelTypeRealtime {
@@ -1881,7 +1881,7 @@ func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 	// See https://github.com/coreos/rpm-ostree/pull/3961 and https://issues.redhat.com/browse/MCO-356
 	// This currently will incur a double reboot; see https://github.com/coreos/rpm-ostree/issues/4018
 	if !newEnough {
-		dn.logSystem("rpm-ostree is not new enough for layering; forcing an update via container")
+		logSystem("rpm-ostree is not new enough for layering; forcing an update via container")
 		if err := dn.InplaceUpdateViaNewContainer(newURL); err != nil {
 			return err
 		}
@@ -2020,7 +2020,7 @@ func runCmdSync(cmdName string, args ...string) error {
 }
 
 // Log a message to the systemd journal as well as our stdout
-func (dn *Daemon) logSystem(format string, a ...interface{}) {
+func logSystem(format string, a ...interface{}) {
 	message := fmt.Sprintf(format, a...)
 	glog.Info(message)
 	// Since we're chrooted into the host rootfs with /run mounted,
@@ -2073,7 +2073,7 @@ func (dn *Daemon) reboot(rationale string) error {
 	if dn.nodeWriter != nil {
 		dn.nodeWriter.Eventf(corev1.EventTypeNormal, "Reboot", rationale)
 	}
-	dn.logSystem("initiating reboot: %s", rationale)
+	logSystem("initiating reboot: %s", rationale)
 
 	// reboot, executed async via systemd-run so that the reboot command is executed
 	// in the context of the host asynchronously from us
@@ -2082,14 +2082,14 @@ func (dn *Daemon) reboot(rationale string) error {
 	// either, we just have one for the MCD itself.
 	rebootCmd := rebootCommand(rationale)
 	if err := rebootCmd.Run(); err != nil {
-		dn.logSystem("failed to run reboot: %v", err)
+		logSystem("failed to run reboot: %v", err)
 		mcdRebootErr.Inc()
 		return fmt.Errorf("reboot command failed, something is seriously wrong")
 	}
 	// if we're here, reboot went through successfully, so we set rebootQueued
 	// and we wait for GracefulNodeShutdown
 	dn.rebootQueued = true
-	dn.logSystem("reboot successful")
+	logSystem("reboot successful")
 	return nil
 }
 
