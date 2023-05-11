@@ -23,6 +23,15 @@ contents:
     protectKernelDefaults: true
     rotateCertificates: true
     serializeImagePulls: false
+    shutdownGracePeriodByPodPriority:
+      - priority: 0
+        shutdownGracePeriodSeconds: 3900
+      - priority: 10000
+        shutdownGracePeriodSeconds: 3900
+      - priority: 2000000000
+        shutdownGracePeriodSeconds: 2100
+      - priority: 2000001000
+        shutdownGracePeriodSeconds: 2100
     staticPodPath: /etc/kubernetes/manifests
     systemCgroups: /system.slice
     nodeStatusUpdateFrequency: 10s
