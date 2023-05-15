@@ -46,7 +46,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	runContext, runCancel := context.WithCancel(context.Background())
 
 	// To help debugging, immediately log version
-	glog.Infof("Version: %s (Raw: %s, Hash: %s)", os.Getenv("RELEASE_VERSION"), version.Raw, version.Hash)
+	glog.Infof("Version: %s (Raw: %s, Hash: %s)", version.ReleaseVersion, version.Raw, version.Hash)
 
 	if startOpts.imagesFile == "" {
 		glog.Fatal("--images-json cannot be empty")

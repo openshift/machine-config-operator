@@ -27,6 +27,7 @@ spec:
         args:
         - "start"
         - "--images-json=/etc/mco/images/images.json"
+        - "--payload-version=0.0.1-snapshot"
         resources:
           requests:
             cpu: 20m
