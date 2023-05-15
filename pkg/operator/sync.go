@@ -1044,6 +1044,7 @@ func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.C
 	return &renderConfig{
 		TargetNamespace:        tnamespace,
 		Version:                version.Raw,
+		ReleaseVersion:         version.ReleaseVersion,
 		ControllerConfig:       *ccSpec,
 		Images:                 imgs,
 		APIServerURL:           apiServerURL,

@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/openshift/machine-config-operator/pkg/server"
+	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/spf13/cobra"
 	"k8s.io/component-base/cli"
 )
@@ -34,6 +35,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&rootOpts.cert, "cert", "/etc/ssl/mcs/tls.crt", "cert file for TLS")
 	rootCmd.PersistentFlags().StringVar(&rootOpts.key, "key", "/etc/ssl/mcs/tls.key", "key file for TLS")
 	rootCmd.PersistentFlags().IntVar(&rootOpts.isport, "insecure-port", server.InsecurePort, "insecure port to serve ignition configs")
+	rootCmd.PersistentFlags().StringVar(&version.ReleaseVersion, "payload-version", version.ReleaseVersion, "Version of the openshift release")
 }
 
 func main() {
