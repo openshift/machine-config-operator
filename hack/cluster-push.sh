@@ -34,6 +34,7 @@ if [[ "${podman:-}" =~ "docker" ]]; then
 else
   imgstorage="containers-storage:"
 fi
+# skopeo copy --dest-tls-verify=false --dest-creds unused:${secret} "${imgstorage}${LOCAL_IMGNAME}" "docker://${registry}/${REMOTE_IMGNAME}"
 
 podman tag "$LOCAL_IMGNAME" "$registry/$REMOTE_IMGNAME"
 podman push --tls-verify=false --creds "unused:$secret" "$LOCAL_IMGNAME" "$registry/$REMOTE_IMGNAME"
