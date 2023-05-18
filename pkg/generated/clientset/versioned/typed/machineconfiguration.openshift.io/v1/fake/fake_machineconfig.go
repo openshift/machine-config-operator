@@ -5,10 +5,9 @@ package fake
 import (
 	"context"
 
-	machineconfigurationopenshiftiov1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	v1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
-	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
 	testing "k8s.io/client-go/testing"
@@ -19,24 +18,24 @@ type FakeMachineConfigs struct {
 	Fake *FakeMachineconfigurationV1
 }
 
-var machineconfigsResource = schema.GroupVersionResource{Group: "machineconfiguration.openshift.io", Version: "v1", Resource: "machineconfigs"}
+var machineconfigsResource = v1.SchemeGroupVersion.WithResource("machineconfigs")
 
-var machineconfigsKind = schema.GroupVersionKind{Group: "machineconfiguration.openshift.io", Version: "v1", Kind: "MachineConfig"}
+var machineconfigsKind = v1.SchemeGroupVersion.WithKind("MachineConfig")
 
 // Get takes name of the machineConfig, and returns the corresponding machineConfig object, and an error if there is any.
-func (c *FakeMachineConfigs) Get(ctx context.Context, name string, options v1.GetOptions) (result *machineconfigurationopenshiftiov1.MachineConfig, err error) {
+func (c *FakeMachineConfigs) Get(ctx context.Context, name string, options metav1.GetOptions) (result *v1.MachineConfig, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootGetAction(machineconfigsResource, name), &machineconfigurationopenshiftiov1.MachineConfig{})
+		Invokes(testing.NewRootGetAction(machineconfigsResource, name), &v1.MachineConfig{})
 	if obj == nil {
 		return nil, err
 	}
-	return obj.(*machineconfigurationopenshiftiov1.MachineConfig), err
+	return obj.(*v1.MachineConfig), err
 }
 
 // List takes label and field selectors, and returns the list of MachineConfigs that match those selectors.
-func (c *FakeMachineConfigs) List(ctx context.Context, opts v1.ListOptions) (result *machineconfigurationopenshiftiov1.MachineConfigList, err error) {
+func (c *FakeMachineConfigs) List(ctx context.Context, opts metav1.ListOptions) (result *v1.MachineConfigList, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootListAction(machineconfigsResource, machineconfigsKind, opts), &machineconfigurationopenshiftiov1.MachineConfigList{})
+		Invokes(testing.NewRootListAction(machineconfigsResource, machineconfigsKind, opts), &v1.MachineConfigList{})
 	if obj == nil {
 		return nil, err
 	}
@@ -45,8 +44,8 @@ func (c *FakeMachineConfigs) List(ctx context.Context, opts v1.ListOptions) (res
 	if label == nil {
 		label = labels.Everything()
 	}
-	list := &machineconfigurationopenshiftiov1.MachineConfigList{ListMeta: obj.(*machineconfigurationopenshiftiov1.MachineConfigList).ListMeta}
-	for _, item := range obj.(*machineconfigurationopenshiftiov1.MachineConfigList).Items {
+	list := &v1.MachineConfigList{ListMeta: obj.(*v1.MachineConfigList).ListMeta}
+	for _, item := range obj.(*v1.MachineConfigList).Items {
 		if label.Matches(labels.Set(item.Labels)) {
 			list.Items = append(list.Items, item)
 		}
@@ -55,52 +54,52 @@ func (c *FakeMachineConfigs) List(ctx context.Context, opts v1.ListOptions) (res
 }
 
 // Watch returns a watch.Interface that watches the requested machineConfigs.
-func (c *FakeMachineConfigs) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
+func (c *FakeMachineConfigs) Watch(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error) {
 	return c.Fake.
 		InvokesWatch(testing.NewRootWatchAction(machineconfigsResource, opts))
 }
 
 // Create takes the representation of a machineConfig and creates it.  Returns the server's representation of the machineConfig, and an error, if there is any.
-func (c *FakeMachineConfigs) Create(ctx context.Context, machineConfig *machineconfigurationopenshiftiov1.MachineConfig, opts v1.CreateOptions) (result *machineconfigurationopenshiftiov1.MachineConfig, err error) {
+func (c *FakeMachineConfigs) Create(ctx context.Context, machineConfig *v1.MachineConfig, opts metav1.CreateOptions) (result *v1.MachineConfig, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootCreateAction(machineconfigsResource, machineConfig), &machineconfigurationopenshiftiov1.MachineConfig{})
+		Invokes(testing.NewRootCreateAction(machineconfigsResource, machineConfig), &v1.MachineConfig{})
 	if obj == nil {
 		return nil, err
 	}
-	return obj.(*machineconfigurationopenshiftiov1.MachineConfig), err
+	return obj.(*v1.MachineConfig), err
 }
 
 // Update takes the representation of a machineConfig and updates it. Returns the server's representation of the machineConfig, and an error, if there is any.
-func (c *FakeMachineConfigs) Update(ctx context.Context, machineConfig *machineconfigurationopenshiftiov1.MachineConfig, opts v1.UpdateOptions) (result *machineconfigurationopenshiftiov1.MachineConfig, err error) {
+func (c *FakeMachineConfigs) Update(ctx context.Context, machineConfig *v1.MachineConfig, opts metav1.UpdateOptions) (result *v1.MachineConfig, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootUpdateAction(machineconfigsResource, machineConfig), &machineconfigurationopenshiftiov1.MachineConfig{})
+		Invokes(testing.NewRootUpdateAction(machineconfigsResource, machineConfig), &v1.MachineConfig{})
 	if obj == nil {
 		return nil, err
 	}
-	return obj.(*machineconfigurationopenshiftiov1.MachineConfig), err
+	return obj.(*v1.MachineConfig), err
 }
 
 // Delete takes name of the machineConfig and deletes it. Returns an error if one occurs.
-func (c *FakeMachineConfigs) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
+func (c *FakeMachineConfigs) Delete(ctx context.Context, name string, opts metav1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewRootDeleteActionWithOptions(machineconfigsResource, name, opts), &machineconfigurationopenshiftiov1.MachineConfig{})
+		Invokes(testing.NewRootDeleteActionWithOptions(machineconfigsResource, name, opts), &v1.MachineConfig{})
 	return err
 }
 
 // DeleteCollection deletes a collection of objects.
-func (c *FakeMachineConfigs) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
+func (c *FakeMachineConfigs) DeleteCollection(ctx context.Context, opts metav1.DeleteOptions, listOpts metav1.ListOptions) error {
 	action := testing.NewRootDeleteCollectionAction(machineconfigsResource, listOpts)
 
-	_, err := c.Fake.Invokes(action, &machineconfigurationopenshiftiov1.MachineConfigList{})
+	_, err := c.Fake.Invokes(action, &v1.MachineConfigList{})
 	return err
 }
 
 // Patch applies the patch and returns the patched machineConfig.
-func (c *FakeMachineConfigs) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *machineconfigurationopenshiftiov1.MachineConfig, err error) {
+func (c *FakeMachineConfigs) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts metav1.PatchOptions, subresources ...string) (result *v1.MachineConfig, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootPatchSubresourceAction(machineconfigsResource, name, pt, data, subresources...), &machineconfigurationopenshiftiov1.MachineConfig{})
+		Invokes(testing.NewRootPatchSubresourceAction(machineconfigsResource, name, pt, data, subresources...), &v1.MachineConfig{})
 	if obj == nil {
 		return nil, err
 	}
-	return obj.(*machineconfigurationopenshiftiov1.MachineConfig), err
+	return obj.(*v1.MachineConfig), err
 }
