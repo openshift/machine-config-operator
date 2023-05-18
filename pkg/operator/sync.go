@@ -677,6 +677,7 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig) error {
 }
 
 func (optr *Operator) syncMachineOSBuilder(config *renderConfig) error {
+	glog.Infof("Performing Machine OS Builder sync")
 	paths := manifestPaths{
 		clusterRoles: []string{
 			mobClusterRoleManifestPath,
