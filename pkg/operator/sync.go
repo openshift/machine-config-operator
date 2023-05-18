@@ -731,7 +731,10 @@ func (optr *Operator) syncMachineConfigServer(config *renderConfig) error {
 // have updated to the latest configuration.
 func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
 	var lastErr error
-	if err := wait.Poll(time.Second, 10*time.Minute, func() (bool, error) {
+
+	ctx := context.TODO()
+
+	if err := wait.PollUntilContextTimeout(ctx, time.Second, 10*time.Minute, false, func(ctx context.Context) (bool, error) {
 		if err := optr.syncMetrics(); err != nil {
 			return false, err
 		}
@@ -747,7 +750,7 @@ func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
 				return false, nil
 			}
 			optr.setOperatorStatusExtension(&co.Status, lastErr)
-			_, err = optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(context.TODO(), co, metav1.UpdateOptions{})
+			_, err = optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(ctx, co, metav1.UpdateOptions{})
 			if err != nil {
 				errs := kubeErrs.NewAggregate([]error{err, lastErr})
 				lastErr = fmt.Errorf("failed to update clusteroperator: %w", errs)
@@ -815,7 +818,7 @@ func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
 		}
 		return true, nil
 	}); err != nil {
-		if err == wait.ErrWaitTimeout {
+		if wait.Interrupted(err) {
 			glog.Errorf("Error syncing Required MachineConfigPools: %q", lastErr)
 			errs := kubeErrs.NewAggregate([]error{err, lastErr})
 			return fmt.Errorf("error during syncRequiredMachineConfigPools: %w", errs)
@@ -841,7 +844,10 @@ const (
 
 func (optr *Operator) waitForCustomResourceDefinition(resource *apiextv1.CustomResourceDefinition) error {
 	var lastErr error
-	if err := wait.Poll(customResourceReadyInterval, customResourceReadyTimeout, func() (bool, error) {
+
+	ctx := context.TODO()
+
+	if err := wait.PollUntilContextTimeout(ctx, customResourceReadyInterval, customResourceReadyTimeout, false, func(_ context.Context) (bool, error) {
 		crd, err := optr.crdLister.Get(resource.Name)
 		if err != nil {
 			lastErr = fmt.Errorf("error getting CustomResourceDefinition %s: %w", resource.Name, err)
@@ -856,7 +862,7 @@ func (optr *Operator) waitForCustomResourceDefinition(resource *apiextv1.CustomR
 		lastErr = fmt.Errorf("CustomResourceDefinition %s is not ready. conditions: %v", crd.Name, crd.Status.Conditions)
 		return false, nil
 	}); err != nil {
-		if err == wait.ErrWaitTimeout {
+		if wait.Interrupted(err) {
 			errs := kubeErrs.NewAggregate([]error{err, lastErr})
 			return fmt.Errorf("error during syncCustomResourceDefinitions: %w", errs)
 		}
@@ -868,7 +874,9 @@ func (optr *Operator) waitForCustomResourceDefinition(resource *apiextv1.CustomR
 //nolint:dupl
 func (optr *Operator) waitForDeploymentRollout(resource *appsv1.Deployment) error {
 	var lastErr error
-	if err := wait.Poll(deploymentRolloutPollInterval, deploymentRolloutTimeout, func() (bool, error) {
+	ctx := context.TODO()
+
+	if err := wait.PollUntilContextTimeout(ctx, deploymentRolloutPollInterval, deploymentRolloutTimeout, false, func(_ context.Context) (bool, error) {
 		d, err := optr.deployLister.Deployments(resource.Namespace).Get(resource.Name)
 		if apierrors.IsNotFound(err) {
 			// exit early to recreate the deployment.
@@ -891,7 +899,7 @@ func (optr *Operator) waitForDeploymentRollout(resource *appsv1.Deployment) erro
 		lastErr = fmt.Errorf("deployment %s is not ready. status: (replicas: %d, updated: %d, ready: %d, unavailable: %d)", d.Name, d.Status.Replicas, d.Status.UpdatedReplicas, d.Status.ReadyReplicas, d.Status.UnavailableReplicas)
 		return false, nil
 	}); err != nil {
-		if err == wait.ErrWaitTimeout {
+		if wait.Interrupted(err) {
 			errs := kubeErrs.NewAggregate([]error{err, lastErr})
 			return fmt.Errorf("error during waitForDeploymentRollout: %w", errs)
 		}
@@ -903,7 +911,9 @@ func (optr *Operator) waitForDeploymentRollout(resource *appsv1.Deployment) erro
 //nolint:dupl
 func (optr *Operator) waitForDaemonsetRollout(resource *appsv1.DaemonSet) error {
 	var lastErr error
-	if err := wait.Poll(daemonsetRolloutPollInterval, daemonsetRolloutTimeout, func() (bool, error) {
+	ctx := context.TODO()
+
+	if err := wait.PollUntilContextTimeout(ctx, daemonsetRolloutPollInterval, daemonsetRolloutTimeout, false, func(_ context.Context) (bool, error) {
 		d, err := optr.daemonsetLister.DaemonSets(resource.Namespace).Get(resource.Name)
 		if apierrors.IsNotFound(err) {
 			// exit early to recreate the daemonset.
@@ -926,7 +936,7 @@ func (optr *Operator) waitForDaemonsetRollout(resource *appsv1.DaemonSet) error 
 		lastErr = fmt.Errorf("daemonset %s is not ready. status: (desired: %d, updated: %d, ready: %d, unavailable: %d)", d.Name, d.Status.DesiredNumberScheduled, d.Status.UpdatedNumberScheduled, d.Status.NumberReady, d.Status.NumberUnavailable)
 		return false, nil
 	}); err != nil {
-		if err == wait.ErrWaitTimeout {
+		if wait.Interrupted(err) {
 			errs := kubeErrs.NewAggregate([]error{err, lastErr})
 			return fmt.Errorf("error during waitForDaemonsetRollout: %w", errs)
 		}
@@ -937,14 +947,16 @@ func (optr *Operator) waitForDaemonsetRollout(resource *appsv1.DaemonSet) error 
 
 func (optr *Operator) waitForControllerConfigToBeCompleted(resource *mcfgv1.ControllerConfig) error {
 	var lastErr error
-	if err := wait.Poll(controllerConfigCompletedInterval, controllerConfigCompletedTimeout, func() (bool, error) {
+	ctx := context.TODO()
+
+	if err := wait.PollUntilContextTimeout(ctx, controllerConfigCompletedInterval, controllerConfigCompletedTimeout, false, func(_ context.Context) (bool, error) {
 		if err := mcfgv1.IsControllerConfigCompleted(resource.GetName(), optr.ccLister.Get); err != nil {
 			lastErr = fmt.Errorf("controllerconfig is not completed: %w", err)
 			return false, nil
 		}
 		return true, nil
 	}); err != nil {
-		if err == wait.ErrWaitTimeout {
+		if wait.Interrupted(err) {
 			errs := kubeErrs.NewAggregate([]error{err, lastErr})
 			return fmt.Errorf("error during waitForControllerConfigToBeCompleted: %w", errs)
 		}
