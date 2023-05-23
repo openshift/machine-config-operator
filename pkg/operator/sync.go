@@ -744,7 +744,7 @@ func (optr *Operator) syncMachineOSBuilder(config *renderConfig) error {
 			return false, nil
 		}
 		for _, pool := range pools {
-			fmt.Printf("Pool Name wasssup: %s\n", pool.Name)
+			fmt.Printf("Pool Name: %s\n", pool.Name)
 			fmt.Printf("checking if pool is degraded")
 			degraded := isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolDegraded)
 			if degraded {
