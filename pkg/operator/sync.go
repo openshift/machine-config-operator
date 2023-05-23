@@ -737,8 +737,8 @@ func (optr *Operator) syncMachineOSBuilder(config *renderConfig) error {
 				return false, nil
 			}
 		}
-
 		fmt.Printf("cluster operator fetched\n")
+
 		pools, err := optr.mcpLister.List(labels.Everything())
 		if err != nil {
 			return false, nil
@@ -756,12 +756,13 @@ func (optr *Operator) syncMachineOSBuilder(config *renderConfig) error {
 				}
 				return false, nil
 			}
-			fmt.Printf("checking if pool has required on-cluster-build label\n")
-			_, hasRequiredPoolLabel := pool.Labels[onClusterBuildPoolLabelKey]
-			if hasRequiredPoolLabel {
-				fmt.Printf("Pool Name: %s\n", onClusterBuildPoolLabelKey)
-			}
+			// fmt.Printf("checking if pool has required on-cluster-build label\n")
+			// _, hasRequiredPoolLabel := pool.Labels[onClusterBuildPoolLabelKey]
+			// if hasRequiredPoolLabel {
+			// 	fmt.Printf("Pool Name: %s\n", onClusterBuildPoolLabelKey)
+			// }
 		}
+		// fmt.Printf("on-cluster-build label is found\n")
 		return true, nil
 	}); err != nil {
 		if err == wait.ErrWaitTimeout {
