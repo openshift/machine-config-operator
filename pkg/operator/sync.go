@@ -44,6 +44,7 @@ import (
 
 const (
 	requiredForUpgradeMachineConfigPoolLabelKey = "operator.machineconfiguration.openshift.io/required-for-upgrade"
+	onClusterBuildPoolLabelKey                  = "on-cluster-build"
 )
 
 var (
@@ -678,6 +679,7 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig) error {
 
 func (optr *Operator) syncMachineOSBuilder(config *renderConfig) error {
 	glog.Infof("Performing Machine OS Builder sync")
+
 	paths := manifestPaths{
 		clusterRoles: []string{
 			mobClusterRoleManifestPath,
@@ -712,6 +714,62 @@ func (optr *Operator) syncMachineOSBuilder(config *renderConfig) error {
 		if err := optr.waitForDeploymentRollout(mob); err != nil {
 			return err
 		}
+	}
+
+	var lastErr error
+	if err := wait.Poll(time.Second, 10*time.Minute, func() (bool, error) {
+		if lastErr != nil {
+			co, err := optr.fetchClusterOperator()
+			if err != nil {
+				errs := kubeErrs.NewAggregate([]error{err, lastErr})
+				lastErr = fmt.Errorf("failed to fetch clusteroperator: %w", errs)
+				return false, nil
+			}
+			if co == nil {
+				glog.Warning("no clusteroperator for machine-config")
+				return false, nil
+			}
+			optr.setOperatorStatusExtension(&co.Status, lastErr)
+			_, err = optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(context.TODO(), co, metav1.UpdateOptions{})
+			if err != nil {
+				errs := kubeErrs.NewAggregate([]error{err, lastErr})
+				lastErr = fmt.Errorf("failed to update clusteroperator: %w", errs)
+				return false, nil
+			}
+		}
+
+		fmt.Printf("cluster operator fetched")
+		pools, err := optr.mcpLister.List(labels.Everything())
+		if err != nil {
+			return false, nil
+		}
+		for _, pool := range pools {
+			fmt.Printf("Pool Name wasssup: %s\n", pool.Name)
+			fmt.Printf("checking if pool is degraded")
+			degraded := isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolDegraded)
+			if degraded {
+				lastErr = fmt.Errorf("error pool %s is not ready, retrying. Status: (pool degraded: %v total: %d, ready %d, updated: %d, unavailable: %d)", pool.Name, degraded, pool.Status.MachineCount, pool.Status.ReadyMachineCount, pool.Status.UpdatedMachineCount, pool.Status.UnavailableMachineCount)
+				glog.Errorf("Error syncing Required MachineConfigPools: %q", lastErr)
+				syncerr := optr.syncUpgradeableStatus()
+				if syncerr != nil {
+					glog.Errorf("Error syncingUpgradeableStatus: %q", syncerr)
+				}
+				return false, nil
+			}
+			fmt.Printf("checking if pool has required on-cluster-build label")
+			_, hasRequiredPoolLabel := pool.Labels[onClusterBuildPoolLabelKey]
+			if hasRequiredPoolLabel {
+				fmt.Printf("Pool Name: %s\n", onClusterBuildPoolLabelKey)
+			}
+		}
+		return true, nil
+	}); err != nil {
+		if err == wait.ErrWaitTimeout {
+			glog.Errorf("Error syncing Required MachineConfigPools: %q", lastErr)
+			errs := kubeErrs.NewAggregate([]error{err, lastErr})
+			return fmt.Errorf("error during syncRequiredMachineConfigPools: %w", errs)
+		}
+		return err
 	}
 	return optr.syncControllerConfig(config)
 }
