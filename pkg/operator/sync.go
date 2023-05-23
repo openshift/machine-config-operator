@@ -738,14 +738,14 @@ func (optr *Operator) syncMachineOSBuilder(config *renderConfig) error {
 			}
 		}
 
-		fmt.Printf("cluster operator fetched")
+		fmt.Printf("cluster operator fetched\n")
 		pools, err := optr.mcpLister.List(labels.Everything())
 		if err != nil {
 			return false, nil
 		}
 		for _, pool := range pools {
 			fmt.Printf("Pool Name: %s\n", pool.Name)
-			fmt.Printf("checking if pool is degraded")
+			fmt.Printf("checking if pool is degraded\n")
 			degraded := isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolDegraded)
 			if degraded {
 				lastErr = fmt.Errorf("error pool %s is not ready, retrying. Status: (pool degraded: %v total: %d, ready %d, updated: %d, unavailable: %d)", pool.Name, degraded, pool.Status.MachineCount, pool.Status.ReadyMachineCount, pool.Status.UpdatedMachineCount, pool.Status.UnavailableMachineCount)
@@ -756,7 +756,7 @@ func (optr *Operator) syncMachineOSBuilder(config *renderConfig) error {
 				}
 				return false, nil
 			}
-			fmt.Printf("checking if pool has required on-cluster-build label")
+			fmt.Printf("checking if pool has required on-cluster-build label\n")
 			_, hasRequiredPoolLabel := pool.Labels[onClusterBuildPoolLabelKey]
 			if hasRequiredPoolLabel {
 				fmt.Printf("Pool Name: %s\n", onClusterBuildPoolLabelKey)
