@@ -220,7 +220,8 @@ func filterTemplates(toFilter map[string]string, path string, config *RenderConf
 		// whole template is conditioned to specific values in render config.
 		// The intention is there shouldn't be any resulting file or unit form
 		// this template and thus we filter it here.
-		if len(renderedData) > 0 {
+		// Also trim the data in case the data only consists of an extra line or space
+		if len(bytes.TrimSpace(renderedData)) > 0 {
 			toFilter[info.Name()] = string(renderedData)
 		}
 
