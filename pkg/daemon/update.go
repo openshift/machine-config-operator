@@ -1606,19 +1606,15 @@ func (dn *Daemon) SetPasswordHash(newUsers []ign3types.PasswdUser, oldUsers []ig
 	for _, user := range oldUsers {
 		fmt.Printf("Name: %s\n", user.Name)
 	}
-	// glog.Infof("Old Users: %+v", oldUsers)
 
 	// Print and log the newUsers
 	fmt.Println("New Users:")
 	for _, user := range newUsers {
 		fmt.Printf("Name: %s\n", user.Name)
 	}
-	// glog.Infof("New Users: %+v", newUsers)
 
-	if len(newUsers) == 0 {
-		deconfigureAbsentUsers(oldUsers, newUsers)
-		return nil
-	}
+	// checking if old users need to be deconfigured
+	deconfigureAbsentUsers(oldUsers, newUsers)
 
 	var uErr user.UnknownUserError
 	switch _, err := user.Lookup(constants.CoreUserName); {
@@ -1657,11 +1653,8 @@ func (dn *Daemon) useNewSSHKeyPath() bool {
 func (dn *Daemon) updateSSHKeys(newUsers []ign3types.PasswdUser, oldUsers []ign3types.PasswdUser) error {
 	glog.Info("updating SSH keys")
 
-	if len(newUsers) == 0 {
-		glog.Info("no new users")
-		deconfigureAbsentUsers(newUsers, oldUsers)
-		return nil
-	}
+	// Checking to see if absent users need to be deconfigured
+	deconfigureAbsentUsers(newUsers, oldUsers)
 
 	var uErr user.UnknownUserError
 	switch _, err := user.Lookup(constants.CoreUserName); {
@@ -1733,7 +1726,7 @@ func isUserPresent(user ign3types.PasswdUser, userList []ign3types.PasswdUser) b
 func deconfigureUser(user ign3types.PasswdUser) error {
 	glog.Info("deconfiguring the absent user")
 
-	// clear out password
+	// clear out password and sshkey
 	pwhash := ""
 	user.PasswordHash = &pwhash
 
@@ -1741,7 +1734,7 @@ func deconfigureUser(user ign3types.PasswdUser) error {
 		return fmt.Errorf("Failed to change password for %s: %s:%w", user.Name, out, err)
 	}
 
-	glog.Info("Password has been reset")
+	glog.Info("Password and SSH Key have been reset")
 	return nil
 }
 
