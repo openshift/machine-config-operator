@@ -27,6 +27,7 @@ contents: |
         --runtime-cgroups=/system.slice/crio.service \
         --node-labels=node-role.kubernetes.io/control-plane,node-role.kubernetes.io/master,node.openshift.io/os_id=${ID} \
 {{- if or (eq .IPFamilies "DualStack") (eq .IPFamilies "DualStackIPv6Primary") }}
+        --feature-gates=CloudDualStackNodeIPs=true \
         --node-ip=${KUBELET_NODE_IPS} \
 {{- else}}
         --node-ip=${KUBELET_NODE_IP} \
