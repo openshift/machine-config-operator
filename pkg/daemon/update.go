@@ -546,13 +546,13 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		}
 	}()
 
-	if err := dn.updateSSHKeys(newIgnConfig.Passwd.Users); err != nil {
+	if err := dn.updateSSHKeys(newIgnConfig.Passwd.Users, oldIgnConfig.Passwd.Users); err != nil {
 		return err
 	}
 
 	defer func() {
 		if retErr != nil {
-			if err := dn.updateSSHKeys(oldIgnConfig.Passwd.Users); err != nil {
+			if err := dn.updateSSHKeys(newIgnConfig.Passwd.Users, oldIgnConfig.Passwd.Users); err != nil {
 				errs := kubeErrs.NewAggregate([]error{err, retErr})
 				retErr = fmt.Errorf("error rolling back SSH keys updates: %w", errs)
 				return
@@ -561,13 +561,13 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	}()
 
 	// Set password hash
-	if err := dn.SetPasswordHash(newIgnConfig.Passwd.Users); err != nil {
+	if err := dn.SetPasswordHash(newIgnConfig.Passwd.Users, oldIgnConfig.Passwd.Users); err != nil {
 		return err
 	}
 
 	defer func() {
 		if retErr != nil {
-			if err := dn.SetPasswordHash(oldIgnConfig.Passwd.Users); err != nil {
+			if err := dn.SetPasswordHash(newIgnConfig.Passwd.Users, oldIgnConfig.Passwd.Users); err != nil {
 				errs := kubeErrs.NewAggregate([]error{err, retErr})
 				retErr = fmt.Errorf("error rolling back password hash updates: %w", errs)
 				return
@@ -651,13 +651,13 @@ func (dn *Daemon) updateHypershift(oldConfig, newConfig *mcfgv1.MachineConfig, d
 		}
 	}()
 
-	if err := dn.updateSSHKeys(newIgnConfig.Passwd.Users); err != nil {
+	if err := dn.updateSSHKeys(newIgnConfig.Passwd.Users, oldIgnConfig.Passwd.Users); err != nil {
 		return err
 	}
 
 	defer func() {
 		if retErr != nil {
-			if err := dn.updateSSHKeys(oldIgnConfig.Passwd.Users); err != nil {
+			if err := dn.updateSSHKeys(newIgnConfig.Passwd.Users, oldIgnConfig.Passwd.Users); err != nil {
 				errs := kubeErrs.NewAggregate([]error{err, retErr})
 				retErr = fmt.Errorf("error rolling back SSH keys updates: %w", errs)
 				return
@@ -1597,9 +1597,26 @@ func (dn *Daemon) atomicallyWriteSSHKey(authKeyPath, keys string) error {
 }
 
 // Set a given PasswdUser's Password Hash
-func (dn *Daemon) SetPasswordHash(newUsers []ign3types.PasswdUser) error {
+func (dn *Daemon) SetPasswordHash(newUsers []ign3types.PasswdUser, oldUsers []ign3types.PasswdUser) error {
 	// confirm that user exits
+	glog.Info("checking if absent users need to be disconfigured")
+
+	// Print and log the oldUsers
+	fmt.Println("Old Users:")
+	for _, user := range oldUsers {
+		fmt.Printf("Name: %s\n", user.Name)
+	}
+	// glog.Infof("Old Users: %+v", oldUsers)
+
+	// Print and log the newUsers
+	fmt.Println("New Users:")
+	for _, user := range newUsers {
+		fmt.Printf("Name: %s\n", user.Name)
+	}
+	// glog.Infof("New Users: %+v", newUsers)
+
 	if len(newUsers) == 0 {
+		deconfigureAbsentUsers(oldUsers, newUsers)
 		return nil
 	}
 
@@ -1637,8 +1654,12 @@ func (dn *Daemon) useNewSSHKeyPath() bool {
 }
 
 // Update a given PasswdUser's SSHKey
-func (dn *Daemon) updateSSHKeys(newUsers []ign3types.PasswdUser) error {
+func (dn *Daemon) updateSSHKeys(newUsers []ign3types.PasswdUser, oldUsers []ign3types.PasswdUser) error {
+	glog.Info("updating SSH keys")
+
 	if len(newUsers) == 0 {
+		glog.Info("no new users")
+		deconfigureAbsentUsers(newUsers, oldUsers)
 		return nil
 	}
 
@@ -1686,6 +1707,41 @@ func (dn *Daemon) updateSSHKeys(newUsers []ign3types.PasswdUser) error {
 		return dn.atomicallyWriteSSHKey(authKeyPath, concatSSHKeys)
 	}
 
+	return nil
+}
+
+func deconfigureAbsentUsers(oldUsers []ign3types.PasswdUser, newUsers []ign3types.PasswdUser) {
+	glog.Info("checking to deconfigure the absent user")
+	for _, oldUser := range oldUsers {
+		if !isUserPresent(oldUser, newUsers) {
+			glog.Infof("deconfiguring the user %s\n", oldUser.Name)
+			deconfigureUser(oldUser)
+		}
+	}
+}
+
+func isUserPresent(user ign3types.PasswdUser, userList []ign3types.PasswdUser) bool {
+	glog.Info("checking if user is present")
+	for _, u := range userList {
+		if u.Name == user.Name {
+			return true
+		}
+	}
+	return false
+}
+
+func deconfigureUser(user ign3types.PasswdUser) error {
+	glog.Info("deconfiguring the absent user")
+
+	// clear out password
+	pwhash := ""
+	user.PasswordHash = &pwhash
+
+	if out, err := exec.Command("usermod", "-p", *user.PasswordHash, user.Name).CombinedOutput(); err != nil {
+		return fmt.Errorf("Failed to change password for %s: %s:%w", user.Name, out, err)
+	}
+
+	glog.Info("Password has been reset")
 	return nil
 }
 
