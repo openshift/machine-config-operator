@@ -574,6 +574,12 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		return err
 	}
 
+	if dn.nmstateNew {
+		if err := PersistNetworkInterfaces2("/"); err != nil {
+			return err
+		}
+	}
+
 	// At this point, we write the now expected to be "current" config to /etc.
 	// When we reboot, we'll find this file and validate that we're in this state,
 	// and that completes an update.

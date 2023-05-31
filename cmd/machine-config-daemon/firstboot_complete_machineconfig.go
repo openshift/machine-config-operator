@@ -39,7 +39,17 @@ func runFirstBootCompleteMachineConfig(_ *cobra.Command, _ []string) error {
 		// If asked, before we try an OS update, persist NIC names so that
 		// we handle the reprovision case with old disk images and Ignition configs
 		// that provide static IP addresses.
-		if err := daemon.PersistNetworkInterfaces("/rootfs"); err != nil {
+		osroot := "/rootfs"
+		newEnough, err := daemon.NmstateIsNewEnoughForCleanup(osroot)
+		if err != nil {
+			return err
+		}
+		if newEnough {
+			err = daemon.PersistNetworkInterfaces2(osroot)
+		} else {
+			err = daemon.PersistNetworkInterfaces1(osroot)
+		}
+		if err != nil {
 			return fmt.Errorf("failed to persist network interfaces: %w", err)
 		}
 		// We're done; this logic is distinct from the *non-containerized* /run/bin/machine-config-daemon

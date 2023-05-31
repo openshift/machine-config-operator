@@ -55,6 +55,9 @@ type Daemon struct {
 	// mock is set if we're running as non-root, probably under unit tests
 	mock bool
 
+	// nmstateNew is set if we have a nmstate that has --cleanup
+	nmstateNew bool
+
 	// NodeUpdaterClient wraps rpm-ostree and will eventually be removed with a direct rpmostreeclient value
 	NodeUpdaterClient *RpmOstreeClient
 
@@ -180,10 +183,6 @@ const (
 
 	// used for certificate syncing
 	caBundleFilePath = "/etc/kubernetes/kubelet-ca.crt"
-
-	// Where nmstate writes the link files if it persisted ifnames.
-	// https://github.com/nmstate/nmstate/blob/03c7b03bd4c9b0067d3811dbbf72635201519356/rust/src/cli/persist_nic.rs#L32-L36
-	systemdNetworkDir = "etc/systemd/network"
 )
 
 type onceFromOrigin int
@@ -232,6 +231,7 @@ func New(
 		osImageURL string
 		osVersion  string
 		osCommit   string
+		nmstateNew bool
 		err        error
 	)
 
@@ -241,6 +241,10 @@ func New(
 		if err != nil {
 			hostOS.WithLabelValues("unsupported", "").Set(1)
 			return nil, fmt.Errorf("checking operating system: %w", err)
+		}
+		nmstateNew, err = NmstateIsNewEnoughForCleanup("/")
+		if err != nil {
+			return nil, err
 		}
 	}
 
@@ -289,6 +293,7 @@ func New(
 		booting:               true,
 		rebootQueued:          false,
 		os:                    hostos,
+		nmstateNew:            nmstateNew,
 		NodeUpdaterClient:     nodeUpdaterClient,
 		bootedOSImageURL:      osImageURL,
 		bootedOSCommit:        osCommit,
@@ -584,8 +589,12 @@ func (dn *Daemon) syncNode(key string) error {
 		if err := removeIgnitionArtifacts(); err != nil {
 			return err
 		}
-		if err := PersistNetworkInterfaces("/"); err != nil {
-			return err
+		// If we have an old nmstate, then we persist network interfaces at this point
+		// if applicable
+		if !dn.nmstateNew {
+			if err := PersistNetworkInterfaces1("/"); err != nil {
+				return err
+			}
 		}
 		if err := dn.checkStateOnFirstRun(); err != nil {
 			return err
@@ -1490,89 +1499,77 @@ func removeIgnitionArtifacts() error {
 	return nil
 }
 
-// PersistNetworkInterfaces runs if the host is RHEL8, which can happen
-// when scaling up older bootimages and targeting 4.13+ (rhel9).  In this case,
-// we may want to pin NIC interface names that reference static IP addresses.
-// More information in https://issues.redhat.com/browse/OCPBUGS-10787
-func PersistNetworkInterfaces(osRoot string) error {
-	hostos, err := osrelease.GetHostRunningOSFromRoot(osRoot)
-	if err != nil {
-		return fmt.Errorf("checking operating system: %w", err)
-	}
-
+func getNmstateBinary(osRoot string) string {
 	nmstateBinary := "/usr/bin/nmstatectl"
 	// If we're already chrooted into the host / in the MCD case, then we
 	// need to find the binary in our saved copy of /usr/bin from the host.
 	if osRoot == "/" {
 		nmstateBinary = filepath.Join(originalContainerBin, "nmstatectl")
 	}
+	return nmstateBinary
+}
+
+// NmstateIsNewEnoughForCleanup returns true if nmstate's persist-nic-names has --cleanup
+// which landed in https://github.com/nmstate/nmstate/commit/03c7b03bd4c9b0067d3811dbbf72635201519356
+func NmstateIsNewEnoughForCleanup(osRoot string) (bool, error) {
+	nmstateBinary := getNmstateBinary(osRoot)
+
+	cmd := exec.Command(nmstateBinary, "persist-nic-names", "--help")
+	o, err := cmd.Output()
+	if err != nil {
+		return false, fmt.Errorf("failed to invoke nmstate: %w", err)
+	}
+	return strings.Contains(string(o), "--cleanup"), nil
+}
+
+// persistNetworkInterfaces1 runs if the host is RHEL8 and the MCD has
+// an old nmstate which doesn't have --cleanup.
+func PersistNetworkInterfaces1(osRoot string) error {
+	hostos, err := osrelease.GetHostRunningOSFromRoot(osRoot)
+	if err != nil {
+		return fmt.Errorf("checking operating system: %w", err)
+	}
+
+	// For the moment, we only look at RHEL-like systems...this logic isn't
+	// yet aiming to try to handle Fedora-level updates.  For that, most
+	// likely this NIC pinning should actually be driven automatically by
+	// host updates.  If you change this, you'll need to change the conditions
+	// below too.
+	persisting := hostos.IsEL8()
+	cleanup := hostos.IsEL9()
+	if !(persisting || cleanup) {
+		return nil
+	}
+
+	nmstateBinary := getNmstateBinary(osRoot)
 
 	cmd := exec.Command(nmstateBinary, "persist-nic-names", "--root", osRoot)
 
-	if hostos.IsEL8() {
-		logSystem("Persisting NIC names for RHEL8 host system")
-
-		// nmstate always logs to stderr, so we need to capture/forward that too
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		klog.Infof("Running: %s", strings.Join(cmd.Args, " "))
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("failed to run nmstatectl: %w", err)
-		}
-	} else if hostos.IsEL9() {
-		ifnames, err := getIfnamesFromLinkFiles(osRoot)
-		if err != nil {
-			klog.Warningf("Failed to persist NIC names: %v", err)
-			return nil
-		}
-
-		ifnamesKeys := []string{}
-		for ifname := range ifnames {
-			ifnamesKeys = append(ifnamesKeys, ifname)
-		}
-		if len(ifnamesKeys) > 0 {
-			logSystem("Have persisted ifnames for %s", strings.Join(ifnamesKeys, ", "))
-		}
+	if persisting {
+		klog.Info("Persisting NIC names for RHEL8 host system")
+	} else if cleanup {
+		cmd.Args = append(cmd.Args, "--inspect")
+	} else {
+		// Should be unreachable
+		panic("Unexpected host OS")
 	}
-
+	// nmstate always logs to stderr, so we need to capture/forward that too
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	klog.Infof("Running: %s", strings.Join(cmd.Args, " "))
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to run nmstatectl: %w", err)
+	}
 	return nil
 }
 
-// getIfnamesFromLinkFiles scans /etc/systemd/network for nmstate link files and
-// extracts the pinned network interface names and MAC addresses.
-func getIfnamesFromLinkFiles(osRoot string) (map[string]string, error) {
-	entries, err := os.ReadDir(filepath.Join(osRoot, systemdNetworkDir))
-	if err != nil {
-		return nil, err
-	}
-	ifnames := make(map[string]string)
-	for _, entry := range entries {
-		if !strings.HasPrefix(entry.Name(), "98-nmstate") || !strings.HasSuffix(entry.Name(), ".link") {
-			continue
-		}
-		f, err := os.Open(filepath.Join(osRoot, systemdNetworkDir, entry.Name()))
-		if err != nil {
-			return nil, err
-		}
-		var ifname, mac string
-		scanner := bufio.NewScanner(f)
-		for scanner.Scan() {
-			line := scanner.Text()
-			if strings.HasPrefix(line, "MACAddress=") {
-				mac = strings.TrimPrefix(line, "MACAddress=")
-			} else if strings.HasPrefix(line, "Name=") {
-				ifname = strings.TrimPrefix(line, "Name=")
-			}
-		}
-		if err = scanner.Err(); err != nil {
-			return nil, fmt.Errorf("failed to read link file %s: %w", entry.Name(), err)
-		}
-		if ifname == "" || mac == "" {
-			return nil, fmt.Errorf("link file %s missing Name or MACAddress field", entry.Name())
-		}
-		ifnames[ifname] = strings.ToLower(mac)
-	}
-	return ifnames, nil
+// PersistNetworkInterfaces2 runs if the host is RHEL8 and the MCD has
+// a new enough nmstate to support the new logic of --cleanup.
+// This happens when scaling up older bootimages and targeting 4.13+ (rhel9).  In this case,
+// we may want to pin NIC interface names that reference static IP addresses.
+// More information in https://issues.redhat.com/browse/OCPBUGS-10787
+func PersistNetworkInterfaces2(osRoot string) error {
+	panic("not implemented yet")
 }
 
 // When we move from RHCOS 8 -> RHCOS 9, the SSH keys do not get written to the
