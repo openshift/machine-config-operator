@@ -1569,7 +1569,86 @@ func PersistNetworkInterfaces1(osRoot string) error {
 // we may want to pin NIC interface names that reference static IP addresses.
 // More information in https://issues.redhat.com/browse/OCPBUGS-10787
 func PersistNetworkInterfaces2(osRoot string) error {
-	panic("not implemented yet")
+	hostos, err := osrelease.GetHostRunningOSFromRoot(osRoot)
+	if err != nil {
+		return fmt.Errorf("checking operating system: %w", err)
+	}
+
+	// For the moment, we only look at RHEL-like systems...this logic isn't
+	// yet aiming to try to handle Fedora-level updates.  For that, most
+	// likely this NIC pinning should actually be driven automatically by
+	// host updates.  If you change this, you'll need to change the conditions
+	// below too.
+	persisting := hostos.IsEL8()
+	cleanup := hostos.IsEL9()
+	if !(persisting || cleanup) {
+		return nil
+	}
+
+	nmstateBinary := getNmstateBinary(osRoot)
+
+	tmpKargs, err := os.CreateTemp("", "nmstate-kargs")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmpKargs.Name())
+
+	cmd := exec.Command(nmstateBinary, "persist-nic-names", "--root", osRoot, "--kargs-file", tmpKargs.Name())
+
+	if persisting {
+		klog.Info("Persisting NIC names for RHEL8 host system")
+	} else if cleanup {
+		cmd.Args = append(cmd.Args, "--cleanup")
+	} else {
+		// Should be unreachable
+		panic("Unexpected host OS")
+	}
+
+	// nmstate always logs to stderr, so we need to capture/forward that too
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	klog.Infof("Running: %s", strings.Join(cmd.Args, " "))
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to run nmstatectl: %w", err)
+	}
+
+	kargsBuf, err := io.ReadAll(tmpKargs)
+	if err != nil {
+		return fmt.Errorf("failed to read %s: %w", tmpKargs.Name(), err)
+	}
+	// If there are no kargs, then nmstate took care of everything else.
+	if len(kargsBuf) == 0 {
+		return nil
+	}
+	kargs := strings.Split(string(kargsBuf), " ")
+
+	var rpmOstreeArgs []string
+	if persisting {
+		for _, karg := range kargs {
+			rpmOstreeArgs = append(rpmOstreeArgs, "--append", karg)
+		}
+	} else if cleanup {
+		for _, karg := range kargs {
+			rpmOstreeArgs = append(rpmOstreeArgs, "--remove", karg)
+		}
+	} else {
+		panic("expected to persist or cleanup")
+	}
+
+	if osRoot != "/" {
+		cmd = exec.Command("chroot", osRoot, "rpm-ostree", "kargs")
+	} else {
+		cmd = exec.Command("rpm-ostree", "kargs")
+	}
+	cmd.Args = append(cmd.Args, rpmOstreeArgs...)
+
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	klog.Infof("Running: %s", strings.Join(cmd.Args, " "))
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to run rpm-ostree kargs: %w", err)
+	}
+	return nil
 }
 
 // When we move from RHCOS 8 -> RHCOS 9, the SSH keys do not get written to the
