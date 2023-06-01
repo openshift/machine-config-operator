@@ -24,7 +24,8 @@ spec:
             namespace: openshift-machine-config-operator
             severity: warning
           annotations:
-            message: "Drain failed on {{ $labels.exported_node }} , updates may be blocked. For more details check MachineConfigController pod logs: oc logs -f -n {{ $labels.namespace }} machine-config-controller-xxxxx -c machine-config-controller"
+            summary: "Alerts the user to a failed node drain. Always triggers when the failure happens one or more times."
+            description: "Drain failed on {{ $labels.exported_node }} , updates may be blocked. For more details check MachineConfigController pod logs: oc logs -f -n {{ $labels.namespace }} machine-config-controller-xxxxx -c machine-config-controller"
     - name: mcc-pool-alert
       rules:
         - alert: MCCPoolAlert
@@ -35,7 +36,7 @@ spec:
             severity: warning
           annotations:
             summary: "Triggers when nodes in a pool have overlapping labels such as master, worker, and a custom label therefore a choice must be made as to which is honored."
-            description: "Node {{ $labels.node }} has triggered a pool alert due to a label change"
+            description: "Node {{ $labels.node }} has triggered a pool alert due to a label change. For more details:  oc logs -f -n {{ $labels.namespace }} {{ $labels.pod }} -c machine-config-daemon"
 ---
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
@@ -60,7 +61,8 @@ spec:
             namespace: openshift-machine-config-operator                   
             severity: critical
           annotations:
-            message: "Reboot failed on {{ $labels.node }} , update may be blocked. For more details:  oc logs -f -n {{ $labels.namespace }} {{ $labels.pod }} -c machine-config-daemon "
+            summary: "Alerts the user that a node failed to reboot one or more times over a span of 5 minutes."
+            description: "Reboot failed on {{ $labels.node }} , update may be blocked. For more details:  oc logs -f -n {{ $labels.namespace }} {{ $labels.pod }} -c machine-config-daemon "
     - name: mcd-pivot-error
       rules:
         - alert: MCDPivotError
@@ -71,7 +73,8 @@ spec:
             namespace: openshift-machine-config-operator
             severity: warning
           annotations:
-            message: "Error detected in pivot logs on {{ $labels.node }} , upgrade may be blocked. For more details:  oc logs -f -n {{ $labels.namespace }} {{ $labels.pod }} -c machine-config-daemon "
+            summary: "Alerts the user when an error is detected upon pivot. This triggers if the pivot errors are above zero for 2 minutes."
+            description: "Error detected in pivot logs on {{ $labels.node }} , upgrade may be blocked. For more details:  oc logs -f -n {{ $labels.namespace }} {{ $labels.pod }} -c machine-config-daemon "
     - name: mcd-kubelet-health-state-error
       rules:
         - alert: KubeletHealthState
@@ -81,7 +84,8 @@ spec:
             namespace: openshift-machine-config-operator
             severity: warning
           annotations:
-            message: "Kubelet health failure threshold reached"
+            summary: "This keeps track of Kubelet health failures, and tallys them. The warning is triggered if 2 or more failures occur."
+            description: "Kubelet health failure threshold reached"
     - name: system-memory-exceeds-reservation
       rules:
         - alert: SystemMemoryExceedsReservation
@@ -92,7 +96,8 @@ spec:
             namespace: openshift-machine-config-operator
             severity: warning
           annotations:
-            message: "System memory usage of {{ $value | humanize }} on {{ $labels.node }} exceeds 95% of the reservation. Reserved memory ensures system processes can function even when the node is fully allocated and protects against workload out of memory events impacting the proper functioning of the node. The default reservation is expected to be sufficient for most configurations and should be increased (https://docs.openshift.com/container-platform/latest/nodes/nodes/nodes-nodes-managing.html) when running nodes with high numbers of pods (either due to rate of change or at steady state)."
+            summary: "Alerts the user when, for 15 miutes, a specific node is using more memory than is reserved"
+            description: "System memory usage of {{ $value | humanize }} on {{ $labels.node }} exceeds 95% of the reservation. Reserved memory ensures system processes can function even when the node is fully allocated and protects against workload out of memory events impacting the proper functioning of the node. The default reservation is expected to be sufficient for most configurations and should be increased (https://docs.openshift.com/container-platform/latest/nodes/nodes/nodes-nodes-managing.html) when running nodes with high numbers of pods (either due to rate of change or at steady state)."
     - name: high-overall-control-plane-memory
       rules:
         - alert: HighOverallControlPlaneMemory
