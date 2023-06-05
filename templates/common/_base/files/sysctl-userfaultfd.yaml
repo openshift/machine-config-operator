@@ -1,0 +1,5 @@
+mode: 0644
+path: "/etc/sysctl.d/enable-userfaultfd.conf"
+contents:
+  inline: |
+    vm.unprivileged_userfaultfd = 1
