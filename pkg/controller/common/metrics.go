@@ -30,12 +30,19 @@ var (
 			Name: "mcc_drain_err",
 			Help: "logs failed drain",
 		}, []string{"node"})
+	// MCCPoolAlert logs when the pool configuration changes in a way the user should know.
+	MCCPoolAlert = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "mcc_pool_alert",
+			Help: "pool status alert",
+		}, []string{"pool", "alert"})
 )
 
 func RegisterMCCMetrics() error {
 	err := RegisterMetrics([]prometheus.Collector{
 		OSImageURLOverride,
 		MCCDrainErr,
+		MCCPoolAlert,
 	})
 
 	if err != nil {
