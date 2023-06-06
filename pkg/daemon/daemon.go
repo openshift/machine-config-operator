@@ -152,9 +152,6 @@ const (
 	// currentConfigPath is where we store the current config on disk to validate
 	// against annotations changes
 	currentConfigPath = "/etc/machine-config-daemon/currentconfig"
-	// pendingStateMessageID is the id we store the pending state in journal. We use it to
-	// also retrieve the pending config after a reboot
-	pendingStateMessageID = "machine-config-daemon-pending-state"
 
 	// originalContainerBin is the path at which we've stashed the MCD container's /usr/bin
 	// in the host namespace.  We use this for executing any extra binaries we have in our
@@ -424,17 +421,6 @@ func PrepareNamespace(target string) error {
 	}
 
 	return nil
-}
-
-// writer implements io.Writer interface as a pass-through for klog.
-type writer struct {
-	logFunc func(args ...interface{})
-}
-
-// Write passes string(p) into writer's logFunc and always returns len(p)
-func (w writer) Write(p []byte) (n int, err error) {
-	w.logFunc(string(p))
-	return len(p), nil
 }
 
 // worker runs a worker thread that just dequeues items, processes them, and marks them done.
@@ -1324,11 +1310,10 @@ type stateAndConfigs struct {
 	bootstrapping bool
 	state         string
 	currentConfig *mcfgv1.MachineConfig
-	pendingConfig *mcfgv1.MachineConfig
 	desiredConfig *mcfgv1.MachineConfig
 }
 
-func (dn *Daemon) getStateAndConfigs(pendingConfigName string) (*stateAndConfigs, error) {
+func (dn *Daemon) getStateAndConfigs() (*stateAndConfigs, error) {
 	_, err := os.Lstat(constants.InitialNodeAnnotationsFilePath)
 	var bootstrapping bool
 	if err != nil {
@@ -1395,20 +1380,6 @@ func (dn *Daemon) getStateAndConfigs(pendingConfigName string) (*stateAndConfigs
 	}
 	glog.Infof("state: %s", state)
 
-	var pendingConfig *mcfgv1.MachineConfig
-	// We usually expect that if current != desired, pending == desired; however,
-	// it can happen that desiredConfig changed while we were rebooting.
-	if pendingConfigName == desiredConfigName {
-		pendingConfig = desiredConfig
-	} else if pendingConfigName != "" {
-		pendingConfig, err = dn.mcLister.Get(pendingConfigName)
-		if err != nil {
-			return nil, err
-		}
-
-		glog.Infof("Pending config: %s", pendingConfigName)
-	}
-
 	var degradedReason string
 	if state == constants.MachineConfigDaemonStateDegraded {
 		degradedReason, err = getNodeAnnotation(dn.node, constants.MachineConfigDaemonReasonAnnotationKey)
@@ -1422,7 +1393,6 @@ func (dn *Daemon) getStateAndConfigs(pendingConfigName string) (*stateAndConfigs
 	return &stateAndConfigs{
 		bootstrapping: bootstrapping,
 		currentConfig: currentConfig,
-		pendingConfig: pendingConfig,
 		desiredConfig: desiredConfig,
 		state:         state,
 	}, nil
@@ -1464,46 +1434,6 @@ func (dn *Daemon) LogSystemData() {
 	} else {
 		glog.Info("systemd service state: OK")
 	}
-}
-
-const (
-	pendingConfigPath = "/etc/machine-config-daemon/state.json"
-)
-
-type pendingConfigState struct {
-	PendingConfig string `json:"pendingConfig,omitempty"`
-	BootID        string `json:"bootID,omitempty"`
-}
-
-// XXX: drop this
-func (dn *Daemon) writePendingConfig(desiredConfig *mcfgv1.MachineConfig) error {
-	t := &pendingConfigState{
-		PendingConfig: desiredConfig.GetName(),
-		BootID:        dn.bootID,
-	}
-	b, err := json.Marshal(t)
-	if err != nil {
-		return err
-	}
-	return writeFileAtomicallyWithDefaults(pendingConfigPath, b)
-}
-
-// XXX: drop this
-// we need this compatibility layer for now
-func (dn *Daemon) getPendingConfig() (*pendingConfigState, error) {
-	s, err := os.ReadFile("/etc/machine-config-daemon/state.json")
-	if err != nil {
-		if !os.IsNotExist(err) {
-			return nil, fmt.Errorf("loading transient state: %w", err)
-		}
-		return nil, nil
-	}
-	var p pendingConfigState
-	if err := json.Unmarshal(s, &p); err != nil {
-		return nil, fmt.Errorf("parsing transient state: %w", err)
-	}
-
-	return &p, nil
 }
 
 // getCurrentConfigOnDisk retrieves the serialized MachineConfig written to /etc
@@ -1727,45 +1657,9 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 	// Update our cached copy
 	dn.node = node
 
-	pendingState, err := dn.getPendingState()
+	state, err := dn.getStateAndConfigs()
 	if err != nil {
 		return err
-	}
-	var pendingConfigName, bootID string
-	if pendingState != nil {
-		pendingConfigName = pendingState.Message
-		bootID = pendingState.BootID
-	}
-	// XXX: drop this
-	// we need this compatibility layer for now
-	if pendingState == nil {
-		legacyPendingState, err := dn.getPendingConfig()
-		if err != nil {
-			return err
-		}
-		if legacyPendingState != nil {
-			pendingConfigName = legacyPendingState.PendingConfig
-			bootID = legacyPendingState.BootID
-		}
-	}
-
-	state, err := dn.getStateAndConfigs(pendingConfigName)
-	if err != nil {
-		return err
-	}
-
-	// if we have a pendingConfig but we're into the same bootid, we failed to drain or reboot
-	// and if we still have a pendingConfig it means we've been killed by kube after 600s
-	// take a stab at that and re-run the drain+reboot routine
-	if state.pendingConfig != nil && bootID == dn.bootID {
-		logSystem("drain interrupted, retrying")
-		if err := dn.performDrain(); err != nil {
-			return err
-		}
-		if err := dn.finalizeBeforeReboot(state.pendingConfig); err != nil {
-			return err
-		}
-		return dn.reboot(fmt.Sprintf("Node will reboot into config %v", state.pendingConfig.GetName()))
 	}
 
 	if err := dn.detectEarlySSHAccessesFromBoot(); err != nil {
@@ -1773,7 +1667,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 	}
 
 	if err := dn.removeRollback(); err != nil {
-		return fmt.Errorf("Failed to remove rollback: %w", err)
+		return fmt.Errorf("failed to remove rollback: %w", err)
 	}
 
 	// Bootstrapping state is when we have the node annotations file
@@ -1786,7 +1680,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 			// Check to see if we have a layered/new format image
 			isLayeredImage, err := dn.NodeUpdaterClient.IsBootableImage(targetOSImageURL)
 			if err != nil {
-				return fmt.Errorf("Error checking type of target image: %w", err)
+				return fmt.Errorf("error checking type of target image: %w", err)
 			}
 
 			if isLayeredImage {
@@ -1806,9 +1700,6 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 				if err := os.RemoveAll(osImageContentDir); err != nil {
 					return err
 				}
-			}
-			if err := dn.finalizeBeforeReboot(state.currentConfig); err != nil {
-				return err
 			}
 			return dn.reboot(fmt.Sprintf("Node will reboot into config %v", state.currentConfig.GetName()))
 		}
@@ -1843,19 +1734,8 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 	//
 	// In the case where we're booting a node for the first time, or the MCD
 	// is restarted, that will be the current config.
-	//
-	// In the case where we have
-	// a pending config, this is where we validate that it actually applied.
-	// We currently just do this on startup, but in the future it could e.g. be
-	// a once-a-day or week cron job.
-	var expectedConfig *mcfgv1.MachineConfig
-	if state.pendingConfig != nil {
-		glog.Infof("Validating against pending config %s", state.pendingConfig.GetName())
-		expectedConfig = state.pendingConfig
-	} else {
-		glog.Infof("Validating against current config %s", state.currentConfig.GetName())
-		expectedConfig = state.currentConfig
-	}
+
+	glog.Infof("Validating against current config %s", state.currentConfig.GetName())
 
 	if forceFileExists() {
 		logSystem("Skipping on-disk validation; %s present", constants.MachineConfigDaemonForceFile)
@@ -1865,12 +1745,12 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 	// When upgrading the OS, it is possible that the SSH key location will
 	// change. We should detect whether that is the case and update before we
 	// check for any config drift.
-	if err := dn.updateSSHKeyLocationIfNeeded(expectedConfig); err != nil {
+	if err := dn.updateSSHKeyLocationIfNeeded(state.currentConfig); err != nil {
 		return err
 	}
 
-	if err := dn.validateOnDiskState(expectedConfig); err != nil {
-		wErr := fmt.Errorf("unexpected on-disk state validating against %s: %w", expectedConfig.GetName(), err)
+	if err := dn.validateOnDiskState(state.currentConfig); err != nil {
+		wErr := fmt.Errorf("unexpected on-disk state validating against %s: %w", state.currentConfig.GetName(), err)
 		dn.nodeWriter.Eventf(corev1.EventTypeWarning, "OnDiskStateValidationFailed", wErr.Error())
 		return wErr
 	}
@@ -1896,10 +1776,6 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 
 // updateConfigAndState updates node to desired state, labels nodes as done and uncordon
 func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, error) {
-	// In the case where we had a pendingConfig, make that now currentConfig.
-	if state.pendingConfig != nil {
-		state.currentConfig = state.pendingConfig
-	}
 
 	if state.bootstrapping {
 		if err := dn.storeCurrentConfigOnDisk(state.currentConfig); err != nil {
@@ -1907,32 +1783,38 @@ func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, error) {
 		}
 	}
 
+	// Set the current config to the last written config to disk. This will be the last
+	// "successful" config update we have completed.
+	currentOnDisk, err := dn.getCurrentConfigOnDisk()
+	if err == nil {
+		state.currentConfig = currentOnDisk
+	} else {
+		glog.Infof("Error reading config from disk")
+		return false, fmt.Errorf("error reading config from disk: %w", err)
+	}
+
 	// In case of node reboot, it may be the case that desiredConfig changed while we
 	// were coming up, so we next look at that before uncordoning the node (so
 	// we don't uncordon and then immediately re-cordon)
+
 	inDesiredConfig := state.currentConfig.GetName() == state.desiredConfig.GetName()
 	if inDesiredConfig {
-		if state.pendingConfig != nil {
-			// Great, we've successfully rebooted for the desired config,
-			// let's mark it done!
-			glog.Infof("Completing pending config %s", state.pendingConfig.GetName())
-			if err := dn.completeUpdate(state.pendingConfig.GetName()); err != nil {
-				UpdateStateMetric(mcdUpdateState, "", err.Error())
-				return inDesiredConfig, err
-			}
-
-			// We update the node annotation, delete the state file, etc.
-			if dn.nodeWriter != nil {
-				dn.nodeWriter.Eventf(corev1.EventTypeNormal, "NodeDone", fmt.Sprintf("Setting node %s, currentConfig %s to Done", dn.node.Name, state.pendingConfig.GetName()))
-			}
-			if err := dn.nodeWriter.SetDone(state.pendingConfig.GetName()); err != nil {
-				return true, fmt.Errorf("error setting node's state to Done: %w", err)
-			}
-			if out, err := dn.storePendingState(state.pendingConfig, 0); err != nil {
-				return true, fmt.Errorf("failed to reset pending config: %s: %w", string(out), err)
-			}
-
+		// Great, we've successfully rebooted for the desired config,
+		// let's mark it done!
+		glog.Infof("Completing update to target config %s", state.currentConfig.GetName())
+		if err := dn.completeUpdate(state.currentConfig.GetName()); err != nil {
+			UpdateStateMetric(mcdUpdateState, "", err.Error())
+			return inDesiredConfig, err
 		}
+
+		// We update the node annotation, and pop an event saying we're done.
+		if dn.nodeWriter != nil {
+			dn.nodeWriter.Eventf(corev1.EventTypeNormal, "NodeDone", fmt.Sprintf("Setting node %s, currentConfig %s to Done", dn.node.Name, state.currentConfig.GetName()))
+		}
+		if err := dn.nodeWriter.SetDone(state.currentConfig.GetName()); err != nil {
+			return true, fmt.Errorf("error setting node's state to Done: %w", err)
+		}
+
 		// If we're degraded here, it means we got an error likely on startup and we retried.
 		// If that's the case, clear it out.
 		if state.state == constants.MachineConfigDaemonStateDegraded {
@@ -2068,7 +1950,7 @@ func (dn *Daemon) prepUpdateFromCluster() (*mcfgv1.MachineConfig, *mcfgv1.Machin
 // been completed.
 func (dn *Daemon) completeUpdate(desiredConfigName string) error {
 	if err := dn.nodeWriter.SetDesiredDrainer(fmt.Sprintf("%s-%s", "uncordon", desiredConfigName)); err != nil {
-		return fmt.Errorf("Could not set drain annotation: %w", err)
+		return fmt.Errorf("could not set drain annotation: %w", err)
 	}
 
 	if err := wait.Poll(10*time.Second, 10*time.Minute, func() (bool, error) {
@@ -2087,7 +1969,7 @@ func (dn *Daemon) completeUpdate(desiredConfigName string) error {
 			dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedToUncordon", failMsg)
 			return fmt.Errorf(failMsg)
 		}
-		return fmt.Errorf("Something went wrong while attempting to uncordon node: %v", err)
+		return fmt.Errorf("something went wrong while attempting to uncordon node: %v", err)
 	}
 
 	logSystem("Update completed for config %s and node has been successfully uncordoned", desiredConfigName)
@@ -2158,7 +2040,7 @@ func (dn *CoreOSDaemon) validateKernelArguments(currentConfig *mcfgv1.MachineCon
 		}
 		glog.Infof("Current ostree kargs: %s", rpmostreeKargs)
 		glog.Infof("Expected MachineConfig kargs: %v", expected)
-		return fmt.Errorf("Missing expected kernel arguments: %v", missing)
+		return fmt.Errorf("missing expected kernel arguments: %v", missing)
 	}
 	return nil
 }
@@ -2323,9 +2205,5 @@ func forceFileExists() bool {
 	_, err := os.Stat(constants.MachineConfigDaemonForceFile)
 
 	// No error means we could stat the file; it exists
-	if err == nil {
-		return true
-	}
-
-	return false
+	return err == nil
 }
