@@ -51,7 +51,7 @@ type ControllerConfigSpec struct {
 	// kubeAPIServerServingCAData managed Kubelet to API Server Cert... Rotated automatically
 	KubeAPIServerServingCAData []byte `json:"kubeAPIServerServingCAData"`
 
-	// rootCAData specifies the root CA data
+	// rootCAData is unused
 	RootCAData []byte `json:"rootCAData"`
 
 	// cloudProvider specifies the cloud provider CA data

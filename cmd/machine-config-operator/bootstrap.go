@@ -55,7 +55,7 @@ var (
 func init() {
 	rootCmd.AddCommand(bootstrapCmd)
 	// See https://docs.openshift.com/container-platform/4.13/security/certificate_types_descriptions/machine-config-operator-certificates.html
-	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.mcsCAFile, "root-ca", "/etc/ssl/kubernetes/ca.crt", "Path to installer-generated root MCS CA")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.mcsCAFile, "root-ca", "/etc/ssl/kubernetes/ca.crt", "This argument is unused and does nothing")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.kubeCAFile, "kube-ca", "", "path to kube-apiserver serving-ca bundle")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.pullSecretFile, "pull-secret", "/assets/manifests/pull.json", "path to secret manifest that contains pull secret.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.destinationDir, "dest-dir", "", "The destination directory where MCO writes the manifests.")

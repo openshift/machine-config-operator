@@ -125,9 +125,7 @@ func RenderBootstrap(
 		spec.CloudProviderConfig = cloudConf
 	}
 
-	bundle := make([]byte, 0)
-	bundle = append(bundle, filesData[mcsCAFile]...)
-	// Append the kube-ca if given.
+	// Set the kube-ca if given.
 	if _, ok := filesData[kubeAPIServerServingCA]; ok {
 		spec.KubeAPIServerServingCAData = filesData[kubeAPIServerServingCA]
 	}
@@ -136,7 +134,6 @@ func RenderBootstrap(
 		spec.CloudProviderCAData = data
 	}
 
-	spec.RootCAData = bundle
 	spec.PullSecret = nil
 	spec.OSImageURL = imgs.MachineOSContent
 	spec.BaseOSContainerImage = imgs.BaseOSContainerImage

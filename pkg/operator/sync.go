@@ -492,9 +492,6 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 		internalRegistryPullSecret = nil
 	}
 
-	bundle := make([]byte, 0)
-	bundle = append(bundle, rootCA...)
-
 	// sync up os image url
 	// TODO: this should probably be part of the imgs
 	oscontainer, osextensionscontainer, osimageurl, err := optr.getOsImageURLs(optr.namespace)
@@ -549,7 +546,6 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 	}
 
 	spec.KubeAPIServerServingCAData = kubeAPIServerServingCABytes
-	spec.RootCAData = bundle
 	spec.ImageRegistryBundleData = imgRegistryData
 	spec.ImageRegistryBundleUserData = imgRegistryUsrData
 	spec.PullSecret = &corev1.ObjectReference{Namespace: "openshift-config", Name: "pull-secret"}
