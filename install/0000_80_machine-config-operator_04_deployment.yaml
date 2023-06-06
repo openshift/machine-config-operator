@@ -37,8 +37,6 @@ spec:
             value: "0.0.1-snapshot"
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
-        - name: root-ca
-          mountPath: /etc/ssl/kubernetes/ca.crt
         - name: images
           mountPath: /etc/mco/images
       - name: kube-rbac-proxy
@@ -87,9 +85,6 @@ spec:
       - name: images
         configMap:
           name: machine-config-operator-images
-      - name: root-ca
-        hostPath:
-          path: /etc/kubernetes/ca.crt
       - name: proxy-tls
         secret:
           secretName: mco-proxy-tls
