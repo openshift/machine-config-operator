@@ -13,6 +13,7 @@ import (
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/library-go/pkg/cloudprovider"
+	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"k8s.io/client-go/kubernetes/scheme"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -27,76 +28,89 @@ func TestMain(m *testing.M) {
 func TestCloudProvider(t *testing.T) {
 	dummyTemplate := []byte(`{{cloudProvider .}}`)
 
+	externalEnabledFG := featuregates.NewHardcodedFeatureGateAccess([]configv1.FeatureGateName{cloudprovider.ExternalCloudProviderFeature, cloudprovider.ExternalCloudProviderFeatureGCP, cloudprovider.ExternalCloudProviderFeatureAzure}, nil)
+	externalDisabledFG := featuregates.NewHardcodedFeatureGateAccess(nil, []configv1.FeatureGateName{cloudprovider.ExternalCloudProviderFeature, cloudprovider.ExternalCloudProviderFeatureGCP, cloudprovider.ExternalCloudProviderFeatureAzure})
+
 	cases := []struct {
-		platform    configv1.PlatformType
-		featureGate *configv1.FeatureGate
-		res         string
+		platform          configv1.PlatformType
+		featureGateAccess featuregates.FeatureGateAccess
+		res               string
 	}{{
-		platform:    configv1.AWSPlatformType,
-		featureGate: newFeatures("cluster", "CustomNoUpgrade", []string{cloudprovider.ExternalCloudProviderFeature}, nil),
-		res:         "external",
+		platform:          configv1.AWSPlatformType,
+		featureGateAccess: externalEnabledFG,
+		res:               "external",
 	}, {
-		platform:    configv1.OpenStackPlatformType,
-		featureGate: newFeatures("cluster", "CustomNoUpgrade", []string{cloudprovider.ExternalCloudProviderFeature}, nil),
-		res:         "external",
+		platform:          configv1.OpenStackPlatformType,
+		featureGateAccess: externalEnabledFG,
+		res:               "external",
 	}, {
-		platform:    configv1.AzurePlatformType,
-		featureGate: newFeatures("cluster", "CustomNoUpgrade", []string{cloudprovider.ExternalCloudProviderFeature}, nil),
-		res:         "external",
+		platform:          configv1.AzurePlatformType,
+		featureGateAccess: externalEnabledFG,
+		res:               "external",
 	}, {
-		platform:    configv1.GCPPlatformType,
-		featureGate: newFeatures("cluster", "CustomNoUpgrade", []string{cloudprovider.ExternalCloudProviderFeature}, nil),
-		res:         "external",
+		platform:          configv1.GCPPlatformType,
+		featureGateAccess: externalEnabledFG,
+		res:               "external",
 	}, {
-		platform:    configv1.VSpherePlatformType,
-		featureGate: newFeatures("cluster", "CustomNoUpgrade", []string{cloudprovider.ExternalCloudProviderFeature}, nil),
-		res:         "external",
+		platform:          configv1.VSpherePlatformType,
+		featureGateAccess: externalEnabledFG,
+		res:               "external",
 	}, {
-		platform:    configv1.OpenStackPlatformType,
-		featureGate: newFeatures("cluster", "CustomNoUpgrade", []string{cloudprovider.ExternalCloudProviderFeature}, nil),
-		res:         "external",
+		platform:          configv1.OpenStackPlatformType,
+		featureGateAccess: externalEnabledFG,
+		res:               "external",
 	}, {
-		platform:    configv1.PowerVSPlatformType,
-		featureGate: newFeatures("cluster", "CustomNoUpgrade", []string{cloudprovider.ExternalCloudProviderFeature}, nil),
-		res:         "external",
+		platform:          configv1.PowerVSPlatformType,
+		featureGateAccess: externalEnabledFG,
+		res:               "external",
 	}, {
-		platform:    configv1.OpenStackPlatformType,
-		featureGate: newFeatures("cluster", "CustomNoUpgrade", nil, []string{cloudprovider.ExternalCloudProviderFeature}),
-		res:         "external",
+		platform:          configv1.OpenStackPlatformType,
+		featureGateAccess: externalEnabledFG,
+		res:               "external",
 	}, {
-		platform:    configv1.NutanixPlatformType,
-		featureGate: newFeatures("cluster", "CustomNoUpgrade", nil, []string{cloudprovider.ExternalCloudProviderFeature}),
-		res:         "external",
+		platform:          configv1.NutanixPlatformType,
+		featureGateAccess: externalEnabledFG,
+		res:               "external",
 	}, {
-		platform: configv1.AWSPlatformType,
-		res:      "external",
+		platform:          configv1.AWSPlatformType,
+		featureGateAccess: externalDisabledFG,
+		res:               "external",
 	}, {
-		platform: configv1.OpenStackPlatformType,
-		res:      "external",
+		platform:          configv1.OpenStackPlatformType,
+		featureGateAccess: externalDisabledFG,
+		res:               "external",
 	}, {
-		platform: configv1.BareMetalPlatformType,
-		res:      "",
+		platform:          configv1.BareMetalPlatformType,
+		featureGateAccess: externalDisabledFG,
+		res:               "",
 	}, {
-		platform: configv1.GCPPlatformType,
-		res:      "gce",
+		platform:          configv1.GCPPlatformType,
+		featureGateAccess: externalDisabledFG,
+		res:               "gce",
 	}, {
-		platform: configv1.LibvirtPlatformType,
-		res:      "",
+		platform:          configv1.LibvirtPlatformType,
+		featureGateAccess: externalDisabledFG,
+		res:               "",
 	}, {
-		platform: configv1.KubevirtPlatformType,
-		res:      "external",
+		platform:          configv1.KubevirtPlatformType,
+		featureGateAccess: externalDisabledFG,
+		res:               "external",
 	}, {
-		platform: configv1.NonePlatformType,
-		res:      "",
+		platform:          configv1.NonePlatformType,
+		featureGateAccess: externalDisabledFG,
+		res:               "",
 	}, {
-		platform: configv1.VSpherePlatformType,
-		res:      "external",
+		platform:          configv1.VSpherePlatformType,
+		featureGateAccess: externalDisabledFG,
+		res:               "external",
 	}, {
-		platform: configv1.AlibabaCloudPlatformType,
-		res:      "external",
+		platform:          configv1.AlibabaCloudPlatformType,
+		featureGateAccess: externalDisabledFG,
+		res:               "external",
 	}, {
-		platform: configv1.NutanixPlatformType,
-		res:      "external",
+		platform:          configv1.NutanixPlatformType,
+		featureGateAccess: externalDisabledFG,
+		res:               "external",
 	}}
 	for idx, c := range cases {
 		name := fmt.Sprintf("case #%d", idx)
@@ -113,7 +127,13 @@ func TestCloudProvider(t *testing.T) {
 					},
 				},
 			}
-			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, c.featureGate, nil}, name, dummyTemplate)
+
+			fgAccess := c.featureGateAccess
+			if fgAccess == nil {
+				fgAccess = featuregates.NewHardcodedFeatureGateAccess(nil, nil)
+			}
+
+			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, fgAccess, nil}, name, dummyTemplate)
 			if err != nil {
 				t.Fatalf("expected nil error %v", err)
 			}
@@ -128,19 +148,23 @@ func TestCloudProvider(t *testing.T) {
 func TestCloudConfigFlag(t *testing.T) {
 	dummyTemplate := []byte(`{{cloudConfigFlag .}}`)
 
+	externalEnabledFG := featuregates.NewHardcodedFeatureGateAccess([]configv1.FeatureGateName{cloudprovider.ExternalCloudProviderFeature, cloudprovider.ExternalCloudProviderFeatureGCP, cloudprovider.ExternalCloudProviderFeatureAzure}, nil)
+	externalDisabledFG := featuregates.NewHardcodedFeatureGateAccess(nil, []configv1.FeatureGateName{cloudprovider.ExternalCloudProviderFeature, cloudprovider.ExternalCloudProviderFeatureGCP, cloudprovider.ExternalCloudProviderFeatureAzure})
+
 	cases := []struct {
-		platform    configv1.PlatformType
-		content     string
-		featureGate *configv1.FeatureGate
-		res         string
+		platform          configv1.PlatformType
+		content           string
+		featureGateAccess featuregates.FeatureGateAccess
+		res               string
 	}{{
 		platform: configv1.AWSPlatformType,
 		content:  "",
 		res:      "",
 	}, {
-		platform: configv1.AzurePlatformType,
-		content:  "",
-		res:      "",
+		platform:          configv1.AzurePlatformType,
+		content:           "",
+		featureGateAccess: externalDisabledFG,
+		res:               "",
 	}, {
 		platform: configv1.LibvirtPlatformType,
 		content:  "",
@@ -165,7 +189,8 @@ func TestCloudConfigFlag(t *testing.T) {
 [dummy-config]
     option = a
 `,
-		res: "--cloud-config=/etc/kubernetes/cloud.conf",
+		featureGateAccess: externalDisabledFG,
+		res:               "--cloud-config=/etc/kubernetes/cloud.conf",
 	}, {
 		platform: configv1.OpenStackPlatformType,
 		content: `
@@ -179,64 +204,64 @@ func TestCloudConfigFlag(t *testing.T) {
 [dummy-config]
     option = a
 `,
-		featureGate: newFeatures("cluster", "CustomNoUpgrade", []string{cloudprovider.ExternalCloudProviderFeature}, nil),
-		res:         "",
+		featureGateAccess: externalEnabledFG,
+		res:               "",
 	}, {
 		platform: configv1.VSpherePlatformType,
 		content: `
 [dummy-config]
     option = a
 `,
-		featureGate: newFeatures("cluster", "CustomNoUpgrade", []string{cloudprovider.ExternalCloudProviderFeature}, nil),
-		res:         "",
+		featureGateAccess: externalEnabledFG,
+		res:               "",
 	}, {
 		platform: configv1.AzurePlatformType,
 		content: `
 [dummy-config]
     option = a
 `,
-		featureGate: newFeatures("cluster", "CustomNoUpgrade", []string{cloudprovider.ExternalCloudProviderFeature}, nil),
-		res:         "",
+		featureGateAccess: externalEnabledFG,
+		res:               "",
 	}, {
 		platform: configv1.OpenStackPlatformType,
 		content: `
 [dummy-config]
     option = a
 `,
-		featureGate: newFeatures("cluster", "CustomNoUpgrade", []string{cloudprovider.ExternalCloudProviderFeature}, nil),
-		res:         "",
+		featureGateAccess: externalEnabledFG,
+		res:               "",
 	}, {
 		platform: configv1.OpenStackPlatformType,
 		content: `
 [dummy-config]
     option = a
 `,
-		featureGate: newFeatures("cluster", "CustomNoUpgrade", nil, []string{cloudprovider.ExternalCloudProviderFeature}),
-		res:         "",
+		featureGateAccess: externalEnabledFG,
+		res:               "",
 	}, {
 		platform: configv1.AWSPlatformType,
 		content: `
 [dummy-config]
     option = a
 `,
-		featureGate: newFeatures("cluster", "CustomNoUpgrade", nil, []string{cloudprovider.ExternalCloudProviderFeature}),
-		res:         "",
+		featureGateAccess: externalEnabledFG,
+		res:               "",
 	}, {
 		platform: configv1.NutanixPlatformType,
 		content: `
 [dummy-config]
     option = a
 `,
-		featureGate: newFeatures("cluster", "CustomNoUpgrade", []string{cloudprovider.ExternalCloudProviderFeature}, nil),
-		res:         "",
+		featureGateAccess: externalEnabledFG,
+		res:               "",
 	}, {
 		platform: configv1.NutanixPlatformType,
 		content: `
 [dummy-config]
     option = a
 `,
-		featureGate: newFeatures("cluster", "CustomNoUpgrade", nil, []string{cloudprovider.ExternalCloudProviderFeature}),
-		res:         "",
+		featureGateAccess: externalEnabledFG,
+		res:               "",
 	}}
 
 	for idx, c := range cases {
@@ -255,7 +280,13 @@ func TestCloudConfigFlag(t *testing.T) {
 					CloudProviderConfig: c.content,
 				},
 			}
-			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, c.featureGate, nil}, name, dummyTemplate)
+
+			fgAccess := c.featureGateAccess
+			if fgAccess == nil {
+				fgAccess = featuregates.NewHardcodedFeatureGateAccess(nil, nil)
+			}
+
+			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, fgAccess, nil}, name, dummyTemplate)
 			if err != nil {
 				t.Fatalf("expected nil error %v", err)
 			}
@@ -346,16 +377,18 @@ func TestInvalidPlatform(t *testing.T) {
 		}
 	}
 
+	fgAccess := featuregates.NewHardcodedFeatureGateAccess(nil, nil)
+
 	// we must treat unrecognized constants as "none"
 	controllerConfig.Spec.Infra.Status.PlatformStatus.Type = "_bad_"
-	_, err = generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, nil, nil}, templateDir)
+	_, err = generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, fgAccess, nil}, templateDir)
 	if err != nil {
 		t.Errorf("expect nil error, got: %v", err)
 	}
 
 	// explicitly blocked
 	controllerConfig.Spec.Infra.Status.PlatformStatus.Type = "_base"
-	_, err = generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, nil, nil}, templateDir)
+	_, err = generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, fgAccess, nil}, templateDir)
 	expectErr(err, "failed to create MachineConfig for role master: platform _base unsupported")
 }
 
@@ -366,7 +399,9 @@ func TestGenerateMachineConfigs(t *testing.T) {
 			t.Fatalf("failed to get controllerconfig config: %v", err)
 		}
 
-		cfgs, err := generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, nil, nil}, templateDir)
+		fgAccess := featuregates.NewHardcodedFeatureGateAccess(nil, []configv1.FeatureGateName{cloudprovider.ExternalCloudProviderFeature, cloudprovider.ExternalCloudProviderFeatureAzure, cloudprovider.ExternalCloudProviderFeatureGCP})
+
+		cfgs, err := generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, fgAccess, nil}, templateDir)
 		if err != nil {
 			t.Fatalf("failed to generate machine configs: %v", err)
 		}

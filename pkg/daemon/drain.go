@@ -69,8 +69,10 @@ func (dn *Daemon) performDrain() error {
 		return fmt.Errorf("Could not set drain annotation: %w", err)
 	}
 
-	if err := wait.Poll(10*time.Second, 1*time.Hour, func() (bool, error) {
-		node, err := dn.kubeClient.CoreV1().Nodes().Get(context.TODO(), dn.name, metav1.GetOptions{})
+	ctx := context.TODO()
+
+	if err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 1*time.Hour, false, func(ctx context.Context) (bool, error) {
+		node, err := dn.kubeClient.CoreV1().Nodes().Get(ctx, dn.name, metav1.GetOptions{})
 		if err != nil {
 			glog.Warningf("Failed to get node: %v", err)
 			return false, nil
@@ -80,7 +82,7 @@ func (dn *Daemon) performDrain() error {
 		}
 		return true, nil
 	}); err != nil {
-		if err == wait.ErrWaitTimeout {
+		if wait.Interrupted(err) {
 			failMsg := fmt.Sprintf("failed to drain node: %s after 1 hour. Please see machine-config-controller logs for more information", dn.node.Name)
 			dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedToDrain", failMsg)
 			return fmt.Errorf(failMsg)

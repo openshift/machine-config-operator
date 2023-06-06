@@ -20,12 +20,14 @@ import (
 
 	apicfgv1 "github.com/openshift/api/config/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
+	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	containerruntimeconfig "github.com/openshift/machine-config-operator/pkg/controller/container-runtime-config"
 	kubeletconfig "github.com/openshift/machine-config-operator/pkg/controller/kubelet-config"
 	"github.com/openshift/machine-config-operator/pkg/controller/render"
 	"github.com/openshift/machine-config-operator/pkg/controller/template"
+	"github.com/openshift/machine-config-operator/pkg/version"
 )
 
 // Bootstrap defines boostrap mode for Machine Config Controller
@@ -145,15 +147,25 @@ func (b *Bootstrap) Run(destDir string) error {
 	}
 
 	if cconfig == nil {
-		return fmt.Errorf("error: no controllerconfig found in dir: %q", destDir)
+		return fmt.Errorf("error: no controllerconfig found in dir: %q", b.manifestDir)
 	}
-	iconfigs, err := template.RunBootstrap(b.templatesDir, cconfig, psraw, featureGate)
+
+	if featureGate == nil {
+		return fmt.Errorf("error: no featuregate found in dir: %q", b.manifestDir)
+	}
+
+	fgAccess, err := featuregates.NewHardcodedFeatureGateAccessFromFeatureGate(featureGate, version.ReleaseVersion)
+	if err != nil {
+		return fmt.Errorf("error creating feature gate access: %w", err)
+	}
+
+	iconfigs, err := template.RunBootstrap(b.templatesDir, cconfig, psraw, fgAccess)
 	if err != nil {
 		return err
 	}
 	configs = append(configs, iconfigs...)
 
-	rconfigs, err := containerruntimeconfig.RunImageBootstrap(b.templatesDir, cconfig, pools, icspRules, idmsRules, itmsRules, imgCfg)
+	rconfigs, err := containerruntimeconfig.RunImageBootstrap(b.templatesDir, cconfig, pools, icspRules, idmsRules, itmsRules, imgCfg, fgAccess)
 	if err != nil {
 		return err
 	}
@@ -161,14 +173,14 @@ func (b *Bootstrap) Run(destDir string) error {
 	configs = append(configs, rconfigs...)
 
 	if len(crconfigs) > 0 {
-		containerRuntimeConfigs, err := containerruntimeconfig.RunContainerRuntimeBootstrap(b.templatesDir, crconfigs, cconfig, pools)
+		containerRuntimeConfigs, err := containerruntimeconfig.RunContainerRuntimeBootstrap(b.templatesDir, crconfigs, cconfig, pools, fgAccess)
 		if err != nil {
 			return err
 		}
 		configs = append(configs, containerRuntimeConfigs...)
 	}
 	if featureGate != nil {
-		featureConfigs, err := kubeletconfig.RunFeatureGateBootstrap(b.templatesDir, featureGate, nodeConfig, cconfig, pools)
+		featureConfigs, err := kubeletconfig.RunFeatureGateBootstrap(b.templatesDir, fgAccess, nodeConfig, cconfig, pools)
 		if err != nil {
 			return err
 		}
@@ -184,14 +196,14 @@ func (b *Bootstrap) Run(destDir string) error {
 		}
 	}
 	if nodeConfig != nil {
-		nodeConfigs, err := kubeletconfig.RunNodeConfigBootstrap(b.templatesDir, featureGate, cconfig, nodeConfig, pools)
+		nodeConfigs, err := kubeletconfig.RunNodeConfigBootstrap(b.templatesDir, fgAccess, cconfig, nodeConfig, pools)
 		if err != nil {
 			return err
 		}
 		configs = append(configs, nodeConfigs...)
 	}
 	if len(kconfigs) > 0 {
-		kconfigs, err := kubeletconfig.RunKubeletBootstrap(b.templatesDir, kconfigs, cconfig, featureGate, nodeConfig, pools)
+		kconfigs, err := kubeletconfig.RunKubeletBootstrap(b.templatesDir, kconfigs, cconfig, fgAccess, nodeConfig, pools)
 		if err != nil {
 			return err
 		}

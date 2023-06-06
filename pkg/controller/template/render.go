@@ -14,6 +14,7 @@ import (
 	"github.com/golang/glog"
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/library-go/pkg/cloudprovider"
+	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/constants"
@@ -24,8 +25,8 @@ import (
 // RenderConfig is wrapper around ControllerConfigSpec.
 type RenderConfig struct {
 	*mcfgv1.ControllerConfigSpec
-	PullSecret  string
-	FeatureGate *configv1.FeatureGate
+	PullSecret        string
+	FeatureGateAccess featuregates.FeatureGateAccess
 
 	// no need to set this, will be automatically configured
 	Constants map[string]string
@@ -394,7 +395,11 @@ func skipMissing(key string) (interface{}, error) {
 
 func cloudProvider(cfg RenderConfig) (interface{}, error) {
 	if cfg.Infra.Status.PlatformStatus != nil {
-		external, err := cloudprovider.IsCloudProviderExternal(cfg.Infra.Status.PlatformStatus, cfg.FeatureGate)
+		if cfg.FeatureGateAccess == nil {
+			panic("FeatureGateAccess is nil")
+		}
+
+		external, err := cloudprovider.IsCloudProviderExternal(cfg.Infra.Status.PlatformStatus, cfg.FeatureGateAccess)
 		if err != nil {
 			glog.Error(err)
 		} else if external {
@@ -439,7 +444,11 @@ func cloudConfigFlag(cfg RenderConfig) interface{} {
 		}
 	}
 
-	external, err := cloudprovider.IsCloudProviderExternal(cfg.Infra.Status.PlatformStatus, cfg.FeatureGate)
+	if cfg.FeatureGateAccess == nil {
+		panic("FeatureGateAccess is nil")
+	}
+
+	external, err := cloudprovider.IsCloudProviderExternal(cfg.Infra.Status.PlatformStatus, cfg.FeatureGateAccess)
 	if err != nil {
 		glog.Error(err)
 	} else if external {
