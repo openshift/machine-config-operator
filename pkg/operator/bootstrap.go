@@ -30,7 +30,7 @@ func RenderBootstrap(
 	clusterConfigConfigMapFile,
 	infraFile, networkFile, dnsFile,
 	cloudConfigFile, cloudProviderCAFile,
-	rootCAFile, kubeAPIServerServingCA, pullSecretFile string,
+	mcsCAFile, kubeAPIServerServingCA, pullSecretFile string,
 	imgs *Images,
 	destinationDir, releaseImage string,
 ) error {
@@ -40,7 +40,7 @@ func RenderBootstrap(
 		clusterConfigConfigMapFile,
 		infraFile,
 		networkFile,
-		rootCAFile,
+		mcsCAFile,
 		pullSecretFile,
 		dnsFile,
 	}
@@ -126,7 +126,7 @@ func RenderBootstrap(
 	}
 
 	bundle := make([]byte, 0)
-	bundle = append(bundle, filesData[rootCAFile]...)
+	bundle = append(bundle, filesData[mcsCAFile]...)
 	// Append the kube-ca if given.
 	if _, ok := filesData[kubeAPIServerServingCA]; ok {
 		spec.KubeAPIServerServingCAData = filesData[kubeAPIServerServingCA]
