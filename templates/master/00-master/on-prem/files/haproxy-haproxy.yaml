@@ -8,6 +8,7 @@ contents:
       maxconn 20000
       mode    tcp
       log     /var/run/haproxy/haproxy-log.sock local0
+      log-format "%ci:%cp -> %fi:%fp [%t] %ft %b/%s %Tw/%Tc/%Tt %B %ts %ac/%fc/%bc/%sc/%rc %sq/%bq"
       option  dontlognull
       retries 3
       timeout http-request 30s
