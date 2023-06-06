@@ -1,0 +1,10 @@
+name: kubelet.service
+dropins:
+  - name: 11-jerry.conf
+    contents: |
+      [Service]
+      Environment="test=1"
+  - name: 12-jerry.conf
+    contents: |
+      [Service]
+      Environment="test=2"
