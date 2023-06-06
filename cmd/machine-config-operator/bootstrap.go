@@ -42,7 +42,7 @@ var (
 		networkConfigFile              string
 		oscontentImage                 string
 		pullSecretFile                 string
-		rootCAFile                     string
+		mcsCAFile                      string
 		proxyConfigFile                string
 		additionalTrustBundleFile      string
 		dnsConfigFile                  string
@@ -54,7 +54,8 @@ var (
 
 func init() {
 	rootCmd.AddCommand(bootstrapCmd)
-	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.rootCAFile, "root-ca", "/etc/ssl/kubernetes/ca.crt", "path to root CA certificate")
+	// See https://docs.openshift.com/container-platform/4.13/security/certificate_types_descriptions/machine-config-operator-certificates.html
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.mcsCAFile, "root-ca", "/etc/ssl/kubernetes/ca.crt", "Path to installer-generated root MCS CA")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.kubeCAFile, "kube-ca", "", "path to kube-apiserver serving-ca bundle")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.pullSecretFile, "pull-secret", "/assets/manifests/pull.json", "path to secret manifest that contains pull secret.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.destinationDir, "dest-dir", "", "The destination directory where MCO writes the manifests.")
@@ -180,7 +181,7 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 		bootstrapOpts.dnsConfigFile,
 		bootstrapOpts.cloudConfigFile,
 		bootstrapOpts.cloudProviderCAFile,
-		bootstrapOpts.rootCAFile, bootstrapOpts.kubeCAFile, bootstrapOpts.pullSecretFile,
+		bootstrapOpts.mcsCAFile, bootstrapOpts.kubeCAFile, bootstrapOpts.pullSecretFile,
 		&imgs,
 		bootstrapOpts.destinationDir,
 		bootstrapOpts.releaseImage,
