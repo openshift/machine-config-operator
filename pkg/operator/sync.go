@@ -775,22 +775,22 @@ func (optr *Operator) syncMachineOSBuilder(config *renderConfig) error {
 	return optr.syncControllerConfig(config)
 }
 
-func (optr *Operator) checkForOnClusterBuild(config *renderConfig) error {
+// func (optr *Operator) checkForOnClusterBuild(config *renderConfig) error {
 
-	pools, err := optr.mcpLister.List(labels.Everything())
-	if err != nil {
-		glog.Fatal(err)
-	}
-	for _, pool := range pools {
-		labels := pool.GetLabels()
-		if val, ok := labels["on-cluster-build"]; ok && val == "true" {
-			fmt.Printf("Pool %s is labeled with 'on-cluster-build'. Starting the build controller pod.\n", pool.Name)
-			startBuildControllerPod()
-		}
-	}
+// 	pools, err := optr.mcpLister.List(labels.Everything())
+// 	if err != nil {
+// 		glog.Fatal(err)
+// 	}
+// 	for _, pool := range pools {
+// 		labels := pool.GetLabels()
+// 		if val, ok := labels["on-cluster-build"]; ok && val == "true" {
+// 			fmt.Printf("Pool %s is labeled with 'on-cluster-build'. Starting the build controller pod.\n", pool.Name)
+// 			startBuildControllerPod()
+// 		}
+// 	}
 
-	return nil
-}
+// 	return nil
+// }
 
 func startBuildControllerPod() {
 	fmt.Printf("hello this starts the build controller pod\n")
