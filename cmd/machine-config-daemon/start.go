@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -184,12 +185,13 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	}
 
 	// This channel is used to ensure all spawned goroutines exit when we exit.
-	stopCh := make(chan struct{})
-	defer close(stopCh)
+	ctx, cancel := context.WithCancel(context.Background())
+	stopCh := ctx.Done()
+	defer cancel()
 
 	if startOpts.hypershiftDesiredConfigMap != "" {
 		// This is a hypershift-mode daemon
-		ctx := ctrlcommon.CreateControllerContext(cb, stopCh, componentName)
+		ctx := ctrlcommon.CreateControllerContext(ctx, cb, componentName)
 		err := dn.HypershiftConnect(
 			startOpts.nodeName,
 			kubeClient,
@@ -212,15 +214,15 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	// Start local metrics listener
 	go ctrlcommon.StartMetricsListener(startOpts.promMetricsURL, stopCh, daemon.RegisterMCDMetrics)
 
-	ctx := ctrlcommon.CreateControllerContext(cb, stopCh, componentName)
+	ctrlctx := ctrlcommon.CreateControllerContext(ctx, cb, componentName)
 	// create the daemon instance. this also initializes kube client items
 	// which need to come from the container and not the chroot.
 	err = dn.ClusterConnect(
 		startOpts.nodeName,
 		kubeClient,
-		ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
-		ctx.KubeInformerFactory.Core().V1().Nodes(),
-		ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
+		ctrlctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
+		ctrlctx.KubeInformerFactory.Core().V1().Nodes(),
+		ctrlctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
 		startOpts.kubeletHealthzEnabled,
 		startOpts.kubeletHealthzEndpoint,
 	)
@@ -228,9 +230,9 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		glog.Fatalf("Failed to initialize: %v", err)
 	}
 
-	ctx.KubeInformerFactory.Start(stopCh)
-	ctx.InformerFactory.Start(stopCh)
-	close(ctx.InformersStarted)
+	ctrlctx.KubeInformerFactory.Start(stopCh)
+	ctrlctx.InformerFactory.Start(stopCh)
+	close(ctrlctx.InformersStarted)
 
 	if err := dn.Run(stopCh, exitCh); err != nil {
 		ctrlcommon.WriteTerminationError(err)

@@ -5,10 +5,9 @@ package fake
 import (
 	"context"
 
-	machineconfigurationopenshiftiov1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	v1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
-	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
 	testing "k8s.io/client-go/testing"
@@ -19,24 +18,24 @@ type FakeControllerConfigs struct {
 	Fake *FakeMachineconfigurationV1
 }
 
-var controllerconfigsResource = schema.GroupVersionResource{Group: "machineconfiguration.openshift.io", Version: "v1", Resource: "controllerconfigs"}
+var controllerconfigsResource = v1.SchemeGroupVersion.WithResource("controllerconfigs")
 
-var controllerconfigsKind = schema.GroupVersionKind{Group: "machineconfiguration.openshift.io", Version: "v1", Kind: "ControllerConfig"}
+var controllerconfigsKind = v1.SchemeGroupVersion.WithKind("ControllerConfig")
 
 // Get takes name of the controllerConfig, and returns the corresponding controllerConfig object, and an error if there is any.
-func (c *FakeControllerConfigs) Get(ctx context.Context, name string, options v1.GetOptions) (result *machineconfigurationopenshiftiov1.ControllerConfig, err error) {
+func (c *FakeControllerConfigs) Get(ctx context.Context, name string, options metav1.GetOptions) (result *v1.ControllerConfig, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootGetAction(controllerconfigsResource, name), &machineconfigurationopenshiftiov1.ControllerConfig{})
+		Invokes(testing.NewRootGetAction(controllerconfigsResource, name), &v1.ControllerConfig{})
 	if obj == nil {
 		return nil, err
 	}
-	return obj.(*machineconfigurationopenshiftiov1.ControllerConfig), err
+	return obj.(*v1.ControllerConfig), err
 }
 
 // List takes label and field selectors, and returns the list of ControllerConfigs that match those selectors.
-func (c *FakeControllerConfigs) List(ctx context.Context, opts v1.ListOptions) (result *machineconfigurationopenshiftiov1.ControllerConfigList, err error) {
+func (c *FakeControllerConfigs) List(ctx context.Context, opts metav1.ListOptions) (result *v1.ControllerConfigList, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootListAction(controllerconfigsResource, controllerconfigsKind, opts), &machineconfigurationopenshiftiov1.ControllerConfigList{})
+		Invokes(testing.NewRootListAction(controllerconfigsResource, controllerconfigsKind, opts), &v1.ControllerConfigList{})
 	if obj == nil {
 		return nil, err
 	}
@@ -45,8 +44,8 @@ func (c *FakeControllerConfigs) List(ctx context.Context, opts v1.ListOptions) (
 	if label == nil {
 		label = labels.Everything()
 	}
-	list := &machineconfigurationopenshiftiov1.ControllerConfigList{ListMeta: obj.(*machineconfigurationopenshiftiov1.ControllerConfigList).ListMeta}
-	for _, item := range obj.(*machineconfigurationopenshiftiov1.ControllerConfigList).Items {
+	list := &v1.ControllerConfigList{ListMeta: obj.(*v1.ControllerConfigList).ListMeta}
+	for _, item := range obj.(*v1.ControllerConfigList).Items {
 		if label.Matches(labels.Set(item.Labels)) {
 			list.Items = append(list.Items, item)
 		}
@@ -55,63 +54,63 @@ func (c *FakeControllerConfigs) List(ctx context.Context, opts v1.ListOptions) (
 }
 
 // Watch returns a watch.Interface that watches the requested controllerConfigs.
-func (c *FakeControllerConfigs) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
+func (c *FakeControllerConfigs) Watch(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error) {
 	return c.Fake.
 		InvokesWatch(testing.NewRootWatchAction(controllerconfigsResource, opts))
 }
 
 // Create takes the representation of a controllerConfig and creates it.  Returns the server's representation of the controllerConfig, and an error, if there is any.
-func (c *FakeControllerConfigs) Create(ctx context.Context, controllerConfig *machineconfigurationopenshiftiov1.ControllerConfig, opts v1.CreateOptions) (result *machineconfigurationopenshiftiov1.ControllerConfig, err error) {
+func (c *FakeControllerConfigs) Create(ctx context.Context, controllerConfig *v1.ControllerConfig, opts metav1.CreateOptions) (result *v1.ControllerConfig, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootCreateAction(controllerconfigsResource, controllerConfig), &machineconfigurationopenshiftiov1.ControllerConfig{})
+		Invokes(testing.NewRootCreateAction(controllerconfigsResource, controllerConfig), &v1.ControllerConfig{})
 	if obj == nil {
 		return nil, err
 	}
-	return obj.(*machineconfigurationopenshiftiov1.ControllerConfig), err
+	return obj.(*v1.ControllerConfig), err
 }
 
 // Update takes the representation of a controllerConfig and updates it. Returns the server's representation of the controllerConfig, and an error, if there is any.
-func (c *FakeControllerConfigs) Update(ctx context.Context, controllerConfig *machineconfigurationopenshiftiov1.ControllerConfig, opts v1.UpdateOptions) (result *machineconfigurationopenshiftiov1.ControllerConfig, err error) {
+func (c *FakeControllerConfigs) Update(ctx context.Context, controllerConfig *v1.ControllerConfig, opts metav1.UpdateOptions) (result *v1.ControllerConfig, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootUpdateAction(controllerconfigsResource, controllerConfig), &machineconfigurationopenshiftiov1.ControllerConfig{})
+		Invokes(testing.NewRootUpdateAction(controllerconfigsResource, controllerConfig), &v1.ControllerConfig{})
 	if obj == nil {
 		return nil, err
 	}
-	return obj.(*machineconfigurationopenshiftiov1.ControllerConfig), err
+	return obj.(*v1.ControllerConfig), err
 }
 
 // UpdateStatus was generated because the type contains a Status member.
 // Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-func (c *FakeControllerConfigs) UpdateStatus(ctx context.Context, controllerConfig *machineconfigurationopenshiftiov1.ControllerConfig, opts v1.UpdateOptions) (*machineconfigurationopenshiftiov1.ControllerConfig, error) {
+func (c *FakeControllerConfigs) UpdateStatus(ctx context.Context, controllerConfig *v1.ControllerConfig, opts metav1.UpdateOptions) (*v1.ControllerConfig, error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootUpdateSubresourceAction(controllerconfigsResource, "status", controllerConfig), &machineconfigurationopenshiftiov1.ControllerConfig{})
+		Invokes(testing.NewRootUpdateSubresourceAction(controllerconfigsResource, "status", controllerConfig), &v1.ControllerConfig{})
 	if obj == nil {
 		return nil, err
 	}
-	return obj.(*machineconfigurationopenshiftiov1.ControllerConfig), err
+	return obj.(*v1.ControllerConfig), err
 }
 
 // Delete takes name of the controllerConfig and deletes it. Returns an error if one occurs.
-func (c *FakeControllerConfigs) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
+func (c *FakeControllerConfigs) Delete(ctx context.Context, name string, opts metav1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewRootDeleteActionWithOptions(controllerconfigsResource, name, opts), &machineconfigurationopenshiftiov1.ControllerConfig{})
+		Invokes(testing.NewRootDeleteActionWithOptions(controllerconfigsResource, name, opts), &v1.ControllerConfig{})
 	return err
 }
 
 // DeleteCollection deletes a collection of objects.
-func (c *FakeControllerConfigs) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
+func (c *FakeControllerConfigs) DeleteCollection(ctx context.Context, opts metav1.DeleteOptions, listOpts metav1.ListOptions) error {
 	action := testing.NewRootDeleteCollectionAction(controllerconfigsResource, listOpts)
 
-	_, err := c.Fake.Invokes(action, &machineconfigurationopenshiftiov1.ControllerConfigList{})
+	_, err := c.Fake.Invokes(action, &v1.ControllerConfigList{})
 	return err
 }
 
 // Patch applies the patch and returns the patched controllerConfig.
-func (c *FakeControllerConfigs) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *machineconfigurationopenshiftiov1.ControllerConfig, err error) {
+func (c *FakeControllerConfigs) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts metav1.PatchOptions, subresources ...string) (result *v1.ControllerConfig, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootPatchSubresourceAction(controllerconfigsResource, name, pt, data, subresources...), &machineconfigurationopenshiftiov1.ControllerConfig{})
+		Invokes(testing.NewRootPatchSubresourceAction(controllerconfigsResource, name, pt, data, subresources...), &v1.ControllerConfig{})
 	if obj == nil {
 		return nil, err
 	}
-	return obj.(*machineconfigurationopenshiftiov1.ControllerConfig), err
+	return obj.(*v1.ControllerConfig), err
 }

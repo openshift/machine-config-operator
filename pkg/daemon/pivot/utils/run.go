@@ -48,7 +48,7 @@ func runExtBackoff(backoff wait.Backoff, command string, args ...string) (string
 		output = strings.TrimSpace(string(out))
 		return true, nil
 	}); err != nil {
-		if err == wait.ErrWaitTimeout {
+		if wait.Interrupted(err) {
 			errs := kubeErrs.NewAggregate([]error{err, lastErr})
 			return "", fmt.Errorf("failed to run command %s (%d tries): %w", command, backoff.Steps, errs)
 		}

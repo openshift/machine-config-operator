@@ -14,6 +14,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
+	featuregatescontroller "github.com/openshift/cluster-config-operator/pkg/operator/featuregates"
 	"github.com/openshift/machine-config-operator/internal/clients"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/controller/bootstrap"
@@ -28,6 +29,7 @@ import (
 	"github.com/openshift/machine-config-operator/test/helpers"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -37,7 +39,7 @@ import (
 )
 
 const (
-	bootstrapTestName    = "BootstrapTest"
+	bootstrapTestName    = "bootstrap-test"
 	templatesDir         = "../../templates"
 	bootstrapTestDataDir = "../../pkg/controller/bootstrap/testdata/bootstrap"
 )
@@ -76,6 +78,13 @@ func TestE2EBootstrap(t *testing.T) {
 	_, err = clientSet.Namespaces().Create(ctx, &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: framework.OpenshiftConfigNamespace,
+		},
+	}, metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	_, err = clientSet.Namespaces().Create(ctx, &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: bootstrapTestName,
 		},
 	}, metav1.CreateOptions{})
 	require.NoError(t, err)
@@ -305,13 +314,18 @@ spec:
 		t.Run(tc.name, func(t *testing.T) {
 			objs := append([]runtime.Object{}, baseTestManifests...)
 			objs = append(objs, loadRawManifests(t, tc.manifests)...)
-			nodeConfigManifest := [][]byte{
-				[]byte(`apiVersion: config.openshift.io/v1
+
+			// Only add this node config if one doesn't already exist.
+			// If two are present, the latter one will overwrite the former one.
+			if !containsGVK(objs, configv1.SchemeGroupVersion.WithKind("Node")) {
+				nodeConfigManifest := [][]byte{
+					[]byte(`apiVersion: config.openshift.io/v1
 kind: Node
 metadata:
   name: cluster`),
+				}
+				objs = append(objs, loadRawManifests(t, nodeConfigManifest)...)
 			}
-			objs = append(objs, loadRawManifests(t, nodeConfigManifest)...)
 
 			fixture := newTestFixture(t, cfg, objs)
 			// Defer stop after cleanup so that the cleanup happens after the stop (defer unwrapping order)
@@ -336,14 +350,13 @@ metadata:
 			require.NoError(t, err)
 			defer os.RemoveAll(srcDir)
 
-			// Ensure all the manifests are in the input directory
-			err = copyDir(bootstrapTestDataDir, srcDir)
-			require.NoError(t, err)
+			for id, obj := range objs {
+				manifest, err := yaml.Marshal(obj)
+				require.NoError(t, err)
 
-			for id, manifest := range tc.manifests {
 				name := fmt.Sprintf("manifest-%d.yaml", id)
 				path := filepath.Join(srcDir, name)
-				err := os.WriteFile(path, manifest, 0644)
+				err = os.WriteFile(path, manifest, 0644)
 				require.NoError(t, err)
 			}
 
@@ -387,7 +400,7 @@ func compareRenderedConfigPool(t *testing.T, clientSet *framework.ClientSet, des
 func newTestFixture(t *testing.T, cfg *rest.Config, objs []runtime.Object) *fixture {
 	ctx, stop := context.WithCancel(context.Background())
 	cb := clients.BuilderFromConfig(cfg)
-	ctrlctx := ctrlcommon.CreateControllerContext(cb, ctx.Done(), bootstrapTestName)
+	ctrlctx := ctrlcommon.CreateControllerContext(ctx, cb, bootstrapTestName)
 
 	clientSet := framework.NewClientSetFromConfig(cfg)
 
@@ -395,6 +408,7 @@ func newTestFixture(t *testing.T, cfg *rest.Config, objs []runtime.Object) *fixt
 	framework.CheckCleanEnvironment(t, clientSet)
 	framework.CreateObjects(t, clientSet, objs...)
 	createClusterVersion(t, clientSet, objs...)
+	ensureFeatureGate(t, clientSet, objs...)
 
 	controllers := createControllers(ctrlctx)
 
@@ -427,9 +441,9 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
 			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
 			ctx.OpenShiftConfigKubeNamespacedInformerFactory.Core().V1().Secrets(),
-			ctx.ConfigInformerFactory.Config().V1().FeatureGates(),
 			ctx.ClientBuilder.KubeClientOrDie("template-controller"),
 			ctx.ClientBuilder.MachineConfigClientOrDie("template-controller"),
+			ctx.FeatureGateAccess,
 		),
 		// Add all "sub-renderers here"
 		kubeletconfig.New(
@@ -443,6 +457,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.ClientBuilder.KubeClientOrDie("kubelet-config-controller"),
 			ctx.ClientBuilder.MachineConfigClientOrDie("kubelet-config-controller"),
 			ctx.ClientBuilder.ConfigClientOrDie("kubelet-config-controller"),
+			ctx.FeatureGateAccess,
 		),
 		containerruntimeconfig.New(
 			templatesDir,
@@ -457,6 +472,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.ClientBuilder.KubeClientOrDie("container-runtime-config-controller"),
 			ctx.ClientBuilder.MachineConfigClientOrDie("container-runtime-config-controller"),
 			ctx.ClientBuilder.ConfigClientOrDie("container-runtime-config-controller"),
+			ctx.FeatureGateAccess,
 		),
 		// The renderer creates "rendered" MCs from the MC fragments generated by
 		// the above sub-controllers, which are then consumed by the node controller
@@ -508,6 +524,53 @@ func createClusterVersion(t *testing.T, clientSet *framework.ClientSet, objs ...
 	cv, err = clientSet.ClusterVersions().UpdateStatus(ctx, cv, metav1.UpdateOptions{})
 	require.NoError(t, err)
 	require.NotEmpty(t, cv.Status.Desired.Image)
+}
+
+// ensureFeatureGate ensures that the cluster contains a feature gate with the
+// correct status to allow the controllers to proceed.
+func ensureFeatureGate(t *testing.T, clientSet *framework.ClientSet, objs ...runtime.Object) {
+	ctx := context.Background()
+	var controllerConfig *mcfgv1.ControllerConfig
+	for _, obj := range objs {
+		if cc, ok := obj.(*mcfgv1.ControllerConfig); ok {
+			controllerConfig = cc
+			break
+		}
+	}
+	require.NotNil(t, controllerConfig, "Did not find controller config in base manifests")
+
+	currentFg, err := clientSet.FeatureGates().Get(ctx, "cluster", metav1.GetOptions{})
+	if !apierrors.IsNotFound(err) {
+		require.NoError(t, err)
+	} else {
+		t.Fatal("FeatureGate cluster not found, bootstrap data should contain at least 1 FeatureGate")
+	}
+
+	// Set up the current controllerconfig image with the current feature gate selection.
+	currentDetails, err := featuregatescontroller.FeaturesGateDetailsFromFeatureSets(configv1.FeatureSets, currentFg, controllerConfig.Spec.ReleaseImage)
+	require.NoError(t, err)
+
+	rawDetails := *currentDetails
+	rawDetails.Version = version.ReleaseVersion
+
+	currentFg.Status = configv1.FeatureGateStatus{
+		FeatureGates: []configv1.FeatureGateDetails{*currentDetails, rawDetails},
+	}
+
+	// Update the feature gate with the current controllerconfig image.
+	_, err = clientSet.FeatureGates().UpdateStatus(ctx, currentFg, metav1.UpdateOptions{})
+	require.NoError(t, err)
+
+	// For some reason API calls aren't populating this? But it's needed for the bootstrap render.
+	currentFg.SetGroupVersionKind(configv1.SchemeGroupVersion.WithKind("FeatureGate"))
+
+	// Make sure that the objects are up to date with the FG
+	// else the bootstrap render will not work.
+	for i, obj := range objs {
+		if _, ok := obj.(*configv1.FeatureGate); ok {
+			objs[i] = currentFg
+		}
+	}
 }
 
 // loadBaseTestManifests loads all of the yaml files in the directory
@@ -586,4 +649,13 @@ func copyDir(src string, dest string) error {
 	}
 
 	return nil
+}
+
+func containsGVK(objs []runtime.Object, gvk schema.GroupVersionKind) bool {
+	for _, obj := range objs {
+		if obj.GetObjectKind().GroupVersionKind() == gvk {
+			return true
+		}
+	}
+	return false
 }
