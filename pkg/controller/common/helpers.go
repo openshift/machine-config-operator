@@ -22,15 +22,12 @@ import (
 	"github.com/coreos/ign-converter/translate/v23tov30"
 	"github.com/coreos/ign-converter/translate/v32tov22"
 	"github.com/coreos/ign-converter/translate/v32tov31"
-	"github.com/coreos/ign-converter/translate/v33tov32"
-	"github.com/coreos/ign-converter/translate/v34tov33"
 	ign2error "github.com/coreos/ignition/config/shared/errors"
 	ign2 "github.com/coreos/ignition/config/v2_2"
 	ign2types "github.com/coreos/ignition/config/v2_2/types"
 	ign2_3 "github.com/coreos/ignition/config/v2_3"
 	validate2 "github.com/coreos/ignition/config/validate"
 	ign3error "github.com/coreos/ignition/v2/config/shared/errors"
-	ign3errors "github.com/coreos/ignition/v2/config/shared/errors"
 	ign3_1 "github.com/coreos/ignition/v2/config/v3_1"
 	translate3_1 "github.com/coreos/ignition/v2/config/v3_1/translate"
 	ign3_1types "github.com/coreos/ignition/v2/config/v3_1/types"
@@ -39,7 +36,6 @@ import (
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	ign3_3 "github.com/coreos/ignition/v2/config/v3_3"
 	ign3_4 "github.com/coreos/ignition/v2/config/v3_4"
-	ign3_4types "github.com/coreos/ignition/v2/config/v3_4/types"
 	validate3 "github.com/coreos/ignition/v2/config/validate"
 	"github.com/ghodss/yaml"
 	"github.com/vincent-petithory/dataurl"
@@ -142,23 +138,6 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.Contro
 		for _, arg := range cfg.Spec.KernelArguments {
 			if !InSlice(arg, kargs) {
 				kargs = append(kargs, arg)
-			}
-		}
-	}
-
-	// Take the kargs from ignition and put them in MachineConfig if we're downgrading
-	// TODO(jkyros): This block is only here for downgrade compatibility
-	// with future MCOs that understand and use ignition 3.3+ KernelArguments
-	// remove this when we raise the ignition default to 3.4
-	for _, cfg := range configs {
-		ignKargs, err := ExtractIgnitionKargsFor4_13(cfg.Spec.Config.Raw)
-		if err != nil {
-			return nil, fmt.Errorf("Error downgrading KernelArguments for %s: %w", cfg.Name, err)
-		}
-		for _, arg := range ignKargs {
-			// ignition KernelArgument is a string under the hood, so we can convert it
-			if !InSlice(string(arg), kargs) {
-				kargs = append(kargs, string(arg))
 			}
 		}
 	}
@@ -552,66 +531,13 @@ func ValidateMachineConfig(cfg mcfgv1.MachineConfigSpec) error {
 	return nil
 }
 
-// ExtractIgnitionKargsFor4_13 parses a raw ignition config to 3.4 and extracts the kernel args,
-// erroring if ShouldNotExist is populated (since this MCO doesn't know how to implement it). This
-// function is used by the render controller to extract the kargs from ignition and migrate them to
-// MachineConfig so newer versions that specify kargs in ignition will still work during a downgrade.
-// TODO(jkyros): remove this when we raise the ignition default to 3.4
-func ExtractIgnitionKargsFor4_13(rawIgn []byte) ([]ign3_4types.KernelArgument, error) {
-	ignCfgV3, rptV3, errV3 := ign3_4.ParseCompatibleVersion(rawIgn)
-	// No kargs in an empty config, and we only want to extract args from versions that have them
-	// We will fail earlier in render controller before we get here if it's actually a version we can't parse
-	if errors.Is(errV3, ign3errors.ErrEmpty) || errors.Is(errV3, ign3error.ErrUnknownVersion) {
-		return nil, nil
-	}
-	if errV3 == nil && !rptV3.IsFatal() {
-		// We can't reconcile ShouldNotExist
-		if len(ignCfgV3.KernelArguments.ShouldNotExist) > 0 {
-			return nil, fmt.Errorf("Ignition KernelArguments.ShouldNotExist is not supported in this release ( ShouldNotExist: %s was supplied )", ignCfgV3.KernelArguments.ShouldNotExist)
-		}
-
-		// But we can stuff ShouldExist in MachineConfig, so send those back
-		if len(ignCfgV3.KernelArguments.ShouldExist) > 0 {
-			return ignCfgV3.KernelArguments.ShouldExist, nil
-		}
-
-		// There were no args in this ignition
-		return nil, nil
-	}
-
-	return nil, fmt.Errorf("parsing Ignition config spec v3.4 failed with error: %v\nReport: %v", errV3, rptV3)
-}
-
 // IgnParseWrapper parses rawIgn for both V2 and V3 ignition configs and returns
 // a V2 or V3 Config or an error. This wrapper is necessary since V2 and V3 use different parsers.
 func IgnParseWrapper(rawIgn []byte) (interface{}, error) {
 	// ParseCompatibleVersion will parse any config <= N to version N
 	ignCfgV3, rptV3, errV3 := ign3_4.ParseCompatibleVersion(rawIgn)
 	if errV3 == nil && !rptV3.IsFatal() {
-
-		// TODO(jkyros): This removes/ignores the kargs for the downconversion to 3.2 since 3.2 doesn't
-		// support the kargs fields (and the MCO doesn't either) but it still needs to be okay if we receive one.
-		// This is okay because in our MachineConfig render we merge them into MachineConfig kargs before
-		// these get stripped out.
-		ignCfgV3.KernelArguments = ign3_4types.KernelArguments{}
-
-		// Regardless of the input version it has now been translated to a 3.4 config, downtranslate to 3.3 so we
-		// can get down to 3.2
-		ignCfgV3_3, errV3_3 := v34tov33.Translate(ignCfgV3)
-		if errV3_3 != nil {
-			// This case should only be hit if fields that only exist in v3_4 are being used which are not
-			// currently supported by the MCO
-			return ign3types.Config{}, fmt.Errorf("translating Ignition config 3.4 to 3.3 failed with error: %v", errV3_3)
-		}
-		// Regardless of the input version it has now been translated to a 3.3 config, downtranslate to 3.2 to match
-		// what is used internally
-		ignCfgV3_2, errV3_2 := v33tov32.Translate(ignCfgV3_3)
-		if errV3_2 != nil {
-			// This case should only be hit if fields that only exist in v3_3 are being used which are not
-			// currently supported by the MCO
-			return ign3types.Config{}, fmt.Errorf("translating Ignition config 3.3 to 3.2 failed with error: %v", errV3_2)
-		}
-		return ignCfgV3_2, nil
+		return ignCfgV3, nil
 	}
 
 	// ParseCompatibleVersion differentiates between ErrUnknownVersion ("I know what it is and we don't support it") and
