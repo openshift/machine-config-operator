@@ -14,9 +14,6 @@ import (
 // +openshift:compatibility-gen:level=1
 type ImageList struct {
 	metav1.TypeMeta `json:",inline"`
-
-	// metadata is the standard list's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	metav1.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// Items is a list of images
@@ -39,10 +36,7 @@ type ImageList struct {
 // Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).
 // +openshift:compatibility-gen:level=1
 type Image struct {
-	metav1.TypeMeta `json:",inline"`
-
-	// metadata is the standard object's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// DockerImageReference is the string that can be used to pull this image.
@@ -116,10 +110,7 @@ type ImageLayer struct {
 // Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).
 // +openshift:compatibility-gen:level=1
 type ImageSignature struct {
-	metav1.TypeMeta `json:",inline"`
-
-	// metadata is the standard object's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// Required: Describes a type of stored blob.
@@ -199,9 +190,6 @@ type SignatureSubject struct {
 // +openshift:compatibility-gen:level=1
 type ImageStreamList struct {
 	metav1.TypeMeta `json:",inline"`
-
-	// metadata is the standard list's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	metav1.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// Items is a list of imageStreams
@@ -231,10 +219,7 @@ type ImageStreamList struct {
 // Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).
 // +openshift:compatibility-gen:level=1
 type ImageStream struct {
-	metav1.TypeMeta `json:",inline"`
-
-	// metadata is the standard object's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// Spec describes the desired state of this stream
@@ -432,10 +417,7 @@ type TagEventCondition struct {
 // Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).
 // +openshift:compatibility-gen:level=1
 type ImageStreamMapping struct {
-	metav1.TypeMeta `json:",inline"`
-
-	// metadata is the standard object's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// Image is a container image.
@@ -460,10 +442,7 @@ type ImageStreamMapping struct {
 // Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).
 // +openshift:compatibility-gen:level=1
 type ImageStreamTag struct {
-	metav1.TypeMeta `json:",inline"`
-
-	// metadata is the standard object's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// tag is the spec tag associated with this image stream tag, and it may be null
@@ -495,9 +474,6 @@ type ImageStreamTag struct {
 // +openshift:compatibility-gen:level=1
 type ImageStreamTagList struct {
 	metav1.TypeMeta `json:",inline"`
-
-	// metadata is the standard list's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	metav1.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// Items is the list of image stream tags
@@ -520,10 +496,7 @@ type ImageStreamTagList struct {
 // Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).
 // +openshift:compatibility-gen:level=1
 type ImageTag struct {
-	metav1.TypeMeta `json:",inline"`
-
-	// metadata is the standard object's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// spec is the spec tag associated with this image stream tag, and it may be null
@@ -550,9 +523,6 @@ type ImageTag struct {
 // +openshift:compatibility-gen:level=1
 type ImageTagList struct {
 	metav1.TypeMeta `json:",inline"`
-
-	// metadata is the standard list's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	metav1.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// Items is the list of image stream tags
@@ -579,10 +549,7 @@ type ImageTagList struct {
 // Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).
 // +openshift:compatibility-gen:level=1
 type ImageStreamImage struct {
-	metav1.TypeMeta `json:",inline"`
-
-	// metadata is the standard object's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// Image associated with the ImageStream and image name.
@@ -611,10 +578,7 @@ type DockerImageReference struct {
 // Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).
 // +openshift:compatibility-gen:level=1
 type ImageStreamLayers struct {
-	metav1.TypeMeta `json:",inline"`
-
-	// metadata is the standard object's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// blobs is a map of blob name to metadata about the blob.
@@ -674,10 +638,7 @@ type ImageLayerData struct {
 // Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).
 // +openshift:compatibility-gen:level=1
 type ImageStreamImport struct {
-	metav1.TypeMeta `json:",inline"`
-
-	// metadata is the standard object's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// Spec is a description of the images that the user wishes to import

@@ -18,10 +18,7 @@ import (
 // Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).
 // +openshift:compatibility-gen:level=1
 type OAuthAccessToken struct {
-	metav1.TypeMeta `json:",inline"`
-
-	// metadata is the standard object's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// ClientName references the client that created this token.
@@ -63,10 +60,7 @@ type OAuthAccessToken struct {
 // Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).
 // +openshift:compatibility-gen:level=1
 type OAuthAuthorizeToken struct {
-	metav1.TypeMeta `json:",inline"`
-
-	// metadata is the standard object's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// ClientName references the client that created this token.
@@ -107,10 +101,7 @@ type OAuthAuthorizeToken struct {
 // Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).
 // +openshift:compatibility-gen:level=1
 type OAuthClient struct {
-	metav1.TypeMeta `json:",inline"`
-
-	// metadata is the standard object's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// Secret is the unique secret associated with a client
@@ -197,10 +188,7 @@ type ClusterRoleScopeRestriction struct {
 // Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).
 // +openshift:compatibility-gen:level=1
 type OAuthClientAuthorization struct {
-	metav1.TypeMeta `json:",inline"`
-
-	// metadata is the standard object's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// ClientName references the client that created this authorization
@@ -225,9 +213,6 @@ type OAuthClientAuthorization struct {
 // +openshift:compatibility-gen:level=1
 type OAuthAccessTokenList struct {
 	metav1.TypeMeta `json:",inline"`
-
-	// metadata is the standard list's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	metav1.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// Items is the list of OAuth access tokens
@@ -242,9 +227,6 @@ type OAuthAccessTokenList struct {
 // +openshift:compatibility-gen:level=1
 type OAuthAuthorizeTokenList struct {
 	metav1.TypeMeta `json:",inline"`
-
-	// metadata is the standard list's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	metav1.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// Items is the list of OAuth authorization tokens
@@ -259,9 +241,6 @@ type OAuthAuthorizeTokenList struct {
 // +openshift:compatibility-gen:level=1
 type OAuthClientList struct {
 	metav1.TypeMeta `json:",inline"`
-
-	// metadata is the standard list's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	metav1.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// Items is the list of OAuth clients
@@ -276,9 +255,6 @@ type OAuthClientList struct {
 // +openshift:compatibility-gen:level=1
 type OAuthClientAuthorizationList struct {
 	metav1.TypeMeta `json:",inline"`
-
-	// metadata is the standard list's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	metav1.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// Items is the list of OAuth client authorizations
@@ -292,10 +268,7 @@ type OAuthClientAuthorizationList struct {
 // Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).
 // +openshift:compatibility-gen:level=1
 type OAuthRedirectReference struct {
-	metav1.TypeMeta `json:",inline"`
-
-	// metadata is the standard object's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// The reference to an redirect object in the current namespace.
@@ -332,9 +305,6 @@ type UserOAuthAccessToken OAuthAccessToken
 // +openshift:compatibility-gen:level=1
 type UserOAuthAccessTokenList struct {
 	metav1.TypeMeta `json:",inline"`
-
-	// metadata is the standard list's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	metav1.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	Items []UserOAuthAccessToken `json:"items" protobuf:"bytes,2,rep,name=items"`

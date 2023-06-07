@@ -447,9 +447,7 @@ func pollForResourceState(timeout time.Duration, pollFunc func() (bool, error)) 
 
 	var lastErr error
 
-	ctx := context.Background()
-
-	waitErr := wait.PollUntilContextTimeout(ctx, 1*time.Second, timeout, true, func(_ context.Context) (bool, error) {
+	waitErr := wait.PollImmediate(1*time.Second, timeout, func() (bool, error) {
 		result, err := pollFunc()
 		lastErr = err
 		return result, nil

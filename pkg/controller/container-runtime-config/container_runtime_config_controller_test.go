@@ -32,7 +32,6 @@ import (
 	configv1informer "github.com/openshift/client-go/config/informers/externalversions"
 	fakeoperatorclient "github.com/openshift/client-go/operator/clientset/versioned/fake"
 	operatorinformer "github.com/openshift/client-go/operator/informers/externalversions"
-	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
@@ -73,8 +72,6 @@ type fixture struct {
 	actions               []core.Action
 	skipActionsValidation bool
 
-	fgAccess featuregates.FeatureGateAccess
-
 	objects         []runtime.Object
 	imgObjects      []runtime.Object
 	operatorObjects []runtime.Object
@@ -84,14 +81,6 @@ func newFixture(t *testing.T) *fixture {
 	f := &fixture{}
 	f.t = t
 	f.objects = []runtime.Object{}
-	f.fgAccess = featuregates.NewHardcodedFeatureGateAccess(
-		[]apicfgv1.FeatureGateName{},
-		[]apicfgv1.FeatureGateName{
-			apicfgv1.FeatureGateExternalCloudProvider,
-			apicfgv1.FeatureGateExternalCloudProviderAzure,
-			apicfgv1.FeatureGateExternalCloudProviderGCP,
-		},
-	)
 	return f
 }
 
@@ -225,9 +214,7 @@ func (f *fixture) newController() *Controller {
 		ci.Config().V1().ImageTagMirrorSets(),
 		oi.Operator().V1alpha1().ImageContentSourcePolicies(),
 		ci.Config().V1().ClusterVersions(),
-		k8sfake.NewSimpleClientset(), f.client, f.imgClient,
-		f.fgAccess,
-	)
+		k8sfake.NewSimpleClientset(), f.client, f.imgClient)
 
 	c.mcpListerSynced = alwaysReady
 	c.mccrListerSynced = alwaysReady
@@ -1091,9 +1078,7 @@ func TestRunImageBootstrap(t *testing.T) {
 				// both registries.conf and policy.json as blocked
 				imgCfg := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"insecure-reg-1.io", "insecure-reg-2.io"}, BlockedRegistries: []string{"blocked-reg.io", "release-reg.io"}, ContainerRuntimeSearchRegistries: []string{"search-reg.io"}})
 
-				fgAccess := featuregates.NewHardcodedFeatureGateAccess([]apicfgv1.FeatureGateName{}, []apicfgv1.FeatureGateName{})
-
-				mcs, err := RunImageBootstrap("../../../templates", cc, pools, tc.icspRules, tc.idmsRules, tc.itmsRules, imgCfg, fgAccess)
+				mcs, err := RunImageBootstrap("../../../templates", cc, pools, tc.icspRules, tc.idmsRules, tc.itmsRules, imgCfg)
 				require.NoError(t, err)
 				require.Len(t, mcs, len(pools))
 

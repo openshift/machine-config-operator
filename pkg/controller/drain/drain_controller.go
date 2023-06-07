@@ -467,7 +467,7 @@ func (ctrl *Controller) cordonOrUncordonNode(desired bool, node *corev1.Node, dr
 		ctrl.logNode(node, "%s succeeded (currently schedulable: %t)", verb, !updatedNode.Spec.Unschedulable)
 		return true, nil
 	}); err != nil {
-		if wait.Interrupted(err) {
+		if err == wait.ErrWaitTimeout {
 			errs := kubeErrs.NewAggregate([]error{err, lastErr})
 			return fmt.Errorf("node %s: failed to %s (%d tries): %w", node.Name, verb, ctrl.cfg.CordonOrUncordonBackoff.Steps, errs)
 		}

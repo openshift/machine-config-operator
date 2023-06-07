@@ -21,7 +21,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
@@ -30,7 +29,7 @@ const (
 
 	// TODO: Figure out how to obtain this value programmatically so we don't
 	// have to remember to increment it.
-	k8sVersion string = "1.26.1"
+	k8sVersion string = "1.22.1"
 )
 
 // This is needed because both setup-envtest and the kubebuilder tools assume
@@ -350,21 +349,7 @@ func CreateObjects(t *testing.T, clientSet *ClientSet, objs ...runtime.Object) {
 			_, err := clientSet.ConfigV1Interface.Images().Create(ctx, tObj, metav1.CreateOptions{})
 			require.NoError(t, err)
 		case *configv1.FeatureGate:
-			originalStatus := tObj.Status
-			cObj, err := clientSet.FeatureGates().Create(ctx, tObj, metav1.CreateOptions{})
-			if !apierrors.IsAlreadyExists(err) {
-				require.NoError(t, err)
-			} else {
-				// If the test specificed a feature gate, override the existing one.
-				cObj, err = clientSet.FeatureGates().Get(ctx, tObj.Name, metav1.GetOptions{})
-				require.NoError(t, err)
-				cObj.Spec = tObj.Spec
-				cObj, err = clientSet.FeatureGates().Update(ctx, cObj, metav1.UpdateOptions{})
-				require.NoError(t, err)
-			}
-
-			cObj.Status = originalStatus
-			_, err = clientSet.FeatureGates().UpdateStatus(ctx, cObj, metav1.UpdateOptions{})
+			_, err := clientSet.FeatureGates().Create(ctx, tObj, metav1.CreateOptions{})
 			require.NoError(t, err)
 		case *configv1.Node:
 			_, err := clientSet.ConfigV1Interface.Nodes().Get(ctx, "cluster", metav1.GetOptions{})

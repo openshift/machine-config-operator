@@ -26,8 +26,11 @@ contents:
     staticPodPath: /etc/kubernetes/manifests
     systemCgroups: /system.slice
     featureGates:
+      APIPriorityAndFairness: true
+      DownwardAPIHugePages: true
       OpenShiftPodSecurityAdmission: true
       RetroactiveDefaultStorageClass: false
+      RotateKubeletServerCertificate: true
     serverTLSBootstrap: true
     tlsMinVersion: VersionTLS12
     tlsCipherSuites:

@@ -10,7 +10,6 @@ import (
 	"github.com/golang/glog"
 	osev1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/library-go/pkg/cloudprovider"
-	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -25,7 +24,7 @@ import (
 
 var (
 	// openshiftOnlyFeatureGates contains selection of featureGates which will be rejected by native kubelet
-	openshiftOnlyFeatureGates = []osev1.FeatureGateName{
+	openshiftOnlyFeatureGates = []string{
 		cloudprovider.ExternalCloudProviderFeature,
 	}
 )
@@ -53,6 +52,21 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 	defer func() {
 		glog.V(4).Infof("Finished syncing feature handler %q (%v)", key, time.Since(startTime))
 	}()
+
+	// Fetch the Feature
+	features, err := ctrl.featLister.Get(ctrlcommon.ClusterFeatureInstanceName)
+	if errors.IsNotFound(err) {
+		glog.V(2).Infof("FeatureSet %v is missing, using default", key)
+		features = &osev1.FeatureGate{
+			Spec: osev1.FeatureGateSpec{
+				FeatureGateSelection: osev1.FeatureGateSelection{
+					FeatureSet: osev1.Default,
+				},
+			},
+		}
+	} else if err != nil {
+		return err
+	}
 
 	cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
 	if err != nil {
@@ -91,7 +105,7 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 			}
 		}
 
-		rawCfgIgn, err := generateKubeConfigIgnFromFeatures(cc, ctrl.templatesDir, role, ctrl.featureGateAccess, nodeConfig)
+		rawCfgIgn, err := generateKubeConfigIgnFromFeatures(cc, ctrl.templatesDir, role, features, nodeConfig)
 		if err != nil {
 			return err
 		}
@@ -168,42 +182,48 @@ func (ctrl *Controller) deleteFeature(obj interface{}) {
 // generateFeatureMap returns a map of enabled/disabled feature gate selection with exclusion list
 //
 //nolint:gocritic
-func generateFeatureMap(featuregateAccess featuregates.FeatureGateAccess, exclusions ...osev1.FeatureGateName) (*map[string]bool, error) {
+func generateFeatureMap(features *osev1.FeatureGate, exclusions ...string) (*map[string]bool, error) {
 	rv := make(map[string]bool)
-	if !featuregateAccess.AreInitialFeatureGatesObserved() {
-		return nil, fmt.Errorf("initial feature gates are not observed")
+	if features == nil {
+		features = createNewDefaultFeatureGate()
 	}
-
-	features, err := featuregateAccess.CurrentFeatureGates()
-	if err != nil {
-		return nil, fmt.Errorf("could not get current feature gates: %w", err)
+	set, ok := osev1.FeatureSets[features.Spec.FeatureSet]
+	if !ok {
+		return &rv, fmt.Errorf("enabled FeatureSet %v does not have a corresponding config", features.Spec.FeatureSet)
 	}
-
-	for _, feat := range features.KnownFeatures() {
-		if features.Enabled(feat) {
-			rv[string(feat)] = true
-		} else {
-			rv[string(feat)] = false
+	for _, featEnabled := range set.Enabled {
+		rv[featEnabled] = true
+	}
+	for _, featDisabled := range set.Disabled {
+		rv[featDisabled] = false
+	}
+	// The CustomNoUpgrade options will override our defaults. This is
+	// expected behavior and can potentially break a cluster.
+	if features.Spec.FeatureSet == osev1.CustomNoUpgrade && features.Spec.CustomNoUpgrade != nil {
+		for _, featEnabled := range features.Spec.CustomNoUpgrade.Enabled {
+			rv[featEnabled] = true
+		}
+		for _, featDisabled := range features.Spec.CustomNoUpgrade.Disabled {
+			rv[featDisabled] = false
 		}
 	}
 
 	// Remove features excluded due to being breaking for some reason
 	for _, excluded := range exclusions {
-		delete(rv, string(excluded))
+		delete(rv, excluded)
 	}
 	return &rv, nil
 }
 
-func generateKubeConfigIgnFromFeatures(cc *mcfgv1.ControllerConfig, templatesDir, role string, featureGateAccess featuregates.FeatureGateAccess, nodeConfig *osev1.Node) ([]byte, error) {
-	originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, templatesDir, role, featureGateAccess)
+func generateKubeConfigIgnFromFeatures(cc *mcfgv1.ControllerConfig, templatesDir, role string, features *osev1.FeatureGate, nodeConfig *osev1.Node) ([]byte, error) {
+	originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, templatesDir, role, features)
 	if err != nil {
 		return nil, err
 	}
 	if nodeConfig != nil {
 		updateOriginalKubeConfigwithNodeConfig(nodeConfig, originalKubeConfig)
 	}
-
-	defaultFeatures, err := generateFeatureMap(createNewDefaultFeatureGateAccess(), openshiftOnlyFeatureGates...)
+	defaultFeatures, err := generateFeatureMap(createNewDefaultFeatureGate(), openshiftOnlyFeatureGates...)
 	if err != nil {
 		return nil, err
 	}
@@ -229,7 +249,7 @@ func generateKubeConfigIgnFromFeatures(cc *mcfgv1.ControllerConfig, templatesDir
 	return rawCfgIgn, nil
 }
 
-func RunFeatureGateBootstrap(templateDir string, featureGateAccess featuregates.FeatureGateAccess, nodeConfig *osev1.Node, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool) ([]*mcfgv1.MachineConfig, error) {
+func RunFeatureGateBootstrap(templateDir string, features *osev1.FeatureGate, nodeConfig *osev1.Node, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool) ([]*mcfgv1.MachineConfig, error) {
 	machineConfigs := []*mcfgv1.MachineConfig{}
 
 	for _, pool := range mcpPools {
@@ -237,7 +257,7 @@ func RunFeatureGateBootstrap(templateDir string, featureGateAccess featuregates.
 		if nodeConfig == nil {
 			nodeConfig = createNewDefaultNodeconfig()
 		}
-		rawCfgIgn, err := generateKubeConfigIgnFromFeatures(controllerConfig, templateDir, role, featureGateAccess, nodeConfig)
+		rawCfgIgn, err := generateKubeConfigIgnFromFeatures(controllerConfig, templateDir, role, features, nodeConfig)
 		if err != nil {
 			return nil, err
 		}

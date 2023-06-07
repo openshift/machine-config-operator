@@ -20,7 +20,6 @@ var (
 )
 
 func init() {
-	utilruntime.Must(api.Install(genericScheme))
 	utilruntime.Must(api.InstallKube(genericScheme))
 	utilruntime.Must(apiextensionsv1beta1.AddToScheme(genericScheme))
 	utilruntime.Must(apiextensionsv1.AddToScheme(genericScheme))

@@ -5,11 +5,10 @@ package v1
 // NutanixPlatformStatusApplyConfiguration represents an declarative configuration of the NutanixPlatformStatus type for use
 // with apply.
 type NutanixPlatformStatusApplyConfiguration struct {
-	APIServerInternalIP  *string                                        `json:"apiServerInternalIP,omitempty"`
-	APIServerInternalIPs []string                                       `json:"apiServerInternalIPs,omitempty"`
-	IngressIP            *string                                        `json:"ingressIP,omitempty"`
-	IngressIPs           []string                                       `json:"ingressIPs,omitempty"`
-	LoadBalancer         *NutanixPlatformLoadBalancerApplyConfiguration `json:"loadBalancer,omitempty"`
+	APIServerInternalIP  *string  `json:"apiServerInternalIP,omitempty"`
+	APIServerInternalIPs []string `json:"apiServerInternalIPs,omitempty"`
+	IngressIP            *string  `json:"ingressIP,omitempty"`
+	IngressIPs           []string `json:"ingressIPs,omitempty"`
 }
 
 // NutanixPlatformStatusApplyConfiguration constructs an declarative configuration of the NutanixPlatformStatus type for use with
@@ -51,13 +50,5 @@ func (b *NutanixPlatformStatusApplyConfiguration) WithIngressIPs(values ...strin
 	for i := range values {
 		b.IngressIPs = append(b.IngressIPs, values[i])
 	}
-	return b
-}
-
-// WithLoadBalancer sets the LoadBalancer field in the declarative configuration to the given value
-// and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the LoadBalancer field is set to the value of the last call.
-func (b *NutanixPlatformStatusApplyConfiguration) WithLoadBalancer(value *NutanixPlatformLoadBalancerApplyConfiguration) *NutanixPlatformStatusApplyConfiguration {
-	b.LoadBalancer = value
 	return b
 }

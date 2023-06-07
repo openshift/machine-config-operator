@@ -8,16 +8,19 @@ import (
 
 	"github.com/clarketm/json"
 	configv1 "github.com/openshift/api/config/v1"
+	osev1 "github.com/openshift/api/config/v1"
 	oseconfigfake "github.com/openshift/client-go/config/clientset/versioned/fake"
+	oseinformersv1 "github.com/openshift/client-go/config/informers/externalversions"
 	"github.com/openshift/library-go/pkg/cloudprovider"
-	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/diff"
+	"k8s.io/apimachinery/pkg/util/rand"
 	coreinformersv1 "k8s.io/client-go/informers"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 	core "k8s.io/client-go/testing"
@@ -42,8 +45,9 @@ type fixture struct {
 	kubeclient *k8sfake.Clientset
 	oseclient  *oseconfigfake.Clientset
 
-	ccLister []*mcfgv1.ControllerConfig
-	mcLister []*mcfgv1.MachineConfig
+	ccLister   []*mcfgv1.ControllerConfig
+	mcLister   []*mcfgv1.MachineConfig
+	featLister []*osev1.FeatureGate
 
 	kubeactions []core.Action
 	actions     []core.Action
@@ -99,16 +103,17 @@ func (f *fixture) newController() *Controller {
 	f.client = fake.NewSimpleClientset(f.objects...)
 	f.kubeclient = k8sfake.NewSimpleClientset(f.kubeobjects...)
 	f.oseclient = oseconfigfake.NewSimpleClientset(f.oseobjects...)
-	fgAccess := featuregates.NewHardcodedFeatureGateAccess(nil, nil)
+	featinformer := oseinformersv1.NewSharedInformerFactory(f.oseclient, 0)
 
 	cinformer := coreinformersv1.NewSharedInformerFactory(f.kubeclient, noResyncPeriodFunc())
 	i := informers.NewSharedInformerFactory(f.client, noResyncPeriodFunc())
 	c := New(templateDir,
-		i.Machineconfiguration().V1().ControllerConfigs(), i.Machineconfiguration().V1().MachineConfigs(), cinformer.Core().V1().Secrets(),
-		f.kubeclient, f.client, fgAccess)
+		i.Machineconfiguration().V1().ControllerConfigs(), i.Machineconfiguration().V1().MachineConfigs(), cinformer.Core().V1().Secrets(), featinformer.Config().V1().FeatureGates(),
+		f.kubeclient, f.client)
 
 	c.ccListerSynced = alwaysReady
 	c.mcListerSynced = alwaysReady
+	c.featListerSynced = alwaysReady
 	c.eventRecorder = &record.FakeRecorder{}
 
 	stopCh := make(chan struct{})
@@ -122,6 +127,10 @@ func (f *fixture) newController() *Controller {
 
 	for _, m := range f.mcLister {
 		i.Machineconfiguration().V1().MachineConfigs().Informer().GetIndexer().Add(m)
+	}
+
+	for _, c := range f.featLister {
+		featinformer.Config().V1().FeatureGates().Informer().GetIndexer().Add(c)
 	}
 
 	return c
@@ -251,6 +260,21 @@ func filterInformerActions(actions []core.Action) []core.Action {
 	return ret
 }
 
+func newFeatures(name, featureSet string, enabled, disabled []string) *osev1.FeatureGate {
+	var custom *osev1.CustomFeatureGates
+	if len(enabled) > 0 || len(disabled) > 0 {
+		custom = &osev1.CustomFeatureGates{Enabled: enabled, Disabled: disabled}
+	}
+	return &osev1.FeatureGate{
+		TypeMeta:   metav1.TypeMeta{APIVersion: osev1.GroupVersion.String()},
+		ObjectMeta: metav1.ObjectMeta{Name: name, UID: types.UID(rand.String(5))},
+		Spec: osev1.FeatureGateSpec{FeatureGateSelection: osev1.FeatureGateSelection{
+			FeatureSet:      osev1.FeatureSet(featureSet),
+			CustomNoUpgrade: custom,
+		}},
+	}
+}
+
 func (f *fixture) expectGetMachineConfigAction(config *mcfgv1.MachineConfig) {
 	f.actions = append(f.actions, core.NewRootGetAction(schema.GroupVersionResource{Resource: "machineconfigs"}, config.Name))
 }
@@ -280,9 +304,7 @@ func TestCreatesMachineConfigs(t *testing.T) {
 	f.objects = append(f.objects, cc)
 	f.kubeobjects = append(f.kubeobjects, ps)
 
-	fgAccess := featuregates.NewHardcodedFeatureGateAccess(nil, nil)
-
-	expMCs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), fgAccess)
+	expMCs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -312,13 +334,14 @@ func TestCreatesMachineConfigsWithFeatureGate(t *testing.T) {
 	f := newFixture(t)
 	cc := newControllerConfig("test-cluster")
 	ps := newPullSecret("coreos-pull-secret", []byte(`{"dummy": "dummy"}`))
-	fgAccess := featuregates.NewHardcodedFeatureGateAccess([]configv1.FeatureGateName{cloudprovider.ExternalCloudProviderFeature, "SomeOther"}, nil)
+	feat := newFeatures("cluster", "CustomNoUpgrade", []string{cloudprovider.ExternalCloudProviderFeature, "SomeOther"}, nil)
+	f.featLister = append(f.featLister, feat)
 
 	f.ccLister = append(f.ccLister, cc)
 	f.objects = append(f.objects, cc)
 	f.kubeobjects = append(f.kubeobjects, ps)
 
-	expMCs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), fgAccess)
+	expMCs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), feat)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -348,9 +371,10 @@ func TestDoNothing(t *testing.T) {
 	f := newFixture(t)
 	cc := newControllerConfig("test-cluster")
 	ps := newPullSecret("coreos-pull-secret", []byte(`{"dummy": "dummy"}`))
-	fgAccess := featuregates.NewHardcodedFeatureGateAccess([]configv1.FeatureGateName{cloudprovider.ExternalCloudProviderFeature}, nil)
+	feat := newFeatures("cluster", "CustomNoUpgrade", []string{cloudprovider.ExternalCloudProviderFeature}, nil)
+	f.featLister = append(f.featLister, feat)
 
-	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), fgAccess)
+	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), feat)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -387,9 +411,10 @@ func TestRecreateMachineConfig(t *testing.T) {
 	f := newFixture(t)
 	cc := newControllerConfig("test-cluster")
 	ps := newPullSecret("coreos-pull-secret", []byte(`{"dummy": "dummy"}`))
-	fgAccess := featuregates.NewHardcodedFeatureGateAccess([]configv1.FeatureGateName{cloudprovider.ExternalCloudProviderFeature}, nil)
+	feat := newFeatures("cluster", "CustomNoUpgrade", []string{cloudprovider.ExternalCloudProviderFeature}, nil)
+	f.featLister = append(f.featLister, feat)
 
-	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), fgAccess)
+	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), feat)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -427,9 +452,10 @@ func TestUpdateMachineConfig(t *testing.T) {
 	f := newFixture(t)
 	cc := newControllerConfig("test-cluster")
 	ps := newPullSecret("coreos-pull-secret", []byte(`{"dummy": "dummy"}`))
-	fgAccess := featuregates.NewHardcodedFeatureGateAccess([]configv1.FeatureGateName{cloudprovider.ExternalCloudProviderFeature}, nil)
+	feat := newFeatures("cluster", "CustomNoUpgrade", []string{cloudprovider.ExternalCloudProviderFeature}, nil)
+	f.featLister = append(f.featLister, feat)
 
-	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), fgAccess)
+	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), feat)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -449,7 +475,7 @@ func TestUpdateMachineConfig(t *testing.T) {
 		f.objects = append(f.objects, mcs[idx])
 	}
 
-	expmcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), fgAccess)
+	expmcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), feat)
 	if err != nil {
 		t.Fatal(err)
 	}
