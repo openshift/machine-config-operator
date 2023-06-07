@@ -716,6 +716,18 @@ func (optr *Operator) syncMachineOSBuilder(config *renderConfig) error {
 		}
 	}
 
+	pools, err := optr.mcpLister.List(labels.Everything())
+	if err != nil {
+		glog.Fatal(err)
+	}
+	for _, pool := range pools {
+		labels := pool.GetLabels()
+		if val, ok := labels["on-cluster-build"]; ok && val == "true" {
+			fmt.Printf("Pool %s is labeled with 'on-cluster-build'. Starting the build controller pod.\n", pool.Name)
+			startBuildControllerPod()
+		}
+	}
+
 	// var lastErr error
 	// if err := wait.Poll(time.Second, 10*time.Minute, func() (bool, error) {
 	// if lastErr != nil {
