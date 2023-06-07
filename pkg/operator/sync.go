@@ -732,13 +732,10 @@ func (optr *Operator) checkForOnClusterBuild(config *renderConfig) error {
 		glog.Fatal(err)
 	}
 	for _, pool := range pools {
-		// labels := pool.GetLabels()
 		glog.Infof("Pool found: %s \n", pool.Name)
 		if pool.Name == "on-cluster-build" {
 			fmt.Printf("Pool %s is labeled with 'on-cluster-build'. Starting the build controller pod.\n", pool.Name)
 			startBuildControllerPod()
-		} else {
-			glog.Infof("Pool %s is not labeled with 'on-cluster-build'.\n", pool.Name)
 		}
 	}
 
