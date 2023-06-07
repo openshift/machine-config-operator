@@ -35,7 +35,7 @@ var (
 		prometheus.GaugeOpts{
 			Name: "mcc_pool_alert",
 			Help: "pool status alert",
-		}, []string{"pool", "alert"})
+		}, []string{"node"})
 )
 
 func RegisterMCCMetrics() error {

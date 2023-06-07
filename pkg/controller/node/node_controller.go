@@ -626,10 +626,10 @@ func (ctrl *Controller) getPoolsForNode(node *corev1.Node) ([]*mcfgv1.MachineCon
 		if master != nil {
 			// if we have a custom pool and master, defer to master and return.
 			klog.Infof("Found master node that matches selector for custom pool %v, defaulting to master. This node will not have any custom role configuration as a result. Please review the node to make sure this is intended", custom[0].Name)
-			ctrlcommon.MCCPoolAlert.WithLabelValues(custom[0].Name, fmt.Sprintf("Given both master and custom pools. Defaulting to master: custom %v", custom[0].Name)).Set(1)
+			ctrlcommon.MCCPoolAlert.WithLabelValues(node.Name).Set(1)
 			pls = append(pls, master)
 		} else {
-			ctrlcommon.MCCPoolAlert.WithLabelValues(custom[0].Name, "Applying custom label for pool").Set(0)
+			ctrlcommon.MCCPoolAlert.WithLabelValues(node.Name).Set(0)
 			pls = append(pls, custom[0])
 		}
 		if worker != nil {
@@ -643,9 +643,11 @@ func (ctrl *Controller) getPoolsForNode(node *corev1.Node) ([]*mcfgv1.MachineCon
 		// the master pool. This occurs in CodeReadyContainers and general
 		// "single node" deployments, which one may want to do for testing bare
 		// metal, etc.
+		ctrlcommon.MCCPoolAlert.WithLabelValues(node.Name).Set(0)
 		return []*mcfgv1.MachineConfigPool{master}, nil
 	}
 	// Otherwise, it's a worker with no custom roles.
+	ctrlcommon.MCCPoolAlert.WithLabelValues(node.Name).Set(0)
 	return []*mcfgv1.MachineConfigPool{worker}, nil
 }
 
