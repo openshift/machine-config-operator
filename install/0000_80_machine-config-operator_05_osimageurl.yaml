@@ -11,9 +11,9 @@ data:
   releaseVersion: 0.0.1-snapshot
   # This (will eventually) replace the below when https://github.com/openshift/enhancements/pull/1032
   # progresses towards the default.
-  baseOSContainerImage: "placeholder.url.oc.will.replace.this.org/placeholdernamespace:rhel-coreos"
-  baseOSExtensionsContainerImage: "placeholder.url.oc.will.replace.this.org/placeholdernamespace:rhel-coreos-extensions"
+  baseOSContainerImage: "quay.io/okd/centos-stream-coreos-9:4.13-x86_64"
+  baseOSExtensionsContainerImage: "quay.io/okd/centos-stream-coreos-9-extensions:4.13-x86_64"
   # The OS payload used for 4.10 and below; more information in
   # https://github.com/openshift/machine-config-operator/blob/master/docs/OSUpgrades.md
   # (The original issue was  https://github.com/openshift/machine-config-operator/issues/183 )
-  osImageURL: "placeholder.url.oc.will.replace.this.org/placeholdernamespace:machine-os-content"
+  osImageURL: "quay.io/okd/centos-stream-coreos-9:4.13-x86_64"

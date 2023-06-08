@@ -114,12 +114,7 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 	// To help debugging, immediately log version
 	glog.Infof("Version: %+v (%s)", version.Raw, version.Hash)
 
-	baseOSContainerImageTag := "rhel-coreos"
-	if version.IsFCOS() {
-		baseOSContainerImageTag = "fedora-coreos"
-	} else if version.IsSCOS() {
-		baseOSContainerImageTag = "centos-stream-coreos-9"
-	}
+	baseOSContainerImageTag := "centos-stream-coreos-9:4.13-x86_64"
 
 	if bootstrapOpts.imageReferences != "" {
 		imageRefData, err := os.ReadFile(bootstrapOpts.imageReferences)
