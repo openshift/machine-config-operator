@@ -65,6 +65,9 @@ const (
 
 	// schedulerCRName that we're interested in watching.
 	schedulerCRName = "cluster"
+
+	// LayeringEnabledPoolLabel is the label that enables the "layered" workflow path for a pool.
+	LayeringEnabledPoolLabel = "machineconfiguration.openshift.io/layering-enabled"
 )
 
 // Controller defines the node controller.
@@ -1172,4 +1175,23 @@ func getErrorString(err error) string {
 		return err.Error()
 	}
 	return ""
+}
+
+// shouldApplyConfigToPool checks if the node-controller should apply configurations to the given pool.
+// If a pool is labeled with 'LayeringEnabledPoolLabel', it returns false indicating that no action should be taken.
+// Otherwise, it returns true indicating that the node-controller can proceed with applying configurations to the pool.
+func shouldApplyConfigToPool(pool *mcfgv1.MachineConfigPool) bool {
+	labels := pool.GetLabels()
+	_, exists := labels[LayeringEnabledPoolLabel]
+	return !exists
+}
+
+func updateCandidateMachines(pool *mcfgv1.MachineConfigPool, candidates []*corev1.Node, capacity uint) error {
+	if !shouldApplyConfigToPool(pool) {
+		// Pool is labeled with 'LayeringEnabledPoolLabel', don't do anything.
+		return nil
+	}
+
+	// Continue with the rest of the update logic for the pool
+	return nil
 }
