@@ -39,6 +39,7 @@ import (
 	"k8s.io/client-go/util/retry"
 	"k8s.io/client-go/util/workqueue"
 
+	"github.com/openshift/machine-config-operator/internal/clients"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	mtmpl "github.com/openshift/machine-config-operator/pkg/controller/template"
@@ -208,10 +209,10 @@ func New(
 	return ctrl
 }
 
-func migrationICSPToIDMS(configClient configclientset.Interface, operatorClient operatorclientset.Interface,
-	icspLister operatorlistersv1alpha1.ImageContentSourcePolicyLister) error {
+func migrationICSPToIDMS(configClient configclientset.Interface, operatorClient operatorclientset.Interface) error {
 	glog.Info("Start migrating ImageContentSourcePolicy to ImageDigestMirrorSet")
-	icspRules, err := icspLister.List(labels.Everything())
+	icspList, err := operatorClient.OperatorV1alpha1().ImageContentSourcePolicies().List(context.Background(), metav1.ListOptions{})
+	icspRules := icspList.Items
 	if err != nil && !errors.IsNotFound(err) {
 		return err
 	}
@@ -221,7 +222,7 @@ func migrationICSPToIDMS(configClient configclientset.Interface, operatorClient 
 	}
 	var idmsRules []*apicfgv1.ImageDigestMirrorSet
 	for _, icspRule := range icspRules {
-		idmsRules = append(idmsRules, convertICSPToIDMS(icspRule))
+		idmsRules = append(idmsRules, convertICSPToIDMS(&icspRule))
 		if err := operatorClient.OperatorV1alpha1().ImageContentSourcePolicies().Delete(context.Background(), icspRule.Name, metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
 			glog.Errorf("Error deleting ImageContentSourcePolicy %s: %v", icspRule.Name, err)
 			return err
@@ -421,7 +422,7 @@ func (ctrl *Controller) processNextImgWorkItem() bool {
 	}
 	defer ctrl.imgQueue.Done(key)
 
-	if err := migrationICSPToIDMS(ctrl.configClient, ctrl.operatorClient, ctrl.icspLister); err != nil {
+	if err := migrationICSPToIDMS(ctrl.configClient, ctrl.operatorClient); err != nil {
 		utilruntime.HandleError(err)
 		return true
 	}
@@ -1005,6 +1006,14 @@ func RunImageBootstrap(templateDir string, controllerConfig *mcfgv1.ControllerCo
 		insecureRegs, registriesBlocked, policyBlocked, allowedRegs, searchRegs []string
 		err                                                                     error
 	)
+
+	clientsBuilder, err := clients.NewBuilder("")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Kubernetes rest client: %w", err)
+	}
+	if err := migrationICSPToIDMS(clientsBuilder.ConfigClientOrDie("container-runtime-config-controller"), clientsBuilder.OperatorClientOrDie("container-runtime-config-controller")); err != nil {
+		return nil, err
+	}
 
 	if err := runtimeutils.RejectMultiUpdateMirrorSetObjs(icspRules, idmsRules, itmsRules); err != nil {
 		return nil, err
