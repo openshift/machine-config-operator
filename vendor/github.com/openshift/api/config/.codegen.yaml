@@ -3,5 +3,3 @@ schemapatch:
   - ""
   - "Default"
   - "TechPreviewNoUpgrade"
-swaggerdocs:
-  commentPolicy: Warn

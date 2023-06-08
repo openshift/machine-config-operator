@@ -12,8 +12,7 @@ package v1alpha1
 
 // AUTO-GENERATED FUNCTIONS START HERE
 var map_ConsolePlugin = map[string]string{
-	"":         "ConsolePlugin is an extension for customizing OpenShift web console by dynamically loading code from another service running on the cluster.\n\nCompatibility level 4: No compatibility is provided, the API can change at any point for any reason. These capabilities should not be used by applications needing long term support.",
-	"metadata": "metadata is the standard object's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
+	"": "ConsolePlugin is an extension for customizing OpenShift web console by dynamically loading code from another service running on the cluster.\n\nCompatibility level 4: No compatibility is provided, the API can change at any point for any reason. These capabilities should not be used by applications needing long term support.",
 }
 
 func (ConsolePlugin) SwaggerDoc() map[string]string {
@@ -21,8 +20,7 @@ func (ConsolePlugin) SwaggerDoc() map[string]string {
 }
 
 var map_ConsolePluginList = map[string]string{
-	"":         "Compatibility level 4: No compatibility is provided, the API can change at any point for any reason. These capabilities should not be used by applications needing long term support.",
-	"metadata": "metadata is the standard list's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
+	"": "Compatibility level 4: No compatibility is provided, the API can change at any point for any reason. These capabilities should not be used by applications needing long term support.",
 }
 
 func (ConsolePluginList) SwaggerDoc() map[string]string {

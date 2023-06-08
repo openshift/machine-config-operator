@@ -266,10 +266,9 @@ func (StringSourceSpec) SwaggerDoc() map[string]string {
 }
 
 var map_APIServer = map[string]string{
-	"":         "APIServer holds configuration (like serving certificates, client CA and CORS domains) shared by all API servers in the system, among them especially kube-apiserver and openshift-apiserver. The canonical name of an instance is 'cluster'.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
-	"metadata": "metadata is the standard object's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
-	"spec":     "spec holds user settable values for configuration",
-	"status":   "status holds observed values from the cluster. They may not be overridden.",
+	"":       "APIServer holds configuration (like serving certificates, client CA and CORS domains) shared by all API servers in the system, among them especially kube-apiserver and openshift-apiserver. The canonical name of an instance is 'cluster'.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
+	"spec":   "spec holds user settable values for configuration",
+	"status": "status holds observed values from the cluster. They may not be overridden.",
 }
 
 func (APIServer) SwaggerDoc() map[string]string {
@@ -285,8 +284,7 @@ func (APIServerEncryption) SwaggerDoc() map[string]string {
 }
 
 var map_APIServerList = map[string]string{
-	"":         "Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
-	"metadata": "metadata is the standard list's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
+	"": "Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
 }
 
 func (APIServerList) SwaggerDoc() map[string]string {
@@ -344,10 +342,9 @@ func (AuditCustomRule) SwaggerDoc() map[string]string {
 }
 
 var map_Authentication = map[string]string{
-	"":         "Authentication specifies cluster-wide settings for authentication (like OAuth and webhook token authenticators). The canonical name of an instance is `cluster`.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
-	"metadata": "metadata is the standard object's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
-	"spec":     "spec holds user settable values for configuration",
-	"status":   "status holds observed values from the cluster. They may not be overridden.",
+	"":       "Authentication specifies cluster-wide settings for authentication (like OAuth and webhook token authenticators). The canonical name of an instance is `cluster`.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
+	"spec":   "spec holds user settable values for configuration",
+	"status": "status holds observed values from the cluster. They may not be overridden.",
 }
 
 func (Authentication) SwaggerDoc() map[string]string {
@@ -355,8 +352,7 @@ func (Authentication) SwaggerDoc() map[string]string {
 }
 
 var map_AuthenticationList = map[string]string{
-	"":         "Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
-	"metadata": "metadata is the standard list's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
+	"": "Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
 }
 
 func (AuthenticationList) SwaggerDoc() map[string]string {
@@ -402,9 +398,8 @@ func (WebhookTokenAuthenticator) SwaggerDoc() map[string]string {
 }
 
 var map_Build = map[string]string{
-	"":         "Build configures the behavior of OpenShift builds for the entire cluster. This includes default settings that can be overridden in BuildConfig objects, and overrides which are applied to all builds.\n\nThe canonical name is \"cluster\"\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
-	"metadata": "metadata is the standard object's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
-	"spec":     "Spec holds user-settable values for the build controller configuration",
+	"":     "Build configures the behavior of OpenShift builds for the entire cluster. This includes default settings that can be overridden in BuildConfig objects, and overrides which are applied to all builds.\n\nThe canonical name is \"cluster\"\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
+	"spec": "Spec holds user-settable values for the build controller configuration",
 }
 
 func (Build) SwaggerDoc() map[string]string {
@@ -424,8 +419,7 @@ func (BuildDefaults) SwaggerDoc() map[string]string {
 }
 
 var map_BuildList = map[string]string{
-	"":         "Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
-	"metadata": "metadata is the standard list's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
+	"": "Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
 }
 
 func (BuildList) SwaggerDoc() map[string]string {
@@ -463,10 +457,9 @@ func (ImageLabel) SwaggerDoc() map[string]string {
 }
 
 var map_ClusterOperator = map[string]string{
-	"":         "ClusterOperator is the Custom Resource object which holds the current state of an operator. This object is used by operators to convey their state to the rest of the cluster.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
-	"metadata": "metadata is the standard object's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
-	"spec":     "spec holds configuration that could apply to any operator.",
-	"status":   "status holds the information about the state of an operator.  It is consistent with status information across the Kubernetes ecosystem.",
+	"":       "ClusterOperator is the Custom Resource object which holds the current state of an operator. This object is used by operators to convey their state to the rest of the cluster.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
+	"spec":   "spec holds configuration that could apply to any operator.",
+	"status": "status holds the information about the state of an operator.  It is consistent with status information across the Kubernetes ecosystem.",
 }
 
 func (ClusterOperator) SwaggerDoc() map[string]string {
@@ -474,8 +467,7 @@ func (ClusterOperator) SwaggerDoc() map[string]string {
 }
 
 var map_ClusterOperatorList = map[string]string{
-	"":         "ClusterOperatorList is a list of OperatorStatus resources.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
-	"metadata": "metadata is the standard list's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
+	"": "ClusterOperatorList is a list of OperatorStatus resources.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
 }
 
 func (ClusterOperatorList) SwaggerDoc() map[string]string {
@@ -547,10 +539,9 @@ func (ClusterCondition) SwaggerDoc() map[string]string {
 }
 
 var map_ClusterVersion = map[string]string{
-	"":         "ClusterVersion is the configuration for the ClusterVersionOperator. This is where parameters related to automatic updates can be set.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
-	"metadata": "metadata is the standard object's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
-	"spec":     "spec is the desired state of the cluster version - the operator will work to ensure that the desired version is applied to the cluster.",
-	"status":   "status contains information about the available updates and any in-progress updates.",
+	"":       "ClusterVersion is the configuration for the ClusterVersionOperator. This is where parameters related to automatic updates can be set.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
+	"spec":   "spec is the desired state of the cluster version - the operator will work to ensure that the desired version is applied to the cluster.",
+	"status": "status contains information about the available updates and any in-progress updates.",
 }
 
 func (ClusterVersion) SwaggerDoc() map[string]string {
@@ -578,8 +569,7 @@ func (ClusterVersionCapabilitiesStatus) SwaggerDoc() map[string]string {
 }
 
 var map_ClusterVersionList = map[string]string{
-	"":         "ClusterVersionList is a list of ClusterVersion resources.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
-	"metadata": "metadata is the standard list's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
+	"": "ClusterVersionList is a list of ClusterVersion resources.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
 }
 
 func (ClusterVersionList) SwaggerDoc() map[string]string {
@@ -701,10 +691,9 @@ func (UpdateHistory) SwaggerDoc() map[string]string {
 }
 
 var map_Console = map[string]string{
-	"":         "Console holds cluster-wide configuration for the web console, including the logout URL, and reports the public URL of the console. The canonical name is `cluster`.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
-	"metadata": "metadata is the standard object's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
-	"spec":     "spec holds user settable values for configuration",
-	"status":   "status holds observed values from the cluster. They may not be overridden.",
+	"":       "Console holds cluster-wide configuration for the web console, including the logout URL, and reports the public URL of the console. The canonical name is `cluster`.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
+	"spec":   "spec holds user settable values for configuration",
+	"status": "status holds observed values from the cluster. They may not be overridden.",
 }
 
 func (Console) SwaggerDoc() map[string]string {
@@ -721,8 +710,7 @@ func (ConsoleAuthentication) SwaggerDoc() map[string]string {
 }
 
 var map_ConsoleList = map[string]string{
-	"":         "Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
-	"metadata": "metadata is the standard list's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
+	"": "Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
 }
 
 func (ConsoleList) SwaggerDoc() map[string]string {
@@ -747,10 +735,9 @@ func (ConsoleStatus) SwaggerDoc() map[string]string {
 }
 
 var map_DNS = map[string]string{
-	"":         "DNS holds cluster-wide information about DNS. The canonical name is `cluster`\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
-	"metadata": "metadata is the standard object's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
-	"spec":     "spec holds user settable values for configuration",
-	"status":   "status holds observed values from the cluster. They may not be overridden.",
+	"":       "DNS holds cluster-wide information about DNS. The canonical name is `cluster`\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
+	"spec":   "spec holds user settable values for configuration",
+	"status": "status holds observed values from the cluster. They may not be overridden.",
 }
 
 func (DNS) SwaggerDoc() map[string]string {
@@ -758,8 +745,7 @@ func (DNS) SwaggerDoc() map[string]string {
 }
 
 var map_DNSList = map[string]string{
-	"":         "Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
-	"metadata": "metadata is the standard list's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
+	"": "Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
 }
 
 func (DNSList) SwaggerDoc() map[string]string {
@@ -796,37 +782,17 @@ func (CustomFeatureGates) SwaggerDoc() map[string]string {
 }
 
 var map_FeatureGate = map[string]string{
-	"":         "Feature holds cluster-wide information about feature gates.  The canonical name is `cluster`\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
-	"metadata": "metadata is the standard object's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
-	"spec":     "spec holds user settable values for configuration",
-	"status":   "status holds observed values from the cluster. They may not be overridden.",
+	"":       "Feature holds cluster-wide information about feature gates.  The canonical name is `cluster`\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
+	"spec":   "spec holds user settable values for configuration",
+	"status": "status holds observed values from the cluster. They may not be overridden.",
 }
 
 func (FeatureGate) SwaggerDoc() map[string]string {
 	return map_FeatureGate
 }
 
-var map_FeatureGateAttributes = map[string]string{
-	"name": "name is the name of the FeatureGate.",
-}
-
-func (FeatureGateAttributes) SwaggerDoc() map[string]string {
-	return map_FeatureGateAttributes
-}
-
-var map_FeatureGateDetails = map[string]string{
-	"version":  "version matches the version provided by the ClusterVersion and in the ClusterOperator.Status.Versions field.",
-	"enabled":  "enabled is a list of all feature gates that are enabled in the cluster for the named version.",
-	"disabled": "disabled is a list of all feature gates that are disabled in the cluster for the named version.",
-}
-
-func (FeatureGateDetails) SwaggerDoc() map[string]string {
-	return map_FeatureGateDetails
-}
-
 var map_FeatureGateList = map[string]string{
-	"":         "Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
-	"metadata": "metadata is the standard list's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
+	"": "Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
 }
 
 func (FeatureGateList) SwaggerDoc() map[string]string {
@@ -842,20 +808,10 @@ func (FeatureGateSelection) SwaggerDoc() map[string]string {
 	return map_FeatureGateSelection
 }
 
-var map_FeatureGateStatus = map[string]string{
-	"conditions":   "conditions represent the observations of the current state. Known .status.conditions.type are: \"DeterminationDegraded\"",
-	"featureGates": "featureGates contains a list of enabled and disabled featureGates that are keyed by payloadVersion. Operators other than the CVO and cluster-config-operator, must read the .status.featureGates, locate the version they are managing, find the enabled/disabled featuregates and make the operand and operator match. The enabled/disabled values for a particular version may change during the life of the cluster as various .spec.featureSet values are selected. Operators may choose to restart their processes to pick up these changes, but remembering past enable/disable lists is beyond the scope of this API and is the responsibility of individual operators. Only featureGates with .version in the ClusterVersion.status will be present in this list.",
-}
-
-func (FeatureGateStatus) SwaggerDoc() map[string]string {
-	return map_FeatureGateStatus
-}
-
 var map_Image = map[string]string{
-	"":         "Image governs policies related to imagestream imports and runtime configuration for external registries. It allows cluster admins to configure which registries OpenShift is allowed to import images from, extra CA trust bundles for external registries, and policies to block or allow registry hostnames. When exposing OpenShift's image registry to the public, this also lets cluster admins specify the external hostname.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
-	"metadata": "metadata is the standard object's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
-	"spec":     "spec holds user settable values for configuration",
-	"status":   "status holds observed values from the cluster. They may not be overridden.",
+	"":       "Image governs policies related to imagestream imports and runtime configuration for external registries. It allows cluster admins to configure which registries OpenShift is allowed to import images from, extra CA trust bundles for external registries, and policies to block or allow registry hostnames. When exposing OpenShift's image registry to the public, this also lets cluster admins specify the external hostname.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
+	"spec":   "spec holds user settable values for configuration",
+	"status": "status holds observed values from the cluster. They may not be overridden.",
 }
 
 func (Image) SwaggerDoc() map[string]string {
@@ -863,8 +819,7 @@ func (Image) SwaggerDoc() map[string]string {
 }
 
 var map_ImageList = map[string]string{
-	"":         "Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
-	"metadata": "metadata is the standard list's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
+	"": "Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
 }
 
 func (ImageList) SwaggerDoc() map[string]string {
@@ -914,9 +869,8 @@ func (RegistrySources) SwaggerDoc() map[string]string {
 }
 
 var map_ImageContentPolicy = map[string]string{
-	"":         "ImageContentPolicy holds cluster-wide information about how to handle registry mirror rules. When multiple policies are defined, the outcome of the behavior is defined on each field.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
-	"metadata": "metadata is the standard object's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
-	"spec":     "spec holds user settable values for configuration",
+	"":     "ImageContentPolicy holds cluster-wide information about how to handle registry mirror rules. When multiple policies are defined, the outcome of the behavior is defined on each field.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
+	"spec": "spec holds user settable values for configuration",
 }
 
 func (ImageContentPolicy) SwaggerDoc() map[string]string {
@@ -924,8 +878,7 @@ func (ImageContentPolicy) SwaggerDoc() map[string]string {
 }
 
 var map_ImageContentPolicyList = map[string]string{
-	"":         "ImageContentPolicyList lists the items in the ImageContentPolicy CRD.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
-	"metadata": "metadata is the standard list's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
+	"": "ImageContentPolicyList lists the items in the ImageContentPolicy CRD.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
 }
 
 func (ImageContentPolicyList) SwaggerDoc() map[string]string {
@@ -953,10 +906,9 @@ func (RepositoryDigestMirrors) SwaggerDoc() map[string]string {
 }
 
 var map_ImageDigestMirrorSet = map[string]string{
-	"":         "ImageDigestMirrorSet holds cluster-wide information about how to handle registry mirror rules on using digest pull specification. When multiple policies are defined, the outcome of the behavior is defined on each field.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
-	"metadata": "metadata is the standard object's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
-	"spec":     "spec holds user settable values for configuration",
-	"status":   "status contains the observed state of the resource.",
+	"":       "ImageDigestMirrorSet holds cluster-wide information about how to handle registry mirror rules on using digest pull specification. When multiple policies are defined, the outcome of the behavior is defined on each field.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
+	"spec":   "spec holds user settable values for configuration",
+	"status": "status contains the observed state of the resource.",
 }
 
 func (ImageDigestMirrorSet) SwaggerDoc() map[string]string {
@@ -964,8 +916,7 @@ func (ImageDigestMirrorSet) SwaggerDoc() map[string]string {
 }
 
 var map_ImageDigestMirrorSetList = map[string]string{
-	"":         "ImageDigestMirrorSetList lists the items in the ImageDigestMirrorSet CRD.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
-	"metadata": "metadata is the standard list's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
+	"": "ImageDigestMirrorSetList lists the items in the ImageDigestMirrorSet CRD.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
 }
 
 func (ImageDigestMirrorSetList) SwaggerDoc() map[string]string {
@@ -993,10 +944,9 @@ func (ImageDigestMirrors) SwaggerDoc() map[string]string {
 }
 
 var map_ImageTagMirrorSet = map[string]string{
-	"":         "ImageTagMirrorSet holds cluster-wide information about how to handle registry mirror rules on using tag pull specification. When multiple policies are defined, the outcome of the behavior is defined on each field.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
-	"metadata": "metadata is the standard object's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
-	"spec":     "spec holds user settable values for configuration",
-	"status":   "status contains the observed state of the resource.",
+	"":       "ImageTagMirrorSet holds cluster-wide information about how to handle registry mirror rules on using tag pull specification. When multiple policies are defined, the outcome of the behavior is defined on each field.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
+	"spec":   "spec holds user settable values for configuration",
+	"status": "status contains the observed state of the resource.",
 }
 
 func (ImageTagMirrorSet) SwaggerDoc() map[string]string {
@@ -1004,8 +954,7 @@ func (ImageTagMirrorSet) SwaggerDoc() map[string]string {
 }
 
 var map_ImageTagMirrorSetList = map[string]string{
-	"":         "ImageTagMirrorSetList lists the items in the ImageTagMirrorSet CRD.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
-	"metadata": "metadata is the standard list's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
+	"": "ImageTagMirrorSetList lists the items in the ImageTagMirrorSet CRD.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
 }
 
 func (ImageTagMirrorSetList) SwaggerDoc() map[string]string {
@@ -1238,10 +1187,9 @@ func (IBMCloudPlatformStatus) SwaggerDoc() map[string]string {
 }
 
 var map_Infrastructure = map[string]string{
-	"":         "Infrastructure holds cluster-wide information about Infrastructure.  The canonical name is `cluster`\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
-	"metadata": "metadata is the standard object's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
-	"spec":     "spec holds user settable values for configuration",
-	"status":   "status holds observed values from the cluster. They may not be overridden.",
+	"":       "Infrastructure holds cluster-wide information about Infrastructure.  The canonical name is `cluster`\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
+	"spec":   "spec holds user settable values for configuration",
+	"status": "status holds observed values from the cluster. They may not be overridden.",
 }
 
 func (Infrastructure) SwaggerDoc() map[string]string {
@@ -1249,8 +1197,7 @@ func (Infrastructure) SwaggerDoc() map[string]string {
 }
 
 var map_InfrastructureList = map[string]string{
-	"":         "InfrastructureList is\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
-	"metadata": "metadata is the standard list's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
+	"": "InfrastructureList is\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
 }
 
 func (InfrastructureList) SwaggerDoc() map[string]string {
@@ -1626,10 +1573,9 @@ func (ComponentRouteStatus) SwaggerDoc() map[string]string {
 }
 
 var map_Ingress = map[string]string{
-	"":         "Ingress holds cluster-wide information about ingress, including the default ingress domain used for routes. The canonical name is `cluster`.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
-	"metadata": "metadata is the standard object's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
-	"spec":     "spec holds user settable values for configuration",
-	"status":   "status holds observed values from the cluster. They may not be overridden.",
+	"":       "Ingress holds cluster-wide information about ingress, including the default ingress domain used for routes. The canonical name is `cluster`.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
+	"spec":   "spec holds user settable values for configuration",
+	"status": "status holds observed values from the cluster. They may not be overridden.",
 }
 
 func (Ingress) SwaggerDoc() map[string]string {
@@ -1637,8 +1583,7 @@ func (Ingress) SwaggerDoc() map[string]string {
 }
 
 var map_IngressList = map[string]string{
-	"":         "Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
-	"metadata": "metadata is the standard list's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
+	"": "Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
 }
 
 func (IngressList) SwaggerDoc() map[string]string {
@@ -1735,10 +1680,9 @@ func (MTUMigrationValues) SwaggerDoc() map[string]string {
 }
 
 var map_Network = map[string]string{
-	"":         "Network holds cluster-wide information about Network. The canonical name is `cluster`. It is used to configure the desired network configuration, such as: IP address pools for services/pod IPs, network plugin, etc. Please view network.spec for an explanation on what applies when configuring this resource.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
-	"metadata": "metadata is the standard object's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
-	"spec":     "spec holds user settable values for configuration. As a general rule, this SHOULD NOT be read directly. Instead, you should consume the NetworkStatus, as it indicates the currently deployed configuration. Currently, most spec fields are immutable after installation. Please view the individual ones for further details on each.",
-	"status":   "status holds observed values from the cluster. They may not be overridden.",
+	"":       "Network holds cluster-wide information about Network. The canonical name is `cluster`. It is used to configure the desired network configuration, such as: IP address pools for services/pod IPs, network plugin, etc. Please view network.spec for an explanation on what applies when configuring this resource.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
+	"spec":   "spec holds user settable values for configuration. As a general rule, this SHOULD NOT be read directly. Instead, you should consume the NetworkStatus, as it indicates the currently deployed configuration. Currently, most spec fields are immutable after installation. Please view the individual ones for further details on each.",
+	"status": "status holds observed values from the cluster. They may not be overridden.",
 }
 
 func (Network) SwaggerDoc() map[string]string {
@@ -1746,8 +1690,7 @@ func (Network) SwaggerDoc() map[string]string {
 }
 
 var map_NetworkList = map[string]string{
-	"":         "Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
-	"metadata": "metadata is the standard list's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
+	"": "Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
 }
 
 func (NetworkList) SwaggerDoc() map[string]string {
@@ -1791,10 +1734,9 @@ func (NetworkStatus) SwaggerDoc() map[string]string {
 }
 
 var map_Node = map[string]string{
-	"":         "Node holds cluster-wide information about node specific features.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
-	"metadata": "metadata is the standard object's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
-	"spec":     "spec holds user settable values for configuration",
-	"status":   "status holds observed values.",
+	"":       "Node holds cluster-wide information about node specific features.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
+	"spec":   "spec holds user settable values for configuration",
+	"status": "status holds observed values.",
 }
 
 func (Node) SwaggerDoc() map[string]string {
@@ -1802,8 +1744,7 @@ func (Node) SwaggerDoc() map[string]string {
 }
 
 var map_NodeList = map[string]string{
-	"":         "Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
-	"metadata": "metadata is the standard list's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
+	"": "Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
 }
 
 func (NodeList) SwaggerDoc() map[string]string {
@@ -1937,10 +1878,9 @@ func (LDAPIdentityProvider) SwaggerDoc() map[string]string {
 }
 
 var map_OAuth = map[string]string{
-	"":         "OAuth holds cluster-wide information about OAuth.  The canonical name is `cluster`. It is used to configure the integrated OAuth server. This configuration is only honored when the top level Authentication config has type set to IntegratedOAuth.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
-	"metadata": "metadata is the standard object's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
-	"spec":     "spec holds user settable values for configuration",
-	"status":   "status holds observed values from the cluster. They may not be overridden.",
+	"":       "OAuth holds cluster-wide information about OAuth.  The canonical name is `cluster`. It is used to configure the integrated OAuth server. This configuration is only honored when the top level Authentication config has type set to IntegratedOAuth.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
+	"spec":   "spec holds user settable values for configuration",
+	"status": "status holds observed values from the cluster. They may not be overridden.",
 }
 
 func (OAuth) SwaggerDoc() map[string]string {
@@ -1948,8 +1888,7 @@ func (OAuth) SwaggerDoc() map[string]string {
 }
 
 var map_OAuthList = map[string]string{
-	"":         "Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
-	"metadata": "metadata is the standard list's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
+	"": "Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
 }
 
 func (OAuthList) SwaggerDoc() map[string]string {
@@ -2073,8 +2012,7 @@ func (HubSourceStatus) SwaggerDoc() map[string]string {
 }
 
 var map_OperatorHub = map[string]string{
-	"":         "OperatorHub is the Schema for the operatorhubs API. It can be used to change the state of the default hub sources for OperatorHub on the cluster from enabled to disabled and vice versa.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
-	"metadata": "metadata is the standard object's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
+	"": "OperatorHub is the Schema for the operatorhubs API. It can be used to change the state of the default hub sources for OperatorHub on the cluster from enabled to disabled and vice versa.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
 }
 
 func (OperatorHub) SwaggerDoc() map[string]string {
@@ -2082,8 +2020,7 @@ func (OperatorHub) SwaggerDoc() map[string]string {
 }
 
 var map_OperatorHubList = map[string]string{
-	"":         "OperatorHubList contains a list of OperatorHub\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
-	"metadata": "metadata is the standard list's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
+	"": "OperatorHubList contains a list of OperatorHub\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
 }
 
 func (OperatorHubList) SwaggerDoc() map[string]string {
@@ -2110,10 +2047,9 @@ func (OperatorHubStatus) SwaggerDoc() map[string]string {
 }
 
 var map_Project = map[string]string{
-	"":         "Project holds cluster-wide information about Project.  The canonical name is `cluster`\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
-	"metadata": "metadata is the standard object's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
-	"spec":     "spec holds user settable values for configuration",
-	"status":   "status holds observed values from the cluster. They may not be overridden.",
+	"":       "Project holds cluster-wide information about Project.  The canonical name is `cluster`\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
+	"spec":   "spec holds user settable values for configuration",
+	"status": "status holds observed values from the cluster. They may not be overridden.",
 }
 
 func (Project) SwaggerDoc() map[string]string {
@@ -2121,8 +2057,7 @@ func (Project) SwaggerDoc() map[string]string {
 }
 
 var map_ProjectList = map[string]string{
-	"":         "Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
-	"metadata": "metadata is the standard list's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
+	"": "Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
 }
 
 func (ProjectList) SwaggerDoc() map[string]string {
@@ -2149,10 +2084,9 @@ func (TemplateReference) SwaggerDoc() map[string]string {
 }
 
 var map_Proxy = map[string]string{
-	"":         "Proxy holds cluster-wide information on how to configure default proxies for the cluster. The canonical name is `cluster`\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
-	"metadata": "metadata is the standard object's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
-	"spec":     "Spec holds user-settable values for the proxy configuration",
-	"status":   "status holds observed values from the cluster. They may not be overridden.",
+	"":       "Proxy holds cluster-wide information on how to configure default proxies for the cluster. The canonical name is `cluster`\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
+	"spec":   "Spec holds user-settable values for the proxy configuration",
+	"status": "status holds observed values from the cluster. They may not be overridden.",
 }
 
 func (Proxy) SwaggerDoc() map[string]string {
@@ -2160,8 +2094,7 @@ func (Proxy) SwaggerDoc() map[string]string {
 }
 
 var map_ProxyList = map[string]string{
-	"":         "Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
-	"metadata": "metadata is the standard list's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
+	"": "Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
 }
 
 func (ProxyList) SwaggerDoc() map[string]string {
@@ -2193,10 +2126,9 @@ func (ProxyStatus) SwaggerDoc() map[string]string {
 }
 
 var map_Scheduler = map[string]string{
-	"":         "Scheduler holds cluster-wide config information to run the Kubernetes Scheduler and influence its placement decisions. The canonical name for this config is `cluster`.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
-	"metadata": "metadata is the standard object's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
-	"spec":     "spec holds user settable values for configuration",
-	"status":   "status holds observed values from the cluster. They may not be overridden.",
+	"":       "Scheduler holds cluster-wide config information to run the Kubernetes Scheduler and influence its placement decisions. The canonical name for this config is `cluster`.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
+	"spec":   "spec holds user settable values for configuration",
+	"status": "status holds observed values from the cluster. They may not be overridden.",
 }
 
 func (Scheduler) SwaggerDoc() map[string]string {
@@ -2204,8 +2136,7 @@ func (Scheduler) SwaggerDoc() map[string]string {
 }
 
 var map_SchedulerList = map[string]string{
-	"":         "Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
-	"metadata": "metadata is the standard list's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
+	"": "Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
 }
 
 func (SchedulerList) SwaggerDoc() map[string]string {

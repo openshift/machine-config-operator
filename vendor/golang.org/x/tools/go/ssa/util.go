@@ -65,25 +65,25 @@ func isString(t types.Type) bool {
 	return isBasic(t) && t.(*types.Basic).Info()&types.IsString != 0
 }
 
-// isByteSlice reports whether t is of the form []~bytes.
+// isByteSlice reports whether t is []byte.
 func isByteSlice(t types.Type) bool {
 	if b, ok := t.(*types.Slice); ok {
-		e, _ := b.Elem().Underlying().(*types.Basic)
+		e, _ := b.Elem().(*types.Basic)
 		return e != nil && e.Kind() == types.Byte
 	}
 	return false
 }
 
-// isRuneSlice reports whether t is of the form []~runes.
+// isRuneSlice reports whether t is []rune.
 func isRuneSlice(t types.Type) bool {
 	if b, ok := t.(*types.Slice); ok {
-		e, _ := b.Elem().Underlying().(*types.Basic)
+		e, _ := b.Elem().(*types.Basic)
 		return e != nil && e.Kind() == types.Rune
 	}
 	return false
 }
 
-// isBasicConvTypes returns true when a type set can be
+// isBasicConvType returns true when a type set can be
 // one side of a Convert operation. This is when:
 // - All are basic, []byte, or []rune.
 // - At least 1 is basic.

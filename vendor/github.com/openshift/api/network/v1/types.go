@@ -23,10 +23,7 @@ const (
 // +kubebuilder:printcolumn:name="Plugin Name",type=string,JSONPath=`.pluginName`,description="The Openshift SDN network plug-in in use"
 // +openshift:compatibility-gen:level=1
 type ClusterNetwork struct {
-	metav1.TypeMeta `json:",inline"`
-
-	// metadata is the standard object's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// Network is a CIDR string specifying the global overlay network's L3 space
@@ -86,9 +83,6 @@ type ClusterNetworkEntry struct {
 // +openshift:compatibility-gen:level=1
 type ClusterNetworkList struct {
 	metav1.TypeMeta `json:",inline"`
-
-	// metadata is the standard list's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	metav1.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// Items is the list of cluster networks
@@ -120,10 +114,7 @@ type HostSubnetEgressCIDR string
 // +kubebuilder:printcolumn:name="Egress IPs",type=string,JSONPath=`.egressIPs`,description="The network egress IP addresses"
 // +openshift:compatibility-gen:level=1
 type HostSubnet struct {
-	metav1.TypeMeta `json:",inline"`
-
-	// metadata is the standard object's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// Host is the name of the node. (This is the same as the object's name, but both fields must be set.)
@@ -159,9 +150,6 @@ type HostSubnet struct {
 // +openshift:compatibility-gen:level=1
 type HostSubnetList struct {
 	metav1.TypeMeta `json:",inline"`
-
-	// metadata is the standard list's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	metav1.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// Items is the list of host subnets
@@ -186,10 +174,7 @@ type NetNamespaceEgressIP string
 // +kubebuilder:printcolumn:name="Egress IPs",type=string,JSONPath=`.egressIPs`,description="The network egress IP addresses"
 // +openshift:compatibility-gen:level=1
 type NetNamespace struct {
-	metav1.TypeMeta `json:",inline"`
-
-	// metadata is the standard object's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// NetName is the name of the network namespace. (This is the same as the object's name, but both fields must be set.)
@@ -215,9 +200,6 @@ type NetNamespace struct {
 // +openshift:compatibility-gen:level=1
 type NetNamespaceList struct {
 	metav1.TypeMeta `json:",inline"`
-
-	// metadata is the standard list's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	metav1.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// Items is the list of net namespaces
@@ -272,10 +254,7 @@ type EgressNetworkPolicySpec struct {
 // Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).
 // +openshift:compatibility-gen:level=1
 type EgressNetworkPolicy struct {
-	metav1.TypeMeta `json:",inline"`
-
-	// metadata is the standard object's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// spec is the specification of the current egress network policy
@@ -290,9 +269,6 @@ type EgressNetworkPolicy struct {
 // +openshift:compatibility-gen:level=1
 type EgressNetworkPolicyList struct {
 	metav1.TypeMeta `json:",inline"`
-
-	// metadata is the standard list's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	metav1.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// items is the list of policies

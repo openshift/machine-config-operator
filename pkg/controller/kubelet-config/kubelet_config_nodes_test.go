@@ -24,10 +24,8 @@ func TestOriginalKubeletConfigDefaultNodeConfig(t *testing.T) {
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			f.ccLister = append(f.ccLister, cc)
 
-			fgAccess := createNewDefaultFeatureGateAccess()
-			ctrl := f.newController(fgAccess)
-
-			kubeletConfig, err := generateOriginalKubeletConfigIgn(cc, ctrl.templatesDir, "master", fgAccess)
+			ctrl := f.newController()
+			kubeletConfig, err := generateOriginalKubeletConfigIgn(cc, ctrl.templatesDir, "master", nil)
 			if err != nil {
 				t.Errorf("could not generate kubelet config from templates %v", err)
 			}
@@ -47,8 +45,7 @@ func TestNodeConfigDefault(t *testing.T) {
 	for _, platform := range []configv1.PlatformType{configv1.AWSPlatformType, configv1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
-			fgAccess := createNewDefaultFeatureGateAccess()
-			f.newController(fgAccess)
+			f.newController()
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
@@ -87,10 +84,10 @@ func TestBootstrapNodeConfigDefault(t *testing.T) {
 			mcps := []*mcfgv1.MachineConfigPool{mcp}
 			mcps = append(mcps, mcp1)
 
-			fgAccess := createNewDefaultFeatureGateAccess()
+			features := createNewDefaultFeatureGate()
 			configNode := createNewDefaultNodeconfig()
 
-			mcs, err := RunNodeConfigBootstrap("../../../templates", fgAccess, cc, configNode, mcps)
+			mcs, err := RunNodeConfigBootstrap("../../../templates", features, cc, configNode, mcps)
 			if err != nil {
 				t.Errorf("could not run node config bootstrap: %v", err)
 			}
@@ -124,8 +121,7 @@ func TestNodeConfigCustom(t *testing.T) {
 	for _, platform := range []configv1.PlatformType{configv1.AWSPlatformType, configv1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
-			fgAccess := createNewDefaultFeatureGateAccess()
-			f.newController(fgAccess)
+			f.newController()
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
@@ -161,7 +157,7 @@ func TestNodeConfigCustom(t *testing.T) {
 			f.nodeLister = append(f.nodeLister, nodeConfig)
 			f.oseobjects = append(f.oseobjects, nodeConfig)
 
-			c := f.newController(fgAccess)
+			c := f.newController()
 
 			mcCustom, err := c.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), mcs1, metav1.CreateOptions{})
 			require.NoError(t, err)

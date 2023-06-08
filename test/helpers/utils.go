@@ -199,17 +199,14 @@ func WaitForRenderedConfigs(t *testing.T, cs *framework.ClientSet, pool string, 
 	var renderedConfig string
 	startTime := time.Now()
 	found := make(map[string]bool)
-
-	ctx := context.Background()
-
-	if err := wait.PollUntilContextTimeout(ctx, 2*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
+	if err := wait.PollImmediate(2*time.Second, 5*time.Minute, func() (bool, error) {
 		// Set up the list
 		for _, name := range mcNames {
 			found[name] = false
 		}
 
 		// Update found based on the MCP
-		mcp, err := cs.MachineConfigPools().Get(ctx, pool, metav1.GetOptions{})
+		mcp, err := cs.MachineConfigPools().Get(context.TODO(), pool, metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
@@ -249,10 +246,8 @@ func notFoundNames(foundNames map[string]bool) []string {
 // WaitForPoolComplete polls a pool until it has completed an update to target
 func WaitForPoolComplete(t *testing.T, cs *framework.ClientSet, pool, target string) error {
 	startTime := time.Now()
-	ctx := context.TODO()
-
-	if err := wait.PollUntilContextTimeout(ctx, 2*time.Second, 20*time.Minute, false, func(ctx context.Context) (bool, error) {
-		mcp, err := cs.MachineConfigPools().Get(ctx, pool, metav1.GetOptions{})
+	if err := wait.Poll(2*time.Second, 20*time.Minute, func() (bool, error) {
+		mcp, err := cs.MachineConfigPools().Get(context.TODO(), pool, metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
@@ -272,10 +267,8 @@ func WaitForPoolComplete(t *testing.T, cs *framework.ClientSet, pool, target str
 
 func WaitForNodeConfigChange(t *testing.T, cs *framework.ClientSet, node corev1.Node, mcName string) error {
 	startTime := time.Now()
-	ctx := context.TODO()
-
-	err := wait.PollUntilContextTimeout(ctx, 2*time.Second, 20*time.Minute, true, func(ctx context.Context) (bool, error) {
-		n, err := cs.CoreV1Interface.Nodes().Get(ctx, node.Name, metav1.GetOptions{})
+	err := wait.PollImmediate(2*time.Second, 20*time.Minute, func() (bool, error) {
+		n, err := cs.CoreV1Interface.Nodes().Get(context.TODO(), node.Name, metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
@@ -298,10 +291,8 @@ func WaitForNodeConfigChange(t *testing.T, cs *framework.ClientSet, node corev1.
 
 // WaitForPoolComplete polls a pool until it has completed any update
 func WaitForPoolCompleteAny(t *testing.T, cs *framework.ClientSet, pool string) error {
-	ctx := context.TODO()
-
-	if err := wait.PollUntilContextTimeout(ctx, 2*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
-		mcp, err := cs.MachineConfigPools().Get(ctx, pool, metav1.GetOptions{})
+	if err := wait.PollImmediate(2*time.Second, 2*time.Minute, func() (bool, error) {
+		mcp, err := cs.MachineConfigPools().Get(context.TODO(), pool, metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
@@ -318,10 +309,8 @@ func WaitForPoolCompleteAny(t *testing.T, cs *framework.ClientSet, pool string) 
 
 // WaitForPausedConfig waits for configuration to be pending in a paused pool
 func WaitForPausedConfig(t *testing.T, cs *framework.ClientSet, pool string) error {
-	ctx := context.TODO()
-
-	if err := wait.PollUntilContextTimeout(ctx, 2*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
-		mcp, err := cs.MachineConfigPools().Get(ctx, pool, metav1.GetOptions{})
+	if err := wait.PollImmediate(2*time.Second, 2*time.Minute, func() (bool, error) {
+		mcp, err := cs.MachineConfigPools().Get(context.TODO(), pool, metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
@@ -360,10 +349,8 @@ func GetMonitoringToken(t *testing.T, cs *framework.ClientSet) (string, error) {
 // WaitForMCDToSyncCert waits for the MCD to write annotation on the latest controllerconfig resourceVersion,
 // to indicate that is has completed the certificate write
 func WaitForMCDToSyncCert(t *testing.T, cs *framework.ClientSet, node corev1.Node, resourceVersion string) error {
-	ctx := context.TODO()
-
-	if err := wait.PollUntilContextTimeout(ctx, 2*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
-		n, err := cs.CoreV1Interface.Nodes().Get(ctx, node.Name, metav1.GetOptions{})
+	if err := wait.PollImmediate(2*time.Second, 2*time.Minute, func() (bool, error) {
+		n, err := cs.CoreV1Interface.Nodes().Get(context.TODO(), node.Name, metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
@@ -436,11 +423,11 @@ func GetRandomNode(t *testing.T, cs *framework.ClientSet, pool string) corev1.No
 	require.Nil(t, err)
 	require.NotEmpty(t, nodes)
 
+	rand.Seed(time.Now().UnixNano())
 	// Disable gosec here to avoid throwing
 	// G404: Use of weak random number generator (math/rand instead of crypto/rand)
 	// #nosec
-	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
-	return nodes[rnd.Intn(len(nodes))]
+	return nodes[rand.Intn(len(nodes))]
 }
 
 // LabelRandomNodeFromPool gets all nodes in pool and chooses one at random to label

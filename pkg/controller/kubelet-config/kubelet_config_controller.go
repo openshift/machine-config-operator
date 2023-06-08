@@ -35,7 +35,6 @@ import (
 	oseinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
 	oselistersv1 "github.com/openshift/client-go/config/listers/config/v1"
 	"github.com/openshift/library-go/pkg/crypto"
-	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	mtmpl "github.com/openshift/machine-config-operator/pkg/controller/template"
@@ -104,8 +103,6 @@ type Controller struct {
 	queue           workqueue.RateLimitingInterface
 	featureQueue    workqueue.RateLimitingInterface
 	nodeConfigQueue workqueue.RateLimitingInterface
-
-	featureGateAccess featuregates.FeatureGateAccess
 }
 
 // New returns a new kubelet config controller
@@ -120,21 +117,19 @@ func New(
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
 	configclient configclientset.Interface,
-	fgAccess featuregates.FeatureGateAccess,
 ) *Controller {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(glog.Infof)
 	eventBroadcaster.StartRecordingToSink(&coreclientsetv1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 
 	ctrl := &Controller{
-		templatesDir:      templatesDir,
-		client:            mcfgClient,
-		configClient:      configclient,
-		eventRecorder:     eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-kubeletconfigcontroller"}),
-		queue:             workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-kubeletconfigcontroller"),
-		featureQueue:      workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-featurecontroller"),
-		nodeConfigQueue:   workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-nodeConfigcontroller"),
-		featureGateAccess: fgAccess,
+		templatesDir:    templatesDir,
+		client:          mcfgClient,
+		configClient:    configclient,
+		eventRecorder:   eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-kubeletconfigcontroller"}),
+		queue:           workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-kubeletconfigcontroller"),
+		featureQueue:    workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-featurecontroller"),
+		nodeConfigQueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-nodeConfigcontroller"),
 	}
 
 	mkuInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -360,8 +355,8 @@ func (ctrl *Controller) handleFeatureErr(err error, key interface{}) {
 
 // generateOriginalKubeletConfigWithFeatureGates generates a KubeletConfig and ensure the correct feature gates are set
 // based on the given FeatureGate.
-func generateOriginalKubeletConfigWithFeatureGates(cc *mcfgv1.ControllerConfig, templatesDir, role string, featureGateAccess featuregates.FeatureGateAccess) (*kubeletconfigv1beta1.KubeletConfiguration, error) {
-	originalKubeletIgn, err := generateOriginalKubeletConfigIgn(cc, templatesDir, role, featureGateAccess)
+func generateOriginalKubeletConfigWithFeatureGates(cc *mcfgv1.ControllerConfig, templatesDir, role string, features *configv1.FeatureGate) (*kubeletconfigv1beta1.KubeletConfiguration, error) {
+	originalKubeletIgn, err := generateOriginalKubeletConfigIgn(cc, templatesDir, role, features)
 	if err != nil {
 		return nil, fmt.Errorf("could not generate the original Kubelet config ignition: %w", err)
 	}
@@ -377,7 +372,7 @@ func generateOriginalKubeletConfigWithFeatureGates(cc *mcfgv1.ControllerConfig, 
 		return nil, fmt.Errorf("could not deserialize the Kubelet source: %w", err)
 	}
 
-	featureGates, err := generateFeatureMap(featureGateAccess, openshiftOnlyFeatureGates...)
+	featureGates, err := generateFeatureMap(features, openshiftOnlyFeatureGates...)
 	if err != nil {
 		return nil, fmt.Errorf("could not generate features map: %w", err)
 	}
@@ -391,9 +386,9 @@ func generateOriginalKubeletConfigWithFeatureGates(cc *mcfgv1.ControllerConfig, 
 	return originalKubeConfig, nil
 }
 
-func generateOriginalKubeletConfigIgn(cc *mcfgv1.ControllerConfig, templatesDir, role string, featureGateAccess featuregates.FeatureGateAccess) (*ign3types.File, error) {
+func generateOriginalKubeletConfigIgn(cc *mcfgv1.ControllerConfig, templatesDir, role string, featureGate *configv1.FeatureGate) (*ign3types.File, error) {
 	// Render the default templates
-	rc := &mtmpl.RenderConfig{ControllerConfigSpec: &cc.Spec, FeatureGateAccess: featureGateAccess}
+	rc := &mtmpl.RenderConfig{ControllerConfigSpec: &cc.Spec, FeatureGate: featureGate}
 	generatedConfigs, err := mtmpl.GenerateMachineConfigsForRole(rc, role, templatesDir)
 	if err != nil {
 		return nil, fmt.Errorf("GenerateMachineConfigsforRole failed with error: %w", err)
@@ -528,6 +523,15 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		return ctrl.syncStatusOnly(cfg, err)
 	}
 
+	features, err := ctrl.featLister.Get(ctrlcommon.ClusterFeatureInstanceName)
+	if macherrors.IsNotFound(err) {
+		features = createNewDefaultFeatureGate()
+	} else if err != nil {
+		glog.V(2).Infof("%v", err)
+		err := fmt.Errorf("could not fetch FeatureGates: %w", err)
+		return ctrl.syncStatusOnly(cfg, err)
+	}
+
 	// Fetch the NodeConfig
 	nodeConfig, err := ctrl.nodeConfigLister.Get(ctrlcommon.ClusterNodeInstanceName)
 	if macherrors.IsNotFound(err) {
@@ -561,7 +565,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			return fmt.Errorf("could not get ControllerConfig %w", err)
 		}
 
-		originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, role, ctrl.featureGateAccess)
+		originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, role, features)
 		if err != nil {
 			return ctrl.syncStatusOnly(cfg, err, "could not get original kubelet config: %v", err)
 		}

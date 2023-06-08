@@ -12,8 +12,7 @@ package v1
 
 // AUTO-GENERATED FUNCTIONS START HERE
 var map_Config = map[string]string{
-	"":         "Config contains the configuration and detailed condition status for the Samples Operator.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
-	"metadata": "metadata is the standard object's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
+	"": "Config contains the configuration and detailed condition status for the Samples Operator.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
 }
 
 func (Config) SwaggerDoc() map[string]string {
@@ -35,8 +34,7 @@ func (ConfigCondition) SwaggerDoc() map[string]string {
 }
 
 var map_ConfigList = map[string]string{
-	"":         "Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
-	"metadata": "metadata is the standard list's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
+	"": "Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
 }
 
 func (ConfigList) SwaggerDoc() map[string]string {

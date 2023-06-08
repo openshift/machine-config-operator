@@ -41,7 +41,7 @@ func waitForConfigDriftMonitorStart(t *testing.T, cs *framework.ClientSet, node 
 
 	ctx := context.Background()
 
-	err := wait.PollUntilContextTimeout(ctx, 2*time.Second, 1*time.Minute, true, func(ctx context.Context) (bool, error) {
+	err := wait.PollImmediate(2*time.Second, 1*time.Minute, func() (bool, error) {
 		mcdPod, err := helpers.MCDForNode(cs, &node)
 		require.Nil(t, err)
 

@@ -16,10 +16,7 @@ import (
 // +openshift:compatibility-gen:level=4
 // +openshift:compatibility-gen:internal
 type ServiceCertSignerOperatorConfig struct {
-	metav1.TypeMeta `json:",inline"`
-
-	// metadata is the standard object's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata"`
 
 	Spec   ServiceCertSignerOperatorConfigSpec   `json:"spec"`
@@ -43,9 +40,6 @@ type ServiceCertSignerOperatorConfigStatus struct {
 // +openshift:compatibility-gen:internal
 type ServiceCertSignerOperatorConfigList struct {
 	metav1.TypeMeta `json:",inline"`
-
-	// metadata is the standard list's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	metav1.ListMeta `json:"metadata,omitempty"`
 
 	// Items contains the items
