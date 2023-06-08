@@ -953,23 +953,30 @@ func TestMCDRotatesCertsOnPausedPool(t *testing.T) {
 	require.Nil(t, err)
 	t.Logf("Certificate stuck behind paused (as expected)")
 
-	// Get the latest certificate from the configmap
-	inClusterCert, err := helpers.GetKubeletCABundleFromConfigmap(cs)
-	require.Nil(t, err)
-
 	// Get the on-disk state for the cert
 	nodes, err := helpers.GetNodesByRole(cs, testPool)
+	require.NotEmpty(t, nodes)
 	selectedNode := nodes[0]
 	controllerConfig, err := cs.ControllerConfigs().Get(context.TODO(), "machine-config-controller", metav1.GetOptions{})
 	require.Nil(t, err)
 	err = helpers.WaitForMCDToSyncCert(t, cs, selectedNode, controllerConfig.ResourceVersion)
 	require.Nil(t, err)
-	require.NotEmpty(t, nodes)
-	onDiskCert := helpers.ExecCmdOnNode(t, cs, selectedNode, "cat", "/rootfs/etc/kubernetes/kubelet-ca.crt")
 
-	assert.Equal(t, inClusterCert, onDiskCert)
+	// Due to the nature of the cert updates(more info in https://github.com/openshift/machine-config-operator/pull/3718#discussion_r1218282540)
+	// attempt to retry on failure after waiting for a few seconds before failing the test
+	// To be extra safe, we re-fetch both certs on every try
+
+	if err := wait.PollImmediate(5*time.Second, 15*time.Second, func() (bool, error) {
+		inClusterCert, err := helpers.GetKubeletCABundleFromConfigmap(cs)
+		require.Nil(t, err)
+		onDiskCert := helpers.ExecCmdOnNode(t, cs, selectedNode, "cat", "/rootfs/etc/kubernetes/kubelet-ca.crt")
+		return (onDiskCert == inClusterCert), nil
+	}); err != nil {
+		t.Errorf("Mismatch between on disk cert and in cluster cert: %v", err)
+	}
+
+	// if we're here, certs matched successfuly
 	t.Logf("The cert was properly rotated behind pause\n")
-
 	// Set the pool back to unpaused
 	mcp2, err := cs.MachineConfigPools().Get(context.TODO(), testPool, metav1.GetOptions{})
 	require.Nil(t, err)
