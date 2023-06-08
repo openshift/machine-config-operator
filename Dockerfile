@@ -1,5 +1,5 @@
 FROM registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.19-openshift-4.13 AS builder
-ARG TAGS=""
+ARG TAGS="scos"
 WORKDIR /go/src/github.com/openshift/machine-config-operator
 COPY . .
 # FIXME once we can depend on a new enough host that supports globs for COPY,
@@ -7,7 +7,7 @@ COPY . .
 RUN make install DESTDIR=./instroot && tar -C instroot -cf instroot.tar .
 
 FROM registry.ci.openshift.org/ocp/4.13:base
-ARG TAGS=""
+ARG TAGS="scos"
 COPY --from=builder /go/src/github.com/openshift/machine-config-operator/instroot.tar /tmp/instroot.tar
 RUN cd / && tar xf /tmp/instroot.tar && rm -f /tmp/instroot.tar
 COPY install /manifests
