@@ -24,7 +24,7 @@ vrrp_instance {{.Cluster.Name}}_API_{{$i}} {
         auth_pass {{.Cluster.Name}}_api_vip
     }
     virtual_ipaddress {
-        {{ .Cluster.APIVIP }}/{{ .Cluster.VIPNetmask }}
+        {{ .Cluster.APIVIP }}/{{ .Cluster.VIPNetmask }} label {{ .VRRPInterface }}:vip
     }
 }
 {{end}}`}}
