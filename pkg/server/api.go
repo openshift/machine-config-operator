@@ -13,6 +13,7 @@ import (
 	"github.com/coreos/go-semver/semver"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/klog/v2"
+	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
 
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 )
@@ -68,7 +69,13 @@ func (a *APIServer) Serve() {
 			klog.Exitf("Machine Config Server exited with error: %v", err)
 		}
 	} else {
-		if err := mcs.ListenAndServeTLS(a.cert, a.key); err != http.ErrServerClosed {
+		certWatcher, err := certwatcher.New(a.cert, a.key)
+		if err != nil {
+			klog.Exitf("failed to load serving cert: %v", err)
+		}
+		mcs.TLSConfig.GetCertificate = certWatcher.GetCertificate
+
+		if err := mcs.ListenAndServeTLS("", ""); err != http.ErrServerClosed {
 			klog.Exitf("Machine Config Server exited with error: %v", err)
 		}
 	}
