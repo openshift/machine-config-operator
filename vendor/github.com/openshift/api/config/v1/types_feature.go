@@ -166,6 +166,7 @@ var FeatureSets = map[FeatureSet]*FeatureGateEnabledDisabled{
 		with(externalCloudProvider).
 		with(externalCloudProviderAzure).
 		with(externalCloudProviderGCP).
+		with(externalCloudProviderExternal).
 		with(csiDriverSharedResource).
 		with(buildCSIVolumes).
 		with(nodeSwap).
@@ -192,6 +193,7 @@ var defaultFeatures = &FeatureGateEnabledDisabled{
 	Enabled: []FeatureGateDescription{
 		openShiftPodSecurityAdmission,
 		alibabaPlatform, // This is a bug, it should be TechPreviewNoUpgrade. This must be downgraded before 4.14 is shipped.
+		cloudDualStackNodeIPs,
 	},
 	Disabled: []FeatureGateDescription{
 		retroactiveDefaultStorageClass,
