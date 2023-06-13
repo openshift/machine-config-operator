@@ -19,6 +19,9 @@ var (
 
 	// ExternalCloudProviderFeatureGCP is the name of the external cloud provider feature gate for GCP.
 	ExternalCloudProviderFeatureGCP = configv1.FeatureGateExternalCloudProviderGCP
+
+	// ExternalCloudProviderFeatureExternal is the name of the external cloud provider feature gate for External platform.
+	ExternalCloudProviderFeatureExternal = configv1.FeatureGateExternalCloudProviderExternal
 )
 
 // IsCloudProviderExternal is used to check whether external cloud provider settings should be used in a component.
@@ -49,6 +52,8 @@ func IsCloudProviderExternal(platformStatus *configv1.PlatformStatus, featureGat
 		configv1.PowerVSPlatformType,
 		configv1.VSpherePlatformType:
 		return true, nil
+	case configv1.ExternalPlatformType:
+		return isExternalPlatformCCMEnabled(platformStatus, featureGateAccessor)
 	default:
 		// Platforms that do not have external cloud providers implemented
 		return false, nil
@@ -57,6 +62,23 @@ func IsCloudProviderExternal(platformStatus *configv1.PlatformStatus, featureGat
 
 func isAzureStackHub(platformStatus *configv1.PlatformStatus) bool {
 	return platformStatus.Azure != nil && platformStatus.Azure.CloudName == configv1.AzureStackCloud
+}
+
+func isExternalPlatformCCMEnabled(platformStatus *configv1.PlatformStatus, featureGateAccessor featuregates.FeatureGateAccess) (bool, error) {
+	featureEnabled, err := isExternalFeatureGateEnabled(featureGateAccessor, ExternalCloudProviderFeature, ExternalCloudProviderFeatureExternal)
+	if err != nil || !featureEnabled {
+		return featureEnabled, err
+	}
+
+	if platformStatus == nil || platformStatus.External == nil {
+		return false, nil
+	}
+
+	if platformStatus.External.CloudControllerManager.State == configv1.CloudControllerManagerExternal {
+		return true, nil
+	}
+
+	return false, nil
 }
 
 // isExternalFeatureGateEnabled determines whether the ExternalCloudProvider feature gate is present in the current
