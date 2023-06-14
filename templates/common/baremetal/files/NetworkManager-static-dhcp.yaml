@@ -64,5 +64,6 @@ contents:
 
     if [ -n "${DHCP4_HOST_NAME:-}" ]
     then
-        hostnamectl set-hostname --static --transient "$DHCP4_HOST_NAME"
+        systemd-run --property=Type=oneshot --unit static-dhcp-hostnamectl -Pq \
+          hostnamectl set-hostname --static --transient "$DHCP4_HOST_NAME"
     fi
