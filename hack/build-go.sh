@@ -39,7 +39,7 @@ mkdir -p ${BIN_PATH}
 # containers/image/signature, which we use only to edit the /etc/containers/policy.json file without doing any cryptography
 CGO_ENABLED=0
 
-if [[ $WHAT == "machine-config-controller" ]]; then
+if [[ $WHAT == "machine-config-controller" || $WHAT == "machine-config-daemon" ]]; then
     GOTAGS="containers_image_openpgp exclude_graphdriver_devicemapper exclude_graphdriver_btrfs containers_image_ostree_stub"
 fi
 
