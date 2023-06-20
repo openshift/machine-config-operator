@@ -3,7 +3,9 @@ package template
 import (
 	"bytes"
 	"context"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"reflect"
 	"sort"
@@ -13,6 +15,7 @@ import (
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	mcoResourceApply "github.com/openshift/machine-config-operator/lib/resourceapply"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	v1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
@@ -421,6 +424,45 @@ func (ctrl *Controller) handleErr(err error, key interface{}) {
 	ctrl.queue.AddAfter(key, 1*time.Minute)
 }
 
+// updateControllerConfigCerts parses the raw cert data and places key information about the certs into the controllerconfig status
+func updateControllerConfigCerts(config *mcfgv1.ControllerConfig) bool {
+	modified := false
+	names := []string{
+		"KubeAPIServerServingCAData", "CloudProviderCAData", "RootCAData", "AdditionalTrustBundle",
+	}
+	config.Status.ControllerCertificates = []v1.ControllerCertificate{}
+	certs := [][]byte{
+		config.Spec.KubeAPIServerServingCAData,
+		config.Spec.CloudProviderCAData,
+		config.Spec.RootCAData,
+		config.Spec.AdditionalTrustBundle,
+	}
+	for i, cert := range certs {
+		for len(cert) > 0 {
+			b, next := pem.Decode(cert)
+			if b == nil {
+				break
+			}
+			c, err := x509.ParseCertificate(b.Bytes)
+			if err != nil {
+				klog.Infof("Malformed Cert, not syncing")
+				continue
+			}
+			cert = next
+			config.Status.ControllerCertificates = append(config.Status.ControllerCertificates, v1.ControllerCertificate{
+				Subject:    c.Subject.String(),
+				Signer:     c.Issuer.String(),
+				NotBefore:  c.NotBefore.String(),
+				NotAfter:   c.NotAfter.String(),
+				BundleFile: names[i],
+			})
+			modified = true
+		}
+
+	}
+	return modified
+}
+
 // syncControllerConfig will sync the controller config with the given key.
 // This function is not meant to be invoked concurrently with the same key.
 func (ctrl *Controller) syncControllerConfig(key string) error {
@@ -449,6 +491,15 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 
 	if cfg.GetGeneration() != cfg.Status.ObservedGeneration {
 		if err := ctrl.syncRunningStatus(cfg); err != nil {
+			return err
+		}
+	}
+
+	modified := updateControllerConfigCerts(cfg)
+
+	if modified {
+		klog.Info("Detecting cert modification, syncing these changes to the true controllerConfig.")
+		if err := ctrl.syncCertificateStatus(cfg); err != nil {
 			return err
 		}
 	}
