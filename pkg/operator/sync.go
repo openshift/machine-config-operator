@@ -44,7 +44,6 @@ import (
 
 const (
 	requiredForUpgradeMachineConfigPoolLabelKey = "operator.machineconfiguration.openshift.io/required-for-upgrade"
-	onClusterBuildPoolLabelKey                  = "on-cluster-build"
 )
 
 var (
@@ -725,7 +724,7 @@ func (optr *Operator) syncMachineOSBuilder(config *renderConfig) error {
 }
 
 func (optr *Operator) checkForOnClusterBuild(config *renderConfig) error {
-	glog.Infof("Checking for On Cluster Build Tag")
+	glog.Infof("Checking for an 'on-cluster-build' tag")
 
 	pools, err := optr.mcpLister.List(labels.Everything())
 	if err != nil {
@@ -743,7 +742,8 @@ func (optr *Operator) checkForOnClusterBuild(config *renderConfig) error {
 }
 
 func startBuildControllerPod() {
-	fmt.Printf("hello this starts the build controller pod\n")
+	fmt.Printf("Starting Build Controller Pod\n")
+
 }
 
 func (optr *Operator) syncMachineConfigDaemon(config *renderConfig) error {
