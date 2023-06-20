@@ -600,6 +600,9 @@ func (ctrl *Controller) getPoolsForNode(node *corev1.Node) ([]*mcfgv1.MachineCon
 		}
 
 		pools = append(pools, p)
+
+		fmt.Printf("Found MachineConfigPool: %s\n", p.Name)
+
 	}
 
 	if len(pools) == 0 {
