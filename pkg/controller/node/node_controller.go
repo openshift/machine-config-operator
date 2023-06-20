@@ -1189,9 +1189,11 @@ func shouldApplyConfigToPool(pool *mcfgv1.MachineConfigPool) bool {
 func updateCandidateMachines(pool *mcfgv1.MachineConfigPool, candidates []*corev1.Node, capacity uint) error {
 	if !shouldApplyConfigToPool(pool) {
 		// Pool is labeled with 'LayeringEnabledPoolLabel', don't do anything.
+		fmt.Println("Pool is labeled with 'LayeringEnabledPoolLabel', don't do anything.")
 		return nil
 	}
 
 	// Continue with the rest of the update logic for the pool
+	fmt.Println("Continue with the rest of the update logic for the pool")
 	return nil
 }
