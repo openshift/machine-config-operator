@@ -731,10 +731,11 @@ func (optr *Operator) checkForOnClusterBuild(config *renderConfig) error {
 		glog.Fatal(err)
 	}
 	for _, pool := range pools {
-		glog.Infof("Pool found: %s \n", pool.Name)
 		if pool.Name == "on-cluster-build" {
 			fmt.Printf("Pool %s is labeled with 'on-cluster-build'. Starting the build controller pod.\n", pool.Name)
 			startBuildControllerPod()
+		} else {
+			fmt.Printf("Pool on-cluster-build not found\n")
 		}
 	}
 
@@ -743,7 +744,7 @@ func (optr *Operator) checkForOnClusterBuild(config *renderConfig) error {
 
 func startBuildControllerPod() {
 	fmt.Printf("Starting Build Controller Pod\n")
-
+	// add logic to start build controller pod
 }
 
 func (optr *Operator) syncMachineConfigDaemon(config *renderConfig) error {
