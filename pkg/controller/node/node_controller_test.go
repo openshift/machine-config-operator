@@ -907,7 +907,7 @@ func TestShouldMakeProgress(t *testing.T) {
 				}
 				f.expectPatchNodeAction(expNode, exppatch)
 			}
-			expStatus := calculateStatus(mcp, nodes)
+			expStatus := calculateStatus(cc, mcp, nodes)
 			expMcp := mcp.DeepCopy()
 			expMcp.Status = expStatus
 			f.expectUpdateMachineConfigPoolStatus(expMcp)
@@ -930,6 +930,7 @@ func TestEmptyCurrentMachineConfig(t *testing.T) {
 
 func TestPaused(t *testing.T) {
 	f := newFixture(t)
+	cc := newControllerConfig(ctrlcommon.ControllerConfigName, configv1.TopologyMode(""))
 	mcp := helpers.NewMachineConfigPool("test-cluster-infra", nil, helpers.InfraSelector, "v1")
 	mcpWorker := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v1")
 	mcp.Spec.MaxUnavailable = intStrPtr(intstr.FromInt(1))
@@ -939,6 +940,7 @@ func TestPaused(t *testing.T) {
 		newNodeWithLabel("node-1", "v0", "v0", map[string]string{"node-role/worker": "", "node-role/infra": ""}),
 	}
 
+	f.ccLister = append(f.ccLister, cc)
 	f.mcpLister = append(f.mcpLister, mcp, mcpWorker)
 	f.objects = append(f.objects, mcp, mcpWorker)
 	f.nodeLister = append(f.nodeLister, nodes...)
@@ -946,7 +948,7 @@ func TestPaused(t *testing.T) {
 		f.kubeobjects = append(f.kubeobjects, nodes[idx])
 	}
 
-	expStatus := calculateStatus(mcp, nodes)
+	expStatus := calculateStatus(cc, mcp, nodes)
 	expMcp := mcp.DeepCopy()
 	expMcp.Status = expStatus
 	f.expectUpdateMachineConfigPoolStatus(expMcp)
@@ -973,7 +975,7 @@ func TestShouldUpdateStatusOnlyUpdated(t *testing.T) {
 		f.kubeobjects = append(f.kubeobjects, nodes[idx])
 	}
 
-	expStatus := calculateStatus(mcp, nodes)
+	expStatus := calculateStatus(cc, mcp, nodes)
 	expMcp := mcp.DeepCopy()
 	expMcp.Status = expStatus
 	f.expectUpdateMachineConfigPoolStatus(expMcp)
@@ -1000,9 +1002,43 @@ func TestShouldUpdateStatusOnlyNoProgress(t *testing.T) {
 		f.kubeobjects = append(f.kubeobjects, nodes[idx])
 	}
 
-	expStatus := calculateStatus(mcp, nodes)
+	expStatus := calculateStatus(cc, mcp, nodes)
 	expMcp := mcp.DeepCopy()
 	expMcp.Status = expStatus
+	f.expectUpdateMachineConfigPoolStatus(expMcp)
+
+	f.run(getKey(mcp, t))
+}
+
+func TestCertStatus(t *testing.T) {
+	f := newFixture(t)
+	cc := newControllerConfig(ctrlcommon.ControllerConfigName, configv1.TopologyMode(""))
+
+	cc.Status.ControllerCertificates = append(cc.Status.ControllerCertificates, mcfgv1.ControllerCertificate{
+		BundleFile: "KubeAPIServerServingCAData",
+		NotAfter:   time.Now().String(),
+	})
+
+	mcp := helpers.NewMachineConfigPool("test-cluster-infra", nil, helpers.InfraSelector, "v1")
+	mcpWorker := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v1")
+	mcp.Spec.MaxUnavailable = intStrPtr(intstr.FromInt(1))
+	nodes := []*corev1.Node{
+		newNodeWithLabel("node-0", "v1", "v1", map[string]string{"node-role/worker": "", "node-role/infra": ""}),
+		newNodeWithLabel("node-1", "v1", "v1", map[string]string{"node-role/worker": "", "node-role/infra": ""}),
+	}
+
+	f.ccLister = append(f.ccLister, cc)
+	f.mcpLister = append(f.mcpLister, mcp, mcpWorker)
+	f.objects = append(f.objects, mcp, mcpWorker)
+	f.nodeLister = append(f.nodeLister, nodes...)
+	for idx := range nodes {
+		f.kubeobjects = append(f.kubeobjects, nodes[idx])
+	}
+
+	expStatus := calculateStatus(cc, mcp, nodes)
+	expMcp := mcp.DeepCopy()
+	expMcp.Status = expStatus
+
 	f.expectUpdateMachineConfigPoolStatus(expMcp)
 
 	f.run(getKey(mcp, t))
@@ -1018,7 +1054,7 @@ func TestShouldDoNothing(t *testing.T) {
 		newNodeWithLabel("node-0", "v1", "v1", map[string]string{"node-role/worker": "", "node-role/infra": ""}),
 		newNodeWithLabel("node-1", "v1", "v1", map[string]string{"node-role/worker": "", "node-role/infra": ""}),
 	}
-	status := calculateStatus(mcp, nodes)
+	status := calculateStatus(cc, mcp, nodes)
 	mcp.Status = status
 
 	f.ccLister = append(f.ccLister, cc)
@@ -1107,7 +1143,7 @@ func TestControlPlaneTopology(t *testing.T) {
 	for _, node := range nodes {
 		addNodeAnnotations(node, annotations)
 	}
-	status := calculateStatus(mcp, nodes)
+	status := calculateStatus(cc, mcp, nodes)
 	mcp.Status = status
 
 	f.ccLister = append(f.ccLister, cc)

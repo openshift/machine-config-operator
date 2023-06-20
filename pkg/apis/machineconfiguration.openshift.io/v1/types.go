@@ -139,6 +139,28 @@ type ControllerConfigStatus struct {
 	// conditions represents the latest available observations of current state.
 	// +optional
 	Conditions []ControllerConfigStatusCondition `json:"conditions"`
+
+	// controllerCertificates represents the latest available observations of the automatically rotating certificates in the MCO.
+	// +optional
+	ControllerCertificates []ControllerCertificate `json:"controllerCertificates"`
+}
+
+// ControllerCertificate contains info about a specific cert.
+type ControllerCertificate struct {
+	// subject is the cert subject
+	Subject string `json:"subject"`
+
+	// signer is the  cert Issuer
+	Signer string `json:"signer"`
+
+	// notBefore is the lower boundary for validity
+	NotBefore string `json:"notBefore"`
+
+	// notAfter is the upper boundary for validity
+	NotAfter string `json:"notAfter"`
+
+	// bundleFile is the larger bundle a cert comes from
+	BundleFile string `json:"bundleFile"`
 }
 
 // ControllerConfigStatusCondition contains condition information for ControllerConfigStatus
@@ -303,6 +325,16 @@ type MachineConfigPoolStatus struct {
 	// conditions represents the latest available observations of current state.
 	// +optional
 	Conditions []MachineConfigPoolCondition `json:"conditions"`
+
+	// certExpirys keeps track of important certificate expiration data
+	CertExpirys []CertExpiry `json:"certExpirys"`
+}
+
+// ceryExpiry contains the bundle name and the expiry date
+type CertExpiry struct {
+	Bundle  string `json:"bundle"`
+	Subject string `json:"subject"`
+	Expiry  string `json:"expiry"`
 }
 
 // MachineConfigPoolStatusConfiguration stores the current configuration for the pool, and
