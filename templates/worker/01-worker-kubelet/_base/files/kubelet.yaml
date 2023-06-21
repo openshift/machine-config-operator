@@ -29,6 +29,7 @@ contents:
       AlibabaPlatform: true
       OpenShiftPodSecurityAdmission: true
       RetroactiveDefaultStorageClass: false
+      CloudDualStackNodeIPs: true
     serverTLSBootstrap: true
     tlsMinVersion: VersionTLS12
     tlsCipherSuites:
