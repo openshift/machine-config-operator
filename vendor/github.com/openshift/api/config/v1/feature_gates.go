@@ -83,6 +83,16 @@ var (
 		OwningProduct:       ocpSpecific,
 	}
 
+	FeatureGateExternalCloudProviderExternal = FeatureGateName("ExternalCloudProviderExternal")
+	externalCloudProviderExternal            = FeatureGateDescription{
+		FeatureGateAttributes: FeatureGateAttributes{
+			Name: FeatureGateExternalCloudProviderExternal,
+		},
+		OwningJiraComponent: "cloud-provider",
+		ResponsiblePerson:   "elmiko",
+		OwningProduct:       ocpSpecific,
+	}
+
 	FeatureGateCSIDriverSharedResource = FeatureGateName("CSIDriverSharedResource")
 	csiDriverSharedResource            = FeatureGateDescription{
 		FeatureGateAttributes: FeatureGateAttributes{
@@ -241,5 +251,15 @@ var (
 		OwningJiraComponent: "cloud-provider",
 		ResponsiblePerson:   "jspeed",
 		OwningProduct:       ocpSpecific,
+	}
+
+	FeatureGateCloudDualStackNodeIPs = FeatureGateName("CloudDualStackNodeIPs")
+	cloudDualStackNodeIPs            = FeatureGateDescription{
+		FeatureGateAttributes: FeatureGateAttributes{
+			Name: FeatureGateCloudDualStackNodeIPs,
+		},
+		OwningJiraComponent: "machine-config-operator/platform-baremetal",
+		ResponsiblePerson:   "mkowalsk",
+		OwningProduct:       kubernetes,
 	}
 )
