@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"reflect"
 	"strconv"
+	"strings"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/imdario/mergo"
@@ -31,6 +32,7 @@ const (
 	managedNodeConfigKeyPrefix    = "97"
 	managedFeaturesKeyPrefix      = "98"
 	managedKubeletConfigKeyPrefix = "99"
+	protectKernelDefaultsStr      = "\"protectKernelDefaults\":false"
 )
 
 func createNewKubeletDynamicSystemReservedIgnition(autoSystemReserved *bool, userDefinedSystemReserved map[string]string) *ign3types.File {
@@ -447,6 +449,14 @@ func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeCo
 		// Remove them here to prevent the specKubeletConfig merge overwriting them.
 		specKubeletConfig.FeatureGates = nil
 
+		// "protectKernelDefaults" is a boolean, optional field with `omitempty` json tag in the upstream kubelet configuration
+		// This field has been set to `true` by default in OCP recently
+		// As this field is an optional one with the above tag, it gets omitted when a user inputs it to `false`
+		// Reference: https://github.com/golang/go/issues/13284
+		// Adding a workaround to decide if the user has actually set the field to `false`
+		if strings.Contains(string(kubeletConfig.Spec.KubeletConfig.Raw), protectKernelDefaultsStr) {
+			originalKubeConfig.ProtectKernelDefaults = false
+		}
 		// Merge the Old and New
 		err = mergo.Merge(originalKubeConfig, specKubeletConfig, mergo.WithOverride)
 		if err != nil {
