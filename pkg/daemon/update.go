@@ -13,7 +13,6 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/clarketm/json"
@@ -105,7 +104,7 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 	// We are here, which means reboot was not needed to apply the configuration.
 
 	// Get current state of node, in case of an error reboot
-	state, err := dn.getStateAndConfigs(configName)
+	state, err := dn.getStateAndConfigs()
 	if err != nil {
 		return fmt.Errorf("could not apply update: error processing state and configs. Error: %w", err)
 	}
@@ -122,31 +121,6 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 
 	// currentConfig != desiredConfig, kick off an update
 	return dn.triggerUpdateWithMachineConfig(state.currentConfig, state.desiredConfig, true)
-}
-
-// finalizeBeforeReboot is the last step in an update() and then we take appropriate postConfigChangeAction.
-// It can also be called as a special case for the "bootstrap pivot".
-func (dn *Daemon) finalizeBeforeReboot(newConfig *mcfgv1.MachineConfig) (retErr error) {
-	if out, err := dn.storePendingState(newConfig, 1); err != nil {
-		return fmt.Errorf("failed to log pending config: %s: %w", string(out), err)
-	}
-	defer func() {
-		if retErr != nil {
-			if dn.nodeWriter != nil {
-				dn.nodeWriter.Eventf(corev1.EventTypeNormal, "PendingConfigRollBack", fmt.Sprintf("Rolling back pending config %s: %v", newConfig.GetName(), retErr))
-			}
-			if out, err := dn.storePendingState(newConfig, 0); err != nil {
-				errs := kubeErrs.NewAggregate([]error{err, retErr})
-				retErr = fmt.Errorf("error rolling back pending config %s: %w", string(out), errs)
-				return
-			}
-		}
-	}()
-	if dn.nodeWriter != nil {
-		dn.nodeWriter.Eventf(corev1.EventTypeNormal, "PendingConfig", fmt.Sprintf("Written pending config %s", newConfig.GetName()))
-	}
-
-	return nil
 }
 
 func canonicalizeEmptyMC(config *mcfgv1.MachineConfig) *mcfgv1.MachineConfig {
@@ -360,7 +334,7 @@ func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newC
 		// The steps from here on are different depending on the image type, so check the image type
 		isLayeredImage, err := dn.NodeUpdaterClient.IsBootableImage(newConfig.Spec.OSImageURL)
 		if err != nil {
-			return fmt.Errorf("Error checking type of update image: %w", err)
+			return fmt.Errorf("error checking type of update image: %w", err)
 		}
 
 		// TODO(jkyros): we can remove the format check and simplify this once we retire the "old format" images
@@ -615,10 +589,6 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 			}
 		}
 	}()
-
-	if err := dn.finalizeBeforeReboot(newConfig); err != nil {
-		return err
-	}
 
 	return dn.performPostConfigChangeAction(actions, newConfig.GetName())
 }
@@ -1190,7 +1160,7 @@ func (dn *CoreOSDaemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig)
 
 		return runRpmOstree(args...)
 	}
-	return fmt.Errorf("Unhandled kernel type %s", newKtype)
+	return fmt.Errorf("unhandled kernel type %s", newKtype)
 }
 
 // updateFiles writes files specified by the nodeconfig to disk. it also writes
@@ -1623,7 +1593,7 @@ func (dn *Daemon) SetPasswordHash(newUsers []ign3types.PasswdUser) error {
 		}
 
 		if out, err := exec.Command("usermod", "-p", pwhash, u.Name).CombinedOutput(); err != nil {
-			return fmt.Errorf("Failed to change password for %s: %s:%w", u.Name, out, err)
+			return fmt.Errorf("failed to change password for %s: %s:%w", u.Name, out, err)
 		}
 		glog.Info("Password has been configured")
 	}
@@ -1891,117 +1861,6 @@ func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 	}
 
 	return nil
-}
-
-func (dn *Daemon) getPendingStateLegacyLogger() (*journalMsg, error) {
-	glog.Info("logger doesn't support --jounald, grepping the journal")
-
-	cmdLiteral := "journalctl -o cat _UID=0 | grep -v audit | grep OPENSHIFT_MACHINE_CONFIG_DAEMON_LEGACY_LOG_HACK"
-	cmd := exec.Command("bash", "-c", cmdLiteral)
-	var combinedOutput bytes.Buffer
-	cmd.Stdout = &combinedOutput
-	cmd.Stderr = &combinedOutput
-	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("failed shelling out to journalctl -o cat: %w", err)
-	}
-	if err := cmd.Wait(); err != nil {
-		if exiterr, ok := err.(*exec.ExitError); ok {
-			// The program has exited with an exit code != 0
-			status, ok := exiterr.Sys().(syscall.WaitStatus)
-			if ok {
-				// grep exit with 1 if it doesn't find anything
-				// from man: Normally, the exit status is 0 if selected lines are found and 1 otherwise. But the exit status is 2 if an error occurred
-				if status.ExitStatus() == 1 {
-					return nil, nil
-				}
-				if status.ExitStatus() > 1 {
-					errs := kubeErrs.NewAggregate([]error{exiterr, fmt.Errorf("grep exited with %s", combinedOutput.Bytes())})
-					return nil, fmt.Errorf("failed to grep on journal output: %w", errs)
-				}
-			}
-		} else {
-			return nil, fmt.Errorf("command wait error: %w", err)
-		}
-	}
-	journalOutput := combinedOutput.Bytes()
-	// just an extra safety check?
-	if len(journalOutput) == 0 {
-		return nil, nil
-	}
-	return dn.processJournalOutput(journalOutput)
-}
-
-type journalMsg struct {
-	Message   string `json:"MESSAGE,omitempty"`
-	BootID    string `json:"BOOT_ID,omitempty"`
-	Pending   string `json:"PENDING,omitempty"`
-	OldLogger string `json:"OPENSHIFT_MACHINE_CONFIG_DAEMON_LEGACY_LOG_HACK,omitempty"` // unused today
-}
-
-func (dn *Daemon) processJournalOutput(journalOutput []byte) (*journalMsg, error) {
-	lines := strings.Split(strings.TrimSpace(string(journalOutput)), "\n")
-	last := lines[len(lines)-1]
-
-	entry := &journalMsg{}
-	if err := json.Unmarshal([]byte(last), entry); err != nil {
-		return nil, fmt.Errorf("getting pending state from journal: %w", err)
-	}
-	if entry.Pending == "0" {
-		return nil, nil
-	}
-	return entry, nil
-}
-
-// getPendingState loads the JSON state we cache across attempting to apply
-// a config+reboot.  If no pending state is available, ("", nil) will be returned.
-// The bootID is stored in the pending state; if it is unchanged, we assume
-// that we failed to reboot; that for now should be a fatal error, in order to avoid
-// reboot loops.
-func (dn *Daemon) getPendingState() (*journalMsg, error) {
-	if !dn.loggerSupportsJournal {
-		return dn.getPendingStateLegacyLogger()
-	}
-	journalOutput, err := exec.Command("journalctl", "-o", "json", "_UID=0", fmt.Sprintf("MESSAGE_ID=%s", pendingStateMessageID)).CombinedOutput()
-	if err != nil {
-		return nil, fmt.Errorf("error running journalctl -o json: %w", err)
-	}
-	if len(journalOutput) == 0 {
-		return nil, nil
-	}
-	return dn.processJournalOutput(journalOutput)
-}
-
-func (dn *Daemon) storePendingStateLegacyLogger(pending *mcfgv1.MachineConfig, isPending int) ([]byte, error) {
-	glog.Info("logger doesn't support --jounald, logging json directly")
-
-	if isPending == 1 {
-		if err := dn.writePendingConfig(pending); err != nil {
-			return nil, err
-		}
-	} else {
-		if err := os.Remove(pendingConfigPath); err != nil {
-			return nil, err
-		}
-	}
-
-	oldLogger := exec.Command("logger", fmt.Sprintf(`{"MESSAGE": "%s", "BOOT_ID": "%s", "PENDING": "%d", "OPENSHIFT_MACHINE_CONFIG_DAEMON_LEGACY_LOG_HACK": "1"}`, pending.GetName(), dn.bootID, isPending))
-	return oldLogger.CombinedOutput()
-}
-
-func (dn *Daemon) storePendingState(pending *mcfgv1.MachineConfig, isPending int) ([]byte, error) {
-	if !dn.loggerSupportsJournal {
-		return dn.storePendingStateLegacyLogger(pending, isPending)
-	}
-	logger := exec.Command("logger", "--journald")
-
-	var pendingState bytes.Buffer
-	pendingState.WriteString(fmt.Sprintf(`MESSAGE_ID=%s
-MESSAGE=%s
-BOOT_ID=%s
-PENDING=%d`, pendingStateMessageID, pending.GetName(), dn.bootID, isPending))
-
-	logger.Stdin = &pendingState
-	return logger.CombinedOutput()
 }
 
 // Synchronously invoke a command, writing its stdout to our stdout,
