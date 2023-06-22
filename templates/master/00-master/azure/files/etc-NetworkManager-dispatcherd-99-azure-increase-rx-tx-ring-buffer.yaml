@@ -1,0 +1,10 @@
+mode: 0755
+path: "/etc/NetworkManager/dispatcher.d/99-azure-increase-rx-tx-ring-buffer"
+contents:
+  inline: |
+    #!/bin/bash
+    driver=$(nmcli -t -m tabular -f general.driver dev show "${DEVICE_IFACE}")
+    if [[ "$2" == "up" && "${driver}" == "hv_netvsc" && -f /usr/sbin/ethtool ]]; then
+      logger -s "99-azure-increase-rx-tx-ring-buffer triggered by ${2} on device ${DEVICE_IFACE}."
+      ethtool -G ${DEVICE_IFACE} rx 9362 tx 2560
+    fi
