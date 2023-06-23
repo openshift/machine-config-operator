@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/golang/glog"
 	"github.com/spf13/cobra"
+	"k8s.io/klog/v2"
 
 	imagev1 "github.com/openshift/api/image/v1"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
@@ -105,7 +105,7 @@ func findImage(stream *imagev1.ImageStream, name string) (string, error) {
 func findImageOrDie(stream *imagev1.ImageStream, name string) string {
 	img, err := findImage(stream, name)
 	if err != nil {
-		glog.Fatalf("Failed to find %s in image references", name)
+		klog.Fatalf("Failed to find %s in image references", name)
 	}
 	return img
 }
@@ -115,7 +115,7 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 	flag.Parse()
 
 	// To help debugging, immediately log version
-	glog.Infof("Version: %+v (%s)", version.Raw, version.Hash)
+	klog.Infof("Version: %+v (%s)", version.Raw, version.Hash)
 
 	baseOSContainerImageTag := "rhel-coreos"
 	if version.IsFCOS() {
@@ -127,7 +127,7 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 	if bootstrapOpts.imageReferences != "" {
 		imageRefData, err := os.ReadFile(bootstrapOpts.imageReferences)
 		if err != nil {
-			glog.Fatalf("failed to read %s: %v", bootstrapOpts.imageReferences, err)
+			klog.Fatalf("failed to read %s: %v", bootstrapOpts.imageReferences, err)
 		}
 
 		imgstream := resourceread.ReadImageStreamV1OrDie(imageRefData)
@@ -144,11 +144,11 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 		bootstrapOpts.haproxyImage = findImageOrDie(imgstream, "haproxy-router")
 		bootstrapOpts.baseOSContainerImage, err = findImage(imgstream, baseOSContainerImageTag)
 		if err != nil {
-			glog.Warningf("Base OS container not found: %s", err)
+			klog.Warningf("Base OS container not found: %s", err)
 		}
 		bootstrapOpts.baseOSExtensionsContainerImage, err = findImage(imgstream, fmt.Sprintf("%s-extensions", baseOSContainerImageTag))
 		if err != nil {
-			glog.Warningf("Base OS extensions container not found: %s", err)
+			klog.Warningf("Base OS extensions container not found: %s", err)
 		}
 	}
 
@@ -186,6 +186,6 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 		bootstrapOpts.destinationDir,
 		bootstrapOpts.releaseImage,
 	); err != nil {
-		glog.Fatalf("error rendering bootstrap manifests: %v", err)
+		klog.Fatalf("error rendering bootstrap manifests: %v", err)
 	}
 }

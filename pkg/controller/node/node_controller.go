@@ -8,7 +8,6 @@ import (
 	"sort"
 	"time"
 
-	"github.com/golang/glog"
 	configv1 "github.com/openshift/api/config/v1"
 	cligoinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
 	cligolistersv1 "github.com/openshift/client-go/config/listers/config/v1"
@@ -40,6 +39,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	clientretry "k8s.io/client-go/util/retry"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/klog/v2"
 )
 
 const (
@@ -103,7 +103,7 @@ func New(
 	mcfgClient mcfgclientset.Interface,
 ) *Controller {
 	eventBroadcaster := record.NewBroadcaster()
-	eventBroadcaster.StartLogging(glog.Infof)
+	eventBroadcaster.StartLogging(klog.Infof)
 	eventBroadcaster.StartRecordingToSink(&coreclientsetv1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 
 	ctrl := &Controller{
@@ -155,8 +155,8 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 		return
 	}
 
-	glog.Info("Starting MachineConfigController-NodeController")
-	defer glog.Info("Shutting down MachineConfigController-NodeController")
+	klog.Info("Starting MachineConfigController-NodeController")
+	defer klog.Info("Shutting down MachineConfigController-NodeController")
 
 	for i := 0; i < workers; i++ {
 		go wait.Until(ctrl.worker, time.Second, stopCh)
@@ -184,13 +184,13 @@ func (ctrl *Controller) checkMasterNodesOnAdd(obj interface{}) {
 func (ctrl *Controller) checkMasterNodesOnDelete(obj interface{}) {
 	scheduler := obj.(*configv1.Scheduler)
 	if scheduler.Name != schedulerCRName {
-		glog.V(4).Infof("We don't care about CRs other than cluster created for scheduler config")
+		klog.V(4).Infof("We don't care about CRs other than cluster created for scheduler config")
 		return
 	}
 	currentMasters, err := ctrl.getCurrentMasters()
 	if err != nil {
 		err = fmt.Errorf("reconciling to make master nodes schedulable/unschedulable failed: %w", err)
-		glog.Error(err)
+		klog.Error(err)
 		return
 	}
 	// On deletion make all masters unschedulable to restore default behaviour
@@ -198,7 +198,7 @@ func (ctrl *Controller) checkMasterNodesOnDelete(obj interface{}) {
 	if len(errs) > 0 {
 		err = v1helpers.NewMultiLineAggregate(errs)
 		err = fmt.Errorf("reconciling to make nodes schedulable/unschedulable failed: %w", err)
-		glog.Error(err)
+		klog.Error(err)
 		return
 	}
 	return
@@ -211,12 +211,12 @@ func (ctrl *Controller) checkMasterNodesOnUpdate(old, cur interface{}) {
 	curScheduler := cur.(*configv1.Scheduler)
 
 	if oldScheduler.Name != schedulerCRName || curScheduler.Name != schedulerCRName {
-		glog.V(4).Infof("We don't care about CRs other than cluster created for scheduler config")
+		klog.V(4).Infof("We don't care about CRs other than cluster created for scheduler config")
 		return
 	}
 
 	if reflect.DeepEqual(oldScheduler.Spec, curScheduler.Spec) {
-		glog.V(4).Info("Scheduler config did not change")
+		klog.V(4).Info("Scheduler config did not change")
 		return
 	}
 
@@ -293,7 +293,7 @@ func (ctrl *Controller) makeMasterNodeSchedulable(node *corev1.Node) error {
 
 func (ctrl *Controller) addMachineConfigPool(obj interface{}) {
 	pool := obj.(*mcfgv1.MachineConfigPool)
-	glog.V(4).Infof("Adding MachineConfigPool %s", pool.Name)
+	klog.V(4).Infof("Adding MachineConfigPool %s", pool.Name)
 	ctrl.enqueueMachineConfigPool(pool)
 }
 
@@ -301,7 +301,7 @@ func (ctrl *Controller) updateMachineConfigPool(old, cur interface{}) {
 	oldPool := old.(*mcfgv1.MachineConfigPool)
 	curPool := cur.(*mcfgv1.MachineConfigPool)
 
-	glog.V(4).Infof("Updating MachineConfigPool %s", oldPool.Name)
+	klog.V(4).Infof("Updating MachineConfigPool %s", oldPool.Name)
 	ctrl.enqueueMachineConfigPool(curPool)
 }
 
@@ -319,7 +319,7 @@ func (ctrl *Controller) deleteMachineConfigPool(obj interface{}) {
 			return
 		}
 	}
-	glog.V(4).Infof("Deleting MachineConfigPool %s", pool.Name)
+	klog.V(4).Infof("Deleting MachineConfigPool %s", pool.Name)
 	// TODO(abhinavdahiya): handle deletes.
 }
 
@@ -362,21 +362,21 @@ func (ctrl *Controller) reconcileMaster(node *corev1.Node) {
 	mastersSchedulable, err := ctrl.getMastersSchedulable()
 	if err != nil {
 		err = fmt.Errorf("getting scheduler config failed: %w", err)
-		glog.Error(err)
+		klog.Error(err)
 		return
 	}
 	if mastersSchedulable {
 		err = ctrl.makeMasterNodeSchedulable(node)
 		if err != nil {
 			err = fmt.Errorf("failed making master Node schedulable: %w", err)
-			glog.Error(err)
+			klog.Error(err)
 			return
 		}
 	} else if !mastersSchedulable {
 		err = ctrl.makeMasterNodeUnSchedulable(node)
 		if err != nil {
 			err = fmt.Errorf("failed making master Node unschedulable: %w", err)
-			glog.Error(err)
+			klog.Error(err)
 			return
 		}
 	}
@@ -388,7 +388,7 @@ func (ctrl *Controller) reconcileMasters() {
 	currentMasters, err := ctrl.getCurrentMasters()
 	if err != nil {
 		err = fmt.Errorf("reconciling to make master nodes schedulable/unschedulable failed: %w", err)
-		glog.Error(err)
+		klog.Error(err)
 		return
 	}
 	for _, node := range currentMasters {
@@ -409,13 +409,13 @@ func (ctrl *Controller) addNode(obj interface{}) {
 
 	pools, err := ctrl.getPoolsForNode(node)
 	if err != nil {
-		glog.Errorf("error finding pools for node %s: %v", node.Name, err)
+		klog.Errorf("error finding pools for node %s: %v", node.Name, err)
 		return
 	}
 	if pools == nil {
 		return
 	}
-	glog.V(4).Infof("Node %s added", node.Name)
+	klog.V(4).Infof("Node %s added", node.Name)
 	for _, pool := range pools {
 		ctrl.enqueueMachineConfigPool(pool)
 	}
@@ -423,7 +423,7 @@ func (ctrl *Controller) addNode(obj interface{}) {
 
 func (ctrl *Controller) logPool(pool *mcfgv1.MachineConfigPool, format string, args ...interface{}) {
 	msg := fmt.Sprintf(format, args...)
-	glog.Infof("Pool %s: %s", pool.Name, msg)
+	klog.Infof("Pool %s: %s", pool.Name, msg)
 }
 
 func (ctrl *Controller) logPoolNode(pool *mcfgv1.MachineConfigPool, node *corev1.Node, format string, args ...interface{}) {
@@ -433,7 +433,7 @@ func (ctrl *Controller) logPoolNode(pool *mcfgv1.MachineConfigPool, node *corev1
 	if zok {
 		zonemsg = fmt.Sprintf("[zone=%s]", zone)
 	}
-	glog.Infof("Pool %s%s: node %s: %s", pool.Name, zonemsg, node.Name, msg)
+	klog.Infof("Pool %s%s: node %s: %s", pool.Name, zonemsg, node.Name, msg)
 }
 
 func (ctrl *Controller) updateNode(old, cur interface{}) {
@@ -450,13 +450,13 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 
 	pool, err := ctrl.getPrimaryPoolForNode(curNode)
 	if err != nil {
-		glog.Errorf("error finding pool for node: %v", err)
+		klog.Errorf("error finding pool for node: %v", err)
 		return
 	}
 	if pool == nil {
 		return
 	}
-	glog.V(4).Infof("Node %s updated", curNode.Name)
+	klog.V(4).Infof("Node %s updated", curNode.Name)
 
 	// Let's be verbose when a node changes pool
 	oldPool, err := ctrl.getPrimaryPoolForNode(oldNode)
@@ -521,7 +521,7 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 
 	pools, err := ctrl.getPoolsForNode(curNode)
 	if err != nil {
-		glog.Errorf("error finding pools for node: %v", err)
+		klog.Errorf("error finding pools for node: %v", err)
 		return
 	}
 	if pools == nil {
@@ -550,7 +550,7 @@ func (ctrl *Controller) deleteNode(obj interface{}) {
 
 	pools, err := ctrl.getPoolsForNode(node)
 	if err != nil {
-		glog.Errorf("error finding pools for node: %v", err)
+		klog.Errorf("error finding pools for node: %v", err)
 		return
 	}
 	if pools == nil {
@@ -559,10 +559,10 @@ func (ctrl *Controller) deleteNode(obj interface{}) {
 
 	// Clear any associated MCCDrainErr, if any.
 	if ctrlcommon.MCCDrainErr.DeleteLabelValues(node.Name) {
-		glog.Infof("Cleaning up MCCDrain error for node(%s) as it is being deleted", node.Name)
+		klog.Infof("Cleaning up MCCDrain error for node(%s) as it is being deleted", node.Name)
 	}
 
-	glog.V(4).Infof("Node %s delete", node.Name)
+	klog.V(4).Infof("Node %s delete", node.Name)
 	for _, pool := range pools {
 		ctrl.enqueueMachineConfigPool(pool)
 	}
@@ -576,7 +576,7 @@ func (ctrl *Controller) getPoolsForNode(node *corev1.Node) ([]*mcfgv1.MachineCon
 	if isWindows(node) {
 		// This is not an error, is this a Windows Node and it won't be managed by MCO. We're explicitly logging
 		// here at a high level to disambiguate this from other pools = nil  scenario
-		glog.V(4).Infof("Node %v is a windows node so won't be managed by MCO", node.Name)
+		klog.V(4).Infof("Node %v is a windows node so won't be managed by MCO", node.Name)
 		return nil, nil
 	}
 	pl, err := ctrl.mcpLister.List(labels.Everything())
@@ -622,7 +622,7 @@ func (ctrl *Controller) getPoolsForNode(node *corev1.Node) ([]*mcfgv1.MachineCon
 		pls := []*mcfgv1.MachineConfigPool{}
 		if master != nil {
 			// if we have a custom pool and master, defer to master and return.
-			glog.Infof("Found master node that matches selector for custom pool %v, defaulting to master. This node will not have any custom role configuration as a result. Please review the node to make sure this is intended", custom[0].Name)
+			klog.Infof("Found master node that matches selector for custom pool %v, defaulting to master. This node will not have any custom role configuration as a result. Please review the node to make sure this is intended", custom[0].Name)
 			ctrlcommon.MCCPoolAlert.WithLabelValues(custom[0].Name, fmt.Sprintf("Given both master and custom pools. Defaulting to master: custom %v", custom[0].Name)).Set(1)
 			pls = append(pls, master)
 		} else {
@@ -721,13 +721,13 @@ func (ctrl *Controller) handleErr(err error, key interface{}) {
 	}
 
 	if ctrl.queue.NumRequeues(key) < maxRetries {
-		glog.V(2).Infof("Error syncing machineconfigpool %v: %v", key, err)
+		klog.V(2).Infof("Error syncing machineconfigpool %v: %v", key, err)
 		ctrl.queue.AddRateLimited(key)
 		return
 	}
 
 	utilruntime.HandleError(err)
-	glog.V(2).Infof("Dropping machineconfigpool %q out of the queue: %v", key, err)
+	klog.V(2).Infof("Dropping machineconfigpool %q out of the queue: %v", key, err)
 	ctrl.queue.Forget(key)
 	ctrl.queue.AddAfter(key, 1*time.Minute)
 }
@@ -736,9 +736,9 @@ func (ctrl *Controller) handleErr(err error, key interface{}) {
 // This function is not meant to be invoked concurrently with the same key.
 func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	startTime := time.Now()
-	glog.V(4).Infof("Started syncing machineconfigpool %q (%v)", key, startTime)
+	klog.V(4).Infof("Started syncing machineconfigpool %q (%v)", key, startTime)
 	defer func() {
-		glog.V(4).Infof("Finished syncing machineconfigpool %q (%v)", key, time.Since(startTime))
+		klog.V(4).Infof("Finished syncing machineconfigpool %q (%v)", key, time.Since(startTime))
 	}()
 
 	_, name, err := cache.SplitMetaNamespaceKey(key)
@@ -747,7 +747,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	}
 	machineconfigpool, err := ctrl.mcpLister.Get(name)
 	if errors.IsNotFound(err) {
-		glog.V(2).Infof("MachineConfigPool %v has been deleted", key)
+		klog.V(2).Infof("MachineConfigPool %v has been deleted", key)
 		return nil
 	}
 	if err != nil {
@@ -758,7 +758,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		// Previously we spammed the logs about empty pools.
 		// Let's just pause for a bit here to let the renderer
 		// initialize them.
-		glog.Infof("Pool %s is unconfigured, pausing %v for renderer to initialize", name, updateDelay)
+		klog.Infof("Pool %s is unconfigured, pausing %v for renderer to initialize", name, updateDelay)
 		time.Sleep(updateDelay)
 		return nil
 	}
@@ -779,7 +779,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 
 	if pool.Spec.Paused {
 		if mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolUpdating) {
-			glog.Infof("Pool %s is paused and will not update.", pool.Name)
+			klog.Infof("Pool %s is paused and will not update.", pool.Name)
 		}
 		return ctrl.syncStatusOnly(pool)
 	}
@@ -816,14 +816,14 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 			if hasInProgressTaint {
 				if err := ctrl.removeUpdateInProgressTaint(ctx, node.Name); err != nil {
 					err = fmt.Errorf("failed removing %s taint for node %s: %w", constants.NodeUpdateInProgressTaint.Key, node.Name, err)
-					glog.Error(err)
+					klog.Error(err)
 				}
 			}
 		} else {
 			if !hasInProgressTaint {
 				if err := ctrl.setUpdateInProgressTaint(ctx, node.Name); err != nil {
 					err = fmt.Errorf("failed applying %s taint for node %s: %w", constants.NodeUpdateInProgressTaint.Key, node.Name, err)
-					glog.Error(err)
+					klog.Error(err)
 				}
 			}
 		}
@@ -874,7 +874,7 @@ func (ctrl *Controller) getNodesForPool(pool *mcfgv1.MachineConfigPool) ([]*core
 	for _, n := range initialNodes {
 		p, err := ctrl.getPrimaryPoolForNode(n)
 		if err != nil {
-			glog.Warningf("can't get pool for node %q: %v", n.Name, err)
+			klog.Warningf("can't get pool for node %q: %v", n.Name, err)
 			continue
 		}
 		if p == nil {
@@ -906,7 +906,7 @@ func (ctrl *Controller) setClusterConfigAnnotation(nodes []*corev1.Node) error {
 			if err != nil {
 				return err
 			}
-			glog.Infof("Updated controlPlaneTopology annotation of node %s from %s to %s", node.Name, oldAnn, node.Annotations[daemonconsts.ClusterControlPlaneTopologyAnnotationKey])
+			klog.Infof("Updated controlPlaneTopology annotation of node %s from %s to %s", node.Name, oldAnn, node.Annotations[daemonconsts.ClusterControlPlaneTopologyAnnotationKey])
 		}
 	}
 	return nil
@@ -1001,14 +1001,14 @@ func (ctrl *Controller) filterControlPlaneCandidateNodes(pool *mcfgv1.MachineCon
 	}
 	etcdLeader, err := ctrl.getCurrentEtcdLeader(candidates)
 	if err != nil {
-		glog.Warningf("Failed to find current etcd leader (continuing anyways): %v", err)
+		klog.Warningf("Failed to find current etcd leader (continuing anyways): %v", err)
 	}
 	var newCandidates []*corev1.Node
 	for _, node := range candidates {
 		if node == etcdLeader {
 			// For now make this an event so we know it's working, even though it's more of a non-event
 			ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, "DeferringEtcdLeaderUpdate", "Deferring update of etcd leader %s", node.Name)
-			glog.Infof("Deferring update of etcd leader: %s", node.Name)
+			klog.Infof("Deferring update of etcd leader: %s", node.Name)
 			continue
 		}
 		newCandidates = append(newCandidates, node)

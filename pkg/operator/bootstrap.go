@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/golang/glog"
+	"k8s.io/klog/v2"
 
 	configv1 "github.com/openshift/api/config/v1"
 	configscheme "github.com/openshift/client-go/config/clientset/versioned/scheme"
@@ -186,7 +186,7 @@ func RenderBootstrap(
 		var err error
 		switch {
 		case len(m.name) > 0:
-			glog.Info(m.name)
+			klog.Info(m.name)
 			b, err = renderAsset(config, m.name)
 			if err != nil {
 				return err
@@ -296,7 +296,7 @@ func loadBootstrapCloudProviderConfig(infra *configv1.Infrastructure, cloudConfi
 	}
 	cloudConf, ok := cm.Data["cloud.conf"]
 	if !ok {
-		glog.Infof("falling back to reading cloud provider config from user specified key %s", infra.Spec.CloudConfig.Key)
+		klog.Infof("falling back to reading cloud provider config from user specified key %s", infra.Spec.CloudConfig.Key)
 		cloudConf = cm.Data[infra.Spec.CloudConfig.Key]
 	}
 	return cloudConf, nil

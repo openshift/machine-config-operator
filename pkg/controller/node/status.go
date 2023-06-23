@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/golang/glog"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/klog/v2"
 )
 
 func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
@@ -87,7 +87,7 @@ func calculateStatus(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv
 		supdating := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionFalse, "", "")
 		mcfgv1.SetMachineConfigPoolCondition(&status, *supdating)
 		if status.Configuration.Name != pool.Spec.Configuration.Name || !equality.Semantic.DeepEqual(status.Configuration.Source, pool.Spec.Configuration.Source) {
-			glog.Infof("Pool %s: %s", pool.Name, updatedMsg)
+			klog.Infof("Pool %s: %s", pool.Name, updatedMsg)
 			status.Configuration = pool.Spec.Configuration
 		}
 	} else {
@@ -104,7 +104,7 @@ func calculateStatus(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv
 
 	var nodeDegraded bool
 	for _, m := range degradedMachines {
-		glog.Infof("Degraded Machine: %v and Degraded Reason: %v", m.Name, m.Annotations[constants.MachineConfigDaemonReasonAnnotationKey])
+		klog.Infof("Degraded Machine: %v and Degraded Reason: %v", m.Name, m.Annotations[constants.MachineConfigDaemonReasonAnnotationKey])
 	}
 	if degradedMachineCount > 0 {
 		nodeDegraded = true
@@ -134,7 +134,7 @@ func calculateStatus(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv
 // isNodeManaged checks whether the MCD has ever run on a node
 func isNodeManaged(node *corev1.Node) bool {
 	if isWindows(node) {
-		glog.V(4).Infof("Node %v is a windows node so won't be managed by MCO", node.Name)
+		klog.V(4).Infof("Node %v is a windows node so won't be managed by MCO", node.Name)
 		return false
 	}
 	if node.Annotations == nil {

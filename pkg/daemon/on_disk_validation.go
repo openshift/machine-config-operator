@@ -8,10 +8,10 @@ import (
 
 	ign2types "github.com/coreos/ignition/config/v2_2/types"
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
-	"github.com/golang/glog"
 	"github.com/google/go-cmp/cmp"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"k8s.io/klog/v2"
 )
 
 // Validates that the on-disk state matches a given MachineConfig.
@@ -176,7 +176,7 @@ func checkV3Files(files []ign3types.File) error {
 	for _, f := range files {
 		if f.Path == caBundleFilePath {
 			// TODO remove this special case once we have a better way to do this
-			glog.V(4).Infof("Skipping file %s during checkV3Files", caBundleFilePath)
+			klog.V(4).Infof("Skipping file %s during checkV3Files", caBundleFilePath)
 			continue
 		}
 		if len(f.Append) > 0 {
@@ -242,7 +242,7 @@ func checkFileContentsAndMode(filePath string, expectedContent []byte, mode os.F
 		return fmt.Errorf("could not read file %q: %w", filePath, err)
 	}
 	if !bytes.Equal(contents, expectedContent) {
-		glog.Errorf("content mismatch for file %q (-want +got):\n%s", filePath, cmp.Diff(expectedContent, contents))
+		klog.Errorf("content mismatch for file %q (-want +got):\n%s", filePath, cmp.Diff(expectedContent, contents))
 		return fmt.Errorf("content mismatch for file %q", filePath)
 	}
 	return nil

@@ -11,7 +11,6 @@ import (
 
 	"github.com/clarketm/json"
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
-	"github.com/golang/glog"
 	"github.com/imdario/mergo"
 	corev1 "k8s.io/api/core/v1"
 	macherrors "k8s.io/apimachinery/pkg/api/errors"
@@ -28,6 +27,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/klog/v2"
 	kubeletconfigv1beta1 "k8s.io/kubelet/config/v1beta1"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -123,7 +123,7 @@ func New(
 	fgAccess featuregates.FeatureGateAccess,
 ) *Controller {
 	eventBroadcaster := record.NewBroadcaster()
-	eventBroadcaster.StartLogging(glog.Infof)
+	eventBroadcaster.StartLogging(klog.Infof)
 	eventBroadcaster.StartRecordingToSink(&coreclientsetv1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 
 	ctrl := &Controller{
@@ -190,8 +190,8 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 		return
 	}
 
-	glog.Info("Starting MachineConfigController-KubeletConfigController")
-	defer glog.Info("Shutting down MachineConfigController-KubeletConfigController")
+	klog.Info("Starting MachineConfigController-KubeletConfigController")
+	defer klog.Info("Shutting down MachineConfigController-KubeletConfigController")
 
 	for i := 0; i < workers; i++ {
 		go wait.Until(ctrl.worker, time.Second, stopCh)
@@ -223,14 +223,14 @@ func (ctrl *Controller) updateKubeletConfig(old, cur interface{}) {
 	newConfig := cur.(*mcfgv1.KubeletConfig)
 
 	if kubeletConfigTriggerObjectChange(oldConfig, newConfig) {
-		glog.V(4).Infof("Update KubeletConfig %s", oldConfig.Name)
+		klog.V(4).Infof("Update KubeletConfig %s", oldConfig.Name)
 		ctrl.enqueueKubeletConfig(newConfig)
 	}
 }
 
 func (ctrl *Controller) addKubeletConfig(obj interface{}) {
 	cfg := obj.(*mcfgv1.KubeletConfig)
-	glog.V(4).Infof("Adding KubeletConfig %s", cfg.Name)
+	klog.V(4).Infof("Adding KubeletConfig %s", cfg.Name)
 	ctrl.enqueueKubeletConfig(cfg)
 }
 
@@ -251,7 +251,7 @@ func (ctrl *Controller) deleteKubeletConfig(obj interface{}) {
 	if err := ctrl.cascadeDelete(cfg); err != nil {
 		utilruntime.HandleError(fmt.Errorf("couldn't delete object %#v: %w", cfg, err))
 	} else {
-		glog.V(4).Infof("Deleted KubeletConfig %s and restored default config", cfg.Name)
+		klog.V(4).Infof("Deleted KubeletConfig %s and restored default config", cfg.Name)
 	}
 }
 
@@ -329,13 +329,13 @@ func (ctrl *Controller) handleErr(err error, key interface{}) {
 	}
 
 	if ctrl.queue.NumRequeues(key) < maxRetries {
-		glog.V(2).Infof("Error syncing kubeletconfig %v: %v", key, err)
+		klog.V(2).Infof("Error syncing kubeletconfig %v: %v", key, err)
 		ctrl.queue.AddRateLimited(key)
 		return
 	}
 
 	utilruntime.HandleError(err)
-	glog.V(2).Infof("Dropping kubeletconfig %q out of the queue: %v", key, err)
+	klog.V(2).Infof("Dropping kubeletconfig %q out of the queue: %v", key, err)
 	ctrl.queue.Forget(key)
 	ctrl.queue.AddAfter(key, 1*time.Minute)
 }
@@ -347,13 +347,13 @@ func (ctrl *Controller) handleFeatureErr(err error, key interface{}) {
 	}
 
 	if ctrl.featureQueue.NumRequeues(key) < maxRetries {
-		glog.V(2).Infof("Error syncing kubeletconfig %v: %v", key, err)
+		klog.V(2).Infof("Error syncing kubeletconfig %v: %v", key, err)
 		ctrl.featureQueue.AddRateLimited(key)
 		return
 	}
 
 	utilruntime.HandleError(err)
-	glog.V(2).Infof("Dropping featureconfig %q out of the queue: %v", key, err)
+	klog.V(2).Infof("Dropping featureconfig %q out of the queue: %v", key, err)
 	ctrl.featureQueue.Forget(key)
 	ctrl.featureQueue.AddAfter(key, 1*time.Minute)
 }
@@ -426,7 +426,7 @@ func (ctrl *Controller) syncStatusOnly(cfg *mcfgv1.KubeletConfig, err error, arg
 		return lerr
 	})
 	if statusUpdateError != nil {
-		glog.Warningf("error updating kubeletconfig status: %v", statusUpdateError)
+		klog.Warningf("error updating kubeletconfig status: %v", statusUpdateError)
 	}
 	return err
 }
@@ -459,7 +459,7 @@ func (ctrl *Controller) addAnnotation(cfg *mcfgv1.KubeletConfig, annotationKey, 
 		return updateErr
 	})
 	if annotationUpdateErr != nil {
-		glog.Warningf("error updating the kubelet config with annotation key %q and value %q: %v", annotationKey, annotationVal, annotationUpdateErr)
+		klog.Warningf("error updating the kubelet config with annotation key %q and value %q: %v", annotationKey, annotationVal, annotationUpdateErr)
 	}
 	return annotationUpdateErr
 }
@@ -470,9 +470,9 @@ func (ctrl *Controller) addAnnotation(cfg *mcfgv1.KubeletConfig, annotationKey, 
 //nolint:gocyclo
 func (ctrl *Controller) syncKubeletConfig(key string) error {
 	startTime := time.Now()
-	glog.V(4).Infof("Started syncing kubeletconfig %q (%v)", key, startTime)
+	klog.V(4).Infof("Started syncing kubeletconfig %q (%v)", key, startTime)
 	defer func() {
-		glog.V(4).Infof("Finished syncing kubeletconfig %q (%v)", key, time.Since(startTime))
+		klog.V(4).Infof("Finished syncing kubeletconfig %q (%v)", key, time.Since(startTime))
 	}()
 
 	// Wait to apply a kubelet config if the controller config is not completed
@@ -488,7 +488,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 	// Fetch the KubeletConfig
 	cfg, err := ctrl.mckLister.Get(name)
 	if macherrors.IsNotFound(err) {
-		glog.V(2).Infof("KubeletConfig %v has been deleted", key)
+		klog.V(2).Infof("KubeletConfig %v has been deleted", key)
 		return nil
 	}
 	if err != nil {
@@ -524,7 +524,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 
 	if len(mcpPools) == 0 {
 		err := fmt.Errorf("KubeletConfig %v does not match any MachineConfigPools", key)
-		glog.V(2).Infof("%v", err)
+		klog.V(2).Infof("%v", err)
 		return ctrl.syncStatusOnly(cfg, err)
 	}
 
@@ -659,7 +659,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		if err := ctrl.addFinalizerToKubeletConfig(cfg, mc); err != nil {
 			return ctrl.syncStatusOnly(cfg, err, "could not add finalizers to KubeletConfig: %v", err)
 		}
-		glog.Infof("Applied KubeletConfig %v on MachineConfigPool %v", key, pool.Name)
+		klog.Infof("Applied KubeletConfig %v on MachineConfigPool %v", key, pool.Name)
 	}
 	if err := ctrl.cleanUpDuplicatedMC(managedKubeletConfigKeyPrefix); err != nil {
 		return err
