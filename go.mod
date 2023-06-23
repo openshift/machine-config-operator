@@ -20,8 +20,7 @@ require (
 	github.com/coreos/rpmostree-client-go v0.0.0-20230303152616-d29525c6e333
 	github.com/davecgh/go-spew v1.1.1
 	github.com/fsnotify/fsnotify v1.6.0
-	github.com/ghodss/yaml v1.0.0
-	github.com/golang/glog v1.0.0
+	github.com/ghodss/yaml v1.0.1-0.20190212211648-25d852aebe32
 	github.com/golangci/golangci-lint v1.49.0
 	github.com/google/go-cmp v0.5.9
 	github.com/google/renameio v0.1.0

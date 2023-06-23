@@ -18,12 +18,12 @@ import (
 
 	"github.com/clarketm/json"
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
-	"github.com/golang/glog"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	kubeErrs "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/uuid"
+	"k8s.io/klog/v2"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -179,7 +179,7 @@ func (dn *Daemon) compareMachineConfig(oldConfig, newConfig *mcfgv1.MachineConfi
 		return true, fmt.Errorf("error creating machineConfigDiff for comparison: %w", err)
 	}
 	if mcDiff.isEmpty() {
-		glog.Infof("No changes from %s to %s", oldConfigName, newConfigName)
+		klog.Infof("No changes from %s to %s", oldConfigName, newConfigName)
 		return false, nil
 	}
 	return true, nil
@@ -285,7 +285,7 @@ func ExtractOSImage(imgURL string) (osImageContentDir string, err error) {
 	if _, err = pivotutils.RunExtBackground(cmdRetriesCount, "oc", args...); err != nil {
 		// Workaround fixes for the environment where oc image extract fails.
 		// See https://bugzilla.redhat.com/show_bug.cgi?id=1862979
-		glog.Infof("Falling back to using podman cp to fetch OS image content")
+		klog.Infof("Falling back to using podman cp to fetch OS image content")
 		if err = podmanCopy(imgURL, osImageContentDir); err != nil {
 			return
 		}
@@ -317,7 +317,7 @@ func ExtractExtensionsImage(imgURL string) (osExtensionsImageContentDir string, 
 	if _, err = pivotutils.RunExtBackground(cmdRetriesCount, "oc", args...); err != nil {
 		// Workaround fixes for the environment where oc image extract fails.
 		// See https://bugzilla.redhat.com/show_bug.cgi?id=1862979
-		glog.Infof("Falling back to using podman cp to fetch OS image content")
+		klog.Infof("Falling back to using podman cp to fetch OS image content")
 		if err = podmanCopy(imgURL, osExtensionsImageContentDir); err != nil {
 			return
 		}
@@ -406,7 +406,7 @@ func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newC
 			// its ok to create a unique event for this low volume event
 			if _, err := dn.kubeClient.CoreV1().Events(metav1.NamespaceDefault).Create(context.TODO(),
 				event, metav1.CreateOptions{}); err != nil {
-				glog.Errorf("Failed to create event with reason 'OSUpdateStaged': %v", err)
+				klog.Errorf("Failed to create event with reason 'OSUpdateStaged': %v", err)
 			}
 		}
 	}
@@ -447,7 +447,7 @@ func calculatePostConfigChangeAction(diff *machineConfigDiff, diffFileSet []stri
 		if err := os.Remove(constants.MachineConfigDaemonForceFile); err != nil {
 			return []string{}, fmt.Errorf("failed to remove force validation file: %w", err)
 		}
-		glog.Infof("Setting post config change action to postConfigChangeActionReboot; %s present", constants.MachineConfigDaemonForceFile)
+		klog.Infof("Setting post config change action to postConfigChangeActionReboot; %s present", constants.MachineConfigDaemonForceFile)
 		return []string{postConfigChangeActionReboot}, nil
 	}
 
@@ -497,7 +497,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		return fmt.Errorf("parsing new Ignition config failed: %w", err)
 	}
 
-	glog.Infof("Checking Reconcilable for config %v to %v", oldConfigName, newConfigName)
+	klog.Infof("Checking Reconcilable for config %v to %v", oldConfigName, newConfigName)
 
 	// make sure we can actually reconcile this state
 	diff, reconcilableError := reconcilable(oldConfig, newConfig)
@@ -528,7 +528,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 			return err
 		}
 	} else {
-		glog.Info("Changes do not require drain, skipping.")
+		klog.Info("Changes do not require drain, skipping.")
 	}
 
 	// update files on disk that need updating
@@ -546,13 +546,13 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		}
 	}()
 
-	if err := dn.updateSSHKeys(newIgnConfig.Passwd.Users, oldIgnConfig.Passwd.Users); err != nil {
+	if err := dn.updateSSHKeys(newIgnConfig.Passwd.Users); err != nil {
 		return err
 	}
 
 	defer func() {
 		if retErr != nil {
-			if err := dn.updateSSHKeys(newIgnConfig.Passwd.Users, oldIgnConfig.Passwd.Users); err != nil {
+			if err := dn.updateSSHKeys(oldIgnConfig.Passwd.Users); err != nil {
 				errs := kubeErrs.NewAggregate([]error{err, retErr})
 				retErr = fmt.Errorf("error rolling back SSH keys updates: %w", errs)
 				return
@@ -561,13 +561,13 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	}()
 
 	// Set password hash
-	if err := dn.SetPasswordHash(newIgnConfig.Passwd.Users, oldIgnConfig.Passwd.Users); err != nil {
+	if err := dn.SetPasswordHash(newIgnConfig.Passwd.Users); err != nil {
 		return err
 	}
 
 	defer func() {
 		if retErr != nil {
-			if err := dn.SetPasswordHash(newIgnConfig.Passwd.Users, oldIgnConfig.Passwd.Users); err != nil {
+			if err := dn.SetPasswordHash(oldIgnConfig.Passwd.Users); err != nil {
 				errs := kubeErrs.NewAggregate([]error{err, retErr})
 				retErr = fmt.Errorf("error rolling back password hash updates: %w", errs)
 				return
@@ -591,7 +591,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 			}
 		}()
 	} else {
-		glog.Info("updating the OS on non-CoreOS nodes is not supported")
+		klog.Info("updating the OS on non-CoreOS nodes is not supported")
 	}
 
 	// Ideally we would want to update kernelArguments only via MachineConfigs.
@@ -651,13 +651,13 @@ func (dn *Daemon) updateHypershift(oldConfig, newConfig *mcfgv1.MachineConfig, d
 		}
 	}()
 
-	if err := dn.updateSSHKeys(newIgnConfig.Passwd.Users, oldIgnConfig.Passwd.Users); err != nil {
+	if err := dn.updateSSHKeys(newIgnConfig.Passwd.Users); err != nil {
 		return err
 	}
 
 	defer func() {
 		if retErr != nil {
-			if err := dn.updateSSHKeys(newIgnConfig.Passwd.Users, oldIgnConfig.Passwd.Users); err != nil {
+			if err := dn.updateSSHKeys(oldIgnConfig.Passwd.Users); err != nil {
 				errs := kubeErrs.NewAggregate([]error{err, retErr})
 				retErr = fmt.Errorf("error rolling back SSH keys updates: %w", errs)
 				return
@@ -681,14 +681,14 @@ func (dn *Daemon) updateHypershift(oldConfig, newConfig *mcfgv1.MachineConfig, d
 			}
 		}()
 	} else {
-		glog.Info("updating the OS on non-CoreOS nodes is not supported")
+		klog.Info("updating the OS on non-CoreOS nodes is not supported")
 	}
 
 	if err := UpdateTuningArgs(KernelTuningFile, CmdLineFile); err != nil {
 		return err
 	}
 
-	glog.Info("Successfully completed Hypershift config update")
+	klog.Info("Successfully completed Hypershift config update")
 	return nil
 }
 
@@ -823,6 +823,9 @@ func reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineConfigDif
 			return nil, fmt.Errorf("ignition Passwd Groups section contains changes")
 		}
 		if !reflect.DeepEqual(oldIgn.Passwd.Users, newIgn.Passwd.Users) {
+			if len(oldIgn.Passwd.Users) > 0 && len(newIgn.Passwd.Users) == 0 {
+				return nil, fmt.Errorf("ignition passwd user section contains unsupported changes: user core may not be deleted")
+			}
 			// there is an update to Users, we must verify that it is ONLY making an acceptable
 			// change to the SSHAuthorizedKeys for the user "core"
 			for _, user := range newIgn.Passwd.Users {
@@ -830,12 +833,10 @@ func reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineConfigDif
 					return nil, fmt.Errorf("ignition passwd user section contains unsupported changes: non-core user")
 				}
 			}
-			// We don't want to panic if the "new" users is empty, and it's still reconcilable because the absence of a user here does not mean "remove the user from the system"
-			if len(newIgn.Passwd.Users) != 0 {
-				glog.Infof("user data to be verified before ssh update: %v", newIgn.Passwd.Users[len(newIgn.Passwd.Users)-1])
-				if err := verifyUserFields(newIgn.Passwd.Users[len(newIgn.Passwd.Users)-1]); err != nil {
-					return nil, err
-				}
+
+			klog.Infof("user data to be verified before ssh update: %v", newIgn.Passwd.Users[len(newIgn.Passwd.Users)-1])
+			if err := verifyUserFields(newIgn.Passwd.Users[len(newIgn.Passwd.Users)-1]); err != nil {
+				return nil, err
 			}
 		}
 	}
@@ -888,7 +889,7 @@ func reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineConfigDif
 	}
 
 	// we made it through all the checks. reconcile away!
-	glog.V(2).Info("Configs are reconcilable")
+	klog.V(2).Info("Configs are reconcilable")
 	mcDiff, err := newMachineConfigDiff(oldConfig, newConfig)
 	if err != nil {
 		return nil, fmt.Errorf("error creating machineConfigDiff: %w", err)
@@ -911,7 +912,7 @@ func verifyUserFields(pwdUser ign3types.PasswdUser) error {
 		if !reflect.DeepEqual(emptyUser, tempUser) {
 			return fmt.Errorf("SSH keys and password hash are not reconcilable")
 		}
-		glog.Info("SSH Keys reconcilable")
+		klog.Info("SSH Keys reconcilable")
 	} else {
 		return fmt.Errorf("ignition passwd user section contains unsupported changes: user must be core and have 1 or more sshKeys")
 	}
@@ -930,7 +931,7 @@ func checkFIPS(current, desired *mcfgv1.MachineConfig) error {
 	if err != nil {
 		if os.IsNotExist(err) {
 			// we just exit cleanly if we're not even on linux
-			glog.Infof("no %s on this system, skipping FIPS check", fipsFile)
+			klog.Infof("no %s on this system, skipping FIPS check", fipsFile)
 			return nil
 		}
 		return fmt.Errorf("error reading FIPS file at %s: %s: %w", fipsFile, string(content), err)
@@ -941,7 +942,7 @@ func checkFIPS(current, desired *mcfgv1.MachineConfig) error {
 	}
 	if desired.Spec.FIPS == nodeFIPS {
 		if desired.Spec.FIPS {
-			glog.Infof("FIPS is configured and enabled")
+			klog.Infof("FIPS is configured and enabled")
 		}
 		// Check if FIPS on the system is at the desired setting
 		current.Spec.FIPS = nodeFIPS
@@ -1143,7 +1144,7 @@ func (dn *CoreOSDaemon) applyExtensions(oldConfig, newConfig *mcfgv1.MachineConf
 	}
 
 	args := dn.generateExtensionsArgs(oldConfig, newConfig)
-	glog.Infof("Applying extensions : %+q", args)
+	klog.Infof("Applying extensions : %+q", args)
 	return runRpmOstree(args...)
 }
 
@@ -1152,7 +1153,7 @@ func (dn *CoreOSDaemon) applyExtensions(oldConfig, newConfig *mcfgv1.MachineConf
 func (dn *CoreOSDaemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 	// We support Kernel update only on RHCOS and SCOS nodes
 	if !dn.os.IsEL() {
-		glog.Info("updating kernel on non-RHCOS nodes is not supported")
+		klog.Info("updating kernel on non-RHCOS nodes is not supported")
 		return nil
 	}
 
@@ -1209,7 +1210,7 @@ func (dn *CoreOSDaemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig)
 // required. in particular, a daemon-reload and restart for any unit files
 // touched.
 func (dn *Daemon) updateFiles(oldIgnConfig, newIgnConfig ign3types.Config, skipCertificateWrite bool) error {
-	glog.Info("Updating files")
+	klog.Info("Updating files")
 	if err := dn.writeFiles(newIgnConfig.Storage.Files, skipCertificateWrite); err != nil {
 		return err
 	}
@@ -1275,7 +1276,7 @@ func (dn *Daemon) isPathInDropins(path string, systemd *ign3types.Systemd) bool 
 //
 //nolint:gocyclo
 func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig ign3types.Config) error {
-	glog.Info("Deleting stale data")
+	klog.Info("Deleting stale data")
 	newFileSet := make(map[string]struct{})
 	for _, f := range newIgnConfig.Storage.Files {
 		newFileSet[f.Path] = struct{}{}
@@ -1289,7 +1290,7 @@ func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig ign3types.Config) e
 			if delErr := os.Remove(noOrigFileStampName(f.Path)); delErr != nil {
 				return fmt.Errorf("deleting noorig file stamp %q: %w", noOrigFileStampName(f.Path), delErr)
 			}
-			glog.V(2).Infof("Removing file %q completely", f.Path)
+			klog.V(2).Infof("Removing file %q completely", f.Path)
 		} else if _, err := os.Stat(origFileName(f.Path)); err == nil {
 			// Add a check for backwards compatibility: basically if the file doesn't exist in /usr/etc (on FCOS/RHCOS)
 			// and no rpm is claiming it, we assume that the orig file came from a wrongful backup of a MachineConfig
@@ -1314,7 +1315,7 @@ func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig ign3types.Config) e
 				if err := restorePath(f.Path); err != nil {
 					return err
 				}
-				glog.V(2).Infof("Restored file %q", f.Path)
+				klog.V(2).Infof("Restored file %q", f.Path)
 				continue
 			}
 
@@ -1325,20 +1326,20 @@ func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig ign3types.Config) e
 
 		// Check Systemd.Units.Dropins - don't remove the file if configuration has been converted into a dropin
 		if dn.isPathInDropins(f.Path, &newIgnConfig.Systemd) {
-			glog.Infof("Not removing file %q: replaced with systemd dropin", f.Path)
+			klog.Infof("Not removing file %q: replaced with systemd dropin", f.Path)
 			continue
 		}
 
-		glog.V(2).Infof("Deleting stale config file: %s", f.Path)
+		klog.V(2).Infof("Deleting stale config file: %s", f.Path)
 		if err := os.Remove(f.Path); err != nil {
 			newErr := fmt.Errorf("unable to delete %s: %w", f.Path, err)
 			if !os.IsNotExist(err) {
 				return newErr
 			}
 			// otherwise, just warn
-			glog.Warningf("%v", newErr)
+			klog.Warningf("%v", newErr)
 		}
-		glog.Infof("Removed stale file %q", f.Path)
+		klog.Infof("Removed stale file %q", f.Path)
 	}
 
 	newUnitSet := make(map[string]struct{})
@@ -1360,24 +1361,24 @@ func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig ign3types.Config) e
 					if delErr := os.Remove(noOrigFileStampName(path)); delErr != nil {
 						return fmt.Errorf("deleting noorig file stamp %q: %w", noOrigFileStampName(path), delErr)
 					}
-					glog.V(2).Infof("Removing file %q completely", path)
+					klog.V(2).Infof("Removing file %q completely", path)
 				} else if _, err := os.Stat(origFileName(path)); err == nil {
 					if err := restorePath(path); err != nil {
 						return err
 					}
-					glog.V(2).Infof("Restored file %q", path)
+					klog.V(2).Infof("Restored file %q", path)
 					continue
 				}
-				glog.V(2).Infof("Deleting stale systemd dropin file: %s", path)
+				klog.V(2).Infof("Deleting stale systemd dropin file: %s", path)
 				if err := os.Remove(path); err != nil {
 					newErr := fmt.Errorf("unable to delete %s: %w", path, err)
 					if !os.IsNotExist(err) {
 						return newErr
 					}
 					// otherwise, just warn
-					glog.Warningf("%v", newErr)
+					klog.Warningf("%v", newErr)
 				}
-				glog.Infof("Removed stale systemd dropin %q", path)
+				klog.Infof("Removed stale systemd dropin %q", path)
 			}
 		}
 		path := filepath.Join(pathSystemd, u.Name)
@@ -1387,30 +1388,30 @@ func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig ign3types.Config) e
 			// if the system has the service disabled
 			// writeUnits() will catch units that still have references in other MCs
 			if err := dn.presetUnit(u); err != nil {
-				glog.Infof("Did not restore preset for %s (may not exist): %s", u.Name, err)
+				klog.Infof("Did not restore preset for %s (may not exist): %s", u.Name, err)
 			}
 			if _, err := os.Stat(noOrigFileStampName(path)); err == nil {
 				if delErr := os.Remove(noOrigFileStampName(path)); delErr != nil {
 					return fmt.Errorf("deleting noorig file stamp %q: %w", noOrigFileStampName(path), delErr)
 				}
-				glog.V(2).Infof("Removing file %q completely", path)
+				klog.V(2).Infof("Removing file %q completely", path)
 			} else if _, err := os.Stat(origFileName(path)); err == nil {
 				if err := restorePath(path); err != nil {
 					return err
 				}
-				glog.V(2).Infof("Restored file %q", path)
+				klog.V(2).Infof("Restored file %q", path)
 				continue
 			}
-			glog.V(2).Infof("Deleting stale systemd unit file: %s", path)
+			klog.V(2).Infof("Deleting stale systemd unit file: %s", path)
 			if err := os.Remove(path); err != nil {
 				newErr := fmt.Errorf("unable to delete %s: %w", path, err)
 				if !os.IsNotExist(err) {
 					return newErr
 				}
 				// otherwise, just warn
-				glog.Warningf("%v", newErr)
+				klog.Warningf("%v", newErr)
 			}
-			glog.Infof("Removed stale systemd unit %q", path)
+			klog.Infof("Removed stale systemd unit %q", path)
 		}
 	}
 
@@ -1457,7 +1458,7 @@ func (dn *Daemon) enableUnits(units []string) error {
 			return fmt.Errorf("error enabling units: %s", stdouterr)
 		}
 	}
-	glog.Infof("Enabled systemd units: %v", units)
+	klog.Infof("Enabled systemd units: %v", units)
 	return nil
 }
 
@@ -1468,7 +1469,7 @@ func (dn *Daemon) disableUnits(units []string) error {
 	if err != nil {
 		return fmt.Errorf("error disabling unit: %s", stdouterr)
 	}
-	glog.Infof("Disabled systemd units %v", units)
+	klog.Infof("Disabled systemd units %v", units)
 	return nil
 }
 
@@ -1479,7 +1480,7 @@ func (dn *Daemon) presetUnit(unit ign3types.Unit) error {
 	if err != nil {
 		return fmt.Errorf("error running preset on unit: %s", stdouterr)
 	}
-	glog.Infof("Preset systemd unit %s", unit.Name)
+	klog.Infof("Preset systemd unit %s", unit.Name)
 	return nil
 }
 
@@ -1516,7 +1517,7 @@ func (dn *Daemon) writeUnits(units []ign3types.Unit) error {
 		} else {
 			if err := dn.presetUnit(u); err != nil {
 				// Don't fail here, since a unit may have a dropin referencing a nonexisting actual unit
-				glog.Infof("Could not reset unit preset for %s, skipping. (Error msg: %v)", u.Name, err)
+				klog.Infof("Could not reset unit preset for %s, skipping. (Error msg: %v)", u.Name, err)
 			}
 		}
 	}
@@ -1543,7 +1544,7 @@ func (dn *Daemon) writeFiles(files []ign3types.File, skipCertificateWrite bool) 
 // Ensures that both the SSH root directory (/home/core/.ssh) as well as any
 // subdirectories are created with the correct (0700) permissions.
 func createSSHKeyDir(authKeyDir string) error {
-	glog.Infof("Creating missing SSH key dir at %s", authKeyDir)
+	klog.Infof("Creating missing SSH key dir at %s", authKeyDir)
 
 	mkdir := func(dir string) error {
 		return exec.Command("runuser", "-u", constants.CoreUserName, "--", "mkdir", "-m", "0700", "-p", dir).Run()
@@ -1576,7 +1577,7 @@ func (dn *Daemon) atomicallyWriteSSHKey(authKeyPath, keys string) error {
 
 	// Keys should only be written to "/home/core/.ssh"
 	// Once Users are supported fully this should be writing to PasswdUser.HomeDir
-	glog.Infof("Writing SSH keys to %q", authKeyPath)
+	klog.Infof("Writing SSH keys to %q", authKeyPath)
 
 	// Creating CoreUserSSHPath in advance if it doesn't exist in order to ensure it is owned by core user
 	// See https://bugzilla.redhat.com/show_bug.cgi?id=2107113
@@ -1591,36 +1592,23 @@ func (dn *Daemon) atomicallyWriteSSHKey(authKeyPath, keys string) error {
 		return err
 	}
 
-	glog.V(2).Infof("Wrote SSH keys to %q", authKeyPath)
+	klog.V(2).Infof("Wrote SSH keys to %q", authKeyPath)
 
 	return nil
 }
 
 // Set a given PasswdUser's Password Hash
-func (dn *Daemon) SetPasswordHash(newUsers []ign3types.PasswdUser, oldUsers []ign3types.PasswdUser) error {
+func (dn *Daemon) SetPasswordHash(newUsers []ign3types.PasswdUser) error {
 	// confirm that user exits
-	glog.Info("checking if absent users need to be disconfigured")
-
-	// Print and log the oldUsers
-	fmt.Println("Old Users:")
-	for _, user := range oldUsers {
-		fmt.Printf("Name: %s\n", user.Name)
+	if len(newUsers) == 0 {
+		return nil
 	}
-
-	// Print and log the newUsers
-	fmt.Println("New Users:")
-	for _, user := range newUsers {
-		fmt.Printf("Name: %s\n", user.Name)
-	}
-
-	// checking if old users need to be deconfigured
-	deconfigureAbsentUsers(oldUsers, newUsers)
 
 	var uErr user.UnknownUserError
 	switch _, err := user.Lookup(constants.CoreUserName); {
 	case err == nil:
 	case errors.As(err, &uErr):
-		glog.Info("core user does not exist, and creating users is not supported, so ignoring configuration specified for core user")
+		klog.Info("core user does not exist, and creating users is not supported, so ignoring configuration specified for core user")
 		return nil
 	default:
 		return fmt.Errorf("failed to check if user core exists: %w", err)
@@ -1636,7 +1624,7 @@ func (dn *Daemon) SetPasswordHash(newUsers []ign3types.PasswdUser, oldUsers []ig
 		if out, err := exec.Command("usermod", "-p", pwhash, u.Name).CombinedOutput(); err != nil {
 			return fmt.Errorf("Failed to change password for %s: %s:%w", u.Name, out, err)
 		}
-		glog.Info("Password has been configured")
+		klog.Info("Password has been configured")
 	}
 
 	return nil
@@ -1650,17 +1638,16 @@ func (dn *Daemon) useNewSSHKeyPath() bool {
 }
 
 // Update a given PasswdUser's SSHKey
-func (dn *Daemon) updateSSHKeys(newUsers []ign3types.PasswdUser, oldUsers []ign3types.PasswdUser) error {
-	glog.Info("updating SSH keys")
-
-	// Checking to see if absent users need to be deconfigured
-	deconfigureAbsentUsers(newUsers, oldUsers)
+func (dn *Daemon) updateSSHKeys(newUsers []ign3types.PasswdUser) error {
+	if len(newUsers) == 0 {
+		return nil
+	}
 
 	var uErr user.UnknownUserError
 	switch _, err := user.Lookup(constants.CoreUserName); {
 	case err == nil:
 	case errors.As(err, &uErr):
-		glog.Info("core user does not exist, and creating users is not supported, so ignoring configuration specified for core user")
+		klog.Info("core user does not exist, and creating users is not supported, so ignoring configuration specified for core user")
 		return nil
 	default:
 		return fmt.Errorf("failed to check if user core exists: %w", err)
@@ -1700,41 +1687,6 @@ func (dn *Daemon) updateSSHKeys(newUsers []ign3types.PasswdUser, oldUsers []ign3
 		return dn.atomicallyWriteSSHKey(authKeyPath, concatSSHKeys)
 	}
 
-	return nil
-}
-
-func deconfigureAbsentUsers(oldUsers []ign3types.PasswdUser, newUsers []ign3types.PasswdUser) {
-	glog.Info("checking to deconfigure the absent user")
-	for _, oldUser := range oldUsers {
-		if !isUserPresent(oldUser, newUsers) {
-			glog.Infof("deconfiguring the user %s\n", oldUser.Name)
-			deconfigureUser(oldUser)
-		}
-	}
-}
-
-func isUserPresent(user ign3types.PasswdUser, userList []ign3types.PasswdUser) bool {
-	glog.Info("checking if user is present")
-	for _, u := range userList {
-		if u.Name == user.Name {
-			return true
-		}
-	}
-	return false
-}
-
-func deconfigureUser(user ign3types.PasswdUser) error {
-	glog.Info("deconfiguring the absent user")
-
-	// clear out password and sshkey
-	pwhash := ""
-	user.PasswordHash = &pwhash
-
-	if out, err := exec.Command("usermod", "-p", *user.PasswordHash, user.Name).CombinedOutput(); err != nil {
-		return fmt.Errorf("Failed to change password for %s: %s:%w", user.Name, out, err)
-	}
-
-	glog.Info("Password and SSH Key have been reset")
 	return nil
 }
 
@@ -1803,7 +1755,7 @@ func removeNonIgnitionKeyPathFragments() error {
 // updateOS updates the system OS to the one specified in newConfig
 func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig, osImageContentDir string) error {
 	newURL := config.Spec.OSImageURL
-	glog.Infof("Updating OS to %s", newURL)
+	klog.Infof("Updating OS to %s", newURL)
 	if _, err := dn.NodeUpdaterClient.Rebase(newURL, osImageContentDir); err != nil {
 		return fmt.Errorf("failed to update OS to %s : %w", newURL, err)
 	}
@@ -1841,7 +1793,7 @@ func (dn *Daemon) InplaceUpdateViaNewContainer(target string) error {
 			return err
 		}
 	} else {
-		glog.Info("SELinux is not enforcing")
+		klog.Info("SELinux is not enforcing")
 	}
 
 	systemdPodmanArgs := []string{"--unit", "machine-config-daemon-update-rpmostree-via-container", "-p", "EnvironmentFile=-/etc/mco/proxy.env", "--collect", "--wait", "--", "podman"}
@@ -1908,9 +1860,9 @@ func (dn *Daemon) queueRevertRTKernel() error {
 			return err
 		}
 	} else if len(kernelOverrides) > 0 || len(kernelRtLayers) > 0 {
-		glog.Infof("notice: detected %d overrides and %d kernel-rt layers", len(kernelOverrides), len(kernelRtLayers))
+		klog.Infof("notice: detected %d overrides and %d kernel-rt layers", len(kernelOverrides), len(kernelRtLayers))
 	} else {
-		glog.Infof("No kernel overrides or replacement detected")
+		klog.Infof("No kernel overrides or replacement detected")
 	}
 
 	return nil
@@ -1919,7 +1871,7 @@ func (dn *Daemon) queueRevertRTKernel() error {
 // updateLayeredOS updates the system OS to the one specified in newConfig
 func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 	newURL := config.Spec.OSImageURL
-	glog.Infof("Updating OS to layered image %s", newURL)
+	klog.Infof("Updating OS to layered image %s", newURL)
 
 	newEnough, err := RpmOstreeIsNewEnoughForLayering()
 	if err != nil {
@@ -2055,7 +2007,7 @@ PENDING=%d`, pendingStateMessageID, pending.GetName(), dn.bootID, isPending))
 // and gathering stderr into a buffer which will be returned in err
 // in case of error.
 func runCmdSync(cmdName string, args ...string) error {
-	glog.Infof("Running: %s %s", cmdName, strings.Join(args, " "))
+	klog.Infof("Running: %s %s", cmdName, strings.Join(args, " "))
 	cmd := exec.Command(cmdName, args...)
 	var stderr bytes.Buffer
 	cmd.Stdout = os.Stdout
@@ -2070,7 +2022,7 @@ func runCmdSync(cmdName string, args ...string) error {
 // Log a message to the systemd journal as well as our stdout
 func logSystem(format string, a ...interface{}) {
 	message := fmt.Sprintf(format, a...)
-	glog.Info(message)
+	klog.Info(message)
 	// Since we're chrooted into the host rootfs with /run mounted,
 	// we can just talk to the journald socket.  Doing this as a
 	// subprocess rather than talking to journald in process since
@@ -2082,7 +2034,7 @@ func logSystem(format string, a ...interface{}) {
 
 	logger.Stdin = &log
 	if err := logger.Run(); err != nil {
-		glog.Errorf("failed to invoke logger: %v", err)
+		klog.Errorf("failed to invoke logger: %v", err)
 	}
 }
 
@@ -2092,7 +2044,7 @@ func (dn *Daemon) catchIgnoreSIGTERM() {
 	if dn.updateActive {
 		return
 	}
-	glog.Info("Adding SIGTERM protection")
+	klog.Info("Adding SIGTERM protection")
 	dn.updateActive = true
 }
 
@@ -2100,7 +2052,7 @@ func (dn *Daemon) cancelSIGTERM() {
 	dn.updateActiveLock.Lock()
 	defer dn.updateActiveLock.Unlock()
 	if dn.updateActive {
-		glog.Info("Removing SIGTERM protection")
+		klog.Info("Removing SIGTERM protection")
 		dn.updateActive = false
 	}
 }
@@ -2145,7 +2097,7 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 	// Override the computed diff if the booted state differs from the oldConfig
 	// https://issues.redhat.com/browse/OCPBUGS-2757
 	if mcDiff.osUpdate && dn.bootedOSImageURL == newConfig.Spec.OSImageURL {
-		glog.Infof("Already in desired image %s", newConfig.Spec.OSImageURL)
+		klog.Infof("Already in desired image %s", newConfig.Spec.OSImageURL)
 		mcDiff.osUpdate = false
 	}
 
@@ -2181,7 +2133,7 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 		// should be sufficient to discard any applied changes.
 		if retErr != nil {
 			// Print out the error now so that if we fail to cleanup -p, we don't lose it.
-			glog.Infof("Rolling back applied changes to OS due to error: %v", retErr)
+			klog.Infof("Rolling back applied changes to OS due to error: %v", retErr)
 			if err := removePendingDeployment(); err != nil {
 				errs := kubeErrs.NewAggregate([]error{err, retErr})
 				retErr = fmt.Errorf("error removing staged deployment: %w", errs)
@@ -2282,7 +2234,7 @@ func (dn *CoreOSDaemon) applyLegacyOSChanges(mcDiff machineConfigDiff, oldConfig
 		// should be sufficient to discard any applied changes.
 		if retErr != nil {
 			// Print out the error now so that if we fail to cleanup -p, we don't lose it.
-			glog.Infof("Rolling back applied changes to OS due to error: %v", retErr)
+			klog.Infof("Rolling back applied changes to OS due to error: %v", retErr)
 			if err := removePendingDeployment(); err != nil {
 				errs := kubeErrs.NewAggregate([]error{err, retErr})
 				retErr = fmt.Errorf("error removing staged deployment: %w", errs)

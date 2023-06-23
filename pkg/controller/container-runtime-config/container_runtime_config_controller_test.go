@@ -9,9 +9,9 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/resource"
 
-	"github.com/golang/glog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"k8s.io/klog/v2"
 
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -91,7 +91,7 @@ func (f *fixture) validateActions() {
 	}
 	actions := filterInformerActions(f.client.Actions())
 	for i, action := range actions {
-		glog.Infof("Action: %v", action)
+		klog.Infof("Action: %v", action)
 
 		if len(f.actions) < i+1 {
 			f.t.Errorf("%d unexpected actions: %+v", len(actions)-len(f.actions), actions[i:])
@@ -568,7 +568,7 @@ func TestContainerRuntimeConfigUpdate(t *testing.T) {
 			c = f.newController()
 			stopCh = make(chan struct{})
 
-			glog.Info("Applying update")
+			klog.Info("Applying update")
 
 			// Apply update
 			err = c.syncHandler(getKey(ctrcfgUpdate, t))
@@ -702,7 +702,7 @@ func TestImageConfigUpdate(t *testing.T) {
 			c = f.newController()
 			stopCh = make(chan struct{})
 
-			glog.Info("Applying update")
+			klog.Info("Applying update")
 
 			// Apply update
 			err = c.syncImgHandler("")
@@ -807,7 +807,7 @@ func TestICSPUpdate(t *testing.T) {
 			c = f.newController()
 			stopCh = make(chan struct{})
 
-			glog.Info("Applying update")
+			klog.Info("Applying update")
 
 			// Apply update
 			err = c.syncImgHandler("")
@@ -910,7 +910,7 @@ func TestIDMSUpdate(t *testing.T) {
 			c = f.newController()
 			stopCh = make(chan struct{})
 
-			glog.Info("Applying update")
+			klog.Info("Applying update")
 
 			// Apply update
 			err = c.syncImgHandler("")
@@ -1013,7 +1013,7 @@ func TestITMSUpdate(t *testing.T) {
 			c = f.newController()
 			stopCh = make(chan struct{})
 
-			glog.Info("Applying update")
+			klog.Info("Applying update")
 
 			// Apply update
 			err = c.syncImgHandler("")

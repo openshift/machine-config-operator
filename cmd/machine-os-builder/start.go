@@ -3,9 +3,9 @@ package main
 import (
 	"flag"
 
-	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/spf13/cobra"
+	"k8s.io/klog/v2"
 )
 
 var (
@@ -30,9 +30,9 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	flag.Set("logtostderr", "true")
 	flag.Parse()
 
-	glog.V(2).Infof("Options parsed: %+v", startOpts)
+	klog.V(2).Infof("Options parsed: %+v", startOpts)
 
 	// To help debugging, immediately log version
-	glog.Infof("Version: %+v (%s)", version.Raw, version.Hash)
+	klog.Infof("Version: %+v (%s)", version.Raw, version.Hash)
 
 }

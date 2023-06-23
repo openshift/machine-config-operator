@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/golang/glog"
+	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/machine-config-operator/cmd/common"
 	"github.com/openshift/machine-config-operator/internal/clients"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -54,7 +54,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	runContext, runCancel := context.WithCancel(context.Background())
 
 	// To help debugging, immediately log version
-	glog.Infof("Version: %+v (%s)", version.Raw, version.Hash)
+	klog.Infof("Version: %+v (%s)", version.Raw, version.Hash)
 
 	cb, err := clients.NewBuilder(startOpts.kubeconfig)
 	if err != nil {
@@ -105,7 +105,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: run,
 			OnStoppedLeading: func() {
-				glog.Infof("Stopped leading. Terminating.")
+				klog.Infof("Stopped leading. Terminating.")
 				os.Exit(0)
 			},
 		},

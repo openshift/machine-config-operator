@@ -3,7 +3,8 @@ package main
 import (
 	"flag"
 
-	"github.com/golang/glog"
+	"k8s.io/klog/v2"
+
 	"github.com/spf13/cobra"
 )
 
@@ -27,6 +28,6 @@ func init() {
 
 func main() {
 	if err := rootCmd.Execute(); err != nil {
-		glog.Exitf("Error executing %s: %v", componentName, err)
+		klog.Exitf("Error executing %s: %v", componentName, err)
 	}
 }

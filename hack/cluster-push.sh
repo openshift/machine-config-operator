@@ -34,13 +34,10 @@ if [[ "${podman:-}" =~ "docker" ]]; then
 else
   imgstorage="containers-storage:"
 fi
-# skopeo copy --dest-tls-verify=false --dest-creds unused:${secret} "${imgstorage}${LOCAL_IMGNAME}" "docker://${registry}/${REMOTE_IMGNAME}"
+skopeo copy --dest-tls-verify=false --dest-creds unused:${secret} "${imgstorage}${LOCAL_IMGNAME}" "docker://${registry}/${REMOTE_IMGNAME}"
 
-podman tag "$LOCAL_IMGNAME" "$registry/$REMOTE_IMGNAME"
-podman push --tls-verify=false --creds "unused:$secret" "$LOCAL_IMGNAME" "$registry/$REMOTE_IMGNAME"
-
-digest="$(skopeo inspect --creds "unused:${secret}" --tls-verify=false "docker://${registry}/${REMOTE_IMGNAME}" | jq -r '.Digest')"
-imageid="${REMOTE_IMGNAME}@${digest}"
+digest=$(skopeo inspect --creds unused:${secret} --tls-verify=false docker://${registry}/${REMOTE_IMGNAME} | jq -r .Digest)
+imageid=${REMOTE_IMGNAME}@${digest}
 
 oc project openshift-machine-config-operator
 

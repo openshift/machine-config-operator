@@ -14,7 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/golang/glog"
 	configclientscheme "github.com/openshift/client-go/config/clientset/versioned/scheme"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -28,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/klog/v2"
 
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
@@ -127,7 +127,7 @@ func (optr *Operator) syncAll(syncFuncs []syncFunc) error {
 			err:  sf.fn(optr.renderConfig),
 		}
 		if optr.inClusterBringup {
-			glog.Infof("[init mode] synced %s in %v", sf.name, time.Since(startTime))
+			klog.Infof("[init mode] synced %s in %v", sf.name, time.Since(startTime))
 		}
 		if syncErr.err != nil {
 			// Keep rendering controllerconfig if the daemon sync fails so (among other things)
@@ -137,7 +137,7 @@ func (optr *Operator) syncAll(syncFuncs []syncFunc) error {
 				if err := optr.safetySyncControllerConfig(optr.renderConfig); err != nil {
 					// we don't want this error to supersede the actual error
 					// it's just "oh also, we tried to save you, but that didn't work either"
-					glog.Errorf("Error performing safety controllerconfig sync: %v", err)
+					klog.Errorf("Error performing safety controllerconfig sync: %v", err)
 				}
 			}
 			break
@@ -172,7 +172,7 @@ func (optr *Operator) syncAll(syncFuncs []syncFunc) error {
 	}
 
 	if optr.inClusterBringup && syncErr.err == nil {
-		glog.Infof("Initialization complete")
+		klog.Infof("Initialization complete")
 		optr.inClusterBringup = false
 	}
 
@@ -232,12 +232,12 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 	}
 
 	if optr.inClusterBringup {
-		glog.V(4).Info("Starting inClusterBringup informers cache sync")
+		klog.V(4).Info("Starting inClusterBringup informers cache sync")
 		// sync now our own informers after having installed the CRDs
 		if !cache.WaitForCacheSync(optr.stopCh, optr.ccListerSynced) {
 			return fmt.Errorf("failed to sync caches for informers")
 		}
-		glog.V(4).Info("Finished inClusterBringup informers cache sync")
+		klog.V(4).Info("Finished inClusterBringup informers cache sync")
 	}
 
 	// sync up the images used by operands.
@@ -593,7 +593,7 @@ func (optr *Operator) applyManifests(config *renderConfig, paths manifestPaths) 
 // we need to keep syncing controllerconfig, but something (like daemon sync failing) is preventing
 // us from getting to the actual controller sync
 func (optr *Operator) safetySyncControllerConfig(config *renderConfig) error {
-	glog.Infof("Performing safety controllerconfig sync")
+	klog.Infof("Performing safety controllerconfig sync")
 
 	// If we have an existing controllerconfig, we might be able to keep rendering
 	existingCc, err := optr.ccLister.Get(ctrlcommon.ControllerConfigName)
@@ -680,9 +680,9 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig) error {
 }
 
 func (optr *Operator) syncMachineOSBuilder(config *renderConfig) error {
-	glog.V(4).Info("Machine OS Builder sync started")
+	klog.V(4).Info("Machine OS Builder sync started")
 	defer func() {
-		glog.V(4).Info("Machine OS Builder sync complete")
+		klog.V(4).Info("Machine OS Builder sync complete")
 	}()
 
 	paths := manifestPaths{
@@ -736,7 +736,7 @@ func (optr *Operator) reconcileMachineOSBuilder(mob *appsv1.Deployment) error {
 	// If the deployment does not exist and we do not have any opted-in pools, we
 	// should create the deployment with zero replicas so that it exists.
 	if apierrors.IsNotFound(err) && len(layeredMCPs) == 0 {
-		glog.Infof("Created Machine OS Builder deployment")
+		klog.Infof("Created Machine OS Builder deployment")
 		return optr.updateMachineOSBuilderDeployment(mob, 0)
 	}
 
@@ -747,14 +747,14 @@ func (optr *Operator) reconcileMachineOSBuilder(mob *appsv1.Deployment) error {
 		for _, mcp := range layeredMCPs {
 			layeredMCPNames = append(layeredMCPNames, mcp.Name)
 		}
-		glog.Infof("Starting Machine OS Builder pod because MachineConfigPool(s) opted into layering: %v", layeredMCPNames)
+		klog.Infof("Starting Machine OS Builder pod because MachineConfigPool(s) opted into layering: %v", layeredMCPNames)
 		return optr.updateMachineOSBuilderDeployment(mob, 1)
 	}
 
 	// If we do not have opted-in pools and the Machine OS Builder deployment is
 	// running, scale it down.
 	if len(layeredMCPs) == 0 && isRunning {
-		glog.Infof("Shutting down Machine OS Builder pod because no MachineConfigPool(s) opted into layering")
+		klog.Infof("Shutting down Machine OS Builder pod because no MachineConfigPool(s) opted into layering")
 		return optr.updateMachineOSBuilderDeployment(mob, 0)
 	}
 
@@ -809,8 +809,7 @@ func (optr *Operator) getLayeredMachineConfigPools() ([]*mcfgv1.MachineConfigPoo
 	// TODO: Once https://github.com/openshift/machine-config-operator/pull/3731
 	// lands, change this to consume ctrlcommon.LayeringEnabledPoolLabel instead
 	// of having this hard-coded here.
-	layeringEnabledPoolLabel := "machineconfiguration.openshift.io/layering-enabled"
-	requirement, err := labels.NewRequirement(layeringEnabledPoolLabel, selection.Exists, []string{})
+	requirement, err := labels.NewRequirement(ctrlcommon.LayeringEnabledPoolLabel, selection.Exists, []string{})
 	if err != nil {
 		return []*mcfgv1.MachineConfigPool{}, err
 	}
@@ -900,7 +899,7 @@ func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
 				return false, nil
 			}
 			if co == nil {
-				glog.Warning("no clusteroperator for machine-config")
+				klog.Warning("no clusteroperator for machine-config")
 				return false, nil
 			}
 			optr.setOperatorStatusExtension(&co.Status, lastErr)
@@ -921,10 +920,10 @@ func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
 			degraded := isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolDegraded)
 			if degraded {
 				lastErr = fmt.Errorf("error pool %s is not ready, retrying. Status: (pool degraded: %v total: %d, ready %d, updated: %d, unavailable: %d)", pool.Name, degraded, pool.Status.MachineCount, pool.Status.ReadyMachineCount, pool.Status.UpdatedMachineCount, pool.Status.UnavailableMachineCount)
-				glog.Errorf("Error syncing Required MachineConfigPools: %q", lastErr)
+				klog.Errorf("Error syncing Required MachineConfigPools: %q", lastErr)
 				syncerr := optr.syncUpgradeableStatus()
 				if syncerr != nil {
-					glog.Errorf("Error syncingUpgradeableStatus: %q", syncerr)
+					klog.Errorf("Error syncingUpgradeableStatus: %q", syncerr)
 				}
 				return false, nil
 			}
@@ -934,7 +933,7 @@ func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
 			if hasRequiredPoolLabel {
 				newFormatOpURL, _, opURL, err := optr.getOsImageURLs(optr.namespace)
 				if err != nil {
-					glog.Errorf("Error getting configmap osImageURL: %q", err)
+					klog.Errorf("Error getting configmap osImageURL: %q", err)
 					return false, nil
 				}
 				releaseVersion, _ := optr.vStore.Get("operator")
@@ -949,7 +948,7 @@ func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
 					lastErr = fmt.Errorf("pool %s has not progressed to latest configuration: %w, retrying", pool.Name, err)
 					syncerr := optr.syncUpgradeableStatus()
 					if syncerr != nil {
-						glog.Errorf("Error syncingUpgradeableStatus: %q", syncerr)
+						klog.Errorf("Error syncingUpgradeableStatus: %q", syncerr)
 					}
 					return false, nil
 				}
@@ -961,7 +960,7 @@ func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
 				lastErr = fmt.Errorf("error required pool %s is not ready, retrying. Status: (total: %d, ready %d, updated: %d, unavailable: %d, degraded: %d)", pool.Name, pool.Status.MachineCount, pool.Status.ReadyMachineCount, pool.Status.UpdatedMachineCount, pool.Status.UnavailableMachineCount, pool.Status.DegradedMachineCount)
 				syncerr := optr.syncUpgradeableStatus()
 				if syncerr != nil {
-					glog.Errorf("Error syncingUpgradeableStatus: %q", syncerr)
+					klog.Errorf("Error syncingUpgradeableStatus: %q", syncerr)
 				}
 				// If we don't account for pause here, we will spin in this loop until we hit the 10 minute timeout because paused pools can't sync.
 				if pool.Spec.Paused {
@@ -972,8 +971,8 @@ func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
 		}
 		return true, nil
 	}); err != nil {
-		if err == wait.ErrWaitTimeout {
-			glog.Errorf("Error syncing Required MachineConfigPools: %q", lastErr)
+		if wait.Interrupted(err) {
+			klog.Errorf("Error syncing Required MachineConfigPools: %q", lastErr)
 			errs := kubeErrs.NewAggregate([]error{err, lastErr})
 			return fmt.Errorf("error during syncRequiredMachineConfigPools: %w", errs)
 		}
@@ -1255,7 +1254,7 @@ func mergeCertWithCABundle(initialBundle, newBundle []byte, subject string) []by
 		}
 		c, err := x509.ParseCertificate(b.Bytes)
 		if err != nil {
-			glog.Warningf("Could not parse initial bundle certificate: %v", err)
+			klog.Warningf("Could not parse initial bundle certificate: %v", err)
 			continue
 		}
 		if strings.Contains(c.Subject.String(), subject) {

@@ -13,13 +13,13 @@ import (
 	"github.com/google/renameio"
 	"k8s.io/client-go/tools/clientcmd"
 
-	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/internal/clients"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/spf13/cobra"
+	"k8s.io/klog/v2"
 )
 
 var (
@@ -82,7 +82,7 @@ func selfCopyToHost() error {
 	if err := t.CloseAtomicallyReplace(); err != nil {
 		return err
 	}
-	glog.Infof("Copied self to /run/bin/machine-config-daemon on host")
+	klog.Infof("Copied self to /run/bin/machine-config-daemon on host")
 	return nil
 }
 
@@ -90,10 +90,10 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	flag.Set("logtostderr", "true")
 	flag.Parse()
 
-	glog.V(2).Infof("Options parsed: %+v", startOpts)
+	klog.V(2).Infof("Options parsed: %+v", startOpts)
 
 	// To help debugging, immediately log version
-	glog.Infof("Version: %+v (%s)", version.Raw, version.Hash)
+	klog.Infof("Version: %+v (%s)", version.Raw, version.Hash)
 
 	// See https://github.com/coreos/rpm-ostree/pull/1880
 	os.Setenv("RPMOSTREE_CLIENT_ID", "machine-config-operator")
@@ -102,24 +102,24 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	if !onceFromMode {
 		// in the daemon case
 		if err := daemon.PrepareNamespace(startOpts.rootMount); err != nil {
-			glog.Fatalf("Binding pod mounts: %+v", err)
+			klog.Fatalf("Binding pod mounts: %+v", err)
 		}
 	}
 
-	glog.Infof(`Calling chroot("%s")`, startOpts.rootMount)
+	klog.Infof(`Calling chroot("%s")`, startOpts.rootMount)
 	if err := syscall.Chroot(startOpts.rootMount); err != nil {
-		glog.Fatalf("Unable to chroot to %s: %s", startOpts.rootMount, err)
+		klog.Fatalf("Unable to chroot to %s: %s", startOpts.rootMount, err)
 	}
 
-	glog.V(2).Infof("Moving to / inside the chroot")
+	klog.V(2).Infof("Moving to / inside the chroot")
 	if err := os.Chdir("/"); err != nil {
-		glog.Fatalf("Unable to change directory to /: %s", err)
+		klog.Fatalf("Unable to change directory to /: %s", err)
 	}
 
 	if startOpts.nodeName == "" {
 		name, ok := os.LookupEnv("NODE_NAME")
 		if !ok || name == "" {
-			glog.Fatalf("node-name is required")
+			klog.Fatalf("node-name is required")
 		}
 		startOpts.nodeName = name
 	}
@@ -134,7 +134,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		exitCh,
 	)
 	if err != nil {
-		glog.Fatalf("Failed to initialize single run daemon: %v", err)
+		klog.Fatalf("Failed to initialize single run daemon: %v", err)
 	}
 
 	// If we are asked to run once and it's a valid file system path use
@@ -142,7 +142,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	if startOpts.onceFrom != "" {
 		err = dn.RunOnceFrom(startOpts.onceFrom, startOpts.skipReboot)
 		if err != nil {
-			glog.Fatalf("%v", err)
+			klog.Fatalf("%v", err)
 		}
 		return
 	}
@@ -150,37 +150,37 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	// In the cluster case, for now we copy our binary out to the host
 	// for SELinux reasons, see https://bugzilla.redhat.com/show_bug.cgi?id=1839065
 	if err := selfCopyToHost(); err != nil {
-		glog.Fatalf("%v", fmt.Errorf("copying self to host: %w", err))
+		klog.Fatalf("%v", fmt.Errorf("copying self to host: %w", err))
 		return
 	}
 
 	// Use kubelet kubeconfig file to get the URL to kube-api-server
 	kubeconfig, err := clientcmd.LoadFromFile("/etc/kubernetes/kubeconfig")
 	if err != nil {
-		glog.Fatalf("failed to load kubelet kubeconfig: %v", err)
+		klog.Fatalf("failed to load kubelet kubeconfig: %v", err)
 	}
 	clusterName := kubeconfig.Contexts[kubeconfig.CurrentContext].Cluster
 	apiURL := kubeconfig.Clusters[clusterName].Server
 
 	url, err := url.Parse(apiURL)
 	if err != nil {
-		glog.Fatalf("failed to parse api url from kubelet kubeconfig: %v", err)
+		klog.Fatalf("failed to parse api url from kubelet kubeconfig: %v", err)
 	}
 
 	// The kubernetes in-cluster functions don't let you override the apiserver
 	// directly; gotta "pass" it via environment vars.
-	glog.Infof("overriding kubernetes api to %s", apiURL)
+	klog.Infof("overriding kubernetes api to %s", apiURL)
 	os.Setenv("KUBERNETES_SERVICE_HOST", url.Hostname())
 	os.Setenv("KUBERNETES_SERVICE_PORT", url.Port())
 
 	cb, err := clients.NewBuilder(startOpts.kubeconfig)
 	if err != nil {
-		glog.Fatalf("Failed to initialize ClientBuilder: %v", err)
+		klog.Fatalf("Failed to initialize ClientBuilder: %v", err)
 	}
 
 	kubeClient, err := cb.KubeClient(componentName)
 	if err != nil {
-		glog.Fatalf("Cannot initialize kubeClient: %v", err)
+		klog.Fatalf("Cannot initialize kubeClient: %v", err)
 	}
 
 	// This channel is used to ensure all spawned goroutines exit when we exit.
@@ -225,7 +225,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		startOpts.kubeletHealthzEndpoint,
 	)
 	if err != nil {
-		glog.Fatalf("Failed to initialize: %v", err)
+		klog.Fatalf("Failed to initialize: %v", err)
 	}
 
 	ctx.KubeInformerFactory.Start(stopCh)

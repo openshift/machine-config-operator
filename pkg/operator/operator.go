@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/golang/glog"
+	"k8s.io/klog/v2"
 
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -141,7 +141,7 @@ func New(
 	maoSecretInformer coreinformersv1.SecretInformer,
 ) *Operator {
 	eventBroadcaster := record.NewBroadcaster()
-	eventBroadcaster.StartLogging(glog.Infof)
+	eventBroadcaster.StartLogging(klog.Infof)
 	eventBroadcaster.StartRecordingToSink(&coreclientsetv1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 
 	optr := &Operator{
@@ -234,10 +234,10 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 	_, err := apiClient.CustomResourceDefinitions().Get(context.TODO(), "controllerconfigs.machineconfiguration.openshift.io", metav1.GetOptions{})
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			glog.Infof("Couldn't find controllerconfig CRD, in cluster bringup mode")
+			klog.Infof("Couldn't find controllerconfig CRD, in cluster bringup mode")
 			optr.inClusterBringup = true
 		} else {
-			glog.Errorf("While checking for cluster bringup: %v", err)
+			klog.Errorf("While checking for cluster bringup: %v", err)
 		}
 	}
 
@@ -259,7 +259,7 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 		optr.mcpListerSynced,
 		optr.mcListerSynced,
 		optr.dnsListerSynced) {
-		glog.Error("failed to sync caches")
+		klog.Error("failed to sync caches")
 		return
 	}
 
@@ -268,13 +268,13 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 		if !cache.WaitForCacheSync(stopCh,
 			optr.ccListerSynced,
 		) {
-			glog.Error("failed to sync caches")
+			klog.Error("failed to sync caches")
 			return
 		}
 	}
 
-	glog.Info("Starting MachineConfigOperator")
-	defer glog.Info("Shutting down MachineConfigOperator")
+	klog.Info("Starting MachineConfigOperator")
+	defer klog.Info("Shutting down MachineConfigOperator")
 
 	optr.stopCh = stopCh
 
@@ -334,22 +334,22 @@ func (optr *Operator) handleErr(err error, key interface{}) {
 	}
 
 	if optr.queue.NumRequeues(key) < maxRetries {
-		glog.V(2).Infof("Error syncing operator %v: %v", key, err)
+		klog.V(2).Infof("Error syncing operator %v: %v", key, err)
 		optr.queue.AddRateLimited(key)
 		return
 	}
 
 	utilruntime.HandleError(err)
-	glog.V(2).Infof("Dropping operator %q out of the queue: %v", key, err)
+	klog.V(2).Infof("Dropping operator %q out of the queue: %v", key, err)
 	optr.queue.Forget(key)
 	optr.queue.AddAfter(key, 1*time.Minute)
 }
 
 func (optr *Operator) sync(key string) error {
 	startTime := time.Now()
-	glog.V(4).Infof("Started syncing operator %q (%v)", key, startTime)
+	klog.V(4).Infof("Started syncing operator %q (%v)", key, startTime)
 	defer func() {
-		glog.V(4).Infof("Finished syncing operator %q (%v)", key, time.Since(startTime))
+		klog.V(4).Infof("Finished syncing operator %q (%v)", key, time.Since(startTime))
 	}()
 
 	// syncFuncs is the list of sync functions that are executed in order.

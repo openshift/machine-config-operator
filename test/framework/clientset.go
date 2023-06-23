@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/golang/glog"
 	clientbuildv1 "github.com/openshift/client-go/build/clientset/versioned/typed/build/v1"
 	clientconfigv1 "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
 	clientimagev1 "github.com/openshift/client-go/image/clientset/versioned/typed/image/v1"
@@ -15,6 +14,7 @@ import (
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/klog/v2"
 )
 
 type ClientSet struct {
@@ -47,10 +47,10 @@ func NewClientSet(kubeconfig string) *ClientSet {
 	}
 
 	if kubeconfig != "" {
-		glog.V(4).Infof("Loading kube client config from path %q", kubeconfig)
+		klog.V(4).Infof("Loading kube client config from path %q", kubeconfig)
 		config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
 	} else {
-		glog.V(4).Infof("Using in-cluster kube client config")
+		klog.V(4).Infof("Using in-cluster kube client config")
 		config, err = rest.InClusterConfig()
 	}
 	if err != nil {

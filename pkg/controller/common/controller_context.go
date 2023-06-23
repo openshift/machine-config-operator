@@ -4,7 +4,6 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/golang/glog"
 	configinformers "github.com/openshift/client-go/config/informers/externalversions"
 	operatorinformers "github.com/openshift/client-go/operator/informers/externalversions"
 	"github.com/openshift/machine-config-operator/internal/clients"
@@ -87,7 +86,7 @@ func CreateControllerContext(cb *clients.Builder, stop <-chan struct{}, targetNa
 	assignFilterLabels := func(opts *metav1.ListOptions) {
 		labelsMap, err := labels.ConvertSelectorToLabelsMap(opts.LabelSelector)
 		if err != nil {
-			glog.Warningf("unable to convert selector %q to map: %v", opts.LabelSelector, err)
+			klog.Warningf("unable to convert selector %q to map: %v", opts.LabelSelector, err)
 			return
 		}
 		opts.LabelSelector = labels.Merge(labelsMap, map[string]string{daemonconsts.OpenShiftOperatorManagedLabel: ""}).String()

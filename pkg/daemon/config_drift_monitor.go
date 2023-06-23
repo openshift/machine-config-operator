@@ -10,10 +10,10 @@ import (
 	ign2types "github.com/coreos/ignition/config/v2_2/types"
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/fsnotify/fsnotify"
-	"github.com/golang/glog"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/klog/v2"
 )
 
 // Outermost error type for config drift errors
@@ -181,8 +181,8 @@ func (c *configDriftWatcher) initialize() error {
 		return fmt.Errorf("could not start watcher: %w", err)
 	}
 
-	glog.V(4).Infof("Initializing Config Drift Monitor")
-	glog.V(4).Infof("Current MachineConfig: %s", c.MachineConfig.Name)
+	klog.V(4).Infof("Initializing Config Drift Monitor")
+	klog.V(4).Infof("Current MachineConfig: %s", c.MachineConfig.Name)
 
 	// Even though we wire up fsnotify to use the parent directories of each
 	// file, we keep track of the file paths individually so that we can ignore
@@ -204,11 +204,11 @@ func (c *configDriftWatcher) initialize() error {
 	// them and attach watchers to those dirs.
 	dirPaths := getDirPathsFromFilePaths(c.filePaths)
 
-	glog.V(4).Infof("Will watch %d directories containing %d files:", len(dirPaths), len(c.filePaths))
+	klog.V(4).Infof("Will watch %d directories containing %d files:", len(dirPaths), len(c.filePaths))
 
 	// Wire up fsnotify to watch our config dirs
 	for _, path := range dirPaths {
-		glog.V(4).Infof("Watching dir: \"%s\"", path)
+		klog.V(4).Infof("Watching dir: \"%s\"", path)
 		if err := c.watcher.Add(path); err != nil {
 			return fmt.Errorf("could not add fsnotify watcher to dir \"%s\": %w", path, err)
 		}
@@ -243,7 +243,7 @@ func (c *configDriftWatcher) start() {
 		}
 	}()
 
-	glog.Info("Config Drift Monitor started")
+	klog.Info("Config Drift Monitor started")
 }
 
 // Stops the watcher.
@@ -252,7 +252,7 @@ func (c *configDriftWatcher) start() {
 func (c *configDriftWatcher) stop() {
 	c.stopCh <- struct{}{}
 	c.wg.Wait()
-	glog.Info("Config Drift Monitor has shut down")
+	klog.Info("Config Drift Monitor has shut down")
 }
 
 // Handles the filesystem event for any of the files we're watching and
