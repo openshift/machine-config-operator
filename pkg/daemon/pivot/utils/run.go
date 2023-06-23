@@ -9,14 +9,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/golang/glog"
 	kubeErrs "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/klog/v2"
 )
 
 // runImpl is the actual shell execution implementation used by other functions.
 func runImpl(command string, args ...string) ([]byte, error) {
-	glog.Infof("Running: %s %s\n", command, strings.Join(args, " "))
+	klog.Infof("Running: %s %s\n", command, strings.Join(args, " "))
 	cmd := exec.Command(command, args...)
 	// multiplex writes to std streams so we keep seeing logs in MCD/systemd
 	// but we'll still be able to give out something here
@@ -42,7 +42,7 @@ func runExtBackoff(backoff wait.Backoff, command string, args ...string) (string
 		out, err := runImpl(command, args...)
 		if err != nil {
 			lastErr = err
-			glog.Warningf("%s failed: %v; retrying...", command, err)
+			klog.Warningf("%s failed: %v; retrying...", command, err)
 			return false, nil
 		}
 		output = strings.TrimSpace(string(out))

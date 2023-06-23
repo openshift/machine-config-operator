@@ -6,7 +6,6 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/golang/glog"
 	mcoResourceApply "github.com/openshift/machine-config-operator/lib/resourceapply"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -28,6 +27,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/klog/v2"
 )
 
 const (
@@ -79,7 +79,7 @@ func New(
 	mcfgClient mcfgclientset.Interface,
 ) *Controller {
 	eventBroadcaster := record.NewBroadcaster()
-	eventBroadcaster.StartLogging(glog.Infof)
+	eventBroadcaster.StartLogging(klog.Infof)
 	eventBroadcaster.StartRecordingToSink(&corev1client.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 
 	ctrl := &Controller{
@@ -121,8 +121,8 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 		return
 	}
 
-	glog.Info("Starting MachineConfigController-RenderController")
-	defer glog.Info("Shutting down MachineConfigController-RenderController")
+	klog.Info("Starting MachineConfigController-RenderController")
+	defer klog.Info("Shutting down MachineConfigController-RenderController")
 
 	for i := 0; i < workers; i++ {
 		go wait.Until(ctrl.worker, time.Second, stopCh)
@@ -133,7 +133,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 
 func (ctrl *Controller) addMachineConfigPool(obj interface{}) {
 	pool := obj.(*mcfgv1.MachineConfigPool)
-	glog.V(4).Infof("Adding MachineConfigPool %s", pool.Name)
+	klog.V(4).Infof("Adding MachineConfigPool %s", pool.Name)
 	ctrl.enqueueMachineConfigPool(pool)
 
 }
@@ -142,7 +142,7 @@ func (ctrl *Controller) updateMachineConfigPool(old, cur interface{}) {
 	oldPool := old.(*mcfgv1.MachineConfigPool)
 	curPool := cur.(*mcfgv1.MachineConfigPool)
 
-	glog.V(4).Infof("Updating MachineConfigPool %s", oldPool.Name)
+	klog.V(4).Infof("Updating MachineConfigPool %s", oldPool.Name)
 	ctrl.enqueueMachineConfigPool(curPool)
 }
 
@@ -160,7 +160,7 @@ func (ctrl *Controller) deleteMachineConfigPool(obj interface{}) {
 			return
 		}
 	}
-	glog.V(4).Infof("Deleting MachineConfigPool %s", pool.Name)
+	klog.V(4).Infof("Deleting MachineConfigPool %s", pool.Name)
 	// TODO(abhinavdahiya): handle deletes.
 }
 
@@ -174,7 +174,7 @@ func (ctrl *Controller) addMachineConfig(obj interface{}) {
 	controllerRef := metav1.GetControllerOf(mc)
 	if controllerRef != nil {
 		if pool := ctrl.resolveControllerRef(controllerRef); pool != nil {
-			glog.V(4).Infof("MachineConfig %s added", mc.Name)
+			klog.V(4).Infof("MachineConfig %s added", mc.Name)
 			ctrl.enqueueMachineConfigPool(pool)
 			return
 		}
@@ -182,11 +182,11 @@ func (ctrl *Controller) addMachineConfig(obj interface{}) {
 
 	pools, err := ctrl.getPoolsForMachineConfig(mc)
 	if err != nil {
-		glog.Errorf("error finding pools for machineconfig: %v", err)
+		klog.Errorf("error finding pools for machineconfig: %v", err)
 		return
 	}
 
-	glog.V(4).Infof("MachineConfig %s added", mc.Name)
+	klog.V(4).Infof("MachineConfig %s added", mc.Name)
 	for _, p := range pools {
 		ctrl.enqueueMachineConfigPool(p)
 	}
@@ -200,13 +200,13 @@ func (ctrl *Controller) updateMachineConfig(old, cur interface{}) {
 	oldControllerRef := metav1.GetControllerOf(oldMC)
 	controllerRefChanged := !reflect.DeepEqual(curControllerRef, oldControllerRef)
 	if controllerRefChanged && oldControllerRef != nil {
-		glog.Errorf("machineconfig has changed controller, not allowed.")
+		klog.Errorf("machineconfig has changed controller, not allowed.")
 		return
 	}
 
 	if curControllerRef != nil {
 		if pool := ctrl.resolveControllerRef(curControllerRef); pool != nil {
-			glog.V(4).Infof("MachineConfig %s updated", curMC.Name)
+			klog.V(4).Infof("MachineConfig %s updated", curMC.Name)
 			ctrl.enqueueMachineConfigPool(pool)
 			return
 		}
@@ -214,11 +214,11 @@ func (ctrl *Controller) updateMachineConfig(old, cur interface{}) {
 
 	pools, err := ctrl.getPoolsForMachineConfig(curMC)
 	if err != nil {
-		glog.Errorf("error finding pools for machineconfig: %v", err)
+		klog.Errorf("error finding pools for machineconfig: %v", err)
 		return
 	}
 
-	glog.V(4).Infof("MachineConfig %s updated", curMC.Name)
+	klog.V(4).Infof("MachineConfig %s updated", curMC.Name)
 	for _, p := range pools {
 		ctrl.enqueueMachineConfigPool(p)
 	}
@@ -243,7 +243,7 @@ func (ctrl *Controller) deleteMachineConfig(obj interface{}) {
 	controllerRef := metav1.GetControllerOf(mc)
 	if controllerRef != nil {
 		if pool := ctrl.resolveControllerRef(controllerRef); pool != nil {
-			glog.V(4).Infof("MachineConfig %s deleted", mc.Name)
+			klog.V(4).Infof("MachineConfig %s deleted", mc.Name)
 			ctrl.enqueueMachineConfigPool(pool)
 			return
 		}
@@ -251,11 +251,11 @@ func (ctrl *Controller) deleteMachineConfig(obj interface{}) {
 
 	pools, err := ctrl.getPoolsForMachineConfig(mc)
 	if err != nil {
-		glog.Errorf("error finding pools for machineconfig: %v", err)
+		klog.Errorf("error finding pools for machineconfig: %v", err)
 		return
 	}
 
-	glog.V(4).Infof("MachineConfig %s deleted", mc.Name)
+	klog.V(4).Infof("MachineConfig %s deleted", mc.Name)
 	for _, p := range pools {
 		ctrl.enqueueMachineConfigPool(p)
 	}
@@ -374,13 +374,13 @@ func (ctrl *Controller) handleErr(err error, key interface{}) {
 	}
 
 	if ctrl.queue.NumRequeues(key) < maxRetries {
-		glog.V(2).Infof("Error syncing machineconfigpool %v: %v", key, err)
+		klog.V(2).Infof("Error syncing machineconfigpool %v: %v", key, err)
 		ctrl.queue.AddRateLimited(key)
 		return
 	}
 
 	utilruntime.HandleError(err)
-	glog.V(2).Infof("Dropping machineconfigpool %q out of the queue: %v", key, err)
+	klog.V(2).Infof("Dropping machineconfigpool %q out of the queue: %v", key, err)
 	ctrl.queue.Forget(key)
 	ctrl.queue.AddAfter(key, 1*time.Minute)
 }
@@ -389,9 +389,9 @@ func (ctrl *Controller) handleErr(err error, key interface{}) {
 // This function is not meant to be invoked concurrently with the same key.
 func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	startTime := time.Now()
-	glog.V(4).Infof("Started syncing machineconfigpool %q (%v)", key, startTime)
+	klog.V(4).Infof("Started syncing machineconfigpool %q (%v)", key, startTime)
 	defer func() {
-		glog.V(4).Infof("Finished syncing machineconfigpool %q (%v)", key, time.Since(startTime))
+		klog.V(4).Infof("Finished syncing machineconfigpool %q (%v)", key, time.Since(startTime))
 	}()
 
 	_, name, err := cache.SplitMetaNamespaceKey(key)
@@ -400,7 +400,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	}
 	machineconfigpool, err := ctrl.mcpLister.Get(name)
 	if errors.IsNotFound(err) {
-		glog.V(2).Infof("MachineConfigPool %v has been deleted", key)
+		klog.V(2).Infof("MachineConfigPool %v has been deleted", key)
 		return nil
 	}
 	if err != nil {
@@ -457,7 +457,7 @@ func (ctrl *Controller) syncFailingStatus(pool *mcfgv1.MachineConfigPool, err er
 	sdegraded := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolRenderDegraded, corev1.ConditionTrue, "", fmt.Sprintf("Failed to render configuration for pool %s: %v", pool.Name, err))
 	mcfgv1.SetMachineConfigPoolCondition(&pool.Status, *sdegraded)
 	if _, updateErr := ctrl.client.MachineconfigurationV1().MachineConfigPools().UpdateStatus(context.TODO(), pool, metav1.UpdateOptions{}); updateErr != nil {
-		glog.Errorf("Error updating MachineConfigPool %s: %v", pool.Name, updateErr)
+		klog.Errorf("Error updating MachineConfigPool %s: %v", pool.Name, updateErr)
 	}
 	return err
 }
@@ -507,7 +507,7 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 		if err != nil {
 			return err
 		}
-		glog.V(2).Infof("Generated machineconfig %s from %d configs: %s", generated.Name, len(source), source)
+		klog.V(2).Infof("Generated machineconfig %s from %d configs: %s", generated.Name, len(source), source)
 		ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, "RenderedConfigGenerated", "%s successfully generated (release version: %s, controller version: %s)",
 			generated.Name, generated.Annotations[ctrlcommon.ReleaseImageVersionAnnotationKey], generated.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey])
 	}
@@ -533,7 +533,7 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 	if err != nil {
 		return err
 	}
-	glog.V(2).Infof("Pool %s: now targeting: %s", pool.Name, pool.Spec.Configuration.Name)
+	klog.V(2).Infof("Pool %s: now targeting: %s", pool.Name, pool.Spec.Configuration.Name)
 
 	if err := ctrl.garbageCollectRenderedConfigs(pool); err != nil {
 		return err
@@ -564,9 +564,9 @@ func generateRenderedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mc
 	}
 
 	if cconfig.Spec.BaseOSContainerImage == "" {
-		glog.Warningf("No BaseOSContainerImage set")
+		klog.Warningf("No BaseOSContainerImage set")
 	} else {
-		glog.Infof("BaseOSContainerImage=%s", cconfig.Spec.BaseOSContainerImage)
+		klog.Infof("BaseOSContainerImage=%s", cconfig.Spec.BaseOSContainerImage)
 	}
 
 	// Before merging all MCs for a specific pool, let's make sure MachineConfigs are valid

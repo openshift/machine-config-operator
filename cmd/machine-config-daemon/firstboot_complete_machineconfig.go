@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/golang/glog"
 	daemon "github.com/openshift/machine-config-operator/pkg/daemon"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"k8s.io/klog/v2"
 )
 
 var firstbootCompleteMachineconfig = &cobra.Command{
@@ -60,8 +60,8 @@ func executeFirstbootCompleteMachineConfig(cmd *cobra.Command, args []string) {
 	for {
 		err := runFirstBootCompleteMachineConfig(cmd, args)
 		if err != nil {
-			glog.Warningf("error: %v\n", err)
-			glog.Info("Sleeping 1 minute for retry")
+			klog.Warningf("error: %v\n", err)
+			klog.Info("Sleeping 1 minute for retry")
 			time.Sleep(time.Minute)
 		} else {
 			break

@@ -10,7 +10,7 @@ import (
 
 	"github.com/apparentlymart/go-cidr/cidr"
 	"github.com/ghodss/yaml"
-	"github.com/golang/glog"
+	"k8s.io/klog/v2"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -175,7 +175,7 @@ func createDiscoveredControllerConfigSpec(infra *configv1.Infrastructure, networ
 
 	if proxy != nil {
 		if proxy.Status == (configv1.ProxyStatus{}) {
-			glog.V(2).Info("Not setting proxy config because Proxy status is empty")
+			klog.V(2).Info("Not setting proxy config because Proxy status is empty")
 		} else {
 			ccSpec.Proxy = &proxy.Status
 		}

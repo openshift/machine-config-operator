@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang/glog"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/controller/node"
 	e2e_shared_test "github.com/openshift/machine-config-operator/test/e2e-shared-tests"
@@ -18,6 +17,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/klog/v2"
 )
 
 func TestClusterOperatorRelatedObjects(t *testing.T) {
@@ -73,7 +73,7 @@ func TestMastersSchedulable(t *testing.T) {
 func checkMasterNodesSchedulability(cs *framework.ClientSet, masterSchedulable bool) bool {
 	masterNodes, err := cs.CoreV1Interface.Nodes().List(context.TODO(), metav1.ListOptions{LabelSelector: "node-role.kubernetes.io/master="})
 	if err != nil {
-		glog.Errorf("error while listing master nodes with %v", err)
+		klog.Errorf("error while listing master nodes with %v", err)
 	}
 	if masterSchedulable {
 		for _, masterNode := range masterNodes.Items {
@@ -107,7 +107,7 @@ func CheckMasterIsAlreadySchedulable(master *corev1.Node) bool {
 func waitForAllMastersUpdate(cs *framework.ClientSet, mastersSchedulable bool) error {
 	return wait.PollImmediate(1*time.Second, 5*time.Minute, func() (bool, error) {
 		if !checkMasterNodesSchedulability(cs, mastersSchedulable) {
-			glog.Infof("All masters are not in desired state")
+			klog.Infof("All masters are not in desired state")
 			return false, nil
 		}
 		return true, nil

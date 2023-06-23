@@ -12,10 +12,10 @@ import (
 
 	"github.com/containers/image/v5/types"
 	rpmostreeclient "github.com/coreos/rpmostree-client-go/pkg/client"
-	"github.com/golang/glog"
 	"github.com/opencontainers/go-digest"
 	pivotutils "github.com/openshift/machine-config-operator/pkg/daemon/pivot/utils"
 	"gopkg.in/yaml.v2"
+	"k8s.io/klog/v2"
 )
 
 const (
@@ -82,7 +82,7 @@ InaccessiblePaths=
 	if err := runCmdSync("systemctl", "daemon-reload"); err != nil {
 		return err
 	}
-	glog.Infof("Enabled workaround for bug 2111817")
+	klog.Infof("Enabled workaround for bug 2111817")
 	return nil
 }
 
@@ -205,19 +205,19 @@ func (r *RpmOstreeClient) Rebase(imgURL, osImageContentDir string) (changed bool
 	if len(defaultDeployment.CustomOrigin) > 0 {
 		if strings.HasPrefix(defaultDeployment.CustomOrigin[0], "pivot://") {
 			previousPivot = defaultDeployment.CustomOrigin[0][len("pivot://"):]
-			glog.Infof("Previous pivot: %s", previousPivot)
+			klog.Infof("Previous pivot: %s", previousPivot)
 		} else {
-			glog.Infof("Previous custom origin: %s", defaultDeployment.CustomOrigin[0])
+			klog.Infof("Previous custom origin: %s", defaultDeployment.CustomOrigin[0])
 		}
 	} else {
-		glog.Info("Current origin is not custom")
+		klog.Info("Current origin is not custom")
 	}
 
 	var imageData *types.ImageInspectInfo
 	if imageData, _, err = imageInspect(imgURL); err != nil {
 		if err != nil {
 			var podmanImgData *imageInspection
-			glog.Infof("Falling back to using podman inspect")
+			klog.Infof("Falling back to using podman inspect")
 			if podmanImgData, err = podmanInspect(imgURL); err != nil {
 				return
 			}
@@ -237,12 +237,12 @@ func (r *RpmOstreeClient) Rebase(imgURL, osImageContentDir string) (changed bool
 	// Commit label takes priority
 	if ostreeCsum != "" {
 		if ostreeVersion != "" {
-			glog.Infof("Pivoting to: %s (%s)", ostreeVersion, ostreeCsum)
+			klog.Infof("Pivoting to: %s (%s)", ostreeVersion, ostreeCsum)
 		} else {
-			glog.Infof("Pivoting to: %s", ostreeCsum)
+			klog.Infof("Pivoting to: %s", ostreeCsum)
 		}
 	} else {
-		glog.Infof("No com.coreos.ostree-commit label found in metadata! Inspecting...")
+		klog.Infof("No com.coreos.ostree-commit label found in metadata! Inspecting...")
 		var refText []byte
 		refText, err = runGetOut("ostree", "refs", "--repo", repo)
 		if err != nil {
@@ -250,7 +250,7 @@ func (r *RpmOstreeClient) Rebase(imgURL, osImageContentDir string) (changed bool
 		}
 		refs := strings.Split(strings.TrimSpace(string(refText)), "\n")
 		if len(refs) == 1 {
-			glog.Infof("Using ref %s", refs[0])
+			klog.Infof("Using ref %s", refs[0])
 			var ostreeCsumBytes []byte
 			ostreeCsumBytes, err = runGetOut("ostree", "rev-parse", "--repo", repo, refs[0])
 			if err != nil {
@@ -269,7 +269,7 @@ func (r *RpmOstreeClient) Rebase(imgURL, osImageContentDir string) (changed bool
 
 	// This will be what will be displayed in `rpm-ostree status` as the "origin spec"
 	customURL := fmt.Sprintf("pivot://%s", imgURL)
-	glog.Infof("Executing rebase from repo path %s with customImageURL %s and checksum %s", repo, customURL, ostreeCsum)
+	klog.Infof("Executing rebase from repo path %s with customImageURL %s and checksum %s", repo, customURL, ostreeCsum)
 
 	args := []string{"rebase", "--experimental", fmt.Sprintf("%s:%s", repo, ostreeCsum),
 		"--custom-origin-url", customURL, "--custom-origin-description", "Managed by machine-config-operator"}
@@ -339,7 +339,7 @@ func RpmOstreeIsNewEnoughForLayering() (bool, error) {
 
 // RebaseLayered rebases system or errors if already rebased
 func (r *RpmOstreeClient) RebaseLayered(imgURL string) (err error) {
-	glog.Infof("Executing rebase to %s", imgURL)
+	klog.Infof("Executing rebase to %s", imgURL)
 	return runRpmOstree("rebase", "--experimental", "ostree-unverified-registry:"+imgURL)
 }
 
@@ -379,7 +379,7 @@ func truncate(input string, limit int) string {
 
 // runGetOut executes a command, logging it, and return the stdout output.
 func runGetOut(command string, args ...string) ([]byte, error) {
-	glog.Infof("Running captured: %s %s", command, strings.Join(args, " "))
+	klog.Infof("Running captured: %s %s", command, strings.Join(args, " "))
 	cmd := exec.Command(command, args...)
 	rawOut, err := cmd.Output()
 	if err != nil {
