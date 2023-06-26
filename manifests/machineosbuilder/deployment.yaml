@@ -15,9 +15,5 @@ spec:
     spec:
       containers:
       - name: machine-os-builder
-        image: openshift/hello-openshift:latest
-        ports:
-        - containerPort: 80
-        args:
-        - "start"
-        - "--resourcelock-namespace={{.TargetNamespace}}"
+        image: {{.Images.MachineConfigOperator}}
+        command: ["/usr/bin/machine-os-builder"]

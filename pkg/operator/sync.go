@@ -23,6 +23,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/selection"
 	kubeErrs "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -40,6 +41,8 @@ import (
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/server"
 	"github.com/openshift/machine-config-operator/pkg/version"
+
+	autoscalingv1 "k8s.io/api/autoscaling/v1"
 )
 
 const (
@@ -677,7 +680,10 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig) error {
 }
 
 func (optr *Operator) syncMachineOSBuilder(config *renderConfig) error {
-	glog.Infof("Performing Machine OS Builder sync")
+	glog.V(4).Info("Machine OS Builder sync started")
+	defer func() {
+		glog.V(4).Info("Machine OS Builder sync complete")
+	}()
 
 	paths := manifestPaths{
 		clusterRoles: []string{
@@ -695,56 +701,127 @@ func (optr *Operator) syncMachineOSBuilder(config *renderConfig) error {
 			mobServiceAccountManifestPath,
 		},
 	}
+
+	// It's probably fine to leave these around if we don't have an opted-in
+	// pool, since they don't consume any resources.
 	if err := optr.applyManifests(config, paths); err != nil {
 		return fmt.Errorf("failed to apply machine os builder manifests: %w", err)
 	}
 
 	mobBytes, err := renderAsset(config, "manifests/machineosbuilder/deployment.yaml")
 	if err != nil {
-		return err
+		return fmt.Errorf("could not render Machine OS Builder deployment asset: %w", err)
 	}
+
 	mob := resourceread.ReadDeploymentV1OrDie(mobBytes)
 
-	_, updated, err := mcoResourceApply.ApplyDeployment(optr.kubeClient.AppsV1(), mob)
-	if err != nil {
-		return err
-	}
-	if updated {
-		if err := optr.waitForDeploymentRollout(mob); err != nil {
-			return err
-		}
-	}
-
-	err = optr.checkForOnClusterBuild(config)
-	if err != nil {
-		return err
-	}
-
-	return optr.syncControllerConfig(config)
+	return optr.reconcileMachineOSBuilder(mob)
 }
 
-func (optr *Operator) checkForOnClusterBuild(config *renderConfig) error {
-	glog.Infof("Checking for an 'on-cluster-build' tag")
-
-	pools, err := optr.mcpLister.List(labels.Everything())
+// Determines if the Machine OS Builder deployment is in the correct state
+// based upon whether we have opted-in pools or not.
+func (optr *Operator) reconcileMachineOSBuilder(mob *appsv1.Deployment) error {
+	// First, check if we have any MachineConfigPools opted in.
+	layeredMCPs, err := optr.getLayeredMachineConfigPools()
 	if err != nil {
-		glog.Fatal(err)
+		return fmt.Errorf("could not get layered MachineConfigPools: %w", err)
 	}
-	for _, pool := range pools {
-		if pool.Name == "on-cluster-build" {
-			fmt.Printf("Pool %s is labeled with 'on-cluster-build'. Starting the build controller pod.\n", pool.Name)
-			startBuildControllerPod()
-		} else {
-			fmt.Printf("Pool on-cluster-build not found\n")
+
+	isRunning, err := optr.isMachineOSBuilderRunning(mob)
+	// An unknown error occurred. Bail out here.
+	if err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("could not determine if Machine OS Builder is running: %w", err)
+	}
+
+	// If the deployment does not exist and we do not have any opted-in pools, we
+	// should create the deployment with zero replicas so that it exists.
+	if apierrors.IsNotFound(err) && len(layeredMCPs) == 0 {
+		glog.Infof("Created Machine OS Builder deployment")
+		return optr.updateMachineOSBuilderDeployment(mob, 0)
+	}
+
+	// If we have opted-in pools and the Machine OS Builder deployment is not
+	// running, scale it up.
+	if len(layeredMCPs) != 0 && !isRunning {
+		layeredMCPNames := []string{}
+		for _, mcp := range layeredMCPs {
+			layeredMCPNames = append(layeredMCPNames, mcp.Name)
+		}
+		glog.Infof("Starting Machine OS Builder pod because MachineConfigPool(s) opted into layering: %v", layeredMCPNames)
+		return optr.updateMachineOSBuilderDeployment(mob, 1)
+	}
+
+	// If we do not have opted-in pools and the Machine OS Builder deployment is
+	// running, scale it down.
+	if len(layeredMCPs) == 0 && isRunning {
+		glog.Infof("Shutting down Machine OS Builder pod because no MachineConfigPool(s) opted into layering")
+		return optr.updateMachineOSBuilderDeployment(mob, 0)
+	}
+
+	// No-op if everything is in the desired state.
+	return nil
+}
+
+// Determines if the Machine OS Builder is running based upon how many replicas
+// we have. If an error is encountered, it is assumed that no Deployments are
+// running.
+func (optr *Operator) isMachineOSBuilderRunning(mob *appsv1.Deployment) (bool, error) {
+	apiMob, err := optr.deployLister.Deployments(ctrlcommon.MCONamespace).Get(mob.Name)
+
+	if err == nil && *apiMob.Spec.Replicas != 0 {
+		return true, nil
+	}
+
+	return false, err
+}
+
+// Updates the Machine OS Builder Deployment, creating it if it does not exist.
+func (optr *Operator) updateMachineOSBuilderDeployment(mob *appsv1.Deployment, replicas int32) error {
+	_, updated, err := mcoResourceApply.ApplyDeployment(optr.kubeClient.AppsV1(), mob)
+	if err != nil {
+		return fmt.Errorf("could not apply Machine OS Builder deployment: %w", err)
+	}
+
+	scale := &autoscalingv1.Scale{
+		ObjectMeta: mob.ObjectMeta,
+		Spec: autoscalingv1.ScaleSpec{
+			Replicas: replicas,
+		},
+	}
+
+	_, err = optr.kubeClient.AppsV1().Deployments(ctrlcommon.MCONamespace).UpdateScale(context.TODO(), mob.Name, scale, metav1.UpdateOptions{})
+	if err != nil {
+		return fmt.Errorf("could not scale Machine OS Builder: %w", err)
+	}
+
+	if updated {
+		if err := optr.waitForDeploymentRollout(mob); err != nil {
+			return fmt.Errorf("could not wait for Machine OS Builder deployment rollout: %w", err)
 		}
 	}
 
 	return nil
 }
 
-func startBuildControllerPod() {
-	fmt.Printf("Starting Build Controller Pod\n")
-	// add logic to start build controller pod
+// Returns a list of MachineConfigPools which have opted in to layering.
+// Returns an empty list if none have opted in.
+func (optr *Operator) getLayeredMachineConfigPools() ([]*mcfgv1.MachineConfigPool, error) {
+	// TODO: Once https://github.com/openshift/machine-config-operator/pull/3731
+	// lands, change this to consume ctrlcommon.LayeringEnabledPoolLabel instead
+	// of having this hard-coded here.
+	layeringEnabledPoolLabel := "machineconfiguration.openshift.io/layering-enabled"
+	requirement, err := labels.NewRequirement(layeringEnabledPoolLabel, selection.Exists, []string{})
+	if err != nil {
+		return []*mcfgv1.MachineConfigPool{}, err
+	}
+
+	selector := labels.NewSelector().Add(*requirement)
+	pools, err := optr.mcpLister.List(selector)
+	if err != nil {
+		return []*mcfgv1.MachineConfigPool{}, err
+	}
+
+	return pools, nil
 }
 
 func (optr *Operator) syncMachineConfigDaemon(config *renderConfig) error {
