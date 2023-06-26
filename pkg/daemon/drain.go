@@ -9,12 +9,12 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/containers/image/v5/pkg/sysregistriesv2"
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
-	"github.com/golang/glog"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/klog/v2"
 )
 
 func (dn *Daemon) drainRequired() bool {
@@ -74,7 +74,7 @@ func (dn *Daemon) performDrain() error {
 	if err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 1*time.Hour, false, func(ctx context.Context) (bool, error) {
 		node, err := dn.kubeClient.CoreV1().Nodes().Get(ctx, dn.name, metav1.GetOptions{})
 		if err != nil {
-			glog.Warningf("Failed to get node: %v", err)
+			klog.Warningf("Failed to get node: %v", err)
 			return false, nil
 		}
 		if node.Annotations[constants.DesiredDrainerAnnotationKey] != node.Annotations[constants.LastAppliedDrainerAnnotationKey] {
@@ -92,7 +92,7 @@ func (dn *Daemon) performDrain() error {
 
 	logSystem("drain complete")
 	t := time.Since(startTime).Seconds()
-	glog.Infof("Successful drain took %v seconds", t)
+	klog.Infof("Successful drain took %v seconds", t)
 
 	return nil
 }
@@ -184,7 +184,7 @@ func isSafeContainerRegistryConfChanges(oldIgnConfig, newIgnConfig ign3types.Con
 	for regLoc := range oldRegHashMap {
 		_, ok := newRegHashMap[regLoc]
 		if !ok {
-			glog.Infof("%s: registry %s has been removed", constants.ContainerRegistryConfPath, regLoc)
+			klog.Infof("%s: registry %s has been removed", constants.ContainerRegistryConfPath, regLoc)
 			return false, nil
 		}
 	}
@@ -198,22 +198,22 @@ func isSafeContainerRegistryConfChanges(oldIgnConfig, newIgnConfig ign3types.Con
 				// Registry has been changed in the new config.
 				// Check that changes made are safe or not.
 				if oldReg.Prefix != newReg.Prefix {
-					glog.Infof("%s: prefix value for registry %s has changed from %s to %s",
+					klog.Infof("%s: prefix value for registry %s has changed from %s to %s",
 						constants.ContainerRegistryConfPath, regLoc, oldReg.Prefix, newReg.Prefix)
 					return false, nil
 				}
 				if oldReg.Location != newReg.Location {
-					glog.Infof("%s: location value for registry %s has changed from %s to %s",
+					klog.Infof("%s: location value for registry %s has changed from %s to %s",
 						constants.ContainerRegistryConfPath, regLoc, oldReg.Location, newReg.Location)
 					return false, nil
 				}
 				if oldReg.Blocked != newReg.Blocked {
-					glog.Infof("%s: blocked value for registry %s has changed from %t to %t",
+					klog.Infof("%s: blocked value for registry %s has changed from %t to %t",
 						constants.ContainerRegistryConfPath, regLoc, oldReg.Blocked, newReg.Blocked)
 					return false, nil
 				}
 				if oldReg.Insecure != newReg.Insecure {
-					glog.Infof("%s: insecure value for registry %s has changed from %t to %t",
+					klog.Infof("%s: insecure value for registry %s has changed from %t to %t",
 						constants.ContainerRegistryConfPath, regLoc, oldReg.Insecure, newReg.Insecure)
 					return false, nil
 				}
@@ -221,7 +221,7 @@ func isSafeContainerRegistryConfChanges(oldIgnConfig, newIgnConfig ign3types.Con
 				// Ensure that all the old mirrors are present
 				for _, m := range oldReg.Mirrors {
 					if found, _ := searchRegistryMirror(m.Location, newReg.Mirrors); !found {
-						glog.Infof("%s: mirror %s has been removed in registry %s",
+						klog.Infof("%s: mirror %s has been removed in registry %s",
 							constants.ContainerRegistryConfPath, m.Location, regLoc)
 						return false, nil
 					}
@@ -230,7 +230,7 @@ func isSafeContainerRegistryConfChanges(oldIgnConfig, newIgnConfig ign3types.Con
 					// Ensure that any change to current does not unset pull-from-mirror="digest-only"
 					if found, oldMirror := searchRegistryMirror(m.Location, oldReg.Mirrors); found {
 						if m.PullFromMirror != oldMirror.PullFromMirror && m.PullFromMirror != sysregistriesv2.MirrorByDigestOnly {
-							glog.Infof("%s: pull-from-mirror value for mirror %s has changed from %s to %s ",
+							klog.Infof("%s: pull-from-mirror value for mirror %s has changed from %s to %s ",
 								constants.ContainerRegistryConfPath, m.Location, oldMirror.PullFromMirror, m.PullFromMirror)
 							return false, nil
 						}
@@ -238,7 +238,7 @@ func isSafeContainerRegistryConfChanges(oldIgnConfig, newIgnConfig ign3types.Con
 					// Ensure that any added mirror has set pull-from-mirror="digest-only"
 					if found, _ := searchRegistryMirror(m.Location, oldReg.Mirrors); !found {
 						if m.PullFromMirror != sysregistriesv2.MirrorByDigestOnly && !newReg.MirrorByDigestOnly {
-							glog.Infof("%s: mirror %s has been added in registry %s that has pull-from-mirror set to %s ",
+							klog.Infof("%s: mirror %s has been added in registry %s that has pull-from-mirror set to %s ",
 								constants.ContainerRegistryConfPath, m.Location, regLoc, m.PullFromMirror)
 							return false, nil
 						}
@@ -248,13 +248,13 @@ func isSafeContainerRegistryConfChanges(oldIgnConfig, newIgnConfig ign3types.Con
 			}
 		} else if !allDigestOnlyMirror(newReg) {
 			// Ensure that each mirror under the newReg has pull-from-mirror=digest-only
-			glog.Infof("%s: registry %s has been added with mirror does not set pull-from-mirror=digest-only",
+			klog.Infof("%s: registry %s has been added with mirror does not set pull-from-mirror=digest-only",
 				constants.ContainerRegistryConfPath, regLoc)
 			return false, nil
 		}
 	}
 
-	glog.Infof("%s: changes made are safe to skip drain", constants.ContainerRegistryConfPath)
+	klog.Infof("%s: changes made are safe to skip drain", constants.ContainerRegistryConfPath)
 	return true, nil
 }
 

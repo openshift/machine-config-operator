@@ -3,10 +3,10 @@ package main
 import (
 	"flag"
 
-	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/pkg/server"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/spf13/cobra"
+	"k8s.io/klog/v2"
 )
 
 var (
@@ -34,12 +34,12 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 	flag.Parse()
 
 	// To help debugging, immediately log version
-	glog.Infof("Version: %+v (%s)", version.Raw, version.Hash)
+	klog.Infof("Version: %+v (%s)", version.Raw, version.Hash)
 
 	bs, err := server.NewBootstrapServer(bootstrapOpts.serverBaseDir, bootstrapOpts.serverKubeConfig)
 
 	if err != nil {
-		glog.Exitf("Machine Config Server exited with error: %v", err)
+		klog.Exitf("Machine Config Server exited with error: %v", err)
 	}
 
 	apiHandler := server.NewServerAPIHandler(bs)

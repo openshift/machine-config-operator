@@ -10,7 +10,6 @@ import (
 
 	"github.com/clarketm/json"
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
-	"github.com/golang/glog"
 	apicfgv1 "github.com/openshift/api/config/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
@@ -36,6 +35,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/klog/v2"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -128,7 +128,7 @@ func New(
 	featureGateAccess featuregates.FeatureGateAccess,
 ) *Controller {
 	eventBroadcaster := record.NewBroadcaster()
-	eventBroadcaster.StartLogging(glog.Infof)
+	eventBroadcaster.StartLogging(klog.Infof)
 	eventBroadcaster.StartRecordingToSink(&coreclientsetv1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 
 	ctrl := &Controller{
@@ -214,8 +214,8 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 		return
 	}
 
-	glog.Info("Starting MachineConfigController-ContainerRuntimeConfigController")
-	defer glog.Info("Shutting down MachineConfigController-ContainerRuntimeConfigController")
+	klog.Info("Starting MachineConfigController-ContainerRuntimeConfigController")
+	defer klog.Info("Shutting down MachineConfigController-ContainerRuntimeConfigController")
 
 	for i := 0; i < workers; i++ {
 		go wait.Until(ctrl.worker, time.Second, stopCh)
@@ -290,14 +290,14 @@ func (ctrl *Controller) updateContainerRuntimeConfig(oldObj, newObj interface{})
 	newCtrCfg := newObj.(*mcfgv1.ContainerRuntimeConfig)
 
 	if ctrConfigTriggerObjectChange(oldCtrCfg, newCtrCfg) {
-		glog.V(4).Infof("Update ContainerRuntimeConfig %s", oldCtrCfg.Name)
+		klog.V(4).Infof("Update ContainerRuntimeConfig %s", oldCtrCfg.Name)
 		ctrl.enqueueContainerRuntimeConfig(newCtrCfg)
 	}
 }
 
 func (ctrl *Controller) addContainerRuntimeConfig(obj interface{}) {
 	cfg := obj.(*mcfgv1.ContainerRuntimeConfig)
-	glog.V(4).Infof("Adding ContainerRuntimeConfig %s", cfg.Name)
+	klog.V(4).Infof("Adding ContainerRuntimeConfig %s", cfg.Name)
 	ctrl.enqueueContainerRuntimeConfig(cfg)
 }
 
@@ -318,7 +318,7 @@ func (ctrl *Controller) deleteContainerRuntimeConfig(obj interface{}) {
 	if err := ctrl.cascadeDelete(cfg); err != nil {
 		utilruntime.HandleError(fmt.Errorf("couldn't delete object %#v: %w", cfg, err))
 	} else {
-		glog.V(4).Infof("Deleted ContainerRuntimeConfig %s and restored default config", cfg.Name)
+		klog.V(4).Infof("Deleted ContainerRuntimeConfig %s and restored default config", cfg.Name)
 	}
 }
 
@@ -400,13 +400,13 @@ func (ctrl *Controller) handleErr(err error, key interface{}) {
 	}
 
 	if ctrl.queue.NumRequeues(key) < maxRetries {
-		glog.V(2).Infof("Error syncing containerruntimeconfig %v: %v", key, err)
+		klog.V(2).Infof("Error syncing containerruntimeconfig %v: %v", key, err)
 		ctrl.queue.AddRateLimited(key)
 		return
 	}
 
 	utilruntime.HandleError(err)
-	glog.V(2).Infof("Dropping containerruntimeconfig %q out of the queue: %v", key, err)
+	klog.V(2).Infof("Dropping containerruntimeconfig %q out of the queue: %v", key, err)
 	ctrl.queue.Forget(key)
 	ctrl.queue.AddAfter(key, 1*time.Minute)
 }
@@ -418,13 +418,13 @@ func (ctrl *Controller) handleImgErr(err error, key interface{}) {
 	}
 
 	if ctrl.imgQueue.NumRequeues(key) < maxRetries {
-		glog.V(2).Infof("Error syncing image config %v: %v", key, err)
+		klog.V(2).Infof("Error syncing image config %v: %v", key, err)
 		ctrl.imgQueue.AddRateLimited(key)
 		return
 	}
 
 	utilruntime.HandleError(err)
-	glog.V(2).Infof("Dropping image config %q out of the queue: %v", key, err)
+	klog.V(2).Infof("Dropping image config %q out of the queue: %v", key, err)
 	ctrl.imgQueue.Forget(key)
 	ctrl.imgQueue.AddAfter(key, 1*time.Minute)
 }
@@ -502,7 +502,7 @@ func (ctrl *Controller) syncStatusOnly(cfg *mcfgv1.ContainerRuntimeConfig, err e
 	})
 	// If an error occurred in updating the status just log it
 	if statusUpdateErr != nil {
-		glog.Warningf("error updating container runtime config status: %v", statusUpdateErr)
+		klog.Warningf("error updating container runtime config status: %v", statusUpdateErr)
 	}
 	// Want to return the actual error received from the sync function
 	return err
@@ -522,7 +522,7 @@ func (ctrl *Controller) addAnnotation(cfg *mcfgv1.ContainerRuntimeConfig, annota
 		return updateErr
 	})
 	if annotationUpdateErr != nil {
-		glog.Warningf("error updating the container runtime config with annotation key %q and value %q: %v", annotationKey, annotationVal, annotationUpdateErr)
+		klog.Warningf("error updating the container runtime config with annotation key %q and value %q: %v", annotationKey, annotationVal, annotationUpdateErr)
 	}
 	return annotationUpdateErr
 }
@@ -532,9 +532,9 @@ func (ctrl *Controller) addAnnotation(cfg *mcfgv1.ContainerRuntimeConfig, annota
 // nolint: gocyclo
 func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 	startTime := time.Now()
-	glog.V(4).Infof("Started syncing ContainerRuntimeconfig %q (%v)", key, startTime)
+	klog.V(4).Infof("Started syncing ContainerRuntimeconfig %q (%v)", key, startTime)
 	defer func() {
-		glog.V(4).Infof("Finished syncing ContainerRuntimeconfig %q (%v)", key, time.Since(startTime))
+		klog.V(4).Infof("Finished syncing ContainerRuntimeconfig %q (%v)", key, time.Since(startTime))
 	}()
 
 	_, name, err := cache.SplitMetaNamespaceKey(key)
@@ -545,7 +545,7 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 	// Fetch the ContainerRuntimeConfig
 	cfg, err := ctrl.mccrLister.Get(name)
 	if errors.IsNotFound(err) {
-		glog.V(2).Infof("ContainerRuntimeConfig %v has been deleted", key)
+		klog.V(2).Infof("ContainerRuntimeConfig %v has been deleted", key)
 		return nil
 	}
 	if err != nil {
@@ -582,7 +582,7 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 
 	if len(mcpPools) == 0 {
 		err := fmt.Errorf("containerRuntimeConfig %v does not match any MachineConfigPools", key)
-		glog.V(2).Infof("%v", err)
+		klog.V(2).Infof("%v", err)
 		return ctrl.syncStatusOnly(cfg, err)
 	}
 
@@ -617,7 +617,7 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 		if !ctrcfg.OverlaySize.IsZero() {
 			storageTOML, err := mergeConfigChanges(originalStorageIgn, cfg, updateStorageConfig)
 			if err != nil {
-				glog.V(2).Infoln(cfg, err, "error merging user changes to storage.conf: %v", err)
+				klog.V(2).Infoln(cfg, err, "error merging user changes to storage.conf: %v", err)
 				ctrl.syncStatusOnly(cfg, err)
 			} else {
 				configFileList = append(configFileList, generatedConfigFile{filePath: storageConfigPath, data: storageTOML})
@@ -687,7 +687,7 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 		if err := ctrl.addFinalizerToContainerRuntimeConfig(cfg, mc); err != nil {
 			return ctrl.syncStatusOnly(cfg, err, "could not add finalizers to ContainerRuntimeConfig: %v", err)
 		}
-		glog.Infof("Applied ContainerRuntimeConfig %v on MachineConfigPool %v", key, pool.Name)
+		klog.Infof("Applied ContainerRuntimeConfig %v on MachineConfigPool %v", key, pool.Name)
 	}
 	if err := ctrl.cleanUpDuplicatedMC(); err != nil {
 		return err
@@ -741,15 +741,15 @@ func mergeConfigChanges(origFile *ign3types.File, cfg *mcfgv1.ContainerRuntimeCo
 // nolint: gocyclo
 func (ctrl *Controller) syncImageConfig(key string) error {
 	startTime := time.Now()
-	glog.V(4).Infof("Started syncing ImageConfig %q (%v)", key, startTime)
+	klog.V(4).Infof("Started syncing ImageConfig %q (%v)", key, startTime)
 	defer func() {
-		glog.V(4).Infof("Finished syncing ImageConfig %q (%v)", key, time.Since(startTime))
+		klog.V(4).Infof("Finished syncing ImageConfig %q (%v)", key, time.Since(startTime))
 	}()
 
 	// Fetch the ImageConfig
 	imgcfg, err := ctrl.imgLister.Get("cluster")
 	if errors.IsNotFound(err) {
-		glog.V(2).Infof("ImageConfig 'cluster' does not exist or has been deleted")
+		klog.V(2).Infof("ImageConfig 'cluster' does not exist or has been deleted")
 		return nil
 	}
 	if err != nil {
@@ -762,7 +762,7 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 	// so that we can avoid adding that registry to blocked registries in /etc/containers/registries.conf
 	clusterVersionCfg, err := ctrl.clusterVersionLister.Get("version")
 	if errors.IsNotFound(err) {
-		glog.Infof("ClusterVersionConfig 'version' does not exist or has been deleted")
+		klog.Infof("ClusterVersionConfig 'version' does not exist or has been deleted")
 		return nil
 	}
 	if err != nil {
@@ -808,7 +808,7 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 		// Go through the registries in the image spec to get and validate the blocked registries
 		registriesBlocked, policyBlocked, allowedRegs, err = getValidBlockedAndAllowedRegistries(releaseImage, &imgcfg.Spec, icspRules, idmsRules)
 		if err != nil && err != errParsingReference {
-			glog.V(2).Infof("%v, skipping....", err)
+			klog.V(2).Infof("%v, skipping....", err)
 		} else if err == errParsingReference {
 			return err
 		}
@@ -894,7 +894,7 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 			return fmt.Errorf("could not Create/Update MachineConfig: %w", err)
 		}
 		if applied {
-			glog.Infof("Applied ImageConfig cluster on MachineConfigPool %v", pool.Name)
+			klog.Infof("Applied ImageConfig cluster on MachineConfigPool %v", pool.Name)
 		}
 	}
 
@@ -974,7 +974,7 @@ func RunImageBootstrap(templateDir string, controllerConfig *mcfgv1.ControllerCo
 		searchRegs = imgCfg.Spec.RegistrySources.ContainerRuntimeSearchRegistries
 		registriesBlocked, policyBlocked, allowedRegs, err = getValidBlockedAndAllowedRegistries(controllerConfig.Spec.ReleaseImage, &imgCfg.Spec, icspRules, idmsRules)
 		if err != nil && err != errParsingReference {
-			glog.V(2).Infof("%v, skipping....", err)
+			klog.V(2).Infof("%v, skipping....", err)
 		} else if err == errParsingReference {
 			return nil, err
 		}

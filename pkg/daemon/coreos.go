@@ -9,7 +9,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/golang/glog"
+	"k8s.io/klog/v2"
 )
 
 // alephPath contains information on the original bootimage; for more
@@ -51,7 +51,7 @@ func logAlephInformation() error {
 	if err := json.Unmarshal(contents, &alephData); err != nil {
 		return err
 	}
-	glog.Infof("CoreOS aleph version: mtime=%v build=%v imgid=%v\n", stat.ModTime().UTC(), alephData.Build, alephData.Imgid)
+	klog.Infof("CoreOS aleph version: mtime=%v build=%v imgid=%v\n", stat.ModTime().UTC(), alephData.Build, alephData.Imgid)
 	return nil
 }
 
@@ -68,15 +68,15 @@ func logInitionProvisioning() error {
 	if err := json.Unmarshal(contents, &ignProvisioning); err != nil {
 		return err
 	}
-	glog.Infof("Ignition provisioning: time=%v\n", ignProvisioning.ProvisioningDate)
+	klog.Infof("Ignition provisioning: time=%v\n", ignProvisioning.ProvisioningDate)
 	return nil
 }
 
 func logProvisioningInformation() {
 	if err := logAlephInformation(); err != nil {
-		glog.Warningf("Failed to get aleph information: %v", err)
+		klog.Warningf("Failed to get aleph information: %v", err)
 	}
 	if err := logInitionProvisioning(); err != nil {
-		glog.Warningf("Failed to get Ignition provisioning information: %v", err)
+		klog.Warningf("Failed to get Ignition provisioning information: %v", err)
 	}
 }

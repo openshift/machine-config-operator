@@ -9,7 +9,6 @@ import (
 	"sort"
 	"time"
 
-	"github.com/golang/glog"
 	osev1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	mcoResourceApply "github.com/openshift/machine-config-operator/lib/resourceapply"
@@ -19,6 +18,7 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
 	mcfglistersv1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
+	"k8s.io/klog/v2"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -79,7 +79,7 @@ func New(
 	fgAccess featuregates.FeatureGateAccess,
 ) *Controller {
 	eventBroadcaster := record.NewBroadcaster()
-	eventBroadcaster.StartLogging(glog.Infof)
+	eventBroadcaster.StartLogging(klog.Infof)
 	eventBroadcaster.StartRecordingToSink(&corev1clientset.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 
 	ctrl := &Controller{
@@ -126,7 +126,7 @@ func New(
 func (ctrl *Controller) filterSecret(secret *corev1.Secret) {
 	if secret.Name == "pull-secret" {
 		ctrl.enqueueController()
-		glog.Infof("Re-syncing ControllerConfig due to secret %s change", secret.Name)
+		klog.Infof("Re-syncing ControllerConfig due to secret %s change", secret.Name)
 	}
 }
 
@@ -136,19 +136,19 @@ func (ctrl *Controller) addSecret(obj interface{}) {
 		ctrl.deleteSecret(secret)
 		return
 	}
-	glog.V(4).Infof("Add Secret %v", secret)
+	klog.V(4).Infof("Add Secret %v", secret)
 	ctrl.filterSecret(secret)
 }
 
 func (ctrl *Controller) updateSecret(old, new interface{}) {
 	secret := new.(*corev1.Secret)
-	glog.V(4).Infof("Update Secret %v", secret)
+	klog.V(4).Infof("Update Secret %v", secret)
 	ctrl.filterSecret(secret)
 }
 
 func (ctrl *Controller) deleteSecret(obj interface{}) {
 	secret, ok := obj.(*corev1.Secret)
-	glog.V(4).Infof("Delete Secret %v", secret)
+	klog.V(4).Infof("Delete Secret %v", secret)
 
 	if !ok {
 		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
@@ -169,7 +169,7 @@ func (ctrl *Controller) deleteSecret(obj interface{}) {
 			utilruntime.HandleError(fmt.Errorf("couldn't get ControllerConfig on secret callback %#w", err))
 			return
 		}
-		glog.V(4).Infof("Re-syncing ControllerConfig %s due to secret deletion", cfg.Name)
+		klog.V(4).Infof("Re-syncing ControllerConfig %s due to secret deletion", cfg.Name)
 		// TODO(runcom): should we resync w/o a secret which is going to just cause the controller to fail when trying to get the secret itself?
 		// ctrl.enqueueControllerConfig(cfg)
 	}
@@ -181,7 +181,7 @@ func (ctrl *Controller) enqueueController() {
 		utilruntime.HandleError(fmt.Errorf("couldn't get ControllerConfig on dependency callback %#w", err))
 		return
 	}
-	glog.V(4).Infof("Re-syncing ControllerConfig %s due to dependency change", cfg.Name)
+	klog.V(4).Infof("Re-syncing ControllerConfig %s due to dependency change", cfg.Name)
 	ctrl.enqueueControllerConfig(cfg)
 }
 
@@ -189,14 +189,14 @@ func (ctrl *Controller) updateFeature(old, cur interface{}) {
 	oldFeature := old.(*osev1.FeatureGate)
 	newFeature := cur.(*osev1.FeatureGate)
 	if !reflect.DeepEqual(oldFeature.Spec, newFeature.Spec) {
-		glog.V(4).Infof("Updating Feature: %s", newFeature.Name)
+		klog.V(4).Infof("Updating Feature: %s", newFeature.Name)
 		ctrl.enqueueController()
 	}
 }
 
 func (ctrl *Controller) addFeature(obj interface{}) {
 	features := obj.(*osev1.FeatureGate)
-	glog.V(4).Infof("Adding Feature: %s", features.Name)
+	klog.V(4).Infof("Adding Feature: %s", features.Name)
 	ctrl.enqueueController()
 }
 
@@ -214,7 +214,7 @@ func (ctrl *Controller) deleteFeature(obj interface{}) {
 			return
 		}
 	}
-	glog.V(4).Infof("Deleting Feature %s", features.Name)
+	klog.V(4).Infof("Deleting Feature %s", features.Name)
 	ctrl.enqueueController()
 }
 
@@ -227,8 +227,8 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 		return
 	}
 
-	glog.Info("Starting MachineConfigController-TemplateController")
-	defer glog.Info("Shutting down MachineConfigController-TemplateController")
+	klog.Info("Starting MachineConfigController-TemplateController")
+	defer klog.Info("Shutting down MachineConfigController-TemplateController")
 
 	for i := 0; i < workers; i++ {
 		go wait.Until(ctrl.worker, time.Second, stopCh)
@@ -239,14 +239,14 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 
 func (ctrl *Controller) addControllerConfig(obj interface{}) {
 	cfg := obj.(*mcfgv1.ControllerConfig)
-	glog.V(4).Infof("Adding ControllerConfig %s", cfg.Name)
+	klog.V(4).Infof("Adding ControllerConfig %s", cfg.Name)
 	ctrl.enqueueControllerConfig(cfg)
 }
 
 func (ctrl *Controller) updateControllerConfig(old, cur interface{}) {
 	oldCfg := old.(*mcfgv1.ControllerConfig)
 	curCfg := cur.(*mcfgv1.ControllerConfig)
-	glog.V(4).Infof("Updating ControllerConfig %s", oldCfg.Name)
+	klog.V(4).Infof("Updating ControllerConfig %s", oldCfg.Name)
 	ctrl.enqueueControllerConfig(curCfg)
 }
 
@@ -264,7 +264,7 @@ func (ctrl *Controller) deleteControllerConfig(obj interface{}) {
 			return
 		}
 	}
-	glog.V(4).Infof("Deleting ControllerConfig %s", cfg.Name)
+	klog.V(4).Infof("Deleting ControllerConfig %s", cfg.Name)
 	// TODO(abhinavdahiya): handle deletes.
 }
 
@@ -280,7 +280,7 @@ func (ctrl *Controller) addMachineConfig(obj interface{}) {
 		if cfg == nil {
 			return
 		}
-		glog.V(4).Infof("MachineConfig %s added", mc.Name)
+		klog.V(4).Infof("MachineConfig %s added", mc.Name)
 		ctrl.enqueueControllerConfig(cfg)
 		return
 	}
@@ -296,7 +296,7 @@ func (ctrl *Controller) updateMachineConfig(old, cur interface{}) {
 		if cfg == nil {
 			return
 		}
-		glog.V(4).Infof("MachineConfig %s updated", curMC.Name)
+		klog.V(4).Infof("MachineConfig %s updated", curMC.Name)
 		ctrl.enqueueControllerConfig(cfg)
 		return
 	}
@@ -329,7 +329,7 @@ func (ctrl *Controller) deleteMachineConfig(obj interface{}) {
 	if cfg == nil {
 		return
 	}
-	glog.V(4).Infof("MachineConfig %s deleted.", mc.Name)
+	klog.V(4).Infof("MachineConfig %s deleted.", mc.Name)
 	ctrl.enqueueControllerConfig(cfg)
 }
 
@@ -410,13 +410,13 @@ func (ctrl *Controller) handleErr(err error, key interface{}) {
 	}
 
 	if ctrl.queue.NumRequeues(key) < maxRetries {
-		glog.V(2).Infof("Error syncing controllerconfig %v: %v", key, err)
+		klog.V(2).Infof("Error syncing controllerconfig %v: %v", key, err)
 		ctrl.queue.AddRateLimited(key)
 		return
 	}
 
 	utilruntime.HandleError(err)
-	glog.V(2).Infof("Dropping controllerconfig %q out of the queue: %v", key, err)
+	klog.V(2).Infof("Dropping controllerconfig %q out of the queue: %v", key, err)
 	ctrl.queue.Forget(key)
 	ctrl.queue.AddAfter(key, 1*time.Minute)
 }
@@ -425,9 +425,9 @@ func (ctrl *Controller) handleErr(err error, key interface{}) {
 // This function is not meant to be invoked concurrently with the same key.
 func (ctrl *Controller) syncControllerConfig(key string) error {
 	startTime := time.Now()
-	glog.V(4).Infof("Started syncing controllerconfig %q (%v)", key, startTime)
+	klog.V(4).Infof("Started syncing controllerconfig %q (%v)", key, startTime)
 	defer func() {
-		glog.V(4).Infof("Finished syncing controllerconfig %q (%v)", key, time.Since(startTime))
+		klog.V(4).Infof("Finished syncing controllerconfig %q (%v)", key, time.Since(startTime))
 	}()
 
 	_, name, err := cache.SplitMetaNamespaceKey(key)
@@ -436,7 +436,7 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 	}
 	controllerconfig, err := ctrl.ccLister.Get(name)
 	if errors.IsNotFound(err) {
-		glog.V(2).Infof("ControllerConfig %v has been deleted", key)
+		klog.V(2).Infof("ControllerConfig %v has been deleted", key)
 		return nil
 	}
 	if err != nil {
@@ -477,7 +477,7 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 			return ctrl.syncFailingStatus(cfg, err)
 		}
 		if updated {
-			glog.V(4).Infof("Machineconfig %s was updated", mc.Name)
+			klog.V(4).Infof("Machineconfig %s was updated", mc.Name)
 		}
 	}
 

@@ -7,9 +7,9 @@ import (
 	"path"
 
 	yaml "github.com/ghodss/yaml"
-	"github.com/golang/glog"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientcmd "k8s.io/client-go/tools/clientcmd/api/v1"
+	"k8s.io/klog/v2"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -62,10 +62,10 @@ func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*runtime.RawExtension, er
 	}
 	// 1. Read the Machine Config Pool object.
 	fileName := path.Join(bsc.serverBaseDir, "machine-pools", cr.machineConfigPool+".yaml")
-	glog.Infof("reading file %q", fileName)
+	klog.Infof("reading file %q", fileName)
 	data, err := os.ReadFile(fileName)
 	if os.IsNotExist(err) {
-		glog.Errorf("could not find file: %s", fileName)
+		klog.Errorf("could not find file: %s", fileName)
 		return nil, nil
 	}
 	if err != nil {
@@ -82,10 +82,10 @@ func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*runtime.RawExtension, er
 
 	// 2. Read the Machine Config object.
 	fileName = path.Join(bsc.serverBaseDir, "machine-configs", currConf+".yaml")
-	glog.Infof("reading file %q", fileName)
+	klog.Infof("reading file %q", fileName)
 	data, err = os.ReadFile(fileName)
 	if os.IsNotExist(err) {
-		glog.Errorf("could not find file: %s", fileName)
+		klog.Errorf("could not find file: %s", fileName)
 		return nil, nil
 	}
 	if err != nil {

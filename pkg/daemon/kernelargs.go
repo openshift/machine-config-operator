@@ -10,9 +10,9 @@ import (
 	// Enable sha256 in container image references
 	_ "crypto/sha256"
 
-	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/pkg/daemon/osrelease"
 	"github.com/openshift/machine-config-operator/pkg/daemon/pivot/types"
+	"k8s.io/klog/v2"
 )
 
 const (
@@ -103,10 +103,10 @@ func parseTuningFile(tuningFilePath, cmdLinePath string) ([]types.TuneArgument, 
 				if !inUse {
 					addArguments = append(addArguments, types.TuneArgument{Key: key, Bare: true})
 				} else {
-					glog.Infof(`skipping "%s" as it is already in use`, key)
+					klog.Infof(`skipping "%s" as it is already in use`, key)
 				}
 			} else {
-				glog.Infof("%s not an allowlisted kernel argument", key)
+				klog.Infof("%s not an allowlisted kernel argument", key)
 			}
 		} else if strings.HasPrefix(line, "DELETE ") {
 			// NOTE: Today only specific bare kernel arguments are allowed so
@@ -124,13 +124,13 @@ func parseTuningFile(tuningFilePath, cmdLinePath string) ([]types.TuneArgument, 
 				if inUse {
 					deleteArguments = append(deleteArguments, types.TuneArgument{Key: key, Bare: true})
 				} else {
-					glog.Infof(`skipping "%s" as it is not present in the current argument list`, key)
+					klog.Infof(`skipping "%s" as it is not present in the current argument list`, key)
 				}
 			} else {
-				glog.Infof("%s not an allowlisted kernel argument", key)
+				klog.Infof("%s not an allowlisted kernel argument", key)
 			}
 		} else {
-			glog.V(2).Infof(`skipping malformed line in %s: "%s"`, tuningFilePath, line)
+			klog.V(2).Infof(`skipping malformed line in %s: "%s"`, tuningFilePath, line)
 		}
 	}
 	return addArguments, deleteArguments, nil
@@ -173,7 +173,7 @@ func UpdateTuningArgs(tuningFilePath, cmdLinePath string) error {
 	}
 
 	if changed {
-		glog.Info("Updated kernel tuning arguments")
+		klog.Info("Updated kernel tuning arguments")
 	}
 	return nil
 }
