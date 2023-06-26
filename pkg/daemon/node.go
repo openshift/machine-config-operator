@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/klog/v2"
 )
 
 func (dn *Daemon) loadNodeAnnotations(node *corev1.Node) (*corev1.Node, error) {
@@ -20,7 +20,7 @@ func (dn *Daemon) loadNodeAnnotations(node *corev1.Node) (*corev1.Node, error) {
 		return node, nil
 	}
 
-	glog.Infof("No %s annotation on node %s: %v, in cluster bootstrap, loading initial node annotation from %s", constants.CurrentMachineConfigAnnotationKey, node.Name, node.Annotations, constants.InitialNodeAnnotationsFilePath)
+	klog.Infof("No %s annotation on node %s: %v, in cluster bootstrap, loading initial node annotation from %s", constants.CurrentMachineConfigAnnotationKey, node.Name, node.Annotations, constants.InitialNodeAnnotationsFilePath)
 
 	d, err := os.ReadFile(constants.InitialNodeAnnotationsFilePath)
 	if err != nil && !os.IsNotExist(err) {
@@ -30,7 +30,7 @@ func (dn *Daemon) loadNodeAnnotations(node *corev1.Node) (*corev1.Node, error) {
 		// try currentConfig if, for whatever reason we lost annotations? this is super best effort.
 		currentOnDisk, err := dn.getCurrentConfigOnDisk()
 		if err == nil {
-			glog.Infof("Setting initial node config based on current configuration on disk: %s", currentOnDisk.GetName())
+			klog.Infof("Setting initial node config based on current configuration on disk: %s", currentOnDisk.GetName())
 			return dn.nodeWriter.SetAnnotations(map[string]string{constants.CurrentMachineConfigAnnotationKey: currentOnDisk.GetName()})
 		}
 		return nil, err
@@ -41,7 +41,7 @@ func (dn *Daemon) loadNodeAnnotations(node *corev1.Node) (*corev1.Node, error) {
 		return nil, fmt.Errorf("failed to unmarshal initial annotations: %w", err)
 	}
 
-	glog.Infof("Setting initial node config: %s", initial[constants.CurrentMachineConfigAnnotationKey])
+	klog.Infof("Setting initial node config: %s", initial[constants.CurrentMachineConfigAnnotationKey])
 	node, err = dn.nodeWriter.SetAnnotations(initial)
 	if err != nil {
 		return nil, fmt.Errorf("failed to set initial annotations: %w", err)

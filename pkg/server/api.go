@@ -11,8 +11,8 @@ import (
 
 	"github.com/clarketm/json"
 	"github.com/coreos/go-semver/semver"
-	"github.com/golang/glog"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/klog/v2"
 
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 )
@@ -61,15 +61,15 @@ func NewAPIServer(a *APIHandler, p int, is bool, c, k string) *APIServer {
 func (a *APIServer) Serve() {
 	mcs := getHTTPServerCfg(fmt.Sprintf(":%v", a.port), a.handler)
 
-	glog.Infof("Launching server on %s", mcs.Addr)
+	klog.Infof("Launching server on %s", mcs.Addr)
 	if a.insecure {
 		// Serve a non TLS server.
 		if err := mcs.ListenAndServe(); err != http.ErrServerClosed {
-			glog.Exitf("Machine Config Server exited with error: %v", err)
+			klog.Exitf("Machine Config Server exited with error: %v", err)
 		}
 	} else {
 		if err := mcs.ListenAndServeTLS(a.cert, a.key); err != http.ErrServerClosed {
-			glog.Exitf("Machine Config Server exited with error: %v", err)
+			klog.Exitf("Machine Config Server exited with error: %v", err)
 		}
 	}
 }
@@ -106,13 +106,13 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	poolName := path.Base(r.URL.Path)
 	useragent := r.Header.Get("User-Agent")
 	acceptHeader := r.Header.Get("Accept")
-	glog.Infof("Pool %s requested by address:%q User-Agent:%q Accept-Header: %q", poolName, r.RemoteAddr, useragent, acceptHeader)
+	klog.Infof("Pool %s requested by address:%q User-Agent:%q Accept-Header: %q", poolName, r.RemoteAddr, useragent, acceptHeader)
 
 	reqConfigVer, err := detectSpecVersionFromAcceptHeader(acceptHeader)
 	if err != nil {
 		w.Header().Set("Content-Length", "0")
 		w.WriteHeader(http.StatusBadRequest)
-		glog.Error(err)
+		klog.Error(err)
 		return
 	}
 
@@ -125,7 +125,7 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		w.Header().Set("Content-Length", "0")
 		w.WriteHeader(http.StatusInternalServerError)
-		glog.Errorf("couldn't get config for req: %v, error: %v", cr, err)
+		klog.Errorf("couldn't get config for req: %v, error: %v", cr, err)
 		return
 	}
 	if conf == nil {
@@ -141,7 +141,7 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			w.Header().Set("Content-Length", "0")
 			w.WriteHeader(http.StatusInternalServerError)
-			glog.Errorf("couldn't convert config for req: %v, error: %v", cr, err)
+			klog.Errorf("couldn't convert config for req: %v, error: %v", cr, err)
 			return
 		}
 		serveConf = &converted34
@@ -151,7 +151,7 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			w.Header().Set("Content-Length", "0")
 			w.WriteHeader(http.StatusInternalServerError)
-			glog.Errorf("couldn't convert config for req: %v, error: %v", cr, err)
+			klog.Errorf("couldn't convert config for req: %v, error: %v", cr, err)
 			return
 		}
 		serveConf = &converted33
@@ -162,7 +162,7 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			w.Header().Set("Content-Length", "0")
 			w.WriteHeader(http.StatusInternalServerError)
-			glog.Errorf("couldn't convert config for req: %v, error: %v", cr, err)
+			klog.Errorf("couldn't convert config for req: %v, error: %v", cr, err)
 			return
 		}
 
@@ -173,7 +173,7 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			w.Header().Set("Content-Length", "0")
 			w.WriteHeader(http.StatusInternalServerError)
-			glog.Errorf("couldn't convert config for req: %v, error: %v", cr, err)
+			klog.Errorf("couldn't convert config for req: %v, error: %v", cr, err)
 			return
 		}
 
@@ -184,7 +184,7 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		w.Header().Set("Content-Length", "0")
 		w.WriteHeader(http.StatusInternalServerError)
-		glog.Errorf("failed to marshal %v config: %v", cr, err)
+		klog.Errorf("failed to marshal %v config: %v", cr, err)
 		return
 	}
 
@@ -197,7 +197,7 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	_, err = w.Write(data)
 	if err != nil {
-		glog.Errorf("failed to write %v response: %v", cr, err)
+		klog.Errorf("failed to write %v response: %v", cr, err)
 	}
 }
 

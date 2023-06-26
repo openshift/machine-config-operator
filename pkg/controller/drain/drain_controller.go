@@ -3,11 +3,12 @@ package drain
 import (
 	"context"
 	"encoding/json"
+
 	"fmt"
+
 	"strings"
 	"time"
 
-	"github.com/golang/glog"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
@@ -28,6 +29,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/klog/v2"
 	"k8s.io/kubectl/pkg/drain"
 )
 
@@ -107,7 +109,7 @@ func New(
 	mcfgClient mcfgclientset.Interface,
 ) *Controller {
 	eventBroadcaster := record.NewBroadcaster()
-	eventBroadcaster.StartLogging(glog.Infof)
+	eventBroadcaster.StartLogging(klog.Infof)
 	eventBroadcaster.StartRecordingToSink(&coreclientsetv1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 
 	ctrl := &Controller{
@@ -155,8 +157,8 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	ongoingDrains := make(map[string]time.Time)
 	ctrl.ongoingDrains = ongoingDrains
 
-	glog.Info("Starting MachineConfigController-DrainController")
-	defer glog.Info("Shutting down MachineConfigController-DrainController")
+	klog.Info("Starting MachineConfigController-DrainController")
+	defer klog.Info("Shutting down MachineConfigController-DrainController")
 
 	for i := 0; i < workers; i++ {
 		go wait.Until(ctrl.worker, ctrl.cfg.WaitUntil, stopCh)
@@ -168,12 +170,12 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 // logNode emits a log message at informational level, prefixed with the node name in a consistent fashion.
 func (ctrl *Controller) logNode(node *corev1.Node, format string, args ...interface{}) {
 	msg := fmt.Sprintf(format, args...)
-	glog.Infof("node %s: %s", node.Name, msg)
+	klog.Infof("node %s: %s", node.Name, msg)
 }
 
 func (ctrl *Controller) handleNodeEvent(node interface{}) {
 	n := node.(*corev1.Node)
-	glog.V(4).Infof("Updating Node %s", n.Name)
+	klog.V(4).Infof("Updating Node %s", n.Name)
 	ctrl.enqueueNode(n)
 }
 
@@ -240,22 +242,22 @@ func (ctrl *Controller) handleErr(err error, key interface{}) {
 	}
 
 	if ctrl.queue.NumRequeues(key) < ctrl.cfg.MaxRetries {
-		glog.V(2).Infof("Error syncing node %v: %v", key, err)
+		klog.V(2).Infof("Error syncing node %v: %v", key, err)
 		ctrl.queue.AddRateLimited(key)
 		return
 	}
 
 	utilruntime.HandleError(err)
-	glog.V(2).Infof("Dropping node %q out of the queue: %v", key, err)
+	klog.V(2).Infof("Dropping node %q out of the queue: %v", key, err)
 	ctrl.queue.Forget(key)
 	ctrl.queue.AddAfter(key, 1*time.Minute)
 }
 
 func (ctrl *Controller) syncNode(key string) error {
 	startTime := time.Now()
-	glog.V(4).Infof("Started syncing node %q (%v)", key, startTime)
+	klog.V(4).Infof("Started syncing node %q (%v)", key, startTime)
 	defer func() {
-		glog.V(4).Infof("Finished syncing node %q (%v)", key, time.Since(startTime))
+		klog.V(4).Infof("Finished syncing node %q (%v)", key, time.Since(startTime))
 	}()
 
 	_, name, err := cache.SplitMetaNamespaceKey(key)
@@ -266,7 +268,7 @@ func (ctrl *Controller) syncNode(key string) error {
 	// First check if a drain request is needed for this node
 	node, err := ctrl.nodeLister.Get(name)
 	if apierrors.IsNotFound(err) {
-		glog.V(2).Infof("node %v has been deleted", key)
+		klog.V(2).Infof("node %v has been deleted", key)
 		return nil
 	}
 	if err != nil {
@@ -275,7 +277,7 @@ func (ctrl *Controller) syncNode(key string) error {
 
 	desiredState := node.Annotations[daemonconsts.DesiredDrainerAnnotationKey]
 	if desiredState == node.Annotations[daemonconsts.LastAppliedDrainerAnnotationKey] {
-		glog.V(4).Infof("Node %v has the correct drain", key)
+		klog.V(4).Infof("Node %v has the correct drain", key)
 		return nil
 	}
 
@@ -293,8 +295,8 @@ func (ctrl *Controller) syncNode(key string) error {
 			}
 			ctrl.logNode(node, "%s pod %s/%s", verbStr, pod.Namespace, pod.Name)
 		},
-		Out:    writer{glog.Info},
-		ErrOut: writer{glog.Error},
+		Out:    writer{klog.Info},
+		ErrOut: writer{klog.Error},
 		Ctx:    context.TODO(),
 	}
 
@@ -345,9 +347,9 @@ func (ctrl *Controller) drainNode(node *corev1.Node, drainer *drain.Helper) erro
 		}
 		isOngoingDrain = true
 		duration = time.Now().Sub(v)
-		glog.Infof("Previous node drain found. Drain has been going on for %v hours", duration.Hours())
+		klog.Infof("Previous node drain found. Drain has been going on for %v hours", duration.Hours())
 		if duration > ctrl.cfg.DrainTimeoutDuration {
-			glog.Errorf("node %s: drain exceeded timeout: %v. Will continue to retry.", node.Name, ctrl.cfg.DrainTimeoutDuration)
+			klog.Errorf("node %s: drain exceeded timeout: %v. Will continue to retry.", node.Name, ctrl.cfg.DrainTimeoutDuration)
 			ctrlcommon.MCCDrainErr.WithLabelValues(node.Name).Set(1)
 		}
 		break
@@ -388,7 +390,7 @@ func (ctrl *Controller) drainNode(node *corev1.Node, drainer *drain.Helper) erro
 
 	// Clear the MCCDrainErr, if any.
 	if ctrlcommon.MCCDrainErr.DeleteLabelValues(node.Name) {
-		glog.Infof("Cleaning up MCCDrain error for node(%s) as drain was completed", node.Name)
+		klog.Infof("Cleaning up MCCDrain error for node(%s) as drain was completed", node.Name)
 	}
 
 	return nil
@@ -446,7 +448,7 @@ func (ctrl *Controller) cordonOrUncordonNode(desired bool, node *corev1.Node, dr
 		err := drain.RunCordonOrUncordon(drainer, node, desired)
 		if err != nil {
 			lastErr = err
-			glog.Infof("%s failed with: %v, retrying", verb, err)
+			klog.Infof("%s failed with: %v, retrying", verb, err)
 			return false, nil
 		}
 
@@ -454,7 +456,7 @@ func (ctrl *Controller) cordonOrUncordonNode(desired bool, node *corev1.Node, dr
 		var updatedNode *corev1.Node
 		if updatedNode, err = ctrl.kubeClient.CoreV1().Nodes().Get(context.TODO(), node.Name, metav1.GetOptions{}); err != nil {
 			lastErr = err
-			glog.Errorf("Failed to fetch node %v, retrying", err)
+			klog.Errorf("Failed to fetch node %v, retrying", err)
 			return false, nil
 		}
 

@@ -10,13 +10,13 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/golang/glog"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/runtime/serializer/json"
 	yamlutil "k8s.io/apimachinery/pkg/util/yaml"
 	kscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/klog/v2"
 
 	apicfgv1 "github.com/openshift/api/config/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
@@ -107,7 +107,7 @@ func (b *Bootstrap) Run(destDir string) error {
 			if err != nil {
 				if runtime.IsNotRegisteredError(err) {
 					// don't care
-					glog.V(4).Infof("skipping path %q [%d] manifest because it is not part of expected api group: %v", file.Name(), idx+1, err)
+					klog.V(4).Infof("skipping path %q [%d] manifest because it is not part of expected api group: %v", file.Name(), idx+1, err)
 					continue
 				}
 				return fmt.Errorf("error parsing %q [%d] manifest: %w", file.Name(), idx+1, err)
@@ -141,7 +141,7 @@ func (b *Bootstrap) Run(destDir string) error {
 					nodeConfig = obj
 				}
 			default:
-				glog.Infof("skipping %q [%d] manifest because of unhandled %T", file.Name(), idx+1, obji)
+				klog.Infof("skipping %q [%d] manifest because of unhandled %T", file.Name(), idx+1, obji)
 			}
 		}
 	}

@@ -2,14 +2,15 @@ package daemon
 
 import (
 	"fmt"
+
 	"time"
 
-	"github.com/golang/glog"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/klog/v2"
 )
 
 var (
@@ -18,7 +19,7 @@ var (
 
 func (dn *Daemon) handleControllerConfigEvent(obj interface{}) {
 	controllerConfig := obj.(*mcfgv1.ControllerConfig)
-	glog.V(4).Infof("Updating ControllerConfig %s", controllerConfig.Name)
+	klog.V(4).Infof("Updating ControllerConfig %s", controllerConfig.Name)
 	dn.enqueueControllerConfig(controllerConfig)
 }
 
@@ -66,18 +67,18 @@ func (dn *Daemon) handleControllerConfigErr(err error, key interface{}) {
 	}
 
 	if err := dn.updateErrorState(err); err != nil {
-		glog.Errorf("Could not update annotation: %v", err)
+		klog.Errorf("Could not update annotation: %v", err)
 	}
 	// This is at V(2) since the updateErrorState() call above ends up logging too
-	glog.V(2).Infof("Error syncing ControllerConfig %v (retries %d): %v", key, dn.ccQueue.NumRequeues(key), err)
+	klog.V(2).Infof("Error syncing ControllerConfig %v (retries %d): %v", key, dn.ccQueue.NumRequeues(key), err)
 	dn.ccQueue.AddRateLimited(key)
 }
 
 func (dn *Daemon) syncControllerConfigHandler(key string) error {
 	startTime := time.Now()
-	glog.V(4).Infof("Started syncing ControllerConfig %q (%v)", key, startTime)
+	klog.V(4).Infof("Started syncing ControllerConfig %q (%v)", key, startTime)
 	defer func() {
-		glog.V(4).Infof("Finished syncing ControllerConfig %q (%v)", key, time.Since(startTime))
+		klog.V(4).Infof("Finished syncing ControllerConfig %q (%v)", key, time.Since(startTime))
 	}()
 
 	if key != ctrlcommon.ControllerConfigName {
@@ -114,7 +115,7 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 		if _, err := dn.nodeWriter.SetAnnotations(annos); err != nil {
 			return fmt.Errorf("failed to set ControllerConfigResourceVersion annotation on node: %w", err)
 		}
-		glog.Infof("Certificate was synced from controllerconfig resourceVersion %s", controllerConfig.ObjectMeta.ResourceVersion)
+		klog.Infof("Certificate was synced from controllerconfig resourceVersion %s", controllerConfig.ObjectMeta.ResourceVersion)
 	}
 
 	return nil

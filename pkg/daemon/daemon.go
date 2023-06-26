@@ -18,7 +18,6 @@ import (
 	"time"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
-	"github.com/golang/glog"
 	"golang.org/x/time/rate"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -27,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/klog/v2"
 
 	corev1lister "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
@@ -258,7 +258,7 @@ func New(
 		if err != nil {
 			return nil, fmt.Errorf("error reading osImageURL from rpm-ostree: %w", err)
 		}
-		glog.Infof("Booted osImageURL: %s (%s) %s", osImageURL, osVersion, osCommit)
+		klog.Infof("Booted osImageURL: %s (%s) %s", osImageURL, osVersion, osCommit)
 	}
 
 	bootID := ""
@@ -371,7 +371,7 @@ func (dn *Daemon) HypershiftConnect(
 
 	node, err := dn.kubeClient.CoreV1().Nodes().Get(context.TODO(), name, metav1.GetOptions{})
 	if err != nil {
-		glog.Fatalf("Cannot fetch node object: %v", err)
+		klog.Fatalf("Cannot fetch node object: %v", err)
 	}
 	dn.node = node
 
@@ -452,14 +452,14 @@ func (dn *Daemon) handleErr(err error, key interface{}) {
 	// Exit if nodewriter is not initialized, used for Hypershift
 	if dn.nodeWriter == nil {
 		dn.updateErrorStateHypershift(err)
-		glog.Fatalf("Error handling node sync: %v", err)
+		klog.Fatalf("Error handling node sync: %v", err)
 	}
 
 	if err := dn.updateErrorState(err); err != nil {
-		glog.Errorf("Could not update annotation: %v", err)
+		klog.Errorf("Could not update annotation: %v", err)
 	}
 	// This is at V(2) since the updateErrorState() call above ends up logging too
-	glog.V(2).Infof("Error syncing node %v (retries %d): %v", key, dn.queue.NumRequeues(key), err)
+	klog.V(2).Infof("Error syncing node %v (retries %d): %v", key, dn.queue.NumRequeues(key), err)
 	dn.queue.AddRateLimited(key)
 }
 
@@ -488,7 +488,7 @@ func (dn *Daemon) updateErrorStateHypershift(err error) {
 		constants.MachineConfigDaemonReasonAnnotationKey: truncatedErr,
 	}
 	if _, annoErr := dn.nodeWriter.SetAnnotations(annos); annoErr != nil {
-		glog.Fatalf("Error setting degraded annotation %v, original error %v", annoErr, err)
+		klog.Fatalf("Error setting degraded annotation %v, original error %v", annoErr, err)
 	}
 }
 
@@ -500,13 +500,13 @@ func (dn *Daemon) initializeNode() error {
 	}
 	// Some parts of the MCO dispatch on whether or not we're managing a control plane node
 	if _, isControlPlane := dn.node.Labels[ctrlcommon.MasterLabel]; isControlPlane {
-		glog.Infof("Node %s is part of the control plane", dn.node.Name)
+		klog.Infof("Node %s is part of the control plane", dn.node.Name)
 		if err := dn.initializeControlPlane(); err != nil {
 			return err
 		}
 		dn.isControlPlane = true
 	} else {
-		glog.Infof("Node %s is not labeled %s", dn.node.Name, ctrlcommon.MasterLabel)
+		klog.Infof("Node %s is not labeled %s", dn.node.Name, ctrlcommon.MasterLabel)
 	}
 	dn.nodeInitialized = true
 	return nil
@@ -514,9 +514,9 @@ func (dn *Daemon) initializeNode() error {
 
 func (dn *Daemon) syncNode(key string) error {
 	startTime := time.Now()
-	glog.V(4).Infof("Started syncing node %q (%v)", key, startTime)
+	klog.V(4).Infof("Started syncing node %q (%v)", key, startTime)
 	defer func() {
-		glog.V(4).Infof("Finished syncing node %q (%v)", key, time.Since(startTime))
+		klog.V(4).Infof("Finished syncing node %q (%v)", key, time.Since(startTime))
 	}()
 
 	_, name, err := cache.SplitMetaNamespaceKey(key)
@@ -531,7 +531,7 @@ func (dn *Daemon) syncNode(key string) error {
 
 	node, err := dn.nodeLister.Get(name)
 	if apierrors.IsNotFound(err) {
-		glog.V(2).Infof("node %v has been deleted", key)
+		klog.V(2).Infof("node %v has been deleted", key)
 		return nil
 	}
 	if err != nil {
@@ -539,14 +539,14 @@ func (dn *Daemon) syncNode(key string) error {
 	}
 	// Check for Deleted Node
 	if node.DeletionTimestamp != nil {
-		glog.Infof("Node %s was deleted!", node.Name)
+		klog.Infof("Node %s was deleted!", node.Name)
 		return nil
 	}
 
 	// Check for queued reboot. If we attempt to sync while waiting for a reboot,
 	// it will cause the update to start again, so we skip the sync.
 	if dn.rebootQueued {
-		glog.Infof("Node %s is queued for a reboot, skipping sync.", node.Name)
+		klog.Infof("Node %s is queued for a reboot, skipping sync.", node.Name)
 		return nil
 	}
 
@@ -564,10 +564,10 @@ func (dn *Daemon) syncNode(key string) error {
 		oldReason := dn.node.Annotations[constants.MachineConfigDaemonReasonAnnotationKey]
 		newReason := node.Annotations[constants.MachineConfigDaemonReasonAnnotationKey]
 		if oldState != newState {
-			glog.Infof("Transitioned from state: %v -> %v", oldState, newState)
+			klog.Infof("Transitioned from state: %v -> %v", oldState, newState)
 		}
 		if oldReason != newReason {
-			glog.Infof("Transitioned from degraded/unreconcilable reason %v -> %v", oldReason, newReason)
+			klog.Infof("Transitioned from degraded/unreconcilable reason %v -> %v", oldReason, newReason)
 		}
 		dn.node = node
 	}
@@ -606,7 +606,7 @@ func (dn *Daemon) syncNode(key string) error {
 	// to stay in this state
 	if dn.node.Annotations[constants.DesiredDrainerAnnotationKey] != "" &&
 		dn.node.Annotations[constants.DesiredDrainerAnnotationKey] != dn.node.Annotations[constants.LastAppliedDrainerAnnotationKey] {
-		glog.Infof("A previously requested drain has not yet completed. Waiting for machine-config-controller to finish draining node.")
+		klog.Infof("A previously requested drain has not yet completed. Waiting for machine-config-controller to finish draining node.")
 		return nil
 	}
 
@@ -625,7 +625,7 @@ func (dn *Daemon) syncNode(key string) error {
 			return err
 		}
 	}
-	glog.V(2).Infof("Node %s is already synced", node.Name)
+	klog.V(2).Infof("Node %s is already synced", node.Name)
 	return nil
 }
 
@@ -635,7 +635,7 @@ func (dn *Daemon) runPreflightConfigDriftCheck() error {
 	// This allows skip behavior based upon the presence of
 	// the forcefile: /run/machine-config-daemon-force.
 	if forceFileExists() {
-		glog.Infof("Skipping preflight config drift check; %s present", constants.MachineConfigDaemonForceFile)
+		klog.Infof("Skipping preflight config drift check; %s present", constants.MachineConfigDaemonForceFile)
 		return nil
 	}
 
@@ -648,11 +648,11 @@ func (dn *Daemon) runPreflightConfigDriftCheck() error {
 
 	if err := dn.validateOnDiskState(currentOnDisk); err != nil {
 		dn.nodeWriter.Eventf(corev1.EventTypeWarning, "PreflightConfigDriftCheckFailed", err.Error())
-		glog.Errorf("Preflight config drift check failed: %v", err)
+		klog.Errorf("Preflight config drift check failed: %v", err)
 		return &configDriftErr{err}
 	}
 
-	glog.Infof("Preflight config drift check successful (took %s)", time.Since(start))
+	klog.Infof("Preflight config drift check successful (took %s)", time.Since(start))
 
 	return nil
 }
@@ -680,8 +680,8 @@ func (dn *Daemon) detectEarlySSHAccessesFromBoot() error {
 		return err
 	}
 	if len(journalOutput) > 0 {
-		glog.Info("Detected a login session before the daemon took over on first boot")
-		glog.Infof("Applying annotation: %v", machineConfigDaemonSSHAccessAnnotationKey)
+		klog.Info("Detected a login session before the daemon took over on first boot")
+		klog.Infof("Applying annotation: %v", machineConfigDaemonSSHAccessAnnotationKey)
 		if err := dn.applySSHAccessedAnnotation(); err != nil {
 			return err
 		}
@@ -691,7 +691,7 @@ func (dn *Daemon) detectEarlySSHAccessesFromBoot() error {
 
 // RunHypershift is the entry point for the simplified Hypershift mode daemon
 func (dn *Daemon) RunHypershift(stopCh <-chan struct{}, exitCh <-chan error) error {
-	glog.Info("Starting MachineConfigDaemon - Hypershift")
+	klog.Info("Starting MachineConfigDaemon - Hypershift")
 
 	signaled := make(chan struct{})
 	dn.InstallSignalHandler(signaled)
@@ -710,7 +710,7 @@ func (dn *Daemon) RunHypershift(stopCh <-chan struct{}, exitCh <-chan error) err
 		case err := <-exitCh:
 			// This channel gets errors from auxiliary goroutines like loginmonitor and kubehealth
 			// TODO we really shouldn't have any for hypershift
-			glog.Warningf("Got an error from auxiliary tools: %v", err)
+			klog.Warningf("Got an error from auxiliary tools: %v", err)
 		}
 	}
 }
@@ -742,7 +742,7 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 	}
 	if node.Annotations[constants.DesiredDrainerAnnotationKey] != node.Annotations[constants.LastAppliedDrainerAnnotationKey] {
 		// The controller has not yet performed our previous request
-		glog.Infof("The controller has not yet performed our previous drain/uncordon request %s", node.Annotations[constants.DesiredDrainerAnnotationKey])
+		klog.Infof("The controller has not yet performed our previous drain/uncordon request %s", node.Annotations[constants.DesiredDrainerAnnotationKey])
 		return nil
 	}
 	if node.Annotations[constants.DesiredMachineConfigAnnotationKey] == "" ||
@@ -750,7 +750,7 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 		// We have not yet been signaled to update, just return
 		// This may cause issues because the desiredConfig here doesn't necessarily match the config in the configmap
 		// TODO consider revisiting that
-		glog.V(4).Info("CurrentConfig == DesiredConfig in node annotations.")
+		klog.V(4).Info("CurrentConfig == DesiredConfig in node annotations.")
 		return nil
 	}
 
@@ -804,7 +804,7 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 		return fmt.Errorf("cannot decode desiredConfig from configmap data: %w", err)
 	}
 
-	glog.Infof("Successfully read current/desired Config")
+	klog.Infof("Successfully read current/desired Config")
 
 	// check update reconcilability
 	mcDiff, err := reconcilable(&currentConfig, &desiredConfig)
@@ -813,7 +813,7 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 	}
 	if mcDiff.isEmpty() {
 		// No diff was detected. Check if we are in the right state.
-		glog.Infof("No diff detected. Assuming a previous update was completed. Checking on-disk state.")
+		klog.Infof("No diff detected. Assuming a previous update was completed. Checking on-disk state.")
 		if err := dn.validateOnDiskState(&desiredConfig); err != nil {
 			return fmt.Errorf("disk validation failed: %w", err)
 		}
@@ -821,7 +821,7 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 		if node.Annotations[constants.CurrentMachineConfigAnnotationKey] == targetHash &&
 			node.Annotations[constants.DesiredDrainerAnnotationKey] == fmt.Sprintf("%s-%s", constants.DrainerStateUncordon, targetHash) {
 			// We are in a done state
-			glog.Infof("The pod is in a completed state. Awaiting removal.")
+			klog.Infof("The pod is in a completed state. Awaiting removal.")
 			return nil
 		}
 		// Assume an update is completed. Set node state to done. Also request an uncordon
@@ -834,12 +834,12 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 		if _, err := dn.nodeWriter.SetAnnotations(annos); err != nil {
 			return fmt.Errorf("failed to set Done annotation on node: %w", err)
 		}
-		glog.Infof("The pod has completed update. Awaiting removal.")
+		klog.Infof("The pod has completed update. Awaiting removal.")
 		// TODO os.Exit here
 		return nil
 	}
 
-	glog.Infof("Update is reconcilable. Diff: %v", mcDiff)
+	klog.Infof("Update is reconcilable. Diff: %v", mcDiff)
 
 	// This should be eventually de-duplicated with the update() function.
 	oldIgnConfig, err := ctrlcommon.ParseAndConvertConfig(currentConfig.Spec.Config.Raw)
@@ -875,7 +875,7 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 				return fmt.Errorf("failed to set Done annotation on node: %w", err)
 			}
 			// Wait for a future sync to perform post-drain actions
-			glog.Info("Setting drain request via annotation to controller.")
+			klog.Info("Setting drain request via annotation to controller.")
 			return nil
 		}
 	}
@@ -895,12 +895,12 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 	// Finally, once we are successful, we perform the necessary post config change action
 	// TODO should be de-duplicated with update()
 	if ctrlcommon.InSlice(postConfigChangeActionReboot, actions) {
-		glog.Info("Rebooting node")
+		klog.Info("Rebooting node")
 		return dn.reboot(fmt.Sprintf("Node will reboot into config %s", desiredConfig.Name))
 	}
 
 	if ctrlcommon.InSlice(postConfigChangeActionNone, actions) {
-		glog.Infof("Node has Desired Config %s, skipping reboot", desiredConfig.Name)
+		klog.Infof("Node has Desired Config %s, skipping reboot", desiredConfig.Name)
 	}
 
 	if ctrlcommon.InSlice(postConfigChangeActionReloadCrio, actions) {
@@ -908,7 +908,7 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 		if err := reloadService(serviceName); err != nil {
 			return fmt.Errorf("could not apply update: reloading %s configuration failed. Error: %w", serviceName, err)
 		}
-		glog.Infof("%s config reloaded successfully! Desired config %s has been applied, skipping reboot", serviceName, desiredConfig.Name)
+		klog.Infof("%s config reloaded successfully! Desired config %s has been applied, skipping reboot", serviceName, desiredConfig.Name)
 	}
 
 	// We are here, which means reboot was not needed to apply the configuration.
@@ -922,7 +922,7 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 	if _, err := dn.nodeWriter.SetAnnotations(annos); err != nil {
 		return fmt.Errorf("failed to set Done annotation on node: %w", err)
 	}
-	glog.Info("A rebootless update was completed.")
+	klog.Info("A rebootless update was completed.")
 	return nil
 }
 
@@ -931,15 +931,15 @@ func (dn *Daemon) RunOnceFrom(onceFrom string, skipReboot bool) error {
 	dn.skipReboot = skipReboot
 	configi, contentFrom, err := dn.senseAndLoadOnceFrom(onceFrom)
 	if err != nil {
-		glog.Warningf("Unable to decipher onceFrom config type: %s", err)
+		klog.Warningf("Unable to decipher onceFrom config type: %s", err)
 		return err
 	}
 	switch c := configi.(type) {
 	case ign3types.Config:
-		glog.V(2).Info("Daemon running directly from Ignition")
+		klog.V(2).Info("Daemon running directly from Ignition")
 		return dn.runOnceFromIgnition(c)
 	case mcfgv1.MachineConfig:
-		glog.V(2).Info("Daemon running directly from MachineConfig")
+		klog.V(2).Info("Daemon running directly from MachineConfig")
 		return dn.runOnceFromMachineConfig(c, contentFrom)
 	}
 	return fmt.Errorf("unsupported onceFrom type provided")
@@ -983,7 +983,7 @@ func (dn *Daemon) RunFirstbootCompleteMachineconfig() error {
 		return fmt.Errorf("failed to reboot for secondary in-place update")
 	}
 
-	glog.Info("rpm-ostree has container feature")
+	klog.Info("rpm-ostree has container feature")
 
 	// Start with an empty config, then add our *booted* osImageURL to
 	// it, reflecting the current machine state.
@@ -1039,7 +1039,7 @@ func (dn *Daemon) InstallSignalHandler(signaled chan struct{}) {
 				updateActive := dn.updateActive
 				dn.updateActiveLock.Unlock()
 				if updateActive {
-					glog.Info("Got SIGTERM, but actively updating")
+					klog.Info("Got SIGTERM, but actively updating")
 				} else {
 					close(signaled)
 					return
@@ -1056,14 +1056,14 @@ func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error) error {
 	logSystem("Starting to manage node: %s", dn.name)
 	dn.LogSystemData()
 
-	glog.Info("Starting MachineConfigDaemon")
-	defer glog.Info("Shutting down MachineConfigDaemon")
+	klog.Info("Starting MachineConfigDaemon")
+	defer klog.Info("Shutting down MachineConfigDaemon")
 
 	signaled := make(chan struct{})
 	dn.InstallSignalHandler(signaled)
 
 	if dn.kubeletHealthzEnabled {
-		glog.Info("Enabling Kubelet Healthz Monitor")
+		klog.Info("Enabling Kubelet Healthz Monitor")
 		go dn.runKubeletHealthzMonitor(stopCh, dn.exitCh)
 	}
 
@@ -1086,7 +1086,7 @@ func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error) error {
 			return nil
 		case err := <-exitCh:
 			// This channel gets errors from auxiliary goroutines like loginmonitor and kubehealth
-			glog.Warningf("Got an error from auxiliary tools: %v", err)
+			klog.Warningf("Got an error from auxiliary tools: %v", err)
 		}
 	}
 }
@@ -1120,8 +1120,8 @@ func (dn *Daemon) runLoginMonitor(stopCh <-chan struct{}, exitCh chan<- error) {
 				}
 				if l > 0 {
 					line := strings.Split(string(buf), "\n")[0]
-					glog.Infof("Detected a new login session: %s", line)
-					glog.Infof("Login access is discouraged! Applying annotation: %v", machineConfigDaemonSSHAccessAnnotationKey)
+					klog.Infof("Detected a new login session: %s", line)
+					klog.Infof("Login access is discouraged! Applying annotation: %v", machineConfigDaemonSSHAccessAnnotationKey)
 					if err := dn.applySSHAccessedAnnotation(); err != nil {
 						exitCh <- err
 					}
@@ -1144,9 +1144,9 @@ func (dn *Daemon) applySSHAccessedAnnotation() error {
 // Called whenever the on-disk config has drifted from the current machineconfig.
 func (dn *Daemon) onConfigDrift(err error) {
 	dn.nodeWriter.Eventf(corev1.EventTypeWarning, "ConfigDriftDetected", err.Error())
-	glog.Error(err)
+	klog.Error(err)
 	if err := dn.updateErrorState(err); err != nil {
-		glog.Errorf("Could not update annotation: %v", err)
+		klog.Errorf("Could not update annotation: %v", err)
 	}
 }
 
@@ -1231,7 +1231,7 @@ func (dn *Daemon) runKubeletHealthzMonitor(stopCh <-chan struct{}, exitCh chan<-
 }
 
 func (dn *Daemon) getHealth() error {
-	glog.V(2).Info("Kubelet health running")
+	klog.V(2).Info("Kubelet health running")
 	ctx, cancel := context.WithTimeout(context.Background(), kubeletHealthzTimeout)
 	defer cancel()
 
@@ -1254,11 +1254,11 @@ func (dn *Daemon) getHealth() error {
 	}
 
 	if string(respData) != "ok" {
-		glog.Warningf("Kubelet Healthz Endpoint returned: %s", string(respData))
+		klog.Warningf("Kubelet Healthz Endpoint returned: %s", string(respData))
 		return nil
 	}
 
-	glog.V(2).Info("Kubelet health ok")
+	klog.V(2).Info("Kubelet health ok")
 
 	return nil
 }
@@ -1268,11 +1268,11 @@ func (dn *Daemon) getHealth() error {
 // likely to be a root cause.
 func (dn *Daemon) syncFinalizationFailureAnnotation(finalizeError string) error {
 	if finalizeError != "" {
-		glog.Warningf("Failed to finalize previous deployment: %s", finalizeError)
+		klog.Warningf("Failed to finalize previous deployment: %s", finalizeError)
 		// Truncate this to a reasonable size in case it's somehow very long
 		finalizeError = fmt.Sprintf("%.2000s", finalizeError)
 	} else {
-		glog.Infof("Previous boot ostree-finalize-staged.service appears successful")
+		klog.Infof("Previous boot ostree-finalize-staged.service appears successful")
 	}
 
 	// Cache it globally so we can include it in any other error messages if applicable
@@ -1324,7 +1324,7 @@ func (dn *Daemon) getStateAndConfigs() (*stateAndConfigs, error) {
 		// doesn't exist, we must not be bootstrapping
 	} else {
 		bootstrapping = true
-		glog.Info("In bootstrap mode")
+		klog.Info("In bootstrap mode")
 	}
 
 	currentConfigName, err := getNodeAnnotation(dn.node, constants.CurrentMachineConfigAnnotationKey)
@@ -1355,7 +1355,7 @@ func (dn *Daemon) getStateAndConfigs() (*stateAndConfigs, error) {
 	if dn.NodeUpdaterClient != nil {
 		finalizeError, err := dn.NodeUpdaterClient.Peel().QueryPreviousDeploymentError()
 		if err != nil {
-			glog.Warningf("failed to query for deployment failure: %v", err)
+			klog.Warningf("failed to query for deployment failure: %v", err)
 		} else {
 			var finalizeErrorVal string
 			if finalizeError != nil {
@@ -1368,23 +1368,23 @@ func (dn *Daemon) getStateAndConfigs() (*stateAndConfigs, error) {
 	var desiredConfig *mcfgv1.MachineConfig
 	if currentConfigName == desiredConfigName {
 		desiredConfig = currentConfig
-		glog.Infof("Current+desired config: %s", currentConfigName)
+		klog.Infof("Current+desired config: %s", currentConfigName)
 	} else {
 		desiredConfig, err = dn.mcLister.Get(desiredConfigName)
 		if err != nil {
 			return nil, err
 		}
 
-		glog.Infof("Current config: %s", currentConfigName)
-		glog.Infof("Desired config: %s", desiredConfigName)
+		klog.Infof("Current config: %s", currentConfigName)
+		klog.Infof("Desired config: %s", desiredConfigName)
 	}
-	glog.Infof("state: %s", state)
+	klog.Infof("state: %s", state)
 
 	var degradedReason string
 	if state == constants.MachineConfigDaemonStateDegraded {
 		degradedReason, err = getNodeAnnotation(dn.node, constants.MachineConfigDaemonReasonAnnotationKey)
 		if err != nil {
-			glog.Errorf("Could not retrieve degraded reason. err: %v", err)
+			klog.Errorf("Could not retrieve degraded reason. err: %v", err)
 		}
 	}
 
@@ -1406,18 +1406,18 @@ func (dn *Daemon) LogSystemData() {
 	if dn.os.IsCoreOSVariant() {
 		out, err := runGetOut("rpm-ostree", "status")
 		if err != nil {
-			glog.Fatalf("unable to get rpm-ostree status: %s", err)
+			klog.Fatalf("unable to get rpm-ostree status: %s", err)
 		}
-		glog.Infof("%s", out)
+		klog.Infof("%s", out)
 
 		logProvisioningInformation()
 	}
 
 	boots, err := runGetOut("journalctl", "--list-boots")
 	if err != nil {
-		glog.Errorf("Listing boots: %v", err)
+		klog.Errorf("Listing boots: %v", err)
 	}
-	glog.Infof("journalctl --list-boots:\n" + string(boots))
+	klog.Infof("journalctl --list-boots:\n" + string(boots))
 
 	// Since nothing in the cluster today watches systemd units, let's
 	// at least capture them in our logs to start.  See also
@@ -1428,11 +1428,11 @@ func (dn *Daemon) LogSystemData() {
 	// also xref https://github.com/coreos/console-login-helper-messages/blob/e8a849f4c23910e7c556c10719911cc59873fc23/usr/share/console-login-helper-messages/profile.sh
 	failedServices, err := runGetOut("systemctl", "list-units", "--state=failed", "--no-legend")
 	if err != nil {
-		glog.Errorf("Listing failed systemd services: %v", err)
+		klog.Errorf("Listing failed systemd services: %v", err)
 	} else if len(failedServices) > 0 {
-		glog.Infof("systemctl --failed:\n" + string(failedServices))
+		klog.Infof("systemctl --failed:\n" + string(failedServices))
 	} else {
-		glog.Info("systemd service state: OK")
+		klog.Info("systemd service state: OK")
 	}
 }
 
@@ -1471,7 +1471,7 @@ func (dn *Daemon) storeCurrentConfigOnDisk(current *mcfgv1.MachineConfig) error 
 func upgradeHackFor44AndBelow() error {
 	_, err := os.Stat(constants.MachineConfigEncapsulatedPath)
 	if err == nil {
-		glog.Warningf("Failed to complete machine-config-daemon-firstboot before joining cluster!")
+		klog.Warningf("Failed to complete machine-config-daemon-firstboot before joining cluster!")
 		// Removing this file signals completion of the initial MC processing.
 		if err := os.Rename(constants.MachineConfigEncapsulatedPath, constants.MachineConfigEncapsulatedBakPath); err != nil {
 			return fmt.Errorf("failed to rename encapsulated MachineConfig after processing on firstboot: %w", err)
@@ -1515,14 +1515,14 @@ func PersistNetworkInterfaces(osRoot string) error {
 		// nmstate always logs to stderr, so we need to capture/forward that too
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
-		glog.Infof("Running: %s", strings.Join(cmd.Args, " "))
+		klog.Infof("Running: %s", strings.Join(cmd.Args, " "))
 		if err := cmd.Run(); err != nil {
 			return fmt.Errorf("failed to run nmstatectl: %w", err)
 		}
 	} else if hostos.IsEL9() {
 		ifnames, err := getIfnamesFromLinkFiles(osRoot)
 		if err != nil {
-			glog.Warningf("Failed to persist NIC names: %v", err)
+			klog.Warningf("Failed to persist NIC names: %v", err)
 			return nil
 		}
 
@@ -1610,7 +1610,7 @@ func (dn *Daemon) isSSHKeyLocationUpdateRequired() (bool, error) {
 
 // Decode the Ignition config and perform the SSH key update.
 func (dn *Daemon) updateSSHKeyLocation(cfg *mcfgv1.MachineConfig) error {
-	glog.Infof("SSH key location update required. Moving SSH keys from %q to %q.", constants.RHCOS8SSHKeyPath, constants.RHCOS9SSHKeyPath)
+	klog.Infof("SSH key location update required. Moving SSH keys from %q to %q.", constants.RHCOS8SSHKeyPath, constants.RHCOS9SSHKeyPath)
 
 	ignConfig, err := ctrlcommon.ParseAndConvertConfig(cfg.Spec.Config.Raw)
 	if err != nil {
@@ -1633,7 +1633,7 @@ func (dn *Daemon) updateSSHKeyLocationIfNeeded(cfg *mcfgv1.MachineConfig) error 
 	}
 
 	if !sshKeyLocationUpdateRequired {
-		glog.Infof("SSH key location (%q) up-to-date!", constants.RHCOS9SSHKeyPath)
+		klog.Infof("SSH key location (%q) up-to-date!", constants.RHCOS9SSHKeyPath)
 		return nil
 	}
 
@@ -1735,7 +1735,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 	// In the case where we're booting a node for the first time, or the MCD
 	// is restarted, that will be the current config.
 
-	glog.Infof("Validating against current config %s", state.currentConfig.GetName())
+	klog.Infof("Validating against current config %s", state.currentConfig.GetName())
 
 	if forceFileExists() {
 		logSystem("Skipping on-disk validation; %s present", constants.MachineConfigDaemonForceFile)
@@ -1789,7 +1789,7 @@ func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, error) {
 	if err == nil {
 		state.currentConfig = currentOnDisk
 	} else {
-		glog.Infof("Error reading config from disk")
+		klog.Infof("Error reading config from disk")
 		return false, fmt.Errorf("error reading config from disk: %w", err)
 	}
 
@@ -1801,7 +1801,7 @@ func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, error) {
 	if inDesiredConfig {
 		// Great, we've successfully rebooted for the desired config,
 		// let's mark it done!
-		glog.Infof("Completing update to target config %s", state.currentConfig.GetName())
+		klog.Infof("Completing update to target config %s", state.currentConfig.GetName())
 		if err := dn.completeUpdate(state.currentConfig.GetName()); err != nil {
 			UpdateStateMetric(mcdUpdateState, "", err.Error())
 			return inDesiredConfig, err
@@ -1825,7 +1825,7 @@ func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, error) {
 			}
 		}
 
-		glog.Infof("In desired config %s", state.currentConfig.GetName())
+		klog.Infof("In desired config %s", state.currentConfig.GetName())
 		UpdateStateMetric(mcdUpdateState, state.currentConfig.GetName(), "")
 	}
 
@@ -1892,7 +1892,7 @@ func (dn *Daemon) runOnceFromIgnition(ignConfig ign3types.Config) error {
 func (dn *Daemon) handleNodeEvent(node interface{}) {
 	n := node.(*corev1.Node)
 
-	glog.V(4).Infof("Updating Node %s", n.Name)
+	klog.V(4).Infof("Updating Node %s", n.Name)
 	dn.enqueueNode(n)
 }
 
@@ -1936,11 +1936,11 @@ func (dn *Daemon) prepUpdateFromCluster() (*mcfgv1.MachineConfig, *mcfgv1.Machin
 	if desiredConfigName == currentConfigName {
 		if state == constants.MachineConfigDaemonStateDone {
 			// No actual update to the config
-			glog.V(2).Info("No updating is required")
+			klog.V(2).Info("No updating is required")
 			return nil, nil, nil
 		}
 		// This seems like it shouldn't happen...let's just warn for now.
-		glog.Warningf("current+desiredConfig is %s but state is %s", currentConfigName, state)
+		klog.Warningf("current+desiredConfig is %s but state is %s", currentConfigName, state)
 	}
 	return currentConfig, desiredConfig, nil
 }
@@ -1958,7 +1958,7 @@ func (dn *Daemon) completeUpdate(desiredConfigName string) error {
 	if err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 10*time.Minute, false, func(ctx context.Context) (bool, error) {
 		node, err := dn.kubeClient.CoreV1().Nodes().Get(ctx, dn.name, metav1.GetOptions{})
 		if err != nil {
-			glog.Warningf("Failed to get node: %v", err)
+			klog.Warningf("Failed to get node: %v", err)
 			return false, nil
 		}
 		if node.Annotations[constants.DesiredDrainerAnnotationKey] != node.Annotations[constants.LastAppliedDrainerAnnotationKey] {
@@ -2036,12 +2036,12 @@ func (dn *CoreOSDaemon) validateKernelArguments(currentConfig *mcfgv1.MachineCon
 	if len(missing) > 0 {
 		cmdlinebytes, err := os.ReadFile(CmdLineFile)
 		if err != nil {
-			glog.Warningf("Failed to read %s: %v", CmdLineFile, err)
+			klog.Warningf("Failed to read %s: %v", CmdLineFile, err)
 		} else {
-			glog.Infof("Booted command line: %s", string(cmdlinebytes))
+			klog.Infof("Booted command line: %s", string(cmdlinebytes))
 		}
-		glog.Infof("Current ostree kargs: %s", rpmostreeKargs)
-		glog.Infof("Expected MachineConfig kargs: %v", expected)
+		klog.Infof("Current ostree kargs: %s", rpmostreeKargs)
+		klog.Infof("Expected MachineConfig kargs: %v", expected)
 		return fmt.Errorf("missing expected kernel arguments: %v", missing)
 	}
 	return nil
@@ -2093,7 +2093,7 @@ func (dn *Daemon) validateOnDiskState(currentConfig *mcfgv1.MachineConfig) error
 func (dn *Daemon) checkOS(osImageURL string) bool {
 	// Nothing to do if we're not on RHCOS or FCOS
 	if !dn.os.IsCoreOSVariant() {
-		glog.Infof(`Not booted into a CoreOS variant, ignoring target OSImageURL %s`, osImageURL)
+		klog.Infof(`Not booted into a CoreOS variant, ignoring target OSImageURL %s`, osImageURL)
 		return true
 	}
 
@@ -2101,10 +2101,10 @@ func (dn *Daemon) checkOS(osImageURL string) bool {
 	// so I'm wondering if at one point this used to work this way....
 	inspection, _, err := imageInspect(osImageURL)
 	if err != nil {
-		glog.Warningf("Unable to check manifest for matching hash: %s", err)
+		klog.Warningf("Unable to check manifest for matching hash: %s", err)
 	} else if ostreeCommit, ok := inspection.Labels["ostree.commit"]; ok {
 		if ostreeCommit == dn.bootedOSCommit {
-			glog.Infof("We are technically in the right image even if the URL doesn't match (%s == %s)", ostreeCommit, osImageURL)
+			klog.Infof("We are technically in the right image even if the URL doesn't match (%s == %s)", ostreeCommit, osImageURL)
 			return true
 		}
 	}
@@ -2166,16 +2166,16 @@ func (dn *Daemon) senseAndLoadOnceFrom(onceFrom string) (interface{}, onceFromOr
 	// Try each supported parser
 	ignConfig, err := ctrlcommon.ParseAndConvertConfig(content)
 	if err == nil && ignConfig.Ignition.Version != "" {
-		glog.V(2).Info("onceFrom file is of type Ignition")
+		klog.V(2).Info("onceFrom file is of type Ignition")
 		return ignConfig, contentFrom, nil
 	}
 
-	glog.V(2).Infof("%s is not an Ignition config: %v\nTrying MachineConfig.", onceFrom, err)
+	klog.V(2).Infof("%s is not an Ignition config: %v\nTrying MachineConfig.", onceFrom, err)
 
 	// Try to parse as a machine config
 	mc, err := mcoResourceRead.ReadMachineConfigV1(content)
 	if err == nil && mc != nil {
-		glog.V(2).Info("onceFrom file is of type MachineConfig")
+		klog.V(2).Info("onceFrom file is of type MachineConfig")
 		return *mc, contentFrom, nil
 	}
 
