@@ -11,7 +11,8 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/golang/glog"
+	"k8s.io/klog/v2"
+
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/library-go/pkg/cloudprovider"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
@@ -65,7 +66,7 @@ func generateTemplateMachineConfigs(config *RenderConfig, templateDir string) ([
 
 	for _, info := range infos {
 		if !info.IsDir() {
-			glog.Infof("ignoring non-directory path %q", info.Name())
+			klog.Infof("ignoring non-directory path %q", info.Name())
 			continue
 		}
 		role := info.Name()
@@ -114,7 +115,7 @@ func GenerateMachineConfigsForRole(config *RenderConfig, role, templateDir strin
 	var commonAdded bool
 	for _, info := range infos {
 		if !info.IsDir() {
-			glog.Infof("ignoring non-directory path %q", info.Name())
+			klog.Infof("ignoring non-directory path %q", info.Name())
 			continue
 		}
 		name := info.Name()
@@ -185,7 +186,7 @@ func platformStringFromControllerConfigSpec(ic *mcfgv1.ControllerConfigSpec) (st
 		// platformNone is used for a non-empty, but currently unsupported platform.
 		// This allows us to incrementally roll out new platforms across the project
 		// by provisioning platforms before all support is added.
-		glog.Warningf("Warning: the controller config referenced an unsupported platform: %v", ic.Infra.Status.PlatformStatus.Type)
+		klog.Warningf("Warning: the controller config referenced an unsupported platform: %v", ic.Infra.Status.PlatformStatus.Type)
 
 		return strings.ToLower(string(configv1.NonePlatformType)), nil
 	}
@@ -401,7 +402,7 @@ func cloudProvider(cfg RenderConfig) (interface{}, error) {
 
 		external, err := cloudprovider.IsCloudProviderExternal(cfg.Infra.Status.PlatformStatus, cfg.FeatureGateAccess)
 		if err != nil {
-			glog.Error(err)
+			klog.Error(err)
 		} else if external {
 			return "external", nil
 		}
@@ -450,7 +451,7 @@ func cloudConfigFlag(cfg RenderConfig) interface{} {
 
 	external, err := cloudprovider.IsCloudProviderExternal(cfg.Infra.Status.PlatformStatus, cfg.FeatureGateAccess)
 	if err != nil {
-		glog.Error(err)
+		klog.Error(err)
 	} else if external {
 		return ""
 	}
@@ -702,7 +703,7 @@ func isOpenShiftManagedDefaultLB(cfg RenderConfig) bool {
 				}
 				return lbType == configv1.LoadBalancerTypeOpenShiftManagedDefault
 			}
-			glog.Info("VSphere UPI doesn't populate VSphere PlatformStatus field. In that case we should return false")
+			klog.Info("VSphere UPI doesn't populate VSphere PlatformStatus field. In that case we should return false")
 			return false
 		case configv1.NutanixPlatformType:
 			if cfg.Infra.Status.PlatformStatus.Nutanix != nil {

@@ -13,13 +13,13 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 
-	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/internal"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	corev1 "k8s.io/api/core/v1"
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 	corev1lister "k8s.io/client-go/listers/core/v1"
+	"k8s.io/klog/v2"
 )
 
 const (
@@ -90,14 +90,14 @@ func newNodeWriter(nodeName string, stopCh <-chan struct{}) (NodeWriter, error) 
 		return &clusterNodeWriter{}, err
 	}
 
-	glog.Infof("NodeWriter initialized with credentials from %s", nodeWriterKubeconfigPath)
+	klog.Infof("NodeWriter initialized with credentials from %s", nodeWriterKubeconfigPath)
 	informer := informers.NewSharedInformerFactory(kubeClient, ctrlcommon.DefaultResyncPeriod()())
 	nodeInformer := informer.Core().V1().Nodes()
 	nodeLister := nodeInformer.Lister()
 	nodeListerSynced := nodeInformer.Informer().HasSynced
 
 	eventBroadcaster := record.NewBroadcaster()
-	eventBroadcaster.StartLogging(glog.V(2).Infof)
+	eventBroadcaster.StartLogging(klog.V(2).Infof)
 	eventBroadcaster.StartRecordingToSink(&corev1client.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 
 	nw := &clusterNodeWriter{
@@ -124,7 +124,7 @@ func newNodeWriter(nodeName string, stopCh <-chan struct{}) (NodeWriter, error) 
 // return if the stop channel is closed. Intended to be run via a goroutine.
 func (nw *clusterNodeWriter) Run(stop <-chan struct{}) {
 	if !cache.WaitForCacheSync(stop, nw.nodeListerSynced) {
-		glog.Fatal("failed to sync initial listers cache")
+		klog.Fatal("failed to sync initial listers cache")
 	}
 
 	for {
@@ -173,7 +173,7 @@ func (nw *clusterNodeWriter) SetWorking() error {
 
 // SetUnreconcilable sets the state to Unreconcilable.
 func (nw *clusterNodeWriter) SetUnreconcilable(err error) error {
-	glog.Errorf("Marking Unreconcilable due to: %v", err)
+	klog.Errorf("Marking Unreconcilable due to: %v", err)
 	// truncatedErr caps error message at a reasonable length to limit the risk of hitting the total
 	// annotation size limit (256 kb) at any point
 	truncatedErr := fmt.Sprintf("%.2000s", err.Error())
@@ -189,7 +189,7 @@ func (nw *clusterNodeWriter) SetUnreconcilable(err error) error {
 	}
 	r := <-respChan
 	if r.err != nil {
-		glog.Errorf("Error setting Unreconcilable annotation for node %s: %v", nw.nodeName, r.err)
+		klog.Errorf("Error setting Unreconcilable annotation for node %s: %v", nw.nodeName, r.err)
 	}
 	return r.err
 }
@@ -197,7 +197,7 @@ func (nw *clusterNodeWriter) SetUnreconcilable(err error) error {
 // SetDegraded logs the error and sets the state to Degraded.
 // Returns an error if it couldn't set the annotation.
 func (nw *clusterNodeWriter) SetDegraded(err error) error {
-	glog.Errorf("Marking Degraded due to: %v", err)
+	klog.Errorf("Marking Degraded due to: %v", err)
 	// truncatedErr caps error message at a reasonable length to limit the risk of hitting the total
 	// annotation size limit (256 kb) at any point
 	truncatedErr := fmt.Sprintf("%.2000s", err.Error())
@@ -213,7 +213,7 @@ func (nw *clusterNodeWriter) SetDegraded(err error) error {
 	}
 	r := <-respChan
 	if r.err != nil {
-		glog.Errorf("Error setting Degraded annotation for node %s: %v", nw.nodeName, r.err)
+		klog.Errorf("Error setting Degraded annotation for node %s: %v", nw.nodeName, r.err)
 	}
 	return r.err
 }

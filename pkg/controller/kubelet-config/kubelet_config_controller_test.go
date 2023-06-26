@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
-	"github.com/golang/glog"
 	osev1 "github.com/openshift/api/config/v1"
 	oseconfigfake "github.com/openshift/client-go/config/clientset/versioned/fake"
 	oseinformersv1 "github.com/openshift/client-go/config/informers/externalversions"
@@ -26,6 +25,7 @@ import (
 	core "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/klog/v2"
 	kubeletconfigv1beta1 "k8s.io/kubelet/config/v1beta1"
 	"k8s.io/utils/pointer"
 
@@ -99,7 +99,7 @@ func (f *fixture) validateActions() {
 		return
 	}
 	for i, action := range actions {
-		glog.Infof("  Action: %v", action)
+		klog.Infof("  Action: %v", action)
 
 		if len(f.actions) < i+1 {
 			f.t.Errorf("%d unexpected actions: %+v", len(actions)-len(f.actions), actions[i:])
@@ -543,7 +543,7 @@ func TestKubeletConfigAutoSizingReserved(t *testing.T) {
 	}
 }
 
-func TestKubeletConfigLogFile(t *testing.T) {
+func TestKubeletConfiglogFile(t *testing.T) {
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
@@ -652,7 +652,7 @@ func TestKubeletConfigUpdates(t *testing.T) {
 			c = f.newController(fgAccess)
 			stopCh = make(chan struct{})
 
-			glog.Info("Applying update")
+			klog.Info("Applying update")
 
 			// Apply update
 			err = c.syncHandler(getKey(kcUpdate, t))

@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/golang/glog"
 	configv1 "github.com/openshift/api/config/v1"
 	cov1helpers "github.com/openshift/library-go/pkg/config/clusteroperator/v1helpers"
 	corev1 "k8s.io/api/core/v1"
@@ -17,6 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/klog/v2"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	v1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -325,7 +325,7 @@ func (optr *Operator) syncUpgradeableStatus() error {
 	if !updating && !degraded {
 		skewStatus, status, err := optr.isKubeletSkewSupported(pools)
 		if err != nil {
-			glog.Errorf("Error checking version skew: %v, kubelet skew status: %v, status reason: %v, status message: %v", err, skewStatus, status.Reason, status.Message)
+			klog.Errorf("Error checking version skew: %v, kubelet skew status: %v, status reason: %v, status message: %v", err, skewStatus, status.Reason, status.Message)
 			coStatus.Reason = status.Reason
 			coStatus.Message = status.Message
 			return optr.updateStatus(co, coStatus)
@@ -344,13 +344,13 @@ func (optr *Operator) syncUpgradeableStatus() error {
 				Namespace: co.Namespace,
 				UID:       co.GetUID(),
 			}
-			glog.Infof("kubelet skew status: %v, status reason: %v", skewStatus, status.Reason)
+			klog.Infof("kubelet skew status: %v, status reason: %v", skewStatus, status.Reason)
 			optr.eventRecorder.Eventf(mcoObjectRef, corev1.EventTypeWarning, coStatus.Reason, coStatus.Message)
 			return optr.updateStatus(co, coStatus)
 		case skewPresent:
 			coStatus.Reason = status.Reason
 			coStatus.Message = status.Message
-			glog.Infof("kubelet skew status: %v, status reason: %v", skewStatus, status.Reason)
+			klog.Infof("kubelet skew status: %v, status reason: %v", skewStatus, status.Reason)
 			return optr.updateStatus(co, coStatus)
 		}
 	}
@@ -373,7 +373,7 @@ func (optr *Operator) syncMetrics() error {
 				latestTime = cond.LastTransitionTime
 			}
 		}
-		glog.Infof("Condition: %s, Machines: %d, UpdatedMachines: %d, DegradedMachines: %d, UnavailableMachines: %d", string(cond.Type), pool.Status.MachineCount, pool.Status.UpdatedMachineCount, pool.Status.DegradedMachineCount, pool.Status.UnavailableMachineCount)
+		klog.Infof("Condition: %s, Machines: %d, UpdatedMachines: %d, DegradedMachines: %d, UnavailableMachines: %d", string(cond.Type), pool.Status.MachineCount, pool.Status.UpdatedMachineCount, pool.Status.DegradedMachineCount, pool.Status.UnavailableMachineCount)
 		mcoState.WithLabelValues(pool.Name, string(cond.Type), cond.Reason).SetToCurrentTime()
 		mcoMachineCount.WithLabelValues(pool.Name).Set(float64(pool.Status.MachineCount))
 		mcoUpdatedMachineCount.WithLabelValues(pool.Name).Set(float64(pool.Status.UpdatedMachineCount))
@@ -566,7 +566,7 @@ func (optr *Operator) initializeClusterOperator() (*configv1.ClusterOperator, er
 func (optr *Operator) setOperatorStatusExtension(status *configv1.ClusterOperatorStatus, statusErr error) {
 	statuses, err := optr.allMachineConfigPoolStatus()
 	if err != nil {
-		glog.Error(err)
+		klog.Error(err)
 		return
 	}
 	if statusErr != nil {
@@ -574,7 +574,7 @@ func (optr *Operator) setOperatorStatusExtension(status *configv1.ClusterOperato
 	}
 	raw, err := json.Marshal(statuses)
 	if err != nil {
-		glog.Error(err)
+		klog.Error(err)
 		return
 	}
 	status.Extension.Raw = raw

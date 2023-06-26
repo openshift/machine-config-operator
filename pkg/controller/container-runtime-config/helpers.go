@@ -18,7 +18,6 @@ import (
 	"github.com/containers/image/v5/types"
 	storageconfig "github.com/containers/storage/pkg/config"
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
-	"github.com/golang/glog"
 	apicfgv1 "github.com/openshift/api/config/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	"github.com/openshift/runtime-utils/pkg/registries"
@@ -26,6 +25,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/klog/v2"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -336,7 +336,7 @@ func createCRIODropinFiles(cfg *mcfgv1.ContainerRuntimeConfig) []generatedConfig
 		tomlConf.Crio.Runtime.LogLevel = ctrcfg.LogLevel
 		generatedConfigFileList, err = addTOMLgeneratedConfigFile(generatedConfigFileList, CRIODropInFilePathLogLevel, tomlConf)
 		if err != nil {
-			glog.V(2).Infoln(cfg, err, "error updating user changes for log-level to crio.conf.d: %v", err)
+			klog.V(2).Infoln(cfg, err, "error updating user changes for log-level to crio.conf.d: %v", err)
 		}
 	}
 	if ctrcfg.PidsLimit != nil {
@@ -344,7 +344,7 @@ func createCRIODropinFiles(cfg *mcfgv1.ContainerRuntimeConfig) []generatedConfig
 		tomlConf.Crio.Runtime.PidsLimit = *ctrcfg.PidsLimit
 		generatedConfigFileList, err = addTOMLgeneratedConfigFile(generatedConfigFileList, crioDropInFilePathPidsLimit, tomlConf)
 		if err != nil {
-			glog.V(2).Infoln(cfg, err, "error updating user changes for pids-limit to crio.conf.d: %v", err)
+			klog.V(2).Infoln(cfg, err, "error updating user changes for pids-limit to crio.conf.d: %v", err)
 		}
 	}
 	if ctrcfg.LogSizeMax.Value() != 0 {
@@ -352,7 +352,7 @@ func createCRIODropinFiles(cfg *mcfgv1.ContainerRuntimeConfig) []generatedConfig
 		tomlConf.Crio.Runtime.LogSizeMax = ctrcfg.LogSizeMax.Value()
 		generatedConfigFileList, err = addTOMLgeneratedConfigFile(generatedConfigFileList, crioDropInFilePathLogSizeMax, tomlConf)
 		if err != nil {
-			glog.V(2).Infoln(cfg, err, "error updating user changes for log-size-max to crio.conf.d: %v", err)
+			klog.V(2).Infoln(cfg, err, "error updating user changes for log-size-max to crio.conf.d: %v", err)
 		}
 	}
 	if ctrcfg.DefaultRuntime != mcfgv1.ContainerRuntimeDefaultRuntimeEmpty {
@@ -360,7 +360,7 @@ func createCRIODropinFiles(cfg *mcfgv1.ContainerRuntimeConfig) []generatedConfig
 		tomlConf.Crio.Runtime.DefaultRuntime = string(ctrcfg.DefaultRuntime)
 		generatedConfigFileList, err = addTOMLgeneratedConfigFile(generatedConfigFileList, CRIODropInFilePathDefaultRuntime, tomlConf)
 		if err != nil {
-			glog.V(2).Infoln(cfg, err, "error updating user changes for default-runtime to crio.conf.d: %v", err)
+			klog.V(2).Infoln(cfg, err, "error updating user changes for default-runtime to crio.conf.d: %v", err)
 		}
 	}
 	return generatedConfigFileList
@@ -377,7 +377,7 @@ func updateSearchRegistriesConfig(searchRegs []string) []generatedConfigFile {
 	tomlConf.UnqualifiedSearchRegistries = searchRegs
 	generatedConfigFileList, err = addTOMLgeneratedConfigFile(generatedConfigFileList, searchRegDropInFilePath, tomlConf)
 	if err != nil {
-		glog.Warningln("error updating user changes for containerRuntimeSearchRegistries to registries.conf.d: ", err)
+		klog.Warningln("error updating user changes for containerRuntimeSearchRegistries to registries.conf.d: ", err)
 	}
 	return generatedConfigFileList
 }
@@ -562,7 +562,7 @@ func getValidBlockedAndAllowedRegistries(releaseImage string, imgSpec *apicfgv1.
 				continue
 			}
 			// Log a warning that we are adding the payload registries to the blocked registries list as there are mirror rules for it
-			glog.Warningf("%q matches the payload repository, but will add it to the list of blocked registries as there are mirror rules configured for it", reg)
+			klog.Warningf("%q matches the payload repository, but will add it to the list of blocked registries as there are mirror rules configured for it", reg)
 			// Intentionally do NOT add reg to policyBlocked, to allow using payloadRepo (physically accessing the mirrors)
 			// In the future, this will be user-controlled via https://github.com/openshift/api/blob/1a6fa2913810101176a1d776f899fc4781b3fa50/config/v1/types_image_digest_mirror_set.go#L74
 			registriesBlocked = append(registriesBlocked, reg)
