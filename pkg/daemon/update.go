@@ -1509,7 +1509,7 @@ func (dn *Daemon) writeUnits(units []ign3types.Unit) error {
 // writeFiles writes the given files to disk.
 // it doesn't fetch remote files and expects a flattened config file.
 func (dn *Daemon) writeFiles(files []ign3types.File, skipCertificateWrite bool) error {
-	return writeFiles(files, skipCertificateWrite)
+	return writeFiles(files, skipCertificateWrite, dn.os.IsCoreOSVariant())
 }
 
 // Ensures that both the SSH root directory (/home/core/.ssh) as well as any

@@ -8,6 +8,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/google/renameio"
@@ -45,12 +46,40 @@ func noOrigFileStampName(fpath string) string {
 	return filepath.Join(noOrigParentDir(), fpath+".mcdnoorig")
 }
 
-func createOrigFile(fromPath, fpath string) error {
+func createOrigFile(fromPath, fpath string, isCoreOSVariant bool) error {
 	if _, err := os.Stat(noOrigFileStampName(fpath)); err == nil {
 		// we already created the no orig file for this default file
 		return nil
 	}
-	if _, err := os.Stat(fpath); os.IsNotExist(err) {
+
+	// Declare a boolean variable - orig - to indicate whether an orig file should be created
+	// for the given path
+	// true - orig file
+	// false - noOrig file
+	var orig bool
+
+	// https://issues.redhat.com/browse/OCPBUGS-11437
+	// MCO keeps the pull secret to .orig file once it replaced
+	// Adapt a check used in function deleteStaleData for backwards compatibility: basically if the file doesn't
+	// exist in /usr/etc (on FCOS/RHCOS) and no rpm is claiming it, we assume that the orig file came from a
+	// wrongful backup of a MachineConfig file instead of a file originally on disk.
+
+	if _, err := exec.Command("rpm", "-qf", fpath).CombinedOutput(); err == nil {
+		// File is owned by an rpm
+		orig = true
+	} else if strings.HasPrefix(fpath, "/etc") && isCoreOSVariant {
+		if _, err := os.Stat(withUsrPath(fpath)); err != nil {
+			if !os.IsNotExist(err) {
+				return err
+			}
+		} else {
+			orig = true
+		}
+	} else {
+		orig = false
+	}
+
+	if !orig {
 		// create a noorig file that tells the MCD that the file wasn't present on disk before MCD
 		// took over so it can just remove it when deleting stale data, as opposed as restoring a file
 		// that was shipped _with_ the underlying OS (e.g. a default chrony config).
@@ -137,7 +166,7 @@ func writeDropins(u ign3types.Unit, systemdRoot string, isCoreOSVariant bool) er
 		klog.Infof("Writing systemd unit dropin %q", u.Dropins[i].Name)
 		if _, err := os.Stat(withUsrPath(dpath)); err == nil &&
 			isCoreOSVariant {
-			if err := createOrigFile(withUsrPath(dpath), dpath); err != nil {
+			if err := createOrigFile(withUsrPath(dpath), dpath, isCoreOSVariant); err != nil {
 				return err
 			}
 		}
@@ -153,7 +182,7 @@ func writeDropins(u ign3types.Unit, systemdRoot string, isCoreOSVariant bool) er
 
 // writeFiles writes the given files to disk.
 // it doesn't fetch remote files and expects a flattened config file.
-func writeFiles(files []ign3types.File, skipCertificateWrite bool) error {
+func writeFiles(files []ign3types.File, skipCertificateWrite, isCoreOSVariant bool) error {
 	for _, file := range files {
 		if skipCertificateWrite && file.Path == caBundleFilePath {
 			// TODO remove this special case once we have a better way to do this
@@ -183,7 +212,7 @@ func writeFiles(files []ign3types.File, skipCertificateWrite bool) error {
 		if err != nil {
 			return fmt.Errorf("failed to retrieve file ownership for file %q: %w", file.Path, err)
 		}
-		if err := createOrigFile(file.Path, file.Path); err != nil {
+		if err := createOrigFile(file.Path, file.Path, isCoreOSVariant); err != nil {
 			return err
 		}
 		if err := writeFileAtomically(file.Path, decodedContents, defaultDirectoryPermissions, mode, uid, gid); err != nil {
@@ -223,7 +252,7 @@ func writeUnit(u ign3types.Unit, systemdRoot string, isCoreOSVariant bool) error
 		klog.Infof("Writing systemd unit %q", u.Name)
 		if _, err := os.Stat(withUsrPath(fpath)); err == nil &&
 			isCoreOSVariant {
-			if err := createOrigFile(withUsrPath(fpath), fpath); err != nil {
+			if err := createOrigFile(withUsrPath(fpath), fpath, isCoreOSVariant); err != nil {
 				return err
 			}
 		}

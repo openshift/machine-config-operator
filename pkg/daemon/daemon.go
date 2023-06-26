@@ -1876,7 +1876,7 @@ func (dn *Daemon) runOnceFromIgnition(ignConfig ign3types.Config) error {
 	if err := dn.writeUnits(ignConfig.Systemd.Units); err != nil {
 		return err
 	}
-	// Unconditionally remove this file in the once-from (classic RHEL)
+	// Unconditionally remove this file in the once-from (classic RsHEL)
 	// case.  We use this file to suppress things like kubelet and SDN
 	// starting on CoreOS during the firstboot/pivot boot, but there's
 	// no such thing on classic RHEL.
