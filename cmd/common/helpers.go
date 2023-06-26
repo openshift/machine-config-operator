@@ -5,13 +5,13 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/internal/clients"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/klog/v2"
 
 	"context"
 
@@ -31,7 +31,7 @@ func CreateResourceLock(cb *clients.Builder, componentNamespace, componentName s
 
 	id, err := os.Hostname()
 	if err != nil {
-		glog.Fatalf("error creating lock: %v", err)
+		klog.Fatalf("error creating lock: %v", err)
 	}
 
 	// add a uniquifier so that two processes on the same host don't accidentally both become active
@@ -73,7 +73,7 @@ func GetLeaderElectionConfig(restcfg *rest.Config) configv1.LeaderElection {
 			return leaderelection.LeaderElectionSNOConfig(defaultLeaderElection)
 		}
 	} else {
-		glog.Warningf("unable to get cluster infrastructure status, using HA cluster values for leader election: %v", err)
+		klog.Warningf("unable to get cluster infrastructure status, using HA cluster values for leader election: %v", err)
 	}
 
 	return defaultLeaderElection
@@ -90,11 +90,11 @@ func SignalHandler(runCancel context.CancelFunc) {
 	// catch SIGINT and SIGTERM
 	signal.Notify(ch, os.Interrupt, syscall.SIGTERM)
 	sig := <-ch
-	glog.Infof("Shutting down due to: %s", sig)
+	klog.Infof("Shutting down due to: %s", sig)
 	// if we're shutting down, cancel the context so everything else will stop
 	runCancel()
-	glog.Infof("Context cancelled")
+	klog.Infof("Context cancelled")
 	sig = <-ch
-	glog.Fatalf("Received shutdown signal twice, exiting: %s", sig)
+	klog.Fatalf("Received shutdown signal twice, exiting: %s", sig)
 
 }

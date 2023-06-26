@@ -3,13 +3,13 @@ package containerruntimeconfig
 import (
 	"fmt"
 
-	"github.com/golang/glog"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/klog/v2"
 )
 
 // RunContainerRuntimeBootstrap generates ignition configs at bootstrap
@@ -43,7 +43,7 @@ func RunContainerRuntimeBootstrap(templateDir string, crconfigs []*mcfgv1.Contai
 			if !ctrcfg.OverlaySize.IsZero() {
 				storageTOML, err := mergeConfigChanges(originalStorageIgn, cfg, updateStorageConfig)
 				if err != nil {
-					glog.V(2).Infoln(cfg, err, "error merging user changes to storage.conf: %v", err)
+					klog.V(2).Infoln(cfg, err, "error merging user changes to storage.conf: %v", err)
 				} else {
 					configFileList = append(configFileList, generatedConfigFile{filePath: storageConfigPath, data: storageTOML})
 				}

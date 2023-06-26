@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/clarketm/json"
-	"github.com/golang/glog"
 	osev1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -20,6 +19,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/retry"
+	"k8s.io/klog/v2"
 )
 
 func (ctrl *Controller) nodeConfigWorker() {
@@ -46,13 +46,13 @@ func (ctrl *Controller) handleNodeConfigErr(err error, key interface{}) {
 	}
 
 	if ctrl.nodeConfigQueue.NumRequeues(key) < maxRetries {
-		glog.V(4).Infof("Error syncing node configuration %v: %v", key, err)
+		klog.V(4).Infof("Error syncing node configuration %v: %v", key, err)
 		ctrl.nodeConfigQueue.AddRateLimited(key)
 		return
 	}
 
 	utilruntime.HandleError(err)
-	glog.V(2).Infof("Dropping node config %q out of the queue: %v", key, err)
+	klog.V(2).Infof("Dropping node config %q out of the queue: %v", key, err)
 	ctrl.nodeConfigQueue.Forget(key)
 	ctrl.nodeConfigQueue.AddAfter(key, 1*time.Minute)
 }
@@ -62,9 +62,9 @@ func (ctrl *Controller) handleNodeConfigErr(err error, key interface{}) {
 // node specific features such as cgroup modes, workerlatencyprofiles, etc.
 func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 	startTime := time.Now()
-	glog.V(4).Infof("Started syncing nodeConfig handler %q (%v)", key, startTime)
+	klog.V(4).Infof("Started syncing nodeConfig handler %q (%v)", key, startTime)
 	defer func() {
-		glog.V(4).Infof("Finished syncing nodeConfig handler %q (%v)", key, time.Since(startTime))
+		klog.V(4).Infof("Finished syncing nodeConfig handler %q (%v)", key, time.Since(startTime))
 	}()
 
 	// Fetch the Node
@@ -78,7 +78,7 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 	}
 	// checking if the Node spec is empty and accordingly returning from here.
 	if reflect.DeepEqual(nodeConfig.Spec, osev1.NodeSpec{}) {
-		glog.V(2).Info("empty Node resource found")
+		klog.V(2).Info("empty Node resource found")
 		return nil
 	}
 
@@ -156,7 +156,7 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 		}); err != nil {
 			return fmt.Errorf("Could not Create/Update MachineConfig, error: %w", err)
 		}
-		glog.Infof("Applied Node configuration %v on MachineConfigPool %v", key, pool.Name)
+		klog.Infof("Applied Node configuration %v on MachineConfigPool %v", key, pool.Name)
 	}
 	// fetch the kubeletconfigs
 	kcs, err := ctrl.mckLister.List(labels.Everything())
@@ -198,7 +198,7 @@ func (ctrl *Controller) updateNodeConfig(old, cur interface{}) {
 	if newNode.Name != ctrlcommon.ClusterNodeInstanceName {
 		message := fmt.Sprintf("The node.config.openshift.io \"%v\" is invalid: metadata.name Invalid value: \"%v\" : must be \"%v\"", newNode.Name, newNode.Name, ctrlcommon.ClusterNodeInstanceName)
 		ctrl.eventRecorder.Eventf(oldNode, corev1.EventTypeNormal, "ActionProhibited", message)
-		glog.V(2).Infof(message)
+		klog.V(2).Infof(message)
 		return
 	}
 	if !reflect.DeepEqual(oldNode.Spec, newNode.Spec) {
@@ -218,10 +218,10 @@ func (ctrl *Controller) updateNodeConfig(old, cur interface{}) {
 		if !isValidWorkerLatencyProfleTransition {
 			message := fmt.Sprintf("Skipping the Update Node event, name: %s, transition not allowed from old WorkerLatencyProfile: \"%s\" to new WorkerLatencyProfile: \"%s\"", newNode.Name, oldNode.Spec.WorkerLatencyProfile, newNode.Spec.WorkerLatencyProfile)
 			ctrl.eventRecorder.Eventf(newNode, corev1.EventTypeNormal, "ActionProhibited", message)
-			glog.Infof(message)
+			klog.Infof(message)
 			return
 		}
-		glog.V(4).Infof("Updating the node config resource, name: %s", newNode.Name)
+		klog.V(4).Infof("Updating the node config resource, name: %s", newNode.Name)
 		ctrl.enqueueNodeConfig(newNode)
 	}
 }
@@ -234,11 +234,11 @@ func (ctrl *Controller) addNodeConfig(obj interface{}) {
 	}
 	if nodeConfig.Name != ctrlcommon.ClusterNodeInstanceName {
 		message := fmt.Sprintf("The node.config.openshift.io \"%v\" is invalid: metadata.name Invalid value: \"%v\" : must be \"%v\"", nodeConfig.Name, nodeConfig.Name, ctrlcommon.ClusterNodeInstanceName)
-		glog.V(2).Infof(message)
+		klog.V(2).Infof(message)
 		ctrl.eventRecorder.Eventf(nodeConfig, corev1.EventTypeNormal, "ActionProhibited", message)
 		return
 	}
-	glog.V(4).Infof("Adding the node config resource, name: %s", nodeConfig.Name)
+	klog.V(4).Infof("Adding the node config resource, name: %s", nodeConfig.Name)
 	ctrl.enqueueNodeConfig(nodeConfig)
 }
 
@@ -256,7 +256,7 @@ func (ctrl *Controller) deleteNodeConfig(obj interface{}) {
 			return
 		}
 	}
-	glog.V(4).Infof("Deleted node config %s and restored default config", nodeConfig.Name)
+	klog.V(4).Infof("Deleted node config %s and restored default config", nodeConfig.Name)
 }
 
 func RunNodeConfigBootstrap(templateDir string, featureGateAccess featuregates.FeatureGateAccess, cconfig *mcfgv1.ControllerConfig, nodeConfig *osev1.Node, mcpPools []*mcfgv1.MachineConfigPool) ([]*mcfgv1.MachineConfig, error) {
@@ -265,7 +265,7 @@ func RunNodeConfigBootstrap(templateDir string, featureGateAccess featuregates.F
 	}
 	// checking if the Node spec is empty and accordingly returning from here.
 	if reflect.DeepEqual(nodeConfig.Spec, osev1.NodeSpec{}) {
-		glog.V(2).Info("empty Node resource found")
+		klog.V(2).Info("empty Node resource found")
 		return nil, nil
 	}
 	configs := []*mcfgv1.MachineConfig{}

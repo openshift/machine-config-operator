@@ -5,7 +5,6 @@ import (
 	"flag"
 	"os"
 
-	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/cmd/common"
 	"github.com/openshift/machine-config-operator/internal/clients"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -13,6 +12,7 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/tools/leaderelection"
+	"k8s.io/klog/v2"
 )
 
 var (
@@ -46,15 +46,15 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	runContext, runCancel := context.WithCancel(context.Background())
 
 	// To help debugging, immediately log version
-	glog.Infof("Version: %s (Raw: %s, Hash: %s)", version.ReleaseVersion, version.Raw, version.Hash)
+	klog.Infof("Version: %s (Raw: %s, Hash: %s)", version.ReleaseVersion, version.Raw, version.Hash)
 
 	if startOpts.imagesFile == "" {
-		glog.Fatal("--images-json cannot be empty")
+		klog.Fatal("--images-json cannot be empty")
 	}
 
 	cb, err := clients.NewBuilder(startOpts.kubeconfig)
 	if err != nil {
-		glog.Fatalf("error creating clients: %v", err)
+		klog.Fatalf("error creating clients: %v", err)
 	}
 
 	stopCh := make(chan struct{})
@@ -121,7 +121,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: run,
 			OnStoppedLeading: func() {
-				glog.Info("Stopped leading. Terminating.")
+				klog.Info("Stopped leading. Terminating.")
 				os.Exit(0)
 			},
 		},

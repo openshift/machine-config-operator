@@ -10,8 +10,8 @@ import (
 	"strconv"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
-	"github.com/golang/glog"
 	"github.com/google/renameio"
+	"k8s.io/klog/v2"
 
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 )
@@ -120,21 +120,21 @@ func writeDropins(u ign3types.Unit, systemdRoot string, isCoreOSVariant bool) er
 	for i := range u.Dropins {
 		dpath := filepath.Join(systemdRoot, u.Name+".d", u.Dropins[i].Name)
 		if u.Dropins[i].Contents == nil || *u.Dropins[i].Contents == "" {
-			glog.Infof("Dropin for %s has no content, skipping write", u.Dropins[i].Name)
+			klog.Infof("Dropin for %s has no content, skipping write", u.Dropins[i].Name)
 			if _, err := os.Stat(dpath); err != nil {
 				if os.IsNotExist(err) {
 					continue
 				}
 				return err
 			}
-			glog.Infof("Removing %q, updated file has zero length", dpath)
+			klog.Infof("Removing %q, updated file has zero length", dpath)
 			if err := os.Remove(dpath); err != nil {
 				return err
 			}
 			continue
 		}
 
-		glog.Infof("Writing systemd unit dropin %q", u.Dropins[i].Name)
+		klog.Infof("Writing systemd unit dropin %q", u.Dropins[i].Name)
 		if _, err := os.Stat(withUsrPath(dpath)); err == nil &&
 			isCoreOSVariant {
 			if err := createOrigFile(withUsrPath(dpath), dpath); err != nil {
@@ -145,7 +145,7 @@ func writeDropins(u ign3types.Unit, systemdRoot string, isCoreOSVariant bool) er
 			return fmt.Errorf("failed to write systemd unit dropin %q: %w", u.Dropins[i].Name, err)
 		}
 
-		glog.V(2).Infof("Wrote systemd unit dropin at %s", dpath)
+		klog.V(2).Infof("Wrote systemd unit dropin at %s", dpath)
 	}
 
 	return nil
@@ -157,10 +157,10 @@ func writeFiles(files []ign3types.File, skipCertificateWrite bool) error {
 	for _, file := range files {
 		if skipCertificateWrite && file.Path == caBundleFilePath {
 			// TODO remove this special case once we have a better way to do this
-			glog.V(4).Infof("Skipping file %s during writeFiles", caBundleFilePath)
+			klog.V(4).Infof("Skipping file %s during writeFiles", caBundleFilePath)
 			continue
 		}
-		glog.Infof("Writing file %q", file.Path)
+		klog.Infof("Writing file %q", file.Path)
 
 		// We don't support appends in the file section, so instead of waiting to fail validation,
 		// let's explicitly fail here.
@@ -204,23 +204,23 @@ func writeUnit(u ign3types.Unit, systemdRoot string, isCoreOSVariant bool) error
 	if u.Mask != nil && *u.Mask {
 		// if the unit is masked, symlink fpath to /dev/null and return early.
 
-		glog.V(2).Info("Systemd unit masked")
+		klog.V(2).Info("Systemd unit masked")
 		if err := os.RemoveAll(fpath); err != nil {
 			return fmt.Errorf("failed to remove unit %q: %w", u.Name, err)
 		}
-		glog.V(2).Infof("Removed unit %q", u.Name)
+		klog.V(2).Infof("Removed unit %q", u.Name)
 
 		if err := renameio.Symlink(pathDevNull, fpath); err != nil {
 			return fmt.Errorf("failed to symlink unit %q to %s: %w", u.Name, pathDevNull, err)
 		}
-		glog.V(2).Infof("Created symlink unit %q to %s", u.Name, pathDevNull)
+		klog.V(2).Infof("Created symlink unit %q to %s", u.Name, pathDevNull)
 
 		// Return early since we don't need to write the file contents in this case.
 		return nil
 	}
 
 	if u.Contents != nil && *u.Contents != "" {
-		glog.Infof("Writing systemd unit %q", u.Name)
+		klog.Infof("Writing systemd unit %q", u.Name)
 		if _, err := os.Stat(withUsrPath(fpath)); err == nil &&
 			isCoreOSVariant {
 			if err := createOrigFile(withUsrPath(fpath), fpath); err != nil {
@@ -231,14 +231,14 @@ func writeUnit(u ign3types.Unit, systemdRoot string, isCoreOSVariant bool) error
 			return fmt.Errorf("failed to write systemd unit %q: %w", u.Name, err)
 		}
 
-		glog.V(2).Infof("Successfully wrote systemd unit %q: ", u.Name)
+		klog.V(2).Infof("Successfully wrote systemd unit %q: ", u.Name)
 	} else if u.Mask != nil && !*u.Mask {
 		// if mask is explicitly set to false, make sure to remove a previous mask
 		// see https://bugzilla.redhat.com/show_bug.cgi?id=1966445
 		// Note that this does not catch all cleanup cases; for example, if the previous machine config specified
 		// Contents, and the current one does not, the previous content will not get cleaned up. For now we're ignoring some
 		// of those edge cases rather than introducing more complexity.
-		glog.V(2).Infof("Ensuring systemd unit %q has no mask at %q", u.Name, fpath)
+		klog.V(2).Infof("Ensuring systemd unit %q has no mask at %q", u.Name, fpath)
 		if err := os.RemoveAll(fpath); err != nil {
 			return fmt.Errorf("failed to cleanup %s: %w", fpath, err)
 		}
@@ -263,7 +263,7 @@ func lookupUID(username string) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("failed to retrieve UserID for username: %s", username)
 	}
-	glog.V(2).Infof("Retrieved UserId: %s for username: %s", osUser.Uid, username)
+	klog.V(2).Infof("Retrieved UserId: %s for username: %s", osUser.Uid, username)
 	uid, _ := strconv.Atoi(osUser.Uid)
 	return uid, nil
 }
@@ -273,7 +273,7 @@ func lookupGID(group string) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("failed to retrieve GroupID for group: %v", group)
 	}
-	glog.V(2).Infof("Retrieved GroupID: %s for group: %s", osGroup.Gid, group)
+	klog.V(2).Infof("Retrieved GroupID: %s for group: %s", osGroup.Gid, group)
 	gid, _ := strconv.Atoi(osGroup.Gid)
 	return gid, nil
 }

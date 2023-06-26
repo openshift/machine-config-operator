@@ -42,11 +42,11 @@ import (
 	ign3_4types "github.com/coreos/ignition/v2/config/v3_4/types"
 	validate3 "github.com/coreos/ignition/v2/config/validate"
 	"github.com/ghodss/yaml"
-	"github.com/golang/glog"
 	"github.com/vincent-petithory/dataurl"
 	kerr "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/klog/v2"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
@@ -255,7 +255,7 @@ func WriteTerminationError(err error) {
 	// G306: Expect WriteFile permissions to be 0600 or less
 	// #nosec
 	os.WriteFile("/dev/termination-log", []byte(msg), 0o644)
-	glog.Fatal(msg)
+	klog.Fatal(msg)
 }
 
 // ConvertRawExtIgnitionToV3 ensures that the Ignition config in
@@ -407,7 +407,7 @@ func convertIgnition2to3(ign2config ign2types.Config) (ign3types.Config, error) 
 	// Workaround to get a v3.2 config as output
 	converted3 := translate3.Translate(translate3_1.Translate(ign3_0config))
 
-	glog.V(4).Infof("Successfully translated Ignition spec v2 config to Ignition spec v3 config: %v", converted3)
+	klog.V(4).Infof("Successfully translated Ignition spec v2 config to Ignition spec v3 config: %v", converted3)
 	return converted3, nil
 }
 
@@ -417,7 +417,7 @@ func convertIgnition3to2(ign3config ign3types.Config) (ign2types.Config, error) 
 	if err != nil {
 		return ign2types.Config{}, fmt.Errorf("unable to convert Ignition spec v3 config to v2: %w", err)
 	}
-	glog.V(4).Infof("Successfully translated Ignition spec v3 config to Ignition spec v2 config: %v", converted2)
+	klog.V(4).Infof("Successfully translated Ignition spec v3 config to Ignition spec v2 config: %v", converted2)
 
 	return converted2, nil
 }
@@ -428,7 +428,7 @@ func convertIgnition32to31(ign3config ign3types.Config) (ign3_1types.Config, err
 	if err != nil {
 		return ign3_1types.Config{}, fmt.Errorf("unable to convert Ignition spec v3_2 config to v3_1: %w", err)
 	}
-	glog.V(4).Infof("Successfully translated Ignition spec v3_2 config to Ignition spec v3_1 config: %v", converted31)
+	klog.V(4).Infof("Successfully translated Ignition spec v3_2 config to Ignition spec v3_1 config: %v", converted31)
 
 	return converted31, nil
 }
@@ -669,7 +669,7 @@ func ParseAndConvertGzippedConfig(rawIgn []byte) (ign3types.Config, error) {
 	out, err := decodeAndDecompressPayload(bytes.NewReader(rawIgn))
 	if err == nil {
 		// Our payload was decoded and decompressed, so parse it as Ignition.
-		glog.V(2).Info("ignition config was base64-decoded and gunzipped successfully")
+		klog.V(2).Info("ignition config was base64-decoded and gunzipped successfully")
 		return ParseAndConvertConfig(out)
 	}
 
@@ -677,18 +677,18 @@ func ParseAndConvertGzippedConfig(rawIgn []byte) (ign3types.Config, error) {
 	// e.g.: $ gzip -9 ign_config.json
 	var base64Err base64.CorruptInputError
 	if errors.As(err, &base64Err) {
-		glog.V(2).Info("ignition config was not base64 encoded, trying to gunzip ignition config")
+		klog.V(2).Info("ignition config was not base64 encoded, trying to gunzip ignition config")
 		out, err = decompressPayload(bytes.NewReader(rawIgn))
 		if err == nil {
 			// We were able to decompress our payload, so let's try parsing it
-			glog.V(2).Info("ignition config was gunzipped successfully")
+			klog.V(2).Info("ignition config was gunzipped successfully")
 			return ParseAndConvertConfig(out)
 		}
 	}
 
 	// Our Ignition config is not gzipped, so let's try to serialize the raw Ignition directly.
 	if errors.Is(err, errConfigNotGzipped) {
-		glog.V(2).Info("ignition config was not gzipped")
+		klog.V(2).Info("ignition config was not gzipped")
 		return ParseAndConvertConfig(rawIgn)
 	}
 
@@ -796,7 +796,7 @@ func removeIgnDuplicateFilesUnitsUsers(ignConfig ign2types.Config) (ign2types.Co
 						continue
 					}
 				}
-				glog.V(2).Infof("Found duplicate unit %v, appending dropin section", unitName)
+				klog.V(2).Infof("Found duplicate unit %v, appending dropin section", unitName)
 			}
 			continue
 		}
@@ -949,7 +949,7 @@ func dedupePasswdUserSSHKeys(passwdUser ign2types.PasswdUser) ign2types.PasswdUs
 	for _, sshKey := range passwdUser.SSHAuthorizedKeys {
 		if _, isKnown := knownSSHKeys[sshKey]; isKnown {
 			// We've seen this key before warn and move on.
-			glog.Warningf("duplicate SSH public key found: %s", sshKey)
+			klog.Warningf("duplicate SSH public key found: %s", sshKey)
 			continue
 		}
 
@@ -983,7 +983,7 @@ func CalculateConfigFileDiffs(oldIgnConfig, newIgnConfig *ign3types.Config) []st
 		_, ok := newFileSet[path]
 		if !ok {
 			// debug: remove
-			glog.Infof("File diff: %v was deleted", path)
+			klog.Infof("File diff: %v was deleted", path)
 			diffFileSet = append(diffFileSet, path)
 		}
 	}
@@ -993,11 +993,11 @@ func CalculateConfigFileDiffs(oldIgnConfig, newIgnConfig *ign3types.Config) []st
 		oldFile, ok := oldFileSet[path]
 		if !ok {
 			// debug: remove
-			glog.Infof("File diff: %v was added", path)
+			klog.Infof("File diff: %v was added", path)
 			diffFileSet = append(diffFileSet, path)
 		} else if !reflect.DeepEqual(oldFile, newFile) {
 			// debug: remove
-			glog.Infof("File diff: detected change to %v", newFile.Path)
+			klog.Infof("File diff: detected change to %v", newFile.Path)
 			diffFileSet = append(diffFileSet, path)
 		}
 	}

@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/clarketm/json"
-	"github.com/golang/glog"
 	osev1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/library-go/pkg/cloudprovider"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
@@ -17,6 +16,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/retry"
+	"k8s.io/klog/v2"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -49,9 +49,9 @@ func (ctrl *Controller) processNextFeatureWorkItem() bool {
 
 func (ctrl *Controller) syncFeatureHandler(key string) error {
 	startTime := time.Now()
-	glog.V(4).Infof("Started syncing feature handler %q (%v)", key, startTime)
+	klog.V(4).Infof("Started syncing feature handler %q (%v)", key, startTime)
 	defer func() {
-		glog.V(4).Infof("Finished syncing feature handler %q (%v)", key, time.Since(startTime))
+		klog.V(4).Infof("Finished syncing feature handler %q (%v)", key, time.Since(startTime))
 	}()
 
 	cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
@@ -115,7 +115,7 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 		}); err != nil {
 			return fmt.Errorf("could not Create/Update MachineConfig: %w", err)
 		}
-		glog.Infof("Applied FeatureSet %v on MachineConfigPool %v", key, pool.Name)
+		klog.Infof("Applied FeatureSet %v on MachineConfigPool %v", key, pool.Name)
 	}
 	if err := ctrl.cleanUpDuplicatedMC(managedFeaturesKeyPrefix); err != nil {
 		return err
@@ -137,14 +137,14 @@ func (ctrl *Controller) updateFeature(old, cur interface{}) {
 	oldFeature := old.(*osev1.FeatureGate)
 	newFeature := cur.(*osev1.FeatureGate)
 	if !reflect.DeepEqual(oldFeature.Spec, newFeature.Spec) {
-		glog.V(4).Infof("Update Feature %s", newFeature.Name)
+		klog.V(4).Infof("Update Feature %s", newFeature.Name)
 		ctrl.enqueueFeature(newFeature)
 	}
 }
 
 func (ctrl *Controller) addFeature(obj interface{}) {
 	features := obj.(*osev1.FeatureGate)
-	glog.V(4).Infof("Adding Feature %s", features.Name)
+	klog.V(4).Infof("Adding Feature %s", features.Name)
 	ctrl.enqueueFeature(features)
 }
 
@@ -162,7 +162,7 @@ func (ctrl *Controller) deleteFeature(obj interface{}) {
 			return
 		}
 	}
-	glog.V(4).Infof("Deleted Feature %s and restored default config", features.Name)
+	klog.V(4).Infof("Deleted Feature %s and restored default config", features.Name)
 }
 
 // generateFeatureMap returns a map of enabled/disabled feature gate selection with exclusion list
