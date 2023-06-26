@@ -1622,7 +1622,7 @@ func (dn *Daemon) useNewSSHKeyPath() bool {
 
 // Update a given PasswdUser's SSHKey
 func (dn *Daemon) updateSSHKeys(newUsers, oldUsers []ign3types.PasswdUser) error {
-	glog.Info("updating SSH keys")
+	klog.Info("updating SSH keys")
 
 	// Checking to see if absent users need to be deconfigured
 	deconfigureAbsentUsers(newUsers, oldUsers)
