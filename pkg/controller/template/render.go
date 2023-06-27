@@ -26,8 +26,9 @@ import (
 // RenderConfig is wrapper around ControllerConfigSpec.
 type RenderConfig struct {
 	*mcfgv1.ControllerConfigSpec
-	PullSecret        string
-	FeatureGateAccess featuregates.FeatureGateAccess
+	PullSecret                 string
+	InternalRegistryPullSecret string
+	FeatureGateAccess          featuregates.FeatureGateAccess
 
 	// no need to set this, will be automatically configured
 	Constants map[string]string

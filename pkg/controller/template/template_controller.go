@@ -566,7 +566,7 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 		pullSecretRaw = secret.Data[corev1.DockerConfigJsonKey]
 	}
 
-	mcs, err := getMachineConfigsForControllerConfig(ctrl.templatesDir, cfg, pullSecretRaw, ctrl.featureGateAccess)
+	mcs, err := getMachineConfigsForControllerConfig(ctrl.templatesDir, cfg, pullSecretRaw, cfg.Spec.InternalRegistryPullSecret, ctrl.featureGateAccess)
 	if err != nil {
 		return ctrl.syncFailingStatus(cfg, err)
 	}
@@ -584,15 +584,16 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 	return ctrl.syncCompletedStatus(cfg)
 }
 
-func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.ControllerConfig, pullSecretRaw []byte, featureGateAccess featuregates.FeatureGateAccess) ([]*mcfgv1.MachineConfig, error) {
+func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.ControllerConfig, pullSecretRaw []byte, internalRegistryPullSecretRaw []byte, featureGateAccess featuregates.FeatureGateAccess) ([]*mcfgv1.MachineConfig, error) {
 	buf := &bytes.Buffer{}
 	if err := json.Compact(buf, pullSecretRaw); err != nil {
 		return nil, fmt.Errorf("couldn't compact pullsecret %q: %w", string(pullSecretRaw), err)
 	}
 	rc := &RenderConfig{
-		ControllerConfigSpec: &config.Spec,
-		PullSecret:           string(buf.Bytes()),
-		FeatureGateAccess:    featureGateAccess,
+		ControllerConfigSpec:       &config.Spec,
+		PullSecret:                 string(buf.Bytes()),
+		InternalRegistryPullSecret: string(internalRegistryPullSecretRaw),
+		FeatureGateAccess:          featureGateAccess,
 	}
 	mcs, err := generateTemplateMachineConfigs(rc, templatesDir)
 	if err != nil {
@@ -610,5 +611,5 @@ func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.Co
 
 // RunBootstrap runs the tempate controller in boostrap mode.
 func RunBootstrap(templatesDir string, config *mcfgv1.ControllerConfig, pullSecretRaw []byte, featureGateAccess featuregates.FeatureGateAccess) ([]*mcfgv1.MachineConfig, error) {
-	return getMachineConfigsForControllerConfig(templatesDir, config, pullSecretRaw, featureGateAccess)
+	return getMachineConfigsForControllerConfig(templatesDir, config, pullSecretRaw, nil, featureGateAccess)
 }
