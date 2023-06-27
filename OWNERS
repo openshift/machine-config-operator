@@ -1,17 +1,22 @@
 # See the OWNERS docs: https://git.k8s.io/community/contributors/guide/owners.md
 
 approvers:
+  - cdoern
   - cgwalters
+  - djoshy
+  - dkhater-redhat
   - sinnykumari
   - yuqi-zhang
   - cheesesashimi
   - jkyros
 reviewers:
+  - cdoern
   - cgwalters
+  - djoshy
+  - dkhater-redhat
   - sinnykumari
   - yuqi-zhang
   - cheesesashimi
   - jkyros
-  - raisaat
 
 component: "Machine Config Operator"
