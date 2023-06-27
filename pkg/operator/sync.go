@@ -18,6 +18,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apiextv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -35,6 +36,7 @@ import (
 	mcoResourceRead "github.com/openshift/machine-config-operator/lib/resourceread"
 	"github.com/openshift/machine-config-operator/manifests"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	v1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	templatectrl "github.com/openshift/machine-config-operator/pkg/controller/template"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
@@ -244,6 +246,94 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 		return fmt.Errorf("refusing to read images.json version %q, operator version %q", imgs.ReleaseVersion, optrVersion)
 	}
 
+	// handle image registry certificates.
+	// parse these, add them to ctrlcfgspec and then handle these in the daemon write to disk function
+	cfg, err := optr.imgLister.Get("cluster")
+	if err != nil {
+		return err
+	}
+	imgRegistryUsrData := []v1.ImageRegistryBundle{}
+	if cfg.Spec.AdditionalTrustedCA.Name != "" {
+		cm, err := optr.clusterCmLister.ConfigMaps("openshift-config").Get(cfg.Spec.AdditionalTrustedCA.Name)
+		if err != nil {
+			klog.Warningf("could not find configmap specified in image.config.openshift.io/cluster with the name %s", cfg.Spec.AdditionalTrustedCA.Name)
+		} else {
+			for key, d := range cm.Data {
+				raw, err := base64.StdEncoding.DecodeString(d)
+				if err != nil {
+					imgRegistryUsrData = append(imgRegistryUsrData, v1.ImageRegistryBundle{
+						File: key,
+						Data: []byte(d),
+					})
+				} else {
+					imgRegistryUsrData = append(imgRegistryUsrData, v1.ImageRegistryBundle{
+						File: key,
+						Data: raw,
+					})
+				}
+			}
+			for key, bd := range cm.BinaryData {
+				imgRegistryUsrData = append(imgRegistryUsrData, v1.ImageRegistryBundle{
+					File: key,
+					Data: bd,
+				})
+			}
+		}
+	}
+
+	imgRegistryData := []v1.ImageRegistryBundle{}
+	cm, err := optr.clusterCmLister.ConfigMaps("openshift-config-managed").Get("image-registry-ca")
+	if err == nil {
+		for key, d := range cm.Data {
+			raw, err := base64.StdEncoding.DecodeString(d)
+			if err != nil {
+				imgRegistryData = append(imgRegistryData, v1.ImageRegistryBundle{
+					File: key,
+					Data: []byte(d),
+				})
+			} else {
+				imgRegistryData = append(imgRegistryData, v1.ImageRegistryBundle{
+					File: key,
+					Data: raw,
+				})
+			}
+		}
+		for key, bd := range cm.BinaryData {
+			imgRegistryData = append(imgRegistryData, v1.ImageRegistryBundle{
+				File: key,
+				Data: bd,
+			})
+		}
+	}
+
+	mergedData := append(imgRegistryData, imgRegistryUsrData...)
+	caData := make(map[string]string, len(mergedData))
+	for _, CA := range mergedData {
+		caData[CA.File] = string(CA.Data)
+	}
+
+	err = optr.kubeClient.CoreV1().ConfigMaps("openshift-config-managed").Delete(context.TODO(), "merged-trusted-image-registry-ca", metav1.DeleteOptions{})
+	if err != nil && !errors.IsNotFound(err) {
+		return err
+	}
+
+	cmAnnotations := make(map[string]string)
+	cmAnnotations["openshift.io/description"] = "Created and managed by the machine-config-operator"
+	_, err = optr.kubeClient.CoreV1().ConfigMaps("openshift-config-managed").Create(
+		context.TODO(),
+		&corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:        "merged-trusted-image-registry-ca",
+				Annotations: cmAnnotations,
+			},
+			Data: caData,
+		},
+		metav1.CreateOptions{},
+	)
+	if err != nil {
+		return err
+	}
+
 	// sync up CAs
 	rootCA, err := optr.getCAsFromConfigMap("kube-system", "root-ca", "ca.crt")
 	if err != nil {
@@ -358,6 +448,8 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 
 	spec.KubeAPIServerServingCAData = kubeAPIServerServingCABytes
 	spec.RootCAData = bundle
+	spec.ImageRegistryBundleData = imgRegistryData
+	spec.ImageRegistryBundleUserData = imgRegistryUsrData
 	spec.PullSecret = &corev1.ObjectReference{Namespace: "openshift-config", Name: "pull-secret"}
 	spec.OSImageURL = imgs.MachineOSContent
 	spec.BaseOSContainerImage = imgs.BaseOSContainerImage
@@ -1122,6 +1214,7 @@ func mergeCertWithCABundle(initialBundle, newBundle []byte, subject string) []by
 	for len(initialBundle) > 0 {
 		b, next := pem.Decode(initialBundle)
 		if b == nil {
+			klog.Infof("Unable to decode cert %s into a pem block. Cert is either empty or invalid.", string(initialBundle))
 			break
 		}
 		c, err := x509.ParseCertificate(b.Bytes)

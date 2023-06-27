@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"time"
@@ -430,37 +432,84 @@ func updateControllerConfigCerts(config *mcfgv1.ControllerConfig) bool {
 	names := []string{
 		"KubeAPIServerServingCAData", "CloudProviderCAData", "RootCAData", "AdditionalTrustBundle",
 	}
-	config.Status.ControllerCertificates = []v1.ControllerCertificate{}
 	certs := [][]byte{
 		config.Spec.KubeAPIServerServingCAData,
 		config.Spec.CloudProviderCAData,
 		config.Spec.RootCAData,
 		config.Spec.AdditionalTrustBundle,
 	}
+	newImgCerts := []v1.ControllerCertificate{}
+	newCtrlCerts := []v1.ControllerCertificate{}
 	for i, cert := range certs {
-		for len(cert) > 0 {
-			b, next := pem.Decode(cert)
-			if b == nil {
+		certs := createNewCert(cert, names[i])
+		if len(certs) > 0 {
+			modified = true
+			newCtrlCerts = append(newCtrlCerts, certs...)
+		}
+	}
+	for _, entry := range config.Spec.ImageRegistryBundleData {
+		names = append(names, entry.File)
+		certs := createNewCert(entry.Data, entry.File)
+		if len(certs) > 0 {
+			modified = true
+			newImgCerts = append(newImgCerts, certs...)
+		}
+	}
+	for _, entry := range config.Spec.ImageRegistryBundleUserData {
+		names = append(names, entry.File)
+		certs := createNewCert(entry.Data, entry.File)
+		if len(certs) > 0 {
+			modified = true
+			newImgCerts = append(newImgCerts, certs...)
+		}
+	}
+	stillExists := false
+	for _, cert := range config.Status.ControllerCertificates {
+		// skip the non-IR certs
+		if cert.BundleFile == "KubeAPIServerServingCAData" || cert.BundleFile == "CloudProviderCAData" || cert.BundleFile == "RootCAData" || cert.BundleFile == "AdditionalTrustBundle" {
+			continue
+		}
+		for _, newC := range newImgCerts {
+			if newC.BundleFile == cert.BundleFile {
+				stillExists = true
 				break
 			}
-			c, err := x509.ParseCertificate(b.Bytes)
-			if err != nil {
-				klog.Infof("Malformed Cert, not syncing")
-				continue
-			}
-			cert = next
-			config.Status.ControllerCertificates = append(config.Status.ControllerCertificates, v1.ControllerCertificate{
-				Subject:    c.Subject.String(),
-				Signer:     c.Issuer.String(),
-				NotBefore:  c.NotBefore.String(),
-				NotAfter:   c.NotAfter.String(),
-				BundleFile: names[i],
-			})
-			modified = true
 		}
-
+		// need to remove old cert path if it does not still exists (only applies to img certs)
+		if !stillExists {
+			if err := os.RemoveAll(filepath.Join("/etc/docker/certs.d", cert.BundleFile)); err != nil {
+				klog.Infof("Could not remove old certificate: %s", filepath.Join("/etc/docker/certs.d", cert.BundleFile))
+			}
+		}
+		stillExists = false
 	}
+	config.Status.ControllerCertificates = append(newCtrlCerts, newImgCerts...)
 	return modified
+}
+
+func createNewCert(cert []byte, name string) []v1.ControllerCertificate {
+	certs := []v1.ControllerCertificate{}
+	for len(cert) > 0 {
+		b, next := pem.Decode(cert)
+		if b == nil {
+			klog.Infof("Unable to decode cert %s into a pem block. Cert is either empty or invalid.", string(cert))
+			break
+		}
+		c, err := x509.ParseCertificate(b.Bytes)
+		if err != nil {
+			klog.Infof("Malformed Cert, not syncing")
+			continue
+		}
+		cert = next
+		certs = append(certs, v1.ControllerCertificate{
+			Subject:    c.Subject.String(),
+			Signer:     c.Issuer.String(),
+			NotBefore:  c.NotBefore.String(),
+			NotAfter:   c.NotAfter.String(),
+			BundleFile: name,
+		})
+	}
+	return certs
 }
 
 // syncControllerConfig will sync the controller config with the given key.
