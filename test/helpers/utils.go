@@ -373,7 +373,23 @@ func WaitForCertStatusToChange(t *testing.T, cs *framework.ClientSet, oldData st
 	}
 
 	return nil
+}
 
+func WaitForCADataToAppear(t *testing.T, cs *framework.ClientSet) error {
+	err := wait.PollUntilContextTimeout(context.TODO(), 2*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
+		controllerConfig, err := cs.ControllerConfigs().Get(context.TODO(), "machine-config-controller", metav1.GetOptions{})
+		require.Nil(t, err)
+		nodes, err := GetNodesByRole(cs, "worker")
+		require.Nil(t, err)
+		for _, cert := range controllerConfig.Spec.ImageRegistryBundleUserData {
+			foundCA, _ := ExecCmdOnNodeWithError(cs, nodes[0], "ls", canonicalizeNodeFilePath(filepath.Join("/etc/docker/certs.d", cert.File)))
+			if strings.Contains(foundCA, "ca.crt") {
+				return true, nil
+			}
+		}
+		return false, nil
+	})
+	return err
 }
 
 // WaitForMCDToSyncCert waits for the MCD to write annotation on the latest controllerconfig resourceVersion,
@@ -403,6 +419,19 @@ func ForceKubeApiserverCertificateRotation(cs *framework.ClientSet) error {
 	// Take note that the slash had to be encoded as ~1 because it's a reference: https://www.rfc-editor.org/rfc/rfc6901#section-3
 	certPatch := fmt.Sprintf(`[{"op":"replace","path":"/metadata/annotations/auth.openshift.io~1certificate-not-after","value": null }]`)
 	_, err := cs.Secrets("openshift-kube-apiserver-operator").Patch(context.TODO(), "kube-apiserver-to-kubelet-signer", types.JSONPatchType, []byte(certPatch), metav1.PatchOptions{})
+	return err
+}
+
+// ForceImageRegistryCertRotationCertificateRotation sets the imae registry cert's not-after date to nil, which causes the
+// apiserver to rotate it
+func ForceImageRegistryCertRotationCertificateRotation(cs *framework.ClientSet) error {
+	cfg, err := cs.ConfigV1Interface.Images().Get(context.TODO(), "cluster", metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	// Take note that the slash had to be encoded as ~1 because it's a reference: https://www.rfc-editor.org/rfc/rfc6901#section-3
+	certPatch := fmt.Sprintf(`[{"op":"replace","path":"/metadata/annotations/auth.openshift.io~1certificate-not-after","value": null }]`)
+	_, err = cs.Secrets("openshift-config").Patch(context.TODO(), cfg.Spec.AdditionalTrustedCA.Name, types.JSONPatchType, []byte(certPatch), metav1.PatchOptions{})
 	return err
 }
 

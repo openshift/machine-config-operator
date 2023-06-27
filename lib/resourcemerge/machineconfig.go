@@ -82,6 +82,15 @@ func ensureControllerConfigSpec(modified *bool, existing *mcfgv1.ControllerConfi
 	setBytesIfSet(modified, &existing.KubeAPIServerServingCAData, required.KubeAPIServerServingCAData)
 	setBytesIfSet(modified, &existing.CloudProviderCAData, required.CloudProviderCAData)
 
+	if required.ImageRegistryBundleData != nil && !equality.Semantic.DeepEqual(existing.ImageRegistryBundleData, required.ImageRegistryBundleData) {
+		*modified = true
+		existing.ImageRegistryBundleData = required.ImageRegistryBundleData
+	}
+
+	if required.ImageRegistryBundleUserData != nil && !equality.Semantic.DeepEqual(existing.ImageRegistryBundleUserData, required.ImageRegistryBundleUserData) {
+		*modified = true
+		existing.ImageRegistryBundleUserData = required.ImageRegistryBundleUserData
+	}
 	if required.Infra != nil && !equality.Semantic.DeepEqual(existing.Infra, required.Infra) {
 		*modified = true
 		existing.Infra = required.Infra
