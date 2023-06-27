@@ -735,7 +735,22 @@ func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
 
 	ctx := context.TODO()
 
-	if err := wait.PollUntilContextTimeout(ctx, time.Second, 10*time.Minute, false, func(ctx context.Context) (bool, error) {
+	// Calculate total timeout for "required"(aka master) nodes in the pool.
+	pools, err := optr.mcpLister.List(labels.Everything())
+	if err != nil {
+		return fmt.Errorf("error during syncRequiredMachineConfigPools: %w", err)
+	}
+
+	requiredMachineCount := 0
+	for _, pool := range pools {
+		_, hasRequiredPoolLabel := pool.Labels[requiredForUpgradeMachineConfigPoolLabelKey]
+		if hasRequiredPoolLabel {
+			requiredMachineCount += int(pool.Status.MachineCount)
+		}
+	}
+
+	// Let's start with a 10 minute timeout per "required" node.
+	if err := wait.PollUntilContextTimeout(ctx, time.Second, time.Duration(requiredMachineCount*10)*time.Minute, false, func(ctx context.Context) (bool, error) {
 		if err := optr.syncMetrics(); err != nil {
 			return false, err
 		}
@@ -767,7 +782,7 @@ func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
 		for _, pool := range pools {
 			degraded := isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolDegraded)
 			if degraded {
-				lastErr = fmt.Errorf("error pool %s is not ready, retrying. Status: (pool degraded: %v total: %d, ready %d, updated: %d, unavailable: %d)", pool.Name, degraded, pool.Status.MachineCount, pool.Status.ReadyMachineCount, pool.Status.UpdatedMachineCount, pool.Status.UnavailableMachineCount)
+				lastErr = fmt.Errorf("error MachineConfigPool %s is not ready, retrying. Status: (pool degraded: %v total: %d, ready %d, updated: %d, unavailable: %d)", pool.Name, degraded, pool.Status.MachineCount, pool.Status.ReadyMachineCount, pool.Status.UpdatedMachineCount, pool.Status.UnavailableMachineCount)
 				klog.Errorf("Error syncing Required MachineConfigPools: %q", lastErr)
 				syncerr := optr.syncUpgradeableStatus()
 				if syncerr != nil {
@@ -793,7 +808,7 @@ func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
 					opURL = newFormatOpURL
 				}
 				if err := isMachineConfigPoolConfigurationValid(pool, version.Hash, releaseVersion, opURL, optr.mcLister.Get); err != nil {
-					lastErr = fmt.Errorf("pool %s has not progressed to latest configuration: %w, retrying", pool.Name, err)
+					lastErr = fmt.Errorf("MachineConfigPool %s has not progressed to latest configuration: %w, retrying", pool.Name, err)
 					syncerr := optr.syncUpgradeableStatus()
 					if syncerr != nil {
 						klog.Errorf("Error syncingUpgradeableStatus: %q", syncerr)
@@ -805,14 +820,14 @@ func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
 					isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolUpdated) {
 					continue
 				}
-				lastErr = fmt.Errorf("error required pool %s is not ready, retrying. Status: (total: %d, ready %d, updated: %d, unavailable: %d, degraded: %d)", pool.Name, pool.Status.MachineCount, pool.Status.ReadyMachineCount, pool.Status.UpdatedMachineCount, pool.Status.UnavailableMachineCount, pool.Status.DegradedMachineCount)
+				lastErr = fmt.Errorf("error required MachineConfigPool %s is not ready, retrying. Status: (total: %d, ready %d, updated: %d, unavailable: %d, degraded: %d)", pool.Name, pool.Status.MachineCount, pool.Status.ReadyMachineCount, pool.Status.UpdatedMachineCount, pool.Status.UnavailableMachineCount, pool.Status.DegradedMachineCount)
 				syncerr := optr.syncUpgradeableStatus()
 				if syncerr != nil {
 					klog.Errorf("Error syncingUpgradeableStatus: %q", syncerr)
 				}
 				// If we don't account for pause here, we will spin in this loop until we hit the 10 minute timeout because paused pools can't sync.
 				if pool.Spec.Paused {
-					return false, fmt.Errorf("Required MachineConfigPool '%s' is paused and can not sync until it is unpaused", pool.Name)
+					return false, fmt.Errorf("error required MachineConfigPool %s is paused and cannot sync until it is unpaused", pool.Name)
 				}
 				return false, nil
 			}
