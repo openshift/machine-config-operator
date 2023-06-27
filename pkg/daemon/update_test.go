@@ -779,11 +779,11 @@ func TestOriginalFileBackupRestore(t *testing.T) {
 	assert.Nil(t, err)
 
 	// Back up that normal file
-	err = createOrigFile(controlFile, controlFile, true)
+	err = createOrigFile(controlFile, controlFile, true, true)
 	assert.Nil(t, err)
 
 	// Now try again and make sure it knows it's already backed up
-	err = createOrigFile(controlFile, controlFile, true)
+	err = createOrigFile(controlFile, controlFile, true, true)
 	assert.Nil(t, err)
 
 	// Restore the normal file
@@ -802,7 +802,7 @@ func TestOriginalFileBackupRestore(t *testing.T) {
 	assert.Nil(t, err)
 
 	// Back up the relative symlink
-	err = createOrigFile(relativeSymlink, relativeSymlink, true)
+	err = createOrigFile(relativeSymlink, relativeSymlink, true, true)
 	assert.Nil(t, err)
 
 	// Remove the symlink and write a file over it
@@ -813,7 +813,7 @@ func TestOriginalFileBackupRestore(t *testing.T) {
 	assert.Nil(t, err)
 
 	// Try to back it up again make sure it knows it's already backed up
-	err = createOrigFile(relativeSymlink, relativeSymlink, true)
+	err = createOrigFile(relativeSymlink, relativeSymlink, true, true)
 	assert.Nil(t, err)
 
 	// Finally, make sure we can restore the relative symlink if we rollback

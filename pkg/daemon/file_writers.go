@@ -46,7 +46,7 @@ func noOrigFileStampName(fpath string) string {
 	return filepath.Join(noOrigParentDir(), fpath+".mcdnoorig")
 }
 
-func createOrigFile(fromPath, fpath string, isCoreOSVariant bool) error {
+func createOrigFile(fromPath, fpath string, isCoreOSVariant, forceCreate bool) error {
 	if _, err := os.Stat(noOrigFileStampName(fpath)); err == nil {
 		// we already created the no orig file for this default file
 		return nil
@@ -75,6 +75,8 @@ func createOrigFile(fromPath, fpath string, isCoreOSVariant bool) error {
 		} else {
 			orig = true
 		}
+	} else if forceCreate == true {
+		orig = true
 	} else {
 		orig = false
 	}
@@ -166,7 +168,7 @@ func writeDropins(u ign3types.Unit, systemdRoot string, isCoreOSVariant bool) er
 		klog.Infof("Writing systemd unit dropin %q", u.Dropins[i].Name)
 		if _, err := os.Stat(withUsrPath(dpath)); err == nil &&
 			isCoreOSVariant {
-			if err := createOrigFile(withUsrPath(dpath), dpath, isCoreOSVariant); err != nil {
+			if err := createOrigFile(withUsrPath(dpath), dpath, isCoreOSVariant, false); err != nil {
 				return err
 			}
 		}
@@ -212,7 +214,7 @@ func writeFiles(files []ign3types.File, skipCertificateWrite, isCoreOSVariant bo
 		if err != nil {
 			return fmt.Errorf("failed to retrieve file ownership for file %q: %w", file.Path, err)
 		}
-		if err := createOrigFile(file.Path, file.Path, isCoreOSVariant); err != nil {
+		if err := createOrigFile(file.Path, file.Path, isCoreOSVariant, false); err != nil {
 			return err
 		}
 		if err := writeFileAtomically(file.Path, decodedContents, defaultDirectoryPermissions, mode, uid, gid); err != nil {
@@ -252,7 +254,7 @@ func writeUnit(u ign3types.Unit, systemdRoot string, isCoreOSVariant bool) error
 		klog.Infof("Writing systemd unit %q", u.Name)
 		if _, err := os.Stat(withUsrPath(fpath)); err == nil &&
 			isCoreOSVariant {
-			if err := createOrigFile(withUsrPath(fpath), fpath, isCoreOSVariant); err != nil {
+			if err := createOrigFile(withUsrPath(fpath), fpath, isCoreOSVariant, false); err != nil {
 				return err
 			}
 		}
