@@ -1572,18 +1572,6 @@ func (dn *Daemon) SetPasswordHash(newUsers, oldUsers []ign3types.PasswdUser) err
 	// confirm that user exits
 	klog.Info("Checking if absent users need to be disconfigured")
 
-	// Print and log the oldUsers
-	klog.Info("Old Users:")
-	for _, user := range oldUsers {
-		klog.Infof("Name: %s\n", user.Name)
-	}
-
-	// Print and log the newUsers
-	klog.Info("New Users:")
-	for _, user := range newUsers {
-		klog.Infof("Name: %s\n", user.Name)
-	}
-
 	// checking if old users need to be deconfigured
 	deconfigureAbsentUsers(newUsers, oldUsers)
 
@@ -1675,17 +1663,15 @@ func (dn *Daemon) updateSSHKeys(newUsers, oldUsers []ign3types.PasswdUser) error
 }
 
 func deconfigureAbsentUsers(newUsers, oldUsers []ign3types.PasswdUser) {
-	klog.Info("checking to deconfigure the absent user")
 	for _, oldUser := range oldUsers {
 		if !isUserPresent(oldUser, newUsers) {
-			klog.Infof("deconfiguring the user %s\n", oldUser.Name)
+			klog.Infof("Absent user detected, deconfiguring the password for user %s\n", oldUser.Name)
 			deconfigureUser(oldUser)
 		}
 	}
 }
 
 func isUserPresent(user ign3types.PasswdUser, userList []ign3types.PasswdUser) bool {
-	klog.Info("checking if user is present")
 	for _, u := range userList {
 		if u.Name == user.Name {
 			return true
@@ -1695,8 +1681,6 @@ func isUserPresent(user ign3types.PasswdUser, userList []ign3types.PasswdUser) b
 }
 
 func deconfigureUser(user ign3types.PasswdUser) error {
-	klog.Info("deconfiguring the password for the absent user")
-
 	// clear out password
 	pwhash := ""
 	user.PasswordHash = &pwhash
@@ -1704,8 +1688,6 @@ func deconfigureUser(user ign3types.PasswdUser) error {
 	if out, err := exec.Command("usermod", "-p", *user.PasswordHash, user.Name).CombinedOutput(); err != nil {
 		return fmt.Errorf("Failed to change password for %s: %s:%w", user.Name, out, err)
 	}
-
-	klog.Info("Password has been reset")
 	return nil
 }
 
