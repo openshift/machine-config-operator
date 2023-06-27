@@ -80,6 +80,7 @@ type Controller struct {
 	mcLister   mcfglistersv1.MachineConfigLister
 	mcpLister  mcfglistersv1.MachineConfigPoolLister
 	nodeLister corelisterv1.NodeLister
+	podLister  corelisterv1.PodLister
 
 	ccListerSynced   cache.InformerSynced
 	mcListerSynced   cache.InformerSynced
@@ -98,6 +99,7 @@ func New(
 	mcInformer mcfginformersv1.MachineConfigInformer,
 	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
 	nodeInformer coreinformersv1.NodeInformer,
+	podInformer coreinformersv1.PodInformer,
 	schedulerInformer cligoinformersv1.SchedulerInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
@@ -135,6 +137,7 @@ func New(
 	ctrl.mcLister = mcInformer.Lister()
 	ctrl.mcpLister = mcpInformer.Lister()
 	ctrl.nodeLister = nodeInformer.Lister()
+	ctrl.podLister = podInformer.Lister()
 	ctrl.ccListerSynced = ccInformer.Informer().HasSynced
 	ctrl.mcListerSynced = mcInformer.Informer().HasSynced
 	ctrl.mcpListerSynced = mcpInformer.Informer().HasSynced
@@ -987,28 +990,39 @@ func getCandidateMachines(pool *mcfgv1.MachineConfigPool, nodesInPool []*corev1.
 	return nodes[:capacity]
 }
 
-// getCurrentEtcdLeader is not yet implemented
-func (ctrl *Controller) getCurrentEtcdLeader(candidates []*corev1.Node) (*corev1.Node, error) {
-	return nil, nil
+// getOperatorPodNodeName fetches the name of the current node running the machine-config-operator pod
+func (ctrl *Controller) getOperatorNodeName() (string, error) {
+	// Create a selector object with  a filter on the machine-config-operator pod
+	parsedSelector, err := labels.Parse("k8s-app=machine-config-operator")
+	if err != nil {
+		klog.Infof("Fetching machine-config-operator pod selector object failed: %v", err)
+		return "", err
+	}
+	// Query pod list with selector, this slice should only have 1 element
+	podList, err := ctrl.podLister.List(parsedSelector)
+	if err != nil || len(podList) != 1 {
+		klog.Infof("Fetching machine-config-operator pod object failed: %v", err)
+		return "", err
+	}
+	return podList[0].Spec.NodeName, err
 }
 
 // filterControlPlaneCandidateNodes adjusts the candidates and capacity specifically
-// for the control plane, e.g. based on which node is the etcd leader at the time.
+// for the control plane, e.g. based on which node is running the operator node at the time.
 // nolint:unparam
 func (ctrl *Controller) filterControlPlaneCandidateNodes(pool *mcfgv1.MachineConfigPool, candidates []*corev1.Node, capacity uint) ([]*corev1.Node, uint, error) {
 	if len(candidates) <= 1 {
 		return candidates, capacity, nil
 	}
-	etcdLeader, err := ctrl.getCurrentEtcdLeader(candidates)
+	operatorNodeName, err := ctrl.getOperatorNodeName()
 	if err != nil {
-		klog.Warningf("Failed to find current etcd leader (continuing anyways): %v", err)
+		klog.Warningf("Failed to find current operator node (continuing anyways): %v", err)
 	}
 	var newCandidates []*corev1.Node
 	for _, node := range candidates {
-		if node == etcdLeader {
-			// For now make this an event so we know it's working, even though it's more of a non-event
-			ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, "DeferringEtcdLeaderUpdate", "Deferring update of etcd leader %s", node.Name)
-			klog.Infof("Deferring update of etcd leader: %s", node.Name)
+		if node.Name == operatorNodeName {
+			ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, "DeferringOperatorNodeUpdate", "Deferring update of machine config operator node %s", node.Name)
+			klog.Infof("Deferring update of machine config operator node: %s", node.Name)
 			continue
 		}
 		newCandidates = append(newCandidates, node)

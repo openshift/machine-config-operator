@@ -29,7 +29,7 @@ rules:
   verbs: ["create"]
 - apiGroups: [""]
   resources: ["pods"]
-  verbs: ["get", "list"]
+  verbs: ["get", "list", "watch"]
 - apiGroups: ["extensions"]
   resources: ["daemonsets"]
   verbs: ["get"]

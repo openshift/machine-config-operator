@@ -80,7 +80,7 @@ func (f *fixture) newController() *Controller {
 	k8sI := kubeinformers.NewSharedInformerFactory(f.kubeclient, noResyncPeriodFunc())
 	ci := configv1informer.NewSharedInformerFactory(f.schedulerClient, noResyncPeriodFunc())
 	c := New(i.Machineconfiguration().V1().ControllerConfigs(), i.Machineconfiguration().V1().MachineConfigs(), i.Machineconfiguration().V1().MachineConfigPools(), k8sI.Core().V1().Nodes(),
-		ci.Config().V1().Schedulers(), f.kubeclient, f.client)
+		k8sI.Core().V1().Pods(), ci.Config().V1().Schedulers(), f.kubeclient, f.client)
 
 	c.ccListerSynced = alwaysReady
 	c.mcpListerSynced = alwaysReady
@@ -219,7 +219,9 @@ func filterInformerActions(actions []core.Action) []core.Action {
 				action.Matches("list", "controllerconfigs") ||
 				action.Matches("watch", "controllerconfigs") ||
 				action.Matches("list", "nodes") ||
-				action.Matches("watch", "nodes")) {
+				action.Matches("watch", "nodes") ||
+				action.Matches("list", "pods") ||
+				action.Matches("watch", "pods")) {
 			continue
 		}
 		ret = append(ret, action)
