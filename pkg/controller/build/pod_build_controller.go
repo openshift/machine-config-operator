@@ -12,6 +12,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	aggerrors "k8s.io/apimachinery/pkg/util/errors"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	coreclientsetv1 "k8s.io/client-go/kubernetes/typed/core/v1"
@@ -185,50 +186,41 @@ func (ctrl *PodBuildController) Run(ctx context.Context, workers int) {
 	<-ctx.Done()
 }
 
-// Gets the final image pullspec by examining the logs of the wait-for-done
-// container. This container runs `$ skopeo inspect
-// docker://registry.hostname.com/org/repo:latest`, which dumps a JSON payload
-// to stdout. This function snarfs that output into a JSON struct and does some
-// munging to get the fully qualified image pullspec (i.e.,
-// registry.hostname.com/org/repo@sha256:...).
+// Gets the final image pullspec by retrieving the ConfigMap that the build pod
+// creates from the Buildah digestfile.
 func (ctrl *PodBuildController) FinalPullspec(pool *mcfgv1.MachineConfigPool) (string, error) {
+	onClusterBuildConfigMap, err := ctrl.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), onClusterBuildConfigMapName, metav1.GetOptions{})
+	if err != nil {
+		return "", err
+	}
+
+	finalImageInfo := newFinalImageInfo(onClusterBuildConfigMap)
 	ibr := newImageBuildRequest(pool)
 
-	buildName := ibr.getBuildName()
-
-	pod, err := ctrl.kubeclient.CoreV1().Pods(ctrlcommon.MCONamespace).Get(context.TODO(), buildName, metav1.GetOptions{})
-	if err != nil {
-		return "", fmt.Errorf("could not get build pod %s for pool %s: %w", buildName, pool.Name, err)
-	}
-
-	req := ctrl.kubeclient.CoreV1().Pods(ctrlcommon.MCONamespace).GetLogs(pod.Name, &corev1.PodLogOptions{
-		Container: "wait-for-done",
-	})
-
-	res := req.Do(context.TODO())
-	if err := res.Error(); err != nil {
-		return "", err
-	}
-
-	out, err := res.Raw()
+	digestConfigMap, err := ctrl.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), ibr.getDigestConfigMapName(), metav1.GetOptions{})
 	if err != nil {
 		return "", err
 	}
 
-	// Unfortunately, FakeClient has a "fake logs" value hardcoded within it.
-	// With that in mind, we need to short-circuit this. See:
-	// https://github.com/kubernetes/kubernetes/pull/91485.
-	if string(out) == "fake logs" {
-		return "fake@logs", nil
-	}
-
-	return parseSkopeoOutputIntoImagePullspec(out)
+	return parseImagePullspec(finalImageInfo.Pullspec, digestConfigMap.Data["digest"])
 }
 
 // Deletes the underlying build pod.
 func (ctrl *PodBuildController) DeleteBuildObject(pool *mcfgv1.MachineConfigPool) error {
-	ibr := newImageBuildRequest(pool)
-	return ctrl.kubeclient.CoreV1().Pods(ctrlcommon.MCONamespace).Delete(context.TODO(), ibr.getBuildName(), metav1.DeleteOptions{})
+	// We want to ignore when a pod or ConfigMap is deleted if it is not found.
+	// This is because when a pool is opted out of layering *after* a successful
+	// build, no pod nor ConfigMap will remain. So we want to be able to
+	// idempotently call this function in that case.
+	return aggerrors.AggregateGoroutines(
+		func() error {
+			ibr := newImageBuildRequest(pool)
+			return ignoreIsNotFoundErr(ctrl.kubeclient.CoreV1().Pods(ctrlcommon.MCONamespace).Delete(context.TODO(), ibr.getBuildName(), metav1.DeleteOptions{}))
+		},
+		func() error {
+			ibr := newImageBuildRequest(pool)
+			return ignoreIsNotFoundErr(ctrl.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Delete(context.TODO(), ibr.getDigestConfigMapName(), metav1.DeleteOptions{}))
+		},
+	)
 }
 
 // Determines if a build is currently running by looking for a corresponding pod.

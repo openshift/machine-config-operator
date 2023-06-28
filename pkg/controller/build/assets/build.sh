@@ -25,7 +25,5 @@ buildah bud \
 buildah push \
 	--storage-driver vfs \
 	--authfile="$FINAL_IMAGE_PUSH_CREDS" \
+	--digestfile="/tmp/done/digestfile" \
 	--cert-dir /var/run/secrets/kubernetes.io/serviceaccount "$TAG"
-
-# Signal that we're done.
-echo "done" > /tmp/done/done
