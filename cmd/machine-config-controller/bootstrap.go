@@ -32,7 +32,7 @@ func init() {
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.pullSecretFile, "pull-secret", "", "The pull secret file.")
 }
 
-func runbootstrapCmd(cmd *cobra.Command, args []string) {
+func runbootstrapCmd(_ *cobra.Command, _ []string) {
 	flag.Set("logtostderr", "true")
 	flag.Parse()
 

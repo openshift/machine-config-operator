@@ -117,11 +117,8 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 		}
 		klog.Infof("Applied FeatureSet %v on MachineConfigPool %v", key, pool.Name)
 	}
-	if err := ctrl.cleanUpDuplicatedMC(managedFeaturesKeyPrefix); err != nil {
-		return err
-	}
+	return ctrl.cleanUpDuplicatedMC(managedFeaturesKeyPrefix)
 
-	return nil
 }
 
 func (ctrl *Controller) enqueueFeature(feat *osev1.FeatureGate) {

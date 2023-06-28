@@ -466,7 +466,7 @@ func (ctrl *Controller) syncFailingStatus(pool *mcfgv1.MachineConfigPool, err er
 // see https://github.com/openshift/machine-config-operator/issues/301
 // It will probably involve making sure we're only GCing a config after all nodes don't have it
 // in either desired or current config.
-func (ctrl *Controller) garbageCollectRenderedConfigs(pool *mcfgv1.MachineConfigPool) error {
+func (ctrl *Controller) garbageCollectRenderedConfigs(_ *mcfgv1.MachineConfigPool) error {
 	// Temporarily until https://github.com/openshift/machine-config-operator/pull/318
 	// which depends on the strategy for https://github.com/openshift/machine-config-operator/issues/301
 	return nil
@@ -535,11 +535,7 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 	}
 	klog.V(2).Infof("Pool %s: now targeting: %s", pool.Name, pool.Spec.Configuration.Name)
 
-	if err := ctrl.garbageCollectRenderedConfigs(pool); err != nil {
-		return err
-	}
-
-	return nil
+	return ctrl.garbageCollectRenderedConfigs(pool)
 }
 
 // generateRenderedMachineConfig takes all MCs for a given pool and returns a single rendered MC. For ex master-XXXX or worker-XXXX
