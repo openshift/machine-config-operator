@@ -159,7 +159,7 @@ Most reboot exceptions also skip a drain, but some have to reload crio.
 The "None" action only performs the corresponding file write; it does not trigger a drain or a reboot. This action is taken for changes to the following items:
 
 1. [SSH Keys](./Update-SSHKeys.md): updated by changing `ignition.passwd.users.sshAuthorizedKeys` in a MachineConfig
-2. kube-apiserver-to-kubelet-signer CA cert: located at `/etc/kubernetes/kubelet-ca.crt` and autorotated by the openshift-kubeapiserver operator after a 1 year expiry
+2. kube-apiserver-to-kubelet-signer CA cert: located at `/etc/kubernetes/kubelet-ca.crt` and autorotated by the openshift-kube-apiserver operator after a 1 year expiry
 3. [Pull Secret](./PullSecret.md): cluster-wide, located at `/var/lib/kubelet/config.json`
 
 #### "Reload Crio" Action
