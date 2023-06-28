@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"k8s.io/klog/v2"
 	buildv1 "github.com/openshift/api/build/v1"
 	buildlistersv1 "github.com/openshift/client-go/build/listers/build/v1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -21,6 +20,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/klog/v2"
 )
 
 // Controller defines the build controller.

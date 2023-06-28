@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/containers/image/v5/docker/reference"
-	"k8s.io/klog/v2"
 	buildv1 "github.com/openshift/api/build/v1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
@@ -21,6 +20,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/klog/v2"
 
 	buildinformers "github.com/openshift/client-go/build/informers/externalversions"
 
@@ -888,8 +888,8 @@ func (ctrl *Controller) getOnClusterBuildConfig(pool *mcfgv1.MachineConfigPool) 
 	}
 
 	// We don't want to write this back to the API server since it's only useful
-	// this specific build. TODO: Migrate this to the ImageBuildRequest object so
-	// that it's generated on-demand instead.
+	// for this specific build. TODO: Migrate this to the ImageBuildRequest
+	// object so that it's generated on-demand instead.
 	onClusterBuildConfigMap.Data[finalImagePullspecConfigKey] = finalImagePullspecWithTag
 
 	return onClusterBuildConfigMap, err
@@ -910,11 +910,11 @@ func (ctrl *Controller) validatePullSecret(name string) (*corev1.Secret, error) 
 	}
 
 	// If a Docker pull secret lacks the top-level "auths" key, this means that
-	// it is a legacy-style pull secret. Buildah and Skopeo do not know how to
-	// correctly use one of these secrets. With that in mind, we "canonicalize"
-	// it, meaning we inject the existing legacy secret into a {"auths": {}}
-	// schema that Buildah and Skopeo can understand. We create a new K8s secret
-	// with this info and pass that secret into our image builder instead.
+	// it is a legacy-style pull secret. Buildah does not know how to correctly
+	// use one of these secrets. With that in mind, we "canonicalize" it, meaning
+	// we inject the existing legacy secret into a {"auths": {}} schema that
+	// Buildah can understand. We create a new K8s secret with this info and pass
+	// that secret into our image builder instead.
 	if strings.HasSuffix(secret.Name, canonicalSecretSuffix) {
 		klog.Infof("Found legacy-style secret %s, canonicalizing as %s", oldSecretName, secret.Name)
 		return ctrl.handleCanonicalizedPullSecret(secret)

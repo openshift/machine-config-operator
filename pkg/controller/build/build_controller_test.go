@@ -361,12 +361,6 @@ func isMCPBuildSuccess(mcp *mcfgv1.MachineConfigPool) bool {
 
 	return hasConfigAnnotation &&
 		ctrlcommon.IsLayeredPool(mcp) &&
-		// Unfortunately, FakeClient has a "fake logs" value hardcoded within it.
-		// With that in mind, we cannot inject realistic Skopeo logs, so we instead
-		// inject "fake@logs" and skip the JSON parsing portion of the test. See:
-		// https://github.com/kubernetes/kubernetes/pull/91485. Presumably, once
-		// https://github.com/kubernetes/kubernetes/issues/117144 is addressed and
-		// lands, we can stop doing this.
 		(imagePullspec == expectedImagePullspecWithSHA || imagePullspec == "fake@logs") &&
 		mcfgv1.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolBuildSuccess) &&
 		!machineConfigPoolHasBuildRef(mcp) && machineConfigPoolHasMachineConfigRefs(mcp)
