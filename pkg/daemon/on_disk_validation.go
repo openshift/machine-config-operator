@@ -100,11 +100,7 @@ func checkV3Unit(unit ign3types.Unit, systemdPath string) error {
 		return nil
 	}
 
-	if err := checkFileContentsAndMode(path, []byte(*unit.Contents), defaultFilePermissions); err != nil {
-		return err
-	}
-
-	return nil
+	return checkFileContentsAndMode(path, []byte(*unit.Contents), defaultFilePermissions)
 }
 
 // checkV3Units validates the contents of all the units in the
@@ -150,11 +146,7 @@ func checkV2Unit(unit ign2types.Unit, systemdPath string) error {
 		return nil
 	}
 
-	if err := checkFileContentsAndMode(path, []byte(unit.Contents), defaultFilePermissions); err != nil {
-		return err
-	}
-
-	return nil
+	return checkFileContentsAndMode(path, []byte(unit.Contents), defaultFilePermissions)
 }
 
 // checkV2Units validates the contents of all the units in the

@@ -273,10 +273,7 @@ func (ctrl *Controller) cascadeDelete(cfg *mcfgv1.KubeletConfig) error {
 			break
 		}
 	}
-	if err := ctrl.popFinalizerFromKubeletConfig(cfg); err != nil {
-		return err
-	}
-	return nil
+	return ctrl.popFinalizerFromKubeletConfig(cfg)
 }
 
 func (ctrl *Controller) enqueue(cfg *mcfgv1.KubeletConfig) {

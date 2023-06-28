@@ -110,7 +110,7 @@ func findImageOrDie(stream *imagev1.ImageStream, name string) string {
 	return img
 }
 
-func runBootstrapCmd(cmd *cobra.Command, args []string) {
+func runBootstrapCmd(_ *cobra.Command, _ []string) {
 	flag.Set("logtostderr", "true")
 	flag.Parse()
 

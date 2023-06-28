@@ -37,7 +37,7 @@ func init() {
 	startCmd.PersistentFlags().StringVar(&startOpts.promMetricsURL, "metrics-listen-address", "127.0.0.1:8797", "Listen address for prometheus metrics listener")
 }
 
-func runStartCmd(cmd *cobra.Command, args []string) {
+func runStartCmd(_ *cobra.Command, _ []string) {
 	flag.Set("logtostderr", "true")
 	flag.Parse()
 

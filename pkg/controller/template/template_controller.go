@@ -140,7 +140,7 @@ func (ctrl *Controller) addSecret(obj interface{}) {
 	ctrl.filterSecret(secret)
 }
 
-func (ctrl *Controller) updateSecret(old, new interface{}) {
+func (ctrl *Controller) updateSecret(_, new interface{}) {
 	secret := new.(*corev1.Secret)
 	klog.V(4).Infof("Update Secret %v", secret)
 	ctrl.filterSecret(secret)
@@ -288,7 +288,7 @@ func (ctrl *Controller) addMachineConfig(obj interface{}) {
 	// No adopting.
 }
 
-func (ctrl *Controller) updateMachineConfig(old, cur interface{}) {
+func (ctrl *Controller) updateMachineConfig(_, cur interface{}) {
 	curMC := cur.(*mcfgv1.MachineConfig)
 
 	if controllerRef := metav1.GetControllerOf(curMC); controllerRef != nil {

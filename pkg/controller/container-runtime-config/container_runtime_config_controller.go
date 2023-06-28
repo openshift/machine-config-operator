@@ -237,51 +237,51 @@ func ctrConfigTriggerObjectChange(old, new *mcfgv1.ContainerRuntimeConfig) bool 
 	return false
 }
 
-func (ctrl *Controller) imageConfAdded(obj interface{}) {
+func (ctrl *Controller) imageConfAdded(_ interface{}) {
 	ctrl.imgQueue.Add("openshift-config")
 }
 
-func (ctrl *Controller) imageConfUpdated(oldObj, newObj interface{}) {
+func (ctrl *Controller) imageConfUpdated(_, _ interface{}) {
 	ctrl.imgQueue.Add("openshift-config")
 }
 
-func (ctrl *Controller) imageConfDeleted(obj interface{}) {
+func (ctrl *Controller) imageConfDeleted(_ interface{}) {
 	ctrl.imgQueue.Add("openshift-config")
 }
 
-func (ctrl *Controller) icspConfAdded(obj interface{}) {
+func (ctrl *Controller) icspConfAdded(_ interface{}) {
 	ctrl.imgQueue.Add("openshift-config")
 }
 
-func (ctrl *Controller) icspConfUpdated(oldObj, newObj interface{}) {
+func (ctrl *Controller) icspConfUpdated(_, _ interface{}) {
 	ctrl.imgQueue.Add("openshift-config")
 }
 
-func (ctrl *Controller) icspConfDeleted(obj interface{}) {
+func (ctrl *Controller) icspConfDeleted(_ interface{}) {
 	ctrl.imgQueue.Add("openshift-config")
 }
 
-func (ctrl *Controller) idmsConfAdded(obj interface{}) {
+func (ctrl *Controller) idmsConfAdded(_ interface{}) {
 	ctrl.imgQueue.Add("openshift-config")
 }
 
-func (ctrl *Controller) idmsConfUpdated(oldObj, newObj interface{}) {
+func (ctrl *Controller) idmsConfUpdated(_, _ interface{}) {
 	ctrl.imgQueue.Add("openshift-config")
 }
 
-func (ctrl *Controller) idmsConfDeleted(obj interface{}) {
+func (ctrl *Controller) idmsConfDeleted(_ interface{}) {
 	ctrl.imgQueue.Add("openshift-config")
 }
 
-func (ctrl *Controller) itmsConfAdded(obj interface{}) {
+func (ctrl *Controller) itmsConfAdded(_ interface{}) {
 	ctrl.imgQueue.Add("openshift-config")
 }
 
-func (ctrl *Controller) itmsConfUpdated(oldObj, newObj interface{}) {
+func (ctrl *Controller) itmsConfUpdated(_, _ interface{}) {
 	ctrl.imgQueue.Add("openshift-config")
 }
 
-func (ctrl *Controller) itmsConfDeleted(obj interface{}) {
+func (ctrl *Controller) itmsConfDeleted(_ interface{}) {
 	ctrl.imgQueue.Add("openshift-config")
 }
 
@@ -331,10 +331,7 @@ func (ctrl *Controller) cascadeDelete(cfg *mcfgv1.ContainerRuntimeConfig) error 
 	if err != nil && !errors.IsNotFound(err) {
 		return err
 	}
-	if err := ctrl.popFinalizerFromContainerRuntimeConfig(cfg); err != nil {
-		return err
-	}
-	return nil
+	return ctrl.popFinalizerFromContainerRuntimeConfig(cfg)
 }
 
 func (ctrl *Controller) enqueue(cfg *mcfgv1.ContainerRuntimeConfig) {
