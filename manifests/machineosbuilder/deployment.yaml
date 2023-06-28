@@ -17,3 +17,7 @@ spec:
       - name: machine-os-builder
         image: {{.Images.MachineConfigOperator}}
         command: ["/usr/bin/machine-os-builder"]
+        args:
+        - start
+        - -v4
+        - --create-defaults

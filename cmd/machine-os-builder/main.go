@@ -2,9 +2,10 @@ package main
 
 import (
 	"flag"
-	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
+	"k8s.io/component-base/cli"
 )
 
 const componentName = "machine-os-builder"
@@ -22,6 +23,5 @@ func init() {
 }
 
 func main() {
-	fmt.Println("Hello, World!")
-	select{}
+	os.Exit(cli.Run(rootCmd))
 }
