@@ -520,13 +520,13 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		}
 	}()
 
-	if err := dn.updateSSHKeys(newIgnConfig.Passwd.Users); err != nil {
+	if err := dn.updateSSHKeys(newIgnConfig.Passwd.Users, oldIgnConfig.Passwd.Users); err != nil {
 		return err
 	}
 
 	defer func() {
 		if retErr != nil {
-			if err := dn.updateSSHKeys(oldIgnConfig.Passwd.Users); err != nil {
+			if err := dn.updateSSHKeys(newIgnConfig.Passwd.Users, oldIgnConfig.Passwd.Users); err != nil {
 				errs := kubeErrs.NewAggregate([]error{err, retErr})
 				retErr = fmt.Errorf("error rolling back SSH keys updates: %w", errs)
 				return
@@ -535,13 +535,13 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	}()
 
 	// Set password hash
-	if err := dn.SetPasswordHash(newIgnConfig.Passwd.Users); err != nil {
+	if err := dn.SetPasswordHash(newIgnConfig.Passwd.Users, oldIgnConfig.Passwd.Users); err != nil {
 		return err
 	}
 
 	defer func() {
 		if retErr != nil {
-			if err := dn.SetPasswordHash(oldIgnConfig.Passwd.Users); err != nil {
+			if err := dn.SetPasswordHash(newIgnConfig.Passwd.Users, oldIgnConfig.Passwd.Users); err != nil {
 				errs := kubeErrs.NewAggregate([]error{err, retErr})
 				retErr = fmt.Errorf("error rolling back password hash updates: %w", errs)
 				return
@@ -621,13 +621,13 @@ func (dn *Daemon) updateHypershift(oldConfig, newConfig *mcfgv1.MachineConfig, d
 		}
 	}()
 
-	if err := dn.updateSSHKeys(newIgnConfig.Passwd.Users); err != nil {
+	if err := dn.updateSSHKeys(newIgnConfig.Passwd.Users, oldIgnConfig.Passwd.Users); err != nil {
 		return err
 	}
 
 	defer func() {
 		if retErr != nil {
-			if err := dn.updateSSHKeys(oldIgnConfig.Passwd.Users); err != nil {
+			if err := dn.updateSSHKeys(newIgnConfig.Passwd.Users, oldIgnConfig.Passwd.Users); err != nil {
 				errs := kubeErrs.NewAggregate([]error{err, retErr})
 				retErr = fmt.Errorf("error rolling back SSH keys updates: %w", errs)
 				return
@@ -793,9 +793,6 @@ func reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineConfigDif
 			return nil, fmt.Errorf("ignition Passwd Groups section contains changes")
 		}
 		if !reflect.DeepEqual(oldIgn.Passwd.Users, newIgn.Passwd.Users) {
-			if len(oldIgn.Passwd.Users) > 0 && len(newIgn.Passwd.Users) == 0 {
-				return nil, fmt.Errorf("ignition passwd user section contains unsupported changes: user core may not be deleted")
-			}
 			// there is an update to Users, we must verify that it is ONLY making an acceptable
 			// change to the SSHAuthorizedKeys for the user "core"
 			for _, user := range newIgn.Passwd.Users {
@@ -803,10 +800,12 @@ func reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineConfigDif
 					return nil, fmt.Errorf("ignition passwd user section contains unsupported changes: non-core user")
 				}
 			}
-
-			klog.Infof("user data to be verified before ssh update: %v", newIgn.Passwd.Users[len(newIgn.Passwd.Users)-1])
-			if err := verifyUserFields(newIgn.Passwd.Users[len(newIgn.Passwd.Users)-1]); err != nil {
-				return nil, err
+			// We don't want to panic if the "new" users is empty, and it's still reconcilable because the absence of a user here does not mean "remove the user from the system"
+			if len(newIgn.Passwd.Users) != 0 {
+				klog.Infof("user data to be verified before ssh update: %v", newIgn.Passwd.Users[len(newIgn.Passwd.Users)-1])
+				if err := verifyUserFields(newIgn.Passwd.Users[len(newIgn.Passwd.Users)-1]); err != nil {
+					return nil, err
+				}
 			}
 		}
 	}
@@ -1569,11 +1568,12 @@ func (dn *Daemon) atomicallyWriteSSHKey(authKeyPath, keys string) error {
 }
 
 // Set a given PasswdUser's Password Hash
-func (dn *Daemon) SetPasswordHash(newUsers []ign3types.PasswdUser) error {
+func (dn *Daemon) SetPasswordHash(newUsers, oldUsers []ign3types.PasswdUser) error {
 	// confirm that user exits
-	if len(newUsers) == 0 {
-		return nil
-	}
+	klog.Info("Checking if absent users need to be disconfigured")
+
+	// checking if old users need to be deconfigured
+	deconfigureAbsentUsers(newUsers, oldUsers)
 
 	var uErr user.UnknownUserError
 	switch _, err := user.Lookup(constants.CoreUserName); {
@@ -1593,7 +1593,7 @@ func (dn *Daemon) SetPasswordHash(newUsers []ign3types.PasswdUser) error {
 		}
 
 		if out, err := exec.Command("usermod", "-p", pwhash, u.Name).CombinedOutput(); err != nil {
-			return fmt.Errorf("failed to change password for %s: %s:%w", u.Name, out, err)
+			return fmt.Errorf("Failed to reset password for %s: %s:%w", u.Name, out, err)
 		}
 		klog.Info("Password has been configured")
 	}
@@ -1609,10 +1609,11 @@ func (dn *Daemon) useNewSSHKeyPath() bool {
 }
 
 // Update a given PasswdUser's SSHKey
-func (dn *Daemon) updateSSHKeys(newUsers []ign3types.PasswdUser) error {
-	if len(newUsers) == 0 {
-		return nil
-	}
+func (dn *Daemon) updateSSHKeys(newUsers, oldUsers []ign3types.PasswdUser) error {
+	klog.Info("updating SSH keys")
+
+	// Checking to see if absent users need to be deconfigured
+	deconfigureAbsentUsers(newUsers, oldUsers)
 
 	var uErr user.UnknownUserError
 	switch _, err := user.Lookup(constants.CoreUserName); {
@@ -1658,6 +1659,35 @@ func (dn *Daemon) updateSSHKeys(newUsers []ign3types.PasswdUser) error {
 		return dn.atomicallyWriteSSHKey(authKeyPath, concatSSHKeys)
 	}
 
+	return nil
+}
+
+func deconfigureAbsentUsers(newUsers, oldUsers []ign3types.PasswdUser) {
+	for _, oldUser := range oldUsers {
+		if !isUserPresent(oldUser, newUsers) {
+			klog.Infof("Absent user detected, deconfiguring the password for user %s\n", oldUser.Name)
+			deconfigureUser(oldUser)
+		}
+	}
+}
+
+func isUserPresent(user ign3types.PasswdUser, userList []ign3types.PasswdUser) bool {
+	for _, u := range userList {
+		if u.Name == user.Name {
+			return true
+		}
+	}
+	return false
+}
+
+func deconfigureUser(user ign3types.PasswdUser) error {
+	// clear out password
+	pwhash := ""
+	user.PasswordHash = &pwhash
+
+	if out, err := exec.Command("usermod", "-p", *user.PasswordHash, user.Name).CombinedOutput(); err != nil {
+		return fmt.Errorf("Failed to change password for %s: %s:%w", user.Name, out, err)
+	}
 	return nil
 }
 
