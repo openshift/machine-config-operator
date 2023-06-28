@@ -63,7 +63,7 @@ spec:
           name: proxy-tls
         - mountPath: /etc/kube-rbac-proxy
           name: auth-proxy-config
-      serviceAccountName: default
+      serviceAccountName: machine-config-operator
       nodeSelector:
         node-role.kubernetes.io/master: ""
       priorityClassName: "system-cluster-critical"
