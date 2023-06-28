@@ -1,15 +1,24 @@
----
-kind: ClusterRoleBinding
-apiVersion: rbac.authorization.k8s.io/v1
+apiVersion: v1
+kind: ServiceAccount
 metadata:
-  name: default-account-openshift-machine-config-operator
+  name: machine-config-operator
+  namespace: openshift-machine-config-operator
+  annotations:
+    include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/ibm-cloud-managed: "true"
+    include.release.openshift.io/single-node-developer: "true"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: custom-account-openshift-machine-config-operator
   annotations:
     include.release.openshift.io/ibm-cloud-managed: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
     include.release.openshift.io/single-node-developer: "true"
 subjects:
 - kind: ServiceAccount
-  name: default
+  name: machine-config-operator
   namespace: openshift-machine-config-operator
 roleRef:
   kind: ClusterRole
@@ -62,3 +71,23 @@ subjects:
 - kind: ServiceAccount
   name: prometheus-k8s
   namespace: openshift-monitoring
+# keep default for upgrading purposes, need to delete the existing role: 
+# https://github.com/openshift/enhancements/blob/master/dev-guide/cluster-version-operator/dev/object-deletion.md
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: default-account-openshift-machine-config-operator
+  annotations:
+    include.release.openshift.io/ibm-cloud-managed: "true"
+    include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-developer: "true"
+    release.openshift.io/delete: "true"
+subjects:
+- kind: ServiceAccount
+  name: default
+  namespace: openshift-machine-config-operator
+roleRef: 
+  kind: ClusterRole
+  name: cluster-admin
+  apiGroup: rbac.authorization.k8s.io
