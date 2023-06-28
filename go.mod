@@ -38,14 +38,15 @@ require (
 	github.com/vincent-petithory/dataurl v1.0.0
 	golang.org/x/net v0.10.0
 	golang.org/x/time v0.2.0
-	k8s.io/api v0.27.2
-	k8s.io/apiextensions-apiserver v0.27.2
-	k8s.io/apimachinery v0.27.2
-	k8s.io/client-go v0.27.2
-	k8s.io/code-generator v0.27.2
-	k8s.io/component-base v0.27.2
-	k8s.io/kubectl v0.27.2
-	k8s.io/kubelet v0.27.2
+	k8s.io/api v0.27.3
+	k8s.io/apiextensions-apiserver v0.27.3
+	k8s.io/apimachinery v0.27.3
+	k8s.io/client-go v0.27.3
+	k8s.io/code-generator v0.27.3
+	k8s.io/component-base v0.27.3
+	k8s.io/kubectl v0.27.3
+	k8s.io/kubelet v0.27.3
+	k8s.io/kubernetes v1.27.3
 	k8s.io/utils v0.0.0-20230505201702-9f6742963106
 	sigs.k8s.io/controller-runtime v0.13.0
 )
@@ -228,8 +229,8 @@ require (
 	github.com/nishanths/predeclared v0.2.2 // indirect
 	github.com/olekukonko/tablewriter v0.0.5 // indirect
 	github.com/opencontainers/image-spec v1.1.0-rc2 // indirect
-	github.com/opencontainers/runc v1.1.4 // indirect
-	github.com/opencontainers/runtime-spec v1.0.3-0.20210326190908-1c3f411f0417 // indirect
+	github.com/opencontainers/runc v1.1.6 // indirect
+	github.com/opencontainers/runtime-spec v1.0.3-0.20220909204839-494a5a6aca78 // indirect
 	github.com/pelletier/go-toml v1.9.5 // indirect
 	github.com/pelletier/go-toml/v2 v2.0.5 // indirect
 	github.com/peterbourgon/diskv v2.0.1+incompatible // indirect
@@ -309,8 +310,8 @@ require (
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	honnef.co/go/tools v0.4.3 // indirect
-	k8s.io/apiserver v0.27.2 // indirect
-	k8s.io/cli-runtime v0.27.2 // indirect
+	k8s.io/apiserver v0.27.3 // indirect
+	k8s.io/cli-runtime v0.27.3 // indirect
 	k8s.io/gengo v0.0.0-20220902162205-c0856e24416d // indirect
 	k8s.io/klog/v2 v2.100.1
 	k8s.io/kube-aggregator v0.27.1 // indirect
