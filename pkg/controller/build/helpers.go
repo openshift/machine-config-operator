@@ -7,10 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"time"
 
 	"github.com/containers/image/v5/docker/reference"
-	imagetypes "github.com/containers/image/v5/types"
 	"github.com/opencontainers/go-digest"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -68,35 +66,6 @@ func compress(r io.Reader, w io.Writer) error {
 	}
 
 	return nil
-}
-
-// Parses the output of `$ skopeo inspect
-// docker://registry.hostname/org/repo:latest` into a struct to get the image
-// pullspec and digest.
-func parseSkopeoOutputIntoImagePullspec(skopeoBytes []byte) (string, error) {
-	// Copy / pasta'ed from: https://github.com/containers/skopeo/blob/main/cmd/skopeo/inspect/output.go
-	type skopeoOutput struct {
-		Name          string `json:",omitempty"`
-		Tag           string `json:",omitempty"`
-		Digest        digest.Digest
-		RepoTags      []string
-		Created       *time.Time
-		DockerVersion string
-		Labels        map[string]string
-		Architecture  string
-		Os            string
-		Layers        []string
-		LayersData    []imagetypes.ImageInspectLayer
-		Env           []string
-	}
-
-	out := &skopeoOutput{}
-
-	if err := json.Unmarshal(skopeoBytes, out); err != nil {
-		return "", err
-	}
-
-	return parseImagePullspecWithDigest(out.Name, out.Digest)
 }
 
 // Replaces any tags on the image pullspec with the provided image digest.

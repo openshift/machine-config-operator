@@ -17,20 +17,6 @@ func TestParseImagePullspec(t *testing.T) {
 	assert.Equal(t, expectedImagePullspecWithSHA, out)
 }
 
-// Tests that Skopeo output is correctly parsed. For brevity, I did not include the full output.
-func TestParseSkopeoOutput(t *testing.T) {
-	t.Parallel()
-
-	skopeoOutput := `{
-    "Name": "quay.io/zzlotnik/testing",
-    "Digest": "sha256:c2a723564f370e80df76f8355c410934fa0b274f406e5cbdc22075f796b63f4e"
-	}`
-
-	out, err := parseSkopeoOutputIntoImagePullspec([]byte(skopeoOutput))
-	assert.NoError(t, err)
-	assert.Equal(t, "quay.io/zzlotnik/testing@sha256:c2a723564f370e80df76f8355c410934fa0b274f406e5cbdc22075f796b63f4e", out)
-}
-
 // Tests that pull secrets are canonicalized. In other words, converted from
 // the legacy-style pull secret to the new-style secret.
 func TestCanonicalizePullSecret(t *testing.T) {

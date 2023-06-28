@@ -475,7 +475,22 @@ func assertMCPFollowsBuildPodStatus(ctx context.Context, t *testing.T, cs *Clien
 		// Set the pod phase and update it.
 		buildPod.Status.Phase = phase
 
-		// TODO: Figure out how to set / get the image pullspec from the build pod.
+		// If we've reached the successful pod phase, create the ConfigMap that the
+		// build pod does which has the resulting image digest.
+		if phase == corev1.PodSucceeded {
+			cm := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      ibr.getDigestConfigMapName(),
+					Namespace: ctrlcommon.MCONamespace,
+				},
+				Data: map[string]string{
+					"digest": expectedImageSHA,
+				},
+			}
+			_, cmErr := cs.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Create(ctx, cm, metav1.CreateOptions{})
+			require.NoError(t, cmErr)
+		}
+
 		_, err = cs.kubeclient.CoreV1().Pods(ctrlcommon.MCONamespace).Update(ctx, buildPod, metav1.UpdateOptions{})
 		require.NoError(t, err)
 
@@ -508,6 +523,7 @@ func assertMCPFollowsBuildPodStatus(ctx context.Context, t *testing.T, cs *Clien
 	_, err := cs.kubeclient.CoreV1().Pods(ctrlcommon.MCONamespace).Get(ctx, buildPodName, metav1.GetOptions{})
 	switch endingPhase {
 	case corev1.PodSucceeded:
+
 		// If the build pod was successful, looking it up should fail because it should have been deleted.
 		outcome = assert.Error(t, err)
 	case corev1.PodFailed:

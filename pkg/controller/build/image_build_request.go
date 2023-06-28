@@ -18,7 +18,6 @@ const (
 	mcPoolAnnotation          string = "machineconfiguration.openshift.io/pool"
 	machineConfigJSONFilename string = "machineconfig.json.gz"
 	buildahImagePullspec      string = "quay.io/buildah/stable:latest"
-	skopeoImagePullspec       string = "quay.io/skopeo/stable:latest"
 )
 
 //go:embed assets/Dockerfile.on-cluster-build-template
@@ -236,6 +235,10 @@ func (i ImageBuildRequest) toBuild() *buildv1.Build {
 func (i ImageBuildRequest) toBuildPod() *corev1.Pod {
 	env := []corev1.EnvVar{
 		{
+			Name:  "DIGEST_CONFIGMAP_NAME",
+			Value: i.getDigestConfigMapName(),
+		},
+		{
 			Name:  "HOME",
 			Value: "/home/build",
 		},
@@ -287,8 +290,10 @@ func (i ImageBuildRequest) toBuildPod() *corev1.Pod {
 	}
 
 	// TODO: We need pull creds with permissions to pull the base image. By
-	// default, none of the MCO pull secrets can directly pull it. I injected my
-	// own pull creds to do that.
+	// default, none of the MCO pull secrets can directly pull it. We can use the
+	// pull-secret creds from openshift-config to do that, though we'll need to
+	// mirror those creds into the MCO namespace. The operator portion of the MCO
+	// has some logic to detect whenever that secret changes.
 	return &corev1.Pod{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "v1",
@@ -311,11 +316,14 @@ func (i ImageBuildRequest) toBuildPod() *corev1.Pod {
 				},
 				{
 					// This container waits for the aforementioned container to finish
-					// building so we can get the final image SHA.
+					// building so we can get the final image SHA. We do this by using
+					// the base OS image (which contains the "oc" binary) to create a
+					// ConfigMap from the digestfile that Buildah creates, which allows
+					// us to avoid parsing log files.
 					Name:            "wait-for-done",
 					Env:             env,
 					Command:         append(command, waitScript),
-					Image:           skopeoImagePullspec,
+					Image:           i.BaseImage.Pullspec,
 					ImagePullPolicy: corev1.PullAlways,
 					SecurityContext: securityContext,
 					VolumeMounts:    volumeMounts,
@@ -420,4 +428,8 @@ func (i ImageBuildRequest) getMCConfigMapName() string {
 // Computes the build name based upon the MachineConfigPool name.
 func (i ImageBuildRequest) getBuildName() string {
 	return fmt.Sprintf("build-%s", i.Pool.Spec.Configuration.Name)
+}
+
+func (i ImageBuildRequest) getDigestConfigMapName() string {
+	return fmt.Sprintf("digest-%s", i.Pool.Spec.Configuration.Name)
 }
