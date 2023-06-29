@@ -70,7 +70,7 @@ func (f *fixture) newController() *Controller {
 	c.mcpListerSynced = alwaysReady
 	c.mcListerSynced = alwaysReady
 	c.ccListerSynced = alwaysReady
-	c.eventRecorder = &record.FakeRecorder{}
+	c.eventRecorder = ctrlcommon.NamespacedEventRecorder(&record.FakeRecorder{})
 
 	stopCh := make(chan struct{})
 	defer close(stopCh)
