@@ -8,7 +8,7 @@ run:
 linters:
   disable-all: true
   enable:
-    - deadcode
+    #- deadcode
     - depguard
     - dupl
     #- gochecknoinits
@@ -26,11 +26,11 @@ linters:
     #- prealloc
     #- scopelint
     - staticcheck
-    - structcheck
+    #- structcheck
     #- typecheck
     - unconvert
     - unparam
-    - varcheck
+    #- varcheck
     #- errcheck
     #- gochecknoglobals
     - gocyclo
