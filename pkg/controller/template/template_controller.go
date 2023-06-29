@@ -86,7 +86,7 @@ func New(
 		templatesDir:  templatesDir,
 		client:        mcfgClient,
 		kubeClient:    kubeClient,
-		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-templatecontroller"}),
+		eventRecorder: ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-templatecontroller"})),
 		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-templatecontroller"),
 	}
 
