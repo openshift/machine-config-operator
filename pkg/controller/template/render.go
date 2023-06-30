@@ -180,7 +180,7 @@ func platformStringFromControllerConfigSpec(ic *mcfgv1.ControllerConfigSpec) (st
 		return "", fmt.Errorf("cannot generate MachineConfigs when no platformStatus.type is set")
 	case platformBase:
 		return "", fmt.Errorf("platform _base unsupported")
-	case configv1.AWSPlatformType, configv1.AlibabaCloudPlatformType, configv1.AzurePlatformType, configv1.BareMetalPlatformType, configv1.GCPPlatformType, configv1.OpenStackPlatformType, configv1.LibvirtPlatformType, configv1.OvirtPlatformType, configv1.VSpherePlatformType, configv1.KubevirtPlatformType, configv1.PowerVSPlatformType, configv1.NonePlatformType, configv1.NutanixPlatformType:
+	case configv1.AWSPlatformType, configv1.AlibabaCloudPlatformType, configv1.AzurePlatformType, configv1.BareMetalPlatformType, configv1.GCPPlatformType, configv1.OpenStackPlatformType, configv1.LibvirtPlatformType, configv1.OvirtPlatformType, configv1.VSpherePlatformType, configv1.KubevirtPlatformType, configv1.PowerVSPlatformType, configv1.NonePlatformType, configv1.ExternalPlatformType, configv1.NutanixPlatformType:
 		return strings.ToLower(string(ic.Infra.Status.PlatformStatus.Type)), nil
 	default:
 		// platformNone is used for a non-empty, but currently unsupported platform.
