@@ -94,6 +94,23 @@ Related issues:
 All this to say, it's quite hard to change storage layout with the MCO today,
 but this is a bug.
 
+## Q: Why am I getting "error: No enabled repositories" from rpm-ostree?
+
+As of OCP 4.13 and below, when any extensions are enabled (e.g. `kernel-rt`, `usbguard` etc.)
+the MCO will provision an rpm-md (yum/dnf) repository only at the time the MCD is making
+changes to the host system.
+
+This means that any other invocations of rpm-ostree (e.g. a manual `rpm-ostree initramfs --enable`,
+or `rpm-ostree install` etc.) won't have that repository enabled.
+
+In some cases, creating an empty/dummy repository in `/etc/yum.repos.d` *may* suffice to work around this bug.
+Or, adding the RHEL UBI repository or [full RHEL entitlements](https://docs.openshift.com/container-platform/4.13/support/remote_health_monitoring/insights-operator-simple-access.html#insights-operator-simple-access) may work.
+
+In the future, the MCO may change to just leave the repository enabled and avoid this.
+
+However, if you're doing deep changes to the host, it may work significantly better
+to instead switch to an [image layering](https://docs.openshift.com/container-platform/4.13/post_installation_configuration/coreos-layering.html) model.
+
 ## Q: Does the MCO run on RHEL worker nodes?
 
 Yes, RHEL worker nodes will have a instance of the Machine Config Daemon running on them.  However, only a subset of MCO functionality is supported on RHEL worker nodes.  It is possible to create a Machine Config to write files and `systemd` units to RHEL worker nodes, but it is not possible to manage OS updates, kernel arguments, or extensions on RHEL worker nodes.
