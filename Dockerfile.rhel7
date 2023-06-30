@@ -7,7 +7,7 @@ COPY . .
 # just use that.  For now we work around this by copying a tarball.
 RUN make install DESTDIR=./instroot && tar -C instroot -cf instroot.tar .
 
-FROM registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.19-openshift-4.13 AS rhel9-builder
+FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.19-openshift-4.13 AS rhel9-builder
 ARG TAGS=""
 WORKDIR /go/src/github.com/openshift/machine-config-operator
 COPY . .
