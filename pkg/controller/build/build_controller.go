@@ -794,7 +794,7 @@ func (ctrl *Controller) prepareMachineConfigForPool(ibr ImageBuildRequest) error
 
 	_, err = ctrl.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Create(context.TODO(), dockerfileConfigMap, metav1.CreateOptions{})
 	if err != nil {
-		return fmt.Errorf("could not load rendered MachineConfig %s into configmap: %w", dockerfileConfigMap.Name, err)
+		return fmt.Errorf("could not load rendered Dockerfile %s into configmap: %w", dockerfileConfigMap.Name, err)
 	}
 
 	klog.Infof("Stored Dockerfile for build %s in ConfigMap %s for build", ibr.getBuildName(), dockerfileConfigMap.Name)

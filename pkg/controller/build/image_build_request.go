@@ -10,6 +10,7 @@ import (
 	buildv1 "github.com/openshift/api/build/v1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/test/helpers"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -26,8 +27,11 @@ var dockerfileTemplate string
 //go:embed assets/wait.sh
 var waitScript string
 
-//go:embed assets/build.sh
-var buildScript string
+//go:embed assets/buildah-build.sh
+var buildahBuildScript string
+
+//go:embed assets/podman-build.sh
+var podmanBuildScript string
 
 // Represents a given image pullspec and the location of the pull secret.
 type ImageInfo struct {
@@ -233,6 +237,185 @@ func (i ImageBuildRequest) toBuild() *buildv1.Build {
 // Creates a custom image build pod to build the final OS image with all
 // ConfigMaps / Secrets / etc. wired into it.
 func (i ImageBuildRequest) toBuildPod() *corev1.Pod {
+	return i.toBuildahPod()
+}
+
+// This reflects an attempt to use Podman to perform the OS build.
+// Unfortunately, it was difficult to get this to run unprivileged and I was
+// not able to figure out a solution. Nevertheless, I will leave it here for
+// posterity.
+func (i ImageBuildRequest) toPodmanPod() *corev1.Pod {
+	env := []corev1.EnvVar{
+		{
+			Name:  "DIGEST_CONFIGMAP_NAME",
+			Value: i.getDigestConfigMapName(),
+		},
+		{
+			Name:  "HOME",
+			Value: "/tmp",
+		},
+		{
+			Name:  "TAG",
+			Value: i.FinalImage.Pullspec,
+		},
+		{
+			Name:  "BASE_IMAGE_PULL_CREDS",
+			Value: "/tmp/base-image-pull-creds/config.json",
+		},
+		{
+			Name:  "FINAL_IMAGE_PUSH_CREDS",
+			Value: "/tmp/final-image-push-creds/config.json",
+		},
+	}
+
+	command := []string{"/bin/bash", "-c"}
+
+	volumeMounts := []corev1.VolumeMount{
+		{
+			Name:      "machineconfig",
+			MountPath: "/tmp/machineconfig",
+		},
+		{
+			Name:      "dockerfile",
+			MountPath: "/tmp/dockerfile",
+		},
+		{
+			Name:      "base-image-pull-creds",
+			MountPath: "/tmp/base-image-pull-creds",
+		},
+		{
+			Name:      "final-image-push-creds",
+			MountPath: "/tmp/final-image-push-creds",
+		},
+		{
+			Name:      "done",
+			MountPath: "/tmp/done",
+		},
+	}
+
+	// See: https://access.redhat.com/solutions/6964609
+	// TL;DR: Trying to get podman / buildah to run in an unprivileged container
+	// is quite involved. However, OpenShift Builder runs in privileged
+	// containers, which sets a precedent.
+	// This requires that one run: $ oc adm policy add-scc-to-user -z machine-os-builder privileged
+	securityContext := &corev1.SecurityContext{
+		Privileged: helpers.BoolToPtr(true),
+		SeccompProfile: &corev1.SeccompProfile{
+			Type:             "Localhost",
+			LocalhostProfile: helpers.StrToPtr("profiles/unshare.json"),
+		},
+	}
+
+	// TODO: We need pull creds with permissions to pull the base image. By
+	// default, none of the MCO pull secrets can directly pull it. We can use the
+	// pull-secret creds from openshift-config to do that, though we'll need to
+	// mirror those creds into the MCO namespace. The operator portion of the MCO
+	// has some logic to detect whenever that secret changes.
+	return &corev1.Pod{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "v1",
+			Kind:       "Pod",
+		},
+		ObjectMeta: i.getObjectMeta(i.getBuildName()),
+		Spec: corev1.PodSpec{
+			RestartPolicy: corev1.RestartPolicyNever,
+			Containers: []corev1.Container{
+				{
+					// This container performs the image build / push process.
+					// Additionally, it takes the digestfile which podman creates, which
+					// contains the SHA256 from the container registry, and stores this
+					// in a ConfigMap which is consumed after the pod stops.
+					Name:            "image-build",
+					Image:           i.BaseImage.Pullspec,
+					Env:             env,
+					Command:         append(command, podmanBuildScript),
+					ImagePullPolicy: corev1.PullIfNotPresent,
+					SecurityContext: securityContext,
+					VolumeMounts:    volumeMounts,
+				},
+			},
+			// We probably cannot count on the 'builder' service account being
+			// present in the future. If we cannot use the builder service account
+			// means that we'll need to:
+			// 1. Create a SecurityContextConstraint.
+			// 2. Additional RBAC / ClusterRole / etc. work to suss this out.
+			ServiceAccountName: "machine-os-builder",
+			Volumes: []corev1.Volume{ // nolint:dupl // I don't want to deduplicate this yet since there are still some unknowns.
+				{
+					// Provides the rendered Dockerfile.
+					Name: "dockerfile",
+					VolumeSource: corev1.VolumeSource{
+						ConfigMap: &corev1.ConfigMapVolumeSource{
+							LocalObjectReference: corev1.LocalObjectReference{
+								Name: i.getDockerfileConfigMapName(),
+							},
+						},
+					},
+				},
+				{
+					// Provides the rendered MachineConfig in a gzipped / base64-encoded
+					// format.
+					Name: "machineconfig",
+					VolumeSource: corev1.VolumeSource{
+						ConfigMap: &corev1.ConfigMapVolumeSource{
+							LocalObjectReference: corev1.LocalObjectReference{
+								Name: i.getMCConfigMapName(),
+							},
+						},
+					},
+				},
+				{
+					// Provides the credentials needed to pull the base OS image.
+					Name: "base-image-pull-creds",
+					VolumeSource: corev1.VolumeSource{
+						Secret: &corev1.SecretVolumeSource{
+							SecretName: i.BaseImage.PullSecret.Name,
+							Items: []corev1.KeyToPath{
+								{
+									Key:  corev1.DockerConfigJsonKey,
+									Path: "config.json",
+								},
+							},
+						},
+					},
+				},
+				{
+					// Provides the credentials needed to push the final OS image.
+					Name: "final-image-push-creds",
+					VolumeSource: corev1.VolumeSource{
+						Secret: &corev1.SecretVolumeSource{
+							SecretName: i.FinalImage.PullSecret.Name,
+							Items: []corev1.KeyToPath{
+								{
+									Key:  corev1.DockerConfigJsonKey,
+									Path: "config.json",
+								},
+							},
+						},
+					},
+				},
+				{
+					// Provides a way for the "image-build" container to signal that it
+					// finished so that the "wait-for-done" container can retrieve the
+					// iamge SHA.
+					Name: "done",
+					VolumeSource: corev1.VolumeSource{
+						EmptyDir: &corev1.EmptyDirVolumeSource{
+							Medium: corev1.StorageMediumMemory,
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+// We're able to run the Buildah image in an unprivileged pod provided that the
+// machine-os-builder service account has the anyuid security constraint
+// context enabled to allow us to use UID 1000, which maps to the UID within
+// the official Buildah image.
+// nolint:dupl // I don't want to deduplicate this yet since there are still some unknowns.
+func (i ImageBuildRequest) toBuildahPod() *corev1.Pod {
 	env := []corev1.EnvVar{
 		{
 			Name:  "DIGEST_CONFIGMAP_NAME",
@@ -309,7 +492,7 @@ func (i ImageBuildRequest) toBuildPod() *corev1.Pod {
 					// TODO: Figure out how to not hard-code this here.
 					Image:           buildahImagePullspec,
 					Env:             env,
-					Command:         append(command, buildScript),
+					Command:         append(command, buildahBuildScript),
 					ImagePullPolicy: corev1.PullAlways,
 					SecurityContext: securityContext,
 					VolumeMounts:    volumeMounts,
@@ -329,6 +512,7 @@ func (i ImageBuildRequest) toBuildPod() *corev1.Pod {
 					VolumeMounts:    volumeMounts,
 				},
 			},
+			ServiceAccountName: "machine-os-builder",
 			Volumes: []corev1.Volume{
 				{
 					// Provides the rendered Dockerfile.
