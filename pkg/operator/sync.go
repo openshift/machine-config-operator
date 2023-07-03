@@ -77,12 +77,13 @@ const (
 	mccServiceAccountManifestPath           = "manifests/machineconfigcontroller/sa.yaml"
 
 	// Machine OS Builder manifest paths
-	mobClusterRoleManifestPath              = "manifests/machineosbuilder/clusterrole.yaml"
-	mobEventsClusterRoleManifestPath        = "manifests/machineosbuilder/events-clusterrole.yaml"
-	mobEventsRoleBindingDefaultManifestPath = "manifests/machineosbuilder/events-rolebinding-default.yaml"
-	mobEventsRoleBindingTargetManifestPath  = "manifests/machineosbuilder/events-rolebinding-target.yaml"
-	mobClusterRoleBindingManifestPath       = "manifests/machineosbuilder/clusterrolebinding.yaml"
-	mobServiceAccountManifestPath           = "manifests/machineosbuilder/sa.yaml"
+	mobClusterRoleManifestPath                      = "manifests/machineosbuilder/clusterrole.yaml"
+	mobEventsClusterRoleManifestPath                = "manifests/machineosbuilder/events-clusterrole.yaml"
+	mobEventsRoleBindingDefaultManifestPath         = "manifests/machineosbuilder/events-rolebinding-default.yaml"
+	mobEventsRoleBindingTargetManifestPath          = "manifests/machineosbuilder/events-rolebinding-target.yaml"
+	mobClusterRoleBindingServiceAccountManifestPath = "manifests/machineosbuilder/clusterrolebinding-service-account.yaml"
+	mobClusterRolebindingAnyUIDManifestPath          = "manifests/machineosbuilder/clusterrolebinding-anyuid.yaml"
+	mobServiceAccountManifestPath                   = "manifests/machineosbuilder/sa.yaml"
 
 	// Machine Config Daemon manifest paths
 	mcdClusterRoleManifestPath              = "manifests/machineconfigdaemon/clusterrole.yaml"
@@ -695,7 +696,8 @@ func (optr *Operator) syncMachineOSBuilder(config *renderConfig) error {
 			mobEventsRoleBindingTargetManifestPath,
 		},
 		clusterRoleBindings: []string{
-			mobClusterRoleBindingManifestPath,
+			mobClusterRoleBindingServiceAccountManifestPath,
+			mobClusterRolebindingAnyUIDManifestPath,
 		},
 		serviceAccounts: []string{
 			mobServiceAccountManifestPath,

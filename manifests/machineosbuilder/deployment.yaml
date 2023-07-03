@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: machine-os-builder
-  namespace: {{.TargetNamespace}}
+  namespace: "{{.TargetNamespace}}"
 spec:
   replicas: 1
   selector:
@@ -15,9 +15,10 @@ spec:
     spec:
       containers:
       - name: machine-os-builder
-        image: {{.Images.MachineConfigOperator}}
+        image: "{{.Images.MachineConfigOperator}}"
         command: ["/usr/bin/machine-os-builder"]
         args:
         - start
         - -v4
         - --create-defaults
+      serviceAccountName: machine-os-builder
