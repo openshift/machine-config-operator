@@ -288,13 +288,13 @@ func (ctrl *PodBuildController) updatePod(oldObj, curObj interface{}) {
 
 	isBuildPod := hasAllRequiredOSBuildLabels(curPod.Labels)
 
-	klog.Infof("Updating pod %s. Is build pod? %v", curPod.Name, isBuildPod)
-
 	// Ignore non-build pods.
 	// TODO: Figure out if we can add the filter criteria onto the lister.
 	if !isBuildPod {
 		return
 	}
+
+	klog.Infof("Updating pod %s. Is build pod? %v", curPod.Name, isBuildPod)
 
 	if oldPod.Status.Phase != curPod.Status.Phase {
 		klog.Infof("Pod %s changed from %s to %s", oldPod.Name, oldPod.Status.Phase, curPod.Status.Phase)
@@ -325,7 +325,11 @@ func (ctrl *PodBuildController) handleErr(err error, key interface{}) {
 
 // Fires whenever a pod is deleted.
 func (ctrl *PodBuildController) deletePod(obj interface{}) {
-	pod := obj.(*corev1.Pod).DeepCopy()
+	pod, ok := obj.(*corev1.Pod)
+	if !ok {
+		return
+	}
+	pod = pod.DeepCopy()
 	klog.V(4).Infof("Deleting Pod %s. Is build pod? %v", pod.Name, hasAllRequiredOSBuildLabels(pod.Labels))
 	ctrl.enqueuePod(pod)
 }
