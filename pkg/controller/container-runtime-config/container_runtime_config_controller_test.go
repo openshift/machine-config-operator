@@ -90,6 +90,7 @@ func newFixture(t *testing.T) *fixture {
 			apicfgv1.FeatureGateExternalCloudProvider,
 			apicfgv1.FeatureGateExternalCloudProviderAzure,
 			apicfgv1.FeatureGateExternalCloudProviderGCP,
+			apicfgv1.FeatureGateExternalCloudProviderExternal,
 		},
 	)
 	return f

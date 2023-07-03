@@ -28,8 +28,8 @@ func TestMain(m *testing.M) {
 func TestCloudProvider(t *testing.T) {
 	dummyTemplate := []byte(`{{cloudProvider .}}`)
 
-	externalEnabledFG := featuregates.NewHardcodedFeatureGateAccess([]configv1.FeatureGateName{cloudprovider.ExternalCloudProviderFeature, cloudprovider.ExternalCloudProviderFeatureGCP, cloudprovider.ExternalCloudProviderFeatureAzure}, nil)
-	externalDisabledFG := featuregates.NewHardcodedFeatureGateAccess(nil, []configv1.FeatureGateName{cloudprovider.ExternalCloudProviderFeature, cloudprovider.ExternalCloudProviderFeatureGCP, cloudprovider.ExternalCloudProviderFeatureAzure})
+	externalEnabledFG := featuregates.NewHardcodedFeatureGateAccess([]configv1.FeatureGateName{cloudprovider.ExternalCloudProviderFeature, cloudprovider.ExternalCloudProviderFeatureGCP, cloudprovider.ExternalCloudProviderFeatureAzure, cloudprovider.ExternalCloudProviderFeatureExternal}, nil)
+	externalDisabledFG := featuregates.NewHardcodedFeatureGateAccess(nil, []configv1.FeatureGateName{cloudprovider.ExternalCloudProviderFeature, cloudprovider.ExternalCloudProviderFeatureGCP, cloudprovider.ExternalCloudProviderFeatureAzure, cloudprovider.ExternalCloudProviderFeatureExternal})
 
 	cases := []struct {
 		platform          configv1.PlatformType
@@ -148,8 +148,8 @@ func TestCloudProvider(t *testing.T) {
 func TestCloudConfigFlag(t *testing.T) {
 	dummyTemplate := []byte(`{{cloudConfigFlag .}}`)
 
-	externalEnabledFG := featuregates.NewHardcodedFeatureGateAccess([]configv1.FeatureGateName{cloudprovider.ExternalCloudProviderFeature, cloudprovider.ExternalCloudProviderFeatureGCP, cloudprovider.ExternalCloudProviderFeatureAzure}, nil)
-	externalDisabledFG := featuregates.NewHardcodedFeatureGateAccess(nil, []configv1.FeatureGateName{cloudprovider.ExternalCloudProviderFeature, cloudprovider.ExternalCloudProviderFeatureGCP, cloudprovider.ExternalCloudProviderFeatureAzure})
+	externalEnabledFG := featuregates.NewHardcodedFeatureGateAccess([]configv1.FeatureGateName{cloudprovider.ExternalCloudProviderFeature, cloudprovider.ExternalCloudProviderFeatureGCP, cloudprovider.ExternalCloudProviderFeatureAzure, cloudprovider.ExternalCloudProviderFeatureExternal}, nil)
+	externalDisabledFG := featuregates.NewHardcodedFeatureGateAccess(nil, []configv1.FeatureGateName{cloudprovider.ExternalCloudProviderFeature, cloudprovider.ExternalCloudProviderFeatureGCP, cloudprovider.ExternalCloudProviderFeatureAzure, cloudprovider.ExternalCloudProviderFeatureExternal})
 
 	cases := []struct {
 		platform          configv1.PlatformType
@@ -352,6 +352,7 @@ var (
 		"libvirt":                "./test_data/controller_config_libvirt.yaml",
 		"mtu-migration":          "./test_data/controller_config_mtu_migration.yaml",
 		"none":                   "./test_data/controller_config_none.yaml",
+		"external":               "./test_data/controller_config_external.yaml",
 		"vsphere":                "./test_data/controller_config_vsphere.yaml",
 		"kubevirt":               "./test_data/controller_config_kubevirt.yaml",
 		"powervs":                "./test_data/controller_config_powervs.yaml",
@@ -399,7 +400,7 @@ func TestGenerateMachineConfigs(t *testing.T) {
 			t.Fatalf("failed to get controllerconfig config: %v", err)
 		}
 
-		fgAccess := featuregates.NewHardcodedFeatureGateAccess(nil, []configv1.FeatureGateName{cloudprovider.ExternalCloudProviderFeature, cloudprovider.ExternalCloudProviderFeatureAzure, cloudprovider.ExternalCloudProviderFeatureGCP})
+		fgAccess := featuregates.NewHardcodedFeatureGateAccess(nil, []configv1.FeatureGateName{cloudprovider.ExternalCloudProviderFeature, cloudprovider.ExternalCloudProviderFeatureAzure, cloudprovider.ExternalCloudProviderFeatureGCP, cloudprovider.ExternalCloudProviderFeatureExternal})
 
 		cfgs, err := generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, fgAccess, nil}, templateDir)
 		if err != nil {
