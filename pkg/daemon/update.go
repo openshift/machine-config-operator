@@ -163,10 +163,7 @@ func (dn *Daemon) compareMachineConfig(oldConfig, newConfig *mcfgv1.MachineConfi
 // install extensions and rt-kernel
 func addExtensionsRepo(osImageContentDir string) error {
 	repoContent := "[coreos-extensions]\nenabled=1\nmetadata_expire=1m\nbaseurl=" + osImageContentDir + "/extensions/\ngpgcheck=0\nskip_if_unavailable=False\n"
-	if err := writeFileAtomicallyWithDefaults(extensionsRepo, []byte(repoContent)); err != nil {
-		return err
-	}
-	return nil
+	return writeFileAtomicallyWithDefaults(extensionsRepo, []byte(repoContent))
 }
 
 // addLayeredExtensionsRepo adds a repo into /etc/yum.repos.d/ which we use later to
@@ -175,10 +172,7 @@ func addExtensionsRepo(osImageContentDir string) error {
 // we extract to a different location
 func addLayeredExtensionsRepo(extensionsImageContentDir string) error {
 	repoContent := "[coreos-extensions]\nenabled=1\nmetadata_expire=1m\nbaseurl=" + extensionsImageContentDir + "/usr/share/rpm-ostree/extensions/\ngpgcheck=0\nskip_if_unavailable=False\n"
-	if err := writeFileAtomicallyWithDefaults(extensionsRepo, []byte(repoContent)); err != nil {
-		return err
-	}
-	return nil
+	return writeFileAtomicallyWithDefaults(extensionsRepo, []byte(repoContent))
 }
 
 // podmanRemove kills and removes a container
@@ -933,7 +927,8 @@ func nextArg(args string, begin int) (int, int) {
 		inQuote     bool
 	)
 	// Skip leading spaces
-	for start = begin; start < len(args) && isSpace(args[start]); start++ {
+	for start = begin; start < len(args) && isSpace(args[start]); {
+		start++
 	}
 	stop = start
 	for ; stop < len(args); stop++ {
@@ -1187,10 +1182,7 @@ func (dn *Daemon) updateFiles(oldIgnConfig, newIgnConfig ign3types.Config, skipC
 	if err := dn.writeUnits(newIgnConfig.Systemd.Units); err != nil {
 		return err
 	}
-	if err := dn.deleteStaleData(oldIgnConfig, newIgnConfig); err != nil {
-		return err
-	}
-	return nil
+	return dn.deleteStaleData(oldIgnConfig, newIgnConfig)
 }
 
 func restorePath(path string) error {
@@ -2074,11 +2066,7 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 	}
 
 	// Apply extensions
-	if err := dn.applyExtensions(oldConfig, newConfig); err != nil {
-		return err
-	}
-
-	return nil
+	return dn.applyExtensions(oldConfig, newConfig)
 }
 
 func (dn *CoreOSDaemon) applyLegacyOSChanges(mcDiff machineConfigDiff, oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
@@ -2146,9 +2134,5 @@ func (dn *CoreOSDaemon) applyLegacyOSChanges(mcDiff machineConfigDiff, oldConfig
 	}
 
 	// Apply extensions
-	if err := dn.applyExtensions(oldConfig, newConfig); err != nil {
-		return err
-	}
-
-	return nil
+	return dn.applyExtensions(oldConfig, newConfig)
 }

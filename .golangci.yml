@@ -8,7 +8,7 @@ run:
 linters:
   disable-all: true
   enable:
-    - deadcode
+    #- deadcode
     - depguard
     - dupl
     #- gochecknoinits
@@ -26,11 +26,11 @@ linters:
     #- prealloc
     #- scopelint
     - staticcheck
-    - structcheck
+    #- structcheck
     #- typecheck
     - unconvert
     - unparam
-    - varcheck
+    #- varcheck
     #- errcheck
     #- gochecknoglobals
     - gocyclo
@@ -112,5 +112,11 @@ linters-settings:
     confidence: medium
     excludes:
       - G204
+  depguard:
+    rules:
+      Main:
+        deny:
+          - desc: "Use k8s.io/klog/v2 instead of github.com/golang/glog"
+            pkg: github.com/golang/glog
 output:
   format: "checkstyle:checkstyle-golangci-lint.xml,junit-xml:junit-golangci-lint.xml,colored-line-number"

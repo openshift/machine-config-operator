@@ -30,7 +30,7 @@ func init() {
 	startCmd.PersistentFlags().StringVar(&startOpts.apiserverURL, "apiserver-url", "", "URL for apiserver; Used to generate kubeconfig")
 }
 
-func runStartCmd(cmd *cobra.Command, args []string) {
+func runStartCmd(_ *cobra.Command, _ []string) {
 	flag.Set("logtostderr", "true")
 	flag.Parse()
 

@@ -29,7 +29,7 @@ func init() {
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.serverKubeConfig, "bootstrap-kubeconfig", "/etc/kubernetes/kubeconfig", "path to bootstrap kubeconfig served by the bootstrap server.")
 }
 
-func runBootstrapCmd(cmd *cobra.Command, args []string) {
+func runBootstrapCmd(_ *cobra.Command, _ []string) {
 	flag.Set("logtostderr", "true")
 	flag.Parse()
 
