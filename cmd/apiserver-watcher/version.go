@@ -21,7 +21,7 @@ func init() {
 	rootCmd.AddCommand(versionCmd)
 }
 
-func runVersionCmd(cmd *cobra.Command, args []string) {
+func runVersionCmd(_ *cobra.Command, _ []string) {
 	flag.Set("logtostderr", "true")
 	flag.Parse()
 

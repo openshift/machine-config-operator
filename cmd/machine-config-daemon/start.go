@@ -87,7 +87,7 @@ func selfCopyToHost() error {
 	return nil
 }
 
-func runStartCmd(cmd *cobra.Command, args []string) {
+func runStartCmd(_ *cobra.Command, _ []string) {
 	flag.Set("logtostderr", "true")
 	flag.Parse()
 

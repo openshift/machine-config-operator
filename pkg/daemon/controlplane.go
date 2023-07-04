@@ -22,8 +22,5 @@ func updateOstreeObjectSync() error {
 // scheduler too but we now only do that late in the process when
 // we go to start an OS update.
 func (dn *Daemon) initializeControlPlane() error {
-	if err := updateOstreeObjectSync(); err != nil {
-		return err
-	}
-	return nil
+	return updateOstreeObjectSync()
 }

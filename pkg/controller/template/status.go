@@ -85,17 +85,17 @@ func updateControllerConfigStatus(name string,
 		if err != nil {
 			return err
 		}
-		new := old.DeepCopy()
+		newCfg := old.DeepCopy()
 		for _, update := range updateFuncs {
-			if err := update(new); err != nil {
+			if err := update(newCfg); err != nil {
 				return err
 			}
 		}
 
-		if equality.Semantic.DeepEqual(old, new) {
+		if equality.Semantic.DeepEqual(old, newCfg) {
 			return nil
 		}
-		_, err = client.UpdateStatus(context.TODO(), new, metav1.UpdateOptions{})
+		_, err = client.UpdateStatus(context.TODO(), newCfg, metav1.UpdateOptions{})
 		return err
 	})
 }

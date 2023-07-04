@@ -14,9 +14,9 @@ import (
 func NewReassign(settings *config.ReassignSettings) *goanalysis.Linter {
 	a := reassign.NewAnalyzer()
 
-	var cfg map[string]map[string]interface{}
+	var cfg map[string]map[string]any
 	if settings != nil && len(settings.Patterns) > 0 {
-		cfg = map[string]map[string]interface{}{
+		cfg = map[string]map[string]any{
 			a.Name: {
 				reassign.FlagPattern: fmt.Sprintf("^(%s)$", strings.Join(settings.Patterns, "|")),
 			},
@@ -28,5 +28,5 @@ func NewReassign(settings *config.ReassignSettings) *goanalysis.Linter {
 		a.Doc,
 		[]*analysis.Analyzer{a},
 		cfg,
-	).WithLoadMode(goanalysis.LoadModeSyntax)
+	).WithLoadMode(goanalysis.LoadModeTypesInfo)
 }

@@ -340,7 +340,7 @@ func WaitForPausedConfig(t *testing.T, cs *framework.ClientSet, pool string) err
 
 // GetMonitoringToken retrieves the token from the openshift-monitoring secrets in the prometheus-k8s namespace.
 // It is equivalent to "oc sa get-token prometheus-k8s -n openshift-monitoring"
-func GetMonitoringToken(t *testing.T, cs *framework.ClientSet) (string, error) {
+func GetMonitoringToken(_ *testing.T, cs *framework.ClientSet) (string, error) {
 	token, err := cs.
 		ServiceAccounts("openshift-monitoring").
 		CreateToken(

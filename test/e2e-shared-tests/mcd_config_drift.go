@@ -179,7 +179,7 @@ func (c configDriftTest) getMachineConfig(t *testing.T) *mcfgv1.MachineConfig {
 }
 
 // Tears down the test objects by delegating to the attached TeardownFunc
-func (c configDriftTest) Teardown(t *testing.T) {
+func (c configDriftTest) Teardown(_ *testing.T) {
 	c.TeardownFunc()
 }
 

@@ -49,7 +49,7 @@ type handler struct {
 	vips []string
 }
 
-func runRunCmd(cmd *cobra.Command, args []string) error {
+func runRunCmd(_ *cobra.Command, _ []string) error {
 	flag.Set("logtostderr", "true")
 	flag.Parse()
 

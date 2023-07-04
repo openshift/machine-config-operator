@@ -178,7 +178,7 @@ func (ctrl *Controller) getCurrentMasters() ([]*corev1.Node, error) {
 
 // checkMasterNodesOnAdd makes the master nodes schedulable/unschedulable whenever scheduler config CR with name
 // cluster is created
-func (ctrl *Controller) checkMasterNodesOnAdd(obj interface{}) {
+func (ctrl *Controller) checkMasterNodesOnAdd(_ interface{}) {
 	ctrl.reconcileMasters()
 }
 
@@ -1144,9 +1144,8 @@ func (ctrl *Controller) removeUpdateInProgressTaint(ctx context.Context, nodeNam
 		for _, taint := range newNode.Spec.Taints {
 			if taint.MatchTaint(constants.NodeUpdateInProgressTaint) {
 				continue
-			} else {
-				taintsAfterUpgrade = append(taintsAfterUpgrade, taint)
 			}
+			taintsAfterUpgrade = append(taintsAfterUpgrade, taint)
 		}
 
 		// Remove the NodeUpdateInProgressTaint.
