@@ -52,6 +52,12 @@ contents:
     # remap-user = "storage"
     # remap-group = "storage"
 
+    [storage.options.overlay]
+    # Storage Options for overlay
+
+    # Do not create a PRIVATE bind mount on the home directory.
+    skip_mount_home = "true"
+
     [storage.options.thinpool]
     # Storage Options for thinpool
 
@@ -115,4 +121,3 @@ contents:
     # attempt to complete IO when ENOSPC (no space) error is returned by
     # underlying storage device.
     # xfs_nospace_max_retries = "0"
-    
