@@ -209,3 +209,20 @@ func MigrateKernelArgsIfNecessary(conf *ign3types.Config, mc *mcfgv1.MachineConf
 	}
 	return nil
 }
+
+func addDataAndMaybeAppendToIgnition(path string, data []byte, ignConf *ign3types.Config) {
+	exists := false
+	for idx, file := range ignConf.Storage.Files {
+		if file.Path == path {
+			exists = true
+			d := getEncodedContent(string(data))
+			if len(data) > 0 {
+				ignConf.Storage.Files[idx].Contents.Source = &d
+			}
+			break
+		}
+	}
+	if !exists && len(data) > 0 {
+		appendFileToIgnition(ignConf, path, (string(data)))
+	}
+}
