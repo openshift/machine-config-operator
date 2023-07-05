@@ -36,7 +36,7 @@ spec:
             severity: warning
           annotations:
             summary: "Triggers when nodes in a pool have overlapping labels such as master, worker, and a custom label therefore a choice must be made as to which is honored."
-            description: "Node {{ $labels.node }} has triggered a pool alert due to a label change. For more details:  oc logs -f -n {{ $labels.namespace }} {{ $labels.pod }} -c machine-config-daemon"
+            description: "Node {{ $labels.exported_node }} has triggered a pool alert due to a label change. For more details check MachineConfigController pod logs: oc logs -f -n {{ $labels.namespace }} machine-config-controller-xxxxx -c machine-config-controller"
 ---
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
