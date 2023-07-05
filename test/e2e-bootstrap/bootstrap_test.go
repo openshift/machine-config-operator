@@ -2,11 +2,14 @@ package e2e_bootstrap_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 
 	"github.com/ghodss/yaml"
 	"github.com/stretchr/testify/assert"
@@ -389,6 +392,16 @@ func compareRenderedConfigPool(t *testing.T, clientSet *framework.ClientSet, des
 	bootstrapRenderedConfigName := strings.TrimSuffix(filepath.Base(bootstrapRenderedConfigFilePath), ".yaml")
 	t.Logf("Bootstrap rendered %s config as %q", poolName, bootstrapRenderedConfigName)
 
+	controllerMC, err := clientSet.MachineConfigs().Get(context.Background(), controllerRenderedConfigName, metav1.GetOptions{})
+	require.Nil(t, err)
+	outIgn := ign3types.Config{}
+	err = json.Unmarshal(controllerMC.Spec.Config.Raw, &outIgn)
+
+	for _, file := range outIgn.Storage.Files {
+		require.False(t, file.Path == "/etc/kubernetes/kubelet-ca.crt")
+		require.False(t, file.Path == "/etc/kubernetes/static-pod-resources/configmaps/cloud-config/ca-bundle.pem")
+		require.False(t, file.Path == "/etc/pki/ca-trust/source/anchors/openshift-config-user-ca-bundle.crt")
+	}
 	if controllerRenderedConfigName != bootstrapRenderedConfigName {
 		t.Errorf("Expected rendered %s configurations to match: got bootstrap config %q, got controller config %q", poolName, bootstrapRenderedConfigName, controllerRenderedConfigName)
 

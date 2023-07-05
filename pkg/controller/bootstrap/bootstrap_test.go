@@ -186,6 +186,7 @@ func TestBootstrapRun(t *testing.T) {
 				if f.Path == "/etc/containers/registries.conf" {
 					registriesConfig = f
 				}
+				require.False(t, f.Path == "/etc/kubernetes/kubelet-ca.crt")
 			}
 			require.NotNil(t, registriesConfig)
 			contents, err := ctrlcommon.DecodeIgnitionFileContents(registriesConfig.Contents.Source, registriesConfig.Contents.Compression)
