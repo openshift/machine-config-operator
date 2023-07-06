@@ -24,6 +24,7 @@ contents:
     serializeImagePulls: false
     staticPodPath: /etc/kubernetes/manifests
     systemCgroups: /system.slice
+    nodeStatusUpdateFrequency: 10s
     featureGates:
       APIPriorityAndFairness: true
       RotateKubeletServerCertificate: true
