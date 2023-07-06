@@ -126,7 +126,7 @@ spec:
               Memory utilization across all control plane nodes is high, and could impact responsiveness and stability.
             description: >-
               Given three control plane nodes, the overall memory utilization may only be about 2/3 of all available capacity.
-              This is because if a single control plane node fails, the kube-apiserver and etcd my be slow to respond.
+              This is because if a single control plane node fails, the kube-apiserver and etcd may be slow to respond.
               To fix this, increase memory of the control plane nodes.
     - name: extremely-high-individual-control-plane-memory
       rules:
