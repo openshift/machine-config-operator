@@ -1,0 +1,11 @@
+path: "/etc/nmstate/002-nmstate-arp-proxy-ipv6-gw.yml"
+contents:
+  inline: |
+    capture:
+      ethernet-nics: interfaces.type=="ethernet"
+    desiredState:
+      routes:
+        config:
+        - destination: ::/0
+          next-hop-interface: "{{`{{ capture.ethernet-nics.interfaces.0.name }}`}}"
+          next-hop-address: fe80::1
