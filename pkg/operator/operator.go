@@ -191,11 +191,11 @@ func New(
 
 	err := corev1.AddToScheme(scheme.Scheme)
 	if err != nil {
-		klog.Errorf("Could not modify scheme: %w", err)
+		klog.Errorf("Could not modify scheme: %v", err)
 	}
 	err = opv1.AddToScheme(scheme.Scheme)
 	if err != nil {
-		klog.Errorf("Could not modify scheme: %w", err)
+		klog.Errorf("Could not modify scheme: %v", err)
 	}
 
 	for _, i := range []cache.SharedIndexInformer{

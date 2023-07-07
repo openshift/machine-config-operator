@@ -46,7 +46,7 @@ func (dn *Daemon) performDrain() error {
 			dn.featureGatesAccessor,
 		)
 		if err != nil {
-			klog.Errorf("Error making MCN for Drain not required: %w", err)
+			klog.Errorf("Error making MCN for Drain not required: %v", err)
 		}
 		dn.nodeWriter.Eventf(corev1.EventTypeNormal, "Drain", "Drain not required, skipping")
 		return nil
