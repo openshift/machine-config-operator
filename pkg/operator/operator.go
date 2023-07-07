@@ -153,7 +153,7 @@ func New(
 		kubeClient:    kubeClient,
 		apiExtClient:  apiExtClient,
 		configClient:  configClient,
-		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigoperator"}),
+		eventRecorder: ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigoperator"})),
 		libgoRecorder: events.NewRecorder(kubeClient.CoreV1().Events(ctrlcommon.MCONamespace), "machine-config-operator", &corev1.ObjectReference{
 			Kind:       "Deployment",
 			Name:       "machine-config-operator",

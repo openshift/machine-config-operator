@@ -46,10 +46,13 @@ import (
 	kerr "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/reference"
 	"k8s.io/klog/v2"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
+	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
 )
 
 // Gates whether or not the MCO uses the new format base OS container image by default
@@ -1128,4 +1131,42 @@ func ReadDir(path string) ([]fs.FileInfo, error) {
 		infos = append(infos, info)
 	}
 	return infos, nil
+}
+
+func NamespacedEventRecorder(delegate record.EventRecorder) record.EventRecorder {
+	return namespacedEventRecorder{delegate: delegate}
+}
+
+type namespacedEventRecorder struct {
+	delegate record.EventRecorder
+}
+
+func ensureEventNamespace(object runtime.Object) runtime.Object {
+	orig, err := reference.GetReference(scheme.Scheme, object)
+	if err != nil {
+		return object
+	}
+	ret := orig.DeepCopy()
+	if ret.Namespace == "" {
+		// the ref must set a namespace to avoid going into default.
+		// cluster operators are clusterscoped and "" becomes default.  Even though the clusteroperator
+		// is not in this namespace, the logical namespace of this operator is the openshift-machine-config-operator.
+		ret.Namespace = MCONamespace
+	}
+
+	return ret
+}
+
+var _ record.EventRecorder = namespacedEventRecorder{}
+
+func (n namespacedEventRecorder) Event(object runtime.Object, eventtype, reason, message string) {
+	n.delegate.Event(ensureEventNamespace(object), eventtype, reason, message)
+}
+
+func (n namespacedEventRecorder) Eventf(object runtime.Object, eventtype, reason, messageFmt string, args ...interface{}) {
+	n.delegate.Eventf(ensureEventNamespace(object), eventtype, reason, messageFmt, args...)
+}
+
+func (n namespacedEventRecorder) AnnotatedEventf(object runtime.Object, annotations map[string]string, eventtype, reason, messageFmt string, args ...interface{}) {
+	n.delegate.AnnotatedEventf(ensureEventNamespace(object), annotations, eventtype, reason, messageFmt, args...)
 }

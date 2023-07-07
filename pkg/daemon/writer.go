@@ -105,7 +105,7 @@ func newNodeWriter(nodeName string, stopCh <-chan struct{}) (NodeWriter, error) 
 		client:           kubeClient.CoreV1().Nodes(),
 		lister:           nodeLister,
 		nodeListerSynced: nodeListerSynced,
-		recorder:         eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigdaemon", Host: nodeName}),
+		recorder:         ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigdaemon", Host: nodeName})),
 		writer:           make(chan message, defaultWriterQueue),
 		kubeClient:       kubeClient,
 	}
