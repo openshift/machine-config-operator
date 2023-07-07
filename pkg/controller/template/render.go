@@ -126,9 +126,9 @@ func GenerateMachineConfigsForRole(config *RenderConfig, role, templateDir strin
 		}
 		// defaulting the CGroups version to "v1"
 		// (TODO) This code can be removed if not required in future releases
-		if name == baseMasterKubeletMC || name == baseWorkerKubeletMC {
-			updateMCwithDefaultCgroupsVersion(nameConfig)
-		}
+		// if name == baseMasterKubeletMC || name == baseWorkerKubeletMC {
+		// 	updateMCwithDefaultCgroupsVersion(nameConfig)
+		// }
 		cfgs = append(cfgs, nameConfig)
 	}
 
