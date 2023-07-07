@@ -49,6 +49,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/tools/reference"
 	"k8s.io/klog/v2"
+	"k8s.io/kubernetes/pkg/credentialprovider"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
@@ -1176,4 +1177,40 @@ func IsLayeredPool(pool *mcfgv1.MachineConfigPool) bool {
 		return true
 	}
 	return false
+}
+
+// Merges kubernetes.io/dockercfg type secrets into a JSON map.
+// Returns an error on failure to marshal the incoming secret.
+func MergeDockerConfigstoJSONMap(secretRaw []byte, auths map[string]credentialprovider.DockerConfigEntry) error {
+	var dockerConfig credentialprovider.DockerConfig
+	// Unmarshal raw JSON
+	err := json.Unmarshal(secretRaw, &dockerConfig)
+	if err != nil {
+		return fmt.Errorf(" unmarshal failure: %w", err)
+	}
+	// Step through the hosts and add them to the JSON map
+	for host := range dockerConfig {
+		auths[host] = dockerConfig[host]
+	}
+	return nil
+}
+
+// Converts a kubernetes.io/dockerconfigjson type secret to a
+// kubernetes.io/dockercfg type secret. Returns an error on failure
+// if the incoming secret is not formatted correctly.
+func ConvertSecretTodockercfg(secretBytes []byte) ([]byte, error) {
+	type newStyleAuth struct {
+		Auths map[string]interface{} `json:"auths,omitempty"`
+	}
+
+	// Un-marshal the new-style secret first
+	newStyleDecoded := &newStyleAuth{}
+	if err := json.Unmarshal(secretBytes, newStyleDecoded); err != nil {
+		return nil, fmt.Errorf("could not decode new-style pull secret: %w", err)
+	}
+
+	// Marshal with old style, which is everything inside the Auths field
+	out, err := json.Marshal(newStyleDecoded.Auths)
+
+	return out, err
 }
