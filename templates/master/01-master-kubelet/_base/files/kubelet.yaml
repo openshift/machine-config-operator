@@ -36,6 +36,7 @@ contents:
       ExternalCloudProviderAzure: true
       ExternalCloudProviderGCP: true
       ExternalCloudProviderExternal: true
+      KMSv1: true
       OpenShiftPodSecurityAdmission: true
       PrivateHostedZoneAWS: true
     serverTLSBootstrap: true

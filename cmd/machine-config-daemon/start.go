@@ -194,12 +194,12 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 	case <-ctrlctx.FeatureGateAccess.InitialFeatureGatesObserved():
 		featureGates, err := ctrlctx.FeatureGateAccess.CurrentFeatureGates()
 		if err != nil {
-			klog.Fatalf("Could not get FG: %w", err)
+			klog.Fatalf("Could not get FG: %v", err)
 		} else {
 			klog.Infof("FeatureGates initialized: knownFeatureGates=%v", featureGates.KnownFeatures())
 		}
 	case <-time.After(1 * time.Minute):
-		klog.Fatalf("Could not get FG, timed out: %w", err)
+		klog.Fatalf("Could not get FG, timed out: %v", err)
 	}
 
 	if err := dn.Run(stopCh, exitCh); err != nil {

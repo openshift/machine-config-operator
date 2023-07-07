@@ -48,7 +48,7 @@ func imageInspect(imageName string) (*types.ImageInspectInfo, *digest.Digest, er
 		err        error
 	)
 
-	retryOpts := retry.Options{
+	retryOpts := retry.RetryOptions{
 		MaxRetry: cmdRetriesCount,
 	}
 
@@ -57,7 +57,7 @@ func imageInspect(imageName string) (*types.ImageInspectInfo, *digest.Digest, er
 
 	// retry.IfNecessary takes into account whether the error is "retryable"
 	// so we don't keep looping on errors that will never resolve
-	if err := retry.IfNecessary(ctx, func() error {
+	if err := retry.RetryIfNecessary(ctx, func() error {
 		src, err = newDockerImageSource(ctx, sys, imageName)
 		return err
 	}, &retryOpts); err != nil {
@@ -65,7 +65,7 @@ func imageInspect(imageName string) (*types.ImageInspectInfo, *digest.Digest, er
 	}
 
 	var rawManifest []byte
-	if err := retry.IfNecessary(ctx, func() error {
+	if err := retry.RetryIfNecessary(ctx, func() error {
 		rawManifest, _, err = src.GetManifest(ctx, nil)
 
 		return err
@@ -86,7 +86,7 @@ func imageInspect(imageName string) (*types.ImageInspectInfo, *digest.Digest, er
 		return nil, nil, fmt.Errorf("error parsing manifest for image %q: %w", imageName, err)
 	}
 
-	if err := retry.IfNecessary(ctx, func() error {
+	if err := retry.RetryIfNecessary(ctx, func() error {
 		imgInspect, err = img.Inspect(ctx)
 		return err
 	}, &retryOpts); err != nil {

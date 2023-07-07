@@ -700,7 +700,7 @@ func (optr *Operator) syncMachineConfigPools(config *renderConfig) error {
 func (optr *Operator) syncMachineConfigNodes(_ *renderConfig) error {
 	fg, err := optr.fgAccessor.CurrentFeatureGates()
 	if err != nil {
-		klog.Errorf("Could not get fg: %w", err)
+		klog.Errorf("Could not get fg: %v", err)
 		return err
 	}
 	if !fg.Enabled(configv1.FeatureGateMachineConfigNodes) {
@@ -753,7 +753,7 @@ func (optr *Operator) syncMachineConfigNodes(_ *renderConfig) error {
 		}
 		mcsBytes, err := json.Marshal(newMCS)
 		if err != nil {
-			klog.Errorf("error rendering asset for MachineConfigNode %w", err)
+			klog.Errorf("error rendering asset for MachineConfigNode %v", err)
 			return err
 		}
 		p := mcoResourceRead.ReadMachineConfigNodeV1OrDie(mcsBytes)
@@ -765,7 +765,7 @@ func (optr *Operator) syncMachineConfigNodes(_ *renderConfig) error {
 		if mcn.Spec.ConfigVersion.Desired == upgrademonitor.NotYetSet {
 			err = upgrademonitor.GenerateAndApplyMachineConfigNodeSpec(optr.fgAccessor, pool, node, optr.client)
 			if err != nil {
-				klog.Errorf("Error making MCN spec for Update Compatible: %w", err)
+				klog.Errorf("Error making MCN spec for Update Compatible: %v", err)
 			}
 		}
 
@@ -1296,7 +1296,7 @@ func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
 
 				// Calling this on a "required" pool for now
 				if err := optr.stampBootImagesCM(pool); err != nil {
-					klog.Errorf("Failed to stamp bootimages configmap: %w", err)
+					klog.Errorf("Failed to stamp bootimages configmap: %v", err)
 				}
 
 				if err := isMachineConfigPoolConfigurationValid(pool, version.Hash, releaseVersion, opURL, optr.mcLister.Get); err != nil {
