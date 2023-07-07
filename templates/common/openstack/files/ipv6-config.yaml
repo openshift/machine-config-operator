@@ -1,3 +1,4 @@
+{{- if eq .IPFamilies "DualStack"}}
 mode: 0600
 path: "/etc/NetworkManager/system-connections/nmconnection.template"
 contents:
@@ -7,3 +8,4 @@ contents:
     [ipv6]
     addr-gen-mode=eui64
     method=auto
+{{- end}}
