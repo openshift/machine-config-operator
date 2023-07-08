@@ -1073,6 +1073,7 @@ func getSupportedExtensions() map[string][]string {
 	// These are RHCOS supported extensions.
 	// Each extension keeps a list of packages required to get enabled on host.
 	return map[string][]string{
+		"wasm":                 {"crun-wasm"},
 		"ipsec":                {"NetworkManager-libreswan", "libreswan"},
 		"usbguard":             {"usbguard"},
 		"kerberos":             {"krb5-workstation", "libkadm5"},
