@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"reflect"
 	"testing"
@@ -14,6 +15,7 @@ import (
 	"github.com/containers/image/v5/types"
 	storageconfig "github.com/containers/storage/pkg/config"
 	apicfgv1 "github.com/openshift/api/config/v1"
+	apicfgv1alpha1 "github.com/openshift/api/config/v1alpha1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	"github.com/stretchr/testify/assert"
@@ -463,7 +465,86 @@ func TestUpdateRegistriesConfig(t *testing.T) {
 	}
 }
 
+var testImagePolicyCRs = map[string]apicfgv1alpha1.ImagePolicy{
+	"test-cr2": {
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-cr2",
+			Namespace: "testnamespace",
+		},
+		Spec: apicfgv1alpha1.ImagePolicySpec{
+			Scopes: []apicfgv1alpha1.ImageScope{"test0.com", "test2.com"},
+			Policy: apicfgv1alpha1.Policy{
+				RootOfTrust: apicfgv1alpha1.PolicyRootOfTrust{
+					PolicyType: apicfgv1alpha1.PublicKeyRootOfTrust,
+					PublicKey: &apicfgv1alpha1.PublicKey{
+						KeyData: "dGVzdC1rZXktZGF0YQ==",
+					},
+				},
+			},
+		},
+	},
+}
+
+var testClusterImagePolicyCRs = map[string]apicfgv1alpha1.ClusterImagePolicy{
+	"test-cr0": {
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-cr0",
+		},
+		Spec: apicfgv1alpha1.ClusterImagePolicySpec{
+			Scopes: []apicfgv1alpha1.ImageScope{"test0.com"},
+			Policy: apicfgv1alpha1.Policy{
+				RootOfTrust: apicfgv1alpha1.PolicyRootOfTrust{
+					PolicyType: apicfgv1alpha1.FulcioCAWithRekorRootOfTrust,
+					FulcioCAWithRekor: &apicfgv1alpha1.FulcioCAWithRekor{
+						FulcioCAData: "dGVzdC1jYS1kYXRhLWRhdGE=",
+						RekorKeyData: "dGVzdC1yZWtvci1rZXktZGF0YQ==",
+						FulcioSubject: apicfgv1alpha1.PolicyFulcioSubject{
+							OIDCIssuer:  "https://OIDC.example.com",
+							SignedEmail: "test-user@example.com",
+						},
+					},
+				},
+				SignedIdentity: apicfgv1alpha1.PolicyIdentity{
+					MatchPolicy: apicfgv1alpha1.IdentityMatchPolicyRemapIdentity,
+					PolicyMatchRemapIdentity: &apicfgv1alpha1.PolicyMatchRemapIdentity{
+						Prefix:       "test-remap-prefix",
+						SignedPrefix: "test-remap-signed-prefix",
+					},
+				},
+			},
+		},
+	},
+	"test-cr1": {
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-cr1",
+		},
+		Spec: apicfgv1alpha1.ClusterImagePolicySpec{
+			Scopes: []apicfgv1alpha1.ImageScope{"test0.com", "test1.com"},
+			Policy: apicfgv1alpha1.Policy{
+				RootOfTrust: apicfgv1alpha1.PolicyRootOfTrust{
+					PolicyType: apicfgv1alpha1.PublicKeyRootOfTrust,
+					PublicKey: &apicfgv1alpha1.PublicKey{
+						KeyData:      "dGVzdC1rZXktZGF0YQ==",
+						RekorKeyData: "dGVzdC1yZWtvci1rZXktZGF0YQ==",
+					},
+				},
+				SignedIdentity: apicfgv1alpha1.PolicyIdentity{
+					MatchPolicy: apicfgv1alpha1.IdentityMatchPolicyRemapIdentity,
+					PolicyMatchRemapIdentity: &apicfgv1alpha1.PolicyMatchRemapIdentity{
+						Prefix:       "test-remap-prefix",
+						SignedPrefix: "test-remap-signed-prefix",
+					},
+				},
+			},
+		},
+	},
+}
+
 func TestUpdatePolicyJSON(t *testing.T) {
+	testClusterImagePolicyCR := testClusterImagePolicyCRs["test-cr0"]
+	expectSigRequirement, policyerr := policyItemFromSpec(testClusterImagePolicyCR.Spec.Policy)
+	require.NoError(t, policyerr)
+
 	templateConfig := signature.Policy{
 		Default: signature.PolicyRequirements{signature.NewPRInsecureAcceptAnything()},
 		Transports: map[string]signature.PolicyTransportScopes{
@@ -480,6 +561,7 @@ func TestUpdatePolicyJSON(t *testing.T) {
 	tests := []struct {
 		name             string
 		allowed, blocked []string
+		imagepolicy      *apicfgv1alpha1.ClusterImagePolicy
 		errorExpected    bool
 		want             signature.Policy
 	}{
@@ -626,10 +708,41 @@ func TestUpdatePolicyJSON(t *testing.T) {
 			},
 			errorExpected: false,
 		},
+		{
+			name:        "update global policy with ImagePolicy CR",
+			allowed:     []string{"allow.io"},
+			imagepolicy: &testClusterImagePolicyCR,
+			want: signature.Policy{
+				Default: signature.PolicyRequirements{signature.NewPRReject()},
+				Transports: map[string]signature.PolicyTransportScopes{
+					"atomic": map[string]signature.PolicyRequirements{
+						"allow.io": {signature.NewPRInsecureAcceptAnything()},
+					},
+					"docker": map[string]signature.PolicyRequirements{
+						"allow.io":  {signature.NewPRInsecureAcceptAnything()},
+						"test0.com": {expectSigRequirement},
+					},
+					"docker-daemon": map[string]signature.PolicyRequirements{
+						"": {signature.NewPRInsecureAcceptAnything()},
+					},
+				},
+			},
+			errorExpected: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := updatePolicyJSON(templateBytes, tt.blocked, tt.allowed, "release-reg.io/image/release")
+
+			var (
+				clusterImagePolicies map[string]signature.PolicyRequirements
+				policyerr            error
+			)
+
+			if tt.imagepolicy != nil {
+				clusterImagePolicies, _, policyerr = getValidScopeNamespacePolicies([]*apicfgv1alpha1.ClusterImagePolicy{tt.imagepolicy}, []*apicfgv1alpha1.ImagePolicy{}, "release-reg.io/image/release", nil)
+				require.NoError(t, policyerr)
+			}
+			got, err := updatePolicyJSON(templateBytes, tt.blocked, tt.allowed, "release-reg.io/image/release", clusterImagePolicies)
 			if err == nil && tt.errorExpected {
 				t.Errorf("updatePolicyJSON() error = %v", err)
 				return
@@ -1104,4 +1217,260 @@ func TestUpdateStorageConfig(t *testing.T) {
 			t.Errorf("%s: failed. got %v, want %v", test.name, got, test.want)
 		}
 	}
+}
+
+func TestGetValidScopeNamespacePolicies(t *testing.T) {
+	type testcase struct {
+		name                   string
+		clusterImagePolicyCRs  []*apicfgv1alpha1.ClusterImagePolicy
+		imagePolicyCRs         []*apicfgv1alpha1.ImagePolicy
+		releaseImg             string
+		expectedScopePolicies  map[string]signature.PolicyRequirements
+		expectedScopeNamespace map[string]map[string]signature.PolicyRequirements
+		errorExpected          bool
+	}
+
+	testCR0 := testClusterImagePolicyCRs["test-cr0"]
+	testCR1 := testClusterImagePolicyCRs["test-cr1"]
+	testCR2 := testImagePolicyCRs["test-cr2"]
+	policyreq0, err := policyItemFromSpec(testCR0.Spec.Policy)
+	require.NoError(t, err)
+	policyreq1, err := policyItemFromSpec(testCR1.Spec.Policy)
+	require.NoError(t, err)
+	policyreq2, err := policyItemFromSpec(testCR2.Spec.Policy)
+	require.NoError(t, err)
+
+	tests := []testcase{
+		{
+			name:                  "cluster and namespace CRs contains the same scope",
+			imagePolicyCRs:        []*apicfgv1alpha1.ImagePolicy{&testCR2},
+			clusterImagePolicyCRs: []*apicfgv1alpha1.ClusterImagePolicy{&testCR0, &testCR1},
+			releaseImg:            "release-reg.io/image/release",
+			expectedScopeNamespace: map[string]map[string]signature.PolicyRequirements{
+				"test2.com": {
+					testCR2.ObjectMeta.Namespace: {policyreq2},
+				},
+			},
+			expectedScopePolicies: map[string]signature.PolicyRequirements{
+				"test0.com": {policyreq0, policyreq1},
+				"test1.com": {policyreq1},
+			},
+			errorExpected: false,
+		},
+		{
+			name:                  "clusterimagepolicy CRs has scope release image scope nested in",
+			imagePolicyCRs:        []*apicfgv1alpha1.ImagePolicy{&testCR2},
+			clusterImagePolicyCRs: []*apicfgv1alpha1.ClusterImagePolicy{&testCR0, &testCR1},
+			releaseImg:            "test1.com/image/release",
+			expectedScopeNamespace: map[string]map[string]signature.PolicyRequirements{
+				"test2.com": {
+					testCR2.ObjectMeta.Namespace: {policyreq2},
+				},
+			},
+			expectedScopePolicies: map[string]signature.PolicyRequirements{
+				"test0.com": {policyreq0, policyreq1},
+			},
+			errorExpected: false,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			gotScopePolicies, gotScopeNamespacePolicies, err := getValidScopeNamespacePolicies(test.clusterImagePolicyCRs, test.imagePolicyCRs, test.releaseImg, nil)
+			fmt.Println(err)
+			require.Equal(t, test.errorExpected, err != nil)
+			if !test.errorExpected {
+				require.Equal(t, test.expectedScopeNamespace, gotScopeNamespacePolicies)
+				require.Equal(t, test.expectedScopePolicies, gotScopePolicies)
+			}
+		})
+	}
+}
+
+func TestGenerateNamespacedPolicyJSON(t *testing.T) {
+	// Test empty namespacePolicies does not generate any policy
+	namespacePoliciesJsons, err := generateNamespacedPolicyJSON([]byte{}, make(map[string]map[string]signature.PolicyRequirements))
+	require.NoError(t, err)
+	require.Equal(t, 0, len(namespacePoliciesJsons))
+
+	testImagePolicyCR0 := testClusterImagePolicyCRs["test-cr0"]
+	testImagePolicyCR1 := testClusterImagePolicyCRs["test-cr1"]
+	testImagePolicyCR2 := testImagePolicyCRs["test-cr2"]
+
+	expectClusterPolicy := []byte(`
+		{
+			"default": [
+			  {
+				"type": "insecureAcceptAnything"
+			  }
+			],
+			"transports": {
+			  "docker": {
+				"test0.com": [
+				  {
+					"type": "sigstoreSigned",
+					"fulcio": {
+					  "caData": "dGVzdC1jYS1kYXRhLWRhdGE=",
+					  "oidcIssuer": "https://OIDC.example.com",
+					  "subjectEmail": "test-user@example.com"
+					},
+					"rekorPublicKeyData": "dGVzdC1yZWtvci1rZXktZGF0YQ==",
+					"signedIdentity": {
+					  "type": "remapIdentity",
+					  "prefix": "test-remap-prefix",
+					  "signedPrefix": "test-remap-signed-prefix"
+					}
+				  },
+				  {
+					"type": "sigstoreSigned",
+					"keyData": "dGVzdC1rZXktZGF0YQ==",
+					"rekorPublicKeyData": "dGVzdC1yZWtvci1rZXktZGF0YQ==",
+					"signedIdentity": {
+					  "type": "remapIdentity",
+					  "prefix": "test-remap-prefix",
+					  "signedPrefix": "test-remap-signed-prefix"
+					}
+				  }
+				],
+				"test1.com": [
+				  {
+					"type": "sigstoreSigned",
+					"keyData": "dGVzdC1rZXktZGF0YQ==",
+					"rekorPublicKeyData": "dGVzdC1yZWtvci1rZXktZGF0YQ==",
+					"signedIdentity": {
+					  "type": "remapIdentity",
+					  "prefix": "test-remap-prefix",
+					  "signedPrefix": "test-remap-signed-prefix"
+					}
+				  }
+				]
+			  },
+			  "docker-daemon": {
+				"": [
+				  {
+					"type": "insecureAcceptAnything"
+				  }
+				]
+			  }
+			}
+		  }
+	`)
+	expectnamespacedPolicy := []byte(`
+	{
+		"default": [
+		  {
+			"type": "insecureAcceptAnything"
+		  }
+		],
+		"transports": {
+		  "docker": {
+			"test0.com": [
+			  {
+				"type": "sigstoreSigned",
+				"fulcio": {
+				  "caData": "dGVzdC1jYS1kYXRhLWRhdGE=",
+				  "oidcIssuer": "https://OIDC.example.com",
+				  "subjectEmail": "test-user@example.com"
+				},
+				"rekorPublicKeyData": "dGVzdC1yZWtvci1rZXktZGF0YQ==",
+				"signedIdentity": {
+				  "type": "remapIdentity",
+				  "prefix": "test-remap-prefix",
+				  "signedPrefix": "test-remap-signed-prefix"
+				}
+			  },
+			  {
+				"type": "sigstoreSigned",
+				"keyData": "dGVzdC1rZXktZGF0YQ==",
+				"rekorPublicKeyData": "dGVzdC1yZWtvci1rZXktZGF0YQ==",
+				"signedIdentity": {
+				  "type": "remapIdentity",
+				  "prefix": "test-remap-prefix",
+				  "signedPrefix": "test-remap-signed-prefix"
+				}
+			  }
+			],
+			"test1.com": [
+			  {
+				"type": "sigstoreSigned",
+				"keyData": "dGVzdC1rZXktZGF0YQ==",
+				"rekorPublicKeyData": "dGVzdC1yZWtvci1rZXktZGF0YQ==",
+				"signedIdentity": {
+				  "type": "remapIdentity",
+				  "prefix": "test-remap-prefix",
+				  "signedPrefix": "test-remap-signed-prefix"
+				}
+			  }
+			],
+			"test2.com": [
+			  {
+				"type": "sigstoreSigned",
+				"keyData": "dGVzdC1rZXktZGF0YQ==",
+				"signedIdentity": {
+				  "type": "matchRepoDigestOrExact"
+				}
+			  }
+			]
+		  },
+		  "docker-daemon": {
+			"": [
+			  {
+				"type": "insecureAcceptAnything"
+			  }
+			]
+		  }
+		}
+	  }
+`)
+
+	expectRet := map[string][]byte{
+		testImagePolicyCR2.ObjectMeta.Namespace: expectnamespacedPolicy,
+	}
+
+	clusterScopePolicies, scopeNamespacePolicies, err := getValidScopeNamespacePolicies([]*apicfgv1alpha1.ClusterImagePolicy{&testImagePolicyCR0, &testImagePolicyCR1}, []*apicfgv1alpha1.ImagePolicy{&testImagePolicyCR2}, "release-reg.io/image/release", nil)
+	require.NoError(t, err)
+	policies := namespaceScopePolicyRequirements(scopeNamespacePolicies)
+
+	templateConfig := signature.Policy{
+		Default: signature.PolicyRequirements{signature.NewPRInsecureAcceptAnything()},
+		Transports: map[string]signature.PolicyTransportScopes{
+			"docker-daemon": map[string]signature.PolicyRequirements{
+				"": {signature.NewPRInsecureAcceptAnything()},
+			},
+		},
+	}
+	buf := bytes.Buffer{}
+	err = json.NewEncoder(&buf).Encode(templateConfig)
+	require.NoError(t, err)
+	templateBytes := buf.Bytes()
+
+	baseData, err := updatePolicyJSON(templateBytes, []string{}, []string{}, "release-reg.io/image/release", clusterScopePolicies)
+	require.NoError(t, err)
+	require.JSONEq(t, string(expectClusterPolicy), string(baseData))
+	got, err := generateNamespacedPolicyJSON(baseData, policies)
+	require.NoError(t, err)
+	for namespace, v := range got {
+		require.JSONEq(t, string(expectRet[namespace]), string(v))
+	}
+}
+
+func TestGenerateSigstoreRegistriesConfig(t *testing.T) {
+	testImagePolicyCR0 := testClusterImagePolicyCRs["test-cr0"]
+	testImagePolicyCR1 := testClusterImagePolicyCRs["test-cr1"]
+	testImagePolicyCR2 := testImagePolicyCRs["test-cr2"]
+
+	expectSigstoreRegistriesConfig := []byte(
+		`docker:
+  test0.com:
+    use-sigstore-attachments: true
+  test1.com:
+    use-sigstore-attachments: true
+  test2.com:
+    use-sigstore-attachments: true
+`)
+
+	clusterScopePolicies, scopeNamespacePolicies, err := getValidScopeNamespacePolicies([]*apicfgv1alpha1.ClusterImagePolicy{&testImagePolicyCR0, &testImagePolicyCR1}, []*apicfgv1alpha1.ImagePolicy{&testImagePolicyCR2}, "release-reg.io/image/release", nil)
+	require.NoError(t, err)
+	got, err := generateSigstoreRegistriesdConfig(clusterScopePolicies, scopeNamespacePolicies)
+	require.NoError(t, err)
+	require.Equal(t, string(expectSigstoreRegistriesConfig), string(got))
 }

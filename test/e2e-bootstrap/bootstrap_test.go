@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	configv1 "github.com/openshift/api/config/v1"
+	configv1alpha1 "github.com/openshift/api/config/v1alpha1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	featuregatescontroller "github.com/openshift/cluster-config-operator/pkg/operator/featuregates"
@@ -65,6 +66,7 @@ func TestE2EBootstrap(t *testing.T) {
 	testEnv := framework.NewTestEnv(t)
 
 	configv1.Install(scheme.Scheme)
+	configv1alpha1.Install(scheme.Scheme)
 	mcfgv1.Install(scheme.Scheme)
 	apioperatorsv1alpha1.Install(scheme.Scheme)
 
@@ -486,6 +488,8 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.ConfigInformerFactory.Config().V1().Images(),
 			ctx.ConfigInformerFactory.Config().V1().ImageDigestMirrorSets(),
 			ctx.ConfigInformerFactory.Config().V1().ImageTagMirrorSets(),
+			ctx.ConfigInformerFactory.Config().V1alpha1().ImagePolicies(),
+			ctx.ConfigInformerFactory.Config().V1alpha1().ClusterImagePolicies(),
 			ctx.OperatorInformerFactory.Operator().V1alpha1().ImageContentSourcePolicies(),
 			ctx.ConfigInformerFactory.Config().V1().ClusterVersions(),
 			ctx.ClientBuilder.KubeClientOrDie("container-runtime-config-controller"),
@@ -615,7 +619,7 @@ func loadBaseTestManifests(t *testing.T) []runtime.Object {
 
 func loadRawManifests(t *testing.T, rawObjs [][]byte) []runtime.Object {
 	codecFactory := serializer.NewCodecFactory(scheme.Scheme)
-	decoder := codecFactory.UniversalDecoder(corev1GroupVersion, mcfgv1.GroupVersion, apioperatorsv1alpha1.GroupVersion, configv1.GroupVersion)
+	decoder := codecFactory.UniversalDecoder(corev1GroupVersion, mcfgv1.GroupVersion, apioperatorsv1alpha1.GroupVersion, configv1alpha1.GroupVersion, configv1.GroupVersion)
 
 	objs := []runtime.Object{}
 	for _, raw := range rawObjs {
