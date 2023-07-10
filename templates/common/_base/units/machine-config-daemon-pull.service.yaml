@@ -8,6 +8,7 @@ contents: |
   # This "stamp file" is unlinked when we complete
   # machine-config-daemon-firstboot.service
   ConditionPathExists=/etc/ignition-machine-config-encapsulated.json
+  After=rhcos-growpart.service # https://issues.redhat.com/browse/OCPBUGS-15087
   # Run after crio-wipe so the pulled MCD image is protected against a corrupted storage from a forced shutdown
   Wants=network-online.target crio-wipe.service
   After=network-online.target crio-wipe.service

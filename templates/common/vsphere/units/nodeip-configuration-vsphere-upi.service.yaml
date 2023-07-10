@@ -18,6 +18,7 @@ contents: |
   Description=Writes IP address configuration so that kubelet and crio services select a valid node IP
   Wants=NetworkManager-wait-online.service crio-wipe.service
   After=NetworkManager-wait-online.service ignition-firstboot-complete.service crio-wipe.service
+  After=rhcos-growpart.service # https://issues.redhat.com/browse/OCPBUGS-15087
   Before=kubelet.service crio.service ovs-configuration.service
 
   [Service]
