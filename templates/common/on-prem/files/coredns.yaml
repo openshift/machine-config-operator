@@ -45,12 +45,16 @@ contents:
         volumeMounts:
         - name: kubeconfig
           mountPath: "/var/lib/kubelet"
+          mountPropagation: HostToContainer
         - name: resource-dir
           mountPath: "/config"
+          mountPropagation: HostToContainer
         - name: conf-dir
           mountPath: "/etc/coredns"
+          mountPropagation: HostToContainer
         - name: nm-resolv
           mountPath: "/var/run/NetworkManager"
+          mountPropagation: HostToContainer
         imagePullPolicy: IfNotPresent
       containers:
       - name: coredns
@@ -98,12 +102,16 @@ contents:
         volumeMounts:
         - name: kubeconfig
           mountPath: "/var/lib/kubelet"
+          mountPropagation: HostToContainer
         - name: resource-dir
           mountPath: "/config"
+          mountPropagation: HostToContainer
         - name: conf-dir
           mountPath: "/etc/coredns"
+          mountPropagation: HostToContainer
         - name: nm-resolv
           mountPath: "/var/run/NetworkManager"
+          mountPropagation: HostToContainer
         imagePullPolicy: IfNotPresent        
       hostNetwork: true
       tolerations:

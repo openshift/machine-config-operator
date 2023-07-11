@@ -90,6 +90,7 @@ spec:
     volumeMounts:
     - name: conf-dir
       mountPath: "/etc/keepalived"
+      mountPropagation: HostToContainer
     - name: run-dir
       mountPath: "/var/run/keepalived"
     livenessProbe:
@@ -131,14 +132,18 @@ spec:
     volumeMounts:
     - name: resource-dir
       mountPath: "/config"
+      mountPropagation: HostToContainer
     - name: kubeconfig
       mountPath: "/etc/kubernetes/kubeconfig"
+      mountPropagation: HostToContainer
     - name: conf-dir
       mountPath: "/etc/keepalived"
+      mountPropagation: HostToContainer
     - name: run-dir
       mountPath: "/var/run/keepalived"
     - name: manifests
       mountPath: "/opt/openshift/manifests"
+      mountPropagation: HostToContainer
     imagePullPolicy: IfNotPresent
   hostNetwork: true
   tolerations:
