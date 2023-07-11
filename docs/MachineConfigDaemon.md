@@ -178,10 +178,6 @@ The "Reload Crio" action performs the file write and runs a `systemctl reload cr
 
 1. **Selected** `/etc/containers/registries.conf` changes: this file is generally changed via ICSP object changes. Node drain will take place except for changes specified [above](#Without-Drain).
 
-## Annotating on SSH access
-
-RHCOS nodes in Openshift are not meant to be manually accessed via SSH. MCD uses logind to watch for login sessions, which, upon detection, warns the user and annotates the node with `machineconfiguration.openshift.io/ssh=accessed`. This in turn will be used to warn cluster admins.
-
 ## Config Drift Detection
 
 ### Overview

@@ -16,13 +16,6 @@ var (
 			Help: "os that MCD is running on and version if RHCOS",
 		}, []string{"os", "version"})
 
-	// mcdSSHAccessed shows ssh access count for a node
-	mcdSSHAccessed = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Name: "ssh_accesses_total",
-			Help: "Total number of SSH access occurred.",
-		})
-
 	// mcdPivotErr flags error encountered during pivot
 	mcdPivotErr = prometheus.NewGauge(
 		prometheus.GaugeOpts{
@@ -72,7 +65,6 @@ func UpdateStateMetric(metric *prometheus.GaugeVec, labels ...string) {
 func RegisterMCDMetrics() error {
 	err := ctrlcommon.RegisterMetrics([]prometheus.Collector{
 		hostOS,
-		mcdSSHAccessed,
 		mcdPivotErr,
 		mcdState,
 		kubeletHealthState,
