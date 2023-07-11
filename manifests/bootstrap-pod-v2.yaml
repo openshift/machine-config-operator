@@ -29,8 +29,10 @@ spec:
     volumeMounts:
     - name: bootstrap-manifests
       mountPath: /etc/mcc/bootstrap
+      mountPropagation: HostToContainer
     - name: server-basedir
       mountPath: /etc/mcs/bootstrap
+      mountPropagation: HostToContainer
   containers:
   - name: machine-config-server
     image: {{.Images.MachineConfigOperator}}
@@ -42,10 +44,13 @@ spec:
     volumeMounts:
     - name: server-certs
       mountPath: /etc/ssl/mcs
+      mountPropagation: HostToContainer
     - name: bootstrap-kubeconfig
       mountPath: /etc/kubernetes/kubeconfig
+      mountPropagation: HostToContainer
     - name: server-basedir
       mountPath: /etc/mcs/bootstrap
+      mountPropagation: HostToContainer
     securityContext:
       privileged: true
       readOnlyRootFilesystem: false

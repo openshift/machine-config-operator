@@ -54,12 +54,16 @@ contents:
         volumeMounts:
         - name: kubeconfig
           mountPath: "/etc/kubernetes"
+          mountPropagation: HostToContainer
         - name: script-dir
           mountPath: "/config"
+          mountPropagation: HostToContainer
         - name: conf-dir
           mountPath: "/etc/keepalived"
+          mountPropagation: HostToContainer
         - name: nodeip-configuration
           mountPath: "/run/nodeip-configuration"
+          mountPropagation: HostToContainer
         imagePullPolicy: IfNotPresent
       containers:
       - name: keepalived
@@ -145,14 +149,18 @@ contents:
         volumeMounts:
         - name: conf-dir
           mountPath: "/etc/keepalived"
+          mountPropagation: HostToContainer
         - name: run-dir
           mountPath: "/var/run/keepalived"
         - name: chroot-host
           mountPath: "/host"
+          mountPropagation: HostToContainer
         - name: kubeconfigvarlib
           mountPath: "/var/lib/kubelet"
+          mountPropagation: HostToContainer
         - name: nodeip-configuration
           mountPath: "/run/nodeip-configuration"
+          mountPropagation: HostToContainer
         livenessProbe:
           exec:
             command:
@@ -193,16 +201,21 @@ contents:
         volumeMounts:
         - name: resource-dir
           mountPath: "/config"
+          mountPropagation: HostToContainer
         - name: kubeconfigvarlib
           mountPath: "/var/lib/kubelet"
+          mountPropagation: HostToContainer
         - name: conf-dir
           mountPath: "/etc/keepalived"
+          mountPropagation: HostToContainer
         - name: run-dir
           mountPath: "/var/run/keepalived"
         - name: chroot-host
           mountPath: "/host"
+          mountPropagation: HostToContainer
         - name: nodeip-configuration
           mountPath: "/run/nodeip-configuration"
+          mountPropagation: HostToContainer
         imagePullPolicy: IfNotPresent
       hostNetwork: true
       tolerations:
