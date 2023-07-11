@@ -353,8 +353,6 @@ func (dn *Daemon) ClusterConnect(
 	dn.kubeletHealthzEnabled = kubeletHealthzEnabled
 	dn.kubeletHealthzEndpoint = kubeletHealthzEndpoint
 
-	go dn.runLoginMonitor(dn.stopCh, dn.exitCh)
-
 	return nil
 }
 
@@ -667,28 +665,6 @@ func (dn *Daemon) enqueueDefault(node *corev1.Node) {
 	dn.queue.AddRateLimited(key)
 }
 
-const (
-	logindUnit = "systemd-logind.service"
-	// IDs are taken from https://cgit.freedesktop.org/systemd/systemd/plain/src/systemd/sd-messages.h
-	sdMessageSessionStart = "8d45620c1a4348dbb17410da57c60c66"
-)
-
-// detectEarlySSHAccessesFromBoot annotates the node if we find a login before the daemon started up.
-func (dn *Daemon) detectEarlySSHAccessesFromBoot() error {
-	journalOutput, err := exec.Command("journalctl", "-b", "-o", "cat", "-u", logindUnit, "MESSAGE_ID="+sdMessageSessionStart).CombinedOutput()
-	if err != nil {
-		return err
-	}
-	if len(journalOutput) > 0 {
-		klog.Info("Detected a login session before the daemon took over on first boot")
-		klog.Infof("Applying annotation: %v", machineConfigDaemonSSHAccessAnnotationKey)
-		if err := dn.applySSHAccessedAnnotation(); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // RunHypershift is the entry point for the simplified Hypershift mode daemon
 func (dn *Daemon) RunHypershift(stopCh <-chan struct{}, exitCh <-chan error) error {
 	klog.Info("Starting MachineConfigDaemon - Hypershift")
@@ -708,7 +684,7 @@ func (dn *Daemon) RunHypershift(stopCh <-chan struct{}, exitCh <-chan error) err
 		case <-signaled:
 			return nil
 		case err := <-exitCh:
-			// This channel gets errors from auxiliary goroutines like loginmonitor and kubehealth
+			// This channel gets errors from auxiliary goroutines like kubehealth
 			// TODO we really shouldn't have any for hypershift
 			klog.Warningf("Got an error from auxiliary tools: %v", err)
 		}
@@ -1089,56 +1065,6 @@ func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error) error {
 			klog.Warningf("Got an error from auxiliary tools: %v", err)
 		}
 	}
-}
-
-func (dn *Daemon) runLoginMonitor(stopCh <-chan struct{}, exitCh chan<- error) {
-	cmd := exec.Command("journalctl", "-b", "-f", "-o", "cat", "-u", logindUnit, "MESSAGE_ID="+sdMessageSessionStart)
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		exitCh <- err
-		return
-	}
-	if err := cmd.Start(); err != nil {
-		exitCh <- err
-		return
-	}
-	worker := make(chan struct{})
-	go func() {
-		for {
-			select {
-			case <-worker:
-				return
-			default:
-				buf := make([]byte, 1024)
-				l, err := stdout.Read(buf)
-				if err != nil {
-					if err == io.EOF {
-						return
-					}
-					exitCh <- err
-					return
-				}
-				if l > 0 {
-					line := strings.Split(string(buf), "\n")[0]
-					klog.Infof("Detected a new login session: %s", line)
-					klog.Infof("Login access is discouraged! Applying annotation: %v", machineConfigDaemonSSHAccessAnnotationKey)
-					if err := dn.applySSHAccessedAnnotation(); err != nil {
-						exitCh <- err
-					}
-				}
-			}
-		}
-	}()
-	<-stopCh
-	close(worker)
-	cmd.Process.Kill()
-}
-
-func (dn *Daemon) applySSHAccessedAnnotation() error {
-	if err := dn.nodeWriter.SetSSHAccessed(); err != nil {
-		return fmt.Errorf("error: cannot apply annotation for SSH access due to: %w", err)
-	}
-	return nil
 }
 
 // Called whenever the on-disk config has drifted from the current machineconfig.
@@ -1660,10 +1586,6 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 	state, err := dn.getStateAndConfigs()
 	if err != nil {
 		return err
-	}
-
-	if err := dn.detectEarlySSHAccessesFromBoot(); err != nil {
-		return fmt.Errorf("error detecting previous SSH accesses: %w", err)
 	}
 
 	if err := dn.removeRollback(); err != nil {
