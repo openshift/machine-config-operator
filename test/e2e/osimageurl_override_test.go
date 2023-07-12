@@ -23,6 +23,18 @@ import (
 // 5. Revert back to the previous state.
 // 6. Wait for the node to roll back.
 // 7. Assert that the binaries are no longer present.
+func TestOnClusterBuildOverride(t *testing.T) {
+	// osImageURL := "quay.io/zzlotnik/testing@sha256:0d283dabddd909668af1a02cfbb7d0b2d93430b709694d25d2ff131e139912cd"
+	osImageURL := "quay.io/zzlotnik/testing:on-cluster-build"
+
+	cs := framework.NewClientSet("")
+
+	node := helpers.GetRandomNode(t, cs, "worker")
+
+	undoFunc := applyCustomOSToNode(t, cs, node, osImageURL, "infra")
+	t.Cleanup(undoFunc)
+}
+
 func TestOSImageURLOverride(t *testing.T) {
 	envVarName := "MCO_OS_IMAGE_URL"
 

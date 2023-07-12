@@ -13,6 +13,7 @@ import (
 	"github.com/openshift/machine-config-operator/test/helpers"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 const (
@@ -94,6 +95,34 @@ func newExtensionsImageInfo(osImageURLConfigMap, onClusterBuildConfigMap *corev1
 	}
 }
 
+func DumpImageBuildRequestObjects(mc *mcfgv1.MachineConfig, pool *mcfgv1.MachineConfigPool, osImageURLConfigMap, onClusterBuildConfigMap *corev1.ConfigMap, customBuildPod bool) ([]runtime.Object, error) {
+	items := []runtime.Object{}
+
+	ibr := newImageBuildRequestWithConfigMap(pool, osImageURLConfigMap, onClusterBuildConfigMap)
+
+	dockerfileConfigMap, err := ibr.dockerfileToConfigMap()
+	if err != nil {
+		return items, err
+	}
+
+	items = append(items, dockerfileConfigMap)
+
+	mcConfigMap, err := ibr.toConfigMap(mc)
+	if err != nil {
+		return items, err
+	}
+
+	items = append(items, mcConfigMap)
+
+	if customBuildPod {
+		items = append(items, ibr.toBuildPod())
+	} else {
+		items = append(items, ibr.toBuild())
+	}
+
+	return items, nil
+}
+
 // Constructs an ImageBuildRequest with all of the images populated from ConfigMaps
 func newImageBuildRequestWithConfigMap(pool *mcfgv1.MachineConfigPool, osImageURLConfigMap, onClusterBuildConfigMap *corev1.ConfigMap) ImageBuildRequest {
 	return ImageBuildRequest{
@@ -113,7 +142,10 @@ func (i ImageBuildRequest) dockerfileToConfigMap() (*corev1.ConfigMap, error) {
 	}
 
 	configmap := &corev1.ConfigMap{
-		TypeMeta:   metav1.TypeMeta{},
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "v1",
+			Kind:       "ConfigMap",
+		},
 		ObjectMeta: i.getObjectMeta(i.getDockerfileConfigMapName()),
 		Data: map[string]string{
 			"Dockerfile": dockerfile,
@@ -141,7 +173,10 @@ func (i ImageBuildRequest) toConfigMap(mc *mcfgv1.MachineConfig) (*corev1.Config
 	}
 
 	configmap := &corev1.ConfigMap{
-		TypeMeta:   metav1.TypeMeta{},
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "v1",
+			Kind:       "ConfigMap",
+		},
 		ObjectMeta: i.getObjectMeta(i.getMCConfigMapName()),
 		Data: map[string]string{
 			machineConfigJSONFilename: compressed.String(),
@@ -184,7 +219,7 @@ func (i ImageBuildRequest) toBuild() *buildv1.Build {
 	// override it via a ConfigMap.
 	dockerfile := "FROM scratch"
 
-	return &buildv1.Build{
+	b := &buildv1.Build{
 		TypeMeta:   metav1.TypeMeta{},
 		ObjectMeta: i.getObjectMeta(i.getBuildName()),
 		Spec: buildv1.BuildSpec{
@@ -232,6 +267,11 @@ func (i ImageBuildRequest) toBuild() *buildv1.Build {
 			},
 		},
 	}
+
+	b.APIVersion = buildv1.GroupVersion.String()
+	b.Kind = "Build"
+
+	return b
 }
 
 // Creates a custom image build pod to build the final OS image with all
@@ -589,9 +629,10 @@ func (i ImageBuildRequest) getObjectMeta(name string) metav1.ObjectMeta {
 		Name:      name,
 		Namespace: ctrlcommon.MCONamespace,
 		Labels: map[string]string{
-			ctrlcommon.OSImageBuildPodLabel: "",
-			targetMachineConfigPoolLabel:    i.Pool.Name,
-			desiredConfigLabel:              i.Pool.Spec.Configuration.Name,
+			ctrlcommon.OSImageBuildPodLabel:                          "",
+			targetMachineConfigPoolLabel:                             i.Pool.Name,
+			desiredConfigLabel:                                       i.Pool.Spec.Configuration.Name,
+			"machineconfiguration.openshift.io/onClusterBuildObject": "",
 		},
 		Annotations: map[string]string{
 			mcPoolAnnotation: "",

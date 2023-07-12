@@ -120,10 +120,12 @@ $(foreach C, $(MCO_COMPONENTS), $(eval $(call target_template,$(patsubst %,machi
 #    make binaries
 binaries: $(patsubst %,_build-%,$(ALL_COMPONENTS))
 
-install: binaries
+install-binaries:
 	for component in $(ALL_COMPONENTS); do \
 	  install -D -m 0755 _output/linux/$(GOARCH)/$${component} $(DESTDIR)$(PREFIX)/bin/$${component}; \
 	done
+
+install: binaries install-binaries
 
 Dockerfile.rhel7: Dockerfile Makefile
 	(echo '# THIS FILE IS GENERATED FROM '$<' DO NOT EDIT' && \
