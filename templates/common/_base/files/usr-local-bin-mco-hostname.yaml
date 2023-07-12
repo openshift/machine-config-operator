@@ -19,6 +19,8 @@ contents:
             sleep 1
         done
         echo "node identified as $(</proc/sys/kernel/hostname)"
+        echo "saving hostname to prevent NetworkManager from ever unsetting it"
+        hostnamectl set-hostname --static --transient $(</proc/sys/kernel/hostname)
         exit 0
     }
 
@@ -61,4 +63,3 @@ contents:
         --gcp) set_gcp_hostname;;
         *) echo "Unhandled arg $arg"; exit 1
     esac
-
