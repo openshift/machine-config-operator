@@ -3,6 +3,8 @@ package main
 import (
 	"flag"
 	"fmt"
+	"os"
+	"syscall"
 	"time"
 
 	daemon "github.com/openshift/machine-config-operator/pkg/daemon"
@@ -42,10 +44,16 @@ func runFirstBootCompleteMachineConfig(_ *cobra.Command, _ []string) error {
 		if err := daemon.PersistNetworkInterfaces("/rootfs"); err != nil {
 			return fmt.Errorf("failed to persist network interfaces: %w", err)
 		}
-		// We're done; this logic is distinct from the *non-containerized* /run/bin/machine-config-daemon
-		// for what I believe is historical reasons; we could shift everything to happening inside
-		// podman actually.
-		return nil
+	}
+
+	klog.Infof(`Calling chroot("%s")`, startOpts.rootMount)
+	if err := syscall.Chroot(startOpts.rootMount); err != nil {
+		return fmt.Errorf("failed to chroot to %s: %w", startOpts.rootMount, err)
+	}
+
+	klog.V(2).Infof("Moving to / inside the chroot")
+	if err := os.Chdir("/"); err != nil {
+		return fmt.Errorf("failed to change directory to /: %w", err)
 	}
 
 	dn, err := daemon.New(exitCh)
