@@ -101,6 +101,10 @@ const (
 	mcsNodeBootstrapperServiceAccountManifestPath = "manifests/machineconfigserver/node-bootstrapper-sa.yaml"
 	mcsNodeBootstrapperTokenManifestPath          = "manifests/machineconfigserver/node-bootstrapper-token.yaml"
 	mcsDaemonsetManifestPath                      = "manifests/machineconfigserver/daemonset.yaml"
+
+	// Machine OS puller manifest paths
+	mopRoleBindingManifestPath    = "manifests/machine-os-puller/rolebinding.yaml"
+	mopServiceAccountManifestPath = "manifests/machine-os-puller/sa.yaml"
 )
 
 type syncFunc struct {
@@ -764,6 +768,7 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig) error {
 			mccEventsRoleBindingDefaultManifestPath,
 			mccEventsRoleBindingTargetManifestPath,
 			mccKubeRbacProxyPrometheusRoleBindingPath,
+			mopRoleBindingManifestPath,
 		},
 		clusterRoleBindings: []string{
 			mccClusterRoleBindingManifestPath,
@@ -773,6 +778,7 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig) error {
 		},
 		serviceAccounts: []string{
 			mccServiceAccountManifestPath,
+			mopServiceAccountManifestPath,
 		},
 	}
 	if err := optr.applyManifests(config, paths); err != nil {
