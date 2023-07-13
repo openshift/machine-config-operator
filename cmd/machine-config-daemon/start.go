@@ -5,7 +5,6 @@ import (
 	"flag"
 	"net/url"
 	"os"
-	"syscall"
 
 	"k8s.io/client-go/tools/clientcmd"
 
@@ -72,14 +71,8 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		}
 	}
 
-	klog.Infof(`Calling chroot("%s")`, startOpts.rootMount)
-	if err := syscall.Chroot(startOpts.rootMount); err != nil {
-		klog.Fatalf("Unable to chroot to %s: %s", startOpts.rootMount, err)
-	}
-
-	klog.V(2).Infof("Moving to / inside the chroot")
-	if err := os.Chdir("/"); err != nil {
-		klog.Fatalf("Unable to change directory to /: %s", err)
+	if err := daemon.ReexecuteForTargetRoot(startOpts.rootMount); err != nil {
+		klog.Fatalf("failed to re-exec: %+v", err)
 	}
 
 	if startOpts.nodeName == "" {
