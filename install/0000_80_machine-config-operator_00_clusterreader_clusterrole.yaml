@@ -29,6 +29,7 @@ rules:
       - controllerconfigs
       - kubeletconfigs
       - machineconfigpools
+      - machineconfigs
     verbs:
       - get
       - list
