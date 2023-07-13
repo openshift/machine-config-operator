@@ -4,9 +4,9 @@ import (
 	"flag"
 	"net/url"
 	"os"
-	"syscall"
 
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/klog/v2"
 
 	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/internal/clients"
@@ -71,14 +71,8 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		}
 	}
 
-	glog.Infof(`Calling chroot("%s")`, startOpts.rootMount)
-	if err := syscall.Chroot(startOpts.rootMount); err != nil {
-		glog.Fatalf("Unable to chroot to %s: %s", startOpts.rootMount, err)
-	}
-
-	glog.V(2).Infof("Moving to / inside the chroot")
-	if err := os.Chdir("/"); err != nil {
-		glog.Fatalf("Unable to change directory to /: %s", err)
+	if err := daemon.ReexecuteForTargetRoot(startOpts.rootMount); err != nil {
+		klog.Fatalf("failed to re-exec: %+v", err)
 	}
 
 	if startOpts.nodeName == "" {

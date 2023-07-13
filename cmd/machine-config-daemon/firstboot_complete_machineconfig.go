@@ -3,8 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"os"
-	"syscall"
 	"time"
 
 	"github.com/golang/glog"
@@ -26,6 +24,7 @@ var maybePersistNics bool
 // init executes upon import
 func init() {
 	rootCmd.AddCommand(firstbootCompleteMachineconfig)
+	firstbootCompleteMachineconfig.PersistentFlags().StringVar(&startOpts.rootMount, "root-mount", "/rootfs", "where the nodes root filesystem is mounted for chroot and file manipulation.")
 	firstbootCompleteMachineconfig.PersistentFlags().BoolVar(&maybePersistNics, "maybe-persist-nics", false, "Run nmstatectl persist-nic-names")
 	pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
 }
@@ -44,16 +43,11 @@ func runFirstBootCompleteMachineConfig(_ *cobra.Command, _ []string) error {
 		if err := daemon.MaybePersistNetworkInterfaces("/rootfs"); err != nil {
 			return fmt.Errorf("failed to persist network interfaces: %w", err)
 		}
+		return nil
 	}
 
-	klog.Infof(`Calling chroot("%s")`, startOpts.rootMount)
-	if err := syscall.Chroot(startOpts.rootMount); err != nil {
-		return fmt.Errorf("failed to chroot to %s: %w", startOpts.rootMount, err)
-	}
-
-	klog.V(2).Infof("Moving to / inside the chroot")
-	if err := os.Chdir("/"); err != nil {
-		return fmt.Errorf("failed to change directory to /: %w", err)
+	if err := daemon.ReexecuteForTargetRoot(startOpts.rootMount); err != nil {
+		return fmt.Errorf("failed to re-exec: %w", err)
 	}
 
 	dn, err := daemon.New(exitCh)
