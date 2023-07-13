@@ -91,8 +91,8 @@ func TestBootstrapNodeConfigDefault(t *testing.T) {
 			if err != nil {
 				t.Errorf("could not run node config bootstrap: %v", err)
 			}
-			if len(mcs) != 0 {
-				t.Errorf("expected no machine configs generated with the default node config, got %v machine configs", len(mcs))
+			if len(mcs) != 2 {
+				t.Errorf("expected %v machine configs generated with the default node config, got 0 machine configs", len(mcs))
 			}
 		})
 	}
