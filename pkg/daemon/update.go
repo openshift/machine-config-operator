@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/clarketm/json"
-	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -754,6 +754,13 @@ func reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineConfigDif
 				}
 			}
 		}
+	}
+
+	// Kernel args
+
+	// ignition now supports kernel args, but the MCO doesn't implement them yet
+	if !reflect.DeepEqual(oldIgn.KernelArguments, newIgn.KernelArguments) {
+		return nil, fmt.Errorf("ignition kargs section contains changes")
 	}
 
 	// Storage section

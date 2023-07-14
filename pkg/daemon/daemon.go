@@ -17,7 +17,7 @@ import (
 	"syscall"
 	"time"
 
-	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	"github.com/google/renameio"
 	"golang.org/x/time/rate"
 	corev1 "k8s.io/api/core/v1"

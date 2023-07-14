@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/ghodss/yaml"
 	buildv1 "github.com/openshift/api/build/v1"

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/library-go/pkg/cloudprovider"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"

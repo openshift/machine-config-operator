@@ -13,9 +13,8 @@ import (
 
 	"github.com/coreos/go-semver/semver"
 	ign2 "github.com/coreos/ignition/config/v2_2"
-	ign3 "github.com/coreos/ignition/v2/config/v3_2"
-	ign3_1 "github.com/coreos/ignition/v2/config/v3_2"
-	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
+	ign3 "github.com/coreos/ignition/v2/config/v3_4"
+	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	yaml "github.com/ghodss/yaml"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
@@ -79,7 +78,6 @@ func TestEncapsulated(t *testing.T) {
 	t.Logf("vers: %v\n", vers)
 	for _, v := range vers {
 		major := v.Slice()[0]
-		minor := v.Slice()[1]
 		mcIgnCfg, err = ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
 		assert.Nil(t, err)
 		err = appendEncapsulated(&mcIgnCfg, mc, v)
@@ -102,21 +100,10 @@ func TestEncapsulated(t *testing.T) {
 		var mc mcfgv1.MachineConfig
 		err = json.Unmarshal(encapData, &mc)
 		assert.Nil(t, err)
-		if major == 3 && minor == 4 {
-			// TODO(jkyros): this parses to 3.2 now because it's still the default and we're down-translating,
-			// but we will need to change this when we move the default to a later version
+		// TODO(jkyros): the encap only supplies what the current internal version is, and 3.1 was able to parse a 3.2 config
+		// because it's weird so we should probably revisit whether it's okay if the encap is now supplying 3.4
+		if major == 3 {
 			_, _, err := ign3.Parse(mc.Spec.Config.Raw)
-			assert.Nil(t, err)
-		} else if major == 3 && minor == 3 {
-			// TODO(jkyros): this parses to 3.2 now because it's still the default and we're down-translating,
-			// but we will need to change this when we move the default to a later version
-			_, _, err := ign3.Parse(mc.Spec.Config.Raw)
-			assert.Nil(t, err)
-		} else if major == 3 && minor == 2 {
-			_, _, err := ign3.Parse(mc.Spec.Config.Raw)
-			assert.Nil(t, err)
-		} else if major == 3 && minor == 1 {
-			_, _, err := ign3_1.Parse(mc.Spec.Config.Raw)
 			assert.Nil(t, err)
 		} else {
 			_, _, err := ign2.Parse(mc.Spec.Config.Raw)

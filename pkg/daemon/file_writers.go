@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 
-	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	"github.com/google/renameio"
 	"k8s.io/klog/v2"
 
