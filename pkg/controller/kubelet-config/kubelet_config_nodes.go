@@ -80,6 +80,15 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 	if err := ctrl.cleanUpDuplicatedMC(managedNodeConfigKeyPrefix); err != nil {
 		return err
 	}
+	// explicitly setting the cgroupMode to "v1"
+	// (TODO) This code is only for 4.13 release and would be removed in the future releases
+	// It stores the default cgroupv1 context in the config node spec if the user has not provided.
+	// All the clusters must upgrade through this 4.13.z release to preserve the cgroupsv1 context
+	// as cgroupsv2 would be the default mode from 4.14 release
+	if nodeConfig.Spec.CgroupMode == emptyInput {
+		nodeConfig.Spec.CgroupMode = osev1.CgroupModeV1
+		ctrl.configClient.ConfigV1().Nodes().Update(context.TODO(), nodeConfig, metav1.UpdateOptions{})
+	}
 	// checking if the Node spec is empty and accordingly returning from here.
 	if reflect.DeepEqual(nodeConfig.Spec, osev1.NodeSpec{}) {
 		glog.V(2).Info("empty Node resource found")
@@ -266,6 +275,11 @@ func (ctrl *Controller) deleteNodeConfig(obj interface{}) {
 func RunNodeConfigBootstrap(templateDir string, features *osev1.FeatureGate, cconfig *mcfgv1.ControllerConfig, nodeConfig *osev1.Node, mcpPools []*mcfgv1.MachineConfigPool) ([]*mcfgv1.MachineConfig, error) {
 	if nodeConfig == nil {
 		return nil, fmt.Errorf("nodes.config.openshift.io resource not found")
+	}
+	// explicitly setting the cgroupMode to "v1"
+	// (TODO) This code can be remove this code in future releases
+	if nodeConfig.Spec.CgroupMode == emptyInput {
+		nodeConfig.Spec.CgroupMode = osev1.CgroupModeV1
 	}
 	// checking if the Node spec is empty and accordingly returning from here.
 	if reflect.DeepEqual(nodeConfig.Spec, osev1.NodeSpec{}) {
