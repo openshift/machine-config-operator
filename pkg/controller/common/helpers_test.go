@@ -7,10 +7,8 @@ import (
 
 	"github.com/clarketm/json"
 	ign2types "github.com/coreos/ignition/config/v2_2/types"
-	ign3 "github.com/coreos/ignition/v2/config/v3_2"
-	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
-	ign3_4 "github.com/coreos/ignition/v2/config/v3_4"
-	ign3_4types "github.com/coreos/ignition/v2/config/v3_4/types"
+	ign3 "github.com/coreos/ignition/v2/config/v3_4"
+	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	validate3 "github.com/coreos/ignition/v2/config/validate"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -104,7 +102,7 @@ func TestValidateIgnition(t *testing.T) {
 	require.NotNil(t, isValid2)
 
 	// Test that a valid ignition config returns nil
-	testIgn3Config.Ignition.Version = "3.2.0"
+	testIgn3Config.Ignition.Version = InternalMCOIgnitionVersion
 	mode := 420
 	testfiledata := "data:,greatconfigstuff"
 	tempFile := ign3types.File{Node: ign3types.Node{Path: "/etc/testfileconfig"},
@@ -141,7 +139,7 @@ func TestConvertIgnition2to3(t *testing.T) {
 	isValid := ValidateIgnition(testIgn2Config)
 	require.Nil(t, isValid)
 
-	convertedIgn, err := convertIgnition2to3(testIgn2Config)
+	convertedIgn, err := convertIgnition22to34(testIgn2Config)
 	require.Nil(t, err)
 	assert.IsType(t, ign3types.Config{}, convertedIgn)
 	isValid3 := ValidateIgnition(convertedIgn)
@@ -153,11 +151,11 @@ func TestConvertIgnition3to2(t *testing.T) {
 	testIgn3Config := ign3types.Config{}
 	tempUser := ign3types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"5678", "abc"}}
 	testIgn3Config.Passwd.Users = []ign3types.PasswdUser{tempUser}
-	testIgn3Config.Ignition.Version = "3.2.0"
+	testIgn3Config.Ignition.Version = "3.4.0"
 	isValid := ValidateIgnition(testIgn3Config)
 	require.Nil(t, isValid)
 
-	convertedIgn, err := convertIgnition3to2(testIgn3Config)
+	convertedIgn, err := convertIgnition34to22(testIgn3Config)
 	require.Nil(t, err)
 	assert.IsType(t, ign2types.Config{}, convertedIgn)
 	isValid2 := ValidateIgnition(convertedIgn)
@@ -169,7 +167,7 @@ func TestParseAndConvert(t *testing.T) {
 	testIgn3Config := ign3types.Config{}
 	tempUser := ign3types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"5678", "abc"}}
 	testIgn3Config.Passwd.Users = []ign3types.PasswdUser{tempUser}
-	testIgn3Config.Ignition.Version = "3.2.0"
+	testIgn3Config.Ignition.Version = InternalMCOIgnitionVersion
 
 	// Make a Ign2 comp config
 	testIgn2Config := ign2types.Config{}
@@ -197,7 +195,7 @@ func TestParseAndConvert(t *testing.T) {
 	assert.Equal(t, testIgn3Config, convertedIgn)
 
 	// Make a valid Ign 3.2 cfg
-	testIgn3Config.Ignition.Version = "3.2.0"
+	testIgn3Config.Ignition.Version = InternalMCOIgnitionVersion
 	// turn it into a raw []byte
 	rawIgn = helpers.MarshalOrDie(testIgn3Config)
 	// check that it was parsed successfully
@@ -209,63 +207,40 @@ func TestParseAndConvert(t *testing.T) {
 	testIgn3Config.Ignition.Version = "3.1.0"
 	// turn it into a raw []byte
 	rawIgn = helpers.MarshalOrDie(testIgn3Config)
-	// check that it was parsed successfully back to 3.2
+	// check that it was parsed successfully back to the default version
 	convertedIgn, err = ParseAndConvertConfig(rawIgn)
 	require.Nil(t, err)
-	testIgn3Config.Ignition.Version = "3.2.0"
+	testIgn3Config.Ignition.Version = InternalMCOIgnitionVersion
 	assert.Equal(t, testIgn3Config, convertedIgn)
 
 	// Make a valid Ign 3.0 cfg
 	testIgn3Config.Ignition.Version = "3.0.0"
 	// turn it into a raw []byte
 	rawIgn = helpers.MarshalOrDie(testIgn3Config)
-	// check that it was parsed successfully back to 3.2
+	// check that it was parsed successfully back to the default version
 	convertedIgn, err = ParseAndConvertConfig(rawIgn)
 	require.Nil(t, err)
-	testIgn3Config.Ignition.Version = "3.2.0"
+	testIgn3Config.Ignition.Version = InternalMCOIgnitionVersion
 	assert.Equal(t, testIgn3Config, convertedIgn)
 
 	// Make a valid Ign 3.3 cfg
 	testIgn3Config.Ignition.Version = "3.3.0"
 	// turn it into a raw []byte
 	rawIgn = helpers.MarshalOrDie(testIgn3Config)
-	// check that it was parsed successfully back to 3.2
+	// check that it was parsed successfully back to the default version
 	convertedIgn, err = ParseAndConvertConfig(rawIgn)
 	require.Nil(t, err)
-	testIgn3Config.Ignition.Version = "3.2.0"
+	testIgn3Config.Ignition.Version = InternalMCOIgnitionVersion
 	assert.Equal(t, testIgn3Config, convertedIgn)
 
 	// Make a valid Ign 3.4 cfg
 	testIgn3Config.Ignition.Version = "3.4.0"
 	// turn it into a raw []byte
 	rawIgn = helpers.MarshalOrDie(testIgn3Config)
-	// check that it was parsed successfully back to 3.2
+	// check that it was parsed successfully back to the default version
 	convertedIgn, err = ParseAndConvertConfig(rawIgn)
 	require.Nil(t, err)
-	testIgn3Config.Ignition.Version = "3.2.0"
-	assert.Equal(t, testIgn3Config, convertedIgn)
-
-	// Make a an Ign 3.4 cfg with kargs
-	testIgn3Config.Ignition.Version = "3.4.0"
-
-	var ign34 ign3_4types.Config
-	// Parse this up to 3.4 specifically so we can test a downgrade that
-	// is using kargs
-	ign34, _, err = ign3_4.ParseCompatibleVersion(rawIgn)
-	require.Nil(t, err)
-	ign34.KernelArguments = ign3_4types.KernelArguments{
-		ShouldExist:    []ign3_4types.KernelArgument{"one", "two", "three"},
-		ShouldNotExist: []ign3_4types.KernelArgument{"four", "five", "six"},
-	}
-	// turn it into a raw []byte
-	rawIgn = helpers.MarshalOrDie(ign34)
-
-	// check that it was parsed successfully back to 3.2
-	// this should strip out the kernel args
-	convertedIgn, err = ParseAndConvertConfig(rawIgn)
-	require.Nil(t, err)
-	testIgn3Config.Ignition.Version = "3.2.0"
-	// we compare to testign3Config because kargs should get stripped out
+	testIgn3Config.Ignition.Version = InternalMCOIgnitionVersion
 	assert.Equal(t, testIgn3Config, convertedIgn)
 
 	// Make a bad Ign3 cfg
@@ -368,17 +343,6 @@ func TestMergeMachineConfigs(t *testing.T) {
 		},
 	})
 
-	// TODO(jkyros): remove this when we raise the ignition default to 3.4
-	machineConfigIgnKernelArgsDowngrade := helpers.CreateMachineConfigFromIgnition(ign3_4types.Config{
-		Ignition: ign3_4types.Ignition{
-			Version: ign3_4types.MaxVersion.String(),
-		},
-		KernelArguments: ign3_4types.KernelArguments{
-			ShouldExist:    []ign3_4types.KernelArgument{"kargFromIgnitionDowngrade"},
-			ShouldNotExist: []ign3_4types.KernelArgument{},
-		},
-	})
-
 	// we added some v3 specific logic for kargs, make sure we didn't break the v2 path
 	machineConfigIgnV2Merge := helpers.CreateMachineConfigFromIgnition(ign2types.Config{
 		Ignition: ign2types.Ignition{
@@ -407,7 +371,6 @@ func TestMergeMachineConfigs(t *testing.T) {
 		machineConfigFIPS,
 		machineConfigIgnPasswdHashUser,
 		machineConfigIgnSSHUser,
-		machineConfigIgnKernelArgsDowngrade,
 		machineConfigIgnV2Merge,
 	}
 
@@ -563,12 +526,12 @@ func TestSetDefaultFileOverwrite(t *testing.T) {
 	// Set up two Ignition configs, one with overwrite: no default, overwrite: false (to be passed to MergeMachineConfigs)
 	// and one with a overwrite: true, overwrite: false (the expected output)
 	testIgn3ConfigPreMerge := ign3types.Config{}
-	testIgn3ConfigPreMerge.Ignition.Version = "3.2.0"
+	testIgn3ConfigPreMerge.Ignition.Version = InternalMCOIgnitionVersion
 	testIgn3ConfigPreMerge.Storage.Files = append(testIgn3ConfigPreMerge.Storage.Files, tempFileNoDefault)
 	testIgn3ConfigPreMerge.Storage.Files = append(testIgn3ConfigPreMerge.Storage.Files, tempFileOverwriteFalse)
 
 	testIgn3ConfigPostMerge := ign3types.Config{}
-	testIgn3ConfigPostMerge.Ignition.Version = "3.2.0"
+	testIgn3ConfigPostMerge.Ignition.Version = InternalMCOIgnitionVersion
 	testIgn3ConfigPostMerge.Storage.Files = append(testIgn3ConfigPostMerge.Storage.Files, tempFileOvewriteTrue)
 	testIgn3ConfigPostMerge.Storage.Files = append(testIgn3ConfigPostMerge.Storage.Files, tempFileOverwriteFalse)
 
@@ -606,7 +569,7 @@ func TestSetDefaultFileOverwrite(t *testing.T) {
 // TestIgnitionMergeCompressed tests https://github.com/coreos/butane/issues/332
 func TestIgnitionMergeCompressed(t *testing.T) {
 	testIgn3Config := ign3types.Config{}
-	testIgn3Config.Ignition.Version = "3.2.0"
+	testIgn3Config.Ignition.Version = InternalMCOIgnitionVersion
 	mode := 420
 	testfiledata := "data:;base64,H4sIAAAAAAAAA0vLz+cCAKhlMn4EAAAA"
 	compression := "gzip"
@@ -615,7 +578,7 @@ func TestIgnitionMergeCompressed(t *testing.T) {
 	testIgn3Config.Storage.Files = append(testIgn3Config.Storage.Files, tempFile)
 
 	testIgn3Config2 := ign3types.Config{}
-	testIgn3Config2.Ignition.Version = "3.2.0"
+	testIgn3Config2.Ignition.Version = InternalMCOIgnitionVersion
 	testIgn3Config2.Storage.Files = append(testIgn3Config2.Storage.Files, NewIgnFile("/etc/testfileconfig", "hello world"))
 
 	merged := ign3.Merge(testIgn3Config, testIgn3Config2)
@@ -634,11 +597,11 @@ func TestCalculateConfigFileDiffs(t *testing.T) {
 	newTempFile := NewIgnFile("/etc/kubernetes/kubelet-ca.crt", "newcertificates")
 
 	// Make an "old" config with the existing file in it
-	testIgn3ConfigOld.Ignition.Version = "3.2.0"
+	testIgn3ConfigOld.Ignition.Version = InternalMCOIgnitionVersion
 	testIgn3ConfigOld.Storage.Files = append(testIgn3ConfigOld.Storage.Files, oldTempFile)
 
 	// Make a "new" config with a change to that file
-	testIgn3ConfigNew.Ignition.Version = "3.2.0"
+	testIgn3ConfigNew.Ignition.Version = InternalMCOIgnitionVersion
 	testIgn3ConfigNew.Storage.Files = append(testIgn3ConfigNew.Storage.Files, newTempFile)
 
 	// If it works, it should notice the file changed
