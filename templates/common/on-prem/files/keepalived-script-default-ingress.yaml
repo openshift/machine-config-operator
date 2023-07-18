@@ -3,4 +3,4 @@ path: "/etc/kubernetes/static-pod-resources/keepalived/scripts/chk_default_ingre
 contents:
   inline: |
     #!/bin/bash
-    /host/bin/crictl -r unix:///host/run/crio/crio.sock pods --namespace openshift-ingress --state Ready | grep -q 'router-default-[[:xdigit:]]\{10\}-[[:alnum:]]\{5\}'
+    chroot /host /bin/crictl pods --namespace openshift-ingress --state Ready | grep -qE 'router-default-[[:alnum:]]{5,}-[[:alnum:]]{5,}'
