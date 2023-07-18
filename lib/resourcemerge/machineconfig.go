@@ -7,6 +7,7 @@ import (
 
 	"github.com/openshift/library-go/pkg/operator/resource/resourcemerge"
 	"k8s.io/apimachinery/pkg/api/equality"
+	"k8s.io/klog/v2"
 )
 
 // EnsureMachineConfig ensures that the existing matches the required.
@@ -59,6 +60,7 @@ func EnsureMachineConfigPool(modified *bool, existing *mcfgv1.MachineConfigPool,
 	}
 }
 
+<<<<<<< HEAD
 func ensureMachineConfigurationSpec(modified *bool, existing *opv1.MachineConfigurationSpec, required opv1.MachineConfigurationSpec) {
 	if !equality.Semantic.DeepEqual(existing.Component, required.Component) {
 		*modified = true
@@ -78,6 +80,18 @@ func ensureMachineConfigNodeSpec(modified *bool, existing *mcfgalphav1.MachineCo
 	if !equality.Semantic.DeepEqual(existing.Pool, required.Pool) {
 		*modified = true
 		(*existing).Pool = required.Pool
+=======
+func ensureMachineStateSpec(modified *bool, existing *mcfgv1.MachineStateSpec, required mcfgv1.MachineStateSpec) {
+	if !equality.Semantic.DeepEqual(existing.Config, required.Config) {
+		*modified = true
+		(*existing).Config = required.Config
+		klog.Infof("the MachineState %s is modified", existing.Kind)
+	}
+	if !equality.Semantic.DeepEqual(existing.Kind, required.Kind) {
+		*modified = true
+		(*existing).Kind = required.Kind
+		klog.Infof("the MachineState %s is modified", existing.Kind)
+>>>>>>> 648bd88fa (progression work)
 	}
 }
 func ensureMachineConfigSpec(modified *bool, existing *mcfgv1.MachineConfigSpec, required mcfgv1.MachineConfigSpec) {

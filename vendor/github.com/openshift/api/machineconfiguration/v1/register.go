@@ -34,6 +34,8 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&MachineConfigList{},
 		&MachineConfigPool{},
 		&MachineConfigPoolList{},
+		&MachineState{},
+		&MachineStateList{},
 	)
 
 	metav1.AddToGroupVersion(scheme, GroupVersion)

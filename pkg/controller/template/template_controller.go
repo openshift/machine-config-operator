@@ -223,10 +223,11 @@ func (ctrl *Controller) deleteFeature(obj interface{}) {
 }
 
 // Run executes the template controller
-func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
+func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}, healthEvents record.EventRecorder) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
+	ctrl.healthEventsRecorder = healthEvents
 	if !cache.WaitForCacheSync(stopCh, ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.secretsInformerSynced) {
 		return
 	}

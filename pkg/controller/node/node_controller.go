@@ -21,6 +21,7 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	"github.com/openshift/machine-config-operator/pkg/constants"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/controller/state"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -70,9 +71,10 @@ const (
 
 // Controller defines the node controller.
 type Controller struct {
-	client        mcfgclientset.Interface
-	kubeClient    clientset.Interface
-	eventRecorder record.EventRecorder
+	client               mcfgclientset.Interface
+	kubeClient           clientset.Interface
+	eventRecorder        record.EventRecorder
+	healthEventsRecorder record.EventRecorder
 
 	syncHandler              func(mcp string) error
 	enqueueMachineConfigPool func(*mcfgv1.MachineConfigPool)
@@ -204,10 +206,10 @@ func newController(
 }
 
 // Run executes the render controller.
-func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
+func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}, healthEvents record.EventRecorder) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
-
+	ctrl.healthEventsRecorder = healthEvents
 	if !cache.WaitForCacheSync(stopCh, ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.mcpListerSynced, ctrl.nodeListerSynced, ctrl.schedulerListerSynced) {
 		return
 	}
@@ -1010,6 +1012,22 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		}
 	}
 	return ctrl.syncStatusOnly(pool)
+}
+
+func (ctrl *Controller) EmitHealthEvent(pod *corev1.Pod, annos map[string]string, eventType, reason, message string) {
+	if ctrl.healthEventsRecorder == nil {
+		return
+	}
+	if pod == nil {
+		healthPod, err := state.StateControllerPod(ctrl.kubeClient)
+		if err != nil {
+			klog.Errorf("Could not get state controller pod yet %w", err)
+			return
+		} else {
+			pod = healthPod
+		}
+	}
+	ctrl.healthEventsRecorder.AnnotatedEventf(pod, annos, eventType, reason, message)
 }
 
 // checkIfNodeHasInProgressTaint checks if the given node has in progress taint
