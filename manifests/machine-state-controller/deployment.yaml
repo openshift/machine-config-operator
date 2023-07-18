@@ -4,6 +4,7 @@ metadata:
   name: machine-state-controller
   namespace: {{.TargetNamespace}}
 spec:
+  replicas: 1
   selector:
     matchLabels:
       k8s-app: machine-state-controller 
@@ -21,3 +22,7 @@ spec:
         args:
         - "start"
       serviceAccountName: machine-state-controller
+      tolerations:
+      - key: node-role.kubernetes.io/master
+        operator: Exists
+        effect: "NoSchedule"

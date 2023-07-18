@@ -53,8 +53,9 @@ var (
 
 // Controller defines the render controller.
 type Controller struct {
-	client        mcfgclientset.Interface
-	eventRecorder record.EventRecorder
+	client               mcfgclientset.Interface
+	eventRecorder        record.EventRecorder
+	healthEventsRecorder record.EventRecorder
 
 	syncHandler              func(mcp string) error
 	enqueueMachineConfigPool func(*mcfgv1.MachineConfigPool)
@@ -114,9 +115,11 @@ func New(
 }
 
 // Run executes the render controller.
-func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
+func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}, healthEvents record.EventRecorder) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
+
+	ctrl.healthEventsRecorder = healthEvents
 
 	if !cache.WaitForCacheSync(stopCh, ctrl.mcpListerSynced, ctrl.mcListerSynced, ctrl.ccListerSynced) {
 		return

@@ -77,9 +77,10 @@ var errCouldNotFindMCPSet = errors.New("could not find any MachineConfigPool set
 type Controller struct {
 	templatesDir string
 
-	client        mcfgclientset.Interface
-	configClient  configclientset.Interface
-	eventRecorder record.EventRecorder
+	client               mcfgclientset.Interface
+	configClient         configclientset.Interface
+	healthEventsRecorder record.EventRecorder
+	eventRecorder        record.EventRecorder
 
 	syncHandler          func(mcp string) error
 	enqueueKubeletConfig func(*mcfgv1.KubeletConfig)
@@ -128,9 +129,10 @@ func New(
 	eventBroadcaster.StartRecordingToSink(&coreclientsetv1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 
 	ctrl := &Controller{
-		templatesDir:      templatesDir,
-		client:            mcfgClient,
-		configClient:      configclient,
+		templatesDir: templatesDir,
+		client:       mcfgClient,
+		configClient: configclient,
+		//healthEventsRecorder: ,
 		eventRecorder:     ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-kubeletconfigcontroller"})),
 		queue:             workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-kubeletconfigcontroller"),
 		featureQueue:      workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-featurecontroller"),
@@ -181,12 +183,13 @@ func New(
 }
 
 // Run executes the kubelet config controller.
-func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
+func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}, healthEvents record.EventRecorder) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 	defer ctrl.featureQueue.ShutDown()
 	defer ctrl.nodeConfigQueue.ShutDown()
 
+	ctrl.healthEventsRecorder = healthEvents
 	if !cache.WaitForCacheSync(stopCh, ctrl.mcpListerSynced, ctrl.mckListerSynced, ctrl.ccListerSynced, ctrl.featListerSynced, ctrl.apiserverListerSynced) {
 		return
 	}
@@ -468,6 +471,10 @@ func (ctrl *Controller) addAnnotation(cfg *mcfgv1.KubeletConfig, annotationKey, 
 //nolint:gocyclo
 func (ctrl *Controller) syncKubeletConfig(key string) error {
 	startTime := time.Now()
+
+	// get kubeletConfig node or at least the node this controller is running on
+	// need a uniform method for determining node we are running on
+	//ctrl.heal
 	klog.V(4).Infof("Started syncing kubeletconfig %q (%v)", key, startTime)
 	defer func() {
 		klog.V(4).Infof("Finished syncing kubeletconfig %q (%v)", key, time.Since(startTime))

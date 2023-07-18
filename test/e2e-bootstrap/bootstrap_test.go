@@ -39,6 +39,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/record"
 )
 
 const (
@@ -422,6 +423,8 @@ func newTestFixture(t *testing.T, cfg *rest.Config, objs []runtime.Object) *fixt
 	cb := clients.BuilderFromConfig(cfg)
 	ctrlctx := ctrlcommon.CreateControllerContext(ctx, cb)
 
+	fakeHealthEvents := &record.FakeRecorder{}
+
 	clientSet := framework.NewClientSetFromConfig(cfg)
 
 	// Ensure the environment has been cleaned, then create this tests objects
@@ -442,7 +445,7 @@ func newTestFixture(t *testing.T, cfg *rest.Config, objs []runtime.Object) *fixt
 	close(ctrlctx.InformersStarted)
 
 	for _, c := range controllers {
-		go c.Run(2, ctrlctx.Stop)
+		go c.Run(2, ctrlctx.Stop, fakeHealthEvents)
 	}
 
 	return &fixture{

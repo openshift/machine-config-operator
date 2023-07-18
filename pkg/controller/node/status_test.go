@@ -879,7 +879,7 @@ func TestCalculateStatus(t *testing.T) {
 					Paused:        test.paused,
 				},
 			}
-			status := calculateStatus(nil, pool, test.nodes)
+			status := calculateStatus(&mcfgv1.MachineState{Status: mcfgv1.MachineStateStatus{}}, nil, pool, test.nodes)
 			test.verify(status, t)
 		})
 	}

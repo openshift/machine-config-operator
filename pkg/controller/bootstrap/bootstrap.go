@@ -26,6 +26,7 @@ import (
 	containerruntimeconfig "github.com/openshift/machine-config-operator/pkg/controller/container-runtime-config"
 	kubeletconfig "github.com/openshift/machine-config-operator/pkg/controller/kubelet-config"
 	"github.com/openshift/machine-config-operator/pkg/controller/render"
+	"github.com/openshift/machine-config-operator/pkg/controller/state"
 	"github.com/openshift/machine-config-operator/pkg/controller/template"
 	"github.com/openshift/machine-config-operator/pkg/version"
 )
@@ -38,8 +39,11 @@ type Bootstrap struct {
 	manifestDir string
 	// pull secret file
 	pullSecretFile string
+	// bootstrap Health Controller
+	StateController state.StateController
 }
 
+// we Might need to make a special new path for bootstrap. No we dont, that is what the subcontroller is for
 // New returns controller for bootstrap
 func New(templatesDir, manifestDir, pullSecretFile string) *Bootstrap {
 	return &Bootstrap{
@@ -53,6 +57,10 @@ func New(templatesDir, manifestDir, pullSecretFile string) *Bootstrap {
 // It writes all the assets to destDir
 // nolint:gocyclo
 func (b *Bootstrap) Run(destDir string) error {
+
+	//	ctx, _ := context.WithCancel(context.Background())
+	//	b.StateController.Run(2, ctx.Done(), nil)
+
 	infos, err := ctrlcommon.ReadDir(b.manifestDir)
 	if err != nil {
 		return err
@@ -75,6 +83,7 @@ func (b *Bootstrap) Run(destDir string) error {
 	codecFactory := serializer.NewCodecFactory(scheme)
 	decoder := codecFactory.UniversalDecoder(mcfgv1.GroupVersion, apioperatorsv1alpha1.GroupVersion, apicfgv1.GroupVersion)
 
+	var states []*mcfgv1.MachineState
 	var cconfig *mcfgv1.ControllerConfig
 	var featureGate *apicfgv1.FeatureGate
 	var nodeConfig *apicfgv1.Node
@@ -114,6 +123,8 @@ func (b *Bootstrap) Run(destDir string) error {
 			}
 
 			switch obj := obji.(type) {
+			case *mcfgv1.MachineState:
+				states = append(states, obj)
 			case *mcfgv1.MachineConfigPool:
 				pools = append(pools, obj)
 			case *mcfgv1.MachineConfig:

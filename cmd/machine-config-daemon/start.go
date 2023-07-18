@@ -90,6 +90,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 	defer close(exitCh)
 
 	dn, err := daemon.New(
+		false,
 		exitCh,
 	)
 	if err != nil {

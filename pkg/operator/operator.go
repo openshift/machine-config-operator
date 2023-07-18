@@ -8,7 +8,9 @@ import (
 	"k8s.io/klog/v2"
 
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
+	v1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/controller/state"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	corev1 "k8s.io/api/core/v1"
 	apiextclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
@@ -63,6 +65,9 @@ type Operator struct {
 
 	vStore *versionStore
 
+	operatorHealthEvents record.EventRecorder
+	stateControllerPod   *corev1.Pod
+
 	client        mcfgclientset.Interface
 	kubeClient    kubernetes.Interface
 	apiExtClient  apiextclientset.Interface
@@ -75,6 +80,7 @@ type Operator struct {
 	imgLister        configlistersv1.ImageLister
 	crdLister        apiextlistersv1.CustomResourceDefinitionLister
 	mcpLister        mcfglistersv1.MachineConfigPoolLister
+	msLister         mcfglistersv1.MachineStateLister
 	ccLister         mcfglistersv1.ControllerConfigLister
 	mcLister         mcfglistersv1.MachineConfigLister
 	deployLister     appslisterv1.DeploymentLister
@@ -115,6 +121,7 @@ type Operator struct {
 	mcoSecretListerSynced            cache.InformerSynced
 	ocSecretListerSynced             cache.InformerSynced
 	mcoCOListerSynced                cache.InformerSynced
+	msListerSynced                   cache.InformerSynced
 
 	// queue only ever has one item, but it has nice error handling backoff/retry semantics
 	queue workqueue.RateLimitingInterface
@@ -154,6 +161,7 @@ func New(
 	mcoSecretInformer coreinformersv1.SecretInformer,
 	ocSecretInformer coreinformersv1.SecretInformer,
 	mcoCOInformer configinformersv1.ClusterOperatorInformer,
+	msInformer mcfginformersv1.MachineStateInformer,
 ) *Operator {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
@@ -177,6 +185,14 @@ func New(
 		}),
 		queue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigoperator"),
 	}
+	err := corev1.AddToScheme(scheme.Scheme)
+	if err != nil {
+		klog.Errorf("Could not modify scheme: %w", err)
+	}
+	healtheventBroadcaster := record.NewBroadcaster()
+	healtheventBroadcaster.StartLogging(klog.V(2).Infof)
+	healtheventBroadcaster.StartRecordingToSink(&coreclientsetv1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("openshift-machine-config-operator")})
+	optr.operatorHealthEvents = healtheventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "operator-health"})
 
 	for _, i := range []cache.SharedIndexInformer{
 		controllerConfigInformer.Informer(),
@@ -201,12 +217,14 @@ func New(
 		mcoSecretInformer.Informer(),
 		ocSecretInformer.Informer(),
 		mcoCOInformer.Informer(),
+		msInformer.Informer(),
 	} {
 		i.AddEventHandler(optr.eventHandler())
 	}
 
 	optr.syncHandler = optr.sync
 
+	optr.msLister = msInformer.Lister()
 	optr.imgLister = imgInformer.Lister()
 	optr.clusterCmLister = clusterCmInfomer.Lister()
 	optr.clusterCmListerSynced = clusterCmInfomer.Informer().HasSynced
@@ -223,6 +241,7 @@ func New(
 	optr.nodeLister = nodeInformer.Lister()
 	optr.nodeListerSynced = nodeInformer.Informer().HasSynced
 
+	optr.msListerSynced = msInformer.Informer().HasSynced
 	optr.imgListerSynced = imgInformer.Informer().HasSynced
 	optr.maoSecretInformerSynced = maoSecretInformer.Informer().HasSynced
 	optr.serviceAccountInformerSynced = serviceAccountInfomer.Informer().HasSynced
@@ -394,6 +413,7 @@ func (optr *Operator) sync(key string) error {
 		// "RenderConfig" must always run first as it sets the renderConfig in the operator
 		// for the sync funcs below
 		{"RenderConfig", optr.syncRenderConfig},
+		{"MachineState", optr.syncMachineStates},
 		{"MachineConfigPools", optr.syncMachineConfigPools},
 		{"MachineConfigDaemon", optr.syncMachineConfigDaemon},
 		{"MachineConfigController", optr.syncMachineConfigController},
@@ -403,4 +423,31 @@ func (optr *Operator) sync(key string) error {
 		{"RequiredPools", optr.syncRequiredMachineConfigPools},
 	}
 	return optr.syncAll(syncFuncs)
+}
+
+func (op *Operator) EmitHealthEvent(pod *corev1.Pod, annos map[string]string, eventType, reason, message string) {
+	if op.operatorHealthEvents == nil {
+		return
+	}
+	if pod == nil {
+		healthPod, err := state.StateControllerPod(op.kubeClient)
+		if err != nil {
+			klog.Errorf("Could not get state controller pod yet %w", err)
+			return
+		} else {
+			pod = healthPod
+			op.stateControllerPod = healthPod
+		}
+	}
+	op.operatorHealthEvents.AnnotatedEventf(pod, annos, eventType, reason, message)
+}
+
+func (op *Operator) HealthAnnotations(object string, objectType string, kind v1.StateProgress) map[string]string {
+	annos := make(map[string]string)
+	annos["ms"] = "OperatorHealth" //might need this might not
+	annos["state"] = string(kind)
+	annos["ObjectName"] = object
+	annos["ObjectKind"] = objectType
+
+	return annos
 }

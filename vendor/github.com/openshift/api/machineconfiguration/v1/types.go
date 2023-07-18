@@ -193,6 +193,7 @@ type ControllerConfigStatus struct {
 	// +listType=atomic
 	// +optional
 	Conditions []ControllerConfigStatusCondition `json:"conditions"`
+
 	// controllerCertificates represents the latest available observations of the automatically rotating certificates in the MCO.
 	// +listType=atomic
 	// +optional
@@ -322,7 +323,7 @@ type MachineConfigSpec struct {
 	FIPS bool `json:"fips"`
 
 	// kernelType contains which kernel we want to be running like default
-	// (traditional), realtime, 64k-pages (aarch64 only).
+	// (traditional), realtime.
 	// +optional
 	KernelType string `json:"kernelType"`
 }

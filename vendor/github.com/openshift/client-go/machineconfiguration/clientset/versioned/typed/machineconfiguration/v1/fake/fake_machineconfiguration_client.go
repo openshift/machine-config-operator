@@ -32,6 +32,10 @@ func (c *FakeMachineconfigurationV1) MachineConfigPools() v1.MachineConfigPoolIn
 	return &FakeMachineConfigPools{c}
 }
 
+func (c *FakeMachineconfigurationV1) MachineStates() v1.MachineStateInterface {
+	return &FakeMachineStates{c}
+}
+
 // RESTClient returns a RESTClient that is used to communicate
 // with API server by this client implementation.
 func (c *FakeMachineconfigurationV1) RESTClient() rest.Interface {

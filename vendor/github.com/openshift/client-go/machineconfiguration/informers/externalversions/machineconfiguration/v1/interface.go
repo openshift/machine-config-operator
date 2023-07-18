@@ -18,6 +18,8 @@ type Interface interface {
 	MachineConfigs() MachineConfigInformer
 	// MachineConfigPools returns a MachineConfigPoolInformer.
 	MachineConfigPools() MachineConfigPoolInformer
+	// MachineStates returns a MachineStateInformer.
+	MachineStates() MachineStateInformer
 }
 
 type version struct {
@@ -54,4 +56,9 @@ func (v *version) MachineConfigs() MachineConfigInformer {
 // MachineConfigPools returns a MachineConfigPoolInformer.
 func (v *version) MachineConfigPools() MachineConfigPoolInformer {
 	return &machineConfigPoolInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
+}
+
+// MachineStates returns a MachineStateInformer.
+func (v *version) MachineStates() MachineStateInformer {
+	return &machineStateInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }

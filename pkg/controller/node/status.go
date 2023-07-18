@@ -17,6 +17,7 @@ import (
 	"k8s.io/klog/v2"
 )
 
+// syncStatusOnly for MachineState
 func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
 	cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
 	if err != nil {
@@ -27,7 +28,9 @@ func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
 		return err
 	}
 
-	newStatus := calculateStatus(cc, pool, nodes)
+	ms, err := ctrl.client.MachineconfigurationV1().MachineStates().Get(context.TODO(), fmt.Sprintf("upgrade-%s", pool.Name), metav1.GetOptions{})
+
+	newStatus := calculateStatus(ms, cc, pool, nodes)
 	if equality.Semantic.DeepEqual(pool.Status, newStatus) {
 		return nil
 	}
@@ -44,7 +47,7 @@ func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
 	return err
 }
 
-func calculateStatus(cconfig *v1.ControllerConfig, pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv1.MachineConfigPoolStatus {
+func calculateStatus(ms *v1.MachineState, cconfig *v1.ControllerConfig, pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv1.MachineConfigPoolStatus {
 	certExpirys := []v1.CertExpiry{}
 	if cconfig != nil {
 		for _, cert := range cconfig.Status.ControllerCertificates {
@@ -60,16 +63,94 @@ func calculateStatus(cconfig *v1.ControllerConfig, pool *mcfgv1.MachineConfigPoo
 	}
 	machineCount := int32(len(nodes))
 
-	updatedMachines := getUpdatedMachines(pool, nodes)
-	updatedMachineCount := int32(len(updatedMachines))
+	// modify this to use state controller data somehow
+	// look for update errors to get degraded machines
+	// updated means the most recent condition is updated in the state controller
+	//  unavailable? I guess this means everything in the process of working thru an upgrade of some kind or having some sort of day to day MCD progress
+	// is unavilable
 
-	readyMachines := getReadyMachines(pool, nodes)
+	// instead of basing everything on nodes (which we don't own) base it on pool state.
+	// however, we can't change the whole updated,ready,unavailable machine logic too much besides cordoning
+
+	// if each machinestate (upgrading) is per pool, we need to not have just a node assoc with each MS but somehow a node attached
+	// to the progression
+
+	/*
+		updatedMachines := getUpdatedMachines(pool.Spec.Configuration.Name, nodes)
+		updatedMachineCount := int32(len(updatedMachines))
+
+		readyMachines := getReadyMachines(pool.Spec.Configuration.Name, nodes)
+		readyMachineCount := int32(len(readyMachines))
+
+		unavailableMachines := getUnavailableMachines(nodes)
+		unavailableMachineCount := int32(len(unavailableMachines))
+
+		degradedMachines := getDegradedMachines(nodes)
+		degradedReasons := []string{}
+		for _, n := range degradedMachines {
+			reason, ok := n.Annotations[daemonconsts.MachineConfigDaemonReasonAnnotationKey]
+			if ok && reason != "" {
+				degradedReasons = append(degradedReasons, fmt.Sprintf("Node %s is reporting: %q", n.Name, reason))
+			}
+		}*/
+
+	var degradedMachines, readyMachines, updatedMachines, unavailableMachines, updatingMachines []*corev1.Node
+	for _, nodeState := range ms.Status.MostRecentState {
+		if nodeState.Kind == v1.Node {
+			klog.Infof("Looking at node: %s", nodeState.Name)
+			var ourNode *corev1.Node
+			for _, node := range nodes {
+				klog.Infof("Node name: %s vs our Node name: %s", node.Name, nodeState.Name)
+				if node.Name == nodeState.Name {
+					ourNode = node
+				}
+			}
+			if ourNode == nil {
+				klog.Info("Did not find node we were looking for")
+				break
+			}
+			switch nodeState.State {
+			case v1.MachineConfigPoolUpdateErrored:
+				// if the most recent phase for that node is unavailable
+				if nodeState.Phase == "Unavailable" {
+					unavailableMachines = append(unavailableMachines, ourNode)
+				} else {
+					degradedMachines = append(degradedMachines, ourNode)
+				}
+			case v1.MachineConfigPoolUpdateInProgress, v1.MachineConfigPoolUpdatePostAction, v1.MachineConfigPoolUpdateCompleting, v1.MachineConfigPoolUpdatePreparing:
+				updatingMachines = append(updatedMachines, ourNode)
+			case v1.MachineConfigPoolUpdateComplete:
+				updatedMachines = append(updatedMachines, ourNode)
+			case v1.MachineConfigPoolReady:
+				readyMachines = append(readyMachines, ourNode)
+				updatedMachines = append(updatedMachines, ourNode)
+			default: // if we are actively doing something like resuming, draining etc, we are unavailable
+				unavailableMachines = append(unavailableMachines, ourNode)
+			}
+		}
+	}
+	degradedMachineCount := int32(len(degradedMachines))
+	updatedMachineCount := int32(len(updatedMachines))
+	unavailableMachineCount := int32(len(unavailableMachines))
+	updatingMachineCount := int32(len(updatingMachines))
 	readyMachineCount := int32(len(readyMachines))
 
-	unavailableMachines := getUnavailableMachines(nodes, pool)
-	unavailableMachineCount := int32(len(unavailableMachines))
+	// this is # 1 priority, get the upgrade states actually reporting
+	if degradedMachineCount+readyMachineCount+updatedMachineCount+unavailableMachineCount+updatingMachineCount != int32(len(nodes)) {
+		klog.Infof("new state reporting did not get all nodes, falling back. Sate reporting node total %d and actual node total %d", (degradedMachineCount + readyMachineCount + updatedMachineCount + unavailableMachineCount + updatingMachineCount), len(nodes))
+		klog.Infof("degraded: %d ready: %d updated %d unavailable %d updating %d", degradedMachineCount, readyMachineCount, updatedMachineCount, unavailableMachineCount, updatingMachineCount)
+		updatedMachines = getUpdatedMachines(pool, nodes)
+		updatedMachineCount = int32(len(updatedMachines))
 
-	degradedMachines := getDegradedMachines(nodes)
+		readyMachines = getReadyMachines(pool, nodes)
+		readyMachineCount = int32(len(readyMachines))
+
+		unavailableMachines = getUnavailableMachines(nodes, pool)
+		unavailableMachineCount = int32(len(unavailableMachines))
+
+		degradedMachines = getDegradedMachines(nodes)
+	}
+
 	degradedReasons := []string{}
 	for _, n := range degradedMachines {
 		reason, ok := n.Annotations[daemonconsts.MachineConfigDaemonReasonAnnotationKey]
@@ -77,14 +158,13 @@ func calculateStatus(cconfig *v1.ControllerConfig, pool *mcfgv1.MachineConfigPoo
 			degradedReasons = append(degradedReasons, fmt.Sprintf("Node %s is reporting: %q", n.Name, reason))
 		}
 	}
-	degradedMachineCount := int32(len(degradedMachines))
 
 	status := mcfgv1.MachineConfigPoolStatus{
 		ObservedGeneration:      pool.Generation,
 		MachineCount:            machineCount,
 		UpdatedMachineCount:     updatedMachineCount,
 		ReadyMachineCount:       readyMachineCount,
-		UnavailableMachineCount: unavailableMachineCount,
+		UnavailableMachineCount: unavailableMachineCount + updatingMachineCount,
 		DegradedMachineCount:    degradedMachineCount,
 		CertExpirys:             certExpirys,
 	}
@@ -95,6 +175,15 @@ func calculateStatus(cconfig *v1.ControllerConfig, pool *mcfgv1.MachineConfigPoo
 		status.Conditions = append(status.Conditions, conditions[i])
 	}
 
+	// this is how we currently choose our MCP condition
+	// what would need to change here?
+
+	// if allUpdated == everything is "updated", "ready" and nothing is "unavailable"
+	// we need to do a few things here
+	// 1) what is unavailable... let's hash that out a bit more
+	// 2) what can go in between updating and updated
+	// a) we are going to need to add a LOT more status checks
+	// b) we are going to need new phases of course but I think we might need new data to track these phases
 	allUpdated := updatedMachineCount == machineCount &&
 		readyMachineCount == machineCount &&
 		unavailableMachineCount == 0
@@ -184,6 +273,11 @@ func isNodeManaged(node *corev1.Node) bool {
 	return true
 }
 
+// ok, if node is done literally just reads the annotations and then also
+// uses MCD data to determine
+// we could... add more annotations for different parts of the update process.
+// reveals a chicken or the egg.
+// we might need the bookeeping at the same time as the state reporting
 // isNodeDone returns true if the current == desired and the MCD has marked done.
 func isNodeDone(node *corev1.Node) bool {
 	if node.Annotations == nil {

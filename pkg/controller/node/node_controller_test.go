@@ -1140,7 +1140,7 @@ func TestShouldMakeProgress(t *testing.T) {
 			} else {
 				t.Logf("not expecting annotation")
 			}
-			expStatus := calculateStatus(cc, mcp, nodes)
+			expStatus := calculateStatus(&mcfgv1.MachineState{Status: mcfgv1.MachineStateStatus{}}, cc, mcp, nodes)
 			expMcp := mcp.DeepCopy()
 			expMcp.Status = expStatus
 			f.expectUpdateMachineConfigPoolStatus(expMcp)
@@ -1192,7 +1192,7 @@ func TestPaused(t *testing.T) {
 		f.kubeobjects = append(f.kubeobjects, nodes[idx])
 	}
 
-	expStatus := calculateStatus(cc, mcp, nodes)
+	expStatus := calculateStatus(&mcfgv1.MachineState{Status: mcfgv1.MachineStateStatus{}}, cc, mcp, nodes)
 	expMcp := mcp.DeepCopy()
 	expMcp.Status = expStatus
 	f.expectUpdateMachineConfigPoolStatus(expMcp)
@@ -1220,7 +1220,7 @@ func TestShouldUpdateStatusOnlyUpdated(t *testing.T) {
 		f.kubeobjects = append(f.kubeobjects, nodes[idx])
 	}
 
-	expStatus := calculateStatus(cc, mcp, nodes)
+	expStatus := calculateStatus(&mcfgv1.MachineState{Status: mcfgv1.MachineStateStatus{}}, cc, mcp, nodes)
 	expMcp := mcp.DeepCopy()
 	expMcp.Status = expStatus
 	f.expectUpdateMachineConfigPoolStatus(expMcp)
@@ -1248,7 +1248,7 @@ func TestShouldUpdateStatusOnlyNoProgress(t *testing.T) {
 		f.kubeobjects = append(f.kubeobjects, nodes[idx])
 	}
 
-	expStatus := calculateStatus(cc, mcp, nodes)
+	expStatus := calculateStatus(&mcfgv1.MachineState{Status: mcfgv1.MachineStateStatus{}}, cc, mcp, nodes)
 	expMcp := mcp.DeepCopy()
 	expMcp.Status = expStatus
 	f.expectUpdateMachineConfigPoolStatus(expMcp)
@@ -1281,7 +1281,7 @@ func TestCertStatus(t *testing.T) {
 		f.kubeobjects = append(f.kubeobjects, nodes[idx])
 	}
 
-	expStatus := calculateStatus(cc, mcp, nodes)
+	expStatus := calculateStatus(&mcfgv1.MachineState{Status: mcfgv1.MachineStateStatus{}}, cc, mcp, nodes)
 	expMcp := mcp.DeepCopy()
 	expMcp.Status = expStatus
 
@@ -1301,7 +1301,7 @@ func TestShouldDoNothing(t *testing.T) {
 		newNodeWithLabel("node-0", machineConfigV1, machineConfigV1, map[string]string{"node-role/worker": "", "node-role/infra": ""}),
 		newNodeWithLabel("node-1", machineConfigV1, machineConfigV1, map[string]string{"node-role/worker": "", "node-role/infra": ""}),
 	}
-	status := calculateStatus(cc, mcp, nodes)
+	status := calculateStatus(&mcfgv1.MachineState{Status: mcfgv1.MachineStateStatus{}}, cc, mcp, nodes)
 	mcp.Status = status
 
 	f.ccLister = append(f.ccLister, cc)
@@ -1392,7 +1392,7 @@ func TestControlPlaneTopology(t *testing.T) {
 	for _, node := range nodes {
 		addNodeAnnotations(node, annotations)
 	}
-	status := calculateStatus(cc, mcp, nodes)
+	status := calculateStatus(&mcfgv1.MachineState{Status: mcfgv1.MachineStateStatus{}}, cc, mcp, nodes)
 	mcp.Status = status
 
 	f.ccLister = append(f.ccLister, cc)
