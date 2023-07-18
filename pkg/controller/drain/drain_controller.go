@@ -9,7 +9,9 @@ import (
 	"strings"
 	"time"
 
+	v1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/controller/state"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
@@ -85,9 +87,12 @@ func DefaultConfig() Config {
 
 // Controller defines the node controller.
 type Controller struct {
-	client        mcfgclientset.Interface
-	kubeClient    clientset.Interface
-	eventRecorder record.EventRecorder
+	client               mcfgclientset.Interface
+	kubeClient           clientset.Interface
+	eventRecorder        record.EventRecorder
+	healthEventsRecorder record.EventRecorder
+	updateEventsRecorder record.EventRecorder
+	stateControllerPod   *corev1.Pod
 
 	syncHandler func(node string) error
 	enqueueNode func(*corev1.Node)
@@ -146,9 +151,21 @@ func (w writer) Write(p []byte) (n int, err error) {
 }
 
 // Run executes the drain controller.
-func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
+func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}, healthEvents record.EventRecorder, updateEvents record.EventRecorder) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
+
+	healthPod, err := state.StateControllerPod(ctrl.kubeClient)
+	if err != nil {
+		klog.Error(err)
+	}
+
+	if healthPod != nil {
+		ctrl.stateControllerPod = healthPod
+	}
+
+	ctrl.healthEventsRecorder = healthEvents
+	ctrl.updateEventsRecorder = updateEvents
 
 	if !cache.WaitForCacheSync(stopCh, ctrl.nodeListerSynced) {
 		return
@@ -303,12 +320,14 @@ func (ctrl *Controller) syncNode(key string) error {
 	desiredVerb := strings.Split(desiredState, "-")[0]
 	switch desiredVerb {
 	case daemonconsts.DrainerStateUncordon:
+		ctrl.EmitUpgradeEvent(ctrl.stateControllerPod, ctrl.UpgradeAnnotations(v1.MachineConfigPoolUpdateCompleting, node), corev1.EventTypeNormal, "CordoningNode", fmt.Sprintf("Cordining Node %s as part of update", node.Name))
 		ctrl.logNode(node, "uncordoning")
 		// perform uncordon
 		if err := ctrl.cordonOrUncordonNode(false, node, drainer); err != nil {
 			return fmt.Errorf("failed to uncordon node %v: %w", node.Name, err)
 		}
 	case daemonconsts.DrainerStateDrain:
+		ctrl.EmitUpgradeEvent(ctrl.stateControllerPod, ctrl.UpgradeAnnotations(v1.MachineConfigPoolUpdateCompleting, node), corev1.EventTypeNormal, "DrainingNode", fmt.Sprintf("Draining Node %s as part of update", node.Name))
 		if err := ctrl.drainNode(node, drainer); err != nil {
 			// If we get an error from drainNode, that means the drain failed.
 			// However, we want to requeue and try again. So we need to return nil
@@ -477,4 +496,29 @@ func (ctrl *Controller) cordonOrUncordonNode(desired bool, node *corev1.Node, dr
 	}
 
 	return nil
+}
+
+func (ctrl *Controller) UpgradeAnnotations(kind v1.StateProgress, node *corev1.Node) map[string]string {
+	annos := make(map[string]string)
+	annos["ms"] = "UpgradeProgression" //might need this might not
+	annos["state"] = string(kind)
+	annos["ObjectKind"] = string(v1.Node)
+	annos["ObjectName"] = node.Name
+
+	return annos
+}
+func (ctrl *Controller) EmitUpgradeEvent(pod *corev1.Pod, annos map[string]string, eventType, reason, message string) {
+	if ctrl.updateEventsRecorder == nil {
+		return
+	}
+	if pod == nil {
+		healthPod, err := state.StateControllerPod(ctrl.kubeClient)
+		if err != nil {
+			klog.Errorf("Could not get state controller pod yet %w", err)
+			return
+		} else {
+			pod = healthPod
+		}
+	}
+	ctrl.updateEventsRecorder.AnnotatedEventf(pod, annos, eventType, reason, message)
 }

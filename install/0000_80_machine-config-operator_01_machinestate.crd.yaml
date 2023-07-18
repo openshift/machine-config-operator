@@ -1,0 +1,205 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: machinestates.machineconfiguration.openshift.io
+  labels:
+    "openshift.io/operator-managed": ""
+  annotations:
+    include.release.openshift.io/ibm-cloud-managed: "true"
+    include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-developer: "true"
+spec:
+  # group name to use for REST API: /apis/<group>/<version>
+  group: machineconfiguration.openshift.io
+  scope: Cluster
+  names:
+    kind: MachineState
+    singular: machinestate
+    plural: machinestates
+    shortnames:
+    - state
+  versions:
+  - name: v1
+    # Each version can be enabled/disabled by Served flag.
+    served: true
+    # One and only one version must be marked as the storage version.
+    storage: true
+    subresources:
+      status: {}
+    additionalPrinterColumns:
+    - jsonPath: .spec.machineStateKind
+      name: Type
+      type: string
+    - jsonPath: .status.healthy
+      name: Healthy
+      type: boolean
+    - jsonPath: .status.allStates[0].state
+      name: Progress
+      type: string
+    - jsonPath: .status.allStates[0].name
+      name: Object
+      type: string
+    - jsonPath: .status.allStates[0].kind
+      name: ObjectType
+      type: string
+    - jsonPath: .status.error
+      name: Error
+      type: string
+    schema:
+      openAPIV3Schema:
+        description: MachineState describes the health of the system.
+        type: object
+        required:
+        - spec
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: MachineStateConfig is the spec for the MachineState resource
+            type: object
+            properties:
+              machineStateKind:
+                description: the kind of machine state we are detailing
+                type: string
+              configuration:
+                description: the targeted MachineState object for the machine state.
+                type: object
+                properties:
+                  apiVersion:
+                    description: API version of the referent.
+                    type: string
+                  fieldPath:
+                    description: 'If referring to a piece of an object instead of an
+                      entire object, this string should contain a valid JSON/Go field
+                      access statement, such as desiredState.manifest.containers[2].
+                      For example, if the object reference is to a container within
+                      a pod, this would take on a value like: "spec.containers{name}"
+                      (where "name" refers to the name of the container that triggered
+                      the event) or if no container name is specified "spec.containers[2]"
+                      (container with index 2 in this pod). This syntax is chosen only
+                      to have some well-defined way of referencing a part of an object.
+                      TODO: this design is not final and this field is subject to change
+                      in the future.'
+                    type: string
+                  kind:
+                    description: 'Kind of the referent. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+                    type: string
+                  name:
+                    description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                    type: string
+                  namespace:
+                    description: 'Namespace of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/'
+                    type: string
+                  resourceVersion:
+                    description: 'Specific resourceVersion to which this reference is
+                      made, if any. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency'
+                    type: string
+          status:
+            description: MachineStateStatus is the status of the MachineState resource.
+            type: object
+            properties:
+              progress:
+                description: progress tracks all machines and their most recent progress.
+                additionalProperties:
+                  description: progessionCondition keeps track of the phase and reason of a specific state.
+                  type: object
+                  properties:
+                    kind:
+                      description: the kind of object we are dealing with
+                      type: string
+                    name:
+                       description: the name of the object we are dealing with
+                       type: string
+                    state:
+                      description: the specific state we are in
+                      type: string
+                    phase:
+                      description: phase of our current state
+                      type: string
+                    reason:
+                      description: reason describes why we are in the current state.
+                      type: string
+                    time:
+                      description: the time of this transition
+                      type: string
+                      format: date-time
+                type: object
+              allStates:
+                description: allStates provides the user with all progression conditions ever reported, or if not healthy the most recently errors state.
+                type: array
+                items:
+                  description: ProgressCondition describes the progress of all reported events
+                  type: object
+                  properties:
+                    kind:
+                      description: the kind of object we are dealing with
+                      type: string
+                    name:
+                       description: the name of the object we are dealing with
+                       type: string
+                    state:
+                      description: the specific state we are in
+                      type: string
+                    phase:
+                      description: phase of our current state
+                      type: string
+                    reason:
+                      description: reason describes why we are in the current state.
+                      type: string
+                    time:
+                      description: the time of this transition
+                      type: string
+                      format: date-time
+              healthy:
+                description: healthy reports to the user whether or not all states are reporting healthy.
+                type: boolean
+              error:
+                description: error reports the last error state of the state controller.
+                type: string
+              configuration:
+                description: configuration represents the MachineState object
+                  that last successfully rolled out.
+                type: object
+                properties:
+                  apiVersion:
+                    description: API version of the referent.
+                    type: string
+                  fieldPath:
+                    description: 'If referring to a piece of an object instead of an
+                      entire object, this string should contain a valid JSON/Go field
+                      access statement, such as desiredState.manifest.containers[2].
+                      For example, if the object reference is to a container within
+                      a pod, this would take on a value like: "spec.containers{name}"
+                      (where "name" refers to the name of the container that triggered
+                      the event) or if no container name is specified "spec.containers[2]"
+                      (container with index 2 in this pod). This syntax is chosen only
+                      to have some well-defined way of referencing a part of an object.
+                      TODO: this design is not final and this field is subject to change
+                      in the future.'
+                    type: string
+                  kind:
+                    description: 'Kind of the referent. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+                    type: string
+                  name:
+                    description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                    type: string
+                  namespace:
+                    description: 'Namespace of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/'
+                    type: string
+                  resourceVersion:
+                    description: 'Specific resourceVersion to which this reference is
+                      made, if any. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency'
+                    type: string
+
+
+

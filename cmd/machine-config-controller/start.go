@@ -10,6 +10,7 @@ import (
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/machine-config-operator/cmd/common"
 	"github.com/openshift/machine-config-operator/internal/clients"
+	v1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	containerruntimeconfig "github.com/openshift/machine-config-operator/pkg/controller/container-runtime-config"
 	"github.com/openshift/machine-config-operator/pkg/controller/drain"
@@ -19,9 +20,14 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/controller/template"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/spf13/cobra"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	coreclientsetv1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/leaderelection"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
+	"k8s.io/kubectl/pkg/scheme"
 )
 
 var (
@@ -37,11 +43,13 @@ var (
 		templates                string
 		promMetricsListenAddress string
 		resourceLockNamespace    string
+		StateSubControllers      []string
 	}
 )
 
 func init() {
 	rootCmd.AddCommand(startCmd)
+	startCmd.PersistentFlags().StringArrayVar(&startOpts.StateSubControllers, "state-controllers", []string{""}, "enable/disable the different health controllers")
 	startCmd.PersistentFlags().StringVar(&startOpts.kubeconfig, "kubeconfig", "", "Kubeconfig file to access a remote cluster (testing only)")
 	startCmd.PersistentFlags().StringVar(&startOpts.resourceLockNamespace, "resourcelock-namespace", metav1.NamespaceSystem, "Path to the template files used for creating MachineConfig objects")
 	startCmd.PersistentFlags().StringVar(&startOpts.promMetricsListenAddress, "metrics-listen-address", "127.0.0.1:8797", "Listen address for prometheus metrics listener")
@@ -71,11 +79,12 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		// Start the metrics handler
 		go ctrlcommon.StartMetricsListener(startOpts.promMetricsListenAddress, ctrlctx.Stop, ctrlcommon.RegisterMCCMetrics)
 
-		controllers := createControllers(ctrlctx)
+		kubeClient := ctrlctx.ClientBuilder.KubeClientOrDie("machine-config-controller")
+		controllers, healthEvents, upgradeEvents := createControllers(ctrlctx, kubeClient)
 		draincontroller := drain.New(
 			drain.DefaultConfig(),
 			ctrlctx.KubeInformerFactory.Core().V1().Nodes(),
-			ctrlctx.ClientBuilder.KubeClientOrDie("node-update-controller"),
+			kubeClient,
 			ctrlctx.ClientBuilder.MachineConfigClientOrDie("node-update-controller"),
 		)
 
@@ -103,9 +112,9 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		}
 
 		for _, c := range controllers {
-			go c.Run(2, ctrlctx.Stop)
+			go c.Run(2, ctrlctx.Stop, healthEvents)
 		}
-		go draincontroller.Run(5, ctrlctx.Stop)
+		go draincontroller.Run(5, ctrlctx.Stop, healthEvents, upgradeEvents)
 
 		// wait here in this function until the context gets cancelled (which tells us whe were being shut down)
 		<-ctx.Done()
@@ -130,9 +139,18 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 	panic("unreachable")
 }
 
-func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controller {
-	var controllers []ctrlcommon.Controller
+func createControllers(ctx *ctrlcommon.ControllerContext, kubeClient kubernetes.Interface) ([]ctrlcommon.Controller, record.EventRecorder, record.EventRecorder) {
 
+	eventBroadcaster := record.NewBroadcaster()
+	eventBroadcaster.StartLogging(klog.Infof)
+	eventBroadcaster.StartRecordingToSink(&coreclientsetv1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
+	upgradeEventsRecorder := eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "upgrade-health"})
+	healthEventsRecorder := eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "mcc-health"})
+	var controllers []ctrlcommon.Controller
+	statesubcontrollers := []v1.StateSubController{}
+	for _, sub := range startOpts.StateSubControllers {
+		statesubcontrollers = append(statesubcontrollers, v1.StateSubController(sub))
+	}
 	controllers = append(controllers,
 		// Our primary MCs come from here
 		template.New(
@@ -140,7 +158,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
 			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
 			ctx.OpenShiftConfigKubeNamespacedInformerFactory.Core().V1().Secrets(),
-			ctx.ClientBuilder.KubeClientOrDie("template-controller"),
+			kubeClient,
 			ctx.ClientBuilder.MachineConfigClientOrDie("template-controller"),
 			ctx.FeatureGateAccess,
 		),
@@ -153,7 +171,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.ConfigInformerFactory.Config().V1().FeatureGates(),
 			ctx.ConfigInformerFactory.Config().V1().Nodes(),
 			ctx.ConfigInformerFactory.Config().V1().APIServers(),
-			ctx.ClientBuilder.KubeClientOrDie("kubelet-config-controller"),
+			kubeClient,
 			ctx.ClientBuilder.MachineConfigClientOrDie("kubelet-config-controller"),
 			ctx.ClientBuilder.ConfigClientOrDie("kubelet-config-controller"),
 			ctx.FeatureGateAccess,
@@ -168,7 +186,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.ConfigInformerFactory.Config().V1().ImageTagMirrorSets(),
 			ctx.OperatorInformerFactory.Operator().V1alpha1().ImageContentSourcePolicies(),
 			ctx.ConfigInformerFactory.Config().V1().ClusterVersions(),
-			ctx.ClientBuilder.KubeClientOrDie("container-runtime-config-controller"),
+			kubeClient,
 			ctx.ClientBuilder.MachineConfigClientOrDie("container-runtime-config-controller"),
 			ctx.ClientBuilder.ConfigClientOrDie("container-runtime-config-controller"),
 			ctx.FeatureGateAccess,
@@ -179,7 +197,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
 			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
 			ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
-			ctx.ClientBuilder.KubeClientOrDie("render-controller"),
+			kubeClient,
 			ctx.ClientBuilder.MachineConfigClientOrDie("render-controller"),
 		),
 		// The node controller consumes data written by the above
@@ -190,12 +208,12 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.KubeInformerFactory.Core().V1().Nodes(),
 			ctx.KubeInformerFactory.Core().V1().Pods(),
 			ctx.ConfigInformerFactory.Config().V1().Schedulers(),
-			ctx.ClientBuilder.KubeClientOrDie("node-update-controller"),
+			kubeClient,
 			ctx.ClientBuilder.MachineConfigClientOrDie("node-update-controller"),
 		),
 	)
 
-	return controllers
+	return controllers, healthEventsRecorder, upgradeEventsRecorder
 }
 
 func getEnabledDisabledFeatures(features featuregates.FeatureGate) ([]string, []string) {

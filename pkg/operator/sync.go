@@ -42,6 +42,7 @@ import (
 	v1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/controller/build"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/controller/state"
 	templatectrl "github.com/openshift/machine-config-operator/pkg/controller/template"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/server"
@@ -74,6 +75,14 @@ type manifestPaths struct {
 }
 
 const (
+	// Machine OS Builder manifest paths
+	mscClusterRoleManifestPath              = "manifests/machine-state-controller/clusterrole.yaml"
+	mscEventsClusterRoleManifestPath        = "manifests/machine-state-controller/events-clusterrole.yaml"
+	mscEventsRoleBindingDefaultManifestPath = "manifests/machine-state-controller/events-rolebinding-default.yaml"
+	mscEventsRoleBindingTargetManifestPath  = "manifests/machine-state-controller/events-rolebinding-target.yaml"
+	mscClusterRoleBindingManifestPath       = "manifests/machine-state-controller/clusterrolebinding.yaml"
+	mscServiceAccountManifestPath           = "manifests/machine-state-controller/sa.yaml"
+
 	// Machine Config Controller manifest paths
 	mccClusterRoleManifestPath                = "manifests/machineconfigcontroller/clusterrole.yaml"
 	mccEventsClusterRoleManifestPath          = "manifests/machineconfigcontroller/events-clusterrole.yaml"
@@ -132,6 +141,13 @@ type syncError struct {
 }
 
 func (optr *Operator) syncAll(syncFuncs []syncFunc) error {
+
+	pod, _ := state.StateControllerPod(optr.kubeClient)
+
+	if pod != nil && (optr.stateControllerPod == nil || pod.Name != optr.stateControllerPod.Name) {
+		optr.stateControllerPod = pod
+	}
+
 	if err := optr.syncProgressingStatus(); err != nil {
 		return fmt.Errorf("error syncing progressing status: %w", err)
 	}
@@ -244,6 +260,7 @@ func (optr *Operator) syncCloudConfig(spec *mcfgv1.ControllerConfigSpec, infra *
 
 //nolint:gocyclo
 func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
+
 	if err := optr.syncCustomResourceDefinitions(); err != nil {
 		return err
 	}
@@ -278,8 +295,10 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 	if err != nil {
 		return err
 	}
+
 	imgRegistryUsrData := []v1.ImageRegistryBundle{}
 	if cfg.Spec.AdditionalTrustedCA.Name != "" {
+		optr.EmitHealthEvent(optr.stateControllerPod, optr.HealthAnnotations(cfg.Spec.AdditionalTrustedCA.Name, "ConfigMap", v1.OperatorSyncRenderConfig), corev1.EventTypeNormal, "GetAdditionalTrustedCA", "Syncing AdditionalTrustedCA while generating render config")
 		cm, err := optr.clusterCmLister.ConfigMaps("openshift-config").Get(cfg.Spec.AdditionalTrustedCA.Name)
 		if err != nil {
 			klog.Warningf("could not find configmap specified in image.config.openshift.io/cluster with the name %s", cfg.Spec.AdditionalTrustedCA.Name)
@@ -312,6 +331,7 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 	imgRegistryData := []v1.ImageRegistryBundle{}
 	cm, err := optr.clusterCmLister.ConfigMaps("openshift-config-managed").Get("image-registry-ca")
 	if err == nil {
+		optr.EmitHealthEvent(optr.stateControllerPod, optr.HealthAnnotations(cm.Name, "ConfigMap", v1.OperatorSyncRenderConfig), corev1.EventTypeNormal, "GetImageRegistryCA", "Syncing ImageRegistryCA while generating render config")
 		newKeys := sets.StringKeySet(cm.Data).List()
 		newBinaryKeys := sets.StringKeySet(cm.BinaryData).List()
 		for _, key := range newKeys {
@@ -341,6 +361,8 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 	for _, CA := range mergedData {
 		caData[CA.File] = string(CA.Data)
 	}
+
+	optr.EmitHealthEvent(optr.stateControllerPod, optr.HealthAnnotations("merged-trusted-image-registry-ca", "ConfigMap", v1.OperatorSyncRenderConfig), corev1.EventTypeNormal, "MergedTrustedCA", "Syncing MergedTrustedImageRegistryCA while generating render config")
 
 	cm, err = optr.clusterCmLister.ConfigMaps("openshift-config-managed").Get("merged-trusted-image-registry-ca")
 	if err != nil && !errors.IsNotFound(err) {
@@ -544,6 +566,8 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 	}
 	spec.AdditionalTrustBundle = trustBundle
 
+	optr.EmitHealthEvent(optr.stateControllerPod, optr.HealthAnnotations("machine-config-controller", "ControllerConfig", v1.OperatorSyncRenderConfig), corev1.EventTypeNormal, "GenerateCConfig", "Syncing ControllerConfig spec while generating render config")
+
 	if err := optr.syncCloudConfig(spec, infra); err != nil {
 		return err
 	}
@@ -620,6 +644,8 @@ func (optr *Operator) syncCustomResourceDefinitions() error {
 	}
 
 	for _, crd := range crds {
+		optr.EmitHealthEvent(optr.stateControllerPod, optr.HealthAnnotations(crd, "CRD", v1.OperatorSyncRenderConfig), corev1.EventTypeNormal, "SyncCRDs", "Syncing CRDs while generating render config")
+
 		crdBytes, err := manifests.ReadFile(crd)
 		if err != nil {
 			return fmt.Errorf("error getting asset %s: %w", crd, err)
@@ -639,12 +665,14 @@ func (optr *Operator) syncCustomResourceDefinitions() error {
 	return nil
 }
 
+// we need to mimic this
 func (optr *Operator) syncMachineConfigPools(config *renderConfig) error {
 	mcps := []string{
 		"manifests/master.machineconfigpool.yaml",
 		"manifests/worker.machineconfigpool.yaml",
 	}
 	for _, mcp := range mcps {
+		optr.EmitHealthEvent(optr.stateControllerPod, optr.HealthAnnotations(mcp, "MCP", v1.OperatorSyncMCP), corev1.EventTypeNormal, "syncMCP", "Syncing MCPs while generating syncingMachineConfigPools")
 		mcpBytes, err := renderAsset(config, mcp)
 		if err != nil {
 			return err
@@ -663,6 +691,8 @@ func (optr *Operator) syncMachineConfigPools(config *renderConfig) error {
 	}
 	// base64.StdEncoding.EncodeToString
 	for _, pool := range pools {
+		optr.EmitHealthEvent(optr.stateControllerPod, optr.HealthAnnotations(pool.Name, "MCP", v1.OperatorSyncMCP), corev1.EventTypeNormal, "createPointerConfig", "creating pointerConfig for pool while syncingMachineConfigPools")
+
 		pointerConfigAsset := newAssetRenderer("pointer-config")
 		pointerConfigAsset.templateData = config.PointerConfig
 		pointerConfigData, err := pointerConfigAsset.render(struct{ Role string }{pool.Name})
@@ -689,6 +719,71 @@ func (optr *Operator) syncMachineConfigPools(config *renderConfig) error {
 		}
 	}
 
+	return nil
+}
+
+// we need to mimic this
+func (optr *Operator) syncMachineStates(config *renderConfig) error {
+	paths := manifestPaths{
+		clusterRoles: []string{
+			mscClusterRoleManifestPath,
+			mscEventsClusterRoleManifestPath,
+		},
+		roleBindings: []string{
+			mscEventsRoleBindingDefaultManifestPath,
+			mscEventsRoleBindingTargetManifestPath,
+		},
+		clusterRoleBindings: []string{
+			mscClusterRoleBindingManifestPath,
+		},
+		serviceAccounts: []string{
+			mscServiceAccountManifestPath,
+		},
+	}
+
+	if err := optr.applyManifests(config, paths); err != nil {
+		return fmt.Errorf("failed to apply machine state controller manifests: %w", err)
+	}
+
+	mscBytes, err := renderAsset(config, "manifests/machine-state-controller/deployment.yaml")
+	if err != nil {
+		return err
+	}
+	ms := resourceread.ReadDeploymentV1OrDie(mscBytes)
+
+	_, updated, err := mcoResourceApply.ApplyDeployment(optr.kubeClient.AppsV1(), ms)
+	if err != nil {
+		return err
+	}
+	if updated {
+		if err := optr.waitForDeploymentRollout(ms); err != nil {
+			return err
+		}
+	}
+	msc := []string{
+		// "manifests/metrics.machinestate.yaml",
+		// "manifests/bootstrap.machinestate.yaml",
+		"manifests/mcc.machinestate.yaml",
+		"manifests/mcd.machinestate.yaml",
+		"manifests/operator.machinestate.yaml",
+		"manifests/upgrade.worker.machinestate.yaml",
+		"manifests/upgrade.master.machinestate.yaml",
+	}
+
+	for _, ms := range msc {
+		klog.Infof("Applying MachineState %s", ms)
+		mcsBytes, err := renderAsset(config, ms)
+		if err != nil {
+			klog.Errorf("error rendering asset for MachineState %s", ms)
+			return err
+		}
+		klog.Infof("state to be applied: %s", string(mcsBytes))
+		p := mcoResourceRead.ReadMachineStateV1OrDie(mcsBytes)
+		_, _, err = mcoResourceApply.ApplyMachineState(optr.client.MachineconfigurationV1(), p)
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -823,10 +918,12 @@ func (optr *Operator) safetySyncControllerConfig(config *renderConfig) error {
 // the operator version and controller version match. We can call it from safetySyncControllerConfig
 // because safetySyncControllerConfig ensures that the operator and controller versions match before it syncs.
 func (optr *Operator) syncControllerConfig(config *renderConfig) error {
+	// important
 	ccBytes, err := renderAsset(config, "manifests/machineconfigcontroller/controllerconfig.yaml")
 	if err != nil {
 		return err
 	}
+	optr.EmitHealthEvent(optr.stateControllerPod, optr.HealthAnnotations("manifests/machineconfigcontroller/controllerconfig.yaml", "Manifest", v1.OperatorSyncMCC), corev1.EventTypeNormal, "applyControllerConfig", "Applying ControllerConfig while updating MCC")
 	cc := mcoResourceRead.ReadControllerConfigV1OrDie(ccBytes)
 	// Propagate our binary version into the controller config to help
 	// suppress rendered config generation until a corresponding
@@ -872,10 +969,12 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig) error {
 			mopServiceAccountManifestPath,
 		},
 	}
+	optr.EmitHealthEvent(optr.stateControllerPod, optr.HealthAnnotations("machine-config-controller", "Manifest", v1.OperatorSyncMCC), corev1.EventTypeNormal, "syncManifests", "Syncing Manifests while updating MCC")
 	if err := optr.applyManifests(config, paths); err != nil {
 		return fmt.Errorf("failed to apply machine config controller manifests: %w", err)
 	}
 
+	optr.EmitHealthEvent(optr.stateControllerPod, optr.HealthAnnotations("manifests/machineconfigcontroller/deployment.yaml", "Deployment", v1.OperatorSyncMCC), corev1.EventTypeNormal, "ApplyDeployment", "Applying deployment for MCC")
 	mccBytes, err := renderAsset(config, "manifests/machineconfigcontroller/deployment.yaml")
 	if err != nil {
 		return err
@@ -1097,6 +1196,7 @@ func (optr *Operator) syncMachineConfigDaemon(config *renderConfig) error {
 			mcdKubeRbacProxyConfigMapPath,
 		},
 	}
+	optr.EmitHealthEvent(optr.stateControllerPod, optr.HealthAnnotations("machine-config-daemon", "Deployment", v1.OperatorSyncMCD), corev1.EventTypeNormal, "syncManifests", "Applying manifests for MCD")
 
 	if err := optr.applyManifests(config, paths); err != nil {
 		return fmt.Errorf("failed to apply machine config daemon manifests: %w", err)
@@ -1124,6 +1224,8 @@ func (optr *Operator) syncMachineConfigServer(config *renderConfig) error {
 		},
 		daemonset: mcsDaemonsetManifestPath,
 	}
+	optr.EmitHealthEvent(optr.stateControllerPod, optr.HealthAnnotations("machine-config-server", "syncManifests", v1.OperatorSyncMCS), corev1.EventTypeNormal, "ApplyDeployment", "Syncing manifests for MCs")
+
 	if err := optr.applyManifests(config, paths); err != nil {
 		return fmt.Errorf("failed to apply machine config server manifests: %w", err)
 	}
@@ -1146,6 +1248,8 @@ func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
 
 	requiredMachineCount := 0
 	for _, pool := range pools {
+		optr.EmitHealthEvent(optr.stateControllerPod, optr.HealthAnnotations(pool.Name, "MCP", v1.OperatorSyncMCPRequired), corev1.EventTypeNormal, "requiredMCPs", fmt.Sprintf("Adding MCP to Required MCPs. Total is %d", requiredMachineCount))
+		klog.Infof("Pool!!! %s", pool.Name)
 		_, hasRequiredPoolLabel := pool.Labels[requiredForUpgradeMachineConfigPoolLabelKey]
 		if hasRequiredPoolLabel {
 			requiredMachineCount += int(pool.Status.MachineCount)
@@ -1154,7 +1258,9 @@ func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
 
 	// Let's start with a 10 minute timeout per "required" node.
 	if err := wait.PollUntilContextTimeout(ctx, time.Second, time.Duration(requiredMachineCount*10)*time.Minute, false, func(ctx context.Context) (bool, error) {
+		klog.Infof("Last err: %w", lastErr)
 		if err := optr.syncMetrics(); err != nil {
+			klog.Errorf("error with metrics syncing")
 			return false, err
 		}
 		if lastErr != nil {
@@ -1183,6 +1289,7 @@ func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
 			return false, nil
 		}
 		for _, pool := range pools {
+			optr.EmitHealthEvent(optr.stateControllerPod, optr.HealthAnnotations(pool.Name, "MCP", v1.OperatorSyncMCPRequired), corev1.EventTypeNormal, "syncingRequiredMCP", fmt.Sprintf("syncing required MCP inside of wait loop"))
 			degraded := isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolDegraded)
 			if degraded {
 				lastErr = fmt.Errorf("error MachineConfigPool %s is not ready, retrying. Status: (pool degraded: %v total: %d, ready %d, updated: %d, unavailable: %d)", pool.Name, degraded, pool.Status.MachineCount, pool.Status.ReadyMachineCount, pool.Status.UpdatedMachineCount, pool.Status.UnavailableMachineCount)

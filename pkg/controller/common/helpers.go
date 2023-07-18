@@ -18,6 +18,7 @@ import (
 	"text/template"
 
 	"github.com/clarketm/json"
+
 	fcctbase "github.com/coreos/fcct/base/v0_1"
 	"github.com/coreos/ign-converter/translate/v23tov30"
 	"github.com/coreos/ign-converter/translate/v32tov22"
@@ -58,6 +59,13 @@ import (
 
 // Gates whether or not the MCO uses the new format base OS container image by default
 var UseNewFormatImageByDefault = true
+
+/*
+func SetPoolHealthProgression(pool mcfgv1.MachineConfigPool, phase v1.MachineConfigPoolProgression, subPhase string, reason string) error {
+	pool.Status.PoolHealthProgression[phase] = v1.MachineConfigPoolHealthCondition{Phase: subPhase, Reason: reason}
+	return nil
+}
+*/
 
 // strToPtr converts the input string to a pointer to itself
 func strToPtr(s string) *string {

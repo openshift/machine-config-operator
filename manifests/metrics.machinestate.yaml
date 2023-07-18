@@ -1,0 +1,8 @@
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineState
+metadata:
+  name: metrics
+  labels:
+    "states.operator.machineconfiguration.openshift.io/mcd": ""
+spec:
+  machineStateKind: UpdatingMetrics

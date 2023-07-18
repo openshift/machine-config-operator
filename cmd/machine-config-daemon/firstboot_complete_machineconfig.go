@@ -50,7 +50,7 @@ func runFirstBootCompleteMachineConfig(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("failed to re-exec: %w", err)
 	}
 
-	dn, err := daemon.New(exitCh)
+	dn, err := daemon.New(true, exitCh)
 	if err != nil {
 		return err
 	}
