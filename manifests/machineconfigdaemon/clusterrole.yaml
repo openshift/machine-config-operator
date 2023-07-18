@@ -7,12 +7,15 @@ rules:
   resources: ["nodes"]
   verbs: ["get", "list", "watch"]
 - apiGroups: ["machineconfiguration.openshift.io"]
-  resources: ["machineconfigs", "controllerconfigs"]
+  resources: ["machineconfigs", "controllerconfigs", "machineconfigpools"]
   verbs: ["get", "list", "watch"]
 - apiGroups: ["security.openshift.io"]
   resourceNames: ["privileged"]
   resources: ["securitycontextconstraints"]
   verbs: ["use"]
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch"]
 - apiGroups:
   - authentication.k8s.io
   resources:

@@ -21,6 +21,7 @@ import (
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	v1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/controller/state"
 )
 
 // syncVersion handles reporting the version to the clusteroperator
@@ -300,12 +301,44 @@ func (optr *Operator) syncUpgradeableStatus() error {
 	}
 
 	var updating, degraded bool
+	// need to determine if upgrading now equals ONLY MCPUpgradeInProgress, or if we just want state controller to supplement this understanding
 	for _, pool := range pools {
 		// collect updating status but continue to check each pool to see if any pool is degraded
-		if isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolUpdating) {
+		updateInProg, err := state.IsUpgradingProgressionTrue(mcfgv1.MachineConfigPoolUpdateInProgress, *pool, optr.msLister, optr.apiExtClient)
+		/*if isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolUpdating) {
 			updating = true
+		}*/
+		if err != nil {
+			klog.Errorf("error on Upgrading Progression %w", err)
+			return err
 		}
-		degraded = isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolDegraded)
+
+		updatePrep, err := state.IsUpgradingProgressionTrue(mcfgv1.MachineConfigPoolUpdatePreparing, *pool, optr.msLister, optr.apiExtClient)
+		if err != nil {
+			klog.Errorf("error on Upgrading Progression %w", err)
+			return err
+		}
+
+		updateFinishing, err := state.IsUpgradingProgressionTrue(mcfgv1.MachineConfigPoolUpdateCompleting, *pool, optr.msLister, optr.apiExtClient)
+		if err != nil {
+			klog.Errorf("error on Upgrading Progression %w", err)
+			return err
+		}
+
+		updatePostAction, err := state.IsUpgradingProgressionTrue(mcfgv1.MachineConfigPoolUpdatePostAction, *pool, optr.msLister, optr.apiExtClient)
+		if err != nil {
+			klog.Errorf("error on Upgrading Progression %w", err)
+			return err
+		}
+
+		updating = updatePrep || updateInProg || updateFinishing || updatePostAction
+
+		degraded, err = state.IsUpgradingProgressionTrue(mcfgv1.MachineConfigPoolUpdateErrored, *pool, optr.msLister, optr.apiExtClient)
+		if err != nil {
+			klog.Errorf("error on Upgrading Progression %w", err)
+			return err
+		}
+		//	degraded = isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolDegraded)
 		// degraded should get top billing in the clusteroperator status, if we find this, set it and update
 		if degraded {
 			coStatus.Status = configv1.ConditionFalse
@@ -360,6 +393,7 @@ func (optr *Operator) syncUpgradeableStatus() error {
 func (optr *Operator) syncMetrics() error {
 	pools, err := optr.mcpLister.List(labels.Everything())
 	if err != nil {
+		klog.Errorf("Error getting MCPs")
 		return err
 	}
 	// set metrics per pool, we need to get the latest condition to log for the state
@@ -367,6 +401,7 @@ func (optr *Operator) syncMetrics() error {
 	latestTime.Time = time.Time{}
 	var cond v1.MachineConfigPoolCondition
 	for _, pool := range pools {
+		klog.Infof("Syncing Metrics for pool %s", pool.Name)
 		for _, condition := range pool.Status.Conditions {
 			if condition.Status == corev1.ConditionTrue && condition.LastTransitionTime.After(latestTime.Time) {
 				cond = condition
