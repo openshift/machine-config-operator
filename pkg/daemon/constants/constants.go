@@ -38,6 +38,8 @@ const (
 	// GeneratedByVersionAnnotationKey is used to tag the controllerconfig to synchronize the MCO and MCC
 	GeneratedByVersionAnnotationKey = "machineconfiguration.openshift.io/generated-by-version"
 
+	// need some additional MachineConfigDaemonStates here... or maybe we need them to be consts of a larger MachineConfigDaemonUpdateStates type
+
 	// MachineConfigDaemonStateWorking is set by daemon when it is applying an update.
 	MachineConfigDaemonStateWorking = "Working"
 	// MachineConfigDaemonStateDone is set by daemon when it is done applying an update.

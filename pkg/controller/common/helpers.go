@@ -18,6 +18,7 @@ import (
 	"text/template"
 
 	"github.com/clarketm/json"
+
 	fcctbase "github.com/coreos/fcct/base/v0_1"
 	"github.com/coreos/ign-converter/translate/v23tov30"
 	"github.com/coreos/ign-converter/translate/v32tov22"

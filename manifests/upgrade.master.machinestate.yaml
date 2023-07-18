@@ -1,0 +1,8 @@
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineState
+metadata:
+  name: upgrade-master
+  labels:
+    "states.operator.machineconfiguration.openshift.io/upgrade": ""
+spec:
+  machineStateKind: UpgradeProgression
