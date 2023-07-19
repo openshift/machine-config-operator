@@ -70,3 +70,11 @@ aliases:
   assisted-reviewers:
     - tsorya
     - eranco74
+  kubevirt-approvers:
+    - davidvossel
+    - orenc1
+    - qinqon
+  kubevirt-reviewers:
+    - davidvossel
+    - orenc1
+    - qinqon
