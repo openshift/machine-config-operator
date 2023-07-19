@@ -26,11 +26,6 @@ const (
 	// defaultWriterQueue the number of pending writes to queue
 	defaultWriterQueue = 25
 
-	// machineConfigDaemonSSHAccessAnnotationKey is used to mark a node after it has been accessed via SSH
-	machineConfigDaemonSSHAccessAnnotationKey = "machineconfiguration.openshift.io/ssh"
-	// MachineConfigDaemonSSHAccessValue is the annotation value applied when ssh access is detected
-	machineConfigDaemonSSHAccessValue = "accessed"
-
 	nodeWriterKubeconfigPath = "/var/lib/kubelet/kubeconfig"
 )
 
@@ -65,7 +60,6 @@ type NodeWriter interface {
 	SetWorking() error
 	SetUnreconcilable(err error) error
 	SetDegraded(err error) error
-	SetSSHAccessed() error
 	SetAnnotations(annos map[string]string) (*corev1.Node, error)
 	SetDesiredDrainer(value string) error
 	Eventf(eventtype, reason, messageFmt string, args ...interface{})
@@ -215,21 +209,6 @@ func (nw *clusterNodeWriter) SetDegraded(err error) error {
 	if r.err != nil {
 		klog.Errorf("Error setting Degraded annotation for node %s: %v", nw.nodeName, r.err)
 	}
-	return r.err
-}
-
-// SetSSHAccessed sets the ssh annotation to accessed
-func (nw *clusterNodeWriter) SetSSHAccessed() error {
-	mcdSSHAccessed.Inc()
-	annos := map[string]string{
-		machineConfigDaemonSSHAccessAnnotationKey: machineConfigDaemonSSHAccessValue,
-	}
-	respChan := make(chan response, 1)
-	nw.writer <- message{
-		annos:           annos,
-		responseChannel: respChan,
-	}
-	r := <-respChan
 	return r.err
 }
 
