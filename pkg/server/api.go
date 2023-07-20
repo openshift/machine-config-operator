@@ -169,7 +169,7 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		serveConf = &converted31
 	} else {
 		// Can only be 2.2 here
-		converted2, err := ctrlcommon.ConvertRawExtIgnitionToV2(conf)
+		converted2, err := ctrlcommon.ConvertRawExtIgnitionToV2Raw(conf)
 		if err != nil {
 			w.Header().Set("Content-Length", "0")
 			w.WriteHeader(http.StatusInternalServerError)
