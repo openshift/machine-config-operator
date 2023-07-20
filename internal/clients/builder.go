@@ -3,7 +3,9 @@ package clients
 import (
 	"os"
 
+	buildclientset "github.com/openshift/client-go/build/clientset/versioned"
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
+	imageclientset "github.com/openshift/client-go/image/clientset/versioned"
 	operatorclientset "github.com/openshift/client-go/operator/clientset/versioned"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	apiext "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
@@ -54,6 +56,14 @@ func (cb *Builder) OperatorClientOrDie(name string) operatorclientset.Interface 
 // APIExtClientOrDie returns the kubernetes client interface for extended kubernetes objects.
 func (cb *Builder) APIExtClientOrDie(name string) apiext.Interface {
 	return apiext.NewForConfigOrDie(rest.AddUserAgent(cb.config, name))
+}
+
+func (cb *Builder) BuildClientOrDie(name string) buildclientset.Interface {
+	return buildclientset.NewForConfigOrDie(rest.AddUserAgent(cb.config, name))
+}
+
+func (cb *Builder) ImageClientOrDie(name string) imageclientset.Interface {
+	return imageclientset.NewForConfigOrDie(rest.AddUserAgent(cb.config, name))
 }
 
 // GetBuilderConfig returns a copy of the builders *rest.Config
