@@ -8,6 +8,11 @@ const (
 	//
 	// XXX
 
+	// CurrentImageAnnotationKey is used to get the current OS image pullspec for a machine
+	CurrentImageAnnotationKey = "machineconfiguration.openshift.io/currentImage"
+	// DesiredImageAnnotationKey is used to specify the desired OS image pullspec for a machine
+	DesiredImageAnnotationKey = "machineconfiguration.openshift.io/desiredImage"
+
 	// CurrentMachineConfigAnnotationKey is used to fetch current MachineConfig for a machine
 	CurrentMachineConfigAnnotationKey = "machineconfiguration.openshift.io/currentConfig"
 	// DesiredMachineConfigAnnotationKey is used to specify the desired MachineConfig for a machine

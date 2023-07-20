@@ -41,4 +41,13 @@ const (
 	MachineConfigPoolMaster = "master"
 	// MachineConfigPoolWorker is the MachineConfigPool name given to the worker
 	MachineConfigPoolWorker = "worker"
+
+	// LayeringEnabledPoolLabel is the label that enables the "layered" workflow path for a pool.
+	LayeringEnabledPoolLabel = "machineconfiguration.openshift.io/layering-enabled"
+
+	// ExperimentalNewestLayeredImageEquivalentConfigAnnotationKey is the annotation that signifies which rendered config
+	// TODO(zzlotnik): Determine if we should use this still.
+	ExperimentalNewestLayeredImageEquivalentConfigAnnotationKey = "machineconfiguration.openshift.io/newestImageEquivalentConfig"
+
+	OSImageBuildPodLabel = "machineconfiguration.openshift.io/buildPod"
 )
