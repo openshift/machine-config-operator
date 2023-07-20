@@ -39,7 +39,6 @@ const (
 	// fipsFile is the file to check if FIPS is enabled
 	fipsFile                   = "/proc/sys/crypto/fips_enabled"
 	extensionsRepo             = "/etc/yum.repos.d/coreos-extensions.repo"
-	osImageContentBaseDir      = "/run/mco-machine-os-content/"
 	osExtensionsContentBaseDir = "/run/mco-extensions/"
 
 	// These are the actions for a node to take after applying config changes. (e.g. a new machineconfig is applied)
@@ -160,17 +159,8 @@ func (dn *Daemon) compareMachineConfig(oldConfig, newConfig *mcfgv1.MachineConfi
 }
 
 // addExtensionsRepo adds a repo into /etc/yum.repos.d/ which we use later to
-// install extensions and rt-kernel
-func addExtensionsRepo(osImageContentDir string) error {
-	repoContent := "[coreos-extensions]\nenabled=1\nmetadata_expire=1m\nbaseurl=" + osImageContentDir + "/extensions/\ngpgcheck=0\nskip_if_unavailable=False\n"
-	return writeFileAtomicallyWithDefaults(extensionsRepo, []byte(repoContent))
-}
-
-// addLayeredExtensionsRepo adds a repo into /etc/yum.repos.d/ which we use later to
-// install extensions and rt-kernel. This is separate from addExtensionsRepo because when we're
-// extracting only the extensions container (because with the new format images they are packaged separately),
-// we extract to a different location
-func addLayeredExtensionsRepo(extensionsImageContentDir string) error {
+// install extensions (additional packages).
+func addExtensionsRepo(extensionsImageContentDir string) error {
 	repoContent := "[coreos-extensions]\nenabled=1\nmetadata_expire=1m\nbaseurl=" + extensionsImageContentDir + "/usr/share/rpm-ostree/extensions/\ngpgcheck=0\nskip_if_unavailable=False\n"
 	return writeFileAtomicallyWithDefaults(extensionsRepo, []byte(repoContent))
 }
@@ -225,40 +215,6 @@ func podmanCopy(imgURL, osImageContentDir string) (err error) {
 		err = fmt.Errorf("changing selinux context on path %s: %w", osImageContentDir, err)
 		return
 	}
-	return
-}
-
-// ExtractOSImage extracts OS image content in a temporary directory under /run/machine-os-content/
-// and returns the path on successful extraction.
-// Note that since we do this in the MCD container, cluster proxy configuration must also be injected
-// into the container. See the MCD daemonset.
-func ExtractOSImage(imgURL string) (osImageContentDir string, err error) {
-	var registryConfig []string
-	if _, err := os.Stat(kubeletAuthFile); err == nil {
-		registryConfig = append(registryConfig, "--registry-config", kubeletAuthFile)
-	}
-	if err = os.MkdirAll(osImageContentBaseDir, 0o755); err != nil {
-		err = fmt.Errorf("error creating directory %s: %w", osImageContentBaseDir, err)
-		return
-	}
-
-	if osImageContentDir, err = os.MkdirTemp(osImageContentBaseDir, "os-content-"); err != nil {
-		return
-	}
-
-	// Extract the image
-	args := []string{"image", "extract", "-v", "10", "--path", "/:" + osImageContentDir}
-	args = append(args, registryConfig...)
-	args = append(args, imgURL)
-	if _, err = pivotutils.RunExtBackground(cmdRetriesCount, "oc", args...); err != nil {
-		// Workaround fixes for the environment where oc image extract fails.
-		// See https://bugzilla.redhat.com/show_bug.cgi?id=1862979
-		klog.Infof("Falling back to using podman cp to fetch OS image content")
-		if err = podmanCopy(imgURL, osImageContentDir); err != nil {
-			return
-		}
-	}
-
 	return
 }
 
@@ -325,24 +281,10 @@ func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newC
 			dn.nodeWriter.Eventf(corev1.EventTypeNormal, "OSUpdateStarted", mcDiff.osChangesString())
 		}
 
-		// The steps from here on are different depending on the image type, so check the image type
-		isLayeredImage, err := dn.NodeUpdaterClient.IsBootableImage(newConfig.Spec.OSImageURL)
-		if err != nil {
-			return fmt.Errorf("error checking type of update image: %w", err)
+		if err := dn.applyLayeredOSChanges(mcDiff, oldConfig, newConfig); err != nil {
+			return err
 		}
 
-		// TODO(jkyros): we can remove the format check and simplify this once we retire the "old format" images
-		if isLayeredImage {
-			// If it's a layered/bootable image, then apply it the "new" way
-			if err := dn.applyLayeredOSChanges(mcDiff, oldConfig, newConfig); err != nil {
-				return err
-			}
-		} else {
-			// Otherwise fall back to the old way -- we can take this out someday when it goes away
-			if err := dn.applyLegacyOSChanges(mcDiff, oldConfig, newConfig); err != nil {
-				return err
-			}
-		}
 		if dn.nodeWriter != nil {
 			var nodeName string
 			var nodeObjRef corev1.ObjectReference
@@ -1997,7 +1939,7 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 		// Delete extracted OS image once we are done.
 		defer os.RemoveAll(osExtensionsContentDir)
 
-		if err := addLayeredExtensionsRepo(osExtensionsContentDir); err != nil {
+		if err := addExtensionsRepo(osExtensionsContentDir); err != nil {
 			return err
 		}
 		defer os.Remove(extensionsRepo)
@@ -2064,74 +2006,6 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 		if err := dn.switchKernel(oldConfig, newConfig); err != nil {
 			return err
 		}
-	}
-
-	// Apply extensions
-	return dn.applyExtensions(oldConfig, newConfig)
-}
-
-func (dn *CoreOSDaemon) applyLegacyOSChanges(mcDiff machineConfigDiff, oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
-	var osImageContentDir string
-	var err error
-	if mcDiff.osUpdate || mcDiff.extensions || mcDiff.kernelType {
-
-		if osImageContentDir, err = ExtractOSImage(newConfig.Spec.OSImageURL); err != nil {
-			return err
-		}
-		// Delete extracted OS image once we are done.
-		defer os.RemoveAll(osImageContentDir)
-
-		if err := addExtensionsRepo(osImageContentDir); err != nil {
-			return err
-		}
-		defer os.Remove(extensionsRepo)
-	}
-
-	// Update OS
-	if mcDiff.osUpdate {
-		if err := dn.updateOS(newConfig, osImageContentDir); err != nil {
-			mcdPivotErr.Inc()
-			return err
-		}
-		if dn.nodeWriter != nil {
-			dn.nodeWriter.Eventf(corev1.EventTypeNormal, "OSUpgradeApplied", "OS upgrade applied; new MachineConfig (%s) has new OS image (%s)", newConfig.Name, newConfig.Spec.OSImageURL)
-		}
-	} else { //nolint:gocritic // The nil check for dn.nodeWriter has nothing to do with an OS update being unavailable.
-		// An OS upgrade is not available
-		if dn.nodeWriter != nil {
-			dn.nodeWriter.Eventf(corev1.EventTypeNormal, "OSUpgradeSkipped", "OS upgrade skipped; new MachineConfig (%s) has same OS image (%s) as old MachineConfig (%s)", newConfig.Name, newConfig.Spec.OSImageURL, oldConfig.Name)
-		}
-	}
-
-	// if we're here, we've successfully pivoted, or pivoting wasn't necessary, so we reset the error gauge
-	mcdPivotErr.Set(0)
-
-	defer func() {
-		// Operations performed by rpm-ostree on the booted system are available
-		// as staged deployment. It gets applied only when we reboot the system.
-		// In case of an error during any rpm-ostree transaction, removing pending deployment
-		// should be sufficient to discard any applied changes.
-		if retErr != nil {
-			// Print out the error now so that if we fail to cleanup -p, we don't lose it.
-			klog.Infof("Rolling back applied changes to OS due to error: %v", retErr)
-			if err := removePendingDeployment(); err != nil {
-				errs := kubeErrs.NewAggregate([]error{err, retErr})
-				retErr = fmt.Errorf("error removing staged deployment: %w", errs)
-				return
-			}
-		}
-	}()
-
-	// Apply kargs
-	if mcDiff.kargs {
-		if err := dn.updateKernelArguments(oldConfig.Spec.KernelArguments, newConfig.Spec.KernelArguments); err != nil {
-			return err
-		}
-	}
-
-	// Switch to real time kernel
-	if err := dn.switchKernel(oldConfig, newConfig); err != nil {
-		return err
 	}
 
 	// Apply extensions
