@@ -3,6 +3,7 @@ package e2e_shared_test
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -17,10 +18,23 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
-func MutateNodeAndWait(t *testing.T, cs *framework.ClientSet, node *corev1.Node, pool *mcfgv1.MachineConfigPool) {
-	bashCmd := fmt.Sprintf("printf '%s' >> %s", "wrong-data-here", "/rootfs/etc/containers/storage.conf")
-	helpers.ExecCmdOnNode(t, cs, *node, "/bin/bash", "-c", bashCmd)
-	assertNodeAndMCPIsDegraded(t, cs, *node, *pool, "/etc/containers/storage.conf")
+func MutateNodeAndWait(t *testing.T, cs *framework.ClientSet, node *corev1.Node, pool *mcfgv1.MachineConfigPool) func() {
+	t.Helper()
+
+	filename := "/etc/containers/storage.conf"
+	nodeFilename := filepath.Join("/rootfs", filename)
+	t.Logf("Mutating %q on %s", filename, node.Name)
+
+	mutateCmd := fmt.Sprintf("printf '%s' >> %s", "wrong-data-here", nodeFilename)
+	helpers.ExecCmdOnNode(t, cs, *node, "/bin/bash", "-c", mutateCmd)
+	assertNodeAndMCPIsDegraded(t, cs, *node, *pool, filename)
+
+	return helpers.MakeIdempotent(func() {
+		t.Logf("Restoring %q on %s", filename, node.Name)
+		recoverCmd := fmt.Sprintf("sed -e s/wrong-data-here//g -i %s", nodeFilename)
+		helpers.ExecCmdOnNode(t, cs, *node, "/bin/bash", "-c", recoverCmd)
+		assertNodeAndMCPIsRecovered(t, cs, *node, *pool)
+	})
 }
 
 func waitForConfigDriftMonitorStart(t *testing.T, cs *framework.ClientSet, node corev1.Node) {
