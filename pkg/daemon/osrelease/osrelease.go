@@ -59,11 +59,11 @@ func (os OperatingSystem) OSRelease() osrelease.OSRelease {
 
 // IsLikeRHEL is true if the OS is RHEL-like.
 func (os OperatingSystem) IsLikeRHEL() bool {
-	if os.osrelease.ID == "rhel" {
+	if os.osrelease.ID == rhel {
 		return true
 	}
 	for _, v := range strings.Split(os.osrelease.ID_LIKE, " ") {
-		if v == "rhel" {
+		if v == rhel {
 			return true
 		}
 	}
