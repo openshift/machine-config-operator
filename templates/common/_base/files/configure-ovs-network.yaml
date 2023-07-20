@@ -297,6 +297,9 @@ contents:
       ipv4_method=$(nmcli -g ipv4.method conn show "$old_conn")
       ipv6_method=$(nmcli -g ipv6.method conn show "$old_conn")
 
+      ipv4_addresses=$(nmcli -g ipv4.addresses conn show "$old_conn")
+      ipv6_addresses=$(nmcli -g ipv6.addresses conn show "$old_conn")
+
       # Warn about an invalid MTU that will most likely fail in one way or
       # another
       if [ ${iface_mtu} -lt 1280 ] && [ "${ipv6_method}" != "disabled" ]; then
@@ -305,7 +308,8 @@ contents:
 
       if ! nmcli connection show "$ovs_interface" &> /dev/null; then
         ovs-vsctl --timeout=30 --if-exists destroy interface "$bridge_name"
-        if [ "${ipv4_method}" = "manual" ] || [ "${ipv6_method}" = "manual" ]; then
+        # Clone the connection in case the method is manual or in case the an address is set (DHCP + static IP)
+        if [ "${ipv4_method}" = "manual" ] || [ "${ipv4_addresses}" != "" ] || [ "${ipv6_method}" = "manual" ] || [ "${ipv6_addresses}" != "" ]; then
           echo "Static IP addressing detected on default gateway connection: ${old_conn}"
           # clone the old connection to get the address settings
           # prefer cloning vs copying the connection file to avoid problems with selinux
