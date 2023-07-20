@@ -1,23 +1,16 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"flag"
-	"fmt"
-	"io"
 	"net/url"
 	"os"
-	"path/filepath"
-	"syscall"
 
-	"github.com/google/renameio"
 	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/openshift/machine-config-operator/internal/clients"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon"
-	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/spf13/cobra"
 	"k8s.io/klog/v2"
@@ -58,35 +51,6 @@ func init() {
 	startCmd.PersistentFlags().StringVar(&startOpts.promMetricsURL, "metrics-url", "127.0.0.1:8797", "URL for prometheus metrics listener")
 }
 
-func selfCopyToHost() error {
-	selfExecutableFd, err := os.Open("/proc/self/exe")
-	if err != nil {
-		return fmt.Errorf("opening our binary: %w", err)
-	}
-	defer selfExecutableFd.Close()
-	if err := os.MkdirAll(filepath.Dir(daemonconsts.HostSelfBinary), 0o755); err != nil {
-		return err
-	}
-	t, err := renameio.TempFile(filepath.Dir(daemonconsts.HostSelfBinary), daemonconsts.HostSelfBinary)
-	if err != nil {
-		return err
-	}
-	defer t.Cleanup()
-	var mode os.FileMode = 0o755
-	if err := t.Chmod(mode); err != nil {
-		return err
-	}
-	_, err = io.Copy(bufio.NewWriter(t), selfExecutableFd)
-	if err != nil {
-		return err
-	}
-	if err := t.CloseAtomicallyReplace(); err != nil {
-		return err
-	}
-	klog.Infof("Copied self to /run/bin/machine-config-daemon on host")
-	return nil
-}
-
 func runStartCmd(_ *cobra.Command, _ []string) {
 	flag.Set("logtostderr", "true")
 	flag.Parse()
@@ -107,14 +71,8 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		}
 	}
 
-	klog.Infof(`Calling chroot("%s")`, startOpts.rootMount)
-	if err := syscall.Chroot(startOpts.rootMount); err != nil {
-		klog.Fatalf("Unable to chroot to %s: %s", startOpts.rootMount, err)
-	}
-
-	klog.V(2).Infof("Moving to / inside the chroot")
-	if err := os.Chdir("/"); err != nil {
-		klog.Fatalf("Unable to change directory to /: %s", err)
+	if err := daemon.ReexecuteForTargetRoot(startOpts.rootMount); err != nil {
+		klog.Fatalf("failed to re-exec: %+v", err)
 	}
 
 	if startOpts.nodeName == "" {
@@ -145,13 +103,6 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		if err != nil {
 			klog.Fatalf("%v", err)
 		}
-		return
-	}
-
-	// In the cluster case, for now we copy our binary out to the host
-	// for SELinux reasons, see https://bugzilla.redhat.com/show_bug.cgi?id=1839065
-	if err := selfCopyToHost(); err != nil {
-		klog.Fatalf("%v", fmt.Errorf("copying self to host: %w", err))
 		return
 	}
 

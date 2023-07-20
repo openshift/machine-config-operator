@@ -421,6 +421,107 @@ func PrepareNamespace(target string) error {
 	return nil
 }
 
+// ReexecuteForTargetRoot detects the OS in the host root filesystem, then
+// copies the appropriate binary into `/run/bin/` there, then does a `chroot`
+// and re-executes the new binary.
+func ReexecuteForTargetRoot(target string) error {
+	// Nothing to do in this case
+	if target == "/" {
+		return nil
+	}
+	// Extra check to avoid recursion
+	reexecEnv := "_MCD_DID_REEXEC"
+	if _, ok := os.LookupEnv(reexecEnv); ok {
+		return nil
+	}
+
+	sourceOsVersion, err := osrelease.GetHostRunningOSFromRoot("/")
+	if err != nil {
+		return fmt.Errorf("failed to get source OS: %w", err)
+	}
+
+	targetOsVersion, err := osrelease.GetHostRunningOSFromRoot(target)
+	if err != nil {
+		return fmt.Errorf("failed to get target OS: %w", err)
+	}
+
+	var sourceBinarySuffix string
+	if sourceOsVersion.IsLikeRHEL() && targetOsVersion.IsLikeRHEL() {
+		sourceMajor := sourceOsVersion.BaseVersionMajor()
+		targetMajor := targetOsVersion.BaseVersionMajor()
+		if sourceMajor == "8" && targetMajor == "9" {
+			sourceBinarySuffix = ".rhel9"
+			klog.Info("container is rhel8, target is rhel9")
+		} else if sourceMajor == "9" && targetMajor == "8" {
+			// This code path shouldn't be hit right now because our container image
+			// is built from rhel8, but let's handle it for consistency in the future
+			// when we're likely to switch the container image to RHEL9.  Then
+			// it will be needed for both scaleup from old rhel8 bootimages as well
+			// as the case where a cluster is upgraded from
+			// 4.12 -> 4.14 or beyond and we have a stray worker node still on
+			// 4.12 (rhel8).
+			sourceBinarySuffix = ".rhel8"
+			klog.Info("container is rhel9, target is rhel8")
+		} else {
+			// Otherwise, we assume that there's no suffixing needed.  Hopefully
+			// by RHEL10 the MCD will have fundamentally changed and we won't be doing the
+			// chroot() thing anymore.
+			klog.Info("not chrooting for source=rhel-%s target=rhel-%s", sourceMajor, targetMajor)
+		}
+	} else {
+		klog.Info("assuming we can use container binary chroot() to host")
+	}
+	sourceBinary := "/usr/bin/machine-config-daemon" + sourceBinarySuffix
+	src, err := os.Open(sourceBinary)
+	if err != nil {
+		return fmt.Errorf("opening %s: %w", sourceBinary, err)
+	}
+	defer src.Close()
+
+	targetBinBase := "run/bin/machine-config-daemon"
+	targetBin := filepath.Join(target, targetBinBase)
+	targetBinDir := filepath.Dir(targetBin)
+	if _, err := os.Stat(targetBinDir); err != nil {
+		if err := os.Mkdir(targetBinDir, 0o755); err != nil {
+			return fmt.Errorf("mkdir %s: %w", targetBinDir, err)
+		}
+	}
+
+	f, err := os.Create(targetBin)
+	if err != nil {
+		return fmt.Errorf("writing %s: %w", targetBin, err)
+	}
+	if _, err := io.Copy(f, src); err != nil {
+		f.Close()
+		return fmt.Errorf("writing %s: %w", targetBin, err)
+	}
+	if err := f.Chmod(0o755); err != nil {
+		return err
+	}
+	// Must close our writable fd
+	f.Close()
+
+	if err := syscall.Chroot(target); err != nil {
+		return fmt.Errorf("failed to chroot to %s: %w", target, err)
+	}
+
+	if err := os.Chdir("/"); err != nil {
+		return fmt.Errorf("failed to change directory to /: %w", err)
+	}
+
+	// Now we will see the binary in the target root
+	targetBin = "/" + targetBinBase
+	// We have a "belt and suspenders" approach for detecting the case where
+	// we're running in the target root.  First we inject --root-mount=/, and
+	// we also set an environment variable to be really sure.
+	newArgv := []string{targetBin}
+	newArgv = append(newArgv, os.Args[1:]...)
+	newArgv = append(newArgv, "--root-mount=/")
+	newEnv := append(os.Environ(), fmt.Sprintf("%s=1", reexecEnv))
+	klog.Infof("Invoking re-exec %s", targetBin)
+	return syscall.Exec(targetBin, newArgv, newEnv)
+}
+
 // worker runs a worker thread that just dequeues items, processes them, and marks them done.
 // It enforces that the syncHandler is never invoked concurrently with the same key.
 func (dn *Daemon) worker() {
