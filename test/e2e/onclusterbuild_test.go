@@ -25,6 +25,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/util/retry"
+
+	"github.com/containers/image/v5/pkg/docker/config"
+	imageTypes "github.com/containers/image/v5/types"
+
+	imagev1 "github.com/openshift/api/image/v1"
 
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 )
@@ -32,7 +38,64 @@ import (
 const (
 	layeringEnabledPoolLabel string = "machineconfiguration.openshift.io/layering-enabled"
 	osImagePoolAnnotation    string = "machineconfiguration.openshift.io/newestImageEquivalentConfig"
+	workerPoolName           string = "worker"
+	layeredPoolName          string = "layered"
+	layeredOSImageURLMCName  string = layeredPoolName + "-layered-custom-os-image"
 )
+
+func setupOnClusterBuildConfig(t *testing.T, cs *framework.ClientSet) string {
+	finalImagePullspec := createImageStream(t, cs, &imagev1.ImageStream{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: ctrlcommon.MCONamespace,
+			Name:      "os-image",
+		},
+		Spec: imagev1.ImageStreamSpec{
+			LookupPolicy: imagev1.ImageLookupPolicy{
+				Local: false,
+			},
+		},
+	})
+
+	clonedSecretName := "global-pull-secret-copy"
+	cloneSecret(t, cs,
+		&corev1.ObjectReference{
+			Namespace: "openshift-config",
+			Name:      "pull-secret",
+		},
+		&corev1.ObjectReference{
+			Namespace: ctrlcommon.MCONamespace,
+			Name:      clonedSecretName,
+		},
+	)
+
+	secrets, err := cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace).List(context.TODO(), metav1.ListOptions{})
+	require.NoError(t, err)
+
+	builderSecretName := ""
+	for _, secret := range secrets.Items {
+		if strings.HasPrefix(secret.Name, "builder-dockercfg") {
+			builderSecretName = secret.Name
+			break
+		}
+	}
+
+	onClusterBuildConfigMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "on-cluster-build-config",
+			Namespace: ctrlcommon.MCONamespace,
+		},
+		Data: map[string]string{
+			"baseImagePullSecretName":  clonedSecretName,
+			"finalImagePullspec":       finalImagePullspec,
+			"finalImagePushSecretName": builderSecretName,
+			"imageBuilderType":         "openshift-image-builder",
+		},
+	}
+
+	createConfigMap(t, cs, onClusterBuildConfigMap)
+
+	return finalImagePullspec
+}
 
 func TestOnClusterBuilds(t *testing.T) {
 	cs := framework.NewClientSet("")
@@ -42,38 +105,84 @@ func TestOnClusterBuilds(t *testing.T) {
 		t.Skipf("Skipping on-cluster build test: %s", err)
 	}
 
-	t.Logf("Generating ephemeral public / private SSH keypair for test. These will be removed after the test is complete.")
-	skp, err := generateSSHKeyPair(t.TempDir())
+	n, err := cs.CoreV1Interface.Nodes().Get(context.TODO(), "ip-10-0-139-51.ec2.internal", metav1.GetOptions{})
 	require.NoError(t, err)
 
-	// Generate the SSH MachineConfig and k8s secret
-	publicSSHMC, _ := generateSSHObjects(skp)
+	node := *n
 
+	// Get the initial worker MachineConfigPool state before we begin our test so we have something to roll back to.
 	initialWorkerMCP, err := cs.MachineConfigPools().Get(context.TODO(), "worker", metav1.GetOptions{})
 	require.NoError(t, err)
-
-	node := helpers.GetRandomNode(t, cs, "worker")
-
-	// Apply the SSH MachineConfig.
-	sshUndoFunc := helpers.MakeIdempotent(helpers.ApplyMC(t, cs, publicSSHMC))
 	t.Cleanup(func() {
-		sshUndoFunc()
 		require.NoError(t, helpers.WaitForNodeConfigChange(t, cs, node, initialWorkerMCP.Spec.Configuration.Name))
 	})
 
-	t.Logf("Waiting for SSH key MC to roll out to worker pool")
-	helpers.WaitForConfigAndPoolComplete(t, cs, "worker", publicSSHMC.Name)
+	t.Cleanup(addDefaultServiceAccountCredsToGlobalPullSecretsToEnableImagePulls(t, cs))
 
-	taggedOSImageURL := "quay.io/zzlotnik/testing:on-cluster-build"
+	finalImagePullspec := setupOnClusterBuildConfig(t, cs)
 
-	layeredPoolName := "layered"
-	layeredOSImageURLMCName := fmt.Sprintf("%s-custom-os-image", layeredPoolName)
+	t.Logf("Opting pool %q into layering", layeredPoolName)
+	unlabelFunc := optIntoLayeredPools(t, cs, node, finalImagePullspec)
 
+	// Now let's add a special file to our new layered MCP.
+	newLayeredMC := helpers.NewMachineConfig("layered-hello-world", helpers.MCLabelForRole(layeredPoolName), "", []ign3types.File{
+		helpers.CreateEncodedIgn3File("/etc/hello-layered-world", "hello layering!", 420),
+	})
+
+	fullyQualifiedImagePullspec := rollOutNewLayeredMachineConfig(t, cs, layeredPoolName, newLayeredMC)
+
+	// Determine that we've booted into the newest OS image.
+	assertRPMOSTreeBootedIntoContainer(t, cs, node, strings.Split(fullyQualifiedImagePullspec, "@")[1])
+
+	// Assert that this new file is on the node.
+	helpers.AssertFileOnNode(t, cs, node, "/etc/hello-layered-world")
+
+	unlabelFunc()
+
+	t.Logf("Waiting for node to roll back to initial state")
+	rollbackUsingSSHBastionPod(t, cs, node)
+	// createSSHRecoveryPod(t, cs, node, skp)
+
+	osImageURLConfigMap, err := cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), "machine-config-osimageurl", metav1.GetOptions{})
+	require.NoError(t, err)
+
+	require.NoError(t, helpers.WaitForNodeConfigChange(t, cs, node, initialWorkerMCP.Spec.Configuration.Name))
+	assertRPMOSTreeBootedIntoContainer(t, cs, node, strings.Split(osImageURLConfigMap.Data["baseOSContainerImage"], "@")[1])
+}
+
+func rollbackUsingSSHBastionPod(t *testing.T, cs *framework.ClientSet, node corev1.Node) {
+	// Because of how things currently work, we need to use an SSH bastion pod
+	// to roll the node back to its original state. But first, we should wait for
+	// the Kubelet to become unready. This means that the config has been applied and the node has rebooted, but has not reconnected back to the kubelet
+	require.NoError(t, wait.PollImmediate(time.Second*2, time.Minute*10, func() (bool, error) {
+		n, err := cs.CoreV1Interface.Nodes().Get(context.TODO(), node.Name, metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+
+		for _, condition := range n.Status.Conditions {
+			if condition.Message == "Kubelet stopped posting node status." {
+				return true, nil
+			}
+		}
+
+		return false, nil
+	}))
+
+	t.Logf("Node %s has disconnected from the cluster", node.Name)
+
+	cmd := exec.Command("/Users/zzlotnik/Repos/oc-oneliners/rebootstrap-node.sh", node.Name)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	require.NoError(t, cmd.Run())
+}
+
+func optIntoLayeredPools(t *testing.T, cs *framework.ClientSet, node corev1.Node, finalImagePullspec string) func() {
 	t.Logf("Creating MachineConfigPool %q", layeredPoolName)
 	t.Cleanup(helpers.CreateMCP(t, cs, layeredPoolName))
 
 	t.Logf("Creating MachineConfig %q", layeredOSImageURLMCName)
-	layeredMC := helpers.NewMachineConfig(layeredOSImageURLMCName, helpers.MCLabelForRole(layeredPoolName), "", []ign3types.File{})
+	layeredMC := helpers.NewMachineConfig(layeredOSImageURLMCName, helpers.MCLabelForRole(layeredPoolName), finalImagePullspec, []ign3types.File{})
 	t.Cleanup(helpers.ApplyMC(t, cs, layeredMC))
 
 	layeredMCP, err := cs.MachineConfigPools().Get(context.TODO(), layeredPoolName, metav1.GetOptions{})
@@ -83,7 +192,7 @@ func TestOnClusterBuilds(t *testing.T) {
 	layeredMCP.Labels[layeringEnabledPoolLabel] = ""
 	layeredMCP, err = cs.MachineConfigPools().Update(context.TODO(), layeredMCP, metav1.UpdateOptions{})
 
-	imagePullspec := waitForBuildAndTagImage(t, cs, layeredMCP.Name, taggedOSImageURL)
+	fullyQualifiedImagePullspec := waitForBuildPodCompleteToUpdateOverrideMC(t, cs, layeredPoolName)
 
 	// Label our target node to roll out the new layered image.
 	nodeRoleLabel := fmt.Sprintf("node-role.kubernetes.io/%s", layeredPoolName)
@@ -101,98 +210,108 @@ func TestOnClusterBuilds(t *testing.T) {
 	require.NoError(t, helpers.WaitForNodeConfigChange(t, cs, node, layeredMCP.Spec.Configuration.Name))
 
 	// Determine that we've booted into the new OS image.
-	assertRPMOSTreeBootedIntoContainer(t, cs, node, strings.Split(imagePullspec, "@")[1])
+	assertRPMOSTreeBootedIntoContainer(t, cs, node, strings.Split(fullyQualifiedImagePullspec, "@")[1])
 
-	// To apply a new MachineConfig, we must first pause our pool.
-	layeredMCP = setPauseForMachineConfigPool(t, cs, layeredPoolName, true)
+	return helpers.MakeIdempotent(func() {
+		t.Logf("Removing label %q to roll node %s back to initial config", nodeRoleLabel, node.Name)
+		unlabelFunc()
+	})
+}
 
-	// Now let's add a special file to our new layered MCP.
-	newLayeredMC := helpers.NewMachineConfig("layered-hello-world", helpers.MCLabelForRole(layeredPoolName), taggedOSImageURL, []ign3types.File{
-		helpers.CreateEncodedIgn3File("/etc/hello-layered-world", "hello layering!", 420),
+func setPauseForMachineConfigPool(t *testing.T, cs *framework.ClientSet, poolName string, paused bool) func() {
+	undoFunc := helpers.MakeIdempotent(func() {
+		if paused {
+			paused = false
+		} else {
+			paused = true
+		}
+
+		setPauseForMachineConfigPool(t, cs, poolName, paused)
 	})
 
-	t.Logf("Creating MachineConfig %s", newLayeredMC.Name)
+	require.NoError(t, retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		pool, err := cs.MachineConfigPools().Get(context.TODO(), poolName, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
 
-	t.Cleanup(helpers.ApplyMC(t, cs, newLayeredMC))
+		if pool.Spec.Paused == paused {
+			t.Logf("MachineConfigPool %s .Spec.Paused already set to %v, no-op", poolName, paused)
+			return nil
+		}
+
+		pool.Spec.Paused = paused
+
+		_, err = cs.MachineConfigPools().Update(context.TODO(), pool, metav1.UpdateOptions{})
+		return err
+	}))
+
+	t.Logf("Set MachineConfigPool %s .Spec.Paused to %v", poolName, paused)
+	return undoFunc
+}
+
+func rollOutNewLayeredMachineConfig(t *testing.T, cs *framework.ClientSet, mcpName string, mc *mcfgv1.MachineConfig) string {
+	unpause := setPauseForMachineConfigPool(t, cs, mcpName, true)
+
+	t.Logf("Creating MachineConfig %s", mc.Name)
+
+	t.Cleanup(helpers.ApplyMC(t, cs, mc))
 
 	t.Logf("Waiting for rendered config to be generated")
 
 	// Wait for the MachineConfigPool to pick up our new config.
-	_, err = helpers.WaitForRenderedConfig(t, cs, layeredPoolName, newLayeredMC.Name)
+	_, err := helpers.WaitForRenderedConfig(t, cs, mcpName, mc.Name)
 	require.NoError(t, err)
 
 	// Now we have to wait for the new image to be built.
-	imagePullspec = waitForBuildAndTagImage(t, cs, layeredMCP.Name, taggedOSImageURL)
+	t.Logf("Waiting for on-cluster build to complete for MachineConfigPool %s", mcpName)
+	fullyQualifiedImagePullspec := waitForBuildPodCompleteToUpdateOverrideMC(t, cs, mcpName)
 
 	// Unpause our pool to allow our new MachineConfig to roll out.
-	layeredMCP = setPauseForMachineConfigPool(t, cs, layeredPoolName, false)
+	unpause()
 
 	// Wait for the node to finish updating.
-	require.NoError(t, helpers.WaitForNodeConfigChange(t, cs, node, layeredMCP.Spec.Configuration.Name))
+	require.NoError(t, helpers.WaitForPoolComplete(t, cs, mcpName, helpers.GetMcName(t, cs, mcpName)))
 
-	// Determine that we've booted into the newest OS image.
-	assertRPMOSTreeBootedIntoContainer(t, cs, node, strings.Split(imagePullspec, "@")[1])
-
-	// Assert that this new file is on the node.
-	helpers.AssertFileOnNode(t, cs, node, "/etc/hello-layered-world")
-
-	workerMCP, err := cs.MachineConfigPools().Get(context.TODO(), "worker", metav1.GetOptions{})
-	require.NoError(t, err)
-
-	t.Logf("Removing label %q to roll node %s back to initial config", nodeRoleLabel, node.Name)
-
-	unlabelFunc()
-
-	t.Logf("Waiting for node to roll back to initial state")
-	// Because of how things currently work, we need to create an SSH bastion pod
-	// to roll the node back to its original state. But first, we should wait for
-	// the Kubelet to become unready.
-	require.NoError(t, wait.PollImmediate(time.Second*2, time.Minute*10, func() (bool, error) {
-		n, err := cs.CoreV1Interface.Nodes().Get(context.TODO(), node.Name, metav1.GetOptions{})
-		if err != nil {
-			return false, err
-		}
-
-		for _, condition := range n.Status.Conditions {
-			if condition.Message == "Kubelet stopped posting node status." {
-				return true, nil
-			}
-		}
-
-		return false, nil
-	}))
-
-	createSSHRecoveryPod(t, cs, node, skp)
-
-	osImageURLConfigMap, err := cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), "machine-config-osimageurl", metav1.GetOptions{})
-	require.NoError(t, err)
-
-	require.NoError(t, helpers.WaitForNodeConfigChange(t, cs, node, workerMCP.Spec.Configuration.Name))
-	assertRPMOSTreeBootedIntoContainer(t, cs, node, strings.Split(osImageURLConfigMap.Data["baseOSContainerImage"], "@")[1])
-}
-
-func setPauseForMachineConfigPool(t *testing.T, cs *framework.ClientSet, poolName string, paused bool) *mcfgv1.MachineConfigPool {
-	pool, err := cs.MachineConfigPools().Get(context.TODO(), poolName, metav1.GetOptions{})
-	require.NoError(t, err)
-	pool.Spec.Paused = paused
-
-	pool, err = cs.MachineConfigPools().Update(context.TODO(), pool, metav1.UpdateOptions{})
-	require.NoError(t, err)
-
-	t.Logf("Set MachineConfigPool %s .Spec.Paused to %v", poolName, paused)
-
-	return pool
-}
-
-func waitForBuildAndTagImage(t *testing.T, cs *framework.ClientSet, mcpName, taggedImagePullspec string) string {
-	t.Logf("Waiting for on-cluster build to complete for MachineConfigPool %s", mcpName)
-	fullyQualifiedImagePullspec := waitForBuildPodAndGetImagePullspec(t, cs, mcpName)
-	t.Logf("Image build complete, has fully-qualified image pullspec: %q", fullyQualifiedImagePullspec)
-	tagImageWithSkopeo(t, cs, fullyQualifiedImagePullspec, taggedImagePullspec)
 	return fullyQualifiedImagePullspec
 }
 
-func waitForBuildPodAndGetImagePullspec(t *testing.T, cs *framework.ClientSet, mcpName string) string {
+func updateOverrideMachineConfig(t *testing.T, cs *framework.ClientSet, fullyQualifiedImagePullspec string) {
+	// Set the osImageURL override MachineConfig to point to the new image
+	// pullspec. Right now, we must do this because the MCD has no concept of a
+	// layering-enabled pool nor how to roll out an image for a layering-enabled
+	// pool.
+	osImageOverrideMCP, err := cs.MachineConfigs().Get(context.TODO(), layeredOSImageURLMCName, metav1.GetOptions{})
+	require.NoError(t, err)
+	osImageOverrideMCP.Spec.OSImageURL = fullyQualifiedImagePullspec
+	_, err = cs.MachineConfigs().Update(context.TODO(), osImageOverrideMCP, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	t.Logf("Updated osImageURL override MachineConfig %q to point to %q", layeredOSImageURLMCName, fullyQualifiedImagePullspec)
+}
+
+func waitForBuildPodCompleteToUpdateOverrideMC(t *testing.T, cs *framework.ClientSet, mcpName string) string {
+	mcp, err := cs.MachineConfigPools().Get(context.TODO(), mcpName, metav1.GetOptions{})
+	require.NoError(t, err)
+	t.Logf("Waiting for on-cluster build to complete for MachineConfigPool %s, config %s", mcpName, mcp.Spec.Configuration.Name)
+
+	fullyQualifiedImagePullspec := waitForBuildPodComplete(t, cs, mcpName)
+
+	updateOverrideMachineConfig(t, cs, fullyQualifiedImagePullspec)
+
+	// Unfortunately, the above MachineConfig change triggers another build that
+	// we have to wait for even though the image produced from this MachineConfig
+	// change is not the image we're planning to roll out. Right now, we have to
+	// wait for this build because there is the possibility that it could get
+	// scheduled on the node we're targeting for the update. If we interrupt the
+	// build, the MachineConfigPool gets degraded with BuildFailed and right now,
+	// we don't have a good way to undo that state right now.
+	t.Logf("Waiting for override MachineConfig build to occur. In the future, this will not be necessary...")
+	waitForBuildPodComplete(t, cs, mcpName)
+
+	return fullyQualifiedImagePullspec
+}
+
+func waitForBuildPodComplete(t *testing.T, cs *framework.ClientSet, mcpName string) string {
 	// Wait for the machine-os-builder pod to start.
 	err := wait.PollImmediate(time.Second, time.Minute, func() (bool, error) {
 		mobPods, err := cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace).List(context.TODO(), metav1.ListOptions{
@@ -313,7 +432,11 @@ func waitForBuildPodAndGetImagePullspec(t *testing.T, cs *framework.ClientSet, m
 	})
 	require.NoError(t, err)
 
-	t.Logf("Image pullspec changed from %q to %q on MachineConfigPool %s", initialImagePullspec, currentImagePullspec, mcpName)
+	if initialImagePullspec == "" {
+		t.Logf("MachineConfigPool %s image pullspec now set to %q", mcpName, currentImagePullspec)
+	} else {
+		t.Logf("Image pullspec changed from %q to %q on MachineConfigPool %s", initialImagePullspec, currentImagePullspec, mcpName)
+	}
 
 	return currentImagePullspec
 }
@@ -357,100 +480,12 @@ func tagImageWithSkopeo(t *testing.T, cs *framework.ClientSet, fullyQualifiedIma
 }
 
 func canRunOnClusterBuildTest(t *testing.T, cs *framework.ClientSet) (bool, error) {
-	requiredCommands := []string{
-		"oc",
-		"skopeo",
-		"ssh-keygen",
-	}
-
-	for _, cmd := range requiredCommands {
-		if _, err := exec.LookPath(cmd); err != nil {
-			return false, fmt.Errorf("could not locate required command %q: %w", cmd, err)
-		}
-
-		t.Logf("Required binary %q found", cmd)
-	}
-
-	ctx := context.Background()
-
-	_, err := cs.AppsV1Interface.Deployments(ctrlcommon.MCONamespace).Get(ctx, "machine-os-builder", metav1.GetOptions{})
+	_, err := cs.AppsV1Interface.Deployments(ctrlcommon.MCONamespace).Get(context.TODO(), "machine-os-builder", metav1.GetOptions{})
 	if err != nil {
 		return false, err
 	}
 
-	onClusterBuildConfigMap, err := cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace).Get(ctx, "on-cluster-build-config", metav1.GetOptions{})
-	if err != nil {
-		return false, err
-	}
-
-	finalImagePushSecretKey := "finalImagePushSecretName"
-
-	val, ok := onClusterBuildConfigMap.Data[finalImagePushSecretKey]
-	if !ok {
-		return false, fmt.Errorf("required on-cluster-build-config key %q missing", finalImagePushSecretKey)
-	}
-
-	if val == "" {
-		return false, fmt.Errorf("required on-cluster-build-config key %q is empty", finalImagePushSecretKey)
-	}
-
-	secretName := onClusterBuildConfigMap.Data[finalImagePushSecretKey]
-	_, err = cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace).Get(ctx, secretName, metav1.GetOptions{})
-	if err != nil {
-		return false, fmt.Errorf("could not get secret %q: %w", finalImagePushSecretKey, err)
-	}
-
-	secretName = onClusterBuildConfigMap.Data["baseImagePullSecretName"]
-	return maybeCloneGlobalPullSecret(ctx, t, cs, secretName)
-}
-
-func maybeCloneGlobalPullSecret(ctx context.Context, t *testing.T, cs *framework.ClientSet, secretName string) (bool, error) {
-	if secretName != "" {
-		secret, err := cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace).Get(ctx, secretName, metav1.GetOptions{})
-		if err == nil {
-			t.Logf("Using preexisting secret %q as the base image pull secret", secret.Name)
-			return true, nil
-		}
-
-		if !k8serrors.IsNotFound(err) {
-			return false, fmt.Errorf("could not get %q: %w", secretName, err)
-		}
-	}
-
-	// At this point, we've determined that our clone of the global pull secret does not exist and we'll need to clone it.
-	t.Logf("Cloning global pull secret (openshift-config/pull-secret) to openshift-machine-config-operator/global-pull-secret-copy")
-
-	globalPullSecret, err := cs.CoreV1Interface.Secrets("openshift-config").Get(ctx, "pull-secret", metav1.GetOptions{})
-	if err != nil {
-		return false, fmt.Errorf("could not get openshift-config/pull-secret: %w", err)
-	}
-
-	cloned := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "global-pull-secret-copy",
-			Namespace: ctrlcommon.MCONamespace,
-			Labels: map[string]string{
-				"on-cluster-build-test": "",
-			},
-		},
-		Data: globalPullSecret.Data,
-		Type: globalPullSecret.Type,
-	}
-
-	_, err = cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace).Create(ctx, cloned, metav1.CreateOptions{})
-	if err != nil {
-		return false, fmt.Errorf("could not create %q: %w", cloned.Name, err)
-	}
-
-	onClusterBuildConfigMap, err := cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace).Get(ctx, "on-cluster-build-config", metav1.GetOptions{})
-	if err != nil {
-		return false, err
-	}
-
-	t.Logf("Updated on-cluster-build-config to use the cloned global pull secret")
-	onClusterBuildConfigMap.Data["baseImagePullSecretName"] = cloned.Name
-	_, err = cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace).Update(ctx, onClusterBuildConfigMap, metav1.UpdateOptions{})
-	return err == nil, err
+	return true, nil
 }
 
 // There is probably a better way to do this using native Golang libraries. But
@@ -460,7 +495,37 @@ type sshKeyPair struct {
 	private string
 }
 
-func generateSSHKeyPair(dir string) (*sshKeyPair, error) {
+func generateSSHKeyPair(t *testing.T, cs *framework.ClientSet, node corev1.Node) *sshKeyPair {
+	_, err := exec.LookPath("ssh-keygen")
+	if err == nil {
+		skp, genErr := generateSSHKeyPairLocally(t.TempDir())
+		require.NoError(t, genErr)
+		return skp
+	}
+
+	return generateSSHKeyPairOnNode(t, cs, node)
+}
+
+func generateSSHKeyPairOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node) *sshKeyPair {
+	t.Logf("Generating ephemeral public / private SSH keypair for test, using %s", node.Name)
+
+	tempDir := strings.TrimSpace(helpers.ExecCmdOnNode(t, cs, node, "chroot", "/rootfs", "mktemp", "-d"))
+	defer func() {
+		helpers.ExecCmdOnNode(t, cs, node, "chroot", "/rootfs", "rm", "-rf", tempDir)
+	}()
+
+	keyfile := filepath.Join(tempDir, "keyfile")
+
+	helpers.ExecCmdOnNode(t, cs, node, "chroot", "/rootfs", "ssh-keygen", "-t", "ed25519", "-f", keyfile, "-q", "-N", "", "-C", "MCO e2e")
+	skp := &sshKeyPair{
+		private: helpers.ExecCmdOnNode(t, cs, node, "chroot", "/rootfs", "cat", keyfile),
+		public:  helpers.ExecCmdOnNode(t, cs, node, "chroot", "/rootfs", "ssh-keygen", "-f", keyfile, "-y"),
+	}
+
+	return skp
+}
+
+func generateSSHKeyPairLocally(dir string) (*sshKeyPair, error) {
 	keyPath := filepath.Join(dir, "keyfile")
 	defer os.RemoveAll(dir)
 
@@ -536,6 +601,24 @@ var sshRecoveryScript string
 var recoveryPodEntrypoint string
 
 func createSSHRecoveryPod(t *testing.T, cs *framework.ClientSet, node corev1.Node, skp *sshKeyPair) {
+	// Because of how things currently work, we need to create an SSH bastion pod
+	// to roll the node back to its original state. But first, we should wait for
+	// the Kubelet to become unready.
+	require.NoError(t, wait.PollImmediate(time.Second*2, time.Minute*10, func() (bool, error) {
+		n, err := cs.CoreV1Interface.Nodes().Get(context.TODO(), node.Name, metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+
+		for _, condition := range n.Status.Conditions {
+			if condition.Message == "Kubelet stopped posting node status." {
+				return true, nil
+			}
+		}
+
+		return false, nil
+	}))
+
 	mcoImages, err := cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), "machine-config-operator-images", metav1.GetOptions{})
 	require.NoError(t, err)
 
@@ -637,19 +720,8 @@ func createSSHRecoveryPod(t *testing.T, cs *framework.ClientSet, node corev1.Nod
 		},
 	}
 
-	ignoreExists := func(err error) error {
-		if k8serrors.IsAlreadyExists(err) {
-			return nil
-		}
-
-		return err
-	}
-
-	_, err = cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace).Create(context.TODO(), configMap, metav1.CreateOptions{})
-	require.NoError(t, ignoreExists(err))
-
-	_, err = cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace).Create(context.TODO(), privateSSHSecret, metav1.CreateOptions{})
-	require.NoError(t, ignoreExists(err))
+	createConfigMap(t, cs, configMap)
+	createSecret(t, cs, privateSSHSecret)
 
 	p, err := cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace).Create(context.TODO(), pod, metav1.CreateOptions{})
 	require.NoError(t, err)
@@ -657,4 +729,184 @@ func createSSHRecoveryPod(t *testing.T, cs *framework.ClientSet, node corev1.Nod
 	t.Logf("Targetting node %s", node.Name)
 
 	t.Logf("Pod scheduled on %s", p.Spec.NodeName)
+
+	t.Cleanup(func() {
+		require.NoError(t, ignoreNotFound(cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace).Delete(context.TODO(), pod.Name, metav1.DeleteOptions{})))
+		t.Logf("Pod %q deleted", pod.Name)
+	})
+}
+
+func ignoreExists(err error) error {
+	if k8serrors.IsAlreadyExists(err) {
+		return nil
+	}
+
+	return err
+}
+
+func ignoreNotFound(err error) error {
+	if k8serrors.IsNotFound(err) {
+		return nil
+	}
+
+	return err
+}
+
+func addDefaultServiceAccountCredsToGlobalPullSecretsToEnableImagePulls(t *testing.T, cs *framework.ClientSet) func() {
+	mcoSecrets, err := cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace).List(context.TODO(), metav1.ListOptions{})
+	require.NoError(t, err)
+
+	var secret *corev1.Secret = nil
+	for _, mcoSecret := range mcoSecrets.Items {
+		if strings.Contains(mcoSecret.Name, "default-dockercfg") {
+			mcoSecret := mcoSecret
+			secret = &mcoSecret
+			break
+		}
+	}
+
+	global, err := cs.CoreV1Interface.Secrets("openshift-config").Get(context.TODO(), "pull-secret", metav1.GetOptions{})
+	require.NoError(t, err)
+
+	originalGlobal := global.DeepCopy()
+
+	globalCfg, err := parseK8sPullSecretIntoDockerAuthConfig(global)
+	require.NoError(t, err)
+
+	mcoCfg, err := parseK8sPullSecretIntoDockerAuthConfig(secret)
+	require.NoError(t, err)
+
+	for key, val := range mcoCfg {
+		globalCfg[key] = val
+	}
+
+	tmpDir := t.TempDir()
+
+	sysCtx := &imageTypes.SystemContext{
+		AuthFilePath: filepath.Join(tmpDir, "final-config.json"),
+	}
+	defer os.RemoveAll(tmpDir)
+
+	for key, val := range globalCfg {
+		_, err := config.SetCredentials(sysCtx, key, val.Username, val.Password)
+		require.NoError(t, err)
+	}
+
+	final, err := os.ReadFile(sysCtx.AuthFilePath)
+	require.NoError(t, err)
+
+	global.Data[corev1.DockerConfigJsonKey] = final
+	_, err = cs.CoreV1Interface.Secrets("openshift-config").Update(context.TODO(), global, metav1.UpdateOptions{})
+	require.NoError(t, err)
+
+	t.Logf("Added pull secret for service account %q to openshift-config/pull-secret for the duration of the test", secret.Name)
+
+	undoFunc := func() {
+		require.NoError(t, retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+			global, err := cs.CoreV1Interface.Secrets("openshift-config").Get(context.TODO(), "pull-secret", metav1.GetOptions{})
+			if err != nil {
+				return err
+			}
+
+			global.Data = originalGlobal.Data
+			_, err = cs.CoreV1Interface.Secrets("openshift-config").Update(context.TODO(), global, metav1.UpdateOptions{})
+			return err
+		}))
+
+		t.Logf("Removed pull secret for service account %q from openshift-config/pull-secret", secret.Name)
+	}
+
+	return helpers.MakeIdempotent(undoFunc)
+}
+
+func parseK8sPullSecretIntoDockerAuthConfig(secret *corev1.Secret) (map[string]imageTypes.DockerAuthConfig, error) {
+	tmpDir, err := os.MkdirTemp("", "mco.e2e")
+	if err != nil {
+		return nil, err
+	}
+
+	defer os.RemoveAll(tmpDir)
+
+	secretPath := filepath.Join(tmpDir, "pull-secret.json")
+
+	sysCtx := imageTypes.SystemContext{}
+
+	secretKey := ""
+	if secret.Type == corev1.SecretTypeDockerConfigJson {
+		secretKey = string(corev1.DockerConfigJsonKey)
+		sysCtx.AuthFilePath = secretPath
+	} else if secret.Type == corev1.SecretTypeDockercfg {
+		secretKey = string(corev1.DockerConfigKey)
+		sysCtx.LegacyFormatAuthFilePath = secretPath
+	} else {
+		return nil, fmt.Errorf("unsupported secret type %s", secret.Type)
+	}
+
+	pullSecretBytes, ok := secret.Data[secretKey]
+	if !ok {
+		return nil, fmt.Errorf("could not find key %s", secretKey)
+	}
+
+	if err := os.WriteFile(secretPath, pullSecretBytes, 0644); err != nil {
+		return nil, err
+	}
+
+	cfg, err := config.GetAllCredentials(&sysCtx)
+	if err != nil {
+		return nil, err
+	}
+
+	return cfg, nil
+}
+
+func createImageStream(t *testing.T, cs *framework.ClientSet, is *imagev1.ImageStream) string {
+	updated, err := cs.ImageV1Interface.ImageStreams(is.Namespace).Create(context.TODO(), is, metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	t.Logf("Created ImageStream %q, has pullspec %q", is.Name, updated.Status.DockerImageRepository)
+
+	t.Cleanup(func() {
+		require.NoError(t, cs.ImageV1Interface.ImageStreams(is.Namespace).Delete(context.TODO(), is.Name, metav1.DeleteOptions{}))
+		t.Logf("Deleted ImageStream %q", is.Name)
+	})
+
+	return updated.Status.DockerImageRepository
+}
+
+func createConfigMap(t *testing.T, cs *framework.ClientSet, cm *corev1.ConfigMap) {
+	_, err := cs.CoreV1Interface.ConfigMaps(cm.Namespace).Create(context.TODO(), cm, metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	t.Logf("Created ConfigMap %q", cm.Name)
+
+	t.Cleanup(func() {
+		require.NoError(t, cs.CoreV1Interface.ConfigMaps(cm.Namespace).Delete(context.TODO(), cm.Name, metav1.DeleteOptions{}))
+		t.Logf("Deleted ConfigMap %q", cm.Name)
+
+	})
+}
+
+func createSecret(t *testing.T, cs *framework.ClientSet, secret *corev1.Secret) {
+	_, err := cs.CoreV1Interface.Secrets(secret.Namespace).Create(context.TODO(), secret, metav1.CreateOptions{})
+	require.NoError(t, err)
+	t.Logf("Created Secret %q", secret.Name)
+
+	t.Cleanup(func() {
+		require.NoError(t, cs.CoreV1Interface.Secrets(secret.Namespace).Delete(context.TODO(), secret.Name, metav1.DeleteOptions{}))
+		t.Logf("Deleted Secret %q", secret.Name)
+	})
+}
+
+func cloneSecret(t *testing.T, cs *framework.ClientSet, src, dst *corev1.ObjectReference) {
+	srcSecret, err := cs.CoreV1Interface.Secrets(src.Namespace).Get(context.TODO(), src.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	createSecret(t, cs, &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      dst.Name,
+			Namespace: dst.Namespace,
+		},
+		Type: srcSecret.Type,
+		Data: srcSecret.Data,
+	})
 }
