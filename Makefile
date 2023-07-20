@@ -137,4 +137,4 @@ test-e2e-single-node: install-go-junit-report
 	set -o pipefail; go test -tags=$(GOTAGS) -failfast -timeout 120m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-single-node/ | ./hack/test-with-junit.sh $(@)
 
 bootstrap-e2e: install-go-junit-report install-setup-envtest
-	set -o pipefail; CGO_ENABLED=0 go test -tags=$(GOTAGS) -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-bootstrap/ | ./hack/test-with-junit.sh $(@)
+	set -o pipefail; go test -tags=$(GOTAGS) -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-bootstrap/ | ./hack/test-with-junit.sh $(@)

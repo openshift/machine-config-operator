@@ -1,3 +1,5 @@
+# TODO switch the default image to rhel9 and drop the rhel8 one in 4.15 because
+# we can require by the time we get to 4.14 that we don't have any rhel8 hosts left
 FROM registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.20-openshift-4.14 AS builder
 ARG TAGS=""
 WORKDIR /go/src/github.com/openshift/machine-config-operator
@@ -6,10 +8,17 @@ COPY . .
 # just use that.  For now we work around this by copying a tarball.
 RUN make install DESTDIR=./instroot && tar -C instroot -cf instroot.tar .
 
+FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.20-openshift-4.14 AS rhel9-builder
+ARG TAGS=""
+WORKDIR /go/src/github.com/openshift/machine-config-operator
+COPY . .
+RUN make install DESTDIR=./instroot
+
 FROM registry.ci.openshift.org/ocp/4.14:base
 ARG TAGS=""
 COPY --from=builder /go/src/github.com/openshift/machine-config-operator/instroot.tar /tmp/instroot.tar
 RUN cd / && tar xf /tmp/instroot.tar && rm -f /tmp/instroot.tar
+COPY --from=rhel9-builder /go/src/github.com/openshift/machine-config-operator/instroot/usr/bin/machine-config-daemon /usr/bin/machine-config-daemon.rhel9
 COPY install /manifests
 
 RUN if [ "${TAGS}" = "fcos" ]; then \
