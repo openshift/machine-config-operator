@@ -76,15 +76,21 @@ func appendEncapsulated(conf *igntypes.Config, mc *mcfgv1.MachineConfig, version
 	// requires an empty Ignition version.
 	if version == nil || version.Slice()[0] == 3 {
 		tmpIgnCfg := ctrlcommon.NewIgnConfig()
+		tmpIgnCfg.Passwd = conf.Passwd
 		rawTmpIgnCfg, err = json.Marshal(tmpIgnCfg)
 		if err != nil {
 			return fmt.Errorf("error marshalling Ignition config: %w", err)
 		}
 	} else {
+		v2, err := ctrlcommon.ConvertV3ToV2Ignition(*conf)
+		if err != nil {
+			return err
+		}
 		tmpIgnCfg := ign2types.Config{
 			Ignition: ign2types.Ignition{
 				Version: ign2types.MaxVersion.String(),
 			},
+			Passwd: v2.Passwd,
 		}
 		rawTmpIgnCfg, err = json.Marshal(tmpIgnCfg)
 		if err != nil {
