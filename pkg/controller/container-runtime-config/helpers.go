@@ -294,11 +294,11 @@ func updateStorageConfig(data []byte, internal *mcfgv1.ContainerRuntimeConfigura
 		return nil, fmt.Errorf("error decoding crio config: %w", err)
 	}
 
-	if internal.OverlaySize.Value() < 0 {
+	if internal.OverlaySize != nil && internal.OverlaySize.Value() < 0 {
 		return nil, fmt.Errorf("invalid overlaySize config %q: the overlaySize should be larger than 0", internal.OverlaySize.String())
 	}
 
-	if internal.OverlaySize.Value() != 0 {
+	if internal.OverlaySize != nil && internal.OverlaySize.Value() != 0 {
 		tomlConf.Storage.Options.Size = internal.OverlaySize.String()
 	}
 
@@ -347,7 +347,7 @@ func createCRIODropinFiles(cfg *mcfgv1.ContainerRuntimeConfig) []generatedConfig
 			klog.V(2).Infoln(cfg, err, "error updating user changes for pids-limit to crio.conf.d: %v", err)
 		}
 	}
-	if ctrcfg.LogSizeMax.Value() != 0 {
+	if ctrcfg.LogSizeMax != nil && ctrcfg.LogSizeMax.Value() != 0 {
 		tomlConf := tomlConfigCRIOLogSizeMax{}
 		tomlConf.Crio.Runtime.LogSizeMax = ctrcfg.LogSizeMax.Value()
 		generatedConfigFileList, err = addTOMLgeneratedConfigFile(generatedConfigFileList, crioDropInFilePathLogSizeMax, tomlConf)
@@ -495,11 +495,11 @@ func validateUserContainerRuntimeConfig(cfg *mcfgv1.ContainerRuntimeConfig) erro
 		return fmt.Errorf("invalid PidsLimit %v", *ctrcfg.PidsLimit)
 	}
 
-	if ctrcfg.LogSizeMax.Value() > 0 && ctrcfg.LogSizeMax.Value() <= minLogSize {
+	if ctrcfg.LogSizeMax != nil && ctrcfg.LogSizeMax.Value() > 0 && ctrcfg.LogSizeMax.Value() <= minLogSize {
 		return fmt.Errorf("invalid LogSizeMax %q, cannot be less than 8kB", ctrcfg.LogSizeMax.String())
 	}
 
-	if ctrcfg.OverlaySize.Value() < 0 {
+	if ctrcfg.OverlaySize != nil && ctrcfg.OverlaySize.Value() < 0 {
 		return fmt.Errorf("invalid overlaySize %q, cannot be less than 0", ctrcfg.OverlaySize.String())
 	}
 

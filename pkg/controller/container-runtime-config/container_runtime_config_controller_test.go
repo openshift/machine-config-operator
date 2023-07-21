@@ -2,6 +2,7 @@ package containerruntimeconfig
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"testing"
@@ -494,10 +495,13 @@ func TestContainerRuntimeConfigCreate(t *testing.T) {
 			f := newFixture(t)
 			f.newController()
 
+			logSizeMax := resource.MustParse("9k")
+			overlaySize := resource.MustParse("3G")
+
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
-			ctrcfg1 := newContainerRuntimeConfig("set-log-level", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug", LogSizeMax: resource.MustParse("9k"), OverlaySize: resource.MustParse("3G")}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
+			ctrcfg1 := newContainerRuntimeConfig("set-log-level", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug", LogSizeMax: &logSizeMax, OverlaySize: &overlaySize}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
 			ctrCfgKey, _ := getManagedKeyCtrCfg(mcp, f.client, ctrcfg1)
 			mcs1 := helpers.NewMachineConfig(getManagedKeyCtrCfgDeprecated(mcp), map[string]string{"node-role": "master"}, "dummy://", []ign3types.File{{}})
 			mcs2 := mcs1.DeepCopy()
@@ -531,10 +535,13 @@ func TestContainerRuntimeConfigUpdate(t *testing.T) {
 			f := newFixture(t)
 			f.newController()
 
+			logSizeMax := resource.MustParse("9k")
+			overlaySize := resource.MustParse("3G")
+
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
-			ctrcfg1 := newContainerRuntimeConfig("set-log-level", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug", LogSizeMax: resource.MustParse("9k"), OverlaySize: resource.MustParse("3G")}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
+			ctrcfg1 := newContainerRuntimeConfig("set-log-level", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug", LogSizeMax: &logSizeMax, OverlaySize: &overlaySize}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
 			keyCtrCfg, _ := getManagedKeyCtrCfg(mcp, f.client, ctrcfg1)
 			mcs := helpers.NewMachineConfig(getManagedKeyCtrCfgDeprecated(mcp), map[string]string{"node-role": "master"}, "dummy://", []ign3types.File{{}})
 			mcsUpdate := mcs.DeepCopy()
@@ -1228,10 +1235,12 @@ func TestRegistriesValidation(t *testing.T) {
 // for the options in containerruntime config
 func TestContainerRuntimeConfigOptions(t *testing.T) {
 	var (
-		invalidPidsLimit int64 = 10
-		validPidsLimit   int64 = 2048
-		validZerolimit   int64 = 0
-		invalidNegLimit  int64 = -10
+		invalidPidsLimit  int64 = 10
+		validPidsLimit    int64 = 2048
+		invalidLogSizeMax       = resource.MustParse("3k")
+		validLogSizeMax         = resource.MustParse("10k")
+		validZerolimit    int64 = 0
+		invalidNegLimit   int64 = -10
 	)
 	failureTests := []struct {
 		name   string
@@ -1252,7 +1261,7 @@ func TestContainerRuntimeConfigOptions(t *testing.T) {
 		{
 			name: "inalid value of max log size",
 			config: &mcfgv1.ContainerRuntimeConfiguration{
-				LogSizeMax: resource.MustParse("3k"),
+				LogSizeMax: &invalidLogSizeMax,
 			},
 		},
 		{
@@ -1288,7 +1297,7 @@ func TestContainerRuntimeConfigOptions(t *testing.T) {
 		{
 			name: "valid max log size",
 			config: &mcfgv1.ContainerRuntimeConfiguration{
-				LogSizeMax: resource.MustParse("10k"),
+				LogSizeMax: &validLogSizeMax,
 			},
 		},
 		{
@@ -1321,6 +1330,73 @@ func TestContainerRuntimeConfigOptions(t *testing.T) {
 		if err != nil {
 			t.Errorf("%s: failed with %v. should have succeeded", test.name, err)
 		}
+	}
+}
+
+func TestMarshalResourceQuantityOptionsJSON(t *testing.T) {
+	var (
+		validLogSizeMax  = resource.MustParse("10k")
+		validOverlaySize = resource.MustParse("10G")
+	)
+
+	emptyValueTests := []struct {
+		name   string
+		config *mcfgv1.ContainerRuntimeConfiguration
+	}{
+		{
+			name: "valid log level, overlaySize/logsizeMax should not appear in json",
+			config: &mcfgv1.ContainerRuntimeConfiguration{
+				LogLevel: "debug",
+			},
+		},
+		{
+			name: "valid value of default runtime， overlaySize/logsizeMax should not appear in json",
+			config: &mcfgv1.ContainerRuntimeConfiguration{
+				DefaultRuntime: "crun",
+			},
+		},
+	}
+
+	successTests := []struct {
+		name      string
+		config    *mcfgv1.ContainerRuntimeConfiguration
+		expectStr string
+	}{
+		{
+			name: "valid max log size should appear in json",
+			config: &mcfgv1.ContainerRuntimeConfiguration{
+				LogSizeMax: &validLogSizeMax,
+				LogLevel:   "debug",
+			},
+			expectStr: "\"logSizeMax\":\"10k\"",
+		},
+		{
+			name: "valid max overlay size should appear in json",
+			config: &mcfgv1.ContainerRuntimeConfiguration{
+				OverlaySize: &validOverlaySize,
+				LogLevel:    "debug",
+			},
+			expectStr: "\"overlaySize\":\"10G\"",
+		},
+	}
+
+	// Successful Tests
+	for _, test := range successTests {
+		ctrcfg := newContainerRuntimeConfig(test.name, test.config, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "", ""))
+		data, err := json.Marshal(ctrcfg)
+		if err != nil {
+			t.Errorf("%s: failed with %v. should have succeeded", test.name, err)
+		}
+		require.Contains(t, string(data), test.expectStr)
+	}
+
+	for _, test := range emptyValueTests {
+		ctrcfg := newContainerRuntimeConfig(test.name, test.config, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "", ""))
+		data, err := json.Marshal(ctrcfg)
+		if err != nil {
+			t.Errorf("%s: failed with %v. should have succeeded", test.name, err)
+		}
+		require.NotContains(t, string(data), "\"overlaySize\"", "\"overlaySize\"")
 	}
 }
 
