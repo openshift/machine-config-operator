@@ -5,12 +5,12 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/client-go/util/retry"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	mcfgclientv1 "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/typed/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/version"
+	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -69,6 +69,15 @@ func (ctrl *Controller) syncCompletedStatus(ctrlconfig *mcfgv1.ControllerConfig)
 		fcond := mcfgv1.NewControllerConfigStatusCondition(mcfgv1.TemplateControllerFailing, corev1.ConditionFalse, "", "")
 		mcfgv1.SetControllerConfigStatusCondition(&cfg.Status, *fcond)
 		cfg.Status.ObservedGeneration = ctrlconfig.GetGeneration()
+		return nil
+	}
+	return updateControllerConfigStatus(ctrlconfig.GetName(), ctrl.ccLister.Get, ctrl.client.MachineconfigurationV1().ControllerConfigs(), updateFunc)
+}
+
+// syncCertificateStatus places the new certitifcate data into the actual controllerConfig that is our source of truth.
+func (ctrl *Controller) syncCertificateStatus(ctrlconfig *mcfgv1.ControllerConfig) error {
+	updateFunc := func(cfg *mcfgv1.ControllerConfig) error {
+		cfg.Status.ControllerCertificates = ctrlconfig.Status.ControllerCertificates
 		return nil
 	}
 	return updateControllerConfigStatus(ctrlconfig.GetName(), ctrl.ccLister.Get, ctrl.client.MachineconfigurationV1().ControllerConfigs(), updateFunc)

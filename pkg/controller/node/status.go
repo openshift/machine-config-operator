@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	v1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	corev1 "k8s.io/api/core/v1"
@@ -15,12 +17,16 @@ import (
 )
 
 func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
+	cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
+	if err != nil {
+		return err
+	}
 	nodes, err := ctrl.getNodesForPool(pool)
 	if err != nil {
 		return err
 	}
 
-	newStatus := calculateStatus(pool, nodes)
+	newStatus := calculateStatus(cc, pool, nodes)
 	if equality.Semantic.DeepEqual(pool.Status, newStatus) {
 		return nil
 	}
@@ -37,7 +43,20 @@ func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
 	return err
 }
 
-func calculateStatus(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv1.MachineConfigPoolStatus {
+func calculateStatus(cconfig *v1.ControllerConfig, pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv1.MachineConfigPoolStatus {
+	certExpirys := []v1.CertExpiry{}
+	if cconfig != nil {
+		for _, cert := range cconfig.Status.ControllerCertificates {
+			if cert.BundleFile == "KubeAPIServerServingCAData" {
+				certExpirys = append(certExpirys, v1.CertExpiry{
+					Bundle:  cert.BundleFile,
+					Subject: cert.Subject,
+					Expiry:  cert.NotAfter,
+				},
+				)
+			}
+		}
+	}
 	machineCount := int32(len(nodes))
 
 	updatedMachines := getUpdatedMachines(pool.Spec.Configuration.Name, nodes)
@@ -66,6 +85,7 @@ func calculateStatus(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv
 		ReadyMachineCount:       readyMachineCount,
 		UnavailableMachineCount: unavailableMachineCount,
 		DegradedMachineCount:    degradedMachineCount,
+		CertExpirys:             certExpirys,
 	}
 	status.Configuration = pool.Status.Configuration
 

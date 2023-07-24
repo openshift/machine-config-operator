@@ -348,6 +348,34 @@ func GetMonitoringToken(_ *testing.T, cs *framework.ClientSet) (string, error) {
 	return token.Status.Token, nil
 }
 
+// WaitForCertStatusToChange queries a controllerconfig until the ControllerCertificates changes.
+func WaitForCertStatusToChange(t *testing.T, cs *framework.ClientSet, oldData string) error {
+	ctx := context.TODO()
+	if err := wait.PollUntilContextTimeout(ctx, 2*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
+		controllerConfig, err := cs.ControllerConfigs().Get(context.TODO(), "machine-config-controller", metav1.GetOptions{})
+		require.Nil(t, err)
+
+		// shows us that the status is updating
+
+		for _, cert := range controllerConfig.Status.ControllerCertificates {
+			t.Logf("comparing: %s to %s\n", oldData, cert.Subject)
+			t.Logf("also, other data: %s %s\n", cert.BundleFile, cert.Subject)
+			if cert.BundleFile == "KubeAPIServerServingCAData" {
+				if oldData != cert.Subject {
+					return true, nil
+				}
+			}
+		}
+
+		return false, nil
+	}); err != nil {
+		return err
+	}
+
+	return nil
+
+}
+
 // WaitForMCDToSyncCert waits for the MCD to write annotation on the latest controllerconfig resourceVersion,
 // to indicate that is has completed the certificate write
 func WaitForMCDToSyncCert(t *testing.T, cs *framework.ClientSet, node corev1.Node, resourceVersion string) error {

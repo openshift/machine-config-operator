@@ -1837,6 +1837,30 @@ spec:
                   by the controller.
                 format: int64
                 type: integer
+              controllerCertificates:
+                description: controllerCertificates holds the information about the MCCs certificates.
+                items:
+                  description: ControllerCertificate contains certificate
+                    information for ControllerConfigStatus
+                  properties:
+                    subject:
+                      description: the subject of the cert.
+                      nullable: true
+                      type: string
+                    signer:
+                      description: signer contains the issuer of the cert
+                      type: string
+                    notBefore:
+                      description: lower bound for validity
+                      type: string
+                    notAfter:
+                      description: upper bound for validity
+                      type: string
+                    bundleFile:
+                      description: the name of the bundle serving this cert.
+                      type: string
+                  type: object
+                type: array
             type: object
         required:
         - spec
