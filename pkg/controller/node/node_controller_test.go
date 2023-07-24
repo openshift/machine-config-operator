@@ -1,6 +1,7 @@
 package node
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -21,6 +22,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 
+	"github.com/davecgh/go-spew/spew"
 	apicfgv1 "github.com/openshift/api/config/v1"
 	configv1 "github.com/openshift/api/config/v1"
 	fakeconfigv1client "github.com/openshift/client-go/config/clientset/versioned/fake"
@@ -34,7 +36,16 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
+)
+
+const (
+	machineConfigV0 string = "rendered-machine-config-v0"
+	machineConfigV1 string = "rendered-machine-config-v1"
+	machineConfigV2 string = "rendered-machine-config-v2"
+	imageV0         string = "registry.com/org/repo@sha256:12345"
+	imageV1         string = "registry.com/org/repo@sha256:54321"
 )
 
 var (
@@ -71,7 +82,7 @@ func newFixture(t *testing.T) *fixture {
 	return f
 }
 
-func (f *fixture) newController() *Controller {
+func (f *fixture) newControllerWithStopChan(stopCh <-chan struct{}) *Controller {
 	f.client = fake.NewSimpleClientset(f.objects...)
 	f.kubeclient = k8sfake.NewSimpleClientset(f.kubeobjects...)
 	f.schedulerClient = fakeconfigv1client.NewSimpleClientset(f.schedulerObjects...)
@@ -79,8 +90,8 @@ func (f *fixture) newController() *Controller {
 	i := informers.NewSharedInformerFactory(f.client, noResyncPeriodFunc())
 	k8sI := kubeinformers.NewSharedInformerFactory(f.kubeclient, noResyncPeriodFunc())
 	ci := configv1informer.NewSharedInformerFactory(f.schedulerClient, noResyncPeriodFunc())
-	c := New(i.Machineconfiguration().V1().ControllerConfigs(), i.Machineconfiguration().V1().MachineConfigs(), i.Machineconfiguration().V1().MachineConfigPools(), k8sI.Core().V1().Nodes(),
-		k8sI.Core().V1().Pods(), ci.Config().V1().Schedulers(), f.kubeclient, f.client)
+	c := NewWithCustomUpdateDelay(i.Machineconfiguration().V1().ControllerConfigs(), i.Machineconfiguration().V1().MachineConfigs(), i.Machineconfiguration().V1().MachineConfigPools(), k8sI.Core().V1().Nodes(),
+		k8sI.Core().V1().Pods(), ci.Config().V1().Schedulers(), f.kubeclient, f.client, time.Millisecond)
 
 	c.ccListerSynced = alwaysReady
 	c.mcpListerSynced = alwaysReady
@@ -88,8 +99,6 @@ func (f *fixture) newController() *Controller {
 	c.schedulerListerSynced = alwaysReady
 	c.eventRecorder = &record.FakeRecorder{}
 
-	stopCh := make(chan struct{})
-	defer close(stopCh)
 	i.Start(stopCh)
 	i.WaitForCacheSync(stopCh)
 	k8sI.Start(stopCh)
@@ -110,6 +119,17 @@ func (f *fixture) newController() *Controller {
 	}
 
 	return c
+
+}
+
+func (f *fixture) newController() *Controller {
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	return f.newControllerWithStopChan(stopCh)
+}
+
+func (f *fixture) newControllerWithContext(ctx context.Context) *Controller {
+	return f.newControllerWithStopChan(ctx.Done())
 }
 
 func (f *fixture) run(pool string) {
@@ -243,6 +263,7 @@ func (f *fixture) expectPatchNodeAction(node *corev1.Node, patch []byte) {
 }
 
 func TestGetNodesForPool(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		pool  *mcfgv1.MachineConfigPool
 		nodes []*corev1.Node
@@ -251,33 +272,33 @@ func TestGetNodesForPool(t *testing.T) {
 		err      bool
 	}{
 		{
-			pool:     helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
+			pool:     helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, machineConfigV0),
 			nodes:    newMixedNodeSet(3, map[string]string{"node-role": ""}, map[string]string{"node-role/worker": ""}),
 			expected: 0,
 			err:      false,
 		},
 		{
-			pool:     helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
+			pool:     helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, machineConfigV0),
 			nodes:    newMixedNodeSet(2, map[string]string{"node-role/master": ""}, map[string]string{"node-role/worker": ""}),
 			expected: 2,
 			err:      false,
 		},
 		{
-			pool:     helpers.NewMachineConfigPool("ïnfra", nil, helpers.InfraSelector, "v0"),
+			pool:     helpers.NewMachineConfigPool("ïnfra", nil, helpers.InfraSelector, machineConfigV0),
 			nodes:    newMixedNodeSet(3, map[string]string{"node-role/master": ""}, map[string]string{"node-role/worker": "", "node-role/infra": ""}),
 			expected: 3,
 			err:      false,
 		},
 		{
 			// Mixed cluster with both Windows and Linux worker nodes. Only Linux nodes should be managed by MCO
-			pool:     helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0"),
+			pool:     helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, machineConfigV0),
 			nodes:    append(newMixedNodeSet(3, map[string]string{"node-role/master": ""}, map[string]string{"node-role/worker": "", "node-role/infra": ""}), newNodeWithLabels("windowsNode", map[string]string{osLabel: "windows"})),
 			expected: 3,
 			err:      false,
 		},
 		{
 			// Single Windows node is the cluster, so shouldn't be managed by MCO
-			pool:     helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0"),
+			pool:     helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, machineConfigV0),
 			nodes:    []*corev1.Node{newNodeWithLabels("windowsNode", map[string]string{osLabel: "windows"})},
 			expected: 0,
 			err:      false,
@@ -285,7 +306,10 @@ func TestGetNodesForPool(t *testing.T) {
 	}
 
 	for idx, test := range tests {
+		idx := idx
+		test := test
 		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
+			t.Parallel()
 			f := newFixture(t)
 
 			f.nodeLister = append(f.nodeLister, test.nodes...)
@@ -303,6 +327,7 @@ func TestGetNodesForPool(t *testing.T) {
 }
 
 func TestGetPrimaryPoolForNode(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		pools     []*mcfgv1.MachineConfigPool
 		nodeLabel map[string]string
@@ -311,8 +336,8 @@ func TestGetPrimaryPoolForNode(t *testing.T) {
 		err      bool
 	}{{
 		pools: []*mcfgv1.MachineConfigPool{
-			helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
-			helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0"),
+			helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, machineConfigV0),
+			helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, machineConfigV0),
 		},
 		nodeLabel: map[string]string{"node-role": ""},
 
@@ -320,50 +345,50 @@ func TestGetPrimaryPoolForNode(t *testing.T) {
 		err:      false,
 	}, {
 		pools: []*mcfgv1.MachineConfigPool{
-			helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
-			helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0"),
+			helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, machineConfigV0),
+			helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, machineConfigV0),
 		},
 		nodeLabel: map[string]string{"node-role/master": ""},
 
-		expected: helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
+		expected: helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, machineConfigV0),
 		err:      false,
 	}, {
 		pools: []*mcfgv1.MachineConfigPool{
-			helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
-			helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0"),
+			helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, machineConfigV0),
+			helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, machineConfigV0),
 		},
 		nodeLabel: map[string]string{"node-role/master": "", "node-role/worker": ""},
 
-		expected: helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
+		expected: helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, machineConfigV0),
 		err:      false,
 	}, {
 		pools: []*mcfgv1.MachineConfigPool{
-			helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
-			helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0"),
-			helpers.NewMachineConfigPool("infra", nil, helpers.InfraSelector, "v0"),
+			helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, machineConfigV0),
+			helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, machineConfigV0),
+			helpers.NewMachineConfigPool("infra", nil, helpers.InfraSelector, machineConfigV0),
 		},
 		nodeLabel: map[string]string{"node-role/worker": "", "node-role/infra": ""},
 
-		expected: helpers.NewMachineConfigPool("infra", nil, helpers.InfraSelector, "v0"),
+		expected: helpers.NewMachineConfigPool("infra", nil, helpers.InfraSelector, machineConfigV0),
 		err:      false,
 	}, {
 		pools: []*mcfgv1.MachineConfigPool{
-			helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
-			helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0"),
-			helpers.NewMachineConfigPool("infra", nil, helpers.InfraSelector, "v0"),
+			helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, machineConfigV0),
+			helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, machineConfigV0),
+			helpers.NewMachineConfigPool("infra", nil, helpers.InfraSelector, machineConfigV0),
 		},
 		nodeLabel: map[string]string{"node-role/master": "", "node-role/infra": ""},
 
 		// https://issues.redhat.com/browse/OCPBUGS-2177 a user should
 		// be able to label something as infra but retain master if it exists
-		expected: helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
+		expected: helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, machineConfigV0),
 		err:      false,
 	}, {
 		pools: []*mcfgv1.MachineConfigPool{
-			helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
-			helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0"),
-			helpers.NewMachineConfigPool("infra", nil, helpers.InfraSelector, "v0"),
-			helpers.NewMachineConfigPool("infra2", nil, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/infra2", ""), "v0"),
+			helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, machineConfigV0),
+			helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, machineConfigV0),
+			helpers.NewMachineConfigPool("infra", nil, helpers.InfraSelector, machineConfigV0),
+			helpers.NewMachineConfigPool("infra2", nil, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/infra2", ""), machineConfigV0),
 		},
 		nodeLabel: map[string]string{"node-role/infra": "", "node-role/infra2": ""},
 
@@ -372,8 +397,8 @@ func TestGetPrimaryPoolForNode(t *testing.T) {
 	}, {
 
 		pools: []*mcfgv1.MachineConfigPool{
-			helpers.NewMachineConfigPool("test-cluster-pool-1", nil, helpers.MasterSelector, "v0"),
-			helpers.NewMachineConfigPool("test-cluster-pool-2", nil, helpers.MasterSelector, "v0"),
+			helpers.NewMachineConfigPool("test-cluster-pool-1", nil, helpers.MasterSelector, machineConfigV0),
+			helpers.NewMachineConfigPool("test-cluster-pool-2", nil, helpers.MasterSelector, machineConfigV0),
 		},
 		nodeLabel: map[string]string{"node-role": "master"},
 
@@ -382,7 +407,7 @@ func TestGetPrimaryPoolForNode(t *testing.T) {
 	}, {
 		// MCP with Widows worker, it should not be assigned a pool
 		pools: []*mcfgv1.MachineConfigPool{
-			helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0"),
+			helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, machineConfigV0),
 		},
 		nodeLabel: map[string]string{"node-role/master": "", "node-role/worker": "", osLabel: "windows"},
 		expected:  nil,
@@ -391,9 +416,12 @@ func TestGetPrimaryPoolForNode(t *testing.T) {
 	}
 
 	for idx, test := range tests {
+		idx := idx
+		test := test
 		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
+			t.Parallel()
 			f := newFixture(t)
-			node := newNode("node-0", "v0", "v0")
+			node := newNode("node-0", machineConfigV0, machineConfigV0)
 			node.Labels = test.nodeLabel
 
 			f.nodeLister = append(f.nodeLister, node)
@@ -450,6 +478,7 @@ func newNodeSet(len int) []*corev1.Node {
 }
 
 func TestMaxUnavailable(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		poolName   string
 		maxUnavail *intstr.IntOrString
@@ -501,6 +530,8 @@ func TestMaxUnavailable(t *testing.T) {
 	}
 
 	for idx, test := range tests {
+		idx := idx
+		test := test
 		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
 			pool := &mcfgv1.MachineConfigPool{
 				ObjectMeta: metav1.ObjectMeta{
@@ -521,7 +552,9 @@ func TestMaxUnavailable(t *testing.T) {
 }
 
 func TestGetCandidateMachines(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
+		name     string
 		nodes    []*corev1.Node
 		progress int
 
@@ -530,142 +563,163 @@ func TestGetCandidateMachines(t *testing.T) {
 		otherCandidates []string
 		// capacity is the maximum number of nodes we could update
 		capacity uint
+
+		layeredPool bool
 	}{{
-		//no progress
+		name:     "no progress - capacity 1",
 		progress: 1,
 		nodes: []*corev1.Node{
-			newNodeWithReady("node-0", "v1", "v1", corev1.ConditionTrue),
-			newNodeWithReady("node-1", "v1", "v1", corev1.ConditionTrue),
-			newNodeWithReady("node-2", "v1", "v1", corev1.ConditionTrue),
+			newNodeWithReady("node-0", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+			newNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+			newNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
 		},
 		expected:        nil,
 		otherCandidates: nil,
 		capacity:        1,
 	}, {
-		//no progress
+		name:     "no progress - capacity 0",
 		progress: 1,
 		nodes: []*corev1.Node{
-			newNodeWithReady("node-0", "v1", "v1", corev1.ConditionTrue),
-			newNodeWithReady("node-1", "v1", "v1", corev1.ConditionTrue),
-			newNodeWithReady("node-2", "v1", "v1", corev1.ConditionFalse),
+			newNodeWithReady("node-0", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+			newNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+			newNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionFalse),
 		},
 		expected:        nil,
 		otherCandidates: nil,
 		capacity:        0,
 	}, {
-		//no progress because we have an unavailable node
+		name:     "no progress because we have an unavailable node",
 		progress: 1,
 		nodes: []*corev1.Node{
-			newNodeWithReady("node-0", "v1", "v1", corev1.ConditionTrue),
-			newNodeWithReady("node-1", "v1", "v1", corev1.ConditionFalse),
-			newNodeWithReady("node-2", "v0", "v1", corev1.ConditionTrue),
+			newNodeWithReady("node-0", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+			newNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionFalse),
+			newNodeWithReady("node-2", machineConfigV0, machineConfigV1, corev1.ConditionTrue),
 		},
 		expected:        nil,
 		otherCandidates: nil,
 		capacity:        0,
 	}, {
-		// node-2 is going to change config, so we can only progress one more
+		name:     "node-2 is going to change config, so we can only progress one more",
 		progress: 3,
 		nodes: []*corev1.Node{
-			newNodeWithReady("node-0", "v1", "v1", corev1.ConditionTrue),
-			newNodeWithReady("node-1", "v1", "v1", corev1.ConditionFalse),
-			newNodeWithReady("node-2", "v0", "v1", corev1.ConditionTrue),
-			newNodeWithReady("node-3", "v0", "v0", corev1.ConditionTrue),
-			newNodeWithReady("node-4", "v0", "v0", corev1.ConditionTrue),
+			newNodeWithReady("node-0", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+			newNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionFalse),
+			newNodeWithReady("node-2", machineConfigV0, machineConfigV1, corev1.ConditionTrue),
+			newNodeWithReady("node-3", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+			newNodeWithReady("node-4", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
 		},
 		expected:        []string{"node-3"},
 		otherCandidates: []string{"node-4"},
 		capacity:        1,
 	}, {
-		// We have a node working, don't start anything else
+		name:     "We have a node working, don't start anything else",
 		progress: 1,
 		nodes: []*corev1.Node{
-			newNodeWithReady("node-0", "v1", "v1", corev1.ConditionTrue),
-			newNodeWithReady("node-1", "v1", "v1", corev1.ConditionTrue),
-			newNodeWithReady("node-2", "v0", "v1", corev1.ConditionTrue),
-			newNodeWithReady("node-3", "v0", "v0", corev1.ConditionTrue),
-			newNodeWithReady("node-4", "v0", "v0", corev1.ConditionTrue),
+			newNodeWithReady("node-0", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+			newNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+			newNodeWithReady("node-2", machineConfigV0, machineConfigV1, corev1.ConditionTrue),
+			newNodeWithReady("node-3", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+			newNodeWithReady("node-4", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
 		},
 		expected:        nil,
 		otherCandidates: nil,
 		capacity:        0,
 	}, {
-		//progress on old stuck node
+		name:     "progress on old stuck node",
 		progress: 1,
 		nodes: []*corev1.Node{
-			newNodeWithReady("node-0", "v1", "v1", corev1.ConditionTrue),
+			newNodeWithReady("node-0", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
 			newNodeWithReadyAndDaemonState("node-1", "v0.1", "v0.2", corev1.ConditionTrue, daemonconsts.MachineConfigDaemonStateDegraded),
-			newNodeWithReady("node-2", "v0", "v0", corev1.ConditionTrue),
+			newNodeWithReady("node-2", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
 		},
 		expected:        []string{"node-1"},
 		otherCandidates: []string{"node-2"},
 		capacity:        1,
 	}, {
-		// Don't change a degraded node to same config, but also don't start another
+		name:     "Don't change a degraded node to same config, but also don't start another",
 		progress: 1,
 		nodes: []*corev1.Node{
-			newNodeWithReady("node-0", "v1", "v1", corev1.ConditionTrue),
-			newNodeWithReadyAndDaemonState("node-1", "v1", "v1", corev1.ConditionTrue, daemonconsts.MachineConfigDaemonStateDegraded),
-			newNodeWithReady("node-2", "v0", "v0", corev1.ConditionTrue),
+			newNodeWithReady("node-0", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+			newNodeWithReadyAndDaemonState("node-1", machineConfigV1, machineConfigV1, corev1.ConditionTrue, daemonconsts.MachineConfigDaemonStateDegraded),
+			newNodeWithReady("node-2", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
 		},
 		expected:        nil,
 		otherCandidates: nil,
 		capacity:        0,
 	}, {
-		// Must be able to roll back
+		name:     "Must be able to roll back",
 		progress: 1,
 		nodes: []*corev1.Node{
-			newNodeWithReady("node-0", "v1", "v1", corev1.ConditionTrue),
-			newNodeWithReady("node-1", "v1", "v1", corev1.ConditionTrue),
-			newNodeWithReadyAndDaemonState("node-2", "v1", "v2", corev1.ConditionTrue, daemonconsts.MachineConfigDaemonStateDegraded),
-			newNodeWithReady("node-3", "v1", "v1", corev1.ConditionTrue),
+			newNodeWithReady("node-0", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+			newNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+			newNodeWithReadyAndDaemonState("node-2", machineConfigV1, machineConfigV2, corev1.ConditionTrue, daemonconsts.MachineConfigDaemonStateDegraded),
+			newNodeWithReady("node-3", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
 		},
 		expected:        []string{"node-2"},
 		otherCandidates: nil,
 		capacity:        1,
 	}, {
-		// Validate we also don't affect nodes which haven't started work
+		name:     "Validate we also don't affect nodes which haven't started work",
 		progress: 1,
 		nodes: []*corev1.Node{
-			newNodeWithReady("node-0", "v1", "v1", corev1.ConditionTrue),
-			newNodeWithReadyAndDaemonState("node-2", "v1", "v2", corev1.ConditionTrue, daemonconsts.MachineConfigDaemonStateDone),
-			newNodeWithReady("node-3", "v1", "v1", corev1.ConditionTrue),
+			newNodeWithReady("node-0", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+			newNodeWithReadyAndDaemonState("node-2", machineConfigV1, machineConfigV2, corev1.ConditionTrue, daemonconsts.MachineConfigDaemonStateDone),
+			newNodeWithReady("node-3", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
 		},
 		expected:        nil,
 		otherCandidates: nil,
 		capacity:        0,
 	}, {
-		// A test with more nodes in mixed order
+		name:     "More nodes in mixed order",
 		progress: 4,
 		nodes: []*corev1.Node{
-			newNodeWithReady("node-0", "v1", "v1", corev1.ConditionTrue),
-			newNodeWithReady("node-1", "v1", "v1", corev1.ConditionFalse),
-			newNodeWithReady("node-2", "v0", "v1", corev1.ConditionTrue),
-			newNodeWithReady("node-3", "v0", "v0", corev1.ConditionTrue),
-			newNodeWithReady("node-4", "v0", "v0", corev1.ConditionTrue),
-			newNodeWithReady("node-5", "v0", "v0", corev1.ConditionTrue),
-			newNodeWithReady("node-6", "v0", "v0", corev1.ConditionTrue),
-			newNodeWithReady("node-7", "v1", "v1", corev1.ConditionTrue),
-			newNodeWithReady("node-8", "v1", "v1", corev1.ConditionTrue),
+			newNodeWithReady("node-0", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+			newNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionFalse),
+			newNodeWithReady("node-2", machineConfigV0, machineConfigV1, corev1.ConditionTrue),
+			newNodeWithReady("node-3", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+			newNodeWithReady("node-4", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+			newNodeWithReady("node-5", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+			newNodeWithReady("node-6", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+			newNodeWithReady("node-7", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+			newNodeWithReady("node-8", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
 		},
 		expected:        []string{"node-3", "node-4"},
 		otherCandidates: []string{"node-5", "node-6"},
 		capacity:        2,
+	}, {
+		name:     "Layered nodes in mixed order",
+		progress: 4,
+		nodes: []*corev1.Node{
+			helpers.NewNodeBuilder("node-0").WithEqualConfigsAndImages(machineConfigV1, imageV1).WithNodeReady().Node(),
+			helpers.NewNodeBuilder("node-1").WithEqualConfigsAndImages(machineConfigV1, imageV1).WithNodeNotReady().Node(),
+			helpers.NewNodeBuilder("node-2").WithConfigs(machineConfigV0, machineConfigV1).WithImages(imageV0, imageV1).WithNodeReady().Node(),
+			helpers.NewNodeBuilder("node-3").WithEqualConfigsAndImages(machineConfigV0, imageV0).WithNodeNotReady().Node(),
+			helpers.NewNodeBuilder("node-4").WithEqualConfigsAndImages(machineConfigV0, imageV0).WithNodeNotReady().Node(),
+			helpers.NewNodeBuilder("node-5").WithEqualConfigsAndImages(machineConfigV0, imageV0).WithNodeNotReady().Node(),
+			helpers.NewNodeBuilder("node-6").WithEqualConfigsAndImages(machineConfigV0, imageV0).WithNodeNotReady().Node(),
+			helpers.NewNodeBuilder("node-7").WithEqualConfigsAndImages(machineConfigV1, imageV1).WithNodeReady().Node(),
+			helpers.NewNodeBuilder("node-8").WithEqualConfigsAndImages(machineConfigV1, imageV1).WithNodeReady().Node(),
+		},
+		expected:        []string{"node-3", "node-4"},
+		otherCandidates: []string{"node-5", "node-6"},
+		capacity:        2,
+		layeredPool:     true,
 	}}
 
-	for idx, test := range tests {
-		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
-			pool := &mcfgv1.MachineConfigPool{
-				Spec: mcfgv1.MachineConfigPoolSpec{
-					Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{ObjectReference: corev1.ObjectReference{Name: "v1"}},
-				},
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			pb := helpers.NewMachineConfigPoolBuilder("").WithMachineConfig(machineConfigV1)
+			if test.layeredPool {
+				pb.WithImage(imageV1)
 			}
 
+			pool := pb.MachineConfigPool()
+
 			got := getCandidateMachines(pool, test.nodes, test.progress)
-			var nodeNames []string
-			for _, node := range got {
-				nodeNames = append(nodeNames, node.Name)
-			}
+			nodeNames := getNamesFromNodes(got)
 			assert.Equal(t, test.expected, nodeNames)
 
 			allCandidates, capacity := getAllCandidateMachines(pool, test.nodes, test.progress)
@@ -683,7 +737,34 @@ func TestGetCandidateMachines(t *testing.T) {
 	}
 }
 
-func assertPatchesNode0ToV1(t *testing.T, actions []core.Action) {
+func assertNodeDoesNotHaveAnnotations(t *testing.T, client *k8sfake.Clientset, nodeName string, annoKeys []string) {
+	t.Helper()
+
+	node, err := client.CoreV1().Nodes().Get(context.TODO(), nodeName, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	for _, key := range annoKeys {
+		assert.NotContains(t, node.Annotations, key)
+	}
+}
+
+func assertNodeHasAnnotations(t *testing.T, client *k8sfake.Clientset, nodeName string, annos map[string]string) {
+	t.Helper()
+
+	node, err := client.CoreV1().Nodes().Get(context.TODO(), nodeName, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	for k, v := range annos {
+		assert.Contains(t, node.Annotations, k)
+		assert.Equal(t, v, node.Annotations[k])
+	}
+
+	if t.Failed() {
+		helpers.DumpNodesAndPools(t, []*corev1.Node{node}, nil)
+	}
+}
+
+func assertNodeGetsAnnotations(t *testing.T, actions []core.Action, annos map[string]string) {
 	if !assert.Equal(t, 2, len(actions)) {
 		t.Fatal("actions")
 	}
@@ -694,53 +775,78 @@ func assertPatchesNode0ToV1(t *testing.T, actions []core.Action) {
 		t.Fatal(actions)
 	}
 
-	expected := []byte(`{"metadata":{"annotations":{"machineconfiguration.openshift.io/desiredConfig":"v1"}}}`)
+	expected := map[string]interface{}{
+		"metadata": map[string]interface{}{
+			"annotations": annos,
+		},
+	}
+
+	expectedBytes, err := json.Marshal(expected)
+	require.NoError(t, err)
+
 	actual := actions[1].(core.PatchAction).GetPatch()
-	assert.Equal(t, expected, actual)
+	assert.JSONEq(t, string(expectedBytes), string(actual))
 }
 
-func TestSetDesiredMachineConfigAnnotation(t *testing.T) {
+func assertPatchesNode0ToV1(t *testing.T, actions []core.Action) {
+	assertNodeGetsAnnotations(t, actions, map[string]string{
+		daemonconsts.DesiredMachineConfigAnnotationKey: machineConfigV1,
+	})
+}
+
+func TestUpdateCandidates(t *testing.T) {
+	t.Parallel()
 
 	tests := []struct {
+		name       string
 		node       *corev1.Node
+		pool       *mcfgv1.MachineConfigPool
 		extraannos map[string]string
 
-		verify func([]core.Action, *testing.T)
+		verify    func([]core.Action, *testing.T)
+		verifyAPI func(*testing.T, *k8sfake.Clientset)
 	}{{
+		name: "Node has no annotations",
 		node: newNode("node-0", "", ""),
 		verify: func(actions []core.Action, t *testing.T) {
 			assertPatchesNode0ToV1(t, actions)
 		},
 	}, {
+		name:       "Node has no MachineConfig annotations",
 		node:       newNode("node-0", "", ""),
 		extraannos: map[string]string{"test": "extra-annotation"},
 		verify: func(actions []core.Action, t *testing.T) {
 			assertPatchesNode0ToV1(t, actions)
 		},
 	}, {
-		node: newNode("node-0", "v0", ""),
+		name: "Node has current MachineConfig annotation only",
+		node: newNode("node-0", machineConfigV0, ""),
 		verify: func(actions []core.Action, t *testing.T) {
 			assertPatchesNode0ToV1(t, actions)
 		},
 	}, {
-		node:       newNode("node-0", "v0", ""),
+		name:       "Node has current MachineConfig annotation and extra ones",
+		node:       newNode("node-0", machineConfigV0, ""),
 		extraannos: map[string]string{"test": "extra-annotation"},
 		verify: func(actions []core.Action, t *testing.T) {
 			assertPatchesNode0ToV1(t, actions)
 		},
 	}, {
-		node: newNode("node-0", "v0", "v0"),
+		name: "Node has both current and desired MachineConfig annotations",
+		node: newNode("node-0", machineConfigV0, machineConfigV0),
 		verify: func(actions []core.Action, t *testing.T) {
 			assertPatchesNode0ToV1(t, actions)
 		},
 	}, {
-		node:       newNode("node-0", "v0", "v0"),
+		name:       "Node has current and desired MachineConfig annotations and extra annotations",
+		node:       newNode("node-0", machineConfigV0, machineConfigV0),
 		extraannos: map[string]string{"test": "extra-annotation"},
 		verify: func(actions []core.Action, t *testing.T) {
 			assertPatchesNode0ToV1(t, actions)
 		},
 	}, {
-		node: newNode("node-0", "v0", "v1"),
+		name: "Node has mismatched MachineConfig annotations",
+		node: newNode("node-0", machineConfigV0, machineConfigV1),
 		verify: func(actions []core.Action, t *testing.T) {
 			if !assert.Equal(t, 1, len(actions)) {
 				return
@@ -751,7 +857,8 @@ func TestSetDesiredMachineConfigAnnotation(t *testing.T) {
 			}
 		},
 	}, {
-		node:       newNode("node-0", "v0", "v1"),
+		name:       "Node has mismatched MachineConfig annotations and extra annotations",
+		node:       newNode("node-0", machineConfigV0, machineConfigV1),
 		extraannos: map[string]string{"test": "extra-annotation"},
 		verify: func(actions []core.Action, t *testing.T) {
 			if !assert.Equal(t, 1, len(actions)) {
@@ -762,10 +869,49 @@ func TestSetDesiredMachineConfigAnnotation(t *testing.T) {
 				t.Fatal(actions)
 			}
 		},
-	}}
+	}, {
+		name: "MachineConfig and OS image change together",
+		node: helpers.NewNodeBuilder("node-0").WithEqualConfigsAndImages(machineConfigV0, imageV0).Node(),
+		pool: helpers.NewMachineConfigPoolBuilder("").WithMachineConfig(machineConfigV1).WithImage(imageV1).MachineConfigPool(),
+		verifyAPI: func(t *testing.T, client *k8sfake.Clientset) {
+			assertNodeHasAnnotations(t, client, "node-0", map[string]string{
+				daemonconsts.DesiredMachineConfigAnnotationKey: machineConfigV1,
+				daemonconsts.DesiredImageAnnotationKey:         imageV1,
+			})
+		},
+	}, {
+		name: "only the OS changes",
+		node: helpers.NewNodeBuilder("node-0").WithEqualConfigs(machineConfigV1).WithImages(imageV0, imageV1).Node(),
+		pool: helpers.NewMachineConfigPoolBuilder("").WithMachineConfig(machineConfigV1).WithImage(imageV1).MachineConfigPool(),
+		verifyAPI: func(t *testing.T, client *k8sfake.Clientset) {
+			assertNodeHasAnnotations(t, client, "node-0", map[string]string{
+				daemonconsts.DesiredImageAnnotationKey:         imageV1,
+				daemonconsts.DesiredMachineConfigAnnotationKey: machineConfigV1,
+			})
+		},
+	}, {
+		name: "node loses desired image annotation because pool is not layered",
+		node: helpers.NewNodeBuilder("node-0").WithEqualConfigsAndImages(machineConfigV1, imageV1).Node(),
+		verifyAPI: func(t *testing.T, client *k8sfake.Clientset) {
+			assertNodeDoesNotHaveAnnotations(t, client, "node-0", []string{
+				daemonconsts.DesiredImageAnnotationKey,
+			})
 
-	for idx, test := range tests {
-		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
+			assertNodeHasAnnotations(t, client, "node-0", map[string]string{
+				daemonconsts.DesiredMachineConfigAnnotationKey: machineConfigV1,
+				// The MCD is responsible for clearing the current image annotation key.
+				daemonconsts.CurrentImageAnnotationKey: imageV1,
+			})
+		},
+	},
+	}
+
+	for _, test := range tests {
+		test := test
+
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			f := newFixture(t)
 			if test.extraannos != nil {
 				if test.node.Annotations == nil {
@@ -775,32 +921,53 @@ func TestSetDesiredMachineConfigAnnotation(t *testing.T) {
 					test.node.Annotations[k] = v
 				}
 			}
+
+			if test.pool == nil {
+				test.pool = helpers.NewMachineConfigPoolBuilder("").WithMachineConfig(machineConfigV1).MachineConfigPool()
+			}
+
+			// Not sure why this is suddenly required now...
+			f.ccLister = append(f.ccLister, newControllerConfig(ctrlcommon.ControllerConfigName, configv1.TopologyMode("")))
+
 			f.nodeLister = append(f.nodeLister, test.node)
 			f.kubeobjects = append(f.kubeobjects, test.node)
+			f.objects = append(f.objects, test.pool)
 
 			c := f.newController()
 
-			err := c.setDesiredMachineConfigAnnotation(test.node.Name, "v1")
+			err := c.setDesiredAnnotations(test.pool, []*corev1.Node{test.node})
 			if !assert.Nil(t, err) {
 				return
 			}
 
-			test.verify(filterInformerActions(f.kubeclient.Actions()), t)
+			if test.verify != nil {
+				test.verify(filterInformerActions(f.kubeclient.Actions()), t)
+			}
+
+			if test.verifyAPI != nil {
+				test.verifyAPI(t, f.kubeclient)
+			}
 		})
 	}
 }
 
 func TestShouldMakeProgress(t *testing.T) {
+	t.Parallel()
 	// nodeWithDesiredConfigTaints is at desired config, so need to do a get on the nodeWithDesiredConfigTaints to check for the taint status
-	nodeWithDesiredConfigTaints := newNodeWithLabel("nodeWithDesiredConfigTaints", "v1", "v1", map[string]string{"node-role/worker": "", "node-role/infra": ""})
+	nodeWithDesiredConfigTaints := newNodeWithLabel("nodeWithDesiredConfigTaints", machineConfigV1, machineConfigV1, map[string]string{"node-role/worker": "", "node-role/infra": ""})
 	// Update nodeWithDesiredConfigTaints to have the needed taint and some dummy taint, UpdateInProgress taint should be removed
 	nodeWithDesiredConfigTaints.Spec.Taints = []corev1.Taint{*constants.NodeUpdateInProgressTaint, {Key: "dummy", Effect: corev1.TaintEffectPreferNoSchedule}}
 	// nodeWithNoDesiredConfigButTaints
-	nodeWithNoDesiredConfigButTaints := newNodeWithLabel("nodeWithNoDesiredConfigButTaints", "v0", "v0", map[string]string{"node-role/worker": "", "node-role/infra": ""})
+	nodeWithNoDesiredConfigButTaints := newNodeWithLabel("nodeWithNoDesiredConfigButTaints", machineConfigV0, machineConfigV0, map[string]string{"node-role/worker": "", "node-role/infra": ""})
 	nodeWithNoDesiredConfigButTaints.Spec.Taints = []corev1.Taint{*constants.NodeUpdateInProgressTaint}
 	tests := []struct {
-		description             string
-		node                    *corev1.Node
+		description string
+		node        *corev1.Node
+		workerPool  *mcfgv1.MachineConfigPool
+		infraPool   *mcfgv1.MachineConfigPool
+
+		workerPoolBuilder       *helpers.MachineConfigPoolBuilder
+		infraPoolBuilder        *helpers.MachineConfigPoolBuilder
 		expectAnnotationPatch   bool
 		expectTaintsAddPatch    bool
 		expectTaintsRemovePatch bool
@@ -809,13 +976,13 @@ func TestShouldMakeProgress(t *testing.T) {
 	}{
 		{
 			description:           "node at desired config no patch on annotation or taints",
-			node:                  newNodeWithLabel("nodeAtDesiredConfig", "v1", "v1", map[string]string{"node-role/worker": "", "node-role/infra": ""}),
+			node:                  newNodeWithLabel("nodeAtDesiredConfig", machineConfigV1, machineConfigV1, map[string]string{"node-role/worker": "", "node-role/infra": ""}),
 			expectAnnotationPatch: false,
 			expectTaintsAddPatch:  false,
 		},
 		{
 			description:           "node not at desired config, patch on annotation and taints",
-			node:                  newNodeWithLabel("nodeNeedingUpdates", "v0", "v0", map[string]string{"node-role/worker": "", "node-role/infra": ""}),
+			node:                  newNodeWithLabel("nodeNeedingUpdates", machineConfigV0, machineConfigV0, map[string]string{"node-role/worker": "", "node-role/infra": ""}),
 			expectAnnotationPatch: true,
 			expectTaintsAddPatch:  true,
 		},
@@ -833,18 +1000,69 @@ func TestShouldMakeProgress(t *testing.T) {
 			expectAnnotationPatch: true,
 			expectTaintsAddPatch:  false,
 		},
+		{
+			description: "node not at desired image, will not proceed because image is still building",
+			node:        helpers.NewNodeBuilder("layered-node").WithEqualConfigsAndImages(machineConfigV1, imageV0).WithLabels(map[string]string{"node-role/worker": "", "node-role/infra": ""}).Node(),
+			workerPool:  helpers.NewMachineConfigPoolBuilder("worker").WithNodeSelector(helpers.WorkerSelector).WithMachineConfig(machineConfigV1).WithCondition(mcfgv1.MachineConfigPoolBuilding, corev1.ConditionTrue, "", "").MachineConfigPool(),
+			infraPool:   helpers.NewMachineConfigPoolBuilder("test-cluster-infra").WithNodeSelector(helpers.InfraSelector).WithMachineConfig(machineConfigV1).WithMaxUnavailable(1).WithCondition(mcfgv1.MachineConfigPoolBuilding, corev1.ConditionTrue, "", "").MachineConfigPool(),
+		},
+		{
+			description: "node not at desired image, will not proceed because image is built but yet not populated",
+			node:        helpers.NewNodeBuilder("layered-node").WithEqualConfigsAndImages(machineConfigV1, imageV0).WithLabels(map[string]string{"node-role/worker": "", "node-role/infra": ""}).Node(),
+			workerPool:  helpers.NewMachineConfigPoolBuilder("worker").WithNodeSelector(helpers.WorkerSelector).WithMachineConfig(machineConfigV1).WithCondition(mcfgv1.MachineConfigPoolBuildSuccess, corev1.ConditionTrue, "", "").MachineConfigPool(),
+			infraPool:   helpers.NewMachineConfigPoolBuilder("test-cluster-infra").WithNodeSelector(helpers.InfraSelector).WithMachineConfig(machineConfigV1).WithMaxUnavailable(1).WithCondition(mcfgv1.MachineConfigPoolBuildSuccess, corev1.ConditionTrue, "", "").MachineConfigPool(),
+		},
+		{
+			description:           "node not at desired image, should proceed because image is built and populated",
+			node:                  helpers.NewNodeBuilder("layered-node").WithEqualConfigsAndImages(machineConfigV1, imageV0).WithLabels(map[string]string{"node-role/worker": "", "node-role/infra": ""}).Node(),
+			workerPool:            helpers.NewMachineConfigPoolBuilder("worker").WithNodeSelector(helpers.WorkerSelector).WithMachineConfig(machineConfigV1).WithCondition(mcfgv1.MachineConfigPoolBuildSuccess, corev1.ConditionTrue, "", "").WithImage(imageV1).MachineConfigPool(),
+			infraPool:             helpers.NewMachineConfigPoolBuilder("test-cluster-infra").WithNodeSelector(helpers.InfraSelector).WithMachineConfig(machineConfigV1).WithMaxUnavailable(1).WithCondition(mcfgv1.MachineConfigPoolBuildSuccess, corev1.ConditionTrue, "", "").WithImage(imageV1).MachineConfigPool(),
+			expectAnnotationPatch: true,
+			expectTaintsAddPatch:  true,
+		},
+		{
+			description:           "layered node should go back to unlayered if pool loses layering",
+			node:                  helpers.NewNodeBuilder("layered-node").WithEqualConfigsAndImages(machineConfigV1, imageV1).WithLabels(map[string]string{"node-role/worker": "", "node-role/infra": ""}).Node(),
+			expectAnnotationPatch: true,
+			expectTaintsAddPatch:  true,
+		},
 	}
+
 	for _, test := range tests {
+		test := test
 		t.Run(test.description, func(t *testing.T) {
+			t.Parallel()
+
 			f := newFixture(t)
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, configv1.TopologyMode(""))
-			mcp := helpers.NewMachineConfigPool("test-cluster-infra", nil, helpers.InfraSelector, "v1")
-			mcpWorker := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v1")
-			mcp.Spec.MaxUnavailable = intStrPtr(intstr.FromInt(1))
+
+			if test.workerPool == nil {
+				test.workerPool = helpers.NewMachineConfigPoolBuilder("worker").WithNodeSelector(helpers.WorkerSelector).WithMachineConfig(machineConfigV1).MachineConfigPool()
+			}
+
+			if test.infraPool == nil {
+				test.infraPool = helpers.NewMachineConfigPoolBuilder("test-cluster-infra").WithNodeSelector(helpers.InfraSelector).WithMachineConfig(machineConfigV1).WithMaxUnavailable(1).MachineConfigPool()
+			}
+
+			mcpWorker := test.workerPool
+			mcp := test.infraPool
+
+			existingNodeBuilder := helpers.NewNodeBuilder("existingNodeAtDesiredConfig").WithEqualConfigs(machineConfigV1).WithLabels(map[string]string{"node-role/worker": "", "node-role/infra": ""})
+			lps := ctrlcommon.NewLayeredPoolState(mcp)
+			if lps.IsLayered() && lps.HasOSImage() {
+				image := lps.GetOSImage()
+				existingNodeBuilder.WithDesiredImage(image).WithCurrentImage(image)
+			}
+
+			lps = ctrlcommon.NewLayeredPoolState(mcpWorker)
+			if lps.IsLayered() && lps.HasOSImage() {
+				image := lps.GetOSImage()
+				existingNodeBuilder.WithDesiredImage(image).WithCurrentImage(image)
+			}
 
 			nodes := []*corev1.Node{
-				// Existing node in the cluster at desired config
-				newNodeWithLabel("existingNodeAtDesiredConfig", "v1", "v1", map[string]string{"node-role/worker": "", "node-role/infra": ""}),
+				// Existing node in the cluster at desired config / image status.
+				existingNodeBuilder.Node(),
 				test.node,
 			}
 
@@ -858,6 +1076,7 @@ func TestShouldMakeProgress(t *testing.T) {
 			var oldData, newData, exppatch []byte
 			var err error
 			expNode := nodes[1].DeepCopy()
+
 			if test.expectTaintsRemovePatch {
 				var taints []corev1.Taint
 				for _, taint := range expNode.Spec.Taints {
@@ -898,7 +1117,16 @@ func TestShouldMakeProgress(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				expNode.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] = "v1"
+
+				lps := ctrlcommon.NewLayeredPoolState(mcp)
+				if lps.IsLayered() && lps.HasOSImage() && lps.IsBuildSuccess() {
+					t.Logf("expecting that the node should get the desired image annotation, desired image is: %s", lps.GetOSImage())
+					expNode.Annotations[daemonconsts.DesiredImageAnnotationKey] = lps.GetOSImage()
+				} else if nodes[1].Annotations[daemonconsts.DesiredImageAnnotationKey] != "" {
+					delete(expNode.Annotations, daemonconsts.DesiredImageAnnotationKey)
+				}
+
+				expNode.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] = machineConfigV1
 				newData, err = json.Marshal(expNode)
 				if err != nil {
 					t.Fatal(err)
@@ -907,18 +1135,31 @@ func TestShouldMakeProgress(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
+
 				f.expectPatchNodeAction(expNode, exppatch)
+			} else {
+				t.Logf("not expecting annotation")
 			}
 			expStatus := calculateStatus(cc, mcp, nodes)
 			expMcp := mcp.DeepCopy()
 			expMcp.Status = expStatus
 			f.expectUpdateMachineConfigPoolStatus(expMcp)
 			f.run(getKey(mcp, t))
+
+			if t.Failed() {
+				nodeList, err := f.kubeclient.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{})
+				require.NoError(t, err)
+				for _, node := range nodeList.Items {
+					t.Logf("Node %s has annotations: %s", node.Name, spew.Sdump(node.Annotations))
+				}
+				helpers.DumpNodesAndPools(t, nodes, []*mcfgv1.MachineConfigPool{mcp, mcpWorker})
+			}
 		})
 	}
 }
 
 func TestEmptyCurrentMachineConfig(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	cc := newControllerConfig(ctrlcommon.ControllerConfigName, configv1.TopologyMode(""))
 	mcp := helpers.NewMachineConfigPool("test-cluster-master", nil, helpers.MasterSelector, "")
@@ -931,15 +1172,16 @@ func TestEmptyCurrentMachineConfig(t *testing.T) {
 }
 
 func TestPaused(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	cc := newControllerConfig(ctrlcommon.ControllerConfigName, configv1.TopologyMode(""))
-	mcp := helpers.NewMachineConfigPool("test-cluster-infra", nil, helpers.InfraSelector, "v1")
-	mcpWorker := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v1")
+	mcp := helpers.NewMachineConfigPool("test-cluster-infra", nil, helpers.InfraSelector, machineConfigV1)
+	mcpWorker := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, machineConfigV1)
 	mcp.Spec.MaxUnavailable = intStrPtr(intstr.FromInt(1))
 	mcp.Spec.Paused = true
 	nodes := []*corev1.Node{
-		newNodeWithLabel("node-0", "v1", "v1", map[string]string{"node-role/worker": "", "node-role/infra": ""}),
-		newNodeWithLabel("node-1", "v0", "v0", map[string]string{"node-role/worker": "", "node-role/infra": ""}),
+		newNodeWithLabel("node-0", machineConfigV1, machineConfigV1, map[string]string{"node-role/worker": "", "node-role/infra": ""}),
+		newNodeWithLabel("node-1", machineConfigV0, machineConfigV0, map[string]string{"node-role/worker": "", "node-role/infra": ""}),
 	}
 
 	f.ccLister = append(f.ccLister, cc)
@@ -959,14 +1201,15 @@ func TestPaused(t *testing.T) {
 }
 
 func TestShouldUpdateStatusOnlyUpdated(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	cc := newControllerConfig(ctrlcommon.ControllerConfigName, configv1.TopologyMode(""))
-	mcp := helpers.NewMachineConfigPool("test-cluster-infra", nil, helpers.InfraSelector, "v1")
-	mcpWorker := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v1")
+	mcp := helpers.NewMachineConfigPool("test-cluster-infra", nil, helpers.InfraSelector, machineConfigV1)
+	mcpWorker := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, machineConfigV1)
 	mcp.Spec.MaxUnavailable = intStrPtr(intstr.FromInt(1))
 	nodes := []*corev1.Node{
-		newNodeWithLabel("node-0", "v1", "v1", map[string]string{"node-role/worker": "", "node-role/infra": ""}),
-		newNodeWithLabel("node-1", "v1", "v1", map[string]string{"node-role/worker": "", "node-role/infra": ""}),
+		newNodeWithLabel("node-0", machineConfigV1, machineConfigV1, map[string]string{"node-role/worker": "", "node-role/infra": ""}),
+		newNodeWithLabel("node-1", machineConfigV1, machineConfigV1, map[string]string{"node-role/worker": "", "node-role/infra": ""}),
 	}
 
 	f.ccLister = append(f.ccLister, cc)
@@ -986,14 +1229,15 @@ func TestShouldUpdateStatusOnlyUpdated(t *testing.T) {
 }
 
 func TestShouldUpdateStatusOnlyNoProgress(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	cc := newControllerConfig(ctrlcommon.ControllerConfigName, configv1.TopologyMode(""))
-	mcp := helpers.NewMachineConfigPool("test-cluster-infra", nil, helpers.InfraSelector, "v1")
-	mcpWorker := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v1")
+	mcp := helpers.NewMachineConfigPool("test-cluster-infra", nil, helpers.InfraSelector, machineConfigV1)
+	mcpWorker := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, machineConfigV1)
 	mcp.Spec.MaxUnavailable = intStrPtr(intstr.FromInt(1))
 	nodes := []*corev1.Node{
-		newNodeWithLabel("node-0", "v1", "v1", map[string]string{"node-role/worker": "", "node-role/infra": ""}),
-		newNodeWithLabel("node-1", "v0", "v1", map[string]string{"node-role/worker": "", "node-role/infra": ""}),
+		newNodeWithLabel("node-0", machineConfigV1, machineConfigV1, map[string]string{"node-role/worker": "", "node-role/infra": ""}),
+		newNodeWithLabel("node-1", machineConfigV0, machineConfigV1, map[string]string{"node-role/worker": "", "node-role/infra": ""}),
 	}
 
 	f.ccLister = append(f.ccLister, cc)
@@ -1047,14 +1291,15 @@ func TestCertStatus(t *testing.T) {
 }
 
 func TestShouldDoNothing(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	cc := newControllerConfig(ctrlcommon.ControllerConfigName, configv1.TopologyMode(""))
-	mcp := helpers.NewMachineConfigPool("test-cluster-infra", nil, helpers.InfraSelector, "v1")
-	mcpWorker := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v1")
+	mcp := helpers.NewMachineConfigPool("test-cluster-infra", nil, helpers.InfraSelector, machineConfigV1)
+	mcpWorker := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, machineConfigV1)
 	mcp.Spec.MaxUnavailable = intStrPtr(intstr.FromInt(1))
 	nodes := []*corev1.Node{
-		newNodeWithLabel("node-0", "v1", "v1", map[string]string{"node-role/worker": "", "node-role/infra": ""}),
-		newNodeWithLabel("node-1", "v1", "v1", map[string]string{"node-role/worker": "", "node-role/infra": ""}),
+		newNodeWithLabel("node-0", machineConfigV1, machineConfigV1, map[string]string{"node-role/worker": "", "node-role/infra": ""}),
+		newNodeWithLabel("node-1", machineConfigV1, machineConfigV1, map[string]string{"node-role/worker": "", "node-role/infra": ""}),
 	}
 	status := calculateStatus(cc, mcp, nodes)
 	mcp.Status = status
@@ -1071,31 +1316,32 @@ func TestShouldDoNothing(t *testing.T) {
 }
 
 func TestSortNodeList(t *testing.T) {
-	node_zoneQQQ := newNodeWithLabel("node-1", "v1", "v1", map[string]string{"topology.kubernetes.io/zone": "QQQ"})
+	t.Parallel()
+	node_zoneQQQ := newNodeWithLabel("node-1", machineConfigV1, machineConfigV1, map[string]string{"topology.kubernetes.io/zone": "QQQ"})
 	node_zoneQQQ.CreationTimestamp = metav1.NewTime(time.Unix(0, 42))
 
-	older_node_zoneRRR := newNodeWithLabel("node-2", "v1", "v1", map[string]string{"topology.kubernetes.io/zone": "RRR"})
+	older_node_zoneRRR := newNodeWithLabel("node-2", machineConfigV1, machineConfigV1, map[string]string{"topology.kubernetes.io/zone": "RRR"})
 	older_node_zoneRRR.CreationTimestamp = metav1.NewTime(time.Unix(0, 42))
 
-	newer_node_zoneRRR := newNodeWithLabel("node-3", "v1", "v1", map[string]string{"topology.kubernetes.io/zone": "RRR"})
+	newer_node_zoneRRR := newNodeWithLabel("node-3", machineConfigV1, machineConfigV1, map[string]string{"topology.kubernetes.io/zone": "RRR"})
 	newer_node_zoneRRR.CreationTimestamp = metav1.NewTime(time.Unix(100, 30))
 
-	older_node_zoneZZZ := newNodeWithLabel("node-4", "v1", "v1", map[string]string{"topology.kubernetes.io/zone": "ZZZ"})
+	older_node_zoneZZZ := newNodeWithLabel("node-4", machineConfigV1, machineConfigV1, map[string]string{"topology.kubernetes.io/zone": "ZZZ"})
 	older_node_zoneZZZ.CreationTimestamp = metav1.NewTime(time.Unix(0, 42))
 
-	newer_node_zoneZZZ := newNodeWithLabel("node-5", "v1", "v1", map[string]string{"topology.kubernetes.io/zone": "ZZZ"})
+	newer_node_zoneZZZ := newNodeWithLabel("node-5", machineConfigV1, machineConfigV1, map[string]string{"topology.kubernetes.io/zone": "ZZZ"})
 	newer_node_zoneZZZ.CreationTimestamp = metav1.NewTime(time.Unix(100, 30))
 
-	newest_node_zoneZZZ := newNodeWithLabel("node-6", "v1", "v1", map[string]string{"topology.kubernetes.io/zone": "ZZZ"})
+	newest_node_zoneZZZ := newNodeWithLabel("node-6", machineConfigV1, machineConfigV1, map[string]string{"topology.kubernetes.io/zone": "ZZZ"})
 	newest_node_zoneZZZ.CreationTimestamp = metav1.NewTime(time.Unix(1500, 30))
 
-	old_node_nozone := newNode("node-7", "v1", "v1")
+	old_node_nozone := newNode("node-7", machineConfigV1, machineConfigV1)
 	old_node_nozone.CreationTimestamp = metav1.NewTime(time.Unix(0, 42))
 
-	newer_node_nozone := newNode("node-8", "v1", "v1")
+	newer_node_nozone := newNode("node-8", machineConfigV1, machineConfigV1)
 	newer_node_nozone.CreationTimestamp = metav1.NewTime(time.Unix(200, 30))
 
-	newest_node_nozone := newNode("node-9", "v1", "v1")
+	newest_node_nozone := newNode("node-9", machineConfigV1, machineConfigV1)
 	newest_node_nozone.CreationTimestamp = metav1.NewTime(time.Unix(900, 30))
 
 	nodes := []*corev1.Node{
@@ -1130,16 +1376,17 @@ func TestSortNodeList(t *testing.T) {
 }
 
 func TestControlPlaneTopology(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	cc := newControllerConfig(ctrlcommon.ControllerConfigName, configv1.SingleReplicaTopologyMode)
-	mcp := helpers.NewMachineConfigPool("test-cluster-infra", nil, helpers.InfraSelector, "v1")
-	mcpWorker := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v1")
+	mcp := helpers.NewMachineConfigPool("test-cluster-infra", nil, helpers.InfraSelector, machineConfigV1)
+	mcpWorker := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, machineConfigV1)
 	mcp.Spec.MaxUnavailable = intStrPtr(intstr.FromInt(1))
 	annotations := map[string]string{daemonconsts.ClusterControlPlaneTopologyAnnotationKey: "SingleReplica"}
 
 	nodes := []*corev1.Node{
-		newNodeWithLabel("node-0", "v1", "v1", map[string]string{"node-role/worker": "", "node-role/infra": ""}),
-		newNodeWithLabel("node-1", "v1", "v1", map[string]string{"node-role/worker": "", "node-role/infra": ""}),
+		newNodeWithLabel("node-0", machineConfigV1, machineConfigV1, map[string]string{"node-role/worker": "", "node-role/infra": ""}),
+		newNodeWithLabel("node-1", machineConfigV1, machineConfigV1, map[string]string{"node-role/worker": "", "node-role/infra": ""}),
 	}
 
 	for _, node := range nodes {

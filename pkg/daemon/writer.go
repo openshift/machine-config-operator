@@ -140,6 +140,7 @@ func (nw *clusterNodeWriter) SetDone(dcAnnotation string) error {
 		// clear out any Degraded/Unreconcilable reason
 		constants.MachineConfigDaemonReasonAnnotationKey: "",
 	}
+
 	UpdateStateMetric(mcdState, constants.MachineConfigDaemonStateDone, "")
 	respChan := make(chan response, 1)
 	nw.writer <- message{
