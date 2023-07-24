@@ -641,7 +641,7 @@ func TestCalculateStatus(t *testing.T) {
 					Paused:        test.paused,
 				},
 			}
-			status := calculateStatus(pool, test.nodes)
+			status := calculateStatus(nil, pool, test.nodes)
 			test.verify(status, t)
 		})
 	}

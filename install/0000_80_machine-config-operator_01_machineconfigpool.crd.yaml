@@ -427,3 +427,19 @@ spec:
                   targeted by the pool that have the CurrentMachineConfig as their config.
                 type: integer
                 format: int32
+              certExpirys:
+                description: The certificate expiry dates from the controller config
+                type: array
+                items:
+                  description: A label selector requirement is a selector that contains values, a key, and an operator that relates the key and values.
+                  type: object
+                  properties:
+                    bundle:
+                      description: the bundle for which the expiry applies
+                      type: string
+                    subject:
+                      description: the subject of the cert
+                      type: string
+                    expiry:
+                      description: the date when the cert expires
+                      type: string 
