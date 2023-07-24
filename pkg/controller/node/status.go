@@ -35,10 +35,10 @@ func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
 	newPool.Status = newStatus
 	_, err = ctrl.client.MachineconfigurationV1().MachineConfigPools().UpdateStatus(context.TODO(), newPool, metav1.UpdateOptions{})
 	if pool.Spec.Configuration.Name != newPool.Spec.Configuration.Name {
-		ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, "Updating", "Pool %s now targeting %s", pool.Name, newPool.Spec.Configuration.Name)
+		ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, "Updating", "Pool %s now targeting %s", pool.Name, getPoolUpdateLine(newPool))
 	}
 	if pool.Status.Configuration.Name != newPool.Status.Configuration.Name {
-		ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, "Completed", "Pool %s has completed update to %s", pool.Name, newPool.Status.Configuration.Name)
+		ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, "Completed", "Pool %s has completed update to %s", pool.Name, getPoolUpdateLine(newPool))
 	}
 	return err
 }
@@ -59,13 +59,13 @@ func calculateStatus(cconfig *v1.ControllerConfig, pool *mcfgv1.MachineConfigPoo
 	}
 	machineCount := int32(len(nodes))
 
-	updatedMachines := getUpdatedMachines(pool.Spec.Configuration.Name, nodes)
+	updatedMachines := getUpdatedMachines(pool, nodes)
 	updatedMachineCount := int32(len(updatedMachines))
 
-	readyMachines := getReadyMachines(pool.Spec.Configuration.Name, nodes)
+	readyMachines := getReadyMachines(pool, nodes)
 	readyMachineCount := int32(len(readyMachines))
 
-	unavailableMachines := getUnavailableMachines(nodes)
+	unavailableMachines := getUnavailableMachines(nodes, pool)
 	unavailableMachineCount := int32(len(unavailableMachines))
 
 	degradedMachines := getDegradedMachines(nodes)
@@ -100,7 +100,7 @@ func calculateStatus(cconfig *v1.ControllerConfig, pool *mcfgv1.MachineConfigPoo
 
 	if allUpdated {
 		//TODO: update api to only have one condition regarding status of update.
-		updatedMsg := fmt.Sprintf("All nodes are updated with %s", pool.Spec.Configuration.Name)
+		updatedMsg := fmt.Sprintf("All nodes are updated with %s", getPoolUpdateLine(pool))
 		supdated := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdated, corev1.ConditionTrue, "", updatedMsg)
 		mcfgv1.SetMachineConfigPoolCondition(&status, *supdated)
 
@@ -114,10 +114,10 @@ func calculateStatus(cconfig *v1.ControllerConfig, pool *mcfgv1.MachineConfigPoo
 		supdated := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdated, corev1.ConditionFalse, "", "")
 		mcfgv1.SetMachineConfigPoolCondition(&status, *supdated)
 		if pool.Spec.Paused {
-			supdating := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionFalse, "", fmt.Sprintf("Pool is paused; will not update to %s", pool.Spec.Configuration.Name))
+			supdating := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionFalse, "", fmt.Sprintf("Pool is paused; will not update to %s", getPoolUpdateLine(pool)))
 			mcfgv1.SetMachineConfigPoolCondition(&status, *supdating)
 		} else {
-			supdating := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionTrue, "", fmt.Sprintf("All nodes are updating to %s", pool.Spec.Configuration.Name))
+			supdating := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionTrue, "", fmt.Sprintf("All nodes are updating to %s", getPoolUpdateLine(pool)))
 			mcfgv1.SetMachineConfigPoolCondition(&status, *supdating)
 		}
 	}
@@ -149,6 +149,22 @@ func calculateStatus(cconfig *v1.ControllerConfig, pool *mcfgv1.MachineConfigPoo
 	}
 
 	return status
+}
+
+func getPoolUpdateLine(pool *mcfgv1.MachineConfigPool) string {
+	targetConfig := pool.Spec.Configuration.Name
+	mcLine := fmt.Sprintf("MachineConfig %s", targetConfig)
+
+	if !ctrlcommon.IsLayeredPool(pool) {
+		return mcLine
+	}
+
+	targetImage, ok := pool.Annotations[ctrlcommon.ExperimentalNewestLayeredImageEquivalentConfigAnnotationKey]
+	if !ok {
+		return mcLine
+	}
+
+	return fmt.Sprintf("%s / Image %s", mcLine, targetImage)
 }
 
 // isNodeManaged checks whether the MCD has ever run on a node
@@ -185,8 +201,8 @@ func isNodeDone(node *corev1.Node) bool {
 }
 
 // isNodeDoneAt checks whether a node is fully updated to a targetConfig
-func isNodeDoneAt(node *corev1.Node, targetConfig string) bool {
-	return isNodeDone(node) && node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey] == targetConfig
+func isNodeDoneAt(node *corev1.Node, pool *mcfgv1.MachineConfigPool) bool {
+	return isNodeDone(node) && node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey] == pool.Spec.Configuration.Name
 }
 
 // isNodeMCDState checks the MCD state against the state parameter
@@ -211,10 +227,11 @@ func isNodeMCDFailing(node *corev1.Node) bool {
 // getUpdatedMachines filters the provided nodes to return the nodes whose
 // current config matches the desired config, which also matches the target config,
 // and the "done" flag is set.
-func getUpdatedMachines(poolTargetConfig string, nodes []*corev1.Node) []*corev1.Node {
+func getUpdatedMachines(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) []*corev1.Node {
 	var updated []*corev1.Node
 	for _, node := range nodes {
-		if isNodeDoneAt(node, poolTargetConfig) {
+		lns := ctrlcommon.NewLayeredNodeState(node)
+		if lns.IsDoneAt(pool) {
 			updated = append(updated, node)
 		}
 	}
@@ -223,8 +240,8 @@ func getUpdatedMachines(poolTargetConfig string, nodes []*corev1.Node) []*corev1
 
 // getReadyMachines filters the provided nodes to return the nodes
 // that are updated and marked ready
-func getReadyMachines(currentConfig string, nodes []*corev1.Node) []*corev1.Node {
-	updated := getUpdatedMachines(currentConfig, nodes)
+func getReadyMachines(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) []*corev1.Node {
+	updated := getUpdatedMachines(pool, nodes)
 	var ready []*corev1.Node
 	for _, node := range updated {
 		if isNodeReady(node) {
@@ -287,13 +304,15 @@ func isNodeUnavailable(node *corev1.Node) bool {
 // node *may* go unschedulable in the future, so we don't want to
 // potentially start another node update exceeding our maxUnavailable.
 // Somewhat the opposite of getReadyNodes().
-func getUnavailableMachines(nodes []*corev1.Node) []*corev1.Node {
+func getUnavailableMachines(nodes []*corev1.Node, pool *mcfgv1.MachineConfigPool) []*corev1.Node {
 	var unavail []*corev1.Node
 	for _, node := range nodes {
-		if isNodeUnavailable(node) {
+		lns := ctrlcommon.NewLayeredNodeState(node)
+		if lns.IsUnavailable(pool) {
 			unavail = append(unavail, node)
 		}
 	}
+
 	return unavail
 }
 
@@ -317,4 +336,17 @@ func getDegradedMachines(nodes []*corev1.Node) []*corev1.Node {
 		}
 	}
 	return degraded
+}
+
+func getNamesFromNodes(nodes []*corev1.Node) []string {
+	if len(nodes) == 0 {
+		return nil
+	}
+
+	names := []string{}
+	for _, node := range nodes {
+		names = append(names, node.Name)
+	}
+
+	return names
 }

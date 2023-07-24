@@ -248,6 +248,23 @@ func implSetNodeAnnotations(client corev1client.NodeInterface, lister corev1list
 		for k, v := range m {
 			node.Annotations[k] = v
 		}
+
+		// HACK: Remove this.
+		desiredImage, dOK := node.Annotations[constants.DesiredImageAnnotationKey]
+
+		if desiredImage != "" {
+			// If we have a desired image, set the current image to match the desired image.
+			node.Annotations[constants.CurrentImageAnnotationKey] = desiredImage
+		} else {
+			// If the desired image annotation is set to an empty string, delete the annotation.
+			delete(node.Annotations, constants.DesiredImageAnnotationKey)
+		}
+
+		// If no desired image annotation is found and the currnet image annotation
+		// is found, delete the current image annotation key.
+		if _, cOK := node.Annotations[constants.CurrentImageAnnotationKey]; cOK && !dOK {
+			delete(node.Annotations, constants.CurrentImageAnnotationKey)
+		}
 	})
 	return response{
 		node: node,
