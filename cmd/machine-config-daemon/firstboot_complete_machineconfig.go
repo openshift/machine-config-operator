@@ -24,6 +24,7 @@ var maybePersistNics bool
 // init executes upon import
 func init() {
 	rootCmd.AddCommand(firstbootCompleteMachineconfig)
+	firstbootCompleteMachineconfig.PersistentFlags().StringVar(&startOpts.rootMount, "root-mount", "/rootfs", "where the nodes root filesystem is mounted for chroot and file manipulation.")
 	firstbootCompleteMachineconfig.PersistentFlags().BoolVar(&maybePersistNics, "maybe-persist-nics", false, "Run nmstatectl persist-nic-names")
 	pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
 }
@@ -42,10 +43,11 @@ func runFirstBootCompleteMachineConfig(_ *cobra.Command, _ []string) error {
 		if err := daemon.MaybePersistNetworkInterfaces("/rootfs"); err != nil {
 			return fmt.Errorf("failed to persist network interfaces: %w", err)
 		}
-		// We're done; this logic is distinct from the *non-containerized* /run/bin/machine-config-daemon
-		// for what I believe is historical reasons; we could shift everything to happening inside
-		// podman actually.
 		return nil
+	}
+
+	if err := daemon.ReexecuteForTargetRoot(startOpts.rootMount); err != nil {
+		return fmt.Errorf("failed to re-exec: %w", err)
 	}
 
 	dn, err := daemon.New(exitCh)

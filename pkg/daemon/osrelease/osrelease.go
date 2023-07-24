@@ -18,6 +18,7 @@ const (
 const (
 	coreos string = "coreos"
 	fedora string = "fedora"
+	rhel   string = "rhel"
 	rhcos  string = "rhcos"
 	scos   string = "scos"
 )
@@ -56,7 +57,32 @@ func (os OperatingSystem) OSRelease() osrelease.OSRelease {
 	return os.osrelease
 }
 
-// IsEL is true if the OS is an Enterprise Linux variant,
+// IsLikeRHEL is true if the OS is RHEL-like.
+func (os OperatingSystem) IsLikeRHEL() bool {
+	if os.osrelease.ID == rhel {
+		return true
+	}
+	for _, v := range strings.Split(os.osrelease.ID_LIKE, " ") {
+		if v == rhel {
+			return true
+		}
+	}
+	return false
+}
+
+// BaseVersion gets the VERSION_ID field, but prefers RHEL_VERSION if it exists
+// as it does for RHEL CoreOS.
+func (os OperatingSystem) BaseVersion() string {
+	return os.version
+}
+
+// BaseVersionMajor returns the first number in a `.` separated BaseVersion.
+// For example with VERSION_ID=9.2, this will return 9.
+func (os OperatingSystem) BaseVersionMajor() string {
+	return strings.Split(os.BaseVersion(), ".")[0]
+}
+
+// IsEL is true if the OS is an Enterprise Linux variant of CoreOS
 // i.e. RHEL CoreOS (RHCOS) or CentOS Stream CoreOS (SCOS)
 func (os OperatingSystem) IsEL() bool {
 	return os.id == rhcos || os.id == scos
