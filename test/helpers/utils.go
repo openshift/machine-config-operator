@@ -79,9 +79,30 @@ func MakeIdempotent(f func()) func() {
 	}
 }
 
-// Creates a pool, adds the provided node to it, applies the MachineConfig,
-// waits for the rollout. Returns an idempotent function which can be used both
-// for reverting and cleanup purposes.
+// Applies a MachineConfig to a given MachineConfigPool, if a MachineConfig is
+// provided. If a MachineConfig is not provided (i.e., nil), it will skip the
+// apply process and wait for the MachineConfigPool to include the "00-worker"
+// MachineConfig. Returns a delete function that will no-op if a MachineConfig
+// is not provided.
+func maybeApplyMCAndWaitForPoolComplete(t *testing.T, cs *framework.ClientSet, poolName string, mc *mcfgv1.MachineConfig) func() {
+	if mc != nil {
+		deleteFunc := ApplyMC(t, cs, mc)
+		WaitForConfigAndPoolComplete(t, cs, poolName, mc.Name)
+		return func() {
+			t.Logf("Deleting MachineConfig %s", mc.Name)
+			deleteFunc()
+		}
+	}
+
+	mcName := "00-worker"
+	t.Logf("No MachineConfig provided, will wait for pool %q to include MachineConfig %q", poolName, mcName)
+	WaitForConfigAndPoolComplete(t, cs, poolName, mcName)
+	return func() {}
+}
+
+// Creates a pool, adds the provided node to it, applies the MachineConfig (if
+// provided), waits for the rollout. Returns an idempotent function which can
+// be used both for reverting and cleanup purposes.
 func CreatePoolAndApplyMCToNode(t *testing.T, cs *framework.ClientSet, poolName string, node corev1.Node, mc *mcfgv1.MachineConfig) func() {
 	workerMCPName := "worker"
 
@@ -92,9 +113,7 @@ func CreatePoolAndApplyMCToNode(t *testing.T, cs *framework.ClientSet, poolName 
 
 	t.Logf("Target Node: %s", node.Name)
 
-	mcDeleteFunc := ApplyMC(t, cs, mc)
-
-	WaitForConfigAndPoolComplete(t, cs, poolName, mc.Name)
+	mcDeleteFunc := maybeApplyMCAndWaitForPoolComplete(t, cs, poolName, mc)
 
 	mcpMCName := GetMcName(t, cs, poolName)
 	require.Nil(t, WaitForNodeConfigChange(t, cs, node, mcpMCName))
@@ -118,52 +137,24 @@ func CreatePoolAndApplyMCToNode(t *testing.T, cs *framework.ClientSet, poolName 
 		t.Logf("Deleting MCP %s", poolName)
 		deleteMCPFunc()
 
-		t.Logf("Deleting MachineConfig %s", mc.Name)
 		mcDeleteFunc()
 	})
 }
 
+// Creates a MachineConfigPool, waits for the MachineConfigPool to inherit the
+// worker MachineConfig "00-worker", and assigns a node to it. Returns an
+// idempotent function which can be used for both reverting and cleanup
+// purposes.
+func CreatePoolWithNode(t *testing.T, cs *framework.ClientSet, poolName string, node corev1.Node) func() {
+	return CreatePoolAndApplyMCToNode(t, cs, poolName, node, nil)
+}
+
+// Selects a random node from the "worker" pool, creates a MachineConfigPool,
+// and applies a MachineConfig to it. Returns an idempotent function which can
+// be used for both reverting and cleanup purposes.
 func CreatePoolAndApplyMC(t *testing.T, cs *framework.ClientSet, poolName string, mc *mcfgv1.MachineConfig) func() {
-	workerMCPName := "worker"
-
-	t.Logf("Setting up pool %s", poolName)
-
-	unlabelFunc := LabelRandomNodeFromPool(t, cs, workerMCPName, MCPNameToRole(poolName))
-	deleteMCPFunc := CreateMCP(t, cs, poolName)
-
-	node := GetSingleNodeByRole(t, cs, poolName)
-
-	t.Logf("Target Node: %s", node.Name)
-
-	mcDeleteFunc := ApplyMC(t, cs, mc)
-
-	WaitForConfigAndPoolComplete(t, cs, poolName, mc.Name)
-
-	mcpMCName := GetMcName(t, cs, poolName)
-	require.Nil(t, WaitForNodeConfigChange(t, cs, node, mcpMCName))
-
-	return func() {
-		t.Logf("Cleaning up MCP %s", poolName)
-		t.Logf("Removing label %s from node %s", MCPNameToRole(poolName), node.Name)
-		unlabelFunc()
-
-		workerMC := GetMcName(t, cs, workerMCPName)
-
-		// Wait for the worker pool to catch up with the deleted label
-		time.Sleep(5 * time.Second)
-
-		t.Logf("Waiting for %s pool to finish applying %s", workerMCPName, workerMC)
-		require.Nil(t, WaitForPoolComplete(t, cs, workerMCPName, workerMC))
-
-		t.Logf("Ensuring node has %s pool config before deleting pool %s", workerMCPName, poolName)
-		require.Nil(t, WaitForNodeConfigChange(t, cs, node, workerMC))
-
-		t.Logf("Deleting MCP %s", poolName)
-		deleteMCPFunc()
-
-		t.Logf("Deleting MachineConfig %s", mc.Name)
-		mcDeleteFunc()
-	}
+	node := GetRandomNode(t, cs, "worker")
+	return CreatePoolAndApplyMCToNode(t, cs, poolName, node, mc)
 }
 
 // GetMcName returns the current configuration name of the machine config pool poolName
@@ -490,15 +481,21 @@ func CreateMCP(t *testing.T, cs *framework.ClientSet, mcpName string) func() {
 	}
 	infraMCP.ObjectMeta.Labels = make(map[string]string)
 	infraMCP.ObjectMeta.Labels[mcpName] = ""
+
 	_, err := cs.MachineConfigPools().Create(context.TODO(), infraMCP, metav1.CreateOptions{})
-	if err != nil {
-		if !errors.IsAlreadyExists(err) {
-			require.Nil(t, err)
-		}
+	switch {
+	case err == nil:
+		t.Logf("Created MachineConfigPool %q", mcpName)
+	case errors.IsAlreadyExists(err):
+		t.Logf("Reusing existing MachineConfigPool %q", mcpName)
+	default:
+		t.Fatalf("Could not create MachineConfigPool %q: %s", mcpName, err)
 	}
+
 	return func() {
 		err := cs.MachineConfigPools().Delete(context.TODO(), mcpName, metav1.DeleteOptions{})
 		require.Nil(t, err)
+		t.Logf("Deleted MachineConfigPool %q", mcpName)
 	}
 }
 
