@@ -1688,17 +1688,6 @@ func removeNonIgnitionKeyPathFragments() error {
 	return nil
 }
 
-// updateOS updates the system OS to the one specified in newConfig
-func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig, osImageContentDir string) error {
-	newURL := config.Spec.OSImageURL
-	klog.Infof("Updating OS to %s", newURL)
-	if _, err := dn.NodeUpdaterClient.Rebase(newURL, osImageContentDir); err != nil {
-		return fmt.Errorf("failed to update OS to %s : %w", newURL, err)
-	}
-
-	return nil
-}
-
 // InplaceUpdateViaNewContainer runs rpm-ostree ex deploy-via-self
 // via a privileged container.  This is needed on firstboot of old
 // nodes as well as temporarily for 4.11 -> 4.12 upgrades.
