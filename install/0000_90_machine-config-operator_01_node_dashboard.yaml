@@ -1,0 +1,2799 @@
+apiVersion: v1
+data:
+  node-cluster-rsrc-use.json: |-
+    {
+        "__inputs": [
+
+        ],
+        "__requires": [
+
+        ],
+        "annotations": {
+            "list": [
+
+            ]
+        },
+        "editable": false,
+        "gnetId": null,
+        "graphTooltip": 1,
+        "hideControls": false,
+        "id": null,
+        "links": [
+
+        ],
+        "refresh": "30s",
+        "rows": [
+            {
+                "collapse": false,
+                "collapsed": false,
+                "panels": [
+                    {
+                        "cacheTimeout": null,
+                        "colorBackground": false,
+                        "colorValue": false,
+                        "colors": [
+                            "rgba(245, 54, 54, 0.9)",
+                            "rgba(237, 129, 40, 0.89)",
+                            "rgba(50, 172, 45, 0.97)"
+                        ],
+                        "datasource": "$datasource",
+                        "editable": true,
+                        "error": false,
+                        "format": "none",
+                        "gauge": {
+                            "maxValue": 100,
+                            "minValue": 0,
+                            "show": false,
+                            "thresholdLabels": false,
+                            "thresholdMarkers": true
+                        },
+                        "id": 28,
+                        "interval": null,
+                        "isNew": true,
+                        "links": [
+
+                        ],
+                        "mappingType": 1,
+                        "mappingTypes": [
+                            {
+                                "name": "value to text",
+                                "value": 1
+                            },
+                            {
+                                "name": "range to text",
+                                "value": 2
+                            }
+                        ],
+                        "maxDataPoints": 100,
+                        "nullPointMode": "connected",
+                        "nullText": null,
+                        "postfix": "",
+                        "postfixFontSize": "50%",
+                        "prefix": "",
+                        "prefixFontSize": "50%",
+                        "rangeMaps": [
+                            {
+                                "from": "null",
+                                "text": "N/A",
+                                "to": "null"
+                            }
+                        ],
+                        "span": 3,
+                        "sparkline": {
+                            "fillColor": "rgba(31, 118, 189, 0.18)",
+                            "full": false,
+                            "lineColor": "rgb(31, 120, 193)",
+                            "show": false
+                        },
+                        "targets": [
+                            {
+                                "expr": "sum(kube_node_status_condition{condition=\"Ready\", status=\"false\"})",
+                                "intervalFactor": 2,
+                                "legendFormat": "",
+                                "metric": "kube_node_status_condition",
+                                "refId": "A",
+                                "step": 20
+                            }
+                        ],
+                        "thresholds": "",
+                        "title": "Not Ready Nodes Count",
+                        "type": "singlestat",
+                        "valueFontSize": "200%",
+                        "valueMaps": [
+                            {
+                                "op": "=",
+                                "text": "N/A",
+                                "value": "null"
+                            }
+                        ],
+                        "valueName": "current"
+                    },
+                    {
+                        "aliasColors": {
+
+                        },
+                        "bars": false,
+                        "datasource": "$datasource",
+                        "editable": true,
+                        "error": false,
+                        "fill": 0,
+                        "grid": {
+
+                        },
+                        "id": 3,
+                        "legend": {
+                            "avg": false,
+                            "current": false,
+                            "max": false,
+                            "min": false,
+                            "show": false,
+                            "total": false,
+                            "values": false
+                        },
+                        "lines": true,
+                        "linewidth": 2,
+                        "links": [
+
+                        ],
+                        "nullPointMode": "connected",
+                        "percentage": false,
+                        "pointradius": 1,
+                        "points": false,
+                        "renderer": "flot",
+                        "seriesOverrides": [
+
+                        ],
+                        "span": 4,
+                        "stack": false,
+                        "steppedLine": true,
+                        "targets": [
+                            {
+                                "expr": "topk(3, sum(increase(container_runtime_crio_containers_oom_count_total[1d])) by (name))",
+                                "hide": false,
+                                "intervalFactor": 2,
+                                "refId": "A",
+                                "step": 4
+                            }
+                        ],
+                        "thresholds": [
+
+                        ],
+                        "timeFrom": null,
+                        "timeShift": null,
+                        "title": "Top 3 Containers With the Most OOM Kills in the Last Day",
+                        "tooltip": {
+                            "msResolution": false,
+                            "shared": true,
+                            "sort": 0,
+                            "value_type": "cumulative"
+                        },
+                        "type": "graph",
+                        "xaxis": {
+                            "mode": "time",
+                            "name": null,
+                            "show": true,
+                            "values": [
+
+                            ]
+                        },
+                        "yaxes": [
+                            {
+                                "format": "short",
+                                "logBase": 1,
+                                "max": null,
+                                "min": null,
+                                "show": true
+                            }
+                        ]
+                    },
+                    {
+                        "aliasColors": {
+
+                        },
+                        "bars": false,
+                        "datasource": "$datasource",
+                        "editable": true,
+                        "error": false,
+                        "fill": 0,
+                        "grid": {
+
+                        },
+                        "id": 3,
+                        "legend": {
+                            "avg": false,
+                            "current": false,
+                            "max": false,
+                            "min": false,
+                            "show": false,
+                            "total": false,
+                            "values": false
+                        },
+                        "lines": true,
+                        "linewidth": 2,
+                        "links": [
+
+                        ],
+                        "nullPointMode": "connected",
+                        "percentage": false,
+                        "pointradius": 1,
+                        "points": false,
+                        "renderer": "flot",
+                        "seriesOverrides": [
+
+                        ],
+                        "span": 4,
+                        "stack": false,
+                        "steppedLine": true,
+                        "targets": [
+                            {
+                                "expr": "rate(container_runtime_crio_image_pulls_failure_total[1h]) / (rate(container_runtime_crio_image_pulls_success_total[1h]) + rate(container_runtime_crio_image_pulls_failure_total[1h]))",
+                                "hide": false,
+                                "intervalFactor": 2,
+                                "refId": "A",
+                                "step": 4
+                            }
+                        ],
+                        "thresholds": [
+
+                        ],
+                        "timeFrom": null,
+                        "timeShift": null,
+                        "title": "Failure Rate for Image Pulls in the Last Hour",
+                        "tooltip": {
+                            "msResolution": false,
+                            "shared": true,
+                            "sort": 0,
+                            "value_type": "cumulative"
+                        },
+                        "type": "graph",
+                        "xaxis": {
+                            "mode": "time",
+                            "name": null,
+                            "show": true,
+                            "values": [
+
+                            ]
+                        },
+                        "yaxes": [
+                            {
+                                "format": "short",
+                                "logBase": 1,
+                                "max": null,
+                                "min": null,
+                                "show": true
+                            }
+                        ]
+                    },
+                    {
+                        "aliasColors": {
+
+                        },
+                        "bars": false,
+                        "datasource": "$datasource",
+                        "editable": true,
+                        "error": false,
+                        "fill": 0,
+                        "grid": {
+
+                        },
+                        "id": 3,
+                        "legend": {
+                            "avg": false,
+                            "current": false,
+                            "max": false,
+                            "min": false,
+                            "show": false,
+                            "total": false,
+                            "values": false
+                        },
+                        "lines": true,
+                        "linewidth": 2,
+                        "links": [
+
+                        ],
+                        "nullPointMode": "connected",
+                        "percentage": false,
+                        "pointradius": 1,
+                        "points": false,
+                        "renderer": "flot",
+                        "seriesOverrides": [
+
+                        ],
+                        "span": 4,
+                        "stack": false,
+                        "steppedLine": true,
+                        "targets": [
+                            {
+                                "expr": "sum by (node) (container_memory_rss{id=\"/system.slice\"}) / sum by (node) (kube_node_status_capacity{resource=\"memory\"} - kube_node_status_allocatable{resource=\"memory\"}) * 100 >= 80",
+                                "hide": false,
+                                "intervalFactor": 2,
+                                "legendFormat": "{{node}}",
+                                "refId": "A",
+                                "step": 4
+                            }
+                        ],
+                        "thresholds": [
+
+                        ],
+                        "timeFrom": null,
+                        "timeShift": null,
+                        "title": "Nodes with System Reserved Memory Utilization > 80%",
+                        "tooltip": {
+                            "msResolution": false,
+                            "shared": true,
+                            "sort": 0,
+                            "value_type": "cumulative"
+                        },
+                        "type": "graph",
+                        "xaxis": {
+                            "mode": "time",
+                            "name": null,
+                            "show": true,
+                            "values": [
+
+                            ]
+                        },
+                        "yaxes": [
+                            {
+                                "format": "percent",
+                                "logBase": 1,
+                                "max": null,
+                                "min": null,
+                                "show": true
+                            }
+                        ]
+                    },
+                    {
+                        "aliasColors": {
+
+                        },
+                        "bars": false,
+                        "datasource": "$datasource",
+                        "editable": true,
+                        "error": false,
+                        "fill": 0,
+                        "grid": {
+
+                        },
+                        "id": 3,
+                        "legend": {
+                            "avg": false,
+                            "current": false,
+                            "max": false,
+                            "min": false,
+                            "show": false,
+                            "total": false,
+                            "values": false
+                        },
+                        "lines": true,
+                        "linewidth": 2,
+                        "links": [
+
+                        ],
+                        "nullPointMode": "connected",
+                        "percentage": false,
+                        "pointradius": 1,
+                        "points": false,
+                        "renderer": "flot",
+                        "seriesOverrides": [
+
+                        ],
+                        "span": 4,
+                        "stack": false,
+                        "steppedLine": true,
+                        "targets": [
+                            {
+                                "expr": "sum by (node) (container_memory_rss{id=\"/system.slice/kubelet.service\"}) / sum by (node) (kube_node_status_capacity{resource=\"memory\"} - kube_node_status_allocatable{resource=\"memory\"}) * 100 >= 50",
+                                "hide": false,
+                                "intervalFactor": 2,
+                                "legendFormat": "{{node}}",
+                                "refId": "A",
+                                "step": 4
+                            }
+                        ],
+                        "thresholds": [
+
+                        ],
+                        "timeFrom": null,
+                        "timeShift": null,
+                        "title": "Nodes with Kubelet System Reserved Memory Utilization > 50%",
+                        "tooltip": {
+                            "msResolution": false,
+                            "shared": true,
+                            "sort": 0,
+                            "value_type": "cumulative"
+                        },
+                        "type": "graph",
+                        "xaxis": {
+                            "mode": "time",
+                            "name": null,
+                            "show": true,
+                            "values": [
+
+                            ]
+                        },
+                        "yaxes": [
+                            {
+                                "format": "percent",
+                                "logBase": 1,
+                                "max": null,
+                                "min": null,
+                                "show": true
+                            }
+                        ]
+                    },
+                    {
+                        "aliasColors": {
+
+                        },
+                        "bars": false,
+                        "datasource": "$datasource",
+                        "editable": true,
+                        "error": false,
+                        "fill": 0,
+                        "grid": {
+
+                        },
+                        "id": 3,
+                        "legend": {
+                            "avg": false,
+                            "current": false,
+                            "max": false,
+                            "min": false,
+                            "show": false,
+                            "total": false,
+                            "values": false
+                        },
+                        "lines": true,
+                        "linewidth": 2,
+                        "links": [
+
+                        ],
+                        "nullPointMode": "connected",
+                        "percentage": false,
+                        "pointradius": 1,
+                        "points": false,
+                        "renderer": "flot",
+                        "seriesOverrides": [
+
+                        ],
+                        "span": 4,
+                        "stack": false,
+                        "steppedLine": true,
+                        "targets": [
+                            {
+                                "expr": "sum by (node) (container_memory_rss{id=\"/system.slice/crio.service\"}) / sum by (node) (kube_node_status_capacity{resource=\"memory\"} - kube_node_status_allocatable{resource=\"memory\"}) * 100 >= 50",
+                                "hide": false,
+                                "intervalFactor": 2,
+                                "legendFormat": "{{node}}",
+                                "refId": "A",
+                                "step": 4
+                            }
+                        ],
+                        "thresholds": [
+
+                        ],
+                        "timeFrom": null,
+                        "timeShift": null,
+                        "title": "Nodes with CRI-O System Reserved Memory Utilization > 50%",
+                        "tooltip": {
+                            "msResolution": false,
+                            "shared": true,
+                            "sort": 0,
+                            "value_type": "cumulative"
+                        },
+                        "type": "graph",
+                        "xaxis": {
+                            "mode": "time",
+                            "name": null,
+                            "show": true,
+                            "values": [
+
+                            ]
+                        },
+                        "yaxes": [
+                            {
+                                "format": "percent",
+                                "logBase": 1,
+                                "max": null,
+                                "min": null,
+                                "show": true
+                            }
+                        ]
+                    },
+                    {
+                        "aliasColors": {
+
+                        },
+                        "bars": false,
+                        "datasource": "$datasource",
+                        "editable": true,
+                        "error": false,
+                        "fill": 0,
+                        "grid": {
+
+                        },
+                        "id": 3,
+                        "legend": {
+                            "avg": false,
+                            "current": false,
+                            "max": false,
+                            "min": false,
+                            "show": false,
+                            "total": false,
+                            "values": false
+                        },
+                        "lines": true,
+                        "linewidth": 2,
+                        "links": [
+
+                        ],
+                        "nullPointMode": "connected",
+                        "percentage": false,
+                        "pointradius": 1,
+                        "points": false,
+                        "renderer": "flot",
+                        "seriesOverrides": [
+
+                        ],
+                        "span": 4,
+                        "stack": false,
+                        "steppedLine": true,
+                        "targets": [
+                            {
+                                "expr": "sum by (node) (rate(container_cpu_usage_seconds_total{id=\"/system.slice\"}[5m]) * 100) / sum by (node) (kube_node_status_capacity{resource=\"cpu\"} - kube_node_status_allocatable{resource=\"cpu\"}) >= 80",
+                                "hide": false,
+                                "intervalFactor": 2,
+                                "legendFormat": "{{node}}",
+                                "refId": "A",
+                                "step": 4
+                            }
+                        ],
+                        "thresholds": [
+                            {
+                                "colorMode": "critical",
+                                "fill": true,
+                                "line": true,
+                                "op": "gt",
+                                "value": 3
+                            }
+                        ],
+                        "timeFrom": null,
+                        "timeShift": null,
+                        "title": "Nodes with System Reserved CPU Utilization > 80%",
+                        "tooltip": {
+                            "msResolution": false,
+                            "shared": true,
+                            "sort": 0,
+                            "value_type": "cumulative"
+                        },
+                        "type": "graph",
+                        "xaxis": {
+                            "mode": "time",
+                            "name": null,
+                            "show": true,
+                            "values": [
+
+                            ]
+                        },
+                        "yaxes": [
+                            {
+                                "format": "percent",
+                                "logBase": 1,
+                                "max": null,
+                                "min": null,
+                                "show": true
+                            }
+                        ]
+                    },
+                    {
+                        "aliasColors": {
+
+                        },
+                        "bars": false,
+                        "datasource": "$datasource",
+                        "editable": true,
+                        "error": false,
+                        "fill": 0,
+                        "grid": {
+
+                        },
+                        "id": 3,
+                        "legend": {
+                            "avg": false,
+                            "current": false,
+                            "max": false,
+                            "min": false,
+                            "show": false,
+                            "total": false,
+                            "values": false
+                        },
+                        "lines": true,
+                        "linewidth": 2,
+                        "links": [
+
+                        ],
+                        "nullPointMode": "connected",
+                        "percentage": false,
+                        "pointradius": 1,
+                        "points": false,
+                        "renderer": "flot",
+                        "seriesOverrides": [
+
+                        ],
+                        "span": 4,
+                        "stack": false,
+                        "steppedLine": true,
+                        "targets": [
+                            {
+                                "expr": "sum by (node) (rate(container_cpu_usage_seconds_total{id=\"/system.slice/kubelet.service\"}[5m]) * 100) / sum by (node) (kube_node_status_capacity{resource=\"cpu\"} - kube_node_status_allocatable{resource=\"cpu\"}) >= 50",
+                                "hide": false,
+                                "intervalFactor": 2,
+                                "legendFormat": "{{node}}",
+                                "refId": "A",
+                                "step": 4
+                            }
+                        ],
+                        "thresholds": [
+                            {
+                                "colorMode": "critical",
+                                "fill": true,
+                                "line": true,
+                                "op": "gt",
+                                "value": 3
+                            }
+                        ],
+                        "timeFrom": null,
+                        "timeShift": null,
+                        "title": "Nodes with Kubelet System Reserved CPU Utilization > 50%",
+                        "tooltip": {
+                            "msResolution": false,
+                            "shared": true,
+                            "sort": 0,
+                            "value_type": "cumulative"
+                        },
+                        "type": "graph",
+                        "xaxis": {
+                            "mode": "time",
+                            "name": null,
+                            "show": true,
+                            "values": [
+
+                            ]
+                        },
+                        "yaxes": [
+                            {
+                                "format": "percent",
+                                "logBase": 1,
+                                "max": null,
+                                "min": null,
+                                "show": true
+                            }
+                        ]
+                    },
+                    {
+                        "aliasColors": {
+
+                        },
+                        "bars": false,
+                        "datasource": "$datasource",
+                        "editable": true,
+                        "error": false,
+                        "fill": 0,
+                        "grid": {
+
+                        },
+                        "id": 3,
+                        "legend": {
+                            "avg": false,
+                            "current": false,
+                            "max": false,
+                            "min": false,
+                            "show": false,
+                            "total": false,
+                            "values": false
+                        },
+                        "lines": true,
+                        "linewidth": 2,
+                        "links": [
+
+                        ],
+                        "nullPointMode": "connected",
+                        "percentage": false,
+                        "pointradius": 1,
+                        "points": false,
+                        "renderer": "flot",
+                        "seriesOverrides": [
+
+                        ],
+                        "span": 4,
+                        "stack": false,
+                        "steppedLine": true,
+                        "targets": [
+                            {
+                                "expr": "sum by (node) (rate(container_cpu_usage_seconds_total{id=\"/system.slice/crio.service\"}[5m]) * 100) / sum by (node) (kube_node_status_capacity{resource=\"cpu\"} - kube_node_status_allocatable{resource=\"cpu\"}) >= 50",
+                                "hide": false,
+                                "intervalFactor": 2,
+                                "legendFormat": "{{node}}",
+                                "refId": "A",
+                                "step": 4
+                            }
+                        ],
+                        "thresholds": [
+                            {
+                                "colorMode": "critical",
+                                "fill": true,
+                                "line": true,
+                                "op": "gt",
+                                "value": 3
+                            }
+                        ],
+                        "timeFrom": null,
+                        "timeShift": null,
+                        "title": "Nodes with CRI-O System Reserved CPU Utilization > 50%",
+                        "tooltip": {
+                            "msResolution": false,
+                            "shared": true,
+                            "sort": 0,
+                            "value_type": "cumulative"
+                        },
+                        "type": "graph",
+                        "xaxis": {
+                            "mode": "time",
+                            "name": null,
+                            "show": true,
+                            "values": [
+
+                            ]
+                        },
+                        "yaxes": [
+                            {
+                                "format": "percent",
+                                "logBase": 1,
+                                "max": null,
+                                "min": null,
+                                "show": true
+                            }
+                        ]
+                    }
+                ],
+                "repeat": null,
+                "repeatIteration": null,
+                "repeatRowId": null,
+                "showTitle": true,
+                "title": "Critical",
+                "titleSize": "h6",
+                "type": "row"
+            },
+            {
+                "collapse": true,
+                "collapsed": false,
+                "panels": [
+                    {
+                        "aliasColors": {
+
+                        },
+                        "bars": false,
+                        "datasource": "$datasource",
+                        "editable": true,
+                        "error": false,
+                        "fill": 0,
+                        "grid": {
+
+                        },
+                        "id": 3,
+                        "legend": {
+                            "avg": false,
+                            "current": false,
+                            "max": false,
+                            "min": false,
+                            "show": false,
+                            "total": false,
+                            "values": false
+                        },
+                        "lines": true,
+                        "linewidth": 2,
+                        "links": [
+
+                        ],
+                        "nullPointMode": "connected",
+                        "percentage": false,
+                        "pointradius": 1,
+                        "points": false,
+                        "renderer": "flot",
+                        "seriesOverrides": [
+
+                        ],
+                        "span": 4,
+                        "stack": false,
+                        "steppedLine": true,
+                        "targets": [
+                            {
+                                "expr": "histogram_quantile(0.95,sum(rate(kubelet_pod_start_duration_seconds_bucket{instance=~\".*\"}[5m])) by (instance, le)) >=0",
+                                "legendFormat": "{{instance}}",
+                                "hide": false,
+                                "intervalFactor": 2,
+                                "refId": "A",
+                                "step": 4
+                            }
+                        ],
+                        "thresholds": [
+
+                        ],
+                        "timeFrom": null,
+                        "timeShift": null,
+                        "title": "(Kubelet) Pod Start Duration ",
+                        "tooltip": {
+                            "msResolution": false,
+                            "shared": true,
+                            "sort": 0,
+                            "value_type": "cumulative"
+                        },
+                        "type": "graph",
+                        "xaxis": {
+                            "mode": "time",
+                            "name": null,
+                            "show": true,
+                            "values": [
+
+                            ]
+                        },
+                        "yaxes": [
+                            {
+                                "format": "none",
+                                "logBase": 1,
+                                "max": null,
+                                "min": null,
+                                "show": true
+                            }
+                        ]
+                    },
+                    {
+                        "aliasColors": {
+
+                        },
+                        "bars": false,
+                        "datasource": "$datasource",
+                        "editable": true,
+                        "error": false,
+                        "fill": 0,
+                        "grid": {
+
+                        },
+                        "id": 3,
+                        "legend": {
+                            "avg": false,
+                            "current": false,
+                            "max": false,
+                            "min": false,
+                            "show": false,
+                            "total": false,
+                            "values": false
+                        },
+                        "lines": true,
+                        "linewidth": 2,
+                        "links": [
+
+                        ],
+                        "nullPointMode": "connected",
+                        "percentage": false,
+                        "pointradius": 1,
+                        "points": false,
+                        "renderer": "flot",
+                        "seriesOverrides": [
+
+                        ],
+                        "span": 4,
+                        "stack": false,
+                        "steppedLine": true,
+                        "targets": [
+                            {
+                                "expr": "histogram_quantile(0.95,sum(rate(kubelet_pod_start_sli_duration_seconds_bucket{instance=~\".*\"}[5m])) by (instance, le)) >=0",
+                                "legendFormat": "{{instance}}",
+                                "hide": false,
+                                "intervalFactor": 2,
+                                "refId": "A",
+                                "step": 4
+                            }
+                        ],
+                        "thresholds": [
+
+                        ],
+                        "timeFrom": null,
+                        "timeShift": null,
+                        "title": "(Kubelet) Pod Start SLI Duration ",
+                        "tooltip": {
+                            "msResolution": false,
+                            "shared": true,
+                            "sort": 0,
+                            "value_type": "cumulative"
+                        },
+                        "type": "graph",
+                        "xaxis": {
+                            "mode": "time",
+                            "name": null,
+                            "show": true,
+                            "values": [
+
+                            ]
+                        },
+                        "yaxes": [
+                            {
+                                "format": "none",
+                                "logBase": 1,
+                                "max": null,
+                                "min": null,
+                                "show": true
+                            }
+                        ]
+                    },
+                    {
+                        "aliasColors": {
+
+                        },
+                        "bars": false,
+                        "datasource": "$datasource",
+                        "editable": true,
+                        "error": false,
+                        "fill": 0,
+                        "grid": {
+
+                        },
+                        "id": 3,
+                        "legend": {
+                            "avg": false,
+                            "current": false,
+                            "max": false,
+                            "min": false,
+                            "show": false,
+                            "total": false,
+                            "values": false
+                        },
+                        "lines": true,
+                        "linewidth": 2,
+                        "links": [
+
+                        ],
+                        "nullPointMode": "connected",
+                        "percentage": false,
+                        "pointradius": 1,
+                        "points": false,
+                        "renderer": "flot",
+                        "seriesOverrides": [
+
+                        ],
+                        "span": 4,
+                        "stack": false,
+                        "steppedLine": true,
+                        "targets": [
+                            {
+                                "expr": "histogram_quantile(0.95,sum(rate(kubelet_runtime_operations_duration_seconds_bucket{instance=~\".*\"}[5m])) by (instance, operation_type, le))",
+                                "legendFormat": "{{instance}}",
+                                "hide": false,
+                                "intervalFactor": 2,
+                                "refId": "A",
+                                "step": 4
+                            }
+                        ],
+                        "thresholds": [
+
+                        ],
+                        "timeFrom": null,
+                        "timeShift": null,
+                        "title": "(Kubelet) Runtime Operations Duration",
+                        "tooltip": {
+                            "msResolution": false,
+                            "shared": true,
+                            "sort": 0,
+                            "value_type": "cumulative"
+                        },
+                        "type": "graph",
+                        "xaxis": {
+                            "mode": "time",
+                            "name": null,
+                            "show": true,
+                            "values": [
+
+                            ]
+                        },
+                        "yaxes": [
+                            {
+                                "format": "none",
+                                "logBase": 1,
+                                "max": null,
+                                "min": null,
+                                "show": true
+                            }
+                        ]
+                    },
+                    {
+                        "aliasColors": {
+
+                        },
+                        "bars": false,
+                        "datasource": "$datasource",
+                        "editable": true,
+                        "error": false,
+                        "fill": 0,
+                        "grid": {
+
+                        },
+                        "id": 3,
+                        "legend": {
+                            "avg": false,
+                            "current": false,
+                            "max": false,
+                            "min": false,
+                            "show": false,
+                            "total": false,
+                            "values": false
+                        },
+                        "lines": true,
+                        "linewidth": 2,
+                        "links": [
+
+                        ],
+                        "nullPointMode": "connected",
+                        "percentage": false,
+                        "pointradius": 1,
+                        "points": false,
+                        "renderer": "flot",
+                        "seriesOverrides": [
+
+                        ],
+                        "span": 4,
+                        "stack": false,
+                        "steppedLine": true,
+                        "targets": [
+                            {
+                                "expr": "histogram_quantile(0.95,sum(rate(kubelet_pod_status_sync_duration_seconds_bucket{instance=~\".*\"}[5m])) by (instance, le)) >=0",
+                                "legendFormat": "{{instance}}",
+                                "hide": false,
+                                "intervalFactor": 2,
+                                "refId": "A",
+                                "step": 4
+                            }
+                        ],
+                        "thresholds": [
+
+                        ],
+                        "timeFrom": null,
+                        "timeShift": null,
+                        "title": "(Kubelet) Pod Status Sync Duration ",
+                        "tooltip": {
+                            "msResolution": false,
+                            "shared": true,
+                            "sort": 0,
+                            "value_type": "cumulative"
+                        },
+                        "type": "graph",
+                        "xaxis": {
+                            "mode": "time",
+                            "name": null,
+                            "show": true,
+                            "values": [
+
+                            ]
+                        },
+                        "yaxes": [
+                            {
+                                "format": "none",
+                                "logBase": 1,
+                                "max": null,
+                                "min": null,
+                                "show": true
+                            }
+                        ]
+                    },
+                    {
+                        "aliasColors": {
+
+                        },
+                        "bars": false,
+                        "datasource": "$datasource",
+                        "editable": true,
+                        "error": false,
+                        "fill": 0,
+                        "grid": {
+
+                        },
+                        "id": 3,
+                        "legend": {
+                            "avg": false,
+                            "current": false,
+                            "max": false,
+                            "min": false,
+                            "show": false,
+                            "total": false,
+                            "values": false
+                        },
+                        "lines": true,
+                        "linewidth": 2,
+                        "links": [
+
+                        ],
+                        "nullPointMode": "connected",
+                        "percentage": false,
+                        "pointradius": 1,
+                        "points": false,
+                        "renderer": "flot",
+                        "seriesOverrides": [
+
+                        ],
+                        "span": 4,
+                        "stack": false,
+                        "steppedLine": true,
+                        "targets": [
+                            {
+                                "expr": "histogram_quantile(0.95, sum(rate(kubelet_cgroup_manager_duration_seconds_bucket{instance=~\".*\"}[5m])) by (instance, operation_type, le)) >=0",
+                                "hide": false,
+                                "legendFormat": "{{instance}}",
+                                "intervalFactor": 2,
+                                "refId": "A",
+                                "step": 4
+                            }
+                        ],
+                        "thresholds": [
+
+                        ],
+                        "timeFrom": null,
+                        "timeShift": null,
+                        "title": "(Kubelet) Cgroup Operation Duration ",
+                        "tooltip": {
+                            "msResolution": false,
+                            "shared": true,
+                            "sort": 0,
+                            "value_type": "individual"
+                        },
+                        "type": "graph",
+                        "xaxis": {
+                            "mode": "time",
+                            "name": null,
+                            "show": true,
+                            "values": [
+
+                            ]
+                        },
+                        "yaxes": [
+                            {
+                                "format": "none",
+                                "logBase": 1,
+                                "max": null,
+                                "min": null,
+                                "show": true
+                            }
+                        ]
+                    },
+                    {
+                        "aliasColors": {
+
+                        },
+                        "bars": false,
+                        "datasource": "$datasource",
+                        "editable": true,
+                        "error": false,
+                        "fill": 0,
+                        "grid": {
+
+                        },
+                        "id": 3,
+                        "legend": {
+                            "avg": false,
+                            "current": false,
+                            "max": false,
+                            "min": false,
+                            "show": false,
+                            "total": false,
+                            "values": false
+                        },
+                        "lines": true,
+                        "linewidth": 2,
+                        "links": [
+
+                        ],
+                        "nullPointMode": "connected",
+                        "percentage": false,
+                        "pointradius": 1,
+                        "points": false,
+                        "renderer": "flot",
+                        "seriesOverrides": [
+
+                        ],
+                        "span": 4,
+                        "stack": false,
+                        "steppedLine": true,
+                        "targets": [
+                            {
+                                "expr": "histogram_quantile(0.95, sum(rate(kubelet_pleg_relist_duration_seconds_bucket{instance=~\".*\"}[5m])) by (instance, le))",
+                                "legendFormat": "{{instance}}",
+                                "hide": false,
+                                "intervalFactor": 2,
+                                "refId": "A",
+                                "step": 4
+                            }
+                        ],
+                        "thresholds": [
+
+                        ],
+                        "timeFrom": null,
+                        "timeShift": null,
+                        "title": "(Kubelet) Pleg Relist Duration ",
+                        "tooltip": {
+                            "msResolution": false,
+                            "shared": true,
+                            "sort": 0,
+                            "value_type": "cumulative"
+                        },
+                        "type": "graph",
+                        "xaxis": {
+                            "mode": "time",
+                            "name": null,
+                            "show": true,
+                            "values": [
+
+                            ]
+                        },
+                        "yaxes": [
+                            {
+                                "format": "none",
+                                "logBase": 1,
+                                "max": null,
+                                "min": null,
+                                "show": true
+                            }
+                        ]
+                    },
+                    {
+                        "aliasColors": {
+
+                        },
+                        "bars": false,
+                        "datasource": "$datasource",
+                        "editable": true,
+                        "error": false,
+                        "fill": 0,
+                        "grid": {
+
+                        },
+                        "id": 3,
+                        "legend": {
+                            "avg": false,
+                            "current": false,
+                            "max": false,
+                            "min": false,
+                            "show": false,
+                            "total": false,
+                            "values": false
+                        },
+                        "lines": true,
+                        "linewidth": 2,
+                        "links": [
+
+                        ],
+                        "nullPointMode": "connected",
+                        "percentage": false,
+                        "pointradius": 1,
+                        "points": false,
+                        "renderer": "flot",
+                        "seriesOverrides": [
+
+                        ],
+                        "span": 4,
+                        "stack": false,
+                        "steppedLine": true,
+                        "targets": [
+                            {
+                                "expr": "histogram_quantile(0.95, sum(rate(kubelet_pod_worker_duration_seconds_bucket{instance=~\".*\"}[5m])) by (instance, operation_type, le)) >= 0",
+                                "legendFormat": "{{instance}}",
+                                "hide": false,
+                                "intervalFactor": 2,
+                                "refId": "A",
+                                "step": 4
+                            }
+                        ],
+                        "thresholds": [
+
+                        ],
+                        "timeFrom": null,
+                        "timeShift": null,
+                        "title": "(Kubelet) Pod Worker Duration ",
+                        "tooltip": {
+                            "msResolution": false,
+                            "shared": true,
+                            "sort": 0,
+                            "value_type": "cumulative"
+                        },
+                        "type": "graph",
+                        "xaxis": {
+                            "mode": "time",
+                            "name": null,
+                            "show": true,
+                            "values": [
+
+                            ]
+                        },
+                        "yaxes": [
+                            {
+                                "format": "none",
+                                "logBase": 1,
+                                "max": null,
+                                "min": null,
+                                "show": true
+                            }
+                        ]
+                    },
+                    {
+                        "aliasColors": {
+
+                        },
+                        "bars": false,
+                        "datasource": "$datasource",
+                        "editable": true,
+                        "error": false,
+                        "fill": 0,
+                        "grid": {
+
+                        },
+                        "id": 3,
+                        "legend": {
+                            "avg": false,
+                            "current": false,
+                            "max": false,
+                            "min": false,
+                            "show": false,
+                            "total": false,
+                            "values": false
+                        },
+                        "lines": true,
+                        "linewidth": 2,
+                        "links": [
+
+                        ],
+                        "nullPointMode": "connected",
+                        "percentage": false,
+                        "pointradius": 1,
+                        "points": false,
+                        "renderer": "flot",
+                        "seriesOverrides": [
+
+                        ],
+                        "span": 4,
+                        "stack": false,
+                        "steppedLine": true,
+                        "targets": [
+                            {
+                                "expr": "histogram_quantile(0.95, sum(rate(storage_operation_duration_seconds_bucket{instance=~\".*\"}[5m])) by (instance, operation_name, volume_plugin, le)) >= 0",
+                                "legendFormat": "{{instance}}",
+                                "hide": false,
+                                "intervalFactor": 2,
+                                "refId": "A",
+                                "step": 4
+                            }
+                        ],
+                        "thresholds": [
+
+                        ],
+                        "timeFrom": null,
+                        "timeShift": null,
+                        "title": "(Kubelet) Storage Op. Duration ",
+                        "tooltip": {
+                            "msResolution": false,
+                            "shared": true,
+                            "sort": 0,
+                            "value_type": "cumulative"
+                        },
+                        "type": "graph",
+                        "xaxis": {
+                            "mode": "time",
+                            "name": null,
+                            "show": true,
+                            "values": [
+
+                            ]
+                        },
+                        "yaxes": [
+                            {
+                                "format": "none",
+                                "logBase": 1,
+                                "max": null,
+                                "min": null,
+                                "show": true
+                            }
+                        ]
+                    }
+                ],
+                "repeat": null,
+                "repeatIteration": null,
+                "repeatRowId": null,
+                "showTitle": true,
+                "title": "Outliers",
+                "titleSize": "h6",
+                "type": "row"
+            },
+            {
+                "collapse": true,
+                "collapsed": false,
+                "panels": [
+                    {
+                        "aliasColors": {
+
+                        },
+                        "bars": false,
+                        "datasource": "$datasource",
+                        "editable": true,
+                        "error": false,
+                        "fill": 0,
+                        "grid": {
+
+                        },
+                        "id": 3,
+                        "legend": {
+                            "avg": false,
+                            "current": false,
+                            "max": false,
+                            "min": false,
+                            "show": false,
+                            "total": false,
+                            "values": false
+                        },
+                        "lines": true,
+                        "linewidth": 2,
+                        "links": [
+
+                        ],
+                        "nullPointMode": "connected",
+                        "percentage": false,
+                        "pointradius": 1,
+                        "points": false,
+                        "renderer": "flot",
+                        "seriesOverrides": [
+
+                        ],
+                        "span": 4,
+                        "stack": false,
+                        "steppedLine": true,
+                        "targets": [
+                            {
+                                "expr": "rate(kubelet_pod_start_duration_seconds_sum{instance=~\".*\"}[5m]) / rate(kubelet_pod_start_duration_seconds_count{instance=~\".*\"}[5m])",
+                                "legendFormat": "{{instance}}",
+                                "hide": false,
+                                "intervalFactor": 2,
+                                "refId": "A",
+                                "step": 4
+                            }
+                        ],
+                        "thresholds": [
+
+                        ],
+                        "timeFrom": null,
+                        "timeShift": null,
+                        "title": "(Kubelet) Pod Start Duration ",
+                        "tooltip": {
+                            "msResolution": false,
+                            "shared": true,
+                            "sort": 0,
+                            "value_type": "cumulative"
+                        },
+                        "type": "graph",
+                        "xaxis": {
+                            "mode": "time",
+                            "name": null,
+                            "show": true,
+                            "values": [
+
+                            ]
+                        },
+                        "yaxes": [
+                            {
+                                "format": "none",
+                                "logBase": 1,
+                                "max": null,
+                                "min": null,
+                                "show": true
+                            }
+                        ]
+                    },
+                    {
+                        "aliasColors": {
+
+                        },
+                        "bars": false,
+                        "datasource": "$datasource",
+                        "editable": true,
+                        "error": false,
+                        "fill": 0,
+                        "grid": {
+
+                        },
+                        "id": 3,
+                        "legend": {
+                            "avg": false,
+                            "current": false,
+                            "max": false,
+                            "min": false,
+                            "show": false,
+                            "total": false,
+                            "values": false
+                        },
+                        "lines": true,
+                        "linewidth": 2,
+                        "links": [
+
+                        ],
+                        "nullPointMode": "connected",
+                        "percentage": false,
+                        "pointradius": 1,
+                        "points": false,
+                        "renderer": "flot",
+                        "seriesOverrides": [
+
+                        ],
+                        "span": 4,
+                        "stack": false,
+                        "steppedLine": true,
+                        "targets": [
+                            {
+                                "expr": "rate(kubelet_pod_start_sli_duration_seconds_sum{instance=~\".*\"}[5m]) / rate(kubelet_pod_start_sli_duration_seconds_count{instance=~\".*\"}[5m])",
+                                "legendFormat": "{{instance}}",
+                                "hide": false,
+                                "intervalFactor": 2,
+                                "refId": "A",
+                                "step": 4
+                            }
+                        ],
+                        "thresholds": [
+
+                        ],
+                        "timeFrom": null,
+                        "timeShift": null,
+                        "title": "(Kubelet) Pod Start SLI Duration ",
+                        "tooltip": {
+                            "msResolution": false,
+                            "shared": true,
+                            "sort": 0,
+                            "value_type": "cumulative"
+                        },
+                        "type": "graph",
+                        "xaxis": {
+                            "mode": "time",
+                            "name": null,
+                            "show": true,
+                            "values": [
+
+                            ]
+                        },
+                        "yaxes": [
+                            {
+                                "format": "none",
+                                "logBase": 1,
+                                "max": null,
+                                "min": null,
+                                "show": true
+                            }
+                        ]
+                    },
+                    {
+                        "aliasColors": {
+
+                        },
+                        "bars": false,
+                        "datasource": "$datasource",
+                        "editable": true,
+                        "error": false,
+                        "fill": 0,
+                        "grid": {
+
+                        },
+                        "id": 3,
+                        "legend": {
+                            "avg": false,
+                            "current": false,
+                            "max": false,
+                            "min": false,
+                            "show": false,
+                            "total": false,
+                            "values": false
+                        },
+                        "lines": true,
+                        "linewidth": 2,
+                        "links": [
+
+                        ],
+                        "nullPointMode": "connected",
+                        "percentage": false,
+                        "pointradius": 1,
+                        "points": false,
+                        "renderer": "flot",
+                        "seriesOverrides": [
+
+                        ],
+                        "span": 4,
+                        "stack": false,
+                        "steppedLine": true,
+                        "targets": [
+                            {
+                                "expr": "rate(kubelet_runtime_operations_duration_seconds_sum{instance=~\".*\"}[5m]) / rate(kubelet_runtime_operations_duration_seconds_count{instance=~\".*\"}[5m])",
+                                "legendFormat": "{{instance}}",
+                                "hide": false,
+                                "intervalFactor": 2,
+                                "refId": "A",
+                                "step": 4
+                            }
+                        ],
+                        "thresholds": [
+
+                        ],
+                        "timeFrom": null,
+                        "timeShift": null,
+                        "title": "(Kubelet) Runtime Operations Duration",
+                        "tooltip": {
+                            "msResolution": false,
+                            "shared": true,
+                            "sort": 0,
+                            "value_type": "cumulative"
+                        },
+                        "type": "graph",
+                        "xaxis": {
+                            "mode": "time",
+                            "name": null,
+                            "show": true,
+                            "values": [
+
+                            ]
+                        },
+                        "yaxes": [
+                            {
+                                "format": "none",
+                                "logBase": 1,
+                                "max": null,
+                                "min": null,
+                                "show": true
+                            }
+                        ]
+                    },
+                    {
+                        "aliasColors": {
+
+                        },
+                        "bars": false,
+                        "datasource": "$datasource",
+                        "editable": true,
+                        "error": false,
+                        "fill": 0,
+                        "grid": {
+
+                        },
+                        "id": 3,
+                        "legend": {
+                            "avg": false,
+                            "current": false,
+                            "max": false,
+                            "min": false,
+                            "show": false,
+                            "total": false,
+                            "values": false
+                        },
+                        "lines": true,
+                        "linewidth": 2,
+                        "links": [
+
+                        ],
+                        "nullPointMode": "connected",
+                        "percentage": false,
+                        "pointradius": 1,
+                        "points": false,
+                        "renderer": "flot",
+                        "seriesOverrides": [
+
+                        ],
+                        "span": 4,
+                        "stack": false,
+                        "steppedLine": true,
+                        "targets": [
+                            {
+                                "expr": "rate(kubelet_pod_status_sync_duration_seconds_sum{instance=~\".*\"}[5m]) / rate(kubelet_pod_status_sync_duration_seconds_count{instance=~\".*\"}[5m])",
+                                "legendFormat": "{{instance}}",
+                                "hide": false,
+                                "intervalFactor": 2,
+                                "refId": "A",
+                                "step": 4
+                            }
+                        ],
+                        "thresholds": [
+
+                        ],
+                        "timeFrom": null,
+                        "timeShift": null,
+                        "title": "(Kubelet) Pod Status Sync Duration ",
+                        "tooltip": {
+                            "msResolution": false,
+                            "shared": true,
+                            "sort": 0,
+                            "value_type": "cumulative"
+                        },
+                        "type": "graph",
+                        "xaxis": {
+                            "mode": "time",
+                            "name": null,
+                            "show": true,
+                            "values": [
+
+                            ]
+                        },
+                        "yaxes": [
+                            {
+                                "format": "none",
+                                "logBase": 1,
+                                "max": null,
+                                "min": null,
+                                "show": true
+                            }
+                        ]
+                    },
+                    {
+                        "aliasColors": {
+
+                        },
+                        "bars": false,
+                        "datasource": "$datasource",
+                        "editable": true,
+                        "error": false,
+                        "fill": 0,
+                        "grid": {
+
+                        },
+                        "id": 3,
+                        "legend": {
+                            "avg": false,
+                            "current": false,
+                            "max": false,
+                            "min": false,
+                            "show": false,
+                            "total": false,
+                            "values": false
+                        },
+                        "lines": true,
+                        "linewidth": 2,
+                        "links": [
+
+                        ],
+                        "nullPointMode": "connected",
+                        "percentage": false,
+                        "pointradius": 1,
+                        "points": false,
+                        "renderer": "flot",
+                        "seriesOverrides": [
+
+                        ],
+                        "span": 4,
+                        "stack": false,
+                        "steppedLine": true,
+                        "targets": [
+                            {
+                                "expr": "rate(kubelet_cgroup_manager_duration_seconds_sum{instance=~\".*\"}[5m]) / rate(kubelet_cgroup_manager_duration_seconds_count{instance=~\".*\"}[5m])",
+                                "hide": false,
+                                "legendFormat": "{{instance}}",
+                                "intervalFactor": 2,
+                                "refId": "A",
+                                "step": 4
+                            }
+                        ],
+                        "thresholds": [
+
+                        ],
+                        "timeFrom": null,
+                        "timeShift": null,
+                        "title": "(Kubelet) Cgroup Operation Duration ",
+                        "tooltip": {
+                            "msResolution": false,
+                            "shared": true,
+                            "sort": 0,
+                            "value_type": "individual"
+                        },
+                        "type": "graph",
+                        "xaxis": {
+                            "mode": "time",
+                            "name": null,
+                            "show": true,
+                            "values": [
+
+                            ]
+                        },
+                        "yaxes": [
+                            {
+                                "format": "none",
+                                "logBase": 1,
+                                "max": null,
+                                "min": null,
+                                "show": true
+                            }
+                        ]
+                    },
+                    {
+                        "aliasColors": {
+
+                        },
+                        "bars": false,
+                        "datasource": "$datasource",
+                        "editable": true,
+                        "error": false,
+                        "fill": 0,
+                        "grid": {
+
+                        },
+                        "id": 3,
+                        "legend": {
+                            "avg": false,
+                            "current": false,
+                            "max": false,
+                            "min": false,
+                            "show": false,
+                            "total": false,
+                            "values": false
+                        },
+                        "lines": true,
+                        "linewidth": 2,
+                        "links": [
+
+                        ],
+                        "nullPointMode": "connected",
+                        "percentage": false,
+                        "pointradius": 1,
+                        "points": false,
+                        "renderer": "flot",
+                        "seriesOverrides": [
+
+                        ],
+                        "span": 4,
+                        "stack": false,
+                        "steppedLine": true,
+                        "targets": [
+                            {
+                                "expr": "rate(kubelet_pleg_relist_duration_seconds_sum{instance=~\".*\"}[5m]) / rate(kubelet_pleg_relist_duration_seconds_count{instance=~\".*\"}[5m])",
+                                "legendFormat": "{{instance}}",
+                                "hide": false,
+                                "intervalFactor": 2,
+                                "refId": "A",
+                                "step": 4
+                            }
+                        ],
+                        "thresholds": [
+
+                        ],
+                        "timeFrom": null,
+                        "timeShift": null,
+                        "title": "(Kubelet) Pleg Relist Duration ",
+                        "tooltip": {
+                            "msResolution": false,
+                            "shared": true,
+                            "sort": 0,
+                            "value_type": "cumulative"
+                        },
+                        "type": "graph",
+                        "xaxis": {
+                            "mode": "time",
+                            "name": null,
+                            "show": true,
+                            "values": [
+
+                            ]
+                        },
+                        "yaxes": [
+                            {
+                                "format": "none",
+                                "logBase": 1,
+                                "max": null,
+                                "min": null,
+                                "show": true
+                            }
+                        ]
+                    },
+                    {
+                        "aliasColors": {
+
+                        },
+                        "bars": false,
+                        "datasource": "$datasource",
+                        "editable": true,
+                        "error": false,
+                        "fill": 0,
+                        "grid": {
+
+                        },
+                        "id": 3,
+                        "legend": {
+                            "avg": false,
+                            "current": false,
+                            "max": false,
+                            "min": false,
+                            "show": false,
+                            "total": false,
+                            "values": false
+                        },
+                        "lines": true,
+                        "linewidth": 2,
+                        "links": [
+
+                        ],
+                        "nullPointMode": "connected",
+                        "percentage": false,
+                        "pointradius": 1,
+                        "points": false,
+                        "renderer": "flot",
+                        "seriesOverrides": [
+
+                        ],
+                        "span": 4,
+                        "stack": false,
+                        "steppedLine": true,
+                        "targets": [
+                            {
+                                "expr": "rate(kubelet_pod_worker_duration_seconds_sum{instance=~\".*\"}[5m]) / rate(kubelet_pod_worker_duration_seconds_count{instance=~\".*\"}[5m])",
+                                "legendFormat": "{{instance}}",
+                                "hide": false,
+                                "intervalFactor": 2,
+                                "refId": "A",
+                                "step": 4
+                            }
+                        ],
+                        "thresholds": [
+
+                        ],
+                        "timeFrom": null,
+                        "timeShift": null,
+                        "title": "(Kubelet) Pod Worker Duration ",
+                        "tooltip": {
+                            "msResolution": false,
+                            "shared": true,
+                            "sort": 0,
+                            "value_type": "cumulative"
+                        },
+                        "type": "graph",
+                        "xaxis": {
+                            "mode": "time",
+                            "name": null,
+                            "show": true,
+                            "values": [
+
+                            ]
+                        },
+                        "yaxes": [
+                            {
+                                "format": "none",
+                                "logBase": 1,
+                                "max": null,
+                                "min": null,
+                                "show": true
+                            }
+                        ]
+                    },
+                    {
+                        "aliasColors": {
+
+                        },
+                        "bars": false,
+                        "datasource": "$datasource",
+                        "editable": true,
+                        "error": false,
+                        "fill": 0,
+                        "grid": {
+
+                        },
+                        "id": 3,
+                        "legend": {
+                            "avg": false,
+                            "current": false,
+                            "max": false,
+                            "min": false,
+                            "show": false,
+                            "total": false,
+                            "values": false
+                        },
+                        "lines": true,
+                        "linewidth": 2,
+                        "links": [
+
+                        ],
+                        "nullPointMode": "connected",
+                        "percentage": false,
+                        "pointradius": 1,
+                        "points": false,
+                        "renderer": "flot",
+                        "seriesOverrides": [
+
+                        ],
+                        "span": 4,
+                        "stack": false,
+                        "steppedLine": true,
+                        "targets": [
+                            {
+                                "expr": "rate(storage_operation_duration_seconds_sum{instance=~\".*\"}[5m]) / rate(storage_operation_duration_seconds_count{instance=~\".*\"}[5m])",
+                                "legendFormat": "{{instance}}",
+                                "hide": false,
+                                "intervalFactor": 2,
+                                "refId": "A",
+                                "step": 4
+                            }
+                        ],
+                        "thresholds": [
+
+                        ],
+                        "timeFrom": null,
+                        "timeShift": null,
+                        "title": "(Kubelet) Storage Op. Duration ",
+                        "tooltip": {
+                            "msResolution": false,
+                            "shared": true,
+                            "sort": 0,
+                            "value_type": "cumulative"
+                        },
+                        "type": "graph",
+                        "xaxis": {
+                            "mode": "time",
+                            "name": null,
+                            "show": true,
+                            "values": [
+
+                            ]
+                        },
+                        "yaxes": [
+                            {
+                                "format": "none",
+                                "logBase": 1,
+                                "max": null,
+                                "min": null,
+                                "show": true
+                            }
+                        ]
+                    }
+                ],
+                "repeat": null,
+                "repeatIteration": null,
+                "repeatRowId": null,
+                "showTitle": true,
+                "title": "Average Durations",
+                "titleSize": "h6",
+                "type": "row"
+            },
+            {
+                "collapse": true,
+                "collapsed": false,
+                "panels": [
+                    {
+                        "aliasColors": {
+
+                        },
+                        "bars": false,
+                        "datasource": "$datasource",
+                        "editable": true,
+                        "error": false,
+                        "fill": 0,
+                        "grid": {
+
+                        },
+                        "id": 3,
+                        "legend": {
+                            "avg": false,
+                            "current": false,
+                            "max": false,
+                            "min": false,
+                            "show": false,
+                            "total": false,
+                            "values": false
+                        },
+                        "lines": true,
+                        "linewidth": 2,
+                        "links": [
+
+                        ],
+                        "nullPointMode": "connected",
+                        "percentage": false,
+                        "pointradius": 1,
+                        "points": false,
+                        "renderer": "flot",
+                        "seriesOverrides": [
+
+                        ],
+                        "span": 4,
+                        "stack": false,
+                        "steppedLine": true,
+                        "targets": [
+                            {
+                                "expr": "sum(increase(kubelet_pod_start_duration_seconds_count{instance=~\".*\"}[5m])) by (instance)",
+                                "legendFormat": "{{instance}}",
+                                "hide": false,
+                                "intervalFactor": 2,
+                                "refId": "A",
+                                "step": 4
+                            }
+                        ],
+                        "thresholds": [
+
+                        ],
+                        "timeFrom": null,
+                        "timeShift": null,
+                        "title": "(Kubelet) Pod Start Duration ",
+                        "tooltip": {
+                            "msResolution": false,
+                            "shared": true,
+                            "sort": 0,
+                            "value_type": "cumulative"
+                        },
+                        "type": "graph",
+                        "xaxis": {
+                            "mode": "time",
+                            "name": null,
+                            "show": true,
+                            "values": [
+
+                            ]
+                        },
+                        "yaxes": [
+                            {
+                                "format": "none",
+                                "logBase": 1,
+                                "max": null,
+                                "min": null,
+                                "show": true
+                            }
+                        ]
+                    },
+                    {
+                        "aliasColors": {
+
+                        },
+                        "bars": false,
+                        "datasource": "$datasource",
+                        "editable": true,
+                        "error": false,
+                        "fill": 0,
+                        "grid": {
+
+                        },
+                        "id": 3,
+                        "legend": {
+                            "avg": false,
+                            "current": false,
+                            "max": false,
+                            "min": false,
+                            "show": false,
+                            "total": false,
+                            "values": false
+                        },
+                        "lines": true,
+                        "linewidth": 2,
+                        "links": [
+
+                        ],
+                        "nullPointMode": "connected",
+                        "percentage": false,
+                        "pointradius": 1,
+                        "points": false,
+                        "renderer": "flot",
+                        "seriesOverrides": [
+
+                        ],
+                        "span": 4,
+                        "stack": false,
+                        "steppedLine": true,
+                        "targets": [
+                            {
+                                "expr": "sum(increase(kubelet_pod_start_sli_duration_seconds{instance=~\".*\"}[5m])) by (instance)",
+                                "legendFormat": "{{instance}}",
+                                "hide": false,
+                                "intervalFactor": 2,
+                                "refId": "A",
+                                "step": 4
+                            }
+                        ],
+                        "thresholds": [
+
+                        ],
+                        "timeFrom": null,
+                        "timeShift": null,
+                        "title": "(Kubelet) Pod Start SLI Duration ",
+                        "tooltip": {
+                            "msResolution": false,
+                            "shared": true,
+                            "sort": 0,
+                            "value_type": "cumulative"
+                        },
+                        "type": "graph",
+                        "xaxis": {
+                            "mode": "time",
+                            "name": null,
+                            "show": true,
+                            "values": [
+
+                            ]
+                        },
+                        "yaxes": [
+                            {
+                                "format": "none",
+                                "logBase": 1,
+                                "max": null,
+                                "min": null,
+                                "show": true
+                            }
+                        ]
+                    },
+                    {
+                        "aliasColors": {
+
+                        },
+                        "bars": false,
+                        "datasource": "$datasource",
+                        "editable": true,
+                        "error": false,
+                        "fill": 0,
+                        "grid": {
+
+                        },
+                        "id": 3,
+                        "legend": {
+                            "avg": false,
+                            "current": false,
+                            "max": false,
+                            "min": false,
+                            "show": false,
+                            "total": false,
+                            "values": false
+                        },
+                        "lines": true,
+                        "linewidth": 2,
+                        "links": [
+
+                        ],
+                        "nullPointMode": "connected",
+                        "percentage": false,
+                        "pointradius": 1,
+                        "points": false,
+                        "renderer": "flot",
+                        "seriesOverrides": [
+
+                        ],
+                        "span": 4,
+                        "stack": false,
+                        "steppedLine": true,
+                        "targets": [
+                            {
+                                "expr": "sum(increase(kubelet_runtime_operations_duration_seconds_count{instance=~\".*\"}[5m])) by (instance, operation_type)",
+                                "legendFormat": "{{instance}}",
+                                "hide": false,
+                                "intervalFactor": 2,
+                                "refId": "A",
+                                "step": 4
+                            }
+                        ],
+                        "thresholds": [
+
+                        ],
+                        "timeFrom": null,
+                        "timeShift": null,
+                        "title": "(Kubelet) Runtime Operations Duration",
+                        "tooltip": {
+                            "msResolution": false,
+                            "shared": true,
+                            "sort": 0,
+                            "value_type": "cumulative"
+                        },
+                        "type": "graph",
+                        "xaxis": {
+                            "mode": "time",
+                            "name": null,
+                            "show": true,
+                            "values": [
+
+                            ]
+                        },
+                        "yaxes": [
+                            {
+                                "format": "none",
+                                "logBase": 1,
+                                "max": null,
+                                "min": null,
+                                "show": true
+                            }
+                        ]
+                    },
+                    {
+                        "aliasColors": {
+
+                        },
+                        "bars": false,
+                        "datasource": "$datasource",
+                        "editable": true,
+                        "error": false,
+                        "fill": 0,
+                        "grid": {
+
+                        },
+                        "id": 3,
+                        "legend": {
+                            "avg": false,
+                            "current": false,
+                            "max": false,
+                            "min": false,
+                            "show": false,
+                            "total": false,
+                            "values": false
+                        },
+                        "lines": true,
+                        "linewidth": 2,
+                        "links": [
+
+                        ],
+                        "nullPointMode": "connected",
+                        "percentage": false,
+                        "pointradius": 1,
+                        "points": false,
+                        "renderer": "flot",
+                        "seriesOverrides": [
+
+                        ],
+                        "span": 4,
+                        "stack": false,
+                        "steppedLine": true,
+                        "targets": [
+                            {
+                                "expr": "sum(increase(kubelet_pod_status_sync_duration_seconds_count{instance=~\".*\"}[5m])) by (instance)",
+                                "legendFormat": "{{instance}}",
+                                "hide": false,
+                                "intervalFactor": 2,
+                                "refId": "A",
+                                "step": 4
+                            }
+                        ],
+                        "thresholds": [
+
+                        ],
+                        "timeFrom": null,
+                        "timeShift": null,
+                        "title": "(Kubelet) Pod Status Sync Duration ",
+                        "tooltip": {
+                            "msResolution": false,
+                            "shared": true,
+                            "sort": 0,
+                            "value_type": "cumulative"
+                        },
+                        "type": "graph",
+                        "xaxis": {
+                            "mode": "time",
+                            "name": null,
+                            "show": true,
+                            "values": [
+
+                            ]
+                        },
+                        "yaxes": [
+                            {
+                                "format": "none",
+                                "logBase": 1,
+                                "max": null,
+                                "min": null,
+                                "show": true
+                            }
+                        ]
+                    },
+                    {
+                        "aliasColors": {
+
+                        },
+                        "bars": false,
+                        "datasource": "$datasource",
+                        "editable": true,
+                        "error": false,
+                        "fill": 0,
+                        "grid": {
+
+                        },
+                        "id": 3,
+                        "legend": {
+                            "avg": false,
+                            "current": false,
+                            "max": false,
+                            "min": false,
+                            "show": false,
+                            "total": false,
+                            "values": false
+                        },
+                        "lines": true,
+                        "linewidth": 2,
+                        "links": [
+
+                        ],
+                        "nullPointMode": "connected",
+                        "percentage": false,
+                        "pointradius": 1,
+                        "points": false,
+                        "renderer": "flot",
+                        "seriesOverrides": [
+
+                        ],
+                        "span": 4,
+                        "stack": false,
+                        "steppedLine": true,
+                        "targets": [
+                            {
+                                "expr": "sum(increase(kubelet_cgroup_manager_duration_seconds_count{instance=~\".*\"}[5m])) by (instance, operation_type)",
+                                "hide": false,
+                                "legendFormat": "{{instance}}",
+                                "intervalFactor": 2,
+                                "refId": "A",
+                                "step": 4
+                            }
+                        ],
+                        "thresholds": [
+
+                        ],
+                        "timeFrom": null,
+                        "timeShift": null,
+                        "title": "(Kubelet) Cgroup Operation Duration ",
+                        "tooltip": {
+                            "msResolution": false,
+                            "shared": true,
+                            "sort": 0,
+                            "value_type": "individual"
+                        },
+                        "type": "graph",
+                        "xaxis": {
+                            "mode": "time",
+                            "name": null,
+                            "show": true,
+                            "values": [
+
+                            ]
+                        },
+                        "yaxes": [
+                            {
+                                "format": "none",
+                                "logBase": 1,
+                                "max": null,
+                                "min": null,
+                                "show": true
+                            }
+                        ]
+                    },
+                    {
+                        "aliasColors": {
+
+                        },
+                        "bars": false,
+                        "datasource": "$datasource",
+                        "editable": true,
+                        "error": false,
+                        "fill": 0,
+                        "grid": {
+
+                        },
+                        "id": 3,
+                        "legend": {
+                            "avg": false,
+                            "current": false,
+                            "max": false,
+                            "min": false,
+                            "show": false,
+                            "total": false,
+                            "values": false
+                        },
+                        "lines": true,
+                        "linewidth": 2,
+                        "links": [
+
+                        ],
+                        "nullPointMode": "connected",
+                        "percentage": false,
+                        "pointradius": 1,
+                        "points": false,
+                        "renderer": "flot",
+                        "seriesOverrides": [
+
+                        ],
+                        "span": 4,
+                        "stack": false,
+                        "steppedLine": true,
+                        "targets": [
+                            {
+                                "expr": "sum(increase(kubelet_pleg_relist_duration_seconds_count{instance=~\".*\"}[5m])) by (instance)",
+                                "legendFormat": "{{instance}}",
+                                "hide": false,
+                                "intervalFactor": 2,
+                                "refId": "A",
+                                "step": 4
+                            }
+                        ],
+                        "thresholds": [
+
+                        ],
+                        "timeFrom": null,
+                        "timeShift": null,
+                        "title": "(Kubelet) Pleg Relist Duration ",
+                        "tooltip": {
+                            "msResolution": false,
+                            "shared": true,
+                            "sort": 0,
+                            "value_type": "cumulative"
+                        },
+                        "type": "graph",
+                        "xaxis": {
+                            "mode": "time",
+                            "name": null,
+                            "show": true,
+                            "values": [
+
+                            ]
+                        },
+                        "yaxes": [
+                            {
+                                "format": "none",
+                                "logBase": 1,
+                                "max": null,
+                                "min": null,
+                                "show": true
+                            }
+                        ]
+                    },
+                    {
+                        "aliasColors": {
+
+                        },
+                        "bars": false,
+                        "datasource": "$datasource",
+                        "editable": true,
+                        "error": false,
+                        "fill": 0,
+                        "grid": {
+
+                        },
+                        "id": 3,
+                        "legend": {
+                            "avg": false,
+                            "current": false,
+                            "max": false,
+                            "min": false,
+                            "show": false,
+                            "total": false,
+                            "values": false
+                        },
+                        "lines": true,
+                        "linewidth": 2,
+                        "links": [
+
+                        ],
+                        "nullPointMode": "connected",
+                        "percentage": false,
+                        "pointradius": 1,
+                        "points": false,
+                        "renderer": "flot",
+                        "seriesOverrides": [
+
+                        ],
+                        "span": 4,
+                        "stack": false,
+                        "steppedLine": true,
+                        "targets": [
+                            {
+                                "expr": "sum(increase(kubelet_pod_worker_duration_seconds_count{instance=~\".*\"}[5m])) by (instance, operation_type)",
+                                "legendFormat": "{{instance}}",
+                                "hide": false,
+                                "intervalFactor": 2,
+                                "refId": "A",
+                                "step": 4
+                            }
+                        ],
+                        "thresholds": [
+
+                        ],
+                        "timeFrom": null,
+                        "timeShift": null,
+                        "title": "(Kubelet) Pod Worker Duration ",
+                        "tooltip": {
+                            "msResolution": false,
+                            "shared": true,
+                            "sort": 0,
+                            "value_type": "cumulative"
+                        },
+                        "type": "graph",
+                        "xaxis": {
+                            "mode": "time",
+                            "name": null,
+                            "show": true,
+                            "values": [
+
+                            ]
+                        },
+                        "yaxes": [
+                            {
+                                "format": "none",
+                                "logBase": 1,
+                                "max": null,
+                                "min": null,
+                                "show": true
+                            }
+                        ]
+                    },
+                    {
+                        "aliasColors": {
+
+                        },
+                        "bars": false,
+                        "datasource": "$datasource",
+                        "editable": true,
+                        "error": false,
+                        "fill": 0,
+                        "grid": {
+
+                        },
+                        "id": 3,
+                        "legend": {
+                            "avg": false,
+                            "current": false,
+                            "max": false,
+                            "min": false,
+                            "show": false,
+                            "total": false,
+                            "values": false
+                        },
+                        "lines": true,
+                        "linewidth": 2,
+                        "links": [
+
+                        ],
+                        "nullPointMode": "connected",
+                        "percentage": false,
+                        "pointradius": 1,
+                        "points": false,
+                        "renderer": "flot",
+                        "seriesOverrides": [
+
+                        ],
+                        "span": 4,
+                        "stack": false,
+                        "steppedLine": true,
+                        "targets": [
+                            {
+                                "expr": "sum(increase(storage_operation_duration_seconds_count{instance=~\".*\"}[5m])) by (instance, operation_name)",
+                                "legendFormat": "{{instance}}",
+                                "hide": false,
+                                "intervalFactor": 2,
+                                "refId": "A",
+                                "step": 4
+                            }
+                        ],
+                        "thresholds": [
+
+                        ],
+                        "timeFrom": null,
+                        "timeShift": null,
+                        "title": "(Kubelet) Storage Op. Duration ",
+                        "tooltip": {
+                            "msResolution": false,
+                            "shared": true,
+                            "sort": 0,
+                            "value_type": "cumulative"
+                        },
+                        "type": "graph",
+                        "xaxis": {
+                            "mode": "time",
+                            "name": null,
+                            "show": true,
+                            "values": [
+
+                            ]
+                        },
+                        "yaxes": [
+                            {
+                                "format": "none",
+                                "logBase": 1,
+                                "max": null,
+                                "min": null,
+                                "show": true
+                            }
+                        ]
+                    }
+                ],
+                "repeat": null,
+                "repeatIteration": null,
+                "repeatRowId": null,
+                "showTitle": true,
+                "title": "Number of Operations",
+                "titleSize": "h6",
+                "type": "row"
+            }
+        ],
+        "schemaVersion": 14,
+        "style": "dark",
+        "tags": [
+            "node-cluster-mixin"
+        ],
+        "templating": {
+            "list": [
+                {
+                    "current": {
+                        "text": "default",
+                        "value": "default"
+                    },
+                    "hide": 0,
+                    "label": "Data Source",
+                    "name": "datasource",
+                    "options": [
+
+                    ],
+                    "query": "prometheus",
+                    "refresh": 1,
+                    "regex": "",
+                    "type": "datasource"
+                },
+                {
+                    "allValue": null,
+                    "current": {
+                        "text": "",
+                        "value": ""
+                    },
+                    "datasource": "$datasource",
+                    "hide": 2,
+                    "includeAll": false,
+                    "label": null,
+                    "multi": false,
+                    "name": "cluster",
+                    "options": [
+
+                    ],
+                    "query": "label_values(node_time_seconds, cluster)",
+                    "refresh": 2,
+                    "regex": "",
+                    "sort": 1,
+                    "tagValuesQuery": "",
+                    "tags": [
+
+                    ],
+                    "tagsQuery": "",
+                    "type": "query",
+                    "useTags": false
+                }
+            ]
+        },
+        "time": {
+            "from": "now-1h",
+            "to": "now"
+        },
+        "timepicker": {
+            "refresh_intervals": [
+                "5s",
+                "10s",
+                "30s",
+                "1m",
+                "5m",
+                "15m",
+                "30m",
+                "1h",
+                "2h",
+                "1d"
+            ],
+            "time_options": [
+                "5m",
+                "15m",
+                "1h",
+                "6h",
+                "12h",
+                "24h",
+                "2d",
+                "7d",
+                "30d"
+            ]
+        },
+        "timezone": "utc",
+        "title": "Node Cluster",
+        "version": 0
+    }
+kind: ConfigMap
+metadata:
+  annotations:
+    include.release.openshift.io/ibm-cloud-managed: "true"
+    include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-developer: "true"
+  labels:
+    app.kubernetes.io/part-of: openshift-monitoring
+    console.openshift.io/dashboard: "true"
+  name: node-cluster
+  namespace: openshift-config-managed
