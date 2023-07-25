@@ -2291,26 +2291,13 @@ func (dn *Daemon) validateOnDiskStateWithImage(currentConfig *mcfgv1.MachineConf
 // checkOS determines whether the booted system matches the target
 // osImageURL and if not whether we need to take action.  This function
 // returns `true` if no action is required, which is the case if we're
-// not running RHCOS or FCOS, or if the target osImageURL is "" (unspecified),
-// or if the digests match.
+// not running RHCOS or FCOS, or if the target osImageURL is "" (unspecified).
 // Otherwise if `false` is returned, then we need to perform an update.
 func (dn *Daemon) checkOS(osImageURL string) bool {
 	// Nothing to do if we're not on RHCOS or FCOS
 	if !dn.os.IsCoreOSVariant() {
 		klog.Infof(`Not booted into a CoreOS variant, ignoring target OSImageURL %s`, osImageURL)
 		return true
-	}
-
-	// TODO(jkyros): the header for this functions says "if the digests match"
-	// so I'm wondering if at one point this used to work this way....
-	inspection, _, err := imageInspect(osImageURL)
-	if err != nil {
-		klog.Warningf("Unable to check manifest for matching hash: %s", err)
-	} else if ostreeCommit, ok := inspection.Labels["ostree.commit"]; ok {
-		if ostreeCommit == dn.bootedOSCommit {
-			klog.Infof("We are technically in the right image even if the URL doesn't match (%s == %s)", ostreeCommit, osImageURL)
-			return true
-		}
 	}
 
 	return dn.bootedOSImageURL == osImageURL

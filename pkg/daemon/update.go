@@ -42,6 +42,9 @@ const (
 	extensionsRepo             = "/etc/yum.repos.d/coreos-extensions.repo"
 	osExtensionsContentBaseDir = "/run/mco-extensions/"
 
+	// cmdRetriesCount is an arbitrary number of times we will retry
+	cmdRetriesCount = 2
+
 	// These are the actions for a node to take after applying config changes. (e.g. a new machineconfig is applied)
 	// "None" means no special action needs to be taken
 	// This happens for example when ssh keys or the pull secret (/var/lib/kubelet/config.json) is changed

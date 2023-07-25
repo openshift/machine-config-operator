@@ -8,11 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 
 	rpmostreeclient "github.com/coreos/rpmostree-client-go/pkg/client"
-	"github.com/opencontainers/go-digest"
-	pivotutils "github.com/openshift/machine-config-operator/pkg/daemon/pivot/utils"
 	"gopkg.in/yaml.v2"
 	"k8s.io/klog/v2"
 )
@@ -27,21 +24,6 @@ const (
 	// Internal Registry Pull secret + Global Pull secret.  Written by the machine-config-operator.
 	imageRegistryAuthFile = "/etc/mco/internal-registry-pull-secret.json"
 )
-
-// imageInspection is a public implementation of
-// https://github.com/containers/skopeo/blob/82186b916faa9c8c70cfa922229bafe5ae024dec/cmd/skopeo/inspect.go#L20-L31
-type imageInspection struct {
-	Name          string `json:",omitempty"`
-	Tag           string `json:",omitempty"`
-	Digest        digest.Digest
-	RepoDigests   []string
-	Created       *time.Time
-	DockerVersion string
-	Labels        map[string]string
-	Architecture  string
-	Os            string
-	Layers        []string
-}
 
 // RpmOstreeClient provides all RpmOstree related methods in one structure.
 // This structure implements DeploymentClient
@@ -160,38 +142,6 @@ func (r *RpmOstreeClient) GetBootedOSImageURL() (string, string, string, error) 
 
 	baseChecksum := bootedDeployment.GetBaseChecksum()
 	return osImageURL, bootedDeployment.Version, baseChecksum, nil
-}
-
-func podmanInspect(imgURL string) (imgdata *imageInspection, err error) {
-	// Pull the container image if not already available
-	var authArgs []string
-	if _, err := os.Stat(ostreeAuthFile); err == nil {
-		authArgs = append(authArgs, "--authfile", ostreeAuthFile)
-	}
-	args := []string{"pull", "-q"}
-	args = append(args, authArgs...)
-	args = append(args, imgURL)
-	_, err = pivotutils.RunExt(numRetriesNetCommands, "podman", args...)
-	if err != nil {
-		return
-	}
-
-	inspectArgs := []string{"inspect", "--type=image"}
-	inspectArgs = append(inspectArgs, fmt.Sprintf("%s", imgURL))
-	var output []byte
-	output, err = runGetOut("podman", inspectArgs...)
-	if err != nil {
-		return
-	}
-	var imagedataArray []imageInspection
-	err = json.Unmarshal(output, &imagedataArray)
-	if err != nil {
-		err = fmt.Errorf("unmarshaling podman inspect: %w", err)
-		return
-	}
-	imgdata = &imagedataArray[0]
-	return
-
 }
 
 // RpmOstreeIsNewEnoughForLayering returns true if the version of rpm-ostree on the
