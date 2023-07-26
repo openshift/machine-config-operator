@@ -43,7 +43,16 @@ contents:
 
             # Ensure resolv.conf exists and contains nameservers before we try to pull image or run podman
             if [[ ! -e /etc/resolv.conf ]] || ! grep -q nameserver /etc/resolv.conf; then
-                cp /var/run/NetworkManager/resolv.conf /etc/resolv.conf
+                cp -Z /var/run/NetworkManager/resolv.conf /etc/resolv.conf
+            fi
+
+            # Now, if we're still in a firstboot scenario, then we're done.
+            # Before we run kubelet, we currently always do an OS update and reboot.
+            # There is currently a dependency loop between rhcos-growpart.service
+            # and this code (which pulls a container image) on RHCOS 4.6 and below,
+            # which this also works around.
+            if test -f /etc/ignition-machine-config-encapsulated.json; then
+                exit 0
             fi
 
             # Ensure baremetalRuntimeCfgImage is pulled in a reliable way before trying to use it
