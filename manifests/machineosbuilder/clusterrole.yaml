@@ -1,0 +1,66 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: machine-os-builder
+rules:
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["get", "list", "watch", "patch"]
+- apiGroups: ["machineconfiguration.openshift.io"]
+  resources: ["*"]
+  verbs: ["*"]
+- apiGroups: [""]
+  resources: ["configmaps", "secrets"]
+  verbs: ["*"]
+- apiGroups: ["config.openshift.io"]
+  resources: ["images", "clusterversions", "featuregates", "nodes", "nodes/status"]
+  verbs: ["*"]
+- apiGroups: ["config.openshift.io"]
+  resources: ["schedulers", "apiservers", "infrastructures", "imagedigestmirrorsets", "imagetagmirrorsets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["operator.openshift.io"]
+  resources: ["imagecontentsourcepolicies"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["operator.openshift.io"]
+  resources: ["etcds"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["image.openshift.io"]
+  resources: ["images"]
+  verbs: ["get","list","watch","create","update","patch","delete"]
+- apiGroups: ["image.openshift.io"]
+  resources: ["imagestreams"]
+  verbs: ["get","list","watch","create","update","patch","delete"]
+- apiGroups: ["build.openshift.io"]
+  resources: ["builds","buildconfigs","buildconfigs/instantiate"]
+  verbs: ["get","list","watch","create","update","patch","delete"]
+- apiGroups: [""]
+  resources: ["pods/eviction"]
+  verbs: ["create"]
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "create", "delete"]
+- apiGroups: ["extensions"]
+  resources: ["daemonsets"]
+  verbs: ["get"]
+- apiGroups: ["apps"]
+  resources: ["daemonsets"]
+  verbs: ["get"]
+- apiGroups:
+  - authentication.k8s.io
+  resources:
+  - tokenreviews
+  - subjectaccessreviews
+  verbs:
+  - create
+- apiGroups:
+  - authorization.k8s.io
+  resources:
+  - subjectaccessreviews
+  verbs:
+  - create
+- apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
+  - "*"
