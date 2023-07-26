@@ -329,6 +329,49 @@ func WaitForPausedConfig(t *testing.T, cs *framework.ClientSet, pool string) err
 	return nil
 }
 
+// WaitForPodStart waits for a pod with the given name prefix in the given namespace to start.
+func WaitForPodStart(cs *framework.ClientSet, podPrefix, namespace string) error {
+	ctx := context.TODO()
+
+	return wait.PollUntilContextTimeout(ctx, 2*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
+		podList, err := cs.CoreV1Interface.Pods(namespace).List(ctx, metav1.ListOptions{})
+		if err != nil {
+			return false, err
+		}
+
+		for _, pod := range podList.Items {
+			if strings.HasPrefix(pod.Name, podPrefix) {
+				for _, condition := range pod.Status.Conditions {
+					if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
+						return true, nil
+					}
+				}
+			}
+		}
+		return false, nil
+	})
+}
+
+// WaitForPodStop waits for a pod with the given name prefix in the given namespace to stop (i.e., to be deleted).
+func WaitForPodStop(cs *framework.ClientSet, podPrefix, namespace string) error {
+	ctx := context.TODO()
+
+	return wait.PollUntilContextTimeout(ctx, 2*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
+		podList, err := cs.CoreV1Interface.Pods(namespace).List(ctx, metav1.ListOptions{})
+		if err != nil {
+			return false, err
+		}
+		for _, pod := range podList.Items {
+			if strings.HasPrefix(pod.Name, podPrefix) {
+				// Pod with prefix still exists, so we return false
+				return false, nil
+			}
+		}
+		// If we reached here, it means no pod with the given prefix exists, so we return true
+		return true, nil
+	})
+}
+
 // GetMonitoringToken retrieves the token from the openshift-monitoring secrets in the prometheus-k8s namespace.
 // It is equivalent to "oc sa get-token prometheus-k8s -n openshift-monitoring"
 func GetMonitoringToken(_ *testing.T, cs *framework.ClientSet) (string, error) {
