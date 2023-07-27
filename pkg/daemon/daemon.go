@@ -476,7 +476,6 @@ func ReexecuteForTargetRoot(target string) error {
 			// by RHEL10 the MCD will have fundamentally changed and we won't be doing the
 			// chroot() thing anymore.
 			klog.Infof("not chrooting for source=rhel-%s target=rhel-%s", sourceMajor, targetMajor)
-			return nil
 		}
 	} else {
 		klog.Info("assuming we can use container binary chroot() to host")
