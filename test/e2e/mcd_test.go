@@ -1,8 +1,10 @@
 package e2e_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -1007,6 +1009,108 @@ func TestMCDRotatesCertsOnPausedPool(t *testing.T) {
 
 }
 
+func TestFirstBootHasSSHKeys(t *testing.T) {
+	cs := framework.NewClientSet("")
+	outNodeYoungest := bytes.NewBuffer([]byte{})
+	outErr := bytes.NewBuffer([]byte{})
+	// get nodes by newest
+	cmdCombined := "oc get nodes --sort-by .metadata.creationTimestamp | tail -n 1"
+	cmd := exec.Command("bash", "-c", cmdCombined)
+	cmd.Stdout = outNodeYoungest
+	cmd.Stderr = outErr
+	err := cmd.Run()
+	require.Nil(t, err, fmt.Sprintf("Got stdout: %s and stderr: %s", outNodeYoungest.String(), outErr))
+	// get top machineset
+	cmdCombined = "oc -n openshift-machine-api -o name get machinesets | head -n 1"
+	cmd = exec.Command("bash", "-c", cmdCombined)
+	outMSet := bytes.NewBuffer([]byte{})
+	outErr = bytes.NewBuffer([]byte{})
+	cmd.Stdout = outMSet
+	cmd.Stderr = outErr
+	err = cmd.Run()
+	require.Nil(t, err, fmt.Sprintf("Got stdout: %s and stderr: %s", outMSet.String(), outErr))
+	mset := strings.Trim(strings.Split(outMSet.String(), "/")[1], "\n")
+	// scale a 2nd machine
+	cmdCombined = "oc scale --replicas=2  machineset " + mset + " -n openshift-machine-api"
+	cmd = exec.Command("bash", "-c", cmdCombined)
+	outScale := bytes.NewBuffer([]byte{})
+	outErr = bytes.NewBuffer([]byte{})
+	cmd.Stdout = outMSet
+	cmd.Stderr = outErr
+	err = cmd.Run()
+	require.Nil(t, err, fmt.Sprintf("Got stdout: %s and stderr: %s", outScale.String(), outErr))
+	outNodeYoungestNew := &bytes.Buffer{}
+	nodeStr := strings.Split(outNodeYoungest.String(), " ")[0]
+	t.Cleanup(func() {
+		if len(outNodeYoungestNew.String()) > 0 && strings.Split(outNodeYoungestNew.String(), " ")[0] != nodeStr {
+			// scale down
+			cmdCombined = "oc scale --replicas=1  machineset " + mset + " -n openshift-machine-api"
+			cmd = exec.Command("bash", "-c", cmdCombined)
+			outScale := bytes.NewBuffer([]byte{})
+			outErr = bytes.NewBuffer([]byte{})
+			cmd.Stdout = outMSet
+			cmd.Stderr = outErr
+			err = cmd.Run()
+			splitNodes := []string{}
+			require.Nil(t, err, fmt.Sprintf("Got stdout: %s and stderr: %s", outScale.String(), outErr))
+			if err := wait.PollUntilContextTimeout(context.TODO(), 2*time.Second, 20*time.Minute, false, func(ctx context.Context) (bool, error) {
+				outNodeYoungestNew = bytes.NewBuffer([]byte{})
+				outErr = bytes.NewBuffer([]byte{})
+				// get all nodes
+				cmdCombined = "oc get nodes"
+				cmd := exec.Command("bash", "-c", cmdCombined)
+				cmd.Stdout = outNodeYoungestNew
+				cmd.Stderr = outErr
+				err := cmd.Run()
+				require.Nil(t, err, fmt.Sprintf("Got stdout: %s and stderr: %s", outNodeYoungestNew.String(), outErr))
+				splitNodes = strings.Split(outNodeYoungestNew.String(), "\n")
+				for _, n := range splitNodes {
+					// find the one with scheduling disabled and delete it
+					if strings.Contains(n, "SchedulingDisabled") {
+						return false, nil
+					}
+				}
+				return true, nil
+			}); err != nil {
+				t.Fatalf("did not get old node upon cleanup: %s", splitNodes)
+			}
+		}
+
+	})
+	nodeSplit := []string{"", ""}
+	if err := wait.PollUntilContextTimeout(context.TODO(), 2*time.Second, 20*time.Minute, false, func(ctx context.Context) (bool, error) {
+		outNodeYoungestNew = bytes.NewBuffer([]byte{})
+		outErr = bytes.NewBuffer([]byte{})
+		// get nodes over and over
+		cmdCombined = "oc get nodes --sort-by .metadata.creationTimestamp | tail -n 1"
+		cmd := exec.Command("bash", "-c", cmdCombined)
+		cmd.Stdout = outNodeYoungestNew
+		cmd.Stderr = outErr
+		err := cmd.Run()
+		require.Nil(t, err, fmt.Sprintf("Got stdout: %s and stderr: %s", outNodeYoungestNew.String(), outErr))
+		nodeSplit = strings.SplitN(outNodeYoungestNew.String(), " ", 2)
+		// if node name != first node name and it is ready, we have a node
+		if nodeSplit[0] != nodeStr && strings.Contains(nodeSplit[1], "Ready") && !strings.Contains(nodeSplit[1], "NotReady") {
+			return true, nil
+		}
+		return false, nil
+	}); err != nil {
+		t.Fatal("did not get new node")
+	}
+
+	nodes, err := helpers.GetNodesByRole(cs, "worker")
+	require.Nil(t, err)
+	foundNode := false
+	for _, node := range nodes {
+		if node.Name == nodeSplit[0] && strings.Contains(nodeSplit[1], "Ready") && !strings.Contains(nodeSplit[1], "NotReady") {
+			foundNode = true
+			out := helpers.ExecCmdOnNode(t, cs, node, "cat", "/rootfs/home/core/.ssh/authorized_keys.d/ignition")
+			t.Logf("Got ssh key file data: %s", out)
+			require.NotEmpty(t, out)
+		}
+	}
+	require.True(t, foundNode)
+}
 func createMCToAddFileForRole(name, role, filename, data string) *mcfgv1.MachineConfig {
 	mcadd := helpers.CreateMC(fmt.Sprintf("%s-%s", name, uuid.NewUUID()), role)
 
