@@ -124,8 +124,6 @@ type Daemon struct {
 
 	currentConfigPath string
 
-	loggerSupportsJournal bool
-
 	// Config Drift Monitor
 	configDriftMonitor ConfigDriftMonitor
 
@@ -268,35 +266,21 @@ func New(
 			return nil, fmt.Errorf("failed to read boot ID: %w", err)
 		}
 	}
-
-	// RHEL 7.6/Centos 7 logger (util-linux) doesn't have the --journald flag
-	loggerSupportsJournal := true
-	if !mock {
-		if hostos.IsLikeTraditionalRHEL7() {
-			loggerOutput, err := exec.Command("logger", "--help").CombinedOutput()
-			if err != nil {
-				return nil, fmt.Errorf("running logger --help: %w", err)
-			}
-			loggerSupportsJournal = strings.Contains(string(loggerOutput), "--journald")
-		}
-	}
-
 	// report OS & version (if RHCOS or FCOS) to prometheus
 	hostOS.WithLabelValues(hostos.ToPrometheusLabel(), osVersion).Set(1)
 
 	return &Daemon{
-		mock:                  mock,
-		booting:               true,
-		rebootQueued:          false,
-		os:                    hostos,
-		NodeUpdaterClient:     nodeUpdaterClient,
-		bootedOSImageURL:      osImageURL,
-		bootedOSCommit:        osCommit,
-		bootID:                bootID,
-		exitCh:                exitCh,
-		currentConfigPath:     currentConfigPath,
-		loggerSupportsJournal: loggerSupportsJournal,
-		configDriftMonitor:    NewConfigDriftMonitor(),
+		mock:               mock,
+		booting:            true,
+		rebootQueued:       false,
+		os:                 hostos,
+		NodeUpdaterClient:  nodeUpdaterClient,
+		bootedOSImageURL:   osImageURL,
+		bootedOSCommit:     osCommit,
+		bootID:             bootID,
+		exitCh:             exitCh,
+		currentConfigPath:  currentConfigPath,
+		configDriftMonitor: NewConfigDriftMonitor(),
 	}, nil
 }
 
