@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	kubeErrs "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/uuid"
+	"k8s.io/klog/v2"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -587,6 +588,11 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 			}
 		}
 	}()
+
+	// update file permissions
+	if err := dn.updateKubeConfigPermission(); err != nil {
+		return err
+	}
 
 	if err := dn.updateSSHKeys(newIgnConfig.Passwd.Users); err != nil {
 		return err
@@ -1891,6 +1897,23 @@ func (dn *Daemon) updateSSHKeys(newUsers []ign3types.PasswdUser) error {
 		if err := dn.atomicallyWriteSSHKey(concatSSHKeys); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// Update the permission of the kubeconfig file located in /etc/kubenetes/kubeconfig
+// Requested in https://issues.redhat.com/browse/OCPBUGS-15367
+func (dn *Daemon) updateKubeConfigPermission() error {
+	klog.Info("updating the permission of the kubeconfig to: 0o600")
+
+	kubeConfigPath := "/etc/kubernetes/kubeconfig"
+	// Checking if kubeconfig is existed in the expected path:
+	if _, err := os.Stat(kubeConfigPath); err == nil {
+		if err := os.Chmod(kubeConfigPath, 0o600); err != nil {
+			return fmt.Errorf("Failed to reset permission for %s:%w", kubeConfigPath, err)
+		}
+	} else {
+		return fmt.Errorf("Cannot stat %s: %w", kubeConfigPath, err)
 	}
 	return nil
 }
