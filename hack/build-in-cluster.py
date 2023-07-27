@@ -21,6 +21,7 @@
 
 import json
 import os
+import pathlib
 import shutil
 import subprocess
 import sys
@@ -93,30 +94,27 @@ def get_mco_imagestream_spec():
         },
     }
 
+# Replace the default base iamge with one I've pre-built with nmstate in it.
+# This eliminates the VPN requirement and speeds up the build slightly since we
+# already have the package built in. I *think* there is a way that we can do
+# this purely via the BuildConfig, but it's been a while since I've done that.
+#
+# As a sidenote, it could be advantageous to shard the RHEL8 and RHEL9 portions
+# of the build so they can execute simultaneously in different pods, with the
+# final assembly being done once those are complete.
+def get_rewritten_dockerfile():
+    default_base_image = "registry.ci.openshift.org/ocp/4.14:base"
+    replacement_base_image = "quay.io/zzlotnik/machine-config-operator:nmstate-4.14"
+    with open("Dockerfile", "r") as dockerfile:
+        return dockerfile.read().replace(default_base_image, replacement_base_image)
+
 # Generates an OpenShift Image Build manifest, supplying the current git branch
 # and remote fork.
 def get_build_spec():
     # We override the repo Dockerfile because of
     # https://issues.redhat.com/browse/MCO-603. Once that is resolved, we can
     # remove this.
-    dockerfile = """FROM registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.19-openshift-4.13 AS builder
-ARG TAGS=""
-WORKDIR /go/src/github.com/openshift/machine-config-operator
-COPY . .
-# FIXME once we can depend on a new enough host that supports globs for COPY,
-# just use that.  For now we work around this by copying a tarball.
-RUN make install DESTDIR=./instroot && tar -C instroot -cf instroot.tar .
-
-FROM registry.ci.openshift.org/ocp/4.13:base
-ARG TAGS=""
-COPY --from=builder /go/src/github.com/openshift/machine-config-operator/instroot.tar /tmp/instroot.tar
-RUN cd / && tar xf /tmp/instroot.tar && rm -f /tmp/instroot.tar
-COPY install /manifests
-
-COPY templates /etc/mcc/templates
-ENTRYPOINT ["/usr/bin/machine-config-operator"]
-LABEL io.openshift.release.operator true
-"""
+    dockerfile = get_rewritten_dockerfile()
 
     return {
         "apiVersion": "build.openshift.io/v1",
@@ -375,6 +373,12 @@ def rollout_pullspec(pullspec):
 def main():
     if not can_run():
         sys.exit(1)
+
+    # Change to the repo root, if we're not already there. This allows this
+    # script to be invoked from a relative path anywhere within the the repo.
+    filedir = pathlib.Path(__file__).parent.resolve()
+    repo_root = os.path.dirname(filedir)
+    os.chdir(repo_root)
 
     # Starts the build process and gets the image pullspec.
     pullspec = start_mco_image_build()
