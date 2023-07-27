@@ -94,6 +94,7 @@ func appendEncapsulated(conf *ign3types.Config, mc *mcfgv1.MachineConfig, versio
 
 	tmpcfg := mc.DeepCopy()
 	tmpcfg.Spec.Config.Raw = rawTmpIgnCfg
+
 	serialized, err := json.Marshal(tmpcfg)
 	if err != nil {
 		return fmt.Errorf("error marshalling MachineConfig: %w", err)
@@ -183,4 +184,28 @@ func getEncodedContent(inp string) string {
 		Scheme: "data",
 		Opaque: "," + dataurl.Escape([]byte(inp)),
 	}).String()
+}
+
+// MigrateKernelArgsIfNecessary moves the kernel arguments back into MachineConfig when going from a version that supports
+// ignition kernel arguments to a version that does not. Without this, we would be unable to serve anything < 3.3 because the
+// ignition converter fails to downconvert if unsupported fields are populated. If ShouldNotExist is populated in the
+// ignition kernel args, we still have to fail because there is nowhere in MachineConfig for us to put those.
+func MigrateKernelArgsIfNecessary(conf *ign3types.Config, mc *mcfgv1.MachineConfig, version *semver.Version) error {
+	// If we're downgrading from a version of ignition that
+	// support kargs, we need to stuff them back into MachineConfig so they still end up in the encapsulation
+	// and they still get applied
+	if version != nil && version.LessThan(*semver.New("3.3.0")) {
+		// we're converting to a version that doesn't support kargs, so we need to stuff them in machineconfig
+		if len(conf.KernelArguments.ShouldNotExist) > 0 {
+			return fmt.Errorf("Can't serve version %s with ignition KernelArguments.ShouldNotExist populated", version)
+		}
+
+		for _, karg := range conf.KernelArguments.ShouldExist {
+			// TODO(jkyros): we probably need to parse/split them because they might be combined
+			mc.Spec.KernelArguments = append(mc.Spec.KernelArguments, string(karg))
+		}
+		// and then we take them out of ignition
+		conf.KernelArguments = ign3types.KernelArguments{}
+	}
+	return nil
 }

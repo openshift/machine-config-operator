@@ -102,6 +102,11 @@ func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*runtime.RawExtension, er
 		return nil, fmt.Errorf("parsing Ignition config failed with error: %w", err)
 	}
 
+	// strip the kargs out if we're going back to a version that doesn't support it
+	if err := MigrateKernelArgsIfNecessary(&ignConf, mc, cr.version); err != nil {
+		return nil, fmt.Errorf("failed to migrate kernel args %w", err)
+	}
+
 	appenders := getAppenders(currConf, nil, bsc.kubeconfigFunc)
 	for _, a := range appenders {
 		if err := a(&ignConf, mc); err != nil {
