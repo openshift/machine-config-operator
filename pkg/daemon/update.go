@@ -456,6 +456,11 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		}
 	}()
 
+	// update file permissions
+	if err := dn.updateKubeConfigPermission(); err != nil {
+		return err
+	}
+
 	if err := dn.updateSSHKeys(newIgnConfig.Passwd.Users, oldIgnConfig.Passwd.Users); err != nil {
 		return err
 	}
@@ -1533,6 +1538,23 @@ func (dn *Daemon) SetPasswordHash(newUsers, oldUsers []ign3types.PasswdUser) err
 		klog.Info("Password has been configured")
 	}
 
+	return nil
+}
+
+// Update the permission of the kubeconfig file located in /etc/kubenetes/kubeconfig
+// Requested in https://issues.redhat.com/browse/OCPBUGS-15367
+func (dn *Daemon) updateKubeConfigPermission() error {
+	klog.Info("updating the permission of the kubeconfig to: 0o600")
+
+	kubeConfigPath := "/etc/kubernetes/kubeconfig"
+	// Checking if kubeconfig is existed in the expected path:
+	if _, err := os.Stat(kubeConfigPath); err == nil {
+		if err := os.Chmod(kubeConfigPath, 0o600); err != nil {
+			return fmt.Errorf("Failed to reset permission for %s:%w", kubeConfigPath, err)
+		}
+	} else {
+		return fmt.Errorf("Cannot stat %s: %w", kubeConfigPath, err)
+	}
 	return nil
 }
 
