@@ -431,7 +431,7 @@ spec:
                 description: The certificate expiry dates from the controller config
                 type: array
                 items:
-                  description: A label selector requirement is a selector that contains values, a key, and an operator that relates the key and values.
+                  description: the certExpiry contains specific information about a certificate stored in the controllerConfig.
                   type: object
                   properties:
                     bundle:
