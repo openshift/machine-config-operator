@@ -466,7 +466,7 @@ func ReexecuteForTargetRoot(target string) error {
 			// Otherwise, we assume that there's no suffixing needed.  Hopefully
 			// by RHEL10 the MCD will have fundamentally changed and we won't be doing the
 			// chroot() thing anymore.
-			klog.Info("not chrooting for source=rhel-%s target=rhel-%s", sourceMajor, targetMajor)
+			klog.Infof("not chrooting for source=rhel-%s target=rhel-%s", sourceMajor, targetMajor)
 		}
 	} else {
 		klog.Info("assuming we can use container binary chroot() to host")
@@ -476,7 +476,11 @@ func ReexecuteForTargetRoot(target string) error {
 	targetBin := filepath.Join(target, targetBinBase)
 
 	// Be idempotent
-	if _, err := os.Stat(targetBin); err != nil {
+	targetBinExist, err := fileExists(targetBin)
+	if err != nil {
+		return err
+	}
+	if !targetBinExist {
 		sourceBinary := "/usr/bin/machine-config-daemon" + sourceBinarySuffix
 		src, err := os.Open(sourceBinary)
 		if err != nil {
@@ -485,7 +489,12 @@ func ReexecuteForTargetRoot(target string) error {
 		defer src.Close()
 
 		targetBinDir := filepath.Dir(targetBin)
-		if _, err := os.Stat(targetBinDir); err != nil {
+		// Before creating targetBinDir, ensure that it doesn't exist
+		targetBinDirExist, err := directoryExists(targetBinDir)
+		if err != nil {
+			return err
+		}
+		if !targetBinDirExist {
 			if err := os.Mkdir(targetBinDir, 0o755); err != nil {
 				return fmt.Errorf("mkdir %s: %w", targetBinDir, err)
 			}
