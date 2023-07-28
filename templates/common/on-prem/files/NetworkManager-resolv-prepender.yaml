@@ -23,10 +23,12 @@ contents:
 
     export DHCP6_FQDN_FQDN IP4_DOMAINS IP6_DOMAINS
     export -f resolv_prepender
-    # Given an overall Network Manager dispatcher timeout of 90 seconds, and 3 events which may occur within
-    # this time period (up, dhcp4, dhcp6), we must enforce a time limit for each event.
+    # Given an overall Network Manager dispatcher timeout of 90 seconds, and multiple events which
+    # may occur within this time period, we must enforce a time limit for each event. As some
+    # events cannot happen in the same transaction, we are not simply dividing timeout by their
+    # number (e.g. "up" and "reapply" don't contribute to the same timeout like  "dhcp*-change").
     case "$STATUS" in
-      up|dhcp4-change|dhcp6-change)
+      up|dhcp4-change|dhcp6-change|reapply)
         >&2 echo "NM resolv-prepender triggered by ${IFACE} ${STATUS}."
         if ! timeout 30s bash -c resolv_prepender; then
             >&2 echo "NM resolv-prepender: Timeout occurred"
