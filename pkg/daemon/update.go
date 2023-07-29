@@ -461,19 +461,23 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		return err
 	}
 
-	if err := dn.updateSSHKeys(newIgnConfig.Passwd.Users, oldIgnConfig.Passwd.Users); err != nil {
-		return err
-	}
-
-	defer func() {
-		if retErr != nil {
-			if err := dn.updateSSHKeys(newIgnConfig.Passwd.Users, oldIgnConfig.Passwd.Users); err != nil {
-				errs := kubeErrs.NewAggregate([]error{err, retErr})
-				retErr = fmt.Errorf("error rolling back SSH keys updates: %w", errs)
-				return
-			}
+	// only update passwd if it has changed (do not nullify)
+	// we do not need to include SetPasswordHash in this, since only updateSSHKeys has issues on firstboot.
+	if diff.passwd {
+		if err := dn.updateSSHKeys(newIgnConfig.Passwd.Users, oldIgnConfig.Passwd.Users); err != nil {
+			return err
 		}
-	}()
+
+		defer func() {
+			if retErr != nil {
+				if err := dn.updateSSHKeys(newIgnConfig.Passwd.Users, oldIgnConfig.Passwd.Users); err != nil {
+					errs := kubeErrs.NewAggregate([]error{err, retErr})
+					retErr = fmt.Errorf("error rolling back SSH keys updates: %w", errs)
+					return
+				}
+			}
+		}()
+	}
 
 	// Set password hash
 	if err := dn.SetPasswordHash(newIgnConfig.Passwd.Users, oldIgnConfig.Passwd.Users); err != nil {
