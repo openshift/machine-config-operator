@@ -450,40 +450,54 @@ func ReexecuteForTargetRoot(target string) error {
 			// Otherwise, we assume that there's no suffixing needed.  Hopefully
 			// by RHEL10 the MCD will have fundamentally changed and we won't be doing the
 			// chroot() thing anymore.
-			klog.Info("not chrooting for source=rhel-%s target=rhel-%s", sourceMajor, targetMajor)
+			klog.Infof("not chrooting for source=rhel-%s target=rhel-%s", sourceMajor, targetMajor)
 		}
 	} else {
 		klog.Info("assuming we can use container binary chroot() to host")
 	}
-	sourceBinary := "/usr/bin/machine-config-daemon" + sourceBinarySuffix
-	src, err := os.Open(sourceBinary)
-	if err != nil {
-		return fmt.Errorf("opening %s: %w", sourceBinary, err)
-	}
-	defer src.Close()
 
 	targetBinBase := "run/bin/machine-config-daemon"
 	targetBin := filepath.Join(target, targetBinBase)
-	targetBinDir := filepath.Dir(targetBin)
-	if _, err := os.Stat(targetBinDir); err != nil {
-		if err := os.Mkdir(targetBinDir, 0o755); err != nil {
-			return fmt.Errorf("mkdir %s: %w", targetBinDir, err)
-		}
-	}
 
-	f, err := os.Create(targetBin)
+	// Be idempotent
+	targetBinExist, err := fileExists(targetBin)
 	if err != nil {
-		return fmt.Errorf("writing %s: %w", targetBin, err)
-	}
-	if _, err := io.Copy(f, src); err != nil {
-		f.Close()
-		return fmt.Errorf("writing %s: %w", targetBin, err)
-	}
-	if err := f.Chmod(0o755); err != nil {
 		return err
 	}
-	// Must close our writable fd
-	f.Close()
+	if !targetBinExist {
+		sourceBinary := "/usr/bin/machine-config-daemon" + sourceBinarySuffix
+		src, err := os.Open(sourceBinary)
+		if err != nil {
+			return fmt.Errorf("opening %s: %w", sourceBinary, err)
+		}
+		defer src.Close()
+
+		targetBinDir := filepath.Dir(targetBin)
+		// Before creating targetBinDir, ensure that it doesn't exist
+		targetBinDirExist, err := directoryExists(targetBinDir)
+		if err != nil {
+			return err
+		}
+		if !targetBinDirExist {
+			if err := os.Mkdir(targetBinDir, 0o755); err != nil {
+				return fmt.Errorf("mkdir %s: %w", targetBinDir, err)
+			}
+		}
+
+		f, err := os.Create(targetBin)
+		if err != nil {
+			return fmt.Errorf("writing %s: %w", targetBin, err)
+		}
+		if _, err := io.Copy(f, src); err != nil {
+			f.Close()
+			return fmt.Errorf("writing %s: %w", targetBin, err)
+		}
+		if err := f.Chmod(0o755); err != nil {
+			return err
+		}
+		// Must close our writable fd
+		f.Close()
+	}
 
 	if err := syscall.Chroot(target); err != nil {
 		return fmt.Errorf("failed to chroot to %s: %w", target, err)
