@@ -39,7 +39,6 @@ const (
 
 	// MachineConfigPoolMaster is the MachineConfigPool name given to the master
 	MachineConfigPoolMaster = "master"
-
 	// MachineConfigPoolWorker is the MachineConfigPool name given to the worker
 	MachineConfigPoolWorker = "worker"
 
