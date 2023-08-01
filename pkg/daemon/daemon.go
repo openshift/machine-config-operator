@@ -18,6 +18,7 @@ import (
 	"time"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
+	"github.com/google/renameio"
 	"golang.org/x/time/rate"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -465,13 +466,11 @@ func ReexecuteForTargetRoot(target string) error {
 	targetBinBase := "run/bin/machine-config-daemon"
 	targetBin := filepath.Join(target, targetBinBase)
 	targetBinDir := filepath.Dir(targetBin)
-	if _, err := os.Stat(targetBinDir); err != nil {
-		if err := os.Mkdir(targetBinDir, 0o755); err != nil {
-			return fmt.Errorf("mkdir %s: %w", targetBinDir, err)
-		}
+	if err := os.MkdirAll(targetBinDir, 0o755); err != nil {
+		return fmt.Errorf("mkdir %s: %w", targetBinDir, err)
 	}
 
-	f, err := os.Create(targetBin)
+	f, err := renameio.TempFile(targetBinDir, targetBin)
 	if err != nil {
 		return fmt.Errorf("writing %s: %w", targetBin, err)
 	}
@@ -483,7 +482,9 @@ func ReexecuteForTargetRoot(target string) error {
 		return err
 	}
 	// Must close our writable fd
-	f.Close()
+	if err := f.CloseAtomicallyReplace(); err != nil {
+		return err
+	}
 
 	if err := syscall.Chroot(target); err != nil {
 		return fmt.Errorf("failed to chroot to %s: %w", target, err)
