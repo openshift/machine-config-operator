@@ -1666,27 +1666,6 @@ func fileExists(path string) (bool, error) {
 	return false, fmt.Errorf("cannot stat file: %w", err)
 }
 
-// Determines if a directory exists by checking the returned error when we stat the file.
-// Also, check that it is a directory.
-func directoryExists(path string) (bool, error) {
-	info, err := os.Stat(path)
-	// If there is no error, check if it is a directory
-	if err == nil {
-		if info.IsDir() {
-			return true, nil
-		}
-		return false, fmt.Errorf("%s exists but it is not a directory", path)
-	}
-
-	// If the error matches fs.ErrNotExist, file definitely does not exist.
-	if errors.Is(err, fs.ErrNotExist) {
-		return false, nil
-	}
-
-	// An unexpected error occurred.
-	return false, fmt.Errorf("cannot stat file: %w", err)
-}
-
 // Removes the old SSH key path (/home/core/.ssh/authorized_keys), if found.
 func cleanSSHKeyPaths() error {
 	oldKeyExists, err := fileExists(constants.RHCOS8SSHKeyPath)
