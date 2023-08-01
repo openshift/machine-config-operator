@@ -43,7 +43,6 @@ import (
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/server"
 	"github.com/openshift/machine-config-operator/pkg/version"
-
 	autoscalingv1 "k8s.io/api/autoscaling/v1"
 )
 
@@ -809,6 +808,7 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig) error {
 	return optr.syncControllerConfig(config)
 }
 
+// syncs machine os builder
 func (optr *Operator) syncMachineOSBuilder(config *renderConfig) error {
 	klog.V(4).Info("Machine OS Builder sync started")
 	defer func() {
@@ -864,32 +864,67 @@ func (optr *Operator) reconcileMachineOSBuilder(mob *appsv1.Deployment) error {
 		return fmt.Errorf("could not determine if Machine OS Builder is running: %w", err)
 	}
 
-	// If the deployment does not exist and we do not have any opted-in pools, we
-	// should create the deployment with zero replicas so that it exists.
-	if apierrors.IsNotFound(err) && len(layeredMCPs) == 0 {
-		klog.Infof("Creating Machine OS Builder deployment")
-		return optr.updateMachineOSBuilderDeployment(mob, 0)
-	}
-
-	// If we have opted-in pools and the Machine OS Builder deployment is not
-	// running, scale it up.
-	if len(layeredMCPs) != 0 && !isRunning {
-		layeredMCPNames := []string{}
-		for _, mcp := range layeredMCPs {
-			layeredMCPNames = append(layeredMCPNames, mcp.Name)
+	// If we have opted-in pools and the Machine OS Builder deployment is either
+	// not running or doesn't have the correct replica count, scale it up.
+	correctReplicaCount := optr.hasCorrectReplicaCount(mob)
+	if len(layeredMCPs) != 0 && (!isRunning || !correctReplicaCount) {
+		if !correctReplicaCount {
+			klog.Infof("Adjusting Machine OS Builder pod replica count because MachineConfigPool(s) opted into layering")
+			return optr.updateMachineOSBuilderDeployment(mob, 1)
 		}
-		klog.Infof("Starting Machine OS Builder pod because MachineConfigPool(s) opted into layering: %v", layeredMCPNames)
-		return optr.updateMachineOSBuilderDeployment(mob, 1)
+		klog.Infof("Starting Machine OS Builder pod because MachineConfigPool(s) opted into layering")
+		return optr.startMachineOSBuilderDeployment(mob)
 	}
 
 	// If we do not have opted-in pools and the Machine OS Builder deployment is
 	// running, scale it down.
 	if len(layeredMCPs) == 0 && isRunning {
 		klog.Infof("Shutting down Machine OS Builder pod because no MachineConfigPool(s) opted into layering")
-		return optr.updateMachineOSBuilderDeployment(mob, 0)
+		return optr.stopMachineOSBuilderDeployment(mob.Name)
 	}
 
 	// No-op if everything is in the desired state.
+	return nil
+}
+
+// Delete the Machine OS Builder Deployment
+func (optr *Operator) stopMachineOSBuilderDeployment(name string) error {
+	return optr.kubeClient.AppsV1().Deployments(ctrlcommon.MCONamespace).Delete(context.TODO(), name, metav1.DeleteOptions{})
+}
+
+// Determines if the Machine OS Builder has the correct replica count.
+func (optr *Operator) hasCorrectReplicaCount(mob *appsv1.Deployment) bool {
+	apiMob, err := optr.deployLister.Deployments(ctrlcommon.MCONamespace).Get(mob.Name)
+	if err == nil && *apiMob.Spec.Replicas == 1 {
+		return true
+	}
+	return false
+}
+
+func (optr *Operator) updateMachineOSBuilderDeployment(mob *appsv1.Deployment, replicas int32) error {
+	_, updated, err := mcoResourceApply.ApplyDeployment(optr.kubeClient.AppsV1(), mob)
+	if err != nil {
+		return fmt.Errorf("could not apply Machine OS Builder deployment: %w", err)
+	}
+
+	scale := &autoscalingv1.Scale{
+		ObjectMeta: mob.ObjectMeta,
+		Spec: autoscalingv1.ScaleSpec{
+			Replicas: replicas,
+		},
+	}
+
+	_, err = optr.kubeClient.AppsV1().Deployments(ctrlcommon.MCONamespace).UpdateScale(context.TODO(), mob.Name, scale, metav1.UpdateOptions{})
+	if err != nil {
+		return fmt.Errorf("could not scale Machine OS Builder: %w", err)
+	}
+
+	if updated {
+		if err := optr.waitForDeploymentRollout(mob); err != nil {
+			return fmt.Errorf("could not wait for Machine OS Builder deployment rollout: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -907,22 +942,11 @@ func (optr *Operator) isMachineOSBuilderRunning(mob *appsv1.Deployment) (bool, e
 }
 
 // Updates the Machine OS Builder Deployment, creating it if it does not exist.
-func (optr *Operator) updateMachineOSBuilderDeployment(mob *appsv1.Deployment, replicas int32) error {
+func (optr *Operator) startMachineOSBuilderDeployment(mob *appsv1.Deployment) error {
+	// start machine os builder deployment
 	_, updated, err := mcoResourceApply.ApplyDeployment(optr.kubeClient.AppsV1(), mob)
 	if err != nil {
 		return fmt.Errorf("could not apply Machine OS Builder deployment: %w", err)
-	}
-
-	scale := &autoscalingv1.Scale{
-		ObjectMeta: mob.ObjectMeta,
-		Spec: autoscalingv1.ScaleSpec{
-			Replicas: replicas,
-		},
-	}
-
-	_, err = optr.kubeClient.AppsV1().Deployments(ctrlcommon.MCONamespace).UpdateScale(context.TODO(), mob.Name, scale, metav1.UpdateOptions{})
-	if err != nil {
-		return fmt.Errorf("could not scale Machine OS Builder: %w", err)
 	}
 
 	if updated {

@@ -372,6 +372,22 @@ func WaitForPodStop(cs *framework.ClientSet, podPrefix, namespace string) error 
 	})
 }
 
+// CheckDeploymentExists checks if a deployment with the given name in the given namespace exists.
+func CheckDeploymentExists(cs *framework.ClientSet, name, namespace string) (bool, error) {
+	ctx := context.TODO()
+	_, err := cs.Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
+
+	if err == nil {
+		return true, nil
+	}
+
+	if errors.IsNotFound(err) {
+		return false, nil
+	}
+
+	return false, err
+}
+
 // GetMonitoringToken retrieves the token from the openshift-monitoring secrets in the prometheus-k8s namespace.
 // It is equivalent to "oc sa get-token prometheus-k8s -n openshift-monitoring"
 func GetMonitoringToken(_ *testing.T, cs *framework.ClientSet) (string, error) {
