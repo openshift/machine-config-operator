@@ -19,6 +19,7 @@ import (
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/golang/glog"
+	"github.com/google/renameio"
 	"golang.org/x/time/rate"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -480,39 +481,36 @@ func ReexecuteForTargetRoot(target string) error {
 	} else {
 		klog.Info("assuming we can use container binary chroot() to host")
 	}
+	sourceBinary := "/usr/bin/machine-config-daemon" + sourceBinarySuffix
+	src, err := os.Open(sourceBinary)
+	if err != nil {
+		return fmt.Errorf("opening %s: %w", sourceBinary, err)
+	}
+	defer src.Close()
 
 	targetBinBase := "run/bin/machine-config-daemon"
 	targetBin := filepath.Join(target, targetBinBase)
+	targetBinDir := filepath.Dir(targetBin)
+	if err := os.MkdirAll(targetBinDir, 0o755); err != nil {
+		return fmt.Errorf("mkdir %s: %w", targetBinDir, err)
+	}
 
-	// Be idempotent
-	if _, err := os.Stat(targetBin); err != nil {
-		sourceBinary := "/usr/bin/machine-config-daemon" + sourceBinarySuffix
-		src, err := os.Open(sourceBinary)
-		if err != nil {
-			return fmt.Errorf("opening %s: %w", sourceBinary, err)
-		}
-		defer src.Close()
+	f, err := renameio.TempFile(targetBinDir, targetBin)
+	if err != nil {
+		return fmt.Errorf("writing %s: %w", targetBin, err)
+	}
+	defer f.Cleanup()
 
-		targetBinDir := filepath.Dir(targetBin)
-		if _, err := os.Stat(targetBinDir); err != nil {
-			if err := os.Mkdir(targetBinDir, 0o755); err != nil {
-				return fmt.Errorf("mkdir %s: %w", targetBinDir, err)
-			}
-		}
-
-		f, err := os.Create(targetBin)
-		if err != nil {
-			return fmt.Errorf("writing %s: %w", targetBin, err)
-		}
-		if _, err := io.Copy(f, src); err != nil {
-			f.Close()
-			return fmt.Errorf("writing %s: %w", targetBin, err)
-		}
-		if err := f.Chmod(0o755); err != nil {
-			return err
-		}
-		// Must close our writable fd
+	if _, err := io.Copy(f, src); err != nil {
 		f.Close()
+		return fmt.Errorf("writing %s: %w", targetBin, err)
+	}
+	if err := f.Chmod(0o755); err != nil {
+		return err
+	}
+	// Must close our writable fd
+	if err := f.CloseAtomicallyReplace(); err != nil {
+		return err
 	}
 
 	if err := syscall.Chroot(target); err != nil {
