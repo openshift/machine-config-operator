@@ -177,6 +177,8 @@ const (
 	configMapConfigKey          = "config"
 	configMapHashKey            = "hash"
 
+	imageCAFilePath = "/etc/docker/certs.d"
+
 	// used for certificate syncing
 	caBundleFilePath = "/etc/kubernetes/kubelet-ca.crt"
 

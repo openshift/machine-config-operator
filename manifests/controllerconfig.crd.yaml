@@ -170,6 +170,34 @@ spec:
                 description: images is map of images that are used by the controller
                   to render templates under ./templates/
                 type: object
+              imageRegistryBundleUserData:
+                description: imageRegistryBundleUserData is Image Registry Data provided by the user. This is pulled from image.config.openshift.io/cluster which contains an additionalCA field.
+                items:
+                  description: ImageRegistryBundle contains the file and data for each CA
+                  properties:
+                    file:
+                      description: file of the CA
+                      type: string
+                    data:
+                      description: data of the CA
+                      type: string
+                      format: byte
+                  type: object
+                type: array
+              imageRegistryBundleData:
+                description: imageRegistryBundleData is Image Registry Data provided by the openshift-config-managed/image-registry-ca configmap.
+                items:
+                  description: ImageRegistryBundle contains the file and data for each CA
+                  properties:
+                    file:
+                      description: file of the CA
+                      type: string
+                    data:
+                      description: data of the CA
+                      type: string
+                      format: byte
+                  type: object
+                type: array
               infra:
                 description: infra holds the infrastructure details
                 nullable: true

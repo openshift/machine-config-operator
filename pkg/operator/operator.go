@@ -72,6 +72,7 @@ type Operator struct {
 
 	syncHandler func(ic string) error
 
+	imgLister        configlistersv1.ImageLister
 	crdLister        apiextlistersv1.CustomResourceDefinitionLister
 	mcpLister        mcfglistersv1.MachineConfigPoolLister
 	ccLister         mcfglistersv1.ControllerConfigLister
@@ -105,6 +106,7 @@ type Operator struct {
 	nodeListerSynced                 cache.InformerSynced
 	dnsListerSynced                  cache.InformerSynced
 	maoSecretInformerSynced          cache.InformerSynced
+	imgListerSynced                  cache.InformerSynced
 
 	// queue only ever has one item, but it has nice error handling backoff/retry semantics
 	queue workqueue.RateLimitingInterface
@@ -139,6 +141,7 @@ func New(
 	oseKubeAPIInformer coreinformersv1.ConfigMapInformer,
 	nodeInformer coreinformersv1.NodeInformer,
 	maoSecretInformer coreinformersv1.SecretInformer,
+	imgInformer configinformersv1.ImageInformer,
 ) *Operator {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
@@ -172,6 +175,7 @@ func New(
 		clusterRoleInformer.Informer(),
 		clusterRoleBindingInformer.Informer(),
 		mcoCmInformer.Informer(),
+		clusterCmInfomer.Informer(),
 		infraInformer.Informer(),
 		networkInformer.Informer(),
 		mcpInformer.Informer(),
@@ -186,6 +190,7 @@ func New(
 
 	optr.syncHandler = optr.sync
 
+	optr.imgLister = imgInformer.Lister()
 	optr.clusterCmLister = clusterCmInfomer.Lister()
 	optr.clusterCmListerSynced = clusterCmInfomer.Informer().HasSynced
 	optr.mcpLister = mcpInformer.Lister()
@@ -201,6 +206,7 @@ func New(
 	optr.nodeLister = nodeInformer.Lister()
 	optr.nodeListerSynced = nodeInformer.Informer().HasSynced
 
+	optr.imgListerSynced = imgInformer.Informer().HasSynced
 	optr.maoSecretInformerSynced = maoSecretInformer.Informer().HasSynced
 	optr.serviceAccountInformerSynced = serviceAccountInfomer.Informer().HasSynced
 	optr.clusterRoleInformerSynced = clusterRoleInformer.Informer().HasSynced
