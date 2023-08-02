@@ -1397,6 +1397,7 @@ func TestMarshalResourceQuantityOptionsJSON(t *testing.T) {
 			t.Errorf("%s: failed with %v. should have succeeded", test.name, err)
 		}
 		require.NotContains(t, string(data), "\"overlaySize\"", "\"overlaySize\"")
+		require.NotContains(t, string(data), "\"logSizeMax\"", "\"logSizeMax\"")
 	}
 }
 
