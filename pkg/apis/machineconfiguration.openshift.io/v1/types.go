@@ -63,6 +63,12 @@ type ControllerConfigSpec struct {
 	// +nullable
 	AdditionalTrustBundle []byte `json:"additionalTrustBundle"`
 
+	// imageRegistryBundleUserData is Image Registry Data provided by the user
+	ImageRegistryBundleUserData []ImageRegistryBundle `json:"imageRegistryBundleUserData"`
+
+	// imageRegistryBundleData is the ImageRegistryData
+	ImageRegistryBundleData []ImageRegistryBundle `json:"imageRegistryBundleData"`
+
 	// TODO: Investigate using a ConfigMapNameReference for the PullSecret and OSImageURL
 
 	// pullSecret is the default pull secret that needs to be installed
@@ -111,6 +117,11 @@ type ControllerConfigSpec struct {
 	// Network contains additional network related information
 	// +nullable
 	Network *NetworkInfo `json:"network"`
+}
+
+type ImageRegistryBundle struct {
+	File string `json:"file"`
+	Data []byte `json:"data"`
 }
 
 // IPFamiliesType indicates whether the cluster network is IPv4-only, IPv6-only, or dual-stack

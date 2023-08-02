@@ -2,6 +2,8 @@ package daemon
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"time"
 
@@ -107,6 +109,24 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 
 		if err := writeFileAtomicallyWithDefaults(caBundleFilePath, kubeAPIServerServingCABytes); err != nil {
 			return err
+		}
+
+		for _, CA := range controllerConfig.Spec.ImageRegistryBundleData {
+			if err := os.MkdirAll(filepath.Join(imageCAFilePath, CA.File), defaultDirectoryPermissions); err != nil {
+				return err
+			}
+			if err := writeFileAtomicallyWithDefaults(filepath.Join(imageCAFilePath, CA.File, "ca.crt"), CA.Data); err != nil {
+				return err
+			}
+		}
+
+		for _, CA := range controllerConfig.Spec.ImageRegistryBundleUserData {
+			if err := os.MkdirAll(filepath.Join(imageCAFilePath, CA.File), defaultDirectoryPermissions); err != nil {
+				return err
+			}
+			if err := writeFileAtomicallyWithDefaults(filepath.Join(imageCAFilePath, CA.File, "ca.crt"), CA.Data); err != nil {
+				return err
+			}
 		}
 
 		annos := map[string]string{
