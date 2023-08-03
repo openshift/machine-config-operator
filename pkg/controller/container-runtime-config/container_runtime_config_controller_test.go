@@ -9,6 +9,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/resource"
 
+	"github.com/clarketm/json"
 	"github.com/golang/glog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -462,6 +463,32 @@ func TestContainerRuntimeConfigCreate(t *testing.T) {
 			f.run(getKey(ctrcfg1, t))
 		})
 	}
+}
+
+func TestZeroFromPatchContainerRuntimeConfig(t *testing.T) {
+	f := newFixture(t)
+	mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
+	ctrcfg := newContainerRuntimeConfig("set-log-level", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug", LogSizeMax: resource.MustParse("9k")}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
+
+	cc := newControllerConfig(ctrlcommon.ControllerConfigName, apicfgv1.AWSPlatformType)
+	f.ccLister = append(f.ccLister, cc)
+	f.mccrLister = append(f.mccrLister, ctrcfg)
+	f.mcpLister = append(f.mcpLister, mcp)
+	f.objects = append(f.objects, ctrcfg)
+	c := f.newController()
+
+	getcfg, err := c.client.MachineconfigurationV1().ContainerRuntimeConfigs().Get(context.TODO(), ctrcfg.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+	data, err := json.Marshal(getcfg)
+	require.NoError(t, err)
+	require.NotContainsf(t, string(data), "\"overlaySize\":\"0\"", "Got %s", string(data))
+
+	patch := []byte(`{"metadata":{"finalizers":["99-master-generated-containerruntime"]}}`)
+	newgetcfg, err := c.client.MachineconfigurationV1().ContainerRuntimeConfigs().Patch(context.TODO(), ctrcfg.Name, types.MergePatchType, patch, metav1.PatchOptions{})
+	require.NoError(t, err)
+	newdata, err := json.Marshal(newgetcfg)
+	require.NoError(t, err)
+	require.Containsf(t, string(newdata), "\"overlaySize\":\"0\"", "Got %s", string(newdata))
 }
 
 // TestContainerRuntimeConfigUpdate ensures that an update happens when an existing containerruntime config is updated.
