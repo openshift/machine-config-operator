@@ -327,6 +327,7 @@ func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newC
 func calculatePostConfigChangeActionFromFileDiffs(diffFileSet []string) (actions []string) {
 	filesPostConfigChangeActionNone := []string{
 		caBundleFilePath,
+		imageRegistryAuthFile,
 		"/var/lib/kubelet/config.json",
 	}
 	filesPostConfigChangeActionReloadCrio := []string{
