@@ -334,7 +334,8 @@ func (ctrl *Controller) getMastersSchedulable() (bool, error) {
 			return sched.Spec.MastersSchedulable, nil
 		}
 	}
-	return false, nil
+	// If the scheduler list is empty, or there is no match. Return an error so it is a no-op.
+	return false, fmt.Errorf("cluster scheduler couldn't be found")
 }
 
 // Determine if a given Node is a master
