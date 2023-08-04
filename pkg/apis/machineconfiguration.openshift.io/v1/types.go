@@ -605,3 +605,79 @@ type ContainerRuntimeConfigList struct {
 
 	Items []ContainerRuntimeConfig `json:"items"`
 }
+
+// +genclient
+// +genclient:nonNamespaced
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// PinnedImageSet describes a set of images that should be pinned.
+type PinnedImageSet struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	// +required
+	Spec ContainerRuntimeConfigSpec `json:"spec"`
+	// +optional
+	Status ContainerRuntimeConfigStatus `json:"status"`
+}
+
+// PinnedImageSetSpec defines the desired state of a PinnedImageSet.
+type PinnedImageSetSpec struct {
+	// nodeSelector defines the set of nodes that this configuration applies to. If not
+	// specified then the configuration applies to all the nodes of the cluster.
+	//
+	// +optional
+	NodeSelector *corev1.NodeSelector `json:"nodeSelector,omitempty"`
+
+	// pinnedImages is a list of images that should be pinned and pre-loaded in all the nodes
+	// of the cluster matching the node selector. Translates into a new file inside the
+	// /etc/crio/crio.conf.d directory with content similar to this:
+	//
+	//	pinned_images = [
+	//		"quay.io/openshift-release-dev/ocp-release@sha256:...",
+	//		"quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:...",
+	//		"quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:...",
+	//		...
+	//	]
+	//
+	// +optional
+	PinnedImages []string `json:"pinnedImages,omitempty"`
+}
+
+// PinnedImageSetStatus defines the observed state of a PinnedImageSet.
+type PinnedImageSetStatus struct {
+	Conditions []ControllerConfigStatusCondition `json:"conditions"`
+}
+
+// PinnedImageSetCondition contains condition information for a PinnedImageSet.
+type PinnedImageSetCondition struct {
+	// type specifies the state of pinned image set.
+	Type PinnedImageSetConditionType `json:"type"`
+
+	// status of the condition, one of True, False, Unknown.
+	Status corev1.ConditionStatus `json:"status"`
+
+	// lastTransitionTime is the time of the last update to the current status object.
+	// +nullable
+	LastTransitionTime metav1.Time `json:"lastTransitionTime"`
+
+	// reason is the reason for the condition's last transition.
+	Reason string `json:"reason,omitempty"`
+
+	// message provides additional information about the current condition. This is only to
+	// be consumed by humans.
+	Message string `json:"message,omitempty"`
+}
+
+// PinnedImageSetConditionType valid conditions of a PinnedImageSet.
+type PinnedImageSetConditionType string
+
+const (
+	// PinnedImageSetReady means that all the images have been pulled and pinned in all the
+	// nodes matching the node selector.
+	PinnedImageSetReady PinnedImageSetConditionType = "Ready"
+
+	// PinnedImageSetFailed means that something failed while trying to pull and pin
+	// the images.
+	PinnedImageSetFailed PinnedImageSetConditionType = "Failed"
+)
