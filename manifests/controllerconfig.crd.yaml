@@ -1881,9 +1881,11 @@ spec:
                     notBefore:
                       description: lower bound for validity
                       type: string
+                      format: date-time
                     notAfter:
                       description: upper bound for validity
                       type: string
+                      format: date-time
                     bundleFile:
                       description: the name of the bundle serving this cert.
                       type: string

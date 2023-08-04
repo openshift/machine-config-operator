@@ -20,6 +20,8 @@ import (
 	"github.com/clarketm/json"
 	fcctbase "github.com/coreos/fcct/base/v0_1"
 	"github.com/coreos/ign-converter/translate/v23tov30"
+	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
+
 	"github.com/coreos/ign-converter/translate/v32tov22"
 	"github.com/coreos/ign-converter/translate/v32tov31"
 	"github.com/coreos/ign-converter/translate/v33tov32"
@@ -51,9 +53,8 @@ import (
 	"k8s.io/client-go/tools/reference"
 	"k8s.io/klog/v2"
 
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
-	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 )
 
 // Gates whether or not the MCO uses the new format base OS container image by default

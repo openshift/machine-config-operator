@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -17,6 +17,8 @@ var (
 
 // TestReadMachineConfig test machine configs being read against
 // ReadMachineConfigV1() and ReadMachineConfigV1OrDie().
+//
+//nolint:staticcheck
 func TestReadMachineConfig(t *testing.T) {
 	tcs := []struct {
 		desc      string
@@ -26,6 +28,7 @@ func TestReadMachineConfig(t *testing.T) {
 		{
 			desc:      "test valid machine config",
 			wantError: false,
+			//nolint:staticcheck
 			mc: &mcfgv1.MachineConfig{
 				metav1.TypeMeta{
 					Kind:       testMCKind,
@@ -44,6 +47,7 @@ func TestReadMachineConfig(t *testing.T) {
 		{
 			desc:      "test invalid machine config",
 			wantError: true,
+			//nolint:staticcheck
 			mc: &mcfgv1.MachineConfig{
 				metav1.TypeMeta{
 					Kind:       "invalidMachineConfig",

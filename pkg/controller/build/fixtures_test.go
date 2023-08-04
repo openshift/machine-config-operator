@@ -12,7 +12,8 @@ import (
 	"github.com/davecgh/go-spew/spew"
 	"github.com/ghodss/yaml"
 	buildv1 "github.com/openshift/api/build/v1"
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	testhelpers "github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/assert"
@@ -390,14 +391,14 @@ func assertMCPFollowsImageBuildStatus(ctx context.Context, t *testing.T, cs *Cli
 		// Wait for the MCP condition to reach the expected state.
 		outcome = assertMachineConfigPoolReachesState(ctx, t, cs, mcp.Name, func(mcp *mcfgv1.MachineConfigPool) bool {
 			targetPool = mcp
-			return mcfgv1.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, expectedMCPCondition) &&
+			return apihelpers.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, expectedMCPCondition) &&
 				expectedBuildRefPresence == machineConfigPoolHasBuildRef(mcp) &&
 				machineConfigPoolHasMachineConfigRefs(mcp)
 		})
 
 		if !outcome {
 			spew.Dump(targetPool)
-			t.Logf("Has expected condition (%s) for phase (%s)? %v", expectedMCPCondition, phase, mcfgv1.IsMachineConfigPoolConditionTrue(targetPool.Status.Conditions, expectedMCPCondition))
+			t.Logf("Has expected condition (%s) for phase (%s)? %v", expectedMCPCondition, phase, apihelpers.IsMachineConfigPoolConditionTrue(targetPool.Status.Conditions, expectedMCPCondition))
 			t.Logf("Has ref? %v. Expected: %v. Actual: %v.", expectedBuildRefPresence == machineConfigPoolHasBuildRef(targetPool), expectedBuildRefPresence, machineConfigPoolHasBuildRef(targetPool))
 			t.Logf("Has MachineConfig refs? %v", machineConfigPoolHasMachineConfigRefs(targetPool))
 			return false
@@ -505,14 +506,14 @@ func assertMCPFollowsBuildPodStatus(ctx context.Context, t *testing.T, cs *Clien
 		// Wait for the MCP condition to reach the expected state.
 		outcome = assertMachineConfigPoolReachesState(ctx, t, cs, mcp.Name, func(mcp *mcfgv1.MachineConfigPool) bool {
 			targetPool = mcp
-			return mcfgv1.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, expectedMCPCondition) &&
+			return apihelpers.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, expectedMCPCondition) &&
 				expectedBuildPodRefPresence == machineConfigPoolHasBuildRef(mcp) &&
 				machineConfigPoolHasMachineConfigRefs(mcp)
 		})
 
 		if !outcome {
 			spew.Dump(targetPool)
-			t.Logf("Has expected condition (%s) for phase (%s)? %v", expectedMCPCondition, phase, mcfgv1.IsMachineConfigPoolConditionTrue(targetPool.Status.Conditions, expectedMCPCondition))
+			t.Logf("Has expected condition (%s) for phase (%s)? %v", expectedMCPCondition, phase, apihelpers.IsMachineConfigPoolConditionTrue(targetPool.Status.Conditions, expectedMCPCondition))
 			t.Logf("Has ref? %v. Expected: %v. Actual: %v.", expectedBuildPodRefPresence == machineConfigPoolHasBuildRef(targetPool), expectedBuildPodRefPresence, machineConfigPoolHasBuildRef(targetPool))
 			t.Logf("Has MachineConfig refs? %v", machineConfigPoolHasMachineConfigRefs(targetPool))
 			return false

@@ -6,12 +6,12 @@ import (
 	"time"
 
 	configinformers "github.com/openshift/client-go/config/informers/externalversions"
+	mcfginformers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
 	operatorinformers "github.com/openshift/client-go/operator/informers/externalversions"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/library-go/pkg/operator/events"
 	"github.com/openshift/machine-config-operator/internal/clients"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
-	mcfginformers "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	apiextinformers "k8s.io/apiextensions-apiserver/pkg/client/informers/externalversions"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

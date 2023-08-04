@@ -9,8 +9,9 @@ import (
 
 	"github.com/containers/image/v5/docker/reference"
 	buildv1 "github.com/openshift/api/build/v1"
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
+	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	corev1 "k8s.io/api/core/v1"
 	aggerrors "k8s.io/apimachinery/pkg/util/errors"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -28,11 +29,11 @@ import (
 
 	buildclientset "github.com/openshift/client-go/build/clientset/versioned"
 
-	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
-	mcfginformers "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions"
+	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
+	mcfginformers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
 
-	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
-	mcfglistersv1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
+	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
+	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 
 	coreinformers "k8s.io/client-go/informers"
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
@@ -356,22 +357,22 @@ func (ctrl *Controller) imageBuildUpdater(build *buildv1.Build) error {
 
 	switch build.Status.Phase {
 	case buildv1.BuildPhaseNew, buildv1.BuildPhasePending:
-		if !mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolBuildPending) {
+		if !apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolBuildPending) {
 			err = ctrl.markBuildPendingWithObjectRef(pool, *objRef)
 		}
 	case buildv1.BuildPhaseRunning:
 		// If we're running, then there's nothing to do right now.
-		if !mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolBuilding) {
+		if !apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolBuilding) {
 			err = ctrl.markBuildInProgress(pool)
 		}
 	case buildv1.BuildPhaseComplete:
 		// If we've succeeded, we need to update the pool to indicate that.
-		if !mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolBuildSuccess) {
+		if !apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolBuildSuccess) {
 			err = ctrl.markBuildSucceeded(pool)
 		}
 	case buildv1.BuildPhaseFailed, buildv1.BuildPhaseError, buildv1.BuildPhaseCancelled:
 		// If we've failed, errored, or cancelled, we need to update the pool to indicate that.
-		if !mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolBuildFailed) {
+		if !apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolBuildFailed) {
 			err = ctrl.markBuildFailed(pool)
 		}
 	}
@@ -395,23 +396,23 @@ func (ctrl *Controller) customBuildPodUpdater(pod *corev1.Pod) error {
 
 	switch pod.Status.Phase {
 	case corev1.PodPending:
-		if !mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolBuildPending) {
+		if !apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolBuildPending) {
 			objRef := toObjectRef(pod)
 			err = ctrl.markBuildPendingWithObjectRef(pool, *objRef)
 		}
 	case corev1.PodRunning:
 		// If we're running, then there's nothing to do right now.
-		if !mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolBuilding) {
+		if !apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolBuilding) {
 			err = ctrl.markBuildInProgress(pool)
 		}
 	case corev1.PodSucceeded:
 		// If we've succeeded, we need to update the pool to indicate that.
-		if !mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolBuildSuccess) {
+		if !apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolBuildSuccess) {
 			err = ctrl.markBuildSucceeded(pool)
 		}
 	case corev1.PodFailed:
 		// If we've failed, we need to update the pool to indicate that.
-		if !mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolBuildFailed) {
+		if !apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolBuildFailed) {
 			err = ctrl.markBuildFailed(pool)
 		}
 	}
@@ -480,21 +481,21 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	}
 
 	switch {
-	case mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolDegraded):
+	case apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolDegraded):
 		klog.V(4).Infof("MachineConfigPool %s is degraded, requeueing", pool.Name)
 		ctrl.enqueueMachineConfigPool(pool)
 		return nil
-	case mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolRenderDegraded):
+	case apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolRenderDegraded):
 		klog.V(4).Infof("MachineConfigPool %s is render degraded, requeueing", pool.Name)
 		ctrl.enqueueMachineConfigPool(pool)
 		return nil
-	case mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolBuildPending):
+	case apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolBuildPending):
 		klog.V(4).Infof("MachineConfigPool %s is build pending", pool.Name)
 		return nil
-	case mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolBuilding):
+	case apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolBuilding):
 		klog.V(4).Infof("MachineConfigPool %s is building", pool.Name)
 		return nil
-	case mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolBuildSuccess):
+	case apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolBuildSuccess):
 		klog.V(4).Infof("MachineConfigPool %s has successfully built", pool.Name)
 		return nil
 	default:
@@ -1073,8 +1074,8 @@ func (ctrl *Controller) syncAvailableStatus(pool *mcfgv1.MachineConfigPool) erro
 			return nil
 		}
 	*/
-	sdegraded := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolRenderDegraded, corev1.ConditionFalse, "", "")
-	mcfgv1.SetMachineConfigPoolCondition(&pool.Status, *sdegraded)
+	sdegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolRenderDegraded, corev1.ConditionFalse, "", "")
+	apihelpers.SetMachineConfigPoolCondition(&pool.Status, *sdegraded)
 
 	if _, err := ctrl.mcfgclient.MachineconfigurationV1().MachineConfigPools().UpdateStatus(context.TODO(), pool, metav1.UpdateOptions{}); err != nil {
 		return err
@@ -1084,8 +1085,8 @@ func (ctrl *Controller) syncAvailableStatus(pool *mcfgv1.MachineConfigPool) erro
 }
 
 func (ctrl *Controller) syncFailingStatus(pool *mcfgv1.MachineConfigPool, err error) error {
-	sdegraded := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolRenderDegraded, corev1.ConditionTrue, "", fmt.Sprintf("Failed to build configuration for pool %s: %v", pool.Name, err))
-	mcfgv1.SetMachineConfigPoolCondition(&pool.Status, *sdegraded)
+	sdegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolRenderDegraded, corev1.ConditionTrue, "", fmt.Sprintf("Failed to build configuration for pool %s: %v", pool.Name, err))
+	apihelpers.SetMachineConfigPoolCondition(&pool.Status, *sdegraded)
 	if _, updateErr := ctrl.mcfgclient.MachineconfigurationV1().MachineConfigPools().UpdateStatus(context.TODO(), pool, metav1.UpdateOptions{}); updateErr != nil {
 		klog.Errorf("Error updating MachineConfigPool %s: %v", pool.Name, updateErr)
 	}
@@ -1167,13 +1168,13 @@ func addObjectRefIfMissing(pool *mcfgv1.MachineConfigPool, objRef corev1.ObjectR
 func setMCPBuildConditions(pool *mcfgv1.MachineConfigPool, conditions []mcfgv1.MachineConfigPoolCondition) {
 	for _, condition := range conditions {
 		condition := condition
-		currentCondition := mcfgv1.GetMachineConfigPoolCondition(pool.Status, condition.Type)
+		currentCondition := apihelpers.GetMachineConfigPoolCondition(pool.Status, condition.Type)
 		if currentCondition != nil && isConditionEqual(*currentCondition, condition) {
 			continue
 		}
 
-		mcpCondition := mcfgv1.NewMachineConfigPoolCondition(condition.Type, condition.Status, condition.Reason, condition.Message)
-		mcfgv1.SetMachineConfigPoolCondition(&pool.Status, *mcpCondition)
+		mcpCondition := apihelpers.NewMachineConfigPoolCondition(condition.Type, condition.Status, condition.Reason, condition.Message)
+		apihelpers.SetMachineConfigPoolCondition(&pool.Status, *mcpCondition)
 	}
 }
 
@@ -1219,7 +1220,7 @@ func canPoolBuild(pool *mcfgv1.MachineConfigPool) bool {
 	}
 
 	for _, conditionType := range conditionTypes {
-		if mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, conditionType) {
+		if apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, conditionType) {
 			return false
 		}
 	}
@@ -1237,7 +1238,7 @@ func isPoolDegraded(pool *mcfgv1.MachineConfigPool) bool {
 	}
 
 	for _, conditionType := range degradedConditionTypes {
-		if mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, conditionType) {
+		if apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, conditionType) {
 			return true
 		}
 	}

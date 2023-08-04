@@ -30,6 +30,9 @@ contents:
       OpenShiftPodSecurityAdmission: true
       RetroactiveDefaultStorageClass: false
       CloudDualStackNodeIPs: true
+      ExternalCloudProviderAzure: true
+      ExternalCloudProviderExternal: true 
+      PrivateHostedZoneAWS: true
     serverTLSBootstrap: true
     tlsMinVersion: VersionTLS12
     tlsCipherSuites:

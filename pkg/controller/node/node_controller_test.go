@@ -23,14 +23,14 @@ import (
 
 	apicfgv1 "github.com/openshift/api/config/v1"
 	configv1 "github.com/openshift/api/config/v1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	fakeconfigv1client "github.com/openshift/client-go/config/clientset/versioned/fake"
 	configv1informer "github.com/openshift/client-go/config/informers/externalversions"
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
+	informers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
 	"github.com/openshift/machine-config-operator/pkg/constants"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
-	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
-	informers "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/assert"
@@ -1016,9 +1016,10 @@ func TestCertStatus(t *testing.T) {
 	f := newFixture(t)
 	cc := newControllerConfig(ctrlcommon.ControllerConfigName, configv1.TopologyMode(""))
 
+	time := metav1.Now()
 	cc.Status.ControllerCertificates = append(cc.Status.ControllerCertificates, mcfgv1.ControllerCertificate{
 		BundleFile: "KubeAPIServerServingCAData",
-		NotAfter:   time.Now().String(),
+		NotAfter:   &time,
 	})
 
 	mcp := helpers.NewMachineConfigPool("test-cluster-infra", nil, helpers.InfraSelector, "v1")

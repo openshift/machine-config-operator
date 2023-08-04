@@ -5,7 +5,8 @@ import (
 	"reflect"
 	"testing"
 
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -337,12 +338,12 @@ func TestCalculateStatus(t *testing.T) {
 				t.Fatalf("mismatch UnavailableMachineCount: got %d want: %d", got, want)
 			}
 
-			condupdated := mcfgv1.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
+			condupdated := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
 			if condupdated == nil {
 				t.Fatal("updated condition not found")
 			}
 
-			condupdating := mcfgv1.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
+			condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
 			if condupdating == nil {
 				t.Fatal("updated condition not found")
 			}
@@ -379,12 +380,12 @@ func TestCalculateStatus(t *testing.T) {
 				t.Fatalf("mismatch UnavailableMachineCount: got %d want: %d", got, want)
 			}
 
-			condupdated := mcfgv1.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
+			condupdated := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
 			if condupdated == nil {
 				t.Fatal("updated condition not found")
 			}
 
-			condupdating := mcfgv1.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
+			condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
 			if condupdating == nil {
 				t.Fatal("updated condition not found")
 			}
@@ -406,7 +407,7 @@ func TestCalculateStatus(t *testing.T) {
 		currentConfig: "v1",
 		paused:        true,
 		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-			condupdated := mcfgv1.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
+			condupdated := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
 			if condupdated == nil {
 				t.Fatal("updated condition not found")
 			}
@@ -414,7 +415,7 @@ func TestCalculateStatus(t *testing.T) {
 				t.Fatalf("mismatch condupdated.Status: got %s want: %s", got, want)
 			}
 
-			condupdating := mcfgv1.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
+			condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
 			if condupdating == nil {
 				t.Fatal("updated condition not found")
 			}
@@ -446,12 +447,12 @@ func TestCalculateStatus(t *testing.T) {
 				t.Fatalf("mismatch UnavailableMachineCount: got %d want: %d", got, want)
 			}
 
-			condupdated := mcfgv1.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
+			condupdated := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
 			if condupdated == nil {
 				t.Fatal("updated condition not found")
 			}
 
-			condupdating := mcfgv1.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
+			condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
 			if condupdating == nil {
 				t.Fatal("updated condition not found")
 			}
@@ -488,12 +489,12 @@ func TestCalculateStatus(t *testing.T) {
 				t.Fatalf("mismatch UnavailableMachineCount: got %d want: %d", got, want)
 			}
 
-			condupdated := mcfgv1.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
+			condupdated := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
 			if condupdated == nil {
 				t.Fatal("updated condition not found")
 			}
 
-			condupdating := mcfgv1.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
+			condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
 			if condupdating == nil {
 				t.Fatal("updated condition not found")
 			}
@@ -530,12 +531,12 @@ func TestCalculateStatus(t *testing.T) {
 				t.Fatalf("mismatch UnavailableMachineCount: got %d want: %d", got, want)
 			}
 
-			condupdated := mcfgv1.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
+			condupdated := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
 			if condupdated == nil {
 				t.Fatal("updated condition not found")
 			}
 
-			condupdating := mcfgv1.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
+			condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
 			if condupdating == nil {
 				t.Fatal("updated condition not found")
 			}
@@ -572,12 +573,12 @@ func TestCalculateStatus(t *testing.T) {
 				t.Fatalf("mismatch UnavailableMachineCount: got %d want: %d", got, want)
 			}
 
-			condupdated := mcfgv1.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
+			condupdated := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
 			if condupdated == nil {
 				t.Fatal("updated condition not found")
 			}
 
-			condupdating := mcfgv1.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
+			condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
 			if condupdating == nil {
 				t.Fatal("updated condition not found")
 			}
@@ -614,12 +615,12 @@ func TestCalculateStatus(t *testing.T) {
 				t.Fatalf("mismatch UnavailableMachineCount: got %d want: %d", got, want)
 			}
 
-			condupdated := mcfgv1.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
+			condupdated := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
 			if condupdated == nil {
 				t.Fatal("updated condition not found")
 			}
 
-			condupdating := mcfgv1.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
+			condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
 			if condupdating == nil {
 				t.Fatal("updated condition not found")
 			}

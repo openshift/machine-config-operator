@@ -247,7 +247,7 @@ const (
 )
 
 // ClusterVersionCapability enumerates optional, core cluster components.
-// +kubebuilder:validation:Enum=openshift-samples;baremetal;marketplace;Console;Insights;Storage;CSISnapshot;NodeTuning;MachineAPI
+// +kubebuilder:validation:Enum=openshift-samples;baremetal;marketplace;Console;Insights;Storage;CSISnapshot;NodeTuning;MachineAPI;Build;DeploymentConfig
 type ClusterVersionCapability string
 
 const (
@@ -313,6 +313,23 @@ const (
 	// documentation. This is important part of openshift system
 	// and may cause cluster damage
 	ClusterVersionCapabilityMachineAPI ClusterVersionCapability = "MachineAPI"
+
+	// ClusterVersionCapabilityBuild manages the Build API which is responsible
+	// for watching the Build API objects and managing their lifecycle.
+	// The functionality is located under openshift-apiserver and openshift-controller-manager.
+	//
+	// The following resources are taken into account:
+	// - builds
+	// - buildconfigs
+	ClusterVersionCapabilityBuild ClusterVersionCapability = "Build"
+
+	// ClusterVersionCapabilityDeploymentConfig manages the DeploymentConfig API
+	// which is responsible for watching the DeploymentConfig API and managing their lifecycle.
+	// The functionality is located under openshift-apiserver and openshift-controller-manager.
+	//
+	// The following resources are taken into account:
+	// - deploymentconfigs
+	ClusterVersionCapabilityDeploymentConfig ClusterVersionCapability = "DeploymentConfig"
 )
 
 // KnownClusterVersionCapabilities includes all known optional, core cluster components.
@@ -326,6 +343,8 @@ var KnownClusterVersionCapabilities = []ClusterVersionCapability{
 	ClusterVersionCapabilityCSISnapshot,
 	ClusterVersionCapabilityNodeTuning,
 	ClusterVersionCapabilityMachineAPI,
+	ClusterVersionCapabilityBuild,
+	ClusterVersionCapabilityDeploymentConfig,
 }
 
 // ClusterVersionCapabilitySet defines sets of cluster version capabilities.
@@ -374,6 +393,7 @@ var ClusterVersionCapabilitySets = map[ClusterVersionCapabilitySet][]ClusterVers
 		ClusterVersionCapabilityBaremetal,
 		ClusterVersionCapabilityMarketplace,
 		ClusterVersionCapabilityOpenShiftSamples,
+		ClusterVersionCapabilityMachineAPI,
 	},
 	ClusterVersionCapabilitySet4_12: {
 		ClusterVersionCapabilityBaremetal,
@@ -383,6 +403,7 @@ var ClusterVersionCapabilitySets = map[ClusterVersionCapabilitySet][]ClusterVers
 		ClusterVersionCapabilityStorage,
 		ClusterVersionCapabilityOpenShiftSamples,
 		ClusterVersionCapabilityCSISnapshot,
+		ClusterVersionCapabilityMachineAPI,
 	},
 	ClusterVersionCapabilitySet4_13: {
 		ClusterVersionCapabilityBaremetal,
@@ -393,6 +414,7 @@ var ClusterVersionCapabilitySets = map[ClusterVersionCapabilitySet][]ClusterVers
 		ClusterVersionCapabilityOpenShiftSamples,
 		ClusterVersionCapabilityCSISnapshot,
 		ClusterVersionCapabilityNodeTuning,
+		ClusterVersionCapabilityMachineAPI,
 	},
 	ClusterVersionCapabilitySet4_14: {
 		ClusterVersionCapabilityBaremetal,
@@ -404,6 +426,8 @@ var ClusterVersionCapabilitySets = map[ClusterVersionCapabilitySet][]ClusterVers
 		ClusterVersionCapabilityCSISnapshot,
 		ClusterVersionCapabilityNodeTuning,
 		ClusterVersionCapabilityMachineAPI,
+		ClusterVersionCapabilityBuild,
+		ClusterVersionCapabilityDeploymentConfig,
 	},
 	ClusterVersionCapabilitySetCurrent: {
 		ClusterVersionCapabilityBaremetal,
@@ -415,6 +439,8 @@ var ClusterVersionCapabilitySets = map[ClusterVersionCapabilitySet][]ClusterVers
 		ClusterVersionCapabilityCSISnapshot,
 		ClusterVersionCapabilityNodeTuning,
 		ClusterVersionCapabilityMachineAPI,
+		ClusterVersionCapabilityBuild,
+		ClusterVersionCapabilityDeploymentConfig,
 	},
 }
 

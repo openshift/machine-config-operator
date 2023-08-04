@@ -11,9 +11,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	fakeclientbuildv1 "github.com/openshift/client-go/build/clientset/versioned/fake"
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	fakeclientmachineconfigv1 "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
+	fakeclientmachineconfigv1 "github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
 	testhelpers "github.com/openshift/machine-config-operator/test/helpers"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	fakecorev1client "k8s.io/client-go/kubernetes/fake"
@@ -21,6 +21,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
+	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 
@@ -362,7 +363,7 @@ func isMCPBuildSuccess(mcp *mcfgv1.MachineConfigPool) bool {
 	return hasConfigAnnotation &&
 		ctrlcommon.IsLayeredPool(mcp) &&
 		(imagePullspec == expectedImagePullspecWithSHA || imagePullspec == "fake@logs") &&
-		mcfgv1.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolBuildSuccess) &&
+		apihelpers.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolBuildSuccess) &&
 		!machineConfigPoolHasBuildRef(mcp) && machineConfigPoolHasMachineConfigRefs(mcp)
 }
 
@@ -381,8 +382,8 @@ func machineConfigPoolHasMachineConfigRefs(pool *mcfgv1.MachineConfigPool) bool 
 // Helper that determines if the build was a failure.
 func isMCPBuildFailure(mcp *mcfgv1.MachineConfigPool) bool {
 	return ctrlcommon.IsLayeredPool(mcp) &&
-		mcfgv1.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolBuildFailed) &&
-		mcfgv1.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolDegraded) &&
+		apihelpers.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolBuildFailed) &&
+		apihelpers.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolDegraded) &&
 		machineConfigPoolHasBuildRef(mcp) && machineConfigPoolHasMachineConfigRefs(mcp)
 }
 
@@ -488,8 +489,8 @@ func testOptedInMCPOptsOut(ctx context.Context, t *testing.T, cs *Clients, optIn
 		}
 
 		for _, condition := range getMachineConfigPoolBuildConditions() {
-			if mcfgv1.IsMachineConfigPoolConditionPresentAndEqual(mcp.Status.Conditions, condition, corev1.ConditionTrue) ||
-				mcfgv1.IsMachineConfigPoolConditionPresentAndEqual(mcp.Status.Conditions, condition, corev1.ConditionFalse) {
+			if apihelpers.IsMachineConfigPoolConditionPresentAndEqual(mcp.Status.Conditions, condition, corev1.ConditionTrue) ||
+				apihelpers.IsMachineConfigPoolConditionPresentAndEqual(mcp.Status.Conditions, condition, corev1.ConditionFalse) {
 				return false
 			}
 		}
@@ -505,8 +506,8 @@ func testMCPIsDegraded(ctx context.Context, t *testing.T, cs *Clients) {
 
 	mcp.Labels[ctrlcommon.LayeringEnabledPoolLabel] = ""
 
-	condition := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolDegraded, corev1.ConditionTrue, "", "")
-	mcfgv1.SetMachineConfigPoolCondition(&mcp.Status, *condition)
+	condition := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolDegraded, corev1.ConditionTrue, "", "")
+	apihelpers.SetMachineConfigPoolCondition(&mcp.Status, *condition)
 
 	_, err = cs.mcfgclient.MachineconfigurationV1().MachineConfigPools().Update(ctx, mcp, metav1.UpdateOptions{})
 	require.NoError(t, err)
@@ -514,12 +515,12 @@ func testMCPIsDegraded(ctx context.Context, t *testing.T, cs *Clients) {
 	assertMachineConfigPoolReachesState(ctx, t, cs, "worker", func(mcp *mcfgv1.MachineConfigPool) bool {
 		// TODO: Should we fail the build without even starting it if the pool is degraded?
 		for _, condition := range getMachineConfigPoolBuildConditions() {
-			if mcfgv1.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, condition) {
+			if apihelpers.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, condition) {
 				return false
 			}
 		}
 
-		return mcfgv1.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolDegraded) &&
+		return apihelpers.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolDegraded) &&
 			assertNoBuildPods(ctx, t, cs) &&
 			assertNoBuilds(ctx, t, cs)
 	})

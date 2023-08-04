@@ -27,9 +27,10 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/klog/v2"
 
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
+
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 )
 
 const (
@@ -183,6 +184,9 @@ func getManagedKeyCtrCfgDeprecated(pool *mcfgv1.MachineConfigPool) string {
 // nolint: dupl
 func getManagedKeyCtrCfg(pool *mcfgv1.MachineConfigPool, client mcfgclientset.Interface, cfg *mcfgv1.ContainerRuntimeConfig) (string, error) {
 	// Get all the ctrcfg CRs
+	if client == nil {
+		return ctrlcommon.GetManagedKey(pool, client, "99", "containerruntime", getManagedKeyCtrCfgDeprecated(pool))
+	}
 	ctrcfgListAll, err := client.MachineconfigurationV1().ContainerRuntimeConfigs().List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		return "", fmt.Errorf("error listing container runtime configs: %w", err)
@@ -265,17 +269,17 @@ func getManagedKeyReg(pool *mcfgv1.MachineConfigPool, client mcfgclientset.Inter
 func wrapErrorWithCondition(err error, args ...interface{}) mcfgv1.ContainerRuntimeConfigCondition {
 	var condition *mcfgv1.ContainerRuntimeConfigCondition
 	if err != nil {
-		condition = mcfgv1.NewContainerRuntimeConfigCondition(
-			mcfgv1.ContainerRuntimeConfigFailure,
-			corev1.ConditionFalse,
-			fmt.Sprintf("Error: %v", err),
-		)
+		condition = &mcfgv1.ContainerRuntimeConfigCondition{
+			Type:    mcfgv1.ContainerRuntimeConfigFailure,
+			Status:  corev1.ConditionFalse,
+			Message: fmt.Sprintf("Error: %v", err),
+		}
 	} else {
-		condition = mcfgv1.NewContainerRuntimeConfigCondition(
-			mcfgv1.ContainerRuntimeConfigSuccess,
-			corev1.ConditionTrue,
-			"Success",
-		)
+		condition = &mcfgv1.ContainerRuntimeConfigCondition{
+			Type:    mcfgv1.ContainerRuntimeConfigSuccess,
+			Status:  corev1.ConditionTrue,
+			Message: "Success"}
+
 	}
 	if len(args) > 0 {
 		format, ok := args[0].(string)
