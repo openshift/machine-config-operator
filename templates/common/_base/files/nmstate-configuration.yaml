@@ -1,0 +1,29 @@
+mode: 0755
+path: "/usr/local/bin/nmstate-configuration.sh"
+contents:
+  inline: |
+    #!/bin/bash
+    set -eux
+
+    if [ -e /etc/nmstate/openshift/applied ]; then
+      # Already done, don't apply again
+      exit 0
+    fi
+
+    hostname=$(hostname -s)
+    hostname_file="/etc/nmstate/openshift/${hostname}.yml"
+    cluster_file="/etc/nmstate/openshift/cluster.yml"
+    config_file=""
+    if [ -s $hostname_file ]; then
+      config_file=$hostname_file
+    fi
+    if [ -s $cluster_file ]; then
+      config_file=$cluster_file
+    fi
+    if [ -z $config_file ]; then
+      # No config to apply
+      exit 0
+    fi
+
+    cp $config_file /etc/nmstate
+    touch /etc/nmstate/openshift/applied
