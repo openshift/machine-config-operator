@@ -1,5 +1,5 @@
 name: ovs-configuration.service
-enabled: false
+enabled: {{if eq .NetworkType "OVNKubernetes" "OpenShiftSDN"}}true{{else}}false{{end}}
 contents: |
   [Unit]
   Description=Configures OVS with proper host networking configuration
