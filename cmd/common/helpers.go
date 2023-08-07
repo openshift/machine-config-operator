@@ -40,7 +40,7 @@ func CreateResourceLock(cb *clients.Builder, componentNamespace, componentName s
 	kubeClient := cb.KubeClientOrDie("leader-election")
 
 	lock, err := resourcelock.New(
-		resourcelock.ConfigMapsLeasesResourceLock,
+		resourcelock.LeasesResourceLock,
 		componentNamespace,
 		componentName,
 		kubeClient.CoreV1(),
