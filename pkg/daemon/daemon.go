@@ -961,6 +961,7 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 	// TODO should be de-duplicated with update()
 	if ctrlcommon.InSlice(postConfigChangeActionReboot, actions) {
 		klog.Info("Rebooting node")
+		logStack()
 		return dn.reboot(fmt.Sprintf("Node will reboot into config %s", desiredConfig.Name))
 	}
 
@@ -1054,6 +1055,10 @@ func (dn *Daemon) RunFirstbootCompleteMachineconfig() error {
 	// it, reflecting the current machine state.
 	oldConfig := canonicalizeEmptyMC(nil)
 	oldConfig.Spec.OSImageURL = dn.bootedOSImageURL
+	if err = mergeRunningKargs(oldConfig, mc.Spec.KernelArguments); err != nil {
+		return fmt.Errorf("failed to merge kernel arguments: %w", err)
+	}
+
 	// Currently, we generally expect the bootimage to be older, but in the special
 	// case of having bootimage == machine-os-content, and no kernel arguments
 	// specified, then we don't need to do anything here.
@@ -1062,6 +1067,7 @@ func (dn *Daemon) RunFirstbootCompleteMachineconfig() error {
 		return fmt.Errorf("failed to compare MachineConfig: %w", err)
 	}
 	if !mcDiffNotEmpty {
+		logSystem("Skipping rebooot")
 		// Removing this file signals completion of the initial MC processing.
 		if err := os.Remove(constants.MachineConfigEncapsulatedPath); err != nil {
 			return fmt.Errorf("failed to remove %s: %w", constants.MachineConfigEncapsulatedPath, err)
@@ -1069,6 +1075,7 @@ func (dn *Daemon) RunFirstbootCompleteMachineconfig() error {
 		return nil
 	}
 
+	logSystem("Not skipping rebooot: %+v %+v", *oldConfig, mc)
 	dn.skipReboot = true
 	// This "false" is a compatibility for IBM's use case, where they are using the MCD to write the full configuration instead of just
 	// the encapsulated config. This shouldn't affect normal OCP operations, but will allow anyone using this code to write configs to
@@ -2075,6 +2082,10 @@ func (dn *Daemon) validateOnDiskState(currentConfig *mcfgv1.MachineConfig) error
 	return nil
 }
 
+func canonizeImageURL(url string) string {
+	return strings.Replace(url, "docker://", "", 1)
+}
+
 // checkOS determines whether the booted system matches the target
 // osImageURL and if not whether we need to take action.  This function
 // returns `true` if no action is required, which is the case if we're
@@ -2100,7 +2111,7 @@ func (dn *Daemon) checkOS(osImageURL string) bool {
 		}
 	}
 
-	return dn.bootedOSImageURL == osImageURL
+	return canonizeImageURL(dn.bootedOSImageURL) == canonizeImageURL(osImageURL)
 }
 
 // Close closes all the connections the node agent has open for it's lifetime

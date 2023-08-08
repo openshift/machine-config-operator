@@ -11,6 +11,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"reflect"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -74,6 +75,7 @@ func reloadService(name string) error {
 func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string, configName string) error {
 	if ctrlcommon.InSlice(postConfigChangeActionReboot, postConfigChangeActions) {
 		logSystem("Rebooting node")
+		logStack()
 		return dn.reboot(fmt.Sprintf("Node will reboot into config %s", configName))
 	}
 
@@ -122,6 +124,24 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 	return dn.triggerUpdateWithMachineConfig(state.currentConfig, state.desiredConfig, true)
 }
 
+func mergeRunningKargs(config *mcfgv1.MachineConfig, requestedKargs []string) error {
+	b, err := os.ReadFile("/proc/cmdline")
+	if err != nil {
+		return err
+	}
+	splits := strings.Split(strings.TrimSpace(string(b)), " ")
+	for _, split := range splits {
+		for _, reqKarg := range requestedKargs {
+			if strings.ReplaceAll(reqKarg, "\"", "") == strings.ReplaceAll(split, "\"", "") {
+				config.Spec.KernelArguments = append(config.Spec.KernelArguments, reqKarg)
+				break
+			}
+		}
+	}
+	logSystem("requested kargs: %+v, merged kargs: %+v", requestedKargs, config.Spec.KernelArguments)
+	return nil
+}
+
 func canonicalizeEmptyMC(config *mcfgv1.MachineConfig) *mcfgv1.MachineConfig {
 	if config != nil {
 		return config
@@ -155,6 +175,8 @@ func (dn *Daemon) compareMachineConfig(oldConfig, newConfig *mcfgv1.MachineConfi
 		klog.Infof("No changes from %s to %s", oldConfigName, newConfigName)
 		return false, nil
 	}
+	logSystem("mc diff %+v", *mcDiff)
+	logSystem("old os-image %s new os-image %s", oldConfig.Spec.OSImageURL, newConfig.Spec.OSImageURL)
 	return true, nil
 }
 
@@ -342,11 +364,16 @@ func calculatePostConfigChangeActionFromFileDiffs(diffFileSet []string) (actions
 		} else if ctrlcommon.InSlice(path, filesPostConfigChangeActionReloadCrio) {
 			actions = []string{postConfigChangeActionReloadCrio}
 		} else {
+			logStack()
 			actions = []string{postConfigChangeActionReboot}
 			return
 		}
 	}
 	return
+}
+
+func logStack() {
+	logSystem("Stack trace: \n%s", string(debug.Stack()))
 }
 
 func calculatePostConfigChangeAction(diff *machineConfigDiff, diffFileSet []string) ([]string, error) {
@@ -358,11 +385,13 @@ func calculatePostConfigChangeAction(diff *machineConfigDiff, diffFileSet []stri
 			return []string{}, fmt.Errorf("failed to remove force validation file: %w", err)
 		}
 		klog.Infof("Setting post config change action to postConfigChangeActionReboot; %s present", constants.MachineConfigDaemonForceFile)
+		logStack()
 		return []string{postConfigChangeActionReboot}, nil
 	}
 
 	if diff.osUpdate || diff.kargs || diff.fips || diff.units || diff.kernelType || diff.extensions {
 		// must reboot
+		logStack()
 		return []string{postConfigChangeActionReboot}, nil
 	}
 
@@ -691,7 +720,7 @@ func newMachineConfigDiff(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineC
 
 	force := forceFileExists()
 	return &machineConfigDiff{
-		osUpdate:   oldConfig.Spec.OSImageURL != newConfig.Spec.OSImageURL || force,
+		osUpdate:   canonizeImageURL(oldConfig.Spec.OSImageURL) != canonizeImageURL(newConfig.Spec.OSImageURL) || force,
 		kargs:      !(kargsEmpty || reflect.DeepEqual(oldConfig.Spec.KernelArguments, newConfig.Spec.KernelArguments)),
 		fips:       oldConfig.Spec.FIPS != newConfig.Spec.FIPS,
 		passwd:     !reflect.DeepEqual(oldIgn.Passwd, newIgn.Passwd),
