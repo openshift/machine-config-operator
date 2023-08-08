@@ -370,6 +370,45 @@ func calculatePostConfigChangeAction(diff *machineConfigDiff, diffFileSet []stri
 	return calculatePostConfigChangeActionFromFileDiffs(diffFileSet), nil
 }
 
+func (dn *Daemon) updateImage(newConfig *mcfgv1.MachineConfig, oldImage, newImage string) error {
+	if dn.nodeWriter != nil {
+		state, err := getNodeAnnotationExt(dn.node, constants.MachineConfigDaemonStateAnnotationKey, true)
+		if err != nil {
+			return err
+		}
+		if state != constants.MachineConfigDaemonStateDegraded && state != constants.MachineConfigDaemonStateUnreconcilable {
+			if err := dn.nodeWriter.SetWorking(); err != nil {
+				return fmt.Errorf("error setting node's state to Working: %w", err)
+			}
+		}
+	}
+
+	if oldImage == "" {
+		logSystem("Starting transition to %q", newImage)
+	} else {
+		logSystem("Starting transition from %q to %q", oldImage, newImage)
+	}
+
+	if err := dn.performDrain(); err != nil {
+		return err
+	}
+
+	if err := dn.updateLayeredOSToPullspec(newImage); err != nil {
+		return err
+	}
+
+	odc := &onDiskConfig{
+		currentImage:  newImage,
+		currentConfig: newConfig,
+	}
+
+	if err := dn.storeCurrentConfigOnDisk(odc); err != nil {
+		return err
+	}
+
+	return dn.reboot(fmt.Sprintf("Node will reboot into image %s", newImage))
+}
+
 // update the node to the provided node configuration.
 //
 //nolint:gocyclo
@@ -522,12 +561,17 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	// At this point, we write the now expected to be "current" config to /etc.
 	// When we reboot, we'll find this file and validate that we're in this state,
 	// and that completes an update.
-	if err := dn.storeCurrentConfigOnDisk(newConfig); err != nil {
+	odc := &onDiskConfig{
+		currentConfig: newConfig,
+	}
+
+	if err := dn.storeCurrentConfigOnDisk(odc); err != nil {
 		return err
 	}
 	defer func() {
 		if retErr != nil {
-			if err := dn.storeCurrentConfigOnDisk(oldConfig); err != nil {
+			odc.currentConfig = oldConfig
+			if err := dn.storeCurrentConfigOnDisk(odc); err != nil {
 				errs := kubeErrs.NewAggregate([]error{err, retErr})
 				retErr = fmt.Errorf("error rolling back current config on disk: %w", errs)
 				return
@@ -1831,8 +1875,11 @@ func (dn *Daemon) queueRevertRTKernel() error {
 func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 	newURL := config.Spec.OSImageURL
 	klog.Infof("Updating OS to layered image %s", newURL)
+	return dn.updateLayeredOSToPullspec(newURL)
+}
 
-	newEnough, err := RpmOstreeIsNewEnoughForLayering()
+func (dn *Daemon) updateLayeredOSToPullspec(newURL string) error {
+	newEnough, err := dn.NodeUpdaterClient.IsNewEnoughForLayering()
 	if err != nil {
 		return err
 	}

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"os/exec"
@@ -124,6 +125,7 @@ type Daemon struct {
 	rebootQueued bool
 
 	currentConfigPath string
+	currentImagePath  string
 
 	// Config Drift Monitor
 	configDriftMonitor ConfigDriftMonitor
@@ -151,6 +153,10 @@ const (
 	// currentConfigPath is where we store the current config on disk to validate
 	// against annotations changes
 	currentConfigPath = "/etc/machine-config-daemon/currentconfig"
+
+	// currentImagePath is where we store the current image on disk to validate
+	// against annotation changes.
+	currentImagePath = "/etc/machine-config-daemon/currentimage"
 
 	// originalContainerBin is the path at which we've stashed the MCD container's /usr/bin
 	// in the host namespace.  We use this for executing any extra binaries we have in our
@@ -283,6 +289,7 @@ func New(
 		bootID:             bootID,
 		exitCh:             exitCh,
 		currentConfigPath:  currentConfigPath,
+		currentImagePath:   currentImagePath,
 		configDriftMonitor: NewConfigDriftMonitor(),
 	}, nil
 }
@@ -705,19 +712,21 @@ func (dn *Daemon) syncNode(key string) error {
 	}
 
 	// Pass to the shared update prep method
-	current, desired, err := dn.prepUpdateFromCluster()
+	ufc, err := dn.prepUpdateFromCluster()
 	if err != nil {
 		return fmt.Errorf("prepping update: %w", err)
 	}
-	if current != nil || desired != nil {
+
+	if ufc != nil {
 		// Only check for config drift if we need to update.
 		if err := dn.runPreflightConfigDriftCheck(); err != nil {
 			return err
 		}
 
-		if err := dn.triggerUpdateWithMachineConfig(current, desired, true); err != nil {
+		if err := dn.triggerUpdate(ufc.currentConfig, ufc.desiredConfig, ufc.currentImage, ufc.desiredImage); err != nil {
 			return err
 		}
+
 	}
 	klog.V(2).Infof("Node %s is already synced", node.Name)
 	return nil
@@ -740,7 +749,7 @@ func (dn *Daemon) runPreflightConfigDriftCheck() error {
 
 	start := time.Now()
 
-	if err := dn.validateOnDiskState(currentOnDisk); err != nil {
+	if err := dn.validateOnDiskStateOrImage(currentOnDisk.currentConfig, currentOnDisk.currentImage); err != nil {
 		dn.nodeWriter.Eventf(corev1.EventTypeWarning, "PreflightConfigDriftCheckFailed", err.Error())
 		klog.Errorf("Preflight config drift check failed: %v", err)
 		return &configDriftErr{err}
@@ -1029,7 +1038,7 @@ func (dn *Daemon) RunFirstbootCompleteMachineconfig() error {
 	if err != nil {
 		return fmt.Errorf("failed to parse MachineConfig: %w", err)
 	}
-	newEnough, err := RpmOstreeIsNewEnoughForLayering()
+	newEnough, err := dn.NodeUpdaterClient.IsNewEnoughForLayering()
 	if err != nil {
 		return err
 	}
@@ -1182,7 +1191,7 @@ func (dn *Daemon) startConfigDriftMonitor() {
 		return
 	}
 
-	currentConfig, err := dn.getCurrentConfigOnDisk()
+	odc, err := dn.getCurrentConfigOnDisk()
 	if err != nil {
 		dn.exitCh <- fmt.Errorf("could not get current config from disk: %w", err)
 		return
@@ -1192,7 +1201,7 @@ func (dn *Daemon) startConfigDriftMonitor() {
 		OnDrift:       dn.onConfigDrift,
 		SystemdPath:   pathSystemd,
 		ErrChan:       dn.exitCh,
-		MachineConfig: currentConfig,
+		MachineConfig: odc.currentConfig,
 	}
 
 	if err := dn.configDriftMonitor.Start(opts); err != nil {
@@ -1201,7 +1210,7 @@ func (dn *Daemon) startConfigDriftMonitor() {
 	}
 
 	dn.nodeWriter.Eventf(corev1.EventTypeNormal, "ConfigDriftMonitorStarted",
-		"Config Drift Monitor started, watching against %s", currentConfig.Name)
+		"Config Drift Monitor started, watching against %s", odc.currentConfig.Name)
 
 	go func() {
 		// Common shutdown function
@@ -1333,6 +1342,16 @@ type stateAndConfigs struct {
 	state         string
 	currentConfig *mcfgv1.MachineConfig
 	desiredConfig *mcfgv1.MachineConfig
+	currentImage  string
+	desiredImage  string
+}
+
+func (s *stateAndConfigs) getCurrentName() string {
+	if s.currentImage == "" {
+		return fmt.Sprintf("MachineConfig: %s", s.currentConfig.GetName())
+	}
+
+	return fmt.Sprintf("MachineConfig: %s / Image: %s", s.currentConfig.GetName(), s.currentImage)
 }
 
 func (dn *Daemon) getStateAndConfigs() (*stateAndConfigs, error) {
@@ -1365,6 +1384,17 @@ func (dn *Daemon) getStateAndConfigs() (*stateAndConfigs, error) {
 	if err != nil {
 		return nil, err
 	}
+	currentImage, err := getNodeAnnotationExt(dn.node, constants.CurrentImageAnnotationKey, true)
+	if err != nil {
+		klog.Infof("%s is not set. any errors? %s", constants.CurrentImageAnnotationKey, err)
+		return nil, err
+	}
+	desiredImage, err := getNodeAnnotationExt(dn.node, constants.DesiredImageAnnotationKey, true)
+	if err != nil {
+		klog.Infof("%s is not set. any errors? %s", constants.DesiredImageAnnotationKey, err)
+		return nil, err
+	}
+
 	// Temporary hack: the MCS used to not write the state=done annotation
 	// key.  If it's unset, let's write it now.
 	if state == "" {
@@ -1400,6 +1430,12 @@ func (dn *Daemon) getStateAndConfigs() (*stateAndConfigs, error) {
 		klog.Infof("Current config: %s", currentConfigName)
 		klog.Infof("Desired config: %s", desiredConfigName)
 	}
+
+	if currentImage == desiredImage && desiredImage != "" {
+		klog.Infof("Current image: %s", currentImage)
+		klog.Infof("Desired image: %s", desiredImage)
+	}
+
 	klog.Infof("state: %s", state)
 
 	var degradedReason string
@@ -1417,6 +1453,8 @@ func (dn *Daemon) getStateAndConfigs() (*stateAndConfigs, error) {
 		currentConfig: currentConfig,
 		desiredConfig: desiredConfig,
 		state:         state,
+		currentImage:  currentImage,
+		desiredImage:  desiredImage,
 	}, nil
 }
 
@@ -1458,9 +1496,36 @@ func (dn *Daemon) LogSystemData() {
 	}
 }
 
+type onDiskConfig struct {
+	currentConfig *mcfgv1.MachineConfig
+	currentImage  string
+}
+
+// This reads a file (/etc/machine-config-daemon/currentimage) to determine
+// what the currently applied OS image is, if we're using layering. This file's
+// purpose is similar to the /etc/machine-config-daemon/currentconfig file.
+func (dn *Daemon) getCurrentImageOnDisk() (string, error) {
+	currentImageBytes, err := os.ReadFile(dn.currentImagePath)
+
+	switch {
+	case err != nil && !errors.Is(err, fs.ErrNotExist):
+		// If the current image path could not be read and it doesn't match the
+		// nonexistent file error, return here.
+		return "", fmt.Errorf("could not read current image path %s: %w", dn.currentImagePath, err)
+	case errors.Is(err, fs.ErrNotExist):
+		// If the current image path does not exist, default to an empty string.
+		klog.Infof("File %q does not yet exist, defaulting to empty value", dn.currentImagePath)
+		return "", nil
+	default:
+		// If we read the current image path successfully, convert it to a string
+		// and trim any spaces, newlines, etc.
+		return strings.TrimSpace(string(currentImageBytes)), nil
+	}
+}
+
 // getCurrentConfigOnDisk retrieves the serialized MachineConfig written to /etc
 // which exists during the time we're trying to perform an update.
-func (dn *Daemon) getCurrentConfigOnDisk() (*mcfgv1.MachineConfig, error) {
+func (dn *Daemon) getCurrentConfigOnDisk() (*onDiskConfig, error) {
 	mcJSON, err := os.Open(dn.currentConfigPath)
 	if err != nil {
 		return nil, err
@@ -1470,18 +1535,34 @@ func (dn *Daemon) getCurrentConfigOnDisk() (*mcfgv1.MachineConfig, error) {
 	if err := json.NewDecoder(bufio.NewReader(mcJSON)).Decode(currentOnDisk); err != nil {
 		return nil, err
 	}
-	return currentOnDisk, nil
+
+	currentImage, err := dn.getCurrentImageOnDisk()
+	if err != nil {
+		return nil, err
+	}
+
+	odc := &onDiskConfig{
+		currentConfig: currentOnDisk,
+		currentImage:  currentImage,
+	}
+
+	return odc, nil
 }
 
 // storeCurrentConfigOnDisk serializes a machine config into a file in /etc,
 // which we use to denote that we are expecting the system has transitioned
 // into this state.
-func (dn *Daemon) storeCurrentConfigOnDisk(current *mcfgv1.MachineConfig) error {
-	mcJSON, err := json.Marshal(current)
+func (dn *Daemon) storeCurrentConfigOnDisk(odc *onDiskConfig) error {
+	mcJSON, err := json.Marshal(odc.currentConfig)
 	if err != nil {
 		return err
 	}
-	return writeFileAtomicallyWithDefaults(dn.currentConfigPath, mcJSON)
+
+	if err := writeFileAtomicallyWithDefaults(dn.currentConfigPath, mcJSON); err != nil {
+		return err
+	}
+
+	return writeFileAtomicallyWithDefaults(dn.currentImagePath, []byte(odc.currentImage))
 }
 
 // https://bugzilla.redhat.com/show_bug.cgi?id=1842906
@@ -1711,33 +1792,43 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 		}
 	}
 
-	var currentOnDisk *mcfgv1.MachineConfig
+	var odc *onDiskConfig
 	if !state.bootstrapping {
 		var err error
-		currentOnDisk, err = dn.getCurrentConfigOnDisk()
+		odc, err = dn.getCurrentConfigOnDisk()
 		// we allow ENOENT for previous MCO versions that don't write this...
 		if err != nil && !os.IsNotExist(err) {
 			return err
 		}
 	}
 
-	if currentOnDisk != nil && state.currentConfig.GetName() != currentOnDisk.GetName() {
-		// The on disk state (if available) is always considered truth.
-		// We want to handle the case where etcd state was restored from a backup.
-		logSystem("Disk currentConfig %s overrides node's currentConfig annotation %s", currentOnDisk.GetName(), state.currentConfig.GetName())
-		state.currentConfig = currentOnDisk
+	if odc != nil {
+		if state.currentConfig.GetName() != odc.currentConfig.GetName() {
+			// The on disk state (if available) is always considered truth.
+			// We want to handle the case where etcd state was restored from a backup.
+			logSystem("Disk currentConfig %q overrides node's currentConfig annotation %q", odc.currentConfig.GetName(), state.currentConfig.GetName())
+			state.currentConfig = odc.currentConfig
+		}
+
+		if state.currentImage != odc.currentImage {
+			logSystem("Disk currentImage %q overrides node's currentImage annotation %q", odc.currentImage, state.currentImage)
+			state.currentImage = odc.currentImage
+		}
 	}
 
 	// Validate the on-disk state against what we *expect*.
 	//
 	// In the case where we're booting a node for the first time, or the MCD
 	// is restarted, that will be the current config.
-
-	klog.Infof("Validating against current config %s", state.currentConfig.GetName())
+	if state.desiredImage != "" {
+		klog.Infof("Validating against current image %s", state.currentImage)
+	} else {
+		klog.Infof("Validating against current config %s", state.currentConfig.GetName())
+	}
 
 	if forceFileExists() {
 		logSystem("Skipping on-disk validation; %s present", constants.MachineConfigDaemonForceFile)
-		return dn.triggerUpdateWithMachineConfig(state.currentConfig, state.desiredConfig, true)
+		return dn.triggerUpdate(state.currentConfig, state.desiredConfig, state.currentImage, state.desiredImage)
 	}
 
 	// When upgrading the OS, it is possible that the SSH key location will
@@ -1747,10 +1838,9 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 		return err
 	}
 
-	if err := dn.validateOnDiskState(state.currentConfig); err != nil {
-		wErr := fmt.Errorf("unexpected on-disk state validating against %s: %w", state.currentConfig.GetName(), err)
-		dn.nodeWriter.Eventf(corev1.EventTypeWarning, "OnDiskStateValidationFailed", wErr.Error())
-		return wErr
+	if err := dn.validateOnDiskStateOrImage(state.currentConfig, state.currentImage); err != nil {
+		dn.nodeWriter.Eventf(corev1.EventTypeWarning, "OnDiskStateValidationFailed", err.Error())
+		return err
 	}
 
 	logSystem("Validated on-disk state")
@@ -1769,23 +1859,36 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 	}
 	// currentConfig != desiredConfig, and we're not booting up into the desiredConfig.
 	// Kick off an update.
-	return dn.triggerUpdateWithMachineConfig(state.currentConfig, state.desiredConfig, true)
+	return dn.triggerUpdate(state.currentConfig, state.desiredConfig, state.currentImage, state.desiredImage)
+}
+
+func (dn *Daemon) isInDesiredConfig(state *stateAndConfigs) bool {
+	if state.desiredImage == "" && state.currentImage == "" {
+		return state.currentConfig.GetName() == state.desiredConfig.GetName()
+	}
+
+	return state.currentConfig.GetName() == state.desiredConfig.GetName() && state.desiredImage == state.currentImage
 }
 
 // updateConfigAndState updates node to desired state, labels nodes as done and uncordon
 func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, error) {
 
 	if state.bootstrapping {
-		if err := dn.storeCurrentConfigOnDisk(state.currentConfig); err != nil {
+		odc := &onDiskConfig{
+			currentConfig: state.currentConfig,
+			currentImage:  state.currentImage,
+		}
+		if err := dn.storeCurrentConfigOnDisk(odc); err != nil {
 			return false, err
 		}
 	}
 
 	// Set the current config to the last written config to disk. This will be the last
 	// "successful" config update we have completed.
-	currentOnDisk, err := dn.getCurrentConfigOnDisk()
+	odc, err := dn.getCurrentConfigOnDisk()
 	if err == nil {
-		state.currentConfig = currentOnDisk
+		state.currentConfig = odc.currentConfig
+		state.currentImage = odc.currentImage
 	} else {
 		klog.Infof("Error reading config from disk")
 		return false, fmt.Errorf("error reading config from disk: %w", err)
@@ -1795,11 +1898,11 @@ func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, error) {
 	// were coming up, so we next look at that before uncordoning the node (so
 	// we don't uncordon and then immediately re-cordon)
 
-	inDesiredConfig := state.currentConfig.GetName() == state.desiredConfig.GetName()
+	inDesiredConfig := dn.isInDesiredConfig(state)
 	if inDesiredConfig {
 		// Great, we've successfully rebooted for the desired config,
 		// let's mark it done!
-		klog.Infof("Completing update to target config %s", state.currentConfig.GetName())
+		klog.Infof("Completing update to target %s", state.getCurrentName())
 		if err := dn.completeUpdate(state.currentConfig.GetName()); err != nil {
 			UpdateStateMetric(mcdUpdateState, "", err.Error())
 			return inDesiredConfig, err
@@ -1809,22 +1912,23 @@ func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, error) {
 		if dn.nodeWriter != nil {
 			dn.nodeWriter.Eventf(corev1.EventTypeNormal, "NodeDone", fmt.Sprintf("Setting node %s, currentConfig %s to Done", dn.node.Name, state.currentConfig.GetName()))
 		}
-		if err := dn.nodeWriter.SetDone(state.currentConfig.GetName()); err != nil {
+
+		if err := dn.nodeWriter.SetDone(state); err != nil {
 			return true, fmt.Errorf("error setting node's state to Done: %w", err)
 		}
 
 		// If we're degraded here, it means we got an error likely on startup and we retried.
 		// If that's the case, clear it out.
 		if state.state == constants.MachineConfigDaemonStateDegraded {
-			if err := dn.nodeWriter.SetDone(state.currentConfig.GetName()); err != nil {
+			if err := dn.nodeWriter.SetDone(state); err != nil {
 				errLabelStr := fmt.Sprintf("error setting node's state to Done: %v", err)
 				UpdateStateMetric(mcdUpdateState, "", errLabelStr)
 				return inDesiredConfig, fmt.Errorf("error setting node's state to Done: %w", err)
 			}
 		}
 
-		klog.Infof("In desired config %s", state.currentConfig.GetName())
-		UpdateStateMetric(mcdUpdateState, state.currentConfig.GetName(), "")
+		klog.Infof("In desired state %s", state.getCurrentName())
+		UpdateStateMetric(mcdUpdateState, state.getCurrentName(), "")
 	}
 
 	// No errors have occurred. Returns true if currentConfig == desiredConfig, false otherwise (needs update)
@@ -1840,18 +1944,18 @@ func (dn *Daemon) runOnceFromMachineConfig(machineConfig mcfgv1.MachineConfig, c
 			panic("running in onceFrom mode with a remote MachineConfig without a cluster")
 		}
 		// NOTE: This case expects a cluster to exists already.
-		current, desired, err := dn.prepUpdateFromCluster()
+		ufc, err := dn.prepUpdateFromCluster()
 		if err != nil {
 			if err := dn.nodeWriter.SetDegraded(err); err != nil {
 				return err
 			}
 			return err
 		}
-		if current == nil || desired == nil {
+		if ufc.currentConfig == nil || ufc.desiredConfig == nil {
 			return nil
 		}
 		// At this point we have verified we need to update
-		if err := dn.triggerUpdateWithMachineConfig(current, &machineConfig, false); err != nil {
+		if err := dn.triggerUpdateWithMachineConfig(ufc.currentConfig, &machineConfig, false); err != nil {
 			dn.nodeWriter.SetDegraded(err)
 			return err
 		}
@@ -1894,53 +1998,89 @@ func (dn *Daemon) handleNodeEvent(node interface{}) {
 	dn.enqueueNode(n)
 }
 
+type updateFromCluster struct {
+	currentConfig *mcfgv1.MachineConfig
+	desiredConfig *mcfgv1.MachineConfig
+	currentImage  string
+	desiredImage  string
+}
+
 // prepUpdateFromCluster handles the shared update prepping functionality for
 // flows that expect the cluster to already be available. Returns true if an
 // update is required, false otherwise.
-func (dn *Daemon) prepUpdateFromCluster() (*mcfgv1.MachineConfig, *mcfgv1.MachineConfig, error) {
+func (dn *Daemon) prepUpdateFromCluster() (*updateFromCluster, error) {
 	desiredConfigName, err := getNodeAnnotationExt(dn.node, constants.DesiredMachineConfigAnnotationKey, true)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
+
 	desiredConfig, err := dn.mcLister.Get(desiredConfigName)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	// currentConfig is always expected to be there as loadNodeAnnotations
 	// is one of the very first calls when the daemon starts.
 	currentConfigName, err := getNodeAnnotation(dn.node, constants.CurrentMachineConfigAnnotationKey)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	currentConfig, err := dn.mcLister.Get(currentConfigName)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	state, err := getNodeAnnotation(dn.node, constants.MachineConfigDaemonStateAnnotationKey)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	currentOnDisk, err := dn.getCurrentConfigOnDisk()
+	odc, err := dn.getCurrentConfigOnDisk()
 	if err != nil && !os.IsNotExist(err) {
-		return nil, nil, err
+		return nil, err
 	}
 
-	if currentOnDisk != nil && currentOnDisk.GetName() != currentConfig.GetName() {
-		return currentOnDisk, desiredConfig, nil
+	desiredImage, err := getNodeAnnotationExt(dn.node, constants.DesiredImageAnnotationKey, true)
+	if err != nil {
+		return nil, err
+	}
+
+	if odc != nil && odc.currentConfig.GetName() != currentConfig.GetName() {
+		return &updateFromCluster{
+			currentConfig: odc.currentConfig,
+			desiredConfig: desiredConfig,
+			currentImage:  odc.currentImage,
+			desiredImage:  desiredImage,
+		}, nil
 	}
 
 	// Detect if there is an update
-	if desiredConfigName == currentConfigName {
-		if state == constants.MachineConfigDaemonStateDone {
-			// No actual update to the config
-			klog.V(2).Info("No updating is required")
-			return nil, nil, nil
+	if desiredImage == "" && odc.currentImage == "" {
+		if desiredConfigName == currentConfigName {
+			if state == constants.MachineConfigDaemonStateDone {
+				// No actual update to the config
+				klog.V(2).Info("No updating is required")
+				return nil, nil
+			}
+			// This seems like it shouldn't happen...let's just warn for now.
+			klog.Warningf("current+desiredConfig is %s but state is %s", currentConfigName, state)
 		}
-		// This seems like it shouldn't happen...let's just warn for now.
-		klog.Warningf("current+desiredConfig is %s but state is %s", currentConfigName, state)
+	} else {
+		if desiredImage == odc.currentImage && desiredConfigName == currentConfigName {
+			if state == constants.MachineConfigDaemonStateDone {
+				// No actual update to the config
+				klog.V(2).Info("No updating is required")
+				return nil, nil
+			}
+			// This seems like it shouldn't happen...let's just warn for now.
+			klog.Warningf("current+desiredConfig is %s, current+desiredImage is %s but state is %s", currentConfigName, odc.currentImage, state)
+		}
 	}
-	return currentConfig, desiredConfig, nil
+
+	return &updateFromCluster{
+		currentConfig: odc.currentConfig,
+		desiredConfig: desiredConfig,
+		currentImage:  odc.currentImage,
+		desiredImage:  desiredImage,
+	}, nil
 }
 
 // completeUpdate marks the node as schedulable again, then deletes the
@@ -1976,6 +2116,30 @@ func (dn *Daemon) completeUpdate(desiredConfigName string) error {
 	dn.nodeWriter.Eventf(corev1.EventTypeNormal, "Uncordon", fmt.Sprintf("Update completed for config %s and node has been uncordoned", desiredConfigName))
 
 	return nil
+}
+
+func (dn *Daemon) triggerUpdate(currentConfig, desiredConfig *mcfgv1.MachineConfig, currentImage, desiredImage string) error {
+	// If both of the image annotations are empty, this is a regular MachineConfig update.
+	if desiredImage == "" && currentImage == "" {
+		return dn.triggerUpdateWithMachineConfig(currentConfig, desiredConfig, true)
+	}
+
+	// If the desired image annotation is empty, but the current image is not
+	// empty, this should be a regular MachineConfig update.
+	//
+	// However, the node will not roll back from a layered config to a
+	// non-layered config without admin intervention; so we should emit an error
+	// for now.
+	if desiredImage == "" && currentImage != "" {
+		return fmt.Errorf("rolling back from a layered to non-layered configuration is not currently supported")
+	}
+
+	// Shut down the Config Drift Monitor since we'll be performing an update
+	// and the config will "drift" while the update is occurring.
+	dn.stopConfigDriftMonitor()
+
+	klog.Infof("Performing layered OS update")
+	return dn.updateImage(desiredConfig, currentImage, desiredImage)
 }
 
 // triggerUpdateWithMachineConfig starts the update. It queries the cluster for
@@ -2046,11 +2210,11 @@ func (dn *CoreOSDaemon) validateKernelArguments(currentConfig *mcfgv1.MachineCon
 }
 
 // Implementation of validateOnDiskState which checks a few conditions
-func (dn *Daemon) validateOnDiskStateImpl(currentConfig *mcfgv1.MachineConfig) error {
+func (dn *Daemon) validateOnDiskStateImpl(currentConfig *mcfgv1.MachineConfig, imageToCheck string) error {
 	// Be sure we're booted into the OS we expect
-	osMatch := dn.checkOS(currentConfig.Spec.OSImageURL)
+	osMatch := dn.checkOS(imageToCheck)
 	if !osMatch {
-		return fmt.Errorf("expected target osImageURL %q, have %q (%q)", currentConfig.Spec.OSImageURL, dn.bootedOSImageURL, dn.bootedOSCommit)
+		return fmt.Errorf("expected target osImageURL %q, have %q (%q)", imageToCheck, dn.bootedOSImageURL, dn.bootedOSCommit)
 	}
 
 	if dn.os.IsCoreOSVariant() {
@@ -2071,7 +2235,40 @@ func (dn *Daemon) validateOnDiskStateImpl(currentConfig *mcfgv1.MachineConfig) e
 // was hit.
 func (dn *Daemon) validateOnDiskState(currentConfig *mcfgv1.MachineConfig) error {
 	// Call the inner validator
-	err := dn.validateOnDiskStateImpl(currentConfig)
+	err := dn.validateOnDiskStateImpl(currentConfig, currentConfig.Spec.OSImageURL)
+	if err != nil {
+		// If we have a previous finalization failure, include it
+		if dn.previousFinalizationFailure != "" {
+			return fmt.Errorf("%w; possible root cause: %s", err, dn.previousFinalizationFailure)
+		}
+		return err
+	}
+	return nil
+}
+
+func (dn *Daemon) validateOnDiskStateOrImage(currentConfig *mcfgv1.MachineConfig, image string) error {
+	wrapErr := func(err error) error {
+		if err == nil {
+			return nil
+		}
+
+		if image == "" {
+			return fmt.Errorf("unexpected on-disk state validating against %s: %w", currentConfig.GetName(), err)
+		}
+
+		return fmt.Errorf("unexpected on-disk state validating against %s: %w", image, err)
+	}
+
+	if image == "" {
+		return wrapErr(dn.validateOnDiskState(currentConfig))
+	}
+
+	return wrapErr(dn.validateOnDiskStateWithImage(currentConfig, image))
+}
+
+func (dn *Daemon) validateOnDiskStateWithImage(currentConfig *mcfgv1.MachineConfig, image string) error {
+	// Call the inner validator
+	err := dn.validateOnDiskStateImpl(currentConfig, image)
 	if err != nil {
 		// If we have a previous finalization failure, include it
 		if dn.previousFinalizationFailure != "" {
