@@ -56,7 +56,7 @@ type clusterNodeWriter struct {
 // NodeWriter is the interface to implement a single writer to Kubernetes to prevent race conditions
 type NodeWriter interface {
 	Run(stop <-chan struct{})
-	SetDone(dcAnnotation string) error
+	SetDone(*stateAndConfigs) error
 	SetWorking() error
 	SetUnreconcilable(err error) error
 	SetDegraded(err error) error
@@ -133,13 +133,14 @@ func (nw *clusterNodeWriter) Run(stop <-chan struct{}) {
 }
 
 // SetDone sets the state to Done.
-func (nw *clusterNodeWriter) SetDone(dcAnnotation string) error {
+func (nw *clusterNodeWriter) SetDone(state *stateAndConfigs) error {
 	annos := map[string]string{
 		constants.MachineConfigDaemonStateAnnotationKey: constants.MachineConfigDaemonStateDone,
-		constants.CurrentMachineConfigAnnotationKey:     dcAnnotation,
+		constants.CurrentMachineConfigAnnotationKey:     state.currentConfig.GetName(),
 		// clear out any Degraded/Unreconcilable reason
 		constants.MachineConfigDaemonReasonAnnotationKey: "",
 	}
+
 	UpdateStateMetric(mcdState, constants.MachineConfigDaemonStateDone, "")
 	respChan := make(chan response, 1)
 	nw.writer <- message{
