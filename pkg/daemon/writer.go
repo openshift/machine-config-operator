@@ -37,6 +37,7 @@ type response struct {
 // message wraps a client and responseChannel
 type message struct {
 	annos           map[string]string
+	annosToDelete   []string
 	responseChannel chan response
 }
 
@@ -56,7 +57,7 @@ type clusterNodeWriter struct {
 // NodeWriter is the interface to implement a single writer to Kubernetes to prevent race conditions
 type NodeWriter interface {
 	Run(stop <-chan struct{})
-	SetDone(dcAnnotation string) error
+	SetDone(*stateAndConfigs) error
 	SetWorking() error
 	SetUnreconcilable(err error) error
 	SetDegraded(err error) error
@@ -126,25 +127,55 @@ func (nw *clusterNodeWriter) Run(stop <-chan struct{}) {
 		case <-stop:
 			return
 		case msg := <-nw.writer:
-			r := implSetNodeAnnotations(nw.client, nw.lister, nw.nodeName, msg.annos)
+			r := implSetNodeAnnotations(nw.client, nw.lister, nw.nodeName, msg.annos, msg.annosToDelete)
 			msg.responseChannel <- r
 		}
 	}
 }
 
 // SetDone sets the state to Done.
-func (nw *clusterNodeWriter) SetDone(dcAnnotation string) error {
+func (nw *clusterNodeWriter) SetDone(state *stateAndConfigs) error {
+	// To address some confusion around why SetDone() sets the annotations to
+	// currentConfig and currentImage instead of desiredConfig and desiredImage:
+	//
+	// 1. After we've applied the update, we write the "new config" and "new image"
+	// to the nodes' filesystem in `/etc/machine-config-daemon/currentconfig` and
+	// `/etc/machine-config-daemon/currentimage`, respectively. In this case, the
+	// "new config" and "new image" are the `desiredConfig` and `desiredImage`. We
+	// then reboot the node (for updates that require it, anyway).
+	// 2. After we reboot, when we call `getCurrentConfigOnDisk()`, the values it
+	// loads become `currentConfig` and `currentImage`, respectively.
+	// 3. SetDone() gets called after the node reboot (for updates that require
+	// it). Because of the above point, `SetDone()` gets called with the current on
+	// disk config and image.
 	annos := map[string]string{
 		constants.MachineConfigDaemonStateAnnotationKey: constants.MachineConfigDaemonStateDone,
-		constants.CurrentMachineConfigAnnotationKey:     dcAnnotation,
+		constants.CurrentMachineConfigAnnotationKey:     state.currentConfig.GetName(),
 		// clear out any Degraded/Unreconcilable reason
 		constants.MachineConfigDaemonReasonAnnotationKey: "",
+	}
+
+	// If current image is not empty, update the annotation.
+	if state.currentImage != "" {
+		annos[constants.CurrentImageAnnotationKey] = state.currentImage
+	}
+
+	annosToDelete := []string{}
+	// If current image is empty, delete the annotation, if it exists.
+	if state.currentImage == "" {
+		annosToDelete = append(annosToDelete, constants.CurrentImageAnnotationKey)
+	}
+
+	// If desired image is empty, delete the annotation, if it exists.
+	if state.desiredImage == "" {
+		annosToDelete = append(annosToDelete, constants.DesiredImageAnnotationKey)
 	}
 
 	UpdateStateMetric(mcdState, constants.MachineConfigDaemonStateDone, "")
 	respChan := make(chan response, 1)
 	nw.writer <- message{
 		annos:           annos,
+		annosToDelete:   annosToDelete,
 		responseChannel: respChan,
 	}
 	r := <-respChan
@@ -243,8 +274,17 @@ func (nw *clusterNodeWriter) Eventf(eventtype, reason, messageFmt string, args .
 	nw.recorder.Eventf(getNodeRef(nw.node), eventtype, reason, messageFmt, args...)
 }
 
-func implSetNodeAnnotations(client corev1client.NodeInterface, lister corev1lister.NodeLister, nodeName string, m map[string]string) response {
+func implSetNodeAnnotations(client corev1client.NodeInterface, lister corev1lister.NodeLister, nodeName string, m map[string]string, toDel []string) response {
 	node, err := internal.UpdateNodeRetry(client, lister, nodeName, func(node *corev1.Node) {
+		if toDel != nil {
+			for _, anno := range toDel {
+				if _, ok := node.Annotations[anno]; ok {
+					klog.V(4).Infof("Deleted annotation %s", anno)
+					delete(node.Annotations, anno)
+				}
+			}
+		}
+
 		for k, v := range m {
 			node.Annotations[k] = v
 		}

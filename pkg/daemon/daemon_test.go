@@ -3,6 +3,7 @@ package daemon
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strconv"
 	"testing"
@@ -320,79 +321,167 @@ func newNode(annotations map[string]string) *corev1.Node {
 }
 
 func TestPrepUpdateFromClusterOnDiskDrift(t *testing.T) {
-	tmpCurrentConfig, err := os.CreateTemp("", "currentconfig")
-	require.Nil(t, err)
-	defer os.Remove(tmpCurrentConfig.Name())
+	t.Parallel()
 
-	// 1: onDisk matches what on the node, so we now have currentFromNode == currentOnDisk, desiredFromNode
-	f := newFixture(t)
-	onDiskMC := helpers.NewMachineConfig("test1", nil, "", nil)
-	annotations := map[string]string{
-		constants.CurrentMachineConfigAnnotationKey:     "test1",
-		constants.DesiredMachineConfigAnnotationKey:     "test2",
-		constants.MachineConfigDaemonStateAnnotationKey: "",
+	tests := []struct {
+		onDiskMCName string
+		onDiskImage  string
+		annotations  map[string]string
+		verify       func(*testing.T, *updateFromCluster, error)
+	}{
+		// 1: onDisk matches what on the node, so we now have currentFromNode == currentOnDisk, desiredFromNode
+		{
+			onDiskMCName: "test1",
+			annotations: map[string]string{
+				constants.CurrentMachineConfigAnnotationKey:     "test1",
+				constants.DesiredMachineConfigAnnotationKey:     "test2",
+				constants.MachineConfigDaemonStateAnnotationKey: "",
+			},
+			verify: func(t *testing.T, ufc *updateFromCluster, err error) {
+				require.Nil(t, err)
+				require.NotNil(t, ufc.currentConfig)
+				require.NotNil(t, ufc.desiredConfig)
+				require.Equal(t, ufc.currentConfig.GetName(), "test1")
+				require.Equal(t, "", ufc.currentImage)
+			},
+		},
+		// 2: onDisk matches what on the node and current == desired,
+		//    so we now have currentFromNode == currentOnDisk == desiredFromNode
+		//    so no update required
+		{
+			onDiskMCName: "test1",
+			annotations: map[string]string{
+				constants.CurrentMachineConfigAnnotationKey:     "test1",
+				constants.DesiredMachineConfigAnnotationKey:     "test1",
+				constants.MachineConfigDaemonStateAnnotationKey: constants.MachineConfigDaemonStateDone,
+			},
+			verify: func(t *testing.T, ufc *updateFromCluster, err error) {
+				require.Nil(t, err)
+				require.Nil(t, ufc)
+			},
+		},
+		// 3: onDisk doesn't what on the node and current == desired,
+		//    so we now have currentFromNode != currentOnDisk, desiredFromNode
+		{
+			onDiskMCName: "test3",
+			annotations: map[string]string{
+				constants.CurrentMachineConfigAnnotationKey:     "test1",
+				constants.DesiredMachineConfigAnnotationKey:     "test2",
+				constants.MachineConfigDaemonStateAnnotationKey: "",
+			},
+			verify: func(t *testing.T, ufc *updateFromCluster, err error) {
+				require.Nil(t, err)
+				require.NotNil(t, ufc.currentConfig)
+				require.NotNil(t, ufc.desiredConfig)
+				require.Equal(t, "test3", ufc.currentConfig.GetName())
+				require.Equal(t, ufc.desiredConfig.GetName(), "test2")
+			},
+		},
+		// 4: onDisk matches what is on the node and images match, but MCD is not
+		// done.
+		{
+			onDiskMCName: "test1",
+			onDiskImage:  "image1",
+			annotations: map[string]string{
+				constants.CurrentMachineConfigAnnotationKey:     "test1",
+				constants.DesiredMachineConfigAnnotationKey:     "test1",
+				constants.CurrentImageAnnotationKey:             "image1",
+				constants.DesiredImageAnnotationKey:             "image1",
+				constants.MachineConfigDaemonStateAnnotationKey: "",
+			},
+			verify: func(t *testing.T, ufc *updateFromCluster, err error) {
+				require.Nil(t, err)
+				require.NotNil(t, ufc.currentConfig)
+				require.NotNil(t, ufc.desiredConfig)
+				require.Equal(t, "image1", ufc.currentImage)
+				require.Equal(t, "image1", ufc.desiredImage)
+			},
+		},
+		// 5: onDisk matches what is on the node and images do not match, but MCD
+		// is not done.
+		{
+			onDiskMCName: "test1",
+			onDiskImage:  "image2",
+			annotations: map[string]string{
+				constants.CurrentMachineConfigAnnotationKey:     "test1",
+				constants.DesiredMachineConfigAnnotationKey:     "test1",
+				constants.CurrentImageAnnotationKey:             "image1",
+				constants.DesiredImageAnnotationKey:             "image1",
+				constants.MachineConfigDaemonStateAnnotationKey: "",
+			},
+			verify: func(t *testing.T, ufc *updateFromCluster, err error) {
+				require.Nil(t, err)
+				require.NotNil(t, ufc.currentConfig)
+				require.NotNil(t, ufc.desiredConfig)
+				require.Equal(t, "image2", ufc.currentImage)
+				require.Equal(t, "image1", ufc.desiredImage)
+			},
+		},
+		// 6: onDisk matches what is on the node and images do not match, but MCD
+		// is not done.
+		{
+			onDiskMCName: "test1",
+			onDiskImage:  "image1",
+			annotations: map[string]string{
+				constants.CurrentMachineConfigAnnotationKey:     "test1",
+				constants.DesiredMachineConfigAnnotationKey:     "test1",
+				constants.CurrentImageAnnotationKey:             "image1",
+				constants.DesiredImageAnnotationKey:             "image1",
+				constants.MachineConfigDaemonStateAnnotationKey: constants.MachineConfigDaemonStateDone,
+			},
+			verify: func(t *testing.T, ufc *updateFromCluster, err error) {
+				require.Nil(t, err)
+				require.Nil(t, ufc)
+			},
+		},
+		{
+			onDiskMCName: "test1",
+			onDiskImage:  "image3",
+			annotations: map[string]string{
+				constants.CurrentMachineConfigAnnotationKey:     "test1",
+				constants.DesiredMachineConfigAnnotationKey:     "test1",
+				constants.CurrentImageAnnotationKey:             "image2",
+				constants.DesiredImageAnnotationKey:             "image1",
+				constants.MachineConfigDaemonStateAnnotationKey: "",
+			},
+			verify: func(t *testing.T, ufc *updateFromCluster, err error) {
+				require.Nil(t, err)
+				require.NotNil(t, ufc.currentConfig)
+				require.NotNil(t, ufc.desiredConfig)
+				require.Equal(t, "image3", ufc.currentImage)
+				require.Equal(t, "image1", ufc.desiredImage)
+			},
+		},
 	}
-	node := newNode(annotations)
-	f.objects = append(f.objects, helpers.NewMachineConfig("test1", nil, "", nil))
-	f.objects = append(f.objects, helpers.NewMachineConfig("test2", nil, "", nil))
-	tmpCurrentConfig.Truncate(0)
-	tmpCurrentConfig.Seek(0, 0)
-	require.Nil(t, json.NewEncoder(tmpCurrentConfig).Encode(onDiskMC))
-	dn := f.newController()
-	dn.node = node
-	dn.currentConfigPath = tmpCurrentConfig.Name()
-	current, desired, err := dn.prepUpdateFromCluster()
-	require.Nil(t, err)
-	require.NotNil(t, current)
-	require.NotNil(t, desired)
-	require.Equal(t, current.GetName(), onDiskMC.GetName())
 
-	// 2: onDisk matches what on the node and current == desired,
-	//    so we now have currentFromNode == currentOnDisk == desiredFromNode
-	//    so no update required
-	f = newFixture(t)
-	onDiskMC = helpers.NewMachineConfig("test1", nil, "", nil)
-	annotations = map[string]string{
-		constants.CurrentMachineConfigAnnotationKey:     "test1",
-		constants.DesiredMachineConfigAnnotationKey:     "test1",
-		constants.MachineConfigDaemonStateAnnotationKey: constants.MachineConfigDaemonStateDone,
-	}
-	node = newNode(annotations)
-	f.objects = append(f.objects, helpers.NewMachineConfig("test1", nil, "", nil))
-	f.objects = append(f.objects, helpers.NewMachineConfig("test2", nil, "", nil))
-	tmpCurrentConfig.Truncate(0)
-	tmpCurrentConfig.Seek(0, 0)
-	require.Nil(t, json.NewEncoder(tmpCurrentConfig).Encode(onDiskMC))
-	dn = f.newController()
-	dn.node = node
-	dn.currentConfigPath = tmpCurrentConfig.Name()
-	current, desired, err = dn.prepUpdateFromCluster()
-	require.Nil(t, err)
-	require.Nil(t, current)
-	require.Nil(t, desired)
+	for _, test := range tests {
+		test := test
+		t.Run("", func(t *testing.T) {
+			t.Parallel()
 
-	// 3: onDisk doesn't what on the node and current == desired,
-	//    so we now have currentFromNode != currentOnDisk, desiredFromNode
-	f = newFixture(t)
-	onDiskMC = helpers.NewMachineConfig("test3", nil, "", nil)
-	annotations = map[string]string{
-		constants.CurrentMachineConfigAnnotationKey:     "test1",
-		constants.DesiredMachineConfigAnnotationKey:     "test2",
-		constants.MachineConfigDaemonStateAnnotationKey: "",
+			onDiskMC := helpers.NewMachineConfig(test.onDiskMCName, nil, "", nil)
+			currentConfigPath := filepath.Join(t.TempDir(), "currentconfig")
+			currentConfigFile, err := os.Create(currentConfigPath)
+			require.NoError(t, err)
+			require.NoError(t, json.NewEncoder(currentConfigFile).Encode(onDiskMC))
+			require.NoError(t, currentConfigFile.Close())
+
+			currentImagePath := filepath.Join(t.TempDir(), "currentimage")
+
+			if test.onDiskImage != "" {
+				require.NoError(t, os.WriteFile(currentImagePath, []byte(test.onDiskImage), 0755))
+			}
+
+			f := newFixture(t)
+			node := newNode(test.annotations)
+			f.objects = append(f.objects, helpers.NewMachineConfig("test1", nil, "", nil))
+			f.objects = append(f.objects, helpers.NewMachineConfig("test2", nil, "", nil))
+			dn := f.newController()
+			dn.node = node
+			dn.currentConfigPath = currentConfigPath
+			dn.currentImagePath = currentImagePath
+			ufc, err := dn.prepUpdateFromCluster()
+			test.verify(t, ufc, err)
+		})
 	}
-	node = newNode(annotations)
-	f.objects = append(f.objects, helpers.NewMachineConfig("test1", nil, "", nil))
-	f.objects = append(f.objects, helpers.NewMachineConfig("test2", nil, "", nil))
-	tmpCurrentConfig.Truncate(0)
-	tmpCurrentConfig.Seek(0, 0)
-	require.Nil(t, json.NewEncoder(tmpCurrentConfig).Encode(onDiskMC))
-	dn = f.newController()
-	dn.node = node
-	dn.currentConfigPath = tmpCurrentConfig.Name()
-	current, desired, err = dn.prepUpdateFromCluster()
-	require.Nil(t, err)
-	require.NotNil(t, current)
-	require.NotNil(t, desired)
-	require.Equal(t, onDiskMC.GetName(), current.GetName())
-	require.Equal(t, desired.GetName(), "test2")
 }
