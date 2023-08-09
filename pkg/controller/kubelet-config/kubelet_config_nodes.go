@@ -177,6 +177,14 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 		}
 	}
 
+	// syncing the featuregate controller
+	features, err := ctrl.featLister.Get(ctrlcommon.ClusterFeatureInstanceName)
+	if err == nil {
+		err := ctrl.syncFeatureHandler(features.Name)
+		if err != nil {
+			return fmt.Errorf("could not sync featuregate controller %v, err: %w", features, err)
+		}
+	}
 	return nil
 }
 
