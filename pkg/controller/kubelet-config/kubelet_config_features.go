@@ -196,7 +196,7 @@ func generateKubeConfigIgnFromFeatures(cc *mcfgv1.ControllerConfig, templatesDir
 	if err != nil {
 		return nil, err
 	}
-	if nodeConfig != nil {
+	if nodeConfig != nil && role == ctrlcommon.MachineConfigPoolWorker {
 		updateOriginalKubeConfigwithNodeConfig(nodeConfig, originalKubeConfig)
 	}
 
