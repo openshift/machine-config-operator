@@ -53,6 +53,16 @@ type ImageBuildRequest struct {
 	FinalImage ImageInfo
 	// The OpenShift release version (derived from the machine-config-osimageurl ConfigMap)
 	ReleaseVersion string
+	// An optional user-supplied Dockerfile that gets injected into the build.
+	CustomDockerfile string
+}
+
+type buildInputs struct {
+	onClusterBuildConfig *corev1.ConfigMap
+	osImageURL           *corev1.ConfigMap
+	customDockerfiles    *corev1.ConfigMap
+	pool                 *mcfgv1.MachineConfigPool
+	machineConfig        *mcfgv1.MachineConfig
 }
 
 // Constructs a simple ImageBuildRequest.
@@ -63,45 +73,51 @@ func newImageBuildRequest(pool *mcfgv1.MachineConfigPool) ImageBuildRequest {
 }
 
 // Populates the final image info from the on-cluster-build-config ConfigMap.
-func newFinalImageInfo(onClusterBuildConfigMap *corev1.ConfigMap) ImageInfo {
+func newFinalImageInfo(inputs *buildInputs) ImageInfo {
 	return ImageInfo{
-		Pullspec: onClusterBuildConfigMap.Data[finalImagePullspecConfigKey],
+		Pullspec: inputs.onClusterBuildConfig.Data[finalImagePullspecConfigKey],
 		PullSecret: corev1.LocalObjectReference{
-			Name: onClusterBuildConfigMap.Data[finalImagePushSecretNameConfigKey],
+			Name: inputs.onClusterBuildConfig.Data[finalImagePushSecretNameConfigKey],
 		},
 	}
 }
 
 // Populates the base image info from both the on-cluster-build-config and
 // machine-config-osimageurl ConfigMaps.
-func newBaseImageInfo(osImageURLConfigMap, onClusterBuildConfigMap *corev1.ConfigMap) ImageInfo {
+func newBaseImageInfo(inputs *buildInputs) ImageInfo {
 	return ImageInfo{
-		Pullspec: osImageURLConfigMap.Data[baseOSContainerImageConfigKey],
+		Pullspec: inputs.osImageURL.Data[baseOSContainerImageConfigKey],
 		PullSecret: corev1.LocalObjectReference{
-			Name: onClusterBuildConfigMap.Data[baseImagePullSecretNameConfigKey],
+			Name: inputs.onClusterBuildConfig.Data[baseImagePullSecretNameConfigKey],
 		},
 	}
 }
 
 // Populates the extensions image info from both the on-cluster-build-config
 // and machine-config-osimageurl ConfigMaps.
-func newExtensionsImageInfo(osImageURLConfigMap, onClusterBuildConfigMap *corev1.ConfigMap) ImageInfo {
+func newExtensionsImageInfo(inputs *buildInputs) ImageInfo {
 	return ImageInfo{
-		Pullspec: osImageURLConfigMap.Data[baseOSExtensionsContainerImageConfigKey],
+		Pullspec: inputs.osImageURL.Data[baseOSExtensionsContainerImageConfigKey],
 		PullSecret: corev1.LocalObjectReference{
-			Name: onClusterBuildConfigMap.Data[baseImagePullSecretNameConfigKey],
+			Name: inputs.onClusterBuildConfig.Data[baseImagePullSecretNameConfigKey],
 		},
 	}
 }
 
 // Constructs an ImageBuildRequest with all of the images populated from ConfigMaps
-func newImageBuildRequestWithConfigMap(pool *mcfgv1.MachineConfigPool, osImageURLConfigMap, onClusterBuildConfigMap *corev1.ConfigMap) ImageBuildRequest {
+func newImageBuildRequestFromBuildInputs(inputs *buildInputs) ImageBuildRequest {
+	customDockerfile := ""
+	if inputs.customDockerfiles != nil {
+		customDockerfile = inputs.customDockerfiles.Data[inputs.pool.Name]
+	}
+
 	return ImageBuildRequest{
-		Pool:            pool.DeepCopy(),
-		BaseImage:       newBaseImageInfo(osImageURLConfigMap, onClusterBuildConfigMap),
-		FinalImage:      newFinalImageInfo(onClusterBuildConfigMap),
-		ExtensionsImage: newExtensionsImageInfo(osImageURLConfigMap, onClusterBuildConfigMap),
-		ReleaseVersion:  osImageURLConfigMap.Data[releaseVersionConfigKey],
+		Pool:             inputs.pool.DeepCopy(),
+		BaseImage:        newBaseImageInfo(inputs),
+		FinalImage:       newFinalImageInfo(inputs),
+		ExtensionsImage:  newExtensionsImageInfo(inputs),
+		ReleaseVersion:   inputs.osImageURL.Data[releaseVersionConfigKey],
+		CustomDockerfile: customDockerfile,
 	}
 }
 

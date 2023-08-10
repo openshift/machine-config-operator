@@ -51,6 +51,11 @@ const (
 	desiredConfigLabel = "machineconfiguration.openshift.io/desiredConfig"
 )
 
+// on-cluster-build-custom-dockerfile ConfigMap name.
+const (
+	customDockerfileConfigMapName = "on-cluster-build-custom-dockerfile"
+)
+
 // on-cluster-build-config ConfigMap keys.
 const (
 	// Name of ConfigMap which contains knobs for configuring the build controller.
@@ -598,7 +603,7 @@ func (ctrl *Controller) postBuildCleanup(pool *mcfgv1.MachineConfigPool, ignoreM
 		return err
 	}
 
-	// Delete the ConfigMap containing the Dockerfile.
+	// Delete the ConfigMap containing the rendered Dockerfile.
 	deleteDockerfileConfigMap := func() error {
 		ibr := newImageBuildRequest(pool)
 
@@ -768,61 +773,94 @@ func (ctrl *Controller) addMachineConfigPool(obj interface{}) {
 	ctrl.enqueueMachineConfigPool(pool)
 }
 
-// Prepares all of the objects needed to perform an image build.
-func (ctrl *Controller) prepareMachineConfigForPool(ibr ImageBuildRequest) error {
-	mc, err := ctrl.mcfgclient.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), ibr.Pool.Spec.Configuration.Name, metav1.GetOptions{})
+func (ctrl *Controller) getBuildInputs(pool *mcfgv1.MachineConfigPool) (*buildInputs, error) {
+	osImageURL, err := ctrl.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), machineConfigOSImageURLConfigMapName, metav1.GetOptions{})
 	if err != nil {
-		return fmt.Errorf("could not get MachineConfig %s: %w", ibr.Pool.Spec.Configuration.Name, err)
+		return nil, fmt.Errorf("could not get OS image URL: %w", err)
 	}
 
-	mcConfigMap, err := ibr.toConfigMap(mc)
+	onClusterBuildConfig, err := ctrl.getOnClusterBuildConfig(pool, osImageURL)
 	if err != nil {
-		return fmt.Errorf("could not convert MachineConfig %s into ConfigMap: %w", mc.Name, err)
+		return nil, fmt.Errorf("could not get configmap %q: %w", onClusterBuildConfigMapName, err)
+	}
+
+	customDockerfiles, err := ctrl.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), customDockerfileConfigMapName, metav1.GetOptions{})
+	if err != nil && !k8serrors.IsNotFound(err) {
+		return nil, fmt.Errorf("could not retrieve %s ConfigMap: %w", customDockerfileConfigMapName, err)
+	}
+
+	mc, err := ctrl.mcfgclient.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), pool.Spec.Configuration.Name, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("could not get MachineConfig %s: %w", pool.Spec.Configuration.Name, err)
+	}
+
+	inputs := &buildInputs{
+		onClusterBuildConfig: onClusterBuildConfig,
+		osImageURL:           osImageURL,
+		customDockerfiles:    customDockerfiles,
+		pool:                 pool,
+		machineConfig:        mc,
+	}
+
+	return inputs, nil
+}
+
+// Prepares all of the objects needed to perform an image build.
+func (ctrl *Controller) prepareForBuild(inputs *buildInputs) (ImageBuildRequest, error) {
+	ibr := newImageBuildRequestFromBuildInputs(inputs)
+
+	mcConfigMap, err := ibr.toConfigMap(inputs.machineConfig)
+	if err != nil {
+		return ImageBuildRequest{}, fmt.Errorf("could not convert MachineConfig %s into ConfigMap: %w", inputs.machineConfig.Name, err)
 	}
 
 	_, err = ctrl.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Create(context.TODO(), mcConfigMap, metav1.CreateOptions{})
 	if err != nil {
-		return fmt.Errorf("could not load rendered MachineConfig %s into configmap: %w", mcConfigMap.Name, err)
+		return ImageBuildRequest{}, fmt.Errorf("could not load rendered MachineConfig %s into configmap: %w", mcConfigMap.Name, err)
 	}
 
-	klog.Infof("Stored MachineConfig %s in ConfigMap %s for build", mc.Name, mcConfigMap.Name)
+	klog.Infof("Stored MachineConfig %s in ConfigMap %s for build", inputs.machineConfig.Name, mcConfigMap.Name)
 
 	dockerfileConfigMap, err := ibr.dockerfileToConfigMap()
 	if err != nil {
-		return fmt.Errorf("could not generate Dockerfile ConfigMap: %w", err)
+		return ImageBuildRequest{}, fmt.Errorf("could not generate Dockerfile ConfigMap: %w", err)
 	}
 
 	_, err = ctrl.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Create(context.TODO(), dockerfileConfigMap, metav1.CreateOptions{})
 	if err != nil {
-		return fmt.Errorf("could not load rendered Dockerfile %s into configmap: %w", dockerfileConfigMap.Name, err)
+		return ImageBuildRequest{}, fmt.Errorf("could not load rendered Dockerfile %s into configmap: %w", dockerfileConfigMap.Name, err)
 	}
 
 	klog.Infof("Stored Dockerfile for build %s in ConfigMap %s for build", ibr.getBuildName(), dockerfileConfigMap.Name)
 
-	return nil
+	return ibr, nil
 }
 
 // Determines if we should run a build, then starts a build pod to perform the
 // build, and updates the MachineConfigPool with an object reference for the
 // build pod.
 func (ctrl *Controller) startBuildForMachineConfigPool(pool *mcfgv1.MachineConfigPool) error {
-	osImageURLConfigMap, err := ctrl.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), machineConfigOSImageURLConfigMapName, metav1.GetOptions{})
+	inputs, err := ctrl.getBuildInputs(pool)
 	if err != nil {
-		return fmt.Errorf("could not get OS image URL: %w", err)
+		return fmt.Errorf("could not fetch build inputs: %w", err)
 	}
 
-	onClusterBuildConfigMap, err := ctrl.getOnClusterBuildConfig(pool)
+	ibr, err := ctrl.prepareForBuild(inputs)
 	if err != nil {
-		return fmt.Errorf("could not get configmap %q: %w", onClusterBuildConfigMapName, err)
+		return fmt.Errorf("could not start build for MachineConfigPool %s: %w", pool.Name, err)
 	}
 
-	ibr := newImageBuildRequestWithConfigMap(pool, osImageURLConfigMap, onClusterBuildConfigMap)
+	objRef, err := ctrl.imageBuilder.StartBuild(ibr)
 
-	return ctrl.handleImageBuildRequest(ibr)
+	if err != nil {
+		return err
+	}
+
+	return ctrl.markBuildPendingWithObjectRef(ibr.Pool, *objRef)
 }
 
 // Gets the ConfigMap which specifies the name of the base image pull secret, final image pull secret, and final image pullspec.
-func (ctrl *Controller) getOnClusterBuildConfig(pool *mcfgv1.MachineConfigPool) (*corev1.ConfigMap, error) {
+func (ctrl *Controller) getOnClusterBuildConfig(pool *mcfgv1.MachineConfigPool, osImageURLConfigMap *corev1.ConfigMap) (*corev1.ConfigMap, error) {
 	onClusterBuildConfigMap, err := ctrl.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), onClusterBuildConfigMapName, metav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("could not get build controller config %q: %w", onClusterBuildConfigMapName, err)
@@ -863,7 +901,7 @@ func (ctrl *Controller) getOnClusterBuildConfig(pool *mcfgv1.MachineConfigPool) 
 			// perform a build.
 			named, err := reference.ParseNamed(val)
 			if err != nil {
-				return nil, fmt.Errorf("could not parse %s with %q: %w", finalImagePullspecConfigKey, val, err)
+				return nil, fmt.Errorf("could not parse %s with %q: %w", key, val, err)
 			}
 
 			tagged, err := reference.WithTag(named, pool.Spec.Configuration.Name)
@@ -958,22 +996,6 @@ func (ctrl *Controller) handleCanonicalizedPullSecret(secret *corev1.Secret) (*c
 	klog.Infof("Updated canonical secret %s", secret.Name)
 
 	return out, nil
-}
-
-// Starts a build for a given Image Build Request.
-func (ctrl *Controller) handleImageBuildRequest(ibr ImageBuildRequest) error {
-	err := ctrl.prepareMachineConfigForPool(ibr)
-	if err != nil {
-		return fmt.Errorf("could not start build for MachineConfigPool %s: %w", ibr.Pool.Name, err)
-	}
-
-	objRef, err := ctrl.imageBuilder.StartBuild(ibr)
-
-	if err != nil {
-		return err
-	}
-
-	return ctrl.markBuildPendingWithObjectRef(ibr.Pool, *objRef)
 }
 
 // If one wants to opt out, this removes all of the statuses and object

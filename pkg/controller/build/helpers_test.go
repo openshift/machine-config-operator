@@ -8,6 +8,28 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+func TestValidateImagePullspecHasDigest(t *testing.T) {
+	cm := getOSImageURLConfigMap()
+
+	validPullspecs := []string{
+		cm.Data[baseOSContainerImageConfigKey],
+		cm.Data[baseOSExtensionsContainerImageConfigKey],
+		cm.Data[osImageURLConfigKey],
+	}
+
+	for _, pullspec := range validPullspecs {
+		assert.NoError(t, validateImageHasDigestedPullspec(pullspec))
+	}
+
+	invalidPullspecs := []string{
+		expectedImagePullspecWithTag,
+	}
+
+	for _, pullspec := range invalidPullspecs {
+		assert.Error(t, validateImageHasDigestedPullspec(pullspec))
+	}
+}
+
 // Tests that a given image pullspec with a tag and SHA is correctly substituted.
 func TestParseImagePullspec(t *testing.T) {
 	t.Parallel()
