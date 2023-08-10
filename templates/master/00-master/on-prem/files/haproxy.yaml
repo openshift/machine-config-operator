@@ -39,8 +39,10 @@ contents:
         volumeMounts:
         - name: chroot-host
           mountPath: "/host"
+          mountPropagation: HostToContainer
         - name: kubeconfigvarlib
           mountPath: "/var/lib/kubelet"
+          mountPropagation: HostToContainer
         imagePullPolicy: IfNotPresent
       containers:
       - name: haproxy
@@ -110,6 +112,7 @@ contents:
         volumeMounts:
         - name: conf-dir
           mountPath: "/etc/haproxy"
+          mountPropagation: HostToContainer
         - name: run-dir
           mountPath: "/var/run/haproxy"
         livenessProbe:
@@ -137,14 +140,18 @@ contents:
         volumeMounts:
         - name: conf-dir
           mountPath: "/etc/haproxy"
+          mountPropagation: HostToContainer
         - name: run-dir
           mountPath: "/var/run/haproxy"
         - name: resource-dir
           mountPath: "/config"
+          mountPropagation: HostToContainer
         - name: chroot-host
           mountPath: "/host"
+          mountPropagation: HostToContainer
         - name: kubeconfigvarlib
           mountPath: "/var/lib/kubelet"
+          mountPropagation: HostToContainer
         terminationMessagePolicy: FallbackToLogsOnError
         imagePullPolicy: IfNotPresent
       hostNetwork: true
