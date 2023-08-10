@@ -43,12 +43,15 @@ spec:
     volumeMounts:
     - name: kubeconfig
       mountPath: "/etc/kubernetes/kubeconfig"
+      mountPropagation: HostToContainer
     - name: resource-dir
       mountPath: "/config"
+      mountPropagation: HostToContainer
     - name: conf-dir
       mountPath: "/etc/coredns"
     - name: manifests
       mountPath: "/opt/openshift/manifests"
+      mountPropagation: HostToContainer
     imagePullPolicy: IfNotPresent
   containers:
   - name: coredns

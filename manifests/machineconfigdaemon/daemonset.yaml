@@ -36,6 +36,7 @@ spec:
         volumeMounts:
           - mountPath: /rootfs
             name: rootfs
+            mountPropagation: HostToContainer
         env:
           - name: NODE_NAME
             valueFrom:
