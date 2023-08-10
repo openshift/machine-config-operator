@@ -12,18 +12,20 @@ func TestImageBuildRequest(t *testing.T) {
 	t.Parallel()
 
 	mcp := newMachineConfigPool("worker", "rendered-worker-1")
-
 	osImageURLConfigMap := getOSImageURLConfigMap()
 	onClusterBuildConfigMap := getOnClusterBuildConfigMap()
 
-	ibr := newImageBuildRequestWithConfigMap(mcp, osImageURLConfigMap, onClusterBuildConfigMap)
+	ibr := newImageBuildRequestFromBuildInputs(&buildInputs{
+		pool:                 mcp,
+		osImageURL:           osImageURLConfigMap,
+		onClusterBuildConfig: onClusterBuildConfigMap,
+	})
 
 	dockerfile, err := ibr.renderDockerfile()
 	assert.NoError(t, err)
 
 	expectedDockerfileContents := []string{
 		osImageURLConfigMap.Data[releaseVersionConfigKey],
-		osImageURLConfigMap.Data[baseOSContainerImageConfigKey],
 		osImageURLConfigMap.Data[baseOSExtensionsContainerImageConfigKey],
 		mcp.Name,
 		mcp.Spec.Configuration.Name,
@@ -65,16 +67,57 @@ func TestImageBuildRequestMissingExtensionsImage(t *testing.T) {
 	t.Parallel()
 
 	mcp := newMachineConfigPool("worker", "rendered-worker-1")
-
 	osImageURLConfigMap := getOSImageURLConfigMap()
 	onClusterBuildConfigMap := getOnClusterBuildConfigMap()
 
 	delete(osImageURLConfigMap.Data, baseOSExtensionsContainerImageConfigKey)
 
-	ibr := newImageBuildRequestWithConfigMap(mcp, osImageURLConfigMap, onClusterBuildConfigMap)
+	ibr := newImageBuildRequestFromBuildInputs(&buildInputs{
+		pool:                 mcp,
+		osImageURL:           osImageURLConfigMap,
+		onClusterBuildConfig: onClusterBuildConfigMap,
+	})
 
 	dockerfile, err := ibr.renderDockerfile()
 	assert.NoError(t, err)
 
 	assert.NotContains(t, dockerfile, "AS extensions")
+}
+
+func TestImageBuildRequestWithCustomDockerfile(t *testing.T) {
+	t.Parallel()
+
+	mcp := newMachineConfigPool("worker", "rendered-worker-1")
+	osImageURLConfigMap := getOSImageURLConfigMap()
+	onClusterBuildConfigMap := getOnClusterBuildConfigMap()
+	customDockerfileConfigMap := getCustomDockerfileConfigMap(map[string]string{
+		"worker": "FROM configs AS final\nRUN dnf install -y python3",
+	})
+
+	ibr := newImageBuildRequestFromBuildInputs(&buildInputs{
+		pool:                 mcp,
+		osImageURL:           osImageURLConfigMap,
+		onClusterBuildConfig: onClusterBuildConfigMap,
+		customDockerfiles:    customDockerfileConfigMap,
+	})
+
+	dockerfile, err := ibr.renderDockerfile()
+	assert.NoError(t, err)
+
+	t.Logf(dockerfile)
+
+	expectedDockerfileContents := []string{
+		"FROM configs AS final",
+		"RUN dnf install -y python3",
+		osImageURLConfigMap.Data[baseOSContainerImageConfigKey],
+		osImageURLConfigMap.Data[releaseVersionConfigKey],
+		osImageURLConfigMap.Data[baseOSExtensionsContainerImageConfigKey],
+		mcp.Name,
+		mcp.Spec.Configuration.Name,
+		machineConfigJSONFilename,
+	}
+
+	for _, content := range expectedDockerfileContents {
+		assert.Contains(t, dockerfile, content)
+	}
 }

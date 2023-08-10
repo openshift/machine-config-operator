@@ -20,14 +20,20 @@ FROM {{.ExtensionsImage.Pullspec}} AS extensions
 {{end}}
 
 
-FROM {{.BaseImage.Pullspec}} AS final
+FROM {{.BaseImage.Pullspec}} AS configs
 # Copy the extracted MachineConfig into the expected place in the image.
 COPY --from=extract /etc/machine-config-daemon/currentconfig /etc/machine-config-daemon/currentconfig
 # Do the ignition live-apply, extracting the Ignition config from the MachineConfig.
-RUN exec -a ignition-apply /usr/lib/dracut/modules.d/30ignition/ignition --ignore-unsupported <(cat /etc/machine-config-daemon/currentconfig | jq '.spec.config') && \
+# Not sure why Ignition explicitly requires the container env var to be set
+# since it should be set by the container runtime / builder.
+RUN container="oci" exec -a ignition-apply /usr/lib/dracut/modules.d/30ignition/ignition --ignore-unsupported <(cat /etc/machine-config-daemon/currentconfig | jq '.spec.config') && \
 	ostree container commit
 
 LABEL machineconfig={{.Pool.Spec.Configuration.Name}}
 LABEL machineconfigpool={{.Pool.Name}}
 LABEL releaseversion={{.ReleaseVersion}}
 LABEL baseOSContainerImage={{.BaseImage.Pullspec}}
+
+{{if .CustomDockerfile}}
+{{.CustomDockerfile}}
+{{end}}
