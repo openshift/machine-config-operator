@@ -478,7 +478,7 @@ func updateControllerConfigCerts(config *mcfgv1.ControllerConfig) bool {
 		// need to remove old cert path if it does not still exists (only applies to img certs)
 		if !stillExists {
 			if err := os.RemoveAll(filepath.Join("/etc/docker/certs.d", cert.BundleFile)); err != nil {
-				klog.Infof("Could not remove old certificate: %s", filepath.Join("/etc/docker/certs.d", cert.BundleFile))
+				klog.Warningf("Could not remove old certificate: %s", filepath.Join("/etc/docker/certs.d", cert.BundleFile))
 			}
 		}
 		stillExists = false
