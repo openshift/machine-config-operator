@@ -132,6 +132,30 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 			}
 		}
 
+		mergedData := append(controllerConfig.Spec.ImageRegistryBundleData, controllerConfig.Spec.ImageRegistryBundleUserData...)
+
+		entries, err := os.ReadDir("/etc/docker/certs.d")
+		if err != nil {
+			return err
+		}
+
+		for _, entry := range entries {
+			if entry.IsDir() {
+				stillExists := false
+				for _, CA := range mergedData {
+					// if one of our spec CAs matches the existing file, we are good.
+					if CA.File == entry.Name() {
+						stillExists = true
+					}
+				}
+				if !stillExists {
+					if err := os.RemoveAll(filepath.Join("/etc/docker/certs.d", entry.Name())); err != nil {
+						klog.Warningf("Could not remove old certificate: %s", filepath.Join("/etc/docker/certs.d", entry.Name()))
+					}
+				}
+			}
+		}
+
 		for _, CA := range controllerConfig.Spec.ImageRegistryBundleData {
 			caFile := strings.ReplaceAll(CA.File, "..", ":")
 			if err := os.MkdirAll(filepath.Join(imageCAFilePath, caFile), defaultDirectoryPermissions); err != nil {
