@@ -64,25 +64,33 @@ type manifestPaths struct {
 	serviceAccounts     []string
 	secrets             []string
 	daemonset           string
+	configMaps          []string
+	roles               []string
 }
 
 const (
 	// Machine Config Controller manifest paths
-	mccClusterRoleManifestPath              = "manifests/machineconfigcontroller/clusterrole.yaml"
-	mccEventsClusterRoleManifestPath        = "manifests/machineconfigcontroller/events-clusterrole.yaml"
-	mccEventsRoleBindingDefaultManifestPath = "manifests/machineconfigcontroller/events-rolebinding-default.yaml"
-	mccEventsRoleBindingTargetManifestPath  = "manifests/machineconfigcontroller/events-rolebinding-target.yaml"
-	mccClusterRoleBindingManifestPath       = "manifests/machineconfigcontroller/clusterrolebinding.yaml"
-	mccServiceAccountManifestPath           = "manifests/machineconfigcontroller/sa.yaml"
+	mccClusterRoleManifestPath                = "manifests/machineconfigcontroller/clusterrole.yaml"
+	mccEventsClusterRoleManifestPath          = "manifests/machineconfigcontroller/events-clusterrole.yaml"
+	mccEventsRoleBindingDefaultManifestPath   = "manifests/machineconfigcontroller/events-rolebinding-default.yaml"
+	mccEventsRoleBindingTargetManifestPath    = "manifests/machineconfigcontroller/events-rolebinding-target.yaml"
+	mccClusterRoleBindingManifestPath         = "manifests/machineconfigcontroller/clusterrolebinding.yaml"
+	mccServiceAccountManifestPath             = "manifests/machineconfigcontroller/sa.yaml"
+	mccKubeRbacProxyConfigMapPath             = "manifests/machineconfigcontroller/kube-rbac-proxy-config.yaml"
+	mccKubeRbacProxyPrometheusRolePath        = "manifests/machineconfigcontroller/prometheus-rbac.yaml"
+	mccKubeRbacProxyPrometheusRoleBindingPath = "manifests/machineconfigcontroller/prometheus-rolebinding-target.yaml"
 
 	// Machine Config Daemon manifest paths
-	mcdClusterRoleManifestPath              = "manifests/machineconfigdaemon/clusterrole.yaml"
-	mcdEventsClusterRoleManifestPath        = "manifests/machineconfigdaemon/events-clusterrole.yaml"
-	mcdEventsRoleBindingDefaultManifestPath = "manifests/machineconfigdaemon/events-rolebinding-default.yaml"
-	mcdEventsRoleBindingTargetManifestPath  = "manifests/machineconfigdaemon/events-rolebinding-target.yaml"
-	mcdClusterRoleBindingManifestPath       = "manifests/machineconfigdaemon/clusterrolebinding.yaml"
-	mcdServiceAccountManifestPath           = "manifests/machineconfigdaemon/sa.yaml"
-	mcdDaemonsetManifestPath                = "manifests/machineconfigdaemon/daemonset.yaml"
+	mcdClusterRoleManifestPath                = "manifests/machineconfigdaemon/clusterrole.yaml"
+	mcdEventsClusterRoleManifestPath          = "manifests/machineconfigdaemon/events-clusterrole.yaml"
+	mcdEventsRoleBindingDefaultManifestPath   = "manifests/machineconfigdaemon/events-rolebinding-default.yaml"
+	mcdEventsRoleBindingTargetManifestPath    = "manifests/machineconfigdaemon/events-rolebinding-target.yaml"
+	mcdClusterRoleBindingManifestPath         = "manifests/machineconfigdaemon/clusterrolebinding.yaml"
+	mcdServiceAccountManifestPath             = "manifests/machineconfigdaemon/sa.yaml"
+	mcdDaemonsetManifestPath                  = "manifests/machineconfigdaemon/daemonset.yaml"
+	mcdKubeRbacProxyConfigMapPath             = "manifests/machineconfigdaemon/kube-rbac-proxy-config.yaml"
+	mcdKubeRbacProxyPrometheusRolePath        = "manifests/machineconfigdaemon/prometheus-rbac.yaml"
+	mcdKubeRbacProxyPrometheusRoleBindingPath = "manifests/machineconfigdaemon/prometheus-rolebinding-target.yaml"
 
 	// Machine Config Server manifest paths
 	mcsClusterRoleManifestPath                    = "manifests/machineconfigserver/clusterrole.yaml"
@@ -456,13 +464,12 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 	spec.BaseOSExtensionsContainerImage = imgs.BaseOSExtensionsContainerImage
 	spec.Images = map[string]string{
 		templatectrl.MachineConfigOperatorKey: imgs.MachineConfigOperator,
-
-		templatectrl.APIServerWatcherKey:    imgs.MachineConfigOperator,
-		templatectrl.InfraImageKey:          imgs.InfraImage,
-		templatectrl.KeepalivedKey:          imgs.Keepalived,
-		templatectrl.CorednsKey:             imgs.Coredns,
-		templatectrl.HaproxyKey:             imgs.Haproxy,
-		templatectrl.BaremetalRuntimeCfgKey: imgs.BaremetalRuntimeCfg,
+		templatectrl.APIServerWatcherKey:      imgs.MachineConfigOperator,
+		templatectrl.InfraImageKey:            imgs.InfraImage,
+		templatectrl.KeepalivedKey:            imgs.Keepalived,
+		templatectrl.CorednsKey:               imgs.Coredns,
+		templatectrl.HaproxyKey:               imgs.Haproxy,
+		templatectrl.BaremetalRuntimeCfgKey:   imgs.BaremetalRuntimeCfg,
 	}
 
 	ignitionHost, err := getIgnitionHost(&infra.Status)
@@ -542,7 +549,6 @@ func (optr *Operator) syncMachineConfigPools(config *renderConfig) error {
 		"manifests/master.machineconfigpool.yaml",
 		"manifests/worker.machineconfigpool.yaml",
 	}
-
 	for _, mcp := range mcps {
 		mcpBytes, err := renderAsset(config, mcp)
 		if err != nil {
@@ -604,6 +610,18 @@ func (optr *Operator) applyManifests(config *renderConfig, paths manifestPaths) 
 		}
 	}
 
+	for _, path := range paths.roles {
+		rBytes, err := renderAsset(config, path)
+		if err != nil {
+			return err
+		}
+		r := resourceread.ReadRoleV1OrDie(rBytes)
+		_, _, err = resourceapply.ApplyRole(context.TODO(), optr.kubeClient.RbacV1(), optr.libgoRecorder, r)
+		if err != nil {
+			return err
+		}
+	}
+
 	for _, path := range paths.roleBindings {
 		rbBytes, err := renderAsset(config, path)
 		if err != nil {
@@ -647,6 +665,18 @@ func (optr *Operator) applyManifests(config *renderConfig, paths manifestPaths) 
 		}
 		s := resourceread.ReadSecretV1OrDie(sBytes)
 		_, _, err = resourceapply.ApplySecret(context.TODO(), optr.kubeClient.CoreV1(), optr.libgoRecorder, s)
+		if err != nil {
+			return err
+		}
+	}
+
+	for _, path := range paths.configMaps {
+		cmBytes, err := renderAsset(config, path)
+		if err != nil {
+			return err
+		}
+		cm := resourceread.ReadConfigMapV1OrDie(cmBytes)
+		_, _, err = resourceapply.ApplyConfigMap(context.TODO(), optr.kubeClient.CoreV1(), optr.libgoRecorder, cm)
 		if err != nil {
 			return err
 		}
@@ -727,12 +757,19 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig) error {
 			mccClusterRoleManifestPath,
 			mccEventsClusterRoleManifestPath,
 		},
+		roles: []string{
+			mccKubeRbacProxyPrometheusRolePath,
+		},
 		roleBindings: []string{
 			mccEventsRoleBindingDefaultManifestPath,
 			mccEventsRoleBindingTargetManifestPath,
+			mccKubeRbacProxyPrometheusRoleBindingPath,
 		},
 		clusterRoleBindings: []string{
 			mccClusterRoleBindingManifestPath,
+		},
+		configMaps: []string{
+			mccKubeRbacProxyConfigMapPath,
 		},
 		serviceAccounts: []string{
 			mccServiceAccountManifestPath,
@@ -766,9 +803,13 @@ func (optr *Operator) syncMachineConfigDaemon(config *renderConfig) error {
 			mcdClusterRoleManifestPath,
 			mcdEventsClusterRoleManifestPath,
 		},
+		roles: []string{
+			mcdKubeRbacProxyPrometheusRolePath,
+		},
 		roleBindings: []string{
 			mcdEventsRoleBindingDefaultManifestPath,
 			mcdEventsRoleBindingTargetManifestPath,
+			mcdKubeRbacProxyPrometheusRoleBindingPath,
 		},
 		clusterRoleBindings: []string{
 			mcdClusterRoleBindingManifestPath,
@@ -777,14 +818,9 @@ func (optr *Operator) syncMachineConfigDaemon(config *renderConfig) error {
 			mcdServiceAccountManifestPath,
 		},
 		daemonset: mcdDaemonsetManifestPath,
-	}
-
-	// Only generate a new proxy cookie secret if the secret does not exist or if it has been deleted.
-	_, err := optr.kubeClient.CoreV1().Secrets(config.TargetNamespace).Get(context.TODO(), "cookie-secret", metav1.GetOptions{})
-	if apierrors.IsNotFound(err) {
-		paths.secrets = []string{"manifests/machineconfigdaemon/cookie-secret.yaml"}
-	} else if err != nil {
-		return err
+		configMaps: []string{
+			mcdKubeRbacProxyConfigMapPath,
+		},
 	}
 
 	if err := optr.applyManifests(config, paths); err != nil {

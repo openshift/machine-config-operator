@@ -39,21 +39,23 @@ func ensurePodSpec(modified *bool, existing *corev1.PodSpec, required corev1.Pod
 		}
 		ensureContainer(modified, existingCurr, required)
 	}
+	// required is new
+	// existing is current
+	// so we want to add required NOT existing
+	// but since the names do not match, kube-rbac-proxy will be treated like a new ctr.
+	// so "existingCurr" will enter ensureContainer empty
+	// so, oauth-proxy and kube-rbac-proxy will never enter ensureContainer together
+	// instead we will add both since kube-rbac-proxy will be parsed seprately from oauth-proxy....
+	// and since we use existing as the source of truth to add to the new daemonset
+	// we add both oauth-proxy and kube-rbac-proxy
+	// so we need a way to detect if containers with different names are going to collide.
 
-	for _, required := range required.Containers {
-		var existingCurr *corev1.Container
-		for j, curr := range existing.Containers {
-			if curr.Name == required.Name {
-				existingCurr = &existing.Containers[j]
-				break
-			}
-		}
-		if existingCurr == nil {
-			*modified = true
-			existing.Containers = append(existing.Containers, corev1.Container{})
-			existingCurr = &existing.Containers[len(existing.Containers)-1]
-		}
-		ensureContainer(modified, existingCurr, required)
+	// if we do not rm oauth-proy it'll be there since
+	// the existing list is what is used, so we need a fresh list!
+
+	if !equality.Semantic.DeepEqual(required.Containers, existing.Containers) {
+		existing.Containers = required.Containers
+		*modified = true
 	}
 
 	// any volume we specify, we require.

@@ -28,6 +28,7 @@ type RenderConfigImages struct {
 	CorednsBootstrap             string `json:"coredns"`
 	BaremetalRuntimeCfgBootstrap string `json:"baremetalRuntimeCfg"`
 	OauthProxy                   string `json:"oauthProxy"`
+	KubeRbacProxy                string `json:"kubeRbacProxy"`
 }
 
 // ControllerConfigImages are image names used to render templates under ./templates/
