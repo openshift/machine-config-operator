@@ -17,7 +17,7 @@ import (
 	signature "github.com/containers/image/v5/signature"
 	"github.com/containers/image/v5/types"
 	storageconfig "github.com/containers/storage/pkg/config"
-	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	apicfgv1 "github.com/openshift/api/config/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	"github.com/openshift/runtime-utils/pkg/registries"

@@ -7,7 +7,7 @@ import (
 	"github.com/clarketm/json"
 	"github.com/coreos/go-semver/semver"
 	ign2types "github.com/coreos/ignition/config/v2_2/types"
-	igntypes "github.com/coreos/ignition/v2/config/v3_2/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	"github.com/vincent-petithory/dataurl"
 	"k8s.io/apimachinery/pkg/runtime"
 
@@ -35,7 +35,7 @@ const (
 type kubeconfigFunc func() (kubeconfigData []byte, rootCAData []byte, err error)
 
 // appenderFunc appends Config.
-type appenderFunc func(*igntypes.Config, *mcfgv1.MachineConfig) error
+type appenderFunc func(*ign3types.Config, *mcfgv1.MachineConfig) error
 
 // Server defines the interface that is implemented by different
 // machine config server implementations.
@@ -46,15 +46,15 @@ type Server interface {
 func getAppenders(currMachineConfig string, version *semver.Version, f kubeconfigFunc) []appenderFunc {
 	appenders := []appenderFunc{
 		// append machine annotations file.
-		func(cfg *igntypes.Config, mc *mcfgv1.MachineConfig) error {
+		func(cfg *ign3types.Config, mc *mcfgv1.MachineConfig) error {
 			return appendNodeAnnotations(cfg, currMachineConfig)
 		},
 		// append kubeconfig.
-		func(cfg *igntypes.Config, mc *mcfgv1.MachineConfig) error { return appendKubeConfig(cfg, f) },
+		func(cfg *ign3types.Config, mc *mcfgv1.MachineConfig) error { return appendKubeConfig(cfg, f) },
 		// append the machineconfig content
 		appendInitialMachineConfig,
 		// This has to come last!!!
-		func(cfg *igntypes.Config, mc *mcfgv1.MachineConfig) error {
+		func(cfg *ign3types.Config, mc *mcfgv1.MachineConfig) error {
 			return appendEncapsulated(cfg, mc, version)
 		},
 	}
@@ -65,7 +65,7 @@ func getAppenders(currMachineConfig string, version *semver.Version, f kubeconfi
 // it to /etc/ignition-machine-config-encapsulated.json.  This is used by
 // machine-config-daemon-firstboot.service to process the bits that the main Ignition (that runs in the initramfs)
 // didn't handle such as kernel arguments.
-func appendEncapsulated(conf *igntypes.Config, mc *mcfgv1.MachineConfig, version *semver.Version) error {
+func appendEncapsulated(conf *ign3types.Config, mc *mcfgv1.MachineConfig, version *semver.Version) error {
 	var rawTmpIgnCfg []byte
 	var err error
 	// In order to handle old RHCOS versions with the MCD baked in (i.e. before the MCS has
@@ -94,6 +94,7 @@ func appendEncapsulated(conf *igntypes.Config, mc *mcfgv1.MachineConfig, version
 
 	tmpcfg := mc.DeepCopy()
 	tmpcfg.Spec.Config.Raw = rawTmpIgnCfg
+
 	serialized, err := json.Marshal(tmpcfg)
 	if err != nil {
 		return fmt.Errorf("error marshalling MachineConfig: %w", err)
@@ -109,7 +110,7 @@ func appendEncapsulated(conf *igntypes.Config, mc *mcfgv1.MachineConfig, version
 // by the MCS when the node first booted.  This currently is only used as a debugging aid
 // in cases where there is unexpected "drift" between the initial bootstrap MC/Ignition and the one
 // computed by the cluster.
-func appendInitialMachineConfig(conf *igntypes.Config, mc *mcfgv1.MachineConfig) error {
+func appendInitialMachineConfig(conf *ign3types.Config, mc *mcfgv1.MachineConfig) error {
 	mcJSON, err := json.MarshalIndent(mc, "", "    ")
 	if err != nil {
 		return err
@@ -118,7 +119,7 @@ func appendInitialMachineConfig(conf *igntypes.Config, mc *mcfgv1.MachineConfig)
 	return nil
 }
 
-func appendKubeConfig(conf *igntypes.Config, f kubeconfigFunc) error {
+func appendKubeConfig(conf *ign3types.Config, f kubeconfigFunc) error {
 	kcData, _, err := f()
 	if err != nil {
 		return err
@@ -130,7 +131,7 @@ func appendKubeConfig(conf *igntypes.Config, f kubeconfigFunc) error {
 	return nil
 }
 
-func appendNodeAnnotations(conf *igntypes.Config, currConf string) error {
+func appendNodeAnnotations(conf *ign3types.Config, currConf string) error {
 	anno, err := getNodeAnnotation(currConf)
 	if err != nil {
 		return err
@@ -155,24 +156,24 @@ func getNodeAnnotation(conf string) (string, error) {
 	return string(contents), nil
 }
 
-func appendFileToIgnition(conf *igntypes.Config, outPath, contents string) error {
+func appendFileToIgnition(conf *ign3types.Config, outPath, contents string) error {
 	fileMode := int(420)
 	overwrite := true
 	source := getEncodedContent(contents)
-	file := igntypes.File{
-		Node: igntypes.Node{
+	file := ign3types.File{
+		Node: ign3types.Node{
 			Path:      outPath,
 			Overwrite: &overwrite,
 		},
-		FileEmbedded1: igntypes.FileEmbedded1{
-			Contents: igntypes.Resource{
+		FileEmbedded1: ign3types.FileEmbedded1{
+			Contents: ign3types.Resource{
 				Source: &source,
 			},
 			Mode: &fileMode,
 		},
 	}
 	if len(conf.Storage.Files) == 0 {
-		conf.Storage.Files = make([]igntypes.File, 0)
+		conf.Storage.Files = make([]ign3types.File, 0)
 	}
 	conf.Storage.Files = append(conf.Storage.Files, file)
 	return nil
@@ -183,4 +184,28 @@ func getEncodedContent(inp string) string {
 		Scheme: "data",
 		Opaque: "," + dataurl.Escape([]byte(inp)),
 	}).String()
+}
+
+// MigrateKernelArgsIfNecessary moves the kernel arguments back into MachineConfig when going from a version that supports
+// ignition kernel arguments to a version that does not. Without this, we would be unable to serve anything < 3.3 because the
+// ignition converter fails to downconvert if unsupported fields are populated. If ShouldNotExist is populated in the
+// ignition kernel args, we still have to fail because there is nowhere in MachineConfig for us to put those.
+func MigrateKernelArgsIfNecessary(conf *ign3types.Config, mc *mcfgv1.MachineConfig, version *semver.Version) error {
+	// If we're downgrading from a version of ignition that
+	// support kargs, we need to stuff them back into MachineConfig so they still end up in the encapsulation
+	// and they still get applied
+	if version != nil && version.LessThan(*semver.New("3.3.0")) {
+		// we're converting to a version that doesn't support kargs, so we need to stuff them in machineconfig
+		if len(conf.KernelArguments.ShouldNotExist) > 0 {
+			return fmt.Errorf("Can't serve version %s with ignition KernelArguments.ShouldNotExist populated", version)
+		}
+
+		for _, karg := range conf.KernelArguments.ShouldExist {
+			// TODO(jkyros): we probably need to parse/split them because they might be combined
+			mc.Spec.KernelArguments = append(mc.Spec.KernelArguments, string(karg))
+		}
+		// and then we take them out of ignition
+		conf.KernelArguments = ign3types.KernelArguments{}
+	}
+	return nil
 }

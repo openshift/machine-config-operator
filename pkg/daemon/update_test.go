@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/osrelease"
@@ -136,10 +136,11 @@ func TestReconcilable(t *testing.T) {
 	checkReconcilableResults(t, "Filesystem", isReconcilable)
 
 	// Verify Raid changes react as expected
+	var stripe = "stripe"
 	oldIgnCfg.Storage.Raid = []ign3types.Raid{
 		{
 			Name:    "data",
-			Level:   "stripe",
+			Level:   &stripe,
 			Devices: []ign3types.Device{"/dev/vda", "/dev/vdb"},
 		},
 	}
@@ -168,6 +169,43 @@ func TestReconcilable(t *testing.T) {
 	newConfig = helpers.CreateMachineConfigFromIgnition(newIgnCfg)
 	_, isReconcilable = reconcilable(oldConfig, newConfig)
 	checkIrreconcilableResults(t, "PasswdGroups", isReconcilable)
+
+	// Verify Ignition kernelArguments changes unsupported
+	oldIgnCfg = ctrlcommon.NewIgnConfig()
+	oldConfig = helpers.CreateMachineConfigFromIgnition(oldIgnCfg)
+	newIgnCfg = ctrlcommon.NewIgnConfig()
+	newIgnCfg.KernelArguments.ShouldExist = []ign3types.KernelArgument{"foo=bar"}
+	newIgnCfg.KernelArguments.ShouldNotExist = []ign3types.KernelArgument{"baz=foo"}
+
+	newConfig = helpers.CreateMachineConfigFromIgnition(newIgnCfg)
+
+	_, isReconcilable = reconcilable(oldConfig, newConfig)
+	checkIrreconcilableResults(t, "KernelArguments", isReconcilable)
+
+	// Verify Tang changes are supported (even though we don't do anything with them yet)
+	oldIgnCfg = ctrlcommon.NewIgnConfig()
+	oldIgnCfg.Storage.Luks = []ign3types.Luks{
+		{
+			Clevis: ign3types.Clevis{
+				Custom: ign3types.ClevisCustom{},
+				Tang: []ign3types.Tang{
+					{
+						URL:           "https://tang.example.com",
+						Advertisement: helpers.StrToPtr(`{"payload": "...", "protected": "...", "signature": "..."}`),
+						Thumbprint:    helpers.StrToPtr("TREPLACE-THIS-WITH-YOUR-TANG-THUMBPRINT"),
+					},
+				},
+			},
+			Device: helpers.StrToPtr("/dev/sdb"),
+			Name:   "luks-tang",
+		},
+	}
+	oldConfig = helpers.CreateMachineConfigFromIgnition(oldIgnCfg)
+	newIgnCfg = ctrlcommon.NewIgnConfig()
+	newConfig = helpers.CreateMachineConfigFromIgnition(newIgnCfg)
+
+	_, isReconcilable = reconcilable(oldConfig, newConfig)
+	checkReconcilableResults(t, "LuksClevisTang", isReconcilable)
 }
 
 func TestMachineConfigDiff(t *testing.T) {
