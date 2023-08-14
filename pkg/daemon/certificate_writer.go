@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-
+	"strings"
 	"time"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -15,9 +15,7 @@ import (
 	"k8s.io/klog/v2"
 )
 
-var (
-	ccRequeueDelay = 1 * time.Minute
-)
+var ccRequeueDelay = 1 * time.Minute
 
 func (dn *Daemon) handleControllerConfigEvent(obj interface{}) {
 	controllerConfig := obj.(*mcfgv1.ControllerConfig)
@@ -112,19 +110,21 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 		}
 
 		for _, CA := range controllerConfig.Spec.ImageRegistryBundleData {
-			if err := os.MkdirAll(filepath.Join(imageCAFilePath, CA.File), defaultDirectoryPermissions); err != nil {
+			caFile := strings.ReplaceAll(CA.File, "..", ":")
+			if err := os.MkdirAll(filepath.Join(imageCAFilePath, caFile), defaultDirectoryPermissions); err != nil {
 				return err
 			}
-			if err := writeFileAtomicallyWithDefaults(filepath.Join(imageCAFilePath, CA.File, "ca.crt"), CA.Data); err != nil {
+			if err := writeFileAtomicallyWithDefaults(filepath.Join(imageCAFilePath, caFile, "ca.crt"), CA.Data); err != nil {
 				return err
 			}
 		}
 
 		for _, CA := range controllerConfig.Spec.ImageRegistryBundleUserData {
-			if err := os.MkdirAll(filepath.Join(imageCAFilePath, CA.File), defaultDirectoryPermissions); err != nil {
+			caFile := strings.ReplaceAll(CA.File, "..", ":")
+			if err := os.MkdirAll(filepath.Join(imageCAFilePath, caFile), defaultDirectoryPermissions); err != nil {
 				return err
 			}
-			if err := writeFileAtomicallyWithDefaults(filepath.Join(imageCAFilePath, CA.File, "ca.crt"), CA.Data); err != nil {
+			if err := writeFileAtomicallyWithDefaults(filepath.Join(imageCAFilePath, caFile, "ca.crt"), CA.Data); err != nil {
 				return err
 			}
 		}
