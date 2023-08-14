@@ -16,8 +16,8 @@ import (
 
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/machine-config-operator/manifests"
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/constants"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	utilnet "k8s.io/utils/net"

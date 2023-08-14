@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	configv1 "github.com/openshift/api/config/v1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

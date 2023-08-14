@@ -25,10 +25,10 @@ import (
 	core "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/cache"
 
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
+	informers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
-	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
-	informers "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions"
 	"github.com/openshift/machine-config-operator/test/helpers"
 )
 

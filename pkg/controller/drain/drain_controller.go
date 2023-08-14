@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
+	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
+	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
-	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
-	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

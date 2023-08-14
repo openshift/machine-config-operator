@@ -6,14 +6,15 @@ import (
 	"reflect"
 	"time"
 
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
+	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
+	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
+	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	mcoResourceApply "github.com/openshift/machine-config-operator/lib/resourceapply"
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
-	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
-	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
-	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
-	mcfglistersv1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -422,7 +423,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	}
 
 	// TODO(runcom): add tests in render_controller_test.go for this condition
-	if err := mcfgv1.IsControllerConfigCompleted(ctrlcommon.ControllerConfigName, ctrl.ccLister.Get); err != nil {
+	if err := apihelpers.IsControllerConfigCompleted(ctrlcommon.ControllerConfigName, ctrl.ccLister.Get); err != nil {
 		return err
 	}
 
@@ -442,11 +443,11 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 }
 
 func (ctrl *Controller) syncAvailableStatus(pool *mcfgv1.MachineConfigPool) error {
-	if mcfgv1.IsMachineConfigPoolConditionFalse(pool.Status.Conditions, mcfgv1.MachineConfigPoolRenderDegraded) {
+	if apihelpers.IsMachineConfigPoolConditionFalse(pool.Status.Conditions, mcfgv1.MachineConfigPoolRenderDegraded) {
 		return nil
 	}
-	sdegraded := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolRenderDegraded, corev1.ConditionFalse, "", "")
-	mcfgv1.SetMachineConfigPoolCondition(&pool.Status, *sdegraded)
+	sdegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolRenderDegraded, corev1.ConditionFalse, "", "")
+	apihelpers.SetMachineConfigPoolCondition(&pool.Status, *sdegraded)
 	if _, err := ctrl.client.MachineconfigurationV1().MachineConfigPools().UpdateStatus(context.TODO(), pool, metav1.UpdateOptions{}); err != nil {
 		return err
 	}
@@ -454,8 +455,8 @@ func (ctrl *Controller) syncAvailableStatus(pool *mcfgv1.MachineConfigPool) erro
 }
 
 func (ctrl *Controller) syncFailingStatus(pool *mcfgv1.MachineConfigPool, err error) error {
-	sdegraded := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolRenderDegraded, corev1.ConditionTrue, "", fmt.Sprintf("Failed to render configuration for pool %s: %v", pool.Name, err))
-	mcfgv1.SetMachineConfigPoolCondition(&pool.Status, *sdegraded)
+	sdegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolRenderDegraded, corev1.ConditionTrue, "", fmt.Sprintf("Failed to render configuration for pool %s: %v", pool.Name, err))
+	apihelpers.SetMachineConfigPoolCondition(&pool.Status, *sdegraded)
 	if _, updateErr := ctrl.client.MachineconfigurationV1().MachineConfigPools().UpdateStatus(context.TODO(), pool, metav1.UpdateOptions{}); updateErr != nil {
 		klog.Errorf("Error updating MachineConfigPool %s: %v", pool.Name, updateErr)
 	}
