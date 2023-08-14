@@ -100,7 +100,6 @@ install-tools: install-golangci-lint install-setup-envtest install-go-junit-repo
 #    make verify
 verify: install-tools
 	./hack/golangci-lint.sh $(GOTAGS)
-#    hack/verify-codegen.sh
 	hack/verify-templates.sh
 
 # Template for defining build targets for binaries.
