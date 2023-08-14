@@ -6,10 +6,10 @@ import (
 	"testing"
 
 	configv1 "github.com/openshift/api/config/v1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
 	mcfgv1resourceread "github.com/openshift/machine-config-operator/lib/resourceread"
 	"github.com/openshift/machine-config-operator/manifests"
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/util/sets"

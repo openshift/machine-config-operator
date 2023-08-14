@@ -27,9 +27,10 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/klog/v2"
 
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
+	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 )
 
 const (
@@ -265,13 +266,13 @@ func getManagedKeyReg(pool *mcfgv1.MachineConfigPool, client mcfgclientset.Inter
 func wrapErrorWithCondition(err error, args ...interface{}) mcfgv1.ContainerRuntimeConfigCondition {
 	var condition *mcfgv1.ContainerRuntimeConfigCondition
 	if err != nil {
-		condition = mcfgv1.NewContainerRuntimeConfigCondition(
+		condition = apihelpers.NewContainerRuntimeConfigCondition(
 			mcfgv1.ContainerRuntimeConfigFailure,
 			corev1.ConditionFalse,
 			fmt.Sprintf("Error: %v", err),
 		)
 	} else {
-		condition = mcfgv1.NewContainerRuntimeConfigCondition(
+		condition = apihelpers.NewContainerRuntimeConfigCondition(
 			mcfgv1.ContainerRuntimeConfigSuccess,
 			corev1.ConditionTrue,
 			"Success",

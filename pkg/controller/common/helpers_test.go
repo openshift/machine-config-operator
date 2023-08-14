@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/runtime"
 
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/machine-config-operator/pkg/controller/common/fixtures"
 	"github.com/openshift/machine-config-operator/test/helpers"
 )
