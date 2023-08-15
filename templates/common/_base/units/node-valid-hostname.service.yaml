@@ -3,7 +3,7 @@ enabled: true
 contents: |
   [Unit]
   Description=Wait for a non-localhost hostname
-  Before=network-online.target
+  Before=kubelet-dependencies.target
 
   [Service]
   Type=oneshot
@@ -15,7 +15,6 @@ contents: |
   TimeoutSec=300
 
   [Install]
-  WantedBy=multi-user.target
-  # Ensure that network-online.target will not complete until the node has a non-localhost hostname.
-  RequiredBy=network-online.target
+  # TODO: Change this to RequiredBy after we fix https://github.com/openshift/machine-config-operator/pull/3865#issuecomment-1746963115
+  WantedBy=kubelet-dependencies.target
 
