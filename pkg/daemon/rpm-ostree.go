@@ -151,11 +151,12 @@ func (r *RpmOstreeClient) GetBootedOSImageURL() (string, string, string, error) 
 
 	// we have container images now, make sure we can parse those too
 	if bootedDeployment.ContainerImageReference != "" {
-		// right now they start with "ostree-unverified-registry:", so scrape that off
-		tokens := strings.SplitN(bootedDeployment.ContainerImageReference, ":", 2)
-		if len(tokens) > 1 {
-			osImageURL = tokens[1]
+		// right now remove ostree remote, and transport from container image reference
+		ostreeImageReference, err := bootedDeployment.RequireContainerImage()
+		if err != nil {
+			return "", "", "", err
 		}
+		osImageURL = ostreeImageReference.Imgref.Image
 	}
 
 	baseChecksum := bootedDeployment.GetBaseChecksum()
