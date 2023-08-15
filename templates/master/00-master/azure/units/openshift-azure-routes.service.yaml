@@ -3,7 +3,9 @@ enabled: false
 contents: |
   [Unit]
   Description=Work around Azure load balancer hairpin
-
+  # We don't need to do this on the firstboot
+  After=firstboot-osupdate.target
+  
   [Service]
   Type=simple
   ExecStart=/bin/bash /opt/libexec/openshift-azure-routes.sh start
