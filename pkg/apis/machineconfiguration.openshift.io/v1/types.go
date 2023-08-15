@@ -165,10 +165,10 @@ type ControllerCertificate struct {
 	Signer string `json:"signer"`
 
 	// notBefore is the lower boundary for validity
-	NotBefore string `json:"notBefore"`
+	NotBefore metav1.Time `json:"notBefore"`
 
 	// notAfter is the upper boundary for validity
-	NotAfter string `json:"notAfter"`
+	NotAfter metav1.Time `json:"notAfter"`
 
 	// bundleFile is the larger bundle a cert comes from
 	BundleFile string `json:"bundleFile"`
@@ -343,9 +343,9 @@ type MachineConfigPoolStatus struct {
 
 // ceryExpiry contains the bundle name and the expiry date
 type CertExpiry struct {
-	Bundle  string `json:"bundle"`
-	Subject string `json:"subject"`
-	Expiry  string `json:"expiry"`
+	Bundle  string      `json:"bundle"`
+	Subject string      `json:"subject"`
+	Expiry  metav1.Time `json:"expiry"`
 }
 
 // MachineConfigPoolStatusConfiguration stores the current configuration for the pool, and

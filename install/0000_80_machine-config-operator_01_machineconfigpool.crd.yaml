@@ -442,4 +442,5 @@ spec:
                       type: string
                     expiry:
                       description: the date when the cert expires
-                      type: string 
+                      type: string
+                      format: date-time
