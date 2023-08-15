@@ -10,6 +10,8 @@ import (
 
 	ign2types "github.com/coreos/ignition/config/v2_2/types"
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
@@ -317,6 +319,50 @@ func newNode(annotations map[string]string) *corev1.Node {
 			Annotations: annotations,
 		},
 	}
+}
+
+func TestSetRunningKargs(t *testing.T) {
+	oldIgnCfg := ctrlcommon.NewIgnConfig()
+	oldConfig := helpers.CreateMachineConfigFromIgnition(oldIgnCfg)
+	oldConfig.ObjectMeta = metav1.ObjectMeta{Name: "oldconfig"}
+	newIgnCfg := ctrlcommon.NewIgnConfig()
+	newConfig := helpers.CreateMachineConfigFromIgnition(newIgnCfg)
+	newConfig.ObjectMeta = metav1.ObjectMeta{Name: "newconfig"}
+	diff, err := newMachineConfigDiff(oldConfig, newConfig)
+	assert.Nil(t, err)
+	assert.True(t, diff.isEmpty())
+
+	cmdline := "BOOT_IMAGE=(hd0,gpt3)/ostree/rhcos-c3b004db4/vmlinuz-5.14.0-284.23.1.el9_2.x86_64 systemd.unified_cgroup_hierarchy=0 systemd.legacy_systemd_cgroup_controller=1"
+	newConfig.Spec.KernelArguments = []string{"systemd.unified_cgroup_hierarchy=0", "systemd.legacy_systemd_cgroup_controller=1"}
+	_ = setRunningKargsWithCmdline(oldConfig, newConfig.Spec.KernelArguments, []byte(cmdline))
+	diff, err = newMachineConfigDiff(oldConfig, newConfig)
+	assert.Nil(t, err)
+	assert.True(t, diff.isEmpty())
+
+	newConfig.Spec.KernelArguments = []string{"systemd.legacy_systemd_cgroup_controller=1", "systemd.unified_cgroup_hierarchy=0"}
+	diff, err = newMachineConfigDiff(oldConfig, newConfig)
+	assert.Nil(t, err)
+	assert.False(t, diff.isEmpty())
+	assert.True(t, diff.kargs)
+
+	newConfig.Spec.KernelArguments = []string{"systemd.unified_cgroup_hierarchy=0", "systemd.legacy_systemd_cgroup_controller=1", "systemd.unified_cgroup_hierarchy=0"}
+	diff, err = newMachineConfigDiff(oldConfig, newConfig)
+	assert.Nil(t, err)
+	assert.False(t, diff.isEmpty())
+	assert.True(t, diff.kargs)
+
+	cmdline = "BOOT_IMAGE=(hd0,gpt3)/ostree/rhcos-c3b004db4/vmlinuz-5.14.0-284.23.1.el9_2.x86_64 systemd.unified_cgroup_hierarchy=0 systemd.unified_cgroup_hierarchy=0 systemd.legacy_systemd_cgroup_controller=1"
+	_ = setRunningKargsWithCmdline(oldConfig, newConfig.Spec.KernelArguments, []byte(cmdline))
+	diff, err = newMachineConfigDiff(oldConfig, newConfig)
+	assert.Nil(t, err)
+	assert.False(t, diff.isEmpty())
+	assert.True(t, diff.kargs)
+
+	cmdline = "BOOT_IMAGE=(hd0,gpt3)/ostree/rhcos-c3b004db4/vmlinuz-5.14.0-284.23.1.el9_2.x86_64 systemd.unified_cgroup_hierarchy=0 systemd.legacy_systemd_cgroup_controller=1 systemd.unified_cgroup_hierarchy=0"
+	_ = setRunningKargsWithCmdline(oldConfig, newConfig.Spec.KernelArguments, []byte(cmdline))
+	diff, err = newMachineConfigDiff(oldConfig, newConfig)
+	assert.Nil(t, err)
+	assert.True(t, diff.isEmpty())
 }
 
 func TestPrepUpdateFromClusterOnDiskDrift(t *testing.T) {
