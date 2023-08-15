@@ -1,5 +1,10 @@
 name: crio.service
 dropins:
+  - name: 05-mco-ordering.conf
+    contents: |
+      [Unit]
+      After=kubelet-dependencies.target
+      Requires=kubelet-dependencies.target
   - name: 10-mco-default-madv.conf
     contents: |
       [Service]

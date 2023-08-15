@@ -6,9 +6,9 @@ contents: |
   # This only applies to VIP managing environments where the kubelet and crio IP
   # address picking logic is flawed and may end up selecting an address from a
   # different subnet or a deprecated address
-  Wants=NetworkManager-wait-online.service crio-wipe.service
-  After=NetworkManager-wait-online.service ignition-firstboot-complete.service crio-wipe.service
-  Before=kubelet.service crio.service ovs-configuration.service
+  Wants=NetworkManager-wait-online.service
+  After=NetworkManager-wait-online.service firstboot-osupdate.target
+  Before=kubelet-dependencies.target ovs-configuration.service
 
   [Service]
   # Need oneshot to delay kubelet
@@ -38,4 +38,4 @@ contents: |
   {{end -}}
 
   [Install]
-  WantedBy=multi-user.target
+  RequiredBy=kubelet-dependencies.target
