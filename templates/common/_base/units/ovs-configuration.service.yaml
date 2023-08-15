@@ -3,13 +3,12 @@ enabled: {{if eq .NetworkType "OVNKubernetes" "OpenShiftSDN"}}true{{else}}false{
 contents: |
   [Unit]
   Description=Configures OVS with proper host networking configuration
-  # Removal of this file signals firstboot completion
-  ConditionPathExists=!/etc/ignition-machine-config-encapsulated.json
   # This service is used to move a physical NIC into OVS and reconfigure OVS to use the host IP
   Requires=openvswitch.service
   Wants=NetworkManager-wait-online.service
+  After=firstboot-osupdate.target
   After=NetworkManager-wait-online.service openvswitch.service network.service nodeip-configuration.service
-  Before=network-online.target kubelet.service crio.service node-valid-hostname.service
+  Before=kubelet-dependencies.target node-valid-hostname.service
 
   [Service]
   # Need oneshot to delay kubelet
@@ -19,4 +18,4 @@ contents: |
   StandardError=journal+console
 
   [Install]
-  WantedBy=network-online.target
+  RequiredBy=kubelet-dependencies.target
