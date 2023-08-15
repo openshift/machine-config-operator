@@ -373,7 +373,6 @@ func (optr *Operator) syncMetrics() error {
 				latestTime = cond.LastTransitionTime
 			}
 		}
-		klog.Infof("Condition: %s, Machines: %d, UpdatedMachines: %d, DegradedMachines: %d, UnavailableMachines: %d", string(cond.Type), pool.Status.MachineCount, pool.Status.UpdatedMachineCount, pool.Status.DegradedMachineCount, pool.Status.UnavailableMachineCount)
 		mcoState.WithLabelValues(pool.Name, string(cond.Type), cond.Reason).SetToCurrentTime()
 		mcoMachineCount.WithLabelValues(pool.Name).Set(float64(pool.Status.MachineCount))
 		mcoUpdatedMachineCount.WithLabelValues(pool.Name).Set(float64(pool.Status.UpdatedMachineCount))
