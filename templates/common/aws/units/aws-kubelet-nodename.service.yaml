@@ -14,7 +14,7 @@ contents: |
   # Wait for NetworkManager to report it's online
   After=NetworkManager-wait-online.service
   # Run before kubelet
-  Before=kubelet.service
+  Before=kubelet-dependencies.target
 
   [Service]
   # Mark afterburn environment file optional, due to it is possible that afterburn service was not executed
