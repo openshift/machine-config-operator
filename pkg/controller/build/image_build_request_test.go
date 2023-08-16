@@ -47,12 +47,12 @@ func TestImageBuildRequest(t *testing.T) {
 	assert.Equal(t, osImageURLConfigMap.Data[baseOSContainerImageConfigKey], ibr.BaseImage.Pullspec)
 	assert.Equal(t, osImageURLConfigMap.Data[baseOSExtensionsContainerImageConfigKey], ibr.ExtensionsImage.Pullspec)
 
-	assert.Equal(t, onClusterBuildConfigMap.Data[baseImagePullSecretNameConfigKey], ibr.BaseImage.PullSecret.Name)
-	assert.Equal(t, onClusterBuildConfigMap.Data[baseImagePullSecretNameConfigKey], ibr.ExtensionsImage.PullSecret.Name)
+	assert.Equal(t, onClusterBuildConfigMap.Data[BaseImagePullSecretNameConfigKey], ibr.BaseImage.PullSecret.Name)
+	assert.Equal(t, onClusterBuildConfigMap.Data[BaseImagePullSecretNameConfigKey], ibr.ExtensionsImage.PullSecret.Name)
 
-	assert.Equal(t, onClusterBuildConfigMap.Data[finalImagePullspecConfigKey], ibr.FinalImage.Pullspec)
+	assert.Equal(t, onClusterBuildConfigMap.Data[FinalImagePullspecConfigKey], ibr.FinalImage.Pullspec)
 
-	assert.Equal(t, onClusterBuildConfigMap.Data[finalImagePushSecretNameConfigKey], ibr.FinalImage.PullSecret.Name)
+	assert.Equal(t, onClusterBuildConfigMap.Data[FinalImagePushSecretNameConfigKey], ibr.FinalImage.PullSecret.Name)
 
 	assert.Equal(t, "dockerfile-rendered-worker-1", ibr.getDockerfileConfigMapName())
 	assert.Equal(t, "build-rendered-worker-1", ibr.getBuildName())
