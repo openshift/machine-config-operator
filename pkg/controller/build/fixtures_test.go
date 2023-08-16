@@ -23,6 +23,16 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
+func getCustomDockerfileConfigMap(poolToDockerfile map[string]string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      customDockerfileConfigMapName,
+			Namespace: ctrlcommon.MCONamespace,
+		},
+		Data: poolToDockerfile,
+	}
+}
+
 // Gets an example machine-config-osimageurl ConfigMap.
 func getOSImageURLConfigMap() *corev1.ConfigMap {
 	return &corev1.ConfigMap{
