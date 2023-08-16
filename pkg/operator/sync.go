@@ -38,7 +38,6 @@ import (
 	"github.com/openshift/machine-config-operator/manifests"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	v1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	build "github.com/openshift/machine-config-operator/pkg/controller/build"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	templatectrl "github.com/openshift/machine-config-operator/pkg/controller/template"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
@@ -864,11 +863,11 @@ func (optr *Operator) reconcileMachineOSBuilder(mob *appsv1.Deployment) error {
 		return fmt.Errorf("could not get layered MachineConfigPools: %w", err)
 	}
 
-	// Validate the on-cluster-build-config ConfigMap and associated secrets.
-	validationErr := build.ValidateOnClusterBuildConfig(layeredMCPs)
-	if validationErr != nil {
-		return fmt.Errorf("failed to find configmap and associated secrets")
-	}
+	// // Validate the on-cluster-build-config ConfigMap and associated secrets.
+	// validationErr := build.ValidateOnClusterBuildConfig(layeredMCPs)
+	// if validationErr != nil {
+	// 	return fmt.Errorf("failed to find configmap and associated secrets")
+	// }
 
 	isRunning, err := optr.isMachineOSBuilderRunning(mob)
 	// An unknown error occurred. Bail out here.
