@@ -53,7 +53,7 @@ func imageInspect(imageName string) (*types.ImageInspectInfo, *digest.Digest, er
 	}
 
 	ctx := context.Background()
-	sys := &types.SystemContext{AuthFilePath: kubeletAuthFile}
+	sys := &types.SystemContext{AuthFilePath: ostreeAuthFile}
 
 	// retry.IfNecessary takes into account whether the error is "retryable"
 	// so we don't keep looping on errors that will never resolve

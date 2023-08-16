@@ -77,6 +77,7 @@ func ensureControllerConfigSpec(modified *bool, existing *mcfgv1.ControllerConfi
 	resourcemerge.SetStringIfSet(modified, &existing.BaseOSExtensionsContainerImage, required.BaseOSExtensionsContainerImage)
 	resourcemerge.SetStringIfSet(modified, &existing.NetworkType, required.NetworkType)
 
+	setBytesIfSet(modified, &existing.InternalRegistryPullSecret, required.InternalRegistryPullSecret)
 	setBytesIfSet(modified, &existing.AdditionalTrustBundle, required.AdditionalTrustBundle)
 	setBytesIfSet(modified, &existing.RootCAData, required.RootCAData)
 	setBytesIfSet(modified, &existing.KubeAPIServerServingCAData, required.KubeAPIServerServingCAData)

@@ -1,0 +1,14 @@
+# Bind system:image-builder role to the image registry service account
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: machine-os-puller-binding
+  namespace: {{.TargetNamespace}}
+roleRef:
+  kind: ClusterRole
+  apiGroup: rbac.authorization.k8s.io
+  name: system:image-puller
+subjects:
+- kind: ServiceAccount
+  namespace: {{.TargetNamespace}}
+  name: machine-os-puller

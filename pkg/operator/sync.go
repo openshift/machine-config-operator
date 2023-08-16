@@ -29,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
+	"k8s.io/kubernetes/pkg/credentialprovider"
 
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
@@ -112,6 +113,10 @@ const (
 	mcsNodeBootstrapperServiceAccountManifestPath = "manifests/machineconfigserver/node-bootstrapper-sa.yaml"
 	mcsNodeBootstrapperTokenManifestPath          = "manifests/machineconfigserver/node-bootstrapper-token.yaml"
 	mcsDaemonsetManifestPath                      = "manifests/machineconfigserver/daemonset.yaml"
+
+	// Machine OS puller manifest paths
+	mopRoleBindingManifestPath    = "manifests/machine-os-puller/rolebinding.yaml"
+	mopServiceAccountManifestPath = "manifests/machine-os-puller/sa.yaml"
 )
 
 type syncFunc struct {
@@ -373,6 +378,7 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 	}
 
 	var kubeAPIServerServingCABytes []byte
+	var internalRegistryPullSecret []byte
 	// We only want to switch to the proper certificate bundle *after* we've generated our first controllerconfig.
 	// we need to make sure we generate a rendered-config that matches the "day 1" config that our nodes bootstrapped with and
 	// if bootstrapComplete happens while inClusterBringup == true, that matching MachineConfig will never get rendered and
@@ -383,6 +389,15 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 		// If the kubelet has a flag to check the in-cluster published ca bundle, that would be ideal.
 		kubeAPIServerServingCABytes, err = optr.getCAsFromConfigMap("openshift-config-managed", "kube-apiserver-client-ca", "ca-bundle.crt")
 		if err != nil {
+			return err
+		}
+		// Fetch the merged image registry pull secret file. The hope is that, by doing this after cluster bringup, an additional
+		// roll of machineconfig can be avoided. This can be moved to the controller once certs are removed from machine configs
+		// https://github.com/openshift/machine-config-operator/pull/3787
+
+		internalRegistryPullSecret, err = optr.getImageRegistryPullSecrets()
+		if err != nil {
+			klog.Errorf("Merging registry secrets failed with: %s", err)
 			return err
 		}
 
@@ -407,6 +422,9 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 		} else {
 			kubeAPIServerServingCABytes = mergeCertWithCABundle(initialKubeAPIServerServingCABytes, kubeAPIServerServingCABytes, "kube-apiserver-to-kubelet-signer")
 		}
+
+		// Blank out image registry pull secret if cluster is still in bringup
+		internalRegistryPullSecret = nil
 	}
 
 	bundle := make([]byte, 0)
@@ -470,6 +488,7 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 	spec.ImageRegistryBundleData = imgRegistryData
 	spec.ImageRegistryBundleUserData = imgRegistryUsrData
 	spec.PullSecret = &corev1.ObjectReference{Namespace: "openshift-config", Name: "pull-secret"}
+	spec.InternalRegistryPullSecret = internalRegistryPullSecret
 	spec.OSImageURL = imgs.MachineOSContent
 	spec.BaseOSContainerImage = imgs.BaseOSContainerImage
 	spec.BaseOSExtensionsContainerImage = imgs.BaseOSExtensionsContainerImage
@@ -775,6 +794,7 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig) error {
 			mccEventsRoleBindingDefaultManifestPath,
 			mccEventsRoleBindingTargetManifestPath,
 			mccKubeRbacProxyPrometheusRoleBindingPath,
+			mopRoleBindingManifestPath,
 		},
 		clusterRoleBindings: []string{
 			mccClusterRoleBindingManifestPath,
@@ -784,6 +804,7 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig) error {
 		},
 		serviceAccounts: []string{
 			mccServiceAccountManifestPath,
+			mopServiceAccountManifestPath,
 		},
 	}
 	if err := optr.applyManifests(config, paths); err != nil {
@@ -1458,4 +1479,96 @@ func isPoolStatusConditionTrue(pool *mcfgv1.MachineConfigPool, conditionType mcf
 		}
 	}
 	return false
+}
+
+// getImageRegistryPullSecrets fetches the image registry's pull secrets and merges them with the
+// global pull secret. It also adds a default route to the registry for the firstboot scenario.
+
+func (optr *Operator) getImageRegistryPullSecrets() ([]byte, error) {
+
+	// Check if image registry exists, if it doesn't we no-op
+	co, err := optr.configClient.ConfigV1().ClusterOperators().Get(context.TODO(), "image-registry", metav1.GetOptions{})
+
+	if err != nil {
+		return nil, err
+	}
+	if co == nil {
+		// returning no error here because image registry may become optional in the future
+		// TODO: add another gate for image registry is "supposed" to be present
+		klog.Errorf("exiting image registry secrets fetch - image registry operator does not exist.")
+		return nil, nil
+	}
+
+	// Image registry exists, so continue to grab the secrets
+
+	// This is for wiring up the default registry route later
+	dns, err := optr.dnsLister.Get("cluster")
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve dns object")
+	}
+	// Create the JSON map
+	dockerConfigJSON := credentialprovider.DockerConfigJSON{
+		Auths: map[string]credentialprovider.DockerConfigEntry{},
+	}
+
+	// Get the list of image pull secrets from the designated service account
+	imageRegistrySA, err := optr.kubeClient.CoreV1().ServiceAccounts("openshift-machine-config-operator").Get(context.TODO(), "machine-os-puller", metav1.GetOptions{})
+	if err != nil {
+		// returning no error here because during an upgrade; the first sync won't have the manifests
+		klog.Errorf("exiting image registry secrets fetch - machine-os-puller service account does not exist yet.")
+		return nil, nil
+	}
+
+	// Step through each image pull secret
+	for _, imagePullSecret := range imageRegistrySA.ImagePullSecrets {
+		secret, err := optr.kubeClient.CoreV1().Secrets("openshift-machine-config-operator").Get(context.TODO(), imagePullSecret.Name, metav1.GetOptions{})
+		if err != nil {
+			return nil, fmt.Errorf("failed to retrieve image pull secret %s: %w", imagePullSecret.Name, err)
+		}
+		// merge the secret into the JSON map
+		ctrlcommon.MergeDockerConfigstoJSONMap(secret.Data[corev1.DockerConfigKey], dockerConfigJSON.Auths)
+	}
+
+	// Fetch the cluster pull secret
+	clusterPullSecret, err := optr.kubeClient.CoreV1().Secrets("openshift-config").Get(context.TODO(), "pull-secret", metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("error fetching cluster pull secret: %w", err)
+	}
+	if clusterPullSecret.Type != corev1.SecretTypeDockerConfigJson {
+		return nil, fmt.Errorf("expected secret type %s found %s", corev1.SecretTypeDockerConfigJson, clusterPullSecret.Type)
+	}
+
+	clusterPullSecretRaw := clusterPullSecret.Data[corev1.DockerConfigJsonKey]
+
+	// Add in the cluster pull secret to the JSON map, but convert it to kubernetes.io/dockercfg first
+	// as the global pull secret is of type kubernetes.io/dockerconfigjson
+	clusterPullSecretRawOld, err := ctrlcommon.ConvertSecretTodockercfg(clusterPullSecretRaw)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert global pull secret to old format: %w", err)
+	}
+
+	err = ctrlcommon.MergeDockerConfigstoJSONMap(clusterPullSecretRawOld, dockerConfigJSON.Auths)
+	if err != nil {
+		return nil, fmt.Errorf("failed to merge global pull secret:  %w", err)
+	}
+
+	// Add in a default image registry route for first boot cases; this route won't be provided during a pull
+	// in live operation. Clone the auth details for the "live" image registry route into this field.
+	if entry, ok := dockerConfigJSON.Auths["image-registry.openshift-image-registry.svc:5000"]; ok {
+		assembledDefaultRoute := "default-route-openshift-image-registry.apps." + dns.Spec.BaseDomain
+		dockerConfigJSON.Auths[assembledDefaultRoute] = entry
+	}
+
+	// If "auths" is empty, don't roll config
+	if len(dockerConfigJSON.Auths) > 0 {
+
+		mergedPullSecrets, err := json.Marshal(dockerConfigJSON)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal the merged pull secrets: %w", err)
+		}
+
+		return mergedPullSecrets, nil
+	}
+
+	return nil, nil
 }
