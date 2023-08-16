@@ -20,6 +20,7 @@ import (
 	k8stypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	clientset "k8s.io/client-go/kubernetes"
+	"k8s.io/klog/v2"
 )
 
 const (
@@ -245,52 +246,96 @@ func ignoreIsNotFoundErr(err error) error {
 func ValidateOnClusterBuildConfig(kubeclient clientset.Interface) error {
 	// Validate the presence of the on-cluster-build-config ConfigMap
 	cm, err := kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), OnClusterBuildConfigMapName, metav1.GetOptions{})
-	if err != nil {
-		return err
+	if err != nil && k8serrors.IsNotFound(err) {
+		return fmt.Errorf("%s ConfigMap missing, did you create it?", OnClusterBuildConfigMapName)
 	}
 
-	secretNames := sets.NewString(BaseImagePullSecretNameConfigKey, FinalImagePushSecretNameConfigKey)
-	imagePullSpecs := sets.NewString(FinalImagePullspecConfigKey)
+	if err != nil {
+		return fmt.Errorf("could not get ConfigMap %s: %w", OnClusterBuildConfigMapName, err)
+	}
+
+	secretNames := []string{BaseImagePullSecretNameConfigKey, FinalImagePushSecretNameConfigKey}
+	imagePullspecs := []string{FinalImagePullspecConfigKey}
 
 	// Validate the presence of secrets it refers to
-	for _, key := range secretNames.UnsortedList() {
+	for _, key := range secretNames {
 		val, ok := cm.Data[key]
 		if !ok {
 			return fmt.Errorf("missing required key %q in configmap %s", key, OnClusterBuildConfigMapName)
 		}
+
 		if val == "" {
 			return fmt.Errorf("key %q in configmap %s has an empty value", key, OnClusterBuildConfigMapName)
 		}
-		if err := validateSecret(kubeclient, key); err != nil {
+
+		if err := validateSecret(kubeclient, val); err != nil {
 			return err
 		}
 	}
 
-	for _, key := range imagePullSpecs.UnsortedList() {
+	// Validate the image pullspec(s) it referes to.
+	for _, key := range imagePullspecs {
 		val, ok := cm.Data[key]
 		if !ok {
 			return fmt.Errorf("missing required key %q in configmap %s", key, OnClusterBuildConfigMapName)
 		}
+
 		if val == "" {
 			return fmt.Errorf("key %q in configmap %s has an empty value", key, OnClusterBuildConfigMapName)
 		}
 
-		_, err := reference.ParseNamed(val)
-		if err != nil {
+		if _, err := reference.ParseNamed(val); err != nil {
 			return fmt.Errorf("could not parse %s with %q: %w", key, val, err)
 		}
 	}
+
+	// Validate the image builder type from the ConfigMap
+	if _, err := GetImageBuilderType(cm); err != nil {
+		return err
+	}
+
 	return nil
 }
 
 func validateSecret(kubeclient clientset.Interface, secretName string) error {
 	// Here we just validate the presence of the secret, and not its content
 	secret, err := kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(context.TODO(), secretName, metav1.GetOptions{})
-	if err != nil {
-		return fmt.Errorf("could not get required secret: %w", err)
+	if err != nil && k8serrors.IsNotFound(err) {
+		return fmt.Errorf("secret %s from %s is not found. Did you use the right secret name?", secretName, OnClusterBuildConfigMapName)
 	}
+
+	if err != nil {
+		return fmt.Errorf("could not get secret %s: %w", secretName, err)
+	}
+
 	if _, err := getPullSecretKey(secret); err != nil {
 		return err
 	}
+
 	return nil
+}
+
+// Determines which image builder to start based upon the imageBuilderType key
+// in the on-cluster-build-config ConfigMap. Defaults to custom-pod-builder.
+func GetImageBuilderType(cm *corev1.ConfigMap) (string, error) {
+	configMapImageBuilder, ok := cm.Data[ImageBuilderTypeConfigMapKey]
+	defaultBuilder := OpenshiftImageBuilder
+
+	if !ok {
+		klog.Infof("%s not set, defaulting to %q", ImageBuilderTypeConfigMapKey, defaultBuilder)
+		return defaultBuilder, nil
+	}
+
+	if ok && configMapImageBuilder == "" {
+		klog.Infof("%s empty, defaulting to %q", ImageBuilderTypeConfigMapKey, defaultBuilder)
+		return defaultBuilder, nil
+	}
+
+	validImageBuilderTypes := sets.NewString(OpenshiftImageBuilder, CustomPodImageBuilder)
+	if !validImageBuilderTypes.Has(configMapImageBuilder) {
+		return "", fmt.Errorf("invalid image builder type %q, valid types: %v", configMapImageBuilder, validImageBuilderTypes.List())
+	}
+
+	klog.Infof("%s set to %q", ImageBuilderTypeConfigMapKey, configMapImageBuilder)
+	return configMapImageBuilder, nil
 }
