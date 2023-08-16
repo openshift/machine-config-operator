@@ -26,6 +26,7 @@ import (
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
 	informers "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions"
 )
@@ -97,6 +98,7 @@ func newPullSecret(name string, contents []byte) *corev1.Secret {
 
 func (f *fixture) newController() *Controller {
 	f.client = fake.NewSimpleClientset(f.objects...)
+
 	f.kubeclient = k8sfake.NewSimpleClientset(f.kubeobjects...)
 	f.oseclient = oseconfigfake.NewSimpleClientset(f.oseobjects...)
 	fgAccess := featuregates.NewHardcodedFeatureGateAccess(nil, nil)
@@ -282,7 +284,7 @@ func TestCreatesMachineConfigs(t *testing.T) {
 
 	fgAccess := featuregates.NewHardcodedFeatureGateAccess(nil, nil)
 
-	expMCs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), fgAccess)
+	expMCs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil, fgAccess)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -318,7 +320,7 @@ func TestCreatesMachineConfigsWithFeatureGate(t *testing.T) {
 	f.objects = append(f.objects, cc)
 	f.kubeobjects = append(f.kubeobjects, ps)
 
-	expMCs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), fgAccess)
+	expMCs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil, fgAccess)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -350,7 +352,7 @@ func TestDoNothing(t *testing.T) {
 	ps := newPullSecret("coreos-pull-secret", []byte(`{"dummy": "dummy"}`))
 	fgAccess := featuregates.NewHardcodedFeatureGateAccess([]configv1.FeatureGateName{cloudprovider.ExternalCloudProviderFeature}, nil)
 
-	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), fgAccess)
+	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil, fgAccess)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -389,7 +391,7 @@ func TestRecreateMachineConfig(t *testing.T) {
 	ps := newPullSecret("coreos-pull-secret", []byte(`{"dummy": "dummy"}`))
 	fgAccess := featuregates.NewHardcodedFeatureGateAccess([]configv1.FeatureGateName{cloudprovider.ExternalCloudProviderFeature}, nil)
 
-	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), fgAccess)
+	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil, fgAccess)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -429,7 +431,7 @@ func TestUpdateMachineConfig(t *testing.T) {
 	ps := newPullSecret("coreos-pull-secret", []byte(`{"dummy": "dummy"}`))
 	fgAccess := featuregates.NewHardcodedFeatureGateAccess([]configv1.FeatureGateName{cloudprovider.ExternalCloudProviderFeature, cloudprovider.ExternalCloudProviderFeatureExternal}, nil)
 
-	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), fgAccess)
+	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil, fgAccess)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -449,7 +451,7 @@ func TestUpdateMachineConfig(t *testing.T) {
 		f.objects = append(f.objects, mcs[idx])
 	}
 
-	expmcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), fgAccess)
+	expmcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), []byte(`{"dummy": "dummy"}`), fgAccess)
 	if err != nil {
 		t.Fatal(err)
 	}

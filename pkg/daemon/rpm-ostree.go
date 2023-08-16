@@ -20,8 +20,12 @@ import (
 const (
 	// the number of times to retry commands that pull data from the network
 	numRetriesNetCommands = 5
+	// Default ostreeAuthFile location
+	ostreeAuthFile = "/run/ostree/auth.json"
 	// Pull secret.  Written by the machine-config-operator
 	kubeletAuthFile = "/var/lib/kubelet/config.json"
+	// Internal Registry Pull secret + Global Pull secret.  Written by the machine-config-operator.
+	imageRegistryAuthFile = "/etc/mco/internal-registry-pull-secret.json"
 )
 
 // imageInspection is a public implementation of
@@ -92,9 +96,10 @@ func (r *RpmOstreeClient) Initialize() error {
 
 	// Commands like update and rebase need the pull secrets to pull images and manifests,
 	// make sure we get access to them when we Initialize
-	err := useKubeletConfigSecrets()
+
+	err := useMergedPullSecrets()
 	if err != nil {
-		return fmt.Errorf("Error while ensuring access to kublet config.json pull secrets: %w", err)
+		klog.Errorf("error while linking rpm-ostree pull secrets %w", err)
 	}
 
 	return nil
@@ -160,8 +165,8 @@ func (r *RpmOstreeClient) GetBootedOSImageURL() (string, string, string, error) 
 func podmanInspect(imgURL string) (imgdata *imageInspection, err error) {
 	// Pull the container image if not already available
 	var authArgs []string
-	if _, err := os.Stat(kubeletAuthFile); err == nil {
-		authArgs = append(authArgs, "--authfile", kubeletAuthFile)
+	if _, err := os.Stat(ostreeAuthFile); err == nil {
+		authArgs = append(authArgs, "--authfile", ostreeAuthFile)
 	}
 	args := []string{"pull", "-q"}
 	args = append(args, authArgs...)
@@ -232,29 +237,56 @@ func RpmOstreeIsNewEnoughForLayering() (bool, error) {
 
 // RebaseLayered rebases system or errors if already rebased
 func (r *RpmOstreeClient) RebaseLayered(imgURL string) (err error) {
+	// Try to re-link the merged pull secrets if they exist, since it could have been populated without a daemon reboot
+	useMergedPullSecrets()
 	klog.Infof("Executing rebase to %s", imgURL)
 	return runRpmOstree("rebase", "--experimental", "ostree-unverified-registry:"+imgURL)
 }
 
-// useKubeletConfigSecrets gives the rpm-ostree client access to secrets in the kubelet config.json by symlinking so that
-// rpm-ostree can use those secrets to pull images. It does this by symlinking the kubelet's config.json into /run/ostree.
-func useKubeletConfigSecrets() error {
-	if _, err := os.Lstat("/run/ostree/auth.json"); err != nil {
-
+// linkOstreeAuthFile gives the rpm-ostree client access to secrets in the file located at `path` by symlinking so that
+// rpm-ostree can use those secrets to pull images. This can be called multiple times to overwrite an older link.
+func linkOstreeAuthFile(path string) error {
+	if _, err := os.Lstat(ostreeAuthFile); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-
-			err := os.MkdirAll("/run/ostree", 0o544)
-			if err != nil {
-				return err
-			}
-
-			err = os.Symlink(kubeletAuthFile, "/run/ostree/auth.json")
-			if err != nil {
+			if err := os.MkdirAll("/run/ostree", 0o544); err != nil {
 				return err
 			}
 		}
+	} else {
+		// Remove older symlink if it exists since it needs to be overwritten
+		if err := os.Remove(ostreeAuthFile); err != nil {
+			return err
+		}
 	}
-	return nil
+
+	klog.Infof("Linking ostree authfile to %s", path)
+	err := os.Symlink(path, ostreeAuthFile)
+	return err
+}
+
+// useMergedSecrets gives the rpm-ostree client access to secrets for the internal registry and the global pull
+// secret. It does this by symlinking the merged secrets file into /run/ostree. If it fails to find the
+// merged secrets, it will use the default pull secret file instead.
+func useMergedPullSecrets() error {
+
+	// check if merged secret file exists
+	if _, err := os.Stat(imageRegistryAuthFile); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			klog.Errorf("Merged secret file does not exist; defaulting to cluster pull secret")
+			return linkOstreeAuthFile(kubeletAuthFile)
+		}
+	}
+	// Check that merged secret file is valid JSON
+	if file, err := os.ReadFile(imageRegistryAuthFile); err != nil {
+		klog.Errorf("Merged secret file could not be read; defaulting to cluster pull secret %v", err)
+		return linkOstreeAuthFile(kubeletAuthFile)
+	} else if !json.Valid(file) {
+		klog.Errorf("Merged secret file could not be validated; defaulting to cluster pull secret %v", err)
+		return linkOstreeAuthFile(kubeletAuthFile)
+	}
+
+	// Attempt to link the merged secrets file
+	return linkOstreeAuthFile(imageRegistryAuthFile)
 }
 
 // truncate a string using runes/codepoints as limits.

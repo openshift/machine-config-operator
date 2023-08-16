@@ -1798,6 +1798,11 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
+              internalRegistryPullSecret:
+                nullable: true
+                description: internalRegistryPullSecret is the pull secret for the internal registry. 
+                format: byte
+                type: string
               releaseImage:
                 description: releaseImage is the image used when installing the cluster
                 type: string
