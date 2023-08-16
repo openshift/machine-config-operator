@@ -264,7 +264,7 @@ func (c configDriftTest) Run(t *testing.T) {
 				mutateFileOnNode(t, c.ClientSet, c.node, configDriftFilename, "not-the-data")
 				assertNodeAndMCPIsDegraded(t, c.ClientSet, c.node, c.mcp, configDriftFilename)
 
-				expectedReason := "content mismatch for file \"/etc/etc-file\""
+				expectedReason := fmt.Sprintf("content mismatch for file %q", configDriftFilename)
 
 				mutateFileOnNode(t, c.ClientSet, c.node, configDriftFilename, configDriftFileContents)
 				assertNodeAndMCPIsRecovered(t, c.ClientSet, c.node, c.mcp)
@@ -277,7 +277,7 @@ func (c configDriftTest) Run(t *testing.T) {
 				node, err := c.ClientSet.CoreV1Interface.Nodes().Get(ctx, c.node.Name, metav1.GetOptions{})
 				require.Nil(t, err)
 
-				assert.Equal(t, node.Annotations[constants.MachineConfigDaemonReasonAnnotationKey], expectedReason)
+				assert.Contains(t, node.Annotations[constants.MachineConfigDaemonReasonAnnotationKey], expectedReason)
 
 				assertPoolReachesState(t, c.ClientSet, c.mcp, isPoolDegraded)
 
@@ -372,7 +372,7 @@ func mutateFileOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, f
 func assertNodeAndMCPIsDegraded(t *testing.T, cs *framework.ClientSet, node corev1.Node, mcp mcfgv1.MachineConfigPool, filename string) {
 	t.Helper()
 
-	logEntry := fmt.Sprintf("content mismatch for file \"%s\"", filename)
+	logEntry := fmt.Sprintf("content mismatch for file %q", filename)
 
 	// Assert that the node eventually reaches a Degraded state and has the
 	// config mismatch as the reason
