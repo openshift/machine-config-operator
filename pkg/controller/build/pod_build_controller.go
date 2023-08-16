@@ -194,7 +194,9 @@ func (ctrl *PodBuildController) FinalPullspec(pool *mcfgv1.MachineConfigPool) (s
 		return "", err
 	}
 
-	finalImageInfo := newFinalImageInfo(onClusterBuildConfigMap)
+	finalImageInfo := newFinalImageInfo(&buildInputs{
+		onClusterBuildConfig: onClusterBuildConfigMap,
+	})
 	ibr := newImageBuildRequest(pool)
 
 	digestConfigMap, err := ctrl.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), ibr.getDigestConfigMapName(), metav1.GetOptions{})

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/containers/image/v5/docker"
 	"github.com/containers/image/v5/docker/reference"
 	"github.com/opencontainers/go-digest"
 	corev1 "k8s.io/api/core/v1"
@@ -66,6 +67,22 @@ func compress(r io.Reader, w io.Writer) error {
 	}
 
 	return nil
+}
+
+func validateImageHasDigestedPullspec(pullspec string) error {
+	tagged, err := docker.ParseReference("//" + pullspec)
+	if err != nil {
+		return err
+	}
+
+	switch tagged.DockerReference().(type) {
+	case reference.Tagged:
+		return fmt.Errorf("expected a pullspec with a SHA256 digest, got %q", pullspec)
+	case reference.Digested:
+		return nil
+	default:
+		return fmt.Errorf("unknown image reference spec %q", pullspec)
+	}
 }
 
 // Replaces any tags on the image pullspec with the provided image digest.
