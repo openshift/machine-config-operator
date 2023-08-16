@@ -265,7 +265,18 @@ func (b *Bootstrap) Run(destDir string) error {
 			return err
 		}
 	}
-	return nil
+	buf := bytes.Buffer{}
+	err = encoder.Encode(cconfig, &buf)
+	if err != nil {
+		return err
+	}
+	cconfigDir := filepath.Join(destDir, "controller-config")
+	if err := os.MkdirAll(cconfigDir, 0o764); err != nil {
+		return err
+	}
+	klog.Infof("writing the following controllerConfig to disk: %s", string(buf.Bytes()))
+	return os.WriteFile(filepath.Join(cconfigDir, "machine-config-controller.yaml"), buf.Bytes(), 0o664)
+
 }
 
 func getPullSecretFromSecret(sData []byte) ([]byte, error) {

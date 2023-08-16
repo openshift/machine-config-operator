@@ -28,9 +28,9 @@ type renderConfig struct {
 	Version                string
 	ReleaseVersion         string
 	ControllerConfig       mcfgv1.ControllerConfigSpec
+	KubeAPIServerServingCA string
 	APIServerURL           string
 	Images                 *RenderConfigImages
-	KubeAPIServerServingCA string
 	Infra                  configv1.Infrastructure
 	Constants              map[string]string
 	PointerConfig          string

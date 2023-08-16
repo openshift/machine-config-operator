@@ -107,6 +107,29 @@ func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*runtime.RawExtension, er
 		return nil, fmt.Errorf("failed to migrate kernel args %w", err)
 	}
 
+	fileName = path.Join(bsc.serverBaseDir, "controller-config", "machine-config-controller.yaml")
+	klog.Infof("reading file %q", fileName)
+	data, err = os.ReadFile(fileName)
+	if os.IsNotExist(err) {
+		klog.Errorf("could not find file: %s", fileName)
+		return nil, fmt.Errorf("could not find controller config on initial bootstrap")
+	}
+	if err != nil {
+		klog.Errorf("could not read file: %s", fileName)
+		return nil, fmt.Errorf("server: could not read file %s, err: %w", fileName, err)
+	}
+	klog.Infof("got controllerConfig: %s", string(data))
+
+	cc := new(mcfgv1.ControllerConfig)
+	err = yaml.Unmarshal(data, cc)
+	if err != nil {
+		klog.Errorf("could not unmarshal file: %s", fileName)
+		return nil, fmt.Errorf("server: could not unmarshal file %s, err: %w", fileName, err)
+	}
+
+	addDataAndMaybeAppendToIgnition(caBundleFilePath, cc.Spec.KubeAPIServerServingCAData, &ignConf)
+	addDataAndMaybeAppendToIgnition(cloudProviderCAPath, cc.Spec.CloudProviderCAData, &ignConf)
+	addDataAndMaybeAppendToIgnition(additionalCAPath, cc.Spec.AdditionalTrustBundle, &ignConf)
 	appenders := getAppenders(currConf, nil, bsc.kubeconfigFunc)
 	for _, a := range appenders {
 		if err := a(&ignConf, mc); err != nil {
@@ -116,8 +139,10 @@ func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*runtime.RawExtension, er
 
 	rawConf, err := json.Marshal(ignConf)
 	if err != nil {
+		klog.Errorf("could not marshal ignConf %w", err)
 		return nil, err
 	}
+	klog.Infof("got ignconf %s", rawConf)
 	return &runtime.RawExtension{Raw: rawConf}, nil
 }
 
