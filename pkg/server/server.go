@@ -3,6 +3,9 @@ package server
 import (
 	"fmt"
 	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/clarketm/json"
 	"github.com/coreos/go-semver/semver"
@@ -43,7 +46,7 @@ type Server interface {
 	GetConfig(poolRequest) (*runtime.RawExtension, error)
 }
 
-func getAppenders(currMachineConfig string, version *semver.Version, f kubeconfigFunc) []appenderFunc {
+func getAppenders(currMachineConfig string, version *semver.Version, f kubeconfigFunc, certs []string, serverDir string) []appenderFunc {
 	appenders := []appenderFunc{
 		// append machine annotations file.
 		func(cfg *ign3types.Config, mc *mcfgv1.MachineConfig) error {
@@ -53,12 +56,28 @@ func getAppenders(currMachineConfig string, version *semver.Version, f kubeconfi
 		func(cfg *ign3types.Config, mc *mcfgv1.MachineConfig) error { return appendKubeConfig(cfg, f) },
 		// append the machineconfig content
 		appendInitialMachineConfig,
+		func(cfg *ign3types.Config, mc *mcfgv1.MachineConfig) error { return appendCerts(cfg, certs, serverDir) },
 		// This has to come last!!!
 		func(cfg *ign3types.Config, mc *mcfgv1.MachineConfig) error {
 			return appendEncapsulated(cfg, mc, version)
 		},
 	}
 	return appenders
+}
+
+func appendCerts(cfg *ign3types.Config, certs []string, serverDir string) error {
+	for _, cert := range certs {
+		keyValue := strings.Split(cert, "=")
+		if len(keyValue) != 2 {
+			return fmt.Errorf("could not use cert, missing key or value %s", cert)
+		}
+		data, err := os.ReadFile(filepath.Join(serverDir, keyValue[1]))
+		if err != nil {
+			return fmt.Errorf("could not read cert file %w", err)
+		}
+		appendFileToIgnition(cfg, filepath.Join("/etc/docker/certs.d", keyValue[0], "ca.crt"), string(data))
+	}
+	return nil
 }
 
 // appendEncapsulated empties out the ignition portion of a MachineConfig and adds
