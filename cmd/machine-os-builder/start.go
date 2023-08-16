@@ -82,6 +82,7 @@ func getImageBuilderType(cm *corev1.ConfigMap) string {
 // upon the imageBuilderType key in the on-cluster-build-config ConfigMap.
 // Defaults to the custom pod builder.
 func getController(ctx context.Context, cb *clients.Builder) (*build.Controller, error) {
+
 	onClusterBuildConfigMap, err := getBuildControllerConfigMap(ctx, cb)
 	if err != nil {
 		return nil, err

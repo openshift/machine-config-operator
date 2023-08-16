@@ -3,6 +3,7 @@ package build
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -11,11 +12,14 @@ import (
 	"github.com/containers/image/v5/docker"
 	"github.com/containers/image/v5/docker/reference"
 	"github.com/opencontainers/go-digest"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	k8stypes "k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
+	clientset "k8s.io/client-go/kubernetes"
 )
 
 const (
@@ -234,5 +238,59 @@ func ignoreIsNotFoundErr(err error) error {
 		return err
 	}
 
+	return nil
+}
+
+// ValidateOnClusterBuildConfig validates the existence of the on-cluster-build-config ConfigMap and the presence of the secrets it refers to.
+func ValidateOnClusterBuildConfig(kubeclient clientset.Interface) error {
+	// Validate the presence of the on-cluster-build-config ConfigMap
+	cm, err := kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), OnClusterBuildConfigMapName, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+
+	secretNames := sets.NewString(BaseImagePullSecretNameConfigKey, FinalImagePushSecretNameConfigKey)
+	imagePullSpecs := sets.NewString(FinalImagePullspecConfigKey)
+
+	// Validate the presence of secrets it refers to
+	for _, key := range secretNames.UnsortedList() {
+		val, ok := cm.Data[key]
+		if !ok {
+			return fmt.Errorf("missing required key %q in configmap %s", key, OnClusterBuildConfigMapName)
+		}
+		if val == "" {
+			return fmt.Errorf("key %q in configmap %s has an empty value", key, OnClusterBuildConfigMapName)
+		}
+		if err := validateSecret(kubeclient, key); err != nil {
+			return err
+		}
+	}
+
+	for _, key := range imagePullSpecs.UnsortedList() {
+		val, ok := cm.Data[key]
+		if !ok {
+			return fmt.Errorf("missing required key %q in configmap %s", key, OnClusterBuildConfigMapName)
+		}
+		if val == "" {
+			return fmt.Errorf("key %q in configmap %s has an empty value", key, OnClusterBuildConfigMapName)
+		}
+
+		_, err := reference.ParseNamed(val)
+		if err != nil {
+			return fmt.Errorf("could not parse %s with %q: %w", key, val, err)
+		}
+	}
+	return nil
+}
+
+func validateSecret(kubeclient clientset.Interface, secretName string) error {
+	// Here we just validate the presence of the secret, and not its content
+	secret, err := kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(context.TODO(), secretName, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("could not get required secret: %w", err)
+	}
+	if _, err := getPullSecretKey(secret); err != nil {
+		return err
+	}
 	return nil
 }

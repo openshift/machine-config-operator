@@ -863,12 +863,6 @@ func (optr *Operator) reconcileMachineOSBuilder(mob *appsv1.Deployment) error {
 		return fmt.Errorf("could not get layered MachineConfigPools: %w", err)
 	}
 
-	// // Validate the on-cluster-build-config ConfigMap and associated secrets.
-	// validationErr := build.ValidateOnClusterBuildConfig(layeredMCPs)
-	// if validationErr != nil {
-	// 	return fmt.Errorf("failed to find configmap and associated secrets")
-	// }
-
 	isRunning, err := optr.isMachineOSBuilderRunning(mob)
 	// An unknown error occurred. Bail out here.
 	if err != nil && !apierrors.IsNotFound(err) {

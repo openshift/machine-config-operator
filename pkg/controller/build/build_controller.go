@@ -791,12 +791,6 @@ func (ctrl *Controller) getBuildInputs(pool *mcfgv1.MachineConfigPool) (*buildIn
 		return nil, fmt.Errorf("could not get OS image URL: %w", err)
 	}
 
-	// Validate the on-cluster-build-config ConfigMap and associated secrets.
-	validationErr := ctrl.ValidateOnClusterBuildConfig(pool)
-	if validationErr != nil {
-		return nil, fmt.Errorf("could not get layered MachineConfigPools: %w", err)
-	}
-
 	onClusterBuildConfig, err := ctrl.getOnClusterBuildConfig(pool)
 	if err != nil {
 		return nil, fmt.Errorf("could not get configmap %q: %w", OnClusterBuildConfigMapName, err)
@@ -949,39 +943,6 @@ func (ctrl *Controller) getOnClusterBuildConfig(pool *mcfgv1.MachineConfigPool) 
 	onClusterBuildConfigMap.Data[FinalImagePullspecConfigKey] = finalImagePullspecWithTag
 
 	return onClusterBuildConfigMap, err
-}
-
-// ValidateOnClusterBuildConfig validates the existence of the on-cluster-build-config ConfigMap and the presence of the secrets it refers to.
-func (ctrl *Controller) ValidateOnClusterBuildConfig(pool *mcfgv1.MachineConfigPool) error {
-	// Validate the presence of the on-cluster-build-config ConfigMap
-	cm, err := ctrl.getOnClusterBuildConfig(pool)
-	if err != nil {
-		return err
-	}
-
-	// Validate the presence of secrets it refers to
-	requiredKeys := []string{
-		BaseImagePullSecretNameConfigKey,
-		FinalImagePushSecretNameConfigKey,
-		FinalImagePullspecConfigKey,
-	}
-
-	for _, key := range requiredKeys {
-		val, ok := cm.Data[key]
-		if !ok {
-			return fmt.Errorf("missing required key %q in configmap %s", key, OnClusterBuildConfigMapName)
-		}
-
-		if key == BaseImagePullSecretNameConfigKey || key == FinalImagePushSecretNameConfigKey {
-			// Here we just validate the presence of the secret, and not its content
-			_, err := ctrl.validatePullSecret(val)
-			if err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
 }
 
 // Ensure that the supplied pull secret exists, is in the correct format, etc.
