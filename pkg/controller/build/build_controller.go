@@ -59,16 +59,16 @@ const (
 // on-cluster-build-config ConfigMap keys.
 const (
 	// Name of ConfigMap which contains knobs for configuring the build controller.
-	onClusterBuildConfigMapName = "on-cluster-build-config"
+	OnClusterBuildConfigMapName = "on-cluster-build-config"
 
 	// The on-cluster-build-config ConfigMap key which contains a K8s secret capable of pulling of the base OS image.
-	baseImagePullSecretNameConfigKey = "baseImagePullSecretName"
+	BaseImagePullSecretNameConfigKey = "baseImagePullSecretName"
 
 	// The on-cluster-build-config ConfigMap key which contains a K8s secret capable of pushing the final OS image.
-	finalImagePushSecretNameConfigKey = "finalImagePushSecretName"
+	FinalImagePushSecretNameConfigKey = "finalImagePushSecretName"
 
 	// The on-cluster-build-config ConfigMap key which contains the pullspec of where to push the final OS image (e.g., registry.hostname.com/org/repo:tag).
-	finalImagePullspecConfigKey = "finalImagePullspec"
+	FinalImagePullspecConfigKey = "finalImagePullspec"
 )
 
 // machine-config-osimageurl ConfigMap keys.
@@ -88,6 +88,18 @@ const (
 	// The machine-config-osimageurl ConfigMap key which contains the osImageURL
 	// value. I don't think we actually use this anywhere though.
 	osImageURLConfigKey = "osImageURL"
+)
+
+// Image builder constants.
+const (
+	// ImageBuilderTypeConfigMapKey is the key in the ConfigMap that determines which type of image builder to use.
+	ImageBuilderTypeConfigMapKey string = "imageBuilderType"
+
+	// OpenshiftImageBuilder is the constant indicating use of the OpenShift image builder.
+	OpenshiftImageBuilder string = "openshift-image-builder"
+
+	// CustomPodImageBuilder is the constant indicating use of the custom pod image builder.
+	CustomPodImageBuilder string = "custom-pod-builder"
 )
 
 var (
@@ -781,7 +793,7 @@ func (ctrl *Controller) getBuildInputs(pool *mcfgv1.MachineConfigPool) (*buildIn
 
 	onClusterBuildConfig, err := ctrl.getOnClusterBuildConfig(pool)
 	if err != nil {
-		return nil, fmt.Errorf("could not get configmap %q: %w", onClusterBuildConfigMapName, err)
+		return nil, fmt.Errorf("could not get configmap %q: %w", OnClusterBuildConfigMapName, err)
 	}
 
 	customDockerfiles, err := ctrl.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), customDockerfileConfigMapName, metav1.GetOptions{})
@@ -861,15 +873,15 @@ func (ctrl *Controller) startBuildForMachineConfigPool(pool *mcfgv1.MachineConfi
 
 // Gets the ConfigMap which specifies the name of the base image pull secret, final image pull secret, and final image pullspec.
 func (ctrl *Controller) getOnClusterBuildConfig(pool *mcfgv1.MachineConfigPool) (*corev1.ConfigMap, error) {
-	onClusterBuildConfigMap, err := ctrl.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), onClusterBuildConfigMapName, metav1.GetOptions{})
+	onClusterBuildConfigMap, err := ctrl.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), OnClusterBuildConfigMapName, metav1.GetOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("could not get build controller config %q: %w", onClusterBuildConfigMapName, err)
+		return nil, fmt.Errorf("could not get build controller config %q: %w", OnClusterBuildConfigMapName, err)
 	}
 
 	requiredKeys := []string{
-		baseImagePullSecretNameConfigKey,
-		finalImagePushSecretNameConfigKey,
-		finalImagePullspecConfigKey,
+		BaseImagePullSecretNameConfigKey,
+		FinalImagePushSecretNameConfigKey,
+		FinalImagePullspecConfigKey,
 	}
 
 	needToUpdateConfigMap := false
@@ -878,23 +890,23 @@ func (ctrl *Controller) getOnClusterBuildConfig(pool *mcfgv1.MachineConfigPool) 
 	for _, key := range requiredKeys {
 		val, ok := onClusterBuildConfigMap.Data[key]
 		if !ok {
-			return nil, fmt.Errorf("missing required key %q in configmap %s", key, onClusterBuildConfigMapName)
+			return nil, fmt.Errorf("missing required key %q in configmap %s", key, OnClusterBuildConfigMapName)
 		}
 
-		if key == baseImagePullSecretNameConfigKey || key == finalImagePushSecretNameConfigKey {
+		if key == BaseImagePullSecretNameConfigKey || key == FinalImagePushSecretNameConfigKey {
 			secret, err := ctrl.validatePullSecret(val)
 			if err != nil {
 				return nil, err
 			}
 
 			if strings.Contains(secret.Name, "canonical") {
-				klog.Infof("Updating build controller config %s to indicate we have a canonicalized secret %s", onClusterBuildConfigMapName, secret.Name)
+				klog.Infof("Updating build controller config %s to indicate we have a canonicalized secret %s", OnClusterBuildConfigMapName, secret.Name)
 				onClusterBuildConfigMap.Data[key] = secret.Name
 				needToUpdateConfigMap = true
 			}
 		}
 
-		if key == finalImagePullspecConfigKey {
+		if key == FinalImagePullspecConfigKey {
 			// Replace the user-supplied tag (if present) with the name of the
 			// rendered MachineConfig for uniqueness. This will also allow us to
 			// eventually do a pre-build registry query to determine if we need to
@@ -921,14 +933,14 @@ func (ctrl *Controller) getOnClusterBuildConfig(pool *mcfgv1.MachineConfigPool) 
 		// TODO: Figure out why this causes failures with resourceVersions.
 		onClusterBuildConfigMap, err = ctrl.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Update(context.TODO(), onClusterBuildConfigMap, metav1.UpdateOptions{})
 		if err != nil {
-			return nil, fmt.Errorf("could not update configmap %q: %w", onClusterBuildConfigMapName, err)
+			return nil, fmt.Errorf("could not update configmap %q: %w", OnClusterBuildConfigMapName, err)
 		}
 	}
 
 	// We don't want to write this back to the API server since it's only useful
 	// for this specific build. TODO: Migrate this to the ImageBuildRequest
 	// object so that it's generated on-demand instead.
-	onClusterBuildConfigMap.Data[finalImagePullspecConfigKey] = finalImagePullspecWithTag
+	onClusterBuildConfigMap.Data[FinalImagePullspecConfigKey] = finalImagePullspecWithTag
 
 	return onClusterBuildConfigMap, err
 }

@@ -189,7 +189,7 @@ func (ctrl *PodBuildController) Run(ctx context.Context, workers int) {
 // Gets the final image pullspec by retrieving the ConfigMap that the build pod
 // creates from the Buildah digestfile.
 func (ctrl *PodBuildController) FinalPullspec(pool *mcfgv1.MachineConfigPool) (string, error) {
-	onClusterBuildConfigMap, err := ctrl.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), onClusterBuildConfigMapName, metav1.GetOptions{})
+	onClusterBuildConfigMap, err := ctrl.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), OnClusterBuildConfigMapName, metav1.GetOptions{})
 	if err != nil {
 		return "", err
 	}
