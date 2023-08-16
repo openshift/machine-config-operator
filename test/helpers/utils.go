@@ -18,6 +18,7 @@ import (
 	authenticationv1 "k8s.io/api/authentication/v1"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
+	"github.com/davecgh/go-spew/spew"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/daemon/osrelease"
@@ -944,4 +945,75 @@ func mcdForNode(cs *framework.ClientSet, node *corev1.Node) (*corev1.Pod, error)
 		return nil, fmt.Errorf("too many (%d) MCDs for node %s", len(mcdList.Items), node.Name)
 	}
 	return &mcdList.Items[0], nil
+}
+
+func DumpNodesAndPools(t *testing.T, nodes []*corev1.Node, pools []*mcfgv1.MachineConfigPool) {
+	t.Helper()
+
+	sb := &strings.Builder{}
+
+	fmt.Fprintln(sb, "")
+	fmt.Fprintln(sb, "===== Nodes =====")
+	for _, node := range nodes {
+		fmt.Fprintln(sb, dumpNode(node, false))
+		fmt.Fprintln(sb, "=========")
+	}
+	fmt.Fprintln(sb, "")
+	fmt.Fprintln(sb, "====== Pools ======")
+
+	for _, pool := range pools {
+		fmt.Fprintln(sb, dumpPool(pool, false))
+		fmt.Fprintln(sb, "===================")
+	}
+
+	t.Log(sb.String())
+}
+
+func dumpNode(node *corev1.Node, silentNil bool) string {
+	sb := &strings.Builder{}
+
+	fmt.Fprintln(sb, "")
+
+	if node != nil {
+		if node.Name != "" {
+			fmt.Fprintf(sb, "Node Name: %s\n", node.Name)
+		}
+		fmt.Fprintln(sb, "")
+		fmt.Fprintf(sb, "Node Annotations: %s", spew.Sdump(node.Annotations))
+		fmt.Fprintln(sb, "")
+		fmt.Fprintf(sb, "Node Labels: %s", spew.Sdump(node.Labels))
+		fmt.Fprintln(sb, "")
+
+		conditions := "<empty>"
+		if len(node.Status.Conditions) != 0 {
+			conditions = spew.Sdump(node.Status.Conditions)
+		}
+		fmt.Fprintf(sb, "Node Conditions: %s\n", conditions)
+	} else if !silentNil {
+		fmt.Fprintln(sb, "Node was nil")
+	}
+
+	return sb.String()
+}
+
+func dumpPool(pool *mcfgv1.MachineConfigPool, silentNil bool) string {
+	sb := &strings.Builder{}
+
+	fmt.Fprintln(sb, "")
+
+	if pool != nil {
+		if pool.Name != "" {
+			fmt.Fprintf(sb, "Pool Name: %q\n", pool.Name)
+		}
+		fmt.Fprintln(sb, "")
+		fmt.Fprintf(sb, "Pool Annotations: %s", spew.Sdump(pool.Annotations))
+		fmt.Fprintln(sb, "")
+		fmt.Fprintf(sb, "Pool Labels: %s", spew.Sdump(pool.Labels))
+		fmt.Fprintln(sb, "")
+		fmt.Fprintf(sb, "Pool Config: %q\n", pool.Spec.Configuration.Name)
+	} else if !silentNil {
+		fmt.Fprintln(sb, "Pool was nil")
+	}
+
+	return sb.String()
 }

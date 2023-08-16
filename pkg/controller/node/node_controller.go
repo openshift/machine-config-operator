@@ -53,9 +53,9 @@ const (
 	// 5ms, 10ms, 20ms, 40ms, 80ms, 160ms, 320ms, 640ms, 1.3s, 2.6s, 5.1s, 10.2s, 20.4s, 41s, 82s
 	maxRetries = 15
 
-	// updateDelay is a pause to deal with churn in MachineConfigs; see
+	// defaultUpdateDelay is a pause to deal with churn in MachineConfigs; see
 	// https://github.com/openshift/machine-config-operator/issues/301
-	updateDelay = 5 * time.Second
+	defaultUpdateDelay = 5 * time.Second
 
 	// osLabel is used to identify which type of OS the node has
 	osLabel = "kubernetes.io/os"
@@ -91,9 +91,12 @@ type Controller struct {
 	schedulerListerSynced cache.InformerSynced
 
 	queue workqueue.RateLimitingInterface
+
+	// updateDelay is a pause to deal with churn in MachineConfigs; see
+	// https://github.com/openshift/machine-config-operator/issues/301
+	updateDelay time.Duration
 }
 
-// New returns a new node controller.
 func New(
 	ccInformer mcfginformersv1.ControllerConfigInformer,
 	mcInformer mcfginformersv1.MachineConfigInformer,
@@ -104,6 +107,55 @@ func New(
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
 ) *Controller {
+	return newController(
+		ccInformer,
+		mcInformer,
+		mcpInformer,
+		nodeInformer,
+		podInformer,
+		schedulerInformer,
+		kubeClient,
+		mcfgClient,
+		defaultUpdateDelay,
+	)
+}
+
+func NewWithCustomUpdateDelay(
+	ccInformer mcfginformersv1.ControllerConfigInformer,
+	mcInformer mcfginformersv1.MachineConfigInformer,
+	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
+	nodeInformer coreinformersv1.NodeInformer,
+	podInformer coreinformersv1.PodInformer,
+	schedulerInformer cligoinformersv1.SchedulerInformer,
+	kubeClient clientset.Interface,
+	mcfgClient mcfgclientset.Interface,
+	updateDelay time.Duration,
+) *Controller {
+	return newController(
+		ccInformer,
+		mcInformer,
+		mcpInformer,
+		nodeInformer,
+		podInformer,
+		schedulerInformer,
+		kubeClient,
+		mcfgClient,
+		updateDelay,
+	)
+}
+
+// new returns a new node controller.
+func newController(
+	ccInformer mcfginformersv1.ControllerConfigInformer,
+	mcInformer mcfginformersv1.MachineConfigInformer,
+	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
+	nodeInformer coreinformersv1.NodeInformer,
+	podInformer coreinformersv1.PodInformer,
+	schedulerInformer cligoinformersv1.SchedulerInformer,
+	kubeClient clientset.Interface,
+	mcfgClient mcfgclientset.Interface,
+	updateDelay time.Duration,
+) *Controller {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
 	eventBroadcaster.StartRecordingToSink(&coreclientsetv1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
@@ -113,6 +165,7 @@ func New(
 		kubeClient:    kubeClient,
 		eventRecorder: ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-nodecontroller"})),
 		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-nodecontroller"),
+		updateDelay:   updateDelay,
 	}
 
 	mcpInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -497,16 +550,31 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 			daemonconsts.DesiredMachineConfigAnnotationKey,
 			daemonconsts.MachineConfigDaemonStateAnnotationKey,
 			daemonconsts.MachineConfigDaemonReasonAnnotationKey,
+			daemonconsts.CurrentImageAnnotationKey,
+			daemonconsts.DesiredImageAnnotationKey,
 		}
+
 		for _, anno := range annos {
-			newValue := curNode.Annotations[anno]
-			if oldNode.Annotations[anno] != newValue {
-				ctrl.logPoolNode(pool, curNode, "changed annotation %s = %s", anno, newValue)
-				changed = true
-				// For the control plane, emit events for these since they're important
-				if pool.Name == ctrlcommon.MachineConfigPoolMaster {
-					ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, "AnnotationChange", "Node %s now has %s=%s", curNode.Name, anno, newValue)
-				}
+			if !hasNodeAnnotationChanged(oldNode, curNode, anno) {
+				continue
+			}
+
+			newValue, ok := curNode.Annotations[anno]
+
+			var changedMsg string
+			var controlPlaneChangedMsg string
+			if ok {
+				changedMsg = fmt.Sprintf("changed annotation %s = %s", anno, newValue)
+				controlPlaneChangedMsg = fmt.Sprintf("Node %s now has %s=%s", curNode.Name, anno, newValue)
+			} else {
+				changedMsg = fmt.Sprintf("lost annotation %s", anno)
+				controlPlaneChangedMsg = fmt.Sprintf("Node %s no longer has %s", curNode.Name, anno)
+			}
+			ctrl.logPoolNode(pool, curNode, changedMsg)
+			changed = true
+			// For the control plane, emit events for these since they're important
+			if pool.Name == ctrlcommon.MachineConfigPoolMaster {
+				ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, "AnnotationChange", controlPlaneChangedMsg)
 			}
 		}
 		if !reflect.DeepEqual(oldNode.Labels, curNode.Labels) {
@@ -534,6 +602,19 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 	for _, pool := range pools {
 		ctrl.enqueueMachineConfigPool(pool)
 	}
+}
+
+func hasNodeAnnotationChanged(oldNode, curNode *corev1.Node, key string) bool {
+	oldValue, oldOK := oldNode.Annotations[key]
+	newValue, newOK := curNode.Annotations[key]
+
+	// If we had an annotation, but no longer have it, we've changed.
+	if oldOK != newOK {
+		return true
+	}
+
+	// If the old value does not match the current value, we've changed.
+	return oldValue != newValue
 }
 
 func (ctrl *Controller) deleteNode(obj interface{}) {
@@ -697,7 +778,7 @@ func (ctrl *Controller) enqueueAfter(pool *mcfgv1.MachineConfigPool, after time.
 
 // enqueueDefault calls a default enqueue function
 func (ctrl *Controller) enqueueDefault(pool *mcfgv1.MachineConfigPool) {
-	ctrl.enqueueAfter(pool, updateDelay)
+	ctrl.enqueueAfter(pool, ctrl.updateDelay)
 }
 
 // worker runs a worker thread that just dequeues items, processes them, and marks them done.
@@ -738,6 +819,40 @@ func (ctrl *Controller) handleErr(err error, key interface{}) {
 	ctrl.queue.AddAfter(key, 1*time.Minute)
 }
 
+// Determines if we should continue processing a layered MachineConfigPool or
+// if we should requeue. This targets the following scenarios:
+// 1. If a pool is opted into layering, we should wait for the initial OS image
+// build to be ready before we attempt to roll it out to the nodes.
+// 2. If a MachineConfig changes, we should wait for the OS image build to be
+// ready so we can update both the nodes' desired MachineConfig and desired
+// image annotations simultaneously.
+func (ctrl *Controller) canLayeredPoolContinue(pool *mcfgv1.MachineConfigPool) (string, bool, error) {
+	lps := ctrlcommon.NewLayeredPoolState(pool)
+
+	hasImage := lps.HasOSImage()
+	pullspec := lps.GetOSImage()
+
+	if !hasImage {
+		return fmt.Sprintf("Image annotation %s is not set", ctrlcommon.ExperimentalNewestLayeredImageEquivalentConfigAnnotationKey), false, nil
+	}
+
+	switch {
+	// If the build is successful and we have the image pullspec, we can proceed
+	// with rolling out the new OS image.
+	case lps.IsBuildSuccess() && hasImage:
+		msg := fmt.Sprintf("Image built successfully, pullspec: %s", pullspec)
+		return msg, true, nil
+	case lps.IsBuildPending():
+		return "Image build pending", false, nil
+	case lps.IsBuilding():
+		return "Image build in progress", false, nil
+	case lps.IsBuildFailure():
+		return "Image build failed", false, fmt.Errorf("image build for MachineConfigPool %s failed", pool.Name)
+	default:
+		return "Image is not ready yet", false, nil
+	}
+}
+
 // syncMachineConfigPool will sync the machineconfig pool with the given key.
 // This function is not meant to be invoked concurrently with the same key.
 func (ctrl *Controller) syncMachineConfigPool(key string) error {
@@ -764,8 +879,8 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		// Previously we spammed the logs about empty pools.
 		// Let's just pause for a bit here to let the renderer
 		// initialize them.
-		klog.Infof("Pool %s is unconfigured, pausing %v for renderer to initialize", name, updateDelay)
-		time.Sleep(updateDelay)
+		klog.Infof("Pool %s is unconfigured, pausing %v for renderer to initialize", name, ctrl.updateDelay)
+		time.Sleep(ctrl.updateDelay)
 		return nil
 	}
 
@@ -788,6 +903,24 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 			klog.Infof("Pool %s is paused and will not update.", pool.Name)
 		}
 		return ctrl.syncStatusOnly(pool)
+	}
+
+	if ctrlcommon.IsLayeredPool(pool) {
+		reason, canApplyUpdates, err := ctrl.canLayeredPoolContinue(pool)
+		if err != nil {
+			klog.Infof("Layered pool %s encountered an error: %s", pool.Name, err)
+			return err
+		}
+
+		if !canApplyUpdates {
+			// The MachineConfigPool is not ready to continue, so requeue.
+			klog.Infof("Requeueing layered pool %s: %s", pool.Name, reason)
+			return ctrl.syncStatusOnly(pool)
+		}
+
+		klog.V(4).Infof("Continuing updates for layered pool %s", pool.Name)
+	} else {
+		klog.V(4).Infof("Pool %s is not layered", pool.Name)
 	}
 
 	nodes, err := ctrl.getNodesForPool(pool)
@@ -816,9 +949,11 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	for _, node := range nodes {
 		// All the nodes that need to be upgraded should have `NodeUpdateInProgressTaint` so that they're less likely
 		// to be chosen during the scheduling cycle.
-		targetConfig := pool.Spec.Configuration.Name
 		hasInProgressTaint := checkIfNodeHasInProgressTaint(node)
-		if node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] == targetConfig {
+
+		lns := ctrlcommon.NewLayeredNodeState(node)
+
+		if lns.IsDesiredEqualToPool(pool) {
 			if hasInProgressTaint {
 				if err := ctrl.removeUpdateInProgressTaint(ctx, node.Name); err != nil {
 					err = fmt.Errorf("failed removing %s taint for node %s: %w", constants.NodeUpdateInProgressTaint.Key, node.Name, err)
@@ -847,7 +982,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		if err := ctrl.updateCandidateMachines(pool, candidates, capacity); err != nil {
 			if syncErr := ctrl.syncStatusOnly(pool); syncErr != nil {
 				errs := kubeErrs.NewAggregate([]error{syncErr, err})
-				return fmt.Errorf("error setting desired machine config annotation for pool %q, sync error: %w", pool.Name, errs)
+				return fmt.Errorf("error setting annotations for pool %q, sync error: %w", pool.Name, errs)
 			}
 			return err
 		}
@@ -918,7 +1053,7 @@ func (ctrl *Controller) setClusterConfigAnnotation(nodes []*corev1.Node) error {
 	return nil
 }
 
-func (ctrl *Controller) setDesiredMachineConfigAnnotation(nodeName, currentConfig string) error {
+func (ctrl *Controller) updateCandidateNode(nodeName string, pool *mcfgv1.MachineConfigPool) error {
 	return clientretry.RetryOnConflict(constants.NodeUpdateBackoff, func() error {
 		oldNode, err := ctrl.kubeClient.CoreV1().Nodes().Get(context.TODO(), nodeName, metav1.GetOptions{})
 		if err != nil {
@@ -929,16 +1064,17 @@ func (ctrl *Controller) setDesiredMachineConfigAnnotation(nodeName, currentConfi
 			return err
 		}
 
-		newNode := oldNode.DeepCopy()
-		if newNode.Annotations == nil {
-			newNode.Annotations = map[string]string{}
-		}
-
-		if newNode.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] == currentConfig {
+		lns := ctrlcommon.NewLayeredNodeState(oldNode)
+		if lns.IsDesiredEqualToPool(pool) {
+			// If the node's desired annotations match the pool, return directly without updating the node.
+			klog.Infof("no update is needed")
 			return nil
 		}
-		newNode.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] = currentConfig
-		newData, err := json.Marshal(newNode)
+
+		// Set the desired state to match the pool.
+		lns.SetDesiredStateFromPool(pool)
+
+		newData, err := json.Marshal(lns.Node())
 		if err != nil {
 			return err
 		}
@@ -955,10 +1091,9 @@ func (ctrl *Controller) setDesiredMachineConfigAnnotation(nodeName, currentConfi
 // getAllCandidateMachines returns all possible nodes which can be updated to the target config, along with a maximum
 // capacity.  It is the reponsibility of the caller to choose a subset of the nodes given the capacity.
 func getAllCandidateMachines(pool *mcfgv1.MachineConfigPool, nodesInPool []*corev1.Node, maxUnavailable int) ([]*corev1.Node, uint) {
-	targetConfig := pool.Spec.Configuration.Name
-	unavail := getUnavailableMachines(nodesInPool)
-	// If we're at capacity, there's nothing to do.
+	unavail := getUnavailableMachines(nodesInPool, pool)
 	if len(unavail) >= maxUnavailable {
+		klog.Infof("No nodes available for updates")
 		return nil, 0
 	}
 	capacity := maxUnavailable - len(unavail)
@@ -966,7 +1101,8 @@ func getAllCandidateMachines(pool *mcfgv1.MachineConfigPool, nodesInPool []*core
 	// We only look at nodes which aren't already targeting our desired config
 	var nodes []*corev1.Node
 	for _, node := range nodesInPool {
-		if node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] == targetConfig {
+		lns := ctrlcommon.NewLayeredNodeState(node)
+		if lns.IsDesiredEqualToPool(pool) {
 			if isNodeMCDFailing(node) {
 				failingThisConfig++
 			}
@@ -1052,19 +1188,33 @@ func (ctrl *Controller) updateCandidateMachines(pool *mcfgv1.MachineConfigPool, 
 
 		candidates = candidates[:capacity]
 	}
-	targetConfig := pool.Spec.Configuration.Name
+
+	return ctrl.setDesiredAnnotations(pool, candidates)
+}
+
+func (ctrl *Controller) setDesiredAnnotations(pool *mcfgv1.MachineConfigPool, candidates []*corev1.Node) error {
+	eventName := "SetDesiredConfig"
+
+	if ctrlcommon.IsLayeredPool(pool) {
+		eventName = "SetDesiredConfigAndOSImage"
+
+		klog.Infof("Continuing to sync layered MachineConfigPool %s", pool.Name)
+	}
+
 	for _, node := range candidates {
-		ctrl.logPool(pool, "Setting node %s target to %s", node.Name, targetConfig)
-		if err := ctrl.setDesiredMachineConfigAnnotation(node.Name, targetConfig); err != nil {
-			return fmt.Errorf("setting desired config for node %s: %w", node.Name, err)
+		ctrl.logPool(pool, "Setting node %s target to %s", node.Name, getPoolUpdateLine(pool))
+		if err := ctrl.updateCandidateNode(node.Name, pool); err != nil {
+			return fmt.Errorf("setting desired %s for node %s: %w", getPoolUpdateLine(pool), node.Name, err)
 		}
 	}
+
 	if len(candidates) == 1 {
 		candidate := candidates[0]
-		ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, "SetDesiredConfig", "Targeted node %s to config %s", candidate.Name, targetConfig)
+		ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, eventName, "Targeted node %s to %s", candidate.Name, getPoolUpdateLine(pool))
 	} else {
-		ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, "SetDesiredConfig", "Set target for %d nodes to config %s", len(candidates), targetConfig)
+		ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, eventName, "Set target for %d nodes to %s", len(candidates), getPoolUpdateLine(pool))
 	}
+
 	return nil
 }
 
