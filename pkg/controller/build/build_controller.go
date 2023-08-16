@@ -945,6 +945,39 @@ func (ctrl *Controller) getOnClusterBuildConfig(pool *mcfgv1.MachineConfigPool) 
 	return onClusterBuildConfigMap, err
 }
 
+// ValidateOnClusterBuildConfig validates the existence of the on-cluster-build-config ConfigMap and the presence of the secrets it refers to.
+func (ctrl *Controller) ValidateOnClusterBuildConfig(pool *mcfgv1.MachineConfigPool) error {
+	// Validate the presence of the on-cluster-build-config ConfigMap
+	cm, err := ctrl.getOnClusterBuildConfig(pool)
+	if err != nil {
+		return err
+	}
+
+	// Validate the presence of secrets it refers to
+	requiredKeys := []string{
+		BaseImagePullSecretNameConfigKey,
+		FinalImagePushSecretNameConfigKey,
+		FinalImagePullspecConfigKey,
+	}
+
+	for _, key := range requiredKeys {
+		val, ok := cm.Data[key]
+		if !ok {
+			return fmt.Errorf("missing required key %q in configmap %s", key, OnClusterBuildConfigMapName)
+		}
+
+		if key == BaseImagePullSecretNameConfigKey || key == FinalImagePushSecretNameConfigKey {
+			// Here we just validate the presence of the secret, and not its content
+			_, err := ctrl.validatePullSecret(val)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
 // Ensure that the supplied pull secret exists, is in the correct format, etc.
 func (ctrl *Controller) validatePullSecret(name string) (*corev1.Secret, error) {
 	secret, err := ctrl.kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(context.TODO(), name, metav1.GetOptions{})
