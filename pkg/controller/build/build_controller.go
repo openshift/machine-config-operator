@@ -1329,19 +1329,3 @@ func hasAllRequiredOSBuildLabels(labels map[string]string) bool {
 
 	return true
 }
-
-// // SetErrorCondition sets error conditions on the pod.
-// func SetErrorCondition(kubeclient kubernetes.Interface, podName, namespace, conditionType, message string) error {
-// 	pod, err := kubeclient.CoreV1().Pods(namespace).Get(context.TODO(), podName, metav1.GetOptions{})
-// 	if err != nil {
-// 		return err
-// 	}
-// 	newCondition := corev1.PodCondition{
-// 		Type:    conditionType,
-// 		Status:  corev1.ConditionTrue,
-// 		Message: message,
-// 	}
-// 	pod.Status.Conditions = append(pod.Status.Conditions, newCondition)
-// 	_, updateErr := kubeclient.CoreV1().Pods(namespace).UpdateStatus(context.TODO(), pod, metav1.UpdateOptions{})
-// 	return updateErr
-// }

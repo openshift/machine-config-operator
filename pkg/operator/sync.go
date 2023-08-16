@@ -50,11 +50,6 @@ const (
 	requiredForUpgradeMachineConfigPoolLabelKey = "operator.machineconfiguration.openshift.io/required-for-upgrade"
 )
 
-const (
-	ConditionTypeConfigMapError = "ConfigMapError"
-	ConditionTypeSecretsError   = "SecretsError"
-)
-
 var (
 	platformsRequiringCloudConf = sets.NewString(
 		string(configv1.AzurePlatformType),
