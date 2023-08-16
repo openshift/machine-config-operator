@@ -23,8 +23,10 @@ import (
 
 const (
 	//nolint:gosec
-	bootstrapTokenDir = "/etc/mcs/bootstrap-token"
-	caBundleFilePath  = "/etc/kubernetes/kubelet-ca.crt"
+	bootstrapTokenDir   = "/etc/mcs/bootstrap-token"
+	caBundleFilePath    = "/etc/kubernetes/kubelet-ca.crt"
+	cloudProviderCAPath = "/etc/kubernetes/static-pod-resources/configmaps/cloud-config/ca-bundle.pem"
+	additionalCAPath    = "/etc/pki/ca-trust/source/anchors/openshift-config-user-ca-bundle.crt"
 )
 
 // ensure clusterServer implements the
@@ -126,21 +128,15 @@ func (cs *clusterServer) GetConfig(cr poolRequest) (*runtime.RawExtension, error
 	if err != nil {
 		return nil, fmt.Errorf("could not get controllerconfig: %w", err)
 	}
-	kubeAPIServerServingCABytes := cc.Spec.KubeAPIServerServingCAData
-
-	for idx, file := range ignConf.Storage.Files {
-		if file.Path == caBundleFilePath {
-			source := getEncodedContent(string(kubeAPIServerServingCABytes))
-			ignConf.Storage.Files[idx].Contents.Source = &source
-			break
-		}
-	}
 
 	// strip the kargs out if we're going back to a version that doesn't support it
 	if err := MigrateKernelArgsIfNecessary(&ignConf, mc, cr.version); err != nil {
 		return nil, fmt.Errorf("failed to migrate kernel args %w", err)
 	}
 
+	addDataAndMaybeAppendToIgnition(caBundleFilePath, cc.Spec.KubeAPIServerServingCAData, &ignConf)
+	addDataAndMaybeAppendToIgnition(cloudProviderCAPath, cc.Spec.CloudProviderCAData, &ignConf)
+	addDataAndMaybeAppendToIgnition(additionalCAPath, cc.Spec.AdditionalTrustBundle, &ignConf)
 	appenders := getAppenders(currConf, cr.version, cs.kubeconfigFunc)
 	for _, a := range appenders {
 		if err := a(&ignConf, mc); err != nil {

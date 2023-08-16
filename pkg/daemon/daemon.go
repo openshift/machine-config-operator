@@ -180,7 +180,9 @@ const (
 	imageCAFilePath = "/etc/docker/certs.d"
 
 	// used for certificate syncing
-	caBundleFilePath = "/etc/kubernetes/kubelet-ca.crt"
+	caBundleFilePath      = "/etc/kubernetes/kubelet-ca.crt"
+	cloudCABundleFilePath = "/etc/kubernetes/static-pod-resources/configmaps/cloud-config/ca-bundle.pem"
+	userCABundleFilePath  = "/etc/pki/ca-trust/source/anchors/openshift-config-user-ca-bundle.crt"
 
 	// Where nmstate writes the link files if it persisted ifnames.
 	// https://github.com/nmstate/nmstate/blob/03c7b03bd4c9b0067d3811dbbf72635201519356/rust/src/cli/persist_nic.rs#L32-L36

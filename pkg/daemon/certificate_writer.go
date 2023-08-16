@@ -103,10 +103,33 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 	currentNodeControllerConfigResource := dn.node.Annotations[constants.ControllerConfigResourceVersionKey]
 
 	if currentNodeControllerConfigResource != controllerConfig.ObjectMeta.ResourceVersion {
-		kubeAPIServerServingCABytes := controllerConfig.Spec.KubeAPIServerServingCAData
+		pathToData := make(map[string][]byte)
 
-		if err := writeFileAtomicallyWithDefaults(caBundleFilePath, kubeAPIServerServingCABytes); err != nil {
-			return err
+		kubeAPIServerServingCABytes := controllerConfig.Spec.KubeAPIServerServingCAData
+		cloudCA := controllerConfig.Spec.CloudProviderCAData
+		userCA := controllerConfig.Spec.AdditionalTrustBundle
+		pathToData[caBundleFilePath] = kubeAPIServerServingCABytes
+		pathToData[cloudCABundleFilePath] = cloudCA
+		pathToData[userCABundleFilePath] = userCA
+
+		for bundle, data := range pathToData {
+			if Finfo, err := os.Stat(bundle); err == nil {
+				var mode os.FileMode
+				Dinfo, err := os.Stat(filepath.Dir(bundle))
+				if err != nil {
+					mode = defaultDirectoryPermissions
+				} else {
+					mode = Dinfo.Mode()
+				}
+				// we need to make sure we honor the mode of that file
+				if err := writeFileAtomically(bundle, data, mode, Finfo.Mode(), -1, -1); err != nil {
+					return err
+				}
+			} else {
+				if err := writeFileAtomicallyWithDefaults(bundle, data); err != nil {
+					return err
+				}
+			}
 		}
 
 		for _, CA := range controllerConfig.Spec.ImageRegistryBundleData {

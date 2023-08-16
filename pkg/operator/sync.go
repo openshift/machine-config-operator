@@ -1441,8 +1441,8 @@ func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.C
 		ReleaseVersion:         version.ReleaseVersion,
 		ControllerConfig:       *ccSpec,
 		Images:                 imgs,
-		APIServerURL:           apiServerURL,
 		KubeAPIServerServingCA: kubeAPIServerServingCA,
+		APIServerURL:           apiServerURL,
 		PointerConfig:          string(pointerConfigData),
 	}
 }
