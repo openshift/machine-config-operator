@@ -384,6 +384,13 @@ func (dn *Daemon) HypershiftConnect(
 
 // PrepareNamespace is invoked before chrooting into the target root
 func PrepareNamespace(target string) error {
+	// With ReexecuteForTargetRoot, we have already chroot into rootfs.
+	// So, we should already have necessary MCD pod content mounted inside the host.
+	// This also avoids overriding previously mounted content.
+	if target == "/" {
+		return nil
+	}
+
 	// This contains the /run/secrets/kubernetes.io service account tokens that we still need
 	secretsMount := "/run/secrets"
 	targetSecrets := filepath.Join(target, secretsMount)
