@@ -18,10 +18,10 @@ spec:
     - "--payload-version={{.ReleaseVersion}}"
     resources:
       limits:
-        memory: 50Mi
+        memory: 200Mi
       requests:
         cpu: 20m
-        memory: 50Mi
+        memory: 200Mi
     securityContext:
       privileged: true
       readOnlyRootFilesystem: false
