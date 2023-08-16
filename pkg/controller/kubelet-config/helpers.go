@@ -180,6 +180,7 @@ func updateMachineConfigwithCgroup(node *osev1.Node, mc *mcfgv1.MachineConfig) e
 		kernelArgsv2                                            = []string{"systemd.unified_cgroup_hierarchy=1", "cgroup_no_v1=\"all\"", "psi=1"}
 		kernelArgsToAdd, kernelArgsToRemove, adjustedKernelArgs []string
 	)
+
 	switch node.Spec.CgroupMode {
 	case osev1.CgroupModeV1:
 		kernelArgsToAdd = append(kernelArgsToAdd, kernelArgsv1...)

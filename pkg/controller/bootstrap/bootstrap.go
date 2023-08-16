@@ -20,6 +20,7 @@ import (
 
 	apicfgv1 "github.com/openshift/api/config/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
+	peformancev2 "github.com/openshift/cluster-node-tuning-operator/pkg/apis/performanceprofile/v2"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -72,8 +73,9 @@ func (b *Bootstrap) Run(destDir string) error {
 	mcfgv1.Install(scheme)
 	apioperatorsv1alpha1.Install(scheme)
 	apicfgv1.Install(scheme)
+	scheme.AddKnownTypes(peformancev2.GroupVersion, &peformancev2.PerformanceProfile{})
 	codecFactory := serializer.NewCodecFactory(scheme)
-	decoder := codecFactory.UniversalDecoder(mcfgv1.GroupVersion, apioperatorsv1alpha1.GroupVersion, apicfgv1.GroupVersion)
+	decoder := codecFactory.UniversalDecoder(mcfgv1.GroupVersion, apioperatorsv1alpha1.GroupVersion, apicfgv1.GroupVersion, peformancev2.GroupVersion)
 
 	var cconfig *mcfgv1.ControllerConfig
 	var featureGate *apicfgv1.FeatureGate
@@ -86,6 +88,7 @@ func (b *Bootstrap) Run(destDir string) error {
 	var idmsRules []*apicfgv1.ImageDigestMirrorSet
 	var itmsRules []*apicfgv1.ImageTagMirrorSet
 	var imgCfg *apicfgv1.Image
+	var forceCgroupsV1 bool
 	for _, info := range infos {
 		if info.IsDir() {
 			continue
@@ -140,6 +143,9 @@ func (b *Bootstrap) Run(destDir string) error {
 				if obj.GetName() == ctrlcommon.ClusterNodeInstanceName {
 					nodeConfig = obj
 				}
+			case *peformancev2.PerformanceProfile:
+				// Force the cgroups v1 if performance profile is found in the manifests folder
+				forceCgroupsV1 = true
 			default:
 				klog.Infof("skipping %q [%d] manifest because of unhandled %T", file.Name(), idx+1, obji)
 			}
@@ -203,6 +209,9 @@ func (b *Bootstrap) Run(destDir string) error {
 		}
 	}
 	if nodeConfig != nil {
+		if forceCgroupsV1 {
+			nodeConfig.Spec.CgroupMode = apicfgv1.CgroupModeV1
+		}
 		nodeConfigs, err := kubeletconfig.RunNodeConfigBootstrap(b.templatesDir, fgAccess, cconfig, nodeConfig, pools)
 		if err != nil {
 			return err
