@@ -1,0 +1,27 @@
+apiVersion: migration.k8s.io/v1alpha1
+kind: StorageVersionMigration
+metadata:
+  name: machineconfiguration-controllerconfig-storage-version-migration
+  annotations: 
+    include.release.openshift.io/ibm-cloud-managed: "true"
+    include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-developer: "true"
+spec:
+  resource:
+    group:  machineconfiguration.openshift.io
+    version: v1
+    resource: controllerconfigs
+---
+apiVersion: migration.k8s.io/v1alpha1
+kind: StorageVersionMigration
+metadata:
+  name: machineconfiguration-machineconfigpool-storage-version-migration
+  annotations: 
+    include.release.openshift.io/ibm-cloud-managed: "true"
+    include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-developer: "true"
+spec:
+  resource:
+    group:  machineconfiguration.openshift.io
+    version: v1
+    resource: machineconfigpools
