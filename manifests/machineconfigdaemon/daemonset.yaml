@@ -25,6 +25,7 @@ spec:
         args:
           - "start"
           - "--payload-version={{.ReleaseVersion}}"
+          - "--v=8"
         resources:
           requests:
             cpu: 20m
