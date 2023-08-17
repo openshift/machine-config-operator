@@ -168,12 +168,6 @@ type ControllerCertificate struct {
 	// signer is the  cert Issuer
 	Signer string `json:"signer"`
 
-	// notBefore is the lower boundary for validity
-	NotBefore string `json:"notBefore"`
-
-	// notAfter is the upper boundary for validity
-	NotAfter string `json:"notAfter"`
-
 	// bundleFile is the larger bundle a cert comes from
 	BundleFile string `json:"bundleFile"`
 }
@@ -349,7 +343,6 @@ type MachineConfigPoolStatus struct {
 type CertExpiry struct {
 	Bundle  string `json:"bundle"`
 	Subject string `json:"subject"`
-	Expiry  string `json:"expiry"`
 }
 
 // MachineConfigPoolStatusConfiguration stores the current configuration for the pool, and
