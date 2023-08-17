@@ -222,7 +222,7 @@ func rpmOstreeVersion() (*VersionData, error) {
 	return &q.Root, nil
 }
 
-func RpmOstreeIsNewEnoughForLayering() (bool, error) {
+func (r *RpmOstreeClient) IsNewEnoughForLayering() (bool, error) {
 	verdata, err := rpmOstreeVersion()
 	if err != nil {
 		return false, err

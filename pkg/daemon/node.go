@@ -28,10 +28,18 @@ func (dn *Daemon) loadNodeAnnotations(node *corev1.Node) (*corev1.Node, error) {
 	}
 	if os.IsNotExist(err) {
 		// try currentConfig if, for whatever reason we lost annotations? this is super best effort.
-		currentOnDisk, err := dn.getCurrentConfigOnDisk()
+		odc, err := dn.getCurrentConfigOnDisk()
 		if err == nil {
-			klog.Infof("Setting initial node config based on current configuration on disk: %s", currentOnDisk.GetName())
-			return dn.nodeWriter.SetAnnotations(map[string]string{constants.CurrentMachineConfigAnnotationKey: currentOnDisk.GetName()})
+			klog.Infof("Setting initial node config based on current configuration on disk: %s", odc.currentConfig.GetName())
+			annos := map[string]string{
+				constants.CurrentMachineConfigAnnotationKey: odc.currentConfig.GetName(),
+			}
+
+			if odc.currentImage != "" {
+				annos[constants.CurrentImageAnnotationKey] = odc.currentImage
+			}
+
+			return dn.nodeWriter.SetAnnotations(annos)
 		}
 		return nil, err
 	}

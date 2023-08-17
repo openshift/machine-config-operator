@@ -9,6 +9,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strconv"
 	"testing"
 	"time"
@@ -809,6 +810,10 @@ func TestRunGetOut(t *testing.T) {
 // TestOriginalFileBackupRestore tests backikg up and restoring original files (files that are present in the base image and
 // get overwritten by a machine configuration)
 func TestOriginalFileBackupRestore(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skipf("Non-Linux OS %q detected, skipping test", runtime.GOOS)
+	}
+
 	testDir, cleanup := setupTempDirWithEtc(t)
 	defer cleanup()
 
