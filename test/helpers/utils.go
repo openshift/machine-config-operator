@@ -16,6 +16,7 @@ import (
 	"time"
 
 	authenticationv1 "k8s.io/api/authentication/v1"
+	aggerrs "k8s.io/apimachinery/pkg/util/errors"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	"github.com/davecgh/go-spew/spew"
@@ -262,6 +263,51 @@ func WaitForPoolComplete(t *testing.T, cs *framework.ClientSet, pool, target str
 	return nil
 }
 
+// Waits for both the node image and config to change.
+func WaitForNodeConfigAndImageChange(t *testing.T, cs *framework.ClientSet, node corev1.Node, mcName, image string) error {
+	startTime := time.Now()
+	ctx := context.TODO()
+
+	err := wait.PollUntilContextTimeout(ctx, 2*time.Second, 20*time.Minute, true, func(ctx context.Context) (bool, error) {
+		n, err := cs.CoreV1Interface.Nodes().Get(ctx, node.Name, metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+
+		return hasNodeConfigChanged(*n, mcName) && hasNodeImageChanged(*n, image), nil
+	})
+
+	if err != nil {
+		return fmt.Errorf("node config / image change did not occur (waited %v): %w", time.Since(startTime), err)
+	}
+
+	t.Logf("Node %s changed config to %s and changed image to %s (waited %v)", node.Name, mcName, image, time.Since(startTime))
+	return nil
+}
+
+// Waits for a node image to change.
+func WaitForNodeImageChange(t *testing.T, cs *framework.ClientSet, node corev1.Node, image string) error {
+	startTime := time.Now()
+	ctx := context.TODO()
+
+	err := wait.PollUntilContextTimeout(ctx, 2*time.Second, 20*time.Minute, true, func(ctx context.Context) (bool, error) {
+		n, err := cs.CoreV1Interface.Nodes().Get(ctx, node.Name, metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+
+		return hasNodeImageChanged(*n, image), nil
+	})
+
+	if err != nil {
+		return fmt.Errorf("node image change did not occur (waited %v): %w", time.Since(startTime), err)
+	}
+
+	t.Logf("Node %s changed image to %s (waited %v)", node.Name, image, time.Since(startTime))
+	return nil
+}
+
+// Waits for a node config to change.
 func WaitForNodeConfigChange(t *testing.T, cs *framework.ClientSet, node corev1.Node, mcName string) error {
 	startTime := time.Now()
 	ctx := context.TODO()
@@ -272,12 +318,7 @@ func WaitForNodeConfigChange(t *testing.T, cs *framework.ClientSet, node corev1.
 			return false, err
 		}
 
-		current := n.Annotations[constants.CurrentMachineConfigAnnotationKey]
-		desired := n.Annotations[constants.DesiredMachineConfigAnnotationKey]
-
-		state := n.Annotations[constants.MachineConfigDaemonStateAnnotationKey]
-
-		return current == desired && desired == mcName && state == constants.MachineConfigDaemonStateDone, nil
+		return hasNodeConfigChanged(*n, mcName), nil
 	})
 
 	if err != nil {
@@ -286,6 +327,26 @@ func WaitForNodeConfigChange(t *testing.T, cs *framework.ClientSet, node corev1.
 
 	t.Logf("Node %s changed config to %s (waited %v)", node.Name, mcName, time.Since(startTime))
 	return nil
+}
+
+// Determines whether a node has changed configs.
+func hasNodeConfigChanged(node corev1.Node, mcName string) bool {
+	current := node.Annotations[constants.CurrentMachineConfigAnnotationKey]
+	desired := node.Annotations[constants.DesiredMachineConfigAnnotationKey]
+
+	state := node.Annotations[constants.MachineConfigDaemonStateAnnotationKey]
+
+	return current == desired && desired == mcName && state == constants.MachineConfigDaemonStateDone
+}
+
+// Determines whether a node has changed images.
+func hasNodeImageChanged(node corev1.Node, image string) bool {
+	current := node.Annotations[constants.CurrentImageAnnotationKey]
+	desired := node.Annotations[constants.DesiredImageAnnotationKey]
+
+	state := node.Annotations[constants.MachineConfigDaemonStateAnnotationKey]
+
+	return current == desired && desired == image && state == constants.MachineConfigDaemonStateDone
 }
 
 // WaitForPoolComplete polls a pool until it has completed any update
@@ -1016,4 +1077,22 @@ func dumpPool(pool *mcfgv1.MachineConfigPool, silentNil bool) string {
 	}
 
 	return sb.String()
+}
+
+// Deletes the node and machine objects from a cluster. This is intended to
+// quickly remedy situations where a node degrades a MachineConfigPool and
+// undoing it is very difficult. In IPI clusters in AWS, GCP, Azure, et. al.,
+// the Machine API will provision a replacement node. For example, the
+// e2e-layering tests cannot cleanly undo layering at this time, so we destroy
+// the node / machine.
+func DeleteNodeAndMachine(t *testing.T, node corev1.Node) {
+	machineAPINamespace := "openshift-machine-api"
+	machineID := strings.ReplaceAll(node.Annotations["machine.openshift.io/machine"], machineAPINamespace+"/", "")
+
+	deleteMachineCmd := exec.Command("oc", "delete", "--wait=false", fmt.Sprintf("machine/%s", machineID), "-n", machineAPINamespace)
+
+	deleteNodeCmd := exec.Command("oc", "delete", "--wait=false", fmt.Sprintf("node/%s", node.Name))
+
+	t.Logf("Deleting machine %s / node %s", machineID, node.Name)
+	require.NoError(t, aggerrs.AggregateGoroutines(deleteMachineCmd.Run, deleteNodeCmd.Run))
 }
