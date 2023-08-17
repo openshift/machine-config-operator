@@ -1262,7 +1262,6 @@ func TestCertStatus(t *testing.T) {
 
 	cc.Status.ControllerCertificates = append(cc.Status.ControllerCertificates, mcfgv1.ControllerCertificate{
 		BundleFile: "KubeAPIServerServingCAData",
-		NotAfter:   time.Now().String(),
 	})
 
 	mcp := helpers.NewMachineConfigPool("test-cluster-infra", nil, helpers.InfraSelector, "v1")
