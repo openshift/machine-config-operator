@@ -442,6 +442,25 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		klog.Info("Changes do not require drain, skipping.")
 	}
 
+	if dn.os.IsCoreOSVariant() {
+		coreOSDaemon := CoreOSDaemon{dn}
+		if err := coreOSDaemon.applyOSChanges(*diff, oldConfig, newConfig); err != nil {
+			return err
+		}
+
+		defer func() {
+			if retErr != nil {
+				if err := coreOSDaemon.applyOSChanges(*diff, newConfig, oldConfig); err != nil {
+					errs := kubeErrs.NewAggregate([]error{err, retErr})
+					retErr = fmt.Errorf("error rolling back changes to OS: %w", errs)
+					return
+				}
+			}
+		}()
+	} else {
+		klog.Info("updating the OS on non-CoreOS nodes is not supported")
+	}
+
 	// update files on disk that need updating
 	if err := dn.updateFiles(oldIgnConfig, newIgnConfig, skipCertificateWrite); err != nil {
 		return err
@@ -494,25 +513,6 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 			}
 		}
 	}()
-
-	if dn.os.IsCoreOSVariant() {
-		coreOSDaemon := CoreOSDaemon{dn}
-		if err := coreOSDaemon.applyOSChanges(*diff, oldConfig, newConfig); err != nil {
-			return err
-		}
-
-		defer func() {
-			if retErr != nil {
-				if err := coreOSDaemon.applyOSChanges(*diff, newConfig, oldConfig); err != nil {
-					errs := kubeErrs.NewAggregate([]error{err, retErr})
-					retErr = fmt.Errorf("error rolling back changes to OS: %w", errs)
-					return
-				}
-			}
-		}()
-	} else {
-		klog.Info("updating the OS on non-CoreOS nodes is not supported")
-	}
 
 	// Ideally we would want to update kernelArguments only via MachineConfigs.
 	// We are keeping this to maintain compatibility and OKD requirement.
