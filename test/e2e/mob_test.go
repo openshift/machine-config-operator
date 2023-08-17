@@ -2,18 +2,63 @@ package e2e_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/openshift/machine-config-operator/test/helpers"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/openshift/machine-config-operator/pkg/controller/build"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	corev1 "k8s.io/api/core/v1"
+	apierrs "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
 )
+
+func createConfigMapForTest(t *testing.T, cs *framework.ClientSet) func() {
+	secrets, err := cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace).List(context.TODO(), metav1.ListOptions{})
+	require.NoError(t, err)
+	secretName := ""
+	for _, secret := range secrets.Items {
+		if strings.HasPrefix(secret.Name, "builder-dockercfg") {
+			secretName = secret.Name
+			break
+		}
+	}
+
+	t.Logf("Using secret name %q for test", secretName)
+
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      build.OnClusterBuildConfigMapName,
+			Namespace: ctrlcommon.MCONamespace,
+		},
+		Data: map[string]string{
+			build.BaseImagePullSecretNameConfigKey:  secretName,
+			build.FinalImagePushSecretNameConfigKey: secretName,
+			build.FinalImagePullspecConfigKey:       "registry.host.com/org/repo:tag",
+		},
+	}
+
+	_, err = cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace).Create(context.TODO(), cm, metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	t.Logf("ConfigMap %q created for test", cm.Name)
+
+	cleanup := helpers.MakeIdempotent(func() {
+		err := cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace).Delete(context.TODO(), cm.Name, metav1.DeleteOptions{})
+		require.NoError(t, err)
+		t.Logf("ConfigMap %q deleted", cm.Name)
+	})
+
+	t.Cleanup(cleanup)
+	return cleanup
+}
 
 func TestMachineOSBuilder(t *testing.T) {
 	//add an assertion to see if deployment object is present or absent
@@ -24,12 +69,14 @@ func TestMachineOSBuilder(t *testing.T) {
 	namespace := "openshift-machine-config-operator"
 	mobPodNamePrefix := "machine-os-builder"
 
-	cleanup := helpers.CreateMCP(t, cs, mcpName)
+	t.Cleanup(createConfigMapForTest(t, cs))
+
+	cleanup := helpers.MakeIdempotent(helpers.CreateMCP(t, cs, mcpName))
+	t.Cleanup(cleanup)
 	time.Sleep(10 * time.Second) // Wait a bit to ensure MCP is fully created
 
 	// added retry because another process was modifying the MCP concurrently
 	retryErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-
 		// Get the latest MCP
 		mcp, err := cs.MachineConfigPools().Get(context.TODO(), mcpName, metav1.GetOptions{})
 		if err != nil {
@@ -56,6 +103,7 @@ func TestMachineOSBuilder(t *testing.T) {
 	// wait for Machine OS Builder pod to start
 	err = helpers.WaitForPodStart(cs, mobPodNamePrefix, namespace)
 	require.NoError(t, err, "Failed to start the Machine OS Builder pod")
+	t.Logf("machine-os-builder deployment exists")
 
 	// delete the MachineConfigPool
 	cleanup()
@@ -71,4 +119,8 @@ func TestMachineOSBuilder(t *testing.T) {
 	// wait for Machine OS Builder pod to stop
 	err = helpers.WaitForPodStop(cs, mobPodNamePrefix, namespace)
 	require.NoError(t, err, "Failed to stop the Machine OS Builder pod")
+	t.Logf("machine-os-builder deployment no longer exists")
+
+	_, err = cs.AppsV1Interface.Deployments(ctrlcommon.MCONamespace).Get(context.TODO(), "machine-os-builder", metav1.GetOptions{})
+	assert.True(t, apierrs.IsNotFound(err), "machine-os-builder deployment still present")
 }

@@ -39,6 +39,7 @@ import (
 	"github.com/openshift/machine-config-operator/manifests"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	v1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	"github.com/openshift/machine-config-operator/pkg/controller/build"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	templatectrl "github.com/openshift/machine-config-operator/pkg/controller/template"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
@@ -923,6 +924,10 @@ func (optr *Operator) hasCorrectReplicaCount(mob *appsv1.Deployment) bool {
 }
 
 func (optr *Operator) updateMachineOSBuilderDeployment(mob *appsv1.Deployment, replicas int32) error {
+	if err := build.ValidateOnClusterBuildConfig(optr.kubeClient); err != nil {
+		return fmt.Errorf("could not update Machine OS Builder deployment: %w", err)
+	}
+
 	_, updated, err := mcoResourceApply.ApplyDeployment(optr.kubeClient.AppsV1(), mob)
 	if err != nil {
 		return fmt.Errorf("could not apply Machine OS Builder deployment: %w", err)
@@ -964,6 +969,10 @@ func (optr *Operator) isMachineOSBuilderRunning(mob *appsv1.Deployment) (bool, e
 
 // Updates the Machine OS Builder Deployment, creating it if it does not exist.
 func (optr *Operator) startMachineOSBuilderDeployment(mob *appsv1.Deployment) error {
+	if err := build.ValidateOnClusterBuildConfig(optr.kubeClient); err != nil {
+		return fmt.Errorf("could not start Machine OS Builder: %w", err)
+	}
+
 	// start machine os builder deployment
 	_, updated, err := mcoResourceApply.ApplyDeployment(optr.kubeClient.AppsV1(), mob)
 	if err != nil {

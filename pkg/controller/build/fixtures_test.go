@@ -53,13 +53,13 @@ func getOSImageURLConfigMap() *corev1.ConfigMap {
 func getOnClusterBuildConfigMap() *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      onClusterBuildConfigMapName,
+			Name:      OnClusterBuildConfigMapName,
 			Namespace: ctrlcommon.MCONamespace,
 		},
 		Data: map[string]string{
-			baseImagePullSecretNameConfigKey:  "base-image-pull-secret",
-			finalImagePushSecretNameConfigKey: "final-image-push-secret",
-			finalImagePullspecConfigKey:       expectedImagePullspecWithTag,
+			BaseImagePullSecretNameConfigKey:  "base-image-pull-secret",
+			FinalImagePushSecretNameConfigKey: "final-image-push-secret",
+			FinalImagePullspecConfigKey:       expectedImagePullspecWithTag,
 		},
 	}
 }
