@@ -75,9 +75,9 @@ func newImageBuildRequest(pool *mcfgv1.MachineConfigPool) ImageBuildRequest {
 // Populates the final image info from the on-cluster-build-config ConfigMap.
 func newFinalImageInfo(inputs *buildInputs) ImageInfo {
 	return ImageInfo{
-		Pullspec: inputs.onClusterBuildConfig.Data[finalImagePullspecConfigKey],
+		Pullspec: inputs.onClusterBuildConfig.Data[FinalImagePullspecConfigKey],
 		PullSecret: corev1.LocalObjectReference{
-			Name: inputs.onClusterBuildConfig.Data[finalImagePushSecretNameConfigKey],
+			Name: inputs.onClusterBuildConfig.Data[FinalImagePushSecretNameConfigKey],
 		},
 	}
 }
@@ -88,7 +88,7 @@ func newBaseImageInfo(inputs *buildInputs) ImageInfo {
 	return ImageInfo{
 		Pullspec: inputs.osImageURL.Data[baseOSContainerImageConfigKey],
 		PullSecret: corev1.LocalObjectReference{
-			Name: inputs.onClusterBuildConfig.Data[baseImagePullSecretNameConfigKey],
+			Name: inputs.onClusterBuildConfig.Data[BaseImagePullSecretNameConfigKey],
 		},
 	}
 }
@@ -99,7 +99,7 @@ func newExtensionsImageInfo(inputs *buildInputs) ImageInfo {
 	return ImageInfo{
 		Pullspec: inputs.osImageURL.Data[baseOSExtensionsContainerImageConfigKey],
 		PullSecret: corev1.LocalObjectReference{
-			Name: inputs.onClusterBuildConfig.Data[baseImagePullSecretNameConfigKey],
+			Name: inputs.onClusterBuildConfig.Data[BaseImagePullSecretNameConfigKey],
 		},
 	}
 }
