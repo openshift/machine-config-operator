@@ -13,6 +13,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/clarketm/json"
@@ -1536,9 +1537,11 @@ func createSSHKeyDir(authKeyDir string) error {
 		return exec.Command("runuser", "-u", constants.CoreUserName, "--", "mkdir", "-m", "0700", "-p", dir).Run()
 	}
 
-	// Create the root SSH key directory (/home/core/.ssh) first.
-	if err := mkdir(filepath.Dir(constants.RHCOS8SSHKeyPath)); err != nil {
-		return err
+	// Create the root SSH key directory (/home/core/.ssh) first (if there does not exist one).
+	if _, err := os.Stat(constants.CoreUserSSHPath); os.IsNotExist(err) {
+		if err := mkdir(filepath.Dir(constants.RHCOS8SSHKeyPath)); err != nil {
+			return err
+		}
 	}
 
 	// For RHCOS 8, creating /home/core/.ssh is all that is needed.
@@ -1564,6 +1567,25 @@ func (dn *Daemon) atomicallyWriteSSHKey(authKeyPath, keys string) error {
 	// Keys should only be written to "/home/core/.ssh"
 	// Once Users are supported fully this should be writing to PasswdUser.HomeDir
 	klog.Infof("Writing SSH keys to %q", authKeyPath)
+
+	// Check the existence of the /home/core/.ssh dir before creating a new one
+	// via runuser core by hand. Delete if the dir is created under the wrong
+	// user (root), and let the MCD recreate it.
+	// Serve as a workaround for https://issues.redhat.com/browse/OCPBUGS-11832
+	if dirInfo, err := os.Stat(constants.CoreUserSSHPath); err == nil {
+		uid := dirInfo.Sys().(*syscall.Stat_t).Uid
+		if userInfo, err := user.LookupId(fmt.Sprint(uid)); err == nil {
+			if userInfo.Username != constants.CoreUserName {
+				if err := os.RemoveAll(constants.CoreUserSSHPath); err != nil {
+					return fmt.Errorf("Failed to remove existing root user owned .ssh path %s:%w", constants.CoreUserSSHPath, err)
+				}
+			}
+		} else {
+			return fmt.Errorf("Failed to look up the user of the .ssh path %s:%w", constants.CoreUserSSHPath, err)
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
 
 	// Creating CoreUserSSHPath in advance if it doesn't exist in order to ensure it is owned by core user
 	// See https://bugzilla.redhat.com/show_bug.cgi?id=2107113
