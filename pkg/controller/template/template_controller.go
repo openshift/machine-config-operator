@@ -504,8 +504,6 @@ func createNewCert(cert []byte, name string) []v1.ControllerCertificate {
 		certs = append(certs, v1.ControllerCertificate{
 			Subject:    c.Subject.String(),
 			Signer:     c.Issuer.String(),
-			NotBefore:  c.NotBefore.String(),
-			NotAfter:   c.NotAfter.String(),
 			BundleFile: name,
 		})
 	}

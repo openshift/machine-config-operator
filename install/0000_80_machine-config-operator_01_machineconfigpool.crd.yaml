@@ -440,6 +440,3 @@ spec:
                     subject:
                       description: the subject of the cert
                       type: string
-                    expiry:
-                      description: the date when the cert expires
-                      type: string 
