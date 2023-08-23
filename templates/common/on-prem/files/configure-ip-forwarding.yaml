@@ -4,14 +4,14 @@ contents:
   inline: |
     #!/bin/bash
     set -ex
-    
+
     # Used for on-prem deployments to enable ip forwarding as part of nodeip-configuration service.
     # IP forwarding is required on the node IP (k8s API) interface in order for keepalived to function.
-    
+
     echo "Configuring IP Forwarding..."
     ovnk_config_dir='/etc/ovnk'
     ip_hint_file="/run/nodeip-configuration/primary-ip"
-    
+
     get_ip_from_ip_hint_file() {
       local ip_hint_file="$1"
       if [[ ! -f "${ip_hint_file}" ]]; then
@@ -21,7 +21,7 @@ contents:
       ip_hint=$(cat "${ip_hint_file}")
       echo "${ip_hint}"
     }
-    
+
     get_nodeip_hint_interface() {
       local ip_hint=""
       local ip_hint_file="$1"
@@ -40,9 +40,9 @@ contents:
       fi
       echo "${iface}"
     }
-    
+
     iface=$(get_nodeip_hint_interface "${ip_hint_file}")
-    
+
     echo "Node IP interface determined as: ${iface}. Enabling IP forwarding..."
-    sysctl -w net.ipv4.conf.${iface}.forwarding=1
-    sysctl -w net.ipv6.conf.${iface}.forwarding=1
+    echo "1" > /proc/sys/net/ipv4/conf/"${iface}"/forwarding
+    echo "1" > /proc/sys/net/ipv6/conf/"${iface}"/forwarding
