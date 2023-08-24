@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -65,35 +64,7 @@ func runRpmOstree(args ...string) error {
 	return runCmdSync("rpm-ostree", args...)
 }
 
-// See https://bugzilla.redhat.com/show_bug.cgi?id=2111817
-func bug2111817Workaround() error {
-	targetUnit := "/run/systemd/system/rpm-ostreed.service.d/bug2111817.conf"
-	// Do nothing if the file exists
-	if _, err := os.Stat(targetUnit); err == nil {
-		return nil
-	}
-	err := os.MkdirAll(filepath.Dir(targetUnit), 0o755)
-	if err != nil {
-		return err
-	}
-	dropin := `[Service]
-InaccessiblePaths=
-`
-	if err := writeFileAtomicallyWithDefaults(targetUnit, []byte(dropin)); err != nil {
-		return err
-	}
-	if err := runCmdSync("systemctl", "daemon-reload"); err != nil {
-		return err
-	}
-	klog.Infof("Enabled workaround for bug 2111817")
-	return nil
-}
-
 func (r *RpmOstreeClient) Initialize() error {
-	if err := bug2111817Workaround(); err != nil {
-		return err
-	}
-
 	// Commands like update and rebase need the pull secrets to pull images and manifests,
 	// make sure we get access to them when we Initialize
 
