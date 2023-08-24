@@ -561,8 +561,6 @@ func generateRenderedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mc
 
 	if cconfig.Spec.BaseOSContainerImage == "" {
 		klog.Warningf("No BaseOSContainerImage set")
-	} else {
-		klog.Infof("BaseOSContainerImage=%s", cconfig.Spec.BaseOSContainerImage)
 	}
 
 	// Before merging all MCs for a specific pool, let's make sure MachineConfigs are valid
