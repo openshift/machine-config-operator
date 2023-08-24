@@ -25,7 +25,6 @@ contents:
     serializeImagePulls: false
     staticPodPath: /etc/kubernetes/manifests
     systemCgroups: /system.slice
-    nodeStatusUpdateFrequency: 10s
     featureGates:
       AlibabaPlatform: true
       OpenShiftPodSecurityAdmission: true
