@@ -283,12 +283,14 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 		if err != nil {
 			klog.Warningf("could not find configmap specified in image.config.openshift.io/cluster with the name %s", cfg.Spec.AdditionalTrustedCA.Name)
 		} else {
-			for key, d := range cm.Data {
-				raw, err := base64.StdEncoding.DecodeString(d)
+			newKeys := sets.StringKeySet(cm.Data).List()
+			newBinaryKeys := sets.StringKeySet(cm.BinaryData).List()
+			for _, key := range newKeys {
+				raw, err := base64.StdEncoding.DecodeString(cm.Data[key])
 				if err != nil {
 					imgRegistryUsrData = append(imgRegistryUsrData, v1.ImageRegistryBundle{
 						File: key,
-						Data: []byte(d),
+						Data: []byte(cm.Data[key]),
 					})
 				} else {
 					imgRegistryUsrData = append(imgRegistryUsrData, v1.ImageRegistryBundle{
@@ -297,10 +299,10 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 					})
 				}
 			}
-			for key, bd := range cm.BinaryData {
+			for _, key := range newBinaryKeys {
 				imgRegistryUsrData = append(imgRegistryUsrData, v1.ImageRegistryBundle{
 					File: key,
-					Data: bd,
+					Data: cm.BinaryData[key],
 				})
 			}
 		}
@@ -309,12 +311,14 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 	imgRegistryData := []v1.ImageRegistryBundle{}
 	cm, err := optr.clusterCmLister.ConfigMaps("openshift-config-managed").Get("image-registry-ca")
 	if err == nil {
-		for key, d := range cm.Data {
-			raw, err := base64.StdEncoding.DecodeString(d)
+		newKeys := sets.StringKeySet(cm.Data).List()
+		newBinaryKeys := sets.StringKeySet(cm.BinaryData).List()
+		for _, key := range newKeys {
+			raw, err := base64.StdEncoding.DecodeString(cm.Data[key])
 			if err != nil {
 				imgRegistryData = append(imgRegistryData, v1.ImageRegistryBundle{
 					File: key,
-					Data: []byte(d),
+					Data: []byte(cm.Data[key]),
 				})
 			} else {
 				imgRegistryData = append(imgRegistryData, v1.ImageRegistryBundle{
@@ -323,10 +327,10 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 				})
 			}
 		}
-		for key, bd := range cm.BinaryData {
+		for _, key := range newBinaryKeys {
 			imgRegistryData = append(imgRegistryData, v1.ImageRegistryBundle{
 				File: key,
-				Data: bd,
+				Data: cm.BinaryData[key],
 			})
 		}
 	}
