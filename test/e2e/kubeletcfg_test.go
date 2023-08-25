@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
-	"strings"
 	"testing"
 	"time"
 
@@ -26,33 +25,12 @@ const (
 	kubeletPath = "/etc/kubernetes/kubelet.conf"
 )
 
-func TestKubeletConfigDefaultUpdateFreq(t *testing.T) {
-	autoSizing := false
-	resources := make(map[string]string)
-	matchLabels := make(map[string]string)
-	matchLabels["pools.operator.machineconfiguration.openshift.io/infra"] = ""
-	resources["cpu"] = "100m"
-	// this might get caught by the test below that says if default == current but that is ok since we want to make sure nodeStatusUpdateFrequency is 10s
-	kcRaw1, err := kcfg.EncodeKubeletConfig(&kubeletconfigv1beta1.KubeletConfiguration{}, kubeletconfigv1beta1.SchemeGroupVersion)
-	require.Nil(t, err, "failed to encode kubelet config")
-	kc1 := &mcfgv1.KubeletConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "test-100"},
-		Spec: mcfgv1.KubeletConfigSpec{
-			AutoSizingReserved: &autoSizing,
-			KubeletConfig: &runtime.RawExtension{
-				Raw: kcRaw1,
-			}, MachineConfigPoolSelector: &metav1.LabelSelector{MatchLabels: matchLabels},
-		},
-	}
-
-	runTestWithKubeletCfg(t, "resources", []string{`"?nodeStatusUpdateFrequency"?: (\S+)`}, []string{"nodeStatusUpdateFrequency"}, [][]string{{"\"10s\","}}, kc1, nil)
-}
 func TestKubeletConfigMaxPods(t *testing.T) {
 	kcRaw1, err := kcfg.EncodeKubeletConfig(&kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, kubeletconfigv1beta1.SchemeGroupVersion)
 	require.Nil(t, err, "failed to encode kubelet config")
 	autoNodeSizing := true
 	kc1 := &mcfgv1.KubeletConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "test-101"},
+		ObjectMeta: metav1.ObjectMeta{Name: "test-100"},
 		Spec: mcfgv1.KubeletConfigSpec{
 			AutoSizingReserved: &autoNodeSizing,
 			KubeletConfig: &runtime.RawExtension{
@@ -71,7 +49,7 @@ func TestKubeletConfigMaxPods(t *testing.T) {
 		},
 	}
 
-	runTestWithKubeletCfg(t, "max-pods", []string{`"?maxPods"?: (\S+)`}, []string{"maxPods"}, [][]string{{"100,", "200,"}}, kc1, kc2)
+	runTestWithKubeletCfg(t, "max-pods", `"?maxPods"?: (\S+)`, "100,", "200,", kc1, kc2)
 }
 
 // runTestWithKubeletCfg creates a kubelet config and checks whether the expected updates were applied, then deletes the kubelet config and makes
@@ -80,14 +58,11 @@ func TestKubeletConfigMaxPods(t *testing.T) {
 // regex key is the searching critera in the kubelet.conf. It is expected that a single field is in a capture group, and this field
 // should equal expectedConfValue upon update
 // kc1 and kc2 are the kubelet configs to update to and rollback from
-func runTestWithKubeletCfg(t *testing.T, testName string, regexKey []string, stringKey []string, expectedConfVals [][]string, kc1, kc2 *mcfgv1.KubeletConfig) {
+func runTestWithKubeletCfg(t *testing.T, testName, regexKey, expectedConfVal1, expectedConfVal2 string, kc1, kc2 *mcfgv1.KubeletConfig) {
 	cs := framework.NewClientSet("")
 	matchValue := fmt.Sprintf("%s", testName)
 	kcName1 := fmt.Sprintf("kubelet-%s", kc1.GetName())
-	kcName2 := ""
-	if kc2 != nil {
-		kcName2 = fmt.Sprintf("kubelet-%s", kc2.GetName())
-	}
+	kcName2 := fmt.Sprintf("kubelet-%s", kc2.GetName())
 	poolName := fmt.Sprintf("node-%s", matchValue)
 	mcName := fmt.Sprintf("mc-%s", matchValue)
 
@@ -115,20 +90,10 @@ func runTestWithKubeletCfg(t *testing.T, testName string, regexKey []string, str
 	// cache the old configuration value to check against later
 	node := helpers.GetSingleNodeByRole(t, cs, poolName)
 	// the kubelet.conf format is yaml when in the default state and becomes a json when we apply a kubelet config CR
-	defaultConfVals := []string{}
-	for i, val := range regexKey {
-		if strings.Contains(val, "systemReserved") {
-			defaultConfVals = append(defaultConfVals, "")
-			continue
-		}
-		out, _ := getValueFromKubeletConfig(t, cs, node, val, stringKey[i], kubeletPath)
-		defaultConfVals = append(defaultConfVals, out)
-		for _, expect := range expectedConfVals[i] {
-			if defaultConfVals[i] == expect {
-				t.Logf("default configuration value %s same as values being tested against. Consider updating the test", defaultConfVals[i])
-				return
-			}
-		}
+	defaultConfVal := getValueFromKubeletConfig(t, cs, node, `"?maxPods"?: (\S+)`, kubeletPath) + ","
+	if defaultConfVal == expectedConfVal1 || defaultConfVal == expectedConfVal2 {
+		t.Logf("default configuration value %s same as values being tested against. Consider updating the test", defaultConfVal)
+		return
 	}
 
 	// create an MCP to match the node we tagged
@@ -152,76 +117,46 @@ func runTestWithKubeletCfg(t *testing.T, testName string, regexKey []string, str
 	// ensure the first kubelet config update rolls out to the pool
 	kc1Target := helpers.WaitForConfigAndPoolComplete(t, cs, poolName, kcMCName1)
 	// verify value was changed to match that of the first kubelet config
-	for i, val := range regexKey {
-		out, found := getValueFromKubeletConfig(t, cs, node, val, stringKey[i], kubeletPath)
-		if found {
-			require.Equal(t, out, expectedConfVals[i][0], "value in kubelet config not updated as expected")
-		} else { // sometimes it seems regexp does not work here
-			require.True(t, strings.Contains(out, expectedConfVals[i][0]))
-		}
-	}
-
+	firstConfValue := getValueFromKubeletConfig(t, cs, node, regexKey, kubeletPath)
+	require.Equal(t, firstConfValue, expectedConfVal1, "value in kubelet config not updated as expected")
 	// Get the new node object which should reflect new values for the allocatables
-	if *kc1.Spec.AutoSizingReserved {
-		refreshedNode := helpers.GetSingleNodeByRole(t, cs, poolName)
+	refreshedNode := helpers.GetSingleNodeByRole(t, cs, poolName)
 
-		// The value for the allocatable should have changed because of the auto node sizing.
-		// We cannot predict if the values of the allocatables will increase or decrease,
-		// as it depends on the configuration of the system under test.
-		require.NotEqual(t, refreshedNode.Status.Allocatable.Memory().Value(), node.Status.Allocatable.Memory().Value(), "value of the allocatable should have changed")
-	}
+	// The value for the allocatable should have changed because of the auto node sizing.
+	// We cannot predict if the values of the allocatables will increase or decrease,
+	// as it depends on the configuration of the system under test.
+	require.NotEqual(t, refreshedNode.Status.Allocatable.Memory().Value(), node.Status.Allocatable.Memory().Value(), "value of the allocatable should have changed")
 
-	if kc2 != nil {
-		// create our second kubelet config and attach it to our created node pool
-		cleanupKcFunc2 := createKcWithConfig(t, cs, kcName2, poolName, &kc2.Spec, "1")
-		// wait for the second kubelet config to show up
-		kcMCName2, err := getMCFromKubeletCfg(t, cs, kcName2)
-		require.Nil(t, err, "failed to render machine config from second container runtime config")
-		// ensure the second kubelet config update rolls out to the pool
-		helpers.WaitForConfigAndPoolComplete(t, cs, poolName, kcMCName2)
-		// verify value was changed to match that of the first kubelet config
-		for i, val := range regexKey {
-			out, found := getValueFromKubeletConfig(t, cs, node, val, stringKey[i], kubeletPath)
-			if found {
-				require.Equal(t, out, expectedConfVals[i][1], "value in kubelet config not updated as expected")
-			} else { // sometimes it seems regexp does not work here
-				require.True(t, strings.Contains(out, expectedConfVals[i][1]))
-			}
-		}
+	// create our second kubelet config and attach it to our created node pool
+	cleanupKcFunc2 := createKcWithConfig(t, cs, kcName2, poolName, &kc2.Spec, "1")
+	// wait for the second kubelet config to show up
+	kcMCName2, err := getMCFromKubeletCfg(t, cs, kcName2)
+	require.Nil(t, err, "failed to render machine config from second container runtime config")
+	// ensure the second kubelet config update rolls out to the pool
+	helpers.WaitForConfigAndPoolComplete(t, cs, poolName, kcMCName2)
+	// verify value was changed to match that of the first kubelet config
+	secondConfValue := getValueFromKubeletConfig(t, cs, node, regexKey, kubeletPath)
+	require.Equal(t, secondConfValue, expectedConfVal2, "value in kubelet config not updated as expected")
 
-		// cleanup the second kubelet config and make sure it doesn't error
-		err = cleanupKcFunc2()
-		require.Nil(t, err)
-		t.Logf("Deleted KubeletConfig %s", kcName2)
+	// cleanup the second kubelet config and make sure it doesn't error
+	err = cleanupKcFunc2()
+	require.Nil(t, err)
+	t.Logf("Deleted KubeletConfig %s", kcName2)
+	// ensure config rolls back to the previous kubelet config as expected
+	helpers.WaitForPoolComplete(t, cs, poolName, kc1Target)
+	// verify that the config value rolled back to that from the first kubelet config
+	rollbackConfValue := getValueFromKubeletConfig(t, cs, node, regexKey, kubeletPath)
+	require.Equal(t, rollbackConfValue, expectedConfVal1, "kubelet config deletion didn't cause node to roll back to previous kubelet config")
 
-		// ensure config rolls back to the previous kubelet config as expected
-		helpers.WaitForPoolComplete(t, cs, poolName, kc1Target)
-		// verify that the config value rolled back to that from the first kubelet config
-		for i, val := range regexKey {
-			out, found := getValueFromKubeletConfig(t, cs, node, val, stringKey[i], kubeletPath)
-			if found {
-				require.Equal(t, out, expectedConfVals[i][0], "value in kubelet config not updated as expected")
-			} else { // sometimes it seems regexp does not work here
-				require.True(t, strings.Contains(out, expectedConfVals[i][0]))
-			}
-		}
-
-		// cleanup the first kubelet config and make sure it doesn't error
-		err = cleanupKcFunc1()
-		require.Nil(t, err)
-		t.Logf("Deleted KubeletConfig %s", kcName1)
-		// ensure config rolls back as expected
-		helpers.WaitForPoolComplete(t, cs, poolName, defaultTarget)
-		// verify that the config value rolled back to the default value
-		for i, val := range regexKey {
-			out, found := getValueFromKubeletConfig(t, cs, node, val, stringKey[i], kubeletPath)
-			if found {
-				require.Equal(t, out, defaultConfVals[i], "value in kubelet config not updated as expected")
-			} else { // sometimes it seems regexp does not work here
-				require.True(t, strings.Contains(out, defaultConfVals[i]))
-			}
-		}
-	}
+	// cleanup the first kubelet config and make sure it doesn't error
+	err = cleanupKcFunc1()
+	require.Nil(t, err)
+	t.Logf("Deleted KubeletConfig %s", kcName1)
+	// ensure config rolls back as expected
+	helpers.WaitForPoolComplete(t, cs, poolName, defaultTarget)
+	// verify that the config value rolled back to the default value
+	restoredConfValue := getValueFromKubeletConfig(t, cs, node, `"?maxPods"?: (\S+)`, kubeletPath) + ","
+	require.Equal(t, restoredConfValue, defaultConfVal, "kubelet config deletion didn't cause node to roll back to default config")
 }
 
 // createKcWithConfig takes a config spec and creates a KubeletConfig object
@@ -286,20 +221,16 @@ func getMCFromKubeletCfg(t *testing.T, cs *framework.ClientSet, kcName string) (
 // getValueFromKubeletConfig jumps onto the node and gets the kubelet config. It then uses the regexKey to
 // find the value that is being searched for
 // regexKey is expected to be in the form `"key": (\S+)` to search for the value of key
-func getValueFromKubeletConfig(t *testing.T, cs *framework.ClientSet, node corev1.Node, regexKey, stringKey, confPath string) (string, bool) {
+func getValueFromKubeletConfig(t *testing.T, cs *framework.ClientSet, node corev1.Node, regexKey, confPath string) string {
 	// get the contents of the kubelet.conf on nodeName
 	out := helpers.ExecCmdOnNode(t, cs, node, "cat", filepath.Join("/rootfs", confPath))
-	t.Log(out)
 
 	// search based on the regex key. The output should have two members:
 	// one with the entire line `value = key` and one with just the key, in that order
 	re := regexp.MustCompile(regexKey)
 	matches := re.FindStringSubmatch(string(out))
-	if len(matches) != 2 && strings.Contains(string(out), stringKey) {
-		return string(out), false
-	}
-	require.Len(t, matches, 2, fmt.Sprintf("failed to get %s", regexKey))
+	require.Len(t, matches, 2)
 
 	require.NotEmpty(t, matches[1], "regex %s attempted on kubelet config of node %s came back empty", node.Name, regexKey)
-	return matches[1], true
+	return matches[1]
 }
