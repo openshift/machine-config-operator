@@ -545,7 +545,6 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 	modified := updateControllerConfigCerts(cfg)
 
 	if modified {
-		klog.Info("Detecting cert modification, syncing these changes to the true controllerConfig.")
 		if err := ctrl.syncCertificateStatus(cfg); err != nil {
 			return err
 		}
