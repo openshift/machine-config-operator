@@ -136,6 +136,7 @@ func (b *Bootstrap) Run(destDir string) error {
 			}
 		}
 	}
+	glog.Infof("Bootstrap manifests were successfully processed.")
 
 	if cconfig == nil {
 		return fmt.Errorf("error: no controllerconfig found in dir: %q", destDir)
@@ -144,12 +145,15 @@ func (b *Bootstrap) Run(destDir string) error {
 	if err != nil {
 		return err
 	}
+	glog.Infof("Successfully generated MachineConfigs from templates.")
+
 	configs = append(configs, iconfigs...)
 
 	rconfigs, err := containerruntimeconfig.RunImageBootstrap(b.templatesDir, cconfig, pools, icspRules, imgCfg)
 	if err != nil {
 		return err
 	}
+	glog.Infof("Successfully generated MachineConfigs from image configs.")
 
 	configs = append(configs, rconfigs...)
 
@@ -166,6 +170,8 @@ func (b *Bootstrap) Run(destDir string) error {
 		}
 		configs = append(configs, containerRuntimeConfigs...)
 	}
+	glog.Infof("Successfully generated MachineConfigs from containerruntime.")
+
 	if featureGate != nil {
 		featureConfigs, err := kubeletconfig.RunFeatureGateBootstrap(b.templatesDir, featureGate, nodeConfig, cconfig, pools)
 		if err != nil {
@@ -173,6 +179,7 @@ func (b *Bootstrap) Run(destDir string) error {
 		}
 		configs = append(configs, featureConfigs...)
 	}
+	glog.Infof("Successfully generated MachineConfigs from feature gates.")
 
 	if nodeConfig != nil {
 		nodeConfigs, err := kubeletconfig.RunNodeConfigBootstrap(b.templatesDir, featureGate, cconfig, nodeConfig, pools)
@@ -181,6 +188,8 @@ func (b *Bootstrap) Run(destDir string) error {
 		}
 		configs = append(configs, nodeConfigs...)
 	}
+	glog.Infof("Successfully generated MachineConfigs from node.Configs.")
+
 	if len(kconfigs) > 0 {
 		kconfigs, err := kubeletconfig.RunKubeletBootstrap(b.templatesDir, kconfigs, cconfig, featureGate, nodeConfig, pools)
 		if err != nil {
@@ -188,6 +197,7 @@ func (b *Bootstrap) Run(destDir string) error {
 		}
 		configs = append(configs, kconfigs...)
 	}
+	glog.Infof("Successfully generated MachineConfigs from kubelet configs.")
 
 	fpools, gconfigs, err := render.RunBootstrap(pools, configs, cconfig)
 	if err != nil {

@@ -17,10 +17,10 @@ spec:
     - "--pull-secret=/etc/mcc/bootstrap/machineconfigcontroller-pull-secret"
     resources:
       limits:
-        memory: 50Mi
+        memory: 200Mi
       requests:
         cpu: 20m
-        memory: 50Mi
+        memory: 200Mi
     securityContext:
       privileged: true
     terminationMessagePolicy: FallbackToLogsOnError
