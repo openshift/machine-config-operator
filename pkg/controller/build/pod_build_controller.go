@@ -12,7 +12,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	aggerrors "k8s.io/apimachinery/pkg/util/errors"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	coreclientsetv1 "k8s.io/client-go/kubernetes/typed/core/v1"
@@ -207,22 +206,10 @@ func (ctrl *PodBuildController) FinalPullspec(pool *mcfgv1.MachineConfigPool) (s
 	return parseImagePullspec(finalImageInfo.Pullspec, digestConfigMap.Data["digest"])
 }
 
-// Deletes the underlying build pod.
+// Deletes the underlying build pod which also deletes the digestfile ConfigMap (if it exists).
 func (ctrl *PodBuildController) DeleteBuildObject(pool *mcfgv1.MachineConfigPool) error {
-	// We want to ignore when a pod or ConfigMap is deleted if it is not found.
-	// This is because when a pool is opted out of layering *after* a successful
-	// build, no pod nor ConfigMap will remain. So we want to be able to
-	// idempotently call this function in that case.
-	return aggerrors.AggregateGoroutines(
-		func() error {
-			ibr := newImageBuildRequest(pool)
-			return ignoreIsNotFoundErr(ctrl.kubeclient.CoreV1().Pods(ctrlcommon.MCONamespace).Delete(context.TODO(), ibr.getBuildName(), metav1.DeleteOptions{}))
-		},
-		func() error {
-			ibr := newImageBuildRequest(pool)
-			return ignoreIsNotFoundErr(ctrl.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Delete(context.TODO(), ibr.getDigestConfigMapName(), metav1.DeleteOptions{}))
-		},
-	)
+	ibr := newImageBuildRequest(pool)
+	return ctrl.kubeclient.CoreV1().Pods(ctrlcommon.MCONamespace).Delete(context.TODO(), ibr.getBuildName(), metav1.DeleteOptions{})
 }
 
 // Determines if a build is currently running by looking for a corresponding pod.
@@ -270,7 +257,17 @@ func (ctrl *PodBuildController) StartBuild(ibr ImageBuildRequest) (*corev1.Objec
 
 	klog.Infof("Build started for pool %s in %s!", ibr.Pool.Name, pod.Name)
 
+	if err := setOwnerRefOnConfigMaps(ctrl.kubeclient, ibr, ctrl.getPodOwnerRefs(pod)); err != nil {
+		return nil, err
+	}
+
 	return toObjectRef(pod), nil
+}
+
+func (ctrl *PodBuildController) getPodOwnerRefs(pod *corev1.Pod) []metav1.OwnerReference {
+	podKind := corev1.SchemeGroupVersion.WithKind("Pod")
+	oref := metav1.NewControllerRef(pod, podKind)
+	return []metav1.OwnerReference{*oref}
 }
 
 // Fires whenever a new pod is started.
@@ -354,4 +351,16 @@ func (ctrl *PodBuildController) processNextWorkItem() bool {
 	ctrl.handleErr(err, key)
 
 	return true
+}
+
+func getDigestfileNameFromBuildPodSpec(pod *corev1.Pod) string {
+	for _, container := range pod.Spec.Containers {
+		for _, envVar := range container.Env {
+			if envVar.Name == "DIGEST_CONFIGMAP_NAME" {
+				return envVar.Value
+			}
+		}
+	}
+
+	return ""
 }

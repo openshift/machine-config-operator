@@ -200,7 +200,7 @@ func (i ImageBuildRequest) toBuild() *buildv1.Build {
 	// override it via a ConfigMap.
 	dockerfile := "FROM scratch"
 
-	return &buildv1.Build{
+	build := &buildv1.Build{
 		TypeMeta:   metav1.TypeMeta{},
 		ObjectMeta: i.getObjectMeta(i.getBuildName()),
 		Spec: buildv1.BuildSpec{
@@ -248,6 +248,10 @@ func (i ImageBuildRequest) toBuild() *buildv1.Build {
 			},
 		},
 	}
+
+	build.SetOwnerReferences(i.getPoolOwnerRefs())
+
+	return build
 }
 
 // Creates a custom image build pod to build the final OS image with all
@@ -434,7 +438,11 @@ func (i ImageBuildRequest) toPodmanPod() *corev1.Pod {
 func (i ImageBuildRequest) toBuildahPod() *corev1.Pod {
 	env := []corev1.EnvVar{
 		{
-			Name:  "DIGEST_CONFIGMAP_NAME",
+			Name:  "DIGESTFILE_CONFIGMAP_PATH",
+			Value: "/tmp/done/digestfile.yaml",
+		},
+		{
+			Name:  "DIGESTFILE_CONFIGMAP_NAME",
 			Value: i.getDigestConfigMapName(),
 		},
 		{
@@ -452,6 +460,22 @@ func (i ImageBuildRequest) toBuildahPod() *corev1.Pod {
 		{
 			Name:  "FINAL_IMAGE_PUSH_CREDS",
 			Value: "/tmp/final-image-push-creds/config.json",
+		},
+		{
+			Name: "BUILD_POD_NAME",
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{
+					FieldPath: "metadata.name",
+				},
+			},
+		},
+		{
+			Name: "BUILD_POD_UID",
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{
+					FieldPath: "metadata.uid",
+				},
+			},
 		},
 	}
 
@@ -493,7 +517,7 @@ func (i ImageBuildRequest) toBuildahPod() *corev1.Pod {
 	// pull-secret creds from openshift-config to do that, though we'll need to
 	// mirror those creds into the MCO namespace. The operator portion of the MCO
 	// has some logic to detect whenever that secret changes.
-	return &corev1.Pod{
+	pod := &corev1.Pod{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "v1",
 			Kind:       "Pod",
@@ -597,11 +621,15 @@ func (i ImageBuildRequest) toBuildahPod() *corev1.Pod {
 			},
 		},
 	}
+
+	pod.SetOwnerReferences(i.getPoolOwnerRefs())
+
+	return pod
 }
 
 // Constructs a common metav1.ObjectMeta object with the namespace, labels, and annotations set.
 func (i ImageBuildRequest) getObjectMeta(name string) metav1.ObjectMeta {
-	return metav1.ObjectMeta{
+	om := metav1.ObjectMeta{
 		Name:      name,
 		Namespace: ctrlcommon.MCONamespace,
 		Labels: map[string]string{
@@ -613,6 +641,14 @@ func (i ImageBuildRequest) getObjectMeta(name string) metav1.ObjectMeta {
 			mcPoolAnnotation: "",
 		},
 	}
+
+	return om
+}
+
+func (i ImageBuildRequest) getPoolOwnerRefs() []metav1.OwnerReference {
+	poolKind := mcfgv1.SchemeGroupVersion.WithKind("MachineConfigPool")
+	oref := metav1.NewControllerRef(i.Pool, poolKind)
+	return []metav1.OwnerReference{*oref}
 }
 
 // Computes the Dockerfile ConfigMap name based upon the MachineConfigPool name.

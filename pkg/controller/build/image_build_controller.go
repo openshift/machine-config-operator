@@ -259,7 +259,17 @@ func (ctrl *ImageBuildController) StartBuild(ibr ImageBuildRequest) (*corev1.Obj
 
 	klog.Infof("Build started for pool %s in %s!", ibr.Pool.Name, build.Name)
 
+	if err := setOwnerRefOnConfigMaps(ctrl.kubeclient, ibr, ctrl.getBuildOwnerRefs(build)); err != nil {
+		return nil, err
+	}
+
 	return toObjectRef(build), nil
+}
+
+func (ctrl *ImageBuildController) getBuildOwnerRefs(build *buildv1.Build) []metav1.OwnerReference {
+	buildKind := buildv1.SchemeGroupVersion.WithKind("Build")
+	oref := metav1.NewControllerRef(build, buildKind)
+	return []metav1.OwnerReference{*oref}
 }
 
 // Fires whenever a Build is added.

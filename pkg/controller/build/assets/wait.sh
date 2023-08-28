@@ -4,13 +4,10 @@
 # within the Build Controller binary (see //go:embed) and injected into a
 # custom build pod.
 
-# Wait until the done file appears.
-while [ ! -f "/tmp/done/digestfile" ]
+# Wait until the digestfile ConfigMap file appears.
+while [ ! -f "$DIGESTFILE_CONFIGMAP_PATH" ]
 do
 	sleep 1
 done
 
-oc create configmap \
-	"$DIGEST_CONFIGMAP_NAME" \
-	--namespace openshift-machine-config-operator \
-	--from-file=digest=/tmp/done/digestfile
+oc apply -f "$DIGESTFILE_CONFIGMAP_PATH"

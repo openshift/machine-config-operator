@@ -20,6 +20,7 @@ import (
 	k8stypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	clientset "k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 )
 
@@ -338,4 +339,37 @@ func GetImageBuilderType(cm *corev1.ConfigMap) (string, error) {
 
 	klog.Infof("%s set to %q", ImageBuilderTypeConfigMapKey, configMapImageBuilder)
 	return configMapImageBuilder, nil
+}
+
+func setOwnerRefOnConfigMaps(kubeclient clientset.Interface, ibr ImageBuildRequest, ownerRefs []metav1.OwnerReference) error {
+	configmapNames := []string{
+		ibr.getDockerfileConfigMapName(),
+		ibr.getMCConfigMapName(),
+	}
+
+	for _, name := range configmapNames {
+		if err := setOwnerRefOnConfigMap(kubeclient, name, ownerRefs); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func setOwnerRefOnConfigMap(kubeclient clientset.Interface, name string, ownerRefs []metav1.OwnerReference) error {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		cm, err := kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+
+		cm.SetOwnerReferences(ownerRefs)
+
+		_, err = kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Update(context.TODO(), cm, metav1.UpdateOptions{})
+		if err != nil {
+			return fmt.Errorf("could not set owner reference %v on %s: %w", ownerRefs, name, err)
+		}
+
+		return nil
+	})
 }

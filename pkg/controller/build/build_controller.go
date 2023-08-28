@@ -11,14 +11,16 @@ import (
 	buildv1 "github.com/openshift/api/build/v1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
+	appsv1 "k8s.io/api/apps/v1"
+
 	corev1 "k8s.io/api/core/v1"
-	aggerrors "k8s.io/apimachinery/pkg/util/errors"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	clientset "k8s.io/client-go/kubernetes"
 	coreclientsetv1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
 
@@ -589,62 +591,23 @@ func (ctrl *Controller) markBuildInProgress(pool *mcfgv1.MachineConfigPool) erro
 	return ctrl.syncAvailableStatus(pool)
 }
 
-// Deletes the ephemeral objects we created to perform this specific build.
+// Deletes the build object. The ephemeral objects (e.g., ConfigMaps) will be
+// deleted as a result of this action since they have the build object set as
+// their owner.
 func (ctrl *Controller) postBuildCleanup(pool *mcfgv1.MachineConfigPool, ignoreMissing bool) error {
 	// Delete the actual build object itself.
-	deleteBuildObject := func() error {
-		err := ctrl.imageBuilder.DeleteBuildObject(pool)
+	err := ctrl.imageBuilder.DeleteBuildObject(pool)
 
-		if err == nil {
-			klog.Infof("Deleted build object %s", newImageBuildRequest(pool).getBuildName())
-		}
-
-		return err
+	if err == nil {
+		klog.Infof("Deleted build object %s", newImageBuildRequest(pool).getBuildName())
+		return nil
 	}
 
-	// Delete the ConfigMap containing the MachineConfig.
-	deleteMCConfigMap := func() error {
-		ibr := newImageBuildRequest(pool)
-
-		err := ctrl.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Delete(context.TODO(), ibr.getMCConfigMapName(), metav1.DeleteOptions{})
-
-		if err == nil {
-			klog.Infof("Deleted MachineConfig ConfigMap %s for build %s", ibr.getMCConfigMapName(), ibr.getBuildName())
-		}
-
-		return err
+	if ignoreMissing {
+		return ignoreIsNotFoundErr(err)
 	}
 
-	// Delete the ConfigMap containing the rendered Dockerfile.
-	deleteDockerfileConfigMap := func() error {
-		ibr := newImageBuildRequest(pool)
-
-		err := ctrl.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Delete(context.TODO(), ibr.getDockerfileConfigMapName(), metav1.DeleteOptions{})
-
-		if err == nil {
-			klog.Infof("Deleted Dockerfile ConfigMap %s for build %s", ibr.getDockerfileConfigMapName(), ibr.getBuildName())
-		}
-
-		return err
-	}
-
-	maybeIgnoreMissing := func(f func() error) func() error {
-		return func() error {
-			if ignoreMissing {
-				return ignoreIsNotFoundErr(f())
-			}
-
-			return f()
-		}
-	}
-
-	// If *any* of these we fail, we want to emit an error. If *all* fail, we
-	// want all of the error messages.
-	return aggerrors.AggregateGoroutines(
-		maybeIgnoreMissing(deleteBuildObject),
-		maybeIgnoreMissing(deleteMCConfigMap),
-		maybeIgnoreMissing(deleteDockerfileConfigMap),
-	)
+	return err
 }
 
 // Marks a given MachineConfigPool as build successful and cleans up after itself.
@@ -973,6 +936,43 @@ func (ctrl *Controller) validatePullSecret(name string) (*corev1.Secret, error) 
 	return secret, nil
 }
 
+func (ctrl *Controller) createCanonicalizedPullSecret(secret *corev1.Secret) (*corev1.Secret, error) {
+	// TODO: Find a constant for this deployment name.
+	deployment, err := ctrl.kubeclient.AppsV1().Deployments(ctrlcommon.MCONamespace).Get(context.TODO(), "machine-os-builder", metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	deployKind := appsv1.SchemeGroupVersion.WithKind("Deployment")
+	oref := metav1.NewControllerRef(deployment, deployKind)
+
+	secret.SetOwnerReferences([]metav1.OwnerReference{*oref})
+
+	return ctrl.kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Create(context.TODO(), secret, metav1.CreateOptions{})
+}
+
+func (ctrl *Controller) updateCanonicalizedPullSecret(secret *corev1.Secret) (*corev1.Secret, error) {
+	var updatedSecret *corev1.Secret
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		out, err := ctrl.kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(context.TODO(), secret.Name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+
+		out.Data = secret.Data
+		out, err = ctrl.kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Update(context.TODO(), out, metav1.UpdateOptions{})
+		if err != nil {
+			return err
+		}
+
+		updatedSecret = out
+		klog.Infof("Updated canonical secret %s", secret.Name)
+		return nil
+	})
+
+	return updatedSecret, err
+}
+
 // Attempt to create a canonicalized pull secret. If the secret already exsits, we should update it.
 func (ctrl *Controller) handleCanonicalizedPullSecret(secret *corev1.Secret) (*corev1.Secret, error) {
 	out, err := ctrl.kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(context.TODO(), secret.Name, metav1.GetOptions{})
@@ -982,13 +982,13 @@ func (ctrl *Controller) handleCanonicalizedPullSecret(secret *corev1.Secret) (*c
 
 	// We don't have a canonical secret, so lets create one.
 	if k8serrors.IsNotFound(err) {
-		out, err = ctrl.kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Create(context.TODO(), secret, metav1.CreateOptions{})
-		if err != nil {
-			return nil, fmt.Errorf("could not create canonical secret %q: %w", secret.Name, err)
+		out, err := ctrl.createCanonicalizedPullSecret(secret)
+		if err == nil {
+			klog.Infof("Created canonical secret %s", secret.Name)
+			return out, nil
 		}
 
-		klog.Infof("Created canonical secret %s", secret.Name)
-		return out, nil
+		return nil, fmt.Errorf("could not create canonical secret %q: %w", secret.Name, err)
 	}
 
 	// Check if the canonical secret from the API server matches the one we have.
@@ -999,15 +999,7 @@ func (ctrl *Controller) handleCanonicalizedPullSecret(secret *corev1.Secret) (*c
 	}
 
 	// If we got here, it means that our secret needs to be updated.
-	out.Data = secret.Data
-	out, err = ctrl.kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Update(context.TODO(), out, metav1.UpdateOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("could not update canonical secret %q: %w", secret.Name, err)
-	}
-
-	klog.Infof("Updated canonical secret %s", secret.Name)
-
-	return out, nil
+	return ctrl.updateCanonicalizedPullSecret(secret)
 }
 
 // If one wants to opt out, this removes all of the statuses and object
