@@ -1695,6 +1695,13 @@ func MaybePersistNetworkInterfaces(osRoot string) error {
 		cmd.Args = append(cmd.Args, "--inspect")
 	}
 
+	// Workaround for https://issues.redhat.com/browse/OCPBUGS-16035 .
+	// Create /etc/systemd/network directory if it doesn't exist.
+	dirPath := filepath.Join(osRoot, "etc/systemd/network")
+	if err := os.MkdirAll(dirPath, defaultDirectoryPermissions); err != nil {
+		return fmt.Errorf("failed to create directory %s: %w", dirPath, err)
+	}
+
 	// nmstate always logs to stderr, so we need to capture/forward that too
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
