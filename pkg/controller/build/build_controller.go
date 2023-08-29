@@ -19,6 +19,7 @@ import (
 	coreclientsetv1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
 
@@ -535,58 +536,72 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 func (ctrl *Controller) markBuildFailed(pool *mcfgv1.MachineConfigPool) error {
 	klog.Errorf("Build failed for pool %s", pool.Name)
 
-	setMCPBuildConditions(pool, []mcfgv1.MachineConfigPoolCondition{
-		{
-			Type:   mcfgv1.MachineConfigPoolBuildFailed,
-			Reason: "BuildFailed",
-			Status: corev1.ConditionTrue,
-		},
-		{
-			Type:   mcfgv1.MachineConfigPoolBuildSuccess,
-			Status: corev1.ConditionFalse,
-		},
-		{
-			Type:   mcfgv1.MachineConfigPoolBuilding,
-			Status: corev1.ConditionFalse,
-		},
-		{
-			Type:   mcfgv1.MachineConfigPoolBuildPending,
-			Status: corev1.ConditionFalse,
-		},
-		{
-			Type:   mcfgv1.MachineConfigPoolDegraded,
-			Status: corev1.ConditionTrue,
-		},
-	})
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		mcp, err := ctrl.mcfgclient.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), pool.Name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
 
-	return ctrl.syncFailingStatus(pool, fmt.Errorf("build failed"))
+		setMCPBuildConditions(mcp, []mcfgv1.MachineConfigPoolCondition{
+			{
+				Type:   mcfgv1.MachineConfigPoolBuildFailed,
+				Reason: "BuildFailed",
+				Status: corev1.ConditionTrue,
+			},
+			{
+				Type:   mcfgv1.MachineConfigPoolBuildSuccess,
+				Status: corev1.ConditionFalse,
+			},
+			{
+				Type:   mcfgv1.MachineConfigPoolBuilding,
+				Status: corev1.ConditionFalse,
+			},
+			{
+				Type:   mcfgv1.MachineConfigPoolBuildPending,
+				Status: corev1.ConditionFalse,
+			},
+			{
+				Type:   mcfgv1.MachineConfigPoolDegraded,
+				Status: corev1.ConditionTrue,
+			},
+		})
+
+		return ctrl.syncFailingStatus(mcp, fmt.Errorf("build failed"))
+	})
 }
 
 // Marks a given MachineConfigPool as the build is in progress.
 func (ctrl *Controller) markBuildInProgress(pool *mcfgv1.MachineConfigPool) error {
 	klog.Infof("Build in progress for MachineConfigPool %s, config %s", pool.Name, pool.Spec.Configuration.Name)
 
-	setMCPBuildConditions(pool, []mcfgv1.MachineConfigPoolCondition{
-		{
-			Type:   mcfgv1.MachineConfigPoolBuildFailed,
-			Status: corev1.ConditionFalse,
-		},
-		{
-			Type:   mcfgv1.MachineConfigPoolBuildSuccess,
-			Status: corev1.ConditionFalse,
-		},
-		{
-			Type:   mcfgv1.MachineConfigPoolBuilding,
-			Reason: "BuildRunning",
-			Status: corev1.ConditionTrue,
-		},
-		{
-			Type:   mcfgv1.MachineConfigPoolBuildPending,
-			Status: corev1.ConditionFalse,
-		},
-	})
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		mcp, err := ctrl.mcfgclient.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), pool.Name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
 
-	return ctrl.syncAvailableStatus(pool)
+		setMCPBuildConditions(mcp, []mcfgv1.MachineConfigPoolCondition{
+			{
+				Type:   mcfgv1.MachineConfigPoolBuildFailed,
+				Status: corev1.ConditionFalse,
+			},
+			{
+				Type:   mcfgv1.MachineConfigPoolBuildSuccess,
+				Status: corev1.ConditionFalse,
+			},
+			{
+				Type:   mcfgv1.MachineConfigPoolBuilding,
+				Reason: "BuildRunning",
+				Status: corev1.ConditionTrue,
+			},
+			{
+				Type:   mcfgv1.MachineConfigPoolBuildPending,
+				Status: corev1.ConditionFalse,
+			},
+		})
+
+		return ctrl.syncAvailableStatus(mcp)
+	})
 }
 
 // Deletes the ephemeral objects we created to perform this specific build.
@@ -666,102 +681,90 @@ func (ctrl *Controller) markBuildSucceeded(pool *mcfgv1.MachineConfigPool) error
 		return fmt.Errorf("could not do post-build cleanup: %w", err)
 	}
 
-	// Set the annotation or field to point to the newly-built container image.
-	klog.V(4).Infof("Setting new image pullspec for %s to %s", pool.Name, imagePullspec)
-	if pool.Annotations == nil {
-		pool.Annotations = map[string]string{}
-	}
-	pool.Annotations[ctrlcommon.ExperimentalNewestLayeredImageEquivalentConfigAnnotationKey] = imagePullspec
-
-	// Remove the build object reference from the MachineConfigPool since we're
-	// not using it anymore.
-	deleteBuildRefFromMachineConfigPool(pool)
-
-	// Adjust the MachineConfigPool status to indicate success.
-	setMCPBuildConditions(pool, []mcfgv1.MachineConfigPoolCondition{
-		{
-			Type:   mcfgv1.MachineConfigPoolBuildFailed,
-			Status: corev1.ConditionFalse,
-		},
-		{
-			Type:   mcfgv1.MachineConfigPoolBuildSuccess,
-			Reason: "BuildSucceeded",
-			Status: corev1.ConditionTrue,
-		},
-		{
-			Type:   mcfgv1.MachineConfigPoolBuilding,
-			Status: corev1.ConditionFalse,
-		},
-		{
-			Type:   mcfgv1.MachineConfigPoolDegraded,
-			Status: corev1.ConditionFalse,
-		},
-	})
-
 	// Perform the MachineConfigPool update.
-	return ctrl.updatePoolAndSyncStatus(pool, ctrl.syncAvailableStatus)
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		mcp, err := ctrl.mcfgclient.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), pool.Name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+
+		// Set the annotation or field to point to the newly-built container image.
+		klog.V(4).Infof("Setting new image pullspec for %s to %s", mcp.Name, imagePullspec)
+		if mcp.Annotations == nil {
+			mcp.Annotations = map[string]string{}
+		}
+		mcp.Annotations[ctrlcommon.ExperimentalNewestLayeredImageEquivalentConfigAnnotationKey] = imagePullspec
+
+		// Remove the build object reference from the MachineConfigPool since we're
+		// not using it anymore.
+		deleteBuildRefFromMachineConfigPool(mcp)
+
+		// Adjust the MachineConfigPool status to indicate success.
+		setMCPBuildConditions(mcp, []mcfgv1.MachineConfigPoolCondition{
+			{
+				Type:   mcfgv1.MachineConfigPoolBuildFailed,
+				Status: corev1.ConditionFalse,
+			},
+			{
+				Type:   mcfgv1.MachineConfigPoolBuildSuccess,
+				Reason: "BuildSucceeded",
+				Status: corev1.ConditionTrue,
+			},
+			{
+				Type:   mcfgv1.MachineConfigPoolBuilding,
+				Status: corev1.ConditionFalse,
+			},
+			{
+				Type:   mcfgv1.MachineConfigPoolDegraded,
+				Status: corev1.ConditionFalse,
+			},
+		})
+
+		return ctrl.updatePoolAndSyncStatus(mcp, ctrl.syncAvailableStatus)
+	})
 }
 
 // Marks a given MachineConfigPool as build pending.
 func (ctrl *Controller) markBuildPendingWithObjectRef(pool *mcfgv1.MachineConfigPool, objRef corev1.ObjectReference) error {
-	klog.Infof("Build for %s marked pending with object reference %v", pool.Name, objRef)
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		mcp, err := ctrl.mcfgclient.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), pool.Name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
 
-	setMCPBuildConditions(pool, []mcfgv1.MachineConfigPoolCondition{
-		{
-			Type:   mcfgv1.MachineConfigPoolBuildFailed,
-			Status: corev1.ConditionFalse,
-		},
-		{
-			Type:   mcfgv1.MachineConfigPoolBuildSuccess,
-			Status: corev1.ConditionFalse,
-		},
-		{
-			Type:   mcfgv1.MachineConfigPoolBuilding,
-			Status: corev1.ConditionFalse,
-		},
-		{
-			Type:   mcfgv1.MachineConfigPoolBuildPending,
-			Reason: "BuildPending",
-			Status: corev1.ConditionTrue,
-		},
+		klog.Infof("Build for %s marked pending with object reference %v", mcp.Name, objRef)
+
+		setMCPBuildConditions(mcp, []mcfgv1.MachineConfigPoolCondition{
+			{
+				Type:   mcfgv1.MachineConfigPoolBuildFailed,
+				Status: corev1.ConditionFalse,
+			},
+			{
+				Type:   mcfgv1.MachineConfigPoolBuildSuccess,
+				Status: corev1.ConditionFalse,
+			},
+			{
+				Type:   mcfgv1.MachineConfigPoolBuilding,
+				Status: corev1.ConditionFalse,
+			},
+			{
+				Type:   mcfgv1.MachineConfigPoolBuildPending,
+				Reason: "BuildPending",
+				Status: corev1.ConditionTrue,
+			},
+		})
+
+		// If the MachineConfigPool has the build object reference, we just want to
+		// update the MachineConfigPool's status.
+		if machineConfigPoolHasObjectRef(mcp, objRef) {
+			return ctrl.syncAvailableStatus(mcp)
+		}
+
+		// If we added the build object reference, we need to update both the
+		// MachineConfigPool itself and its status.
+		addObjectRefIfMissing(mcp, objRef)
+		return ctrl.updatePoolAndSyncStatus(mcp, ctrl.syncAvailableStatus)
 	})
-
-	// If the MachineConfigPool has the build object reference, we just want to
-	// update the MachineConfigPool's status.
-	if machineConfigPoolHasObjectRef(pool, objRef) {
-		return ctrl.syncAvailableStatus(pool)
-	}
-
-	// If we added the build object reference, we need to update both the
-	// MachineConfigPool itself and its status.
-	addObjectRefIfMissing(pool, objRef)
-	return ctrl.updatePoolAndSyncStatus(pool, ctrl.syncAvailableStatus)
-}
-
-func (ctrl *Controller) markBuildPending(pool *mcfgv1.MachineConfigPool) error {
-	klog.Infof("Build for %s marked pending", pool.Name)
-
-	setMCPBuildConditions(pool, []mcfgv1.MachineConfigPoolCondition{
-		{
-			Type:   mcfgv1.MachineConfigPoolBuildFailed,
-			Status: corev1.ConditionFalse,
-		},
-		{
-			Type:   mcfgv1.MachineConfigPoolBuildSuccess,
-			Status: corev1.ConditionFalse,
-		},
-		{
-			Type:   mcfgv1.MachineConfigPoolBuilding,
-			Status: corev1.ConditionFalse,
-		},
-		{
-			Type:   mcfgv1.MachineConfigPoolBuildPending,
-			Reason: "BuildPending",
-			Status: corev1.ConditionTrue,
-		},
-	})
-
-	return ctrl.syncAvailableStatus(pool)
 }
 
 func (ctrl *Controller) updatePoolAndSyncStatus(pool *mcfgv1.MachineConfigPool, statusFunc func(*mcfgv1.MachineConfigPool) error) error {
@@ -1017,28 +1020,35 @@ func (ctrl *Controller) finalizeOptOut(pool *mcfgv1.MachineConfigPool) error {
 		return err
 	}
 
-	deleteBuildRefFromMachineConfigPool(pool)
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		mcp, err := ctrl.mcfgclient.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), pool.Name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
 
-	delete(pool.Annotations, ctrlcommon.ExperimentalNewestLayeredImageEquivalentConfigAnnotationKey)
+		deleteBuildRefFromMachineConfigPool(mcp)
 
-	conditions := []mcfgv1.MachineConfigPoolCondition{}
+		delete(mcp.Annotations, ctrlcommon.ExperimentalNewestLayeredImageEquivalentConfigAnnotationKey)
 
-	for _, condition := range pool.Status.Conditions {
-		buildConditionFound := false
-		for _, buildConditionType := range getMachineConfigPoolBuildConditions() {
-			if condition.Type == buildConditionType {
-				buildConditionFound = true
-				break
+		conditions := []mcfgv1.MachineConfigPoolCondition{}
+
+		for _, condition := range mcp.Status.Conditions {
+			buildConditionFound := false
+			for _, buildConditionType := range getMachineConfigPoolBuildConditions() {
+				if condition.Type == buildConditionType {
+					buildConditionFound = true
+					break
+				}
+			}
+
+			if !buildConditionFound {
+				conditions = append(conditions, condition)
 			}
 		}
 
-		if !buildConditionFound {
-			conditions = append(conditions, condition)
-		}
-	}
-
-	pool.Status.Conditions = conditions
-	return ctrl.updatePoolAndSyncStatus(pool, ctrl.syncAvailableStatus)
+		mcp.Status.Conditions = conditions
+		return ctrl.updatePoolAndSyncStatus(mcp, ctrl.syncAvailableStatus)
+	})
 }
 
 // Fires whenever a MachineConfigPool is updated.
