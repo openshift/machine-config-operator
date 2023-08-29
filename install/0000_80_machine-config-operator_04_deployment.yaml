@@ -14,6 +14,8 @@ spec:
   selector:
     matchLabels:
       k8s-app: machine-config-operator
+  strategy:
+    type: Recreate
   template:
     metadata:
       labels:
