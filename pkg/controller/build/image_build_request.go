@@ -201,7 +201,9 @@ func (i ImageBuildRequest) toBuild() *buildv1.Build {
 	dockerfile := "FROM scratch"
 
 	return &buildv1.Build{
-		TypeMeta:   metav1.TypeMeta{},
+		TypeMeta: metav1.TypeMeta{
+			Kind: "Build",
+		},
 		ObjectMeta: i.getObjectMeta(i.getBuildName()),
 		Spec: buildv1.BuildSpec{
 			CommonSpec: buildv1.CommonSpec{
