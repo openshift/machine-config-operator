@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: machine-state-controller
+  namespace: {{.TargetNamespace}}
+spec:
+  selector:
+    matchLabels:
+      k8s-app: machine-state-controller 
+  template:
+    metadata:
+      labels:
+        k8s-app: machine-state-controller
+      annotations:
+        target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
+    spec: 
+      containers:
+      - name: machine-state-controller
+        image: {{.Images.MachineConfigOperator}}
+        command: ["/usr/bin/machine-state-controller"]
+        args:
+        - "start"
+      serviceAccountName: machine-state-controller
