@@ -11,8 +11,8 @@ import (
 var (
 	versionCmd = &cobra.Command{
 		Use:   "version",
-		Short: "Print the version number of Machine OS Builder",
-		Long:  `All software has versions. This is Machine OS Builder's.`,
+		Short: "Print the version number of Machine State Controller",
+		Long:  `All software has versions. This is Machine State Controller's.`,
 		Run:   runVersionCmd,
 	}
 )
@@ -25,7 +25,7 @@ func runVersionCmd(_ *cobra.Command, _ []string) {
 	flag.Set("logtostderr", "true")
 	flag.Parse()
 
-	program := "MachineOSBuilder"
+	program := "MachineStateController"
 	version := version.Raw + "-" + version.Hash
 
 	fmt.Println(program, version)
