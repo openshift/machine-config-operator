@@ -3,14 +3,13 @@ package build
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	"github.com/davecgh/go-spew/spew"
-	"github.com/ghodss/yaml"
 	buildv1 "github.com/openshift/api/build/v1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -21,6 +20,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
+)
+
+const (
+	maxWait         time.Duration = time.Second * 5
+	pollInterval    time.Duration = time.Millisecond
+	testUpdateDelay time.Duration = time.Millisecond * 5
 )
 
 func getCustomDockerfileConfigMap(poolToDockerfile map[string]string) *corev1.ConfigMap {
@@ -162,14 +167,36 @@ func optOutMCP(ctx context.Context, t *testing.T, cs *Clients, poolName string) 
 	require.NoError(t, err)
 }
 
+func getTrueBuildConditions(mcp *mcfgv1.MachineConfigPool) []mcfgv1.MachineConfigPoolCondition {
+	trueBuildConditions := []mcfgv1.MachineConfigPoolCondition{}
+
+	ps := newPoolState(mcp)
+
+	for _, condition := range ps.GetAllBuildConditions() {
+		if condition.Status == corev1.ConditionTrue {
+			trueBuildConditions = append(trueBuildConditions, condition)
+		}
+	}
+
+	return trueBuildConditions
+}
+
+func isNoBuildConditionTrue(mcp *mcfgv1.MachineConfigPool) bool {
+	return len(getTrueBuildConditions(mcp)) == 0
+}
+
+func isOnlyOneBuildConditionTrue(mcp *mcfgv1.MachineConfigPool) bool {
+	return len(getTrueBuildConditions(mcp)) == 1
+}
+
 // Polls until a MachineConfigPool reaches a desired state.
 func assertMachineConfigPoolReachesState(ctx context.Context, t *testing.T, cs *Clients, poolName string, checkFunc func(*mcfgv1.MachineConfigPool) bool) bool {
 	t.Helper()
 
-	pollCtx, cancel := context.WithTimeout(ctx, time.Second*10)
+	pollCtx, cancel := context.WithTimeout(ctx, maxWait)
 	t.Cleanup(cancel)
 
-	err := wait.PollImmediateUntilWithContext(pollCtx, time.Millisecond, func(c context.Context) (bool, error) {
+	err := wait.PollImmediateUntilWithContext(pollCtx, pollInterval, func(c context.Context) (bool, error) {
 		mcp, err := cs.mcfgclient.MachineconfigurationV1().MachineConfigPools().Get(c, poolName, metav1.GetOptions{})
 		if err != nil {
 			return false, err
@@ -178,7 +205,34 @@ func assertMachineConfigPoolReachesState(ctx context.Context, t *testing.T, cs *
 		return checkFunc(mcp), nil
 	})
 
-	return assert.NoError(t, err, "MachineConfigPool %s never reached desired state", poolName)
+	return assert.NoError(t, err, "MachineConfigPool %s never reached expected state", poolName)
+}
+
+// Polls until a MachineConfigPool reaches a desired state.
+func assertMachineConfigPoolReachesStateWithMsg(ctx context.Context, t *testing.T, cs *Clients, poolName string, checkFunc func(*mcfgv1.MachineConfigPool) bool, msgFunc func(*mcfgv1.MachineConfigPool) string) bool {
+	t.Helper()
+
+	pollCtx, cancel := context.WithTimeout(ctx, maxWait)
+	t.Cleanup(cancel)
+
+	var targetPool *mcfgv1.MachineConfigPool
+
+	err := wait.PollImmediateUntilWithContext(pollCtx, pollInterval, func(c context.Context) (bool, error) {
+		mcp, err := cs.mcfgclient.MachineconfigurationV1().MachineConfigPools().Get(c, poolName, metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+
+		targetPool = mcp
+		return checkFunc(mcp), nil
+	})
+
+	sb := &strings.Builder{}
+	fmt.Fprintf(sb, "MachineConfigPool %s did not reach expected state\n", poolName)
+	spew.Fdump(sb, targetPool)
+	fmt.Fprintln(sb, msgFunc(targetPool))
+
+	return assert.NoError(t, err, sb.String())
 }
 
 // Asserts that there are no build pods.
@@ -244,7 +298,7 @@ func assertConfigMapsCreated(ctx context.Context, t *testing.T, cs *Clients, ibr
 		ibr.getMCConfigMapName():         false,
 	}
 
-	err := wait.PollImmediateInfiniteWithContext(ctx, time.Millisecond, func(ctx context.Context) (bool, error) {
+	err := wait.PollImmediateInfiniteWithContext(ctx, pollInterval, func(ctx context.Context) (bool, error) {
 		configmapList, err := cs.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).List(ctx, metav1.ListOptions{})
 		if err != nil {
 			return false, err
@@ -268,16 +322,19 @@ func assertConfigMapsCreated(ctx context.Context, t *testing.T, cs *Clients, ibr
 func assertBuildIsCreated(ctx context.Context, t *testing.T, cs *Clients, ibr ImageBuildRequest) bool {
 	t.Helper()
 
-	buildName := ibr.getBuildName()
+	var buildNames []string
 
-	err := wait.PollImmediateInfiniteWithContext(ctx, time.Millisecond, func(ctx context.Context) (bool, error) {
+	err := wait.PollImmediateInfiniteWithContext(ctx, pollInterval, func(ctx context.Context) (bool, error) {
 		buildList, err := cs.buildclient.BuildV1().Builds(ctrlcommon.MCONamespace).List(ctx, metav1.ListOptions{})
 		if err != nil {
 			return false, err
 		}
 
+		buildNames = []string{}
+
 		for _, build := range buildList.Items {
-			if build.Name == buildName {
+			buildNames = append(buildNames, build.Name)
+			if build.Name == ibr.getBuildName() {
 				return true, nil
 			}
 		}
@@ -285,7 +342,7 @@ func assertBuildIsCreated(ctx context.Context, t *testing.T, cs *Clients, ibr Im
 		return false, nil
 	})
 
-	return assert.NoError(t, err, "build %s was not created", buildName)
+	return assert.NoError(t, err, "build %s was not created, have: %v", ibr.getBuildName(), buildNames)
 }
 
 // Polls until a build pod is created.
@@ -294,14 +351,19 @@ func assertBuildPodIsCreated(ctx context.Context, t *testing.T, cs *Clients, ibr
 
 	buildPodName := ibr.getBuildName()
 
-	err := wait.PollImmediateInfiniteWithContext(ctx, time.Millisecond, func(ctx context.Context) (bool, error) {
+	var podNames []string
+
+	err := wait.PollImmediateInfiniteWithContext(ctx, pollInterval, func(ctx context.Context) (bool, error) {
 		podList, err := cs.kubeclient.CoreV1().Pods(ctrlcommon.MCONamespace).List(ctx, metav1.ListOptions{})
 		if err != nil {
 			return false, err
 		}
 
+		podNames = []string{}
+
 		for _, pod := range podList.Items {
-			if pod.Name == buildPodName {
+			podNames = append(podNames, pod.Name)
+			if pod.Name == buildPodName && hasAllRequiredOSBuildLabels(pod.Labels) {
 				return true, nil
 			}
 		}
@@ -309,7 +371,7 @@ func assertBuildPodIsCreated(ctx context.Context, t *testing.T, cs *Clients, ibr
 		return false, nil
 	})
 
-	return assert.NoError(t, err, "build pod %s was not created", buildPodName)
+	return assert.NoError(t, err, "build pod %s was not created, have: %v", buildPodName, podNames)
 }
 
 // Simulates a pod being scheduled and reaching various states. Verifies that
@@ -386,7 +448,7 @@ func assertMCPFollowsImageBuildStatus(ctx context.Context, t *testing.T, cs *Cli
 			}
 		}
 
-		_, err = cs.buildclient.BuildV1().Builds(ctrlcommon.MCONamespace).Update(ctx, build, metav1.UpdateOptions{})
+		_, err = cs.buildclient.BuildV1().Builds(ctrlcommon.MCONamespace).UpdateStatus(ctx, build, metav1.UpdateOptions{})
 		require.NoError(t, err)
 
 		// Look up the expected MCP condition for our current pod phase.
@@ -395,21 +457,8 @@ func assertMCPFollowsImageBuildStatus(ctx context.Context, t *testing.T, cs *Cli
 		// Look up the expected build pod condition for our current pod phase.
 		expectedBuildRefPresence := shouldHaveBuildRef[phase]
 
-		var targetPool *mcfgv1.MachineConfigPool
-
-		// Wait for the MCP condition to reach the expected state.
-		outcome = assertMachineConfigPoolReachesState(ctx, t, cs, mcp.Name, func(mcp *mcfgv1.MachineConfigPool) bool {
-			targetPool = mcp
-			return mcfgv1.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, expectedMCPCondition) &&
-				expectedBuildRefPresence == machineConfigPoolHasBuildRef(mcp) &&
-				machineConfigPoolHasMachineConfigRefs(mcp)
-		})
-
+		outcome = assertPoolReachedExpectedStateForBuild(ctx, t, cs, mcp, expectedBuildRefPresence, expectedMCPCondition, phase)
 		if !outcome {
-			spew.Dump(targetPool)
-			t.Logf("Has expected condition (%s) for phase (%s)? %v", expectedMCPCondition, phase, mcfgv1.IsMachineConfigPoolConditionTrue(targetPool.Status.Conditions, expectedMCPCondition))
-			t.Logf("Has ref? %v. Expected: %v. Actual: %v.", expectedBuildRefPresence == machineConfigPoolHasBuildRef(targetPool), expectedBuildRefPresence, machineConfigPoolHasBuildRef(targetPool))
-			t.Logf("Has MachineConfig refs? %v", machineConfigPoolHasMachineConfigRefs(targetPool))
 			return false
 		}
 	}
@@ -501,7 +550,7 @@ func assertMCPFollowsBuildPodStatus(ctx context.Context, t *testing.T, cs *Clien
 			require.NoError(t, cmErr)
 		}
 
-		_, err = cs.kubeclient.CoreV1().Pods(ctrlcommon.MCONamespace).Update(ctx, buildPod, metav1.UpdateOptions{})
+		_, err = cs.kubeclient.CoreV1().Pods(ctrlcommon.MCONamespace).UpdateStatus(ctx, buildPod, metav1.UpdateOptions{})
 		require.NoError(t, err)
 
 		// Look up the expected MCP condition for our current pod phase.
@@ -510,21 +559,7 @@ func assertMCPFollowsBuildPodStatus(ctx context.Context, t *testing.T, cs *Clien
 		// Look up the expected build pod condition for our current pod phase.
 		expectedBuildPodRefPresence := shouldHaveBuildPodRef[phase]
 
-		var targetPool *mcfgv1.MachineConfigPool
-
-		// Wait for the MCP condition to reach the expected state.
-		outcome = assertMachineConfigPoolReachesState(ctx, t, cs, mcp.Name, func(mcp *mcfgv1.MachineConfigPool) bool {
-			targetPool = mcp
-			return mcfgv1.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, expectedMCPCondition) &&
-				expectedBuildPodRefPresence == machineConfigPoolHasBuildRef(mcp) &&
-				machineConfigPoolHasMachineConfigRefs(mcp)
-		})
-
-		if !outcome {
-			spew.Dump(targetPool)
-			t.Logf("Has expected condition (%s) for phase (%s)? %v", expectedMCPCondition, phase, mcfgv1.IsMachineConfigPoolConditionTrue(targetPool.Status.Conditions, expectedMCPCondition))
-			t.Logf("Has ref? %v. Expected: %v. Actual: %v.", expectedBuildPodRefPresence == machineConfigPoolHasBuildRef(targetPool), expectedBuildPodRefPresence, machineConfigPoolHasBuildRef(targetPool))
-			t.Logf("Has MachineConfig refs? %v", machineConfigPoolHasMachineConfigRefs(targetPool))
+		if outcome = assertPoolReachedExpectedStateForBuild(ctx, t, cs, mcp, expectedBuildPodRefPresence, expectedMCPCondition, phase); !outcome {
 			return false
 		}
 	}
@@ -544,49 +579,72 @@ func assertMCPFollowsBuildPodStatus(ctx context.Context, t *testing.T, cs *Clien
 	return outcome
 }
 
-// Dumps all the objects within each of the fake clients to a YAML file for easy debugging.
-func dumpObjects(ctx context.Context, t *testing.T, cs *Clients, filenamePrefix string) {
-	if cs.mcfgclient != nil {
-		mcp, err := cs.mcfgclient.MachineconfigurationV1().MachineConfigPools().List(ctx, metav1.ListOptions{})
-		require.NoError(t, err)
+func assertPoolReachedExpectedStateForBuild(ctx context.Context, t *testing.T, cs *Clients, pool *mcfgv1.MachineConfigPool, expectedToHaveBuildRef bool, expectedMCPConditionType mcfgv1.MachineConfigPoolConditionType, phase interface{}) bool {
+	t.Helper()
 
-		dumpToYAMLFile(t, mcp, filenamePrefix+"-machineconfigpools.yaml")
-
-		machineconfigs, err := cs.mcfgclient.MachineconfigurationV1().MachineConfigs().List(ctx, metav1.ListOptions{})
-		require.NoError(t, err)
-
-		dumpToYAMLFile(t, machineconfigs, filenamePrefix+"-machineconfigs.yaml")
+	checkFunc := func(mcp *mcfgv1.MachineConfigPool) bool {
+		return poolReachesExpectedBuildState(mcp, expectedToHaveBuildRef, expectedMCPConditionType)
 	}
 
-	if cs.kubeclient != nil {
-		pods, err := cs.kubeclient.CoreV1().Pods(ctrlcommon.MCONamespace).List(ctx, metav1.ListOptions{})
-		require.NoError(t, err)
-
-		dumpToYAMLFile(t, pods, filenamePrefix+"-pods.yaml")
-
-		configmaps, err := cs.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).List(ctx, metav1.ListOptions{})
-		require.NoError(t, err)
-		dumpToYAMLFile(t, configmaps, filenamePrefix+"-configmaps.yaml")
+	msgFunc := func(mcp *mcfgv1.MachineConfigPool) string {
+		return getPoolFailureMsg(mcp, expectedToHaveBuildRef, expectedMCPConditionType, phase)
 	}
 
-	if cs.buildclient != nil {
-		buildconfigs, err := cs.buildclient.BuildV1().BuildConfigs(ctrlcommon.MCONamespace).List(ctx, metav1.ListOptions{})
-		require.NoError(t, err)
-
-		dumpToYAMLFile(t, buildconfigs, filenamePrefix+"-buildconfigs.yaml")
-
-		builds, err := cs.buildclient.BuildV1().Builds(ctrlcommon.MCONamespace).List(ctx, metav1.ListOptions{})
-		require.NoError(t, err)
-		dumpToYAMLFile(t, builds, filenamePrefix+"-builds.yaml")
-	}
+	return assertMachineConfigPoolReachesStateWithMsg(ctx, t, cs, pool.Name, checkFunc, msgFunc)
 }
 
-// Dumps the provided object to the given filename.
-func dumpToYAMLFile(t *testing.T, obj interface{}, filename string) {
-	out, err := yaml.Marshal(obj)
-	require.NoError(t, err)
+func getPoolFailureMsg(mcp *mcfgv1.MachineConfigPool, expectedToHaveBuildRef bool, expectedMCPConditionType mcfgv1.MachineConfigPoolConditionType, phase interface{}) string {
+	ps := newPoolState(mcp)
+	msg := &strings.Builder{}
 
-	filename = strings.ReplaceAll(filename, "/", "_")
+	fmt.Fprintf(msg, "Has expected condition (%s) for phase (%s)? %v\n", expectedMCPConditionType, phase, mcfgv1.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, expectedMCPConditionType))
 
-	require.NoError(t, ioutil.WriteFile(filename, out, 0755))
+	fmt.Fprintf(msg, "Is only one build condition true? %v\n", isOnlyOneBuildConditionTrue(mcp))
+
+	hasBuildObject := ps.HasBuildObjectForCurrentMachineConfig()
+	buildObjectRefs := ps.GetBuildObjectRefs()
+	fmt.Fprintf(msg, "Has ref? %v. Expected: %v. Actual: %v.\n", hasBuildObject, expectedToHaveBuildRef, hasBuildObject == expectedToHaveBuildRef)
+
+	if expectedToHaveBuildRef {
+		fmt.Fprintf(msg, "Has only one build ref? %v. Build refs found: %v\n", len(buildObjectRefs) == 1, buildObjectRefs)
+	} else {
+		fmt.Fprintf(msg, "Has no build refs? %v. Build refs found: %v\n", len(buildObjectRefs) == 0, buildObjectRefs)
+	}
+
+	fmt.Fprintf(msg, "Has MachineConfig refs? %v\n", machineConfigPoolHasMachineConfigRefs(mcp))
+
+	configsEqual := reflect.DeepEqual(mcp.Spec.Configuration, mcp.Status.Configuration)
+	fmt.Fprintf(msg, "Spec.Configuration and Status.Configuration equal? %v\n", configsEqual)
+	if !configsEqual {
+		fmt.Fprintf(msg, "Spec.Configuration: %s\n", spew.Sdump(mcp.Spec.Configuration))
+		fmt.Fprintf(msg, "Status.Configuration: %s\n", spew.Sdump(mcp.Status.Configuration))
+	}
+
+	return msg.String()
+}
+
+func poolReachesExpectedBuildState(mcp *mcfgv1.MachineConfigPool, expectedToHaveBuildRef bool, expectedMCPConditionType mcfgv1.MachineConfigPoolConditionType) bool {
+	if !isOnlyOneBuildConditionTrue(mcp) {
+		return false
+	}
+
+	if !machineConfigPoolHasMachineConfigRefs(mcp) {
+		return false
+	}
+
+	if !mcfgv1.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, expectedMCPConditionType) {
+		return false
+	}
+
+	if !reflect.DeepEqual(mcp.Spec.Configuration, mcp.Status.Configuration) {
+		return false
+	}
+
+	ps := newPoolState(mcp)
+
+	if expectedToHaveBuildRef {
+		return ps.HasBuildObjectForCurrentMachineConfig() && len(ps.GetBuildObjectRefs()) == 1
+	}
+
+	return !ps.HasBuildObjectForCurrentMachineConfig() && len(ps.GetBuildObjectRefs()) == 0
 }

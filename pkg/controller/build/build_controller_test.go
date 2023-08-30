@@ -4,7 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"time"
+	"reflect"
+	"strings"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	buildv1 "github.com/openshift/api/build/v1"
@@ -51,9 +52,9 @@ func TestBuildControllerNoPoolsOptedIn(t *testing.T) {
 }
 
 func TestBuildControllerSingleOptedInPool(t *testing.T) {
-	pool := "worker"
-
 	t.Parallel()
+
+	pool := "worker"
 
 	t.Run("Happy Path", func(t *testing.T) {
 		t.Parallel()
@@ -88,12 +89,12 @@ func TestBuildControllerSingleOptedInPool(t *testing.T) {
 			imageBuilder: func(ctx context.Context, t *testing.T, cs *Clients) {
 				mcp := optInMCP(ctx, t, cs, pool)
 				assertMCPFollowsImageBuildStatus(ctx, t, cs, mcp, buildv1.BuildPhaseFailed)
-				assertMachineConfigPoolReachesState(ctx, t, cs, pool, isMCPBuildFailure)
+				assertMachineConfigPoolReachesStateWithMsg(ctx, t, cs, pool, isMCPBuildFailure, isMCPBuildFailureMsg)
 			},
 			customPodBuilder: func(ctx context.Context, t *testing.T, cs *Clients) {
 				mcp := optInMCP(ctx, t, cs, pool)
 				assertMCPFollowsBuildPodStatus(ctx, t, cs, mcp, corev1.PodFailed)
-				assertMachineConfigPoolReachesState(ctx, t, cs, pool, isMCPBuildFailure)
+				assertMachineConfigPoolReachesStateWithMsg(ctx, t, cs, pool, isMCPBuildFailure, isMCPBuildFailureMsg)
 			},
 		})
 	})
@@ -144,10 +145,10 @@ func TestBuildControllerMultipleOptedInPools(t *testing.T) {
 		t.Parallel()
 
 		fixture := newBuildControllerTestFixture(t)
+
 		for _, pool := range pools {
 			pool := pool
 			t.Run(pool, func(t *testing.T) {
-				t.Parallel()
 				fixture.runTestFuncs(t, testFuncs{
 					imageBuilder: func(ctx context.Context, t *testing.T, cs *Clients) {
 						t.Logf("Running in pool %s", pool)
@@ -173,8 +174,6 @@ func TestBuildControllerMultipleOptedInPools(t *testing.T) {
 		for _, pool := range pools {
 			pool := pool
 			t.Run(pool, func(t *testing.T) {
-				t.Parallel()
-
 				fixture.runTestFuncs(t, testFuncs{
 					imageBuilder: func(ctx context.Context, t *testing.T, cs *Clients) {
 						testMultipleConfigsAreRolledOut(ctx, t, cs, pool, testOptInMCPImageBuilder)
@@ -196,18 +195,16 @@ func TestBuildControllerMultipleOptedInPools(t *testing.T) {
 		for _, pool := range pools {
 			pool := pool
 			t.Run(pool, func(t *testing.T) {
-				t.Parallel()
-
 				fixture.runTestFuncs(t, testFuncs{
 					imageBuilder: func(ctx context.Context, t *testing.T, cs *Clients) {
 						mcp := optInMCP(ctx, t, cs, pool)
 						assertMCPFollowsImageBuildStatus(ctx, t, cs, mcp, buildv1.BuildPhaseFailed)
-						assertMachineConfigPoolReachesState(ctx, t, cs, pool, isMCPBuildFailure)
+						assertMachineConfigPoolReachesStateWithMsg(ctx, t, cs, pool, isMCPBuildFailure, isMCPBuildFailureMsg)
 					},
 					customPodBuilder: func(ctx context.Context, t *testing.T, cs *Clients) {
 						mcp := optInMCP(ctx, t, cs, pool)
 						assertMCPFollowsBuildPodStatus(ctx, t, cs, mcp, corev1.PodFailed)
-						assertMachineConfigPoolReachesState(ctx, t, cs, pool, isMCPBuildFailure)
+						assertMachineConfigPoolReachesStateWithMsg(ctx, t, cs, pool, isMCPBuildFailure, isMCPBuildFailureMsg)
 					},
 				})
 			})
@@ -241,7 +238,7 @@ func newBuildControllerTestFixtureWithContext(ctx context.Context, t *testing.T)
 }
 
 func newBuildControllerTestFixture(t *testing.T) *buildControllerTestFixture {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	ctx, cancel := context.WithTimeout(context.Background(), maxWait)
 	t.Cleanup(cancel)
 
 	return newBuildControllerTestFixtureWithContext(ctx, t)
@@ -250,18 +247,11 @@ func newBuildControllerTestFixture(t *testing.T) *buildControllerTestFixture {
 func (b *buildControllerTestFixture) runTestFuncs(t *testing.T, tf testFuncs) {
 	t.Run("CustomBuildPod", func(t *testing.T) {
 		t.Parallel()
-		// t.Cleanup(func() {
-		// 	dumpObjects(b.ctx, t, b.customPodBuilderClient, t.Name())
-		// })
 		tf.customPodBuilder(b.ctx, t, b.customPodBuilderClient)
 	})
 
 	t.Run("ImageBuilder", func(t *testing.T) {
 		t.Parallel()
-		// t.Cleanup(func() {
-		// 	dumpObjects(b.ctx, t, b.imageBuilderClient, t.Name())
-		// })
-
 		tf.imageBuilder(b.ctx, t, b.imageBuilderClient)
 	})
 }
@@ -329,8 +319,8 @@ func (b *buildControllerTestFixture) setupClients() *Clients {
 
 func (b *buildControllerTestFixture) getConfig() BuildControllerConfig {
 	return BuildControllerConfig{
-		MaxRetries:  5,
-		UpdateDelay: time.Millisecond,
+		MaxRetries:  1,
+		UpdateDelay: testUpdateDelay,
 	}
 }
 
@@ -357,20 +347,40 @@ func (b *buildControllerTestFixture) startBuildControllerWithCustomPodBuilder() 
 
 // Helper that determines if the build is a success.
 func isMCPBuildSuccess(mcp *mcfgv1.MachineConfigPool) bool {
-	imagePullspec, hasConfigAnnotation := mcp.Annotations[ctrlcommon.ExperimentalNewestLayeredImageEquivalentConfigAnnotationKey]
+	ps := newPoolState(mcp)
 
-	return hasConfigAnnotation &&
-		ctrlcommon.IsLayeredPool(mcp) &&
-		(imagePullspec == expectedImagePullspecWithSHA || imagePullspec == "fake@logs") &&
-		mcfgv1.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolBuildSuccess) &&
-		!machineConfigPoolHasBuildRef(mcp) && machineConfigPoolHasMachineConfigRefs(mcp)
+	return ps.IsLayered() &&
+		ps.HasOSImage() &&
+		ps.GetOSImage() == expectedImagePullspecWithSHA &&
+		ps.IsBuildSuccess() &&
+		!ps.HasBuildObjectForCurrentMachineConfig() &&
+		machineConfigPoolHasMachineConfigRefs(mcp) &&
+		reflect.DeepEqual(mcp.Spec.Configuration, mcp.Status.Configuration)
+}
+
+func isMCPBuildSuccessMsg(mcp *mcfgv1.MachineConfigPool) string {
+	sb := &strings.Builder{}
+
+	ps := newPoolState(mcp)
+
+	fmt.Fprintf(sb, "Is layered? %v\n", ps.IsLayered())
+	fmt.Fprintf(sb, "Has OS image? %v\n", ps.HasOSImage())
+	fmt.Fprintf(sb, "Matches expected pullspec (%s)? %v\n", expectedImagePullspecWithSHA, ps.GetOSImage() == expectedImagePullspecWithSHA)
+	fmt.Fprintf(sb, "Is build success? %v\n", ps.IsBuildSuccess())
+	fmt.Fprintf(sb, "Is degraded? %v\n", ps.IsDegraded())
+	fmt.Fprintf(sb, "Has build object ref for current MachineConfig? %v. Build refs found: %v\n", ps.HasBuildObjectForCurrentMachineConfig(), ps.GetBuildObjectRefs())
+	fmt.Fprintf(sb, "Has MachineConfig refs? %v\n", machineConfigPoolHasMachineConfigRefs(mcp))
+	fmt.Fprintf(sb, "Spec.Configuration == Status.Configuration? %v\n", reflect.DeepEqual(mcp.Spec.Configuration, mcp.Status.Configuration))
+
+	return sb.String()
 }
 
 func machineConfigPoolHasMachineConfigRefs(pool *mcfgv1.MachineConfigPool) bool {
 	expectedMCP := newMachineConfigPool(pool.Name)
+	ps := newPoolState(pool)
 
 	for _, ref := range expectedMCP.Spec.Configuration.Source {
-		if !machineConfigPoolHasObjectRef(pool, ref) {
+		if !ps.HasObjectRef(ref) {
 			return false
 		}
 	}
@@ -380,24 +390,43 @@ func machineConfigPoolHasMachineConfigRefs(pool *mcfgv1.MachineConfigPool) bool 
 
 // Helper that determines if the build was a failure.
 func isMCPBuildFailure(mcp *mcfgv1.MachineConfigPool) bool {
-	return ctrlcommon.IsLayeredPool(mcp) &&
-		mcfgv1.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolBuildFailed) &&
-		mcfgv1.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolDegraded) &&
-		machineConfigPoolHasBuildRef(mcp) && machineConfigPoolHasMachineConfigRefs(mcp)
+	ps := newPoolState(mcp)
+
+	return ps.IsLayered() &&
+		ps.IsBuildFailure() &&
+		ps.IsDegraded() &&
+		ps.HasBuildObjectForCurrentMachineConfig() &&
+		machineConfigPoolHasMachineConfigRefs(mcp) &&
+		reflect.DeepEqual(mcp.Spec.Configuration, mcp.Status.Configuration)
+}
+
+func isMCPBuildFailureMsg(mcp *mcfgv1.MachineConfigPool) string {
+	sb := &strings.Builder{}
+
+	ps := newPoolState(mcp)
+
+	fmt.Fprintf(sb, "Is layered? %v\n", ps.IsLayered())
+	fmt.Fprintf(sb, "Is build failure? %v\n", ps.IsBuildFailure())
+	fmt.Fprintf(sb, "Is degraded? %v\n", ps.IsDegraded())
+	fmt.Fprintf(sb, "Has build object ref for current MachineConfig? %v. Build refs found: %v\n", ps.HasBuildObjectForCurrentMachineConfig(), ps.GetBuildObjectRefs())
+	fmt.Fprintf(sb, "Has MachineConfig refs? %v\n", machineConfigPoolHasMachineConfigRefs(mcp))
+	fmt.Fprintf(sb, "Spec.Configuration == Status.Configuration? %v\n", reflect.DeepEqual(mcp.Spec.Configuration, mcp.Status.Configuration))
+
+	return sb.String()
 }
 
 // Opts a given MachineConfigPool into layering and asserts that the MachineConfigPool reaches the desired state.
 func testOptInMCPCustomBuildPod(ctx context.Context, t *testing.T, cs *Clients, poolName string) {
 	mcp := optInMCP(ctx, t, cs, poolName)
 	assertMCPFollowsBuildPodStatus(ctx, t, cs, mcp, corev1.PodSucceeded)
-	assertMachineConfigPoolReachesState(ctx, t, cs, poolName, isMCPBuildSuccess)
+	assertMachineConfigPoolReachesStateWithMsg(ctx, t, cs, poolName, isMCPBuildSuccess, isMCPBuildSuccessMsg)
 }
 
 // Opts a given MachineConfigPool into layering and asserts that the MachineConfigPool reaches the desired state.
 func testOptInMCPImageBuilder(ctx context.Context, t *testing.T, cs *Clients, poolName string) {
 	mcp := optInMCP(ctx, t, cs, poolName)
 	assertMCPFollowsImageBuildStatus(ctx, t, cs, mcp, buildv1.BuildPhaseComplete)
-	assertMachineConfigPoolReachesState(ctx, t, cs, poolName, isMCPBuildSuccess)
+	assertMachineConfigPoolReachesStateWithMsg(ctx, t, cs, poolName, isMCPBuildSuccess, isMCPBuildSuccessMsg)
 }
 
 // Mutates all MachineConfigPools that are not opted in to ensure they are ignored.
@@ -418,8 +447,9 @@ func testNoMCPsOptedIn(ctx context.Context, t *testing.T, cs *Clients) {
 
 	for _, mcp := range mcpList.Items {
 		mcp := mcp
-		assert.False(t, ctrlcommon.IsLayeredPool(&mcp))
-		assert.NotContains(t, mcp.Labels, ctrlcommon.ExperimentalNewestLayeredImageEquivalentConfigAnnotationKey)
+		ps := newPoolState(&mcp)
+		assert.False(t, ps.IsLayered())
+		assert.False(t, ps.HasOSImage())
 	}
 }
 
@@ -428,45 +458,46 @@ func testMultipleConfigsAreRolledOut(ctx context.Context, t *testing.T, cs *Clie
 	for i := 1; i < 10; i++ {
 		config := fmt.Sprintf("rendered-%s-%d", poolName, i)
 
-		t.Run(config, func(t *testing.T) {
-			workerMCP, err := cs.mcfgclient.MachineconfigurationV1().MachineConfigPools().Get(ctx, poolName, metav1.GetOptions{})
+		mcp, err := cs.mcfgclient.MachineconfigurationV1().MachineConfigPools().Get(ctx, poolName, metav1.GetOptions{})
+		require.NoError(t, err)
+
+		mcp.Spec.Configuration.Name = config
+		mcp.Status.Configuration.Name = config
+
+		renderedMC := testhelpers.NewMachineConfig(
+			config,
+			map[string]string{
+				ctrlcommon.GeneratedByControllerVersionAnnotationKey: "version-number",
+				"machineconfiguration.openshift.io/role":             poolName,
+			},
+			"",
+			[]ign3types.File{})
+
+		_, err = cs.mcfgclient.MachineconfigurationV1().MachineConfigs().Create(ctx, renderedMC, metav1.CreateOptions{})
+		if err != nil && !k8serrors.IsAlreadyExists(err) {
 			require.NoError(t, err)
+		}
 
-			workerMCP.Spec.Configuration.Name = config
+		_, err = cs.mcfgclient.MachineconfigurationV1().MachineConfigPools().Update(ctx, mcp, metav1.UpdateOptions{})
+		require.NoError(t, err)
 
-			renderedMC := testhelpers.NewMachineConfig(
-				config,
-				map[string]string{
-					ctrlcommon.GeneratedByControllerVersionAnnotationKey: "version-number",
-					"machineconfiguration.openshift.io/role":             poolName,
-				},
-				"",
-				[]ign3types.File{})
+		_, err = cs.mcfgclient.MachineconfigurationV1().MachineConfigPools().UpdateStatus(ctx, mcp, metav1.UpdateOptions{})
+		require.NoError(t, err)
 
-			_, err = cs.mcfgclient.MachineconfigurationV1().MachineConfigs().Create(ctx, renderedMC, metav1.CreateOptions{})
-			if err != nil && !k8serrors.IsAlreadyExists(err) {
-				require.NoError(t, err)
-			}
+		optInFunc(ctx, t, cs, poolName)
 
-			_, err = cs.mcfgclient.MachineconfigurationV1().MachineConfigPools().Update(ctx, workerMCP, metav1.UpdateOptions{})
-			require.NoError(t, err)
-			optInFunc(ctx, t, cs, poolName)
+		checkFunc := func(pool *mcfgv1.MachineConfigPool) bool {
+			return pool.Spec.Configuration.Name == config && isMCPBuildSuccess(pool)
+		}
 
-			var targetPool *mcfgv1.MachineConfigPool
+		msgFunc := func(pool *mcfgv1.MachineConfigPool) string {
+			sb := &strings.Builder{}
+			fmt.Fprintln(sb, isMCPBuildFailureMsg(pool))
+			fmt.Fprintf(sb, "Configuration name equals config? %v. Expected: %s\n, Actual: %s\n", pool.Spec.Configuration.Name == config, config, pool.Spec.Configuration.Name)
+			return sb.String()
+		}
 
-			outcome := assertMachineConfigPoolReachesState(ctx, t, cs, poolName, func(mcp *mcfgv1.MachineConfigPool) bool {
-				targetPool = mcp
-				return mcp.Spec.Configuration.Name == config && isMCPBuildSuccess(mcp) && machineConfigPoolHasMachineConfigRefs(mcp)
-			})
-
-			if !outcome {
-				t.Logf("Config name, actual: %s, expected: %v", targetPool.Spec.Configuration.Name, config)
-				t.Logf("Is build success? %v", isMCPBuildSuccess(targetPool))
-				t.Logf("Has all MachineConfig refs? %v", machineConfigPoolHasMachineConfigRefs(targetPool))
-			}
-
-			time.Sleep(time.Millisecond)
-		})
+		assertMachineConfigPoolReachesStateWithMsg(ctx, t, cs, poolName, checkFunc, msgFunc)
 	}
 }
 
@@ -476,26 +507,37 @@ func testOptedInMCPOptsOut(ctx context.Context, t *testing.T, cs *Clients, optIn
 
 	optOutMCP(ctx, t, cs, "worker")
 
-	assertMachineConfigPoolReachesState(ctx, t, cs, "worker", func(mcp *mcfgv1.MachineConfigPool) bool {
-		layeringLabels := []string{
-			ctrlcommon.LayeringEnabledPoolLabel,
+	checkFunc := func(mcp *mcfgv1.MachineConfigPool) bool {
+		ps := newPoolState(mcp)
+
+		if ps.IsLayered() {
+			return false
 		}
 
-		for _, label := range layeringLabels {
-			if _, ok := mcp.Labels[label]; ok {
-				return false
-			}
+		if ps.HasBuildObjectForCurrentMachineConfig() {
+			return false
 		}
 
-		for _, condition := range getMachineConfigPoolBuildConditions() {
-			if mcfgv1.IsMachineConfigPoolConditionPresentAndEqual(mcp.Status.Conditions, condition, corev1.ConditionTrue) ||
-				mcfgv1.IsMachineConfigPoolConditionPresentAndEqual(mcp.Status.Conditions, condition, corev1.ConditionFalse) {
-				return false
-			}
+		if len(ps.GetAllBuildConditions()) != 0 {
+			return false
 		}
 
-		return !machineConfigPoolHasBuildRef(mcp)
-	})
+		return true
+	}
+
+	msgFunc := func(mcp *mcfgv1.MachineConfigPool) string {
+		sb := &strings.Builder{}
+
+		ps := newPoolState(mcp)
+		fmt.Fprintf(sb, "Is layered? %v\n", ps.IsLayered())
+		fmt.Fprintf(sb, "Has build object for current MachineConfig? %v\n", ps.HasBuildObjectForCurrentMachineConfig())
+		fmt.Fprintf(sb, "Build objects: %v\n", ps.GetBuildObjectRefs())
+		buildConditions := ps.GetAllBuildConditions()
+		fmt.Fprintf(sb, "Has no build conditions? %v. Build conditions: %v\n", len(buildConditions) == 0, buildConditions)
+		return sb.String()
+	}
+
+	assertMachineConfigPoolReachesStateWithMsg(ctx, t, cs, "worker", checkFunc, msgFunc)
 }
 
 // Tests that if a MachineConfigPool is degraded, that a build (object / pod) is not created.
@@ -553,8 +595,6 @@ func (m *mockIsBuildRunning) IsBuildRunning(*mcfgv1.MachineConfigPool) (bool, er
 
 // Tests if we should do a build for a variety of edge-cases and circumstances.
 func TestShouldWeDoABuild(t *testing.T) {
-	t.Parallel()
-
 	// Mutators which mutate the given MachineConfigPool.
 	toLayeredPool := func(mcp *mcfgv1.MachineConfigPool) *mcfgv1.MachineConfigPool {
 		mcp.Labels[ctrlcommon.LayeringEnabledPoolLabel] = ""
@@ -563,16 +603,16 @@ func TestShouldWeDoABuild(t *testing.T) {
 
 	toLayeredPoolWithImagePullspec := func(mcp *mcfgv1.MachineConfigPool) *mcfgv1.MachineConfigPool {
 		mcp = toLayeredPool(mcp)
-		mcp.Annotations = map[string]string{
-			ctrlcommon.ExperimentalNewestLayeredImageEquivalentConfigAnnotationKey: "image-pullspec",
-		}
-		return mcp
+		ps := newPoolState(mcp)
+		ps.SetImagePullspec("image-pullspec")
+		return ps.MachineConfigPool()
 	}
 
 	toLayeredPoolWithConditionsSet := func(mcp *mcfgv1.MachineConfigPool, conditions []mcfgv1.MachineConfigPoolCondition) *mcfgv1.MachineConfigPool {
 		mcp = toLayeredPoolWithImagePullspec(mcp)
-		setMCPBuildConditions(mcp, conditions)
-		return mcp
+		ps := newPoolState(mcp)
+		ps.SetBuildConditions(conditions)
+		return ps.MachineConfigPool()
 	}
 
 	type shouldWeBuildTestCase struct {

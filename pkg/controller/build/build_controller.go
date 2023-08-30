@@ -372,25 +372,27 @@ func (ctrl *Controller) imageBuildUpdater(build *buildv1.Build) error {
 
 	objRef := toObjectRef(build)
 
+	ps := newPoolState(pool)
+
 	switch build.Status.Phase {
 	case buildv1.BuildPhaseNew, buildv1.BuildPhasePending:
-		if !mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolBuildPending) {
-			err = ctrl.markBuildPendingWithObjectRef(pool, *objRef)
+		if !ps.IsBuildPending() {
+			err = ctrl.markBuildPendingWithObjectRef(ps, *objRef)
 		}
 	case buildv1.BuildPhaseRunning:
 		// If we're running, then there's nothing to do right now.
-		if !mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolBuilding) {
-			err = ctrl.markBuildInProgress(pool)
+		if !ps.IsBuilding() {
+			err = ctrl.markBuildInProgress(ps)
 		}
 	case buildv1.BuildPhaseComplete:
 		// If we've succeeded, we need to update the pool to indicate that.
-		if !mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolBuildSuccess) {
-			err = ctrl.markBuildSucceeded(pool)
+		if !ps.IsBuildSuccess() {
+			err = ctrl.markBuildSucceeded(ps)
 		}
 	case buildv1.BuildPhaseFailed, buildv1.BuildPhaseError, buildv1.BuildPhaseCancelled:
 		// If we've failed, errored, or cancelled, we need to update the pool to indicate that.
-		if !mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolBuildFailed) {
-			err = ctrl.markBuildFailed(pool)
+		if !ps.IsBuildFailure() {
+			err = ctrl.markBuildFailed(ps)
 		}
 	}
 
@@ -411,26 +413,28 @@ func (ctrl *Controller) customBuildPodUpdater(pod *corev1.Pod) error {
 
 	klog.Infof("Build pod (%s) is %s", pod.Name, pod.Status.Phase)
 
+	ps := newPoolState(pool)
+
 	switch pod.Status.Phase {
 	case corev1.PodPending:
-		if !mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolBuildPending) {
+		if !ps.IsBuildPending() {
 			objRef := toObjectRef(pod)
-			err = ctrl.markBuildPendingWithObjectRef(pool, *objRef)
+			err = ctrl.markBuildPendingWithObjectRef(ps, *objRef)
 		}
 	case corev1.PodRunning:
 		// If we're running, then there's nothing to do right now.
-		if !mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolBuilding) {
-			err = ctrl.markBuildInProgress(pool)
+		if !ps.IsBuilding() {
+			err = ctrl.markBuildInProgress(ps)
 		}
 	case corev1.PodSucceeded:
 		// If we've succeeded, we need to update the pool to indicate that.
-		if !mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolBuildSuccess) {
-			err = ctrl.markBuildSucceeded(pool)
+		if !ps.IsBuildSuccess() {
+			err = ctrl.markBuildSucceeded(ps)
 		}
 	case corev1.PodFailed:
 		// If we've failed, we need to update the pool to indicate that.
-		if !mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolBuildFailed) {
-			err = ctrl.markBuildFailed(pool)
+		if !ps.IsBuildFailure() {
+			err = ctrl.markBuildFailed(ps)
 		}
 	}
 
@@ -491,28 +495,30 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		return err
 	}
 
+	ps := newPoolState(pool)
+
 	// Not a layered pool, so stop here.
-	if !ctrlcommon.IsLayeredPool(pool) {
+	if !ps.IsLayered() {
 		klog.V(4).Infof("MachineConfigPool %s is not opted-in for layering, ignoring", pool.Name)
 		return nil
 	}
 
 	switch {
-	case mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolDegraded):
+	case ps.IsDegraded():
 		klog.V(4).Infof("MachineConfigPool %s is degraded, requeueing", pool.Name)
 		ctrl.enqueueMachineConfigPool(pool)
 		return nil
-	case mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolRenderDegraded):
+	case ps.IsRenderDegraded():
 		klog.V(4).Infof("MachineConfigPool %s is render degraded, requeueing", pool.Name)
 		ctrl.enqueueMachineConfigPool(pool)
 		return nil
-	case mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolBuildPending):
+	case ps.IsBuildPending():
 		klog.V(4).Infof("MachineConfigPool %s is build pending", pool.Name)
 		return nil
-	case mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolBuilding):
+	case ps.IsBuilding():
 		klog.V(4).Infof("MachineConfigPool %s is building", pool.Name)
 		return nil
-	case mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolBuildSuccess):
+	case ps.IsBuildSuccess():
 		klog.V(4).Infof("MachineConfigPool %s has successfully built", pool.Name)
 		return nil
 	default:
@@ -522,7 +528,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		}
 
 		if shouldBuild {
-			return ctrl.startBuildForMachineConfigPool(pool)
+			return ctrl.startBuildForMachineConfigPool(ps)
 		}
 
 		klog.V(4).Infof("Nothing to do for pool %q", pool.Name)
@@ -533,16 +539,17 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 }
 
 // Marks a given MachineConfigPool as a failed build.
-func (ctrl *Controller) markBuildFailed(pool *mcfgv1.MachineConfigPool) error {
-	klog.Errorf("Build failed for pool %s", pool.Name)
+func (ctrl *Controller) markBuildFailed(ps *poolState) error {
+	klog.Errorf("Build failed for pool %s", ps.Name())
 
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		mcp, err := ctrl.mcfgclient.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), pool.Name, metav1.GetOptions{})
+		mcp, err := ctrl.mcfgclient.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), ps.Name(), metav1.GetOptions{})
 		if err != nil {
 			return err
 		}
 
-		setMCPBuildConditions(mcp, []mcfgv1.MachineConfigPoolCondition{
+		ps := newPoolState(mcp)
+		ps.SetBuildConditions([]mcfgv1.MachineConfigPoolCondition{
 			{
 				Type:   mcfgv1.MachineConfigPoolBuildFailed,
 				Reason: "BuildFailed",
@@ -566,21 +573,22 @@ func (ctrl *Controller) markBuildFailed(pool *mcfgv1.MachineConfigPool) error {
 			},
 		})
 
-		return ctrl.syncFailingStatus(mcp, fmt.Errorf("build failed"))
+		return ctrl.syncFailingStatus(ps.MachineConfigPool(), fmt.Errorf("build failed"))
 	})
 }
 
 // Marks a given MachineConfigPool as the build is in progress.
-func (ctrl *Controller) markBuildInProgress(pool *mcfgv1.MachineConfigPool) error {
-	klog.Infof("Build in progress for MachineConfigPool %s, config %s", pool.Name, pool.Spec.Configuration.Name)
+func (ctrl *Controller) markBuildInProgress(ps *poolState) error {
+	klog.Infof("Build in progress for MachineConfigPool %s, config %s", ps.Name(), ps.CurrentMachineConfig())
 
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		mcp, err := ctrl.mcfgclient.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), pool.Name, metav1.GetOptions{})
+		mcp, err := ctrl.mcfgclient.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), ps.Name(), metav1.GetOptions{})
 		if err != nil {
 			return err
 		}
 
-		setMCPBuildConditions(mcp, []mcfgv1.MachineConfigPoolCondition{
+		ps := newPoolState(mcp)
+		ps.SetBuildConditions([]mcfgv1.MachineConfigPoolCondition{
 			{
 				Type:   mcfgv1.MachineConfigPoolBuildFailed,
 				Status: corev1.ConditionFalse,
@@ -600,7 +608,7 @@ func (ctrl *Controller) markBuildInProgress(pool *mcfgv1.MachineConfigPool) erro
 			},
 		})
 
-		return ctrl.syncAvailableStatus(mcp)
+		return ctrl.syncAvailableStatus(ps.MachineConfigPool())
 	})
 }
 
@@ -663,17 +671,19 @@ func (ctrl *Controller) postBuildCleanup(pool *mcfgv1.MachineConfigPool, ignoreM
 }
 
 // Marks a given MachineConfigPool as build successful and cleans up after itself.
-func (ctrl *Controller) markBuildSucceeded(pool *mcfgv1.MachineConfigPool) error {
-	klog.Infof("Build succeeded for MachineConfigPool %s, config %s", pool.Name, pool.Spec.Configuration.Name)
+func (ctrl *Controller) markBuildSucceeded(ps *poolState) error {
+	klog.Infof("Build succeeded for MachineConfigPool %s, config %s", ps.Name(), ps.CurrentMachineConfig())
+
+	pool := ps.MachineConfigPool()
 
 	// Get the final image pullspec.
 	imagePullspec, err := ctrl.imageBuilder.FinalPullspec(pool)
 	if err != nil {
-		return fmt.Errorf("could not get final image pullspec for pool %s: %w", pool.Name, err)
+		return fmt.Errorf("could not get final image pullspec for pool %s: %w", ps.Name(), err)
 	}
 
 	if imagePullspec == "" {
-		return fmt.Errorf("image pullspec empty for pool %s", pool.Name)
+		return fmt.Errorf("image pullspec empty for pool %s", ps.Name())
 	}
 
 	// Perform the post-build cleanup.
@@ -683,24 +693,23 @@ func (ctrl *Controller) markBuildSucceeded(pool *mcfgv1.MachineConfigPool) error
 
 	// Perform the MachineConfigPool update.
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		mcp, err := ctrl.mcfgclient.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), pool.Name, metav1.GetOptions{})
+		mcp, err := ctrl.mcfgclient.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), ps.Name(), metav1.GetOptions{})
 		if err != nil {
 			return err
 		}
 
+		ps := newPoolState(mcp)
+
 		// Set the annotation or field to point to the newly-built container image.
-		klog.V(4).Infof("Setting new image pullspec for %s to %s", mcp.Name, imagePullspec)
-		if mcp.Annotations == nil {
-			mcp.Annotations = map[string]string{}
-		}
-		mcp.Annotations[ctrlcommon.ExperimentalNewestLayeredImageEquivalentConfigAnnotationKey] = imagePullspec
+		klog.V(4).Infof("Setting new image pullspec for %s to %s", ps.Name(), imagePullspec)
+		ps.SetImagePullspec(imagePullspec)
 
 		// Remove the build object reference from the MachineConfigPool since we're
 		// not using it anymore.
-		deleteBuildRefFromMachineConfigPool(mcp)
+		ps.DeleteBuildRefForCurrentMachineConfig()
 
 		// Adjust the MachineConfigPool status to indicate success.
-		setMCPBuildConditions(mcp, []mcfgv1.MachineConfigPoolCondition{
+		ps.SetBuildConditions([]mcfgv1.MachineConfigPoolCondition{
 			{
 				Type:   mcfgv1.MachineConfigPoolBuildFailed,
 				Status: corev1.ConditionFalse,
@@ -720,21 +729,23 @@ func (ctrl *Controller) markBuildSucceeded(pool *mcfgv1.MachineConfigPool) error
 			},
 		})
 
-		return ctrl.updatePoolAndSyncStatus(mcp, ctrl.syncAvailableStatus)
+		return ctrl.updatePoolAndSyncAvailableStatus(ps.MachineConfigPool())
 	})
 }
 
 // Marks a given MachineConfigPool as build pending.
-func (ctrl *Controller) markBuildPendingWithObjectRef(pool *mcfgv1.MachineConfigPool, objRef corev1.ObjectReference) error {
+func (ctrl *Controller) markBuildPendingWithObjectRef(ps *poolState, objRef corev1.ObjectReference) error {
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		mcp, err := ctrl.mcfgclient.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), pool.Name, metav1.GetOptions{})
+		mcp, err := ctrl.mcfgclient.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), ps.Name(), metav1.GetOptions{})
 		if err != nil {
 			return err
 		}
 
-		klog.Infof("Build for %s marked pending with object reference %v", mcp.Name, objRef)
+		ps := newPoolState(mcp)
 
-		setMCPBuildConditions(mcp, []mcfgv1.MachineConfigPoolCondition{
+		klog.Infof("Build for %s marked pending with object reference %v", ps.Name(), objRef)
+
+		ps.SetBuildConditions([]mcfgv1.MachineConfigPoolCondition{
 			{
 				Type:   mcfgv1.MachineConfigPoolBuildFailed,
 				Status: corev1.ConditionFalse,
@@ -756,18 +767,21 @@ func (ctrl *Controller) markBuildPendingWithObjectRef(pool *mcfgv1.MachineConfig
 
 		// If the MachineConfigPool has the build object reference, we just want to
 		// update the MachineConfigPool's status.
-		if machineConfigPoolHasObjectRef(mcp, objRef) {
-			return ctrl.syncAvailableStatus(mcp)
+		if ps.HasBuildObjectRef(objRef) {
+			return ctrl.syncAvailableStatus(ps.MachineConfigPool())
 		}
 
 		// If we added the build object reference, we need to update both the
 		// MachineConfigPool itself and its status.
-		addObjectRefIfMissing(mcp, objRef)
-		return ctrl.updatePoolAndSyncStatus(mcp, ctrl.syncAvailableStatus)
+		if err := ps.AddBuildObjectRef(objRef); err != nil {
+			return err
+		}
+
+		return ctrl.updatePoolAndSyncAvailableStatus(ps.MachineConfigPool())
 	})
 }
 
-func (ctrl *Controller) updatePoolAndSyncStatus(pool *mcfgv1.MachineConfigPool, statusFunc func(*mcfgv1.MachineConfigPool) error) error {
+func (ctrl *Controller) updatePoolAndSyncAvailableStatus(pool *mcfgv1.MachineConfigPool) error {
 	// We need to do an API server round-trip to ensure all of our mutations get
 	// propagated.
 	updatedPool, err := ctrl.mcfgclient.MachineconfigurationV1().MachineConfigPools().Update(context.TODO(), pool, metav1.UpdateOptions{})
@@ -777,7 +791,7 @@ func (ctrl *Controller) updatePoolAndSyncStatus(pool *mcfgv1.MachineConfigPool, 
 
 	updatedPool.Status = pool.Status
 
-	return statusFunc(updatedPool)
+	return ctrl.syncAvailableStatus(updatedPool)
 }
 
 // Machine Config Pools
@@ -788,13 +802,13 @@ func (ctrl *Controller) addMachineConfigPool(obj interface{}) {
 	ctrl.enqueueMachineConfigPool(pool)
 }
 
-func (ctrl *Controller) getBuildInputs(pool *mcfgv1.MachineConfigPool) (*buildInputs, error) {
+func (ctrl *Controller) getBuildInputs(ps *poolState) (*buildInputs, error) {
 	osImageURL, err := ctrl.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), machineConfigOSImageURLConfigMapName, metav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("could not get OS image URL: %w", err)
 	}
 
-	onClusterBuildConfig, err := ctrl.getOnClusterBuildConfig(pool)
+	onClusterBuildConfig, err := ctrl.getOnClusterBuildConfig(ps)
 	if err != nil {
 		return nil, fmt.Errorf("could not get configmap %q: %w", OnClusterBuildConfigMapName, err)
 	}
@@ -804,16 +818,18 @@ func (ctrl *Controller) getBuildInputs(pool *mcfgv1.MachineConfigPool) (*buildIn
 		return nil, fmt.Errorf("could not retrieve %s ConfigMap: %w", customDockerfileConfigMapName, err)
 	}
 
-	mc, err := ctrl.mcfgclient.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), pool.Spec.Configuration.Name, metav1.GetOptions{})
+	currentMC := ps.CurrentMachineConfig()
+
+	mc, err := ctrl.mcfgclient.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), currentMC, metav1.GetOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("could not get MachineConfig %s: %w", pool.Spec.Configuration.Name, err)
+		return nil, fmt.Errorf("could not get MachineConfig %s: %w", currentMC, err)
 	}
 
 	inputs := &buildInputs{
 		onClusterBuildConfig: onClusterBuildConfig,
 		osImageURL:           osImageURL,
 		customDockerfiles:    customDockerfiles,
-		pool:                 pool,
+		pool:                 ps.MachineConfigPool(),
 		machineConfig:        mc,
 	}
 
@@ -854,15 +870,15 @@ func (ctrl *Controller) prepareForBuild(inputs *buildInputs) (ImageBuildRequest,
 // Determines if we should run a build, then starts a build pod to perform the
 // build, and updates the MachineConfigPool with an object reference for the
 // build pod.
-func (ctrl *Controller) startBuildForMachineConfigPool(pool *mcfgv1.MachineConfigPool) error {
-	inputs, err := ctrl.getBuildInputs(pool)
+func (ctrl *Controller) startBuildForMachineConfigPool(ps *poolState) error {
+	inputs, err := ctrl.getBuildInputs(ps)
 	if err != nil {
 		return fmt.Errorf("could not fetch build inputs: %w", err)
 	}
 
 	ibr, err := ctrl.prepareForBuild(inputs)
 	if err != nil {
-		return fmt.Errorf("could not start build for MachineConfigPool %s: %w", pool.Name, err)
+		return fmt.Errorf("could not start build for MachineConfigPool %s: %w", ps.Name(), err)
 	}
 
 	objRef, err := ctrl.imageBuilder.StartBuild(ibr)
@@ -871,11 +887,11 @@ func (ctrl *Controller) startBuildForMachineConfigPool(pool *mcfgv1.MachineConfi
 		return err
 	}
 
-	return ctrl.markBuildPendingWithObjectRef(ibr.Pool, *objRef)
+	return ctrl.markBuildPendingWithObjectRef(ps, *objRef)
 }
 
 // Gets the ConfigMap which specifies the name of the base image pull secret, final image pull secret, and final image pullspec.
-func (ctrl *Controller) getOnClusterBuildConfig(pool *mcfgv1.MachineConfigPool) (*corev1.ConfigMap, error) {
+func (ctrl *Controller) getOnClusterBuildConfig(ps *poolState) (*corev1.ConfigMap, error) {
 	onClusterBuildConfigMap, err := ctrl.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), OnClusterBuildConfigMapName, metav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("could not get build controller config %q: %w", OnClusterBuildConfigMapName, err)
@@ -889,6 +905,8 @@ func (ctrl *Controller) getOnClusterBuildConfig(pool *mcfgv1.MachineConfigPool) 
 
 	needToUpdateConfigMap := false
 	finalImagePullspecWithTag := ""
+
+	currentMC := ps.CurrentMachineConfig()
 
 	for _, key := range requiredKeys {
 		val, ok := onClusterBuildConfigMap.Data[key]
@@ -919,9 +937,9 @@ func (ctrl *Controller) getOnClusterBuildConfig(pool *mcfgv1.MachineConfigPool) 
 				return nil, fmt.Errorf("could not parse %s with %q: %w", key, val, err)
 			}
 
-			tagged, err := reference.WithTag(named, pool.Spec.Configuration.Name)
+			tagged, err := reference.WithTag(named, currentMC)
 			if err != nil {
-				return nil, fmt.Errorf("could not add tag %s to image pullspec %s: %w", pool.Spec.Configuration.Name, val, err)
+				return nil, fmt.Errorf("could not add tag %s to image pullspec %s: %w", currentMC, val, err)
 			}
 
 			finalImagePullspecWithTag = tagged.String()
@@ -1015,39 +1033,23 @@ func (ctrl *Controller) handleCanonicalizedPullSecret(secret *corev1.Secret) (*c
 
 // If one wants to opt out, this removes all of the statuses and object
 // references from a given MachineConfigPool.
-func (ctrl *Controller) finalizeOptOut(pool *mcfgv1.MachineConfigPool) error {
-	if err := ctrl.postBuildCleanup(pool, true); err != nil {
+func (ctrl *Controller) finalizeOptOut(ps *poolState) error {
+	if err := ctrl.postBuildCleanup(ps.MachineConfigPool(), true); err != nil {
 		return err
 	}
 
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		mcp, err := ctrl.mcfgclient.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), pool.Name, metav1.GetOptions{})
+		mcp, err := ctrl.mcfgclient.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), ps.MachineConfigPool().Name, metav1.GetOptions{})
 		if err != nil {
 			return err
 		}
 
-		deleteBuildRefFromMachineConfigPool(mcp)
+		ps := newPoolState(mcp)
+		ps.DeleteBuildRefForCurrentMachineConfig()
+		ps.ClearImagePullspec()
+		ps.ClearAllBuildConditions()
 
-		delete(mcp.Annotations, ctrlcommon.ExperimentalNewestLayeredImageEquivalentConfigAnnotationKey)
-
-		conditions := []mcfgv1.MachineConfigPoolCondition{}
-
-		for _, condition := range mcp.Status.Conditions {
-			buildConditionFound := false
-			for _, buildConditionType := range getMachineConfigPoolBuildConditions() {
-				if condition.Type == buildConditionType {
-					buildConditionFound = true
-					break
-				}
-			}
-
-			if !buildConditionFound {
-				conditions = append(conditions, condition)
-			}
-		}
-
-		mcp.Status.Conditions = conditions
-		return ctrl.updatePoolAndSyncStatus(mcp, ctrl.syncAvailableStatus)
+		return ctrl.updatePoolAndSyncAvailableStatus(ps.MachineConfigPool())
 	})
 }
 
@@ -1069,7 +1071,7 @@ func (ctrl *Controller) updateMachineConfigPool(old, cur interface{}) {
 	// We've transitioned from a layered pool to a non-layered pool.
 	case ctrlcommon.IsLayeredPool(oldPool) && !ctrlcommon.IsLayeredPool(curPool):
 		klog.V(4).Infof("MachineConfigPool %s has opted out of layering", curPool.Name)
-		if err := ctrl.finalizeOptOut(curPool); err != nil {
+		if err := ctrl.finalizeOptOut(newPoolState(curPool)); err != nil {
 			klog.Errorln(err)
 			ctrl.handleErr(err, curPool.Name)
 			return
@@ -1077,7 +1079,7 @@ func (ctrl *Controller) updateMachineConfigPool(old, cur interface{}) {
 	// We need to do a build.
 	case doABuild:
 		klog.V(4).Infof("MachineConfigPool %s has changed, requiring a build", curPool.Name)
-		if err := ctrl.startBuildForMachineConfigPool(curPool); err != nil {
+		if err := ctrl.startBuildForMachineConfigPool(newPoolState(curPool)); err != nil {
 			klog.Errorln(err)
 			ctrl.handleErr(err, curPool.Name)
 			return
@@ -1136,100 +1138,9 @@ func (ctrl *Controller) syncFailingStatus(pool *mcfgv1.MachineConfigPool, err er
 	return err
 }
 
-// Searches a MachineConfigPoolStatusConfiguration for a given object reference.
-func machineConfigPoolObjectRefSearchFunc(cfg mcfgv1.MachineConfigPoolStatusConfiguration, objRef corev1.ObjectReference) bool {
-	for _, src := range cfg.Source {
-		if src == objRef {
-			return true
-		}
-	}
-
-	return false
-}
-
-// Determines if a MachineConfigPool contains a given ObjectReference.
-func machineConfigPoolHasObjectRef(pool *mcfgv1.MachineConfigPool, objRef corev1.ObjectReference) bool {
-	return machineConfigPoolObjectRefSearchFunc(pool.Spec.Configuration, objRef) &&
-		machineConfigPoolObjectRefSearchFunc(pool.Status.Configuration, objRef)
-}
-
-// Determines if a MachineConfigPool contains a reference to a Build or custom build pod.
-func machineConfigPoolHasBuildRef(pool *mcfgv1.MachineConfigPool) bool {
-	buildName := newImageBuildRequest(pool).getBuildName()
-
-	searchFunc := func(cfg mcfgv1.MachineConfigPoolStatusConfiguration) bool {
-		for _, src := range cfg.Source {
-			if src.Name == buildName && src.Kind != "MachineConfig" {
-				return true
-			}
-		}
-
-		return false
-	}
-
-	return searchFunc(pool.Spec.Configuration) && searchFunc(pool.Status.Configuration)
-}
-
-// Deletes the build pod references from the MachineConfigPool.
-func deleteBuildRefFromMachineConfigPool(pool *mcfgv1.MachineConfigPool) {
-	buildPodName := newImageBuildRequest(pool).getBuildName()
-
-	deleteFunc := func(cfg mcfgv1.MachineConfigPoolStatusConfiguration) []corev1.ObjectReference {
-		configSources := []corev1.ObjectReference{}
-
-		for _, src := range cfg.Source {
-			if src.Name != buildPodName {
-				configSources = append(configSources, src)
-			}
-		}
-
-		return configSources
-	}
-
-	pool.Spec.Configuration.Source = deleteFunc(pool.Spec.Configuration)
-	pool.Status.Configuration.Source = deleteFunc(pool.Status.Configuration)
-}
-
-// Determines if two conditions are equal. Note: I purposely do not include the
-// timestamp in the equality test, since we do not directly set it.
-func isConditionEqual(cond1, cond2 mcfgv1.MachineConfigPoolCondition) bool {
-	return cond1.Type == cond2.Type &&
-		cond1.Status == cond2.Status &&
-		cond1.Message == cond2.Message &&
-		cond1.Reason == cond2.Reason
-}
-
-// Idempotently adds an ObjectRefence to a pool.
-func addObjectRefIfMissing(pool *mcfgv1.MachineConfigPool, objRef corev1.ObjectReference) {
-	if !machineConfigPoolHasObjectRef(pool, objRef) {
-		pool.Spec.Configuration.Source = append(pool.Spec.Configuration.Source, objRef)
-		pool.Status.Configuration.Source = append(pool.Status.Configuration.Source, objRef)
-	}
-}
-
-// Idempotently sets MCP build conditions on a given MachineConfigPool.
-func setMCPBuildConditions(pool *mcfgv1.MachineConfigPool, conditions []mcfgv1.MachineConfigPoolCondition) {
-	for _, condition := range conditions {
-		condition := condition
-		currentCondition := mcfgv1.GetMachineConfigPoolCondition(pool.Status, condition.Type)
-		if currentCondition != nil && isConditionEqual(*currentCondition, condition) {
-			continue
-		}
-
-		mcpCondition := mcfgv1.NewMachineConfigPoolCondition(condition.Type, condition.Status, condition.Reason, condition.Message)
-		mcfgv1.SetMachineConfigPoolCondition(&pool.Status, *mcpCondition)
-	}
-}
-
 // Determine if we have a config change.
 func isPoolConfigChange(oldPool, curPool *mcfgv1.MachineConfigPool) bool {
 	return oldPool.Spec.Configuration.Name != curPool.Spec.Configuration.Name
-}
-
-// Determine if we have an image pullspec label.
-func hasImagePullspecAnnotation(pool *mcfgv1.MachineConfigPool) bool {
-	imagePullspecAnnotation, ok := pool.Annotations[ctrlcommon.ExperimentalNewestLayeredImageEquivalentConfigAnnotationKey]
-	return imagePullspecAnnotation != "" && ok
 }
 
 // Checks our pool to see if we can do a build. We base this off of a few criteria:
@@ -1239,54 +1150,36 @@ func hasImagePullspecAnnotation(pool *mcfgv1.MachineConfigPool) bool {
 // 4. Is our build in a specific state?
 //
 // Returns true if we are able to build.
-func canPoolBuild(pool *mcfgv1.MachineConfigPool) bool {
+func canPoolBuild(ps *poolState) bool {
 	// If we don't have a layered pool, we should not build.
-	if !ctrlcommon.IsLayeredPool(pool) {
+	if !ps.IsLayered() {
 		return false
 	}
 
 	// If we have a reference to an in-progress build, we should not build.
-	if machineConfigPoolHasBuildRef(pool) {
+	if ps.HasBuildObjectForCurrentMachineConfig() {
 		return false
 	}
 
 	// If the pool is degraded, we should not build.
-	if isPoolDegraded(pool) {
+	if ps.IsAnyDegraded() {
 		return false
 	}
 
 	// If the pool is in any of these states, we should not build.
-	conditionTypes := []mcfgv1.MachineConfigPoolConditionType{
-		mcfgv1.MachineConfigPoolBuilding,
-		mcfgv1.MachineConfigPoolBuildPending,
-		mcfgv1.MachineConfigPoolBuildFailed,
+	if ps.IsBuilding() {
+		return false
 	}
 
-	for _, conditionType := range conditionTypes {
-		if mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, conditionType) {
-			return false
-		}
+	if ps.IsBuildPending() {
+		return false
+	}
+
+	if ps.IsBuildFailure() {
+		return false
 	}
 
 	return true
-}
-
-// Determines if a pool is in a degraded state. Returns true if the pool is in
-// any kind of degraded state.
-func isPoolDegraded(pool *mcfgv1.MachineConfigPool) bool {
-	degradedConditionTypes := []mcfgv1.MachineConfigPoolConditionType{
-		mcfgv1.MachineConfigPoolDegraded,
-		mcfgv1.MachineConfigPoolRenderDegraded,
-		mcfgv1.MachineConfigPoolNodeDegraded,
-	}
-
-	for _, conditionType := range degradedConditionTypes {
-		if mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, conditionType) {
-			return true
-		}
-	}
-
-	return false
 }
 
 // Determines if we should do a build based upon the state of our
@@ -1294,14 +1187,16 @@ func isPoolDegraded(pool *mcfgv1.MachineConfigPool) bool {
 func shouldWeDoABuild(builder interface {
 	IsBuildRunning(*mcfgv1.MachineConfigPool) (bool, error)
 }, oldPool, curPool *mcfgv1.MachineConfigPool) (bool, error) {
+	ps := newPoolState(curPool)
+
 	// If we don't have a layered pool, we should not build.
-	poolStateSuggestsBuild := canPoolBuild(curPool) &&
+	poolStateSuggestsBuild := canPoolBuild(ps) &&
 		// If we have a config change or we're missing an image pullspec label, we
 		// should do a build.
-		(isPoolConfigChange(oldPool, curPool) || !hasImagePullspecAnnotation(curPool)) &&
+		(isPoolConfigChange(oldPool, curPool) || !ps.HasOSImage()) &&
 		// If we're missing a build pod reference, it likely means we don't need to
 		// do a build.
-		!machineConfigPoolHasBuildRef(curPool)
+		!ps.HasBuildObjectRefName(newImageBuildRequest(curPool).getBuildName())
 
 	if !poolStateSuggestsBuild {
 		return false, nil
