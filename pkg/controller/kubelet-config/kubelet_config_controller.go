@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"k8s.io/client-go/dynamic"
 	"reflect"
 	"strconv"
 	"strings"
@@ -77,6 +78,7 @@ type Controller struct {
 	templatesDir string
 
 	client        mcfgclientset.Interface
+	dynamicClient dynamic.Interface
 	configClient  configclientset.Interface
 	eventRecorder record.EventRecorder
 
@@ -118,6 +120,7 @@ func New(
 	nodeConfigInformer oseinformersv1.NodeInformer,
 	apiserverInformer oseinformersv1.APIServerInformer,
 	kubeClient clientset.Interface,
+	dynamicKubeClient dynamic.Interface,
 	mcfgClient mcfgclientset.Interface,
 	configclient configclientset.Interface,
 	fgAccess featuregates.FeatureGateAccess,
@@ -135,6 +138,7 @@ func New(
 		featureQueue:      workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-featurecontroller"),
 		nodeConfigQueue:   workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-nodeConfigcontroller"),
 		featureGateAccess: fgAccess,
+		dynamicClient:     dynamicKubeClient,
 	}
 
 	mkuInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{

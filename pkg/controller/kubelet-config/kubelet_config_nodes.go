@@ -3,6 +3,8 @@ package kubeletconfig
 import (
 	"context"
 	"fmt"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"reflect"
 	"time"
 
@@ -75,6 +77,33 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 	}
 	if err := ctrl.cleanUpDuplicatedMC(managedNodeConfigKeyPrefix); err != nil {
 		return err
+	}
+	pprofile := schema.GroupVersionResource{
+		Group:    "performance.openshift.io",
+		Version:  "v2",
+		Resource: "performanceprofiles",
+	}
+	perfList, err := ctrl.dynamicClient.Resource(pprofile).Namespace("").List(context.TODO(), metav1.ListOptions{})
+	if len(perfList.Items) >= 1 {
+		configNode := schema.GroupVersionResource{
+			Group:    "config.openshift.io",
+			Version:  "v1",
+			Resource: "nodes",
+		}
+
+		nodeObject := &unstructured.Unstructured{
+			Object: map[string]interface{}{
+				"apiVersion": "config.openshift.io/v1",
+				"kind":       "Node",
+				"metadata": map[string]interface{}{
+					"name": "cluster",
+				},
+				"spec": map[string]interface{}{
+					"cgroupMode": "v1",
+				},
+			},
+		}
+		ctrl.dynamicClient.Resource(configNode).Namespace("").Update(context.TODO(), nodeObject, metav1.UpdateOptions{})
 	}
 	// explicitly setting the cgroupMode to "v2" and also updating the config node's spec if found empty
 	// This helps in updating the cgroupMode on all the worker nodes if they still have cgroupsv1 (Ex: RHEL8 workers)

@@ -21,6 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/diff"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
+	dynamick8sfake "k8s.io/client-go/dynamic/fake"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 	core "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/cache"
@@ -204,6 +205,7 @@ func (f *fixture) newController(fgAccess featuregates.FeatureGateAccess) *Contro
 		featinformer.Config().V1().Nodes(),
 		featinformer.Config().V1().APIServers(),
 		k8sfake.NewSimpleClientset(),
+		dynamick8sfake.NewSimpleDynamicClient(),
 		f.client,
 		f.oseclient,
 		fgAccess,

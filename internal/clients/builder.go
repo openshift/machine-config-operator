@@ -1,6 +1,7 @@
 package clients
 
 import (
+	"k8s.io/client-go/dynamic"
 	"os"
 
 	buildclientset "github.com/openshift/client-go/build/clientset/versioned"
@@ -41,6 +42,17 @@ func (cb *Builder) KubeClientOrDie(name string) kubernetes.Interface {
 // based on the configuration provided
 func (cb *Builder) KubeClient(name string) (kubernetes.Interface, error) {
 	return kubernetes.NewForConfig(rest.AddUserAgent(cb.config, name))
+}
+
+// DynamicKubeClientOrDie returns the dynamic kubernetes client interface for dynamic kubernetes objects.
+func (cb *Builder) DynamicKubeClientOrDie(name string) dynamic.Interface {
+	return dynamic.NewForConfigOrDie(rest.AddUserAgent(cb.config, name))
+}
+
+// DynamicKubeClient is used in onceFrom mode where we can or cannot have a cluster ready
+// based on the configuration provided
+func (cb *Builder) DynamicKubeClient(name string) (dynamic.Interface, error) {
+	return dynamic.NewForConfig(rest.AddUserAgent(cb.config, name))
 }
 
 // ConfigClientOrDie returns the config client interface for openshift
