@@ -1498,16 +1498,16 @@ func (optr *Operator) getImageRegistryPullSecrets() ([]byte, error) {
 	// Check if image registry exists, if it doesn't we no-op
 	co, err := optr.configClient.ConfigV1().ClusterOperators().Get(context.TODO(), "image-registry", metav1.GetOptions{})
 
+	// returning no error in certain cases because image registry may become optional in the future
+	// More info at: https://issues.redhat.com/browse/IR-351
+	if co == nil || apierrors.IsNotFound(err) {
+		klog.Infof("exiting image registry secrets fetch - image registry operator does not exist.")
+		return nil, nil
+	}
+	// for any other error, report it back
 	if err != nil {
 		return nil, err
 	}
-	if co == nil {
-		// returning no error here because image registry may become optional in the future
-		// TODO: add another gate for image registry is "supposed" to be present
-		klog.Errorf("exiting image registry secrets fetch - image registry operator does not exist.")
-		return nil, nil
-	}
-
 	// Image registry exists, so continue to grab the secrets
 
 	// This is for wiring up the default registry route later
