@@ -1,4 +1,4 @@
-# Bind system:image-builder role to the image registry service account
+# Bind system:image-puller role to the image registry service account
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
