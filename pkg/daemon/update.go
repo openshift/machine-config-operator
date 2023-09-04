@@ -273,7 +273,7 @@ func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newC
 		}
 	}
 
-	// Only check the image type and excute OS changes if:
+	// Only check the image type and execute OS changes if:
 	// - machineconfig changed
 	// - we're staying on a realtime kernel ( need to run rpm-ostree update )
 	// - we have extensions ( need to run rpm-ostree update )
@@ -282,7 +282,9 @@ func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newC
 	// if they were in use, so we also need to preserve that behavior.
 	// https://issues.redhat.com/browse/OCPBUGS-4049
 	if mcDiff.osUpdate || mcDiff.extensions || mcDiff.kernelType || mcDiff.kargs ||
-		canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelTypeRealtime || len(newConfig.Spec.Extensions) > 0 {
+		canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelTypeRealtime ||
+		canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelType64kPages ||
+		len(newConfig.Spec.Extensions) > 0 {
 
 		// Throw started/staged events only if there is any update required for the OS
 		if dn.nodeWriter != nil {
@@ -722,6 +724,8 @@ func (mcDiff *machineConfigDiff) osChangesString() string {
 func canonicalizeKernelType(kernelType string) string {
 	if kernelType == ctrlcommon.KernelTypeRealtime {
 		return ctrlcommon.KernelTypeRealtime
+	} else if kernelType == ctrlcommon.KernelType64kPages {
+		return ctrlcommon.KernelType64kPages
 	}
 	return ctrlcommon.KernelTypeDefault
 }
@@ -1127,7 +1131,7 @@ func (dn *CoreOSDaemon) applyExtensions(oldConfig, newConfig *mcfgv1.MachineConf
 }
 
 // switchKernel updates kernel on host with the kernelType specified in MachineConfig.
-// Right now it supports default (traditional) and realtime kernel
+// Right now it supports default (traditional), realtime kernel and 64k pages kernel
 func (dn *CoreOSDaemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 	// We support Kernel update only on RHCOS and SCOS nodes
 	if !dn.os.IsEL() {
@@ -1148,8 +1152,8 @@ func (dn *CoreOSDaemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig)
 	defaultKernel := []string{"kernel", "kernel-core", "kernel-modules", "kernel-modules-core", "kernel-modules-extra"}
 	// Note this list explicitly does *not* include kernel-rt as that is a meta-package that tries to pull in a lot
 	// of other dependencies we don't want for historical reasons.
-	// kernel-rt also has a split off kernel-rt-kvm subpackage because it's in a separate subscription in RHEL.
 	realtimeKernel := []string{"kernel-rt-core", "kernel-rt-modules", "kernel-rt-modules-extra", "kernel-rt-kvm"}
+	hugePagesKernel := []string{"kernel-64k-core", "kernel-64k-modules", "kernel-64k-modules-core", "kernel-64k-modules-extra"}
 
 	if oldKtype != newKtype {
 		logSystem("Initiating switch to kernel %s", newKtype)
@@ -1162,6 +1166,15 @@ func (dn *CoreOSDaemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig)
 		args := []string{"override", "remove"}
 		args = append(args, defaultKernel...)
 		for _, pkg := range realtimeKernel {
+			args = append(args, "--install", pkg)
+		}
+
+		return runRpmOstree(args...)
+	} else if newKtype == ctrlcommon.KernelType64kPages {
+		// Switch to 64k pages kernel
+		args := []string{"override", "remove"}
+		args = append(args, defaultKernel...)
+		for _, pkg := range hugePagesKernel {
 			args = append(args, "--install", pkg)
 		}
 
@@ -1878,49 +1891,49 @@ func (dn *Daemon) InplaceUpdateViaNewContainer(target string) error {
 	return nil
 }
 
-// queueRevertRTKernel undoes the layering of the RT kernel
-func (dn *Daemon) queueRevertRTKernel() error {
+// queueRevertKernelSwap undoes the layering of the RT kernel or kernel-64k hugepages
+func (dn *Daemon) queueRevertKernelSwap() error {
 	booted, _, err := dn.NodeUpdaterClient.GetBootedAndStagedDeployment()
 	if err != nil {
 		return err
 	}
 
-	// Before we attempt to do an OS update, we must remove the kernel-rt switch
+	// Before we attempt to do an OS update, we must remove the kernel-rt or kernel-64k switch
 	// because in the case of updating from RHEL8 to RHEL9, the kernel packages are
 	// OS version dependent.  See also https://github.com/coreos/rpm-ostree/issues/2542
 	// (Now really what we want to do here is something more like rpm-ostree override reset --kernel
 	//  i.e. the inverse of https://github.com/coreos/rpm-ostree/pull/4322 so that
 	//  we're again not hardcoding even the prefix of kernel packages)
 	kernelOverrides := []string{}
-	kernelRtLayers := []string{}
+	kernelExtLayers := []string{}
 	for _, removal := range booted.RequestedBaseRemovals {
 		if removal == "kernel" || strings.HasPrefix(removal, "kernel-") {
 			kernelOverrides = append(kernelOverrides, removal)
 		}
 	}
 	for _, pkg := range booted.RequestedPackages {
-		if strings.HasPrefix(pkg, "kernel-rt-") {
-			kernelRtLayers = append(kernelRtLayers, pkg)
+		if strings.HasPrefix(pkg, "kernel-rt-") || strings.HasPrefix(pkg, "kernel-64k-") {
+			kernelExtLayers = append(kernelExtLayers, pkg)
 		}
 	}
-	// We *only* do this switch if the node has done a switch from kernel -> kernel-rt.
+	// We *only* do this switch if the node has done a switch from kernel -> kernel-rt or kernel-64k.
 	// We don't want to override any machine-local hotfixes for the kernel package.
-	// Implicitly in this we don't really support machine-local hotfixes for kernel-rt.
+	// Implicitly in this we don't really support machine-local hotfixes for kernel-rt or kernel-64k.
 	// The only sane way to handle that is declarative drop-ins, but really we want to
 	// just go to deploying pre-built images and not doing per-node mutation with rpm-ostree
 	// at all.
-	if len(kernelOverrides) > 0 && len(kernelRtLayers) > 0 {
+	if len(kernelOverrides) > 0 && len(kernelExtLayers) > 0 {
 		args := []string{"override", "reset"}
 		args = append(args, kernelOverrides...)
-		for _, pkg := range kernelRtLayers {
+		for _, pkg := range kernelExtLayers {
 			args = append(args, "--uninstall", pkg)
 		}
 		err := runRpmOstree(args...)
 		if err != nil {
 			return err
 		}
-	} else if len(kernelOverrides) > 0 || len(kernelRtLayers) > 0 {
-		klog.Infof("notice: detected %d overrides and %d kernel-rt layers", len(kernelOverrides), len(kernelRtLayers))
+	} else if len(kernelOverrides) > 0 || len(kernelExtLayers) > 0 {
+		klog.Infof("notice: detected %d kernel overrides and %d kernel-rt or kernel-64k layers", len(kernelOverrides), len(kernelExtLayers))
 	} else {
 		klog.Infof("No kernel overrides or replacement detected")
 	}
@@ -2094,10 +2107,10 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 		}
 	}()
 
-	// If we have an OS update *or* a kernel type change, then we must undo the RT kernel
+	// If we have an OS update *or* a kernel type change, then we must undo the kernel swap
 	// enablement.
 	if mcDiff.osUpdate || mcDiff.kernelType {
-		if err := dn.queueRevertRTKernel(); err != nil {
+		if err := dn.queueRevertKernelSwap(); err != nil {
 			mcdPivotErr.Inc()
 			return err
 		}
