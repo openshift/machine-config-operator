@@ -120,17 +120,17 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.Contro
 		return nil, err
 	}
 
-	// Setting FIPS to true or kerneType to realtime in any MachineConfig takes priority in setting that field
+	// Setting FIPS to true or kernelType to a non-default value in any MachineConfig takes priority in setting that field
 	for _, cfg := range configs {
 		if cfg.Spec.FIPS {
 			fips = true
 		}
-		if cfg.Spec.KernelType == KernelTypeRealtime {
+		if cfg.Spec.KernelType == KernelTypeRealtime || cfg.Spec.KernelType == KernelType64kPages {
 			kernelType = cfg.Spec.KernelType
 		}
 	}
 
-	// If no MC sets kerneType, then set it to 'default' since that's what it is using
+	// If no MC sets kernelType, then set it to 'default' since that's what it is using
 	if kernelType == "" {
 		kernelType = KernelTypeDefault
 	}
@@ -569,7 +569,7 @@ func InSlice(elem string, slice []string) bool {
 
 // ValidateMachineConfig validates that given MachineConfig Spec is valid.
 func ValidateMachineConfig(cfg mcfgv1.MachineConfigSpec) error {
-	if !(cfg.KernelType == "" || cfg.KernelType == KernelTypeDefault || cfg.KernelType == KernelTypeRealtime) {
+	if !(cfg.KernelType == "" || cfg.KernelType == KernelTypeDefault || cfg.KernelType == KernelTypeRealtime || cfg.KernelType == KernelType64kPages) {
 		return fmt.Errorf("kernelType=%s is invalid", cfg.KernelType)
 	}
 
