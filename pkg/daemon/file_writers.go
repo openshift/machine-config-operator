@@ -8,6 +8,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	"github.com/google/renameio"
@@ -45,12 +46,81 @@ func noOrigFileStampName(fpath string) string {
 	return filepath.Join(noOrigParentDir(), fpath+".mcdnoorig")
 }
 
-func createOrigFile(fromPath, fpath string) error {
-	if _, err := os.Stat(noOrigFileStampName(fpath)); err == nil {
-		// we already created the no orig file for this default file
-		return nil
+func isFileOwnedByRPMPkg(fpath string) (bool, bool, error) {
+	// The first bool returns false if rpm exists, and true otherwise (indicating other Linux distros or Mac).
+	// We would like to skip orig file creation and preservation for [first bool = true] cases.
+	// The second bool returns true if the given path is owned by the rpm pkg.
+
+	// Check whether the underlying OS is Fedora/RHEL, skip the rest and return if not (e.g. Mac -> no rpm)
+	// If we cannot find the rpm binary, return an error.
+	path, err := exec.LookPath("rpm")
+	if err != nil {
+		return true, false, err
 	}
-	if _, err := os.Stat(fpath); os.IsNotExist(err) {
+
+	// Check whether the given path is owned by an rpm pkg
+	cmd := exec.Command(path, "-qf", fpath)
+	out, err := cmd.CombinedOutput()
+
+	if err == nil && cmd.ProcessState.ExitCode() == 0 {
+		return false, true, nil
+	}
+	fileNotOwnedMsg := fmt.Sprintf("file %s is not owned by any package", fpath)
+	if strings.Contains(string(out), fileNotOwnedMsg) {
+		return false, false, nil
+	}
+	return false, false, fmt.Errorf("command %q returned with unexpected error: %s: %w", cmd, string(out), err)
+}
+
+func createOrigFile(fromPath, fpath string) error {
+	orig := false
+
+	// https://issues.redhat.com/browse/OCPBUGS-11437
+	// MCO keeps the pull secret to .orig file once it replaced
+	// Adapt a check used in function deleteStaleData for backwards compatibility: basically if the file doesn't
+	// exist in /usr/etc (on FCOS/RHCOS) and no rpm is claiming it, we assume the orig file doesn't need to be created.
+	// Only do the check for existing files because files that wasn't present on disk before MCD took over will never
+	// be files that were shipped _with_ the underlying OS (e.g. a default chrony config).
+	if _, err := os.Stat(fpath); err == nil {
+		rpmNotFound, isOwned, err := isFileOwnedByRPMPkg(fpath)
+		if isOwned {
+			// File is owned by an rpm
+			orig = true
+		} else if !isOwned && (err == nil) {
+			// Run on Fedora/RHEL - check whether the file exist in /usr/etc (on FCOS/RHCOS)
+			if strings.HasPrefix(fpath, "/etc") {
+				if _, err := os.Stat(withUsrPath(fpath)); err != nil {
+					if !os.IsNotExist(err) {
+						return err
+					}
+				} else {
+					orig = true
+				}
+			}
+		} else if rpmNotFound {
+			// Run on non-Fedora/RHEL machine
+			klog.Infof("Running on non-Fedora/RHEL, skip orig file preservation.")
+		} else {
+			return err
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+
+	if !orig {
+		if _, err := os.Stat(noOrigFileStampName(fpath)); err == nil {
+			// we already created the no orig file for this default file
+			return nil
+		}
+
+		// check whether there is already an orig preservation for the path, and remove upon existence (wrongly preserved)
+		if _, err := os.Stat(origFileName(fpath)); err == nil {
+			if delErr := os.Remove(origFileName(fpath)); delErr != nil {
+				return fmt.Errorf("deleting orig file for %q: %w", origFileName(fpath), delErr)
+			}
+			klog.Infof("Removing files %q completely for incorrect preservation", origFileName(fpath))
+		}
+
 		// create a noorig file that tells the MCD that the file wasn't present on disk before MCD
 		// took over so it can just remove it when deleting stale data, as opposed as restoring a file
 		// that was shipped _with_ the underlying OS (e.g. a default chrony config).
