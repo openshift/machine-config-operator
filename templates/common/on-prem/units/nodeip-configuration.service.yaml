@@ -7,7 +7,7 @@ contents: |
   # address picking logic is flawed and may end up selecting an address from a
   # different subnet or a deprecated address
   Wants=NetworkManager-wait-online.service crio-wipe.service
-  After=NetworkManager-wait-online.service ignition-firstboot-complete.service crio-wipe.service
+  After=NetworkManager-wait-online.service coreos-ignition-firstboot-complete.service crio-wipe.service
   Before=kubelet.service crio.service ovs-configuration.service
 
   [Service]

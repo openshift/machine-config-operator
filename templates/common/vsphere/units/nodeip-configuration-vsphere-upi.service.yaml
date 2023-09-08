@@ -17,7 +17,7 @@ contents: |
   [Unit]
   Description=Writes IP address configuration so that kubelet and crio services select a valid node IP
   Wants=NetworkManager-wait-online.service crio-wipe.service
-  After=NetworkManager-wait-online.service ignition-firstboot-complete.service crio-wipe.service
+  After=NetworkManager-wait-online.service coreos-ignition-firstboot-complete.service crio-wipe.service
   Before=kubelet.service crio.service ovs-configuration.service
 
   [Service]
