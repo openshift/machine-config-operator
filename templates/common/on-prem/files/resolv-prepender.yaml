@@ -18,6 +18,9 @@ contents:
     {{end -}}
 
     function pull_baremetal_runtime_cfg_image {
+        if [[ "$(/usr/bin/podman images  --quiet {{ .Images.baremetalRuntimeCfgImage }} | wc -l)" == "1" ]]; then
+            return 0
+        fi
         >&2 echo "NM resolv-prepender: Starting download of baremetal runtime cfg image"
         while ! /usr/bin/podman pull --authfile /var/lib/kubelet/config.json {{ .Images.baremetalRuntimeCfgImage }}; do sleep 1; done
         >&2 echo "NM resolv-prepender: Download of baremetal runtime cfg image completed"
