@@ -83,6 +83,8 @@ func ensureControllerConfigSpec(modified *bool, existing *mcfgv1.ControllerConfi
 	setBytesIfSet(modified, &existing.KubeAPIServerServingCAData, required.KubeAPIServerServingCAData)
 	setBytesIfSet(modified, &existing.CloudProviderCAData, required.CloudProviderCAData)
 
+	setIPFamiliesIfSet(modified, &existing.IPFamilies, required.IPFamilies)
+
 	if required.ImageRegistryBundleData != nil && !equality.Semantic.DeepEqual(existing.ImageRegistryBundleData, required.ImageRegistryBundleData) {
 		*modified = true
 		existing.ImageRegistryBundleData = required.ImageRegistryBundleData
