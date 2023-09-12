@@ -18,12 +18,18 @@ contents:
     {{end -}}
 
     function pull_baremetal_runtime_cfg_image {
-        if [[ "$(/usr/bin/podman images  --quiet {{ .Images.baremetalRuntimeCfgImage }} | wc -l)" == "1" ]]; then
-            return 0
+        # By default podman retries to pull an image 3 times with 1 second back-off. It is not configurable. For this
+        # reason we are implementing our own logic of pulling image and retrying indefinitely.
+        # Ref.: https://github.com/containers/common/blob/e028741ef77fdfa3ae261b9d23cdd50253d586c4/libimage/copier.go#L27-L30
+
+        >&2 echo "NM resolv-prepender: Checking if baremetal runtime cfg image already exists"
+        if ! /usr/bin/podman image exists {{ .Images.baremetalRuntimeCfgImage }}; then
+          >&2 echo "NM resolv-prepender: Starting download of baremetal runtime cfg image"
+          while ! /usr/bin/podman pull --authfile /var/lib/kubelet/config.json {{ .Images.baremetalRuntimeCfgImage }}; do sleep 1; done
+          >&2 echo "NM resolv-prepender: Download of baremetal runtime cfg image completed"
+        else
+          >&2 echo "NM resolv-prepender: Image exists, no need to download"
         fi
-        >&2 echo "NM resolv-prepender: Starting download of baremetal runtime cfg image"
-        while ! /usr/bin/podman pull --authfile /var/lib/kubelet/config.json {{ .Images.baremetalRuntimeCfgImage }}; do sleep 1; done
-        >&2 echo "NM resolv-prepender: Download of baremetal runtime cfg image completed"
     }
 
     function resolv_prepender {
