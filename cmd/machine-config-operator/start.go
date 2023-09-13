@@ -93,6 +93,10 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			ctrlctx.KubeInformerFactory.Core().V1().Nodes(),
 			ctrlctx.KubeMAOSharedInformer.Core().V1().Secrets(),
 			ctrlctx.ConfigInformerFactory.Config().V1().Images(),
+			ctrlctx.KubeNamespacedInformerFactory.Core().V1().ServiceAccounts(),
+			ctrlctx.KubeNamespacedInformerFactory.Core().V1().Secrets(),
+			ctrlctx.OpenShiftConfigKubeNamespacedInformerFactory.Core().V1().Secrets(),
+			ctrlctx.ConfigInformerFactory.Config().V1().ClusterOperators(),
 		)
 
 		ctrlctx.NamespacedInformerFactory.Start(ctrlctx.Stop)
@@ -101,6 +105,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		ctrlctx.APIExtInformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.ConfigInformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.OpenShiftKubeAPIServerKubeNamespacedInformerFactory.Start(ctrlctx.Stop)
+		ctrlctx.OpenShiftConfigKubeNamespacedInformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.OperatorInformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.KubeMAOSharedInformer.Start(ctrlctx.Stop)
 		close(ctrlctx.InformersStarted)
