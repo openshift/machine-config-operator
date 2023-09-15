@@ -196,6 +196,8 @@ func generateKubeConfigIgnFromFeatures(cc *mcfgv1.ControllerConfig, templatesDir
 	if err != nil {
 		return nil, err
 	}
+	// Enable EventedPLEG fg
+	originalKubeConfig.FeatureGates["EventedPLEG"] = true
 	if nodeConfig != nil && role == ctrlcommon.MachineConfigPoolWorker {
 		updateOriginalKubeConfigwithNodeConfig(nodeConfig, originalKubeConfig)
 	}
