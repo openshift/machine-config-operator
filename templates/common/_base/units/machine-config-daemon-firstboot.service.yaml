@@ -8,7 +8,7 @@ contents: |
   # Removal of this file signals firstboot completion
   ConditionPathExists=/etc/ignition-machine-config-encapsulated.json
   After=machine-config-daemon-pull.service
-  Before=crio.service kubelet.service
+  Before=network-online.target crio.service kubelet.service ovs-configuration.service
 
   [Service]
   Type=oneshot
@@ -23,5 +23,5 @@ contents: |
   {{end -}}
 
   [Install]
-  WantedBy=multi-user.target
-  RequiredBy=crio.service kubelet.service
+  WantedBy=network-online.target
+  RequiredBy=crio.service kubelet.service ovs-configuration.service
