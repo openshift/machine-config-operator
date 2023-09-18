@@ -817,51 +817,20 @@ func TestOriginalFileBackupRestore(t *testing.T) {
 	testDir, cleanup := setupTempDirWithEtc(t)
 	defer cleanup()
 
-	// Write a normal file as a control to make sure normal case works
+	// Write a file in the /tmp dir to test whether orig files are selectively preserved
 	controlFile := filepath.Join(testDir, "control-file")
 	err := os.WriteFile(controlFile, []byte("control file contents"), 0755)
 	assert.Nil(t, err)
 
-	// Back up that normal file
+	// Back up the tmp file
 	err = createOrigFile(controlFile, controlFile)
 	assert.Nil(t, err)
 
-	// Now try again and make sure it knows it's already backed up
+	// Now try again and make sure it knows it's already backed up if it should be
 	err = createOrigFile(controlFile, controlFile)
 	assert.Nil(t, err)
 
-	// Restore the normal file
-	err = restorePath(controlFile)
-	assert.Nil(t, err)
-
-	// The normal file worked, try it with a symlink
-	// Write a file we can point a symlink at
-	err = os.WriteFile(filepath.Join(testDir, "target-file"), []byte("target file contents"), 0755)
-	assert.Nil(t, err)
-
-	// Make a relative symlink
-	relativeSymlink := filepath.Join(testDir, "etc", "relative-symlink-to-target-file")
-	relativeSymlinkTarget := filepath.Join("..", "target-file")
-	err = os.Symlink(relativeSymlinkTarget, relativeSymlink)
-	assert.Nil(t, err)
-
-	// Back up the relative symlink
-	err = createOrigFile(relativeSymlink, relativeSymlink)
-	assert.Nil(t, err)
-
-	// Remove the symlink and write a file over it
-	fileOverSymlink := filepath.Join(testDir, "etc", "relative-symlink-to-target-file")
-	err = os.Remove(fileOverSymlink)
-	assert.Nil(t, err)
-	err = os.WriteFile(fileOverSymlink, []byte("replacement contents"), 0755)
-	assert.Nil(t, err)
-
-	// Try to back it up again make sure it knows it's already backed up
-	err = createOrigFile(relativeSymlink, relativeSymlink)
-	assert.Nil(t, err)
-
-	// Finally, make sure we can restore the relative symlink if we rollback
-	err = restorePath(relativeSymlink)
-	assert.Nil(t, err)
-
+	// Check whether there is an orig preservation for the path - OK: there is no back up for the tmp file
+	_, err = os.Stat(origFileName(controlFile))
+	assert.True(t, os.IsNotExist(err))
 }

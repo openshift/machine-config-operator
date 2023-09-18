@@ -1245,6 +1245,7 @@ func (dn *Daemon) isPathInDropins(path string, systemd *ign3types.Systemd) bool 
 //nolint:gocyclo
 func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig ign3types.Config) error {
 	klog.Info("Deleting stale data")
+
 	newFileSet := make(map[string]struct{})
 	for _, f := range newIgnConfig.Storage.Files {
 		newFileSet[f.Path] = struct{}{}
@@ -1282,20 +1283,27 @@ func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig ign3types.Config) e
 			// Add a check for backwards compatibility: basically if the file doesn't exist in /usr/etc (on FCOS/RHCOS)
 			// and no rpm is claiming it, we assume that the orig file came from a wrongful backup of a MachineConfig
 			// file instead of a file originally on disk. See https://bugzilla.redhat.com/show_bug.cgi?id=1814397
-			var restore bool
-			if _, err := exec.Command("rpm", "-qf", f.Path).CombinedOutput(); err == nil {
+			restore := false
+			rpmNotFound, isOwned, err := isFileOwnedByRPMPkg(f.Path)
+			if isOwned {
 				// File is owned by an rpm
 				restore = true
-			} else if strings.HasPrefix(f.Path, "/etc") && dn.os.IsCoreOSVariant() {
-				if _, err := os.Stat(withUsrPath(f.Path)); err != nil {
-					if !os.IsNotExist(err) {
-						return err
+			} else if !isOwned && (err == nil) {
+				// Run on Fedora/RHEL - check whether the file exist in /usr/etc (on FCOS/RHCOS)
+				if strings.HasPrefix(f.Path, "/etc") {
+					if _, err := os.Stat(withUsrPath(f.Path)); err != nil {
+						if !os.IsNotExist(err) {
+							return err
+						}
+					} else {
+						restore = true
 					}
-
-					// If the error is ErrNotExist then we don't restore the file
-				} else {
-					restore = true
 				}
+			} else if rpmNotFound {
+				// Run on non-Fedora/RHEL machine
+				klog.Infof("Running on non-Fedora/RHEL machine, skip file restoration.")
+			} else {
+				return err
 			}
 
 			if restore {
