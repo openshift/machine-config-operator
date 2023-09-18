@@ -580,7 +580,6 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 			}
 		}
 	}()
-
 	return dn.performPostConfigChangeAction(actions, newConfig.GetName())
 }
 
@@ -1747,7 +1746,7 @@ func deconfigureUser(user ign3types.PasswdUser) error {
 }
 
 // Determines if a file exists by checking for the presence or lack thereof of
-// an error when stat'ing the file. Returns any other error.
+// an error when stat'ing the file. Returns any other erro  fr.
 func fileExists(path string) (bool, error) {
 	_, err := os.Stat(path)
 	// If there is no error, the file definitely exists.

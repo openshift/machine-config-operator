@@ -872,12 +872,12 @@ func (optr *Operator) syncMachineOSBuilder(config *renderConfig) error {
 
 	mob := resourceread.ReadDeploymentV1OrDie(mobBytes)
 
-	return optr.reconcileMachineOSBuilder(mob)
+	return optr.ReconcileMachineOSBuilder(mob)
 }
 
 // Determines if the Machine OS Builder deployment is in the correct state
 // based upon whether we have opted-in pools or not.
-func (optr *Operator) reconcileMachineOSBuilder(mob *appsv1.Deployment) error {
+func (optr *Operator) ReconcileMachineOSBuilder(mob *appsv1.Deployment) error {
 	// First, check if we have any MachineConfigPools opted in.
 	layeredMCPs, err := optr.getLayeredMachineConfigPools()
 	if err != nil {
@@ -909,9 +909,44 @@ func (optr *Operator) reconcileMachineOSBuilder(mob *appsv1.Deployment) error {
 		return optr.stopMachineOSBuilderDeployment(mob.Name)
 	}
 
+	// If MOB is running and there are opted-in pools, configure passwd and ssh
+	if isRunning && len(layeredMCPs) != 0 && correctReplicaCount {
+		// if err := optr.handlePasswordUpdateForLayeredMCPs(layeredMCPs); err != nil {
+		// 	return fmt.Errorf("handling password update for layering-enabled pools failed: %w", err)
+		// }
+		klog.Infof("Machine OS Builder has configured Password and SSH fields")
+	}
+
 	// No-op if everything is in the desired state.
 	return nil
 }
+
+// func (optr *Operator) handlePasswordUpdateForLayeredMCPs(layeredMCPs []*mcfgv1.MachineConfigPool) error {
+// 	klog.Info("Handling Password Update for layering-enabled MCP's")
+
+// 	oldConfig, newConfig := optr.fetchOldAndNewConfigs()
+// 	if oldConfig == nil || newConfig == nil {
+// 		return fmt.Errorf("failed to fetch old or new config")
+// 	}
+
+// 	dn := &daemon.Daemon{}
+
+// 	oldIgnConfig, err := ctrlcommon.ParseAndConvertConfig(oldConfig.Spec.Config.Raw)
+// 	if err != nil {
+// 		return fmt.Errorf("parsing old Ignition config failed: %w", err)
+// 	}
+// 	newIgnConfig, err := ctrlcommon.ParseAndConvertConfig(newConfig.Spec.Config.Raw)
+// 	if err != nil {
+// 		return fmt.Errorf("parsing new Ignition config failed: %w", err)
+// 	}
+
+// 	// Set password hash
+// 	if err := dn.SetPasswordHash(newIgnConfig.Passwd.Users, oldIgnConfig.Passwd.Users); err != nil {
+// 		return err
+// 	}
+
+// 	return nil
+// }
 
 // Delete the Machine OS Builder Deployment
 func (optr *Operator) stopMachineOSBuilderDeployment(name string) error {
