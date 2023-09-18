@@ -1072,6 +1072,13 @@ func (dn *Daemon) RunFirstbootCompleteMachineconfig() error {
 	// it, reflecting the current machine state.
 	oldConfig := canonicalizeEmptyMC(nil)
 	oldConfig.Spec.OSImageURL = dn.bootedOSImageURL
+
+	// Setting the Kernel Arguments is for comparison only with the desired MachineConfig.
+	// The resulting MC should not be for updating node configuration.
+	if err = setRunningKargs(oldConfig, mc.Spec.KernelArguments); err != nil {
+		return fmt.Errorf("failed to set kernel arguments from /proc/cmdline: %w", err)
+	}
+
 	// Currently, we generally expect the bootimage to be older, but in the special
 	// case of having bootimage == machine-os-content, and no kernel arguments
 	// specified, then we don't need to do anything here.

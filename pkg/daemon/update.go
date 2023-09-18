@@ -123,6 +123,29 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 	return dn.triggerUpdateWithMachineConfig(state.currentConfig, state.desiredConfig, true)
 }
 
+func setRunningKargsWithCmdline(config *mcfgv1.MachineConfig, requestedKargs []string, cmdline []byte) error {
+	splits := splitKernelArguments(strings.TrimSpace(string(cmdline)))
+	config.Spec.KernelArguments = nil
+	for _, split := range splits {
+		for _, reqKarg := range requestedKargs {
+			if reqKarg == split {
+				config.Spec.KernelArguments = append(config.Spec.KernelArguments, reqKarg)
+				break
+			}
+		}
+	}
+	return nil
+}
+
+func setRunningKargs(config *mcfgv1.MachineConfig, requestedKargs []string) error {
+	rpmostreeKargsBytes, err := runGetOut("rpm-ostree", "kargs")
+	if err != nil {
+		return err
+	}
+
+	return setRunningKargsWithCmdline(config, requestedKargs, rpmostreeKargsBytes)
+}
+
 func canonicalizeEmptyMC(config *mcfgv1.MachineConfig) *mcfgv1.MachineConfig {
 	if config != nil {
 		return config
