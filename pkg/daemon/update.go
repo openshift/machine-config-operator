@@ -341,10 +341,6 @@ func ExtractOSImage(imgURL string) (osImageContentDir string, err error) {
 // ExtractExtensionsImage extracts the OS extensions content in a temporary directory under /run/machine-os-extensions
 // and returns the path on successful extraction
 func ExtractExtensionsImage(imgURL string) (osExtensionsImageContentDir string, err error) {
-	var registryConfig []string
-	if _, err := os.Stat(kubeletAuthFile); err == nil {
-		registryConfig = append(registryConfig, "--registry-config", kubeletAuthFile)
-	}
 	if err = os.MkdirAll(osExtensionsContentBaseDir, 0o755); err != nil {
 		err = fmt.Errorf("error creating directory %s: %w", osExtensionsContentBaseDir, err)
 		return
@@ -354,20 +350,8 @@ func ExtractExtensionsImage(imgURL string) (osExtensionsImageContentDir string, 
 		return
 	}
 
-	// Extract the image
-	args := []string{"image", "extract", "-v", "10", "--path", "/:" + osExtensionsImageContentDir}
-	args = append(args, registryConfig...)
-	args = append(args, imgURL)
-	if _, err = pivotutils.RunExtBackground(cmdRetriesCount, "oc", args...); err != nil {
-		// Workaround fixes for the environment where oc image extract fails.
-		// See https://bugzilla.redhat.com/show_bug.cgi?id=1862979
-		glog.Infof("Falling back to using podman cp to fetch OS image content")
-		if err = podmanCopy(imgURL, osExtensionsImageContentDir); err != nil {
-			return
-		}
-	}
-
-	return
+	// Extract the image using `podman cp`
+	return osExtensionsImageContentDir, podmanCopy(imgURL, osExtensionsImageContentDir)
 }
 
 // Remove pending deployment on OSTree based system
