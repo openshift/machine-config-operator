@@ -46,7 +46,6 @@ require (
 	k8s.io/component-base v0.27.3
 	k8s.io/kubectl v0.27.3
 	k8s.io/kubelet v0.27.3
-	k8s.io/kubernetes v1.27.3
 	k8s.io/utils v0.0.0-20230505201702-9f6742963106
 	sigs.k8s.io/controller-runtime v0.13.0
 )
