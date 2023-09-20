@@ -10,6 +10,8 @@ import (
 
 	"github.com/containers/image/v5/docker/reference"
 	yaml "gopkg.in/yaml.v3"
+
+	"github.com/coreos/rpmostree-client-go/pkg/imgref"
 )
 
 // Status summarizes the current worldview of the rpm-ostree daemon.
@@ -38,6 +40,7 @@ type Deployment struct {
 	ContainerImageReference string   `json:"container-image-reference"`
 	RequestedPackages       []string `json:"requested-packages"`
 	RequestedBaseRemovals   []string `json:"requested-base-removals"`
+	Unlocked                *string  `json:"unlocked"`
 }
 
 // Client is a handle for interacting with an rpm-ostree based system.
@@ -171,6 +174,14 @@ func (s *Deployment) GetBaseChecksum() string {
 	return s.Checksum
 }
 
+// Parse the deployment's container image reference.
+func (d *Deployment) RequireContainerImage() (*imgref.OstreeImageReference, error) {
+	if d.ContainerImageReference == "" {
+		return nil, fmt.Errorf("deployment is not using a container origin")
+	}
+	return imgref.Parse(d.ContainerImageReference)
+}
+
 // Remove the pending deployment.
 func (client *Client) RemovePendingDeployment() error {
 	return client.run("cleanup", "-p")
@@ -238,12 +249,12 @@ func (client *Client) OverrideReset(toReset []string, toUninstall []string) erro
 
 // RebaseToContainerImage switches to the target container image
 func (client *Client) RebaseToContainerImage(target reference.Reference) error {
-	return client.run("rebase", "--experimental", fmt.Sprintf("ostree-image-signed:docker://%s", target.String()))
+	return client.run("rebase", fmt.Sprintf("ostree-image-signed:docker://%s", target.String()))
 }
 
 // RebaseToContainerImageAllowUnsigned switches to the target container image, ignoring lack of image signatures.
 func (client *Client) RebaseToContainerImageAllowUnsigned(target reference.Reference) error {
-	return client.run("rebase", "--experimental", fmt.Sprintf("ostree-unverified-registry:%s", target.String()))
+	return client.run("rebase", fmt.Sprintf("ostree-unverified-registry:%s", target.String()))
 }
 
 func parseDeploymentError(buf string) (*string, error) {
