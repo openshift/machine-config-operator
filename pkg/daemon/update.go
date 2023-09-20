@@ -583,6 +583,49 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	return dn.performPostConfigChangeAction(actions, newConfig.GetName())
 }
 
+func isNodeInOptedInPool(node *corev1.Node) bool {
+	_, currentImagePresent := node.Annotations["currentImage"]
+	_, desiredImagePresent := node.Annotations["desiredImage"]
+	if currentImagePresent || desiredImagePresent {
+		klog.Infof("Node %s is opted into the pool.", node.Name)
+		return true
+	}
+	return false
+}
+
+func (dn *Daemon) HandlePasswordUpdateForLayeredMCPs(oldConfig, newConfig *mcfgv1.MachineConfig) error {
+	node, err := dn.kubeClient.CoreV1().Nodes().Get(context.TODO(), dn.name, metav1.GetOptions{})
+	if err != nil {
+		klog.Errorf("could not retrieve node: %v", err)
+		return err
+	}
+	if isNodeInOptedInPool(node) {
+		err := dn.SetPasswordHashForConfigs(oldConfig, newConfig)
+		if err != nil {
+			klog.Errorf("error setting password hash for configs: %v", err)
+			return err
+		}
+	}
+	return nil
+}
+
+func (dn *Daemon) SetPasswordHashForConfigs(oldConfig, newConfig *mcfgv1.MachineConfig) error {
+
+	oldIgnConfig, err := ctrlcommon.ParseAndConvertConfig(oldConfig.Spec.Config.Raw)
+	if err != nil {
+		return fmt.Errorf("parsing old Ignition config failed: %w", err)
+	}
+
+	newIgnConfig, err := ctrlcommon.ParseAndConvertConfig(newConfig.Spec.Config.Raw)
+	if err != nil {
+		return fmt.Errorf("parsing new Ignition config failed: %w", err)
+	}
+
+	klog.Info("Handling Password Update for layering-enabled MCP's")
+
+	return dn.SetPasswordHash(newIgnConfig.Passwd.Users, oldIgnConfig.Passwd.Users)
+}
+
 // This is currently a subsection copied over from update() since we need to be more nuanced. Should eventually
 // de-dupe the functions.
 func (dn *Daemon) updateHypershift(oldConfig, newConfig *mcfgv1.MachineConfig, diff *machineConfigDiff) (retErr error) {
@@ -1576,11 +1619,11 @@ func (dn *Daemon) atomicallyWriteSSHKey(authKeyPath, keys string) error {
 		if userInfo, err := user.LookupId(fmt.Sprint(uid)); err == nil {
 			if userInfo.Username != constants.CoreUserName {
 				if err := os.RemoveAll(constants.CoreUserSSHPath); err != nil {
-					return fmt.Errorf("Failed to remove existing root user owned .ssh path %s:%w", constants.CoreUserSSHPath, err)
+					return fmt.Errorf("failed to remove existing root user owned .ssh path %s:%w", constants.CoreUserSSHPath, err)
 				}
 			}
 		} else {
-			return fmt.Errorf("Failed to look up the user of the .ssh path %s:%w", constants.CoreUserSSHPath, err)
+			return fmt.Errorf("failed to look up the user of the .ssh path %s:%w", constants.CoreUserSSHPath, err)
 		}
 	} else if !os.IsNotExist(err) {
 		return err
@@ -1630,7 +1673,7 @@ func (dn *Daemon) SetPasswordHash(newUsers, oldUsers []ign3types.PasswdUser) err
 		}
 
 		if out, err := exec.Command("usermod", "-p", pwhash, u.Name).CombinedOutput(); err != nil {
-			return fmt.Errorf("Failed to reset password for %s: %s:%w", u.Name, out, err)
+			return fmt.Errorf("failed to reset password for %s: %s:%w", u.Name, out, err)
 		}
 		klog.Info("Password has been configured")
 	}
@@ -1647,10 +1690,10 @@ func (dn *Daemon) updateKubeConfigPermission() error {
 	// Checking if kubeconfig is existed in the expected path:
 	if _, err := os.Stat(kubeConfigPath); err == nil {
 		if err := os.Chmod(kubeConfigPath, 0o600); err != nil {
-			return fmt.Errorf("Failed to reset permission for %s:%w", kubeConfigPath, err)
+			return fmt.Errorf("failed to reset permission for %s:%w", kubeConfigPath, err)
 		}
 	} else {
-		return fmt.Errorf("Cannot stat %s: %w", kubeConfigPath, err)
+		return fmt.Errorf("cannot stat %s: %w", kubeConfigPath, err)
 	}
 	return nil
 }
@@ -1740,7 +1783,7 @@ func deconfigureUser(user ign3types.PasswdUser) error {
 	user.PasswordHash = &pwhash
 
 	if out, err := exec.Command("usermod", "-p", *user.PasswordHash, user.Name).CombinedOutput(); err != nil {
-		return fmt.Errorf("Failed to change password for %s: %s:%w", user.Name, out, err)
+		return fmt.Errorf("failed to change password for %s: %s:%w", user.Name, out, err)
 	}
 	return nil
 }
