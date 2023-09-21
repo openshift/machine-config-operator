@@ -20,7 +20,9 @@ import (
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/selection"
 	kubeErrs "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/klog/v2"
@@ -482,18 +484,20 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		klog.Info("Changes do not require drain, skipping.")
 	}
 
-	// Get the current node to check if it's in the opted-in pool
-	node, err := dn.kubeClient.CoreV1().Nodes().Get(context.TODO(), dn.name, metav1.GetOptions{})
+	// Get the list of MachineConfigPools that have opted into layering
+	layeredMCPs, err := dn.getLayeredMachineConfigPools()
 	if err != nil {
-		klog.Errorf("could not retrieve node: %v", err)
 		return err
 	}
 
-	if isNodeInOptedInPool(node) {
-		// Handle the password update for this node
-		if err := dn.HandlePasswordUpdateForLayeredMCPs(oldConfig, newConfig); err != nil {
-			klog.Errorf("error handling password update for layered MCPs: %v", err)
-			return err
+	// Iterate over the list of opted-in MCPs
+	for _, mcp := range layeredMCPs {
+		if isMCPOptedIn(mcp) {
+			// Handle the password update for this MCP opted into on cluster builds
+			if err := dn.HandlePasswordUpdateForLayeredMCPs(oldConfig, newConfig); err != nil {
+				klog.Errorf("error handling password update for layered MCPs: %v", err)
+				return err
+			}
 		}
 	}
 
@@ -598,14 +602,41 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	return dn.performPostConfigChangeAction(actions, newConfig.GetName())
 }
 
-func isNodeInOptedInPool(node *corev1.Node) bool {
-	klog.Infof("Checking which nodes are opted in mcp for on cluster build")
-	_, currentImagePresent := node.Annotations["currentImage"]
-	_, desiredImagePresent := node.Annotations["desiredImage"]
-	if currentImagePresent || desiredImagePresent {
-		klog.Infof("Node %s is opted into the pool.", node.Name)
+// Returns a list of MachineConfigPools which have opted in to layering.
+// Returns an empty list if none have opted in.
+func (dn *Daemon) getLayeredMachineConfigPools() ([]*mcfgv1.MachineConfigPool, error) {
+	requirement, err := labels.NewRequirement(ctrlcommon.LayeringEnabledPoolLabel, selection.Exists, []string{})
+	if err != nil {
+		return []*mcfgv1.MachineConfigPool{}, err
+	}
+
+	selector := labels.NewSelector().Add(*requirement)
+	// pools, err := dn.mcpLister.List(selector)
+	pools, err := dn.
+	if err != nil {
+		return []*mcfgv1.MachineConfigPool{}, err
+	}
+
+	return pools, nil
+}
+
+func isMCPOptedIn(mcp *mcfgv1.MachineConfigPool) bool {
+	// klog.Infof("Checking which nodes are opted in mcp for on cluster build")
+	// _, currentImagePresent := node.Annotations["currentImage"]
+	// _, desiredImagePresent := node.Annotations["desiredImage"]
+	// if currentImagePresent || desiredImagePresent {
+	// 	klog.Infof("Node %s is opted into the pool.", node.Name)
+	// 	return true
+	// }
+	// klog.Infof("No nodes are opted into on cluster builds")
+	// return false
+
+	_, layeringEnabled := mcp.Labels["machineconfiguration.openshift.io/layering-enabled"]
+	if layeringEnabled {
+		klog.Infof("MCP %s is opted into on cluster build.", mcp.Name)
 		return true
 	}
+	klog.Infof("MCP %s is not opted into on cluster builds.", mcp.Name)
 	return false
 }
 
