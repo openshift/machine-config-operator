@@ -184,6 +184,7 @@ func New(
 		nodeInformer.Informer(),
 		dnsInformer.Informer(),
 		maoSecretInformer.Informer(),
+		imgInformer.Informer(),
 	} {
 		i.AddEventHandler(optr.eventHandler())
 	}
@@ -264,7 +265,8 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 		optr.nodeListerSynced,
 		optr.mcpListerSynced,
 		optr.mcListerSynced,
-		optr.dnsListerSynced) {
+		optr.dnsListerSynced,
+		optr.imgListerSynced) {
 		klog.Error("failed to sync caches")
 		return
 	}

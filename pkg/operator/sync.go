@@ -24,7 +24,9 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/selection"
+	"k8s.io/apimachinery/pkg/types"
 	kubeErrs "k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/jsonmergepatch"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
@@ -340,26 +342,85 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 		caData[CA.File] = string(CA.Data)
 	}
 
-	err = optr.kubeClient.CoreV1().ConfigMaps("openshift-config-managed").Delete(context.TODO(), "merged-trusted-image-registry-ca", metav1.DeleteOptions{})
+	cm, err = optr.clusterCmLister.ConfigMaps("openshift-config-managed").Get("merged-trusted-image-registry-ca")
 	if err != nil && !errors.IsNotFound(err) {
 		return err
 	}
-
 	cmAnnotations := make(map[string]string)
 	cmAnnotations["openshift.io/description"] = "Created and managed by the machine-config-operator"
-	_, err = optr.kubeClient.CoreV1().ConfigMaps("openshift-config-managed").Create(
-		context.TODO(),
-		&corev1.ConfigMap{
+	if err != nil && errors.IsNotFound(err) {
+		klog.Infof("creating merged-trusted-image-registry-ca")
+		_, err = optr.kubeClient.CoreV1().ConfigMaps("openshift-config-managed").Create(
+			context.TODO(),
+			&corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "merged-trusted-image-registry-ca",
+					Annotations: cmAnnotations,
+				},
+				Data: caData,
+			},
+			metav1.CreateOptions{},
+		)
+		if err != nil {
+			return err
+		}
+	} else {
+		cmMarshal, err := json.Marshal(cm)
+		if err != nil {
+			return err
+		}
+		newCM := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:        "merged-trusted-image-registry-ca",
 				Annotations: cmAnnotations,
 			},
 			Data: caData,
-		},
-		metav1.CreateOptions{},
-	)
-	if err != nil {
-		return err
+		}
+		newCMMarshal, err := json.Marshal(newCM)
+		if err != nil {
+			return err
+		}
+
+		// check for deletedData
+		stillExists := false
+		for file, data := range cm.Data {
+			stillExists = false
+			// for each file in the configmap
+			// does it match ANY of the new files? if not, it is deleted.
+			for newfile, newdata := range caData {
+				if newfile == file && newdata == data {
+					stillExists = true
+				}
+			}
+			if !stillExists {
+				break
+			}
+		}
+		// check for newData
+		for file, data := range caData {
+			equal := false
+			for oldfile, olddata := range cm.Data {
+				if file == oldfile && data == olddata {
+					equal = true
+				}
+			}
+			if !equal || (!stillExists && len(cm.Data) > 0) {
+				klog.Info("Detecting changes in merged-trusted-image-registry-ca, creating patch")
+				if !equal {
+					klog.Infof("Diff is between file %s and its data %s which are new", file, data)
+				}
+				patchBytes, err := jsonmergepatch.CreateThreeWayJSONMergePatch(cmMarshal, newCMMarshal, cmMarshal)
+				klog.Infof("JSONPATCH: \n  %s", string(patchBytes))
+				if err != nil {
+					return err
+				}
+				_, err = optr.kubeClient.CoreV1().ConfigMaps("openshift-config-managed").Patch(context.TODO(), "merged-trusted-image-registry-ca", types.MergePatchType, patchBytes, metav1.PatchOptions{})
+				if err != nil {
+					return fmt.Errorf("Could not patch merged-trusted-image-registry-ca with data %s: %w", string(patchBytes), err)
+				}
+				break
+			}
+		}
 	}
 
 	// sync up CAs
