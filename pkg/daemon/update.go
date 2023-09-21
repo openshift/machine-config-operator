@@ -482,6 +482,21 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		klog.Info("Changes do not require drain, skipping.")
 	}
 
+	// Get the current node to check if it's in the opted-in pool
+	node, err := dn.kubeClient.CoreV1().Nodes().Get(context.TODO(), dn.name, metav1.GetOptions{})
+	if err != nil {
+		klog.Errorf("could not retrieve node: %v", err)
+		return err
+	}
+
+	if isNodeInOptedInPool(node) {
+		// Handle the password update for this node
+		if err := dn.HandlePasswordUpdateForLayeredMCPs(oldConfig, newConfig); err != nil {
+			klog.Errorf("error handling password update for layered MCPs: %v", err)
+			return err
+		}
+	}
+
 	// update files on disk that need updating
 	if err := dn.updateFiles(oldIgnConfig, newIgnConfig, skipCertificateWrite); err != nil {
 		return err
@@ -584,6 +599,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 }
 
 func isNodeInOptedInPool(node *corev1.Node) bool {
+	klog.Infof("Checking which nodes are opted in mcp for on cluster build")
 	_, currentImagePresent := node.Annotations["currentImage"]
 	_, desiredImagePresent := node.Annotations["desiredImage"]
 	if currentImagePresent || desiredImagePresent {
@@ -594,17 +610,10 @@ func isNodeInOptedInPool(node *corev1.Node) bool {
 }
 
 func (dn *Daemon) HandlePasswordUpdateForLayeredMCPs(oldConfig, newConfig *mcfgv1.MachineConfig) error {
-	node, err := dn.kubeClient.CoreV1().Nodes().Get(context.TODO(), dn.name, metav1.GetOptions{})
+	err := dn.SetPasswordHashForConfigs(oldConfig, newConfig)
 	if err != nil {
-		klog.Errorf("could not retrieve node: %v", err)
+		klog.Errorf("error setting password hash for configs: %v", err)
 		return err
-	}
-	if isNodeInOptedInPool(node) {
-		err := dn.SetPasswordHashForConfigs(oldConfig, newConfig)
-		if err != nil {
-			klog.Errorf("error setting password hash for configs: %v", err)
-			return err
-		}
 	}
 	return nil
 }
