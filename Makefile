@@ -133,6 +133,9 @@ Dockerfile.rhel7: Dockerfile Makefile
 test-e2e: install-go-junit-report
 	set -o pipefail; go test -tags=$(GOTAGS) -failfast -timeout 150m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e/ | ./hack/test-with-junit.sh $(@)
 
+test-e2e-layering: install-go-junit-report
+	set -o pipefail; go test -tags=$(GOTAGS) -failfast -timeout 150m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-layering | ./hack/test-with-junit.sh $(@)
+
 test-e2e-single-node: install-go-junit-report
 	set -o pipefail; go test -tags=$(GOTAGS) -failfast -timeout 120m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-single-node/ | ./hack/test-with-junit.sh $(@)
 
