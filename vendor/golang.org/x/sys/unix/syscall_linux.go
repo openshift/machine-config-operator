@@ -2114,6 +2114,28 @@ func writevRacedetect(iovecs []Iovec, n int) {
 // mmap varies by architecture; see syscall_linux_*.go.
 //sys	munmap(addr uintptr, length uintptr) (err error)
 //sys	mremap(oldaddr uintptr, oldlength uintptr, newlength uintptr, flags int, newaddr uintptr) (xaddr uintptr, err error)
+
+var mapper = &mremapMmapper{
+	mmapper: mmapper{
+		active: make(map[*byte][]byte),
+		mmap:   mmap,
+		munmap: munmap,
+	},
+	mremap: mremap,
+}
+
+func Mmap(fd int, offset int64, length int, prot int, flags int) (data []byte, err error) {
+	return mapper.Mmap(fd, offset, length, prot, flags)
+}
+
+func Munmap(b []byte) (err error) {
+	return mapper.Munmap(b)
+}
+
+func Mremap(oldData []byte, newLength int, flags int) (data []byte, err error) {
+	return mapper.Mremap(oldData, newLength, flags)
+}
+
 //sys	Madvise(b []byte, advice int) (err error)
 //sys	Mprotect(b []byte, prot int) (err error)
 //sys	Mlock(b []byte) (err error)
@@ -2427,58 +2449,98 @@ func Getresgid() (rgid, egid, sgid int) {
 	return int(r), int(e), int(s)
 }
 
-// Pselect is a wrapper around the Linux pselect6 system call.
-// This version does not modify the timeout argument.
-func Pselect(nfd int, r *FdSet, w *FdSet, e *FdSet, timeout *Timespec, sigmask *Sigset_t) (n int, err error) {
-	// Per https://man7.org/linux/man-pages/man2/select.2.html#NOTES,
-	// The Linux pselect6() system call modifies its timeout argument.
-	// [Not modifying the argument] is the behavior required by POSIX.1-2001.
-	var mutableTimeout *Timespec
-	if timeout != nil {
-		mutableTimeout = new(Timespec)
-		*mutableTimeout = *timeout
-	}
-
-	// The final argument of the pselect6() system call is not a
-	// sigset_t * pointer, but is instead a structure
-	var kernelMask *sigset_argpack
-	if sigmask != nil {
-		wordBits := 32 << (^uintptr(0) >> 63) // see math.intSize
-
-		// A sigset stores one bit per signal,
-		// offset by 1 (because signal 0 does not exist).
-		// So the number of words needed is ⌈__C_NSIG - 1 / wordBits⌉.
-		sigsetWords := (_C__NSIG - 1 + wordBits - 1) / (wordBits)
-
-		sigsetBytes := uintptr(sigsetWords * (wordBits / 8))
-		kernelMask = &sigset_argpack{
-			ss:    sigmask,
-			ssLen: sigsetBytes,
-		}
-	}
-
-	return pselect6(nfd, r, w, e, mutableTimeout, kernelMask)
-}
-
-//sys	schedSetattr(pid int, attr *SchedAttr, flags uint) (err error)
-//sys	schedGetattr(pid int, attr *SchedAttr, size uint, flags uint) (err error)
-
-// SchedSetAttr is a wrapper for sched_setattr(2) syscall.
-// https://man7.org/linux/man-pages/man2/sched_setattr.2.html
-func SchedSetAttr(pid int, attr *SchedAttr, flags uint) error {
-	if attr == nil {
-		return EINVAL
-	}
-	attr.Size = SizeofSchedAttr
-	return schedSetattr(pid, attr, flags)
-}
-
-// SchedGetAttr is a wrapper for sched_getattr(2) syscall.
-// https://man7.org/linux/man-pages/man2/sched_getattr.2.html
-func SchedGetAttr(pid int, flags uint) (*SchedAttr, error) {
-	attr := &SchedAttr{}
-	if err := schedGetattr(pid, attr, SizeofSchedAttr, flags); err != nil {
-		return nil, err
-	}
-	return attr, nil
-}
+/*
+ * Unimplemented
+ */
+// AfsSyscall
+// ArchPrctl
+// Brk
+// ClockNanosleep
+// ClockSettime
+// Clone
+// EpollCtlOld
+// EpollPwait
+// EpollWaitOld
+// Execve
+// Fork
+// Futex
+// GetKernelSyms
+// GetMempolicy
+// GetRobustList
+// GetThreadArea
+// Getpmsg
+// IoCancel
+// IoDestroy
+// IoGetevents
+// IoSetup
+// IoSubmit
+// IoprioGet
+// IoprioSet
+// KexecLoad
+// LookupDcookie
+// Mbind
+// MigratePages
+// Mincore
+// ModifyLdt
+// Mount
+// MovePages
+// MqGetsetattr
+// MqNotify
+// MqOpen
+// MqTimedreceive
+// MqTimedsend
+// MqUnlink
+// Msgctl
+// Msgget
+// Msgrcv
+// Msgsnd
+// Nfsservctl
+// Personality
+// Pselect6
+// Ptrace
+// Putpmsg
+// Quotactl
+// Readahead
+// Readv
+// RemapFilePages
+// RestartSyscall
+// RtSigaction
+// RtSigpending
+// RtSigqueueinfo
+// RtSigreturn
+// RtSigsuspend
+// RtSigtimedwait
+// SchedGetPriorityMax
+// SchedGetPriorityMin
+// SchedGetparam
+// SchedGetscheduler
+// SchedRrGetInterval
+// SchedSetparam
+// SchedYield
+// Security
+// Semctl
+// Semget
+// Semop
+// Semtimedop
+// SetMempolicy
+// SetRobustList
+// SetThreadArea
+// SetTidAddress
+// Sigaltstack
+// Swapoff
+// Swapon
+// Sysfs
+// TimerCreate
+// TimerDelete
+// TimerGetoverrun
+// TimerGettime
+// TimerSettime
+// Tkill (obsolete)
+// Tuxcall
+// Umount2
+// Uselib
+// Utimensat
+// Vfork
+// Vhangup
+// Vserver
+// _Sysctl

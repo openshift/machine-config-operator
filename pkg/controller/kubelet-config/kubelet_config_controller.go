@@ -21,6 +21,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/kubernetes"
 	clientset "k8s.io/client-go/kubernetes"
 	coreclientsetv1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/cache"
@@ -77,8 +78,10 @@ var errCouldNotFindMCPSet = errors.New("could not find any MachineConfigPool set
 type Controller struct {
 	templatesDir string
 
-	client        mcfgclientset.Interface
-	configClient  configclientset.Interface
+	client       mcfgclientset.Interface
+	kubeClient   kubernetes.Interface
+	configClient configclientset.Interface
+
 	eventRecorder record.EventRecorder
 
 	syncHandler          func(mcp string) error
@@ -131,6 +134,7 @@ func New(
 		templatesDir:      templatesDir,
 		client:            mcfgClient,
 		configClient:      configclient,
+		kubeClient:        kubeClient,
 		eventRecorder:     ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-kubeletconfigcontroller"})),
 		queue:             workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-kubeletconfigcontroller"),
 		featureQueue:      workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-featurecontroller"),
@@ -204,6 +208,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 
 	for i := 0; i < workers; i++ {
 		go wait.Until(ctrl.nodeConfigWorker, time.Second, stopCh)
+
 	}
 
 	<-stopCh
@@ -426,6 +431,9 @@ func (ctrl *Controller) syncStatusOnly(cfg *mcfgv1.KubeletConfig, err error, arg
 	if statusUpdateError != nil {
 		klog.Warningf("error updating kubeletconfig status: %v", statusUpdateError)
 	}
+	if err != nil {
+		//ctrl.EmitHealthEvent(ctrl.stateControllerPod, ctrl.HealthAnnotations(cfg.Name, string(v1.KC), v1.MachineConfigStateErrored), corev1.EventTypeWarning, "KubeletSyncError", fmt.Sprintf("Error Syncing KubeletConfig: %s", err.Error()))
+	}
 	return err
 }
 
@@ -473,6 +481,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		klog.V(4).Infof("Finished syncing kubeletconfig %q (%v)", key, time.Since(startTime))
 	}()
 
+	//ctrl.EmitHealthEvent(ctrl.stateControllerPod, ctrl.HealthAnnotations(ctrlcommon.ControllerConfigName, string(v1.CC), v1.MCCSync), corev1.EventTypeNormal, "CheckingControllerConfig", "Checking if ControllerConfig is complete")
 	// Wait to apply a kubelet config if the controller config is not completed
 	if err := apihelpers.IsControllerConfigCompleted(ctrlcommon.ControllerConfigName, ctrl.ccLister.Get); err != nil {
 		return err
@@ -492,6 +501,8 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 	if err != nil {
 		return err
 	}
+
+	//ctrl.EmitHealthEvent(ctrl.stateControllerPod, ctrl.HealthAnnotations(name, string(v1.KC), v1.MCCSync), corev1.EventTypeNormal, "GotKubeletConfig", "Got KubeletConfig to Sync")
 
 	// Deep-copy otherwise we are mutating our cache.
 	cfg = cfg.DeepCopy()
@@ -515,6 +526,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 	}
 
 	// Find all MachineConfigPools
+	//ctrl.EmitHealthEvent(ctrl.stateControllerPod, ctrl.HealthAnnotations(cfg.Name, string(v1.KC), v1.MCCSync), corev1.EventTypeNormal, "SyncingKubeletStatus", "Syncing KubeletConfigStatus")
 	mcpPools, err := ctrl.getPoolsForKubeletConfig(cfg)
 	if err != nil {
 		return ctrl.syncStatusOnly(cfg, err)
@@ -533,6 +545,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 	}
 
 	for _, pool := range mcpPools {
+		//ctrl.EmitHealthEvent(ctrl.stateControllerPod, ctrl.HealthAnnotations(cfg.Name, string(v1.KC), v1.MCCSync), corev1.EventTypeNormal, "ApplyingConfigsForKubelet", fmt.Sprintf("Applying Kubelet MCs associated with Pool %s", pool.Name))
 		if pool.Spec.Configuration.Name == "" {
 			updateDelay := 5 * time.Second
 			// Previously we spammed the logs about empty pools.
@@ -584,6 +597,8 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		observedMinTLSVersion, observedCipherSuites := getSecurityProfileCiphers(profile)
 		originalKubeConfig.TLSMinVersion = observedMinTLSVersion
 		originalKubeConfig.TLSCipherSuites = observedCipherSuites
+
+		//ctrl.EmitHealthEvent(ctrl.stateControllerPod, ctrl.HealthAnnotations(cfg.Name, string(v1.KC), v1.MCCSync), corev1.EventTypeNormal, "GeneratingIgnForKubelet", "Generating Ignition for OriginalKubeletConfig")
 
 		kubeletIgnition, logLevelIgnition, autoSizingReservedIgnition, err := generateKubeletIgnFiles(cfg, originalKubeConfig)
 		if err != nil {

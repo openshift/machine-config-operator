@@ -28,10 +28,12 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
+	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/klog/v2"
 
 	corev1lister "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -40,7 +42,9 @@ import (
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	mcoResourceRead "github.com/openshift/machine-config-operator/lib/resourceread"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	statectrl "github.com/openshift/machine-config-operator/pkg/controller/state"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
+
 	"github.com/openshift/machine-config-operator/pkg/daemon/osrelease"
 )
 
@@ -132,6 +136,8 @@ type Daemon struct {
 
 	// Used for Hypershift
 	hypershiftConfigMap string
+
+	stateControllerPod *corev1.Pod
 }
 
 // CoreOSDaemon protects the methods that should only be called on CoreOS variants
@@ -307,8 +313,22 @@ func (dn *Daemon) ClusterConnect(
 	kubeletHealthzEnabled bool,
 	kubeletHealthzEndpoint string,
 ) error {
+
+	healthPod, err := statectrl.StateControllerPod(kubeClient)
+	if err != nil {
+		klog.Error(err)
+	}
+
+	if healthPod != nil {
+		dn.stateControllerPod = healthPod
+	}
+
 	dn.name = name
 	dn.kubeClient = kubeClient
+
+	eventBroadcaster := record.NewBroadcaster()
+	eventBroadcaster.StartLogging(klog.V(2).Infof)
+	eventBroadcaster.StartRecordingToSink(&corev1client.EventSinkImpl{Interface: kubeClient.CoreV1().Events("openshift-machine-config-operator")})
 
 	// Other controllers start out with the default controller limiter which retries
 	// in milliseconds; since any change here will involve rebooting the node
@@ -655,6 +675,18 @@ func (dn *Daemon) syncNode(key string) error {
 
 	// Deep-copy otherwise we are mutating our cache.
 	node = node.DeepCopy()
+	// this is going to be weird
+	// events need to be done on an object
+	/*
+		annos := make(map[string]string)
+		annos["ms"] = "DaemonState" //might need this might not
+		annos["state"] = "StateControllerSyncDaemon"
+		annos["ObjectKind"] = string(mcfgv1.Node)
+		annos["ObjectName"] = node.Name
+
+		dn.EmitHealthEvent(dn.stateControllerPod, annos, corev1.EventTypeNormal, "GotNode", fmt.Sprintf("Got node %s for MCD", node.Name))
+	*/
+	//	dn.daemonHealthEvents.Eventf(
 	if dn.node == nil {
 		dn.node = node
 		if err := dn.initializeNode(); err != nil {
@@ -667,10 +699,10 @@ func (dn *Daemon) syncNode(key string) error {
 		oldReason := dn.node.Annotations[constants.MachineConfigDaemonReasonAnnotationKey]
 		newReason := node.Annotations[constants.MachineConfigDaemonReasonAnnotationKey]
 		if oldState != newState {
-			klog.Infof("Transitioned from state: %v -> %v", oldState, newState)
+			//	dn.EmitHealthEvent(dn.stateControllerPod, annos, corev1.EventTypeNormal, "UpdatingStateAnnotations", fmt.Sprintf("Updating MCO State from %s to %s", oldState, newState))
 		}
 		if oldReason != newReason {
-			klog.Infof("Transitioned from degraded/unreconcilable reason %v -> %v", oldReason, newReason)
+			//	dn.EmitHealthEvent(dn.stateControllerPod, annos, corev1.EventTypeNormal, "UpdatingReasonAnnotations", fmt.Sprintf("Updating MCO State Transition Reasons from %s to %s", oldReason, newReason))
 		}
 		dn.node = node
 	}
@@ -720,17 +752,30 @@ func (dn *Daemon) syncNode(key string) error {
 	}
 
 	if ufc != nil {
+		annos := map[string]string{
+			constants.MachineConfigDaemonStateAnnotationKey:  constants.MachineConfigDaemonStateWorkPerparing,
+			constants.MachineConfigDaemonReasonAnnotationKey: "ClosingCfgDriftMonitor",
+			constants.MachineConfigDaemonPhaseAnnotationKey:  fmt.Sprintf("Detecting diff in current: %s and desired %s MC. Preparing upgrade", ufc.currentConfig.Name, ufc.desiredConfig.Name),
+		}
+		dn.nodeWriter.SetAnnotations(annos)
 		// Only check for config drift if we need to update.
 		if err := dn.runPreflightConfigDriftCheck(); err != nil {
 			return err
 		}
 
+		//dn.EmitHealthEvent(dn.stateControllerPod, annos, corev1.EventTypeNormal, "TriggeringUpdate", fmt.Sprintf("Updating MCO to new MachineConfig %s", ufc.desiredConfig.Name))
 		if err := dn.triggerUpdate(ufc.currentConfig, ufc.desiredConfig, ufc.currentImage, ufc.desiredImage); err != nil {
+			annos = map[string]string{
+				constants.MachineConfigDaemonStateAnnotationKey:  constants.MachineConfigDaemonStateDegraded,
+				constants.MachineConfigDaemonReasonAnnotationKey: err.Error(),
+			}
+			dn.nodeWriter.SetAnnotations(annos)
+			//dn.EmitUpgradeEvent(dn.stateControllerPod, dn.UpgradeAnnotations(v1.MachineConfigStateErrored), corev1.EventTypeWarning, "UpdateError", fmt.Sprintf("Error Updating to new MachineConfig %s", ufc.desiredConfig.Name))
 			return err
 		}
 
 	}
-	klog.V(2).Infof("Node %s is already synced", node.Name)
+	//dn.EmitUpgradeEvent(dn.stateControllerPod, dn.UpgradeAnnotations(v1.MachineConfigPoolReady), corev1.EventTypeNormal, "NodeUpdated", fmt.Sprintf("Node %s is up to date", dn.nodeName()))
 	return nil
 }
 
@@ -2228,6 +2273,13 @@ func (dn *Daemon) triggerUpdateWithMachineConfig(currentConfig, desiredConfig *m
 	// Shut down the Config Drift Monitor since we'll be performing an update
 	// and the config will "drift" while the update is occurring.
 	dn.stopConfigDriftMonitor()
+
+	// we need to do this but it needs to reach into the controller....
+	// without annotations
+	// dn.UpgradeProgression
+	//dn.setPoolHealthProgression(v1.MachineConfigPoolUpdatePreparing, "stopping config drift monitor", "")
+
+	//dn.EmitUpgradeEvent(dn.stateControllerPod, dn.UpgradeAnnotations(v1.MachineConfigPoolUpdatePreparing), corev1.EventTypeNormal, "StoppingConfigDriftMonitor", "Daemon is stopping the config drift monitor")
 
 	// run the update process. this function doesn't currently return.
 	return dn.update(currentConfig, desiredConfig, skipCertificateWrite)

@@ -97,7 +97,6 @@ type ControllerConfigSpec struct {
 	// internalRegistryPullSecret is the pull secret for the internal registry, used by
 	// rpm-ostree to pull images from the internal registry if present
 	// +optional
-	// +nullable
 	InternalRegistryPullSecret []byte `json:"internalRegistryPullSecret"`
 
 	// images is map of images that are used by the controller to render templates under ./templates/
@@ -193,6 +192,7 @@ type ControllerConfigStatus struct {
 	// +listType=atomic
 	// +optional
 	Conditions []ControllerConfigStatusCondition `json:"conditions"`
+
 	// controllerCertificates represents the latest available observations of the automatically rotating certificates in the MCO.
 	// +listType=atomic
 	// +optional
@@ -758,4 +758,124 @@ type ContainerRuntimeConfigList struct {
 	metav1.ListMeta `json:"metadata"`
 
 	Items []ContainerRuntimeConfig `json:"items"`
+}
+
+// +genclient
+// +genclient:nonNamespaced
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// MachineConfigState describes the health of the Machines on the system
+//
+// Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).
+// +openshift:compatibility-gen:level=1
+type MachineConfigState struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	// +kubebuilder:validation:Required
+	Spec MachineConfigStateSpec `json:"spec"`
+	// +optional
+	Status MachineConfigStateStatus `json:"status"`
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// MachineConfigStateList describes all of the MachinesStates on the system
+//
+// Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).
+// +openshift:compatibility-gen:level=1
+type MachineConfigStateList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata"`
+
+	Items []MachineConfigState `json:"items"`
+}
+
+// MachineConfigStateSpec describes the type of State we are managing
+type MachineConfigStateSpec struct {
+	// configuration describes the object reference inforation of a MachineConfigState
+	Config MachineConfigStateConfig `json:"configuration"`
+}
+
+// MachineConfigStateStatus holds the reported information on a particular MachineConfigState
+type MachineConfigStateStatus struct {
+	// configuration Describes the Kind of MachineConfigState
+	Config MachineConfigStateConfig `json:"configuration"`
+	// mostRecentState is the most recent state reporting for each object in a particular machineState
+	// +listType=map
+	// +listMapKey=name
+	// +patchMergeKey=name
+	// +patchStrategy=merge
+	MostRecentState []ProgressionCondition `json:"mostRecentState" patchStrategy:"merge" patchMergeKey:"name"`
+	// progressionHistory contains a list of events that have happened on all objects in this machinestate
+	ProgressionHistory []ProgressionHistory `json:"progressionHistory"`
+	// mostRecentError is populated if the State reports an error.
+	MostRecentError string `json:"mostRecentError"`
+	// health reports the overall status of this MachineConfigState Given its Progress
+	Health MachineConfigStateHealthEnumeration `json:"health"`
+}
+
+type MachineConfigStateHealthEnumeration string
+
+const (
+	// healthy describes a machineState that is functioning properly
+	Healthy MachineConfigStateHealthEnumeration = "Healthy"
+	// unknown describes a machieState who's health is unknown
+	Unknown MachineConfigStateHealthEnumeration = "Unknown"
+	// unhealthy describes a machinestate that is not functioning properly
+	UnHealthy MachineConfigStateHealthEnumeration = "Unhealthy"
+)
+
+// MachineConfigStateConfig describes the configuration of a MachineConfigState
+type MachineConfigStateConfig struct {
+	corev1.ObjectReference `json:",inline"`
+}
+
+// StateProgress is each possible state for each possible MachineConfigStateType
+// UpgradeProgression Kind will only use the "MachinConfigPoolUpdate..." types for example
+type StateProgress string
+
+const (
+	// MachineConfigPoolUpdatePreparing describes a machine that is preparing in the daemon to trigger an update
+	MachineConfigPoolUpdatePreparing StateProgress = "UpdatePreparing"
+	// MachineConfigPoolUpdateInProgress describes a machine that is in progress of updating
+	MachineConfigPoolUpdateInProgress StateProgress = "UpdateInProgress"
+	// MachineConfigPoolUpdatePostAction describes a machine that is executing its post update action
+	MachineConfigPoolUpdatePostAction StateProgress = "UpdatePostAction"
+	// MachineConfigPoolUpdateCompleting describes a machine that is in the process of resuming normal processes
+	MachineConfigPoolUpdateCompleting StateProgress = "UpdateCompleting"
+	// MachineConfigPoolUpdateComplete describes a machine that has a matching desired and current config after executing an update
+	MachineConfigPoolUpdateComplete StateProgress = "Updated"
+	// MachineConfigPoolUpdateResuming describes a machine that is in the process of resuming normal processes
+	MachineConfigPoolResuming StateProgress = "Resuming"
+	// MachineConfigPoolReady describes a machine that has a matching desired and current config
+	MachineConfigPoolReady StateProgress = "Ready"
+	// MachineConfigStateErrored describes when a machine had run into an issue
+	MachineConfigStateErrored StateProgress = "Errored"
+)
+
+// ProgressionCondition is the base struct that contains all information about an event reported from an MCO component
+type ProgressionCondition struct {
+	// state describes what is happening with this object
+	State StateProgress `json:"state"`
+	// name is the object's name
+	// +kubebuilder:validation:Required
+	// +required
+	Name string `json:"name"`
+	// phase is the general action occuring
+	Phase string `json:"phase"`
+	// reason is a more detailed description of the phase
+	Reason string `json:"reason"`
+	// time is the timestamp of this event
+	Time metav1.Time `json:"time"`
+}
+
+// ProgressionHistory contains the history of an object that exists in a progressioncondition
+type ProgressionHistory struct {
+	// NameAndState describes the name and state of the object
+	NameAndState string `json:"nameAndState"`
+	// phase is the general action occuring
+	Phase string `json:"phase"`
+	// reason is a more detailed description of the phase
+	Reason string `json:"reason"`
 }

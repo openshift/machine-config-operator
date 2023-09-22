@@ -12,6 +12,7 @@ import (
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/controller/state"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -150,6 +151,15 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
+	healthPod, err := state.StateControllerPod(ctrl.kubeClient)
+	if err != nil {
+		klog.Error(err)
+	}
+
+	if healthPod != nil {
+		ctrl.stateControllerPod = healthPod
+	}
+
 	if !cache.WaitForCacheSync(stopCh, ctrl.nodeListerSynced) {
 		return
 	}
@@ -162,6 +172,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 
 	for i := 0; i < workers; i++ {
 		go wait.Until(ctrl.worker, ctrl.cfg.WaitUntil, stopCh)
+
 	}
 
 	<-stopCh
@@ -303,12 +314,14 @@ func (ctrl *Controller) syncNode(key string) error {
 	desiredVerb := strings.Split(desiredState, "-")[0]
 	switch desiredVerb {
 	case daemonconsts.DrainerStateUncordon:
+		//	ctrl.EmitUpgradeEvent(ctrl.stateControllerPod, ctrl.UpgradeAnnotations(mcfgv1.MachineConfigPoolUpdateCompleting, node), corev1.EventTypeNormal, "CordoningNode", fmt.Sprintf("Cordining Node %s as part of update", node.Name))
 		ctrl.logNode(node, "uncordoning")
 		// perform uncordon
 		if err := ctrl.cordonOrUncordonNode(false, node, drainer); err != nil {
 			return fmt.Errorf("failed to uncordon node %v: %w", node.Name, err)
 		}
 	case daemonconsts.DrainerStateDrain:
+		//ctrl.EmitUpgradeEvent(ctrl.stateControllerPod, ctrl.UpgradeAnnotations(mcfgv1.MachineConfigPoolUpdateCompleting, node), corev1.EventTypeNormal, "DrainingNode", fmt.Sprintf("Draining Node %s as part of update", node.Name))
 		if err := ctrl.drainNode(node, drainer); err != nil {
 			// If we get an error from drainNode, that means the drain failed.
 			// However, we want to requeue and try again. So we need to return nil

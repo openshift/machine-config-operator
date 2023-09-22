@@ -876,6 +876,25 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		return err
 	}
 
+	// make this a function
+	// update all nodes for pool with pool prog.
+	nodes, err := ctrl.getNodesForPool(machineconfigpool)
+	if err != nil {
+		return err
+	}
+	/*
+		annos := make(map[string]string)
+		annos["ms"] = "ControllerState"
+		annos["state"] = "StateControllerSyncController"
+		annos["ObjectKind"] = string(mcfgv1.MCP)
+		annos["ObjectName"] = machineconfigpool.Name
+
+		s, err := state.StateControllerPod(ctrl.kubeClient)
+		if err != nil {
+			klog.Error(err)
+		}
+	*/
+	//ctrl.EmitHealthEvent(s, annos, corev1.EventTypeNormal, "GotMachineConfigPool", fmt.Sprintf("Got Machine Config Pool %s", key))
 	if machineconfigpool.Spec.Configuration.Name == "" {
 		// Previously we spammed the logs about empty pools.
 		// Let's just pause for a bit here to let the renderer
@@ -924,7 +943,8 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		klog.V(4).Infof("Pool %s is not layered", pool.Name)
 	}
 
-	nodes, err := ctrl.getNodesForPool(pool)
+	//ctrl.EmitHealthEvent(s, annos, corev1.EventTypeNormal, "SyncingPoolStatus", fmt.Sprintf("Syncing MachineConfigPool Status %s", key))
+	nodes, err = ctrl.getNodesForPool(pool)
 	if err != nil {
 		if syncErr := ctrl.syncStatusOnly(pool); syncErr != nil {
 			errs := kubeErrs.NewAggregate([]error{syncErr, err})
@@ -970,6 +990,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 			}
 		}
 	}
+	//ctrl.EmitHealthEvent(s, annos, corev1.EventTypeNormal, "SyncingPoolMachines", fmt.Sprintf("Syncing MachineConfigPool's Machine with the proper Config Annotations %s", key))
 	candidates, capacity := getAllCandidateMachines(pool, nodes, maxunavail)
 	if len(candidates) > 0 {
 		zones := make(map[string]bool)

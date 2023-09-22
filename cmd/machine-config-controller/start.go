@@ -20,6 +20,7 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/leaderelection"
 	"k8s.io/klog/v2"
 )
@@ -71,7 +72,8 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		// Start the metrics handler
 		go ctrlcommon.StartMetricsListener(startOpts.promMetricsListenAddress, ctrlctx.Stop, ctrlcommon.RegisterMCCMetrics)
 
-		controllers := createControllers(ctrlctx)
+		kubeClient := ctrlctx.ClientBuilder.KubeClientOrDie("machine-config-controller")
+		controllers := createControllers(ctrlctx, kubeClient)
 		draincontroller := drain.New(
 			drain.DefaultConfig(),
 			ctrlctx.KubeInformerFactory.Core().V1().Nodes(),
@@ -130,9 +132,9 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 	panic("unreachable")
 }
 
-func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controller {
-	var controllers []ctrlcommon.Controller
+func createControllers(ctx *ctrlcommon.ControllerContext, kubeClient kubernetes.Interface) []ctrlcommon.Controller {
 
+	var controllers []ctrlcommon.Controller
 	controllers = append(controllers,
 		// Our primary MCs come from here
 		template.New(

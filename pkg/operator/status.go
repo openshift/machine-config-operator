@@ -22,6 +22,7 @@ import (
 	v1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/controller/state"
 )
 
 // syncVersion handles reporting the version to the clusteroperator
@@ -306,6 +307,32 @@ func (optr *Operator) syncUpgradeableStatus() error {
 		if isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolUpdating) {
 			updating = true
 		}
+
+		updatePrep, err := state.IsUpgradingProgressionTrue(mcfgv1.MachineConfigPoolUpdatePreparing, *pool, optr.msLister, optr.apiExtClient)
+		if err != nil {
+			klog.Errorf("error on Upgrading Progression %w", err)
+			return err
+		}
+
+		updateFinishing, err := state.IsUpgradingProgressionTrue(mcfgv1.MachineConfigPoolUpdateCompleting, *pool, optr.msLister, optr.apiExtClient)
+		if err != nil {
+			klog.Errorf("error on Upgrading Progression %w", err)
+			return err
+		}
+
+		updatePostAction, err := state.IsUpgradingProgressionTrue(mcfgv1.MachineConfigPoolUpdatePostAction, *pool, optr.msLister, optr.apiExtClient)
+		if err != nil {
+			klog.Errorf("error on Upgrading Progression %w", err)
+			return err
+		}
+
+		updating = updatePrep || updateInProg || updateFinishing || updatePostAction
+
+		//degraded, err = state.IsUpgradingProgressionTrue(mcfgv1.MachineConfigStateErrored, *pool, optr.msLister, optr.apiExtClient)
+		//if err != nil {
+		//	klog.Errorf("error on Upgrading Progression %w", err)
+		//	return err
+		//}
 		degraded = isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolDegraded)
 		// degraded should get top billing in the clusteroperator status, if we find this, set it and update
 		if degraded {
