@@ -1,20 +1,16 @@
 package state
 
 import (
-	"context"
-	"encoding/json"
-
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	v1 "github.com/openshift/api/machineconfiguration/v1"
 	"k8s.io/klog/v2"
-
-	v1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 )
 
+/*
 func (ctrl *Controller) WriteStatus(kind string, status, reason string, annos map[string]string) error {
 	// write status and reason to a struct of some sort
 
 	// get machine state with name. example "mcc-health"
-	currState, err := ctrl.Clients.Mcfgclient.MachineconfigurationV1().MachineStates().Get(context.TODO(), kind, metav1.GetOptions{})
+	currState, err := ctrl.Clients.Mcfgclient.MachineconfigurationV1().MachineConfigStates().Get(context.TODO(), kind, metav1.GetOptions{})
 	if err != nil {
 		klog.Errorf("Could not get machinestate %s: %w", kind, err)
 		return err
@@ -34,7 +30,6 @@ func (ctrl *Controller) WriteStatus(kind string, status, reason string, annos ma
 		objName = val
 	}
 	newCondition := v1.ProgressionCondition{
-		Kind:   v1.OperatorObject(objKind),
 		Name:   objName,
 		State:  state,
 		Phase:  status,
@@ -42,44 +37,100 @@ func (ctrl *Controller) WriteStatus(kind string, status, reason string, annos ma
 		Time:   metav1.Now(),
 	}
 
-	newState.Status.Healthy = true
-	if state == v1.MachineConfigPoolUpdateErrored {
+	newState.Status.Health = v1.Healthy
+	if state == v1.MachineConfigStateErrored {
 		newState.Status.MostRecentError = reason
-		newState.Status.Healthy = false
+		newState.Status.Health = v1.UnHealthy
 	}
 
 	c, _ := json.Marshal(newCondition)
 	klog.Infof("new condition: %s", string(c))
 	// update overall progression
 	// remove a list item if too long, we don't want 100s of statuses
-	if len(newState.Status.Progression) > 20 {
-		newState.Status.Progression = newState.Status.Progression[1:]
+
+	if len(newState.Status.ProgressionHistory) > 20 {
+		newState.Status.ProgressionHistory = newState.Status.ProgressionHistory[1:]
 	}
-	newState.Status.Progression = append(newState.Status.Progression, newCondition) //[node.Name] = append([]v1.ProgressionCondition{newCondition}, newState.Status.Progression[node.Name]...)
+	newState.Status.ProgressionHistory = append(newState.Status.ProgressionHistory, v1.ProgressionHistory{
+		NameAndType: fmt.Sprintf("%s:%s", newCondition.Kind, newCondition.Name),
+		State:       newCondition.State,
+		Phase:       newCondition.Phase,
+		Reason:      newCondition.Reason,
+	}) //[node.Name] = append([]v1.ProgressionCondition{newCondition}, newState.Status.Progression[node.Name]...)
+
 	//newState.Status.Progression[newStateProgress] = newCondition
 
 	// update most recent state per node
 	//	newState.Status.MostRecentState[objName] = newCondition
 
 	if newState.Status.MostRecentState == nil {
-		newState.Status.MostRecentState = make(map[string]v1.ProgressionCondition)
+		newState.Status.MostRecentState = []v1.ProgressionCondition{}
 	}
-	newState.Status.MostRecentState[objName] = newCondition
+
+	// supposedly this is supposed to only allow one of each key :shrug:
+	alreadyExists := false
+	for i, currentMostRecentState := range newState.Status.MostRecentState {
+		if currentMostRecentState.Name == newCondition.Name {
+			newState.Status.MostRecentState[i] = newCondition
+			alreadyExists = true
+			break
+		}
+	}
+	if !alreadyExists {
+		newState.Status.MostRecentState = append(newState.Status.MostRecentState, newCondition)
+	}
 
 	s, _ := json.Marshal(newState.Status)
 	klog.Infof("Updating Machine State Controller Status to %s", string(s))
-	_, err = ctrl.Clients.Mcfgclient.MachineconfigurationV1().MachineStates().UpdateStatus(context.TODO(), newState, metav1.UpdateOptions{})
+
+	currJson, _ := json.Marshal(currState)
+	newJson, _ := json.Marshal(newState)
+
+	//machineStateApplyConfig, err := machineconfigurationv1.ExtractMachineConfigStateStatus(newState, "machine-config-operator")
 	if err != nil {
-		currJson, _ := json.Marshal(currState)
-		newJson, _ := json.Marshal(newState)
+		klog.Errorf("Could not extract machine state: %w", err)
+		return err
+	}
+
+	cfgApplyConfig := machineconfigurationv1.MachineConfigStateConfig().WithKind(newState.Kind).WithName(newState.Name).WithAPIVersion(newState.APIVersion).WithResourceVersion(newState.ResourceVersion).WithUID(newState.UID)
+	//progressionConditionApplyConfig := machineconfigurationv1.ProgressionCondition().WithKind(newCondition.Kind).WithName(newCondition.Name).WithPhase(newCondition.Name).WithReason(newCondition.Reason).WithState(newCondition.State).WithTime(newCondition.Time)
+	progressionHistoryApplyConfigs := []*machineconfigurationv1.ProgressionHistoryApplyConfiguration{}
+	for _, s := range newState.Status.ProgressionHistory {
+		progressionHistoryApplyConfigs = append(progressionHistoryApplyConfigs, machineconfigurationv1.ProgressionHistory().WithNameAndType(s.NameAndType).WithPhase(s.Phase).WithReason(s.Reason).WithState(s.State))
+	}
+	progressionApplyConfigs := []*machineconfigurationv1.ProgressionConditionApplyConfiguration{}
+	for _, s := range newState.Status.MostRecentState {
+		progressionApplyConfigs = append(progressionApplyConfigs, machineconfigurationv1.ProgressionCondition().WithKind(s.Kind).WithName(s.Name).WithPhase(s.Phase).WithReason(s.Reason).WithState(s.State).WithTime(s.Time))
+	}
+	statusApplyConfig := machineconfigurationv1.MachineConfigStateStatus().WithConfig(cfgApplyConfig).WithHealth(newState.Status.Health).WithMostRecentError(newState.Status.MostRecentError).WithMostRecentState(progressionApplyConfigs...).WithProgressionHistory(progressionHistoryApplyConfigs...)
+	specApplyConfig := machineconfigurationv1.MachineConfigStateSpec().WithConfig(cfgApplyConfig).WithKind(newState.Spec.Kind)
+	msApplyConfig := machineconfigurationv1.MachineConfigState(newState.Name).WithStatus(statusApplyConfig).WithSpec(specApplyConfig)
+	//ctrl.Clients.Mcfgclient.MachineconfigurationV1().MachineConfigStates().Patch(context.TODO(), newState.Name, types.MergePatchType)
+
+	applyConfig, _ := json.Marshal(msApplyConfig)
+	klog.Infof("Updating Machine State Controller apply config Status to %s", string(applyConfig))
+	ms, err := ctrl.Clients.Mcfgclient.MachineconfigurationV1().MachineConfigStates().ApplyStatus(context.TODO(), msApplyConfig, metav1.ApplyOptions{FieldManager: "machine-config-operator", Force: true})
+
+	/*
+		patch, err := jsonmergepatch.CreateThreeWayJSONMergePatch(currJson, newJson, currJson)
+		if err != nil {
+			return err
+		}
+		ms, err := ctrl.Clients.Mcfgclient.MachineconfigurationV1().MachineConfigStates().Patch(context.TODO(), newState.Name, types.MergePatchType, patch, metav1.PatchOptions{}, "status")
+
+
+	if err != nil {
+
 		klog.Errorf("Could not update machine state. Original config %s \n New Config %s : %w", string(currJson), string(newJson), err)
 		return err
 	}
+	m, err := json.Marshal(ms)
+	klog.Infof("MACHINESTATE: %s", string(m))
 	return nil
 }
-
+*/
 // this is where metric application will live primarily. and also any options applied to other components
-func (ctrl *Controller) ReadSpec(ms *v1.MachineState) error {
+func (ctrl *Controller) ReadSpec(ms *v1.MachineConfigState) error {
 	var err error
 	if ms != nil {
 		/*	if ms.Kind == string(v1.UpdatingMetrics) {
@@ -88,11 +139,11 @@ func (ctrl *Controller) ReadSpec(ms *v1.MachineState) error {
 				}
 				// somehow also apply the collection frequency
 			}
-		*/ //_, err = ctrl.Mcfgclient.MachineconfigurationV1().MachineStates().Update(context.TODO(), ms, metav1.UpdateOptions{})
+		*/ //_, err = ctrl.Mcfgclient.MachineconfigurationV1().MachineConfigStates().Update(context.TODO(), ms, metav1.UpdateOptions{})
 
 	}
 	if err != nil {
-		klog.Errorf("Could not update MachineState: %s ... %w", ms.Name, err)
+		klog.Errorf("Could not update MachineConfigState: %s ... %w", ms.Name, err)
 	}
 	return err
 }

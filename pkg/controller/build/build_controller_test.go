@@ -23,6 +23,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
+	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 

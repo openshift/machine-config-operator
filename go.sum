@@ -122,6 +122,10 @@ github.com/butuzov/ireturn v0.2.0 h1:kCHi+YzC150GE98WFuZQu9yrTn6GEydO2AuPLbTgnO4
 github.com/butuzov/ireturn v0.2.0/go.mod h1:Wh6Zl3IMtTpaIKbmwzqi6olnM9ptYQxxVacMsOEFPoc=
 github.com/butuzov/mirror v1.1.0 h1:ZqX54gBVMXu78QLoiqdwpl2mgmoOJTk7s4p4o+0avZI=
 github.com/butuzov/mirror v1.1.0/go.mod h1:8Q0BdQU6rC6WILDiBM60DBfvV78OLJmMmixe7GF45AE=
+github.com/cdoern/api v0.0.0-20231005133555-eb1d410b3cc5 h1:S0VYrgsFj97MT+agJf/dmyrkh8vlPE5gjPLqLqKF99g=
+github.com/cdoern/api v0.0.0-20231005133555-eb1d410b3cc5/go.mod h1:qNtV0315F+f8ld52TLtPvrfivZpdimOzTi3kn9IVbtU=
+github.com/cdoern/client-go v0.0.0-20231005134336-d47d5818c40d h1:4u7n1XJF95t2bS5B0bynUmEvq0Ifw1rAtqo2vE3zOOI=
+github.com/cdoern/client-go v0.0.0-20231005134336-d47d5818c40d/go.mod h1:tAZ7Va2YOMsSJGSm1yJp+R99/apBB2OVRXkFQ863i/k=
 github.com/census-instrumentation/opencensus-proto v0.2.1/go.mod h1:f6KPmirojxKA12rnyqOA5BBL4O983OfeGPqjHWSTneU=
 github.com/cespare/xxhash/v2 v2.1.1/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XLFGgcrjCOs=
 github.com/cespare/xxhash/v2 v2.1.2/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XLFGgcrjCOs=

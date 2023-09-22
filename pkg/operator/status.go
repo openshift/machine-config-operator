@@ -334,12 +334,12 @@ func (optr *Operator) syncUpgradeableStatus() error {
 
 		updating = updatePrep || updateInProg || updateFinishing || updatePostAction
 
-		degraded, err = state.IsUpgradingProgressionTrue(mcfgv1.MachineConfigPoolUpdateErrored, *pool, optr.msLister, optr.apiExtClient)
-		if err != nil {
-			klog.Errorf("error on Upgrading Progression %w", err)
-			return err
-		}
-		//	degraded = isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolDegraded)
+		//degraded, err = state.IsUpgradingProgressionTrue(mcfgv1.MachineConfigStateErrored, *pool, optr.msLister, optr.apiExtClient)
+		//if err != nil {
+		//	klog.Errorf("error on Upgrading Progression %w", err)
+		//	return err
+		//}
+		degraded = isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolDegraded)
 		// degraded should get top billing in the clusteroperator status, if we find this, set it and update
 		if degraded {
 			coStatus.Status = configv1.ConditionFalse

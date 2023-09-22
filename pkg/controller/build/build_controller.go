@@ -25,6 +25,7 @@ import (
 	"k8s.io/klog/v2"
 
 	buildinformers "github.com/openshift/client-go/build/informers/externalversions"
+	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 
 	buildinformersv1 "github.com/openshift/client-go/build/informers/externalversions/build/v1"
 
@@ -39,6 +40,7 @@ import (
 	coreinformers "k8s.io/client-go/informers"
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
 
+	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 

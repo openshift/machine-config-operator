@@ -48,14 +48,14 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 
 		ctrlctx := ctrlcommon.CreateControllerContext(ctx, cb, ctrlcommon.MCONamespace)
 
-		ctrl := state.New(ctrlctx.NamespacedInformerFactory.Machineconfiguration().V1().MachineConfigPools(),
-
-			ctrlctx.NamespacedInformerFactory.Machineconfiguration().V1().MachineStates(),
+		ctrl := state.New(ctrlctx.NamespacedInformerFactory.Machineconfiguration().V1().MachineConfigStates(),
 			ctrlctx.KubeNamespacedInformerFactory.Core().V1().Events(),
+			ctrlctx.KubeInformerFactory.Core().V1().Nodes(),
 			state.StateControllerConfig{}, ctrlctx.ClientBuilder.KubeClientOrDie(componentName),
 			ctrlctx.ClientBuilder.MachineConfigClientOrDie(componentName),
 		)
 
+		ctrlctx.KubeInformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.NamespacedInformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.InformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.KubeNamespacedInformerFactory.Start(ctrlctx.Stop)

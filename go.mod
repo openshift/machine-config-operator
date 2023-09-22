@@ -84,6 +84,9 @@ require (
 	go.tmz.dev/musttag v0.7.0 // indirect
 	gopkg.in/DATA-DOG/go-sqlmock.v1 v1.3.0 // indirect
 	gopkg.in/go-jose/go-jose.v2 v2.6.1 // indirect
+	k8s.io/cli-runtime v0.28.2 // indirect
+	sigs.k8s.io/kustomize/api v0.13.5-0.20230601165947-6ce0bf390ce3 // indirect
+	sigs.k8s.io/kustomize/kyaml v0.14.3-0.20230601165947-6ce0bf390ce3 // indirect
 )
 
 require (
@@ -323,3 +326,9 @@ require (
 	sigs.k8s.io/structured-merge-diff/v4 v4.3.0 // indirect
 	sigs.k8s.io/yaml v1.3.0 // indirect
 )
+
+replace github.com/openshift/api => github.com/cdoern/api v0.0.0-20231005133555-eb1d410b3cc5
+
+replace k8s.io/kube-openapi => github.com/openshift/kube-openapi v0.0.0-20230816122517-ffc8f001abb0
+
+replace github.com/openshift/client-go => github.com/cdoern/client-go v0.0.0-20231005134336-d47d5818c40d

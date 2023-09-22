@@ -39,9 +39,15 @@ const (
 	GeneratedByVersionAnnotationKey = "machineconfiguration.openshift.io/generated-by-version"
 
 	// need some additional MachineConfigDaemonStates here... or maybe we need them to be consts of a larger MachineConfigDaemonUpdateStates type
-
-	// MachineConfigDaemonStateWorking is set by daemon when it is applying an update.
+	MachineConfigDaemonStateWorkPerparing = "WorkPreparing"
+	// MachineConfigDaemonStateWorking is set by daemon when it is beginning to apply an update.
 	MachineConfigDaemonStateWorking = "Working"
+	// MachineConfigDaemonStateWorkPostAction is set by daemon when it is applying an update.
+	MachineConfigDaemonStateWorkPostAction = "WorkPostAction"
+	// MachineConfigDaemonStateWorkCompleting is set by daemon when it is applying an update.
+	MachineConfigDaemonStateWorkCompleting = "WorkCompleting"
+	// MachineConfigDaemonResuming is set by daemon when it is applying an update.
+	MachineConfigDaemonResuming = "Resuming"
 	// MachineConfigDaemonStateDone is set by daemon when it is done applying an update.
 	MachineConfigDaemonStateDone = "Done"
 	// MachineConfigDaemonStateDegraded is set by daemon when an error not caused by a bad MachineConfig
@@ -51,6 +57,8 @@ const (
 	MachineConfigDaemonStateUnreconcilable = "Unreconcilable"
 	// MachineConfigDaemonReasonAnnotationKey is set by the daemon when it needs to report a human readable reason for its state. E.g. when state flips to degraded/unreconcilable.
 	MachineConfigDaemonReasonAnnotationKey = "machineconfiguration.openshift.io/reason"
+	// MachineConfigDaemonPhaseAnnotationKey is set by the daemon alongside the reason annotation key when more detail is needed
+	MachineConfigDaemonPhaseAnnotationKey = "machineconfiguration.openshift.io/phase"
 	// MachineConfigDaemonFinalizeFailureAnnotationKey is set by the daemon when ostree fails to finalize
 	MachineConfigDaemonFinalizeFailureAnnotationKey = "machineconfiguration.openshift.io/ostree-finalize-staged-failure"
 	// InitialNodeAnnotationsFilePath defines the path at which it will find the node annotations it needs to set on the node once it comes up for the first time.

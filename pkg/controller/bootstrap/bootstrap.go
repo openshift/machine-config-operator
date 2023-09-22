@@ -83,7 +83,7 @@ func (b *Bootstrap) Run(destDir string) error {
 	codecFactory := serializer.NewCodecFactory(scheme)
 	decoder := codecFactory.UniversalDecoder(mcfgv1.GroupVersion, apioperatorsv1alpha1.GroupVersion, apicfgv1.GroupVersion)
 
-	var states []*mcfgv1.MachineState
+	var states []*mcfgv1.MachineConfigState
 	var cconfig *mcfgv1.ControllerConfig
 	var featureGate *apicfgv1.FeatureGate
 	var nodeConfig *apicfgv1.Node
@@ -123,7 +123,7 @@ func (b *Bootstrap) Run(destDir string) error {
 			}
 
 			switch obj := obji.(type) {
-			case *mcfgv1.MachineState:
+			case *mcfgv1.MachineConfigState:
 				states = append(states, obj)
 			case *mcfgv1.MachineConfigPool:
 				pools = append(pools, obj)

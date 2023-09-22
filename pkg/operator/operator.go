@@ -7,10 +7,9 @@ import (
 
 	"k8s.io/klog/v2"
 
+	v1 "github.com/openshift/api/machineconfiguration/v1"
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
-	v1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	"github.com/openshift/machine-config-operator/pkg/controller/state"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	corev1 "k8s.io/api/core/v1"
 	apiextclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
@@ -80,7 +79,7 @@ type Operator struct {
 	imgLister        configlistersv1.ImageLister
 	crdLister        apiextlistersv1.CustomResourceDefinitionLister
 	mcpLister        mcfglistersv1.MachineConfigPoolLister
-	msLister         mcfglistersv1.MachineStateLister
+	msLister         mcfglistersv1.MachineConfigStateLister
 	ccLister         mcfglistersv1.ControllerConfigLister
 	mcLister         mcfglistersv1.MachineConfigLister
 	deployLister     appslisterv1.DeploymentLister
@@ -161,7 +160,7 @@ func New(
 	mcoSecretInformer coreinformersv1.SecretInformer,
 	ocSecretInformer coreinformersv1.SecretInformer,
 	mcoCOInformer configinformersv1.ClusterOperatorInformer,
-	msInformer mcfginformersv1.MachineStateInformer,
+	msInformer mcfginformersv1.MachineConfigStateInformer,
 ) *Operator {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
@@ -189,10 +188,6 @@ func New(
 	if err != nil {
 		klog.Errorf("Could not modify scheme: %w", err)
 	}
-	healtheventBroadcaster := record.NewBroadcaster()
-	healtheventBroadcaster.StartLogging(klog.V(2).Infof)
-	healtheventBroadcaster.StartRecordingToSink(&coreclientsetv1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("openshift-machine-config-operator")})
-	optr.operatorHealthEvents = healtheventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "operator-health"})
 
 	for _, i := range []cache.SharedIndexInformer{
 		controllerConfigInformer.Informer(),
@@ -413,7 +408,7 @@ func (optr *Operator) sync(key string) error {
 		// "RenderConfig" must always run first as it sets the renderConfig in the operator
 		// for the sync funcs below
 		{"RenderConfig", optr.syncRenderConfig},
-		{"MachineState", optr.syncMachineStates},
+		{"MachineConfigState", optr.syncMachineConfigStates},
 		{"MachineConfigPools", optr.syncMachineConfigPools},
 		{"MachineConfigDaemon", optr.syncMachineConfigDaemon},
 		{"MachineConfigController", optr.syncMachineConfigController},
@@ -423,23 +418,6 @@ func (optr *Operator) sync(key string) error {
 		{"RequiredPools", optr.syncRequiredMachineConfigPools},
 	}
 	return optr.syncAll(syncFuncs)
-}
-
-func (op *Operator) EmitHealthEvent(pod *corev1.Pod, annos map[string]string, eventType, reason, message string) {
-	if op.operatorHealthEvents == nil {
-		return
-	}
-	if pod == nil {
-		healthPod, err := state.StateControllerPod(op.kubeClient)
-		if err != nil {
-			klog.Errorf("Could not get state controller pod yet %w", err)
-			return
-		} else {
-			pod = healthPod
-			op.stateControllerPod = healthPod
-		}
-	}
-	op.operatorHealthEvents.AnnotatedEventf(pod, annos, eventType, reason, message)
 }
 
 func (op *Operator) HealthAnnotations(object string, objectType string, kind v1.StateProgress) map[string]string {

@@ -7,7 +7,7 @@ import (
 	"sync"
 
 	"github.com/fsnotify/fsnotify"
-	v1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	v1 "github.com/openshift/api/machineconfiguration/v1"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
 )
@@ -15,11 +15,11 @@ import (
 // I don't think we need euqueue, workers, or any of that. Just needs to run and listen
 
 type BootstrapStateController struct {
-	config                      StateControllerConfig
-	queue                       workqueue.RateLimitingInterface
-	enqueueBoostrapMachineState func(*v1.MachineState)
-	stopCh                      chan struct{}
-	wg                          sync.WaitGroup
+	config                            StateControllerConfig
+	queue                             workqueue.RateLimitingInterface
+	enqueueBoostrapMachineConfigState func(*v1.MachineConfigState)
+	stopCh                            chan struct{}
+	wg                                sync.WaitGroup
 }
 
 func newBootstrapStateController(
@@ -66,15 +66,15 @@ func (ctrl *BootstrapStateController) Run(workers int, stopCh <-chan struct{}) e
 					return nil
 				}
 				f, err := os.ReadFile(event.Name)
-				newMS := v1.MachineState{}
+				newMS := v1.MachineConfigState{}
 				if err = json.Unmarshal(f, &newMS); err != nil {
 					return err
 				}
 				switch newMS.Kind {
-				case string(v1.MCCBootstrapProgression):
-					// erase and re-write controller state
-				case string(v1.MCSBootstrapProgression):
-					// erase and re-write server state
+				//case string(v1.MCCBootstrapProgression):
+				// erase and re-write controller state
+				//dcase string(v1.MCSBootstrapProgression):
+				// erase and re-write server state
 				}
 			case err := <-watcher.Errors:
 				// Send fsnotify errors directly to the error channel.
@@ -90,7 +90,7 @@ func (ctrl *BootstrapStateController) Run(workers int, stopCh <-chan struct{}) e
 	klog.Info("Bootstrap MSC started, gathering data")
 
 	// might not need any of the enqueue stuff honestly.
-	// read from somewhere you know mcc, mcs are writing data to in the form of a MachineState or some sort of update
+	// read from somewhere you know mcc, mcs are writing data to in the form of a MachineConfigState or some sort of update
 	// make sure you keep track of it and at the end, write it to disk
 	// machine-state-controller --subcontrollers=bootstrap
 

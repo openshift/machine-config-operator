@@ -28,7 +28,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/kubernetes/scheme"
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/klog/v2"
 
@@ -43,8 +42,9 @@ import (
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	mcoResourceRead "github.com/openshift/machine-config-operator/lib/resourceread"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	"github.com/openshift/machine-config-operator/pkg/controller/state"
+	statectrl "github.com/openshift/machine-config-operator/pkg/controller/state"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
+
 	"github.com/openshift/machine-config-operator/pkg/daemon/osrelease"
 )
 
@@ -136,10 +136,6 @@ type Daemon struct {
 
 	// Used for Hypershift
 	hypershiftConfigMap string
-
-	// deaemonHealthEvents lists all health related events
-	daemonHealthEvents  record.EventRecorder
-	daemonUpgradeEvents record.EventRecorder
 
 	stateControllerPod *corev1.Pod
 }
@@ -321,7 +317,7 @@ func (dn *Daemon) ClusterConnect(
 	kubeletHealthzEndpoint string,
 ) error {
 
-	healthPod, err := state.StateControllerPod(kubeClient)
+	healthPod, err := statectrl.StateControllerPod(kubeClient)
 	if err != nil {
 		klog.Error(err)
 	}
@@ -336,9 +332,6 @@ func (dn *Daemon) ClusterConnect(
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.V(2).Infof)
 	eventBroadcaster.StartRecordingToSink(&corev1client.EventSinkImpl{Interface: kubeClient.CoreV1().Events("openshift-machine-config-operator")})
-
-	dn.daemonHealthEvents = eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "mcd-health"})
-	dn.daemonUpgradeEvents = eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "upgrade-health"})
 
 	// Other controllers start out with the default controller limiter which retries
 	// in milliseconds; since any change here will involve rebooting the node
@@ -645,23 +638,6 @@ func (dn *Daemon) initializeNode() error {
 	return nil
 }
 
-func (dn *Daemon) EmitHealthEvent(pod *corev1.Pod, annos map[string]string, eventType, reason, message string) {
-	if dn.daemonHealthEvents == nil {
-		return
-	}
-	if pod == nil {
-		healthPod, err := state.StateControllerPod(dn.kubeClient)
-		if err != nil {
-			klog.Errorf("Could not get state controller pod yet %w", err)
-			return
-		} else {
-			pod = healthPod
-			dn.stateControllerPod = healthPod
-		}
-	}
-	dn.daemonHealthEvents.AnnotatedEventf(pod, annos, eventType, reason, message)
-}
-
 func (dn *Daemon) syncNode(key string) error {
 
 	// how to communicate with the healthcontroller
@@ -707,14 +683,15 @@ func (dn *Daemon) syncNode(key string) error {
 	node = node.DeepCopy()
 	// this is going to be weird
 	// events need to be done on an object
+	/*
+		annos := make(map[string]string)
+		annos["ms"] = "DaemonState" //might need this might not
+		annos["state"] = "StateControllerSyncDaemon"
+		annos["ObjectKind"] = string(mcfgv1.Node)
+		annos["ObjectName"] = node.Name
 
-	annos := make(map[string]string)
-	annos["ms"] = "DaemonState" //might need this might not
-	annos["state"] = "StateControllerSyncDaemon"
-	annos["ObjectKind"] = string(v1.Node)
-	annos["ObjectName"] = node.Name
-
-	dn.EmitHealthEvent(dn.stateControllerPod, annos, corev1.EventTypeNormal, "GotNode", fmt.Sprintf("Got node %s for MCD", node.Name))
+		dn.EmitHealthEvent(dn.stateControllerPod, annos, corev1.EventTypeNormal, "GotNode", fmt.Sprintf("Got node %s for MCD", node.Name))
+	*/
 	//	dn.daemonHealthEvents.Eventf(
 	if dn.node == nil {
 		dn.node = node
@@ -728,10 +705,10 @@ func (dn *Daemon) syncNode(key string) error {
 		oldReason := dn.node.Annotations[constants.MachineConfigDaemonReasonAnnotationKey]
 		newReason := node.Annotations[constants.MachineConfigDaemonReasonAnnotationKey]
 		if oldState != newState {
-			dn.EmitHealthEvent(dn.stateControllerPod, annos, corev1.EventTypeNormal, "UpdatingStateAnnotations", fmt.Sprintf("Updating MCO State from %s to %s", oldState, newState))
+			//	dn.EmitHealthEvent(dn.stateControllerPod, annos, corev1.EventTypeNormal, "UpdatingStateAnnotations", fmt.Sprintf("Updating MCO State from %s to %s", oldState, newState))
 		}
 		if oldReason != newReason {
-			dn.EmitHealthEvent(dn.stateControllerPod, annos, corev1.EventTypeNormal, "UpdatingReasonAnnotations", fmt.Sprintf("Updating MCO State Transition Reasons from %s to %s", oldReason, newReason))
+			//	dn.EmitHealthEvent(dn.stateControllerPod, annos, corev1.EventTypeNormal, "UpdatingReasonAnnotations", fmt.Sprintf("Updating MCO State Transition Reasons from %s to %s", oldReason, newReason))
 		}
 		dn.node = node
 		// this is going to be weird
@@ -784,20 +761,31 @@ func (dn *Daemon) syncNode(key string) error {
 	}
 
 	if ufc != nil {
+		annos := map[string]string{
+			constants.MachineConfigDaemonStateAnnotationKey:  constants.MachineConfigDaemonStateWorkPerparing,
+			constants.MachineConfigDaemonReasonAnnotationKey: "ClosingCfgDriftMonitor",
+			constants.MachineConfigDaemonPhaseAnnotationKey:  fmt.Sprintf("Detecting diff in current: %s and desired %s MC. Preparing upgrade", ufc.currentConfig.Name, ufc.desiredConfig.Name),
+		}
+		dn.nodeWriter.SetAnnotations(annos)
 		// Only check for config drift if we need to update.
 		if err := dn.runPreflightConfigDriftCheck(); err != nil {
 			return err
 		}
 
-		dn.EmitHealthEvent(dn.stateControllerPod, annos, corev1.EventTypeNormal, "TriggeringUpdate", fmt.Sprintf("Updating MCO to new MachineConfig %s", ufc.desiredConfig.Name))
+		//dn.EmitHealthEvent(dn.stateControllerPod, annos, corev1.EventTypeNormal, "TriggeringUpdate", fmt.Sprintf("Updating MCO to new MachineConfig %s", ufc.desiredConfig.Name))
 		if err := dn.triggerUpdate(ufc.currentConfig, ufc.desiredConfig, ufc.currentImage, ufc.desiredImage); err != nil {
-			dn.EmitUpgradeEvent(dn.stateControllerPod, dn.UpgradeAnnotations(v1.MachineConfigPoolUpdateErrored), corev1.EventTypeWarning, "UpdateError", fmt.Sprintf("Error Updating to new MachineConfig %s", ufc.desiredConfig.Name))
+			annos = map[string]string{
+				constants.MachineConfigDaemonStateAnnotationKey:  constants.MachineConfigDaemonStateDegraded,
+				constants.MachineConfigDaemonReasonAnnotationKey: err.Error(),
+			}
+			dn.nodeWriter.SetAnnotations(annos)
+			//dn.EmitUpgradeEvent(dn.stateControllerPod, dn.UpgradeAnnotations(v1.MachineConfigStateErrored), corev1.EventTypeWarning, "UpdateError", fmt.Sprintf("Error Updating to new MachineConfig %s", ufc.desiredConfig.Name))
 			return err
 		}
 		klog.V(2).Infof("Node %s is already synced", node.Name)
 		return nil
 	}
-	dn.EmitUpgradeEvent(dn.stateControllerPod, dn.UpgradeAnnotations(v1.MachineConfigPoolReady), corev1.EventTypeNormal, "NodeUpdated", fmt.Sprintf("Node %s is up to date", dn.nodeName()))
+	//dn.EmitUpgradeEvent(dn.stateControllerPod, dn.UpgradeAnnotations(v1.MachineConfigPoolReady), corev1.EventTypeNormal, "NodeUpdated", fmt.Sprintf("Node %s is up to date", dn.nodeName()))
 	return nil
 }
 
@@ -2290,48 +2278,10 @@ func (dn *Daemon) triggerUpdateWithMachineConfig(currentConfig, desiredConfig *m
 	// dn.UpgradeProgression
 	//dn.setPoolHealthProgression(v1.MachineConfigPoolUpdatePreparing, "stopping config drift monitor", "")
 
-	dn.EmitUpgradeEvent(dn.stateControllerPod, dn.UpgradeAnnotations(v1.MachineConfigPoolUpdatePreparing), corev1.EventTypeNormal, "StoppingConfigDriftMonitor", "Daemon is stopping the config drift monitor")
+	//dn.EmitUpgradeEvent(dn.stateControllerPod, dn.UpgradeAnnotations(v1.MachineConfigPoolUpdatePreparing), corev1.EventTypeNormal, "StoppingConfigDriftMonitor", "Daemon is stopping the config drift monitor")
 
 	// run the update process. this function doesn't currently return.
 	return dn.update(currentConfig, desiredConfig, skipCertificateWrite)
-}
-
-func (dn *Daemon) UpgradeAnnotations(kind v1.StateProgress) map[string]string {
-	annos := make(map[string]string)
-	annos["ms"] = "UpgradeProgression" //might need this might not
-	annos["state"] = string(kind)
-	if dn.node == nil {
-		annos["ObjectKind"] = "None"
-		annos["ObjectName"] = "Firstboot"
-		annos["Pool"] = "None"
-	} else {
-		annos["ObjectKind"] = string(v1.Node)
-		if dn.node != nil {
-			annos["ObjectName"] = dn.node.Name
-			if _, hasWorkerLabel := dn.node.Labels[WorkerLabel]; hasWorkerLabel {
-				annos["Pool"] = "worker"
-			} else if _, hasMasterLabel := dn.node.Labels[MasterLabel]; hasMasterLabel {
-				annos["Pool"] = "master"
-			}
-		}
-	}
-	return annos
-}
-func (dn *Daemon) EmitUpgradeEvent(pod *corev1.Pod, annos map[string]string, eventType, reason, message string) {
-	if dn.daemonUpgradeEvents == nil {
-		return
-	}
-	if pod == nil {
-		healthPod, err := state.StateControllerPod(dn.kubeClient)
-		if err != nil {
-			klog.Errorf("Could not get state controller pod yet %w", err)
-			return
-		} else {
-			pod = healthPod
-			dn.stateControllerPod = healthPod
-		}
-	}
-	dn.daemonUpgradeEvents.AnnotatedEventf(pod, annos, eventType, reason, message)
 }
 
 // validateKernelArguments checks that the current boot has all arguments specified

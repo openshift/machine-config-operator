@@ -7,10 +7,10 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 
-	mcfgv1listers "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
+	mcfgv1listers "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	apiextclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -45,13 +45,13 @@ func ConvertStateControllerToPoolType(stateType mcfgv1.StateProgress) mcfgv1.Mac
 		return mcfgv1.MachineConfigPoolUpdating
 	case mcfgv1.MachineConfigPoolUpdateComplete:
 		return mcfgv1.MachineConfigPoolUpdated
-	case mcfgv1.MachineConfigPoolUpdateErrored:
+	case mcfgv1.MachineConfigStateErrored:
 		return mcfgv1.MachineConfigPoolDegraded
 	}
 	return mcfgv1.MachineConfigPoolUpdated // ?
 }
 
-func IsUpgradingProgressionTrue(which mcfgv1.StateProgress, pool mcfgv1.MachineConfigPool, msLister mcfgv1listers.MachineStateLister, apiCli apiextclientset.Interface) (bool, error) {
+func IsUpgradingProgressionTrue(which mcfgv1.StateProgress, pool mcfgv1.MachineConfigPool, msLister mcfgv1listers.MachineConfigStateLister, apiCli apiextclientset.Interface) (bool, error) {
 	if _, err := apiCli.ApiextensionsV1().CustomResourceDefinitions().Get(context.TODO(), "machinestates.machineconfiguration.openshift.io", metav1.GetOptions{}); err != nil {
 		for _, condition := range pool.Status.Conditions {
 			if condition.Type == ConvertStateControllerToPoolType(which) {
@@ -60,7 +60,7 @@ func IsUpgradingProgressionTrue(which mcfgv1.StateProgress, pool mcfgv1.MachineC
 		}
 		return false, nil
 	}
-	ms, err := GetMachineStateForPool(pool, msLister)
+	ms, err := GetMachineConfigStateForPool(pool, msLister)
 	if err != nil || ms == nil {
 		// if for some reason the machinestate has been deleted or DNE, fallback to old method
 		for _, condition := range pool.Status.Conditions {
@@ -79,6 +79,6 @@ func IsUpgradingProgressionTrue(which mcfgv1.StateProgress, pool mcfgv1.MachineC
 	return false, nil
 }
 
-func GetMachineStateForPool(pool mcfgv1.MachineConfigPool, msLister mcfgv1listers.MachineStateLister) (*mcfgv1.MachineState, error) {
+func GetMachineConfigStateForPool(pool mcfgv1.MachineConfigPool, msLister mcfgv1listers.MachineConfigStateLister) (*mcfgv1.MachineConfigState, error) {
 	return msLister.Get(fmt.Sprintf("upgrade-%s", pool.Name))
 }

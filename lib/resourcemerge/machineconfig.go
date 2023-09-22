@@ -9,9 +9,9 @@ import (
 
 // EnsureMachineConfig ensures that the existing matches the required.
 // modified is set to true when existing had to be updated with required.
-func EnsureMachineState(modified *bool, existing *mcfgv1.MachineState, required mcfgv1.MachineState) {
+func EnsureMachineConfigState(modified *bool, existing *mcfgv1.MachineConfigState, required mcfgv1.MachineConfigState) {
 	resourcemerge.EnsureObjectMeta(modified, &existing.ObjectMeta, required.ObjectMeta)
-	ensureMachineStateSpec(modified, &existing.Spec, required.Spec)
+	ensureMachineConfigStateSpec(modified, &existing.Spec, required.Spec)
 }
 
 // EnsureMachineConfig ensures that the existing matches the required.
@@ -52,16 +52,16 @@ func EnsureMachineConfigPool(modified *bool, existing *mcfgv1.MachineConfigPool,
 	}
 }
 
-func ensureMachineStateSpec(modified *bool, existing *mcfgv1.MachineStateSpec, required mcfgv1.MachineStateSpec) {
+func ensureMachineConfigStateSpec(modified *bool, existing *mcfgv1.MachineConfigStateSpec, required mcfgv1.MachineConfigStateSpec) {
 	if !equality.Semantic.DeepEqual(existing.Config, required.Config) {
 		*modified = true
 		(*existing).Config = required.Config
-		klog.Infof("the MachineState %s is modified", existing.Kind)
+		klog.Infof("the MachineConfigState %s is modified", existing.Config.Name)
 	}
-	if !equality.Semantic.DeepEqual(existing.Kind, required.Kind) {
+	if !equality.Semantic.DeepEqual(existing.Config.Name, required.Config.Name) {
 		*modified = true
-		(*existing).Kind = required.Kind
-		klog.Infof("the MachineState %s is modified", existing.Kind)
+		(*existing).Config.Name = required.Config.Name
+		klog.Infof("the MachineConfigState %s is modified", existing.Config.Name)
 	}
 }
 func ensureMachineConfigSpec(modified *bool, existing *mcfgv1.MachineConfigSpec, required mcfgv1.MachineConfigSpec) {

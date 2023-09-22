@@ -22,6 +22,6 @@ type MachineConfigListerExpansion interface{}
 // MachineConfigPoolLister.
 type MachineConfigPoolListerExpansion interface{}
 
-// MachineStateListerExpansion allows custom methods to be added to
-// MachineStateLister.
-type MachineStateListerExpansion interface{}
+// MachineConfigStateListerExpansion allows custom methods to be added to
+// MachineConfigStateLister.
+type MachineConfigStateListerExpansion interface{}

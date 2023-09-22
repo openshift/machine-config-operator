@@ -12,4 +12,4 @@ type MachineConfigExpansion interface{}
 
 type MachineConfigPoolExpansion interface{}
 
-type MachineStateExpansion interface{}
+type MachineConfigStateExpansion interface{}

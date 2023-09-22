@@ -54,11 +54,9 @@ var controllerKind = mcfgv1.SchemeGroupVersion.WithKind("ControllerConfig")
 type Controller struct {
 	templatesDir string
 
-	client               mcfgclientset.Interface
-	kubeClient           clientset.Interface
-	eventRecorder        record.EventRecorder
-	healthEventsRecorder record.EventRecorder
-
+	client                  mcfgclientset.Interface
+	kubeClient              clientset.Interface
+	eventRecorder           record.EventRecorder
 	syncHandler             func(ccKey string) error
 	enqueueControllerConfig func(*mcfgv1.ControllerConfig)
 
@@ -225,11 +223,10 @@ func (ctrl *Controller) deleteFeature(obj interface{}) {
 }
 
 // Run executes the template controller
-func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}, healthEvents record.EventRecorder) {
+func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	ctrl.healthEventsRecorder = healthEvents
 	if !cache.WaitForCacheSync(stopCh, ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.secretsInformerSynced) {
 		return
 	}
