@@ -161,21 +161,16 @@ func mergedTagMirrorSets(itmsRules []*apicfgv1.ImageTagMirrorSet) ([]mergedMirro
 	return mergedMirrorSets(tagMirrorSets)
 }
 
-// mergedDigestMirrorSets processes idmsRules and returns a set of mergedMirrorSet, one for each Source value,
+// mergedDigestMirrorSets processes idmsRules and icspRules and returns a set of mergedMirrorSet, one for each Source value,
 // ordered consistently with the preference order of the individual entries (if possible)
 // E.g. given mirror sets (B, C) and (A, B), it will combine them into a single (A, B, C) set.
-func mergedDigestMirrorSets(idmsRules []*apicfgv1.ImageDigestMirrorSet) ([]mergedMirrorSet, error) {
-	digestMirrorSets := newMirrorSets()
+func mergedDigestMirrorSets(idmsRules []*apicfgv1.ImageDigestMirrorSet, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy) ([]mergedMirrorSet, error) {
+	mirrorSets := newMirrorSets()
 	for _, idms := range idmsRules {
 		for _, set := range idms.Spec.ImageDigestMirrors {
-			digestMirrorSets.addMirrorSet(set.Source, set.MirrorSourcePolicy, set.Mirrors)
+			mirrorSets.addMirrorSet(set.Source, set.MirrorSourcePolicy, set.Mirrors)
 		}
 	}
-	return mergedMirrorSets(digestMirrorSets)
-}
-
-func mergedICSPMirrorSets(icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy) ([]mergedMirrorSet, error) {
-	repositoryMirrorSets := newMirrorSets()
 	for _, icsp := range icspRules {
 		for _, set := range icsp.Spec.RepositoryDigestMirrors {
 			imgMirrors := []apicfgv1.ImageMirror{}
@@ -183,10 +178,10 @@ func mergedICSPMirrorSets(icspRules []*apioperatorsv1alpha1.ImageContentSourcePo
 				imgMirrors = append(imgMirrors, apicfgv1.ImageMirror(m))
 			}
 			// leave MirrorSourcePolicy blank, it will follow the default AllowContactingSource
-			repositoryMirrorSets.addMirrorSet(set.Source, "", imgMirrors)
+			mirrorSets.addMirrorSet(set.Source, "", imgMirrors)
 		}
 	}
-	return mergedMirrorSets(repositoryMirrorSets)
+	return mergedMirrorSets(mirrorSets)
 }
 
 // mirrorsAdjustedForNestedScope returns mirrors from mirroredScope, updated
@@ -238,10 +233,8 @@ func registryScope(reg *sysregistriesv2.Registry) string {
 // A valid scope is in the form of registry/namespace...[/repo] (can also refer to sysregistriesv2.Registry.Prefix)
 // NOTE: Validation of wildcard entries is done before EditRegistriesConfig is called in the MCO code.
 func EditRegistriesConfig(config *sysregistriesv2.V2RegistriesConf, insecureScopes, blockedScopes []string, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy,
-	idmsRules []*apicfgv1.ImageDigestMirrorSet, itmsRules []*apicfgv1.ImageTagMirrorSet) error {
-	if err := RejectMultiUpdateMirrorSetObjs(icspRules, idmsRules, itmsRules); err != nil {
-		return err
-	}
+	idmsRules []*apicfgv1.ImageDigestMirrorSet, itmsRules []*apicfgv1.ImageTagMirrorSet,
+) error {
 	// addRegistryEntry creates a Registry object corresponding to scope.
 	// NOTE: The pointer is valid only until the next getRegistryEntry call.
 	addRegistryEntry := func(scope string) *sysregistriesv2.Registry {
@@ -283,17 +276,11 @@ func EditRegistriesConfig(config *sysregistriesv2.V2RegistriesConf, insecureScop
 		}
 	}
 
-	digestMirrorSets, err := mergedDigestMirrorSets(idmsRules)
+	digestMirrorSets, err := mergedDigestMirrorSets(idmsRules, icspRules)
 	if err != nil {
 		return err
 	}
 	addMirrorsToRegistries(digestMirrorSets, sysregistriesv2.MirrorByDigestOnly)
-
-	icspMirrorSets, err := mergedICSPMirrorSets(icspRules)
-	if err != nil {
-		return err
-	}
-	addMirrorsToRegistries(icspMirrorSets, sysregistriesv2.MirrorByDigestOnly)
 
 	tagMirrorSets, err := mergedTagMirrorSets(itmsRules)
 	if err != nil {
@@ -341,7 +328,7 @@ func EditRegistriesConfig(config *sysregistriesv2.V2RegistriesConf, insecureScop
 		}
 	}
 
-	allMirrorSets := append(icspMirrorSets, append(digestMirrorSets, tagMirrorSets...)...)
+	allMirrorSets := append(digestMirrorSets, tagMirrorSets...)
 	for _, mirrorSet := range allMirrorSets {
 		mirroredReg := getRegistryEntry(mirrorSet.source)
 		mirroredScope := registryScope(mirroredReg)
@@ -380,17 +367,4 @@ func IsValidRegistriesConfScope(scope string) bool {
 		return true
 	}
 	return false
-}
-
-// RejectMultiUpdateMirrorSetObjs returns error if icsp objects exist with imagedigestmirrorset or imagetagmirrorset objects
-// to avoid existing mirror settings get updated by others
-func RejectMultiUpdateMirrorSetObjs(icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy,
-	idmsRules []*apicfgv1.ImageDigestMirrorSet, itmsRules []*apicfgv1.ImageTagMirrorSet) error {
-	if len(icspRules) > 0 && len(idmsRules) > 0 {
-		return fmt.Errorf("error: both imagecontentsourcepolicy and imagedigestmirrorset exist")
-	}
-	if len(icspRules) > 0 && len(itmsRules) > 0 {
-		return fmt.Errorf("error: both imagecontentsourcepolicy and imagetagmirrorset exist")
-	}
-	return nil
 }

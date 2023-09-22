@@ -806,8 +806,8 @@ github.com/openshift/cluster-config-operator v0.0.0-alpha.0.0.20230516205036-088
 github.com/openshift/cluster-config-operator v0.0.0-alpha.0.0.20230516205036-088c6d48cc1a/go.mod h1:O4TuBlo2A+kZiykV1LxUSdEjx6zNqgCKf05+lkTDVZc=
 github.com/openshift/library-go v0.0.0-20230614142803-865e70cc6b32 h1:4fniM/5gS16UJ79sC3whgqufsfg7+Rj6ySMLb2GJvAY=
 github.com/openshift/library-go v0.0.0-20230614142803-865e70cc6b32/go.mod h1:PegtilvJPBJXjJG3AV8uL1a0SAnBr6K67ShNiWVb40M=
-github.com/openshift/runtime-utils v0.0.0-20220926190846-5c488b20a19f h1:ubRzazPtplWWNWWX07v4ww74S9QL+B2RAxHJ8O00m7o=
-github.com/openshift/runtime-utils v0.0.0-20220926190846-5c488b20a19f/go.mod h1:l9/qeKZuAmYUMl0yicJlbkPGDsIycGhwxOvOAWyaP0E=
+github.com/openshift/runtime-utils v0.0.0-20230921210328-7bdb5b9c177b h1:oXzC1N6E9gw76/WH2gEA8GEHvuq09wuVQ9GoCuR8GF4=
+github.com/openshift/runtime-utils v0.0.0-20230921210328-7bdb5b9c177b/go.mod h1:l9/qeKZuAmYUMl0yicJlbkPGDsIycGhwxOvOAWyaP0E=
 github.com/otiai10/copy v1.2.0 h1:HvG945u96iNadPoG2/Ja2+AUJeW5YuFQMixq9yirC+k=
 github.com/otiai10/copy v1.2.0/go.mod h1:rrF5dJ5F0t/EWSYODDu4j9/vEeYHMkc8jt0zJChqQWw=
 github.com/otiai10/curr v0.0.0-20150429015615-9b4961190c95/go.mod h1:9qAhocn7zKJG+0mI8eUu6xqkFDYS2kb2saOteoSB3cE=
