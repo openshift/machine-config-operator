@@ -16,11 +16,13 @@ import (
 	macherrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/jsonmergepatch"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/kubernetes"
 	clientset "k8s.io/client-go/kubernetes"
 	coreclientsetv1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/cache"
@@ -31,18 +33,22 @@ import (
 	kubeletconfigv1beta1 "k8s.io/kubelet/config/v1beta1"
 
 	configv1 "github.com/openshift/api/config/v1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	v1 "github.com/openshift/api/machineconfiguration/v1"
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
 	oseinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
 	oselistersv1 "github.com/openshift/client-go/config/listers/config/v1"
+	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
+	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
+	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
+	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	"github.com/openshift/library-go/pkg/crypto"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	"github.com/openshift/machine-config-operator/pkg/apihelpers"
+	"github.com/openshift/machine-config-operator/pkg/constants"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/controller/state"
 	mtmpl "github.com/openshift/machine-config-operator/pkg/controller/template"
-	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
-	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
-	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
-	mcfglistersv1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/version"
 )
 
@@ -77,9 +83,12 @@ type Controller struct {
 	templatesDir string
 
 	client               mcfgclientset.Interface
+	kubeClient           kubernetes.Interface
 	configClient         configclientset.Interface
 	healthEventsRecorder record.EventRecorder
-	eventRecorder        record.EventRecorder
+	stateControllerPod   *corev1.Pod
+
+	eventRecorder record.EventRecorder
 
 	syncHandler          func(mcp string) error
 	enqueueKubeletConfig func(*mcfgv1.KubeletConfig)
@@ -103,6 +112,7 @@ type Controller struct {
 	apiserverListerSynced cache.InformerSynced
 
 	queue           workqueue.RateLimitingInterface
+	eventQueue      []constants.QueuedEvent
 	featureQueue    workqueue.RateLimitingInterface
 	nodeConfigQueue workqueue.RateLimitingInterface
 
@@ -131,9 +141,11 @@ func New(
 		templatesDir: templatesDir,
 		client:       mcfgClient,
 		configClient: configclient,
+		kubeClient:   kubeClient,
 		//healthEventsRecorder: ,
 		eventRecorder:     ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-kubeletconfigcontroller"})),
 		queue:             workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-kubeletconfigcontroller"),
+		eventQueue:        []constants.QueuedEvent{},
 		featureQueue:      workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-featurecontroller"),
 		nodeConfigQueue:   workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-nodeConfigcontroller"),
 		featureGateAccess: fgAccess,
@@ -206,6 +218,8 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}, healthEvents re
 
 	for i := 0; i < workers; i++ {
 		go wait.Until(ctrl.nodeConfigWorker, time.Second, stopCh)
+		go wait.Until(ctrl.eventWorker, time.Second, stopCh)
+
 	}
 
 	<-stopCh
@@ -428,6 +442,9 @@ func (ctrl *Controller) syncStatusOnly(cfg *mcfgv1.KubeletConfig, err error, arg
 	if statusUpdateError != nil {
 		klog.Warningf("error updating kubeletconfig status: %v", statusUpdateError)
 	}
+	if err != nil {
+		ctrl.EmitHealthEvent(ctrl.stateControllerPod, ctrl.HealthAnnotations(cfg.Name, string(v1.KC), v1.MachineStateErrored), corev1.EventTypeWarning, "KubeletSyncError", fmt.Sprintf("Error Syncing KubeletConfig: %s", err.Error()))
+	}
 	return err
 }
 
@@ -479,8 +496,16 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		klog.V(4).Infof("Finished syncing kubeletconfig %q (%v)", key, time.Since(startTime))
 	}()
 
+	s, err := state.StateControllerPod(ctrl.kubeClient)
+	if err != nil {
+		klog.Error(err)
+	}
+
+	ctrl.stateControllerPod = s
+
+	ctrl.EmitHealthEvent(ctrl.stateControllerPod, ctrl.HealthAnnotations(ctrlcommon.ControllerConfigName, string(v1.CC), v1.MCCSync), corev1.EventTypeNormal, "CheckingControllerConfig", "Checking if ControllerConfig is complete")
 	// Wait to apply a kubelet config if the controller config is not completed
-	if err := mcfgv1.IsControllerConfigCompleted(ctrlcommon.ControllerConfigName, ctrl.ccLister.Get); err != nil {
+	if err := apihelpers.IsControllerConfigCompleted(ctrlcommon.ControllerConfigName, ctrl.ccLister.Get); err != nil {
 		return err
 	}
 
@@ -498,6 +523,8 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 	if err != nil {
 		return err
 	}
+
+	ctrl.EmitHealthEvent(ctrl.stateControllerPod, ctrl.HealthAnnotations(name, string(v1.KC), v1.MCCSync), corev1.EventTypeNormal, "GotKubeletConfig", "Got KubeletConfig to Sync")
 
 	// Deep-copy otherwise we are mutating our cache.
 	cfg = cfg.DeepCopy()
@@ -521,6 +548,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 	}
 
 	// Find all MachineConfigPools
+	ctrl.EmitHealthEvent(ctrl.stateControllerPod, ctrl.HealthAnnotations(cfg.Name, string(v1.KC), v1.MCCSync), corev1.EventTypeNormal, "SyncingKubeletStatus", "Syncing KubeletConfigStatus")
 	mcpPools, err := ctrl.getPoolsForKubeletConfig(cfg)
 	if err != nil {
 		return ctrl.syncStatusOnly(cfg, err)
@@ -539,6 +567,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 	}
 
 	for _, pool := range mcpPools {
+		ctrl.EmitHealthEvent(ctrl.stateControllerPod, ctrl.HealthAnnotations(cfg.Name, string(v1.KC), v1.MCCSync), corev1.EventTypeNormal, "ApplyingConfigsForKubelet", fmt.Sprintf("Applying Kubelet MCs associated with Pool %s", pool.Name))
 		if pool.Spec.Configuration.Name == "" {
 			updateDelay := 5 * time.Second
 			// Previously we spammed the logs about empty pools.
@@ -590,6 +619,8 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		observedMinTLSVersion, observedCipherSuites := getSecurityProfileCiphers(profile)
 		originalKubeConfig.TLSMinVersion = observedMinTLSVersion
 		originalKubeConfig.TLSCipherSuites = observedCipherSuites
+
+		ctrl.EmitHealthEvent(ctrl.stateControllerPod, ctrl.HealthAnnotations(cfg.Name, string(v1.KC), v1.MCCSync), corev1.EventTypeNormal, "GeneratingIgnForKubelet", "Generating Ignition for OriginalKubeletConfig")
 
 		kubeletIgnition, logLevelIgnition, autoSizingReservedIgnition, err := generateKubeletIgnFiles(cfg, originalKubeConfig)
 		if err != nil {
@@ -835,4 +866,77 @@ func getSecurityProfileCiphers(profile *configv1.TLSSecurityProfile) (string, []
 
 	// need to remap all Ciphers to their respective IANA names used by Go
 	return string(profileSpec.MinTLSVersion), crypto.OpenSSLToIANACipherSuites(profileSpec.Ciphers)
+}
+
+func (ctrl *Controller) eventWorker() {
+	for ctrl.processNextEventWorkItem() {
+	}
+}
+
+// processNextEventWorkItem only sends an event to the state controller
+// if we have 10 events or if the events in the queue have been sitting for a while
+func (ctrl *Controller) processNextEventWorkItem() bool {
+	if len(ctrl.eventQueue) > 1 {
+		// format large event to send
+		allAnnotations := make(map[string]string)
+		allReason := ""
+		allMessage := ""
+		var obj runtime.Object
+		obj, err := state.StateControllerPod(ctrl.kubeClient)
+		if err != nil {
+			klog.Errorf("err getting pod: %w", err)
+		}
+		for i := 0; i < 2; i++ {
+			ev := ctrl.eventQueue[0]
+			if err != nil {
+				klog.Errorf("err unmarshaling %w", err)
+			}
+			for k, anno := range ev.Annotations {
+				allAnnotations[fmt.Sprintf("%d.%s", i, k)] = anno
+			}
+			allReason += ev.Reason + "."
+			allMessage += ev.Message + "."
+
+			if len(ctrl.eventQueue) > 1 {
+				ctrl.eventQueue = ctrl.eventQueue[1:]
+			}
+		}
+		if obj != nil {
+			ctrl.healthEventsRecorder.AnnotatedEventf(obj, allAnnotations, corev1.EventTypeNormal, allReason, allMessage)
+		}
+	}
+
+	return true
+}
+
+func (ctrl *Controller) EmitHealthEvent(pod *corev1.Pod, annos map[string]string, eventType, reason, message string) {
+	if ctrl.healthEventsRecorder == nil {
+		return
+	}
+	if pod == nil {
+		healthPod, err := state.StateControllerPod(ctrl.kubeClient)
+		if err != nil {
+			klog.Errorf("Could not get state controller pod yet %w", err)
+			return
+		} else {
+			pod = healthPod
+		}
+	}
+	newQueuedEvent := constants.QueuedEvent{
+		Annotations: annos,
+		EventType:   corev1.EventTypeNormal,
+		Reason:      reason,
+		Message:     message,
+	}
+	ctrl.eventQueue = append(ctrl.eventQueue, newQueuedEvent)
+}
+
+func (ctrl *Controller) HealthAnnotations(object string, objectType string, kind v1.StateProgress) map[string]string {
+	annos := make(map[string]string)
+	annos["ms"] = "ControllerHealth" //might need this might not
+	annos["state"] = string(kind)
+	annos["ObjectName"] = object
+	annos["ObjectKind"] = objectType
+
+	return annos
 }

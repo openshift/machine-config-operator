@@ -5,4 +5,4 @@ metadata:
   labels:
     "states.operator.machineconfiguration.openshift.io/upgrade": ""
 spec:
-  machineStateType: UpgradeProgression
+  machineStateKind: UpgradeProgression

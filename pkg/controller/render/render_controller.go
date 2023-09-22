@@ -6,22 +6,28 @@ import (
 	"reflect"
 	"time"
 
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	v1 "github.com/openshift/api/machineconfiguration/v1"
+	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
+	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
+	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
+	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	mcoResourceApply "github.com/openshift/machine-config-operator/lib/resourceapply"
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	"github.com/openshift/machine-config-operator/pkg/apihelpers"
+	"github.com/openshift/machine-config-operator/pkg/constants"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/controller/state"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
-	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
-	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
-	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
-	mcfglistersv1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/kubernetes"
 	clientset "k8s.io/client-go/kubernetes"
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/cache"
@@ -56,6 +62,9 @@ type Controller struct {
 	eventRecorder        record.EventRecorder
 	healthEventsRecorder record.EventRecorder
 
+	kubeClient         kubernetes.Interface
+	stateControllerPod *corev1.Pod
+
 	syncHandler              func(mcp string) error
 	enqueueMachineConfigPool func(*mcfgv1.MachineConfigPool)
 
@@ -68,7 +77,8 @@ type Controller struct {
 	ccLister       mcfglistersv1.ControllerConfigLister
 	ccListerSynced cache.InformerSynced
 
-	queue workqueue.RateLimitingInterface
+	queue      workqueue.RateLimitingInterface
+	eventQueue []constants.QueuedEvent
 }
 
 // New returns a new render controller.
@@ -85,8 +95,10 @@ func New(
 
 	ctrl := &Controller{
 		client:        mcfgClient,
+		kubeClient:    kubeClient,
 		eventRecorder: ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-rendercontroller"})),
 		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-rendercontroller"),
+		eventQueue:    []constants.QueuedEvent{},
 	}
 
 	mcpInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -129,6 +141,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}, healthEvents re
 
 	for i := 0; i < workers; i++ {
 		go wait.Until(ctrl.worker, time.Second, stopCh)
+		go wait.Until(ctrl.eventWorker, time.Second, stopCh)
 	}
 
 	<-stopCh
@@ -397,6 +410,14 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		klog.V(4).Infof("Finished syncing machineconfigpool %q (%v)", key, time.Since(startTime))
 	}()
 
+	healthPod, err := state.StateControllerPod(ctrl.kubeClient)
+	if err != nil {
+		klog.Error(err)
+	}
+
+	if healthPod != nil {
+		ctrl.stateControllerPod = healthPod
+	}
 	_, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		return err
@@ -425,7 +446,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	}
 
 	// TODO(runcom): add tests in render_controller_test.go for this condition
-	if err := mcfgv1.IsControllerConfigCompleted(ctrlcommon.ControllerConfigName, ctrl.ccLister.Get); err != nil {
+	if err := apihelpers.IsControllerConfigCompleted(ctrlcommon.ControllerConfigName, ctrl.ccLister.Get); err != nil {
 		return err
 	}
 
@@ -437,6 +458,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		return ctrl.syncFailingStatus(pool, fmt.Errorf("no MachineConfigs found matching selector %v", selector))
 	}
 
+	ctrl.EmitHealthEvent(ctrl.stateControllerPod, ctrl.HealthAnnotations(name, string(v1.MCP), v1.MCCSync), corev1.EventTypeNormal, "SyncingGeneratedMCs", fmt.Sprintf("Syncing Generated MCs for Pool %s in the render controller", pool.Name))
 	if err := ctrl.syncGeneratedMachineConfig(pool, mcs); err != nil {
 		return ctrl.syncFailingStatus(pool, err)
 	}
@@ -445,11 +467,11 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 }
 
 func (ctrl *Controller) syncAvailableStatus(pool *mcfgv1.MachineConfigPool) error {
-	if mcfgv1.IsMachineConfigPoolConditionFalse(pool.Status.Conditions, mcfgv1.MachineConfigPoolRenderDegraded) {
+	if apihelpers.IsMachineConfigPoolConditionFalse(pool.Status.Conditions, mcfgv1.MachineConfigPoolRenderDegraded) {
 		return nil
 	}
-	sdegraded := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolRenderDegraded, corev1.ConditionFalse, "", "")
-	mcfgv1.SetMachineConfigPoolCondition(&pool.Status, *sdegraded)
+	sdegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolRenderDegraded, corev1.ConditionFalse, "", "")
+	apihelpers.SetMachineConfigPoolCondition(&pool.Status, *sdegraded)
 	if _, err := ctrl.client.MachineconfigurationV1().MachineConfigPools().UpdateStatus(context.TODO(), pool, metav1.UpdateOptions{}); err != nil {
 		return err
 	}
@@ -457,8 +479,8 @@ func (ctrl *Controller) syncAvailableStatus(pool *mcfgv1.MachineConfigPool) erro
 }
 
 func (ctrl *Controller) syncFailingStatus(pool *mcfgv1.MachineConfigPool, err error) error {
-	sdegraded := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolRenderDegraded, corev1.ConditionTrue, "", fmt.Sprintf("Failed to render configuration for pool %s: %v", pool.Name, err))
-	mcfgv1.SetMachineConfigPoolCondition(&pool.Status, *sdegraded)
+	sdegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolRenderDegraded, corev1.ConditionTrue, "", fmt.Sprintf("Failed to render configuration for pool %s: %v", pool.Name, err))
+	apihelpers.SetMachineConfigPoolCondition(&pool.Status, *sdegraded)
 	if _, updateErr := ctrl.client.MachineconfigurationV1().MachineConfigPools().UpdateStatus(context.TODO(), pool, metav1.UpdateOptions{}); updateErr != nil {
 		klog.Errorf("Error updating MachineConfigPool %s: %v", pool.Name, updateErr)
 	}
@@ -658,4 +680,77 @@ func getMachineConfigsForPool(pool *mcfgv1.MachineConfigPool, configs []*mcfgv1.
 		return nil, fmt.Errorf("couldn't find any MachineConfigs for pool: %v", pool.Name)
 	}
 	return out, nil
+}
+
+func (ctrl *Controller) eventWorker() {
+	for ctrl.processNextEventWorkItem() {
+	}
+}
+
+// processNextEventWorkItem only sends an event to the state controller
+// if we have 10 events or if the events in the queue have been sitting for a while
+func (ctrl *Controller) processNextEventWorkItem() bool {
+	if len(ctrl.eventQueue) > 1 {
+		// format large event to send
+		allAnnotations := make(map[string]string)
+		allReason := ""
+		allMessage := ""
+		var obj runtime.Object
+		obj, err := state.StateControllerPod(ctrl.kubeClient)
+		if err != nil {
+			klog.Errorf("err getting pod: %w", err)
+		}
+		for i := 0; i < 2; i++ {
+			ev := ctrl.eventQueue[0]
+			if err != nil {
+				klog.Errorf("err unmarshaling %w", err)
+			}
+			for k, anno := range ev.Annotations {
+				allAnnotations[fmt.Sprintf("%d.%s", i, k)] = anno
+			}
+			allReason += ev.Reason + "."
+			allMessage += ev.Message + "."
+
+			if len(ctrl.eventQueue) > 1 {
+				ctrl.eventQueue = ctrl.eventQueue[1:]
+			}
+		}
+		if obj != nil {
+			ctrl.healthEventsRecorder.AnnotatedEventf(obj, allAnnotations, corev1.EventTypeNormal, allReason, allMessage)
+		}
+	}
+
+	return true
+}
+
+func (ctrl *Controller) EmitHealthEvent(pod *corev1.Pod, annos map[string]string, eventType, reason, message string) {
+	if ctrl.healthEventsRecorder == nil {
+		return
+	}
+	if pod == nil {
+		healthPod, err := state.StateControllerPod(ctrl.kubeClient)
+		if err != nil {
+			klog.Errorf("Could not get state controller pod yet %w", err)
+			return
+		} else {
+			pod = healthPod
+		}
+	}
+	newQueuedEvent := constants.QueuedEvent{
+		Annotations: annos,
+		EventType:   corev1.EventTypeNormal,
+		Reason:      reason,
+		Message:     message,
+	}
+	ctrl.eventQueue = append(ctrl.eventQueue, newQueuedEvent)
+}
+
+func (ctrl *Controller) HealthAnnotations(object string, objectType string, kind v1.StateProgress) map[string]string {
+	annos := make(map[string]string)
+	annos["ms"] = "ControllerHealth" //might need this might not
+	annos["state"] = string(kind)
+	annos["ObjectName"] = object
+	annos["ObjectKind"] = objectType
+
+	return annos
 }

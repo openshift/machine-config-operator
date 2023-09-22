@@ -54,8 +54,8 @@ test-unit: install-go-junit-report
 # Example:
 #    make update
 update:
-	hack/update-codegen.sh
 	hack/update-templates.sh
+	hack/crds-sync.sh
 
 go-deps:
 	go mod tidy
@@ -101,7 +101,7 @@ install-tools: install-golangci-lint install-setup-envtest install-go-junit-repo
 #    make verify
 verify: install-tools
 	./hack/golangci-lint.sh $(GOTAGS)
-	hack/verify-codegen.sh
+#    hack/verify-codegen.sh
 	hack/verify-templates.sh
 
 # Template for defining build targets for binaries.

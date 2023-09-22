@@ -9,14 +9,17 @@ import (
 	"strings"
 	"time"
 
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
+	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
+	"github.com/openshift/machine-config-operator/pkg/constants"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/controller/state"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
-	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
-	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	kubeErrs "k8s.io/apimachinery/pkg/util/errors"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -100,6 +103,7 @@ type Controller struct {
 	nodeListerSynced cache.InformerSynced
 
 	queue         workqueue.RateLimitingInterface
+	eventQueue    []constants.QueuedEvent
 	ongoingDrains map[string]time.Time
 
 	cfg Config
@@ -121,6 +125,7 @@ func New(
 		kubeClient:    kubeClient,
 		eventRecorder: ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-nodecontroller"})),
 		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-nodecontroller"),
+		eventQueue:    []constants.QueuedEvent{},
 		cfg:           cfg,
 	}
 
@@ -178,6 +183,8 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}, healthEvents re
 
 	for i := 0; i < workers; i++ {
 		go wait.Until(ctrl.worker, ctrl.cfg.WaitUntil, stopCh)
+		go wait.Until(ctrl.eventWorker, time.Second, stopCh)
+
 	}
 
 	<-stopCh
@@ -319,14 +326,14 @@ func (ctrl *Controller) syncNode(key string) error {
 	desiredVerb := strings.Split(desiredState, "-")[0]
 	switch desiredVerb {
 	case daemonconsts.DrainerStateUncordon:
-		ctrl.EmitUpgradeEvent(ctrl.stateControllerPod, ctrl.UpgradeAnnotations(v1.MachineConfigPoolUpdateCompleting, node), corev1.EventTypeNormal, "CordoningNode", fmt.Sprintf("Cordining Node %s as part of update", node.Name))
+		ctrl.EmitUpgradeEvent(ctrl.stateControllerPod, ctrl.UpgradeAnnotations(mcfgv1.MachineConfigPoolUpdateCompleting, node), corev1.EventTypeNormal, "CordoningNode", fmt.Sprintf("Cordining Node %s as part of update", node.Name))
 		ctrl.logNode(node, "uncordoning")
 		// perform uncordon
 		if err := ctrl.cordonOrUncordonNode(false, node, drainer); err != nil {
 			return fmt.Errorf("failed to uncordon node %v: %w", node.Name, err)
 		}
 	case daemonconsts.DrainerStateDrain:
-		ctrl.EmitUpgradeEvent(ctrl.stateControllerPod, ctrl.UpgradeAnnotations(v1.MachineConfigPoolUpdateCompleting, node), corev1.EventTypeNormal, "DrainingNode", fmt.Sprintf("Draining Node %s as part of update", node.Name))
+		ctrl.EmitUpgradeEvent(ctrl.stateControllerPod, ctrl.UpgradeAnnotations(mcfgv1.MachineConfigPoolUpdateCompleting, node), corev1.EventTypeNormal, "DrainingNode", fmt.Sprintf("Draining Node %s as part of update", node.Name))
 		if err := ctrl.drainNode(node, drainer); err != nil {
 			// If we get an error from drainNode, that means the drain failed.
 			// However, we want to requeue and try again. So we need to return nil
@@ -497,11 +504,52 @@ func (ctrl *Controller) cordonOrUncordonNode(desired bool, node *corev1.Node, dr
 	return nil
 }
 
-func (ctrl *Controller) UpgradeAnnotations(kind v1.StateProgress, node *corev1.Node) map[string]string {
+func (ctrl *Controller) eventWorker() {
+	for ctrl.processNextEventWorkItem() {
+	}
+}
+
+// processNextEventWorkItem only sends an event to the state controller
+// if we have 10 events or if the events in the queue have been sitting for a while
+func (ctrl *Controller) processNextEventWorkItem() bool {
+	if len(ctrl.eventQueue) > 1 {
+		// format large event to send
+		allAnnotations := make(map[string]string)
+		allReason := ""
+		allMessage := ""
+		var obj runtime.Object
+		obj, err := state.StateControllerPod(ctrl.kubeClient)
+		if err != nil {
+			klog.Errorf("err getting pod: %w", err)
+		}
+		for i := 0; i < 2; i++ {
+			ev := ctrl.eventQueue[0]
+			if err != nil {
+				klog.Errorf("err unmarshaling %w", err)
+			}
+			for k, anno := range ev.Annotations {
+				allAnnotations[fmt.Sprintf("%d.%s", i, k)] = anno
+			}
+			allReason += ev.Reason + "."
+			allMessage += ev.Message + "."
+
+			if len(ctrl.eventQueue) > 1 {
+				ctrl.eventQueue = ctrl.eventQueue[1:]
+			}
+		}
+		if obj != nil {
+			ctrl.updateEventsRecorder.AnnotatedEventf(obj, allAnnotations, corev1.EventTypeNormal, allReason, allMessage)
+		}
+	}
+
+	return true
+}
+
+func (ctrl *Controller) UpgradeAnnotations(kind mcfgv1.StateProgress, node *corev1.Node) map[string]string {
 	annos := make(map[string]string)
 	annos["ms"] = "UpgradeProgression" //might need this might not
 	annos["state"] = string(kind)
-	annos["ObjectKind"] = string(v1.Node)
+	annos["ObjectKind"] = string(mcfgv1.Node)
 	annos["ObjectName"] = node.Name
 
 	return annos
@@ -519,5 +567,12 @@ func (ctrl *Controller) EmitUpgradeEvent(pod *corev1.Pod, annos map[string]strin
 			pod = healthPod
 		}
 	}
-	ctrl.updateEventsRecorder.AnnotatedEventf(pod, annos, eventType, reason, message)
+	newQueuedEvent := constants.QueuedEvent{
+		Annotations: annos,
+		EventType:   corev1.EventTypeNormal,
+		Reason:      reason,
+		Message:     message,
+	}
+
+	ctrl.eventQueue = append(ctrl.eventQueue, newQueuedEvent)
 }

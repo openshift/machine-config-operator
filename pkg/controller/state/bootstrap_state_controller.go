@@ -7,7 +7,7 @@ import (
 	"sync"
 
 	"github.com/fsnotify/fsnotify"
-	v1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	v1 "github.com/openshift/api/machineconfiguration/v1"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
 )

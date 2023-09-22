@@ -9,23 +9,25 @@ import (
 	"time"
 
 	configv1 "github.com/openshift/api/config/v1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	cligoinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
 	cligolistersv1 "github.com/openshift/client-go/config/listers/config/v1"
+	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
+	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
+	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
+	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
 	"github.com/openshift/machine-config-operator/internal"
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	"github.com/openshift/machine-config-operator/pkg/constants"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/controller/state"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
-	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
-	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
-	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
-	mcfglistersv1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	kubeErrs "k8s.io/apimachinery/pkg/util/errors"
 	intstrutil "k8s.io/apimachinery/pkg/util/intstr"
@@ -92,7 +94,8 @@ type Controller struct {
 	schedulerList         cligolistersv1.SchedulerLister
 	schedulerListerSynced cache.InformerSynced
 
-	queue workqueue.RateLimitingInterface
+	queue      workqueue.RateLimitingInterface
+	eventQueue []constants.QueuedEvent
 
 	// updateDelay is a pause to deal with churn in MachineConfigs; see
 	// https://github.com/openshift/machine-config-operator/issues/301
@@ -167,6 +170,7 @@ func newController(
 		kubeClient:    kubeClient,
 		eventRecorder: ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-nodecontroller"})),
 		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-nodecontroller"),
+		eventQueue:    []constants.QueuedEvent{},
 		updateDelay:   updateDelay,
 	}
 
@@ -208,6 +212,7 @@ func newController(
 func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}, healthEvents record.EventRecorder) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
+
 	ctrl.healthEventsRecorder = healthEvents
 	if !cache.WaitForCacheSync(stopCh, ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.mcpListerSynced, ctrl.nodeListerSynced, ctrl.schedulerListerSynced) {
 		return
@@ -218,6 +223,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}, healthEvents re
 
 	for i := 0; i < workers; i++ {
 		go wait.Until(ctrl.worker, time.Second, stopCh)
+		go wait.Until(ctrl.eventWorker, time.Second, stopCh)
 	}
 
 	<-stopCh
@@ -918,7 +924,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	}
 
 	if pool.Spec.Paused {
-		if mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolUpdating) {
+		if apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolUpdating) {
 			klog.Infof("Pool %s is paused and will not update.", pool.Name)
 		}
 		return ctrl.syncStatusOnly(pool)
@@ -1011,6 +1017,49 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	return ctrl.syncStatusOnly(pool)
 }
 
+func (ctrl *Controller) eventWorker() {
+	for ctrl.processNextEventWorkItem() {
+	}
+}
+
+// processNextEventWorkItem only sends an event to the state controller
+// if we have 10 events or if the events in the queue have been sitting for a while
+func (ctrl *Controller) processNextEventWorkItem() bool {
+	klog.Info("Processing next node controller event")
+	if len(ctrl.eventQueue) > 1 {
+		// format large event to send
+		allAnnotations := make(map[string]string)
+		allReason := ""
+		allMessage := ""
+		var obj runtime.Object
+		obj, err := state.StateControllerPod(ctrl.kubeClient)
+		if err != nil {
+			klog.Errorf("err getting pod: %w", err)
+		}
+		for i := 0; i < 2; i++ {
+			ev := ctrl.eventQueue[0]
+			if err != nil {
+				klog.Errorf("err unmarshaling %w", err)
+			}
+			for k, anno := range ev.Annotations {
+				allAnnotations[fmt.Sprintf("%d.%s", i, k)] = anno
+			}
+			allReason += ev.Reason + "."
+			allMessage += ev.Message + "."
+
+			if len(ctrl.eventQueue) > 1 {
+				ctrl.eventQueue = ctrl.eventQueue[1:]
+			}
+		}
+		klog.Info("emitting node controller health event")
+		if obj != nil {
+			ctrl.healthEventsRecorder.AnnotatedEventf(obj, allAnnotations, corev1.EventTypeNormal, allReason, allMessage)
+		}
+	}
+
+	return true
+}
+
 func (ctrl *Controller) EmitHealthEvent(pod *corev1.Pod, annos map[string]string, eventType, reason, message string) {
 	if ctrl.healthEventsRecorder == nil {
 		return
@@ -1024,7 +1073,13 @@ func (ctrl *Controller) EmitHealthEvent(pod *corev1.Pod, annos map[string]string
 			pod = healthPod
 		}
 	}
-	ctrl.healthEventsRecorder.AnnotatedEventf(pod, annos, eventType, reason, message)
+	newQueuedEvent := constants.QueuedEvent{
+		Annotations: annos,
+		EventType:   corev1.EventTypeNormal,
+		Reason:      reason,
+		Message:     message,
+	}
+	ctrl.eventQueue = append(ctrl.eventQueue, newQueuedEvent)
 }
 
 // checkIfNodeHasInProgressTaint checks if the given node has in progress taint

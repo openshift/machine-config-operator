@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	v1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	v1 "github.com/openshift/api/machineconfiguration/v1"
+	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
@@ -92,6 +93,9 @@ func calculateStatus(ms *v1.MachineState, cconfig *v1.ControllerConfig, pool *mc
 			}
 		}*/
 
+	// in the event you are upgrading between versions, the statecontroller is going to get confused and it seems to depend on
+	// the operator pod being rolled out
+
 	var degradedMachines, readyMachines, updatedMachines, unavailableMachines, updatingMachines []*corev1.Node
 	for _, nodeState := range ms.Status.MostRecentState {
 		if nodeState.Kind == v1.Node {
@@ -108,7 +112,7 @@ func calculateStatus(ms *v1.MachineState, cconfig *v1.ControllerConfig, pool *mc
 				break
 			}
 			switch nodeState.State {
-			case v1.MachineConfigPoolUpdateErrored:
+			case v1.MachineStateErrored:
 				// if the most recent phase for that node is unavailable
 				if nodeState.Phase == "Unavailable" {
 					unavailableMachines = append(unavailableMachines, ourNode)
@@ -134,7 +138,7 @@ func calculateStatus(ms *v1.MachineState, cconfig *v1.ControllerConfig, pool *mc
 	readyMachineCount := int32(len(readyMachines))
 
 	// this is # 1 priority, get the upgrade states actually reporting
-	if degradedMachineCount+readyMachineCount+updatedMachineCount+unavailableMachineCount+updatingMachineCount != int32(len(nodes)) {
+	if degradedMachineCount+readyMachineCount+unavailableMachineCount+updatingMachineCount != int32(len(nodes)) {
 		klog.Infof("new state reporting did not get all nodes, falling back. Sate reporting node total %d and actual node total %d", (degradedMachineCount + readyMachineCount + updatedMachineCount + unavailableMachineCount + updatingMachineCount), len(nodes))
 		klog.Infof("degraded: %d ready: %d updated %d unavailable %d updating %d", degradedMachineCount, readyMachineCount, updatedMachineCount, unavailableMachineCount, updatingMachineCount)
 		updatedMachines = getUpdatedMachines(pool, nodes)
@@ -189,24 +193,24 @@ func calculateStatus(ms *v1.MachineState, cconfig *v1.ControllerConfig, pool *mc
 	if allUpdated {
 		//TODO: update api to only have one condition regarding status of update.
 		updatedMsg := fmt.Sprintf("All nodes are updated with %s", getPoolUpdateLine(pool))
-		supdated := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdated, corev1.ConditionTrue, "", updatedMsg)
-		mcfgv1.SetMachineConfigPoolCondition(&status, *supdated)
+		supdated := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdated, corev1.ConditionTrue, "", updatedMsg)
+		apihelpers.SetMachineConfigPoolCondition(&status, *supdated)
 
-		supdating := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionFalse, "", "")
-		mcfgv1.SetMachineConfigPoolCondition(&status, *supdating)
+		supdating := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionFalse, "", "")
+		apihelpers.SetMachineConfigPoolCondition(&status, *supdating)
 		if status.Configuration.Name != pool.Spec.Configuration.Name || !equality.Semantic.DeepEqual(status.Configuration.Source, pool.Spec.Configuration.Source) {
 			klog.Infof("Pool %s: %s", pool.Name, updatedMsg)
 			status.Configuration = pool.Spec.Configuration
 		}
 	} else {
-		supdated := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdated, corev1.ConditionFalse, "", "")
-		mcfgv1.SetMachineConfigPoolCondition(&status, *supdated)
+		supdated := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdated, corev1.ConditionFalse, "", "")
+		apihelpers.SetMachineConfigPoolCondition(&status, *supdated)
 		if pool.Spec.Paused {
-			supdating := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionFalse, "", fmt.Sprintf("Pool is paused; will not update to %s", getPoolUpdateLine(pool)))
-			mcfgv1.SetMachineConfigPoolCondition(&status, *supdating)
+			supdating := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionFalse, "", fmt.Sprintf("Pool is paused; will not update to %s", getPoolUpdateLine(pool)))
+			apihelpers.SetMachineConfigPoolCondition(&status, *supdating)
 		} else {
-			supdating := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionTrue, "", fmt.Sprintf("All nodes are updating to %s", getPoolUpdateLine(pool)))
-			mcfgv1.SetMachineConfigPoolCondition(&status, *supdating)
+			supdating := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionTrue, "", fmt.Sprintf("All nodes are updating to %s", getPoolUpdateLine(pool)))
+			apihelpers.SetMachineConfigPoolCondition(&status, *supdating)
 		}
 	}
 
@@ -216,24 +220,24 @@ func calculateStatus(ms *v1.MachineState, cconfig *v1.ControllerConfig, pool *mc
 	}
 	if degradedMachineCount > 0 {
 		nodeDegraded = true
-		sdegraded := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolNodeDegraded, corev1.ConditionTrue, fmt.Sprintf("%d nodes are reporting degraded status on sync", len(degradedMachines)), strings.Join(degradedReasons, ", "))
-		mcfgv1.SetMachineConfigPoolCondition(&status, *sdegraded)
+		sdegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolNodeDegraded, corev1.ConditionTrue, fmt.Sprintf("%d nodes are reporting degraded status on sync", len(degradedMachines)), strings.Join(degradedReasons, ", "))
+		apihelpers.SetMachineConfigPoolCondition(&status, *sdegraded)
 	} else {
-		sdegraded := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolNodeDegraded, corev1.ConditionFalse, "", "")
-		mcfgv1.SetMachineConfigPoolCondition(&status, *sdegraded)
+		sdegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolNodeDegraded, corev1.ConditionFalse, "", "")
+		apihelpers.SetMachineConfigPoolCondition(&status, *sdegraded)
 	}
 
 	// here we now set the MCP Degraded field, the node_controller is the one making the call right now
 	// but we might have a dedicated controller or control loop somewhere else that understands how to
 	// set Degraded. For now, the node_controller understand NodeDegraded & RenderDegraded = Degraded.
-	renderDegraded := mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolRenderDegraded)
+	renderDegraded := apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolRenderDegraded)
 	if nodeDegraded || renderDegraded {
-		sdegraded := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolDegraded, corev1.ConditionTrue, "", "")
-		mcfgv1.SetMachineConfigPoolCondition(&status, *sdegraded)
+		sdegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolDegraded, corev1.ConditionTrue, "", "")
+		apihelpers.SetMachineConfigPoolCondition(&status, *sdegraded)
 
 	} else {
-		sdegraded := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolDegraded, corev1.ConditionFalse, "", "")
-		mcfgv1.SetMachineConfigPoolCondition(&status, *sdegraded)
+		sdegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolDegraded, corev1.ConditionFalse, "", "")
+		apihelpers.SetMachineConfigPoolCondition(&status, *sdegraded)
 	}
 
 	return status

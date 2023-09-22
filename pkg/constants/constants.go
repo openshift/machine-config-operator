@@ -10,6 +10,14 @@ import (
 // constants defines some file paths that are shared outside of the
 // MCO package; and thus consumed by other users
 
+type QueuedEvent struct {
+	Type        string            `json:"type"`
+	Annotations map[string]string `json:"annotations"`
+	EventType   string            `json:"eventType"`
+	Reason      string            `json:"reason"`
+	Message     string            `json:"message"`
+}
+
 const (
 	// APIServerURLFile is the path to the apiserver url environment file.
 	// See templates/master/00-master/_base/files/apiserver-url-env.yaml

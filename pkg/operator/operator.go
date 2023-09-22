@@ -7,8 +7,9 @@ import (
 
 	"k8s.io/klog/v2"
 
+	v1 "github.com/openshift/api/machineconfiguration/v1"
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
-	v1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	"github.com/openshift/machine-config-operator/pkg/constants"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/controller/state"
 	"github.com/openshift/machine-config-operator/pkg/version"
@@ -18,6 +19,7 @@ import (
 	apiextlistersv1 "k8s.io/apiextensions-apiserver/pkg/client/listers/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	appsinformersv1 "k8s.io/client-go/informers/apps/v1"
@@ -37,10 +39,10 @@ import (
 	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
 	"github.com/openshift/library-go/pkg/operator/events"
 
-	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
-	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
-	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
-	mcfglistersv1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
+	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
+	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
+	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
+	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 )
 
 const (
@@ -124,7 +126,8 @@ type Operator struct {
 	msListerSynced                   cache.InformerSynced
 
 	// queue only ever has one item, but it has nice error handling backoff/retry semantics
-	queue workqueue.RateLimitingInterface
+	queue      workqueue.RateLimitingInterface
+	eventQueue []constants.QueuedEvent
 
 	stopCh <-chan struct{}
 
@@ -183,7 +186,8 @@ func New(
 			Namespace:  ctrlcommon.MCONamespace,
 			APIVersion: "apps/v1",
 		}),
-		queue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigoperator"),
+		queue:      workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigoperator"),
+		eventQueue: []constants.QueuedEvent{},
 	}
 	err := corev1.AddToScheme(scheme.Scheme)
 	if err != nil {
@@ -335,6 +339,7 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 
 	for i := 0; i < workers; i++ {
 		go wait.Until(optr.worker, time.Second, stopCh)
+		go wait.Until(optr.eventWorker, time.Second, stopCh)
 	}
 
 	<-stopCh
@@ -425,6 +430,47 @@ func (optr *Operator) sync(key string) error {
 	return optr.syncAll(syncFuncs)
 }
 
+func (optr *Operator) eventWorker() {
+	for optr.processNextEventWorkItem() {
+	}
+}
+
+// processNextEventWorkItem only sends an event to the state controller
+// if we have 10 events or if the events in the queue have been sitting for a while
+func (optr *Operator) processNextEventWorkItem() bool {
+	if len(optr.eventQueue) > 1 {
+		// format large event to send
+		allAnnotations := make(map[string]string)
+		allReason := ""
+		allMessage := ""
+		var obj runtime.Object
+		obj, err := state.StateControllerPod(optr.kubeClient)
+		if err != nil {
+			klog.Errorf("err getting pod: %w", err)
+		}
+		for i := 0; i < 2; i++ {
+			ev := optr.eventQueue[0]
+			if err != nil {
+				klog.Errorf("err unmarshaling %w", err)
+			}
+			for k, anno := range ev.Annotations {
+				allAnnotations[fmt.Sprintf("%d.%s", i, k)] = anno
+			}
+			allReason += ev.Reason + "."
+			allMessage += ev.Message + "."
+
+			if len(optr.eventQueue) > 1 {
+				optr.eventQueue = optr.eventQueue[1:]
+			}
+		}
+		if obj != nil {
+			optr.operatorHealthEvents.AnnotatedEventf(obj, allAnnotations, corev1.EventTypeNormal, allReason, allMessage)
+		}
+	}
+
+	return true
+}
+
 func (op *Operator) EmitHealthEvent(pod *corev1.Pod, annos map[string]string, eventType, reason, message string) {
 	if op.operatorHealthEvents == nil {
 		return
@@ -439,7 +485,16 @@ func (op *Operator) EmitHealthEvent(pod *corev1.Pod, annos map[string]string, ev
 			op.stateControllerPod = healthPod
 		}
 	}
-	op.operatorHealthEvents.AnnotatedEventf(pod, annos, eventType, reason, message)
+	// add event to queue
+	// and either check queue here or have queue check itself?
+	newQueuedEvent := constants.QueuedEvent{
+		Annotations: annos,
+		EventType:   corev1.EventTypeNormal,
+		Reason:      reason,
+		Message:     message,
+	}
+	op.eventQueue = append(op.eventQueue, newQueuedEvent)
+
 }
 
 func (op *Operator) HealthAnnotations(object string, objectType string, kind v1.StateProgress) map[string]string {

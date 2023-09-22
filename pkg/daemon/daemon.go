@@ -24,6 +24,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
@@ -38,14 +39,17 @@ import (
 	"k8s.io/client-go/util/workqueue"
 
 	configv1 "github.com/openshift/api/config/v1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	v1 "github.com/openshift/api/machineconfiguration/v1"
+	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
+	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	mcoResourceRead "github.com/openshift/machine-config-operator/lib/resourceread"
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	operatorconstants "github.com/openshift/machine-config-operator/pkg/constants"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/controller/state"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
+
 	"github.com/openshift/machine-config-operator/pkg/daemon/osrelease"
-	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
-	mcfglistersv1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
 )
 
 // Daemon is the dispatch point for the functions of the agent on the
@@ -112,6 +116,7 @@ type Daemon struct {
 	node *corev1.Node
 
 	queue       workqueue.RateLimitingInterface
+	eventQueue  []operatorconstants.QueuedEvent
 	ccQueue     workqueue.RateLimitingInterface
 	enqueueNode func(*corev1.Node)
 	syncHandler func(node string) error
@@ -356,6 +361,7 @@ func (dn *Daemon) ClusterConnect(
 	dn.mcLister = mcInformer.Lister()
 	dn.mcListerSynced = mcInformer.Informer().HasSynced
 
+	dn.eventQueue = []operatorconstants.QueuedEvent{}
 	dn.ccQueue = workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter())
 	ccInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    dn.handleControllerConfigEvent,
@@ -645,6 +651,52 @@ func (dn *Daemon) initializeNode() error {
 	return nil
 }
 
+func (dn *Daemon) eventWorker() {
+	for dn.processNextEventWorkItem() {
+	}
+}
+
+// processNextEventWorkItem only sends an event to the state controller
+// if we have 10 events or if the events in the queue have been sitting for a while
+func (dn *Daemon) processNextEventWorkItem() bool {
+	var ev operatorconstants.QueuedEvent
+	if len(dn.eventQueue) > 1 {
+		// format large event to send
+		allAnnotations := make(map[string]string)
+		allReason := ""
+		allMessage := ""
+		var obj runtime.Object
+		obj, err := state.StateControllerPod(dn.kubeClient)
+		if err != nil {
+			klog.Errorf("err getting pod: %w", err)
+		}
+		for i := 0; i < 2; i++ {
+			ev = dn.eventQueue[0]
+			if err != nil {
+				klog.Errorf("err unmarshaling %w", err)
+			}
+			for k, anno := range ev.Annotations {
+				allAnnotations[fmt.Sprintf("%d.%s", i, k)] = anno
+			}
+			allReason += ev.Reason + "."
+			allMessage += ev.Message + "."
+
+			if len(dn.eventQueue) > 1 {
+				dn.eventQueue = dn.eventQueue[1:]
+			}
+		}
+		if obj != nil {
+			if ev.Type == "upgrade" {
+				dn.daemonUpgradeEvents.AnnotatedEventf(obj, allAnnotations, corev1.EventTypeNormal, allReason, allMessage)
+			} else {
+				dn.daemonHealthEvents.AnnotatedEventf(obj, allAnnotations, corev1.EventTypeNormal, allReason, allMessage)
+			}
+		}
+	}
+
+	return true
+}
+
 func (dn *Daemon) EmitHealthEvent(pod *corev1.Pod, annos map[string]string, eventType, reason, message string) {
 	if dn.daemonHealthEvents == nil {
 		return
@@ -659,7 +711,13 @@ func (dn *Daemon) EmitHealthEvent(pod *corev1.Pod, annos map[string]string, even
 			dn.stateControllerPod = healthPod
 		}
 	}
-	dn.daemonHealthEvents.AnnotatedEventf(pod, annos, eventType, reason, message)
+	newQueuedEvent := operatorconstants.QueuedEvent{
+		Annotations: annos,
+		EventType:   corev1.EventTypeNormal,
+		Reason:      reason,
+		Message:     message,
+	}
+	dn.eventQueue = append(dn.eventQueue, newQueuedEvent)
 }
 
 func (dn *Daemon) syncNode(key string) error {
@@ -711,7 +769,7 @@ func (dn *Daemon) syncNode(key string) error {
 	annos := make(map[string]string)
 	annos["ms"] = "DaemonState" //might need this might not
 	annos["state"] = "StateControllerSyncDaemon"
-	annos["ObjectKind"] = string(v1.Node)
+	annos["ObjectKind"] = string(mcfgv1.Node)
 	annos["ObjectName"] = node.Name
 
 	dn.EmitHealthEvent(dn.stateControllerPod, annos, corev1.EventTypeNormal, "GotNode", fmt.Sprintf("Got node %s for MCD", node.Name))
@@ -791,7 +849,7 @@ func (dn *Daemon) syncNode(key string) error {
 
 		dn.EmitHealthEvent(dn.stateControllerPod, annos, corev1.EventTypeNormal, "TriggeringUpdate", fmt.Sprintf("Updating MCO to new MachineConfig %s", ufc.desiredConfig.Name))
 		if err := dn.triggerUpdate(ufc.currentConfig, ufc.desiredConfig, ufc.currentImage, ufc.desiredImage); err != nil {
-			dn.EmitUpgradeEvent(dn.stateControllerPod, dn.UpgradeAnnotations(v1.MachineConfigPoolUpdateErrored), corev1.EventTypeWarning, "UpdateError", fmt.Sprintf("Error Updating to new MachineConfig %s", ufc.desiredConfig.Name))
+			dn.EmitUpgradeEvent(dn.stateControllerPod, dn.UpgradeAnnotations(v1.MachineStateErrored), corev1.EventTypeWarning, "UpdateError", fmt.Sprintf("Error Updating to new MachineConfig %s", ufc.desiredConfig.Name))
 			return err
 		}
 		klog.V(2).Infof("Node %s is already synced", node.Name)
@@ -1232,6 +1290,7 @@ func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error) error {
 		return fmt.Errorf("failed to sync initial listers cache")
 	}
 
+	go wait.Until(dn.eventWorker, time.Second, stopCh)
 	go wait.Until(dn.worker, time.Second, stopCh)
 	go wait.Until(dn.controllerConfigWorker, time.Second, stopCh)
 
@@ -2317,6 +2376,7 @@ func (dn *Daemon) UpgradeAnnotations(kind v1.StateProgress) map[string]string {
 	}
 	return annos
 }
+
 func (dn *Daemon) EmitUpgradeEvent(pod *corev1.Pod, annos map[string]string, eventType, reason, message string) {
 	if dn.daemonUpgradeEvents == nil {
 		return
@@ -2331,7 +2391,14 @@ func (dn *Daemon) EmitUpgradeEvent(pod *corev1.Pod, annos map[string]string, eve
 			dn.stateControllerPod = healthPod
 		}
 	}
-	dn.daemonUpgradeEvents.AnnotatedEventf(pod, annos, eventType, reason, message)
+	newQueuedEvent := operatorconstants.QueuedEvent{
+		Type:        "upgrade",
+		Annotations: annos,
+		EventType:   corev1.EventTypeNormal,
+		Reason:      reason,
+		Message:     message,
+	}
+	dn.eventQueue = append(dn.eventQueue, newQueuedEvent)
 }
 
 // validateKernelArguments checks that the current boot has all arguments specified

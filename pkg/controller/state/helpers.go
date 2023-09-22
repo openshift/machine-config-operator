@@ -7,10 +7,10 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 
-	mcfgv1listers "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
+	mcfgv1listers "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	apiextclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -45,7 +45,7 @@ func ConvertStateControllerToPoolType(stateType mcfgv1.StateProgress) mcfgv1.Mac
 		return mcfgv1.MachineConfigPoolUpdating
 	case mcfgv1.MachineConfigPoolUpdateComplete:
 		return mcfgv1.MachineConfigPoolUpdated
-	case mcfgv1.MachineConfigPoolUpdateErrored:
+	case mcfgv1.MachineStateErrored:
 		return mcfgv1.MachineConfigPoolDegraded
 	}
 	return mcfgv1.MachineConfigPoolUpdated // ?
