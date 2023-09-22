@@ -7,9 +7,12 @@ metadata:
     "openshift.io/operator-managed": ""
   annotations:
     api-approved.openshift.io: https://github.com/openshift/api/pull/1453
+<<<<<<< HEAD
     include.release.openshift.io/ibm-cloud-managed: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
     include.release.openshift.io/single-node-developer: "true"
+=======
+>>>>>>> c598429a2 (api types)
 spec:
   # group name to use for REST API: /apis/<group>/<version>
   group: machineconfiguration.openshift.io
@@ -1079,7 +1082,10 @@ spec:
                   description: internalRegistryPullSecret is the pull secret for the internal registry, used by rpm-ostree to pull images from the internal registry if present
                   type: string
                   format: byte
+<<<<<<< HEAD
                   nullable: true
+=======
+>>>>>>> c598429a2 (api types)
                 ipFamilies:
                   description: ipFamilies indicates the IP families in use by the cluster network
                   type: string

@@ -133,7 +133,10 @@ spec:
                       type:
                         description: type specifies the state of the operator's reconciliation functionality.
                         type: string
+<<<<<<< HEAD
                   x-kubernetes-list-type: atomic
+=======
+>>>>>>> c598429a2 (api types)
                 observedGeneration:
                   description: observedGeneration represents the generation observed by the controller.
                   type: integer

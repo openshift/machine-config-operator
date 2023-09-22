@@ -10,8 +10,6 @@ import (
 	"github.com/containers/image/v5/docker/reference"
 	buildv1 "github.com/openshift/api/build/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
-	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	corev1 "k8s.io/api/core/v1"
 	aggerrors "k8s.io/apimachinery/pkg/util/errors"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"

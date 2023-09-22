@@ -1,8 +1,0 @@
-apiVersion: machineconfiguration.openshift.io/v1
-kind: MachineState
-metadata:
-  name: mcd-health
-  labels:
-    "states.operator.machineconfiguration.openshift.io/mcd": ""
-spec:
-  machineStateKind: DaemonState

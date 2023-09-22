@@ -55,9 +55,11 @@ var (
 
 // Controller defines the render controller.
 type Controller struct {
-	client               mcfgclientset.Interface
-	eventRecorder        record.EventRecorder
-	healthEventsRecorder record.EventRecorder
+	client        mcfgclientset.Interface
+	eventRecorder record.EventRecorder
+
+	kubeClient         kubernetes.Interface
+	stateControllerPod *corev1.Pod
 
 	kubeClient         kubernetes.Interface
 	stateControllerPod *corev1.Pod
@@ -121,11 +123,9 @@ func New(
 }
 
 // Run executes the render controller.
-func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}, healthEvents record.EventRecorder) {
+func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
-
-	ctrl.healthEventsRecorder = healthEvents
 
 	if !cache.WaitForCacheSync(stopCh, ctrl.mcpListerSynced, ctrl.mcListerSynced, ctrl.ccListerSynced) {
 		return

@@ -641,23 +641,6 @@ func (dn *Daemon) initializeNode() error {
 	return nil
 }
 
-func (dn *Daemon) EmitHealthEvent(pod *corev1.Pod, annos map[string]string, eventType, reason, message string) {
-	if dn.daemonHealthEvents == nil {
-		return
-	}
-	if pod == nil {
-		healthPod, err := state.StateControllerPod(dn.kubeClient)
-		if err != nil {
-			klog.Errorf("Could not get state controller pod yet %w", err)
-			return
-		} else {
-			pod = healthPod
-			dn.stateControllerPod = healthPod
-		}
-	}
-	dn.daemonHealthEvents.AnnotatedEventf(pod, annos, eventType, reason, message)
-}
-
 func (dn *Daemon) syncNode(key string) error {
 
 	// how to communicate with the healthcontroller
@@ -2305,44 +2288,6 @@ func (dn *Daemon) triggerUpdateWithMachineConfig(currentConfig, desiredConfig *m
 
 	// run the update process. this function doesn't currently return.
 	return dn.update(currentConfig, desiredConfig, skipCertificateWrite)
-}
-
-func (dn *Daemon) UpgradeAnnotations(kind v1.StateProgress) map[string]string {
-	annos := make(map[string]string)
-	annos["ms"] = "UpgradeProgression" //might need this might not
-	annos["state"] = string(kind)
-	if dn.node == nil {
-		annos["ObjectKind"] = "None"
-		annos["ObjectName"] = "Firstboot"
-		annos["Pool"] = "None"
-	} else {
-		annos["ObjectKind"] = string(v1.Node)
-		if dn.node != nil {
-			annos["ObjectName"] = dn.node.Name
-			if _, hasWorkerLabel := dn.node.Labels[WorkerLabel]; hasWorkerLabel {
-				annos["Pool"] = "worker"
-			} else if _, hasMasterLabel := dn.node.Labels[MasterLabel]; hasMasterLabel {
-				annos["Pool"] = "master"
-			}
-		}
-	}
-	return annos
-}
-func (dn *Daemon) EmitUpgradeEvent(pod *corev1.Pod, annos map[string]string, eventType, reason, message string) {
-	if dn.daemonUpgradeEvents == nil {
-		return
-	}
-	if pod == nil {
-		healthPod, err := state.StateControllerPod(dn.kubeClient)
-		if err != nil {
-			klog.Errorf("Could not get state controller pod yet %w", err)
-			return
-		} else {
-			pod = healthPod
-			dn.stateControllerPod = healthPod
-		}
-	}
-	dn.daemonUpgradeEvents.AnnotatedEventf(pod, annos, eventType, reason, message)
 }
 
 // validateKernelArguments checks that the current boot has all arguments specified

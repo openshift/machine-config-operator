@@ -151,7 +151,7 @@ func (w writer) Write(p []byte) (n int, err error) {
 }
 
 // Run executes the drain controller.
-func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}, healthEvents record.EventRecorder, updateEvents record.EventRecorder) {
+func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
@@ -494,29 +494,4 @@ func (ctrl *Controller) cordonOrUncordonNode(desired bool, node *corev1.Node, dr
 	}
 
 	return nil
-}
-
-func (ctrl *Controller) UpgradeAnnotations(kind v1.StateProgress, node *corev1.Node) map[string]string {
-	annos := make(map[string]string)
-	annos["ms"] = "UpgradeProgression" //might need this might not
-	annos["state"] = string(kind)
-	annos["ObjectKind"] = string(v1.Node)
-	annos["ObjectName"] = node.Name
-
-	return annos
-}
-func (ctrl *Controller) EmitUpgradeEvent(pod *corev1.Pod, annos map[string]string, eventType, reason, message string) {
-	if ctrl.updateEventsRecorder == nil {
-		return
-	}
-	if pod == nil {
-		healthPod, err := state.StateControllerPod(ctrl.kubeClient)
-		if err != nil {
-			klog.Errorf("Could not get state controller pod yet %w", err)
-			return
-		} else {
-			pod = healthPod
-		}
-	}
-	ctrl.updateEventsRecorder.AnnotatedEventf(pod, annos, eventType, reason, message)
 }

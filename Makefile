@@ -56,6 +56,10 @@ test-unit: install-go-junit-report
 update:
 	hack/update-templates.sh
 	hack/crds-sync.sh
+<<<<<<< HEAD
+=======
+
+>>>>>>> c598429a2 (api types)
 go-deps:
 	go mod tidy
 	go mod vendor
@@ -100,6 +104,10 @@ install-tools: install-golangci-lint install-setup-envtest install-go-junit-repo
 #    make verify
 verify: install-tools
 	./hack/golangci-lint.sh $(GOTAGS)
+<<<<<<< HEAD
+=======
+#    hack/verify-codegen.sh
+>>>>>>> c598429a2 (api types)
 	hack/verify-templates.sh
 
 # Template for defining build targets for binaries.

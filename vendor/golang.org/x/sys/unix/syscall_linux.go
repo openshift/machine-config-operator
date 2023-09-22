@@ -2114,6 +2114,31 @@ func writevRacedetect(iovecs []Iovec, n int) {
 // mmap varies by architecture; see syscall_linux_*.go.
 //sys	munmap(addr uintptr, length uintptr) (err error)
 //sys	mremap(oldaddr uintptr, oldlength uintptr, newlength uintptr, flags int, newaddr uintptr) (xaddr uintptr, err error)
+<<<<<<< HEAD
+=======
+
+var mapper = &mremapMmapper{
+	mmapper: mmapper{
+		active: make(map[*byte][]byte),
+		mmap:   mmap,
+		munmap: munmap,
+	},
+	mremap: mremap,
+}
+
+func Mmap(fd int, offset int64, length int, prot int, flags int) (data []byte, err error) {
+	return mapper.Mmap(fd, offset, length, prot, flags)
+}
+
+func Munmap(b []byte) (err error) {
+	return mapper.Munmap(b)
+}
+
+func Mremap(oldData []byte, newLength int, flags int) (data []byte, err error) {
+	return mapper.Mremap(oldData, newLength, flags)
+}
+
+>>>>>>> c598429a2 (api types)
 //sys	Madvise(b []byte, advice int) (err error)
 //sys	Mprotect(b []byte, prot int) (err error)
 //sys	Mlock(b []byte) (err error)
@@ -2427,6 +2452,7 @@ func Getresgid() (rgid, egid, sgid int) {
 	return int(r), int(e), int(s)
 }
 
+<<<<<<< HEAD
 // Pselect is a wrapper around the Linux pselect6 system call.
 // This version does not modify the timeout argument.
 func Pselect(nfd int, r *FdSet, w *FdSet, e *FdSet, timeout *Timespec, sigmask *Sigset_t) (n int, err error) {
@@ -2482,3 +2508,100 @@ func SchedGetAttr(pid int, flags uint) (*SchedAttr, error) {
 	}
 	return attr, nil
 }
+=======
+/*
+ * Unimplemented
+ */
+// AfsSyscall
+// ArchPrctl
+// Brk
+// ClockNanosleep
+// ClockSettime
+// Clone
+// EpollCtlOld
+// EpollPwait
+// EpollWaitOld
+// Execve
+// Fork
+// Futex
+// GetKernelSyms
+// GetMempolicy
+// GetRobustList
+// GetThreadArea
+// Getpmsg
+// IoCancel
+// IoDestroy
+// IoGetevents
+// IoSetup
+// IoSubmit
+// IoprioGet
+// IoprioSet
+// KexecLoad
+// LookupDcookie
+// Mbind
+// MigratePages
+// Mincore
+// ModifyLdt
+// Mount
+// MovePages
+// MqGetsetattr
+// MqNotify
+// MqOpen
+// MqTimedreceive
+// MqTimedsend
+// MqUnlink
+// Msgctl
+// Msgget
+// Msgrcv
+// Msgsnd
+// Nfsservctl
+// Personality
+// Pselect6
+// Ptrace
+// Putpmsg
+// Quotactl
+// Readahead
+// Readv
+// RemapFilePages
+// RestartSyscall
+// RtSigaction
+// RtSigpending
+// RtSigqueueinfo
+// RtSigreturn
+// RtSigsuspend
+// RtSigtimedwait
+// SchedGetPriorityMax
+// SchedGetPriorityMin
+// SchedGetparam
+// SchedGetscheduler
+// SchedRrGetInterval
+// SchedSetparam
+// SchedYield
+// Security
+// Semctl
+// Semget
+// Semop
+// Semtimedop
+// SetMempolicy
+// SetRobustList
+// SetThreadArea
+// SetTidAddress
+// Sigaltstack
+// Swapoff
+// Swapon
+// Sysfs
+// TimerCreate
+// TimerDelete
+// TimerGetoverrun
+// TimerGettime
+// TimerSettime
+// Tkill (obsolete)
+// Tuxcall
+// Umount2
+// Uselib
+// Utimensat
+// Vfork
+// Vhangup
+// Vserver
+// _Sysctl
+>>>>>>> c598429a2 (api types)

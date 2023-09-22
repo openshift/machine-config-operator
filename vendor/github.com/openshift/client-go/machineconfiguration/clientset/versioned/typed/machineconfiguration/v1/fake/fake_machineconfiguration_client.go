@@ -32,8 +32,8 @@ func (c *FakeMachineconfigurationV1) MachineConfigPools() v1.MachineConfigPoolIn
 	return &FakeMachineConfigPools{c}
 }
 
-func (c *FakeMachineconfigurationV1) MachineStates() v1.MachineStateInterface {
-	return &FakeMachineStates{c}
+func (c *FakeMachineconfigurationV1) MachineConfigStates() v1.MachineConfigStateInterface {
+	return &FakeMachineConfigStates{c}
 }
 
 // RESTClient returns a RESTClient that is used to communicate

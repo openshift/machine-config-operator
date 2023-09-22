@@ -1,8 +1,0 @@
-apiVersion: machineconfiguration.openshift.io/v1
-kind: MachineState
-metadata:
-  name: operator-health
-  labels:
-    "states.operator.machineconfiguration.openshift.io/operator": ""
-spec:
-  machineStateKind: OperatorProgression

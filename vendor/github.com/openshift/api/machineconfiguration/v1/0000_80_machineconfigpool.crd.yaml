@@ -139,7 +139,10 @@ spec:
                             description: 'UID of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids'
                             type: string
                         x-kubernetes-map-type: atomic
+<<<<<<< HEAD
                       x-kubernetes-list-type: atomic
+=======
+>>>>>>> c598429a2 (api types)
                     uid:
                       description: 'UID of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids'
                       type: string
@@ -317,7 +320,10 @@ spec:
                             description: 'UID of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids'
                             type: string
                         x-kubernetes-map-type: atomic
+<<<<<<< HEAD
                       x-kubernetes-list-type: atomic
+=======
+>>>>>>> c598429a2 (api types)
                     uid:
                       description: 'UID of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids'
                       type: string

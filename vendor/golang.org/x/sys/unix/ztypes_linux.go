@@ -1977,7 +1977,11 @@ const (
 	NFT_MSG_GETFLOWTABLE              = 0x17
 	NFT_MSG_DELFLOWTABLE              = 0x18
 	NFT_MSG_GETRULE_RESET             = 0x19
+<<<<<<< HEAD
 	NFT_MSG_MAX                       = 0x22
+=======
+	NFT_MSG_MAX                       = 0x21
+>>>>>>> c598429a2 (api types)
 	NFTA_LIST_UNSPEC                  = 0x0
 	NFTA_LIST_ELEM                    = 0x1
 	NFTA_HOOK_UNSPEC                  = 0x0
@@ -4499,7 +4503,11 @@ const (
 	NL80211_ATTR_MAC_HINT                                   = 0xc8
 	NL80211_ATTR_MAC_MASK                                   = 0xd7
 	NL80211_ATTR_MAX_AP_ASSOC_STA                           = 0xca
+<<<<<<< HEAD
 	NL80211_ATTR_MAX                                        = 0x146
+=======
+	NL80211_ATTR_MAX                                        = 0x145
+>>>>>>> c598429a2 (api types)
 	NL80211_ATTR_MAX_CRIT_PROT_DURATION                     = 0xb4
 	NL80211_ATTR_MAX_CSA_COUNTERS                           = 0xce
 	NL80211_ATTR_MAX_MATCH_SETS                             = 0x85
@@ -4869,7 +4877,11 @@ const (
 	NL80211_CMD_LEAVE_IBSS                                  = 0x2c
 	NL80211_CMD_LEAVE_MESH                                  = 0x45
 	NL80211_CMD_LEAVE_OCB                                   = 0x6d
+<<<<<<< HEAD
 	NL80211_CMD_MAX                                         = 0x9a
+=======
+	NL80211_CMD_MAX                                         = 0x99
+>>>>>>> c598429a2 (api types)
 	NL80211_CMD_MICHAEL_MIC_FAILURE                         = 0x29
 	NL80211_CMD_MODIFY_LINK_STA                             = 0x97
 	NL80211_CMD_NAN_MATCH                                   = 0x78
