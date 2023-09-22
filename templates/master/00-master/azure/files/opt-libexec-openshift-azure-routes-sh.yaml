@@ -130,8 +130,12 @@ contents:
 
     remove_stale_routes() {
         ## find extra ovn routes
-        local ovnkContainerID=($(crictl ps --name ovnkube-controller | awk '{ print $1 }' | tail -n+2))
-        echo ${ovnkContainerID}
+        local ovnkContainerID=$(crictl ps --name ovnkube-master | awk '{ print $1 }' | tail -n+2)
+        if [ -z "${ovnkContainerID}" ]; then
+            echo "Plugin is SDN, nothing to do.. exiting"
+            return
+        fi
+        echo "Found ovnkube-master pod... ${ovnkContainerID}"
         local routeVIPsV4=$(crictl exec -i ${ovnkContainerID} ovn-nbctl lr-policy-list ovn_cluster_router | grep "1010" | grep "ip4" | awk '$8{print $8}')
         echo "Found v4route vips: ${routeVIPsV4}"
         local host=$(hostname)
@@ -177,8 +181,12 @@ contents:
     }
 
     add_routes() {
-        local ovnkContainerID=($(crictl ps --name ovnkube-controller | awk '{ print $1 }' | tail -n+2))
-        echo "Found ovnkube-controller pod... ${ovnkContainerID}"
+        local ovnkContainerID=$(crictl ps --name ovnkube-master | awk '{ print $1 }' | tail -n+2)
+        if [ -z "${ovnkContainerID}" ]; then
+            echo "Plugin is SDN, nothing to do.. exiting"
+            return
+        fi
+        echo "Found ovnkube-master pod... ${ovnkContainerID}"
         local ovnK8sMp0v4=$(ip -brief address show ovn-k8s-mp0 | awk '{print $3}' | awk -F/ '{print $1}')
         echo "Found ovn-k8s-mp0 interface IP ${ovnK8sMp0v4}"
         local host=$(hostname)
@@ -227,8 +235,12 @@ contents:
     }
 
     clear_routes() {
-        local ovnkContainerID=($(crictl ps --name ovnkube-controller | awk '{ print $1 }' | tail -n+2))
-        echo "Found ovnkube-controller pod... ${ovnkContainerID}"
+        local ovnkContainerID=$(crictl ps --name ovnkube-master | awk '{ print $1 }' | tail -n+2)
+        if [ -z "${ovnkContainerID}" ]; then
+            echo "Plugin is SDN, nothing to do.. exiting"
+            return
+        fi
+        echo "Found ovnkube-master pod... ${ovnkContainerID}"
         echo "clearing all routes from ovn-cluster-router"
         crictl exec -i ${ovnkContainerID} ovn-nbctl lr-policy-del ovn_cluster_router 1010
     }
@@ -266,14 +278,14 @@ contents:
             initialize
             list_lb_ips
             remove_stale
-            remove_stale_routes # needed for sgw mode
+            remove_stale_routes # needed for OVN-Kubernetes plugin's routingViaHost=false mode
             add_rules
-            add_routes # needed for sgw mode
+            add_routes # needed for OVN-Kubernetes plugin's routingViaHost=false mode
             echo "done applying vip rules"
             ;;
         cleanup)
             clear_rules
-            clear_routes # needed for sgw mode
+            clear_routes # needed for OVN-Kubernetes plugin's routingViaHost=false mode
             ;;
         *)
             echo $"Usage: $0 {start|cleanup}"
