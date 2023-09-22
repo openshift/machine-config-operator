@@ -27,7 +27,7 @@ contents: |
     {{ .Images.baremetalRuntimeCfgImage }} \
     node-ip \
     set \
-    --platform {{ .Infra.Status.PlatformStatus.Type }} \
+    --platform ${REMOTE_WORKER_OVERRIDE:-{{ .Infra.Status.PlatformStatus.Type }}} \
     {{if not (isOpenShiftManagedDefaultLB .) -}}
     --user-managed-lb \
     {{end -}}
