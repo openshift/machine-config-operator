@@ -67,3 +67,31 @@ func (l *LayeredPoolState) IsBuilding() bool {
 func (l *LayeredPoolState) IsBuildFailure() bool {
 	return mcfgv1.IsMachineConfigPoolConditionTrue(l.pool.Status.Conditions, mcfgv1.MachineConfigPoolBuildFailed)
 }
+
+func (l *LayeredPoolState) IsAnyDegraded() bool {
+	condTypes := []mcfgv1.MachineConfigPoolConditionType{
+		mcfgv1.MachineConfigPoolDegraded,
+		mcfgv1.MachineConfigPoolNodeDegraded,
+		mcfgv1.MachineConfigPoolRenderDegraded,
+	}
+
+	for _, condType := range condTypes {
+		if mcfgv1.IsMachineConfigPoolConditionTrue(l.pool.Status.Conditions, condType) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (l *LayeredPoolState) IsDegraded() bool {
+	return mcfgv1.IsMachineConfigPoolConditionTrue(l.pool.Status.Conditions, mcfgv1.MachineConfigPoolDegraded)
+}
+
+func (l *LayeredPoolState) IsNodeDegraded() bool {
+	return mcfgv1.IsMachineConfigPoolConditionTrue(l.pool.Status.Conditions, mcfgv1.MachineConfigPoolNodeDegraded)
+}
+
+func (l *LayeredPoolState) IsRenderDegraded() bool {
+	return mcfgv1.IsMachineConfigPoolConditionTrue(l.pool.Status.Conditions, mcfgv1.MachineConfigPoolRenderDegraded)
+}
