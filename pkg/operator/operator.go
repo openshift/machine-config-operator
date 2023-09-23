@@ -87,6 +87,10 @@ type Operator struct {
 	oseKubeAPILister corelisterv1.ConfigMapLister
 	nodeLister       corelisterv1.NodeLister
 	dnsLister        configlistersv1.DNSLister
+	mcoSALister      corelisterv1.ServiceAccountLister
+	mcoSecretLister  corelisterv1.SecretLister
+	ocSecretLister   corelisterv1.SecretLister
+	mcoCOLister      configlistersv1.ClusterOperatorLister
 
 	crdListerSynced                  cache.InformerSynced
 	deployListerSynced               cache.InformerSynced
@@ -107,6 +111,10 @@ type Operator struct {
 	dnsListerSynced                  cache.InformerSynced
 	maoSecretInformerSynced          cache.InformerSynced
 	imgListerSynced                  cache.InformerSynced
+	mcoSAListerSynced                cache.InformerSynced
+	mcoSecretListerSynced            cache.InformerSynced
+	ocSecretListerSynced             cache.InformerSynced
+	mcoCOListerSynced                cache.InformerSynced
 
 	// queue only ever has one item, but it has nice error handling backoff/retry semantics
 	queue workqueue.RateLimitingInterface
@@ -142,6 +150,10 @@ func New(
 	nodeInformer coreinformersv1.NodeInformer,
 	maoSecretInformer coreinformersv1.SecretInformer,
 	imgInformer configinformersv1.ImageInformer,
+	mcoSAInformer coreinformersv1.ServiceAccountInformer,
+	mcoSecretInformer coreinformersv1.SecretInformer,
+	ocSecretInformer coreinformersv1.SecretInformer,
+	mcoCOInformer configinformersv1.ClusterOperatorInformer,
 ) *Operator {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
@@ -185,6 +197,10 @@ func New(
 		dnsInformer.Informer(),
 		maoSecretInformer.Informer(),
 		imgInformer.Informer(),
+		mcoSAInformer.Informer(),
+		mcoSecretInformer.Informer(),
+		ocSecretInformer.Informer(),
+		mcoCOInformer.Informer(),
 	} {
 		i.AddEventHandler(optr.eventHandler())
 	}
@@ -226,6 +242,14 @@ func New(
 	optr.networkListerSynced = networkInformer.Informer().HasSynced
 	optr.dnsLister = dnsInformer.Lister()
 	optr.dnsListerSynced = dnsInformer.Informer().HasSynced
+	optr.mcoSALister = mcoSAInformer.Lister()
+	optr.mcoSAListerSynced = mcoSAInformer.Informer().HasSynced
+	optr.mcoSecretLister = mcoSecretInformer.Lister()
+	optr.mcoSecretListerSynced = mcoSecretInformer.Informer().HasSynced
+	optr.ocSecretLister = ocSecretInformer.Lister()
+	optr.ocSecretListerSynced = ocSecretInformer.Informer().HasSynced
+	optr.mcoCOLister = mcoCOInformer.Lister()
+	optr.mcoCOListerSynced = mcoCOInformer.Informer().HasSynced
 
 	optr.vStore.Set("operator", version.ReleaseVersion)
 
@@ -266,7 +290,11 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 		optr.mcpListerSynced,
 		optr.mcListerSynced,
 		optr.dnsListerSynced,
-		optr.imgListerSynced) {
+		optr.imgListerSynced,
+		optr.mcoSAListerSynced,
+		optr.mcoSecretListerSynced,
+		optr.ocSecretListerSynced,
+		optr.mcoCOListerSynced) {
 		klog.Error("failed to sync caches")
 		return
 	}

@@ -1560,7 +1560,7 @@ func isPoolStatusConditionTrue(pool *mcfgv1.MachineConfigPool, conditionType mcf
 func (optr *Operator) getImageRegistryPullSecrets() ([]byte, error) {
 
 	// Check if image registry exists, if it doesn't we no-op
-	co, err := optr.configClient.ConfigV1().ClusterOperators().Get(context.TODO(), "image-registry", metav1.GetOptions{})
+	co, err := optr.mcoCOLister.Get("image-registry")
 
 	// returning no error in certain cases because image registry may become optional in the future
 	// More info at: https://issues.redhat.com/browse/IR-351
@@ -1586,7 +1586,7 @@ func (optr *Operator) getImageRegistryPullSecrets() ([]byte, error) {
 	}
 
 	// Get the list of image pull secrets from the designated service account
-	imageRegistrySA, err := optr.kubeClient.CoreV1().ServiceAccounts("openshift-machine-config-operator").Get(context.TODO(), "machine-os-puller", metav1.GetOptions{})
+	imageRegistrySA, err := optr.mcoSALister.ServiceAccounts(optr.namespace).Get("machine-os-puller")
 	if err != nil {
 		// returning no error here because during an upgrade; the first sync won't have the manifests
 		klog.Errorf("exiting image registry secrets fetch - machine-os-puller service account does not exist yet.")
@@ -1595,7 +1595,7 @@ func (optr *Operator) getImageRegistryPullSecrets() ([]byte, error) {
 
 	// Step through each image pull secret
 	for _, imagePullSecret := range imageRegistrySA.ImagePullSecrets {
-		secret, err := optr.kubeClient.CoreV1().Secrets("openshift-machine-config-operator").Get(context.TODO(), imagePullSecret.Name, metav1.GetOptions{})
+		secret, err := optr.mcoSecretLister.Secrets(optr.namespace).Get(imagePullSecret.Name)
 		if err != nil {
 			return nil, fmt.Errorf("failed to retrieve image pull secret %s: %w", imagePullSecret.Name, err)
 		}
@@ -1604,7 +1604,7 @@ func (optr *Operator) getImageRegistryPullSecrets() ([]byte, error) {
 	}
 
 	// Fetch the cluster pull secret
-	clusterPullSecret, err := optr.kubeClient.CoreV1().Secrets("openshift-config").Get(context.TODO(), "pull-secret", metav1.GetOptions{})
+	clusterPullSecret, err := optr.ocSecretLister.Secrets("openshift-config").Get("pull-secret")
 	if err != nil {
 		return nil, fmt.Errorf("error fetching cluster pull secret: %w", err)
 	}
