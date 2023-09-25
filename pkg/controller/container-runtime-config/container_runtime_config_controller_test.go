@@ -1047,6 +1047,11 @@ func TestRunImageBootstrap(t *testing.T) {
 			itmsRules []*apicfgv1.ImageTagMirrorSet
 		}{
 			{
+				idmsRules: []*apicfgv1.ImageDigestMirrorSet{
+					newIDMS("idms-1", []apicfgv1.ImageDigestMirrors{
+						{Source: "source.example.com", Mirrors: []apicfgv1.ImageMirror{"mirror.example.com"}},
+					}),
+				},
 				icspRules: []*apioperatorsv1alpha1.ImageContentSourcePolicy{
 					newICSP("built-in", []apioperatorsv1alpha1.RepositoryDigestMirrors{
 						{Source: "built-in-source.example.com", Mirrors: []string{"built-in-mirror.example.com"}},
