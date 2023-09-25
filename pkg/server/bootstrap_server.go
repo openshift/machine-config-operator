@@ -26,17 +26,20 @@ type bootstrapServer struct {
 	serverBaseDir string
 
 	kubeconfigFunc kubeconfigFunc
+
+	certs []string
 }
 
 // NewBootstrapServer initializes a new Bootstrap server that implements
 // the Server interface.
-func NewBootstrapServer(dir, kubeconfig string) (Server, error) {
+func NewBootstrapServer(dir, kubeconfig string, ircerts []string) (Server, error) {
 	if _, err := os.Stat(kubeconfig); err != nil {
 		return nil, fmt.Errorf("kubeconfig not found at location: %s", kubeconfig)
 	}
 	return &bootstrapServer{
 		serverBaseDir:  dir,
 		kubeconfigFunc: func() ([]byte, []byte, error) { return kubeconfigFromFile(kubeconfig) },
+		certs:          ircerts,
 	}, nil
 }
 
@@ -130,7 +133,7 @@ func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*runtime.RawExtension, er
 	addDataAndMaybeAppendToIgnition(caBundleFilePath, cc.Spec.KubeAPIServerServingCAData, &ignConf)
 	addDataAndMaybeAppendToIgnition(cloudProviderCAPath, cc.Spec.CloudProviderCAData, &ignConf)
 	addDataAndMaybeAppendToIgnition(additionalCAPath, cc.Spec.AdditionalTrustBundle, &ignConf)
-	appenders := getAppenders(currConf, nil, bsc.kubeconfigFunc)
+	appenders := getAppenders(currConf, nil, bsc.kubeconfigFunc, bsc.certs, bsc.serverBaseDir)
 	for _, a := range appenders {
 		if err := a(&ignConf, mc); err != nil {
 			return nil, err

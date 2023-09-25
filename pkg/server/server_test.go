@@ -17,6 +17,7 @@ import (
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	yaml "github.com/ghodss/yaml"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -165,10 +166,14 @@ func TestBootstrapServer(t *testing.T) {
 		t.Fatalf("unexpected error while appending file to ignition: %v", err)
 	}
 
+	bytes := []byte("testing")
+	err = os.WriteFile(filepath.Join(testDir, "bar.crt"), bytes, 0o664)
+	require.Nil(t, err)
 	// initialize bootstrap server and get config.
 	bs := &bootstrapServer{
 		serverBaseDir:  testDir,
 		kubeconfigFunc: func() ([]byte, []byte, error) { return getKubeConfigContent(t) },
+		certs:          []string{"foo=bar.crt"},
 	}
 	if err != nil {
 		t.Fatal(err)
@@ -189,6 +194,13 @@ func TestBootstrapServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	foundCertFiles := false
+	for _, file := range resCfg.Storage.Files {
+		if strings.Contains(file.Path, filepath.Join("/etc/docker/certs.d", "foo")) {
+			foundCertFiles = true
+		}
+	}
+	require.True(t, foundCertFiles)
 	validateIgnitionFiles(t, ignCfg.Storage.Files, resCfg.Storage.Files)
 	validateIgnitionSystemd(t, ignCfg.Systemd.Units, resCfg.Systemd.Units)
 
