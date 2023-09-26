@@ -181,6 +181,7 @@ When a machine boots with `nosmt` Kernel Argument, it disables multi-threading o
 
 This feature is available with OCP 4.4 and onward releases as both `day 1` and `day 2` operation. It allows to choose between traditional and Real Time (RT) kernel on an RHCOS node. Supported values are
 `""` or `default` for traditional kernel, `realtime` for RT kernel and `64k-pages` for 64k memory pages on aarch64.
+Note that `64k-pages` and `realtime` cannot be selected at the same time. Also, 64k pages support is limited to aarch64 architecture.
 
 To set kernelType field during cluster install, see the [installer guide](https://github.com/openshift/installer/blob/master/docs/user/customization.md#Switching-RHCOS-host-kernel-using-KernelType).
 
