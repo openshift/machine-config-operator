@@ -379,7 +379,17 @@ func calculatePostConfigChangeAction(diff *machineConfigDiff, diffFileSet []stri
 	return calculatePostConfigChangeActionFromFileDiffs(diffFileSet), nil
 }
 
-func (dn *Daemon) updateImage(newConfig *mcfgv1.MachineConfig, oldImage, newImage string) error {
+// This is another update function implementation for the special case of
+// on-cluster built images. It is necessary to perform certain steps
+// post-reboot since rpm-ostree will not write contents to the /home/core
+// directory nor certain portions of the /etc directory.
+//
+// This function should be consolidated with dn.update() and dn.updateHypershift(). See: https://issues.redhat.com/browse/MCO-810 for further discussion.
+//
+//nolint:gocyclo
+func (dn *Daemon) updateOnClusterBuild(oldConfig, newConfig *mcfgv1.MachineConfig, oldImage, newImage string, skipCertificateWrite bool) (retErr error) {
+	oldConfig = canonicalizeEmptyMC(oldConfig)
+
 	if dn.nodeWriter != nil {
 		state, err := getNodeAnnotationExt(dn.node, constants.MachineConfigDaemonStateAnnotationKey, true)
 		if err != nil {
@@ -392,17 +402,124 @@ func (dn *Daemon) updateImage(newConfig *mcfgv1.MachineConfig, oldImage, newImag
 		}
 	}
 
-	if oldImage == "" {
-		logSystem("Starting transition to %q", newImage)
-	} else {
-		logSystem("Starting transition from %q to %q", oldImage, newImage)
+	dn.catchIgnoreSIGTERM()
+	defer func() {
+		// now that we do rebootless updates, we need to turn off our SIGTERM protection
+		// regardless of how we leave the "update loop"
+		dn.cancelSIGTERM()
+	}()
+
+	oldConfigName := oldConfig.GetName()
+	newConfigName := newConfig.GetName()
+
+	oldIgnConfig, err := ctrlcommon.ParseAndConvertConfig(oldConfig.Spec.Config.Raw)
+	if err != nil {
+		return fmt.Errorf("parsing old Ignition config failed: %w", err)
+	}
+	newIgnConfig, err := ctrlcommon.ParseAndConvertConfig(newConfig.Spec.Config.Raw)
+	if err != nil {
+		return fmt.Errorf("parsing new Ignition config failed: %w", err)
+	}
+
+	klog.Infof("Checking Reconcilable for config %v to %v", oldConfigName, newConfigName)
+
+	// Make sure we can actually reconcile this state. In the future, this check should be moved to the BuildController and performed prior to the build occurring. This addresses the following bugs:
+	// - https://issues.redhat.com/browse/OCPBUGS-18670
+	// - https://issues.redhat.com/browse/OCPBUGS-18535
+	// -
+	diff, reconcilableError := reconcilable(oldConfig, newConfig)
+
+	if reconcilableError != nil {
+		wrappedErr := fmt.Errorf("can't reconcile config %s with %s: %w", oldConfigName, newConfigName, reconcilableError)
+		if dn.nodeWriter != nil {
+			dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedToReconcile", wrappedErr.Error())
+		}
+		return &unreconcilableErr{wrappedErr}
+	}
+
+	if oldImage == newImage && newImage != "" {
+		if oldImage == "" {
+			logSystem("Starting transition to %q", newImage)
+		} else {
+			logSystem("Starting transition from %q to %q", oldImage, newImage)
+		}
 	}
 
 	if err := dn.performDrain(); err != nil {
 		return err
 	}
 
-	if err := dn.updateLayeredOSToPullspec(newImage); err != nil {
+	// If the new image pullspec is already on disk, do not attempt to re-apply
+	// it. rpm-ostree will throw an error as a result.
+	// See: https://issues.redhat.com/browse/OCPBUGS-18414.
+	if oldImage != newImage && newImage != "" {
+		if err := dn.updateLayeredOSToPullspec(newImage); err != nil {
+			return err
+		}
+	} else {
+		klog.Infof("Image pullspecs equal, skipping rpm-ostree rebase")
+	}
+
+	// update files on disk that need updating
+	if err := dn.updateFiles(oldIgnConfig, newIgnConfig, skipCertificateWrite); err != nil {
+		return err
+	}
+
+	defer func() {
+		if retErr != nil {
+			if err := dn.updateFiles(newIgnConfig, oldIgnConfig, skipCertificateWrite); err != nil {
+				errs := kubeErrs.NewAggregate([]error{err, retErr})
+				retErr = fmt.Errorf("error rolling back files writes: %w", errs)
+				return
+			}
+		}
+	}()
+
+	// update file permissions
+	if err := dn.updateKubeConfigPermission(); err != nil {
+		return err
+	}
+
+	// only update passwd if it has changed (do not nullify)
+	// we do not need to include SetPasswordHash in this, since only updateSSHKeys has issues on firstboot.
+	// For on-cluster builds, this needs to be performed here instead of during
+	// the image build process. This is bceause rpm-ostree will not touch files
+	// in /home/core. See: https://issues.redhat.com/browse/OCPBUGS-18458
+	if diff.passwd {
+		if err := dn.updateSSHKeys(newIgnConfig.Passwd.Users, oldIgnConfig.Passwd.Users); err != nil {
+			return err
+		}
+
+		defer func() {
+			if retErr != nil {
+				if err := dn.updateSSHKeys(newIgnConfig.Passwd.Users, oldIgnConfig.Passwd.Users); err != nil {
+					errs := kubeErrs.NewAggregate([]error{err, retErr})
+					retErr = fmt.Errorf("error rolling back SSH keys updates: %w", errs)
+					return
+				}
+			}
+		}()
+	}
+
+	// Set password hash
+	// See: https://issues.redhat.com/browse/OCPBUGS-18456
+	if err := dn.SetPasswordHash(newIgnConfig.Passwd.Users, oldIgnConfig.Passwd.Users); err != nil {
+		return err
+	}
+
+	defer func() {
+		if retErr != nil {
+			if err := dn.SetPasswordHash(newIgnConfig.Passwd.Users, oldIgnConfig.Passwd.Users); err != nil {
+				errs := kubeErrs.NewAggregate([]error{err, retErr})
+				retErr = fmt.Errorf("error rolling back password hash updates: %w", errs)
+				return
+			}
+		}
+	}()
+
+	// Ideally we would want to update kernelArguments only via MachineConfigs.
+	// We are keeping this to maintain compatibility and OKD requirement.
+	if err := UpdateTuningArgs(KernelTuningFile, CmdLineFile); err != nil {
 		return err
 	}
 
@@ -415,10 +532,25 @@ func (dn *Daemon) updateImage(newConfig *mcfgv1.MachineConfig, oldImage, newImag
 		return err
 	}
 
-	return dn.reboot(fmt.Sprintf("Node will reboot into image %s", newImage))
+	defer func() {
+		if retErr != nil {
+			odc.currentConfig = oldConfig
+			odc.currentImage = oldImage
+			if err := dn.storeCurrentConfigOnDisk(odc); err != nil {
+				errs := kubeErrs.NewAggregate([]error{err, retErr})
+				retErr = fmt.Errorf("error rolling back current config on disk: %w", errs)
+				return
+			}
+		}
+	}()
+
+	return dn.reboot(fmt.Sprintf("Node will reboot into image %s / MachineConfig %s", newImage, newConfigName))
 }
 
-// update the node to the provided node configuration.
+// Update the node to the provided node configuration.
+// This funciton should be de-duped with dn.updateHypershift() and
+// dn.updateOnClusterBuild(). See: https://issues.redhat.com/browse/MCO-810 for
+// discussion.
 //
 //nolint:gocyclo
 func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertificateWrite bool) (retErr error) {
@@ -593,6 +725,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 
 // This is currently a subsection copied over from update() since we need to be more nuanced. Should eventually
 // de-dupe the functions.
+// See: https://issues.redhat.com/browse/MCO-810
 func (dn *Daemon) updateHypershift(oldConfig, newConfig *mcfgv1.MachineConfig, diff *machineConfigDiff) (retErr error) {
 	oldIgnConfig, err := ctrlcommon.ParseAndConvertConfig(oldConfig.Spec.Config.Raw)
 	if err != nil {
