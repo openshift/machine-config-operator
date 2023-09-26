@@ -11,6 +11,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"reflect"
+	goruntime "runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -1146,6 +1147,11 @@ func (dn *CoreOSDaemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig)
 	// is also default (i.e. throughput) then we have nothing to do.
 	if newKtype == ctrlcommon.KernelTypeDefault {
 		return nil
+	}
+
+	// 64K memory pages kernel is only supported for aarch64
+	if newKtype == ctrlcommon.KernelType64kPages && goruntime.GOARCH != "arm64" {
+		return fmt.Errorf("64k-pages is only supported for aarch64 architecture")
 	}
 
 	// TODO: Drop this code and use https://github.com/coreos/rpm-ostree/issues/2542 instead
