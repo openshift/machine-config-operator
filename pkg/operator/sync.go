@@ -29,7 +29,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/pkg/credentialprovider"
 
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
@@ -1519,9 +1518,10 @@ func (optr *Operator) getImageRegistryPullSecrets() ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to retrieve dns object")
 	}
+
 	// Create the JSON map
-	dockerConfigJSON := credentialprovider.DockerConfigJSON{
-		Auths: map[string]credentialprovider.DockerConfigEntry{},
+	dockerConfigJSON := ctrlcommon.DockerConfigJSON{
+		Auths: map[string]ctrlcommon.DockerConfigEntry{},
 	}
 
 	// Get the list of image pull secrets from the designated service account

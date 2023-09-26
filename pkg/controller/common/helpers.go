@@ -50,7 +50,6 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/tools/reference"
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/pkg/credentialprovider"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
@@ -1167,10 +1166,28 @@ func IsLayeredPool(pool *mcfgv1.MachineConfigPool) bool {
 	return false
 }
 
+// DockerConfigJSON represents ~/.docker/config.json file info
+type DockerConfigJSON struct {
+	Auths DockerConfig `json:"auths"`
+}
+
+// DockerConfig represents the config file used by the docker CLI.
+// This config that represents the credentials that should be used
+// when pulling images from specific image repositories.
+type DockerConfig map[string]DockerConfigEntry
+
+// DockerConfigEntry wraps a docker config as a entry
+type DockerConfigEntry struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+	Email    string `json:"email"`
+	Auth     string `json:"auth"`
+}
+
 // Merges kubernetes.io/dockercfg type secrets into a JSON map.
 // Returns an error on failure to marshal the incoming secret.
-func MergeDockerConfigstoJSONMap(secretRaw []byte, auths map[string]credentialprovider.DockerConfigEntry) error {
-	var dockerConfig credentialprovider.DockerConfig
+func MergeDockerConfigstoJSONMap(secretRaw []byte, auths map[string]DockerConfigEntry) error {
+	var dockerConfig DockerConfig
 	// Unmarshal raw JSON
 	err := json.Unmarshal(secretRaw, &dockerConfig)
 	if err != nil {
