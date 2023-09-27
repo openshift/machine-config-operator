@@ -353,6 +353,82 @@ func TestUpdateRegistriesConfig(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "imageDigestMirrorSet + imageTagMirrorSet + imageContentSourcePolicy merging",
+			idmsRules: []*apicfgv1.ImageDigestMirrorSet{
+				{
+					Spec: apicfgv1.ImageDigestMirrorSetSpec{
+						ImageDigestMirrors: []apicfgv1.ImageDigestMirrors{
+							{Source: "registry-a.com", Mirrors: []apicfgv1.ImageMirror{"mirror-digest-1.registry-a.com", "mirror-digest-2.registry-a.com"}},
+							{Source: "registry-b.com", Mirrors: []apicfgv1.ImageMirror{"mirror-digest-1.registry-b.com", "mirror-digest-2.registry-b.com"}},
+						},
+					},
+				},
+			},
+			itmsRules: []*apicfgv1.ImageTagMirrorSet{
+				{
+					Spec: apicfgv1.ImageTagMirrorSetSpec{
+						ImageTagMirrors: []apicfgv1.ImageTagMirrors{
+							{Source: "registry-a.com", Mirrors: []apicfgv1.ImageMirror{"mirror-tag-1.registry-a.com", "mirror-tag-2.registry-a.com"}},
+							{Source: "registry-b.com", Mirrors: []apicfgv1.ImageMirror{"mirror-tag-1.registry-b.com", "mirror-tag-2.registry-b.com"}},
+						},
+					},
+				},
+			},
+			icspRules: []*apioperatorsv1alpha1.ImageContentSourcePolicy{
+				{
+					Spec: apioperatorsv1alpha1.ImageContentSourcePolicySpec{
+						// icsp contains duplicated and newly added sources mirrors
+						RepositoryDigestMirrors: []apioperatorsv1alpha1.RepositoryDigestMirrors{
+							{Source: "registry-a.com", Mirrors: []string{"mirror-digest-1.registry-a.com", "mirror-digest-2.registry-a.com", "mirror-icsp-1.registry-a.com"}},
+							{Source: "registry-b.com", Mirrors: []string{"mirror-digest-1.registry-b.com", "mirror-digest-2.registry-b.com", "mirror-icsp-1.registry-b.com"}},
+							{Source: "registry-c.com", Mirrors: []string{"mirror-icsp-1.registry-c.com", "mirror-icsp-2.registry-c.com"}},
+						},
+					},
+				},
+			},
+
+			want: sysregistriesv2.V2RegistriesConf{
+				UnqualifiedSearchRegistries: []string{"registry.access.redhat.com", "docker.io"},
+				Registries: []sysregistriesv2.Registry{
+					{
+						Endpoint: sysregistriesv2.Endpoint{
+							Location: "registry-a.com",
+						},
+						Mirrors: []sysregistriesv2.Endpoint{
+
+							{Location: "mirror-digest-1.registry-a.com", PullFromMirror: sysregistriesv2.MirrorByDigestOnly},
+							{Location: "mirror-digest-2.registry-a.com", PullFromMirror: sysregistriesv2.MirrorByDigestOnly},
+							{Location: "mirror-icsp-1.registry-a.com", PullFromMirror: sysregistriesv2.MirrorByDigestOnly},
+							{Location: "mirror-tag-1.registry-a.com", PullFromMirror: sysregistriesv2.MirrorByTagOnly},
+							{Location: "mirror-tag-2.registry-a.com", PullFromMirror: sysregistriesv2.MirrorByTagOnly},
+						},
+					},
+
+					{
+						Endpoint: sysregistriesv2.Endpoint{
+							Location: "registry-b.com",
+						},
+						Mirrors: []sysregistriesv2.Endpoint{
+							{Location: "mirror-digest-1.registry-b.com", PullFromMirror: sysregistriesv2.MirrorByDigestOnly},
+							{Location: "mirror-digest-2.registry-b.com", PullFromMirror: sysregistriesv2.MirrorByDigestOnly},
+							{Location: "mirror-icsp-1.registry-b.com", PullFromMirror: sysregistriesv2.MirrorByDigestOnly},
+							{Location: "mirror-tag-1.registry-b.com", PullFromMirror: sysregistriesv2.MirrorByTagOnly},
+							{Location: "mirror-tag-2.registry-b.com", PullFromMirror: sysregistriesv2.MirrorByTagOnly},
+						},
+					},
+					{
+						Endpoint: sysregistriesv2.Endpoint{
+							Location: "registry-c.com",
+						},
+						Mirrors: []sysregistriesv2.Endpoint{
+							{Location: "mirror-icsp-1.registry-c.com", PullFromMirror: sysregistriesv2.MirrorByDigestOnly},
+							{Location: "mirror-icsp-2.registry-c.com", PullFromMirror: sysregistriesv2.MirrorByDigestOnly},
+						},
+					},
+				},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
