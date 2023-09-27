@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	v1 "github.com/openshift/api/config/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/controller/node"
 	e2e_shared_test "github.com/openshift/machine-config-operator/test/e2e-shared-tests"
@@ -16,6 +17,8 @@ import (
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/jsonmergepatch"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
 )
@@ -176,4 +179,113 @@ func TestMetrics(t *testing.T) {
 	}); err != nil {
 		t.Errorf("error getting metrics: %q", err)
 	}
+}
+
+func TestImageRegistryMergedCM(t *testing.T) {
+	// patch the cluster object with a fake registry
+	// make sure the merged cm does not get deleted, (look at creation time?)
+	cs := framework.NewClientSet("")
+
+	caData := make(map[string]string)
+	caData["foo"] = "bar"
+	_, err := cs.CoreV1Interface.ConfigMaps("openshift-config").Create(
+		context.TODO(),
+		&corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "mcotestingca",
+			},
+			Data: caData,
+		},
+		metav1.CreateOptions{},
+	)
+	require.Nil(t, err)
+
+	trustedCM, err := cs.CoreV1Interface.ConfigMaps("openshift-config-managed").Get(context.TODO(), "merged-trusted-image-registry-ca", metav1.GetOptions{})
+	require.Nil(t, err)
+
+	cfg, err := cs.ConfigV1Interface.Images().Get(context.TODO(), "cluster", metav1.GetOptions{})
+	require.Nil(t, err)
+
+	cfgJson, err := json.Marshal(cfg)
+	require.Nil(t, err)
+
+	newCfg := cfg.DeepCopy()
+
+	newCfg.Spec.AdditionalTrustedCA = v1.ConfigMapNameReference{Name: "mcotestingca"}
+
+	newCfgJson, err := json.Marshal(newCfg)
+
+	require.Nil(t, err)
+
+	patchBytes, err := jsonmergepatch.CreateThreeWayJSONMergePatch(cfgJson, newCfgJson, cfgJson)
+
+	//	patchBytes, err := strategicpatch.CreateTwoWayMergePatch(cfgJson, newCfgJson, v1.Image{})
+	require.Nil(t, err)
+	_, err = cs.ConfigV1Interface.Images().Patch(context.TODO(), "cluster", types.MergePatchType, patchBytes, metav1.PatchOptions{})
+	require.Nil(t, err)
+
+	cfg, err = cs.ConfigV1Interface.Images().Get(context.TODO(), "cluster", metav1.GetOptions{})
+	cfgJson, err = json.Marshal(cfg)
+	t.Logf("CFG: %s", string(cfgJson))
+
+	newTrustedCM := &corev1.ConfigMap{}
+
+	err = wait.PollUntilContextTimeout(context.TODO(), 2*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
+		newTrustedCM, err = cs.CoreV1Interface.ConfigMaps("openshift-config-managed").Get(context.TODO(), "merged-trusted-image-registry-ca", metav1.GetOptions{})
+		require.Nil(t, err)
+
+		if _, ok := newTrustedCM.Data["foo"]; ok {
+			return true, nil
+		}
+		return false, nil
+	})
+	require.Nil(t, err)
+	require.Equal(t, newTrustedCM.CreationTimestamp, trustedCM.CreationTimestamp)
+
+	nodes, err := helpers.GetNodesByRole(cs, "worker")
+	require.Nil(t, err)
+
+	//mcd, err := helpers.MCDForNode(cs, &nodes[0])
+
+	err = wait.PollUntilContextTimeout(context.TODO(), 2*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
+		out := helpers.ExecCmdOnNode(t, cs, nodes[0], "ls", "/rootfs/etc/docker/certs.d")
+		t.Logf("OUTPUT: %s", out)
+		return strings.Contains(out, "foo"), nil
+	})
+
+	cfg, err = cs.ConfigV1Interface.Images().Get(context.TODO(), "cluster", metav1.GetOptions{})
+	require.Nil(t, err)
+
+	cfgJson, err = json.Marshal(cfg)
+	require.Nil(t, err)
+
+	newCfg = cfg.DeepCopy()
+
+	newCfg.Spec.AdditionalTrustedCA = v1.ConfigMapNameReference{}
+
+	newCfgJson, err = json.Marshal(newCfg)
+
+	require.Nil(t, err)
+
+	patchBytes, err = jsonmergepatch.CreateThreeWayJSONMergePatch(cfgJson, newCfgJson, cfgJson)
+	require.Nil(t, err)
+
+	_, err = cs.ConfigV1Interface.Images().Patch(context.TODO(), "cluster", types.MergePatchType, patchBytes, metav1.PatchOptions{})
+	require.Nil(t, err)
+
+	err = wait.PollUntilContextTimeout(context.TODO(), 2*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
+		newTrustedCM, err = cs.CoreV1Interface.ConfigMaps("openshift-config-managed").Get(context.TODO(), "merged-trusted-image-registry-ca", metav1.GetOptions{})
+		require.Nil(t, err)
+		if _, ok := newTrustedCM.Data["foo"]; ok {
+			return false, nil
+		}
+		return true, nil
+	})
+
+	err = wait.PollUntilContextTimeout(context.TODO(), 2*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
+		out := helpers.ExecCmdOnNode(t, cs, nodes[0], "ls", "/rootfs/etc/docker/certs.d")
+		return !strings.Contains(out, "foo"), nil
+	})
+	err = cs.CoreV1Interface.ConfigMaps("openshift-config").Delete(context.TODO(), "mcotestingca", metav1.DeleteOptions{})
+	require.Nil(t, err)
 }
