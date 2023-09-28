@@ -348,7 +348,7 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 	}
 	cmAnnotations := make(map[string]string)
 	cmAnnotations["openshift.io/description"] = "Created and managed by the machine-config-operator"
-	if err != nil && errors.IsNotFound(err) {
+	if errors.IsNotFound(err) {
 		klog.Infof("creating merged-trusted-image-registry-ca")
 		_, err = optr.kubeClient.CoreV1().ConfigMaps("openshift-config-managed").Create(
 			context.TODO(),
@@ -364,6 +364,8 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 		if err != nil {
 			return err
 		}
+	} else if err != nil {
+		return err
 	} else {
 		cmMarshal, err := json.Marshal(cm)
 		if err != nil {
