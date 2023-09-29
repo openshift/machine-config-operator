@@ -1,7 +1,7 @@
 package resourcemerge
 
 import (
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 )
 
 func setBytesIfSet(modified *bool, existing *[]byte, required []byte) {
