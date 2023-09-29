@@ -8,7 +8,6 @@ import (
 
 	"github.com/clarketm/json"
 	osev1 "github.com/openshift/api/config/v1"
-	"github.com/openshift/library-go/pkg/cloudprovider"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -26,7 +25,10 @@ import (
 var (
 	// openshiftOnlyFeatureGates contains selection of featureGates which will be rejected by native kubelet
 	openshiftOnlyFeatureGates = []osev1.FeatureGateName{
-		cloudprovider.ExternalCloudProviderFeature,
+		// TODO(jkyros): OpenShift carries a patch that makes kubelet/apiserver ignore feature gates it doesn't
+		// understand, so we don't have to filter these out anymore, but we really need to come back and take the
+		// hardcoded featureGates out of the kubelet.yaml template and inject them from the feature gate
+		// accessor instead so we don't have to worry about keeping all the lists manually in sync.
 	}
 )
 

@@ -42,6 +42,24 @@ func TestFeatureGateDrift(t *testing.T) {
 				t.Errorf("could not generate defaultFeatureGates: %v", err)
 			}
 			if !reflect.DeepEqual(originalKubeConfig.FeatureGates, *defaultFeatureGates) {
+				var found = map[string]bool{}
+				for featureGate := range originalKubeConfig.FeatureGates {
+					for apiGate := range *defaultFeatureGates {
+						if featureGate == apiGate {
+							found[apiGate] = true
+						}
+					}
+				}
+				for featureGate := range originalKubeConfig.FeatureGates {
+					if _, ok := found[featureGate]; !ok {
+						t.Logf("%s is not present in api", featureGate)
+					}
+				}
+				for featureGate := range *defaultFeatureGates {
+					if _, ok := found[featureGate]; !ok {
+						t.Logf("%s is not present in template", featureGate)
+					}
+				}
 				t.Errorf("template FeatureGates do not match openshift/api FeatureGates: (tmpl=[%v], api=[%v]", originalKubeConfig.FeatureGates, defaultFeatureGates)
 			}
 		})
