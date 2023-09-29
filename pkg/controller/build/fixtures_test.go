@@ -12,6 +12,7 @@ import (
 	"github.com/davecgh/go-spew/spew"
 	buildv1 "github.com/openshift/api/build/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	testhelpers "github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/assert"
@@ -597,7 +598,7 @@ func getPoolFailureMsg(mcp *mcfgv1.MachineConfigPool, expectedToHaveBuildRef boo
 	ps := newPoolState(mcp)
 	msg := &strings.Builder{}
 
-	fmt.Fprintf(msg, "Has expected condition (%s) for phase (%s)? %v\n", expectedMCPConditionType, phase, mcfgv1.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, expectedMCPConditionType))
+	fmt.Fprintf(msg, "Has expected condition (%s) for phase (%s)? %v\n", expectedMCPConditionType, phase, apihelpers.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, expectedMCPConditionType))
 
 	fmt.Fprintf(msg, "Is only one build condition true? %v\n", isOnlyOneBuildConditionTrue(mcp))
 
@@ -632,7 +633,7 @@ func poolReachesExpectedBuildState(mcp *mcfgv1.MachineConfigPool, expectedToHave
 		return false
 	}
 
-	if !mcfgv1.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, expectedMCPConditionType) {
+	if !apihelpers.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, expectedMCPConditionType) {
 		return false
 	}
 

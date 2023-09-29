@@ -4,7 +4,8 @@ import (
 	"testing"
 
 	"github.com/davecgh/go-spew/spew"
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 )
@@ -78,8 +79,8 @@ func TestLayeredPoolState(t *testing.T) {
 			t.Parallel()
 
 			if test.buildCondition != "" {
-				cond := mcfgv1.NewMachineConfigPoolCondition(test.buildCondition, corev1.ConditionTrue, "", "")
-				mcfgv1.SetMachineConfigPoolCondition(&test.pool.Status, *cond)
+				cond := apihelpers.NewMachineConfigPoolCondition(test.buildCondition, corev1.ConditionTrue, "", "")
+				apihelpers.SetMachineConfigPoolCondition(&test.pool.Status, *cond)
 			}
 
 			lps := NewLayeredPoolState(test.pool)
