@@ -8,7 +8,6 @@ import (
 
 	"github.com/clarketm/json"
 	osev1 "github.com/openshift/api/config/v1"
-	"github.com/openshift/library-go/pkg/cloudprovider"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -26,7 +25,8 @@ import (
 var (
 	// openshiftOnlyFeatureGates contains selection of featureGates which will be rejected by native kubelet
 	openshiftOnlyFeatureGates = []osev1.FeatureGateName{
-		cloudprovider.ExternalCloudProviderFeature,
+		// TODO(jkyros): this has graduated, so I assume kubelet is cool with it now
+		// cloudprovider.ExternalCloudProviderFeature,
 	}
 )
 

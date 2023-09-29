@@ -108,11 +108,17 @@ func createNewDefaultFeatureGateAccess() featuregates.FeatureGateAccess {
 	enabled, disabled := sets.New[osev1.FeatureGateName](), sets.New[osev1.FeatureGateName]()
 
 	for _, feature := range defaultFeatures.Enabled {
-		enabled.Insert(feature.FeatureGateAttributes.Name)
+		// The kubelet doesn't understand OpenShift-specific featuregates, so ignore
+		// them when we generate the default feature gate list
+		if feature.OwningProduct != osev1.OwningProduct("OCP") {
+			enabled.Insert(feature.FeatureGateAttributes.Name)
+		}
 	}
 
 	for _, feature := range defaultFeatures.Disabled {
-		disabled.Insert(feature.FeatureGateAttributes.Name)
+		if feature.OwningProduct != osev1.OwningProduct("OCP") {
+			disabled.Insert(feature.FeatureGateAttributes.Name)
+		}
 	}
 
 	return featuregates.NewHardcodedFeatureGateAccess(sets.List(enabled), sets.List(disabled))
