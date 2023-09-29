@@ -52,6 +52,7 @@ func calculateStatus(cconfig *v1.ControllerConfig, pool *mcfgv1.MachineConfigPoo
 				certExpirys = append(certExpirys, v1.CertExpiry{
 					Bundle:  cert.BundleFile,
 					Subject: cert.Subject,
+					Expiry:  cert.NotAfter,
 				},
 				)
 			}
