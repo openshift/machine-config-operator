@@ -505,6 +505,8 @@ func createNewCert(cert []byte, name string) []v1.ControllerCertificate {
 			Subject:    c.Subject.String(),
 			Signer:     c.Issuer.String(),
 			BundleFile: name,
+			NotBefore:  &metav1.Time{Time: c.NotBefore},
+			NotAfter:   &metav1.Time{Time: c.NotAfter},
 		})
 	}
 	return certs
