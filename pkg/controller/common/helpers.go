@@ -56,9 +56,6 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
 )
 
-// Gates whether or not the MCO uses the new format base OS container image by default
-var UseNewFormatImageByDefault = true
-
 // strToPtr converts the input string to a pointer to itself
 func strToPtr(s string) *string {
 	return &s
@@ -1058,13 +1055,9 @@ func GetIgnitionFileDataByPath(config *ign3types.Config, path string) ([]byte, e
 	return nil, nil
 }
 
-// GetDefaultBaseImageContainer is kind of a "soft feature gate" for using the "new format" image by default, its behavior
-// is determined by the "UseNewFormatImageByDefault" boolean
+// GetDefaultBaseImageContainer returns the default bootable host base image.
 func GetDefaultBaseImageContainer(cconfigspec *mcfgv1.ControllerConfigSpec) string {
-	if UseNewFormatImageByDefault {
-		return cconfigspec.BaseOSContainerImage
-	}
-	return cconfigspec.OSImageURL
+	return cconfigspec.BaseOSContainerImage
 }
 
 // Configures common template FuncMaps used across all renderers.
