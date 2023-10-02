@@ -16,7 +16,6 @@ type Images struct {
 // RenderConfigImages are image names used to render templates under ./manifests/
 type RenderConfigImages struct {
 	MachineConfigOperator string `json:"machineConfigOperator"`
-	MachineOSContent      string `json:"machineOSContent"`
 	// The new format image
 	BaseOSContainerImage string `json:"baseOSContainerImage"`
 	// The matching extensions container for the new format image

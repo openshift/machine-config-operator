@@ -497,11 +497,10 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 
 	// sync up os image url
 	// TODO: this should probably be part of the imgs
-	oscontainer, osextensionscontainer, osimageurl, err := optr.getOsImageURLs(optr.namespace)
+	oscontainer, osextensionscontainer, err := optr.getOsImageURLs(optr.namespace)
 	if err != nil {
 		return err
 	}
-	imgs.MachineOSContent = osimageurl
 	imgs.BaseOSContainerImage = oscontainer
 	imgs.BaseOSExtensionsContainerImage = osextensionscontainer
 
@@ -554,7 +553,6 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 	spec.ImageRegistryBundleUserData = imgRegistryUsrData
 	spec.PullSecret = &corev1.ObjectReference{Namespace: "openshift-config", Name: "pull-secret"}
 	spec.InternalRegistryPullSecret = internalRegistryPullSecret
-	spec.OSImageURL = imgs.MachineOSContent
 	spec.BaseOSContainerImage = imgs.BaseOSContainerImage
 	spec.BaseOSExtensionsContainerImage = imgs.BaseOSExtensionsContainerImage
 	spec.Images = map[string]string{
@@ -1197,19 +1195,13 @@ func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
 			_, hasRequiredPoolLabel := pool.Labels[requiredForUpgradeMachineConfigPoolLabelKey]
 
 			if hasRequiredPoolLabel {
-				newFormatOpURL, _, opURL, err := optr.getOsImageURLs(optr.namespace)
+				opURL, _, err := optr.getOsImageURLs(optr.namespace)
 				if err != nil {
 					klog.Errorf("Error getting configmap osImageURL: %q", err)
 					return false, nil
 				}
 				releaseVersion, _ := optr.vStore.Get("operator")
 
-				// TODO(jkyros): The operator looks at the osimageurl configmap directly, so we can't use
-				// our centralized default image selection helper, but we can still use the constant.
-				// This will come out once we drop machine-os-content.
-				if ctrlcommon.UseNewFormatImageByDefault {
-					opURL = newFormatOpURL
-				}
 				if err := isMachineConfigPoolConfigurationValid(pool, version.Hash, releaseVersion, opURL, optr.mcLister.Get); err != nil {
 					lastErr = fmt.Errorf("MachineConfigPool %s has not progressed to latest configuration: %w, retrying", pool.Name, err)
 					syncerr := optr.syncUpgradeableStatus()
@@ -1385,29 +1377,21 @@ func (optr *Operator) waitForControllerConfigToBeCompleted(resource *mcfgv1.Cont
 }
 
 // getOsImageURLs returns (new type, new extensions, old type) for operating system update images.
-func (optr *Operator) getOsImageURLs(namespace string) (string, string, string, error) {
+func (optr *Operator) getOsImageURLs(namespace string) (string, string, error) {
 	cm, err := optr.mcoCmLister.ConfigMaps(namespace).Get(osImageConfigMapName)
 	if err != nil {
-		return "", "", "", err
+		return "", "", err
 	}
 	releaseVersion := cm.Data["releaseVersion"]
 	optrVersion, _ := optr.vStore.Get("operator")
 	if releaseVersion != optrVersion {
-		return "", "", "", fmt.Errorf("refusing to read osImageURL version %q, operator version %q", releaseVersion, optrVersion)
+		return "", "", fmt.Errorf("refusing to read osImageURL version %q, operator version %q", releaseVersion, optrVersion)
 	}
 
-	newextensions, _ := cm.Data["baseOSExtensionsContainerImage"]
+	baseOSImage := cm.Data["baseOSContainerImage"]
+	extensionsImage := cm.Data["baseOSExtensionsContainerImage"]
 
-	newformat, hasNewFormat := cm.Data["baseOSContainerImage"]
-
-	oldformat, hasOldFormat := cm.Data["osImageURL"]
-
-	// If we don't have a new format image, and we can't fall back to the old one
-	if !hasOldFormat && !hasNewFormat {
-		return "", "", "", fmt.Errorf("Missing baseOSContainerImage and osImageURL from configmap")
-	}
-
-	return newformat, newextensions, oldformat, nil
+	return baseOSImage, extensionsImage, nil
 }
 
 func (optr *Operator) getCAsFromConfigMap(namespace, name, key string) ([]byte, error) {
