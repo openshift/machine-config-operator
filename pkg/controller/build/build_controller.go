@@ -370,7 +370,7 @@ func (ctrl *Controller) imageBuildUpdater(build *buildv1.Build) error {
 
 	klog.Infof("Build (%s) is %s", build.Name, build.Status.Phase)
 
-	objRef := toObjectRef(build)
+	objRef := toBuildObjectRef(build)
 
 	ps := newPoolState(pool)
 
@@ -418,7 +418,7 @@ func (ctrl *Controller) customBuildPodUpdater(pod *corev1.Pod) error {
 	switch pod.Status.Phase {
 	case corev1.PodPending:
 		if !ps.IsBuildPending() {
-			objRef := toObjectRef(pod)
+			objRef := toPodObjectRef(pod)
 			err = ctrl.markBuildPendingWithObjectRef(ps, *objRef)
 		}
 	case corev1.PodRunning:

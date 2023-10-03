@@ -256,7 +256,7 @@ func (ctrl *PodBuildController) StartBuild(ibr ImageBuildRequest) (*corev1.Objec
 	// This means we found a preexisting build pod.
 	if pod != nil && err == nil && hasAllRequiredOSBuildLabels(pod.Labels) {
 		klog.Infof("Found preexisting build pod (%s) for pool %s", pod.Name, ibr.Pool.Name)
-		return toObjectRef(pod), nil
+		return toPodObjectRef(pod), nil
 	}
 
 	klog.Infof("Starting build for pool %s", ibr.Pool.Name)
@@ -270,7 +270,7 @@ func (ctrl *PodBuildController) StartBuild(ibr ImageBuildRequest) (*corev1.Objec
 
 	klog.Infof("Build started for pool %s in %s!", ibr.Pool.Name, pod.Name)
 
-	return toObjectRef(pod), nil
+	return toPodObjectRef(pod), nil
 }
 
 // Fires whenever a new pod is started.

@@ -245,7 +245,7 @@ func (ctrl *ImageBuildController) StartBuild(ibr ImageBuildRequest) (*corev1.Obj
 	// This means we found a preexisting build build.
 	if build != nil && err == nil && hasAllRequiredOSBuildLabels(build.Labels) {
 		klog.Infof("Found preexisting OS image build (%s) for pool %s", build.Name, ibr.Pool.Name)
-		return toObjectRef(build), nil
+		return toBuildObjectRef(build), nil
 	}
 
 	klog.Infof("Starting build for pool %s", ibr.Pool.Name)
@@ -259,7 +259,7 @@ func (ctrl *ImageBuildController) StartBuild(ibr ImageBuildRequest) (*corev1.Obj
 
 	klog.Infof("Build started for pool %s in %s!", ibr.Pool.Name, build.Name)
 
-	return toObjectRef(build), nil
+	return toBuildObjectRef(build), nil
 }
 
 // Fires whenever a Build is added.

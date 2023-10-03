@@ -12,12 +12,11 @@ import (
 	"github.com/containers/image/v5/docker"
 	"github.com/containers/image/v5/docker/reference"
 	"github.com/opencontainers/go-digest"
+	buildv1 "github.com/openshift/api/build/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	k8stypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
@@ -218,18 +217,21 @@ func getPullSecretKey(secret *corev1.Secret) (string, error) {
 	return key, nil
 }
 
-// Converts a given Kube object into an object reference.
-func toObjectRef(obj interface {
-	GetName() string
-	GetNamespace() string
-	GetUID() k8stypes.UID
-	GetObjectKind() schema.ObjectKind
-}) *corev1.ObjectReference {
+func toBuildObjectRef(build *buildv1.Build) *corev1.ObjectReference {
 	return &corev1.ObjectReference{
-		Kind:      obj.GetObjectKind().GroupVersionKind().Kind,
-		Name:      obj.GetName(),
-		Namespace: obj.GetNamespace(),
-		UID:       obj.GetUID(),
+		Kind:      "Build",
+		Name:      build.GetName(),
+		Namespace: build.GetNamespace(),
+		UID:       build.GetUID(),
+	}
+}
+
+func toPodObjectRef(pod *corev1.Pod) *corev1.ObjectReference {
+	return &corev1.ObjectReference{
+		Kind:      "Pod",
+		Name:      pod.GetName(),
+		Namespace: pod.GetNamespace(),
+		UID:       pod.GetUID(),
 	}
 }
 
