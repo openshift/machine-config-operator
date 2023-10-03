@@ -14,6 +14,7 @@ import (
 	containerruntimeconfig "github.com/openshift/machine-config-operator/pkg/controller/container-runtime-config"
 	"github.com/openshift/machine-config-operator/pkg/controller/drain"
 	kubeletconfig "github.com/openshift/machine-config-operator/pkg/controller/kubelet-config"
+	machinesetbootimage "github.com/openshift/machine-config-operator/pkg/controller/machine-set-boot-image"
 	"github.com/openshift/machine-config-operator/pkg/controller/node"
 	"github.com/openshift/machine-config-operator/pkg/controller/render"
 	"github.com/openshift/machine-config-operator/pkg/controller/template"
@@ -87,6 +88,9 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		ctrlctx.OpenShiftConfigKubeNamespacedInformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.OperatorInformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.ConfigInformerFactory.Start(ctrlctx.Stop)
+		ctrlctx.KubeNamespacedInformerFactory.Start(ctrlctx.Stop)
+		ctrlctx.MachineInformerFactory.Start(ctrlctx.Stop)
+		ctrlctx.KubeMAOSharedInformer.Start(ctrlctx.Stop)
 
 		close(ctrlctx.InformersStarted)
 
@@ -195,6 +199,16 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.ClientBuilder.KubeClientOrDie("node-update-controller"),
 			ctx.ClientBuilder.MachineConfigClientOrDie("node-update-controller"),
 			ctx.FeatureGateAccess,
+		),
+		machinesetbootimage.New(
+			ctx.ClientBuilder.KubeClientOrDie("machine-set-boot-image-controller"),
+			ctx.ClientBuilder.MachineClientOrDie("machine-set-boot-image-controller"),
+			ctx.KubeNamespacedInformerFactory.Core().V1().ConfigMaps(),
+			ctx.MachineInformerFactory.Machine().V1beta1().Machines(),
+			ctx.MachineInformerFactory.Machine().V1beta1().MachineSets(),
+			ctx.KubeMAOSharedInformer.Core().V1().Secrets(),
+			ctx.ConfigInformerFactory.Config().V1().Infrastructures(),
+			ctx.KubeInformerFactory.Core().V1().Nodes(),
 		),
 	)
 

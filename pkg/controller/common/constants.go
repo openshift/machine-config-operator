@@ -64,4 +64,7 @@ const (
 
 	// MachineConfigRoleLabel is the role on MachineConfigs, used to select for pools
 	MachineConfigRoleLabel = "machineconfiguration.openshift.io/role"
+
+	// BootImagesConfigMapName is a Configmap of golden bootimages, updated by CVO on an upgrade
+	BootImagesConfigMapName = "coreos-bootimages"
 )

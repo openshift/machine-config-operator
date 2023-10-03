@@ -36,6 +36,12 @@ rules:
 - apiGroups: ["apps"]
   resources: ["daemonsets"]
   verbs: ["get"]
+- apiGroups: ["machine.openshift.io"]
+  resources: ["machinesets"]
+  verbs: ["get", "list", "watch", "patch"]
+- apiGroups: ["machine.openshift.io"]
+  resources: ["machines"]
+  verbs: ["list","watch"]
 - apiGroups:
   - authentication.k8s.io
   resources:
