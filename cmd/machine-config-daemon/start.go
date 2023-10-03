@@ -142,7 +142,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 
 	if startOpts.hypershiftDesiredConfigMap != "" {
 		// This is a hypershift-mode daemon
-		ctx := ctrlcommon.CreateControllerContext(ctx, cb, componentName)
+		ctx := ctrlcommon.CreateControllerContext(ctx, cb)
 		err := dn.HypershiftConnect(
 			startOpts.nodeName,
 			kubeClient,
@@ -165,7 +165,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 	// Start local metrics listener
 	go ctrlcommon.StartMetricsListener(startOpts.promMetricsURL, stopCh, daemon.RegisterMCDMetrics)
 
-	ctrlctx := ctrlcommon.CreateControllerContext(ctx, cb, componentName)
+	ctrlctx := ctrlcommon.CreateControllerContext(ctx, cb)
 	// create the daemon instance. this also initializes kube client items
 	// which need to come from the container and not the chroot.
 	err = dn.ClusterConnect(
