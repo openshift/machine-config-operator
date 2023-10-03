@@ -124,11 +124,8 @@ kind: Node
 metadata:
   name: cluster`),
 			},
-			// "CgroupMode" field in the nodes.config resource is empty
-			// Internally it gets updated to "v2" explicitly
-			// Hence, 97-{master/worker}-generated-kubelet are expected
-			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries", "97-master-generated-kubelet"},
-			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries", "97-worker-generated-kubelet"},
+			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries"},
+			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries"},
 		},
 		{
 			name: "With a node config manifest empty \"cgroupMode\"",
@@ -140,10 +137,8 @@ metadata:
 spec:
   workerLatencyProfile: MediumUpdateAverageReaction`),
 			},
-			// "CgroupMode" field in the nodes.config resource is empty
-			// Internally it gets updated to "v2" explicitly
-			// Hence, 97-{master/worker}-generated-kubelet are expected
-			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries", "97-master-generated-kubelet"},
+
+			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries"},
 			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries", "97-worker-generated-kubelet"},
 		},
 		{
@@ -270,8 +265,6 @@ spec:
       memory: 500Mi
 `),
 			},
-			// 97-{master/worker}-generated-kubelet are expected to be created as the empty "cgroupMode"
-			// internally translates to "v2"
 			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries", "97-master-generated-kubelet"},
 			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries", "99-worker-generated-kubelet", "97-worker-generated-kubelet"},
 		},

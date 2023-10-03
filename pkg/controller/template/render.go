@@ -35,11 +35,13 @@ type RenderConfig struct {
 }
 
 const (
-	filesDir       = "files"
-	unitsDir       = "units"
-	platformBase   = "_base"
-	platformOnPrem = "on-prem"
-	sno            = "sno"
+	filesDir            = "files"
+	unitsDir            = "units"
+	platformBase        = "_base"
+	platformOnPrem      = "on-prem"
+	sno                 = "sno"
+	baseMasterKubeletMC = "01-master-kubelet"
+	baseWorkerKubeletMC = "01-worker-kubelet"
 )
 
 // generateTemplateMachineConfigs returns MachineConfig objects from the templateDir and a config object
@@ -123,10 +125,41 @@ func GenerateMachineConfigsForRole(config *RenderConfig, role, templateDir strin
 		if err != nil {
 			return nil, err
 		}
+		// defaulting the CGroups version to "v1"
+		// (TODO) This code can be removed if not required in future releases
+		if name == baseMasterKubeletMC || name == baseWorkerKubeletMC {
+			updateMCwithDefaultCgroupsVersion(nameConfig)
+		}
 		cfgs = append(cfgs, nameConfig)
 	}
 
 	return cfgs, nil
+}
+
+// updateMCwithDefaultCgroupsVersion updates the MC kArgs with the default CGroups version config
+func updateMCwithDefaultCgroupsVersion(mc *mcfgv1.MachineConfig) {
+	// updating the Machine Config resource with the default cgroupv1 config
+	var (
+		kernelArgsv1       = []string{"systemd.unified_cgroup_hierarchy=0", "systemd.legacy_systemd_cgroup_controller=1"}
+		kernelArgsv2       = []string{"systemd.unified_cgroup_hierarchy=1", "cgroup_no_v1=\"all\"", "psi=1"}
+		adjustedKernelArgs []string
+	)
+	// avoiding the undesired kArgs from the already existing kArgs
+	for _, arg := range mc.Spec.KernelArguments {
+		// only append the args we want to keep, omitting the undesired
+		if !ctrlcommon.InSlice(arg, kernelArgsv2) {
+			adjustedKernelArgs = append(adjustedKernelArgs, arg)
+		}
+	}
+	// appending the desired kArgs to the existing kArgs
+	for _, arg := range kernelArgsv1 {
+		// add the additional that aren't already there
+		if !ctrlcommon.InSlice(arg, adjustedKernelArgs) {
+			adjustedKernelArgs = append(adjustedKernelArgs, arg)
+		}
+	}
+	// overwrite the KernelArguments with the adjusted KernelArgs
+	mc.Spec.KernelArguments = adjustedKernelArgs
 }
 
 func platformStringFromControllerConfigSpec(ic *mcfgv1.ControllerConfigSpec) (string, error) {
