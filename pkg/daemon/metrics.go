@@ -52,16 +52,6 @@ var (
 		}, []string{"config", "err"})
 )
 
-// Updates metric with new labels & timestamp, deletes any existing
-// gauges stored in the metric prior to doing so.
-// More context: https://issues.redhat.com/browse/OCPBUGS-1662
-// We are using these metrics as a node state logger, so it is undesirable
-// to have multiple metrics of the same kind when the state changes.
-func UpdateStateMetric(metric *prometheus.GaugeVec, labels ...string) {
-	metric.Reset()
-	metric.WithLabelValues(labels...).SetToCurrentTime()
-}
-
 func RegisterMCDMetrics() error {
 	err := ctrlcommon.RegisterMetrics([]prometheus.Collector{
 		hostOS,

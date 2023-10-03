@@ -40,7 +40,6 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	mcoResourceRead "github.com/openshift/machine-config-operator/lib/resourceread"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	v1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/controller/state"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
@@ -141,6 +140,7 @@ type Daemon struct {
 	// deaemonHealthEvents lists all health related events
 	daemonHealthEvents  record.EventRecorder
 	daemonUpgradeEvents record.EventRecorder
+	daemonMetricEvents  record.EventRecorder
 
 	stateControllerPod *corev1.Pod
 }
@@ -293,6 +293,11 @@ func New(
 	}
 	// report OS & version (if RHCOS or FCOS) to prometheus
 	hostOS.WithLabelValues(hostos.ToPrometheusLabel(), osVersion).Set(1)
+	// Migrate the metric update to eventing TBD
+	// Blocker: There is many occcasions where we do nto have a kubeclient during new, so it is usually
+	// impossible to pass in the kubeclient in during New and set up the recorder in New to report this
+	// metric update.
+	// Possible solution: eventqueue to store evenmts and send them later
 
 	return &Daemon{
 		mock:               mock,
@@ -340,6 +345,7 @@ func (dn *Daemon) ClusterConnect(
 
 	dn.daemonHealthEvents = eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "mcd-health"})
 	dn.daemonUpgradeEvents = eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "upgrade-health"})
+	dn.daemonMetricEvents = eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "metrics"})
 
 	// Other controllers start out with the default controller limiter which retries
 	// in milliseconds; since any change here will involve rebooting the node
@@ -372,7 +378,7 @@ func (dn *Daemon) ClusterConnect(
 		return err
 	}
 	dn.nodeWriter = nw
-	go dn.nodeWriter.Run(dn.stopCh)
+	go dn.nodeWriter.Run(dn.stopCh, dn.daemonMetricEvents)
 
 	dn.enqueueNode = dn.enqueueDefault
 	dn.syncHandler = dn.syncNode
@@ -417,7 +423,7 @@ func (dn *Daemon) HypershiftConnect(
 		return err
 	}
 	dn.nodeWriter = nw
-	go dn.nodeWriter.Run(dn.stopCh)
+	go dn.nodeWriter.Run(dn.stopCh, dn.daemonMetricEvents)
 
 	return nil
 }
@@ -712,7 +718,7 @@ func (dn *Daemon) syncNode(key string) error {
 	annos := make(map[string]string)
 	annos["ms"] = "DaemonState" //might need this might not
 	annos["state"] = "StateControllerSyncDaemon"
-	annos["ObjectKind"] = string(v1.Node)
+	annos["ObjectKind"] = string(mcfgv1.Node)
 	annos["ObjectName"] = node.Name
 
 	dn.EmitHealthEvent(dn.stateControllerPod, annos, corev1.EventTypeNormal, "GotNode", fmt.Sprintf("Got node %s for MCD", node.Name))
@@ -792,13 +798,13 @@ func (dn *Daemon) syncNode(key string) error {
 
 		dn.EmitHealthEvent(dn.stateControllerPod, annos, corev1.EventTypeNormal, "TriggeringUpdate", fmt.Sprintf("Updating MCO to new MachineConfig %s", ufc.desiredConfig.Name))
 		if err := dn.triggerUpdate(ufc.currentConfig, ufc.desiredConfig, ufc.currentImage, ufc.desiredImage); err != nil {
-			dn.EmitUpgradeEvent(dn.stateControllerPod, dn.UpgradeAnnotations(v1.MachineConfigPoolUpdateErrored), corev1.EventTypeWarning, "UpdateError", fmt.Sprintf("Error Updating to new MachineConfig %s", ufc.desiredConfig.Name))
+			dn.EmitUpgradeEvent(dn.stateControllerPod, dn.UpgradeAnnotations(mcfgv1.MachineConfigPoolUpdateErrored), corev1.EventTypeWarning, "UpdateError", fmt.Sprintf("Error Updating to new MachineConfig %s", ufc.desiredConfig.Name))
 			return err
 		}
 		klog.V(2).Infof("Node %s is already synced", node.Name)
 		return nil
 	}
-	dn.EmitUpgradeEvent(dn.stateControllerPod, dn.UpgradeAnnotations(v1.MachineConfigPoolReady), corev1.EventTypeNormal, "NodeUpdated", fmt.Sprintf("Node %s is up to date", dn.nodeName()))
+	dn.EmitUpgradeEvent(dn.stateControllerPod, dn.UpgradeAnnotations(mcfgv1.MachineConfigPoolReady), corev1.EventTypeNormal, "NodeUpdated", fmt.Sprintf("Node %s is up to date", dn.nodeName()))
 	return nil
 }
 
@@ -1346,6 +1352,14 @@ func (dn *Daemon) stopConfigDriftMonitor() {
 func (dn *Daemon) runKubeletHealthzMonitor(stopCh <-chan struct{}, exitCh chan<- error) {
 	failureCount := 0
 	kubeletHealthState.Set(float64(failureCount))
+	// Migrate the metric update to eventing
+	var annos map[string]string
+	if dn.node == nil {
+		annos = state.WriteMetricAnnotations("None", "Firstboot")
+	} else {
+		annos = state.WriteMetricAnnotations(string(mcfgv1.Node), dn.node.Name)
+	}
+	state.EmitMetricEvent(dn.daemonMetricEvents, dn.stateControllerPod, dn.kubeClient, annos, corev1.EventTypeNormal, "kubeletHealthState", fmt.Sprintf("set %f", float64(failureCount)))
 	for {
 		select {
 		case <-stopCh:
@@ -1360,6 +1374,14 @@ func (dn *Daemon) runKubeletHealthzMonitor(stopCh <-chan struct{}, exitCh chan<-
 				failureCount = 0
 			}
 			kubeletHealthState.Set(float64(failureCount))
+			// Migrate the metric update to eventing
+			var annos map[string]string
+			if dn.node == nil {
+				annos = state.WriteMetricAnnotations("None", "Firstboot")
+			} else {
+				annos = state.WriteMetricAnnotations(string(mcfgv1.Node), dn.node.Name)
+			}
+			state.EmitMetricEvent(dn.daemonMetricEvents, dn.stateControllerPod, dn.kubeClient, annos, corev1.EventTypeNormal, "kubeletHealthState", fmt.Sprintf("set %f", float64(failureCount)))
 		}
 	}
 }
@@ -1549,7 +1571,7 @@ func (dn *Daemon) getStateAndConfigs() (*stateAndConfigs, error) {
 		}
 	}
 
-	UpdateStateMetric(mcdState, state, degradedReason)
+	dn.UpdateStateMetric("mcdState", state, degradedReason)
 
 	return &stateAndConfigs{
 		bootstrapping: bootstrapping,
@@ -2016,7 +2038,7 @@ func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, error) {
 		// let's mark it done!
 		klog.Infof("Completing update to target %s", state.getCurrentName())
 		if err := dn.completeUpdate(state.currentConfig.GetName()); err != nil {
-			UpdateStateMetric(mcdUpdateState, "", err.Error())
+			dn.UpdateStateMetric("mcdUpdateState", "", err.Error())
 			return inDesiredConfig, err
 		}
 
@@ -2034,13 +2056,13 @@ func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, error) {
 		if state.state == constants.MachineConfigDaemonStateDegraded {
 			if err := dn.nodeWriter.SetDone(state); err != nil {
 				errLabelStr := fmt.Sprintf("error setting node's state to Done: %v", err)
-				UpdateStateMetric(mcdUpdateState, "", errLabelStr)
+				dn.UpdateStateMetric("mcdUpdateState", "", errLabelStr)
 				return inDesiredConfig, fmt.Errorf("error setting node's state to Done: %w", err)
 			}
 		}
 
 		klog.Infof("In desired state %s", state.getCurrentName())
-		UpdateStateMetric(mcdUpdateState, state.getCurrentName(), "")
+		dn.UpdateStateMetric("mcdUpdateState", state.getCurrentName(), "")
 	}
 
 	// No errors have occurred. Returns true if currentConfig == desiredConfig, false otherwise (needs update)
@@ -2291,13 +2313,13 @@ func (dn *Daemon) triggerUpdateWithMachineConfig(currentConfig, desiredConfig *m
 	// dn.UpgradeProgression
 	//dn.setPoolHealthProgression(v1.MachineConfigPoolUpdatePreparing, "stopping config drift monitor", "")
 
-	dn.EmitUpgradeEvent(dn.stateControllerPod, dn.UpgradeAnnotations(v1.MachineConfigPoolUpdatePreparing), corev1.EventTypeNormal, "StoppingConfigDriftMonitor", "Daemon is stopping the config drift monitor")
+	dn.EmitUpgradeEvent(dn.stateControllerPod, dn.UpgradeAnnotations(mcfgv1.MachineConfigPoolUpdatePreparing), corev1.EventTypeNormal, "StoppingConfigDriftMonitor", "Daemon is stopping the config drift monitor")
 
 	// run the update process. this function doesn't currently return.
 	return dn.update(currentConfig, desiredConfig, skipCertificateWrite)
 }
 
-func (dn *Daemon) UpgradeAnnotations(kind v1.StateProgress) map[string]string {
+func (dn *Daemon) UpgradeAnnotations(kind mcfgv1.StateProgress) map[string]string {
 	annos := make(map[string]string)
 	annos["ms"] = "UpgradeProgression" //might need this might not
 	annos["state"] = string(kind)
@@ -2306,7 +2328,7 @@ func (dn *Daemon) UpgradeAnnotations(kind v1.StateProgress) map[string]string {
 		annos["ObjectName"] = "Firstboot"
 		annos["Pool"] = "None"
 	} else {
-		annos["ObjectKind"] = string(v1.Node)
+		annos["ObjectKind"] = string(mcfgv1.Node)
 		if dn.node != nil {
 			annos["ObjectName"] = dn.node.Name
 			if _, hasWorkerLabel := dn.node.Labels[WorkerLabel]; hasWorkerLabel {
@@ -2333,6 +2355,27 @@ func (dn *Daemon) EmitUpgradeEvent(pod *corev1.Pod, annos map[string]string, eve
 		}
 	}
 	dn.daemonUpgradeEvents.AnnotatedEventf(pod, annos, eventType, reason, message)
+}
+
+// Updates metric with new labels & timestamp, deletes any existing
+// gauges stored in the metric prior to doing so.
+// More context: https://issues.redhat.com/browse/OCPBUGS-1662
+// We are using these metrics as a node state logger, so it is undesirable
+// to have multiple metrics of the same kind when the state changes.
+func (dn *Daemon) UpdateStateMetric(metric string, labels ...string) {
+	// metric.Reset()
+	// Migrate the metric update to eventing
+	var annos map[string]string
+	if dn.node == nil {
+		annos = state.WriteMetricAnnotations("None", "Firstboot")
+	} else {
+		annos = state.WriteMetricAnnotations(string(mcfgv1.Node), dn.node.Name)
+	}
+	state.EmitMetricEvent(dn.daemonMetricEvents, dn.stateControllerPod, dn.kubeClient, annos, corev1.EventTypeNormal, metric, fmt.Sprintf("reset"))
+
+	// metric.WithLabelValues(labels...).SetToCurrentTime()
+	// Migrate the metric update to eventing TBD
+	// Need to find a common event msg/ struct to store metric update information
 }
 
 // validateKernelArguments checks that the current boot has all arguments specified

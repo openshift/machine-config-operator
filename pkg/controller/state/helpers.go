@@ -11,13 +11,14 @@ import (
 	apiextclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	v1 "k8s.io/api/core/v1"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	clientset "k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/record"
 )
 
-func StateControllerPod(client clientset.Interface) (*v1.Pod, error) {
+func StateControllerPod(client clientset.Interface) (*corev1.Pod, error) {
 	listOptions := metav1.ListOptions{
 		LabelSelector: labels.SelectorFromSet(labels.Set{"k8s-app": "machine-state-controller"}).String(),
 	}
@@ -81,4 +82,29 @@ func IsUpgradingProgressionTrue(which mcfgv1.StateProgress, pool mcfgv1.MachineC
 
 func GetMachineStateForPool(pool mcfgv1.MachineConfigPool, msLister mcfgv1listers.MachineStateLister) (*mcfgv1.MachineState, error) {
 	return msLister.Get(fmt.Sprintf("upgrade-%s", pool.Name))
+}
+
+func EmitMetricEvent(metricRecorder record.EventRecorder, pod *corev1.Pod, client clientset.Interface, annos map[string]string, eventType, reason, message string) {
+	if metricRecorder == nil {
+		return
+	}
+	if pod == nil {
+		healthPod, err := StateControllerPod(client)
+		if err != nil {
+			klog.Errorf("Could not get state controller pod yet %w", err)
+			return
+		} else {
+			pod = healthPod
+		}
+	}
+	metricRecorder.AnnotatedEventf(pod, annos, eventType, reason, message)
+}
+
+func WriteMetricAnnotations(kind, name string) map[string]string {
+	annos := make(map[string]string)
+	annos["ms"] = string(mcfgv1.UpdatingMetrics)
+	annos["state"] = string(mcfgv1.MetricsSync)
+	annos["ObjectKind"] = kind
+	annos["ObjectName"] = name
+	return annos
 }

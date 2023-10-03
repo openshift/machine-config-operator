@@ -424,6 +424,7 @@ func newTestFixture(t *testing.T, cfg *rest.Config, objs []runtime.Object) *fixt
 	ctrlctx := ctrlcommon.CreateControllerContext(ctx, cb, bootstrapTestName)
 
 	fakeHealthEvents := &record.FakeRecorder{}
+	fakeMetricEvents := &record.FakeRecorder{}
 
 	clientSet := framework.NewClientSetFromConfig(cfg)
 
@@ -445,7 +446,7 @@ func newTestFixture(t *testing.T, cfg *rest.Config, objs []runtime.Object) *fixt
 	close(ctrlctx.InformersStarted)
 
 	for _, c := range controllers {
-		go c.Run(2, ctrlctx.Stop, fakeHealthEvents)
+		go c.Run(2, ctrlctx.Stop, fakeHealthEvents, fakeMetricEvents)
 	}
 
 	return &fixture{

@@ -38,6 +38,7 @@ import (
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/controller/state"
 	mtmpl "github.com/openshift/machine-config-operator/pkg/controller/template"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
@@ -76,10 +77,15 @@ var errCouldNotFindMCPSet = errors.New("could not find any MachineConfigPool set
 type Controller struct {
 	templatesDir string
 
-	client               mcfgclientset.Interface
-	configClient         configclientset.Interface
-	healthEventsRecorder record.EventRecorder
-	eventRecorder        record.EventRecorder
+	client       mcfgclientset.Interface
+	kubeClient   clientset.Interface
+	configClient configclientset.Interface
+
+	healthEventsRecorder   record.EventRecorder
+	controllerMetricEvents record.EventRecorder
+	stateControllerPod     *corev1.Pod
+
+	eventRecorder record.EventRecorder
 
 	syncHandler          func(mcp string) error
 	enqueueKubeletConfig func(*mcfgv1.KubeletConfig)
@@ -130,6 +136,7 @@ func New(
 	ctrl := &Controller{
 		templatesDir: templatesDir,
 		client:       mcfgClient,
+		kubeClient:   kubeClient,
 		configClient: configclient,
 		//healthEventsRecorder: ,
 		eventRecorder:     ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-kubeletconfigcontroller"})),
@@ -182,13 +189,24 @@ func New(
 }
 
 // Run executes the kubelet config controller.
-func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}, healthEvents record.EventRecorder) {
+func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}, healthEvents record.EventRecorder, controllerMetricEvents record.EventRecorder) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 	defer ctrl.featureQueue.ShutDown()
 	defer ctrl.nodeConfigQueue.ShutDown()
 
+	healthPod, err := state.StateControllerPod(ctrl.kubeClient)
+	if err != nil {
+		klog.Error(err)
+	}
+
+	if healthPod != nil {
+		ctrl.stateControllerPod = healthPod
+	}
+
 	ctrl.healthEventsRecorder = healthEvents
+	ctrl.controllerMetricEvents = controllerMetricEvents
+
 	if !cache.WaitForCacheSync(stopCh, ctrl.mcpListerSynced, ctrl.mckListerSynced, ctrl.ccListerSynced, ctrl.featListerSynced, ctrl.apiserverListerSynced) {
 		return
 	}

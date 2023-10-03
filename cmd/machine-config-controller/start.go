@@ -80,7 +80,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		go ctrlcommon.StartMetricsListener(startOpts.promMetricsListenAddress, ctrlctx.Stop, ctrlcommon.RegisterMCCMetrics)
 
 		kubeClient := ctrlctx.ClientBuilder.KubeClientOrDie("machine-config-controller")
-		controllers, healthEvents, upgradeEvents := createControllers(ctrlctx, kubeClient)
+		controllers, healthEvents, upgradeEvents, controllerMetricEvents := createControllers(ctrlctx, kubeClient)
 		draincontroller := drain.New(
 			drain.DefaultConfig(),
 			ctrlctx.KubeInformerFactory.Core().V1().Nodes(),
@@ -112,9 +112,9 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		}
 
 		for _, c := range controllers {
-			go c.Run(2, ctrlctx.Stop, healthEvents)
+			go c.Run(2, ctrlctx.Stop, healthEvents, controllerMetricEvents)
 		}
-		go draincontroller.Run(5, ctrlctx.Stop, healthEvents, upgradeEvents)
+		go draincontroller.Run(5, ctrlctx.Stop, healthEvents, upgradeEvents, controllerMetricEvents)
 
 		// wait here in this function until the context gets cancelled (which tells us whe were being shut down)
 		<-ctx.Done()
@@ -139,13 +139,15 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 	panic("unreachable")
 }
 
-func createControllers(ctx *ctrlcommon.ControllerContext, kubeClient kubernetes.Interface) ([]ctrlcommon.Controller, record.EventRecorder, record.EventRecorder) {
+func createControllers(ctx *ctrlcommon.ControllerContext, kubeClient kubernetes.Interface) ([]ctrlcommon.Controller, record.EventRecorder, record.EventRecorder, record.EventRecorder) {
 
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
-	eventBroadcaster.StartRecordingToSink(&coreclientsetv1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
+	eventBroadcaster.StartRecordingToSink(&coreclientsetv1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("openshift-machine-config-operator")})
 	upgradeEventsRecorder := eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "upgrade-health"})
 	healthEventsRecorder := eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "mcc-health"})
+	controllerMetricEvents := eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "metrics"})
+
 	var controllers []ctrlcommon.Controller
 	statesubcontrollers := []v1.StateSubController{}
 	for _, sub := range startOpts.StateSubControllers {
@@ -213,7 +215,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext, kubeClient kubernetes.
 		),
 	)
 
-	return controllers, healthEventsRecorder, upgradeEventsRecorder
+	return controllers, healthEventsRecorder, upgradeEventsRecorder, controllerMetricEvents
 }
 
 func getEnabledDisabledFeatures(features featuregates.FeatureGate) ([]string, []string) {

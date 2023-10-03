@@ -70,10 +70,12 @@ const (
 
 // Controller defines the node controller.
 type Controller struct {
-	client               mcfgclientset.Interface
-	kubeClient           clientset.Interface
-	eventRecorder        record.EventRecorder
-	healthEventsRecorder record.EventRecorder
+	client                 mcfgclientset.Interface
+	kubeClient             clientset.Interface
+	eventRecorder          record.EventRecorder
+	healthEventsRecorder   record.EventRecorder
+	controllerMetricEvents record.EventRecorder
+	stateControllerPod     *corev1.Pod
 
 	syncHandler              func(mcp string) error
 	enqueueMachineConfigPool func(*mcfgv1.MachineConfigPool)
@@ -205,10 +207,22 @@ func newController(
 }
 
 // Run executes the render controller.
-func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}, healthEvents record.EventRecorder) {
+func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}, healthEvents record.EventRecorder, controllerMetricEvents record.EventRecorder) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
+
+	healthPod, err := state.StateControllerPod(ctrl.kubeClient)
+	if err != nil {
+		klog.Error(err)
+	}
+
+	if healthPod != nil {
+		ctrl.stateControllerPod = healthPod
+	}
+
 	ctrl.healthEventsRecorder = healthEvents
+	ctrl.controllerMetricEvents = controllerMetricEvents
+
 	if !cache.WaitForCacheSync(stopCh, ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.mcpListerSynced, ctrl.nodeListerSynced, ctrl.schedulerListerSynced) {
 		return
 	}
@@ -645,6 +659,9 @@ func (ctrl *Controller) deleteNode(obj interface{}) {
 	}
 
 	// Clear any associated MCCDrainErr, if any.
+	// Migrate the metric update to eventing
+	annos := state.WriteMetricAnnotations(string(mcfgv1.Node), node.Name)
+	state.EmitMetricEvent(ctrl.controllerMetricEvents, ctrl.stateControllerPod, ctrl.kubeClient, annos, corev1.EventTypeNormal, "MCCDrainErr", fmt.Sprintf("Delete"))
 	if ctrlcommon.MCCDrainErr.DeleteLabelValues(node.Name) {
 		klog.Infof("Cleaning up MCCDrain error for node(%s) as it is being deleted", node.Name)
 	}
@@ -711,9 +728,15 @@ func (ctrl *Controller) getPoolsForNode(node *corev1.Node) ([]*mcfgv1.MachineCon
 			// if we have a custom pool and master, defer to master and return.
 			klog.Infof("Found master node that matches selector for custom pool %v, defaulting to master. This node will not have any custom role configuration as a result. Please review the node to make sure this is intended", custom[0].Name)
 			ctrlcommon.MCCPoolAlert.WithLabelValues(node.Name).Set(1)
+			// Migrate the metric update to eventing
+			annos := state.WriteMetricAnnotations(string(mcfgv1.Node), node.Name)
+			state.EmitMetricEvent(ctrl.controllerMetricEvents, ctrl.stateControllerPod, ctrl.kubeClient, annos, corev1.EventTypeNormal, "MCCPoolAlert", fmt.Sprintf("Set 1"))
 			pls = append(pls, master)
 		} else {
 			ctrlcommon.MCCPoolAlert.WithLabelValues(node.Name).Set(0)
+			// Migrate the metric update to eventing
+			annos := state.WriteMetricAnnotations(string(mcfgv1.Node), node.Name)
+			state.EmitMetricEvent(ctrl.controllerMetricEvents, ctrl.stateControllerPod, ctrl.kubeClient, annos, corev1.EventTypeNormal, "MCCPoolAlert", fmt.Sprintf("Set 0"))
 			pls = append(pls, custom[0])
 		}
 		if worker != nil {
@@ -728,10 +751,16 @@ func (ctrl *Controller) getPoolsForNode(node *corev1.Node) ([]*mcfgv1.MachineCon
 		// "single node" deployments, which one may want to do for testing bare
 		// metal, etc.
 		ctrlcommon.MCCPoolAlert.WithLabelValues(node.Name).Set(0)
+		// Migrate the metric update to eventing
+		annos := state.WriteMetricAnnotations(string(mcfgv1.Node), node.Name)
+		state.EmitMetricEvent(ctrl.controllerMetricEvents, ctrl.stateControllerPod, ctrl.kubeClient, annos, corev1.EventTypeNormal, "MCCPoolAlert", fmt.Sprintf("Set 1"))
 		return []*mcfgv1.MachineConfigPool{master}, nil
 	}
 	// Otherwise, it's a worker with no custom roles.
 	ctrlcommon.MCCPoolAlert.WithLabelValues(node.Name).Set(0)
+	// Migrate the metric update to eventing
+	annos := state.WriteMetricAnnotations(string(mcfgv1.Node), node.Name)
+	state.EmitMetricEvent(ctrl.controllerMetricEvents, ctrl.stateControllerPod, ctrl.kubeClient, annos, corev1.EventTypeNormal, "MCCPoolAlert", fmt.Sprintf("Set 0"))
 	return []*mcfgv1.MachineConfigPool{worker}, nil
 }
 

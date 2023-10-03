@@ -408,11 +408,18 @@ func (optr *Operator) syncMetrics() error {
 				latestTime = cond.LastTransitionTime
 			}
 		}
+		// Migrate the metric update to eventing
+		annos := state.WriteMetricAnnotations(string(mcfgv1.MCP), pool.Name)
 		mcoState.WithLabelValues(pool.Name, string(cond.Type), cond.Reason).SetToCurrentTime()
+		state.EmitMetricEvent(optr.operatorMetricEvents, optr.stateControllerPod, optr.kubeClient, annos, corev1.EventTypeNormal, "mcoState", fmt.Sprintf(""))
 		mcoMachineCount.WithLabelValues(pool.Name).Set(float64(pool.Status.MachineCount))
+		state.EmitMetricEvent(optr.operatorMetricEvents, optr.stateControllerPod, optr.kubeClient, annos, corev1.EventTypeNormal, "mcoMachineCount", fmt.Sprintf(""))
 		mcoUpdatedMachineCount.WithLabelValues(pool.Name).Set(float64(pool.Status.UpdatedMachineCount))
+		state.EmitMetricEvent(optr.operatorMetricEvents, optr.stateControllerPod, optr.kubeClient, annos, corev1.EventTypeNormal, "mcoUpdatedMachineCount", fmt.Sprintf(""))
 		mcoDegradedMachineCount.WithLabelValues(pool.Name).Set(float64(pool.Status.DegradedMachineCount))
+		state.EmitMetricEvent(optr.operatorMetricEvents, optr.stateControllerPod, optr.kubeClient, annos, corev1.EventTypeNormal, "mcoDegradedMachineCount", fmt.Sprintf(""))
 		mcoUnavailableMachineCount.WithLabelValues(pool.Name).Set(float64(pool.Status.UnavailableMachineCount))
+		state.EmitMetricEvent(optr.operatorMetricEvents, optr.stateControllerPod, optr.kubeClient, annos, corev1.EventTypeNormal, "mcoUnavailableMachineCount", fmt.Sprintf(""))
 	}
 	return nil
 }

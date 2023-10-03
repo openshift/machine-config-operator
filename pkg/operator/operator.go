@@ -8,7 +8,7 @@ import (
 	"k8s.io/klog/v2"
 
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
-	v1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/controller/state"
 	"github.com/openshift/machine-config-operator/pkg/version"
@@ -67,6 +67,7 @@ type Operator struct {
 
 	operatorHealthEvents record.EventRecorder
 	stateControllerPod   *corev1.Pod
+	operatorMetricEvents record.EventRecorder
 
 	client        mcfgclientset.Interface
 	kubeClient    kubernetes.Interface
@@ -193,6 +194,7 @@ func New(
 	healtheventBroadcaster.StartLogging(klog.V(2).Infof)
 	healtheventBroadcaster.StartRecordingToSink(&coreclientsetv1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("openshift-machine-config-operator")})
 	optr.operatorHealthEvents = healtheventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "operator-health"})
+	optr.operatorMetricEvents = healtheventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "metrics"})
 
 	for _, i := range []cache.SharedIndexInformer{
 		controllerConfigInformer.Informer(),
@@ -442,7 +444,7 @@ func (op *Operator) EmitHealthEvent(pod *corev1.Pod, annos map[string]string, ev
 	op.operatorHealthEvents.AnnotatedEventf(pod, annos, eventType, reason, message)
 }
 
-func (op *Operator) HealthAnnotations(object string, objectType string, kind v1.StateProgress) map[string]string {
+func (op *Operator) HealthAnnotations(object string, objectType string, kind mcfgv1.StateProgress) map[string]string {
 	annos := make(map[string]string)
 	annos["ms"] = "OperatorHealth" //might need this might not
 	annos["state"] = string(kind)

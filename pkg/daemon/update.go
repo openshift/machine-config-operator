@@ -26,8 +26,8 @@ import (
 	"k8s.io/klog/v2"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	v1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/controller/state"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	pivottypes "github.com/openshift/machine-config-operator/pkg/daemon/pivot/types"
 	pivotutils "github.com/openshift/machine-config-operator/pkg/daemon/pivot/utils"
@@ -75,7 +75,7 @@ func reloadService(name string) error {
 // If at any point an error occurs, we reboot the node so that node has correct configuration.
 func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string, configName string) error {
 	if ctrlcommon.InSlice(postConfigChangeActionReboot, postConfigChangeActions) {
-		dn.EmitUpgradeEvent(dn.stateControllerPod, dn.UpgradeAnnotations(v1.MachineConfigPoolUpdatePostAction), corev1.EventTypeNormal, "RebootingNode", fmt.Sprintf("Rebooting node %s during upgrade", dn.nodeName()))
+		dn.EmitUpgradeEvent(dn.stateControllerPod, dn.UpgradeAnnotations(mcfgv1.MachineConfigPoolUpdatePostAction), corev1.EventTypeNormal, "RebootingNode", fmt.Sprintf("Rebooting node %s during upgrade", dn.nodeName()))
 		logSystem("Rebooting node")
 		return dn.reboot(fmt.Sprintf("Node will reboot into config %s", configName))
 	}
@@ -90,7 +90,7 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 	if ctrlcommon.InSlice(postConfigChangeActionReloadCrio, postConfigChangeActions) {
 		serviceName := "crio"
 
-		dn.EmitUpgradeEvent(dn.stateControllerPod, dn.UpgradeAnnotations(v1.MachineConfigPoolUpdatePostAction), corev1.EventTypeNormal, "RealoadingCRIO", fmt.Sprintf("Realoding CRIO on node %s as part of upgrade", dn.nodeName()))
+		dn.EmitUpgradeEvent(dn.stateControllerPod, dn.UpgradeAnnotations(mcfgv1.MachineConfigPoolUpdatePostAction), corev1.EventTypeNormal, "RealoadingCRIO", fmt.Sprintf("Realoding CRIO on node %s as part of upgrade", dn.nodeName()))
 		if err := reloadService(serviceName); err != nil {
 			if dn.nodeWriter != nil {
 				dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedServiceReload", fmt.Sprintf("Reloading %s service failed. Error: %v", serviceName, err))
@@ -117,7 +117,7 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 		return fmt.Errorf("could not apply update: setting node's state to Done failed. Error: %w", err)
 	}
 	if inDesiredConfig {
-		dn.EmitUpgradeEvent(dn.stateControllerPod, dn.UpgradeAnnotations(v1.MachineConfigPoolUpdateComplete), corev1.EventTypeNormal, "ResumingConfigDrift", fmt.Sprintf("Resuming ConfigDrift Monitor, signaling the completion of update on node %s", dn.nodeName()))
+		dn.EmitUpgradeEvent(dn.stateControllerPod, dn.UpgradeAnnotations(mcfgv1.MachineConfigPoolUpdateComplete), corev1.EventTypeNormal, "ResumingConfigDrift", fmt.Sprintf("Resuming ConfigDrift Monitor, signaling the completion of update on node %s", dn.nodeName()))
 		// (re)start the config drift monitor since rebooting isn't needed.
 		dn.startConfigDriftMonitor()
 		return nil
@@ -466,7 +466,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	klog.Infof("Checking Reconcilable for config %v to %v", oldConfigName, newConfigName)
 
 	// checking for reconcilability
-	dn.EmitUpgradeEvent(dn.stateControllerPod, dn.UpgradeAnnotations(v1.MachineConfigPoolUpdatePreparing), corev1.EventTypeNormal, "ReconcilingConfigs", fmt.Sprintf("Checking if %s and %s are reconcilable", oldConfig.Name, newConfig.Name))
+	dn.EmitUpgradeEvent(dn.stateControllerPod, dn.UpgradeAnnotations(mcfgv1.MachineConfigPoolUpdatePreparing), corev1.EventTypeNormal, "ReconcilingConfigs", fmt.Sprintf("Checking if %s and %s are reconcilable", oldConfig.Name, newConfig.Name))
 	// make sure we can actually reconcile this state
 	diff, reconcilableError := reconcilable(oldConfig, newConfig)
 
@@ -495,7 +495,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		return err
 	}
 	if drain {
-		dn.EmitUpgradeEvent(dn.stateControllerPod, dn.UpgradeAnnotations(v1.MachineConfigPoolUpdateInProgress), corev1.EventTypeNormal, "DrainingNode", fmt.Sprintf("Draining Node %s", dn.nodeName()))
+		dn.EmitUpgradeEvent(dn.stateControllerPod, dn.UpgradeAnnotations(mcfgv1.MachineConfigPoolUpdateInProgress), corev1.EventTypeNormal, "DrainingNode", fmt.Sprintf("Draining Node %s", dn.nodeName()))
 		if err := dn.performDrain(); err != nil {
 			return err
 		}
@@ -503,7 +503,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		klog.Info("Changes do not require drain, skipping.")
 	}
 
-	dn.EmitUpgradeEvent(dn.stateControllerPod, dn.UpgradeAnnotations(v1.MachineConfigPoolUpdateInProgress), corev1.EventTypeNormal, "UpdatingFiles", fmt.Sprintf("Updating Files on Disk on node %s", dn.nodeName()))
+	dn.EmitUpgradeEvent(dn.stateControllerPod, dn.UpgradeAnnotations(mcfgv1.MachineConfigPoolUpdateInProgress), corev1.EventTypeNormal, "UpdatingFiles", fmt.Sprintf("Updating Files on Disk on node %s", dn.nodeName()))
 
 	// update files on disk that need updating
 	if err := dn.updateFiles(oldIgnConfig, newIgnConfig, skipCertificateWrite); err != nil {
@@ -558,7 +558,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		}
 	}()
 
-	dn.EmitUpgradeEvent(dn.stateControllerPod, dn.UpgradeAnnotations(v1.MachineConfigPoolUpdateInProgress), corev1.EventTypeNormal, "ApplyngOSChanges", fmt.Sprintf("Applying OS Changes on node %s", dn.nodeName()))
+	dn.EmitUpgradeEvent(dn.stateControllerPod, dn.UpgradeAnnotations(mcfgv1.MachineConfigPoolUpdateInProgress), corev1.EventTypeNormal, "ApplyngOSChanges", fmt.Sprintf("Applying OS Changes on node %s", dn.nodeName()))
 
 	if dn.os.IsCoreOSVariant() {
 		coreOSDaemon := CoreOSDaemon{dn}
@@ -2032,7 +2032,7 @@ func (dn *Daemon) cancelSIGTERM() {
 // on failure to reboot, it throws an error and waits for the operator to try again
 func (dn *Daemon) reboot(rationale string) error {
 	// Now that everything is done, avoid delaying shutdown.
-	dn.EmitUpgradeEvent(dn.stateControllerPod, dn.UpgradeAnnotations(v1.MachineConfigPoolUpdatePostAction), corev1.EventTypeNormal, "ClosingDaemon", "Closing Daemon")
+	dn.EmitUpgradeEvent(dn.stateControllerPod, dn.UpgradeAnnotations(mcfgv1.MachineConfigPoolUpdatePostAction), corev1.EventTypeNormal, "ClosingDaemon", "Closing Daemon")
 	dn.cancelSIGTERM()
 	dn.Close()
 
@@ -2055,6 +2055,14 @@ func (dn *Daemon) reboot(rationale string) error {
 	if err := rebootCmd.Run(); err != nil {
 		logSystem("failed to run reboot: %v", err)
 		mcdRebootErr.Inc()
+		// Migrate the metric update to eventing
+		var annos map[string]string
+		if dn.node == nil {
+			annos = state.WriteMetricAnnotations("None", "Firstboot")
+		} else {
+			annos = state.WriteMetricAnnotations(string(mcfgv1.Node), dn.node.Name)
+		}
+		state.EmitMetricEvent(dn.daemonMetricEvents, dn.stateControllerPod, dn.kubeClient, annos, corev1.EventTypeNormal, "mcdRebootErr", fmt.Sprintf("+1"))
 		return fmt.Errorf("reboot command failed, something is seriously wrong")
 	}
 	// if we're here, reboot went through successfully, so we set rebootQueued
@@ -2118,6 +2126,14 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 	if mcDiff.osUpdate || mcDiff.kernelType {
 		if err := dn.queueRevertRTKernel(); err != nil {
 			mcdPivotErr.Inc()
+			// Migrate the metric update to eventing
+			var annos map[string]string
+			if dn.node == nil {
+				annos = state.WriteMetricAnnotations("None", "Firstboot")
+			} else {
+				annos = state.WriteMetricAnnotations(string(mcfgv1.Node), dn.node.Name)
+			}
+			state.EmitMetricEvent(dn.daemonMetricEvents, dn.stateControllerPod, dn.kubeClient, annos, corev1.EventTypeNormal, "mcdPivotErr", fmt.Sprintf("+ 1"))
 			return err
 		}
 	}
@@ -2126,6 +2142,14 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 	if mcDiff.osUpdate {
 		if err := dn.updateLayeredOS(newConfig); err != nil {
 			mcdPivotErr.Inc()
+			// Migrate the metric update to eventing
+			var annos map[string]string
+			if dn.node == nil {
+				annos = state.WriteMetricAnnotations("None", "Firstboot")
+			} else {
+				annos = state.WriteMetricAnnotations(string(mcfgv1.Node), dn.node.Name)
+			}
+			state.EmitMetricEvent(dn.daemonMetricEvents, dn.stateControllerPod, dn.kubeClient, annos, corev1.EventTypeNormal, "mcdPivotErr", fmt.Sprintf("+ 1"))
 			return err
 		}
 		if dn.nodeWriter != nil {
@@ -2140,7 +2164,14 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 
 	// if we're here, we've successfully pivoted, or pivoting wasn't necessary, so we reset the error gauge
 	mcdPivotErr.Set(0)
-
+	// Migrate the metric update to eventing
+	var annos map[string]string
+	if dn.node == nil {
+		annos = state.WriteMetricAnnotations("None", "Firstboot")
+	} else {
+		annos = state.WriteMetricAnnotations(string(mcfgv1.Node), dn.node.Name)
+	}
+	state.EmitMetricEvent(dn.daemonMetricEvents, dn.stateControllerPod, dn.kubeClient, annos, corev1.EventTypeNormal, "mcdPivotErr", fmt.Sprintf("set 0"))
 	if mcDiff.kargs {
 		if err := dn.updateKernelArguments(oldConfig.Spec.KernelArguments, newConfig.Spec.KernelArguments); err != nil {
 			return err

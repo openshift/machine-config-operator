@@ -761,7 +761,7 @@ func (optr *Operator) syncMachineStates(config *renderConfig) error {
 		}
 	}
 	msc := []string{
-		// "manifests/metrics.machinestate.yaml",
+		"manifests/metrics.machinestate.yaml",
 		// "manifests/bootstrap.machinestate.yaml",
 		"manifests/mcc.machinestate.yaml",
 		"manifests/mcd.machinestate.yaml",

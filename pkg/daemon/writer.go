@@ -16,6 +16,9 @@ import (
 	"github.com/openshift/machine-config-operator/internal"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
+
+	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	"github.com/openshift/machine-config-operator/pkg/controller/state"
 	corev1 "k8s.io/api/core/v1"
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 	corev1lister "k8s.io/client-go/listers/core/v1"
@@ -52,11 +55,14 @@ type clusterNodeWriter struct {
 	// cached reference to node object - TODO change the daemon to read this too
 	node     *corev1.Node
 	recorder record.EventRecorder
+
+	clusterNodeWriterMetricEvents record.EventRecorder
+	stateControllerPod            *corev1.Pod
 }
 
 // NodeWriter is the interface to implement a single writer to Kubernetes to prevent race conditions
 type NodeWriter interface {
-	Run(stop <-chan struct{})
+	Run(stop <-chan struct{}, clusterNodeWriterMetricEvents record.EventRecorder)
 	SetDone(*stateAndConfigs) error
 	SetWorking() error
 	SetUnreconcilable(err error) error
@@ -117,7 +123,19 @@ func newNodeWriter(nodeName string, stopCh <-chan struct{}) (NodeWriter, error) 
 
 // Run reads from the writer channel and sets the node annotation. It will
 // return if the stop channel is closed. Intended to be run via a goroutine.
-func (nw *clusterNodeWriter) Run(stop <-chan struct{}) {
+func (nw *clusterNodeWriter) Run(stop <-chan struct{}, clusterNodeWriterMetricEvents record.EventRecorder) {
+
+	healthPod, err := state.StateControllerPod(nw.kubeClient)
+	if err != nil {
+		klog.Error(err)
+	}
+
+	if healthPod != nil {
+		nw.stateControllerPod = healthPod
+	}
+
+	nw.clusterNodeWriterMetricEvents = clusterNodeWriterMetricEvents
+
 	if !cache.WaitForCacheSync(stop, nw.nodeListerSynced) {
 		klog.Fatal("failed to sync initial listers cache")
 	}
@@ -171,7 +189,7 @@ func (nw *clusterNodeWriter) SetDone(state *stateAndConfigs) error {
 		annosToDelete = append(annosToDelete, constants.DesiredImageAnnotationKey)
 	}
 
-	UpdateStateMetric(mcdState, constants.MachineConfigDaemonStateDone, "")
+	nw.UpdateStateMetric("mcdState", constants.MachineConfigDaemonStateDone, "")
 	respChan := make(chan response, 1)
 	nw.writer <- message{
 		annos:           annos,
@@ -187,7 +205,7 @@ func (nw *clusterNodeWriter) SetWorking() error {
 	annos := map[string]string{
 		constants.MachineConfigDaemonStateAnnotationKey: constants.MachineConfigDaemonStateWorking,
 	}
-	UpdateStateMetric(mcdState, constants.MachineConfigDaemonStateWorking, "")
+	nw.UpdateStateMetric("mcdState", constants.MachineConfigDaemonStateWorking, "")
 	respChan := make(chan response, 1)
 	nw.writer <- message{
 		annos:           annos,
@@ -207,7 +225,7 @@ func (nw *clusterNodeWriter) SetUnreconcilable(err error) error {
 		constants.MachineConfigDaemonStateAnnotationKey:  constants.MachineConfigDaemonStateUnreconcilable,
 		constants.MachineConfigDaemonReasonAnnotationKey: truncatedErr,
 	}
-	UpdateStateMetric(mcdState, constants.MachineConfigDaemonStateUnreconcilable, truncatedErr)
+	nw.UpdateStateMetric("mcdState", constants.MachineConfigDaemonStateUnreconcilable, truncatedErr)
 	respChan := make(chan response, 1)
 	nw.writer <- message{
 		annos:           annos,
@@ -231,7 +249,7 @@ func (nw *clusterNodeWriter) SetDegraded(err error) error {
 		constants.MachineConfigDaemonStateAnnotationKey:  constants.MachineConfigDaemonStateDegraded,
 		constants.MachineConfigDaemonReasonAnnotationKey: truncatedErr,
 	}
-	UpdateStateMetric(mcdState, constants.MachineConfigDaemonStateDegraded, truncatedErr)
+	nw.UpdateStateMetric("mcdState", constants.MachineConfigDaemonStateDegraded, truncatedErr)
 	respChan := make(chan response, 1)
 	nw.writer <- message{
 		annos:           annos,
@@ -293,4 +311,20 @@ func implSetNodeAnnotations(client corev1client.NodeInterface, lister corev1list
 		node: node,
 		err:  err,
 	}
+}
+
+func (nw *clusterNodeWriter) UpdateStateMetric(metric string, labels ...string) {
+	// metric.Reset()
+	// Migrate the metric update to eventing
+	var annos map[string]string
+	if nw.node == nil {
+		annos = state.WriteMetricAnnotations("None", "Firstboot")
+	} else {
+		annos = state.WriteMetricAnnotations(string(mcfgv1.Node), nw.node.Name)
+	}
+	state.EmitMetricEvent(nw.clusterNodeWriterMetricEvents, nw.stateControllerPod, nw.kubeClient, annos, corev1.EventTypeNormal, metric, fmt.Sprintf("reset"))
+
+	// metric.WithLabelValues(labels...).SetToCurrentTime()
+	// Migrate the metric update to eventing TBD
+	// Need to find a common event msg/ struct to store metric update information
 }

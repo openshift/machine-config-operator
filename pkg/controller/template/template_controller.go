@@ -19,6 +19,7 @@ import (
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	v1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/controller/state"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
@@ -54,10 +55,13 @@ var controllerKind = mcfgv1.SchemeGroupVersion.WithKind("ControllerConfig")
 type Controller struct {
 	templatesDir string
 
-	client               mcfgclientset.Interface
-	kubeClient           clientset.Interface
-	eventRecorder        record.EventRecorder
-	healthEventsRecorder record.EventRecorder
+	client        mcfgclientset.Interface
+	kubeClient    clientset.Interface
+	eventRecorder record.EventRecorder
+
+	healthEventsRecorder   record.EventRecorder
+	controllerMetricEvents record.EventRecorder
+	stateControllerPod     *corev1.Pod
 
 	syncHandler             func(ccKey string) error
 	enqueueControllerConfig func(*mcfgv1.ControllerConfig)
@@ -225,11 +229,22 @@ func (ctrl *Controller) deleteFeature(obj interface{}) {
 }
 
 // Run executes the template controller
-func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}, healthEvents record.EventRecorder) {
+func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}, healthEvents record.EventRecorder, controllerMetricEvents record.EventRecorder) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
+	healthPod, err := state.StateControllerPod(ctrl.kubeClient)
+	if err != nil {
+		klog.Error(err)
+	}
+
+	if healthPod != nil {
+		ctrl.stateControllerPod = healthPod
+	}
+
 	ctrl.healthEventsRecorder = healthEvents
+	ctrl.controllerMetricEvents = controllerMetricEvents
+
 	if !cache.WaitForCacheSync(stopCh, ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.secretsInformerSynced) {
 		return
 	}
