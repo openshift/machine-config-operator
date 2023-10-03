@@ -35,7 +35,8 @@ contents: |
     --prefer-ipv6 \
     {{end -}}
     --retry-on-failure \
-    {{ range onPremPlatformAPIServerInternalIPs . }}{{.}} {{end}}; \
+    {{ range onPremPlatformAPIServerInternalIPs . }}{{.}} {{end}} \
+    {{ range onPremPlatformIngressIPs . }}{{.}} {{end}}; \
     do \
     sleep 5; \
     done"
