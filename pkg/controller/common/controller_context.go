@@ -6,6 +6,7 @@ import (
 	"time"
 
 	configinformers "github.com/openshift/client-go/config/informers/externalversions"
+	machineinformersv1beta1 "github.com/openshift/client-go/machine/informers/externalversions"
 	mcfginformers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
 
 	operatorinformers "github.com/openshift/client-go/operator/informers/externalversions"
@@ -56,6 +57,7 @@ type ControllerContext struct {
 	ConfigInformerFactory                               configinformers.SharedInformerFactory
 	OperatorInformerFactory                             operatorinformers.SharedInformerFactory
 	KubeMAOSharedInformer                               informers.SharedInformerFactory
+	MachineInformerFactory                              machineinformersv1beta1.SharedInformerFactory
 
 	FeatureGateAccess featuregates.FeatureGateAccess
 
@@ -75,6 +77,7 @@ func CreateControllerContext(ctx context.Context, cb *clients.Builder) *Controll
 	apiExtClient := cb.APIExtClientOrDie("apiext-shared-informer")
 	configClient := cb.ConfigClientOrDie("config-shared-informer")
 	operatorClient := cb.OperatorClientOrDie("operator-shared-informer")
+	machineClient := cb.MachineClientOrDie("machine-shared-informer")
 	sharedInformers := mcfginformers.NewSharedInformerFactory(client, resyncPeriod()())
 	sharedNamespacedInformers := mcfginformers.NewFilteredSharedInformerFactory(client, resyncPeriod()(), MCONamespace, nil)
 	kubeSharedInformer := informers.NewSharedInformerFactory(kubeClient, resyncPeriod()())
@@ -103,6 +106,8 @@ func CreateControllerContext(ctx context.Context, cb *clients.Builder) *Controll
 		apiextinformers.WithNamespace(MCONamespace), apiextinformers.WithTweakListOptions(assignFilterLabels))
 	configSharedInformer := configinformers.NewSharedInformerFactory(configClient, resyncPeriod()())
 	operatorSharedInformer := operatorinformers.NewSharedInformerFactory(operatorClient, resyncPeriod()())
+	machineSharedInformer := machineinformersv1beta1.NewSharedInformerFactoryWithOptions(machineClient, resyncPeriod()(), machineinformersv1beta1.WithNamespace("openshift-machine-api"))
+
 	desiredVersion := version.ReleaseVersion
 	missingVersion := "0.0.1-snapshot"
 
@@ -133,6 +138,7 @@ func CreateControllerContext(ctx context.Context, cb *clients.Builder) *Controll
 		APIExtInformerFactory:                               apiExtSharedInformer,
 		ConfigInformerFactory:                               configSharedInformer,
 		OperatorInformerFactory:                             operatorSharedInformer,
+		MachineInformerFactory:                              machineSharedInformer,
 		Stop:                                                ctx.Done(),
 		InformersStarted:                                    make(chan struct{}),
 		ResyncPeriod:                                        resyncPeriod(),
