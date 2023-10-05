@@ -15,14 +15,13 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	configclientscheme "github.com/openshift/client-go/config/clientset/versioned/scheme"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apiextv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/runtime"
 	kubeErrs "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -1031,43 +1030,7 @@ func (optr *Operator) getGlobalConfig() (*configv1.Infrastructure, *configv1.Net
 	if err != nil && !apierrors.IsNotFound(err) {
 		return nil, nil, nil, nil, err
 	}
-
-	// the client removes apiversion/kind (gvk) from all objects during decoding and re-adds it when they are reencoded for
-	// transmission, which is normally fine, but the re-add does not recurse into embedded objects, so we have to explicitly
-	// re-inject apiversion/kind here so our embedded objects will still validate when embedded in ControllerConfig
-	// See: https://issues.redhat.com/browse/OCPBUGS-13860
-	infra = infra.DeepCopy()
-	err = setGVK(infra, configclientscheme.Scheme)
-	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("Failed setting gvk for infra object: %w", err)
-	}
-	dns = dns.DeepCopy()
-	err = setGVK(dns, configclientscheme.Scheme)
-	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("Failed setting gvk for dns object: %w", err)
-	}
-
 	return infra, network, proxy, dns, nil
-}
-
-// setGVK sets the group/version/kind of an object based on the supplied client schema. This
-// is used by the MCO to re-populate the apiVersion and Kind fields in our embedded objects since
-// they get stripped out when the client decodes the object (this stripping behavior is an upstream
-// kube decision and not a decision by the MCO)
-func setGVK(obj runtime.Object, scheme *runtime.Scheme) error {
-	gvks, _, err := scheme.ObjectKinds(obj)
-	if err != nil {
-		return err
-	}
-	// For our usage we will only probably ever get back one gvk, but just in case
-	for _, gvk := range gvks {
-		if gvk.Kind == "" || gvk.Version == "" {
-			continue
-		}
-		obj.GetObjectKind().SetGroupVersionKind(gvk)
-		break
-	}
-	return nil
 }
 
 func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *RenderConfigImages, apiServerURL string, pointerConfigData []byte) *renderConfig {
