@@ -322,7 +322,7 @@ type MachineConfigSpec struct {
 	FIPS bool `json:"fips"`
 
 	// kernelType contains which kernel we want to be running like default
-	// (traditional), realtime.
+	// (traditional), realtime, 64k-pages (aarch64 only).
 	// +optional
 	KernelType string `json:"kernelType"`
 }
