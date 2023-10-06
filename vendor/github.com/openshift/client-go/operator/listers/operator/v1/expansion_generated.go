@@ -62,6 +62,10 @@ type KubeSchedulerListerExpansion interface{}
 // KubeStorageVersionMigratorLister.
 type KubeStorageVersionMigratorListerExpansion interface{}
 
+// MachineConfigurationListerExpansion allows custom methods to be added to
+// MachineConfigurationLister.
+type MachineConfigurationListerExpansion interface{}
+
 // NetworkListerExpansion allows custom methods to be added to
 // NetworkLister.
 type NetworkListerExpansion interface{}
