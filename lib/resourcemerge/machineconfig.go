@@ -21,6 +21,11 @@ func EnsureMachineConfiguration(modified *bool, existing *opv1.MachineConfigurat
 	ensureMachineConfigurationSpec(modified, &existing.Spec, required.Spec)
 }
 
+func EnsureMachineConfiguration(modified *bool, existing *opv1.MachineConfiguration, required opv1.MachineConfiguration) {
+	resourcemerge.EnsureObjectMeta(modified, &existing.ObjectMeta, required.ObjectMeta)
+	ensureMachineConfigurationSpec(modified, &existing.Spec, required.Spec)
+}
+
 // EnsureMachineConfig ensures that the existing matches the required.
 // modified is set to true when existing had to be updated with required.
 func EnsureMachineConfig(modified *bool, existing *mcfgv1.MachineConfig, required mcfgv1.MachineConfig) {

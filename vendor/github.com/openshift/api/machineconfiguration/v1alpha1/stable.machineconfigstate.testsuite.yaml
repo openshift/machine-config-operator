@@ -1,15 +1,15 @@
 
 apiVersion: apiextensions.k8s.io/v1 # Hack because controller-gen complains if we don't have this
-name: "[Stable] MachineCofigState"
+name: "[Stable] MachineConfigState"
 crd: 0000_80_machineconfigstate.crd.yaml
 tests:
   onCreate:
   - name: Should be able to create a minimal MachineState
     initial: |
-      apiVersion: machineconfiguration.openshift.io/v1
+      apiVersion: machineconfiguration.openshift.io/v1alpha1
       kind: MachineConfigState
       spec:  {}
     expected: |
-      apiVersion: machineconfiguration.openshift.io/v1
+      apiVersion: machineconfiguration.openshift.io/v1alpha1
       kind: MachineConfigState
       spec: {}

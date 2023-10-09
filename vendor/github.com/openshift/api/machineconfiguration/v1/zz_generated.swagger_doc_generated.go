@@ -319,66 +319,13 @@ var map_MachineConfigSpec = map[string]string{
 	"kernelArguments":                "kernelArguments contains a list of kernel arguments to be added",
 	"extensions":                     "extensions contains a list of additional features that can be enabled on host",
 	"fips":                           "fips controls FIPS mode",
-<<<<<<< HEAD
-	"kernelType":                     "kernelType contains which kernel we want to be running like default (traditional), realtime, 64k-pages (aarch64 only).",
-=======
 	"kernelType":                     "kernelType contains which kernel we want to be running like default (traditional), realtime.",
->>>>>>> c598429a2 (api types)
 }
 
 func (MachineConfigSpec) SwaggerDoc() map[string]string {
 	return map_MachineConfigSpec
 }
 
-<<<<<<< HEAD
-=======
-var map_MachineConfigState = map[string]string{
-	"": "MachineConfigState describes the health of the Machines on the system\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
-}
-
-func (MachineConfigState) SwaggerDoc() map[string]string {
-	return map_MachineConfigState
-}
-
-var map_MachineConfigStateConfig = map[string]string{
-	"": "MachineConfigStateConfig describes the configuration of a MachineConfigState",
-}
-
-func (MachineConfigStateConfig) SwaggerDoc() map[string]string {
-	return map_MachineConfigStateConfig
-}
-
-var map_MachineConfigStateList = map[string]string{
-	"": "MachineConfigStateList describes all of the MachinesStates on the system\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
-}
-
-func (MachineConfigStateList) SwaggerDoc() map[string]string {
-	return map_MachineConfigStateList
-}
-
-var map_MachineConfigStateSpec = map[string]string{
-	"":              "MachineConfigStateSpec describes the type of State we are managing",
-	"configuration": "configuration describes the object reference inforation of a MachineConfigState",
-}
-
-func (MachineConfigStateSpec) SwaggerDoc() map[string]string {
-	return map_MachineConfigStateSpec
-}
-
-var map_MachineConfigStateStatus = map[string]string{
-	"":                   "MachineConfigStateStatus holds the reported information on a particular MachineConfigState",
-	"configuration":      "configuration Describes the Kind of MachineConfigState",
-	"mostRecentState":    "mostRecentState is the most recent state reporting for each object in a particular machineState",
-	"progressionHistory": "progressionHistory contains a list of events that have happened on all objects in this machinestate",
-	"mostRecentError":    "mostRecentError is populated if the State reports an error.",
-	"health":             "health reports the overall status of this MachineConfigState Given its Progress",
-}
-
-func (MachineConfigStateStatus) SwaggerDoc() map[string]string {
-	return map_MachineConfigStateStatus
-}
-
->>>>>>> c598429a2 (api types)
 var map_NetworkInfo = map[string]string{
 	"":             "Network contains network related configuration",
 	"mtuMigration": "MTUMigration contains the MTU migration configuration.",
@@ -388,31 +335,4 @@ func (NetworkInfo) SwaggerDoc() map[string]string {
 	return map_NetworkInfo
 }
 
-<<<<<<< HEAD
-=======
-var map_ProgressionCondition = map[string]string{
-	"":       "ProgressionCondition is the base struct that contains all information about an event reported from an MCO component",
-	"state":  "state describes what is happening with this object",
-	"name":   "name is the object's name",
-	"phase":  "phase is the general action occuring",
-	"reason": "reason is a more detailed description of the phase",
-	"time":   "time is the timestamp of this event",
-}
-
-func (ProgressionCondition) SwaggerDoc() map[string]string {
-	return map_ProgressionCondition
-}
-
-var map_ProgressionHistory = map[string]string{
-	"":             "ProgressionHistory contains the history of an object that exists in a progressioncondition",
-	"nameAndState": "NameAndState describes the name and state of the object",
-	"phase":        "phase is the general action occuring",
-	"reason":       "reason is a more detailed description of the phase",
-}
-
-func (ProgressionHistory) SwaggerDoc() map[string]string {
-	return map_ProgressionHistory
-}
-
->>>>>>> c598429a2 (api types)
 // AUTO-GENERATED FUNCTIONS END HERE

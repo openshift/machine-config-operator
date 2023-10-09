@@ -143,32 +143,33 @@ func calculateStatus(mcs []*mcfgalphav1.MachineConfigNode, cconfig *v1.Controlle
 			}
 		}
 		if ourNode == nil {
-			klog.Info("Did not find node we were looking for")
-			break
+			klog.Errorf("Could not find specificed node %s", state.Name)
 		}
-		switch nodeState.State {
-		case v1.MachineConfigStateErrored:
+
+		currently := state.Status.Conditions[0]
+
+		switch currently.State {
+		case mcfgalphav1.MachineConfigStateErrored:
 			// if the most recent phase for that node is unavailable
-			if nodeState.Phase == "Unavailable" {
+			if currently.Phase == "Unavailable" {
 				unavailableMachines = append(unavailableMachines, ourNode)
 			} else {
 				degradedMachines = append(degradedMachines, ourNode)
 			}
-		case v1.MachineConfigPoolUpdateInProgress, v1.MachineConfigPoolUpdatePostAction, v1.MachineConfigPoolUpdateCompleting, v1.MachineConfigPoolUpdatePreparing:
-			if nodeState.Reason == "NodeDraining" {
+		case mcfgalphav1.MachineConfigPoolUpdateInProgress, mcfgalphav1.MachineConfigPoolUpdatePostAction, mcfgalphav1.MachineConfigPoolUpdateCompleting, mcfgalphav1.MachineConfigPoolUpdatePreparing:
+			if currently.Reason == "NodeDraining" {
 				unavailableMachines = append(unavailableMachines, ourNode)
 			} else {
 				updatingMachines = append(updatedMachines, ourNode)
 			}
-		case v1.MachineConfigPoolUpdateComplete:
+		case mcfgalphav1.MachineConfigPoolUpdateComplete:
 			updatedMachines = append(updatedMachines, ourNode)
-		case v1.MachineConfigPoolReady:
+		case mcfgalphav1.MachineConfigPoolReady:
 			readyMachines = append(readyMachines, ourNode)
 			updatedMachines = append(updatedMachines, ourNode)
 		default: // if we are actively doing something like resuming, draining etc, we are unavailable
 			unavailableMachines = append(unavailableMachines, ourNode)
 		}
-
 	}
 	degradedMachineCount := int32(len(degradedMachines))
 	updatedMachineCount := int32(len(updatedMachines))
@@ -206,7 +207,7 @@ func calculateStatus(mcs []*mcfgalphav1.MachineConfigNode, cconfig *v1.Controlle
 		MachineCount:            machineCount,
 		UpdatedMachineCount:     updatedMachineCount,
 		ReadyMachineCount:       readyMachineCount,
-		UnavailableMachineCount: unavailableMachineCount, //+ updatingMachineCount,
+		UnavailableMachineCount: unavailableMachineCount + updatingMachineCount,
 		DegradedMachineCount:    degradedMachineCount,
 		CertExpirys:             certExpirys,
 	}

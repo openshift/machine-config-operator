@@ -11,7 +11,6 @@ import (
 	opv1clientset "github.com/openshift/client-go/operator/clientset/versioned"
 	"k8s.io/klog/v2"
 
-	v1 "github.com/openshift/api/machineconfiguration/v1"
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/version"
