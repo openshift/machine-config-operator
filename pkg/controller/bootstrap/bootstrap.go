@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
+	mcfgalphav1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	corev1 "k8s.io/api/core/v1"
@@ -83,7 +84,7 @@ func (b *Bootstrap) Run(destDir string) error {
 	codecFactory := serializer.NewCodecFactory(scheme)
 	decoder := codecFactory.UniversalDecoder(mcfgv1.GroupVersion, apioperatorsv1alpha1.GroupVersion, apicfgv1.GroupVersion)
 
-	var states []*mcfgv1.MachineConfigState
+	var states []*mcfgalphav1.MachineConfigNode
 	var cconfig *mcfgv1.ControllerConfig
 	var featureGate *apicfgv1.FeatureGate
 	var nodeConfig *apicfgv1.Node
@@ -123,7 +124,7 @@ func (b *Bootstrap) Run(destDir string) error {
 			}
 
 			switch obj := obji.(type) {
-			case *mcfgv1.MachineConfigState:
+			case *mcfgalphav1.MachineConfigNode:
 				states = append(states, obj)
 			case *mcfgv1.MachineConfigPool:
 				pools = append(pools, obj)

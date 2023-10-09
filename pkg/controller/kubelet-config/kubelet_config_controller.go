@@ -432,7 +432,7 @@ func (ctrl *Controller) syncStatusOnly(cfg *mcfgv1.KubeletConfig, err error, arg
 		klog.Warningf("error updating kubeletconfig status: %v", statusUpdateError)
 	}
 	if err != nil {
-		//ctrl.EmitHealthEvent(ctrl.stateControllerPod, ctrl.HealthAnnotations(cfg.Name, string(v1.KC), v1.MachineConfigStateErrored), corev1.EventTypeWarning, "KubeletSyncError", fmt.Sprintf("Error Syncing KubeletConfig: %s", err.Error()))
+		//ctrl.EmitHealthEvent(ctrl.stateControllerPod, ctrl.HealthAnnotations(cfg.Name, string(v1.KC), v1.MachineConfigNodeErrored), corev1.EventTypeWarning, "KubeletSyncError", fmt.Sprintf("Error Syncing KubeletConfig: %s", err.Error()))
 	}
 	return err
 }

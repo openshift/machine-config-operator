@@ -1,5 +1,5 @@
 apiVersion: machineconfiguration.openshift.io/v1
-kind: MachineConfigState
+kind: MachineConfigNode
 metadata:
   name: upgrade-master
   labels:

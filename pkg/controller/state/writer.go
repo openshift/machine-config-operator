@@ -1,7 +1,7 @@
 package state
 
 import (
-	v1 "github.com/openshift/api/machineconfiguration/v1"
+	mcfgalphav1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	"k8s.io/klog/v2"
 )
 
@@ -10,7 +10,7 @@ func (ctrl *Controller) WriteStatus(kind string, status, reason string, annos ma
 	// write status and reason to a struct of some sort
 
 	// get machine state with name. example "mcc-health"
-	currState, err := ctrl.Clients.Mcfgclient.MachineconfigurationV1().MachineConfigStates().Get(context.TODO(), kind, metav1.GetOptions{})
+	currState, err := ctrl.Clients.Mcfgclient.MachineconfigurationV1().MachineConfigNodes().Get(context.TODO(), kind, metav1.GetOptions{})
 	if err != nil {
 		klog.Errorf("Could not get machinestate %s: %w", kind, err)
 		return err
@@ -38,7 +38,7 @@ func (ctrl *Controller) WriteStatus(kind string, status, reason string, annos ma
 	}
 
 	newState.Status.Health = v1.Healthy
-	if state == v1.MachineConfigStateErrored {
+	if state == v1.MachineConfigNodeErrored {
 		newState.Status.MostRecentError = reason
 		newState.Status.Health = v1.UnHealthy
 	}
@@ -86,13 +86,13 @@ func (ctrl *Controller) WriteStatus(kind string, status, reason string, annos ma
 	currJson, _ := json.Marshal(currState)
 	newJson, _ := json.Marshal(newState)
 
-	//machineStateApplyConfig, err := machineconfigurationv1.ExtractMachineConfigStateStatus(newState, "machine-config-operator")
+	//machineStateApplyConfig, err := machineconfigurationv1.ExtractMachineConfigNodeStatus(newState, "machine-config-operator")
 	if err != nil {
 		klog.Errorf("Could not extract machine state: %w", err)
 		return err
 	}
 
-	cfgApplyConfig := machineconfigurationv1.MachineConfigStateConfig().WithKind(newState.Kind).WithName(newState.Name).WithAPIVersion(newState.APIVersion).WithResourceVersion(newState.ResourceVersion).WithUID(newState.UID)
+	cfgApplyConfig := machineconfigurationv1.MachineConfigNodeConfig().WithKind(newState.Kind).WithName(newState.Name).WithAPIVersion(newState.APIVersion).WithResourceVersion(newState.ResourceVersion).WithUID(newState.UID)
 	//progressionConditionApplyConfig := machineconfigurationv1.ProgressionCondition().WithKind(newCondition.Kind).WithName(newCondition.Name).WithPhase(newCondition.Name).WithReason(newCondition.Reason).WithState(newCondition.State).WithTime(newCondition.Time)
 	progressionHistoryApplyConfigs := []*machineconfigurationv1.ProgressionHistoryApplyConfiguration{}
 	for _, s := range newState.Status.ProgressionHistory {
@@ -102,21 +102,21 @@ func (ctrl *Controller) WriteStatus(kind string, status, reason string, annos ma
 	for _, s := range newState.Status.MostRecentState {
 		progressionApplyConfigs = append(progressionApplyConfigs, machineconfigurationv1.ProgressionCondition().WithKind(s.Kind).WithName(s.Name).WithPhase(s.Phase).WithReason(s.Reason).WithState(s.State).WithTime(s.Time))
 	}
-	statusApplyConfig := machineconfigurationv1.MachineConfigStateStatus().WithConfig(cfgApplyConfig).WithHealth(newState.Status.Health).WithMostRecentError(newState.Status.MostRecentError).WithMostRecentState(progressionApplyConfigs...).WithProgressionHistory(progressionHistoryApplyConfigs...)
-	specApplyConfig := machineconfigurationv1.MachineConfigStateSpec().WithConfig(cfgApplyConfig).WithKind(newState.Spec.Kind)
-	msApplyConfig := machineconfigurationv1.MachineConfigState(newState.Name).WithStatus(statusApplyConfig).WithSpec(specApplyConfig)
-	//ctrl.Clients.Mcfgclient.MachineconfigurationV1().MachineConfigStates().Patch(context.TODO(), newState.Name, types.MergePatchType)
+	statusApplyConfig := machineconfigurationv1.MachineConfigNodeStatus().WithConfig(cfgApplyConfig).WithHealth(newState.Status.Health).WithMostRecentError(newState.Status.MostRecentError).WithMostRecentState(progressionApplyConfigs...).WithProgressionHistory(progressionHistoryApplyConfigs...)
+	specApplyConfig := machineconfigurationv1.MachineConfigNodeSpec().WithConfig(cfgApplyConfig).WithKind(newState.Spec.Kind)
+	msApplyConfig := machineconfigurationv1.MachineConfigNode(newState.Name).WithStatus(statusApplyConfig).WithSpec(specApplyConfig)
+	//ctrl.Clients.Mcfgclient.MachineconfigurationV1().MachineConfigNodes().Patch(context.TODO(), newState.Name, types.MergePatchType)
 
 	applyConfig, _ := json.Marshal(msApplyConfig)
 	klog.Infof("Updating Machine State Controller apply config Status to %s", string(applyConfig))
-	ms, err := ctrl.Clients.Mcfgclient.MachineconfigurationV1().MachineConfigStates().ApplyStatus(context.TODO(), msApplyConfig, metav1.ApplyOptions{FieldManager: "machine-config-operator", Force: true})
+	ms, err := ctrl.Clients.Mcfgclient.MachineconfigurationV1().MachineConfigNodes().ApplyStatus(context.TODO(), msApplyConfig, metav1.ApplyOptions{FieldManager: "machine-config-operator", Force: true})
 
 	/*
 		patch, err := jsonmergepatch.CreateThreeWayJSONMergePatch(currJson, newJson, currJson)
 		if err != nil {
 			return err
 		}
-		ms, err := ctrl.Clients.Mcfgclient.MachineconfigurationV1().MachineConfigStates().Patch(context.TODO(), newState.Name, types.MergePatchType, patch, metav1.PatchOptions{}, "status")
+		ms, err := ctrl.Clients.Mcfgclient.MachineconfigurationV1().MachineConfigNodes().Patch(context.TODO(), newState.Name, types.MergePatchType, patch, metav1.PatchOptions{}, "status")
 
 
 	if err != nil {
@@ -130,7 +130,7 @@ func (ctrl *Controller) WriteStatus(kind string, status, reason string, annos ma
 }
 */
 // this is where metric application will live primarily. and also any options applied to other components
-func (ctrl *Controller) ReadSpec(ms *v1.MachineConfigState) error {
+func (ctrl *Controller) ReadSpec(ms *mcfgalphav1.MachineConfigNode) error {
 	var err error
 	if ms != nil {
 		/*	if ms.Kind == string(v1.UpdatingMetrics) {
@@ -139,11 +139,11 @@ func (ctrl *Controller) ReadSpec(ms *v1.MachineConfigState) error {
 				}
 				// somehow also apply the collection frequency
 			}
-		*/ //_, err = ctrl.Mcfgclient.MachineconfigurationV1().MachineConfigStates().Update(context.TODO(), ms, metav1.UpdateOptions{})
+		*/ //_, err = ctrl.Mcfgclient.MachineconfigurationV1().MachineConfigNodes().Update(context.TODO(), ms, metav1.UpdateOptions{})
 
 	}
 	if err != nil {
-		klog.Errorf("Could not update MachineConfigState: %s ... %w", ms.Name, err)
+		klog.Errorf("Could not update MachineConfigNode: %s ... %w", ms.Name, err)
 	}
 	return err
 }

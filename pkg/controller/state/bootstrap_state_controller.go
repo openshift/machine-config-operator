@@ -6,8 +6,9 @@ import (
 	"os"
 	"sync"
 
+	mcfgalphav1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+
 	"github.com/fsnotify/fsnotify"
-	v1 "github.com/openshift/api/machineconfiguration/v1"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
 )
@@ -15,11 +16,11 @@ import (
 // I don't think we need euqueue, workers, or any of that. Just needs to run and listen
 
 type BootstrapStateController struct {
-	config                            StateControllerConfig
-	queue                             workqueue.RateLimitingInterface
-	enqueueBoostrapMachineConfigState func(*v1.MachineConfigState)
-	stopCh                            chan struct{}
-	wg                                sync.WaitGroup
+	config                           StateControllerConfig
+	queue                            workqueue.RateLimitingInterface
+	enqueueBoostrapMachineConfigNode func(*mcfgalphav1.MachineConfigNode)
+	stopCh                           chan struct{}
+	wg                               sync.WaitGroup
 }
 
 func newBootstrapStateController(
@@ -66,7 +67,7 @@ func (ctrl *BootstrapStateController) Run(workers int, stopCh <-chan struct{}) e
 					return nil
 				}
 				f, err := os.ReadFile(event.Name)
-				newMS := v1.MachineConfigState{}
+				newMS := mcfgalphav1.MachineConfigNode{}
 				if err = json.Unmarshal(f, &newMS); err != nil {
 					return err
 				}
@@ -90,7 +91,7 @@ func (ctrl *BootstrapStateController) Run(workers int, stopCh <-chan struct{}) e
 	klog.Info("Bootstrap MSC started, gathering data")
 
 	// might not need any of the enqueue stuff honestly.
-	// read from somewhere you know mcc, mcs are writing data to in the form of a MachineConfigState or some sort of update
+	// read from somewhere you know mcc, mcs are writing data to in the form of a MachineConfigNode or some sort of update
 	// make sure you keep track of it and at the end, write it to disk
 	// machine-state-controller --subcontrollers=bootstrap
 

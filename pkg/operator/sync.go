@@ -35,6 +35,8 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	v1 "github.com/openshift/api/machineconfiguration/v1"
+	v1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+
 	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
 	mcoResourceApply "github.com/openshift/machine-config-operator/lib/resourceapply"
@@ -721,8 +723,29 @@ func (optr *Operator) syncMachineConfigPools(config *renderConfig) error {
 	return nil
 }
 
+func (optr *Operator) syncMachineConfiguration(config *renderConfig) error {
+	mcfgs := []string{
+		"manifests/machineconfigoperator.machineconfiguration.yaml",
+		"manifests/machineconfigcontroller.machineconfiguration.yaml",
+		"manifests/machineconfigdaemon.machineconfiguration.yaml",
+	}
+	for _, mcfg := range mcfgs {
+		// optr.EmitHealthEvent(optr.stateControllerPod, optr.HealthAnnotations(mcp, "MCP", v1.OperatorSyncMCP), corev1.EventTypeNormal, "syncMCP", "Syncing MCPs while generating syncingMachineConfigPools")
+		mcfgBytes, err := renderAsset(config, mcfg)
+		if err != nil {
+			return err
+		}
+		p := mcoResourceRead.ReadMachineConfigurationV1OrDie(mcfgBytes)
+		_, _, err = mcoResourceApply.ApplyMachineConfguration(optr.opv1Client.OperatorV1(), p)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // we need to mimic this
-func (optr *Operator) syncMachineConfigStates(config *renderConfig) error {
+func (optr *Operator) syncMachineConfigNodes(config *renderConfig) error {
 	paths := manifestPaths{
 		clusterRoles: []string{
 			mscClusterRoleManifestPath,
@@ -759,26 +782,52 @@ func (optr *Operator) syncMachineConfigStates(config *renderConfig) error {
 			return err
 		}
 	}
-	msc := []string{
-		// "manifests/metrics.machinestate.yaml",
-		// "manifests/bootstrap.machinestate.yaml",
-		//"manifests/mcc.machinestate.yaml",
-		//"manifests/mcd.machinestate.yaml",
-		//"manifests/operator.machinestate.yaml",
-		"manifests/upgrade.worker.machineconfigstate.yaml",
-		"manifests/upgrade.master.machineconfigstate.yaml",
-	}
 
-	for _, ms := range msc {
-		klog.Infof("Applying MachineConfigState %s", ms)
-		mcsBytes, err := renderAsset(config, ms)
+	nodes, err := optr.nodeLister.List(labels.Everything())
+	if err != nil {
+		return err
+	}
+	for _, node := range nodes {
+		var pool string
+		var ok bool
+		if pool, ok = node.Labels["node-role.kubernetes.io/worker"]; ok {
+			pool = "worker"
+		} else if pool, ok = node.Labels["node-role.kubernetes.io/master"]; ok {
+			pool = "master"
+		}
+		klog.Infof("Applying MachineConfigNode for node %s", node.Name)
+		newMCS := &v1alpha1.MachineConfigNode{
+			Spec: v1alpha1.MachineConfigNodeSpec{
+				NodeRef: v1alpha1.MCOObjectReference{
+					Kind:       "Node",
+					Name:       string(node.Name),
+					APIVersion: node.APIVersion,
+				},
+				Pool: v1alpha1.MCOObjectReference{
+					Kind:       "MachineConfigPool",
+					Name:       string(pool),
+					APIVersion: "machineconfiguration.openshift.io/v1",
+				},
+			},
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "MachineConfigNode",
+				APIVersion: "machineconfiguration.openshift.io/v1alpha1",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name: node.Name,
+			},
+		}
+		mcsBytes, err := json.Marshal(newMCS)
 		if err != nil {
-			klog.Errorf("error rendering asset for MachineConfigState %s", ms)
+			return err
+		}
+		if err != nil {
+			klog.Errorf("error rendering asset for MachineConfigNode %s", ms)
 			return err
 		}
 		klog.Infof("state to be applied: %s", string(mcsBytes))
-		p := mcoResourceRead.ReadMachineConfigStateV1OrDie(mcsBytes)
-		_, _, err = mcoResourceApply.ApplyMachineConfigState(optr.client.MachineconfigurationV1(), p)
+		p := mcoResourceRead.ReadMachineConfigNodeV1OrDie(mcsBytes)
+		_, _, err = mcoResourceApply.ApplyMachineConfigNode(optr.client.MachineconfigurationV1alpha1(), p)
 		if err != nil {
 			return err
 		}

@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	mcfgalphav1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -1140,7 +1142,7 @@ func TestShouldMakeProgress(t *testing.T) {
 			} else {
 				t.Logf("not expecting annotation")
 			}
-			expStatus := calculateStatus(&mcfgv1.MachineConfigState{Status: mcfgv1.MachineConfigStateStatus{}}, cc, mcp, nodes)
+			expStatus := calculateStatus([]*mcfgalphav1.MachineConfigNode{}, cc, mcp, nodes)
 			expMcp := mcp.DeepCopy()
 			expMcp.Status = expStatus
 			f.expectUpdateMachineConfigPoolStatus(expMcp)
@@ -1192,7 +1194,7 @@ func TestPaused(t *testing.T) {
 		f.kubeobjects = append(f.kubeobjects, nodes[idx])
 	}
 
-	expStatus := calculateStatus(&mcfgv1.MachineConfigState{Status: mcfgv1.MachineConfigStateStatus{}}, cc, mcp, nodes)
+	expStatus := calculateStatus([]*mcfgalphav1.MachineConfigNode{}, cc, mcp, nodes)
 	expMcp := mcp.DeepCopy()
 	expMcp.Status = expStatus
 	f.expectUpdateMachineConfigPoolStatus(expMcp)
@@ -1220,7 +1222,7 @@ func TestShouldUpdateStatusOnlyUpdated(t *testing.T) {
 		f.kubeobjects = append(f.kubeobjects, nodes[idx])
 	}
 
-	expStatus := calculateStatus(&mcfgv1.MachineConfigState{Status: mcfgv1.MachineConfigStateStatus{}}, cc, mcp, nodes)
+	expStatus := calculateStatus([]*mcfgalphav1.MachineConfigNode{}, cc, mcp, nodes)
 	expMcp := mcp.DeepCopy()
 	expMcp.Status = expStatus
 	f.expectUpdateMachineConfigPoolStatus(expMcp)
@@ -1248,7 +1250,7 @@ func TestShouldUpdateStatusOnlyNoProgress(t *testing.T) {
 		f.kubeobjects = append(f.kubeobjects, nodes[idx])
 	}
 
-	expStatus := calculateStatus(&mcfgv1.MachineConfigState{Status: mcfgv1.MachineConfigStateStatus{}}, cc, mcp, nodes)
+	expStatus := calculateStatus([]*mcfgalphav1.MachineConfigNode{}, cc, mcp, nodes)
 	expMcp := mcp.DeepCopy()
 	expMcp.Status = expStatus
 	f.expectUpdateMachineConfigPoolStatus(expMcp)
@@ -1281,7 +1283,7 @@ func TestCertStatus(t *testing.T) {
 		f.kubeobjects = append(f.kubeobjects, nodes[idx])
 	}
 
-	expStatus := calculateStatus(&mcfgv1.MachineConfigState{Status: mcfgv1.MachineConfigStateStatus{}}, cc, mcp, nodes)
+	expStatus := calculateStatus([]*mcfgalphav1.MachineConfigNode{}, cc, mcp, nodes)
 	expMcp := mcp.DeepCopy()
 	expMcp.Status = expStatus
 
@@ -1301,7 +1303,7 @@ func TestShouldDoNothing(t *testing.T) {
 		newNodeWithLabel("node-0", machineConfigV1, machineConfigV1, map[string]string{"node-role/worker": "", "node-role/infra": ""}),
 		newNodeWithLabel("node-1", machineConfigV1, machineConfigV1, map[string]string{"node-role/worker": "", "node-role/infra": ""}),
 	}
-	status := calculateStatus(&mcfgv1.MachineConfigState{Status: mcfgv1.MachineConfigStateStatus{}}, cc, mcp, nodes)
+	status := calculateStatus([]*mcfgalphav1.MachineConfigNode{}, cc, mcp, nodes)
 	mcp.Status = status
 
 	f.ccLister = append(f.ccLister, cc)
@@ -1392,7 +1394,7 @@ func TestControlPlaneTopology(t *testing.T) {
 	for _, node := range nodes {
 		addNodeAnnotations(node, annotations)
 	}
-	status := calculateStatus(&mcfgv1.MachineConfigState{Status: mcfgv1.MachineConfigStateStatus{}}, cc, mcp, nodes)
+	status := calculateStatus([]*mcfgalphav1.MachineConfigNode{}, cc, mcp, nodes)
 	mcp.Status = status
 
 	f.ccLister = append(f.ccLister, cc)

@@ -38,6 +38,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	mcfgalphav1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	mcoResourceRead "github.com/openshift/machine-config-operator/lib/resourceread"
@@ -763,8 +764,8 @@ func (dn *Daemon) syncNode(key string) error {
 	if ufc != nil {
 		annos := map[string]string{
 			constants.MachineConfigDaemonStateAnnotationKey:  constants.MachineConfigDaemonStateWorkPerparing,
-			constants.MachineConfigDaemonReasonAnnotationKey: "ClosingCfgDriftMonitor",
-			constants.MachineConfigDaemonPhaseAnnotationKey:  fmt.Sprintf("Detecting diff in current: %s and desired %s MC. Preparing upgrade", ufc.currentConfig.Name, ufc.desiredConfig.Name),
+			constants.MachineConfigDaemonPhaseAnnotationKey:  string(mcfgalphav1.MachineConfigPoolUpdateComparingMC),
+			constants.MachineConfigDaemonReasonAnnotationKey: fmt.Sprintf("Detecting diff in current: %s and desired %s MC. Preparing upgrade", ufc.currentConfig.Name, ufc.desiredConfig.Name),
 		}
 		dn.nodeWriter.SetAnnotations(annos)
 		// Only check for config drift if we need to update.
@@ -776,10 +777,11 @@ func (dn *Daemon) syncNode(key string) error {
 		if err := dn.triggerUpdate(ufc.currentConfig, ufc.desiredConfig, ufc.currentImage, ufc.desiredImage); err != nil {
 			annos = map[string]string{
 				constants.MachineConfigDaemonStateAnnotationKey:  constants.MachineConfigDaemonStateDegraded,
+				constants.MachineConfigDaemonPhaseAnnotationKey:  string(mcfgalphav1.MachineConfigNodeErrored),
 				constants.MachineConfigDaemonReasonAnnotationKey: err.Error(),
 			}
 			dn.nodeWriter.SetAnnotations(annos)
-			//dn.EmitUpgradeEvent(dn.stateControllerPod, dn.UpgradeAnnotations(v1.MachineConfigStateErrored), corev1.EventTypeWarning, "UpdateError", fmt.Sprintf("Error Updating to new MachineConfig %s", ufc.desiredConfig.Name))
+			//dn.EmitUpgradeEvent(dn.stateControllerPod, dn.UpgradeAnnotations(v1.MachineConfigNodeErrored), corev1.EventTypeWarning, "UpdateError", fmt.Sprintf("Error Updating to new MachineConfig %s", ufc.desiredConfig.Name))
 			return err
 		}
 		klog.V(2).Infof("Node %s is already synced", node.Name)
@@ -966,6 +968,7 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 		annos := map[string]string{
 			constants.MachineConfigDaemonStateAnnotationKey:  constants.MachineConfigDaemonStateDone,
 			constants.MachineConfigDaemonReasonAnnotationKey: "",
+			constants.MachineConfigDaemonPhaseAnnotationKey:  string(mcfgalphav1.MachineConfigPoolUpdateCordoning),
 			constants.CurrentMachineConfigAnnotationKey:      targetHash,
 			constants.DesiredDrainerAnnotationKey:            fmt.Sprintf("%s-%s", constants.DrainerStateUncordon, targetHash),
 		}
@@ -1006,6 +1009,7 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 			// Make a request to perform drain
 			annos := map[string]string{
 				constants.MachineConfigDaemonStateAnnotationKey:  constants.MachineConfigDaemonStateWorking,
+				constants.MachineConfigDaemonPhaseAnnotationKey:  string(mcfgalphav1.MachineConfigPoolUpdateDraining),
 				constants.MachineConfigDaemonReasonAnnotationKey: "",
 				constants.DesiredDrainerAnnotationKey:            targetDrainValue,
 			}

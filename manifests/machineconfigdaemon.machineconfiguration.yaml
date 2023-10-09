@@ -1,0 +1,9 @@
+apiVersion: operator.openshift.io/v1
+kind: MachineConfiguration
+metadata:
+  name: machineconfigdaemon
+  labels:
+spec:
+  component: machineconfigdaemon
+  mode: in-cluster
+  managementState: Managed

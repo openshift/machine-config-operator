@@ -11,6 +11,8 @@ import (
 // with apply.
 type MachineConfigurationSpecApplyConfiguration struct {
 	StaticPodOperatorSpecApplyConfiguration `json:",inline"`
+	Component                               *operatorv1.MCOComponent     `json:"component,omitempty"`
+	Mode                                    *operatorv1.MCOOperationMode `json:"mode,omitempty"`
 }
 
 // MachineConfigurationSpecApplyConfiguration constructs an declarative configuration of the MachineConfigurationSpec type for use with
@@ -80,5 +82,21 @@ func (b *MachineConfigurationSpecApplyConfiguration) WithFailedRevisionLimit(val
 // If called multiple times, the SucceededRevisionLimit field is set to the value of the last call.
 func (b *MachineConfigurationSpecApplyConfiguration) WithSucceededRevisionLimit(value int32) *MachineConfigurationSpecApplyConfiguration {
 	b.SucceededRevisionLimit = &value
+	return b
+}
+
+// WithComponent sets the Component field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Component field is set to the value of the last call.
+func (b *MachineConfigurationSpecApplyConfiguration) WithComponent(value operatorv1.MCOComponent) *MachineConfigurationSpecApplyConfiguration {
+	b.Component = &value
+	return b
+}
+
+// WithMode sets the Mode field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Mode field is set to the value of the last call.
+func (b *MachineConfigurationSpecApplyConfiguration) WithMode(value operatorv1.MCOOperationMode) *MachineConfigurationSpecApplyConfiguration {
+	b.Mode = &value
 	return b
 }

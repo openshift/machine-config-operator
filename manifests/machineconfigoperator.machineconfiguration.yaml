@@ -1,0 +1,8 @@
+apiVersion: operator.openshift.io/v1
+kind: MachineConfiguration
+metadata:
+  name: machineconfigoperator
+spec:
+  component: machineconfigoperator
+  mode: in-cluster
+  managementState: Managed

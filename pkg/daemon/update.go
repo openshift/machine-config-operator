@@ -27,6 +27,8 @@ import (
 	"k8s.io/klog/v2"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	mcfgalphav1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	pivottypes "github.com/openshift/machine-config-operator/pkg/daemon/pivot/types"
@@ -77,8 +79,8 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 	if ctrlcommon.InSlice(postConfigChangeActionReboot, postConfigChangeActions) {
 		annos := map[string]string{
 			constants.MachineConfigDaemonStateAnnotationKey:  constants.MachineConfigDaemonStateWorkPostAction,
-			constants.MachineConfigDaemonReasonAnnotationKey: "RebootingNode",
-			constants.MachineConfigDaemonPhaseAnnotationKey:  fmt.Sprintf("Node will reboot into config %s", configName),
+			constants.MachineConfigDaemonPhaseAnnotationKey:  string(mcfgalphav1.MachineConfigPoolUpdateRebooting),
+			constants.MachineConfigDaemonReasonAnnotationKey: fmt.Sprintf("Node will reboot into config %s", configName),
 		}
 		_, err := dn.nodeWriter.SetAnnotations(annos)
 		if err != nil {
@@ -100,7 +102,8 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 		serviceName := "crio"
 		annos := map[string]string{
 			constants.MachineConfigDaemonStateAnnotationKey:  constants.MachineConfigDaemonStateWorkPostAction,
-			constants.MachineConfigDaemonReasonAnnotationKey: "ReloadingCRIO",
+			constants.MachineConfigDaemonPhaseAnnotationKey:  string(mcfgalphav1.MachineConfigPoolUpdateReloading),
+			constants.MachineConfigDaemonReasonAnnotationKey: "Reloading CRIO, upgrade does not require reboot.",
 		}
 		_, err := dn.nodeWriter.SetAnnotations(annos)
 		if err != nil {
@@ -135,8 +138,8 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 	if inDesiredConfig {
 		annos := map[string]string{
 			constants.MachineConfigDaemonStateAnnotationKey:  constants.MachineConfigDaemonResuming,
-			constants.MachineConfigDaemonReasonAnnotationKey: "ResumingConfigDriftMonitor",
-			constants.MachineConfigDaemonPhaseAnnotationKey:  fmt.Sprintf("In desired config %s. Resuming normal operations.", state.currentConfig.Name),
+			constants.MachineConfigDaemonPhaseAnnotationKey:  string(mcfgalphav1.MachineConfigPoolResuming),
+			constants.MachineConfigDaemonReasonAnnotationKey: fmt.Sprintf("In desired config %s. Resuming normal operations.", state.currentConfig.Name),
 		}
 		_, err := dn.nodeWriter.SetAnnotations(annos)
 		if err != nil {
@@ -419,7 +422,7 @@ func (dn *Daemon) updateImage(newConfig *mcfgv1.MachineConfig, oldImage, newImag
 			return err
 		}
 		if state != constants.MachineConfigDaemonStateDegraded && state != constants.MachineConfigDaemonStateUnreconcilable {
-			if err := dn.nodeWriter.SetWorking("Upgrading Image", fmt.Sprintf("New Image is %s", newImage)); err != nil {
+			if err := dn.nodeWriter.SetWorking("Upgrading Image", string(mcfgalphav1.MachineConfigPoolUpdateFilesAndOS)); err != nil {
 				return fmt.Errorf("error setting node's state to Working: %w", err)
 			}
 		}
@@ -465,7 +468,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 			return err
 		}
 		if state != constants.MachineConfigDaemonStateDegraded && state != constants.MachineConfigDaemonStateUnreconcilable {
-			if err := dn.nodeWriter.SetWorking("Preparing Upgrade. Comparing MachineConfigs", fmt.Sprintf("Machineconfigs %s and %s", oldConfig.Name, newConfig.Name)); err != nil {
+			if err := dn.nodeWriter.SetWorking(fmt.Sprintf("Machineconfigs %s and %s", oldConfig.Name, newConfig.Name), string(mcfgalphav1.MachineConfigPoolUpdateComparingMC)); err != nil {
 				return fmt.Errorf("error setting node's state to Working: %w", err)
 			}
 		}
@@ -544,8 +547,8 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	}
 	annos := map[string]string{
 		constants.MachineConfigDaemonStateAnnotationKey:  constants.MachineConfigDaemonStateWorking,
-		constants.MachineConfigDaemonReasonAnnotationKey: "ApplyingFilesAndOSChanges",
-		constants.MachineConfigDaemonPhaseAnnotationKey:  fmt.Sprintf("Applying files to node. Using new Ignition files: %s", files),
+		constants.MachineConfigDaemonPhaseAnnotationKey:  string(mcfgalphav1.MachineConfigPoolUpdateFilesAndOS),
+		constants.MachineConfigDaemonReasonAnnotationKey: fmt.Sprintf("Applying files to node. Using new Ignition files: %s", files),
 	}
 	_, err = dn.nodeWriter.SetAnnotations(annos)
 	if err != nil {

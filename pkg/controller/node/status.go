@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 
+	mcfgalphav1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	v1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
@@ -17,7 +19,7 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// syncStatusOnly for MachineConfigState
+// syncStatusOnly for MachineConfigNode
 func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
 	cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
 	if err != nil {
@@ -28,9 +30,16 @@ func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
 		return err
 	}
 
-	ms, err := ctrl.client.MachineconfigurationV1().MachineConfigStates().Get(context.TODO(), fmt.Sprintf("upgrade-%s", pool.Name), metav1.GetOptions{})
-
-	newStatus := calculateStatus(ms, cc, pool, nodes)
+	machineConfigStates := []*mcfgalphav1.MachineConfigNode{}
+	for _, node := range nodes {
+		ms, err := ctrl.client.MachineconfigurationV1alpha1().MachineConfigNodes().Get(context.TODO(), node.Name, metav1.GetOptions{})
+		if err != nil {
+			klog.Errorf("Could not find our MachineConfigNode fornode. %s: %w", node.Name, err)
+			continue
+		}
+		machineConfigStates = append(machineConfigStates, ms)
+	}
+	newStatus := calculateStatus(machineConfigStates, cc, pool, nodes)
 	if equality.Semantic.DeepEqual(pool.Status, newStatus) {
 		return nil
 	}
@@ -47,7 +56,7 @@ func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
 	return err
 }
 
-func calculateStatus(ms *v1.MachineConfigState, cconfig *v1.ControllerConfig, pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv1.MachineConfigPoolStatus {
+func calculateStatus(mcs []*mcfgalphav1.MachineConfigNode, cconfig *v1.ControllerConfig, pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv1.MachineConfigPoolStatus {
 	certExpirys := []v1.CertExpiry{}
 	if cconfig != nil {
 		for _, cert := range cconfig.Status.ControllerCertificates {
@@ -97,42 +106,42 @@ func calculateStatus(ms *v1.MachineConfigState, cconfig *v1.ControllerConfig, po
 	// the operator pod being rolled out
 
 	var degradedMachines, readyMachines, updatedMachines, unavailableMachines, updatingMachines []*corev1.Node
-	for _, nodeState := range ms.Status.MostRecentState {
-		klog.Infof("Looking at node: %s", nodeState.Name)
+	for _, state := range mcs {
 		var ourNode *corev1.Node
-		for _, node := range nodes {
-			klog.Infof("Node name: %s vs our Node name: %s", node.Name, nodeState.Name)
-			if node.Name == nodeState.Name {
-				ourNode = node
+		for _, n := range nodes {
+			if state.Name == n.Name {
+				ourNode = n
+				break
 			}
 		}
 		if ourNode == nil {
-			klog.Info("Did not find node we were looking for")
-			break
-		}
-		switch nodeState.State {
-		case v1.MachineConfigStateErrored:
-			// if the most recent phase for that node is unavailable
-			if nodeState.Phase == "Unavailable" {
-				unavailableMachines = append(unavailableMachines, ourNode)
-			} else {
-				degradedMachines = append(degradedMachines, ourNode)
-			}
-		case v1.MachineConfigPoolUpdateInProgress, v1.MachineConfigPoolUpdatePostAction, v1.MachineConfigPoolUpdateCompleting, v1.MachineConfigPoolUpdatePreparing:
-			if nodeState.Reason == "NodeDraining" {
-				unavailableMachines = append(unavailableMachines, ourNode)
-			} else {
-				updatingMachines = append(updatedMachines, ourNode)
-			}
-		case v1.MachineConfigPoolUpdateComplete:
-			updatedMachines = append(updatedMachines, ourNode)
-		case v1.MachineConfigPoolReady:
-			readyMachines = append(readyMachines, ourNode)
-			updatedMachines = append(updatedMachines, ourNode)
-		default: // if we are actively doing something like resuming, draining etc, we are unavailable
-			unavailableMachines = append(unavailableMachines, ourNode)
+			klog.Errorf("Could not find specificed node %s", state.Name)
 		}
 
+		currently := state.Status.Conditions[0]
+
+		if currently.Status == metav1.ConditionTrue {
+			switch mcfgalphav1.StateProgress(currently.Type) {
+			case mcfgalphav1.MachineConfigNodeErrored:
+				// if the most recent phase for that node is unavailable
+				if currently.Reason == "Unavailable" {
+					unavailableMachines = append(unavailableMachines, ourNode)
+				} else {
+					degradedMachines = append(degradedMachines, ourNode)
+				}
+			case mcfgalphav1.MachineConfigPoolUpdateInProgress, mcfgalphav1.MachineConfigPoolUpdatePostAction, mcfgalphav1.MachineConfigPoolUpdateCompleting, mcfgalphav1.MachineConfigPoolUpdatePreparing:
+				if currently.Reason == "NodeDraining" {
+					unavailableMachines = append(unavailableMachines, ourNode)
+				} else {
+					updatingMachines = append(updatedMachines, ourNode)
+				}
+			case mcfgalphav1.MachineConfigPoolUpdateComplete:
+				readyMachines = append(readyMachines, ourNode)
+				updatedMachines = append(updatedMachines, ourNode)
+			default: // if we are actively doing something like resuming, draining etc, we are unavailable
+				unavailableMachines = append(unavailableMachines, ourNode)
+			}
+		}
 	}
 	degradedMachineCount := int32(len(degradedMachines))
 	updatedMachineCount := int32(len(updatedMachines))
@@ -170,7 +179,7 @@ func calculateStatus(ms *v1.MachineConfigState, cconfig *v1.ControllerConfig, po
 		MachineCount:            machineCount,
 		UpdatedMachineCount:     updatedMachineCount,
 		ReadyMachineCount:       readyMachineCount,
-		UnavailableMachineCount: unavailableMachineCount, //+ updatingMachineCount,
+		UnavailableMachineCount: unavailableMachineCount + updatingMachineCount,
 		DegradedMachineCount:    degradedMachineCount,
 		CertExpirys:             certExpirys,
 	}

@@ -1,8 +1,0 @@
-apiVersion: machineconfiguration.openshift.io/v1
-kind: MachineConfigState
-metadata:
-  name: bootstrap-health
-  labels:
-    "states.operator.machineconfiguration.openshift.io/mcd": ""
-spec:
-  machineStateKind: MCCBootstrapProgression

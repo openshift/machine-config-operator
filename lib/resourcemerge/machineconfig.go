@@ -2,16 +2,23 @@ package resourcemerge
 
 import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	mcfgalphav1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+	opv1 "github.com/openshift/api/operator/v1"
+
 	"github.com/openshift/library-go/pkg/operator/resource/resourcemerge"
 	"k8s.io/apimachinery/pkg/api/equality"
-	"k8s.io/klog/v2"
 )
 
 // EnsureMachineConfig ensures that the existing matches the required.
 // modified is set to true when existing had to be updated with required.
-func EnsureMachineConfigState(modified *bool, existing *mcfgv1.MachineConfigState, required mcfgv1.MachineConfigState) {
+func EnsureMachineConfigNode(modified *bool, existing *mcfgalphav1.MachineConfigNode, required mcfgalphav1.MachineConfigNode) {
 	resourcemerge.EnsureObjectMeta(modified, &existing.ObjectMeta, required.ObjectMeta)
-	ensureMachineConfigStateSpec(modified, &existing.Spec, required.Spec)
+	ensureMachineConfigNodeSpec(modified, &existing.Spec, required.Spec)
+}
+
+func EnsureMachineConfiguration(modified *bool, existing *opv1.MachineConfiguration, required opv1.MachineConfiguration) {
+	resourcemerge.EnsureObjectMeta(modified, &existing.ObjectMeta, required.ObjectMeta)
+	ensureMachineConfigurationSpec(modified, &existing.Spec, required.Spec)
 }
 
 // EnsureMachineConfig ensures that the existing matches the required.
@@ -52,16 +59,25 @@ func EnsureMachineConfigPool(modified *bool, existing *mcfgv1.MachineConfigPool,
 	}
 }
 
-func ensureMachineConfigStateSpec(modified *bool, existing *mcfgv1.MachineConfigStateSpec, required mcfgv1.MachineConfigStateSpec) {
-	if !equality.Semantic.DeepEqual(existing.Config, required.Config) {
+func ensureMachineConfigurationSpec(modified *bool, existing *opv1.MachineConfigurationSpec, required opv1.MachineConfigurationSpec) {
+	if !equality.Semantic.DeepEqual(existing.Component, required.Component) {
 		*modified = true
-		(*existing).Config = required.Config
-		klog.Infof("the MachineConfigState %s is modified", existing.Config.Name)
+		(*existing).Component = required.Component
 	}
-	if !equality.Semantic.DeepEqual(existing.Config.Name, required.Config.Name) {
+	if !equality.Semantic.DeepEqual(existing.Mode, required.Mode) {
 		*modified = true
-		(*existing).Config.Name = required.Config.Name
-		klog.Infof("the MachineConfigState %s is modified", existing.Config.Name)
+		(*existing).Mode = required.Mode
+	}
+}
+
+func ensureMachineConfigNodeSpec(modified *bool, existing *mcfgalphav1.MachineConfigNodeSpec, required mcfgalphav1.MachineConfigNodeSpec) {
+	if !equality.Semantic.DeepEqual(existing.NodeRef, required.NodeRef) {
+		*modified = true
+		(*existing).NodeRef = required.NodeRef
+	}
+	if !equality.Semantic.DeepEqual(existing.Pool, required.Pool) {
+		*modified = true
+		(*existing).Pool = required.Pool
 	}
 }
 func ensureMachineConfigSpec(modified *bool, existing *mcfgv1.MachineConfigSpec, required mcfgv1.MachineConfigSpec) {

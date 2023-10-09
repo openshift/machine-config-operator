@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"strings"
 
-	v1 "github.com/openshift/api/machineconfiguration/v1"
+	mcfgalphav1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+	opv1 "github.com/openshift/api/operator/v1"
+
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog/v2"
 )
@@ -48,31 +49,31 @@ func (ctrl *Controller) syncAll(syncFuncs []syncFunc, obj string) error {
 		var object interface{}
 		var err error
 
-			object, err = ctrl.Kubeclient.CoreV1().Nodes().Get(context.TODO(), objAndNamespace[1], metav1.GetOptions{})
+			object, err = ctrl.Kubeclient.CoreV1().Nodes().Get(context.TODO(), objAndNamespace[1], metamcfgalphav1.GetOptions{})
 			if err == nil {
 				return syncFunc.fn(object)
 			}
-			object, err = ctrl.Mcfgclient.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), objAndNamespace[1], metav1.GetOptions{})
+			object, err = ctrl.Mcfgclient.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), objAndNamespace[1], metamcfgalphav1.GetOptions{})
 			if err == nil {
 				syncFunc.fn(object)
 			}
-			object, err = ctrl.Mcfgclient.MachineconfigurationV1().KubeletConfigs().Get(context.TODO(), objAndNamespace[1], metav1.GetOptions{})
+			object, err = ctrl.Mcfgclient.MachineconfigurationV1().KubeletConfigs().Get(context.TODO(), objAndNamespace[1], metamcfgalphav1.GetOptions{})
 			if err == nil {
 				syncFunc.fn(object)
 			}
-			object, err = ctrl.Mcfgclient.MachineconfigurationV1().ControllerConfigs().Get(context.TODO(), objAndNamespace[1], metav1.GetOptions{})
+			object, err = ctrl.Mcfgclient.MachineconfigurationV1().ControllerConfigs().Get(context.TODO(), objAndNamespace[1], metamcfgalphav1.GetOptions{})
 			if err == nil {
 				syncFunc.fn(object)
 			}
-			object, err = ctrl.Mcfgclient.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), objAndNamespace[1], metav1.GetOptions{})
+			object, err = ctrl.Mcfgclient.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), objAndNamespace[1], metamcfgalphav1.GetOptions{})
 			if err == nil {
 				syncFunc.fn(object)
 			}
-			object, err = ctrl.Mcfgclient.MachineconfigurationV1().MachineConfigStates().Get(context.TODO(), objAndNamespace[1], metav1.GetOptions{})
+			object, err = ctrl.Mcfgclient.MachineconfigurationV1().MachineConfigNodes().Get(context.TODO(), objAndNamespace[1], metamcfgalphav1.GetOptions{})
 			if err == nil {
 				syncFunc.fn(object)
 			}
-			object, err = ctrl.Kubeclient.CoreV1().Events("openshift-machine-config-operator").Get(context.TODO(), objAndNamespace[1], metav1.GetOptions{})
+			object, err = ctrl.Kubeclient.CoreV1().Events("openshift-machine-config-operator").Get(context.TODO(), objAndNamespace[1], metamcfgalphav1.GetOptions{})
 			if err == nil {
 				syncFunc.fn(object)
 			}
@@ -80,9 +81,9 @@ func (ctrl *Controller) syncAll(syncFuncs []syncFunc, obj string) error {
 			return fmt.Errorf("Object %s not found", objAndNamespace[1])
 			// find out which type of obj we are
 			/*
-				object, err = ctrl.Mcfgclient.MachineconfigurationV1().MachineConfigStates().Get(context.TODO(), objAndNamespace[1], metav1.GetOptions{})
+				object, err = ctrl.Mcfgclient.MachineconfigurationV1().MachineConfigNodes().Get(context.TODO(), objAndNamespace[1], metamcfgalphav1.GetOptions{})
 				if err != nil {
-					object, err = ctrl.Kubeclient.CoreV1().Events("openshift-machine-config-operator").Get(context.TODO(), objAndNamespace[1], metav1.GetOptions{})
+					object, err = ctrl.Kubeclient.CoreV1().Events("openshift-machine-config-operator").Get(context.TODO(), objAndNamespace[1], metamcfgalphav1.GetOptions{})
 					if err != nil {
 						return err
 					}
@@ -139,11 +140,11 @@ func (ctrl *Controller) syncAll(syncFuncs []syncFunc, obj string) error {
 // namespace/event
 // namespace/machine-state-name
 func (ctrl *Controller) syncMCC(obj interface{}) error {
-	var msToSync *v1.MachineConfigState
+	var msToSync *mcfgalphav1.MachineConfigNode
 	var eventToSync *corev1.Event
 	var ok bool
 
-	if msToSync, ok = obj.(*v1.MachineConfigState); !ok {
+	if msToSync, ok = obj.(*mcfgalphav1.MachineConfigNode); !ok {
 		msToSync = nil
 		if eventToSync, ok = obj.(*corev1.Event); !ok {
 			return fmt.Errorf("Could not get event or MS from object: %s", obj.(string))
@@ -163,11 +164,11 @@ func (ctrl *Controller) syncMCC(obj interface{}) error {
 
 func (ctrl *Controller) syncMCD(obj interface{}) error {
 	//syncNode
-	var msToSync *v1.MachineConfigState
+	var msToSync *mcfgalphav1.MachineConfigNode
 	var eventToSync *corev1.Event
 	var ok bool
 
-	if msToSync, ok = obj.(*v1.MachineConfigState); !ok {
+	if msToSync, ok = obj.(*mcfgalphav1.MachineConfigNode); !ok {
 		if eventToSync, ok = obj.(*corev1.Event); !ok {
 			return fmt.Errorf("Could not get event or MS from object: %s", obj.(string))
 		}
@@ -186,11 +187,11 @@ func (ctrl *Controller) syncMCD(obj interface{}) error {
 }
 
 func (ctrl *Controller) syncMCS(obj interface{}) error {
-	var msToSync *v1.MachineConfigState
+	var msToSync *mcfgalphav1.MachineConfigNode
 	var eventToSync *corev1.Event
 	var ok bool
 
-	if msToSync, ok = obj.(*v1.MachineConfigState); !ok {
+	if msToSync, ok = obj.(*mcfgalphav1.MachineConfigNode); !ok {
 		if eventToSync, ok = obj.(*corev1.Event); !ok {
 			return fmt.Errorf("Could not get event or MS from object: %s", obj.(string))
 		}
@@ -210,11 +211,11 @@ func (ctrl *Controller) syncMCS(obj interface{}) error {
 func (ctrl *Controller) syncMetrics(obj interface{}) error {
 	// get requests
 	// update metrics requested, or register, or degregister
-	var msToSync *v1.MachineConfigState
+	var msToSync *mcfgalphav1.MachineConfigNode
 	var eventToSync *corev1.Event
 	var ok bool
 
-	if msToSync, ok = obj.(*v1.MachineConfigState); !ok {
+	if msToSync, ok = obj.(*mcfgalphav1.MachineConfigNode); !ok {
 		if eventToSync, ok = obj.(*corev1.Event); !ok {
 			return fmt.Errorf("Could not get event or MS from object: %s", obj.(string))
 		}
@@ -232,11 +233,11 @@ func (ctrl *Controller) syncMetrics(obj interface{}) error {
 }
 
 func (ctrl *Controller) syncUpgradingProgression(obj interface{}) error {
-	var msToSync *v1.MachineConfigState
+	var msToSync *mcfgalphav1.MachineConfigNode
 	var eventToSync *corev1.Event
 	var ok bool
 
-	if msToSync, ok = obj.(*v1.MachineConfigState); !ok {
+	if msToSync, ok = obj.(*mcfgalphav1.MachineConfigNode); !ok {
 		if eventToSync, ok = obj.(*corev1.Event); !ok {
 			return fmt.Errorf("Could not get event or MS from object: %s", obj.(string))
 		}
@@ -260,11 +261,11 @@ func (ctrl *Controller) syncUpgradingProgression(obj interface{}) error {
 }
 
 func (ctrl *Controller) syncOperatorProgression(obj interface{}) error {
-	var msToSync *v1.MachineConfigState
+	var msToSync *mcfgalphav1.MachineConfigNode
 	var eventToSync *corev1.Event
 	var ok bool
 
-	if msToSync, ok = obj.(*v1.MachineConfigState); !ok {
+	if msToSync, ok = obj.(*mcfgalphav1.MachineConfigNode); !ok {
 		if eventToSync, ok = obj.(*corev1.Event); !ok {
 			return fmt.Errorf("Could not get event or MS from object: %s", obj.(string))
 		}
@@ -282,29 +283,34 @@ func (ctrl *Controller) syncOperatorProgression(obj interface{}) error {
 
 }
 
-func (ctrl *Controller) GenerateMachineConfigStates(object interface{}) []*v1.MachineConfigState {
-	var msArr []*v1.MachineConfigState
-	var state v1.StateProgress
-	var phase string
-	var reason string
-	//newStatus :=
+func (ctrl *Controller) GenerateMachineConfigNodes(object interface{}) []*mcfgalphav1.MachineConfigNode {
+	var msArr []*mcfgalphav1.MachineConfigNode
+	var ParentState mcfgalphav1.StateProgress
+	var ParentPhase string
+	var ParentReason string
+
+	var ChildState mcfgalphav1.StateProgress
+	var ChildPhase string
+	var ChildReason string
+
+	// We Should have 2 true conditions and all of the other ones should be false
+	// 1 == higher up state (updating, updateinprogress)
+	// 2 == phase (cordoning, draining etc)
 	klog.Infof("OBJ: %s", object.(string))
 	if nodeToSync, err := ctrl.nodeInformer.Lister().Get(object.(string)); err == nil {
 		klog.Infof("GOT NODE %s", nodeToSync.Name)
-		pool := "worker"
-		if _, ok := nodeToSync.Labels["node-role.kubernetes.io/master"]; ok {
-			pool = "master"
-		}
-		whichMS := fmt.Sprintf("upgrade-%s", pool)
-		ms, _ := ctrl.Mcfgclient.MachineconfigurationV1().MachineConfigStates().Get(context.TODO(), whichMS, metav1.GetOptions{})
+		ms, _ := ctrl.Mcfgclient.MachineconfigurationV1alpha1().MachineConfigNodes().Get(context.TODO(), nodeToSync.Name, metav1.GetOptions{})
 		newMS := ms.DeepCopy()
 		// if the config annotations differ, we are upgrading. else we are not.
 		if nodeToSync.Annotations[constants.DesiredMachineConfigAnnotationKey] != nodeToSync.Annotations[constants.CurrentMachineConfigAnnotationKey] {
 			switch nodeToSync.Annotations[constants.MachineConfigDaemonStateAnnotationKey] {
 			case constants.MachineConfigDaemonStateWorkPerparing:
-				state = v1.MachineConfigPoolUpdatePreparing
-				phase = "NodeUpgradePreparing"
-				reason = nodeToSync.Annotations[constants.MachineConfigDaemonReasonAnnotationKey]
+				ChildState = mcfgalphav1.StateProgress(nodeToSync.Annotations[constants.MachineConfigDaemonPhaseAnnotationKey])
+				ParentState = mcfgalphav1.MachineConfigPoolUpdatePreparing
+				ParentPhase = string(ChildState)
+				ParentReason = fmt.Sprintf("Update Preparing. Currently: %s", string(ChildState))
+				ChildPhase = fmt.Sprintf("%s%s", string(mcfgalphav1.MachineConfigPoolUpdatePreparing), string(ChildState))
+				ChildReason = nodeToSync.Annotations[constants.MachineConfigDaemonReasonAnnotationKey]
 			case constants.MachineConfigDaemonStateWorking:
 				if nodeToSync.Annotations[constants.LastAppliedDrainerAnnotationKey] != nodeToSync.Annotations[constants.DesiredDrainerAnnotationKey] {
 					desiredVerb := strings.Split(nodeToSync.Annotations[constants.DesiredDrainerAnnotationKey], "-")[0]
@@ -312,118 +318,223 @@ func (ctrl *Controller) GenerateMachineConfigStates(object interface{}) []*v1.Ma
 					// this might not be right. We seem to drain/uncordon more than I assumed
 					case constants.DrainerStateDrain:
 						// we are draining
-						state = v1.MachineConfigPoolUpdateInProgress
-						phase = fmt.Sprintf("Draining node. Desired Drainer is %s", nodeToSync.Annotations[constants.DesiredDrainerAnnotationKey])
-						reason = "NodeDraining"
+						ChildState = mcfgalphav1.StateProgress(nodeToSync.Annotations[constants.MachineConfigDaemonPhaseAnnotationKey])
+						ParentState = mcfgalphav1.MachineConfigPoolUpdateInProgress
+						ParentPhase = string(ChildState)
+						ParentReason = fmt.Sprintf("Update In Progress. Currently: %s", string(ChildState))
+						ChildPhase = fmt.Sprintf("%s%s", string(mcfgalphav1.MachineConfigPoolUpdateInProgress), string(ChildState))
+						ChildReason = fmt.Sprintf("Draining node. Desired Drainer is %s", nodeToSync.Annotations[constants.DesiredDrainerAnnotationKey])
 					case constants.DrainerStateUncordon:
 						// we are uncordoning, this only happens (I think) in completeUpdate. If not, we need another state for this
-						state = v1.MachineConfigPoolUpdateCompleting
-						phase = fmt.Sprintf("Cordining/Uncordoning node. Desired Drainer is %s", nodeToSync.Annotations[constants.DesiredDrainerAnnotationKey])
-						reason = "NodeUncordoning"
+						ChildState = mcfgalphav1.StateProgress(nodeToSync.Annotations[constants.MachineConfigDaemonPhaseAnnotationKey])
+						ParentState = mcfgalphav1.MachineConfigPoolUpdateCompleting
+						ParentPhase = string(ChildState)
+						ParentReason = fmt.Sprintf("Update Completing. Currently: %s", string(ChildState))
+						ChildPhase = fmt.Sprintf("%s%s", string(mcfgalphav1.MachineConfigPoolUpdateCompleting), string(ChildState))
+						ChildReason = fmt.Sprintf("Cordining/Uncordoning node. Desired Drainer is %s", nodeToSync.Annotations[constants.DesiredDrainerAnnotationKey])
 					}
 					// we are draining
 					break
 				}
-				state = v1.MachineConfigPoolUpdateInProgress
-				phase = nodeToSync.Annotations[constants.MachineConfigDaemonPhaseAnnotationKey]
-				reason = nodeToSync.Annotations[constants.MachineConfigDaemonReasonAnnotationKey]
+				ChildState = mcfgalphav1.StateProgress(nodeToSync.Annotations[constants.MachineConfigDaemonPhaseAnnotationKey])
+				ParentState = mcfgalphav1.MachineConfigPoolUpdateInProgress
+				ParentPhase = string(ChildState)
+				ParentReason = fmt.Sprintf("Update in Progress. Currently: %s", string(ChildState))
+				ChildPhase = fmt.Sprintf("%s%s", string(mcfgalphav1.MachineConfigPoolUpdateInProgress), string(ChildState))
+				ChildReason = nodeToSync.Annotations[constants.MachineConfigDaemonReasonAnnotationKey]
 			case constants.MachineConfigDaemonStateWorkPostAction:
 				// updatePostAction
-				state = v1.MachineConfigPoolUpdatePostAction
-				phase = nodeToSync.Annotations[constants.MachineConfigDaemonPhaseAnnotationKey]
-				reason = nodeToSync.Annotations[constants.MachineConfigDaemonReasonAnnotationKey]
+				ChildState = mcfgalphav1.StateProgress(nodeToSync.Annotations[constants.MachineConfigDaemonPhaseAnnotationKey])
+				ParentState = mcfgalphav1.MachineConfigPoolUpdatePostAction
+				ParentPhase = string(ChildState)
+				ParentReason = fmt.Sprintf("Update in Post Action Phase. Currently: %s", string(ChildState))
+				ChildPhase = fmt.Sprintf("%s%s", string(mcfgalphav1.MachineConfigPoolUpdatePostAction), string(ChildState))
+				ChildReason = nodeToSync.Annotations[constants.MachineConfigDaemonReasonAnnotationKey]
 			case constants.MachineConfigDaemonResuming:
-				state = v1.MachineConfigPoolResuming
-				phase = "MachineConfigDaemonResuming"
-				reason = nodeToSync.Annotations[constants.MachineConfigDaemonReasonAnnotationKey]
+				ChildState = mcfgalphav1.StateProgress(nodeToSync.Annotations[constants.MachineConfigDaemonPhaseAnnotationKey])
+				ParentState = mcfgalphav1.MachineConfigPoolResuming
+				ParentPhase = string(ChildState)
+				ParentReason = fmt.Sprintf("Update Complete. Currently: %s", string(ChildState))
+				ChildPhase = fmt.Sprintf("%s%s", string(mcfgalphav1.MachineConfigPoolResuming), string(ChildState))
+				ChildReason = nodeToSync.Annotations[constants.MachineConfigDaemonReasonAnnotationKey]
 			case constants.MachineConfigDaemonStateDegraded:
-				state = v1.MachineConfigStateErrored
-				reason = nodeToSync.Annotations[constants.MachineConfigDaemonReasonAnnotationKey]
-				phase = "UpgradeErrored"
+				ParentState = mcfgalphav1.MachineConfigNodeErrored
+				ParentPhase = nodeToSync.Annotations[constants.MachineConfigDaemonPhaseAnnotationKey]
+				ParentReason = nodeToSync.Annotations[constants.MachineConfigDaemonReasonAnnotationKey]
 
 			}
 		} else {
 			// else they are equal... but we need to figure out: were we just updating though?
-			wasUpdating := false
-			existsAlready := false
-			for _, s := range ms.Status.MostRecentState {
-				if s.Name == nodeToSync.Name {
-					existsAlready = true
-					if s.State == v1.MachineConfigPoolUpdateCompleting || s.State == v1.MachineConfigPoolUpdatePreparing || s.State == v1.MachineConfigPoolUpdateInProgress || s.State == v1.MachineConfigPoolUpdatePostAction {
-						wasUpdating = true
-					}
+			alreadyUpdated := false
+			for _, s := range ms.Status.Conditions {
+				if mcfgalphav1.StateProgress(s.Type) == mcfgalphav1.MachineConfigPoolUpdateComplete && s.Status == metav1.ConditionTrue {
+					alreadyUpdated = true
 				}
 			}
 			// if the MCO was updating, but no longer has mismatched configs, that means the update is complete
-			if wasUpdating {
-				state = v1.MachineConfigPoolUpdateComplete
-				reason = "NodeUpgradeComplete"
-				phase = fmt.Sprintf("Node has completed update to config %s", nodeToSync.Annotations[constants.CurrentMachineConfigAnnotationKey])
-			} else if !existsAlready {
-				// else if none of this is true BUT this item does not exist in the list, we need to add Ready.
-				state = v1.MachineConfigPoolReady
-				reason = "NodeReady"
-				phase = fmt.Sprintf("Node is ready and in config %s", nodeToSync.Annotations[constants.CurrentMachineConfigAnnotationKey])
+			if !alreadyUpdated {
+				ParentState = mcfgalphav1.MachineConfigPoolUpdateComplete
+				ParentPhase = "NodeUpgradeComplete"
+				ParentReason = fmt.Sprintf("Node has completed update to config %s", nodeToSync.Annotations[constants.CurrentMachineConfigAnnotationKey])
 			} else {
 				// else we are already Ready. No need to update
 				return nil
 			}
 		}
-		newCondition := v1.ProgressionCondition{
-			Name:   nodeToSync.Name,
-			State:  state,
-			Phase:  phase,
-			Reason: reason,
-			Time:   metav1.Now(),
+		newParentCondition := metav1.Condition{
+			Type:               string(ParentState),
+			Status:             metav1.ConditionTrue,
+			Reason:             ParentPhase,
+			Message:            ParentReason,
+			LastTransitionTime: metav1.Now(),
+		}
+		var newChildCondition *metav1.Condition
+		var c2 []byte
+		if len(ChildState) > 0 {
+			newChildCondition = &metav1.Condition{
+				Type:               string(ChildState),
+				Status:             metav1.ConditionTrue,
+				Reason:             ChildPhase,
+				Message:            ChildReason,
+				LastTransitionTime: metav1.Now(),
+			}
+			c2, _ = json.Marshal(&newChildCondition)
+			klog.Infof("new condition 1: %s", string(c2))
 		}
 
-		newMS.Status.Health = v1.Healthy
-		if state == v1.MachineConfigStateErrored {
-			newMS.Status.MostRecentError = reason
-			newMS.Status.Health = v1.UnHealthy
+		c1, _ := json.Marshal(newParentCondition)
+		klog.Infof("new condition 1: %s", string(c1))
+
+		allConditionTypes := []mcfgalphav1.StateProgress{
+			mcfgalphav1.MachineConfigPoolUpdatePreparing,
+			mcfgalphav1.MachineConfigPoolUpdateInProgress,
+			mcfgalphav1.MachineConfigPoolUpdatePostAction,
+			mcfgalphav1.MachineConfigPoolUpdateCompleting,
+			mcfgalphav1.MachineConfigPoolUpdateComplete,
+			mcfgalphav1.MachineConfigPoolResuming,
+			mcfgalphav1.MachineConfigNodeErrored,
+			mcfgalphav1.MachineConfigPoolUpdateComparingMC,
+			mcfgalphav1.MachineConfigPoolUpdateDraining,
+			mcfgalphav1.MachineConfigPoolUpdateFilesAndOS,
+			mcfgalphav1.MachineConfigPoolUpdateCordoning,
+			mcfgalphav1.MachineConfigPoolUpdateRebooting,
+			mcfgalphav1.MachineConfigPoolUpdateReloading,
 		}
-
-		c, _ := json.Marshal(newCondition)
-		klog.Infof("new condition: %s", string(c))
-		// update overall progression
-		// remove a list item if too long, we don't want 100s of statuses
-
-		if len(newMS.Status.ProgressionHistory) > 20 {
-			newMS.Status.ProgressionHistory = newMS.Status.ProgressionHistory[1:]
-		}
-
-		prog := v1.ProgressionHistory{
-			NameAndState: fmt.Sprintf("%s:%s", newCondition.Name, newCondition.State),
-			Phase:        newCondition.Phase,
-			Reason:       newCondition.Reason,
-		}
-
-		if len(newMS.Status.ProgressionHistory) == 0 || !equality.Semantic.DeepEqual(prog, newMS.Status.ProgressionHistory[len(newMS.Status.ProgressionHistory)-1]) {
-			newMS.Status.ProgressionHistory = append(newMS.Status.ProgressionHistory, prog) //[node.Name] = append([]v1.ProgressionCondition{newCondition}, newState.Status.Progression[node.Name]...)
-		}
-		//newState.Status.Progression[newStateProgress] = newCondition
-
-		// update most recent state per node
-		//	newState.Status.MostRecentState[objName] = newCondition
-
-		if newMS.Status.MostRecentState == nil {
-			newMS.Status.MostRecentState = []v1.ProgressionCondition{}
-		}
-
-		// supposedly this is supposed to only allow one of each key :shrug:
-		alreadyExists := false
-		for i, currentMostRecentState := range newMS.Status.MostRecentState {
-			if currentMostRecentState.Name == newCondition.Name {
-				newMS.Status.MostRecentState[i] = newCondition
-				alreadyExists = true
-				break
+		// create all of the conditions, even the false ones
+		if newMS.Status.Conditions == nil {
+			newMS.Status.Conditions = []metav1.Condition{}
+			newMS.Status.Conditions = append(newMS.Status.Conditions, newParentCondition)
+			if newChildCondition != nil {
+				newMS.Status.Conditions = append(newMS.Status.Conditions, *newChildCondition)
+			}
+			for _, condType := range allConditionTypes {
+				found := false
+				for _, cond := range newMS.Status.Conditions {
+					// if this is one of our two conditions, do not nullify this
+					if condType == mcfgalphav1.StateProgress(cond.Type) {
+						found = true
+					}
+				}
+				// else if we do not have this one yet, set it to some sane default.
+				if !found {
+					newMS.Status.Conditions = append(newMS.Status.Conditions,
+						metav1.Condition{
+							Type:               string(condType),
+							Message:            fmt.Sprintf("This node has not yet entered the %s phase", string(condType)),
+							Reason:             "NotYetOccured",
+							LastTransitionTime: metav1.Now(),
+							Status:             metav1.ConditionFalse,
+						})
+				}
+			}
+			// else we already have some conditions. Lets update accordingly
+		} else {
+			foundChild := false
+			foundParent := false
+			// look through all of the conditions for our current ones, updat them accordingly
+			// also set all other ones to false and update last transition time.
+			for i, condition := range newMS.Status.Conditions {
+				if newChildCondition != nil && condition.Type == newChildCondition.Type {
+					foundChild = true
+					newChildCondition.DeepCopyInto(&condition)
+				} else if condition.Type == newParentCondition.Type {
+					foundParent = true
+					newParentCondition.DeepCopyInto(&condition)
+				} else if condition.Status != metav1.ConditionFalse {
+					condition.Status = metav1.ConditionFalse
+					condition.LastTransitionTime = metav1.Now()
+				}
+				condition.DeepCopyInto(&newMS.Status.Conditions[i])
+			}
+			// I don't think this'll happen given the above logic, but if somehow we do not have an entry for this yet, add one.
+			if !foundChild && newChildCondition != nil {
+				newMS.Status.Conditions = append(newMS.Status.Conditions, *newChildCondition)
+			}
+			if !foundParent {
+				newMS.Status.Conditions = append(newMS.Status.Conditions, newParentCondition)
 			}
 		}
-		if !alreadyExists {
-			newMS.Status.MostRecentState = append(newMS.Status.MostRecentState, newCondition)
+
+		newMS.Status.ConfigVersion = mcfgalphav1.MachineConfigVersion{
+			Desired: nodeToSync.Annotations["machineconfiguration.openshift.io/desiredConfig"],
+			Current: nodeToSync.Annotations["machineconfiguration.openshift.io/currentConfig"],
 		}
+
 		msArr = append(msArr, newMS)
 
 	}
 	return msArr
+}
+
+func (ctrl *Controller) GenerateMachineConfiguration(object interface{}) []opv1.MachineConfiguration {
+	mcfgArr := []opv1.MachineConfiguration{}
+
+	objectToUse := ""
+	objAndNamespace := strings.Split(object.(string), "/")
+	if len(objAndNamespace) != 2 {
+		klog.Infof("Obj: %s", object.(string))
+		// just try it
+		objectToUse = objAndNamespace[0]
+		//return fmt.Errorf("Object could not be split up, %s", key)
+	} else {
+		objectToUse = objAndNamespace[1]
+	}
+	// how are we going to do this.
+	// we get word that an object was either created, updated, or deleted.
+	// certain objects are modified in certain areas of the mco and in certain ways
+	// so if we can create a layout map of who is modified where, we can figure out what we are doing.
+	if cc, err := ctrl.ccInformer.Lister().Get(objectToUse); err == nil {
+		// render config generated by the operator
+		// but not applied or updated until the syncControllerConfig call from the controller's sync loop
+		klog.Infof("Got an edit on cc: %s Not Implemeneted yet :)", cc.Name)
+	} else if kc, err := ctrl.kcInformer.Lister().Get(objectToUse); err == nil {
+		// sync'd either from addFinalizerToKubeletConfig
+		// or from syncStatusOnly where the status is updated
+		// or when annotations are added via .Update addAnnotations
+		klog.Infof("Got an edit on kc: %s Not Implemeneted yet :)", kc.Name)
+	} else if cm, err := ctrl.cmInformer.Lister().ConfigMaps(objAndNamespace[0]).Get(objectToUse); err == nil {
+		// modified in a few different namespaces but the ones I am going to care about at first are:
+		// merged-trusted-image-registry-ca
+		// image-registry-ca
+		klog.Infof("Got an edit on cm : %s Not Implemeneted yet :)", cm.Name)
+	} else if mcp, err := ctrl.mcpInformer.Lister().Get(objectToUse); err == nil {
+		// modified in the node controller when we sync status or change annotations
+		// modified in osbuilder -- syncing status after failed build or successful one
+		// modified in render controller -- after applying generated MC
+		//
+		klog.Infof("Got an edit on mcp: %s Not Implemeneted yet :)", mcp.Name)
+
+	} else if crd, err := ctrl.crdInformer.Lister().Get(objectToUse); err == nil {
+		// basically only updated (by us) in the operator's sync func: syncCustomResourceDefinitions
+		klog.Infof("Got an edit on crd: %s Not Implemeneted yet :)", crd.Name)
+
+	} else if deployment, err := ctrl.deploymentInformer.Lister().Deployments("openshift-machine-config-operator").Get(objectToUse); err == nil {
+		// our deplyoment
+		// mcc deployment
+		// mob deployment
+		klog.Infof("Got an edit on deployment: %s Not Implemeneted yet :)", deployment.Name)
+
+	}
+
+	return mcfgArr
 }

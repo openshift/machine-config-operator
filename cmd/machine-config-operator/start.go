@@ -89,6 +89,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			ctrlctx.ClientBuilder.KubeClientOrDie(componentName),
 			ctrlctx.ClientBuilder.APIExtClientOrDie(componentName),
 			ctrlctx.ClientBuilder.ConfigClientOrDie(componentName),
+			ctrlctx.ClientBuilder.OperatorClientOrDie(componentName),
 			ctrlctx.OpenShiftKubeAPIServerKubeNamespacedInformerFactory.Core().V1().ConfigMaps(),
 			ctrlctx.KubeInformerFactory.Core().V1().Nodes(),
 			ctrlctx.KubeMAOSharedInformer.Core().V1().Secrets(),
@@ -97,7 +98,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			ctrlctx.KubeNamespacedInformerFactory.Core().V1().Secrets(),
 			ctrlctx.OpenShiftConfigKubeNamespacedInformerFactory.Core().V1().Secrets(),
 			ctrlctx.ConfigInformerFactory.Config().V1().ClusterOperators(),
-			ctrlctx.NamespacedInformerFactory.Machineconfiguration().V1().MachineConfigStates(),
+			ctrlctx.NamespacedInformerFactory.Machineconfiguration().V1alpha1().MachineConfigNodes(),
 		)
 
 		ctrlctx.NamespacedInformerFactory.Start(ctrlctx.Stop)

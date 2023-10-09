@@ -7,7 +7,7 @@ CRDS_MAPPING=( "v1/0000_80_containerruntimeconfig.crd.yaml:0000_80_machine-confi
                "v1/0000_80_kubeletconfig.crd.yaml:0000_80_machine-config-operator_01_kubeletconfig.crd.yaml"
                "v1/0000_80_machineconfig.crd.yaml:0000_80_machine-config-operator_01_machineconfig.crd.yaml"
                "v1/0000_80_machineconfigpool.crd.yaml:0000_80_machine-config-operator_01_machineconfigpool.crd.yaml"
-               v1/0000_80_machineconfigstate.crd.yaml:0000_80_machine-config-operator_01_machineconfigstate.crd.yaml ) 
+               v1alpha1/0000_80_machineconfignode.crd.yaml:0000_80_machine-config-operator_01_machineconfignode.crd.yaml ) 
                 #TODO(jkyros): 0000_80_machine-config-operator_02_containerruntimeconfig.crd.yaml)
 
 for crd in "${CRDS_MAPPING[@]}" ; do
@@ -18,6 +18,7 @@ done
 
 #this one goes in manifests rather than install, but should it? 
 cp "vendor/github.com/openshift/api/machineconfiguration/v1/0000_80_controllerconfig.crd.yaml" "manifests/controllerconfig.crd.yaml"
+cp "vendor/github.com/openshift/api/operator/v1/0000_80_machine-config-operator_01_config.crd.yaml" "install/0000_80_machine-config-operator_01_config.crd.yaml"
 
 
 #v1/0000_10_containerruntimeconfig.crd.yaml:0000_80_machine-config-operator_01_containerruntimeconfig.crd.yaml

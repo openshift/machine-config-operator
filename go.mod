@@ -26,8 +26,8 @@ require (
 	github.com/google/renameio v0.1.0
 	github.com/imdario/mergo v0.3.13
 	github.com/opencontainers/go-digest v1.0.0
-	github.com/openshift/api v0.0.0-20231013202211-096c446e7f60
-	github.com/openshift/client-go v0.0.0-20231005121823-e81400b97c46
+	github.com/openshift/api v0.0.0-20230929221546-73731d374fbf
+	github.com/openshift/client-go v0.0.0-20230926161409-848405da69e1
 	github.com/openshift/cluster-config-operator v0.0.0-alpha.0.0.20230516205036-088c6d48cc1a
 	github.com/openshift/library-go v0.0.0-20231010152045-c91dd9756953
 	github.com/openshift/runtime-utils v0.0.0-20230921210328-7bdb5b9c177b
@@ -327,8 +327,8 @@ require (
 	sigs.k8s.io/yaml v1.3.0 // indirect
 )
 
-replace github.com/openshift/api => github.com/cdoern/api v0.0.0-20231005133555-eb1d410b3cc5
-
 replace k8s.io/kube-openapi => github.com/openshift/kube-openapi v0.0.0-20230816122517-ffc8f001abb0
 
-replace github.com/openshift/client-go => github.com/cdoern/client-go v0.0.0-20231005134336-d47d5818c40d
+replace github.com/openshift/client-go => github.com/cdoern/client-go v0.0.0-20231016145455-5304126d9d12
+
+replace github.com/openshift/api => github.com/cdoern/api v0.0.0-20231016144815-7282c4245d9b

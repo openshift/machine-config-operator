@@ -1264,6 +1264,53 @@ func (MachineConfigurationList) SwaggerDoc() map[string]string {
 	return map_MachineConfigurationList
 }
 
+var map_MachineConfigurationSpec = map[string]string{
+	"component": "component details which part of the MCO this is coming from",
+	"mode":      "Mode describes if we are talking about this object in cluster or during bootstrap",
+}
+
+func (MachineConfigurationSpec) SwaggerDoc() map[string]string {
+	return map_MachineConfigurationSpec
+}
+
+var map_MachineConfigurationStatus = map[string]string{
+	"mostRecentState":    "mostRecentState is the most recent state reporting for each component",
+	"progressionHistory": "progressionHistory contains a list of events that have happened on all objects in the MCO",
+	"mostRecentError":    "mostRecentError is populated if the State reports an error.",
+	"health":             "health reports the overall status of the MCO given its Progress",
+}
+
+func (MachineConfigurationStatus) SwaggerDoc() map[string]string {
+	return map_MachineConfigurationStatus
+}
+
+var map_ProgressionCondition = map[string]string{
+	"":           "ProgressionCondition is the base struct that contains all information about an event reported from an MCO component",
+	"kind":       "kind describes the type of object for this condition (node, mcp, etc)",
+	"state":      "state describes what is happening with this object",
+	"objectName": "nameName is the object's name",
+	"phase":      "phase is the general action occuring",
+	"reason":     "reason is a more detailed description of the phase",
+	"time":       "time is the timestamp of this event",
+}
+
+func (ProgressionCondition) SwaggerDoc() map[string]string {
+	return map_ProgressionCondition
+}
+
+var map_ProgressionHistory = map[string]string{
+	"":                   "ProgressionHistory contains the history of an object that exists in a progressioncondition",
+	"componentAndObject": "componentAndObject describes the name of the component and type of object we are dealing with",
+	"state":              "state describes what is happening with this component",
+	"objectType":         "objectType describes the type of object",
+	"phase":              "phase is the general action occuring",
+	"reason":             "reason is a more detailed description of the phase",
+}
+
+func (ProgressionHistory) SwaggerDoc() map[string]string {
+	return map_ProgressionHistory
+}
+
 var map_AdditionalNetworkDefinition = map[string]string{
 	"":                    "AdditionalNetworkDefinition configures an extra network that is available but not created by default. Instead, pods must request them by name. type must be specified, along with exactly one \"Config\" that matches the type.",
 	"type":                "type is the type of network The supported values are NetworkTypeRaw, NetworkTypeSimpleMacvlan",

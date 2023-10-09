@@ -2245,6 +2245,10 @@ var schemaYAML = typed.YAMLObject(`types:
 - name: com.github.openshift.api.operator.v1.MachineConfigurationSpec
   map:
     fields:
+    - name: component
+      type:
+        scalar: string
+      default: ""
     - name: failedRevisionLimit
       type:
         scalar: numeric
@@ -2256,6 +2260,10 @@ var schemaYAML = typed.YAMLObject(`types:
       type:
         scalar: string
     - name: managementState
+      type:
+        scalar: string
+      default: ""
+    - name: mode
       type:
         scalar: string
       default: ""
@@ -2288,12 +2296,28 @@ var schemaYAML = typed.YAMLObject(`types:
           elementType:
             namedType: com.github.openshift.api.operator.v1.GenerationStatus
           elementRelationship: atomic
+    - name: health
+      type:
+        scalar: string
+      default: ""
     - name: latestAvailableRevision
       type:
         scalar: numeric
     - name: latestAvailableRevisionReason
       type:
         scalar: string
+    - name: mostRecentError
+      type:
+        scalar: string
+      default: ""
+    - name: mostRecentState
+      type:
+        list:
+          elementType:
+            namedType: com.github.openshift.api.operator.v1.ProgressionCondition
+          elementRelationship: associative
+          keys:
+          - objectName
     - name: nodeStatuses
       type:
         list:
@@ -2303,6 +2327,12 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: observedGeneration
       type:
         scalar: numeric
+    - name: progressionHistory
+      type:
+        list:
+          elementType:
+            namedType: com.github.openshift.api.operator.v1.ProgressionHistory
+          elementRelationship: atomic
     - name: readyReplicas
       type:
         scalar: numeric
@@ -2780,6 +2810,56 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: protocol
       type:
         scalar: string
+- name: com.github.openshift.api.operator.v1.ProgressionCondition
+  map:
+    fields:
+    - name: kind
+      type:
+        scalar: string
+      default: ""
+    - name: objectName
+      type:
+        scalar: string
+      default: ""
+    - name: phase
+      type:
+        scalar: string
+      default: ""
+    - name: reason
+      type:
+        scalar: string
+      default: ""
+    - name: state
+      type:
+        scalar: string
+      default: ""
+    - name: time
+      type:
+        namedType: io.k8s.apimachinery.pkg.apis.meta.v1.Time
+      default: {}
+- name: com.github.openshift.api.operator.v1.ProgressionHistory
+  map:
+    fields:
+    - name: componentAndObject
+      type:
+        scalar: string
+      default: ""
+    - name: objectType
+      type:
+        scalar: string
+      default: ""
+    - name: phase
+      type:
+        scalar: string
+      default: ""
+    - name: reason
+      type:
+        scalar: string
+      default: ""
+    - name: state
+      type:
+        scalar: string
+      default: ""
 - name: com.github.openshift.api.operator.v1.ProjectAccess
   map:
     fields:

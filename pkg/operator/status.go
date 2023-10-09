@@ -8,6 +8,9 @@ import (
 	"strings"
 	"time"
 
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	mcfgalphav1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+
 	configv1 "github.com/openshift/api/config/v1"
 	cov1helpers "github.com/openshift/library-go/pkg/config/clusteroperator/v1helpers"
 	corev1 "k8s.io/api/core/v1"
@@ -18,7 +21,6 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/klog/v2"
 
-	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	v1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -305,8 +307,8 @@ func (optr *Operator) syncUpgradeableStatus() error {
 	// need to determine if upgrading now equals ONLY MCPUpgradeInProgress, or if we just want state controller to supplement this understanding
 	for _, pool := range pools {
 		// collect updating status but continue to check each pool to see if any pool is degraded
-		updateInProg, err := state.IsUpgradingProgressionTrue(mcfgv1.MachineConfigPoolUpdateInProgress, *pool, optr.msLister, optr.apiExtClient)
-		/*if isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolUpdating) {
+		updateInProg, err := state.IsUpgradingProgressionTrue(mcfgalphav1.MachineConfigPoolUpdateInProgress, *pool, optr.msLister, optr.apiExtClient)
+		/*if isPoolStatusConditionTrue(pool, mcfgalphav1.MachineConfigPoolUpdating) {
 			updating = true
 		}*/
 		if err != nil {
@@ -314,19 +316,19 @@ func (optr *Operator) syncUpgradeableStatus() error {
 			return err
 		}
 
-		updatePrep, err := state.IsUpgradingProgressionTrue(mcfgv1.MachineConfigPoolUpdatePreparing, *pool, optr.msLister, optr.apiExtClient)
+		updatePrep, err := state.IsUpgradingProgressionTrue(mcfgalphav1.MachineConfigPoolUpdatePreparing, *pool, optr.msLister, optr.apiExtClient)
 		if err != nil {
 			klog.Errorf("error on Upgrading Progression %w", err)
 			return err
 		}
 
-		updateFinishing, err := state.IsUpgradingProgressionTrue(mcfgv1.MachineConfigPoolUpdateCompleting, *pool, optr.msLister, optr.apiExtClient)
+		updateFinishing, err := state.IsUpgradingProgressionTrue(mcfgalphav1.MachineConfigPoolUpdateCompleting, *pool, optr.msLister, optr.apiExtClient)
 		if err != nil {
 			klog.Errorf("error on Upgrading Progression %w", err)
 			return err
 		}
 
-		updatePostAction, err := state.IsUpgradingProgressionTrue(mcfgv1.MachineConfigPoolUpdatePostAction, *pool, optr.msLister, optr.apiExtClient)
+		updatePostAction, err := state.IsUpgradingProgressionTrue(mcfgalphav1.MachineConfigPoolUpdatePostAction, *pool, optr.msLister, optr.apiExtClient)
 		if err != nil {
 			klog.Errorf("error on Upgrading Progression %w", err)
 			return err
@@ -334,7 +336,7 @@ func (optr *Operator) syncUpgradeableStatus() error {
 
 		updating = updatePrep || updateInProg || updateFinishing || updatePostAction
 
-		//degraded, err = state.IsUpgradingProgressionTrue(mcfgv1.MachineConfigStateErrored, *pool, optr.msLister, optr.apiExtClient)
+		//degraded, err = state.IsUpgradingProgressionTrue(mcfgalphav1.MachineConfigNodeErrored, *pool, optr.msLister, optr.apiExtClient)
 		//if err != nil {
 		//	klog.Errorf("error on Upgrading Progression %w", err)
 		//	return err

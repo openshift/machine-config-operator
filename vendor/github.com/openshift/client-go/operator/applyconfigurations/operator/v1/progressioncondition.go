@@ -3,24 +3,33 @@
 package v1
 
 import (
-	v1 "github.com/openshift/api/machineconfiguration/v1"
+	v1 "github.com/openshift/api/operator/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // ProgressionConditionApplyConfiguration represents an declarative configuration of the ProgressionCondition type for use
 // with apply.
 type ProgressionConditionApplyConfiguration struct {
-	State  *v1.StateProgress `json:"state,omitempty"`
-	Name   *string           `json:"name,omitempty"`
-	Phase  *string           `json:"phase,omitempty"`
-	Reason *string           `json:"reason,omitempty"`
-	Time   *metav1.Time      `json:"time,omitempty"`
+	Kind       *v1.OperatorObject `json:"kind,omitempty"`
+	State      *v1.StateProgress  `json:"state,omitempty"`
+	ObjectName *string            `json:"objectName,omitempty"`
+	Phase      *string            `json:"phase,omitempty"`
+	Reason     *string            `json:"reason,omitempty"`
+	Time       *metav1.Time       `json:"time,omitempty"`
 }
 
 // ProgressionConditionApplyConfiguration constructs an declarative configuration of the ProgressionCondition type for use with
 // apply.
 func ProgressionCondition() *ProgressionConditionApplyConfiguration {
 	return &ProgressionConditionApplyConfiguration{}
+}
+
+// WithKind sets the Kind field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Kind field is set to the value of the last call.
+func (b *ProgressionConditionApplyConfiguration) WithKind(value v1.OperatorObject) *ProgressionConditionApplyConfiguration {
+	b.Kind = &value
+	return b
 }
 
 // WithState sets the State field in the declarative configuration to the given value
@@ -31,11 +40,11 @@ func (b *ProgressionConditionApplyConfiguration) WithState(value v1.StateProgres
 	return b
 }
 
-// WithName sets the Name field in the declarative configuration to the given value
+// WithObjectName sets the ObjectName field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the Name field is set to the value of the last call.
-func (b *ProgressionConditionApplyConfiguration) WithName(value string) *ProgressionConditionApplyConfiguration {
-	b.Name = &value
+// If called multiple times, the ObjectName field is set to the value of the last call.
+func (b *ProgressionConditionApplyConfiguration) WithObjectName(value string) *ProgressionConditionApplyConfiguration {
+	b.ObjectName = &value
 	return b
 }
 
