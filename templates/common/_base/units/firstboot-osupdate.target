@@ -1,0 +1,11 @@
+name: firstboot-osupdate.target
+enabled: true
+contents: |
+  [Unit]
+  Description=The firstboot OS update has completed
+  Documentation=https://github.com/openshift/machine-config-operator/
+  Requires=basic.target
+
+  [Install]
+  WantedBy=default.target
+

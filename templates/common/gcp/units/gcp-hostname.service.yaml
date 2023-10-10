@@ -3,10 +3,8 @@ enabled: true
 contents: |
   [Unit]
   Description=Set GCP Transient Hostname
-  # Removal of this file signals firstboot completion
-  ConditionPathExists=!/etc/ignition-machine-config-encapsulated.json
-  # Block services relying on networking being up.
-  Before=network-online.target
+  # We don't need to do this on the firstboot
+  After=firstboot-osupdate.target
   # Wait for NetworkManager to report it's online
   After=NetworkManager-wait-online.service
   # Run before hostname checks
@@ -18,5 +16,4 @@ contents: |
   ExecStart=/usr/local/bin/mco-hostname --gcp
 
   [Install]
-  WantedBy=multi-user.target
-  WantedBy=network-online.target
+  RequiredBy=kubelet-dependencies.target
