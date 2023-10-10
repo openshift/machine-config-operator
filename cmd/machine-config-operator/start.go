@@ -66,7 +66,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 	run := func(ctx context.Context) {
 		go common.SignalHandler(runCancel)
 
-		ctrlctx := ctrlcommon.CreateControllerContext(ctx, cb, ctrlcommon.MCONamespace)
+		ctrlctx := ctrlcommon.CreateControllerContext(ctx, cb)
 		controller := operator.New(
 			ctrlcommon.MCONamespace, componentName,
 			startOpts.imagesFile,
