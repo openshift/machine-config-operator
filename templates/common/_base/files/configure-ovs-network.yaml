@@ -659,27 +659,45 @@ contents:
       echo "${physical_interface}"
     }
 
-    # Accepts parameters $iface, $iface_default_hint_file, $ip_hint_file
-    # Finds the nodeip interface from the interface that matches the ip address in $ip_hint_file.
-    # Otherwise fallbacks to a previously used interface or to the default interface.ç
-    # Never use the interface that is provided inside extra_bridge_file for br-ex1.
-    # Never use br-ex1.
-    # Read $ip_hint_file and return the interface that matches this ip.  Otherwise:
-    # If the default interface is br-ex, use that and return.
+    # Accepts parameters $iface_default_hint_file, $extra_bridge_file, $ip_hint_file, $default_bridge_file
+    # Determines the interface to be used for br-ex. Order of priority is:
+    # 1. Use the user specified interface if provided in the default bridge file
+    # 2. Use the node IP hint interface
+    # 3. Use the previously selected interface
+    # 4. Use the interface detected as default gateway
+    #
+    # Read $default_bridge_file and return the contained interface. Otherwise,
+    # read $ip_hint_file and return the interface that matches this ip. Otherwise,
+    # if the default interface is br-ex, use that and return.
     # If the default interface is not br-ex:
-    # Check if there is a valid hint inside iface_default_hint_file. If so, use that hint.
+    # Check if there is a valid hint inside $iface_default_hint_file. If so, use that hint.
     # If there is no valid hint, use the default interface that we found during the step
-    # earlier. Write the default interface to the hint file.
-    get_nodeip_interface() {
+    # earlier.
+    # Never use the interface that is provided inside $extra_bridge_file for br-ex1.
+    # Never use br-ex1.
+    # Write the default interface to $iface_default_hint_file
+    get_default_bridge_interface() {
       local iface=""
       local counter=0
       local iface_default_hint_file="$1"
       local extra_bridge_file="$2"
       local ip_hint_file="$3"
+      local default_bridge_file="$4"
       local extra_bridge=""
 
       if [ -f "${extra_bridge_file}" ]; then
         extra_bridge=$(cat ${extra_bridge_file})
+      fi
+
+      # try to use user specified file first
+      if [ -f "$default_bridge_file" ]; then
+        iface=$(cat "${iface_default_hint_file}")
+        if [ -z "$iface" ]; then
+          echo "ERROR: User specified bridge file detected without any data"
+          exit 1
+        fi
+        echo "${iface}"
+        return
       fi
 
       # if node ip was set, we should search for interface that matches it
@@ -851,6 +869,8 @@ contents:
         extra_bridge_file="${ovnk_config_dir}/extra_bridge"
         iface_default_hint_file="${ovnk_var_dir}/iface_default_hint"
         ip_hint_file="/run/nodeip-configuration/primary-ip"
+        # explicitly specify which interface should be used with the default bridge
+        default_bridge_file="${ovnk_config_dir}/default_bridge"
 
         # make sure to create ovnk_config_dir if it does not exist, yet
         mkdir -p "${ovnk_config_dir}"
@@ -891,10 +911,10 @@ contents:
         fi
         touch /run/configure-ovs-boot-done
 
-        iface=$(get_nodeip_interface "${iface_default_hint_file}" "${extra_bridge_file}" "${ip_hint_file}")
+        iface=$(get_default_bridge_interface "${iface_default_hint_file}" "${extra_bridge_file}" "${ip_hint_file}" "${default_bridge_file}")
 
         if [ "$iface" != "br-ex" ]; then
-          # Default gateway is not br-ex.
+          # Specified interface is not br-ex.
           # Some deployments use a temporary solution where br-ex is moved out from the default gateway interface
           # and bound to a different nic (https://github.com/trozet/openshift-ovn-migration).
           # This is now supported through an extra bridge if requested. If that is the case, we rollback.
