@@ -5,14 +5,14 @@ contents:
     #!/bin/bash
     set -eux
 
-    if [ -e /etc/nmstate/applied ]; then
+    if [ -e /etc/nmstate/openshift/applied ]; then
       # Already done, don't apply again
       exit 0
     fi
 
     hostname=$(hostname -s)
-    hostname_file="/etc/nmstate/${hostname}.yaml"
-    cluster_file="/etc/nmstate/cluster.yaml"
+    hostname_file="/etc/nmstate/openshift/${hostname}.yml"
+    cluster_file="/etc/nmstate/openshift/cluster.yml"
     config_file=""
     if [ -s $hostname_file ]; then
       config_file=$hostname_file
@@ -25,9 +25,5 @@ contents:
       exit 0
     fi
 
-    until /bin/nmstatectl apply $config_file
-    do
-      echo "Failed to apply NMState configuration from $config_file. Retrying in 60 seconds."
-      sleep 60
-    done
-    touch /etc/nmstate/applied
+    cp $config_file /etc/nmstate
+    touch /etc/nmstate/openshift/applied

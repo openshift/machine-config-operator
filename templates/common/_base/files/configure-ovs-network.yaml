@@ -5,7 +5,7 @@ contents:
     #!/bin/bash
     set -x
 
-    if [ -e /etc/nmstate/applied ]; then
+    if [ -e /etc/nmstate/openshift/applied ]; then
       echo "Skipping configure-ovs due to manual network configuration"
       exit 0
     fi
