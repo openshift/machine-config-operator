@@ -76,6 +76,11 @@ func RegisterMCDMetrics() error {
 		return fmt.Errorf("could not register machine-config-daemon metrics: %w", err)
 	}
 
+	// Initilize GuageVecs:
+	hostOS.WithLabelValues("initialize", "initialize").Set(0)
+	mcdState.WithLabelValues("initialize", "initialize").Set(0)
+	mcdUpdateState.WithLabelValues("initialize", "initialize").Set(0)
+
 	kubeletHealthState.Set(0)
 
 	return nil

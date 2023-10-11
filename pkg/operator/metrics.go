@@ -1,6 +1,8 @@
 package operator
 
 import (
+	"fmt"
+
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -46,5 +48,24 @@ var (
 )
 
 func RegisterMCOMetrics() error {
-	return ctrlcommon.RegisterMetrics([]prometheus.Collector{mcoState, mcoMachineCount, mcoUpdatedMachineCount, mcoDegradedMachineCount, mcoUnavailableMachineCount})
+	err := ctrlcommon.RegisterMetrics([]prometheus.Collector{
+		mcoState,
+		mcoMachineCount,
+		mcoUpdatedMachineCount,
+		mcoDegradedMachineCount,
+		mcoUnavailableMachineCount,
+	})
+
+	if err != nil {
+		return fmt.Errorf("could not register machine-config-operator metrics: %w", err)
+	}
+
+	// Initilize GuageVecs:
+	mcoState.WithLabelValues("initialize", "initialize", "initialize").Set(0)
+	mcoMachineCount.WithLabelValues("initialize").Set(0)
+	mcoUpdatedMachineCount.WithLabelValues("initialize").Set(0)
+	mcoDegradedMachineCount.WithLabelValues("initialize").Set(0)
+	mcoUnavailableMachineCount.WithLabelValues("initialize").Set(0)
+
+	return nil
 }

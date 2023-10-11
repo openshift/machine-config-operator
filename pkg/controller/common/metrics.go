@@ -49,7 +49,10 @@ func RegisterMCCMetrics() error {
 		return fmt.Errorf("could not register machine-config-controller metrics: %w", err)
 	}
 
-	MCCDrainErr.Reset()
+	// Initilize GuageVecs:
+	OSImageURLOverride.WithLabelValues("initialize").Set(0)
+	MCCDrainErr.WithLabelValues("initialize").Set(0)
+	MCCPoolAlert.WithLabelValues("initialize").Set(0)
 
 	return nil
 }
