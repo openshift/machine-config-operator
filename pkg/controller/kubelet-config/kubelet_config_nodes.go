@@ -80,7 +80,8 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 	// This helps in updating the cgroupMode on all the worker nodes if they still have cgroupsv1 (Ex: RHEL8 workers)
 	if nodeConfig.Spec.CgroupMode == osev1.CgroupModeEmpty {
 		nodeConfig.Spec.CgroupMode = osev1.CgroupModeV2
-		ctrl.configClient.ConfigV1().Nodes().Update(context.TODO(), nodeConfig, metav1.UpdateOptions{})
+		_, err = ctrl.configClient.ConfigV1().Nodes().Update(context.TODO(), nodeConfig, metav1.UpdateOptions{})
+		return err
 	}
 	// checking if the Node spec is empty and accordingly returning from here.
 	if reflect.DeepEqual(nodeConfig.Spec, osev1.NodeSpec{}) {
