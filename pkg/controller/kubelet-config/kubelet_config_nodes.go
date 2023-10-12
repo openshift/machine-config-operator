@@ -76,17 +76,6 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 	if err := ctrl.cleanUpDuplicatedMC(managedNodeConfigKeyPrefix); err != nil {
 		return err
 	}
-	// explicitly setting the cgroupMode to "v2" and also updating the config node's spec if found empty
-	// This helps in updating the cgroupMode on all the worker nodes if they still have cgroupsv1 (Ex: RHEL8 workers)
-	if nodeConfig.Spec.CgroupMode == osev1.CgroupModeEmpty {
-		nodeConfig.Spec.CgroupMode = osev1.CgroupModeV2
-		ctrl.configClient.ConfigV1().Nodes().Update(context.TODO(), nodeConfig, metav1.UpdateOptions{})
-	}
-	// checking if the Node spec is empty and accordingly returning from here.
-	if reflect.DeepEqual(nodeConfig.Spec, osev1.NodeSpec{}) {
-		klog.V(2).Info("empty Node resource found")
-		return nil
-	}
 
 	// Fetch the controllerconfig
 	cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
@@ -198,7 +187,7 @@ func (ctrl *Controller) enqueueNodeConfig(nodeConfig *osev1.Node) {
 }
 
 func (ctrl *Controller) updateNodeConfig(old, cur interface{}) {
-	var isValidWorkerLatencyProfleTransition = true
+	isValidWorkerLatencyProfleTransition := true
 	oldNode, ok := old.(*osev1.Node)
 	if !ok {
 		utilruntime.HandleError(fmt.Errorf("Couldn't retrieve the old object from the Update Node Config event %#v", old))
@@ -277,16 +266,7 @@ func RunNodeConfigBootstrap(templateDir string, featureGateAccess featuregates.F
 	if nodeConfig == nil {
 		return nil, fmt.Errorf("nodes.config.openshift.io resource not found")
 	}
-	// explicitly setting the cgroupMode to "v2" and also updating the config node's spec if found empty
-	// This helps in updating the cgroupMode on all the worker nodes if they still have cgroupsv1 (Ex: RHEL8 workers)
-	if nodeConfig.Spec.CgroupMode == osev1.CgroupModeEmpty {
-		nodeConfig.Spec.CgroupMode = osev1.CgroupModeV2
-	}
-	// checking if the Node spec is empty and accordingly returning from here.
-	if reflect.DeepEqual(nodeConfig.Spec, osev1.NodeSpec{}) {
-		klog.V(2).Info("empty Node resource found")
-		return nil, nil
-	}
+
 	configs := []*mcfgv1.MachineConfig{}
 
 	for _, pool := range mcpPools {

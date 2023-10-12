@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"reflect"
 	"strconv"
 	"strings"
 
@@ -128,6 +127,17 @@ func createNewDefaultNodeconfig() *osev1.Node {
 	}
 }
 
+func createNewDefaultNodeconfigWithCgroup(mode osev1.CgroupMode) *osev1.Node {
+	return &osev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: ctrlcommon.ClusterNodeInstanceName,
+		},
+		Spec: osev1.NodeSpec{
+			CgroupMode: mode,
+		},
+	}
+}
+
 func getConfigNode(ctrl *Controller, key string) (*osev1.Node, error) {
 	nodeConfig, err := ctrl.nodeConfigLister.Get(ctrlcommon.ClusterNodeInstanceName)
 	if errors.IsNotFound(err) {
@@ -140,12 +150,6 @@ func getConfigNode(ctrl *Controller, key string) (*osev1.Node, error) {
 
 // updateOriginalKubeConfigwithNodeConfig updates the original Kubelet Configuration based on the Nodespecific configuration
 func updateOriginalKubeConfigwithNodeConfig(node *osev1.Node, originalKubeletConfig *kubeletconfigv1beta1.KubeletConfiguration) error {
-	if node == nil {
-		return fmt.Errorf("node configuration not found, failed to update the original kubelet configuration")
-	}
-	if reflect.DeepEqual(node.Spec, osev1.NodeSpec{}) {
-		return fmt.Errorf("empty node resource spec found")
-	}
 	// updating the kubelet specific fields based on the Node's workerlatency profile.
 	// (TODO): The durations can be replaced with the defined constants in the openshift/api repository once the respective changes are merged.
 	switch node.Spec.WorkerLatencyProfile {
@@ -166,15 +170,6 @@ func updateOriginalKubeConfigwithNodeConfig(node *osev1.Node, originalKubeletCon
 
 // updateMachineConfigwithCgroup updates the Machine Config object based on the cgroup mode present in the Config Node resource.
 func updateMachineConfigwithCgroup(node *osev1.Node, mc *mcfgv1.MachineConfig) error {
-	if node == nil {
-		return fmt.Errorf("node configuration not found, failed to update the machine config with the cgroup information")
-	}
-	if reflect.DeepEqual(node.Spec, osev1.NodeSpec{}) {
-		return fmt.Errorf("empty config node resource spec found")
-	}
-	if mc == nil || reflect.DeepEqual(mc.Spec, mcfgv1.MachineConfigSpec{}) {
-		return fmt.Errorf("machine config not found, failed to update the machine config with the cgroup information")
-	}
 	// updating the Machine Config resource with the relevant cgroup config
 	var (
 		kernelArgsv1                                            = []string{"systemd.unified_cgroup_hierarchy=0", "systemd.legacy_systemd_cgroup_controller=1"}
@@ -185,11 +180,9 @@ func updateMachineConfigwithCgroup(node *osev1.Node, mc *mcfgv1.MachineConfig) e
 	case osev1.CgroupModeV1:
 		kernelArgsToAdd = append(kernelArgsToAdd, kernelArgsv1...)
 		kernelArgsToRemove = append(kernelArgsToRemove, kernelArgsv2...)
-	case osev1.CgroupModeV2:
+	case osev1.CgroupModeV2, osev1.CgroupModeEmpty:
 		kernelArgsToAdd = append(kernelArgsToAdd, kernelArgsv2...)
 		kernelArgsToRemove = append(kernelArgsToRemove, kernelArgsv1...)
-	case emptyInput:
-		return nil
 	default:
 		return fmt.Errorf("unknown cgroup mode found %v, failed to update the machine config resource", node.Spec.CgroupMode)
 	}
