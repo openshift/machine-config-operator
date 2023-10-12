@@ -78,24 +78,54 @@ func TestNodeConfigDefault(t *testing.T) {
 }
 
 func TestBootstrapNodeConfigDefault(t *testing.T) {
+	configNodeCgroupDefault := createNewDefaultNodeconfig()
+	configNodeCgroupV1 := createNewDefaultNodeconfigWithCgroup(osev1.CgroupModeV1)
+	configNodeCgroupV2 := createNewDefaultNodeconfigWithCgroup(osev1.CgroupModeV2)
+
+	expected := map[*osev1.Node]struct {
+		Name             string
+		MasterKernelArgs []string
+		WorkerKernelArgs []string
+	}{
+		configNodeCgroupDefault: {
+			Name:             "Default",
+			MasterKernelArgs: []string{"systemd.unified_cgroup_hierarchy=1", "cgroup_no_v1=\"all\"", "psi=1"},
+			WorkerKernelArgs: []string{"systemd.unified_cgroup_hierarchy=1", "cgroup_no_v1=\"all\"", "psi=1"},
+		},
+		configNodeCgroupV2: {
+			Name:             "Cgroupv2",
+			MasterKernelArgs: []string{"systemd.unified_cgroup_hierarchy=1", "cgroup_no_v1=\"all\"", "psi=1"},
+			WorkerKernelArgs: []string{"systemd.unified_cgroup_hierarchy=1", "cgroup_no_v1=\"all\"", "psi=1"},
+		},
+		configNodeCgroupV1: {
+			Name:             "Cgroupv1",
+			MasterKernelArgs: []string{"systemd.unified_cgroup_hierarchy=0", "systemd.legacy_systemd_cgroup_controller=1"},
+			WorkerKernelArgs: []string{"systemd.unified_cgroup_hierarchy=0", "systemd.legacy_systemd_cgroup_controller=1"},
+		},
+	}
+
 	for _, platform := range []configv1.PlatformType{configv1.AWSPlatformType, configv1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
-
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp1 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			mcps := []*mcfgv1.MachineConfigPool{mcp}
 			mcps = append(mcps, mcp1)
-
 			fgAccess := createNewDefaultFeatureGateAccess()
-			configNode := createNewDefaultNodeconfig()
 
-			mcs, err := RunNodeConfigBootstrap("../../../templates", fgAccess, cc, configNode, mcps)
-			if err != nil {
-				t.Errorf("could not run node config bootstrap: %v", err)
-			}
-			if len(mcs) != 2 {
-				t.Errorf("expected %v machine configs generated with the default node config, got 0 machine configs", len(mcs))
+			for _, configNode := range []*osev1.Node{configNodeCgroupDefault, configNodeCgroupV1, configNodeCgroupV2} {
+				expect := expected[configNode]
+				t.Run(fmt.Sprintf("Testing %v", expect.Name), func(t *testing.T) {
+					mcs, err := RunNodeConfigBootstrap("../../../templates", fgAccess, cc, configNode, mcps)
+					if err != nil {
+						t.Errorf("could not run node config bootstrap: %v", err)
+					}
+					expectedCount := 2
+					if len(mcs) != expectedCount {
+						t.Errorf("expected %v machine configs generated with the default node config, got %d machine configs", expectedCount, len(mcs))
+					}
+					require.Equal(t, mcs[0].Spec.KernelArguments, expect.MasterKernelArgs)
+				})
 			}
 		})
 	}
@@ -104,7 +134,6 @@ func TestBootstrapNodeConfigDefault(t *testing.T) {
 func TestBootstrapNoNodeConfig(t *testing.T) {
 	for _, platform := range []configv1.PlatformType{configv1.AWSPlatformType, configv1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
-
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			mcps := []*mcfgv1.MachineConfigPool{mcp}
@@ -147,7 +176,6 @@ func TestNodeConfigCustom(t *testing.T) {
 			f.mcpLister = append(f.mcpLister, mcp)
 
 			nodeConfig := &osev1.Node{
-
 				ObjectMeta: metav1.ObjectMeta{
 					Name: ctrlcommon.ClusterNodeInstanceName,
 				},
