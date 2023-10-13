@@ -128,7 +128,7 @@ contents:
             if [[ ! -v vips[${route_vip}] ]] || [[ "${vips[${route_vip}]}" = down ]]; then
                 echo removing stale vip "${route_vip}" for local clients
                 echo "ovn-nbctl lr-policy-del ovn_cluster_router 1010 inport == rtos-${host} && ip4.dst == ${route_vip}"
-                crictl exec -i ${ovnkContainerID} ovn-nbctl lr-policy-del ovn_cluster_router 1010 "inport == \"rtos-${host}\" && ip4.dst == ${route_vip}"
+                crictl exec -i ${ovnkContainerID} ovn-nbctl lr-policy-del ovn_cluster_router 1010 "inport == \"rtos-${host}\" && ip4.dst == ${route_vip}" || true
             fi
         done
     }
@@ -166,7 +166,7 @@ contents:
                 else
                     echo "Route does not exist; creating it..."
                     echo "ovn-nbctl lr-policy-add ovn_cluster_router 1010 inport == rtos-${host} && ip4.dst == ${vip} reroute ${ovnK8sMp0v4}"
-                    crictl exec -i ${ovnkContainerID} ovn-nbctl lr-policy-add ovn_cluster_router 1010 "inport == \"rtos-${host}\" && ip4.dst == ${vip}" reroute "${ovnK8sMp0v4}"
+                    crictl exec -i ${ovnkContainerID} ovn-nbctl lr-policy-add ovn_cluster_router 1010 "inport == \"rtos-${host}\" && ip4.dst == ${vip}" reroute "${ovnK8sMp0v4}" || true
                 fi
             fi
         done
@@ -185,7 +185,7 @@ contents:
         fi
         echo "Found ovnkube-controller pod... ${ovnkContainerID}"
         echo "clearing all routes from ovn-cluster-router"
-        crictl exec -i ${ovnkContainerID} ovn-nbctl lr-policy-del ovn_cluster_router 1010
+        crictl exec -i ${ovnkContainerID} ovn-nbctl lr-policy-del ovn_cluster_router 1010 || true
     }
 
     # out paramater: vips
