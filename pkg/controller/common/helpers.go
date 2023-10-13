@@ -51,6 +51,7 @@ import (
 	"k8s.io/client-go/tools/reference"
 	"k8s.io/klog/v2"
 
+	osev1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
@@ -64,6 +65,54 @@ func strToPtr(s string) *string {
 // bootToPtr converts the input boolean to a pointer to itself
 func boolToPtr(b bool) *bool {
 	return &b
+}
+
+// UpdateMachineConfigwithCgroup updates the Machine Config object based on the cgroup mode present in the Config Node resource.
+func UpdateMachineConfigwithCgroup(node *osev1.Node, mc *mcfgv1.MachineConfig) error {
+	if node == nil {
+		return fmt.Errorf("node configuration not found, failed to update the machine config with the cgroup information")
+	}
+	if reflect.DeepEqual(node.Spec, osev1.NodeSpec{}) {
+		return fmt.Errorf("empty config node resource spec found")
+	}
+	if mc == nil || reflect.DeepEqual(mc.Spec, mcfgv1.MachineConfigSpec{}) {
+		return fmt.Errorf("machine config not found, failed to update the machine config with the cgroup information")
+	}
+	// updating the Machine Config resource with the relevant cgroup config
+	var (
+		kernelArgsv1                                            = []string{"systemd.unified_cgroup_hierarchy=0", "systemd.legacy_systemd_cgroup_controller=1"}
+		kernelArgsv2                                            = []string{"systemd.unified_cgroup_hierarchy=1", "cgroup_no_v1=\"all\"", "psi=1"}
+		kernelArgsToAdd, kernelArgsToRemove, adjustedKernelArgs []string
+	)
+	switch node.Spec.CgroupMode {
+	case osev1.CgroupModeV1:
+		kernelArgsToAdd = append(kernelArgsToAdd, kernelArgsv1...)
+		kernelArgsToRemove = append(kernelArgsToRemove, kernelArgsv2...)
+	case osev1.CgroupModeV2:
+		kernelArgsToAdd = append(kernelArgsToAdd, kernelArgsv2...)
+		kernelArgsToRemove = append(kernelArgsToRemove, kernelArgsv1...)
+	case "":
+		return nil
+	default:
+		return fmt.Errorf("unknown cgroup mode found %v, failed to update the machine config resource", node.Spec.CgroupMode)
+	}
+
+	for _, arg := range mc.Spec.KernelArguments {
+		// only append the args we want to keep, omitting the undesired
+		if !InSlice(arg, kernelArgsToRemove) {
+			adjustedKernelArgs = append(adjustedKernelArgs, arg)
+		}
+	}
+
+	for _, arg := range kernelArgsToAdd {
+		// add the additional that aren't already there
+		if !InSlice(arg, adjustedKernelArgs) {
+			adjustedKernelArgs = append(adjustedKernelArgs, arg)
+		}
+	}
+	// overwrite the KernelArguments with the adjusted KernelArgs
+	mc.Spec.KernelArguments = adjustedKernelArgs
+	return nil
 }
 
 // MergeMachineConfigs combines multiple machineconfig objects into one object.

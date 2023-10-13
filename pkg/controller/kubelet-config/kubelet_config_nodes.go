@@ -131,7 +131,7 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 			}
 		}
 		// The following code updates the MC with the relevant CGroups version
-		err = updateMachineConfigwithCgroup(nodeConfig, mc)
+		err = ctrlcommon.UpdateMachineConfigwithCgroup(nodeConfig, mc)
 		if err != nil {
 			return err
 		}
@@ -313,7 +313,7 @@ func RunNodeConfigBootstrap(templateDir string, featureGateAccess featuregates.F
 			}
 		}
 		// The following code updates the MC with the relevant CGroups version
-		err = updateMachineConfigwithCgroup(nodeConfig, mc)
+		err = ctrlcommon.UpdateMachineConfigwithCgroup(nodeConfig, mc)
 		if err != nil {
 			return nil, err
 		}

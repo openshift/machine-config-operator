@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"time"
 
+	configclientset "github.com/openshift/client-go/config/clientset/versioned"
 	mcoResourceApply "github.com/openshift/machine-config-operator/lib/resourceapply"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -53,6 +54,7 @@ var (
 // Controller defines the render controller.
 type Controller struct {
 	client        mcfgclientset.Interface
+	configClient  configclientset.Interface
 	eventRecorder record.EventRecorder
 
 	syncHandler              func(mcp string) error
@@ -76,6 +78,7 @@ func New(
 	mcInformer mcfginformersv1.MachineConfigInformer,
 	ccInformer mcfginformersv1.ControllerConfigInformer,
 	kubeClient clientset.Interface,
+	configclient configclientset.Interface,
 	mcfgClient mcfgclientset.Interface,
 ) *Controller {
 	eventBroadcaster := record.NewBroadcaster()
@@ -84,6 +87,7 @@ func New(
 
 	ctrl := &Controller{
 		client:        mcfgClient,
+		configClient:  configclient,
 		eventRecorder: ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-rendercontroller"})),
 		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-rendercontroller"),
 	}
@@ -487,6 +491,11 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 		return err
 	}
 
+	// update the generated MC's kArgs with the relevant cgroups info
+	nodeCfg, _ := ctrl.configClient.ConfigV1().Nodes().Get(context.Background(), ctrlcommon.ClusterNodeInstanceName, metav1.GetOptions{})
+	if nodeCfg != nil {
+		ctrlcommon.UpdateMachineConfigwithCgroup(nodeCfg, generated)
+	}
 	// Emit event and collect metric when OSImageURL was overridden.
 	if generated.Spec.OSImageURL != ctrlcommon.GetDefaultBaseImageContainer(&cc.Spec) {
 		ctrlcommon.OSImageURLOverride.WithLabelValues(pool.Name).Set(1)

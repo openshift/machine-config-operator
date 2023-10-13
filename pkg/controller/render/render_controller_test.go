@@ -24,6 +24,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 
+	configclientset "github.com/openshift/client-go/config/clientset/versioned/fake"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
@@ -65,7 +66,7 @@ func (f *fixture) newController() *Controller {
 	i := informers.NewSharedInformerFactory(f.client, noResyncPeriodFunc())
 
 	c := New(i.Machineconfiguration().V1().MachineConfigPools(), i.Machineconfiguration().V1().MachineConfigs(),
-		i.Machineconfiguration().V1().ControllerConfigs(), k8sfake.NewSimpleClientset(), f.client)
+		i.Machineconfiguration().V1().ControllerConfigs(), k8sfake.NewSimpleClientset(), configclientset.NewSimpleClientset(), f.client)
 
 	c.mcpListerSynced = alwaysReady
 	c.mcListerSynced = alwaysReady
