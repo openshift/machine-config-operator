@@ -120,9 +120,11 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 			}
 		}
 		// The following code updates the MC with the relevant CGroups version
-		err = updateMachineConfigwithCgroup(nodeConfig, mc)
-		if err != nil {
-			return err
+		if role == ctrlcommon.MachineConfigPoolWorker || role == ctrlcommon.MachineConfigPoolMaster {
+			err = updateMachineConfigwithCgroup(nodeConfig, mc)
+			if err != nil {
+				return err
+			}
 		}
 		// Encode the new config into raw JSON
 		cfgIgn, err := kubeletConfigToIgnFile(originalKubeConfig)
