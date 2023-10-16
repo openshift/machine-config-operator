@@ -18,13 +18,13 @@ contents:
     # metadata related afterburn doc: https://coreos.github.io/afterburn/usage/attributes/
     
     HOSTNAME=${AFTERBURN_AWS_HOSTNAME:-}
-    if [[ -z "${HOSTNAME}" ]]; then
+    while [[ -z "${HOSTNAME}" ]]; do
       HOSTNAME=$(curl -fSs http://169.254.169.254/2022-09-24/meta-data/local-hostname)
       if [[ -z "${HOSTNAME}" ]]; then
-        echo "Can not obtain hostname from the metadata service."
-        exit 1
+        echo "Can not obtain hostname from the metadata service." 1>&2
+        sleep 5
       fi 
-    fi
+    done
 
     # For compatibility with the AWS in-tree provider
     # Set node name to be instance name instead of the default FQDN hostname
