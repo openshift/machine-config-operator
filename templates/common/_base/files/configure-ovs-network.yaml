@@ -98,7 +98,7 @@ contents:
       old_name="$(nmcli -g connection.id connection show uuid "$uuid")"
       local new_name="${old_name}${MANAGED_NM_CONN_SUFFIX}"
       if nmcli connection show id "${new_name}" &> /dev/null; then
-        echo "WARN: existing ovs slave ${new_name} connection profile file found, overwriting..." >&2
+        echo "WARNING: existing ovs slave ${new_name} connection profile file found, overwriting..." >&2
         nmcli connection delete id "${new_name}" &> /dev/null
       fi
       nmcli connection clone $uuid "${new_name}" &> /dev/null
@@ -307,7 +307,7 @@ contents:
       # Warn about an invalid MTU that will most likely fail in one way or
       # another
       if [ ${iface_mtu} -lt 1280 ] && [ "${ipv6_method}" != "disabled" ]; then
-        echo "Warning: MTU ${iface_mtu} is lower than the minimum required of 1280 for IPv6"
+        echo "WARNING: MTU ${iface_mtu} is lower than the minimum required of 1280 for IPv6"
       fi
 
       if ! nmcli connection show "$ovs_interface" &> /dev/null; then
@@ -459,7 +459,7 @@ contents:
 
         echo "Waiting for interface $dev to activate..."
         if ! timeout 60 bash -c "while ! nmcli -g DEVICE,STATE c | grep "'"'"$dev":activated'"'"; do sleep 5; done"; then
-          echo "Warning: $dev did not activate"
+          echo "WARNING: $dev did not activate"
         fi
       done
 
@@ -814,11 +814,23 @@ contents:
 
       exit $e
     }
+    
+    # Setup a signal trap to rollback
+    handle_termination() {
+      echo "WARNING: configure-ovs has been requested to terminate, quitting..."
+      
+      # by exiting with an error we will cleanup after ourselves in a
+      # subsequent call to handle_exit
+      exit 1
+    }
 
     # main function
     configure_ovs() {
       set -eu
-      trap "handle_exit" EXIT
+
+      # setup traps to handle signals and other abnormal exits
+      trap 'handle_termination' TERM INT
+      trap 'handle_exit' EXIT
 
       # this flag tracks if any config change was made
       nm_config_changed=0
@@ -836,7 +848,7 @@ contents:
       fi
 
       if ! rpm -qa | grep -q openvswitch; then
-        echo "Warning: Openvswitch package is not installed!"
+        echo "WARNING: Openvswitch package is not installed!"
         exit 1
       fi
 
@@ -986,12 +998,25 @@ contents:
     # infrastructure problems.
     RETRY="${RETRY-15m}"
     while true; do
-      # Run configure_ovs in a sub-shell
+
+      # Disable retries if termination signal is received. Note that systemd
+      # sends the signals to all processes in the group by default so we expect
+      # configure_ovs to get its own signals.
+      trap 'echo "WARNING: termination requested, disabling retries"; RETRY=""' INT TERM
+      
+      # Run configure_ovs in a sub-shell. 
       ( configure_ovs "$@" )
       e=$?
+
+      # Handle signals while we sleep
+      trap 'handle_termination' INT TERM
+      
+      # Exit if succesful and not configured to retry
       [ "$e" -eq 0 ] || [ -z "$RETRY" ] && exit "$e"
-      echo "configure_ovs failed, will retry after $RETRY"
+      
+      echo "configure-ovs failed, will retry after $RETRY"
       # flag that a retry has happened
       touch /tmp/configure-ovs-retry
       sleep "$RETRY"
+    
     done
