@@ -7,8 +7,8 @@ contents:
     version_file_persist = "/var/lib/crio/version"
 
     [crio.api]
-    stream_address = ""
-    stream_port = "10010"
+    stream_address = "127.0.0.1"
+    stream_port = "0"
 
     [crio.runtime]
     selinux = true
