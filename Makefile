@@ -55,7 +55,7 @@ test-unit: install-go-junit-report
 #    make update
 update:
 	hack/update-templates.sh
-
+	hack/crds-sync.sh
 go-deps:
 	go mod tidy
 	go mod vendor
