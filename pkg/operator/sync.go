@@ -1,6 +1,7 @@
 package operator
 
 import (
+	"bytes"
 	"context"
 	"crypto/x509"
 	"encoding/base64"
@@ -18,6 +19,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apiextv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -46,6 +48,7 @@ import (
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	templatectrl "github.com/openshift/machine-config-operator/pkg/controller/template"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
+	"github.com/openshift/machine-config-operator/pkg/helpers"
 	"github.com/openshift/machine-config-operator/pkg/server"
 	"github.com/openshift/machine-config-operator/pkg/upgrademonitor"
 	"github.com/openshift/machine-config-operator/pkg/version"
@@ -624,6 +627,11 @@ func (optr *Operator) syncCustomResourceDefinitions() error {
 	}
 
 	for _, crd := range crds {
+		dne := false
+		current, err := optr.ccLister.Get("machine-config-controller")
+		if apierrors.IsNotFound(err) {
+			dne = true
+		}
 
 		crdBytes, err := manifests.ReadFile(crd)
 		if err != nil {
@@ -639,9 +647,103 @@ func (optr *Operator) syncCustomResourceDefinitions() error {
 				return err
 			}
 		}
+
+		if strings.Contains(crd, "controllerconfig") {
+			currentCR, err := optr.apiExtClient.ApiextensionsV1().CustomResourceDefinitions().Get(context.TODO(), "controllerconfigs.machineconfiguration.openshift.io", metav1.GetOptions{})
+			if err != nil && !os.IsNotExist(err) {
+				klog.Errorf("Error getting controller config CRD. Cluster might be initializing: %v", err)
+			}
+			if currentCR == nil || !equality.Semantic.DeepEqual(c.Spec, currentCR.Spec) || !equality.Semantic.DeepEqual(c.Status, currentCR.Status) || dne {
+				// we have changes. And need to regen the CR immediately or else we face validation errors.
+				// right now, the only changes we know of that we support is the controller certificate migration.
+				newCC, err := optr.client.MachineconfigurationV1().ControllerConfigs().Get(context.TODO(), "machine-config-controller", metav1.GetOptions{})
+				if err != nil {
+					if os.IsNotExist(err) || apierrors.IsNotFound(err) {
+						continue
+					}
+					return err
+				}
+				// if this is a new cconfig or data has changed
+				if dne || anyCertDataDiffers(current.Spec, newCC.Spec) {
+					names := []string{
+						"KubeAPIServerServingCAData", "CloudProviderCAData", "RootCAData", "AdditionalTrustBundle",
+					}
+
+					certs := [][]byte{
+						newCC.Spec.KubeAPIServerServingCAData,
+						newCC.Spec.CloudProviderCAData,
+						newCC.Spec.RootCAData,
+						newCC.Spec.AdditionalTrustBundle,
+					}
+
+					// update existing information ONLY, we are not here to generate new entries.
+					newCerts := []mcfgv1.ControllerCertificate{}
+					for i, certName := range names {
+						for _, cert := range newCC.Status.ControllerCertificates {
+							if cert.BundleFile == certName {
+								newCerts = append(newCerts, helpers.CreateNewCert(certs[i], certName)...)
+							}
+						}
+					}
+
+					for _, entry := range newCC.Spec.ImageRegistryBundleData {
+						for _, cert := range newCC.Status.ControllerCertificates {
+							if cert.BundleFile == entry.File {
+								newCerts = append(newCerts, helpers.CreateNewCert(entry.Data, entry.File)...)
+							}
+						}
+					}
+
+					for _, entry := range newCC.Spec.ImageRegistryBundleUserData {
+						for _, cert := range newCC.Status.ControllerCertificates {
+							if cert.BundleFile == entry.File {
+								newCerts = append(newCerts, helpers.CreateNewCert(entry.Data, entry.File)...)
+							}
+						}
+					}
+
+					newCC.Status.ControllerCertificates = newCerts
+
+					_, err = optr.client.MachineconfigurationV1().ControllerConfigs().Update(context.TODO(), newCC, metav1.UpdateOptions{})
+					if err != nil {
+						return err
+					}
+				}
+			}
+		}
 	}
 
 	return nil
+}
+
+func anyCertDataDiffers(oldSpec, spec mcfgv1.ControllerConfigSpec) bool {
+	if !bytes.Equal(spec.KubeAPIServerServingCAData, oldSpec.KubeAPIServerServingCAData) || bytes.Equal(spec.CloudProviderCAData, oldSpec.CloudProviderCAData) || !bytes.Equal(spec.AdditionalTrustBundle, oldSpec.AdditionalTrustBundle) || !bytes.Equal(spec.RootCAData, oldSpec.RootCAData) {
+		return true
+	}
+
+	if len(spec.ImageRegistryBundleData) != len(oldSpec.ImageRegistryBundleData) || len(spec.ImageRegistryBundleUserData) != len(oldSpec.ImageRegistryBundleUserData) {
+		return true
+	}
+	// for each new cert, see if it already existed
+	for _, cert := range spec.ImageRegistryBundleData {
+		for _, oldData := range oldSpec.ImageRegistryBundleData {
+			// if this is the same cert, with new data then return true
+			if oldData.File == cert.File && !bytes.Equal(cert.Data, oldData.Data) {
+				return true
+			}
+		}
+	}
+	// for each new cert, see if it already existed
+	for _, cert := range spec.ImageRegistryBundleUserData {
+		for _, oldData := range oldSpec.ImageRegistryBundleUserData {
+			// if this is the same cert, with new data then return true
+			if oldData.File == cert.File && !bytes.Equal(cert.Data, oldData.Data) {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 func (optr *Operator) syncMachineConfigPools(config *renderConfig) error {

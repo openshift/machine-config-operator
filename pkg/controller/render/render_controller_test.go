@@ -131,7 +131,7 @@ func (f *fixture) runController(mcpname string, expectError bool) {
 // checkAction verifies that expected and actual actions are equal and both have
 // same attached resources
 func checkAction(expected, actual core.Action, t *testing.T) {
-	if !(expected.Matches(actual.GetVerb(), actual.GetResource().Resource) && actual.GetSubresource() == expected.GetSubresource()) {
+	if !(expected.Matches(actual.GetVerb(), actual.GetResource().Resource) && actual.GetSubresource() == expected.GetSubresource() && actual.GetResource().Resource == "controllerconfigs") {
 		t.Errorf("Expected\n\t%#v\ngot\n\t%#v", expected, actual)
 		return
 	}
@@ -182,6 +182,7 @@ func filterInformerActions(actions []core.Action) []core.Action {
 			(action.Matches("list", "machineconfigpools") ||
 				action.Matches("watch", "machineconfigpools") ||
 				action.Matches("list", "controllerconfigs") ||
+				action.Matches("get", "controllerconfigs") ||
 				action.Matches("watch", "controllerconfigs") ||
 				action.Matches("list", "machineconfigs") ||
 				action.Matches("watch", "machineconfigs")) {

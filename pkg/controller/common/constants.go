@@ -1,5 +1,7 @@
 package common
 
+import "time"
+
 const (
 	// MCONamespace is the namespace that should be used for all API objects owned by the MCO by default
 	MCONamespace = "openshift-machine-config-operator"
@@ -12,6 +14,9 @@ const (
 
 	// OSImageURLOverriddenKey is used to tag a rendered machineconfig when OSImageURL has been overridden from default using machineconfig
 	OSImageURLOverriddenKey = "machineconfiguration.openshift.io/os-image-url-overridden"
+
+	ControllerConfigRolloutInterval = time.Second
+	ControllerConfigTimeout         = 5 * time.Minute
 
 	// ControllerConfigName is the name of the ControllerConfig object that controllers use
 	ControllerConfigName = "machine-config-controller"

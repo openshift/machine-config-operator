@@ -3,9 +3,7 @@ package template
 import (
 	"bytes"
 	"context"
-	"crypto/x509"
 	"encoding/json"
-	"encoding/pem"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -22,6 +20,7 @@ import (
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	mcoResourceApply "github.com/openshift/machine-config-operator/lib/resourceapply"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/helpers"
 	"k8s.io/klog/v2"
 
 	corev1 "k8s.io/api/core/v1"
@@ -439,7 +438,7 @@ func updateControllerConfigCerts(config *mcfgv1.ControllerConfig) bool {
 	newImgCerts := []mcfgv1.ControllerCertificate{}
 	newCtrlCerts := []mcfgv1.ControllerCertificate{}
 	for i, cert := range certs {
-		certs := createNewCert(cert, names[i])
+		certs := helpers.CreateNewCert(cert, names[i])
 		if len(certs) > 0 {
 			modified = true
 			newCtrlCerts = append(newCtrlCerts, certs...)
@@ -447,7 +446,7 @@ func updateControllerConfigCerts(config *mcfgv1.ControllerConfig) bool {
 	}
 	for _, entry := range config.Spec.ImageRegistryBundleData {
 		names = append(names, entry.File)
-		certs := createNewCert(entry.Data, entry.File)
+		certs := helpers.CreateNewCert(entry.Data, entry.File)
 		if len(certs) > 0 {
 			modified = true
 			newImgCerts = append(newImgCerts, certs...)
@@ -455,7 +454,7 @@ func updateControllerConfigCerts(config *mcfgv1.ControllerConfig) bool {
 	}
 	for _, entry := range config.Spec.ImageRegistryBundleUserData {
 		names = append(names, entry.File)
-		certs := createNewCert(entry.Data, entry.File)
+		certs := helpers.CreateNewCert(entry.Data, entry.File)
 		if len(certs) > 0 {
 			modified = true
 			newImgCerts = append(newImgCerts, certs...)
@@ -483,31 +482,6 @@ func updateControllerConfigCerts(config *mcfgv1.ControllerConfig) bool {
 	}
 	config.Status.ControllerCertificates = append(newCtrlCerts, newImgCerts...)
 	return modified
-}
-
-func createNewCert(cert []byte, name string) []mcfgv1.ControllerCertificate {
-	certs := []mcfgv1.ControllerCertificate{}
-	for len(cert) > 0 {
-		b, next := pem.Decode(cert)
-		if b == nil {
-			klog.Infof("Unable to decode cert %s into a pem block. Cert is either empty or invalid.", string(cert))
-			break
-		}
-		c, err := x509.ParseCertificate(b.Bytes)
-		if err != nil {
-			klog.Infof("Malformed Cert, not syncing")
-			continue
-		}
-		cert = next
-		certs = append(certs, mcfgv1.ControllerCertificate{
-			Subject:    c.Subject.String(),
-			Signer:     c.Issuer.String(),
-			BundleFile: name,
-			NotBefore:  &metav1.Time{Time: c.NotBefore},
-			NotAfter:   &metav1.Time{Time: c.NotAfter},
-		})
-	}
-	return certs
 }
 
 // syncControllerConfig will sync the controller config with the given key.

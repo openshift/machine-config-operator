@@ -13,6 +13,7 @@ import (
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	"github.com/imdario/mergo"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	macherrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -475,6 +476,18 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		klog.V(4).Infof("Finished syncing kubeletconfig %q (%v)", key, time.Since(startTime))
 	}()
 
+	if err := wait.PollUntilContextTimeout(context.TODO(), ctrlcommon.ControllerConfigRolloutInterval, ctrlcommon.ControllerConfigTimeout, false, func(_ context.Context) (bool, error) {
+		_, err := ctrl.client.MachineconfigurationV1().ControllerConfigs().Get(context.TODO(), ctrlcommon.ControllerConfigName, metav1.GetOptions{})
+		if err == nil {
+			return true, nil
+		}
+		if apierrors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, nil
+	}); err != nil {
+		klog.Infof("Controller Config has not been created. Continuing %v", err)
+	}
 	// Wait to apply a kubelet config if the controller config is not completed
 	if err := apihelpers.IsControllerConfigCompleted(ctrlcommon.ControllerConfigName, ctrl.ccLister.Get); err != nil {
 		return err

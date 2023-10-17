@@ -423,6 +423,19 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		return err
 	}
 
+	if err := wait.PollUntilContextTimeout(context.TODO(), ctrlcommon.ControllerConfigRolloutInterval, ctrlcommon.ControllerConfigTimeout, false, func(_ context.Context) (bool, error) {
+		_, err := ctrl.client.MachineconfigurationV1().ControllerConfigs().Get(context.TODO(), ctrlcommon.ControllerConfigName, metav1.GetOptions{})
+		if err == nil {
+			return true, nil
+		}
+		if apierrors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, nil
+	}); err != nil {
+		klog.Infof("Controller Config has not been created. Continuing %v", err)
+	}
+
 	// TODO(runcom): add tests in render_controller_test.go for this condition
 	if err := apihelpers.IsControllerConfigCompleted(ctrlcommon.ControllerConfigName, ctrl.ccLister.Get); err != nil {
 		return err
