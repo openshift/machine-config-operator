@@ -87,7 +87,7 @@ data:
                         },
                         "targets": [
                             {
-                                "expr": "sum(kube_node_status_condition{condition=\"Ready\", status=\"false\"})",
+                                "expr": "sum(kube_node_status_condition{condition=\"Ready\", status=~\"unknown|false\"})",
                                 "intervalFactor": 2,
                                 "legendFormat": "",
                                 "metric": "kube_node_status_condition",
