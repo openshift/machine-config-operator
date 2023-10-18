@@ -29,7 +29,7 @@ require (
 	github.com/openshift/api v0.0.0-20231013202211-096c446e7f60
 	github.com/openshift/client-go v0.0.0-20231005121823-e81400b97c46
 	github.com/openshift/cluster-config-operator v0.0.0-alpha.0.0.20230516205036-088c6d48cc1a
-	github.com/openshift/library-go v0.0.0-20231010152045-c91dd9756953
+	github.com/openshift/library-go v0.0.0-20231017173800-126f85ed0cc7
 	github.com/openshift/runtime-utils v0.0.0-20230921210328-7bdb5b9c177b
 	github.com/prometheus/client_golang v1.16.0
 	github.com/spf13/cobra v1.7.0
@@ -38,14 +38,14 @@ require (
 	github.com/vincent-petithory/dataurl v1.0.0
 	golang.org/x/net v0.17.0
 	golang.org/x/time v0.3.0
-	k8s.io/api v0.28.2
-	k8s.io/apiextensions-apiserver v0.28.2
-	k8s.io/apimachinery v0.28.2
-	k8s.io/client-go v0.28.2
-	k8s.io/code-generator v0.28.2
-	k8s.io/component-base v0.28.2
-	k8s.io/kubectl v0.28.2
-	k8s.io/kubelet v0.28.2
+	k8s.io/api v0.28.3
+	k8s.io/apiextensions-apiserver v0.28.3
+	k8s.io/apimachinery v0.28.3
+	k8s.io/client-go v0.28.3
+	k8s.io/code-generator v0.28.3
+	k8s.io/component-base v0.28.3
+	k8s.io/kubectl v0.28.3
+	k8s.io/kubelet v0.28.3
 	k8s.io/utils v0.0.0-20230726121419-3b25d923346b
 	sigs.k8s.io/controller-runtime v0.13.0
 )
@@ -306,11 +306,11 @@ require (
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	honnef.co/go/tools v0.4.3 // indirect
-	k8s.io/apiserver v0.28.2 // indirect
-	k8s.io/cli-runtime v0.28.2 // indirect
+	k8s.io/apiserver v0.28.3 // indirect
+	k8s.io/cli-runtime v0.28.3 // indirect
 	k8s.io/gengo v0.0.0-20220902162205-c0856e24416d // indirect
 	k8s.io/klog/v2 v2.100.1
-	k8s.io/kube-aggregator v0.28.2 // indirect
+	k8s.io/kube-aggregator v0.28.3 // indirect
 	k8s.io/kube-openapi v0.0.0-20230717233707-2695361300d9 // indirect
 	mvdan.cc/gofumpt v0.5.0 // indirect
 	mvdan.cc/interfacer v0.0.0-20180901003855-c20040233aed // indirect
