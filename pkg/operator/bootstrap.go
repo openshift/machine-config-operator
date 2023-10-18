@@ -177,26 +177,11 @@ func RenderBootstrap(
 			name:     "manifests/machineconfigserver/kube-apiserver-serving-ca-configmap.yaml",
 			filename: "manifests/kube-apiserver-serving-ca-configmap.yaml",
 		}, {
-			name:     "manifests/mcc.machinestate.yaml",
-			filename: "bootstrap/manifests/mcc.machinestate.yaml",
+			name:     "manifests/upgrade.worker.machineconfigstate.yaml",
+			filename: "bootstrap/manifests/upgrade.worker.machineconfigstate.yaml",
 		}, {
-			name:     "manifests/mcd.machinestate.yaml",
-			filename: "bootstrap/manifests/mcd.machinestate.yaml",
-		}, {
-			name:     "manifests/upgrade.worker.machinestate.yaml",
-			filename: "bootstrap/manifests/upgrade.worker.machinestate.yaml",
-		}, {
-			name:     "manifests/upgrade.master.machinestate.yaml",
-			filename: "bootstrap/manifests/upgrade.master.machinestate.yaml",
-		}, {
-			name:     "manifests/operator.machinestate.yaml",
-			filename: "bootstrap/manifests/operator.machinestate.yaml",
-		}, {
-			name:     "manifests/metrics.machinestate.yaml",
-			filename: "bootstrap/manifests/metrics.machinestate.yaml",
-		}, {
-			name:     "manifests/bootstrap.machinestate.yaml",
-			filename: "bootstrap/manifests/bootstrap.machinestate.yaml",
+			name:     "manifests/upgrade.master.machineconfigstate.yaml",
+			filename: "bootstrap/manifests/upgrade.master.machineconfigstate.yaml",
 		}}
 
 	manifests = appendManifestsByPlatform(manifests, *infra)

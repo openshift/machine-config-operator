@@ -55,3 +55,6 @@ rules:
   - leases
   verbs:
   - "*"
+- apiGroups: ["apps"]
+  resources: ["replicasets"]
+  verbs: ["get", "list"]

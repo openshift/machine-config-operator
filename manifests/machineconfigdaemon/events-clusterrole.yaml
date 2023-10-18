@@ -5,4 +5,4 @@ metadata:
 rules:
 - apiGroups: [""]
   resources: ["events"]
-  verbs: ["get", "watch", "list", "create", "update", "patch"]
+  verbs: ["create", "patch"]
