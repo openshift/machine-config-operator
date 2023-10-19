@@ -12,7 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubeletconfigv1beta1 "k8s.io/kubelet/config/v1beta1"
 
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/require"
@@ -42,6 +42,24 @@ func TestFeatureGateDrift(t *testing.T) {
 				t.Errorf("could not generate defaultFeatureGates: %v", err)
 			}
 			if !reflect.DeepEqual(originalKubeConfig.FeatureGates, *defaultFeatureGates) {
+				var found = map[string]bool{}
+				for featureGate := range originalKubeConfig.FeatureGates {
+					for apiGate := range *defaultFeatureGates {
+						if featureGate == apiGate {
+							found[apiGate] = true
+						}
+					}
+				}
+				for featureGate := range originalKubeConfig.FeatureGates {
+					if _, ok := found[featureGate]; !ok {
+						t.Logf("%s is not present in api", featureGate)
+					}
+				}
+				for featureGate := range *defaultFeatureGates {
+					if _, ok := found[featureGate]; !ok {
+						t.Logf("%s is not present in template", featureGate)
+					}
+				}
 				t.Errorf("template FeatureGates do not match openshift/api FeatureGates: (tmpl=[%v], api=[%v]", originalKubeConfig.FeatureGates, defaultFeatureGates)
 			}
 		})

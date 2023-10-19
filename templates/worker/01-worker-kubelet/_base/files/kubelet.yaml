@@ -28,9 +28,16 @@ contents:
     nodeStatusUpdateFrequency: 10s
     featureGates:
       AlibabaPlatform: true
-      OpenShiftPodSecurityAdmission: true
-      RetroactiveDefaultStorageClass: false
+      AzureWorkloadIdentity: true
+      BuildCSIVolumes: true
       CloudDualStackNodeIPs: true
+      ExternalCloudProvider: true
+      ExternalCloudProviderAzure: true
+      ExternalCloudProviderGCP: true
+      ExternalCloudProviderExternal: true
+      OpenShiftPodSecurityAdmission: true
+      PrivateHostedZoneAWS: true
+      RetroactiveDefaultStorageClass: false
     serverTLSBootstrap: true
     tlsMinVersion: VersionTLS12
     tlsCipherSuites:

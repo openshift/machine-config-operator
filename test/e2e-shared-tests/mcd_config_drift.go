@@ -9,7 +9,8 @@ import (
 	"time"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/openshift/machine-config-operator/test/helpers"
@@ -463,7 +464,7 @@ func pollForResourceState(timeout time.Duration, pollFunc func() (bool, error)) 
 
 func allMCPConditionsTrue(conditions []mcfgv1.MachineConfigPoolConditionType, mcp mcfgv1.MachineConfigPool) bool {
 	for _, condition := range conditions {
-		if !mcfgv1.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, condition) {
+		if !apihelpers.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, condition) {
 			return false
 		}
 	}
@@ -473,7 +474,7 @@ func allMCPConditionsTrue(conditions []mcfgv1.MachineConfigPoolConditionType, mc
 
 func allMCPConditionsFalse(conditions []mcfgv1.MachineConfigPoolConditionType, mcp mcfgv1.MachineConfigPool) bool {
 	for _, condition := range conditions {
-		if !mcfgv1.IsMachineConfigPoolConditionFalse(mcp.Status.Conditions, condition) {
+		if !apihelpers.IsMachineConfigPoolConditionFalse(mcp.Status.Conditions, condition) {
 			return false
 		}
 	}

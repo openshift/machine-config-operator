@@ -3,7 +3,8 @@ package build
 import (
 	"fmt"
 
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	corev1 "k8s.io/api/core/v1"
 )
@@ -155,13 +156,13 @@ func (p *poolState) ClearAllBuildConditions() {
 func (p *poolState) SetBuildConditions(conditions []mcfgv1.MachineConfigPoolCondition) {
 	for _, condition := range conditions {
 		condition := condition
-		currentCondition := mcfgv1.GetMachineConfigPoolCondition(p.pool.Status, condition.Type)
+		currentCondition := apihelpers.GetMachineConfigPoolCondition(p.pool.Status, condition.Type)
 		if currentCondition != nil && isConditionEqual(*currentCondition, condition) {
 			continue
 		}
 
-		mcpCondition := mcfgv1.NewMachineConfigPoolCondition(condition.Type, condition.Status, condition.Reason, condition.Message)
-		mcfgv1.SetMachineConfigPoolCondition(&p.pool.Status, *mcpCondition)
+		mcpCondition := apihelpers.NewMachineConfigPoolCondition(condition.Type, condition.Status, condition.Reason, condition.Message)
+		apihelpers.SetMachineConfigPoolCondition(&p.pool.Status, *mcpCondition)
 	}
 }
 

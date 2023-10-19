@@ -17,7 +17,7 @@ import (
 	"github.com/openshift/library-go/pkg/cloudprovider"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/machine-config-operator/pkg/constants"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/version"

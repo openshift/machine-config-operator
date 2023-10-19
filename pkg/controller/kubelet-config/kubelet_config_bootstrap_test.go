@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	configv1 "github.com/openshift/api/config/v1"
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/require"

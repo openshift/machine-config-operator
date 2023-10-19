@@ -11,7 +11,7 @@ import (
 	clientcmd "k8s.io/client-go/tools/clientcmd/api/v1"
 	"k8s.io/klog/v2"
 
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 )
 
