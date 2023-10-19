@@ -110,9 +110,15 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 	}
 
 	var inDesiredConfig bool
-	if inDesiredConfig, err = dn.updateConfigAndState(state); err != nil {
+	var missingODC bool
+	if missingODC, inDesiredConfig, err = dn.updateConfigAndState(state); err != nil {
 		return fmt.Errorf("could not apply update: setting node's state to Done failed. Error: %w", err)
 	}
+
+	if missingODC {
+		return fmt.Errorf("error updating state.currentconfig from on-disk currentconfig")
+	}
+
 	if inDesiredConfig {
 		// (re)start the config drift monitor since rebooting isn't needed.
 		dn.startConfigDriftMonitor()
