@@ -1,7 +1,8 @@
 package common
 
 import (
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 )
 
 // This is intended to provide a singular way to interrogate MachineConfigPool
@@ -50,22 +51,22 @@ func (l *LayeredPoolState) HasOSImage() bool {
 
 // Determines if an OS image build is a success.
 func (l *LayeredPoolState) IsBuildSuccess() bool {
-	return mcfgv1.IsMachineConfigPoolConditionTrue(l.pool.Status.Conditions, mcfgv1.MachineConfigPoolBuildSuccess)
+	return apihelpers.IsMachineConfigPoolConditionTrue(l.pool.Status.Conditions, mcfgv1.MachineConfigPoolBuildSuccess)
 }
 
 // Determines if an OS image build is pending.
 func (l *LayeredPoolState) IsBuildPending() bool {
-	return mcfgv1.IsMachineConfigPoolConditionTrue(l.pool.Status.Conditions, mcfgv1.MachineConfigPoolBuildPending)
+	return apihelpers.IsMachineConfigPoolConditionTrue(l.pool.Status.Conditions, mcfgv1.MachineConfigPoolBuildPending)
 }
 
 // Determines if an OS image build is in progress.
 func (l *LayeredPoolState) IsBuilding() bool {
-	return mcfgv1.IsMachineConfigPoolConditionTrue(l.pool.Status.Conditions, mcfgv1.MachineConfigPoolBuilding)
+	return apihelpers.IsMachineConfigPoolConditionTrue(l.pool.Status.Conditions, mcfgv1.MachineConfigPoolBuilding)
 }
 
 // Determines if an OS image build has failed.
 func (l *LayeredPoolState) IsBuildFailure() bool {
-	return mcfgv1.IsMachineConfigPoolConditionTrue(l.pool.Status.Conditions, mcfgv1.MachineConfigPoolBuildFailed)
+	return apihelpers.IsMachineConfigPoolConditionTrue(l.pool.Status.Conditions, mcfgv1.MachineConfigPoolBuildFailed)
 }
 
 func (l *LayeredPoolState) IsAnyDegraded() bool {
@@ -76,7 +77,7 @@ func (l *LayeredPoolState) IsAnyDegraded() bool {
 	}
 
 	for _, condType := range condTypes {
-		if mcfgv1.IsMachineConfigPoolConditionTrue(l.pool.Status.Conditions, condType) {
+		if apihelpers.IsMachineConfigPoolConditionTrue(l.pool.Status.Conditions, condType) {
 			return true
 		}
 	}
@@ -85,13 +86,13 @@ func (l *LayeredPoolState) IsAnyDegraded() bool {
 }
 
 func (l *LayeredPoolState) IsDegraded() bool {
-	return mcfgv1.IsMachineConfigPoolConditionTrue(l.pool.Status.Conditions, mcfgv1.MachineConfigPoolDegraded)
+	return apihelpers.IsMachineConfigPoolConditionTrue(l.pool.Status.Conditions, mcfgv1.MachineConfigPoolDegraded)
 }
 
 func (l *LayeredPoolState) IsNodeDegraded() bool {
-	return mcfgv1.IsMachineConfigPoolConditionTrue(l.pool.Status.Conditions, mcfgv1.MachineConfigPoolNodeDegraded)
+	return apihelpers.IsMachineConfigPoolConditionTrue(l.pool.Status.Conditions, mcfgv1.MachineConfigPoolNodeDegraded)
 }
 
 func (l *LayeredPoolState) IsRenderDegraded() bool {
-	return mcfgv1.IsMachineConfigPoolConditionTrue(l.pool.Status.Conditions, mcfgv1.MachineConfigPoolRenderDegraded)
+	return apihelpers.IsMachineConfigPoolConditionTrue(l.pool.Status.Conditions, mcfgv1.MachineConfigPoolRenderDegraded)
 }

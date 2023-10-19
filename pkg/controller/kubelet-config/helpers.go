@@ -24,9 +24,10 @@ import (
 	"k8s.io/apimachinery/pkg/util/yaml"
 	kubeletconfigv1beta1 "k8s.io/kubelet/config/v1beta1"
 
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
+	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 )
 
 const (
@@ -360,13 +361,13 @@ func validateUserKubeletConfig(cfg *mcfgv1.KubeletConfig) error {
 func wrapErrorWithCondition(err error, args ...interface{}) mcfgv1.KubeletConfigCondition {
 	var condition *mcfgv1.KubeletConfigCondition
 	if err != nil {
-		condition = mcfgv1.NewKubeletConfigCondition(
+		condition = apihelpers.NewKubeletConfigCondition(
 			mcfgv1.KubeletConfigFailure,
 			corev1.ConditionFalse,
 			fmt.Sprintf("Error: %v", err),
 		)
 	} else {
-		condition = mcfgv1.NewKubeletConfigCondition(
+		condition = apihelpers.NewKubeletConfigCondition(
 			mcfgv1.KubeletConfigSuccess,
 			corev1.ConditionTrue,
 			"Success",
