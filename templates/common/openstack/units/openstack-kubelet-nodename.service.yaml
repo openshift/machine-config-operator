@@ -13,4 +13,4 @@ contents: |
   Type=oneshot
 
   [Install]
-  WantedBy=network-online.target
+  WantedBy=kubelet-dependencies.target
