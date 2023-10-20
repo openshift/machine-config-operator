@@ -5,19 +5,38 @@ contents:
     #!/bin/bash
     set -e -o pipefail
 
-    NODECONF=/etc/systemd/system/kubelet.service.d/20-openstack-node-name.conf
+    NODEENV=/etc/kubernetes/node.env
 
-    if [ -e "${NODECONF}" ]; then
-        echo "Not replacing existing ${NODECONF}"
+    # This can be removed 1 release after it merges because all affected nodes
+    # will have upgraded
+    LEGACY_NODEENV=/etc/systemd/system/kubelet.service.d/20-openstack-node-name.conf
+    if [ -e "${LEGACY_NODEENV}" ]; then
+        # Legacy file was a systemd stanza with KUBELET_NODE_NAME specified in
+        # a directive of the format:
+        #   Environment="KUBELET_NODE_NAME=node.example.com"
+        # New format is an environment file. The following extracts only the
+        # contents of any Environment directives.
+        echo "Migrating ${LEGACY_NODEENV} to ${NODEENV}"
+        awk 'match($0, /^\s*Environment\s*=\s*"(.*)"\s*$/, value) { print value[1] }' < "${LEGACY_NODEENV}" > "${NODEENV}"
+        rm "${LEGACY_NODEENV}"
+        exit 0
+    fi
+
+    if [ -e "${NODEENV}" ]; then
+        echo "Not replacing existing ${NODEENV}"
         exit 0
     fi
 
     # For compatibility with the OpenStack in-tree provider
     # Set node name to be instance name instead of the default FQDN hostname
-    #
-    # https://docs.openstack.org/nova/victoria/user/metadata.html#metadata-openstack-format
-    name=$(curl -s http://169.254.169.254/openstack/2012-08-10/meta_data.json | jq -re .name)
-    cat > "${NODECONF}" <<EOF
-    [Service]
-    Environment="KUBELET_NODE_NAME=${name}"
-    EOF
+    while true; do
+        # https://docs.openstack.org/nova/victoria/user/metadata.html#metadata-openstack-format
+        hostname=$(curl -s http://169.254.169.254/openstack/2012-08-10/meta_data.json | jq -re .name)
+        if [[ -z "${hostname}" ]]; then
+            sleep 5
+            continue
+        fi
+
+        echo "KUBELET_NODE_NAME=${hostname}" > ${NODEENV}
+        break
+    done
