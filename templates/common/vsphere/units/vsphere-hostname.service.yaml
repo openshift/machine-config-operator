@@ -8,7 +8,7 @@ contents: |
 
   ConditionVirtualization=vmware
   
-  Before=kubelet.service
+  Before=kubelet-dependencies.target
   Before=node-valid-hostname.service
   Before=NetworkManager.service
 

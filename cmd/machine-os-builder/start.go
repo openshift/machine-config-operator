@@ -66,7 +66,7 @@ func getBuildController(ctx context.Context, cb *clients.Builder) (*build.Contro
 		return nil, err
 	}
 
-	ctrlCtx := ctrlcommon.CreateControllerContext(ctx, cb, componentName)
+	ctrlCtx := ctrlcommon.CreateControllerContext(ctx, cb)
 	buildClients := build.NewClientsFromControllerContext(ctrlCtx)
 	cfg := build.DefaultBuildControllerConfig()
 

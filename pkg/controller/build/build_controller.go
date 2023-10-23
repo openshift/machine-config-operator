@@ -9,8 +9,9 @@ import (
 
 	"github.com/containers/image/v5/docker/reference"
 	buildv1 "github.com/openshift/api/build/v1"
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
+	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	corev1 "k8s.io/api/core/v1"
 	aggerrors "k8s.io/apimachinery/pkg/util/errors"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -29,11 +30,11 @@ import (
 
 	buildclientset "github.com/openshift/client-go/build/clientset/versioned"
 
-	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
-	mcfginformers "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions"
+	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
+	mcfginformers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
 
-	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
-	mcfglistersv1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
+	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
+	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 
 	coreinformers "k8s.io/client-go/informers"
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
@@ -1115,12 +1116,12 @@ func (ctrl *Controller) syncAvailableStatus(pool *mcfgv1.MachineConfigPool) erro
 	// I'm not sure what the consequences are of not doing this.
 	//nolint:gocritic // Leaving this here for review purposes.
 	/*
-		if mcfgv1.IsMachineConfigPoolConditionFalse(pool.Status.Conditions, mcfgv1.MachineConfigPoolRenderDegraded) {
+		if apihelpers.IsMachineConfigPoolConditionFalse(pool.Status.Conditions, mcfgv1.MachineConfigPoolRenderDegraded) {
 			return nil
 		}
 	*/
-	sdegraded := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolRenderDegraded, corev1.ConditionFalse, "", "")
-	mcfgv1.SetMachineConfigPoolCondition(&pool.Status, *sdegraded)
+	sdegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolRenderDegraded, corev1.ConditionFalse, "", "")
+	apihelpers.SetMachineConfigPoolCondition(&pool.Status, *sdegraded)
 
 	if _, err := ctrl.mcfgclient.MachineconfigurationV1().MachineConfigPools().UpdateStatus(context.TODO(), pool, metav1.UpdateOptions{}); err != nil {
 		return err
@@ -1130,8 +1131,8 @@ func (ctrl *Controller) syncAvailableStatus(pool *mcfgv1.MachineConfigPool) erro
 }
 
 func (ctrl *Controller) syncFailingStatus(pool *mcfgv1.MachineConfigPool, err error) error {
-	sdegraded := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolRenderDegraded, corev1.ConditionTrue, "", fmt.Sprintf("Failed to build configuration for pool %s: %v", pool.Name, err))
-	mcfgv1.SetMachineConfigPoolCondition(&pool.Status, *sdegraded)
+	sdegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolRenderDegraded, corev1.ConditionTrue, "", fmt.Sprintf("Failed to build configuration for pool %s: %v", pool.Name, err))
+	apihelpers.SetMachineConfigPoolCondition(&pool.Status, *sdegraded)
 	if _, updateErr := ctrl.mcfgclient.MachineconfigurationV1().MachineConfigPools().UpdateStatus(context.TODO(), pool, metav1.UpdateOptions{}); updateErr != nil {
 		klog.Errorf("Error updating MachineConfigPool %s: %v", pool.Name, updateErr)
 	}

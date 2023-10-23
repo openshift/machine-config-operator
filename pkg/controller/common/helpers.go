@@ -51,13 +51,10 @@ import (
 	"k8s.io/client-go/tools/reference"
 	"k8s.io/klog/v2"
 
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
-	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
+	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 )
-
-// Gates whether or not the MCO uses the new format base OS container image by default
-var UseNewFormatImageByDefault = true
 
 // strToPtr converts the input string to a pointer to itself
 func strToPtr(s string) *string {
@@ -123,28 +120,24 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.Contro
 		return nil, err
 	}
 
-	// Setting FIPS to true or kerneType to realtime in any MachineConfig takes priority in setting that field
+	// Setting FIPS to true or kernelType to a non-default value in any MachineConfig takes priority in setting that field
 	for _, cfg := range configs {
 		if cfg.Spec.FIPS {
 			fips = true
 		}
-		if cfg.Spec.KernelType == KernelTypeRealtime {
+		if cfg.Spec.KernelType == KernelTypeRealtime || cfg.Spec.KernelType == KernelType64kPages {
 			kernelType = cfg.Spec.KernelType
 		}
 	}
 
-	// If no MC sets kerneType, then set it to 'default' since that's what it is using
+	// If no MC sets kernelType, then set it to 'default' since that's what it is using
 	if kernelType == "" {
 		kernelType = KernelTypeDefault
 	}
 
 	kargs := []string{}
 	for _, cfg := range configs {
-		for _, arg := range cfg.Spec.KernelArguments {
-			if !InSlice(arg, kargs) {
-				kargs = append(kargs, arg)
-			}
-		}
+		kargs = append(kargs, cfg.Spec.KernelArguments...)
 	}
 
 	extensions := []string{}
@@ -576,7 +569,7 @@ func InSlice(elem string, slice []string) bool {
 
 // ValidateMachineConfig validates that given MachineConfig Spec is valid.
 func ValidateMachineConfig(cfg mcfgv1.MachineConfigSpec) error {
-	if !(cfg.KernelType == "" || cfg.KernelType == KernelTypeDefault || cfg.KernelType == KernelTypeRealtime) {
+	if !(cfg.KernelType == "" || cfg.KernelType == KernelTypeDefault || cfg.KernelType == KernelTypeRealtime || cfg.KernelType == KernelType64kPages) {
 		return fmt.Errorf("kernelType=%s is invalid", cfg.KernelType)
 	}
 
@@ -1058,13 +1051,9 @@ func GetIgnitionFileDataByPath(config *ign3types.Config, path string) ([]byte, e
 	return nil, nil
 }
 
-// GetDefaultBaseImageContainer is kind of a "soft feature gate" for using the "new format" image by default, its behavior
-// is determined by the "UseNewFormatImageByDefault" boolean
+// GetDefaultBaseImageContainer returns the default bootable host base image.
 func GetDefaultBaseImageContainer(cconfigspec *mcfgv1.ControllerConfigSpec) string {
-	if UseNewFormatImageByDefault {
-		return cconfigspec.BaseOSContainerImage
-	}
-	return cconfigspec.OSImageURL
+	return cconfigspec.BaseOSContainerImage
 }
 
 // Configures common template FuncMaps used across all renderers.
