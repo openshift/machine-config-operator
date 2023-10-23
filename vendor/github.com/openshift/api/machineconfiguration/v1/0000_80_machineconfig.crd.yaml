@@ -86,11 +86,7 @@ spec:
                   nullable: true
                   x-kubernetes-list-type: atomic
                 kernelType:
-<<<<<<< HEAD
-                  description: kernelType contains which kernel we want to be running like default (traditional), realtime, 64k-pages (aarch64 only).
-=======
                   description: kernelType contains which kernel we want to be running like default (traditional), realtime.
->>>>>>> c598429a2 (api types)
                   type: string
                 osImageURL:
                   description: OSImageURL specifies the remote location that will be used to fetch the OS.

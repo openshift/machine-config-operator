@@ -15,10 +15,6 @@ import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	fakeclientbuildv1 "github.com/openshift/client-go/build/clientset/versioned/fake"
 	fakeclientmachineconfigv1 "github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
-<<<<<<< HEAD
-	"github.com/openshift/machine-config-operator/pkg/apihelpers"
-=======
->>>>>>> c598429a2 (api types)
 	testhelpers "github.com/openshift/machine-config-operator/test/helpers"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	fakecorev1client "k8s.io/client-go/kubernetes/fake"

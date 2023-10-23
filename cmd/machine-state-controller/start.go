@@ -50,10 +50,9 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 
 		ctrlctx := ctrlcommon.CreateControllerContext(ctx, cb)
 
-		// userInput := []string{"msc_test"}
+		userInput := []string{"msc_test_2", "msc_test_4"}
 		// Start the metrics handler
-		// go state.StartMetricsListener(startOpts.promMetricsListenAddress, ctrlctx.Stop, state.RegisterMetrics, userInput)
-		go ctrlcommon.StartMetricsListener(startOpts.promMetricsListenAddress, ctrlctx.Stop, state.RegisterMetrics)
+		go state.StartMetricsListener(startOpts.promMetricsListenAddress, ctrlctx.Stop, state.RegisterMetrics, userInput)
 
 		ctrl := state.New(ctrlctx.NamespacedInformerFactory.Machineconfiguration().V1alpha1().MachineConfigStates(),
 			ctrlctx.KubeNamespacedInformerFactory.Core().V1().Events(),

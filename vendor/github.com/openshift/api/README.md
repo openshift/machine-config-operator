@@ -1,7 +1,5 @@
 # api
-The canonical location of the OpenShift API definition.
-This repo holds the API type definitions and serialization code used by [openshift/client-go](https://github.com/openshift/client-go)
-APIs in this repo ship inside OCP payloads.
+The canonical location of the OpenShift API definition.  This repo holds the API type definitions and serialization code used by [openshift/client-go](https://github.com/openshift/client-go)
 
 ## defining new APIs
 

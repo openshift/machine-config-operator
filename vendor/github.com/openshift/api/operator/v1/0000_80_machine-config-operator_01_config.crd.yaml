@@ -54,11 +54,8 @@ spec:
               description: spec is the specification of the desired behavior of the Machine Config Operator
               type: object
               required:
-                - component
+                - mode
               properties:
-                component:
-                  description: component details which part of the MCO this is coming from
-                  type: string
                 failedRevisionLimit:
                   description: failedRevisionLimit is the number of failed static pod installer revisions to keep on disk and in the api -1 = unlimited, 0 or unset = 5 (default)
                   type: integer
@@ -110,6 +107,10 @@ spec:
             status:
               description: status is the most recently observed status of the Machine Config Operator
               type: object
+              required:
+                - controller
+                - daemon
+                - operator
               properties:
                 conditions:
                   description: conditions is a list of conditions and their status
@@ -129,6 +130,114 @@ spec:
                         type: string
                       type:
                         type: string
+                controller:
+                  description: controller describes the most recent progression of the MCC pods
+                  type: object
+                  properties:
+                    conditions:
+                      description: conditions is the most recent state reporting for each component
+                      type: array
+                      items:
+                        description: "Condition contains details for one aspect of the current state of this API Resource. --- This struct is intended for direct use as an array at the field path .status.conditions.  For example, \n type FooStatus struct{ // Represents the observations of a foo's current state. // Known .status.conditions.type are: \"Available\", \"Progressing\", and \"Degraded\" // +patchMergeKey=type // +patchStrategy=merge // +listType=map // +listMapKey=type Conditions []metav1.Condition `json:\"conditions,omitempty\" patchStrategy:\"merge\" patchMergeKey:\"type\" protobuf:\"bytes,1,rep,name=conditions\"` \n // other fields }"
+                        type: object
+                        required:
+                          - lastTransitionTime
+                          - message
+                          - reason
+                          - status
+                          - type
+                        properties:
+                          lastTransitionTime:
+                            description: lastTransitionTime is the last time the condition transitioned from one status to another. This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                            type: string
+                            format: date-time
+                          message:
+                            description: message is a human readable message indicating details about the transition. This may be an empty string.
+                            type: string
+                            maxLength: 32768
+                          observedGeneration:
+                            description: observedGeneration represents the .metadata.generation that the condition was set based upon. For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date with respect to the current state of the instance.
+                            type: integer
+                            format: int64
+                            minimum: 0
+                          reason:
+                            description: reason contains a programmatic identifier indicating the reason for the condition's last transition. Producers of specific condition types may define expected values and meanings for this field, and whether the values are considered a guaranteed API. The value should be a CamelCase string. This field may not be empty.
+                            type: string
+                            maxLength: 1024
+                            minLength: 1
+                            pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                          status:
+                            description: status of the condition, one of True, False, Unknown.
+                            type: string
+                            enum:
+                              - "True"
+                              - "False"
+                              - Unknown
+                          type:
+                            description: type of condition in CamelCase or in foo.example.com/CamelCase. --- Many .condition.type values are consistent across resources like Available, but because arbitrary conditions can be useful (see .node.status.conditions), the ability to deconflict is important. The regex it matches is (dns1123SubdomainFmt/)?(qualifiedNameFmt)
+                            type: string
+                            maxLength: 316
+                            pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      x-kubernetes-list-map-keys:
+                        - type
+                      x-kubernetes-list-type: map
+                    name:
+                      description: name represents the full name of this component
+                      type: string
+                daemon:
+                  description: daemon describes the most recent progression of the MCD pods
+                  type: object
+                  properties:
+                    conditions:
+                      description: conditions is the most recent state reporting for each component
+                      type: array
+                      items:
+                        description: "Condition contains details for one aspect of the current state of this API Resource. --- This struct is intended for direct use as an array at the field path .status.conditions.  For example, \n type FooStatus struct{ // Represents the observations of a foo's current state. // Known .status.conditions.type are: \"Available\", \"Progressing\", and \"Degraded\" // +patchMergeKey=type // +patchStrategy=merge // +listType=map // +listMapKey=type Conditions []metav1.Condition `json:\"conditions,omitempty\" patchStrategy:\"merge\" patchMergeKey:\"type\" protobuf:\"bytes,1,rep,name=conditions\"` \n // other fields }"
+                        type: object
+                        required:
+                          - lastTransitionTime
+                          - message
+                          - reason
+                          - status
+                          - type
+                        properties:
+                          lastTransitionTime:
+                            description: lastTransitionTime is the last time the condition transitioned from one status to another. This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                            type: string
+                            format: date-time
+                          message:
+                            description: message is a human readable message indicating details about the transition. This may be an empty string.
+                            type: string
+                            maxLength: 32768
+                          observedGeneration:
+                            description: observedGeneration represents the .metadata.generation that the condition was set based upon. For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date with respect to the current state of the instance.
+                            type: integer
+                            format: int64
+                            minimum: 0
+                          reason:
+                            description: reason contains a programmatic identifier indicating the reason for the condition's last transition. Producers of specific condition types may define expected values and meanings for this field, and whether the values are considered a guaranteed API. The value should be a CamelCase string. This field may not be empty.
+                            type: string
+                            maxLength: 1024
+                            minLength: 1
+                            pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                          status:
+                            description: status of the condition, one of True, False, Unknown.
+                            type: string
+                            enum:
+                              - "True"
+                              - "False"
+                              - Unknown
+                          type:
+                            description: type of condition in CamelCase or in foo.example.com/CamelCase. --- Many .condition.type values are consistent across resources like Available, but because arbitrary conditions can be useful (see .node.status.conditions), the ability to deconflict is important. The regex it matches is (dns1123SubdomainFmt/)?(qualifiedNameFmt)
+                            type: string
+                            maxLength: 316
+                            pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      x-kubernetes-list-map-keys:
+                        - type
+                      x-kubernetes-list-type: map
+                    name:
+                      description: name represents the full name of this component
+                      type: string
                 generations:
                   description: generations are used to determine when an item needs to be reconciled or has changed in a way that needs a reaction.
                   type: array
@@ -168,35 +277,6 @@ spec:
                 mostRecentError:
                   description: mostRecentError is populated if the State reports an error.
                   type: string
-                mostRecentState:
-                  description: mostRecentState is the most recent state reporting for each component
-                  type: array
-                  items:
-                    description: ProgressionCondition is the base struct that contains all information about an event reported from an MCO component
-                    type: object
-                    properties:
-                      kind:
-                        description: kind describes the type of object for this condition (node, mcp, etc)
-                        type: string
-                      objectName:
-                        description: nameName is the object's name
-                        type: string
-                      phase:
-                        description: phase is the general action occuring
-                        type: string
-                      reason:
-                        description: reason is a more detailed description of the phase
-                        type: string
-                      state:
-                        description: state describes what is happening with this object
-                        type: string
-                      time:
-                        description: time is the timestamp of this event
-                        type: string
-                        format: date-time
-                  x-kubernetes-list-map-keys:
-                    - objectName
-                  x-kubernetes-list-type: map
                 nodeStatuses:
                   description: nodeStatuses track the deployment values and errors across individual nodes
                   type: array
@@ -241,28 +321,60 @@ spec:
                   description: observedGeneration is the last generation change you've dealt with
                   type: integer
                   format: int64
-                progressionHistory:
-                  description: progressionHistory contains a list of events that have happened on all objects in the MCO
-                  type: array
-                  items:
-                    description: ProgressionHistory contains the history of an object that exists in a progressioncondition
-                    type: object
-                    properties:
-                      componentAndObject:
-                        description: componentAndObject describes the name of the component and type of object we are dealing with
-                        type: string
-                      objectType:
-                        description: objectType describes the type of object
-                        type: string
-                      phase:
-                        description: phase is the general action occuring
-                        type: string
-                      reason:
-                        description: reason is a more detailed description of the phase
-                        type: string
-                      state:
-                        description: state describes what is happening with this component
-                        type: string
+                operator:
+                  description: operator describes the most recent progression of the MCO pod
+                  type: object
+                  properties:
+                    conditions:
+                      description: conditions is the most recent state reporting for each component
+                      type: array
+                      items:
+                        description: "Condition contains details for one aspect of the current state of this API Resource. --- This struct is intended for direct use as an array at the field path .status.conditions.  For example, \n type FooStatus struct{ // Represents the observations of a foo's current state. // Known .status.conditions.type are: \"Available\", \"Progressing\", and \"Degraded\" // +patchMergeKey=type // +patchStrategy=merge // +listType=map // +listMapKey=type Conditions []metav1.Condition `json:\"conditions,omitempty\" patchStrategy:\"merge\" patchMergeKey:\"type\" protobuf:\"bytes,1,rep,name=conditions\"` \n // other fields }"
+                        type: object
+                        required:
+                          - lastTransitionTime
+                          - message
+                          - reason
+                          - status
+                          - type
+                        properties:
+                          lastTransitionTime:
+                            description: lastTransitionTime is the last time the condition transitioned from one status to another. This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                            type: string
+                            format: date-time
+                          message:
+                            description: message is a human readable message indicating details about the transition. This may be an empty string.
+                            type: string
+                            maxLength: 32768
+                          observedGeneration:
+                            description: observedGeneration represents the .metadata.generation that the condition was set based upon. For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date with respect to the current state of the instance.
+                            type: integer
+                            format: int64
+                            minimum: 0
+                          reason:
+                            description: reason contains a programmatic identifier indicating the reason for the condition's last transition. Producers of specific condition types may define expected values and meanings for this field, and whether the values are considered a guaranteed API. The value should be a CamelCase string. This field may not be empty.
+                            type: string
+                            maxLength: 1024
+                            minLength: 1
+                            pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                          status:
+                            description: status of the condition, one of True, False, Unknown.
+                            type: string
+                            enum:
+                              - "True"
+                              - "False"
+                              - Unknown
+                          type:
+                            description: type of condition in CamelCase or in foo.example.com/CamelCase. --- Many .condition.type values are consistent across resources like Available, but because arbitrary conditions can be useful (see .node.status.conditions), the ability to deconflict is important. The regex it matches is (dns1123SubdomainFmt/)?(qualifiedNameFmt)
+                            type: string
+                            maxLength: 316
+                            pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      x-kubernetes-list-map-keys:
+                        - type
+                      x-kubernetes-list-type: map
+                    name:
+                      description: name represents the full name of this component
+                      type: string
                 readyReplicas:
                   description: readyReplicas indicates how many replicas are ready and at the desired state
                   type: integer

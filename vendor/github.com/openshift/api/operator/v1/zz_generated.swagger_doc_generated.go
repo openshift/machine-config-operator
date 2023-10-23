@@ -1254,6 +1254,15 @@ func (MachineConfiguration) SwaggerDoc() map[string]string {
 	return map_MachineConfiguration
 }
 
+var map_MachineConfigurationComponent = map[string]string{
+	"name":       "name represents the full name of this component",
+	"conditions": "conditions is the most recent state reporting for each component",
+}
+
+func (MachineConfigurationComponent) SwaggerDoc() map[string]string {
+	return map_MachineConfigurationComponent
+}
+
 var map_MachineConfigurationList = map[string]string{
 	"":         "MachineConfigurationList is a collection of items\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
 	"metadata": "metadata is the standard list's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
@@ -1265,8 +1274,7 @@ func (MachineConfigurationList) SwaggerDoc() map[string]string {
 }
 
 var map_MachineConfigurationSpec = map[string]string{
-	"component": "component details which part of the MCO this is coming from",
-	"mode":      "Mode describes if we are talking about this object in cluster or during bootstrap",
+	"mode": "Mode describes if we are talking about this object in cluster or during bootstrap",
 }
 
 func (MachineConfigurationSpec) SwaggerDoc() map[string]string {
@@ -1274,41 +1282,15 @@ func (MachineConfigurationSpec) SwaggerDoc() map[string]string {
 }
 
 var map_MachineConfigurationStatus = map[string]string{
-	"mostRecentState":    "mostRecentState is the most recent state reporting for each component",
-	"progressionHistory": "progressionHistory contains a list of events that have happened on all objects in the MCO",
-	"mostRecentError":    "mostRecentError is populated if the State reports an error.",
-	"health":             "health reports the overall status of the MCO given its Progress",
+	"daemon":          "daemon describes the most recent progression of the MCD pods",
+	"controller":      "controller describes the most recent progression of the MCC pods",
+	"operator":        "operator describes the most recent progression of the MCO pod",
+	"mostRecentError": "mostRecentError is populated if the State reports an error.",
+	"health":          "health reports the overall status of the MCO given its Progress",
 }
 
 func (MachineConfigurationStatus) SwaggerDoc() map[string]string {
 	return map_MachineConfigurationStatus
-}
-
-var map_ProgressionCondition = map[string]string{
-	"":           "ProgressionCondition is the base struct that contains all information about an event reported from an MCO component",
-	"kind":       "kind describes the type of object for this condition (node, mcp, etc)",
-	"state":      "state describes what is happening with this object",
-	"objectName": "nameName is the object's name",
-	"phase":      "phase is the general action occuring",
-	"reason":     "reason is a more detailed description of the phase",
-	"time":       "time is the timestamp of this event",
-}
-
-func (ProgressionCondition) SwaggerDoc() map[string]string {
-	return map_ProgressionCondition
-}
-
-var map_ProgressionHistory = map[string]string{
-	"":                   "ProgressionHistory contains the history of an object that exists in a progressioncondition",
-	"componentAndObject": "componentAndObject describes the name of the component and type of object we are dealing with",
-	"state":              "state describes what is happening with this component",
-	"objectType":         "objectType describes the type of object",
-	"phase":              "phase is the general action occuring",
-	"reason":             "reason is a more detailed description of the phase",
-}
-
-func (ProgressionHistory) SwaggerDoc() map[string]string {
-	return map_ProgressionHistory
 }
 
 var map_AdditionalNetworkDefinition = map[string]string{

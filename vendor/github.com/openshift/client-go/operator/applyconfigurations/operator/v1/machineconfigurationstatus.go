@@ -10,10 +10,11 @@ import (
 // with apply.
 type MachineConfigurationStatusApplyConfiguration struct {
 	StaticPodOperatorStatusApplyConfiguration `json:",inline"`
-	MostRecentState                           []ProgressionConditionApplyConfiguration    `json:"mostRecentState,omitempty"`
-	ProgressionHistory                        []ProgressionHistoryApplyConfiguration      `json:"progressionHistory,omitempty"`
-	MostRecentError                           *string                                     `json:"mostRecentError,omitempty"`
-	Health                                    *operatorv1.MachineConfigOperatorHealthEnum `json:"health,omitempty"`
+	Daemon                                    *MachineConfigurationComponentApplyConfiguration `json:"daemon,omitempty"`
+	Controller                                *MachineConfigurationComponentApplyConfiguration `json:"controller,omitempty"`
+	Operator                                  *MachineConfigurationComponentApplyConfiguration `json:"operator,omitempty"`
+	MostRecentError                           *string                                          `json:"mostRecentError,omitempty"`
+	Health                                    *operatorv1.MachineConfigOperatorHealthEnum      `json:"health,omitempty"`
 }
 
 // MachineConfigurationStatusApplyConfiguration constructs an declarative configuration of the MachineConfigurationStatus type for use with
@@ -101,29 +102,27 @@ func (b *MachineConfigurationStatusApplyConfiguration) WithNodeStatuses(values .
 	return b
 }
 
-// WithMostRecentState adds the given value to the MostRecentState field in the declarative configuration
-// and returns the receiver, so that objects can be build by chaining "With" function invocations.
-// If called multiple times, values provided by each call will be appended to the MostRecentState field.
-func (b *MachineConfigurationStatusApplyConfiguration) WithMostRecentState(values ...*ProgressionConditionApplyConfiguration) *MachineConfigurationStatusApplyConfiguration {
-	for i := range values {
-		if values[i] == nil {
-			panic("nil value passed to WithMostRecentState")
-		}
-		b.MostRecentState = append(b.MostRecentState, *values[i])
-	}
+// WithDaemon sets the Daemon field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Daemon field is set to the value of the last call.
+func (b *MachineConfigurationStatusApplyConfiguration) WithDaemon(value *MachineConfigurationComponentApplyConfiguration) *MachineConfigurationStatusApplyConfiguration {
+	b.Daemon = value
 	return b
 }
 
-// WithProgressionHistory adds the given value to the ProgressionHistory field in the declarative configuration
-// and returns the receiver, so that objects can be build by chaining "With" function invocations.
-// If called multiple times, values provided by each call will be appended to the ProgressionHistory field.
-func (b *MachineConfigurationStatusApplyConfiguration) WithProgressionHistory(values ...*ProgressionHistoryApplyConfiguration) *MachineConfigurationStatusApplyConfiguration {
-	for i := range values {
-		if values[i] == nil {
-			panic("nil value passed to WithProgressionHistory")
-		}
-		b.ProgressionHistory = append(b.ProgressionHistory, *values[i])
-	}
+// WithController sets the Controller field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Controller field is set to the value of the last call.
+func (b *MachineConfigurationStatusApplyConfiguration) WithController(value *MachineConfigurationComponentApplyConfiguration) *MachineConfigurationStatusApplyConfiguration {
+	b.Controller = value
+	return b
+}
+
+// WithOperator sets the Operator field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Operator field is set to the value of the last call.
+func (b *MachineConfigurationStatusApplyConfiguration) WithOperator(value *MachineConfigurationComponentApplyConfiguration) *MachineConfigurationStatusApplyConfiguration {
+	b.Operator = value
 	return b
 }
 

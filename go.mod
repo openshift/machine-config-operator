@@ -326,6 +326,6 @@ require (
 
 replace k8s.io/kube-openapi => github.com/openshift/kube-openapi v0.0.0-20230816122517-ffc8f001abb0
 
-replace github.com/openshift/client-go => github.com/cdoern/client-go v0.0.0-20231016145455-5304126d9d12
+replace github.com/openshift/client-go => github.com/cdoern/client-go v0.0.0-20231020152023-90a931bace72
 
-replace github.com/openshift/api => github.com/cdoern/api v0.0.0-20231016144815-7282c4245d9b
+replace github.com/openshift/api => github.com/cdoern/api v0.0.0-20231020151238-0dde26a29f17

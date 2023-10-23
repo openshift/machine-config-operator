@@ -430,17 +430,13 @@ type MachineConfigPoolStatus struct {
 	// +listType=atomic
 	// +optional
 	Conditions []MachineConfigPoolCondition `json:"conditions"`
-<<<<<<< HEAD
-=======
 
 	// certExpirys keeps track of important certificate expiration data
 	// +listType=atomic
 	// +optional
 	CertExpirys []CertExpiry `json:"certExpirys"`
->>>>>>> c598429a2 (api types)
 }
 
-// certExpirys keeps track of important certificate expiration data
 // ceryExpiry contains the bundle name and the expiry date
 type CertExpiry struct {
 	// bundle is the name of the bundle in which the subject certificate resides

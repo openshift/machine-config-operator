@@ -2242,13 +2242,24 @@ var schemaYAML = typed.YAMLObject(`types:
       type:
         namedType: com.github.openshift.api.operator.v1.MachineConfigurationStatus
       default: {}
-- name: com.github.openshift.api.operator.v1.MachineConfigurationSpec
+- name: com.github.openshift.api.operator.v1.MachineConfigurationComponent
   map:
     fields:
-    - name: component
+    - name: conditions
+      type:
+        list:
+          elementType:
+            namedType: io.k8s.apimachinery.pkg.apis.meta.v1.Condition
+          elementRelationship: associative
+          keys:
+          - type
+    - name: name
       type:
         scalar: string
       default: ""
+- name: com.github.openshift.api.operator.v1.MachineConfigurationSpec
+  map:
+    fields:
     - name: failedRevisionLimit
       type:
         scalar: numeric
@@ -2290,6 +2301,14 @@ var schemaYAML = typed.YAMLObject(`types:
           elementType:
             namedType: com.github.openshift.api.operator.v1.OperatorCondition
           elementRelationship: atomic
+    - name: controller
+      type:
+        namedType: com.github.openshift.api.operator.v1.MachineConfigurationComponent
+      default: {}
+    - name: daemon
+      type:
+        namedType: com.github.openshift.api.operator.v1.MachineConfigurationComponent
+      default: {}
     - name: generations
       type:
         list:
@@ -2310,14 +2329,6 @@ var schemaYAML = typed.YAMLObject(`types:
       type:
         scalar: string
       default: ""
-    - name: mostRecentState
-      type:
-        list:
-          elementType:
-            namedType: com.github.openshift.api.operator.v1.ProgressionCondition
-          elementRelationship: associative
-          keys:
-          - objectName
     - name: nodeStatuses
       type:
         list:
@@ -2327,12 +2338,10 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: observedGeneration
       type:
         scalar: numeric
-    - name: progressionHistory
+    - name: operator
       type:
-        list:
-          elementType:
-            namedType: com.github.openshift.api.operator.v1.ProgressionHistory
-          elementRelationship: atomic
+        namedType: com.github.openshift.api.operator.v1.MachineConfigurationComponent
+      default: {}
     - name: readyReplicas
       type:
         scalar: numeric
@@ -2810,56 +2819,6 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: protocol
       type:
         scalar: string
-- name: com.github.openshift.api.operator.v1.ProgressionCondition
-  map:
-    fields:
-    - name: kind
-      type:
-        scalar: string
-      default: ""
-    - name: objectName
-      type:
-        scalar: string
-      default: ""
-    - name: phase
-      type:
-        scalar: string
-      default: ""
-    - name: reason
-      type:
-        scalar: string
-      default: ""
-    - name: state
-      type:
-        scalar: string
-      default: ""
-    - name: time
-      type:
-        namedType: io.k8s.apimachinery.pkg.apis.meta.v1.Time
-      default: {}
-- name: com.github.openshift.api.operator.v1.ProgressionHistory
-  map:
-    fields:
-    - name: componentAndObject
-      type:
-        scalar: string
-      default: ""
-    - name: objectType
-      type:
-        scalar: string
-      default: ""
-    - name: phase
-      type:
-        scalar: string
-      default: ""
-    - name: reason
-      type:
-        scalar: string
-      default: ""
-    - name: state
-      type:
-        scalar: string
-      default: ""
 - name: com.github.openshift.api.operator.v1.ProjectAccess
   map:
     fields:

@@ -31,25 +31,37 @@ type MachineConfiguration struct {
 type MachineConfigurationSpec struct {
 	StaticPodOperatorSpec `json:",inline"`
 
-	// component details which part of the MCO this is coming from
+	// Mode describes if we are talking about this object in cluster or during bootstrap
 	// +kubebuilder:validation:Required
 	// +required
-	Component MCOComponent `json:"component"`
-
-	// Mode describes if we are talking about this object in cluster or during bootstrap
 	Mode MCOOperationMode `json:"mode"`
+}
+
+type MachineConfigurationComponent struct {
+	// name represents the full name of this component
+	Name string `json:"name"`
+	// conditions is the most recent state reporting for each component
+	// +listType=map
+	// +listMapKey=type
+	// +patchMergeKey=type
+	// +patchStrategy=merge
+	Conditions []metav1.Condition `json:"conditions" patchStrategy:"merge" patchMergeKey:"type"`
 }
 
 type MachineConfigurationStatus struct {
 	StaticPodOperatorStatus `json:",inline"`
-	// mostRecentState is the most recent state reporting for each component
-	// +listType=map
-	// +listMapKey=objectName
-	// +patchMergeKey=objectName
-	// +patchStrategy=merge
-	MostRecentState []ProgressionCondition `json:"mostRecentState" patchStrategy:"merge" patchMergeKey:"objectName"`
-	// progressionHistory contains a list of events that have happened on all objects in the MCO
-	ProgressionHistory []ProgressionHistory `json:"progressionHistory"`
+	// daemon describes the most recent progression of the MCD pods
+	// +kubebuilder:validation:Required
+	// +required
+	Daemon MachineConfigurationComponent `json:"daemon"`
+	// controller describes the most recent progression of the MCC pods
+	// +kubebuilder:validation:Required
+	// +required
+	Controller MachineConfigurationComponent `json:"controller"`
+	// operator describes the most recent progression of the MCO pod
+	// +kubebuilder:validation:Required
+	// +required
+	Operator MachineConfigurationComponent `json:"operator"`
 	// mostRecentError is populated if the State reports an error.
 	MostRecentError string `json:"mostRecentError"`
 	// health reports the overall status of the MCO given its Progress
@@ -67,28 +79,18 @@ const (
 	UnHealthy MachineConfigOperatorHealthEnum = "Unhealthy"
 )
 
-// An OperatorObject is used as the key in the map describing the most recent states
-type OperatorObject string
-
-const (
-	// MCP describes a MachineConfigPool
-	MCP OperatorObject = "MachineConfigPool"
-	// KC describes a KubeletConfig object
-	KC OperatorObject = "KubeletConfig"
-	// MC describes a MachineConfig object
-	MC OperatorObject = "MachineConfig"
-	// CC describes a ControllerConfig object
-	CC OperatorObject = "ControllerConfig"
-	// Node describes a Node object
-	Node OperatorObject = "Node"
-)
-
 // StateProgress is each possible state for the components of the MCO
 type StateProgress string
 
 const (
+	// OperatorSync describes the overall process of syncing the operator regularly
+	OperatorSync StateProgress = "OperatorSync"
 	// OperatorSyncRenderConfig describes a machine that is creating or syncing its render config
 	OperatorSyncRenderConfig StateProgress = "OperatorSyncRenderConfig"
+	// OperatorSyncCustomResourceDefinitions describes the process of applying and verifying the CRDs related to the MCO
+	OperatorSyncCustomResourceDefinitions StateProgress = "OperatorSyncCustomResourceDefinitions"
+	// OperatorSyncConfigMaps describes the process of generating new data for and applying the configmaps the MCO manages
+	OperatorSyncConfigMaps StateProgress = "OperatorSyncConfigmaps"
 	// OperatorSyncMCP describes a machine that is syncing or applying its MachineConigPools
 	OperatorSyncMCP StateProgress = "OperatorSyncMCP"
 	// OperatorSyncMCD describes a machine that is syncing or applying Daemon related files.
@@ -102,31 +104,29 @@ const (
 	// OperatorSyncKubeletConfig describes a machine that is syncing its KubeletConfig
 	OperatorSyncKubeletConfig StateProgress = "OperatorSyncKubeletConfig"
 	// MCCSync describes the process of syncing the MCC regularly
-	MCCSync StateProgress = "SyncController"
+	MCCSync StateProgress = "SyncMCC"
+	// MCCSyncMachineConfigPool describes the process of modifying a machineconfigpool in the MCC
+	MCCSyncMachineConfigPool StateProgress = "SyncMCCMachineConfigPool"
+	// MCCSyncRenderedMachineConfigs describes the process of generating and applying new machineconfigs
+	MCCSyncRenderedMachineConfigs StateProgress = "SyncMCCRenderedMachineConfigs"
+	// MCCSyncGeneratedKubeletConfig describes the process of generating and applying new kubelet machineconfigs
+	MCCSyncGeneratedKubeletConfigs StateProgress = "SyncMCCGeneratedKubeletConfigs"
+	// MCCSyncControllerConfig describes the process of filling out and applying a new controller config
+	MCCSyncControllerConfig StateProgress = "SyncMCCControllerConfig"
+	// MCCSyncContainerRuntimeConfig describes the process of generating and applying the container runtime machineconfigs
+	MCCSyncContainerRuntimeConfig StateProgress = "SyncMCCContainerRuntimeConfig"
 	// MCDSync describes the process of syncing the MCD regularly
-	MCDSync StateProgress = "SyncDaemon"
+	MCDSync StateProgress = "SyncMCD"
+	// MCDSyncChangingStateAndReason indicates when the MCD changes the state on the node.
+	MCDSyncChangingStateAndReason StateProgress = "SyncMCDChangingStateAndReason"
+	// MCDSyncTriggeringUpdate indicates when the MCD tells the node it needs to update.
+	MCDSyncTriggeringUpdate StateProgress = "SyncMCDTriggeringUpdate"
 	// MetricSync describes the process of updating metrics and their related options
 	MetricsSync StateProgress = "SyncMetrics"
 	// BootstrapProgression describes processes occuring during the bootstrapping process
 	BootstrapProgression StateProgress = "BootstrapProgression"
 	// MachineStateErroed describes a machine that has errored during its proccess
 	MachineStateErrored StateProgress = "Errored"
-)
-
-// MachineStateType describes the Kind of MachineState we are using
-type MCOComponent string
-
-const (
-	// MCOperator describes behaviors in the Operator's sync functions
-	MCOperator MCOComponent = "Operator"
-	// MCController describes behaviors in the Controller's sync function
-	MCController MCOComponent = "Controller"
-	// MCDaemon describes behaviors in the Daemon's sync function
-	MCDaemon MCOComponent = "Daemon"
-	// MCServer describes behaviors in the Serve's sync function
-	MCServer MCOComponent = "Server"
-	// Metrics describes changes to metrics on the cluster
-	Metrics MCOComponent = "Metrics"
 )
 
 type MCOOperationMode string
@@ -137,37 +137,6 @@ const (
 	// InCluster
 	InCluster string = "inCluster"
 )
-
-// ProgressionCondition is the base struct that contains all information about an event reported from an MCO component
-type ProgressionCondition struct {
-	// kind describes the type of object for this condition (node, mcp, etc)
-	Kind OperatorObject `json:"kind"`
-	// state describes what is happening with this object
-	State StateProgress `json:"state"`
-	// nameName is the object's name
-	// +required
-	ObjectName string `json:"objectName"`
-	// phase is the general action occuring
-	Phase string `json:"phase"`
-	// reason is a more detailed description of the phase
-	Reason string `json:"reason"`
-	// time is the timestamp of this event
-	Time metav1.Time `json:"time"`
-}
-
-// ProgressionHistory contains the history of an object that exists in a progressioncondition
-type ProgressionHistory struct {
-	// componentAndObject describes the name of the component and type of object we are dealing with
-	ComponentAndObject string `json:"componentAndObject"`
-	// state describes what is happening with this component
-	State StateProgress `json:"state"`
-	// objectType describes the type of object
-	ObjectType OperatorObject `json:"objectType"`
-	// phase is the general action occuring
-	Phase string `json:"phase"`
-	// reason is a more detailed description of the phase
-	Reason string `json:"reason"`
-}
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 

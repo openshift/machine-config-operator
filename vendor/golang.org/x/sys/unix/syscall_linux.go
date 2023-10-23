@@ -693,10 +693,10 @@ type SockaddrALG struct {
 
 func (sa *SockaddrALG) sockaddr() (unsafe.Pointer, _Socklen, error) {
 	// Leave room for NUL byte terminator.
-	if len(sa.Type) > len(sa.raw.Type)-1 {
+	if len(sa.Type) > 13 {
 		return nil, 0, EINVAL
 	}
-	if len(sa.Name) > len(sa.raw.Name)-1 {
+	if len(sa.Name) > 63 {
 		return nil, 0, EINVAL
 	}
 
@@ -704,8 +704,17 @@ func (sa *SockaddrALG) sockaddr() (unsafe.Pointer, _Socklen, error) {
 	sa.raw.Feat = sa.Feature
 	sa.raw.Mask = sa.Mask
 
-	copy(sa.raw.Type[:], sa.Type)
-	copy(sa.raw.Name[:], sa.Name)
+	typ, err := ByteSliceFromString(sa.Type)
+	if err != nil {
+		return nil, 0, err
+	}
+	name, err := ByteSliceFromString(sa.Name)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	copy(sa.raw.Type[:], typ)
+	copy(sa.raw.Name[:], name)
 
 	return unsafe.Pointer(&sa.raw), SizeofSockaddrALG, nil
 }
@@ -1876,7 +1885,7 @@ func Getpgrp() (pid int) {
 //sys	PerfEventOpen(attr *PerfEventAttr, pid int, cpu int, groupFd int, flags int) (fd int, err error)
 //sys	PivotRoot(newroot string, putold string) (err error) = SYS_PIVOT_ROOT
 //sys	Prctl(option int, arg2 uintptr, arg3 uintptr, arg4 uintptr, arg5 uintptr) (err error)
-//sys	pselect6(nfd int, r *FdSet, w *FdSet, e *FdSet, timeout *Timespec, sigmask *sigset_argpack) (n int, err error)
+//sys	Pselect(nfd int, r *FdSet, w *FdSet, e *FdSet, timeout *Timespec, sigmask *Sigset_t) (n int, err error) = SYS_PSELECT6
 //sys	read(fd int, p []byte) (n int, err error)
 //sys	Removexattr(path string, attr string) (err error)
 //sys	Renameat2(olddirfd int, oldpath string, newdirfd int, newpath string, flags uint) (err error)
@@ -1979,6 +1988,8 @@ func Signalfd(fd int, sigmask *Sigset_t, flags int) (newfd int, err error) {
 //sys	Unshare(flags int) (err error)
 //sys	write(fd int, p []byte) (n int, err error)
 //sys	exitThread(code int) (err error) = SYS_EXIT
+//sys	readlen(fd int, p *byte, np int) (n int, err error) = SYS_READ
+//sys	writelen(fd int, p *byte, np int) (n int, err error) = SYS_WRITE
 //sys	readv(fd int, iovs []Iovec) (n int, err error) = SYS_READV
 //sys	writev(fd int, iovs []Iovec) (n int, err error) = SYS_WRITEV
 //sys	preadv(fd int, iovs []Iovec, offs_l uintptr, offs_h uintptr) (n int, err error) = SYS_PREADV
@@ -2114,8 +2125,6 @@ func writevRacedetect(iovecs []Iovec, n int) {
 // mmap varies by architecture; see syscall_linux_*.go.
 //sys	munmap(addr uintptr, length uintptr) (err error)
 //sys	mremap(oldaddr uintptr, oldlength uintptr, newlength uintptr, flags int, newaddr uintptr) (xaddr uintptr, err error)
-<<<<<<< HEAD
-=======
 
 var mapper = &mremapMmapper{
 	mmapper: mmapper{
@@ -2138,7 +2147,6 @@ func Mremap(oldData []byte, newLength int, flags int) (data []byte, err error) {
 	return mapper.Mremap(oldData, newLength, flags)
 }
 
->>>>>>> c598429a2 (api types)
 //sys	Madvise(b []byte, advice int) (err error)
 //sys	Mprotect(b []byte, prot int) (err error)
 //sys	Mlock(b []byte) (err error)
@@ -2146,12 +2154,6 @@ func Mremap(oldData []byte, newLength int, flags int) (data []byte, err error) {
 //sys	Msync(b []byte, flags int) (err error)
 //sys	Munlock(b []byte) (err error)
 //sys	Munlockall() (err error)
-
-const (
-	mremapFixed     = MREMAP_FIXED
-	mremapDontunmap = MREMAP_DONTUNMAP
-	mremapMaymove   = MREMAP_MAYMOVE
-)
 
 // Vmsplice splices user pages from a slice of Iovecs into a pipe specified by fd,
 // using the specified flags.
@@ -2452,63 +2454,6 @@ func Getresgid() (rgid, egid, sgid int) {
 	return int(r), int(e), int(s)
 }
 
-<<<<<<< HEAD
-// Pselect is a wrapper around the Linux pselect6 system call.
-// This version does not modify the timeout argument.
-func Pselect(nfd int, r *FdSet, w *FdSet, e *FdSet, timeout *Timespec, sigmask *Sigset_t) (n int, err error) {
-	// Per https://man7.org/linux/man-pages/man2/select.2.html#NOTES,
-	// The Linux pselect6() system call modifies its timeout argument.
-	// [Not modifying the argument] is the behavior required by POSIX.1-2001.
-	var mutableTimeout *Timespec
-	if timeout != nil {
-		mutableTimeout = new(Timespec)
-		*mutableTimeout = *timeout
-	}
-
-	// The final argument of the pselect6() system call is not a
-	// sigset_t * pointer, but is instead a structure
-	var kernelMask *sigset_argpack
-	if sigmask != nil {
-		wordBits := 32 << (^uintptr(0) >> 63) // see math.intSize
-
-		// A sigset stores one bit per signal,
-		// offset by 1 (because signal 0 does not exist).
-		// So the number of words needed is ⌈__C_NSIG - 1 / wordBits⌉.
-		sigsetWords := (_C__NSIG - 1 + wordBits - 1) / (wordBits)
-
-		sigsetBytes := uintptr(sigsetWords * (wordBits / 8))
-		kernelMask = &sigset_argpack{
-			ss:    sigmask,
-			ssLen: sigsetBytes,
-		}
-	}
-
-	return pselect6(nfd, r, w, e, mutableTimeout, kernelMask)
-}
-
-//sys	schedSetattr(pid int, attr *SchedAttr, flags uint) (err error)
-//sys	schedGetattr(pid int, attr *SchedAttr, size uint, flags uint) (err error)
-
-// SchedSetAttr is a wrapper for sched_setattr(2) syscall.
-// https://man7.org/linux/man-pages/man2/sched_setattr.2.html
-func SchedSetAttr(pid int, attr *SchedAttr, flags uint) error {
-	if attr == nil {
-		return EINVAL
-	}
-	attr.Size = SizeofSchedAttr
-	return schedSetattr(pid, attr, flags)
-}
-
-// SchedGetAttr is a wrapper for sched_getattr(2) syscall.
-// https://man7.org/linux/man-pages/man2/sched_getattr.2.html
-func SchedGetAttr(pid int, flags uint) (*SchedAttr, error) {
-	attr := &SchedAttr{}
-	if err := schedGetattr(pid, attr, SizeofSchedAttr, flags); err != nil {
-		return nil, err
-	}
-	return attr, nil
-}
-=======
 /*
  * Unimplemented
  */
@@ -2604,4 +2549,3 @@ func SchedGetAttr(pid int, flags uint) (*SchedAttr, error) {
 // Vhangup
 // Vserver
 // _Sysctl
->>>>>>> c598429a2 (api types)
