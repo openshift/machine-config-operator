@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/ghodss/yaml"
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 )
 
 var (

@@ -36,6 +36,8 @@ type Interface interface {
 	KubeSchedulers() KubeSchedulerInformer
 	// KubeStorageVersionMigrators returns a KubeStorageVersionMigratorInformer.
 	KubeStorageVersionMigrators() KubeStorageVersionMigratorInformer
+	// MachineConfigurations returns a MachineConfigurationInformer.
+	MachineConfigurations() MachineConfigurationInformer
 	// Networks returns a NetworkInformer.
 	Networks() NetworkInformer
 	// OpenShiftAPIServers returns a OpenShiftAPIServerInformer.
@@ -131,6 +133,11 @@ func (v *version) KubeSchedulers() KubeSchedulerInformer {
 // KubeStorageVersionMigrators returns a KubeStorageVersionMigratorInformer.
 func (v *version) KubeStorageVersionMigrators() KubeStorageVersionMigratorInformer {
 	return &kubeStorageVersionMigratorInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
+}
+
+// MachineConfigurations returns a MachineConfigurationInformer.
+func (v *version) MachineConfigurations() MachineConfigurationInformer {
+	return &machineConfigurationInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
 // Networks returns a NetworkInformer.

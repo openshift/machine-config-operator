@@ -11,3 +11,9 @@ contents:
     if vm_name=$(/bin/vmtoolsd --cmd 'info-get guestinfo.hostname'); then
         /usr/bin/hostnamectl set-hostname --static ${vm_name}
     fi
+
+    if [ -z "${vm_name}" ]; then
+      if capi_vm_name=$(bin/vmtoolsd --cmd 'info-get guestinfo.metadata' | base64 -d | grep local-hostname | awk '{ print $2; }' | tr -d '",'; then
+        /usr/bin/hostnamectl set-hostname --static ${capi_vm_name}
+      fi
+    fi

@@ -1,7 +1,8 @@
 package helpers
 
 import (
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -120,7 +121,7 @@ func (m *MachineConfigPoolBuilder) WithCondition(condType mcfgv1.MachineConfigPo
 		m.WithLayeringEnabled()
 	}
 
-	condition := mcfgv1.NewMachineConfigPoolCondition(condType, status, reason, message)
+	condition := apihelpers.NewMachineConfigPoolCondition(condType, status, reason, message)
 	m.conditions = append(m.conditions, condition)
 
 	return m
@@ -164,7 +165,7 @@ func (m *MachineConfigPoolBuilder) MachineConfigPool() *mcfgv1.MachineConfigPool
 
 	if m.conditions != nil {
 		for _, condition := range m.conditions {
-			mcfgv1.SetMachineConfigPoolCondition(&mcp.Status, *condition)
+			apihelpers.SetMachineConfigPoolCondition(&mcp.Status, *condition)
 		}
 	}
 

@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	ctrcfg "github.com/openshift/machine-config-operator/pkg/controller/container-runtime-config"
 	"github.com/openshift/machine-config-operator/test/framework"

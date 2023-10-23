@@ -7,8 +7,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/util/retry"
 
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	mcfgclientv1 "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/typed/machineconfiguration.openshift.io/v1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	mcfgclientv1 "github.com/openshift/client-go/machineconfiguration/clientset/versioned/typed/machineconfiguration/v1"
+	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -20,11 +21,11 @@ import (
 func (ctrl *Controller) syncRunningStatus(ctrlconfig *mcfgv1.ControllerConfig) error {
 	updateFunc := func(cfg *mcfgv1.ControllerConfig) error {
 		reason := fmt.Sprintf("syncing towards (%d) generation using controller version %s", cfg.GetGeneration(), version.Raw)
-		rcond := mcfgv1.NewControllerConfigStatusCondition(mcfgv1.TemplateControllerRunning, corev1.ConditionTrue, "", reason)
-		mcfgv1.SetControllerConfigStatusCondition(&cfg.Status, *rcond)
-		if cfg.GetGeneration() != cfg.Status.ObservedGeneration && mcfgv1.IsControllerConfigStatusConditionPresentAndEqual(cfg.Status.Conditions, mcfgv1.TemplateControllerCompleted, corev1.ConditionTrue) {
-			acond := mcfgv1.NewControllerConfigStatusCondition(mcfgv1.TemplateControllerCompleted, corev1.ConditionFalse, "", fmt.Sprintf("%s due to change in Generation", reason))
-			mcfgv1.SetControllerConfigStatusCondition(&cfg.Status, *acond)
+		rcond := apihelpers.NewControllerConfigStatusCondition(mcfgv1.TemplateControllerRunning, corev1.ConditionTrue, "", reason)
+		apihelpers.SetControllerConfigStatusCondition(&cfg.Status, *rcond)
+		if cfg.GetGeneration() != cfg.Status.ObservedGeneration && apihelpers.IsControllerConfigStatusConditionPresentAndEqual(cfg.Status.Conditions, mcfgv1.TemplateControllerCompleted, corev1.ConditionTrue) {
+			acond := apihelpers.NewControllerConfigStatusCondition(mcfgv1.TemplateControllerCompleted, corev1.ConditionFalse, "", fmt.Sprintf("%s due to change in Generation", reason))
+			apihelpers.SetControllerConfigStatusCondition(&cfg.Status, *acond)
 		}
 		cfg.Status.ObservedGeneration = ctrlconfig.GetGeneration()
 		return nil
@@ -41,12 +42,12 @@ func (ctrl *Controller) syncFailingStatus(ctrlconfig *mcfgv1.ControllerConfig, o
 	}
 	updateFunc := func(cfg *mcfgv1.ControllerConfig) error {
 		message := fmt.Sprintf("failed to syncing towards (%d) generation using controller version %s: %v", cfg.GetGeneration(), version.Raw, oerr)
-		fcond := mcfgv1.NewControllerConfigStatusCondition(mcfgv1.TemplateControllerFailing, corev1.ConditionTrue, "", message)
-		mcfgv1.SetControllerConfigStatusCondition(&cfg.Status, *fcond)
-		acond := mcfgv1.NewControllerConfigStatusCondition(mcfgv1.TemplateControllerCompleted, corev1.ConditionFalse, "", "")
-		mcfgv1.SetControllerConfigStatusCondition(&cfg.Status, *acond)
-		rcond := mcfgv1.NewControllerConfigStatusCondition(mcfgv1.TemplateControllerRunning, corev1.ConditionFalse, "", "")
-		mcfgv1.SetControllerConfigStatusCondition(&cfg.Status, *rcond)
+		fcond := apihelpers.NewControllerConfigStatusCondition(mcfgv1.TemplateControllerFailing, corev1.ConditionTrue, "", message)
+		apihelpers.SetControllerConfigStatusCondition(&cfg.Status, *fcond)
+		acond := apihelpers.NewControllerConfigStatusCondition(mcfgv1.TemplateControllerCompleted, corev1.ConditionFalse, "", "")
+		apihelpers.SetControllerConfigStatusCondition(&cfg.Status, *acond)
+		rcond := apihelpers.NewControllerConfigStatusCondition(mcfgv1.TemplateControllerRunning, corev1.ConditionFalse, "", "")
+		apihelpers.SetControllerConfigStatusCondition(&cfg.Status, *rcond)
 		cfg.Status.ObservedGeneration = ctrlconfig.GetGeneration()
 		return nil
 	}
@@ -62,12 +63,12 @@ func (ctrl *Controller) syncFailingStatus(ctrlconfig *mcfgv1.ControllerConfig, o
 func (ctrl *Controller) syncCompletedStatus(ctrlconfig *mcfgv1.ControllerConfig) error {
 	updateFunc := func(cfg *mcfgv1.ControllerConfig) error {
 		reason := fmt.Sprintf("sync completed towards (%d) generation using controller version %s", cfg.GetGeneration(), version.Raw)
-		acond := mcfgv1.NewControllerConfigStatusCondition(mcfgv1.TemplateControllerCompleted, corev1.ConditionTrue, "", reason)
-		mcfgv1.SetControllerConfigStatusCondition(&cfg.Status, *acond)
-		rcond := mcfgv1.NewControllerConfigStatusCondition(mcfgv1.TemplateControllerRunning, corev1.ConditionFalse, "", "")
-		mcfgv1.SetControllerConfigStatusCondition(&cfg.Status, *rcond)
-		fcond := mcfgv1.NewControllerConfigStatusCondition(mcfgv1.TemplateControllerFailing, corev1.ConditionFalse, "", "")
-		mcfgv1.SetControllerConfigStatusCondition(&cfg.Status, *fcond)
+		acond := apihelpers.NewControllerConfigStatusCondition(mcfgv1.TemplateControllerCompleted, corev1.ConditionTrue, "", reason)
+		apihelpers.SetControllerConfigStatusCondition(&cfg.Status, *acond)
+		rcond := apihelpers.NewControllerConfigStatusCondition(mcfgv1.TemplateControllerRunning, corev1.ConditionFalse, "", "")
+		apihelpers.SetControllerConfigStatusCondition(&cfg.Status, *rcond)
+		fcond := apihelpers.NewControllerConfigStatusCondition(mcfgv1.TemplateControllerFailing, corev1.ConditionFalse, "", "")
+		apihelpers.SetControllerConfigStatusCondition(&cfg.Status, *fcond)
 		cfg.Status.ObservedGeneration = ctrlconfig.GetGeneration()
 		return nil
 	}
