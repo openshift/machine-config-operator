@@ -5,4 +5,9 @@ contents: |
   Documentation=https://github.com/openshift/machine-config-operator/
   Requires=basic.target network-online.target
   Wants=NetworkManager-wait-online.service crio-wipe.service
+  # This dependency was introduced in the very first commit of the MCO:
+  # https://github.com/openshift/machine-config-operator/commit/8f910e33fdfd4714dfd2445f769b0bbb566325fb#diff-cff20332eb01f47c1d7d4ad1776817ed58e95f024b6457f71eef568ea4383d1cR6
+  # We believe it came from CoreOS Tectonic in order to support kubelet NFS mounts.  In theory
+  # this dependency should become dynamic (i.e. kubelet should change to only pull
+  # it in as necessary)
   Wants=rpc-statd.service
