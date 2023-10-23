@@ -3,4 +3,4 @@ path: "/etc/kubernetes/static-pod-resources/keepalived/scripts/chk_default_ingre
 contents:
   inline: |
     #!/bin/bash
-    /host/bin/oc --kubeconfig /var/lib/kubelet/kubeconfig get ep -n openshift-ingress router-internal-default -o yaml | grep -q 'ip: {{`{{.NonVirtualIP}}`}}$'
+    chroot /host /bin/crictl pods --namespace openshift-ingress --state Ready | grep -qE 'router-default-[[:alnum:]]{5,}-[[:alnum:]]{5,}'
