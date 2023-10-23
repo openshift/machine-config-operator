@@ -124,11 +124,7 @@ func (b *Bootstrap) Run(destDir string) error {
 			}
 
 			switch obj := obji.(type) {
-<<<<<<< HEAD
 			case *mcfgalphav1.MachineConfigNode:
-=======
-			case *mcfgalphav1.MachineConfigState:
->>>>>>> 28fe1c202 (machineconfiguration operator types)
 				states = append(states, obj)
 			case *mcfgv1.MachineConfigPool:
 				pools = append(pools, obj)

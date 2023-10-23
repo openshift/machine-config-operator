@@ -3,7 +3,7 @@ package resourcemerge
 import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgalphav1 "github.com/openshift/api/machineconfiguration/v1alpha1"
-	opv1 "github.com/openshift/api/operator/v1"
+	opv1 "github.com/openshift/api/operator/v1alpha1"
 
 	"github.com/openshift/library-go/pkg/operator/resource/resourcemerge"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -14,11 +14,6 @@ import (
 func EnsureMachineConfigNode(modified *bool, existing *mcfgalphav1.MachineConfigNode, required mcfgalphav1.MachineConfigNode) {
 	resourcemerge.EnsureObjectMeta(modified, &existing.ObjectMeta, required.ObjectMeta)
 	ensureMachineConfigNodeSpec(modified, &existing.Spec, required.Spec)
-}
-
-func EnsureMachineConfiguration(modified *bool, existing *opv1.MachineConfiguration, required opv1.MachineConfiguration) {
-	resourcemerge.EnsureObjectMeta(modified, &existing.ObjectMeta, required.ObjectMeta)
-	ensureMachineConfigurationSpec(modified, &existing.Spec, required.Spec)
 }
 
 func EnsureMachineConfiguration(modified *bool, existing *opv1.MachineConfiguration, required opv1.MachineConfiguration) {

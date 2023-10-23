@@ -54,7 +54,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		// Start the metrics handler
 		go state.StartMetricsListener(startOpts.promMetricsListenAddress, ctrlctx.Stop, state.RegisterMetrics, userInput)
 
-		ctrl := state.New(ctrlctx.NamespacedInformerFactory.Machineconfiguration().V1alpha1().MachineConfigStates(),
+		ctrl := state.New(ctrlctx.NamespacedInformerFactory.Machineconfiguration().V1alpha1().MachineConfigNodes(),
 			ctrlctx.KubeNamespacedInformerFactory.Core().V1().Events(),
 			ctrlctx.KubeInformerFactory.Core().V1().Nodes(),
 			state.StateControllerConfig{}, ctrlctx.ClientBuilder.KubeClientOrDie(componentName),

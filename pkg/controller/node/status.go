@@ -142,34 +142,6 @@ func calculateStatus(mcs []*mcfgalphav1.MachineConfigNode, cconfig *v1.Controlle
 				unavailableMachines = append(unavailableMachines, ourNode)
 			}
 		}
-		if ourNode == nil {
-			klog.Errorf("Could not find specificed node %s", state.Name)
-		}
-
-		currently := state.Status.Conditions[0]
-
-		switch currently.State {
-		case mcfgalphav1.MachineConfigStateErrored:
-			// if the most recent phase for that node is unavailable
-			if currently.Phase == "Unavailable" {
-				unavailableMachines = append(unavailableMachines, ourNode)
-			} else {
-				degradedMachines = append(degradedMachines, ourNode)
-			}
-		case mcfgalphav1.MachineConfigPoolUpdateInProgress, mcfgalphav1.MachineConfigPoolUpdatePostAction, mcfgalphav1.MachineConfigPoolUpdateCompleting, mcfgalphav1.MachineConfigPoolUpdatePreparing:
-			if currently.Reason == "NodeDraining" {
-				unavailableMachines = append(unavailableMachines, ourNode)
-			} else {
-				updatingMachines = append(updatedMachines, ourNode)
-			}
-		case mcfgalphav1.MachineConfigPoolUpdateComplete:
-			updatedMachines = append(updatedMachines, ourNode)
-		case mcfgalphav1.MachineConfigPoolReady:
-			readyMachines = append(readyMachines, ourNode)
-			updatedMachines = append(updatedMachines, ourNode)
-		default: // if we are actively doing something like resuming, draining etc, we are unavailable
-			unavailableMachines = append(unavailableMachines, ourNode)
-		}
 	}
 	degradedMachineCount := int32(len(degradedMachines))
 	updatedMachineCount := int32(len(updatedMachines))

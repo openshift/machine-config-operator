@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	operatorv1 "github.com/openshift/client-go/operator/applyconfigurations/operator/v1"
+	operatorv1 "github.com/openshift/client-go/operator/applyconfigurations/operator/v1alpha1"
 	opv1clientset "github.com/openshift/client-go/operator/clientset/versioned"
 
 	machineconfigurationalphav1 "github.com/openshift/client-go/machineconfiguration/applyconfigurations/machineconfiguration/v1alpha1"

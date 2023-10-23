@@ -101,26 +101,6 @@ func ApplyMachineConfguration(client operatorclientv1.MachineConfigurationsGette
 	return actual, true, err
 }
 
-func ApplyMachineConfguration(client operatorclientv1.MachineConfigurationsGetter, required *opv1.MachineConfiguration) (*opv1.MachineConfiguration, bool, error) {
-	existing, err := client.MachineConfigurations().Get(context.TODO(), required.GetName(), metav1.GetOptions{})
-	if apierrors.IsNotFound(err) {
-		actual, err := client.MachineConfigurations().Create(context.TODO(), required, metav1.CreateOptions{})
-		return actual, true, err
-	}
-	if err != nil {
-		return nil, false, err
-	}
-
-	modified := resourcemerge.BoolPtr(false)
-	mcoResourceMerge.EnsureMachineConfiguration(modified, existing, *required)
-	if !*modified {
-		return existing, false, nil
-	}
-
-	actual, err := client.MachineConfigurations().Update(context.TODO(), existing, metav1.UpdateOptions{})
-	return actual, true, err
-}
-
 // ApplyControllerConfig applies the required machineconfig to the cluster.
 func ApplyControllerConfig(client mcfgclientv1.ControllerConfigsGetter, required *mcfgv1.ControllerConfig) (*mcfgv1.ControllerConfig, bool, error) {
 	existing, err := client.ControllerConfigs().Get(context.TODO(), required.GetName(), metav1.GetOptions{})

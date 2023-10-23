@@ -61,9 +61,6 @@ type Controller struct {
 	kubeClient         kubernetes.Interface
 	stateControllerPod *corev1.Pod
 
-	kubeClient         kubernetes.Interface
-	stateControllerPod *corev1.Pod
-
 	syncHandler              func(mcp string) error
 	enqueueMachineConfigPool func(*mcfgv1.MachineConfigPool)
 
