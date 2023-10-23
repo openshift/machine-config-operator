@@ -53,10 +53,6 @@ func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource
 	case v1alpha1.SchemeGroupVersion.WithResource("machineconfignodes"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Machineconfiguration().V1alpha1().MachineConfigNodes().Informer()}, nil
 
-		// Group=machineconfiguration.openshift.io, Version=v1alpha1
-	case v1alpha1.SchemeGroupVersion.WithResource("machineconfignodes"):
-		return &genericInformer{resource: resource.GroupResource(), informer: f.Machineconfiguration().V1alpha1().MachineConfigNodes().Informer()}, nil
-
 	}
 
 	return nil, fmt.Errorf("no informer found for %v", resource)

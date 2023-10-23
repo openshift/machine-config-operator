@@ -883,6 +883,10 @@ github.com/openshift/client-go/build/clientset/versioned/fake
 github.com/openshift/client-go/build/clientset/versioned/scheme
 github.com/openshift/client-go/build/clientset/versioned/typed/build/v1
 github.com/openshift/client-go/build/clientset/versioned/typed/build/v1/fake
+github.com/openshift/client-go/build/informers/externalversions
+github.com/openshift/client-go/build/informers/externalversions/build
+github.com/openshift/client-go/build/informers/externalversions/build/v1
+github.com/openshift/client-go/build/informers/externalversions/internalinterfaces
 github.com/openshift/client-go/build/listers/build/v1
 github.com/openshift/client-go/config/applyconfigurations/config/v1
 github.com/openshift/client-go/config/applyconfigurations/config/v1alpha1
@@ -963,7 +967,7 @@ github.com/openshift/library-go/pkg/operator/resource/resourceread
 github.com/openshift/library-go/pkg/operator/resourcesynccontroller
 github.com/openshift/library-go/pkg/operator/status
 github.com/openshift/library-go/pkg/operator/v1helpers
-# github.com/openshift/runtime-utils v0.0.0-20220926190846-5c488b20a19f
+# github.com/openshift/runtime-utils v0.0.0-20230921210328-7bdb5b9c177b
 ## explicit; go 1.18
 github.com/openshift/runtime-utils/pkg/registries
 # github.com/pelletier/go-toml/v2 v2.0.8
