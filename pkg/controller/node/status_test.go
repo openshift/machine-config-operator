@@ -5,6 +5,8 @@ import (
 	"reflect"
 	"testing"
 
+	mcfgalphav1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
@@ -879,7 +881,7 @@ func TestCalculateStatus(t *testing.T) {
 					Paused:        test.paused,
 				},
 			}
-			status := calculateStatus(&mcfgv1.MachineState{Status: mcfgv1.MachineStateStatus{}}, nil, pool, test.nodes)
+			status := calculateStatus([]*mcfgalphav1.MachineConfigNode{}, nil, pool, test.nodes)
 			test.verify(status, t)
 		})
 	}

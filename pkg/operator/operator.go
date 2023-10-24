@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"time"
 
+	opv1 "github.com/openshift/api/operator/v1"
+
+	mcfgalphav1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+	opv1clientset "github.com/openshift/client-go/operator/clientset/versioned"
 	"k8s.io/klog/v2"
 
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
-	v1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	"github.com/openshift/machine-config-operator/pkg/controller/state"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	corev1 "k8s.io/api/core/v1"
 	apiextclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
@@ -40,7 +42,9 @@ import (
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
+	mcfginformersalphav1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1alpha1"
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
+	mcfglistersalphav1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1"
 )
 
 const (
@@ -70,6 +74,7 @@ type Operator struct {
 
 	client        mcfgclientset.Interface
 	kubeClient    kubernetes.Interface
+	opv1Client    opv1clientset.Interface
 	apiExtClient  apiextclientset.Interface
 	configClient  configclientset.Interface
 	eventRecorder record.EventRecorder
@@ -80,7 +85,7 @@ type Operator struct {
 	imgLister        configlistersv1.ImageLister
 	crdLister        apiextlistersv1.CustomResourceDefinitionLister
 	mcpLister        mcfglistersv1.MachineConfigPoolLister
-	msLister         mcfglistersv1.MachineStateLister
+	msLister         mcfglistersalphav1.MachineConfigNodeLister
 	ccLister         mcfglistersv1.ControllerConfigLister
 	mcLister         mcfglistersv1.MachineConfigLister
 	deployLister     appslisterv1.DeploymentLister
@@ -153,6 +158,7 @@ func New(
 	kubeClient kubernetes.Interface,
 	apiExtClient apiextclientset.Interface,
 	configClient configclientset.Interface,
+	opv1Client opv1clientset.Interface,
 	oseKubeAPIInformer coreinformersv1.ConfigMapInformer,
 	nodeInformer coreinformersv1.NodeInformer,
 	maoSecretInformer coreinformersv1.SecretInformer,
@@ -161,7 +167,7 @@ func New(
 	mcoSecretInformer coreinformersv1.SecretInformer,
 	ocSecretInformer coreinformersv1.SecretInformer,
 	mcoCOInformer configinformersv1.ClusterOperatorInformer,
-	msInformer mcfginformersv1.MachineStateInformer,
+	msInformer mcfginformersalphav1.MachineConfigNodeInformer,
 ) *Operator {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
@@ -173,6 +179,7 @@ func New(
 		imagesFile:    imagesFile,
 		vStore:        newVersionStore(),
 		client:        client,
+		opv1Client:    opv1Client,
 		kubeClient:    kubeClient,
 		apiExtClient:  apiExtClient,
 		configClient:  configClient,
@@ -189,10 +196,10 @@ func New(
 	if err != nil {
 		klog.Errorf("Could not modify scheme: %w", err)
 	}
-	healtheventBroadcaster := record.NewBroadcaster()
-	healtheventBroadcaster.StartLogging(klog.V(2).Infof)
-	healtheventBroadcaster.StartRecordingToSink(&coreclientsetv1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("openshift-machine-config-operator")})
-	optr.operatorHealthEvents = healtheventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "operator-health"})
+	err = opv1.AddToScheme(scheme.Scheme)
+	if err != nil {
+		klog.Errorf("Could not modify scheme: %w", err)
+	}
 
 	for _, i := range []cache.SharedIndexInformer{
 		controllerConfigInformer.Informer(),
@@ -413,7 +420,8 @@ func (optr *Operator) sync(key string) error {
 		// "RenderConfig" must always run first as it sets the renderConfig in the operator
 		// for the sync funcs below
 		{"RenderConfig", optr.syncRenderConfig},
-		{"MachineState", optr.syncMachineStates},
+		{"MachineConfiguration", optr.syncMachineConfiguration},
+		{"MachineConfigNode", optr.syncMachineConfigNodes},
 		{"MachineConfigPools", optr.syncMachineConfigPools},
 		{"MachineConfigDaemon", optr.syncMachineConfigDaemon},
 		{"MachineConfigController", optr.syncMachineConfigController},
@@ -425,24 +433,7 @@ func (optr *Operator) sync(key string) error {
 	return optr.syncAll(syncFuncs)
 }
 
-func (op *Operator) EmitHealthEvent(pod *corev1.Pod, annos map[string]string, eventType, reason, message string) {
-	if op.operatorHealthEvents == nil {
-		return
-	}
-	if pod == nil {
-		healthPod, err := state.StateControllerPod(op.kubeClient)
-		if err != nil {
-			klog.Errorf("Could not get state controller pod yet %w", err)
-			return
-		} else {
-			pod = healthPod
-			op.stateControllerPod = healthPod
-		}
-	}
-	op.operatorHealthEvents.AnnotatedEventf(pod, annos, eventType, reason, message)
-}
-
-func (op *Operator) HealthAnnotations(object string, objectType string, kind v1.StateProgress) map[string]string {
+func (op *Operator) HealthAnnotations(object string, objectType string, kind mcfgalphav1.StateProgress) map[string]string {
 	annos := make(map[string]string)
 	annos["ms"] = "OperatorHealth" //might need this might not
 	annos["state"] = string(kind)

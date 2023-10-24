@@ -4,11 +4,21 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 // constants defines some file paths that are shared outside of the
 // MCO package; and thus consumed by other users
+
+type QueuedEvent struct {
+	Time        metav1.Time       `json:"time"`
+	Type        string            `json:"type"`
+	Annotations map[string]string `json:"annotations"`
+	EventType   string            `json:"eventType"`
+	Reason      string            `json:"reason"`
+	Message     string            `json:"message"`
+}
 
 const (
 	// APIServerURLFile is the path to the apiserver url environment file.

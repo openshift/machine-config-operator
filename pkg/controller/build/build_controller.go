@@ -10,8 +10,6 @@ import (
 	"github.com/containers/image/v5/docker/reference"
 	buildv1 "github.com/openshift/api/build/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
-	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	corev1 "k8s.io/api/core/v1"
 	aggerrors "k8s.io/apimachinery/pkg/util/errors"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -25,12 +23,14 @@ import (
 	"k8s.io/klog/v2"
 
 	buildinformers "github.com/openshift/client-go/build/informers/externalversions"
+	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 
 	buildinformersv1 "github.com/openshift/client-go/build/informers/externalversions/build/v1"
 
 	buildclientset "github.com/openshift/client-go/build/clientset/versioned"
 
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
+
 	mcfginformers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
 
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
@@ -39,6 +39,7 @@ import (
 	coreinformers "k8s.io/client-go/informers"
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
 
+	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -1133,7 +1134,10 @@ func (ctrl *Controller) syncAvailableStatus(pool *mcfgv1.MachineConfigPool) erro
 func (ctrl *Controller) syncFailingStatus(pool *mcfgv1.MachineConfigPool, err error) error {
 	sdegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolRenderDegraded, corev1.ConditionTrue, "", fmt.Sprintf("Failed to build configuration for pool %s: %v", pool.Name, err))
 	apihelpers.SetMachineConfigPoolCondition(&pool.Status, *sdegraded)
-	if _, updateErr := ctrl.mcfgclient.MachineconfigurationV1().MachineConfigPools().UpdateStatus(context.TODO(), pool, metav1.UpdateOptions{}); updateErr != nil {
+	newAnnos := make(map[string]string)
+	newAnnos["machineconfiguration.openshift.io/editor"] = "machine-config-controller"
+	pool.SetAnnotations(newAnnos)
+	if _, updateErr := ctrl.mcfgclient.MachineconfigurationV1().MachineConfigPools().Update(context.TODO(), pool, metav1.UpdateOptions{}); updateErr != nil {
 		klog.Errorf("Error updating MachineConfigPool %s: %v", pool.Name, updateErr)
 	}
 	return err

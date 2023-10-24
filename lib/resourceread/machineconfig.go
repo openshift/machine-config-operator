@@ -5,6 +5,10 @@ import (
 	"fmt"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	opv1 "github.com/openshift/api/operator/v1"
+
+	mcfgalphav1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 )
@@ -12,10 +16,22 @@ import (
 var (
 	mcfgScheme = runtime.NewScheme()
 	mcfgCodecs = serializer.NewCodecFactory(mcfgScheme)
+
+	mcfgAlphaScheme = runtime.NewScheme()
+	mcfgAlphaCodecs = serializer.NewCodecFactory(mcfgAlphaScheme)
+
+	opv1Scheme = runtime.NewScheme()
+	opv1Codec  = serializer.NewCodecFactory(opv1Scheme)
 )
 
 func init() {
+	if err := mcfgalphav1.AddToScheme(mcfgAlphaScheme); err != nil {
+		panic(err)
+	}
 	if err := mcfgv1.AddToScheme(mcfgScheme); err != nil {
+		panic(err)
+	}
+	if err := opv1.AddToScheme(opv1Scheme); err != nil {
 		panic(err)
 	}
 }
@@ -61,12 +77,12 @@ func ReadMachineConfigPoolV1OrDie(objBytes []byte) *mcfgv1.MachineConfigPool {
 }
 
 // ReadMachineConfigPoolV1OrDie reads MachineConfigPool object from bytes. Panics on error.
-func ReadMachineStateV1OrDie(objBytes []byte) *mcfgv1.MachineState {
-	requiredObj, err := runtime.Decode(mcfgCodecs.UniversalDecoder(mcfgv1.SchemeGroupVersion), objBytes)
+func ReadMachineConfigNodeV1OrDie(objBytes []byte) *mcfgalphav1.MachineConfigNode {
+	requiredObj, err := runtime.Decode(mcfgAlphaCodecs.UniversalDecoder(mcfgalphav1.SchemeGroupVersion), objBytes)
 	if err != nil {
 		panic(err)
 	}
-	return requiredObj.(*mcfgv1.MachineState)
+	return requiredObj.(*mcfgalphav1.MachineConfigNode)
 }
 
 // ReadControllerConfigV1OrDie reads ControllerConfig object from bytes. Panics on error.
@@ -76,4 +92,12 @@ func ReadControllerConfigV1OrDie(objBytes []byte) *mcfgv1.ControllerConfig {
 		panic(err)
 	}
 	return requiredObj.(*mcfgv1.ControllerConfig)
+}
+
+func ReadMachineConfigurationV1OrDie(objBytes []byte) *opv1.MachineConfiguration {
+	requiredObj, err := runtime.Decode(opv1Codec.UniversalDecoder(opv1.SchemeGroupVersion), objBytes)
+	if err != nil {
+		panic(err)
+	}
+	return requiredObj.(*opv1.MachineConfiguration)
 }

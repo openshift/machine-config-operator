@@ -46,16 +46,25 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 	run := func(ctx context.Context) {
 		go common.SignalHandler(runCancel)
 
-		ctrlctx := ctrlcommon.CreateControllerContext(ctx, cb, ctrlcommon.MCONamespace)
+		ctrlctx := ctrlcommon.CreateControllerContext(ctx, cb)
 
-		ctrl := state.New(ctrlctx.NamespacedInformerFactory.Machineconfiguration().V1().MachineConfigPools(),
-
-			ctrlctx.NamespacedInformerFactory.Machineconfiguration().V1().MachineStates(),
+		ctrl := state.New(ctrlctx.NamespacedInformerFactory.Machineconfiguration().V1alpha1().MachineConfigNodes(),
 			ctrlctx.KubeNamespacedInformerFactory.Core().V1().Events(),
+			ctrlctx.KubeInformerFactory.Core().V1().Nodes(),
 			state.StateControllerConfig{}, ctrlctx.ClientBuilder.KubeClientOrDie(componentName),
 			ctrlctx.ClientBuilder.MachineConfigClientOrDie(componentName),
+			ctrlctx.ClientBuilder.OperatorClientOrDie(componentName),
+			ctrlctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
+			ctrlctx.KubeInformerFactory.Core().V1().ConfigMaps(),
+			ctrlctx.InformerFactory.Machineconfiguration().V1().KubeletConfigs(),
+			ctrlctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
+			ctrlctx.APIExtInformerFactory.Apiextensions().V1().CustomResourceDefinitions(),
+			ctrlctx.KubeNamespacedInformerFactory.Apps().V1().Deployments(),
+			ctrlctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
 		)
 
+		ctrlctx.APIExtInformerFactory.Start(ctrlctx.Stop)
+		ctrlctx.KubeInformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.NamespacedInformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.InformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.KubeNamespacedInformerFactory.Start(ctrlctx.Stop)

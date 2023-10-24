@@ -1,0 +1,187 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: machineconfignodes.machineconfiguration.openshift.io
+  labels:
+    "openshift.io/operator-managed": ""
+  annotations:
+    api-approved.openshift.io: https://github.com/openshift/api/pull/1596
+    include.release.openshift.io/ibm-cloud-managed: "true"
+    include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-developer: "true"
+    release.openshift.io/feature-set: TechPreviewNoUpgrade
+spec:
+  # group name to use for REST API: /apis/<group>/<version>
+  group: machineconfiguration.openshift.io
+  scope: Cluster
+  names:
+    kind: MachineConfigNode
+    singular: machineconfignode
+    plural: machineconfignodes
+  versions:
+    - name: v1alpha1
+      # Each version can be enabled/disabled by Served flag.
+      served: true
+      # One and only one version must be marked as the storage version.
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - jsonPath: .status.conditions[?(@.type=="Updated")].status
+          name: Updated
+          type: string
+        - jsonPath: .status.conditions[?(@.type=="UpdatePreparing")].status
+          name: UpdatePreparing
+          type: string
+        - jsonPath: .status.conditions[?(@.type=="UpdateInProgress")].status
+          name: UpdateInProgress
+          type: string
+        - jsonPath: .status.conditions[?(@.type=="UpdatePostAction")].status
+          name: UpdatePostAction
+          type: string
+        - jsonPath: .status.conditions[?(@.type=="UpdateCompleting")].status
+          name: UpdateCompleting
+          type: string
+        - jsonPath: .status.conditions[?(@.type=="Resuming")].status
+          name: Resuming
+          type: string
+        - jsonPath: .status.conditions[?(@.type=="ComparingMCs")].status
+          name: ComparingMachineConfigs
+          priority: 1
+          type: string
+        - jsonPath: .status.conditions[?(@.type=="ApplyingFilesAndOS")].status
+          name: UpdatingFilesAndOS
+          priority: 1
+          type: string
+        - jsonPath: .status.conditions[?(@.type=="CordoningNode")].status
+          name: CordoningNode
+          priority: 1
+          type: string
+        - jsonPath: .status.conditions[?(@.type=="DrainingNode")].status
+          name: DrainingNode
+          priority: 1
+          type: string
+        - jsonPath: .status.conditions[?(@.type=="RebootingNode")].status
+          name: RebootingNode
+          priority: 1
+          type: string
+        - jsonPath: .status.conditions[?(@.type=="ReloadingCRIO")].status
+          name: ReloadingCRIO
+          priority: 1
+          type: string
+      schema:
+        openAPIV3Schema:
+          description: 'MachineConfigNode describes the health of the Machines on the system Compatibility level 4: No compatibility is provided, the API can change at any point for any reason. These capabilities should not be used by applications needing long term support.'
+          type: object
+          required:
+            - spec
+          properties:
+            apiVersion:
+              description: 'APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+              type: string
+            kind:
+              description: 'Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+              type: string
+            metadata:
+              type: object
+            spec:
+              description: spec describes the configuration of this specific machineconfignode
+              type: object
+              required:
+                - configVersion
+                - node
+                - pool
+              properties:
+                configVersion:
+                  description: configVersion holds the current and desired config versions for the node targeted by this MachineConfigNode resource. The current version represents the current machine config for the node and is updated after a successful update. The desired version represents the machine config the node will attempt to update to when it next has the chance.
+                  type: object
+                  required:
+                    - current
+                    - desired
+                  properties:
+                    current:
+                      description: Current is the current MachineConfig a node is using Must be a lowercase RFC-1123 hostname (https://tools.ietf.org/html/rfc1123)
+                      type: string
+                      maxLength: 253
+                      pattern: ^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])(\.([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9]))*$
+                    desired:
+                      description: Desired is the MachineConfig the node wants to upgrade to. Must be a lowercase RFC-1123 hostname (https://tools.ietf.org/html/rfc1123)
+                      type: string
+                      maxLength: 253
+                      pattern: ^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])(\.([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9]))*$
+                node:
+                  description: node contains references to the node for this MachineConfigNode
+                  type: object
+                  required:
+                    - name
+                  properties:
+                    name:
+                      description: name describes what this object is called
+                      type: string
+                pool:
+                  description: pool contains a reference to the MachineConfigPool that this MachineConfigNode's referenced Node belongs to.
+                  type: object
+                  required:
+                    - name
+                  properties:
+                    name:
+                      description: name describes what this object is called
+                      type: string
+            status:
+              description: status describes the last observed state of this machineconfignode
+              type: object
+              properties:
+                conditions:
+                  description: 'conditions represent the observations of a MachineConfigNode''s current state. Known .status.conditions.type are: "UpdatePreparing", "UpdateInProgress", "UpdatePostAction", "UpdateCompleting", "Resuming", "Updated", "Ready", "ComparingMCs", "DrainingNode", "ApplyingFilesAndOS", "CordoningNode", "RebootingNode", and "ReloadingCRIO"'
+                  type: array
+                  items:
+                    description: "Condition contains details for one aspect of the current state of this API Resource. --- This struct is intended for direct use as an array at the field path .status.conditions.  For example, \n type FooStatus struct{ // Represents the observations of a foo's current state. // Known .status.conditions.type are: \"Available\", \"Progressing\", and \"Degraded\" // +patchMergeKey=type // +patchStrategy=merge // +listType=map // +listMapKey=type Conditions []metav1.Condition `json:\"conditions,omitempty\" patchStrategy:\"merge\" patchMergeKey:\"type\" protobuf:\"bytes,1,rep,name=conditions\"` \n // other fields }"
+                    type: object
+                    required:
+                      - lastTransitionTime
+                      - message
+                      - reason
+                      - status
+                      - type
+                    properties:
+                      lastTransitionTime:
+                        description: lastTransitionTime is the last time the condition transitioned from one status to another. This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                        type: string
+                        format: date-time
+                      message:
+                        description: message is a human readable message indicating details about the transition. This may be an empty string.
+                        type: string
+                        maxLength: 32768
+                      observedGeneration:
+                        description: observedGeneration represents the .metadata.generation that the condition was set based upon. For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date with respect to the current state of the instance.
+                        type: integer
+                        format: int64
+                        minimum: 0
+                      reason:
+                        description: reason contains a programmatic identifier indicating the reason for the condition's last transition. Producers of specific condition types may define expected values and meanings for this field, and whether the values are considered a guaranteed API. The value should be a CamelCase string. This field may not be empty.
+                        type: string
+                        maxLength: 1024
+                        minLength: 1
+                        pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      status:
+                        description: status of the condition, one of True, False, Unknown.
+                        type: string
+                        enum:
+                          - "True"
+                          - "False"
+                          - Unknown
+                      type:
+                        description: type of condition in CamelCase or in foo.example.com/CamelCase. --- Many .condition.type values are consistent across resources like Available, but because arbitrary conditions can be useful (see .node.status.conditions), the ability to deconflict is important. The regex it matches is (dns1123SubdomainFmt/)?(qualifiedNameFmt)
+                        type: string
+                        maxLength: 316
+                        pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                  x-kubernetes-list-map-keys:
+                    - type
+                  x-kubernetes-list-type: map
+                observedGeneration:
+                  description: observedGeneration represents the generation observed by the controller.
+                  type: integer
+                  format: int64
+          x-kubernetes-validations:
+            - rule: self.metadata.name == self.spec.node.name
+              message: spec.node.name should match metadata.name

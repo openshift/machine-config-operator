@@ -1,8 +1,0 @@
-apiVersion: machineconfiguration.openshift.io/v1
-kind: MachineState
-metadata:
-  name: upgrade-worker
-  labels:
-    "states.operator.machineconfiguration.openshift.io/upgrade": ""
-spec:
-  machineStateType: UpgradeProgression

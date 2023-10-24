@@ -4,13 +4,14 @@ import (
 	"context"
 	"fmt"
 
+	mcfgalphav1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 
-	mcfgv1listers "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
+	mcfgalphav1listers "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1"
 	apiextclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -33,25 +34,25 @@ func StateControllerPod(client clientset.Interface) (*v1.Pod, error) {
 	}
 }
 
-func ConvertStateControllerToPoolType(stateType mcfgv1.StateProgress) mcfgv1.MachineConfigPoolConditionType {
+func ConvertStateControllerToPoolType(stateType mcfgalphav1.StateProgress) mcfgv1.MachineConfigPoolConditionType {
 	switch stateType {
-	case mcfgv1.MachineConfigPoolUpdatePreparing:
+	case mcfgalphav1.MachineConfigPoolUpdatePreparing:
 		return mcfgv1.MachineConfigPoolUpdating
-	case mcfgv1.MachineConfigPoolUpdateInProgress:
+	case mcfgalphav1.MachineConfigPoolUpdateInProgress:
 		return mcfgv1.MachineConfigPoolUpdating
-	case mcfgv1.MachineConfigPoolUpdatePostAction:
+	case mcfgalphav1.MachineConfigPoolUpdatePostAction:
 		return mcfgv1.MachineConfigPoolUpdating
-	case mcfgv1.MachineConfigPoolUpdateCompleting:
+	case mcfgalphav1.MachineConfigPoolUpdateCompleting:
 		return mcfgv1.MachineConfigPoolUpdating
-	case mcfgv1.MachineConfigPoolUpdateComplete:
+	case mcfgalphav1.MachineConfigPoolUpdateComplete:
 		return mcfgv1.MachineConfigPoolUpdated
-	case mcfgv1.MachineConfigPoolUpdateErrored:
+	case mcfgalphav1.MachineConfigNodeErrored:
 		return mcfgv1.MachineConfigPoolDegraded
 	}
 	return mcfgv1.MachineConfigPoolUpdated // ?
 }
 
-func IsUpgradingProgressionTrue(which mcfgv1.StateProgress, pool mcfgv1.MachineConfigPool, msLister mcfgv1listers.MachineStateLister, apiCli apiextclientset.Interface) (bool, error) {
+func IsUpgradingProgressionTrue(which mcfgalphav1.StateProgress, pool mcfgv1.MachineConfigPool, msLister mcfgalphav1listers.MachineConfigNodeLister, apiCli apiextclientset.Interface) (bool, error) {
 	if _, err := apiCli.ApiextensionsV1().CustomResourceDefinitions().Get(context.TODO(), "machinestates.machineconfiguration.openshift.io", metav1.GetOptions{}); err != nil {
 		for _, condition := range pool.Status.Conditions {
 			if condition.Type == ConvertStateControllerToPoolType(which) {
@@ -60,7 +61,7 @@ func IsUpgradingProgressionTrue(which mcfgv1.StateProgress, pool mcfgv1.MachineC
 		}
 		return false, nil
 	}
-	ms, err := GetMachineStateForPool(pool, msLister)
+	ms, err := GetMachineConfigNodeForPool(pool, msLister)
 	if err != nil || ms == nil {
 		// if for some reason the machinestate has been deleted or DNE, fallback to old method
 		for _, condition := range pool.Status.Conditions {
@@ -69,8 +70,8 @@ func IsUpgradingProgressionTrue(which mcfgv1.StateProgress, pool mcfgv1.MachineC
 			}
 		}
 	}
-	for _, stateOnNode := range ms.Status.MostRecentState {
-		if stateOnNode.State == which {
+	for _, stateOnNode := range ms.Status.Conditions {
+		if mcfgalphav1.StateProgress(stateOnNode.Type) == which && stateOnNode.Status == metav1.ConditionTrue {
 			klog.Infof("Upgrading progression true")
 			return true, nil
 		}
@@ -79,6 +80,6 @@ func IsUpgradingProgressionTrue(which mcfgv1.StateProgress, pool mcfgv1.MachineC
 	return false, nil
 }
 
-func GetMachineStateForPool(pool mcfgv1.MachineConfigPool, msLister mcfgv1listers.MachineStateLister) (*mcfgv1.MachineState, error) {
+func GetMachineConfigNodeForPool(pool mcfgv1.MachineConfigPool, msLister mcfgalphav1listers.MachineConfigNodeLister) (*mcfgalphav1.MachineConfigNode, error) {
 	return msLister.Get(fmt.Sprintf("upgrade-%s", pool.Name))
 }

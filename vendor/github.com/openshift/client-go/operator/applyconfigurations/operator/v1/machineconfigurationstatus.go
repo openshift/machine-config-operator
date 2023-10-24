@@ -2,10 +2,19 @@
 
 package v1
 
+import (
+	operatorv1 "github.com/openshift/api/operator/v1"
+)
+
 // MachineConfigurationStatusApplyConfiguration represents an declarative configuration of the MachineConfigurationStatus type for use
 // with apply.
 type MachineConfigurationStatusApplyConfiguration struct {
 	StaticPodOperatorStatusApplyConfiguration `json:",inline"`
+	Daemon                                    *MachineConfigurationComponentApplyConfiguration `json:"daemon,omitempty"`
+	Controller                                *MachineConfigurationComponentApplyConfiguration `json:"controller,omitempty"`
+	Operator                                  *MachineConfigurationComponentApplyConfiguration `json:"operator,omitempty"`
+	MostRecentError                           *string                                          `json:"mostRecentError,omitempty"`
+	Health                                    *operatorv1.MachineConfigOperatorHealthEnum      `json:"health,omitempty"`
 }
 
 // MachineConfigurationStatusApplyConfiguration constructs an declarative configuration of the MachineConfigurationStatus type for use with
@@ -90,5 +99,45 @@ func (b *MachineConfigurationStatusApplyConfiguration) WithNodeStatuses(values .
 		}
 		b.NodeStatuses = append(b.NodeStatuses, *values[i])
 	}
+	return b
+}
+
+// WithDaemon sets the Daemon field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Daemon field is set to the value of the last call.
+func (b *MachineConfigurationStatusApplyConfiguration) WithDaemon(value *MachineConfigurationComponentApplyConfiguration) *MachineConfigurationStatusApplyConfiguration {
+	b.Daemon = value
+	return b
+}
+
+// WithController sets the Controller field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Controller field is set to the value of the last call.
+func (b *MachineConfigurationStatusApplyConfiguration) WithController(value *MachineConfigurationComponentApplyConfiguration) *MachineConfigurationStatusApplyConfiguration {
+	b.Controller = value
+	return b
+}
+
+// WithOperator sets the Operator field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Operator field is set to the value of the last call.
+func (b *MachineConfigurationStatusApplyConfiguration) WithOperator(value *MachineConfigurationComponentApplyConfiguration) *MachineConfigurationStatusApplyConfiguration {
+	b.Operator = value
+	return b
+}
+
+// WithMostRecentError sets the MostRecentError field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the MostRecentError field is set to the value of the last call.
+func (b *MachineConfigurationStatusApplyConfiguration) WithMostRecentError(value string) *MachineConfigurationStatusApplyConfiguration {
+	b.MostRecentError = &value
+	return b
+}
+
+// WithHealth sets the Health field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Health field is set to the value of the last call.
+func (b *MachineConfigurationStatusApplyConfiguration) WithHealth(value operatorv1.MachineConfigOperatorHealthEnum) *MachineConfigurationStatusApplyConfiguration {
+	b.Health = &value
 	return b
 }

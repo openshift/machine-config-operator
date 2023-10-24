@@ -14,6 +14,7 @@ import (
 	mcoResourceApply "github.com/openshift/machine-config-operator/lib/resourceapply"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/controller/state"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	corev1 "k8s.io/api/core/v1"
@@ -23,6 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/kubernetes"
 	clientset "k8s.io/client-go/kubernetes"
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/cache"
@@ -53,9 +55,11 @@ var (
 
 // Controller defines the render controller.
 type Controller struct {
-	client               mcfgclientset.Interface
-	eventRecorder        record.EventRecorder
-	healthEventsRecorder record.EventRecorder
+	client        mcfgclientset.Interface
+	eventRecorder record.EventRecorder
+
+	kubeClient         kubernetes.Interface
+	stateControllerPod *corev1.Pod
 
 	syncHandler              func(mcp string) error
 	enqueueMachineConfigPool func(*mcfgv1.MachineConfigPool)
@@ -86,6 +90,7 @@ func New(
 
 	ctrl := &Controller{
 		client:        mcfgClient,
+		kubeClient:    kubeClient,
 		eventRecorder: ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-rendercontroller"})),
 		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-rendercontroller"),
 	}
@@ -115,11 +120,9 @@ func New(
 }
 
 // Run executes the render controller.
-func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}, healthEvents record.EventRecorder) {
+func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
-
-	ctrl.healthEventsRecorder = healthEvents
 
 	if !cache.WaitForCacheSync(stopCh, ctrl.mcpListerSynced, ctrl.mcListerSynced, ctrl.ccListerSynced) {
 		return
@@ -398,6 +401,14 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		klog.V(4).Infof("Finished syncing machineconfigpool %q (%v)", key, time.Since(startTime))
 	}()
 
+	healthPod, err := state.StateControllerPod(ctrl.kubeClient)
+	if err != nil {
+		klog.Error(err)
+	}
+
+	if healthPod != nil {
+		ctrl.stateControllerPod = healthPod
+	}
 	_, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		return err
@@ -438,6 +449,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		return ctrl.syncFailingStatus(pool, fmt.Errorf("no MachineConfigs found matching selector %v", selector))
 	}
 
+	//ctrl.EmitHealthEvent(ctrl.stateControllerPod, ctrl.HealthAnnotations(name, string(v1.MCP), v1.MCCSync), corev1.EventTypeNormal, "SyncingGeneratedMCs", fmt.Sprintf("Syncing Generated MCs for Pool %s in the render controller", pool.Name))
 	if err := ctrl.syncGeneratedMachineConfig(pool, mcs); err != nil {
 		return ctrl.syncFailingStatus(pool, err)
 	}
@@ -451,7 +463,10 @@ func (ctrl *Controller) syncAvailableStatus(pool *mcfgv1.MachineConfigPool) erro
 	}
 	sdegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolRenderDegraded, corev1.ConditionFalse, "", "")
 	apihelpers.SetMachineConfigPoolCondition(&pool.Status, *sdegraded)
-	if _, err := ctrl.client.MachineconfigurationV1().MachineConfigPools().UpdateStatus(context.TODO(), pool, metav1.UpdateOptions{}); err != nil {
+	newAnnos := make(map[string]string)
+	newAnnos["machineconfiguration.openshift.io/editor"] = "machine-config-controller-render"
+	pool.SetAnnotations(newAnnos)
+	if _, err := ctrl.client.MachineconfigurationV1().MachineConfigPools().Update(context.TODO(), pool, metav1.UpdateOptions{}); err != nil {
 		return err
 	}
 	return nil
@@ -460,8 +475,11 @@ func (ctrl *Controller) syncAvailableStatus(pool *mcfgv1.MachineConfigPool) erro
 func (ctrl *Controller) syncFailingStatus(pool *mcfgv1.MachineConfigPool, err error) error {
 	sdegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolRenderDegraded, corev1.ConditionTrue, "", fmt.Sprintf("Failed to render configuration for pool %s: %v", pool.Name, err))
 	apihelpers.SetMachineConfigPoolCondition(&pool.Status, *sdegraded)
-	if _, updateErr := ctrl.client.MachineconfigurationV1().MachineConfigPools().UpdateStatus(context.TODO(), pool, metav1.UpdateOptions{}); updateErr != nil {
-		klog.Errorf("Error updating MachineConfigPool %s: %v", pool.Name, updateErr)
+	newAnnos := make(map[string]string)
+	newAnnos["machineconfiguration.openshift.io/editor"] = "machine-config-controller-render"
+	pool.SetAnnotations(newAnnos)
+	if _, err := ctrl.client.MachineconfigurationV1().MachineConfigPools().Update(context.TODO(), pool, metav1.UpdateOptions{}); err != nil {
+		return err
 	}
 	return err
 }
@@ -527,14 +545,20 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 		if err != nil {
 			return err
 		}
-		_, err = ctrl.client.MachineconfigurationV1().MachineConfigPools().Update(context.TODO(), newPool, metav1.UpdateOptions{})
-		return err
+		newAnnos := make(map[string]string)
+		newAnnos["machineconfiguration.openshift.io/editor"] = "machine-config-controller-render"
+		pool.SetAnnotations(newAnnos)
+		if _, err := ctrl.client.MachineconfigurationV1().MachineConfigPools().Update(context.TODO(), pool, metav1.UpdateOptions{}); err != nil {
+			return err
+		}
 	}
 
 	newPool.Spec.Configuration.Name = generated.Name
 	// TODO(walters) Use subresource or JSON patch, but the latter isn't supported by the unit test mocks
-	pool, err = ctrl.client.MachineconfigurationV1().MachineConfigPools().Update(context.TODO(), newPool, metav1.UpdateOptions{})
-	if err != nil {
+	newAnnos := make(map[string]string)
+	newAnnos["machineconfiguration.openshift.io/editor"] = "machine-config-controller-render"
+	pool.SetAnnotations(newAnnos)
+	if _, err := ctrl.client.MachineconfigurationV1().MachineConfigPools().Update(context.TODO(), pool, metav1.UpdateOptions{}); err != nil {
 		return err
 	}
 	klog.V(2).Infof("Pool %s: now targeting: %s", pool.Name, pool.Spec.Configuration.Name)

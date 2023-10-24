@@ -319,7 +319,7 @@ var map_MachineConfigSpec = map[string]string{
 	"kernelArguments":                "kernelArguments contains a list of kernel arguments to be added",
 	"extensions":                     "extensions contains a list of additional features that can be enabled on host",
 	"fips":                           "fips controls FIPS mode",
-	"kernelType":                     "kernelType contains which kernel we want to be running like default (traditional), realtime, 64k-pages (aarch64 only).",
+	"kernelType":                     "kernelType contains which kernel we want to be running like default (traditional), realtime.",
 }
 
 func (MachineConfigSpec) SwaggerDoc() map[string]string {

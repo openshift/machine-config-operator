@@ -2242,6 +2242,21 @@ var schemaYAML = typed.YAMLObject(`types:
       type:
         namedType: com.github.openshift.api.operator.v1.MachineConfigurationStatus
       default: {}
+- name: com.github.openshift.api.operator.v1.MachineConfigurationComponent
+  map:
+    fields:
+    - name: conditions
+      type:
+        list:
+          elementType:
+            namedType: io.k8s.apimachinery.pkg.apis.meta.v1.Condition
+          elementRelationship: associative
+          keys:
+          - type
+    - name: name
+      type:
+        scalar: string
+      default: ""
 - name: com.github.openshift.api.operator.v1.MachineConfigurationSpec
   map:
     fields:
@@ -2256,6 +2271,10 @@ var schemaYAML = typed.YAMLObject(`types:
       type:
         scalar: string
     - name: managementState
+      type:
+        scalar: string
+      default: ""
+    - name: mode
       type:
         scalar: string
       default: ""
@@ -2282,18 +2301,34 @@ var schemaYAML = typed.YAMLObject(`types:
           elementType:
             namedType: com.github.openshift.api.operator.v1.OperatorCondition
           elementRelationship: atomic
+    - name: controller
+      type:
+        namedType: com.github.openshift.api.operator.v1.MachineConfigurationComponent
+      default: {}
+    - name: daemon
+      type:
+        namedType: com.github.openshift.api.operator.v1.MachineConfigurationComponent
+      default: {}
     - name: generations
       type:
         list:
           elementType:
             namedType: com.github.openshift.api.operator.v1.GenerationStatus
           elementRelationship: atomic
+    - name: health
+      type:
+        scalar: string
+      default: ""
     - name: latestAvailableRevision
       type:
         scalar: numeric
     - name: latestAvailableRevisionReason
       type:
         scalar: string
+    - name: mostRecentError
+      type:
+        scalar: string
+      default: ""
     - name: nodeStatuses
       type:
         list:
@@ -2303,6 +2338,10 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: observedGeneration
       type:
         scalar: numeric
+    - name: operator
+      type:
+        namedType: com.github.openshift.api.operator.v1.MachineConfigurationComponent
+      default: {}
     - name: readyReplicas
       type:
         scalar: numeric

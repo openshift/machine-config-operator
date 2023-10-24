@@ -2,16 +2,29 @@ package state
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
-	v1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
-	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
+	operatorv1 "github.com/openshift/client-go/operator/applyconfigurations/operator/v1"
+	opv1clientset "github.com/openshift/client-go/operator/clientset/versioned"
+
+	machineconfigurationalphav1 "github.com/openshift/client-go/machineconfiguration/applyconfigurations/machineconfiguration/v1alpha1"
+	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
+	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
+	mcfginformersalphav1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1alpha1"
+
+	operatorcfginformersv1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1"
+	apiextinformersv1 "k8s.io/apiextensions-apiserver/pkg/client/informers/externalversions/apiextensions/v1"
+	appsinformersv1 "k8s.io/client-go/informers/apps/v1"
+
 	"golang.org/x/time/rate"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apimachinery/pkg/watch"
+	coreinformersv1 "k8s.io/client-go/informers/core/v1"
 	corev1eventinformers "k8s.io/client-go/informers/core/v1"
 
 	clientset "k8s.io/client-go/kubernetes"
@@ -32,7 +45,7 @@ const (
 
 type syncFunc struct {
 	name string
-	fn   func(string) error
+	fn   func(interface{}) error
 }
 
 // need to establish if this is the sort of thing
@@ -45,21 +58,29 @@ type syncFunc struct {
 // but we want bookkeeping, so we will need to probably have a struct that has a new "bookkeeping" style entity
 // as well as specific health related structs
 type StateControllerConfig struct {
-	SubControllers []v1.StateSubController
-	UpdateDelay    time.Duration
+	UpdateDelay time.Duration
 }
 type StateController interface {
 	Run(int, <-chan struct{}, record.EventRecorder)
 }
 
 type informers struct {
-	mcpInformer   mcfginformersv1.MachineConfigPoolInformer
-	msInformer    mcfginformersv1.MachineStateInformer
-	eventInformer corev1eventinformers.EventInformer
+	operatorCfgInformer operatorcfginformersv1.MachineConfigurationInformer
+	nodeInformer        coreinformersv1.NodeInformer
+	msInformer          mcfginformersalphav1.MachineConfigNodeInformer
+	eventInformer       corev1eventinformers.EventInformer
+	ccInformer          mcfginformersv1.ControllerConfigInformer
+	cmInformer          coreinformersv1.ConfigMapInformer
+	kcInformer          mcfginformersv1.KubeletConfigInformer
+	mcpInformer         mcfginformersv1.MachineConfigPoolInformer
+	crdInformer         apiextinformersv1.CustomResourceDefinitionInformer
+	deploymentInformer  appsinformersv1.DeploymentInformer
+	mcInformer          mcfginformersv1.MachineConfigInformer
 }
 type Clients struct {
 	Mcfgclient mcfgclientset.Interface
 	Kubeclient clientset.Interface
+	Opv1client opv1clientset.Interface
 }
 
 type Controller struct {
@@ -69,9 +90,16 @@ type Controller struct {
 	syncHandler   func(key string) error
 	enqueueObject func(interface{})
 
-	mcpListerSynced   cache.InformerSynced
-	msListerSynced    cache.InformerSynced
-	eventListerSynced cache.InformerSynced
+	msListerSynced         cache.InformerSynced
+	eventListerSynced      cache.InformerSynced
+	nodeListerSynced       cache.InformerSynced
+	ccListerSynced         cache.InformerSynced
+	cmListerSynced         cache.InformerSynced
+	kcListerSynced         cache.InformerSynced
+	mcpListerSynced        cache.InformerSynced
+	crdListerSynced        cache.InformerSynced
+	deploymentListerSynced cache.InformerSynced
+	mcListerSynced         cache.InformerSynced
 
 	queue workqueue.RateLimitingInterface
 
@@ -79,27 +107,32 @@ type Controller struct {
 
 	listeners []watch.Interface
 
-	subControllers []v1.StateSubController
-
 	bootstrapHealthController BootstrapStateController
 }
 
 func New(
-	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
-	msInformer mcfginformersv1.MachineStateInformer,
+	msInformer mcfginformersalphav1.MachineConfigNodeInformer,
 	eventInformer corev1eventinformers.EventInformer,
+	nodeInformer coreinformersv1.NodeInformer,
 	cfg StateControllerConfig,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
+	opv1client opv1clientset.Interface,
+	ccInformer mcfginformersv1.ControllerConfigInformer,
+	cmInformer coreinformersv1.ConfigMapInformer,
+	kcInformer mcfginformersv1.KubeletConfigInformer,
+	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
+	crdInformer apiextinformersv1.CustomResourceDefinitionInformer,
+	deploymentInformer appsinformersv1.DeploymentInformer,
+	mcInformer mcfginformersv1.MachineConfigInformer,
 ) *Controller {
 
 	ctrl := &Controller{
 		informers: &informers{
-			mcpInformer:   mcpInformer,
 			msInformer:    msInformer,
 			eventInformer: eventInformer,
+			nodeInformer:  nodeInformer,
 		},
-		subControllers: cfg.SubControllers,
 		config: StateControllerConfig{
 			UpdateDelay: time.Second * 5,
 		},
@@ -108,12 +141,27 @@ func New(
 	// does component matter? because I have been using it for whatever I want.
 	ctrl.eventInformer = eventInformer
 	ctrl.msInformer = msInformer
+	ctrl.nodeInformer = nodeInformer
 	ctrl.syncHandler = ctrl.syncStateController
 	ctrl.enqueueObject = ctrl.enqueueDefault
+	ctrl.ccInformer = ccInformer
+	ctrl.cmInformer = cmInformer
+	ctrl.kcInformer = kcInformer
+	ctrl.mcpInformer = mcpInformer
+	ctrl.crdInformer = crdInformer
+	ctrl.deploymentInformer = deploymentInformer
+	ctrl.mcInformer = mcInformer
 
 	ctrl.msListerSynced = msInformer.Informer().HasSynced
-	ctrl.mcpListerSynced = mcpInformer.Informer().HasSynced
 	ctrl.eventListerSynced = eventInformer.Informer().HasSynced
+	ctrl.nodeListerSynced = nodeInformer.Informer().HasSynced
+	ctrl.ccListerSynced = ccInformer.Informer().HasSynced
+	ctrl.cmListerSynced = cmInformer.Informer().HasSynced
+	ctrl.kcListerSynced = kcInformer.Informer().HasSynced
+	ctrl.mcpListerSynced = mcpInformer.Informer().HasSynced
+	ctrl.crdListerSynced = crdInformer.Informer().HasSynced
+	ctrl.deploymentListerSynced = deploymentInformer.Informer().HasSynced
+	ctrl.mcListerSynced = mcInformer.Informer().HasSynced
 
 	ctrl.queue = workqueue.NewNamedRateLimitingQueue(workqueue.NewMaxOfRateLimiter(
 		&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(rate.Limit(updateDelay), 1)},
@@ -122,33 +170,27 @@ func New(
 	ctrl.Clients = &Clients{
 		Mcfgclient: mcfgClient,
 		Kubeclient: kubeClient,
+		Opv1client: opv1client,
 	}
-
-	for _, entry := range cfg.SubControllers {
-		switch entry {
-		//	case v1.StateSubControllerPool:
-		//		ctrl.upgradeHealthController = *newUpgradeStateController(ctrl.config, upgradeWatcher)
-		//	case v1.StateSubControllerOperator:
-		//		ctrl.operatorHealthController = *newOperatorStateController(ctrl.config, operatorWatcher)
-		case v1.StateSubControllerBootstrap:
-			//	ctrl.bootstrapHealthController = *newBootstrapStateController(ctrl.config)
-		}
-	}
-
-	/*	ctrl.msInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    ctrl.addMachineState,
-		UpdateFunc: ctrl.updateMachineState,
-		//DeleteFunc: ctrl.deleteMachineState,
-	})*/
 
 	if ctrl.eventInformer != nil && ctrl.msInformer != nil {
 		ctrl.eventInformer.Informer().AddEventHandler(ctrl.eventHandler())
 		ctrl.msInformer.Informer().AddEventHandler(ctrl.eventHandler())
+		ctrl.nodeInformer.Informer().AddEventHandler(ctrl.eventHandler())
+		ctrl.ccInformer.Informer().AddEventHandler(ctrl.eventHandler())
+		ctrl.cmInformer.Informer().AddEventHandler(ctrl.eventHandler())
+		ctrl.kcInformer.Informer().AddEventHandler(ctrl.eventHandler())
+		ctrl.mcpInformer.Informer().AddEventHandler(ctrl.eventHandler())
+		ctrl.crdInformer.Informer().AddEventHandler(ctrl.eventHandler())
+		ctrl.deploymentInformer.Informer().AddEventHandler(ctrl.eventHandler())
+		ctrl.mcInformer.Informer().AddEventHandler(ctrl.eventHandler())
+
 	}
 
 	return ctrl
 }
 
+// if we react to nodes, mcps, mc, kc, cc AFTER they change. I guess that is just as good as catching when they change. Maybe we only event if we error
 func (ctrl *Controller) eventHandler() cache.ResourceEventHandler {
 	return cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
@@ -191,21 +233,21 @@ func (ctrl *Controller) enqueueDefault(obj interface{}) {
 }
 
 /*
-func (ctrl *Controller) addMachineState(obj interface{}) {
-	ms := obj.(*mcfgv1.MachineState).DeepCopy()
+func (ctrl *Controller) addMachineConfigNode(obj interface{}) {
+	ms := obj.(*mcfgv1.MachineConfigNode).DeepCopy()
 	klog.V(4).Infof("Adding MachineConfigPool %s", ms.Name)
-	ctrl.enqueueMachineState(ms)
+	ctrl.enqueueMachineConfigNode(ms)
 }
 
-func (ctrl *Controller) updateMachineState(old, curr interface{}) {
-	currMS := curr.(*mcfgv1.MachineState).DeepCopy()
-	oldMS := old.(*mcfgv1.MachineState).DeepCopy()
+func (ctrl *Controller) updateMachineConfigNode(old, curr interface{}) {
+	currMS := curr.(*mcfgv1.MachineConfigNode).DeepCopy()
+	oldMS := old.(*mcfgv1.MachineConfigNode).DeepCopy()
 	if !reflect.DeepEqual(oldMS.Status, currMS.Status) {
-		klog.Info("user cannot change MachineState status via the API")
+		klog.Info("user cannot change MachineConfigNode status via the API")
 		return
 	}
 	klog.V(4).Infof("updating MachineConfigPool %s", currMS.Name)
-	ctrl.enqueueMachineState(currMS)
+	ctrl.enqueueMachineConfigNode(currMS)
 }
 */
 
@@ -221,7 +263,7 @@ func (ctrl *Controller) Run(workers int, parentCtx context.Context, stopCh <-cha
 
 	//ctrl.informers.start(ctx)
 
-	if !cache.WaitForCacheSync(ctx.Done(), ctrl.mcpListerSynced, ctrl.msListerSynced, ctrl.eventListerSynced) {
+	if !cache.WaitForCacheSync(ctx.Done(), ctrl.nodeListerSynced, ctrl.msListerSynced, ctrl.eventListerSynced) {
 		return
 	}
 	/*	for _, subctrl := range ctrl.subControllers {
@@ -250,26 +292,6 @@ func (ctrl *Controller) Run(workers int, parentCtx context.Context, stopCh <-cha
 			go ctrl.operatorHealthController.Run(workers)
 		}
 	}*/
-
-	if len(ctrl.subControllers) > 0 && ctrl.subControllers[0] == v1.StateSubControllerBootstrap {
-		/*go ctrl.bootstrapHealthController.Run(workers, stopCh)
-		go func() {
-			shutdown := func() {
-				ctrl.bootstrapHealthController.Stop()
-			}
-			for {
-				select {
-				case <-stopCh:
-					shutdown()
-					return
-					//	case <-ctrl.bootstrapHealthController.Done():
-					//		// We got a stop signal from the Config Drift Monitor.
-					//shutdown()
-					//		return
-				}
-			}
-		}() */
-	}
 
 	for i := 0; i < workers; i++ {
 		go wait.Until(ctrl.worker, time.Second, stopCh)
@@ -321,13 +343,79 @@ func (ctrl *Controller) syncStateController(key string) error {
 		klog.V(4).Infof("Finished syncing machine state %q (%v)", key, time.Since(startTime))
 	}()
 
-	var syncFuncs = []syncFunc{
-		{string(v1.ControllerState), ctrl.syncMCC},
-		{string(v1.DaemonState), ctrl.syncMCD},
-		{string(v1.ServerState), ctrl.syncMCS},
-		{string(v1.MetricsSync), ctrl.syncMetrics},
-		{string(v1.UpgradeProgression), ctrl.syncUpgradingProgression},
-		{string(v1.OperatorProgression), ctrl.syncOperatorProgression},
+	/*
+		var syncFuncs = []syncFunc{
+			{string(v1.ControllerState), ctrl.syncMCC},
+			{string(v1.DaemonState), ctrl.syncMCD},
+			{string(v1.ServerState), ctrl.syncMCS},
+			{string(v1.MetricsSync), ctrl.syncMetrics},
+			{string(v1.UpgradeProgression), ctrl.syncUpgradingProgression},
+			{string(v1.OperatorProgression), ctrl.syncOperatorProgression},
+		}
+	*/
+
+	objectToUse := ""
+	objAndNamespace := strings.Split(key, "/")
+	if len(objAndNamespace) != 2 {
+		klog.Infof("Obj: %s", key)
+		// just try it
+		objectToUse = objAndNamespace[0]
+		//return fmt.Errorf("Object could not be split up, %s", key)
+	} else {
+		objectToUse = objAndNamespace[1]
 	}
-	return ctrl.syncAll(syncFuncs, key)
+	mcsList := ctrl.GenerateMachineConfigNodes(objectToUse)
+	for _, item := range mcsList {
+		klog.Infof("MCSLIST ITEM: %s", item.Name)
+		o, _ := json.Marshal(item.Status)
+		klog.Infof("STATUS: %s", o)
+	}
+	opMcfgList := ctrl.GenerateMachineConfiguration(key)
+	for _, newState := range mcsList {
+		//	cfgApplyConfig := machineconfigurationalphav1.MachineConfigNode().WithKind(newState.Kind).WithName(newState.Name).WithAPIVersion(newState.APIVersion).WithResourceVersion(newState.ResourceVersion).WithUID(newState.UID)
+		//progressionConditionApplyConfig := machineconfigurationv1.ProgressionCondition().WithKind(newCondition.Kind).WithName(newCondition.Name).WithPhase(newCondition.Name).WithReason(newCondition.Reason).WithState(newCondition.State).WithTime(newCondition.Time)
+		// might need to add some more here
+		nodeRefApplyConfig := machineconfigurationalphav1.MCOObjectReference().WithName(newState.Spec.Node.Name)
+		poolRefApplyConfig := machineconfigurationalphav1.MCOObjectReference().WithName(newState.Spec.Pool.Name)
+		configVersionApplyConfig := machineconfigurationalphav1.MachineConfigVersion().WithCurrent(newState.Spec.ConfigVersion.Current).WithDesired(newState.Spec.ConfigVersion.Desired)
+		statusApplyConfig := machineconfigurationalphav1.MachineConfigNodeStatus().WithConditions(newState.Status.Conditions...).WithObservedGeneration(newState.Generation + 1)
+		specApplyConfig := machineconfigurationalphav1.MachineConfigNodeSpec().WithNode(nodeRefApplyConfig).WithPool(poolRefApplyConfig).WithConfigVersion(configVersionApplyConfig)
+		mcnodeApplyConfig := machineconfigurationalphav1.MachineConfigNode(newState.Name).WithStatus(statusApplyConfig).WithSpec(specApplyConfig)
+		//ctrl.Clients.Mcfgclient.MachineconfigurationV1().MachineConfigNodes().Patch(context.TODO(), newState.Name, types.MergePatchType)
+
+		applyConfig, _ := json.Marshal(mcnodeApplyConfig)
+		klog.Infof("Updating Machine State Controller apply config Status to %s", string(applyConfig))
+		//	oldms, _ := ctrl.Clients.Mcfgclient.MachineconfigurationV1alpha1().MachineConfigNodes().Get(context.TODO(), newState.Name, metav1.GetOptions{})
+		//	if !equality.Semantic.DeepEqual(newState, oldms) {
+		ms, err := ctrl.Clients.Mcfgclient.MachineconfigurationV1alpha1().MachineConfigNodes().ApplyStatus(context.TODO(), mcnodeApplyConfig, metav1.ApplyOptions{FieldManager: "machine-config-operator", Force: true})
+		if err != nil {
+			klog.Errorf("ERROR: %w", err)
+			return err
+		}
+		m, err := json.Marshal(ms)
+		klog.Infof("MACHINECONFIGSTATE: %s", string(m))
+		//	}
+	}
+
+	for _, newMachineConfiguration := range opMcfgList {
+		specApplyConfig := operatorv1.MachineConfigurationSpec().WithMode(newMachineConfiguration.Spec.Mode)
+		opApplyCfg := operatorv1.MachineConfigurationComponent().WithConditions(newMachineConfiguration.Status.Operator.Conditions...)
+		ctrlApplyCfg := operatorv1.MachineConfigurationComponent().WithConditions(newMachineConfiguration.Status.Controller.Conditions...)
+		daemonApplyCfg := operatorv1.MachineConfigurationComponent().WithConditions(newMachineConfiguration.Status.Daemon.Conditions...)
+		statusApplyConfig := operatorv1.MachineConfigurationStatus().WithHealth(newMachineConfiguration.Status.Health).WithMostRecentError(newMachineConfiguration.Status.MostRecentError).WithDaemon(daemonApplyCfg).WithOperator(opApplyCfg).WithController(ctrlApplyCfg)
+		machineConfigurationApplyConfig := operatorv1.MachineConfiguration(newMachineConfiguration.Name).WithStatus(statusApplyConfig).WithSpec(specApplyConfig)
+		applyConfig, _ := json.Marshal(machineConfigurationApplyConfig)
+		klog.Infof("Updating Machine State Controller apply config Status to %s", string(applyConfig))
+		//	oldmcfg, _ := ctrl.Clients.Opv1client.OperatorV1().MachineConfigurations().Get(context.TODO(), newMachineConfiguration.Name, metav1.GetOptions{})
+		//	if !equality.Semantic.DeepEqual(newMachineConfiguration, oldmcfg) {
+		ms, err := ctrl.Clients.Opv1client.OperatorV1().MachineConfigurations().ApplyStatus(context.TODO(), machineConfigurationApplyConfig, metav1.ApplyOptions{FieldManager: "machine-config-operator", Force: true})
+		if err != nil {
+			klog.Errorf("ERROR: %w", err)
+			return err
+		}
+		m, err := json.Marshal(ms)
+		klog.Infof("MACHINECONFIGURATION: %s", string(m))
+		//	}
+	}
+	return nil
 }

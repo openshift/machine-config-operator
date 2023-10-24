@@ -1254,6 +1254,15 @@ func (MachineConfiguration) SwaggerDoc() map[string]string {
 	return map_MachineConfiguration
 }
 
+var map_MachineConfigurationComponent = map[string]string{
+	"name":       "name represents the full name of this component",
+	"conditions": "conditions is the most recent state reporting for each component",
+}
+
+func (MachineConfigurationComponent) SwaggerDoc() map[string]string {
+	return map_MachineConfigurationComponent
+}
+
 var map_MachineConfigurationList = map[string]string{
 	"":         "MachineConfigurationList is a collection of items\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
 	"metadata": "metadata is the standard list's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
@@ -1262,6 +1271,26 @@ var map_MachineConfigurationList = map[string]string{
 
 func (MachineConfigurationList) SwaggerDoc() map[string]string {
 	return map_MachineConfigurationList
+}
+
+var map_MachineConfigurationSpec = map[string]string{
+	"mode": "Mode describes if we are talking about this object in cluster or during bootstrap",
+}
+
+func (MachineConfigurationSpec) SwaggerDoc() map[string]string {
+	return map_MachineConfigurationSpec
+}
+
+var map_MachineConfigurationStatus = map[string]string{
+	"daemon":          "daemon describes the most recent progression of the MCD pods",
+	"controller":      "controller describes the most recent progression of the MCC pods",
+	"operator":        "operator describes the most recent progression of the MCO pod",
+	"mostRecentError": "mostRecentError is populated if the State reports an error.",
+	"health":          "health reports the overall status of the MCO given its Progress",
+}
+
+func (MachineConfigurationStatus) SwaggerDoc() map[string]string {
+	return map_MachineConfigurationStatus
 }
 
 var map_AdditionalNetworkDefinition = map[string]string{

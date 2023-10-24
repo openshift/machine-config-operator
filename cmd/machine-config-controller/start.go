@@ -10,7 +10,6 @@ import (
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/machine-config-operator/cmd/common"
 	"github.com/openshift/machine-config-operator/internal/clients"
-	v1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	containerruntimeconfig "github.com/openshift/machine-config-operator/pkg/controller/container-runtime-config"
 	"github.com/openshift/machine-config-operator/pkg/controller/drain"
@@ -20,14 +19,10 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/controller/template"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/spf13/cobra"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	coreclientsetv1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/leaderelection"
-	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
-	"k8s.io/kubectl/pkg/scheme"
 )
 
 var (
@@ -80,7 +75,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		go ctrlcommon.StartMetricsListener(startOpts.promMetricsListenAddress, ctrlctx.Stop, ctrlcommon.RegisterMCCMetrics)
 
 		kubeClient := ctrlctx.ClientBuilder.KubeClientOrDie("machine-config-controller")
-		controllers, healthEvents, upgradeEvents := createControllers(ctrlctx, kubeClient)
+		controllers := createControllers(ctrlctx, kubeClient)
 		draincontroller := drain.New(
 			drain.DefaultConfig(),
 			ctrlctx.KubeInformerFactory.Core().V1().Nodes(),
@@ -112,9 +107,9 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		}
 
 		for _, c := range controllers {
-			go c.Run(2, ctrlctx.Stop, healthEvents)
+			go c.Run(2, ctrlctx.Stop)
 		}
-		go draincontroller.Run(5, ctrlctx.Stop, healthEvents, upgradeEvents)
+		go draincontroller.Run(5, ctrlctx.Stop)
 
 		// wait here in this function until the context gets cancelled (which tells us whe were being shut down)
 		<-ctx.Done()
@@ -139,18 +134,9 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 	panic("unreachable")
 }
 
-func createControllers(ctx *ctrlcommon.ControllerContext, kubeClient kubernetes.Interface) ([]ctrlcommon.Controller, record.EventRecorder, record.EventRecorder) {
+func createControllers(ctx *ctrlcommon.ControllerContext, kubeClient kubernetes.Interface) []ctrlcommon.Controller {
 
-	eventBroadcaster := record.NewBroadcaster()
-	eventBroadcaster.StartLogging(klog.Infof)
-	eventBroadcaster.StartRecordingToSink(&coreclientsetv1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
-	upgradeEventsRecorder := eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "upgrade-health"})
-	healthEventsRecorder := eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "mcc-health"})
 	var controllers []ctrlcommon.Controller
-	statesubcontrollers := []v1.StateSubController{}
-	for _, sub := range startOpts.StateSubControllers {
-		statesubcontrollers = append(statesubcontrollers, v1.StateSubController(sub))
-	}
 	controllers = append(controllers,
 		// Our primary MCs come from here
 		template.New(
@@ -213,7 +199,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext, kubeClient kubernetes.
 		),
 	)
 
-	return controllers, healthEventsRecorder, upgradeEventsRecorder
+	return controllers
 }
 
 func getEnabledDisabledFeatures(features featuregates.FeatureGate) ([]string, []string) {
