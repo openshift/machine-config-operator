@@ -7,5 +7,3 @@ status:
   - version: 0.0.1-snapshot
     enabled:
     - name: OpenShiftPodSecurityAdmission
-    disabled:
-    - name: RetroactiveDefaultStorageClass

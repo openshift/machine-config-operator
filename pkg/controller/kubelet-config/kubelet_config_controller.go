@@ -77,8 +77,9 @@ var errCouldNotFindMCPSet = errors.New("could not find any MachineConfigPool set
 type Controller struct {
 	templatesDir string
 
-	client        mcfgclientset.Interface
-	configClient  configclientset.Interface
+	client       mcfgclientset.Interface
+	configClient configclientset.Interface
+
 	eventRecorder record.EventRecorder
 
 	syncHandler          func(mcp string) error
@@ -204,6 +205,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 
 	for i := 0; i < workers; i++ {
 		go wait.Until(ctrl.nodeConfigWorker, time.Second, stopCh)
+
 	}
 
 	<-stopCh

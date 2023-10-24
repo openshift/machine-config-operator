@@ -270,6 +270,14 @@ var schemaYAML = typed.YAMLObject(`types:
       type:
         namedType: com.github.openshift.api.config.v1.ConfigMapNameReference
       default: {}
+    - name: oidcProviders
+      type:
+        list:
+          elementType:
+            namedType: com.github.openshift.api.config.v1.OIDCProvider
+          elementRelationship: associative
+          keys:
+          - name
     - name: serviceAccountIssuer
       type:
         scalar: string
@@ -2171,6 +2179,27 @@ var schemaYAML = typed.YAMLObject(`types:
       type:
         namedType: com.github.openshift.api.config.v1.SecretNameReference
       default: {}
+- name: com.github.openshift.api.config.v1.OIDCProvider
+  map:
+    fields:
+    - name: claimMappings
+      type:
+        namedType: com.github.openshift.api.config.v1.TokenClaimMappings
+      default: {}
+    - name: claimValidationRules
+      type:
+        list:
+          elementType:
+            namedType: com.github.openshift.api.config.v1.TokenClaimValidationRule
+          elementRelationship: atomic
+    - name: issuer
+      type:
+        namedType: com.github.openshift.api.config.v1.TokenIssuer
+      default: {}
+    - name: name
+      type:
+        scalar: string
+      default: ""
 - name: com.github.openshift.api.config.v1.ObjectReference
   map:
     fields:
@@ -2565,6 +2594,17 @@ var schemaYAML = typed.YAMLObject(`types:
       type:
         scalar: string
       default: ""
+- name: com.github.openshift.api.config.v1.PrefixedClaimMapping
+  map:
+    fields:
+    - name: claim
+      type:
+        scalar: string
+      default: ""
+    - name: prefix
+      type:
+        scalar: string
+      default: ""
 - name: com.github.openshift.api.config.v1.Project
   map:
     fields:
@@ -2905,6 +2945,27 @@ var schemaYAML = typed.YAMLObject(`types:
       type:
         scalar: string
       default: ""
+- name: com.github.openshift.api.config.v1.TokenClaimMappings
+  map:
+    fields:
+    - name: groups
+      type:
+        namedType: com.github.openshift.api.config.v1.PrefixedClaimMapping
+      default: {}
+    - name: username
+      type:
+        namedType: com.github.openshift.api.config.v1.UsernameClaimMapping
+      default: {}
+- name: com.github.openshift.api.config.v1.TokenClaimValidationRule
+  map:
+    fields:
+    - name: requiredClaim
+      type:
+        namedType: com.github.openshift.api.config.v1.TokenRequiredClaim
+    - name: type
+      type:
+        scalar: string
+      default: ""
 - name: com.github.openshift.api.config.v1.TokenConfig
   map:
     fields:
@@ -2917,6 +2978,34 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: accessTokenMaxAgeSeconds
       type:
         scalar: numeric
+- name: com.github.openshift.api.config.v1.TokenIssuer
+  map:
+    fields:
+    - name: audiences
+      type:
+        list:
+          elementType:
+            scalar: string
+          elementRelationship: associative
+    - name: issuerCertificateAuthority
+      type:
+        namedType: com.github.openshift.api.config.v1.ConfigMapNameReference
+      default: {}
+    - name: issuerURL
+      type:
+        scalar: string
+      default: ""
+- name: com.github.openshift.api.config.v1.TokenRequiredClaim
+  map:
+    fields:
+    - name: claim
+      type:
+        scalar: string
+      default: ""
+    - name: requiredValue
+      type:
+        scalar: string
+      default: ""
 - name: com.github.openshift.api.config.v1.Update
   map:
     fields:
@@ -2962,6 +3051,27 @@ var schemaYAML = typed.YAMLObject(`types:
         scalar: boolean
       default: false
     - name: version
+      type:
+        scalar: string
+      default: ""
+- name: com.github.openshift.api.config.v1.UsernameClaimMapping
+  map:
+    fields:
+    - name: claim
+      type:
+        scalar: string
+      default: ""
+    - name: prefix
+      type:
+        namedType: com.github.openshift.api.config.v1.UsernamePrefix
+    - name: prefixPolicy
+      type:
+        scalar: string
+      default: ""
+- name: com.github.openshift.api.config.v1.UsernamePrefix
+  map:
+    fields:
+    - name: prefixString
       type:
         scalar: string
       default: ""
@@ -3099,6 +3209,9 @@ var schemaYAML = typed.YAMLObject(`types:
             scalar: string
           elementRelationship: atomic
     - name: resourcePool
+      type:
+        scalar: string
+    - name: template
       type:
         scalar: string
 - name: com.github.openshift.api.config.v1.VSpherePlatformVCenterSpec

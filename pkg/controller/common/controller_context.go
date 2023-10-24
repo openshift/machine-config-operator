@@ -7,6 +7,7 @@ import (
 
 	configinformers "github.com/openshift/client-go/config/informers/externalversions"
 	mcfginformers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
+
 	operatorinformers "github.com/openshift/client-go/operator/informers/externalversions"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/library-go/pkg/operator/events"
@@ -102,7 +103,6 @@ func CreateControllerContext(ctx context.Context, cb *clients.Builder) *Controll
 		apiextinformers.WithNamespace(MCONamespace), apiextinformers.WithTweakListOptions(assignFilterLabels))
 	configSharedInformer := configinformers.NewSharedInformerFactory(configClient, resyncPeriod()())
 	operatorSharedInformer := operatorinformers.NewSharedInformerFactory(operatorClient, resyncPeriod()())
-
 	desiredVersion := version.ReleaseVersion
 	missingVersion := "0.0.1-snapshot"
 
@@ -111,7 +111,7 @@ func CreateControllerContext(ctx context.Context, cb *clients.Builder) *Controll
 		klog.Warningf("unable to get owner reference (falling back to namespace): %v", err)
 	}
 
-	recorder := events.NewKubeRecorder(kubeClient.CoreV1().Events(MCONamespace), "cloud-controller-manager-operator", controllerRef)
+	recorder := events.NewKubeRecorder(kubeClient.CoreV1().Events(MCONamespace), "machine-config-operator", controllerRef)
 
 	// By default, this will exit(0) the process if the featuregates ever change to a different set of values.
 	featureGateAccessor := featuregates.NewFeatureGateAccess(
@@ -119,6 +119,7 @@ func CreateControllerContext(ctx context.Context, cb *clients.Builder) *Controll
 		configSharedInformer.Config().V1().ClusterVersions(), configSharedInformer.Config().V1().FeatureGates(),
 		recorder,
 	)
+
 	go featureGateAccessor.Run(ctx)
 
 	return &ControllerContext{

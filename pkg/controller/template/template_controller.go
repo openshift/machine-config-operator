@@ -54,10 +54,9 @@ var controllerKind = mcfgv1.SchemeGroupVersion.WithKind("ControllerConfig")
 type Controller struct {
 	templatesDir string
 
-	client        mcfgclientset.Interface
-	kubeClient    clientset.Interface
-	eventRecorder record.EventRecorder
-
+	client                  mcfgclientset.Interface
+	kubeClient              clientset.Interface
+	eventRecorder           record.EventRecorder
 	syncHandler             func(ccKey string) error
 	enqueueControllerConfig func(*mcfgv1.ControllerConfig)
 

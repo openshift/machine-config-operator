@@ -5,6 +5,11 @@ import (
 	"fmt"
 	"strings"
 
+	configv1 "github.com/openshift/api/config/v1"
+
+	"github.com/openshift/api/machineconfiguration/v1alpha1"
+	mcfgalphav1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	v1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
@@ -17,6 +22,7 @@ import (
 	"k8s.io/klog/v2"
 )
 
+// syncStatusOnly for MachineConfigNode
 func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
 	cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
 	if err != nil {
@@ -27,7 +33,28 @@ func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
 		return err
 	}
 
-	newStatus := calculateStatus(cc, pool, nodes)
+	machineConfigStates := []*mcfgalphav1.MachineConfigNode{}
+	fg, err := ctrl.fgAcessor.CurrentFeatureGates()
+	list := fg.KnownFeatures()
+	mcnExists := false
+	for _, feature := range list {
+		if feature == configv1.FeatureGateMachineConfigNodes {
+			mcnExists = true
+		}
+	}
+	if err != nil {
+		klog.Errorf("Could not get FG: %w", err)
+	} else if mcnExists && fg.Enabled(configv1.FeatureGateMachineConfigNodes) {
+		for _, node := range nodes {
+			ms, err := ctrl.client.MachineconfigurationV1alpha1().MachineConfigNodes().Get(context.TODO(), node.Name, metav1.GetOptions{})
+			if err != nil {
+				klog.Errorf("Could not find our MachineConfigNode for node. %s: %w", node.Name, err)
+				continue
+			}
+			machineConfigStates = append(machineConfigStates, ms)
+		}
+	}
+	newStatus := calculateStatus(machineConfigStates, cc, pool, nodes)
 	if equality.Semantic.DeepEqual(pool.Status, newStatus) {
 		return nil
 	}
@@ -35,6 +62,7 @@ func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
 	newPool := pool
 	newPool.Status = newStatus
 	_, err = ctrl.client.MachineconfigurationV1().MachineConfigPools().UpdateStatus(context.TODO(), newPool, metav1.UpdateOptions{})
+
 	if pool.Spec.Configuration.Name != newPool.Spec.Configuration.Name {
 		ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, "Updating", "Pool %s now targeting %s", pool.Name, getPoolUpdateLine(newPool))
 	}
@@ -44,7 +72,8 @@ func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
 	return err
 }
 
-func calculateStatus(cconfig *v1.ControllerConfig, pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv1.MachineConfigPoolStatus {
+//nolint:gocyclo
+func calculateStatus(mcs []*mcfgalphav1.MachineConfigNode, cconfig *v1.ControllerConfig, pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv1.MachineConfigPoolStatus {
 	certExpirys := []v1.CertExpiry{}
 	if cconfig != nil {
 		for _, cert := range cconfig.Status.ControllerCertificates {
@@ -60,16 +89,84 @@ func calculateStatus(cconfig *v1.ControllerConfig, pool *mcfgv1.MachineConfigPoo
 	}
 	machineCount := int32(len(nodes))
 
-	updatedMachines := getUpdatedMachines(pool, nodes)
+	var degradedMachines, readyMachines, updatedMachines, unavailableMachines, updatingMachines []*corev1.Node
+	// if we represent updating properly here, we will also represent updating properly in the CO
+	// so this solves the cordoning RFE and the upgradeable RFE
+	// updating == updatePrepared, updateExecuted, updatedComplete, postAction, cordoning, draining
+	// updated == nodeResumed, updated
+	// ready == nodeResumed, updated
+	// unavailable == draining, cordoned
+	// degraded == if the condition.Reason == error
+	// this ensures that a MCP only enters Upgradeable==False if the node actually needs to upgrade to the new MC
+	for _, state := range mcs {
+		var ourNode *corev1.Node
+		for _, n := range nodes {
+			if state.Name == n.Name {
+				ourNode = n
+				break
+			}
+		}
+		if ourNode == nil {
+			klog.Errorf("Could not find specified node %s", state.Name)
+		}
+		if len(state.Status.Conditions) == 0 {
+			// not ready yet
+			break
+		}
+		for _, cond := range state.Status.Conditions {
+			if strings.Contains(cond.Message, "Error:") {
+				degradedMachines = append(degradedMachines, ourNode)
+				continue
+			}
+			if cond.Status == metav1.ConditionUnknown {
+				switch v1alpha1.StateProgress(cond.Type) {
+				case mcfgalphav1.MachineConfigNodeUpdatePrepared:
+					updatingMachines = append(updatedMachines, ourNode)
+				case mcfgalphav1.MachineConfigNodeUpdateExecuted:
+					updatingMachines = append(updatingMachines, ourNode)
+				case mcfgalphav1.MachineConfigNodeUpdatePostActionComplete:
+					updatingMachines = append(updatingMachines, ourNode)
+				case mcfgalphav1.MachineConfigNodeUpdateComplete:
+					updatingMachines = append(updatingMachines, ourNode)
+				case mcfgalphav1.MachineConfigNodeResumed:
+					updatedMachines = append(updatingMachines, ourNode)
+					readyMachines = append(readyMachines, ourNode)
+				case mcfgalphav1.MachineConfigNodeUpdateCompatible:
+					updatedMachines = append(updatingMachines, ourNode)
+				case mcfgalphav1.MachineConfigNodeUpdateDrained:
+					unavailableMachines = append(unavailableMachines, ourNode)
+					updatingMachines = append(updatingMachines, ourNode)
+				case mcfgalphav1.MachineConfigNodeUpdateCordoned:
+					unavailableMachines = append(unavailableMachines, ourNode)
+					updatingMachines = append(updatingMachines, ourNode)
+				case mcfgalphav1.MachineConfigNodeUpdated:
+					updatedMachines = append(updatedMachines, ourNode)
+					readyMachines = append(readyMachines, ourNode)
+				}
+			}
+		}
+	}
+	degradedMachineCount := int32(len(degradedMachines))
 	updatedMachineCount := int32(len(updatedMachines))
-
-	readyMachines := getReadyMachines(pool, nodes)
+	unavailableMachineCount := int32(len(unavailableMachines))
+	updatingMachineCount := int32(len(updatingMachines))
 	readyMachineCount := int32(len(readyMachines))
 
-	unavailableMachines := getUnavailableMachines(nodes, pool)
-	unavailableMachineCount := int32(len(unavailableMachines))
+	// this is # 1 priority, get the upgrade states actually reporting
+	if degradedMachineCount+readyMachineCount+unavailableMachineCount+updatingMachineCount != int32(len(nodes)) {
+		updatedMachines = getUpdatedMachines(pool, nodes)
+		updatedMachineCount = int32(len(updatedMachines))
 
-	degradedMachines := getDegradedMachines(nodes)
+		readyMachines = getReadyMachines(pool, nodes)
+		readyMachineCount = int32(len(readyMachines))
+
+		unavailableMachines = getUnavailableMachines(nodes, pool)
+		unavailableMachineCount = int32(len(unavailableMachines))
+
+		degradedMachines = getDegradedMachines(nodes)
+		degradedMachineCount = int32(len(degradedMachines))
+	}
+
 	degradedReasons := []string{}
 	for _, n := range degradedMachines {
 		reason, ok := n.Annotations[daemonconsts.MachineConfigDaemonReasonAnnotationKey]
@@ -77,7 +174,6 @@ func calculateStatus(cconfig *v1.ControllerConfig, pool *mcfgv1.MachineConfigPoo
 			degradedReasons = append(degradedReasons, fmt.Sprintf("Node %s is reporting: %q", n.Name, reason))
 		}
 	}
-	degradedMachineCount := int32(len(degradedMachines))
 
 	status := mcfgv1.MachineConfigPoolStatus{
 		ObservedGeneration:      pool.Generation,

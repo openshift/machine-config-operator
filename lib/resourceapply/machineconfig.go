@@ -4,7 +4,11 @@ import (
 	"context"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	mcfgalphav1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+
 	mcfgclientv1 "github.com/openshift/client-go/machineconfiguration/clientset/versioned/typed/machineconfiguration/v1"
+	mcfgclientalphav1 "github.com/openshift/client-go/machineconfiguration/clientset/versioned/typed/machineconfiguration/v1alpha1"
+
 	"github.com/openshift/library-go/pkg/operator/resource/resourcemerge"
 	mcoResourceMerge "github.com/openshift/machine-config-operator/lib/resourcemerge"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -50,6 +54,27 @@ func ApplyMachineConfigPool(client mcfgclientv1.MachineConfigPoolsGetter, requir
 	}
 
 	actual, err := client.MachineConfigPools().Update(context.TODO(), existing, metav1.UpdateOptions{})
+	return actual, true, err
+}
+
+// ApplyMachineConfigNode applies the required machineconfignode to the cluster.
+func ApplyMachineConfigNode(client mcfgclientalphav1.MachineConfigNodesGetter, required *mcfgalphav1.MachineConfigNode) (*mcfgalphav1.MachineConfigNode, bool, error) {
+	existing, err := client.MachineConfigNodes().Get(context.TODO(), required.GetName(), metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		actual, err := client.MachineConfigNodes().Create(context.TODO(), required, metav1.CreateOptions{})
+		return actual, true, err
+	}
+	if err != nil {
+		return nil, false, err
+	}
+
+	modified := resourcemerge.BoolPtr(false)
+	mcoResourceMerge.EnsureMachineConfigNode(modified, existing, *required)
+	if !*modified {
+		return existing, false, nil
+	}
+
+	actual, err := client.MachineConfigNodes().Update(context.TODO(), existing, metav1.UpdateOptions{})
 	return actual, true, err
 }
 
