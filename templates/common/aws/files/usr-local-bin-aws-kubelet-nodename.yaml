@@ -5,10 +5,10 @@ contents:
     #!/bin/bash
     set -e -o pipefail
 
-    NODECONF=/etc/systemd/system/kubelet.service.d/20-aws-node-name.conf
+    ENV_FILE=/etc/kubernetes/kubelet-env
 
-    if [ -e "${NODECONF}" ]; then
-        echo "Not replacing existing ${NODECONF}"
+    if ! grep KUBELET_NODE_NAME ${ENV_FILE} > /dev/null; then
+        echo "KUBELET_NODE_NAME already set in ${ENV_FILE}"
         exit 0
     fi
     
@@ -28,7 +28,6 @@ contents:
 
     # For compatibility with the AWS in-tree provider
     # Set node name to be instance name instead of the default FQDN hostname
-    cat > "${NODECONF}" <<EOF
-    [Service]
-    Environment="KUBELET_NODE_NAME=${HOSTNAME}"
+    cat >> "${ENV_FILE}" <<EOF
+    KUBELET_NODE_NAME=${HOSTNAME}"
     EOF
