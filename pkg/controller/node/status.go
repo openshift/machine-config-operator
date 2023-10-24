@@ -7,8 +7,8 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 
-	"github.com/openshift/api/machineconfiguration/v1alpha1"
 	mcfgalphav1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+	helpers "github.com/openshift/machine-config-operator/pkg/helpers"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	v1 "github.com/openshift/api/machineconfiguration/v1"
@@ -119,7 +119,7 @@ func calculateStatus(mcs []*mcfgalphav1.MachineConfigNode, cconfig *v1.Controlle
 				continue
 			}
 			if cond.Status == metav1.ConditionUnknown {
-				switch v1alpha1.StateProgress(cond.Type) {
+				switch mcfgalphav1.StateProgress(cond.Type) {
 				case mcfgalphav1.MachineConfigNodeUpdatePrepared:
 					updatingMachines = append(updatedMachines, ourNode)
 				case mcfgalphav1.MachineConfigNodeUpdateExecuted:
@@ -266,7 +266,7 @@ func getPoolUpdateLine(pool *mcfgv1.MachineConfigPool) string {
 
 // isNodeManaged checks whether the MCD has ever run on a node
 func isNodeManaged(node *corev1.Node) bool {
-	if isWindows(node) {
+	if helpers.IsWindows(node) {
 		klog.V(4).Infof("Node %v is a windows node so won't be managed by MCO", node.Name)
 		return false
 	}
