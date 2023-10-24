@@ -152,11 +152,13 @@ func (f *fixture) newController() *Daemon {
 	}
 	d.ClusterConnect("node_name_test",
 		f.kubeclient,
+		f.client,
 		i.Machineconfiguration().V1().MachineConfigs(),
 		k8sI.Core().V1().Nodes(),
 		i.Machineconfiguration().V1().ControllerConfigs(),
 		false,
 		"",
+		d.featureGatesAccessor,
 	)
 
 	d.mcListerSynced = alwaysReady

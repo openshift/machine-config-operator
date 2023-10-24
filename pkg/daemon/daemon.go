@@ -18,6 +18,9 @@ import (
 	"syscall"
 	"time"
 
+	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
+	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
+
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	"github.com/google/renameio"
 	"golang.org/x/time/rate"
@@ -36,11 +39,14 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	mcfgalphav1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	mcoResourceRead "github.com/openshift/machine-config-operator/lib/resourceread"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
+	"github.com/openshift/machine-config-operator/pkg/upgrademonitor"
+
 	"github.com/openshift/machine-config-operator/pkg/daemon/osrelease"
 )
 
@@ -76,6 +82,8 @@ type Daemon struct {
 	// kubeClient allows interaction with Kubernetes, including the node we are running on.
 	kubeClient kubernetes.Interface
 
+	mcfgClient mcfgclientset.Interface
+
 	// nodeLister is used to watch for updates via the informer
 	nodeLister       corev1lister.NodeLister
 	nodeListerSynced cache.InformerSynced
@@ -96,6 +104,8 @@ type Daemon struct {
 	updateActiveLock sync.Mutex
 
 	nodeWriter NodeWriter
+
+	featureGatesAccessor featuregates.FeatureGateAccess
 
 	// channel used by callbacks to signal Run() of an error
 	exitCh chan<- error
@@ -301,14 +311,17 @@ func New(
 func (dn *Daemon) ClusterConnect(
 	name string,
 	kubeClient kubernetes.Interface,
+	mcfgClient mcfgclientset.Interface,
 	mcInformer mcfginformersv1.MachineConfigInformer,
 	nodeInformer coreinformersv1.NodeInformer,
 	ccInformer mcfginformersv1.ControllerConfigInformer,
 	kubeletHealthzEnabled bool,
 	kubeletHealthzEndpoint string,
+	featureGatesAccessor featuregates.FeatureGateAccess,
 ) error {
 	dn.name = name
 	dn.kubeClient = kubeClient
+	dn.mcfgClient = mcfgClient
 
 	// Other controllers start out with the default controller limiter which retries
 	// in milliseconds; since any change here will involve rebooting the node
@@ -348,6 +361,8 @@ func (dn *Daemon) ClusterConnect(
 
 	dn.kubeletHealthzEnabled = kubeletHealthzEnabled
 	dn.kubeletHealthzEndpoint = kubeletHealthzEndpoint
+
+	dn.featureGatesAccessor = featureGatesAccessor
 
 	return nil
 }
@@ -653,8 +668,31 @@ func (dn *Daemon) syncNode(key string) error {
 		return nil
 	}
 
+	if node.Annotations[constants.MachineConfigDaemonPostConfigAction] == constants.MachineConfigDaemonStateRebooting {
+		klog.Info("Detected Rebooting Annotation, applying MCN.")
+		err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
+			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdatePostActionComplete, Reason: string(mcfgalphav1.MachineConfigNodeUpdateRebooted), Message: "Node has rebooted"},
+			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateRebooted, Reason: fmt.Sprintf("%s%s", string(mcfgalphav1.MachineConfigNodeUpdatePostActionComplete), string(mcfgalphav1.MachineConfigNodeUpdateRebooted)), Message: "Upgrade required a reboot. Completed this as the post update action."},
+			metav1.ConditionTrue,
+			metav1.ConditionTrue,
+			node,
+			dn.mcfgClient,
+			dn.featureGatesAccessor,
+		)
+		if err != nil {
+			klog.Errorf("Error making MCN for Rebooted: %w", err)
+		}
+		removeRebooting := make(map[string]string)
+		removeRebooting[constants.MachineConfigDaemonPostConfigAction] = ""
+		_, err = dn.nodeWriter.SetAnnotations(removeRebooting)
+		if err != nil {
+			klog.Errorf("Could not unset rebooting Anno: %w", err)
+		}
+	}
+
 	// Deep-copy otherwise we are mutating our cache.
 	node = node.DeepCopy()
+
 	if dn.node == nil {
 		dn.node = node
 		if err := dn.initializeNode(); err != nil {
@@ -698,6 +736,21 @@ func (dn *Daemon) syncNode(key string) error {
 		// I think we should change this to continue.
 		dn.booting = false
 
+		err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
+			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeResumed, Reason: string(mcfgalphav1.MachineConfigNodeResumed), Message: fmt.Sprintf("In desired config %s. Resumed normal operations.", node.Annotations[constants.CurrentMachineConfigAnnotationKey])},
+			nil,
+			metav1.ConditionTrue,
+			metav1.ConditionFalse,
+			node,
+			dn.mcfgClient,
+			dn.featureGatesAccessor,
+		)
+		if err != nil {
+			klog.Errorf("Error making MCN for Resumed true: %w", err)
+		}
+		removeRebooting := make(map[string]string)
+		removeRebooting[constants.MachineConfigDaemonReasonAnnotationKey] = ""
+		node.SetAnnotations(removeRebooting)
 		// Start the Config Drift Monitor since we're booted up.
 		dn.startConfigDriftMonitor()
 
@@ -720,6 +773,19 @@ func (dn *Daemon) syncNode(key string) error {
 	}
 
 	if ufc != nil {
+		err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
+			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdated, Reason: string(mcfgalphav1.MachineConfigNodeUpdated), Message: fmt.Sprintf("Node %s needs an update", dn.node.GetName())},
+			nil,
+			metav1.ConditionFalse,
+			metav1.ConditionFalse,
+			dn.node,
+			dn.mcfgClient,
+			dn.featureGatesAccessor,
+		)
+		if err != nil {
+			klog.Errorf("Error making MCN for Updated false: %w", err)
+		}
+
 		// Only check for config drift if we need to update.
 		if err := dn.runPreflightConfigDriftCheck(); err != nil {
 			return err
@@ -728,7 +794,19 @@ func (dn *Daemon) syncNode(key string) error {
 		if err := dn.triggerUpdate(ufc.currentConfig, ufc.desiredConfig, ufc.currentImage, ufc.desiredImage); err != nil {
 			return err
 		}
-
+	} else {
+		err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
+			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdated, Reason: string(mcfgalphav1.MachineConfigNodeUpdated), Message: fmt.Sprintf("Node %s Updated", dn.node.GetName())},
+			nil,
+			metav1.ConditionTrue,
+			metav1.ConditionFalse,
+			dn.node,
+			dn.mcfgClient,
+			dn.featureGatesAccessor,
+		)
+		if err != nil {
+			klog.Errorf("Error making MCN for Updated: %w", err)
+		}
 	}
 	klog.V(2).Infof("Node %s is already synced", node.Name)
 	return nil
@@ -915,6 +993,7 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 			return nil
 		}
 		// Assume an update is completed. Set node state to done. Also request an uncordon
+
 		annos := map[string]string{
 			constants.MachineConfigDaemonStateAnnotationKey:  constants.MachineConfigDaemonStateDone,
 			constants.MachineConfigDaemonReasonAnnotationKey: "",
@@ -924,6 +1003,7 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 		if _, err := dn.nodeWriter.SetAnnotations(annos); err != nil {
 			return fmt.Errorf("failed to set Done annotation on node: %w", err)
 		}
+
 		klog.Infof("The pod has completed update. Awaiting removal.")
 		// TODO os.Exit here
 		return nil
@@ -1960,6 +2040,18 @@ func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, bool, erro
 	if inDesiredConfig {
 		// Great, we've successfully rebooted for the desired config,
 		// let's mark it done!
+		err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
+			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeResumed, Reason: string(mcfgalphav1.MachineConfigNodeResumed), Message: fmt.Sprintf("In desired config %s. Resumed normal operations. Applying proper annotations.", state.currentConfig.Name)},
+			nil,
+			metav1.ConditionTrue,
+			metav1.ConditionFalse,
+			dn.node,
+			dn.mcfgClient,
+			dn.featureGatesAccessor,
+		)
+		if err != nil {
+			klog.Errorf("Error making MCN for Resumed true: %w", err)
+		}
 		klog.Infof("Completing update to target %s", state.getCurrentName())
 		if err := dn.completeUpdate(state.currentConfig.GetName()); err != nil {
 			UpdateStateMetric(mcdUpdateState, "", err.Error())
@@ -2053,6 +2145,7 @@ func (dn *Daemon) handleNodeEvent(node interface{}) {
 	n := node.(*corev1.Node)
 
 	klog.V(4).Infof("Updating Node %s", n.Name)
+
 	dn.enqueueNode(n)
 }
 
