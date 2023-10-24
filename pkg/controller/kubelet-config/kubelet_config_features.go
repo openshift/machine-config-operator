@@ -3,6 +3,7 @@ package kubeletconfig
 import (
 	"context"
 	"fmt"
+	cloudcontrollercap "github.com/openshift/machine-config-operator/pkg/controller/cloud-controller-cap"
 	"reflect"
 	"time"
 
@@ -67,6 +68,11 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 		return err
 	}
 
+	CCMDisabled, err := cloudcontrollercap.IsCloudControllerCapDisabled(cloudcontrollercap.WithConfigClientSet(ctrl.configClient))
+	if err != nil {
+		return fmt.Errorf("failed to check if cloud controller is disabled, err:%w", err)
+	}
+
 	for _, pool := range mcpPools {
 		var nodeConfig *osev1.Node
 		role := pool.Name
@@ -93,7 +99,7 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 			}
 		}
 
-		rawCfgIgn, err := generateKubeConfigIgnFromFeatures(cc, ctrl.templatesDir, role, ctrl.featureGateAccess, nodeConfig)
+		rawCfgIgn, err := generateKubeConfigIgnFromFeatures(cc, ctrl.templatesDir, role, ctrl.featureGateAccess, nodeConfig, CCMDisabled)
 		if err != nil {
 			return err
 		}
@@ -194,8 +200,8 @@ func generateFeatureMap(featuregateAccess featuregates.FeatureGateAccess, exclus
 	return &rv, nil
 }
 
-func generateKubeConfigIgnFromFeatures(cc *mcfgv1.ControllerConfig, templatesDir, role string, featureGateAccess featuregates.FeatureGateAccess, nodeConfig *osev1.Node) ([]byte, error) {
-	originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, templatesDir, role, featureGateAccess)
+func generateKubeConfigIgnFromFeatures(cc *mcfgv1.ControllerConfig, templatesDir, role string, featureGateAccess featuregates.FeatureGateAccess, nodeConfig *osev1.Node, CCMDisabled bool) ([]byte, error) {
+	originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, templatesDir, role, featureGateAccess, CCMDisabled)
 	if err != nil {
 		return nil, err
 	}
@@ -229,7 +235,7 @@ func generateKubeConfigIgnFromFeatures(cc *mcfgv1.ControllerConfig, templatesDir
 	return rawCfgIgn, nil
 }
 
-func RunFeatureGateBootstrap(templateDir string, featureGateAccess featuregates.FeatureGateAccess, nodeConfig *osev1.Node, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool) ([]*mcfgv1.MachineConfig, error) {
+func RunFeatureGateBootstrap(templateDir string, featureGateAccess featuregates.FeatureGateAccess, nodeConfig *osev1.Node, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool, CCMDisabled bool) ([]*mcfgv1.MachineConfig, error) {
 	machineConfigs := []*mcfgv1.MachineConfig{}
 
 	for _, pool := range mcpPools {
@@ -237,7 +243,7 @@ func RunFeatureGateBootstrap(templateDir string, featureGateAccess featuregates.
 		if nodeConfig == nil {
 			nodeConfig = createNewDefaultNodeconfig()
 		}
-		rawCfgIgn, err := generateKubeConfigIgnFromFeatures(controllerConfig, templateDir, role, featureGateAccess, nodeConfig)
+		rawCfgIgn, err := generateKubeConfigIgnFromFeatures(controllerConfig, templateDir, role, featureGateAccess, nodeConfig, CCMDisabled)
 		if err != nil {
 			return nil, err
 		}

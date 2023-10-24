@@ -3,6 +3,7 @@ package containerruntimeconfig
 import (
 	"context"
 	"fmt"
+	cloudcontrollercap "github.com/openshift/machine-config-operator/pkg/controller/cloud-controller-cap"
 	"reflect"
 	"strconv"
 	"strings"
@@ -426,11 +427,12 @@ func (ctrl *Controller) handleImgErr(err error, key interface{}) {
 }
 
 // generateOriginalContainerRuntimeConfigs returns rendered default storage, registries and policy config files
-func generateOriginalContainerRuntimeConfigs(templateDir string, cc *mcfgv1.ControllerConfig, role string, featureGateAccess featuregates.FeatureGateAccess) (*ign3types.File, *ign3types.File, *ign3types.File, error) {
+func generateOriginalContainerRuntimeConfigs(templateDir string, cc *mcfgv1.ControllerConfig, role string, featureGateAccess featuregates.FeatureGateAccess, CCMDisabled bool) (*ign3types.File, *ign3types.File, *ign3types.File, error) {
 	// Render the default templates
 	rc := &mtmpl.RenderConfig{
-		ControllerConfigSpec: &cc.Spec,
-		FeatureGateAccess:    featureGateAccess,
+		ControllerConfigSpec:    &cc.Spec,
+		FeatureGateAccess:       featureGateAccess,
+		CloudControllerDisabled: CCMDisabled,
 	}
 	generatedConfigs, err := mtmpl.GenerateMachineConfigsForRole(rc, role, templateDir)
 	if err != nil {
@@ -582,6 +584,11 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 		return ctrl.syncStatusOnly(cfg, err)
 	}
 
+	CCMDisabled, err := cloudcontrollercap.IsCloudControllerCapDisabled(cloudcontrollercap.WithConfigClientSet(ctrl.configClient))
+	if err != nil {
+		return fmt.Errorf("failed to check if cloud controller is disabled, err:%w", err)
+	}
+
 	for _, pool := range mcpPools {
 		role := pool.Name
 		// Get MachineConfig
@@ -603,7 +610,7 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 			}
 		}
 		// Generate the original ContainerRuntimeConfig
-		originalStorageIgn, _, _, err := generateOriginalContainerRuntimeConfigs(ctrl.templatesDir, controllerConfig, role, ctrl.featureGateAccess)
+		originalStorageIgn, _, _, err := generateOriginalContainerRuntimeConfigs(ctrl.templatesDir, controllerConfig, role, ctrl.featureGateAccess, CCMDisabled)
 		if err != nil {
 			return ctrl.syncStatusOnly(cfg, err, "could not generate origin ContainerRuntime Configs: %v", err)
 		}
@@ -821,6 +828,12 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 	if err != nil {
 		return err
 	}
+
+	CCMDisabled, err := cloudcontrollercap.IsCloudControllerCapDisabled(cloudcontrollercap.WithConfigClientSet(ctrl.configClient))
+	if err != nil {
+		return fmt.Errorf("failed to check if cloud controller is disabled, err:%w", err)
+	}
+
 	for _, pool := range mcpPools {
 		// To keep track of whether we "actually" got an updated image config
 		applied := true
@@ -833,7 +846,7 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 		if err := retry.RetryOnConflict(updateBackoff, func() error {
 			registriesIgn, err := registriesConfigIgnition(ctrl.templatesDir, controllerConfig, role, releaseImage,
 				imgcfg.Spec.RegistrySources.InsecureRegistries, registriesBlocked, policyBlocked, allowedRegs,
-				imgcfg.Spec.RegistrySources.ContainerRuntimeSearchRegistries, icspRules, idmsRules, itmsRules, ctrl.featureGateAccess)
+				imgcfg.Spec.RegistrySources.ContainerRuntimeSearchRegistries, icspRules, idmsRules, itmsRules, ctrl.featureGateAccess, CCMDisabled)
 			if err != nil {
 				return err
 			}
@@ -893,9 +906,12 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 	return nil
 }
 
-func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.ControllerConfig, role, releaseImage string,
+func registriesConfigIgnition(
+	templateDir string, controllerConfig *mcfgv1.ControllerConfig, role, releaseImage string,
 	insecureRegs, registriesBlocked, policyBlocked, allowedRegs, searchRegs []string,
-	icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy, idmsRules []*apicfgv1.ImageDigestMirrorSet, itmsRules []*apicfgv1.ImageTagMirrorSet, featureGateAccess featuregates.FeatureGateAccess) (*ign3types.Config, error) {
+	icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy, idmsRules []*apicfgv1.ImageDigestMirrorSet,
+	itmsRules []*apicfgv1.ImageTagMirrorSet, featureGateAccess featuregates.FeatureGateAccess, CCMDisabled bool,
+) (*ign3types.Config, error) {
 
 	var (
 		registriesTOML []byte
@@ -903,7 +919,7 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 	)
 
 	// Generate the original registries config
-	_, originalRegistriesIgn, originalPolicyIgn, err := generateOriginalContainerRuntimeConfigs(templateDir, controllerConfig, role, featureGateAccess)
+	_, originalRegistriesIgn, originalPolicyIgn, err := generateOriginalContainerRuntimeConfigs(templateDir, controllerConfig, role, featureGateAccess, CCMDisabled)
 	if err != nil {
 		return nil, fmt.Errorf("could not generate original ContainerRuntime Configs: %w", err)
 	}
@@ -949,7 +965,7 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 // RunImageBootstrap generates MachineConfig objects for mcpPools that would have been generated by syncImageConfig,
 // except that mcfgv1.Image is not available.
 func RunImageBootstrap(templateDir string, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy,
-	idmsRules []*apicfgv1.ImageDigestMirrorSet, itmsRules []*apicfgv1.ImageTagMirrorSet, imgCfg *apicfgv1.Image, featureGateAccess featuregates.FeatureGateAccess) ([]*mcfgv1.MachineConfig, error) {
+	idmsRules []*apicfgv1.ImageDigestMirrorSet, itmsRules []*apicfgv1.ImageTagMirrorSet, imgCfg *apicfgv1.Image, featureGateAccess featuregates.FeatureGateAccess, CCMDisabled bool) ([]*mcfgv1.MachineConfig, error) {
 
 	var (
 		insecureRegs, registriesBlocked, policyBlocked, allowedRegs, searchRegs []string
@@ -977,7 +993,7 @@ func RunImageBootstrap(templateDir string, controllerConfig *mcfgv1.ControllerCo
 			return nil, err
 		}
 		registriesIgn, err := registriesConfigIgnition(templateDir, controllerConfig, role, controllerConfig.Spec.ReleaseImage,
-			insecureRegs, registriesBlocked, policyBlocked, allowedRegs, searchRegs, icspRules, idmsRules, itmsRules, featureGateAccess)
+			insecureRegs, registriesBlocked, policyBlocked, allowedRegs, searchRegs, icspRules, idmsRules, itmsRules, featureGateAccess, CCMDisabled)
 		if err != nil {
 			return nil, err
 		}

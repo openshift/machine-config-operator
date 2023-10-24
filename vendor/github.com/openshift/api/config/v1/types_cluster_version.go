@@ -278,7 +278,7 @@ const (
 )
 
 // ClusterVersionCapability enumerates optional, core cluster components.
-// +kubebuilder:validation:Enum=openshift-samples;baremetal;marketplace;Console;Insights;Storage;CSISnapshot;NodeTuning;MachineAPI;Build;DeploymentConfig;ImageRegistry;OperatorLifecycleManager;CloudCredential
+// +kubebuilder:validation:Enum=openshift-samples;baremetal;marketplace;Console;Insights;Storage;CSISnapshot;NodeTuning;MachineAPI;Build;DeploymentConfig;ImageRegistry;OperatorLifecycleManager;CloudCredential;CloudControllerManager
 type ClusterVersionCapability string
 
 const (
@@ -376,6 +376,11 @@ const (
 	// ClusterVersionCapabilityCloudCredential manages credentials for cloud providers
 	// in openshift cluster
 	ClusterVersionCapabilityCloudCredential ClusterVersionCapability = "CloudCredential"
+
+	// ClusterVersionCapabilityCloudControllerManager manages various Cloud Controller
+	// Managers deployed on top of OpenShift. They help you to work with cloud
+	// provider API and embeds cloud-specific control logic.
+	ClusterVersionCapabilityCloudControllerManager ClusterVersionCapability = "CloudControllerManager"
 )
 
 // KnownClusterVersionCapabilities includes all known optional, core cluster components.
@@ -394,6 +399,7 @@ var KnownClusterVersionCapabilities = []ClusterVersionCapability{
 	ClusterVersionCapabilityImageRegistry,
 	ClusterVersionCapabilityOperatorLifecycleManager,
 	ClusterVersionCapabilityCloudCredential,
+	ClusterVersionCapabilityCloudControllerManager,
 }
 
 // ClusterVersionCapabilitySet defines sets of cluster version capabilities.
@@ -500,6 +506,7 @@ var ClusterVersionCapabilitySets = map[ClusterVersionCapabilitySet][]ClusterVers
 		ClusterVersionCapabilityImageRegistry,
 		ClusterVersionCapabilityOperatorLifecycleManager,
 		ClusterVersionCapabilityCloudCredential,
+		ClusterVersionCapabilityCloudControllerManager,
 	},
 	ClusterVersionCapabilitySetCurrent: {
 		ClusterVersionCapabilityBaremetal,
@@ -516,6 +523,7 @@ var ClusterVersionCapabilitySets = map[ClusterVersionCapabilitySet][]ClusterVers
 		ClusterVersionCapabilityImageRegistry,
 		ClusterVersionCapabilityOperatorLifecycleManager,
 		ClusterVersionCapabilityCloudCredential,
+		ClusterVersionCapabilityCloudControllerManager,
 	},
 }
 

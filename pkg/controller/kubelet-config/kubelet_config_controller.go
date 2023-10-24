@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	cloudcontrollercap "github.com/openshift/machine-config-operator/pkg/controller/cloud-controller-cap"
 	"reflect"
 	"strconv"
 	"strings"
@@ -360,8 +361,8 @@ func (ctrl *Controller) handleFeatureErr(err error, key interface{}) {
 
 // generateOriginalKubeletConfigWithFeatureGates generates a KubeletConfig and ensure the correct feature gates are set
 // based on the given FeatureGate.
-func generateOriginalKubeletConfigWithFeatureGates(cc *mcfgv1.ControllerConfig, templatesDir, role string, featureGateAccess featuregates.FeatureGateAccess) (*kubeletconfigv1beta1.KubeletConfiguration, error) {
-	originalKubeletIgn, err := generateOriginalKubeletConfigIgn(cc, templatesDir, role, featureGateAccess)
+func generateOriginalKubeletConfigWithFeatureGates(cc *mcfgv1.ControllerConfig, templatesDir, role string, featureGateAccess featuregates.FeatureGateAccess, CCMDisabled bool) (*kubeletconfigv1beta1.KubeletConfiguration, error) {
+	originalKubeletIgn, err := generateOriginalKubeletConfigIgn(cc, templatesDir, role, featureGateAccess, CCMDisabled)
 	if err != nil {
 		return nil, fmt.Errorf("could not generate the original Kubelet config ignition: %w", err)
 	}
@@ -391,9 +392,13 @@ func generateOriginalKubeletConfigWithFeatureGates(cc *mcfgv1.ControllerConfig, 
 	return originalKubeConfig, nil
 }
 
-func generateOriginalKubeletConfigIgn(cc *mcfgv1.ControllerConfig, templatesDir, role string, featureGateAccess featuregates.FeatureGateAccess) (*ign3types.File, error) {
+func generateOriginalKubeletConfigIgn(cc *mcfgv1.ControllerConfig, templatesDir, role string, featureGateAccess featuregates.FeatureGateAccess, CCMDisabled bool) (*ign3types.File, error) {
 	// Render the default templates
-	rc := &mtmpl.RenderConfig{ControllerConfigSpec: &cc.Spec, FeatureGateAccess: featureGateAccess}
+	rc := &mtmpl.RenderConfig{
+		ControllerConfigSpec:    &cc.Spec,
+		FeatureGateAccess:       featureGateAccess,
+		CloudControllerDisabled: CCMDisabled,
+	}
 	generatedConfigs, err := mtmpl.GenerateMachineConfigsForRole(rc, role, templatesDir)
 	if err != nil {
 		return nil, fmt.Errorf("GenerateMachineConfigsforRole failed with error: %w", err)
@@ -534,6 +539,11 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		nodeConfig = createNewDefaultNodeconfig()
 	}
 
+	CCMDisabled, err := cloudcontrollercap.IsCloudControllerCapDisabled(cloudcontrollercap.WithConfigClientSet(ctrl.configClient))
+	if err != nil {
+		return fmt.Errorf("failed to check if cloud controller is disabled, err:%w", err)
+	}
+
 	for _, pool := range mcpPools {
 		if pool.Spec.Configuration.Name == "" {
 			updateDelay := 5 * time.Second
@@ -561,7 +571,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			return fmt.Errorf("could not get ControllerConfig %w", err)
 		}
 
-		originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, role, ctrl.featureGateAccess)
+		originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, role, ctrl.featureGateAccess, CCMDisabled)
 		if err != nil {
 			return ctrl.syncStatusOnly(cfg, err, "could not get original kubelet config: %v", err)
 		}

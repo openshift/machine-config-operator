@@ -1106,7 +1106,7 @@ func TestRunImageBootstrap(t *testing.T) {
 
 				fgAccess := featuregates.NewHardcodedFeatureGateAccess([]apicfgv1.FeatureGateName{}, []apicfgv1.FeatureGateName{})
 
-				mcs, err := RunImageBootstrap("../../../templates", cc, pools, tc.icspRules, tc.idmsRules, tc.itmsRules, imgCfg, fgAccess)
+				mcs, err := RunImageBootstrap("../../../templates", cc, pools, tc.icspRules, tc.idmsRules, tc.itmsRules, imgCfg, fgAccess, false)
 				require.NoError(t, err)
 				require.Len(t, mcs, len(pools))
 

@@ -75,7 +75,7 @@ func TestRunKubeletBootstrap(t *testing.T) {
 			}
 
 			fgAccess := createNewDefaultFeatureGateAccess()
-			mcs, err := RunKubeletBootstrap("../../../templates", cfgs, cc, fgAccess, nil, pools)
+			mcs, err := RunKubeletBootstrap("../../../templates", cfgs, cc, fgAccess, nil, pools, false)
 			require.NoError(t, err)
 			require.Len(t, mcs, len(cfgs))
 
@@ -215,7 +215,7 @@ func TestAddKubeletCfgAfterBootstrapKubeletCfg(t *testing.T) {
 			f.mckLister = append(f.mckLister, kc)
 			f.objects = append(f.objects, kc)
 
-			mcs, err := RunKubeletBootstrap("../../../templates", []*mcfgv1.KubeletConfig{kc}, cc, fgAccess, nil, pools)
+			mcs, err := RunKubeletBootstrap("../../../templates", []*mcfgv1.KubeletConfig{kc}, cc, fgAccess, nil, pools, false)
 			require.NoError(t, err)
 			require.Len(t, mcs, 1)
 

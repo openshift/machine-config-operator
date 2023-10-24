@@ -82,6 +82,7 @@ spec:
                       - ImageRegistry
                       - OperatorLifecycleManager
                       - CloudCredential
+                      - CloudControllerManager
                       type: string
                     type: array
                     x-kubernetes-list-type: atomic
@@ -348,6 +349,7 @@ spec:
                       - ImageRegistry
                       - OperatorLifecycleManager
                       - CloudCredential
+                      - CloudControllerManager
                       type: string
                     type: array
                     x-kubernetes-list-type: atomic
@@ -372,6 +374,7 @@ spec:
                       - ImageRegistry
                       - OperatorLifecycleManager
                       - CloudCredential
+                      - CloudControllerManager
                       type: string
                     type: array
                     x-kubernetes-list-type: atomic

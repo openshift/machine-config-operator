@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	configclientset "github.com/openshift/client-go/config/clientset/versioned"
+	cloudcontrollercap "github.com/openshift/machine-config-operator/pkg/controller/cloud-controller-cap"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -55,6 +57,7 @@ type Controller struct {
 
 	client                  mcfgclientset.Interface
 	kubeClient              clientset.Interface
+	cvoClient               configclientset.Interface
 	eventRecorder           record.EventRecorder
 	syncHandler             func(ccKey string) error
 	enqueueControllerConfig func(*mcfgv1.ControllerConfig)
@@ -72,15 +75,7 @@ type Controller struct {
 }
 
 // New returns a new template controller.
-func New(
-	templatesDir string,
-	ccInformer mcfginformersv1.ControllerConfigInformer,
-	mcInformer mcfginformersv1.MachineConfigInformer,
-	secretsInformer coreinformersv1.SecretInformer,
-	kubeClient clientset.Interface,
-	mcfgClient mcfgclientset.Interface,
-	fgAccess featuregates.FeatureGateAccess,
-) *Controller {
+func New(templatesDir string, ccInformer mcfginformersv1.ControllerConfigInformer, mcInformer mcfginformersv1.MachineConfigInformer, secretsInformer coreinformersv1.SecretInformer, kubeClient clientset.Interface, mcfgClient mcfgclientset.Interface, cvoClient configclientset.Interface, fgAccess featuregates.FeatureGateAccess) *Controller {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
 	eventBroadcaster.StartRecordingToSink(&corev1clientset.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
@@ -89,8 +84,11 @@ func New(
 		templatesDir:  templatesDir,
 		client:        mcfgClient,
 		kubeClient:    kubeClient,
+		cvoClient:     cvoClient,
 		eventRecorder: ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-templatecontroller"})),
-		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-templatecontroller"),
+		queue: workqueue.NewRateLimitingQueueWithConfig(workqueue.DefaultControllerRateLimiter(), workqueue.RateLimitingQueueConfig{
+			Name: "machineconfigcontroller-templatecontroller",
+		}),
 	}
 
 	ccInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -563,7 +561,12 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 		clusterPullSecretRaw = clusterPullSecret.Data[corev1.DockerConfigJsonKey]
 	}
 
-	mcs, err := getMachineConfigsForControllerConfig(ctrl.templatesDir, cfg, clusterPullSecretRaw, cfg.Spec.InternalRegistryPullSecret, ctrl.featureGateAccess)
+	CCMDisabled, err := cloudcontrollercap.IsCloudControllerCapDisabled(cloudcontrollercap.WithConfigClientSet(ctrl.cvoClient))
+	if err != nil {
+		return ctrl.syncFailingStatus(cfg, err)
+	}
+
+	mcs, err := getMachineConfigsForControllerConfig(ctrl.templatesDir, cfg, clusterPullSecretRaw, cfg.Spec.InternalRegistryPullSecret, ctrl.featureGateAccess, CCMDisabled)
 	if err != nil {
 		return ctrl.syncFailingStatus(cfg, err)
 	}
@@ -582,16 +585,18 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 	return ctrl.syncCompletedStatus(cfg)
 }
 
-func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.ControllerConfig, clusterPullSecretRaw, internalRegistryPullSecretRaw []byte, featureGateAccess featuregates.FeatureGateAccess) ([]*mcfgv1.MachineConfig, error) {
+func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.ControllerConfig, clusterPullSecretRaw, internalRegistryPullSecretRaw []byte, featureGateAccess featuregates.FeatureGateAccess, CCMDisabled bool) ([]*mcfgv1.MachineConfig, error) {
 	buf := &bytes.Buffer{}
 	if err := json.Compact(buf, clusterPullSecretRaw); err != nil {
 		return nil, fmt.Errorf("couldn't compact pullsecret %q: %w", string(clusterPullSecretRaw), err)
 	}
+
 	rc := &RenderConfig{
 		ControllerConfigSpec:       &config.Spec,
 		PullSecret:                 string(buf.Bytes()),
 		InternalRegistryPullSecret: string(internalRegistryPullSecretRaw),
 		FeatureGateAccess:          featureGateAccess,
+		CloudControllerDisabled:    CCMDisabled,
 	}
 	mcs, err := generateTemplateMachineConfigs(rc, templatesDir)
 	if err != nil {
@@ -608,6 +613,6 @@ func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.Co
 }
 
 // RunBootstrap runs the tempate controller in boostrap mode.
-func RunBootstrap(templatesDir string, config *mcfgv1.ControllerConfig, pullSecretRaw []byte, featureGateAccess featuregates.FeatureGateAccess) ([]*mcfgv1.MachineConfig, error) {
-	return getMachineConfigsForControllerConfig(templatesDir, config, pullSecretRaw, nil, featureGateAccess)
+func RunBootstrap(templatesDir string, config *mcfgv1.ControllerConfig, pullSecretRaw []byte, featureGateAccess featuregates.FeatureGateAccess, CCMDisabled bool) ([]*mcfgv1.MachineConfig, error) {
+	return getMachineConfigsForControllerConfig(templatesDir, config, pullSecretRaw, nil, featureGateAccess, CCMDisabled)
 }

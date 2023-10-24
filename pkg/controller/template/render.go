@@ -37,6 +37,7 @@ type RenderConfig struct {
 	PullSecret                 string
 	InternalRegistryPullSecret string
 	FeatureGateAccess          featuregates.FeatureGateAccess
+	CloudControllerDisabled    bool
 
 	// no need to set this, will be automatically configured
 	Constants map[string]string
@@ -375,29 +376,36 @@ func skipMissing(key string) (interface{}, error) {
 }
 
 func cloudProvider(cfg RenderConfig) (interface{}, error) {
-	if cfg.Infra.Status.PlatformStatus != nil {
-		if cfg.FeatureGateAccess == nil {
-			panic("FeatureGateAccess is nil")
-		}
-
-		external, err := cloudprovider.IsCloudProviderExternal(cfg.Infra.Status.PlatformStatus, cfg.FeatureGateAccess)
-		if err != nil {
-			klog.Error(err)
-		} else if external {
-			return "external", nil
-		}
-
-		switch cfg.Infra.Status.PlatformStatus.Type {
-		case configv1.AWSPlatformType, configv1.AzurePlatformType, configv1.OpenStackPlatformType, configv1.VSpherePlatformType:
-			return strings.ToLower(string(cfg.Infra.Status.PlatformStatus.Type)), nil
-		case configv1.GCPPlatformType:
-			return "gce", nil
-		default:
-			return "", nil
-		}
-	} else {
+	if cfg.Infra.Status.PlatformStatus == nil {
 		return "", nil
 	}
+
+	if cfg.FeatureGateAccess == nil {
+		panic("FeatureGateAccess is nil")
+	}
+
+	external, err := cloudprovider.IsCloudProviderExternal(cfg.Infra.Status.PlatformStatus, cfg.FeatureGateAccess)
+	if err != nil {
+		klog.Errorln("failed to check if cloud provider external", err)
+	} else if external {
+		if !cfg.CloudControllerDisabled || cfg.CloudControllerDisabled && cfg.Infra.Status.PlatformStatus.Type == configv1.ExternalPlatformType {
+			return "external", nil
+		}
+		return "", nil
+	}
+
+	if cfg.CloudControllerDisabled {
+		return "", nil
+	}
+
+	switch cfg.Infra.Status.PlatformStatus.Type {
+	case configv1.AWSPlatformType, configv1.AzurePlatformType, configv1.OpenStackPlatformType, configv1.VSpherePlatformType:
+		return strings.ToLower(string(cfg.Infra.Status.PlatformStatus.Type)), nil
+	case configv1.GCPPlatformType:
+		return "gce", nil
+	}
+
+	return "", nil
 }
 
 // Process the {{cloudConfigFlag .}}

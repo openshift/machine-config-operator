@@ -455,15 +455,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 
 	controllers = append(controllers,
 		// Our primary MCs come from here
-		template.New(
-			templatesDir,
-			ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
-			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
-			ctx.OpenShiftConfigKubeNamespacedInformerFactory.Core().V1().Secrets(),
-			ctx.ClientBuilder.KubeClientOrDie("template-controller"),
-			ctx.ClientBuilder.MachineConfigClientOrDie("template-controller"),
-			ctx.FeatureGateAccess,
-		),
+		template.New(templatesDir, ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(), ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(), ctx.OpenShiftConfigKubeNamespacedInformerFactory.Core().V1().Secrets(), ctx.ClientBuilder.KubeClientOrDie("template-controller"), ctx.ClientBuilder.MachineConfigClientOrDie("template-controller"), ctx.ClientBuilder.ConfigClientOrDie("cloud-controller-cap-controller"), ctx.FeatureGateAccess),
 		// Add all "sub-renderers here"
 		kubeletconfig.New(
 			templatesDir,

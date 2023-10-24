@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	cloudcontrollercap "github.com/openshift/machine-config-operator/pkg/controller/cloud-controller-cap"
 	"io"
 	"os"
 	"path/filepath"
@@ -160,7 +161,12 @@ func (b *Bootstrap) Run(destDir string) error {
 		return fmt.Errorf("error creating feature gate access: %w", err)
 	}
 
-	iconfigs, err := template.RunBootstrap(b.templatesDir, cconfig, psraw, fgAccess)
+	CCMDisabled, err := cloudcontrollercap.IsCloudControllerCapDisabled(cloudcontrollercap.WithManifestDir(b.manifestDir))
+	if err != nil {
+		return fmt.Errorf("failed to check if cloud controller disabled, %w", err)
+	}
+
+	iconfigs, err := template.RunBootstrap(b.templatesDir, cconfig, psraw, fgAccess, CCMDisabled)
 	if err != nil {
 		return err
 	}
@@ -168,7 +174,7 @@ func (b *Bootstrap) Run(destDir string) error {
 
 	configs = append(configs, iconfigs...)
 
-	rconfigs, err := containerruntimeconfig.RunImageBootstrap(b.templatesDir, cconfig, pools, icspRules, idmsRules, itmsRules, imgCfg, fgAccess)
+	rconfigs, err := containerruntimeconfig.RunImageBootstrap(b.templatesDir, cconfig, pools, icspRules, idmsRules, itmsRules, imgCfg, fgAccess, CCMDisabled)
 	if err != nil {
 		return err
 	}
@@ -177,7 +183,7 @@ func (b *Bootstrap) Run(destDir string) error {
 	configs = append(configs, rconfigs...)
 
 	if len(crconfigs) > 0 {
-		containerRuntimeConfigs, err := containerruntimeconfig.RunContainerRuntimeBootstrap(b.templatesDir, crconfigs, cconfig, pools, fgAccess)
+		containerRuntimeConfigs, err := containerruntimeconfig.RunContainerRuntimeBootstrap(b.templatesDir, crconfigs, cconfig, pools, fgAccess, CCMDisabled)
 		if err != nil {
 			return err
 		}
@@ -186,7 +192,7 @@ func (b *Bootstrap) Run(destDir string) error {
 	klog.Infof("Successfully generated MachineConfigs from containerruntime.")
 
 	if featureGate != nil {
-		featureConfigs, err := kubeletconfig.RunFeatureGateBootstrap(b.templatesDir, fgAccess, nodeConfig, cconfig, pools)
+		featureConfigs, err := kubeletconfig.RunFeatureGateBootstrap(b.templatesDir, fgAccess, nodeConfig, cconfig, pools, CCMDisabled)
 		if err != nil {
 			return err
 		}
@@ -203,7 +209,7 @@ func (b *Bootstrap) Run(destDir string) error {
 		}
 	}
 	if nodeConfig != nil {
-		nodeConfigs, err := kubeletconfig.RunNodeConfigBootstrap(b.templatesDir, fgAccess, cconfig, nodeConfig, pools)
+		nodeConfigs, err := kubeletconfig.RunNodeConfigBootstrap(b.templatesDir, fgAccess, cconfig, nodeConfig, pools, CCMDisabled)
 		if err != nil {
 			return err
 		}
@@ -212,7 +218,7 @@ func (b *Bootstrap) Run(destDir string) error {
 	klog.Infof("Successfully generated MachineConfigs from node.Configs.")
 
 	if len(kconfigs) > 0 {
-		kconfigs, err := kubeletconfig.RunKubeletBootstrap(b.templatesDir, kconfigs, cconfig, fgAccess, nodeConfig, pools)
+		kconfigs, err := kubeletconfig.RunKubeletBootstrap(b.templatesDir, kconfigs, cconfig, fgAccess, nodeConfig, pools, CCMDisabled)
 		if err != nil {
 			return err
 		}
