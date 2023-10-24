@@ -10,7 +10,7 @@ import (
 	"k8s.io/client-go/util/retry"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 
 	"github.com/openshift/machine-config-operator/pkg/controller/build"
 	"github.com/openshift/machine-config-operator/test/framework"
