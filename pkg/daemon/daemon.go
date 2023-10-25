@@ -745,8 +745,15 @@ func (dn *Daemon) runPreflightConfigDriftCheck() error {
 	}
 
 	currentOnDisk, err := dn.getCurrentConfigOnDisk()
-	if err != nil {
-		return fmt.Errorf("could not get on-disk config: %w", err)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	if currentOnDisk == nil {
+		currentOnDisk, err = dn.getCurrentConfigFromNode()
+		if err != nil {
+			return err
+		}
 	}
 
 	start := time.Now()
@@ -1190,6 +1197,20 @@ func (dn *Daemon) onConfigDrift(err error) {
 	}
 }
 
+// getCurrentConfigFromNode fetch the current config through node annotations to respond to getCurrentConfigDisk
+// calls where the ODC is missing due to manual deletion and other reasons.
+func (dn *Daemon) getCurrentConfigFromNode() (*onDiskConfig, error) {
+	state, err := dn.getStateAndConfigs()
+	if err != nil {
+		return nil, fmt.Errorf("could not get the state: %w", err)
+	}
+	tempConfig := &onDiskConfig{
+		currentImage:  state.currentImage,
+		currentConfig: state.currentConfig,
+	}
+	return tempConfig, nil
+}
+
 func (dn *Daemon) startConfigDriftMonitor() {
 	// Even though the Config Drift Monitor object ensures that only a single
 	// Config Drift Watcher is running at any given time, other things, such as
@@ -1201,9 +1222,17 @@ func (dn *Daemon) startConfigDriftMonitor() {
 	}
 
 	odc, err := dn.getCurrentConfigOnDisk()
-	if err != nil {
+	if err != nil && !os.IsNotExist(err) {
 		dn.exitCh <- fmt.Errorf("could not get current config from disk: %w", err)
 		return
+	}
+
+	if odc == nil {
+		odc, err = dn.getCurrentConfigFromNode()
+		if err != nil {
+			dn.exitCh <- err
+			return
+		}
 	}
 
 	opts := ConfigDriftMonitorOpts{
@@ -1863,7 +1892,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 
 	// We've validated state. Now, ensure that node is in desired state
 	var inDesiredConfig bool
-	if inDesiredConfig, err = dn.updateConfigAndState(state); err != nil {
+	if _, inDesiredConfig, err = dn.updateConfigAndState(state); err != nil {
 		return err
 	}
 	if inDesiredConfig {
@@ -1887,7 +1916,8 @@ func (dn *Daemon) isInDesiredConfig(state *stateAndConfigs) bool {
 }
 
 // updateConfigAndState updates node to desired state, labels nodes as done and uncordon
-func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, error) {
+func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, bool, error) {
+	missingODC := false
 
 	if state.bootstrapping {
 		odc := &onDiskConfig{
@@ -1895,19 +1925,24 @@ func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, error) {
 			currentImage:  state.currentImage,
 		}
 		if err := dn.storeCurrentConfigOnDisk(odc); err != nil {
-			return false, err
+			return missingODC, false, err
 		}
 	}
 
 	// Set the current config to the last written config to disk. This will be the last
 	// "successful" config update we have completed.
 	odc, err := dn.getCurrentConfigOnDisk()
+
+	if odc == nil {
+		missingODC = true
+	}
+
 	if err == nil {
 		state.currentConfig = odc.currentConfig
 		state.currentImage = odc.currentImage
-	} else {
+	} else if err != nil && !os.IsNotExist(err) {
 		klog.Infof("Error reading config from disk")
-		return false, fmt.Errorf("error reading config from disk: %w", err)
+		return missingODC, false, fmt.Errorf("error reading config from disk: %w", err)
 	}
 
 	// In case of node reboot, it may be the case that desiredConfig changed while we
@@ -1921,7 +1956,7 @@ func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, error) {
 		klog.Infof("Completing update to target %s", state.getCurrentName())
 		if err := dn.completeUpdate(state.currentConfig.GetName()); err != nil {
 			UpdateStateMetric(mcdUpdateState, "", err.Error())
-			return inDesiredConfig, err
+			return missingODC, inDesiredConfig, err
 		}
 
 		// We update the node annotation, and pop an event saying we're done.
@@ -1930,7 +1965,7 @@ func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, error) {
 		}
 
 		if err := dn.nodeWriter.SetDone(state); err != nil {
-			return true, fmt.Errorf("error setting node's state to Done: %w", err)
+			return missingODC, true, fmt.Errorf("error setting node's state to Done: %w", err)
 		}
 
 		// If we're degraded here, it means we got an error likely on startup and we retried.
@@ -1939,7 +1974,7 @@ func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, error) {
 			if err := dn.nodeWriter.SetDone(state); err != nil {
 				errLabelStr := fmt.Sprintf("error setting node's state to Done: %v", err)
 				UpdateStateMetric(mcdUpdateState, "", errLabelStr)
-				return inDesiredConfig, fmt.Errorf("error setting node's state to Done: %w", err)
+				return missingODC, inDesiredConfig, fmt.Errorf("error setting node's state to Done: %w", err)
 			}
 		}
 
@@ -1948,7 +1983,7 @@ func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, error) {
 	}
 
 	// No errors have occurred. Returns true if currentConfig == desiredConfig, false otherwise (needs update)
-	return inDesiredConfig, nil
+	return missingODC, inDesiredConfig, nil
 }
 
 // runOnceFromMachineConfig utilizes a parsed machineConfig and executes in onceFrom
@@ -2066,6 +2101,13 @@ func (dn *Daemon) prepUpdateFromCluster() (*updateFromCluster, error) {
 			currentImage:  odc.currentImage,
 			desiredImage:  desiredImage,
 		}, nil
+	}
+
+	if odc == nil {
+		odc, err = dn.getCurrentConfigFromNode()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Detect if there is an update
