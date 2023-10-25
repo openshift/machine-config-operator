@@ -5,10 +5,25 @@ contents:
     #!/bin/bash
     set -e -o pipefail
 
-    NODECONF=/etc/systemd/system/kubelet.service.d/20-aws-node-name.conf
+    NODEENV=/etc/kubernetes/node.env
 
-    if [ -e "${NODECONF}" ]; then
-        echo "Not replacing existing ${NODECONF}"
+    # This can be removed 1 release after it merges because all affected nodes
+    # will have upgraded
+    LEGACY_NODEENV=/etc/systemd/system/kubelet.service.d/20-aws-node-name.conf
+    if [ -e "${LEGACY_NODEENV}" ]; then
+        # Legacy file was a systemd stanza with KUBELET_NODE_NAME specified in
+        # a directive of the format:
+        #   Environment="KUBELET_NODE_NAME=node.example.com"
+        # New format is an environment file. The following extracts only the
+        # contents of any Environment directives.
+        echo "Migrating ${LEGACY_NODEENV} to ${NODEENV}"
+        awk 'match($0, /^\s*Environment\s*=\s*"(.*)"\s*$/, value) { print value[1] }' < "${LEGACY_NODEENV}" > "${NODEENV}"
+        rm "${LEGACY_NODEENV}"
+        exit 0
+    fi
+
+    if [ -e "${NODENV}" ]; then
+        echo "Not replacing existing ${NODENV}"
         exit 0
     fi
     
@@ -18,17 +33,16 @@ contents:
     # metadata related afterburn doc: https://coreos.github.io/afterburn/usage/attributes/
     
     HOSTNAME=${AFTERBURN_AWS_HOSTNAME:-}
-    if [[ -z "${HOSTNAME}" ]]; then
+    while [[ -z "${HOSTNAME}" ]]; do
       HOSTNAME=$(curl -fSs http://169.254.169.254/2022-09-24/meta-data/local-hostname)
       if [[ -z "${HOSTNAME}" ]]; then
-        echo "Can not obtain hostname from the metadata service."
-        exit 1
+        echo "Can not obtain hostname from the metadata service." 1>&2
+        sleep 5
       fi 
-    fi
+    done
 
     # For compatibility with the AWS in-tree provider
-    # Set node name to be instance name instead of the default FQDN hostname
-    cat > "${NODECONF}" <<EOF
-    [Service]
-    Environment="KUBELET_NODE_NAME=${HOSTNAME}"
+    # Set node name to be instance FQDN instead of the default hostname
+    cat > "${NODEENV}" <<EOF
+    KUBELET_NODE_NAME=${HOSTNAME}
     EOF
