@@ -691,7 +691,7 @@ contents:
 
       # try to use user specified file first
       if [ -f "$default_bridge_file" ]; then
-        iface=$(cat "${iface_default_hint_file}")
+        iface=$(cat "${default_bridge_file}")
         if [ -z "$iface" ]; then
           echo "ERROR: User specified bridge file detected without any data"
           exit 1
