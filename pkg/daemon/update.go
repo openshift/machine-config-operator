@@ -388,7 +388,7 @@ func calculatePostConfigChangeAction(diff *machineConfigDiff, diffFileSet []stri
 	return calculatePostConfigChangeActionFromFileDiffs(diffFileSet), nil
 }
 
-func (dn *Daemon) updateImage(newConfig *mcfgv1.MachineConfig, oldImage, newImage string) error {
+func (dn *Daemon) updateImage(newConfig *mcfgv1.MachineConfig, oldImage, newImage string, writeNewImageToOnDiskConfig bool) error {
 	if dn.nodeWriter != nil {
 		state, err := getNodeAnnotationExt(dn.node, constants.MachineConfigDaemonStateAnnotationKey, true)
 		if err != nil {
@@ -416,8 +416,11 @@ func (dn *Daemon) updateImage(newConfig *mcfgv1.MachineConfig, oldImage, newImag
 	}
 
 	odc := &onDiskConfig{
-		currentImage:  newImage,
 		currentConfig: newConfig,
+	}
+
+	if writeNewImageToOnDiskConfig {
+		odc.currentImage = newImage
 	}
 
 	if err := dn.storeCurrentConfigOnDisk(odc); err != nil {

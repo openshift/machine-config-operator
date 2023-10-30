@@ -24,10 +24,12 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
 
 	corev1lister "k8s.io/client-go/listers/core/v1"
@@ -2175,29 +2177,58 @@ func (dn *Daemon) completeUpdate(desiredConfigName string) error {
 
 	return nil
 }
+func (dn *Daemon) revertToNonLayeredState(desiredConfig *mcfgv1.MachineConfig, currentImage string) error {
+	// Get the default OS image from the machine-config-osimageurl ConfigMap or the machine-config-images ConfigMap.
+	defaultOSImage, _ := dn.loadFromConfigMap()
+	return dn.updateImage(desiredConfig, currentImage, defaultOSImage, false)
+}
+
+// loadFromConfigMap retrieves the default OS image URL from a ConfigMap.
+func (dn *Daemon) loadFromConfigMap() (string, error) {
+	// Setup Kubernetes client
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		return "", err
+	}
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return "", err
+	}
+
+	// Fetch the ConfigMap
+	namespace := "openshift-machine-config-operator"
+	configMapName := "machine-config-osimageurl"
+	configMap, err := clientset.CoreV1().ConfigMaps(namespace).Get(context.TODO(), configMapName, v1.GetOptions{})
+	if err != nil {
+		return "", err
+	}
+
+	// Retrieve the OS image URL from the ConfigMap data
+	defaultOSImage, ok := configMap.Data["defaultOSImage"]
+	if !ok {
+		return "", fmt.Errorf("key 'defaultOSImage' not found in ConfigMap '%s'", configMapName)
+	}
+
+	return defaultOSImage, nil
+}
 
 func (dn *Daemon) triggerUpdate(currentConfig, desiredConfig *mcfgv1.MachineConfig, currentImage, desiredImage string) error {
+	dn.stopConfigDriftMonitor()
+
 	// If both of the image annotations are empty, this is a regular MachineConfig update.
 	if desiredImage == "" && currentImage == "" {
 		return dn.triggerUpdateWithMachineConfig(currentConfig, desiredConfig, true)
 	}
 
 	// If the desired image annotation is empty, but the current image is not
-	// empty, this should be a regular MachineConfig update.
-	//
-	// However, the node will not roll back from a layered config to a
-	// non-layered config without admin intervention; so we should emit an error
-	// for now.
+	// empty. This means we want to revert the node from a layered config state
+	// to a non-layered config state.
 	if desiredImage == "" && currentImage != "" {
-		return fmt.Errorf("rolling back from a layered to non-layered configuration is not currently supported")
+		return dn.revertToNonLayeredState(desiredConfig, currentImage)
 	}
 
-	// Shut down the Config Drift Monitor since we'll be performing an update
-	// and the config will "drift" while the update is occurring.
-	dn.stopConfigDriftMonitor()
-
 	klog.Infof("Performing layered OS update")
-	return dn.updateImage(desiredConfig, currentImage, desiredImage)
+	return dn.updateImage(desiredConfig, currentImage, desiredImage, true)
 }
 
 // triggerUpdateWithMachineConfig starts the update. It queries the cluster for
