@@ -2176,28 +2176,34 @@ func (dn *Daemon) completeUpdate(desiredConfigName string) error {
 	return nil
 }
 
+func (dn *Daemon) revertToNonLayeredState(desiredConfig *mcfgv1.MachineConfig, currentImage string) error {
+	// Get the default OS image from the machine-config-osimageurl ConfigMap or the machine-config-images ConfigMap.
+	defaultOSImage, _ := loadFromConfigMap()
+
+	return dn.updateImage(desiredConfig, currentImage, defaultOSImage, false)
+}
+
 func (dn *Daemon) triggerUpdate(currentConfig, desiredConfig *mcfgv1.MachineConfig, currentImage, desiredImage string) error {
 	// If both of the image annotations are empty, this is a regular MachineConfig update.
 	if desiredImage == "" && currentImage == "" {
 		return dn.triggerUpdateWithMachineConfig(currentConfig, desiredConfig, true)
 	}
 
-	// If the desired image annotation is empty, but the current image is not
-	// empty, this should be a regular MachineConfig update.
-	//
-	// However, the node will not roll back from a layered config to a
-	// non-layered config without admin intervention; so we should emit an error
-	// for now.
-	if desiredImage == "" && currentImage != "" {
-		return fmt.Errorf("rolling back from a layered to non-layered configuration is not currently supported")
-	}
-
 	// Shut down the Config Drift Monitor since we'll be performing an update
 	// and the config will "drift" while the update is occurring.
 	dn.stopConfigDriftMonitor()
 
+	// If the desired image annotation is empty, but the current image is not
+	// empty. This means we want to revert the node from a layered config state
+	// to a non-layered config state.
+	if desiredImage == "" && currentImage != "" {
+		return dn.revertToNonLayeredState(desiredConfig, currentImage)
+	}
+
+	// Move this code above the if-block so that the Config Drift Monitor is stopped for all cases.
+
 	klog.Infof("Performing layered OS update")
-	return dn.updateImage(desiredConfig, currentImage, desiredImage)
+	return dn.updateImage(desiredConfig, currentImage, desiredImage, true)
 }
 
 // triggerUpdateWithMachineConfig starts the update. It queries the cluster for
