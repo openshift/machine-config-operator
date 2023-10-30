@@ -3,12 +3,15 @@ package e2e_layering
 import (
 	"context"
 	"flag"
+	"strings"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/util/retry"
 
+	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+
 	"github.com/openshift/machine-config-operator/pkg/controller/build"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/openshift/machine-config-operator/test/helpers"
@@ -16,6 +19,7 @@ import (
 
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 const (
@@ -224,4 +228,90 @@ func prepareForTest(t *testing.T, cs *framework.ClientSet, testOpts onClusterBui
 
 	_, err = helpers.WaitForRenderedConfig(t, cs, testOpts.poolName, "00-worker")
 	require.NoError(t, err)
+}
+
+func TestSSHKeyAndPasswordForOSBuilder(t *testing.T) {
+	cs := framework.NewClientSet("")
+
+	// label random node from pool, get the node
+	unlabelFunc := helpers.LabelRandomNodeFromPool(t, cs, "worker", "node-role.kubernetes.io/layered")
+	osNode := helpers.GetSingleNodeByRole(t, cs, layeredMCPName)
+
+	// prepare for on cluster build test
+	prepareForTest(t, cs, onClusterBuildTestOpts{
+		imageBuilderType:  build.OpenshiftImageBuilder,
+		poolName:          layeredMCPName,
+		customDockerfiles: map[string]string{},
+	})
+
+	// Set up Ignition config with the desired SSH key and password
+	testIgnConfig := ctrlcommon.NewIgnConfig()
+	sshKeyContent := "testsshkey11"
+	passwordHash := "testpassword11"
+
+	// retreive initial etc/shadow contents
+	initialEtcShadowContents := helpers.ExecCmdOnNode(t, cs, osNode, "grep", "^core:", "/rootfs/etc/shadow")
+
+	testIgnConfig.Passwd.Users = []ign3types.PasswdUser{
+		{
+			Name:              "core",
+			SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{ign3types.SSHAuthorizedKey(sshKeyContent)},
+			PasswordHash:      &passwordHash,
+		},
+	}
+
+	testConfig := &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "99-test-ssh-and-password",
+			Labels: helpers.MCLabelForRole(layeredMCPName),
+		},
+		Spec: mcfgv1.MachineConfigSpec{
+			Config: runtime.RawExtension{
+				Raw: helpers.MarshalOrDie(testIgnConfig),
+			},
+		},
+	}
+
+	// Create the MachineConfig and wait for the configuration to be applied
+	_, err := cs.MachineConfigs().Create(context.TODO(), testConfig, metav1.CreateOptions{})
+	require.Nil(t, err, "failed to create MC")
+	t.Logf("Created %s", testConfig.Name)
+
+	// wait for rendered config to finish creating
+	renderedConfig, err := helpers.WaitForRenderedConfig(t, cs, layeredMCPName, testConfig.Name)
+	require.Nil(t, err)
+	t.Logf("Finished rendering config")
+
+	// wait for mcp to complete updating
+	err = helpers.WaitForPoolComplete(t, cs, layeredMCPName, renderedConfig)
+	require.Nil(t, err)
+	t.Logf("Pool completed updating")
+
+	// Validate the SSH key and password
+	osNode = helpers.GetSingleNodeByRole(t, cs, layeredMCPName) // Re-fetch node with updated configurations
+
+	foundSSHKey := helpers.ExecCmdOnNode(t, cs, osNode, "cat", "/rootfs/home/core/.ssh/authorized_keys.d/ignition")
+	if !strings.Contains(foundSSHKey, sshKeyContent) {
+		t.Fatalf("updated ssh key not found, got %s", foundSSHKey)
+	}
+	t.Logf("updated ssh hash found, got %s", foundSSHKey)
+
+	currentEtcShadowContents := helpers.ExecCmdOnNode(t, cs, osNode, "grep", "^core:", "/rootfs/etc/shadow")
+	if currentEtcShadowContents == initialEtcShadowContents {
+		t.Fatalf("updated password hash not found in /etc/shadow, got %s", currentEtcShadowContents)
+	}
+	t.Logf("updated password hash found in /etc/shadow, got %s", currentEtcShadowContents)
+
+	t.Logf("Node %s has correct SSH Key and Password Hash", osNode.Name)
+
+	// Clean-up: Delete the applied MachineConfig and ensure configurations are rolled back
+
+	t.Cleanup(func() {
+		unlabelFunc()
+		if err := cs.MachineConfigs().Delete(context.TODO(), testConfig.Name, metav1.DeleteOptions{}); err != nil {
+			t.Error(err)
+		}
+		// delete()
+		t.Logf("Deleted MachineConfig %s", testConfig.Name)
+	})
 }
