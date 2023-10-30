@@ -1,0 +1,26 @@
+name: afterburn-transient-hostname.service
+enabled: true
+contents: |
+  [Unit]
+  Description=Set Transient Hostname from KubeVirt meta_data
+
+  # Run afterburn service for collect info from metadata server
+  # see: https://coreos.github.io/afterburn/usage/attributes/
+  Wants=afterburn.service
+  After=afterburn.service
+
+  # Before hostname is received from DHCP
+  Before=network-pre.target
+  Wants=network-pre.target
+
+  # Run before kubelet
+  Before=kubelet.service
+
+  [Service]
+  # Mark afterburn environment file optional, due to it is possible that afterburn service was not executed
+  EnvironmentFile=/run/metadata/afterburn
+  ExecStart=hostnamectl hostname --transient "${AFTERBURN_KUBEVIRT_HOSTNAME}"
+  Type=oneshot
+
+  [Install]
+  WantedBy=network-online.target
