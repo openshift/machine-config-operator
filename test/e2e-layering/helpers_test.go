@@ -14,6 +14,7 @@ import (
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
@@ -129,15 +130,29 @@ func copyGlobalPullSecret(t *testing.T, cs *framework.ClientSet) func() {
 
 // Waits for the target MachineConfigPool to reach a state defined in a supplied function.
 func waitForPoolToReachState(t *testing.T, cs *framework.ClientSet, poolName string, condFunc func(*mcfgv1.MachineConfigPool) bool) {
-	err := wait.PollImmediate(1*time.Second, 10*time.Minute, func() (bool, error) {
-		mcp, err := cs.MachineconfigurationV1Interface.MachineConfigPools().Get(context.TODO(), poolName, metav1.GetOptions{})
+	ctx, cancel := context.WithTimeout(context.TODO(), 15*time.Second)
+	defer cancel()
+
+	condition := func(ctx context.Context) (bool, error) {
+		mcp, err := cs.MachineconfigurationV1Interface.MachineConfigPools().Get(ctx, poolName, metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
 
-		return condFunc(mcp), nil
-	})
+		lps := ctrlcommon.NewLayeredPoolState(mcp)
+		hasOSImage := lps.HasOSImage()
+		isBuildSuccess := lps.IsBuildSuccess()
+		isBuildPending := lps.IsBuildPending()
+		IsBuilding := lps.IsBuilding()
+		isLayered := lps.IsLayered()
 
+		t.Logf("Checking state for MCP %s: HasOSImage- %v, IsBuildSuccess- %v, IsBuildPending- %v, IsBuilding- %v, isLayered- %v", poolName, hasOSImage, isBuildSuccess, isBuildPending, IsBuilding, isLayered)
+		t.Logf("MCP %s Status: %+v", poolName, mcp.Status)
+
+		return condFunc(mcp), nil
+	}
+
+	err := wait.PollUntilContextTimeout(ctx, 1*time.Second, 10*time.Minute, true, condition)
 	require.NoError(t, err, "MachineConfigPool %q did not reach desired state", poolName)
 }
 
@@ -151,4 +166,16 @@ func makeIdempotentAndRegister(t *testing.T, cleanupFunc func()) func() {
 	})
 	t.Cleanup(out)
 	return out
+}
+
+// Check if a specific deployment exists in a namespace.
+func CheckDeploymentExists(t *testing.T, cs *framework.ClientSet, deploymentName, namespace string) bool {
+	_, err := cs.AppsV1Interface.Deployments(namespace).Get(context.TODO(), deploymentName, metav1.GetOptions{})
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			return false
+		}
+		t.Fatalf("Error fetching deployment: %v", err)
+	}
+	return true
 }

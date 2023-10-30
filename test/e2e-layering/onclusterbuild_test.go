@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"testing"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/util/retry"
@@ -224,4 +225,51 @@ func prepareForTest(t *testing.T, cs *framework.ClientSet, testOpts onClusterBui
 
 	_, err = helpers.WaitForRenderedConfig(t, cs, testOpts.poolName, "00-worker")
 	require.NoError(t, err)
+}
+
+func TestRollbackFromLayeredToNonLayeredConfiguration(t *testing.T) {
+	cs := framework.NewClientSet("")
+
+	// prepare for on cluster build test
+	prepareForTest(t, cs, onClusterBuildTestOpts{
+		imageBuilderType:  build.OpenshiftImageBuilder,
+		poolName:          layeredMCPName,
+		customDockerfiles: map[string]string{},
+	})
+
+	// Opt the MCP into layering and get the cleanup function
+	cleanupFunc := optPoolIntoLayering(t, cs, "layered")
+	defer cleanupFunc()
+
+	// wait for mcp to build
+	// waitForPoolToReachState(t, cs, layeredMCPName, func(mcp *mcfgv1.MachineConfigPool) bool {
+	// 	lps := ctrlcommon.NewLayeredPoolState(mcp)
+	// 	return lps.IsLayered()
+	// })
+	waitDuration := 15 * time.Second
+	time.Sleep(waitDuration)
+
+	// Check if deployment exists
+	exists, err := helpers.CheckDeploymentExists(cs, "machine-os-builder", "openshift-machine-config-operator")
+	require.NoError(t, err, "Failed to check if Machine OS builder deployment exists")
+	require.True(t, exists, "Machine OS builder deployment not found")
+
+	// Now, rollback to non-layered configuration
+	mcp, err := cs.MachineconfigurationV1Interface.MachineConfigPools().Get(context.TODO(), "layered", metav1.GetOptions{})
+	require.NoError(t, err, "Cannot fetch MCP")
+
+	_, err = cs.MachineconfigurationV1Interface.MachineConfigPools().Update(context.TODO(), mcp, metav1.UpdateOptions{})
+	require.NoError(t, err, "Failed to unlabel MCP")
+
+	// Wait for the rollback update to complete
+	time.Sleep(waitDuration)
+	// waitForPoolToReachState(t, cs, layeredMCPName, func(mcp *mcfgv1.MachineConfigPool) bool {
+	// 	lps := ctrlcommon.NewLayeredPoolState(mcp)
+	// 	return !lps.HasOSImage()
+	// })
+
+	exists, err = helpers.CheckDeploymentExists(cs, "machine-os-builder", "openshift-machine-config-operator")
+	require.NoError(t, err, "Failed to check if Machine OS builder deployment doesnt exist")
+	require.True(t, exists, "Machine OS builder deployment still exists after rollback")
+
 }
