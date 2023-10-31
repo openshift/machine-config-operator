@@ -22,13 +22,15 @@ var (
 	}
 
 	startOpts struct {
-		kubeconfig string
+		kubeconfig               string
+		promMetricsListenAddress string
 	}
 )
 
 func init() {
 	rootCmd.AddCommand(startCmd)
 	startCmd.PersistentFlags().StringVar(&startOpts.kubeconfig, "kubeconfig", "", "Kubeconfig file to access a remote cluster (testing only)")
+	startCmd.PersistentFlags().StringVar(&startOpts.promMetricsListenAddress, "metrics-listen-address", "127.0.0.1:8797", "Listen address for prometheus metrics listener")
 }
 
 func runStartCmd(_ *cobra.Command, _ []string) {
@@ -47,6 +49,10 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		go common.SignalHandler(runCancel)
 
 		ctrlctx := ctrlcommon.CreateControllerContext(ctx, cb)
+
+		userInput := []string{"msc_test_2", "msc_test_4"}
+		// Start the metrics handler
+		go state.StartMetricsListener(startOpts.promMetricsListenAddress, ctrlctx.Stop, state.RegisterMetrics, userInput)
 
 		ctrl := state.New(ctrlctx.NamespacedInformerFactory.Machineconfiguration().V1alpha1().MachineConfigNodes(),
 			ctrlctx.KubeNamespacedInformerFactory.Core().V1().Events(),
