@@ -399,24 +399,10 @@ func calculatePostConfigChangeAction(diff *machineConfigDiff, diffFileSet []stri
 func (dn *Daemon) updateOnClusterBuild(oldConfig, newConfig *mcfgv1.MachineConfig, oldImage, newImage string, skipCertificateWrite bool) (retErr error) {
 	oldConfig = canonicalizeEmptyMC(oldConfig)
 
-	if dn.nodeWriter != nil {
-		state, err := getNodeAnnotationExt(dn.node, constants.MachineConfigDaemonStateAnnotationKey, true)
-		if err != nil {
-			return err
-		}
-		if state != constants.MachineConfigDaemonStateDegraded && state != constants.MachineConfigDaemonStateUnreconcilable {
-			if err := dn.nodeWriter.SetWorking(); err != nil {
-				return fmt.Errorf("error setting node's state to Working: %w", err)
-			}
-		}
+	err := dn.sharedUpdateRoutine(oldConfig, newConfig, oldImage, newImage, skipCertificateWrite, true)
+	if err != nil {
+		return err
 	}
-
-	dn.catchIgnoreSIGTERM()
-	defer func() {
-		// now that we do rebootless updates, we need to turn off our SIGTERM protection
-		// regardless of how we leave the "update loop"
-		dn.cancelSIGTERM()
-	}()
 
 	oldConfigName := oldConfig.GetName()
 	newConfigName := newConfig.GetName()
@@ -444,29 +430,6 @@ func (dn *Daemon) updateOnClusterBuild(oldConfig, newConfig *mcfgv1.MachineConfi
 			dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedToReconcile", wrappedErr.Error())
 		}
 		return &unreconcilableErr{wrappedErr}
-	}
-
-	if oldImage == newImage && newImage != "" {
-		if oldImage == "" {
-			logSystem("Starting transition to %q", newImage)
-		} else {
-			logSystem("Starting transition from %q to %q", oldImage, newImage)
-		}
-	}
-
-	if err := dn.performDrain(); err != nil {
-		return err
-	}
-
-	// If the new image pullspec is already on disk, do not attempt to re-apply
-	// it. rpm-ostree will throw an error as a result.
-	// See: https://issues.redhat.com/browse/OCPBUGS-18414.
-	if oldImage != newImage && newImage != "" {
-		if err := dn.updateLayeredOSToPullspec(newImage); err != nil {
-			return err
-		}
-	} else {
-		klog.Infof("Image pullspecs equal, skipping rpm-ostree rebase")
 	}
 
 	// update files on disk that need updating
@@ -554,6 +517,73 @@ func (dn *Daemon) updateOnClusterBuild(oldConfig, newConfig *mcfgv1.MachineConfi
 	}()
 
 	return dn.reboot(fmt.Sprintf("Node will reboot into image %s / MachineConfig %s", newImage, newConfigName))
+}
+
+func (dn *Daemon) updateImage(oldConfig, newConfig *mcfgv1.MachineConfig, oldImage, newImage string, writeNewImageToOnDiskConfig bool) error {
+	err := dn.sharedUpdateRoutine(nil, newConfig, oldImage, newImage, false, writeNewImageToOnDiskConfig)
+	if err != nil {
+		return err
+	}
+
+	// on-disk configuration logic
+	odc := &onDiskConfig{
+		currentConfig: newConfig,
+	}
+	if writeNewImageToOnDiskConfig {
+		odc.currentImage = newImage
+	}
+	if err := dn.storeCurrentConfigOnDisk(odc); err != nil {
+		return err
+	}
+
+	return dn.reboot(fmt.Sprintf("Node will reboot into image %s", newImage))
+}
+
+func (dn *Daemon) sharedUpdateRoutine(oldConfig, newConfig *mcfgv1.MachineConfig, oldImage, newImage string, skipCertificateWrite, writeNewImageToOnDiskConfig bool) error {
+	// setting node's state to working
+	if dn.nodeWriter != nil {
+		state, err := getNodeAnnotationExt(dn.node, constants.MachineConfigDaemonStateAnnotationKey, true)
+		if err != nil {
+			return err
+		}
+		if state != constants.MachineConfigDaemonStateDegraded && state != constants.MachineConfigDaemonStateUnreconcilable {
+			if err := dn.nodeWriter.SetWorking(); err != nil {
+				return fmt.Errorf("error setting node's state to Working: %w", err)
+			}
+		}
+	}
+
+	dn.catchIgnoreSIGTERM()
+	defer func() {
+		// now that we do rebootless updates, we need to turn off our SIGTERM protection
+		// regardless of how we leave the "update loop"
+		dn.cancelSIGTERM()
+	}()
+
+	if oldImage == newImage && newImage != "" {
+		if oldImage == "" {
+			logSystem("Starting transition to %q", newImage)
+		} else {
+			logSystem("Starting transition from %q to %q", oldImage, newImage)
+		}
+	}
+
+	if err := dn.performDrain(); err != nil {
+		return err
+	}
+
+	// If the new image pullspec is already on disk, do not attempt to re-apply
+	// it. rpm-ostree will throw an error as a result.
+	// See: https://issues.redhat.com/browse/OCPBUGS-18414.
+	if oldImage != newImage && newImage != "" {
+		if err := dn.updateLayeredOSToPullspec(newImage); err != nil {
+			return err
+		}
+	} else {
+		klog.Infof("Image pullspecs equal, skipping rpm-ostree rebase")
+	}
+
+	return nil
 }
 
 // Update the node to the provided node configuration.

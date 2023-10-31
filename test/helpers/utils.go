@@ -264,6 +264,27 @@ func WaitForPoolComplete(t *testing.T, cs *framework.ClientSet, pool, target str
 	return nil
 }
 
+// WaitForPoolToBeUpdated polls a pool until it has completed its update
+func WaitForPoolToBeUpdated(t *testing.T, cs *framework.ClientSet, pool string) error {
+	startTime := time.Now()
+	ctx := context.TODO()
+
+	if err := wait.PollUntilContextTimeout(ctx, 2*time.Second, 20*time.Minute, false, func(ctx context.Context) (bool, error) {
+		mcp, err := cs.MachineConfigPools().Get(ctx, pool, metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+		if apihelpers.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolUpdated) {
+			return true, nil
+		}
+		return false, nil
+	}); err != nil {
+		return fmt.Errorf("pool %s didn't complete its update (waited %s): %w", pool, time.Since(startTime), err)
+	}
+	t.Logf("Pool %s has completed its update (waited %v)", pool, time.Since(startTime))
+	return nil
+}
+
 // Waits for both the node image and config to change.
 func WaitForNodeConfigAndImageChange(t *testing.T, cs *framework.ClientSet, node corev1.Node, mcName, image string) error {
 	startTime := time.Now()
@@ -1096,4 +1117,16 @@ func DeleteNodeAndMachine(t *testing.T, node corev1.Node) {
 
 	t.Logf("Deleting machine %s / node %s", machineID, node.Name)
 	require.NoError(t, aggerrs.AggregateGoroutines(deleteMachineCmd.Run, deleteNodeCmd.Run))
+}
+
+func UnlabelMCP(t *testing.T, cs *framework.ClientSet, poolName, labelKey string) {
+	mcp, err := cs.MachineconfigurationV1Interface.MachineConfigPools().Get(context.TODO(), poolName, metav1.GetOptions{})
+	require.NoError(t, err, "Cannot fetch MCP")
+
+	if mcp.ObjectMeta.Labels != nil {
+		delete(mcp.ObjectMeta.Labels, labelKey)
+	}
+
+	_, err = cs.MachineconfigurationV1Interface.MachineConfigPools().Update(context.TODO(), mcp, metav1.UpdateOptions{})
+	require.NoError(t, err, "Failed to unlabel MCP")
 }

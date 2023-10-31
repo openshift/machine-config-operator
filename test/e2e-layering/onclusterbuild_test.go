@@ -246,8 +246,8 @@ func TestSSHKeyAndPasswordForOSBuilder(t *testing.T) {
 
 	// Set up Ignition config with the desired SSH key and password
 	testIgnConfig := ctrlcommon.NewIgnConfig()
-	sshKeyContent := "testsshkey11"
-	passwordHash := "testpassword11"
+	sshKeyContent := "testsshkey"
+	passwordHash := "testpassword"
 
 	// retreive initial etc/shadow contents
 	initialEtcShadowContents := helpers.ExecCmdOnNode(t, cs, osNode, "grep", "^core:", "/rootfs/etc/shadow")
@@ -314,4 +314,36 @@ func TestSSHKeyAndPasswordForOSBuilder(t *testing.T) {
 		// delete()
 		t.Logf("Deleted MachineConfig %s", testConfig.Name)
 	})
+}
+
+func TestRollbackFromLayeredToNonLayeredConfiguration(t *testing.T) {
+	cs := framework.NewClientSet("")
+
+	// prepare for on cluster build test
+	prepareForTest(t, cs, onClusterBuildTestOpts{
+		imageBuilderType:  build.OpenshiftImageBuilder,
+		poolName:          layeredMCPName,
+		customDockerfiles: map[string]string{},
+	})
+
+	// Opt the MCP into layering and get the cleanup function
+	cleanupFunc := optPoolIntoLayering(t, cs, "layered")
+	defer cleanupFunc()
+
+	// wait for pool to complete building
+	helpers.WaitForPoolToBeUpdated(t, cs, layeredMCPName)
+
+	// Check if deployment exists
+	exists, err := helpers.CheckDeploymentExists(cs, "machine-os-builder", "openshift-machine-config-operator")
+	require.NoError(t, err, "Failed to check if Machine OS builder deployment exists")
+	require.True(t, exists, "Machine OS builder deployment not found")
+
+	// Now, rollback to non-layered configuration
+	helpers.UnlabelMCP(t, cs, layeredMCPName, ctrlcommon.LayeringEnabledPoolLabel)
+
+	// checking to see if deployment exists
+	exists, err = helpers.CheckDeploymentExists(cs, "machine-os-builder", "openshift-machine-config-operator")
+	require.NoError(t, err, "Failed to check if Machine OS builder deployment doesnt exist")
+	require.True(t, exists, "Machine OS builder deployment still exists after rollback")
+
 }
