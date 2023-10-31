@@ -55,3 +55,18 @@ rules:
   - leases
   verbs:
   - "*"
+- apiGroups: ["apps"]
+  resources: ["replicasets"]
+  verbs: ["get", "list"]
+- apiGroups: ["apiextensions.k8s.io"]
+  resources: ["customresourcedefinitions"]
+  verbs: ["list", "watch"]
+- apiGroups: [""]
+  resources: ["deployments"]
+  verbs: ["list", "watch"]
+- apiGroups: ["apps"]
+  resources: ["deployments"]
+  verbs: ["list", "watch"]
+- apiGroups: [""]
+  resources: ["certificates"]
+  verbs: ["create", "list"]

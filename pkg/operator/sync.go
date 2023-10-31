@@ -75,12 +75,16 @@ type manifestPaths struct {
 }
 
 const (
-	mscClusterRoleManifestPath              = "manifests/machine-state-controller/clusterrole.yaml"
-	mscEventsClusterRoleManifestPath        = "manifests/machine-state-controller/events-clusterrole.yaml"
-	mscEventsRoleBindingDefaultManifestPath = "manifests/machine-state-controller/events-rolebinding-default.yaml"
-	mscEventsRoleBindingTargetManifestPath  = "manifests/machine-state-controller/events-rolebinding-target.yaml"
-	mscClusterRoleBindingManifestPath       = "manifests/machine-state-controller/clusterrolebinding.yaml"
-	mscServiceAccountManifestPath           = "manifests/machine-state-controller/sa.yaml"
+	// Machine State Controller manifest paths
+	mscClusterRoleManifestPath                = "manifests/machine-state-controller/clusterrole.yaml"
+	mscEventsClusterRoleManifestPath          = "manifests/machine-state-controller/events-clusterrole.yaml"
+	mscEventsRoleBindingDefaultManifestPath   = "manifests/machine-state-controller/events-rolebinding-default.yaml"
+	mscEventsRoleBindingTargetManifestPath    = "manifests/machine-state-controller/events-rolebinding-target.yaml"
+	mscClusterRoleBindingManifestPath         = "manifests/machine-state-controller/clusterrolebinding.yaml"
+	mscServiceAccountManifestPath             = "manifests/machine-state-controller/sa.yaml"
+	mscKubeRbacProxyConfigMapPath             = "manifests/machine-state-controller/kube-rbac-proxy-config.yaml"
+	mscKubeRbacProxyPrometheusRolePath        = "manifests/machine-state-controller/prometheus-rbac.yaml"
+	mscKubeRbacProxyPrometheusRoleBindingPath = "manifests/machine-state-controller/prometheus-rolebinding-target.yaml"
 
 	// Machine Config Controller manifest paths
 	mccClusterRoleManifestPath                = "manifests/machineconfigcontroller/clusterrole.yaml"
@@ -715,12 +719,19 @@ func (optr *Operator) syncMachineStateController(config *renderConfig) error {
 			mscClusterRoleManifestPath,
 			mscEventsClusterRoleManifestPath,
 		},
+		roles: []string{
+			mscKubeRbacProxyPrometheusRolePath,
+		},
 		roleBindings: []string{
 			mscEventsRoleBindingDefaultManifestPath,
 			mscEventsRoleBindingTargetManifestPath,
+			mscKubeRbacProxyPrometheusRoleBindingPath,
 		},
 		clusterRoleBindings: []string{
 			mscClusterRoleBindingManifestPath,
+		},
+		configMaps: []string{
+			mscKubeRbacProxyConfigMapPath,
 		},
 		serviceAccounts: []string{
 			mscServiceAccountManifestPath,
