@@ -274,6 +274,9 @@ func WaitForPoolToBeUpdated(t *testing.T, cs *framework.ClientSet, pool string) 
 		if err != nil {
 			return false, err
 		}
+		if apihelpers.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolDegraded) {
+			return false, fmt.Errorf("machine config pool is degraded")
+		}
 		if apihelpers.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolUpdated) {
 			return true, nil
 		}
