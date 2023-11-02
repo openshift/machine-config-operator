@@ -140,11 +140,7 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.Contro
 
 	kargs := []string{}
 	for _, cfg := range configs {
-		for _, arg := range cfg.Spec.KernelArguments {
-			if !InSlice(arg, kargs) {
-				kargs = append(kargs, arg)
-			}
-		}
+		kargs = append(kargs, cfg.Spec.KernelArguments...)
 	}
 
 	extensions := []string{}
