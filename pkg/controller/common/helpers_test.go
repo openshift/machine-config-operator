@@ -12,6 +12,7 @@ import (
 	validate3 "github.com/coreos/ignition/v2/config/validate"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
@@ -263,6 +264,10 @@ func TestMergeMachineConfigs(t *testing.T) {
 
 	// Test that a singular base config that sets FIPS also sets other defaults correctly
 	machineConfigFIPS := &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "fips",
+			Labels: map[string]string{MachineConfigRoleLabel: MachineConfigPoolWorker},
+		},
 		Spec: mcfgv1.MachineConfigSpec{
 			FIPS: fips,
 		},
@@ -301,27 +306,43 @@ func TestMergeMachineConfigs(t *testing.T) {
 	// machineconfig, but now that we're doing layering, we want to
 	// give that functionality back, so make sure we can override it
 	machineConfigOSImageURL := &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "osimageurl",
+			Labels: map[string]string{MachineConfigRoleLabel: MachineConfigPoolWorker},
+		},
 		Spec: mcfgv1.MachineConfigSpec{
 			OSImageURL: "overriddenURL",
 		},
 	}
 	machineConfigKernelArgs := &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "kargs",
+			Labels: map[string]string{MachineConfigRoleLabel: MachineConfigPoolWorker},
+		},
 		Spec: mcfgv1.MachineConfigSpec{
 			KernelArguments: kargs,
 		},
 	}
 	machineConfigKernelType := &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "kerneltype",
+			Labels: map[string]string{MachineConfigRoleLabel: MachineConfigPoolWorker},
+		},
 		Spec: mcfgv1.MachineConfigSpec{
 			KernelType: KernelTypeRealtime,
 		},
 	}
 	machineConfigExtensions := &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "extension",
+			Labels: map[string]string{MachineConfigRoleLabel: MachineConfigPoolWorker},
+		},
 		Spec: mcfgv1.MachineConfigSpec{
 			Extensions: extensions,
 		},
 	}
 
-	machineConfigIgnSSHUser := helpers.CreateMachineConfigFromIgnition(ign3types.Config{
+	machineConfigIgnSSHUser := helpers.CreateMachineConfigFromIgnitionWithMetadata(ign3types.Config{
 		Ignition: ign3types.Ignition{
 			Version: ign3types.MaxVersion.String(),
 		},
@@ -330,9 +351,9 @@ func TestMergeMachineConfigs(t *testing.T) {
 				{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"1234"}},
 			},
 		},
-	})
+	}, "ssh", MachineConfigPoolWorker)
 
-	machineConfigIgnPasswdHashUser := helpers.CreateMachineConfigFromIgnition(ign3types.Config{
+	machineConfigIgnPasswdHashUser := helpers.CreateMachineConfigFromIgnitionWithMetadata(ign3types.Config{
 		Ignition: ign3types.Ignition{
 			Version: ign3types.MaxVersion.String(),
 		},
@@ -341,16 +362,16 @@ func TestMergeMachineConfigs(t *testing.T) {
 				{Name: "core", PasswordHash: helpers.StrToPtr("testpass")},
 			},
 		},
-	})
+	}, "passwd", MachineConfigPoolWorker)
 
 	// we added some v3 specific logic for kargs, make sure we didn't break the v2 path
-	machineConfigIgnV2Merge := helpers.CreateMachineConfigFromIgnition(ign2types.Config{
+	machineConfigIgnV2Merge := helpers.CreateMachineConfigFromIgnitionWithMetadata(ign2types.Config{
 		Ignition: ign2types.Ignition{
 			Version: ign2types.MaxVersion.String(),
 		},
-	})
+	}, "v2", MachineConfigPoolWorker)
 
-	machineConfigIgn := helpers.CreateMachineConfigFromIgnition(ign3types.Config{
+	machineConfigIgn := helpers.CreateMachineConfigFromIgnitionWithMetadata(ign3types.Config{
 		Ignition: ign3types.Ignition{
 			Version: ign3types.MaxVersion.String(),
 		},
@@ -359,7 +380,7 @@ func TestMergeMachineConfigs(t *testing.T) {
 				{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"5678"}},
 			},
 		},
-	})
+	}, "ssh", MachineConfigPoolWorker)
 
 	// Now merge all of the above
 	inMachineConfigs = []*mcfgv1.MachineConfig{
@@ -399,6 +420,119 @@ func TestMergeMachineConfigs(t *testing.T) {
 		},
 	}
 	assert.Equal(t, *mergedMachineConfig, *expectedMachineConfig)
+
+	// Test that custom pool configuration can overwrite base pool configuration
+	// Also test that other alphanumeric ordering is preserved
+	filePath1 := "/etc/test1"
+	filePath2 := "/etc/test2"
+	mode := 420
+	testDataOld := "data:,old"
+	testDataNew := "data:,new"
+
+	machineConfigWorker1 := helpers.CreateMachineConfigFromIgnitionWithMetadata(ign3types.Config{
+		Ignition: ign3types.Ignition{
+			Version: ign3types.MaxVersion.String(),
+		},
+		Storage: ign3types.Storage{
+			Files: []ign3types.File{
+				helpers.CreateIgn3File(filePath1, testDataOld, mode),
+			},
+		},
+	}, "aaa", MachineConfigPoolWorker)
+	machineConfigWorker2 := helpers.CreateMachineConfigFromIgnitionWithMetadata(ign3types.Config{
+		Ignition: ign3types.Ignition{
+			Version: ign3types.MaxVersion.String(),
+		},
+		Storage: ign3types.Storage{
+			Files: []ign3types.File{
+				helpers.CreateIgn3File(filePath1, testDataNew, mode),
+			},
+		},
+	}, "bbb", MachineConfigPoolWorker)
+	machineConfigWorker3 := helpers.CreateMachineConfigFromIgnitionWithMetadata(ign3types.Config{
+		Ignition: ign3types.Ignition{
+			Version: ign3types.MaxVersion.String(),
+		},
+		Storage: ign3types.Storage{
+			Files: []ign3types.File{
+				helpers.CreateIgn3File(filePath2, testDataOld, mode),
+			},
+		},
+	}, "ddd", MachineConfigPoolWorker)
+	machineConfigInfra := helpers.CreateMachineConfigFromIgnitionWithMetadata(ign3types.Config{
+		Ignition: ign3types.Ignition{
+			Version: ign3types.MaxVersion.String(),
+		},
+		Storage: ign3types.Storage{
+			Files: []ign3types.File{
+				helpers.CreateIgn3File(filePath2, testDataNew, mode),
+			},
+		},
+	}, "ccc", "infra")
+
+	inMachineConfigs = []*mcfgv1.MachineConfig{
+		machineConfigInfra,
+		machineConfigWorker1,
+		machineConfigWorker2,
+		machineConfigWorker3,
+	}
+
+	cconfig = &mcfgv1.ControllerConfig{}
+	mergedMachineConfig, err = MergeMachineConfigs(inMachineConfigs, cconfig)
+	require.Nil(t, err)
+
+	// The expectation here is that the merged config contains the MCs with name bbb (overrides aaa due to name) and ccc (overrides ddd due to pool)
+	expectedMachineConfig = &mcfgv1.MachineConfig{
+		Spec: mcfgv1.MachineConfigSpec{
+			KernelArguments: []string{},
+			Config: runtime.RawExtension{
+				Raw: helpers.MarshalOrDie(ign3types.Config{
+					Ignition: ign3types.Ignition{
+						Version: ign3types.MaxVersion.String(),
+					},
+					Storage: ign3types.Storage{
+						Files: []ign3types.File{
+							{
+								FileEmbedded1: ign3types.FileEmbedded1{
+									Contents: ign3types.Resource{
+										Source: &testDataNew,
+									},
+									Mode: &mode,
+								},
+								Node: ign3types.Node{
+									Path:      filePath1,
+									Overwrite: boolToPtr(true),
+									User: ign3types.NodeUser{
+										Name: helpers.StrToPtr("root"),
+									},
+								},
+							},
+							{
+								FileEmbedded1: ign3types.FileEmbedded1{
+									Contents: ign3types.Resource{
+										Source: &testDataNew,
+									},
+									Mode: &mode,
+								},
+								Node: ign3types.Node{
+									Path:      filePath2,
+									Overwrite: boolToPtr(true),
+									User: ign3types.NodeUser{
+										Name: helpers.StrToPtr("root"),
+									},
+								},
+							},
+						},
+					},
+				}),
+			},
+			FIPS:       false,
+			KernelType: KernelTypeDefault,
+			Extensions: []string{},
+		},
+	}
+	assert.Equal(t, *mergedMachineConfig, *expectedMachineConfig)
+
 }
 
 func TestRemoveIgnDuplicateFilesAndUnits(t *testing.T) {
@@ -538,6 +672,10 @@ func TestSetDefaultFileOverwrite(t *testing.T) {
 	// Convert and create the expected pre-merge config
 	rawOutIgnPreMerge, err := json.Marshal(testIgn3ConfigPreMerge)
 	machineConfigPreMerge := &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "overwrite",
+			Labels: map[string]string{"machineconfiguration.openshift.io/role": MachineConfigPoolWorker},
+		},
 		Spec: mcfgv1.MachineConfigSpec{
 			Config: runtime.RawExtension{
 				Raw: rawOutIgnPreMerge,
