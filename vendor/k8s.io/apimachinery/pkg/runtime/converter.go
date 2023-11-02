@@ -231,7 +231,7 @@ func (c *fromUnstructuredContext) pushKey(key string) {
 
 }
 
-// FromUnstructuredWIthValidation converts an object from map[string]interface{} representation into a concrete type.
+// FromUnstructuredWithValidation converts an object from map[string]interface{} representation into a concrete type.
 // It uses encoding/json/Unmarshaler if object implements it or reflection if not.
 // It takes a validationDirective that indicates how to behave when it encounters unknown fields.
 func (c *unstructuredConverter) FromUnstructuredWithValidation(u map[string]interface{}, obj interface{}, returnUnknownFields bool) error {
@@ -465,7 +465,7 @@ func sliceFromUnstructured(sv, dv reflect.Value, ctx *fromUnstructuredContext) e
 			}
 			dv.SetBytes(data)
 		} else {
-			dv.Set(reflect.Zero(dt))
+			dv.Set(reflect.MakeSlice(dt, 0, 0))
 		}
 		return nil
 	}
@@ -705,24 +705,13 @@ func mapToUnstructured(sv, dv reflect.Value) error {
 	}
 	if dt.Kind() == reflect.Interface && dv.NumMethod() == 0 {
 		if st.Key().Kind() == reflect.String {
-			switch st.Elem().Kind() {
-			// TODO It should be possible to reuse the slice for primitive types.
-			// However, it is panicing in the following form.
-			// case reflect.String, reflect.Bool,
-			// 	reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
-			// 	reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-			// 	sv.Set(sv)
-			// 	return nil
-			default:
-				// We need to do a proper conversion.
-			}
+			dv.Set(reflect.MakeMap(mapStringInterfaceType))
+			dv = dv.Elem()
+			dt = dv.Type()
 		}
-		dv.Set(reflect.MakeMap(mapStringInterfaceType))
-		dv = dv.Elem()
-		dt = dv.Type()
 	}
 	if dt.Kind() != reflect.Map {
-		return fmt.Errorf("cannot convert struct to: %v", dt.Kind())
+		return fmt.Errorf("cannot convert map to: %v", dt.Kind())
 	}
 
 	if !st.Key().AssignableTo(dt.Key()) && !st.Key().ConvertibleTo(dt.Key()) {
@@ -763,20 +752,9 @@ func sliceToUnstructured(sv, dv reflect.Value) error {
 		return nil
 	}
 	if dt.Kind() == reflect.Interface && dv.NumMethod() == 0 {
-		switch st.Elem().Kind() {
-		// TODO It should be possible to reuse the slice for primitive types.
-		// However, it is panicing in the following form.
-		// case reflect.String, reflect.Bool,
-		// 	reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
-		// 	reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		// 	sv.Set(sv)
-		// 	return nil
-		default:
-			// We need to do a proper conversion.
-			dv.Set(reflect.MakeSlice(reflect.SliceOf(dt), sv.Len(), sv.Cap()))
-			dv = dv.Elem()
-			dt = dv.Type()
-		}
+		dv.Set(reflect.MakeSlice(reflect.SliceOf(dt), sv.Len(), sv.Cap()))
+		dv = dv.Elem()
+		dt = dv.Type()
 	}
 	if dt.Kind() != reflect.Slice {
 		return fmt.Errorf("cannot convert slice to: %v", dt.Kind())
