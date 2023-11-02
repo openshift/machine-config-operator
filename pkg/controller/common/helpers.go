@@ -75,7 +75,27 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.Contro
 	if len(configs) == 0 {
 		return nil, nil
 	}
-	sort.SliceStable(configs, func(i, j int) bool { return configs[i].Name < configs[j].Name })
+
+	// Overall the sort is alphanumerical, but custom pool configuration should take priority.
+	// Generally speaking if a custom pool is created, the expectation is that custom pool configuration should override base
+	// worker configuration.
+	// This mostly aims to help with generated configs (e.g. kubelet or containerruntime configs) where the pool name is
+	// part of the MachineConfig name, which cannot be directly modified.
+	var workerConfigs, otherConfigs []*mcfgv1.MachineConfig
+	for _, config := range configs {
+		if config.ObjectMeta.Labels == nil {
+			// This shouldn't really be possible
+			return nil, fmt.Errorf("Cannot find label in MachineConfig %s", config.ObjectMeta.Name)
+		}
+		if config.ObjectMeta.Labels[MachineConfigRoleLabel] == MachineConfigPoolWorker {
+			workerConfigs = append(workerConfigs, config)
+		} else {
+			otherConfigs = append(otherConfigs, config)
+		}
+	}
+	sort.SliceStable(workerConfigs, func(i, j int) bool { return workerConfigs[i].Name < workerConfigs[j].Name })
+	sort.SliceStable(otherConfigs, func(i, j int) bool { return otherConfigs[i].Name < otherConfigs[j].Name })
+	configs = append(workerConfigs, otherConfigs...)
 
 	var fips bool
 	var kernelType string

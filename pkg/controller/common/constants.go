@@ -61,4 +61,7 @@ const (
 	// to be 3.4.0 currently". Ideally if you find an explicit "3.4.0", it's supposed to be "3.4.0" version. If it's this constant,
 	// it's supposed to be the internal default version.
 	InternalMCOIgnitionVersion = "3.4.0"
+
+	// MachineConfigRoleLabel is the role on MachineConfigs, used to select for pools
+	MachineConfigRoleLabel = "machineconfiguration.openshift.io/role"
 )
