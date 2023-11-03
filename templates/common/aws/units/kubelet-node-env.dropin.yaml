@@ -1,0 +1,6 @@
+name: kubelet.service
+dropins:
+- name: 20-node-env.conf
+  contents: |
+    [Service]
+    EnvironmentFile=/etc/kubernetes/node.env
