@@ -89,10 +89,12 @@ type ControllerConfigSpec struct {
 	Proxy *configv1.ProxyStatus `json:"proxy"`
 
 	// infra holds the infrastructure details
+	// +kubebuilder:validation:EmbeddedResource
 	// +nullable
 	Infra *configv1.Infrastructure `json:"infra"`
 
 	// dns holds the cluster dns details
+	// +kubebuilder:validation:EmbeddedResource
 	// +nullable
 	DNS *configv1.DNS `json:"dns"`
 

@@ -151,6 +151,7 @@ spec:
                 required:
                 - spec
                 type: object
+                x-kubernetes-embedded-resource: true
               etcdDiscoveryDomain:
                 description: etcdDiscoveryDomain is deprecated, use Infra.Status.EtcdDiscoveryDomain
                   instead
@@ -901,6 +902,7 @@ spec:
                 required:
                 - spec
                 type: object
+                x-kubernetes-embedded-resource: true
               ipFamilies:
                 description: ipFamilies indicates the IP families in use by the cluster
                   network
