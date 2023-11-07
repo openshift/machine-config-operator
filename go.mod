@@ -28,26 +28,28 @@ require (
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/openshift/api v0.0.0-20220915134421-1265e9925688
 	github.com/openshift/client-go v0.0.0-20220831193253-4950ae70c8ea
-	github.com/openshift/library-go v0.0.0-20220915130036-73d5a4a82865
+	github.com/openshift/library-go v0.0.0-20231020125033-d932feccfc56
 	github.com/openshift/runtime-utils v0.0.0-20220906151503-3beb0b584526
 	github.com/prometheus/client_golang v1.13.0
 	github.com/spf13/cobra v1.5.0
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.8.0
 	github.com/vincent-petithory/dataurl v1.0.0
-	golang.org/x/net v0.0.0-20220822230855-b0a4917ee28c
+	golang.org/x/net v0.17.0
 	golang.org/x/time v0.0.0-20220609170525-579cf78fd858
-	k8s.io/api v0.25.1
-	k8s.io/apiextensions-apiserver v0.25.1
-	k8s.io/apimachinery v0.25.1
-	k8s.io/client-go v0.25.1
-	k8s.io/code-generator v0.25.1
-	k8s.io/component-base v0.25.1
-	k8s.io/kubectl v0.25.1
-	k8s.io/kubelet v0.25.1
+	k8s.io/api v0.25.15
+	k8s.io/apiextensions-apiserver v0.25.15
+	k8s.io/apimachinery v0.25.15
+	k8s.io/client-go v0.25.15
+	k8s.io/code-generator v0.25.15
+	k8s.io/component-base v0.25.15
+	k8s.io/kubectl v0.25.15
+	k8s.io/kubelet v0.25.15
 	k8s.io/utils v0.0.0-20220823124924-e9cbc92d1a73
 	sigs.k8s.io/controller-runtime v0.13.0
 )
+
+require gopkg.in/DATA-DOG/go-sqlmock.v1 v1.3.0 // indirect
 
 require (
 	4d63.com/gochecknoglobals v0.1.0 // indirect
@@ -264,16 +266,16 @@ require (
 	go.uber.org/multierr v1.6.0 // indirect
 	go.uber.org/zap v1.21.0 // indirect
 	go4.org v0.0.0-20200104003542-c7e774b10ea0 // indirect
-	golang.org/x/crypto v0.0.0-20220722155217-630584e8d5aa // indirect
+	golang.org/x/crypto v0.14.0 // indirect
 	golang.org/x/exp v0.0.0-20220722155223-a9213eeb770e // indirect
 	golang.org/x/exp/typeparams v0.0.0-20220613132600-b0d781184e0d // indirect
-	golang.org/x/mod v0.6.0-dev.0.20220419223038-86c51ed26bb4 // indirect
+	golang.org/x/mod v0.8.0 // indirect
 	golang.org/x/oauth2 v0.0.0-20220622183110-fd043fe589d2 // indirect
-	golang.org/x/sync v0.0.0-20220722155255-886fb9371eb4 // indirect
-	golang.org/x/sys v0.0.0-20220818161305-2296e01440c6 // indirect
-	golang.org/x/term v0.0.0-20210927222741-03fcf44c2211 // indirect
-	golang.org/x/text v0.3.7 // indirect
-	golang.org/x/tools v0.1.12 // indirect
+	golang.org/x/sync v0.1.0 // indirect
+	golang.org/x/sys v0.13.0 // indirect
+	golang.org/x/term v0.13.0 // indirect
+	golang.org/x/text v0.13.0 // indirect
+	golang.org/x/tools v0.6.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/genproto v0.0.0-20220624142145-8cd45d7dbd1f // indirect
 	google.golang.org/grpc v1.47.0 // indirect
@@ -284,10 +286,10 @@ require (
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	honnef.co/go/tools v0.3.3 // indirect
-	k8s.io/apiserver v0.25.1 // indirect
-	k8s.io/cli-runtime v0.25.1 // indirect
+	k8s.io/apiserver v0.25.15 // indirect
+	k8s.io/cli-runtime v0.25.15 // indirect
 	k8s.io/gengo v0.0.0-20211129171323-c02415ce4185 // indirect
-	k8s.io/klog/v2 v2.70.1 // indirect
+	k8s.io/klog/v2 v2.70.1
 	k8s.io/kube-aggregator v0.25.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20220803162953-67bda5d908f1 // indirect
 	mvdan.cc/gofumpt v0.3.1 // indirect
@@ -303,7 +305,6 @@ require (
 )
 
 replace (
-	github.com/InVisionApp/go-health => github.com/InVisionApp/go-health v1.1.7-0.20190926150048-b5cab38233bb
 	github.com/go-log/log => github.com/go-log/log v0.1.1-0.20181211034820-a514cf01a3eb
 	github.com/godbus/dbus => github.com/godbus/dbus v0.0.0-20190623212516-8a1682060722
 	github.com/opencontainers/runtime-spec => github.com/opencontainers/runtime-spec v0.1.2-0.20190408193819-a1b50f621a48
