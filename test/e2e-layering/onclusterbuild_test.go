@@ -244,10 +244,15 @@ func TestSSHKeyAndPasswordForOSBuilder(t *testing.T) {
 		customDockerfiles: map[string]string{},
 	})
 
+	cleanupFunc := optPoolIntoLayering(t, cs, "layered")
+
+	// wait for pool to complete building
+	helpers.WaitForPoolToBeUpdated(t, cs, layeredMCPName)
+
 	// Set up Ignition config with the desired SSH key and password
 	testIgnConfig := ctrlcommon.NewIgnConfig()
-	sshKeyContent := "testsshkey"
-	passwordHash := "testpassword"
+	sshKeyContent := "testsshkey1"
+	passwordHash := "testpassword1"
 
 	// retreive initial etc/shadow contents
 	initialEtcShadowContents := helpers.ExecCmdOnNode(t, cs, osNode, "grep", "^core:", "/rootfs/etc/shadow")
@@ -308,10 +313,10 @@ func TestSSHKeyAndPasswordForOSBuilder(t *testing.T) {
 
 	t.Cleanup(func() {
 		unlabelFunc()
+		cleanupFunc()
 		if err := cs.MachineConfigs().Delete(context.TODO(), testConfig.Name, metav1.DeleteOptions{}); err != nil {
 			t.Error(err)
 		}
-		// delete()
 		t.Logf("Deleted MachineConfig %s", testConfig.Name)
 	})
 }

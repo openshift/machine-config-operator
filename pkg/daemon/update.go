@@ -399,7 +399,7 @@ func calculatePostConfigChangeAction(diff *machineConfigDiff, diffFileSet []stri
 func (dn *Daemon) updateOnClusterBuild(oldConfig, newConfig *mcfgv1.MachineConfig, oldImage, newImage string, skipCertificateWrite bool) (retErr error) {
 	oldConfig = canonicalizeEmptyMC(oldConfig)
 
-	err := dn.sharedUpdateRoutine(oldConfig, newConfig, oldImage, newImage, skipCertificateWrite, true)
+	err := dn.PerformImageUpdate(oldConfig, newConfig, oldImage, newImage, skipCertificateWrite)
 	if err != nil {
 		return err
 	}
@@ -519,27 +519,7 @@ func (dn *Daemon) updateOnClusterBuild(oldConfig, newConfig *mcfgv1.MachineConfi
 	return dn.reboot(fmt.Sprintf("Node will reboot into image %s / MachineConfig %s", newImage, newConfigName))
 }
 
-func (dn *Daemon) updateImage(oldConfig, newConfig *mcfgv1.MachineConfig, oldImage, newImage string, writeNewImageToOnDiskConfig bool) error {
-	err := dn.sharedUpdateRoutine(nil, newConfig, oldImage, newImage, false, writeNewImageToOnDiskConfig)
-	if err != nil {
-		return err
-	}
-
-	// on-disk configuration logic
-	odc := &onDiskConfig{
-		currentConfig: newConfig,
-	}
-	if writeNewImageToOnDiskConfig {
-		odc.currentImage = newImage
-	}
-	if err := dn.storeCurrentConfigOnDisk(odc); err != nil {
-		return err
-	}
-
-	return dn.reboot(fmt.Sprintf("Node will reboot into image %s", newImage))
-}
-
-func (dn *Daemon) sharedUpdateRoutine(oldConfig, newConfig *mcfgv1.MachineConfig, oldImage, newImage string, skipCertificateWrite, writeNewImageToOnDiskConfig bool) error {
+func (dn *Daemon) PerformImageUpdate(oldConfig, newConfig *mcfgv1.MachineConfig, oldImage, newImage string, skipCertificateWrite bool) error {
 	// setting node's state to working
 	if dn.nodeWriter != nil {
 		state, err := getNodeAnnotationExt(dn.node, constants.MachineConfigDaemonStateAnnotationKey, true)

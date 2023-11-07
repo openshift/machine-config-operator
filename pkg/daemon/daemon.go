@@ -2180,12 +2180,34 @@ func (dn *Daemon) completeUpdate(desiredConfigName string) error {
 
 func (dn *Daemon) revertToNonLayeredState(desiredConfig *mcfgv1.MachineConfig, currentImage string) error {
 	// Get the default OS image from the machine-config-osimageurl ConfigMap or the machine-config-images ConfigMap.
-	defaultOSImage, _ := dn.loadFromConfigMap()
-	return dn.updateImage(nil, desiredConfig, currentImage, defaultOSImage, false)
+	defaultOSImage, err := dn.getDefaultOSPullspec()
+	if err != nil {
+		return fmt.Errorf("failed to get default OS image pull spec: %w", err)
+	}
+
+	// Perform the image update with the logic that was previously in updateImage
+	err = dn.PerformImageUpdate(nil, desiredConfig, currentImage, defaultOSImage, false)
+	if err != nil {
+		return err
+	}
+
+	// Update the on-disk configuration with the new MachineConfig and new image without the conditional.
+	// Since writeNewImageToOnDiskConfig is always false in the previous call, it is assumed that
+	// we do not write the new image to the on-disk config in the revertToNonLayeredState scenario.
+	odc := &onDiskConfig{
+		currentConfig: desiredConfig,
+		currentImage:  defaultOSImage, // Set the current image to the default obtained earlier
+	}
+	if err := dn.storeCurrentConfigOnDisk(odc); err != nil {
+		return err
+	}
+
+	// Trigger a reboot to apply the new image and config
+	return dn.reboot(fmt.Sprintf("Node will reboot into image %s", defaultOSImage))
 }
 
-// loadFromConfigMap retrieves the default OS image URL from a ConfigMap.
-func (dn *Daemon) loadFromConfigMap() (string, error) {
+// getDefaultOSPullspec retrieves the default OS image URL from a ConfigMap.
+func (dn *Daemon) getDefaultOSPullspec() (string, error) {
 	// Setup Kubernetes client
 	config, err := rest.InClusterConfig()
 	if err != nil {
@@ -2197,9 +2219,8 @@ func (dn *Daemon) loadFromConfigMap() (string, error) {
 	}
 
 	// Fetch the ConfigMap
-	namespace := "openshift-machine-config-operator"
 	configMapName := "machine-config-osimageurl"
-	configMap, err := clientset.CoreV1().ConfigMaps(namespace).Get(context.TODO(), configMapName, v1.GetOptions{})
+	configMap, err := clientset.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), configMapName, v1.GetOptions{})
 	if err != nil {
 		return "", err
 	}
