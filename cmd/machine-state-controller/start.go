@@ -1,7 +1,17 @@
 package main
 
 import (
+	"context"
+	"os"
+
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+
+	"github.com/openshift/machine-config-operator/cmd/common"
+	"github.com/openshift/machine-config-operator/internal/clients"
+	"github.com/openshift/machine-config-operator/pkg/controller/state"
 	"github.com/spf13/cobra"
+	"k8s.io/client-go/tools/leaderelection"
+	"k8s.io/klog/v2"
 )
 
 var (
@@ -37,11 +47,10 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 	run := func(ctx context.Context) {
 		go common.SignalHandler(runCancel)
 
-		ctrlctx := ctrlcommon.CreateControllerContext(ctx, cb, ctrlcommon.MCONamespace)
+		ctrlctx := ctrlcommon.CreateControllerContext(ctx, cb)
 
-		ctrl := state.New(ctrlctx.NamespacedInformerFactory.Machineconfiguration().V1().MachineConfigStates(),
-			ctrlctx.KubeNamespacedInformerFactory.Core().V1().Events(),
-			ctrlctx.KubeInformerFactory.Core().V1().Nodes(),
+		ctrl := state.New(
+			ctrlctx.KubeInformerFactory.Core().V1().Services(),
 			state.StateControllerConfig{}, ctrlctx.ClientBuilder.KubeClientOrDie(componentName),
 			ctrlctx.ClientBuilder.MachineConfigClientOrDie(componentName),
 		)

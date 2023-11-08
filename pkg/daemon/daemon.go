@@ -42,7 +42,6 @@ import (
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	mcoResourceRead "github.com/openshift/machine-config-operator/lib/resourceread"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	statectrl "github.com/openshift/machine-config-operator/pkg/controller/state"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 
 	"github.com/openshift/machine-config-operator/pkg/daemon/osrelease"
@@ -313,15 +312,6 @@ func (dn *Daemon) ClusterConnect(
 	kubeletHealthzEnabled bool,
 	kubeletHealthzEndpoint string,
 ) error {
-
-	healthPod, err := statectrl.StateControllerPod(kubeClient)
-	if err != nil {
-		klog.Error(err)
-	}
-
-	if healthPod != nil {
-		dn.stateControllerPod = healthPod
-	}
 
 	dn.name = name
 	dn.kubeClient = kubeClient

@@ -133,6 +133,7 @@ spec:
                       type:
                         description: type specifies the state of the operator's reconciliation functionality.
                         type: string
+                  x-kubernetes-list-type: atomic
                 observedGeneration:
                   description: observedGeneration represents the generation observed by the controller.
                   type: integer

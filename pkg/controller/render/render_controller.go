@@ -14,7 +14,6 @@ import (
 	mcoResourceApply "github.com/openshift/machine-config-operator/lib/resourceapply"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	"github.com/openshift/machine-config-operator/pkg/controller/state"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	corev1 "k8s.io/api/core/v1"
@@ -401,14 +400,6 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		klog.V(4).Infof("Finished syncing machineconfigpool %q (%v)", key, time.Since(startTime))
 	}()
 
-	healthPod, err := state.StateControllerPod(ctrl.kubeClient)
-	if err != nil {
-		klog.Error(err)
-	}
-
-	if healthPod != nil {
-		ctrl.stateControllerPod = healthPod
-	}
 	_, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		return err

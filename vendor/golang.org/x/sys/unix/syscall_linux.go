@@ -693,10 +693,10 @@ type SockaddrALG struct {
 
 func (sa *SockaddrALG) sockaddr() (unsafe.Pointer, _Socklen, error) {
 	// Leave room for NUL byte terminator.
-	if len(sa.Type) > len(sa.raw.Type)-1 {
+	if len(sa.Type) > 13 {
 		return nil, 0, EINVAL
 	}
-	if len(sa.Name) > len(sa.raw.Name)-1 {
+	if len(sa.Name) > 63 {
 		return nil, 0, EINVAL
 	}
 
@@ -704,8 +704,17 @@ func (sa *SockaddrALG) sockaddr() (unsafe.Pointer, _Socklen, error) {
 	sa.raw.Feat = sa.Feature
 	sa.raw.Mask = sa.Mask
 
-	copy(sa.raw.Type[:], sa.Type)
-	copy(sa.raw.Name[:], sa.Name)
+	typ, err := ByteSliceFromString(sa.Type)
+	if err != nil {
+		return nil, 0, err
+	}
+	name, err := ByteSliceFromString(sa.Name)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	copy(sa.raw.Type[:], typ)
+	copy(sa.raw.Name[:], name)
 
 	return unsafe.Pointer(&sa.raw), SizeofSockaddrALG, nil
 }
@@ -1876,7 +1885,7 @@ func Getpgrp() (pid int) {
 //sys	PerfEventOpen(attr *PerfEventAttr, pid int, cpu int, groupFd int, flags int) (fd int, err error)
 //sys	PivotRoot(newroot string, putold string) (err error) = SYS_PIVOT_ROOT
 //sys	Prctl(option int, arg2 uintptr, arg3 uintptr, arg4 uintptr, arg5 uintptr) (err error)
-//sys	pselect6(nfd int, r *FdSet, w *FdSet, e *FdSet, timeout *Timespec, sigmask *sigset_argpack) (n int, err error)
+//sys	Pselect(nfd int, r *FdSet, w *FdSet, e *FdSet, timeout *Timespec, sigmask *Sigset_t) (n int, err error) = SYS_PSELECT6
 //sys	read(fd int, p []byte) (n int, err error)
 //sys	Removexattr(path string, attr string) (err error)
 //sys	Renameat2(olddirfd int, oldpath string, newdirfd int, newpath string, flags uint) (err error)
@@ -1979,6 +1988,8 @@ func Signalfd(fd int, sigmask *Sigset_t, flags int) (newfd int, err error) {
 //sys	Unshare(flags int) (err error)
 //sys	write(fd int, p []byte) (n int, err error)
 //sys	exitThread(code int) (err error) = SYS_EXIT
+//sys	readlen(fd int, p *byte, np int) (n int, err error) = SYS_READ
+//sys	writelen(fd int, p *byte, np int) (n int, err error) = SYS_WRITE
 //sys	readv(fd int, iovs []Iovec) (n int, err error) = SYS_READV
 //sys	writev(fd int, iovs []Iovec) (n int, err error) = SYS_WRITEV
 //sys	preadv(fd int, iovs []Iovec, offs_l uintptr, offs_h uintptr) (n int, err error) = SYS_PREADV
@@ -2143,12 +2154,6 @@ func Mremap(oldData []byte, newLength int, flags int) (data []byte, err error) {
 //sys	Msync(b []byte, flags int) (err error)
 //sys	Munlock(b []byte) (err error)
 //sys	Munlockall() (err error)
-
-const (
-	mremapFixed     = MREMAP_FIXED
-	mremapDontunmap = MREMAP_DONTUNMAP
-	mremapMaymove   = MREMAP_MAYMOVE
-)
 
 // Vmsplice splices user pages from a slice of Iovecs into a pipe specified by fd,
 // using the specified flags.

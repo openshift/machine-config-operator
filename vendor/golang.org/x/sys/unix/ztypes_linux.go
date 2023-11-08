@@ -866,11 +866,6 @@ const (
 	POLLNVAL = 0x20
 )
 
-type sigset_argpack struct {
-	ss    *Sigset_t
-	ssLen uintptr
-}
-
 type SignalfdSiginfo struct {
 	Signo     uint32
 	Errno     int32
@@ -5503,7 +5498,7 @@ const (
 	NL80211_RATE_INFO_HE_RU_ALLOC_52                        = 0x1
 	NL80211_RATE_INFO_HE_RU_ALLOC_996                       = 0x5
 	NL80211_RATE_INFO_HE_RU_ALLOC                           = 0x11
-	NL80211_RATE_INFO_MAX                                   = 0x1d
+	NL80211_RATE_INFO_MAX                                   = 0x16
 	NL80211_RATE_INFO_MCS                                   = 0x2
 	NL80211_RATE_INFO_SHORT_GI                              = 0x4
 	NL80211_RATE_INFO_VHT_MCS                               = 0x6
@@ -5868,18 +5863,3 @@ const (
 	VIRTIO_NET_HDR_GSO_UDP_L4 = 0x5
 	VIRTIO_NET_HDR_GSO_ECN    = 0x80
 )
-
-type SchedAttr struct {
-	Size     uint32
-	Policy   uint32
-	Flags    uint64
-	Nice     int32
-	Priority uint32
-	Runtime  uint64
-	Deadline uint64
-	Period   uint64
-	Util_min uint32
-	Util_max uint32
-}
-
-const SizeofSchedAttr = 0x38

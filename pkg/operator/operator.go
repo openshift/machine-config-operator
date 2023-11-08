@@ -7,7 +7,6 @@ import (
 
 	"k8s.io/klog/v2"
 
-	v1 "github.com/openshift/api/machineconfiguration/v1"
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/version"
@@ -76,7 +75,6 @@ type Operator struct {
 	imgLister        configlistersv1.ImageLister
 	crdLister        apiextlistersv1.CustomResourceDefinitionLister
 	mcpLister        mcfglistersv1.MachineConfigPoolLister
-	msLister         mcfglistersv1.MachineConfigStateLister
 	ccLister         mcfglistersv1.ControllerConfigLister
 	mcLister         mcfglistersv1.MachineConfigLister
 	deployLister     appslisterv1.DeploymentLister
@@ -156,7 +154,6 @@ func New(
 	mcoSecretInformer coreinformersv1.SecretInformer,
 	ocSecretInformer coreinformersv1.SecretInformer,
 	mcoCOInformer configinformersv1.ClusterOperatorInformer,
-	msInformer mcfginformersv1.MachineConfigStateInformer,
 ) *Operator {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
@@ -401,7 +398,7 @@ func (optr *Operator) sync(key string) error {
 		// "RenderConfig" must always run first as it sets the renderConfig in the operator
 		// for the sync funcs below
 		{"RenderConfig", optr.syncRenderConfig},
-		{"MachineConfigState", optr.syncMachineConfigStates},
+		{"MachineStateController", optr.syncMachineStateController},
 		{"MachineConfigPools", optr.syncMachineConfigPools},
 		{"MachineConfigDaemon", optr.syncMachineConfigDaemon},
 		{"MachineConfigController", optr.syncMachineConfigController},
@@ -411,14 +408,4 @@ func (optr *Operator) sync(key string) error {
 		{"RequiredPools", optr.syncRequiredMachineConfigPools},
 	}
 	return optr.syncAll(syncFuncs)
-}
-
-func (op *Operator) HealthAnnotations(object string, objectType string, kind v1.StateProgress) map[string]string {
-	annos := make(map[string]string)
-	annos["ms"] = "OperatorHealth" //might need this might not
-	annos["state"] = string(kind)
-	annos["ObjectName"] = object
-	annos["ObjectKind"] = objectType
-
-	return annos
 }

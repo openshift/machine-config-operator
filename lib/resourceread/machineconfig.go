@@ -60,15 +60,6 @@ func ReadMachineConfigPoolV1OrDie(objBytes []byte) *mcfgv1.MachineConfigPool {
 	return requiredObj.(*mcfgv1.MachineConfigPool)
 }
 
-// ReadMachineConfigPoolV1OrDie reads MachineConfigPool object from bytes. Panics on error.
-func ReadMachineConfigStateV1OrDie(objBytes []byte) *mcfgv1.MachineConfigState {
-	requiredObj, err := runtime.Decode(mcfgCodecs.UniversalDecoder(mcfgv1.SchemeGroupVersion), objBytes)
-	if err != nil {
-		panic(err)
-	}
-	return requiredObj.(*mcfgv1.MachineConfigState)
-}
-
 // ReadControllerConfigV1OrDie reads ControllerConfig object from bytes. Panics on error.
 func ReadControllerConfigV1OrDie(objBytes []byte) *mcfgv1.ControllerConfig {
 	requiredObj, err := runtime.Decode(mcfgCodecs.UniversalDecoder(mcfgv1.SchemeGroupVersion), objBytes)

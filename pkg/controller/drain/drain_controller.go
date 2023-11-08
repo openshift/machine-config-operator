@@ -12,7 +12,6 @@ import (
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	"github.com/openshift/machine-config-operator/pkg/controller/state"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -150,15 +149,6 @@ func (w writer) Write(p []byte) (n int, err error) {
 func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
-
-	healthPod, err := state.StateControllerPod(ctrl.kubeClient)
-	if err != nil {
-		klog.Error(err)
-	}
-
-	if healthPod != nil {
-		ctrl.stateControllerPod = healthPod
-	}
 
 	if !cache.WaitForCacheSync(stopCh, ctrl.nodeListerSynced) {
 		return

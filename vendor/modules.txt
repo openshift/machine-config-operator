@@ -802,7 +802,7 @@ github.com/opencontainers/runc/libcontainer/user
 # github.com/opencontainers/runtime-spec v1.1.0-rc.3
 ## explicit
 github.com/opencontainers/runtime-spec/specs-go
-# github.com/openshift/api v0.0.0-20230915112357-693d4b64813c => github.com/cdoern/api v0.0.0-20231005133555-eb1d410b3cc5
+# github.com/openshift/api v0.0.0-20231102215821-c90b4c82852e
 ## explicit; go 1.20
 github.com/openshift/api
 github.com/openshift/api/apiserver
@@ -837,10 +837,12 @@ github.com/openshift/api/machine/v1
 github.com/openshift/api/machine/v1alpha1
 github.com/openshift/api/machine/v1beta1
 github.com/openshift/api/machineconfiguration/v1
+github.com/openshift/api/machineconfiguration/v1alpha1
 github.com/openshift/api/monitoring
 github.com/openshift/api/monitoring/v1alpha1
 github.com/openshift/api/network
 github.com/openshift/api/network/v1
+github.com/openshift/api/network/v1alpha1
 github.com/openshift/api/networkoperator
 github.com/openshift/api/networkoperator/v1
 github.com/openshift/api/oauth
@@ -873,7 +875,7 @@ github.com/openshift/api/template
 github.com/openshift/api/template/v1
 github.com/openshift/api/user
 github.com/openshift/api/user/v1
-# github.com/openshift/client-go v0.0.0-20230926161409-848405da69e1 => github.com/cdoern/client-go v0.0.0-20231005134336-d47d5818c40d
+# github.com/openshift/client-go v0.0.0-20230926161409-848405da69e1 => github.com/cdoern/client-go v0.0.0-20231103192524-6d365f9a85a3
 ## explicit; go 1.20
 github.com/openshift/client-go/build/applyconfigurations/build/v1
 github.com/openshift/client-go/build/applyconfigurations/internal
@@ -911,16 +913,21 @@ github.com/openshift/client-go/image/clientset/versioned/scheme
 github.com/openshift/client-go/image/clientset/versioned/typed/image/v1
 github.com/openshift/client-go/machineconfiguration/applyconfigurations/internal
 github.com/openshift/client-go/machineconfiguration/applyconfigurations/machineconfiguration/v1
+github.com/openshift/client-go/machineconfiguration/applyconfigurations/machineconfiguration/v1alpha1
 github.com/openshift/client-go/machineconfiguration/clientset/versioned
 github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake
 github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme
 github.com/openshift/client-go/machineconfiguration/clientset/versioned/typed/machineconfiguration/v1
 github.com/openshift/client-go/machineconfiguration/clientset/versioned/typed/machineconfiguration/v1/fake
+github.com/openshift/client-go/machineconfiguration/clientset/versioned/typed/machineconfiguration/v1alpha1
+github.com/openshift/client-go/machineconfiguration/clientset/versioned/typed/machineconfiguration/v1alpha1/fake
 github.com/openshift/client-go/machineconfiguration/informers/externalversions
 github.com/openshift/client-go/machineconfiguration/informers/externalversions/internalinterfaces
 github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration
 github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1
+github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1alpha1
 github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1
+github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1
 github.com/openshift/client-go/operator/applyconfigurations/internal
 github.com/openshift/client-go/operator/applyconfigurations/operator/v1
 github.com/openshift/client-go/operator/applyconfigurations/operator/v1alpha1
@@ -1319,6 +1326,7 @@ golang.org/x/sync/semaphore
 ## explicit; go 1.17
 golang.org/x/sys/cpu
 golang.org/x/sys/execabs
+golang.org/x/sys/internal/unsafeheader
 golang.org/x/sys/plan9
 golang.org/x/sys/unix
 golang.org/x/sys/windows
@@ -2226,7 +2234,7 @@ sigs.k8s.io/kustomize/kyaml/yaml/merge2
 sigs.k8s.io/kustomize/kyaml/yaml/merge3
 sigs.k8s.io/kustomize/kyaml/yaml/schema
 sigs.k8s.io/kustomize/kyaml/yaml/walk
-# sigs.k8s.io/structured-merge-diff/v4 v4.3.0
+# sigs.k8s.io/structured-merge-diff/v4 v4.2.3
 ## explicit; go 1.13
 sigs.k8s.io/structured-merge-diff/v4/fieldpath
 sigs.k8s.io/structured-merge-diff/v4/merge
@@ -2236,6 +2244,5 @@ sigs.k8s.io/structured-merge-diff/v4/value
 # sigs.k8s.io/yaml v1.3.0
 ## explicit; go 1.12
 sigs.k8s.io/yaml
-# github.com/openshift/api => github.com/cdoern/api v0.0.0-20231005133555-eb1d410b3cc5
 # k8s.io/kube-openapi => github.com/openshift/kube-openapi v0.0.0-20230816122517-ffc8f001abb0
-# github.com/openshift/client-go => github.com/cdoern/client-go v0.0.0-20231005134336-d47d5818c40d
+# github.com/openshift/client-go => github.com/cdoern/client-go v0.0.0-20231103192524-6d365f9a85a3

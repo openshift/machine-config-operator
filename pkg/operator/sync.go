@@ -75,6 +75,13 @@ type manifestPaths struct {
 }
 
 const (
+	mscClusterRoleManifestPath              = "manifests/machine-state-controller/clusterrole.yaml"
+	mscEventsClusterRoleManifestPath        = "manifests/machine-state-controller/events-clusterrole.yaml"
+	mscEventsRoleBindingDefaultManifestPath = "manifests/machine-state-controller/events-rolebinding-default.yaml"
+	mscEventsRoleBindingTargetManifestPath  = "manifests/machine-state-controller/events-rolebinding-target.yaml"
+	mscClusterRoleBindingManifestPath       = "manifests/machine-state-controller/clusterrolebinding.yaml"
+	mscServiceAccountManifestPath           = "manifests/machine-state-controller/sa.yaml"
+
 	// Machine Config Controller manifest paths
 	mccClusterRoleManifestPath                = "manifests/machineconfigcontroller/clusterrole.yaml"
 	mccEventsClusterRoleManifestPath          = "manifests/machineconfigcontroller/events-clusterrole.yaml"
@@ -702,8 +709,7 @@ func (optr *Operator) syncMachineConfigPools(config *renderConfig) error {
 	return nil
 }
 
-// we need to mimic this
-func (optr *Operator) syncMachineConfigStates(config *renderConfig) error {
+func (optr *Operator) syncMachineStateController(config *renderConfig) error {
 	paths := manifestPaths{
 		clusterRoles: []string{
 			mscClusterRoleManifestPath,
@@ -740,30 +746,7 @@ func (optr *Operator) syncMachineConfigStates(config *renderConfig) error {
 			return err
 		}
 	}
-	msc := []string{
-		// "manifests/metrics.machinestate.yaml",
-		// "manifests/bootstrap.machinestate.yaml",
-		//"manifests/mcc.machinestate.yaml",
-		//"manifests/mcd.machinestate.yaml",
-		//"manifests/operator.machinestate.yaml",
-		"manifests/upgrade.worker.machineconfigstate.yaml",
-		"manifests/upgrade.master.machineconfigstate.yaml",
-	}
 
-	for _, ms := range msc {
-		klog.Infof("Applying MachineConfigState %s", ms)
-		mcsBytes, err := renderAsset(config, ms)
-		if err != nil {
-			klog.Errorf("error rendering asset for MachineConfigState %s", ms)
-			return err
-		}
-		klog.Infof("state to be applied: %s", string(mcsBytes))
-		p := mcoResourceRead.ReadMachineConfigStateV1OrDie(mcsBytes)
-		_, _, err = mcoResourceApply.ApplyMachineConfigState(optr.client.MachineconfigurationV1(), p)
-		if err != nil {
-			return err
-		}
-	}
 	return nil
 }
 

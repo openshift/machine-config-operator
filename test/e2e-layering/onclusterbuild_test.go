@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/util/retry"
 

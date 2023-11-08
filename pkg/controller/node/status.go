@@ -28,9 +28,7 @@ func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
 		return err
 	}
 
-	ms, err := ctrl.client.MachineconfigurationV1().MachineConfigStates().Get(context.TODO(), fmt.Sprintf("upgrade-%s", pool.Name), metav1.GetOptions{})
-
-	newStatus := calculateStatus(ms, cc, pool, nodes)
+	newStatus := calculateStatus(cc, pool, nodes)
 	if equality.Semantic.DeepEqual(pool.Status, newStatus) {
 		return nil
 	}
@@ -47,7 +45,7 @@ func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
 	return err
 }
 
-func calculateStatus(ms *v1.MachineConfigState, cconfig *v1.ControllerConfig, pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv1.MachineConfigPoolStatus {
+func calculateStatus(cconfig *v1.ControllerConfig, pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv1.MachineConfigPoolStatus {
 	certExpirys := []v1.CertExpiry{}
 	if cconfig != nil {
 		for _, cert := range cconfig.Status.ControllerCertificates {
@@ -74,88 +72,15 @@ func calculateStatus(ms *v1.MachineConfigState, cconfig *v1.ControllerConfig, po
 
 	// if each machinestate (upgrading) is per pool, we need to not have just a node assoc with each MS but somehow a node attached
 	// to the progression
-	/*
-		updatedMachines := getUpdatedMachines(pool.Spec.Configuration.Name, nodes)
-		updatedMachineCount := int32(len(updatedMachines))
 
-		readyMachines := getReadyMachines(pool.Spec.Configuration.Name, nodes)
-		readyMachineCount := int32(len(readyMachines))
-
-		unavailableMachines := getUnavailableMachines(nodes)
-		unavailableMachineCount := int32(len(unavailableMachines))
-
-		degradedMachines := getDegradedMachines(nodes)
-		degradedReasons := []string{}
-		for _, n := range degradedMachines {
-			reason, ok := n.Annotations[daemonconsts.MachineConfigDaemonReasonAnnotationKey]
-			if ok && reason != "" {
-				degradedReasons = append(degradedReasons, fmt.Sprintf("Node %s is reporting: %q", n.Name, reason))
-			}
-		}
-	*/
-	// in the event you are upgrading between versions, the statecontroller is going to get confused and it seems to depend on
-	// the operator pod being rolled out
-
-	var degradedMachines, readyMachines, updatedMachines, unavailableMachines, updatingMachines []*corev1.Node
-	for _, nodeState := range ms.Status.MostRecentState {
-		klog.Infof("Looking at node: %s", nodeState.Name)
-		var ourNode *corev1.Node
-		for _, node := range nodes {
-			klog.Infof("Node name: %s vs our Node name: %s", node.Name, nodeState.Name)
-			if node.Name == nodeState.Name {
-				ourNode = node
-			}
-		}
-		if ourNode == nil {
-			klog.Info("Did not find node we were looking for")
-			break
-		}
-		switch nodeState.State {
-		case v1.MachineConfigStateErrored:
-			// if the most recent phase for that node is unavailable
-			if nodeState.Phase == "Unavailable" {
-				unavailableMachines = append(unavailableMachines, ourNode)
-			} else {
-				degradedMachines = append(degradedMachines, ourNode)
-			}
-		case v1.MachineConfigPoolUpdateInProgress, v1.MachineConfigPoolUpdatePostAction, v1.MachineConfigPoolUpdateCompleting, v1.MachineConfigPoolUpdatePreparing:
-			if nodeState.Reason == "NodeDraining" {
-				unavailableMachines = append(unavailableMachines, ourNode)
-			} else {
-				updatingMachines = append(updatedMachines, ourNode)
-			}
-		case v1.MachineConfigPoolUpdateComplete:
-			updatedMachines = append(updatedMachines, ourNode)
-		case v1.MachineConfigPoolReady:
-			readyMachines = append(readyMachines, ourNode)
-			updatedMachines = append(updatedMachines, ourNode)
-		default: // if we are actively doing something like resuming, draining etc, we are unavailable
-			unavailableMachines = append(unavailableMachines, ourNode)
-		}
-
-	}
-	degradedMachineCount := int32(len(degradedMachines))
+	updatedMachines := getUpdatedMachines(pool, nodes)
 	updatedMachineCount := int32(len(updatedMachines))
 
 	readyMachines := getReadyMachines(pool, nodes)
 	readyMachineCount := int32(len(readyMachines))
 
-	// this is # 1 priority, get the upgrade states actually reporting
-	if degradedMachineCount+readyMachineCount+unavailableMachineCount+updatingMachineCount != int32(len(nodes)) {
-		klog.Infof("new state reporting did not get all nodes, falling back. Sate reporting node total %d and actual node total %d", (degradedMachineCount + readyMachineCount + updatedMachineCount + unavailableMachineCount + updatingMachineCount), len(nodes))
-		klog.Infof("degraded: %d ready: %d updated %d unavailable %d updating %d", degradedMachineCount, readyMachineCount, updatedMachineCount, unavailableMachineCount, updatingMachineCount)
-		updatedMachines = getUpdatedMachines(pool, nodes)
-		updatedMachineCount = int32(len(updatedMachines))
-
-		readyMachines = getReadyMachines(pool, nodes)
-		readyMachineCount = int32(len(readyMachines))
-
-		unavailableMachines = getUnavailableMachines(nodes, pool)
-		unavailableMachineCount = int32(len(unavailableMachines))
-
-		degradedMachines = getDegradedMachines(nodes)
-		degradedMachineCount = int32(len(degradedMachines))
-	}
+	unavailableMachines := getUnavailableMachines(nodes, pool)
+	unavailableMachineCount := int32(len(unavailableMachines))
 
 	degradedMachines := getDegradedMachines(nodes)
 	degradedReasons := []string{}
@@ -165,7 +90,10 @@ func calculateStatus(ms *v1.MachineConfigState, cconfig *v1.ControllerConfig, po
 			degradedReasons = append(degradedReasons, fmt.Sprintf("Node %s is reporting: %q", n.Name, reason))
 		}
 	}
+
 	degradedMachineCount := int32(len(degradedMachines))
+
+	// this is # 1 priority, get the upgrade states actually reporting
 
 	status := mcfgv1.MachineConfigPoolStatus{
 		ObservedGeneration:      pool.Generation,

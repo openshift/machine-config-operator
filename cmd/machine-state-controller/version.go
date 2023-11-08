@@ -25,7 +25,7 @@ func runVersionCmd(_ *cobra.Command, _ []string) {
 	flag.Set("logtostderr", "true")
 	flag.Parse()
 
-	program := "MachineConfigStateController"
+	program := "MachineStateController"
 	version := version.Raw + "-" + version.Hash
 
 	fmt.Println(program, version)

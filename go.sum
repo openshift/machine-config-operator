@@ -122,10 +122,8 @@ github.com/butuzov/ireturn v0.2.0 h1:kCHi+YzC150GE98WFuZQu9yrTn6GEydO2AuPLbTgnO4
 github.com/butuzov/ireturn v0.2.0/go.mod h1:Wh6Zl3IMtTpaIKbmwzqi6olnM9ptYQxxVacMsOEFPoc=
 github.com/butuzov/mirror v1.1.0 h1:ZqX54gBVMXu78QLoiqdwpl2mgmoOJTk7s4p4o+0avZI=
 github.com/butuzov/mirror v1.1.0/go.mod h1:8Q0BdQU6rC6WILDiBM60DBfvV78OLJmMmixe7GF45AE=
-github.com/cdoern/api v0.0.0-20231005133555-eb1d410b3cc5 h1:S0VYrgsFj97MT+agJf/dmyrkh8vlPE5gjPLqLqKF99g=
-github.com/cdoern/api v0.0.0-20231005133555-eb1d410b3cc5/go.mod h1:qNtV0315F+f8ld52TLtPvrfivZpdimOzTi3kn9IVbtU=
-github.com/cdoern/client-go v0.0.0-20231005134336-d47d5818c40d h1:4u7n1XJF95t2bS5B0bynUmEvq0Ifw1rAtqo2vE3zOOI=
-github.com/cdoern/client-go v0.0.0-20231005134336-d47d5818c40d/go.mod h1:tAZ7Va2YOMsSJGSm1yJp+R99/apBB2OVRXkFQ863i/k=
+github.com/cdoern/client-go v0.0.0-20231103192524-6d365f9a85a3 h1:bZZuQx6yCGAriYthixwtvhSaozJz8nHdEId2NRNEnf4=
+github.com/cdoern/client-go v0.0.0-20231103192524-6d365f9a85a3/go.mod h1:/BACtJX3fnHOlecTC3VW7JPsJU7KCGaUqt/HkWp5ryo=
 github.com/census-instrumentation/opencensus-proto v0.2.1/go.mod h1:f6KPmirojxKA12rnyqOA5BBL4O983OfeGPqjHWSTneU=
 github.com/cespare/xxhash/v2 v2.1.1/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XLFGgcrjCOs=
 github.com/cespare/xxhash/v2 v2.1.2/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XLFGgcrjCOs=
@@ -662,6 +660,8 @@ github.com/opencontainers/runc v1.1.7 h1:y2EZDS8sNng4Ksf0GUYNhKbTShZJPJg1FiXJNH/
 github.com/opencontainers/runc v1.1.7/go.mod h1:CbUumNnWCuTGFukNXahoo/RFBZvDAgRh/smNYNOhA50=
 github.com/opencontainers/runtime-spec v1.1.0-rc.3 h1:l04uafi6kxByhbxev7OWiuUv0LZxEsYUfDWZ6bztAuU=
 github.com/opencontainers/runtime-spec v1.1.0-rc.3/go.mod h1:jwyrGlmzljRJv/Fgzds9SsS/C5hL+LL3ko9hs6T5lQ0=
+github.com/openshift/api v0.0.0-20231102215821-c90b4c82852e h1:vV6rs7WEgJ4jkkXWReu+Y4VEnHWi1gjicZO1n4ysbdc=
+github.com/openshift/api v0.0.0-20231102215821-c90b4c82852e/go.mod h1:qNtV0315F+f8ld52TLtPvrfivZpdimOzTi3kn9IVbtU=
 github.com/openshift/cluster-config-operator v0.0.0-alpha.0.0.20230516205036-088c6d48cc1a h1:y/vIcJvfAKxLlbtU1uCQea/NSAeUUunEJ68lR/wWKC8=
 github.com/openshift/cluster-config-operator v0.0.0-alpha.0.0.20230516205036-088c6d48cc1a/go.mod h1:O4TuBlo2A+kZiykV1LxUSdEjx6zNqgCKf05+lkTDVZc=
 github.com/openshift/kube-openapi v0.0.0-20230816122517-ffc8f001abb0 h1:GPlAy197Jkr+D0T2FNWanamraTdzS/r9ZkT29lxvHaA=
