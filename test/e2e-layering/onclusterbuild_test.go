@@ -233,10 +233,6 @@ func prepareForTest(t *testing.T, cs *framework.ClientSet, testOpts onClusterBui
 func TestSSHKeyAndPasswordForOSBuilder(t *testing.T) {
 	cs := framework.NewClientSet("")
 
-	// label random node from pool, get the node
-	unlabelFunc := helpers.LabelRandomNodeFromPool(t, cs, "worker", "node-role.kubernetes.io/layered")
-	osNode := helpers.GetSingleNodeByRole(t, cs, layeredMCPName)
-
 	// prepare for on cluster build test
 	prepareForTest(t, cs, onClusterBuildTestOpts{
 		imageBuilderType:  build.OpenshiftImageBuilder,
@@ -251,8 +247,12 @@ func TestSSHKeyAndPasswordForOSBuilder(t *testing.T) {
 
 	// Set up Ignition config with the desired SSH key and password
 	testIgnConfig := ctrlcommon.NewIgnConfig()
-	sshKeyContent := "testsshkey1"
-	passwordHash := "testpassword1"
+	sshKeyContent := "testsshkey22"
+	passwordHash := "testpassword22"
+
+	// label random node from pool, get the node
+	unlabelFunc := helpers.LabelRandomNodeFromPool(t, cs, "worker", "node-role.kubernetes.io/layered")
+	osNode := helpers.GetSingleNodeByRole(t, cs, layeredMCPName)
 
 	// retreive initial etc/shadow contents
 	initialEtcShadowContents := helpers.ExecCmdOnNode(t, cs, osNode, "grep", "^core:", "/rootfs/etc/shadow")
