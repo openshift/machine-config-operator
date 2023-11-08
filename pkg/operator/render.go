@@ -77,6 +77,7 @@ func (a *assetRenderer) addTemplateFuncs() {
 	funcs["cloudPlatformAPIIntLoadBalancerIPs"] = cloudPlatformAPIIntLoadBalancerIPs
 	funcs["cloudPlatformAPILoadBalancerIPs"] = cloudPlatformAPILoadBalancerIPs
 	funcs["cloudPlatformIngressLoadBalancerIPs"] = cloudPlatformIngressLoadBalancerIPs
+	funcs["isSingleReplicaTopology"] = isSingleReplicaTopology
 
 	a.tmpl = a.tmpl.Funcs(funcs)
 }
@@ -447,4 +448,8 @@ func cloudPlatformLoadBalancerIPState(cfg mcfgv1.ControllerConfigSpec) LoadBalan
 		}
 	}
 	return lbIPState
+}
+
+func isSingleReplicaTopology(cfg mcfgv1.ControllerConfigSpec) bool {
+	return cfg.Infra.Status.InfrastructureTopology == configv1.SingleReplicaTopologyMode
 }
