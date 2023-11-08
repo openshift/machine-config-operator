@@ -67,4 +67,10 @@ const (
 
 	// BootImagesConfigMapName is a Configmap of golden bootimages, updated by CVO on an upgrade
 	BootImagesConfigMapName = "coreos-bootimages"
+
+	// MCOVersionHashKey is the key for indexing the MCO git version hash stored in the bootimages configmap
+	MCOVersionHashKey = "MCOVersionHash"
+
+	// MCOReleaseImageVersionKey is the key for indexing the MCO release version stored in the bootimages configmap
+	MCOReleaseImageVersionKey = "MCOReleaseImageVersion"
 )

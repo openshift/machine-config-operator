@@ -34,6 +34,7 @@ import (
 	machineclientset "github.com/openshift/client-go/machine/clientset/versioned"
 	machineinformers "github.com/openshift/client-go/machine/informers/externalversions/machine/v1beta1"
 	machinelisters "github.com/openshift/client-go/machine/listers/machine/v1beta1"
+	operatorversion "github.com/openshift/machine-config-operator/pkg/version"
 
 	archtranslater "github.com/coreos/stream-metadata-go/arch"
 	"github.com/coreos/stream-metadata-go/stream"
@@ -296,6 +297,33 @@ func (ctrl *Controller) syncMachineSet(key string) error {
 	if configMap == nil || err != nil {
 		return fmt.Errorf("failed to fetch coreos-bootimages config map during machineset sync: %w", err)
 	}
+
+	// Take no action if the MCO hash version stored in the configmap does not match the current controller
+	// version. This is done by the operator when a master node successfully updates to a new image. This is
+	// to prevent machinesets from being updated before the operator itself has updated.
+
+	versionHashFromCM, versionHashFound := configMap.Data[ctrlcommon.MCOVersionHashKey]
+	if !versionHashFound {
+		klog.Infof("failed to find mco version hash in %s configmap, sync will exit to wait for the MCO upgrade to complete", ctrlcommon.BootImagesConfigMapName)
+		return nil
+	}
+	if versionHashFromCM != operatorversion.Hash {
+		klog.Infof("mismatch between MCO hash version stored in configmap and current MCO version; sync will exit to wait for the MCO upgrade to complete")
+		return nil
+	}
+	releaseVersionFromCM, releaseVersionFound := configMap.Data[ctrlcommon.MCOReleaseImageVersionKey]
+	if !releaseVersionFound {
+		klog.Infof("failed to find mco release version in %s configmap, sync will exit to wait for the MCO upgrade to complete", ctrlcommon.BootImagesConfigMapName)
+		return nil
+	}
+	if releaseVersionFromCM != operatorversion.ReleaseVersion {
+		klog.Infof("mismatch between MCO release version stored in configmap and current MCO release version; sync will exit to wait for the MCO upgrade to complete")
+		return nil
+	}
+
+	// TODO: Also check against the release version stored in the configmap under releaseVersion. This is currently broken as the version
+	// stored is "0.0.1-snapshot" and does not reflect the correct value. Tracked in this bug https://issues.redhat.com/browse/OCPBUGS-19824
+	// The current hash and version check should be enough to skate by for now, but fixing this would be additional safety - djoshy
 
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
