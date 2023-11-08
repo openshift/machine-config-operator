@@ -178,6 +178,21 @@ func NewMachineConfigPool(name string, mcSelector, nodeSelector *metav1.LabelSel
 	}
 }
 
+// CreateMachineConfigFromIgnitionWithMetadata returns a MachineConfig object from an Ignition config, name, and role label
+func CreateMachineConfigFromIgnitionWithMetadata(ignCfg interface{}, name, role string) *mcfgv1.MachineConfig {
+	return &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   name,
+			Labels: map[string]string{"machineconfiguration.openshift.io/role": role},
+		},
+		Spec: mcfgv1.MachineConfigSpec{
+			Config: runtime.RawExtension{
+				Raw: MarshalOrDie(ignCfg),
+			},
+		},
+	}
+}
+
 // CreateMachineConfigFromIgnition returns a MachineConfig object from an Ignition config passed to it
 func CreateMachineConfigFromIgnition(ignCfg interface{}) *mcfgv1.MachineConfig {
 	return &mcfgv1.MachineConfig{
