@@ -68,7 +68,6 @@ contents:
                 {{if not (isOpenShiftManagedDefaultLB .) -}}
                 --user-managed-lb \
                 {{end -}}
-                --retry-on-failure \
                 {{range onPremPlatformAPIServerInternalIPs . }}"{{.}}" {{end}} \
                 {{range onPremPlatformIngressIPs . }}"{{.}}" {{end}})"
             DOMAINS="${IP4_DOMAINS} ${IP6_DOMAINS} {{.DNS.Spec.BaseDomain}}"
