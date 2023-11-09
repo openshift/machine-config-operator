@@ -17,6 +17,10 @@ spec:
       containers:
       - name: machine-config-controller
         image: {{.Images.MachineConfigOperator}}
+        ports:
+        - containerPort: 9090
+          name: test
+          protocol: TCP
         command: ["/usr/bin/machine-config-controller"]
         args:
         - "start"

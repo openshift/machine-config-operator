@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"reflect"
 	"sort"
 	"time"
@@ -857,6 +858,27 @@ func (ctrl *Controller) canLayeredPoolContinue(pool *mcfgv1.MachineConfigPool) (
 // syncMachineConfigPool will sync the machineconfig pool with the given key.
 // This function is not meant to be invoked concurrently with the same key.
 func (ctrl *Controller) syncMachineConfigPool(key string) error {
+
+	//test service communication
+	mux := http.NewServeMux()
+	mux.HandleFunc("/receive", func(w http.ResponseWriter, r *http.Request) {
+		var data struct {
+			Value int `json:"value"`
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		receivedValue := data.Value
+		klog.Infof("Received Integer: %v", receivedValue)
+	})
+
+	http.ListenAndServe(":9090", nil)
+
+	// test end
+
 	startTime := time.Now()
 	klog.V(4).Infof("Started syncing machineconfigpool %q (%v)", key, startTime)
 	defer func() {
