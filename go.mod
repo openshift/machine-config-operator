@@ -30,7 +30,7 @@ require (
 	github.com/openshift/api v0.0.0-20230330150608-05635858d40f
 	github.com/openshift/client-go v0.0.0-20230120202327-72f107311084
 	github.com/openshift/library-go v0.0.0-20231020125026-aa39c7c45714
-	github.com/openshift/runtime-utils v0.0.0-20220926190846-5c488b20a19f
+	github.com/openshift/runtime-utils v0.0.0-20230921210328-7bdb5b9c177b
 	github.com/prometheus/client_golang v1.14.0
 	github.com/spf13/cobra v1.6.0
 	github.com/spf13/pflag v1.0.6-0.20210604193023-d5e0c0615ace
