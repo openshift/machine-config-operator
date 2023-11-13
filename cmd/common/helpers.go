@@ -8,7 +8,6 @@ import (
 	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/internal/clients"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
@@ -38,17 +37,25 @@ func CreateResourceLock(cb *clients.Builder, componentNamespace, componentName s
 	// add a uniquifier so that two processes on the same host don't accidentally both become active
 	id = id + "_" + string(uuid.NewUUID())
 
-	return &resourcelock.ConfigMapLock{
-		ConfigMapMeta: metav1.ObjectMeta{
-			Namespace: componentNamespace,
-			Name:      componentName,
-		},
-		Client: cb.KubeClientOrDie("leader-election").CoreV1(),
-		LockConfig: resourcelock.ResourceLockConfig{
+	kubeClient := cb.KubeClientOrDie("leader-election")
+
+	lock, err := resourcelock.New(
+		resourcelock.ConfigMapsLeasesResourceLock,
+		componentNamespace,
+		componentName,
+		kubeClient.CoreV1(),
+		kubeClient.CoordinationV1(),
+		resourcelock.ResourceLockConfig{
 			Identity:      id,
 			EventRecorder: recorder,
 		},
+	)
+
+	if err != nil {
+		panic(err)
 	}
+
+	return lock
 }
 
 // GetLeaderElectionConfig returns leader election configs defaults based on the cluster topology
