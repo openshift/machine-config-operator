@@ -4,13 +4,16 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"os"
 
+	"github.com/openshift/machine-config-operator/cmd/common"
 	"github.com/openshift/machine-config-operator/internal/clients"
 	"github.com/openshift/machine-config-operator/pkg/controller/build"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/leaderelection"
 
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/spf13/cobra"
@@ -95,11 +98,29 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		klog.Fatalln(err)
 	}
 
-	ctrl, err := getBuildController(ctx, cb)
-	if err != nil {
-		klog.Fatalln(err)
-	}
+	leaderElectionCfg := common.GetLeaderElectionConfig(cb.GetBuilderConfig())
 
-	go ctrl.Run(ctx, 5)
-	<-ctx.Done()
+	leaderelection.RunOrDie(ctx, leaderelection.LeaderElectionConfig{
+		Lock:            common.CreateResourceLock(cb, ctrlcommon.MCONamespace, componentName),
+		ReleaseOnCancel: true,
+		LeaseDuration:   leaderElectionCfg.LeaseDuration.Duration,
+		RenewDeadline:   leaderElectionCfg.RenewDeadline.Duration,
+		RetryPeriod:     leaderElectionCfg.RetryPeriod.Duration,
+		Callbacks: leaderelection.LeaderCallbacks{
+			OnStartedLeading: func(ctx context.Context) {
+				go common.SignalHandler(cancel)
+				ctrl, err := getBuildController(ctx, cb)
+				if err != nil {
+					klog.Fatalln(err)
+				}
+
+				go ctrl.Run(ctx, 5)
+				<-ctx.Done()
+			},
+			OnStoppedLeading: func() {
+				klog.Info("Stopped leading. Terminating.")
+				os.Exit(0)
+			},
+		},
+	})
 }
