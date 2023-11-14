@@ -16,11 +16,6 @@ import (
 // information see e.g. https://github.com/coreos/fedora-coreos-tracker/blob/main/internals%2FREADME-internals.md#aleph-version
 const alephPath = "/sysroot/.coreos-aleph-version.json"
 
-type coreosAleph struct {
-	Build string `json:"build"`
-	Imgid string `json:"imgid"`
-}
-
 // ignitionProvisioningPath is written by Ignition, see
 // https://github.com/coreos/ignition/commit/556bc9404cfff08ea63c2a865bd3586ece7e8e44
 const ignitionProvisioningPath = "/etc/.ignition-result.json"
@@ -47,11 +42,15 @@ func logAlephInformation() error {
 	if err != nil {
 		return err
 	}
-	var alephData coreosAleph
+	var alephData map[string]any
 	if err := json.Unmarshal(contents, &alephData); err != nil {
 		return err
 	}
-	klog.Infof("CoreOS aleph version: mtime=%v build=%v imgid=%v\n", stat.ModTime().UTC(), alephData.Build, alephData.Imgid)
+	prettyAlephData, err := json.MarshalIndent(alephData, "", "   ")
+	if err != nil {
+		klog.Fatalf("marshaling error: %s", err)
+	}
+	klog.Infof("CoreOS aleph version: mtime=%v\n%v", stat.ModTime().UTC(), string(prettyAlephData))
 	return nil
 }
 
