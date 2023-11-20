@@ -4,6 +4,11 @@ contents:
     capture:
       ethernet-nics: interfaces.type=="ethernet"
     desiredState:
+      interfaces:
+      - name: "{{`{{ capture.ethernet-nics.interfaces.0.name }}`}}"
+        type: "{{`{{ capture.ethernet-nics.interfaces.0.type }}`}}"
+        ipv4: "{{`{{ capture.ethernet-nics.interfaces.0.ipv4 }}`}}"
+        ipv6: "{{`{{ capture.ethernet-nics.interfaces.0.ipv6 }}`}}"
       routes:
         config:
         - destination: ::/0
