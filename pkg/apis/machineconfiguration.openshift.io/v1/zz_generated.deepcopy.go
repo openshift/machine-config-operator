@@ -148,8 +148,16 @@ func (in *ContainerRuntimeConfiguration) DeepCopyInto(out *ContainerRuntimeConfi
 		*out = new(int64)
 		**out = **in
 	}
-	out.LogSizeMax = in.LogSizeMax.DeepCopy()
-	out.OverlaySize = in.OverlaySize.DeepCopy()
+	if in.LogSizeMax != nil {
+		in, out := &in.LogSizeMax, &out.LogSizeMax
+		x := (*in).DeepCopy()
+		*out = &x
+	}
+	if in.OverlaySize != nil {
+		in, out := &in.OverlaySize, &out.OverlaySize
+		x := (*in).DeepCopy()
+		*out = &x
+	}
 	return
 }
 
