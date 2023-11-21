@@ -9,6 +9,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/resource"
 
+	"github.com/clarketm/json"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/klog/v2"
@@ -1243,9 +1244,9 @@ func TestContainerRuntimeConfigOptions(t *testing.T) {
 		validPidsLimit   int64 = 2048
 		validZerolimit   int64 = 0
 		invalidNegLimit  int64 = -10
+		three                  = resource.MustParse("3k")
+		ten                    = resource.MustParse("10k")
 	)
-	three := resource.MustParse("3k")
-	ten := resource.MustParse("10k")
 	failureTests := []struct {
 		name   string
 		config *mcfgv1.ContainerRuntimeConfiguration
@@ -1334,6 +1335,74 @@ func TestContainerRuntimeConfigOptions(t *testing.T) {
 		if err != nil {
 			t.Errorf("%s: failed with %v. should have succeeded", test.name, err)
 		}
+	}
+}
+
+func TestMarshalResourceQuantityOptionsJSON(t *testing.T) {
+	var (
+		validLogSizeMax  = resource.MustParse("10k")
+		validOverlaySize = resource.MustParse("10G")
+	)
+
+	emptyValueTests := []struct {
+		name   string
+		config *mcfgv1.ContainerRuntimeConfiguration
+	}{
+		{
+			name: "valid log level, overlaySize/logsizeMax should not appear in json",
+			config: &mcfgv1.ContainerRuntimeConfiguration{
+				LogLevel: "debug",
+			},
+		},
+		{
+			name: "valid value of default runtime， overlaySize/logsizeMax should not appear in json",
+			config: &mcfgv1.ContainerRuntimeConfiguration{
+				DefaultRuntime: "crun",
+			},
+		},
+	}
+
+	successTests := []struct {
+		name      string
+		config    *mcfgv1.ContainerRuntimeConfiguration
+		expectStr string
+	}{
+		{
+			name: "valid max log size should appear in json",
+			config: &mcfgv1.ContainerRuntimeConfiguration{
+				LogSizeMax: &validLogSizeMax,
+				LogLevel:   "debug",
+			},
+			expectStr: "\"logSizeMax\":\"10k\"",
+		},
+		{
+			name: "valid max overlay size should appear in json",
+			config: &mcfgv1.ContainerRuntimeConfiguration{
+				OverlaySize: &validOverlaySize,
+				LogLevel:    "debug",
+			},
+			expectStr: "\"overlaySize\":\"10G\"",
+		},
+	}
+
+	// Successful Tests
+	for _, test := range successTests {
+		ctrcfg := newContainerRuntimeConfig(test.name, test.config, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "", ""))
+		data, err := json.Marshal(ctrcfg)
+		if err != nil {
+			t.Errorf("%s: failed with %v. should have succeeded", test.name, err)
+		}
+		require.Contains(t, string(data), test.expectStr)
+	}
+
+	for _, test := range emptyValueTests {
+		ctrcfg := newContainerRuntimeConfig(test.name, test.config, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "", ""))
+		data, err := json.Marshal(ctrcfg)
+		if err != nil {
+			t.Errorf("%s: failed with %v. should have succeeded", test.name, err)
+		}
+		require.NotContains(t, string(data), "\"overlaySize\"", "\"overlaySize\"")
+		require.NotContains(t, string(data), "\"logSizeMax\"", "\"logSizeMax\"")
 	}
 }
 
