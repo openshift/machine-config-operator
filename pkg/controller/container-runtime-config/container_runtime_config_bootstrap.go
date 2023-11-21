@@ -39,7 +39,7 @@ func RunContainerRuntimeBootstrap(templateDir string, crconfigs []*mcfgv1.Contai
 
 			var configFileList []generatedConfigFile
 			ctrcfg := cfg.Spec.ContainerRuntimeConfig
-			if !ctrcfg.OverlaySize.IsZero() {
+			if ctrcfg.OverlaySize != nil && !ctrcfg.OverlaySize.IsZero() {
 				storageTOML, err := mergeConfigChanges(originalStorageIgn, cfg, updateStorageConfig)
 				if err != nil {
 					glog.V(2).Infoln(cfg, err, "error merging user changes to storage.conf: %v", err)
@@ -48,7 +48,7 @@ func RunContainerRuntimeBootstrap(templateDir string, crconfigs []*mcfgv1.Contai
 				}
 			}
 			// Create the cri-o drop-in files
-			if ctrcfg.LogLevel != "" || ctrcfg.PidsLimit != nil || !ctrcfg.LogSizeMax.IsZero() || ctrcfg.DefaultRuntime != mcfgv1.ContainerRuntimeDefaultRuntimeEmpty {
+			if ctrcfg.LogLevel != "" || ctrcfg.PidsLimit != nil || (ctrcfg.LogSizeMax != nil && !ctrcfg.LogSizeMax.IsZero()) || ctrcfg.DefaultRuntime != mcfgv1.ContainerRuntimeDefaultRuntimeEmpty {
 				crioFileConfigs := createCRIODropinFiles(cfg)
 				configFileList = append(configFileList, crioFileConfigs...)
 			}
