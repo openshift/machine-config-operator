@@ -40,7 +40,7 @@ func RunContainerRuntimeBootstrap(templateDir string, crconfigs []*mcfgv1.Contai
 
 			var configFileList []generatedConfigFile
 			ctrcfg := cfg.Spec.ContainerRuntimeConfig
-			if !ctrcfg.OverlaySize.IsZero() {
+			if ctrcfg.OverlaySize != nil && !ctrcfg.OverlaySize.IsZero() {
 				storageTOML, err := mergeConfigChanges(originalStorageIgn, cfg, updateStorageConfig)
 				if err != nil {
 					klog.V(2).Infoln(cfg, err, "error merging user changes to storage.conf: %v", err)
