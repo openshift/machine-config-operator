@@ -3,6 +3,8 @@ kind: ConfigMap
 metadata:
   name: initial-kube-apiserver-server-ca
   namespace: openshift-config
+  annotations:
+    openshift.io/owning-component: Machine Config Operator
 data:
   ca-bundle.crt: |
 {{.KubeAPIServerServingCA | indent 4}}
