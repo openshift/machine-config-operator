@@ -25,9 +25,10 @@ import (
 	"k8s.io/client-go/tools/record"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
 	informers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 )
 
 var (

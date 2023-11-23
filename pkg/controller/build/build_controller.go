@@ -10,8 +10,6 @@ import (
 	"github.com/containers/image/v5/docker/reference"
 	buildv1 "github.com/openshift/api/build/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
-	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	corev1 "k8s.io/api/core/v1"
 	aggerrors "k8s.io/apimachinery/pkg/util/errors"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -25,12 +23,14 @@ import (
 	"k8s.io/klog/v2"
 
 	buildinformers "github.com/openshift/client-go/build/informers/externalversions"
+	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 
 	buildinformersv1 "github.com/openshift/client-go/build/informers/externalversions/build/v1"
 
 	buildclientset "github.com/openshift/client-go/build/clientset/versioned"
 
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
+
 	mcfginformers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
 
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
@@ -39,6 +39,7 @@ import (
 	coreinformers "k8s.io/client-go/informers"
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
 
+	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 

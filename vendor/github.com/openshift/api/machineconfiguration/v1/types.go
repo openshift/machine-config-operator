@@ -193,6 +193,7 @@ type ControllerConfigStatus struct {
 	// +listType=atomic
 	// +optional
 	Conditions []ControllerConfigStatusCondition `json:"conditions"`
+
 	// controllerCertificates represents the latest available observations of the automatically rotating certificates in the MCO.
 	// +listType=atomic
 	// +optional

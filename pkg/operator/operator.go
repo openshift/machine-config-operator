@@ -177,6 +177,10 @@ func New(
 		}),
 		queue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigoperator"),
 	}
+	err := corev1.AddToScheme(scheme.Scheme)
+	if err != nil {
+		klog.Errorf("Could not modify scheme: %w", err)
+	}
 
 	for _, i := range []cache.SharedIndexInformer{
 		controllerConfigInformer.Informer(),
@@ -394,6 +398,7 @@ func (optr *Operator) sync(key string) error {
 		// "RenderConfig" must always run first as it sets the renderConfig in the operator
 		// for the sync funcs below
 		{"RenderConfig", optr.syncRenderConfig},
+		{"MachineStateController", optr.syncMachineStateController},
 		{"MachineConfigPools", optr.syncMachineConfigPools},
 		{"MachineConfigDaemon", optr.syncMachineConfigDaemon},
 		{"MachineConfigController", optr.syncMachineConfigController},

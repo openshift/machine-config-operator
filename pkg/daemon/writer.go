@@ -58,7 +58,7 @@ type clusterNodeWriter struct {
 type NodeWriter interface {
 	Run(stop <-chan struct{})
 	SetDone(*stateAndConfigs) error
-	SetWorking() error
+	SetWorking(string, string) error
 	SetUnreconcilable(err error) error
 	SetDegraded(err error) error
 	SetAnnotations(annos map[string]string) (*corev1.Node, error)
@@ -183,9 +183,11 @@ func (nw *clusterNodeWriter) SetDone(state *stateAndConfigs) error {
 }
 
 // SetWorking sets the state to Working.
-func (nw *clusterNodeWriter) SetWorking() error {
+func (nw *clusterNodeWriter) SetWorking(reason string, phase string) error {
 	annos := map[string]string{
-		constants.MachineConfigDaemonStateAnnotationKey: constants.MachineConfigDaemonStateWorking,
+		constants.MachineConfigDaemonStateAnnotationKey:  constants.MachineConfigDaemonStateWorking,
+		constants.MachineConfigDaemonReasonAnnotationKey: reason,
+		constants.MachineConfigDaemonPhaseAnnotationKey:  phase,
 	}
 	UpdateStateMetric(mcdState, constants.MachineConfigDaemonStateWorking, "")
 	respChan := make(chan response, 1)

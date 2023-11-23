@@ -17,6 +17,7 @@ import (
 	"k8s.io/klog/v2"
 )
 
+// syncStatusOnly for MachineConfigState
 func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
 	cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
 	if err != nil {
@@ -60,6 +61,18 @@ func calculateStatus(cconfig *v1.ControllerConfig, pool *mcfgv1.MachineConfigPoo
 	}
 	machineCount := int32(len(nodes))
 
+	// modify this to use state controller data somehow
+	// look for update errors to get degraded machines
+	// updated means the most recent condition is updated in the state controller
+	//  unavailable? I guess this means everything in the process of working thru an upgrade of some kind or having some sort of day to day MCD progress
+	// is unavilable
+
+	// instead of basing everything on nodes (which we don't own) base it on pool state.
+	// however, we can't change the whole updated,ready,unavailable machine logic too much besides cordoning
+
+	// if each machinestate (upgrading) is per pool, we need to not have just a node assoc with each MS but somehow a node attached
+	// to the progression
+
 	updatedMachines := getUpdatedMachines(pool, nodes)
 	updatedMachineCount := int32(len(updatedMachines))
 
@@ -77,14 +90,17 @@ func calculateStatus(cconfig *v1.ControllerConfig, pool *mcfgv1.MachineConfigPoo
 			degradedReasons = append(degradedReasons, fmt.Sprintf("Node %s is reporting: %q", n.Name, reason))
 		}
 	}
+
 	degradedMachineCount := int32(len(degradedMachines))
+
+	// this is # 1 priority, get the upgrade states actually reporting
 
 	status := mcfgv1.MachineConfigPoolStatus{
 		ObservedGeneration:      pool.Generation,
 		MachineCount:            machineCount,
 		UpdatedMachineCount:     updatedMachineCount,
 		ReadyMachineCount:       readyMachineCount,
-		UnavailableMachineCount: unavailableMachineCount,
+		UnavailableMachineCount: unavailableMachineCount, //+ updatingMachineCount,
 		DegradedMachineCount:    degradedMachineCount,
 		CertExpirys:             certExpirys,
 	}

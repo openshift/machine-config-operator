@@ -23,6 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/kubernetes"
 	clientset "k8s.io/client-go/kubernetes"
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/cache"
@@ -56,6 +57,9 @@ type Controller struct {
 	client        mcfgclientset.Interface
 	eventRecorder record.EventRecorder
 
+	kubeClient         kubernetes.Interface
+	stateControllerPod *corev1.Pod
+
 	syncHandler              func(mcp string) error
 	enqueueMachineConfigPool func(*mcfgv1.MachineConfigPool)
 
@@ -85,6 +89,7 @@ func New(
 
 	ctrl := &Controller{
 		client:        mcfgClient,
+		kubeClient:    kubeClient,
 		eventRecorder: ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-rendercontroller"})),
 		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-rendercontroller"),
 	}
@@ -435,6 +440,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		return ctrl.syncFailingStatus(pool, fmt.Errorf("no MachineConfigs found matching selector %v", selector))
 	}
 
+	//ctrl.EmitHealthEvent(ctrl.stateControllerPod, ctrl.HealthAnnotations(name, string(v1.MCP), v1.MCCSync), corev1.EventTypeNormal, "SyncingGeneratedMCs", fmt.Sprintf("Syncing Generated MCs for Pool %s in the render controller", pool.Name))
 	if err := ctrl.syncGeneratedMachineConfig(pool, mcs); err != nil {
 		return ctrl.syncFailingStatus(pool, err)
 	}
