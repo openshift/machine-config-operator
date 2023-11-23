@@ -1086,6 +1086,12 @@ func (dn *Daemon) RunFirstbootCompleteMachineconfig() error {
 		return fmt.Errorf("failed to set kernel arguments from /proc/cmdline: %w", err)
 	}
 
+	// Set the running fips setting to oldConfig in order to correctly include this value
+	// during comparison
+	if err = setNodeFipsIntoMC(oldConfig); err != nil {
+		return fmt.Errorf("failed to set node FIPS into MC: %w", err)
+	}
+
 	// Currently, we generally expect the bootimage to be older, but in the special
 	// case of having bootimage == machine-os-content, and no kernel arguments
 	// specified, then we don't need to do anything here.
@@ -1098,6 +1104,7 @@ func (dn *Daemon) RunFirstbootCompleteMachineconfig() error {
 		if err := os.Remove(constants.MachineConfigEncapsulatedPath); err != nil {
 			return fmt.Errorf("failed to remove %s: %w", constants.MachineConfigEncapsulatedPath, err)
 		}
+		logSystem("skipping reboot since no changes were detected from %s to %s", oldConfig.GetName(), mc.GetName())
 		return nil
 	}
 
