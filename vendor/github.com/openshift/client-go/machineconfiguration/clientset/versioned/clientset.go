@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	machineconfigurationv1 "github.com/openshift/client-go/machineconfiguration/clientset/versioned/typed/machineconfiguration/v1"
+	machineconfigurationv1alpha1 "github.com/openshift/client-go/machineconfiguration/clientset/versioned/typed/machineconfiguration/v1alpha1"
 	discovery "k8s.io/client-go/discovery"
 	rest "k8s.io/client-go/rest"
 	flowcontrol "k8s.io/client-go/util/flowcontrol"
@@ -15,17 +16,24 @@ import (
 type Interface interface {
 	Discovery() discovery.DiscoveryInterface
 	MachineconfigurationV1() machineconfigurationv1.MachineconfigurationV1Interface
+	MachineconfigurationV1alpha1() machineconfigurationv1alpha1.MachineconfigurationV1alpha1Interface
 }
 
 // Clientset contains the clients for groups.
 type Clientset struct {
 	*discovery.DiscoveryClient
-	machineconfigurationV1 *machineconfigurationv1.MachineconfigurationV1Client
+	machineconfigurationV1       *machineconfigurationv1.MachineconfigurationV1Client
+	machineconfigurationV1alpha1 *machineconfigurationv1alpha1.MachineconfigurationV1alpha1Client
 }
 
 // MachineconfigurationV1 retrieves the MachineconfigurationV1Client
 func (c *Clientset) MachineconfigurationV1() machineconfigurationv1.MachineconfigurationV1Interface {
 	return c.machineconfigurationV1
+}
+
+// MachineconfigurationV1alpha1 retrieves the MachineconfigurationV1alpha1Client
+func (c *Clientset) MachineconfigurationV1alpha1() machineconfigurationv1alpha1.MachineconfigurationV1alpha1Interface {
+	return c.machineconfigurationV1alpha1
 }
 
 // Discovery retrieves the DiscoveryClient
@@ -76,6 +84,10 @@ func NewForConfigAndClient(c *rest.Config, httpClient *http.Client) (*Clientset,
 	if err != nil {
 		return nil, err
 	}
+	cs.machineconfigurationV1alpha1, err = machineconfigurationv1alpha1.NewForConfigAndClient(&configShallowCopy, httpClient)
+	if err != nil {
+		return nil, err
+	}
 
 	cs.DiscoveryClient, err = discovery.NewDiscoveryClientForConfigAndClient(&configShallowCopy, httpClient)
 	if err != nil {
@@ -98,6 +110,7 @@ func NewForConfigOrDie(c *rest.Config) *Clientset {
 func New(c rest.Interface) *Clientset {
 	var cs Clientset
 	cs.machineconfigurationV1 = machineconfigurationv1.New(c)
+	cs.machineconfigurationV1alpha1 = machineconfigurationv1alpha1.New(c)
 
 	cs.DiscoveryClient = discovery.NewDiscoveryClient(c)
 	return &cs
