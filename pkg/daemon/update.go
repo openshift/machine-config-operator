@@ -183,9 +183,10 @@ func (dn *Daemon) compareMachineConfig(oldConfig, newConfig *mcfgv1.MachineConfi
 		return true, fmt.Errorf("error creating machineConfigDiff for comparison: %w", err)
 	}
 	if mcDiff.isEmpty() {
-		klog.Infof("No changes from %s to %s", oldConfigName, newConfigName)
+		logSystem("No changes from %s to %s", oldConfigName, newConfigName)
 		return false, nil
 	}
+	logSystem("Changes detected from %s to %s: %+v", oldConfigName, newConfigName, mcDiff)
 	return true, nil
 }
 
@@ -1038,14 +1039,7 @@ func verifyUserFields(pwdUser ign3types.PasswdUser) error {
 	return nil
 }
 
-// checkFIPS verifies the state of FIPS on the system before an update.
-// Our new thought around this is that really FIPS should be a "day 1"
-// operation, and we don't want to make it editable after the fact.
-// See also https://github.com/openshift/installer/pull/2594
-// Anyone who wants to force this can change the MC flag, then
-// `oc debug node` and run the disable command by hand, then reboot.
-// If we detect that FIPS has been changed, we reject the update.
-func checkFIPS(current, desired *mcfgv1.MachineConfig) error {
+func processFips(handler func(bool) error) error {
 	content, err := os.ReadFile(fipsFile)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -1059,15 +1053,40 @@ func checkFIPS(current, desired *mcfgv1.MachineConfig) error {
 	if err != nil {
 		return fmt.Errorf("error parsing FIPS file at %s: %w", fipsFile, err)
 	}
-	if desired.Spec.FIPS == nodeFIPS {
-		if desired.Spec.FIPS {
-			klog.Infof("FIPS is configured and enabled")
+	return handler(nodeFIPS)
+}
+
+// checkFIPS verifies the state of FIPS on the system before an update.
+// Our new thought around this is that really FIPS should be a "day 1"
+// operation, and we don't want to make it editable after the fact.
+// See also https://github.com/openshift/installer/pull/2594
+// Anyone who wants to force this can change the MC flag, then
+// `oc debug node` and run the disable command by hand, then reboot.
+// If we detect that FIPS has been changed, we reject the update.
+func checkFIPS(current, desired *mcfgv1.MachineConfig) error {
+	return processFips(func(nodeFIPS bool) error {
+		if desired.Spec.FIPS == nodeFIPS {
+			if desired.Spec.FIPS {
+				klog.Infof("FIPS is configured and enabled")
+			}
+			// Check if FIPS on the system is at the desired setting
+			current.Spec.FIPS = nodeFIPS
+			return nil
 		}
-		// Check if FIPS on the system is at the desired setting
-		current.Spec.FIPS = nodeFIPS
+		return fmt.Errorf("detected change to FIPS flag; refusing to modify FIPS on a running cluster")
+	})
+}
+
+// Set the value of the running node fips to the provided machine config
+// The purpose is to set the fips value to the machine config representing the
+// current setting.  It is used when comparing the running configuration
+// to the desired configuration in order to decide if reboot is necessary during
+// firstboot
+func setNodeFipsIntoMC(mc *mcfgv1.MachineConfig) error {
+	return processFips(func(nodeFIPS bool) error {
+		mc.Spec.FIPS = nodeFIPS
 		return nil
-	}
-	return fmt.Errorf("detected change to FIPS flag; refusing to modify FIPS on a running cluster")
+	})
 }
 
 // checks for white-space characters in "C" and "POSIX" locales.
