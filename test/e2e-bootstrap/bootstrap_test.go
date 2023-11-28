@@ -513,6 +513,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.ConfigInformerFactory.Config().V1().Schedulers(),
 			ctx.ClientBuilder.KubeClientOrDie("node-update-controller"),
 			ctx.ClientBuilder.MachineConfigClientOrDie("node-update-controller"),
+			ctx.FeatureGateAccess,
 		),
 	)
 

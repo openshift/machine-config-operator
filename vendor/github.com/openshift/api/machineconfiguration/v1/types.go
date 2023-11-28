@@ -193,6 +193,7 @@ type ControllerConfigStatus struct {
 	// +listType=atomic
 	// +optional
 	Conditions []ControllerConfigStatusCondition `json:"conditions"`
+
 	// controllerCertificates represents the latest available observations of the automatically rotating certificates in the MCO.
 	// +listType=atomic
 	// +optional
@@ -210,11 +211,11 @@ type ControllerCertificate struct {
 	Signer string `json:"signer"`
 
 	// notBefore is the lower boundary for validity
-	// +kubebuilder:validation:Required
+	// +optional
 	NotBefore *metav1.Time `json:"notBefore"`
 
 	// notAfter is the upper boundary for validity
-	// +kubebuilder:validation:Required
+	// +optional
 	NotAfter *metav1.Time `json:"notAfter"`
 
 	// bundleFile is the larger bundle a cert comes from
@@ -445,7 +446,7 @@ type CertExpiry struct {
 	// +kubebuilder:validation:Required
 	Subject string `json:"subject"`
 	// expiry is the date after which the certificate will no longer be valid
-	// +kubebuilder:validation:Required
+	// +optional
 	Expiry *metav1.Time `json:"expiry"`
 }
 
@@ -569,7 +570,7 @@ type KubeletConfigSpec struct {
 
 	// If unset, the default is based on the apiservers.config.openshift.io/cluster resource.
 	// Note that only Old and Intermediate profiles are currently supported, and
-	// the maximum available MinTLSVersions is VersionTLS12.
+	// the maximum available minTLSVersion is VersionTLS12.
 	// +optional
 	TLSSecurityProfile *configv1.TLSSecurityProfile `json:"tlsSecurityProfile,omitempty"`
 }
@@ -678,12 +679,12 @@ type ContainerRuntimeConfiguration struct {
 	// Negative numbers indicate that no size limit is imposed.
 	// If it is positive, it must be >= 8192 to match/exceed conmon's read buffer.
 	// +optional
-	LogSizeMax resource.Quantity `json:"logSizeMax,omitempty"`
+	LogSizeMax *resource.Quantity `json:"logSizeMax,omitempty"`
 
 	// overlaySize specifies the maximum size of a container image.
 	// This flag can be used to set quota on the size of container images. (default: 10GB)
 	// +optional
-	OverlaySize resource.Quantity `json:"overlaySize,omitempty"`
+	OverlaySize *resource.Quantity `json:"overlaySize,omitempty"`
 
 	// defaultRuntime is the name of the OCI runtime to be used as the default.
 	// +optional

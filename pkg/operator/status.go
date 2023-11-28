@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+
 	configv1 "github.com/openshift/api/config/v1"
 	cov1helpers "github.com/openshift/library-go/pkg/config/clusteroperator/v1helpers"
 	corev1 "k8s.io/api/core/v1"
@@ -18,7 +20,6 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/klog/v2"
 
-	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	v1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -306,6 +307,7 @@ func (optr *Operator) syncUpgradeableStatus() error {
 		if isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolUpdating) {
 			updating = true
 		}
+
 		degraded = isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolDegraded)
 		// degraded should get top billing in the clusteroperator status, if we find this, set it and update
 		if degraded {
@@ -315,6 +317,7 @@ func (optr *Operator) syncUpgradeableStatus() error {
 			break
 		}
 	}
+	// this should no longer trigger when adding a node to a pool. It should only trigger if the node actually has to go through an upgrade
 	// updating and degraded can occur together, in that case defer to the degraded Reason that is already set above
 	if updating && !degraded {
 		coStatus.Status = configv1.ConditionFalse

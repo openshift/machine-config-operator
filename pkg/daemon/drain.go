@@ -9,8 +9,10 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/containers/image/v5/pkg/sysregistriesv2"
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
+	mcfgalphav1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
+	"github.com/openshift/machine-config-operator/pkg/upgrademonitor"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -34,6 +36,18 @@ func (dn *Daemon) performDrain() error {
 
 	if !dn.drainRequired() {
 		logSystem("Drain not required, skipping")
+		err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
+			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateExecuted, Reason: string(mcfgalphav1.MachineConfigNodeUpdateDrained), Message: "Node Drain Not required for this update."},
+			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateDrained, Reason: fmt.Sprintf("%s%s", string(mcfgalphav1.MachineConfigNodeUpdateExecuted), string(mcfgalphav1.MachineConfigNodeUpdateDrained)), Message: "Node Drain Not required for this update."},
+			metav1.ConditionUnknown,
+			metav1.ConditionFalse,
+			dn.node,
+			dn.mcfgClient,
+			dn.featureGatesAccessor,
+		)
+		if err != nil {
+			klog.Errorf("Error making MCN for Drain not required: %w", err)
+		}
 		dn.nodeWriter.Eventf(corev1.EventTypeNormal, "Drain", "Drain not required, skipping")
 		return nil
 	}
@@ -85,12 +99,15 @@ func (dn *Daemon) performDrain() error {
 		if wait.Interrupted(err) {
 			failMsg := fmt.Sprintf("failed to drain node: %s after 1 hour. Please see machine-config-controller logs for more information", dn.node.Name)
 			dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedToDrain", failMsg)
+
 			return fmt.Errorf(failMsg)
+
 		}
 		return fmt.Errorf("Something went wrong while attempting to drain node: %v", err)
 	}
 
 	logSystem("drain complete")
+
 	t := time.Since(startTime).Seconds()
 	klog.Infof("Successful drain took %v seconds", t)
 

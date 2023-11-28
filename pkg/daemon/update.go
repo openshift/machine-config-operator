@@ -27,10 +27,13 @@ import (
 	"k8s.io/klog/v2"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	mcfgalphav1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	pivottypes "github.com/openshift/machine-config-operator/pkg/daemon/pivot/types"
 	pivotutils "github.com/openshift/machine-config-operator/pkg/daemon/pivot/utils"
+	"github.com/openshift/machine-config-operator/pkg/upgrademonitor"
 )
 
 const (
@@ -75,6 +78,18 @@ func reloadService(name string) error {
 // If at any point an error occurs, we reboot the node so that node has correct configuration.
 func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string, configName string) error {
 	if ctrlcommon.InSlice(postConfigChangeActionReboot, postConfigChangeActions) {
+		err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
+			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdatePostActionComplete, Reason: string(mcfgalphav1.MachineConfigNodeUpdateRebooted), Message: fmt.Sprintf("Node will reboot into config %s", configName)},
+			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateRebooted, Reason: fmt.Sprintf("%s%s", string(mcfgalphav1.MachineConfigNodeUpdatePostActionComplete), string(mcfgalphav1.MachineConfigNodeUpdateRebooted)), Message: "Upgrade requires a reboot. Currently doing this as the post update action."},
+			metav1.ConditionUnknown,
+			metav1.ConditionUnknown,
+			dn.node,
+			dn.mcfgClient,
+			dn.featureGatesAccessor,
+		)
+		if err != nil {
+			klog.Errorf("Error making MCN for rebooting: %w", err)
+		}
 		logSystem("Rebooting node")
 		return dn.reboot(fmt.Sprintf("Node will reboot into config %s", configName))
 	}
@@ -82,6 +97,18 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 	if ctrlcommon.InSlice(postConfigChangeActionNone, postConfigChangeActions) {
 		if dn.nodeWriter != nil {
 			dn.nodeWriter.Eventf(corev1.EventTypeNormal, "SkipReboot", "Config changes do not require reboot.")
+		}
+		err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
+			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdatePostActionComplete, Reason: "None", Message: fmt.Sprintf("Changes do not require a reboot")},
+			nil,
+			metav1.ConditionTrue,
+			metav1.ConditionFalse,
+			dn.node,
+			dn.mcfgClient,
+			dn.featureGatesAccessor,
+		)
+		if err != nil {
+			klog.Errorf("Error making MCN for no post config change action: %w", err)
 		}
 		logSystem("Node has Desired Config %s, skipping reboot", configName)
 	}
@@ -94,6 +121,19 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 				dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedServiceReload", fmt.Sprintf("Reloading %s service failed. Error: %v", serviceName, err))
 			}
 			return fmt.Errorf("could not apply update: reloading %s configuration failed. Error: %w", serviceName, err)
+		}
+
+		err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
+			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdatePostActionComplete, Reason: string(mcfgalphav1.MachineConfigNodeUpdateReloaded), Message: "Node has reloaded CRIO"},
+			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateReloaded, Reason: fmt.Sprintf("%s%s", string(mcfgalphav1.MachineConfigNodeUpdatePostActionComplete), string(mcfgalphav1.MachineConfigNodeUpdateReloaded)), Message: "Upgrade required a CRIO reload. Completed this this as the post update action."},
+			metav1.ConditionTrue,
+			metav1.ConditionTrue,
+			dn.node,
+			dn.mcfgClient,
+			dn.featureGatesAccessor,
+		)
+		if err != nil {
+			klog.Errorf("Error making MCN for Reloading success: %w", err)
 		}
 
 		if dn.nodeWriter != nil {
@@ -599,10 +639,23 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 
 	klog.Infof("Checking Reconcilable for config %v to %v", oldConfigName, newConfigName)
 
+	// checking for reconcilability
 	// make sure we can actually reconcile this state
 	diff, reconcilableError := reconcilable(oldConfig, newConfig)
 
 	if reconcilableError != nil {
+		Nerr := upgrademonitor.GenerateAndApplyMachineConfigNodes(
+			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdatePrepared, Reason: string(mcfgalphav1.MachineConfigNodeUpdateCompatible), Message: fmt.Sprintf("Update Failed during the Checking for Compatibility phase")},
+			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateCompatible, Reason: fmt.Sprintf("%s%s", string(mcfgalphav1.MachineConfigNodeUpdatePrepared), string(mcfgalphav1.MachineConfigNodeUpdateCompatible)), Message: fmt.Sprintf("Error: MachineConfigs %v and %v are not compatible. Err: %s", oldConfigName, newConfigName, reconcilableError.Error())},
+			metav1.ConditionUnknown,
+			metav1.ConditionUnknown,
+			dn.node,
+			dn.mcfgClient,
+			dn.featureGatesAccessor,
+		)
+		if Nerr != nil {
+			klog.Errorf("Error making MCN for Preparing update failed: %w", err)
+		}
 		wrappedErr := fmt.Errorf("can't reconcile config %s with %s: %w", oldConfigName, newConfigName, reconcilableError)
 		if dn.nodeWriter != nil {
 			dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedToReconcile", wrappedErr.Error())
@@ -615,6 +668,18 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	diffFileSet := ctrlcommon.CalculateConfigFileDiffs(&oldIgnConfig, &newIgnConfig)
 	actions, err := calculatePostConfigChangeAction(diff, diffFileSet)
 	if err != nil {
+		Nerr := upgrademonitor.GenerateAndApplyMachineConfigNodes(
+			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdatePrepared, Reason: string(mcfgalphav1.MachineConfigNodeUpdateCompatible), Message: "Update Failed during the Checking for Compatibility phase."},
+			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateCompatible, Reason: fmt.Sprintf("%s%s", string(mcfgalphav1.MachineConfigNodeUpdatePrepared), string(mcfgalphav1.MachineConfigNodeUpdateCompatible)), Message: fmt.Sprintf("Error: MachineConfigs %v and %v are not available for update. Error calculating post config change actions: %s", oldConfigName, newConfigName, err.Error())},
+			metav1.ConditionUnknown,
+			metav1.ConditionUnknown,
+			dn.node,
+			dn.mcfgClient,
+			dn.featureGatesAccessor,
+		)
+		if Nerr != nil {
+			klog.Errorf("Error making MCN for Preparing update failed: %w", err)
+		}
 		return err
 	}
 
@@ -623,12 +688,76 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	if err != nil {
 		return err
 	}
+	err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
+		&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdatePrepared, Reason: string(mcfgalphav1.MachineConfigNodeUpdateCompatible), Message: "Update is Compatible."},
+		&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateCompatible, Reason: fmt.Sprintf("%s%s", string(mcfgalphav1.MachineConfigNodeUpdatePrepared), string(mcfgalphav1.MachineConfigNodeUpdateCompatible)), Message: fmt.Sprintf("Update Compatible. Post Cfg Actions %v: Drain Required: %t", actions, drain)},
+		metav1.ConditionTrue,
+		metav1.ConditionTrue,
+		dn.node,
+		dn.mcfgClient,
+		dn.featureGatesAccessor,
+	)
+	if err != nil {
+		klog.Errorf("Error making MCN for Update Compatible: %w", err)
+	}
+	pool := ""
+	var ok bool
+	if dn.node != nil {
+		if _, ok = dn.node.Labels["node-role.kubernetes.io/worker"]; ok {
+			pool = "worker"
+		} else if _, ok = dn.node.Labels["node-role.kubernetes.io/master"]; ok {
+			pool = "master"
+		}
+	}
+
+	err = upgrademonitor.GenerateAndApplyMachineConfigNodeSpec(dn.featureGatesAccessor, pool, dn.node, dn.mcfgClient)
+	if err != nil {
+		klog.Errorf("Error making MCN spec for Update Compatible: %w", err)
+	}
 	if drain {
 		if err := dn.performDrain(); err != nil {
 			return err
 		}
 	} else {
 		klog.Info("Changes do not require drain, skipping.")
+		err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
+			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateExecuted, Reason: string(mcfgalphav1.MachineConfigNodeUpdateDrained), Message: "Node Drain Not required for this update."},
+			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateDrained, Reason: fmt.Sprintf("%s%s", string(mcfgalphav1.MachineConfigNodeUpdateExecuted), string(mcfgalphav1.MachineConfigNodeUpdateDrained)), Message: "Node Drain Not required for this update."},
+			metav1.ConditionUnknown,
+			metav1.ConditionFalse,
+			dn.node,
+			dn.mcfgClient,
+			dn.featureGatesAccessor,
+		)
+		if err != nil {
+			klog.Errorf("Error making MCN for Drain not required: %w", err)
+		}
+	}
+
+	files := ""
+	for _, f := range newIgnConfig.Storage.Files {
+		files += f.Path + " "
+	}
+
+	updatesNeeded := []string{"not", "not"}
+	if diff.passwd {
+		updatesNeeded[1] = ""
+	}
+	if diff.osUpdate || diff.extensions || diff.kernelType {
+		updatesNeeded[0] = ""
+	}
+
+	err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
+		&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateExecuted, Reason: string(mcfgalphav1.MachineConfigNodeUpdateFilesAndOS), Message: fmt.Sprintf("Updating the Files and OS on disk as a part of the in progress phase")},
+		&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateFilesAndOS, Reason: fmt.Sprintf("%s%s", string(mcfgalphav1.MachineConfigNodeUpdateExecuted), string(mcfgalphav1.MachineConfigNodeUpdateFilesAndOS)), Message: fmt.Sprintf("Applying files and new OS config to node. OS will %s need an update. SSH Keys will %s need an update", updatesNeeded[0], updatesNeeded[1])},
+		metav1.ConditionUnknown,
+		metav1.ConditionUnknown,
+		dn.node,
+		dn.mcfgClient,
+		dn.featureGatesAccessor,
+	)
+	if err != nil {
+		klog.Errorf("Error making MCN for Updating Files and OS: %w", err)
 	}
 
 	// update files on disk that need updating
@@ -730,7 +859,24 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		}
 	}()
 
-	return dn.performPostConfigChangeAction(actions, newConfig.GetName())
+	err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
+		&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateExecuted, Reason: string(mcfgalphav1.MachineConfigNodeUpdateFilesAndOS), Message: fmt.Sprintf("Updated the Files and OS on disk as a part of the in progress phase")},
+		&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateFilesAndOS, Reason: fmt.Sprintf("%s%s", string(mcfgalphav1.MachineConfigNodeUpdateExecuted), string(mcfgalphav1.MachineConfigNodeUpdateFilesAndOS)), Message: fmt.Sprintf("Applied files and new OS config to node. OS did %s need an update. SSH Keys did %s need an update", updatesNeeded[0], updatesNeeded[1])},
+		metav1.ConditionTrue,
+		metav1.ConditionTrue,
+		dn.node,
+		dn.mcfgClient,
+		dn.featureGatesAccessor,
+	)
+	if err != nil {
+		klog.Errorf("Error making MCN for Updated Files and OS: %w", err)
+	}
+
+	err = dn.performPostConfigChangeAction(actions, newConfig.GetName())
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // This is currently a subsection copied over from update() since we need to be more nuanced. Should eventually
@@ -2204,6 +2350,15 @@ func (dn *Daemon) reboot(rationale string) error {
 	}
 	logSystem("initiating reboot: %s", rationale)
 
+	if dn.node != nil {
+		Rebooting := make(map[string]string)
+		Rebooting[constants.MachineConfigDaemonPostConfigAction] = constants.MachineConfigDaemonStateRebooting
+		_, err := dn.nodeWriter.SetAnnotations(Rebooting)
+		if err != nil {
+			klog.Errorf("Error setting post config action annotation %w", err)
+		}
+	}
+
 	// reboot, executed async via systemd-run so that the reboot command is executed
 	// in the context of the host asynchronously from us
 	// We're not returning the error from the reboot command as it can be terminated by
@@ -2219,6 +2374,7 @@ func (dn *Daemon) reboot(rationale string) error {
 	// and we wait for GracefulNodeShutdown
 	dn.rebootQueued = true
 	logSystem("reboot successful")
+
 	return nil
 }
 

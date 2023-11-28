@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"os"
+	"time"
 
 	"github.com/openshift/machine-config-operator/cmd/common"
 	"github.com/openshift/machine-config-operator/internal/clients"
@@ -44,6 +45,8 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 	// This is 'main' context that we thread through the controller context and
 	// the leader elections. Cancelling this is "stop everything, we are shutting down".
 	runContext, runCancel := context.WithCancel(context.Background())
+	stopCh := make(chan struct{})
+	defer close(stopCh)
 
 	// To help debugging, immediately log version
 	klog.Infof("Version: %s (Raw: %s, Hash: %s)", version.ReleaseVersion, version.Raw, version.Hash)
@@ -57,16 +60,13 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		klog.Fatalf("error creating clients: %v", err)
 	}
 
-	stopCh := make(chan struct{})
-	defer close(stopCh)
-
 	// start metrics listener
 	go ctrlcommon.StartMetricsListener(startOpts.promMetricsURL, stopCh, operator.RegisterMCOMetrics)
 
 	run := func(ctx context.Context) {
 		go common.SignalHandler(runCancel)
-
 		ctrlctx := ctrlcommon.CreateControllerContext(ctx, cb)
+
 		controller := operator.New(
 			ctrlcommon.MCONamespace, componentName,
 			startOpts.imagesFile,
@@ -97,18 +97,34 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			ctrlctx.KubeNamespacedInformerFactory.Core().V1().Secrets(),
 			ctrlctx.OpenShiftConfigKubeNamespacedInformerFactory.Core().V1().Secrets(),
 			ctrlctx.ConfigInformerFactory.Config().V1().ClusterOperators(),
+			ctrlctx.NamespacedInformerFactory.Machineconfiguration().V1alpha1().MachineConfigNodes(),
+			ctrlctx.FeatureGateAccess,
 		)
 
+		ctrlctx.InformerFactory.Start(ctrlctx.Stop)
+		ctrlctx.ConfigInformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.NamespacedInformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.KubeInformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.KubeNamespacedInformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.APIExtInformerFactory.Start(ctrlctx.Stop)
-		ctrlctx.ConfigInformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.OpenShiftKubeAPIServerKubeNamespacedInformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.OpenShiftConfigKubeNamespacedInformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.OperatorInformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.KubeMAOSharedInformer.Start(ctrlctx.Stop)
+
 		close(ctrlctx.InformersStarted)
+
+		select {
+		case <-ctrlctx.FeatureGateAccess.InitialFeatureGatesObserved():
+			featureGates, err := ctrlctx.FeatureGateAccess.CurrentFeatureGates()
+			if err != nil {
+				klog.Fatalf("Could not get FG: %w", err)
+			} else {
+				klog.Infof("FeatureGates initialized: knownFeatureGates=%v", featureGates.KnownFeatures())
+			}
+		case <-time.After(1 * time.Minute):
+			klog.Fatalf("Could not get FG, timed out: %w", err)
+		}
 
 		go controller.Run(2, ctrlctx.Stop)
 

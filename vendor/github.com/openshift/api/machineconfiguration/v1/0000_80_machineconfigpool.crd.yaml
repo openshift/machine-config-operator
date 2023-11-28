@@ -227,7 +227,6 @@ spec:
                     type: object
                     required:
                       - bundle
-                      - expiry
                       - subject
                     properties:
                       bundle:

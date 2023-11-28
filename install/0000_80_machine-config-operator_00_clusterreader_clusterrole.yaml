@@ -33,3 +33,15 @@ rules:
       - get
       - list
       - watch
+  - apiGroups:
+      - config.openshift.io
+    resources: 
+      - images 
+      - clusterversions
+      - featuregates 
+      - nodes
+      - nodes/status
+    verbs:
+      - get
+      - list
+      - watch
