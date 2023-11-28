@@ -1,0 +1,11 @@
+mode: 0644
+path: "/etc/sysctl.d/gc-thresh.conf"
+contents:
+  inline: |
+    # See: rhbz#1384746, OCPBUGS-24012
+    net.ipv4.neigh.default.gc_thresh1=8192
+    net.ipv4.neigh.default.gc_thresh2=32768
+    net.ipv4.neigh.default.gc_thresh3=65536
+    net.ipv6.neigh.default.gc_thresh1=8192
+    net.ipv6.neigh.default.gc_thresh2=32768
+    net.ipv6.neigh.default.gc_thresh3=65536
