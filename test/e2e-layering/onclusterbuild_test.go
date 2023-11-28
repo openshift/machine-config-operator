@@ -247,8 +247,8 @@ func TestSSHKeyAndPasswordForOSBuilder(t *testing.T) {
 
 	// Set up Ignition config with the desired SSH key and password
 	testIgnConfig := ctrlcommon.NewIgnConfig()
-	sshKeyContent := "testsshkey22"
-	passwordHash := "testpassword22"
+	sshKeyContent := "testsshkey221"
+	passwordHash := "testpassword221"
 
 	// label random node from pool, get the node
 	unlabelFunc := helpers.LabelRandomNodeFromPool(t, cs, "worker", "node-role.kubernetes.io/layered")
@@ -309,10 +309,26 @@ func TestSSHKeyAndPasswordForOSBuilder(t *testing.T) {
 
 	t.Logf("Node %s has correct SSH Key and Password Hash", osNode.Name)
 
-	// Clean-up: Delete the applied MachineConfig and ensure configurations are rolled back
+	// Now, rollback to non-layered configuration
+	unlabelFunc()
 
+	// Get current worker config
+	currentWorkerConfig := helpers.GetMcName(t, cs, "worker")
+
+	// Wait for the mcp to rollback to previous config
+	if err := helpers.WaitForPoolComplete(t, cs, "worker", currentWorkerConfig); err != nil {
+		t.Fatal(err)
+	}
+
+	// checking to see if deployment exists
+	exists, err = helpers.CheckDeploymentExists(cs, "machine-os-builder", "openshift-machine-config-operator")
+	require.NoError(t, err, "Failed to check if Machine OS builder deployment doesnt exist")
+	require.True(t, exists, "Machine OS builder deployment still exists after rollback")
+
+	//check that ssh and password are not there after this test
+
+	// Clean-up: Delete the applied MachineConfig and ensure configurations are rolled back
 	t.Cleanup(func() {
-		unlabelFunc()
 		cleanupFunc()
 		if err := cs.MachineConfigs().Delete(context.TODO(), testConfig.Name, metav1.DeleteOptions{}); err != nil {
 			t.Error(err)
@@ -332,7 +348,7 @@ func TestRollbackFromLayeredToNonLayeredConfiguration(t *testing.T) {
 	})
 
 	// Opt the MCP into layering and get the cleanup function
-	cleanupFunc := optPoolIntoLayering(t, cs, "layered")
+	cleanupFunc := optPoolIntoLayering(t, cs, layeredMCPName)
 	defer cleanupFunc()
 
 	// wait for pool to complete building
@@ -350,5 +366,4 @@ func TestRollbackFromLayeredToNonLayeredConfiguration(t *testing.T) {
 	exists, err = helpers.CheckDeploymentExists(cs, "machine-os-builder", "openshift-machine-config-operator")
 	require.NoError(t, err, "Failed to check if Machine OS builder deployment doesnt exist")
 	require.True(t, exists, "Machine OS builder deployment still exists after rollback")
-
 }
