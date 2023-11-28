@@ -2252,11 +2252,14 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 		}
 	}()
 
-	// If we have an OS update *or* a kernel type change, then we must undo the kernel swap
+	mcdPivotErrCount := 0
+
+	// If we have an OS update *or* a kernel type change, then we must undo the RT kernel
 	// enablement.
 	if mcDiff.osUpdate || mcDiff.kernelType {
 		if err := dn.queueRevertKernelSwap(); err != nil {
-			mcdPivotErr.Inc()
+			mcdPivotErrCount++
+			mcdPivotErr.WithLabelValues(fmt.Sprint(mcdPivotErrCount)).SetToCurrentTime()
 			return err
 		}
 	}
@@ -2264,7 +2267,8 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 	// Update OS
 	if mcDiff.osUpdate {
 		if err := dn.updateLayeredOS(newConfig); err != nil {
-			mcdPivotErr.Inc()
+			mcdPivotErrCount++
+			mcdPivotErr.WithLabelValues(fmt.Sprint(mcdPivotErrCount)).SetToCurrentTime()
 			return err
 		}
 		if dn.nodeWriter != nil {
@@ -2278,7 +2282,8 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 	}
 
 	// if we're here, we've successfully pivoted, or pivoting wasn't necessary, so we reset the error gauge
-	mcdPivotErr.Set(0)
+	mcdPivotErrCount = 0
+	mcdPivotErr.WithLabelValues(fmt.Sprint(mcdPivotErrCount)).SetToCurrentTime()
 
 	if mcDiff.kargs {
 		if err := dn.updateKernelArguments(oldConfig.Spec.KernelArguments, newConfig.Spec.KernelArguments); err != nil {
