@@ -494,10 +494,13 @@ func TestContainerRuntimeConfigCreate(t *testing.T) {
 			f := newFixture(t)
 			f.newController()
 
+			nine := resource.MustParse("9k")
+			three := resource.MustParse("3G")
+
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
-			ctrcfg1 := newContainerRuntimeConfig("set-log-level", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug", LogSizeMax: resource.MustParse("9k"), OverlaySize: resource.MustParse("3G")}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
+			ctrcfg1 := newContainerRuntimeConfig("set-log-level", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug", LogSizeMax: &nine, OverlaySize: &three}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
 			ctrCfgKey, _ := getManagedKeyCtrCfg(mcp, f.client, ctrcfg1)
 			mcs1 := helpers.NewMachineConfig(getManagedKeyCtrCfgDeprecated(mcp), map[string]string{"node-role": "master"}, "dummy://", []ign3types.File{{}})
 			mcs2 := mcs1.DeepCopy()
@@ -531,10 +534,13 @@ func TestContainerRuntimeConfigUpdate(t *testing.T) {
 			f := newFixture(t)
 			f.newController()
 
+			nine := resource.MustParse("9k")
+			three := resource.MustParse("3G")
+
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
-			ctrcfg1 := newContainerRuntimeConfig("set-log-level", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug", LogSizeMax: resource.MustParse("9k"), OverlaySize: resource.MustParse("3G")}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
+			ctrcfg1 := newContainerRuntimeConfig("set-log-level", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug", LogSizeMax: &nine, OverlaySize: &three}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
 			keyCtrCfg, _ := getManagedKeyCtrCfg(mcp, f.client, ctrcfg1)
 			mcs := helpers.NewMachineConfig(getManagedKeyCtrCfgDeprecated(mcp), map[string]string{"node-role": "master"}, "dummy://", []ign3types.File{{}})
 			mcsUpdate := mcs.DeepCopy()
@@ -1238,6 +1244,8 @@ func TestContainerRuntimeConfigOptions(t *testing.T) {
 		validZerolimit   int64 = 0
 		invalidNegLimit  int64 = -10
 	)
+	three := resource.MustParse("3k")
+	ten := resource.MustParse("10k")
 	failureTests := []struct {
 		name   string
 		config *mcfgv1.ContainerRuntimeConfiguration
@@ -1257,7 +1265,7 @@ func TestContainerRuntimeConfigOptions(t *testing.T) {
 		{
 			name: "inalid value of max log size",
 			config: &mcfgv1.ContainerRuntimeConfiguration{
-				LogSizeMax: resource.MustParse("3k"),
+				LogSizeMax: &three,
 			},
 		},
 		{
@@ -1293,7 +1301,7 @@ func TestContainerRuntimeConfigOptions(t *testing.T) {
 		{
 			name: "valid max log size",
 			config: &mcfgv1.ContainerRuntimeConfiguration{
-				LogSizeMax: resource.MustParse("10k"),
+				LogSizeMax: &ten,
 			},
 		},
 		{

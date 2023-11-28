@@ -35,6 +35,8 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	v1 "github.com/openshift/api/machineconfiguration/v1"
+	v1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+
 	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
 	mcoResourceApply "github.com/openshift/machine-config-operator/lib/resourceapply"
@@ -616,9 +618,11 @@ func getIgnitionHost(infraStatus *configv1.InfrastructureStatus) (string, error)
 func (optr *Operator) syncCustomResourceDefinitions() error {
 	crds := []string{
 		"manifests/controllerconfig.crd.yaml",
+		"manifests/0000_80_machine-config-operator_01_machineconfignode-TechPreviewNoUpgrade.crd.yaml",
 	}
 
 	for _, crd := range crds {
+
 		crdBytes, err := manifests.ReadFile(crd)
 		if err != nil {
 			return fmt.Errorf("error getting asset %s: %w", crd, err)
@@ -662,6 +666,7 @@ func (optr *Operator) syncMachineConfigPools(config *renderConfig) error {
 	}
 	// base64.StdEncoding.EncodeToString
 	for _, pool := range pools {
+
 		pointerConfigAsset := newAssetRenderer("pointer-config")
 		pointerConfigAsset.templateData = config.PointerConfig
 		pointerConfigData, err := pointerConfigAsset.render(struct{ Role string }{pool.Name})
@@ -688,6 +693,62 @@ func (optr *Operator) syncMachineConfigPools(config *renderConfig) error {
 		}
 	}
 
+	return nil
+}
+
+// we need to mimic this
+func (optr *Operator) syncMachineConfigNodes(_ *renderConfig) error {
+	fg, err := optr.fgAccessor.CurrentFeatureGates()
+	if err != nil {
+		klog.Errorf("Could not get fg: %w", err)
+		return err
+	}
+	if !fg.Enabled(configv1.FeatureGateMachineConfigNodes) {
+		return nil
+	}
+	nodes, err := optr.nodeLister.List(labels.Everything())
+	if err != nil {
+		return err
+	}
+	for _, node := range nodes {
+		var pool string
+		var ok bool
+		if _, ok = node.Labels["node-role.kubernetes.io/worker"]; ok {
+			pool = "worker"
+		} else if _, ok = node.Labels["node-role.kubernetes.io/master"]; ok {
+			pool = "master"
+		}
+		newMCS := &v1alpha1.MachineConfigNode{
+			Spec: v1alpha1.MachineConfigNodeSpec{
+				Node: v1alpha1.MCOObjectReference{
+					Name: node.Name,
+				},
+				Pool: v1alpha1.MCOObjectReference{
+					Name: pool,
+				},
+				ConfigVersion: v1alpha1.MachineConfigNodeSpecMachineConfigVersion{
+					Desired: "NotYetSet",
+				},
+			},
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "MachineConfigNode",
+				APIVersion: "machineconfiguration.openshift.io/v1alpha1",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name: node.Name,
+			},
+		}
+		mcsBytes, err := json.Marshal(newMCS)
+		if err != nil {
+			klog.Errorf("error rendering asset for MachineConfigNode %w", err)
+			return err
+		}
+		p := mcoResourceRead.ReadMachineConfigNodeV1OrDie(mcsBytes)
+		_, _, err = mcoResourceApply.ApplyMachineConfigNode(optr.client.MachineconfigurationV1alpha1(), p)
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -1123,6 +1184,7 @@ func (optr *Operator) syncMachineConfigServer(config *renderConfig) error {
 		},
 		daemonset: mcsDaemonsetManifestPath,
 	}
+
 	if err := optr.applyManifests(config, paths); err != nil {
 		return fmt.Errorf("failed to apply machine config server manifests: %w", err)
 	}

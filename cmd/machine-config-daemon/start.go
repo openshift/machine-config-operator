@@ -5,6 +5,7 @@ import (
 	"flag"
 	"net/url"
 	"os"
+	"time"
 
 	"k8s.io/client-go/tools/clientcmd"
 
@@ -166,24 +167,40 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 	go ctrlcommon.StartMetricsListener(startOpts.promMetricsURL, stopCh, daemon.RegisterMCDMetrics)
 
 	ctrlctx := ctrlcommon.CreateControllerContext(ctx, cb)
+
 	// create the daemon instance. this also initializes kube client items
 	// which need to come from the container and not the chroot.
 	err = dn.ClusterConnect(
 		startOpts.nodeName,
 		kubeClient,
+		ctrlctx.ClientBuilder.MachineConfigClientOrDie(componentName),
 		ctrlctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
 		ctrlctx.KubeInformerFactory.Core().V1().Nodes(),
 		ctrlctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
 		startOpts.kubeletHealthzEnabled,
 		startOpts.kubeletHealthzEndpoint,
+		ctrlctx.FeatureGateAccess,
 	)
 	if err != nil {
 		klog.Fatalf("Failed to initialize: %v", err)
 	}
 
+	ctrlctx.ConfigInformerFactory.Start(ctrlctx.Stop)
 	ctrlctx.KubeInformerFactory.Start(stopCh)
 	ctrlctx.InformerFactory.Start(stopCh)
 	close(ctrlctx.InformersStarted)
+
+	select {
+	case <-ctrlctx.FeatureGateAccess.InitialFeatureGatesObserved():
+		featureGates, err := ctrlctx.FeatureGateAccess.CurrentFeatureGates()
+		if err != nil {
+			klog.Fatalf("Could not get FG: %w", err)
+		} else {
+			klog.Infof("FeatureGates initialized: knownFeatureGates=%v", featureGates.KnownFeatures())
+		}
+	case <-time.After(1 * time.Minute):
+		klog.Fatalf("Could not get FG, timed out: %w", err)
+	}
 
 	if err := dn.Run(stopCh, exitCh); err != nil {
 		ctrlcommon.WriteTerminationError(err)

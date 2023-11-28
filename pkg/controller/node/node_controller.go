@@ -8,6 +8,8 @@ import (
 	"sort"
 	"time"
 
+	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
+
 	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	cligoinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
@@ -93,6 +95,8 @@ type Controller struct {
 
 	queue workqueue.RateLimitingInterface
 
+	fgAcessor featuregates.FeatureGateAccess
+
 	// updateDelay is a pause to deal with churn in MachineConfigs; see
 	// https://github.com/openshift/machine-config-operator/issues/301
 	updateDelay time.Duration
@@ -107,6 +111,7 @@ func New(
 	schedulerInformer cligoinformersv1.SchedulerInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
+	fgAccessor featuregates.FeatureGateAccess,
 ) *Controller {
 	return newController(
 		ccInformer,
@@ -118,6 +123,7 @@ func New(
 		kubeClient,
 		mcfgClient,
 		defaultUpdateDelay,
+		fgAccessor,
 	)
 }
 
@@ -131,6 +137,7 @@ func NewWithCustomUpdateDelay(
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
 	updateDelay time.Duration,
+	fgAccessor featuregates.FeatureGateAccess,
 ) *Controller {
 	return newController(
 		ccInformer,
@@ -142,6 +149,7 @@ func NewWithCustomUpdateDelay(
 		kubeClient,
 		mcfgClient,
 		updateDelay,
+		fgAccessor,
 	)
 }
 
@@ -156,6 +164,7 @@ func newController(
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
 	updateDelay time.Duration,
+	fgAccessor featuregates.FeatureGateAccess,
 ) *Controller {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
@@ -167,6 +176,7 @@ func newController(
 		eventRecorder: ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-nodecontroller"})),
 		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-nodecontroller"),
 		updateDelay:   updateDelay,
+		fgAcessor:     fgAccessor,
 	}
 
 	mcpInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -856,6 +866,8 @@ func (ctrl *Controller) canLayeredPoolContinue(pool *mcfgv1.MachineConfigPool) (
 
 // syncMachineConfigPool will sync the machineconfig pool with the given key.
 // This function is not meant to be invoked concurrently with the same key.
+//
+//nolint:gocyclo
 func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	startTime := time.Now()
 	klog.V(4).Infof("Started syncing machineconfigpool %q (%v)", key, startTime)

@@ -436,6 +436,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	}
 
 	if err := ctrl.syncGeneratedMachineConfig(pool, mcs); err != nil {
+		klog.Errorf("Error syncing Generated MCFG: %w", err)
 		return ctrl.syncFailingStatus(pool, err)
 	}
 

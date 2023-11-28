@@ -66,9 +66,10 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 	run := func(ctx context.Context) {
 		go common.SignalHandler(runCancel)
 
+		// Start the metrics handler
+
 		ctrlctx := ctrlcommon.CreateControllerContext(ctx, cb)
 
-		// Start the metrics handler
 		go ctrlcommon.StartMetricsListener(startOpts.promMetricsListenAddress, ctrlctx.Stop, ctrlcommon.RegisterMCCMetrics)
 
 		controllers := createControllers(ctrlctx)
@@ -77,14 +78,15 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			ctrlctx.KubeInformerFactory.Core().V1().Nodes(),
 			ctrlctx.ClientBuilder.KubeClientOrDie("node-update-controller"),
 			ctrlctx.ClientBuilder.MachineConfigClientOrDie("node-update-controller"),
+			ctrlctx.FeatureGateAccess,
 		)
 
 		// Start the shared factory informers that you need to use in your controller
 		ctrlctx.InformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.KubeInformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.OpenShiftConfigKubeNamespacedInformerFactory.Start(ctrlctx.Stop)
-		ctrlctx.ConfigInformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.OperatorInformerFactory.Start(ctrlctx.Stop)
+		ctrlctx.ConfigInformerFactory.Start(ctrlctx.Stop)
 
 		close(ctrlctx.InformersStarted)
 
@@ -131,8 +133,8 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 }
 
 func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controller {
-	var controllers []ctrlcommon.Controller
 
+	var controllers []ctrlcommon.Controller
 	controllers = append(controllers,
 		// Our primary MCs come from here
 		template.New(
@@ -192,6 +194,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.ConfigInformerFactory.Config().V1().Schedulers(),
 			ctx.ClientBuilder.KubeClientOrDie("node-update-controller"),
 			ctx.ClientBuilder.MachineConfigClientOrDie("node-update-controller"),
+			ctx.FeatureGateAccess,
 		),
 	)
 

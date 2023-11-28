@@ -38,17 +38,21 @@ const (
 	// GeneratedByVersionAnnotationKey is used to tag the controllerconfig to synchronize the MCO and MCC
 	GeneratedByVersionAnnotationKey = "machineconfiguration.openshift.io/generated-by-version"
 
-	// MachineConfigDaemonStateWorking is set by daemon when it is applying an update.
+	// MachineConfigDaemonStateWorking is set by daemon when it is beginning to apply an update.
 	MachineConfigDaemonStateWorking = "Working"
 	// MachineConfigDaemonStateDone is set by daemon when it is done applying an update.
 	MachineConfigDaemonStateDone = "Done"
 	// MachineConfigDaemonStateDegraded is set by daemon when an error not caused by a bad MachineConfig
 	// is thrown during an update.
 	MachineConfigDaemonStateDegraded = "Degraded"
+	// MachineConfigDaemonRebooting is used to indicate a reboot is either queued or is in progress.
+	MachineConfigDaemonStateRebooting = "Rebooting"
 	// MachineConfigDaemonStateUnreconcilable is set by the daemon when a MachineConfig cannot be applied.
 	MachineConfigDaemonStateUnreconcilable = "Unreconcilable"
 	// MachineConfigDaemonReasonAnnotationKey is set by the daemon when it needs to report a human readable reason for its state. E.g. when state flips to degraded/unreconcilable.
 	MachineConfigDaemonReasonAnnotationKey = "machineconfiguration.openshift.io/reason"
+	// MachineConfigDaemonPostConfigAction is set by the daemon when it needs to report a human readable post config action that takes place during update.
+	MachineConfigDaemonPostConfigAction = "machineconfiguration.openshift.io/post-config-action"
 	// MachineConfigDaemonFinalizeFailureAnnotationKey is set by the daemon when ostree fails to finalize
 	MachineConfigDaemonFinalizeFailureAnnotationKey = "machineconfiguration.openshift.io/ostree-finalize-staged-failure"
 	// InitialNodeAnnotationsFilePath defines the path at which it will find the node annotations it needs to set on the node once it comes up for the first time.

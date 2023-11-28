@@ -2,9 +2,18 @@ package resourcemerge
 
 import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	mcfgalphav1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+
 	"github.com/openshift/library-go/pkg/operator/resource/resourcemerge"
 	"k8s.io/apimachinery/pkg/api/equality"
 )
+
+// EnsureMachineConfig ensures that the existing matches the required.
+// modified is set to true when existing had to be updated with required.
+func EnsureMachineConfigNode(modified *bool, existing *mcfgalphav1.MachineConfigNode, required mcfgalphav1.MachineConfigNode) {
+	resourcemerge.EnsureObjectMeta(modified, &existing.ObjectMeta, required.ObjectMeta)
+	ensureMachineConfigNodeSpec(modified, &existing.Spec, required.Spec)
+}
 
 // EnsureMachineConfig ensures that the existing matches the required.
 // modified is set to true when existing had to be updated with required.
@@ -44,6 +53,16 @@ func EnsureMachineConfigPool(modified *bool, existing *mcfgv1.MachineConfigPool,
 	}
 }
 
+func ensureMachineConfigNodeSpec(modified *bool, existing *mcfgalphav1.MachineConfigNodeSpec, required mcfgalphav1.MachineConfigNodeSpec) {
+	if !equality.Semantic.DeepEqual(existing.Node, required.Node) {
+		*modified = true
+		(*existing).Node = required.Node
+	}
+	if !equality.Semantic.DeepEqual(existing.Pool, required.Pool) {
+		*modified = true
+		(*existing).Pool = required.Pool
+	}
+}
 func ensureMachineConfigSpec(modified *bool, existing *mcfgv1.MachineConfigSpec, required mcfgv1.MachineConfigSpec) {
 	resourcemerge.SetStringIfSet(modified, &existing.OSImageURL, required.OSImageURL)
 	resourcemerge.SetStringIfSet(modified, &existing.KernelType, required.KernelType)

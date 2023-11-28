@@ -5,6 +5,10 @@ import (
 	"fmt"
 	"time"
 
+	v1 "github.com/openshift/api/config/v1"
+	opv1 "github.com/openshift/api/operator/v1"
+	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
+
 	"k8s.io/klog/v2"
 
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
@@ -38,7 +42,9 @@ import (
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
+	mcfginformersalphav1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1alpha1"
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
+	mcfglistersalphav1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1"
 )
 
 const (
@@ -63,6 +69,8 @@ type Operator struct {
 
 	vStore *versionStore
 
+	operatorHealthEvents record.EventRecorder
+
 	client        mcfgclientset.Interface
 	kubeClient    kubernetes.Interface
 	apiExtClient  apiextclientset.Interface
@@ -72,9 +80,11 @@ type Operator struct {
 
 	syncHandler func(ic string) error
 
+	mcNodeLister     mcfglistersalphav1.MachineConfigNodeLister
 	imgLister        configlistersv1.ImageLister
 	crdLister        apiextlistersv1.CustomResourceDefinitionLister
 	mcpLister        mcfglistersv1.MachineConfigPoolLister
+	msLister         mcfglistersalphav1.MachineConfigNodeLister
 	ccLister         mcfglistersv1.ControllerConfigLister
 	mcLister         mcfglistersv1.MachineConfigLister
 	deployLister     appslisterv1.DeploymentLister
@@ -92,6 +102,7 @@ type Operator struct {
 	ocSecretLister   corelisterv1.SecretLister
 	mcoCOLister      configlistersv1.ClusterOperatorLister
 
+	mcNodeListerSynced               cache.InformerSynced
 	crdListerSynced                  cache.InformerSynced
 	deployListerSynced               cache.InformerSynced
 	daemonsetListerSynced            cache.InformerSynced
@@ -122,6 +133,8 @@ type Operator struct {
 	stopCh <-chan struct{}
 
 	renderConfig *renderConfig
+
+	fgAccessor featuregates.FeatureGateAccess
 }
 
 // New returns a new machine config operator.
@@ -154,6 +167,8 @@ func New(
 	mcoSecretInformer coreinformersv1.SecretInformer,
 	ocSecretInformer coreinformersv1.SecretInformer,
 	mcoCOInformer configinformersv1.ClusterOperatorInformer,
+	mcNodeInformer mcfginformersalphav1.MachineConfigNodeInformer,
+	fgAccess featuregates.FeatureGateAccess,
 ) *Operator {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
@@ -175,7 +190,17 @@ func New(
 			Namespace:  ctrlcommon.MCONamespace,
 			APIVersion: "apps/v1",
 		}),
-		queue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigoperator"),
+		queue:      workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigoperator"),
+		fgAccessor: fgAccess,
+	}
+
+	err := corev1.AddToScheme(scheme.Scheme)
+	if err != nil {
+		klog.Errorf("Could not modify scheme: %w", err)
+	}
+	err = opv1.AddToScheme(scheme.Scheme)
+	if err != nil {
+		klog.Errorf("Could not modify scheme: %w", err)
 	}
 
 	for _, i := range []cache.SharedIndexInformer{
@@ -201,12 +226,14 @@ func New(
 		mcoSecretInformer.Informer(),
 		ocSecretInformer.Informer(),
 		mcoCOInformer.Informer(),
+		mcNodeInformer.Informer(),
 	} {
 		i.AddEventHandler(optr.eventHandler())
 	}
 
 	optr.syncHandler = optr.sync
 
+	optr.mcNodeLister = mcNodeInformer.Lister()
 	optr.imgLister = imgInformer.Lister()
 	optr.clusterCmLister = clusterCmInfomer.Lister()
 	optr.clusterCmListerSynced = clusterCmInfomer.Informer().HasSynced
@@ -223,6 +250,7 @@ func New(
 	optr.nodeLister = nodeInformer.Lister()
 	optr.nodeListerSynced = nodeInformer.Informer().HasSynced
 
+	optr.mcNodeListerSynced = mcInformer.Informer().HasSynced
 	optr.imgListerSynced = imgInformer.Informer().HasSynced
 	optr.maoSecretInformerSynced = maoSecretInformer.Informer().HasSynced
 	optr.serviceAccountInformerSynced = serviceAccountInfomer.Informer().HasSynced
@@ -272,8 +300,7 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 		}
 	}
 
-	if !cache.WaitForCacheSync(stopCh,
-		optr.crdListerSynced,
+	cacheSynced := []cache.InformerSynced{optr.crdListerSynced,
 		optr.deployListerSynced,
 		optr.daemonsetListerSynced,
 		optr.infraListerSynced,
@@ -294,7 +321,15 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 		optr.mcoSAListerSynced,
 		optr.mcoSecretListerSynced,
 		optr.ocSecretListerSynced,
-		optr.mcoCOListerSynced) {
+		optr.mcoCOListerSynced}
+	fg, err := optr.fgAccessor.CurrentFeatureGates()
+	if err != nil {
+		klog.Errorf("No fg enabled %w", err)
+	} else if fg.Enabled(v1.FeatureGateMachineConfigNodes) {
+		cacheSynced = append(cacheSynced, optr.mcNodeListerSynced)
+	}
+	if !cache.WaitForCacheSync(stopCh,
+		cacheSynced...) {
 		klog.Error("failed to sync caches")
 		return
 	}
@@ -394,6 +429,7 @@ func (optr *Operator) sync(key string) error {
 		// "RenderConfig" must always run first as it sets the renderConfig in the operator
 		// for the sync funcs below
 		{"RenderConfig", optr.syncRenderConfig},
+		{"MachineConfigNode", optr.syncMachineConfigNodes},
 		{"MachineConfigPools", optr.syncMachineConfigPools},
 		{"MachineConfigDaemon", optr.syncMachineConfigDaemon},
 		{"MachineConfigController", optr.syncMachineConfigController},
@@ -402,5 +438,6 @@ func (optr *Operator) sync(key string) error {
 		// this check must always run last since it makes sure the pools are in sync/upgrading correctly
 		{"RequiredPools", optr.syncRequiredMachineConfigPools},
 	}
+
 	return optr.syncAll(syncFuncs)
 }
