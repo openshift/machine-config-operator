@@ -321,11 +321,26 @@ func TestSSHKeyAndPasswordForOSBuilder(t *testing.T) {
 	}
 
 	// checking to see if deployment exists
+	var exists bool
 	exists, err = helpers.CheckDeploymentExists(cs, "machine-os-builder", "openshift-machine-config-operator")
 	require.NoError(t, err, "Failed to check if Machine OS builder deployment doesnt exist")
 	require.True(t, exists, "Machine OS builder deployment still exists after rollback")
 
+	// Re-fetch the node after rollback
+	osNode = helpers.GetSingleNodeByRole(t, cs, "worker")
+
 	//check that ssh and password are not there after this test
+	foundSSHKeyAfterRollback := helpers.ExecCmdOnNode(t, cs, osNode, "cat", "/rootfs/home/core/.ssh/authorized_keys.d/ignition")
+	if strings.Contains(foundSSHKeyAfterRollback, sshKeyContent) {
+		t.Fatalf("SSH key should not be present after rollback, found %s", foundSSHKeyAfterRollback)
+	}
+	t.Logf("SSH key correctly removed after rollback")
+
+	currentEtcShadowContentsAfterRollback := helpers.ExecCmdOnNode(t, cs, osNode, "grep", "^core:", "/rootfs/etc/shadow")
+	if currentEtcShadowContentsAfterRollback != initialEtcShadowContents {
+		t.Fatalf("Password hash should not be present after rollback, found %s", currentEtcShadowContentsAfterRollback)
+	}
+	t.Logf("Password hash correctly removed after rollback")
 
 	// Clean-up: Delete the applied MachineConfig and ensure configurations are rolled back
 	t.Cleanup(func() {
@@ -337,33 +352,33 @@ func TestSSHKeyAndPasswordForOSBuilder(t *testing.T) {
 	})
 }
 
-func TestRollbackFromLayeredToNonLayeredConfiguration(t *testing.T) {
-	cs := framework.NewClientSet("")
+// func TestRollbackFromLayeredToNonLayeredConfiguration(t *testing.T) {
+// 	cs := framework.NewClientSet("")
 
-	// prepare for on cluster build test
-	prepareForTest(t, cs, onClusterBuildTestOpts{
-		imageBuilderType:  build.OpenshiftImageBuilder,
-		poolName:          layeredMCPName,
-		customDockerfiles: map[string]string{},
-	})
+// 	// prepare for on cluster build test
+// 	prepareForTest(t, cs, onClusterBuildTestOpts{
+// 		imageBuilderType:  build.OpenshiftImageBuilder,
+// 		poolName:          layeredMCPName,
+// 		customDockerfiles: map[string]string{},
+// 	})
 
-	// Opt the MCP into layering and get the cleanup function
-	cleanupFunc := optPoolIntoLayering(t, cs, layeredMCPName)
-	defer cleanupFunc()
+// 	// Opt the MCP into layering and get the cleanup function
+// 	cleanupFunc := optPoolIntoLayering(t, cs, layeredMCPName)
+// 	defer cleanupFunc()
 
-	// wait for pool to complete building
-	helpers.WaitForPoolToBeUpdated(t, cs, layeredMCPName)
+// 	// wait for pool to complete building
+// 	helpers.WaitForPoolToBeUpdated(t, cs, layeredMCPName)
 
-	// Check if deployment exists
-	exists, err := helpers.CheckDeploymentExists(cs, "machine-os-builder", "openshift-machine-config-operator")
-	require.NoError(t, err, "Failed to check if Machine OS builder deployment exists")
-	require.True(t, exists, "Machine OS builder deployment not found")
+// 	// Check if deployment exists
+// 	exists, err := helpers.CheckDeploymentExists(cs, "machine-os-builder", "openshift-machine-config-operator")
+// 	require.NoError(t, err, "Failed to check if Machine OS builder deployment exists")
+// 	require.True(t, exists, "Machine OS builder deployment not found")
 
-	// Now, rollback to non-layered configuration
-	helpers.UnlabelMCP(t, cs, layeredMCPName, ctrlcommon.LayeringEnabledPoolLabel)
+// 	// Now, rollback to non-layered configuration
+// 	helpers.UnlabelMCP(t, cs, layeredMCPName, ctrlcommon.LayeringEnabledPoolLabel)
 
-	// checking to see if deployment exists
-	exists, err = helpers.CheckDeploymentExists(cs, "machine-os-builder", "openshift-machine-config-operator")
-	require.NoError(t, err, "Failed to check if Machine OS builder deployment doesnt exist")
-	require.True(t, exists, "Machine OS builder deployment still exists after rollback")
-}
+// 	// checking to see if deployment exists
+// 	exists, err = helpers.CheckDeploymentExists(cs, "machine-os-builder", "openshift-machine-config-operator")
+// 	require.NoError(t, err, "Failed to check if Machine OS builder deployment doesnt exist")
+// 	require.True(t, exists, "Machine OS builder deployment still exists after rollback")
+// }
