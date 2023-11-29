@@ -168,7 +168,7 @@ func GenerateAndApplyMachineConfigNodes(parentCondition, childCondition *Conditi
 	}
 	// if the update is compatible, we can set the desired to the one being used in the update
 	// this happens either if we get prepared == true OR literally any other parent condition, since if we get past prepared, then the desiredConfig is correct.
-	if newParentCondition.Type == string(mcfgalphav1.MachineConfigNodeUpdatePrepared) && newParentCondition.Status == metav1.ConditionTrue || newParentCondition.Type != string(mcfgalphav1.MachineConfigNodeUpdatePrepared) {
+	if newParentCondition.Type == string(mcfgalphav1.MachineConfigNodeUpdatePrepared) && newParentCondition.Status == metav1.ConditionTrue || newParentCondition.Type != string(mcfgalphav1.MachineConfigNodeUpdatePrepared) && node.Annotations["machineconfiguration.openshift.io/desiredConfig"] != "" {
 		newMCNode.Status.ConfigVersion.Desired = node.Annotations["machineconfiguration.openshift.io/desiredConfig"]
 	} else if newMCNode.Status.ConfigVersion.Desired == "" {
 		newMCNode.Status.ConfigVersion.Desired = "NotYetSet"
@@ -194,6 +194,12 @@ func GenerateAndApplyMachineConfigNodes(parentCondition, childCondition *Conditi
 			pool = "master"
 		}
 
+		newMCNode.Spec.ConfigVersion = mcfgalphav1.MachineConfigNodeSpecMachineConfigVersion{
+			Desired: node.Annotations["machineconfiguration.openshift.io/desiredConfig"],
+		}
+		if newMCNode.Spec.ConfigVersion.Desired == "" {
+			newMCNode.Spec.ConfigVersion.Desired = "NotYetSet"
+		}
 		newMCNode.Name = node.Name
 		newMCNode.Spec.Pool = mcfgalphav1.MCOObjectReference{Name: pool}
 		newMCNode.Spec.Node = mcfgalphav1.MCOObjectReference{Name: node.Name}
