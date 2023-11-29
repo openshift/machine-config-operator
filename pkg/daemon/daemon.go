@@ -1074,7 +1074,7 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 	}
 
 	if ctrlcommon.InSlice(postConfigChangeActionReloadCrio, actions) {
-		serviceName := "crio"
+		serviceName := constants.CRIOServiceName
 		if err := reloadService(serviceName); err != nil {
 			return fmt.Errorf("could not apply update: reloading %s configuration failed. Error: %w", serviceName, err)
 		}

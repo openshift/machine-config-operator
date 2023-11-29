@@ -248,7 +248,13 @@ func TestImageRegistryMergedCM(t *testing.T) {
 	//mcd, err := helpers.MCDForNode(cs, &nodes[0])
 
 	err = wait.PollUntilContextTimeout(context.TODO(), 2*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
-		out := helpers.ExecCmdOnNode(t, cs, nodes[0], "ls", "/rootfs/etc/docker/certs.d")
+		out, err := helpers.ExecCmdOnNodeWithError(cs, nodes[0], "ls", "/rootfs/etc/docker/certs.d")
+		if err != nil {
+			t.Logf("Error while exec'ing on node. Probably transient due to commands being executed: %s", err.Error())
+			nodes, err = helpers.GetNodesByRole(cs, "worker")
+			require.Nil(t, err)
+			return false, nil
+		}
 		t.Logf("OUTPUT: %s", out)
 		return strings.Contains(out, "foo"), nil
 	})
