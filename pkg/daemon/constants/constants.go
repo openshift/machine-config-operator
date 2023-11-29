@@ -97,4 +97,7 @@ const (
 
 	// SSH keys in RHCOS 9 / FCOS / SCOS will be written to /home/core/.ssh/authorized_keys.d/ignition
 	RHCOS9SSHKeyPath = CoreUserSSHPath + "/authorized_keys.d/ignition"
+
+	// CRIOServiceName is used to specify reloads and restarts of the CRI-O service
+	CRIOServiceName = "crio"
 )

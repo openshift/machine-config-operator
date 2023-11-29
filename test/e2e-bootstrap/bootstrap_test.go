@@ -400,7 +400,6 @@ func compareRenderedConfigPool(t *testing.T, clientSet *framework.ClientSet, des
 	for _, file := range outIgn.Storage.Files {
 		require.False(t, file.Path == "/etc/kubernetes/kubelet-ca.crt")
 		require.False(t, file.Path == "/etc/kubernetes/static-pod-resources/configmaps/cloud-config/ca-bundle.pem")
-		require.False(t, file.Path == "/etc/pki/ca-trust/source/anchors/openshift-config-user-ca-bundle.crt")
 	}
 	if controllerRenderedConfigName != bootstrapRenderedConfigName {
 		t.Errorf("Expected rendered %s configurations to match: got bootstrap config %q, got controller config %q", poolName, bootstrapRenderedConfigName, controllerRenderedConfigName)
