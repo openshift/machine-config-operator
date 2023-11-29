@@ -119,7 +119,7 @@ func isDrainRequired(actions, diffFileSet []string, oldIgnConfig, newIgnConfig i
 	if ctrlcommon.InSlice(postConfigChangeActionReboot, actions) {
 		// Node is going to reboot, we definitely want to perform drain
 		return true, nil
-	} else if ctrlcommon.InSlice(postConfigChangeActionReloadCrio, actions) {
+	} else if ctrlcommon.InSlice(postConfigChangeActionReloadCrio, actions) || ctrlcommon.InSlice(postConfigChangeActionRestartCrio, actions) {
 		// Drain may or may not be necessary in case of container registry config changes.
 		if ctrlcommon.InSlice(constants.ContainerRegistryConfPath, diffFileSet) {
 			isSafe, err := isSafeContainerRegistryConfChanges(oldIgnConfig, newIgnConfig)
