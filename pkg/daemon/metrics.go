@@ -17,11 +17,11 @@ var (
 		}, []string{"os", "version"})
 
 	// mcdPivotErr flags error encountered during pivot
-	mcdPivotErr = prometheus.NewGauge(
+	mcdPivotErr = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "mcd_pivot_errors_total",
 			Help: "Total number of errors encountered during pivot.",
-		})
+		}, []string{"total"})
 
 	// mcdState is state of mcd for indicated node (ex: degraded)
 	mcdState = prometheus.NewGaugeVec(
@@ -50,6 +50,13 @@ var (
 			Name: "mcd_update_state",
 			Help: "completed update config or error",
 		}, []string{"config", "err"})
+
+	// mcdConfigDrift logs a config drift
+	mcdConfigDrift = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "mcd_config_drift",
+			Help: "timestamp for configt drift",
+		})
 )
 
 // Updates metric with new labels & timestamp, deletes any existing
@@ -70,11 +77,15 @@ func RegisterMCDMetrics() error {
 		kubeletHealthState,
 		mcdRebootErr,
 		mcdUpdateState,
+		mcdConfigDrift,
 	})
 
 	if err != nil {
 		return fmt.Errorf("could not register machine-config-daemon metrics: %w", err)
 	}
+
+	// Initilize GuageVecs:
+	mcdPivotErr.WithLabelValues("initialize").Set(0)
 
 	kubeletHealthState.Set(0)
 

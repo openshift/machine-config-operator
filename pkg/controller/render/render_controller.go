@@ -439,7 +439,6 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		klog.Errorf("Error syncing Generated MCFG: %w", err)
 		return ctrl.syncFailingStatus(pool, err)
 	}
-
 	return ctrl.syncAvailableStatus(pool)
 }
 
@@ -536,7 +535,7 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 		return err
 	}
 	klog.V(2).Infof("Pool %s: now targeting: %s", pool.Name, pool.Spec.Configuration.Name)
-
+	ctrlcommon.UpdateStateMetric(ctrlcommon.MCCSubControllerState, "machine-config-controller-render", "Sync Machine Config Pool with new MC", pool.Name)
 	return ctrl.garbageCollectRenderedConfigs(pool)
 }
 
