@@ -361,7 +361,7 @@ func (ctrl *Controller) syncNode(key string) error {
 	if err := ctrl.setNodeAnnotations(node.Name, annotations); err != nil {
 		return fmt.Errorf("node %s: failed to set node uncordoned annotation: %w", node.Name, err)
 	}
-	ctrlcommon.UpdateStateMetric(ctrlcommon.MCCSubControllerState, "machine-config-controller-drain", desiredVerb, node.Name)
+
 	return nil
 }
 

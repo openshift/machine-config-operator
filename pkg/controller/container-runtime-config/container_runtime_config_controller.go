@@ -684,11 +684,11 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 			return ctrl.syncStatusOnly(cfg, err, "could not add finalizers to ContainerRuntimeConfig: %v", err)
 		}
 		klog.Infof("Applied ContainerRuntimeConfig %v on MachineConfigPool %v", key, pool.Name)
-		ctrlcommon.UpdateStateMetric(ctrlcommon.MCCSubControllerState, "machine-config-controller-container-runtime-config", "Sync Container Runtime Config", pool.Name)
 	}
 	if err := ctrl.cleanUpDuplicatedMC(); err != nil {
 		return err
 	}
+
 	return ctrl.syncStatusOnly(cfg, nil)
 }
 
@@ -887,9 +887,9 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 		}
 		if applied {
 			klog.Infof("Applied ImageConfig cluster on MachineConfigPool %v", pool.Name)
-			ctrlcommon.UpdateStateMetric(ctrlcommon.MCCSubControllerState, "machine-config-controller-container-runtime-config", "Sync Image Config", pool.Name)
 		}
 	}
+
 	return nil
 }
 

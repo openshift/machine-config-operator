@@ -38,12 +38,6 @@ var (
 			Name: "mcc_pool_alert",
 			Help: "pool status alert",
 		}, []string{"node"})
-	// MCCSubControllerState logs the state of the subcontrollers of the MCC
-	MCCSubControllerState = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "mcc_sub_controller_state",
-			Help: "state of sub-controllers in the MCC",
-		}, []string{"subcontroller", "state", "object"})
 )
 
 func RegisterMCCMetrics() error {
@@ -51,25 +45,15 @@ func RegisterMCCMetrics() error {
 		OSImageURLOverride,
 		MCCDrainErr,
 		MCCPoolAlert,
-		MCCSubControllerState,
 	})
 
 	if err != nil {
 		return fmt.Errorf("could not register machine-config-controller metrics: %w", err)
 	}
 
-	// Initilize GuageVecs to ensure that metrics of type GuageVec are accessible from the dashboard even if without a logged value
-	// Solution to OCPBUGS-20427: https://issues.redhat.com/browse/OCPBUGS-20427
-	OSImageURLOverride.WithLabelValues("initialize").Set(0)
-	MCCDrainErr.WithLabelValues("initialize").Set(0)
-	MCCPoolAlert.WithLabelValues("initialize").Set(0)
-	MCCSubControllerState.WithLabelValues("initialize", "initialize", "initialize").Set(0)
+	MCCDrainErr.Reset()
 
 	return nil
-}
-
-func UpdateStateMetric(metric *prometheus.GaugeVec, labels ...string) {
-	metric.WithLabelValues(labels...).SetToCurrentTime()
 }
 
 func RegisterMetrics(metrics []prometheus.Collector) error {
