@@ -295,12 +295,14 @@ func updateStorageConfig(data []byte, internal *mcfgv1.ContainerRuntimeConfigura
 		return nil, fmt.Errorf("error decoding crio config: %w", err)
 	}
 
-	if internal.OverlaySize != nil && internal.OverlaySize.Value() < 0 {
-		return nil, fmt.Errorf("invalid overlaySize config %q: the overlaySize should be larger than 0", internal.OverlaySize.String())
-	}
+	if internal.OverlaySize != nil {
+		if internal.OverlaySize.Value() < 0 {
+			return nil, fmt.Errorf("invalid overlaySize config %q: the overlaySize should be larger than 0", internal.OverlaySize.String())
+		}
 
-	if internal.OverlaySize != nil && internal.OverlaySize.Value() != 0 {
-		tomlConf.Storage.Options.Size = internal.OverlaySize.String()
+		if internal.OverlaySize.Value() != 0 {
+			tomlConf.Storage.Options.Size = internal.OverlaySize.String()
+		}
 	}
 
 	var newData bytes.Buffer
