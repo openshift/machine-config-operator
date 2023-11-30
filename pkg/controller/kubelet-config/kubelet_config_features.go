@@ -118,7 +118,6 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 			return fmt.Errorf("could not Create/Update MachineConfig: %w", err)
 		}
 		klog.Infof("Applied FeatureSet %v on MachineConfigPool %v", key, pool.Name)
-		ctrlcommon.UpdateStateMetric(ctrlcommon.MCCSubControllerState, "machine-config-controller-kubelet-config", "Sync FeatureSet", pool.Name)
 	}
 	return ctrl.cleanUpDuplicatedMC(managedFeaturesKeyPrefix)
 

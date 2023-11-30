@@ -163,7 +163,6 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 			return fmt.Errorf("Could not Create/Update MachineConfig, error: %w", err)
 		}
 		klog.Infof("Applied Node configuration %v on MachineConfigPool %v", key, pool.Name)
-		ctrlcommon.UpdateStateMetric(ctrlcommon.MCCSubControllerState, "machine-config-controller-kubelet-config", "Sync NodeConfig", pool.Name)
 	}
 	// fetch the kubeletconfigs
 	kcs, err := ctrl.mckLister.List(labels.Everything())
