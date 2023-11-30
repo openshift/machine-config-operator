@@ -577,7 +577,6 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 		if updated {
 			klog.V(4).Infof("Machineconfig %s was updated", mc.Name)
 		}
-		ctrlcommon.UpdateStateMetric(ctrlcommon.MCCSubControllerState, "machine-config-controller-template", "Sync Controller Config", mc.Name)
 	}
 
 	return ctrl.syncCompletedStatus(cfg)
