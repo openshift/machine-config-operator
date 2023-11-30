@@ -1,0 +1,15 @@
+name: wait-for-br-ex-up.service
+enabled: {{if gt (len (onPremPlatformAPIServerInternalIPs .)) 0}}true{{else}}false{{end}}
+contents: |
+  [Unit]
+  Description=Wait for br-ex up event from NetworkManager
+  Wants=ovs-configuration.service
+  After=ovs-configuration.service
+  Before=node-valid-hostname.service
+
+  [Service]
+  Type=oneshot
+  ExecStart=/usr/local/bin/wait-for-br-ex-up.sh
+
+  [Install]
+  RequiredBy=node-valid-hostname.service
