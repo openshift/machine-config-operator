@@ -34,9 +34,6 @@ contents:
             >&2 echo "NM resolv-prepender: Timeout occurred"
             exit 1
         fi
-        if [[ "$STATUS" == "up" ]] && [[ $IFACE == "br-ex" ]]; then
-            touch /run/nodeip-configuration/br-ex-up
-        fi
       ;;
       *)
       ;;
