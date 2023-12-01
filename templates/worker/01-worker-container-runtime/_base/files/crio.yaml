@@ -32,6 +32,13 @@ contents:
     ]
     drop_infra_ctr = true
 
+    [crio.runtime.runtimes.crun]
+    runtime_root = "/run/crun"
+    allowed_annotations = [
+        "io.containers.trace-syscall",
+        "io.kubernetes.cri-o.Devices",
+    ]
+
     [crio.runtime.workloads.openshift-builder]
     activation_annotation = "io.openshift.builder"
     allowed_annotations = [
