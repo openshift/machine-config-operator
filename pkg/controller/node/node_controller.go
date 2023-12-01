@@ -999,6 +999,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 			}
 			return err
 		}
+		ctrlcommon.UpdateStateMetric(ctrlcommon.MCCSubControllerState, "machine-config-controller-node", "Sync Machine Config Pool", pool.Name)
 	}
 	return ctrl.syncStatusOnly(pool)
 }
