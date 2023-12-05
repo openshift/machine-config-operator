@@ -155,7 +155,6 @@ spec:
 			}
 		})
 	}
-
 }
 
 func TestBootstrapRun(t *testing.T) {
