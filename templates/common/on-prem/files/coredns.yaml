@@ -25,6 +25,9 @@ contents:
       - name: nm-resolv
         hostPath:
           path: "/var/run/NetworkManager"
+      - name: nodeip-configuration
+        hostPath:
+          path: "/run/nodeip-configuration"
       initContainers:
       - name: render-config-coredns
         image: {{ .Images.baremetalRuntimeCfgImage }}
@@ -55,6 +58,9 @@ contents:
         - name: nm-resolv
           mountPath: "/var/run/NetworkManager"
           mountPropagation: HostToContainer
+        - name: nodeip-configuration
+          mountPath: "/run/nodeip-configuration"
+          mountPropagation: HostToContainer
         imagePullPolicy: IfNotPresent
       containers:
       - name: coredns
@@ -71,6 +77,9 @@ contents:
         volumeMounts:
         - name: conf-dir
           mountPath: "/etc/coredns"
+        - name: nodeip-configuration
+          mountPath: "/run/nodeip-configuration"
+          mountPropagation: HostToContainer
         livenessProbe:
           httpGet:
             path: /health
@@ -98,7 +107,7 @@ contents:
         resources:
           requests:
             cpu: 100m
-            memory: 200Mi          
+            memory: 200Mi
         volumeMounts:
         - name: kubeconfig
           mountPath: "/var/lib/kubelet"
@@ -112,7 +121,10 @@ contents:
         - name: nm-resolv
           mountPath: "/var/run/NetworkManager"
           mountPropagation: HostToContainer
-        imagePullPolicy: IfNotPresent        
+        - name: nodeip-configuration
+          mountPath: "/run/nodeip-configuration"
+          mountPropagation: HostToContainer
+        imagePullPolicy: IfNotPresent
       hostNetwork: true
       tolerations:
       - operator: Exists
