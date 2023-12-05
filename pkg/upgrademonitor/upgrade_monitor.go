@@ -33,7 +33,7 @@ func GenerateAndApplyMachineConfigNodes(parentCondition, childCondition *Conditi
 	}
 	fg, err := fgAccessor.CurrentFeatureGates()
 	if err != nil {
-		klog.Errorf("Could not get fg: %w", err)
+		klog.Errorf("Could not get fg: %v", err)
 		return err
 	}
 	if fg == nil || !fg.Enabled(v1.FeatureGateMachineConfigNodes) {
@@ -182,7 +182,7 @@ func GenerateAndApplyMachineConfigNodes(parentCondition, childCondition *Conditi
 		mcnodeApplyConfig := machineconfigurationalphav1.MachineConfigNode(newMCNode.Name).WithStatus(statusApplyConfig)
 		_, err := mcfgClient.MachineconfigurationV1alpha1().MachineConfigNodes().ApplyStatus(context.TODO(), mcnodeApplyConfig, metav1.ApplyOptions{FieldManager: "machine-config-operator", Force: true})
 		if err != nil {
-			klog.Errorf("Error applying MCN status: %w", err)
+			klog.Errorf("Error applying MCN status: %v", err)
 			return err
 		}
 	} else {
@@ -206,7 +206,7 @@ func GenerateAndApplyMachineConfigNodes(parentCondition, childCondition *Conditi
 		newMCNode.Spec.Node = mcfgalphav1.MCOObjectReference{Name: node.Name}
 		_, err := mcfgClient.MachineconfigurationV1alpha1().MachineConfigNodes().Create(context.TODO(), newMCNode, metav1.CreateOptions{})
 		if err != nil {
-			klog.Errorf("Error creating MCN: %w", err)
+			klog.Errorf("Error creating MCN: %v", err)
 			return err
 		}
 	}
@@ -220,7 +220,7 @@ func GenerateAndApplyMachineConfigNodeSpec(fgAccessor featuregates.FeatureGateAc
 	}
 	fg, err := fgAccessor.CurrentFeatureGates()
 	if err != nil {
-		klog.Errorf("Could not get fg: %w", err)
+		klog.Errorf("Could not get fg: %v", err)
 		return err
 	}
 	if fg == nil || !fg.Enabled(v1.FeatureGateMachineConfigNodes) {
@@ -248,13 +248,13 @@ func GenerateAndApplyMachineConfigNodeSpec(fgAccessor featuregates.FeatureGateAc
 		mcnodeApplyConfig := machineconfigurationalphav1.MachineConfigNode(newMCNode.Name).WithSpec(specApplyConfig)
 		_, err := mcfgClient.MachineconfigurationV1alpha1().MachineConfigNodes().Apply(context.TODO(), mcnodeApplyConfig, metav1.ApplyOptions{FieldManager: "machine-config-operator", Force: true})
 		if err != nil {
-			klog.Errorf("Error applying MCN Spec: %w", err)
+			klog.Errorf("Error applying MCN Spec: %v", err)
 			return err
 		}
 	} else {
 		_, err := mcfgClient.MachineconfigurationV1alpha1().MachineConfigNodes().Create(context.TODO(), newMCNode, metav1.CreateOptions{})
 		if err != nil {
-			klog.Errorf("Error creating MCN: %w", err)
+			klog.Errorf("Error creating MCN: %v", err)
 			return err
 		}
 	}
@@ -265,7 +265,7 @@ func GenerateAndApplyMachineConfigNodeSpec(fgAccessor featuregates.FeatureGateAc
 func createOrGetMachineConfigNode(mcfgClient mcfgclientset.Interface, node *corev1.Node) (*mcfgalphav1.MachineConfigNode, bool) {
 	mcNode, err := mcfgClient.MachineconfigurationV1alpha1().MachineConfigNodes().Get(context.TODO(), node.Name, metav1.GetOptions{})
 	if mcNode.Name == "" || (err != nil && apierrors.IsNotFound(err)) {
-		klog.Errorf("error getting existing MCN: %w", err)
+		klog.Errorf("error getting existing MCN: %v", err)
 		return mcNode, true
 	}
 

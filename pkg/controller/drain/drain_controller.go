@@ -324,9 +324,9 @@ func (ctrl *Controller) syncNode(key string) error {
 				ctrl.featureGatesAccessor,
 			)
 			if nErr != nil {
-				klog.Errorf("Error making MCN for Uncordon failure: %w", err)
+				klog.Errorf("Error making MCN for Uncordon failure: %v", err)
 			}
-			return fmt.Errorf("failed to uncordon node %v: %w", node.Name, err)
+			return fmt.Errorf("failed to uncordon node %v: %v", node.Name, err)
 
 		}
 
@@ -339,7 +339,7 @@ func (ctrl *Controller) syncNode(key string) error {
 			ctrl.featureGatesAccessor,
 		)
 		if err != nil {
-			klog.Errorf("Error making MCN for UnCordon success: %w", err)
+			klog.Errorf("Error making MCN for UnCordon success: %v", err)
 		}
 	case daemonconsts.DrainerStateDrain:
 
@@ -359,7 +359,7 @@ func (ctrl *Controller) syncNode(key string) error {
 		daemonconsts.LastAppliedDrainerAnnotationKey: desiredState,
 	}
 	if err := ctrl.setNodeAnnotations(node.Name, annotations); err != nil {
-		return fmt.Errorf("node %s: failed to set node uncordoned annotation: %w", node.Name, err)
+		return fmt.Errorf("node %s: failed to set node uncordoned annotation: %v", node.Name, err)
 	}
 	ctrlcommon.UpdateStateMetric(ctrlcommon.MCCSubControllerState, "machine-config-controller-drain", desiredVerb, node.Name)
 	return nil
@@ -402,9 +402,9 @@ func (ctrl *Controller) drainNode(node *corev1.Node, drainer *drain.Helper) erro
 				ctrl.featureGatesAccessor,
 			)
 			if Nerr != nil {
-				klog.Errorf("Error making MCN for Cordon Failure: %w", Nerr)
+				klog.Errorf("Error making MCN for Cordon Failure: %v", Nerr)
 			}
-			return fmt.Errorf("node %s: failed to cordon: %w", node.Name, err)
+			return fmt.Errorf("node %s: failed to cordon: %v", node.Name, err)
 		}
 		ctrl.ongoingDrains[node.Name] = time.Now()
 		err := upgrademonitor.GenerateAndApplyMachineConfigNodes(&upgrademonitor.Condition{State: v1alpha1.MachineConfigNodeUpdateExecuted, Reason: string(v1alpha1.MachineConfigNodeUpdateCordoned), Message: fmt.Sprintf("Cordoned Node as part of update executed phase")},
@@ -416,7 +416,7 @@ func (ctrl *Controller) drainNode(node *corev1.Node, drainer *drain.Helper) erro
 			ctrl.featureGatesAccessor,
 		)
 		if err != nil {
-			klog.Errorf("Error making MCN for Cordon Success: %w", err)
+			klog.Errorf("Error making MCN for Cordon Success: %v", err)
 		}
 	}
 
@@ -432,7 +432,7 @@ func (ctrl *Controller) drainNode(node *corev1.Node, drainer *drain.Helper) erro
 		ctrl.featureGatesAccessor,
 	)
 	if err != nil {
-		klog.Errorf("Error making MCN for Drain beginning: %w", err)
+		klog.Errorf("Error making MCN for Drain beginning: %v", err)
 	}
 	if err := drain.RunNodeDrain(drainer, node.Name); err != nil {
 		// To mimic our old daemon logic, we should probably have a more nuanced backoff.
@@ -459,7 +459,7 @@ func (ctrl *Controller) drainNode(node *corev1.Node, drainer *drain.Helper) erro
 			ctrl.featureGatesAccessor,
 		)
 		if nErr != nil {
-			klog.Errorf("Error making MCN for Drain failure: %w", nErr)
+			klog.Errorf("Error making MCN for Drain failure: %v", nErr)
 		}
 
 		// Return early without deleting the ongoing drain.
@@ -475,7 +475,7 @@ func (ctrl *Controller) drainNode(node *corev1.Node, drainer *drain.Helper) erro
 		ctrl.featureGatesAccessor,
 	)
 	if err != nil {
-		klog.Errorf("Error making MCN for Drain success: %w", err)
+		klog.Errorf("Error making MCN for Drain success: %v", err)
 	}
 
 	// Drain was successful. Delete the ongoing drain.
@@ -513,14 +513,14 @@ func (ctrl *Controller) setNodeAnnotations(nodeName string, annotations map[stri
 
 		patchBytes, err := strategicpatch.CreateTwoWayMergePatch(oldNode, newNode, corev1.Node{})
 		if err != nil {
-			return fmt.Errorf("node %s: failed to create patch for: %w", nodeName, err)
+			return fmt.Errorf("node %s: failed to create patch for: %v", nodeName, err)
 		}
 
 		_, err = ctrl.kubeClient.CoreV1().Nodes().Patch(context.TODO(), nodeName, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
 		return err
 	}); err != nil {
 		// may be conflict if max retries were hit
-		return fmt.Errorf("node %s: unable to update: %w", nodeName, err)
+		return fmt.Errorf("node %s: unable to update: %v", nodeName, err)
 	}
 	return nil
 }
@@ -564,9 +564,9 @@ func (ctrl *Controller) cordonOrUncordonNode(desired bool, node *corev1.Node, dr
 	}); err != nil {
 		if wait.Interrupted(err) {
 			errs := kubeErrs.NewAggregate([]error{err, lastErr})
-			return fmt.Errorf("node %s: failed to %s (%d tries): %w", node.Name, verb, ctrl.cfg.CordonOrUncordonBackoff.Steps, errs)
+			return fmt.Errorf("node %s: failed to %s (%d tries): %v", node.Name, verb, ctrl.cfg.CordonOrUncordonBackoff.Steps, errs)
 		}
-		return fmt.Errorf("node %s: failed to %s: %w", node.Name, verb, err)
+		return fmt.Errorf("node %s: failed to %s: %v", node.Name, verb, err)
 	}
 
 	return nil
