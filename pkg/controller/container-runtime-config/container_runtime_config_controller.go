@@ -18,7 +18,6 @@ import (
 	cligolistersv1 "github.com/openshift/client-go/config/listers/config/v1"
 	operatorinformersv1alpha1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1alpha1"
 	operatorlistersv1alpha1 "github.com/openshift/client-go/operator/listers/operator/v1alpha1"
-	runtimeutils "github.com/openshift/runtime-utils/pkg/registries"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -783,10 +782,6 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 		return err
 	}
 
-	if err := runtimeutils.RejectMultiUpdateMirrorSetObjs(icspRules, idmsRules, itmsRules); err != nil {
-		return err
-	}
-
 	var (
 		registriesBlocked, policyBlocked, allowedRegs []string
 		releaseImage                                  string
@@ -954,10 +949,6 @@ func RunImageBootstrap(templateDir string, controllerConfig *mcfgv1.ControllerCo
 		insecureRegs, registriesBlocked, policyBlocked, allowedRegs, searchRegs []string
 		err                                                                     error
 	)
-
-	if err := runtimeutils.RejectMultiUpdateMirrorSetObjs(icspRules, idmsRules, itmsRules); err != nil {
-		return nil, err
-	}
 
 	// Read the search, insecure, blocked, and allowed registries from the cluster-wide Image CR if it is not nil
 	if imgCfg != nil {
