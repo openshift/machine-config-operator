@@ -196,11 +196,11 @@ func New(
 
 	err := corev1.AddToScheme(scheme.Scheme)
 	if err != nil {
-		klog.Errorf("Could not modify scheme: %w", err)
+		klog.Errorf("Could not modify scheme: %v", err)
 	}
 	err = opv1.AddToScheme(scheme.Scheme)
 	if err != nil {
-		klog.Errorf("Could not modify scheme: %w", err)
+		klog.Errorf("Could not modify scheme: %v", err)
 	}
 
 	for _, i := range []cache.SharedIndexInformer{
@@ -324,7 +324,7 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 		optr.mcoCOListerSynced}
 	fg, err := optr.fgAccessor.CurrentFeatureGates()
 	if err != nil {
-		klog.Errorf("No fg enabled %w", err)
+		klog.Errorf("No fg enabled %v", err)
 	} else if fg.Enabled(v1.FeatureGateMachineConfigNodes) {
 		cacheSynced = append(cacheSynced, optr.mcNodeListerSynced)
 	}

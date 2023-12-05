@@ -43,12 +43,12 @@ func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
 		}
 	}
 	if err != nil {
-		klog.Errorf("Could not get FG: %w", err)
+		klog.Errorf("Could not get FG: %v", err)
 	} else if mcnExists && fg.Enabled(configv1.FeatureGateMachineConfigNodes) {
 		for _, node := range nodes {
 			ms, err := ctrl.client.MachineconfigurationV1alpha1().MachineConfigNodes().Get(context.TODO(), node.Name, metav1.GetOptions{})
 			if err != nil {
-				klog.Errorf("Could not find our MachineConfigNode for node. %s: %w", node.Name, err)
+				klog.Errorf("Could not find our MachineConfigNode for node. %s: %v", node.Name, err)
 				continue
 			}
 			machineConfigStates = append(machineConfigStates, ms)
