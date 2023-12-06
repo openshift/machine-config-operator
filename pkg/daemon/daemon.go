@@ -1277,6 +1277,7 @@ func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error) error {
 
 // Called whenever the on-disk config has drifted from the current machineconfig.
 func (dn *Daemon) onConfigDrift(err error) {
+	mcdConfigDrift.SetToCurrentTime()
 	dn.nodeWriter.Eventf(corev1.EventTypeWarning, "ConfigDriftDetected", err.Error())
 	klog.Error(err)
 	if err := dn.updateErrorState(err); err != nil {
@@ -1299,6 +1300,7 @@ func (dn *Daemon) getCurrentConfigFromNode() (*onDiskConfig, error) {
 }
 
 func (dn *Daemon) startConfigDriftMonitor() {
+	mcdConfigDrift.Set(0)
 	// Even though the Config Drift Monitor object ensures that only a single
 	// Config Drift Watcher is running at any given time, other things, such as
 	// emitting Kube events on startup, should only occur if we weren't

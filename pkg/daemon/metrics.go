@@ -50,6 +50,13 @@ var (
 			Name: "mcd_update_state",
 			Help: "completed update config or error",
 		}, []string{"config", "err"})
+
+	// mcdConfigDrift logs a config drift
+	mcdConfigDrift = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "mcd_config_drift",
+			Help: "timestamp for config drift",
+		})
 )
 
 // Updates metric with new labels & timestamp, deletes any existing
@@ -70,6 +77,7 @@ func RegisterMCDMetrics() error {
 		kubeletHealthState,
 		mcdRebootErr,
 		mcdUpdateState,
+		mcdConfigDrift,
 	})
 
 	if err != nil {
