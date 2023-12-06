@@ -31,14 +31,7 @@ RUN if [ "${TAGS}" = "fcos" ]; then \
     elif [ "${TAGS}" = "scos" ]; then \
     # rewrite image names for scos
     sed -i 's/rhel-coreos/centos-stream-coreos-9/g' /manifests/*; fi && \
-    # pin nmstate to 2.2.9 until we update to https://github.com/openshift/machine-config-operator/pull/3720 \
-    . /etc/os-release; \
-    NMSTATE_PKG=nmstate-2.2.9-6.rhaos4.14.el8; \
-    if [ "${ID}" == "centos" ]; then \
-        GNU_ARCH=$(uname -m); \
-        NMSTATE_PKG="https://kojihub.stream.centos.org/kojifiles/packages/nmstate/2.2.9/1.el9/${GNU_ARCH}/nmstate-2.2.9-1.el9.${GNU_ARCH}.rpm"; \
-    fi && \
-    dnf -y install ${NMSTATE_PKG} && \
+    dnf -y install 'nmstate >= 2.2.10' && \
     if ! rpm -q util-linux; then dnf install -y util-linux; fi && \
     dnf clean all && rm -rf /var/cache/dnf/*
 COPY templates /etc/mcc/templates
