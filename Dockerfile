@@ -31,8 +31,7 @@ RUN if [ "${TAGS}" = "fcos" ]; then \
     elif [ "${TAGS}" = "scos" ]; then \
     # rewrite image names for scos
     sed -i 's/rhel-coreos/centos-stream-coreos-9/g' /manifests/*; fi && \
-    # pin nmstate to 2.2.9 until we update to https://github.com/openshift/machine-config-operator/pull/3720
-    if ! rpm -q util-linux; then dnf install -y util-linux; fi && dnf -y install nmstate-2.2.9-6.rhaos4.14.el8 && dnf clean all && rm -rf /var/cache/dnf/*
+    if ! rpm -q util-linux; then dnf install -y util-linux; fi && dnf -y install 'nmstate >= 2.2.10' && dnf clean all && rm -rf /var/cache/dnf/*
 COPY templates /etc/mcc/templates
 ENTRYPOINT ["/usr/bin/machine-config-operator"]
 LABEL io.openshift.release.operator true
