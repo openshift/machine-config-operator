@@ -23,6 +23,7 @@ import (
 	v1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/helpers"
 )
 
 // syncVersion handles reporting the version to the clusteroperator
@@ -377,7 +378,11 @@ func (optr *Operator) syncMetrics() error {
 				latestTime = cond.LastTransitionTime
 			}
 		}
-		mcoState.WithLabelValues(pool.Name, string(cond.Type), cond.Reason).SetToCurrentTime()
+
+		nodes, _ := helpers.GetNodesForPool(optr.mcpLister, optr.nodeLister, pool)
+		for _, node := range nodes {
+			mcoState.WithLabelValues(node.Name, pool.Name, string(cond.Type), cond.Reason).SetToCurrentTime()
+		}
 		mcoMachineCount.WithLabelValues(pool.Name).Set(float64(pool.Status.MachineCount))
 		mcoUpdatedMachineCount.WithLabelValues(pool.Name).Set(float64(pool.Status.UpdatedMachineCount))
 		mcoDegradedMachineCount.WithLabelValues(pool.Name).Set(float64(pool.Status.DegradedMachineCount))

@@ -20,7 +20,7 @@ var (
 		prometheus.GaugeOpts{
 			Name: "mco_state",
 			Help: "state of a specified pool",
-		}, []string{"pool", "state", "reason"})
+		}, []string{"node", "pool", "state", "reason"})
 	// mcoMachineCount is the total number of nodes in the pool
 	mcoMachineCount = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
