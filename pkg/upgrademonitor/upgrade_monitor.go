@@ -81,6 +81,7 @@ func GenerateAndApplyMachineConfigNodes(parentCondition, childCondition *Conditi
 		mcfgalphav1.MachineConfigNodeUpdateRebooted,
 		mcfgalphav1.MachineConfigNodeUpdateReloaded,
 		mcfgalphav1.MachineConfigNodeUpdated,
+		mcfgalphav1.MachineConfigNodeUpdateUncordoned,
 	}
 	// create all of the conditions, even the false ones
 	if newMCNode.Status.Conditions == nil {
@@ -148,7 +149,7 @@ func GenerateAndApplyMachineConfigNodes(parentCondition, childCondition *Conditi
 				newParentCondition.DeepCopyInto(&condition)
 			} else if condition.Status != metav1.ConditionFalse && reset {
 				condition.Status = metav1.ConditionFalse
-				condition.Message = "Action during previous iteration: " + condition.Message
+				condition.Message = fmt.Sprintf("Action during update to %s: %s", newMCNode.Spec.ConfigVersion.Desired, condition.Message)
 				condition.LastTransitionTime = metav1.Now()
 			}
 			condition.DeepCopyInto(&newMCNode.Status.Conditions[i])
