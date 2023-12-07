@@ -52,6 +52,8 @@ const (
 	postConfigChangeActionNone = "none"
 	// The "reload crio" action will run "systemctl reload crio"
 	postConfigChangeActionReloadCrio = "reload crio"
+	// The "restart crio" action will run "systemctl restart crio"
+	postConfigChangeActionRestartCrio = "restart crio"
 	// Rebooting is still the default scenario for any other change
 	postConfigChangeActionReboot = "reboot"
 
@@ -66,6 +68,10 @@ func getNodeRef(node *corev1.Node) *corev1.ObjectReference {
 		Name: node.GetName(),
 		UID:  node.GetUID(),
 	}
+}
+
+func restartService(name string) error {
+	return runCmdSync("systemctl", "restart", name)
 }
 
 func reloadService(name string) error {
@@ -114,7 +120,7 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 	}
 
 	if ctrlcommon.InSlice(postConfigChangeActionReloadCrio, postConfigChangeActions) {
-		serviceName := "crio"
+		serviceName := constants.CRIOServiceName
 
 		if err := reloadService(serviceName); err != nil {
 			if dn.nodeWriter != nil {
@@ -142,6 +148,26 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 		logSystem("%s config reloaded successfully! Desired config %s has been applied, skipping reboot", serviceName, configName)
 	}
 
+	if ctrlcommon.InSlice(postConfigChangeActionRestartCrio, postConfigChangeActions) {
+		cmd := exec.Command("update-ca-trust")
+		var stderr bytes.Buffer
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("error running update-ca-trust: %s: %w", string(stderr.Bytes()), err)
+		}
+
+		serviceName := constants.CRIOServiceName
+
+		if err := restartService(serviceName); err != nil {
+			if dn.nodeWriter != nil {
+				dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedServiceReload", fmt.Sprintf("Reloading %s service failed. Error: %v", serviceName, err))
+			}
+			return fmt.Errorf("could not apply update: reloading %s configuration failed. Error: %w", serviceName, err)
+		}
+		logSystem("%s config restarted successfully! Desired config %s has been applied, skipping reboot", serviceName, configName)
+
+	}
 	// We are here, which means reboot was not needed to apply the configuration.
 
 	// Get current state of node, in case of an error reboot
@@ -393,6 +419,9 @@ func calculatePostConfigChangeActionFromFileDiffs(diffFileSet []string) (actions
 		GPGNoRebootPath,
 		"/etc/containers/policy.json",
 	}
+	filesPostConfigChangeActionRestartCrio := []string{
+		"/etc/pki/ca-trust/source/anchors/openshift-config-user-ca-bundle.crt",
+	}
 
 	actions = []string{postConfigChangeActionNone}
 	for _, path := range diffFileSet {
@@ -400,6 +429,8 @@ func calculatePostConfigChangeActionFromFileDiffs(diffFileSet []string) (actions
 			continue
 		} else if ctrlcommon.InSlice(path, filesPostConfigChangeActionReloadCrio) {
 			actions = []string{postConfigChangeActionReloadCrio}
+		} else if ctrlcommon.InSlice(path, filesPostConfigChangeActionRestartCrio) {
+			actions = []string{postConfigChangeActionRestartCrio}
 		} else {
 			actions = []string{postConfigChangeActionReboot}
 			return

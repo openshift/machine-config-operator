@@ -107,10 +107,8 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 
 		kubeAPIServerServingCABytes := controllerConfig.Spec.KubeAPIServerServingCAData
 		cloudCA := controllerConfig.Spec.CloudProviderCAData
-		userCA := controllerConfig.Spec.AdditionalTrustBundle
 		pathToData[caBundleFilePath] = kubeAPIServerServingCABytes
 		pathToData[cloudCABundleFilePath] = cloudCA
-		pathToData[userCABundleFilePath] = userCA
 
 		for bundle, data := range pathToData {
 			if Finfo, err := os.Stat(bundle); err == nil {
@@ -183,6 +181,7 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 			return fmt.Errorf("failed to set ControllerConfigResourceVersion annotation on node: %w", err)
 		}
 		klog.Infof("Certificate was synced from controllerconfig resourceVersion %s", controllerConfig.ObjectMeta.ResourceVersion)
+
 	}
 
 	return nil
