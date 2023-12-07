@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
+	helpers "github.com/openshift/machine-config-operator/pkg/helpers"
 
 	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
@@ -411,20 +412,6 @@ func (ctrl *Controller) isMaster(node *corev1.Node) bool {
 	return master
 }
 
-// isWindows checks if given node is a Windows node or a Linux node
-func isWindows(node *corev1.Node) bool {
-	windowsOsValue := "windows"
-	if value, ok := node.ObjectMeta.Labels[osLabel]; ok {
-		if value == windowsOsValue {
-			return true
-		}
-		return false
-	}
-	// All the nodes should have a OS label populated by kubelet, if not just to maintain
-	// backwards compatibility, we can returning true here.
-	return false
-}
-
 // Given a master Node, ensure it reflects the current mastersSchedulable setting
 func (ctrl *Controller) reconcileMaster(node *corev1.Node) {
 	mastersSchedulable, err := ctrl.getMastersSchedulable()
@@ -669,79 +656,17 @@ func (ctrl *Controller) deleteNode(obj interface{}) {
 // and where a custom role may be used. It returns a slice of all the pools the node belongs to.
 // It also ignores the Windows nodes.
 func (ctrl *Controller) getPoolsForNode(node *corev1.Node) ([]*mcfgv1.MachineConfigPool, error) {
-	if isWindows(node) {
-		// This is not an error, is this a Windows Node and it won't be managed by MCO. We're explicitly logging
-		// here at a high level to disambiguate this from other pools = nil  scenario
-		klog.V(4).Infof("Node %v is a windows node so won't be managed by MCO", node.Name)
-		return nil, nil
-	}
-	pl, err := ctrl.mcpLister.List(labels.Everything())
+	pools, metric, err := helpers.GetPoolsForNode(ctrl.mcpLister, node)
 	if err != nil {
 		return nil, err
 	}
-
-	var pools []*mcfgv1.MachineConfigPool
-	for _, p := range pl {
-		selector, err := metav1.LabelSelectorAsSelector(p.Spec.NodeSelector)
-		if err != nil {
-			return nil, fmt.Errorf("invalid label selector: %w", err)
-		}
-
-		// If a pool with a nil or empty selector creeps in, it should match nothing, not everything.
-		if selector.Empty() || !selector.Matches(labels.Set(node.Labels)) {
-			continue
-		}
-
-		pools = append(pools, p)
-	}
-
-	if len(pools) == 0 {
-		// This is not an error, as there might be nodes in cluster that are not managed by machineconfigpool.
+	if pools == nil {
 		return nil, nil
 	}
-
-	var master, worker *mcfgv1.MachineConfigPool
-	var custom []*mcfgv1.MachineConfigPool
-	for _, pool := range pools {
-		if pool.Name == ctrlcommon.MachineConfigPoolMaster {
-			master = pool
-		} else if pool.Name == ctrlcommon.MachineConfigPoolWorker {
-			worker = pool
-		} else {
-			custom = append(custom, pool)
-		}
+	if metric != nil {
+		ctrlcommon.MCCPoolAlert.WithLabelValues(node.Name).Set(float64(*metric))
 	}
-
-	if len(custom) > 1 {
-		return nil, fmt.Errorf("node %s belongs to %d custom roles, cannot proceed with this Node", node.Name, len(custom))
-	} else if len(custom) == 1 {
-		pls := []*mcfgv1.MachineConfigPool{}
-		if master != nil {
-			// if we have a custom pool and master, defer to master and return.
-			klog.Infof("Found master node that matches selector for custom pool %v, defaulting to master. This node will not have any custom role configuration as a result. Please review the node to make sure this is intended", custom[0].Name)
-			ctrlcommon.MCCPoolAlert.WithLabelValues(node.Name).Set(1)
-			pls = append(pls, master)
-		} else {
-			ctrlcommon.MCCPoolAlert.WithLabelValues(node.Name).Set(0)
-			pls = append(pls, custom[0])
-		}
-		if worker != nil {
-			pls = append(pls, worker)
-		}
-		// this allows us to have master, worker, infra but be in the master pool.
-		// or if !worker and !master then we just use the custom pool.
-		return pls, nil
-	} else if master != nil {
-		// In the case where a node is both master/worker, have it live under
-		// the master pool. This occurs in CodeReadyContainers and general
-		// "single node" deployments, which one may want to do for testing bare
-		// metal, etc.
-		ctrlcommon.MCCPoolAlert.WithLabelValues(node.Name).Set(0)
-		return []*mcfgv1.MachineConfigPool{master}, nil
-	}
-	// Otherwise, it's a worker with no custom roles.
-	ctrlcommon.MCCPoolAlert.WithLabelValues(node.Name).Set(0)
-	return []*mcfgv1.MachineConfigPool{worker}, nil
+	return pools, nil
 }
 
 // getPrimaryPoolForNode uses getPoolsForNode and returns the first one which is the one the node targets
