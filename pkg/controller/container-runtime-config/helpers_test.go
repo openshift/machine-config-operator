@@ -661,6 +661,7 @@ func TestValidateRegistriesConfScopes(t *testing.T) {
 		insecure    []string
 		blocked     []string
 		allowed     []string
+		icspRules   []*apioperatorsv1alpha1.ImageContentSourcePolicy
 		idmsRules   []*apicfgv1.ImageDigestMirrorSet
 		expectedErr error
 	}{
@@ -734,7 +735,7 @@ func TestValidateRegistriesConfScopes(t *testing.T) {
 					},
 				},
 			},
-			expectedErr: errors.New("invalid empty entry for source configuration"),
+			expectedErr: errors.New("invalid format for source \"\""),
 		},
 		{
 			insecure: []string{"*.insecure.com"},
@@ -749,7 +750,55 @@ func TestValidateRegistriesConfScopes(t *testing.T) {
 					},
 				},
 			},
-			expectedErr: errors.New("invalid empty entry for mirror configuration"),
+			expectedErr: errors.New("invalid format for mirror \"\""),
+		},
+		{
+			icspRules: []*apioperatorsv1alpha1.ImageContentSourcePolicy{
+				{
+					Spec: apioperatorsv1alpha1.ImageContentSourcePolicySpec{
+						RepositoryDigestMirrors: []apioperatorsv1alpha1.RepositoryDigestMirrors{
+							{Source: "*.insecure.com/ns-i1", Mirrors: []string{"", "other.com/ns-o1"}},
+						},
+					},
+				},
+			},
+			expectedErr: errors.New("invalid format for source \"*.insecure.com/ns-i1\""),
+		},
+		{
+			icspRules: []*apioperatorsv1alpha1.ImageContentSourcePolicy{
+				{
+					Spec: apioperatorsv1alpha1.ImageContentSourcePolicySpec{
+						RepositoryDigestMirrors: []apioperatorsv1alpha1.RepositoryDigestMirrors{
+							{Source: "*.insecure.com", Mirrors: []string{"*.other.com/ns-o1"}},
+						},
+					},
+				},
+			},
+			expectedErr: errors.New("invalid format for mirror \"*.other.com/ns-o1\""),
+		},
+		{
+			icspRules: []*apioperatorsv1alpha1.ImageContentSourcePolicy{
+				{
+					Spec: apioperatorsv1alpha1.ImageContentSourcePolicySpec{
+						RepositoryDigestMirrors: []apioperatorsv1alpha1.RepositoryDigestMirrors{
+							{Source: "insecure.com/ns-i1 ", Mirrors: []string{"", "other.com/ns-o1"}},
+						},
+					},
+				},
+			},
+			expectedErr: errors.New("invalid format for source \"insecure.com/ns-i1 \""),
+		},
+		{
+			icspRules: []*apioperatorsv1alpha1.ImageContentSourcePolicy{
+				{
+					Spec: apioperatorsv1alpha1.ImageContentSourcePolicySpec{
+						RepositoryDigestMirrors: []apioperatorsv1alpha1.RepositoryDigestMirrors{
+							{Source: "insecure.com/ns-i1", Mirrors: []string{"other.com/ns-o1  "}},
+						},
+					},
+				},
+			},
+			expectedErr: errors.New("invalid format for mirror \"other.com/ns-o1  \""),
 		},
 		{
 			insecure: []string{"*.insecure.com"},
@@ -759,6 +808,7 @@ func TestValidateRegistriesConfScopes(t *testing.T) {
 				{
 					Spec: apicfgv1.ImageDigestMirrorSetSpec{
 						ImageDigestMirrors: []apicfgv1.ImageDigestMirrors{
+							{Source: "*.insecure.com", Mirrors: []apicfgv1.ImageMirror{"other.com/ns-o1"}},
 							{Source: "insecure.com/ns-i1", Mirrors: []apicfgv1.ImageMirror{"other.com/ns-o1"}},
 						},
 					},
@@ -769,7 +819,7 @@ func TestValidateRegistriesConfScopes(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		res := validateRegistriesConfScopes(tc.insecure, tc.blocked, tc.allowed, nil, tc.idmsRules, nil)
+		res := validateRegistriesConfScopes(tc.insecure, tc.blocked, tc.allowed, tc.icspRules, tc.idmsRules, nil)
 		require.Equal(t, tc.expectedErr, res)
 	}
 }
