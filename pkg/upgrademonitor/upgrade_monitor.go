@@ -16,6 +16,8 @@ import (
 	"k8s.io/klog/v2"
 )
 
+const NotYetSet = "NotYetSet"
+
 type Condition struct {
 	State   mcfgalphav1.StateProgress
 	Reason  string
@@ -38,6 +40,14 @@ func GenerateAndApplyMachineConfigNodes(parentCondition, childCondition *Conditi
 	}
 	if fg == nil || !fg.Enabled(v1.FeatureGateMachineConfigNodes) {
 		return nil
+	}
+
+	var pool string
+	var ok bool
+	if _, ok = node.Labels["node-role.kubernetes.io/worker"]; ok {
+		pool = "worker"
+	} else if _, ok = node.Labels["node-role.kubernetes.io/master"]; ok {
+		pool = "master"
 	}
 
 	// get the existing MCN, or if it DNE create one below
@@ -163,21 +173,30 @@ func GenerateAndApplyMachineConfigNodes(parentCondition, childCondition *Conditi
 	}
 
 	// for now, keep spec and status aligned
-	newMCNode.Status.ConfigVersion = mcfgalphav1.MachineConfigNodeStatusMachineConfigVersion{
-		Desired: newMCNode.Status.ConfigVersion.Desired,
-		Current: node.Annotations["machineconfiguration.openshift.io/currentConfig"],
+	if node.Annotations["machineconfiguration.openshift.io/currentConfig"] != "" {
+		newMCNode.Status.ConfigVersion = mcfgalphav1.MachineConfigNodeStatusMachineConfigVersion{
+			Desired: newMCNode.Status.ConfigVersion.Desired,
+			Current: node.Annotations["machineconfiguration.openshift.io/currentConfig"],
+		}
+	} else {
+		newMCNode.Status.ConfigVersion = mcfgalphav1.MachineConfigNodeStatusMachineConfigVersion{
+			Desired: newMCNode.Status.ConfigVersion.Desired,
+		}
 	}
 	// if the update is compatible, we can set the desired to the one being used in the update
 	// this happens either if we get prepared == true OR literally any other parent condition, since if we get past prepared, then the desiredConfig is correct.
 	if newParentCondition.Type == string(mcfgalphav1.MachineConfigNodeUpdatePrepared) && newParentCondition.Status == metav1.ConditionTrue || newParentCondition.Type != string(mcfgalphav1.MachineConfigNodeUpdatePrepared) && node.Annotations["machineconfiguration.openshift.io/desiredConfig"] != "" {
 		newMCNode.Status.ConfigVersion.Desired = node.Annotations["machineconfiguration.openshift.io/desiredConfig"]
 	} else if newMCNode.Status.ConfigVersion.Desired == "" {
-		newMCNode.Status.ConfigVersion.Desired = "NotYetSet"
+		newMCNode.Status.ConfigVersion.Desired = NotYetSet
 	}
 
 	// if we do not need a new MCN, generate the apply configurations for this object
 	if !needNewMCNode {
-		statusconfigVersionApplyConfig := machineconfigurationalphav1.MachineConfigNodeStatusMachineConfigVersion().WithCurrent(newMCNode.Status.ConfigVersion.Current).WithDesired(newMCNode.Status.ConfigVersion.Desired)
+		statusconfigVersionApplyConfig := machineconfigurationalphav1.MachineConfigNodeStatusMachineConfigVersion().WithDesired(newMCNode.Status.ConfigVersion.Desired)
+		if node.Annotations["machineconfiguration.openshift.io/currentConfig"] != "" {
+			statusconfigVersionApplyConfig = statusconfigVersionApplyConfig.WithCurrent(newMCNode.Status.ConfigVersion.Current)
+		}
 		statusApplyConfig := machineconfigurationalphav1.MachineConfigNodeStatus().WithConditions(newMCNode.Status.Conditions...).WithObservedGeneration(newMCNode.Generation + 1).WithConfigVersion(statusconfigVersionApplyConfig)
 		mcnodeApplyConfig := machineconfigurationalphav1.MachineConfigNode(newMCNode.Name).WithStatus(statusApplyConfig)
 		_, err := mcfgClient.MachineconfigurationV1alpha1().MachineConfigNodes().ApplyStatus(context.TODO(), mcnodeApplyConfig, metav1.ApplyOptions{FieldManager: "machine-config-operator", Force: true})
@@ -185,21 +204,13 @@ func GenerateAndApplyMachineConfigNodes(parentCondition, childCondition *Conditi
 			klog.Errorf("Error applying MCN status: %w", err)
 			return err
 		}
-	} else {
+	} else if node.Status.Phase != corev1.NodePending && node.Status.Phase != corev1.NodePhase("Provisioning") {
 		// there are cases where we get here before the MCO has settled and applied all of the MCnodes.
-		var pool string
-		var ok bool
-		if _, ok = node.Labels["node-role.kubernetes.io/worker"]; ok {
-			pool = "worker"
-		} else if _, ok = node.Labels["node-role.kubernetes.io/master"]; ok {
-			pool = "master"
-		}
-
 		newMCNode.Spec.ConfigVersion = mcfgalphav1.MachineConfigNodeSpecMachineConfigVersion{
 			Desired: node.Annotations["machineconfiguration.openshift.io/desiredConfig"],
 		}
 		if newMCNode.Spec.ConfigVersion.Desired == "" {
-			newMCNode.Spec.ConfigVersion.Desired = "NotYetSet"
+			newMCNode.Spec.ConfigVersion.Desired = NotYetSet
 		}
 		newMCNode.Name = node.Name
 		newMCNode.Spec.Pool = mcfgalphav1.MCOObjectReference{Name: pool}
@@ -208,6 +219,13 @@ func GenerateAndApplyMachineConfigNodes(parentCondition, childCondition *Conditi
 		if err != nil {
 			klog.Errorf("Error creating MCN: %w", err)
 			return err
+		}
+	}
+	// if this is the first time we are applying the MCN and the node is ready, set the config version probably
+	if node.Status.Phase != corev1.NodePending && node.Status.Phase != corev1.NodePhase("Provisioning") && newMCNode.Spec.ConfigVersion.Desired == "NotYetSet" {
+		err = GenerateAndApplyMachineConfigNodeSpec(fgAccessor, pool, node, mcfgClient)
+		if err != nil {
+			klog.Errorf("Error making MCN spec for Update Compatible: %w", err)
 		}
 	}
 	return nil

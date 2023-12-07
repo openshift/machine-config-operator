@@ -48,6 +48,7 @@ import (
 	templatectrl "github.com/openshift/machine-config-operator/pkg/controller/template"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/server"
+	"github.com/openshift/machine-config-operator/pkg/upgrademonitor"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	autoscalingv1 "k8s.io/api/autoscaling/v1"
 )
@@ -710,7 +711,20 @@ func (optr *Operator) syncMachineConfigNodes(_ *renderConfig) error {
 	if err != nil {
 		return err
 	}
+
+	nodeMap := make(map[string]*corev1.Node, len(nodes))
 	for _, node := range nodes {
+		nodeMap[node.Name] = node
+	}
+
+	mcns, err := optr.client.MachineconfigurationV1alpha1().MachineConfigNodes().List(context.TODO(), metav1.ListOptions{})
+	if err != nil {
+		return err
+	}
+	for _, node := range nodes {
+		if node.Status.Phase == corev1.NodePending || node.Status.Phase == corev1.NodePhase("Provisioning") {
+			continue
+		}
 		var pool string
 		var ok bool
 		if _, ok = node.Labels["node-role.kubernetes.io/worker"]; ok {
@@ -727,7 +741,7 @@ func (optr *Operator) syncMachineConfigNodes(_ *renderConfig) error {
 					Name: pool,
 				},
 				ConfigVersion: v1alpha1.MachineConfigNodeSpecMachineConfigVersion{
-					Desired: "NotYetSet",
+					Desired: upgrademonitor.NotYetSet,
 				},
 			},
 			TypeMeta: metav1.TypeMeta{
@@ -744,9 +758,25 @@ func (optr *Operator) syncMachineConfigNodes(_ *renderConfig) error {
 			return err
 		}
 		p := mcoResourceRead.ReadMachineConfigNodeV1OrDie(mcsBytes)
-		_, _, err = mcoResourceApply.ApplyMachineConfigNode(optr.client.MachineconfigurationV1alpha1(), p)
+		mcn, _, err := mcoResourceApply.ApplyMachineConfigNode(optr.client.MachineconfigurationV1alpha1(), p)
 		if err != nil {
 			return err
+		}
+		// if this is the first time we are applying the MCN and the node is ready, set the config version probably
+		if mcn.Spec.ConfigVersion.Desired == upgrademonitor.NotYetSet {
+			err = upgrademonitor.GenerateAndApplyMachineConfigNodeSpec(optr.fgAccessor, pool, node, optr.client)
+			if err != nil {
+				klog.Errorf("Error making MCN spec for Update Compatible: %w", err)
+			}
+		}
+
+	}
+	if mcns != nil {
+		for _, mcn := range mcns.Items {
+			if _, ok := nodeMap[mcn.Name]; !ok {
+				klog.Infof("Node %s has been removed, deleting associated MCN", mcn.Name)
+				optr.client.MachineconfigurationV1alpha1().MachineConfigNodes().Delete(context.TODO(), mcn.Name, metav1.DeleteOptions{})
+			}
 		}
 	}
 	return nil
