@@ -4,7 +4,6 @@ contents:
   inline: |
     [crio]
     internal_wipe = true
-    version_file_persist = "/var/lib/crio/version"
 
     [crio.api]
     stream_address = "127.0.0.1"
