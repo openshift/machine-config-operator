@@ -1737,79 +1737,85 @@ func PersistNetworkInterfaces(osRoot string) error {
 		nmstateBinary = filepath.Join(originalContainerBin, "nmstatectl")
 	}
 
-	cmd := exec.Command(nmstateBinary, "persist-nic-names", "--root", osRoot)
+	// For the moment, we only look at RHEL-like systems...this logic isn't
+	// yet aiming to try to handle Fedora-level updates.  For that, most
+	// likely this NIC pinning should actually be driven automatically by
+	// host updates.  If you change this, you'll need to change the conditions
+	// below too.
+	persisting := hostos.IsEL8()
+	cleanup := hostos.IsEL9()
+	if !(persisting || cleanup) {
+		return nil
+	}
 
-	if hostos.IsEL8() {
-		logSystem("Persisting NIC names for RHEL8 host system")
+	tmpKargs, err := os.CreateTemp("", "nmstate-kargs")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmpKargs.Name())
 
-		// Workaround for https://issues.redhat.com/browse/OCPBUGS-16035 .
-		// Create /etc/systemd/network directory if it doesn't exist.
-		dirPath := filepath.Join(osRoot, systemdNetworkDir)
-		if err := os.MkdirAll(dirPath, defaultDirectoryPermissions); err != nil {
-			return fmt.Errorf("failed to create directory %s: %w", dirPath, err)
-		}
+	cmd := exec.Command(nmstateBinary, "persist-nic-names", "--root", osRoot, "--kargs-out", tmpKargs.Name())
 
-		// nmstate always logs to stderr, so we need to capture/forward that too
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		klog.Infof("Running: %s", strings.Join(cmd.Args, " "))
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("failed to run nmstatectl: %w", err)
-		}
-	} else if hostos.IsEL9() {
-		ifnames, err := getIfnamesFromLinkFiles(osRoot)
-		if err != nil {
-			klog.Warningf("Failed to persist NIC names: %v", err)
+	if persisting {
+		klog.Info("Persisting NIC names for RHEL8 host system")
+	} else if cleanup {
+		cmd.Args = append(cmd.Args, "--cleanup")
+	} else {
+		return fmt.Errorf("Unexpected host OS %s", hostos.ToPrometheusLabel())
+	}
+
+	// nmstate always logs to stderr, so we need to capture/forward that too
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	klog.Infof("Running: %s", strings.Join(cmd.Args, " "))
+	if err := cmd.Run(); err != nil {
+		if cleanup {
+			// nmstatectl clean up will fail if stamp file not
+			// found or `ROOT/etc/systemd/network` folder not
+			// found, these error is OK to ignore
+			klog.Infof("Cleanup error ignored: %w", err)
 			return nil
 		}
-
-		ifnamesKeys := []string{}
-		for ifname := range ifnames {
-			ifnamesKeys = append(ifnamesKeys, ifname)
-		}
-		if len(ifnamesKeys) > 0 {
-			logSystem("Have persisted ifnames for %s", strings.Join(ifnamesKeys, ", "))
-		}
+		return fmt.Errorf("failed to run nmstatectl: %w", err)
 	}
 
-	return nil
-}
-
-// getIfnamesFromLinkFiles scans /etc/systemd/network for nmstate link files and
-// extracts the pinned network interface names and MAC addresses.
-func getIfnamesFromLinkFiles(osRoot string) (map[string]string, error) {
-	entries, err := os.ReadDir(filepath.Join(osRoot, systemdNetworkDir))
+	kargsBuf, err := io.ReadAll(tmpKargs)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("failed to read %s: %w", tmpKargs.Name(), err)
 	}
-	ifnames := make(map[string]string)
-	for _, entry := range entries {
-		if !strings.HasPrefix(entry.Name(), "98-nmstate") || !strings.HasSuffix(entry.Name(), ".link") {
-			continue
-		}
-		f, err := os.Open(filepath.Join(osRoot, systemdNetworkDir, entry.Name()))
-		if err != nil {
-			return nil, err
-		}
-		var ifname, mac string
-		scanner := bufio.NewScanner(f)
-		for scanner.Scan() {
-			line := scanner.Text()
-			if strings.HasPrefix(line, "MACAddress=") {
-				mac = strings.TrimPrefix(line, "MACAddress=")
-			} else if strings.HasPrefix(line, "Name=") {
-				ifname = strings.TrimPrefix(line, "Name=")
-			}
-		}
-		if err = scanner.Err(); err != nil {
-			return nil, fmt.Errorf("failed to read link file %s: %w", entry.Name(), err)
-		}
-		if ifname == "" || mac == "" {
-			return nil, fmt.Errorf("link file %s missing Name or MACAddress field", entry.Name())
-		}
-		ifnames[ifname] = strings.ToLower(mac)
+	// If there are no kargs, then nmstate took care of everything else.
+	if len(kargsBuf) == 0 {
+		return nil
 	}
-	return ifnames, nil
+	kargs := strings.Split(string(kargsBuf), " ")
+
+	var rpmOstreeArgs []string
+	if persisting {
+		for _, karg := range kargs {
+			rpmOstreeArgs = append(rpmOstreeArgs, "--append", karg)
+		}
+	} else if cleanup {
+		for _, karg := range kargs {
+			rpmOstreeArgs = append(rpmOstreeArgs, "--remove", karg)
+		}
+	} else {
+		return fmt.Errorf("Unexpected host OS %s", hostos.ToPrometheusLabel())
+	}
+
+	if osRoot != "/" {
+		cmd = exec.Command("chroot", osRoot, "rpm-ostree", "kargs")
+	} else {
+		cmd = exec.Command("rpm-ostree", "kargs")
+	}
+	cmd.Args = append(cmd.Args, rpmOstreeArgs...)
+
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	klog.Infof("Running: %s", strings.Join(cmd.Args, " "))
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to run rpm-ostree kargs: %w", err)
+	}
+	return nil
 }
 
 // When we move from RHCOS 8 -> RHCOS 9, the SSH keys do not get written to the
