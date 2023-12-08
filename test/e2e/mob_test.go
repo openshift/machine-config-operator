@@ -69,6 +69,24 @@ func TestMachineOSBuilder(t *testing.T) {
 	namespace := "openshift-machine-config-operator"
 	mobPodNamePrefix := "machine-os-builder"
 
+	// get the feature gates because we're gating this for now
+	featureGates, err := cs.ConfigV1Interface.FeatureGates().Get(context.TODO(), "cluster", metav1.GetOptions{})
+	require.NoError(t, err, "Failed to retrieve feature gates")
+
+	// TODO(jkyros): this should be a helper or we should use whatever the "best practice" way is
+	// for retrieving the gates during a test, but this works for now
+	var featureGateEnabled bool
+	for _, featureGateDetails := range featureGates.Status.FeatureGates {
+		for _, enabled := range featureGateDetails.Enabled {
+			if enabled.Name == "OnClusterBuild" {
+				featureGateEnabled = true
+
+			}
+		}
+	}
+
+	t.Logf("Feature gate OnClusterBuiild enabled: %t", featureGateEnabled)
+
 	t.Cleanup(createConfigMapForTest(t, cs))
 
 	cleanup := helpers.MakeIdempotent(helpers.CreateMCP(t, cs, mcpName))
@@ -94,33 +112,38 @@ func TestMachineOSBuilder(t *testing.T) {
 
 	// assertion to see if the deployment object is present after setting the label
 	ctx := context.TODO()
-	err := wait.PollUntilContextTimeout(ctx, 2*time.Second, time.Minute, true, func(ctx context.Context) (bool, error) {
+	err = wait.PollUntilContextTimeout(ctx, 2*time.Second, time.Minute, true, func(ctx context.Context) (bool, error) {
 		exists, err := helpers.CheckDeploymentExists(cs, "machine-os-builder", namespace)
 		return exists, err
 	})
-	require.NoError(t, err, "Failed to check the existence of the Machine OS Builder deployment")
 
-	// wait for Machine OS Builder pod to start
-	err = helpers.WaitForPodStart(cs, mobPodNamePrefix, namespace)
-	require.NoError(t, err, "Failed to start the Machine OS Builder pod")
-	t.Logf("machine-os-builder deployment exists")
+	if featureGateEnabled {
+		require.NoError(t, err, "Failed to check the existence of the Machine OS Builder deployment")
 
-	// delete the MachineConfigPool
-	cleanup()
-	time.Sleep(20 * time.Second)
+		// wait for Machine OS Builder pod to start
+		err = helpers.WaitForPodStart(cs, mobPodNamePrefix, namespace)
+		require.NoError(t, err, "Failed to start the Machine OS Builder pod")
+		t.Logf("machine-os-builder deployment exists")
 
-	// assertion to see if the deployment object is absent after deleting the MCP
-	err = wait.PollUntilContextTimeout(ctx, 2*time.Second, time.Minute, true, func(ctx context.Context) (bool, error) {
-		exists, err := helpers.CheckDeploymentExists(cs, "machine-os-builder", namespace)
-		return !exists, err
-	})
-	require.NoError(t, err, "Failed to check the absence of the Machine OS Builder deployment")
+		// delete the MachineConfigPool
+		cleanup()
+		time.Sleep(20 * time.Second)
 
-	// wait for Machine OS Builder pod to stop
-	err = helpers.WaitForPodStop(cs, mobPodNamePrefix, namespace)
-	require.NoError(t, err, "Failed to stop the Machine OS Builder pod")
-	t.Logf("machine-os-builder deployment no longer exists")
+		// assertion to see if the deployment object is absent after deleting the MCP
+		err = wait.PollUntilContextTimeout(ctx, 2*time.Second, time.Minute, true, func(ctx context.Context) (bool, error) {
+			exists, err := helpers.CheckDeploymentExists(cs, "machine-os-builder", namespace)
+			return !exists, err
+		})
+		require.NoError(t, err, "Failed to check the absence of the Machine OS Builder deployment")
 
-	_, err = cs.AppsV1Interface.Deployments(ctrlcommon.MCONamespace).Get(context.TODO(), "machine-os-builder", metav1.GetOptions{})
-	assert.True(t, apierrs.IsNotFound(err), "machine-os-builder deployment still present")
+		// wait for Machine OS Builder pod to stop
+		err = helpers.WaitForPodStop(cs, mobPodNamePrefix, namespace)
+		require.NoError(t, err, "Failed to stop the Machine OS Builder pod")
+		t.Logf("machine-os-builder deployment no longer exists")
+
+		_, err = cs.AppsV1Interface.Deployments(ctrlcommon.MCONamespace).Get(context.TODO(), "machine-os-builder", metav1.GetOptions{})
+		assert.True(t, apierrs.IsNotFound(err), "machine-os-builder deployment still present")
+	} else {
+		require.Error(t, err, "Machine OS Builder deployment exists and it should not, because the feature gate is disabled")
+	}
 }
