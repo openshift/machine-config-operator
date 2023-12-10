@@ -706,7 +706,7 @@ func (dn *Daemon) syncNode(key string) error {
 		if err := removeIgnitionArtifacts(); err != nil {
 			return err
 		}
-		if err := MaybePersistNetworkInterfaces("/"); err != nil {
+		if err := PersistNetworkInterfaces("/"); err != nil {
 			return err
 		}
 		if err := dn.checkStateOnFirstRun(); err != nil {
@@ -1668,11 +1668,11 @@ func removeIgnitionArtifacts() error {
 	return nil
 }
 
-// MaybePersistNetworkInterfaces runs if the host is RHEL8, which can happen
+// PersistNetworkInterfaces runs if the host is RHEL8, which can happen
 // when scaling up older bootimages and targeting 4.13+ (rhel9).  In this case,
 // we may want to pin NIC interface names that reference static IP addresses.
 // More information in https://issues.redhat.com/browse/OCPBUGS-10787
-func MaybePersistNetworkInterfaces(osRoot string) error {
+func PersistNetworkInterfaces(osRoot string) error {
 	hostos, err := osrelease.GetHostRunningOSFromRoot(osRoot)
 	if err != nil {
 		return fmt.Errorf("checking operating system: %w", err)
@@ -1685,31 +1685,84 @@ func MaybePersistNetworkInterfaces(osRoot string) error {
 		nmstateBinary = filepath.Join(originalContainerBin, "nmstatectl")
 	}
 
-	cmd := exec.Command(nmstateBinary, "persist-nic-names", "--root", osRoot)
-
-	if hostos.IsEL8() {
-		glog.Info("Persisting NIC names for RHEL8 host system")
-	} else {
-		// If we're not on RHEL, just output the current state.  We don't strictly need to do
-		// this but it will greatly help debugging and validation.
-		cmd.Args = append(cmd.Args, "--inspect")
+	// For the moment, we only look at RHEL-like systems...this logic isn't
+	// yet aiming to try to handle Fedora-level updates.  For that, most
+	// likely this NIC pinning should actually be driven automatically by
+	// host updates.  If you change this, you'll need to change the conditions
+	// below too.
+	persisting := hostos.IsEL8()
+	cleanup := hostos.IsEL9()
+	if !(persisting || cleanup) {
+		return nil
 	}
 
-	// Workaround for https://issues.redhat.com/browse/OCPBUGS-16035 .
-	// Create /etc/systemd/network directory if it doesn't exist.
-	dirPath := filepath.Join(osRoot, "etc/systemd/network")
-	if err := os.MkdirAll(dirPath, defaultDirectoryPermissions); err != nil {
-		return fmt.Errorf("failed to create directory %s: %w", dirPath, err)
+	tmpKargs, err := os.CreateTemp("", "nmstate-kargs")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmpKargs.Name())
+
+	cmd := exec.Command(nmstateBinary, "persist-nic-names", "--root", osRoot, "--kargs-out", tmpKargs.Name())
+
+	if persisting {
+		klog.Info("Persisting NIC names for RHEL8 host system")
+	} else if cleanup {
+		cmd.Args = append(cmd.Args, "--cleanup")
+	} else {
+		return fmt.Errorf("Unexpected host OS %s", hostos.ToPrometheusLabel())
 	}
 
 	// nmstate always logs to stderr, so we need to capture/forward that too
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	glog.Infof("Running: %s", strings.Join(cmd.Args, " "))
+	klog.Infof("Running: %s", strings.Join(cmd.Args, " "))
 	if err := cmd.Run(); err != nil {
+		if cleanup {
+			// nmstatectl clean up will fail if stamp file not
+			// found or `ROOT/etc/systemd/network` folder not
+			// found, these error is OK to ignore
+			klog.Infof("Cleanup error ignored: %w", err)
+			return nil
+		}
 		return fmt.Errorf("failed to run nmstatectl: %w", err)
 	}
 
+	kargsBuf, err := io.ReadAll(tmpKargs)
+	if err != nil {
+		return fmt.Errorf("failed to read %s: %w", tmpKargs.Name(), err)
+	}
+	// If there are no kargs, then nmstate took care of everything else.
+	if len(kargsBuf) == 0 {
+		return nil
+	}
+	kargs := strings.Split(string(kargsBuf), " ")
+
+	var rpmOstreeArgs []string
+	if persisting {
+		for _, karg := range kargs {
+			rpmOstreeArgs = append(rpmOstreeArgs, "--append", karg)
+		}
+	} else if cleanup {
+		for _, karg := range kargs {
+			rpmOstreeArgs = append(rpmOstreeArgs, "--remove", karg)
+		}
+	} else {
+		return fmt.Errorf("Unexpected host OS %s", hostos.ToPrometheusLabel())
+	}
+
+	if osRoot != "/" {
+		cmd = exec.Command("chroot", osRoot, "rpm-ostree", "kargs")
+	} else {
+		cmd = exec.Command("rpm-ostree", "kargs")
+	}
+	cmd.Args = append(cmd.Args, rpmOstreeArgs...)
+
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	klog.Infof("Running: %s", strings.Join(cmd.Args, " "))
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to run rpm-ostree kargs: %w", err)
+	}
 	return nil
 }
 
