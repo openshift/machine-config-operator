@@ -136,7 +136,6 @@ func (cs *clusterServer) GetConfig(cr poolRequest) (*runtime.RawExtension, error
 
 	addDataAndMaybeAppendToIgnition(caBundleFilePath, cc.Spec.KubeAPIServerServingCAData, &ignConf)
 	addDataAndMaybeAppendToIgnition(cloudProviderCAPath, cc.Spec.CloudProviderCAData, &ignConf)
-	addDataAndMaybeAppendToIgnition(additionalCAPath, cc.Spec.AdditionalTrustBundle, &ignConf)
 	appenders := getAppenders(currConf, cr.version, cs.kubeconfigFunc)
 	for _, a := range appenders {
 		if err := a(&ignConf, mc); err != nil {

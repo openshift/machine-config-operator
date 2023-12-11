@@ -129,7 +129,6 @@ func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*runtime.RawExtension, er
 
 	addDataAndMaybeAppendToIgnition(caBundleFilePath, cc.Spec.KubeAPIServerServingCAData, &ignConf)
 	addDataAndMaybeAppendToIgnition(cloudProviderCAPath, cc.Spec.CloudProviderCAData, &ignConf)
-	addDataAndMaybeAppendToIgnition(additionalCAPath, cc.Spec.AdditionalTrustBundle, &ignConf)
 	appenders := getAppenders(currConf, nil, bsc.kubeconfigFunc)
 	for _, a := range appenders {
 		if err := a(&ignConf, mc); err != nil {
