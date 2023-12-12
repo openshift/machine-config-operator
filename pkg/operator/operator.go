@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	v1 "github.com/openshift/api/config/v1"
 	opv1 "github.com/openshift/api/operator/v1"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 
@@ -42,7 +41,6 @@ import (
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
-	mcfginformersalphav1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1alpha1"
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	mcfglistersalphav1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1"
 )
@@ -80,7 +78,6 @@ type Operator struct {
 
 	syncHandler func(ic string) error
 
-	mcNodeLister     mcfglistersalphav1.MachineConfigNodeLister
 	imgLister        configlistersv1.ImageLister
 	crdLister        apiextlistersv1.CustomResourceDefinitionLister
 	mcpLister        mcfglistersv1.MachineConfigPoolLister
@@ -102,7 +99,6 @@ type Operator struct {
 	ocSecretLister   corelisterv1.SecretLister
 	mcoCOLister      configlistersv1.ClusterOperatorLister
 
-	mcNodeListerSynced               cache.InformerSynced
 	crdListerSynced                  cache.InformerSynced
 	deployListerSynced               cache.InformerSynced
 	daemonsetListerSynced            cache.InformerSynced
@@ -167,7 +163,6 @@ func New(
 	mcoSecretInformer coreinformersv1.SecretInformer,
 	ocSecretInformer coreinformersv1.SecretInformer,
 	mcoCOInformer configinformersv1.ClusterOperatorInformer,
-	mcNodeInformer mcfginformersalphav1.MachineConfigNodeInformer,
 	fgAccess featuregates.FeatureGateAccess,
 ) *Operator {
 	eventBroadcaster := record.NewBroadcaster()
@@ -226,14 +221,12 @@ func New(
 		mcoSecretInformer.Informer(),
 		ocSecretInformer.Informer(),
 		mcoCOInformer.Informer(),
-		mcNodeInformer.Informer(),
 	} {
 		i.AddEventHandler(optr.eventHandler())
 	}
 
 	optr.syncHandler = optr.sync
 
-	optr.mcNodeLister = mcNodeInformer.Lister()
 	optr.imgLister = imgInformer.Lister()
 	optr.clusterCmLister = clusterCmInfomer.Lister()
 	optr.clusterCmListerSynced = clusterCmInfomer.Informer().HasSynced
@@ -250,7 +243,6 @@ func New(
 	optr.nodeLister = nodeInformer.Lister()
 	optr.nodeListerSynced = nodeInformer.Informer().HasSynced
 
-	optr.mcNodeListerSynced = mcInformer.Informer().HasSynced
 	optr.imgListerSynced = imgInformer.Informer().HasSynced
 	optr.maoSecretInformerSynced = maoSecretInformer.Informer().HasSynced
 	optr.serviceAccountInformerSynced = serviceAccountInfomer.Informer().HasSynced
@@ -322,12 +314,7 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 		optr.mcoSecretListerSynced,
 		optr.ocSecretListerSynced,
 		optr.mcoCOListerSynced}
-	fg, err := optr.fgAccessor.CurrentFeatureGates()
-	if err != nil {
-		klog.Errorf("No fg enabled %w", err)
-	} else if fg.Enabled(v1.FeatureGateMachineConfigNodes) {
-		cacheSynced = append(cacheSynced, optr.mcNodeListerSynced)
-	}
+
 	if !cache.WaitForCacheSync(stopCh,
 		cacheSynced...) {
 		klog.Error("failed to sync caches")
