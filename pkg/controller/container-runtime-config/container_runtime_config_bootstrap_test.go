@@ -28,6 +28,7 @@ func TestAddKubeletCfgAfterBootstrapKubeletCfg(t *testing.T) {
 			f.mcpLister = append(f.mcpLister, pools[0])
 			f.mccrLister = append(f.mccrLister, ctrcfg)
 			f.objects = append(f.objects, ctrcfg)
+			f.imgObjects = append(f.imgObjects, newClusterVersionConfig("version", "default"))
 
 			mcs, err := RunContainerRuntimeBootstrap("../../../templates", []*mcfgv1.ContainerRuntimeConfig{ctrcfg}, cc, pools, f.fgAccess, false)
 			require.NoError(t, err)

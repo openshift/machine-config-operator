@@ -374,6 +374,12 @@ func CreateObjects(t *testing.T, clientSet *ClientSet, objs ...runtime.Object) {
 				clientSet.ConfigV1Interface.Nodes().Update(ctx, tObj, metav1.UpdateOptions{})
 			}
 			require.NoError(t, err)
+		case *corev1.ConfigMap:
+			_, err := clientSet.CoreV1Interface.ConfigMaps("kube-system").Create(ctx, tObj, metav1.CreateOptions{})
+			if errors.IsAlreadyExists(err) {
+				_, err = clientSet.CoreV1Interface.ConfigMaps("kube-system").Update(ctx, tObj, metav1.UpdateOptions{})
+			}
+			require.NoError(t, err)
 		default:
 			t.Errorf("Unknown object type %T", obj)
 		}

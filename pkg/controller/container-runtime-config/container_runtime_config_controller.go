@@ -3,11 +3,12 @@ package containerruntimeconfig
 import (
 	"context"
 	"fmt"
-	cloudcontrollercap "github.com/openshift/machine-config-operator/pkg/controller/cloud-controller-cap"
 	"reflect"
 	"strconv"
 	"strings"
 	"time"
+
+	cloudcontrollercap "github.com/openshift/machine-config-operator/pkg/controller/cloud-controller-cap"
 
 	"github.com/clarketm/json"
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"

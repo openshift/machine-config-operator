@@ -7,13 +7,14 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
-	configclientset "github.com/openshift/client-go/config/clientset/versioned"
-	cloudcontrollercap "github.com/openshift/machine-config-operator/pkg/controller/cloud-controller-cap"
 	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
 	"time"
+
+	configclientset "github.com/openshift/client-go/config/clientset/versioned"
+	cloudcontrollercap "github.com/openshift/machine-config-operator/pkg/controller/cloud-controller-cap"
 
 	osev1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
@@ -585,7 +586,7 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 	return ctrl.syncCompletedStatus(cfg)
 }
 
-func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.ControllerConfig, clusterPullSecretRaw, internalRegistryPullSecretRaw []byte, featureGateAccess featuregates.FeatureGateAccess, CCMDisabled bool) ([]*mcfgv1.MachineConfig, error) {
+func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.ControllerConfig, clusterPullSecretRaw, internalRegistryPullSecretRaw []byte, featureGateAccess featuregates.FeatureGateAccess, ccmDisabled bool) ([]*mcfgv1.MachineConfig, error) {
 	buf := &bytes.Buffer{}
 	if err := json.Compact(buf, clusterPullSecretRaw); err != nil {
 		return nil, fmt.Errorf("couldn't compact pullsecret %q: %w", string(clusterPullSecretRaw), err)
@@ -596,7 +597,7 @@ func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.Co
 		PullSecret:                 string(buf.Bytes()),
 		InternalRegistryPullSecret: string(internalRegistryPullSecretRaw),
 		FeatureGateAccess:          featureGateAccess,
-		CloudControllerDisabled:    CCMDisabled,
+		CloudControllerDisabled:    ccmDisabled,
 	}
 	mcs, err := generateTemplateMachineConfigs(rc, templatesDir)
 	if err != nil {
@@ -613,6 +614,6 @@ func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.Co
 }
 
 // RunBootstrap runs the tempate controller in boostrap mode.
-func RunBootstrap(templatesDir string, config *mcfgv1.ControllerConfig, pullSecretRaw []byte, featureGateAccess featuregates.FeatureGateAccess, CCMDisabled bool) ([]*mcfgv1.MachineConfig, error) {
-	return getMachineConfigsForControllerConfig(templatesDir, config, pullSecretRaw, nil, featureGateAccess, CCMDisabled)
+func RunBootstrap(templatesDir string, config *mcfgv1.ControllerConfig, pullSecretRaw []byte, featureGateAccess featuregates.FeatureGateAccess, ccmDisabled bool) ([]*mcfgv1.MachineConfig, error) {
+	return getMachineConfigsForControllerConfig(templatesDir, config, pullSecretRaw, nil, featureGateAccess, ccmDisabled)
 }

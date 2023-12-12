@@ -13,7 +13,7 @@ import (
 )
 
 // RunContainerRuntimeBootstrap generates ignition configs at bootstrap
-func RunContainerRuntimeBootstrap(templateDir string, crconfigs []*mcfgv1.ContainerRuntimeConfig, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool, featureGateAccess featuregates.FeatureGateAccess, CCMDisabled bool) ([]*mcfgv1.MachineConfig, error) {
+func RunContainerRuntimeBootstrap(templateDir string, crconfigs []*mcfgv1.ContainerRuntimeConfig, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool, featureGateAccess featuregates.FeatureGateAccess, ccmDisabled bool) ([]*mcfgv1.MachineConfig, error) {
 	var res []*mcfgv1.MachineConfig
 	managedKeyExist := make(map[string]bool)
 	for _, cfg := range crconfigs {
@@ -33,7 +33,7 @@ func RunContainerRuntimeBootstrap(templateDir string, crconfigs []*mcfgv1.Contai
 			}
 			role := pool.Name
 			// Generate the original ContainerRuntimeConfig
-			originalStorageIgn, _, _, err := generateOriginalContainerRuntimeConfigs(templateDir, controllerConfig, role, featureGateAccess, CCMDisabled)
+			originalStorageIgn, _, _, err := generateOriginalContainerRuntimeConfigs(templateDir, controllerConfig, role, featureGateAccess, ccmDisabled)
 			if err != nil {
 				return nil, fmt.Errorf("could not generate origin ContainerRuntime Configs: %w", err)
 			}

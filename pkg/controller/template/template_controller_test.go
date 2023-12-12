@@ -2,6 +2,8 @@ package template
 
 import (
 	"fmt"
+	"k8s.io/apimachinery/pkg/types"
+	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"reflect"
 	"testing"
 	"time"
@@ -87,6 +89,18 @@ func newControllerConfig(name string) *mcfgv1.ControllerConfig {
 	}
 }
 
+func newClusterVersionConfig(name, desiredImage string) *configv1.ClusterVersion {
+	return &configv1.ClusterVersion{
+		TypeMeta:   metav1.TypeMeta{APIVersion: configv1.SchemeGroupVersion.String()},
+		ObjectMeta: metav1.ObjectMeta{Name: name, UID: types.UID(utilrand.String(5)), Generation: 1},
+		Status: configv1.ClusterVersionStatus{
+			Desired: configv1.Release{
+				Image: desiredImage,
+			},
+		},
+	}
+}
+
 func newPullSecret(name string, contents []byte) *corev1.Secret {
 	return &corev1.Secret{
 		TypeMeta:   metav1.TypeMeta{APIVersion: corev1.SchemeGroupVersion.String()},
@@ -100,12 +114,17 @@ func (f *fixture) newController() *Controller {
 	f.client = fake.NewSimpleClientset(f.objects...)
 
 	f.kubeclient = k8sfake.NewSimpleClientset(f.kubeobjects...)
+
+	if len(f.oseobjects) == 0 {
+		f.oseobjects = append(f.oseobjects, newClusterVersionConfig("version", "default"))
+	}
 	f.oseclient = oseconfigfake.NewSimpleClientset(f.oseobjects...)
+
 	fgAccess := featuregates.NewHardcodedFeatureGateAccess(nil, nil)
 
 	cinformer := coreinformersv1.NewSharedInformerFactory(f.kubeclient, noResyncPeriodFunc())
 	i := informers.NewSharedInformerFactory(f.client, noResyncPeriodFunc())
-	c := New(templateDir, i.Machineconfiguration().V1().ControllerConfigs(), i.Machineconfiguration().V1().MachineConfigs(), cinformer.Core().V1().Secrets(), f.kubeclient, f.client, nil, fgAccess)
+	c := New(templateDir, i.Machineconfiguration().V1().ControllerConfigs(), i.Machineconfiguration().V1().MachineConfigs(), cinformer.Core().V1().Secrets(), f.kubeclient, f.client, f.oseclient, fgAccess)
 
 	c.ccListerSynced = alwaysReady
 	c.mcListerSynced = alwaysReady

@@ -327,7 +327,7 @@ spec:
 
 			// Only add this node config if one doesn't already exist.
 			// If two are present, the latter one will overwrite the former one.
-			if !containsGVK(objs, configv1.SchemeGroupVersion.WithKind("Node")) {
+			if !containsGVK(objs, configv1.GroupVersion.WithKind("Node")) {
 				nodeConfigManifest := [][]byte{
 					[]byte(`apiVersion: config.openshift.io/v1
 kind: Node
@@ -365,6 +365,14 @@ metadata:
 				require.NoError(t, err)
 
 				name := fmt.Sprintf("manifest-%d.yaml", id)
+
+				cm, ok := obj.(*corev1.ConfigMap)
+				if ok {
+					if cm.Name == "cluster-config-v1" {
+						name = "cluster-config.yaml"
+					}
+				}
+
 				path := filepath.Join(srcDir, name)
 				err = os.WriteFile(path, manifest, 0644)
 				require.NoError(t, err)

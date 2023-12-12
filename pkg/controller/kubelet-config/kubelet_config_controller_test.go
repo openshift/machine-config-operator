@@ -165,6 +165,18 @@ func newControllerConfig(name string, platform osev1.PlatformType) *mcfgv1.Contr
 	return cc
 }
 
+func newClusterVersionConfig(name, desiredImage string) *osev1.ClusterVersion {
+	return &osev1.ClusterVersion{
+		TypeMeta:   metav1.TypeMeta{APIVersion: osev1.SchemeGroupVersion.String()},
+		ObjectMeta: metav1.ObjectMeta{Name: name, UID: types.UID(utilrand.String(5)), Generation: 1},
+		Status: osev1.ClusterVersionStatus{
+			Desired: osev1.Release{
+				Image: desiredImage,
+			},
+		},
+	}
+}
+
 func newKubeletConfig(name string, kubeconf *kubeletconfigv1beta1.KubeletConfiguration, selector *metav1.LabelSelector) *mcfgv1.KubeletConfig {
 	kcRaw, err := EncodeKubeletConfig(kubeconf, kubeletconfigv1beta1.SchemeGroupVersion)
 	if err != nil {
@@ -187,6 +199,10 @@ func newKubeletConfig(name string, kubeconf *kubeletconfigv1beta1.KubeletConfigu
 
 func (f *fixture) newController(fgAccess featuregates.FeatureGateAccess) *Controller {
 	f.client = fake.NewSimpleClientset(f.objects...)
+
+	if len(f.oseobjects) == 0 {
+		f.oseobjects = append(f.oseobjects, newClusterVersionConfig("version", "default"))
+	}
 	f.oseclient = oseconfigfake.NewSimpleClientset(f.oseobjects...)
 
 	i := informers.NewSharedInformerFactory(f.client, 0)

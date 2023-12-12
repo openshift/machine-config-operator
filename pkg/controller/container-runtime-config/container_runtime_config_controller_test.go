@@ -85,6 +85,7 @@ func newFixture(t *testing.T) *fixture {
 	f := &fixture{}
 	f.t = t
 	f.objects = []runtime.Object{}
+	f.imgObjects = []runtime.Object{}
 	f.fgAccess = featuregates.NewHardcodedFeatureGateAccess(
 		[]apicfgv1.FeatureGateName{},
 		[]apicfgv1.FeatureGateName{
@@ -512,6 +513,7 @@ func TestContainerRuntimeConfigCreate(t *testing.T) {
 			f.mcpLister = append(f.mcpLister, mcp2)
 			f.mccrLister = append(f.mccrLister, ctrcfg1)
 			f.objects = append(f.objects, ctrcfg1)
+			f.imgObjects = append(f.imgObjects, newClusterVersionConfig("version", "default"))
 
 			f.expectGetMachineConfigAction(mcs2)
 			f.expectGetMachineConfigAction(mcs1)
@@ -552,6 +554,7 @@ func TestContainerRuntimeConfigUpdate(t *testing.T) {
 			f.mcpLister = append(f.mcpLister, mcp2)
 			f.mccrLister = append(f.mccrLister, ctrcfg1)
 			f.objects = append(f.objects, ctrcfg1)
+			f.imgObjects = append(f.imgObjects, newClusterVersionConfig("version", "default"))
 
 			f.expectGetMachineConfigAction(mcsUpdate)
 			f.expectGetMachineConfigAction(mcs)
@@ -585,6 +588,7 @@ func TestContainerRuntimeConfigUpdate(t *testing.T) {
 			f.mcpLister = append(f.mcpLister, mcp2)
 			f.mccrLister = append(f.mccrLister, ctrcfgUpdate)
 			f.objects = append(f.objects, mcsUpdate, ctrcfgUpdate)
+			f.imgObjects = append(f.imgObjects, newClusterVersionConfig("version", "default"))
 
 			c = f.newController()
 			stopCh = make(chan struct{})
@@ -634,6 +638,7 @@ func TestImageConfigCreate(t *testing.T) {
 			f.imgLister = append(f.imgLister, imgcfg1)
 			f.cvLister = append(f.cvLister, cvcfg1)
 			f.imgObjects = append(f.imgObjects, imgcfg1)
+			f.imgObjects = append(f.imgObjects, cvcfg1)
 
 			f.expectGetMachineConfigAction(mcs1)
 			f.expectGetMachineConfigAction(mcs1)
@@ -679,7 +684,7 @@ func TestImageConfigUpdate(t *testing.T) {
 			f.mcpLister = append(f.mcpLister, mcp2)
 			f.imgLister = append(f.imgLister, imgcfg1)
 			f.cvLister = append(f.cvLister, cvcfg1)
-			f.imgObjects = append(f.imgObjects, imgcfg1)
+			f.imgObjects = append(f.imgObjects, imgcfg1, cvcfg1)
 
 			f.expectGetMachineConfigAction(mcs1Update)
 			f.expectGetMachineConfigAction(mcs1)
@@ -717,7 +722,7 @@ func TestImageConfigUpdate(t *testing.T) {
 			f.mcpLister = append(f.mcpLister, mcp2)
 			f.imgLister = append(f.imgLister, imgcfgUpdate)
 			f.cvLister = append(f.cvLister, cvcfg1)
-			f.imgObjects = append(f.imgObjects, imgcfgUpdate)
+			f.imgObjects = append(f.imgObjects, imgcfgUpdate, cvcfg1)
 			f.objects = append(f.objects, mcs1Update, mcs2Update)
 
 			c = f.newController()
@@ -779,7 +784,7 @@ func TestICSPUpdate(t *testing.T) {
 			f.imgLister = append(f.imgLister, imgcfg1)
 			f.icspLister = append(f.icspLister, icsp)
 			f.cvLister = append(f.cvLister, cvcfg1)
-			f.imgObjects = append(f.imgObjects, imgcfg1)
+			f.imgObjects = append(f.imgObjects, imgcfg1, cvcfg1)
 			f.operatorObjects = append(f.operatorObjects, icsp)
 
 			f.expectGetMachineConfigAction(mcs1Update)
@@ -822,7 +827,7 @@ func TestICSPUpdate(t *testing.T) {
 			f.icspLister = append(f.icspLister, icspUpdate)
 			f.cvLister = append(f.cvLister, cvcfg1)
 			f.objects = append(f.objects, mcs1Update, mcs2Update)
-			f.imgObjects = append(f.imgObjects, imgcfg1)
+			f.imgObjects = append(f.imgObjects, imgcfg1, cvcfg1)
 			f.operatorObjects = append(f.operatorObjects, icspUpdate)
 
 			c = f.newController()
@@ -882,7 +887,7 @@ func TestIDMSUpdate(t *testing.T) {
 			f.imgLister = append(f.imgLister, imgcfg1)
 			f.idmsLister = append(f.idmsLister, idms)
 			f.cvLister = append(f.cvLister, cvcfg1)
-			f.imgObjects = append(f.imgObjects, imgcfg1)
+			f.imgObjects = append(f.imgObjects, imgcfg1, cvcfg1)
 			f.operatorObjects = append(f.operatorObjects, idms)
 
 			f.expectGetMachineConfigAction(mcs1Update)
@@ -925,7 +930,7 @@ func TestIDMSUpdate(t *testing.T) {
 			f.idmsLister = append(f.idmsLister, idmsUpdate)
 			f.cvLister = append(f.cvLister, cvcfg1)
 			f.objects = append(f.objects, mcs1Update, mcs2Update)
-			f.imgObjects = append(f.imgObjects, imgcfg1)
+			f.imgObjects = append(f.imgObjects, imgcfg1, cvcfg1)
 			f.operatorObjects = append(f.operatorObjects, idmsUpdate)
 
 			c = f.newController()
@@ -985,7 +990,7 @@ func TestITMSUpdate(t *testing.T) {
 			f.imgLister = append(f.imgLister, imgcfg1)
 			f.itmsLister = append(f.itmsLister, itms)
 			f.cvLister = append(f.cvLister, cvcfg1)
-			f.imgObjects = append(f.imgObjects, imgcfg1)
+			f.imgObjects = append(f.imgObjects, imgcfg1, cvcfg1)
 			f.operatorObjects = append(f.operatorObjects, itms)
 
 			f.expectGetMachineConfigAction(mcs1Update)
@@ -1028,7 +1033,7 @@ func TestITMSUpdate(t *testing.T) {
 			f.itmsLister = append(f.itmsLister, itmsUpdate)
 			f.cvLister = append(f.cvLister, cvcfg1)
 			f.objects = append(f.objects, mcs1Update, mcs2Update)
-			f.imgObjects = append(f.imgObjects, imgcfg1)
+			f.imgObjects = append(f.imgObjects, imgcfg1, cvcfg1)
 			f.operatorObjects = append(f.operatorObjects, itmsUpdate)
 
 			c = f.newController()
@@ -1427,6 +1432,7 @@ func TestCtrruntimeConfigMultiCreate(t *testing.T) {
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			f.ccLister = append(f.ccLister, cc)
+			f.imgObjects = append(f.imgObjects, newClusterVersionConfig("version", "default"))
 
 			ctrcfgCount := 30
 			for i := 0; i < ctrcfgCount; i++ {
@@ -1486,6 +1492,7 @@ func TestContainerruntimeConfigResync(t *testing.T) {
 			f.mcpLister = append(f.mcpLister, mcp2)
 			f.mccrLister = append(f.mccrLister, ccr1)
 			f.objects = append(f.objects, ccr1)
+			f.imgObjects = append(f.imgObjects, newClusterVersionConfig("version", "default"))
 
 			c := f.newController()
 			err := c.syncHandler(getKey(ccr1, t))
@@ -1552,6 +1559,7 @@ func TestAddAnnotationExistingContainerRuntimeConfig(t *testing.T) {
 			f.mcpLister = append(f.mcpLister, mcp2)
 			f.mccrLister = append(f.mccrLister, ctrc, ctrc1)
 			f.objects = append(f.objects, ctrc, ctrc1, ctrcfgMC)
+			f.imgObjects = append(f.imgObjects, newClusterVersionConfig("version", "default"))
 
 			// ctrc created before ctrc1,
 			// make sure ccr does not have annotation machineconfiguration.openshift.io/mc-name-suffix before sync, ccr1 has annotation machineconfiguration.openshift.io/mc-name-suffix
@@ -1612,6 +1620,7 @@ func TestCleanUpDuplicatedMC(t *testing.T) {
 			})
 			f.mccrLister = append(f.mccrLister, ccr1)
 			f.objects = append(f.objects, ccr1)
+			f.imgObjects = append(f.imgObjects, newClusterVersionConfig("version", "default"))
 
 			ctrl := f.newController()
 
