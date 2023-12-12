@@ -111,6 +111,10 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 		pathToData[cloudCABundleFilePath] = cloudCA
 
 		for bundle, data := range pathToData {
+			if !strings.HasSuffix(string(data), "\n") {
+				bString := string(data) + "\n"
+				data = []byte(bString)
+			}
 			if Finfo, err := os.Stat(bundle); err == nil {
 				var mode os.FileMode
 				Dinfo, err := os.Stat(filepath.Dir(bundle))
