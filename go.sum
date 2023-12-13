@@ -658,8 +658,8 @@ github.com/opencontainers/runc v1.1.7 h1:y2EZDS8sNng4Ksf0GUYNhKbTShZJPJg1FiXJNH/
 github.com/opencontainers/runc v1.1.7/go.mod h1:CbUumNnWCuTGFukNXahoo/RFBZvDAgRh/smNYNOhA50=
 github.com/opencontainers/runtime-spec v1.1.0-rc.3 h1:l04uafi6kxByhbxev7OWiuUv0LZxEsYUfDWZ6bztAuU=
 github.com/opencontainers/runtime-spec v1.1.0-rc.3/go.mod h1:jwyrGlmzljRJv/Fgzds9SsS/C5hL+LL3ko9hs6T5lQ0=
-github.com/openshift/api v0.0.0-20231128111040-e1845c5a7acd h1:bkX3IPDizf3+oYTIn10KbSIHTCsns1Ov6Ilv86Vm+Yc=
-github.com/openshift/api v0.0.0-20231128111040-e1845c5a7acd/go.mod h1:qNtV0315F+f8ld52TLtPvrfivZpdimOzTi3kn9IVbtU=
+github.com/openshift/api v0.0.0-20231207204216-5efc6fca4b2d h1:DJxRHF5883tyG1Lf/5kQB4Ut2ycutC7tpGIaXMLKzYk=
+github.com/openshift/api v0.0.0-20231207204216-5efc6fca4b2d/go.mod h1:qNtV0315F+f8ld52TLtPvrfivZpdimOzTi3kn9IVbtU=
 github.com/openshift/client-go v0.0.0-20231110140829-a6ca51f6d5ba h1:uZ9gqdJIKUegxqeBqKXbPdd0JfO6aueQ2Ot/gTOhkD8=
 github.com/openshift/client-go v0.0.0-20231110140829-a6ca51f6d5ba/go.mod h1:/BACtJX3fnHOlecTC3VW7JPsJU7KCGaUqt/HkWp5ryo=
 github.com/openshift/cluster-config-operator v0.0.0-alpha.0.0.20231110142214-403ea8439974 h1:Pb8KC/DpQUMLHTZalQL90ly9j4Fk2R6wIE8SAHbCf8I=
