@@ -1192,7 +1192,7 @@ func (dn *Daemon) RunFirstbootCompleteMachineconfig() error {
 	// This "false" is a compatibility for IBM's use case, where they are using the MCD to write the full configuration instead of just
 	// the encapsulated config. This shouldn't affect normal OCP operations, but will allow anyone using this code to write configs to
 	// still get the kubelet cert
-	err = dn.update(nil, &mc, false)
+	err = dn.update(oldConfig, &mc, false)
 	if err != nil {
 		return err
 	}
