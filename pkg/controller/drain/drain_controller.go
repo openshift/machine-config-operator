@@ -315,8 +315,8 @@ func (ctrl *Controller) syncNode(key string) error {
 		ctrl.logNode(node, "uncordoning")
 		// perform uncordon
 		if err := ctrl.cordonOrUncordonNode(false, node, drainer); err != nil {
-			nErr := upgrademonitor.GenerateAndApplyMachineConfigNodes(&upgrademonitor.Condition{State: v1alpha1.MachineConfigNodeUpdateComplete, Reason: string(v1alpha1.MachineConfigNodeUpdateCordoned), Message: fmt.Sprintf("Failed to UnCordon Node as part of completing upgrade phase")},
-				&upgrademonitor.Condition{State: v1alpha1.MachineConfigNodeUpdateCordoned, Reason: fmt.Sprintf("%s%s", string(v1alpha1.MachineConfigNodeUpdateComplete), string(v1alpha1.MachineConfigNodeUpdateCordoned)), Message: fmt.Sprintf("Error: Failed to UnCordon node. Error is: %s The node is reporting Unschedulable = %t", err.Error(), node.Spec.Unschedulable)},
+			nErr := upgrademonitor.GenerateAndApplyMachineConfigNodes(&upgrademonitor.Condition{State: v1alpha1.MachineConfigNodeUpdateComplete, Reason: string(v1alpha1.MachineConfigNodeUpdateUncordoned), Message: fmt.Sprintf("Failed to UnCordon Node as part of completing upgrade phase")},
+				&upgrademonitor.Condition{State: v1alpha1.MachineConfigNodeUpdateUncordoned, Reason: fmt.Sprintf("%s%s", string(v1alpha1.MachineConfigNodeUpdateComplete), string(v1alpha1.MachineConfigNodeUpdateUncordoned)), Message: fmt.Sprintf("Error: Failed to UnCordon node. Error is: %s The node is reporting Unschedulable = %t", err.Error(), node.Spec.Unschedulable)},
 				metav1.ConditionUnknown,
 				metav1.ConditionUnknown,
 				node,
@@ -330,8 +330,8 @@ func (ctrl *Controller) syncNode(key string) error {
 
 		}
 
-		err = upgrademonitor.GenerateAndApplyMachineConfigNodes(&upgrademonitor.Condition{State: v1alpha1.MachineConfigNodeUpdateComplete, Reason: string(v1alpha1.MachineConfigNodeUpdateCordoned), Message: fmt.Sprintf("UnCordoned Node as part of completing upgrade phase")},
-			&upgrademonitor.Condition{State: v1alpha1.MachineConfigNodeUpdateCordoned, Reason: fmt.Sprintf("%s%s", string(v1alpha1.MachineConfigNodeUpdateComplete), string(v1alpha1.MachineConfigNodeUpdateCordoned)), Message: fmt.Sprintf("UnCordoned node. The node is reporting Unschedulable = %t", node.Spec.Unschedulable)},
+		err = upgrademonitor.GenerateAndApplyMachineConfigNodes(&upgrademonitor.Condition{State: v1alpha1.MachineConfigNodeUpdateComplete, Reason: string(v1alpha1.MachineConfigNodeUpdateUncordoned), Message: fmt.Sprintf("UnCordoned Node as part of completing upgrade phase")},
+			&upgrademonitor.Condition{State: v1alpha1.MachineConfigNodeUpdateUncordoned, Reason: fmt.Sprintf("%s%s", string(v1alpha1.MachineConfigNodeUpdateComplete), string(v1alpha1.MachineConfigNodeUpdateUncordoned)), Message: fmt.Sprintf("UnCordoned node. The node is reporting Unschedulable = %t", node.Spec.Unschedulable)},
 			metav1.ConditionTrue,
 			metav1.ConditionTrue,
 			node,
