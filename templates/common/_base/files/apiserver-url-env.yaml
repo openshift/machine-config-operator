@@ -1,6 +1,6 @@
 mode: 0644
 path: "{{.Constants.APIServerURLFile}}"
-# used by the cluster network operator to learn the URL to the internal apiserver load balancer
+# used by the cluster network operator and cloud controller manager to learn the URL to the internal apiserver load balancer
 contents:
  inline: |
    KUBERNETES_SERVICE_HOST='{{urlHost .Infra.Status.APIServerInternalURL}}'
