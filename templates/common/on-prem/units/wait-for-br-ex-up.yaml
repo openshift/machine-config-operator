@@ -1,5 +1,5 @@
 name: wait-for-br-ex-up.service
-enabled: {{if gt (len (onPremPlatformAPIServerInternalIPs .)) 0}}true{{else}}false{{end}}
+enabled: {{if and (gt (len (onPremPlatformAPIServerInternalIPs .)) 0) (eq .NetworkType "OVNKubernetes")}}true{{else}}false{{end}}
 contents: |
   [Unit]
   Description=Wait for br-ex up event from NetworkManager
