@@ -1,0 +1,10 @@
+mode: 0755
+path: "/usr/local/bin/wait-for-br-ex-up.sh"
+contents:
+  inline: |
+    #!/bin/bash
+
+    until [ -e /run/nodeip-configuration/br-ex-up ]
+    do
+      sleep 1
+    done
