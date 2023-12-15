@@ -1090,10 +1090,21 @@ func DeleteNodeAndMachine(t *testing.T, node corev1.Node) {
 	machineAPINamespace := "openshift-machine-api"
 	machineID := strings.ReplaceAll(node.Annotations["machine.openshift.io/machine"], machineAPINamespace+"/", "")
 
+	var dmout, dmerr bytes.Buffer
 	deleteMachineCmd := exec.Command("oc", "delete", "--wait=false", fmt.Sprintf("machine/%s", machineID), "-n", machineAPINamespace)
+	deleteMachineCmd.Stdout = &dmout
+	deleteMachineCmd.Stderr = &dmerr
 
+	var dnout, dnerr bytes.Buffer
 	deleteNodeCmd := exec.Command("oc", "delete", "--wait=false", fmt.Sprintf("node/%s", node.Name))
+	deleteNodeCmd.Stdout = &dnout
+	deleteNodeCmd.Stderr = &dnerr
 
 	t.Logf("Deleting machine %s / node %s", machineID, node.Name)
-	require.NoError(t, aggerrs.AggregateGoroutines(deleteMachineCmd.Run, deleteNodeCmd.Run))
+	t.Logf("MACHINE: %s", dmout.String())
+	t.Logf("EMACHINE: %s", dmerr.String())
+	t.Logf("NODE: %s", dnout.String())
+	t.Logf("ENODE: %s", dnerr.String())
+	assert.NoError(t, aggerrs.AggregateGoroutines(deleteMachineCmd.Run, deleteNodeCmd.Run))
+
 }
