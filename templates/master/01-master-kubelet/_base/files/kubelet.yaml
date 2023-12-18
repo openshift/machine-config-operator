@@ -38,6 +38,10 @@ contents:
       ExternalCloudProviderExternal: true
       OpenShiftPodSecurityAdmission: true
       PrivateHostedZoneAWS: true
+      NodeSwap: true
+    failSwapOn: false
+    memorySwap:
+      swapBehavior: LimitedSwap
     serverTLSBootstrap: true
     tlsMinVersion: VersionTLS12
     tlsCipherSuites:
