@@ -284,6 +284,7 @@ func RunNodeConfigBootstrap(templateDir string, featureGateAccess featuregates.F
 		if err != nil {
 			return nil, err
 		}
+		klog.Infof(">>> 1 role %s, key %s, kargs %s", role, key, mc.Spec.KernelArguments)
 		originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cconfig, templateDir, role, featureGateAccess)
 		if err != nil {
 			return nil, err
@@ -300,6 +301,7 @@ func RunNodeConfigBootstrap(templateDir string, featureGateAccess featuregates.F
 		if err != nil {
 			return nil, err
 		}
+		klog.Infof(">>> 2 role %s, key %s, kargs %s", role, key, mc.Spec.KernelArguments)
 		// Encode the new config into raw JSON
 		cfgIgn, err := kubeletConfigToIgnFile(originalKubeConfig)
 		if err != nil {
