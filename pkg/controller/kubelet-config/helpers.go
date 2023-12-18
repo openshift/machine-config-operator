@@ -21,6 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/yaml"
+	"k8s.io/klog/v2"
 	kubeletconfigv1beta1 "k8s.io/kubelet/config/v1beta1"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
@@ -413,6 +414,8 @@ func kubeletConfigToIgnFile(cfg *kubeletconfigv1beta1.KubeletConfiguration) (*ig
 	if err != nil {
 		return nil, fmt.Errorf("could not encode kubelet configuration: %w", err)
 	}
+	klog.Info((">>>"))
+	klog.Info(cfgJSON)
 	cfgIgn := createNewKubeletIgnition(cfgJSON)
 	return cfgIgn, nil
 }
