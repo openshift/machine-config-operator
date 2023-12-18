@@ -415,7 +415,7 @@ func kubeletConfigToIgnFile(cfg *kubeletconfigv1beta1.KubeletConfiguration) (*ig
 		return nil, fmt.Errorf("could not encode kubelet configuration: %w", err)
 	}
 	klog.Info((">>>"))
-	klog.Info(cfgJSON)
+	klog.Info(string(cfgJSON))
 	cfgIgn := createNewKubeletIgnition(cfgJSON)
 	return cfgIgn, nil
 }
