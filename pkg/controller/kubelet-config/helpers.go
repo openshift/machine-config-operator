@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	rt "runtime/debug"
 	"strconv"
 	"strings"
 
@@ -415,6 +416,7 @@ func kubeletConfigToIgnFile(cfg *kubeletconfigv1beta1.KubeletConfiguration) (*ig
 		return nil, fmt.Errorf("could not encode kubelet configuration: %w", err)
 	}
 	klog.Info((">>>"))
+	rt.PrintStack()
 	klog.Info(string(cfgJSON))
 	cfgIgn := createNewKubeletIgnition(cfgJSON)
 	return cfgIgn, nil
