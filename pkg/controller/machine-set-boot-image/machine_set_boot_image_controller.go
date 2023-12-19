@@ -8,6 +8,7 @@ import (
 
 	configinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
 	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
+	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -66,6 +67,9 @@ type Controller struct {
 	enqueueMachineSet func(*machinev1beta1.MachineSet)
 
 	queue workqueue.RateLimitingInterface
+
+	featureGateAccess featuregates.FeatureGateAccess
+	featureEnabled    bool
 }
 
 const (
@@ -92,6 +96,7 @@ func New(
 	maoSecretInformer coreinformersv1.SecretInformer,
 	infraInformer configinformersv1.InfrastructureInformer,
 	nodeInformer coreinformersv1.NodeInformer,
+	featureGateAccess featuregates.FeatureGateAccess,
 ) *Controller {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
@@ -130,6 +135,28 @@ func New(
 	ctrl.maoSecretInformerSynced = maoSecretInformer.Informer().HasSynced
 	ctrl.infraListerSynced = infraInformer.Informer().HasSynced
 	ctrl.nodeListerSynced = nodeInformer.Informer().HasSynced
+
+	ctrl.featureGateAccess = featureGateAccess
+
+	ctrl.featureEnabled = false
+	ctrl.featureGateAccess.SetChangeHandler(func(featureChange featuregates.FeatureChange) {
+		klog.InfoS("FeatureGates changed", "enabled", featureChange.New.Enabled, "disabled", featureChange.New.Disabled)
+
+		var prevfeatureEnabled bool
+		if featureChange.Previous == nil {
+			// When the initial featuregate is set, the previous version is nil. Default to the feature being disabled.
+			prevfeatureEnabled = false
+		} else {
+			prevfeatureEnabled = featuregates.NewFeatureGate(featureChange.Previous.Enabled, featureChange.Previous.Disabled).
+				Enabled(osconfigv1.FeatureGateManagedBootImages)
+		}
+		ctrl.featureEnabled = featuregates.NewFeatureGate(featureChange.New.Enabled, featureChange.New.Disabled).
+			Enabled(osconfigv1.FeatureGateManagedBootImages)
+		if !prevfeatureEnabled && ctrl.featureEnabled {
+			klog.Info("Trigger a sync as this feature was turned on")
+			ctrl.enqueueAllMachineSets()
+		}
+	})
 
 	return ctrl
 }
@@ -193,6 +220,10 @@ func (ctrl *Controller) handleErr(err error, key interface{}) {
 }
 
 func (ctrl *Controller) addMachineSet(obj interface{}) {
+	// No-op if feature is disabled
+	if !ctrl.featureEnabled {
+		return
+	}
 	machineSet := obj.(*machinev1beta1.MachineSet)
 	klog.Infof("MachineSet %s added", machineSet.Name)
 
@@ -209,6 +240,10 @@ func (ctrl *Controller) addMachineSet(obj interface{}) {
 // Perhaps worth implementing a diff check before starting the sync?
 
 func (ctrl *Controller) updateMachineSet(old, _ interface{}) {
+	// No-op if feature is disabled
+	if !ctrl.featureEnabled {
+		return
+	}
 	oldMachineSet := old.(*machinev1beta1.MachineSet)
 	klog.Infof("MachineSet %s updated, reconciling all machinesets", oldMachineSet.Name)
 
@@ -222,6 +257,10 @@ func (ctrl *Controller) updateMachineSet(old, _ interface{}) {
 }
 
 func (ctrl *Controller) addConfigMap(obj interface{}) {
+	// No-op if feature is disabled
+	if !ctrl.featureEnabled {
+		return
+	}
 	configMap := obj.(*corev1.ConfigMap)
 
 	// Take no action if this isn't the "golden" config map
@@ -242,6 +281,10 @@ func (ctrl *Controller) addConfigMap(obj interface{}) {
 // TODO: This callback happens every ~15 minutes or so even if the configmap contents is not updated
 // Perhaps worth implementing a diff check before starting the sync?
 func (ctrl *Controller) updateConfigMap(old, _ interface{}) {
+	// No-op if feature is disabled
+	if !ctrl.featureEnabled {
+		return
+	}
 	oldConfigMap := old.(*corev1.ConfigMap)
 
 	// Take no action if this isn't the "golden" config map
