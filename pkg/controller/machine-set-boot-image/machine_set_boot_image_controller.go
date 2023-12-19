@@ -36,6 +36,7 @@ import (
 	machinelisters "github.com/openshift/client-go/machine/listers/machine/v1beta1"
 
 	archtranslater "github.com/coreos/stream-metadata-go/arch"
+	"github.com/coreos/stream-metadata-go/stream"
 
 	osconfigv1 "github.com/openshift/api/config/v1"
 )
@@ -485,8 +486,48 @@ func unmarshalStreamDataConfigMap(cm *corev1.ConfigMap, st interface{}) error {
 // -GCPMachineProviderSpec.Disk(s) stores actual bootimage URL
 // -identical for x86_64/amd64 and aarch64/arm64
 func reconcileGCP(machineSet *machinev1beta1.MachineSet, configMap *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
-	klog.Infof("Skipping machineset %s, unsupported platform type GCP with %s arch", machineSet.Name, arch)
-	return false, nil, nil
+	klog.Infof("Reconciling machineset %s on GCP, with arch %s", machineSet.Name, arch)
+
+	// First, unmarshal the GCP providerSpec
+	providerSpec := new(machinev1beta1.GCPMachineProviderSpec)
+	if err := unmarshalProviderSpec(machineSet, providerSpec); err != nil {
+		return false, nil, err
+	}
+
+	// Next, unmarshal the configmap into a stream object
+	streamData := new(stream.Stream)
+	if err := unmarshalStreamDataConfigMap(configMap, streamData); err != nil {
+		return false, nil, err
+	}
+
+	// Construct the new target bootimage from the configmap
+	// This formatting is based on how the installer constructs
+	// the boot image during cluster bootstrap
+	newBootImage := fmt.Sprintf("projects/%s/global/images/%s", streamData.Architectures[arch].Images.Gcp.Project, streamData.Architectures[arch].Images.Gcp.Name)
+
+	// Grab what the current bootimage is, compare to the newBootImage
+	// There is typically only one element in this Disk array, assume multiple to be safe
+	patchRequired = false
+	newProviderSpec := providerSpec.DeepCopy()
+	for idx, disk := range newProviderSpec.Disks {
+		if newBootImage != disk.Image {
+			klog.Infof("New target boot image: %s", newBootImage)
+			klog.Infof("Current image: %s", disk.Image)
+			patchRequired = true
+			newProviderSpec.Disks[idx].Image = newBootImage
+		}
+	}
+
+	// TODO: Check if referenced secret is spec 3 here
+
+	// If patch is required, marshal the new providerspec into the machineset
+	if patchRequired {
+		newMachineSet = machineSet.DeepCopy()
+		if err := marshalProviderSpec(newMachineSet, newProviderSpec); err != nil {
+			return false, nil, err
+		}
+	}
+	return patchRequired, newMachineSet, nil
 }
 
 func reconcileAWS(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
