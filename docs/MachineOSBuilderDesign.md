@@ -103,8 +103,9 @@ the following describes the typical build process:
    single replica of the MOB process.
 
 2. For now, the MOB process will start a BuildController which uses the
-   ImageBuildController. This will change in the future (see Known
-   Limitations for details).
+   ImageBuildController. This will change in the future (see
+   [Known Limitations](OnClusterBuildInstructions.md#known-limitations)
+   for details).
 
 3. BuildController looks for MachineConfigPools that have been opted
    into OS layering, looking for the existence of the
@@ -137,7 +138,8 @@ the following describes the typical build process:
    only store a maximum of 1 MB, the MachineConfig is gzipped and
    Base64-encoded before storing in a ConfigMap. The Base64-encoding
    is required because ConfigMaps are not intended to store binary
-   data, which is what one gets after gzipping. (see: Known Limitations).
+   data, which is what one gets after gzipping. (see:
+   [Known Limitations](OnClusterBuildInstructions.md#known-limitations)).
 
 8. Either a new OpenShift Image Build or custom build pod will be
    created to consume the Dockerfile and the rendered MachineConfig
@@ -150,7 +152,8 @@ the following describes the typical build process:
    write the MachineConfig contents to the OS image. Although there
    is a section to perform operations on the extensions image, it
    does not currently do anything other than pull the extensions
-   image (see: Known Limitations).
+   image (see:
+   [Known Limitations](OnClusterBuildInstructions.md#known-limitations)).
 
 9. Upon successful completion of the build, the image is pushed to the
    configured image registry, using the rendered MachineConfig name
