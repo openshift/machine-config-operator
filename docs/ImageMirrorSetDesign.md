@@ -10,7 +10,7 @@ Users need a way to set up mirror configuration. Users can set mirror configurat
 
 3. Setting cluster wide mirror registries, but blocking the image pull from the registry that specified as source in the pull spec by setting the enum field `mirrorSourcePolicy`. If all the mirror registries are failed, the image pull will be redirected to the registry in the pull spec by default. This field is available for both `ImageDigestMirrorSet` and `ImageTagMirrorSet`.
 
-4.  Before the `ImageContentSourcePolicy` CRD gets deprecated, reject to update one of `ImageDigestMirrorSet`/ `ImageTagMirrorSet` and `ImageContentSourcePolicy` when there is an attempt to update both objects on the cluster.
+4. `ImageContentSourcePolicy` CRD will be marked as deprecated and will be supported during all of 4.x. Update and coexistence of `ImageDigestMirrorSet`/ `ImageTagMirrorSet` and `ImageContentSourcePolicy` is supported. We encourage users to move to IDMS while supporting both in the cluster, but will not remove ICSP in OCP 4.x. 
 
 ## Non-Goals
 

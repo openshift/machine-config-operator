@@ -604,7 +604,6 @@ func payloadRepoHasUnblockedMirror(payloadRepo reference.Named, idmsRules []*api
 	}
 	defer os.Remove(tmpFile.Name())
 
-	// var payloadMirrors []string
 	// Go through the mirror rules configured and check if a source matches the payload registry
 	// Get the possible pull sources for the payload repo using the temp registries.conf file created above
 	r, err := sysregistriesv2.FindRegistry(&types.SystemContext{SystemRegistriesConfPath: tmpFile.Name()}, payloadRepo.Name())
