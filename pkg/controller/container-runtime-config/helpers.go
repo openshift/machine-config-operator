@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -48,7 +49,13 @@ const (
 	CRIODropInFilePathDefaultRuntime = "/etc/crio/crio.conf.d/01-ctrcfg-defaultRuntime"
 )
 
-var errParsingReference = errors.New("error parsing reference of release image")
+var (
+	errParsingReference = errors.New("error parsing reference of release image")
+	// sourceRegex and mirrorRegex pattern should stay the same with https://github.com/openshift/api/blob/ef62af078a9387e739abd99ec1d80e9129bb5475/config/v1/types_image_digest_mirror_set.go
+	// Validation the source and mirror format for IDMS/ITMS already exists in the CRD. We need to keep this regex validation for ICSP
+	sourceRegex = regexp.MustCompile(`^\*(?:\.(?:[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]))+$|^((?:[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])(?:(?:\.(?:[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]))+)?(?::[0-9]+)?)(?:(?:/[a-z0-9]+(?:(?:(?:[._]|__|[-]*)[a-z0-9]+)+)?)+)?$`)
+	mirrorRegex = regexp.MustCompile(`^((?:[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])(?:(?:\.(?:[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]))+)?(?::[0-9]+)?)(?:(?:/[a-z0-9]+(?:(?:(?:[._]|__|[-]*)[a-z0-9]+)+)?)+)?$`)
+)
 
 // TOML-friendly explicit tables used for conversions.
 type tomlConfigStorage struct {
@@ -679,11 +686,8 @@ func validateRegistriesConfScopes(insecure, blocked, allowed []string, icspRules
 
 	sourcePolicy := map[string]apicfgv1.MirrorSourcePolicy{}
 	validateMirrors := func(source string, mirrors []apicfgv1.ImageMirror, policy apicfgv1.MirrorSourcePolicy) error {
-		if source == "" {
-			return fmt.Errorf("invalid empty entry for source configuration")
-		}
-		if strings.Contains(source, "*") {
-			return fmt.Errorf("wildcard entries are not supported with mirror configuration %q", source)
+		if !sourceRegex.MatchString(source) {
+			return fmt.Errorf("invalid format for source %q", source)
 		}
 		if policy == "" {
 			policy = apicfgv1.AllowContactingSource
@@ -697,11 +701,8 @@ func validateRegistriesConfScopes(insecure, blocked, allowed []string, icspRules
 		}
 
 		for _, mirror := range mirrors {
-			if mirror == "" {
-				return fmt.Errorf("invalid empty entry for mirror configuration")
-			}
-			if strings.Contains(string(mirror), "*") {
-				return fmt.Errorf("wildcard entries are not supported with mirror configuration %q", mirror)
+			if !mirrorRegex.MatchString(string(mirror)) {
+				return fmt.Errorf("invalid format for mirror %q", mirror)
 			}
 			if policy == apicfgv1.NeverContactSource && string(mirror) == source {
 				return fmt.Errorf("cannot set mirrorSourcePolicy: NeverContactSource if the source %q is one of the mirrors", source)
