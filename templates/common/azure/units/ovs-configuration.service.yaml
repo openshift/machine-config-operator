@@ -1,0 +1,21 @@
+name: ovs-configuration.service
+enabled: {{if eq .NetworkType "OVNKubernetes" "OpenShiftSDN"}}true{{else}}false{{end}}
+contents: |
+  [Unit]
+  Description=Configures OVS with proper host networking configuration
+  # This service is used to move a physical NIC into OVS and reconfigure OVS to use the host IP
+  Requires=openvswitch.service
+  Wants=NetworkManager-wait-online.service
+  After=firstboot-osupdate.target
+  After=NetworkManager-wait-online.service openvswitch.service network.service nodeip-configuration.service
+  Before=kubelet-dependencies.target node-valid-hostname.service dnsmasq.service
+
+  [Service]
+  # Need oneshot to delay kubelet
+  Type=oneshot
+  ExecStart=/usr/local/bin/configure-ovs.sh {{.NetworkType}}
+  StandardOutput=journal+console
+  StandardError=journal+console
+
+  [Install]
+  RequiredBy=kubelet-dependencies.target
