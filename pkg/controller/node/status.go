@@ -11,7 +11,6 @@ import (
 	helpers "github.com/openshift/machine-config-operator/pkg/helpers"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	v1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
@@ -73,12 +72,12 @@ func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
 }
 
 //nolint:gocyclo
-func calculateStatus(mcs []*mcfgalphav1.MachineConfigNode, cconfig *v1.ControllerConfig, pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv1.MachineConfigPoolStatus {
-	certExpirys := []v1.CertExpiry{}
+func calculateStatus(mcs []*mcfgalphav1.MachineConfigNode, cconfig *mcfgv1.ControllerConfig, pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv1.MachineConfigPoolStatus {
+	certExpirys := []mcfgv1.CertExpiry{}
 	if cconfig != nil {
 		for _, cert := range cconfig.Status.ControllerCertificates {
 			if cert.BundleFile == "KubeAPIServerServingCAData" {
-				certExpirys = append(certExpirys, v1.CertExpiry{
+				certExpirys = append(certExpirys, mcfgv1.CertExpiry{
 					Bundle:  cert.BundleFile,
 					Subject: cert.Subject,
 					Expiry:  cert.NotAfter,
