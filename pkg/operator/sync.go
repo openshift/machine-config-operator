@@ -687,6 +687,15 @@ func (optr *Operator) syncMachineConfigPools(config *renderConfig) error {
 			return err
 		}
 		p := resourceread.ReadSecretV1OrDie(userdataBytes)
+
+		p.ObjectMeta.OwnerReferences = []metav1.OwnerReference{
+			{
+				APIVersion: pool.APIVersion,
+				Kind:       pool.Kind,
+				Name:       pool.ObjectMeta.Name,
+				UID:        pool.ObjectMeta.UID,
+			},
+		}
 		_, _, err = resourceapply.ApplySecret(context.TODO(), optr.kubeClient.CoreV1(), optr.libgoRecorder, p)
 		if err != nil {
 			return err
