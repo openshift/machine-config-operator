@@ -688,6 +688,10 @@ func (optr *Operator) syncMachineConfigPools(config *renderConfig) error {
 		}
 		p := resourceread.ReadSecretV1OrDie(userdataBytes)
 
+		// Work around https://github.com/kubernetes/kubernetes/issues/3030 and https://github.com/kubernetes/kubernetes/issues/80609
+		pool.APIVersion = mcfgv1.GroupVersion.String()
+		pool.Kind = "MachineConfigPool"
+
 		p.ObjectMeta.OwnerReferences = []metav1.OwnerReference{
 			{
 				APIVersion: pool.APIVersion,
