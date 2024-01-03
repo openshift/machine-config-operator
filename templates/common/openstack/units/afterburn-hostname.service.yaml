@@ -3,16 +3,25 @@ enabled: true
 contents: |
   [Unit]
   Description=Afterburn Hostname
-  # Block services relying on Networking being up.
+  # Block services relying on Networking being up
   Before=network-online.target
   # Wait for NetworkManager to report its online
   After=NetworkManager-wait-online.service
   # Run before hostname checks
   Before=node-valid-hostname.service
+  # Allow 120 retries (10 minutes at 5 seconds per retry)
+  StartLimitIntervalSec=infinity
+  StartLimitBurst=120
 
   [Service]
   ExecStart=/usr/local/bin/openstack-afterburn-hostname
   Type=oneshot
+  # Show as active after exit since we change state
+  RemainAfterExit=true
+  # Retry every 5 seconds on failure without marking the service as failed
+  Restart=on-failure
+  RestartMode=direct
+  RestartSec=5
 
   [Install]
   WantedBy=network-online.target
