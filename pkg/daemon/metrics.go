@@ -57,6 +57,12 @@ var (
 			Name: "mcd_config_drift",
 			Help: "timestamp for config drift",
 		})
+	// mcdMissingMC tracks the missing machine config error
+	mcdMissingMC = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "mcd_missing_mc",
+			Help: "total number of times a MC was reported missing",
+		}, []string{"mc"})
 )
 
 // Updates metric with new labels & timestamp, deletes any existing

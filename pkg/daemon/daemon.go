@@ -217,6 +217,28 @@ var (
 	defaultRebootTimeout = 24 * time.Hour
 )
 
+// Create a custom error type to hold the missing MachineConfig name.
+type ErrMissingMachineConfig struct {
+	missingMC string
+}
+
+// Optional constructor for the error type.
+func newErrMissingMachineConfig(missingMC string) error {
+	return &ErrMissingMachineConfig{
+		missingMC: missingMC,
+	}
+}
+
+// This implements the error interface within Go.
+func (e *ErrMissingMachineConfig) Error() string {
+	return fmt.Sprintf("missing MachineConfig %s", e.missingMC)
+}
+
+// This is an optional accessor to get the missing MachineConfig. useful when trying to increment the metric in one line.
+func (e *ErrMissingMachineConfig) MissingMachineConfig() string {
+	return e.missingMC
+}
+
 // rebootCommand creates a new transient systemd unit to reboot the system.
 // With the upstream implementation of kubelet graceful shutdown feature,
 // we don't explicitly stop the kubelet so that kubelet can gracefully shutdown
@@ -769,7 +791,8 @@ func (dn *Daemon) syncNode(key string) error {
 	// Pass to the shared update prep method
 	ufc, err := dn.prepUpdateFromCluster()
 	if err != nil {
-		return fmt.Errorf("prepping update: %w", err)
+		maybeReportOnMissingMC(err)
+		return err
 	}
 
 	if ufc != nil {
@@ -792,6 +815,8 @@ func (dn *Daemon) syncNode(key string) error {
 		}
 
 		if err := dn.triggerUpdate(ufc.currentConfig, ufc.desiredConfig, ufc.currentImage, ufc.desiredImage); err != nil {
+			// if MC was not found, let user know where they can find more info on this.
+			maybeReportOnMissingMC(err)
 			return err
 		}
 	} else {
@@ -1505,7 +1530,7 @@ func (dn *Daemon) getStateAndConfigs() (*stateAndConfigs, error) {
 	}
 	currentConfig, err := dn.mcLister.Get(currentConfigName)
 	if err != nil {
-		return nil, err
+		return nil, maybeAddMachineConfigInfo(currentConfigName, err)
 	}
 	state, err := getNodeAnnotationExt(dn.node, constants.MachineConfigDaemonStateAnnotationKey, true)
 	if err != nil {
@@ -1551,9 +1576,8 @@ func (dn *Daemon) getStateAndConfigs() (*stateAndConfigs, error) {
 	} else {
 		desiredConfig, err = dn.mcLister.Get(desiredConfigName)
 		if err != nil {
-			return nil, err
+			return nil, maybeAddMachineConfigInfo(desiredConfigName, err)
 		}
-
 		klog.Infof("Current config: %s", currentConfigName)
 		klog.Infof("Desired config: %s", desiredConfigName)
 	}
@@ -1902,6 +1926,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 
 	state, err := dn.getStateAndConfigs()
 	if err != nil {
+		maybeReportOnMissingMC(err)
 		return err
 	}
 
@@ -1969,6 +1994,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 	if forceFileExists() {
 		logSystem("Skipping on-disk validation; %s present", constants.MachineConfigDaemonForceFile)
 		return dn.triggerUpdate(state.currentConfig, state.desiredConfig, state.currentImage, state.desiredImage)
+
 	}
 
 	// When upgrading the OS, it is possible that the SSH key location will
@@ -1999,7 +2025,11 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 	}
 	// currentConfig != desiredConfig, and we're not booting up into the desiredConfig.
 	// Kick off an update.
-	return dn.triggerUpdate(state.currentConfig, state.desiredConfig, state.currentImage, state.desiredImage)
+	err = dn.triggerUpdate(state.currentConfig, state.desiredConfig, state.currentImage, state.desiredImage)
+	if err != nil {
+		maybeReportOnMissingMC(err)
+	}
+	return err
 }
 
 func (dn *Daemon) isInDesiredConfig(state *stateAndConfigs) bool {
@@ -2107,13 +2137,14 @@ func (dn *Daemon) runOnceFromMachineConfig(machineConfig mcfgv1.MachineConfig, c
 			if err := dn.nodeWriter.SetDegraded(err); err != nil {
 				return err
 			}
+			maybeReportOnMissingMC(err)
 			return err
 		}
 		if ufc.currentConfig == nil || ufc.desiredConfig == nil {
 			return nil
 		}
 		// At this point we have verified we need to update
-		if err := dn.triggerUpdateWithMachineConfig(ufc.currentConfig, &machineConfig, false); err != nil {
+		if err = dn.triggerUpdateWithMachineConfig(ufc.currentConfig, &machineConfig, false); err != nil {
 			dn.nodeWriter.SetDegraded(err)
 			return err
 		}
@@ -2175,7 +2206,7 @@ func (dn *Daemon) prepUpdateFromCluster() (*updateFromCluster, error) {
 
 	desiredConfig, err := dn.mcLister.Get(desiredConfigName)
 	if err != nil {
-		return nil, err
+		return nil, maybeAddMachineConfigInfo(desiredConfigName, err)
 	}
 	// currentConfig is always expected to be there as loadNodeAnnotations
 	// is one of the very first calls when the daemon starts.
@@ -2185,7 +2216,7 @@ func (dn *Daemon) prepUpdateFromCluster() (*updateFromCluster, error) {
 	}
 	currentConfig, err := dn.mcLister.Get(currentConfigName)
 	if err != nil {
-		return nil, err
+		return nil, maybeAddMachineConfigInfo(currentConfigName, err)
 	}
 	state, err := getNodeAnnotation(dn.node, constants.MachineConfigDaemonStateAnnotationKey)
 	if err != nil {
@@ -2318,7 +2349,7 @@ func (dn *Daemon) triggerUpdateWithMachineConfig(currentConfig, desiredConfig *m
 		}
 		currentConfig, err = dn.mcLister.Get(ccAnnotation)
 		if err != nil {
-			return err
+			return maybeAddMachineConfigInfo(ccAnnotation, err)
 		}
 	}
 
@@ -2329,7 +2360,7 @@ func (dn *Daemon) triggerUpdateWithMachineConfig(currentConfig, desiredConfig *m
 		}
 		desiredConfig, err = dn.mcLister.Get(dcAnnotation)
 		if err != nil {
-			return err
+			return maybeAddMachineConfigInfo(dcAnnotation, err)
 		}
 	}
 
@@ -2569,4 +2600,21 @@ func forceFileExists() bool {
 
 	// No error means we could stat the file; it exists
 	return err == nil
+}
+
+func maybeAddMachineConfigInfo(configName string, err error) error {
+	if apierrors.IsNotFound(err) {
+		// We actually know the MC is missing, so lets add the additional context.
+		return errors.Join(newErrMissingMachineConfig(configName), err)
+	}
+
+	// We couldn't get the MC for any other reason.
+	return err
+}
+
+func maybeReportOnMissingMC(err error) {
+	var missingMCErr *ErrMissingMachineConfig
+	if errors.As(err, &missingMCErr) {
+		mcdMissingMC.WithLabelValues(missingMCErr.MissingMachineConfig()).Inc()
+	}
 }
