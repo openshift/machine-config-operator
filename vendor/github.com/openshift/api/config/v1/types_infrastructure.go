@@ -475,6 +475,7 @@ type AWSPlatformSpec struct {
 	// serviceEndpoints list contains custom endpoints which will override default
 	// service endpoint of AWS Services.
 	// There must be only one ServiceEndpoint for a service.
+	// +listType=atomic
 	// +optional
 	ServiceEndpoints []AWSServiceEndpoint `json:"serviceEndpoints,omitempty"`
 }
@@ -487,6 +488,7 @@ type AWSPlatformStatus struct {
 	// ServiceEndpoints list contains custom endpoints which will override default
 	// service endpoint of AWS Services.
 	// There must be only one ServiceEndpoint for a service.
+	// +listType=atomic
 	// +optional
 	ServiceEndpoints []AWSServiceEndpoint `json:"serviceEndpoints,omitempty"`
 
@@ -495,6 +497,7 @@ type AWSPlatformStatus struct {
 	// AWS supports a maximum of 50 tags per resource. OpenShift reserves 25 tags for its use, leaving 25 tags
 	// available for the user.
 	// +kubebuilder:validation:MaxItems=25
+	// +listType=atomic
 	// +optional
 	ResourceTags []AWSResourceTag `json:"resourceTags,omitempty"`
 }
@@ -550,6 +553,7 @@ type AzurePlatformStatus struct {
 	// may be applied. OpenShift reserves 5 tags for internal use, allowing 10 tags for user configuration.
 	// +kubebuilder:validation:MaxItems=10
 	// +kubebuilder:validation:XValidation:rule="self.all(x, x in oldSelf) && oldSelf.all(x, x in self)",message="resourceTags are immutable and may only be configured during installation"
+	// +listType=atomic
 	// +optional
 	ResourceTags []AzureResourceTag `json:"resourceTags,omitempty"`
 }
@@ -751,6 +755,7 @@ type BareMetalPlatformStatus struct {
 	//
 	// +kubebuilder:validation:Format=ip
 	// +kubebuilder:validation:MaxItems=2
+	// +listType=set
 	APIServerInternalIPs []string `json:"apiServerInternalIPs"`
 
 	// ingressIP is an external IP which routes to the default ingress controller.
@@ -766,6 +771,7 @@ type BareMetalPlatformStatus struct {
 	//
 	// +kubebuilder:validation:Format=ip
 	// +kubebuilder:validation:MaxItems=2
+	// +listType=set
 	IngressIPs []string `json:"ingressIPs"`
 
 	// nodeDNSIP is the IP address for the internal DNS used by the
@@ -827,6 +833,7 @@ type OpenStackPlatformStatus struct {
 	//
 	// +kubebuilder:validation:Format=ip
 	// +kubebuilder:validation:MaxItems=2
+	// +listType=set
 	APIServerInternalIPs []string `json:"apiServerInternalIPs"`
 
 	// cloudName is the name of the desired OpenStack cloud in the
@@ -846,6 +853,7 @@ type OpenStackPlatformStatus struct {
 	//
 	// +kubebuilder:validation:Format=ip
 	// +kubebuilder:validation:MaxItems=2
+	// +listType=set
 	IngressIPs []string `json:"ingressIPs"`
 
 	// nodeDNSIP is the IP address for the internal DNS used by the
@@ -906,6 +914,7 @@ type OvirtPlatformStatus struct {
 	//
 	// +kubebuilder:validation:Format=ip
 	// +kubebuilder:validation:MaxItems=2
+	// +listType=set
 	APIServerInternalIPs []string `json:"apiServerInternalIPs"`
 
 	// ingressIP is an external IP which routes to the default ingress controller.
@@ -921,6 +930,7 @@ type OvirtPlatformStatus struct {
 	//
 	// +kubebuilder:validation:Format=ip
 	// +kubebuilder:validation:MaxItems=2
+	// +listType=set
 	IngressIPs []string `json:"ingressIPs"`
 
 	// deprecated: as of 4.6, this field is no longer set or honored.  It will be removed in a future release.
@@ -1021,6 +1031,7 @@ type VSpherePlatformTopology struct {
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MaxItems=1
 	// +kubebuilder:validation:MinItems=1
+	// +listType=atomic
 	Networks []string `json:"networks"`
 
 	// datastore is the absolute path of the datastore in which the
@@ -1094,6 +1105,7 @@ type VSpherePlatformVCenterSpec struct {
 	// a topology.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinItems=1
+	// +listType=set
 	Datacenters []string `json:"datacenters"`
 }
 
@@ -1107,6 +1119,7 @@ type VSpherePlatformNodeNetworkingSpec struct {
 	// that will be used in respective status.addresses fields.
 	// ---
 	// + Validation is applied via a patch, we validate the format as cidr
+	// +listType=set
 	// +optional
 	NetworkSubnetCIDR []string `json:"networkSubnetCidr,omitempty"`
 
@@ -1123,6 +1136,7 @@ type VSpherePlatformNodeNetworkingSpec struct {
 	// the IP address from the VirtualMachine's VM for use in the status.addresses fields.
 	// ---
 	// + Validation is applied via a patch, we validate the format as cidr
+	// +listType=atomic
 	// +optional
 	ExcludeNetworkSubnetCIDR []string `json:"excludeNetworkSubnetCidr,omitempty"`
 }
@@ -1148,11 +1162,14 @@ type VSpherePlatformSpec struct {
 	// + in openshift-config.
 	// +kubebuilder:validation:MaxItems=1
 	// +kubebuilder:validation:MinItems=0
+	// +listType=atomic
 	// +optional
 	VCenters []VSpherePlatformVCenterSpec `json:"vcenters,omitempty"`
 
 	// failureDomains contains the definition of region, zone and the vCenter topology.
 	// If this is omitted failure domains (regions and zones) will not be used.
+	// +listType=map
+	// +listMapKey=name
 	// +optional
 	FailureDomains []VSpherePlatformFailureDomainSpec `json:"failureDomains,omitempty"`
 
@@ -1183,6 +1200,7 @@ type VSpherePlatformStatus struct {
 	//
 	// +kubebuilder:validation:Format=ip
 	// +kubebuilder:validation:MaxItems=2
+	// +listType=set
 	APIServerInternalIPs []string `json:"apiServerInternalIPs"`
 
 	// ingressIP is an external IP which routes to the default ingress controller.
@@ -1198,6 +1216,7 @@ type VSpherePlatformStatus struct {
 	//
 	// +kubebuilder:validation:Format=ip
 	// +kubebuilder:validation:MaxItems=2
+	// +listType=set
 	IngressIPs []string `json:"ingressIPs"`
 
 	// nodeDNSIP is the IP address for the internal DNS used by the
@@ -1364,6 +1383,8 @@ type PowerVSPlatformStatus struct {
 
 	// serviceEndpoints is a list of custom endpoints which will override the default
 	// service endpoints of a Power VS service.
+	// +listType=map
+	// +listMapKey=name
 	// +optional
 	ServiceEndpoints []PowerVSServiceEndpoint `json:"serviceEndpoints,omitempty"`
 
@@ -1574,6 +1595,7 @@ type NutanixPlatformStatus struct {
 	//
 	// +kubebuilder:validation:Format=ip
 	// +kubebuilder:validation:MaxItems=2
+	// +listType=set
 	APIServerInternalIPs []string `json:"apiServerInternalIPs"`
 
 	// ingressIP is an external IP which routes to the default ingress controller.
@@ -1589,6 +1611,7 @@ type NutanixPlatformStatus struct {
 	//
 	// +kubebuilder:validation:Format=ip
 	// +kubebuilder:validation:MaxItems=2
+	// +listType=set
 	IngressIPs []string `json:"ingressIPs"`
 
 	// loadBalancer defines how the load balancer used by the cluster is configured.

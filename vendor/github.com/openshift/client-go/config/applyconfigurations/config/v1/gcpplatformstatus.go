@@ -2,13 +2,18 @@
 
 package v1
 
+import (
+	configv1 "github.com/openshift/api/config/v1"
+)
+
 // GCPPlatformStatusApplyConfiguration represents an declarative configuration of the GCPPlatformStatus type for use
 // with apply.
 type GCPPlatformStatusApplyConfiguration struct {
-	ProjectID      *string                              `json:"projectID,omitempty"`
-	Region         *string                              `json:"region,omitempty"`
-	ResourceLabels []GCPResourceLabelApplyConfiguration `json:"resourceLabels,omitempty"`
-	ResourceTags   []GCPResourceTagApplyConfiguration   `json:"resourceTags,omitempty"`
+	ProjectID        *string                              `json:"projectID,omitempty"`
+	Region           *string                              `json:"region,omitempty"`
+	ResourceLabels   []GCPResourceLabelApplyConfiguration `json:"resourceLabels,omitempty"`
+	ResourceTags     []GCPResourceTagApplyConfiguration   `json:"resourceTags,omitempty"`
+	ClusterHostedDNS *configv1.ClusterHostedDNS           `json:"clusterHostedDNS,omitempty"`
 }
 
 // GCPPlatformStatusApplyConfiguration constructs an declarative configuration of the GCPPlatformStatus type for use with
@@ -56,5 +61,13 @@ func (b *GCPPlatformStatusApplyConfiguration) WithResourceTags(values ...*GCPRes
 		}
 		b.ResourceTags = append(b.ResourceTags, *values[i])
 	}
+	return b
+}
+
+// WithClusterHostedDNS sets the ClusterHostedDNS field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ClusterHostedDNS field is set to the value of the last call.
+func (b *GCPPlatformStatusApplyConfiguration) WithClusterHostedDNS(value configv1.ClusterHostedDNS) *GCPPlatformStatusApplyConfiguration {
+	b.ClusterHostedDNS = &value
 	return b
 }

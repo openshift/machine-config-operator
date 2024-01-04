@@ -8,12 +8,7 @@ import (
 	"strings"
 	"time"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	configv1 "github.com/openshift/api/config/v1"
-
-	"k8s.io/apimachinery/pkg/util/sets"
-
 	configv1client "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
 	v1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
 	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
@@ -22,6 +17,8 @@ import (
 	"github.com/openshift/library-go/pkg/operator/status"
 	operatorv1helpers "github.com/openshift/library-go/pkg/operator/v1helpers"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 const FeatureVersionName = "feature-gates"
@@ -40,7 +37,9 @@ type FeatureGateController struct {
 }
 
 // NewController returns a new FeatureGateController.
-func NewFeatureGateController(operatorClient operatorv1helpers.OperatorClient,
+func NewFeatureGateController(
+	featureGateDetails map[configv1.FeatureSet]*configv1.FeatureGateEnabledDisabled,
+	operatorClient operatorv1helpers.OperatorClient,
 	processVersion string,
 	featureGatesClient configv1client.FeatureGatesGetter, featureGatesInformer v1.FeatureGateInformer,
 	clusterVersionInformer v1.ClusterVersionInformer,
@@ -51,7 +50,7 @@ func NewFeatureGateController(operatorClient operatorv1helpers.OperatorClient,
 		featureGatesClient:   featureGatesClient,
 		featureGatesLister:   featureGatesInformer.Lister(),
 		clusterVersionLister: clusterVersionInformer.Lister(),
-		featureSetMap:        configv1.FeatureSets,
+		featureSetMap:        featureGateDetails,
 		versionRecorder:      versionRecorder,
 		eventRecorder:        eventRecorder,
 	}
