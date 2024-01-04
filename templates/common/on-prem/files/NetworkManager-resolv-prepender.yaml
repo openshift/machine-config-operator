@@ -10,18 +10,22 @@ contents:
 
     function resolv_prepender {
       mkdir -p /run/resolv-prepender
-      echo "DHCP6_FQDN_FQDN=$DHCP6_FQDN_FQDN" > /run/resolv-prepender/env
-      echo "IP4_DOMAINS=$IP4_DOMAINS" >> /run/resolv-prepender/env
-      echo "IP6_DOMAINS=$IP6_DOMAINS" >> /run/resolv-prepender/env
-      systemctl start on-prem-resolv-prepender
-      # Wait for the service to complete so we don't mark the network up too soon
-      while systemctl is-active on-prem-resolv-prepender
-      do
-        sleep 1
-      done
+      echo "IP4_DOMAINS=$IP4_DOMAINS" > /run/resolv-prepender/env.new
+      echo "IP6_DOMAINS=$IP6_DOMAINS" >> /run/resolv-prepender/env.new
+      # If we changed the environment, we should restart the service to pick up the
+      # new values. However, if the image hasn't been pulled successfully yet we can't
+      # restart the service or we may interrupt the pull and end up with a corrupt image.
+      # We're better off with incorrect search domains for a while than wedging the
+      # system with a bad image.
+      if ! diff -q /run/resolv-prepender/env /run/resolv-prepender/env.new && /usr/bin/podman image exists {{ .Images.baremetalRuntimeCfgImage }}; then
+        >&2 echo "NM resolv-prepender: Environment variable(s) changed. Restarting service."
+        systemctl is-active on-prem-resolv-prepender && systemctl kill on-prem-resolv-prepender
+      fi
+      mv -f /run/resolv-prepender/env.new /run/resolv-prepender/env
+      systemctl start --no-block on-prem-resolv-prepender
     }
 
-    export DHCP6_FQDN_FQDN IP4_DOMAINS IP6_DOMAINS
+    export IP4_DOMAINS IP6_DOMAINS
     export -f resolv_prepender
     # Given an overall Network Manager dispatcher timeout of 90 seconds, and multiple events which
     # may occur within this time period, we must enforce a time limit for each event. As some
@@ -33,6 +37,16 @@ contents:
         if ! timeout 30s bash -c resolv_prepender; then
             >&2 echo "NM resolv-prepender: Timeout occurred"
             exit 1
+        fi
+        # If $DHCP6_FQDN_FQDN is not empty and is not localhost.localdomain and static hostname was not already set
+        if [[ -n "$DHCP6_FQDN_FQDN" && "$DHCP6_FQDN_FQDN" != "localhost.localdomain" && "$DHCP6_FQDN_FQDN" =~ "." ]] ; then
+           STATIC_HOSTNAME="$(test ! -e /etc/hostname && echo -n || cat /etc/hostname | xargs)"
+
+           if [[ -z "$STATIC_HOSTNAME" || "$STATIC_HOSTNAME" == "localhost.localdomain" ]] ; then
+              # run with systemd-run to avoid selinux problems
+              systemd-run --property=Type=oneshot --unit resolve-prepender-hostnamectl -Pq \
+                  hostnamectl set-hostname --static --transient $DHCP6_FQDN_FQDN
+           fi
         fi
       ;;
       *)
