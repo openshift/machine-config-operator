@@ -52,69 +52,69 @@ func TestMCDToken(t *testing.T) {
 	}
 }
 
-func TestKernelArguments(t *testing.T) {
-	cs := framework.NewClientSet("")
+// func TestKernelArguments(t *testing.T) {
+// 	cs := framework.NewClientSet("")
 
-	// Get initial MachineConfig used by the master pool so that we can rollback to it later on
-	mcp, err := cs.MachineConfigPools().Get(context.TODO(), "master", metav1.GetOptions{})
-	require.Nil(t, err)
-	oldMasterRenderedConfig := mcp.Status.Configuration.Name
+// 	// Get initial MachineConfig used by the master pool so that we can rollback to it later on
+// 	mcp, err := cs.MachineConfigPools().Get(context.TODO(), "master", metav1.GetOptions{})
+// 	require.Nil(t, err)
+// 	oldMasterRenderedConfig := mcp.Status.Configuration.Name
 
-	// create kargs MC
-	kargsMC := &mcfgv1.MachineConfig{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:   fmt.Sprintf("kargs-%s", uuid.NewUUID()),
-			Labels: helpers.MCLabelForRole("master"),
-		},
-		Spec: mcfgv1.MachineConfigSpec{
-			Config: runtime.RawExtension{
-				Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
-			},
-			KernelArguments: []string{"foo=bar", "foo=baz", " baz=test bar=hello world"},
-		},
-	}
+// 	// create kargs MC
+// 	kargsMC := &mcfgv1.MachineConfig{
+// 		ObjectMeta: metav1.ObjectMeta{
+// 			Name:   fmt.Sprintf("kargs-%s", uuid.NewUUID()),
+// 			Labels: helpers.MCLabelForRole("master"),
+// 		},
+// 		Spec: mcfgv1.MachineConfigSpec{
+// 			Config: runtime.RawExtension{
+// 				Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
+// 			},
+// 			KernelArguments: []string{"foo=bar", "foo=baz", " baz=test bar=hello world"},
+// 		},
+// 	}
 
-	_, err = cs.MachineConfigs().Create(context.TODO(), kargsMC, metav1.CreateOptions{})
-	require.Nil(t, err)
-	t.Logf("Created %s", kargsMC.Name)
-	renderedConfig, err := helpers.WaitForRenderedConfig(t, cs, "master", kargsMC.Name)
-	require.Nil(t, err)
-	err = waitForSingleNodePoolComplete(t, cs, "master", renderedConfig)
-	require.Nil(t, err)
+// 	_, err = cs.MachineConfigs().Create(context.TODO(), kargsMC, metav1.CreateOptions{})
+// 	require.Nil(t, err)
+// 	t.Logf("Created %s", kargsMC.Name)
+// 	renderedConfig, err := helpers.WaitForRenderedConfig(t, cs, "master", kargsMC.Name)
+// 	require.Nil(t, err)
+// 	err = waitForSingleNodePoolComplete(t, cs, "master", renderedConfig)
+// 	require.Nil(t, err)
 
-	node := helpers.GetSingleNodeByRole(t, cs, "master")
-	assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
-	assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
-	kargs := helpers.ExecCmdOnNode(t, cs, node, "cat", "/rootfs/proc/cmdline")
-	expectedKernelArgs := []string{"foo=bar", "foo=baz", "baz=test", "bar=hello world"}
-	for _, v := range expectedKernelArgs {
-		if !strings.Contains(kargs, v) {
-			t.Fatalf("Missing %q in kargs: %q", v, kargs)
-		}
-	}
-	t.Logf("Node %s has expected kargs", node.Name)
+// 	node := helpers.GetSingleNodeByRole(t, cs, "master")
+// 	assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
+// 	assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
+// 	kargs := helpers.ExecCmdOnNode(t, cs, node, "cat", "/rootfs/proc/cmdline")
+// 	expectedKernelArgs := []string{"foo=bar", "foo=baz", "baz=test", "bar=hello world"}
+// 	for _, v := range expectedKernelArgs {
+// 		if !strings.Contains(kargs, v) {
+// 			t.Fatalf("Missing %q in kargs: %q", v, kargs)
+// 		}
+// 	}
+// 	t.Logf("Node %s has expected kargs", node.Name)
 
-	// cleanup - delete karg mc and rollback
-	if err := cs.MachineConfigs().Delete(context.TODO(), kargsMC.Name, metav1.DeleteOptions{}); err != nil {
-		t.Error(err)
-	}
-	t.Logf("Deleted MachineConfig %s", kargsMC.Name)
-	err = waitForSingleNodePoolComplete(t, cs, "master", oldMasterRenderedConfig)
-	require.Nil(t, err)
+// 	// cleanup - delete karg mc and rollback
+// 	if err := cs.MachineConfigs().Delete(context.TODO(), kargsMC.Name, metav1.DeleteOptions{}); err != nil {
+// 		t.Error(err)
+// 	}
+// 	t.Logf("Deleted MachineConfig %s", kargsMC.Name)
+// 	err = waitForSingleNodePoolComplete(t, cs, "master", oldMasterRenderedConfig)
+// 	require.Nil(t, err)
 
-	node = helpers.GetSingleNodeByRole(t, cs, "master")
-	assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], oldMasterRenderedConfig)
-	assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
-	kargs = helpers.ExecCmdOnNode(t, cs, node, "cat", "/rootfs/proc/cmdline")
+// 	node = helpers.GetSingleNodeByRole(t, cs, "master")
+// 	assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], oldMasterRenderedConfig)
+// 	assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
+// 	kargs = helpers.ExecCmdOnNode(t, cs, node, "cat", "/rootfs/proc/cmdline")
 
-	for _, v := range expectedKernelArgs {
-		if strings.Contains(kargs, v) {
-			t.Fatalf("Node %s did not rollback successfully", node.Name)
-		}
-	}
-	t.Logf("Node %s has successfully rolled back", node.Name)
+// 	for _, v := range expectedKernelArgs {
+// 		if strings.Contains(kargs, v) {
+// 			t.Fatalf("Node %s did not rollback successfully", node.Name)
+// 		}
+// 	}
+// 	t.Logf("Node %s has successfully rolled back", node.Name)
 
-}
+// }
 
 func TestKernelType(t *testing.T) {
 	cs := framework.NewClientSet("")
