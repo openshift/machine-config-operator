@@ -18,6 +18,7 @@ require (
 	github.com/coreos/ignition v0.35.0
 	github.com/coreos/ignition/v2 v2.15.0
 	github.com/coreos/rpmostree-client-go v0.0.0-20230914135003-fae0786302f7
+	github.com/coreos/stream-metadata-go v0.4.3
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
 	github.com/fsnotify/fsnotify v1.6.0
 	github.com/ghodss/yaml v1.0.1-0.20190212211648-25d852aebe32
