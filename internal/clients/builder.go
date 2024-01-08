@@ -6,6 +6,7 @@ import (
 	buildclientset "github.com/openshift/client-go/build/clientset/versioned"
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
 	imageclientset "github.com/openshift/client-go/image/clientset/versioned"
+	mapiclientset "github.com/openshift/client-go/machine/clientset/versioned"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	operatorclientset "github.com/openshift/client-go/operator/clientset/versioned"
 	apiext "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
@@ -64,6 +65,11 @@ func (cb *Builder) BuildClientOrDie(name string) buildclientset.Interface {
 
 func (cb *Builder) ImageClientOrDie(name string) imageclientset.Interface {
 	return imageclientset.NewForConfigOrDie(rest.AddUserAgent(cb.config, name))
+}
+
+// MachineClientOrDie returns the machine api client interface for machine api objects.
+func (cb *Builder) MachineClientOrDie(name string) mapiclientset.Interface {
+	return mapiclientset.NewForConfigOrDie(rest.AddUserAgent(cb.config, name))
 }
 
 // GetBuilderConfig returns a copy of the builders *rest.Config
