@@ -298,6 +298,69 @@ func TestCloudConfigFlag(t *testing.T) {
 	}
 }
 
+func TestCredentialProviderConfigFlag(t *testing.T) {
+	dummyTemplate := []byte(`{{credentialProviderConfigFlag .}}`)
+
+	testCases := []struct {
+		platform configv1.PlatformType
+		res      string
+	}{
+		{
+			platform: configv1.AWSPlatformType,
+			res:      "--image-credential-provider-bin-dir=/usr/libexec/kubelet-image-credential-provider-plugins --image-credential-provider-config=/etc/kubernetes/credential-providers/ecr-credential-provider.yaml",
+		},
+		{
+			platform: configv1.AzurePlatformType,
+			res:      "",
+		},
+		{
+			platform: configv1.GCPPlatformType,
+			res:      "",
+		},
+		{
+			platform: configv1.VSpherePlatformType,
+			res:      "",
+		},
+		{
+			platform: configv1.OpenStackPlatformType,
+			res:      "",
+		},
+		{
+			platform: configv1.BareMetalPlatformType,
+			res:      "",
+		},
+	}
+
+	for idx, c := range testCases {
+		name := fmt.Sprintf("case #%d: %s", idx, c.platform)
+		t.Run(name, func(t *testing.T) {
+			config := &mcfgv1.ControllerConfig{
+				Spec: mcfgv1.ControllerConfigSpec{
+					Infra: &configv1.Infrastructure{
+						Status: configv1.InfrastructureStatus{
+							Platform: c.platform,
+							PlatformStatus: &configv1.PlatformStatus{
+								Type: c.platform,
+							},
+						},
+					},
+				},
+			}
+
+			fgAccess := featuregates.NewHardcodedFeatureGateAccess(nil, nil)
+
+			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, `{"dummy":"dummy"}`, fgAccess, nil}, name, dummyTemplate)
+			if err != nil {
+				t.Fatalf("expected nil error %v", err)
+			}
+
+			if string(got) != c.res {
+				t.Fatalf("mismatch got: %s want: %s", got, c.res)
+			}
+		})
+	}
+}
+
 func TestSkipMissing(t *testing.T) {
 	dummyTemplate := `{{skip "%s"}}`
 

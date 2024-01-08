@@ -326,6 +326,7 @@ func renderTemplate(config RenderConfig, path string, b []byte) ([]byte, error) 
 	funcs["skip"] = skipMissing
 	funcs["cloudProvider"] = cloudProvider
 	funcs["cloudConfigFlag"] = cloudConfigFlag
+	funcs["credentialProviderConfigFlag"] = credentialProviderConfigFlag
 	funcs["onPremPlatformAPIServerInternalIP"] = onPremPlatformAPIServerInternalIP
 	funcs["onPremPlatformAPIServerInternalIPs"] = onPremPlatformAPIServerInternalIPs
 	funcs["onPremPlatformIngressIP"] = onPremPlatformIngressIP
@@ -428,6 +429,33 @@ func cloudConfigFlag(cfg RenderConfig) interface{} {
 	switch cfg.Infra.Status.PlatformStatus.Type {
 	case configv1.AWSPlatformType, configv1.AzurePlatformType, configv1.GCPPlatformType, configv1.OpenStackPlatformType, configv1.VSpherePlatformType:
 		return flag
+	default:
+		return ""
+	}
+}
+
+// Process the {{credentialProviderConfigFlag .}}
+// On supported platforms, this returns the `--image-credential-provider` flags for Kubelet.
+// This will point to the bin dir containing the binaries and the appropriate config for
+// the platform.
+func credentialProviderConfigFlag(cfg RenderConfig) interface{} {
+	if cfg.Infra == nil {
+		cfg.Infra = &configv1.Infrastructure{
+			Status: configv1.InfrastructureStatus{},
+		}
+	}
+
+	if cfg.Infra.Status.PlatformStatus == nil {
+		cfg.Infra.Status.PlatformStatus = &configv1.PlatformStatus{
+			Type: "",
+		}
+	}
+
+	credentialProviderBinDirFlag := "--image-credential-provider-bin-dir=/usr/libexec/kubelet-image-credential-provider-plugins"
+	credentialProviderConfigFlag := "--image-credential-provider-config=/etc/kubernetes/credential-providers/"
+	switch cfg.Infra.Status.PlatformStatus.Type {
+	case configv1.AWSPlatformType:
+		return fmt.Sprintf("%s %s%s", credentialProviderBinDirFlag, credentialProviderConfigFlag, "ecr-credential-provider.yaml")
 	default:
 		return ""
 	}
