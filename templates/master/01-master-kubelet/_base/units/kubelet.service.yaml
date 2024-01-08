@@ -37,6 +37,7 @@ contents: |
         --cloud-provider={{cloudProvider .}} \
         --volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec \
         {{cloudConfigFlag . }} \
+        {{credentialProviderConfigFlag . }} \
         --hostname-override=${KUBELET_NODE_NAME} \
         --provider-id=${KUBELET_PROVIDERID} \
         --register-with-taints=node-role.kubernetes.io/master=:NoSchedule \
