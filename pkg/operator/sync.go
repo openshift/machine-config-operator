@@ -550,6 +550,12 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 		return err
 	}
 
+	apiIntBundle, err := optr.getCAsFromConfigMap("openshift-config-managed", "kube-apiserver-server-ca", "ca-bundle.crt")
+	if err != nil {
+		return err
+	}
+
+	spec.InternalAPICert = apiIntBundle
 	spec.KubeAPIServerServingCAData = kubeAPIServerServingCABytes
 	spec.RootCAData = bundle
 	spec.ImageRegistryBundleData = imgRegistryData
@@ -700,7 +706,7 @@ func (optr *Operator) syncMachineConfigPools(config *renderConfig) error {
 func (optr *Operator) syncMachineConfigNodes(_ *renderConfig) error {
 	fg, err := optr.fgAccessor.CurrentFeatureGates()
 	if err != nil {
-		klog.Errorf("Could not get fg: %w", err)
+		klog.Errorf("Could not get fg: %v", err)
 		return err
 	}
 	if !fg.Enabled(configv1.FeatureGateMachineConfigNodes) {
@@ -740,7 +746,7 @@ func (optr *Operator) syncMachineConfigNodes(_ *renderConfig) error {
 		}
 		mcsBytes, err := json.Marshal(newMCS)
 		if err != nil {
-			klog.Errorf("error rendering asset for MachineConfigNode %w", err)
+			klog.Errorf("error rendering asset for MachineConfigNode %v", err)
 			return err
 		}
 		p := mcoResourceRead.ReadMachineConfigNodeV1OrDie(mcsBytes)

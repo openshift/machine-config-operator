@@ -535,6 +535,13 @@ func WaitForMCDToSyncCert(t *testing.T, cs *framework.ClientSet, node corev1.Nod
 	return nil
 }
 
+func ForceLoadBalancerCertificateRotation(cs *framework.ClientSet) error {
+	// Take note that the slash had to be encoded as ~1 because it's a reference: https://www.rfc-editor.org/rfc/rfc6901#section-3
+	certPatch := fmt.Sprintf(`[{"op":"replace","path":"/metadata/annotations/auth.openshift.io~1certificate-not-after","value": null }]`)
+	_, err := cs.Secrets("openshift-kube-apiserver-operator").Patch(context.TODO(), "loadbalancer-serving-signer", types.JSONPatchType, []byte(certPatch), metav1.PatchOptions{})
+	return err
+}
+
 // ForceKubeApiserverCertificateRotation sets the kube-apiserver-to-kubelet-signer's not-after date to nil, which causes the
 // apiserver to rotate it
 func ForceKubeApiserverCertificateRotation(cs *framework.ClientSet) error {
@@ -555,6 +562,17 @@ func ForceImageRegistryCertRotationCertificateRotation(cs *framework.ClientSet) 
 	certPatch := fmt.Sprintf(`[{"op":"replace","path":"/metadata/annotations/auth.openshift.io~1certificate-not-after","value": null }]`)
 	_, err = cs.Secrets("openshift-config").Patch(context.TODO(), cfg.Spec.AdditionalTrustedCA.Name, types.JSONPatchType, []byte(certPatch), metav1.PatchOptions{})
 	return err
+}
+
+func GetInternalAPICABundleFromConfigmap(cs *framework.ClientSet) (string, error) {
+	certBundle, err := cs.ConfigMaps("openshift-config-managed").Get(context.TODO(), "kube-apiserver-server-ca", metav1.GetOptions{})
+	if err != nil {
+		return "", fmt.Errorf("Could not get in-cluster kube-apiserver-server-ca configmap")
+	}
+	if cert, ok := certBundle.Data["ca-bundle.crt"]; ok {
+		return cert, nil
+	}
+	return "", fmt.Errorf("Could not find ca-bundle")
 }
 
 // GetKubeletCABundleFromConfigmap fetches the latest kubelet ca bundle data from

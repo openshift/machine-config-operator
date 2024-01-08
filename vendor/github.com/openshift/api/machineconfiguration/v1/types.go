@@ -100,6 +100,10 @@ type ControllerConfigSpec struct {
 	// +nullable
 	InternalRegistryPullSecret []byte `json:"internalRegistryPullSecret"`
 
+	// InternalAPICert is used to generate and update /etc/kubelet/kubeconfig
+	// +kubebuilder:validation:Required
+	InternalAPICert []byte `json:"internalAPICert"`
+
 	// images is map of images that are used by the controller to render templates under ./templates/
 	// +kubebuilder:validation:Required
 	Images map[string]string `json:"images"`

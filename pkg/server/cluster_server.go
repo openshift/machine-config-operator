@@ -27,6 +27,7 @@ const (
 	caBundleFilePath    = "/etc/kubernetes/kubelet-ca.crt"
 	cloudProviderCAPath = "/etc/kubernetes/static-pod-resources/configmaps/cloud-config/ca-bundle.pem"
 	additionalCAPath    = "/etc/pki/ca-trust/source/anchors/openshift-config-user-ca-bundle.crt"
+	kubeConfigFilePAth  = "/etc/kubernetes/kubeconfig"
 )
 
 // ensure clusterServer implements the
@@ -134,6 +135,8 @@ func (cs *clusterServer) GetConfig(cr poolRequest) (*runtime.RawExtension, error
 		return nil, fmt.Errorf("failed to migrate kernel args %w", err)
 	}
 
+	// what path is this? What do we do with this data?
+	addDataAndMaybeAppendToIgnition(kubeConfigFilePAth, cc.Spec.InternalAPICert, &ignConf)
 	addDataAndMaybeAppendToIgnition(caBundleFilePath, cc.Spec.KubeAPIServerServingCAData, &ignConf)
 	addDataAndMaybeAppendToIgnition(cloudProviderCAPath, cc.Spec.CloudProviderCAData, &ignConf)
 	appenders := getAppenders(currConf, cr.version, cs.kubeconfigFunc, []string{}, "")

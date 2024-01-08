@@ -429,13 +429,14 @@ func (ctrl *Controller) handleErr(err error, key interface{}) {
 func updateControllerConfigCerts(config *mcfgv1.ControllerConfig) bool {
 	modified := false
 	names := []string{
-		"KubeAPIServerServingCAData", "CloudProviderCAData", "RootCAData", "AdditionalTrustBundle",
+		"KubeAPIServerServingCAData", "CloudProviderCAData", "RootCAData", "AdditionalTrustBundle", "KubeConfigData",
 	}
 	certs := [][]byte{
 		config.Spec.KubeAPIServerServingCAData,
 		config.Spec.CloudProviderCAData,
 		config.Spec.RootCAData,
 		config.Spec.AdditionalTrustBundle,
+		config.Spec.InternalAPICert,
 	}
 	newImgCerts := []v1.ControllerCertificate{}
 	newCtrlCerts := []v1.ControllerCertificate{}

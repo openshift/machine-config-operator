@@ -970,6 +970,47 @@ func TestMCDRotatesCerts(t *testing.T) {
 	require.Nil(t, err)
 
 }
+func TestMCDRotatesKCCerts(t *testing.T) {
+	var testPool = "master"
+
+	cs := framework.NewClientSet("")
+
+	// Rotate the certificates
+	controllerConfig, err := cs.ControllerConfigs().Get(context.TODO(), "machine-config-controller", metav1.GetOptions{})
+	require.Nil(t, err)
+
+	oldData := ""
+	for _, cert := range controllerConfig.Status.ControllerCertificates {
+		if cert.BundleFile == "KubeConfigData" {
+			oldData = cert.Subject
+		}
+	}
+	t.Logf("Patching certificate")
+	err = helpers.ForceLoadBalancerCertificateRotation(cs)
+	require.Nil(t, err)
+	t.Logf("Patched")
+
+	// Get the on-disk state for the cert
+	nodes, err := helpers.GetNodesByRole(cs, testPool)
+	require.NotEmpty(t, nodes)
+	selectedNode := nodes[0]
+	controllerConfig, err = cs.ControllerConfigs().Get(context.TODO(), "machine-config-controller", metav1.GetOptions{})
+	require.Nil(t, err)
+	err = helpers.WaitForMCDToSyncCert(t, cs, selectedNode, controllerConfig.ResourceVersion)
+	require.Nil(t, err)
+
+	if err := wait.PollImmediate(5*time.Second, 15*time.Second, func() (bool, error) {
+		inClusterCert, err := helpers.GetInternalAPICABundleFromConfigmap(cs)
+		require.Nil(t, err)
+		onDiskCert := helpers.ExecCmdOnNode(t, cs, selectedNode, "cat", "/etc/kubernetes/kubeconfig")
+		return (onDiskCert == inClusterCert), nil
+	}); err != nil {
+		t.Errorf("Mismatch between on disk cert and in cluster cert: %v", err)
+	}
+
+	err = helpers.WaitForCertStatusToChange(t, cs, oldData)
+	require.Nil(t, err)
+}
 
 func TestFirstBootHasSSHKeys(t *testing.T) {
 	cs := framework.NewClientSet("")
