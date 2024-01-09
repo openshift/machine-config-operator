@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"net/url"
 	"os"
@@ -52,6 +53,7 @@ func init() {
 	startCmd.PersistentFlags().StringVar(&startOpts.promMetricsURL, "metrics-url", "127.0.0.1:8797", "URL for prometheus metrics listener")
 }
 
+//nolint:gocritic
 func runStartCmd(_ *cobra.Command, _ []string) {
 	flag.Set("logtostderr", "true")
 	flag.Parse()
@@ -89,6 +91,9 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 	// a <-chan in Run() for the main thread to listen on.
 	exitCh := make(chan error)
 	defer close(exitCh)
+
+	errCh := make(chan error)
+	defer close(errCh)
 
 	dn, err := daemon.New(
 		exitCh,
@@ -187,6 +192,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 
 	ctrlctx.ConfigInformerFactory.Start(ctrlctx.Stop)
 	ctrlctx.KubeInformerFactory.Start(stopCh)
+	ctrlctx.KubeNamespacedInformerFactory.Start(stopCh)
 	ctrlctx.InformerFactory.Start(stopCh)
 	close(ctrlctx.InformersStarted)
 
@@ -202,7 +208,16 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		klog.Fatalf("Could not get FG, timed out: %v", err)
 	}
 
-	if err := dn.Run(stopCh, exitCh); err != nil {
+	if err := dn.Run(stopCh, exitCh, errCh); err != nil {
 		ctrlcommon.WriteTerminationError(err)
+		if errors.Is(err, daemon.ErrAuxiliary) {
+			dn.CancelSIGTERM()
+			dn.Close()
+			cancel()
+			close(errCh)
+			close(exitCh)
+			os.Exit(255)
+		}
 	}
+
 }

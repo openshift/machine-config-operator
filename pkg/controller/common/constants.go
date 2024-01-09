@@ -73,4 +73,9 @@ const (
 
 	// MCOReleaseImageVersionKey is the key for indexing the MCO release version stored in the bootimages configmap
 	MCOReleaseImageVersionKey = "MCOReleaseImageVersion"
+
+	ServiceCARotateAnnotation = "machineconfiguration.openshift.io/service-ca-rotate"
+
+	ServiceCARotateTrue  = "true"
+	ServiceCARotateFalse = "false"
 )

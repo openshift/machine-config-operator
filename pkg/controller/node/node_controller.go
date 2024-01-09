@@ -195,6 +195,7 @@ func newController(
 		UpdateFunc: ctrl.checkMasterNodesOnUpdate,
 		DeleteFunc: ctrl.checkMasterNodesOnDelete,
 	})
+
 	ctrl.syncHandler = ctrl.syncMachineConfigPool
 	ctrl.enqueueMachineConfigPool = ctrl.enqueueDefault
 

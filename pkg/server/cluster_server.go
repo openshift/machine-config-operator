@@ -11,12 +11,16 @@ import (
 
 	yaml "github.com/ghodss/yaml"
 	mcfginformers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
+
 	"github.com/openshift/machine-config-operator/internal/clients"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/informers"
+	corelisterv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	clientcmdv1 "k8s.io/client-go/tools/clientcmd/api/v1"
+	"k8s.io/klog/v2"
 
 	v1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 )
@@ -37,6 +41,7 @@ type clusterServer struct {
 	machineConfigPoolLister v1.MachineConfigPoolLister
 	machineConfigLister     v1.MachineConfigLister
 	controllerConfigLister  v1.ControllerConfigLister
+	configMapLister         corelisterv1.ConfigMapLister
 
 	kubeconfigFunc kubeconfigFunc
 }
@@ -66,22 +71,27 @@ func NewClusterServer(kubeConfig, apiserverURL string) (Server, error) {
 	}
 
 	machineConfigClient := clientsBuilder.MachineConfigClientOrDie("machine-config-shared-informer")
+	kubeClient := clientsBuilder.KubeClientOrDie("kube-client-shared-informer")
 	sharedInformerFactory := mcfginformers.NewSharedInformerFactory(machineConfigClient, resyncPeriod()())
+	kubeNamespacedSharedInformer := informers.NewFilteredSharedInformerFactory(kubeClient, resyncPeriod()(), "openshift-machine-config-operator", nil)
 
-	mcpInformer, mcInformer, ccInformer :=
+	mcpInformer, mcInformer, ccInformer, cmInformer :=
 		sharedInformerFactory.Machineconfiguration().V1().MachineConfigPools(),
 		sharedInformerFactory.Machineconfiguration().V1().MachineConfigs(),
-		sharedInformerFactory.Machineconfiguration().V1().ControllerConfigs()
-	mcpLister, mcLister, ccLister := mcpInformer.Lister(), mcInformer.Lister(), ccInformer.Lister()
-	mcpListerHasSynced, mcListerHasSynced, ccListerHasSynced :=
+		sharedInformerFactory.Machineconfiguration().V1().ControllerConfigs(),
+		kubeNamespacedSharedInformer.Core().V1().ConfigMaps()
+	mcpLister, mcLister, ccLister, cmLister := mcpInformer.Lister(), mcInformer.Lister(), ccInformer.Lister(), cmInformer.Lister()
+	mcpListerHasSynced, mcListerHasSynced, ccListerHasSynced, cmListerHasSynced :=
 		mcpInformer.Informer().HasSynced,
 		mcInformer.Informer().HasSynced,
-		ccInformer.Informer().HasSynced
+		ccInformer.Informer().HasSynced,
+		cmInformer.Informer().HasSynced
 
 	var informerStopCh chan struct{}
 	go sharedInformerFactory.Start(informerStopCh)
+	go kubeNamespacedSharedInformer.Start(informerStopCh)
 
-	if !cache.WaitForCacheSync(informerStopCh, mcpListerHasSynced, mcListerHasSynced, ccListerHasSynced) {
+	if !cache.WaitForCacheSync(informerStopCh, mcpListerHasSynced, mcListerHasSynced, ccListerHasSynced, cmListerHasSynced) {
 		return nil, errors.New("failed to wait for cache sync")
 	}
 
@@ -89,6 +99,7 @@ func NewClusterServer(kubeConfig, apiserverURL string) (Server, error) {
 		machineConfigPoolLister: mcpLister,
 		machineConfigLister:     mcLister,
 		controllerConfigLister:  ccLister,
+		configMapLister:         cmLister,
 		kubeconfigFunc:          func() ([]byte, []byte, error) { return kubeconfigFromSecret(bootstrapTokenDir, apiserverURL) },
 	}, nil
 }
@@ -127,6 +138,19 @@ func (cs *clusterServer) GetConfig(cr poolRequest) (*runtime.RawExtension, error
 	cc, err := cs.controllerConfigLister.Get(ctrlcommon.ControllerConfigName)
 	if err != nil {
 		return nil, fmt.Errorf("could not get controllerconfig: %w", err)
+	}
+
+	// we cannot mock this in a test env
+	if cs.configMapLister != nil {
+		cm, err := cs.configMapLister.ConfigMaps(ctrlcommon.MCONamespace).Get("kubeconfig-data")
+		if err != nil {
+			klog.Errorf("Could not get kubeconfig data: %v", err)
+		} else {
+			if kc, ok := cm.BinaryData["kubeconfig"]; ok {
+				addDataAndMaybeAppendToIgnition(defaultMachineKubeConfPath, kc, &ignConf)
+				cs.kubeconfigFunc = nil
+			}
+		}
 	}
 
 	// strip the kargs out if we're going back to a version that doesn't support it
