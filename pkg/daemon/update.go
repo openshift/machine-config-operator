@@ -492,7 +492,7 @@ func (dn *Daemon) updateOnClusterBuild(oldConfig, newConfig *mcfgv1.MachineConfi
 	defer func() {
 		// now that we do rebootless updates, we need to turn off our SIGTERM protection
 		// regardless of how we leave the "update loop"
-		dn.cancelSIGTERM()
+		dn.CancelSIGTERM()
 	}()
 
 	oldConfigName := oldConfig.GetName()
@@ -658,7 +658,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	defer func() {
 		// now that we do rebootless updates, we need to turn off our SIGTERM protection
 		// regardless of how we leave the "update loop"
-		dn.cancelSIGTERM()
+		dn.CancelSIGTERM()
 	}()
 
 	oldConfigName := oldConfig.GetName()
@@ -2364,7 +2364,7 @@ func (dn *Daemon) catchIgnoreSIGTERM() {
 	dn.updateActive = true
 }
 
-func (dn *Daemon) cancelSIGTERM() {
+func (dn *Daemon) CancelSIGTERM() {
 	dn.updateActiveLock.Lock()
 	defer dn.updateActiveLock.Unlock()
 	if dn.updateActive {
@@ -2378,7 +2378,7 @@ func (dn *Daemon) cancelSIGTERM() {
 // on failure to reboot, it throws an error and waits for the operator to try again
 func (dn *Daemon) reboot(rationale string) error {
 	// Now that everything is done, avoid delaying shutdown.
-	dn.cancelSIGTERM()
+	dn.CancelSIGTERM()
 	dn.Close()
 
 	if dn.skipReboot {

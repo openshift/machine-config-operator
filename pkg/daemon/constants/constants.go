@@ -34,7 +34,8 @@ const (
 	OpenShiftOperatorManagedLabel = "openshift.io/operator-managed"
 	// ControllerConfigResourceVersionKey is used for the certificate writer to indicate the last controllerconfig object it synced upon
 	ControllerConfigResourceVersionKey = "machineconfiguration.openshift.io/lastSyncedControllerConfigResourceVersion"
-
+	// ControllerConfigSyncServerCA is used to determine if we have already synced the server CA for this version of the controller config
+	ControllerConfigSyncServerCA = "machineconfiguration.openshift.io/lastObservedServerCAAnnotation"
 	// GeneratedByVersionAnnotationKey is used to tag the controllerconfig to synchronize the MCO and MCC
 	GeneratedByVersionAnnotationKey = "machineconfiguration.openshift.io/generated-by-version"
 

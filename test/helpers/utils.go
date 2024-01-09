@@ -781,6 +781,13 @@ func ExecCmdOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, subA
 	cmd.Stderr = os.Stderr
 
 	out, err := cmd.Output()
+	if err != nil {
+		// common err is that the mcd went down mid cmd. Re-try for good measure
+		cmd, err = execCmdOnNode(cs, node, subArgs...)
+		require.Nil(t, err, "could not prepare to exec cmd %v on node %s: %s", subArgs, node.Name, err)
+		out, err = cmd.Output()
+
+	}
 	require.Nil(t, err, "failed to exec cmd %v on node %s: %s", subArgs, node.Name, string(out))
 	return string(out)
 }
