@@ -15,7 +15,6 @@ import (
 
 	osev1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	v1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
@@ -437,8 +436,8 @@ func updateControllerConfigCerts(config *mcfgv1.ControllerConfig) bool {
 		config.Spec.RootCAData,
 		config.Spec.AdditionalTrustBundle,
 	}
-	newImgCerts := []v1.ControllerCertificate{}
-	newCtrlCerts := []v1.ControllerCertificate{}
+	newImgCerts := []mcfgv1.ControllerCertificate{}
+	newCtrlCerts := []mcfgv1.ControllerCertificate{}
 	for i, cert := range certs {
 		certs := createNewCert(cert, names[i])
 		if len(certs) > 0 {
@@ -486,8 +485,8 @@ func updateControllerConfigCerts(config *mcfgv1.ControllerConfig) bool {
 	return modified
 }
 
-func createNewCert(cert []byte, name string) []v1.ControllerCertificate {
-	certs := []v1.ControllerCertificate{}
+func createNewCert(cert []byte, name string) []mcfgv1.ControllerCertificate {
+	certs := []mcfgv1.ControllerCertificate{}
 	for len(cert) > 0 {
 		b, next := pem.Decode(cert)
 		if b == nil {
@@ -500,7 +499,7 @@ func createNewCert(cert []byte, name string) []v1.ControllerCertificate {
 			continue
 		}
 		cert = next
-		certs = append(certs, v1.ControllerCertificate{
+		certs = append(certs, mcfgv1.ControllerCertificate{
 			Subject:    c.Subject.String(),
 			Signer:     c.Issuer.String(),
 			BundleFile: name,
