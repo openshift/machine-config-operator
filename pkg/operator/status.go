@@ -20,7 +20,6 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/klog/v2"
 
-	v1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/helpers"
@@ -370,7 +369,7 @@ func (optr *Operator) syncMetrics() error {
 	// set metrics per pool, we need to get the latest condition to log for the state
 	var latestTime metav1.Time
 	latestTime.Time = time.Time{}
-	var cond v1.MachineConfigPoolCondition
+	var cond mcfgv1.MachineConfigPoolCondition
 	for _, pool := range pools {
 		for _, condition := range pool.Status.Conditions {
 			if condition.Status == corev1.ConditionTrue && condition.LastTransitionTime.After(latestTime.Time) {
@@ -393,7 +392,7 @@ func (optr *Operator) syncMetrics() error {
 
 // isKubeletSkewSupported checks the version skew of kube-apiserver and node kubelet version.
 // Returns the skew status. version skew > 2 is not supported.
-func (optr *Operator) isKubeletSkewSupported(pools []*v1.MachineConfigPool) (skewStatus string, coStatus configv1.ClusterOperatorStatusCondition, err error) {
+func (optr *Operator) isKubeletSkewSupported(pools []*mcfgv1.MachineConfigPool) (skewStatus string, coStatus configv1.ClusterOperatorStatusCondition, err error) {
 	coStatus = configv1.ClusterOperatorStatusCondition{}
 	kubeAPIServerStatus, err := optr.configClient.ConfigV1().ClusterOperators().Get(context.TODO(), "kube-apiserver", metav1.GetOptions{})
 	if err != nil {
@@ -471,7 +470,7 @@ func (optr *Operator) isKubeletSkewSupported(pools []*v1.MachineConfigPool) (ske
 }
 
 // GetAllManagedNodes returns the nodes managed by MCO
-func (optr *Operator) GetAllManagedNodes(pools []*v1.MachineConfigPool) ([]*corev1.Node, error) {
+func (optr *Operator) GetAllManagedNodes(pools []*mcfgv1.MachineConfigPool) ([]*corev1.Node, error) {
 	nodes := []*corev1.Node{}
 	for _, pool := range pools {
 		selector, err := metav1.LabelSelectorAsSelector(pool.Spec.NodeSelector)
