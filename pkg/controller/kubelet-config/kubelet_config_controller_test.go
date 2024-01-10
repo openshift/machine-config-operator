@@ -173,7 +173,7 @@ func newKubeletConfig(name string, kubeconf *kubeletconfigv1beta1.KubeletConfigu
 
 	return &mcfgv1.KubeletConfig{
 		TypeMeta:   metav1.TypeMeta{APIVersion: mcfgv1.SchemeGroupVersion.String()},
-		ObjectMeta: metav1.ObjectMeta{Name: name, UID: types.UID(utilrand.String(5)), Generation: 1},
+		ObjectMeta: metav1.ObjectMeta{Name: name, UID: types.UID(utilrand.String(5)), Generation: 1, CreationTimestamp: metav1.Now()},
 		Spec: mcfgv1.KubeletConfigSpec{
 			LogLevel: pointer.Int32Ptr(2),
 			KubeletConfig: &runtime.RawExtension{
@@ -948,6 +948,65 @@ func TestKubeletConfigResync(t *testing.T) {
 			}
 			val = kc2.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
 			require.Equal(t, "1", val)
+		})
+	}
+}
+
+func TestAddAnnotationExistingKubeletConfig(t *testing.T) {
+	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
+		t.Run(string(platform), func(t *testing.T) {
+			f := newFixture(t)
+			fgAccess := createNewDefaultFeatureGateAccess()
+			f.newController(fgAccess)
+
+			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
+			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
+
+			kcMCKey := "99-master-generated-kubelet"
+			kc1MCKey := "99-master-generated-kubelet-1"
+			kc := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
+			kc.Finalizers = []string{kcMCKey}
+			kc1 := newKubeletConfig("smaller-max-pods-1", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 200}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
+			kc1.SetAnnotations(map[string]string{ctrlcommon.MCNameSuffixAnnotationKey: "1"})
+			kc1.Finalizers = []string{kc1MCKey}
+			kcMC := helpers.NewMachineConfig(kcMCKey, map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{{}})
+
+			f.ccLister = append(f.ccLister, cc)
+			f.mcpLister = append(f.mcpLister, mcp)
+			f.mcpLister = append(f.mcpLister, mcp2)
+			f.mckLister = append(f.mckLister, kc, kc1)
+			f.objects = append(f.objects, kc, kc1, kcMC)
+
+			// kc created before kc1,
+			// make sure kc does not have annotation machineconfiguration.openshift.io/mc-name-suffix before sync, kc1 has annotation machineconfiguration.openshift.io/mc-name-suffix
+			_, ok := kc.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
+			require.False(t, ok)
+			val := kc1.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
+			require.Equal(t, "1", val)
+
+			// no new machine config will be created
+			f.expectGetMachineConfigAction(kcMC)
+			f.expectGetMachineConfigAction(kcMC)
+			f.expectUpdateKubeletConfigRoot(kc)
+			f.expectUpdateMachineConfigAction(kcMC)
+			f.expectPatchKubeletConfig(kc, []uint8{0x7b, 0x22, 0x6d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0x22, 0x3a, 0x7b, 0x22, 0x66, 0x69, 0x6e, 0x61, 0x6c, 0x69, 0x7a, 0x65, 0x72, 0x73, 0x22, 0x3a, 0x5b, 0x22, 0x39, 0x39, 0x2d, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x2d, 0x68, 0x35, 0x35, 0x32, 0x6d, 0x2d, 0x73, 0x6d, 0x61, 0x6c, 0x6c, 0x65, 0x72, 0x2d, 0x6d, 0x61, 0x78, 0x2d, 0x70, 0x6f, 0x64, 0x73, 0x2d, 0x6b, 0x75, 0x62, 0x65, 0x6c, 0x65, 0x74, 0x22, 0x5d, 0x7d, 0x7d})
+			f.expectUpdateKubeletConfig(kc)
+
+			c := f.newController(fgAccess)
+			err := c.syncHandler(getKey(kc, t))
+			if err != nil {
+				t.Errorf("syncHandler returned: %v", err)
+			}
+
+			f.validateActions()
+
+			// kc annotation machineconfiguration.openshift.io/mc-name-suffix after sync
+			val = kc.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
+			require.Equal(t, "", val)
+			kcFinalizers := kc.GetFinalizers()
+			require.Equal(t, 1, len(kcFinalizers))
+			require.Equal(t, kcMCKey, kcFinalizers[0])
 		})
 	}
 }
