@@ -27,6 +27,7 @@ contents:
     systemCgroups: /system.slice
     nodeStatusUpdateFrequency: 10s
     featureGates:
+      AlibabaPlatform: true
       AzureWorkloadIdentity: true
       BuildCSIVolumes: true
       CloudDualStackNodeIPs: true
