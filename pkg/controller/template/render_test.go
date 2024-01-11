@@ -11,10 +11,11 @@ import (
 	"testing"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
+	"k8s.io/client-go/kubernetes/scheme"
+
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/library-go/pkg/cloudprovider"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
-	"k8s.io/client-go/kubernetes/scheme"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -101,10 +102,6 @@ func TestCloudProvider(t *testing.T) {
 		res:               "",
 	}, {
 		platform:          configv1.VSpherePlatformType,
-		featureGateAccess: externalDisabledFG,
-		res:               "external",
-	}, {
-		platform:          configv1.AlibabaCloudPlatformType,
 		featureGateAccess: externalDisabledFG,
 		res:               "external",
 	}, {
@@ -344,7 +341,6 @@ const templateDir = "../../../templates"
 
 var (
 	configs = map[string]string{
-		"alibaba":                "./test_data/controller_config_alibaba.yaml",
 		"aws":                    "./test_data/controller_config_aws.yaml",
 		"baremetal":              "./test_data/controller_config_baremetal.yaml",
 		"gcp":                    "./test_data/controller_config_gcp.yaml",

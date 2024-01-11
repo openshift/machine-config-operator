@@ -3,7 +3,7 @@
 ## Background
 
 Some cloud provider load balancers need special handling for hairpin scenarios.
-Because default OpenShift installations are "self-driving", i.e. the control 
+Because default OpenShift installations are "self-driving", i.e. the control
 plane is hosted as part of the cluster, we rely on hairpin extensively.
 
 
@@ -62,17 +62,6 @@ So, when the apiserver is up, we want to direct all local traffic to ourselves.
 When it is down, we would like it to go over the load balancer.
 
 See `templates/master/00-master/azure/files/opt-libexec-openshift-azure-routes-sh.yaml`
-
-### Alibaba Cloud
-
-When using an Alibaba Cloud L4 SLB, an ECS instance cannot provide services for clients
-and function as the backend server of the SLB service at the same time. In other words,
-a master cannot hairpin traffic to itself via the load balancer.
-
-So, when the apiserver is up, we want to direct all local traffic to ourselves.
-When it is down, we would like it to go over the load balancer.
-
-See `templates/master/00-master/alibabacloud/files/opt-libexec-openshift-alibabacloud-routes-sh.yaml`
 
 ## Functionality
 
