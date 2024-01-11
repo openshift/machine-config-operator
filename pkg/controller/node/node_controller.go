@@ -509,6 +509,7 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 		return
 	}
 	if pool == nil {
+		utilruntime.HandleError(fmt.Errorf("all nodes must be in a pool if managed by the MCO. Node %s is not in a pool", curNode.Name))
 		return
 	}
 	klog.V(4).Infof("Node %s updated", curNode.Name)
