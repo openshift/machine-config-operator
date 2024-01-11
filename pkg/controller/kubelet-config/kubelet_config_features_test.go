@@ -6,16 +6,18 @@ import (
 	"testing"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	kubeletconfigv1beta1 "k8s.io/kubelet/config/v1beta1"
+
 	configv1 "github.com/openshift/api/config/v1"
 	osev1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	kubeletconfigv1beta1 "k8s.io/kubelet/config/v1beta1"
+
+	"github.com/stretchr/testify/require"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/test/helpers"
-	"github.com/stretchr/testify/require"
 )
 
 func TestFeatureGateDrift(t *testing.T) {
@@ -215,7 +217,7 @@ func TestBootstrapFeaturesCustomNoUpgrade(t *testing.T) {
 						FeatureGateSelection: osev1.FeatureGateSelection{
 							FeatureSet: osev1.CustomNoUpgrade,
 							CustomNoUpgrade: &osev1.CustomFeatureGates{
-								Enabled: []osev1.FeatureGateName{"AlibabaPlatform"},
+								Enabled: []osev1.FeatureGateName{"Example"},
 							},
 						},
 					},

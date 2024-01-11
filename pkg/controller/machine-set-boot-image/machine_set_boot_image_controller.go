@@ -8,11 +8,6 @@ import (
 	"strings"
 	"time"
 
-	opv1 "github.com/openshift/api/operator/v1"
-	configinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
-	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
-	mcopclientset "github.com/openshift/client-go/operator/clientset/versioned"
-	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -34,6 +29,13 @@ import (
 	"k8s.io/kubectl/pkg/scheme"
 	"sigs.k8s.io/yaml"
 
+	opv1 "github.com/openshift/api/operator/v1"
+	mcopclientset "github.com/openshift/client-go/operator/clientset/versioned"
+
+	configinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
+	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
+	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
+
 	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 
@@ -49,7 +51,7 @@ import (
 	"github.com/coreos/stream-metadata-go/stream"
 
 	osconfigv1 "github.com/openshift/api/config/v1"
-	features "github.com/openshift/api/features"
+	"github.com/openshift/api/features"
 )
 
 // Controller defines the machine-set-boot-image controller.
@@ -588,8 +590,6 @@ func checkMachineSet(infra *osconfigv1.Infrastructure, machineSet *machinev1beta
 		return reconcileAzure(machineSet, configMap, arch)
 	case osconfigv1.BareMetalPlatformType:
 		return reconcileBareMetal(machineSet, configMap, arch)
-	case osconfigv1.AlibabaCloudPlatformType:
-		return reconcileAliBaba(machineSet, configMap, arch)
 	case osconfigv1.OpenStackPlatformType:
 		return reconcileOpenStack(machineSet, configMap, arch)
 	case osconfigv1.EquinixMetalPlatformType:
@@ -724,11 +724,6 @@ func reconcileAzure(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap, 
 
 func reconcileBareMetal(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
 	klog.Infof("Skipping machineset %s, unsupported platform type BareMetal with %s arch", machineSet.Name, arch)
-	return false, nil, nil
-}
-
-func reconcileAliBaba(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
-	klog.Infof("Skipping machineset %s, unsupported platform type AliBaba with %s arch", machineSet.Name, arch)
 	return false, nil, nil
 }
 
