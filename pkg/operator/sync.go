@@ -1597,9 +1597,8 @@ func getCAsFromConfigMap(cm *corev1.ConfigMap, key string) ([]byte, error) {
 			return []byte(d), nil
 		}
 		return raw, nil
-	} else {
-		return nil, fmt.Errorf("%s not found in %s/%s", key, cm.Namespace, cm.Name)
 	}
+	return nil, fmt.Errorf("%s not found in %s/%s", key, cm.Namespace, cm.Name)
 }
 
 func (optr *Operator) getCloudConfigFromConfigMap(namespace, name, key string) (string, error) {
