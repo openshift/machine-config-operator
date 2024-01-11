@@ -37,14 +37,6 @@ aliases:
     - jcpowermac
     - patrickdillon
     - rvanderp3
-  alibaba-reviewers:
-    - kwoodson
-    - fabianofranz
-    - rvanderp3
-  alibaba-approvers:
-    - kwoodson
-    - fabianofranz
-    - rvanderp3
   powervs-approvers:
     - Prashanth684
     - clnperez

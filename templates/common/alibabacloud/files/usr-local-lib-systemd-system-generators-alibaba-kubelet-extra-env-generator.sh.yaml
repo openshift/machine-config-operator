@@ -1,8 +1,0 @@
-mode: 0755
-path: "/usr/local/lib/systemd/system-generators/alibaba-kubelet-extra-env-generator.sh"
-contents:
-  inline: |
-    #!/bin/sh
-    # /run/kubelet-alibaba.env is now directly referenced from the alibabacloud kubelet
-    # unit definition. keeping this file but removing executable content as preexisting 
-    # files aren't removed.
