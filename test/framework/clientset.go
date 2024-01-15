@@ -27,6 +27,12 @@ type ClientSet struct {
 	clientbuildv1.BuildV1Interface
 	clientimagev1.ImageV1Interface
 	kubeconfig string
+	config     *rest.Config
+}
+
+// Allows the instantiation of additional clients with the same config.
+func (cs *ClientSet) GetRestConfig() *rest.Config {
+	return cs.config
 }
 
 func (cs *ClientSet) GetKubeconfig() (string, error) {
@@ -59,6 +65,7 @@ func NewClientSet(kubeconfig string) *ClientSet {
 
 	cs := NewClientSetFromConfig(config)
 	cs.kubeconfig = kubeconfig
+	cs.config = config
 	return cs
 }
 
@@ -73,5 +80,6 @@ func NewClientSetFromConfig(config *rest.Config) *ClientSet {
 		OperatorV1alpha1Interface:       clientoperatorsv1alpha1.NewForConfigOrDie(config),
 		BuildV1Interface:                clientbuildv1.NewForConfigOrDie(config),
 		ImageV1Interface:                clientimagev1.NewForConfigOrDie(config),
+		config:                          config,
 	}
 }

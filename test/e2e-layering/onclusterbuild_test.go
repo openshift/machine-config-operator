@@ -100,7 +100,7 @@ func TestOnClusterBuildRollsOutImage(t *testing.T) {
 	cs := framework.NewClientSet("")
 	node := helpers.GetRandomNode(t, cs, "worker")
 	t.Cleanup(makeIdempotentAndRegister(t, func() {
-		helpers.DeleteNodeAndMachine(t, node)
+		helpers.DeleteNodeAndMachine(t, cs, node)
 	}))
 	helpers.LabelNode(t, cs, node, helpers.MCPNameToRole(layeredMCPName))
 	helpers.WaitForNodeImageChange(t, cs, node, imagePullspec)

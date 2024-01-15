@@ -21,6 +21,7 @@ import (
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	"github.com/davecgh/go-spew/spew"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	machineClientv1beta1 "github.com/openshift/client-go/machine/clientset/versioned/typed/machine/v1beta1"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/daemon/osrelease"
@@ -1086,14 +1087,23 @@ func dumpPool(pool *mcfgv1.MachineConfigPool, silentNil bool) string {
 // the Machine API will provision a replacement node. For example, the
 // e2e-layering tests cannot cleanly undo layering at this time, so we destroy
 // the node / machine.
-func DeleteNodeAndMachine(t *testing.T, node corev1.Node) {
+func DeleteNodeAndMachine(t *testing.T, cs *framework.ClientSet, node corev1.Node) {
 	machineAPINamespace := "openshift-machine-api"
 	machineID := strings.ReplaceAll(node.Annotations["machine.openshift.io/machine"], machineAPINamespace+"/", "")
 
-	deleteMachineCmd := exec.Command("oc", "delete", "--wait=false", fmt.Sprintf("machine/%s", machineID), "-n", machineAPINamespace)
+	ctx := context.Background()
 
-	deleteNodeCmd := exec.Command("oc", "delete", "--wait=false", fmt.Sprintf("node/%s", node.Name))
+	machineClient := machineClientv1beta1.NewForConfigOrDie(cs.GetRestConfig())
 
 	t.Logf("Deleting machine %s / node %s", machineID, node.Name)
-	require.NoError(t, aggerrs.AggregateGoroutines(deleteMachineCmd.Run, deleteNodeCmd.Run))
+
+	delErr := aggerrs.AggregateGoroutines(
+		func() error {
+			return machineClient.Machines(machineAPINamespace).Delete(ctx, machineID, metav1.DeleteOptions{})
+		},
+		func() error {
+			return cs.CoreV1Interface.Nodes().Delete(ctx, node.Name, metav1.DeleteOptions{})
+		})
+
+	require.NoError(t, delErr)
 }
