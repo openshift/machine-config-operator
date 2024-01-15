@@ -2,6 +2,7 @@ package e2e_test
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -16,9 +17,52 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrs "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/jsonmergepatch"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
 )
+
+func patchConfigMapForTest(t *testing.T, cs *framework.ClientSet) {
+	secrets, err := cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace).List(context.TODO(), metav1.ListOptions{})
+	require.NoError(t, err)
+	secretName := ""
+	for _, secret := range secrets.Items {
+		if strings.HasPrefix(secret.Name, "builder-dockercfg") {
+			secretName = secret.Name
+			break
+		}
+	}
+
+	t.Logf("Using secret name %q for test", secretName)
+
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      build.OnClusterBuildConfigMapName,
+			Namespace: ctrlcommon.MCONamespace,
+		},
+		Data: map[string]string{
+			build.ImageBuilderTypeConfigMapKey:      string(build.CustomPodImageBuilder),
+			build.BaseImagePullSecretNameConfigKey:  secretName,
+			build.FinalImagePushSecretNameConfigKey: secretName,
+			build.FinalImagePullspecConfigKey:       "registry.host.com/org/repo:tag",
+		},
+	}
+
+	oldCM, err := cs.CoreV1Interface.ConfigMaps("openshift-machine-config-operator").Get(context.TODO(), build.OnClusterBuildConfigMapName, metav1.GetOptions{})
+	require.Nil(t, err)
+
+	oldCMJson, _ := json.Marshal(oldCM)
+	newCMJson, _ := json.Marshal(cm)
+
+	patch, err := jsonmergepatch.CreateThreeWayJSONMergePatch(oldCMJson, newCMJson, oldCMJson)
+	require.Nil(t, err)
+
+	_, err = cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace).Patch(context.TODO(), build.OnClusterBuildConfigMapName, types.MergePatchType, patch, metav1.PatchOptions{})
+	require.NoError(t, err)
+
+	t.Logf("ConfigMap %q patched for test", cm.Name)
+}
 
 func createConfigMapForTest(t *testing.T, cs *framework.ClientSet) func() {
 	secrets, err := cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace).List(context.TODO(), metav1.ListOptions{})
@@ -118,6 +162,23 @@ func TestMachineOSBuilder(t *testing.T) {
 		return exists, err
 	})
 	if featureGateEnabled {
+		require.NoError(t, err, "Failed to check the existence of the Machine OS Builder deployment")
+
+		// wait for Machine OS Builder pod to start
+		err = helpers.WaitForPodStart(cs, mobPodNamePrefix, namespace)
+		require.NoError(t, err, "Failed to start the Machine OS Builder pod")
+		t.Logf("machine-os-builder deployment exists")
+
+		patchConfigMapForTest(t, cs)
+		err = helpers.WaitForPodStop(cs, mobPodNamePrefix, namespace)
+		require.NoError(t, err, "Failed to stop the Machine OS Builder pod")
+
+		// assertion to see if the deployment object is present after setting the label
+		ctx = context.TODO()
+		err = wait.PollUntilContextTimeout(ctx, 2*time.Second, time.Minute, true, func(ctx context.Context) (bool, error) {
+			exists, err := helpers.CheckDeploymentExists(cs, "machine-os-builder", namespace)
+			return exists, err
+		})
 		require.NoError(t, err, "Failed to check the existence of the Machine OS Builder deployment")
 
 		// wait for Machine OS Builder pod to start

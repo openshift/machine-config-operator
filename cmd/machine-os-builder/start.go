@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
+	"os"
 
 	"github.com/openshift/machine-config-operator/internal/clients"
 	"github.com/openshift/machine-config-operator/pkg/controller/build"
@@ -88,7 +90,6 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 	klog.Infof("Version: %+v (%s)", version.Raw, version.Hash)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	cb, err := clients.NewBuilder("")
 	if err != nil {
@@ -98,8 +99,15 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 	ctrl, err := getBuildController(ctx, cb)
 	if err != nil {
 		klog.Fatalln(err)
+		var invalidImageBuiler *build.ErrInvalidImageBuilder
+		if errors.As(err, &invalidImageBuiler) {
+			klog.Errorf("The user passed an invalid imageBuilderType of %s", invalidImageBuiler.InvalidType)
+			cancel()
+			os.Exit(255)
+		}
 	}
 
 	go ctrl.Run(ctx, 5)
 	<-ctx.Done()
+	cancel()
 }
