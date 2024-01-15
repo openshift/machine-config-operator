@@ -36,6 +36,14 @@ contents:
         fall 3
     }
 
+    vrrp_script chk_mcs {
+        script "/usr/bin/timeout 1.9 /etc/keepalived/chk_mcs_script.sh"
+        interval 2
+        weight 3
+        rise 3
+        fall 3
+    }
+
     # TODO: Improve this check. The port is assumed to be alive.
     # Need to assess what is the ramification if the port is not there.
     vrrp_script chk_ingress {
@@ -93,6 +101,7 @@ contents:
         track_script {
             chk_ocp_lb
             chk_ocp_both
+            chk_mcs
         }
     }
     {{`{{end}}`}}
