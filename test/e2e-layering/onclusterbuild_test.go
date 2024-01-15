@@ -52,7 +52,7 @@ func init() {
 // Holds elements common for each on-cluster build tests.
 type onClusterBuildTestOpts struct {
 	// Which image builder type to use for the test.
-	imageBuilderType string
+	imageBuilderType build.ImageBuilderType
 
 	// The custom Dockerfiles to use for the test. This is a map of MachineConfigPool name to Dockerfile content.
 	customDockerfiles map[string]string
@@ -216,7 +216,7 @@ func prepareForTest(t *testing.T, cs *framework.ClientSet, testOpts onClusterBui
 			build.BaseImagePullSecretNameConfigKey:  globalPullSecretCloneName,
 			build.FinalImagePushSecretNameConfigKey: pushSecretName,
 			build.FinalImagePullspecConfigKey:       finalPullspec,
-			build.ImageBuilderTypeConfigMapKey:      testOpts.imageBuilderType,
+			build.ImageBuilderTypeConfigMapKey:      string(testOpts.imageBuilderType),
 		},
 	})
 

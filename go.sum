@@ -689,8 +689,8 @@ github.com/opencontainers/runc v1.1.10 h1:EaL5WeO9lv9wmS6SASjszOeQdSctvpbu0DdBQB
 github.com/opencontainers/runc v1.1.10/go.mod h1:+/R6+KmDlh+hOO8NkjmgkG9Qzvypzk0yXxAPYYR65+M=
 github.com/opencontainers/runtime-spec v1.1.0 h1:HHUyrt9mwHUjtasSbXSMvs4cyFxh+Bll4AjJ9odEGpg=
 github.com/opencontainers/runtime-spec v1.1.0/go.mod h1:jwyrGlmzljRJv/Fgzds9SsS/C5hL+LL3ko9hs6T5lQ0=
-github.com/openshift/api v0.0.0-20240112192513-412e126bd40b h1:GfdgT7sKknrqzFU5XRPMIQzv17f9NnZ3K7VQ8obuZMM=
-github.com/openshift/api v0.0.0-20240112192513-412e126bd40b/go.mod h1:CxgbWAlvu2iQB0UmKTtRu1YfepRg1/vJ64n2DlIEVz4=
+github.com/openshift/api v0.0.0-20240205144533-7162acc29bb6 h1:OrjG0Lt0pXNYd6LUfGD3BYoBWXhfRMAMK0LYu8pdyqQ=
+github.com/openshift/api v0.0.0-20240205144533-7162acc29bb6/go.mod h1:CxgbWAlvu2iQB0UmKTtRu1YfepRg1/vJ64n2DlIEVz4=
 github.com/openshift/client-go v0.0.0-20240104132419-223261fd8630 h1:JQ/TO3bSDowReecFDvz+Nr0Fx8aoJI0zdo01y2W5NKk=
 github.com/openshift/client-go v0.0.0-20240104132419-223261fd8630/go.mod h1:8W4atsD8vBtEK0qplKpFWo+7XsQwzHTlqL7o/XpagRM=
 github.com/openshift/cluster-config-operator v0.0.0-alpha.0.0.20231213185242-e4dc676febfe h1:wDQtyIbJJIoif2Ux0S+9MJWIWEGV0oG+iLm8WtqwdSw=
@@ -1435,8 +1435,8 @@ k8s.io/gengo v0.0.0-20230829151522-9cce18d56c01/go.mod h1:FiNAH4ZV3gBg2Kwh89tzAE
 k8s.io/klog/v2 v2.2.0/go.mod h1:Od+F08eJP+W3HUb4pSrPpgp9DGU4GzlpG/TmITuYh/Y=
 k8s.io/klog/v2 v2.110.1 h1:U/Af64HJf7FcwMcXyKm2RPM22WZzyR7OSpYj5tg3cL0=
 k8s.io/klog/v2 v2.110.1/go.mod h1:YGtd1984u+GgbuZ7e08/yBuAfKLSO0+uR1Fhi6ExXjo=
-k8s.io/kube-aggregator v0.28.3 h1:CVbj3+cpshSHR5dWPzLYx3sVpIDEPLlzMSxY/lAc9cM=
-k8s.io/kube-aggregator v0.28.3/go.mod h1:5DyLevbRTcWnT1f9b+lB3BfbXC1w7gDa/OtB6kKInCw=
+k8s.io/kube-aggregator v0.29.0 h1:N4fmtePxOZ+bwiK1RhVEztOU+gkoVkvterHgpwAuiTw=
+k8s.io/kube-aggregator v0.29.0/go.mod h1:bjatII63ORkFg5yUFP2qm2OC49R0wwxZhRVIyJ4Z4X0=
 k8s.io/kubectl v0.29.0 h1:Oqi48gXjikDhrBF67AYuZRTcJV4lg2l42GmvsP7FmYI=
 k8s.io/kubectl v0.29.0/go.mod h1:0jMjGWIcMIQzmUaMgAzhSELv5WtHo2a8pq67DtviAJs=
 k8s.io/kubelet v0.29.0 h1:SX5hlznTBcGIrS1scaf8r8p6m3e475KMifwt9i12iOk=

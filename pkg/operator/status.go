@@ -302,12 +302,14 @@ func (optr *Operator) syncUpgradeableStatus() error {
 		Reason: asExpectedReason,
 	}
 
-	var updating, degraded bool
+	var updating, degraded, interrupted bool
 	for _, pool := range pools {
 		// collect updating status but continue to check each pool to see if any pool is degraded
 		if isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolUpdating) {
 			updating = true
 		}
+
+		interrupted = isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolBuildInterrupted)
 
 		degraded = isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolDegraded)
 		// degraded should get top billing in the clusteroperator status, if we find this, set it and update
@@ -317,17 +319,24 @@ func (optr *Operator) syncUpgradeableStatus() error {
 			coStatus.Message = "One or more machine config pools are degraded, please see `oc get mcp` for further details and resolve before upgrading"
 			break
 		}
+
+		if interrupted {
+			coStatus.Status = configv1.ConditionFalse
+			coStatus.Reason = "InterruptedBuild"
+			coStatus.Message = "One or more machine config pools' builds have been interrupted, please see `oc get mcp` for further details and resolve before upgrading"
+			break
+		}
 	}
 	// this should no longer trigger when adding a node to a pool. It should only trigger if the node actually has to go through an upgrade
 	// updating and degraded can occur together, in that case defer to the degraded Reason that is already set above
-	if updating && !degraded {
+	if updating && !degraded && !interrupted {
 		coStatus.Status = configv1.ConditionFalse
 		coStatus.Reason = "PoolUpdating"
 		coStatus.Message = "One or more machine config pools are updating, please see `oc get mcp` for further details"
 	}
 
 	// don't overwrite status if updating or degraded
-	if !updating && !degraded {
+	if !updating && !degraded && !interrupted {
 		skewStatus, status, err := optr.isKubeletSkewSupported(pools)
 		if err != nil {
 			klog.Errorf("Error checking version skew: %v, kubelet skew status: %v, status reason: %v, status message: %v", err, skewStatus, status.Reason, status.Message)

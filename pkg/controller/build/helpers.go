@@ -18,7 +18,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	k8stypes "k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/sets"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 )
@@ -317,8 +316,9 @@ func validateSecret(kubeclient clientset.Interface, secretName string) error {
 
 // Determines which image builder to start based upon the imageBuilderType key
 // in the on-cluster-build-config ConfigMap. Defaults to custom-pod-builder.
-func GetImageBuilderType(cm *corev1.ConfigMap) (string, error) {
+func GetImageBuilderType(cm *corev1.ConfigMap) (ImageBuilderType, error) {
 	configMapImageBuilder, ok := cm.Data[ImageBuilderTypeConfigMapKey]
+	cmBuilder := ImageBuilderType(configMapImageBuilder)
 	defaultBuilder := OpenshiftImageBuilder
 
 	if !ok {
@@ -331,11 +331,10 @@ func GetImageBuilderType(cm *corev1.ConfigMap) (string, error) {
 		return defaultBuilder, nil
 	}
 
-	validImageBuilderTypes := sets.NewString(OpenshiftImageBuilder, CustomPodImageBuilder)
-	if !validImageBuilderTypes.Has(configMapImageBuilder) {
-		return "", fmt.Errorf("invalid image builder type %q, valid types: %v", configMapImageBuilder, validImageBuilderTypes.List())
+	if !validImageBuilderTypes.Has(ImageBuilderType(configMapImageBuilder)) {
+		return "", &ErrInvalidImageBuilder{Message: fmt.Sprintf("invalid image builder type %q, valid types: %v", configMapImageBuilder, validImageBuilderTypes.UnsortedList()), InvalidType: configMapImageBuilder}
 	}
 
 	klog.Infof("%s set to %q", ImageBuilderTypeConfigMapKey, configMapImageBuilder)
-	return configMapImageBuilder, nil
+	return cmBuilder, nil
 }

@@ -37,8 +37,10 @@ contents:
       ExternalCloudProviderGCP: true
       ExternalCloudProviderExternal: true
       KMSv1: true
+      NetworkLiveMigration: true
       OpenShiftPodSecurityAdmission: true
       PrivateHostedZoneAWS: true
+      VSphereControlPlaneMachineSet: true
     serverTLSBootstrap: true
     tlsMinVersion: VersionTLS12
     tlsCipherSuites:
