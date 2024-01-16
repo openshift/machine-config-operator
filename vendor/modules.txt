@@ -802,7 +802,7 @@ github.com/opencontainers/runc/libcontainer/user
 # github.com/opencontainers/runtime-spec v1.1.0-rc.3
 ## explicit
 github.com/opencontainers/runtime-spec/specs-go
-# github.com/openshift/api v0.0.0-20231128111040-e1845c5a7acd
+# github.com/openshift/api v0.0.0-20240116035456-11ed2fbcb805
 ## explicit; go 1.20
 github.com/openshift/api
 github.com/openshift/api/apiserver
@@ -875,7 +875,7 @@ github.com/openshift/api/template
 github.com/openshift/api/template/v1
 github.com/openshift/api/user
 github.com/openshift/api/user/v1
-# github.com/openshift/client-go v0.0.0-20231110140829-a6ca51f6d5ba
+# github.com/openshift/client-go v0.0.0-20240109161853-2425b4b6d3b3
 ## explicit; go 1.20
 github.com/openshift/client-go/build/applyconfigurations/build/v1
 github.com/openshift/client-go/build/applyconfigurations/internal
