@@ -204,7 +204,6 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.ClientBuilder.KubeClientOrDie("machine-set-boot-image-controller"),
 			ctx.ClientBuilder.MachineClientOrDie("machine-set-boot-image-controller"),
 			ctx.KubeNamespacedInformerFactory.Core().V1().ConfigMaps(),
-			ctx.MachineInformerFactory.Machine().V1beta1().Machines(),
 			ctx.MachineInformerFactory.Machine().V1beta1().MachineSets(),
 			ctx.KubeMAOSharedInformer.Core().V1().Secrets(),
 			ctx.ConfigInformerFactory.Config().V1().Infrastructures(),
