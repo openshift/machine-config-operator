@@ -816,6 +816,29 @@ func TestValidateRegistriesConfScopes(t *testing.T) {
 			},
 			expectedErr: nil,
 		},
+		{
+			icspRules: []*apioperatorsv1alpha1.ImageContentSourcePolicy{
+				{
+					Spec: apioperatorsv1alpha1.ImageContentSourcePolicySpec{
+						RepositoryDigestMirrors: []apioperatorsv1alpha1.RepositoryDigestMirrors{
+							{Source: "insecure.com/ns-i1", Mirrors: []string{"other.com/ns-o1  "}},
+						},
+					},
+				},
+			},
+			idmsRules: []*apicfgv1.ImageDigestMirrorSet{
+				{
+					Spec: apicfgv1.ImageDigestMirrorSetSpec{
+						ImageDigestMirrors: []apicfgv1.ImageDigestMirrors{ // other.com is neither insecure nor blocked
+							{Source: "insecure.com/ns-i1", Mirrors: []apicfgv1.ImageMirror{"blocked.com/ns-b1", "other.com/ns-o1"}, MirrorSourcePolicy: apicfgv1.NeverContactSource},
+							{Source: "blocked.com/ns-b/ns2-b", Mirrors: []apicfgv1.ImageMirror{"other.com/ns-o2", "insecure.com/ns-i2"}},
+							{Source: "other.com/ns-o3", Mirrors: []apicfgv1.ImageMirror{"insecure.com/ns-i2", "blocked.com/ns-b/ns3-b", "foo.insecure-example.com/bar"}},
+						},
+					},
+				},
+			},
+			expectedErr: errors.New(`conflicting mirrorSourcePolicy is set for the same source "insecure.com/ns-i1" in imagedigestmirrorsets, imagetagmirrorsets, or imagecontentsourcepolicies`),
+		},
 	}
 
 	for _, tc := range tests {
