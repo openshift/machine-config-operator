@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	configinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
@@ -50,14 +51,12 @@ type Controller struct {
 	eventRecorder record.EventRecorder
 
 	mcoCmLister      corelisterv1.ConfigMapLister
-	machineLister    machinelisters.MachineLister
 	machineSetLister machinelisters.MachineSetLister
 	maoSecretLister  corelisterv1.SecretLister
 	infraLister      configlistersv1.InfrastructureLister
 	nodeLister       corelisterv1.NodeLister
 
 	mcoCmListerSynced       cache.InformerSynced
-	machineListerSynced     cache.InformerSynced
 	machineSetListerSynced  cache.InformerSynced
 	maoSecretInformerSynced cache.InformerSynced
 	infraListerSynced       cache.InformerSynced
@@ -82,8 +81,8 @@ const (
 	StreamConfigMapKey = "stream"
 
 	// Labels and Annotations required for determining architecture of a machineset
-	MachineAnnotationKey = "machine.openshift.io/machine"
-	ArchLabelKey         = "kubernetes.io/arch"
+	MachineSetArchAnnotationKey = "capacity.cluster-autoscaler.kubernetes.io/labels"
+	ArchLabelKey                = "kubernetes.io/arch="
 )
 
 // New returns a new machine-set-boot-image controller.
@@ -91,7 +90,6 @@ func New(
 	kubeClient clientset.Interface,
 	machineClient machineclientset.Interface,
 	mcoCmInfomer coreinformersv1.ConfigMapInformer,
-	machineInformer machineinformers.MachineInformer,
 	machinesetInformer machineinformers.MachineSetInformer,
 	maoSecretInformer coreinformersv1.SecretInformer,
 	infraInformer configinformersv1.InfrastructureInformer,
@@ -123,14 +121,12 @@ func New(
 	ctrl.enqueueMachineSet = ctrl.enqueue
 
 	ctrl.mcoCmLister = mcoCmInfomer.Lister()
-	ctrl.machineLister = machineInformer.Lister()
 	ctrl.machineSetLister = machinesetInformer.Lister()
 	ctrl.maoSecretLister = maoSecretInformer.Lister()
 	ctrl.infraLister = infraInformer.Lister()
 	ctrl.nodeLister = nodeInformer.Lister()
 
 	ctrl.mcoCmListerSynced = mcoCmInfomer.Informer().HasSynced
-	ctrl.machineListerSynced = machineInformer.Informer().HasSynced
 	ctrl.machineSetListerSynced = machinesetInformer.Informer().HasSynced
 	ctrl.maoSecretInformerSynced = maoSecretInformer.Informer().HasSynced
 	ctrl.infraListerSynced = infraInformer.Informer().HasSynced
@@ -167,7 +163,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer ctrl.queue.ShutDown()
 
 	if !cache.WaitForCacheSync(stopCh, ctrl.mcoCmListerSynced, ctrl.machineSetListerSynced, ctrl.maoSecretInformerSynced, ctrl.infraListerSynced,
-		ctrl.nodeListerSynced, ctrl.machineListerSynced) {
+		ctrl.nodeListerSynced) {
 		return
 	}
 
@@ -380,10 +376,7 @@ func (ctrl *Controller) syncMachineSet(key string) error {
 	}
 
 	// Fetch the architecture type of this machineset
-	arch, err := ctrl.getArchFromMachineSet(machineSet)
-	if err != nil {
-		return fmt.Errorf("failed to fetch architecture type of machineset %s, err: %w", machineSet.Name, err)
-	}
+	arch := ctrl.getArchFromMachineSet(machineSet)
 
 	// Fetch the infra object to determine the platform type
 	infra, err := ctrl.infraLister.Get("cluster")
@@ -408,45 +401,21 @@ func (ctrl *Controller) syncMachineSet(key string) error {
 }
 
 // Returns architecture type for a given machine set
-func (ctrl *Controller) getArchFromMachineSet(machineset *machinev1beta1.MachineSet) (arch string, err error) {
-	machineSelector, err := metav1.LabelSelectorAsSelector(&machineset.Spec.Selector)
+func (ctrl *Controller) getArchFromMachineSet(machineset *machinev1beta1.MachineSet) (arch string) {
 
-	if err != nil {
-		return " ", fmt.Errorf("could not convert MachineSet label selector to selector, error: %w", err)
-	}
-
-	machines, err := ctrl.machineLister.List(machineSelector)
-	if err != nil || len(machines) == 0 {
-		return " ", fmt.Errorf("could not find any machines linked to machineset, error: %w", err)
-	}
-
-	// Any machine from this slice will be of the same architecture, so grab the first one
-	// Cycle through nodes, compare to annotations to find node with matching machine
-
-	nodes, err := ctrl.nodeLister.List(labels.Everything())
-	for _, node := range nodes {
-		if node.Annotations == nil {
-			continue
+	// Check if the annotation enclosing arch label is present on this machineset
+	archLabel, archLabelMatch := machineset.Annotations[MachineSetArchAnnotationKey]
+	if archLabelMatch {
+		// Grab arch value from the annotation
+		_, archLabelValue, archLabelValueFound := strings.Cut(archLabel, ArchLabelKey)
+		if archLabelValueFound {
+			return archtranslater.RpmArch(archLabelValue)
 		}
-		machine, nodeMatch := node.Annotations[MachineAnnotationKey]
-		_, machineName, err := cache.SplitMetaNamespaceKey(machine)
-		if err != nil {
-			return " ", fmt.Errorf("could not split machine name %s, error: %w", machineName, err)
-		}
-		// Compare machine name to machine obtained from earlier selector
-		// Search the labels of the node to find the arch label
-		if nodeMatch && machineName == machines[0].Name {
-			archLabelValue, archFound := node.Labels[ArchLabelKey]
-			if archFound {
-				return archtranslater.RpmArch(archLabelValue), nil
-			}
-			return " ", fmt.Errorf("architecture of node %s could not be determined from labels", node.Name)
-
-		}
-
 	}
-	// At this point, no node was found with this machineSet, exit sync attempt
-	return " ", fmt.Errorf("could not find any nodes attached to this machineset, error: %w", err)
+	// If no arch annotation was found on the machineset, default to the control plane arch.
+	// return the architecture of the node running this pod, which will always be a control plane node.
+	klog.Infof("Defaulting to control plane architecture")
+	return archtranslater.CurrentRpmArch()
 }
 
 // This function patches the machineset object using the machineClient
