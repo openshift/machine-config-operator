@@ -228,7 +228,7 @@ func (ctrl *Controller) addMachineSet(obj interface{}) {
 	// this.
 	err := ctrl.enqueueAllMachineSets()
 	if err != nil {
-		klog.Errorf("Error enqueuing all machine sets: %w", err)
+		klog.Errorf("Error enqueuing all machine sets: %v", err)
 	}
 }
 
@@ -248,7 +248,7 @@ func (ctrl *Controller) updateMachineSet(old, _ interface{}) {
 	// this.
 	err := ctrl.enqueueAllMachineSets()
 	if err != nil {
-		klog.Errorf("Error enqueuing all machine sets: %w", err)
+		klog.Errorf("Error enqueuing all machine sets: %v", err)
 	}
 }
 
@@ -270,7 +270,7 @@ func (ctrl *Controller) addConfigMap(obj interface{}) {
 	// Update all machine sets since the "golden" configmap has been updated
 	err := ctrl.enqueueAllMachineSets()
 	if err != nil {
-		klog.Errorf("Error enqueuing all machine sets: %w", err)
+		klog.Errorf("Error enqueuing all machine sets: %v", err)
 	}
 }
 

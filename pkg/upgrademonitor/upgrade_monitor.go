@@ -225,7 +225,7 @@ func GenerateAndApplyMachineConfigNodes(parentCondition, childCondition *Conditi
 	if node.Status.Phase != corev1.NodePending && node.Status.Phase != corev1.NodePhase("Provisioning") && newMCNode.Spec.ConfigVersion.Desired == "NotYetSet" {
 		err = GenerateAndApplyMachineConfigNodeSpec(fgAccessor, pool, node, mcfgClient)
 		if err != nil {
-			klog.Errorf("Error making MCN spec for Update Compatible: %w", err)
+			klog.Errorf("Error making MCN spec for Update Compatible: %v", err)
 		}
 	}
 	return nil

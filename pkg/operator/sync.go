@@ -778,7 +778,7 @@ func (optr *Operator) syncMachineConfigNodes(_ *renderConfig) error {
 		if mcn.Spec.ConfigVersion.Desired == upgrademonitor.NotYetSet {
 			err = upgrademonitor.GenerateAndApplyMachineConfigNodeSpec(optr.fgAccessor, pool, node, optr.client)
 			if err != nil {
-				klog.Errorf("Error making MCN spec for Update Compatible: %w", err)
+				klog.Errorf("Error making MCN spec for Update Compatible: %v", err)
 			}
 		}
 
@@ -1324,7 +1324,7 @@ func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
 
 				// Calling this on a "required" pool for now
 				if err := optr.stampBootImagesCM(pool); err != nil {
-					klog.Errorf("Failed to stamp bootimages configmap: %w", err)
+					klog.Errorf("Failed to stamp bootimages configmap: %v", err)
 				}
 
 				if err := isMachineConfigPoolConfigurationValid(pool, version.Hash, releaseVersion, opURL, optr.mcLister.Get); err != nil {
