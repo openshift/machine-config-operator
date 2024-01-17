@@ -22,8 +22,8 @@ contents:
         exit 0
     fi
 
-    if [ -e "${NODENV}" ]; then
-        echo "Not replacing existing ${NODENV}"
+    if [ -e "${NODEENV}" ]; then
+        echo "Not replacing existing ${NODEENV}"
         exit 0
     fi
     
