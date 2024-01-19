@@ -17,7 +17,7 @@ contents:
       # restart the service or we may interrupt the pull and end up with a corrupt image.
       # We're better off with incorrect search domains for a while than wedging the
       # system with a bad image.
-      if ! diff -q /run/resolv-prepender/env /run/resolv-prepender/env.new && /usr/bin/podman image exists {{ .Images.baremetalRuntimeCfgImage }}; then
+      if ! diff -q /run/resolv-prepender/env /run/resolv-prepender/env.new && /usr/bin/podman image exists "{{ .Images.baremetalRuntimeCfgImage }}"; then
         >&2 echo "NM resolv-prepender: Environment variable(s) changed. Restarting service."
         systemctl is-active on-prem-resolv-prepender && systemctl kill on-prem-resolv-prepender
       fi
