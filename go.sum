@@ -338,6 +338,8 @@ github.com/containernetworking/cni v0.8.0/go.mod h1:LGwApLUm2FpoOfxTDEeq8T9ipbpZ
 github.com/containernetworking/cni v0.8.1/go.mod h1:LGwApLUm2FpoOfxTDEeq8T9ipbpZ61X79hmU3w8FmsY=
 github.com/containernetworking/plugins v0.8.6/go.mod h1:qnw5mN19D8fIwkqW7oHHYDHVlzhJpcY6TQxn/fUyDDM=
 github.com/containernetworking/plugins v0.9.1/go.mod h1:xP/idU2ldlzN6m4p5LmGiwRDjeJr6FLK6vuiUwoH7P8=
+github.com/containers/common v0.49.0 h1:RvXl6DV+AIiWFAInr9kda8v0kNFYp8Gi6TdMDJxiN0s=
+github.com/containers/common v0.49.0/go.mod h1:veUB/Ny3z9uCvwQTsG1/hxI+9xOprONp3mH3jO4mYqg=
 github.com/containers/image/v5 v5.22.0 h1:KemxPmD4D2YYOFZN2SgoTk7nBFcnwPiPW0MqjYtknSE=
 github.com/containers/image/v5 v5.22.0/go.mod h1:D8Ksv2RNB8qLJ7xe1P3rgJJOSQpahA6amv2Ax++/YO4=
 github.com/containers/kubensmnt v1.2.0 h1:BDtkaOFQ5fN7FnB9kC6peMW50KkwI1KI8E9ROBFeQIg=

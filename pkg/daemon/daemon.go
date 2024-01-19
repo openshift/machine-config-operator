@@ -1898,9 +1898,7 @@ func (dn *Daemon) checkOS(osImageURL string) bool {
 
 	// TODO(jkyros): the header for this functions says "if the digests match"
 	// so I'm wondering if at one point this used to work this way....
-	// TODO(jkyros): and pulling it just to check is so expensive, skopeo works now
-	// if you use the --no-tags argument (doesn't pull tags) so we should probably just do that
-	inspection, err := imageInspect(osImageURL)
+	inspection, _, err := imageInspect(osImageURL)
 	if err != nil {
 		glog.Warningf("Unable to check manifest for matching hash: %s", err)
 	} else if ostreeCommit, ok := inspection.Labels["ostree.commit"]; ok {

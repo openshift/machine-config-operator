@@ -112,6 +112,9 @@ github.com/chavacava/garif
 # github.com/clarketm/json v1.14.1
 ## explicit
 github.com/clarketm/json
+# github.com/containers/common v0.49.0
+## explicit; go 1.17
+github.com/containers/common/pkg/retry
 # github.com/containers/image/v5 v5.22.0
 ## explicit; go 1.17
 github.com/containers/image/v5/docker
