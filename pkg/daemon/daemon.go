@@ -199,6 +199,7 @@ const (
 	caBundleFilePath      = "/etc/kubernetes/kubelet-ca.crt"
 	cloudCABundleFilePath = "/etc/kubernetes/static-pod-resources/configmaps/cloud-config/ca-bundle.pem"
 	userCABundleFilePath  = "/etc/pki/ca-trust/source/anchors/openshift-config-user-ca-bundle.crt"
+	kubeConfigPath        = "/etc/kubernetes/kubeconfig"
 
 	// Where nmstate writes the link files if it persisted ifnames.
 	// https://github.com/nmstate/nmstate/blob/03c7b03bd4c9b0067d3811dbbf72635201519356/rust/src/cli/persist_nic.rs#L32-L36
@@ -680,13 +681,13 @@ func (dn *Daemon) syncNode(key string) error {
 			dn.featureGatesAccessor,
 		)
 		if err != nil {
-			klog.Errorf("Error making MCN for Rebooted: %w", err)
+			klog.Errorf("Error making MCN for Rebooted: %v", err)
 		}
 		removeRebooting := make(map[string]string)
 		removeRebooting[constants.MachineConfigDaemonPostConfigAction] = ""
 		_, err = dn.nodeWriter.SetAnnotations(removeRebooting)
 		if err != nil {
-			klog.Errorf("Could not unset rebooting Anno: %w", err)
+			klog.Errorf("Could not unset rebooting Anno: %v", err)
 		}
 	}
 
@@ -746,7 +747,7 @@ func (dn *Daemon) syncNode(key string) error {
 			dn.featureGatesAccessor,
 		)
 		if err != nil {
-			klog.Errorf("Error making MCN for Resumed true: %w", err)
+			klog.Errorf("Error making MCN for Resumed true: %v", err)
 		}
 		removeRebooting := make(map[string]string)
 		removeRebooting[constants.MachineConfigDaemonReasonAnnotationKey] = ""
@@ -783,7 +784,7 @@ func (dn *Daemon) syncNode(key string) error {
 			dn.featureGatesAccessor,
 		)
 		if err != nil {
-			klog.Errorf("Error making MCN for Updated false: %w", err)
+			klog.Errorf("Error making MCN for Updated false: %v", err)
 		}
 
 		// Only check for config drift if we need to update.
@@ -805,7 +806,7 @@ func (dn *Daemon) syncNode(key string) error {
 			dn.featureGatesAccessor,
 		)
 		if err != nil {
-			klog.Errorf("Error making MCN for Updated: %w", err)
+			klog.Errorf("Error making MCN for Updated: %v", err)
 		}
 	}
 	klog.V(2).Infof("Node %s is already synced", node.Name)
@@ -1773,7 +1774,7 @@ func PersistNetworkInterfaces(osRoot string) error {
 			// nmstatectl clean up will fail if stamp file not
 			// found or `ROOT/etc/systemd/network` folder not
 			// found, these error is OK to ignore
-			klog.Infof("Cleanup error ignored: %w", err)
+			klog.Infof("Cleanup error ignored: %v", err)
 			return nil
 		}
 		return fmt.Errorf("failed to run nmstatectl: %w", err)
@@ -2058,7 +2059,7 @@ func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, bool, erro
 			dn.featureGatesAccessor,
 		)
 		if err != nil {
-			klog.Errorf("Error making MCN for Resumed true: %w", err)
+			klog.Errorf("Error making MCN for Resumed true: %v", err)
 		}
 		klog.Infof("Completing update to target %s", state.getCurrentName())
 		if err := dn.completeUpdate(state.currentConfig.GetName()); err != nil {

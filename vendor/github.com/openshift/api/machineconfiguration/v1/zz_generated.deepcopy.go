@@ -323,6 +323,11 @@ func (in *ControllerConfigSpec) DeepCopyInto(out *ControllerConfigSpec) {
 		*out = make([]byte, len(*in))
 		copy(*out, *in)
 	}
+	if in.InternalAPICert != nil {
+		in, out := &in.InternalAPICert, &out.InternalAPICert
+		*out = make([]byte, len(*in))
+		copy(*out, *in)
+	}
 	if in.Images != nil {
 		in, out := &in.Images, &out.Images
 		*out = make(map[string]string, len(*in))

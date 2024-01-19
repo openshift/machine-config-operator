@@ -1,11 +1,16 @@
 package daemon
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
+
+	clientcmdv1 "k8s.io/client-go/tools/clientcmd/api/v1"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -106,9 +111,33 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 		pathToData := make(map[string][]byte)
 
 		kubeAPIServerServingCABytes := controllerConfig.Spec.KubeAPIServerServingCAData
+		var currentKCData []byte
 		cloudCA := controllerConfig.Spec.CloudProviderCAData
 		pathToData[caBundleFilePath] = kubeAPIServerServingCABytes
 		pathToData[cloudCABundleFilePath] = cloudCA
+		currentKC := clientcmdv1.Config{}
+		kcBytes, err := os.ReadFile(kubeConfigPath)
+		if err != nil {
+			return err
+		}
+		if kcBytes != nil {
+			err = json.Unmarshal(kcBytes, &currentKC)
+			if err != nil {
+				return err
+			}
+			var newData []byte
+			if len(currentKC.Clusters) > 0 {
+				currentKCData = currentKC.Clusters[0].Cluster.CertificateAuthorityData
+				if !bytes.Equal(currentKCData, controllerConfig.Spec.InternalAPICert) {
+					currentKC.Clusters[0].Cluster.CertificateAuthorityData = controllerConfig.Spec.InternalAPICert
+					newData, err = json.Marshal(currentKC)
+					if err != nil {
+						return err
+					}
+				}
+				pathToData[kubeConfigPath] = newData
+			}
+		}
 
 		for bundle, data := range pathToData {
 			if !strings.HasSuffix(string(data), "\n") {
@@ -134,6 +163,28 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 			}
 		}
 
+		if !bytes.Equal(currentKCData, controllerConfig.Spec.InternalAPICert) {
+			cmd := exec.Command("systemctl", "stop", "kubelet")
+			errOut := &bytes.Buffer{}
+			cmd.Stderr = errOut
+			err = cmd.Run()
+			if err != nil {
+				return fmt.Errorf("Could not stop kubelet %s, %v", errOut.String(), err)
+			}
+
+			err = os.RemoveAll("/var/lib/kubelet")
+			if err != nil {
+				return fmt.Errorf("Could not remove kubelet: %v", err)
+			}
+
+			cmd = exec.Command("systemctl", "start", "kubelet")
+			errOut = &bytes.Buffer{}
+			cmd.Stderr = errOut
+			err = cmd.Run()
+			if err != nil {
+				return fmt.Errorf("Could not start kubelet %s, %v", errOut.String(), err)
+			}
+		}
 		mergedData := append(controllerConfig.Spec.ImageRegistryBundleData, controllerConfig.Spec.ImageRegistryBundleUserData...)
 
 		entries, err := os.ReadDir("/etc/docker/certs.d")

@@ -126,6 +126,7 @@ var map_ControllerConfigSpec = map[string]string{
 	"imageRegistryBundleData":        "imageRegistryBundleData is the ImageRegistryData",
 	"pullSecret":                     "pullSecret is the default pull secret that needs to be installed on all machines.",
 	"internalRegistryPullSecret":     "internalRegistryPullSecret is the pull secret for the internal registry, used by rpm-ostree to pull images from the internal registry if present",
+	"internalAPICert":                "InternalAPICert is used to generate and update /etc/kubelet/kubeconfig",
 	"images":                         "images is map of images that are used by the controller to render templates under ./templates/",
 	"baseOSContainerImage":           "BaseOSContainerImage is the new-format container image for operating system updates.",
 	"baseOSExtensionsContainerImage": "BaseOSExtensionsContainerImage is the matching extensions container for the new-format container",

@@ -99,7 +99,7 @@ func (r *RpmOstreeClient) Initialize() error {
 
 	err := useMergedPullSecrets()
 	if err != nil {
-		klog.Errorf("error while linking rpm-ostree pull secrets %w", err)
+		klog.Errorf("error while linking rpm-ostree pull secrets %v", err)
 	}
 
 	return nil

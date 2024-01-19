@@ -324,9 +324,9 @@ func (ctrl *Controller) syncNode(key string) error {
 				ctrl.featureGatesAccessor,
 			)
 			if nErr != nil {
-				klog.Errorf("Error making MCN for Uncordon failure: %w", err)
+				klog.Errorf("Error making MCN for Uncordon failure: %v", err)
 			}
-			return fmt.Errorf("failed to uncordon node %v: %w", node.Name, err)
+			return fmt.Errorf("failed to uncordon node %v: %v", node.Name, err)
 
 		}
 
@@ -339,7 +339,7 @@ func (ctrl *Controller) syncNode(key string) error {
 			ctrl.featureGatesAccessor,
 		)
 		if err != nil {
-			klog.Errorf("Error making MCN for UnCordon success: %w", err)
+			klog.Errorf("Error making MCN for UnCordon success: %v", err)
 		}
 	case daemonconsts.DrainerStateDrain:
 
@@ -402,7 +402,7 @@ func (ctrl *Controller) drainNode(node *corev1.Node, drainer *drain.Helper) erro
 				ctrl.featureGatesAccessor,
 			)
 			if Nerr != nil {
-				klog.Errorf("Error making MCN for Cordon Failure: %w", Nerr)
+				klog.Errorf("Error making MCN for Cordon Failure: %v", Nerr)
 			}
 			return fmt.Errorf("node %s: failed to cordon: %w", node.Name, err)
 		}
@@ -416,7 +416,7 @@ func (ctrl *Controller) drainNode(node *corev1.Node, drainer *drain.Helper) erro
 			ctrl.featureGatesAccessor,
 		)
 		if err != nil {
-			klog.Errorf("Error making MCN for Cordon Success: %w", err)
+			klog.Errorf("Error making MCN for Cordon Success: %v", err)
 		}
 	}
 
@@ -432,7 +432,7 @@ func (ctrl *Controller) drainNode(node *corev1.Node, drainer *drain.Helper) erro
 		ctrl.featureGatesAccessor,
 	)
 	if err != nil {
-		klog.Errorf("Error making MCN for Drain beginning: %w", err)
+		klog.Errorf("Error making MCN for Drain beginning: %v", err)
 	}
 	if err := drain.RunNodeDrain(drainer, node.Name); err != nil {
 		// To mimic our old daemon logic, we should probably have a more nuanced backoff.
@@ -459,7 +459,7 @@ func (ctrl *Controller) drainNode(node *corev1.Node, drainer *drain.Helper) erro
 			ctrl.featureGatesAccessor,
 		)
 		if nErr != nil {
-			klog.Errorf("Error making MCN for Drain failure: %w", nErr)
+			klog.Errorf("Error making MCN for Drain failure: %v", nErr)
 		}
 
 		// Return early without deleting the ongoing drain.
@@ -475,7 +475,7 @@ func (ctrl *Controller) drainNode(node *corev1.Node, drainer *drain.Helper) erro
 		ctrl.featureGatesAccessor,
 	)
 	if err != nil {
-		klog.Errorf("Error making MCN for Drain success: %w", err)
+		klog.Errorf("Error making MCN for Drain success: %v", err)
 	}
 
 	// Drain was successful. Delete the ongoing drain.
