@@ -509,6 +509,63 @@ func TestGetUnavailableMachines(t *testing.T) {
 			helpers.NewNodeBuilder("node-4").WithEqualConfigs(machineConfigV0).WithEqualImages(imageV1).WithNodeReady().Node(),
 		},
 		unavail: []string{"node-0"},
+	}, {
+		// Targets https://issues.redhat.com/browse/OCPBUGS-24705.
+		name: "nodes working toward layered should not be considered available",
+		nodes: []*corev1.Node{
+			// Need to set WithNodeReady() on all nodes to avoid short-circuiting.
+			helpers.NewNodeBuilder("node-0").
+				WithEqualConfigs(machineConfigV0).
+				WithNodeReady().
+				Node(),
+			helpers.NewNodeBuilder("node-1").
+				WithEqualConfigs(machineConfigV0).
+				WithNodeReady().
+				Node(),
+			helpers.NewNodeBuilder("node-2").
+				WithEqualConfigs(machineConfigV0).
+				WithDesiredImage(imageV1).
+				WithMCDState(daemonconsts.MachineConfigDaemonStateWorking).
+				WithNodeReady().
+				Node(),
+			helpers.NewNodeBuilder("node-3").
+				WithEqualConfigs(machineConfigV0).
+				WithDesiredImage(imageV1).WithCurrentImage("").
+				WithNodeReady().
+				Node(),
+		},
+		layeredPoolWithImage: true,
+		unavail:              []string{"node-2", "node-3"},
+	}, {
+		// Targets https://issues.redhat.com/browse/OCPBUGS-24705.
+		name: "nodes with desiredImage annotation that have not yet started working should not be considered available",
+		nodes: []*corev1.Node{
+			// Need to set WithNodeReady() on all nodes to avoid short-circuiting.
+			helpers.NewNodeBuilder("node-0").
+				WithEqualConfigs(machineConfigV0).
+				WithMCDState(daemonconsts.MachineConfigDaemonStateDone).
+				WithNodeReady().
+				Node(),
+			helpers.NewNodeBuilder("node-1").
+				WithEqualConfigs(machineConfigV0).
+				WithMCDState(daemonconsts.MachineConfigDaemonStateDone).
+				WithNodeReady().
+				Node(),
+			helpers.NewNodeBuilder("node-2").
+				WithEqualConfigs(machineConfigV0).
+				WithDesiredImage(imageV1).
+				WithMCDState(daemonconsts.MachineConfigDaemonStateDone).
+				WithNodeReady().
+				Node(),
+			helpers.NewNodeBuilder("node-3").
+				WithEqualConfigs(machineConfigV0).
+				WithDesiredImage(imageV1).WithCurrentImage("").
+				WithMCDState(daemonconsts.MachineConfigDaemonStateDone).
+				WithNodeReady().
+				Node(),
+		},
+		layeredPoolWithImage: true,
+		unavail:              []string{"node-2", "node-3"},
 	},
 	}
 

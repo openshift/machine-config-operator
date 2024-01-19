@@ -709,7 +709,62 @@ func TestGetCandidateMachines(t *testing.T) {
 		otherCandidates: []string{"node-5", "node-6"},
 		capacity:        2,
 		layeredPool:     true,
-	}}
+	}, {
+		// Targets https://issues.redhat.com/browse/OCPBUGS-24705.
+		name:     "Node has received desiredImage annotation but MCD has not yet started working",
+		progress: 1,
+		nodes: []*corev1.Node{
+			// Need to set WithNodeReady() on all nodes to avoid short-circuiting.
+			helpers.NewNodeBuilder("node-0").
+				WithEqualConfigs(machineConfigV1).
+				WithDesiredImage(imageV1).
+				WithNodeReady().
+				WithMCDState(daemonconsts.MachineConfigDaemonStateDone).
+				Node(),
+			helpers.NewNodeBuilder("node-1").
+				WithEqualConfigs(machineConfigV1).
+				WithNodeReady().
+				WithMCDState(daemonconsts.MachineConfigDaemonStateDone).
+				Node(),
+			helpers.NewNodeBuilder("node-2").
+				WithEqualConfigs(machineConfigV1).
+				WithNodeReady().
+				WithMCDState(daemonconsts.MachineConfigDaemonStateDone).
+				Node(),
+		},
+		expected:        nil,
+		otherCandidates: nil,
+		capacity:        0,
+		layeredPool:     true,
+	}, {
+		// Targets https://issues.redhat.com/browse/OCPBUGS-24705.
+		name:     "Node has received desiredImage annotation and the MCD has started working",
+		progress: 1,
+		nodes: []*corev1.Node{
+			// Need to set WithNodeReady() on all nodes to avoid short-circuiting.
+			helpers.NewNodeBuilder("node-0").
+				WithEqualConfigs(machineConfigV1).
+				WithDesiredImage(imageV1).
+				WithNodeReady().
+				WithMCDState(daemonconsts.MachineConfigDaemonStateWorking).
+				Node(),
+			helpers.NewNodeBuilder("node-1").
+				WithEqualConfigs(machineConfigV1).
+				WithNodeReady().
+				WithMCDState(daemonconsts.MachineConfigDaemonStateDone).
+				Node(),
+			helpers.NewNodeBuilder("node-2").
+				WithEqualConfigs(machineConfigV1).
+				WithNodeReady().
+				WithMCDState(daemonconsts.MachineConfigDaemonStateDone).
+				Node(),
+		},
+		expected:        nil,
+		otherCandidates: nil,
+		capacity:        0,
+		layeredPool:     true,
+	},
+	}
 
 	for _, test := range tests {
 		test := test
