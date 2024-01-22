@@ -1282,7 +1282,10 @@ func (BareMetalPlatformLoadBalancer) SwaggerDoc() map[string]string {
 }
 
 var map_BareMetalPlatformSpec = map[string]string{
-	"": "BareMetalPlatformSpec holds the desired state of the BareMetal infrastructure provider. This only includes fields that can be modified in the cluster.",
+	"":                     "BareMetalPlatformSpec holds the desired state of the BareMetal infrastructure provider. This only includes fields that can be modified in the cluster.",
+	"apiServerInternalIPs": "apiServerInternalIPs are the IP addresses to contact the Kubernetes API server that can be used by components inside the cluster, like kubelets using the infrastructure rather than Kubernetes networking. These are the IPs for a self-hosted load balancer in front of the API servers. In dual stack clusters this list contains two IP addresses, one from IPv4 family and one from IPv6. In single stack clusters a single IP address is expected. When omitted, values from the status.apiServerInternalIPs will be used. Once set, the list cannot be completely removed (but its second entry can).",
+	"ingressIPs":           "ingressIPs are the external IPs which route to the default ingress controller. The IPs are suitable targets of a wildcard DNS record used to resolve default route host names. In dual stack clusters this list contains two IP addresses, one from IPv4 family and one from IPv6. In single stack clusters a single IP address is expected. When omitted, values from the status.ingressIPs will be used. Once set, the list cannot be completely removed (but its second entry can).",
+	"machineNetworks":      "machineNetworks are IP networks used to connect all the OpenShift cluster nodes. Each network is provided in the CIDR format and should be IPv4 or IPv6, for example \"10.0.0.0/8\" or \"fd00::/8\".",
 }
 
 func (BareMetalPlatformSpec) SwaggerDoc() map[string]string {
@@ -1297,6 +1300,7 @@ var map_BareMetalPlatformStatus = map[string]string{
 	"ingressIPs":           "ingressIPs are the external IPs which route to the default ingress controller. The IPs are suitable targets of a wildcard DNS record used to resolve default route host names. In dual stack clusters this list contains two IPs otherwise only one.",
 	"nodeDNSIP":            "nodeDNSIP is the IP address for the internal DNS used by the nodes. Unlike the one managed by the DNS operator, `NodeDNSIP` provides name resolution for the nodes themselves. There is no DNS-as-a-service for BareMetal deployments. In order to minimize necessary changes to the datacenter DNS, a DNS service is hosted as a static pod to serve those hostnames to the nodes in the cluster.",
 	"loadBalancer":         "loadBalancer defines how the load balancer used by the cluster is configured.",
+	"machineNetworks":      "machineNetworks are IP networks used to connect all the OpenShift cluster nodes.",
 }
 
 func (BareMetalPlatformStatus) SwaggerDoc() map[string]string {
@@ -1310,6 +1314,27 @@ var map_CloudControllerManagerStatus = map[string]string{
 
 func (CloudControllerManagerStatus) SwaggerDoc() map[string]string {
 	return map_CloudControllerManagerStatus
+}
+
+var map_CloudLoadBalancerConfig = map[string]string{
+	"":              "CloudLoadBalancerConfig contains an union discriminator indicating the type of DNS solution in use within the cluster. When the DNSType is `ClusterHosted`, the cloud's Load Balancer configuration needs to be provided so that the DNS solution hosted within the cluster can be configured with those values.",
+	"dnsType":       "dnsType indicates the type of DNS solution in use within the cluster. Its default value of `PlatformDefault` indicates that the cluster's DNS is the default provided by the cloud platform. It can be set to `ClusterHosted` to bypass the configuration of the cloud default DNS. In this mode, the cluster needs to provide a self-hosted DNS solution for the cluster's installation to succeed. The cluster's use of the cloud's Load Balancers is unaffected by this setting. The value is immutable after it has been set at install time. Currently, there is no way for the customer to add additional DNS entries into the cluster hosted DNS. Enabling this functionality allows the user to start their own DNS solution outside the cluster after installation is complete. The customer would be responsible for configuring this custom DNS solution, and it can be run in addition to the in-cluster DNS solution.",
+	"clusterHosted": "clusterHosted holds the IP addresses of API, API-Int and Ingress Load Balancers on Cloud Platforms. The DNS solution hosted within the cluster use these IP addresses to provide resolution for API, API-Int and Ingress services.",
+}
+
+func (CloudLoadBalancerConfig) SwaggerDoc() map[string]string {
+	return map_CloudLoadBalancerConfig
+}
+
+var map_CloudLoadBalancerIPs = map[string]string{
+	"":                       "CloudLoadBalancerIPs contains the Load Balancer IPs for the cloud's API, API-Int and Ingress Load balancers. They will be populated as soon as the respective Load Balancers have been configured. These values are utilized to configure the DNS solution hosted within the cluster.",
+	"apiIntLoadBalancerIPs":  "apiIntLoadBalancerIPs holds Load Balancer IPs for the internal API service. These Load Balancer IP addresses can be IPv4 and/or IPv6 addresses. Entries in the apiIntLoadBalancerIPs must be unique. A maximum of 16 IP addresses are permitted.",
+	"apiLoadBalancerIPs":     "apiLoadBalancerIPs holds Load Balancer IPs for the API service. These Load Balancer IP addresses can be IPv4 and/or IPv6 addresses. Could be empty for private clusters. Entries in the apiLoadBalancerIPs must be unique. A maximum of 16 IP addresses are permitted.",
+	"ingressLoadBalancerIPs": "ingressLoadBalancerIPs holds IPs for Ingress Load Balancers. These Load Balancer IP addresses can be IPv4 and/or IPv6 addresses. Entries in the ingressLoadBalancerIPs must be unique. A maximum of 16 IP addresses are permitted.",
+}
+
+func (CloudLoadBalancerIPs) SwaggerDoc() map[string]string {
+	return map_CloudLoadBalancerIPs
 }
 
 var map_EquinixMetalPlatformSpec = map[string]string{
@@ -1357,12 +1382,12 @@ func (GCPPlatformSpec) SwaggerDoc() map[string]string {
 }
 
 var map_GCPPlatformStatus = map[string]string{
-	"":                 "GCPPlatformStatus holds the current status of the Google Cloud Platform infrastructure provider.",
-	"projectID":        "resourceGroupName is the Project ID for new GCP resources created for the cluster.",
-	"region":           "region holds the region for new GCP resources created for the cluster.",
-	"resourceLabels":   "resourceLabels is a list of additional labels to apply to GCP resources created for the cluster. See https://cloud.google.com/compute/docs/labeling-resources for information on labeling GCP resources. GCP supports a maximum of 64 labels per resource. OpenShift reserves 32 labels for internal use, allowing 32 labels for user configuration.",
-	"resourceTags":     "resourceTags is a list of additional tags to apply to GCP resources created for the cluster. See https://cloud.google.com/resource-manager/docs/tags/tags-overview for information on tagging GCP resources. GCP supports a maximum of 50 tags per resource.",
-	"clusterHostedDNS": "clusterHostedDNS indicates the type of DNS solution in use within the cluster. Its default value of \"Disabled\" indicates that the cluster's DNS is the default provided by the cloud platform. It can be \"Enabled\" during install to bypass the configuration of the cloud default DNS. When \"Enabled\", the cluster needs to provide a self-hosted DNS solution for the cluster's installation to succeed. The cluster's use of the cloud's Load Balancers is unaffected by this setting. The value is immutable after it has been set at install time. Currently, there is no way for the customer to add additional DNS entries into the cluster hosted DNS. Enabling this functionality allows the user to start their own DNS solution outside the cluster after installation is complete. The customer would be responsible for configuring this custom DNS solution, and it can be run in addition to the in-cluster DNS solution.",
+	"":                        "GCPPlatformStatus holds the current status of the Google Cloud Platform infrastructure provider.",
+	"projectID":               "resourceGroupName is the Project ID for new GCP resources created for the cluster.",
+	"region":                  "region holds the region for new GCP resources created for the cluster.",
+	"resourceLabels":          "resourceLabels is a list of additional labels to apply to GCP resources created for the cluster. See https://cloud.google.com/compute/docs/labeling-resources for information on labeling GCP resources. GCP supports a maximum of 64 labels per resource. OpenShift reserves 32 labels for internal use, allowing 32 labels for user configuration.",
+	"resourceTags":            "resourceTags is a list of additional tags to apply to GCP resources created for the cluster. See https://cloud.google.com/resource-manager/docs/tags/tags-overview for information on tagging GCP resources. GCP supports a maximum of 50 tags per resource.",
+	"cloudLoadBalancerConfig": "cloudLoadBalancerConfig is a union that contains the IP addresses of API, API-Int and Ingress Load Balancers created on the cloud platform. These values would not be populated on on-prem platforms. These Load Balancer IPs are used to configure the in-cluster DNS instances for API, API-Int and Ingress services. `dnsType` is expected to be set to `ClusterHosted` when these Load Balancer IP addresses are populated and used.",
 }
 
 func (GCPPlatformStatus) SwaggerDoc() map[string]string {
@@ -1572,7 +1597,10 @@ func (OpenStackPlatformLoadBalancer) SwaggerDoc() map[string]string {
 }
 
 var map_OpenStackPlatformSpec = map[string]string{
-	"": "OpenStackPlatformSpec holds the desired state of the OpenStack infrastructure provider. This only includes fields that can be modified in the cluster.",
+	"":                     "OpenStackPlatformSpec holds the desired state of the OpenStack infrastructure provider. This only includes fields that can be modified in the cluster.",
+	"apiServerInternalIPs": "apiServerInternalIPs are the IP addresses to contact the Kubernetes API server that can be used by components inside the cluster, like kubelets using the infrastructure rather than Kubernetes networking. These are the IPs for a self-hosted load balancer in front of the API servers. In dual stack clusters this list contains two IP addresses, one from IPv4 family and one from IPv6. In single stack clusters a single IP address is expected. When omitted, values from the status.apiServerInternalIPs will be used. Once set, the list cannot be completely removed (but its second entry can).",
+	"ingressIPs":           "ingressIPs are the external IPs which route to the default ingress controller. The IPs are suitable targets of a wildcard DNS record used to resolve default route host names. In dual stack clusters this list contains two IP addresses, one from IPv4 family and one from IPv6. In single stack clusters a single IP address is expected. When omitted, values from the status.ingressIPs will be used. Once set, the list cannot be completely removed (but its second entry can).",
+	"machineNetworks":      "machineNetworks are IP networks used to connect all the OpenShift cluster nodes. Each network is provided in the CIDR format and should be IPv4 or IPv6, for example \"10.0.0.0/8\" or \"fd00::/8\".",
 }
 
 func (OpenStackPlatformSpec) SwaggerDoc() map[string]string {
@@ -1588,6 +1616,7 @@ var map_OpenStackPlatformStatus = map[string]string{
 	"ingressIPs":           "ingressIPs are the external IPs which route to the default ingress controller. The IPs are suitable targets of a wildcard DNS record used to resolve default route host names. In dual stack clusters this list contains two IPs otherwise only one.",
 	"nodeDNSIP":            "nodeDNSIP is the IP address for the internal DNS used by the nodes. Unlike the one managed by the DNS operator, `NodeDNSIP` provides name resolution for the nodes themselves. There is no DNS-as-a-service for OpenStack deployments. In order to minimize necessary changes to the datacenter DNS, a DNS service is hosted as a static pod to serve those hostnames to the nodes in the cluster.",
 	"loadBalancer":         "loadBalancer defines how the load balancer used by the cluster is configured.",
+	"machineNetworks":      "machineNetworks are IP networks used to connect all the OpenShift cluster nodes.",
 }
 
 func (OpenStackPlatformStatus) SwaggerDoc() map[string]string {
@@ -1748,10 +1777,13 @@ func (VSpherePlatformNodeNetworkingSpec) SwaggerDoc() map[string]string {
 }
 
 var map_VSpherePlatformSpec = map[string]string{
-	"":               "VSpherePlatformSpec holds the desired state of the vSphere infrastructure provider. In the future the cloud provider operator, storage operator and machine operator will use these fields for configuration.",
-	"vcenters":       "vcenters holds the connection details for services to communicate with vCenter. Currently, only a single vCenter is supported.",
-	"failureDomains": "failureDomains contains the definition of region, zone and the vCenter topology. If this is omitted failure domains (regions and zones) will not be used.",
-	"nodeNetworking": "nodeNetworking contains the definition of internal and external network constraints for assigning the node's networking. If this field is omitted, networking defaults to the legacy address selection behavior which is to only support a single address and return the first one found.",
+	"":                     "VSpherePlatformSpec holds the desired state of the vSphere infrastructure provider. In the future the cloud provider operator, storage operator and machine operator will use these fields for configuration.",
+	"vcenters":             "vcenters holds the connection details for services to communicate with vCenter. Currently, only a single vCenter is supported.",
+	"failureDomains":       "failureDomains contains the definition of region, zone and the vCenter topology. If this is omitted failure domains (regions and zones) will not be used.",
+	"nodeNetworking":       "nodeNetworking contains the definition of internal and external network constraints for assigning the node's networking. If this field is omitted, networking defaults to the legacy address selection behavior which is to only support a single address and return the first one found.",
+	"apiServerInternalIPs": "apiServerInternalIPs are the IP addresses to contact the Kubernetes API server that can be used by components inside the cluster, like kubelets using the infrastructure rather than Kubernetes networking. These are the IPs for a self-hosted load balancer in front of the API servers. In dual stack clusters this list contains two IP addresses, one from IPv4 family and one from IPv6. In single stack clusters a single IP address is expected. When omitted, values from the status.apiServerInternalIPs will be used. Once set, the list cannot be completely removed (but its second entry can).",
+	"ingressIPs":           "ingressIPs are the external IPs which route to the default ingress controller. The IPs are suitable targets of a wildcard DNS record used to resolve default route host names. In dual stack clusters this list contains two IP addresses, one from IPv4 family and one from IPv6. In single stack clusters a single IP address is expected. When omitted, values from the status.ingressIPs will be used. Once set, the list cannot be completely removed (but its second entry can).",
+	"machineNetworks":      "machineNetworks are IP networks used to connect all the OpenShift cluster nodes. Each network is provided in the CIDR format and should be IPv4 or IPv6, for example \"10.0.0.0/8\" or \"fd00::/8\".",
 }
 
 func (VSpherePlatformSpec) SwaggerDoc() map[string]string {
@@ -1766,6 +1798,7 @@ var map_VSpherePlatformStatus = map[string]string{
 	"ingressIPs":           "ingressIPs are the external IPs which route to the default ingress controller. The IPs are suitable targets of a wildcard DNS record used to resolve default route host names. In dual stack clusters this list contains two IPs otherwise only one.",
 	"nodeDNSIP":            "nodeDNSIP is the IP address for the internal DNS used by the nodes. Unlike the one managed by the DNS operator, `NodeDNSIP` provides name resolution for the nodes themselves. There is no DNS-as-a-service for vSphere deployments. In order to minimize necessary changes to the datacenter DNS, a DNS service is hosted as a static pod to serve those hostnames to the nodes in the cluster.",
 	"loadBalancer":         "loadBalancer defines how the load balancer used by the cluster is configured.",
+	"machineNetworks":      "machineNetworks are IP networks used to connect all the OpenShift cluster nodes.",
 }
 
 func (VSpherePlatformStatus) SwaggerDoc() map[string]string {
