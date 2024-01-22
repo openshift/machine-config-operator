@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -241,6 +242,34 @@ func TestAPIHandler(t *testing.T) {
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
 				checkStatus(t, response, http.StatusInternalServerError)
+				checkContentLength(t, response, 0)
+				checkBodyLength(t, response, 0)
+			},
+		},
+		{
+			name:    "stop path traversal attempt",
+			request: setAcceptHeaderOnReq(httptest.NewRequest(http.MethodGet, "http://testrequest/config/../../../worker", nil)),
+			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
+				return &runtime.RawExtension{
+					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
+				}, fmt.Errorf("not acceptable")
+			},
+			checkResponse: func(t *testing.T, response *http.Response) {
+				checkStatus(t, response, http.StatusBadRequest)
+				checkContentLength(t, response, 0)
+				checkBodyLength(t, response, 0)
+			},
+		},
+		{
+			name:    "stop path traversal attempt - chars on end",
+			request: setAcceptHeaderOnReq(httptest.NewRequest(http.MethodGet, "http://testrequest/config/worker/..", nil)),
+			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
+				return &runtime.RawExtension{
+					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
+				}, fmt.Errorf("not acceptable")
+			},
+			checkResponse: func(t *testing.T, response *http.Response) {
+				checkStatus(t, response, http.StatusBadRequest)
 				checkContentLength(t, response, 0)
 				checkBodyLength(t, response, 0)
 			},
@@ -806,6 +835,74 @@ EKTcWGekdmdDPsHloRNtsiCa697B2O9IFA==
 					t.Fatalf("want: %s\n got: %v", c.errString, err)
 				}
 			}
+		})
+	}
+}
+
+func TestGetValidPoolName(t *testing.T) {
+	testcases := []struct {
+		path        string
+		expected    string
+		errExpected bool
+	}{
+		{
+			path:     "/config/worker",
+			expected: "worker",
+		},
+		{
+			path:     "/config/master",
+			expected: "master",
+		},
+		{
+			path:        "",
+			errExpected: true,
+		},
+		{
+			path:        "/",
+			errExpected: true,
+		},
+		{
+			path:        "/config",
+			errExpected: true,
+		},
+		{
+			path:        "/config/",
+			errExpected: true,
+		},
+		{
+			path:        "/config/.",
+			errExpected: true,
+		},
+		{
+			path:        "/config/something/..",
+			errExpected: true,
+		},
+		{
+			path:        "/healthz",
+			errExpected: true,
+		},
+		{
+			path:        "/config/../something",
+			errExpected: true,
+		},
+		{
+			path:        "/config/something/master",
+			errExpected: true,
+		},
+	}
+
+	for _, testcase := range testcases {
+		testcase := testcase
+		t.Run(testcase.path, func(t *testing.T) {
+			actual, err := getValidPoolName(&url.URL{Path: testcase.path})
+			if testcase.errExpected {
+				t.Log(err)
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+
+			assert.Equal(t, testcase.expected, actual)
 		})
 	}
 }
