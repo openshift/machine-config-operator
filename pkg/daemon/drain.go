@@ -115,13 +115,17 @@ func (dn *Daemon) performDrain() error {
 }
 
 // isDrainRequired determines whether node drain is required or not to apply config changes.
-func isDrainRequired(actions, diffFileSet []string, oldIgnConfig, newIgnConfig ign3types.Config) (bool, error) {
+func isDrainRequired(actions, diffFileSet []string, oldIgnConfig, newIgnConfig ign3types.Config, overrideImageRegistryDrain bool) (bool, error) {
 	if ctrlcommon.InSlice(postConfigChangeActionReboot, actions) {
 		// Node is going to reboot, we definitely want to perform drain
 		return true, nil
 	} else if ctrlcommon.InSlice(postConfigChangeActionReloadCrio, actions) || ctrlcommon.InSlice(postConfigChangeActionRestartCrio, actions) {
 		// Drain may or may not be necessary in case of container registry config changes.
 		if ctrlcommon.InSlice(constants.ContainerRegistryConfPath, diffFileSet) {
+			if overrideImageRegistryDrain {
+				klog.Warningf("Drain was skipped for this image registry update due to the configmap %s being present. This may not be a safe change", ImageRegistryDrainOverrideConfigmap)
+				return false, nil
+			}
 			isSafe, err := isSafeContainerRegistryConfChanges(oldIgnConfig, newIgnConfig)
 			if err != nil {
 				return false, err
