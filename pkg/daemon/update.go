@@ -94,7 +94,7 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 			dn.featureGatesAccessor,
 		)
 		if err != nil {
-			klog.Errorf("Error making MCN for rebooting: %w", err)
+			klog.Errorf("Error making MCN for rebooting: %v", err)
 		}
 		logSystem("Rebooting node")
 		return dn.reboot(fmt.Sprintf("Node will reboot into config %s", configName))
@@ -114,7 +114,7 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 			dn.featureGatesAccessor,
 		)
 		if err != nil {
-			klog.Errorf("Error making MCN for no post config change action: %w", err)
+			klog.Errorf("Error making MCN for no post config change action: %v", err)
 		}
 		logSystem("Node has Desired Config %s, skipping reboot", configName)
 	}
@@ -139,7 +139,7 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 			dn.featureGatesAccessor,
 		)
 		if err != nil {
-			klog.Errorf("Error making MCN for Reloading success: %w", err)
+			klog.Errorf("Error making MCN for Reloading success: %v", err)
 		}
 
 		if dn.nodeWriter != nil {
@@ -685,7 +685,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 			dn.featureGatesAccessor,
 		)
 		if Nerr != nil {
-			klog.Errorf("Error making MCN for Preparing update failed: %w", err)
+			klog.Errorf("Error making MCN for Preparing update failed: %v", err)
 		}
 		wrappedErr := fmt.Errorf("can't reconcile config %s with %s: %w", oldConfigName, newConfigName, reconcilableError)
 		if dn.nodeWriter != nil {
@@ -709,7 +709,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 			dn.featureGatesAccessor,
 		)
 		if Nerr != nil {
-			klog.Errorf("Error making MCN for Preparing update failed: %w", err)
+			klog.Errorf("Error making MCN for Preparing update failed: %v", err)
 		}
 		return err
 	}
@@ -729,7 +729,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		dn.featureGatesAccessor,
 	)
 	if err != nil {
-		klog.Errorf("Error making MCN for Update Compatible: %w", err)
+		klog.Errorf("Error making MCN for Update Compatible: %v", err)
 	}
 	pool := ""
 	var ok bool
@@ -743,7 +743,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 
 	err = upgrademonitor.GenerateAndApplyMachineConfigNodeSpec(dn.featureGatesAccessor, pool, dn.node, dn.mcfgClient)
 	if err != nil {
-		klog.Errorf("Error making MCN spec for Update Compatible: %w", err)
+		klog.Errorf("Error making MCN spec for Update Compatible: %v", err)
 	}
 	if drain {
 		if err := dn.performDrain(); err != nil {
@@ -761,7 +761,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 			dn.featureGatesAccessor,
 		)
 		if err != nil {
-			klog.Errorf("Error making MCN for Drain not required: %w", err)
+			klog.Errorf("Error making MCN for Drain not required: %v", err)
 		}
 	}
 
@@ -788,7 +788,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		dn.featureGatesAccessor,
 	)
 	if err != nil {
-		klog.Errorf("Error making MCN for Updating Files and OS: %w", err)
+		klog.Errorf("Error making MCN for Updating Files and OS: %v", err)
 	}
 
 	// update files on disk that need updating
@@ -900,7 +900,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		dn.featureGatesAccessor,
 	)
 	if err != nil {
-		klog.Errorf("Error making MCN for Updated Files and OS: %w", err)
+		klog.Errorf("Error making MCN for Updated Files and OS: %v", err)
 	}
 
 	err = dn.performPostConfigChangeAction(actions, newConfig.GetName())
@@ -2386,7 +2386,7 @@ func (dn *Daemon) reboot(rationale string) error {
 		Rebooting[constants.MachineConfigDaemonPostConfigAction] = constants.MachineConfigDaemonStateRebooting
 		_, err := dn.nodeWriter.SetAnnotations(Rebooting)
 		if err != nil {
-			klog.Errorf("Error setting post config action annotation %w", err)
+			klog.Errorf("Error setting post config action annotation %v", err)
 		}
 	}
 
