@@ -19,6 +19,7 @@ import (
 	"github.com/clarketm/json"
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	kubeErrs "k8s.io/apimachinery/pkg/util/errors"
@@ -56,6 +57,10 @@ const (
 	// GPGNoRebootPath is the path MCO expects will contain GPG key updates. MCO will attempt to only reload crio for
 	// changes to this path. Note that other files added to the parent directory will not be handled specially
 	GPGNoRebootPath = "/etc/machine-config-daemon/no-reboot/containers-gpg.pub"
+
+	// ImageRegistryDrainOverrideConfigmap is the name of the Configmap a user can apply to force all
+	// image registry changes to not drain
+	ImageRegistryDrainOverrideConfigmap = "image-registry-override-drain"
 )
 
 func getNodeRef(node *corev1.Node) *corev1.ObjectReference {
@@ -485,7 +490,12 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	}
 
 	// Check and perform node drain if required
-	drain, err := isDrainRequired(actions, diffFileSet, oldIgnConfig, newIgnConfig)
+	crioOverrideConfigmapExists, err := dn.hasImageRegistryDrainOverrideConfigMap()
+	if err != nil {
+		return err
+	}
+
+	drain, err := isDrainRequired(actions, diffFileSet, oldIgnConfig, newIgnConfig, crioOverrideConfigmapExists)
 	if err != nil {
 		return err
 	}
@@ -2137,4 +2147,21 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 
 	// Apply extensions
 	return dn.applyExtensions(oldConfig, newConfig)
+}
+
+func (dn *Daemon) hasImageRegistryDrainOverrideConfigMap() (bool, error) {
+	if dn.kubeClient == nil {
+		return false, nil
+	}
+
+	_, err := dn.kubeClient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), ImageRegistryDrainOverrideConfigmap, metav1.GetOptions{})
+	if err == nil {
+		return true, nil
+	}
+
+	if apierrors.IsNotFound(err) {
+		return false, nil
+	}
+
+	return false, fmt.Errorf("Error fetching image registry drain override configmap: %w", err)
 }
