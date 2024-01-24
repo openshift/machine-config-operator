@@ -53,7 +53,7 @@ const (
 	CgroupModeEmpty   CgroupMode = "" // Empty string indicates to honor user set value on the system that should not be overridden by OpenShift
 	CgroupModeV1      CgroupMode = "v1"
 	CgroupModeV2      CgroupMode = "v2"
-	CgroupModeDefault CgroupMode = CgroupModeV1
+	CgroupModeDefault CgroupMode = CgroupModeV2
 )
 
 // +kubebuilder:validation:Enum=Default;MediumUpdateAverageReaction;LowUpdateSlowReaction
