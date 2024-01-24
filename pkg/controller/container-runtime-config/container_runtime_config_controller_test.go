@@ -369,7 +369,7 @@ func checkAction(expected, actual core.Action, t *testing.T, index int) {
 		expPatch := e.GetPatch()
 		patch := a.GetPatch()
 
-		if !equality.Semantic.DeepEqual(expPatch, expPatch) {
+		if !equality.Semantic.DeepEqual(expPatch, patch) {
 			t.Errorf("Action %s %s has wrong patch\nDiff:\n %s",
 				a.GetVerb(), a.GetResource().Resource, diff.ObjectGoPrintDiff(expPatch, patch))
 		}
@@ -485,7 +485,7 @@ func verifyRegistriesConfigAndPolicyJSONContents(t *testing.T, mc *mcfgv1.Machin
 }
 
 // The patch bytes to expect when creating/updating a containerruntimeconfig
-var ctrcfgPatchBytes = []uint8{0x7b, 0x22, 0x6d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0x22, 0x3a, 0x7b, 0x22, 0x66, 0x69, 0x6e, 0x61, 0x6c, 0x69, 0x7a, 0x65, 0x72, 0x73, 0x22, 0x3a, 0x5b, 0x22, 0x39, 0x39, 0x2d, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x2d, 0x73, 0x78, 0x32, 0x76, 0x72, 0x2d, 0x63, 0x6f, 0x6e, 0x74, 0x61, 0x69, 0x6e, 0x65, 0x72, 0x72, 0x75, 0x6e, 0x74, 0x69, 0x6d, 0x65, 0x22, 0x5d, 0x7d, 0x7d}
+var ctrcfgPatchBytes = []byte("{\"metadata\":{\"finalizers\":[\"99-master-generated-containerruntime\"]}}")
 
 // TestContainerRuntimeConfigCreate ensures that a create happens when an existing containerruntime config is created.
 // It tests that the necessary get, create, and update steps happen in the correct order.
@@ -1449,7 +1449,7 @@ func TestCtrruntimeConfigMultiCreate(t *testing.T) {
 				mcsDeprecated := mcs.DeepCopy()
 				mcsDeprecated.Name = getManagedKeyCtrCfgDeprecated(mcp)
 
-				expectedPatch := fmt.Sprintf("{\"metadata\":{\"finalizers\":[\"99-%v-generated-containerruntime-1\"]}}", poolName)
+				expectedPatch := fmt.Sprintf("{\"metadata\":{\"finalizers\":[\"99-%v-generated-containerruntime\"]}}", poolName)
 
 				f.expectGetMachineConfigAction(mcs)
 				f.expectGetMachineConfigAction(mcsDeprecated)
@@ -1565,7 +1565,7 @@ func TestAddAnnotationExistingContainerRuntimeConfig(t *testing.T) {
 			f.expectGetMachineConfigAction(ctrcfgMC)
 			f.expectUpdateContainerRuntimeConfigRoot(ctrc)
 			f.expectUpdateMachineConfigAction(ctrcfgMC)
-			f.expectPatchContainerRuntimeConfig(ctrc, ctrcfgPatchBytes)
+			f.expectPatchContainerRuntimeConfig(ctrc, []byte("{}"))
 			f.expectUpdateContainerRuntimeConfig(ctrc)
 
 			c := f.newController()
