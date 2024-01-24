@@ -11,6 +11,8 @@ contents:
       deletionGracePeriodSeconds: 65
       labels:
         app: {{ onPremPlatformShortName . }}-infra-coredns
+      annotations:
+        target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
     spec:
       volumes:
       - name: resource-dir
