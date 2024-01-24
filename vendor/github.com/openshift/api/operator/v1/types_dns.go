@@ -291,7 +291,6 @@ type ForwardPlugin struct {
 	// +optional
 	TransportConfig DNSTransportConfig `json:"transportConfig,omitempty"`
 
-
 	// protocolStrategy specifies the protocol to use for upstream DNS
 	// requests.
 	// Valid values for protocolStrategy are "TCP" and omitted.
@@ -373,10 +372,10 @@ type UpstreamResolvers struct {
 
 // Upstream can either be of type SystemResolvConf, or of type Network.
 //
-// * For an Upstream of type SystemResolvConf, no further fields are necessary:
-//   The upstream will be configured to use /etc/resolv.conf.
-// * For an Upstream of type Network, a NetworkResolver field needs to be defined
-//   with an IP address or IP:port if the upstream listens on a port other than 53.
+//   - For an Upstream of type SystemResolvConf, no further fields are necessary:
+//     The upstream will be configured to use /etc/resolv.conf.
+//   - For an Upstream of type Network, a NetworkResolver field needs to be defined
+//     with an IP address or IP:port if the upstream listens on a port other than 53.
 type Upstream struct {
 
 	// Type defines whether this upstream contains an IP/IP:port resolver or the local /etc/resolv.conf.

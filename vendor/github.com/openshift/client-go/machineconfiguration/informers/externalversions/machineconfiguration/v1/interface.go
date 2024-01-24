@@ -18,6 +18,8 @@ type Interface interface {
 	MachineConfigs() MachineConfigInformer
 	// MachineConfigPools returns a MachineConfigPoolInformer.
 	MachineConfigPools() MachineConfigPoolInformer
+	// PinnedImageSets returns a PinnedImageSetInformer.
+	PinnedImageSets() PinnedImageSetInformer
 }
 
 type version struct {
@@ -54,4 +56,9 @@ func (v *version) MachineConfigs() MachineConfigInformer {
 // MachineConfigPools returns a MachineConfigPoolInformer.
 func (v *version) MachineConfigPools() MachineConfigPoolInformer {
 	return &machineConfigPoolInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
+}
+
+// PinnedImageSets returns a PinnedImageSetInformer.
+func (v *version) PinnedImageSets() PinnedImageSetInformer {
+	return &pinnedImageSetInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }

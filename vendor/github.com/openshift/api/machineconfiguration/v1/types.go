@@ -762,3 +762,76 @@ type ContainerRuntimeConfigList struct {
 
 	Items []ContainerRuntimeConfig `json:"items"`
 }
+
+// +genclient
+// +genclient:nonNamespaced
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// PinnedImageSet describes a set of images that should be pinned.
+//
+// Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).
+// +openshift:compatibility-gen:level=1
+type PinnedImageSet struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	// +required
+	Spec PinnedImageSetSpec `json:"spec"`
+	// +optional
+	Status PinnedImageSetStatus `json:"status"`
+}
+
+// PinnedImageSetSpec defines the desired state of a PinnedImageSet.
+type PinnedImageSetSpec struct {
+	// MachineConfigPoolSelector selects which pools the PinnedImageSet should apply to.
+	// A nil selector will result in no pools being selected.
+	// +optional
+	MachineConfigPoolSelector *metav1.LabelSelector `json:"machineConfigPoolSelector,omitempty"`
+
+	// pinnedImages is a list of images that should be pinned and pre-loaded in all the nodes
+	// of the cluster matching the node selector. Translates into a new file inside the
+	// /etc/crio/crio.conf.d directory with content similar to this:
+	//
+	//      pinned_images = [
+	//              "quay.io/openshift-release-dev/ocp-release@sha256:...",
+	//              "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:...",
+	//              "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:...",
+	//              ...
+	//      ]
+	//
+	// These image references should all be by digest, tags aren't allowed.
+	// +optional
+	PinnedImages []PinnedImageRef `json:"pinnedImages,omitempty"`
+}
+
+// PinnedImageRef is an image reference by digest.
+//
+// +kubebuilder:validation:Pattern:=`@sha256:[a-fA-F0-9]{64}$`
+type PinnedImageRef string
+
+// PinnedImageSetStatus defines the observed state of a PinnedImageSet.
+type PinnedImageSetStatus struct {
+	// observedGeneration represents the generation observed by the controller.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
+	// conditions represent the observations of the PinnedImageSet controller.
+	// +patchMergeKey=type
+	// +patchStrategy=merge
+	// +listType=map
+	// +listMapKey=type
+	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// PinnedImageSetList is a list of PinnedImageSet resources
+//
+// Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).
+// +openshift:compatibility-gen:level=1
+type PinnedImageSetList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata"`
+
+	Items []PinnedImageSet `json:"items"`
+}

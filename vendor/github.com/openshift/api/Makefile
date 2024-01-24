@@ -50,7 +50,6 @@ verify-scripts:
 	bash -x hack/verify-group-versions.sh
 	bash -x hack/verify-prerelease-lifecycle-gen.sh
 	hack/verify-payload-crds.sh
-	hack/verify-payload-featuregates.sh
 
 .PHONY: verify
 verify: verify-scripts verify-crd-schema verify-codegen-crds
@@ -78,7 +77,7 @@ verify-%:
 ################################################################################################
 
 .PHONY: update-scripts
-update-scripts: update-compatibility update-openapi update-deepcopy update-protobuf update-swagger-docs tests-vendor update-prerelease-lifecycle-gen update-payload-crds update-payload-featuregates
+update-scripts: update-compatibility update-openapi update-deepcopy update-protobuf update-swagger-docs tests-vendor update-prerelease-lifecycle-gen update-payload-crds
 
 .PHONY: update-compatibility
 update-compatibility:
@@ -107,10 +106,6 @@ update-prerelease-lifecycle-gen:
 .PHONY: update-payload-crds
 update-payload-crds:
 	hack/update-payload-crds.sh
-
-.PHONY: update-payload-featuregates
-update-payload-featuregates:
-	hack/update-payload-featuregates.sh
 
 #####################
 #

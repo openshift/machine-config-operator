@@ -335,4 +335,40 @@ func (NetworkInfo) SwaggerDoc() map[string]string {
 	return map_NetworkInfo
 }
 
+var map_PinnedImageSet = map[string]string{
+	"": "PinnedImageSet describes a set of images that should be pinned.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
+}
+
+func (PinnedImageSet) SwaggerDoc() map[string]string {
+	return map_PinnedImageSet
+}
+
+var map_PinnedImageSetList = map[string]string{
+	"": "PinnedImageSetList is a list of PinnedImageSet resources\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
+}
+
+func (PinnedImageSetList) SwaggerDoc() map[string]string {
+	return map_PinnedImageSetList
+}
+
+var map_PinnedImageSetSpec = map[string]string{
+	"":                          "PinnedImageSetSpec defines the desired state of a PinnedImageSet.",
+	"machineConfigPoolSelector": "MachineConfigPoolSelector selects which pools the PinnedImageSet should apply to. A nil selector will result in no pools being selected.",
+	"pinnedImages":              "pinnedImages is a list of images that should be pinned and pre-loaded in all the nodes of the cluster matching the node selector. Translates into a new file inside the /etc/crio/crio.conf.d directory with content similar to this:\n\n     pinned_images = [\n             \"quay.io/openshift-release-dev/ocp-release@sha256:...\",\n             \"quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:...\",\n             \"quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:...\",\n             ...\n     ]\n\nThese image references should all be by digest, tags aren't allowed.",
+}
+
+func (PinnedImageSetSpec) SwaggerDoc() map[string]string {
+	return map_PinnedImageSetSpec
+}
+
+var map_PinnedImageSetStatus = map[string]string{
+	"":                   "PinnedImageSetStatus defines the observed state of a PinnedImageSet.",
+	"observedGeneration": "observedGeneration represents the generation observed by the controller.",
+	"conditions":         "conditions represent the observations of the PinnedImageSet controller.",
+}
+
+func (PinnedImageSetStatus) SwaggerDoc() map[string]string {
+	return map_PinnedImageSetStatus
+}
+
 // AUTO-GENERATED FUNCTIONS END HERE

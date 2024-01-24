@@ -505,6 +505,10 @@ github.com/hashicorp/golang-lru v0.5.0/go.mod h1:/m3WP610KZHVQ1SGc6re/UDhFvYD7pJ
 github.com/hashicorp/golang-lru v0.5.1/go.mod h1:/m3WP610KZHVQ1SGc6re/UDhFvYD7pJ4Ao+sR/qLZy8=
 github.com/hashicorp/hcl v1.0.0 h1:0Anlzjpi4vEasTeNFn2mLJgTSwt0+6sfsiTG8qcWGx4=
 github.com/hashicorp/hcl v1.0.0/go.mod h1:E5yfLk+7swimpb2L/Alb/PJmXilQ/rhwaUYs4T20WEQ=
+github.com/hexfusion/api v0.0.0-20240125205502-d262ef28f66d h1:IFW6hvNN3YvFZvNs4AyzUcx67gCYwGFTbTMvz8Wpq3Q=
+github.com/hexfusion/api v0.0.0-20240125205502-d262ef28f66d/go.mod h1:CxgbWAlvu2iQB0UmKTtRu1YfepRg1/vJ64n2DlIEVz4=
+github.com/hexfusion/client-go v0.0.0-20240125213357-957c2c9950e9 h1:9R4udI6FjYwmZOLBVF8YRHu7xQVNItprSVGbOUL2jB4=
+github.com/hexfusion/client-go v0.0.0-20240125213357-957c2c9950e9/go.mod h1:YzQp/MSP/ltBy2dMfKo1AoD546IbLOYu/EQ9421w1q0=
 github.com/hexops/gotextdiff v1.0.3 h1:gitA9+qJrrTCsiCl7+kh75nPqQt1cx4ZkudSTLoUqJM=
 github.com/hexops/gotextdiff v1.0.3/go.mod h1:pSWU5MAI3yDq+fZBTazCSJysOMbxWL1BSow5/V2vxeg=
 github.com/honeycombio/beeline-go v1.10.0 h1:cUDe555oqvw8oD76BQJ8alk7FP0JZ/M/zXpNvOEDLDc=
@@ -689,10 +693,6 @@ github.com/opencontainers/runc v1.1.10 h1:EaL5WeO9lv9wmS6SASjszOeQdSctvpbu0DdBQB
 github.com/opencontainers/runc v1.1.10/go.mod h1:+/R6+KmDlh+hOO8NkjmgkG9Qzvypzk0yXxAPYYR65+M=
 github.com/opencontainers/runtime-spec v1.1.0 h1:HHUyrt9mwHUjtasSbXSMvs4cyFxh+Bll4AjJ9odEGpg=
 github.com/opencontainers/runtime-spec v1.1.0/go.mod h1:jwyrGlmzljRJv/Fgzds9SsS/C5hL+LL3ko9hs6T5lQ0=
-github.com/openshift/api v0.0.0-20240205144533-7162acc29bb6 h1:OrjG0Lt0pXNYd6LUfGD3BYoBWXhfRMAMK0LYu8pdyqQ=
-github.com/openshift/api v0.0.0-20240205144533-7162acc29bb6/go.mod h1:CxgbWAlvu2iQB0UmKTtRu1YfepRg1/vJ64n2DlIEVz4=
-github.com/openshift/client-go v0.0.0-20240104132419-223261fd8630 h1:JQ/TO3bSDowReecFDvz+Nr0Fx8aoJI0zdo01y2W5NKk=
-github.com/openshift/client-go v0.0.0-20240104132419-223261fd8630/go.mod h1:8W4atsD8vBtEK0qplKpFWo+7XsQwzHTlqL7o/XpagRM=
 github.com/openshift/cluster-config-operator v0.0.0-alpha.0.0.20231213185242-e4dc676febfe h1:wDQtyIbJJIoif2Ux0S+9MJWIWEGV0oG+iLm8WtqwdSw=
 github.com/openshift/cluster-config-operator v0.0.0-alpha.0.0.20231213185242-e4dc676febfe/go.mod h1:SGUtv1pKZSzSVr2YCxXFvhE+LbGfI+vcetEhNicKayw=
 github.com/openshift/kube-openapi v0.0.0-20230816122517-ffc8f001abb0 h1:GPlAy197Jkr+D0T2FNWanamraTdzS/r9ZkT29lxvHaA=

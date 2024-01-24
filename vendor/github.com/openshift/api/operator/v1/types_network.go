@@ -129,7 +129,7 @@ const (
 )
 
 // NetworkMigration represents the cluster network configuration.
-// +openshift:validation:FeatureSetAwareXValidation:featureSet=CustomNoUpgrade;TechPreviewNoUpgrade,rule="!has(self.mtu) || !has(self.networkType) || self.networkType == '' || has(self.mode) && self.mode == 'Live'",message="networkType migration in mode other than 'Live' may not be configured at the same time as mtu migration"
+// +openshift:validation:FeatureSetAwareXValidation:featureSet=CustomNoUpgrade;TechPreviewNoUpgrade,rule="!has(self.mtu) || !has(self.networkType) || self.networkType == ” || has(self.mode) && self.mode == 'Live'",message="networkType migration in mode other than 'Live' may not be configured at the same time as mtu migration"
 type NetworkMigration struct {
 	// networkType is the target type of network migration. Set this to the
 	// target network type to allow changing the default network. If unset, the
@@ -437,7 +437,7 @@ type IPsecConfig struct {
 	// When 'External', ipsec is enabled on the node level but requires the user to configure the secure communication parameters.
 	// This mode is for external secure communications and the configuration can be done using the k8s-nmstate operator.
 	// When 'Full', ipsec is configured on the node level and inter-pod secure communication within the cluster is configured.
-	// Note with `Full`, if ipsec is desired for communication with external (to the cluster) entities (such as storage arrays), 
+	// Note with `Full`, if ipsec is desired for communication with external (to the cluster) entities (such as storage arrays),
 	// this is left to the user to configure.
 	// +kubebuilder:validation:Enum=Disabled;External;Full
 	// +optional

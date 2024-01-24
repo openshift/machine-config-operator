@@ -32,6 +32,10 @@ func (c *FakeMachineconfigurationV1) MachineConfigPools() v1.MachineConfigPoolIn
 	return &FakeMachineConfigPools{c}
 }
 
+func (c *FakeMachineconfigurationV1) PinnedImageSets() v1.PinnedImageSetInterface {
+	return &FakePinnedImageSets{c}
+}
+
 // RESTClient returns a RESTClient that is used to communicate
 // with API server by this client implementation.
 func (c *FakeMachineconfigurationV1) RESTClient() rest.Interface {

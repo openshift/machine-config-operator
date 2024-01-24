@@ -11,19 +11,20 @@ import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 // "csi.sharedresource.openshift.io" CSI driver and a reference to the SharedSecret in the volume attributes:
 //
 // spec:
-//  volumes:
-//  - name: shared-secret
-//    csi:
-//      driver: csi.sharedresource.openshift.io
-//      volumeAttributes:
-//        sharedSecret: my-share
+//
+//	volumes:
+//	- name: shared-secret
+//	  csi:
+//	    driver: csi.sharedresource.openshift.io
+//	    volumeAttributes:
+//	      sharedSecret: my-share
 //
 // For the mount to be successful, the pod's service account must be granted permission to 'use' the named SharedSecret object
 // within its namespace with an appropriate Role and RoleBinding. For compactness, here are example `oc` invocations for creating
 // such Role and RoleBinding objects.
 //
-//  `oc create role shared-resource-my-share --verb=use --resource=sharedsecrets.sharedresource.openshift.io --resource-name=my-share`
-//  `oc create rolebinding shared-resource-my-share --role=shared-resource-my-share --serviceaccount=my-namespace:default`
+//	`oc create role shared-resource-my-share --verb=use --resource=sharedsecrets.sharedresource.openshift.io --resource-name=my-share`
+//	`oc create rolebinding shared-resource-my-share --role=shared-resource-my-share --serviceaccount=my-namespace:default`
 //
 // Shared resource objects, in this case Secrets, have default permissions of list, get, and watch for system authenticated users.
 //
@@ -31,7 +32,6 @@ import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 // These capabilities should not be used by applications needing long term support.
 // +openshift:compatibility-gen:level=4
 // +kubebuilder:subresource:status
-//
 type SharedSecret struct {
 	metav1.TypeMeta `json:",inline"`
 

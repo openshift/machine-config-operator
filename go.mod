@@ -329,4 +329,8 @@ require (
 	sigs.k8s.io/yaml v1.4.0
 )
 
-replace k8s.io/kube-openapi => github.com/openshift/kube-openapi v0.0.0-20230816122517-ffc8f001abb0
+replace (
+	github.com/openshift/api => github.com/hexfusion/api v0.0.0-20240125205502-d262ef28f66d
+	github.com/openshift/client-go => github.com/hexfusion/client-go v0.0.0-20240125213357-957c2c9950e9
+	k8s.io/kube-openapi => github.com/openshift/kube-openapi v0.0.0-20230816122517-ffc8f001abb0
+)

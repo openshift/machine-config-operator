@@ -48,6 +48,8 @@ func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Machineconfiguration().V1().MachineConfigs().Informer()}, nil
 	case v1.SchemeGroupVersion.WithResource("machineconfigpools"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Machineconfiguration().V1().MachineConfigPools().Informer()}, nil
+	case v1.SchemeGroupVersion.WithResource("pinnedimagesets"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Machineconfiguration().V1().PinnedImageSets().Informer()}, nil
 
 		// Group=machineconfiguration.openshift.io, Version=v1alpha1
 	case v1alpha1.SchemeGroupVersion.WithResource("machineconfignodes"):
