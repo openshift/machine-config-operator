@@ -80,7 +80,7 @@ func TestNodeConfigDefault(t *testing.T) {
 func TestBootstrapNodeConfigDefault(t *testing.T) {
 	configNodeCgroupDefault := createNewDefaultNodeconfig()
 	configNodeCgroupV1 := createNewDefaultNodeconfigWithCgroup(osev1.CgroupModeV1)
-	configNodeCgroupV2 := createNewDefaultNodeconfigWithCgroup(osev1.CgroupModeV2)
+	configNodeCgroupV2 := createNewDefaultNodeconfigWithCgroup(osev1.CgroupModeDefault)
 
 	expected := map[*osev1.Node]struct {
 		Name             string

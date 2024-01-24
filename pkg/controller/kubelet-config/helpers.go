@@ -180,7 +180,7 @@ func updateMachineConfigwithCgroup(node *osev1.Node, mc *mcfgv1.MachineConfig) e
 	case osev1.CgroupModeV1:
 		kernelArgsToAdd = append(kernelArgsToAdd, kernelArgsv1...)
 		kernelArgsToRemove = append(kernelArgsToRemove, kernelArgsv2...)
-	case osev1.CgroupModeV2, osev1.CgroupModeEmpty:
+	case osev1.CgroupModeDefault, osev1.CgroupModeEmpty:
 		kernelArgsToAdd = append(kernelArgsToAdd, kernelArgsv2...)
 		kernelArgsToRemove = append(kernelArgsToRemove, kernelArgsv1...)
 	default:
