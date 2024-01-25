@@ -1040,6 +1040,21 @@ func (optr *Operator) syncMachineOSBuilder(config *renderConfig) error {
 // Determines if the Machine OS Builder deployment is in the correct state
 // based upon whether we have opted-in pools or not.
 func (optr *Operator) reconcileMachineOSBuilder(mob *appsv1.Deployment) error {
+	// Access current feature gates
+	fg, err := optr.fgAccessor.CurrentFeatureGates()
+	if err != nil {
+		return fmt.Errorf("could not get feature gates: %w", err)
+	}
+
+	if fg == nil {
+		return fmt.Errorf("received nil feature gates")
+	}
+
+	// Check if OnClusterBuild feature gate is enabled
+	if !fg.Enabled(configv1.FeatureGateOnClusterBuild) {
+		return nil
+	}
+
 	// First, check if we have any MachineConfigPools opted in.
 	layeredMCPs, err := optr.getLayeredMachineConfigPools()
 	if err != nil {
