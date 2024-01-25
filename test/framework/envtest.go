@@ -109,7 +109,7 @@ func NewTestEnv(t *testing.T) *envtest.Environment {
 		CRDInstallOptions: envtest.CRDInstallOptions{
 			Paths: []string{
 				filepath.Join("..", "..", "install"),
-				filepath.Join("..", "..", "manifests", "controllerconfig.crd.yaml"),
+				filepath.Join("..", "..", "manifests", "0000_80_machine-config-operator_01_controllerconfig-Default.crd.yaml"),
 				filepath.Join("..", "..", "vendor", "github.com", "openshift", "api", "config", "v1"),
 				filepath.Join("..", "..", "vendor", "github.com", "openshift", "api", "operator", "v1alpha1"),
 			},
