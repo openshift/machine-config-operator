@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"sort"
 	"time"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
@@ -431,6 +432,8 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	if err != nil {
 		return err
 	}
+	sort.SliceStable(mcs, func(i, j int) bool { return mcs[i].Name < mcs[j].Name })
+
 	if len(mcs) == 0 {
 		return ctrl.syncFailingStatus(pool, fmt.Errorf("no MachineConfigs found matching selector %v", selector))
 	}
