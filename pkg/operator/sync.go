@@ -108,6 +108,8 @@ const (
 	mcdKubeRbacProxyConfigMapPath             = "manifests/machineconfigdaemon/kube-rbac-proxy-config.yaml"
 	mcdKubeRbacProxyPrometheusRolePath        = "manifests/machineconfigdaemon/prometheus-rbac.yaml"
 	mcdKubeRbacProxyPrometheusRoleBindingPath = "manifests/machineconfigdaemon/prometheus-rolebinding-target.yaml"
+	mcdRolePath                               = "manifests/machineconfigdaemon/role.yaml"
+	mcdRoleBindingPath                        = "manifests/machineconfigdaemon/rolebinding.yaml"
 
 	// Machine Config Server manifest paths
 	mcsClusterRoleManifestPath                    = "manifests/machineconfigserver/clusterrole.yaml"
@@ -1197,11 +1199,13 @@ func (optr *Operator) syncMachineConfigDaemon(config *renderConfig) error {
 		},
 		roles: []string{
 			mcdKubeRbacProxyPrometheusRolePath,
+			mcdRolePath,
 		},
 		roleBindings: []string{
 			mcdEventsRoleBindingDefaultManifestPath,
 			mcdEventsRoleBindingTargetManifestPath,
 			mcdKubeRbacProxyPrometheusRoleBindingPath,
+			mcdRoleBindingPath,
 		},
 		clusterRoleBindings: []string{
 			mcdClusterRoleBindingManifestPath,
