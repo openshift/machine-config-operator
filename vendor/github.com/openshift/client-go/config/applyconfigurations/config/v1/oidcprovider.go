@@ -7,6 +7,7 @@ package v1
 type OIDCProviderApplyConfiguration struct {
 	Name                 *string                                      `json:"name,omitempty"`
 	Issuer               *TokenIssuerApplyConfiguration               `json:"issuer,omitempty"`
+	OIDCClients          []OIDCClientConfigApplyConfiguration         `json:"oidcClients,omitempty"`
 	ClaimMappings        *TokenClaimMappingsApplyConfiguration        `json:"claimMappings,omitempty"`
 	ClaimValidationRules []TokenClaimValidationRuleApplyConfiguration `json:"claimValidationRules,omitempty"`
 }
@@ -30,6 +31,19 @@ func (b *OIDCProviderApplyConfiguration) WithName(value string) *OIDCProviderApp
 // If called multiple times, the Issuer field is set to the value of the last call.
 func (b *OIDCProviderApplyConfiguration) WithIssuer(value *TokenIssuerApplyConfiguration) *OIDCProviderApplyConfiguration {
 	b.Issuer = value
+	return b
+}
+
+// WithOIDCClients adds the given value to the OIDCClients field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, values provided by each call will be appended to the OIDCClients field.
+func (b *OIDCProviderApplyConfiguration) WithOIDCClients(values ...*OIDCClientConfigApplyConfiguration) *OIDCProviderApplyConfiguration {
+	for i := range values {
+		if values[i] == nil {
+			panic("nil value passed to WithOIDCClients")
+		}
+		b.OIDCClients = append(b.OIDCClients, *values[i])
+	}
 	return b
 }
 

@@ -161,6 +161,8 @@ const (
 	MachineConfigNodeUpdateFilesAndOS StateProgress = "AppliedFilesAndOS"
 	// MachineConfigNodeUpdateCordoned describes the part of the completing phase where the node cordons
 	MachineConfigNodeUpdateCordoned StateProgress = "Cordoned"
+	// MachineConfigNodeUpdateUncordoned describes the part of the completing phase where the node uncordons
+	MachineConfigNodeUpdateUncordoned StateProgress = "Uncordoned"
 	// MachineConfigNodeUpdateRebooted describes the part of the post action phase where the node reboots itself
 	MachineConfigNodeUpdateRebooted StateProgress = "RebootedNode"
 	// MachineConfigNodeUpdateReloaded describes the part of the post action phase where the node reloads its CRIO service

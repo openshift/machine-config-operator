@@ -262,6 +262,16 @@ var (
 		OwningProduct:       ocpSpecific,
 	}
 
+	FeatureGateNetworkLiveMigration = FeatureGateName("NetworkLiveMigration")
+	sdnLiveMigration                = FeatureGateDescription{
+		FeatureGateAttributes: FeatureGateAttributes{
+			Name: FeatureGateNetworkLiveMigration,
+		},
+		OwningJiraComponent: "Networking/ovn-kubernetes",
+		ResponsiblePerson:   "pliu",
+		OwningProduct:       ocpSpecific,
+	}
+
 	FeatureGateAutomatedEtcdBackup = FeatureGateName("AutomatedEtcdBackup")
 	automatedEtcdBackup            = FeatureGateDescription{
 		FeatureGateAttributes: FeatureGateAttributes{
@@ -349,6 +359,57 @@ var (
 		},
 		OwningJiraComponent: "Installer",
 		ResponsiblePerson:   "barbacbd",
+		OwningProduct:       ocpSpecific,
+	}
+
+	FeatureGateMixedCPUsAllocation = FeatureGateName("MixedCPUsAllocation")
+	mixedCPUsAllocation            = FeatureGateDescription{
+		FeatureGateAttributes: FeatureGateAttributes{
+			Name: FeatureGateMixedCPUsAllocation,
+		},
+		OwningJiraComponent: "NodeTuningOperator",
+		ResponsiblePerson:   "titzhak",
+		OwningProduct:       ocpSpecific,
+	}
+
+	FeatureGateManagedBootImages = FeatureGateName("ManagedBootImages")
+	managedBootImages            = FeatureGateDescription{
+		FeatureGateAttributes: FeatureGateAttributes{
+			Name: FeatureGateManagedBootImages,
+		},
+		OwningJiraComponent: "MachineConfigOperator",
+		ResponsiblePerson:   "djoshy",
+		OwningProduct:       ocpSpecific,
+	}
+
+	FeatureGateDisableKubeletCloudCredentialProviders = FeatureGateName("DisableKubeletCloudCredentialProviders")
+	disableKubeletCloudCredentialProviders            = FeatureGateDescription{
+		FeatureGateAttributes: FeatureGateAttributes{
+			Name: FeatureGateDisableKubeletCloudCredentialProviders,
+		},
+		OwningJiraComponent: "cloud-provider",
+		ResponsiblePerson:   "jspeed",
+		OwningProduct:       kubernetes,
+	}
+
+
+	FeatureGateOnClusterBuild = FeatureGateName("OnClusterBuild")
+	onClusterBuild            = FeatureGateDescription{
+		FeatureGateAttributes: FeatureGateAttributes{
+			Name: FeatureGateOnClusterBuild,
+		},
+		OwningJiraComponent: "MachineConfigOperator",
+		ResponsiblePerson:   "dkhater",
+		OwningProduct:       ocpSpecific,
+	}
+
+	FeatureGateSignatureStores = FeatureGateName("SignatureStores")
+	signatureStores            = FeatureGateDescription{
+		FeatureGateAttributes: FeatureGateAttributes{
+			Name: FeatureGateSignatureStores,
+		},
+		OwningJiraComponent: "over-the-air-updates",
+		ResponsiblePerson:   "lmohanty",
 		OwningProduct:       ocpSpecific,
 	}
 )

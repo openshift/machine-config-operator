@@ -343,6 +343,9 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: gcp
       type:
         namedType: com.github.openshift.api.operator.v1.GCPCSIDriverConfigSpec
+    - name: ibmcloud
+      type:
+        namedType: com.github.openshift.api.operator.v1.IBMCloudCSIDriverConfigSpec
     - name: vSphere
       type:
         namedType: com.github.openshift.api.operator.v1.VSphereCSIDriverConfigSpec
@@ -355,6 +358,8 @@ var schemaYAML = typed.YAMLObject(`types:
         discriminatorValue: Azure
       - fieldName: gcp
         discriminatorValue: GCP
+      - fieldName: ibmcloud
+        discriminatorValue: IBMCloud
       - fieldName: vSphere
         discriminatorValue: VSphere
 - name: com.github.openshift.api.operator.v1.CSISnapshotController
@@ -931,9 +936,6 @@ var schemaYAML = typed.YAMLObject(`types:
 - name: com.github.openshift.api.operator.v1.DefaultNetworkDefinition
   map:
     fields:
-    - name: kuryrConfig
-      type:
-        namedType: com.github.openshift.api.operator.v1.KuryrConfig
     - name: openshiftSDNConfig
       type:
         namedType: com.github.openshift.api.operator.v1.OpenShiftSDNConfig
@@ -1362,6 +1364,13 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: hybridOverlayVXLANPort
       type:
         scalar: numeric
+- name: com.github.openshift.api.operator.v1.IBMCloudCSIDriverConfigSpec
+  map:
+    fields:
+    - name: encryptionKeyCRN
+      type:
+        scalar: string
+      default: ""
 - name: com.github.openshift.api.operator.v1.IBMLoadBalancerParameters
   map:
     fields:
@@ -2136,33 +2145,6 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: version
       type:
         scalar: string
-- name: com.github.openshift.api.operator.v1.KuryrConfig
-  map:
-    fields:
-    - name: controllerProbesPort
-      type:
-        scalar: numeric
-    - name: daemonProbesPort
-      type:
-        scalar: numeric
-    - name: enablePortPoolsPrepopulation
-      type:
-        scalar: boolean
-    - name: mtu
-      type:
-        scalar: numeric
-    - name: openStackServiceNetwork
-      type:
-        scalar: string
-    - name: poolBatchPorts
-      type:
-        scalar: numeric
-    - name: poolMaxPorts
-      type:
-        scalar: numeric
-    - name: poolMinPorts
-      type:
-        scalar: numeric
 - name: com.github.openshift.api.operator.v1.LoadBalancerStrategy
   map:
     fields:
@@ -2346,6 +2328,10 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: features
       type:
         namedType: com.github.openshift.api.operator.v1.FeaturesMigration
+    - name: mode
+      type:
+        scalar: string
+      default: ""
     - name: mtu
       type:
         namedType: com.github.openshift.api.operator.v1.MTUMigration

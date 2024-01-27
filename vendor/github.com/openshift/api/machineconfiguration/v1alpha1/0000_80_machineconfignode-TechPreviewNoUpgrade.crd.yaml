@@ -69,6 +69,10 @@ spec:
           name: ReloadedCRIO
           priority: 1
           type: string
+        - jsonPath: .status.conditions[?(@.type=="Uncordoned")].status
+          name: UncordonedNode
+          priority: 1
+          type: string
       schema:
         openAPIV3Schema:
           description: 'MachineConfigNode describes the health of the Machines on the system Compatibility level 4: No compatibility is provided, the API can change at any point for any reason. These capabilities should not be used by applications needing long term support.'
