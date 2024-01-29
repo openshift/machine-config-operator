@@ -12,10 +12,14 @@ import (
 	"github.com/containers/image/v5/pkg/sysregistriesv2"
 	signature "github.com/containers/image/v5/signature"
 	"github.com/containers/image/v5/types"
+	storageconfig "github.com/containers/storage/pkg/config"
 	apicfgv1 "github.com/openshift/api/config/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
+	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/diff"
 )
 
@@ -864,5 +868,123 @@ func TestGetValidBlockAndAllowedRegistries(t *testing.T) {
 			require.Equal(t, tt.expectedPolicyBlocked, gotPolicy)
 			require.Equal(t, tt.expectedAllowed, gotAllowed)
 		})
+	}
+}
+
+func TestCreateCRIODropinFiles(t *testing.T) {
+	zeroLogSizeMax := resource.MustParse("0k")
+	validLogSizeMax := resource.MustParse("10G")
+
+	// Test zero value of logSizeMax will not be applied
+	zeroValueTests := []struct {
+		name     string
+		cfg      *mcfgv1.ContainerRuntimeConfiguration
+		filepath string
+	}{
+		{
+			name: "01-ctrcfg-logSizeMax will not be created if logSizeMax is zero",
+			cfg: &mcfgv1.ContainerRuntimeConfiguration{
+				LogSizeMax: &zeroLogSizeMax,
+			},
+			filepath: crioDropInFilePathLogSizeMax,
+		},
+	}
+
+	// Test valid value of logSizeMax will be applied to the drop-in file
+	validValueTests := []struct {
+		name     string
+		cfg      *mcfgv1.ContainerRuntimeConfiguration
+		filepath string
+		want     []byte
+	}{
+		{
+			name: "01-ctrcfg-logSizeMax created for valid logSizeMax",
+			cfg: &mcfgv1.ContainerRuntimeConfiguration{
+				LogSizeMax: &validLogSizeMax,
+			},
+			filepath: crioDropInFilePathLogSizeMax,
+			want: []byte(`[crio]
+  [crio.runtime]
+    log_size_max = 10000000000
+`),
+		},
+	}
+
+	for _, test := range zeroValueTests {
+		ctrcfg := newContainerRuntimeConfig(test.name, test.cfg, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "", ""))
+		files := createCRIODropinFiles(ctrcfg)
+		for _, file := range files {
+			if file.filePath == test.filepath {
+				t.Errorf("%s: failed. should not have created dropin file", test.name)
+			}
+		}
+	}
+
+	for _, test := range validValueTests {
+		ctrcfg := newContainerRuntimeConfig(test.name, test.cfg, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "", ""))
+		files := createCRIODropinFiles(ctrcfg)
+		for _, file := range files {
+			if file.filePath == test.filepath {
+				require.Equal(t, test.want, file.data, "createCRIODropinFiles() Diff, want %v, got %v", test.want, string(file.data))
+			}
+		}
+	}
+}
+
+func TestUpdateStorageConfig(t *testing.T) {
+	templateStorageConfig := tomlConfigStorage{}
+	buf := bytes.Buffer{}
+	err := toml.NewEncoder(&buf).Encode(templateStorageConfig)
+	require.NoError(t, err)
+	templateBytes := buf.Bytes()
+
+	zeroOverLayerSize := resource.MustParse("0k")
+	validOverLaySize := resource.MustParse("10G")
+
+	tests := []struct {
+		name string
+		cfg  *mcfgv1.ContainerRuntimeConfiguration
+		want tomlConfigStorage
+	}{
+		{
+			name: "not apply zero value of overlaySize",
+			cfg: &mcfgv1.ContainerRuntimeConfiguration{
+				OverlaySize: &zeroOverLayerSize,
+			},
+			want: tomlConfigStorage{},
+		},
+		{
+			name: "apply valid overlaySize",
+			cfg: &mcfgv1.ContainerRuntimeConfiguration{
+				OverlaySize: &validOverLaySize,
+			},
+			want: tomlConfigStorage{
+				Storage: struct {
+					Driver    string                                "toml:\"driver\""
+					RunRoot   string                                "toml:\"runroot\""
+					GraphRoot string                                "toml:\"graphroot\""
+					Options   struct{ storageconfig.OptionsConfig } "toml:\"options\""
+				}{
+					Options: struct{ storageconfig.OptionsConfig }{
+						storageconfig.OptionsConfig{
+							Size: "10G",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		got, err := updateStorageConfig(templateBytes, test.cfg)
+		require.NoError(t, err)
+		gotConf := tomlConfigStorage{}
+		if _, err := toml.Decode(string(got), &gotConf); err != nil {
+			t.Errorf("error unmarshalling result: %v", err)
+			return
+		}
+		if !reflect.DeepEqual(gotConf, test.want) {
+			t.Errorf("%s: failed. got %v, want %v", test.name, got, test.want)
+		}
 	}
 }
