@@ -2,6 +2,7 @@ package render
 
 import (
 	"context"
+	goerrs "errors"
 	"fmt"
 	"reflect"
 	"sort"
@@ -476,6 +477,24 @@ func (ctrl *Controller) garbageCollectRenderedConfigs(_ *mcfgv1.MachineConfigPoo
 	return nil
 }
 
+func (ctrl *Controller) getRenderedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig, cc *mcfgv1.ControllerConfig) (*mcfgv1.MachineConfig, error) {
+	// If we don't yet have a rendered MachineConfig on the pool, we cannot
+	// perform reconciliation. So we must solely generate the rendered
+	// MachineConfig.
+	if pool.Spec.Configuration.Name == "" {
+		return generateRenderedMachineConfig(pool, configs, cc)
+	}
+
+	// The pool has a rendered MachineConfig, so we can do more advanced
+	// reconciliation as we generate it.
+	currentMC, err := ctrl.mcLister.Get(pool.Spec.Configuration.Name)
+	if err != nil {
+		return nil, fmt.Errorf("could not get current MachineConfig %s for MachineConfigPool %s: %w", pool.Spec.Configuration.Name, pool.Name, err)
+	}
+
+	return generateAndValidateRenderedMachineConfig(currentMC, pool, configs, cc)
+}
+
 func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig) error {
 	if len(configs) == 0 {
 		return nil
@@ -486,9 +505,9 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 		return err
 	}
 
-	generated, err := generateRenderedMachineConfig(pool, configs, cc)
+	generated, err := ctrl.getRenderedMachineConfig(pool, configs, cc)
 	if err != nil {
-		return err
+		return fmt.Errorf("could not generate rendered MachineConfig: %w", err)
 	}
 
 	// Emit event and collect metric when OSImageURL was overridden.
@@ -500,10 +519,7 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 		ctrlcommon.OSImageURLOverride.WithLabelValues(pool.Name).Set(0)
 	}
 
-	source := []corev1.ObjectReference{}
-	for _, cfg := range configs {
-		source = append(source, corev1.ObjectReference{Kind: machineconfigKind.Kind, Name: cfg.GetName(), APIVersion: machineconfigKind.GroupVersion().String()})
-	}
+	source := getMachineConfigRefs(configs)
 
 	_, err = ctrl.mcLister.Get(generated.Name)
 	if apierrors.IsNotFound(err) {
@@ -603,6 +619,33 @@ func generateRenderedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mc
 	return merged, nil
 }
 
+// This function takes into account the current MachineConfig that is present
+// on the MachineConfigPool. It first attempts to verify that the newly
+// generated rendered MachineConfig is reconcilable against the current
+// MachineConfig. If it is not reconcilable, the component MachineConfigs that
+// were used to generate the rendered MachineConfig will be evaluated
+// one-by-one to identify which MachineConfig is not reconcilable. The name of
+// the unreconcilable MachineConfig is included in the returned error.
+func generateAndValidateRenderedMachineConfig(currentMC *mcfgv1.MachineConfig, pool *mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.ControllerConfig) (*mcfgv1.MachineConfig, error) {
+	source := getMachineConfigRefs(configs)
+	klog.V(4).Infof("Considering %d configs %s for MachineConfig generation", len(source), source)
+
+	generated, err := generateRenderedMachineConfig(pool, configs, cconfig)
+	if err != nil {
+		return nil, err
+	}
+
+	klog.V(4).Infof("Considering generated MachineConfig %q", generated.Name)
+
+	if err := ctrlcommon.IsRenderedConfigReconcilable(currentMC, generated); err != nil {
+		return nil, goerrs.Join(err, ctrlcommon.IsComponentConfigsReconcilable(currentMC, configs))
+	}
+
+	klog.V(4).Infof("Rendered MachineConfig %q is reconcilable against %q", generated.Name, currentMC.Name)
+
+	return generated, nil
+}
+
 // RunBootstrap runs the render controller in bootstrap mode.
 // For each pool, it matches the machineconfigs based on label selector and
 // returns the generated machineconfigs and pool with CurrentMachineConfig status field set.
@@ -622,10 +665,7 @@ func RunBootstrap(pools []*mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineCo
 			return nil, nil, err
 		}
 
-		source := []corev1.ObjectReference{}
-		for _, cfg := range configs {
-			source = append(source, corev1.ObjectReference{Kind: machineconfigKind.Kind, Name: cfg.GetName(), APIVersion: machineconfigKind.GroupVersion().String()})
-		}
+		source := getMachineConfigRefs(configs)
 
 		pool.Spec.Configuration.Name = generated.Name
 		pool.Spec.Configuration.Source = source
@@ -659,4 +699,14 @@ func getMachineConfigsForPool(pool *mcfgv1.MachineConfigPool, configs []*mcfgv1.
 		return nil, fmt.Errorf("couldn't find any MachineConfigs for pool: %v", pool.Name)
 	}
 	return out, nil
+}
+
+func getMachineConfigRefs(mcfgs []*mcfgv1.MachineConfig) []corev1.ObjectReference {
+	refs := []corev1.ObjectReference{}
+
+	for _, cfg := range mcfgs {
+		refs = append(refs, corev1.ObjectReference{Kind: machineconfigKind.Kind, Name: cfg.GetName(), APIVersion: machineconfigKind.GroupVersion().String()})
+	}
+
+	return refs
 }
