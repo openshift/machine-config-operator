@@ -12,7 +12,7 @@
 # code. Instead, we create this duplicate version of the service that will
 # only be enabled for VSphere UPI deployments.
 name: nodeip-configuration-vsphere-upi.service
-enabled: {{if eq (len (onPremPlatformAPIServerInternalIPs .)) 0}}true{{else}}false{{end}}
+enabled: {{if or (eq (len (onPremPlatformAPIServerInternalIPs .)) 0) (and (eq .Infra.Status.ControlPlaneTopology "SingleReplica") (eq (cloudProvider .) "external"))}}true{{else}}false{{end}}
 contents: |
   [Unit]
   Description=Writes IP address configuration so that kubelet and crio services select a valid node IP
