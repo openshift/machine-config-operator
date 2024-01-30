@@ -139,13 +139,13 @@ func (ctrl *Controller) addSecret(obj interface{}) {
 		ctrl.deleteSecret(secret)
 		return
 	}
-	klog.Infof("Add Secret %v", secret)
+	klog.V(4).Infof("Add Secret %v", secret)
 	ctrl.filterSecret(secret)
 }
 
 func (ctrl *Controller) updateSecret(_, new interface{}) {
 	secret := new.(*corev1.Secret)
-	klog.Infof("Update Secret %v", secret)
+	klog.V(4).Infof("Update Secret %v", secret)
 	ctrl.filterSecret(secret)
 }
 
