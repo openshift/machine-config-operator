@@ -91,27 +91,30 @@ func NewMachineConfigExtended(
 	if annotations == nil {
 		annotations = map[string]string{}
 	}
-	rawIgnition := MarshalOrDie(
-		&ign3types.Config{
-			Ignition: ign3types.Ignition{
-				Version: ign3types.MaxVersion.String(),
-			},
-			Storage: ign3types.Storage{
-				Files: files,
-			},
-			Systemd: ign3types.Systemd{
-				Units: units,
-			},
-			Passwd: ign3types.Passwd{
-				Users: []ign3types.PasswdUser{
-					{
-						Name:              "core",
-						SSHAuthorizedKeys: sshkeys,
-					},
+
+	ignConfig := &ign3types.Config{
+		Ignition: ign3types.Ignition{
+			Version: ign3types.MaxVersion.String(),
+		},
+		Storage: ign3types.Storage{
+			Files: files,
+		},
+		Systemd: ign3types.Systemd{
+			Units: units,
+		},
+		Passwd: ign3types.Passwd{},
+	}
+
+	if len(sshkeys) != 0 {
+		ignConfig.Passwd = ign3types.Passwd{
+			Users: []ign3types.PasswdUser{
+				{
+					Name:              "core",
+					SSHAuthorizedKeys: sshkeys,
 				},
 			},
-		},
-	)
+		}
+	}
 
 	return &mcfgv1.MachineConfig{
 		TypeMeta: metav1.TypeMeta{
@@ -125,7 +128,7 @@ func NewMachineConfigExtended(
 		},
 		Spec: mcfgv1.MachineConfigSpec{
 			Config: runtime.RawExtension{
-				Raw: rawIgnition,
+				Raw: MarshalOrDie(ignConfig),
 			},
 			Extensions:      extensions,
 			FIPS:            fips,
