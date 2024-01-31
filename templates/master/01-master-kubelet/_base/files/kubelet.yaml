@@ -31,11 +31,11 @@ contents:
       AzureWorkloadIdentity: true
       BuildCSIVolumes: true
       CloudDualStackNodeIPs: true
+      DisableKubeletCloudCredentialProviders: false
       ExternalCloudProvider: true
       ExternalCloudProviderAzure: true
       ExternalCloudProviderGCP: true
       ExternalCloudProviderExternal: true
-      OpenShiftPodSecurityAdmission: true
       PrivateHostedZoneAWS: true
     serverTLSBootstrap: true
     tlsMinVersion: VersionTLS12
