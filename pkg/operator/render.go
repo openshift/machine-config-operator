@@ -23,6 +23,14 @@ import (
 	utilnet "k8s.io/utils/net"
 )
 
+type LoadBalancerIPState string
+
+const (
+	availableLBIPState LoadBalancerIPState = "Available"
+	absentLBIPState    LoadBalancerIPState = "Absent"
+	defaultLBIPState   LoadBalancerIPState = "Default"
+)
+
 type renderConfig struct {
 	TargetNamespace        string
 	Version                string
@@ -66,6 +74,9 @@ func (a *assetRenderer) addTemplateFuncs() {
 	funcs["onPremPlatformIngressIP"] = onPremPlatformIngressIP
 	funcs["onPremPlatformIngressIPs"] = onPremPlatformIngressIPs
 	funcs["onPremPlatformShortName"] = onPremPlatformShortName
+	funcs["cloudPlatformAPIIntLoadBalancerIPs"] = cloudPlatformAPIIntLoadBalancerIPs
+	funcs["cloudPlatformAPILoadBalancerIPs"] = cloudPlatformAPILoadBalancerIPs
+	funcs["cloudPlatformIngressLoadBalancerIPs"] = cloudPlatformIngressLoadBalancerIPs
 
 	a.tmpl = a.tmpl.Funcs(funcs)
 }
@@ -350,4 +361,90 @@ func onPremPlatformAPIServerInternalIPs(cfg mcfgv1.ControllerConfigSpec) (interf
 		}
 	}
 	return nil, fmt.Errorf("")
+}
+
+// cloudPlatformAPIIntLoadBalancerIPs provides the API-Int Server IPs for
+// supported cloud platforms when the DNSType is set to `ClusterHosted`.
+func cloudPlatformAPIIntLoadBalancerIPs(cfg mcfgv1.ControllerConfigSpec) (interface{}, error) {
+	if cfg.Infra.Status.PlatformStatus != nil {
+		switch cfg.Infra.Status.PlatformStatus.Type {
+		case configv1.GCPPlatformType:
+			switch cloudPlatformLoadBalancerIPState(cfg) {
+			case availableLBIPState:
+				return cfg.Infra.Status.PlatformStatus.GCP.CloudLoadBalancerConfig.ClusterHosted.APIIntLoadBalancerIPs, nil
+			case absentLBIPState:
+				return nil, fmt.Errorf("GCP API Server Internal IPs unavailable when the DNSType is ClusterHosted")
+			default:
+				return nil, fmt.Errorf("")
+			}
+		default:
+			return nil, fmt.Errorf("invalid cloud platform for API Server Internal IP")
+		}
+	} else {
+		return nil, fmt.Errorf("")
+	}
+}
+
+// cloudPlatformAPILoadBalancerIPs provides the API Server IPs for supported
+// cloud platforms when the DNSType is set to `ClusterHosted`.
+func cloudPlatformAPILoadBalancerIPs(cfg mcfgv1.ControllerConfigSpec) (interface{}, error) {
+	if cfg.Infra.Status.PlatformStatus != nil {
+		switch cfg.Infra.Status.PlatformStatus.Type {
+		case configv1.GCPPlatformType:
+			switch cloudPlatformLoadBalancerIPState(cfg) {
+			case availableLBIPState:
+				return cfg.Infra.Status.PlatformStatus.GCP.CloudLoadBalancerConfig.ClusterHosted.APILoadBalancerIPs, nil
+			case absentLBIPState:
+				return nil, fmt.Errorf("GCP API Server IPs unavailable when the DNSType is ClusterHosted")
+			default:
+				return nil, fmt.Errorf("")
+			}
+		default:
+			return nil, fmt.Errorf("invalid cloud platform for API Server IPs")
+		}
+	} else {
+		return nil, fmt.Errorf("")
+	}
+}
+
+// cloudPlatformIngressLoadBalancerIPs provides the Ingress IPs for supported
+// cloud platforms when the DNSType is set to `ClusterHosted`.
+func cloudPlatformIngressLoadBalancerIPs(cfg mcfgv1.ControllerConfigSpec) (interface{}, error) {
+	if cfg.Infra.Status.PlatformStatus != nil {
+		switch cfg.Infra.Status.PlatformStatus.Type {
+		case configv1.GCPPlatformType:
+			switch cloudPlatformLoadBalancerIPState(cfg) {
+			case availableLBIPState:
+				return cfg.Infra.Status.PlatformStatus.GCP.CloudLoadBalancerConfig.ClusterHosted.IngressLoadBalancerIPs, nil
+			case absentLBIPState:
+				return nil, fmt.Errorf("GCP Ingress IPs unavailable when the DNSType is ClusterHosted")
+			default:
+				return nil, fmt.Errorf("")
+			}
+		default:
+			return nil, fmt.Errorf("invalid cloud platform for Ingress LoadBalancer IPs")
+		}
+	} else {
+		return nil, fmt.Errorf("")
+	}
+}
+
+// cloudPlatformLoadBalancerIPState is a helper function that determines if
+// LoadBalancer config has been set.
+func cloudPlatformLoadBalancerIPState(cfg mcfgv1.ControllerConfigSpec) LoadBalancerIPState {
+	lbIPState := defaultLBIPState
+	if cfg.Infra.Status.PlatformStatus != nil {
+		if cfg.Infra.Status.PlatformStatus.Type == configv1.GCPPlatformType {
+			// If DNSType is set to `ClusterHosted`, we expect the Load Balancer IP addresses to be set.
+			// If absent, that is exoected to be temporary.
+			if cfg.Infra.Status.PlatformStatus.GCP != nil && cfg.Infra.Status.PlatformStatus.GCP.CloudLoadBalancerConfig != nil && cfg.Infra.Status.PlatformStatus.GCP.CloudLoadBalancerConfig.DNSType == configv1.ClusterHostedDNSType {
+				if cfg.Infra.Status.PlatformStatus.GCP.CloudLoadBalancerConfig.ClusterHosted != nil {
+					lbIPState = availableLBIPState
+				} else {
+					lbIPState = absentLBIPState
+				}
+			}
+		}
+	}
+	return lbIPState
 }
