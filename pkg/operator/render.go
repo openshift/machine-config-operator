@@ -66,6 +66,7 @@ func (a *assetRenderer) addTemplateFuncs() {
 	funcs["onPremPlatformIngressIP"] = onPremPlatformIngressIP
 	funcs["onPremPlatformIngressIPs"] = onPremPlatformIngressIPs
 	funcs["onPremPlatformShortName"] = onPremPlatformShortName
+	funcs["isSingleReplicaTopology"] = isSingleReplicaTopology
 
 	a.tmpl = a.tmpl.Funcs(funcs)
 }
@@ -350,4 +351,8 @@ func onPremPlatformAPIServerInternalIPs(cfg mcfgv1.ControllerConfigSpec) (interf
 		}
 	}
 	return nil, fmt.Errorf("")
+}
+
+func isSingleReplicaTopology(cfg mcfgv1.ControllerConfigSpec) bool {
+	return cfg.Infra.Status.InfrastructureTopology == configv1.SingleReplicaTopologyMode
 }

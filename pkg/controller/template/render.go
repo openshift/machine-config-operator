@@ -335,6 +335,7 @@ func renderTemplate(config RenderConfig, path string, b []byte) ([]byte, error) 
 	funcs["urlHost"] = urlHost
 	funcs["urlPort"] = urlPort
 	funcs["isOpenShiftManagedDefaultLB"] = isOpenShiftManagedDefaultLB
+	funcs["isSingleReplicaTopology"] = isSingleReplicaTopology
 	tmpl, err := template.New(path).Funcs(funcs).Parse(string(b))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse template %s: %w", path, err)
@@ -714,4 +715,8 @@ func isOpenShiftManagedDefaultLB(cfg RenderConfig) bool {
 		}
 	}
 	return false
+}
+
+func isSingleReplicaTopology(cfg RenderConfig) bool {
+	return cfg.Infra.Status.InfrastructureTopology == configv1.SingleReplicaTopologyMode
 }
