@@ -25,6 +25,7 @@ func newLayeredNode(currentConfig, desiredConfig, currentImage, desiredImage str
 	nb := helpers.NewNodeBuilder("")
 	nb.WithCurrentConfig(currentConfig).WithDesiredConfig(desiredConfig)
 	nb.WithCurrentImage(currentImage).WithDesiredImage(desiredImage)
+	nb.WithNodeReady()
 	return nb.Node()
 }
 
@@ -90,9 +91,146 @@ func TestLayeredNodeState(t *testing.T) {
 			pool: newLayeredMachineConfigPoolWithImage(machineConfigV1, imageV1),
 		},
 		{
+			name:                 "layered node machineconfig outdated",
 			node:                 newLayeredNode(machineConfigV0, machineConfigV1, imageV1, imageV1),
 			pool:                 newLayeredMachineConfigPoolWithImage(machineConfigV1, imageV1),
-			name:                 "layered node machineconfig outdated",
+			isUnavailable:        true,
+			isDesiredEqualToPool: true,
+		},
+		{
+			name: "Node becoming layered should be unavailable",
+			node: helpers.NewNodeBuilder("").
+				WithEqualConfigs(machineConfigV0).
+				WithDesiredImage(imageV0).
+				WithMCDState(daemonconsts.MachineConfigDaemonStateWorking).
+				WithNodeReady().
+				Node(),
+			pool:                 newLayeredMachineConfigPoolWithImage(machineConfigV0, imageV0),
+			isUnavailable:        true,
+			isDesiredEqualToPool: true,
+		},
+		{
+			name: "Node becoming layered should be unavailable even if the MCD hasn't started yet",
+			node: helpers.NewNodeBuilder("").
+				WithEqualConfigs(machineConfigV0).
+				WithDesiredImage(imageV0).
+				WithMCDState(daemonconsts.MachineConfigDaemonStateDone).
+				WithNodeReady().
+				Node(),
+			pool:                 newLayeredMachineConfigPoolWithImage(machineConfigV0, imageV0),
+			isUnavailable:        true,
+			isDesiredEqualToPool: true,
+		},
+		{
+			name: "Node changing configs should be unavailable",
+			node: helpers.NewNodeBuilder("").
+				WithConfigs(machineConfigV0, machineConfigV1).
+				WithMCDState(daemonconsts.MachineConfigDaemonStateWorking).
+				WithNodeReady().
+				Node(),
+			pool:          newLayeredMachineConfigPool(machineConfigV0),
+			isUnavailable: true,
+		},
+		{
+			name: "Node changing configs should be unavailable even if the MCD hasn't started yet",
+			node: helpers.NewNodeBuilder("").
+				WithConfigs(machineConfigV0, machineConfigV1).
+				WithMCDState(daemonconsts.MachineConfigDaemonStateDone).
+				WithNodeReady().
+				Node(),
+			pool:          newLayeredMachineConfigPool(machineConfigV0),
+			isUnavailable: true,
+		},
+		{
+			name: "Node changing images should be unavailable",
+			node: helpers.NewNodeBuilder("").
+				WithConfigs(machineConfigV0, machineConfigV0).
+				WithImages(imageV0, imageV1).
+				WithMCDState(daemonconsts.MachineConfigDaemonStateWorking).
+				WithNodeReady().
+				Node(),
+			pool:                 newLayeredMachineConfigPoolWithImage(machineConfigV0, imageV1),
+			isUnavailable:        true,
+			isDesiredEqualToPool: true,
+		},
+		{
+			name: "Node changing images should be unavailable even if the MCD hasn't started yet",
+			node: helpers.NewNodeBuilder("").
+				WithConfigs(machineConfigV0, machineConfigV0).
+				WithImages(imageV0, imageV1).
+				WithMCDState(daemonconsts.MachineConfigDaemonStateDone).
+				WithNodeReady().
+				Node(),
+			pool:                 newLayeredMachineConfigPoolWithImage(machineConfigV0, imageV1),
+			isUnavailable:        true,
+			isDesiredEqualToPool: true,
+		},
+		{
+			name: "Degraded node should be unavailable",
+			node: helpers.NewNodeBuilder("").
+				WithEqualConfigs(machineConfigV0).
+				WithMCDState(daemonconsts.MachineConfigDaemonStateDegraded).
+				WithNodeReady().
+				Node(),
+			pool:                 newLayeredMachineConfigPool(machineConfigV0),
+			isUnavailable:        true,
+			isDesiredEqualToPool: true,
+		},
+		{
+			name: "Degraded layered node should be unavailable",
+			node: helpers.NewNodeBuilder("").
+				WithEqualConfigs(machineConfigV0).
+				WithEqualImages(imageV0).
+				WithMCDState(daemonconsts.MachineConfigDaemonStateDegraded).
+				WithNodeReady().
+				Node(),
+			pool:                 newLayeredMachineConfigPoolWithImage(machineConfigV0, imageV0),
+			isUnavailable:        true,
+			isDesiredEqualToPool: true,
+		},
+		{
+			name: "Degraded layered node should be unavailable while transitioning images",
+			node: helpers.NewNodeBuilder("").
+				WithCurrentImage(imageV0).
+				WithDesiredImage(imageV1).
+				WithMCDState(daemonconsts.MachineConfigDaemonStateDegraded).
+				WithNodeReady().
+				Node(),
+			pool:          newLayeredMachineConfigPoolWithImage(machineConfigV0, imageV1),
+			isUnavailable: true,
+		},
+		{
+			name: "Rebooting node should be unavailable",
+			node: helpers.NewNodeBuilder("").
+				WithEqualConfigs(machineConfigV0).
+				WithMCDState(daemonconsts.MachineConfigDaemonStateRebooting).
+				WithNodeReady().
+				Node(),
+			pool:                 newLayeredMachineConfigPool(machineConfigV0),
+			isUnavailable:        true,
+			isDesiredEqualToPool: true,
+		},
+		{
+			name: "Rebooting layered node should be unavailable",
+			node: helpers.NewNodeBuilder("").
+				WithEqualConfigs(machineConfigV0).
+				WithEqualImages(imageV0).
+				WithMCDState(daemonconsts.MachineConfigDaemonStateRebooting).
+				WithNodeReady().
+				Node(),
+			pool:                 newLayeredMachineConfigPoolWithImage(machineConfigV0, imageV0),
+			isUnavailable:        true,
+			isDesiredEqualToPool: true,
+		},
+		{
+			name: "Unready node should be unavailable",
+			node: helpers.NewNodeBuilder("").
+				WithEqualConfigs(machineConfigV0).
+				WithEqualImages(imageV0).
+				WithMCDState(daemonconsts.MachineConfigDaemonStateRebooting).
+				WithNodeNotReady().
+				Node(),
+			pool:                 newLayeredMachineConfigPoolWithImage(machineConfigV0, imageV0),
 			isUnavailable:        true,
 			isDesiredEqualToPool: true,
 		},
@@ -108,7 +246,7 @@ func TestLayeredNodeState(t *testing.T) {
 			if test.pool != nil {
 				assert.Equal(t, test.isDoneAt, lns.IsDoneAt(test.pool), "IsDoneAt()")
 				assert.Equal(t, test.isDesiredEqualToPool, lns.IsDesiredEqualToPool(test.pool), "IsDesiredEqualToPool()")
-				assert.Equal(t, test.isUnavailable, lns.IsUnavailable(test.pool), "IsUnavailablePool()")
+				assert.Equal(t, test.isUnavailable, lns.IsUnavailable(test.pool), "IsUnavailable()")
 			}
 
 			if t.Failed() {

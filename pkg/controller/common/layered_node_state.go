@@ -131,16 +131,66 @@ func isNodeDone(node *corev1.Node) bool {
 	if node.Annotations == nil {
 		return false
 	}
+
+	if !isNodeConfigDone(node) {
+		return false
+	}
+
+	if !isNodeImageDone(node) {
+		return false
+	}
+
+	if !isNodeMCDState(node, daemonconsts.MachineConfigDaemonStateDone) {
+		return false
+	}
+
+	return true
+}
+
+// Determines if a node's configuration is done based upon the presence and
+// equality of the current / desired config annotations.
+func isNodeConfigDone(node *corev1.Node) bool {
 	cconfig, ok := node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey]
 	if !ok || cconfig == "" {
 		return false
 	}
+
 	dconfig, ok := node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey]
 	if !ok || dconfig == "" {
 		return false
 	}
 
-	return cconfig == dconfig && isNodeMCDState(node, daemonconsts.MachineConfigDaemonStateDone)
+	return cconfig == dconfig
+}
+
+// Determines if a node's image is done based upon the presence of the current
+// / desired image annotations. Note: Unlike the above function, if both
+// annotations are missing, we return "True" because we do not want to take
+// these annotations into consideration. Only when one (or both) of these
+// annotations is present should we take them into consideration.
+// them into consideration.
+func isNodeImageDone(node *corev1.Node) bool {
+	desired, desiredOK := node.Annotations[daemonconsts.DesiredImageAnnotationKey]
+	current, currentOK := node.Annotations[daemonconsts.CurrentImageAnnotationKey]
+
+	// If neither annotation exists, we are "done" because there are no image
+	// annotations to consider.
+	if !desiredOK && !currentOK {
+		return true
+	}
+
+	// If the desired annotation is empty, we are not "done" yet.
+	if desired == "" {
+		return false
+	}
+
+	// If the current annotation is empty, we are not "done" yet.
+	if current == "" {
+		return false
+	}
+
+	// If the current image equals the desired image and neither are empty, we are done.
+	return desired == current
 }
 
 // isNodeDoneAt checks whether a node is fully updated to a targetConfig
