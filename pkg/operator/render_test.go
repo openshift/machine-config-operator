@@ -156,6 +156,8 @@ func TestRenderAllManifests(t *testing.T) {
 
 	// These are files in the manifest directory that we should ignore in this test.
 	ignored := sets.NewString("manifests.go")
+	ignored = ignored.Insert("cloud-platform-alt-dns/coredns.yaml")
+	ignored = ignored.Insert("cloud-platform-alt-dns/coredns-corefile.tmpl")
 
 	for _, manifestPath := range allManifests {
 		manifestPath := manifestPath
@@ -483,4 +485,136 @@ func renderUntypedAsset(data interface{}, path string) ([]byte, error) {
 	ar.addTemplateFuncs()
 
 	return ar.render(data)
+}
+
+func TestRenderCloudAltDNSManifests(t *testing.T) {
+	t.Parallel()
+
+	allManifests, err := manifests.AllManifests()
+	require.NoError(t, err)
+
+	APIIntLBIP := configv1.IP("10.10.10.4")
+	APILBIP := configv1.IP("196.78.125.4")
+	IngressLBIP1 := configv1.IP("196.78.125.5")
+	IngressLBIP2 := configv1.IP("10.10.10.5")
+	renderConfig := &renderConfig{
+		TargetNamespace: "testing-namespace",
+		Images: &RenderConfigImages{
+			MachineConfigOperator: "mco-operator-image",
+			KubeRbacProxy:         "kube-rbac-proxy-image",
+			KeepalivedBootstrap:   "keepalived-bootstrap-image",
+		},
+		ControllerConfig: mcfgv1.ControllerConfigSpec{
+			DNS: &configv1.DNS{
+				Spec: configv1.DNSSpec{
+					BaseDomain: "local",
+				},
+			},
+			Proxy: &configv1.ProxyStatus{
+				HTTPSProxy: "https://i.am.a.proxy.server",
+				NoProxy:    "*",
+			},
+			Infra: &configv1.Infrastructure{
+				Status: configv1.InfrastructureStatus{
+					PlatformStatus: &configv1.PlatformStatus{
+						Type: configv1.GCPPlatformType,
+						GCP: &configv1.GCPPlatformStatus{
+							CloudLoadBalancerConfig: &configv1.CloudLoadBalancerConfig{
+								DNSType: configv1.ClusterHostedDNSType,
+								ClusterHosted: &configv1.CloudLoadBalancerIPs{
+									APIIntLoadBalancerIPs: []configv1.IP{
+										APIIntLBIP,
+									},
+									APILoadBalancerIPs: []configv1.IP{
+										APILBIP,
+									},
+									IngressLoadBalancerIPs: []configv1.IP{
+										IngressLBIP1,
+										IngressLBIP2,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	// Some of the templates accept a different schema type that doesn't have a
+	// known type, but contains elements of the above renderConfig.
+	untypedRenderConfig := struct {
+		Role             string
+		PointerConfig    string
+		ControllerConfig mcfgv1.ControllerConfigSpec
+		Images           *RenderConfigImages
+	}{
+		Role:             "control-plane",
+		PointerConfig:    "cG9pbnRlci1jb25maWctZGF0YQo=", // This must be Base64-encoded
+		ControllerConfig: renderConfig.ControllerConfig,
+		Images:           renderConfig.Images,
+	}
+
+	// These manifest templates are rendered with the untypedRenderConfig above.
+	untypedCases := sets.NewString(
+		"cloud-platform-alt-dns/coredns.yaml",
+		"cloud-platform-alt-dns/coredns-corefile.tmpl")
+
+	// These are files in the manifest directory that we should ignore in this test.
+	ignored := sets.NewString("manifests.go")
+
+	for _, manifestPath := range allManifests {
+		manifestPath := manifestPath
+		// Skip files that we should ignore for this test.
+		if ignored.Has(manifestPath) {
+			continue
+		}
+
+		// Skip if this is not a manifest for alternate DNS for cloud config
+		if !strings.Contains(manifestPath, "cloud-platform-alt-dns") {
+			continue
+		}
+
+		t.Run(manifestPath, func(t *testing.T) {
+			t.Parallel()
+
+			var buf []byte
+			var err error
+			var desc string
+
+			// Determine if this manifest is rendered with the renderConfig or the untypedConfig.
+			if untypedCases.Has(manifestPath) {
+				desc = fmt.Sprintf("Path(%#v), UntypedRenderData(%#v)", manifestPath, untypedRenderConfig)
+				buf, err = renderUntypedAsset(untypedRenderConfig, manifestPath)
+			} else {
+				desc = fmt.Sprintf("Path(%#v), RenderConfig(%#v)", manifestPath, renderConfig)
+				buf, err = renderAsset(renderConfig, manifestPath)
+			}
+
+			// The template lib will throw an err if a template field is missing
+			if err != nil {
+				t.Logf("%s failed: %s", desc, err.Error())
+				t.Fail()
+			}
+			if buf == nil || len(buf) == 0 {
+				t.Log("Buffer is empty!")
+				t.Fail()
+			}
+			// Verify that the buf can be converted back into a string safely
+			str := fmt.Sprintf("%s", buf)
+			if str == "" || len(str) == 0 {
+				t.Log("Buffer is not a valid string!")
+				t.Fail()
+			}
+
+			t.Logf("%s was rendered to be : %s", manifestPath, buf)
+
+			// If we have a .yaml extension, we have a kube manifest. We should
+			// ensure that it can be read into the appropriate data structure to
+			// ensure there are no rendering errors.
+			if strings.HasSuffix(manifestPath, ".yaml") {
+				assertRenderedCanBeRead(t, buf)
+			}
+		})
+	}
 }

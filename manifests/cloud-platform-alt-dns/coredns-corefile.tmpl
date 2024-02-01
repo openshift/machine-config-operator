@@ -1,0 +1,36 @@
+. {
+    errors
+    health :18080
+    forward . {{`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`}} {
+        policy sequential
+    }
+    cache 30
+    reload
+    template IN {{`{{ .Cluster.CloudLBRecordType }}`}} {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
+        match .*.apps.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
+        answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ if gt (len (cloudPlatformIngressLoadBalancerIPs .ControllerConfig)) 0 }}{{ index (cloudPlatformIngressLoadBalancerIPs .ControllerConfig) 0 }}{{ end }}"
+        fallthrough
+    }
+    template IN {{`{{ .Cluster.CloudLBEmptyType }}`}} {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
+        match .*.apps.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
+        fallthrough
+    }
+    template IN {{`{{ .Cluster.CloudLBRecordType }}`}} {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
+        match ^api.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
+        answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ if gt (len (cloudPlatformAPILoadBalancerIPs .ControllerConfig)) 0 }}{{ index (cloudPlatformAPILoadBalancerIPs .ControllerConfig) 0 }}{{ end }}"
+        fallthrough
+    }
+    template IN {{`{{ .Cluster.CloudLBEmptyType }}`}} {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
+        match ^api.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
+        fallthrough
+    }
+    template IN {{`{{ .Cluster.CloudLBRecordType }}`}} {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
+        match ^api-int.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
+        answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ if gt (len (cloudPlatformAPIIntLoadBalancerIPs .ControllerConfig)) 0 }}{{ index (cloudPlatformAPIIntLoadBalancerIPs .ControllerConfig) 0 }}{{ end }}"
+        fallthrough
+    }
+    template IN {{`{{ .Cluster.CloudLBEmptyType }}`}} {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
+        match ^api-int.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
+        fallthrough
+    }
+}

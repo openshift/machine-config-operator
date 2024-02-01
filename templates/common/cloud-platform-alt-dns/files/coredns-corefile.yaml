@@ -1,0 +1,50 @@
+mode: 0644
+path: "/etc/kubernetes/static-pod-resources/coredns/Corefile.tmpl"
+contents:
+  inline: |
+    . {
+        errors
+        bufsize 512
+        health :18080
+        forward . {{`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`}} {
+            policy sequential
+        }
+        cache 30
+        reload
+        template IN {{`{{ .Cluster.CloudLBRecordType }}`}} {{ .DNS.Spec.BaseDomain }} {
+            match .*[.]apps.{{ .DNS.Spec.BaseDomain }}
+            answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ if gt (len (cloudPlatformIngressLoadBalancerIPs .)) 0 }}{{ index (cloudPlatformIngressLoadBalancerIPs .) 0 }}{{ end }}"
+            fallthrough
+        }
+        template IN {{`{{ .Cluster.CloudLBEmptyType }}`}} {{ .DNS.Spec.BaseDomain }} {
+            match .*[.]apps.{{ .DNS.Spec.BaseDomain }}
+            {{ if gt (len (cloudPlatformIngressLoadBalancerIPs .)) 1 }}answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ index (cloudPlatformIngressLoadBalancerIPs .) 1 }}"{{ end }}
+            fallthrough
+        }
+        template IN {{`{{ .Cluster.CloudLBRecordType }}`}} {{ .DNS.Spec.BaseDomain }} {
+            match ^api.{{ .DNS.Spec.BaseDomain }}
+            answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ if gt (len (cloudPlatformAPILoadBalancerIPs .)) 0 }}{{ index (cloudPlatformAPILoadBalancerIPs) 0 }}{{ end }}"
+            fallthrough
+        }
+        template IN {{`{{ .Cluster.CloudLBEmptyType }}`}} {{ .DNS.Spec.BaseDomain }} {
+            match ^api.{{ .DNS.Spec.BaseDomain }}
+            {{ if gt (len (cloudPlatformAPILoadBalancerIPs .)) 1 }}answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ index (cloudPlatformAPILoadBalancerIPs) 1 }}"{{ end }}
+            fallthrough
+        }
+        template IN {{`{{ .Cluster.CloudLBRecordType }}`}} {{ .DNS.Spec.BaseDomain }} {
+            match ^api-int.{{ .DNS.Spec.BaseDomain }}
+            answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ if gt (len (cloudPlatformAPIIntLoadBalancerIPs .)) 0 }}{{ index (cloudPlatformAPIIntLoadBalancerIPs .) 0 }}{{ end }}"
+            fallthrough
+        }
+        template IN {{`{{ .Cluster.CloudLBEmptyType }}`}} {{ .DNS.Spec.BaseDomain }} {
+            match ^api-int.{{ .DNS.Spec.BaseDomain }}
+            {{ if gt (len (cloudPlatformAPIIntLoadBalancerIPs .)) 1 }}answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ index (cloudPlatformAPIIntLoadBalancerIPs .) 1 }}"{{ end }}
+            fallthrough
+        }
+        hosts {
+            {{`{{- range .Cluster.NodeAddresses }}
+            {{ .Address }} {{ .Name }} {{ .Name }}.{{ $.Cluster.Name }}.{{ $.Cluster.Domain }}
+            {{- end }}`}}
+            fallthrough
+        }
+    }
