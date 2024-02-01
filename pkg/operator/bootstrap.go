@@ -276,6 +276,16 @@ func appendManifestsByPlatform(manifests []manifest, infra configv1.Infrastructu
 		manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.NutanixPlatformType)), lbType)
 	}
 
+	if infra.Status.PlatformStatus.GCP != nil {
+		// Generate just the CoreDNS manifests for the GCP platform only when the DNSType is `ClusterHosted`.
+		if infra.Status.PlatformStatus.GCP.CloudLoadBalancerConfig != nil && infra.Status.PlatformStatus.GCP.CloudLoadBalancerConfig.DNSType == configv1.ClusterHostedDNSType {
+			// We do not need the keepalived manifests to be generated because in this case the cloud default Load Balancers are used.
+			// So, setting the lbType to `UserManaged` although the default cloud LBs are not user managed.
+			lbType = configv1.LoadBalancerTypeUserManaged
+			manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.GCPPlatformType)), lbType)
+		}
+	}
+
 	return manifests
 }
 
