@@ -60,3 +60,6 @@ spec:
   - name: metrics
     port: 9001
     protocol: TCP
+  - name: crio-metrics
+    port: 9637
+    protocol: TCP
