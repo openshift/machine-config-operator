@@ -276,6 +276,8 @@ func appendManifestsByPlatform(manifests []manifest, infra configv1.Infrastructu
 		manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.NutanixPlatformType)), lbType)
 	}
 
+	klog.Infof("Successfully generated platform manifests")
+
 	return manifests
 }
 
