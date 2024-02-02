@@ -85,6 +85,7 @@ func (optr *Operator) syncRelatedObjects() error {
 		{Resource: "namespaces", Name: "openshift-ovirt-infra"},
 		{Resource: "namespaces", Name: "openshift-vsphere-infra"},
 		{Resource: "namespaces", Name: "openshift-nutanix-infra"},
+		{Resource: "namespaces", Name: "openshift-cloud-platform-infra"},
 	}
 
 	if !equality.Semantic.DeepEqual(coCopy.Status.RelatedObjects, co.Status.RelatedObjects) {
