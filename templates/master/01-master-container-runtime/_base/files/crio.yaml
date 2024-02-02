@@ -70,6 +70,7 @@ contents:
 
     [crio.metrics]
     enable_metrics = true
+    metrics_host = "127.0.0.1"
     metrics_port = 9537
     metrics_collectors = [
       "operations", # DEPRECATED: in favour of "operations_total"
