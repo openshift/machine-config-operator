@@ -32,6 +32,7 @@ contents:
         "/etc/hostname",
     ]
     drop_infra_ctr = true
+    pids_limit = -1
 
     [crio.runtime.workloads.openshift-builder]
     activation_annotation = "io.openshift.builder"
