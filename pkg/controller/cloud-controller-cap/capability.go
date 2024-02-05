@@ -2,12 +2,14 @@ package cloudcontrollercap
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	configv1 "github.com/openshift/api/config/v1"
 	openshiftconfigclientset "github.com/openshift/client-go/config/clientset/versioned"
+	configscheme "github.com/openshift/client-go/config/clientset/versioned/scheme"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -59,6 +61,15 @@ func IsCloudControllerCapDisabled(opts ...Option) (bool, error) {
 		opt(&conf)
 	}
 
+	// check if running in hypershift and return true because
+	// hypershift does not support capabilities
+	external, err := isTopologyExternal(conf.manifestDir)
+	if err != nil {
+		klog.Infoln("failed to check if topology is external", err)
+	} else if external {
+		return false, nil
+	}
+
 	disabled, err := checkClusterVersionForCCMODisabled(conf)
 	if err != nil {
 		klog.Errorln("failed to check if CloudController disabled via clusterversion, trying install config", err)
@@ -71,6 +82,33 @@ func IsCloudControllerCapDisabled(opts ...Option) (bool, error) {
 		klog.Errorln("failed to check if CloudController disabled via install config", err)
 	}
 	return disabled, err
+}
+
+func isTopologyExternal(manifestDir string) (bool, error) {
+	if manifestDir == "" {
+		manifestDir = "/assets/manifests/config"
+	} else {
+		// for hypershift we need to change dir
+		manifestDir, _ = filepath.Split(manifestDir)
+		manifestDir = filepath.Join(manifestDir, "config")
+	}
+
+	f, err := os.ReadFile(filepath.Join(manifestDir, "cluster-infrastructure-02-config.yaml"))
+	if err != nil {
+		return false, fmt.Errorf("failed to read cluster config, %w", err)
+	}
+
+	obj, err := runtime.Decode(configscheme.Codecs.UniversalDecoder(configv1.GroupVersion), f)
+	if err != nil {
+		return false, fmt.Errorf("failed to decode infrastructure config, %w", err)
+	}
+
+	infra, ok := obj.(*configv1.Infrastructure)
+	if !ok {
+		return false, errors.New("unable to read infrastructure config ")
+	}
+
+	return infra.Status.ControlPlaneTopology == configv1.ExternalTopologyMode, nil
 }
 
 func checkClusterVersionForCCMODisabled(cfg config) (bool, error) {
