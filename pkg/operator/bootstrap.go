@@ -279,7 +279,7 @@ func appendManifestsByPlatform(manifests []manifest, infra configv1.Infrastructu
 	if infra.Status.PlatformStatus.GCP != nil {
 		// Generate just the CoreDNS manifests for the GCP platform only when the DNSType is `ClusterHosted`.
 		if infra.Status.PlatformStatus.GCP.CloudLoadBalancerConfig != nil && infra.Status.PlatformStatus.GCP.CloudLoadBalancerConfig.DNSType == configv1.ClusterHostedDNSType {
-			// We do not need the keepalived manifests to be generated because in this case the cloud default Load Balancers are used.
+			// We do not need the keepalived manifests to be generated because the cloud default Load Balancers are in use.
 			// So, setting the lbType to `UserManaged` although the default cloud LBs are not user managed.
 			lbType = configv1.LoadBalancerTypeUserManaged
 			manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.GCPPlatformType)), lbType)
@@ -312,17 +312,27 @@ func loadBootstrapCloudProviderConfig(infra *configv1.Infrastructure, cloudConfi
 }
 
 func getPlatformManifests(manifests []manifest, platformName string, lbType configv1.PlatformLoadBalancerType) []manifest {
+	var corednsName string
+	var corefileName string
+	switch platformName {
+	case strings.ToLower(string(configv1.GCPPlatformType)):
+		corednsName = "manifests/cloud-platform-alt-dns/coredns.yaml"
+		corefileName = "manifests/cloud-platform-alt-dns/coredns-corefile.tmpl"
+	default:
+		corednsName = "manifests/on-prem/coredns.yaml"
+		corefileName = "manifests/on-prem/coredns-corefile.tmpl"
+	}
+
 	platformManifests := append(manifests,
 		manifest{
-			name:     "manifests/on-prem/coredns.yaml",
+			name:     corednsName,
 			filename: platformName + "/manifests/coredns.yaml",
 		},
 		manifest{
-			name:     "manifests/on-prem/coredns-corefile.tmpl",
+			name:     corefileName,
 			filename: platformName + "/static-pod-resources/coredns/Corefile.tmpl",
 		},
 	)
-
 	if lbType == configv1.LoadBalancerTypeOpenShiftManagedDefault || lbType == "" {
 		platformManifests = append(platformManifests,
 			manifest{
