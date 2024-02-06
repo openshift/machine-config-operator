@@ -609,12 +609,21 @@ func (dn *Daemon) updateOnClusterBuild(oldConfig, newConfig *mcfgv1.MachineConfi
 		return err
 	}
 
+	return nil
+}
+
+func (dn *Daemon) updateOnClusterBuildAndReboot(oldConfig, newConfig *mcfgv1.MachineConfig, oldImage, newImage string, skipCertificateWrite bool) (retErr error) {
+	if err := dn.updateOnClusterBuild(oldConfig, newConfig, oldImage, newImage, skipCertificateWrite); err != nil {
+		return err
+	}
+
 	odc := &onDiskConfig{
 		currentImage:  newImage,
 		currentConfig: newConfig,
 	}
 
 	if err := dn.storeCurrentConfigOnDisk(odc); err != nil {
+		klog.Errorf("current image is %s and current config is %s, Error: %v", odc.currentImage, odc.currentConfig.Name, err)
 		return err
 	}
 
@@ -630,7 +639,7 @@ func (dn *Daemon) updateOnClusterBuild(oldConfig, newConfig *mcfgv1.MachineConfi
 		}
 	}()
 
-	return dn.reboot(fmt.Sprintf("Node will reboot into image %s / MachineConfig %s", newImage, newConfigName))
+	return dn.reboot(fmt.Sprintf("Node will reboot into image %s / MachineConfig %s", newImage, newConfig.Name))
 }
 
 // Update the node to the provided node configuration.

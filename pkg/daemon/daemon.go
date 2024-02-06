@@ -356,6 +356,7 @@ func (dn *Daemon) ClusterConnect(
 		AddFunc:    dn.handleNodeEvent,
 		UpdateFunc: func(oldObj, newObj interface{}) { dn.handleNodeEvent(newObj) },
 	})
+
 	dn.nodeLister = nodeInformer.Lister()
 	dn.nodeListerSynced = nodeInformer.Informer().HasSynced
 	dn.mcLister = mcInformer.Lister()
@@ -1785,7 +1786,7 @@ func PersistNetworkInterfaces(osRoot string) error {
 	} else if cleanup {
 		cmd.Args = append(cmd.Args, "--cleanup")
 	} else {
-		return fmt.Errorf("Unexpected host OS %s", hostos.ToPrometheusLabel())
+		return fmt.Errorf("unexpected host OS %s", hostos.ToPrometheusLabel())
 	}
 
 	// nmstate always logs to stderr, so we need to capture/forward that too
@@ -1823,7 +1824,7 @@ func PersistNetworkInterfaces(osRoot string) error {
 			rpmOstreeArgs = append(rpmOstreeArgs, "--remove", karg)
 		}
 	} else {
-		return fmt.Errorf("Unexpected host OS %s", hostos.ToPrometheusLabel())
+		return fmt.Errorf("unexpected host OS %s", hostos.ToPrometheusLabel())
 	}
 
 	if osRoot != "/" {
@@ -2327,8 +2328,10 @@ func (dn *Daemon) triggerUpdate(currentConfig, desiredConfig *mcfgv1.MachineConf
 	// However, the node will not roll back from a layered config to a
 	// non-layered config without admin intervention; so we should emit an error
 	// for now.
+	klog.Infof("Checking if rollback is needed")
+	klog.Infof("desired image: %s and current image: %s", desiredImage, currentImage)
 	if desiredImage == "" && currentImage != "" {
-		return fmt.Errorf("rolling back from a layered to non-layered configuration is not currently supported")
+		return dn.handleLayeringDisabled(currentConfig, desiredConfig, currentImage)
 	}
 
 	// Shut down the Config Drift Monitor since we'll be performing an update
@@ -2336,7 +2339,41 @@ func (dn *Daemon) triggerUpdate(currentConfig, desiredConfig *mcfgv1.MachineConf
 	dn.stopConfigDriftMonitor()
 
 	klog.Infof("Performing layered OS update")
-	return dn.updateOnClusterBuild(currentConfig, desiredConfig, currentImage, desiredImage, true)
+	return dn.updateOnClusterBuildAndReboot(currentConfig, desiredConfig, currentImage, desiredImage, true)
+}
+
+func (dn *Daemon) handleLayeringDisabled(currentConfig, desiredConfig *mcfgv1.MachineConfig, currentImage string) error {
+	klog.Info("Layering disabled, rolling back to non-layered state")
+
+	// Get the default (non-layered) OS image URL and MachineConfig
+	klog.Info("Fetching default non-layered config")
+	defaultOSImage := desiredConfig.Spec.OSImageURL
+
+	// Check if a rollback to a non-layered state is needed
+	klog.Infof("rollback required. Initiating rollback to default OS image: %s and MachineConfig: %s", defaultOSImage, desiredConfig.Name)
+
+	// Trigger rollback to the default non-layered OS image and MachineConfig
+	klog.Info("Performing image update")
+	err := dn.updateOnClusterBuild(currentConfig, desiredConfig, currentImage, defaultOSImage, false)
+	if err != nil {
+		klog.Errorf("Failed to rollback to default OS image: %v", err)
+		return err
+	}
+
+	// Store the rolled back state on disk
+	klog.Info("Storing rolled back state on disk")
+	odc := &onDiskConfig{
+		currentConfig: currentConfig,
+		currentImage:  "", // This is purposely empty so the MCD doesnt think the node has layering enabled
+	}
+	if err := dn.storeCurrentConfigOnDisk(odc); err != nil {
+		klog.Errorf("Failed to store current config on disk: %v", err)
+		return err
+	}
+
+	// Trigger a reboot to apply the changes
+	klog.Info("Triggering reboot to complete roll back to non-layered state")
+	return dn.reboot("Node will reboot to non-layered state")
 }
 
 // triggerUpdateWithMachineConfig starts the update. It queries the cluster for
