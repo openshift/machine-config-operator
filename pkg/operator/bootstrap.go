@@ -235,38 +235,20 @@ func appendManifestsByPlatform(manifests []manifest, infra configv1.Infrastructu
 	}
 
 	if infra.Status.PlatformStatus.VSphere != nil {
-		deployInternalLB := true
-		// vSphere allows to use a user managed load balancer by not setting the VIPs in PlatformStatus.
-		// We will maintain backward compatibility by checking if the VIPs are not set, we will not deploy
-		// Keepalived and CoreDNS.
+		// TODO(mko) It is not clear why for user-managed LB and for ELB we want to skip CoreDNS as every
+		// other platform deploys CoreDNS without keepalived, and only vSphere skips both.
+		// As this only refactors the existing code, I do not want to change this behaviour.
+
+		// vSphere allows setting user-managed LB by simply leaving the VIPs in PlatformStatus empty.
 		if len(infra.Status.PlatformStatus.VSphere.APIServerInternalIPs) == 0 {
-			deployInternalLB = false
+			return manifests
 		}
-
 		if infra.Status.PlatformStatus.VSphere.LoadBalancer != nil {
-			deployInternalLB = configv1.LoadBalancerTypeOpenShiftManagedDefault == infra.Status.PlatformStatus.VSphere.LoadBalancer.Type
+			if infra.Status.PlatformStatus.VSphere.LoadBalancer.Type != configv1.LoadBalancerTypeOpenShiftManagedDefault {
+				return manifests
+			}
 		}
-
-		if deployInternalLB {
-			manifests = append(manifests,
-				manifest{
-					name:     "manifests/on-prem/coredns.yaml",
-					filename: "vsphere/manifests/coredns.yaml",
-				},
-				manifest{
-					name:     "manifests/on-prem/coredns-corefile.tmpl",
-					filename: "vsphere/static-pod-resources/coredns/Corefile.tmpl",
-				},
-				manifest{
-					name:     "manifests/on-prem/keepalived.yaml",
-					filename: "vsphere/manifests/keepalived.yaml",
-				},
-				manifest{
-					name:     "manifests/on-prem/keepalived.conf.tmpl",
-					filename: "vsphere/static-pod-resources/keepalived/keepalived.conf.tmpl",
-				},
-			)
-		}
+		manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.VSpherePlatformType)), lbType)
 	}
 
 	if infra.Status.PlatformStatus.Nutanix != nil {
