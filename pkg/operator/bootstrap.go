@@ -150,6 +150,7 @@ func RenderBootstrap(
 		templatectrl.CorednsKey:             imgs.Coredns,
 		templatectrl.HaproxyKey:             imgs.Haproxy,
 		templatectrl.BaremetalRuntimeCfgKey: imgs.BaremetalRuntimeCfg,
+		templatectrl.KubeRbacProxyKey:       imgs.KubeRbacProxy,
 	}
 
 	config := getRenderConfig("", string(filesData[kubeAPIServerServingCA]), spec, &imgs.RenderConfigImages, infra.Status.APIServerInternalURL, nil)
@@ -176,7 +177,8 @@ func RenderBootstrap(
 		}, {
 			name:     "manifests/machineconfigserver/kube-apiserver-serving-ca-configmap.yaml",
 			filename: "manifests/kube-apiserver-serving-ca-configmap.yaml",
-		}}
+		},
+	}
 
 	manifests = appendManifestsByPlatform(manifests, *infra)
 
