@@ -53,13 +53,11 @@ const (
 	requiredForUpgradeMachineConfigPoolLabelKey = "operator.machineconfiguration.openshift.io/required-for-upgrade"
 )
 
-var (
-	platformsRequiringCloudConf = sets.NewString(
-		string(configv1.AzurePlatformType),
-		string(configv1.GCPPlatformType),
-		string(configv1.OpenStackPlatformType),
-		string(configv1.VSpherePlatformType),
-	)
+var platformsRequiringCloudConf = sets.NewString(
+	string(configv1.AzurePlatformType),
+	string(configv1.GCPPlatformType),
+	string(configv1.OpenStackPlatformType),
+	string(configv1.VSpherePlatformType),
 )
 
 type manifestPaths struct {
@@ -567,6 +565,7 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 		templatectrl.CorednsKey:               imgs.Coredns,
 		templatectrl.HaproxyKey:               imgs.Haproxy,
 		templatectrl.BaremetalRuntimeCfgKey:   imgs.BaremetalRuntimeCfg,
+		templatectrl.KubeRbacProxyKey:         imgs.KubeRbacProxy,
 	}
 
 	ignitionHost, err := getIgnitionHost(&infra.Status)
@@ -1562,7 +1561,6 @@ func isPoolStatusConditionTrue(pool *mcfgv1.MachineConfigPool, conditionType mcf
 // global pull secret. It also adds a default route to the registry for the firstboot scenario.
 
 func (optr *Operator) getImageRegistryPullSecrets() ([]byte, error) {
-
 	// Check if image registry exists, if it doesn't we no-op
 	co, err := optr.mcoCOLister.Get("image-registry")
 
