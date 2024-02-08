@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -11,8 +12,10 @@ import (
 	buildv1 "github.com/openshift/api/build/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	aggerrors "k8s.io/apimachinery/pkg/util/errors"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	clientset "k8s.io/client-go/kubernetes"
 	coreclientsetv1 "k8s.io/client-go/kubernetes/typed/core/v1"
@@ -35,6 +38,7 @@ import (
 
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
+	corelistersv1 "k8s.io/client-go/listers/core/v1"
 
 	coreinformers "k8s.io/client-go/informers"
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
@@ -93,22 +97,35 @@ const (
 	osImageURLConfigKey = "osImageURL"
 )
 
+type ErrInvalidImageBuilder struct {
+	Message     string
+	InvalidType string
+}
+
+func (e *ErrInvalidImageBuilder) Error() string {
+	return e.Message
+}
+
 // Image builder constants.
+
+type ImageBuilderType string
+
 const (
 	// ImageBuilderTypeConfigMapKey is the key in the ConfigMap that determines which type of image builder to use.
 	ImageBuilderTypeConfigMapKey string = "imageBuilderType"
 
 	// OpenshiftImageBuilder is the constant indicating use of the OpenShift image builder.
-	OpenshiftImageBuilder string = "openshift-image-builder"
+	OpenshiftImageBuilder ImageBuilderType = "openshift-image-builder"
 
 	// CustomPodImageBuilder is the constant indicating use of the custom pod image builder.
-	CustomPodImageBuilder string = "custom-pod-builder"
+	CustomPodImageBuilder ImageBuilderType = "custom-pod-builder"
 )
 
 var (
 	// controllerKind contains the schema.GroupVersionKind for this controller type.
 	//nolint:varcheck,deadcode // This will be used eventually
-	controllerKind = mcfgv1.SchemeGroupVersion.WithKind("MachineConfigPool")
+	controllerKind         = mcfgv1.SchemeGroupVersion.WithKind("MachineConfigPool")
+	validImageBuilderTypes = sets.New[ImageBuilderType](OpenshiftImageBuilder, CustomPodImageBuilder)
 )
 
 //nolint:revive // If I name this ControllerConfig, that name will be overloaded :P
@@ -145,6 +162,7 @@ type Controller struct {
 	syncHandler              func(mcp string) error
 	enqueueMachineConfigPool func(*mcfgv1.MachineConfigPool)
 
+	cmLister  corelistersv1.ConfigMapLister
 	ccLister  mcfglistersv1.ControllerConfigLister
 	mcpLister mcfglistersv1.MachineConfigPoolLister
 
@@ -154,8 +172,9 @@ type Controller struct {
 
 	queue workqueue.RateLimitingInterface
 
-	config       BuildControllerConfig
-	imageBuilder ImageBuilder
+	config           BuildControllerConfig
+	imageBuilder     ImageBuilder
+	imageBuilderType ImageBuilderType
 }
 
 // Creates a BuildControllerConfig with sensible production defaults.
@@ -191,6 +210,7 @@ type informers struct {
 	mcpInformer   mcfginformersv1.MachineConfigPoolInformer
 	buildInformer buildinformersv1.BuildInformer
 	podInformer   coreinformersv1.PodInformer
+	cmInformer    coreinformersv1.ConfigMapInformer
 	toStart       []interface{ Start(<-chan struct{}) }
 }
 
@@ -205,18 +225,21 @@ func (i *informers) start(ctx context.Context) {
 func newInformers(bcc *Clients) *informers {
 	ccInformer := mcfginformers.NewSharedInformerFactory(bcc.mcfgclient, 0)
 	mcpInformer := mcfginformers.NewSharedInformerFactory(bcc.mcfgclient, 0)
+	cmInformer := coreinformers.NewFilteredSharedInformerFactory(bcc.kubeclient, 0, ctrlcommon.MCONamespace, nil)
 	buildInformer := buildinformers.NewSharedInformerFactoryWithOptions(bcc.buildclient, 0, buildinformers.WithNamespace(ctrlcommon.MCONamespace))
 	podInformer := coreinformers.NewSharedInformerFactoryWithOptions(bcc.kubeclient, 0, coreinformers.WithNamespace(ctrlcommon.MCONamespace))
 
 	return &informers{
 		ccInformer:    ccInformer.Machineconfiguration().V1().ControllerConfigs(),
 		mcpInformer:   mcpInformer.Machineconfiguration().V1().MachineConfigPools(),
+		cmInformer:    cmInformer.Core().V1().ConfigMaps(),
 		buildInformer: buildInformer.Build().V1().Builds(),
 		podInformer:   podInformer.Core().V1().Pods(),
 		toStart: []interface{ Start(<-chan struct{}) }{
 			ccInformer,
 			mcpInformer,
 			buildInformer,
+			cmInformer,
 			podInformer,
 		},
 	}
@@ -243,6 +266,10 @@ func newBuildController(
 		AddFunc:    ctrl.addMachineConfigPool,
 		UpdateFunc: ctrl.updateMachineConfigPool,
 		DeleteFunc: ctrl.deleteMachineConfigPool,
+	})
+
+	ctrl.cmInformer.Informer().AddEventHandler(cache.ResourceEventHandlerDetailedFuncs{
+		UpdateFunc: ctrl.updateConfigMap,
 	})
 
 	ctrl.syncHandler = ctrl.syncMachineConfigPool
@@ -362,6 +389,34 @@ func (ctrl *Controller) processNextWorkItem() bool {
 	return true
 }
 
+// Checks for new Data in the on-cluster-build-config configmap
+// if the imageBuilderType has changed, we need to restart the controller
+func (ctrl *Controller) updateConfigMap(old, new interface{}) {
+	oldCM := old.(*corev1.ConfigMap).DeepCopy()
+	newCM := new.(*corev1.ConfigMap).DeepCopy()
+	if newCM.Name == OnClusterBuildConfigMapName && oldCM.Data[ImageBuilderTypeConfigMapKey] != newCM.Data[ImageBuilderTypeConfigMapKey] {
+		// restart ctrl and re-init
+		mcps, _ := ctrl.mcpLister.List(labels.Everything())
+		impactedPools := []*mcfgv1.MachineConfigPool{}
+		for _, mcp := range mcps {
+			if ctrlcommon.IsLayeredPool(mcp) {
+				if running, _ := ctrl.imageBuilder.IsBuildRunning(mcp); running {
+					// building on this pool, we have changed img builder type. Need to stop build
+					impactedPools = append(impactedPools, mcp)
+					ps := newPoolState(mcp)
+					ctrl.imageBuilder.DeleteBuildObject(mcp)
+					ctrl.markBuildInterrupted(ps)
+				}
+			}
+		}
+		if ImageBuilderType(newCM.Data[ImageBuilderTypeConfigMapKey]) != OpenshiftImageBuilder && ImageBuilderType(newCM.Data[ImageBuilderTypeConfigMapKey]) != CustomPodImageBuilder {
+			ctrl.handleConfigMapError(impactedPools, &ErrInvalidImageBuilder{Message: "Invalid Image Builder Type found in configmap", InvalidType: newCM.Data[ImageBuilderTypeConfigMapKey]}, new)
+			os.Exit(255)
+		}
+		os.Exit(0)
+	}
+}
+
 // Reconciles the MachineConfigPool state with the state of an OpenShift Image
 // Builder object.
 func (ctrl *Controller) imageBuildUpdater(build *buildv1.Build) error {
@@ -448,6 +503,17 @@ func (ctrl *Controller) customBuildPodUpdater(pod *corev1.Pod) error {
 	return nil
 }
 
+func (ctrl *Controller) handleConfigMapError(pools []*mcfgv1.MachineConfigPool, err error, key interface{}) {
+	klog.V(2).Infof("Error syncing configmap %v: %v", key, err)
+	utilruntime.HandleError(err)
+	for _, pool := range pools {
+		klog.V(2).Infof("Dropping machineconfigpool %q out of the queue: %v", pool.Name, err)
+		ctrl.queue.Forget(pool.Name)
+		ctrl.queue.AddAfter(pool.Name, 1*time.Minute)
+	}
+
+}
+
 func (ctrl *Controller) handleErr(err error, key interface{}) {
 	if err == nil {
 		ctrl.queue.Forget(key)
@@ -506,6 +572,10 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	}
 
 	switch {
+	case ps.IsInterrupted():
+		klog.V(4).Infof("MachineConfigPool %s is build interrupted, requeueing", pool.Name)
+		ctrl.enqueueMachineConfigPool(pool)
+		return nil
 	case ps.IsDegraded():
 		klog.V(4).Infof("MachineConfigPool %s is degraded, requeueing", pool.Name)
 		ctrl.enqueueMachineConfigPool(pool)
@@ -540,6 +610,47 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	return ctrl.syncAvailableStatus(pool)
 }
 
+func (ctrl *Controller) markBuildInterrupted(ps *poolState) error {
+	klog.Errorf("Build interrupted for pool %s", ps.Name())
+
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		mcp, err := ctrl.mcfgclient.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), ps.Name(), metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+
+		ps := newPoolState(mcp)
+		ps.SetBuildConditions([]mcfgv1.MachineConfigPoolCondition{
+			{
+				Type:   mcfgv1.MachineConfigPoolBuildInterrupted,
+				Reason: "BuildInterrupted",
+				Status: corev1.ConditionTrue,
+			},
+			{
+				Type:   mcfgv1.MachineConfigPoolBuildSuccess,
+				Status: corev1.ConditionFalse,
+			},
+			{
+				Type:   mcfgv1.MachineConfigPoolBuilding,
+				Status: corev1.ConditionFalse,
+			},
+			{
+				Type:   mcfgv1.MachineConfigPoolBuildPending,
+				Status: corev1.ConditionFalse,
+			},
+			{
+				Type:   mcfgv1.MachineConfigPoolDegraded,
+				Status: corev1.ConditionTrue,
+			},
+		})
+
+		ps.pool.Spec.Configuration.Source = ps.pool.Spec.Configuration.Source[:len(ps.pool.Spec.Configuration.Source)-1]
+
+		return ctrl.updatePoolAndSyncAvailableStatus(ps.MachineConfigPool())
+	})
+
+}
+
 // Marks a given MachineConfigPool as a failed build.
 func (ctrl *Controller) markBuildFailed(ps *poolState) error {
 	klog.Errorf("Build failed for pool %s", ps.Name())
@@ -552,6 +663,10 @@ func (ctrl *Controller) markBuildFailed(ps *poolState) error {
 
 		ps := newPoolState(mcp)
 		ps.SetBuildConditions([]mcfgv1.MachineConfigPoolCondition{
+			{
+				Type:   mcfgv1.MachineConfigPoolBuildInterrupted,
+				Status: corev1.ConditionFalse,
+			},
 			{
 				Type:   mcfgv1.MachineConfigPoolBuildFailed,
 				Reason: "BuildFailed",
@@ -591,6 +706,10 @@ func (ctrl *Controller) markBuildInProgress(ps *poolState) error {
 
 		ps := newPoolState(mcp)
 		ps.SetBuildConditions([]mcfgv1.MachineConfigPoolCondition{
+			{
+				Type:   mcfgv1.MachineConfigPoolBuildInterrupted,
+				Status: corev1.ConditionFalse,
+			},
 			{
 				Type:   mcfgv1.MachineConfigPoolBuildFailed,
 				Status: corev1.ConditionFalse,
@@ -748,6 +867,10 @@ func (ctrl *Controller) markBuildPendingWithObjectRef(ps *poolState, objRef core
 		klog.Infof("Build for %s marked pending with object reference %v", ps.Name(), objRef)
 
 		ps.SetBuildConditions([]mcfgv1.MachineConfigPoolCondition{
+			{
+				Type:   mcfgv1.MachineConfigPoolBuildInterrupted,
+				Status: corev1.ConditionFalse,
+			},
 			{
 				Type:   mcfgv1.MachineConfigPoolBuildFailed,
 				Status: corev1.ConditionFalse,
