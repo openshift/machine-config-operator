@@ -85,6 +85,10 @@ func (l *LayeredPoolState) IsAnyDegraded() bool {
 	return false
 }
 
+func (l *LayeredPoolState) IsInterrupted() bool {
+	return apihelpers.IsMachineConfigPoolConditionTrue(l.pool.Status.Conditions, mcfgv1.MachineConfigPoolBuildInterrupted)
+}
+
 func (l *LayeredPoolState) IsDegraded() bool {
 	return apihelpers.IsMachineConfigPoolConditionTrue(l.pool.Status.Conditions, mcfgv1.MachineConfigPoolDegraded)
 }

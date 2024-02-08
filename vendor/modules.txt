@@ -815,7 +815,7 @@ github.com/opencontainers/runc/libcontainer/user
 # github.com/opencontainers/runtime-spec v1.1.0
 ## explicit
 github.com/opencontainers/runtime-spec/specs-go
-# github.com/openshift/api v0.0.0-20240112192513-412e126bd40b
+# github.com/openshift/api v0.0.0-20240205144533-7162acc29bb6
 ## explicit; go 1.21
 github.com/openshift/api
 github.com/openshift/api/apiserver
@@ -2095,8 +2095,8 @@ k8s.io/klog/v2/internal/dbg
 k8s.io/klog/v2/internal/serialize
 k8s.io/klog/v2/internal/severity
 k8s.io/klog/v2/internal/sloghandler
-# k8s.io/kube-aggregator v0.28.3
-## explicit; go 1.20
+# k8s.io/kube-aggregator v0.29.0
+## explicit; go 1.21
 k8s.io/kube-aggregator/pkg/apis/apiregistration
 k8s.io/kube-aggregator/pkg/apis/apiregistration/v1
 k8s.io/kube-aggregator/pkg/apis/apiregistration/v1beta1
