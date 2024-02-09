@@ -187,29 +187,51 @@ REPO={docker.io/username} ./hack/push-image.sh
 Quay.io or any other public registry isn't strictly required - you can use a local
 registry as long as those images are pullable.
 
+By default, podman created quay.io repo is marked as private, make sure to
+change it in the quay.io webapge to public, allowing the cluster to pull
+the update payload.
+
 ## Build a custom release payload
+
+Get a pull secret from https://console.redhat.com/openshift/install/pull-secret
+and store it to `$HOME/.kube/pull-secret.txt` or any place you like.
+
+Besides pull secret, you need to run `podman login quay.io:443` and `oc
+registry login`. The reason to use `quay.io:443` is because pull secret already
+has `quay.io` login information for
+`quay.io/openshift-release-dev/ocp-release`, but you need your personal account
+to upload to `quay.io:443/user/origin-release`.
 
 Now that your have your custom image, to build a custom release payload, run:
 
 ```
-oc adm release new -n origin --server https://api.ci.openshift.org \
-                                --from-image-stream "{version number}" \
-                                --to-image quay.io/user/origin-release:v{version number} \
-                                machine-config-operator=quay.io/user/machine-config-operator:latest
+oc adm release new \
+    -a ~/.kube/pull-secret.txt \
+    --from-release \
+    quay.io/openshift-release-dev/ocp-release:{version_number}-x86_64 \
+    --name {version_number} \
+    --to-image quay.io:443/<your_user>/origin-release:v{version_number} \
+    machine-config-operator=quay.io/<your_user>/machine-config-operator:latest
 ```
 
-`{version number}` is an openshift version, for example 4.5
+`{version_number}` is an openshift version, for example 4.13.21
 
 Make sure you're using a relatively new `oc` binary from `openshift/oc`. The image must be pullable by
 remote resources (nodes), therefore using a local registry might not work.
 
-Any registry credentials need to be present in `~/.docker/config.json` for `oc` to interact with the registry.
+If you run into authentication problem, please check these paths:
+ * `${XDG_RUNTIME_DIR}/containers/auth.json`
+ * `$HOME/.config/containers/auth.json`
+ * `$HOME/.docker/config.json`
+
+Please check `quay.io/<your-user>/origin-release` webpage to make sure it is
+public accessible.
 
 When the command above finishes, your custom release payload is going to be available
 at the location you specified via the `--to-image` flag for the installer to be consumed. E.g.:
 
 ```
-oc adm upgrade --force --to-image quay.io/user/origin-release:v{version number}
+oc adm upgrade --force --to-image quay.io/<your_user>/origin-release:v{version number}
 ```
 
 To watch the upgrade you can do:
