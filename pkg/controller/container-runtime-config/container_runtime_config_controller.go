@@ -360,7 +360,7 @@ func (ctrl *Controller) clusterImagePolicyDeleted(_ interface{}) {
 	if !ctrl.sigstoreAPIEnabled() {
 		return
 	}
-	ctrl.imagePoliciesDeleted()
+	ctrl.imgQueue.Add("openshift-config")
 }
 
 func (ctrl *Controller) imagePoliciesDeleted() {

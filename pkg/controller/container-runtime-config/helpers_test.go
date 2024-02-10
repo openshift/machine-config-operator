@@ -496,7 +496,7 @@ var testClusterImagePolicyCRs = map[string]apicfgv1alpha1.ClusterImagePolicy{
 				RootOfTrust: apicfgv1alpha1.PolicyRootOfTrust{
 					PolicyType: apicfgv1alpha1.FulcioCAWithRekorRootOfTrust,
 					FulcioCAWithRekor: &apicfgv1alpha1.FulcioCAWithRekor{
-						FulcioCAData: "dGVzdC1jYS1kYXRhLWRhdGE=",
+						FulcioCAData: []byte("dGVzdC1jYS1kYXRhLWRhdGE="),
 						RekorKeyData: "dGVzdC1yZWtvci1rZXktZGF0YQ==",
 						FulcioSubject: apicfgv1alpha1.PolicyFulcioSubject{
 							OIDCIssuer:  "https://OIDC.example.com",

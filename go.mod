@@ -27,7 +27,7 @@ require (
 	github.com/google/renameio v0.1.0
 	github.com/imdario/mergo v0.3.13
 	github.com/opencontainers/go-digest v1.0.0
-	github.com/openshift/api v0.0.0-20240205144533-7162acc29bb6
+	github.com/openshift/api v0.0.0-20240124164020-e2ce40831f2e
 	github.com/openshift/client-go v0.0.0-20240104132419-223261fd8630
 	github.com/openshift/cluster-config-operator v0.0.0-alpha.0.0.20231213185242-e4dc676febfe
 	github.com/openshift/library-go v0.0.0-20231020125034-5a2d9fe760b3
@@ -330,3 +330,7 @@ require (
 )
 
 replace k8s.io/kube-openapi => github.com/openshift/kube-openapi v0.0.0-20230816122517-ffc8f001abb0
+
+replace github.com/openshift/api => github.com/QiWang19/api v0.0.0-20240210054700-a95bb144f44f
+
+replace github.com/openshift/client-go => github.com/QiWang19/client-go v0.0.0-20240210061104-d13d84b73765

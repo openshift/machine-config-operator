@@ -895,11 +895,7 @@ func policyItemFromSpec(policy apicfgv1alpha1.Policy) (signature.PolicyRequireme
 		}
 	case apicfgv1alpha1.FulcioCAWithRekorRootOfTrust:
 		fulcioOptions := []signature.PRSigstoreSignedFulcioOption{}
-		fulcioDataDec, err := b64.StdEncoding.DecodeString(policy.RootOfTrust.FulcioCAWithRekor.FulcioCAData)
-		if err != nil {
-			return nil, fmt.Errorf("failed to decode fulcioCAData: %v", err)
-		}
-		fulcioOptions = append(fulcioOptions, signature.PRSigstoreSignedFulcioWithCAData(fulcioDataDec),
+		fulcioOptions = append(fulcioOptions, signature.PRSigstoreSignedFulcioWithCAData(policy.RootOfTrust.FulcioCAWithRekor.FulcioCAData),
 			signature.PRSigstoreSignedFulcioWithOIDCIssuer(policy.RootOfTrust.FulcioCAWithRekor.FulcioSubject.OIDCIssuer),
 			signature.PRSigstoreSignedFulcioWithSubjectEmail(policy.RootOfTrust.FulcioCAWithRekor.FulcioSubject.SignedEmail))
 

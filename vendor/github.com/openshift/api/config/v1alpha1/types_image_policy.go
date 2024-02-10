@@ -110,7 +110,7 @@ type FulcioCAWithRekor struct {
 	// fulcioCAData must be at most 8192 characters.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MaxLength=8192
-	FulcioCAData string `json:"fulcioCAData"`
+	FulcioCAData []byte `json:"fulcioCAData"`
 	// rekorKeyData contains inline base64-encoded data for the PEM format from the Rekor public key.
 	// rekorKeyData must be at most 8192 characters.
 	// +kubebuilder:validation:Required
