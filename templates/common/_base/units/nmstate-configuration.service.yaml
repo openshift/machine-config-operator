@@ -6,7 +6,7 @@ contents: |
   Requires=openvswitch.service
   Wants=NetworkManager-wait-online.service
   After=NetworkManager-wait-online.service openvswitch.service network.service nodeip-configuration.service
-  Before=nmstate.service kubelet-dependencies.target kubelet.service crio.service ovs-configuration.service node-valid-hostname.service
+  Before=nmstate.service kubelet-dependencies.target ovs-configuration.service node-valid-hostname.service
 
   [Service]
   Type=oneshot
