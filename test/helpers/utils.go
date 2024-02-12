@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"context"
 	"fmt"
+	"log"
 	"math/rand"
 	"os"
 	"os/exec"
@@ -20,6 +21,7 @@ import (
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	"github.com/davecgh/go-spew/spew"
+	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	machineClientv1beta1 "github.com/openshift/client-go/machine/clientset/versioned/typed/machine/v1beta1"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
@@ -262,6 +264,30 @@ func WaitForPoolComplete(t *testing.T, cs *framework.ClientSet, pool, target str
 		return fmt.Errorf("pool %s didn't report %s to updated (waited %s): %w", pool, target, time.Since(startTime), err)
 	}
 	t.Logf("Pool %s has completed %s (waited %v)", pool, target, time.Since(startTime))
+	return nil
+}
+
+// WaitForOneMasterNode waits until atleast one master node has completed an update
+func WaitForOneMasterNodeToBeReady(t *testing.T, cs *framework.ClientSet) error {
+	startTime := time.Now()
+	ctx := context.TODO()
+
+	if err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 12*time.Minute, false, func(ctx context.Context) (bool, error) {
+		mcp, err := cs.MachineConfigPools().Get(ctx, "master", metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+		// Check if the pool has atleast one updated node(mid-upgrade), or if the pool has completed the upgrade to the new config(the additional check for spec==status here is
+		// to ensure we are not checking an older "Updated" condition and the MCP fields haven't caught up yet
+		if (apihelpers.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolUpdating) && mcp.Status.UpdatedMachineCount > 0) ||
+			(apihelpers.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolUpdated) && (mcp.Spec.Configuration.Name == mcp.Status.Configuration.Name)) {
+			return true, nil
+		}
+		return false, nil
+	}); err != nil {
+		return fmt.Errorf("the master pool has failed to update a node in time (waited %s): %w", time.Since(startTime), err)
+	}
+	t.Logf("The master pool has atleast one updated node (waited %v)", time.Since(startTime))
 	return nil
 }
 
@@ -1106,4 +1132,44 @@ func DeleteNodeAndMachine(t *testing.T, cs *framework.ClientSet, node corev1.Nod
 		})
 
 	require.NoError(t, delErr)
+}
+
+// MustHaveFeatureGatesEnabled fatally exits the test if any feature gate in requiredFeatureGates is not enabled.
+func MustHaveFeatureGatesEnabled(requiredFeatureGates ...configv1.FeatureGateName) {
+	cs := framework.NewClientSet("")
+	if err := validateFeatureGatesEnabled(cs, requiredFeatureGates...); err != nil {
+		log.Fatalln(err)
+	}
+	log.Printf("All required featuregates %v present!", requiredFeatureGates)
+}
+
+// Validates if feature gates listed in requiredFeatureGates are enabled.
+func validateFeatureGatesEnabled(cs *framework.ClientSet, requiredFeatureGates ...configv1.FeatureGateName) error {
+	currentFeatureGates, err := cs.ConfigV1Interface.FeatureGates().Get(context.TODO(), "cluster", metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to fetch feature gates: %w", err)
+	}
+
+	// This uses the new Go generics to construct a typed set of
+	// FeatureGateNames. Under the hood, sets are map[T]struct{}{} where
+	// only the keys matter and one cannot have duplicate keys. Perfect for our use-case!
+	enabledFeatures := sets.New[configv1.FeatureGateName]()
+
+	// Load all of the feature gate names into our set. Duplicates will be
+	// automatically be ignored.
+	for _, currentFeatureGateDetails := range currentFeatureGates.Status.FeatureGates {
+		for _, enabled := range currentFeatureGateDetails.Enabled {
+			enabledFeatures.Insert(enabled.Name)
+		}
+	}
+
+	// If we have all of the required feature gates, we're done!
+	if enabledFeatures.HasAll(requiredFeatureGates...) {
+		return nil
+	}
+
+	// If we don't, lets diff against what we have vs. what we want and return that information.
+	requiredFeatures := sets.New[configv1.FeatureGateName](requiredFeatureGates...)
+	disabledRequiredFeatures := requiredFeatures.Difference(enabledFeatures)
+	return fmt.Errorf("missing required FeatureGate(s): %v, have: %v", sets.List(disabledRequiredFeatures), sets.List(enabledFeatures))
 }
