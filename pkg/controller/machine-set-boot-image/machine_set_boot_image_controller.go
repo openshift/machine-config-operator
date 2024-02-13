@@ -235,12 +235,22 @@ func (ctrl *Controller) addMachineSet(obj interface{}) {
 // TODO: This callback happens every ~15 minutes or so even if the machineset contents are not updated
 // Perhaps worth implementing a diff check before starting the sync?
 
-func (ctrl *Controller) updateMachineSet(old, _ interface{}) {
+func (ctrl *Controller) updateMachineSet(oldMS, newMS interface{}) {
+
 	// No-op if feature is disabled
 	if !ctrl.featureEnabled {
 		return
 	}
-	oldMachineSet := old.(*machinev1beta1.MachineSet)
+	oldMachineSet := oldMS.(*machinev1beta1.MachineSet)
+	newMachineSet := newMS.(*machinev1beta1.MachineSet)
+
+	// Only take action if the machineset.Generation has bumped indicating a change in the resource has taken place.
+	// This callback seems to take place fairly frequently when there has been no changes in the resource itself
+	// and this check helps avoid unnecessary full loop syncs.
+	if oldMachineSet.Generation == newMachineSet.Generation {
+		return
+	}
+
 	klog.Infof("MachineSet %s updated, reconciling all machinesets", oldMachineSet.Name)
 
 	// Update all machinesets instead of just this once. This prevents needing to maintain a local
@@ -276,16 +286,24 @@ func (ctrl *Controller) addConfigMap(obj interface{}) {
 
 // TODO: This callback happens every ~15 minutes or so even if the configmap contents is not updated
 // Perhaps worth implementing a diff check before starting the sync?
-func (ctrl *Controller) updateConfigMap(old, _ interface{}) {
+func (ctrl *Controller) updateConfigMap(oldCM, newCM interface{}) {
 	// No-op if feature is disabled
 	if !ctrl.featureEnabled {
 		return
 	}
-	oldConfigMap := old.(*corev1.ConfigMap)
+	oldConfigMap := oldCM.(*corev1.ConfigMap)
+	newConfigMap := newCM.(*corev1.ConfigMap)
 
 	// Take no action if this isn't the "golden" config map
 	if oldConfigMap.Name != ctrlcommon.BootImagesConfigMapName {
 		klog.V(4).Infof("configMap %s updated, but does not match %s, skipping bootimage sync", oldConfigMap.Name, ctrlcommon.BootImagesConfigMapName)
+		return
+	}
+
+	// Only take action if the configmap.ResourceVersion has bumped indicating a change in the resource has taken place.
+	// This callback seems to take place fairly frequently when there has been no changes in the resource itself
+	// and this check helps avoid unnecessary full loop syncs.
+	if oldConfigMap.ResourceVersion == newConfigMap.ResourceVersion {
 		return
 	}
 
