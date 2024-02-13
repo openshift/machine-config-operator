@@ -359,6 +359,14 @@ func isMCPBuildSuccess(mcp *mcfgv1.MachineConfigPool) bool {
 		reflect.DeepEqual(mcp.Spec.Configuration, mcp.Status.Configuration)
 }
 
+func isMCPBuildInProgress(mcp *mcfgv1.MachineConfigPool) bool {
+	ps := newPoolState(mcp)
+
+	return ps.IsLayered() &&
+		ps.IsBuilding()
+
+}
+
 func isMCPBuildSuccessMsg(mcp *mcfgv1.MachineConfigPool) string {
 	sb := &strings.Builder{}
 
@@ -428,6 +436,41 @@ func testOptInMCPImageBuilder(ctx context.Context, t *testing.T, cs *Clients, po
 	mcp := optInMCP(ctx, t, cs, poolName)
 	assertMCPFollowsImageBuildStatus(ctx, t, cs, mcp, buildv1.BuildPhaseComplete)
 	assertMachineConfigPoolReachesStateWithMsg(ctx, t, cs, poolName, isMCPBuildSuccess, isMCPBuildSuccessMsg)
+}
+
+func testRebuildMCPImageBuilder(ctx context.Context, t *testing.T, cs *Clients, poolName string) {
+	mcp := optInMCP(ctx, t, cs, poolName)
+	assertMCPFollowsImageBuildStatus(ctx, t, cs, mcp, buildv1.BuildPhaseComplete)
+	assertMachineConfigPoolReachesStateWithMsg(ctx, t, cs, poolName, isMCPBuildSuccess, isMCPBuildSuccessMsg)
+	// wait for an initial build to finish, then rebuild
+	mcp.Labels[ctrlcommon.RebuildPoolLabel] = ""
+	assertMachineConfigPoolReachesState(ctx, t, cs, poolName, isMCPBuildInProgress)
+	assertMachineConfigPoolReachesStateWithMsg(ctx, t, cs, poolName, isMCPBuildSuccess, isMCPBuildSuccessMsg)
+}
+
+func testRebuildDoesNothing(ctx context.Context, t *testing.T, cs *Clients, poolName string) {
+
+	// Set an unrelated label to force a sync.
+	mcpList, err := cs.mcfgclient.MachineconfigurationV1().MachineConfigPools().List(ctx, metav1.ListOptions{})
+	require.NoError(t, err)
+
+	for _, mcp := range mcpList.Items {
+		mcp := mcp
+		mcp.Labels[ctrlcommon.RebuildPoolLabel] = ""
+		_, err := cs.mcfgclient.MachineconfigurationV1().MachineConfigPools().Update(ctx, &mcp, metav1.UpdateOptions{})
+		require.NoError(t, err)
+	}
+
+	mcpList, err = cs.mcfgclient.MachineconfigurationV1().MachineConfigPools().List(ctx, metav1.ListOptions{})
+	require.NoError(t, err)
+
+	for _, mcp := range mcpList.Items {
+		mcp := mcp
+		ps := newPoolState(&mcp)
+		assert.False(t, ps.IsLayered())
+		assert.False(t, ps.HasOSImage())
+	}
+
 }
 
 // Mutates all MachineConfigPools that are not opted in to ensure they are ignored.
