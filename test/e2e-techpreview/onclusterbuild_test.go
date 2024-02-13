@@ -1,4 +1,4 @@
-package e2e_layering
+package e2e_techpreview_test
 
 import (
 	"context"
