@@ -1,0 +1,6 @@
+mode: 0755
+path: "/etc/kubernetes/static-pod-resources/keepalived/scripts/chk_mcs_script.sh.tmpl"
+contents:
+  inline: |
+    #!/bin/bash
+    chroot /host /bin/crictl ps --state running | grep -qE '\smachine-config-server\s'
