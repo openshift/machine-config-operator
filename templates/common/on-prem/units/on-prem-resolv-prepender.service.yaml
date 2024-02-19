@@ -8,5 +8,8 @@ contents: |
   After=crio-wipe.service
   [Service]
   Type=oneshot
+  Restart=on-failure
+  RestartSec=10
+  StartLimitIntervalSec=0
   ExecStart=/usr/local/bin/resolv-prepender.sh
   EnvironmentFile=/run/resolv-prepender/env
