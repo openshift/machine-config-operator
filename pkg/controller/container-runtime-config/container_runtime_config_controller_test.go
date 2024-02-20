@@ -149,7 +149,7 @@ func newControllerConfig(name string, platform apicfgv1.PlatformType) *mcfgv1.Co
 func newContainerRuntimeConfig(name string, ctrconf *mcfgv1.ContainerRuntimeConfiguration, selector *metav1.LabelSelector) *mcfgv1.ContainerRuntimeConfig {
 	return &mcfgv1.ContainerRuntimeConfig{
 		TypeMeta:   metav1.TypeMeta{APIVersion: mcfgv1.SchemeGroupVersion.String()},
-		ObjectMeta: metav1.ObjectMeta{Name: name, UID: types.UID(utilrand.String(5)), Generation: 1},
+		ObjectMeta: metav1.ObjectMeta{Name: name, UID: types.UID(utilrand.String(5)), Generation: 1, CreationTimestamp: metav1.Now()},
 		Spec: mcfgv1.ContainerRuntimeConfigSpec{
 			ContainerRuntimeConfig:    ctrconf,
 			MachineConfigPoolSelector: selector,
@@ -1524,6 +1524,63 @@ func TestContainerruntimeConfigResync(t *testing.T) {
 			}
 			val = ccr2.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
 			require.Equal(t, "1", val)
+		})
+	}
+}
+
+func TestAddAnnotationExistingContainerRuntimeConfig(t *testing.T) {
+	for _, platform := range []apicfgv1.PlatformType{apicfgv1.AWSPlatformType, apicfgv1.NonePlatformType, "unrecognized"} {
+		t.Run(string(platform), func(t *testing.T) {
+			f := newFixture(t)
+			f.newController()
+
+			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
+			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
+
+			ctrMCKey := "99-master-generated-containerruntime"
+			ctr1MCKey := "99-master-generated-containerruntime-1"
+			ctrc := newContainerRuntimeConfig("log-level", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
+			ctrc.Finalizers = []string{ctrMCKey}
+			ctrc1 := newContainerRuntimeConfig("log-level-1", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
+			ctrc1.SetAnnotations(map[string]string{ctrlcommon.MCNameSuffixAnnotationKey: "1"})
+			ctrc1.Finalizers = []string{ctr1MCKey}
+			ctrcfgMC := helpers.NewMachineConfig(ctrMCKey, map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{{}})
+
+			f.ccLister = append(f.ccLister, cc)
+			f.mcpLister = append(f.mcpLister, mcp)
+			f.mcpLister = append(f.mcpLister, mcp2)
+			f.mccrLister = append(f.mccrLister, ctrc, ctrc1)
+			f.objects = append(f.objects, ctrc, ctrc1, ctrcfgMC)
+
+			// ctrc created before ctrc1,
+			// make sure ccr does not have annotation machineconfiguration.openshift.io/mc-name-suffix before sync, ccr1 has annotation machineconfiguration.openshift.io/mc-name-suffix
+			_, ok := ctrc.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
+			require.False(t, ok)
+			val := ctrc1.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
+			require.Equal(t, "1", val)
+
+			// no new machine config will be created
+			f.expectGetMachineConfigAction(ctrcfgMC)
+			f.expectGetMachineConfigAction(ctrcfgMC)
+			f.expectUpdateContainerRuntimeConfigRoot(ctrc)
+			f.expectUpdateMachineConfigAction(ctrcfgMC)
+			f.expectPatchContainerRuntimeConfig(ctrc, ctrcfgPatchBytes)
+			f.expectUpdateContainerRuntimeConfig(ctrc)
+
+			c := f.newController()
+			err := c.syncHandler(getKey(ctrc, t))
+			if err != nil {
+				t.Errorf("syncHandler returned: %v", err)
+			}
+			f.validateActions()
+
+			// ctrc annotation machineconfiguration.openshift.io/mc-name-suffix after sync
+			val = ctrc.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
+			require.Equal(t, "", val)
+			ctrcFinalizers := ctrc.GetFinalizers()
+			require.Equal(t, 1, len(ctrcFinalizers))
+			require.Equal(t, ctrMCKey, ctrcFinalizers[0])
 		})
 	}
 }
