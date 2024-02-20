@@ -988,7 +988,7 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 				return fmt.Errorf("could not sync registries Ignition config: %w", err)
 			}
 			if namespacedPoliciesIgn != nil {
-				appliedImagePolicy, err = ctrl.syncIgnitionConfig(managedKeyNamespaceImagePolicy, namespacedPoliciesIgn, pool, ownerReferenceForImagePolicy(imagePolicies, clusterImagePolicies))
+				appliedImagePolicy, err = ctrl.syncIgnitionConfig(managedKeyNamespaceImagePolicy, namespacedPoliciesIgn, pool, ownerReferenceForImageConfig(imgcfg))
 				if err != nil {
 					return fmt.Errorf("could not sync imagepolicies Ignition config: %w", err)
 				}
