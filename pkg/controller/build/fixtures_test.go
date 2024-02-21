@@ -602,9 +602,9 @@ func getPoolFailureMsg(mcp *mcfgv1.MachineConfigPool, expectedToHaveBuildRef boo
 
 	fmt.Fprintf(msg, "Is only one build condition true? %v\n", isOnlyOneBuildConditionTrue(mcp))
 
-	hasBuildObject := ps.HasBuildObjectForCurrentMachineConfig()
+	//hasBuildObject := ps.HasBuildObjectForCurrentMachineConfig()
 	buildObjectRefs := ps.GetBuildObjectRefs()
-	fmt.Fprintf(msg, "Has ref? %v. Expected: %v. Actual: %v.\n", hasBuildObject, expectedToHaveBuildRef, hasBuildObject == expectedToHaveBuildRef)
+	//fmt.Fprintf(msg, "Has ref? %v. Expected: %v. Actual: %v.\n", hasBuildObject, expectedToHaveBuildRef, hasBuildObject == expectedToHaveBuildRef)
 
 	if expectedToHaveBuildRef {
 		fmt.Fprintf(msg, "Has only one build ref? %v. Build refs found: %v\n", len(buildObjectRefs) == 1, buildObjectRefs)
@@ -641,11 +641,11 @@ func poolReachesExpectedBuildState(mcp *mcfgv1.MachineConfigPool, expectedToHave
 		return false
 	}
 
-	ps := newPoolState(mcp)
+	//ps := newPoolState(mcp)
 
-	if expectedToHaveBuildRef {
-		return ps.HasBuildObjectForCurrentMachineConfig() && len(ps.GetBuildObjectRefs()) == 1
-	}
+	//if expectedToHaveBuildRef {
+	//	return ps.HasBuildObjectForCurrentMachineConfig() && len(ps.GetBuildObjectRefs()) == 1
+	//}
 
-	return !ps.HasBuildObjectForCurrentMachineConfig() && len(ps.GetBuildObjectRefs()) == 0
+	//return !ps.HasBuildObjectForCurrentMachineConfig() && len(ps.GetBuildObjectRefs()) == 0
 }

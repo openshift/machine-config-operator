@@ -1,0 +1,98 @@
+apiVersion: apiextensions.k8s.io/v1 # Hack because controller-gen complains if we don't have this
+name: "[TechPreview] MachineOSConfig"
+crd: 0000_80_machine-config_01_machineosconfigs-TechPreviewNoUpgrade.crd.yaml
+tests:
+  onCreate:
+  - name: Should be able to create a minimal MachineOSConfig
+    initial: |
+      apiVersion: machineconfiguration.openshift.io/v1alpha1
+      kind: MachineOSConfig
+      metadata:
+         name: foobar
+      spec:
+        machineConfigPool:
+          name: worker
+        buildInputs:
+          imageBuilderType: Default
+          baseOSImagePullspec: example.io/my-project/image-v1.0_23@sha256:2c3ea52ac3a41c6d58e85977c3149413e3fa4b70eb2397426456863adbf43306
+          baseImagePullSecret:
+            name: foo
+          baseOSExtensionsImagePullspec: example.io/my-project/image-v1.0_23@sha256:2c3ea52ac3a41c6d58e85977c3149413e3fa4b70eb2397426456863adbf43306
+          finalImagePushSecret:
+            name: foo
+          finalImagePullSecret:
+            name: foo
+          finalImagePullspec: quay.io/cdoern/finalImg:latest
+        rebuild:
+          rebuildStrategy: NoRebuild
+          maxRetries: 4
+    expected: |
+      apiVersion: machineconfiguration.openshift.io/v1alpha1
+      kind: MachineOSConfig
+      metadata:
+         name: foobar
+      spec:
+        machineConfigPool:
+          name: worker
+        buildInputs:
+          imageBuilderType: Default
+          baseOSImagePullspec: example.io/my-project/image-v1.0_23@sha256:2c3ea52ac3a41c6d58e85977c3149413e3fa4b70eb2397426456863adbf43306
+          baseImagePullSecret:
+            name: foo
+          baseOSExtensionsImagePullspec: example.io/my-project/image-v1.0_23@sha256:2c3ea52ac3a41c6d58e85977c3149413e3fa4b70eb2397426456863adbf43306
+          finalImagePushSecret:
+            name: foo
+          finalImagePullSecret:
+            name: foo
+          finalImagePullspec: quay.io/cdoern/finalImg:latest
+        rebuild:
+          rebuildStrategy: NoRebuild
+          maxRetries: 4
+  - name: Fail on invalid final image pullspec
+    initial: |
+      apiVersion: machineconfiguration.openshift.io/v1alpha1
+      kind: MachineOSConfig
+      metadata:
+         name: foobar
+      spec:
+        machineConfigPool:
+          name: worker
+        buildInputs:
+          imageBuilderType: Default
+          baseOSImagePullspec: example.io/my-project/image-v1.0_23@sha256:2c3ea52ac3a41c6d58e85977c3149413e3fa4b70eb2397426456863adbf43306
+          baseImagePullSecret:
+            name: foo
+          baseOSExtensionsImagePullspec: example.io/my-project/image-v1.0_23@sha256:2c3ea52ac3a41c6d58e85977c3149413e3fa4b70eb2397426456863adbf43306
+          finalImagePushSecret:
+            name: foo
+          finalImagePullSecret:
+            name: foo
+          finalImagePullspec: foo.bar
+        rebuild:
+          rebuildStrategy: NoRebuild
+          maxRetries: 4
+    expectedError: "Invalid value: \"string\": the OCI Image name should follow the host[:port][/namespace]/name format, resembling a valid URL without the scheme"
+  - name: Fail on invalid base image pullspec
+    initial: |
+      apiVersion: machineconfiguration.openshift.io/v1alpha1
+      kind: MachineOSConfig
+      metadata:
+         name: foobar
+      spec:
+        machineConfigPool:
+          name: worker
+        buildInputs:
+          imageBuilderType: Default
+          baseOSImagePullspec: example.io/my-project/image-v1.0_23:latest
+          baseImagePullSecret:
+            name: foo
+          baseOSExtensionsImagePullspec: example.io/my-project/image-v1.0_23@sha256:2c3ea52ac3a41c6d58e85977c3149413e3fa4b70eb2397426456863adbf43306
+          finalImagePushSecret:
+            name: foo
+          finalImagePullSecret:
+            name: foo
+          finalImagePullspec: foo.bar
+        rebuild:
+          rebuildStrategy: NoRebuild
+          maxRetries: 4
+    expectedError: "Invalid value: \"string\": the OCI Image name should follow the host[:port][/namespace]/name format, resembling a valid URL without the scheme"

@@ -79,4 +79,230 @@ func (MachineConfigNodeStatusMachineConfigVersion) SwaggerDoc() map[string]strin
 	return map_MachineConfigNodeStatusMachineConfigVersion
 }
 
+var map_MachineOSBuild = map[string]string{
+	"":       "MachineOSBuild describes a build process managed by the MCO Compatibility level 4: No compatibility is provided, the API can change at any point for any reason. These capabilities should not be used by applications needing long term support.",
+	"spec":   "spec describes the configuration of the machine os build",
+	"status": "status describes the lst observed state of this machine os build",
+}
+
+func (MachineOSBuild) SwaggerDoc() map[string]string {
+	return map_MachineOSBuild
+}
+
+var map_MachineOSBuildList = map[string]string{
+	"": "MachineOSBuildList describes all of the Builds on the system\n\nCompatibility level 4: No compatibility is provided, the API can change at any point for any reason. These capabilities should not be used by applications needing long term support.",
+}
+
+func (MachineOSBuildList) SwaggerDoc() map[string]string {
+	return map_MachineOSBuildList
+}
+
+var map_MachineOSBuildSpec = map[string]string{
+	"":                  "MachineOSBuildSpec describes user-configurable options as well as information about a build process.",
+	"machineConfigPool": "machineConfigPool is the pool which the build is for",
+}
+
+func (MachineOSBuildSpec) SwaggerDoc() map[string]string {
+	return map_MachineOSBuildSpec
+}
+
+var map_MachineOSBuildStatus = map[string]string{
+	"":              "MachineOSBuildStatus describes the state of a build and other helpful information.",
+	"conditions":    "conditions are state related conditions for the build. Valid types are: BuildPrepared, Building, BuildFailed, BuildInterrupted, BuildRestarted, and Ready",
+	"buildName":     "buildName is the build object reference associated with this MachineOSBuildObject",
+	"buildStart":    "buildStart describes when the build started.",
+	"buildEnd":      "buildEnd describes when the build ended.",
+	"desiredConfig": "desiredConfig is the desired config we want to build an image for.",
+}
+
+func (MachineOSBuildStatus) SwaggerDoc() map[string]string {
+	return map_MachineOSBuildStatus
+}
+
+var map_MachineOSImageReference = map[string]string{
+	"":     "Refers to the name of a (future) MachineOSImage (e.g., \"worker-os-image-167651b10ec98af17971d6a47df9e22f\", etc.):",
+	"name": "name is the name of the MachineOSImage object attached to this MachineOSBuild. Must be a lowercase RFC-1123 hostname (https://tools.ietf.org/html/rfc1123) It may consist of only alphanumeric characters, hyphens (-) and periods (.) and must be at most 253 characters in length.",
+}
+
+func (MachineOSImageReference) SwaggerDoc() map[string]string {
+	return map_MachineOSImageReference
+}
+
+var map_RenderedMachineConfigReference = map[string]string{
+	"":     "Refers to the name of a rendered MachineConfig (e.g., \"rendered-worker-ec40d2965ff81bce7cd7a7e82a680739\", etc.): the build targets this MachineConfig, this is often used to tell us whether we need an update.",
+	"name": "name is the name of the rendered MachineConfig object.",
+}
+
+func (RenderedMachineConfigReference) SwaggerDoc() map[string]string {
+	return map_RenderedMachineConfigReference
+}
+
+var map_BuildConfigMapObjectReference = map[string]string{
+	"":     "BuildConfigMapObjectReference refers to the name and contents of a configmap used in a previous build",
+	"name": "name of the configmap",
+}
+
+func (BuildConfigMapObjectReference) SwaggerDoc() map[string]string {
+	return map_BuildConfigMapObjectReference
+}
+
+var map_BuildHistory = map[string]string{
+	"":             "BuildHistory contains information about related builds these builds can be failed, interrupted, or succeeded.",
+	"name":         "name is the name of the build",
+	"buildFailure": "buildFailure contains an optional message of why this build ended prematurely.",
+	"configmaps":   "configMaps references all config map objects created during the build process",
+	"buildPod":     "buildPod references the build pod used in this previous build if it existed",
+}
+
+func (BuildHistory) SwaggerDoc() map[string]string {
+	return map_BuildHistory
+}
+
+var map_BuildInputs = map[string]string{
+	"":                              "BuildInputs holds all of the information needed to trigger a build",
+	"imageBuilderType":              "imageBuilderType specifies the backend to be used to build the image. Valid options are: OpenShiftImageBuilder, PodImageBuilder, and Default (OpenShiftImageBuilder)",
+	"baseOSExtensionsImagePullspec": "baseOSExtensionsImagePullspec is the base Extensions image used in the build process The format of the image pullspec is: host[:port][/namespace]/name@sha256:<digest>",
+	"baseOSImagePullspec":           "baseOSImagePullspec is the base OSImage we use to build our custom image. The format of the image pullspec is: host[:port][/namespace]/name@sha256:<digest>",
+	"baseImagePullSecret":           "baseImagePullSecret is the secret used to pull the base image.",
+	"finalImagePushSecret":          "finalImagePushSecret is the secret used to connect to a user registry. the final image push and pull secrets should be separate for security concerns. If the final image push secret is somehow exfiltrated, that gives someone the power to push images to the image repository. By comparison, if the final image pull secret gets exfiltrated, that only gives someone to pull images from the image repository. It's basically the principle of least permissions. this push secret will be used only by the MachineConfigController pod to push the image to the final destination. Not all nodes will need to push this image, most of them will only need to pull the image in order to use it.",
+	"finalImagePullSecret":          "finalImagePullSecret is the secret used to pull the final produced image. the final image push and pull secrets should be separate for security concerns. If the final image push secret is somehow exfiltrated, that gives someone the power to push images to the image repository. By comparison, if the final image pull secret gets exfiltrated, that only gives someone to pull images from the image repository. It's basically the principle of least permissions. this pull secret will be used on all nodes in the pool. These nodes will need to pull the final OS image and boot into it using rpm-ostree or bootc.",
+	"finalImagePullspec":            "finalImagePullspec describes the location of the final image. The format of the image pullspec is: host[:port][/namespace]/name@sha256:<digest> or host[:port][/namespace]/name:<tag>",
+	"containerFile":                 "containerFile describes the custom data the user has specified to build into the image.",
+}
+
+func (BuildInputs) SwaggerDoc() map[string]string {
+	return map_BuildInputs
+}
+
+var map_BuildPodReference = map[string]string{
+	"":           "BuildPodReference refers to the pod used to build an image that either failed or was interrupted",
+	"name":       "name of the build pod used Must be a lowercase RFC-1123 hostname (https://tools.ietf.org/html/rfc1123) It may consist of only alphanumeric characters, hyphens (-) and periods (.) and must be at most 253 characters in length.",
+	"exitReason": "exitReason is how the pod exited",
+}
+
+func (BuildPodReference) SwaggerDoc() map[string]string {
+	return map_BuildPodReference
+}
+
+var map_ImageSecretObjectReference = map[string]string{
+	"":     "Refers to the name of an image registry push/pull secret needed in the build process.",
+	"name": "name is the name of the secret used to push or pull this MachineOSConfig object.",
+}
+
+func (ImageSecretObjectReference) SwaggerDoc() map[string]string {
+	return map_ImageSecretObjectReference
+}
+
+var map_MachineConfigPoolReference = map[string]string{
+	"":     "Refers to the name of a MachineConfigPool (e.g., \"worker\", \"infra\", etc.):",
+	"name": "name of the MachineConfigPool object.",
+}
+
+func (MachineConfigPoolReference) SwaggerDoc() map[string]string {
+	return map_MachineConfigPoolReference
+}
+
+var map_MachineOSConfig = map[string]string{
+	"":       "MachineOSConfig describes a build process managed by the MCO Compatibility level 4: No compatibility is provided, the API can change at any point for any reason. These capabilities should not be used by applications needing long term support.",
+	"spec":   "spec describes the configuration of the machineosconfig",
+	"status": "status describes the status of the machineosconfig",
+}
+
+func (MachineOSConfig) SwaggerDoc() map[string]string {
+	return map_MachineOSConfig
+}
+
+var map_MachineOSConfigList = map[string]string{
+	"": "MachineOSConfigList describes all of the Builds on the system\n\nCompatibility level 4: No compatibility is provided, the API can change at any point for any reason. These capabilities should not be used by applications needing long term support.",
+}
+
+func (MachineOSConfigList) SwaggerDoc() map[string]string {
+	return map_MachineOSConfigList
+}
+
+var map_MachineOSConfigSpec = map[string]string{
+	"":                  "MachineOSConfigSpec describes user-configurable options as well as information about a build process.",
+	"machineConfigPool": "machineConfigPool is the pool which the build is for",
+	"buildInputs":       "buildInputs is where user options for the build live",
+	"rebuild":           "rebuild allows the user to manually trigger a rebuild",
+}
+
+func (MachineOSConfigSpec) SwaggerDoc() map[string]string {
+	return map_MachineOSConfigSpec
+}
+
+var map_MachineOSConfigStatus = map[string]string{
+	"":             "MachineOSConfigStatus describes the status of builds associated with this MachineOSConfig",
+	"buildHistory": "buildHistory contains previous iterations of failed, interrupted, or succeded builds related to this config. this will only detail the 3 previous builds associated with the MachineOSConfig.",
+}
+
+func (MachineOSConfigStatus) SwaggerDoc() map[string]string {
+	return map_MachineOSConfigStatus
+}
+
+var map_MachineOSContainerfile = map[string]string{
+	"":                  "MachineOSContainerfile contains all custom content the user wants built into the image",
+	"containerFileArch": "containerFileArch describes the architecture this containerfile is to be built for this arch is optional. If the user does not specify an architecture, it is assumed that the content can be applied to all architectures, or in a single arch cluster: the only architecture.",
+	"content":           "content is the custom content to be built",
+}
+
+func (MachineOSContainerfile) SwaggerDoc() map[string]string {
+	return map_MachineOSContainerfile
+}
+
+var map_MachineOSRebuild = map[string]string{
+	"":                "MachineOSRebuild describes user options to manage rebuilding the image.",
+	"rebuildStrategy": "rebuildStrategy is the user provided manual rebuild method of choice",
+	"maxRetries":      "maxRetries is the amount of times we want to auto-rebuild after build failures before we deem the update unreconcilable.",
+}
+
+func (MachineOSRebuild) SwaggerDoc() map[string]string {
+	return map_MachineOSRebuild
+}
+
+var map_PinnedImageRef = map[string]string{
+	"name": "name is an OCI Image referenced by digest.\n\nThe format of the image ref is: host[:port][/namespace]/name@sha256:<digest>",
+}
+
+func (PinnedImageRef) SwaggerDoc() map[string]string {
+	return map_PinnedImageRef
+}
+
+var map_PinnedImageSet = map[string]string{
+	"":       "PinnedImageSet describes a set of images that should be pinned by CRI-O and pulled to the nodes which are members of the declared MachineConfigPools.\n\nCompatibility level 4: No compatibility is provided, the API can change at any point for any reason. These capabilities should not be used by applications needing long term support.",
+	"spec":   "spec describes the configuration of this pinned image set.",
+	"status": "status describes the last observed state of this pinned image set.",
+}
+
+func (PinnedImageSet) SwaggerDoc() map[string]string {
+	return map_PinnedImageSet
+}
+
+var map_PinnedImageSetList = map[string]string{
+	"":         "PinnedImageSetList is a list of PinnedImageSet resources\n\nCompatibility level 4: No compatibility is provided, the API can change at any point for any reason. These capabilities should not be used by applications needing long term support.",
+	"metadata": "metadata is the standard list's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
+}
+
+func (PinnedImageSetList) SwaggerDoc() map[string]string {
+	return map_PinnedImageSetList
+}
+
+var map_PinnedImageSetSpec = map[string]string{
+	"":             "PinnedImageSetSpec defines the desired state of a PinnedImageSet.",
+	"pinnedImages": "pinnedImages is a list of OCI Image referenced by digest that should be pinned and pre-loaded by the nodes of a MachineConfigPool. Translates into a new file inside the /etc/crio/crio.conf.d directory with content similar to this:\n\n     pinned_images = [\n             \"quay.io/openshift-release-dev/ocp-release@sha256:...\",\n             \"quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:...\",\n             \"quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:...\",\n             ...\n     ]\n\nThese image references should all be by digest, tags aren't allowed.",
+}
+
+func (PinnedImageSetSpec) SwaggerDoc() map[string]string {
+	return map_PinnedImageSetSpec
+}
+
+var map_PinnedImageSetStatus = map[string]string{
+	"":           "PinnedImageSetStatus describes the current state of a PinnedImageSet.",
+	"conditions": "conditions represent the observations of a pinned image set's current state.",
+}
+
+func (PinnedImageSetStatus) SwaggerDoc() map[string]string {
+	return map_PinnedImageSetStatus
+}
+
 // AUTO-GENERATED FUNCTIONS END HERE

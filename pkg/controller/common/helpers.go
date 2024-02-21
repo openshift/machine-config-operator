@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"reflect"
+
 	"sort"
 	"strings"
 	"text/template"
@@ -52,6 +53,7 @@ import (
 	"k8s.io/klog/v2"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 )
@@ -1168,11 +1170,9 @@ func (n namespacedEventRecorder) AnnotatedEventf(object runtime.Object, annotati
 	n.delegate.AnnotatedEventf(ensureEventNamespace(object), annotations, eventtype, reason, messageFmt, args...)
 }
 
-func IsLayeredPool(pool *mcfgv1.MachineConfigPool) bool {
-	if _, ok := pool.Labels[LayeringEnabledPoolLabel]; ok {
-		return true
-	}
-	return false
+func IsLayeredPool(pool *mcfgv1.MachineConfigPool, mosc *mcfgv1alpha1.MachineOSConfig, mosb *mcfgv1alpha1.MachineOSBuild) bool {
+	_, ok := pool.Labels[LayeringEnabledPoolLabel]
+	return mosc != nil || mosb != nil || ok
 }
 
 func DoARebuild(pool *mcfgv1.MachineConfigPool) bool {
