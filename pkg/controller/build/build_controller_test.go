@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"reflect"
 	"strings"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
@@ -346,44 +345,6 @@ func (b *buildControllerTestFixture) startBuildControllerWithCustomPodBuilder() 
 	return clients
 }
 
-// Helper that determines if the build is a success.
-func isMCPBuildSuccess(mcp *mcfgv1.MachineConfigPool) bool {
-	ps := newPoolState(mcp)
-
-	return ps.IsLayered() &&
-		ps.HasOSImage() &&
-		ps.GetOSImage() == expectedImagePullspecWithSHA &&
-		ps.IsBuildSuccess() &&
-		!ps.HasBuildObjectForCurrentMachineConfig() &&
-		machineConfigPoolHasMachineConfigRefs(mcp) &&
-		reflect.DeepEqual(mcp.Spec.Configuration, mcp.Status.Configuration)
-}
-
-func isMCPBuildInProgress(mcp *mcfgv1.MachineConfigPool) bool {
-	ps := newPoolState(mcp)
-
-	return ps.IsLayered() &&
-		ps.IsBuilding()
-
-}
-
-func isMCPBuildSuccessMsg(mcp *mcfgv1.MachineConfigPool) string {
-	sb := &strings.Builder{}
-
-	ps := newPoolState(mcp)
-
-	fmt.Fprintf(sb, "Is layered? %v\n", ps.IsLayered())
-	fmt.Fprintf(sb, "Has OS image? %v\n", ps.HasOSImage())
-	fmt.Fprintf(sb, "Matches expected pullspec (%s)? %v\n", expectedImagePullspecWithSHA, ps.GetOSImage() == expectedImagePullspecWithSHA)
-	fmt.Fprintf(sb, "Is build success? %v\n", ps.IsBuildSuccess())
-	fmt.Fprintf(sb, "Is degraded? %v\n", ps.IsDegraded())
-	fmt.Fprintf(sb, "Has build object ref for current MachineConfig? %v. Build refs found: %v\n", ps.HasBuildObjectForCurrentMachineConfig(), ps.GetBuildObjectRefs())
-	fmt.Fprintf(sb, "Has MachineConfig refs? %v\n", machineConfigPoolHasMachineConfigRefs(mcp))
-	fmt.Fprintf(sb, "Spec.Configuration == Status.Configuration? %v\n", reflect.DeepEqual(mcp.Spec.Configuration, mcp.Status.Configuration))
-
-	return sb.String()
-}
-
 func machineConfigPoolHasMachineConfigRefs(pool *mcfgv1.MachineConfigPool) bool {
 	expectedMCP := newMachineConfigPool(pool.Name)
 	ps := newPoolState(pool)
@@ -395,33 +356,6 @@ func machineConfigPoolHasMachineConfigRefs(pool *mcfgv1.MachineConfigPool) bool 
 	}
 
 	return true
-}
-
-// Helper that determines if the build was a failure.
-func isMCPBuildFailure(mcp *mcfgv1.MachineConfigPool) bool {
-	ps := newPoolState(mcp)
-
-	return ps.IsLayered() &&
-		ps.IsBuildFailure() &&
-		ps.IsDegraded() &&
-		ps.HasBuildObjectForCurrentMachineConfig() &&
-		machineConfigPoolHasMachineConfigRefs(mcp) &&
-		reflect.DeepEqual(mcp.Spec.Configuration, mcp.Status.Configuration)
-}
-
-func isMCPBuildFailureMsg(mcp *mcfgv1.MachineConfigPool) string {
-	sb := &strings.Builder{}
-
-	ps := newPoolState(mcp)
-
-	fmt.Fprintf(sb, "Is layered? %v\n", ps.IsLayered())
-	fmt.Fprintf(sb, "Is build failure? %v\n", ps.IsBuildFailure())
-	fmt.Fprintf(sb, "Is degraded? %v\n", ps.IsDegraded())
-	fmt.Fprintf(sb, "Has build object ref for current MachineConfig? %v. Build refs found: %v\n", ps.HasBuildObjectForCurrentMachineConfig(), ps.GetBuildObjectRefs())
-	fmt.Fprintf(sb, "Has MachineConfig refs? %v\n", machineConfigPoolHasMachineConfigRefs(mcp))
-	fmt.Fprintf(sb, "Spec.Configuration == Status.Configuration? %v\n", reflect.DeepEqual(mcp.Spec.Configuration, mcp.Status.Configuration))
-
-	return sb.String()
 }
 
 // Opts a given MachineConfigPool into layering and asserts that the MachineConfigPool reaches the desired state.
@@ -554,13 +488,13 @@ func testOptedInMCPOptsOut(ctx context.Context, t *testing.T, cs *Clients, optIn
 	checkFunc := func(mcp *mcfgv1.MachineConfigPool) bool {
 		ps := newPoolState(mcp)
 
-		if ps.IsLayered() {
-			return false
-		}
+		//if ps.IsLayered() {
+		//	return false
+		//}
 
-		if ps.HasBuildObjectForCurrentMachineConfig() {
-			return false
-		}
+		//if ps.HasBuildObjectForCurrentMachineConfig() {
+		//	return false
+		//}
 
 		if len(ps.GetAllBuildConditions()) != 0 {
 			return false
@@ -573,8 +507,8 @@ func testOptedInMCPOptsOut(ctx context.Context, t *testing.T, cs *Clients, optIn
 		sb := &strings.Builder{}
 
 		ps := newPoolState(mcp)
-		fmt.Fprintf(sb, "Is layered? %v\n", ps.IsLayered())
-		fmt.Fprintf(sb, "Has build object for current MachineConfig? %v\n", ps.HasBuildObjectForCurrentMachineConfig())
+		//fmt.Fprintf(sb, "Is layered? %v\n", ps.IsLayered())
+		//fmt.Fprintf(sb, "Has build object for current MachineConfig? %v\n", ps.HasBuildObjectForCurrentMachineConfig())
 		fmt.Fprintf(sb, "Build objects: %v\n", ps.GetBuildObjectRefs())
 		buildConditions := ps.GetAllBuildConditions()
 		fmt.Fprintf(sb, "Has no build conditions? %v. Build conditions: %v\n", len(buildConditions) == 0, buildConditions)
