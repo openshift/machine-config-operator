@@ -6,6 +6,7 @@ metadata:
   labels:
     k8s-app: machine-config-operator
   annotations:
+    include.release.openshift.io/hypershift: "true"
     include.release.openshift.io/ibm-cloud-managed: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
     include.release.openshift.io/single-node-developer: "true"
@@ -27,6 +28,7 @@ metadata:
   labels:
     k8s-app: machine-config-controller
   annotations:
+    include.release.openshift.io/hypershift: "true"
     include.release.openshift.io/ibm-cloud-managed: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
     include.release.openshift.io/single-node-developer: "true"
@@ -48,6 +50,7 @@ metadata:
   labels:
     k8s-app: machine-config-daemon
   annotations:
+    include.release.openshift.io/hypershift: "true"
     include.release.openshift.io/ibm-cloud-managed: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
     include.release.openshift.io/single-node-developer: "true"
