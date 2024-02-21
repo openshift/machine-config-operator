@@ -42,8 +42,8 @@ const (
 	registriesConfigPath                   = "/etc/containers/registries.conf"
 	searchRegDropInFilePath                = "/etc/containers/registries.conf.d/01-image-searchRegistries.conf"
 	policyConfigPath                       = "/etc/containers/policy.json"
-	// CRIODropInFilePathLogLevel is the path at which changes to the crio config for log-level
-	// will be dropped in this is exported so that we can use it in the e2e-tests
+	// CRIODropInFilePathLogLevel is the path at which changes to the crio config for log-level will be dropped in
+	// this is exported so that we can use it in the e2e-tests
 	CRIODropInFilePathLogLevel       = "/etc/crio/crio.conf.d/01-ctrcfg-logLevel"
 	crioDropInFilePathPidsLimit      = "/etc/crio/crio.conf.d/01-ctrcfg-pidsLimit"
 	crioDropInFilePathLogSizeMax     = "/etc/crio/crio.conf.d/01-ctrcfg-logSizeMax"
