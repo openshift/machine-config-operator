@@ -116,8 +116,8 @@ contents:
                       # re-run the lookup of the hostname now that we know we have DNS
                       # servers configured correctly in resolv.conf.
                       nmcli general reload dns-rc
-                      touch "${KNICONFDONEPATH}"
                     fi
+                    touch "${KNICONFDONEPATH}"
                 fi
             fi
     }
