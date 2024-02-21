@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"reflect"
+
 	"sort"
 	"strings"
 	"text/template"
@@ -1166,13 +1167,6 @@ func (n namespacedEventRecorder) Eventf(object runtime.Object, eventtype, reason
 
 func (n namespacedEventRecorder) AnnotatedEventf(object runtime.Object, annotations map[string]string, eventtype, reason, messageFmt string, args ...interface{}) {
 	n.delegate.AnnotatedEventf(ensureEventNamespace(object), annotations, eventtype, reason, messageFmt, args...)
-}
-
-func IsLayeredPool(pool *mcfgv1.MachineConfigPool) bool {
-	if _, ok := pool.Labels[LayeringEnabledPoolLabel]; ok {
-		return true
-	}
-	return false
 }
 
 func DoARebuild(pool *mcfgv1.MachineConfigPool) bool {

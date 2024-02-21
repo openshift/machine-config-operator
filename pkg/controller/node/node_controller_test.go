@@ -778,7 +778,7 @@ func TestGetCandidateMachines(t *testing.T) {
 
 			pool := pb.MachineConfigPool()
 
-			got := getCandidateMachines(pool, test.nodes, test.progress)
+			got := getCandidateMachines(pool, test.nodes, test.progress, true)
 			nodeNames := getNamesFromNodes(got)
 			assert.Equal(t, test.expected, nodeNames)
 
@@ -1108,13 +1108,13 @@ func TestShouldMakeProgress(t *testing.T) {
 			mcp := test.infraPool
 
 			existingNodeBuilder := helpers.NewNodeBuilder("existingNodeAtDesiredConfig").WithEqualConfigs(machineConfigV1).WithLabels(map[string]string{"node-role/worker": "", "node-role/infra": ""})
-			lps := ctrlcommon.NewLayeredPoolState(mcp)
+			lps := ctrlcommon.NewMachineOSBuildState(mcp)
 			if lps.IsLayered() && lps.HasOSImage() {
 				image := lps.GetOSImage()
 				existingNodeBuilder.WithDesiredImage(image).WithCurrentImage(image)
 			}
 
-			lps = ctrlcommon.NewLayeredPoolState(mcpWorker)
+			lps = ctrlcommon.NewMachineOSBuildState(mcpWorker)
 			if lps.IsLayered() && lps.HasOSImage() {
 				image := lps.GetOSImage()
 				existingNodeBuilder.WithDesiredImage(image).WithCurrentImage(image)
@@ -1178,7 +1178,7 @@ func TestShouldMakeProgress(t *testing.T) {
 					t.Fatal(err)
 				}
 
-				lps := ctrlcommon.NewLayeredPoolState(mcp)
+				lps := ctrlcommon.NewMachineOSBuildState(mcp)
 				if lps.IsLayered() && lps.HasOSImage() && lps.IsBuildSuccess() {
 					t.Logf("expecting that the node should get the desired image annotation, desired image is: %s", lps.GetOSImage())
 					expNode.Annotations[daemonconsts.DesiredImageAnnotationKey] = lps.GetOSImage()

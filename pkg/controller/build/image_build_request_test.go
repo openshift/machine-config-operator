@@ -15,7 +15,7 @@ func TestImageBuildRequest(t *testing.T) {
 	osImageURLConfigMap := getOSImageURLConfigMap()
 	onClusterBuildConfigMap := getOnClusterBuildConfigMap()
 
-	ibr := newImageBuildRequestFromBuildInputs(&buildInputs{
+	ibr := newImageBuildRequestFromBuildInputs(&BuildInputs{
 		pool:                 mcp,
 		osImageURL:           osImageURLConfigMap,
 		onClusterBuildConfig: onClusterBuildConfigMap,
@@ -72,7 +72,7 @@ func TestImageBuildRequestMissingExtensionsImage(t *testing.T) {
 
 	delete(osImageURLConfigMap.Data, baseOSExtensionsContainerImageConfigKey)
 
-	ibr := newImageBuildRequestFromBuildInputs(&buildInputs{
+	ibr := newImageBuildRequestFromBuildInputs(&BuildInputs{
 		pool:                 mcp,
 		osImageURL:           osImageURLConfigMap,
 		onClusterBuildConfig: onClusterBuildConfigMap,
@@ -94,7 +94,7 @@ func TestImageBuildRequestWithCustomDockerfile(t *testing.T) {
 		"worker": "FROM configs AS final\nRUN dnf install -y python3",
 	})
 
-	ibr := newImageBuildRequestFromBuildInputs(&buildInputs{
+	ibr := newImageBuildRequestFromBuildInputs(&BuildInputs{
 		pool:                 mcp,
 		osImageURL:           osImageURLConfigMap,
 		onClusterBuildConfig: onClusterBuildConfigMap,
