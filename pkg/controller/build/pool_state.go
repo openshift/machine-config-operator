@@ -10,15 +10,13 @@ import (
 )
 
 type poolState struct {
-	*ctrlcommon.LayeredPoolState
 	pool *mcfgv1.MachineConfigPool
 }
 
 func newPoolState(pool *mcfgv1.MachineConfigPool) *poolState {
 	copied := pool.DeepCopy()
 	return &poolState{
-		LayeredPoolState: ctrlcommon.NewLayeredPoolState(copied),
-		pool:             copied,
+		pool: copied,
 	}
 }
 
@@ -65,12 +63,6 @@ func (p *poolState) DeleteBuildRefByName(name string) {
 	})
 }
 
-// Determines if a MachineConfigPool contains a reference to a Build or custom
-// build pod for its current rendered MachineConfig.
-func (p *poolState) HasBuildObjectForCurrentMachineConfig() bool {
-	return p.HasBuildObjectRefName(newImageBuildRequest(p.pool).getBuildName())
-}
-
 // Determines if a MachineConfigPool has a build object reference given its
 // name.
 func (p *poolState) HasBuildObjectRefName(name string) bool {
@@ -103,11 +95,6 @@ func (p *poolState) HasBuildObjectRef(objRef corev1.ObjectReference) bool {
 	}
 
 	return false
-}
-
-// Deletes the build object reference for the build belonging to the current MachineConfig.
-func (p *poolState) DeleteBuildRefForCurrentMachineConfig() {
-	p.DeleteBuildRefByName(newImageBuildRequest(p.pool).getBuildName())
 }
 
 // Deletes all build object references.

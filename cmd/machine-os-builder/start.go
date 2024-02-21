@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 
+	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+
 	"github.com/openshift/machine-config-operator/internal/clients"
 	"github.com/openshift/machine-config-operator/pkg/controller/build"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -37,6 +39,12 @@ func init() {
 	startCmd.PersistentFlags().StringVar(&startOpts.kubeconfig, "kubeconfig", "", "Kubeconfig file to access a remote cluster (testing only)")
 }
 
+func getMachineOSConfigs(ctx context.Context, cb *clients.Builder) (*mcfgv1alpha1.MachineOSConfigList, error) {
+	mcfgClient := cb.MachineConfigClientOrDie(componentName)
+	return mcfgClient.MachineconfigurationV1alpha1().MachineOSConfigs().List(ctx, metav1.ListOptions{})
+
+}
+
 // Checks if the on-cluster-build-config ConfigMap exists. If it exists, return the ConfigMap.
 // If not, return an error.
 func getBuildControllerConfigMap(ctx context.Context, cb *clients.Builder) (*corev1.ConfigMap, error) {
@@ -57,13 +65,8 @@ func getBuildControllerConfigMap(ctx context.Context, cb *clients.Builder) (*cor
 
 // Creates a new BuildController configured for a certain image builder based
 // upon the imageBuilderType key in the on-cluster-build-config ConfigMap.
-func getBuildController(ctx context.Context, cb *clients.Builder) (*build.Controller, error) {
-	onClusterBuildConfigMap, err := getBuildControllerConfigMap(ctx, cb)
-	if err != nil {
-		return nil, err
-	}
-
-	imageBuilderType, err := build.GetImageBuilderType(onClusterBuildConfigMap)
+func getBuildController(ctx context.Context, cb *clients.Builder) ([]*build.Controller, error) {
+	machineOSConfigs, err := getMachineOSConfigs(ctx, cb)
 	if err != nil {
 		return nil, err
 	}
@@ -72,11 +75,12 @@ func getBuildController(ctx context.Context, cb *clients.Builder) (*build.Contro
 	buildClients := build.NewClientsFromControllerContext(ctrlCtx)
 	cfg := build.DefaultBuildControllerConfig()
 
-	if imageBuilderType == build.OpenshiftImageBuilder {
-		return build.NewWithImageBuilder(cfg, buildClients), nil
-	}
+	controllersToStart := []*build.Controller{}
 
-	return build.NewWithCustomPodBuilder(cfg, buildClients), nil
+	for range machineOSConfigs.Items {
+		controllersToStart = append(controllersToStart, build.NewWithCustomPodBuilder(cfg, buildClients))
+	}
+	return controllersToStart, nil
 }
 
 func runStartCmd(_ *cobra.Command, _ []string) {
@@ -90,13 +94,12 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 	klog.Infof("Version: %+v (%s)", version.Raw, version.Hash)
 
 	ctx, cancel := context.WithCancel(context.Background())
-
 	cb, err := clients.NewBuilder("")
 	if err != nil {
 		klog.Fatalln(err)
 	}
 
-	ctrl, err := getBuildController(ctx, cb)
+	controllers, err := getBuildController(ctx, cb)
 	if err != nil {
 		klog.Fatalln(err)
 		var invalidImageBuiler *build.ErrInvalidImageBuilder
@@ -107,7 +110,14 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		}
 	}
 
-	go ctrl.Run(ctx, 5)
-	<-ctx.Done()
+	// is this... allowed?
+	// since users can specify different settings per pool, we need to run a controller PER pool. Otherwise, settings will be conflated, as will failures and builds.
+	for _, ctrl := range controllers {
+		go ctrl.Run(ctx, 3)
+		<-ctx.Done()
+		cancel()
+	}
+
 	cancel()
+
 }

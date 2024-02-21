@@ -10,7 +10,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
-func TestLayeredPoolState(t *testing.T) {
+func TestMachineOSBuildState(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -83,7 +83,7 @@ func TestLayeredPoolState(t *testing.T) {
 				apihelpers.SetMachineConfigPoolCondition(&test.pool.Status, *cond)
 			}
 
-			lps := NewLayeredPoolState(test.pool)
+			lps := NewMachineOSBuildState(test.pool)
 
 			assert.Equal(t, test.isLayered, lps.IsLayered(), "is layered mismatch %s", spew.Sdump(test.pool.Labels))
 			assert.Equal(t, test.hasOSImage, lps.HasOSImage(), "has OS image mismatch %s", spew.Sdump(test.pool.Annotations))
