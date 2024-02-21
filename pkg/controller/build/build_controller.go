@@ -4,13 +4,14 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/containers/image/v5/docker/reference"
-	buildv1 "github.com/openshift/api/build/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+
+	mcfginformersv1alpha1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	aggerrors "k8s.io/apimachinery/pkg/util/errors"
@@ -38,6 +39,7 @@ import (
 
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
+	mcfglistersv1alpha1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1"
 	corelistersv1 "k8s.io/client-go/listers/core/v1"
 
 	coreinformers "k8s.io/client-go/informers"
@@ -47,6 +49,7 @@ import (
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"k8s.io/apimachinery/pkg/api/equality"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"github.com/openshift/machine-config-operator/internal/clients"
@@ -111,21 +114,16 @@ func (e *ErrInvalidImageBuilder) Error() string {
 type ImageBuilderType string
 
 const (
-	// ImageBuilderTypeConfigMapKey is the key in the ConfigMap that determines which type of image builder to use.
-	ImageBuilderTypeConfigMapKey string = "imageBuilderType"
-
-	// OpenshiftImageBuilder is the constant indicating use of the OpenShift image builder.
-	OpenshiftImageBuilder ImageBuilderType = "openshift-image-builder"
 
 	// CustomPodImageBuilder is the constant indicating use of the custom pod image builder.
-	CustomPodImageBuilder ImageBuilderType = "custom-pod-builder"
+	CustomPodImageBuilder ImageBuilderType = "CustomPodBuilder"
 )
 
 var (
 	// controllerKind contains the schema.GroupVersionKind for this controller type.
 	//nolint:varcheck,deadcode // This will be used eventually
 	controllerKind         = mcfgv1.SchemeGroupVersion.WithKind("MachineConfigPool")
-	validImageBuilderTypes = sets.New[ImageBuilderType](OpenshiftImageBuilder, CustomPodImageBuilder)
+	validImageBuilderTypes = sets.New[ImageBuilderType](CustomPodImageBuilder)
 )
 
 //nolint:revive // If I name this ControllerConfig, that name will be overloaded :P
@@ -147,9 +145,8 @@ type BuildControllerConfig struct {
 type ImageBuilder interface {
 	Run(context.Context, int)
 	StartBuild(ImageBuildRequest) (*corev1.ObjectReference, error)
-	IsBuildRunning(*mcfgv1.MachineConfigPool) (bool, error)
-	DeleteBuildObject(*mcfgv1.MachineConfigPool) error
-	FinalPullspec(*mcfgv1.MachineConfigPool) (string, error)
+	IsBuildRunning(*mcfgv1alpha1.MachineOSBuild, *mcfgv1alpha1.MachineOSConfig) (bool, error)
+	DeleteBuildObject(*mcfgv1alpha1.MachineOSBuild, *mcfgv1alpha1.MachineOSConfig) error
 }
 
 // Controller defines the build controller.
@@ -159,18 +156,21 @@ type Controller struct {
 
 	eventRecorder record.EventRecorder
 
-	syncHandler              func(mcp string) error
-	enqueueMachineConfigPool func(*mcfgv1.MachineConfigPool)
+	syncHandler func(build string) error
 
-	cmLister  corelistersv1.ConfigMapLister
-	ccLister  mcfglistersv1.ControllerConfigLister
-	mcpLister mcfglistersv1.MachineConfigPoolLister
+	cmLister              corelistersv1.ConfigMapLister
+	ccLister              mcfglistersv1.ControllerConfigLister
+	mcpLister             mcfglistersv1.MachineConfigPoolLister
+	machineOSBuildLister  mcfglistersv1alpha1.MachineOSBuildLister
+	machineOSConfigLister mcfglistersv1alpha1.MachineOSConfigLister
 
-	ccListerSynced  cache.InformerSynced
-	mcpListerSynced cache.InformerSynced
-	podListerSynced cache.InformerSynced
+	machineOSConfigListerSynced cache.InformerSynced
+	machineOSBuildListerSynced  cache.InformerSynced
+	ccListerSynced              cache.InformerSynced
+	mcpListerSynced             cache.InformerSynced
+	podListerSynced             cache.InformerSynced
 
-	queue workqueue.RateLimitingInterface
+	mosQueue workqueue.RateLimitingInterface
 
 	config           BuildControllerConfig
 	imageBuilder     ImageBuilder
@@ -206,12 +206,14 @@ func NewClients(cb *clients.Builder) *Clients {
 
 // Holds and starts each of the infomrers used by the Build Controller and its subcontrollers.
 type informers struct {
-	ccInformer    mcfginformersv1.ControllerConfigInformer
-	mcpInformer   mcfginformersv1.MachineConfigPoolInformer
-	buildInformer buildinformersv1.BuildInformer
-	podInformer   coreinformersv1.PodInformer
-	cmInformer    coreinformersv1.ConfigMapInformer
-	toStart       []interface{ Start(<-chan struct{}) }
+	ccInformer              mcfginformersv1.ControllerConfigInformer
+	mcpInformer             mcfginformersv1.MachineConfigPoolInformer
+	buildInformer           buildinformersv1.BuildInformer
+	podInformer             coreinformersv1.PodInformer
+	cmInformer              coreinformersv1.ConfigMapInformer
+	machineOSBuildInformer  mcfginformersv1alpha1.MachineOSBuildInformer
+	machineOSConfigInformer mcfginformersv1alpha1.MachineOSConfigInformer
+	toStart                 []interface{ Start(<-chan struct{}) }
 }
 
 // Starts the informers, wiring them up to the provided context.
@@ -228,19 +230,26 @@ func newInformers(bcc *Clients) *informers {
 	cmInformer := coreinformers.NewFilteredSharedInformerFactory(bcc.kubeclient, 0, ctrlcommon.MCONamespace, nil)
 	buildInformer := buildinformers.NewSharedInformerFactoryWithOptions(bcc.buildclient, 0, buildinformers.WithNamespace(ctrlcommon.MCONamespace))
 	podInformer := coreinformers.NewSharedInformerFactoryWithOptions(bcc.kubeclient, 0, coreinformers.WithNamespace(ctrlcommon.MCONamespace))
+	// this may not work, might need a new mcfg client and or a new informer pkg
+	machineOSBuildInformer := mcfginformers.NewSharedInformerFactory(bcc.mcfgclient, 0)
+	machineOSConfigInformer := mcfginformers.NewSharedInformerFactory(bcc.mcfgclient, 0)
 
 	return &informers{
-		ccInformer:    ccInformer.Machineconfiguration().V1().ControllerConfigs(),
-		mcpInformer:   mcpInformer.Machineconfiguration().V1().MachineConfigPools(),
-		cmInformer:    cmInformer.Core().V1().ConfigMaps(),
-		buildInformer: buildInformer.Build().V1().Builds(),
-		podInformer:   podInformer.Core().V1().Pods(),
+		ccInformer:              ccInformer.Machineconfiguration().V1().ControllerConfigs(),
+		mcpInformer:             mcpInformer.Machineconfiguration().V1().MachineConfigPools(),
+		cmInformer:              cmInformer.Core().V1().ConfigMaps(),
+		buildInformer:           buildInformer.Build().V1().Builds(),
+		podInformer:             podInformer.Core().V1().Pods(),
+		machineOSBuildInformer:  machineOSBuildInformer.Machineconfiguration().V1alpha1().MachineOSBuilds(),
+		machineOSConfigInformer: machineOSConfigInformer.Machineconfiguration().V1alpha1().MachineOSConfigs(),
 		toStart: []interface{ Start(<-chan struct{}) }{
 			ccInformer,
 			mcpInformer,
 			buildInformer,
 			cmInformer,
 			podInformer,
+			machineOSBuildInformer,
+			machineOSConfigInformer,
 		},
 	}
 }
@@ -258,26 +267,31 @@ func newBuildController(
 		informers:     newInformers(clients),
 		Clients:       clients,
 		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineosbuilder-buildcontroller"}),
-		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineosbuilder-buildcontroller"),
+		mosQueue:      workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineosbuilder"),
 		config:        ctrlConfig,
 	}
 
-	ctrl.mcpInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    ctrl.addMachineConfigPool,
-		UpdateFunc: ctrl.updateMachineConfigPool,
-		DeleteFunc: ctrl.deleteMachineConfigPool,
-	})
-
-	ctrl.cmInformer.Informer().AddEventHandler(cache.ResourceEventHandlerDetailedFuncs{
-		UpdateFunc: ctrl.updateConfigMap,
-	})
-
-	ctrl.syncHandler = ctrl.syncMachineConfigPool
-	ctrl.enqueueMachineConfigPool = ctrl.enqueueDefault
+	ctrl.syncHandler = ctrl.syncMachineOSBuilder
 
 	ctrl.ccLister = ctrl.ccInformer.Lister()
 	ctrl.mcpLister = ctrl.mcpInformer.Lister()
+	ctrl.machineOSConfigLister = ctrl.machineOSConfigInformer.Lister()
 
+	ctrl.machineOSBuildLister = ctrl.machineOSBuildInformer.Lister()
+
+	ctrl.machineOSBuildInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		UpdateFunc: ctrl.updateMachineOSBuild,
+		DeleteFunc: ctrl.deleteMachineOSBuild,
+	})
+
+	ctrl.machineOSConfigInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		UpdateFunc: ctrl.updateMachineOSConfig,
+		AddFunc:    ctrl.addMachineOSConfig,
+		DeleteFunc: ctrl.deleteMachineOSConfig,
+	})
+
+	ctrl.machineOSConfigListerSynced = ctrl.machineOSConfigInformer.Informer().HasSynced
+	ctrl.machineOSBuildListerSynced = ctrl.machineOSBuildInformer.Informer().HasSynced
 	ctrl.ccListerSynced = ctrl.ccInformer.Informer().HasSynced
 	ctrl.mcpListerSynced = ctrl.mcpInformer.Informer().HasSynced
 
@@ -295,17 +309,6 @@ func NewWithCustomPodBuilder(
 	return ctrl
 }
 
-// Creates a Build Controller instance with an OpenShift Image Builder
-// implementation for the ImageBuilder.
-func NewWithImageBuilder(
-	ctrlConfig BuildControllerConfig,
-	clients *Clients,
-) *Controller {
-	ctrl := newBuildController(ctrlConfig, clients)
-	ctrl.imageBuilder = newImageBuildController(ctrlConfig, clients, ctrl.imageBuildUpdater)
-	return ctrl
-}
-
 // Run executes the render controller.
 // TODO: Make this use a context instead of a stop channel.
 func (ctrl *Controller) Run(parentCtx context.Context, workers int) {
@@ -315,7 +318,7 @@ func (ctrl *Controller) Run(parentCtx context.Context, workers int) {
 	// Not sure if I actually need a child context here or not.
 	ctx, cancel := context.WithCancel(parentCtx)
 	defer utilruntime.HandleCrash()
-	defer ctrl.queue.ShutDown()
+	defer ctrl.mosQueue.ShutDown()
 	defer cancel()
 
 	ctrl.informers.start(ctx)
@@ -327,138 +330,49 @@ func (ctrl *Controller) Run(parentCtx context.Context, workers int) {
 	go ctrl.imageBuilder.Run(ctx, workers)
 
 	for i := 0; i < workers; i++ {
-		go wait.Until(ctrl.worker, time.Second, ctx.Done())
+		go wait.Until(ctrl.mosWorker, time.Second, ctx.Done())
 	}
 
 	<-ctx.Done()
 }
 
-func (ctrl *Controller) enqueue(pool *mcfgv1.MachineConfigPool) {
-	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(pool)
+func (ctrl *Controller) enqueueMachineOSConfig(mosc *mcfgv1alpha1.MachineOSConfig) {
+	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(mosc)
 	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("Couldn't get key for object %#v: %v", pool, err))
+		utilruntime.HandleError(fmt.Errorf("Couldn't get key for object %#v: %v", mosc, err))
+		return
+	}
+	ctrl.mosQueue.Add(key)
+}
+
+func (ctrl *Controller) enqueueMachineOSBuild(mosb *mcfgv1alpha1.MachineOSBuild) {
+	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(mosb)
+	if err != nil {
+		utilruntime.HandleError(fmt.Errorf("Couldn't get key for object %#v: %v", mosb, err))
 		return
 	}
 
-	ctrl.queue.Add(key)
-}
-
-func (ctrl *Controller) enqueueRateLimited(pool *mcfgv1.MachineConfigPool) {
-	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(pool)
-	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("Couldn't get key for object %#v: %v", pool, err))
-		return
-	}
-
-	ctrl.queue.AddRateLimited(key)
-}
-
-// enqueueAfter will enqueue a pool after the provided amount of time.
-func (ctrl *Controller) enqueueAfter(pool *mcfgv1.MachineConfigPool, after time.Duration) {
-	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(pool)
-	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("Couldn't get key for object %#v: %v", pool, err))
-		return
-	}
-
-	ctrl.queue.AddAfter(key, after)
-}
-
-// enqueueDefault calls a default enqueue function
-func (ctrl *Controller) enqueueDefault(pool *mcfgv1.MachineConfigPool) {
-	ctrl.enqueueAfter(pool, ctrl.config.UpdateDelay)
+	ctrl.mosQueue.Add(key)
 }
 
 // worker runs a worker thread that just dequeues items, processes them, and marks them done.
 // It enforces that the syncHandler is never invoked concurrently with the same key.
-func (ctrl *Controller) worker() {
-	for ctrl.processNextWorkItem() {
+func (ctrl *Controller) mosWorker() {
+	for ctrl.processNextMosWorkItem() {
 	}
 }
 
-func (ctrl *Controller) processNextWorkItem() bool {
-	key, quit := ctrl.queue.Get()
+func (ctrl *Controller) processNextMosWorkItem() bool {
+	key, quit := ctrl.mosQueue.Get()
 	if quit {
 		return false
 	}
-	defer ctrl.queue.Done(key)
+	defer ctrl.mosQueue.Done(key)
 
 	err := ctrl.syncHandler(key.(string))
 	ctrl.handleErr(err, key)
 
 	return true
-}
-
-// Checks for new Data in the on-cluster-build-config configmap
-// if the imageBuilderType has changed, we need to restart the controller
-func (ctrl *Controller) updateConfigMap(old, new interface{}) {
-	oldCM := old.(*corev1.ConfigMap).DeepCopy()
-	newCM := new.(*corev1.ConfigMap).DeepCopy()
-	if newCM.Name == OnClusterBuildConfigMapName && oldCM.Data[ImageBuilderTypeConfigMapKey] != newCM.Data[ImageBuilderTypeConfigMapKey] {
-		// restart ctrl and re-init
-		mcps, _ := ctrl.mcpLister.List(labels.Everything())
-		impactedPools := []*mcfgv1.MachineConfigPool{}
-		for _, mcp := range mcps {
-			if ctrlcommon.IsLayeredPool(mcp) {
-				if running, _ := ctrl.imageBuilder.IsBuildRunning(mcp); running {
-					// building on this pool, we have changed img builder type. Need to stop build
-					impactedPools = append(impactedPools, mcp)
-					ps := newPoolState(mcp)
-					ctrl.imageBuilder.DeleteBuildObject(mcp)
-					ctrl.markBuildInterrupted(ps)
-				}
-			}
-		}
-		if ImageBuilderType(newCM.Data[ImageBuilderTypeConfigMapKey]) != OpenshiftImageBuilder && ImageBuilderType(newCM.Data[ImageBuilderTypeConfigMapKey]) != CustomPodImageBuilder {
-			ctrl.handleConfigMapError(impactedPools, &ErrInvalidImageBuilder{Message: "Invalid Image Builder Type found in configmap", InvalidType: newCM.Data[ImageBuilderTypeConfigMapKey]}, new)
-			os.Exit(255)
-		}
-		os.Exit(0)
-	}
-}
-
-// Reconciles the MachineConfigPool state with the state of an OpenShift Image
-// Builder object.
-func (ctrl *Controller) imageBuildUpdater(build *buildv1.Build) error {
-	pool, err := ctrl.mcfgclient.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), build.Labels[targetMachineConfigPoolLabel], metav1.GetOptions{})
-	if err != nil {
-		return err
-	}
-
-	klog.Infof("Build (%s) is %s", build.Name, build.Status.Phase)
-
-	objRef := toObjectRef(build)
-
-	ps := newPoolState(pool)
-
-	switch build.Status.Phase {
-	case buildv1.BuildPhaseNew, buildv1.BuildPhasePending:
-		if !ps.IsBuildPending() {
-			err = ctrl.markBuildPendingWithObjectRef(ps, *objRef)
-		}
-	case buildv1.BuildPhaseRunning:
-		// If we're running, then there's nothing to do right now.
-		if !ps.IsBuilding() {
-			err = ctrl.markBuildInProgress(ps)
-		}
-	case buildv1.BuildPhaseComplete:
-		// If we've succeeded, we need to update the pool to indicate that.
-		if !ps.IsBuildSuccess() {
-			err = ctrl.markBuildSucceeded(ps)
-		}
-	case buildv1.BuildPhaseFailed, buildv1.BuildPhaseError, buildv1.BuildPhaseCancelled:
-		// If we've failed, errored, or cancelled, we need to update the pool to indicate that.
-		if !ps.IsBuildFailure() {
-			err = ctrl.markBuildFailed(ps)
-		}
-	}
-
-	if err != nil {
-		return err
-	}
-
-	ctrl.enqueueMachineConfigPool(pool)
-	return nil
 }
 
 // Reconciles the MachineConfigPool state with the state of a custom pod object.
@@ -468,30 +382,55 @@ func (ctrl *Controller) customBuildPodUpdater(pod *corev1.Pod) error {
 		return err
 	}
 
-	klog.Infof("Build pod (%s) is %s", pod.Name, pod.Status.Phase)
+	mosbs, err := ctrl.machineOSBuildLister.List(labels.Everything())
+	if err != nil {
+		return err
+	}
 
-	ps := newPoolState(pool)
+	moscs, err := ctrl.machineOSConfigLister.List(labels.Everything())
+	if err != nil {
+		return err
+	}
+
+	var mosb *mcfgv1alpha1.MachineOSBuild
+	var mosc *mcfgv1alpha1.MachineOSConfig
+
+	for _, config := range moscs {
+		if config.Spec.MachineConfigPool.Name == pool.Name {
+			mosc = config
+			break
+		}
+	}
+
+	for _, build := range mosbs {
+		if build.Spec.MachineOSConfig.Name == mosc.Name {
+			mosb = build
+			break
+		}
+	}
+
+	mosbState := ctrlcommon.NewMachineOSBuildState(mosb)
 
 	switch pod.Status.Phase {
 	case corev1.PodPending:
-		if !ps.IsBuildPending() {
+		if !mosbState.IsBuildPending() {
 			objRef := toObjectRef(pod)
-			err = ctrl.markBuildPendingWithObjectRef(ps, *objRef)
+			err = ctrl.markBuildPendingWithObjectRef(mosc, mosb, *objRef)
 		}
 	case corev1.PodRunning:
 		// If we're running, then there's nothing to do right now.
-		if !ps.IsBuilding() {
-			err = ctrl.markBuildInProgress(ps)
+		if !mosbState.IsBuilding() {
+			err = ctrl.markBuildInProgress(mosb)
 		}
 	case corev1.PodSucceeded:
 		// If we've succeeded, we need to update the pool to indicate that.
-		if !ps.IsBuildSuccess() {
-			err = ctrl.markBuildSucceeded(ps)
+		if !mosbState.IsBuildSuccess() {
+			err = ctrl.markBuildSucceeded(mosc, mosb)
 		}
 	case corev1.PodFailed:
 		// If we've failed, we need to update the pool to indicate that.
-		if !ps.IsBuildFailure() {
-			err = ctrl.markBuildFailed(ps)
+		if !mosbState.IsBuildFailure() {
+			err = ctrl.markBuildFailed(mosc, mosb)
 		}
 	}
 
@@ -499,248 +438,273 @@ func (ctrl *Controller) customBuildPodUpdater(pod *corev1.Pod) error {
 		return err
 	}
 
-	ctrl.enqueueMachineConfigPool(pool)
+	ctrl.enqueueMachineOSBuild(mosb)
 	return nil
 }
 
 func (ctrl *Controller) handleConfigMapError(pools []*mcfgv1.MachineConfigPool, err error, key interface{}) {
 	klog.V(2).Infof("Error syncing configmap %v: %v", key, err)
 	utilruntime.HandleError(err)
+	// get mosb assoc. with pool
 	for _, pool := range pools {
 		klog.V(2).Infof("Dropping machineconfigpool %q out of the queue: %v", pool.Name, err)
-		ctrl.queue.Forget(pool.Name)
-		ctrl.queue.AddAfter(pool.Name, 1*time.Minute)
+		ctrl.mosQueue.Forget(pool.Name)
+		ctrl.mosQueue.AddAfter(pool.Name, 1*time.Minute)
 	}
 
 }
 
 func (ctrl *Controller) handleErr(err error, key interface{}) {
 	if err == nil {
-		ctrl.queue.Forget(key)
+		ctrl.mosQueue.Forget(key)
 		return
 	}
 
-	if ctrl.queue.NumRequeues(key) < ctrl.config.MaxRetries {
-		klog.V(2).Infof("Error syncing machineconfigpool %v: %v", key, err)
-		ctrl.queue.AddRateLimited(key)
+	if ctrl.mosQueue.NumRequeues(key) < ctrl.config.MaxRetries {
+		klog.V(2).Infof("Error syncing machineosbuild %v: %v", key, err)
+		ctrl.mosQueue.AddRateLimited(key)
 		return
 	}
 
 	utilruntime.HandleError(err)
-	klog.V(2).Infof("Dropping machineconfigpool %q out of the queue: %v", key, err)
-	ctrl.queue.Forget(key)
-	ctrl.queue.AddAfter(key, 1*time.Minute)
+	klog.V(2).Infof("Dropping machineosbuild %q out of the queue: %v", key, err)
+	ctrl.mosQueue.Forget(key)
+	ctrl.mosQueue.AddAfter(key, 1*time.Minute)
 }
 
-// syncMachineConfigPool will sync the machineconfig pool with the given key.
-// This function is not meant to be invoked concurrently with the same key.
-func (ctrl *Controller) syncMachineConfigPool(key string) error {
-	startTime := time.Now()
-	klog.V(4).Infof("Started syncing machineconfigpool %q (%v)", key, startTime)
-	defer func() {
-		klog.V(4).Infof("Finished syncing machineconfigpool %q (%v)", key, time.Since(startTime))
-	}()
-
+func (ctrl *Controller) syncMachineOSBuilder(key string) error {
 	_, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		return err
 	}
-	machineconfigpool, err := ctrl.mcpLister.Get(name)
+	isConfig := false
+	var machineOSConfig *mcfgv1alpha1.MachineOSConfig
+	machineosbuild, err := ctrl.machineOSBuildLister.Get(name)
 	if k8serrors.IsNotFound(err) {
-		klog.V(2).Infof("MachineConfigPool %v has been deleted", key)
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-
-	// TODO: Doing a deep copy of this pool object from our cache and using it to
-	// determine our next course of action sometimes causes a race condition. I'm
-	// not sure if it's better to get a current copy from the API server or what.
-	// pool := machineconfigpool.DeepCopy()
-	pool, err := ctrl.mcfgclient.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), machineconfigpool.Name, metav1.GetOptions{})
-	if err != nil {
-		return err
-	}
-
-	ps := newPoolState(pool)
-
-	// Not a layered pool, so stop here.
-	if !ps.IsLayered() {
-		klog.V(4).Infof("MachineConfigPool %s is not opted-in for layering, ignoring", pool.Name)
-		return nil
-	}
-
-	switch {
-	case ps.IsInterrupted():
-		klog.V(4).Infof("MachineConfigPool %s is build interrupted, requeueing", pool.Name)
-		ctrl.enqueueMachineConfigPool(pool)
-		return nil
-	case ps.IsDegraded():
-		klog.V(4).Infof("MachineConfigPool %s is degraded, requeueing", pool.Name)
-		ctrl.enqueueMachineConfigPool(pool)
-		return nil
-	case ps.IsRenderDegraded():
-		klog.V(4).Infof("MachineConfigPool %s is render degraded, requeueing", pool.Name)
-		ctrl.enqueueMachineConfigPool(pool)
-		return nil
-	case ps.IsBuildPending():
-		klog.V(4).Infof("MachineConfigPool %s is build pending", pool.Name)
-		return nil
-	case ps.IsBuilding():
-		klog.V(4).Infof("MachineConfigPool %s is building", pool.Name)
-		return nil
-	case ps.IsBuildSuccess():
-		klog.V(4).Infof("MachineConfigPool %s has successfully built", pool.Name)
-		return nil
-	default:
-		shouldBuild, err := shouldWeDoABuild(ctrl.imageBuilder, pool, pool)
-		if err != nil {
-			return fmt.Errorf("could not determine if a build is required for MachineConfigPool %q: %w", pool.Name, err)
+		// if this is not an existing build. This means our machineOsConfig changed
+		isConfig = true
+		machineOSConfig, err = ctrl.machineOSConfigLister.Get(name)
+		if k8serrors.IsNotFound(err) {
+			return nil
 		}
-
-		if shouldBuild {
-			return ctrl.startBuildForMachineConfigPool(ps)
-		}
-
-		klog.V(4).Infof("Nothing to do for pool %q", pool.Name)
 	}
 
-	// For everything else
-	return ctrl.syncAvailableStatus(pool)
+	// so if the MOSB status updates, we need to react to that and possibly requeue.
+	// otherwise we should get the MCP and trigger a build if necessary
+	// we still probably need the MCP function to trigger when the desired config changes.
+
+	if !isConfig {
+		for _, cond := range machineosbuild.Status.Conditions {
+			if cond.Status == metav1.ConditionTrue {
+				switch mcfgv1alpha1.BuildProgress(cond.Type) {
+				case mcfgv1alpha1.MachineOSBuildPrepared:
+					return nil
+				case mcfgv1alpha1.MachineOSBuilding:
+					//
+					return nil
+				case mcfgv1alpha1.MachineOSBuildFailed:
+					//
+					return nil
+				case mcfgv1alpha1.MachineOSBuildInterrupted:
+					//
+					ctrl.enqueueMachineOSBuild(machineosbuild)
+
+				case mcfgv1alpha1.MachineOSBuildSucceeded:
+					//
+					return nil
+				default:
+					// should we build? we can determine this by getting the MCP associated with this obj. However,
+					// this obj will not update each time the mcp does need to figure out how to reconcile that.
+					machineOSConfig, err := ctrl.machineOSConfigLister.Get(machineosbuild.Spec.MachineOSConfig.Name)
+					if err != nil {
+						return err
+					}
+
+					doABuild, err := shouldWeDoABuild(ctrl.imageBuilder, machineOSConfig, machineosbuild, machineosbuild)
+					if err != nil {
+						return err
+					}
+					if doABuild {
+						ctrl.startBuildForMachineConfigPool(machineOSConfig, machineosbuild)
+					}
+
+				}
+
+			}
+		}
+	} else {
+		// this is a config change or a config CREATION. We need to possibly make a mosb for this build. The updated config is handlded in the updateMachineOSConfig function
+		//	if ctrl.imageBuilder.
+		var buildExists bool
+		var status *mcfgv1alpha1.MachineOSBuildStatus
+		machineosbuild, buildExists = ctrl.doesMOSBExist(machineOSConfig)
+		if !buildExists {
+			machineosbuild, status, err = ctrl.CreateBuildFromConfig(machineOSConfig)
+			if err != nil {
+				return err
+			}
+			machineosbuild.Status = *status
+
+			//	machineosbuild, err = ctrl.mcfgclient.MachineconfigurationV1alpha1().MachineOSBuilds().UpdateStatus(context.TODO(), machineosbuild, metav1.UpdateOptions{})
+			//if err != nil {
+			//	return err
+			//}
+			// now we have mosb, and must also trigger a build.
+			if err := ctrl.startBuildForMachineConfigPool(machineOSConfig, machineosbuild); err != nil {
+				ctrl.syncAvailableStatus(machineosbuild)
+				return err
+			}
+			return nil
+		}
+	}
+
+	// hmm, might need to do this, otherwise we dupe the above sync
+	// if keep getting status errs, might need omitempties
+
+	return ctrl.syncAvailableStatus(machineosbuild)
 }
 
-func (ctrl *Controller) markBuildInterrupted(ps *poolState) error {
-	klog.Errorf("Build interrupted for pool %s", ps.Name())
+func (ctrl *Controller) markBuildInterrupted(mosc *mcfgv1alpha1.MachineOSConfig, mosb *mcfgv1alpha1.MachineOSBuild) error {
+	klog.Errorf("Build interrupted for pool %s", mosc.Spec.MachineConfigPool.Name)
 
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		mcp, err := ctrl.mcfgclient.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), ps.Name(), metav1.GetOptions{})
-		if err != nil {
-			return err
-		}
 
-		ps := newPoolState(mcp)
-		ps.SetBuildConditions([]mcfgv1.MachineConfigPoolCondition{
+		bs := ctrlcommon.NewMachineOSBuildState(mosb)
+		bs.SetBuildConditions([]metav1.Condition{
 			{
-				Type:   mcfgv1.MachineConfigPoolBuildInterrupted,
-				Reason: "BuildInterrupted",
-				Status: corev1.ConditionTrue,
+				Type:    string(mcfgv1alpha1.MachineOSBuildInterrupted),
+				Reason:  "BuildInterrupted",
+				Status:  metav1.ConditionTrue,
+				Message: "",
 			},
 			{
-				Type:   mcfgv1.MachineConfigPoolBuildSuccess,
-				Status: corev1.ConditionFalse,
+				Type:    string(mcfgv1alpha1.MachineOSBuildSucceeded),
+				Reason:  "OSReady",
+				Status:  metav1.ConditionFalse,
+				Message: "",
 			},
 			{
-				Type:   mcfgv1.MachineConfigPoolBuilding,
-				Status: corev1.ConditionFalse,
+				Type:    string(mcfgv1alpha1.MachineOSBuilding),
+				Reason:  "OSBuilding",
+				Status:  metav1.ConditionFalse,
+				Message: "",
 			},
-			{
-				Type:   mcfgv1.MachineConfigPoolBuildPending,
-				Status: corev1.ConditionFalse,
-			},
-			{
-				Type:   mcfgv1.MachineConfigPoolDegraded,
-				Status: corev1.ConditionTrue,
-			},
+			/*
+				{
+					Type:   mcfgv1.MachineConfigPoolBuildPending,
+					Status: metav1.ConditionFalse,
+				},
+				{
+					Type:   mcfgv1.MachineConfigPoolDegraded,
+					Status: metav1.ConditionTrue,
+				},
+			*/
 		})
 
-		ps.pool.Spec.Configuration.Source = ps.pool.Spec.Configuration.Source[:len(ps.pool.Spec.Configuration.Source)-1]
+		//ps.pool.Spec.Configuration.Source = ps.pool.Spec.Configuration.Source[:len(ps.pool.Spec.Configuration.Source)-1]
 
-		return ctrl.updatePoolAndSyncAvailableStatus(ps.MachineConfigPool())
+		// update mosc status
+
+		return ctrl.syncAvailableStatus(bs.Build)
 	})
 
 }
 
 // Marks a given MachineConfigPool as a failed build.
-func (ctrl *Controller) markBuildFailed(ps *poolState) error {
-	klog.Errorf("Build failed for pool %s", ps.Name())
-
+func (ctrl *Controller) markBuildFailed(mosc *mcfgv1alpha1.MachineOSConfig, mosb *mcfgv1alpha1.MachineOSBuild) error {
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		mcp, err := ctrl.mcfgclient.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), ps.Name(), metav1.GetOptions{})
-		if err != nil {
-			return err
-		}
 
-		ps := newPoolState(mcp)
-		ps.SetBuildConditions([]mcfgv1.MachineConfigPoolCondition{
+		bs := ctrlcommon.NewMachineOSBuildState(mosb)
+		bs.SetBuildConditions([]metav1.Condition{
 			{
-				Type:   mcfgv1.MachineConfigPoolBuildInterrupted,
-				Status: corev1.ConditionFalse,
+				Type:    string(mcfgv1alpha1.MachineOSBuildInterrupted),
+				Status:  metav1.ConditionFalse,
+				Reason:  "Interrupted",
+				Message: "MOSB Failed",
 			},
 			{
-				Type:   mcfgv1.MachineConfigPoolBuildFailed,
-				Reason: "BuildFailed",
-				Status: corev1.ConditionTrue,
+				Type:    string(mcfgv1alpha1.MachineOSBuildFailed),
+				Reason:  "BuildFailed",
+				Status:  metav1.ConditionTrue,
+				Message: "MOSB Failed",
 			},
 			{
-				Type:   mcfgv1.MachineConfigPoolBuildSuccess,
-				Status: corev1.ConditionFalse,
+				Type:    string(mcfgv1alpha1.MachineOSBuildSucceeded),
+				Status:  metav1.ConditionFalse,
+				Reason:  "Ready",
+				Message: "MOSB Failed",
 			},
 			{
-				Type:   mcfgv1.MachineConfigPoolBuilding,
-				Status: corev1.ConditionFalse,
+				Type:    string(mcfgv1alpha1.MachineOSBuilding),
+				Status:  metav1.ConditionFalse,
+				Reason:  "Building",
+				Message: "MOSB Failed",
 			},
-			{
-				Type:   mcfgv1.MachineConfigPoolBuildPending,
-				Status: corev1.ConditionFalse,
-			},
-			{
-				Type:   mcfgv1.MachineConfigPoolDegraded,
-				Status: corev1.ConditionTrue,
-			},
+			/*
+				{
+					Type:   mcfgv1.MachineConfigPoolBuildPending,
+					Status: metav1.ConditionFalse,
+				},
+			*/
 		})
 
-		return ctrl.syncFailingStatus(ps.MachineConfigPool(), fmt.Errorf("build failed"))
+		return ctrl.syncFailingStatus(mosc, bs.Build, fmt.Errorf("BuildFailed"))
 	})
+
 }
 
 // Marks a given MachineConfigPool as the build is in progress.
-func (ctrl *Controller) markBuildInProgress(ps *poolState) error {
-	klog.Infof("Build in progress for MachineConfigPool %s, config %s", ps.Name(), ps.CurrentMachineConfig())
+func (ctrl *Controller) markBuildInProgress(mosb *mcfgv1alpha1.MachineOSBuild) error {
+	klog.Infof("Build in progress for config %s", mosb.Spec.DesiredConfig.Name)
 
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		mcp, err := ctrl.mcfgclient.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), ps.Name(), metav1.GetOptions{})
-		if err != nil {
-			return err
-		}
 
-		ps := newPoolState(mcp)
-		ps.SetBuildConditions([]mcfgv1.MachineConfigPoolCondition{
+		bs := ctrlcommon.NewMachineOSBuildState(mosb)
+
+		bs.SetBuildConditions([]metav1.Condition{
 			{
-				Type:   mcfgv1.MachineConfigPoolBuildInterrupted,
-				Status: corev1.ConditionFalse,
+				Type:    string(mcfgv1alpha1.MachineOSBuildInterrupted),
+				Status:  metav1.ConditionFalse,
+				Reason:  "Interrupted",
+				Message: "MOSB Available",
 			},
 			{
-				Type:   mcfgv1.MachineConfigPoolBuildFailed,
-				Status: corev1.ConditionFalse,
+				Type:    string(mcfgv1alpha1.MachineOSBuildFailed),
+				Status:  metav1.ConditionFalse,
+				Reason:  "Failed",
+				Message: "MOSB Available",
 			},
 			{
-				Type:   mcfgv1.MachineConfigPoolBuildSuccess,
-				Status: corev1.ConditionFalse,
+				Type:    string(mcfgv1alpha1.MachineOSBuildSucceeded),
+				Status:  metav1.ConditionFalse,
+				Reason:  "Ready",
+				Message: "MOSB Available",
 			},
 			{
-				Type:   mcfgv1.MachineConfigPoolBuilding,
-				Reason: "BuildRunning",
-				Status: corev1.ConditionTrue,
+				Type:    string(mcfgv1alpha1.MachineOSBuilding),
+				Reason:  "BuildRunning",
+				Status:  metav1.ConditionTrue,
+				Message: "Image Build In Progress",
 			},
-			{
-				Type:   mcfgv1.MachineConfigPoolBuildPending,
-				Status: corev1.ConditionFalse,
-			},
+			/*
+				{
+					Type:   mcfgv1.MachineConfigPoolBuildPending,
+					Status: metav1.ConditionFalse},
+			*/
 		})
 
-		return ctrl.syncAvailableStatus(ps.MachineConfigPool())
+		return ctrl.syncAvailableStatus(mosb)
 	})
 }
 
 // Deletes the ephemeral objects we created to perform this specific build.
-func (ctrl *Controller) postBuildCleanup(pool *mcfgv1.MachineConfigPool, ignoreMissing bool) error {
+func (ctrl *Controller) postBuildCleanup(mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig, ignoreMissing bool) error {
 	// Delete the actual build object itself.
 	deleteBuildObject := func() error {
-		err := ctrl.imageBuilder.DeleteBuildObject(pool)
+		err := ctrl.imageBuilder.DeleteBuildObject(mosb, mosc)
 
 		if err == nil {
-			klog.Infof("Deleted build object %s", newImageBuildRequest(pool).getBuildName())
+			klog.Infof("Deleted build object %s", newImageBuildRequest(mosc, mosb).getBuildName())
 		}
 
 		return err
@@ -748,7 +712,7 @@ func (ctrl *Controller) postBuildCleanup(pool *mcfgv1.MachineConfigPool, ignoreM
 
 	// Delete the ConfigMap containing the MachineConfig.
 	deleteMCConfigMap := func() error {
-		ibr := newImageBuildRequest(pool)
+		ibr := newImageBuildRequest(mosc, mosb)
 
 		err := ctrl.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Delete(context.TODO(), ibr.getMCConfigMapName(), metav1.DeleteOptions{})
 
@@ -761,7 +725,7 @@ func (ctrl *Controller) postBuildCleanup(pool *mcfgv1.MachineConfigPool, ignoreM
 
 	// Delete the ConfigMap containing the rendered Dockerfile.
 	deleteDockerfileConfigMap := func() error {
-		ibr := newImageBuildRequest(pool)
+		ibr := newImageBuildRequest(mosc, mosb)
 
 		err := ctrl.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Delete(context.TODO(), ibr.getDockerfileConfigMapName(), metav1.DeleteOptions{})
 
@@ -792,142 +756,205 @@ func (ctrl *Controller) postBuildCleanup(pool *mcfgv1.MachineConfigPool, ignoreM
 }
 
 // Marks a given MachineConfigPool as build successful and cleans up after itself.
-func (ctrl *Controller) markBuildSucceeded(ps *poolState) error {
-	klog.Infof("Build succeeded for MachineConfigPool %s, config %s", ps.Name(), ps.CurrentMachineConfig())
-
-	pool := ps.MachineConfigPool()
-
-	// Get the final image pullspec.
-	imagePullspec, err := ctrl.imageBuilder.FinalPullspec(pool)
-	if err != nil {
-		return fmt.Errorf("could not get final image pullspec for pool %s: %w", ps.Name(), err)
-	}
-
-	if imagePullspec == "" {
-		return fmt.Errorf("image pullspec empty for pool %s", ps.Name())
-	}
-
-	// Perform the post-build cleanup.
-	if err := ctrl.postBuildCleanup(pool, false); err != nil {
-		return fmt.Errorf("could not do post-build cleanup: %w", err)
-	}
-
+func (ctrl *Controller) markBuildSucceeded(mosc *mcfgv1alpha1.MachineOSConfig, mosb *mcfgv1alpha1.MachineOSBuild) error {
 	// Perform the MachineConfigPool update.
+
+	// we might need to wire up a way for the pool to be updated when the update is complete...
+	// or. We can say if build succeded in the mosb and desired == the url, then `IsDoneAt`==true
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		mcp, err := ctrl.mcfgclient.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), ps.Name(), metav1.GetOptions{})
+
+		// need to do the below with the mosb
+		/*
+			ps := newPoolState(mcp)
+
+			// Set the annotation or field to point to the newly-built container image.
+			klog.V(4).Infof("Setting new image pullspec for %s to %s", ps.Name(), imagePullspec)
+			ps.SetImagePullspec(imagePullspec)
+
+			// Remove the build object reference from the MachineConfigPool since we're
+			// not using it anymore.
+			ps.DeleteBuildRefForCurrentMachineConfig()
+		*/
+		// Adjust the MachineConfigPool status to indicate success.
+
+		// REPLACE FINAL PULLSPEC WITH SHA HERE USING ctrl.imagebuilder.FinalPullspec
+		ibr := newImageBuildRequest(mosc, mosb)
+		digestConfigMap, err := ctrl.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), ibr.getDigestConfigMapName(), metav1.GetOptions{})
 		if err != nil {
 			return err
 		}
 
-		ps := newPoolState(mcp)
+		sha, _ := ParseImagePullspec(mosc.Status.CurrentImagePullspec, digestConfigMap.Data["digest"])
+		// now, all we need is to make sure this is used all around. (node controller, getters, etc)
+		mosc.Status.CurrentImagePullspec = sha
+		mosb.Status.FinalImagePushspec = sha
+		bs := ctrlcommon.NewMachineOSBuildState(mosb)
 
-		// Set the annotation or field to point to the newly-built container image.
-		klog.V(4).Infof("Setting new image pullspec for %s to %s", ps.Name(), imagePullspec)
-		ps.SetImagePullspec(imagePullspec)
-
-		// Remove the build object reference from the MachineConfigPool since we're
-		// not using it anymore.
-		ps.DeleteBuildRefForCurrentMachineConfig()
-
-		// Adjust the MachineConfigPool status to indicate success.
-		ps.SetBuildConditions([]mcfgv1.MachineConfigPoolCondition{
+		bs.SetBuildConditions([]metav1.Condition{
 			{
-				Type:   mcfgv1.MachineConfigPoolBuildFailed,
-				Status: corev1.ConditionFalse,
+				Type:    string(mcfgv1alpha1.MachineOSBuildFailed),
+				Reason:  "BuildFailed",
+				Status:  metav1.ConditionFalse,
+				Message: "",
 			},
 			{
-				Type:   mcfgv1.MachineConfigPoolBuildSuccess,
-				Reason: "BuildSucceeded",
-				Status: corev1.ConditionTrue,
+				Type:    string(mcfgv1alpha1.MachineOSBuildSucceeded),
+				Reason:  "BuildSucceeded",
+				Status:  metav1.ConditionTrue,
+				Message: "",
 			},
 			{
-				Type:   mcfgv1.MachineConfigPoolBuilding,
-				Status: corev1.ConditionFalse,
-			},
-			{
-				Type:   mcfgv1.MachineConfigPoolDegraded,
-				Status: corev1.ConditionFalse,
+				Type:    string(mcfgv1alpha1.MachineOSBuilding),
+				Reason:  "OSBuilding",
+				Status:  metav1.ConditionFalse,
+				Message: "",
 			},
 		})
 
-		return ctrl.updatePoolAndSyncAvailableStatus(ps.MachineConfigPool())
+		return ctrl.updateConfigAndBuild(mosc, bs.Build)
+
+		// don't SetImagPullSpec. It is already in MOSB. Wherever we check for desiredImage or query the Pool's annotation
+		// we need to replace with mosb
 	})
 }
 
 // Marks a given MachineConfigPool as build pending.
-func (ctrl *Controller) markBuildPendingWithObjectRef(ps *poolState, objRef corev1.ObjectReference) error {
+func (ctrl *Controller) markBuildPendingWithObjectRef(mosc *mcfgv1alpha1.MachineOSConfig, mosb *mcfgv1alpha1.MachineOSBuild, objRef corev1.ObjectReference) error {
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		mcp, err := ctrl.mcfgclient.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), ps.Name(), metav1.GetOptions{})
+		bs := ctrlcommon.NewMachineOSBuildState(mosb)
+
+		bs.SetBuildConditions([]metav1.Condition{
+			{
+				Type:    string(mcfgv1alpha1.MachineOSBuildInterrupted),
+				Reason:  "BuildInterrupted",
+				Status:  metav1.ConditionFalse,
+				Message: "",
+			},
+			{
+				Type:    string(mcfgv1.MachineConfigPoolBuildFailed),
+				Reason:  "BuildFailed",
+				Status:  metav1.ConditionFalse,
+				Message: "",
+			},
+			{
+				Type:    string(mcfgv1alpha1.MachineOSBuildSucceeded),
+				Reason:  "OSReady",
+				Status:  metav1.ConditionFalse,
+				Message: "",
+			},
+			// what is the difference between building and build pending?
+			{
+				Type:    string(mcfgv1alpha1.MachineOSBuilding),
+				Reason:  "BuildPending",
+				Status:  metav1.ConditionTrue,
+				Message: "",
+			},
+			/*
+				{
+					Type:   mcfgv1.MachineConfigPoolBuildPending,
+					Status: metav1.ConditionTrue,
+				},
+			*/
+		})
+
+		/*
+			// If the MachineConfigPool has the build object reference, we just want to
+			// update the MachineConfigPool's status.
+			if ps.HasBuildObjectRef(objRef) {
+				return ctrl.syncAvailableStatus(ps.MachineConfigPool())
+			}
+
+			// If we added the build object reference, we need to update both the
+			// MachineConfigPool itself and its status.
+			if err := ps.AddBuildObjectRef(objRef); err != nil {
+				return err
+			}
+
+			return ctrl.updatePoolAndSyncAvailableStatus(ps.MachineConfigPool())
+
+		*/
+
+		mcp, err := ctrl.mcfgclient.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), mosc.Spec.MachineConfigPool.Name, metav1.GetOptions{})
 		if err != nil {
 			return err
 		}
 
-		ps := newPoolState(mcp)
+		//
+		mcp.Spec.Configuration.Source = append(mcp.Spec.Configuration.Source, objRef)
+		ctrl.mcfgclient.MachineconfigurationV1().MachineConfigPools().Update(context.TODO(), mcp, metav1.UpdateOptions{})
+		// add obj ref to mosc
 
-		klog.Infof("Build for %s marked pending with object reference %v", ps.Name(), objRef)
-
-		ps.SetBuildConditions([]mcfgv1.MachineConfigPoolCondition{
-			{
-				Type:   mcfgv1.MachineConfigPoolBuildInterrupted,
-				Status: corev1.ConditionFalse,
-			},
-			{
-				Type:   mcfgv1.MachineConfigPoolBuildFailed,
-				Status: corev1.ConditionFalse,
-			},
-			{
-				Type:   mcfgv1.MachineConfigPoolBuildSuccess,
-				Status: corev1.ConditionFalse,
-			},
-			{
-				Type:   mcfgv1.MachineConfigPoolBuilding,
-				Status: corev1.ConditionFalse,
-			},
-			{
-				Type:   mcfgv1.MachineConfigPoolBuildPending,
-				Reason: "BuildPending",
-				Status: corev1.ConditionTrue,
-			},
-		})
-
-		// If the MachineConfigPool has the build object reference, we just want to
-		// update the MachineConfigPool's status.
-		if ps.HasBuildObjectRef(objRef) {
-			return ctrl.syncAvailableStatus(ps.MachineConfigPool())
+		if bs.Build.Status.BuilderReference == nil {
+			mosb.Status.BuilderReference = &mcfgv1alpha1.MachineOSBuilderReference{ImageBuilderType: mosc.Spec.BuildInputs.ImageBuilder.ImageBuilderType, PodImageBuilder: &mcfgv1alpha1.ObjectReference{
+				Name:      objRef.Name,
+				Group:     objRef.GroupVersionKind().Group,
+				Namespace: objRef.Namespace,
+				Resource:  objRef.ResourceVersion,
+			}}
 		}
+		return ctrl.syncAvailableStatus(bs.Build)
 
-		// If we added the build object reference, we need to update both the
-		// MachineConfigPool itself and its status.
-		if err := ps.AddBuildObjectRef(objRef); err != nil {
-			return err
-		}
-
-		return ctrl.updatePoolAndSyncAvailableStatus(ps.MachineConfigPool())
 	})
 }
 
-func (ctrl *Controller) updatePoolAndSyncAvailableStatus(pool *mcfgv1.MachineConfigPool) error {
+func (ctrl *Controller) updateMOSCAndSyncFailing(mosc *mcfgv1alpha1.MachineOSConfig, mosb *mcfgv1alpha1.MachineOSBuild) error {
 	// We need to do an API server round-trip to ensure all of our mutations get
 	// propagated.
-	updatedPool, err := ctrl.mcfgclient.MachineconfigurationV1().MachineConfigPools().Update(context.TODO(), pool, metav1.UpdateOptions{})
+	_, err := ctrl.mcfgclient.MachineconfigurationV1alpha1().MachineOSConfigs().UpdateStatus(context.TODO(), mosc, metav1.UpdateOptions{})
 	if err != nil {
-		return fmt.Errorf("could not update MachineConfigPool %q: %w", pool.Name, err)
+		return fmt.Errorf("could not update MachineOSBuild %q: %w", mosb.Name, err)
 	}
 
-	updatedPool.Status = pool.Status
-
-	return ctrl.syncAvailableStatus(updatedPool)
+	return ctrl.syncFailingStatus(mosc, mosb, fmt.Errorf("build failed"))
 }
 
-// Machine Config Pools
+func (ctrl *Controller) updateConfigSpec(mosc *mcfgv1alpha1.MachineOSConfig) error {
+	_, err := ctrl.mcfgclient.MachineconfigurationV1alpha1().MachineOSConfigs().Update(context.TODO(), mosc, metav1.UpdateOptions{})
+	if err != nil {
+		return fmt.Errorf("could not update MachineOSConfig %q: %w", mosc.Name, err)
+	}
+	return nil
+}
+func (ctrl *Controller) updateConfigAndBuild(mosc *mcfgv1alpha1.MachineOSConfig, mosb *mcfgv1alpha1.MachineOSBuild) error {
+	_, err := ctrl.mcfgclient.MachineconfigurationV1alpha1().MachineOSConfigs().UpdateStatus(context.TODO(), mosc, metav1.UpdateOptions{})
+	if err != nil {
+		return fmt.Errorf("could not update MachineOSConfig%q: %w", mosc.Name, err)
+	}
+	newMosb, err := ctrl.mcfgclient.MachineconfigurationV1alpha1().MachineOSBuilds().Update(context.TODO(), mosb, metav1.UpdateOptions{})
+	if err != nil {
+		return fmt.Errorf("could not update MachineOSBuild %q: %w", mosb.Name, err)
+	}
 
-func (ctrl *Controller) addMachineConfigPool(obj interface{}) {
-	pool := obj.(*mcfgv1.MachineConfigPool).DeepCopy()
-	klog.V(4).Infof("Adding MachineConfigPool %s", pool.Name)
-	ctrl.enqueueMachineConfigPool(pool)
+	newMosb.Status = mosb.Status
+
+	return ctrl.syncAvailableStatus(newMosb)
 }
 
-func (ctrl *Controller) getBuildInputs(ps *poolState) (*buildInputs, error) {
+func (ctrl *Controller) updateMOSCAndSyncAvailable(mosc *mcfgv1alpha1.MachineOSConfig, mosb *mcfgv1alpha1.MachineOSBuild) error {
+	// We need to do an API server round-trip to ensure all of our mutations get
+	// propagated.
+	_, err := ctrl.mcfgclient.MachineconfigurationV1alpha1().MachineOSConfigs().UpdateStatus(context.TODO(), mosc, metav1.UpdateOptions{})
+	if err != nil {
+		return fmt.Errorf("could not update MachineOSBuild %q: %w", mosb.Name, err)
+	}
+
+	return ctrl.syncAvailableStatus(mosb)
+}
+
+func (ctrl *Controller) updateMOSBAndSyncAvailable(mosb *mcfgv1alpha1.MachineOSBuild) error {
+	// We need to do an API server round-trip to ensure all of our mutations get
+	// propagated.
+	m, err := ctrl.mcfgclient.MachineconfigurationV1alpha1().MachineOSBuilds().Update(context.TODO(), mosb, metav1.UpdateOptions{})
+	if err != nil {
+		return fmt.Errorf("could not update MachineOSBuild %q: %w", mosb.Name, err)
+	}
+
+	m.Status = mosb.Status
+
+	return ctrl.syncAvailableStatus(m)
+}
+
+func (ctrl *Controller) getBuildInputs(ps *poolState) (*BuildInputs, error) {
 	osImageURL, err := ctrl.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), machineConfigOSImageURLConfigMapName, metav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("could not get OS image URL: %w", err)
@@ -950,7 +977,7 @@ func (ctrl *Controller) getBuildInputs(ps *poolState) (*buildInputs, error) {
 		return nil, fmt.Errorf("could not get MachineConfig %s: %w", currentMC, err)
 	}
 
-	inputs := &buildInputs{
+	inputs := &BuildInputs{
 		onClusterBuildConfig: onClusterBuildConfig,
 		osImageURL:           osImageURL,
 		customDockerfiles:    customDockerfiles,
@@ -962,12 +989,39 @@ func (ctrl *Controller) getBuildInputs(ps *poolState) (*buildInputs, error) {
 }
 
 // Prepares all of the objects needed to perform an image build.
-func (ctrl *Controller) prepareForBuild(inputs *buildInputs) (ImageBuildRequest, error) {
-	ibr := newImageBuildRequestFromBuildInputs(inputs)
+func (ctrl *Controller) prepareForBuild(mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig) (ImageBuildRequest, error) {
+	ibr := newImageBuildRequestFromBuildInputs(mosb, mosc)
 
-	mcConfigMap, err := ibr.toConfigMap(inputs.machineConfig)
+	// populate the "optional" fields, if the user did not specify them
+	osImageURL, err := ctrl.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), machineConfigOSImageURLConfigMapName, metav1.GetOptions{})
 	if err != nil {
-		return ImageBuildRequest{}, fmt.Errorf("could not convert MachineConfig %s into ConfigMap: %w", inputs.machineConfig.Name, err)
+		return ibr, fmt.Errorf("could not get OS image URL: %w", err)
+	}
+	moscNew := mosc.DeepCopy()
+
+	url := newExtensionsImageInfo(osImageURL, mosc)
+	if len(moscNew.Spec.BuildInputs.BaseOSExtensionsImagePullspec) == 0 {
+		moscNew.Spec.BuildInputs.BaseOSExtensionsImagePullspec = url.Pullspec
+	}
+	url = newBaseImageInfo(osImageURL, mosc)
+	if len(moscNew.Spec.BuildInputs.BaseOSImagePullspec) == 0 {
+		moscNew.Spec.BuildInputs.BaseOSImagePullspec = url.Pullspec
+		moscNew.Spec.BuildInputs.ReleaseVersion = osImageURL.Data[releaseVersionConfigKey]
+	}
+
+	// make sure to get these new settings
+	ibr.MachineOSConfig = moscNew
+
+	//ctrl.mcfgclient.MachineconfigurationV1alpha1().MachineOSConfigs().Update(context.TODO(), moscNew, metav1.UpdateOptions{})
+
+	mc, err := ctrl.mcfgclient.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), mosb.Spec.DesiredConfig.Name, metav1.GetOptions{})
+	if err != nil {
+		return ibr, err
+	}
+
+	mcConfigMap, err := ibr.toConfigMap(mc) // ??????
+	if err != nil {
+		return ImageBuildRequest{}, fmt.Errorf("could not convert MachineConfig %s into ConfigMap: %w", mosb.Spec.DesiredConfig.Name, err) // ????
 	}
 
 	_, err = ctrl.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Create(context.TODO(), mcConfigMap, metav1.CreateOptions{})
@@ -975,7 +1029,7 @@ func (ctrl *Controller) prepareForBuild(inputs *buildInputs) (ImageBuildRequest,
 		return ImageBuildRequest{}, fmt.Errorf("could not load rendered MachineConfig %s into configmap: %w", mcConfigMap.Name, err)
 	}
 
-	klog.Infof("Stored MachineConfig %s in ConfigMap %s for build", inputs.machineConfig.Name, mcConfigMap.Name)
+	klog.Infof("Stored MachineConfig %s in ConfigMap %s for build", mosb.Spec.DesiredConfig.Name, mcConfigMap.Name)
 
 	dockerfileConfigMap, err := ibr.dockerfileToConfigMap()
 	if err != nil {
@@ -995,33 +1049,64 @@ func (ctrl *Controller) prepareForBuild(inputs *buildInputs) (ImageBuildRequest,
 // Determines if we should run a build, then starts a build pod to perform the
 // build, and updates the MachineConfigPool with an object reference for the
 // build pod.
-func (ctrl *Controller) startBuildForMachineConfigPool(ps *poolState) error {
+func (ctrl *Controller) startBuildForMachineConfigPool(mosc *mcfgv1alpha1.MachineOSConfig, mosb *mcfgv1alpha1.MachineOSBuild) error {
 
-	if ctrlcommon.DoARebuild(ps.pool) {
-		// delete FAILED build attempts and builds
-		// delete rendered containerfile, MC, configmaps etc.
-		// Delete the actual build object itself.
-		// if we are rebuilding, we cannot ignore DNE. All of these objects should exist.
-		err := ctrl.postBuildCleanup(ps.pool, false)
-		if err != nil {
-			return fmt.Errorf("Could not update pool when triggering a rebuild: %v", err)
-		}
-		// remove annotation
-		delete(ps.pool.Labels, ctrlcommon.RebuildPoolLabel)
-		err = ctrl.updatePoolAndSyncAvailableStatus(ps.MachineConfigPool())
-		if err != nil {
-			return fmt.Errorf("Could not update pool when triggering a rebuild: %v", err)
-		}
+	// we need to add osImageURL to mosbuild, will reduce api calls to configmaps
+	// ocb config will live in th mosb
+	// pool will live in the mosb
+	// mc we can get based off the pool specified in the mosb.... though, given how we could use this in two places
 
-	}
-	inputs, err := ctrl.getBuildInputs(ps)
+	ourConfig, err := ctrl.machineOSConfigLister.Get(mosb.Spec.MachineOSConfig.Name)
 	if err != nil {
-		return fmt.Errorf("could not fetch build inputs: %w", err)
+		return err
+	}
+	// Replace the user-supplied tag (if present) with the name of the
+	// rendered MachineConfig for uniqueness. This will also allow us to
+	// eventually do a pre-build registry query to determine if we need to
+	// perform a build.
+	named, err := reference.ParseNamed(ourConfig.Spec.BuildInputs.RenderedImagePushspec)
+	if err != nil {
+		return err
 	}
 
-	ibr, err := ctrl.prepareForBuild(inputs)
+	tagged, err := reference.WithTag(named, mosb.Spec.DesiredConfig.Name)
 	if err != nil {
-		return fmt.Errorf("could not start build for MachineConfigPool %s: %w", ps.Name(), err)
+		return fmt.Errorf("could not add tag %s to image pullspec %s: %w", mosb.Spec.DesiredConfig.Name, ourConfig.Spec.BuildInputs.RenderedImagePushspec, err)
+	}
+
+	ourConfig.Status.CurrentImagePullspec = tagged.String()
+
+	secrets := make(map[string]string)
+	secrets["push"] = ourConfig.Spec.BuildInputs.RenderedImagePushSecret.Name
+	secrets["pull"] = ourConfig.Spec.BuildInputs.BaseImagePullSecret.Name
+	updateMOSC := false
+	for key, s := range secrets {
+		if s == "" {
+			continue
+		}
+		newS, err := ctrl.validatePullSecret(s)
+		if err != nil {
+			return err
+		}
+
+		if strings.Contains(newS.Name, "canonical") {
+			updateMOSC = true
+			klog.Infof("Updating build controller config to indicate we have a canonicalized secret %s", newS.Name)
+			switch key {
+			case "push":
+				ourConfig.Spec.BuildInputs.RenderedImagePushSecret.Name = newS.Name
+			case "pull":
+				ourConfig.Spec.BuildInputs.BaseImagePullSecret.Name = newS.Name
+			}
+		}
+	}
+
+	// ok
+	// we need to 1) replace tag
+
+	ibr, err := ctrl.prepareForBuild(mosb, ourConfig)
+	if err != nil {
+		return fmt.Errorf("could not start build for MachineConfigPool %s: %w", ourConfig.Spec.MachineConfigPool.Name, err)
 	}
 
 	objRef, err := ctrl.imageBuilder.StartBuild(ibr)
@@ -1030,7 +1115,14 @@ func (ctrl *Controller) startBuildForMachineConfigPool(ps *poolState) error {
 		return err
 	}
 
-	return ctrl.markBuildPendingWithObjectRef(ps, *objRef)
+	err = ctrl.markBuildPendingWithObjectRef(mosc, mosb, *objRef)
+	if err != nil {
+		return err
+	}
+	if updateMOSC {
+		return ctrl.updateConfigSpec(ourConfig)
+	}
+	return nil
 }
 
 // Gets the ConfigMap which specifies the name of the base image pull secret, final image pull secret, and final image pullspec.
@@ -1174,87 +1266,102 @@ func (ctrl *Controller) handleCanonicalizedPullSecret(secret *corev1.Secret) (*c
 	return out, nil
 }
 
-// If one wants to opt out, this removes all of the statuses and object
-// references from a given MachineConfigPool.
-func (ctrl *Controller) finalizeOptOut(ps *poolState) error {
-	if err := ctrl.postBuildCleanup(ps.MachineConfigPool(), true); err != nil {
-		return err
-	}
+func (ctrl *Controller) addMachineOSConfig(cur interface{}) {
+	m := cur.(*mcfgv1alpha1.MachineOSConfig).DeepCopy()
+	ctrl.enqueueMachineOSConfig(m)
+	klog.V(4).Infof("Adding MachineOSConfig %s", m.Name)
 
-	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		mcp, err := ctrl.mcfgclient.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), ps.MachineConfigPool().Name, metav1.GetOptions{})
-		if err != nil {
-			return err
-		}
-
-		ps := newPoolState(mcp)
-		ps.DeleteBuildRefForCurrentMachineConfig()
-		ps.ClearImagePullspec()
-		ps.ClearAllBuildConditions()
-
-		return ctrl.updatePoolAndSyncAvailableStatus(ps.MachineConfigPool())
-	})
 }
 
-// Fires whenever a MachineConfigPool is updated.
-func (ctrl *Controller) updateMachineConfigPool(old, cur interface{}) {
-	oldPool := old.(*mcfgv1.MachineConfigPool).DeepCopy()
-	curPool := cur.(*mcfgv1.MachineConfigPool).DeepCopy()
+func (ctrl *Controller) updateMachineOSConfig(old, cur interface{}) {
+	oldMOSC := old.(*mcfgv1alpha1.MachineOSConfig).DeepCopy()
+	curMOSC := cur.(*mcfgv1alpha1.MachineOSConfig).DeepCopy()
 
-	klog.V(4).Infof("Updating MachineConfigPool %s", oldPool.Name)
-
-	doABuild, err := shouldWeDoABuild(ctrl.imageBuilder, oldPool, curPool)
-	if err != nil {
-		klog.Errorln(err)
-		ctrl.handleErr(err, curPool.Name)
+	if equality.Semantic.DeepEqual(oldMOSC.Spec.BuildInputs, curMOSC.Spec.BuildInputs) {
+		// we do not want to trigger an update func just for MOSC status, we dont act on the status
 		return
 	}
 
-	switch {
-	// We've transitioned from a layered pool to a non-layered pool.
-	case ctrlcommon.IsLayeredPool(oldPool) && !ctrlcommon.IsLayeredPool(curPool):
-		klog.V(4).Infof("MachineConfigPool %s has opted out of layering", curPool.Name)
-		if err := ctrl.finalizeOptOut(newPoolState(curPool)); err != nil {
-			klog.Errorln(err)
-			ctrl.handleErr(err, curPool.Name)
-			return
-		}
-	// We need to do a build.
-	case doABuild || (ctrlcommon.IsLayeredPool(curPool) && ctrlcommon.DoARebuild(curPool)):
-		klog.V(4).Infof("MachineConfigPool %s has changed, requiring a build", curPool.Name)
-		if err := ctrl.startBuildForMachineConfigPool(newPoolState(curPool)); err != nil {
-			klog.Errorln(err)
-			ctrl.handleErr(err, curPool.Name)
-			return
-		}
-	// Everything else.
-	default:
-		klog.V(4).Infof("MachineConfigPool %s up-to-date", curPool.Name)
-	}
+	klog.Infof("Updating MachineOSConfig %s", oldMOSC.Name)
 
-	ctrl.enqueueMachineConfigPool(curPool)
+	doABuild := configChangeCauseBuild(oldMOSC, curMOSC)
+	if doABuild {
+		build, exists := ctrl.doesMOSBExist(curMOSC)
+		if exists {
+			ctrl.startBuildForMachineConfigPool(curMOSC, build) // ?
+		}
+		// if the mosb does not exist, lets just enqueue the mosc and let the sync handler take care of the new object creation
+	}
+	ctrl.enqueueMachineOSConfig(curMOSC)
 }
 
-// Fires whenever a MachineConfigPool is deleted. TODO: Wire up checks for
-// deleting any in-progress builds.
-func (ctrl *Controller) deleteMachineConfigPool(obj interface{}) {
-	pool, ok := obj.(*mcfgv1.MachineConfigPool)
+func (ctrl *Controller) deleteMachineOSConfig(cur interface{}) {
+	m, ok := cur.(*mcfgv1alpha1.MachineOSConfig)
+	// first, we need to stop and delete any existing builds.
+	mosb, err := ctrl.machineOSBuildLister.Get(fmt.Sprintf("%s-builder", m.Spec.MachineConfigPool.Name))
+	if err == nil {
+		if running, _ := ctrl.imageBuilder.IsBuildRunning(mosb, m); running {
+			// we need to stop the build.
+			ctrl.imageBuilder.DeleteBuildObject(mosb, m)
+			ctrl.markBuildInterrupted(m, mosb)
+		}
+		ctrl.mcfgclient.MachineconfigurationV1alpha1().MachineOSBuilds().Delete(context.TODO(), mosb.Name, metav1.DeleteOptions{})
+	}
 	if !ok {
-		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+		tombstone, ok := cur.(cache.DeletedFinalStateUnknown)
 		if !ok {
-			utilruntime.HandleError(fmt.Errorf("Couldn't get object from tombstone %#v", obj))
+			utilruntime.HandleError(fmt.Errorf("Couldn't get object from tombstone %#v", cur))
 			return
 		}
-		pool, ok = tombstone.Obj.(*mcfgv1.MachineConfigPool)
+		m, ok = tombstone.Obj.(*mcfgv1alpha1.MachineOSConfig)
 		if !ok {
-			utilruntime.HandleError(fmt.Errorf("Tombstone contained object that is not a MachineConfigPool %#v", obj))
+			utilruntime.HandleError(fmt.Errorf("Tombstone contained object that is not a MachineOSConfig %#v", cur))
 			return
 		}
 	}
-	klog.V(4).Infof("Deleting MachineConfigPool %s", pool.Name)
+	klog.V(4).Infof("Deleting MachineOSBuild %s", m.Name)
 }
 
-func (ctrl *Controller) syncAvailableStatus(pool *mcfgv1.MachineConfigPool) error {
+func (ctrl *Controller) updateMachineOSBuild(old, cur interface{}) {
+	oldMOSB := old.(*mcfgv1alpha1.MachineOSBuild).DeepCopy()
+	curMOSB := cur.(*mcfgv1alpha1.MachineOSBuild).DeepCopy()
+
+	if equality.Semantic.DeepEqual(oldMOSB.Status, oldMOSB.Status) {
+		// we do not want to trigger an update func just for MOSB spec, we dont act on the spec
+		return
+	}
+
+	klog.Infof("Updating MachineOSBuild %s", oldMOSB.Name)
+	ourConfig, err := ctrl.machineOSConfigLister.Get(curMOSB.Spec.MachineOSConfig.Name)
+
+	doABuild, err := shouldWeDoABuild(ctrl.imageBuilder, ourConfig, oldMOSB, curMOSB)
+	if err != nil {
+		return
+	}
+	if doABuild {
+		ctrl.startBuildForMachineConfigPool(ourConfig, curMOSB)
+	}
+	ctrl.enqueueMachineOSBuild(curMOSB)
+}
+
+func (ctrl *Controller) deleteMachineOSBuild(mosb interface{}) {
+	m, ok := mosb.(*mcfgv1alpha1.MachineOSBuild)
+	if !ok {
+		tombstone, ok := mosb.(cache.DeletedFinalStateUnknown)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("Couldn't get object from tombstone %#v", mosb))
+			return
+		}
+		m, ok = tombstone.Obj.(*mcfgv1alpha1.MachineOSBuild)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("Tombstone contained object that is not a MachineOSBuild %#v", mosb))
+			return
+		}
+	}
+	klog.V(4).Infof("Deleting MachineOSBuild %s", m.Name)
+}
+
+func (ctrl *Controller) syncAvailableStatus(mosb *mcfgv1alpha1.MachineOSBuild) error {
 	// I'm not sure what the consequences are of not doing this.
 	//nolint:gocritic // Leaving this here for review purposes.
 	/*
@@ -1262,21 +1369,21 @@ func (ctrl *Controller) syncAvailableStatus(pool *mcfgv1.MachineConfigPool) erro
 			return nil
 		}
 	*/
-	sdegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolRenderDegraded, corev1.ConditionFalse, "", "")
-	apihelpers.SetMachineConfigPoolCondition(&pool.Status, *sdegraded)
+	sdegraded := apihelpers.NewMachineOSBuildCondition(string(mcfgv1alpha1.MachineOSBuildFailed), metav1.ConditionFalse, "MOSCAvailable", "MOSC")
+	apihelpers.SetMachineOSBuildCondition(&mosb.Status, *sdegraded)
 
-	if _, err := ctrl.mcfgclient.MachineconfigurationV1().MachineConfigPools().UpdateStatus(context.TODO(), pool, metav1.UpdateOptions{}); err != nil {
+	if _, err := ctrl.mcfgclient.MachineconfigurationV1alpha1().MachineOSBuilds().UpdateStatus(context.TODO(), mosb, metav1.UpdateOptions{}); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (ctrl *Controller) syncFailingStatus(pool *mcfgv1.MachineConfigPool, err error) error {
-	sdegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolRenderDegraded, corev1.ConditionTrue, "", fmt.Sprintf("Failed to build configuration for pool %s: %v", pool.Name, err))
-	apihelpers.SetMachineConfigPoolCondition(&pool.Status, *sdegraded)
-	if _, updateErr := ctrl.mcfgclient.MachineconfigurationV1().MachineConfigPools().UpdateStatus(context.TODO(), pool, metav1.UpdateOptions{}); updateErr != nil {
-		klog.Errorf("Error updating MachineConfigPool %s: %v", pool.Name, updateErr)
+func (ctrl *Controller) syncFailingStatus(mosc *mcfgv1alpha1.MachineOSConfig, mosb *mcfgv1alpha1.MachineOSBuild, err error) error {
+	sdegraded := apihelpers.NewMachineOSBuildCondition(string(mcfgv1alpha1.MachineOSBuildFailed), metav1.ConditionTrue, "BuildFailed", fmt.Sprintf("Failed to build configuration for pool %s: %v", mosc.Spec.MachineConfigPool.Name, err))
+	apihelpers.SetMachineOSBuildCondition(&mosb.Status, *sdegraded)
+	if _, updateErr := ctrl.mcfgclient.MachineconfigurationV1alpha1().MachineOSBuilds().UpdateStatus(context.TODO(), mosb, metav1.UpdateOptions{}); updateErr != nil {
+		klog.Errorf("Error updating MachineOSBuild %s: %v", mosb.Name, updateErr)
 	}
 	return err
 }
@@ -1286,69 +1393,29 @@ func isPoolConfigChange(oldPool, curPool *mcfgv1.MachineConfigPool) bool {
 	return oldPool.Spec.Configuration.Name != curPool.Spec.Configuration.Name
 }
 
-// Checks our pool to see if we can do a build. We base this off of a few criteria:
-// 1. Is the pool opted into layering?
-// 2. Do we have an object reference to an in-progress build?
-// 3. Is the pool degraded?
-// 4. Is our build in a specific state?
-//
-// Returns true if we are able to build.
-func canPoolBuild(ps *poolState) bool {
-	// If we don't have a layered pool, we should not build.
-	if !ps.IsLayered() {
-		return false
-	}
-
-	// If we have a reference to an in-progress build, we should not build.
-	if ps.HasBuildObjectForCurrentMachineConfig() {
-		return false
-	}
-
-	// If the pool is degraded, we should not build.
-	if ps.IsAnyDegraded() {
-		return false
-	}
-
-	// If the pool is in any of these states, we should not build.
-	if ps.IsBuilding() {
-		return false
-	}
-
-	if ps.IsBuildPending() {
-		return false
-	}
-
-	if ps.IsBuildFailure() {
-		return false
-	}
-
-	return true
+func configChangeCauseBuild(old, cur *mcfgv1alpha1.MachineOSConfig) bool {
+	return equality.Semantic.DeepEqual(old.Spec.BuildInputs, cur.Spec.BuildInputs)
 }
 
 // Determines if we should do a build based upon the state of our
 // MachineConfigPool, the presence of a build pod, etc.
 func shouldWeDoABuild(builder interface {
-	IsBuildRunning(*mcfgv1.MachineConfigPool) (bool, error)
-}, oldPool, curPool *mcfgv1.MachineConfigPool) (bool, error) {
-	ps := newPoolState(curPool)
+	IsBuildRunning(*mcfgv1alpha1.MachineOSBuild, *mcfgv1alpha1.MachineOSConfig) (bool, error)
+}, mosc *mcfgv1alpha1.MachineOSConfig, oldMOSB, curMOSB *mcfgv1alpha1.MachineOSBuild) (bool, error) {
+	// get desired and current. If desired != current,
+	// assume we are doing a build. remove the whole layered pool annotation workflow
 
-	// If we don't have a layered pool, we should not build.
-	poolStateSuggestsBuild := canPoolBuild(ps) &&
-		// If we have a config change or we're missing an image pullspec label, we
-		// should do a build.
-		(isPoolConfigChange(oldPool, curPool) || !ps.HasOSImage()) &&
-		// If we're missing a build pod reference, it likely means we don't need to
-		// do a build.
-		!ps.HasBuildObjectRefName(newImageBuildRequest(curPool).getBuildName())
+	if oldMOSB.Spec.DesiredConfig != curMOSB.Spec.DesiredConfig {
+		// the desiredConfig changed. We need to do an update
+		// but check that there isn't already a build.
+		// If a build is found running, we should not do a build.
+		isRunning, err := builder.IsBuildRunning(curMOSB, mosc)
 
-	if !poolStateSuggestsBuild {
-		return false, nil
+		return !isRunning, err
+
+		// check for image pull sped changing?
 	}
-
-	// If a build is found running, we should not do a build.
-	isRunning, err := builder.IsBuildRunning(curPool)
-
-	return !isRunning, err
+	return false, nil
 }
 
 // Enumerates all of the build-related MachineConfigPool condition types.
@@ -1376,4 +1443,47 @@ func hasAllRequiredOSBuildLabels(labels map[string]string) bool {
 	}
 
 	return true
+}
+
+func (ctrl *Controller) doesMOSBExist(config *mcfgv1alpha1.MachineOSConfig) (*mcfgv1alpha1.MachineOSBuild, bool) {
+	mosb, err := ctrl.machineOSBuildLister.Get(fmt.Sprintf("%s-builder", config.Spec.MachineConfigPool.Name))
+	if err != nil && k8serrors.IsNotFound(err) {
+		return nil, false
+	} else if mosb != nil {
+		return mosb, true
+	}
+	return nil, false
+}
+
+func (ctrl *Controller) CreateBuildFromConfig(config *mcfgv1alpha1.MachineOSConfig) (*mcfgv1alpha1.MachineOSBuild, *mcfgv1alpha1.MachineOSBuildStatus, error) {
+	mcp, err := ctrl.mcpLister.Get(config.Spec.MachineConfigPool.Name)
+	if err != nil {
+		return nil, nil, err
+	}
+	now := metav1.Now()
+	build := mcfgv1alpha1.MachineOSBuild{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "MachineOSBuild",
+			APIVersion: "machineconfiguration.openshift.io/v1alpha1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: fmt.Sprintf("%s-builder", config.Spec.MachineConfigPool.Name),
+		},
+		Spec: mcfgv1alpha1.MachineOSBuildSpec{
+			RenderedImagePushspec: config.Spec.BuildInputs.RenderedImagePushspec,
+			Version:               1,
+			ConfigGeneration:      1,
+			DesiredConfig: mcfgv1alpha1.RenderedMachineConfigReference{
+				Name: mcp.Spec.Configuration.Name,
+			},
+			MachineOSConfig: mcfgv1alpha1.MachineOSConfigReference{
+				Name: config.Name,
+			},
+		},
+		Status: mcfgv1alpha1.MachineOSBuildStatus{
+			BuildStart: &now,
+		},
+	}
+	mosb, err := ctrl.mcfgclient.MachineconfigurationV1alpha1().MachineOSBuilds().Create(context.TODO(), &build, metav1.CreateOptions{})
+	return mosb, &build.Status, err
 }

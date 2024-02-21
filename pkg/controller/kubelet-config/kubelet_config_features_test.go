@@ -25,7 +25,7 @@ func TestFeatureGateDrift(t *testing.T) {
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			f.ccLister = append(f.ccLister, cc)
 
-			fgAccess := createNewDefaultFeatureGateAccess()
+			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{}, []osev1.FeatureGateName{})
 			ctrl := f.newController(fgAccess)
 
 			kubeletConfig, err := generateOriginalKubeletConfigIgn(cc, ctrl.templatesDir, "master")
@@ -70,7 +70,7 @@ func TestFeaturesDefault(t *testing.T) {
 	for _, platform := range []configv1.PlatformType{configv1.AWSPlatformType, configv1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
-			fgAccess := createNewDefaultFeatureGateAccess()
+			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{}, []osev1.FeatureGateName{})
 			f.newController(fgAccess)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
@@ -174,7 +174,7 @@ func TestBootstrapFeaturesDefault(t *testing.T) {
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			mcps := []*mcfgv1.MachineConfigPool{mcp, mcp2}
 
-			fgAccess := createNewDefaultFeatureGateAccess()
+			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{}, []osev1.FeatureGateName{})
 
 			mcs, err := RunFeatureGateBootstrap("../../../templates", fgAccess, nil, cc, mcps)
 			if err != nil {
@@ -215,7 +215,7 @@ func TestBootstrapFeaturesCustomNoUpgrade(t *testing.T) {
 				originalKubeConfig, err := decodeKubeletConfig(conf)
 				require.NoError(t, err)
 
-				fgAccess := createNewDefaultFeatureGateAccess()
+				fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{}, []osev1.FeatureGateName{})
 				defaultFeatureGates, err := generateFeatureMap(fgAccess)
 				if err != nil {
 					t.Errorf("could not generate defaultFeatureGates: %v", err)
