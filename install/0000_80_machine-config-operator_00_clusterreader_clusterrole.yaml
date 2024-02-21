@@ -56,3 +56,23 @@ rules:
       - get
       - list
       - watch
+  - apiGroups: 
+      - machineconfiguration.openshift.io
+    resources: 
+      - machineosconfigs 
+      - machineosconfigs/status
+    verbs: 
+      - create
+      - update 
+      - patch 
+      - get
+  - apiGroups: 
+      - machineconfiguration.openshift.io
+    resources: 
+      - machineosbuilds
+      - machineosbuilds/status
+    verbs: 
+      - create
+      - update 
+      - patch
+      - get

@@ -11,7 +11,7 @@ import (
 // +kubebuilder:resource:path=machineconfignodes,scope=Cluster
 // +kubebuilder:subresource:status
 // +openshift:api-approved.openshift.io=https://github.com/openshift/api/pull/1596
-// +openshift:file-pattern=0000_80_machineconfignodeMARKERS.crd.yaml
+// +openshift:file-pattern=cvoRunLevel=0000_80,operatorName=machine-config,operatorOrdering=01
 // +openshift:enable:FeatureGate=MachineConfigNodes
 // +kubebuilder:printcolumn:name="Updated",type="string",JSONPath=.status.conditions[?(@.type=="Updated")].status
 // +kubebuilder:printcolumn:name="UpdatePrepared",type="string",JSONPath=.status.conditions[?(@.type=="UpdatePrepared")].status
@@ -87,6 +87,13 @@ type MachineConfigNodeSpec struct {
 	// the new machine config against the current machine config.
 	// +kubebuilder:validation:Required
 	ConfigVersion MachineConfigNodeSpecMachineConfigVersion `json:"configVersion"`
+
+	// pinnedImageSets holds the desired pinned image sets that this node should pin and pull.
+	// +listType=map
+	// +listMapKey=name
+	// +kubebuilder:validation:MaxItems=100
+	// +optional
+	PinnedImageSets []MachineConfigNodeSpecPinnedImageSet `json:"pinnedImageSets,omitempty"`
 }
 
 // MachineConfigNodeStatus holds the reported information on a particular machine config node.
@@ -107,6 +114,43 @@ type MachineConfigNodeStatus struct {
 	// This desired machine config has been compared to the current machine config and has been validated by the machine config operator as one that is valid and that exists.
 	// +kubebuilder:validation:Required
 	ConfigVersion MachineConfigNodeStatusMachineConfigVersion `json:"configVersion"`
+	// pinnedImageSets describes the current and desired pinned image sets for this node.
+	// The current version is the generation of the pinned image set that has most recently been successfully pulled and pinned on this node.
+	// The desired version is the generation of the pinned image set that is targeted to be pulled and pinned on this node.
+	// +listType=map
+	// +listMapKey=name
+	// +kubebuilder:validation:MaxItems=100
+	// +optional
+	PinnedImageSets []MachineConfigNodeStatusPinnedImageSet `json:"pinnedImageSets,omitempty"`
+}
+
+// +kubebuilder:validation:XValidation:rule="has(self.desiredGeneration) && has(self.currentGeneration) ? self.desiredGeneration >= self.currentGeneration : true",message="desired generation must be greater than or equal to the current generation"
+// +kubebuilder:validation:XValidation:rule="has(self.lastFailedGeneration) && has(self.desiredGeneration) ? self.desiredGeneration >= self.lastFailedGeneration : true",message="desired generation must be greater than last failed generation"
+// +kubebuilder:validation:XValidation:rule="has(self.lastFailedGeneration) ? has(self.desiredGeneration): true",message="desired generation must be defined if last failed generation is defined"
+type MachineConfigNodeStatusPinnedImageSet struct {
+	// name is the name of the pinned image set.
+	// Must be a lowercase RFC-1123 hostname (https://tools.ietf.org/html/rfc1123)
+	// It may consist of only alphanumeric characters, hyphens (-) and periods (.)
+	// and must be at most 253 characters in length.
+	// +kubebuilder:validation:MaxLength:=253
+	// +kubebuilder:validation:Pattern=`^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])(\.([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9]))*$`
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+	// currentGeneration is the generation of the pinned image set that has most recently been successfully pulled and pinned on this node.
+	// +optional
+	CurrentGeneration int32 `json:"currentGeneration,omitempty"`
+	// desiredGeneration version is the generation of the pinned image set that is targeted to be pulled and pinned on this node.
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	DesiredGeneration int32 `json:"desiredGeneration,omitempty"`
+	// lastFailedGeneration is the generation of the most recent pinned image set that failed to be pulled and pinned on this node.
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	LastFailedGeneration int32 `json:"lastFailedGeneration,omitempty"`
+	// lastFailedGenerationErrors is a list of errors why the lastFailed generation failed to be pulled and pinned.
+	// +kubebuilder:validation:MaxItems=10
+	// +optional
+	LastFailedGenerationErrors []string `json:"lastFailedGenerationErrors,omitempty"`
 }
 
 // MachineConfigNodeStatusMachineConfigVersion holds the current and desired config versions as last updated in the MCN status.
@@ -155,6 +199,17 @@ type MachineConfigNodeSpecMachineConfigVersion struct {
 	Desired string `json:"desired"`
 }
 
+type MachineConfigNodeSpecPinnedImageSet struct {
+	// name is the name of the pinned image set.
+	// Must be a lowercase RFC-1123 hostname (https://tools.ietf.org/html/rfc1123)
+	// It may consist of only alphanumeric characters, hyphens (-) and periods (.)
+	// and must be at most 253 characters in length.
+	// +kubebuilder:validation:MaxLength:=253
+	// +kubebuilder:validation:Pattern=`^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])(\.([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9]))*$`
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+}
+
 // StateProgress is each possible state for each possible MachineConfigNodeType
 // UpgradeProgression Kind will only use the "MachinConfigPoolUpdate..." types for example
 // Please note: These conditions are subject to change. Both additions and deletions may be made.
@@ -187,4 +242,8 @@ const (
 	MachineConfigNodeUpdateRebooted StateProgress = "RebootedNode"
 	// MachineConfigNodeUpdateReloaded describes the part of the post action phase where the node reloads its CRIO service
 	MachineConfigNodeUpdateReloaded StateProgress = "ReloadedCRIO"
+	// MachineConfigNodePinnedImageSetsProgressing describes a machine currently progressing to the desired pinned image sets
+	MachineConfigNodePinnedImageSetsProgressing StateProgress = "PinnedImageSetsProgressing"
+	// MachineConfigNodePinnedImageSetsDegraded describes a machine that has failed to progress to the desired pinned image sets
+	MachineConfigNodePinnedImageSetsDegraded StateProgress = "PinnedImageSetsDegraded"
 )

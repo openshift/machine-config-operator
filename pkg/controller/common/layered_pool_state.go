@@ -18,20 +18,6 @@ func NewLayeredPoolState(pool *mcfgv1.MachineConfigPool) *LayeredPoolState {
 	return &LayeredPoolState{pool: pool}
 }
 
-// Determines if a MachineConfigPool is layered by looking for the layering
-// enabled label.
-func (l *LayeredPoolState) IsLayered() bool {
-	if l.pool == nil {
-		return false
-	}
-
-	if l.pool.Labels == nil {
-		return false
-	}
-
-	return IsLayeredPool(l.pool)
-}
-
 // Returns the OS image, if one is present.
 func (l *LayeredPoolState) GetOSImage() string {
 	osImage := l.pool.Annotations[ExperimentalNewestLayeredImageEquivalentConfigAnnotationKey]

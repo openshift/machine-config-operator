@@ -12,6 +12,9 @@ import (
 	"github.com/containers/image/v5/docker"
 	"github.com/containers/image/v5/docker/reference"
 	"github.com/opencontainers/go-digest"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+	"github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -19,7 +22,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	k8stypes "k8s.io/apimachinery/pkg/types"
 	clientset "k8s.io/client-go/kubernetes"
-	"k8s.io/klog/v2"
 )
 
 const (
@@ -106,7 +108,7 @@ func parseImagePullspecWithDigest(pullspec string, imageDigest digest.Digest) (s
 
 // Parses an image pullspec from a string and an image SHA and replaces any
 // tags on the pullspec with the provided image SHA.
-func parseImagePullspec(pullspec, imageSHA string) (string, error) {
+func ParseImagePullspec(pullspec, imageSHA string) (string, error) {
 	imageDigest, err := digest.Parse(imageSHA)
 	if err != nil {
 		return "", err
@@ -242,55 +244,38 @@ func ignoreIsNotFoundErr(err error) error {
 }
 
 // ValidateOnClusterBuildConfig validates the existence of the on-cluster-build-config ConfigMap and the presence of the secrets it refers to.
-func ValidateOnClusterBuildConfig(kubeclient clientset.Interface) error {
+func ValidateOnClusterBuildConfig(kubeclient clientset.Interface, mcfgclient versioned.Interface, layeredMCPs []*mcfgv1.MachineConfigPool) error {
 	// Validate the presence of the on-cluster-build-config ConfigMap
-	cm, err := kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), OnClusterBuildConfigMapName, metav1.GetOptions{})
-	if err != nil && k8serrors.IsNotFound(err) {
-		return fmt.Errorf("%s ConfigMap missing, did you create it?", OnClusterBuildConfigMapName)
-	}
-
+	machineOSConfigs, err := mcfgclient.MachineconfigurationV1alpha1().MachineOSConfigs().List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
-		return fmt.Errorf("could not get ConfigMap %s: %w", OnClusterBuildConfigMapName, err)
+		return err
 	}
 
-	secretNames := []string{BaseImagePullSecretNameConfigKey, FinalImagePushSecretNameConfigKey}
-	imagePullspecs := []string{FinalImagePullspecConfigKey}
-
-	// Validate the presence of secrets it refers to
-	for _, key := range secretNames {
-		val, ok := cm.Data[key]
-		if !ok {
-			return fmt.Errorf("missing required key %q in configmap %s", key, OnClusterBuildConfigMapName)
+	moscForPoolExists := false
+	var moscForPool *mcfgv1alpha1.MachineOSConfig
+	for _, pool := range layeredMCPs {
+		moscForPoolExists = false
+		for _, mosc := range machineOSConfigs.Items {
+			if mosc.Spec.MachineConfigPool.Name == pool.Name {
+				moscForPoolExists = true
+				moscForPool = &mosc
+				break
+			}
 		}
+		if !moscForPoolExists {
+			return fmt.Errorf("MachineOSConfig for pool %s missing, did you create it?", pool.Name)
 
-		if val == "" {
-			return fmt.Errorf("key %q in configmap %s has an empty value", key, OnClusterBuildConfigMapName)
 		}
-
-		if err := validateSecret(kubeclient, val); err != nil {
+		if err := validateSecret(kubeclient, moscForPool.Spec.BuildInputs.BaseImagePullSecret.Name); err != nil {
 			return err
 		}
-	}
-
-	// Validate the image pullspec(s) it referes to.
-	for _, key := range imagePullspecs {
-		val, ok := cm.Data[key]
-		if !ok {
-			return fmt.Errorf("missing required key %q in configmap %s", key, OnClusterBuildConfigMapName)
+		if err := validateSecret(kubeclient, moscForPool.Spec.BuildInputs.RenderedImagePushSecret.Name); err != nil {
+			return err
+		}
+		if _, err := reference.ParseNamed(moscForPool.Spec.BuildInputs.RenderedImagePushspec); err != nil {
+			return err
 		}
 
-		if val == "" {
-			return fmt.Errorf("key %q in configmap %s has an empty value", key, OnClusterBuildConfigMapName)
-		}
-
-		if _, err := reference.ParseNamed(val); err != nil {
-			return fmt.Errorf("could not parse %s with %q: %w", key, val, err)
-		}
-	}
-
-	// Validate the image builder type from the ConfigMap
-	if _, err := GetImageBuilderType(cm); err != nil {
-		return err
 	}
 
 	return nil
@@ -312,29 +297,4 @@ func validateSecret(kubeclient clientset.Interface, secretName string) error {
 	}
 
 	return nil
-}
-
-// Determines which image builder to start based upon the imageBuilderType key
-// in the on-cluster-build-config ConfigMap. Defaults to custom-pod-builder.
-func GetImageBuilderType(cm *corev1.ConfigMap) (ImageBuilderType, error) {
-	configMapImageBuilder, ok := cm.Data[ImageBuilderTypeConfigMapKey]
-	cmBuilder := ImageBuilderType(configMapImageBuilder)
-	defaultBuilder := OpenshiftImageBuilder
-
-	if !ok {
-		klog.Infof("%s not set, defaulting to %q", ImageBuilderTypeConfigMapKey, defaultBuilder)
-		return defaultBuilder, nil
-	}
-
-	if ok && configMapImageBuilder == "" {
-		klog.Infof("%s empty, defaulting to %q", ImageBuilderTypeConfigMapKey, defaultBuilder)
-		return defaultBuilder, nil
-	}
-
-	if !validImageBuilderTypes.Has(ImageBuilderType(configMapImageBuilder)) {
-		return "", &ErrInvalidImageBuilder{Message: fmt.Sprintf("invalid image builder type %q, valid types: %v", configMapImageBuilder, validImageBuilderTypes.UnsortedList()), InvalidType: configMapImageBuilder}
-	}
-
-	klog.Infof("%s set to %q", ImageBuilderTypeConfigMapKey, configMapImageBuilder)
-	return cmBuilder, nil
 }
