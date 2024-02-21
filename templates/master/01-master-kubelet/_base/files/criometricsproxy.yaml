@@ -16,6 +16,19 @@ contents:
         hostPath:
           path: "/var/lib/kubelet"
       hostNetwork: true
+      priorityClassName: system-cluster-critical
+      tolerations:
+      - effect: NoExecute
+        key: node.kubernetes.io/unreachable
+        operator: Exists
+        tolerationSeconds: 120
+      - effect: NoExecute
+        key: node.kubernetes.io/not-ready
+        operator: Exists
+        tolerationSeconds: 120
+      - effect: NoSchedule
+        key: node.kubernetes.io/memory-pressure
+        operator: Exists
       initContainers:
       - name: setup
         terminationMessagePolicy: FallbackToLogsOnError
