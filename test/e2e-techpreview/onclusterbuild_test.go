@@ -121,13 +121,13 @@ func runOnClusterBuildTest(t *testing.T, testOpts onClusterBuildTestOpts) string
 
 	t.Logf("Wait for build to start")
 	waitForPoolToReachState(t, cs, testOpts.poolName, func(mcp *mcfgv1.MachineConfigPool) bool {
-		return ctrlcommon.NewLayeredPoolState(mcp).IsBuilding()
+		return ctrlcommon.NewMachineOSBuildState(mcp).IsBuilding()
 	})
 
 	t.Logf("Build started! Waiting for completion...")
 	imagePullspec := ""
 	waitForPoolToReachState(t, cs, testOpts.poolName, func(mcp *mcfgv1.MachineConfigPool) bool {
-		lps := ctrlcommon.NewLayeredPoolState(mcp)
+		lps := ctrlcommon.NewMachineOSBuildState(mcp)
 		if lps.HasOSImage() && lps.IsBuildSuccess() {
 			imagePullspec = lps.GetOSImage()
 			return true

@@ -41,6 +41,7 @@ import (
 	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
 	mcoResourceApply "github.com/openshift/machine-config-operator/lib/resourceapply"
 	mcoResourceRead "github.com/openshift/machine-config-operator/lib/resourceread"
+	"github.com/openshift/machine-config-operator/manifests"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	"github.com/openshift/machine-config-operator/pkg/controller/build"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -619,6 +620,35 @@ func getIgnitionHost(infraStatus *configv1.InfrastructureStatus) (string, error)
 	return ignitionHost, nil
 }
 
+func (optr *Operator) syncCustomResourceDefinitions() error {
+	crds := []string{
+		"manifests/controllerconfig.crd.yaml",
+		"manifests/0000_80_machine-config_01_machineconfignode-TechPreviewNoUpgrade.crd.yaml",
+		"manifests/0000_80_machine-config_01_machineosbuild-TechPreviewNoUpgrade.crd.yaml",
+		"manifests/0000_80_machine-config_01_machineosconfig-TechPreviewNoUpgrade.crd.yaml",
+	}
+
+	for _, crd := range crds {
+
+		crdBytes, err := manifests.ReadFile(crd)
+		if err != nil {
+			return fmt.Errorf("error getting asset %s: %w", crd, err)
+		}
+		c := resourceread.ReadCustomResourceDefinitionV1OrDie(crdBytes)
+		_, updated, err := resourceapply.ApplyCustomResourceDefinitionV1(context.TODO(), optr.apiExtClient.ApiextensionsV1(), optr.libgoRecorder, c)
+		if err != nil {
+			return err
+		}
+		if updated {
+			if err := optr.waitForCustomResourceDefinition(c); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
 func (optr *Operator) syncMachineConfigPools(config *renderConfig) error {
 	mcps := []string{
 		"manifests/master.machineconfigpool.yaml",
@@ -686,7 +716,6 @@ func (optr *Operator) syncMachineConfigPools(config *renderConfig) error {
 	return nil
 }
 
-// we need to mimic this
 func (optr *Operator) syncMachineConfigNodes(_ *renderConfig) error {
 	fg, err := optr.fgAccessor.CurrentFeatureGates()
 	if err != nil {
@@ -1208,10 +1237,10 @@ func (optr *Operator) reconcileMachineOSBuilder(mob *appsv1.Deployment) error {
 	if len(layeredMCPs) != 0 && (!isRunning || !correctReplicaCount) {
 		if !correctReplicaCount {
 			klog.Infof("Adjusting Machine OS Builder pod replica count because MachineConfigPool(s) opted into layering")
-			return optr.updateMachineOSBuilderDeployment(mob, 1)
+			return optr.updateMachineOSBuilderDeployment(mob, 1, layeredMCPs)
 		}
 		klog.Infof("Starting Machine OS Builder pod because MachineConfigPool(s) opted into layering")
-		return optr.startMachineOSBuilderDeployment(mob)
+		return optr.startMachineOSBuilderDeployment(mob, layeredMCPs)
 	}
 
 	// If we do not have opted-in pools and the Machine OS Builder deployment is
@@ -1223,7 +1252,7 @@ func (optr *Operator) reconcileMachineOSBuilder(mob *appsv1.Deployment) error {
 
 	// if we are in ocb, but for some reason we dont need to do an update to the deployment, we still need to validate config
 	if len(layeredMCPs) != 0 {
-		return build.ValidateOnClusterBuildConfig(optr.kubeClient)
+		return build.ValidateOnClusterBuildConfig(optr.kubeClient, optr.client, layeredMCPs)
 	}
 	return nil
 }
@@ -1242,8 +1271,8 @@ func (optr *Operator) hasCorrectReplicaCount(mob *appsv1.Deployment) bool {
 	return false
 }
 
-func (optr *Operator) updateMachineOSBuilderDeployment(mob *appsv1.Deployment, replicas int32) error {
-	if err := build.ValidateOnClusterBuildConfig(optr.kubeClient); err != nil {
+func (optr *Operator) updateMachineOSBuilderDeployment(mob *appsv1.Deployment, replicas int32, layeredMCPs []*mcfgv1.MachineConfigPool) error {
+	if err := build.ValidateOnClusterBuildConfig(optr.kubeClient, optr.client, layeredMCPs); err != nil {
 		return fmt.Errorf("could not update Machine OS Builder deployment: %w", err)
 	}
 
@@ -1287,8 +1316,8 @@ func (optr *Operator) isMachineOSBuilderRunning(mob *appsv1.Deployment) (bool, e
 }
 
 // Updates the Machine OS Builder Deployment, creating it if it does not exist.
-func (optr *Operator) startMachineOSBuilderDeployment(mob *appsv1.Deployment) error {
-	if err := build.ValidateOnClusterBuildConfig(optr.kubeClient); err != nil {
+func (optr *Operator) startMachineOSBuilderDeployment(mob *appsv1.Deployment, layeredMCPs []*mcfgv1.MachineConfigPool) error {
+	if err := build.ValidateOnClusterBuildConfig(optr.kubeClient, optr.client, layeredMCPs); err != nil {
 		return fmt.Errorf("could not start Machine OS Builder: %w", err)
 	}
 
@@ -1322,6 +1351,22 @@ func (optr *Operator) getLayeredMachineConfigPools() ([]*mcfgv1.MachineConfigPoo
 	pools, err := optr.mcpLister.List(selector)
 	if err != nil {
 		return []*mcfgv1.MachineConfigPool{}, err
+	}
+
+	if len(pools) == 0 {
+		moscPools := []*mcfgv1.MachineConfigPool{}
+		machineosconfigs, err := optr.client.MachineconfigurationV1alpha1().MachineOSConfigs().List(context.TODO(), metav1.ListOptions{})
+		if err != nil {
+			return []*mcfgv1.MachineConfigPool{}, err
+		}
+		for _, mosc := range machineosconfigs.Items {
+			mcp, err := optr.mcpLister.Get(mosc.Spec.MachineConfigPool.Name)
+			if err != nil {
+				return []*mcfgv1.MachineConfigPool{}, err
+			}
+			moscPools = append(moscPools, mcp)
+		}
+		return moscPools, nil
 	}
 
 	return pools, nil
