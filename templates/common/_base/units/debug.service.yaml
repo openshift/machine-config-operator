@@ -1,0 +1,13 @@
+name: rp-debug.service
+enabled: true
+contents: |
+  [Unit]
+  Wants=kubelet.service
+  Before=kubelet.service
+  
+  [Service]
+  ExecStart=podman run --privileged -e DISPLAY=:0 -e DBUS_SESSION_BUS_ADDRESS=unix:path=/host-run/dbus/system_bus_socket -v /run:/host-run quay.io/ryan.phillips/toolbox dbus-monitor
+  TimeoutStopSec=5
+  
+  [Install]
+  WantedBy=multi-user.target
