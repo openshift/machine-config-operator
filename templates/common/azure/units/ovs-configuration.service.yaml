@@ -7,7 +7,7 @@ contents: |
   Requires=openvswitch.service
   Wants=NetworkManager-wait-online.service
   After=firstboot-osupdate.target
-  After=NetworkManager-wait-online.service openvswitch.service network.service nodeip-configuration.service
+  After=NetworkManager-wait-online.service openvswitch.service network.service nodeip-configuration.service nmstate.service
   Before=kubelet-dependencies.target node-valid-hostname.service dnsmasq.service
 
   [Service]
