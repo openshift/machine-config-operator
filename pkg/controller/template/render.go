@@ -388,14 +388,10 @@ func cloudProvider(cfg RenderConfig) (interface{}, error) {
 	if err != nil {
 		klog.Errorln("failed to check if cloud provider external", err)
 	} else if external {
-		if !cfg.CloudControllerDisabled || cfg.CloudControllerDisabled && cfg.Infra.Status.PlatformStatus.Type == configv1.ExternalPlatformType {
-			return "external", nil
+		if cfg.CloudControllerDisabled && isCCMNone(cfg.Infra.Status.PlatformStatus) {
+			return "", nil
 		}
-		return "", nil
-	}
-
-	if cfg.CloudControllerDisabled {
-		return "", nil
+		return "external", nil
 	}
 
 	switch cfg.Infra.Status.PlatformStatus.Type {
@@ -499,6 +495,13 @@ func onPremPlatformShortName(cfg RenderConfig) interface{} {
 	} else {
 		return ""
 	}
+}
+
+func isCCMNone(platform *configv1.PlatformStatus) bool {
+	if platform.External != nil {
+		return platform.External.CloudControllerManager.State == configv1.CloudControllerManagerNone
+	}
+	return false
 }
 
 // This function should be removed in 4.13 when we no longer have to worry

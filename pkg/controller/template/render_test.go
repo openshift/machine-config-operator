@@ -349,7 +349,7 @@ func TestCredentialProviderConfigFlag(t *testing.T) {
 
 			fgAccess := featuregates.NewHardcodedFeatureGateAccess(nil, nil)
 
-			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, `{"dummy":"dummy"}`, fgAccess, false,nil}, name, dummyTemplate)
+			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, `{"dummy":"dummy"}`, fgAccess, false, nil}, name, dummyTemplate)
 			if err != nil {
 				t.Fatalf("expected nil error %v", err)
 			}
