@@ -95,6 +95,8 @@ type Controller struct {
 	idmsLister       cligolistersv1.ImageDigestMirrorSetLister
 	idmsListerSynced cache.InformerSynced
 
+	configInformerv1 cligoinformersv1.Interface
+	itmsInformer     cligoinformersv1.ImageTagMirrorSetInformer
 	itmsLister       cligolistersv1.ImageTagMirrorSetLister
 	itmsListerSynced cache.InformerSynced
 
@@ -118,7 +120,7 @@ func New(
 	mcrInformer mcfginformersv1.ContainerRuntimeConfigInformer,
 	imgInformer cligoinformersv1.ImageInformer,
 	idmsInformer cligoinformersv1.ImageDigestMirrorSetInformer,
-	itmsInformer cligoinformersv1.ImageTagMirrorSetInformer,
+	configInformerv1 cligoinformersv1.Interface,
 	icspInformer operatorinformersv1alpha1.ImageContentSourcePolicyInformer,
 	clusterVersionInformer cligoinformersv1.ClusterVersionInformer,
 	kubeClient clientset.Interface,
@@ -163,11 +165,7 @@ func New(
 		DeleteFunc: ctrl.idmsConfDeleted,
 	})
 
-	itmsInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    ctrl.itmsConfAdded,
-		UpdateFunc: ctrl.itmsConfUpdated,
-		DeleteFunc: ctrl.itmsConfDeleted,
-	})
+	ctrl.configInformerv1 = configInformerv1
 
 	ctrl.syncHandler = ctrl.syncContainerRuntimeConfig
 	ctrl.syncImgHandler = ctrl.syncImageConfig
@@ -191,9 +189,6 @@ func New(
 	ctrl.idmsLister = idmsInformer.Lister()
 	ctrl.idmsListerSynced = idmsInformer.Informer().HasSynced
 
-	ctrl.itmsLister = itmsInformer.Lister()
-	ctrl.itmsListerSynced = itmsInformer.Informer().HasSynced
-
 	ctrl.clusterVersionLister = clusterVersionInformer.Lister()
 	ctrl.clusterVersionListerSynced = clusterVersionInformer.Informer().HasSynced
 
@@ -207,6 +202,15 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 	defer ctrl.imgQueue.ShutDown()
+
+	ctrl.itmsInformer = ctrl.configInformerv1.ImageTagMirrorSets()
+	ctrl.itmsInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.itmsConfAdded,
+		UpdateFunc: ctrl.itmsConfUpdated,
+		DeleteFunc: ctrl.itmsConfDeleted,
+	})
+	ctrl.itmsLister = ctrl.itmsInformer.Lister()
+	ctrl.itmsListerSynced = ctrl.itmsInformer.Informer().HasSynced
 
 	if !cache.WaitForCacheSync(stopCh, ctrl.mcpListerSynced, ctrl.mccrListerSynced, ctrl.ccListerSynced,
 		ctrl.imgListerSynced, ctrl.icspListerSynced, ctrl.idmsListerSynced, ctrl.itmsListerSynced, ctrl.clusterVersionListerSynced) {
