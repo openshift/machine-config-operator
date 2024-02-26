@@ -9,6 +9,7 @@ contents: |
 
   [Service]
   Type=notify
+  Delegate=true
   ExecStartPre=/bin/mkdir --parents /etc/kubernetes/manifests
 {{- if eq .IPFamilies "IPv6"}}
   Environment="KUBELET_NODE_IP=::"
