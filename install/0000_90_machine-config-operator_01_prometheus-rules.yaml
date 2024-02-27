@@ -37,6 +37,18 @@ spec:
           annotations:
             summary: "Triggers when nodes in a pool have overlapping labels such as master, worker, and a custom label therefore a choice must be made as to which is honored."
             description: "Node {{ $labels.exported_node }} has triggered a pool alert due to a label change. For more details check MachineConfigController pod logs: oc logs -f -n {{ $labels.namespace }} machine-config-controller-xxxxx -c machine-config-controller"
+    - name: mcc-boot-image-update-error
+      rules:
+        - alert: MCCBootImageUpdateError
+          expr: |
+            mcc_bootimage_update_error > 0
+          for: 30m
+          labels:
+            namespace: openshift-machine-config-operator
+            severity: warning
+          annotations:
+            summary: "Triggers when machineset boot images could not be updated"
+            description: "The boot images of Machineset {{ $labels.machineset }} could not be updated. For more details check MachineConfigController pod logs: oc logs -n {{ $labels.namespace }} -f $(oc get pod -o name -l='k8s-app=machine-config-controller' -n openshift-machine-config-operator) | grep machine_set"
 ---
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
