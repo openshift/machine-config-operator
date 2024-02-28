@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"reflect"
+	"regexp"
 	"sort"
 	"strings"
 	"text/template"
@@ -46,6 +47,8 @@ import (
 	"github.com/vincent-petithory/dataurl"
 	kerr "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/tools/reference"
@@ -54,6 +57,7 @@ import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
+	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 )
 
 // strToPtr converts the input string to a pointer to itself
@@ -585,6 +589,20 @@ func InSlice(elem string, slice []string) bool {
 		}
 	}
 	return false
+}
+
+// InSliceRegex parses a slice of regexp and returns true if they match, otherwise return false
+func InSliceRegex(elem string, slice []string) (bool, error) {
+	for _, p := range slice {
+		r, err := regexp.Compile(p)
+		if err != nil {
+			return false, err
+		}
+		if r.MatchString(elem) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // ValidateMachineConfig validates that given MachineConfig Spec is valid.
@@ -1227,4 +1245,53 @@ func ConvertSecretTodockercfg(secretBytes []byte) ([]byte, error) {
 	out, err := json.Marshal(newStyleDecoded.Auths)
 
 	return out, err
+}
+
+// GetPoolsForPinnedImageSet returns a MachineConfigPool that match the MachineConfigPoolSelector for the given PinnedImageSet.
+func GetPoolsForPinnedImageSet(mcpLister mcfglistersv1.MachineConfigPoolLister, imageSet *mcfgv1.PinnedImageSet) ([]*mcfgv1.MachineConfigPool, error) {
+	pList, err := mcpLister.List(labels.Everything())
+	if err != nil {
+		return nil, err
+	}
+
+	// although the selector can include multiple labels, we only support one.
+	selector, err := metav1.LabelSelectorAsSelector(imageSet.Spec.MachineConfigPoolSelector)
+	if err != nil {
+		return nil, fmt.Errorf("invalid label selector: %w", err)
+	}
+
+	var pools []*mcfgv1.MachineConfigPool
+	for _, p := range pList {
+		if selector.Empty() || !selector.Matches(labels.Set(p.Labels)) {
+			continue
+		}
+
+		pools = append(pools, p)
+	}
+
+	return pools, nil
+}
+
+// GetPinnedImageSetsForPool returns a list of PinnedImageSet that match the MachineConfigPoolSelector for the given MachineConfigPool.
+func GetPinnedImageSetsForPool(pinnedImageSetLister mcfglistersv1.PinnedImageSetLister, pool *mcfgv1.MachineConfigPool) ([]*mcfgv1.PinnedImageSet, error) {
+	pinnedImageSets, err := pinnedImageSetLister.List(labels.Everything())
+	if err != nil {
+		return nil, err
+	}
+
+	var imageSets []*mcfgv1.PinnedImageSet
+	for _, imageSet := range pinnedImageSets {
+		selector, err := metav1.LabelSelectorAsSelector(imageSet.Spec.MachineConfigPoolSelector)
+		if err != nil {
+			return nil, fmt.Errorf("invalid label selector: %w", err)
+		}
+
+		if selector.Empty() || !selector.Matches(labels.Set(pool.Labels)) {
+			continue
+		}
+
+		imageSets = append(imageSets, imageSet)
+	}
+
+	return imageSets, nil
 }

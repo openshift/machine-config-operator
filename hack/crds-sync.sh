@@ -7,6 +7,7 @@ CRDS_MAPPING=( "v1/0000_80_containerruntimeconfig.crd.yaml:0000_80_machine-confi
                "v1/0000_80_kubeletconfig.crd.yaml:0000_80_machine-config-operator_01_kubeletconfig.crd.yaml"
                "v1/0000_80_machineconfig.crd.yaml:0000_80_machine-config-operator_01_machineconfig.crd.yaml"
                "v1/0000_80_machineconfigpool.crd.yaml:0000_80_machine-config-operator_01_machineconfigpool.crd.yaml"
+               "v1/0000_80_pinnedimageset.crd.yaml:0000_80_machine-config-operator_01_pinned_image_set.crd.yaml"
                "v1alpha1/0000_80_machineconfignode-TechPreviewNoUpgrade.crd.yaml:0000_80_machine-config-operator_01_machineconfignode-TechPreviewNoUpgrade.crd.yaml" ) 
                 #TODO(jkyros): 0000_80_machine-config-operator_02_containerruntimeconfig.crd.yaml)
 

@@ -16,6 +16,7 @@ import (
 	kubeletconfig "github.com/openshift/machine-config-operator/pkg/controller/kubelet-config"
 	machinesetbootimage "github.com/openshift/machine-config-operator/pkg/controller/machine-set-boot-image"
 	"github.com/openshift/machine-config-operator/pkg/controller/node"
+	pinnedimageset "github.com/openshift/machine-config-operator/pkg/controller/pinned-image-set"
 	"github.com/openshift/machine-config-operator/pkg/controller/render"
 	"github.com/openshift/machine-config-operator/pkg/controller/template"
 	"github.com/openshift/machine-config-operator/pkg/version"
@@ -208,6 +209,14 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.KubeMAOSharedInformer.Core().V1().Secrets(),
 			ctx.ConfigInformerFactory.Config().V1().Infrastructures(),
 			ctx.KubeInformerFactory.Core().V1().Nodes(),
+			ctx.FeatureGateAccess,
+		),
+		pinnedimageset.New(
+			ctx.InformerFactory.Machineconfiguration().V1().PinnedImageSets(),
+			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
+			ctx.KubeInformerFactory.Core().V1().Nodes(),
+			ctx.ClientBuilder.KubeClientOrDie("pinned-image-set-controller"),
+			ctx.ClientBuilder.MachineConfigClientOrDie("pinned-image-set-controller"),
 			ctx.FeatureGateAccess,
 		),
 	)
