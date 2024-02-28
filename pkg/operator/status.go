@@ -8,9 +8,8 @@ import (
 	"strings"
 	"time"
 
-	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-
 	configv1 "github.com/openshift/api/config/v1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	cov1helpers "github.com/openshift/library-go/pkg/config/clusteroperator/v1helpers"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -76,6 +75,7 @@ func (optr *Operator) syncRelatedObjects() error {
 		{Group: "machineconfiguration.openshift.io", Resource: "kubeletconfigs"},
 		{Group: "machineconfiguration.openshift.io", Resource: "containerruntimeconfigs"},
 		{Group: "machineconfiguration.openshift.io", Resource: "machineconfigs"},
+		{Group: "machineconfiguration.openshift.io", Resource: "pinnedimagesets"},
 		// gathered because the machineconfigs created container bootstrap credentials and node configuration that gets reflected via the API and is needed for debugging
 		{Group: "", Resource: "nodes"},
 		// Gathered for the on-prem services running in static pods.

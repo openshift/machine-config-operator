@@ -10,7 +10,7 @@ rules:
   resources: ["clusterversions", "featuregates"]
   verbs: ["get", "list", "watch"]
 - apiGroups: ["machineconfiguration.openshift.io"]
-  resources: ["machineconfigs", "controllerconfigs"]
+  resources: ["machineconfigs", "controllerconfigs", "pinnedimagesets", "machineconfigpools"]
   verbs: ["get", "list", "watch"]
 - apiGroups: ["machineconfiguration.openshift.io"]
   resources: ["machineconfignodes", "machineconfignodes/status"]

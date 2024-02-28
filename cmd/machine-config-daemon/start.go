@@ -177,6 +177,8 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		ctrlctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
 		ctrlctx.KubeInformerFactory.Core().V1().Nodes(),
 		ctrlctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
+		ctrlctx.InformerFactory.Machineconfiguration().V1().PinnedImageSets(),
+		ctrlctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
 		startOpts.kubeletHealthzEnabled,
 		startOpts.kubeletHealthzEndpoint,
 		ctrlctx.FeatureGateAccess,

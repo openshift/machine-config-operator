@@ -63,6 +63,18 @@ var (
 			Name: "mcd_missing_mc",
 			Help: "total number of times a MC was reported missing",
 		}, []string{"mc"})
+	// mcdPrefetchImageSuccess tracks successful image prefetches.
+	mcdPrefetchImageSuccess = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "mcd_prefetch_image_pull_success_total",
+			Help: "Total number of successful prefetched image pulls.",
+		})
+	// mcdPrefetchImageFailure tracks successful image prefetches.
+	mcdPrefetchImageFailure = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "mcd_prefetch_image_pull_failure_total",
+			Help: "Total number of prefetch image pull failures.",
+		})
 )
 
 // Updates metric with new labels & timestamp, deletes any existing
@@ -84,6 +96,8 @@ func RegisterMCDMetrics() error {
 		mcdRebootErr,
 		mcdUpdateState,
 		mcdConfigDrift,
+		mcdPrefetchImageSuccess,
+		mcdPrefetchImageFailure,
 	})
 
 	if err != nil {

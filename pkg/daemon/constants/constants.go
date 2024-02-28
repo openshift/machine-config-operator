@@ -34,6 +34,12 @@ const (
 	OpenShiftOperatorManagedLabel = "openshift.io/operator-managed"
 	// ControllerConfigResourceVersionKey is used for the certificate writer to indicate the last controllerconfig object it synced upon
 	ControllerConfigResourceVersionKey = "machineconfiguration.openshift.io/lastSyncedControllerConfigResourceVersion"
+	// MachineConfigDaemonPinnedImageSetPrefetchReasonAnnotationKey is used to indicate a human readable reason for the operation state of image prefetching.
+	MachineConfigDaemonPinnedImageSetPrefetchReasonAnnotationKey = "machineconfiguration.openshift.io/pinnedImageSetPrefetchReason"
+	// MachineConfigDaemonPinnedImageSetPrefetchCurrentAnnotationKey is used to indicate the current PinnedImageSet UID that has been applied to the node.
+	MachineConfigDaemonPinnedImageSetPrefetchCurrentAnnotationKey = "machineconfiguration.openshift.io/pinnedImageSetPrefetchUIDCurrent"
+	// MachineConfigDaemonPinnedImageSetPrefetchDesiredAnnotationKey is used to indicate the desired PinnedImageSet UID version.
+	MachineConfigDaemonPinnedImageSetPrefetchDesiredAnnotationKey = "machineconfiguration.openshift.io/pinnedImageSetPrefetchUIDDesired"
 
 	// GeneratedByVersionAnnotationKey is used to tag the controllerconfig to synchronize the MCO and MCC
 	GeneratedByVersionAnnotationKey = "machineconfiguration.openshift.io/generated-by-version"
@@ -104,4 +110,10 @@ const (
 
 	// CRIOServiceName is used to specify reloads and restarts of the CRI-O service
 	CRIOServiceName = "crio"
+
+	// DefaultCRIOSocketPath is the default path to the CRI-O socket
+	DefaultCRIOSocketPath = "/var/run/crio/crio.sock"
+
+	// KubeletAuthFile is the path to the kubelet auth file.
+	KubeletAuthFile = "/var/lib/kubelet/config.json"
 )

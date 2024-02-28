@@ -105,6 +105,8 @@ type Daemon struct {
 
 	nodeWriter NodeWriter
 
+	prefetchManager *PrefetchManager
+
 	featureGatesAccessor featuregates.FeatureGateAccess
 
 	// channel used by callbacks to signal Run() of an error
@@ -203,6 +205,13 @@ const (
 	// Where nmstate writes the link files if it persisted ifnames.
 	// https://github.com/nmstate/nmstate/blob/03c7b03bd4c9b0067d3811dbbf72635201519356/rust/src/cli/persist_nic.rs#L32-L36
 	systemdNetworkDir = "etc/systemd/network"
+
+	// prefetchTimeout is the timeout for the prefetch process.
+	prefetchTimeout = 10 * time.Minute
+
+	// minFreeStorageAfterPrefetch is the minimum amount of storage in bytes
+	// available on the root filesystem after prefetching images.
+	minFreeStorageAfterPrefetch int64 = 16 * 1024 * 1024 * 1024 // 16GB
 )
 
 type onceFromOrigin int
@@ -337,6 +346,8 @@ func (dn *Daemon) ClusterConnect(
 	mcInformer mcfginformersv1.MachineConfigInformer,
 	nodeInformer coreinformersv1.NodeInformer,
 	ccInformer mcfginformersv1.ControllerConfigInformer,
+	pisInformer mcfginformersv1.PinnedImageSetInformer,
+	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
 	kubeletHealthzEnabled bool,
 	kubeletHealthzEndpoint string,
 	featureGatesAccessor featuregates.FeatureGateAccess,
@@ -377,6 +388,20 @@ func (dn *Daemon) ClusterConnect(
 	}
 	dn.nodeWriter = nw
 	go dn.nodeWriter.Run(dn.stopCh)
+
+	prefetchManager := newPrefetchManager(
+		dn.name,
+		dn.nodeWriter,
+		pisInformer,
+		nodeInformer,
+		mcpInformer,
+		minFreeStorageAfterPrefetch,
+		constants.DefaultCRIOSocketPath,
+		constants.KubeletAuthFile,
+		prefetchTimeout,
+	)
+	dn.prefetchManager = prefetchManager
+	go dn.prefetchManager.Run(2, dn.stopCh)
 
 	dn.enqueueNode = dn.enqueueDefault
 	dn.syncHandler = dn.syncNode
