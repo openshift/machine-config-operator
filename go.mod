@@ -39,12 +39,14 @@ require (
 	github.com/vincent-petithory/dataurl v1.0.0
 	golang.org/x/net v0.18.0
 	golang.org/x/time v0.3.0
+	google.golang.org/grpc v1.58.3
 	k8s.io/api v0.29.0
 	k8s.io/apiextensions-apiserver v0.29.0
 	k8s.io/apimachinery v0.29.0
 	k8s.io/client-go v0.29.0
 	k8s.io/code-generator v0.29.0
 	k8s.io/component-base v0.29.0
+	k8s.io/cri-api v0.29.0
 	k8s.io/kubectl v0.29.0
 	k8s.io/kubelet v0.29.0
 	k8s.io/utils v0.0.0-20230726121419-3b25d923346b
@@ -106,6 +108,7 @@ require (
 	go.mongodb.org/mongo-driver v1.11.3 // indirect
 	go.starlark.net v0.0.0-20230525235612-a134d8f9ddca // indirect
 	go.tmz.dev/musttag v0.7.0 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20230920204549-e6e6cdab5c13 // indirect
 	gopkg.in/DATA-DOG/go-sqlmock.v1 v1.3.0 // indirect
 	gopkg.in/go-jose/go-jose.v2 v2.6.1 // indirect
 	k8s.io/cli-runtime v0.29.0 // indirect

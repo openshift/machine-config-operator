@@ -818,7 +818,7 @@ github.com/opencontainers/runc/libcontainer/user
 # github.com/opencontainers/runtime-spec v1.1.0
 ## explicit
 github.com/opencontainers/runtime-spec/specs-go
-# github.com/openshift/api v0.0.0-20231218131639-7a5aa77cc72d => github.com/hexfusion/api v0.0.0-20240125205502-d262ef28f66d
+# github.com/openshift/api v0.0.0-20240205144533-7162acc29bb6 => github.com/hexfusion/api v0.0.0-20240125205502-d262ef28f66d
 ## explicit; go 1.21
 github.com/openshift/api
 github.com/openshift/api/apiserver
@@ -891,7 +891,7 @@ github.com/openshift/api/template
 github.com/openshift/api/template/v1
 github.com/openshift/api/user
 github.com/openshift/api/user/v1
-# github.com/openshift/client-go v0.0.0-20231110140829-a6ca51f6d5ba => github.com/hexfusion/client-go v0.0.0-20240125213357-957c2c9950e9
+# github.com/openshift/client-go v0.0.0-20240104132419-223261fd8630 => github.com/hexfusion/client-go v0.0.0-20240125213357-957c2c9950e9
 ## explicit; go 1.21
 github.com/openshift/client-go/build/applyconfigurations/build/v1
 github.com/openshift/client-go/build/applyconfigurations/internal
@@ -975,7 +975,7 @@ github.com/openshift/client-go/operator/informers/externalversions/operator/v1
 github.com/openshift/client-go/operator/informers/externalversions/operator/v1alpha1
 github.com/openshift/client-go/operator/listers/operator/v1
 github.com/openshift/client-go/operator/listers/operator/v1alpha1
-# github.com/openshift/cluster-config-operator v0.0.0-alpha.0.0.20231110142214-403ea8439974
+# github.com/openshift/cluster-config-operator v0.0.0-alpha.0.0.20231213185242-e4dc676febfe
 ## explicit; go 1.20
 github.com/openshift/cluster-config-operator/pkg/operator/featuregates
 # github.com/openshift/library-go v0.0.0-20231020125034-5a2d9fe760b3
