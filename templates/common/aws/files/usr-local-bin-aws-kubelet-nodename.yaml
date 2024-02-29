@@ -19,7 +19,22 @@ contents:
         echo "Migrating ${LEGACY_NODEENV} to ${NODEENV}"
         awk 'match($0, /^\s*Environment\s*=\s*"(.*)"\s*$/, value) { print value[1] }' < "${LEGACY_NODEENV}" > "${NODEENV}"
         rm "${LEGACY_NODEENV}"
-        exit 0
+    fi
+
+    CURRENT_CLIENT_CERT=/var/lib/kubelet/pki/kubelet-client-current.pem
+
+    # If the node already has a client certificate, use the CN from that certificate as the node name.
+    # This is required as hostname override is not supported when the in-tree cloud provider is used.
+    # When upgrading from 4.13 to 4.14, the kubelet will be restarted and the node name will be updated to the value of the `NODECONF` file.
+    # We must ensure that it persists across this upgrade boundary by writing the current node name out, no matter what we expected it to be.
+    if [ -e "${CURRENT_CLIENT_CERT}" ]; then
+      HOSTNAME=$(openssl x509 -noout -subject -in "${CURRENT_CLIENT_CERT}" | sed 's/.*CN = //' | sed 's/\"//g' | sed 's/system:node://')
+      if [[ ! -z "${HOSTNAME}" ]]; then
+        cat > "${NODEENV}" <<EOF
+    KUBELET_NODE_NAME=${HOSTNAME}
+    EOF
+      echo "Persisted existing node name from client certificate ${HOSTNAME}"
+      fi
     fi
 
     if [ -e "${NODEENV}" ]; then
