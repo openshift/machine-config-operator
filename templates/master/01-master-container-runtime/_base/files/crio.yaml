@@ -35,12 +35,15 @@ contents:
     [crio.runtime.runtimes.runc]
     allowed_annotations = [
         "io.containers.trace-syscall",
+        "io.kubernetes.cri-o.Devices",
         "io.kubernetes.cri-o.LinkLogs",
     ]
 
     [crio.runtime.runtimes.crun]
+    runtime_root = "/run/crun"
     allowed_annotations = [
         "io.containers.trace-syscall",
+        "io.kubernetes.cri-o.Devices",
         "io.kubernetes.cri-o.LinkLogs",
     ]
 
