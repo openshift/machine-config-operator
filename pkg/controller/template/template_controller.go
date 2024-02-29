@@ -143,10 +143,30 @@ func (ctrl *Controller) addSecret(obj interface{}) {
 	ctrl.filterSecret(secret)
 }
 
-func (ctrl *Controller) updateSecret(_, new interface{}) {
-	secret := new.(*corev1.Secret)
-	klog.V(4).Infof("Update Secret %v", secret)
-	ctrl.filterSecret(secret)
+func secretTriggerObjectChange(oldSecret, newSecret *corev1.Secret) bool {
+	if !reflect.DeepEqual(oldSecret.Immutable, newSecret.Immutable) {
+		return true
+	}
+	if !reflect.DeepEqual(oldSecret.Data, newSecret.Data) {
+		return true
+	}
+	if !reflect.DeepEqual(oldSecret.StringData, newSecret.StringData) {
+		return true
+	}
+	if !reflect.DeepEqual(oldSecret.Type, newSecret.Type) {
+		return true
+	}
+	return false
+}
+
+func (ctrl *Controller) updateSecret(old, new interface{}) {
+	oldSecret := old.(*corev1.Secret)
+	newSecret := new.(*corev1.Secret)
+
+	if secretTriggerObjectChange(oldSecret, newSecret) {
+		klog.V(4).Infof("Update Secret %v", newSecret)
+		ctrl.filterSecret(newSecret)
+	}
 }
 
 func (ctrl *Controller) deleteSecret(obj interface{}) {
@@ -246,11 +266,24 @@ func (ctrl *Controller) addControllerConfig(obj interface{}) {
 	ctrl.enqueueControllerConfig(cfg)
 }
 
+func controllerConfigTriggerObjectChange(oldControllerConfig, newControllerConfig *mcfgv1.ControllerConfig) bool {
+	if oldControllerConfig.DeletionTimestamp != newControllerConfig.DeletionTimestamp {
+		return true
+	}
+	if !reflect.DeepEqual(oldControllerConfig.Spec, newControllerConfig.Spec) {
+		return true
+	}
+	return false
+}
+
 func (ctrl *Controller) updateControllerConfig(old, cur interface{}) {
 	oldCfg := old.(*mcfgv1.ControllerConfig)
 	curCfg := cur.(*mcfgv1.ControllerConfig)
-	klog.V(4).Infof("Updating ControllerConfig %s", oldCfg.Name)
-	ctrl.enqueueControllerConfig(curCfg)
+
+	if controllerConfigTriggerObjectChange(oldCfg, curCfg) {
+		klog.V(4).Infof("Updating ControllerConfig %s", oldCfg.Name)
+		ctrl.enqueueControllerConfig(curCfg)
+	}
 }
 
 func (ctrl *Controller) deleteControllerConfig(obj interface{}) {
@@ -291,17 +324,26 @@ func (ctrl *Controller) addMachineConfig(obj interface{}) {
 	// No adopting.
 }
 
-func (ctrl *Controller) updateMachineConfig(_, cur interface{}) {
+func (ctrl *Controller) updateMachineConfig(old, cur interface{}) {
+	oldMC := old.(*mcfgv1.MachineConfig)
 	curMC := cur.(*mcfgv1.MachineConfig)
 
-	if controllerRef := metav1.GetControllerOf(curMC); controllerRef != nil {
-		cfg := ctrl.resolveControllerRef(controllerRef)
-		if cfg == nil {
-			return
-		}
-		klog.V(4).Infof("MachineConfig %s updated", curMC.Name)
-		ctrl.enqueueControllerConfig(cfg)
+	curControllerRef := metav1.GetControllerOf(curMC)
+	oldControllerRef := metav1.GetControllerOf(oldMC)
+	controllerRefChanged := !reflect.DeepEqual(curControllerRef, oldControllerRef)
+	if controllerRefChanged && oldControllerRef != nil {
+		klog.Errorf("machineconfig has changed controller, not allowed.")
 		return
+	}
+
+	if curControllerRef != nil {
+		if cfg := ctrl.resolveControllerRef(curControllerRef); cfg != nil {
+			if !reflect.DeepEqual(oldMC.Spec, curMC.Spec) {
+				klog.V(4).Infof("MachineConfig %s updated", curMC.Name)
+				ctrl.enqueueControllerConfig(cfg)
+				return
+			}
+		}
 	}
 
 	// No adopting.

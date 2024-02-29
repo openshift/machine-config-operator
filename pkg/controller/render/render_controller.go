@@ -208,9 +208,11 @@ func (ctrl *Controller) updateMachineConfig(old, cur interface{}) {
 
 	if curControllerRef != nil {
 		if pool := ctrl.resolveControllerRef(curControllerRef); pool != nil {
-			klog.V(4).Infof("MachineConfig %s updated", curMC.Name)
-			ctrl.enqueueMachineConfigPool(pool)
-			return
+			if !reflect.DeepEqual(oldMC.Spec, curMC.Spec) {
+				klog.V(4).Infof("MachineConfig %s updated", curMC.Name)
+				ctrl.enqueueMachineConfigPool(pool)
+				return
+			}
 		}
 	}
 
