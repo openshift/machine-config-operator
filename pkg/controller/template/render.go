@@ -333,7 +333,6 @@ func renderTemplate(config RenderConfig, path string, b []byte) ([]byte, error) 
 	funcs := ctrlcommon.GetTemplateFuncMap()
 	funcs["skip"] = skipMissing
 	funcs["cloudProvider"] = cloudProvider
-	funcs["cloudConfigFlag"] = cloudConfigFlag
 	funcs["credentialProviderConfigFlag"] = credentialProviderConfigFlag
 	funcs["onPremPlatformAPIServerInternalIP"] = onPremPlatformAPIServerInternalIP
 	funcs["onPremPlatformAPIServerInternalIPs"] = onPremPlatformAPIServerInternalIPs
@@ -375,74 +374,20 @@ func skipMissing(key string) (interface{}, error) {
 }
 
 func cloudProvider(cfg RenderConfig) (interface{}, error) {
-	if cfg.Infra.Status.PlatformStatus != nil {
-		if cfg.FeatureGateAccess == nil {
-			panic("FeatureGateAccess is nil")
-		}
-
-		external, err := cloudprovider.IsCloudProviderExternal(cfg.Infra.Status.PlatformStatus, cfg.FeatureGateAccess)
-		if err != nil {
-			klog.Error(err)
-		} else if external {
-			return "external", nil
-		}
-
-		switch cfg.Infra.Status.PlatformStatus.Type {
-		case configv1.AWSPlatformType, configv1.AzurePlatformType, configv1.OpenStackPlatformType, configv1.VSpherePlatformType:
-			return strings.ToLower(string(cfg.Infra.Status.PlatformStatus.Type)), nil
-		case configv1.GCPPlatformType:
-			return "gce", nil
-		default:
-			return "", nil
-		}
-	} else {
+	if cfg.Infra.Status.PlatformStatus == nil {
 		return "", nil
 	}
-}
-
-// Process the {{cloudConfigFlag .}}
-// If the CloudProviderConfig field is set and not empty, this
-// returns the cloud conf flag for kubelet [1] pointing the kubelet to use
-// /etc/kubernetes/cloud.conf for configuring the cloud provider for select platforms.
-// By default, even if CloudProviderConfig fields is set, the kubelet will be configured to be
-// used for select platforms only.
-//
-// [1]: https://kubernetes.io/docs/reference/command-line-tools-reference/kubelet/#options
-func cloudConfigFlag(cfg RenderConfig) interface{} {
-	if cfg.CloudProviderConfig == "" {
-		return ""
-	}
-
-	if cfg.Infra == nil {
-		cfg.Infra = &configv1.Infrastructure{
-			Status: configv1.InfrastructureStatus{},
-		}
-	}
-
-	if cfg.Infra.Status.PlatformStatus == nil {
-		cfg.Infra.Status.PlatformStatus = &configv1.PlatformStatus{
-			Type: "",
-		}
-	}
-
-	if cfg.FeatureGateAccess == nil {
-		panic("FeatureGateAccess is nil")
-	}
-
-	external, err := cloudprovider.IsCloudProviderExternal(cfg.Infra.Status.PlatformStatus, cfg.FeatureGateAccess)
+	external, err := cloudprovider.IsCloudProviderExternal(cfg.Infra.Status.PlatformStatus)
 	if err != nil {
 		klog.Error(err)
-	} else if external {
-		return ""
 	}
 
-	flag := "--cloud-config=/etc/kubernetes/cloud.conf"
-	switch cfg.Infra.Status.PlatformStatus.Type {
-	case configv1.AWSPlatformType, configv1.AzurePlatformType, configv1.GCPPlatformType, configv1.OpenStackPlatformType, configv1.VSpherePlatformType:
-		return flag
-	default:
-		return ""
+	if external {
+		return "external", nil
 	}
+
+	// If it is not external, then it should not be set at all.
+	return "", nil
 }
 
 // Process the {{credentialProviderConfigFlag .}}

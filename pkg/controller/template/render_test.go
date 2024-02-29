@@ -28,242 +28,47 @@ func TestMain(m *testing.M) {
 func TestCloudProvider(t *testing.T) {
 	dummyTemplate := []byte(`{{cloudProvider .}}`)
 
-	externalEnabledFG := featuregates.NewHardcodedFeatureGateAccess([]configv1.FeatureGateName{cloudprovider.ExternalCloudProviderFeature, cloudprovider.ExternalCloudProviderFeatureGCP, cloudprovider.ExternalCloudProviderFeatureAzure, cloudprovider.ExternalCloudProviderFeatureExternal}, nil)
-	externalDisabledFG := featuregates.NewHardcodedFeatureGateAccess(nil, []configv1.FeatureGateName{cloudprovider.ExternalCloudProviderFeature, cloudprovider.ExternalCloudProviderFeatureGCP, cloudprovider.ExternalCloudProviderFeatureAzure, cloudprovider.ExternalCloudProviderFeatureExternal})
-
 	cases := []struct {
 		platform          configv1.PlatformType
 		featureGateAccess featuregates.FeatureGateAccess
 		res               string
 	}{{
-		platform:          configv1.AWSPlatformType,
-		featureGateAccess: externalEnabledFG,
-		res:               "external",
-	}, {
-		platform:          configv1.OpenStackPlatformType,
-		featureGateAccess: externalEnabledFG,
-		res:               "external",
-	}, {
-		platform:          configv1.AzurePlatformType,
-		featureGateAccess: externalEnabledFG,
-		res:               "external",
-	}, {
-		platform:          configv1.GCPPlatformType,
-		featureGateAccess: externalEnabledFG,
-		res:               "external",
-	}, {
-		platform:          configv1.VSpherePlatformType,
-		featureGateAccess: externalEnabledFG,
-		res:               "external",
-	}, {
-		platform:          configv1.OpenStackPlatformType,
-		featureGateAccess: externalEnabledFG,
-		res:               "external",
-	}, {
-		platform:          configv1.PowerVSPlatformType,
-		featureGateAccess: externalEnabledFG,
-		res:               "external",
-	}, {
-		platform:          configv1.OpenStackPlatformType,
-		featureGateAccess: externalEnabledFG,
-		res:               "external",
-	}, {
-		platform:          configv1.NutanixPlatformType,
-		featureGateAccess: externalEnabledFG,
-		res:               "external",
-	}, {
-		platform:          configv1.AWSPlatformType,
-		featureGateAccess: externalDisabledFG,
-		res:               "external",
-	}, {
-		platform:          configv1.OpenStackPlatformType,
-		featureGateAccess: externalDisabledFG,
-		res:               "external",
-	}, {
-		platform:          configv1.BareMetalPlatformType,
-		featureGateAccess: externalDisabledFG,
-		res:               "",
-	}, {
-		platform:          configv1.GCPPlatformType,
-		featureGateAccess: externalDisabledFG,
-		res:               "gce",
-	}, {
-		platform:          configv1.LibvirtPlatformType,
-		featureGateAccess: externalDisabledFG,
-		res:               "",
-	}, {
-		platform:          configv1.KubevirtPlatformType,
-		featureGateAccess: externalDisabledFG,
-		res:               "external",
-	}, {
-		platform:          configv1.NonePlatformType,
-		featureGateAccess: externalDisabledFG,
-		res:               "",
-	}, {
-		platform:          configv1.VSpherePlatformType,
-		featureGateAccess: externalDisabledFG,
-		res:               "external",
-	}, {
-		platform:          configv1.AlibabaCloudPlatformType,
-		featureGateAccess: externalDisabledFG,
-		res:               "external",
-	}, {
-		platform:          configv1.NutanixPlatformType,
-		featureGateAccess: externalDisabledFG,
-		res:               "external",
-	}}
-	for idx, c := range cases {
-		name := fmt.Sprintf("case #%d", idx)
-		t.Run(name, func(t *testing.T) {
-			config := &mcfgv1.ControllerConfig{
-				Spec: mcfgv1.ControllerConfigSpec{
-					Infra: &configv1.Infrastructure{
-						Status: configv1.InfrastructureStatus{
-							Platform: c.platform,
-							PlatformStatus: &configv1.PlatformStatus{
-								Type: c.platform,
-							},
-						},
-					},
-				},
-			}
-
-			fgAccess := c.featureGateAccess
-			if fgAccess == nil {
-				fgAccess = featuregates.NewHardcodedFeatureGateAccess(nil, nil)
-			}
-
-			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, `{"dummy":"dummy"}`, fgAccess, nil}, name, dummyTemplate)
-			if err != nil {
-				t.Fatalf("expected nil error %v", err)
-			}
-
-			if string(got) != c.res {
-				t.Fatalf("mismatch got: %s want: %s", got, c.res)
-			}
-		})
-	}
-}
-
-func TestCloudConfigFlag(t *testing.T) {
-	dummyTemplate := []byte(`{{cloudConfigFlag .}}`)
-
-	externalEnabledFG := featuregates.NewHardcodedFeatureGateAccess([]configv1.FeatureGateName{cloudprovider.ExternalCloudProviderFeature, cloudprovider.ExternalCloudProviderFeatureGCP, cloudprovider.ExternalCloudProviderFeatureAzure, cloudprovider.ExternalCloudProviderFeatureExternal}, nil)
-	externalDisabledFG := featuregates.NewHardcodedFeatureGateAccess(nil, []configv1.FeatureGateName{cloudprovider.ExternalCloudProviderFeature, cloudprovider.ExternalCloudProviderFeatureGCP, cloudprovider.ExternalCloudProviderFeatureAzure, cloudprovider.ExternalCloudProviderFeatureExternal})
-
-	cases := []struct {
-		platform          configv1.PlatformType
-		content           string
-		featureGateAccess featuregates.FeatureGateAccess
-		res               string
-	}{{
 		platform: configv1.AWSPlatformType,
-		content:  "",
-		res:      "",
-	}, {
-		platform:          configv1.AzurePlatformType,
-		content:           "",
-		featureGateAccess: externalDisabledFG,
-		res:               "",
-	}, {
-		platform: configv1.LibvirtPlatformType,
-		content:  "",
-		res:      "",
-	}, {
-		platform: configv1.AWSPlatformType,
-		content: `
-[dummy-config]
-    option = a
-`,
-		res: "",
-	}, {
-		platform: configv1.LibvirtPlatformType,
-		content: `
-[dummy-config]
-    option = a
-`,
-		res: "",
-	}, {
-		platform: configv1.AzurePlatformType,
-		content: `
-[dummy-config]
-    option = a
-`,
-		featureGateAccess: externalDisabledFG,
-		res:               "--cloud-config=/etc/kubernetes/cloud.conf",
+		res:      "external",
 	}, {
 		platform: configv1.OpenStackPlatformType,
-		content: `
-[dummy-config]
-    option = a
-`,
-		res: "",
+		res:      "external",
+	}, {
+		platform: configv1.AzurePlatformType,
+		res:      "external",
 	}, {
 		platform: configv1.GCPPlatformType,
-		content: `
-[dummy-config]
-    option = a
-`,
-		featureGateAccess: externalEnabledFG,
-		res:               "",
+		res:      "external",
 	}, {
 		platform: configv1.VSpherePlatformType,
-		content: `
-[dummy-config]
-    option = a
-`,
-		featureGateAccess: externalEnabledFG,
-		res:               "",
+		res:      "external",
 	}, {
-		platform: configv1.AzurePlatformType,
-		content: `
-[dummy-config]
-    option = a
-`,
-		featureGateAccess: externalEnabledFG,
-		res:               "",
-	}, {
-		platform: configv1.OpenStackPlatformType,
-		content: `
-[dummy-config]
-    option = a
-`,
-		featureGateAccess: externalEnabledFG,
-		res:               "",
-	}, {
-		platform: configv1.OpenStackPlatformType,
-		content: `
-[dummy-config]
-    option = a
-`,
-		featureGateAccess: externalEnabledFG,
-		res:               "",
-	}, {
-		platform: configv1.AWSPlatformType,
-		content: `
-[dummy-config]
-    option = a
-`,
-		featureGateAccess: externalEnabledFG,
-		res:               "",
+		platform: configv1.PowerVSPlatformType,
+		res:      "external",
 	}, {
 		platform: configv1.NutanixPlatformType,
-		content: `
-[dummy-config]
-    option = a
-`,
-		featureGateAccess: externalEnabledFG,
-		res:               "",
+		res:      "external",
 	}, {
-		platform: configv1.NutanixPlatformType,
-		content: `
-[dummy-config]
-    option = a
-`,
-		featureGateAccess: externalEnabledFG,
-		res:               "",
+		platform: configv1.BareMetalPlatformType,
+		res:      "",
+	}, {
+		platform: configv1.LibvirtPlatformType,
+		res:      "",
+	}, {
+		platform: configv1.KubevirtPlatformType,
+		res:      "external",
+	}, {
+		platform: configv1.NonePlatformType,
+		res:      "",
+	}, {
+		platform: configv1.AlibabaCloudPlatformType,
+		res:      "external",
 	}}
-
 	for idx, c := range cases {
 		name := fmt.Sprintf("case #%d", idx)
 		t.Run(name, func(t *testing.T) {
@@ -277,16 +82,10 @@ func TestCloudConfigFlag(t *testing.T) {
 							},
 						},
 					},
-					CloudProviderConfig: c.content,
 				},
 			}
 
-			fgAccess := c.featureGateAccess
-			if fgAccess == nil {
-				fgAccess = featuregates.NewHardcodedFeatureGateAccess(nil, nil)
-			}
-
-			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, `{"dummy":"dummy"}`, fgAccess, nil}, name, dummyTemplate)
+			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, `{"dummy":"dummy"}`, nil, nil}, name, dummyTemplate)
 			if err != nil {
 				t.Fatalf("expected nil error %v", err)
 			}
