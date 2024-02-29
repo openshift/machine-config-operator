@@ -818,6 +818,7 @@ github.com/opencontainers/runtime-spec/specs-go
 # github.com/openshift/api v0.0.0-20240205144533-7162acc29bb6
 ## explicit; go 1.21
 github.com/openshift/api
+github.com/openshift/api/annotations
 github.com/openshift/api/apiserver
 github.com/openshift/api/apiserver/v1
 github.com/openshift/api/apps
@@ -975,14 +976,16 @@ github.com/openshift/client-go/operator/listers/operator/v1alpha1
 # github.com/openshift/cluster-config-operator v0.0.0-alpha.0.0.20231213185242-e4dc676febfe
 ## explicit; go 1.20
 github.com/openshift/cluster-config-operator/pkg/operator/featuregates
-# github.com/openshift/library-go v0.0.0-20231020125034-5a2d9fe760b3
-## explicit; go 1.20
+# github.com/openshift/library-go v0.0.0-20240228143125-4602d24d27bc
+## explicit; go 1.21
+github.com/openshift/library-go/pkg/certs
 github.com/openshift/library-go/pkg/cloudprovider
 github.com/openshift/library-go/pkg/config/clusteroperator/v1helpers
 github.com/openshift/library-go/pkg/config/clusterstatus
 github.com/openshift/library-go/pkg/config/leaderelection
 github.com/openshift/library-go/pkg/controller/factory
 github.com/openshift/library-go/pkg/crypto
+github.com/openshift/library-go/pkg/operator/certrotation
 github.com/openshift/library-go/pkg/operator/condition
 github.com/openshift/library-go/pkg/operator/configobserver
 github.com/openshift/library-go/pkg/operator/configobserver/featuregates

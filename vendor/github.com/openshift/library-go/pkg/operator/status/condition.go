@@ -89,8 +89,8 @@ func UnionCondition(conditionType string, defaultConditionStatus operatorv1.Cond
 // on true, but Available merges on false.  Thing of it like an anti-default.
 //
 // If inertia is non-nil, then resist returning a condition with a status opposite the defaultConditionStatus.
-func UnionClusterCondition(conditionType string, defaultConditionStatus operatorv1.ConditionStatus, inertia Inertia, allConditions ...operatorv1.OperatorCondition) configv1.ClusterOperatorStatusCondition {
-	cnd := UnionCondition(conditionType, defaultConditionStatus, inertia, allConditions...)
+func UnionClusterCondition(conditionType configv1.ClusterStatusConditionType, defaultConditionStatus operatorv1.ConditionStatus, inertia Inertia, allConditions ...operatorv1.OperatorCondition) configv1.ClusterOperatorStatusCondition {
+	cnd := UnionCondition(string(conditionType), defaultConditionStatus, inertia, allConditions...)
 	return OperatorConditionToClusterOperatorCondition(cnd)
 }
 
