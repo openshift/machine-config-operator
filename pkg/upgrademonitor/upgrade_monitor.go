@@ -249,6 +249,14 @@ func GenerateAndApplyMachineConfigNodeSpec(fgAccessor featuregates.FeatureGateAc
 	mcNode, needNewMCNode := createOrGetMachineConfigNode(mcfgClient, node)
 	newMCNode := mcNode.DeepCopy()
 	// set the spec config version
+	newMCNode.ObjectMeta.OwnerReferences = []metav1.OwnerReference{
+		{
+			APIVersion: node.APIVersion,
+			Name:       node.ObjectMeta.Name,
+			Kind:       node.Kind,
+			UID:        node.ObjectMeta.UID,
+		},
+	}
 	newMCNode.Spec.ConfigVersion = mcfgalphav1.MachineConfigNodeSpecMachineConfigVersion{
 		Desired: node.Annotations["machineconfiguration.openshift.io/desiredConfig"],
 	}
