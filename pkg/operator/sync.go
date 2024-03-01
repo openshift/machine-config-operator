@@ -764,6 +764,14 @@ func (optr *Operator) syncMachineConfigNodes(_ *renderConfig) error {
 			},
 			ObjectMeta: metav1.ObjectMeta{
 				Name: node.Name,
+				OwnerReferences: []metav1.OwnerReference{
+					{
+						APIVersion: node.APIVersion,
+						Name:       node.ObjectMeta.Name,
+						Kind:       node.Kind,
+						UID:        node.ObjectMeta.UID,
+					},
+				},
 			},
 		}
 		mcsBytes, err := json.Marshal(newMCS)
