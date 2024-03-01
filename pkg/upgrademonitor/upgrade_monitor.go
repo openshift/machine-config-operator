@@ -251,9 +251,9 @@ func GenerateAndApplyMachineConfigNodeSpec(fgAccessor featuregates.FeatureGateAc
 	// set the spec config version
 	newMCNode.ObjectMeta.OwnerReferences = []metav1.OwnerReference{
 		{
-			APIVersion: node.APIVersion,
+			APIVersion: "v1",
 			Name:       node.ObjectMeta.Name,
-			Kind:       node.Kind,
+			Kind:       "Node",
 			UID:        node.ObjectMeta.UID,
 		},
 	}
