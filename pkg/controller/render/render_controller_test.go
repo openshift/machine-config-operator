@@ -269,6 +269,18 @@ func TestCreatesGeneratedMachineConfig(t *testing.T) {
 	for idx := range mcs {
 		f.objects = append(f.objects, mcs[idx])
 	}
+
+	gmc, err := generateRenderedMachineConfig(mcp, mcs, cc)
+	assert.NoError(t, err)
+
+	mcpNew := mcp.DeepCopy()
+	mcpNew.Spec.Configuration.Source = getMachineConfigRefs(mcs)
+	mcpNew.Spec.Configuration.Name = gmc.Name
+
+	f.expectCreateMachineConfigAction(gmc)
+	f.expectUpdateMachineConfigPool(mcpNew)
+
+	f.run(getKey(mcp, t))
 }
 
 // Testing that ignition validation in generateRenderedMachineConfig() correctly finds MCs that contain invalid ignconfigs.
@@ -321,11 +333,13 @@ func TestUpdatesGeneratedMachineConfig(t *testing.T) {
 	mcp := helpers.NewMachineConfigPool("test-cluster-master", helpers.MasterSelector, nil, "")
 	files := []ign3types.File{{
 		Node: ign3types.Node{
-			Path: "/dummy/0",
+			Path:      "/dummy/0",
+			Overwrite: helpers.BoolToPtr(false),
 		},
 	}, {
 		Node: ign3types.Node{
-			Path: "/dummy/1",
+			Path:      "/dummy/1",
+			Overwrite: helpers.BoolToPtr(false),
 		},
 	}}
 	mcs := []*mcfgv1.MachineConfig{
@@ -359,9 +373,7 @@ func TestUpdatesGeneratedMachineConfig(t *testing.T) {
 	}
 
 	mcpNew := mcp.DeepCopy()
-	for _, mc := range mcs {
-		mcpNew.Spec.Configuration.Source = append(mcpNew.Spec.Configuration.Source, corev1.ObjectReference{Kind: machineconfigKind.Kind, Name: mc.GetName(), APIVersion: machineconfigKind.GroupVersion().String()})
-	}
+	mcpNew.Spec.Configuration.Source = getMachineConfigRefs(mcs)
 
 	f.expectGetMachineConfigAction(expmc)
 	f.expectUpdateMachineConfigAction(expmc)
@@ -384,6 +396,12 @@ func TestGenerateMachineConfigOverrideOSImageURL(t *testing.T) {
 		t.Fatal(err)
 	}
 	assert.Equal(t, "dummy-change", gmc.Spec.OSImageURL)
+
+	mcs = append(mcs, helpers.NewMachineConfig("00-test-cluster-master-1", map[string]string{"node-role/master": ""}, "dummy-change-2", []ign3types.File{}))
+
+	gmc, err = generateAndValidateRenderedMachineConfig(gmc, mcp, mcs, cc)
+	assert.NoError(t, err)
+	assert.Equal(t, "dummy-change-2", gmc.Spec.OSImageURL)
 }
 
 func TestVersionSkew(t *testing.T) {
@@ -429,11 +447,13 @@ func TestDoNothing(t *testing.T) {
 	mcp := helpers.NewMachineConfigPool("test-cluster-master", helpers.MasterSelector, nil, "")
 	files := []ign3types.File{{
 		Node: ign3types.Node{
-			Path: "/dummy/0",
+			Path:      "/dummy/0",
+			Overwrite: helpers.BoolToPtr(false),
 		},
 	}, {
 		Node: ign3types.Node{
-			Path: "/dummy/1",
+			Path:      "/dummy/1",
+			Overwrite: helpers.BoolToPtr(false),
 		},
 	}}
 	mcs := []*mcfgv1.MachineConfig{
@@ -461,9 +481,7 @@ func TestDoNothing(t *testing.T) {
 	f.objects = append(f.objects, gmc)
 
 	mcpNew := mcp.DeepCopy()
-	for _, mc := range mcs {
-		mcpNew.Spec.Configuration.Source = append(mcpNew.Spec.Configuration.Source, corev1.ObjectReference{Kind: machineconfigKind.Kind, Name: mc.GetName(), APIVersion: machineconfigKind.GroupVersion().String()})
-	}
+	mcpNew.Spec.Configuration.Source = getMachineConfigRefs(mcs)
 
 	f.expectGetMachineConfigAction(gmc)
 	f.expectUpdateMachineConfigPool(mcpNew)
@@ -533,4 +551,23 @@ func TestMachineConfigsNoBailWithoutPool(t *testing.T) {
 	c.updateMachineConfig(mc, mc)
 	c.deleteMachineConfig(mc)
 	require.Len(t, queue, 3)
+}
+
+func TestGenerateMachineConfigValidation(t *testing.T) {
+	mcp := helpers.NewMachineConfigPool("test-cluster-master", helpers.MasterSelector, nil, "")
+	mcs := []*mcfgv1.MachineConfig{
+		helpers.NewMachineConfig("00-test-cluster-master", map[string]string{"node-role/master": ""}, "dummy-test-1", []ign3types.File{}),
+		helpers.NewMachineConfig("00-test-cluster-master-0", map[string]string{"node-role/master": ""}, "dummy-change", []ign3types.File{}),
+	}
+
+	currentMC := helpers.NewMachineConfig("00-test-cluster-master", map[string]string{"node-role/master": ""}, "dummy-test-1", []ign3types.File{})
+	currentMC.Spec.FIPS = false
+
+	mcs[1].Spec.FIPS = true
+
+	cc := newControllerConfig(ctrlcommon.ControllerConfigName)
+
+	gmc, err := generateAndValidateRenderedMachineConfig(currentMC, mcp, mcs, cc)
+	assert.Error(t, err)
+	assert.Nil(t, gmc)
 }
