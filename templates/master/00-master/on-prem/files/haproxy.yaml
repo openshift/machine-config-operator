@@ -11,6 +11,8 @@ contents:
       deletionGracePeriodSeconds: 65
       labels:
         app: {{ onPremPlatformShortName . }}-infra-api-lb
+      annotations:
+        target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
     spec:
       volumes:
       - name: resource-dir
@@ -136,7 +138,7 @@ contents:
         resources:
           requests:
             cpu: 100m
-            memory: 200Mi          
+            memory: 200Mi
         volumeMounts:
         - name: conf-dir
           mountPath: "/etc/haproxy"
