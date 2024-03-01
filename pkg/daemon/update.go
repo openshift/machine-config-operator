@@ -275,21 +275,46 @@ func podmanRemove(cid string) {
 	exec.Command("podman", "rm", "-f", cid).Run()
 }
 
+// return true if the image is present
+func isImagePresent(imgURL string) (bool, error) {
+	// search the image
+	var imageSearch []byte
+	imageSearch, err := runGetOut("podman", "images", "-q", "--filter", fmt.Sprintf("reference=%s", imgURL))
+	if err != nil {
+		return false, fmt.Errorf("error searching the image: %w", err)
+	}
+	if strings.TrimSpace(string(imageSearch)) == "" {
+		return false, nil
+	}
+	return true, nil
+}
+
 func podmanCopy(imgURL, osImageContentDir string) (err error) {
+	// arguments used in external commands
+	var args []string
+
 	// make sure that osImageContentDir doesn't exist
 	os.RemoveAll(osImageContentDir)
 
-	// Pull the container image
-	var authArgs []string
-	if _, err := os.Stat(kubeletAuthFile); err == nil {
-		authArgs = append(authArgs, "--authfile", kubeletAuthFile)
-	}
-	args := []string{"pull", "-q"}
-	args = append(args, authArgs...)
-	args = append(args, imgURL)
-	_, err = pivotutils.RunExtBackground(numRetriesNetCommands, "podman", args...)
+	// Check if the image is present
+	imagePresent, err := isImagePresent(imgURL)
 	if err != nil {
 		return
+	}
+
+	// Pull the container image
+	if !imagePresent {
+		var authArgs []string
+		if _, err := os.Stat(kubeletAuthFile); err == nil {
+			authArgs = append(authArgs, "--authfile", kubeletAuthFile)
+		}
+		args = []string{"pull", "-q"}
+		args = append(args, authArgs...)
+		args = append(args, imgURL)
+		_, err = pivotutils.RunExtBackground(numRetriesNetCommands, "podman", args...)
+		if err != nil {
+			return
+		}
 	}
 
 	// create a container
