@@ -1113,25 +1113,106 @@ func newMachineConfigDiff(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineC
 }
 
 // reconcilable checks the configs to make sure that the only changes requested
-// are ones we know how to do in-place. If we can reconcile, (nil, nil) is returned.
+// are ones we know how to do in-place.  If we can reconcile, (nil, nil) is returned.
 // Otherwise, if we can't do it in place, the node is marked as degraded;
 // the returned string value includes the rationale.
 //
 // we can only update machine configs that have changes to the files,
 // directories, links, and systemd units sections of the included ignition
 // config currently.
-//
-// NOTE: The RenderController is also checking the configs to ensure that they
-// are reconcilable. By the time this code is reached, we can be reasonably
-// confident that the configs are reconcilable however, this check remains here
-// out of an abundance of caution. Additionally, this code has access to the
-// underlying node filesystem and can inspect the FIPS file
-// (/proc/sys/crypto/fips_enabled) and can determine if there is a mismatch
-// between the MachineConfig and the actual on-disk state.
 func reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineConfigDiff, error) {
-	if err := ctrlcommon.IsRenderedConfigReconcilable(oldConfig, newConfig); err != nil {
-		return nil, fmt.Errorf("configs %s, %s are not reconcilable: %w", oldConfig.Name, newConfig.Name, err)
+	// The parser will try to translate versions less than maxVersion to maxVersion, or output an err.
+	// The ignition output in case of success will always have maxVersion
+	oldIgn, err := ctrlcommon.ParseAndConvertConfig(oldConfig.Spec.Config.Raw)
+	if err != nil {
+		return nil, fmt.Errorf("parsing old Ignition config failed with error: %w", err)
 	}
+	newIgn, err := ctrlcommon.ParseAndConvertConfig(newConfig.Spec.Config.Raw)
+	if err != nil {
+		return nil, fmt.Errorf("parsing new Ignition config failed with error: %w", err)
+	}
+
+	// Check if this is a generally valid Ignition Config
+	if err := ctrlcommon.ValidateIgnition(newIgn); err != nil {
+		return nil, err
+	}
+
+	// Passwd section
+
+	// we don't currently configure Groups in place. we don't configure Users except
+	// for setting/updating SSHAuthorizedKeys for the only allowed user "core".
+	// otherwise we can't fix it if something changed here.
+	passwdChanged := !reflect.DeepEqual(oldIgn.Passwd, newIgn.Passwd)
+
+	if passwdChanged {
+		if !reflect.DeepEqual(oldIgn.Passwd.Groups, newIgn.Passwd.Groups) {
+			return nil, fmt.Errorf("ignition Passwd Groups section contains changes")
+		}
+		if !reflect.DeepEqual(oldIgn.Passwd.Users, newIgn.Passwd.Users) {
+			// there is an update to Users, we must verify that it is ONLY making an acceptable
+			// change to the SSHAuthorizedKeys for the user "core"
+			for _, user := range newIgn.Passwd.Users {
+				if user.Name != constants.CoreUserName {
+					return nil, fmt.Errorf("ignition passwd user section contains unsupported changes: non-core user")
+				}
+			}
+			// We don't want to panic if the "new" users is empty, and it's still reconcilable because the absence of a user here does not mean "remove the user from the system"
+			if len(newIgn.Passwd.Users) != 0 {
+				klog.Infof("user data to be verified before ssh update: %v", newIgn.Passwd.Users[len(newIgn.Passwd.Users)-1])
+				if err := verifyUserFields(newIgn.Passwd.Users[len(newIgn.Passwd.Users)-1]); err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
+
+	// Kernel args
+
+	// ignition now supports kernel args, but the MCO doesn't implement them yet
+	if !reflect.DeepEqual(oldIgn.KernelArguments, newIgn.KernelArguments) {
+		return nil, fmt.Errorf("ignition kargs section contains changes")
+	}
+
+	// Storage section
+
+	// we can only reconcile files right now. make sure the sections we can't
+	// fix aren't changed.
+	if !reflect.DeepEqual(oldIgn.Storage.Disks, newIgn.Storage.Disks) {
+		return nil, fmt.Errorf("ignition disks section contains changes")
+	}
+	if !reflect.DeepEqual(oldIgn.Storage.Filesystems, newIgn.Storage.Filesystems) {
+		return nil, fmt.Errorf("ignition filesystems section contains changes")
+	}
+	if !reflect.DeepEqual(oldIgn.Storage.Raid, newIgn.Storage.Raid) {
+		return nil, fmt.Errorf("ignition raid section contains changes")
+	}
+	if !reflect.DeepEqual(oldIgn.Storage.Directories, newIgn.Storage.Directories) {
+		return nil, fmt.Errorf("ignition directories section contains changes")
+	}
+	if !reflect.DeepEqual(oldIgn.Storage.Links, newIgn.Storage.Links) {
+		// This means links have been added, as opposed as being removed as it happened with
+		// https://bugzilla.redhat.com/show_bug.cgi?id=1677198. This doesn't really change behavior
+		// since we still don't support links but we allow old MC to remove links when upgrading.
+		if len(newIgn.Storage.Links) != 0 {
+			return nil, fmt.Errorf("ignition links section contains changes")
+		}
+	}
+
+	// Special case files append: if the new config wants us to append, then we
+	// have to force a reprovision since it's not idempotent
+	for _, f := range newIgn.Storage.Files {
+		if len(f.Append) > 0 {
+			return nil, fmt.Errorf("ignition file %v includes append", f.Path)
+		}
+		// We also disallow writing some special files
+		if f.Path == constants.MachineConfigDaemonForceFile {
+			return nil, fmt.Errorf("cannot create %s via Ignition", f.Path)
+		}
+	}
+
+	// Systemd section
+
+	// we can reconcile any state changes in the systemd section.
 
 	// FIPS section
 	// We do not allow update to FIPS for a running cluster, so any changes here will be an error
@@ -1146,6 +1227,28 @@ func reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineConfigDif
 		return nil, fmt.Errorf("error creating machineConfigDiff: %w", err)
 	}
 	return mcDiff, nil
+}
+
+// verifyUserFields returns nil for the user Name = "core" if 1 or more SSHKeys exist for
+// this user or if a password exists for this user and if all other fields in User are empty.
+// Otherwise, an error will be returned and the proposed config will not be reconcilable.
+// At this time we do not support non-"core" users or any changes to the "core" user
+// outside of SSHAuthorizedKeys and passwordHash.
+func verifyUserFields(pwdUser ign3types.PasswdUser) error {
+	emptyUser := ign3types.PasswdUser{}
+	tempUser := pwdUser
+	if tempUser.Name == constants.CoreUserName && ((tempUser.PasswordHash) != nil || len(tempUser.SSHAuthorizedKeys) >= 1) {
+		tempUser.Name = ""
+		tempUser.SSHAuthorizedKeys = nil
+		tempUser.PasswordHash = nil
+		if !reflect.DeepEqual(emptyUser, tempUser) {
+			return fmt.Errorf("SSH keys and password hash are not reconcilable")
+		}
+		klog.Info("SSH Keys reconcilable")
+	} else {
+		return fmt.Errorf("ignition passwd user section contains unsupported changes: user must be core and have 1 or more sshKeys")
+	}
+	return nil
 }
 
 func processFips(handler func(bool) error) error {

@@ -663,6 +663,106 @@ func TestPoolDegradedOnFailToRender(t *testing.T) {
 	}
 }
 
+func TestReconcileAfterBadMC(t *testing.T) {
+	cs := framework.NewClientSet("")
+
+	// create a MC that contains a valid ignition config but is not reconcilable
+	mcadd := createMCToAddFile("add-a-file", "/etc/mytestconfs", "test")
+	ignCfg, err := ctrlcommon.ParseAndConvertConfig(mcadd.Spec.Config.Raw)
+	require.Nil(t, err, "failed to parse ignition config")
+	ignCfg.Storage.Disks = []ign3types.Disk{
+		{
+			Device: "/one",
+		},
+	}
+	rawIgnCfg := helpers.MarshalOrDie(ignCfg)
+	mcadd.Spec.Config.Raw = rawIgnCfg
+
+	workerOldMc := helpers.GetMcName(t, cs, "worker")
+
+	// create the dummy MC now
+	_, err = cs.MachineConfigs().Create(context.TODO(), mcadd, metav1.CreateOptions{})
+	if err != nil {
+		t.Errorf("failed to create machine config %v", err)
+	}
+
+	renderedConfig, err := helpers.WaitForRenderedConfig(t, cs, "worker", mcadd.Name)
+	require.Nil(t, err)
+
+	// verify that one node picked the above up
+	if err := wait.Poll(2*time.Second, 5*time.Minute, func() (bool, error) {
+		nodes, err := helpers.GetNodesByRole(cs, "worker")
+		if err != nil {
+			return false, err
+		}
+		for _, node := range nodes {
+			if node.Annotations[constants.DesiredMachineConfigAnnotationKey] == renderedConfig &&
+				node.Annotations[constants.MachineConfigDaemonStateAnnotationKey] != constants.MachineConfigDaemonStateDone {
+				// just check that we have the annotation here, w/o strings checking anything that can flip fast causing flakes
+				if node.Annotations[constants.MachineConfigDaemonReasonAnnotationKey] != "" {
+					return true, nil
+				}
+			}
+		}
+		return false, nil
+	}); err != nil {
+		t.Errorf("machine config hasn't been picked by any MCD: %v", err)
+	}
+
+	// verify that we got indeed an unavailable machine in the pool
+	if err := wait.Poll(2*time.Second, 5*time.Minute, func() (bool, error) {
+		mcp, err := cs.MachineConfigPools().Get(context.TODO(), "worker", metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+		if apihelpers.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolNodeDegraded) && mcp.Status.DegradedMachineCount >= 1 {
+			return true, nil
+		}
+		return false, nil
+	}); err != nil {
+		t.Errorf("worker pool isn't reporting degraded with a bad MC: %v", err)
+	}
+
+	// now delete the bad MC and watch the nodes reconciling as expected
+	if err := cs.MachineConfigs().Delete(context.TODO(), mcadd.Name, metav1.DeleteOptions{}); err != nil {
+		t.Error(err)
+	}
+
+	// wait for the mcp to go back to previous config
+	if err := helpers.WaitForPoolComplete(t, cs, "worker", workerOldMc); err != nil {
+		t.Fatal(err)
+	}
+
+	visited := make(map[string]bool)
+	if err := wait.Poll(2*time.Second, 30*time.Minute, func() (bool, error) {
+		nodes, err := helpers.GetNodesByRole(cs, "worker")
+		if err != nil {
+			return false, err
+		}
+		mcp, err := cs.MachineConfigPools().Get(context.TODO(), "worker", metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+		for _, node := range nodes {
+			if node.Annotations[constants.CurrentMachineConfigAnnotationKey] == workerOldMc &&
+				node.Annotations[constants.DesiredMachineConfigAnnotationKey] == workerOldMc &&
+				node.Annotations[constants.MachineConfigDaemonStateAnnotationKey] == constants.MachineConfigDaemonStateDone {
+				visited[node.Name] = true
+				if len(visited) == len(nodes) {
+					if mcp.Status.UnavailableMachineCount == 0 && mcp.Status.ReadyMachineCount == int32(len(nodes)) &&
+						mcp.Status.UpdatedMachineCount == int32(len(nodes)) {
+						return true, nil
+					}
+				}
+				continue
+			}
+		}
+		return false, nil
+	}); err != nil {
+		t.Errorf("machine config didn't roll back on any worker: %v", err)
+	}
+}
+
 // Test that deleting a MC that changes a file does not completely delete the file
 // entirely but rather restores it to its original state.
 func TestDontDeleteRPMFiles(t *testing.T) {

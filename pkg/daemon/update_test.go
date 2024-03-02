@@ -80,6 +80,135 @@ func TestRunCmdSync(t *testing.T) {
 	assert.NotNil(t, err)
 }
 
+// TestReconcilable attempts to verify the conditions in which configs would and would not be
+// reconcilable. Welcome to the longest unittest you've ever read.
+func TestReconcilable(t *testing.T) {
+	oldIgnCfg := ctrlcommon.NewIgnConfig()
+	// oldConfig is the current config of the fake system
+	oldConfig := helpers.CreateMachineConfigFromIgnition(oldIgnCfg)
+	newIgnCfg := ctrlcommon.NewIgnConfig()
+
+	// Set improper version
+	newIgnCfg.Ignition.Version = "4.0.0"
+
+	// newConfig is the config that is being requested to apply to the system
+	newConfig := helpers.CreateMachineConfigFromIgnition(newIgnCfg)
+	// Verify Ignition version mismatch react as expected
+	_, isReconcilable := reconcilable(oldConfig, newConfig)
+	checkIrreconcilableResults(t, "Ignition", isReconcilable)
+	//reset to proper Ignition version
+	newIgnCfg.Ignition.Version = ign3types.MaxVersion.String()
+	newConfig = helpers.CreateMachineConfigFromIgnition(newIgnCfg)
+	_, isReconcilable = reconcilable(oldConfig, newConfig)
+	checkReconcilableResults(t, "Ignition", isReconcilable)
+
+	// Verify Disk changes react as expected
+	oldIgnCfg.Storage.Disks = []ign3types.Disk{
+		{
+			Device: "/one",
+		},
+	}
+	oldConfig = helpers.CreateMachineConfigFromIgnition(oldIgnCfg)
+	_, isReconcilable = reconcilable(oldConfig, newConfig)
+	checkIrreconcilableResults(t, "Disk", isReconcilable)
+
+	// Match storage disks
+	newIgnCfg.Storage.Disks = oldIgnCfg.Storage.Disks
+	newConfig = helpers.CreateMachineConfigFromIgnition(newIgnCfg)
+	_, isReconcilable = reconcilable(oldConfig, newConfig)
+	checkReconcilableResults(t, "Disk", isReconcilable)
+
+	// Verify Filesystems changes react as expected
+	oldIgnCfg.Storage.Filesystems = []ign3types.Filesystem{
+		{
+			Device: "/dev/sda1",
+			Format: helpers.StrToPtr("ext4"),
+			Path:   helpers.StrToPtr("/foo/bar"),
+		},
+	}
+	oldConfig = helpers.CreateMachineConfigFromIgnition(oldIgnCfg)
+	_, isReconcilable = reconcilable(oldConfig, newConfig)
+	checkIrreconcilableResults(t, "Filesystem", isReconcilable)
+
+	// Match Storage filesystems
+	newIgnCfg.Storage.Filesystems = oldIgnCfg.Storage.Filesystems
+	newConfig = helpers.CreateMachineConfigFromIgnition(newIgnCfg)
+	_, isReconcilable = reconcilable(oldConfig, newConfig)
+	checkReconcilableResults(t, "Filesystem", isReconcilable)
+
+	// Verify Raid changes react as expected
+	var stripe = "stripe"
+	oldIgnCfg.Storage.Raid = []ign3types.Raid{
+		{
+			Name:    "data",
+			Level:   &stripe,
+			Devices: []ign3types.Device{"/dev/vda", "/dev/vdb"},
+		},
+	}
+	oldConfig = helpers.CreateMachineConfigFromIgnition(oldIgnCfg)
+	_, isReconcilable = reconcilable(oldConfig, newConfig)
+	checkIrreconcilableResults(t, "Raid", isReconcilable)
+
+	// Match storage raid
+	newIgnCfg.Storage.Raid = oldIgnCfg.Storage.Raid
+	newConfig = helpers.CreateMachineConfigFromIgnition(newIgnCfg)
+	_, isReconcilable = reconcilable(oldConfig, newConfig)
+	checkReconcilableResults(t, "Raid", isReconcilable)
+
+	// Verify Passwd Groups changes unsupported
+	oldIgnCfg = ctrlcommon.NewIgnConfig()
+	oldConfig = helpers.CreateMachineConfigFromIgnition(oldIgnCfg)
+	newIgnCfg = ctrlcommon.NewIgnConfig()
+	newConfig = helpers.CreateMachineConfigFromIgnition(newIgnCfg)
+
+	_, isReconcilable = reconcilable(oldConfig, newConfig)
+	checkReconcilableResults(t, "PasswdGroups", isReconcilable)
+
+	tempGroup := ign3types.PasswdGroup{}
+	tempGroup.Name = "testGroup"
+	newIgnCfg.Passwd.Groups = []ign3types.PasswdGroup{tempGroup}
+	newConfig = helpers.CreateMachineConfigFromIgnition(newIgnCfg)
+	_, isReconcilable = reconcilable(oldConfig, newConfig)
+	checkIrreconcilableResults(t, "PasswdGroups", isReconcilable)
+
+	// Verify Ignition kernelArguments changes unsupported
+	oldIgnCfg = ctrlcommon.NewIgnConfig()
+	oldConfig = helpers.CreateMachineConfigFromIgnition(oldIgnCfg)
+	newIgnCfg = ctrlcommon.NewIgnConfig()
+	newIgnCfg.KernelArguments.ShouldExist = []ign3types.KernelArgument{"foo=bar"}
+	newIgnCfg.KernelArguments.ShouldNotExist = []ign3types.KernelArgument{"baz=foo"}
+
+	newConfig = helpers.CreateMachineConfigFromIgnition(newIgnCfg)
+
+	_, isReconcilable = reconcilable(oldConfig, newConfig)
+	checkIrreconcilableResults(t, "KernelArguments", isReconcilable)
+
+	// Verify Tang changes are supported (even though we don't do anything with them yet)
+	oldIgnCfg = ctrlcommon.NewIgnConfig()
+	oldIgnCfg.Storage.Luks = []ign3types.Luks{
+		{
+			Clevis: ign3types.Clevis{
+				Custom: ign3types.ClevisCustom{},
+				Tang: []ign3types.Tang{
+					{
+						URL:           "https://tang.example.com",
+						Advertisement: helpers.StrToPtr(`{"payload": "...", "protected": "...", "signature": "..."}`),
+						Thumbprint:    helpers.StrToPtr("TREPLACE-THIS-WITH-YOUR-TANG-THUMBPRINT"),
+					},
+				},
+			},
+			Device: helpers.StrToPtr("/dev/sdb"),
+			Name:   "luks-tang",
+		},
+	}
+	oldConfig = helpers.CreateMachineConfigFromIgnition(oldIgnCfg)
+	newIgnCfg = ctrlcommon.NewIgnConfig()
+	newConfig = helpers.CreateMachineConfigFromIgnition(newIgnCfg)
+
+	_, isReconcilable = reconcilable(oldConfig, newConfig)
+	checkReconcilableResults(t, "LuksClevisTang", isReconcilable)
+}
+
 func TestMachineConfigDiff(t *testing.T) {
 	oldIgnCfg := ctrlcommon.NewIgnConfig()
 	oldConfig := helpers.CreateMachineConfigFromIgnition(oldIgnCfg)
@@ -270,6 +399,56 @@ func TestKernelAguments(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestReconcilableSSH(t *testing.T) {
+	// Check that updating SSH Key of user core supported
+	oldIgnCfg := ctrlcommon.NewIgnConfig()
+	oldMcfg := helpers.CreateMachineConfigFromIgnition(oldIgnCfg)
+	tempUser1 := ign3types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"5678", "abc"}}
+	newIgnCfg := ctrlcommon.NewIgnConfig()
+	newIgnCfg.Passwd.Users = []ign3types.PasswdUser{tempUser1}
+	newMcfg := helpers.CreateMachineConfigFromIgnition(newIgnCfg)
+	_, errMsg := reconcilable(oldMcfg, newMcfg)
+	checkReconcilableResults(t, "SSH", errMsg)
+
+	// 	Check that updating User with User that is not core is not supported
+	tempUser2 := ign3types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"1234"}}
+	oldIgnCfg.Passwd.Users = append(oldIgnCfg.Passwd.Users, tempUser2)
+	oldMcfg = helpers.CreateMachineConfigFromIgnition(oldIgnCfg)
+	tempUser3 := ign3types.PasswdUser{Name: "another user", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"5678"}}
+	newIgnCfg.Passwd.Users[0] = tempUser3
+	newMcfg = helpers.CreateMachineConfigFromIgnition(newIgnCfg)
+	_, errMsg = reconcilable(oldMcfg, newMcfg)
+	checkIrreconcilableResults(t, "SSH", errMsg)
+
+	// check that we cannot make updates if any other Passwd.User field is changed.
+	tempUser4 := ign3types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"5678"}, HomeDir: helpers.StrToPtr("somedir")}
+	newIgnCfg.Passwd.Users[0] = tempUser4
+	newMcfg = helpers.CreateMachineConfigFromIgnition(newIgnCfg)
+	_, errMsg = reconcilable(oldMcfg, newMcfg)
+	checkIrreconcilableResults(t, "SSH", errMsg)
+
+	// check that we cannot add a user or have len(Passwd.Users)> 1
+	tempUser5 := ign3types.PasswdUser{Name: "some user", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"5678"}}
+	newIgnCfg.Passwd.Users = append(newIgnCfg.Passwd.Users, tempUser5)
+	newMcfg = helpers.CreateMachineConfigFromIgnition(newIgnCfg)
+	_, errMsg = reconcilable(oldMcfg, newMcfg)
+	checkIrreconcilableResults(t, "SSH", errMsg)
+
+	// check that user is not attempting to remove the only sshkey from core user
+	tempUser6 := ign3types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{}}
+	newIgnCfg.Passwd.Users[0] = tempUser6
+	newIgnCfg.Passwd.Users = newIgnCfg.Passwd.Users[:len(newIgnCfg.Passwd.Users)-1]
+	newMcfg = helpers.CreateMachineConfigFromIgnition(newIgnCfg)
+	_, errMsg = reconcilable(oldMcfg, newMcfg)
+	checkIrreconcilableResults(t, "SSH", errMsg)
+
+	//check that empty Users does not cause panic
+	newIgnCfg.Passwd.Users = nil
+	newMcfg = helpers.CreateMachineConfigFromIgnition(newIgnCfg)
+	_, errMsg = reconcilable(oldMcfg, newMcfg)
+	checkReconcilableResults(t, "SSH", errMsg)
 }
 
 func TestWriteFiles(t *testing.T) {
