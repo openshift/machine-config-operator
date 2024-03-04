@@ -1,6 +1,5 @@
-# TODO switch the default image to rhel9 and drop the rhel8 one in 4.15 because
-# we can require by the time we get to 4.14 that we don't have any rhel8 hosts left
-FROM registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.20-openshift-4.15 AS builder
+# Use RHEL 9 as the primary builder base for the Machine Config Operator
+FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.21-openshift-4.16 AS builder
 ARG TAGS=""
 WORKDIR /go/src/github.com/openshift/machine-config-operator
 COPY . .
@@ -8,17 +7,20 @@ COPY . .
 # just use that.  For now we work around this by copying a tarball.
 RUN make install DESTDIR=./instroot && tar -C instroot -cf instroot.tar .
 
-FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.20-openshift-4.15 AS rhel9-builder
+# Add a RHEL 8 builder to compile the RHEL 8 compatible binaries
+FROM registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.21-openshift-4.16 AS rhel8-builder
 ARG TAGS=""
 WORKDIR /go/src/github.com/openshift/machine-config-operator
 COPY . .
-RUN make install DESTDIR=./instroot
+RUN make install DESTDIR=./instroot-rhel8 && tar -C instroot-rhel8 -cf instroot-rhel8.tar .
 
-FROM registry.ci.openshift.org/ocp/4.15:base
+# Base image is RHEL 9. Only machine-config-daemon.rhel8 is from RHEL 8; all other binaries are RHEL 9.
+FROM registry.ci.openshift.org/ocp/4.16:base-rhel9
 ARG TAGS=""
 COPY --from=builder /go/src/github.com/openshift/machine-config-operator/instroot.tar /tmp/instroot.tar
 RUN cd / && tar xf /tmp/instroot.tar && rm -f /tmp/instroot.tar
-COPY --from=rhel9-builder /go/src/github.com/openshift/machine-config-operator/instroot/usr/bin/machine-config-daemon /usr/bin/machine-config-daemon.rhel9
+# Copy the RHEL 8 machine-config-daemon binary and rename
+COPY --from=rhel8-builder /go/src/github.com/openshift/machine-config-operator/instroot-rhel8/usr/bin/machine-config-daemon /usr/bin/machine-config-daemon.rhel8
 COPY install /manifests
 
 RUN if [ "${TAGS}" = "fcos" ]; then \
