@@ -56,3 +56,13 @@ rules:
       - get
       - list
       - watch
+  - apiGroups:
+      - config.openshift.io
+    resources: 
+      - imagepolicies 
+      - clusterimagepolicies
+    verbs:
+      - get
+      - list
+      - watch
+      - update

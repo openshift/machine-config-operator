@@ -72,6 +72,10 @@ github.com/OpenPeeDeeP/depguard/v2 v2.1.0 h1:aQl70G173h/GZYhWf36aE5H0KaujXfVMnn/
 github.com/OpenPeeDeeP/depguard/v2 v2.1.0/go.mod h1:PUBgk35fX4i7JDmwzlJwJ+GMe6NfO1723wmJMgPThNQ=
 github.com/PuerkitoBio/purell v1.1.1/go.mod h1:c11w/QuzBsJSee3cPx9rAFu61PvFxuPbtSwDGJws/X0=
 github.com/PuerkitoBio/urlesc v0.0.0-20170810143723-de5bf2ad4578/go.mod h1:uGdkoq3SwY9Y+13GIhn11/XLaGBb4BfwItxLd5jeuXE=
+github.com/QiWang19/api v0.0.0-20240210054700-a95bb144f44f h1:V8tMeJUo24MoTX0Ac8Ud6y7AgcYJ53fk8av43ylbqN4=
+github.com/QiWang19/api v0.0.0-20240210054700-a95bb144f44f/go.mod h1:CxgbWAlvu2iQB0UmKTtRu1YfepRg1/vJ64n2DlIEVz4=
+github.com/QiWang19/client-go v0.0.0-20240210061104-d13d84b73765 h1:/el4UT01Tg+5nnQaZSLzeZYBmVLhaFSDLqdp+lHFa9w=
+github.com/QiWang19/client-go v0.0.0-20240210061104-d13d84b73765/go.mod h1:abbgYykRixaLLqDXiSdoMd8/sIm5bE1kfaMU1rGHJ7c=
 github.com/ajeddeloh/go-json v0.0.0-20170920214419-6a2fe990e083/go.mod h1:otnto4/Icqn88WCcM4bhIJNSgsh9VLBuspyyCfvof9c=
 github.com/ajeddeloh/go-json v0.0.0-20200220154158-5ae607161559 h1:4SPQljF/GJ8Q+QlCWMWxRBepub4DresnOm4eI2ebFGc=
 github.com/ajeddeloh/go-json v0.0.0-20200220154158-5ae607161559/go.mod h1:otnto4/Icqn88WCcM4bhIJNSgsh9VLBuspyyCfvof9c=
@@ -689,10 +693,6 @@ github.com/opencontainers/runc v1.1.10 h1:EaL5WeO9lv9wmS6SASjszOeQdSctvpbu0DdBQB
 github.com/opencontainers/runc v1.1.10/go.mod h1:+/R6+KmDlh+hOO8NkjmgkG9Qzvypzk0yXxAPYYR65+M=
 github.com/opencontainers/runtime-spec v1.1.0 h1:HHUyrt9mwHUjtasSbXSMvs4cyFxh+Bll4AjJ9odEGpg=
 github.com/opencontainers/runtime-spec v1.1.0/go.mod h1:jwyrGlmzljRJv/Fgzds9SsS/C5hL+LL3ko9hs6T5lQ0=
-github.com/openshift/api v0.0.0-20240205144533-7162acc29bb6 h1:OrjG0Lt0pXNYd6LUfGD3BYoBWXhfRMAMK0LYu8pdyqQ=
-github.com/openshift/api v0.0.0-20240205144533-7162acc29bb6/go.mod h1:CxgbWAlvu2iQB0UmKTtRu1YfepRg1/vJ64n2DlIEVz4=
-github.com/openshift/client-go v0.0.0-20240104132419-223261fd8630 h1:JQ/TO3bSDowReecFDvz+Nr0Fx8aoJI0zdo01y2W5NKk=
-github.com/openshift/client-go v0.0.0-20240104132419-223261fd8630/go.mod h1:8W4atsD8vBtEK0qplKpFWo+7XsQwzHTlqL7o/XpagRM=
 github.com/openshift/cluster-config-operator v0.0.0-alpha.0.0.20231213185242-e4dc676febfe h1:wDQtyIbJJIoif2Ux0S+9MJWIWEGV0oG+iLm8WtqwdSw=
 github.com/openshift/cluster-config-operator v0.0.0-alpha.0.0.20231213185242-e4dc676febfe/go.mod h1:SGUtv1pKZSzSVr2YCxXFvhE+LbGfI+vcetEhNicKayw=
 github.com/openshift/kube-openapi v0.0.0-20230816122517-ffc8f001abb0 h1:GPlAy197Jkr+D0T2FNWanamraTdzS/r9ZkT29lxvHaA=

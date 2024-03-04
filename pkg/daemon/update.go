@@ -452,6 +452,10 @@ func calculatePostConfigChangeActionFromFileDiffs(diffFileSet []string) (actions
 	filesPostConfigChangeActionRestartCrio := []string{
 		"/etc/pki/ca-trust/source/anchors/openshift-config-user-ca-bundle.crt",
 	}
+	dirsPostConfigChangeActionReloadCrio := []string{
+		constants.CrioPoliciesDir,
+		constants.SigstoreRegistriesConfigDir,
+	}
 
 	actions = []string{postConfigChangeActionNone}
 	for _, path := range diffFileSet {
@@ -461,6 +465,8 @@ func calculatePostConfigChangeActionFromFileDiffs(diffFileSet []string) (actions
 			actions = []string{postConfigChangeActionReloadCrio}
 		} else if ctrlcommon.InSlice(path, filesPostConfigChangeActionRestartCrio) {
 			actions = []string{postConfigChangeActionRestartCrio}
+		} else if ctrlcommon.InSlice(filepath.Dir(path), dirsPostConfigChangeActionReloadCrio) {
+			actions = []string{postConfigChangeActionReloadCrio}
 		} else {
 			actions = []string{postConfigChangeActionReboot}
 			return

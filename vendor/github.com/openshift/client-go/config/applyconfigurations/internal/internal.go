@@ -3619,7 +3619,6 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: fulcioCAData
       type:
         scalar: string
-      default: ""
     - name: fulcioSubject
       type:
         namedType: com.github.openshift.api.config.v1alpha1.PolicyFulcioSubject
