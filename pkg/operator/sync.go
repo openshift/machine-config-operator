@@ -766,9 +766,9 @@ func (optr *Operator) syncMachineConfigNodes(_ *renderConfig) error {
 				Name: node.Name,
 				OwnerReferences: []metav1.OwnerReference{
 					{
-						APIVersion: "v1",
+						APIVersion: node.APIVersion,
 						Name:       node.ObjectMeta.Name,
-						Kind:       "Node",
+						Kind:       node.Kind,
 						UID:        node.ObjectMeta.UID,
 					},
 				},
