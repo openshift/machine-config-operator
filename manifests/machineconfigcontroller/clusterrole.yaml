@@ -5,7 +5,7 @@ metadata:
 rules:
 - apiGroups: [""]
   resources: ["nodes"]
-  verbs: ["get", "list", "watch", "patch"]
+  verbs: ["get", "list", "watch", "patch", "update"]
 - apiGroups: ["machineconfiguration.openshift.io"]
   resources: ["*"]
   verbs: ["*"]

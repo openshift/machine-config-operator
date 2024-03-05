@@ -346,9 +346,15 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 func (optr *Operator) enqueue(obj interface{}) {
 	// we're filtering out config maps that are "leader" based and we don't have logic around them
 	// resyncing on these causes the operator to sync every 14s for no good reason
-	if cm, ok := obj.(*corev1.ConfigMap); ok && cm.GetAnnotations() != nil && cm.GetAnnotations()[resourcelock.LeaderElectionRecordAnnotationKey] != "" {
-		return
+	if cm, ok := obj.(*corev1.ConfigMap); ok {
+		if cm.GetAnnotations() != nil && cm.GetAnnotations()[resourcelock.LeaderElectionRecordAnnotationKey] != "" {
+			return
+		}
+		if cm.Name == "kube-apiserver-server-ca" && cm.Namespace == "openshift-config-managed" {
+			klog.Info("Change observed to kube-apiserver-server-ca")
+		}
 	}
+
 	workQueueKey := fmt.Sprintf("%s/%s", optr.namespace, optr.name)
 	optr.queue.Add(workQueueKey)
 }
@@ -359,6 +365,7 @@ func (optr *Operator) eventHandler() cache.ResourceEventHandler {
 			optr.enqueue(obj)
 		},
 		UpdateFunc: func(old, new interface{}) {
+
 			optr.enqueue(new)
 		},
 		DeleteFunc: func(obj interface{}) {

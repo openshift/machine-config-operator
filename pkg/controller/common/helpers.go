@@ -669,7 +669,7 @@ var errConfigNotGzipped = fmt.Errorf("ignition config not gzipped")
 // Decode, decompress, and deserialize an Ignition config file.
 func ParseAndConvertGzippedConfig(rawIgn []byte) (ign3types.Config, error) {
 	// Try to decode and decompress our payload
-	out, err := decodeAndDecompressPayload(bytes.NewReader(rawIgn))
+	out, err := DecodeAndDecompressPayload(bytes.NewReader(rawIgn))
 	if err == nil {
 		// Our payload was decoded and decompressed, so parse it as Ignition.
 		klog.V(2).Info("ignition config was base64-decoded and gunzipped successfully")
@@ -699,7 +699,7 @@ func ParseAndConvertGzippedConfig(rawIgn []byte) (ign3types.Config, error) {
 }
 
 // Attempts to base64-decode and/or decompresses a given byte array.
-func decodeAndDecompressPayload(r io.Reader) ([]byte, error) {
+func DecodeAndDecompressPayload(r io.Reader) ([]byte, error) {
 	// Wrap the io.Reader in a base64 decoder (which implements io.Reader)
 	base64Dec := base64.NewDecoder(base64.StdEncoding, r)
 	out, err := decompressPayload(base64Dec)

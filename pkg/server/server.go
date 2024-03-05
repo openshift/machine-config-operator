@@ -139,6 +139,9 @@ func appendInitialMachineConfig(conf *ign3types.Config, mc *mcfgv1.MachineConfig
 }
 
 func appendKubeConfig(conf *ign3types.Config, f kubeconfigFunc) error {
+	if f == nil {
+		return nil
+	}
 	kcData, _, err := f()
 	if err != nil {
 		return err
