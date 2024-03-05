@@ -1,6 +1,8 @@
 package helpers
 
 import (
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
@@ -159,4 +161,29 @@ func ListPools(node *corev1.Node, mcpLister v1.MachineConfigPoolLister) (*mcfgv1
 	}
 
 	return master, worker, custom, nil
+}
+
+func CreateNewCert(cert []byte, name string) []mcfgv1.ControllerCertificate {
+	certs := []mcfgv1.ControllerCertificate{}
+	for len(cert) > 0 {
+		b, next := pem.Decode(cert)
+		if b == nil {
+			klog.Infof("Unable to decode cert %s into a pem block. Cert is either empty or invalid.", string(cert))
+			break
+		}
+		c, err := x509.ParseCertificate(b.Bytes)
+		if err != nil {
+			klog.Infof("Malformed Cert, not syncing")
+			continue
+		}
+		cert = next
+		certs = append(certs, mcfgv1.ControllerCertificate{
+			Subject:    c.Subject.String(),
+			Signer:     c.Issuer.String(),
+			BundleFile: name,
+			NotBefore:  &metav1.Time{Time: c.NotBefore},
+			NotAfter:   &metav1.Time{Time: c.NotAfter},
+		})
+	}
+	return certs
 }

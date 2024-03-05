@@ -416,10 +416,10 @@ func (optr *Operator) sync(key string) error {
 		// "RenderConfig" must always run first as it sets the renderConfig in the operator
 		// for the sync funcs below
 		{"RenderConfig", optr.syncRenderConfig},
+		{"MachineConfigController", optr.syncMachineConfigController},
 		{"MachineConfigNode", optr.syncMachineConfigNodes},
 		{"MachineConfigPools", optr.syncMachineConfigPools},
 		{"MachineConfigDaemon", optr.syncMachineConfigDaemon},
-		{"MachineConfigController", optr.syncMachineConfigController},
 		{"MachineConfigServer", optr.syncMachineConfigServer},
 		{"MachineOSBuilder", optr.syncMachineOSBuilder},
 		// this check must always run last since it makes sure the pools are in sync/upgrading correctly
