@@ -44,6 +44,12 @@ var (
 			Name: "mcc_sub_controller_state",
 			Help: "state of sub-controllers in the MCC",
 		}, []string{"subcontroller", "state", "object"})
+	// MCCBootImageUpdateErr logs when the bootimage reconciliation of a MachineSet fails.
+	MCCBootImageUpdateErr = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "mcc_bootimage_update_error",
+			Help: "boot image reconciliation failed",
+		}, []string{"machineset"})
 )
 
 func RegisterMCCMetrics() error {
@@ -52,6 +58,7 @@ func RegisterMCCMetrics() error {
 		MCCDrainErr,
 		MCCPoolAlert,
 		MCCSubControllerState,
+		MCCBootImageUpdateErr,
 	})
 
 	if err != nil {
@@ -64,6 +71,7 @@ func RegisterMCCMetrics() error {
 	MCCDrainErr.WithLabelValues("initialize").Set(0)
 	MCCPoolAlert.WithLabelValues("initialize").Set(0)
 	MCCSubControllerState.WithLabelValues("initialize", "initialize", "initialize").Set(0)
+	MCCBootImageUpdateErr.WithLabelValues("initialize").Set(0)
 
 	return nil
 }
