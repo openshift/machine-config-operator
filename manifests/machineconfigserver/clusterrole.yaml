@@ -13,3 +13,6 @@ rules:
   resourceNames: ["hostnetwork"]
   resources: ["securitycontextconstraints"]
   verbs: ["use"]
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list", "watch"]

@@ -62,6 +62,14 @@ func waitForConfigDriftMonitorStart(t *testing.T, cs *framework.ClientSet, node 
 		logs, err := cs.Pods(mcdPod.Namespace).GetLogs(mcdPod.Name, &corev1.PodLogOptions{
 			Container: "machine-config-daemon",
 		}).DoRaw(ctx)
+		if err != nil {
+			// common err is that the mcd went down mid cmd. Re-try for good measure
+			mcdPod, err = helpers.MCDForNode(cs, &node)
+			require.Nil(t, err)
+			logs, err = cs.Pods(mcdPod.Namespace).GetLogs(mcdPod.Name, &corev1.PodLogOptions{
+				Container: "machine-config-daemon",
+			}).DoRaw(ctx)
+		}
 		require.Nil(t, err)
 
 		splitLogs := strings.Split(string(logs), "\n")
@@ -94,12 +102,20 @@ func waitForConfigDriftMonitorStart(t *testing.T, cs *framework.ClientSet, node 
 	require.Nil(t, err, "expected config drift monitor to start (waited %v)", end)
 }
 
-func assertLogsContain(t *testing.T, cs *framework.ClientSet, mcdPod *corev1.Pod, expectedContents string) {
+func assertLogsContain(t *testing.T, cs *framework.ClientSet, mcdPod *corev1.Pod, node *corev1.Node, expectedContents string) {
 	t.Helper()
 
 	logs, err := cs.Pods(mcdPod.Namespace).GetLogs(mcdPod.Name, &corev1.PodLogOptions{
 		Container: "machine-config-daemon",
 	}).DoRaw(context.TODO())
+	if err != nil {
+		// common err is that the mcd went down mid cmd. Re-try for good measure
+		mcdPod, err = helpers.MCDForNode(cs, node)
+		require.Nil(t, err)
+		logs, err = cs.Pods(mcdPod.Namespace).GetLogs(mcdPod.Name, &corev1.PodLogOptions{
+			Container: "machine-config-daemon",
+		}).DoRaw(context.TODO())
+	}
 	require.Nil(t, err)
 
 	if !strings.Contains(string(logs), expectedContents) {

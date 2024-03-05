@@ -1,6 +1,7 @@
 package operator
 
 import (
+	"bytes"
 	"context"
 	"crypto/x509"
 	"encoding/base64"
@@ -934,7 +935,10 @@ func (optr *Operator) safetySyncControllerConfig(config *renderConfig) error {
 // it is meant to be called as part of syncMachineConfigController because it will only succeed if
 // the operator version and controller version match. We can call it from safetySyncControllerConfig
 // because safetySyncControllerConfig ensures that the operator and controller versions match before it syncs.
+//
+//nolint:gocritic
 func (optr *Operator) syncControllerConfig(config *renderConfig) error {
+
 	ccBytes, err := renderAsset(config, "manifests/machineconfigcontroller/controllerconfig.yaml")
 	if err != nil {
 		return err
@@ -944,8 +948,105 @@ func (optr *Operator) syncControllerConfig(config *renderConfig) error {
 	// suppress rendered config generation until a corresponding
 	// new controller can roll out too.
 	// https://bugzilla.redhat.com/show_bug.cgi?id=1879099
-	cc.Annotations[daemonconsts.GeneratedByVersionAnnotationKey] = version.Raw
 
+	editCCAnno := false
+	kubeConfigData, err := optr.clusterCmLister.ConfigMaps("openshift-config-managed").Get("kube-apiserver-server-ca")
+	if err != nil {
+		klog.Errorf("Could not get in-cluster server-ca data %v", err)
+	} else {
+		data, err := cmToData(kubeConfigData, "ca-bundle.crt")
+		if err != nil {
+			klog.Errorf("kube-apiserver-server-ca ConfigMap not populated yet. %v", err)
+		} else if data != nil {
+			cmNew := corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "kubeconfig-data",
+				},
+			}
+			mcoCM, getErr := optr.kubeClient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), "kubeconfig-data", metav1.GetOptions{})
+			if getErr != nil {
+				klog.Errorf("Issue getting the kubeconfig-data configmap: %v", getErr)
+				if !apierrors.IsNotFound(getErr) && !apierrors.IsTimeout(getErr) && !apierrors.IsServerTimeout(getErr) {
+					return getErr
+				}
+			}
+			dataOld, err := cmToData(mcoCM, "ca-bundle.crt")
+			if err != nil && getErr == nil {
+				klog.Errorf("Could not get ca-bundle.crt from kubeconfig-data cm %v", err)
+			} else if !bytes.Equal(data, dataOld) && getErr == nil {
+				// -1 == mcoCM < kubeCM
+				// 1 == mcoCM > kubeCM
+				klog.Infof("the MCO configmap for the server-ca and the openshift-config-managed one do not match. Diff: (0 means equal -1 means data has been removed 1 means data has been added) %d.", bytes.Compare(dataOld, data))
+				// old mco CM data
+				newData := true
+				for newData {
+					klog.Infof("Polling for new data in kube-apiserver-server-ca")
+					if err := wait.PollUntilContextTimeout(context.TODO(), 15*time.Second, 1*time.Minute, false, func(ctx context.Context) (bool, error) {
+						newData = false
+						// pull off of API not a lister
+						kubeConfigData, err := optr.kubeClient.CoreV1().ConfigMaps("openshift-config-managed").Get(context.TODO(), "kube-apiserver-server-ca", metav1.GetOptions{})
+						if err != nil {
+							klog.Errorf("Could not get in-cluster server-ca data %v", err)
+						} else {
+							newBytes, err := cmToData(kubeConfigData, "ca-bundle.crt")
+							if err != nil {
+								return false, err
+							}
+							if !bytes.Equal(newBytes, data) {
+								klog.Infof("Found new data while polling. Waiting an extra minute to see if there are any more changes.")
+								newData = true
+								data = newBytes
+								return newData, nil
+							}
+						}
+						return false, nil
+					}); err != nil {
+						if !wait.Interrupted(err) {
+							klog.Errorf("Error waiting for kube-apiserver-server-ca to settle: %v", err)
+						}
+					}
+				}
+				binData := make(map[string][]byte)
+				binData["ca-bundle.crt"] = data
+				cmNew.BinaryData = binData
+				cmMarshal, err := json.Marshal(mcoCM)
+				if err != nil {
+					return fmt.Errorf("could not marshal old configmap data. Err: %v ", err)
+				}
+				// new mco CM Data
+				newCMMarshal, err := json.Marshal(cmNew)
+				if err != nil {
+					return fmt.Errorf("could not marshal new configmap data. Data: %s Err: %v ", string(data), err)
+				}
+				// patch mco CM
+				patchBytes, err := jsonmergepatch.CreateThreeWayJSONMergePatch(cmMarshal, newCMMarshal, cmMarshal)
+				if err != nil {
+					return fmt.Errorf("Could not create a three way json merge patch: %w", err)
+				}
+				_, err = optr.kubeClient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Patch(context.TODO(), "kubeconfig-data", types.MergePatchType, patchBytes, metav1.PatchOptions{})
+				if err != nil {
+					return fmt.Errorf("Could not patch kubeconfig-data with data %s: %w", string(patchBytes), err)
+				}
+				editCCAnno = true
+			} else if getErr != nil {
+				binData := make(map[string][]byte)
+				binData["ca-bundle.crt"] = data
+				cmNew.BinaryData = binData
+				_, err := optr.kubeClient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Create(context.TODO(), &cmNew, metav1.CreateOptions{})
+				if err != nil {
+					return fmt.Errorf("Could not make kubeconfig-data CM, %v", err)
+				}
+				editCCAnno = true
+			}
+
+		}
+	}
+	cc.Annotations[daemonconsts.GeneratedByVersionAnnotationKey] = version.Raw
+	if editCCAnno {
+		cc.Annotations[ctrlcommon.ServiceCARotateAnnotation] = ctrlcommon.ServiceCARotateTrue
+	} else {
+		cc.Annotations[ctrlcommon.ServiceCARotateAnnotation] = ctrlcommon.ServiceCARotateFalse
+	}
 	// add ocp release version as annotation to controller config, for use when
 	// annotating rendered configs with same.
 	optrVersion, _ := optr.vStore.Get("operator")
@@ -1600,8 +1701,6 @@ func getCAsFromConfigMap(cm *corev1.ConfigMap, key string) ([]byte, error) {
 	} else if d, dok := cm.Data[key]; dok {
 		raw, err := base64.StdEncoding.DecodeString(d)
 		if err != nil {
-			// this is actually the result of a bad assumption.  configmap values are not encoded.
-			// After the installer pull merges, this entire attempt to decode can go away.
 			return []byte(d), nil
 		}
 		return raw, nil
@@ -1821,4 +1920,19 @@ func (optr *Operator) getImageRegistryPullSecrets() ([]byte, error) {
 	}
 
 	return nil, nil
+}
+
+//nolint:unparam
+func cmToData(cm *corev1.ConfigMap, key string) ([]byte, error) {
+	if bd, bdok := cm.BinaryData["ca-bundle.crt"]; bdok {
+		return bd, nil
+	}
+	if d, dok := cm.Data["ca-bundle.crt"]; dok {
+		raw, err := base64.StdEncoding.DecodeString(d)
+		if err != nil {
+			return []byte(d), nil
+		}
+		return raw, nil
+	}
+	return nil, fmt.Errorf("%s not found in %s/%s", key, cm.Namespace, cm.Name)
 }
