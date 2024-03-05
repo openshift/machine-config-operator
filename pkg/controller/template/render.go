@@ -467,6 +467,8 @@ func credentialProviderConfigFlag(cfg RenderConfig) interface{} {
 	switch cfg.Infra.Status.PlatformStatus.Type {
 	case configv1.AWSPlatformType:
 		return fmt.Sprintf("%s %s%s", credentialProviderBinDirFlag, credentialProviderConfigFlag, "ecr-credential-provider.yaml")
+	case configv1.GCPPlatformType:
+		return fmt.Sprintf("%s %s%s", credentialProviderBinDirFlag, credentialProviderConfigFlag, "gcr-credential-provider.yaml")
 	default:
 		return ""
 	}
