@@ -18,6 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/jsonmergepatch"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
 	clientset "k8s.io/client-go/kubernetes"
@@ -198,11 +199,22 @@ func (ctrl *Controller) processNextWorkItem() bool {
 }
 
 func (ctrl *Controller) handleErr(err error, key interface{}) {
-	if err == nil {
-		ctrl.queue.Forget(key)
+
+	_, msName, splitErr := cache.SplitMetaNamespaceKey(key.(string))
+	if splitErr != nil {
+		klog.V(2).Infof("Exception %v handling error during machineset sync %v: %v", splitErr, key, err)
 		return
 	}
 
+	if err == nil {
+		ctrl.queue.Forget(key)
+		// Clear any errors as this machineset was successfully patched
+		ctrlcommon.MCCBootImageUpdateErr.WithLabelValues(msName).Set(0)
+		return
+	}
+
+	// Increment error on this machineset
+	ctrlcommon.MCCBootImageUpdateErr.WithLabelValues(msName).Inc()
 	if ctrl.queue.NumRequeues(key) < maxRetries {
 		klog.V(2).Infof("Error syncing machineset %v: %v", key, err)
 		ctrl.queue.AddRateLimited(key)
@@ -361,21 +373,17 @@ func (ctrl *Controller) syncMachineSet(key string) error {
 
 	versionHashFromCM, versionHashFound := configMap.Data[ctrlcommon.MCOVersionHashKey]
 	if !versionHashFound {
-		klog.Infof("failed to find mco version hash in %s configmap, sync will exit to wait for the MCO upgrade to complete", ctrlcommon.BootImagesConfigMapName)
-		return nil
+		return fmt.Errorf("failed to find mco version hash in %s configmap, sync will exit to wait for the MCO upgrade to complete", ctrlcommon.BootImagesConfigMapName)
 	}
 	if versionHashFromCM != operatorversion.Hash {
-		klog.Infof("mismatch between MCO hash version stored in configmap and current MCO version; sync will exit to wait for the MCO upgrade to complete")
-		return nil
+		return fmt.Errorf("mismatch between MCO hash version stored in configmap and current MCO version; sync will exit to wait for the MCO upgrade to complete")
 	}
 	releaseVersionFromCM, releaseVersionFound := configMap.Data[ctrlcommon.MCOReleaseImageVersionKey]
 	if !releaseVersionFound {
-		klog.Infof("failed to find mco release version in %s configmap, sync will exit to wait for the MCO upgrade to complete", ctrlcommon.BootImagesConfigMapName)
-		return nil
+		return fmt.Errorf("failed to find mco release version in %s configmap, sync will exit to wait for the MCO upgrade to complete", ctrlcommon.BootImagesConfigMapName)
 	}
 	if releaseVersionFromCM != operatorversion.ReleaseVersion {
-		klog.Infof("mismatch between MCO release version stored in configmap and current MCO release version; sync will exit to wait for the MCO upgrade to complete")
-		return nil
+		return fmt.Errorf("mismatch between MCO release version stored in configmap and current MCO release version; sync will exit to wait for the MCO upgrade to complete")
 	}
 
 	// TODO: Also check against the release version stored in the configmap under releaseVersion. This is currently broken as the version
@@ -394,7 +402,10 @@ func (ctrl *Controller) syncMachineSet(key string) error {
 	}
 
 	// Fetch the architecture type of this machineset
-	arch := ctrl.getArchFromMachineSet(machineSet)
+	arch, err := ctrl.getArchFromMachineSet(machineSet)
+	if err != nil {
+		return fmt.Errorf("failed to fetch arch during machineset sync: %w", err)
+	}
 
 	// Fetch the infra object to determine the platform type
 	infra, err := ctrl.infraLister.Get("cluster")
@@ -411,29 +422,31 @@ func (ctrl *Controller) syncMachineSet(key string) error {
 	// Patch the machineset if required
 	if patchRequired {
 		klog.Infof("Patching machineset %s", machineSet.Name)
-		ctrl.patchMachineSet(machineSet, newMachineSet)
-	} else {
-		klog.Infof("No patching required for machineset %s", machineSet.Name)
+		return ctrl.patchMachineSet(machineSet, newMachineSet)
 	}
+	klog.Infof("No patching required for machineset %s", machineSet.Name)
 	return nil
 }
 
 // Returns architecture type for a given machine set
-func (ctrl *Controller) getArchFromMachineSet(machineset *machinev1beta1.MachineSet) (arch string) {
+func (ctrl *Controller) getArchFromMachineSet(machineset *machinev1beta1.MachineSet) (arch string, err error) {
 
+	// Valid set of machineset/node architectures
+	validArchSet := sets.New[string]("arm64", "s390x", "amd64", "ppc64le")
 	// Check if the annotation enclosing arch label is present on this machineset
 	archLabel, archLabelMatch := machineset.Annotations[MachineSetArchAnnotationKey]
 	if archLabelMatch {
-		// Grab arch value from the annotation
+		// Grab arch value from the annotation and check if it is valid
 		_, archLabelValue, archLabelValueFound := strings.Cut(archLabel, ArchLabelKey)
-		if archLabelValueFound {
-			return archtranslater.RpmArch(archLabelValue)
+		if archLabelValueFound && validArchSet.Has(archLabelValue) {
+			return archtranslater.RpmArch(archLabelValue), nil
 		}
+		return "", fmt.Errorf("invalid architecture value found in annotation: %s ", archLabel)
 	}
 	// If no arch annotation was found on the machineset, default to the control plane arch.
 	// return the architecture of the node running this pod, which will always be a control plane node.
 	klog.Infof("Defaulting to control plane architecture")
-	return archtranslater.CurrentRpmArch()
+	return archtranslater.CurrentRpmArch(), nil
 }
 
 // This function patches the machineset object using the machineClient
@@ -455,6 +468,7 @@ func (ctrl *Controller) patchMachineSet(oldMachineSet, newMachineSet *machinev1b
 	if err != nil {
 		return fmt.Errorf("unable to patch new machineset: %w", err)
 	}
+	klog.Infof("Successfully patched machineset %s", oldMachineSet.Name)
 	return nil
 }
 
