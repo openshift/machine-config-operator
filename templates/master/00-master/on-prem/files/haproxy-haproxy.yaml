@@ -7,7 +7,7 @@ contents:
     defaults
       maxconn 20000
       mode    tcp
-      log     /var/run/haproxy/haproxy-log.sock local0
+      log     /var/run/haproxy/haproxy-log.sock local0 notice alert
       log-format "%ci:%cp -> %fi:%fp [%t] %ft %b/%s %Tw/%Tc/%Tt %B %ts %ac/%fc/%bc/%sc/%rc %sq/%bq"
       option  dontlognull
       retries 3
@@ -37,7 +37,6 @@ contents:
       stats auth Username:Password
     backend masters
        option  httpchk GET /readyz HTTP/1.0
-       option  log-health-checks
        balance roundrobin
     {{`{{- range .LBConfig.Backends }}
        server {{ .Host }} {{ .Address }}:{{ .Port }} weight 1 verify none check check-ssl inter 1s fall 2 rise 3
