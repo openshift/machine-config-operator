@@ -311,7 +311,7 @@ func TestCredentialProviderConfigFlag(t *testing.T) {
 		},
 		{
 			platform: configv1.AzurePlatformType,
-			res:      "",
+			res:      "--image-credential-provider-bin-dir=/usr/libexec/kubelet-image-credential-provider-plugins --image-credential-provider-config=/etc/kubernetes/credential-providers/acr-credential-provider.yaml",
 		},
 		{
 			platform: configv1.GCPPlatformType,
