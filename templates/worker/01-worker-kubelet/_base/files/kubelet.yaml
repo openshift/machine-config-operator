@@ -26,6 +26,7 @@ contents:
     staticPodPath: /etc/kubernetes/manifests
     systemCgroups: /system.slice
     nodeStatusUpdateFrequency: 10s
+    nodeStatusReportFrequency: 5m
     featureGates:
       AlibabaPlatform: true
       OpenShiftPodSecurityAdmission: true
