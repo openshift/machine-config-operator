@@ -92,7 +92,7 @@ contents:
             if pid=$(pgrep -o keepalived); then
                 kill -s SIGHUP "$pid"
             else
-                /usr/sbin/keepalived -f /etc/keepalived/keepalived.conf --dont-fork --vrrp --log-detail --log-console &
+                /usr/sbin/keepalived -f /etc/keepalived/keepalived.conf --dont-fork --vrrp --log-console &
             fi
           }
 
@@ -139,7 +139,7 @@ contents:
 
           trap sigterm_handler SIGTERM
           if [ -s "/etc/keepalived/keepalived.conf" ]; then
-              /usr/sbin/keepalived -f /etc/keepalived/keepalived.conf --dont-fork --vrrp --log-detail --log-console &
+              /usr/sbin/keepalived -f /etc/keepalived/keepalived.conf --dont-fork --vrrp --log-console &
           fi
 
           rm -f "$keepalived_sock"
