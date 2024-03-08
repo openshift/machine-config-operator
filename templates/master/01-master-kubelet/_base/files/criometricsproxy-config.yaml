@@ -1,0 +1,11 @@
+mode: 0644
+path: "/etc/kubernetes/crio-metrics-proxy.cfg"
+contents:
+  inline: |-
+    authorization:
+      static:
+        - resourceRequest: false
+          path: /metrics
+          verb: get
+          user:
+            name: system:serviceaccount:openshift-monitoring:prometheus-k8s
