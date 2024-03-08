@@ -2070,7 +2070,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 
 			return dn.reboot(fmt.Sprintf("Node will reboot into config %v", state.currentConfig.GetName()))
 		}
-		logSystem("No bootstrap pivot required; unlinking bootstrap node annotations")
+		logSystem("No bootstrap pivot required; unlinking bootstrap node annotations!")
 
 		// Rename the bootstrap node annotations; the
 		// currentConfig's osImageURL should now be *truth*.
