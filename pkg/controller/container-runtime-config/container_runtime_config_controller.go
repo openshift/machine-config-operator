@@ -894,7 +894,7 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 
 func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.ControllerConfig, role, releaseImage string,
 	insecureRegs, registriesBlocked, policyBlocked, allowedRegs, searchRegs []string,
-	icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy, idmsRules []*apicfgv1.ImageDigestMirrorSet, itmsRules []*apicfgv1.ImageTagMirrorSet, featureGateAccess featuregates.FeatureGateAccess) (*ign3types.Config, error) {
+	icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy, idmsRules []*apicfgv1.ImageDigestMirrorSet, itmsRules []*apicfgv1.ImageTagMirrorSet, featureGateAccess featuregates.FeatureGateAccess) (*ign3types.Config, error) { //nolint:revive,unparam
 
 	var (
 		registriesTOML []byte
