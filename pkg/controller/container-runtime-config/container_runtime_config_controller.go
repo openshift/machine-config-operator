@@ -426,11 +426,10 @@ func (ctrl *Controller) handleImgErr(err error, key interface{}) {
 }
 
 // generateOriginalContainerRuntimeConfigs returns rendered default storage, registries and policy config files
-func generateOriginalContainerRuntimeConfigs(templateDir string, cc *mcfgv1.ControllerConfig, role string, featureGateAccess featuregates.FeatureGateAccess) (*ign3types.File, *ign3types.File, *ign3types.File, error) {
+func generateOriginalContainerRuntimeConfigs(templateDir string, cc *mcfgv1.ControllerConfig, role string) (*ign3types.File, *ign3types.File, *ign3types.File, error) {
 	// Render the default templates
 	rc := &mtmpl.RenderConfig{
 		ControllerConfigSpec: &cc.Spec,
-		FeatureGateAccess:    featureGateAccess,
 	}
 	generatedConfigs, err := mtmpl.GenerateMachineConfigsForRole(rc, role, templateDir)
 	if err != nil {
@@ -603,7 +602,7 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 			}
 		}
 		// Generate the original ContainerRuntimeConfig
-		originalStorageIgn, _, _, err := generateOriginalContainerRuntimeConfigs(ctrl.templatesDir, controllerConfig, role, ctrl.featureGateAccess)
+		originalStorageIgn, _, _, err := generateOriginalContainerRuntimeConfigs(ctrl.templatesDir, controllerConfig, role)
 		if err != nil {
 			return ctrl.syncStatusOnly(cfg, err, "could not generate origin ContainerRuntime Configs: %v", err)
 		}
@@ -903,7 +902,7 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 	)
 
 	// Generate the original registries config
-	_, originalRegistriesIgn, originalPolicyIgn, err := generateOriginalContainerRuntimeConfigs(templateDir, controllerConfig, role, featureGateAccess)
+	_, originalRegistriesIgn, originalPolicyIgn, err := generateOriginalContainerRuntimeConfigs(templateDir, controllerConfig, role)
 	if err != nil {
 		return nil, fmt.Errorf("could not generate original ContainerRuntime Configs: %w", err)
 	}

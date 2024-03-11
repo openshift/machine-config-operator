@@ -15,7 +15,6 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/library-go/pkg/cloudprovider"
-	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/machine-config-operator/pkg/constants"
@@ -36,7 +35,6 @@ type RenderConfig struct {
 	*mcfgv1.ControllerConfigSpec
 	PullSecret                 string
 	InternalRegistryPullSecret string
-	FeatureGateAccess          featuregates.FeatureGateAccess
 
 	// no need to set this, will be automatically configured
 	Constants map[string]string

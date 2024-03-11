@@ -462,7 +462,6 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.OpenShiftConfigKubeNamespacedInformerFactory.Core().V1().Secrets(),
 			ctx.ClientBuilder.KubeClientOrDie("template-controller"),
 			ctx.ClientBuilder.MachineConfigClientOrDie("template-controller"),
-			ctx.FeatureGateAccess,
 		),
 		// Add all "sub-renderers here"
 		kubeletconfig.New(
