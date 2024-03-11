@@ -12,7 +12,6 @@ import (
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	configv1 "github.com/openshift/api/config/v1"
-	"github.com/openshift/library-go/pkg/cloudprovider"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"k8s.io/client-go/kubernetes/scheme"
 
@@ -85,7 +84,7 @@ func TestCloudProvider(t *testing.T) {
 				},
 			}
 
-			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, `{"dummy":"dummy"}`, nil, nil}, name, dummyTemplate)
+			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, `{"dummy":"dummy"}`, nil}, name, dummyTemplate)
 			if err != nil {
 				t.Fatalf("expected nil error %v", err)
 			}
@@ -146,9 +145,7 @@ func TestCredentialProviderConfigFlag(t *testing.T) {
 				},
 			}
 
-			fgAccess := featuregates.NewHardcodedFeatureGateAccess(nil, nil)
-
-			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, `{"dummy":"dummy"}`, fgAccess, nil}, name, dummyTemplate)
+			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, `{"dummy":"dummy"}`, nil}, name, dummyTemplate)
 			if err != nil {
 				t.Fatalf("expected nil error %v", err)
 			}
@@ -240,18 +237,16 @@ func TestInvalidPlatform(t *testing.T) {
 		}
 	}
 
-	fgAccess := featuregates.NewHardcodedFeatureGateAccess(nil, nil)
-
 	// we must treat unrecognized constants as "none"
 	controllerConfig.Spec.Infra.Status.PlatformStatus.Type = "_bad_"
-	_, err = generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, `{"dummy":"dummy"}`, fgAccess, nil}, templateDir)
+	_, err = generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, `{"dummy":"dummy"}`, nil}, templateDir)
 	if err != nil {
 		t.Errorf("expect nil error, got: %v", err)
 	}
 
 	// explicitly blocked
 	controllerConfig.Spec.Infra.Status.PlatformStatus.Type = "_base"
-	_, err = generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, `{"dummy":"dummy"}`, fgAccess, nil}, templateDir)
+	_, err = generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, `{"dummy":"dummy"}`, nil}, templateDir)
 	expectErr(err, "failed to create MachineConfig for role master: platform _base unsupported")
 }
 
@@ -262,9 +257,7 @@ func TestGenerateMachineConfigs(t *testing.T) {
 			t.Fatalf("failed to get controllerconfig config: %v", err)
 		}
 
-		fgAccess := featuregates.NewHardcodedFeatureGateAccess(nil, []configv1.FeatureGateName{cloudprovider.ExternalCloudProviderFeature, cloudprovider.ExternalCloudProviderFeatureAzure, cloudprovider.ExternalCloudProviderFeatureGCP, cloudprovider.ExternalCloudProviderFeatureExternal})
-
-		cfgs, err := generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, `{"dummy":"dummy"}`, fgAccess, nil}, templateDir)
+		cfgs, err := generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, `{"dummy":"dummy"}`, nil}, templateDir)
 		if err != nil {
 			t.Fatalf("failed to generate machine configs: %v", err)
 		}
@@ -391,7 +384,7 @@ func TestGetPaths(t *testing.T) {
 			}
 			c.res = append(c.res, platformBase)
 
-			got := getPaths(&RenderConfig{&config.Spec, `{"dummy":"dummy"}`, `{"dummy":"dummy"}`, nil, nil}, config.Spec.Platform)
+			got := getPaths(&RenderConfig{&config.Spec, `{"dummy":"dummy"}`, `{"dummy":"dummy"}`, nil}, config.Spec.Platform)
 			if reflect.DeepEqual(got, c.res) {
 				t.Fatalf("mismatch got: %s want: %s", got, c.res)
 			}

@@ -19,7 +19,6 @@ import (
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
-	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	mcoResourceApply "github.com/openshift/machine-config-operator/lib/resourceapply"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"k8s.io/klog/v2"
@@ -66,8 +65,6 @@ type Controller struct {
 	mcListerSynced        cache.InformerSynced
 	secretsInformerSynced cache.InformerSynced
 
-	featureGateAccess featuregates.FeatureGateAccess
-
 	queue workqueue.RateLimitingInterface
 }
 
@@ -79,7 +76,6 @@ func New(
 	secretsInformer coreinformersv1.SecretInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
-	fgAccess featuregates.FeatureGateAccess,
 ) *Controller {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
@@ -120,8 +116,6 @@ func New(
 	ctrl.ccListerSynced = ccInformer.Informer().HasSynced
 	ctrl.mcListerSynced = mcInformer.Informer().HasSynced
 	ctrl.secretsInformerSynced = secretsInformer.Informer().HasSynced
-
-	ctrl.featureGateAccess = fgAccess
 
 	return ctrl
 }
@@ -563,7 +557,7 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 		clusterPullSecretRaw = clusterPullSecret.Data[corev1.DockerConfigJsonKey]
 	}
 
-	mcs, err := getMachineConfigsForControllerConfig(ctrl.templatesDir, cfg, clusterPullSecretRaw, cfg.Spec.InternalRegistryPullSecret, ctrl.featureGateAccess)
+	mcs, err := getMachineConfigsForControllerConfig(ctrl.templatesDir, cfg, clusterPullSecretRaw, cfg.Spec.InternalRegistryPullSecret)
 	if err != nil {
 		return ctrl.syncFailingStatus(cfg, err)
 	}
@@ -582,7 +576,7 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 	return ctrl.syncCompletedStatus(cfg)
 }
 
-func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.ControllerConfig, clusterPullSecretRaw, internalRegistryPullSecretRaw []byte, featureGateAccess featuregates.FeatureGateAccess) ([]*mcfgv1.MachineConfig, error) {
+func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.ControllerConfig, clusterPullSecretRaw, internalRegistryPullSecretRaw []byte) ([]*mcfgv1.MachineConfig, error) {
 	buf := &bytes.Buffer{}
 	if err := json.Compact(buf, clusterPullSecretRaw); err != nil {
 		return nil, fmt.Errorf("couldn't compact pullsecret %q: %w", string(clusterPullSecretRaw), err)
@@ -591,7 +585,6 @@ func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.Co
 		ControllerConfigSpec:       &config.Spec,
 		PullSecret:                 string(buf.Bytes()),
 		InternalRegistryPullSecret: string(internalRegistryPullSecretRaw),
-		FeatureGateAccess:          featureGateAccess,
 	}
 	mcs, err := generateTemplateMachineConfigs(rc, templatesDir)
 	if err != nil {
@@ -608,6 +601,6 @@ func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.Co
 }
 
 // RunBootstrap runs the tempate controller in boostrap mode.
-func RunBootstrap(templatesDir string, config *mcfgv1.ControllerConfig, pullSecretRaw []byte, featureGateAccess featuregates.FeatureGateAccess) ([]*mcfgv1.MachineConfig, error) {
-	return getMachineConfigsForControllerConfig(templatesDir, config, pullSecretRaw, nil, featureGateAccess)
+func RunBootstrap(templatesDir string, config *mcfgv1.ControllerConfig, pullSecretRaw []byte) ([]*mcfgv1.MachineConfig, error) {
+	return getMachineConfigsForControllerConfig(templatesDir, config, pullSecretRaw, nil)
 }
