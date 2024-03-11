@@ -13,7 +13,7 @@ import (
 )
 
 // RunContainerRuntimeBootstrap generates ignition configs at bootstrap
-func RunContainerRuntimeBootstrap(templateDir string, crconfigs []*mcfgv1.ContainerRuntimeConfig, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool, featureGateAccess featuregates.FeatureGateAccess) ([]*mcfgv1.MachineConfig, error) {
+func RunContainerRuntimeBootstrap(templateDir string, crconfigs []*mcfgv1.ContainerRuntimeConfig, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool, featureGateAccess featuregates.FeatureGateAccess) ([]*mcfgv1.MachineConfig, error) { //nolint:revive,unparam
 	var res []*mcfgv1.MachineConfig
 	managedKeyExist := make(map[string]bool)
 	for _, cfg := range crconfigs {
