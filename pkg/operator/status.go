@@ -96,7 +96,7 @@ func (optr *Operator) syncRelatedObjects() error {
 }
 
 // syncAvailableStatus applies the new condition to the mco's ClusterOperator object.
-func (optr *Operator) syncAvailableStatus(ierr syncError) error {
+func (optr *Operator) syncAvailableStatus() error {
 	co, err := optr.fetchClusterOperator()
 	if err != nil {
 		return err
@@ -105,32 +105,17 @@ func (optr *Operator) syncAvailableStatus(ierr syncError) error {
 		return nil
 	}
 
-	message := fmt.Sprintf("Cluster has deployed %s", co.Status.Versions)
-	available := configv1.ConditionTrue
-	reason := asExpectedReason
-
-	// we will only be Available = False where there is a problem syncing
-	// operands of the MCO as that points to impaired operator functionality.
-	// RequiredPools failing but everything else being ok, should be just Degraded = True.
-	if ierr.err != nil && ierr.task != "RequiredPools" {
-		available = configv1.ConditionFalse
-		mcoObjectRef := &corev1.ObjectReference{
-			Kind:      co.Kind,
-			Name:      co.Name,
-			Namespace: co.Namespace,
-			UID:       co.GetUID(),
-		}
-
-		reason = taskFailed(ierr.task)
-		message = fmt.Sprintf("Cluster not available for %s: %s", co.Status.Versions, ierr.err.Error())
-		optr.eventRecorder.Eventf(mcoObjectRef, corev1.EventTypeWarning, reason, message)
-	}
+	// Based on Openshift Operator Guidance, Available = False is only necessary
+	// if a midnight admin page is required. In the MCO land, nothing quite reaches
+	// that level of severity. Most MCO errors typically fall into the degrade category
+	// (which imply a working hours admin page)
+	// See https://issues.redhat.com/browse/OCPBUGS-9108 for more information.
 
 	coStatus := configv1.ClusterOperatorStatusCondition{
 		Type:    configv1.OperatorAvailable,
-		Status:  available,
-		Message: message,
-		Reason:  reason,
+		Status:  configv1.ConditionTrue,
+		Message: fmt.Sprintf("Cluster has deployed %s", co.Status.Versions),
+		Reason:  asExpectedReason,
 	}
 
 	return optr.updateStatus(co, coStatus)
