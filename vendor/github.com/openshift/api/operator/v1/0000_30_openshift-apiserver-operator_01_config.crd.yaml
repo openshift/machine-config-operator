@@ -3,6 +3,7 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     api-approved.openshift.io: https://github.com/openshift/api/pull/475
+    api.openshift.io/merged-by-featuregates: "true"
     include.release.openshift.io/ibm-cloud-managed: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
     include.release.openshift.io/single-node-developer: "true"
@@ -13,6 +14,7 @@ spec:
     categories:
     - coreoperators
     kind: OpenShiftAPIServer
+    listKind: OpenShiftAPIServerList
     plural: openshiftapiservers
     singular: openshiftapiserver
   scope: Cluster
@@ -112,8 +114,13 @@ spec:
                       type: string
                     type:
                       type: string
+                  required:
+                  - type
                   type: object
                 type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
               generations:
                 description: generations are used to determine when an item needs
                   to be reconciled or has changed in a way that needs a reaction.
@@ -146,6 +153,7 @@ spec:
                       type: string
                   type: object
                 type: array
+                x-kubernetes-list-type: atomic
               latestAvailableRevision:
                 description: latestAvailableRevision is the latest revision used as
                   suffix of revisioned secrets like encryption-config. A new revision

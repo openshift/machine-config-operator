@@ -69,6 +69,38 @@ spec:
                   pulled into this github repository, but based on our pulling only
                   ocp content it typically defaults to registry.redhat.io.
                 type: string
+              skippedHelmCharts:
+                description: skippedHelmCharts specifies names of helm charts that
+                  should NOT be managed. Admins can use this to allow them to delete
+                  content they don’t want. They will still have to MANUALLY DELETE
+                  the content but the operator will not recreate(or update) anything
+                  listed here. Few examples of the name of helmcharts which can be
+                  skipped are 'redhat-redhat-perl-imagestreams','redhat-redhat-nodejs-imagestreams','redhat-nginx-imagestreams',
+                  'redhat-redhat-ruby-imagestreams','redhat-redhat-python-imagestreams','redhat-redhat-php-imagestreams',
+                  'redhat-httpd-imagestreams','redhat-redhat-dotnet-imagestreams'.
+                  Rest of the names can be obtained from openshift console --> helmcharts
+                  -->installed helmcharts. This will display the list of all the 12
+                  helmcharts(of imagestreams)being installed by Samples Operator.
+                  The skippedHelmCharts must be a valid Kubernetes resource name.
+                  May contain only lowercase alphanumeric characters, hyphens and
+                  periods, and each period separated segment must begin and end with
+                  an alphanumeric character. It must be non-empty and at most 253
+                  characters in length
+                items:
+                  description: HelmChartName is a string alias that is used to represent
+                    the name of a helm chart.
+                  maxLength: 253
+                  minLength: 1
+                  type: string
+                maxItems: 16
+                type: array
+                x-kubernetes-list-type: set
+                x-kubernetes-validations:
+                - message: skippedHelmCharts must be a valid Kubernetes resource name.
+                    May contain only lowercase alphanumeric characters, hyphens and
+                    periods, and each period separated segment must begin and end
+                    with an alphanumeric character
+                  rule: self.all(x, x.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$'))
               skippedImagestreams:
                 description: skippedImagestreams specifies names of image streams
                   that should NOT be created/updated.  Admins can use this to allow
