@@ -34,7 +34,6 @@ contents: |
         --minimum-container-ttl-duration=6m0s \
         --volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec \
         --cloud-provider={{cloudProvider .}} \
-        {{cloudConfigFlag . }} \
         {{credentialProviderConfigFlag . }} \
         --hostname-override=${KUBELET_NODE_NAME} \
         --provider-id=${KUBELET_PROVIDERID} \
