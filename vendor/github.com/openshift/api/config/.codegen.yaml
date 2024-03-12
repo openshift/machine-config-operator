@@ -1,8 +1,10 @@
 schemapatch:
-  requiredFeatureSets:
-  - ""
-  - "Default"
-  - "TechPreviewNoUpgrade"
-  - "CustomNoUpgrade"
 swaggerdocs:
   commentPolicy: Warn
+manifestMerge:
+  tupleOverrides:
+    - crdName: authentications.config.openshift.io
+      featureSet: Default
+      clusterProfilesToInject:
+        - include.release.openshift.io/self-managed-high-availability
+        - include.release.openshift.io/single-node-developer
