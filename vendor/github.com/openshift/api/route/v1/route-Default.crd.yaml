@@ -3,11 +3,14 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     api-approved.openshift.io: https://github.com/openshift/api/pull/1228
+    api.openshift.io/merged-by-featuregates: "true"
+    release.openshift.io/feature-set: Default
   name: routes.route.openshift.io
 spec:
   group: route.openshift.io
   names:
     kind: Route
+    listKind: RouteList
     plural: routes
     singular: route
   scope: Namespaced
@@ -425,6 +428,10 @@ spec:
                     - not:
                         enum:
                         - ""
+                    anyOf: null
+                    description: The target port on pods selected by the service this
+                      route points to. If this is a string, it will be looked up as
+                      a named port in the target endpoints port list. Required
                     x-kubernetes-int-or-string: true
                 required:
                 - targetPort

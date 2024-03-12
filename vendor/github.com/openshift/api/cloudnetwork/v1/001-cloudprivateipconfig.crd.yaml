@@ -3,6 +3,7 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     api-approved.openshift.io: https://github.com/openshift/api/pull/859
+    api.openshift.io/merged-by-featuregates: "true"
   name: cloudprivateipconfigs.cloud.network.openshift.io
 spec:
   group: cloud.network.openshift.io
@@ -143,9 +144,3 @@ spec:
     storage: true
     subresources:
       status: {}
-status:
-  acceptedNames:
-    kind: ""
-    plural: ""
-  conditions: []
-  storedVersions: []

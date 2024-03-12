@@ -1,0 +1,4 @@
+manifestMerge:
+  tupleOverrides:
+    - crdName: cloudprivateipconfigs.cloud.network.openshift.io
+      ungated: true

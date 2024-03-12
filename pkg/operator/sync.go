@@ -620,7 +620,20 @@ func getIgnitionHost(infraStatus *configv1.InfrastructureStatus) (string, error)
 func (optr *Operator) syncCustomResourceDefinitions() error {
 	crds := []string{
 		"manifests/controllerconfig.crd.yaml",
-		"manifests/0000_80_machine-config-operator_01_machineconfignode-TechPreviewNoUpgrade.crd.yaml",
+	}
+	fg, err := optr.fgAccessor.CurrentFeatureGates()
+	if err != nil {
+		klog.Errorf("Could not get fg: %v", err)
+		return err
+	}
+
+	// Check if FeatureGateMachineConfigNodes feature gate is enabled
+	if fg.Enabled(configv1.FeatureGateMachineConfigNodes) {
+		crds = append(crds, "manifests/0000_80_machine-config-operator_01_machineconfignode-TechPreviewNoUpgrade.crd.yaml")
+	}
+	// Check if FeatureGateNodeDisruptionPolicy feature gate is enabled
+	if fg.Enabled(configv1.FeatureGateManagedBootImages) {
+		crds = append(crds, "manifests/0000_80_machine-config-operator_01_config-TechPreviewNoUpgrade.crd.yaml")
 	}
 
 	for _, crd := range crds {
@@ -630,10 +643,12 @@ func (optr *Operator) syncCustomResourceDefinitions() error {
 			return fmt.Errorf("error getting asset %s: %w", crd, err)
 		}
 		c := resourceread.ReadCustomResourceDefinitionV1OrDie(crdBytes)
+		klog.Infof("applying crd %s", crd)
 		_, updated, err := resourceapply.ApplyCustomResourceDefinitionV1(context.TODO(), optr.apiExtClient.ApiextensionsV1(), optr.libgoRecorder, c)
 		if err != nil {
 			return err
 		}
+		klog.Infof("updated crd %s", crd)
 		if updated {
 			if err := optr.waitForCustomResourceDefinition(c); err != nil {
 				return err
@@ -1499,6 +1514,7 @@ func (optr *Operator) waitForCustomResourceDefinition(resource *apiextv1.CustomR
 		crd, err := optr.crdLister.Get(resource.Name)
 		if err != nil {
 			lastErr = fmt.Errorf("error getting CustomResourceDefinition %s: %w", resource.Name, err)
+			klog.Infof("error getting CustomResourceDefinition %s: %s", resource.Name, err)
 			return false, nil
 		}
 
@@ -1508,6 +1524,7 @@ func (optr *Operator) waitForCustomResourceDefinition(resource *apiextv1.CustomR
 			}
 		}
 		lastErr = fmt.Errorf("CustomResourceDefinition %s is not ready. conditions: %v", crd.Name, crd.Status.Conditions)
+		klog.Infof("CustomResourceDefinition %s is not ready. conditions: %v", crd.Name, crd.Status.Conditions)
 		return false, nil
 	}); err != nil {
 		if wait.Interrupted(err) {
@@ -1932,4 +1949,10 @@ func cmToData(cm *corev1.ConfigMap, key string) ([]byte, error) {
 		return raw, nil
 	}
 	return nil, fmt.Errorf("%s not found in %s/%s", key, cm.Namespace, cm.Name)
+}
+
+// syncs the current MachineConfiguration operator level CRD
+func (optr *Operator) syncMachineConfiguration(config *renderConfig) error {
+	klog.Infof("Syncing machine configoooo")
+	return nil
 }

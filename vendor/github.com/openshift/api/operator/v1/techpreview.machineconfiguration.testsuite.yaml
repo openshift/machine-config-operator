@@ -1,0 +1,260 @@
+apiVersion: apiextensions.k8s.io/v1 # Hack because controller-gen complains if we don't have this
+name: "[TechPreviewNoUpgrade] MachineConfiguration"
+crd: 0000_80_machine-config-operator_01_config-TechPreviewNoUpgrade.crd.yaml
+tests:
+  onCreate:
+  - name: Should be able to create a minimal MachineConfiguration
+    initial: |
+      apiVersion: operator.openshift.io/v1
+      kind: MachineConfiguration
+      spec: {} # No spec is required for a MachineConfiguration
+    expected: |
+      apiVersion: operator.openshift.io/v1
+      kind: MachineConfiguration
+      spec:
+        logLevel: Normal
+        operatorLogLevel: Normal
+  - name: Should be able to create an empty ManagedBootImages configuration knob
+    initial: |
+      apiVersion: operator.openshift.io/v1
+      kind: MachineConfiguration
+      spec:
+        managedBootImages:
+          machineManagers: []
+    expected: |
+      apiVersion: operator.openshift.io/v1
+      kind: MachineConfiguration
+      spec:
+        logLevel: Normal
+        operatorLogLevel: Normal
+        managedBootImages:
+          machineManagers: []
+  - name: Should be able to create a ManagedBootImages configuration knob that opts in all MachineSets
+    initial: |
+      apiVersion: operator.openshift.io/v1
+      kind: MachineConfiguration
+      spec:
+        managedBootImages:
+          machineManagers:
+            - resource: machinesets
+              apiGroup: machine.openshift.io
+              selection:
+                mode: All
+    expected: |
+      apiVersion: operator.openshift.io/v1
+      kind: MachineConfiguration
+      spec:
+        logLevel: Normal
+        operatorLogLevel: Normal
+        managedBootImages:
+          machineManagers:
+            - resource: machinesets
+              apiGroup: machine.openshift.io
+              selection:
+                mode: All
+  - name: Should be able to create a ManagedBootImages configuration knob that opts in MachineSets in partial mode
+    initial: |
+      apiVersion: operator.openshift.io/v1
+      kind: MachineConfiguration
+      spec:
+        managedBootImages:
+          machineManagers:
+            - resource: machinesets
+              apiGroup: machine.openshift.io                     
+              selection:
+                mode: Partial
+                partial:
+                  machineResourceSelector:
+                    matchLabels: {}
+    expected: |
+      apiVersion: operator.openshift.io/v1
+      kind: MachineConfiguration
+      spec:
+        logLevel: Normal
+        operatorLogLevel: Normal
+        managedBootImages:
+          machineManagers:
+            - resource: machinesets
+              apiGroup: machine.openshift.io             
+              selection:
+                mode: Partial
+                partial:
+                  machineResourceSelector:
+                    matchLabels: {}
+  - name: Should not be able to add partial field if machineManager.selection.mode is not set to Partial
+    initial: |
+      apiVersion: operator.openshift.io/v1
+      kind: MachineConfiguration
+      spec:
+        managedBootImages:
+          machineManagers:
+            - resource: machinesets
+              apiGroup: machine.openshift.io                     
+              selection:
+                mode: All
+                partial:
+                  machineResourceSelector:
+                    matchLabels: {}
+    expectedError: "Partial is required when type is partial, and forbidden otherwise"
+  - name: Only one unique pair of resource/apigroup is allowed in machineManagers
+    initial: |
+      apiVersion: operator.openshift.io/v1
+      kind: MachineConfiguration
+      spec:
+        managedBootImages:
+          machineManagers:
+            - resource: machinesets
+              apiGroup: machine.openshift.io
+              selection:
+                mode: Partial
+                partial:
+                  machineResourceSelector:
+                    matchLabels: {}
+            - resource: machinesets
+              apiGroup: machine.openshift.io
+              selection:
+                mode: All
+    expectedError: "spec.managedBootImages.machineManagers[1]: Duplicate value: map[string]interface {}{\"apiGroup\":\"machine.openshift.io\", \"resource\":\"machinesets\"}"
+  - name: Should be able to create a valid node disruption policy
+    initial: |
+      apiVersion: operator.openshift.io/v1
+      kind: MachineConfiguration
+      spec:
+        nodeDisruptionPolicy:
+          files:
+            - path: "/etc/my-file"
+              actions:
+                - type: DaemonReload
+                - type: Reload
+                  reload:
+                    serviceName: my.service
+          units:
+            - name: "my.service"
+              actions:
+                - type: Restart
+                  restart:
+                    serviceName: my-other.service
+          sshkey:
+            actions:
+              - type: None
+    expected: |
+      apiVersion: operator.openshift.io/v1
+      kind: MachineConfiguration
+      spec:
+        logLevel: Normal
+        operatorLogLevel: Normal
+        nodeDisruptionPolicy:
+          files:
+            - path: "/etc/my-file"
+              actions:
+                - type: DaemonReload
+                - type: Reload
+                  reload:
+                    serviceName: my.service
+          units:
+            - name: "my.service"
+              actions:
+                - type: Restart
+                  restart:
+                    serviceName: my-other.service
+          sshkey:
+            actions:
+              - type: None
+  - name: Should be able to define a node disruption policy with multiple entries of the same type
+    initial: |
+      apiVersion: operator.openshift.io/v1
+      kind: MachineConfiguration
+      spec:
+        nodeDisruptionPolicy:
+          files:
+            - path: "/etc/my-file"
+              actions:
+                - type: DaemonReload
+                - type: Reload
+                  reload:
+                    serviceName: my.service
+            - path: "/etc/my-other-file"
+              actions:
+                - type: Drain
+                - type: Restart
+                  restart:
+                    serviceName: my.service
+    expected: |
+      apiVersion: operator.openshift.io/v1
+      kind: MachineConfiguration
+      spec:
+        logLevel: Normal
+        operatorLogLevel: Normal
+        nodeDisruptionPolicy:
+          files:
+            - path: "/etc/my-file"
+              actions:
+                - type: DaemonReload
+                - type: Reload
+                  reload:
+                    serviceName: my.service
+            - path: "/etc/my-other-file"
+              actions:
+                - type: Drain
+                - type: Restart
+                  restart:
+                    serviceName: my.service
+  - name: Node disruption policies with duplicate file entries should fail
+    initial: |
+      apiVersion: operator.openshift.io/v1
+      kind: MachineConfiguration
+      spec:
+        nodeDisruptionPolicy:
+          files:
+            - path: "/etc/my-file"
+              actions:
+                - type: DaemonReload
+                - type: Reload
+                  reload:
+                    serviceName: my.service
+            - path: "/etc/my-file"
+              actions:
+                - type: Drain
+                - type: Reload
+                  reload:
+                    serviceName: my.service
+    expectedError: "spec.nodeDisruptionPolicy.files[1]: Duplicate value: map[string]interface {}{\"path\":\"/etc/my-file\"}"
+  - name: Node disruption policies that specify a reload action should fail if you don't specify the reload field
+    initial: |
+      apiVersion: operator.openshift.io/v1
+      kind: MachineConfiguration
+      spec:
+        nodeDisruptionPolicy:
+          files:
+            - path: "/etc/my-file"
+              actions:
+                - type: DaemonReload
+                - type: Reload
+    expectedError: "Reload is required when type is reload, and forbidden otherwise"
+  - name: Node disruption policies that specify a reboot action should not allow other actions in the list
+    initial: |
+      apiVersion: operator.openshift.io/v1
+      kind: MachineConfiguration
+      spec:
+        nodeDisruptionPolicy:
+          files:
+            - path: "/etc/my-file"
+              actions:
+                - type: Reboot
+                - type: DaemonReload
+    expectedError: "Reboot action can only be specified standalone, as it will override any other actions"
+  - name: Node disruption policies that specify a service name needs to be in the right format
+    initial: |
+      apiVersion: operator.openshift.io/v1
+      kind: MachineConfiguration
+      spec:
+        nodeDisruptionPolicy:
+          files:
+            - path: "/etc/my-file"
+              actions:
+                - type: DaemonReload
+                - type: Reload
+                  reload:
+                    serviceName: myservice
+    expectedError: "Invalid service name schema, needs to be in the format of ${NAME}.${SERVICETYPE}"
+
