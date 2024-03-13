@@ -1,0 +1,19 @@
+clusterresourcequotas.quota.openshift.io:
+  Annotations: {}
+  ApprovedPRNumber: https://github.com/openshift/api/pull/470
+  CRDName: clusterresourcequotas.quota.openshift.io
+  Capability: ""
+  Category: ""
+  FeatureGates: []
+  GroupName: quota.openshift.io
+  HasStatus: true
+  KindName: ClusterResourceQuota
+  Labels: {}
+  PluralName: clusterresourcequotas
+  PrinterColumns: []
+  Scope: Cluster
+  ShortNames: null
+  TargetFilenamePattern: 0000_03_quota-openshift_01_clusterresourcequotaMARKERS.crd.yaml
+  TopLevelFeatureGates: []
+  Version: v1
+

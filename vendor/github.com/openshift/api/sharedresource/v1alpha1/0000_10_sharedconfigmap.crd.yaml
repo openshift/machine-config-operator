@@ -3,6 +3,7 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     api-approved.openshift.io: https://github.com/openshift/api/pull/979
+    api.openshift.io/merged-by-featuregates: "true"
     description: Extension for sharing ConfigMaps across Namespaces
     displayName: SharedConfigMap
   name: sharedconfigmaps.sharedresource.openshift.io

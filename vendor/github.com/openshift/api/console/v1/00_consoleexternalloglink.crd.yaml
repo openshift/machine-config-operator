@@ -3,6 +3,7 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     api-approved.openshift.io: https://github.com/openshift/api/pull/481
+    api.openshift.io/merged-by-featuregates: "true"
     capability.openshift.io/name: Console
     description: ConsoleExternalLogLink is an extension for customizing OpenShift
       web console log links.

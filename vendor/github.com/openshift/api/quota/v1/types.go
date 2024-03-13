@@ -13,6 +13,11 @@ import (
 // synthetic ResourceQuota object to allow quota evaluation re-use.
 //
 // Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).
+// +kubebuilder:object:root=true
+// +kubebuilder:resource:path=clusterresourcequotas,scope=Cluster
+// +kubebuilder:subresource:status
+// +openshift:api-approved.openshift.io=https://github.com/openshift/api/pull/470
+// +openshift:file-pattern=0000_03_quota-openshift_01_clusterresourcequotaMARKERS.crd.yaml
 // +openshift:compatibility-gen:level=1
 type ClusterResourceQuota struct {
 	metav1.TypeMeta `json:",inline"`
