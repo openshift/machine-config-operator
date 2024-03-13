@@ -21,4 +21,7 @@ const (
 
 	// BaremetalRuntimeCfgKey is the key that references the baremetal-runtimecfg image in the controller
 	BaremetalRuntimeCfgKey string = "baremetalRuntimeCfgImage"
+
+	// KubeRbacProxyKey the key that references the kubeRbacProxy image
+	KubeRbacProxyKey string = "kubeRbacProxyImage"
 )
