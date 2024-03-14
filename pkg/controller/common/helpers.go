@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net/http"
 	"net/url"
 	"os"
 	"reflect"
@@ -1227,4 +1228,25 @@ func ConvertSecretTodockercfg(secretBytes []byte) ([]byte, error) {
 	out, err := json.Marshal(newStyleDecoded.Auths)
 
 	return out, err
+}
+
+func StartServiceListener() {
+	klog.Infof("Starting service listener")
+	mux := http.NewServeMux()
+	mux.HandleFunc("/receive", func(w http.ResponseWriter, r *http.Request) {
+		var data struct {
+			Value int `json:"value"`
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		receivedValue := data.Value
+		klog.Infof("Received Integer: %v", receivedValue)
+	})
+
+	http.ListenAndServe(":9090", nil)
+
 }

@@ -39,6 +39,10 @@ spec:
   - name: metrics
     port: 9001
     protocol: TCP
+  - name: test
+    port: 9090
+    targetPort: 9090
+    protocol: TCP
 ---
 apiVersion: v1
 kind: Service
