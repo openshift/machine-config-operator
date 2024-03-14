@@ -14,6 +14,11 @@ import (
 //
 // Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).
 // +openshift:compatibility-gen:level=1
+// +openshift:api-approved.openshift.io=https://github.com/openshift/api/pull/470
+// +openshift:file-pattern=0000_10_config-operator_01_featuregateMARKERS.crd.yaml
+// +kubebuilder:object:root=true
+// +kubebuilder:resource:path=featuregates,scope=Cluster
+// +kubebuilder:subresource:status
 type FeatureGate struct {
 	metav1.TypeMeta `json:",inline"`
 
@@ -196,6 +201,14 @@ var FeatureSets = map[FeatureSet]*FeatureGateEnabledDisabled{
 		with(upgradeStatus).
 		with(translateStreamCloseWebsocketRequests).
 		with(volumeGroupSnapshot).
+		with(externalOIDC).
+		with(example).
+		with(hardwareSpeed).
+		with(platformOperators).
+		with(externalRouteCertificate).
+		with(bareMetalLoadBalancer).
+		with(insightsOnDemandDataGather).
+		with(alertingRules).
 		toFeatures(defaultFeatures),
 	LatencySensitive: newDefaultFeatures().
 		toFeatures(defaultFeatures),

@@ -1,0 +1,24 @@
+controllerconfigs.machineconfiguration.openshift.io:
+  Annotations: {}
+  ApprovedPRNumber: https://github.com/openshift/api/pull/1453
+  CRDName: controllerconfigs.machineconfiguration.openshift.io
+  Capability: ""
+  Category: ""
+  FeatureGates:
+  - BareMetalLoadBalancer
+  - GCPClusterHostedDNS
+  - GCPLabelsTags
+  - VSphereControlPlaneMachineSet
+  GroupName: machineconfiguration.openshift.io
+  HasStatus: true
+  KindName: ControllerConfig
+  Labels:
+    openshift.io/operator-managed: ""
+  PluralName: controllerconfigs
+  PrinterColumns: []
+  Scope: Cluster
+  ShortName: ""
+  TargetFilenamePattern: 0000_80_controllerconfigMARKERS.crd.yaml
+  TopLevelFeatureGates: []
+  Version: v1
+
