@@ -992,6 +992,14 @@ func (ctrl *Controller) prepareForBuild(inputs *buildInputs) (ImageBuildRequest,
 	return ibr, nil
 }
 
+func (ctrl *Controller) restartBuildForMachineConfigPool(oldPoolState, newPoolState *poolState) error {
+	if err := ctrl.postBuildCleanup(oldPoolState.MachineConfigPool(), true); err != nil {
+		return fmt.Errorf("could not delete build for MachineConfigPool %s: %w", oldPoolState.Name(), err)
+	}
+
+	return ctrl.startBuildForMachineConfigPool(newPoolState)
+}
+
 // Determines if we should run a build, then starts a build pod to perform the
 // build, and updates the MachineConfigPool with an object reference for the
 // build pod.
@@ -1210,6 +1218,13 @@ func (ctrl *Controller) updateMachineConfigPool(old, cur interface{}) {
 		return
 	}
 
+	restartRunningBuild, err := shouldWeRestartRunningBuild(ctrl.imageBuilder, oldPool, curPool)
+	if err != nil {
+		klog.Errorln(err)
+		ctrl.handleErr(err, curPool.Name)
+		return
+	}
+
 	switch {
 	// We've transitioned from a layered pool to a non-layered pool.
 	case ctrlcommon.IsLayeredPool(oldPool) && !ctrlcommon.IsLayeredPool(curPool):
@@ -1226,6 +1241,12 @@ func (ctrl *Controller) updateMachineConfigPool(old, cur interface{}) {
 			klog.Errorln(err)
 			ctrl.handleErr(err, curPool.Name)
 			return
+		}
+	case restartRunningBuild:
+		klog.V(4).Infof("MachineConfigPool %s config has changed, requiring a build restart", curPool.Name)
+		if err := ctrl.restartBuildForMachineConfigPool(newPoolState(oldPool), newPoolState(curPool)); err != nil {
+			klog.Errorln(err)
+			ctrl.handleErr(err, curPool.Name)
 		}
 	// Everything else.
 	default:
@@ -1376,4 +1397,16 @@ func hasAllRequiredOSBuildLabels(labels map[string]string) bool {
 	}
 
 	return true
+}
+
+func shouldWeRestartRunningBuild(builder ImageBuilder, oldPool, newPool *mcfgv1.MachineConfigPool) (bool, error) {
+	if !ctrlcommon.IsLayeredPool(oldPool) && !ctrlcommon.IsLayeredPool(newPool) {
+		return false, nil
+	}
+
+	if !isPoolConfigChange(oldPool, newPool) {
+		return false, nil
+	}
+
+	return builder.IsBuildRunning(oldPool)
 }
