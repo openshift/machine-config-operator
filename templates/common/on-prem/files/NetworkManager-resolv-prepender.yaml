@@ -48,6 +48,9 @@ contents:
                   hostnamectl set-hostname --static --transient $DHCP6_FQDN_FQDN
            fi
         fi
+        if [[ "$STATUS" == "up" ]] && [[ $IFACE == "br-ex" ]]; then
+            touch /run/nodeip-configuration/br-ex-up
+        fi
       ;;
       *)
       ;;
