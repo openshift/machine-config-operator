@@ -749,7 +749,7 @@ func validateRegistriesConfScopes(insecure, blocked, allowed []string, icspRules
 		}
 		if p, ok := sourcePolicy[source]; ok {
 			if policy != p {
-				return fmt.Errorf("conflicting mirrorSourcePolicy is set for the same source %q in imagedigestmirrorsets and/or imagetagmirrorsets", source)
+				return fmt.Errorf("conflicting mirrorSourcePolicy is set for the same source %q in imagedigestmirrorsets, imagetagmirrorsets, or imagecontentsourcepolicies", source)
 			}
 		} else {
 			sourcePolicy[source] = policy
