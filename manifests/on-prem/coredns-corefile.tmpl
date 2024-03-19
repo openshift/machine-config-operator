@@ -6,6 +6,9 @@
     }
     cache 30
     reload
+    allow {
+    	ip {{ .NonVirtualIP }}
+    }
     template IN {{`{{ .Cluster.IngressVIPRecordType }}`}} {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
         match .*.apps.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
         answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ if gt (len (onPremPlatformIngressIPs .ControllerConfig)) 0 }}{{ index (onPremPlatformIngressIPs .ControllerConfig) 0 }}{{ end }}"
