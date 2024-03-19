@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -36,6 +37,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	v1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+	opv1 "github.com/openshift/api/operator/v1"
 
 	mcoac "github.com/openshift/client-go/operator/applyconfigurations/operator/v1"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
@@ -1987,8 +1989,185 @@ func (optr *Operator) syncMachineConfiguration(config *renderConfig) error {
 		return nil
 	}
 
-	// Do additional processing for feature gate related fields here
+	// Merges the cluster's default node disruption policies with the user defined policies, if any.
+	newNodeDisruptionPolicyStatus := opv1.NodeDisruptionPolicyStatus{
+		ClusterPolicies: mergeClusterPolicies(mcop.Spec.NodeDisruptionPolicy),
+	}
+
+	// Check if any changes are required in the Status before making the API call. Is this check necessary?
+	if !reflect.DeepEqual(mcop.Status.NodeDisruptionPolicyStatus, newNodeDisruptionPolicyStatus) {
+		klog.Infof("Updating node disruption policy status")
+		mcop.Status.NodeDisruptionPolicyStatus = newNodeDisruptionPolicyStatus
+		_, err = optr.mcopClient.OperatorV1().MachineConfigurations().UpdateStatus(context.TODO(), mcop, metav1.UpdateOptions{})
+		if err != nil {
+			klog.Errorf("status apply failed: %v", err)
+			return nil
+		}
+	}
 
 	klog.Infof("Exiting machine configurations CR sync")
 	return nil
+}
+
+// Merges the cluster's default node disruption policies with the user defined policies, if any.
+func mergeClusterPolicies(userDefinedClusterPolicies opv1.NodeDisruptionPolicyConfig) opv1.NodeDisruptionPolicyClusterStatus {
+
+	defaultClusterPolicies := opv1.NodeDisruptionPolicyClusterStatus{
+		Files: []opv1.NodeDisruptionPolicyStatusFile{
+			{
+				Path: "/etc/mco/internal-registry-pull-secret.json",
+				Actions: []opv1.NodeDisruptionPolicyStatusAction{
+					{
+						Type: opv1.NoneStatusAction,
+					},
+				},
+			},
+			{
+				Path: "/var/lib/kubelet/config.json",
+				Actions: []opv1.NodeDisruptionPolicyStatusAction{
+					{
+						Type: opv1.NoneStatusAction,
+					},
+				},
+			},
+			{
+				Path: "/etc/machine-config-daemon/no-reboot/containers-gpg.pub",
+				Actions: []opv1.NodeDisruptionPolicyStatusAction{
+					{
+						Type: opv1.ReloadStatusAction,
+						Reload: &opv1.ReloadService{
+							ServiceName: "crio.service",
+						},
+					},
+				},
+			},
+			{
+				Path: "/etc/containers/policy.json",
+				Actions: []opv1.NodeDisruptionPolicyStatusAction{
+					{
+						Type: opv1.ReloadStatusAction,
+						Reload: &opv1.ReloadService{
+							ServiceName: "crio.service",
+						},
+					},
+				},
+			},
+			{
+				Path: "/etc/containers/registries.conf",
+				Actions: []opv1.NodeDisruptionPolicyStatusAction{
+					{
+						Type: opv1.SpecialStatusAction,
+					},
+				},
+			},
+		},
+		SSHKey: opv1.NodeDisruptionPolicyStatusSSHKey{
+			Actions: []opv1.NodeDisruptionPolicyStatusAction{
+				{
+					Type: opv1.NoneStatusAction,
+				},
+			},
+		},
+	}
+	mergedClusterPolicies := opv1.NodeDisruptionPolicyClusterStatus{}
+
+	// Add default file policies to the merged list.
+	mergedClusterPolicies.Files = append(mergedClusterPolicies.Files, defaultClusterPolicies.Files...)
+
+	// Iterate through user file policies.
+	// If there is a conflict with default policy, replace that entry in the merged list with the user defined policy.
+	// If there was no conflict, add the user defined policy as a new entry to the merged list.
+	for _, userDefinedPolicyFile := range userDefinedClusterPolicies.Files {
+		override := false
+		for i, defaultPolicyFile := range defaultClusterPolicies.Files {
+			if defaultPolicyFile.Path == userDefinedPolicyFile.Path {
+				mergedClusterPolicies.Files[i] = convertSpecFileToStatusFile(userDefinedPolicyFile)
+				override = true
+				break
+			}
+		}
+		if !override {
+			mergedClusterPolicies.Files = append(mergedClusterPolicies.Files, convertSpecFileToStatusFile(userDefinedPolicyFile))
+		}
+	}
+
+	// Add default service unit policies to the merged list.
+	mergedClusterPolicies.Units = append(mergedClusterPolicies.Units, defaultClusterPolicies.Units...)
+
+	// Iterate through user service unit policies.
+	// If there is a conflict with default policy, replace that entry in the merged list with the user defined policy.
+	// If there was no conflict, add the user defined policy as a new entry to the merged list.
+	for _, userDefinedPolicyUnit := range userDefinedClusterPolicies.Units {
+		override := false
+		for i, defaultPolicyUnit := range defaultClusterPolicies.Units {
+			if defaultPolicyUnit.Name == userDefinedPolicyUnit.Name {
+				mergedClusterPolicies.Units[i] = convertSpecUnitToStatusUnit(userDefinedPolicyUnit)
+				override = true
+				break
+			}
+		}
+		if !override {
+			mergedClusterPolicies.Units = append(mergedClusterPolicies.Units, convertSpecUnitToStatusUnit(userDefinedPolicyUnit))
+		}
+	}
+
+	// If no user defined SSH policy exists, use the cluster defaults.
+	if len(userDefinedClusterPolicies.SSHKey.Actions) == 0 {
+		mergedClusterPolicies.SSHKey = *defaultClusterPolicies.SSHKey.DeepCopy()
+	} else {
+		mergedClusterPolicies.SSHKey = convertSpecSSHKeyToStatusSSHKey(*userDefinedClusterPolicies.SSHKey.DeepCopy())
+	}
+	return mergedClusterPolicies
+}
+
+// converts NodeDisruptionPolicySpecFile -> NodeDisruptionPolicyStatusFile
+func convertSpecFileToStatusFile(specFile opv1.NodeDisruptionPolicySpecFile) opv1.NodeDisruptionPolicyStatusFile {
+	statusFile := opv1.NodeDisruptionPolicyStatusFile{Path: specFile.Path, Actions: []opv1.NodeDisruptionPolicyStatusAction{}}
+	for _, action := range specFile.Actions {
+		statusFile.Actions = append(statusFile.Actions, convertSpecActiontoStatusAction(action))
+	}
+	return statusFile
+}
+
+// converts NodeDisruptionPolicySpecUnit -> NodeDisruptionPolicyStatusUnit
+func convertSpecUnitToStatusUnit(specUnit opv1.NodeDisruptionPolicySpecUnit) opv1.NodeDisruptionPolicyStatusUnit {
+	statusUnit := opv1.NodeDisruptionPolicyStatusUnit{Name: specUnit.Name, Actions: []opv1.NodeDisruptionPolicyStatusAction{}}
+	for _, action := range specUnit.Actions {
+		statusUnit.Actions = append(statusUnit.Actions, convertSpecActiontoStatusAction(action))
+	}
+	return statusUnit
+}
+
+// converts NodeDisruptionPolicySpecSSHKey -> NodeDisruptionPolicyStatusSSHKey
+func convertSpecSSHKeyToStatusSSHKey(specSSHKey opv1.NodeDisruptionPolicySpecSSHKey) opv1.NodeDisruptionPolicyStatusSSHKey {
+	statusSSHKey := opv1.NodeDisruptionPolicyStatusSSHKey{Actions: []opv1.NodeDisruptionPolicyStatusAction{}}
+	for _, action := range specSSHKey.Actions {
+		statusSSHKey.Actions = append(statusSSHKey.Actions, convertSpecActiontoStatusAction(action))
+	}
+	return statusSSHKey
+}
+
+// converts NodeDisruptionPolicySpecAction -> NodeDisruptionPolicyStatusAction
+func convertSpecActiontoStatusAction(action opv1.NodeDisruptionPolicySpecAction) opv1.NodeDisruptionPolicyStatusAction {
+	switch action.Type {
+	case opv1.DaemonReloadSpecAction:
+		return opv1.NodeDisruptionPolicyStatusAction{Type: opv1.DaemonReloadStatusAction}
+	case opv1.DrainSpecAction:
+		return opv1.NodeDisruptionPolicyStatusAction{Type: opv1.DrainStatusAction}
+	case opv1.NoneSpecAction:
+		return opv1.NodeDisruptionPolicyStatusAction{Type: opv1.NoneStatusAction}
+	case opv1.RebootSpecAction:
+		return opv1.NodeDisruptionPolicyStatusAction{Type: opv1.RebootStatusAction}
+	case opv1.ReloadSpecAction:
+		return opv1.NodeDisruptionPolicyStatusAction{Type: opv1.ReloadStatusAction, Reload: &opv1.ReloadService{
+			ServiceName: action.Reload.ServiceName,
+		}}
+	case opv1.RestartSpecAction:
+		return opv1.NodeDisruptionPolicyStatusAction{Type: opv1.RestartStatusAction, Restart: &opv1.RestartService{
+			ServiceName: action.Restart.ServiceName,
+		}}
+	default: // We should never be here as this is guarded by API validation. The return statement is to silence errors.
+		klog.Fatal("Unexpected action type found in Node Disruption Status calculation")
+		return opv1.NodeDisruptionPolicyStatusAction{Type: opv1.RebootStatusAction}
+	}
 }
