@@ -29,7 +29,7 @@ RUN if [ "${TAGS}" = "fcos" ]; then \
     elif [ "${TAGS}" = "scos" ]; then \
     # rewrite image names for scos
     sed -i 's/rhel-coreos/centos-stream-coreos-9/g' /manifests/*; fi && \
-    if ! rpm -q util-linux; then dnf install -y util-linux; fi && dnf -y install 'nmstate >= 2.2.10' && dnf clean all && rm -rf /var/cache/dnf/*
+    if ! rpm -q util-linux; then dnf install -y util-linux; fi && dnf -y install https://people.redhat.com/fge/OCPBUGS-17877/nmstate-2.2.27-0.alpha.20240319.e66c69e1.el8.x86_64.rpm  && dnf clean all && rm -rf /var/cache/dnf/*
 COPY templates /etc/mcc/templates
 ENTRYPOINT ["/usr/bin/machine-config-operator"]
 LABEL io.openshift.release.operator true
