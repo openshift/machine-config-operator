@@ -104,7 +104,7 @@ func createNewDefaultFeatureGate() *osev1.FeatureGate {
 }
 
 func createNewDefaultFeatureGateAccess() featuregates.FeatureGateAccess {
-	defaultFeatures := osev1.FeatureSets[osev1.Default]
+	defaultFeatures, _ := osev1.FeatureSets(osev1.SelfManaged, osev1.Default)
 
 	enabled, disabled := sets.New[osev1.FeatureGateName](), sets.New[osev1.FeatureGateName]()
 

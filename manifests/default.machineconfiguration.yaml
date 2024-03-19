@@ -1,7 +1,7 @@
 apiVersion: operator.openshift.io/v1
 kind: MachineConfiguration
 metadata:
-  name: default
+  name: cluster
   labels:
 spec:
   mode: in-cluster

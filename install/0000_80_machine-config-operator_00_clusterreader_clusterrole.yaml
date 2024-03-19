@@ -45,6 +45,16 @@ rules:
       - delete
       - create
   - apiGroups:
+      - operator.openshift.io
+    resources:
+      - machineconfigurations
+    verbs:
+      - get
+      - list
+      - watch
+      - delete
+      - create
+  - apiGroups:
       - config.openshift.io
     resources: 
       - images 

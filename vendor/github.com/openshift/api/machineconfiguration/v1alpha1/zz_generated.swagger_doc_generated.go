@@ -79,4 +79,39 @@ func (MachineConfigNodeStatusMachineConfigVersion) SwaggerDoc() map[string]strin
 	return map_MachineConfigNodeStatusMachineConfigVersion
 }
 
+var map_PinnedImageRef = map[string]string{
+	"name": "name is an OCI Image referenced by digest.\n\nThe format of the image ref is: host[:port][/namespace]/name@sha256:<digest>",
+}
+
+func (PinnedImageRef) SwaggerDoc() map[string]string {
+	return map_PinnedImageRef
+}
+
+var map_PinnedImageSet = map[string]string{
+	"":     "PinnedImageSet describes a set of images that should be pinned by CRI-O and pulled to the nodes which are members of the declared MachineConfigPools.\n\nCompatibility level 4: No compatibility is provided, the API can change at any point for any reason. These capabilities should not be used by applications needing long term support.",
+	"spec": "spec describes the configuration of this pinned image set.",
+}
+
+func (PinnedImageSet) SwaggerDoc() map[string]string {
+	return map_PinnedImageSet
+}
+
+var map_PinnedImageSetList = map[string]string{
+	"":         "PinnedImageSetList is a list of PinnedImageSet resources\n\nCompatibility level 4: No compatibility is provided, the API can change at any point for any reason. These capabilities should not be used by applications needing long term support.",
+	"metadata": "metadata is the standard list's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
+}
+
+func (PinnedImageSetList) SwaggerDoc() map[string]string {
+	return map_PinnedImageSetList
+}
+
+var map_PinnedImageSetSpec = map[string]string{
+	"":             "PinnedImageSetSpec defines the desired state of a PinnedImageSet.",
+	"pinnedImages": "pinnedImages is a list of OCI Image referenced by digest that should be pinned and pre-loaded by the nodes of a MachineConfigPool. Translates into a new file inside the /etc/crio/crio.conf.d directory with content similar to this:\n\n     pinned_images = [\n             \"quay.io/openshift-release-dev/ocp-release@sha256:...\",\n             \"quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:...\",\n             \"quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:...\",\n             ...\n     ]\n\nThese image references should all be by digest, tags aren't allowed.",
+}
+
+func (PinnedImageSetSpec) SwaggerDoc() map[string]string {
+	return map_PinnedImageSetSpec
+}
+
 // AUTO-GENERATED FUNCTIONS END HERE

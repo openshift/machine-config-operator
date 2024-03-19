@@ -37,6 +37,7 @@ import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	v1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 
+	mcoac "github.com/openshift/client-go/operator/applyconfigurations/operator/v1"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
 	mcoResourceApply "github.com/openshift/machine-config-operator/lib/resourceapply"
@@ -619,8 +620,23 @@ func getIgnitionHost(infraStatus *configv1.InfrastructureStatus) (string, error)
 
 func (optr *Operator) syncCustomResourceDefinitions() error {
 	crds := []string{
-		"manifests/controllerconfig.crd.yaml",
-		"manifests/0000_80_machine-config-operator_01_machineconfignode-TechPreviewNoUpgrade.crd.yaml",
+		"manifests/0000_80_machine-config_01_controllerconfigs-Default.crd.yaml",
+	}
+	fg, err := optr.fgAccessor.CurrentFeatureGates()
+	if err != nil {
+		klog.Errorf("Could not get fg: %v", err)
+		return err
+	}
+
+	// Check if FeatureGateMachineConfigNodes feature gate is enabled
+	if fg.Enabled(configv1.FeatureGateMachineConfigNodes) {
+		crds = append(crds, "manifests/0000_80_machine-config_01_machineconfignodes-TechPreviewNoUpgrade.crd.yaml")
+	}
+	// Check if any feature gates requiring the TechPreview version of the operator/MachineConfiguration CRD is enabled
+	if fg.Enabled(configv1.FeatureGateManagedBootImages) {
+		crds = append(crds, "manifests/0000_80_machine-config_01_machineconfigurations-TechPreviewNoUpgrade.crd.yaml")
+	} else {
+		crds = append(crds, "manifests/0000_80_machine-config_01_machineconfigurations-Default.crd.yaml")
 	}
 
 	for _, crd := range crds {
@@ -1496,9 +1512,13 @@ func (optr *Operator) waitForCustomResourceDefinition(resource *apiextv1.CustomR
 	ctx := context.TODO()
 
 	if err := wait.PollUntilContextTimeout(ctx, customResourceReadyInterval, customResourceReadyTimeout, false, func(_ context.Context) (bool, error) {
-		crd, err := optr.crdLister.Get(resource.Name)
+		// Do a direct API call instead of using a lister as the cache will be out of date
+		// since the CRD in question was just added/updated
+		apiClient := optr.apiExtClient.ApiextensionsV1()
+		crd, err := apiClient.CustomResourceDefinitions().Get(context.TODO(), resource.Name, metav1.GetOptions{})
 		if err != nil {
 			lastErr = fmt.Errorf("error getting CustomResourceDefinition %s: %w", resource.Name, err)
+			klog.Infof("error getting CustomResourceDefinition %s: %s", resource.Name, err)
 			return false, nil
 		}
 
@@ -1932,4 +1952,43 @@ func cmToData(cm *corev1.ConfigMap, key string) ([]byte, error) {
 		return raw, nil
 	}
 	return nil, fmt.Errorf("%s not found in %s/%s", key, cm.Namespace, cm.Name)
+}
+
+// Validates configuration provided in the MachineConfiguration object's spec for each feature
+// and updates the status of the object as necessary
+func (optr *Operator) syncMachineConfiguration(config *renderConfig) error {
+
+	klog.Infof("Syncing machine configurations CR")
+
+	// Grab the cluster CR
+	mcop, err := optr.mcopLister.Get("cluster")
+	// Create one if it doesn't exist
+	if mcop == nil || apierrors.IsNotFound(err) {
+		klog.Info("MachineConfiguration object doesn't exist; a new one will be created")
+		p := mcoac.MachineConfiguration("cluster").WithSpec(mcoac.MachineConfigurationSpec().WithManagementState("Managed"))
+		_, err := optr.mcopClient.OperatorV1().MachineConfigurations().Apply(context.TODO(), p, metav1.ApplyOptions{FieldManager: "machine-config-operator"})
+		if err != nil {
+			klog.Infof("applying mco object failed: %s", err)
+			return err
+		}
+		// This causes a re-sync and allows the cache for the lister to refresh.
+		return nil
+	}
+
+	fg, err := optr.fgAccessor.CurrentFeatureGates()
+	if err != nil {
+		klog.Errorf("Could not get fg: %v", err)
+		return err
+	}
+
+	// If FeatureGateNodeDisruptionPolicy feature gate is not enabled, no updates will be done to MachineConfiguration object.
+	if !fg.Enabled(configv1.FeatureGateNodeDisruptionPolicy) {
+		klog.Infof("Exiting machine configurations CR sync as FeatureGateNodeDisruptionPolicy is disabled")
+		return nil
+	}
+
+	// Do additional processing for feature gate related fields here
+
+	klog.Infof("Exiting machine configurations CR sync")
+	return nil
 }
