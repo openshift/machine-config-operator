@@ -76,6 +76,9 @@ const (
 	// MCOReleaseImageVersionKey is the key for indexing the MCO release version stored in the bootimages configmap
 	MCOReleaseImageVersionKey = "MCOReleaseImageVersion"
 
+	// MCOOperatorKnobsObjectName is the name of the global MachineConfiguration "knobs" object that the MCO watches.
+	MCOOperatorKnobsObjectName = "cluster"
+
 	ServiceCARotateAnnotation = "machineconfiguration.openshift.io/service-ca-rotate"
 
 	ServiceCARotateTrue  = "true"
