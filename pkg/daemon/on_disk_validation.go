@@ -166,7 +166,7 @@ func checkV2Units(units []ign2types.Unit, systemdPath string) error {
 // check for overwrites.
 func checkV3Files(files []ign3types.File) error {
 	for _, f := range files {
-		if f.Path == caBundleFilePath {
+		if f.Path == caBundleFilePath || f.Path == cloudCABundleFilePath {
 			// TODO remove this special case once we have a better way to do this
 			klog.V(4).Infof("Skipping file %s during checkV3Files", caBundleFilePath)
 			continue
