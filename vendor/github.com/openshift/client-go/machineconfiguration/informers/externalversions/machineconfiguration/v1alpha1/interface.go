@@ -10,6 +10,8 @@ import (
 type Interface interface {
 	// MachineConfigNodes returns a MachineConfigNodeInformer.
 	MachineConfigNodes() MachineConfigNodeInformer
+	// PinnedImageSets returns a PinnedImageSetInformer.
+	PinnedImageSets() PinnedImageSetInformer
 }
 
 type version struct {
@@ -26,4 +28,9 @@ func New(f internalinterfaces.SharedInformerFactory, namespace string, tweakList
 // MachineConfigNodes returns a MachineConfigNodeInformer.
 func (v *version) MachineConfigNodes() MachineConfigNodeInformer {
 	return &machineConfigNodeInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
+}
+
+// PinnedImageSets returns a PinnedImageSetInformer.
+func (v *version) PinnedImageSets() PinnedImageSetInformer {
+	return &pinnedImageSetInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }

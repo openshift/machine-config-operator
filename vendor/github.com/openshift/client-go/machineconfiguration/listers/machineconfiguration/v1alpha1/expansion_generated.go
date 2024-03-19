@@ -5,3 +5,7 @@ package v1alpha1
 // MachineConfigNodeListerExpansion allows custom methods to be added to
 // MachineConfigNodeLister.
 type MachineConfigNodeListerExpansion interface{}
+
+// PinnedImageSetListerExpansion allows custom methods to be added to
+// PinnedImageSetLister.
+type PinnedImageSetListerExpansion interface{}
