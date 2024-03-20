@@ -203,17 +203,6 @@ func generateKubeConfigIgnFromFeatures(cc *mcfgv1.ControllerConfig, templatesDir
 		updateOriginalKubeConfigwithNodeConfig(nodeConfig, originalKubeConfig)
 	}
 
-	defaultFeatures, err := generateFeatureMap(createNewDefaultFeatureGateAccess(), openshiftOnlyFeatureGates...)
-	if err != nil {
-		return nil, err
-	}
-
-	// Check to see if configured FeatureGates are equivalent to the Default FeatureSet.
-	if reflect.DeepEqual(originalKubeConfig.FeatureGates, *defaultFeatures) {
-		// When there is no difference, this isn't an error, but no machine config should be created
-		return nil, nil
-	}
-
 	// Encode the new config into raw JSON
 	cfgIgn, err := kubeletConfigToIgnFile(originalKubeConfig)
 	if err != nil {

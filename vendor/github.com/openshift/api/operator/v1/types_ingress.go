@@ -17,7 +17,7 @@ import (
 // +kubebuilder:resource:path=ingresscontrollers,scope=Namespaced
 // +openshift:api-approved.openshift.io=https://github.com/openshift/api/pull/616
 // +openshift:capability=Ingress
-// +openshift:file-pattern=0000_50_ingress-operator_00-ingresscontrollerMARKERS.crd.yaml
+// +openshift:file-pattern=cvoRunLevel=0000_50,operatorName=ingress,operatorOrdering=00
 
 // IngressController describes a managed ingress controller for the cluster. The
 // controller can service OpenShift Route and Kubernetes Ingress resources.
