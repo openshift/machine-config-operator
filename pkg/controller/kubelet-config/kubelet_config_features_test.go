@@ -28,39 +28,19 @@ func TestFeatureGateDrift(t *testing.T) {
 			fgAccess := createNewDefaultFeatureGateAccess()
 			ctrl := f.newController(fgAccess)
 
-			kubeletConfig, err := generateOriginalKubeletConfigIgn(cc, ctrl.templatesDir, "master")
-			if err != nil {
-				t.Errorf("could not generate kubelet config from templates %v", err)
-			}
-			contents, err := ctrlcommon.DecodeIgnitionFileContents(kubeletConfig.Contents.Source, kubeletConfig.Contents.Compression)
-			require.NoError(t, err)
-			originalKubeConfig, err := decodeKubeletConfig(contents)
+			// Generate kubelet config with feature gates applied
+			kubeletConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, "master", fgAccess)
 			require.NoError(t, err)
 
+			t.Logf("Generated Kubelet Config Feature Gates: %v", kubeletConfig.FeatureGates)
+
 			defaultFeatureGates, err := generateFeatureMap(fgAccess)
-			if err != nil {
-				t.Errorf("could not generate defaultFeatureGates: %v", err)
-			}
-			if !reflect.DeepEqual(originalKubeConfig.FeatureGates, *defaultFeatureGates) {
-				var found = map[string]bool{}
-				for featureGate := range originalKubeConfig.FeatureGates {
-					for apiGate := range *defaultFeatureGates {
-						if featureGate == apiGate {
-							found[apiGate] = true
-						}
-					}
-				}
-				for featureGate := range originalKubeConfig.FeatureGates {
-					if _, ok := found[featureGate]; !ok {
-						t.Logf("%s is not present in api", featureGate)
-					}
-				}
-				for featureGate := range *defaultFeatureGates {
-					if _, ok := found[featureGate]; !ok {
-						t.Logf("%s is not present in template", featureGate)
-					}
-				}
-				t.Errorf("template FeatureGates do not match openshift/api FeatureGates: (tmpl=[%v], api=[%v]", originalKubeConfig.FeatureGates, defaultFeatureGates)
+			require.NoError(t, err)
+
+			t.Logf("Expected Feature Gates: %v", *defaultFeatureGates)
+
+			if !reflect.DeepEqual(kubeletConfig.FeatureGates, *defaultFeatureGates) {
+				t.Errorf("Generated kubelet configuration feature gates do not match expected feature gates: generated=%v, expected=%v", kubeletConfig.FeatureGates, *defaultFeatureGates)
 			}
 		})
 	}
