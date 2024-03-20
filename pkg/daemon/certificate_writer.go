@@ -230,7 +230,7 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 						}
 						if kubeConfigDiff && !allCertsThere {
 							// we can still have a scenario where we are adding 1 CA but dont want to remove all the old ones.
-							klog.Infof("On disk cert and configmap cert differ. Diff: %d (0 means same legnth, -1 means on disk is shorter than configmap 1 means on disk is longer than configmap)", numericalDiff)
+							klog.Infof("On disk cert and configmap cert differ. Diff: %d (0 means same length, -1 means on disk is shorter than configmap 1 means on disk is longer than configmap)", numericalDiff)
 							var newData []byte
 							if currentKC.Clusters == nil {
 								return errors.New("clusters cannot be nil")
