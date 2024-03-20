@@ -15,6 +15,7 @@ type MachineConfigPoolSpecApplyConfiguration struct {
 	Paused                *bool                                                   `json:"paused,omitempty"`
 	MaxUnavailable        *intstr.IntOrString                                     `json:"maxUnavailable,omitempty"`
 	Configuration         *MachineConfigPoolStatusConfigurationApplyConfiguration `json:"configuration,omitempty"`
+	PinnedImageSets       []PinnedImageSetRefApplyConfiguration                   `json:"pinnedImageSets,omitempty"`
 }
 
 // MachineConfigPoolSpecApplyConfiguration constructs an declarative configuration of the MachineConfigPoolSpec type for use with
@@ -60,5 +61,18 @@ func (b *MachineConfigPoolSpecApplyConfiguration) WithMaxUnavailable(value intst
 // If called multiple times, the Configuration field is set to the value of the last call.
 func (b *MachineConfigPoolSpecApplyConfiguration) WithConfiguration(value *MachineConfigPoolStatusConfigurationApplyConfiguration) *MachineConfigPoolSpecApplyConfiguration {
 	b.Configuration = value
+	return b
+}
+
+// WithPinnedImageSets adds the given value to the PinnedImageSets field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, values provided by each call will be appended to the PinnedImageSets field.
+func (b *MachineConfigPoolSpecApplyConfiguration) WithPinnedImageSets(values ...*PinnedImageSetRefApplyConfiguration) *MachineConfigPoolSpecApplyConfiguration {
+	for i := range values {
+		if values[i] == nil {
+			panic("nil value passed to WithPinnedImageSets")
+		}
+		b.PinnedImageSets = append(b.PinnedImageSets, *values[i])
+	}
 	return b
 }

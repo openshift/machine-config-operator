@@ -27,21 +27,6 @@ contents:
     systemCgroups: /system.slice
     nodeStatusUpdateFrequency: 10s
     nodeStatusReportFrequency: 5m
-    featureGates:
-      AlibabaPlatform: true
-      AzureWorkloadIdentity: true
-      BuildCSIVolumes: true
-      CloudDualStackNodeIPs: true
-      DisableKubeletCloudCredentialProviders: false
-      ExternalCloudProvider: true
-      ExternalCloudProviderAzure: true
-      ExternalCloudProviderGCP: true
-      ExternalCloudProviderExternal: true
-      KMSv1: true
-      NetworkLiveMigration: true
-      OpenShiftPodSecurityAdmission: true
-      PrivateHostedZoneAWS: true
-      VSphereControlPlaneMachineSet: true
     serverTLSBootstrap: true
     tlsMinVersion: VersionTLS12
     tlsCipherSuites:
