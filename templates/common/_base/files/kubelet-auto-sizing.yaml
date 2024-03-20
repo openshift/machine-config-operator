@@ -45,30 +45,18 @@ contents:
     }
     function dynamic_cpu_sizing {
         total_cpu=$(getconf _NPROCESSORS_ONLN)
-        recommended_systemreserved_cpu=0
-        if (($total_cpu <= 1)); then # 6% of the first core
-            recommended_systemreserved_cpu=$(echo $total_cpu 0.06 | awk '{print $1 * $2}')
-            total_cpu=0
+        # Base allocation for 1 CPU in fractions of a core (60 millicores = 0.06 CPU core)
+        base_allocation_fraction=0.06
+        # Increment per additional CPU in fractions of a core (12 millicores = 0.012 CPU core)
+        increment_per_cpu_fraction=0.012
+
+        if ((total_cpu > 1)); then
+            # Calculate the total system-reserved CPU in fractions, starting with the base allocation
+            # and adding the incremental fraction for each additional CPU
+            recommended_systemreserved_cpu=$(awk -v base="$base_allocation_fraction" -v increment="$increment_per_cpu_fraction" -v cpus="$total_cpu" 'BEGIN {printf "%.2f\n", base + increment * (cpus - 1)}')
         else
-            recommended_systemreserved_cpu=0.06
-            total_cpu=$((total_cpu-1))
-        fi
-        if (($total_cpu <= 1)); then # 1% of the next core (up to 2 cores)
-            recommended_systemreserved_cpu=$(echo $recommended_systemreserved_cpu $(echo $total_cpu 0.01 | awk '{print $1 * $2}') | awk '{print $1 + $2}')
-            total_cpu=0
-        else
-            recommended_systemreserved_cpu=$(echo $recommended_systemreserved_cpu 0.01 | awk '{print $1 + $2}')
-            total_cpu=$((total_cpu-1))
-        fi
-        if (($total_cpu <= 2)); then # 0.5% of the next 2 cores (up to 4 cores)
-            recommended_systemreserved_cpu=$(echo $recommended_systemreserved_cpu $(echo $total_cpu 0.005 | awk '{print $1 * $2}') | awk '{print $1 + $2}')
-            total_cpu=0
-        else
-            recommended_systemreserved_cpu=$(echo $recommended_systemreserved_cpu 0.01 | awk '{print $1 + $2}')
-            total_cpu=$((total_cpu-2))
-        fi
-        if (($total_cpu >= 0)); then # 0.25% of any cores above 4 cores
-            recommended_systemreserved_cpu=$(echo $recommended_systemreserved_cpu $(echo $total_cpu 0.0025 | awk '{print $1 * $2}') | awk '{print $1 + $2}')
+            # For a single CPU, use the base allocation
+            recommended_systemreserved_cpu=$base_allocation_fraction
         fi
         echo "SYSTEM_RESERVED_CPU=${recommended_systemreserved_cpu}">> ${NODE_SIZES_ENV}
     }
