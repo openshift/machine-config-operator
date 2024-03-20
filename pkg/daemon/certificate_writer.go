@@ -24,7 +24,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/jsonmergepatch"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
 	clientcmdv1 "k8s.io/client-go/tools/clientcmd/api/v1"
 	"k8s.io/klog/v2"
@@ -119,6 +118,7 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 	kubeConfigDiff := false
 	allCertsThere := true
 	dontRestartKubelet := false
+	currentKC := clientcmdv1.Config{}
 
 	if currentNodeControllerConfigResource != controllerConfig.ObjectMeta.ResourceVersion || controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation] == ctrlcommon.ServiceCARotateTrue {
 		pathToData := make(map[string][]byte)
@@ -139,7 +139,6 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 				if err != nil {
 					klog.Errorf("kubeconfig-data ConfigMap not populated yet. %v", err)
 				} else if data != nil {
-					currentKC := clientcmdv1.Config{}
 					kcBytes, err := os.ReadFile(kubeConfigPath)
 					if err != nil {
 						return err
@@ -340,41 +339,43 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 
 	klog.Infof("Certificate was synced from controllerconfig resourceVersion %s", controllerConfig.ObjectMeta.ResourceVersion)
 	if controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation] == ctrlcommon.ServiceCARotateTrue && oldAnno != controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation] && cmErr == nil && kubeConfigDiff && !allCertsThere && !dontRestartKubelet {
-		logSystem("restarting kubelet due to server-ca rotation")
-		if err := runCmdSync("systemctl", "stop", "kubelet"); err != nil {
-			return err
-		}
-		err = os.Remove("/var/lib/kubelet/kubeconfig")
-		if err != nil {
-			return fmt.Errorf("could not remove kubelet's kubeconfig file: %v", err)
-		}
-		if err := runCmdSync("systemctl", "daemon-reload"); err != nil {
-			return err
-		}
-
-		if err := runCmdSync("systemctl", "restart", "kubelet"); err != nil {
-			return err
-		}
-
-		if err := wait.PollUntilContextTimeout(context.TODO(), 10*time.Second, 2*time.Minute, false, func(ctx context.Context) (bool, error) {
+		if len(currentKC.Clusters[0].Cluster.CertificateAuthorityData) > 0 {
+			logSystem("restarting kubelet due to server-ca rotation")
+			if err := runCmdSync("systemctl", "stop", "kubelet"); err != nil {
+				return err
+			}
 			f, err := os.ReadFile("/var/lib/kubelet/kubeconfig")
 			if err != nil && os.IsNotExist(err) {
 				klog.Warningf("Failed to get kubeconfig file: %v", err)
-				return false, nil
+				return err
 			} else if err != nil {
-				return false, fmt.Errorf("unexpected error reading kubeconfig file, %v", err)
+				return fmt.Errorf("unexpected error reading kubeconfig file, %v", err)
 			}
-			currentKC := clientcmdv1.Config{}
-			err = yaml.Unmarshal(f, &currentKC)
+			kubeletKC := clientcmdv1.Config{}
+			err = yaml.Unmarshal(f, &kubeletKC)
 			if err != nil {
-				return false, fmt.Errorf("could not unmarshal kubeconfig into struct. Data: %s, Error: %v", string(f), err)
+				return err
 			}
-			if !bytes.Equal(currentKC.Clusters[0].Cluster.CertificateAuthorityData, data) {
-				return false, errors.New("cert data is not equal")
+			// set CA data to the one we just parsed above, the rest of the data should be preserved.
+			kubeletKC.Clusters[0].Cluster.CertificateAuthorityData = currentKC.Clusters[0].Cluster.CertificateAuthorityData
+			newData, err := yaml.Marshal(kubeletKC)
+			if err != nil {
+				return fmt.Errorf("could not marshal kubeconfig into bytes. Error: %v", err)
 			}
-			return true, nil
-		}); err != nil {
-			return fmt.Errorf("something went wrong while waiting for kubeconfig file to generate: %v", err)
+			filesToWrite := make(map[string][]byte)
+			filesToWrite["/var/lib/kubelet/kubeconfig"] = newData
+			err = writeToDisk(filesToWrite)
+			if err != nil {
+				return err
+			}
+
+			if err := runCmdSync("systemctl", "daemon-reload"); err != nil {
+				return err
+			}
+
+			if err := runCmdSync("systemctl", "restart", "kubelet"); err != nil {
+				return err
+			}
 		}
 
 		klog.V(4).Infof("Finished syncing ControllerConfig %q (%v)", key, time.Since(startTime))
