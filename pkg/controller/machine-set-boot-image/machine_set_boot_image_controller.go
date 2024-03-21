@@ -508,6 +508,12 @@ func (ctrl *Controller) syncMachineResource(key string) error {
 		return fmt.Errorf("failed to fetch machineset object during machineset sync: %w", err)
 	}
 
+	// If the machineset has an owner reference, exit and report error. This means
+	// that the machineset may be managed by another workflow and should not be reconciled.
+	if len(machineSet.GetOwnerReferences()) != 0 {
+		return fmt.Errorf("machineset object has an unexpected owner reference : %v and will not be updated. Please remove this machineset from boot image management to avoid errors", machineSet.GetOwnerReferences()[0])
+	}
+
 	// Fetch the architecture type of this machineset
 	arch, err := ctrl.getArchFromMachineSet(machineSet)
 	if err != nil {
