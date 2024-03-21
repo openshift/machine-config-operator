@@ -208,6 +208,8 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.KubeMAOSharedInformer.Core().V1().Secrets(),
 			ctx.ConfigInformerFactory.Config().V1().Infrastructures(),
 			ctx.KubeInformerFactory.Core().V1().Nodes(),
+			ctx.ClientBuilder.OperatorClientOrDie(componentName),
+			ctx.OperatorInformerFactory.Operator().V1().MachineConfigurations(),
 			ctx.FeatureGateAccess,
 		),
 	)
