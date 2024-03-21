@@ -307,6 +307,7 @@ func (ctrl *Controller) makeMastersUnSchedulable(currentMasters []*corev1.Node) 
 // makeMasterNodeUnSchedulable makes master node unschedulable by removing worker label and adding `NoSchedule`
 // master taint to the master node
 func (ctrl *Controller) makeMasterNodeUnSchedulable(node *corev1.Node) error {
+	klog.Infof("makeMasterNodeUnSchedulable %s", node.Name)
 	_, err := internal.UpdateNodeRetry(ctrl.kubeClient.CoreV1().Nodes(), ctrl.nodeLister, node.Name, func(node *corev1.Node) {
 		// Remove worker label
 		newLabels := node.Labels
@@ -337,6 +338,7 @@ func (ctrl *Controller) makeMasterNodeUnSchedulable(node *corev1.Node) error {
 // makeMasterNodeSchedulable makes master node schedulable by removing NoSchedule master taint and
 // adding worker label
 func (ctrl *Controller) makeMasterNodeSchedulable(node *corev1.Node) error {
+	klog.Infof("makeMasterNodeSchedulable %s", node.Name)
 	_, err := internal.UpdateNodeRetry(ctrl.kubeClient.CoreV1().Nodes(), ctrl.nodeLister, node.Name, func(node *corev1.Node) {
 		// Add worker label
 		newLabels := node.Labels
@@ -1024,6 +1026,7 @@ func (ctrl *Controller) updateCandidateNode(nodeName string, pool *mcfgv1.Machin
 		if err != nil {
 			return fmt.Errorf("failed to create patch for node %q: %w", nodeName, err)
 		}
+		klog.Infof("updateCandidateNode patch %s: %s", nodeName, string(patchBytes))
 		_, err = ctrl.kubeClient.CoreV1().Nodes().Patch(context.TODO(), nodeName, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
 		return err
 	})
@@ -1214,6 +1217,7 @@ func (ctrl *Controller) setUpdateInProgressTaint(ctx context.Context, nodeName s
 		if err != nil {
 			return fmt.Errorf("failed to create patch for node %q: %v", nodeName, err)
 		}
+		klog.Infof("setUpdateInProgressTaint patch %s: %s", nodeName, string(patchBytes))
 		_, err = ctrl.kubeClient.CoreV1().Nodes().Patch(ctx, nodeName, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
 		return err
 	})
@@ -1253,6 +1257,7 @@ func (ctrl *Controller) removeUpdateInProgressTaint(ctx context.Context, nodeNam
 		if err != nil {
 			return fmt.Errorf("failed to create patch for node %q: %w", nodeName, err)
 		}
+		klog.Infof("setUpdateInProgressTaint patch %s: %s", nodeName, string(patchBytes))
 		_, err = ctrl.kubeClient.CoreV1().Nodes().Patch(ctx, nodeName, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
 		return err
 	})

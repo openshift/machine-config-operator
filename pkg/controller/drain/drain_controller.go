@@ -516,6 +516,7 @@ func (ctrl *Controller) setNodeAnnotations(nodeName string, annotations map[stri
 			return fmt.Errorf("node %s: failed to create patch for: %v", nodeName, err)
 		}
 
+		klog.Infof("setNodeAnnotations patch %s: %s", nodeName, string(patchBytes))
 		_, err = ctrl.kubeClient.CoreV1().Nodes().Patch(context.TODO(), nodeName, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
 		return err
 	}); err != nil {
