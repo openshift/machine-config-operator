@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
+	opv1 "github.com/openshift/api/operator/v1"
 	configinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
 	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
+	mcopclientset "github.com/openshift/client-go/operator/clientset/versioned"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -35,9 +38,12 @@ import (
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 
 	machineclientset "github.com/openshift/client-go/machine/clientset/versioned"
-	machineinformers "github.com/openshift/client-go/machine/informers/externalversions/machine/v1beta1"
+	mapimachineinformers "github.com/openshift/client-go/machine/informers/externalversions/machine/v1beta1"
 	machinelisters "github.com/openshift/client-go/machine/listers/machine/v1beta1"
 	operatorversion "github.com/openshift/machine-config-operator/pkg/version"
+
+	mcopinformersv1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1"
+	mcoplistersv1 "github.com/openshift/client-go/operator/listers/operator/v1"
 
 	archtranslater "github.com/coreos/stream-metadata-go/arch"
 	"github.com/coreos/stream-metadata-go/stream"
@@ -49,22 +55,25 @@ import (
 type Controller struct {
 	kubeClient    clientset.Interface
 	machineClient machineclientset.Interface
+	mcopClient    mcopclientset.Interface
 	eventRecorder record.EventRecorder
 
-	mcoCmLister      corelisterv1.ConfigMapLister
-	machineSetLister machinelisters.MachineSetLister
-	maoSecretLister  corelisterv1.SecretLister
-	infraLister      configlistersv1.InfrastructureLister
-	nodeLister       corelisterv1.NodeLister
+	mcoCmLister          corelisterv1.ConfigMapLister
+	mapiMachineSetLister machinelisters.MachineSetLister
+	maoSecretLister      corelisterv1.SecretLister
+	infraLister          configlistersv1.InfrastructureLister
+	nodeLister           corelisterv1.NodeLister
+	mcopLister           mcoplistersv1.MachineConfigurationLister
 
-	mcoCmListerSynced       cache.InformerSynced
-	machineSetListerSynced  cache.InformerSynced
-	maoSecretInformerSynced cache.InformerSynced
-	infraListerSynced       cache.InformerSynced
-	nodeListerSynced        cache.InformerSynced
+	mcoCmListerSynced          cache.InformerSynced
+	mapiMachineSetListerSynced cache.InformerSynced
+	maoSecretListerSynced      cache.InformerSynced
+	infraListerSynced          cache.InformerSynced
+	nodeListerSynced           cache.InformerSynced
 
-	syncHandler       func(ms string) error
-	enqueueMachineSet func(*machinev1beta1.MachineSet)
+	mcopListerSynced cache.InformerSynced
+
+	syncHandler func(ms string) error
 
 	queue workqueue.RateLimitingInterface
 
@@ -91,10 +100,12 @@ func New(
 	kubeClient clientset.Interface,
 	machineClient machineclientset.Interface,
 	mcoCmInfomer coreinformersv1.ConfigMapInformer,
-	machinesetInformer machineinformers.MachineSetInformer,
+	mapiMachineSetInformer mapimachineinformers.MachineSetInformer,
 	maoSecretInformer coreinformersv1.SecretInformer,
 	infraInformer configinformersv1.InfrastructureInformer,
 	nodeInformer coreinformersv1.NodeInformer,
+	mcopClient mcopclientset.Interface,
+	mcopInformer mcopinformersv1.MachineConfigurationInformer,
 	featureGateAccess featuregates.FeatureGateAccess,
 ) *Controller {
 	eventBroadcaster := record.NewBroadcaster()
@@ -104,13 +115,14 @@ func New(
 	ctrl := &Controller{
 		kubeClient:    kubeClient,
 		machineClient: machineClient,
+		mcopClient:    mcopClient,
 		eventRecorder: ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-machinesetbootimagecontroller"})),
 		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-machinesetbootimagecontroller"),
 	}
 
-	machinesetInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    ctrl.addMachineSet,
-		UpdateFunc: ctrl.updateMachineSet,
+	mapiMachineSetInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.addMAPIMachineSet,
+		UpdateFunc: ctrl.updateMAPIMachineSet,
 	})
 
 	mcoCmInfomer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -118,20 +130,26 @@ func New(
 		UpdateFunc: ctrl.updateConfigMap,
 	})
 
-	ctrl.syncHandler = ctrl.syncMachineSet
-	ctrl.enqueueMachineSet = ctrl.enqueue
+	mcopInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.addMachineConfiguration,
+		UpdateFunc: ctrl.updateMachineConfiguration,
+	})
+
+	ctrl.syncHandler = ctrl.syncMachineResource
 
 	ctrl.mcoCmLister = mcoCmInfomer.Lister()
-	ctrl.machineSetLister = machinesetInformer.Lister()
+	ctrl.mapiMachineSetLister = mapiMachineSetInformer.Lister()
 	ctrl.maoSecretLister = maoSecretInformer.Lister()
 	ctrl.infraLister = infraInformer.Lister()
 	ctrl.nodeLister = nodeInformer.Lister()
+	ctrl.mcopLister = mcopInformer.Lister()
 
 	ctrl.mcoCmListerSynced = mcoCmInfomer.Informer().HasSynced
-	ctrl.machineSetListerSynced = machinesetInformer.Informer().HasSynced
-	ctrl.maoSecretInformerSynced = maoSecretInformer.Informer().HasSynced
+	ctrl.mapiMachineSetListerSynced = mapiMachineSetInformer.Informer().HasSynced
+	ctrl.maoSecretListerSynced = maoSecretInformer.Informer().HasSynced
 	ctrl.infraListerSynced = infraInformer.Informer().HasSynced
 	ctrl.nodeListerSynced = nodeInformer.Informer().HasSynced
+	ctrl.mcopListerSynced = mcopInformer.Informer().HasSynced
 
 	ctrl.featureGateAccess = featureGateAccess
 
@@ -151,7 +169,7 @@ func New(
 			Enabled(osconfigv1.FeatureGateManagedBootImages)
 		if !prevfeatureEnabled && ctrl.featureEnabled {
 			klog.Info("Trigger a sync as this feature was turned on")
-			ctrl.enqueueAllMachineSets()
+			ctrl.enqueueMAPIMachineSets()
 		}
 	})
 
@@ -163,8 +181,8 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.mcoCmListerSynced, ctrl.machineSetListerSynced, ctrl.maoSecretInformerSynced, ctrl.infraListerSynced,
-		ctrl.nodeListerSynced) {
+	if !cache.WaitForCacheSync(stopCh, ctrl.mcoCmListerSynced, ctrl.mapiMachineSetListerSynced, ctrl.maoSecretListerSynced, ctrl.infraListerSynced,
+		ctrl.nodeListerSynced, ctrl.mcopListerSynced) {
 		return
 	}
 
@@ -227,27 +245,25 @@ func (ctrl *Controller) handleErr(err error, key interface{}) {
 	ctrl.queue.AddAfter(key, 1*time.Minute)
 }
 
-func (ctrl *Controller) addMachineSet(obj interface{}) {
+func (ctrl *Controller) addMAPIMachineSet(obj interface{}) {
 	// No-op if feature is disabled
 	if !ctrl.featureEnabled {
 		return
 	}
 	machineSet := obj.(*machinev1beta1.MachineSet)
-	klog.Infof("MachineSet %s added", machineSet.Name)
+
+	klog.Infof("MAPI MachineSet %s added, reconciling enrolled machine resources", machineSet.Name)
 
 	// Update/Check all machinesets instead of just this one. This prevents needing to maintain a local
 	// store of machine set conditions. As this is using a lister, it is relatively inexpensive to do
 	// this.
-	err := ctrl.enqueueAllMachineSets()
+	err := ctrl.enqueueMAPIMachineSets()
 	if err != nil {
-		klog.Errorf("Error enqueuing all machine sets: %v", err)
+		klog.Errorf("Error enqueuing MAPI machine sets: %v", err)
 	}
 }
 
-// TODO: This callback happens every ~15 minutes or so even if the machineset contents are not updated
-// Perhaps worth implementing a diff check before starting the sync?
-
-func (ctrl *Controller) updateMachineSet(oldMS, newMS interface{}) {
+func (ctrl *Controller) updateMAPIMachineSet(oldMS, newMS interface{}) {
 
 	// No-op if feature is disabled
 	if !ctrl.featureEnabled {
@@ -256,21 +272,19 @@ func (ctrl *Controller) updateMachineSet(oldMS, newMS interface{}) {
 	oldMachineSet := oldMS.(*machinev1beta1.MachineSet)
 	newMachineSet := newMS.(*machinev1beta1.MachineSet)
 
-	// Only take action if the machineset.Generation has bumped indicating a change in the resource has taken place.
-	// This callback seems to take place fairly frequently when there has been no changes in the resource itself
-	// and this check helps avoid unnecessary full loop syncs.
-	if oldMachineSet.Generation == newMachineSet.Generation {
+	// Only take action if the there is an actual change in the MachineSet's Spec, or a change in the labels
+	if oldMachineSet.Generation == newMachineSet.Generation && reflect.DeepEqual(oldMachineSet.Labels, newMachineSet.Labels) {
 		return
 	}
 
-	klog.Infof("MachineSet %s updated, reconciling all machinesets", oldMachineSet.Name)
+	klog.Infof("MachineSet %s updated, reconciling enrolled machineset resources", oldMachineSet.Name)
 
-	// Update all machinesets instead of just this once. This prevents needing to maintain a local
+	// Update all machinesets instead of just this one. This prevents needing to maintain a local
 	// store of machine set conditions. As this is using a lister, it is relatively inexpensive to do
 	// this.
-	err := ctrl.enqueueAllMachineSets()
+	err := ctrl.enqueueMAPIMachineSets()
 	if err != nil {
-		klog.Errorf("Error enqueuing all machine sets: %v", err)
+		klog.Errorf("Error enqueuing MAPI machine sets: %v", err)
 	}
 }
 
@@ -287,17 +301,15 @@ func (ctrl *Controller) addConfigMap(obj interface{}) {
 		return
 	}
 
-	klog.Infof("configMap %s added, reconciling all machine sets", configMap.Name)
+	klog.Infof("configMap %s added, reconciling enrolled machine resources", configMap.Name)
 
 	// Update all machine sets since the "golden" configmap has been updated
-	err := ctrl.enqueueAllMachineSets()
+	err := ctrl.enqueueMAPIMachineSets()
 	if err != nil {
-		klog.Errorf("Error enqueuing all machine sets: %v", err)
+		klog.Errorf("Error enqueuing MAPI machine sets: %v", err)
 	}
 }
 
-// TODO: This callback happens every ~15 minutes or so even if the configmap contents is not updated
-// Perhaps worth implementing a diff check before starting the sync?
 func (ctrl *Controller) updateConfigMap(oldCM, newCM interface{}) {
 	// No-op if feature is disabled
 	if !ctrl.featureEnabled {
@@ -312,20 +324,74 @@ func (ctrl *Controller) updateConfigMap(oldCM, newCM interface{}) {
 		return
 	}
 
-	// Only take action if the configmap.ResourceVersion has bumped indicating a change in the resource has taken place.
-	// This callback seems to take place fairly frequently when there has been no changes in the resource itself
-	// and this check helps avoid unnecessary full loop syncs.
+	// Only take action if the there is an actual change in the configMap Object
 	if oldConfigMap.ResourceVersion == newConfigMap.ResourceVersion {
 		return
 	}
 
-	klog.Infof("configMap %s updated, reconciling all machine sets", oldConfigMap.Name)
+	klog.Infof("configMap %s updated, reconciling enrolled machine resources", oldConfigMap.Name)
 
 	// Update all machine sets since the "golden" configmap has been updated
-	ctrl.enqueueAllMachineSets()
+	err := ctrl.enqueueMAPIMachineSets()
+	if err != nil {
+		klog.Errorf("Error enqueuing MAPI machine sets: %v", err)
+	}
 }
 
-func (ctrl *Controller) enqueue(ms *machinev1beta1.MachineSet) {
+func (ctrl *Controller) addMachineConfiguration(obj interface{}) {
+	// No-op if feature is disabled
+	if !ctrl.featureEnabled {
+		return
+	}
+
+	machineConfiguration := obj.(*opv1.MachineConfiguration)
+
+	// Take no action if this isn't the "cluster" level MachineConfiguration object
+	if machineConfiguration.Name != ctrlcommon.MCOOperatorKnobsObjectName {
+		klog.V(4).Infof("MachineConfiguration %s updated, but does not match %s, skipping bootimage sync", machineConfiguration.Name, ctrlcommon.MCOOperatorKnobsObjectName)
+		return
+	}
+
+	klog.Infof("Bootimages management configuration has been added, reconciling enrolled machine resources")
+
+	// Update/Check machinesets since the boot images configuration knob was updated
+	err := ctrl.enqueueMAPIMachineSets()
+	if err != nil {
+		klog.Errorf("Error enqueuing MAPI machine sets: %v", err)
+	}
+}
+
+func (ctrl *Controller) updateMachineConfiguration(oldMC, newMC interface{}) {
+
+	// No-op if feature is disabled
+	if !ctrl.featureEnabled {
+		return
+	}
+	oldMachineConfiguration := oldMC.(*opv1.MachineConfiguration)
+	newMachineConfiguration := newMC.(*opv1.MachineConfiguration)
+
+	// Take no action if this isn't the "cluster" level MachineConfiguration object
+	if oldMachineConfiguration.Name != ctrlcommon.MCOOperatorKnobsObjectName {
+		klog.V(4).Infof("MachineConfiguration %s updated, but does not match %s, skipping bootimage sync", oldMachineConfiguration.Name, ctrlcommon.MCOOperatorKnobsObjectName)
+		return
+	}
+
+	// Only take action if the there is an actual change in the MachineConfiguration's ManagedBootImages knob
+	if reflect.DeepEqual(oldMachineConfiguration.Spec.ManagedBootImages, newMachineConfiguration.Spec.ManagedBootImages) {
+		return
+	}
+
+	klog.Infof("Bootimages management configuration has been updated, reconciling enrolled machine resources")
+
+	// Update all machinesets since the boot images configuration knob was updated
+	err := ctrl.enqueueMAPIMachineSets()
+	if err != nil {
+		klog.Errorf("Error enqueuing MAPI machine sets: %v", err)
+	}
+}
+
+// This function adds MAPI machinesets to the workqueue
+func (ctrl *Controller) enqueueMAPIMachineSet(ms *machinev1beta1.MachineSet) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(ms)
 	if err != nil {
 		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %w", ms, err))
@@ -336,23 +402,62 @@ func (ctrl *Controller) enqueue(ms *machinev1beta1.MachineSet) {
 }
 
 // syncMachineSet will attempt to enqueue every machineset
-func (ctrl *Controller) enqueueAllMachineSets() error {
+func (ctrl *Controller) enqueueMAPIMachineSets() error {
 
-	machineSets, err := ctrl.machineSetLister.List(labels.Everything())
+	// Grab the global operator knobs
+	mcop, err := ctrl.mcopLister.Get(ctrlcommon.MCOOperatorKnobsObjectName)
 	if err != nil {
-		return fmt.Errorf("failed to fetch MachineSet list during config map update %w", err)
+		return fmt.Errorf("failed to fetch MachineConfiguration knobs list while enqueueing MAPI MachineSets %w", err)
 	}
 
+	// If no machine managers exist; exit the enqueue process.
+	if len(mcop.Spec.ManagedBootImages.MachineManagers) == 0 {
+		klog.Infof("No MAPI machineset manager was found, so no MAPI machinesets will be enqueued.")
+		return nil
+	}
+
+	machineManagerFound, machineResourceSelector, err := getMachineResourceSelectorFromMachineManagers(mcop.Spec.ManagedBootImages.MachineManagers, opv1.MachineAPI, opv1.MachineSets)
+	if err != nil {
+		return fmt.Errorf("failed to create a machine set selector while enqueueing MAPI machineset %w", err)
+	}
+	if !machineManagerFound {
+		klog.Infof("No MAPI machineset manager was found, so no MAPI machinesets will be enqueued.")
+		return nil
+	}
+
+	machineSets, err := ctrl.mapiMachineSetLister.List(machineResourceSelector)
+	if err != nil {
+		return fmt.Errorf("failed to fetch MachineSet list while enqueueing MAPI MachineSets %w", err)
+	}
+
+	klog.Infof("Reconciling %d MAPI MachineSet(s)", len(machineSets))
 	for _, machineSet := range machineSets {
-		ctrl.enqueueMachineSet(machineSet)
+		ctrl.enqueueMAPIMachineSet(machineSet)
 	}
 
 	return nil
 }
 
-// syncMachineSet will attempt to reconcile the machineset with the given key.
+// This function checks if an array of machineManagers contains the target apigroup/resource and returns
+// a bool(success/fail), a label selector to filter the target resource and an error, if any.
+func getMachineResourceSelectorFromMachineManagers(machineManagers []opv1.MachineManager, apiGroup opv1.MachineManagerMachineSetsAPIGroupType, resource opv1.MachineManagerMachineSetsResourceType) (bool, labels.Selector, error) {
+
+	for _, machineManager := range machineManagers {
+		if machineManager.APIGroup == apiGroup && machineManager.Resource == resource {
+			if machineManager.Selection.Mode == opv1.Partial {
+				selector, err := metav1.LabelSelectorAsSelector(machineManager.Selection.Partial.MachineResourceSelector)
+				return true, selector, err
+			} else if machineManager.Selection.Mode == opv1.All {
+				return true, labels.Everything(), nil
+			}
+		}
+	}
+	return false, nil, nil
+}
+
+// syncMachineResource will attempt to reconcile the machineresource with the given key.
 // This function is not meant to be invoked concurrently with the same key.
-func (ctrl *Controller) syncMachineSet(key string) error {
+func (ctrl *Controller) syncMachineResource(key string) error {
 
 	// TODO: lower this level of all info logs in this function
 	startTime := time.Now()
@@ -390,13 +495,15 @@ func (ctrl *Controller) syncMachineSet(key string) error {
 	// stored is "0.0.1-snapshot" and does not reflect the correct value. Tracked in this bug https://issues.redhat.com/browse/OCPBUGS-19824
 	// The current hash and version check should be enough to skate by for now, but fixing this would be additional safety - djoshy
 
+	// When adding support for mulitple kinds of machine resources, the "key" format can be updated to enclose the kind of machine resource. Once decoded,
+	// an appropriate processing function can be called. For now only MAPI machinesets are supported, so proceed assuming that.
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		return err
 	}
 
 	// Fetch the machineset
-	machineSet, err := ctrl.machineSetLister.MachineSets(namespace).Get(name)
+	machineSet, err := ctrl.mapiMachineSetLister.MachineSets(namespace).Get(name)
 	if machineSet == nil || apierrors.IsNotFound(err) {
 		return fmt.Errorf("failed to fetch machineset object during machineset sync: %w", err)
 	}
@@ -421,10 +528,10 @@ func (ctrl *Controller) syncMachineSet(key string) error {
 
 	// Patch the machineset if required
 	if patchRequired {
-		klog.Infof("Patching machineset %s", machineSet.Name)
+		klog.Infof("Patching MAPI machineset %s", machineSet.Name)
 		return ctrl.patchMachineSet(machineSet, newMachineSet)
 	}
-	klog.Infof("No patching required for machineset %s", machineSet.Name)
+	klog.Infof("No patching required for MAPI machineset %s", machineSet.Name)
 	return nil
 }
 
@@ -558,7 +665,7 @@ func unmarshalStreamDataConfigMap(cm *corev1.ConfigMap, st interface{}) error {
 // -GCPMachineProviderSpec.Disk(s) stores actual bootimage URL
 // -identical for x86_64/amd64 and aarch64/arm64
 func reconcileGCP(machineSet *machinev1beta1.MachineSet, configMap *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
-	klog.Infof("Reconciling machineset %s on GCP, with arch %s", machineSet.Name, arch)
+	klog.Infof("Reconciling MAPI machineset %s on GCP, with arch %s", machineSet.Name, arch)
 
 	// First, unmarshal the GCP providerSpec
 	providerSpec := new(machinev1beta1.GCPMachineProviderSpec)
