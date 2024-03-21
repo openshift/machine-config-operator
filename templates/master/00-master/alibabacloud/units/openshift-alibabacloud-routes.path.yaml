@@ -3,8 +3,8 @@ enabled: true
 contents: |
   [Unit]
   Description=Watch for downfile changes
-  Before=kubelet.service
-  ConditionPathExists=!/etc/ignition-machine-config-encapsulated.json
+  Before=kubelet-dependencies.service
+  After=firstboot-osupdate.target
 
   [Path]
   PathExistsGlob=/run/cloud-routes/*
@@ -12,4 +12,4 @@ contents: |
   MakeDirectory=true
 
   [Install]
-  RequiredBy=kubelet.service
+  RequiredBy=kubelet-dependencies.service

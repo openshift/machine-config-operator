@@ -8,7 +8,7 @@ contents: |
   Wants=NetworkManager-wait-online.service
   After=firstboot-osupdate.target
   After=NetworkManager-wait-online.service openvswitch.service network.service nodeip-configuration.service
-  Before=kubelet-dependencies.target node-valid-hostname.service
+  Before=kubelet-dependencies.target node-valid-hostname.service dnsmasq.service
 
   [Service]
   # Need oneshot to delay kubelet
