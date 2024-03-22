@@ -1387,7 +1387,7 @@ func shouldWeRebuild(oldPool, curPool *mcfgv1.MachineConfigPool) (bool, error) {
 	poolStateSuggestsReBuild := canPoolRetriggerBuild(ps) &&
 		// If we have a config change interrupting the current running build, we
 		// should restart the build.
-		!ps.HasBuildObjectForCurrentMachineConfig()
+		(isPoolConfigChange(oldPool, curPool) && !ps.HasBuildObjectForCurrentMachineConfig())
 
 	return poolStateSuggestsReBuild, nil
 }
