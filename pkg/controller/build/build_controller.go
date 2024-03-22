@@ -1200,7 +1200,7 @@ func (ctrl *Controller) updateMachineConfigPool(old, cur interface{}) {
 		return
 	}
 
-	reBuild, err := shouldWeRebuild(ctrl.imageBuilder, oldPool, curPool)
+	reBuild, err := shouldWeRebuild(oldPool, curPool)
 	if err != nil {
 		klog.Errorln(err)
 		ctrl.handleErr(err, curPool.Name)
@@ -1335,7 +1335,7 @@ func canPoolBuild(ps *poolState) bool {
 // 3. Is our build in a specific state and the reason?
 //
 // Returns true if we are able to build.
-func shouldPoolRetriggerBuild(ps *poolState) bool {
+func canPoolRetriggerBuild(ps *poolState) bool {
 	// If we don't have a layered pool, we should not re-trigger build.
 	if !ps.IsLayered() {
 		return false
@@ -1381,15 +1381,14 @@ func shouldWeDoABuild(builder interface {
 
 // Determines if we should restart the build based upon reasons behind a build failure,
 // whether there is a change to the machine config pool, etc.
-func shouldWeRebuild(builder interface {
-	IsBuildRunning(*mcfgv1.MachineConfigPool) (bool, error)
-}, oldPool, curPool *mcfgv1.MachineConfigPool) (bool, error) {
+func shouldWeRebuild(oldPool, curPool *mcfgv1.MachineConfigPool) (bool, error) {
 	ps := newPoolState(curPool)
 
-	poolStateSuggestsReBuild := shouldPoolRetriggerBuild(ps) ||
-		// If we have a config change or we're missing an image pullspec label, we
+	poolStateSuggestsReBuild := canPoolRetriggerBuild(ps) &&
+		// If we have a config change interrupting the current running build, we
 		// should restart the build.
-		(isPoolConfigChange(oldPool, curPool) || !ps.HasOSImage())
+		!ps.HasBuildObjectForCurrentMachineConfig()
+
 	return poolStateSuggestsReBuild, nil
 }
 
