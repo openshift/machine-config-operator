@@ -996,6 +996,24 @@ func (ctrl *Controller) prepareForBuild(inputs *buildInputs) (ImageBuildRequest,
 // build, and updates the MachineConfigPool with an object reference for the
 // build pod.
 func (ctrl *Controller) startBuildForMachineConfigPool(ps *poolState) error {
+
+	if ctrlcommon.DoARebuild(ps.pool) {
+		// delete FAILED build attempts and builds
+		// delete rendered containerfile, MC, configmaps etc.
+		// Delete the actual build object itself.
+		// if we are rebuilding, we cannot ignore DNE. All of these objects should exist.
+		err := ctrl.postBuildCleanup(ps.pool, false)
+		if err != nil {
+			return fmt.Errorf("Could not update pool when triggering a rebuild: %v", err)
+		}
+		// remove annotation
+		delete(ps.pool.Labels, ctrlcommon.RebuildPoolLabel)
+		err = ctrl.updatePoolAndSyncAvailableStatus(ps.MachineConfigPool())
+		if err != nil {
+			return fmt.Errorf("Could not update pool when triggering a rebuild: %v", err)
+		}
+
+	}
 	inputs, err := ctrl.getBuildInputs(ps)
 	if err != nil {
 		return fmt.Errorf("could not fetch build inputs: %w", err)
@@ -1202,7 +1220,7 @@ func (ctrl *Controller) updateMachineConfigPool(old, cur interface{}) {
 			return
 		}
 	// We need to do a build.
-	case doABuild:
+	case doABuild || (ctrlcommon.IsLayeredPool(curPool) && ctrlcommon.DoARebuild(curPool)):
 		klog.V(4).Infof("MachineConfigPool %s has changed, requiring a build", curPool.Name)
 		if err := ctrl.startBuildForMachineConfigPool(newPoolState(curPool)); err != nil {
 			klog.Errorln(err)

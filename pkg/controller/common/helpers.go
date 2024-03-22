@@ -1175,6 +1175,12 @@ func IsLayeredPool(pool *mcfgv1.MachineConfigPool) bool {
 	return false
 }
 
+func DoARebuild(pool *mcfgv1.MachineConfigPool) bool {
+	_, ok := pool.Labels[RebuildPoolLabel]
+	return ok
+
+}
+
 // DockerConfigJSON represents ~/.docker/config.json file info
 type DockerConfigJSON struct {
 	Auths DockerConfig `json:"auths"`
