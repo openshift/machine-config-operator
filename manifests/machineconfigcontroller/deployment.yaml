@@ -13,6 +13,7 @@ spec:
         k8s-app: machine-config-controller
       annotations:
         target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
+        openshift.io/required-scc: restricted-v2
     spec:
       containers:
       - name: machine-config-controller
