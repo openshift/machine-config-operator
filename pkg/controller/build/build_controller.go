@@ -1200,12 +1200,7 @@ func (ctrl *Controller) updateMachineConfigPool(old, cur interface{}) {
 		return
 	}
 
-	reBuild, err := shouldWeRebuild(oldPool, curPool)
-	if err != nil {
-		klog.Errorln(err)
-		ctrl.handleErr(err, curPool.Name)
-		return
-	}
+	reBuild := shouldWeRebuild(oldPool, curPool)
 
 	switch {
 	// We've transitioned from a layered pool to a non-layered pool.
@@ -1381,7 +1376,7 @@ func shouldWeDoABuild(builder interface {
 
 // Determines if we should restart the build based upon reasons behind a build failure,
 // whether there is a change to the machine config pool, etc.
-func shouldWeRebuild(oldPool, curPool *mcfgv1.MachineConfigPool) (bool, error) {
+func shouldWeRebuild(oldPool, curPool *mcfgv1.MachineConfigPool) bool {
 	ps := newPoolState(curPool)
 
 	poolStateSuggestsReBuild := canPoolRetriggerBuild(ps) &&
@@ -1389,7 +1384,7 @@ func shouldWeRebuild(oldPool, curPool *mcfgv1.MachineConfigPool) (bool, error) {
 		// should restart the build.
 		(isPoolConfigChange(oldPool, curPool) && !ps.HasBuildObjectForCurrentMachineConfig())
 
-	return poolStateSuggestsReBuild, nil
+	return poolStateSuggestsReBuild
 }
 
 // Enumerates all of the build-related MachineConfigPool condition types.
