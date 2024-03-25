@@ -1207,8 +1207,8 @@ func (dn *Daemon) RunOnceFrom(onceFrom string, skipReboot bool) error {
 
 // RunFirstbootCompleteMachineconfig is run via systemd on the first boot
 // to complete processing of the target MachineConfig.
-func (dn *Daemon) RunFirstbootCompleteMachineconfig() error {
-	data, err := os.ReadFile(constants.MachineConfigEncapsulatedPath)
+func (dn *Daemon) RunFirstbootCompleteMachineconfig(machineConfigFile string) error {
+	data, err := os.ReadFile(machineConfigFile)
 	if err != nil {
 		return err
 	}
@@ -1287,9 +1287,18 @@ func (dn *Daemon) RunFirstbootCompleteMachineconfig() error {
 		return err
 	}
 
-	// Removing this file signals completion of the initial MC processing.
-	if err := os.Rename(constants.MachineConfigEncapsulatedPath, constants.MachineConfigEncapsulatedBakPath); err != nil {
-		return fmt.Errorf("failed to rename encapsulated MachineConfig after processing on firstboot: %w", err)
+	if machineConfigFile == constants.MachineConfigEncapsulatedPath {
+		// Removing this file signals completion of the initial MC processing.
+		if err := os.Rename(constants.MachineConfigEncapsulatedPath, constants.MachineConfigEncapsulatedBakPath); err != nil {
+			return fmt.Errorf("failed to rename encapsulated MachineConfig after processing on firstboot: %w", err)
+		}
+	}
+
+	// If we re-bootstrapped the node, we should disable and remove the systemd
+	// unit that we used to do that. This function will no-op and return nil if
+	// the systemd unit is not present.
+	if err := dn.disableRevertSystemdUnit(); err != nil {
+		return err
 	}
 
 	dn.skipReboot = false
@@ -2454,16 +2463,6 @@ func (dn *Daemon) triggerUpdate(currentConfig, desiredConfig *mcfgv1.MachineConf
 	// If both of the image annotations are empty, this is a regular MachineConfig update.
 	if desiredImage == "" && currentImage == "" {
 		return dn.triggerUpdateWithMachineConfig(currentConfig, desiredConfig, true)
-	}
-
-	// If the desired image annotation is empty, but the current image is not
-	// empty, this should be a regular MachineConfig update.
-	//
-	// However, the node will not roll back from a layered config to a
-	// non-layered config without admin intervention; so we should emit an error
-	// for now.
-	if desiredImage == "" && currentImage != "" {
-		return fmt.Errorf("rolling back from a layered to non-layered configuration is not currently supported")
 	}
 
 	// Shut down the Config Drift Monitor since we'll be performing an update

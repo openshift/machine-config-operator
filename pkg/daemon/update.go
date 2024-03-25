@@ -40,6 +40,7 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	pivottypes "github.com/openshift/machine-config-operator/pkg/daemon/pivot/types"
 	pivotutils "github.com/openshift/machine-config-operator/pkg/daemon/pivot/utils"
+	"github.com/openshift/machine-config-operator/pkg/daemon/runtimeassets"
 	"github.com/openshift/machine-config-operator/pkg/upgrademonitor"
 )
 
@@ -856,12 +857,25 @@ func (dn *Daemon) updateOnClusterBuild(oldConfig, newConfig *mcfgv1.MachineConfi
 	// If the new image pullspec is already on disk, do not attempt to re-apply
 	// it. rpm-ostree will throw an error as a result.
 	// See: https://issues.redhat.com/browse/OCPBUGS-18414.
-	if oldImage != newImage && newImage != "" {
+	if oldImage != newImage {
+		// If the new image field is empty, set it to the OS image URL value
+		// provided by the MachineConfig to do a rollback.
+		if newImage == "" {
+			klog.Infof("%s empty, reverting to osImageURL %s from MachineConfig %s", constants.DesiredImageAnnotationKey, newConfig.Spec.OSImageURL, newConfig.Name)
+			newImage = newConfig.Spec.OSImageURL
+		}
 		if err := dn.updateLayeredOSToPullspec(newImage); err != nil {
 			return err
 		}
 	} else {
 		klog.Infof("Image pullspecs equal, skipping rpm-ostree rebase")
+	}
+
+	// If the new OS image equals the OS image URL value, this means we're in a
+	// revert-from-layering situation. This also means we can return early after
+	// taking a different path.
+	if newImage == newConfig.Spec.OSImageURL {
+		return dn.finalizeRevertToNonLayering(newConfig)
 	}
 
 	// update files on disk that need updating
@@ -949,6 +963,60 @@ func (dn *Daemon) updateOnClusterBuild(oldConfig, newConfig *mcfgv1.MachineConfi
 	}()
 
 	return dn.reboot(fmt.Sprintf("Node will reboot into image %s / MachineConfig %s", newImage, newConfigName))
+}
+
+// Finalizes the revert process by enabling a special systemd unit prior to
+// rebooting the node.
+//
+// After we write the original factory image to the node, none of the files
+// specified in the MachineConfig will be written due to how rpm-ostree handles
+// file writes. Because those files are owned by the layered container image,
+// they are not present after reboot; even if we were to write them to the node
+// before rebooting. Consequently, after reverting back to the original image,
+// the node will lose contact with the control plane and the easiest way to
+// reestablish contact is to rebootstrap the node.
+//
+// By comparison, if we write a file that is _not_ owned by the layered
+// container image, this file will persist after reboot. So what we do is write
+// a special systemd unit that will rebootstrap the node upon reboot.
+// Unfortunately, this will incur a second reboot during the rollback process,
+// so there is room for improvement here.
+func (dn *Daemon) finalizeRevertToNonLayering(newConfig *mcfgv1.MachineConfig) error {
+	// First, we write the new MachineConfig to a file. This is both the signal
+	// that the revert systemd unit should fire as well as the desired source of
+	// truth.
+	outBytes, err := json.Marshal(newConfig)
+	if err != nil {
+		return fmt.Errorf("could not marshal MachineConfig %q to JSON: %w", newConfig.Name, err)
+	}
+
+	if err := writeFileAtomicallyWithDefaults(runtimeassets.RevertServiceMachineConfigFile, outBytes); err != nil {
+		return fmt.Errorf("could not write MachineConfig %q to %q: %w", newConfig.Name, runtimeassets.RevertServiceMachineConfigFile, err)
+	}
+
+	klog.Infof("Wrote MachineConfig %q to %q", newConfig.Name, runtimeassets.RevertServiceMachineConfigFile)
+
+	// Next, we enable the revert systemd unit. This renders and writes the
+	// machine-config-daemon-revert.service systemd unit, clones it, and writes
+	// it to disk. The reason for doing it this way is because it will persist
+	// after the reboot since it was not written or mutated by the rpm-ostree
+	// process.
+	if err := dn.enableRevertSystemdUnit(); err != nil {
+		return err
+	}
+
+	// Clear the current image field so that after reboot, the node will clear
+	// the currentImage annotation.
+	odc := &onDiskConfig{
+		currentImage:  "",
+		currentConfig: newConfig,
+	}
+
+	if err := dn.storeCurrentConfigOnDisk(odc); err != nil {
+		return err
+	}
+
+	return dn.reboot(fmt.Sprintf("Node will reboot into image %s / MachineConfig %s", newConfig.Spec.OSImageURL, newConfig.Name))
 }
 
 // Update the node to the provided node configuration.
@@ -2824,4 +2892,77 @@ func (dn *Daemon) hasImageRegistryDrainOverrideConfigMap() (bool, error) {
 	}
 
 	return false, fmt.Errorf("Error fetching image registry drain override configmap: %w", err)
+}
+
+// Enables the revert layering systemd unit.
+//
+// To enable the unit, we perform the following operations:
+// 1. Retrieve the ControllerConfig.
+// 2. Generate the Ignition config from the ControllerConfig.
+// 3. Writes the new systemd unit to disk and enables it.
+func (dn *Daemon) enableRevertSystemdUnit() error {
+	ctrlcfg, err := dn.ccLister.Get(ctrlcommon.ControllerConfigName)
+	if err != nil {
+		return fmt.Errorf("could not get controllerconfig %s: %w", ctrlcommon.ControllerConfigName, err)
+	}
+
+	revertService, err := runtimeassets.NewRevertService(ctrlcfg)
+	if err != nil {
+		return err
+	}
+
+	revertIgn, err := revertService.Ignition()
+	if err != nil {
+		return fmt.Errorf("could not create %s: %w", runtimeassets.RevertServiceName, err)
+	}
+
+	if err := dn.writeUnits(revertIgn.Systemd.Units); err != nil {
+		return fmt.Errorf("could not write %s: %w", runtimeassets.RevertServiceName, err)
+	}
+
+	return nil
+}
+
+// Disables the revert layering systemd unit, if it is present.
+//
+// To disable the unit, it performs the following operations:
+// 1. Checks for the presence of the systemd unit file. If not present, it will
+// no-op.
+// 2. If the unit file is present, it will disable the unit using the default
+// MCD code paths for that purpose.
+// 3. It will ensure that the unit file is removed as well as the file that the
+// Ignition config was written to.
+func (dn *Daemon) disableRevertSystemdUnit() error {
+	unitPath := filepath.Join(pathSystemd, runtimeassets.RevertServiceName)
+
+	unitPathExists, err := fileExists(unitPath)
+	if err != nil {
+		return fmt.Errorf("could not determine if service %q exists: %w", runtimeassets.RevertServiceName, err)
+	}
+
+	// If the unit path does not exist, there is nothing left to do.
+	if !unitPathExists {
+		return nil
+	}
+
+	// If we've reached this point, we know that the unit file is still present,
+	// which means that the unit may still be enabled.
+	if err := dn.disableUnits([]string{runtimeassets.RevertServiceName}); err != nil {
+		return err
+	}
+
+	filesToRemove := []string{
+		unitPath,
+		runtimeassets.RevertServiceMachineConfigFile,
+	}
+
+	// systemd removes the unit file, but there is no harm in calling
+	// os.RemoveAll() since it will return nil if the file does not exist.
+	for _, fileToRemove := range filesToRemove {
+		if err := os.RemoveAll(fileToRemove); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
