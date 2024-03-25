@@ -1956,7 +1956,7 @@ func cmToData(cm *corev1.ConfigMap, key string) ([]byte, error) {
 
 // Validates configuration provided in the MachineConfiguration object's spec for each feature
 // and updates the status of the object as necessary
-func (optr *Operator) syncMachineConfiguration(config *renderConfig) error {
+func (optr *Operator) syncMachineConfiguration(_ *renderConfig) error {
 
 	klog.Infof("Syncing machine configurations CR")
 
