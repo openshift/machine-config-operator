@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
+
 	daemon "github.com/openshift/machine-config-operator/pkg/daemon"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -21,11 +23,14 @@ var firstbootCompleteMachineconfig = &cobra.Command{
 
 var persistNics bool
 
+var machineConfigFile string
+
 // init executes upon import
 func init() {
 	rootCmd.AddCommand(firstbootCompleteMachineconfig)
 	firstbootCompleteMachineconfig.PersistentFlags().StringVar(&startOpts.rootMount, "root-mount", "/rootfs", "where the nodes root filesystem is mounted for chroot and file manipulation.")
 	firstbootCompleteMachineconfig.PersistentFlags().BoolVar(&persistNics, "persist-nics", false, "Run nmstatectl persist-nic-names")
+	firstbootCompleteMachineconfig.PersistentFlags().StringVar(&machineConfigFile, "machineconfig-file", daemonconsts.MachineConfigEncapsulatedPath, "The MachineConfig file on-disk to use as the source of truth.")
 	pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
 }
 
@@ -55,7 +60,7 @@ func runFirstBootCompleteMachineConfig(_ *cobra.Command, _ []string) error {
 		return err
 	}
 
-	return dn.RunFirstbootCompleteMachineconfig()
+	return dn.RunFirstbootCompleteMachineconfig(machineConfigFile)
 }
 
 func executeFirstbootCompleteMachineConfig(cmd *cobra.Command, args []string) {
