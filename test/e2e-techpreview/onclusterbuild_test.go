@@ -15,6 +15,7 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/controller/build"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/openshift/machine-config-operator/test/helpers"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -99,13 +100,29 @@ func TestOnClusterBuildRollsOutImage(t *testing.T) {
 
 	cs := framework.NewClientSet("")
 	node := helpers.GetRandomNode(t, cs, "worker")
-	t.Cleanup(makeIdempotentAndRegister(t, func() {
-		helpers.DeleteNodeAndMachine(t, cs, node)
-	}))
-	helpers.LabelNode(t, cs, node, helpers.MCPNameToRole(layeredMCPName))
+
+	unlabelFunc := makeIdempotentAndRegister(t, helpers.LabelNode(t, cs, node, helpers.MCPNameToRole(layeredMCPName)))
 	helpers.WaitForNodeImageChange(t, cs, node, imagePullspec)
 
+	assert.Contains(t, helpers.GetRPMOstreeStatus(t, cs, node), imagePullspec, "node %q did not get new image %q", node.Name, imagePullspec)
+	t.Logf("Node %s is booted into image %q", node.Name, imagePullspec)
+
 	t.Log(helpers.ExecCmdOnNode(t, cs, node, "chroot", "/rootfs", "cowsay", "Moo!"))
+
+	unlabelFunc()
+
+	assertNodeRevertsToNonLayered(t, cs, node)
+}
+
+func assertNodeRevertsToNonLayered(t *testing.T, cs *framework.ClientSet, node corev1.Node) {
+	workerMCName := helpers.GetMcName(t, cs, "worker")
+	workerMC, err := cs.MachineConfigs().Get(context.TODO(), workerMCName, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	helpers.WaitForNodeConfigAndImageChange(t, cs, node, workerMCName, "")
+
+	assert.Contains(t, helpers.GetRPMOstreeStatus(t, cs, node), workerMC.Spec.OSImageURL, "node %q did not rollback to OS image %q", node.Name, workerMC.Spec.OSImageURL)
+	t.Logf("Node %s has reverted to OS image %q", node.Name, workerMC.Spec.OSImageURL)
 }
 
 // Sets up and performs an on-cluster build for a given set of parameters.

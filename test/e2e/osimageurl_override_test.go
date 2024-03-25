@@ -76,12 +76,8 @@ func assertNodeDoesNotHaveBinaries(t *testing.T, cs *framework.ClientSet, node c
 // Creates a new MachineConfigPool, adds the given node to it, and overrides
 // the osImageURL with the provided OS image name.
 func applyCustomOSToNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, osImageURL, poolName string) func() {
-	getRpmOstreeStatus := func() string {
-		return helpers.ExecCmdOnNode(t, cs, node, "chroot", "/rootfs", "rpm-ostree", "status")
-	}
-
 	// Do a pre-run assertion to ensure that we are not in the new OS image.
-	assert.NotContains(t, getRpmOstreeStatus(), osImageURL, fmt.Sprintf("node %q already booted into %q", node.Name, osImageURL))
+	assert.NotContains(t, helpers.GetRPMOstreeStatus(t, cs, node), osImageURL, fmt.Sprintf("node %q already booted into %q", node.Name, osImageURL))
 
 	mc := helpers.NewMachineConfig("custom-os-image", helpers.MCLabelForRole(poolName), osImageURL, []ign3types.File{})
 
@@ -90,7 +86,7 @@ func applyCustomOSToNode(t *testing.T, cs *framework.ClientSet, node corev1.Node
 	undoFunc := helpers.CreatePoolAndApplyMCToNode(t, cs, poolName, node, mc)
 
 	// Assert that we've booted into the new custom OS image.
-	assert.Contains(t, getRpmOstreeStatus(), osImageURL, fmt.Sprintf("node %q did not boot into %q", node.Name, osImageURL))
+	assert.Contains(t, helpers.GetRPMOstreeStatus(t, cs, node), osImageURL, fmt.Sprintf("node %q did not boot into %q", node.Name, osImageURL))
 
 	t.Logf("Node %q has booted into %q", node.Name, osImageURL)
 
@@ -99,7 +95,7 @@ func applyCustomOSToNode(t *testing.T, cs *framework.ClientSet, node corev1.Node
 		undoFunc()
 
 		// Assert that rpm-ostree indicates we're not running the custom OS image anymore.
-		assert.NotContains(t, getRpmOstreeStatus(), osImageURL, fmt.Sprintf("node %q did not roll back to previous OS image", node.Name))
+		assert.NotContains(t, helpers.GetRPMOstreeStatus(t, cs, node), osImageURL, fmt.Sprintf("node %q did not roll back to previous OS image", node.Name))
 
 		t.Logf("Node %q has returned to its previous OS image", node.Name)
 	})
