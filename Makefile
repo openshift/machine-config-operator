@@ -71,7 +71,7 @@ ifdef SETUP_ENVTEST
 	@echo "Found setup-envtest"
 else
 	@echo "Installing setup-envtest"
-	go install -mod= sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
+	go install -mod= sigs.k8s.io/controller-runtime/tools/setup-envtest@v0.0.0-20240315194348-5aaf1190f880
 endif
 
 GO_JUNIT_REPORT := $(shell command -v go-junit-report 2> /dev/null)
