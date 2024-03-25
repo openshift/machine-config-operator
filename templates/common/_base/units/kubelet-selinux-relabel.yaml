@@ -4,6 +4,8 @@ contents: |
   [Unit]
   Description=Relabel necessary files for kubelet
   Before=kubelet-dependencies.target
+  Wants=rhcos-selinux-policy-upgrade.service
+  After=rhcos-selinux-policy-upgrade.service
 
   [Service]
   Type=oneshot
