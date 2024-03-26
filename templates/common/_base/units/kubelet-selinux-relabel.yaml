@@ -3,7 +3,6 @@ enabled: true
 contents: |
   [Unit]
   Description=Relabel necessary files for kubelet
-  Before=kubelet-dependencies.target
 
   [Service]
   Type=oneshot
@@ -12,7 +11,3 @@ contents: |
   ExecStart=-/usr/sbin/restorecon /usr/local/bin/kubenswrapper
   ExecStart=-/usr/sbin/restorecon /usr/bin/kubensenter
   TimeoutSec=20
-
-  [Install]
-  # TODO: Change this to RequiredBy after we fix https://github.com/openshift/machine-config-operator/pull/3865#issuecomment-1746963115
-  WantedBy=kubelet-dependencies.target

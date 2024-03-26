@@ -3,6 +3,6 @@ contents: |
   [Unit]
   Description=Dependencies necessary to run kubelet
   Documentation=https://github.com/openshift/machine-config-operator/
-  Requires=basic.target network-online.target
+  Requires=basic.target network-online.target kubelet-selinux-relabel.service
   Wants=NetworkManager-wait-online.service crio-wipe.service
   Wants=rpc-statd.service
