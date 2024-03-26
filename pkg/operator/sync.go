@@ -19,7 +19,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apiextv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -31,6 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -70,7 +70,6 @@ type manifestPaths struct {
 	clusterRoleBindings []string
 	serviceAccounts     []string
 	secrets             []string
-	daemonset           string
 	configMaps          []string
 	roles               []string
 }
@@ -172,7 +171,7 @@ func (optr *Operator) syncAll(syncFuncs []syncFunc) error {
 		return fmt.Errorf("error syncing degraded status: %w", err)
 	}
 
-	if err := optr.syncAvailableStatus(syncErr); err != nil {
+	if err := optr.syncAvailableStatus(); err != nil {
 		return fmt.Errorf("error syncing available status: %w", err)
 	}
 
@@ -347,12 +346,12 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 	}
 
 	cm, err = optr.clusterCmLister.ConfigMaps("openshift-config-managed").Get("merged-trusted-image-registry-ca")
-	if err != nil && !errors.IsNotFound(err) {
+	if err != nil && !apierrors.IsNotFound(err) {
 		return err
 	}
 	cmAnnotations := make(map[string]string)
 	cmAnnotations["openshift.io/description"] = "Created and managed by the machine-config-operator"
-	if err != nil && errors.IsNotFound(err) {
+	if err != nil && apierrors.IsNotFound(err) {
 		klog.Infof("creating merged-trusted-image-registry-ca")
 		_, err = optr.kubeClient.CoreV1().ConfigMaps("openshift-config-managed").Create(
 			context.TODO(),
@@ -803,108 +802,112 @@ func (optr *Operator) syncMachineConfigNodes(_ *renderConfig) error {
 	}
 	return nil
 }
+func isApplyManifestErrorRetriable(err error) bool {
+	// Retry on brief rpc errors
+	// See https://issues.redhat.com/browse/OCPBUGS-24228 for more information.
+	// String compare isn't great, but could not find a good error type for this in the standard libraries
+	if strings.Contains(err.Error(), "rpc error") {
+		return true
+	}
+	// Retry on resource conflict errors, i.e "the object has been modified; please apply your changes to the latest version and try again"
+	// See last few comments on https://issues.redhat.com/browse/OCPBUGS-9108 for more information
+	if apierrors.IsConflict(err) {
+		return true
+	}
+	// Add any other errors to be added to the retry here.
 
+	klog.Infof("Skipping retry in ApplyManifests for error: %s", err)
+	return false
+}
 func (optr *Operator) applyManifests(config *renderConfig, paths manifestPaths) error {
-	for _, path := range paths.clusterRoles {
-		crBytes, err := renderAsset(config, path)
-		if err != nil {
-			return err
+	// Retry in case this is a short lived, transient issue.
+	// This does an exponential retry, up to 5 times before it eventually times out and causing a degrade.
+	return retry.OnError(retry.DefaultRetry, isApplyManifestErrorRetriable, func() error {
+		for _, path := range paths.clusterRoles {
+			crBytes, err := renderAsset(config, path)
+			if err != nil {
+				return err
+			}
+			cr := resourceread.ReadClusterRoleV1OrDie(crBytes)
+			_, _, err = resourceapply.ApplyClusterRole(context.TODO(), optr.kubeClient.RbacV1(), optr.libgoRecorder, cr)
+			if err != nil {
+				return err
+			}
 		}
-		cr := resourceread.ReadClusterRoleV1OrDie(crBytes)
-		_, _, err = resourceapply.ApplyClusterRole(context.TODO(), optr.kubeClient.RbacV1(), optr.libgoRecorder, cr)
-		if err != nil {
-			return err
-		}
-	}
 
-	for _, path := range paths.roles {
-		rBytes, err := renderAsset(config, path)
-		if err != nil {
-			return err
+		for _, path := range paths.roles {
+			rBytes, err := renderAsset(config, path)
+			if err != nil {
+				return err
+			}
+			r := resourceread.ReadRoleV1OrDie(rBytes)
+			_, _, err = resourceapply.ApplyRole(context.TODO(), optr.kubeClient.RbacV1(), optr.libgoRecorder, r)
+			if err != nil {
+				return err
+			}
 		}
-		r := resourceread.ReadRoleV1OrDie(rBytes)
-		_, _, err = resourceapply.ApplyRole(context.TODO(), optr.kubeClient.RbacV1(), optr.libgoRecorder, r)
-		if err != nil {
-			return err
-		}
-	}
 
-	for _, path := range paths.roleBindings {
-		rbBytes, err := renderAsset(config, path)
-		if err != nil {
-			return err
+		for _, path := range paths.roleBindings {
+			rbBytes, err := renderAsset(config, path)
+			if err != nil {
+				return err
+			}
+			rb := resourceread.ReadRoleBindingV1OrDie(rbBytes)
+			_, _, err = resourceapply.ApplyRoleBinding(context.TODO(), optr.kubeClient.RbacV1(), optr.libgoRecorder, rb)
+			if err != nil {
+				return err
+			}
 		}
-		rb := resourceread.ReadRoleBindingV1OrDie(rbBytes)
-		_, _, err = resourceapply.ApplyRoleBinding(context.TODO(), optr.kubeClient.RbacV1(), optr.libgoRecorder, rb)
-		if err != nil {
-			return err
-		}
-	}
 
-	for _, path := range paths.clusterRoleBindings {
-		crbBytes, err := renderAsset(config, path)
-		if err != nil {
-			return err
+		for _, path := range paths.clusterRoleBindings {
+			crbBytes, err := renderAsset(config, path)
+			if err != nil {
+				return err
+			}
+			crb := resourceread.ReadClusterRoleBindingV1OrDie(crbBytes)
+			_, _, err = resourceapply.ApplyClusterRoleBinding(context.TODO(), optr.kubeClient.RbacV1(), optr.libgoRecorder, crb)
+			if err != nil {
+				return err
+			}
 		}
-		crb := resourceread.ReadClusterRoleBindingV1OrDie(crbBytes)
-		_, _, err = resourceapply.ApplyClusterRoleBinding(context.TODO(), optr.kubeClient.RbacV1(), optr.libgoRecorder, crb)
-		if err != nil {
-			return err
-		}
-	}
 
-	for _, path := range paths.serviceAccounts {
-		saBytes, err := renderAsset(config, path)
-		if err != nil {
-			return err
+		for _, path := range paths.serviceAccounts {
+			saBytes, err := renderAsset(config, path)
+			if err != nil {
+				return err
+			}
+			sa := resourceread.ReadServiceAccountV1OrDie(saBytes)
+			_, _, err = resourceapply.ApplyServiceAccount(context.TODO(), optr.kubeClient.CoreV1(), optr.libgoRecorder, sa)
+			if err != nil {
+				return err
+			}
 		}
-		sa := resourceread.ReadServiceAccountV1OrDie(saBytes)
-		_, _, err = resourceapply.ApplyServiceAccount(context.TODO(), optr.kubeClient.CoreV1(), optr.libgoRecorder, sa)
-		if err != nil {
-			return err
-		}
-	}
 
-	for _, path := range paths.secrets {
-		sBytes, err := renderAsset(config, path)
-		if err != nil {
-			return err
+		for _, path := range paths.secrets {
+			sBytes, err := renderAsset(config, path)
+			if err != nil {
+				return err
+			}
+			s := resourceread.ReadSecretV1OrDie(sBytes)
+			_, _, err = resourceapply.ApplySecret(context.TODO(), optr.kubeClient.CoreV1(), optr.libgoRecorder, s)
+			if err != nil {
+				return err
+			}
 		}
-		s := resourceread.ReadSecretV1OrDie(sBytes)
-		_, _, err = resourceapply.ApplySecret(context.TODO(), optr.kubeClient.CoreV1(), optr.libgoRecorder, s)
-		if err != nil {
-			return err
-		}
-	}
 
-	for _, path := range paths.configMaps {
-		cmBytes, err := renderAsset(config, path)
-		if err != nil {
-			return err
+		for _, path := range paths.configMaps {
+			cmBytes, err := renderAsset(config, path)
+			if err != nil {
+				return err
+			}
+			cm := resourceread.ReadConfigMapV1OrDie(cmBytes)
+			_, _, err = resourceapply.ApplyConfigMap(context.TODO(), optr.kubeClient.CoreV1(), optr.libgoRecorder, cm)
+			if err != nil {
+				return err
+			}
 		}
-		cm := resourceread.ReadConfigMapV1OrDie(cmBytes)
-		_, _, err = resourceapply.ApplyConfigMap(context.TODO(), optr.kubeClient.CoreV1(), optr.libgoRecorder, cm)
-		if err != nil {
-			return err
-		}
-	}
-
-	if paths.daemonset != "" {
-		dBytes, err := renderAsset(config, paths.daemonset)
-		if err != nil {
-			return err
-		}
-		d := resourceread.ReadDaemonSetV1OrDie(dBytes)
-		_, updated, err := mcoResourceApply.ApplyDaemonSet(optr.kubeClient.AppsV1(), d)
-		if err != nil {
-			return err
-		}
-		if updated {
-			return optr.waitForDaemonsetRollout(d)
-		}
-	}
-
-	return nil
+		return nil
+	})
 }
 
 // safetySyncControllerConfig is a special case render of the controllerconfig that we run when
@@ -1321,7 +1324,6 @@ func (optr *Operator) syncMachineConfigDaemon(config *renderConfig) error {
 		serviceAccounts: []string{
 			mcdServiceAccountManifestPath,
 		},
-		daemonset: mcdDaemonsetManifestPath,
 		configMaps: []string{
 			mcdKubeRbacProxyConfigMapPath,
 		},
@@ -1329,6 +1331,19 @@ func (optr *Operator) syncMachineConfigDaemon(config *renderConfig) error {
 
 	if err := optr.applyManifests(config, paths); err != nil {
 		return fmt.Errorf("failed to apply machine config daemon manifests: %w", err)
+	}
+
+	dBytes, err := renderAsset(config, mcdDaemonsetManifestPath)
+	if err != nil {
+		return err
+	}
+	d := resourceread.ReadDaemonSetV1OrDie(dBytes)
+	_, updated, err := mcoResourceApply.ApplyDaemonSet(optr.kubeClient.AppsV1(), d)
+	if err != nil {
+		return err
+	}
+	if updated {
+		return optr.waitForDaemonsetRollout(d)
 	}
 
 	return nil
@@ -1351,11 +1366,23 @@ func (optr *Operator) syncMachineConfigServer(config *renderConfig) error {
 		secrets: []string{
 			mcsNodeBootstrapperTokenManifestPath,
 		},
-		daemonset: mcsDaemonsetManifestPath,
 	}
 
 	if err := optr.applyManifests(config, paths); err != nil {
 		return fmt.Errorf("failed to apply machine config server manifests: %w", err)
+	}
+
+	dBytes, err := renderAsset(config, mcsDaemonsetManifestPath)
+	if err != nil {
+		return err
+	}
+	d := resourceread.ReadDaemonSetV1OrDie(dBytes)
+	_, updated, err := mcoResourceApply.ApplyDaemonSet(optr.kubeClient.AppsV1(), d)
+	if err != nil {
+		return err
+	}
+	if updated {
+		return optr.waitForDaemonsetRollout(d)
 	}
 
 	return nil
