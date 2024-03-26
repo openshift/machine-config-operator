@@ -42,7 +42,7 @@ contents: |
   [Unit]
   Description=kubelet
   [Service]
-  ExecStart=/usr/bin/hyperkube
+  ExecStart=/usr/bin/kubelet
 `
 	crioDropin := `
 name: crio.service
