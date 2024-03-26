@@ -432,6 +432,16 @@ func createCRIODropinFiles(cfg *mcfgv1.ContainerRuntimeConfig) []generatedConfig
 			klog.V(2).Infoln(cfg, err, "error updating user changes for default-runtime to crio.conf.d: %v", err)
 		}
 	}
+	tomlConf := tomlConfigStorage{}
+	tomlConf.Storage.Driver = "overlay"
+	tomlConf.Storage.GraphRoot = "/var/lib/containers/storage"
+	tomlConf.Storage.RunRoot = "/run/containers/storage"
+	tomlConf.Storage.Options.AdditionalLayerStores = []string{"/var/lib/stargz-store/store:ref"}
+	generatedConfigFileList, err = addTOMLgeneratedConfigFile(generatedConfigFileList, storageConfigPath, tomlConf)
+	if err != nil {
+		klog.V(2).Infoln(cfg, err, "error updating estargz changes: %v", err)
+	}
+
 	return generatedConfigFileList
 }
 
