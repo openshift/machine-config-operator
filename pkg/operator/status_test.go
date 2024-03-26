@@ -250,8 +250,8 @@ func TestOperatorSyncStatus(t *testing.T) {
 						},
 						{
 							Type:   configv1.OperatorAvailable,
-							Status: configv1.ConditionFalse,
-							Reason: "fn1Failed",
+							Status: configv1.ConditionTrue,
+							Reason: asExpectedReason,
 						},
 						{
 							Type:   configv1.OperatorProgressing,
@@ -398,7 +398,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 				},
 			},
 		},
-		// 3. test that if progressing fails, we report available=false because state of the operator
+		// 3. test that if progressing fails, we report degraded=false because state of the operator
 		//    might have changed in the various sync calls
 		{
 			syncs: []syncCase{
@@ -439,8 +439,8 @@ func TestOperatorSyncStatus(t *testing.T) {
 						},
 						{
 							Type:   configv1.OperatorAvailable,
-							Status: configv1.ConditionFalse,
-							Reason: "fn1Failed",
+							Status: configv1.ConditionTrue,
+							Reason: asExpectedReason,
 						},
 						{
 							Type:   configv1.OperatorDegraded,
@@ -463,7 +463,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 				},
 			},
 		},
-		// 4. test that if progressing fails during bringup, we still report degraded and not available
+		// 4. test that if progressing fails during bringup, we still report degraded
 		{
 			syncs: []syncCase{
 				{
@@ -475,8 +475,8 @@ func TestOperatorSyncStatus(t *testing.T) {
 						},
 						{
 							Type:   configv1.OperatorAvailable,
-							Status: configv1.ConditionFalse,
-							Reason: "fn1Failed",
+							Status: configv1.ConditionTrue,
+							Reason: asExpectedReason,
 						},
 						{
 							Type:   configv1.OperatorDegraded,
@@ -507,8 +507,8 @@ func TestOperatorSyncStatus(t *testing.T) {
 						},
 						{
 							Type:   configv1.OperatorAvailable,
-							Status: configv1.ConditionFalse,
-							Reason: "fn1Failed",
+							Status: configv1.ConditionTrue,
+							Reason: asExpectedReason,
 						},
 						{
 							Type:   configv1.OperatorDegraded,
@@ -531,7 +531,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 				},
 			},
 		},
-		// 5. test status flipping between available and degraded
+		// 5. test status flipping between not degraded and degraded
 		{
 			syncs: []syncCase{
 				{
@@ -571,8 +571,8 @@ func TestOperatorSyncStatus(t *testing.T) {
 						},
 						{
 							Type:   configv1.OperatorAvailable,
-							Status: configv1.ConditionFalse,
-							Reason: "fn1Failed",
+							Status: configv1.ConditionTrue,
+							Reason: asExpectedReason,
 						},
 						{
 							Type:   configv1.OperatorDegraded,
