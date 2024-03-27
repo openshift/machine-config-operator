@@ -279,6 +279,8 @@ func isNodeManaged(node *corev1.Node) bool {
 	return true
 }
 
+// TODO this this where we can conclude is Done
+
 // isNodeDone returns true if the current == desired and the MCD has marked done.
 func isNodeDone(node *corev1.Node) bool {
 	if node.Annotations == nil {
@@ -383,7 +385,7 @@ func isNodeUnavailable(node *corev1.Node) bool {
 		return true
 	}
 	// Ready nodes are not unavailable
-	if isNodeDone(node) {
+	if isNodeDone(node) { // here we should wait
 		return false
 	}
 	// Now we know the node isn't ready - the current config must not

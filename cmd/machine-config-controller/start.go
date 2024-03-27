@@ -18,11 +18,18 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/controller/node"
 	"github.com/openshift/machine-config-operator/pkg/controller/render"
 	"github.com/openshift/machine-config-operator/pkg/controller/template"
+	"github.com/openshift/machine-config-operator/pkg/operator"
 	"github.com/openshift/machine-config-operator/pkg/version"
+	"github.com/openshift/machine-config-operator/pkg/webhook"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/leaderelection"
 	"k8s.io/klog/v2"
+)
+
+const (
+	defaultWebhookPort    = operator.MachineConfigPoolWebhookPort
+	defaultWebhookCertdir = "/etc/mcc/tls"
 )
 
 var (
@@ -82,6 +89,13 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			ctrlctx.FeatureGateAccess,
 		)
 
+		// create webhook server
+		webHookServer := webhook.NewServer(
+			webhook.NewConfig(defaultWebhookPort, defaultWebhookCertdir),
+			ctrlctx.InformerFactory.Machineconfiguration().V1alpha1().PinnedImageSets(),
+			ctrlctx.FeatureGateAccess,
+		)
+
 		// Start the shared factory informers that you need to use in your controller
 		ctrlctx.InformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.KubeInformerFactory.Start(ctrlctx.Stop)
@@ -112,6 +126,8 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			go c.Run(2, ctrlctx.Stop)
 		}
 		go draincontroller.Run(5, ctrlctx.Stop)
+
+		go webHookServer.Run(ctrlctx.Stop)
 
 		// wait here in this function until the context gets cancelled (which tells us whe were being shut down)
 		<-ctx.Done()

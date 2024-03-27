@@ -37,7 +37,9 @@ import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	v1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 
+	"github.com/openshift/library-go/pkg/operator/events"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
+	"github.com/openshift/library-go/pkg/operator/resource/resourcemerge"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
 	mcoResourceApply "github.com/openshift/machine-config-operator/lib/resourceapply"
 	mcoResourceRead "github.com/openshift/machine-config-operator/lib/resourceread"
@@ -50,11 +52,13 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/server"
 	"github.com/openshift/machine-config-operator/pkg/upgrademonitor"
 	"github.com/openshift/machine-config-operator/pkg/version"
+	"github.com/openshift/machine-config-operator/pkg/webhook"
 	autoscalingv1 "k8s.io/api/autoscaling/v1"
 )
 
 const (
 	requiredForUpgradeMachineConfigPoolLabelKey = "operator.machineconfiguration.openshift.io/required-for-upgrade"
+	MachineConfigPoolWebhookPort                = 8443
 )
 
 var platformsRequiringCloudConf = sets.NewString(
@@ -69,6 +73,7 @@ type manifestPaths struct {
 	roleBindings        []string
 	clusterRoleBindings []string
 	serviceAccounts     []string
+	service             []string
 	secrets             []string
 	configMaps          []string
 	roles               []string
@@ -85,6 +90,7 @@ const (
 	mccKubeRbacProxyConfigMapPath             = "manifests/machineconfigcontroller/kube-rbac-proxy-config.yaml"
 	mccKubeRbacProxyPrometheusRolePath        = "manifests/machineconfigcontroller/prometheus-rbac.yaml"
 	mccKubeRbacProxyPrometheusRoleBindingPath = "manifests/machineconfigcontroller/prometheus-rolebinding-target.yaml"
+	mccWebHookServiceManifestPath             = "manifests/machineconfigcontroller/webhook-service.yaml"
 
 	// Machine OS Builder manifest paths
 	mobClusterRoleManifestPath                      = "manifests/machineosbuilder/clusterrole.yaml"
@@ -137,6 +143,10 @@ type syncError struct {
 func (optr *Operator) syncAll(syncFuncs []syncFunc) error {
 	if err := optr.syncProgressingStatus(); err != nil {
 		return fmt.Errorf("error syncing progressing status: %w", err)
+	}
+
+	if err := optr.syncMachineConfigPoolValidatingWebhook(); err != nil {
+		return fmt.Errorf("error syncing machine-config-pool webhook configurations: %w", err)
 	}
 
 	var syncErr syncError
@@ -616,6 +626,22 @@ func getIgnitionHost(infraStatus *configv1.InfrastructureStatus) (string, error)
 	return ignitionHost, nil
 }
 
+// syncMachineConfigPoolValidatingWebhook ensures the MachineConfigPool validating webhook configuration is available via the API server.
+func (optr *Operator) syncMachineConfigPoolValidatingWebhook() error {
+	validatingWebhook, updated, err := resourceapply.ApplyValidatingWebhookConfigurationImproved(context.TODO(), optr.kubeClient.AdmissionregistrationV1(),
+		events.NewLoggingEventRecorder(optr.name),
+		webhook.NewMachineConfigPoolValidatingWebhookConfiguration(),
+		optr.cache)
+	if err != nil {
+		return err
+	}
+	if updated {
+		resourcemerge.SetValidatingWebhooksConfigurationGeneration(&optr.generations, validatingWebhook)
+	}
+
+	return nil
+}
+
 func (optr *Operator) syncCustomResourceDefinitions() error {
 	crds := []string{
 		"manifests/controllerconfig.crd.yaml",
@@ -906,6 +932,19 @@ func (optr *Operator) applyManifests(config *renderConfig, paths manifestPaths) 
 				return err
 			}
 		}
+
+		for _, path := range paths.service {
+			svcBytes, err := renderAsset(config, path)
+			if err != nil {
+				return err
+			}
+			svc := resourceread.ReadServiceV1OrDie(svcBytes)
+			_, _, err = resourceapply.ApplyService(context.TODO(), optr.kubeClient.CoreV1(), optr.libgoRecorder, svc)
+			if err != nil {
+				return err
+			}
+		}
+
 		return nil
 	})
 }
@@ -1085,6 +1124,9 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig) error {
 		serviceAccounts: []string{
 			mccServiceAccountManifestPath,
 			mopServiceAccountManifestPath,
+		},
+		service: []string{
+			mccWebHookServiceManifestPath,
 		},
 	}
 	if err := optr.applyManifests(config, paths); err != nil {

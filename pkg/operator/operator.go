@@ -7,12 +7,15 @@ import (
 
 	opv1 "github.com/openshift/api/operator/v1"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
+	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
 
 	"k8s.io/klog/v2"
 
+	osoperatorv1 "github.com/openshift/api/operator/v1"
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/version"
+	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
 	apiextclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	apiextinformersv1 "k8s.io/apiextensions-apiserver/pkg/client/informers/externalversions/apiextensions/v1"
@@ -21,11 +24,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
+	admissioninformersv1 "k8s.io/client-go/informers/admissionregistration/v1"
 	appsinformersv1 "k8s.io/client-go/informers/apps/v1"
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
 	rbacinformersv1 "k8s.io/client-go/informers/rbac/v1"
 	"k8s.io/client-go/kubernetes"
 	coreclientsetv1 "k8s.io/client-go/kubernetes/typed/core/v1"
+	admissionlisterv1 "k8s.io/client-go/listers/admissionregistration/v1"
 	appslisterv1 "k8s.io/client-go/listers/apps/v1"
 	corelisterv1 "k8s.io/client-go/listers/core/v1"
 
@@ -78,26 +83,27 @@ type Operator struct {
 
 	syncHandler func(ic string) error
 
-	imgLister        configlistersv1.ImageLister
-	crdLister        apiextlistersv1.CustomResourceDefinitionLister
-	mcpLister        mcfglistersv1.MachineConfigPoolLister
-	msLister         mcfglistersalphav1.MachineConfigNodeLister
-	ccLister         mcfglistersv1.ControllerConfigLister
-	mcLister         mcfglistersv1.MachineConfigLister
-	deployLister     appslisterv1.DeploymentLister
-	daemonsetLister  appslisterv1.DaemonSetLister
-	infraLister      configlistersv1.InfrastructureLister
-	networkLister    configlistersv1.NetworkLister
-	mcoCmLister      corelisterv1.ConfigMapLister
-	clusterCmLister  corelisterv1.ConfigMapLister
-	proxyLister      configlistersv1.ProxyLister
-	oseKubeAPILister corelisterv1.ConfigMapLister
-	nodeLister       corelisterv1.NodeLister
-	dnsLister        configlistersv1.DNSLister
-	mcoSALister      corelisterv1.ServiceAccountLister
-	mcoSecretLister  corelisterv1.SecretLister
-	ocSecretLister   corelisterv1.SecretLister
-	mcoCOLister      configlistersv1.ClusterOperatorLister
+	imgLister               configlistersv1.ImageLister
+	crdLister               apiextlistersv1.CustomResourceDefinitionLister
+	mcpLister               mcfglistersv1.MachineConfigPoolLister
+	msLister                mcfglistersalphav1.MachineConfigNodeLister
+	ccLister                mcfglistersv1.ControllerConfigLister
+	mcLister                mcfglistersv1.MachineConfigLister
+	deployLister            appslisterv1.DeploymentLister
+	daemonsetLister         appslisterv1.DaemonSetLister
+	infraLister             configlistersv1.InfrastructureLister
+	networkLister           configlistersv1.NetworkLister
+	mcoCmLister             corelisterv1.ConfigMapLister
+	clusterCmLister         corelisterv1.ConfigMapLister
+	proxyLister             configlistersv1.ProxyLister
+	oseKubeAPILister        corelisterv1.ConfigMapLister
+	nodeLister              corelisterv1.NodeLister
+	dnsLister               configlistersv1.DNSLister
+	mcoSALister             corelisterv1.ServiceAccountLister
+	mcoSecretLister         corelisterv1.SecretLister
+	ocSecretLister          corelisterv1.SecretLister
+	mcoCOLister             configlistersv1.ClusterOperatorLister
+	validatingWebhookLister admissionlisterv1.ValidatingWebhookConfigurationLister
 
 	crdListerSynced                  cache.InformerSynced
 	deployListerSynced               cache.InformerSynced
@@ -122,6 +128,8 @@ type Operator struct {
 	mcoSecretListerSynced            cache.InformerSynced
 	ocSecretListerSynced             cache.InformerSynced
 	mcoCOListerSynced                cache.InformerSynced
+	validatingWebhookListerSynced    cache.InformerSynced
+	cache                            resourceapply.ResourceCache
 
 	// queue only ever has one item, but it has nice error handling backoff/retry semantics
 	queue workqueue.RateLimitingInterface
@@ -131,6 +139,8 @@ type Operator struct {
 	renderConfig *renderConfig
 
 	fgAccessor featuregates.FeatureGateAccess
+
+	generations []osoperatorv1.GenerationStatus
 }
 
 // New returns a new machine config operator.
@@ -163,6 +173,7 @@ func New(
 	mcoSecretInformer coreinformersv1.SecretInformer,
 	ocSecretInformer coreinformersv1.SecretInformer,
 	mcoCOInformer configinformersv1.ClusterOperatorInformer,
+	validatingWebhookInformer admissioninformersv1.ValidatingWebhookConfigurationInformer,
 	fgAccess featuregates.FeatureGateAccess,
 ) *Operator {
 	eventBroadcaster := record.NewBroadcaster()
@@ -196,6 +207,11 @@ func New(
 	err = opv1.AddToScheme(scheme.Scheme)
 	if err != nil {
 		klog.Errorf("Could not modify scheme: %v", err)
+	}
+
+	_, err = validatingWebhookInformer.Informer().AddEventHandler(optr.eventHandlerSingleton(isMachineConfigPoolWebhook))
+	if err != nil {
+		klog.Errorf("Could not add event handler to validatingwebhook informer: %v", err)
 	}
 
 	for _, i := range []cache.SharedIndexInformer{
@@ -270,6 +286,10 @@ func New(
 	optr.ocSecretListerSynced = ocSecretInformer.Informer().HasSynced
 	optr.mcoCOLister = mcoCOInformer.Lister()
 	optr.mcoCOListerSynced = mcoCOInformer.Informer().HasSynced
+
+	optr.cache = resourceapply.NewResourceCache()
+	optr.validatingWebhookLister = validatingWebhookInformer.Lister()
+	optr.validatingWebhookListerSynced = validatingWebhookInformer.Informer().HasSynced
 
 	optr.vStore.Set("operator", version.ReleaseVersion)
 
@@ -434,4 +454,41 @@ func (optr *Operator) sync(key string) error {
 	}
 
 	return optr.syncAll(syncFuncs)
+}
+
+func (optr *Operator) eventHandlerSingleton(f func(interface{}) bool) cache.FilteringResourceEventHandler {
+	workQueueKey := fmt.Sprintf("%s/%s", optr.namespace, optr.name)
+	addToQueue := func(obj interface{}) {
+		logResource(obj)
+		optr.queue.Add(workQueueKey)
+	}
+
+	return cache.FilteringResourceEventHandler{
+		FilterFunc: f,
+		Handler: cache.ResourceEventHandlerFuncs{
+			AddFunc:    addToQueue,
+			DeleteFunc: addToQueue,
+			UpdateFunc: func(old, new interface{}) {
+				addToQueue(new)
+			},
+		},
+	}
+}
+
+func logResource(obj interface{}) {
+	metaObj, okObject := obj.(metav1.Object)
+	if !okObject {
+		klog.Errorf("Error assigning type to interface when logging")
+	}
+	klog.V(4).Infof("Resource type: %T", obj)
+	klog.V(4).Infof("Resource: %v", metaObj.GetSelfLink())
+}
+
+func isMachineConfigPoolWebhook(obj interface{}) bool {
+	validatingWebhook, ok := obj.(*admissionregistrationv1.ValidatingWebhookConfiguration)
+	if ok {
+		return validatingWebhook.Name == "machine-api"
+	}
+
+	return false
 }
