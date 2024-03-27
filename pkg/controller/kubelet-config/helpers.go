@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -35,8 +36,9 @@ const (
 	managedNodeConfigKeyPrefix    = "97"
 	managedFeaturesKeyPrefix      = "98"
 	managedKubeletConfigKeyPrefix = "99"
-	protectKernelDefaultsStr      = "\"protectKernelDefaults\":false"
 )
+
+var protectKernelDefaultsFalseRegex = regexp.MustCompile(`"protectKernelDefaults":\s*false`)
 
 func createNewKubeletDynamicSystemReservedIgnition(autoSystemReserved *bool, userDefinedSystemReserved map[string]string) *ign3types.File {
 	var autoNodeSizing string
@@ -517,7 +519,7 @@ func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeCo
 		// As this field is an optional one with the above tag, it gets omitted when a user inputs it to `false`
 		// Reference: https://github.com/golang/go/issues/13284
 		// Adding a workaround to decide if the user has actually set the field to `false`
-		if strings.Contains(string(kubeletConfig.Spec.KubeletConfig.Raw), protectKernelDefaultsStr) {
+		if protectKernelDefaultsFalseRegex.MatchString(string(kubeletConfig.Spec.KubeletConfig.Raw)) {
 			originalKubeConfig.ProtectKernelDefaults = false
 		}
 		// Merge the Old and New
