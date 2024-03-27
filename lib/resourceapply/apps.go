@@ -3,8 +3,7 @@ package resourceapply
 import (
 	"context"
 
-	"github.com/openshift/library-go/pkg/operator/resource/resourcemerge"
-	mcoResourceMerge "github.com/openshift/machine-config-operator/lib/resourcemerge"
+	"github.com/openshift/machine-config-operator/lib/resourcemerge"
 	appsv1 "k8s.io/api/apps/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -22,9 +21,9 @@ func ApplyDaemonSet(client appsclientv1.DaemonSetsGetter, required *appsv1.Daemo
 		return nil, false, err
 	}
 
-	modified := resourcemerge.BoolPtr(false)
-	mcoResourceMerge.EnsureDaemonSet(modified, existing, *required)
-	if !*modified {
+	modified := false
+	resourcemerge.EnsureDaemonSet(&modified, existing, *required)
+	if !modified {
 		return existing, false, nil
 	}
 
@@ -43,9 +42,9 @@ func ApplyDeployment(client appsclientv1.DeploymentsGetter, required *appsv1.Dep
 		return nil, false, err
 	}
 
-	modified := resourcemerge.BoolPtr(false)
-	mcoResourceMerge.EnsureDeployment(modified, existing, *required)
-	if !*modified {
+	modified := false
+	resourcemerge.EnsureDeployment(&modified, existing, *required)
+	if !modified {
 		return existing, false, nil
 	}
 
