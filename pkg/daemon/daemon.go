@@ -1285,6 +1285,10 @@ func (dn *Daemon) RunFirstbootCompleteMachineconfig() error {
 		return fmt.Errorf("failed to rename encapsulated MachineConfig after processing on firstboot: %w", err)
 	}
 
+	if err := dn.toggleRevertSystemdUnit(&mc, false); err != nil {
+		return err
+	}
+
 	dn.skipReboot = false
 	return dn.reboot(fmt.Sprintf("Completing firstboot provisioning to %s", mc.GetName()))
 }

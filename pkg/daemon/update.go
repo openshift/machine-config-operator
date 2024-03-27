@@ -35,6 +35,7 @@ import (
 	pivottypes "github.com/openshift/machine-config-operator/pkg/daemon/pivot/types"
 	pivotutils "github.com/openshift/machine-config-operator/pkg/daemon/pivot/utils"
 	"github.com/openshift/machine-config-operator/pkg/upgrademonitor"
+	"github.com/openshift/machine-config-operator/test/helpers"
 )
 
 const (
@@ -65,6 +66,9 @@ const (
 	// ImageRegistryDrainOverrideConfigmap is the name of the Configmap a user can apply to force all
 	// image registry changes to not drain
 	ImageRegistryDrainOverrideConfigmap = "image-registry-override-drain"
+
+	// name of the systemd unit that re-bootstraps a node after reverting from layered to non-layered
+	layeringRevertSystemdUnitName = "machine-config-daemon-revert.service"
 )
 
 func getNodeRef(node *corev1.Node) *corev1.ObjectReference {
@@ -686,24 +690,9 @@ func (dn *Daemon) finalizeRevertToNonLayering(newConfig *mcfgv1.MachineConfig) e
 
 	klog.Infof("Wrote MachineConfig %q to %q", newConfig.Name, constants.MachineConfigEncapsulatedPath)
 
-	clonedRevertUnitName := "machine-config-daemon-revert-layered.service"
-	if _, err := exec.Command("cp", filepath.Join(pathSystemd, "machine-config-daemon-revert.service"), filepath.Join(pathSystemd, clonedRevertUnitName)).CombinedOutput(); err != nil {
-		return fmt.Errorf("could not clone systemd unit: %w", err)
+	if err := dn.toggleRevertSystemdUnit(newConfig, true); err != nil {
+		return err
 	}
-
-	klog.Infof("Cloned systemd unit to %q", filepath.Join(pathSystemd, clonedRevertUnitName))
-
-	if _, err := exec.Command("systemctl", "daemon-reload").CombinedOutput(); err != nil {
-		return fmt.Errorf("could not reload systemd daemon: %w", err)
-	}
-
-	klog.Infof("Reloaded systemd daemon")
-
-	if _, err := exec.Command("systemctl", "enable", clonedRevertUnitName).CombinedOutput(); err != nil {
-		return fmt.Errorf("could not enable systemd unit %q: %w", clonedRevertUnitName, err)
-	}
-
-	klog.Infof("Enabled systemd unit %q", clonedRevertUnitName)
 
 	// Clear the current image field
 	odc := &onDiskConfig{
@@ -2512,4 +2501,42 @@ func (dn *Daemon) hasImageRegistryDrainOverrideConfigMap() (bool, error) {
 	}
 
 	return false, fmt.Errorf("Error fetching image registry drain override configmap: %w", err)
+}
+
+func (dn *Daemon) toggleRevertSystemdUnit(mc *mcfgv1.MachineConfig, enabled bool) error {
+	clonedUnit, err := getRevertSystemdUnitFromMachineConfig(mc)
+	if err != nil {
+		return err
+	}
+
+	clonedUnit.Enabled = helpers.BoolToPtr(enabled)
+	clonedUnit.Mask = nil
+
+	if err := dn.writeUnits([]ign3types.Unit{*clonedUnit}); err != nil {
+		return err
+	}
+
+	if !enabled {
+		return os.RemoveAll(filepath.Join(pathSystemd, clonedUnit.Name))
+	}
+
+	return nil
+}
+
+func getRevertSystemdUnitFromMachineConfig(mc *mcfgv1.MachineConfig) (*ign3types.Unit, error) {
+	ignConfig, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, unit := range ignConfig.Systemd.Units {
+		unit := unit
+		if unit.Name == layeringRevertSystemdUnitName {
+			unit.Name = "machine-config-daemon-revert-layered.service"
+			unit.Mask = nil
+			return &unit, nil
+		}
+	}
+
+	return nil, fmt.Errorf("could not find %s in MachineConfig %s", layeringRevertSystemdUnitName, mc.Name)
 }

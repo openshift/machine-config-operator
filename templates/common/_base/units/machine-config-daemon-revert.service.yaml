@@ -1,4 +1,5 @@
 name: machine-config-daemon-revert.service
+mask: true
 enabled: false
 contents: |
   [Unit]

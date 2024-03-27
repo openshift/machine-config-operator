@@ -123,6 +123,8 @@ func assertNodeRevertsToNonLayered(t *testing.T, cs *framework.ClientSet, node c
 
 	assert.Contains(t, helpers.GetRPMOstreeStatus(t, cs, node), workerMC.Spec.OSImageURL, "node %q did not rollback to OS image %q", node.Name, workerMC.Spec.OSImageURL)
 	t.Logf("Node %s has reverted to OS image %q", node.Name, workerMC.Spec.OSImageURL)
+
+	helpers.AssertFileNotOnNode(t, cs, node, "/etc/systemd/system/machine-config-daemon-revert-layered.service")
 }
 
 // Sets up and performs an on-cluster build for a given set of parameters.
