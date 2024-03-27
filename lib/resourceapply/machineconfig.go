@@ -9,8 +9,7 @@ import (
 	mcfgclientv1 "github.com/openshift/client-go/machineconfiguration/clientset/versioned/typed/machineconfiguration/v1"
 	mcfgclientalphav1 "github.com/openshift/client-go/machineconfiguration/clientset/versioned/typed/machineconfiguration/v1alpha1"
 
-	"github.com/openshift/library-go/pkg/operator/resource/resourcemerge"
-	mcoResourceMerge "github.com/openshift/machine-config-operator/lib/resourcemerge"
+	"github.com/openshift/machine-config-operator/lib/resourcemerge"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -26,9 +25,9 @@ func ApplyMachineConfig(client mcfgclientv1.MachineConfigsGetter, required *mcfg
 		return nil, false, err
 	}
 
-	modified := resourcemerge.BoolPtr(false)
-	mcoResourceMerge.EnsureMachineConfig(modified, existing, *required)
-	if !*modified {
+	modified := false
+	resourcemerge.EnsureMachineConfig(&modified, existing, *required)
+	if !modified {
 		return existing, false, nil
 	}
 
@@ -47,9 +46,9 @@ func ApplyMachineConfigPool(client mcfgclientv1.MachineConfigPoolsGetter, requir
 		return nil, false, err
 	}
 
-	modified := resourcemerge.BoolPtr(false)
-	mcoResourceMerge.EnsureMachineConfigPool(modified, existing, *required)
-	if !*modified {
+	modified := false
+	resourcemerge.EnsureMachineConfigPool(&modified, existing, *required)
+	if !modified {
 		return existing, false, nil
 	}
 
@@ -68,9 +67,9 @@ func ApplyMachineConfigNode(client mcfgclientalphav1.MachineConfigNodesGetter, r
 		return nil, false, err
 	}
 
-	modified := resourcemerge.BoolPtr(false)
-	mcoResourceMerge.EnsureMachineConfigNode(modified, existing, *required)
-	if !*modified {
+	modified := false
+	resourcemerge.EnsureMachineConfigNode(&modified, existing, *required)
+	if !modified {
 		return existing, false, nil
 	}
 
@@ -89,9 +88,9 @@ func ApplyControllerConfig(client mcfgclientv1.ControllerConfigsGetter, required
 		return nil, false, err
 	}
 
-	modified := resourcemerge.BoolPtr(false)
-	mcoResourceMerge.EnsureControllerConfig(modified, existing, *required)
-	if !*modified {
+	modified := false
+	resourcemerge.EnsureControllerConfig(&modified, existing, *required)
+	if !modified {
 		return existing, false, nil
 	}
 
