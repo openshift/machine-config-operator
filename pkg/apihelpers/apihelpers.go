@@ -99,6 +99,16 @@ func NewKubeletConfigCondition(condType mcfgv1.KubeletConfigStatusConditionType,
 	}
 }
 
+func NewCondition(condType string, status metav1.ConditionStatus, reason, message string) *metav1.Condition {
+	return &metav1.Condition{
+		Type:               condType,
+		Status:             status,
+		LastTransitionTime: metav1.Now(),
+		Reason:             reason,
+		Message:            message,
+	}
+}
+
 // NewContainerRuntimeConfigCondition returns an instance of a ContainerRuntimeConfigCondition
 func NewContainerRuntimeConfigCondition(condType mcfgv1.ContainerRuntimeConfigStatusConditionType, status corev1.ConditionStatus, message string) *mcfgv1.ContainerRuntimeConfigCondition {
 	return &mcfgv1.ContainerRuntimeConfigCondition{

@@ -94,6 +94,9 @@ const (
 	// changes to registries.conf will cause a crio reload and require extra logic about whether to drain
 	ContainerRegistryConfPath = "/etc/containers/registries.conf"
 
+	// changes to registries.d will cause a crio reload
+	SigstoreRegistriesConfigDir = "/etc/containers/registries.d"
+
 	// SSH Keys for user "core" will only be written at /home/core/.ssh
 	CoreUserSSHPath = "/home/" + CoreUserName + "/.ssh"
 
