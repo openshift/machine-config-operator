@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/machine-config-operator/cmd/common"
 	"github.com/openshift/machine-config-operator/internal/clients"
@@ -89,13 +90,6 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			ctrlctx.FeatureGateAccess,
 		)
 
-		// create webhook server
-		webHookServer := webhook.NewServer(
-			webhook.NewConfig(defaultWebhookPort, defaultWebhookCertdir),
-			ctrlctx.InformerFactory.Machineconfiguration().V1alpha1().PinnedImageSets(),
-			ctrlctx.FeatureGateAccess,
-		)
-
 		// Start the shared factory informers that you need to use in your controller
 		ctrlctx.InformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.KubeInformerFactory.Start(ctrlctx.Stop)
@@ -127,7 +121,20 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		}
 		go draincontroller.Run(5, ctrlctx.Stop)
 
-		go webHookServer.Run(ctrlctx.Stop)
+		fg, err := ctrlctx.FeatureGateAccess.CurrentFeatureGates()
+		if err != nil {
+			klog.Fatalf("Could not get feature gate: %v", err)
+		}
+		if fg.Enabled(configv1.FeatureGatePinnedImages) {
+			webHookServer := webhook.NewServer(
+				webhook.NewConfig(defaultWebhookPort, defaultWebhookCertdir),
+				ctrlctx.InformerFactory.Machineconfiguration().V1alpha1().PinnedImageSets(),
+				ctrlctx.FeatureGateAccess,
+			)
+
+			// start the webhook server
+			go webHookServer.Run(ctrlctx.Stop)
+		}
 
 		// wait here in this function until the context gets cancelled (which tells us whe were being shut down)
 		<-ctx.Done()

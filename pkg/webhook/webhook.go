@@ -8,13 +8,12 @@ import (
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	configv1 "github.com/openshift/api/config/v1"
 	mcfginformersv1alpha1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1alpha1"
 	mcfglistersv1alpha1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 )
 
-// NewConfig returns a new ServerConfig.
+// NewConfig returns a new webhook server config.
 func NewConfig(port int, certDir string) *Config {
 	return &Config{
 		Port:    fmt.Sprintf(":%d", port),
@@ -56,20 +55,11 @@ func NewServer(
 
 // Run starts the webhook server.
 func (s *Server) Run(stopCh <-chan struct{}) {
-	fg, err := s.fgAccessor.CurrentFeatureGates()
-	if err != nil {
-		klog.Errorf("Could not get feature gate: %v", err)
-		return
-	}
-	if !fg.Enabled(configv1.FeatureGatePinnedImages) {
-		klog.Info("FeatureGatePinnedImages is not enabled, skipped starting webhook server")
-		return
-	}
 	cache.WaitForCacheSync(stopCh, s.imageSetListerSynced)
 
 	machineConfigPoolValidator, err := NewMachineConfigPoolValidator(s.imageSetLister)
 	if err != nil {
-		klog.Fatalf("Failed to create we hook: %v", err)
+		klog.Fatalf("Failed to create webhook: %v", err)
 	}
 
 	if err := s.RegisterValidatingWebHook(machineConfigPoolValidatingHookPath, machineConfigPoolValidator); err != nil {
