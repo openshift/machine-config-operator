@@ -86,7 +86,7 @@ contents:
       fi
     }
 
-    # Used to remove files managed by configure-ovs
+    # Used to remove files managed by configure-ovs and temporary leftover files from network manager
     rm_nm_conn_files() {
       for file in "${MANAGED_NM_CONN_FILES[@]}"; do
         if [ -f "$file" ]; then
@@ -94,6 +94,13 @@ contents:
           echo "Removed nmconnection file $file"
           nm_config_changed=1
         fi
+      done
+      for file in "${MANAGED_NM_CONN_FILES[@]}"; do
+        for temp in $(compgen -G "${file}.*"); do
+          rm -f "$temp"
+          echo "Removed nmconnection temporary file $temp"
+          nm_config_changed=1
+        done
       done
     }
 
