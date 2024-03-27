@@ -1285,6 +1285,10 @@ func (dn *Daemon) RunFirstbootCompleteMachineconfig() error {
 		return fmt.Errorf("failed to rename encapsulated MachineConfig after processing on firstboot: %w", err)
 	}
 
+	if err := dn.toggleRevertSystemdUnit(&mc, false); err != nil {
+		return err
+	}
+
 	dn.skipReboot = false
 	return dn.reboot(fmt.Sprintf("Completing firstboot provisioning to %s", mc.GetName()))
 }
@@ -2442,16 +2446,6 @@ func (dn *Daemon) triggerUpdate(currentConfig, desiredConfig *mcfgv1.MachineConf
 	// If both of the image annotations are empty, this is a regular MachineConfig update.
 	if desiredImage == "" && currentImage == "" {
 		return dn.triggerUpdateWithMachineConfig(currentConfig, desiredConfig, true)
-	}
-
-	// If the desired image annotation is empty, but the current image is not
-	// empty, this should be a regular MachineConfig update.
-	//
-	// However, the node will not roll back from a layered config to a
-	// non-layered config without admin intervention; so we should emit an error
-	// for now.
-	if desiredImage == "" && currentImage != "" {
-		return fmt.Errorf("rolling back from a layered to non-layered configuration is not currently supported")
 	}
 
 	// Shut down the Config Drift Monitor since we'll be performing an update

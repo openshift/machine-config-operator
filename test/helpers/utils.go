@@ -792,6 +792,10 @@ func ExecCmdOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, subA
 	return string(out)
 }
 
+func GetRPMOstreeStatus(t *testing.T, cs *framework.ClientSet, node corev1.Node) string {
+	return ExecCmdOnNode(t, cs, node, "chroot", "/rootfs", "rpm-ostree", "status")
+}
+
 // ExecCmdOnNodeWithError behaves like ExecCmdOnNode, with the exception that
 // any errors are returned to the caller for inspection. This allows one to
 // execute a command that is expected to fail; e.g., stat /nonexistant/file.
