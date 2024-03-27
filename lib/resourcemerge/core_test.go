@@ -6,7 +6,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
-	"k8s.io/utils/ptr"
 )
 
 // Test added for now to test ensureContainer (mostly so we don't break Env Vars - proxy)
@@ -119,11 +118,11 @@ func TestEnsureContainer(t *testing.T) {
 
 	for idx, test := range tests {
 		t.Run(fmt.Sprintf("test#%d", idx), func(t *testing.T) {
-			modified := ptr.To(false)
-			ensureContainer(modified, &test.existing, test.input)
+			modified := false
+			ensureContainer(&modified, &test.existing, test.input)
 
-			if *modified != test.expectedModified {
-				t.Fatalf("mismatch container got: %v want: %v", *modified, test.expectedModified)
+			if modified != test.expectedModified {
+				t.Fatalf("mismatch container got: %v want: %v", modified, test.expectedModified)
 			}
 
 			if !equality.Semantic.DeepEqual(test.existing, test.expected) {

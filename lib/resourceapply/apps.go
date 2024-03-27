@@ -4,8 +4,6 @@ import (
 	"context"
 	"strings"
 
-	"k8s.io/utils/ptr"
-
 	mcoResourceMerge "github.com/openshift/machine-config-operator/lib/resourcemerge"
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/klog/v2"
@@ -48,9 +46,9 @@ func ApplyDaemonSet(client appsclientv1.DaemonSetsGetter, required *appsv1.Daemo
 		return nil, false, err
 	}
 
-	modified := ptr.To(false)
-	mcoResourceMerge.EnsureDaemonSet(modified, existing, *required)
-	if !*modified {
+	modified := false
+	mcoResourceMerge.EnsureDaemonSet(&modified, existing, *required)
+	if !modified {
 		return existing, false, nil
 	}
 
@@ -69,9 +67,9 @@ func ApplyDeployment(client appsclientv1.DeploymentsGetter, required *appsv1.Dep
 		return nil, false, err
 	}
 
-	modified := ptr.To(false)
-	mcoResourceMerge.EnsureDeployment(modified, existing, *required)
-	if !*modified {
+	modified := false
+	mcoResourceMerge.EnsureDeployment(&modified, existing, *required)
+	if !modified {
 		return existing, false, nil
 	}
 
