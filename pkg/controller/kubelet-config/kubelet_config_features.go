@@ -203,7 +203,8 @@ func generateKubeConfigIgnFromFeatures(cc *mcfgv1.ControllerConfig, templatesDir
 		updateOriginalKubeConfigwithNodeConfig(nodeConfig, originalKubeConfig)
 	}
 
-	defaultFeatures, err := generateFeatureMap(createNewDefaultFeatureGateAccess(), openshiftOnlyFeatureGates...)
+	fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{}, []osev1.FeatureGateName{})
+	defaultFeatures, err := generateFeatureMap(fgAccess, openshiftOnlyFeatureGates...)
 	if err != nil {
 		return nil, err
 	}
