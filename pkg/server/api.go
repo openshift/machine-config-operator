@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/http"
+	"net/url"
 	"path"
 	"sort"
 	"strconv"
@@ -95,6 +96,31 @@ func NewServerAPIHandler(s Server) *APIHandler {
 	}
 }
 
+// Validates that the given request path is neither empty nor contains any path
+// traversal characters  (e.g., "." or ".."). Makes the path from the HTTP
+// request safer to mitigate path traversal issues. See:
+// https://cwe.mitre.org/data/definitions/22.html for additional details.
+func getValidPoolName(u *url.URL) (string, error) {
+	if u.Path == "" {
+		return "", fmt.Errorf("empty path")
+	}
+
+	// We call path.Join() because we want our path to be absolute. Inside,
+	// path.Join() calls path.Clean() to handle any relative path patterns such
+	// as "." or ".." in order to make the provided path absolute.
+	cleaned := path.Join("/", u.EscapedPath())
+
+	// Next, we check that our directory path is /config/. This will catch other
+	// incorrect paths such as /config/something/worker in addition to ones that
+	// are obviously incorrectly, such as /healthz.
+	dir, pool := path.Split(cleaned)
+	if dir != "/config/" {
+		return "", fmt.Errorf("invalid path: %q", cleaned)
+	}
+
+	return path.Base(pool), nil
+}
+
 // ServeHTTP handles the requests for the machine config server
 // API handler.
 func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -104,13 +130,14 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if r.URL.Path == "" {
+	poolName, err := getValidPoolName(r.URL)
+	if err != nil {
+		klog.Errorf("could not fetch %q: %s", r.URL.Path, err)
 		w.Header().Set("Content-Length", "0")
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	poolName := path.Base(r.URL.Path)
 	useragent := r.Header.Get("User-Agent")
 	acceptHeader := r.Header.Get("Accept")
 	klog.Infof("Pool %s requested by address:%q User-Agent:%q Accept-Header: %q", poolName, r.RemoteAddr, useragent, acceptHeader)
