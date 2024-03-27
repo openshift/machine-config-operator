@@ -8,6 +8,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 
 	mcfgalphav1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	helpers "github.com/openshift/machine-config-operator/pkg/helpers"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
@@ -53,7 +54,10 @@ func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
 			machineConfigStates = append(machineConfigStates, ms)
 		}
 	}
-	newStatus := calculateStatus(machineConfigStates, cc, pool, nodes)
+
+	mosc, mosb, _ := ctrl.GetConfigAndBuild(pool)
+
+	newStatus := calculateStatus(machineConfigStates, cc, pool, nodes, mosc, mosb)
 	if equality.Semantic.DeepEqual(pool.Status, newStatus) {
 		return nil
 	}
@@ -63,16 +67,16 @@ func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
 	_, err = ctrl.client.MachineconfigurationV1().MachineConfigPools().UpdateStatus(context.TODO(), newPool, metav1.UpdateOptions{})
 
 	if pool.Spec.Configuration.Name != newPool.Spec.Configuration.Name {
-		ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, "Updating", "Pool %s now targeting %s", pool.Name, getPoolUpdateLine(newPool))
+		ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, "Updating", "Pool %s now targeting %s", pool.Name, getPoolUpdateLine(newPool, mosc, mosb))
 	}
 	if pool.Status.Configuration.Name != newPool.Status.Configuration.Name {
-		ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, "Completed", "Pool %s has completed update to %s", pool.Name, getPoolUpdateLine(newPool))
+		ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, "Completed", "Pool %s has completed update to %s", pool.Name, getPoolUpdateLine(newPool, mosc, mosb))
 	}
 	return err
 }
 
 //nolint:gocyclo
-func calculateStatus(mcs []*mcfgalphav1.MachineConfigNode, cconfig *mcfgv1.ControllerConfig, pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv1.MachineConfigPoolStatus {
+func calculateStatus(mcs []*mcfgalphav1.MachineConfigNode, cconfig *mcfgv1.ControllerConfig, pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node, mosc *mcfgalphav1.MachineOSConfig, mosb *mcfgv1alpha1.MachineOSBuild) mcfgv1.MachineConfigPoolStatus {
 	certExpirys := []mcfgv1.CertExpiry{}
 	if cconfig != nil {
 		for _, cert := range cconfig.Status.ControllerCertificates {
@@ -153,13 +157,15 @@ func calculateStatus(mcs []*mcfgalphav1.MachineConfigNode, cconfig *mcfgv1.Contr
 
 	// this is # 1 priority, get the upgrade states actually reporting
 	if degradedMachineCount+readyMachineCount+unavailableMachineCount+updatingMachineCount != int32(len(nodes)) {
-		updatedMachines = getUpdatedMachines(pool, nodes)
+
+		updatedMachines = getUpdatedMachines(pool, nodes, mosc, mosb)
 		updatedMachineCount = int32(len(updatedMachines))
 
-		readyMachines = getReadyMachines(pool, nodes)
+		readyMachines = getReadyMachines(pool, nodes, mosc, mosb)
 		readyMachineCount = int32(len(readyMachines))
 
-		unavailableMachines = getUnavailableMachines(nodes, pool)
+		layered := ctrlcommon.IsLayeredPool(pool, mosc, mosb)
+		unavailableMachines = getUnavailableMachines(nodes, pool, layered, mosb)
 		unavailableMachineCount = int32(len(unavailableMachines))
 
 		degradedMachines = getDegradedMachines(nodes)
@@ -196,7 +202,7 @@ func calculateStatus(mcs []*mcfgalphav1.MachineConfigNode, cconfig *mcfgv1.Contr
 
 	if allUpdated {
 		//TODO: update api to only have one condition regarding status of update.
-		updatedMsg := fmt.Sprintf("All nodes are updated with %s", getPoolUpdateLine(pool))
+		updatedMsg := fmt.Sprintf("All nodes are updated with %s", getPoolUpdateLine(pool, mosc, mosb))
 		supdated := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdated, corev1.ConditionTrue, "", updatedMsg)
 		apihelpers.SetMachineConfigPoolCondition(&status, *supdated)
 
@@ -210,10 +216,10 @@ func calculateStatus(mcs []*mcfgalphav1.MachineConfigNode, cconfig *mcfgv1.Contr
 		supdated := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdated, corev1.ConditionFalse, "", "")
 		apihelpers.SetMachineConfigPoolCondition(&status, *supdated)
 		if pool.Spec.Paused {
-			supdating := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionFalse, "", fmt.Sprintf("Pool is paused; will not update to %s", getPoolUpdateLine(pool)))
+			supdating := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionFalse, "", fmt.Sprintf("Pool is paused; will not update to %s", getPoolUpdateLine(pool, mosc, mosb)))
 			apihelpers.SetMachineConfigPoolCondition(&status, *supdating)
 		} else {
-			supdating := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionTrue, "", fmt.Sprintf("All nodes are updating to %s", getPoolUpdateLine(pool)))
+			supdating := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionTrue, "", fmt.Sprintf("All nodes are updating to %s", getPoolUpdateLine(pool, mosc, mosb)))
 			apihelpers.SetMachineConfigPoolCondition(&status, *supdating)
 		}
 	}
@@ -247,11 +253,11 @@ func calculateStatus(mcs []*mcfgalphav1.MachineConfigNode, cconfig *mcfgv1.Contr
 	return status
 }
 
-func getPoolUpdateLine(pool *mcfgv1.MachineConfigPool) string {
+func getPoolUpdateLine(pool *mcfgv1.MachineConfigPool, mosc *mcfgv1alpha1.MachineOSConfig, mosb *mcfgv1alpha1.MachineOSBuild) string {
 	targetConfig := pool.Spec.Configuration.Name
 	mcLine := fmt.Sprintf("MachineConfig %s", targetConfig)
 
-	if !ctrlcommon.IsLayeredPool(pool) {
+	if ok := ctrlcommon.IsLayeredPool(pool, mosc, mosb); ok {
 		return mcLine
 	}
 
@@ -323,12 +329,21 @@ func isNodeMCDFailing(node *corev1.Node) bool {
 // getUpdatedMachines filters the provided nodes to return the nodes whose
 // current config matches the desired config, which also matches the target config,
 // and the "done" flag is set.
-func getUpdatedMachines(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) []*corev1.Node {
+func getUpdatedMachines(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node, mosc *mcfgv1alpha1.MachineOSConfig, mosb *mcfgv1alpha1.MachineOSBuild) []*corev1.Node {
 	var updated []*corev1.Node
 	for _, node := range nodes {
 		lns := ctrlcommon.NewLayeredNodeState(node)
-		if lns.IsDoneAt(pool) {
-			updated = append(updated, node)
+		if mosb != nil && mosc != nil {
+			mosbState := ctrlcommon.NewMachineOSBuildState(mosb)
+			if ctrlcommon.IsLayeredPool(pool, mosc, mosb) && mosbState.IsBuildSuccess() && mosb.Status.DesiredConfig.Name == pool.Status.Configuration.Name {
+				updated = append(updated, node)
+			}
+		} else {
+			layered := ctrlcommon.IsLayeredPool(pool, mosc, mosb)
+			if lns.IsDoneAt(pool, layered) {
+				updated = append(updated, node)
+
+			}
 		}
 	}
 	return updated
@@ -336,8 +351,8 @@ func getUpdatedMachines(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) []
 
 // getReadyMachines filters the provided nodes to return the nodes
 // that are updated and marked ready
-func getReadyMachines(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) []*corev1.Node {
-	updated := getUpdatedMachines(pool, nodes)
+func getReadyMachines(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node, mosc *mcfgv1alpha1.MachineOSConfig, mosb *mcfgv1alpha1.MachineOSBuild) []*corev1.Node {
+	updated := getUpdatedMachines(pool, nodes, mosc, mosb)
 	var ready []*corev1.Node
 	for _, node := range updated {
 		if isNodeReady(node) {
@@ -400,12 +415,21 @@ func isNodeUnavailable(node *corev1.Node) bool {
 // node *may* go unschedulable in the future, so we don't want to
 // potentially start another node update exceeding our maxUnavailable.
 // Somewhat the opposite of getReadyNodes().
-func getUnavailableMachines(nodes []*corev1.Node, pool *mcfgv1.MachineConfigPool) []*corev1.Node {
+func getUnavailableMachines(nodes []*corev1.Node, pool *mcfgv1.MachineConfigPool, layered bool, mosb *mcfgv1alpha1.MachineOSBuild) []*corev1.Node {
 	var unavail []*corev1.Node
 	for _, node := range nodes {
-		lns := ctrlcommon.NewLayeredNodeState(node)
-		if lns.IsUnavailable(pool) {
-			unavail = append(unavail, node)
+		if mosb != nil {
+			mosbState := ctrlcommon.NewMachineOSBuildState(mosb)
+			// if node is unavail, desiredConfigs match, and the build is a success, then we are unavail.
+			// not sure on this one honestly
+			if layered && isNodeUnavailable(node) && mosb.Status.DesiredConfig.Name == pool.Status.Configuration.Name && mosbState.IsBuildSuccess() {
+				unavail = append(unavail, node)
+			}
+		} else {
+			lns := ctrlcommon.NewLayeredNodeState(node)
+			if lns.IsUnavailable(pool, layered) {
+				unavail = append(unavail, node)
+			}
 		}
 	}
 

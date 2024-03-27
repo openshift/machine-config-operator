@@ -6,6 +6,9 @@ dnsnameresolvers.network.openshift.io:
   Category: ""
   FeatureGates:
   - DNSNameResolver
+  FilenameOperatorName: dns
+  FilenameOperatorOrdering: "00"
+  FilenameRunLevel: "0000_70"
   GroupName: network.openshift.io
   HasStatus: true
   KindName: DNSNameResolver
@@ -13,8 +16,7 @@ dnsnameresolvers.network.openshift.io:
   PluralName: dnsnameresolvers
   PrinterColumns: []
   Scope: Namespaced
-  ShortName: ""
-  TargetFilenamePattern: 0000_70_dnsnameresolver_00MARKERS.crd.yaml
+  ShortNames: null
   TopLevelFeatureGates:
   - DNSNameResolver
   Version: v1alpha1

@@ -7,13 +7,16 @@ import (
 	"time"
 
 	buildv1 "github.com/openshift/api/build/v1"
-	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	buildlistersv1 "github.com/openshift/client-go/build/listers/build/v1"
+	mcfglistersv1alpha1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1"
+
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	coreclientsetv1 "k8s.io/client-go/kubernetes/typed/core/v1"
@@ -33,12 +36,20 @@ type ImageBuildController struct {
 	// The function to call whenever we've encountered a Build. This function is
 	// responsible for examining the Build to determine what state its in and map
 	// that state to the appropriate MachineConfigPool object.
-	buildHandler func(*buildv1.Build) error
+	buildHandler func(*buildv1.Build, *mcfgv1alpha1.MachineOSBuild, *mcfgv1alpha1.MachineOSConfig) error
 
 	syncHandler  func(pod string) error
 	enqueueBuild func(*buildv1.Build)
 
 	buildLister buildlistersv1.BuildLister
+
+	machineOSBuildLister mcfglistersv1alpha1.MachineOSBuildLister
+
+	machineOSBuildListerSynced cache.InformerSynced
+
+	machineOSConfigLister mcfglistersv1alpha1.MachineOSConfigLister
+
+	machineOSConfigListerSynced cache.InformerSynced
 
 	buildListerSynced cache.InformerSynced
 
@@ -53,7 +64,7 @@ var _ ImageBuilder = (*ImageBuildController)(nil)
 func newImageBuildController(
 	ctrlConfig BuildControllerConfig,
 	clients *Clients,
-	buildHandler func(*buildv1.Build) error,
+	buildHandler func(*buildv1.Build, *mcfgv1alpha1.MachineOSBuild, *mcfgv1alpha1.MachineOSConfig) error,
 ) *ImageBuildController {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
@@ -75,6 +86,10 @@ func newImageBuildController(
 		DeleteFunc: ctrl.deleteBuild,
 	})
 
+	ctrl.machineOSConfigLister = ctrl.machineOSConfigInformer.Lister()
+	ctrl.machineOSConfigListerSynced = ctrl.machineOSConfigInformer.Informer().HasSynced
+	ctrl.machineOSBuildLister = ctrl.machineOSBuildInformer.Lister()
+	ctrl.machineOSBuildListerSynced = ctrl.machineOSBuildInformer.Informer().HasSynced
 	ctrl.buildLister = ctrl.buildInformer.Lister()
 	ctrl.buildListerSynced = ctrl.buildInformer.Informer().HasSynced
 
@@ -121,6 +136,7 @@ func (ctrl *ImageBuildController) enqueueDefault(build *buildv1.Build) {
 }
 
 // Syncs Builds.
+// this is where we need
 func (ctrl *ImageBuildController) syncBuild(key string) error { //nolint:dupl // This does have commonality with the PodBuildController.
 	start := time.Now()
 	defer func() {
@@ -142,6 +158,28 @@ func (ctrl *ImageBuildController) syncBuild(key string) error { //nolint:dupl //
 		return err
 	}
 
+	// this is not right
+	mosbList, err := ctrl.machineOSBuildLister.List(labels.Everything())
+	if err != nil {
+		klog.Errorf("There is no MachineOSBuild for build %s", build.Name)
+	}
+
+	var mosb *mcfgv1alpha1.MachineOSBuild
+	for _, m := range mosbList {
+		if m.Status.BuildName == build.Name {
+			mosb = m
+		}
+	}
+
+	moscList, err := ctrl.machineOSConfigLister.List(labels.Everything())
+
+	var mosc *mcfgv1alpha1.MachineOSConfig
+	for _, m := range moscList {
+		if m.Spec.MachineConfigPool.Name == mosb.Spec.MachineConfigPool.Name {
+			mosc = m
+		}
+	}
+
 	build, err = ctrl.buildclient.BuildV1().Builds(ctrlcommon.MCONamespace).Get(context.TODO(), build.Name, metav1.GetOptions{})
 	if err != nil {
 		return err
@@ -152,7 +190,7 @@ func (ctrl *ImageBuildController) syncBuild(key string) error { //nolint:dupl //
 		return nil
 	}
 
-	if err := ctrl.buildHandler(build); err != nil {
+	if err := ctrl.buildHandler(build, mosb, mosc); err != nil {
 		return fmt.Errorf("unable to update with build status: %w", err)
 	}
 
@@ -182,38 +220,15 @@ func (ctrl *ImageBuildController) Run(ctx context.Context, workers int) {
 	<-ctx.Done()
 }
 
-// Gets the final image pullspec. In this case, we can interrogate the Build
-// object for this information.
-func (ctrl *ImageBuildController) FinalPullspec(pool *mcfgv1.MachineConfigPool) (string, error) {
-	buildName := newImageBuildRequest(pool).getBuildName()
-
-	build, err := ctrl.buildclient.BuildV1().Builds(ctrlcommon.MCONamespace).Get(context.TODO(), buildName, metav1.GetOptions{})
-	if err != nil {
-		return "", fmt.Errorf("could not get build %s for pool %s: %w", buildName, pool.Name, err)
-	}
-
-	// Get the image digest from the completed build and replace the tag with
-	// the digest.
-	if build.Status.OutputDockerImageReference == "" {
-		return "", fmt.Errorf("no image reference outputted")
-	}
-
-	if build.Status.Output.To.ImageDigest == "" {
-		return "", fmt.Errorf("no image digest found")
-	}
-
-	return parseImagePullspec(build.Status.OutputDockerImageReference, build.Status.Output.To.ImageDigest)
-}
-
 // Deletes the underlying Build object.
-func (ctrl *ImageBuildController) DeleteBuildObject(pool *mcfgv1.MachineConfigPool) error {
-	buildName := newImageBuildRequest(pool).getBuildName()
+func (ctrl *ImageBuildController) DeleteBuildObject(mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig) error {
+	buildName := newImageBuildRequest(mosc, mosb).getBuildName()
 	return ctrl.buildclient.BuildV1().Builds(ctrlcommon.MCONamespace).Delete(context.TODO(), buildName, metav1.DeleteOptions{})
 }
 
 // Determines if a build is currently running by looking for a corresponding Build.
-func (ctrl *ImageBuildController) IsBuildRunning(pool *mcfgv1.MachineConfigPool) (bool, error) {
-	buildName := newImageBuildRequest(pool).getBuildName()
+func (ctrl *ImageBuildController) IsBuildRunning(mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig) (bool, error) {
+	buildName := newImageBuildRequest(mosc, mosb).getBuildName()
 
 	// First check if we have a build in progress for this MachineConfigPool and rendered config.
 	_, err := ctrl.buildclient.BuildV1().Builds(ctrlcommon.MCONamespace).Get(context.TODO(), buildName, metav1.GetOptions{})
@@ -227,7 +242,7 @@ func (ctrl *ImageBuildController) IsBuildRunning(pool *mcfgv1.MachineConfigPool)
 // Starts a new build, assuming one is not found first. In that case, it
 // returns an object reference to the preexisting Build object.
 func (ctrl *ImageBuildController) StartBuild(ibr ImageBuildRequest) (*corev1.ObjectReference, error) {
-	targetMC := ibr.Pool.Spec.Configuration.Name
+	targetMC := ibr.MachineOSBuild.Status.DesiredConfig.Name
 
 	buildName := ibr.getBuildName()
 
@@ -244,20 +259,20 @@ func (ctrl *ImageBuildController) StartBuild(ibr ImageBuildRequest) (*corev1.Obj
 
 	// This means we found a preexisting build build.
 	if build != nil && err == nil && hasAllRequiredOSBuildLabels(build.Labels) {
-		klog.Infof("Found preexisting OS image build (%s) for pool %s", build.Name, ibr.Pool.Name)
+		klog.Infof("Found preexisting OS image build (%s) for pool %s", build.Name, ibr.MachineOSBuild.Spec.MachineConfigPool.Name)
 		return toObjectRef(build), nil
 	}
 
-	klog.Infof("Starting build for pool %s", ibr.Pool.Name)
+	klog.Infof("Starting build for pool %s", ibr.MachineOSBuild.Spec.MachineConfigPool.Name)
 	klog.Infof("Build name: %s", buildName)
-	klog.Infof("Final image will be pushed to %q, using secret %q", ibr.FinalImage.Pullspec, ibr.FinalImage.PullSecret.Name)
+	klog.Infof("Final image will be pushed to %q, using secret %q", ibr.MachineOSConfig.Spec.BuildInputs.FinalImagePullspec, ibr.MachineOSConfig.Spec.BuildInputs.FinalImagePullSecret.Name)
 
 	build, err = ctrl.buildclient.BuildV1().Builds(ctrlcommon.MCONamespace).Create(context.TODO(), ibr.toBuild(), metav1.CreateOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("could not create OS image build: %w", err)
 	}
 
-	klog.Infof("Build started for pool %s in %s!", ibr.Pool.Name, build.Name)
+	klog.Infof("Build started for pool %s in %s!", ibr.MachineOSBuild.Spec.MachineConfigPool.Name, build.Name)
 
 	return toObjectRef(build), nil
 }

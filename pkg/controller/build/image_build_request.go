@@ -9,6 +9,7 @@ import (
 
 	buildv1 "github.com/openshift/api/build/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	corev1 "k8s.io/api/core/v1"
@@ -43,18 +44,10 @@ type ImageInfo struct {
 
 // Represents the request to build a layered OS image.
 type ImageBuildRequest struct {
-	// The target MachineConfigPool
-	Pool *mcfgv1.MachineConfigPool
-	// The base OS image (derived from the machine-config-osimageurl ConfigMap)
-	BaseImage ImageInfo
-	// The extensions image (derived from the machine-config-osimageurl ConfigMap)
-	ExtensionsImage ImageInfo
-	// The final OS image (desired from the on-cluster-build-config ConfigMap)
-	FinalImage ImageInfo
-	// The OpenShift release version (derived from the machine-config-osimageurl ConfigMap)
-	ReleaseVersion string
-	// An optional user-supplied Dockerfile that gets injected into the build.
-	CustomDockerfile string
+	// The target Build object
+	MachineOSBuild *mcfgv1alpha1.MachineOSBuild
+	//
+	MachineOSConfig *mcfgv1alpha1.MachineOSConfig
 }
 
 type buildInputs struct {
@@ -66,10 +59,12 @@ type buildInputs struct {
 }
 
 // Constructs a simple ImageBuildRequest.
-func newImageBuildRequest(pool *mcfgv1.MachineConfigPool) ImageBuildRequest {
-	return ImageBuildRequest{
-		Pool: pool.DeepCopy(),
+func newImageBuildRequest(mosc *mcfgv1alpha1.MachineOSConfig, mosb *mcfgv1alpha1.MachineOSBuild) *ImageBuildRequest {
+	return &ImageBuildRequest{
+		MachineOSConfig: mosc,
+		MachineOSBuild:  mosb,
 	}
+
 }
 
 // Populates the final image info from the on-cluster-build-config ConfigMap.
@@ -84,40 +79,31 @@ func newFinalImageInfo(inputs *buildInputs) ImageInfo {
 
 // Populates the base image info from both the on-cluster-build-config and
 // machine-config-osimageurl ConfigMaps.
-func newBaseImageInfo(inputs *buildInputs) ImageInfo {
+func newBaseImageInfo(osImageURL *corev1.ConfigMap, mosc *mcfgv1alpha1.MachineOSConfig) ImageInfo {
 	return ImageInfo{
-		Pullspec: inputs.osImageURL.Data[baseOSContainerImageConfigKey],
+		Pullspec: osImageURL.Data[baseOSContainerImageConfigKey],
 		PullSecret: corev1.LocalObjectReference{
-			Name: inputs.onClusterBuildConfig.Data[BaseImagePullSecretNameConfigKey],
+			Name: mosc.Spec.BuildInputs.BaseImagePullSecret.Name,
 		},
 	}
 }
 
 // Populates the extensions image info from both the on-cluster-build-config
 // and machine-config-osimageurl ConfigMaps.
-func newExtensionsImageInfo(inputs *buildInputs) ImageInfo {
+func newExtensionsImageInfo(osImageURL *corev1.ConfigMap, mosc *mcfgv1alpha1.MachineOSConfig) ImageInfo {
 	return ImageInfo{
-		Pullspec: inputs.osImageURL.Data[baseOSExtensionsContainerImageConfigKey],
+		Pullspec: osImageURL.Data[baseOSExtensionsContainerImageConfigKey],
 		PullSecret: corev1.LocalObjectReference{
-			Name: inputs.onClusterBuildConfig.Data[BaseImagePullSecretNameConfigKey],
+			Name: mosc.Spec.BuildInputs.BaseImagePullSecret.Name,
 		},
 	}
 }
 
 // Constructs an ImageBuildRequest with all of the images populated from ConfigMaps
-func newImageBuildRequestFromBuildInputs(inputs *buildInputs) ImageBuildRequest {
-	customDockerfile := ""
-	if inputs.customDockerfiles != nil {
-		customDockerfile = inputs.customDockerfiles.Data[inputs.pool.Name]
-	}
-
+func newImageBuildRequestFromBuildInputs(mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig) ImageBuildRequest {
 	return ImageBuildRequest{
-		Pool:             inputs.pool.DeepCopy(),
-		BaseImage:        newBaseImageInfo(inputs),
-		FinalImage:       newFinalImageInfo(inputs),
-		ExtensionsImage:  newExtensionsImageInfo(inputs),
-		ReleaseVersion:   inputs.osImageURL.Data[releaseVersionConfigKey],
-		CustomDockerfile: customDockerfile,
+		MachineOSConfig: mosc,
+		MachineOSBuild:  mosb,
 	}
 }
 
@@ -239,12 +225,14 @@ func (i ImageBuildRequest) toBuild() *buildv1.Build {
 				},
 				Output: buildv1.BuildOutput{
 					To: &corev1.ObjectReference{
-						Name: i.FinalImage.Pullspec,
+						Name: i.MachineOSConfig.Spec.BuildInputs.FinalImagePullspec,
 						Kind: "DockerImage",
 					},
-					PushSecret: &i.FinalImage.PullSecret,
+					PushSecret: &corev1.LocalObjectReference{
+						Name: i.MachineOSConfig.Spec.BuildInputs.FinalImagePushSecret.Name,
+					},
 					ImageLabels: []buildv1.ImageLabel{
-						{Name: "io.openshift.machineconfig.pool", Value: i.Pool.Name},
+						{Name: "io.openshift.machineconfig.pool", Value: i.MachineOSBuild.Spec.MachineConfigPool.Name},
 					},
 				},
 			},
@@ -274,7 +262,7 @@ func (i ImageBuildRequest) toPodmanPod() *corev1.Pod {
 		},
 		{
 			Name:  "TAG",
-			Value: i.FinalImage.Pullspec,
+			Value: i.MachineOSConfig.Spec.BuildInputs.FinalImagePullspec,
 		},
 		{
 			Name:  "BASE_IMAGE_PULL_CREDS",
@@ -344,7 +332,7 @@ func (i ImageBuildRequest) toPodmanPod() *corev1.Pod {
 					// contains the SHA256 from the container registry, and stores this
 					// in a ConfigMap which is consumed after the pod stops.
 					Name:            "image-build",
-					Image:           i.BaseImage.Pullspec,
+					Image:           i.MachineOSConfig.Spec.BuildInputs.BaseOSImagePullspec,
 					Env:             env,
 					Command:         append(command, podmanBuildScript),
 					ImagePullPolicy: corev1.PullIfNotPresent,
@@ -387,7 +375,7 @@ func (i ImageBuildRequest) toPodmanPod() *corev1.Pod {
 					Name: "base-image-pull-creds",
 					VolumeSource: corev1.VolumeSource{
 						Secret: &corev1.SecretVolumeSource{
-							SecretName: i.BaseImage.PullSecret.Name,
+							SecretName: i.MachineOSConfig.Spec.BuildInputs.BaseImagePullSecret.Name,
 							Items: []corev1.KeyToPath{
 								{
 									Key:  corev1.DockerConfigJsonKey,
@@ -402,7 +390,7 @@ func (i ImageBuildRequest) toPodmanPod() *corev1.Pod {
 					Name: "final-image-push-creds",
 					VolumeSource: corev1.VolumeSource{
 						Secret: &corev1.SecretVolumeSource{
-							SecretName: i.FinalImage.PullSecret.Name,
+							SecretName: i.MachineOSConfig.Spec.BuildInputs.FinalImagePullSecret.Name,
 							Items: []corev1.KeyToPath{
 								{
 									Key:  corev1.DockerConfigJsonKey,
@@ -445,7 +433,7 @@ func (i ImageBuildRequest) toBuildahPod() *corev1.Pod {
 		},
 		{
 			Name:  "TAG",
-			Value: i.FinalImage.Pullspec,
+			Value: i.MachineOSConfig.Spec.BuildInputs.FinalImagePullspec,
 		},
 		{
 			Name:  "BASE_IMAGE_PULL_CREDS",
@@ -524,7 +512,7 @@ func (i ImageBuildRequest) toBuildahPod() *corev1.Pod {
 					Name:            "wait-for-done",
 					Env:             env,
 					Command:         append(command, waitScript),
-					Image:           i.BaseImage.Pullspec,
+					Image:           i.MachineOSConfig.Spec.BuildInputs.BaseOSImagePullspec,
 					ImagePullPolicy: corev1.PullAlways,
 					SecurityContext: securityContext,
 					VolumeMounts:    volumeMounts,
@@ -560,7 +548,7 @@ func (i ImageBuildRequest) toBuildahPod() *corev1.Pod {
 					Name: "base-image-pull-creds",
 					VolumeSource: corev1.VolumeSource{
 						Secret: &corev1.SecretVolumeSource{
-							SecretName: i.BaseImage.PullSecret.Name,
+							SecretName: i.MachineOSConfig.Spec.BuildInputs.BaseImagePullSecret.Name,
 							Items: []corev1.KeyToPath{
 								{
 									Key:  corev1.DockerConfigJsonKey,
@@ -575,7 +563,7 @@ func (i ImageBuildRequest) toBuildahPod() *corev1.Pod {
 					Name: "final-image-push-creds",
 					VolumeSource: corev1.VolumeSource{
 						Secret: &corev1.SecretVolumeSource{
-							SecretName: i.FinalImage.PullSecret.Name,
+							SecretName: i.MachineOSConfig.Spec.BuildInputs.FinalImagePullspec,
 							Items: []corev1.KeyToPath{
 								{
 									Key:  corev1.DockerConfigJsonKey,
@@ -608,8 +596,8 @@ func (i ImageBuildRequest) getObjectMeta(name string) metav1.ObjectMeta {
 		Namespace: ctrlcommon.MCONamespace,
 		Labels: map[string]string{
 			ctrlcommon.OSImageBuildPodLabel: "",
-			targetMachineConfigPoolLabel:    i.Pool.Name,
-			desiredConfigLabel:              i.Pool.Spec.Configuration.Name,
+			targetMachineConfigPoolLabel:    i.MachineOSBuild.Spec.MachineConfigPool.Name,
+			desiredConfigLabel:              i.MachineOSBuild.Status.DesiredConfig.Name,
 		},
 		Annotations: map[string]string{
 			mcPoolAnnotation: "",
@@ -619,19 +607,19 @@ func (i ImageBuildRequest) getObjectMeta(name string) metav1.ObjectMeta {
 
 // Computes the Dockerfile ConfigMap name based upon the MachineConfigPool name.
 func (i ImageBuildRequest) getDockerfileConfigMapName() string {
-	return fmt.Sprintf("dockerfile-%s", i.Pool.Spec.Configuration.Name)
+	return fmt.Sprintf("dockerfile-%s", i.MachineOSBuild.Status.DesiredConfig)
 }
 
 // Computes the MachineConfig ConfigMap name based upon the MachineConfigPool name.
 func (i ImageBuildRequest) getMCConfigMapName() string {
-	return fmt.Sprintf("mc-%s", i.Pool.Spec.Configuration.Name)
+	return fmt.Sprintf("mc-%s", i.MachineOSBuild.Status.DesiredConfig)
 }
 
 // Computes the build name based upon the MachineConfigPool name.
 func (i ImageBuildRequest) getBuildName() string {
-	return fmt.Sprintf("build-%s", i.Pool.Spec.Configuration.Name)
+	return fmt.Sprintf("build-%s", i.MachineOSBuild.Status.DesiredConfig)
 }
 
 func (i ImageBuildRequest) getDigestConfigMapName() string {
-	return fmt.Sprintf("digest-%s", i.Pool.Spec.Configuration.Name)
+	return fmt.Sprintf("digest-%s", i.MachineOSBuild.Status.DesiredConfig)
 }
