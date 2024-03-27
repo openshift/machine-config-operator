@@ -495,7 +495,7 @@ func TestKubeconfigFromSecret(t *testing.T) {
 	for idx, test := range tests {
 		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
 			desc := fmt.Sprintf("SecretPath(%#v), TestAPIUrl(%#v)", test.SecretPath, test.TestURL)
-			kc, ca, err := kubeconfigFromSecret(test.SecretPath, test.TestURL)
+			kc, ca, err := kubeconfigFromSecret(test.SecretPath, test.TestURL, nil)
 			if err != nil {
 				if !test.Error {
 					t.Fatalf("%s failed %s", desc, err.Error())

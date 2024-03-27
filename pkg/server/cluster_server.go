@@ -44,6 +44,7 @@ type clusterServer struct {
 	configMapLister         corelisterv1.ConfigMapLister
 
 	kubeconfigFunc kubeconfigFunc
+	apiserverURL   string
 }
 
 const minResyncPeriod = 20 * time.Minute
@@ -100,7 +101,8 @@ func NewClusterServer(kubeConfig, apiserverURL string) (Server, error) {
 		machineConfigLister:     mcLister,
 		controllerConfigLister:  ccLister,
 		configMapLister:         cmLister,
-		kubeconfigFunc:          func() ([]byte, []byte, error) { return kubeconfigFromSecret(bootstrapTokenDir, apiserverURL) },
+		kubeconfigFunc:          func() ([]byte, []byte, error) { return kubeconfigFromSecret(bootstrapTokenDir, apiserverURL, nil) },
+		apiserverURL:            apiserverURL,
 	}, nil
 }
 
@@ -146,9 +148,10 @@ func (cs *clusterServer) GetConfig(cr poolRequest) (*runtime.RawExtension, error
 		if err != nil {
 			klog.Errorf("Could not get kubeconfig data: %v", err)
 		} else {
-			if kc, ok := cm.BinaryData["kubeconfig"]; ok {
-				addDataAndMaybeAppendToIgnition(defaultMachineKubeConfPath, kc, &ignConf)
-				cs.kubeconfigFunc = nil
+			if caBundle, ok := cm.BinaryData["ca-bundle.crt"]; ok {
+				cs.kubeconfigFunc = func() ([]byte, []byte, error) {
+					return kubeconfigFromSecret(bootstrapTokenDir, cs.apiserverURL, caBundle)
+				}
 			}
 		}
 	}
@@ -175,13 +178,17 @@ func (cs *clusterServer) GetConfig(cr poolRequest) (*runtime.RawExtension, error
 }
 
 // kubeconfigFromSecret creates a kubeconfig with the certificate
-// and token files in secretDir
-func kubeconfigFromSecret(secretDir, apiserverURL string) ([]byte, []byte, error) {
+// and token files in secretDir. If caData is provided, it will instead
+// use that to populate the kubeconfig
+func kubeconfigFromSecret(secretDir, apiserverURL string, caData []byte) ([]byte, []byte, error) {
 	caFile := filepath.Join(secretDir, corev1.ServiceAccountRootCAKey)
 	tokenFile := filepath.Join(secretDir, corev1.ServiceAccountTokenKey)
-	caData, err := os.ReadFile(caFile)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to read %s: %w", caFile, err)
+	if caData == nil {
+		var err error
+		caData, err = os.ReadFile(caFile)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to read %s: %w", caFile, err)
+		}
 	}
 	token, err := os.ReadFile(tokenFile)
 	if err != nil {
