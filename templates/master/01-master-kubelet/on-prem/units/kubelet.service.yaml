@@ -10,6 +10,7 @@ contents: |
   [Service]
   Type=notify
   ExecStartPre=/bin/mkdir --parents /etc/kubernetes/manifests
+  ExecStartPre=-/usr/sbin/restorecon /usr/local/bin/kubenswrapper /usr/bin/kubensenter
   EnvironmentFile=/etc/os-release
   EnvironmentFile=-/etc/kubernetes/kubelet-workaround
   EnvironmentFile=-/etc/kubernetes/kubelet-env
