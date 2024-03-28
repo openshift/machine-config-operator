@@ -66,6 +66,10 @@ worker   rendered-worker-6db67f47c0b205c26561b1c5ab74d79b   True      False     
 
 The example above makes an `infra` pool that contains all of the MachineConfigs used by the `worker` pool.
 
+### Ordering the custom pool and resulting MachineConfigs
+
+The MachineConfigPool will generate MachineConfigs based on it's `Name`. The render controller sorts all the other MachineConfigs based on the lexicographically increasing order of their `Name`. It uses the first MachineConfig in the list as the base and appends the rest to the base MachineConfig. As a result, in order to successfully override MachineConfigs applied by the `worker` MachineConfigPool, the custom MachineConfigPool should have a name with a lexicographic value greater than `worker`. The simplest way is to make the custom MachineConfigPool name start with a `x`, `y`, or `z`.
+
 ## Deploy changes to a custom pool (optional)
 
 Deploying changes to a custom pool is just a matter of creating a MachineConfig that uses the custom pool name as the label (`infra` in the example):
