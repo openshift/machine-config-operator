@@ -28,6 +28,14 @@ spec:
             cpu: 20m
             memory: 50Mi
         terminationMessagePolicy: FallbackToLogsOnError
+        ports:
+        - containerPort: 8443
+          name: webhook-server
+          protocol: TCP
+        volumeMounts:
+          - mountPath: /etc/mcc/tls
+            name: machine-config-controller-webhook-cert
+            readOnly: true
       - name: kube-rbac-proxy
         image: {{.Images.KubeRbacProxy}}
         ports:
@@ -57,6 +65,15 @@ spec:
         node-role.kubernetes.io/master: ""
       priorityClassName: "system-cluster-critical"
       volumes:
+        - name: machine-config-controller-webhook-cert
+          secret:
+            defaultMode: 420
+            items:
+            - key: tls.crt
+              path: tls.crt
+            - key: tls.key
+              path: tls.key
+            secretName: machine-config-controller-webhook-cert
         - name: proxy-tls
           secret:
             secretName: mcc-proxy-tls

@@ -487,7 +487,7 @@ func logResource(obj interface{}) {
 func isMachineConfigPoolWebhook(obj interface{}) bool {
 	validatingWebhook, ok := obj.(*admissionregistrationv1.ValidatingWebhookConfiguration)
 	if ok {
-		return validatingWebhook.Name == "machine-api"
+		return validatingWebhook.Name == "machine-config-pool"
 	}
 
 	return false

@@ -90,7 +90,7 @@ const (
 	mccKubeRbacProxyConfigMapPath             = "manifests/machineconfigcontroller/kube-rbac-proxy-config.yaml"
 	mccKubeRbacProxyPrometheusRolePath        = "manifests/machineconfigcontroller/prometheus-rbac.yaml"
 	mccKubeRbacProxyPrometheusRoleBindingPath = "manifests/machineconfigcontroller/prometheus-rolebinding-target.yaml"
-	mccWebHookServiceManifestPath             = "manifests/machineconfigcontroller/webhook-service.yaml"
+	mccWebHookServiceTechPreviewManifestPath  = "manifests/machineconfigcontroller/webhook-service-techpreview.yaml"
 
 	// Machine OS Builder manifest paths
 	mobClusterRoleManifestPath                      = "manifests/machineosbuilder/clusterrole.yaml"
@@ -143,10 +143,6 @@ type syncError struct {
 func (optr *Operator) syncAll(syncFuncs []syncFunc) error {
 	if err := optr.syncProgressingStatus(); err != nil {
 		return fmt.Errorf("error syncing progressing status: %w", err)
-	}
-
-	if err := optr.syncMachineConfigPoolValidatingWebhook(); err != nil {
-		return fmt.Errorf("error syncing machine-config-pool webhook configurations: %w", err)
 	}
 
 	var syncErr syncError
@@ -1125,15 +1121,33 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig) error {
 			mccServiceAccountManifestPath,
 			mopServiceAccountManifestPath,
 		},
-		service: []string{
-			mccWebHookServiceManifestPath,
-		},
 	}
+
+	var mccDeploymentManifestPath string
+	fg, err := optr.fgAccessor.CurrentFeatureGates()
+	if err != nil {
+		return fmt.Errorf("failed to get feature gate: %v", err)
+	}
+	if fg.Enabled(configv1.FeatureGatePinnedImages) {
+		// enable feature gated webhook service
+		paths.service = append(paths.service, mccWebHookServiceTechPreviewManifestPath)
+		// enable feature gates deployment which supports the webhook service
+		mccDeploymentManifestPath = "manifests/machineconfigcontroller/deployment-techpreview.yaml"
+
+		// sync up the MachineConfigPool validating webhook configuration
+		if err := optr.syncMachineConfigPoolValidatingWebhook(); err != nil {
+			return fmt.Errorf("error syncing machine config pool webhook configurations: %w", err)
+		}
+	} else {
+		// enable the default deployment
+		mccDeploymentManifestPath = "manifests/machineconfigcontroller/deployment.yaml"
+	}
+
 	if err := optr.applyManifests(config, paths); err != nil {
 		return fmt.Errorf("failed to apply machine config controller manifests: %w", err)
 	}
 
-	mccBytes, err := renderAsset(config, "manifests/machineconfigcontroller/deployment.yaml")
+	mccBytes, err := renderAsset(config, mccDeploymentManifestPath)
 	if err != nil {
 		return err
 	}
@@ -1148,7 +1162,11 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig) error {
 			return err
 		}
 	}
-	return optr.syncControllerConfig(config)
+	if err := optr.syncControllerConfig(config); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // syncs machine os builder
