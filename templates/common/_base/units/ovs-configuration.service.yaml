@@ -2,6 +2,11 @@ name: ovs-configuration.service
 enabled: {{if eq .NetworkType "OVNKubernetes" "OpenShiftSDN"}}true{{else}}false{{end}}
 contents: |
   [Unit]
+  # Kdump will generate it's initramfs based on the running state when kdump.service run
+  # If OVS has already run, the kdump fails to gather a working network config,
+  # which prevent network log exports, sush as SSH.
+  # See https://issues.redhat.com/browse/OCPBUGS-28239
+  After=kdump.service
   Description=Configures OVS with proper host networking configuration
   # This service is used to move a physical NIC into OVS and reconfigure OVS to use the host IP
   Requires=openvswitch.service
