@@ -46,6 +46,8 @@ contents: |
   EnvironmentFile=/etc/mco/proxy.env
   {{end -}}
   ExecStartPost=+/usr/local/bin/configure-ip-forwarding.sh
+  StandardOutput=journal+console
+  StandardError=journal+console
 
   [Install]
   RequiredBy=kubelet-dependencies.target

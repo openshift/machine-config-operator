@@ -37,6 +37,8 @@ contents: |
     done"
   ExecStart=/bin/systemctl daemon-reload
   ExecStartPre=/bin/mkdir -p /run/nodeip-configuration
+  StandardOutput=journal+console
+  StandardError=journal+console
 
   {{if .Proxy -}}
   EnvironmentFile=/etc/mco/proxy.env
