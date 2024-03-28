@@ -1199,7 +1199,10 @@ func (optr *Operator) reconcileMachineOSBuilder(mob *appsv1.Deployment) error {
 		return optr.stopMachineOSBuilderDeployment(mob.Name)
 	}
 
-	// No-op if everything is in the desired state.
+	// if we are in ocb, but for some reason we dont need to do an update to the deployment, we still need to validate config
+	if len(layeredMCPs) != 0 {
+		return build.ValidateOnClusterBuildConfig(optr.kubeClient)
+	}
 	return nil
 }
 
