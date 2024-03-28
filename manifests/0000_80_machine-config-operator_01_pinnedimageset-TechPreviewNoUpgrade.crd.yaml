@@ -1,0 +1,75 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    api.openshift.io/merged-by-featuregates: "true"
+    include.release.openshift.io/ibm-cloud-managed: "true"
+    include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-developer: "true"
+    release.openshift.io/feature-set: TechPreviewNoUpgrade
+  labels:
+    openshift.io/operator-managed: ""
+  name: pinnedimagesets.machineconfiguration.openshift.io
+spec:
+  group: machineconfiguration.openshift.io
+  names:
+    kind: PinnedImageSet
+    listKind: PinnedImageSetList
+    plural: pinnedimagesets
+    singular: pinnedimageset
+  scope: Cluster
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: "PinnedImageSet describes a set of images that should be pinned
+          by CRI-O and pulled to the nodes which are members of the declared MachineConfigPools.
+          \n Compatibility level 4: No compatibility is provided, the API can change
+          at any point for any reason. These capabilities should not be used by applications
+          needing long term support."
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec describes the configuration of this pinned image set.
+            properties:
+              pinnedImages:
+                description: "pinnedImages is a list of OCI Image referenced by digest
+                  that should be pinned and pre-loaded by the nodes of a MachineConfigPool.
+                  Translates into a new file inside the /etc/crio/crio.conf.d directory
+                  with content similar to this: \n pinned_images = [ \"quay.io/openshift-release-dev/ocp-release@sha256:...\",
+                  \"quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:...\", \"quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:...\",
+                  ... ] \n These image references should all be by digest, tags aren't
+                  allowed."
+                items:
+                  description: "PinnedImageRef is an OCI Image referenced by digest.
+                    \n The format of the image ref is: host[:port][/namespace]/name@sha256:<digest>"
+                  maxLength: 447
+                  minLength: 1
+                  type: string
+                  x-kubernetes-validations:
+                  - message: The image reference must be in the format host[:port][/namespace]/name@sha256:<digest>
+                      with a valid SHA256 digest
+                    rule: self.matches('^([a-zA-Z0-9-]+\\.)+[a-zA-Z0-9-]+(:[0-9]{2,5})?/([a-zA-Z0-9-_]{0,61}/)?[a-zA-Z0-9-_.]{0,61}@sha256:[a-f0-9]{64}$')
+                maxItems: 2000
+                minItems: 1
+                type: array
+                x-kubernetes-list-type: atomic
+            required:
+            - pinnedImages
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true

@@ -1,0 +1,95 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: machine-config-controller
+  namespace: {{.TargetNamespace}}
+spec:
+  selector:
+    matchLabels:
+      k8s-app: machine-config-controller
+  template:
+    metadata:
+      labels:
+        k8s-app: machine-config-controller
+      annotations:
+        target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
+    spec:
+      containers:
+      - name: machine-config-controller
+        image: {{.Images.MachineConfigOperator}}
+        command: ["/usr/bin/machine-config-controller"]
+        args:
+        - "start"
+        - "--resourcelock-namespace={{.TargetNamespace}}"
+        - "--v=2"
+        - "--payload-version={{.ReleaseVersion}}"
+        resources:
+          requests:
+            cpu: 20m
+            memory: 50Mi
+        terminationMessagePolicy: FallbackToLogsOnError
+        ports:
+        - containerPort: 8443
+          name: webhook-server
+          protocol: TCP
+        volumeMounts:
+          - mountPath: /etc/mcc/tls
+            name: machine-config-controller-webhook-cert
+            readOnly: true
+      - name: kube-rbac-proxy
+        image: {{.Images.KubeRbacProxy}}
+        ports:
+        - containerPort: 9001
+          name: metrics
+          protocol: TCP
+        args:
+        - --secure-listen-address=0.0.0.0:9001
+        - --config-file=/etc/kube-rbac-proxy/config-file.yaml
+        - --tls-cipher-suites=TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305
+        - --upstream=http://127.0.0.1:8797
+        - --logtostderr=true
+        - --tls-cert-file=/etc/tls/private/tls.crt
+        - --tls-private-key-file=/etc/tls/private/tls.key
+        resources:
+          requests:
+            cpu: 20m
+            memory: 50Mi
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /etc/tls/private
+          name: proxy-tls
+        - mountPath: /etc/kube-rbac-proxy
+          name: mcc-auth-proxy-config
+      serviceAccountName: machine-config-controller
+      nodeSelector:
+        node-role.kubernetes.io/master: ""
+      priorityClassName: "system-cluster-critical"
+      volumes:
+        - name: machine-config-controller-webhook-cert
+          secret:
+            defaultMode: 420
+            items:
+            - key: tls.crt
+              path: tls.crt
+            - key: tls.key
+              path: tls.key
+            secretName: machine-config-controller-webhook-cert
+        - name: proxy-tls
+          secret:
+            secretName: mcc-proxy-tls
+        - configMap:
+             name: kube-rbac-proxy
+          name: mcc-auth-proxy-config
+      restartPolicy: Always
+      tolerations:
+      - key: node-role.kubernetes.io/master
+        operator: Exists
+        effect: "NoSchedule"
+      - key: "node.kubernetes.io/unreachable"
+        operator: "Exists"
+        effect: "NoExecute"
+        tolerationSeconds: 120
+      - key: "node.kubernetes.io/not-ready"
+        operator: "Exists"
+        effect: "NoExecute"
+        tolerationSeconds: 120

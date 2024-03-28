@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: machine-config-controller-webhook
+  namespace: {{.TargetNamespace}}
+  labels:
+    k8s-app: machine-config-controller-webhook
+  annotations:
+    capability.openshift.io/name: MachineConfig
+    exclude.release.openshift.io/internal-openshift-hosted: "true"
+    include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-developer: "true"
+    service.beta.openshift.io/serving-cert-secret-name: machine-config-controller-webhook-cert
+spec:
+  type: ClusterIP
+  ports:
+    - name: https
+      port: 443
+      protocol: TCP
+      targetPort: webhook-server
+  selector:
+    k8s-app: machine-config-controller
+  sessionAffinity: None

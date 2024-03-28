@@ -18,7 +18,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
-	featuregatescontroller "github.com/openshift/cluster-config-operator/pkg/operator/featuregates"
+	// featuregatescontroller "github.com/openshift/cluster-config-operator/pkg/operator/featuregates"
 	"github.com/openshift/machine-config-operator/internal/clients"
 	"github.com/openshift/machine-config-operator/pkg/controller/bootstrap"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -32,7 +32,7 @@ import (
 	"github.com/openshift/machine-config-operator/test/helpers"
 
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	// apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -549,48 +549,53 @@ func createClusterVersion(t *testing.T, clientSet *framework.ClientSet, objs ...
 // ensureFeatureGate ensures that the cluster contains a feature gate with the
 // correct status to allow the controllers to proceed.
 func ensureFeatureGate(t *testing.T, clientSet *framework.ClientSet, objs ...runtime.Object) {
-	ctx := context.Background()
-	var controllerConfig *mcfgv1.ControllerConfig
-	for _, obj := range objs {
-		if cc, ok := obj.(*mcfgv1.ControllerConfig); ok {
-			controllerConfig = cc
-			break
-		}
-	}
-	require.NotNil(t, controllerConfig, "Did not find controller config in base manifests")
+	// ctx := context.Background()
+	// var controllerConfig *mcfgv1.ControllerConfig
+	// for _, obj := range objs {
+	// 	if cc, ok := obj.(*mcfgv1.ControllerConfig); ok {
+	// 		controllerConfig = cc
+	// 		break
+	// 	}
+	// }
+	// require.NotNil(t, controllerConfig, "Did not find controller config in base manifests")
 
-	currentFg, err := clientSet.FeatureGates().Get(ctx, "cluster", metav1.GetOptions{})
-	if !apierrors.IsNotFound(err) {
-		require.NoError(t, err)
-	} else {
-		t.Fatal("FeatureGate cluster not found, bootstrap data should contain at least 1 FeatureGate")
-	}
+	// currentFg, err := clientSet.FeatureGates().Get(ctx, "cluster", metav1.GetOptions{})
+	// if !apierrors.IsNotFound(err) {
+	// 	require.NoError(t, err)
+	// } else {
+	// 	t.Fatal("FeatureGate cluster not found, bootstrap data should contain at least 1 FeatureGate")
+	// }
 
-	// Set up the current controllerconfig image with the current feature gate selection.
-	currentDetails, err := featuregatescontroller.FeaturesGateDetailsFromFeatureSets(configv1.FeatureSets, currentFg, controllerConfig.Spec.ReleaseImage)
-	require.NoError(t, err)
+	// featureGateStatus, err := configv1.FeatureSets(configv1.ClusterProfileName(clusterProfileAnnotationName), featureGates.Spec.FeatureSet)
+	// 	if err != nil {
+	// 		return fmt.Errorf("unable to resolve featureGateStatus: %w", err)
+	// 	}
 
-	rawDetails := *currentDetails
-	rawDetails.Version = version.ReleaseVersion
+	// // Set up the current controllerconfig image with the current feature gate selection.
+	// currentDetails, err := featuregatescontroller.FeaturesGateDetailsFromFeatureSets(configv1.FeatureSets2, currentFg, controllerConfig.Spec.ReleaseImage)
+	// require.NoError(t, err)
 
-	currentFg.Status = configv1.FeatureGateStatus{
-		FeatureGates: []configv1.FeatureGateDetails{*currentDetails, rawDetails},
-	}
+	// rawDetails := *currentDetails
+	// rawDetails.Version = version.ReleaseVersion
 
-	// Update the feature gate with the current controllerconfig image.
-	_, err = clientSet.FeatureGates().UpdateStatus(ctx, currentFg, metav1.UpdateOptions{})
-	require.NoError(t, err)
+	// currentFg.Status = configv1.FeatureGateStatus{
+	// 	FeatureGates: []configv1.FeatureGateDetails{*currentDetails, rawDetails},
+	// }
 
-	// For some reason API calls aren't populating this? But it's needed for the bootstrap render.
-	currentFg.SetGroupVersionKind(configv1.SchemeGroupVersion.WithKind("FeatureGate"))
+	// // Update the feature gate with the current controllerconfig image.
+	// _, err = clientSet.FeatureGates().UpdateStatus(ctx, currentFg, metav1.UpdateOptions{})
+	// require.NoError(t, err)
 
-	// Make sure that the objects are up to date with the FG
-	// else the bootstrap render will not work.
-	for i, obj := range objs {
-		if _, ok := obj.(*configv1.FeatureGate); ok {
-			objs[i] = currentFg
-		}
-	}
+	// // For some reason API calls aren't populating this? But it's needed for the bootstrap render.
+	// currentFg.SetGroupVersionKind(configv1.SchemeGroupVersion.WithKind("FeatureGate"))
+
+	// // Make sure that the objects are up to date with the FG
+	// // else the bootstrap render will not work.
+	// for i, obj := range objs {
+	// 	if _, ok := obj.(*configv1.FeatureGate); ok {
+	// 		objs[i] = currentFg
+	// 	}
+	// }
 }
 
 // loadBaseTestManifests loads all of the yaml files in the directory

@@ -881,6 +881,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		return err
 	}
 
+	// set topology
 	if err := ctrl.setClusterConfigAnnotation(nodes); err != nil {
 		return fmt.Errorf("error setting clusterConfig Annotation for node in pool %q, error: %w", pool.Name, err)
 	}
