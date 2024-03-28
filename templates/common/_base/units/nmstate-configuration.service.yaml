@@ -1,0 +1,25 @@
+name: nmstate-configuration.service
+enabled: true
+contents: |
+  [Unit]
+  Description=Applies per-node NMState network configuration
+  Requires=openvswitch.service
+  Wants=NetworkManager-wait-online.service
+  After=NetworkManager-wait-online.service openvswitch.service network.service nodeip-configuration.service
+  Before=nmstate.service kubelet-dependencies.target ovs-configuration.service node-valid-hostname.service
+
+  [Service]
+  Type=oneshot
+  # Would prefer to do Restart=on-failure instead of this bash retry loop, but
+  # the version of systemd we have right now doesn't support it. It should be
+  # available in systemd v244 and higher.
+  ExecStart=/usr/local/bin/nmstate-configuration.sh
+  StandardOutput=journal+console
+  StandardError=journal+console
+
+  {{if .Proxy -}}
+  EnvironmentFile=/etc/mco/proxy.env
+  {{end -}}
+
+  [Install]
+  WantedBy=network-online.target

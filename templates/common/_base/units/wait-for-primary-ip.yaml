@@ -1,0 +1,23 @@
+name: wait-for-primary-ip.service
+enabled: true
+contents: |
+  [Unit]
+  Description=Ensure primary IP is assigned and usable
+  Requires=nmstate.service
+  After=nmstate.service
+  Before=kubelet-dependencies.target
+
+  [Service]
+  Type=oneshot
+  Restart=on-failure
+  RestartSec=10
+  ExecStart=/usr/local/bin/wait-for-primary-ip.sh
+  StandardOutput=journal+console
+  StandardError=journal+console
+
+  {{if .Proxy -}}
+  EnvironmentFile=/etc/mco/proxy.env
+  {{end -}}
+
+  [Install]
+  WantedBy=network-online.target

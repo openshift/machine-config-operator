@@ -444,6 +444,12 @@ func calculatePostConfigChangeActionFromFileDiffs(diffFileSet []string) (actions
 		imageRegistryAuthFile,
 		"/var/lib/kubelet/config.json",
 	}
+	directoriesPostConfigChangeActionNone := []string{
+		// We probably don't want to use this exact path because NMState is
+		// planning to add a service that applies configs from it too, and we
+		// want to make sure our service is the only one processing the configs.
+		"/etc/nmstate",
+	}
 	filesPostConfigChangeActionReloadCrio := []string{
 		constants.ContainerRegistryConfPath,
 		GPGNoRebootPath,
@@ -454,7 +460,13 @@ func calculatePostConfigChangeActionFromFileDiffs(diffFileSet []string) (actions
 	}
 
 	actions = []string{postConfigChangeActionNone}
+path:
 	for _, path := range diffFileSet {
+		for _, dir := range directoriesPostConfigChangeActionNone {
+			if strings.HasPrefix(path, dir) {
+				continue path
+			}
+		}
 		if ctrlcommon.InSlice(path, filesPostConfigChangeActionNone) {
 			continue
 		} else if ctrlcommon.InSlice(path, filesPostConfigChangeActionReloadCrio) {
