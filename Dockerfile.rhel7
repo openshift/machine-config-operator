@@ -15,7 +15,7 @@ WORKDIR /go/src/github.com/openshift/machine-config-operator
 COPY . .
 RUN make install DESTDIR=./instroot
 
-FROM registry.ci.openshift.org/ocp/4.16:base
+FROM registry.ci.openshift.org/ocp/4.16:base-rhel9
 ARG TAGS=""
 COPY --from=builder /go/src/github.com/openshift/machine-config-operator/instroot.tar /tmp/instroot.tar
 RUN cd / && tar xf /tmp/instroot.tar && rm -f /tmp/instroot.tar
