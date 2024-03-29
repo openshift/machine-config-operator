@@ -152,41 +152,6 @@ var schemaYAML = typed.YAMLObject(`types:
       type:
         scalar: string
       default: ""
-- name: com.github.openshift.api.machineconfiguration.v1alpha1.PinnedImageRef
-  map:
-    fields:
-    - name: name
-      type:
-        scalar: string
-      default: ""
-- name: com.github.openshift.api.machineconfiguration.v1alpha1.PinnedImageSet
-  map:
-    fields:
-    - name: apiVersion
-      type:
-        scalar: string
-    - name: kind
-      type:
-        scalar: string
-    - name: metadata
-      type:
-        namedType: io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta
-      default: {}
-    - name: spec
-      type:
-        namedType: com.github.openshift.api.machineconfiguration.v1alpha1.PinnedImageSetSpec
-      default: {}
-- name: com.github.openshift.api.machineconfiguration.v1alpha1.PinnedImageSetSpec
-  map:
-    fields:
-    - name: pinnedImages
-      type:
-        list:
-          elementType:
-            namedType: com.github.openshift.api.machineconfiguration.v1alpha1.PinnedImageRef
-          elementRelationship: associative
-          keys:
-          - name
 - name: io.k8s.apimachinery.pkg.apis.meta.v1.Condition
   map:
     fields:

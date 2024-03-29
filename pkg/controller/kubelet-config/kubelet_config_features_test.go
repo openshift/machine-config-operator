@@ -25,36 +25,42 @@ func TestFeatureGateDrift(t *testing.T) {
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			f.ccLister = append(f.ccLister, cc)
 
-			features := &osev1.FeatureGate{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: ctrlcommon.ClusterFeatureInstanceName,
-				},
-				Spec: osev1.FeatureGateSpec{
-					FeatureGateSelection: osev1.FeatureGateSelection{
-						FeatureSet: osev1.CustomNoUpgrade,
-						CustomNoUpgrade: &osev1.CustomFeatureGates{
-							Enabled:  []osev1.FeatureGateName{"CSIMigration"},
-							Disabled: []osev1.FeatureGateName{"DisableKubeletCloudCredentialProviders"},
-						},
-					},
-				},
-			}
-			fgAccess := featuregates.NewHardcodedFeatureGateAccess(features.Spec.FeatureGateSelection.CustomNoUpgrade.Enabled, features.Spec.FeatureGateSelection.CustomNoUpgrade.Disabled)
+			fgAccess := createNewDefaultFeatureGateAccess()
 			ctrl := f.newController(fgAccess)
 
-			// Generate kubelet config with feature gates applied
-			kubeletConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, "master", fgAccess)
+			kubeletConfig, err := generateOriginalKubeletConfigIgn(cc, ctrl.templatesDir, "master")
+			if err != nil {
+				t.Errorf("could not generate kubelet config from templates %v", err)
+			}
+			contents, err := ctrlcommon.DecodeIgnitionFileContents(kubeletConfig.Contents.Source, kubeletConfig.Contents.Compression)
 			require.NoError(t, err)
-
-			t.Logf("Generated Kubelet Config Feature Gates: %v", kubeletConfig.FeatureGates)
+			originalKubeConfig, err := decodeKubeletConfig(contents)
+			require.NoError(t, err)
 
 			defaultFeatureGates, err := generateFeatureMap(fgAccess)
-			require.NoError(t, err)
-
-			t.Logf("Expected Feature Gates: %v", *defaultFeatureGates)
-
-			if !reflect.DeepEqual(kubeletConfig.FeatureGates, *defaultFeatureGates) {
-				t.Errorf("Generated kubelet configuration feature gates do not match expected feature gates: generated=%v, expected=%v", kubeletConfig.FeatureGates, *defaultFeatureGates)
+			if err != nil {
+				t.Errorf("could not generate defaultFeatureGates: %v", err)
+			}
+			if !reflect.DeepEqual(originalKubeConfig.FeatureGates, *defaultFeatureGates) {
+				var found = map[string]bool{}
+				for featureGate := range originalKubeConfig.FeatureGates {
+					for apiGate := range *defaultFeatureGates {
+						if featureGate == apiGate {
+							found[apiGate] = true
+						}
+					}
+				}
+				for featureGate := range originalKubeConfig.FeatureGates {
+					if _, ok := found[featureGate]; !ok {
+						t.Logf("%s is not present in api", featureGate)
+					}
+				}
+				for featureGate := range *defaultFeatureGates {
+					if _, ok := found[featureGate]; !ok {
+						t.Logf("%s is not present in template", featureGate)
+					}
+				}
+				t.Errorf("template FeatureGates do not match openshift/api FeatureGates: (tmpl=[%v], api=[%v]", originalKubeConfig.FeatureGates, defaultFeatureGates)
 			}
 		})
 	}
@@ -64,7 +70,7 @@ func TestFeaturesDefault(t *testing.T) {
 	for _, platform := range []configv1.PlatformType{configv1.AWSPlatformType, configv1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
-			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"CSIMigration"}, nil)
+			fgAccess := createNewDefaultFeatureGateAccess()
 			f.newController(fgAccess)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
@@ -93,11 +99,9 @@ func TestFeaturesDefault(t *testing.T) {
 			f.expectGetMachineConfigAction(mcs)
 			f.expectGetMachineConfigAction(mcsDeprecated)
 			f.expectGetMachineConfigAction(mcs)
-			f.expectCreateMachineConfigAction(mcs)
 			f.expectGetMachineConfigAction(mcs2)
 			f.expectGetMachineConfigAction(mcs2Deprecated)
 			f.expectGetMachineConfigAction(mcs2)
-			f.expectCreateMachineConfigAction(mcs2)
 
 			f.runFeature(getKeyFromFeatureGate(features, t), fgAccess)
 		})
@@ -120,6 +124,8 @@ func TestFeaturesCustomNoUpgrade(t *testing.T) {
 					},
 				},
 			}
+
+			// Ensure the FG Access matches the feature gate.
 			fgAccess := featuregates.NewHardcodedFeatureGateAccess(features.Spec.FeatureGateSelection.CustomNoUpgrade.Enabled, features.Spec.FeatureGateSelection.CustomNoUpgrade.Disabled)
 
 			f := newFixture(t)
@@ -162,18 +168,19 @@ func TestFeaturesCustomNoUpgrade(t *testing.T) {
 func TestBootstrapFeaturesDefault(t *testing.T) {
 	for _, platform := range []configv1.PlatformType{configv1.AWSPlatformType, configv1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
+
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			mcps := []*mcfgv1.MachineConfigPool{mcp, mcp2}
 
-			fgAccess := featuregates.NewHardcodedFeatureGateAccess(nil, nil)
+			fgAccess := createNewDefaultFeatureGateAccess()
 
 			mcs, err := RunFeatureGateBootstrap("../../../templates", fgAccess, nil, cc, mcps)
 			if err != nil {
 				t.Errorf("could not run feature gate bootstrap: %v", err)
 			}
-			if len(mcs) == 0 {
+			if len(mcs) > 0 {
 				t.Errorf("expected no machine config generated with the default feature gate, got %d configs", len(mcs))
 			}
 		})
@@ -208,21 +215,7 @@ func TestBootstrapFeaturesCustomNoUpgrade(t *testing.T) {
 				originalKubeConfig, err := decodeKubeletConfig(conf)
 				require.NoError(t, err)
 
-				features := &osev1.FeatureGate{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: ctrlcommon.ClusterFeatureInstanceName,
-					},
-					Spec: osev1.FeatureGateSpec{
-						FeatureGateSelection: osev1.FeatureGateSelection{
-							FeatureSet: osev1.CustomNoUpgrade,
-							CustomNoUpgrade: &osev1.CustomFeatureGates{
-								Enabled: []osev1.FeatureGateName{"AlibabaPlatform"},
-							},
-						},
-					},
-				}
-
-				fgAccess := featuregates.NewHardcodedFeatureGateAccess(features.Spec.FeatureGateSelection.CustomNoUpgrade.Enabled, features.Spec.FeatureGateSelection.CustomNoUpgrade.Disabled)
+				fgAccess := createNewDefaultFeatureGateAccess()
 				defaultFeatureGates, err := generateFeatureMap(fgAccess)
 				if err != nil {
 					t.Errorf("could not generate defaultFeatureGates: %v", err)
@@ -255,6 +248,7 @@ func TestFeaturesCustomNoUpgradeRemoveUnmanagedMC(t *testing.T) {
 				},
 			}
 
+			// Ensure the FG Access matches the feature gate.
 			fgAccess := featuregates.NewHardcodedFeatureGateAccess(features.Spec.FeatureGateSelection.CustomNoUpgrade.Enabled, features.Spec.FeatureGateSelection.CustomNoUpgrade.Disabled)
 
 			f := newFixture(t)
@@ -288,6 +282,7 @@ func TestFeaturesCustomNoUpgradeRemoveUnmanagedMC(t *testing.T) {
 			f.featLister = append(f.featLister, features)
 			c := f.newController(fgAccess)
 
+			// Ensure the FG Access matches the feature gate.
 			c.featureGateAccess = featuregates.NewHardcodedFeatureGateAccess(features.Spec.FeatureGateSelection.CustomNoUpgrade.Enabled, features.Spec.FeatureGateSelection.CustomNoUpgrade.Disabled)
 
 			mcCustom, err := c.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), mcs3, metav1.CreateOptions{})
