@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -35,6 +36,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	v1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+	opv1 "github.com/openshift/api/operator/v1"
 
 	mcoac "github.com/openshift/client-go/operator/applyconfigurations/operator/v1"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
@@ -1413,7 +1415,7 @@ func (optr *Operator) syncMachineConfigServer(config *renderConfig) error {
 
 // syncRequiredMachineConfigPools ensures that all the nodes in machineconfigpools labeled with requiredForUpgradeMachineConfigPoolLabelKey
 // have updated to the latest configuration.
-func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
+func (optr *Operator) syncRequiredMachineConfigPools(config *renderConfig) error {
 	var lastErr error
 
 	ctx := context.TODO()
@@ -1435,6 +1437,12 @@ func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
 	// Let's start with a 10 minute timeout per "required" node.
 	if err := wait.PollUntilContextTimeout(ctx, time.Second, time.Duration(requiredMachineCount*10)*time.Minute, false, func(ctx context.Context) (bool, error) {
 		if err := optr.syncMetrics(); err != nil {
+			return false, err
+		}
+		// This was needed in-case the cluster is mid-update when a new MachineConfiguration was applied.
+		// This prevents the need to wait for all the master nodes to update before the MachineConfiguration
+		// status is updated.
+		if err := optr.syncMachineConfiguration(config); err != nil {
 			return false, err
 		}
 		if lastErr != nil {
@@ -1960,11 +1968,13 @@ func cmToData(cm *corev1.ConfigMap, key string) ([]byte, error) {
 func (optr *Operator) syncMachineConfiguration(_ *renderConfig) error {
 
 	// Grab the cluster CR
-	_, err := optr.mcopLister.Get(ctrlcommon.MCOOperatorKnobsObjectName)
+	mcop, err := optr.mcopLister.Get(ctrlcommon.MCOOperatorKnobsObjectName)
 	if err != nil {
 		// Create one if it doesn't exist
 		if apierrors.IsNotFound(err) {
 			klog.Info("MachineConfiguration object doesn't exist; a new one will be created")
+			// Using server-side apply here as the NodeDisruption API has a rule technicality which prevents apply using a template manifest like the MCO typically does
+			// [spec.nodeDisruptionPolicy.sshkey.actions: Required value, <nil>: Invalid value: "null"]
 			p := mcoac.MachineConfiguration(ctrlcommon.MCOOperatorKnobsObjectName).WithSpec(mcoac.MachineConfigurationSpec().WithManagementState("Managed"))
 			_, err := optr.mcopClient.OperatorV1().MachineConfigurations().Apply(context.TODO(), p, metav1.ApplyOptions{FieldManager: "machine-config-operator"})
 			if err != nil {
@@ -1988,7 +1998,21 @@ func (optr *Operator) syncMachineConfiguration(_ *renderConfig) error {
 		return nil
 	}
 
-	// Do additional processing for feature gate related fields here
+	// Merges the cluster's default node disruption policies with the user defined policies, if any.
+	newNodeDisruptionPolicyStatus := opv1.NodeDisruptionPolicyStatus{
+		ClusterPolicies: apihelpers.MergeClusterPolicies(mcop.Spec.NodeDisruptionPolicy),
+	}
+
+	// Check if any changes are required in the Status before making the API call.
+	if !reflect.DeepEqual(mcop.Status.NodeDisruptionPolicyStatus, newNodeDisruptionPolicyStatus) {
+		klog.Infof("Updating NodeDisruptionPolicy status")
+		mcop.Status.NodeDisruptionPolicyStatus = newNodeDisruptionPolicyStatus
+		_, err = optr.mcopClient.OperatorV1().MachineConfigurations().UpdateStatus(context.TODO(), mcop, metav1.UpdateOptions{})
+		if err != nil {
+			klog.Errorf("NodeDisruptionPolicy status apply failed: %v", err)
+			return nil
+		}
+	}
 
 	return nil
 }
