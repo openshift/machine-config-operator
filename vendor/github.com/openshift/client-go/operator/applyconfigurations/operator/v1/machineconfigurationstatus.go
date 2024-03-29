@@ -6,7 +6,6 @@ package v1
 // with apply.
 type MachineConfigurationStatusApplyConfiguration struct {
 	StaticPodOperatorStatusApplyConfiguration `json:",inline"`
-	NodeDisruptionPolicyStatus                *NodeDisruptionPolicyStatusApplyConfiguration `json:"nodeDisruptionPolicyStatus,omitempty"`
 }
 
 // MachineConfigurationStatusApplyConfiguration constructs an declarative configuration of the MachineConfigurationStatus type for use with
@@ -91,13 +90,5 @@ func (b *MachineConfigurationStatusApplyConfiguration) WithNodeStatuses(values .
 		}
 		b.NodeStatuses = append(b.NodeStatuses, *values[i])
 	}
-	return b
-}
-
-// WithNodeDisruptionPolicyStatus sets the NodeDisruptionPolicyStatus field in the declarative configuration to the given value
-// and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the NodeDisruptionPolicyStatus field is set to the value of the last call.
-func (b *MachineConfigurationStatusApplyConfiguration) WithNodeDisruptionPolicyStatus(value *NodeDisruptionPolicyStatusApplyConfiguration) *MachineConfigurationStatusApplyConfiguration {
-	b.NodeDisruptionPolicyStatus = value
 	return b
 }

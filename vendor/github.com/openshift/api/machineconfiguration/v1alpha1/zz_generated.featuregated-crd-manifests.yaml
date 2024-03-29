@@ -6,9 +6,6 @@ machineconfignodes.machineconfiguration.openshift.io:
   Category: ""
   FeatureGates:
   - MachineConfigNodes
-  FilenameOperatorName: machine-config
-  FilenameOperatorOrdering: "01"
-  FilenameRunLevel: "0000_80"
   GroupName: machineconfiguration.openshift.io
   HasStatus: true
   KindName: MachineConfigNode
@@ -63,32 +60,9 @@ machineconfignodes.machineconfiguration.openshift.io:
     priority: 1
     type: string
   Scope: Cluster
-  ShortNames: null
+  ShortName: ""
+  TargetFilenamePattern: 0000_80_machineconfignodeMARKERS.crd.yaml
   TopLevelFeatureGates:
   - MachineConfigNodes
-  Version: v1alpha1
-
-pinnedimagesets.machineconfiguration.openshift.io:
-  Annotations: {}
-  ApprovedPRNumber: https://github.com/openshift/api/pull/1713
-  CRDName: pinnedimagesets.machineconfiguration.openshift.io
-  Capability: ""
-  Category: ""
-  FeatureGates:
-  - PinnedImages
-  FilenameOperatorName: machine-config
-  FilenameOperatorOrdering: "01"
-  FilenameRunLevel: "0000_80"
-  GroupName: machineconfiguration.openshift.io
-  HasStatus: true
-  KindName: PinnedImageSet
-  Labels:
-    openshift.io/operator-managed: ""
-  PluralName: pinnedimagesets
-  PrinterColumns: []
-  Scope: Cluster
-  ShortNames: null
-  TopLevelFeatureGates:
-  - PinnedImages
   Version: v1alpha1
 

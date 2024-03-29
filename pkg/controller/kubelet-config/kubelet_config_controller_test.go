@@ -420,7 +420,7 @@ func TestKubeletConfigCreate(t *testing.T) {
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
-			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"AlibabaPlatform"}, nil)
+			fgAccess := createNewDefaultFeatureGateAccess()
 			f.newController(fgAccess)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
@@ -455,7 +455,7 @@ func TestKubeletConfigMultiCreate(t *testing.T) {
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
-			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"AlibabaPlatform"}, nil)
+			fgAccess := createNewDefaultFeatureGateAccess()
 			f.newController(fgAccess)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
@@ -505,7 +505,7 @@ func TestKubeletConfigAutoSizingReserved(t *testing.T) {
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
-			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"AlibabaPlatform"}, nil)
+			fgAccess := createNewDefaultFeatureGateAccess()
 			f.newController(fgAccess)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
@@ -549,7 +549,7 @@ func TestKubeletConfiglogFile(t *testing.T) {
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
-			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"AlibabaPlatform"}, nil)
+			fgAccess := createNewDefaultFeatureGateAccess()
 			f.newController(fgAccess)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
@@ -592,7 +592,7 @@ func TestKubeletConfigUpdates(t *testing.T) {
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
-			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"AlibabaPlatform"}, nil)
+			fgAccess := createNewDefaultFeatureGateAccess()
 			f.newController(fgAccess)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
@@ -749,7 +749,7 @@ func TestKubeletFeatureExists(t *testing.T) {
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "Unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
-			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"AlibabaPlatform"}, nil)
+			fgAccess := createNewDefaultFeatureGateAccess()
 			f.newController(fgAccess)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
@@ -893,7 +893,7 @@ func TestKubeletConfigResync(t *testing.T) {
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
-			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"AlibabaPlatform"}, nil)
+			fgAccess := createNewDefaultFeatureGateAccess()
 			f.newController(fgAccess)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
@@ -958,7 +958,7 @@ func TestAddAnnotationExistingKubeletConfig(t *testing.T) {
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
-			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"AlibabaPlatform"}, nil)
+			fgAccess := createNewDefaultFeatureGateAccess()
 			f.newController(fgAccess)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
@@ -1025,7 +1025,7 @@ func TestCleanUpDuplicatedMC(t *testing.T) {
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
-			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"AlibabaPlatform"}, nil)
+			fgAccess := createNewDefaultFeatureGateAccess()
 			f.newController(fgAccess)
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
