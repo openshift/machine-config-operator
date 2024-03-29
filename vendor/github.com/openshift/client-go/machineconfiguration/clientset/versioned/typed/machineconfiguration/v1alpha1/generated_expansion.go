@@ -3,5 +3,3 @@
 package v1alpha1
 
 type MachineConfigNodeExpansion interface{}
-
-type PinnedImageSetExpansion interface{}

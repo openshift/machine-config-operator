@@ -14,7 +14,7 @@ import (
 // Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).
 // +openshift:compatibility-gen:level=1
 // +openshift:api-approved.openshift.io=https://github.com/openshift/api/pull/495
-// +openshift:file-pattern=cvoRunLevel=0000_00,operatorName=cluster-version-operator,operatorOrdering=01
+// +openshift:file-pattern=0000_00_cluster-version-operator_01_clusterversionMARKERS.crd.yaml
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:path=clusterversions,scope=Cluster

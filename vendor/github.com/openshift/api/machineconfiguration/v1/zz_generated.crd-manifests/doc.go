@@ -1,1 +1,0 @@
-package machineconfiguration_v1_crdmanifests

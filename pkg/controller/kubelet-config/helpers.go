@@ -11,6 +11,7 @@ import (
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	"github.com/imdario/mergo"
 	osev1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -18,6 +19,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/klog/v2"
 	kubeletconfigv1beta1 "k8s.io/kubelet/config/v1beta1"
@@ -99,6 +101,22 @@ func createNewDefaultFeatureGate() *osev1.FeatureGate {
 			},
 		},
 	}
+}
+
+func createNewDefaultFeatureGateAccess() featuregates.FeatureGateAccess {
+	defaultFeatures := osev1.FeatureSets[osev1.Default]
+
+	enabled, disabled := sets.New[osev1.FeatureGateName](), sets.New[osev1.FeatureGateName]()
+
+	for _, feature := range defaultFeatures.Enabled {
+		enabled.Insert(feature.FeatureGateAttributes.Name)
+	}
+
+	for _, feature := range defaultFeatures.Disabled {
+		disabled.Insert(feature.FeatureGateAttributes.Name)
+	}
+
+	return featuregates.NewHardcodedFeatureGateAccess(sets.List(enabled), sets.List(disabled))
 }
 
 func createNewDefaultNodeconfig() *osev1.Node {
