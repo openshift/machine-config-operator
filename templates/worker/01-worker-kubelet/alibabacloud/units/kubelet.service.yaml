@@ -10,6 +10,7 @@ contents: |
   [Service]
   Type=notify
   ExecStartPre=/bin/mkdir --parents /etc/kubernetes/manifests
+  ExecStartPre=-/usr/sbin/restorecon /usr/local/bin/kubenswrapper /usr/bin/kubensenter``
   ExecStartPre=/bin/rm -f /var/lib/kubelet/cpu_manager_state
   ExecStartPre=/bin/rm -f /var/lib/kubelet/memory_manager_state
 {{- if eq .IPFamilies "IPv6"}}
