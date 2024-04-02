@@ -60,18 +60,13 @@ type Controller struct {
 
 	mcoCmLister          corelisterv1.ConfigMapLister
 	mapiMachineSetLister machinelisters.MachineSetLister
-	maoSecretLister      corelisterv1.SecretLister
 	infraLister          configlistersv1.InfrastructureLister
-	nodeLister           corelisterv1.NodeLister
 	mcopLister           mcoplistersv1.MachineConfigurationLister
 
 	mcoCmListerSynced          cache.InformerSynced
 	mapiMachineSetListerSynced cache.InformerSynced
-	maoSecretListerSynced      cache.InformerSynced
 	infraListerSynced          cache.InformerSynced
-	nodeListerSynced           cache.InformerSynced
-
-	mcopListerSynced cache.InformerSynced
+	mcopListerSynced           cache.InformerSynced
 
 	syncHandler func(ms string) error
 
@@ -93,6 +88,9 @@ const (
 	// Labels and Annotations required for determining architecture of a machineset
 	MachineSetArchAnnotationKey = "capacity.cluster-autoscaler.kubernetes.io/labels"
 	ArchLabelKey                = "kubernetes.io/arch="
+
+	// Name of managed worker secret
+	ManagedWorkerSecretName = "worker-user-data-managed"
 )
 
 // New returns a new machine-set-boot-image controller.
@@ -101,9 +99,7 @@ func New(
 	machineClient machineclientset.Interface,
 	mcoCmInfomer coreinformersv1.ConfigMapInformer,
 	mapiMachineSetInformer mapimachineinformers.MachineSetInformer,
-	maoSecretInformer coreinformersv1.SecretInformer,
 	infraInformer configinformersv1.InfrastructureInformer,
-	nodeInformer coreinformersv1.NodeInformer,
 	mcopClient mcopclientset.Interface,
 	mcopInformer mcopinformersv1.MachineConfigurationInformer,
 	featureGateAccess featuregates.FeatureGateAccess,
@@ -139,16 +135,12 @@ func New(
 
 	ctrl.mcoCmLister = mcoCmInfomer.Lister()
 	ctrl.mapiMachineSetLister = mapiMachineSetInformer.Lister()
-	ctrl.maoSecretLister = maoSecretInformer.Lister()
 	ctrl.infraLister = infraInformer.Lister()
-	ctrl.nodeLister = nodeInformer.Lister()
 	ctrl.mcopLister = mcopInformer.Lister()
 
 	ctrl.mcoCmListerSynced = mcoCmInfomer.Informer().HasSynced
 	ctrl.mapiMachineSetListerSynced = mapiMachineSetInformer.Informer().HasSynced
-	ctrl.maoSecretListerSynced = maoSecretInformer.Informer().HasSynced
 	ctrl.infraListerSynced = infraInformer.Informer().HasSynced
-	ctrl.nodeListerSynced = nodeInformer.Informer().HasSynced
 	ctrl.mcopListerSynced = mcopInformer.Informer().HasSynced
 
 	ctrl.featureGateAccess = featureGateAccess
@@ -181,8 +173,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.mcoCmListerSynced, ctrl.mapiMachineSetListerSynced, ctrl.maoSecretListerSynced, ctrl.infraListerSynced,
-		ctrl.nodeListerSynced, ctrl.mcopListerSynced) {
+	if !cache.WaitForCacheSync(stopCh, ctrl.mcoCmListerSynced, ctrl.mapiMachineSetListerSynced, ctrl.infraListerSynced, ctrl.mcopListerSynced) {
 		return
 	}
 
@@ -703,7 +694,12 @@ func reconcileGCP(machineSet *machinev1beta1.MachineSet, configMap *corev1.Confi
 		}
 	}
 
-	// TODO: Check if referenced secret is spec 3 here
+	// For now, hardcode to the managed worker secret, until Custom Pool Booting is implemented. When that happens, this will have to
+	// respect the pool this machineset is targeted for.
+	if newProviderSpec.UserDataSecret.Name != ManagedWorkerSecretName {
+		newProviderSpec.UserDataSecret.Name = ManagedWorkerSecretName
+		patchRequired = true
+	}
 
 	// If patch is required, marshal the new providerspec into the machineset
 	if patchRequired {
