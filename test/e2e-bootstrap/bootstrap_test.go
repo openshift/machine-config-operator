@@ -14,6 +14,7 @@ import (
 	"github.com/ghodss/yaml"
 	configv1 "github.com/openshift/api/config/v1"
 	_ "github.com/openshift/api/config/v1/zz_generated.crd-manifests"
+	configv1alpha1 "github.com/openshift/api/config/v1alpha1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	_ "github.com/openshift/api/operator/v1alpha1/zz_generated.crd-manifests"
