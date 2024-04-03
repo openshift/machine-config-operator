@@ -53,6 +53,17 @@ import (
 )
 
 const (
+	// Name of the etc-pki-entitlement secret from the openshift-config-managed namespace.
+	etcPkiEntitlementSecretName = "etc-pki-entitlement"
+
+	// Name of the etc-pki-rpm-gpg secret.
+	etcPkiRpmGpgSecretName = "etc-pki-rpm-gpg"
+
+	// Name of the etc-yum-repos-d ConfigMap.
+	etcYumReposDConfigMapName = "etc-yum-repos-d"
+)
+
+const (
 	targetMachineConfigPoolLabel = "machineconfiguration.openshift.io/targetMachineConfigPool"
 	// TODO(zzlotnik): Is there a constant for this someplace else?
 	desiredConfigLabel = "machineconfiguration.openshift.io/desiredConfig"
@@ -472,6 +483,20 @@ func (ctrl *Controller) customBuildPodUpdater(pod *corev1.Pod) error {
 
 	ps := newPoolState(pool)
 
+	// We cannot solely rely upon the pod phase to determine whether the build
+	// pod is in an error state. This is because it is possible for the build
+	// container to enter an error state while the wait-for-done container is
+	// still running. The pod phase in this state will still be "Running" as
+	// opposed to error.
+	if isBuildPodError(pod) {
+		if err := ctrl.markBuildFailed(ps); err != nil {
+			return err
+		}
+
+		ctrl.enqueueMachineConfigPool(pool)
+		return nil
+	}
+
 	switch pod.Status.Phase {
 	case corev1.PodPending:
 		if !ps.IsBuildPending() {
@@ -501,6 +526,22 @@ func (ctrl *Controller) customBuildPodUpdater(pod *corev1.Pod) error {
 
 	ctrl.enqueueMachineConfigPool(pool)
 	return nil
+}
+
+// Determines if the build pod is in an error state by examining the individual
+// container statuses. Returns true if a single container is in an error state.
+func isBuildPodError(pod *corev1.Pod) bool {
+	for _, container := range pod.Status.ContainerStatuses {
+		if container.State.Waiting != nil && container.State.Waiting.Reason == "ErrImagePull" {
+			return true
+		}
+
+		if container.State.Terminated != nil && container.State.Terminated.ExitCode != 0 {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (ctrl *Controller) handleConfigMapError(pools []*mcfgv1.MachineConfigPool, err error, key interface{}) {
@@ -950,15 +991,67 @@ func (ctrl *Controller) getBuildInputs(ps *poolState) (*buildInputs, error) {
 		return nil, fmt.Errorf("could not get MachineConfig %s: %w", currentMC, err)
 	}
 
+	etcPkiEntitlements, err := ctrl.getOptionalSecret(etcPkiEntitlementSecretName)
+	if err != nil {
+		return nil, err
+	}
+
+	etcPkiRpmGpgKeys, err := ctrl.getOptionalSecret(etcPkiRpmGpgSecretName)
+	if err != nil {
+		return nil, err
+	}
+
+	etcYumReposDConfigs, err := ctrl.getOptionalConfigMap(etcYumReposDConfigMapName)
+	if err != nil {
+		return nil, err
+	}
+
 	inputs := &buildInputs{
-		onClusterBuildConfig: onClusterBuildConfig,
-		osImageURL:           osImageURL,
-		customDockerfiles:    customDockerfiles,
-		pool:                 ps.MachineConfigPool(),
-		machineConfig:        mc,
+		onClusterBuildConfig:  onClusterBuildConfig,
+		osImageURL:            osImageURL,
+		customDockerfiles:     customDockerfiles,
+		pool:                  ps.MachineConfigPool(),
+		machineConfig:         mc,
+		etcPkiEntitlementKeys: etcPkiEntitlements,
+		etcYumReposDConfigs:   etcYumReposDConfigs,
+		etcPkiRpmGpgKeys:      etcPkiRpmGpgKeys,
 	}
 
 	return inputs, nil
+}
+
+// Fetches an optional secret to inject into the build. Returns a nil error if
+// the secret is not found.
+func (ctrl *Controller) getOptionalSecret(secretName string) (*corev1.Secret, error) {
+	optionalSecret, err := ctrl.kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(context.TODO(), secretName, metav1.GetOptions{})
+	if err == nil {
+		klog.Infof("Optional build secret %q found, will include in build", secretName)
+		return optionalSecret, nil
+	}
+
+	if k8serrors.IsNotFound(err) {
+		klog.Infof("Could not find optional secret %q, will not include in build", secretName)
+		return nil, nil
+	}
+
+	return nil, fmt.Errorf("could not retrieve optional secret: %s: %w", secretName, err)
+}
+
+// Fetches an optional ConfigMap to inject into the build. Returns a nil error if
+// the ConfigMap is not found.
+func (ctrl *Controller) getOptionalConfigMap(configmapName string) (*corev1.ConfigMap, error) {
+	optionalConfigMap, err := ctrl.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), configmapName, metav1.GetOptions{})
+	if err == nil {
+		klog.Infof("Optional build ConfigMap %q found, will include in build", configmapName)
+		return optionalConfigMap, nil
+	}
+
+	if k8serrors.IsNotFound(err) {
+		klog.Infof("Could not find ConfigMap %q, will not include in build", configmapName)
+		return nil, nil
+	}
+
+	return nil, fmt.Errorf("could not retrieve optional ConfigMap: %s: %w", configmapName, err)
 }
 
 // Prepares all of the objects needed to perform an image build.

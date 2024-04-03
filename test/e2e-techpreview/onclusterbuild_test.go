@@ -2,6 +2,7 @@ package e2e_techpreview_test
 
 import (
 	"context"
+	_ "embed"
 	"flag"
 	"strings"
 	"testing"
@@ -31,18 +32,28 @@ const (
 
 	// The name of the global pull secret copy to use for the tests.
 	globalPullSecretCloneName string = "global-pull-secret-copy"
-
-	// The custom Dockerfile content to build for the tests.
-	cowsayDockerfile string = `FROM quay.io/centos/centos:stream9 AS centos
-RUN dnf install -y epel-release
-FROM configs AS final
-COPY --from=centos /etc/yum.repos.d /etc/yum.repos.d
-COPY --from=centos /etc/pki/rpm-gpg/RPM-GPG-KEY-* /etc/pki/rpm-gpg/
-RUN sed -i 's/\$stream/9-stream/g' /etc/yum.repos.d/centos*.repo && \
-    rpm-ostree install cowsay`
 )
 
 var skipCleanup bool
+
+var (
+	// Provides a Containerfile that installs cowsayusing the Centos Stream 9
+	// EPEL repository to do so without requiring any entitlements.
+	//go:embed Containerfile.cowsay
+	cowsayDockerfile string
+
+	// Provides a Containerfile that installs Buildah from the default RHCOS RPM
+	// repositories. If the installation succeeds, the entitlement certificate is
+	// working.
+	//go:embed Containerfile.entitled
+	entitledDockerfile string
+
+	// Provides a Containerfile that works similarly to the cowsay Dockerfile
+	// with the exception that the /etc/yum.repos.d and /etc/pki/rpm-gpg key
+	// content is mounted into the build context by the BuildController.
+	//go:embed Containerfile.yum-repos-d
+	yumReposDockerfile string
+)
 
 func init() {
 	// Skips running the cleanup functions. Useful for debugging tests.
@@ -62,36 +73,84 @@ type onClusterBuildTestOpts struct {
 
 	// What MachineConfigPool name to use for the test.
 	poolName string
-}
 
-// Tests that an on-cluster build can be performed with the OpenShift Image Builder.
-func TestOnClusterBuildsOpenshiftImageBuilder(t *testing.T) {
-	runOnClusterBuildTest(t, onClusterBuildTestOpts{
-		imageBuilderType: build.OpenshiftImageBuilder,
-		poolName:         layeredMCPName,
-		customDockerfiles: map[string]string{
-			layeredMCPName: cowsayDockerfile,
-		},
-	})
+	// Use RHEL entitlements
+	useEtcPkiEntitlement bool
+
+	// Inject YUM repo information from a Centos 9 stream container
+	useYumRepos bool
 }
 
 // Tests tha an on-cluster build can be performed with the Custom Pod Builder.
 func TestOnClusterBuildsCustomPodBuilder(t *testing.T) {
 	runOnClusterBuildTest(t, onClusterBuildTestOpts{
-		imageBuilderType: build.CustomPodImageBuilder,
-		poolName:         layeredMCPName,
+		poolName: layeredMCPName,
 		customDockerfiles: map[string]string{
 			layeredMCPName: cowsayDockerfile,
 		},
 	})
+}
+
+// This test extracts the /etc/yum.repos.d and /etc/pki/rpm-gpg content from a
+// Centos Stream 9 image and injects them into the MCO namespace. It then
+// performs a build with the expectation that these artifacts will be used,
+// simulating a build where someone has added this content; usually a Red Hat
+// Satellite user.
+func TestYumReposBuilds(t *testing.T) {
+	runOnClusterBuildTest(t, onClusterBuildTestOpts{
+		poolName: layeredMCPName,
+		customDockerfiles: map[string]string{
+			layeredMCPName: yumReposDockerfile,
+		},
+		useYumRepos: true,
+	})
+}
+
+// Clones the etc-pki-entitlement certificate from the openshift-config-managed
+// namespace into the MCO namespace. Then performs an on-cluster layering build
+// which should consume the entitlement certificates.
+func TestEntitledBuilds(t *testing.T) {
+	skipOnOKD(t)
+
+	runOnClusterBuildTest(t, onClusterBuildTestOpts{
+		poolName: layeredMCPName,
+		customDockerfiles: map[string]string{
+			layeredMCPName: entitledDockerfile,
+		},
+		useEtcPkiEntitlement: true,
+	})
+}
+
+// Performs the same build as above, but deploys the built image to a node on
+// that cluster and attempts to run the binary installed in the process (in
+// this case, buildah).
+func TestEntitledBuildsRollsOutImage(t *testing.T) {
+	skipOnOKD(t)
+
+	imagePullspec := runOnClusterBuildTest(t, onClusterBuildTestOpts{
+		poolName: layeredMCPName,
+		customDockerfiles: map[string]string{
+			layeredMCPName: entitledDockerfile,
+		},
+		useEtcPkiEntitlement: true,
+	})
+
+	cs := framework.NewClientSet("")
+	node := helpers.GetRandomNode(t, cs, "worker")
+	t.Cleanup(makeIdempotentAndRegister(t, func() {
+		helpers.DeleteNodeAndMachine(t, cs, node)
+	}))
+	helpers.LabelNode(t, cs, node, helpers.MCPNameToRole(layeredMCPName))
+	helpers.WaitForNodeImageChange(t, cs, node, imagePullspec)
+
+	t.Log(helpers.ExecCmdOnNode(t, cs, node, "chroot", "/rootfs", "buildah", "--help"))
 }
 
 // Tests that an on-cluster build can be performed and that the resulting image
 // is rolled out to an opted-in node.
 func TestOnClusterBuildRollsOutImage(t *testing.T) {
 	imagePullspec := runOnClusterBuildTest(t, onClusterBuildTestOpts{
-		imageBuilderType: build.OpenshiftImageBuilder,
-		poolName:         layeredMCPName,
+		poolName: layeredMCPName,
 		customDockerfiles: map[string]string{
 			layeredMCPName: cowsayDockerfile,
 		},
@@ -111,20 +170,35 @@ func TestOnClusterBuildRollsOutImage(t *testing.T) {
 // Sets up and performs an on-cluster build for a given set of parameters.
 // Returns the built image pullspec for later consumption.
 func runOnClusterBuildTest(t *testing.T, testOpts onClusterBuildTestOpts) string {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
 	cs := framework.NewClientSet("")
 
 	t.Logf("Running with ImageBuilder type: %s", testOpts.imageBuilderType)
 
+	// Create all of the objects needed to set up our test.
 	prepareForTest(t, cs, testOpts)
 
+	// Opt the test MachineConfigPool into layering to signal the build to begin.
 	optPoolIntoLayering(t, cs, testOpts.poolName)
 
 	t.Logf("Wait for build to start")
+	var pool *mcfgv1.MachineConfigPool
 	waitForPoolToReachState(t, cs, testOpts.poolName, func(mcp *mcfgv1.MachineConfigPool) bool {
+		pool = mcp
 		return ctrlcommon.NewLayeredPoolState(mcp).IsBuilding()
 	})
 
 	t.Logf("Build started! Waiting for completion...")
+
+	// The pod log collection blocks the main Goroutine since we follow the logs
+	// for each container in the build pod. So they must run in a separate
+	// Goroutine so that the rest of the test can continue.
+	go func() {
+		require.NoError(t, streamBuildPodLogsToFile(ctx, t, cs, pool))
+	}()
+
 	imagePullspec := ""
 	waitForPoolToReachState(t, cs, testOpts.poolName, func(mcp *mcfgv1.MachineConfigPool) bool {
 		lps := ctrlcommon.NewLayeredPoolState(mcp)
@@ -134,6 +208,7 @@ func runOnClusterBuildTest(t *testing.T, testOpts onClusterBuildTestOpts) string
 		}
 
 		if lps.IsBuildFailure() {
+			require.NoError(t, writeBuildArtifactsToFiles(t, cs, pool))
 			t.Fatalf("Build unexpectedly failed.")
 		}
 
@@ -189,6 +264,7 @@ func optPoolIntoLayering(t *testing.T, cs *framework.ClientSet, pool string) fun
 // - Gets the Docker Builder secret name from the MCO namespace.
 // - Creates the imagestream to use for the test.
 // - Clones the global pull secret into the MCO namespace.
+// - If requrested, clones the RHEL entitlement secret into the MCO namespace.
 // - Creates the on-cluster-build-config ConfigMap.
 // - Creates the target MachineConfigPool and waits for it to get a rendered config.
 // - Creates the on-cluster-build-custom-dockerfile ConfigMap.
@@ -199,14 +275,39 @@ func prepareForTest(t *testing.T, cs *framework.ClientSet, testOpts onClusterBui
 	pushSecretName, err := getBuilderPushSecretName(cs)
 	require.NoError(t, err)
 
+	// If the test requires RHEL entitlements, clone them from
+	// "etc-pki-entitlement" in the "openshift-config-managed" namespace.
+	// If we want to use RHEL entit
+	if testOpts.useEtcPkiEntitlement {
+		t.Cleanup(copyEntitlementCerts(t, cs))
+	}
+
+	// If the test requires /etc/yum.repos.d and /etc/pki/rpm-gpg, pull a Centos
+	// Stream 9 container image and populate them from there. This is intended to
+	// emulate the Red Hat Satellite enablement process, but does not actually
+	// require any Red Hat Satellite creds to work.
+	if testOpts.useYumRepos {
+		t.Cleanup(injectYumRepos(t, cs))
+	}
+
+	// Creates an imagestream to push the built OS image to. This is so that the
+	// test may be self-contained within the test cluster.
 	imagestreamName := "os-image"
 	t.Cleanup(createImagestream(t, cs, imagestreamName))
 
+	// Default to the custom pod builder image builder type.
+	if testOpts.imageBuilderType == "" {
+		testOpts.imageBuilderType = build.CustomPodImageBuilder
+	}
+
+	// Copy the global pull secret into the MCO namespace.
 	t.Cleanup(copyGlobalPullSecret(t, cs))
 
+	// Get the final image pullspec from the imagestream that we just created.
 	finalPullspec, err := getImagestreamPullspec(cs, imagestreamName)
 	require.NoError(t, err)
 
+	// Set up the on-cluster-build-config ConfigMap.
 	cmCleanup := createConfigMap(t, cs, &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      build.OnClusterBuildConfigMapName,
@@ -222,10 +323,13 @@ func prepareForTest(t *testing.T, cs *framework.ClientSet, testOpts onClusterBui
 
 	t.Cleanup(cmCleanup)
 
+	// Create the MachineConfigPool that we intend to target for the test.
 	t.Cleanup(makeIdempotentAndRegister(t, helpers.CreateMCP(t, cs, testOpts.poolName)))
 
+	// Create the on-cluster-build-custom-dockerfile ConfigMap.
 	t.Cleanup(createCustomDockerfileConfigMap(t, cs, testOpts.customDockerfiles))
 
+	// Wait for our targeted MachineConfigPool to get a base MachineConfig.
 	_, err = helpers.WaitForRenderedConfig(t, cs, testOpts.poolName, "00-worker")
 	require.NoError(t, err)
 }
@@ -239,7 +343,6 @@ func TestSSHKeyAndPasswordForOSBuilder(t *testing.T) {
 
 	// prepare for on cluster build test
 	prepareForTest(t, cs, onClusterBuildTestOpts{
-		imageBuilderType:  build.OpenshiftImageBuilder,
 		poolName:          layeredMCPName,
 		customDockerfiles: map[string]string{},
 	})
