@@ -12,13 +12,11 @@ import (
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 
 	"github.com/ghodss/yaml"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-
 	configv1 "github.com/openshift/api/config/v1"
-	configv1alpha1 "github.com/openshift/api/config/v1alpha1"
+	_ "github.com/openshift/api/config/v1/zz_generated.crd-manifests"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
+	_ "github.com/openshift/api/operator/v1alpha1/zz_generated.crd-manifests"
 	featuregatescontroller "github.com/openshift/cluster-config-operator/pkg/operator/featuregates"
 	"github.com/openshift/machine-config-operator/internal/clients"
 	"github.com/openshift/machine-config-operator/pkg/controller/bootstrap"
@@ -31,6 +29,8 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/openshift/machine-config-operator/test/helpers"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -61,6 +61,7 @@ type fixture struct {
 }
 
 func TestE2EBootstrap(t *testing.T) {
+
 	ctx := context.Background()
 
 	testEnv := framework.NewTestEnv(t)
@@ -553,6 +554,7 @@ func createClusterVersion(t *testing.T, clientSet *framework.ClientSet, objs ...
 // correct status to allow the controllers to proceed.
 func ensureFeatureGate(t *testing.T, clientSet *framework.ClientSet, objs ...runtime.Object) {
 	ctx := context.Background()
+
 	var controllerConfig *mcfgv1.ControllerConfig
 	for _, obj := range objs {
 		if cc, ok := obj.(*mcfgv1.ControllerConfig); ok {
@@ -569,8 +571,19 @@ func ensureFeatureGate(t *testing.T, clientSet *framework.ClientSet, objs ...run
 		t.Fatal("FeatureGate cluster not found, bootstrap data should contain at least 1 FeatureGate")
 	}
 
-	// Set up the current controllerconfig image with the current feature gate selection.
-	currentDetails, err := featuregatescontroller.FeaturesGateDetailsFromFeatureSets(configv1.FeatureSets, currentFg, controllerConfig.Spec.ReleaseImage)
+	currentFeatureSet := currentFg.Spec.FeatureSet
+
+	SelfManaged := configv1.ClusterProfileName("include.release.openshift.io/self-managed-high-availability")
+	if err != nil {
+		t.Fatalf("Error retrieving current feature gates: %v", err)
+	}
+	featureGateEnabledDisabled, err := configv1.FeatureSets(configv1.ClusterProfileName(SelfManaged), currentFeatureSet)
+	require.NoError(t, err)
+
+	featureSetMap := map[configv1.FeatureSet]*configv1.FeatureGateEnabledDisabled{
+		currentFeatureSet: featureGateEnabledDisabled,
+	}
+	currentDetails, err := featuregatescontroller.FeaturesGateDetailsFromFeatureSets(featureSetMap, currentFg, controllerConfig.Spec.ReleaseImage)
 	require.NoError(t, err)
 
 	rawDetails := *currentDetails

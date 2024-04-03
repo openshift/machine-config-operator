@@ -5,7 +5,9 @@ import (
 	"testing"
 
 	configv1 "github.com/openshift/api/config/v1"
+	osev1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/require"
@@ -74,7 +76,7 @@ func TestRunKubeletBootstrap(t *testing.T) {
 				},
 			}
 
-			fgAccess := createNewDefaultFeatureGateAccess()
+			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"AlibabaPlatform"}, nil)
 			mcs, err := RunKubeletBootstrap("../../../templates", cfgs, cc, fgAccess, nil, pools)
 			require.NoError(t, err)
 			require.Len(t, mcs, len(cfgs))
@@ -199,8 +201,7 @@ func TestAddKubeletCfgAfterBootstrapKubeletCfg(t *testing.T) {
 	for _, platform := range []configv1.PlatformType{configv1.AWSPlatformType, configv1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
-
-			fgAccess := createNewDefaultFeatureGateAccess()
+			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"AlibabaPlatform"}, nil)
 			f.newController(fgAccess)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
