@@ -486,7 +486,7 @@ func (ctrl *Controller) syncMachineResource(key string) error {
 	// stored is "0.0.1-snapshot" and does not reflect the correct value. Tracked in this bug https://issues.redhat.com/browse/OCPBUGS-19824
 	// The current hash and version check should be enough to skate by for now, but fixing this would be additional safety - djoshy
 
-	// When adding support for mulitple kinds of machine resources, the "key" format can be updated to enclose the kind of machine resource. Once decoded,
+	// When adding support for multiple kinds of machine resources, the "key" format can be updated to enclose the kind of machine resource. Once decoded,
 	// an appropriate processing function can be called. For now only MAPI machinesets are supported, so proceed assuming that.
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
