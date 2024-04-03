@@ -576,7 +576,7 @@ func calculatePostConfigChangeActionFromMCDiffs(diffFileSet []string) (actions [
 		// We probably don't want to use this exact path because NMState is
 		// planning to add a service that applies configs from it too, and we
 		// want to make sure our service is the only one processing the configs.
-		"/etc/nmstate",
+		"/etc/nmstate/openshift",
 	}
 	filesPostConfigChangeActionReloadCrio := []string{
 		constants.ContainerRegistryConfPath,
