@@ -417,6 +417,18 @@ func (ctrl *Controller) updateConfigMap(old, new interface{}) {
 	}
 }
 
+// Determines if we have a graceful recovery plan for a failed build based upon reasons behind a build failure
+// If yes, retry build on the spot by labeling the ppol with machineconfiguration.openshift.io/rebuildImage label
+// If no, return false and degrade the pool afterwards
+func (ctrl *Controller) shouldWeRetryBuild(ps *poolState, build *buildv1.Build) bool {
+	switch build.Status.Reason {
+	case buildv1.StatusReasonBuildPodDeleted:
+		ps.pool.Labels[ctrlcommon.RebuildPoolLabel] = ""
+		return true
+	}
+	return false
+}
+
 // Reconciles the MachineConfigPool state with the state of an OpenShift Image
 // Builder object.
 func (ctrl *Controller) imageBuildUpdater(build *buildv1.Build) error {
@@ -447,9 +459,13 @@ func (ctrl *Controller) imageBuildUpdater(build *buildv1.Build) error {
 			err = ctrl.markBuildSucceeded(ps)
 		}
 	case buildv1.BuildPhaseFailed, buildv1.BuildPhaseError, buildv1.BuildPhaseCancelled:
-		// If we've failed, errored, or cancelled, we need to update the pool to indicate that.
-		if !ps.IsBuildFailure() {
-			err = ctrl.markBuildFailed(ps)
+		klog.Infof("Build (%s) is %s due to %s", build.Name, build.Status.Phase, build.Status.Reason)
+		retryBuild := shouldWeRetryBuild(ps, build)
+		if !retryBuild {
+			// If we've failed, errored, or cancelled, we need to update the pool to indicate that.
+			if !ps.IsBuildFailure() {
+				err = ctrl.markBuildFailed(ps)
+			}
 		}
 	}
 
@@ -1342,13 +1358,9 @@ func canPoolBuild(ps *poolState) bool {
 	return true
 }
 
-// Checks our pool to see if we need to re-trigger a build on a specific pool. We base this off of a few criteria:
-// 1. Is the pool opted into layering?
-// 2. Is the pool degraded?
-// 3. Is our build in a specific state and the reason?
-//
-// Returns true if we are able to build.
-func canPoolRetriggerBuild(ps *poolState) bool {
+// Checks our pool to see if we can restart a build on a specific pool.
+// Returns true if we are able to restart the build.
+func canPoolRestartBuild(ps *poolState) bool {
 	// If we don't have a layered pool, we should not re-trigger build.
 	if !ps.IsLayered() {
 		return false
@@ -1358,10 +1370,6 @@ func canPoolRetriggerBuild(ps *poolState) bool {
 	if ps.IsAnyDegraded() {
 		return false
 	}
-
-	// If the pool is in any of these states, we should not retry build.
-
-	// If the build fails with these reasons, we should not retry build
 
 	return true
 }
@@ -1397,7 +1405,7 @@ func shouldWeDoABuild(builder interface {
 func shouldWeRebuild(oldPool, curPool *mcfgv1.MachineConfigPool) bool {
 	ps := newPoolState(curPool)
 
-	poolStateSuggestsReBuild := canPoolRetriggerBuild(ps) &&
+	poolStateSuggestsReBuild := canPoolRestartBuild(ps) &&
 		// If we have a config change interrupting the current running build, we
 		// should restart the build.
 		(isPoolConfigChange(oldPool, curPool) && !ps.HasBuildObjectForCurrentMachineConfig())
