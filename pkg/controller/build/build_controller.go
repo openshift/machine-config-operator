@@ -420,13 +420,17 @@ func (ctrl *Controller) updateConfigMap(old, new interface{}) {
 // Determines if we have a graceful recovery plan for a failed build based upon reasons behind a build failure
 // If yes, retry build on the spot by labeling the ppol with machineconfiguration.openshift.io/rebuildImage label
 // If no, return false and degrade the pool afterwards
-func (ctrl *Controller) shouldWeRetryBuild(ps *poolState, build *buildv1.Build) bool {
+func (ctrl *Controller) shouldWeRetryBuild(ps *poolState, build *buildv1.Build) (bool, error) {
 	switch build.Status.Reason {
 	case buildv1.StatusReasonBuildPodDeleted:
 		ps.pool.Labels[ctrlcommon.RebuildPoolLabel] = ""
-		return true
+		err := ctrl.updatePoolAndSyncAvailableStatus(ps.pool)
+		if err != nil {
+			return false, fmt.Errorf("could not update pool with rebuild label for build failur recovery: %v", err)
+		}
+		return true, nil
 	}
-	return false
+	return false, nil
 }
 
 // Reconciles the MachineConfigPool state with the state of an OpenShift Image
@@ -460,7 +464,10 @@ func (ctrl *Controller) imageBuildUpdater(build *buildv1.Build) error {
 		}
 	case buildv1.BuildPhaseFailed, buildv1.BuildPhaseError, buildv1.BuildPhaseCancelled:
 		klog.Infof("Build (%s) is %s due to %s", build.Name, build.Status.Phase, build.Status.Reason)
-		retryBuild := shouldWeRetryBuild(ps, build)
+		retryBuild, err := ctrl.shouldWeRetryBuild(ps, build)
+		if err != nil {
+			return err
+		}
 		if !retryBuild {
 			// If we've failed, errored, or cancelled, we need to update the pool to indicate that.
 			if !ps.IsBuildFailure() {
@@ -1009,8 +1016,20 @@ func (ctrl *Controller) prepareForBuild(inputs *buildInputs) (ImageBuildRequest,
 }
 
 func (ctrl *Controller) restartBuildForMachineConfigPool(oldPoolState, newPoolState *poolState) error {
-	if err := ctrl.postBuildCleanup(oldPoolState.MachineConfigPool(), true); err != nil {
+	// Delete FAILED build attempts and builds
+	// Delete rendered containerfile, MC, configmaps etc.
+	// Delete the actual build object itself.
+	// If we are rebuilding, we cannot ignore DNE. All of these objects should exist.
+	if err := ctrl.postBuildCleanup(oldPoolState.MachineConfigPool(), false); err != nil {
 		return fmt.Errorf("could not delete build for MachineConfigPool %s: %w", oldPoolState.Name(), err)
+	}
+	// If the restart is triggered by a rebuild label, we shall also remove annotation
+	if ctrlcommon.DoARebuild(oldPoolState.MachineConfigPool()) {
+		delete(oldPoolState.MachineConfigPool().Labels, ctrlcommon.RebuildPoolLabel)
+		err := ctrl.updatePoolAndSyncAvailableStatus(oldPoolState.MachineConfigPool())
+		if err != nil {
+			return fmt.Errorf("could not update pool when triggering a rebuild: %v", err)
+		}
 	}
 
 	return ctrl.startBuildForMachineConfigPool(newPoolState)
@@ -1020,24 +1039,6 @@ func (ctrl *Controller) restartBuildForMachineConfigPool(oldPoolState, newPoolSt
 // build, and updates the MachineConfigPool with an object reference for the
 // build pod.
 func (ctrl *Controller) startBuildForMachineConfigPool(ps *poolState) error {
-
-	if ctrlcommon.DoARebuild(ps.pool) {
-		// delete FAILED build attempts and builds
-		// delete rendered containerfile, MC, configmaps etc.
-		// Delete the actual build object itself.
-		// if we are rebuilding, we cannot ignore DNE. All of these objects should exist.
-		err := ctrl.postBuildCleanup(ps.pool, false)
-		if err != nil {
-			return fmt.Errorf("Could not update pool when triggering a rebuild: %v", err)
-		}
-		// remove annotation
-		delete(ps.pool.Labels, ctrlcommon.RebuildPoolLabel)
-		err = ctrl.updatePoolAndSyncAvailableStatus(ps.MachineConfigPool())
-		if err != nil {
-			return fmt.Errorf("Could not update pool when triggering a rebuild: %v", err)
-		}
-
-	}
 	inputs, err := ctrl.getBuildInputs(ps)
 	if err != nil {
 		return fmt.Errorf("could not fetch build inputs: %w", err)
@@ -1246,7 +1247,7 @@ func (ctrl *Controller) updateMachineConfigPool(old, cur interface{}) {
 			return
 		}
 	// We need to do a build.
-	case doABuild || (ctrlcommon.IsLayeredPool(curPool) && ctrlcommon.DoARebuild(curPool)):
+	case doABuild:
 		klog.V(4).Infof("MachineConfigPool %s has changed, requiring a build", curPool.Name)
 		if err := ctrl.startBuildForMachineConfigPool(newPoolState(curPool)); err != nil {
 			klog.Errorln(err)
@@ -1255,7 +1256,7 @@ func (ctrl *Controller) updateMachineConfigPool(old, cur interface{}) {
 		}
 	// We need to restart build due to config change
 	case reBuild:
-		klog.V(4).Infof("MachineConfigPool %s config has changed, requiring a build restart", curPool.Name)
+		klog.V(4).Infof("MachineConfigPool %s requires a build restart", curPool.Name)
 		if err := ctrl.restartBuildForMachineConfigPool(newPoolState(oldPool), newPoolState(curPool)); err != nil {
 			klog.Errorln(err)
 			ctrl.handleErr(err, curPool.Name)
@@ -1360,7 +1361,7 @@ func canPoolBuild(ps *poolState) bool {
 
 // Checks our pool to see if we can restart a build on a specific pool.
 // Returns true if we are able to restart the build.
-func canPoolRestartBuild(ps *poolState) bool {
+func canPoolRebuild(ps *poolState) bool {
 	// If we don't have a layered pool, we should not re-trigger build.
 	if !ps.IsLayered() {
 		return false
@@ -1405,10 +1406,13 @@ func shouldWeDoABuild(builder interface {
 func shouldWeRebuild(oldPool, curPool *mcfgv1.MachineConfigPool) bool {
 	ps := newPoolState(curPool)
 
-	poolStateSuggestsReBuild := canPoolRestartBuild(ps) &&
+	poolStateSuggestsReBuild := canPoolRebuild(ps) &&
 		// If we have a config change interrupting the current running build, we
 		// should restart the build.
-		(isPoolConfigChange(oldPool, curPool) && !ps.HasBuildObjectForCurrentMachineConfig())
+		((isPoolConfigChange(oldPool, curPool) && !ps.HasBuildObjectForCurrentMachineConfig()) ||
+			// If the pool is labeled for a hard rebuild from the customer or
+			// graceful build failure recovery, we should restart the build.
+			(ctrlcommon.DoARebuild(curPool)))
 
 	return poolStateSuggestsReBuild
 }
