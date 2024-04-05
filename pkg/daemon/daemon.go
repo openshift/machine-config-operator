@@ -500,24 +500,11 @@ func ReexecuteForTargetRoot(target string) error {
 	if sourceOsVersion.IsLikeRHEL() && targetOsVersion.IsLikeRHEL() {
 		sourceMajor := sourceOsVersion.BaseVersionMajor()
 		targetMajor := targetOsVersion.BaseVersionMajor()
-		if sourceMajor == "8" && targetMajor == "9" {
-			sourceBinarySuffix = ".rhel9"
-			klog.Info("container is rhel8, target is rhel9")
-		} else if sourceMajor == "9" && targetMajor == "8" {
-			// This code path shouldn't be hit right now because our container image
-			// is built from rhel8, but let's handle it for consistency in the future
-			// when we're likely to switch the container image to RHEL9.  Then
-			// it will be needed for both scaleup from old rhel8 bootimages as well
-			// as the case where a cluster is upgraded from
-			// 4.12 -> 4.14 or beyond and we have a stray worker node still on
-			// 4.12 (rhel8).
+		if sourceMajor == "9" && targetMajor == "8" {
 			sourceBinarySuffix = ".rhel8"
 			klog.Info("container is rhel9, target is rhel8")
 		} else {
-			// Otherwise, we assume that there's no suffixing needed.  Hopefully
-			// by RHEL10 the MCD will have fundamentally changed and we won't be doing the
-			// chroot() thing anymore.
-			klog.Infof("not chrooting for source=rhel-%s target=rhel-%s", sourceMajor, targetMajor)
+			klog.Infof("using appropriate binary for source=rhel-%s target=rhel-%s", sourceMajor, targetMajor)
 		}
 	} else {
 		klog.Info("assuming we can use container binary chroot() to host")
