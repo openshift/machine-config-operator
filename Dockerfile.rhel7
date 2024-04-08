@@ -1,5 +1,5 @@
 # Use RHEL 9 as the primary builder base for the Machine Config Operator
-FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.21-openshift-4.16 AS builder
+FROM registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.21-openshift-4.16 AS builder
 ARG TAGS=""
 WORKDIR /go/src/github.com/openshift/machine-config-operator
 COPY . .
@@ -8,7 +8,7 @@ COPY . .
 RUN make install DESTDIR=./instroot && tar -C instroot -cf instroot.tar .
 
 # Add a RHEL 8 builder to compile the RHEL 8 compatible binaries
-FROM registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.21-openshift-4.16 AS rhel8-builder
+FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.21-openshift-4.16 AS rhel8-builder
 ARG TAGS=""
 WORKDIR /go/src/github.com/openshift/machine-config-operator
 COPY . .
