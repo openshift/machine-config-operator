@@ -100,6 +100,9 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			ctrlctx.ClientBuilder.OperatorClientOrDie(componentName),
 			ctrlctx.OperatorInformerFactory.Operator().V1().MachineConfigurations(),
 			ctrlctx.FeatureGateAccess,
+			ctrlctx.InformerFactory.Machineconfiguration().V1().KubeletConfigs(),
+			ctrlctx.InformerFactory.Machineconfiguration().V1().ContainerRuntimeConfigs(),
+			ctrlctx.ConfigInformerFactory.Config().V1().Nodes(),
 		)
 
 		ctrlctx.InformerFactory.Start(ctrlctx.Stop)
