@@ -12,6 +12,7 @@ import (
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 	corev1lister "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/util/retry"
+	"k8s.io/klog/v2"
 )
 
 // UpdateNodeRetry calls f to update a node object in Kubernetes.
@@ -44,6 +45,7 @@ func UpdateNodeRetry(client corev1client.NodeInterface, lister corev1lister.Node
 			return fmt.Errorf("failed to create patch for node %q: %w", nodeName, err)
 		}
 
+		klog.Infof("UpdateNodeRetry patch %s: %s", nodeName, string(patchBytes))
 		node, err = client.Patch(context.TODO(), nodeName, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
 		return err
 	}); err != nil {
