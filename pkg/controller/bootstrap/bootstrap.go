@@ -19,6 +19,7 @@ import (
 	"k8s.io/klog/v2"
 
 	apicfgv1 "github.com/openshift/api/config/v1"
+	apicfgv1alpha1 "github.com/openshift/api/config/v1alpha1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
@@ -72,20 +73,24 @@ func (b *Bootstrap) Run(destDir string) error {
 	mcfgv1.Install(scheme)
 	apioperatorsv1alpha1.Install(scheme)
 	apicfgv1.Install(scheme)
+	apicfgv1alpha1.Install(scheme)
 	codecFactory := serializer.NewCodecFactory(scheme)
-	decoder := codecFactory.UniversalDecoder(mcfgv1.GroupVersion, apioperatorsv1alpha1.GroupVersion, apicfgv1.GroupVersion)
+	decoder := codecFactory.UniversalDecoder(mcfgv1.GroupVersion, apioperatorsv1alpha1.GroupVersion, apicfgv1.GroupVersion, apicfgv1alpha1.GroupVersion)
 
-	var cconfig *mcfgv1.ControllerConfig
-	var featureGate *apicfgv1.FeatureGate
-	var nodeConfig *apicfgv1.Node
-	var kconfigs []*mcfgv1.KubeletConfig
-	var pools []*mcfgv1.MachineConfigPool
-	var configs []*mcfgv1.MachineConfig
-	var crconfigs []*mcfgv1.ContainerRuntimeConfig
-	var icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy
-	var idmsRules []*apicfgv1.ImageDigestMirrorSet
-	var itmsRules []*apicfgv1.ImageTagMirrorSet
-	var imgCfg *apicfgv1.Image
+	var (
+		cconfig              *mcfgv1.ControllerConfig
+		featureGate          *apicfgv1.FeatureGate
+		nodeConfig           *apicfgv1.Node
+		kconfigs             []*mcfgv1.KubeletConfig
+		pools                []*mcfgv1.MachineConfigPool
+		configs              []*mcfgv1.MachineConfig
+		crconfigs            []*mcfgv1.ContainerRuntimeConfig
+		icspRules            []*apioperatorsv1alpha1.ImageContentSourcePolicy
+		idmsRules            []*apicfgv1.ImageDigestMirrorSet
+		itmsRules            []*apicfgv1.ImageTagMirrorSet
+		clusterImagePolicies []*apicfgv1alpha1.ClusterImagePolicy
+		imgCfg               *apicfgv1.Image
+	)
 	for _, info := range infos {
 		if info.IsDir() {
 			continue
@@ -132,6 +137,8 @@ func (b *Bootstrap) Run(destDir string) error {
 				itmsRules = append(itmsRules, obj)
 			case *apicfgv1.Image:
 				imgCfg = obj
+			case *apicfgv1alpha1.ClusterImagePolicy:
+				clusterImagePolicies = append(clusterImagePolicies, obj)
 			case *apicfgv1.FeatureGate:
 				if obj.GetName() == ctrlcommon.ClusterFeatureInstanceName {
 					featureGate = obj
@@ -168,7 +175,7 @@ func (b *Bootstrap) Run(destDir string) error {
 
 	configs = append(configs, iconfigs...)
 
-	rconfigs, err := containerruntimeconfig.RunImageBootstrap(b.templatesDir, cconfig, pools, icspRules, idmsRules, itmsRules, imgCfg, fgAccess)
+	rconfigs, err := containerruntimeconfig.RunImageBootstrap(b.templatesDir, cconfig, pools, icspRules, idmsRules, itmsRules, imgCfg, clusterImagePolicies, fgAccess)
 	if err != nil {
 		return err
 	}
@@ -177,7 +184,7 @@ func (b *Bootstrap) Run(destDir string) error {
 	configs = append(configs, rconfigs...)
 
 	if len(crconfigs) > 0 {
-		containerRuntimeConfigs, err := containerruntimeconfig.RunContainerRuntimeBootstrap(b.templatesDir, crconfigs, cconfig, pools, fgAccess)
+		containerRuntimeConfigs, err := containerruntimeconfig.RunContainerRuntimeBootstrap(b.templatesDir, crconfigs, cconfig, pools)
 		if err != nil {
 			return err
 		}
