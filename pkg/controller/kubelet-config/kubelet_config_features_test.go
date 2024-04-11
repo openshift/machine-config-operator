@@ -34,7 +34,7 @@ func TestFeatureGateDrift(t *testing.T) {
 			}
 			contents, err := ctrlcommon.DecodeIgnitionFileContents(kubeletConfig.Contents.Source, kubeletConfig.Contents.Compression)
 			require.NoError(t, err)
-			originalKubeConfig, err := decodeKubeletConfig(contents)
+			originalKubeConfig, err := DecodeKubeletConfig(contents)
 			require.NoError(t, err)
 
 			defaultFeatureGates, err := generateFeatureMap(fgAccess)
@@ -42,7 +42,7 @@ func TestFeatureGateDrift(t *testing.T) {
 				t.Errorf("could not generate defaultFeatureGates: %v", err)
 			}
 			if !reflect.DeepEqual(originalKubeConfig.FeatureGates, *defaultFeatureGates) {
-				var found = map[string]bool{}
+				found := map[string]bool{}
 				for featureGate := range originalKubeConfig.FeatureGates {
 					for apiGate := range *defaultFeatureGates {
 						if featureGate == apiGate {
@@ -168,7 +168,6 @@ func TestFeaturesCustomNoUpgrade(t *testing.T) {
 func TestBootstrapFeaturesDefault(t *testing.T) {
 	for _, platform := range []configv1.PlatformType{configv1.AWSPlatformType, configv1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
-
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
@@ -190,7 +189,6 @@ func TestBootstrapFeaturesDefault(t *testing.T) {
 func TestBootstrapFeaturesCustomNoUpgrade(t *testing.T) {
 	for _, platform := range []configv1.PlatformType{configv1.AWSPlatformType, configv1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
-
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
@@ -212,7 +210,7 @@ func TestBootstrapFeaturesCustomNoUpgrade(t *testing.T) {
 				conf, err := ctrlcommon.DecodeIgnitionFileContents(regfile.Contents.Source, regfile.Contents.Compression)
 				require.NoError(t, err)
 
-				originalKubeConfig, err := decodeKubeletConfig(conf)
+				originalKubeConfig, err := DecodeKubeletConfig(conf)
 				require.NoError(t, err)
 
 				fgAccess := createNewDefaultFeatureGateAccess()

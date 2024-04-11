@@ -99,6 +99,9 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			ctrlctx.ConfigInformerFactory.Config().V1().ClusterOperators(),
 			ctrlctx.NamespacedInformerFactory.Machineconfiguration().V1alpha1().MachineConfigNodes(),
 			ctrlctx.FeatureGateAccess,
+			ctrlctx.InformerFactory.Machineconfiguration().V1().KubeletConfigs(),
+			ctrlctx.InformerFactory.Machineconfiguration().V1().ContainerRuntimeConfigs(),
+			ctrlctx.ConfigInformerFactory.Config().V1().Nodes(),
 		)
 
 		ctrlctx.InformerFactory.Start(ctrlctx.Stop)

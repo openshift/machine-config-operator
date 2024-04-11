@@ -380,7 +380,7 @@ func validateUserKubeletConfig(cfg *mcfgv1.KubeletConfig) error {
 	if cfg.Spec.KubeletConfig == nil || cfg.Spec.KubeletConfig.Raw == nil {
 		return nil
 	}
-	kcDecoded, err := decodeKubeletConfig(cfg.Spec.KubeletConfig.Raw)
+	kcDecoded, err := DecodeKubeletConfig(cfg.Spec.KubeletConfig.Raw)
 	if err != nil {
 		return fmt.Errorf("KubeletConfig could not be unmarshalled, err: %w", err)
 	}
@@ -436,7 +436,7 @@ func wrapErrorWithCondition(err error, args ...interface{}) mcfgv1.KubeletConfig
 	return *condition
 }
 
-func decodeKubeletConfig(data []byte) (*kubeletconfigv1beta1.KubeletConfiguration, error) {
+func DecodeKubeletConfig(data []byte) (*kubeletconfigv1beta1.KubeletConfiguration, error) {
 	config := &kubeletconfigv1beta1.KubeletConfiguration{}
 	d := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(data), len(data))
 	if err := d.Decode(config); err != nil {
@@ -488,7 +488,7 @@ func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeCo
 	userDefinedSystemReserved := make(map[string]string)
 
 	if kubeletConfig.Spec.KubeletConfig != nil && kubeletConfig.Spec.KubeletConfig.Raw != nil {
-		specKubeletConfig, err := decodeKubeletConfig(kubeletConfig.Spec.KubeletConfig.Raw)
+		specKubeletConfig, err := DecodeKubeletConfig(kubeletConfig.Spec.KubeletConfig.Raw)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("could not deserialize the new Kubelet config: %w", err)
 		}
