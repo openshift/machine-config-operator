@@ -35,7 +35,7 @@ import (
 // +kubebuilder:resource:path=alertingrules,scope=Namespaced
 // +kubebuilder:subresource:status
 // +openshift:api-approved.openshift.io=https://github.com/openshift/api/pull/1179
-// +openshift:file-pattern=0000_50_monitoring_01_alertingrulesMARKERS.crd.yaml
+// +openshift:file-pattern=cvoRunLevel=0000_50,operatorName=monitoring,operatorOrdering=01
 // +openshift:enable:FeatureGate=AlertingRules
 // +kubebuilder:metadata:annotations="description=OpenShift Monitoring alerting rules"
 type AlertingRule struct {
@@ -240,7 +240,7 @@ type PrometheusRuleRef struct {
 // +kubebuilder:resource:path=alertrelabelconfigs,scope=Namespaced
 // +kubebuilder:subresource:status
 // +openshift:api-approved.openshift.io=https://github.com/openshift/api/pull/1179
-// +openshift:file-pattern=0000_50_monitoring_02_alertrelabelconfigsMARKERS.crd.yaml
+// +openshift:file-pattern=cvoRunLevel=0000_50,operatorName=monitoring,operatorOrdering=02
 // +openshift:enable:FeatureGate=AlertingRules
 // +kubebuilder:metadata:annotations="description=OpenShift Monitoring alert relabel configurations"
 type AlertRelabelConfig struct {

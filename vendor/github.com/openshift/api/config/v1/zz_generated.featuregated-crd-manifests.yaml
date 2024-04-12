@@ -5,6 +5,9 @@ apiservers.config.openshift.io:
   Capability: ""
   Category: ""
   FeatureGates: []
+  FilenameOperatorName: config-operator
+  FilenameOperatorOrdering: "01"
+  FilenameRunLevel: "0000_10"
   GroupName: config.openshift.io
   HasStatus: true
   KindName: APIServer
@@ -12,8 +15,7 @@ apiservers.config.openshift.io:
   PluralName: apiservers
   PrinterColumns: []
   Scope: Cluster
-  ShortName: ""
-  TargetFilenamePattern: 0000_10_config-operator_01_apiserverMARKERS.crd.yaml
+  ShortNames: null
   TopLevelFeatureGates: []
   Version: v1
 
@@ -25,6 +27,9 @@ authentications.config.openshift.io:
   Category: ""
   FeatureGates:
   - ExternalOIDC
+  FilenameOperatorName: config-operator
+  FilenameOperatorOrdering: "01"
+  FilenameRunLevel: "0000_10"
   GroupName: config.openshift.io
   HasStatus: true
   KindName: Authentication
@@ -32,8 +37,7 @@ authentications.config.openshift.io:
   PluralName: authentications
   PrinterColumns: []
   Scope: Cluster
-  ShortName: ""
-  TargetFilenamePattern: 0000_10_config-operator_01_authentication.crdMARKERS.yaml
+  ShortNames: null
   TopLevelFeatureGates: []
   Version: v1
 
@@ -44,6 +48,9 @@ builds.config.openshift.io:
   Capability: Build
   Category: ""
   FeatureGates: []
+  FilenameOperatorName: openshift-controller-manager
+  FilenameOperatorOrdering: "01"
+  FilenameRunLevel: "0000_10"
   GroupName: config.openshift.io
   HasStatus: true
   KindName: Build
@@ -51,20 +58,21 @@ builds.config.openshift.io:
   PluralName: builds
   PrinterColumns: []
   Scope: Cluster
-  ShortName: ""
-  TargetFilenamePattern: 0000_10_openshift-controller-manager-operator_01_buildMARKERS.crd.yaml
+  ShortNames: null
   TopLevelFeatureGates: []
   Version: v1
 
 clusteroperators.config.openshift.io:
   Annotations:
     include.release.openshift.io/self-managed-high-availability: "true"
-    include.release.openshift.io/single-node-developer: "true"
   ApprovedPRNumber: https://github.com/openshift/api/pull/497
   CRDName: clusteroperators.config.openshift.io
   Capability: ""
   Category: ""
   FeatureGates: []
+  FilenameOperatorName: cluster-version-operator
+  FilenameOperatorOrdering: "01"
+  FilenameRunLevel: "0000_00"
   GroupName: config.openshift.io
   HasStatus: true
   KindName: ClusterOperator
@@ -92,21 +100,23 @@ clusteroperators.config.openshift.io:
     name: Since
     type: date
   Scope: Cluster
-  ShortName: co
-  TargetFilenamePattern: 0000_00_cluster-version-operator_01_clusteroperatorMARKERS.crd.yaml
+  ShortNames:
+  - co
   TopLevelFeatureGates: []
   Version: v1
 
 clusterversions.config.openshift.io:
   Annotations:
     include.release.openshift.io/self-managed-high-availability: "true"
-    include.release.openshift.io/single-node-developer: "true"
   ApprovedPRNumber: https://github.com/openshift/api/pull/495
   CRDName: clusterversions.config.openshift.io
   Capability: ""
   Category: ""
   FeatureGates:
   - SignatureStores
+  FilenameOperatorName: cluster-version-operator
+  FilenameOperatorOrdering: "01"
+  FilenameRunLevel: "0000_00"
   GroupName: config.openshift.io
   HasStatus: true
   KindName: ClusterVersion
@@ -129,8 +139,7 @@ clusterversions.config.openshift.io:
     name: Status
     type: string
   Scope: Cluster
-  ShortName: ""
-  TargetFilenamePattern: 0000_00_cluster-version-operator_01_clusterversionMARKERS.crd.yaml
+  ShortNames: null
   TopLevelFeatureGates: []
   Version: v1
 
@@ -141,6 +150,9 @@ consoles.config.openshift.io:
   Capability: ""
   Category: ""
   FeatureGates: []
+  FilenameOperatorName: config-operator
+  FilenameOperatorOrdering: "01"
+  FilenameRunLevel: "0000_10"
   GroupName: config.openshift.io
   HasStatus: true
   KindName: Console
@@ -148,8 +160,7 @@ consoles.config.openshift.io:
   PluralName: consoles
   PrinterColumns: []
   Scope: Cluster
-  ShortName: ""
-  TargetFilenamePattern: 0000_10_config-operator_01_consoleMARKERS.crd.yaml
+  ShortNames: null
   TopLevelFeatureGates: []
   Version: v1
 
@@ -160,6 +171,9 @@ dnses.config.openshift.io:
   Capability: ""
   Category: ""
   FeatureGates: []
+  FilenameOperatorName: config-operator
+  FilenameOperatorOrdering: "01"
+  FilenameRunLevel: "0000_10"
   GroupName: config.openshift.io
   HasStatus: true
   KindName: DNS
@@ -167,8 +181,7 @@ dnses.config.openshift.io:
   PluralName: dnses
   PrinterColumns: []
   Scope: Cluster
-  ShortName: ""
-  TargetFilenamePattern: 0000_10_config-operator_01_dnsMARKERS.crd.yaml
+  ShortNames: null
   TopLevelFeatureGates: []
   Version: v1
 
@@ -179,6 +192,9 @@ featuregates.config.openshift.io:
   Capability: ""
   Category: ""
   FeatureGates: []
+  FilenameOperatorName: config-operator
+  FilenameOperatorOrdering: "01"
+  FilenameRunLevel: "0000_10"
   GroupName: config.openshift.io
   HasStatus: true
   KindName: FeatureGate
@@ -186,8 +202,7 @@ featuregates.config.openshift.io:
   PluralName: featuregates
   PrinterColumns: []
   Scope: Cluster
-  ShortName: ""
-  TargetFilenamePattern: 0000_10_config-operator_01_featuregateMARKERS.crd.yaml
+  ShortNames: null
   TopLevelFeatureGates: []
   Version: v1
 
@@ -198,6 +213,9 @@ images.config.openshift.io:
   Capability: ""
   Category: ""
   FeatureGates: []
+  FilenameOperatorName: config-operator
+  FilenameOperatorOrdering: "01"
+  FilenameRunLevel: "0000_10"
   GroupName: config.openshift.io
   HasStatus: true
   KindName: Image
@@ -205,8 +223,7 @@ images.config.openshift.io:
   PluralName: images
   PrinterColumns: []
   Scope: Cluster
-  ShortName: ""
-  TargetFilenamePattern: 0000_10_config-operator_01_imageMARKERS.crd.yaml
+  ShortNames: null
   TopLevelFeatureGates: []
   Version: v1
 
@@ -217,6 +234,9 @@ imagecontentpolicies.config.openshift.io:
   Capability: ""
   Category: ""
   FeatureGates: []
+  FilenameOperatorName: config-operator
+  FilenameOperatorOrdering: "01"
+  FilenameRunLevel: "0000_10"
   GroupName: config.openshift.io
   HasStatus: true
   KindName: ImageContentPolicy
@@ -224,8 +244,7 @@ imagecontentpolicies.config.openshift.io:
   PluralName: imagecontentpolicies
   PrinterColumns: []
   Scope: Cluster
-  ShortName: ""
-  TargetFilenamePattern: 0000_10_config-operator_01_imagecontentpolicyMARKERS.crd.yaml
+  ShortNames: null
   TopLevelFeatureGates: []
   Version: v1
 
@@ -236,6 +255,9 @@ imagedigestmirrorsets.config.openshift.io:
   Capability: ""
   Category: ""
   FeatureGates: []
+  FilenameOperatorName: config-operator
+  FilenameOperatorOrdering: "01"
+  FilenameRunLevel: "0000_10"
   GroupName: config.openshift.io
   HasStatus: true
   KindName: ImageDigestMirrorSet
@@ -243,8 +265,8 @@ imagedigestmirrorsets.config.openshift.io:
   PluralName: imagedigestmirrorsets
   PrinterColumns: []
   Scope: Cluster
-  ShortName: idms
-  TargetFilenamePattern: 0000_10_config-operator_01_imagedigestmirrorsetMARKERS.crd.yaml
+  ShortNames:
+  - idms
   TopLevelFeatureGates: []
   Version: v1
 
@@ -255,6 +277,9 @@ imagetagmirrorsets.config.openshift.io:
   Capability: ""
   Category: ""
   FeatureGates: []
+  FilenameOperatorName: config-operator
+  FilenameOperatorOrdering: "01"
+  FilenameRunLevel: "0000_10"
   GroupName: config.openshift.io
   HasStatus: true
   KindName: ImageTagMirrorSet
@@ -262,8 +287,8 @@ imagetagmirrorsets.config.openshift.io:
   PluralName: imagetagmirrorsets
   PrinterColumns: []
   Scope: Cluster
-  ShortName: itms
-  TargetFilenamePattern: 0000_10_config-operator_01_imagetagmirrorsetMARKERS.crd.yaml
+  ShortNames:
+  - itms
   TopLevelFeatureGates: []
   Version: v1
 
@@ -278,6 +303,9 @@ infrastructures.config.openshift.io:
   - GCPClusterHostedDNS
   - GCPLabelsTags
   - VSphereControlPlaneMachineSet
+  FilenameOperatorName: config-operator
+  FilenameOperatorOrdering: "01"
+  FilenameRunLevel: "0000_10"
   GroupName: config.openshift.io
   HasStatus: true
   KindName: Infrastructure
@@ -285,8 +313,7 @@ infrastructures.config.openshift.io:
   PluralName: infrastructures
   PrinterColumns: []
   Scope: Cluster
-  ShortName: ""
-  TargetFilenamePattern: 0000_10_config-operator_01_infrastructureMARKERS.crd.yaml
+  ShortNames: null
   TopLevelFeatureGates: []
   Version: v1
 
@@ -297,6 +324,9 @@ ingresses.config.openshift.io:
   Capability: ""
   Category: ""
   FeatureGates: []
+  FilenameOperatorName: config-operator
+  FilenameOperatorOrdering: "01"
+  FilenameRunLevel: "0000_10"
   GroupName: config.openshift.io
   HasStatus: true
   KindName: Ingress
@@ -304,28 +334,30 @@ ingresses.config.openshift.io:
   PluralName: ingresses
   PrinterColumns: []
   Scope: Cluster
-  ShortName: ""
-  TargetFilenamePattern: 0000_10_config-operator_01_ingressMARKERS.crd.yaml
+  ShortNames: null
   TopLevelFeatureGates: []
   Version: v1
 
-projects.config.openshift.io:
+networks.config.openshift.io:
   Annotations: {}
-  ApprovedPRNumber: ""
-  CRDName: projects.config.openshift.io
+  ApprovedPRNumber: https://github.com/openshift/api/pull/470
+  CRDName: networks.config.openshift.io
   Capability: ""
   Category: ""
   FeatureGates:
+  - NetworkDiagnosticsConfig
   - NetworkLiveMigration
+  FilenameOperatorName: config-operator
+  FilenameOperatorOrdering: "01"
+  FilenameRunLevel: "0000_10"
   GroupName: config.openshift.io
-  HasStatus: true
+  HasStatus: false
   KindName: Network
   Labels: {}
-  PluralName: projects
+  PluralName: networks
   PrinterColumns: []
   Scope: Cluster
-  ShortName: ""
-  TargetFilenamePattern: 0000_10_config-operator_01_networkMARKERS.crd.yaml
+  ShortNames: null
   TopLevelFeatureGates: []
   Version: v1
 
@@ -336,6 +368,9 @@ nodes.config.openshift.io:
   Capability: ""
   Category: ""
   FeatureGates: []
+  FilenameOperatorName: config-operator
+  FilenameOperatorOrdering: "01"
+  FilenameRunLevel: "0000_10"
   GroupName: config.openshift.io
   HasStatus: true
   KindName: Node
@@ -343,8 +378,7 @@ nodes.config.openshift.io:
   PluralName: nodes
   PrinterColumns: []
   Scope: Cluster
-  ShortName: ""
-  TargetFilenamePattern: 0000_10_config-operator_01_nodeMARKERS.crd.yaml
+  ShortNames: null
   TopLevelFeatureGates: []
   Version: v1
 
@@ -355,6 +389,9 @@ oauths.config.openshift.io:
   Capability: ""
   Category: ""
   FeatureGates: []
+  FilenameOperatorName: config-operator
+  FilenameOperatorOrdering: "01"
+  FilenameRunLevel: "0000_10"
   GroupName: config.openshift.io
   HasStatus: true
   KindName: OAuth
@@ -362,8 +399,28 @@ oauths.config.openshift.io:
   PluralName: oauths
   PrinterColumns: []
   Scope: Cluster
-  ShortName: ""
-  TargetFilenamePattern: 0000_10_config-operator_01_oauthMARKERS.crd.yaml
+  ShortNames: null
+  TopLevelFeatureGates: []
+  Version: v1
+
+operatorhubs.config.openshift.io:
+  Annotations: {}
+  ApprovedPRNumber: https://github.com/openshift/api/pull/470
+  CRDName: operatorhubs.config.openshift.io
+  Capability: marketplace
+  Category: ""
+  FeatureGates: []
+  FilenameOperatorName: marketplace
+  FilenameOperatorOrdering: "01"
+  FilenameRunLevel: "0000_03"
+  GroupName: config.openshift.io
+  HasStatus: true
+  KindName: OperatorHub
+  Labels: {}
+  PluralName: operatorhubs
+  PrinterColumns: []
+  Scope: Cluster
+  ShortNames: null
   TopLevelFeatureGates: []
   Version: v1
 
@@ -374,6 +431,9 @@ projects.config.openshift.io:
   Capability: ""
   Category: ""
   FeatureGates: []
+  FilenameOperatorName: config-operator
+  FilenameOperatorOrdering: "01"
+  FilenameRunLevel: "0000_10"
   GroupName: config.openshift.io
   HasStatus: true
   KindName: Project
@@ -381,8 +441,7 @@ projects.config.openshift.io:
   PluralName: projects
   PrinterColumns: []
   Scope: Cluster
-  ShortName: ""
-  TargetFilenamePattern: 0000_10_config-operator_01_projectMARKERS.crd.yaml
+  ShortNames: null
   TopLevelFeatureGates: []
   Version: v1
 
@@ -393,6 +452,9 @@ proxies.config.openshift.io:
   Capability: ""
   Category: ""
   FeatureGates: []
+  FilenameOperatorName: config-operator
+  FilenameOperatorOrdering: "01"
+  FilenameRunLevel: "0000_03"
   GroupName: config.openshift.io
   HasStatus: true
   KindName: Proxy
@@ -400,8 +462,7 @@ proxies.config.openshift.io:
   PluralName: proxies
   PrinterColumns: []
   Scope: Cluster
-  ShortName: ""
-  TargetFilenamePattern: 0000_03_config-operator_01_proxyMARKERS.crd.yaml
+  ShortNames: null
   TopLevelFeatureGates: []
   Version: v1
 
@@ -413,6 +474,9 @@ schedulers.config.openshift.io:
   Category: ""
   FeatureGates:
   - DynamicResourceAllocation
+  FilenameOperatorName: config-operator
+  FilenameOperatorOrdering: "01"
+  FilenameRunLevel: "0000_10"
   GroupName: config.openshift.io
   HasStatus: true
   KindName: Scheduler
@@ -420,8 +484,7 @@ schedulers.config.openshift.io:
   PluralName: schedulers
   PrinterColumns: []
   Scope: Cluster
-  ShortName: ""
-  TargetFilenamePattern: 0000_10_config-operator_01_schedulerMARKERS.crd.yaml
+  ShortNames: null
   TopLevelFeatureGates: []
   Version: v1
 
