@@ -38,6 +38,7 @@ contents:
         - |
           /usr/bin/curl -o /dev/null -kLfs https://api-int.{{ .DNS.Spec.BaseDomain }}:6443/healthz
         resources: {}
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - name: chroot-host
           mountPath: "/host"

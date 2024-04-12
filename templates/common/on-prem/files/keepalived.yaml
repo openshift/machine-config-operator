@@ -53,6 +53,7 @@ contents:
         - "--out-dir"
         - "/etc/keepalived"
         resources: {}
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - name: kubeconfig
           mountPath: "/etc/kubernetes"
@@ -218,6 +219,7 @@ contents:
         - name: nodeip-configuration
           mountPath: "/run/nodeip-configuration"
           mountPropagation: HostToContainer
+        terminationMessagePolicy: FallbackToLogsOnError
         imagePullPolicy: IfNotPresent
       hostNetwork: true
       tolerations:

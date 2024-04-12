@@ -68,6 +68,7 @@ contents:
           requests:
             cpu: 20m
             memory: 50Mi
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - name: etc-kube
           mountPath: "/etc/kubernetes"

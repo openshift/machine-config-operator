@@ -47,6 +47,7 @@ contents:
         - "--resolvconf-path"
         - "/var/run/NetworkManager/resolv.conf"
         resources: {}
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - name: kubeconfig
           mountPath: "/var/lib/kubelet"
@@ -110,6 +111,7 @@ contents:
           requests:
             cpu: 100m
             memory: 200Mi
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - name: kubeconfig
           mountPath: "/var/lib/kubelet"
