@@ -52,6 +52,7 @@ contents:
           mountPath: "/etc/coredns"
           mountPropagation: HostToContainer
         imagePullPolicy: IfNotPresent
+        terminationMessagePolicy: FallbackToLogsOnError
       containers:
       - name: coredns
         securityContext:
@@ -97,6 +98,7 @@ contents:
           requests:
             cpu: 100m
             memory: 200Mi          
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - name: kubeconfig
           mountPath: "/var/lib/kubelet"
