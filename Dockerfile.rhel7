@@ -27,7 +27,7 @@ RUN if [ "${TAGS}" = "fcos" ]; then \
     # comment out non-base/extensions image-references entirely for fcos
     sed -i '/- name: rhel-coreos-/,+3 s/^/#/' /manifests/image-references && \
     # also remove extensions from the osimageurl configmap (if we don't, oc won't rewrite it, and the placeholder value will survive and get used)
-    sed -i '/baseOSExtensionsContainerImage:/ s/^/#/' /manifests/0000_80_machine-config-operator_05_osimageurl.yaml && \
+    sed -i '/baseOSExtensionsContainerImage:/ s/^/#/' /manifests/0000_80_machine-config_05_osimageurl.yaml && \
     # rewrite image names for fcos
     sed -i 's/rhel-coreos/fedora-coreos/g' /manifests/*; \
     elif [ "${TAGS}" = "scos" ]; then \
