@@ -198,7 +198,7 @@ func New(
 		klog.Errorf("Could not modify scheme: %v", err)
 	}
 
-	for _, i := range []cache.SharedIndexInformer{
+	informers := []cache.SharedIndexInformer{
 		controllerConfigInformer.Informer(),
 		serviceAccountInfomer.Informer(),
 		crdInformer.Informer(),
@@ -221,7 +221,12 @@ func New(
 		mcoSecretInformer.Informer(),
 		ocSecretInformer.Informer(),
 		mcoCOInformer.Informer(),
-	} {
+	}
+
+	// this is for the FG
+	//	informers = append(informers, moscInformer.Informer())
+
+	for _, i := range informers {
 		i.AddEventHandler(optr.eventHandler())
 	}
 

@@ -10,7 +10,7 @@ import (
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:path=dnsnameresolvers,scope=Namespaced
 // +openshift:api-approved.openshift.io=https://github.com/openshift/api/pull/1524
-// +openshift:file-pattern=0000_70_dnsnameresolver_00MARKERS.crd.yaml
+// +openshift:file-pattern=cvoRunLevel=0000_70,operatorName=dns,operatorOrdering=00
 // +openshift:compatibility-gen:level=4
 // +openshift:enable:FeatureGate=DNSNameResolver
 

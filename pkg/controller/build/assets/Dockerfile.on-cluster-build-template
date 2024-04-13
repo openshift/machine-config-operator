@@ -5,22 +5,22 @@
 # Decode and extract the MachineConfig from the gzipped ConfigMap and move it
 # into position. We do this in a separate stage so that we don't have the
 # gzipped MachineConfig laying around.
-FROM {{.BaseImage.Pullspec}} AS extract
+FROM {{.MachineOSConfig.Spec.BuildInputs.BaseOSImagePullspec}} AS extract
 COPY ./machineconfig/machineconfig.json.gz /tmp/machineconfig.json.gz
 RUN mkdir -p /etc/machine-config-daemon && \
 	cat /tmp/machineconfig.json.gz | base64 -d | gunzip - > /etc/machine-config-daemon/currentconfig
 
-{{if .ExtensionsImage.Pullspec}}
+{{if .MachineOSConfig.Spec.BuildInputs.BaseOSExtensionsImagePullspec}}
 # Pull our extensions image. Not sure yet what / how this should be wired up
 # though. Ideally, I'd like to use some Buildah tricks to have the extensions
 # directory mounted into the container at build-time so that I don't have to
 # copy the RPMs into the container, configure the repo, and do the
 # installation. Alternatively, I'd have to start a pod with an HTTP server.
-FROM {{.ExtensionsImage.Pullspec}} AS extensions
+FROM {{.MachineOSConfig.Spec.BuildInputs.BaseOSExtensionsImagePullspec}} AS extensions
 {{end}}
 
 
-FROM {{.BaseImage.Pullspec}} AS configs
+FROM {{.MachineOSConfig.Spec.BuildInputs.BaseOSImagePullspec}} AS configs
 # Copy the extracted MachineConfig into the expected place in the image.
 COPY --from=extract /etc/machine-config-daemon/currentconfig /etc/machine-config-daemon/currentconfig
 # Do the ignition live-apply, extracting the Ignition config from the MachineConfig.
@@ -29,11 +29,11 @@ COPY --from=extract /etc/machine-config-daemon/currentconfig /etc/machine-config
 RUN container="oci" exec -a ignition-apply /usr/lib/dracut/modules.d/30ignition/ignition --ignore-unsupported <(cat /etc/machine-config-daemon/currentconfig | jq '.spec.config') && \
 	ostree container commit
 
-LABEL machineconfig={{.Pool.Spec.Configuration.Name}}
-LABEL machineconfigpool={{.Pool.Name}}
-LABEL releaseversion={{.ReleaseVersion}}
-LABEL baseOSContainerImage={{.BaseImage.Pullspec}}
+LABEL machineconfig={{.MachineOSBuild.Spec.DesiredConfig.Name}}
+LABEL machineconfigpool={{.MachineOSConfig.Spec.MachineConfigPool.Name}}
+LABEL releaseversion={{.MachineOSConfig.Spec.BuildInputs.ReleaseVersion}}
+LABEL baseOSContainerImage={{.MachineOSConfig.Spec.BuildInputs.BaseOSImagePullspec}}
 
-{{if .CustomDockerfile}}
-{{.CustomDockerfile}}
+{{if .Containerfile}}
+{{.Containerfile}}
 {{end}}

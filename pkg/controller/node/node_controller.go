@@ -13,11 +13,16 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+	mcfginformersv1alpha1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1alpha1"
+
 	cligoinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
 	cligolistersv1 "github.com/openshift/client-go/config/listers/config/v1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
+	mcfglistersv1alpha1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1"
+
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
 	"github.com/openshift/machine-config-operator/internal"
@@ -85,11 +90,13 @@ type Controller struct {
 	mcpLister  mcfglistersv1.MachineConfigPoolLister
 	nodeLister corelisterv1.NodeLister
 	podLister  corelisterv1.PodLister
+	mosbLister mcfglistersv1alpha1.MachineOSBuildLister
 
 	ccListerSynced   cache.InformerSynced
 	mcListerSynced   cache.InformerSynced
 	mcpListerSynced  cache.InformerSynced
 	nodeListerSynced cache.InformerSynced
+	mosbListerSynced cache.InformerSynced
 
 	schedulerList         cligolistersv1.SchedulerLister
 	schedulerListerSynced cache.InformerSynced
@@ -109,6 +116,7 @@ func New(
 	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
 	nodeInformer coreinformersv1.NodeInformer,
 	podInformer coreinformersv1.PodInformer,
+	mosbInformer mcfginformersv1alpha1.MachineOSBuildInformer,
 	schedulerInformer cligoinformersv1.SchedulerInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
@@ -118,6 +126,7 @@ func New(
 		ccInformer,
 		mcInformer,
 		mcpInformer,
+		mosbInformer,
 		nodeInformer,
 		podInformer,
 		schedulerInformer,
@@ -134,6 +143,7 @@ func NewWithCustomUpdateDelay(
 	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
 	nodeInformer coreinformersv1.NodeInformer,
 	podInformer coreinformersv1.PodInformer,
+	mosbInformer mcfginformersv1alpha1.MachineOSBuildInformer,
 	schedulerInformer cligoinformersv1.SchedulerInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
@@ -144,6 +154,7 @@ func NewWithCustomUpdateDelay(
 		ccInformer,
 		mcInformer,
 		mcpInformer,
+		mosbInformer,
 		nodeInformer,
 		podInformer,
 		schedulerInformer,
@@ -159,6 +170,7 @@ func newController(
 	ccInformer mcfginformersv1.ControllerConfigInformer,
 	mcInformer mcfginformersv1.MachineConfigInformer,
 	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
+	mosbInformer mcfginformersv1alpha1.MachineOSBuildInformer,
 	nodeInformer coreinformersv1.NodeInformer,
 	podInformer coreinformersv1.PodInformer,
 	schedulerInformer cligoinformersv1.SchedulerInformer,
@@ -179,6 +191,12 @@ func newController(
 		updateDelay:   updateDelay,
 		fgAcessor:     fgAccessor,
 	}
+
+	mosbInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.addMachineConfigPool,
+		UpdateFunc: ctrl.updateMachineConfigPool,
+		DeleteFunc: ctrl.deleteMachineConfigPool,
+	})
 
 	mcpInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.addMachineConfigPool,
@@ -208,6 +226,7 @@ func newController(
 	ctrl.mcListerSynced = mcInformer.Informer().HasSynced
 	ctrl.mcpListerSynced = mcpInformer.Informer().HasSynced
 	ctrl.nodeListerSynced = nodeInformer.Informer().HasSynced
+	ctrl.mosbListerSynced = mosbInformer.Informer().HasSynced
 
 	ctrl.schedulerList = schedulerInformer.Lister()
 	ctrl.schedulerListerSynced = schedulerInformer.Informer().HasSynced
@@ -358,6 +377,42 @@ func (ctrl *Controller) makeMasterNodeSchedulable(node *corev1.Node) error {
 		return err
 	}
 	return nil
+}
+
+func (ctrl *Controller) addMachineOSBuild(obj interface{}) {
+	curMOSB := obj.(*mcfgv1alpha1.MachineOSBuild)
+
+	config, _ := ctrl.client.MachineconfigurationV1alpha1().MachineOSConfigs().Get(context.TODO(), curMOSB.Spec.MachineOSConfig.Name, metav1.GetOptions{})
+
+	mcp, _ := ctrl.mcpLister.Get(config.Spec.MachineConfigPool.Name)
+	ctrl.enqueueMachineConfigPool(mcp)
+}
+
+func (ctrl *Controller) updateMachineOSBuild(old, cur interface{}) {
+	curMOSB := cur.(*mcfgv1alpha1.MachineOSBuild)
+
+	config, _ := ctrl.client.MachineconfigurationV1alpha1().MachineOSConfigs().Get(context.TODO(), curMOSB.Spec.MachineOSConfig.Name, metav1.GetOptions{})
+
+	mcp, _ := ctrl.mcpLister.Get(config.Spec.MachineConfigPool.Name)
+	ctrl.enqueueMachineConfigPool(mcp)
+}
+
+func (ctrl *Controller) deleteMachineOSBuild(obj interface{}) {
+	pool, ok := obj.(*mcfgv1alpha1.MachineOSBuild)
+	if !ok {
+		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("couldn't get object from tombstone %#v", obj))
+			return
+		}
+		pool, ok = tombstone.Obj.(*mcfgv1alpha1.MachineOSBuild)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not a MOSB %#v", obj))
+			return
+		}
+	}
+	klog.V(4).Infof("Deleting MachineConfigPool %s", pool.Name)
+	// TODO(abhinavdahiya): handle deletes.
 }
 
 func (ctrl *Controller) addMachineConfigPool(obj interface{}) {
@@ -764,28 +819,79 @@ func (ctrl *Controller) handleErr(err error, key interface{}) {
 // 2. If a MachineConfig changes, we should wait for the OS image build to be
 // ready so we can update both the nodes' desired MachineConfig and desired
 // image annotations simultaneously.
-func (ctrl *Controller) canLayeredPoolContinue(pool *mcfgv1.MachineConfigPool) (string, bool, error) {
-	lps := ctrlcommon.NewLayeredPoolState(pool)
 
-	hasImage := lps.HasOSImage()
-	pullspec := lps.GetOSImage()
+func (ctrl *Controller) GetConfigAndBuild(pool *mcfgv1.MachineConfigPool) (*mcfgv1alpha1.MachineOSConfig, *mcfgv1alpha1.MachineOSBuild, error) {
+	var ourConfig *mcfgv1alpha1.MachineOSConfig
+	var ourBuild *mcfgv1alpha1.MachineOSBuild
+	configList, err := ctrl.client.MachineconfigurationV1alpha1().MachineOSConfigs().List(context.TODO(), metav1.ListOptions{})
+	if err != nil {
+		return nil, nil, err
+	}
+
+	for _, config := range configList.Items {
+		if config.Spec.MachineConfigPool.Name == pool.Name {
+			ourConfig = &config
+			break
+		}
+	}
+
+	if ourConfig == nil {
+		return nil, nil, nil
+	}
+
+	buildList, err := ctrl.client.MachineconfigurationV1alpha1().MachineOSBuilds().List(context.TODO(), metav1.ListOptions{})
+	if err != nil {
+		return nil, nil, err
+	}
+
+	for _, build := range buildList.Items {
+		if build.Spec.MachineOSConfig.Name == ourConfig.Name {
+			ourBuild = &build
+			break
+		}
+	}
+
+	return ourConfig, ourBuild, nil
+
+}
+
+func (ctrl *Controller) canLayeredPoolContinue(pool *mcfgv1.MachineConfigPool) (string, bool, error) {
+
+	mosc, mosb, _ := ctrl.GetConfigAndBuild(pool)
+
+	if mosc == nil || mosb == nil {
+		return "No MachineOSConfig or Build for this pool", false, nil
+	}
+
+	cs := ctrlcommon.NewMachineOSConfigState(mosc)
+
+	// annoying that we need to either a) pass aroung mosb lister and mosb lister EVERYWHERE
+	// or b) need to retrv one or the other depending on which is passed into the func.
+	// would be nice if we could a) at least centralize this code: ctrl.GetConfigAndBuild(pool)
+	// if we did this, we could potentially, just pass the pool around (as we used to) and shell out to the listers in the func to get the obj assoc. with the pool
+	//owner := mosb.OwnerReferences[0]
+
+	bs := ctrlcommon.NewMachineOSBuildState(mosb)
+
+	hasImage := cs.HasOSImage()
+	pullspec := cs.GetOSImage()
 
 	if !hasImage {
-		return fmt.Sprintf("Image annotation %s is not set", ctrlcommon.ExperimentalNewestLayeredImageEquivalentConfigAnnotationKey), false, nil
+		return "Desired Image not set in MachineOSBuild", false, nil
 	}
 
 	switch {
 	// If the build is successful and we have the image pullspec, we can proceed
 	// with rolling out the new OS image.
-	case lps.IsBuildSuccess() && hasImage:
+	case bs.IsBuildSuccess() && hasImage:
 		msg := fmt.Sprintf("Image built successfully, pullspec: %s", pullspec)
 		return msg, true, nil
-	case lps.IsBuildPending():
+	case bs.IsBuildPending():
 		return "Image build pending", false, nil
-	case lps.IsBuilding():
+	case bs.IsBuilding():
 		return "Image build in progress", false, nil
-	case lps.IsBuildFailure():
-		return "Image build failed", false, fmt.Errorf("image build for MachineConfigPool %s failed", pool.Name)
+	case bs.IsBuildFailure():
+		return "Image build failed", false, fmt.Errorf("image build for MachineConfigPool %s failed", mosb.Name)
 	default:
 		return "Image is not ready yet", false, nil
 	}
@@ -845,7 +951,9 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		return ctrl.syncStatusOnly(pool)
 	}
 
-	if ctrlcommon.IsLayeredPool(pool) {
+	mosc, mosb, _ := ctrl.GetConfigAndBuild(pool)
+
+	if ok := ctrl.IsLayeredPool(pool, mosc, mosb); ok {
 		reason, canApplyUpdates, err := ctrl.canLayeredPoolContinue(pool)
 		if err != nil {
 			klog.Infof("Layered pool %s encountered an error: %s", pool.Name, err)
@@ -892,8 +1000,10 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		hasInProgressTaint := checkIfNodeHasInProgressTaint(node)
 
 		lns := ctrlcommon.NewLayeredNodeState(node)
+		config, build, _ := ctrl.GetConfigAndBuild(pool)
 
-		if lns.IsDesiredEqualToPool(pool) {
+		layered := ctrl.IsLayeredPool(pool, config, build)
+		if lns.IsDesiredEqualToPool(pool, layered) {
 			if hasInProgressTaint {
 				if err := ctrl.removeUpdateInProgressTaint(ctx, node.Name); err != nil {
 					err = fmt.Errorf("failed removing %s taint for node %s: %w", constants.NodeUpdateInProgressTaint.Key, node.Name, err)
@@ -909,7 +1019,13 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 			}
 		}
 	}
-	candidates, capacity := getAllCandidateMachines(pool, nodes, maxunavail)
+
+	// NOTE
+	// this needs to get triggered, the new os img needs to propogate here and be set on the candidate machines.
+	config, build, _ := ctrl.GetConfigAndBuild(pool)
+
+	layered := ctrl.IsLayeredPool(pool, config, build)
+	candidates, capacity := getAllCandidateMachines(layered, config, build, pool, nodes, maxunavail)
 	if len(candidates) > 0 {
 		zones := make(map[string]bool)
 		for _, candidate := range candidates {
@@ -994,7 +1110,9 @@ func (ctrl *Controller) setClusterConfigAnnotation(nodes []*corev1.Node) error {
 	return nil
 }
 
-func (ctrl *Controller) updateCandidateNode(nodeName string, pool *mcfgv1.MachineConfigPool) error {
+// updateCandidateNode needs to understand MOSB
+// specifically, the LayeredNodeState probably needs to understand mosb
+func (ctrl *Controller) updateCandidateNode(mosc *mcfgv1alpha1.MachineOSConfig, mosb *mcfgv1alpha1.MachineOSBuild, nodeName string, pool *mcfgv1.MachineConfigPool) error {
 	return clientretry.RetryOnConflict(constants.NodeUpdateBackoff, func() error {
 		oldNode, err := ctrl.kubeClient.CoreV1().Nodes().Get(context.TODO(), nodeName, metav1.GetOptions{})
 		if err != nil {
@@ -1006,14 +1124,31 @@ func (ctrl *Controller) updateCandidateNode(nodeName string, pool *mcfgv1.Machin
 		}
 
 		lns := ctrlcommon.NewLayeredNodeState(oldNode)
-		if lns.IsDesiredEqualToPool(pool) {
-			// If the node's desired annotations match the pool, return directly without updating the node.
-			klog.Infof("no update is needed")
-			return nil
+		layered := ctrl.IsLayeredPool(pool, mosc, mosb)
+		if mosb == nil {
+			if lns.IsDesiredEqualToPool(pool, layered) {
+				// If the node's desired annotations match the pool, return directly without updating the node.
+				klog.Infof("no update is needed")
+				return nil
+
+			}
+			lns.SetDesiredStateFromPool(layered, pool)
+
+		} else {
+			if lns.IsDesiredEqualToBuild(mosc, mosb) {
+				// If the node's desired annotations match the pool, return directly without updating the node.
+				klog.Infof("no update is needed")
+				return nil
+			}
+			// ensure this is happening. it might not be.
+			// we need to ensure the node controller is triggered at all the same times
+			// when using this new system
+			// we know the mosc+mosb can trigger one another and cause a build, but if the node controller
+			// can't set this anno, and subsequently cannot trigger the daemon to update, we need to rework.
+			lns.SetDesiredStateFromMachineOSConfig(mosc, mosb)
 		}
 
 		// Set the desired state to match the pool.
-		lns.SetDesiredStateFromPool(pool)
 
 		newData, err := json.Marshal(lns.Node())
 		if err != nil {
@@ -1031,8 +1166,8 @@ func (ctrl *Controller) updateCandidateNode(nodeName string, pool *mcfgv1.Machin
 
 // getAllCandidateMachines returns all possible nodes which can be updated to the target config, along with a maximum
 // capacity.  It is the reponsibility of the caller to choose a subset of the nodes given the capacity.
-func getAllCandidateMachines(pool *mcfgv1.MachineConfigPool, nodesInPool []*corev1.Node, maxUnavailable int) ([]*corev1.Node, uint) {
-	unavail := getUnavailableMachines(nodesInPool, pool)
+func getAllCandidateMachines(layered bool, config *mcfgv1alpha1.MachineOSConfig, build *mcfgv1alpha1.MachineOSBuild, pool *mcfgv1.MachineConfigPool, nodesInPool []*corev1.Node, maxUnavailable int) ([]*corev1.Node, uint) {
+	unavail := getUnavailableMachines(nodesInPool, pool, layered, build)
 	if len(unavail) >= maxUnavailable {
 		klog.Infof("No nodes available for updates")
 		return nil, 0
@@ -1043,11 +1178,19 @@ func getAllCandidateMachines(pool *mcfgv1.MachineConfigPool, nodesInPool []*core
 	var nodes []*corev1.Node
 	for _, node := range nodesInPool {
 		lns := ctrlcommon.NewLayeredNodeState(node)
-		if lns.IsDesiredEqualToPool(pool) {
-			if isNodeMCDFailing(node) {
-				failingThisConfig++
+		if !layered {
+			if lns.IsDesiredEqualToPool(pool, layered) {
+				if isNodeMCDFailing(node) {
+					failingThisConfig++
+				}
+				continue
 			}
-			continue
+		} else {
+			if lns.IsDesiredEqualToBuild(config, build) {
+				// If the node's desired annotations match the pool, return directly without updating the node.
+				klog.Infof("no update is needed")
+				continue
+			}
 		}
 		nodes = append(nodes, node)
 	}
@@ -1062,8 +1205,8 @@ func getAllCandidateMachines(pool *mcfgv1.MachineConfigPool, nodesInPool []*core
 }
 
 // getCandidateMachines returns the maximum subset of nodes which can be updated to the target config given availability constraints.
-func getCandidateMachines(pool *mcfgv1.MachineConfigPool, nodesInPool []*corev1.Node, maxUnavailable int) []*corev1.Node {
-	nodes, capacity := getAllCandidateMachines(pool, nodesInPool, maxUnavailable)
+func getCandidateMachines(pool *mcfgv1.MachineConfigPool, config *mcfgv1alpha1.MachineOSConfig, build *mcfgv1alpha1.MachineOSBuild, nodesInPool []*corev1.Node, maxUnavailable int, layered bool) []*corev1.Node {
+	nodes, capacity := getAllCandidateMachines(layered, config, build, pool, nodesInPool, maxUnavailable)
 	if uint(len(nodes)) < capacity {
 		return nodes
 	}
@@ -1110,6 +1253,8 @@ func (ctrl *Controller) filterControlPlaneCandidateNodes(pool *mcfgv1.MachineCon
 	return newCandidates, capacity, nil
 }
 
+// SetDesiredStateFromPool in old mco explains how this works. Somehow you need to NOT FAIL if the mosb doesn't exist. So
+// we still need to base this whole things on pools but IsLayeredPool == does mosb exist
 // updateCandidateMachines sets the desiredConfig annotation the candidate machines
 func (ctrl *Controller) updateCandidateMachines(pool *mcfgv1.MachineConfigPool, candidates []*corev1.Node, capacity uint) error {
 	if pool.Name == ctrlcommon.MachineConfigPoolMaster {
@@ -1135,25 +1280,26 @@ func (ctrl *Controller) updateCandidateMachines(pool *mcfgv1.MachineConfigPool, 
 
 func (ctrl *Controller) setDesiredAnnotations(pool *mcfgv1.MachineConfigPool, candidates []*corev1.Node) error {
 	eventName := "SetDesiredConfig"
+	config, build, _ := ctrl.GetConfigAndBuild(pool)
 
-	if ctrlcommon.IsLayeredPool(pool) {
+	if layered := ctrl.IsLayeredPool(pool, config, build); layered {
 		eventName = "SetDesiredConfigAndOSImage"
 
 		klog.Infof("Continuing to sync layered MachineConfigPool %s", pool.Name)
 	}
 
 	for _, node := range candidates {
-		ctrl.logPool(pool, "Setting node %s target to %s", node.Name, getPoolUpdateLine(pool))
-		if err := ctrl.updateCandidateNode(node.Name, pool); err != nil {
-			return fmt.Errorf("setting desired %s for node %s: %w", getPoolUpdateLine(pool), node.Name, err)
+		//ctrl.logPool(pool, "Setting node %s target to %s", node.Name, getPoolUpdateLine(pool))
+		if err := ctrl.updateCandidateNode(config, build, node.Name, pool); err != nil {
+			return fmt.Errorf("setting desired %s for node %s: %w", &pool.Spec.Configuration.Name, node.Name, err)
 		}
 	}
 
 	if len(candidates) == 1 {
 		candidate := candidates[0]
-		ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, eventName, "Targeted node %s to %s", candidate.Name, getPoolUpdateLine(pool))
+		ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, eventName, "Targeted node %s to %s", candidate.Name, &pool.Spec.Configuration.Name)
 	} else {
-		ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, eventName, "Set target for %d nodes to %s", len(candidates), getPoolUpdateLine(pool))
+		ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, eventName, "Set target for %d nodes to %s", len(candidates), &pool.Spec.Configuration.Name)
 	}
 
 	return nil
@@ -1279,4 +1425,12 @@ func getErrorString(err error) string {
 		return err.Error()
 	}
 	return ""
+}
+
+func (ctrl *Controller) IsLayeredPool(pool *mcfgv1.MachineConfigPool, mosc *mcfgv1alpha1.MachineOSConfig, mosb *mcfgv1alpha1.MachineOSBuild) bool {
+	fg, err := ctrl.fgAcessor.CurrentFeatureGates()
+	if err != nil {
+		return false
+	}
+	return (mosc != nil || mosb != nil) && fg.Enabled(configv1.FeatureGateOnClusterBuild)
 }

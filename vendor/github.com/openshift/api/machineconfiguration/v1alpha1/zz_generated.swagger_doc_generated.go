@@ -39,10 +39,11 @@ func (MachineConfigNodeList) SwaggerDoc() map[string]string {
 }
 
 var map_MachineConfigNodeSpec = map[string]string{
-	"":              "MachineConfigNodeSpec describes the MachineConfigNode we are managing.",
-	"node":          "node contains a reference to the node for this machine config node.",
-	"pool":          "pool contains a reference to the machine config pool that this machine config node's referenced node belongs to.",
-	"configVersion": "configVersion holds the desired config version for the node targeted by this machine config node resource. The desired version represents the machine config the node will attempt to update to. This gets set before the machine config operator validates the new machine config against the current machine config.",
+	"":                "MachineConfigNodeSpec describes the MachineConfigNode we are managing.",
+	"node":            "node contains a reference to the node for this machine config node.",
+	"pool":            "pool contains a reference to the machine config pool that this machine config node's referenced node belongs to.",
+	"configVersion":   "configVersion holds the desired config version for the node targeted by this machine config node resource. The desired version represents the machine config the node will attempt to update to. This gets set before the machine config operator validates the new machine config against the current machine config.",
+	"pinnedImageSets": "pinnedImageSets holds the desired pinned image sets that this node should pin and pull.",
 }
 
 func (MachineConfigNodeSpec) SwaggerDoc() map[string]string {
@@ -58,11 +59,20 @@ func (MachineConfigNodeSpecMachineConfigVersion) SwaggerDoc() map[string]string 
 	return map_MachineConfigNodeSpecMachineConfigVersion
 }
 
+var map_MachineConfigNodeSpecPinnedImageSet = map[string]string{
+	"name": "name is the name of the pinned image set. Must be a lowercase RFC-1123 hostname (https://tools.ietf.org/html/rfc1123) It may consist of only alphanumeric characters, hyphens (-) and periods (.) and must be at most 253 characters in length.",
+}
+
+func (MachineConfigNodeSpecPinnedImageSet) SwaggerDoc() map[string]string {
+	return map_MachineConfigNodeSpecPinnedImageSet
+}
+
 var map_MachineConfigNodeStatus = map[string]string{
 	"":                   "MachineConfigNodeStatus holds the reported information on a particular machine config node.",
 	"conditions":         "conditions represent the observations of a machine config node's current state.",
 	"observedGeneration": "observedGeneration represents the generation observed by the controller. This field is updated when the controller observes a change to the desiredConfig in the configVersion of the machine config node spec.",
 	"configVersion":      "configVersion describes the current and desired machine config for this node. The current version represents the current machine config for the node and is updated after a successful update. The desired version represents the machine config the node will attempt to update to. This desired machine config has been compared to the current machine config and has been validated by the machine config operator as one that is valid and that exists.",
+	"pinnedImageSets":    "pinnedImageSets describes the current and desired pinned image sets for this node. The current version is the generation of the pinned image set that has most recently been successfully pulled and pinned on this node. The desired version is the generation of the pinned image set that is targeted to be pulled and pinned on this node.",
 }
 
 func (MachineConfigNodeStatus) SwaggerDoc() map[string]string {
@@ -77,6 +87,249 @@ var map_MachineConfigNodeStatusMachineConfigVersion = map[string]string{
 
 func (MachineConfigNodeStatusMachineConfigVersion) SwaggerDoc() map[string]string {
 	return map_MachineConfigNodeStatusMachineConfigVersion
+}
+
+var map_MachineConfigNodeStatusPinnedImageSet = map[string]string{
+	"name":                       "name is the name of the pinned image set. Must be a lowercase RFC-1123 hostname (https://tools.ietf.org/html/rfc1123) It may consist of only alphanumeric characters, hyphens (-) and periods (.) and must be at most 253 characters in length.",
+	"currentGeneration":          "currentGeneration is the generation of the pinned image set that has most recently been successfully pulled and pinned on this node.",
+	"desiredGeneration":          "desiredGeneration version is the generation of the pinned image set that is targeted to be pulled and pinned on this node.",
+	"lastFailedGeneration":       "lastFailedGeneration is the generation of the most recent pinned image set that failed to be pulled and pinned on this node.",
+	"lastFailedGenerationErrors": "lastFailedGenerationErrors is a list of errors why the lastFailed generation failed to be pulled and pinned.",
+}
+
+func (MachineConfigNodeStatusPinnedImageSet) SwaggerDoc() map[string]string {
+	return map_MachineConfigNodeStatusPinnedImageSet
+}
+
+var map_MachineOSBuild = map[string]string{
+	"":       "MachineOSBuild describes a build process managed and deployed by the MCO Compatibility level 4: No compatibility is provided, the API can change at any point for any reason. These capabilities should not be used by applications needing long term support.",
+	"spec":   "spec describes the configuration of the machine os build",
+	"status": "status describes the lst observed state of this machine os build",
+}
+
+func (MachineOSBuild) SwaggerDoc() map[string]string {
+	return map_MachineOSBuild
+}
+
+var map_MachineOSBuildList = map[string]string{
+	"": "MachineOSBuildList describes all of the Builds on the system\n\nCompatibility level 4: No compatibility is provided, the API can change at any point for any reason. These capabilities should not be used by applications needing long term support.",
+}
+
+func (MachineOSBuildList) SwaggerDoc() map[string]string {
+	return map_MachineOSBuildList
+}
+
+var map_MachineOSBuildSpec = map[string]string{
+	"":                      "MachineOSBuildSpec describes information about a build process primarily populated from a MachineOSConfig object.",
+	"configGeneration":      "configGeneration tracks which version of MachineOSConfig this build is based off of",
+	"desiredConfig":         "desiredConfig is the desired config we want to build an image for.",
+	"machineOSConfig":       "machineOSConfig is the config object which the build is based off of",
+	"version":               "version tracks the newest MachineOSBuild for each MachineOSConfig",
+	"renderedImagePushspec": "renderedImagePushspec is set from the MachineOSConfig The format of the image pullspec is: host[:port][/namespace]/name:<tag> or svc_name.namespace.svc[:port]/repository/name:<tag>",
+}
+
+func (MachineOSBuildSpec) SwaggerDoc() map[string]string {
+	return map_MachineOSBuildSpec
+}
+
+var map_MachineOSBuildStatus = map[string]string{
+	"":                   "MachineOSBuildStatus describes the state of a build and other helpful information.",
+	"conditions":         "conditions are state related conditions for the build. Valid types are: Prepared, Building, Failed, Interrupted, and Succeeded once a Build is marked as Failed, no future conditions can be set. This is enforced by the MCO.",
+	"builderReference":   "ImageBuilderType describes the image builder set in the MachineOSConfig",
+	"relatedObjects":     "relatedObjects is a list of objects that are related to the build process.",
+	"buildStart":         "buildStart describes when the build started.",
+	"buildEnd":           "buildEnd describes when the build ended.",
+	"finalImagePullspec": "finalImagePushSpec describes the fully qualified pushspec produced by this build that the final image can be. Must be in sha format.",
+}
+
+func (MachineOSBuildStatus) SwaggerDoc() map[string]string {
+	return map_MachineOSBuildStatus
+}
+
+var map_MachineOSBuilderReference = map[string]string{
+	"":                 "MachineOSBuilderReference describes which ImageBuilder backend to use for this build/",
+	"imageBuilderType": "ImageBuilderType describes the image builder set in the MachineOSConfig",
+	"buildPod":         "relatedObjects is a list of objects that are related to the build process.",
+}
+
+func (MachineOSBuilderReference) SwaggerDoc() map[string]string {
+	return map_MachineOSBuilderReference
+}
+
+var map_MachineOSConfigReference = map[string]string{
+	"":     "MachineOSConfigReference refers to the MachineOSConfig this build is based off of",
+	"name": "name of the MachineOSConfig",
+}
+
+func (MachineOSConfigReference) SwaggerDoc() map[string]string {
+	return map_MachineOSConfigReference
+}
+
+var map_ObjectReference = map[string]string{
+	"":          "ObjectReference contains enough information to let you inspect or modify the referred object.",
+	"group":     "group of the referent.",
+	"resource":  "resource of the referent.",
+	"namespace": "namespace of the referent.",
+	"name":      "name of the referent.",
+}
+
+func (ObjectReference) SwaggerDoc() map[string]string {
+	return map_ObjectReference
+}
+
+var map_RenderedMachineConfigReference = map[string]string{
+	"":     "Refers to the name of a rendered MachineConfig (e.g., \"rendered-worker-ec40d2965ff81bce7cd7a7e82a680739\", etc.): the build targets this MachineConfig, this is often used to tell us whether we need an update.",
+	"name": "name is the name of the rendered MachineConfig object.",
+}
+
+func (RenderedMachineConfigReference) SwaggerDoc() map[string]string {
+	return map_RenderedMachineConfigReference
+}
+
+var map_BuildInputs = map[string]string{
+	"":                              "BuildInputs holds all of the information needed to trigger a build",
+	"baseOSExtensionsImagePullspec": "baseOSExtensionsImagePullspec is the base Extensions image used in the build process the MachineOSConfig object will use the in cluster image registry configuration. if you wish to use a mirror or any other settings specific to registries.conf, please specify those in the cluster wide registries.conf. The format of the image pullspec is: host[:port][/namespace]/name@sha256:<digest>",
+	"baseOSImagePullspec":           "baseOSImagePullspec is the base OSImage we use to build our custom image. the MachineOSConfig object will use the in cluster image registry configuration. if you wish to use a mirror or any other settings specific to registries.conf, please specify those in the cluster wide registries.conf. The format of the image pullspec is: host[:port][/namespace]/name@sha256:<digest>",
+	"baseImagePullSecret":           "baseImagePullSecret is the secret used to pull the base image. must live in the openshift-machine-config-operator namespace",
+	"imageBuilder":                  "machineOSImageBuilder describes which image builder will be used in each build triggered by this MachineOSConfig",
+	"renderedImagePushSecret":       "renderedImagePushSecret is the secret used to connect to a user registry. the final image push and pull secrets should be separate for security concerns. If the final image push secret is somehow exfiltrated, that gives someone the power to push images to the image repository. By comparison, if the final image pull secret gets exfiltrated, that only gives someone to pull images from the image repository. It's basically the principle of least permissions. this push secret will be used only by the MachineConfigController pod to push the image to the final destination. Not all nodes will need to push this image, most of them will only need to pull the image in order to use it.",
+	"renderedImagePushspec":         "renderedImagePushspec describes the location of the final image. the MachineOSConfig object will use the in cluster image registry configuration. if you wish to use a mirror or any other settings specific to registries.conf, please specify those in the cluster wide registries.conf. The format of the image pushspec is: host[:port][/namespace]/name:<tag> or svc_name.namespace.svc[:port]/repository/name:<tag>",
+	"releaseVersion":                "releaseVersion is associated with the base OS Image. This is the version of Openshift that the Base Image is associated with. This field is populated from the machine-config-osimageurl configmap in the openshift-machine-config-operator namespace. It will come in the format: 4.16.0-0.nightly-2024-04-03-065948 or any valid release. The MachineOSBuilder populates this field and validates that this is a valid stream. This is used as a label in the dockerfile that builds the OS image.",
+	"containerFile":                 "containerFile describes the custom data the user has specified to build into the image. this is also commonly called a Dockerfile and you can treat it as such. The content is the content of your Dockerfile.",
+}
+
+func (BuildInputs) SwaggerDoc() map[string]string {
+	return map_BuildInputs
+}
+
+var map_BuildOutputs = map[string]string{
+	"":                       "BuildOutputs holds all information needed to handle booting the image after a build",
+	"currentImagePullSecret": "currentImagePullSecret is the secret used to pull the final produced image. must live in the openshift-machine-config-operator namespace the final image push and pull secrets should be separate for security concerns. If the final image push secret is somehow exfiltrated, that gives someone the power to push images to the image repository. By comparison, if the final image pull secret gets exfiltrated, that only gives someone to pull images from the image repository. It's basically the principle of least permissions. this pull secret will be used on all nodes in the pool. These nodes will need to pull the final OS image and boot into it using rpm-ostree or bootc.",
+}
+
+func (BuildOutputs) SwaggerDoc() map[string]string {
+	return map_BuildOutputs
+}
+
+var map_ImageSecretObjectReference = map[string]string{
+	"":     "Refers to the name of an image registry push/pull secret needed in the build process.",
+	"name": "name is the name of the secret used to push or pull this MachineOSConfig object. this secret must be in the openshift-machine-config-operator namespace.",
+}
+
+func (ImageSecretObjectReference) SwaggerDoc() map[string]string {
+	return map_ImageSecretObjectReference
+}
+
+var map_MachineConfigPoolReference = map[string]string{
+	"":     "Refers to the name of a MachineConfigPool (e.g., \"worker\", \"infra\", etc.): the MachineOSBuilder pod validates that the user has provided a valid pool",
+	"name": "name of the MachineConfigPool object.",
+}
+
+func (MachineConfigPoolReference) SwaggerDoc() map[string]string {
+	return map_MachineConfigPoolReference
+}
+
+var map_MachineOSConfig = map[string]string{
+	"":       "MachineOSConfig describes the configuration for a build process managed by the MCO Compatibility level 4: No compatibility is provided, the API can change at any point for any reason. These capabilities should not be used by applications needing long term support.",
+	"spec":   "spec describes the configuration of the machineosconfig",
+	"status": "status describes the status of the machineosconfig",
+}
+
+func (MachineOSConfig) SwaggerDoc() map[string]string {
+	return map_MachineOSConfig
+}
+
+var map_MachineOSConfigList = map[string]string{
+	"": "MachineOSConfigList describes all configurations for image builds on the system\n\nCompatibility level 4: No compatibility is provided, the API can change at any point for any reason. These capabilities should not be used by applications needing long term support.",
+}
+
+func (MachineOSConfigList) SwaggerDoc() map[string]string {
+	return map_MachineOSConfigList
+}
+
+var map_MachineOSConfigSpec = map[string]string{
+	"":                  "MachineOSConfigSpec describes user-configurable options as well as information about a build process.",
+	"machineConfigPool": "machineConfigPool is the pool which the build is for",
+	"buildInputs":       "buildInputs is where user input options for the build live",
+	"buildOutputs":      "buildOutputs is where user input options for the build live",
+}
+
+func (MachineOSConfigSpec) SwaggerDoc() map[string]string {
+	return map_MachineOSConfigSpec
+}
+
+var map_MachineOSConfigStatus = map[string]string{
+	"":                     "MachineOSConfigStatus describes the status this config object and relates it to the builds associated with this MachineOSConfig",
+	"conditions":           "conditions are state related conditions for the config.",
+	"observedGeneration":   "observedGeneration represents the generation observed by the controller. this field is updated when the user changes the configuration in BuildSettings or the MCP this object is associated with.",
+	"currentImagePullspec": "currentImagePullspec is the fully qualified image pull spec used by the MCO to pull down the new OSImage. This must include sha256.",
+}
+
+func (MachineOSConfigStatus) SwaggerDoc() map[string]string {
+	return map_MachineOSConfigStatus
+}
+
+var map_MachineOSContainerfile = map[string]string{
+	"":                  "MachineOSContainerfile contains all custom content the user wants built into the image",
+	"containerfileArch": "containerfileArch describes the architecture this containerfile is to be built for this arch is optional. If the user does not specify an architecture, it is assumed that the content can be applied to all architectures, or in a single arch cluster: the only architecture.",
+	"content":           "content is the custom content to be built",
+}
+
+func (MachineOSContainerfile) SwaggerDoc() map[string]string {
+	return map_MachineOSContainerfile
+}
+
+var map_MachineOSImageBuilder = map[string]string{
+	"imageBuilderType": "imageBuilderType specifies the backend to be used to build the image. Valid options are: PodImageBuilder",
+}
+
+func (MachineOSImageBuilder) SwaggerDoc() map[string]string {
+	return map_MachineOSImageBuilder
+}
+
+var map_PinnedImageRef = map[string]string{
+	"name": "name is an OCI Image referenced by digest.\n\nThe format of the image ref is: host[:port][/namespace]/name@sha256:<digest>",
+}
+
+func (PinnedImageRef) SwaggerDoc() map[string]string {
+	return map_PinnedImageRef
+}
+
+var map_PinnedImageSet = map[string]string{
+	"":       "PinnedImageSet describes a set of images that should be pinned by CRI-O and pulled to the nodes which are members of the declared MachineConfigPools.\n\nCompatibility level 4: No compatibility is provided, the API can change at any point for any reason. These capabilities should not be used by applications needing long term support.",
+	"spec":   "spec describes the configuration of this pinned image set.",
+	"status": "status describes the last observed state of this pinned image set.",
+}
+
+func (PinnedImageSet) SwaggerDoc() map[string]string {
+	return map_PinnedImageSet
+}
+
+var map_PinnedImageSetList = map[string]string{
+	"":         "PinnedImageSetList is a list of PinnedImageSet resources\n\nCompatibility level 4: No compatibility is provided, the API can change at any point for any reason. These capabilities should not be used by applications needing long term support.",
+	"metadata": "metadata is the standard list's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
+}
+
+func (PinnedImageSetList) SwaggerDoc() map[string]string {
+	return map_PinnedImageSetList
+}
+
+var map_PinnedImageSetSpec = map[string]string{
+	"":             "PinnedImageSetSpec defines the desired state of a PinnedImageSet.",
+	"pinnedImages": "pinnedImages is a list of OCI Image referenced by digest that should be pinned and pre-loaded by the nodes of a MachineConfigPool. Translates into a new file inside the /etc/crio/crio.conf.d directory with content similar to this:\n\n     pinned_images = [\n             \"quay.io/openshift-release-dev/ocp-release@sha256:...\",\n             \"quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:...\",\n             \"quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:...\",\n             ...\n     ]\n\nThese image references should all be by digest, tags aren't allowed.",
+}
+
+func (PinnedImageSetSpec) SwaggerDoc() map[string]string {
+	return map_PinnedImageSetSpec
+}
+
+var map_PinnedImageSetStatus = map[string]string{
+	"":           "PinnedImageSetStatus describes the current state of a PinnedImageSet.",
+	"conditions": "conditions represent the observations of a pinned image set's current state.",
+}
+
+func (PinnedImageSetStatus) SwaggerDoc() map[string]string {
+	return map_PinnedImageSetStatus
 }
 
 // AUTO-GENERATED FUNCTIONS END HERE

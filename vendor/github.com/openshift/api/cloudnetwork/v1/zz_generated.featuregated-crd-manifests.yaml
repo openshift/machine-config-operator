@@ -5,6 +5,9 @@ cloudprivateipconfigs.cloud.network.openshift.io:
   Capability: ""
   Category: ""
   FeatureGates: []
+  FilenameOperatorName: ""
+  FilenameOperatorOrdering: "001"
+  FilenameRunLevel: ""
   GroupName: cloud.network.openshift.io
   HasStatus: true
   KindName: CloudPrivateIPConfig
@@ -12,8 +15,7 @@ cloudprivateipconfigs.cloud.network.openshift.io:
   PluralName: cloudprivateipconfigs
   PrinterColumns: []
   Scope: Cluster
-  ShortName: ""
-  TargetFilenamePattern: 001-cloudprivateipconfigMARKERS.crd.yaml
+  ShortNames: null
   TopLevelFeatureGates: []
   Version: v1
 
