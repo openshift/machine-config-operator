@@ -68,6 +68,12 @@ type RotatedSelfSignedCertKeySecret struct {
 	Lister        corev1listers.SecretLister
 	Client        corev1client.SecretsGetter
 	EventRecorder events.Recorder
+
+	// Deprecated: DO NOT eanble, it is intended as a short term hack for a very specific use case,
+	// and it works in tandem with a particular carry patch applied to the openshift kube-apiserver.
+	// we will remove this when we migrate all of the affected secret
+	// objects to their intended type: https://issues.redhat.com/browse/API-1800
+	UseSecretUpdateOnly bool
 }
 
 type TargetCertCreator interface {
@@ -107,10 +113,15 @@ func (c RotatedSelfSignedCertKeySecret) EnsureTargetCertKeyPair(ctx context.Cont
 		}
 	}
 
+	applyFn := resourceapply.ApplySecret
+	if c.UseSecretUpdateOnly {
+		applyFn = resourceapply.ApplySecretDoNotUse
+	}
+
 	// apply necessary metadata (possibly via delete+recreate) if secret exists
 	// this is done before content update to prevent unexpected rollouts
 	if ensureMetadataUpdate(targetCertKeyPairSecret, c.Owner, c.AdditionalAnnotations) && ensureSecretTLSTypeSet(targetCertKeyPairSecret) {
-		actualTargetCertKeyPairSecret, _, err := resourceapply.ApplySecret(ctx, c.Client, c.EventRecorder, targetCertKeyPairSecret)
+		actualTargetCertKeyPairSecret, _, err := applyFn(ctx, c.Client, c.EventRecorder, targetCertKeyPairSecret)
 		if err != nil {
 			return nil, err
 		}
@@ -125,7 +136,7 @@ func (c RotatedSelfSignedCertKeySecret) EnsureTargetCertKeyPair(ctx context.Cont
 
 		LabelAsManagedSecret(targetCertKeyPairSecret, CertificateTypeTarget)
 
-		actualTargetCertKeyPairSecret, _, err := resourceapply.ApplySecret(ctx, c.Client, c.EventRecorder, targetCertKeyPairSecret)
+		actualTargetCertKeyPairSecret, _, err := applyFn(ctx, c.Client, c.EventRecorder, targetCertKeyPairSecret)
 		if err != nil {
 			return nil, err
 		}
@@ -270,7 +281,7 @@ func (r *ServingRotation) NewCertificate(signer *crypto.CA, validity time.Durati
 	if len(r.Hostnames()) == 0 {
 		return nil, fmt.Errorf("no hostnames set")
 	}
-	return signer.MakeServerCertForDuration(sets.NewString(r.Hostnames()...), validity, r.CertificateExtensionFn...)
+	return signer.MakeServerCertForDuration(sets.New(r.Hostnames()...), validity, r.CertificateExtensionFn...)
 }
 
 func (r *ServingRotation) RecheckChannel() <-chan struct{} {
@@ -287,19 +298,19 @@ func (r *ServingRotation) NeedNewTargetCertKeyPair(currentCertSecret *corev1.Sec
 }
 
 func (r *ServingRotation) missingHostnames(annotations map[string]string) string {
-	existingHostnames := sets.NewString(strings.Split(annotations[CertificateHostnames], ",")...)
-	requiredHostnames := sets.NewString(r.Hostnames()...)
+	existingHostnames := sets.New(strings.Split(annotations[CertificateHostnames], ",")...)
+	requiredHostnames := sets.New(r.Hostnames()...)
 	if !existingHostnames.Equal(requiredHostnames) {
 		existingNotRequired := existingHostnames.Difference(requiredHostnames)
 		requiredNotExisting := requiredHostnames.Difference(existingHostnames)
-		return fmt.Sprintf("%q are existing and not required, %q are required and not existing", strings.Join(existingNotRequired.List(), ","), strings.Join(requiredNotExisting.List(), ","))
+		return fmt.Sprintf("%q are existing and not required, %q are required and not existing", strings.Join(sets.List(existingNotRequired), ","), strings.Join(sets.List(requiredNotExisting), ","))
 	}
 
 	return ""
 }
 
 func (r *ServingRotation) SetAnnotations(cert *crypto.TLSCertificateConfig, annotations map[string]string) map[string]string {
-	hostnames := sets.String{}
+	hostnames := sets.Set[string]{}
 	for _, ip := range cert.Certs[0].IPAddresses {
 		hostnames.Insert(ip.String())
 	}
@@ -308,7 +319,7 @@ func (r *ServingRotation) SetAnnotations(cert *crypto.TLSCertificateConfig, anno
 	}
 
 	// List does a sort so that we have a consistent representation
-	annotations[CertificateHostnames] = strings.Join(hostnames.List(), ",")
+	annotations[CertificateHostnames] = strings.Join(sets.List(hostnames), ",")
 	return annotations
 }
 
