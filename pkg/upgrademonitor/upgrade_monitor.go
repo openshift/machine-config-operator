@@ -9,6 +9,7 @@ import (
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/utils/ptr"
 
 	v1 "github.com/openshift/api/config/v1"
 	mcfgalphav1 "github.com/openshift/api/machineconfiguration/v1alpha1"
@@ -29,7 +30,43 @@ type Condition struct {
 // 2) the desiredConfig in the MCN Status will only be set once the update is proven to be compatible. Meanwhile the desired and current config in the spec react to live changes of state on the Node
 // 3) None of this will be executed unless the TechPreviewNoUpgrade featuregate is applied.
 // nolint:gocyclo
-func GenerateAndApplyMachineConfigNodes(parentCondition, childCondition *Condition, parentStatus, childStatus metav1.ConditionStatus, node *corev1.Node, mcfgClient mcfgclientset.Interface, fgAccessor featuregates.FeatureGateAccess) error {
+func GenerateAndApplyMachineConfigNodes(
+	parentCondition,
+	childCondition *Condition,
+	parentStatus,
+	childStatus metav1.ConditionStatus,
+	node *corev1.Node,
+	mcfgClient mcfgclientset.Interface,
+	fgAccessor featuregates.FeatureGateAccess,
+) error {
+	return generateAndApplyMachineConfigNodes(parentCondition, childCondition, parentStatus, childStatus, node, mcfgClient, nil, nil, fgAccessor)
+}
+
+func UpdateMachineConfigNodeStatus(
+	parentCondition,
+	childCondition *Condition,
+	parentStatus,
+	childStatus metav1.ConditionStatus,
+	node *corev1.Node,
+	mcfgClient mcfgclientset.Interface,
+	imageSetApplyConfig []*machineconfigurationalphav1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration,
+	imageSetSpec []mcfgalphav1.MachineConfigNodeSpecPinnedImageSet,
+	fgAccessor featuregates.FeatureGateAccess,
+) error {
+	return generateAndApplyMachineConfigNodes(parentCondition, childCondition, parentStatus, childStatus, node, mcfgClient, imageSetApplyConfig, imageSetSpec, fgAccessor)
+}
+
+func generateAndApplyMachineConfigNodes(
+	parentCondition,
+	childCondition *Condition,
+	parentStatus,
+	childStatus metav1.ConditionStatus,
+	node *corev1.Node,
+	mcfgClient mcfgclientset.Interface,
+	imageSetApplyConfig []*machineconfigurationalphav1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration,
+	imageSetSpec []mcfgalphav1.MachineConfigNodeSpecPinnedImageSet,
+	fgAccessor featuregates.FeatureGateAccess,
+) error {
 	if fgAccessor == nil || node == nil || parentCondition == nil || mcfgClient == nil {
 		return nil
 	}
@@ -92,6 +129,8 @@ func GenerateAndApplyMachineConfigNodes(parentCondition, childCondition *Conditi
 		mcfgalphav1.MachineConfigNodeUpdateReloaded,
 		mcfgalphav1.MachineConfigNodeUpdated,
 		mcfgalphav1.MachineConfigNodeUpdateUncordoned,
+		mcfgalphav1.MachineConfigNodePinnedImageSetsDegraded,
+		mcfgalphav1.MachineConfigNodePinnedImageSetsProgressing,
 	}
 	// create all of the conditions, even the false ones
 	if newMCNode.Status.Conditions == nil {
@@ -197,7 +236,26 @@ func GenerateAndApplyMachineConfigNodes(parentCondition, childCondition *Conditi
 		if node.Annotations["machineconfiguration.openshift.io/currentConfig"] != "" {
 			statusconfigVersionApplyConfig = statusconfigVersionApplyConfig.WithCurrent(newMCNode.Status.ConfigVersion.Current)
 		}
-		statusApplyConfig := machineconfigurationalphav1.MachineConfigNodeStatus().WithConditions(newMCNode.Status.Conditions...).WithObservedGeneration(newMCNode.Generation + 1).WithConfigVersion(statusconfigVersionApplyConfig)
+		statusApplyConfig := machineconfigurationalphav1.MachineConfigNodeStatus().
+			WithConditions(newMCNode.Status.Conditions...).
+			WithObservedGeneration(newMCNode.Generation + 1).
+			WithConfigVersion(statusconfigVersionApplyConfig)
+
+		if imageSetApplyConfig != nil {
+			statusApplyConfig = statusApplyConfig.WithPinnedImageSets(imageSetApplyConfig...)
+		} else {
+			// use the existing image sets
+			for _, imageSet := range newMCNode.Status.PinnedImageSets {
+				statusApplyConfig = statusApplyConfig.WithPinnedImageSets(&machineconfigurationalphav1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration{
+					DesiredGeneration:          ptr.To(imageSet.DesiredGeneration),
+					CurrentGeneration:          ptr.To(imageSet.CurrentGeneration),
+					Name:                       ptr.To(imageSet.Name),
+					LastFailedGeneration:       ptr.To(imageSet.LastFailedGeneration),
+					LastFailedGenerationErrors: imageSet.LastFailedGenerationErrors,
+				})
+			}
+		}
+
 		mcnodeApplyConfig := machineconfigurationalphav1.MachineConfigNode(newMCNode.Name).WithStatus(statusApplyConfig)
 		_, err := mcfgClient.MachineconfigurationV1alpha1().MachineConfigNodes().ApplyStatus(context.TODO(), mcnodeApplyConfig, metav1.ApplyOptions{FieldManager: "machine-config-operator", Force: true})
 		if err != nil {
@@ -215,6 +273,10 @@ func GenerateAndApplyMachineConfigNodes(parentCondition, childCondition *Conditi
 		newMCNode.Name = node.Name
 		newMCNode.Spec.Pool = mcfgalphav1.MCOObjectReference{Name: pool}
 		newMCNode.Spec.Node = mcfgalphav1.MCOObjectReference{Name: node.Name}
+		if imageSetSpec != nil {
+			newMCNode.Spec.PinnedImageSets = imageSetSpec
+		}
+
 		_, err := mcfgClient.MachineconfigurationV1alpha1().MachineConfigNodes().Create(context.TODO(), newMCNode, metav1.CreateOptions{})
 		if err != nil {
 			klog.Errorf("Error creating MCN: %v", err)
@@ -296,4 +358,21 @@ func createOrGetMachineConfigNode(mcfgClient mcfgclientset.Interface, node *core
 	}
 
 	return mcNode, false
+}
+
+type ApplyCallback struct {
+	StatusConfigFn      func(applyConfig *machineconfigurationalphav1.MachineConfigNodeStatusApplyConfiguration)
+	MachineConfigNodeFn func(*mcfgalphav1.MachineConfigNode)
+}
+
+func applyStatusConfig(cfg *machineconfigurationalphav1.MachineConfigNodeStatusApplyConfiguration, applyCallback ...*ApplyCallback) {
+	for _, apply := range applyCallback {
+		apply.StatusConfigFn(cfg)
+	}
+}
+
+func applyMachineConfigNode(mcn *mcfgalphav1.MachineConfigNode, applyCallback ...*ApplyCallback) {
+	for _, apply := range applyCallback {
+		apply.MachineConfigNodeFn(mcn)
+	}
 }
