@@ -10,6 +10,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	osev1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/require"
@@ -24,7 +25,7 @@ func TestOriginalKubeletConfigDefaultNodeConfig(t *testing.T) {
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			f.ccLister = append(f.ccLister, cc)
 
-			fgAccess := createNewDefaultFeatureGateAccess()
+			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"AlibabaPlatform"}, nil)
 			ctrl := f.newController(fgAccess)
 
 			kubeletConfig, err := generateOriginalKubeletConfigIgn(cc, ctrl.templatesDir, "master")
@@ -47,7 +48,7 @@ func TestNodeConfigDefault(t *testing.T) {
 	for _, platform := range []configv1.PlatformType{configv1.AWSPlatformType, configv1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
-			fgAccess := createNewDefaultFeatureGateAccess()
+			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"AlibabaPlatform"}, nil)
 			f.newController(fgAccess)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
@@ -111,7 +112,7 @@ func TestBootstrapNodeConfigDefault(t *testing.T) {
 			mcp1 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			mcps := []*mcfgv1.MachineConfigPool{mcp}
 			mcps = append(mcps, mcp1)
-			fgAccess := createNewDefaultFeatureGateAccess()
+			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"AlibabaPlatform"}, nil)
 
 			for _, configNode := range []*osev1.Node{configNodeCgroupDefault, configNodeCgroupV1, configNodeCgroupV2} {
 				expect := expected[configNode]
@@ -153,7 +154,20 @@ func TestNodeConfigCustom(t *testing.T) {
 	for _, platform := range []configv1.PlatformType{configv1.AWSPlatformType, configv1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
-			fgAccess := createNewDefaultFeatureGateAccess()
+			features := &osev1.FeatureGate{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: ctrlcommon.ClusterFeatureInstanceName,
+				},
+				Spec: osev1.FeatureGateSpec{
+					FeatureGateSelection: osev1.FeatureGateSelection{
+						FeatureSet: osev1.CustomNoUpgrade,
+						CustomNoUpgrade: &osev1.CustomFeatureGates{
+							Enabled: []osev1.FeatureGateName{"CSIMigration"},
+						},
+					},
+				},
+			}
+			fgAccess := featuregates.NewHardcodedFeatureGateAccess(features.Spec.FeatureGateSelection.CustomNoUpgrade.Enabled, features.Spec.FeatureGateSelection.CustomNoUpgrade.Disabled)
 			f.newController(fgAccess)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
