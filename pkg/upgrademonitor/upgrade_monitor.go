@@ -29,7 +29,6 @@ type Condition struct {
 // there are a few stipulations. 1) if the parent and child condition exactly match their currently applied statuses, no new MCN is generated
 // 2) the desiredConfig in the MCN Status will only be set once the update is proven to be compatible. Meanwhile the desired and current config in the spec react to live changes of state on the Node
 // 3) None of this will be executed unless the TechPreviewNoUpgrade featuregate is applied.
-// nolint:gocyclo
 func GenerateAndApplyMachineConfigNodes(
 	parentCondition,
 	childCondition *Condition,
@@ -56,6 +55,7 @@ func UpdateMachineConfigNodeStatus(
 	return generateAndApplyMachineConfigNodes(parentCondition, childCondition, parentStatus, childStatus, node, mcfgClient, imageSetApplyConfig, imageSetSpec, fgAccessor)
 }
 
+// nolint:gocyclo
 func generateAndApplyMachineConfigNodes(
 	parentCondition,
 	childCondition *Condition,

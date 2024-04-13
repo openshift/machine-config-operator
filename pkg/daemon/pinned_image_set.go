@@ -187,6 +187,7 @@ type imageInfo struct {
 }
 
 func (p *PinnedImageSetManager) sync(key string) error {
+	klog.V(4).Infof("Syncing PinnedImageSet for pool: %s", key)
 	node, err := p.nodeLister.Get(p.nodeName)
 	if err != nil {
 		return fmt.Errorf("failed to get node %q: %w", p.nodeName, err)
@@ -401,11 +402,7 @@ func (p *PinnedImageSetManager) checkNodeAllocatableStorage(ctx context.Context,
 		return fmt.Errorf("%w capacity: %d, required: %d", errInsufficientStorage, capacity, p.minStorageAvailableBytes.Value())
 	}
 
-	if err := p.checkImagePayloadStorage(ctx, imageSet.Spec.PinnedImages, capacity); err != nil {
-		return err
-	}
-
-	return nil
+	return p.checkImagePayloadStorage(ctx, imageSet.Spec.PinnedImages, capacity)
 }
 
 func (p *PinnedImageSetManager) checkImagePayloadStorage(ctx context.Context, images []mcfgv1alpha1.PinnedImageRef, capacity int64) error {
@@ -710,7 +707,7 @@ func scheduleWork(ctx context.Context, prefetchCh chan prefetch, registryAuth *r
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			image := string(imageRef.Name)
+			image := imageRef.Name
 			authConfig, err := registryAuth.getAuthConfigForImage(image)
 			if err != nil {
 				return fmt.Errorf("failed to get auth config for image %s: %w", image, err)
@@ -1099,13 +1096,13 @@ func (p *PinnedImageSetManager) handleErr(err error, key interface{}) {
 	p.queue.AddAfter(key, 1*time.Minute)
 }
 
-func getImageSize(ctx context.Context, imageName string, authFilePath string) (int64, error) {
+func getImageSize(ctx context.Context, imageName, authFilePath string) (int64, error) {
 	args := []string{
 		"manifest",
 		"--log-level", "error", // suppress warn log output
 		"inspect",
 		"--authfile", authFilePath,
-		string(imageName),
+		imageName,
 	}
 
 	output, err := exec.CommandContext(ctx, "podman", args...).CombinedOutput()
@@ -1124,7 +1121,7 @@ func getImageSize(ctx context.Context, imageName string, authFilePath string) (i
 
 	var totalSize int64
 	for _, layer := range manifest.Layers {
-		totalSize += int64(layer.Size)
+		totalSize += layer.Size
 	}
 
 	return totalSize, nil
