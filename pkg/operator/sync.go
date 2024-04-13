@@ -18,7 +18,6 @@ import (
 	configclientscheme "github.com/openshift/client-go/config/clientset/versioned/scheme"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	apiextv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -41,7 +40,6 @@ import (
 	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
 	mcoResourceApply "github.com/openshift/machine-config-operator/lib/resourceapply"
 	mcoResourceRead "github.com/openshift/machine-config-operator/lib/resourceread"
-	"github.com/openshift/machine-config-operator/manifests"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	"github.com/openshift/machine-config-operator/pkg/controller/build"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -247,10 +245,6 @@ func (optr *Operator) syncCloudConfig(spec *mcfgv1.ControllerConfigSpec, infra *
 
 //nolint:gocyclo
 func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
-	if err := optr.syncCustomResourceDefinitions(); err != nil {
-		return err
-	}
-
 	if optr.inClusterBringup {
 		klog.V(4).Info("Starting inClusterBringup informers cache sync")
 		// sync now our own informers after having installed the CRDs
@@ -614,33 +608,6 @@ func getIgnitionHost(infraStatus *configv1.InfrastructureStatus) (string, error)
 	}
 
 	return ignitionHost, nil
-}
-
-func (optr *Operator) syncCustomResourceDefinitions() error {
-	crds := []string{
-		"manifests/controllerconfig.crd.yaml",
-		"manifests/0000_80_machine-config-operator_01_machineconfignode-TechPreviewNoUpgrade.crd.yaml",
-	}
-
-	for _, crd := range crds {
-
-		crdBytes, err := manifests.ReadFile(crd)
-		if err != nil {
-			return fmt.Errorf("error getting asset %s: %w", crd, err)
-		}
-		c := resourceread.ReadCustomResourceDefinitionV1OrDie(crdBytes)
-		_, updated, err := resourceapply.ApplyCustomResourceDefinitionV1(context.TODO(), optr.apiExtClient.ApiextensionsV1(), optr.libgoRecorder, c)
-		if err != nil {
-			return err
-		}
-		if updated {
-			if err := optr.waitForCustomResourceDefinition(c); err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
 }
 
 func (optr *Operator) syncMachineConfigPools(config *renderConfig) error {
@@ -1519,35 +1486,6 @@ const (
 	controllerConfigCompletedInterval = time.Second
 	controllerConfigCompletedTimeout  = 5 * time.Minute
 )
-
-func (optr *Operator) waitForCustomResourceDefinition(resource *apiextv1.CustomResourceDefinition) error {
-	var lastErr error
-
-	ctx := context.TODO()
-
-	if err := wait.PollUntilContextTimeout(ctx, customResourceReadyInterval, customResourceReadyTimeout, false, func(_ context.Context) (bool, error) {
-		crd, err := optr.crdLister.Get(resource.Name)
-		if err != nil {
-			lastErr = fmt.Errorf("error getting CustomResourceDefinition %s: %w", resource.Name, err)
-			return false, nil
-		}
-
-		for _, condition := range crd.Status.Conditions {
-			if condition.Type == apiextv1.Established && condition.Status == apiextv1.ConditionTrue {
-				return true, nil
-			}
-		}
-		lastErr = fmt.Errorf("CustomResourceDefinition %s is not ready. conditions: %v", crd.Name, crd.Status.Conditions)
-		return false, nil
-	}); err != nil {
-		if wait.Interrupted(err) {
-			errs := kubeErrs.NewAggregate([]error{err, lastErr})
-			return fmt.Errorf("error during syncCustomResourceDefinitions: %w", errs)
-		}
-		return err
-	}
-	return nil
-}
 
 //nolint:dupl
 func (optr *Operator) waitForDeploymentRollout(resource *appsv1.Deployment) error {

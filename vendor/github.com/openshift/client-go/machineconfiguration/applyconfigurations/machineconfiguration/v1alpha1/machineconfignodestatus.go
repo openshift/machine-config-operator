@@ -12,6 +12,7 @@ type MachineConfigNodeStatusApplyConfiguration struct {
 	Conditions         []v1.Condition                                                 `json:"conditions,omitempty"`
 	ObservedGeneration *int64                                                         `json:"observedGeneration,omitempty"`
 	ConfigVersion      *MachineConfigNodeStatusMachineConfigVersionApplyConfiguration `json:"configVersion,omitempty"`
+	PinnedImageSets    []MachineConfigNodeStatusPinnedImageSetApplyConfiguration      `json:"pinnedImageSets,omitempty"`
 }
 
 // MachineConfigNodeStatusApplyConfiguration constructs an declarative configuration of the MachineConfigNodeStatus type for use with
@@ -43,5 +44,18 @@ func (b *MachineConfigNodeStatusApplyConfiguration) WithObservedGeneration(value
 // If called multiple times, the ConfigVersion field is set to the value of the last call.
 func (b *MachineConfigNodeStatusApplyConfiguration) WithConfigVersion(value *MachineConfigNodeStatusMachineConfigVersionApplyConfiguration) *MachineConfigNodeStatusApplyConfiguration {
 	b.ConfigVersion = value
+	return b
+}
+
+// WithPinnedImageSets adds the given value to the PinnedImageSets field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, values provided by each call will be appended to the PinnedImageSets field.
+func (b *MachineConfigNodeStatusApplyConfiguration) WithPinnedImageSets(values ...*MachineConfigNodeStatusPinnedImageSetApplyConfiguration) *MachineConfigNodeStatusApplyConfiguration {
+	for i := range values {
+		if values[i] == nil {
+			panic("nil value passed to WithPinnedImageSets")
+		}
+		b.PinnedImageSets = append(b.PinnedImageSets, *values[i])
+	}
 	return b
 }

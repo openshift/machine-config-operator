@@ -16,6 +16,18 @@ func (c *FakeMachineconfigurationV1alpha1) MachineConfigNodes() v1alpha1.Machine
 	return &FakeMachineConfigNodes{c}
 }
 
+func (c *FakeMachineconfigurationV1alpha1) MachineOSBuilds() v1alpha1.MachineOSBuildInterface {
+	return &FakeMachineOSBuilds{c}
+}
+
+func (c *FakeMachineconfigurationV1alpha1) MachineOSConfigs() v1alpha1.MachineOSConfigInterface {
+	return &FakeMachineOSConfigs{c}
+}
+
+func (c *FakeMachineconfigurationV1alpha1) PinnedImageSets() v1alpha1.PinnedImageSetInterface {
+	return &FakePinnedImageSets{c}
+}
+
 // RESTClient returns a RESTClient that is used to communicate
 // with API server by this client implementation.
 func (c *FakeMachineconfigurationV1alpha1) RESTClient() rest.Interface {

@@ -10,6 +10,12 @@ import (
 type Interface interface {
 	// MachineConfigNodes returns a MachineConfigNodeInformer.
 	MachineConfigNodes() MachineConfigNodeInformer
+	// MachineOSBuilds returns a MachineOSBuildInformer.
+	MachineOSBuilds() MachineOSBuildInformer
+	// MachineOSConfigs returns a MachineOSConfigInformer.
+	MachineOSConfigs() MachineOSConfigInformer
+	// PinnedImageSets returns a PinnedImageSetInformer.
+	PinnedImageSets() PinnedImageSetInformer
 }
 
 type version struct {
@@ -26,4 +32,19 @@ func New(f internalinterfaces.SharedInformerFactory, namespace string, tweakList
 // MachineConfigNodes returns a MachineConfigNodeInformer.
 func (v *version) MachineConfigNodes() MachineConfigNodeInformer {
 	return &machineConfigNodeInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
+}
+
+// MachineOSBuilds returns a MachineOSBuildInformer.
+func (v *version) MachineOSBuilds() MachineOSBuildInformer {
+	return &machineOSBuildInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
+}
+
+// MachineOSConfigs returns a MachineOSConfigInformer.
+func (v *version) MachineOSConfigs() MachineOSConfigInformer {
+	return &machineOSConfigInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
+}
+
+// PinnedImageSets returns a PinnedImageSetInformer.
+func (v *version) PinnedImageSets() PinnedImageSetInformer {
+	return &pinnedImageSetInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
