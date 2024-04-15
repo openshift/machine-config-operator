@@ -830,7 +830,7 @@ func (p *PinnedImageSetManager) Run(workers int, stopCh <-chan struct{}) {
 		p.mcpSynced,
 	) {
 		klog.Errorf("failed to sync initial listers cache")
-		return
+		return	
 	}
 
 	workerCount, err := p.getWorkerCount()

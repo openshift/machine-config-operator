@@ -195,25 +195,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		klog.Fatalf("Failed to initialize: %v", err)
 	}
 
-	criClient, err := cri.NewClient(ctx, constants.DefaultCRIOSocketPath)
-	if err != nil {
-		klog.Fatalf("Failed to initialize CRI client: %v", err)
-	}
-	prefetchTimeout := 2 * time.Minute
-	pinnedImageSetManager := daemon.NewPinnedImageSetManager(
-		startOpts.nodeName,
-		criClient,
-		ctrlctx.ClientBuilder.MachineConfigClientOrDie(componentName),
-		ctrlctx.InformerFactory.Machineconfiguration().V1alpha1().PinnedImageSets(),
-		ctrlctx.KubeInformerFactory.Core().V1().Nodes(),
-		ctrlctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
-		resource.MustParse(constants.MinFreeStorageAfterPrefetch),
-		constants.DefaultCRIOSocketPath,
-		constants.KubeletAuthFile,
-		prefetchTimeout,
-		ctrlctx.FeatureGateAccess,
-	)
-
+	// start config informer early because feature gate depends on it
 	ctrlctx.ConfigInformerFactory.Start(ctrlctx.Stop)
 	ctrlctx.KubeInformerFactory.Start(stopCh)
 	ctrlctx.KubeNamespacedInformerFactory.Start(stopCh)
@@ -223,13 +205,40 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 
 	select {
 	case <-ctrlctx.FeatureGateAccess.InitialFeatureGatesObserved():
+		// ok to start the rest of the informers now that we have observed the initial feature gates
+	
+
 		featureGates, err := ctrlctx.FeatureGateAccess.CurrentFeatureGates()
 		if err != nil {
 			klog.Fatalf("Could not get FG: %v", err)
 		} else {
 			klog.Infof("FeatureGates initialized: knownFeatureGates=%v", featureGates.KnownFeatures())
 			if featureGates.Enabled(configv1.FeatureGatePinnedImages) {
+				klog.Infof("Feature enabled: %s", configv1.FeatureGatePinnedImages)
+				criClient, err := cri.NewClient(ctx, constants.DefaultCRIOSocketPath)
+				if err != nil {
+					klog.Fatalf("Failed to initialize CRI client: %v", err)
+				}
+
+				prefetchTimeout := 2 * time.Minute
+				pinnedImageSetManager := daemon.NewPinnedImageSetManager(
+					startOpts.nodeName,
+					criClient,
+					ctrlctx.ClientBuilder.MachineConfigClientOrDie(componentName),
+					ctrlctx.InformerFactory.Machineconfiguration().V1alpha1().PinnedImageSets(),
+					ctrlctx.KubeInformerFactory.Core().V1().Nodes(),
+					ctrlctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
+					resource.MustParse(constants.MinFreeStorageAfterPrefetch),
+					constants.DefaultCRIOSocketPath,
+					constants.KubeletAuthFile,
+					prefetchTimeout,
+					ctrlctx.FeatureGateAccess,
+				)
+
 				go pinnedImageSetManager.Run(2, stopCh)
+				// start the informers for the pinned image set again after the feature gate is enabled this is allowed.
+				// see comments in SharedInformerFactory interface.
+				ctrlctx.InformerFactory.Start(stopCh)
 			}
 		}
 	case <-time.After(1 * time.Minute):
