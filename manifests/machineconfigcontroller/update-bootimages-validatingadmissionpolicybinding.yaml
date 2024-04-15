@@ -1,0 +1,10 @@
+apiVersion: admissionregistration.k8s.io/v1beta1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: "managed-bootimages-platform-check-binding"
+spec:
+  policyName: "managed-bootimages-platform-check"
+  validationActions: [Deny]
+  paramRef:
+    name: "cluster"
+    parameterNotFoundAction: "Deny"
