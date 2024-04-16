@@ -206,7 +206,6 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 	select {
 	case <-ctrlctx.FeatureGateAccess.InitialFeatureGatesObserved():
 		// ok to start the rest of the informers now that we have observed the initial feature gates
-	
 
 		featureGates, err := ctrlctx.FeatureGateAccess.CurrentFeatureGates()
 		if err != nil {
