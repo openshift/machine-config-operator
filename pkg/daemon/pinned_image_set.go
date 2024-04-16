@@ -69,10 +69,11 @@ const (
 )
 
 var (
-	errInsufficientStorage = errors.New("storage available is less than minimum required")
-	errFailedToPullImage   = errors.New("failed to pull image")
-	errNotFound            = errors.New("not found")
-	errNoAuthForImage      = errors.New("no auth found for image")
+	errInsufficientStorage       = errors.New("storage available is less than minimum required")
+	errFailedToPullImage         = errors.New("failed to pull image")
+	errNotFound                  = errors.New("not found")
+	errNoAuthForImage            = errors.New("no auth found for image")
+	errImageSetGenerationUpdated = errors.New("image set generation updated")
 )
 
 // PinnedImageSetManager manages the prefetching of images.
@@ -252,6 +253,18 @@ func (p *PinnedImageSetManager) syncMachineConfigPools(ctx context.Context, pool
 		}
 	}
 
+	// verify all images are pulled and available if not clear the cache and requeue
+	for _, image := range images {
+		exists, err := p.criClient.ImageStatus(ctx, image.Name)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			p.cache.Clear()
+			return errFailedToPullImage
+		}
+	}
+
 	//  write config and reload crio last to allow a window for kubelet to gc images in emergency
 	if err := p.ensureCrioPinnedImagesConfigFile(images); err != nil {
 		klog.Errorf("failed to write crio config file: %v", err)
@@ -284,25 +297,6 @@ func validateTargetPoolForNode(nodeName string, nodeLister corev1lister.NodeList
 	return true, nil
 }
 
-func (p *PinnedImageSetManager) resetWorkload(cancelFn context.CancelFunc) {
-	p.mu.Lock()
-	if p.cancelFn != nil {
-		p.cancelFn()
-	}
-	p.cancelFn = cancelFn
-	p.mu.Unlock()
-}
-
-func (p *PinnedImageSetManager) cancelWorkload(reason string) {
-	klog.Infof("Cancelling workload: %s", reason)
-	p.mu.Lock()
-	if p.cancelFn != nil {
-		p.cancelFn()
-		p.cancelFn = nil
-	}
-	p.mu.Unlock()
-}
-
 func (p *PinnedImageSetManager) syncMachineConfigPool(ctx context.Context, pool *mcfgv1.MachineConfigPool) error {
 	if pool.Spec.PinnedImageSets == nil {
 		return nil
@@ -323,51 +317,6 @@ func (p *PinnedImageSetManager) syncMachineConfigPool(ctx context.Context, pool 
 	}
 
 	return p.prefetchImageSets(ctx, imageSets...)
-}
-
-// prefetchMonitor is used to monitor the status of prefetch operations.
-type prefetchMonitor struct {
-	once  sync.Once
-	errFn func(error)
-	err   error
-	wg    sync.WaitGroup
-}
-
-func newPrefetchMonitor() *prefetchMonitor {
-	m := &prefetchMonitor{}
-	m.errFn = func(err error) {
-		m.once.Do(func() {
-			m.err = err
-		})
-	}
-	return m
-}
-
-// Add increments the number of prefetch operations the monitor is waiting for.
-func (m *prefetchMonitor) Add(i int) {
-	m.wg.Add(i)
-}
-
-func (m *prefetchMonitor) finalize(err error) {
-	m.once.Do(func() {
-		m.err = err
-	})
-}
-
-// Error is called when an error occurs during prefetching.
-func (m *prefetchMonitor) Error(err error) {
-	m.finalize(err)
-}
-
-// Done decrements the number of prefetch operations the monitor is waiting for.
-func (m *prefetchMonitor) Done() {
-	m.wg.Done()
-}
-
-// WaitForDone waits for the prefetch operations to complete and returns the first error encountered.
-func (m *prefetchMonitor) WaitForDone() error {
-	m.wg.Wait()
-	return m.err
 }
 
 // prefetchImageSets schedules the prefetching of images for the given image sets and waits for completion.
@@ -691,11 +640,23 @@ func (p *PinnedImageSetManager) getWorkerCount() (int, error) {
 	return workerCount, nil
 }
 
-// prefetch represents a task to prefetch an image.
-type prefetch struct {
-	image   string
-	auth    *runtimeapi.AuthConfig
-	monitor *prefetchMonitor
+func (p *PinnedImageSetManager) resetWorkload(cancelFn context.CancelFunc) {
+	p.mu.Lock()
+	if p.cancelFn != nil {
+		p.cancelFn()
+	}
+	p.cancelFn = cancelFn
+	p.mu.Unlock()
+}
+
+func (p *PinnedImageSetManager) cancelWorkload(reason string) {
+	klog.Infof("Cancelling workload: %s", reason)
+	p.mu.Lock()
+	if p.cancelFn != nil {
+		p.cancelFn()
+		p.cancelFn = nil
+	}
+	p.mu.Unlock()
 }
 
 // prefetchWorker is a worker that pulls images from the container runtime.
@@ -740,13 +701,13 @@ func (p *PinnedImageSetManager) scheduleWork(ctx context.Context, prefetchCh cha
 		default:
 			image := imageRef.Name
 
-			// check cache if image is pulled and dont schedule
+			// check cache if image is pulled
+			// this is an optimization to speedup prefetching after requeue
 			if value, found := p.cache.Get(image); found {
 				imageInfo, ok := value.(imageInfo)
 				if ok {
 					if imageInfo.Pulled {
 						scheduledImages++
-						// report status every 25% of images scheduled
 						if scheduledImages%updateIncrement == 0 {
 							klog.Infof("Completed scheduling %d%% of images", (scheduledImages*100)/totalImages)
 						}
@@ -996,15 +957,13 @@ func (p *PinnedImageSetManager) updatePinnedImageSet(oldObj, newObj interface{})
 		return
 	}
 
-	// cancel any currently running tasks in the worker pool
-	p.cancelWorkload("PinnedImageSet update")
-
 	if triggerPinnedImageSetChange(oldImageSet, newImageSet) {
 		klog.V(4).Infof("PinnedImageSet %s update", imageSet.Name)
 		for _, pool := range pools {
 			if !isImageSetInPool(imageSet.Name, pool) {
 				continue
 			}
+			p.cancelWorkload("PinnedImageSet update")
 			p.enqueueMachineConfigPool(pool)
 		}
 	}
@@ -1259,4 +1218,56 @@ func (r *registryAuth) getAuthConfigForImage(image string) (*runtimeapi.AuthConf
 		return nil, fmt.Errorf("%w: %q", errNoAuthForImage, image)
 	}
 	return auth, nil
+}
+
+// prefetch represents a task to prefetch an image.
+type prefetch struct {
+	image   string
+	auth    *runtimeapi.AuthConfig
+	monitor *prefetchMonitor
+}
+
+// prefetchMonitor is used to monitor the status of prefetch operations.
+type prefetchMonitor struct {
+	once  sync.Once
+	errFn func(error)
+	err   error
+	wg    sync.WaitGroup
+}
+
+func newPrefetchMonitor() *prefetchMonitor {
+	m := &prefetchMonitor{}
+	m.errFn = func(err error) {
+		m.once.Do(func() {
+			m.err = err
+		})
+	}
+	return m
+}
+
+// Add increments the number of prefetch operations the monitor is waiting for.
+func (m *prefetchMonitor) Add(i int) {
+	m.wg.Add(i)
+}
+
+func (m *prefetchMonitor) finalize(err error) {
+	m.once.Do(func() {
+		m.err = err
+	})
+}
+
+// Error is called when an error occurs during prefetching.
+func (m *prefetchMonitor) Error(err error) {
+	m.finalize(err)
+}
+
+// Done decrements the number of prefetch operations the monitor is waiting for.
+func (m *prefetchMonitor) Done() {
+	m.wg.Done()
+}
+
+// WaitForDone waits for the prefetch operations to complete and returns the first error encountered.
+func (m *prefetchMonitor) WaitForDone() error {
+	m.wg.Wait()
+	return m.err
 }
