@@ -63,26 +63,30 @@ var platformsRequiringCloudConf = sets.NewString(
 )
 
 type manifestPaths struct {
-	clusterRoles        []string
-	roleBindings        []string
-	clusterRoleBindings []string
-	serviceAccounts     []string
-	secrets             []string
-	configMaps          []string
-	roles               []string
+	clusterRoles                      []string
+	roleBindings                      []string
+	clusterRoleBindings               []string
+	serviceAccounts                   []string
+	secrets                           []string
+	configMaps                        []string
+	roles                             []string
+	validatingAdmissionPolicies       []string
+	validatingAdmissionPolicyBindings []string
 }
 
 const (
 	// Machine Config Controller manifest paths
-	mccClusterRoleManifestPath                = "manifests/machineconfigcontroller/clusterrole.yaml"
-	mccEventsClusterRoleManifestPath          = "manifests/machineconfigcontroller/events-clusterrole.yaml"
-	mccEventsRoleBindingDefaultManifestPath   = "manifests/machineconfigcontroller/events-rolebinding-default.yaml"
-	mccEventsRoleBindingTargetManifestPath    = "manifests/machineconfigcontroller/events-rolebinding-target.yaml"
-	mccClusterRoleBindingManifestPath         = "manifests/machineconfigcontroller/clusterrolebinding.yaml"
-	mccServiceAccountManifestPath             = "manifests/machineconfigcontroller/sa.yaml"
-	mccKubeRbacProxyConfigMapPath             = "manifests/machineconfigcontroller/kube-rbac-proxy-config.yaml"
-	mccKubeRbacProxyPrometheusRolePath        = "manifests/machineconfigcontroller/prometheus-rbac.yaml"
-	mccKubeRbacProxyPrometheusRoleBindingPath = "manifests/machineconfigcontroller/prometheus-rolebinding-target.yaml"
+	mccClusterRoleManifestPath                              = "manifests/machineconfigcontroller/clusterrole.yaml"
+	mccEventsClusterRoleManifestPath                        = "manifests/machineconfigcontroller/events-clusterrole.yaml"
+	mccEventsRoleBindingDefaultManifestPath                 = "manifests/machineconfigcontroller/events-rolebinding-default.yaml"
+	mccEventsRoleBindingTargetManifestPath                  = "manifests/machineconfigcontroller/events-rolebinding-target.yaml"
+	mccClusterRoleBindingManifestPath                       = "manifests/machineconfigcontroller/clusterrolebinding.yaml"
+	mccServiceAccountManifestPath                           = "manifests/machineconfigcontroller/sa.yaml"
+	mccKubeRbacProxyConfigMapPath                           = "manifests/machineconfigcontroller/kube-rbac-proxy-config.yaml"
+	mccKubeRbacProxyPrometheusRolePath                      = "manifests/machineconfigcontroller/prometheus-rbac.yaml"
+	mccKubeRbacProxyPrometheusRoleBindingPath               = "manifests/machineconfigcontroller/prometheus-rolebinding-target.yaml"
+	mccUpdateBootImagesValidatingAdmissionPolicyPath        = "manifests/machineconfigcontroller/update-bootimages-validatingadmissionpolicy.yaml"
+	mccUpdateBootImagesValidatingAdmissionPolicyBindingPath = "manifests/machineconfigcontroller/update-bootimages-validatingadmissionpolicybinding.yaml"
 
 	// Machine OS Builder manifest paths
 	mobClusterRoleManifestPath                      = "manifests/machineosbuilder/clusterrole.yaml"
@@ -786,6 +790,8 @@ func isApplyManifestErrorRetriable(err error) bool {
 	klog.Infof("Skipping retry in ApplyManifests for error: %s", err)
 	return false
 }
+
+//nolint:gocyclo
 func (optr *Operator) applyManifests(config *renderConfig, paths manifestPaths) error {
 	// Retry in case this is a short lived, transient issue.
 	// This does an exponential retry, up to 5 times before it eventually times out and causing a degrade.
@@ -873,8 +879,48 @@ func (optr *Operator) applyManifests(config *renderConfig, paths manifestPaths) 
 				return err
 			}
 		}
+		fg, err := optr.fgAccessor.CurrentFeatureGates()
+
+		if err != nil {
+			return fmt.Errorf("could not get feature gates: %w", err)
+		}
+
+		if fg == nil {
+			return fmt.Errorf("received nil feature gates")
+		}
+
+		// Only sync validatingadmissionpolicy manifests if ValidatingAdmissionPolicy feature gate is enabled
+		if fg.Enabled(configv1.FeatureGateValidatingAdmissionPolicy) {
+
+			// These new apply functions have a resource cache in case there are duplicate CRs
+			noCache := resourceapply.NewResourceCache()
+			for _, path := range paths.validatingAdmissionPolicies {
+				vapBytes, err := renderAsset(config, path)
+				if err != nil {
+					return err
+				}
+				vap := resourceread.ReadValidatingAdmissionPolicyV1beta1OrDie(vapBytes)
+				_, _, err = resourceapply.ApplyValidatingAdmissionPolicyV1beta1(context.TODO(), optr.kubeClient.AdmissionregistrationV1beta1(), optr.libgoRecorder, vap, noCache)
+				if err != nil {
+					return err
+				}
+			}
+
+			for _, path := range paths.validatingAdmissionPolicyBindings {
+				vapbBytes, err := renderAsset(config, path)
+				if err != nil {
+					return err
+				}
+				vapb := resourceread.ReadValidatingAdmissionPolicyBindingV1beta1OrDie(vapbBytes)
+				_, _, err = resourceapply.ApplyValidatingAdmissionPolicyBindingV1beta1(context.TODO(), optr.kubeClient.AdmissionregistrationV1beta1(), optr.libgoRecorder, vapb, noCache)
+				if err != nil {
+					return err
+				}
+			}
+		}
 		return nil
 	})
+
 }
 
 // safetySyncControllerConfig is a special case render of the controllerconfig that we run when
@@ -1052,6 +1098,12 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig) error {
 		serviceAccounts: []string{
 			mccServiceAccountManifestPath,
 			mopServiceAccountManifestPath,
+		},
+		validatingAdmissionPolicies: []string{
+			mccUpdateBootImagesValidatingAdmissionPolicyPath,
+		},
+		validatingAdmissionPolicyBindings: []string{
+			mccUpdateBootImagesValidatingAdmissionPolicyBindingPath,
 		},
 	}
 	if err := optr.applyManifests(config, paths); err != nil {
