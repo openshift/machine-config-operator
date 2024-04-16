@@ -182,8 +182,9 @@ func NewPinnedImageSetManager(
 }
 
 type imageInfo struct {
-	Name string
-	Size int64
+	Name   string
+	Size   int64
+	Pulled bool
 }
 
 func (p *PinnedImageSetManager) sync(key string) error {
@@ -292,6 +293,16 @@ func (p *PinnedImageSetManager) resetWorkload(cancelFn context.CancelFunc) {
 	p.mu.Unlock()
 }
 
+func (p *PinnedImageSetManager) cancelWorkload(reason string) {
+	klog.Infof("Cancelling workload: %s", reason)
+	p.mu.Lock()
+	if p.cancelFn != nil {
+		p.cancelFn()
+		p.cancelFn = nil
+	}
+	p.mu.Unlock()
+}
+
 func (p *PinnedImageSetManager) syncMachineConfigPool(ctx context.Context, pool *mcfgv1.MachineConfigPool) error {
 	if pool.Spec.PinnedImageSets == nil {
 		return nil
@@ -369,7 +380,7 @@ func (p *PinnedImageSetManager) prefetchImageSets(ctx context.Context, imageSets
 	// monitor prefetch operations
 	monitor := newPrefetchMonitor()
 	for _, imageSet := range imageSets {
-		if err := scheduleWork(ctx, p.prefetchCh, registryAuth, imageSet.Spec.PinnedImages, monitor); err != nil {
+		if err := p.scheduleWork(ctx, p.prefetchCh, registryAuth, imageSet.Spec.PinnedImages, monitor); err != nil {
 			return err
 		}
 	}
@@ -410,6 +421,17 @@ func (p *PinnedImageSetManager) checkImagePayloadStorage(ctx context.Context, im
 	requiredStorage := int64(0)
 	for _, image := range images {
 		imageName := image.Name
+
+		// check cache if image is pulled
+		if value, found := p.cache.Get(imageName); found {
+			imageInfo, ok := value.(imageInfo)
+			if ok {
+				if imageInfo.Pulled {
+					continue
+				}
+			}
+		}
+
 		exists, err := p.criClient.ImageStatus(ctx, imageName)
 		if err != nil {
 			return err
@@ -627,10 +649,10 @@ func getImageSetApplyConfigs(imageSetLister mcfglistersv1alpha1.PinnedImageSetLi
 			})
 			imageSet, err := imageSetLister.Get(imageSets.Name)
 			if err != nil {
-				klog.Errorf("Error getting pinned image set: %v", err)
 				if apierrors.IsNotFound(err) {
 					continue
 				}
+				klog.Errorf("Error getting pinned image set: %v", err)
 				return nil, nil, err
 			}
 
@@ -685,6 +707,15 @@ func (p *PinnedImageSetManager) prefetchWorker(ctx context.Context) {
 		}
 		task.monitor.Done()
 
+		cachedImage, ok := p.cache.Get(task.image)
+		if ok {
+			imageInfo := cachedImage.(imageInfo)
+			imageInfo.Pulled = true
+			p.cache.Add(task.image, imageInfo)
+		} else {
+			p.cache.Add(task.image, imageInfo{Name: task.image, Pulled: true})
+		}
+
 		// throttle prefetching to avoid overloading the file system
 		select {
 		case <-time.After(defaultPrefetchThrottleDuration):
@@ -695,7 +726,7 @@ func (p *PinnedImageSetManager) prefetchWorker(ctx context.Context) {
 }
 
 // scheduleWork schedules the prefetch work for the images and collects the first error encountered.
-func scheduleWork(ctx context.Context, prefetchCh chan prefetch, registryAuth *registryAuth, prefetchImages []mcfgv1alpha1.PinnedImageRef, monitor *prefetchMonitor) error {
+func (p *PinnedImageSetManager) scheduleWork(ctx context.Context, prefetchCh chan prefetch, registryAuth *registryAuth, prefetchImages []mcfgv1alpha1.PinnedImageRef, monitor *prefetchMonitor) error {
 	totalImages := len(prefetchImages)
 	updateIncrement := totalImages / 4
 	if updateIncrement == 0 {
@@ -708,6 +739,22 @@ func scheduleWork(ctx context.Context, prefetchCh chan prefetch, registryAuth *r
 			return ctx.Err()
 		default:
 			image := imageRef.Name
+
+			// check cache if image is pulled and dont schedule
+			if value, found := p.cache.Get(image); found {
+				imageInfo, ok := value.(imageInfo)
+				if ok {
+					if imageInfo.Pulled {
+						scheduledImages++
+						// report status every 25% of images scheduled
+						if scheduledImages%updateIncrement == 0 {
+							klog.Infof("Completed scheduling %d%% of images", (scheduledImages*100)/totalImages)
+						}
+						continue
+					}
+				}
+			}
+
 			authConfig, err := registryAuth.getAuthConfigForImage(image)
 			if err != nil {
 				return fmt.Errorf("failed to get auth config for image %s: %w", image, err)
@@ -775,6 +822,7 @@ func (p *PinnedImageSetManager) deleteCrioConfigFile() error {
 	if err := os.Remove(crioPinnedImagesDropInFilePath); err != nil {
 		return fmt.Errorf("failed to remove crio config file: %w", err)
 	}
+	klog.Infof("removed crio config file: %s", crioPinnedImagesDropInFilePath)
 
 	return nil
 }
@@ -830,7 +878,7 @@ func (p *PinnedImageSetManager) Run(workers int, stopCh <-chan struct{}) {
 		p.mcpSynced,
 	) {
 		klog.Errorf("failed to sync initial listers cache")
-		return	
+		return
 	}
 
 	workerCount, err := p.getWorkerCount()
@@ -947,6 +995,9 @@ func (p *PinnedImageSetManager) updatePinnedImageSet(oldObj, newObj interface{})
 	if pools == nil {
 		return
 	}
+
+	// cancel any currently running tasks in the worker pool
+	p.cancelWorkload("PinnedImageSet update")
 
 	if triggerPinnedImageSetChange(oldImageSet, newImageSet) {
 		klog.V(4).Infof("PinnedImageSet %s update", imageSet.Name)
