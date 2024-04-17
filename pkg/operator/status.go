@@ -817,6 +817,9 @@ func machineConfigPoolStatus(pool *mcfgv1.MachineConfigPool) string {
 		return fmt.Sprintf("all %d nodes are at latest configuration %s", pool.Status.MachineCount, pool.Status.Configuration.Name)
 	case apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolUpdating):
 		return fmt.Sprintf("%d (ready %d) out of %d nodes are updating to latest configuration %s", pool.Status.UpdatedMachineCount, pool.Status.ReadyMachineCount, pool.Status.MachineCount, pool.Spec.Configuration.Name)
+	case apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolPinnedImageSetsDegraded):
+		cond := apihelpers.GetMachineConfigPoolCondition(pool.Status, mcfgv1.MachineConfigPoolPinnedImageSetsDegraded)
+		return fmt.Sprintf("pool is degraded because pinned image sets failed with %q: %q", cond.Reason, cond.Message)
 	default:
 		return "<unknown>"
 	}

@@ -176,6 +176,13 @@ func NewMachineConfigPool(name string, mcSelector, nodeSelector *metav1.LabelSel
 					Reason:             "",
 					Message:            "",
 				},
+				{
+					Type:               mcfgv1.MachineConfigPoolPinnedImageSetsDegraded,
+					Status:             corev1.ConditionFalse,
+					LastTransitionTime: metav1.Unix(0, 0),
+					Reason:             "",
+					Message:            "",
+				},
 			},
 		},
 	}
