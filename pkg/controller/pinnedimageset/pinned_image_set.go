@@ -7,16 +7,6 @@ import (
 	"sort"
 	"time"
 
-	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
-	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
-	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
-	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
-	mcfginformersv1alpha1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1alpha1"
-	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
-	mcfglistersv1alpha1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1"
-	"github.com/openshift/machine-config-operator/pkg/apihelpers"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -29,6 +19,17 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
+
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
+	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
+	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
+	mcfginformersv1alpha1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1alpha1"
+	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
+	mcfglistersv1alpha1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1"
+	"github.com/openshift/machine-config-operator/pkg/apihelpers"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 )
 
 const (
@@ -39,7 +40,7 @@ const (
 	// 5ms, 10ms, 20ms, 40ms, 80ms, 160ms, 320ms, 640ms, 1.3s, 2.6s, 5.1s, 10.2s, 20.4s, 41s, 82s
 	maxRetries = 15
 
-	// delay is a pause to avoid churn in PinnedImageSets; see
+	// delay is a pause to avoid churn in PinnedImageSets
 	delay = 5 * time.Second
 )
 
@@ -72,8 +73,7 @@ func New(
 	eventBroadcaster.StartRecordingToSink(&corev1client.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 
 	ctrl := &Controller{
-		client: mcfgClient,
-
+		client:        mcfgClient,
 		eventRecorder: ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-pinnedimagesetcontroller"})),
 		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-pinnedimagesetcontroller"),
 	}
@@ -103,7 +103,6 @@ func New(
 
 // Run executes the render controller.
 func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
-	klog.Info("Starting MachineConfigController-PinnedImageSetController")
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
@@ -123,7 +122,6 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 
 func (ctrl *Controller) addMachineConfigPool(obj interface{}) {
 	pool := obj.(*mcfgv1.MachineConfigPool)
-	klog.V(4).Infof("Adding MachineConfigPool %s", pool.Name)
 	ctrl.enqueueMachineConfigPool(pool)
 }
 
@@ -227,10 +225,6 @@ func (ctrl *Controller) deletePinnedImageSet(obj interface{}) {
 }
 
 func (ctrl *Controller) getPoolsForPinnedImageSet(imageSet *mcfgv1alpha1.PinnedImageSet) ([]*mcfgv1.MachineConfigPool, error) {
-	if len(imageSet.Labels) == 0 {
-		return nil, fmt.Errorf("could not find any MachineConfigPool set for PinnedImageSet %s with labels: %v", imageSet.Name, imageSet.Labels)
-	}
-
 	pList, err := ctrl.mcpLister.List(labels.Everything())
 	if err != nil {
 		return nil, err
@@ -359,11 +353,10 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 }
 
 func (ctrl *Controller) syncAvailableStatus(pool *mcfgv1.MachineConfigPool) error {
-	// TODO: update with the correct condition MachineConfigPoolPinnedImageSetsDegraded
 	if apihelpers.IsMachineConfigPoolConditionFalse(pool.Status.Conditions, mcfgv1.MachineConfigPoolRenderDegraded) {
 		return nil
 	}
-	sdegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolRenderDegraded, corev1.ConditionFalse, "", "")
+	sdegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolPinnedImageSetsDegraded, corev1.ConditionFalse, "", "")
 	apihelpers.SetMachineConfigPoolCondition(&pool.Status, *sdegraded)
 	if _, err := ctrl.client.MachineconfigurationV1().MachineConfigPools().UpdateStatus(context.TODO(), pool, metav1.UpdateOptions{}); err != nil {
 		return err
@@ -372,7 +365,7 @@ func (ctrl *Controller) syncAvailableStatus(pool *mcfgv1.MachineConfigPool) erro
 }
 
 func (ctrl *Controller) syncFailingStatus(pool *mcfgv1.MachineConfigPool, err error) error {
-	sdegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolRenderDegraded, corev1.ConditionTrue, "", fmt.Sprintf("Failed to populate pinned image sets for pool %s: %v", pool.Name, err))
+	sdegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolPinnedImageSetsDegraded, corev1.ConditionTrue, "", fmt.Sprintf("Failed to populate pinned image sets for pool %s: %v", pool.Name, err))
 	apihelpers.SetMachineConfigPoolCondition(&pool.Status, *sdegraded)
 	if _, updateErr := ctrl.client.MachineconfigurationV1().MachineConfigPools().UpdateStatus(context.TODO(), pool, metav1.UpdateOptions{}); updateErr != nil {
 		klog.Errorf("Error updating MachineConfigPool %s: %v", pool.Name, updateErr)

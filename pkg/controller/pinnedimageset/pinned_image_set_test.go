@@ -155,9 +155,9 @@ func TestUpdateSpecNewPinnedImageSet(t *testing.T) {
 			err := c.syncHandler(mcp.Name)
 			require.NoError(err)
 
-			mcp, err = c.client.MachineconfigurationV1().MachineConfigPools().Get(ctx, mcp.Name, metav1.GetOptions{})
+			mcpNew, err := c.client.MachineconfigurationV1().MachineConfigPools().Get(ctx, mcp.Name, metav1.GetOptions{})
 			require.NoError(err)
-			require.Equal(mcp.Spec.PinnedImageSets, tt.wantSpecPis)
+			require.Equal(mcpNew.Spec.PinnedImageSets, tt.wantSpecPis)
 		})
 	}
 }
