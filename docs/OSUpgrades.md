@@ -1,11 +1,11 @@
 # OS updates
 
 The MCO manages the Red Hat Enterprise Linux CoreOS (RHCOS) operating system. Further,
-the operating system itself is just another part of the [release image](https://github.com/openshift/cluster-version-operator/), called `machine-os-content`.
+the operating system itself is just another part of the [release image](https://github.com/openshift/cluster-version-operator/), called `rhel-coreos`.
 
 In other words, the cluster controls the operating system.
 
-# "Bootimage" vs machine-os-content
+# "Bootimage" vs rhel-coreos image
 
 We will use the term "bootimage" to mean an initial RHCOS disk image, such
 as an AMI, bare metal raw disk image, VMWare VMDK, OpenStack qcow2, etc.  
@@ -13,14 +13,14 @@ These bootimages are built using [coreos-assembler](https://github.com/coreos/co
 
 Today, [the installer](https://github.com/openshift/installer/) pins the "bootimages"
 it uses, and released installers also pin the release image.  As noted above,
-release images contain `machine-os-content`, which can be a *different*
+release images contain `rhel-coreos`, which can be a *different*
 RHCOS version.  You can find the installer-pinned bootimage in e.g. [this file](https://github.com/openshift/installer/blob/release-4.4/data/data/rhcos.json).
 
 [A pending enhancement](https://github.com/openshift/enhancements/pull/201) describes
 generating and inspecting bootimage data from the release image
 (not yet implemented).
 
-It's essential to understand that both the bootimage and the `machine-os-content` container
+It's essential to understand that both the bootimage and the `rhel-coreos` container
 are both essentially wrappers for an [OSTree](https://github.com/ostreedev/ostree) commit.
 The OSTree format is an image format designed for in-place operating system updates; it operates
 at the filesystem level (like container images) but (unlike container runtimes) has
@@ -37,7 +37,7 @@ and in general it can be hard to require that in every environment (for
 example, bare metal PXE setups).
 
 [As of today](https://github.com/openshift/machine-config-operator/pull/1766/), when a node boots the MCO serves it Ignition for configuration,
-including a systemd unit called `machine-config-operator-firstboot.service`
+including a systemd unit called `machine-config-daemon-firstboot.service`
 which pulls code onto the host, and then it runs `Before=kubelet.service`
 to perform an OS update and reboot.
 
@@ -59,15 +59,15 @@ as well as for the control plane.
 
 The bootstrap node's `bootkube.sh` service pulls the release image, which
 contains a reference to the MCO (`machine-config-operator`) and also a
-reference to a newer `machine-os-content`. The `bootkube.sh` service runs the MCO in
+reference to a newer `rhel-coreos`. The `bootkube.sh` service runs the MCO in
 "bootstrap" mode to generate and serve Ignition to the master machines.
 
 The control plane nodes wait in the initramfs, retrying until they are able to
 fetch the Ignition config from the bootstrap node.
 
 When that succeeds, the above process of `machine-config-daemon-firstboot.service`
-runs which extracts OS updates from the `machine-os-content` container image,
-and the control plane nodes each reboot (before `kubelet.service` has started).
+runs which performs OS update using rpm-ostree by specifying refspec that references `rhel-coreos`
+image and the control plane nodes each reboot (before `kubelet.service` has started).
 
 When the control plane nodes reboot and form a cluster, the bootstrap
 node is torn down.
@@ -88,7 +88,7 @@ After a node (whether control plane or worker) has joined the cluster, the MCO
 takes over.  Previously, each individual node was running systemd units;
 now changes are coordinated via the MCO.
 
-When the administrator starts an `oc adm upgrade`, if a new `machine-os-content`
+When the administrator starts an `oc adm upgrade`, if a new `rhel-coreos`
 is provided in the release image, it will be rolled out to the control plane
 and workers.
 
@@ -143,11 +143,9 @@ The overall approach here is that the operating system is just one part of the c
 Integrity of the OpenShift platform is handled to start by the
 [cluster version operator](https://github.com/openshift/cluster-version-operator).
 Today the CVO will by default GPG verify the integrity of the release image
-before applying it.  The release image contains a `sha256` digest of `machine-os-content`
-which is used by the MCO for updates.  On the host, the container runtime
-`podman` verifies the integrity of that `sha256` when pulling the image,
-before the MCO reads its content.  Hence, there is end-to-end GPG-verified integrity
-for the operating system updates (as well as the rest of the cluster components
+before applying it.  The release image contains a `sha256` digest of `rhel-coreos`
+which is used by the MCO for updates. MCD performs update by directly supply `rhel-coreos` image reference to rpm-ostree.
+Hence, there is end-to-end GPG-verified integrity for the operating system updates (as well as the rest of the cluster components
 which run as regular containers).
 
 Q: Why do you do this weird "ostree repository in container" thing?  Why ostree?
@@ -157,8 +155,8 @@ system that has been in use for many years by multiple distributions.  It handle
 SELinux and bootloaders, etc.  We're just "encapsulating" that system inside
 a container image for all of the above reasons (management, etc.).
 
-At some point in the future though it's likely that we will try to change
-the `machine-os-content` container to look more like an unpacked container image.
+With OCP 4.12 and onward releases, we are using OCI container image that can be used
+called `rhel-coreos` in release payload.
 
 Q: How do I look at the content in the ostree repository inside the container?
 
@@ -169,23 +167,23 @@ container for example.
 From there, probably the simplest thing is to use `oc image extract`
 to unpack the container image.  Something like this:
 ```
-$ mkdir machine-os-content
-$ oc image extract quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:02d810d3eb284e684bd20d342af3a800e955cccf0bb55e23ee0b434956221bdd --path /:machine-os-content
-$ find machine-os-content/srv/repo/ -name '*.commit'
-machine-os-content/srv/repo/objects/33/dd81479490fbb61a58af8525a71934e7545b9ed72d846d3e32a3f33f6fac9d.commit
-$ ostree --repo=machine-os-content/srv/repo ls 33dd81479490fbb61a58af8525a71934e7545b9ed72d846d3e32a3f33f6fac9d
+$ mkdir rhel-coreos
+$ oc image extract quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:6973e9353f29e678cad79fe768c22cfd6697d8aa30d2aeaa78cceea989925ded --path /:rhel-coreos
+$ find rhel-coreos/ -name '*.commit'
+rhel-coreos/sysroot/ostree/repo/objects/bf/445baa02dbbe3bb4b8a6f216c478c78d2e22f45343879e405a12550ba8664a.commit
+$ ostree --repo=rhel-coreos/sysroot/ostree/repo ls bf445baa02dbbe3bb4b8a6f216c478c78d2e22f45343879e405a12550ba8664a
 d00755 0 0      0 /
-l00777 0 0      0 /bin -> usr/bin
-l00777 0 0      0 /home -> var/home
-l00777 0 0      0 /lib -> usr/lib
-l00777 0 0      0 /lib64 -> usr/lib64
-l00777 0 0      0 /media -> run/media
-l00777 0 0      0 /mnt -> var/mnt
-l00777 0 0      0 /opt -> var/opt
-l00777 0 0      0 /ostree -> sysroot/ostree
-l00777 0 0      0 /root -> var/roothome
-l00777 0 0      0 /sbin -> usr/sbin
-l00777 0 0      0 /srv -> var/srv
+l00777 1000 1000      0 /bin -> usr/bin
+l00777 1000 1000      0 /home -> var/home
+l00777 1000 1000      0 /lib -> usr/lib
+l00777 1000 1000      0 /lib64 -> usr/lib64
+l00777 1000 1000      0 /media -> run/media
+l00777 1000 1000      0 /mnt -> var/mnt
+l00777 1000 1000      0 /opt -> var/opt
+l00777 1000 1000      0 /ostree -> sysroot/ostree
+l00777 1000 1000      0 /root -> var/roothome
+l00777 1000 1000      0 /sbin -> usr/sbin
+l00777 1000 1000      0 /srv -> var/srv
 d00755 0 0      0 /boot
 d00755 0 0      0 /dev
 d00755 0 0      0 /proc

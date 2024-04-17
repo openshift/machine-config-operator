@@ -328,7 +328,7 @@ func podmanCopy(imgURL, osImageContentDir string) (err error) {
 	// only delete created container, we will delete container image later as we may need it for podmanInspect()
 	defer podmanRemove(containerName)
 
-	// copy the content from create container locally into a temp directory under /run/machine-os-content/
+	// copy the content from create container locally into a temp directory under /run/
 	cid := strings.TrimSpace(string(cidBuf))
 	args = []string{"cp", fmt.Sprintf("%s:/", cid), osImageContentDir}
 	_, err = pivotutils.RunExtBackground(numRetriesNetCommands, "podman", args...)
