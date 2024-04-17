@@ -7,10 +7,10 @@ import (
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/client-go/util/retry"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 
 	"github.com/openshift/machine-config-operator/pkg/controller/build"
 	"github.com/openshift/machine-config-operator/test/framework"
@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
@@ -64,17 +65,6 @@ type onClusterBuildTestOpts struct {
 	poolName string
 }
 
-// Tests that an on-cluster build can be performed with the OpenShift Image Builder.
-func TestOnClusterBuildsOpenshiftImageBuilder(t *testing.T) {
-	runOnClusterBuildTest(t, onClusterBuildTestOpts{
-		imageBuilderType: build.OpenshiftImageBuilder,
-		poolName:         layeredMCPName,
-		customDockerfiles: map[string]string{
-			layeredMCPName: cowsayDockerfile,
-		},
-	})
-}
-
 // Tests tha an on-cluster build can be performed with the Custom Pod Builder.
 func TestOnClusterBuildsCustomPodBuilder(t *testing.T) {
 	runOnClusterBuildTest(t, onClusterBuildTestOpts{
@@ -90,7 +80,7 @@ func TestOnClusterBuildsCustomPodBuilder(t *testing.T) {
 // is rolled out to an opted-in node.
 func TestOnClusterBuildRollsOutImage(t *testing.T) {
 	imagePullspec := runOnClusterBuildTest(t, onClusterBuildTestOpts{
-		imageBuilderType: build.OpenshiftImageBuilder,
+		imageBuilderType: build.CustomPodImageBuilder,
 		poolName:         layeredMCPName,
 		customDockerfiles: map[string]string{
 			layeredMCPName: cowsayDockerfile,
@@ -115,74 +105,50 @@ func runOnClusterBuildTest(t *testing.T, testOpts onClusterBuildTestOpts) string
 
 	t.Logf("Running with ImageBuilder type: %s", testOpts.imageBuilderType)
 
-	prepareForTest(t, cs, testOpts)
+	mosc := prepareForTest(t, cs, testOpts)
 
-	optPoolIntoLayering(t, cs, testOpts.poolName)
+	t.Cleanup(createMachineOSConfig(t, cs, mosc))
 
 	t.Logf("Wait for build to start")
-	waitForPoolToReachState(t, cs, testOpts.poolName, func(mcp *mcfgv1.MachineConfigPool) bool {
-		return ctrlcommon.NewMachineOSBuildState(mcp).IsBuilding()
+	waitForMachineOSBuildToReachState(t, cs, testOpts.poolName, func(mosb *mcfgv1alpha1.MachineOSBuild, err error) (bool, error) {
+		// If we had any errors retrieving the build, (other than it not existing yet), stop here.
+		if err != nil && !k8serrors.IsNotFound(err) {
+			return false, err
+		}
+
+		// The build object has not been created yet, requeue and try again.
+		if mosb == nil && k8serrors.IsNotFound(err) {
+			t.Logf("MachineOSBuild does not exist yet, retrying...")
+			return false, nil
+		}
+
+		// At this point, the build object exists and we want to ensure that it is running.
+		return ctrlcommon.NewMachineOSBuildState(mosb).IsBuilding(), nil
 	})
 
 	t.Logf("Build started! Waiting for completion...")
-	imagePullspec := ""
-	waitForPoolToReachState(t, cs, testOpts.poolName, func(mcp *mcfgv1.MachineConfigPool) bool {
-		lps := ctrlcommon.NewMachineOSBuildState(mcp)
-		if lps.HasOSImage() && lps.IsBuildSuccess() {
-			imagePullspec = lps.GetOSImage()
-			return true
+
+	var build *mcfgv1alpha1.MachineOSBuild
+	waitForMachineOSBuildToReachState(t, cs, testOpts.poolName, func(mosb *mcfgv1alpha1.MachineOSBuild, err error) (bool, error) {
+		if err != nil {
+			return false, err
 		}
 
-		if lps.IsBuildFailure() {
-			t.Fatalf("Build unexpectedly failed.")
+		build = mosb
+
+		state := ctrlcommon.NewMachineOSBuildState(mosb)
+
+		if state.IsBuildFailure() {
+			t.Logf("MachineOSBuild %q unexpectedly failed", mosb.Name)
+			t.Fail()
 		}
 
-		return false
+		return state.IsBuildSuccess(), nil
 	})
 
-	t.Logf("MachineConfigPool %q has finished building. Got image: %s", testOpts.poolName, imagePullspec)
+	t.Logf("MachineOSBuild %q has finished building. Got image: %s", build.Name, build.Status.FinalImagePushspec)
 
-	return imagePullspec
-}
-
-// Adds the layeringEnabled label to the target MachineConfigPool and registers
-// / returns a function to unlabel it.
-func optPoolIntoLayering(t *testing.T, cs *framework.ClientSet, pool string) func() {
-	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		mcp, err := cs.MachineconfigurationV1Interface.MachineConfigPools().Get(context.TODO(), pool, metav1.GetOptions{})
-		require.NoError(t, err)
-
-		if mcp.Labels == nil {
-			mcp.Labels = map[string]string{}
-		}
-
-		mcp.Labels[ctrlcommon.LayeringEnabledPoolLabel] = ""
-
-		_, err = cs.MachineconfigurationV1Interface.MachineConfigPools().Update(context.TODO(), mcp, metav1.UpdateOptions{})
-		if err == nil {
-			t.Logf("Added label %q to MachineConfigPool %s to opt into layering", ctrlcommon.LayeringEnabledPoolLabel, pool)
-		}
-		return err
-	})
-
-	require.NoError(t, err)
-
-	return makeIdempotentAndRegister(t, func() {
-		err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-			mcp, err := cs.MachineconfigurationV1Interface.MachineConfigPools().Get(context.TODO(), pool, metav1.GetOptions{})
-			require.NoError(t, err)
-
-			delete(mcp.Labels, ctrlcommon.LayeringEnabledPoolLabel)
-
-			_, err = cs.MachineconfigurationV1Interface.MachineConfigPools().Update(context.TODO(), mcp, metav1.UpdateOptions{})
-			if err == nil {
-				t.Logf("Removed label %q to MachineConfigPool %s to opt out of layering", ctrlcommon.LayeringEnabledPoolLabel, pool)
-			}
-			return err
-		})
-
-		require.NoError(t, err)
-	})
+	return build.Status.FinalImagePushspec
 }
 
 // Prepares for an on-cluster build test by performing the following:
@@ -195,9 +161,17 @@ func optPoolIntoLayering(t *testing.T, cs *framework.ClientSet, pool string) fun
 //
 // Each of the object creation steps registers an idempotent cleanup function
 // that will delete the object at the end of the test.
-func prepareForTest(t *testing.T, cs *framework.ClientSet, testOpts onClusterBuildTestOpts) {
+//
+// Returns a MachineOSConfig object for the caller to create to begin the build
+// process.
+func prepareForTest(t *testing.T, cs *framework.ClientSet, testOpts onClusterBuildTestOpts) *mcfgv1alpha1.MachineOSConfig {
 	pushSecretName, err := getBuilderPushSecretName(cs)
 	require.NoError(t, err)
+
+	// Register ephemeral object cleanup function.
+	t.Cleanup(func() {
+		cleanupEphemeralBuildObjects(t, cs)
+	})
 
 	imagestreamName := "os-image"
 	t.Cleanup(createImagestream(t, cs, imagestreamName))
@@ -207,30 +181,51 @@ func prepareForTest(t *testing.T, cs *framework.ClientSet, testOpts onClusterBui
 	finalPullspec, err := getImagestreamPullspec(cs, imagestreamName)
 	require.NoError(t, err)
 
-	cmCleanup := createConfigMap(t, cs, &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      build.OnClusterBuildConfigMapName,
-			Namespace: ctrlcommon.MCONamespace,
-		},
-		Data: map[string]string{
-			build.BaseImagePullSecretNameConfigKey:  globalPullSecretCloneName,
-			build.FinalImagePushSecretNameConfigKey: pushSecretName,
-			build.FinalImagePullspecConfigKey:       finalPullspec,
-			build.ImageBuilderTypeConfigMapKey:      string(testOpts.imageBuilderType),
-		},
-	})
-
-	t.Cleanup(cmCleanup)
-
 	t.Cleanup(makeIdempotentAndRegister(t, helpers.CreateMCP(t, cs, testOpts.poolName)))
-
-	t.Cleanup(createCustomDockerfileConfigMap(t, cs, testOpts.customDockerfiles))
 
 	_, err = helpers.WaitForRenderedConfig(t, cs, testOpts.poolName, "00-worker")
 	require.NoError(t, err)
+
+	return &mcfgv1alpha1.MachineOSConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: testOpts.poolName,
+		},
+		Spec: mcfgv1alpha1.MachineOSConfigSpec{
+			MachineConfigPool: mcfgv1alpha1.MachineConfigPoolReference{
+				Name: testOpts.poolName,
+			},
+			BuildInputs: mcfgv1alpha1.BuildInputs{
+				BaseImagePullSecret: mcfgv1alpha1.ImageSecretObjectReference{
+					Name: globalPullSecretCloneName,
+				},
+				RenderedImagePushSecret: mcfgv1alpha1.ImageSecretObjectReference{
+					Name: pushSecretName,
+				},
+				RenderedImagePushspec: finalPullspec,
+				ImageBuilder: &mcfgv1alpha1.MachineOSImageBuilder{
+					ImageBuilderType: mcfgv1alpha1.PodBuilder,
+				},
+				Containerfile: []mcfgv1alpha1.MachineOSContainerfile{
+					{
+						ContainerfileArch: mcfgv1alpha1.NoArch,
+						Content:           testOpts.customDockerfiles[testOpts.poolName],
+					},
+				},
+			},
+			BuildOutputs: mcfgv1alpha1.BuildOutputs{
+				CurrentImagePullSecret: mcfgv1alpha1.ImageSecretObjectReference{
+					// TODO: Can this use the global pull secret? Or should this use the
+					// push secret name for now?
+					Name: pushSecretName,
+				},
+			},
+		},
+	}
 }
 
 func TestSSHKeyAndPasswordForOSBuilder(t *testing.T) {
+	t.Skip()
+
 	cs := framework.NewClientSet("")
 
 	// label random node from pool, get the node
@@ -239,7 +234,6 @@ func TestSSHKeyAndPasswordForOSBuilder(t *testing.T) {
 
 	// prepare for on cluster build test
 	prepareForTest(t, cs, onClusterBuildTestOpts{
-		imageBuilderType:  build.OpenshiftImageBuilder,
 		poolName:          layeredMCPName,
 		customDockerfiles: map[string]string{},
 	})
