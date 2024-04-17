@@ -818,7 +818,7 @@ github.com/opencontainers/runc/libcontainer/user
 # github.com/opencontainers/runtime-spec v1.1.0
 ## explicit
 github.com/opencontainers/runtime-spec/specs-go
-# github.com/openshift/api v0.0.0-20240410141538-3c0461467316
+# github.com/openshift/api v0.0.0-20240416170644-3efee4252217
 ## explicit; go 1.21
 github.com/openshift/api
 github.com/openshift/api/annotations
@@ -860,7 +860,7 @@ github.com/openshift/api/machineconfiguration/v1/zz_generated.crd-manifests
 github.com/openshift/api/machineconfiguration/v1alpha1
 github.com/openshift/api/machineconfiguration/v1alpha1/zz_generated.crd-manifests
 github.com/openshift/api/monitoring
-github.com/openshift/api/monitoring/v1alpha1
+github.com/openshift/api/monitoring/v1
 github.com/openshift/api/network
 github.com/openshift/api/network/v1
 github.com/openshift/api/network/v1alpha1
@@ -898,7 +898,7 @@ github.com/openshift/api/template
 github.com/openshift/api/template/v1
 github.com/openshift/api/user
 github.com/openshift/api/user/v1
-# github.com/openshift/client-go v0.0.0-20240408153607-64bd6feb83ae
+# github.com/openshift/client-go v0.0.0-20240415214935-be70f772f157
 ## explicit; go 1.21
 github.com/openshift/client-go/build/applyconfigurations/build/v1
 github.com/openshift/client-go/build/applyconfigurations/internal
