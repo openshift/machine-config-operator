@@ -100,6 +100,17 @@ const (
 	osImageURLConfigKey = "osImageURL"
 )
 
+const (
+	// Name of the etc-pki-entitlement secret from the openshift-config-managed namespace.
+	etcPkiEntitlementSecretName = "etc-pki-entitlement"
+
+	// Name of the etc-pki-rpm-gpg secret.
+	etcPkiRpmGpgSecretName = "etc-pki-rpm-gpg"
+
+	// Name of the etc-yum-repos-d ConfigMap.
+	etcYumReposDConfigMapName = "etc-yum-repos-d"
+)
+
 type ErrInvalidImageBuilder struct {
 	Message     string
 	InvalidType string
@@ -390,6 +401,20 @@ func (ctrl *Controller) customBuildPodUpdater(pod *corev1.Pod) error {
 	mosc, mosb, err := ctrl.getConfigAndBuildForPool(pool)
 	if err != nil {
 		return err
+	}
+
+	// We cannot solely rely upon the pod phase to determine whether the build
+	// pod is in an error state. This is because it is possible for the build
+	// container to enter an error state while the wait-for-done container is
+	// still running. The pod phase in this state will still be "Running" as
+	// opposed to error.
+	if isBuildPodError(pod) {
+		if err := ctrl.markBuildFailed(mosc, mosb); err != nil {
+			return err
+		}
+
+		ctrl.enqueueMachineOSBuild(mosb)
+		return nil
 	}
 
 	mosbState := ctrlcommon.NewMachineOSBuildState(mosb)
@@ -965,6 +990,27 @@ func (ctrl *Controller) prepareForBuild(mosb *mcfgv1alpha1.MachineOSBuild, mosc 
 		moscNew.Spec.BuildInputs.ReleaseVersion = osImageURL.Data[releaseVersionConfigKey]
 	}
 
+	etcPkiEntitlements, err := ctrl.getOptionalSecret(etcPkiEntitlementSecretName)
+	if err != nil {
+		return ImageBuildRequest{}, err
+	}
+
+	ibr.HasEtcPkiEntitlementKeys = etcPkiEntitlements != nil
+
+	etcPkiRpmGpgKeys, err := ctrl.getOptionalSecret(etcPkiRpmGpgSecretName)
+	if err != nil {
+		return ImageBuildRequest{}, err
+	}
+
+	ibr.HasEtcPkiRpmGpgKeys = etcPkiRpmGpgKeys != nil
+
+	etcYumReposDConfigs, err := ctrl.getOptionalConfigMap(etcYumReposDConfigMapName)
+	if err != nil {
+		return ImageBuildRequest{}, err
+	}
+
+	ibr.HasEtcYumReposDConfigs = etcYumReposDConfigs != nil
+
 	// make sure to get these new settings
 	ibr.MachineOSConfig = moscNew
 
@@ -998,6 +1044,40 @@ func (ctrl *Controller) prepareForBuild(mosb *mcfgv1alpha1.MachineOSBuild, mosc 
 	klog.Infof("Stored Dockerfile for build %s in ConfigMap %s for build", ibr.getBuildName(), dockerfileConfigMap.Name)
 
 	return ibr, nil
+}
+
+// Fetches an optional secret to inject into the build. Returns a nil error if
+// the secret is not found.
+func (ctrl *Controller) getOptionalSecret(secretName string) (*corev1.Secret, error) {
+	optionalSecret, err := ctrl.kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(context.TODO(), secretName, metav1.GetOptions{})
+	if err == nil {
+		klog.Infof("Optional build secret %q found, will include in build", secretName)
+		return optionalSecret, nil
+	}
+
+	if k8serrors.IsNotFound(err) {
+		klog.Infof("Could not find optional secret %q, will not include in build", secretName)
+		return nil, nil
+	}
+
+	return nil, fmt.Errorf("could not retrieve optional secret: %s: %w", secretName, err)
+}
+
+// Fetches an optional ConfigMap to inject into the build. Returns a nil error if
+// the ConfigMap is not found.
+func (ctrl *Controller) getOptionalConfigMap(configmapName string) (*corev1.ConfigMap, error) {
+	optionalConfigMap, err := ctrl.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), configmapName, metav1.GetOptions{})
+	if err == nil {
+		klog.Infof("Optional build ConfigMap %q found, will include in build", configmapName)
+		return optionalConfigMap, nil
+	}
+
+	if k8serrors.IsNotFound(err) {
+		klog.Infof("Could not find ConfigMap %q, will not include in build", configmapName)
+		return nil, nil
+	}
+
+	return nil, fmt.Errorf("could not retrieve optional ConfigMap: %s: %w", configmapName, err)
 }
 
 // Determines if we should run a build, then starts a build pod to perform the
@@ -1384,4 +1464,27 @@ func (ctrl *Controller) getConfigAndBuildForPool(pool *mcfgv1.MachineConfigPool)
 	}
 
 	return mosc, mosb, nil
+}
+
+// Determines if the build pod is in an error state by examining the individual
+// container statuses. Returns true if a single container is in an error state.
+func isBuildPodError(pod *corev1.Pod) bool {
+	errStates := map[string]struct{}{
+		"ErrImagePull":         struct{}{},
+		"CreateContainerError": struct{}{},
+	}
+
+	for _, container := range pod.Status.ContainerStatuses {
+		if container.State.Waiting != nil {
+			if _, ok := errStates[container.State.Waiting.Reason]; ok {
+				return true
+			}
+		}
+
+		if container.State.Terminated != nil && container.State.Terminated.ExitCode != 0 {
+			return true
+		}
+	}
+
+	return false
 }
