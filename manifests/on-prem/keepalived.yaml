@@ -112,6 +112,8 @@ spec:
         value: "yes"
       - name: IS_BOOTSTRAP
         value: "yes"
+      - name: ENABLE_NODEIP_DEBUG
+        value: "true"
     command:
     - dynkeepalived
     - "/etc/kubernetes/kubeconfig"
