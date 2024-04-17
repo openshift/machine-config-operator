@@ -52,6 +52,7 @@ func TestLayeredNodeState(t *testing.T) {
 		isDoneAt             bool
 		isUnavailable        bool
 		isDesiredEqualToPool bool
+		layered              bool
 	}{
 		{
 			name:                 "Updated non-layered node",
@@ -59,12 +60,14 @@ func TestLayeredNodeState(t *testing.T) {
 			pool:                 newMachineConfigPool(machineConfigV0),
 			isDesiredEqualToPool: true,
 			isDoneAt:             true,
+			layered:              false,
 		},
 		{
 			name:     "Out-of-date non-layered node",
 			node:     newNode(machineConfigV0, machineConfigV0),
 			pool:     newMachineConfigPool(machineConfigV1),
 			isDoneAt: false,
+			layered:  false,
 		},
 		{
 			name:                 "Fully transitioned layered node",
@@ -72,11 +75,13 @@ func TestLayeredNodeState(t *testing.T) {
 			pool:                 newLayeredMachineConfigPoolWithImage(machineConfigV0, imageV0),
 			isDesiredEqualToPool: true,
 			isDoneAt:             true,
+			layered:              true,
 		},
 		{
-			name: "Layered node changes image only",
-			node: newLayeredNode(machineConfigV0, machineConfigV0, imageV0, imageV0),
-			pool: newLayeredMachineConfigPoolWithImage(machineConfigV0, imageV1),
+			name:    "Layered node changes image only",
+			node:    newLayeredNode(machineConfigV0, machineConfigV0, imageV0, imageV0),
+			pool:    newLayeredMachineConfigPoolWithImage(machineConfigV0, imageV1),
+			layered: true,
 		},
 		{
 			name:                 "Layered node changes machineconfigs and image",
@@ -84,11 +89,13 @@ func TestLayeredNodeState(t *testing.T) {
 			pool:                 newLayeredMachineConfigPoolWithImage(machineConfigV1, imageV1),
 			isUnavailable:        true,
 			isDesiredEqualToPool: true,
+			layered:              true,
 		},
 		{
-			name: "Out-of-date layered image",
-			node: newLayeredNode(machineConfigV1, machineConfigV1, imageV0, imageV0),
-			pool: newLayeredMachineConfigPoolWithImage(machineConfigV1, imageV1),
+			name:    "Out-of-date layered image",
+			node:    newLayeredNode(machineConfigV1, machineConfigV1, imageV0, imageV0),
+			pool:    newLayeredMachineConfigPoolWithImage(machineConfigV1, imageV1),
+			layered: true,
 		},
 		{
 			name:                 "layered node machineconfig outdated",
@@ -96,6 +103,7 @@ func TestLayeredNodeState(t *testing.T) {
 			pool:                 newLayeredMachineConfigPoolWithImage(machineConfigV1, imageV1),
 			isUnavailable:        true,
 			isDesiredEqualToPool: true,
+			layered:              true,
 		},
 		{
 			name: "Node becoming layered should be unavailable",
@@ -108,6 +116,7 @@ func TestLayeredNodeState(t *testing.T) {
 			pool:                 newLayeredMachineConfigPoolWithImage(machineConfigV0, imageV0),
 			isUnavailable:        true,
 			isDesiredEqualToPool: true,
+			layered:              true,
 		},
 		{
 			name: "Node becoming layered should be unavailable even if the MCD hasn't started yet",
@@ -120,6 +129,7 @@ func TestLayeredNodeState(t *testing.T) {
 			pool:                 newLayeredMachineConfigPoolWithImage(machineConfigV0, imageV0),
 			isUnavailable:        true,
 			isDesiredEqualToPool: true,
+			layered:              true,
 		},
 		{
 			name: "Node changing configs should be unavailable",
@@ -130,6 +140,7 @@ func TestLayeredNodeState(t *testing.T) {
 				Node(),
 			pool:          newLayeredMachineConfigPool(machineConfigV0),
 			isUnavailable: true,
+			layered:       true,
 		},
 		{
 			name: "Node changing configs should be unavailable even if the MCD hasn't started yet",
@@ -140,6 +151,7 @@ func TestLayeredNodeState(t *testing.T) {
 				Node(),
 			pool:          newLayeredMachineConfigPool(machineConfigV0),
 			isUnavailable: true,
+			layered:       true,
 		},
 		{
 			name: "Node changing images should be unavailable",
@@ -152,6 +164,7 @@ func TestLayeredNodeState(t *testing.T) {
 			pool:                 newLayeredMachineConfigPoolWithImage(machineConfigV0, imageV1),
 			isUnavailable:        true,
 			isDesiredEqualToPool: true,
+			layered:              true,
 		},
 		{
 			name: "Node changing images should be unavailable even if the MCD hasn't started yet",
@@ -164,6 +177,7 @@ func TestLayeredNodeState(t *testing.T) {
 			pool:                 newLayeredMachineConfigPoolWithImage(machineConfigV0, imageV1),
 			isUnavailable:        true,
 			isDesiredEqualToPool: true,
+			layered:              true,
 		},
 		{
 			name: "Degraded node should be unavailable",
@@ -175,6 +189,7 @@ func TestLayeredNodeState(t *testing.T) {
 			pool:                 newLayeredMachineConfigPool(machineConfigV0),
 			isUnavailable:        true,
 			isDesiredEqualToPool: true,
+			layered:              true,
 		},
 		{
 			name: "Degraded layered node should be unavailable",
@@ -187,6 +202,7 @@ func TestLayeredNodeState(t *testing.T) {
 			pool:                 newLayeredMachineConfigPoolWithImage(machineConfigV0, imageV0),
 			isUnavailable:        true,
 			isDesiredEqualToPool: true,
+			layered:              true,
 		},
 		{
 			name: "Degraded layered node should be unavailable while transitioning images",
@@ -198,6 +214,7 @@ func TestLayeredNodeState(t *testing.T) {
 				Node(),
 			pool:          newLayeredMachineConfigPoolWithImage(machineConfigV0, imageV1),
 			isUnavailable: true,
+			layered:       true,
 		},
 		{
 			name: "Rebooting node should be unavailable",
@@ -209,6 +226,7 @@ func TestLayeredNodeState(t *testing.T) {
 			pool:                 newLayeredMachineConfigPool(machineConfigV0),
 			isUnavailable:        true,
 			isDesiredEqualToPool: true,
+			layered:              true,
 		},
 		{
 			name: "Rebooting layered node should be unavailable",
@@ -221,6 +239,7 @@ func TestLayeredNodeState(t *testing.T) {
 			pool:                 newLayeredMachineConfigPoolWithImage(machineConfigV0, imageV0),
 			isUnavailable:        true,
 			isDesiredEqualToPool: true,
+			layered:              true,
 		},
 		{
 			name: "Unready node should be unavailable",
@@ -233,6 +252,7 @@ func TestLayeredNodeState(t *testing.T) {
 			pool:                 newLayeredMachineConfigPoolWithImage(machineConfigV0, imageV0),
 			isUnavailable:        true,
 			isDesiredEqualToPool: true,
+			layered:              true,
 		},
 	}
 
@@ -244,9 +264,9 @@ func TestLayeredNodeState(t *testing.T) {
 			lns := NewLayeredNodeState(test.node)
 
 			if test.pool != nil {
-				assert.Equal(t, test.isDoneAt, lns.IsDoneAt(test.pool), "IsDoneAt()")
-				assert.Equal(t, test.isDesiredEqualToPool, lns.IsDesiredEqualToPool(test.pool), "IsDesiredEqualToPool()")
-				assert.Equal(t, test.isUnavailable, lns.IsUnavailable(test.pool), "IsUnavailable()")
+				assert.Equal(t, test.isDoneAt, lns.IsDoneAt(test.pool, test.layered), "IsDoneAt()")
+				assert.Equal(t, test.isDesiredEqualToPool, lns.IsDesiredEqualToPool(test.pool, test.layered), "IsDesiredEqualToPool()")
+				assert.Equal(t, test.isUnavailable, lns.IsUnavailable(test.pool, test.layered), "IsUnavailable()")
 			}
 
 			if t.Failed() {
@@ -263,11 +283,13 @@ func TestLayeredNodeStateIsMutated(t *testing.T) {
 		node                  *corev1.Node
 		expectedImage         string
 		expectedMachineConfig string
+		layered               bool
 	}{
 		{
-			name: "layered node loses desired image because pool is not layered",
-			pool: newMachineConfigPool(machineConfigV0),
-			node: newLayeredNode(machineConfigV0, machineConfigV0, imageV0, imageV0),
+			name:    "layered node loses desired image because pool is not layered",
+			pool:    newMachineConfigPool(machineConfigV0),
+			node:    newLayeredNode(machineConfigV0, machineConfigV0, imageV0, imageV0),
+			layered: true,
 		},
 		{
 			name: "layered node loses desired image because pool has no image",
@@ -275,26 +297,30 @@ func TestLayeredNodeStateIsMutated(t *testing.T) {
 			node: newLayeredNode(machineConfigV0, machineConfigV0, imageV0, imageV0),
 		},
 		{
-			name: "layered node loses desired image because pool has no image and MachineConfig changes",
-			pool: newLayeredMachineConfigPool(machineConfigV1),
-			node: newLayeredNode(machineConfigV0, machineConfigV0, imageV0, imageV0),
+			name:    "layered node loses desired image because pool has no image and MachineConfig changes",
+			pool:    newLayeredMachineConfigPool(machineConfigV1),
+			node:    newLayeredNode(machineConfigV0, machineConfigV0, imageV0, imageV0),
+			layered: true,
 		},
 		{
 			name:          "unlayered node becomes layered because pool is layered",
 			pool:          newLayeredMachineConfigPoolWithImage(machineConfigV0, imageV0),
 			node:          newNode(machineConfigV0, machineConfigV0),
 			expectedImage: imageV0,
+			layered:       false,
 		},
 		{
-			name: "unlayered node MachineConfig changes",
-			pool: newMachineConfigPool(machineConfigV1),
-			node: newNode(machineConfigV0, machineConfigV0),
+			name:    "unlayered node MachineConfig changes",
+			pool:    newMachineConfigPool(machineConfigV1),
+			node:    newNode(machineConfigV0, machineConfigV0),
+			layered: false,
 		},
 		{
 			name:          "layered node image changes",
 			pool:          newLayeredMachineConfigPoolWithImage(machineConfigV0, imageV1),
 			node:          newLayeredNode(machineConfigV0, machineConfigV0, imageV0, imageV0),
 			expectedImage: imageV1,
+			layered:       true,
 		},
 		{
 			name:                  "layered node image and MachineConfig changes",
@@ -302,6 +328,7 @@ func TestLayeredNodeStateIsMutated(t *testing.T) {
 			node:                  newLayeredNode(machineConfigV0, machineConfigV0, imageV0, imageV0),
 			expectedImage:         imageV1,
 			expectedMachineConfig: machineConfigV1,
+			layered:               true,
 		},
 	}
 
@@ -310,7 +337,7 @@ func TestLayeredNodeStateIsMutated(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			lns := NewLayeredNodeState(test.node)
-			lns.SetDesiredStateFromPool(test.pool)
+			lns.SetDesiredStateFromPool(test.layered, test.pool)
 
 			updatedNode := lns.Node()
 

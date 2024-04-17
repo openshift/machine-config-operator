@@ -64,17 +64,6 @@ type onClusterBuildTestOpts struct {
 	poolName string
 }
 
-// Tests that an on-cluster build can be performed with the OpenShift Image Builder.
-func TestOnClusterBuildsOpenshiftImageBuilder(t *testing.T) {
-	runOnClusterBuildTest(t, onClusterBuildTestOpts{
-		imageBuilderType: build.OpenshiftImageBuilder,
-		poolName:         layeredMCPName,
-		customDockerfiles: map[string]string{
-			layeredMCPName: cowsayDockerfile,
-		},
-	})
-}
-
 // Tests tha an on-cluster build can be performed with the Custom Pod Builder.
 func TestOnClusterBuildsCustomPodBuilder(t *testing.T) {
 	runOnClusterBuildTest(t, onClusterBuildTestOpts{
@@ -90,7 +79,7 @@ func TestOnClusterBuildsCustomPodBuilder(t *testing.T) {
 // is rolled out to an opted-in node.
 func TestOnClusterBuildRollsOutImage(t *testing.T) {
 	imagePullspec := runOnClusterBuildTest(t, onClusterBuildTestOpts{
-		imageBuilderType: build.OpenshiftImageBuilder,
+		imageBuilderType: build.CustomPodImageBuilder,
 		poolName:         layeredMCPName,
 		customDockerfiles: map[string]string{
 			layeredMCPName: cowsayDockerfile,
