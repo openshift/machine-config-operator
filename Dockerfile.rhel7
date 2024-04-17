@@ -1,29 +1,34 @@
+# THIS FILE IS GENERATED FROM Dockerfile DO NOT EDIT
 # Use RHEL 9 as the primary builder base for the Machine Config Operator
-FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.21-openshift-4.16 AS builder
+FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.21-openshift-4.16 AS rhel9-builder
 ARG TAGS=""
 WORKDIR /go/src/github.com/openshift/machine-config-operator
 COPY . .
 # FIXME once we can depend on a new enough host that supports globs for COPY,
 # just use that.  For now we work around this by copying a tarball.
-RUN make install DESTDIR=./instroot && tar -C instroot -cf instroot.tar .
+ENV GOCACHE="/go/rhel9/.cache"
+ENV GOMODCACHE="/go/rhel9/pkg/mod"
+RUN --mount=type=cache,target=/go/rhel9/.cache,z \
+    --mount=type=cache,target=/go/rhel9/pkg/mod,z \
+    make install DESTDIR=./instroot-rhel9 && tar -C instroot-rhel9 -cf instroot-rhel9.tar .
 
 # Add a RHEL 8 builder to compile the RHEL 8 compatible binaries
 FROM registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.21-openshift-4.16 AS rhel8-builder
 ARG TAGS=""
 WORKDIR /go/src/github.com/openshift/machine-config-operator
+# Copy the RHEL 8 machine-config-daemon binary and rename
 COPY . .
-RUN make install DESTDIR=./instroot-rhel8 && tar -C instroot-rhel8 -cf instroot-rhel8.tar .
+ENV GOCACHE="/go/rhel8/.cache"
+ENV GOMODCACHE="/go/rhel8/pkg/mod"
+RUN --mount=type=cache,target=/go/rhel8/.cache,z \
+    --mount=type=cache,target=/go/rhel8/pkg/mod,z \
+    make install DESTDIR=./instroot-rhel8 && tar -C instroot-rhel8 -cf instroot-rhel8.tar .
 
-# Base image is RHEL 9. Only machine-config-daemon.rhel8 is from RHEL 8; all other binaries are RHEL 9.
 FROM registry.ci.openshift.org/ocp/4.16:base-rhel9
 ARG TAGS=""
-COPY --from=builder /go/src/github.com/openshift/machine-config-operator/instroot.tar /tmp/instroot.tar
-RUN cd / && tar xf /tmp/instroot.tar && rm -f /tmp/instroot.tar
-# Copy the RHEL 8 machine-config-daemon binary and rename
-COPY --from=rhel8-builder /go/src/github.com/openshift/machine-config-operator/instroot-rhel8/usr/bin/machine-config-daemon /usr/bin/machine-config-daemon.rhel8
 COPY install /manifests
-
-RUN if [ "${TAGS}" = "fcos" ]; then \
+RUN --mount=type=cache,target=/var/cache/dnf,z \
+    if [ "${TAGS}" = "fcos" ]; then \
     # comment out non-base/extensions image-references entirely for fcos
     sed -i '/- name: rhel-coreos-/,+3 s/^/#/' /manifests/image-references && \
     # also remove extensions from the osimageurl configmap (if we don't, oc won't rewrite it, and the placeholder value will survive and get used)
@@ -33,9 +38,13 @@ RUN if [ "${TAGS}" = "fcos" ]; then \
     elif [ "${TAGS}" = "scos" ]; then \
     # rewrite image names for scos
     sed -i 's/rhel-coreos/centos-stream-coreos-9/g' /manifests/*; fi && \
-    dnf -y install 'nmstate >= 2.2.10' && \
-    if ! rpm -q util-linux; then dnf install -y util-linux; fi && \
-    dnf clean all && rm -rf /var/cache/dnf/*
+    dnf --setopt=keepcache=true -y install 'nmstate >= 2.2.10' && \
+    if ! rpm -q util-linux; then dnf install --setopt=keepcache=true -y util-linux; fi
+# Copy the binaries *after* we install nmstate so we don't invalidate our cache for local builds.
+COPY --from=rhel9-builder /go/src/github.com/openshift/machine-config-operator/instroot-rhel9.tar /tmp/instroot-rhel9.tar
+RUN cd / && tar xf /tmp/instroot-rhel9.tar && rm -f /tmp/instroot-rhel9.tar
+# Copy the RHEL 8 machine-config-daemon binary and rename
+COPY --from=rhel8-builder /go/src/github.com/openshift/machine-config-operator/instroot-rhel8/usr/bin/machine-config-daemon /usr/bin/machine-config-daemon.rhel8
 COPY templates /etc/mcc/templates
 ENTRYPOINT ["/usr/bin/machine-config-operator"]
 LABEL io.openshift.release.operator true
