@@ -49,6 +49,12 @@ type ImageBuildRequest struct {
 	MachineOSConfig *mcfgv1alpha1.MachineOSConfig
 	// the containerfile designated from the MachineOSConfig
 	Containerfile string
+	// Has /etc/pki/entitlement
+	HasEtcPkiEntitlementKeys bool
+	// Has /etc/yum.repos.d configs
+	HasEtcYumReposDConfigs bool
+	// Has /etc/pki/rpm-gpg configs
+	HasEtcPkiRpmGpgKeys bool
 }
 
 // Constructs a simple ImageBuildRequest.
@@ -417,6 +423,164 @@ func (i ImageBuildRequest) toBuildahPod() *corev1.Pod {
 		},
 	}
 
+	volumes := []corev1.Volume{
+		{
+			// Provides the rendered Dockerfile.
+			Name: "dockerfile",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: i.getDockerfileConfigMapName(),
+					},
+				},
+			},
+		},
+		{
+			// Provides the rendered MachineConfig in a gzipped / base64-encoded
+			// format.
+			Name: "machineconfig",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: i.getMCConfigMapName(),
+					},
+				},
+			},
+		},
+		{
+			// Provides the credentials needed to pull the base OS image.
+			Name: "base-image-pull-creds",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: i.MachineOSConfig.Spec.BuildInputs.BaseImagePullSecret.Name,
+					Items: []corev1.KeyToPath{
+						{
+							Key:  corev1.DockerConfigJsonKey,
+							Path: "config.json",
+						},
+					},
+				},
+			},
+		},
+		{
+			// Provides the credentials needed to push the final OS image.
+			Name: "final-image-push-creds",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: i.MachineOSConfig.Spec.BuildInputs.RenderedImagePushSecret.Name,
+					Items: []corev1.KeyToPath{
+						{
+							Key:  corev1.DockerConfigJsonKey,
+							Path: "config.json",
+						},
+					},
+				},
+			},
+		},
+		{
+			// Provides a way for the "image-build" container to signal that it
+			// finished so that the "wait-for-done" container can retrieve the
+			// iamge SHA.
+			Name: "done",
+			VolumeSource: corev1.VolumeSource{
+				EmptyDir: &corev1.EmptyDirVolumeSource{
+					Medium: corev1.StorageMediumMemory,
+				},
+			},
+		},
+		{
+			// This provides a dedicated place for Buildah to store / cache its
+			// images during the build. This seems to be required for the build-time
+			// volume mounts to work correctly, most likely due to an issue with
+			// SELinux that I have yet to figure out. Despite being called a cache
+			// directory, it gets removed whenever the build pod exits
+			Name: "buildah-cache",
+			VolumeSource: corev1.VolumeSource{
+				EmptyDir: &corev1.EmptyDirVolumeSource{},
+			},
+		},
+	}
+
+	// Octal: 0755.
+	var mountMode int32 = 493
+
+	// If the etc-pki-entitlement secret is found, mount it into the build pod.
+	if i.HasEtcPkiEntitlementKeys {
+		mountPoint := "/etc/pki/entitlement"
+
+		env = append(env, corev1.EnvVar{
+			Name:  "ETC_PKI_ENTITLEMENT_MOUNTPOINT",
+			Value: mountPoint,
+		})
+
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      etcPkiEntitlementSecretName,
+			MountPath: mountPoint,
+		})
+
+		volumes = append(volumes, corev1.Volume{
+			Name: etcPkiEntitlementSecretName,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					DefaultMode: &mountMode,
+					SecretName:  etcPkiEntitlementSecretName,
+				},
+			},
+		})
+	}
+
+	// If the etc-yum-repos-d ConfigMap is found, mount it into the build pod.
+	if i.HasEtcYumReposDConfigs {
+		mountPoint := "/etc/yum.repos.d"
+
+		env = append(env, corev1.EnvVar{
+			Name:  "ETC_YUM_REPOS_D_MOUNTPOINT",
+			Value: mountPoint,
+		})
+
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      etcYumReposDConfigMapName,
+			MountPath: mountPoint,
+		})
+
+		volumes = append(volumes, corev1.Volume{
+			Name: etcYumReposDConfigMapName,
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					DefaultMode: &mountMode,
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: etcYumReposDConfigMapName,
+					},
+				},
+			},
+		})
+	}
+
+	// If the etc-pki-rpm-gpg secret is found, mount it into the build pod.
+	if i.HasEtcPkiRpmGpgKeys {
+		mountPoint := "/etc/pki/rpm-gpg"
+
+		env = append(env, corev1.EnvVar{
+			Name:  "ETC_PKI_RPM_GPG_MOUNTPOINT",
+			Value: mountPoint,
+		})
+
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      etcPkiRpmGpgSecretName,
+			MountPath: mountPoint,
+		})
+
+		volumes = append(volumes, corev1.Volume{
+			Name: etcPkiRpmGpgSecretName,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					DefaultMode: &mountMode,
+					SecretName:  etcPkiRpmGpgSecretName,
+				},
+			},
+		})
+	}
+
 	// TODO: We need pull creds with permissions to pull the base image. By
 	// default, none of the MCO pull secrets can directly pull it. We can use the
 	// pull-secret creds from openshift-config to do that, though we'll need to
@@ -440,7 +604,11 @@ func (i ImageBuildRequest) toBuildahPod() *corev1.Pod {
 					Command:         append(command, buildahBuildScript),
 					ImagePullPolicy: corev1.PullAlways,
 					SecurityContext: securityContext,
-					VolumeMounts:    volumeMounts,
+					// Only attach the buildah-cache volume mount to the buildah container.
+					VolumeMounts: append(volumeMounts, corev1.VolumeMount{
+						Name:      "buildah-cache",
+						MountPath: "/home/build/.local/share/containers",
+					}),
 				},
 				{
 					// This container waits for the aforementioned container to finish
@@ -458,79 +626,14 @@ func (i ImageBuildRequest) toBuildahPod() *corev1.Pod {
 				},
 			},
 			ServiceAccountName: "machine-os-builder",
-			Volumes: []corev1.Volume{
-				{
-					// Provides the rendered Dockerfile.
-					Name: "dockerfile",
-					VolumeSource: corev1.VolumeSource{
-						ConfigMap: &corev1.ConfigMapVolumeSource{
-							LocalObjectReference: corev1.LocalObjectReference{
-								Name: i.getDockerfileConfigMapName(),
-							},
-						},
-					},
-				},
-				{
-					// Provides the rendered MachineConfig in a gzipped / base64-encoded
-					// format.
-					Name: "machineconfig",
-					VolumeSource: corev1.VolumeSource{
-						ConfigMap: &corev1.ConfigMapVolumeSource{
-							LocalObjectReference: corev1.LocalObjectReference{
-								Name: i.getMCConfigMapName(),
-							},
-						},
-					},
-				},
-				{
-					// Provides the credentials needed to pull the base OS image.
-					Name: "base-image-pull-creds",
-					VolumeSource: corev1.VolumeSource{
-						Secret: &corev1.SecretVolumeSource{
-							SecretName: i.MachineOSConfig.Spec.BuildInputs.BaseImagePullSecret.Name,
-							Items: []corev1.KeyToPath{
-								{
-									Key:  corev1.DockerConfigJsonKey,
-									Path: "config.json",
-								},
-							},
-						},
-					},
-				},
-				{
-					// Provides the credentials needed to push the final OS image.
-					Name: "final-image-push-creds",
-					VolumeSource: corev1.VolumeSource{
-						Secret: &corev1.SecretVolumeSource{
-							SecretName: i.MachineOSConfig.Spec.BuildInputs.RenderedImagePushSecret.Name,
-							Items: []corev1.KeyToPath{
-								{
-									Key:  corev1.DockerConfigJsonKey,
-									Path: "config.json",
-								},
-							},
-						},
-					},
-				},
-				{
-					// Provides a way for the "image-build" container to signal that it
-					// finished so that the "wait-for-done" container can retrieve the
-					// iamge SHA.
-					Name: "done",
-					VolumeSource: corev1.VolumeSource{
-						EmptyDir: &corev1.EmptyDirVolumeSource{
-							Medium: corev1.StorageMediumMemory,
-						},
-					},
-				},
-			},
+			Volumes:            volumes,
 		},
 	}
 }
 
 // Constructs a common metav1.ObjectMeta object with the namespace, labels, and annotations set.
 func (i ImageBuildRequest) getObjectMeta(name string) metav1.ObjectMeta {
-	return metav1.ObjectMeta{
+	objectMeta := metav1.ObjectMeta{
 		Name:      name,
 		Namespace: ctrlcommon.MCONamespace,
 		Labels: map[string]string{
@@ -542,6 +645,22 @@ func (i ImageBuildRequest) getObjectMeta(name string) metav1.ObjectMeta {
 			mcPoolAnnotation: "",
 		},
 	}
+
+	hasOptionalBuildInputTemplate := "machineconfiguration.openshift.io/has-%s"
+
+	if i.HasEtcPkiEntitlementKeys {
+		objectMeta.Annotations[fmt.Sprintf(hasOptionalBuildInputTemplate, etcPkiEntitlementSecretName)] = ""
+	}
+
+	if i.HasEtcYumReposDConfigs {
+		objectMeta.Annotations[fmt.Sprintf(hasOptionalBuildInputTemplate, etcYumReposDConfigMapName)] = ""
+	}
+
+	if i.HasEtcPkiRpmGpgKeys {
+		objectMeta.Annotations[fmt.Sprintf(hasOptionalBuildInputTemplate, etcPkiRpmGpgSecretName)] = ""
+	}
+
+	return objectMeta
 }
 
 // Computes the Dockerfile ConfigMap name based upon the MachineConfigPool name.
