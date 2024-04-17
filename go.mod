@@ -27,8 +27,8 @@ require (
 	github.com/google/renameio v0.1.0
 	github.com/imdario/mergo v0.3.13
 	github.com/opencontainers/go-digest v1.0.0
-	github.com/openshift/api v0.0.0-20240410141538-3c0461467316
-	github.com/openshift/client-go v0.0.0-20240408153607-64bd6feb83ae
+	github.com/openshift/api v0.0.0-20240416170644-3efee4252217
+	github.com/openshift/client-go v0.0.0-20240415214935-be70f772f157
 	github.com/openshift/cluster-config-operator v0.0.0-alpha.0.0.20231213185242-e4dc676febfe
 	github.com/openshift/library-go v0.0.0-20240412173449-eb2f24c36528
 	github.com/openshift/runtime-utils v0.0.0-20230921210328-7bdb5b9c177b

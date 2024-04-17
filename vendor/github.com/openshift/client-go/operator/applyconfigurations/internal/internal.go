@@ -3599,6 +3599,15 @@ var schemaYAML = typed.YAMLObject(`types:
 - name: com.github.openshift.api.operator.v1.VSphereCSIDriverConfigSpec
   map:
     fields:
+    - name: globalMaxSnapshotsPerBlockVolume
+      type:
+        scalar: numeric
+    - name: granularMaxSnapshotsPerBlockVolumeInVSAN
+      type:
+        scalar: numeric
+    - name: granularMaxSnapshotsPerBlockVolumeInVVOL
+      type:
+        scalar: numeric
     - name: topologyCategories
       type:
         list:

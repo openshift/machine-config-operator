@@ -554,13 +554,6 @@ var (
 						enableIn(TechPreviewNoUpgrade).
 						mustRegister()
 
-	FeatureGateAlertingRules = newFeatureGate("AlertingRules").
-					reportProblemsToJiraComponent("Monitoring").
-					contactPerson("simon").
-					productScope(ocpSpecific).
-					enableIn(TechPreviewNoUpgrade).
-					mustRegister()
-
 	FeatureGateBareMetalLoadBalancer = newFeatureGate("BareMetalLoadBalancer").
 						reportProblemsToJiraComponent("metal").
 						contactPerson("EmilienM").
@@ -592,6 +585,13 @@ var (
 	FeatureGateMetricsCollectionProfiles = newFeatureGate("MetricsCollectionProfiles").
 						reportProblemsToJiraComponent("Monitoring").
 						contactPerson("rexagod").
+						productScope(ocpSpecific).
+						enableIn(TechPreviewNoUpgrade).
+						mustRegister()
+
+	FeatureGateVSphereDriverConfiguration = newFeatureGate("VSphereDriverConfiguration").
+						reportProblemsToJiraComponent("Storage / Kubernetes External Components").
+						contactPerson("rbednar").
 						productScope(ocpSpecific).
 						enableIn(TechPreviewNoUpgrade).
 						mustRegister()
