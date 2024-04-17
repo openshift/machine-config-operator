@@ -246,11 +246,11 @@ func (ctrl *Controller) addMAPIMachineSet(obj interface{}) {
 	klog.Infof("MAPI MachineSet %s added, reconciling enrolled machine resources", machineSet.Name)
 
 	// Update/Check all machinesets instead of just this one. This prevents needing to maintain a local
-	// store of machine set conditions. As this is using a lister, it is relatively inexpensive to do
+	// store of machineset conditions. As this is using a lister, it is relatively inexpensive to do
 	// this.
 	err := ctrl.enqueueMAPIMachineSets()
 	if err != nil {
-		klog.Errorf("Error enqueuing MAPI machine sets: %v", err)
+		klog.Errorf("Error enqueuing MAPI machinesets: %v", err)
 	}
 }
 
@@ -271,11 +271,11 @@ func (ctrl *Controller) updateMAPIMachineSet(oldMS, newMS interface{}) {
 	klog.Infof("MachineSet %s updated, reconciling enrolled machineset resources", oldMachineSet.Name)
 
 	// Update all machinesets instead of just this one. This prevents needing to maintain a local
-	// store of machine set conditions. As this is using a lister, it is relatively inexpensive to do
+	// store of machineset conditions. As this is using a lister, it is relatively inexpensive to do
 	// this.
 	err := ctrl.enqueueMAPIMachineSets()
 	if err != nil {
-		klog.Errorf("Error enqueuing MAPI machine sets: %v", err)
+		klog.Errorf("Error enqueuing MAPI machinesets: %v", err)
 	}
 }
 
@@ -294,10 +294,10 @@ func (ctrl *Controller) addConfigMap(obj interface{}) {
 
 	klog.Infof("configMap %s added, reconciling enrolled machine resources", configMap.Name)
 
-	// Update all machine sets since the "golden" configmap has been updated
+	// Update all machinesets since the "golden" configmap has been updated
 	err := ctrl.enqueueMAPIMachineSets()
 	if err != nil {
-		klog.Errorf("Error enqueuing MAPI machine sets: %v", err)
+		klog.Errorf("Error enqueuing MAPI machinesets: %v", err)
 	}
 }
 
@@ -322,10 +322,10 @@ func (ctrl *Controller) updateConfigMap(oldCM, newCM interface{}) {
 
 	klog.Infof("configMap %s updated, reconciling enrolled machine resources", oldConfigMap.Name)
 
-	// Update all machine sets since the "golden" configmap has been updated
+	// Update all machinesets since the "golden" configmap has been updated
 	err := ctrl.enqueueMAPIMachineSets()
 	if err != nil {
-		klog.Errorf("Error enqueuing MAPI machine sets: %v", err)
+		klog.Errorf("Error enqueuing MAPI machinesets: %v", err)
 	}
 }
 
@@ -348,7 +348,7 @@ func (ctrl *Controller) addMachineConfiguration(obj interface{}) {
 	// Update/Check machinesets since the boot images configuration knob was updated
 	err := ctrl.enqueueMAPIMachineSets()
 	if err != nil {
-		klog.Errorf("Error enqueuing MAPI machine sets: %v", err)
+		klog.Errorf("Error enqueuing MAPI machinesets: %v", err)
 	}
 }
 
@@ -377,7 +377,7 @@ func (ctrl *Controller) updateMachineConfiguration(oldMC, newMC interface{}) {
 	// Update all machinesets since the boot images configuration knob was updated
 	err := ctrl.enqueueMAPIMachineSets()
 	if err != nil {
-		klog.Errorf("Error enqueuing MAPI machine sets: %v", err)
+		klog.Errorf("Error enqueuing MAPI machinesets: %v", err)
 	}
 }
 
@@ -409,7 +409,7 @@ func (ctrl *Controller) enqueueMAPIMachineSets() error {
 
 	machineManagerFound, machineResourceSelector, err := getMachineResourceSelectorFromMachineManagers(mcop.Spec.ManagedBootImages.MachineManagers, opv1.MachineAPI, opv1.MachineSets)
 	if err != nil {
-		return fmt.Errorf("failed to create a machine set selector while enqueueing MAPI machineset %w", err)
+		return fmt.Errorf("failed to create a machineset selector while enqueueing MAPI machineset %w", err)
 	}
 	if !machineManagerFound {
 		klog.Infof("No MAPI machineset manager was found, so no MAPI machinesets will be enqueued.")
@@ -532,7 +532,7 @@ func (ctrl *Controller) syncMachineResource(key string) error {
 	return nil
 }
 
-// Returns architecture type for a given machine set
+// Returns architecture type for a given machineset
 func (ctrl *Controller) getArchFromMachineSet(machineset *machinev1beta1.MachineSet) (arch string, err error) {
 
 	// Valid set of machineset/node architectures
