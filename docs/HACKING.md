@@ -271,10 +271,10 @@ Then, to directly push your images, run:
 $ ./hack/cluster-push.sh
 ```
 
-## Hacking on `machine-os-content`
+## Hacking on `rhel-coreos` image
 
 If you own part of the operating system (from kernel to kubelet) you
-are part of the `machine-os-content`.  More information in [OSUpgrades.md](OSUpgrades.md).
+are part of the `rhel-coreos` image.  More information in [OSUpgrades.md](OSUpgrades.md).
 You will want a workflow for testing changes to a cluster.
 
 ### Directly applying changes live to a node
@@ -287,16 +287,20 @@ replace binaries there (e.g. `/usr/bin/crio`).  For anything that requires a reb
 
 ### Applying a custom oscontainer
 
-A more advanced flow is to build a custom `machine-os-content`
+With OCP 4.12+, we are using `rhel-coreos` which is an OCI container image and
+can be used as a base image to create custom container.
+The easiest way to create and apply custom image is using [layering](https://docs.openshift.com/container-platform/4.15/post_installation_configuration/coreos-layering.html).
+
+A more advanced flow is to build a custom `rhel-coreos`
 container; this exercises applying updates the same way that is used by
 the default upgrade path.  This can be useful if for example you're testing
 code related to upgrades.  For this, see https://github.com/coreos/coreos-assembler/pull/489
 (A future iteration of this document will better describe this part)
 But let's assume you have a custom container and have pushed to a registry, for
-this example `quay.io/example/machine-os-content:latest`.
+this example `quay.io/example/rhel-coreos:latest`.
 
 Once you have an oscontainer, you can again use `oc debug node/` and  `pivot` to directly switch
-to the target oscontainer, e.g. `pivot quay.io/example/machine-os-content:latest`.
+to the target oscontainer, e.g. `rpm-ostree rebase --experimental ostree-unverified-registry:quay.io/example/rhel-coreos:latest`.
 If you choose this path though the MCD will go degraded until you revert the change.
 
 If you want to roll it out to the entire cluster using the MCO, first scale down the CVO:
@@ -304,21 +308,21 @@ If you want to roll it out to the entire cluster using the MCO, first scale down
 
 Then,
 `oc -n openshift-machine-config-operator edit configmap/machine-config-osimageurl`
-and change the `osImageURL: quay.io/example/machine-os-content@sha256:...`.
+and change the `osImageURL: quay.io/example/rhel-coreos@sha256:...`.
 Notice the use of the pull-by-digest form `@sha256`; this is required by the MCO.
 
 This will follow the upgrade process that's normally used for upgrades and only
 drain/reboot a single node at a time.
 
-### Replacing `machine-os-content` in a new release image
+### Replacing `rhel-coreos` content in a new release image
 
 The method that best matches the way true upgrades work though is to build
-a custom release image that includes your custom `machine-os-content` as an
+a custom release image that includes your custom `rhel-coreos` as an
 override.  To do this, follow the instructions above for creating a custom
 release image, but instead of overriding `machine-config-operator`, override
-`machine-os-content`.  Note that today the MCO code requires that the OS
+`rhel-coreos`.  Note that today the MCO code requires that the OS
 come from a "digested" pull spec, e.g.
-`oc adm release new ... machine-os-content=quay.io/user/machine-os@sha256:49aefeabe1459e4091859b89ac1bc43d4161296cf80113fb633d59a56018ffa6`.
+`oc adm release new ... rhel-coreos=quay.io/user/rhel-coreos@sha256:49aefeabe1459e4091859b89ac1bc43d4161296cf80113fb633d59a56018ffa6`.
 It will fail if you use e.g. `:latest`.
 
 At the time of this writing, the [kubelet](https://github.com/smarterclayton/origin/blob/4de957b019aee56931b1a29af148cf64865a969b/images/os/Dockerfile)
