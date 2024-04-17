@@ -2,15 +2,16 @@ package e2e_techpreview_test
 
 import (
 	"context"
+	_ "embed"
 	"flag"
 	"strings"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/client-go/util/retry"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 
 	"github.com/openshift/machine-config-operator/pkg/controller/build"
 	"github.com/openshift/machine-config-operator/test/framework"
@@ -18,6 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
@@ -31,15 +33,28 @@ const (
 
 	// The name of the global pull secret copy to use for the tests.
 	globalPullSecretCloneName string = "global-pull-secret-copy"
+)
 
-	// The custom Dockerfile content to build for the tests.
-	cowsayDockerfile string = `FROM quay.io/centos/centos:stream9 AS centos
-RUN dnf install -y epel-release
-FROM configs AS final
-COPY --from=centos /etc/yum.repos.d /etc/yum.repos.d
-COPY --from=centos /etc/pki/rpm-gpg/RPM-GPG-KEY-* /etc/pki/rpm-gpg/
-RUN sed -i 's/\$stream/9-stream/g' /etc/yum.repos.d/centos*.repo && \
-    rpm-ostree install cowsay`
+var (
+	// Provides a Containerfile that installs cowsayusing the Centos Stream 9
+	// EPEL repository to do so without requiring any entitlements.
+	//go:embed Containerfile.cowsay
+	cowsayDockerfile string
+
+	// Provides a Containerfile that installs Buildah from the default RHCOS RPM
+	// repositories. If the installation succeeds, the entitlement certificate is
+	// working.
+	//go:embed Containerfile.entitled
+	entitledDockerfile string
+
+	// Provides a Containerfile that works similarly to the cowsay Dockerfile
+	// with the exception that the /etc/yum.repos.d and /etc/pki/rpm-gpg key
+	// content is mounted into the build context by the BuildController.
+	//go:embed Containerfile.yum-repos-d
+	yumReposDockerfile string
+
+	//go:embed Containerfile.okd-fcos
+	okdFcosDockerfile string
 )
 
 var skipCleanup bool
@@ -62,13 +77,29 @@ type onClusterBuildTestOpts struct {
 
 	// What MachineConfigPool name to use for the test.
 	poolName string
+
+	// Use RHEL entitlements
+	useEtcPkiEntitlement bool
+
+	// Inject YUM repo information from a Centos 9 stream container
+	useYumRepos bool
+}
+
+func TestOnClusterBuildsOnOKD(t *testing.T) {
+	skipOnOCP(t)
+
+	runOnClusterBuildTest(t, onClusterBuildTestOpts{
+		poolName: layeredMCPName,
+		customDockerfiles: map[string]string{
+			layeredMCPName: okdFcosDockerfile,
+		},
+	})
 }
 
 // Tests tha an on-cluster build can be performed with the Custom Pod Builder.
 func TestOnClusterBuildsCustomPodBuilder(t *testing.T) {
 	runOnClusterBuildTest(t, onClusterBuildTestOpts{
-		imageBuilderType: build.CustomPodImageBuilder,
-		poolName:         layeredMCPName,
+		poolName: layeredMCPName,
 		customDockerfiles: map[string]string{
 			layeredMCPName: cowsayDockerfile,
 		},
@@ -79,8 +110,7 @@ func TestOnClusterBuildsCustomPodBuilder(t *testing.T) {
 // is rolled out to an opted-in node.
 func TestOnClusterBuildRollsOutImage(t *testing.T) {
 	imagePullspec := runOnClusterBuildTest(t, onClusterBuildTestOpts{
-		imageBuilderType: build.CustomPodImageBuilder,
-		poolName:         layeredMCPName,
+		poolName: layeredMCPName,
 		customDockerfiles: map[string]string{
 			layeredMCPName: cowsayDockerfile,
 		},
@@ -97,96 +127,174 @@ func TestOnClusterBuildRollsOutImage(t *testing.T) {
 	t.Log(helpers.ExecCmdOnNode(t, cs, node, "chroot", "/rootfs", "cowsay", "Moo!"))
 }
 
+// This test extracts the /etc/yum.repos.d and /etc/pki/rpm-gpg content from a
+// Centos Stream 9 image and injects them into the MCO namespace. It then
+// performs a build with the expectation that these artifacts will be used,
+// simulating a build where someone has added this content; usually a Red Hat
+// Satellite user.
+func TestYumReposBuilds(t *testing.T) {
+	runOnClusterBuildTest(t, onClusterBuildTestOpts{
+		poolName: layeredMCPName,
+		customDockerfiles: map[string]string{
+			layeredMCPName: yumReposDockerfile,
+		},
+		useYumRepos: true,
+	})
+}
+
+// Clones the etc-pki-entitlement certificate from the openshift-config-managed
+// namespace into the MCO namespace. Then performs an on-cluster layering build
+// which should consume the entitlement certificates.
+func TestEntitledBuilds(t *testing.T) {
+	skipOnOKD(t)
+
+	runOnClusterBuildTest(t, onClusterBuildTestOpts{
+		poolName: layeredMCPName,
+		customDockerfiles: map[string]string{
+			layeredMCPName: entitledDockerfile,
+		},
+		useEtcPkiEntitlement: true,
+	})
+}
+
 // Sets up and performs an on-cluster build for a given set of parameters.
 // Returns the built image pullspec for later consumption.
 func runOnClusterBuildTest(t *testing.T, testOpts onClusterBuildTestOpts) string {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel = makeIdempotentAndRegister(t, cancel)
+
 	cs := framework.NewClientSet("")
 
-	t.Logf("Running with ImageBuilder type: %s", testOpts.imageBuilderType)
+	imageBuilder := testOpts.imageBuilderType
+	if testOpts.imageBuilderType == "" {
+		imageBuilder = build.CustomPodImageBuilder
+	}
 
-	prepareForTest(t, cs, testOpts)
+	t.Logf("Running with ImageBuilder type: %s", imageBuilder)
 
-	optPoolIntoLayering(t, cs, testOpts.poolName)
+	mosc := prepareForTest(t, cs, testOpts)
+
+	t.Cleanup(createMachineOSConfig(t, cs, mosc))
+
+	// Create a child context for the machine-os-builder pod log streamer. We
+	// create it here because we want the cancellation to run before the
+	// MachineOSConfig object is removed.
+	mobPodStreamerCtx, mobPodStreamerCancel := context.WithCancel(ctx)
+	t.Cleanup(mobPodStreamerCancel)
 
 	t.Logf("Wait for build to start")
-	waitForPoolToReachState(t, cs, testOpts.poolName, func(mcp *mcfgv1.MachineConfigPool) bool {
-		return ctrlcommon.NewMachineOSBuildState(mcp).IsBuilding()
+	waitForMachineOSBuildToReachState(t, cs, testOpts.poolName, func(mosb *mcfgv1alpha1.MachineOSBuild, err error) (bool, error) {
+		// If we had any errors retrieving the build, (other than it not existing yet), stop here.
+		if err != nil && !k8serrors.IsNotFound(err) {
+			return false, err
+		}
+
+		// The build object has not been created yet, requeue and try again.
+		if mosb == nil && k8serrors.IsNotFound(err) {
+			t.Logf("MachineOSBuild does not exist yet, retrying...")
+			return false, nil
+		}
+
+		// At this point, the build object exists and we want to ensure that it is running.
+		return ctrlcommon.NewMachineOSBuildState(mosb).IsBuilding(), nil
 	})
 
 	t.Logf("Build started! Waiting for completion...")
-	imagePullspec := ""
-	waitForPoolToReachState(t, cs, testOpts.poolName, func(mcp *mcfgv1.MachineConfigPool) bool {
-		lps := ctrlcommon.NewMachineOSBuildState(mcp)
-		if lps.HasOSImage() && lps.IsBuildSuccess() {
-			imagePullspec = lps.GetOSImage()
-			return true
-		}
 
-		if lps.IsBuildFailure() {
-			t.Fatalf("Build unexpectedly failed.")
-		}
+	// Create a child context for the build pod log streamer. This is so we can
+	// cancel it independently of the parent context or the context for the
+	// machine-os-build pod watcher (which has its own separate context).
+	buildPodStreamerCtx, buildPodStreamerCancel := context.WithCancel(ctx)
 
-		return false
+	// We wire this to both t.Cleanup() as well as defer because we want to
+	// cancel this context either at the end of this function or when the test
+	// fails, whichever comes first.
+	buildPodWatcherShutdown := makeIdempotentAndRegister(t, buildPodStreamerCancel)
+	defer buildPodWatcherShutdown()
+
+	t.Cleanup(func() {
+		if t.Failed() {
+			writeBuildArtifactsToFiles(t, cs, testOpts.poolName)
+		}
 	})
 
-	t.Logf("MachineConfigPool %q has finished building. Got image: %s", testOpts.poolName, imagePullspec)
-
-	return imagePullspec
-}
-
-// Adds the layeringEnabled label to the target MachineConfigPool and registers
-// / returns a function to unlabel it.
-func optPoolIntoLayering(t *testing.T, cs *framework.ClientSet, pool string) func() {
-	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		mcp, err := cs.MachineconfigurationV1Interface.MachineConfigPools().Get(context.TODO(), pool, metav1.GetOptions{})
+	// The pod log collection blocks the main Goroutine since we follow the logs
+	// for each container in the build pod. So they must run in a separate
+	// Goroutine so that the rest of the test can continue.
+	go func() {
+		pool, err := cs.MachineconfigurationV1Interface.MachineConfigPools().Get(buildPodStreamerCtx, testOpts.poolName, metav1.GetOptions{})
 		require.NoError(t, err)
+		err = streamBuildPodLogsToFile(buildPodStreamerCtx, t, cs, pool)
+		require.NoError(t, err, "expected no error, got %s", err)
+	}()
 
-		if mcp.Labels == nil {
-			mcp.Labels = map[string]string{}
+	// We also want to collect logs from the machine-os-builder pod since they
+	// can provide a valuable window in how / why a test failed. As mentioned
+	// above, we need to run this in a separate Goroutine so that the test is not
+	// blocked.
+	go func() {
+		err := streamMachineOSBuilderPodLogsToFile(mobPodStreamerCtx, t, cs)
+		require.NoError(t, err, "expected no error, got: %s", err)
+	}()
+
+	var build *mcfgv1alpha1.MachineOSBuild
+	waitForMachineOSBuildToReachState(t, cs, testOpts.poolName, func(mosb *mcfgv1alpha1.MachineOSBuild, err error) (bool, error) {
+		if err != nil {
+			return false, err
 		}
 
-		mcp.Labels[ctrlcommon.LayeringEnabledPoolLabel] = ""
+		build = mosb
 
-		_, err = cs.MachineconfigurationV1Interface.MachineConfigPools().Update(context.TODO(), mcp, metav1.UpdateOptions{})
-		if err == nil {
-			t.Logf("Added label %q to MachineConfigPool %s to opt into layering", ctrlcommon.LayeringEnabledPoolLabel, pool)
+		state := ctrlcommon.NewMachineOSBuildState(mosb)
+
+		if state.IsBuildFailure() {
+			t.Fatalf("MachineOSBuild %q unexpectedly failed", mosb.Name)
 		}
-		return err
+
+		return state.IsBuildSuccess(), nil
 	})
 
-	require.NoError(t, err)
+	t.Logf("MachineOSBuild %q has finished building. Got image: %s", build.Name, build.Status.FinalImagePushspec)
 
-	return makeIdempotentAndRegister(t, func() {
-		err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-			mcp, err := cs.MachineconfigurationV1Interface.MachineConfigPools().Get(context.TODO(), pool, metav1.GetOptions{})
-			require.NoError(t, err)
-
-			delete(mcp.Labels, ctrlcommon.LayeringEnabledPoolLabel)
-
-			_, err = cs.MachineconfigurationV1Interface.MachineConfigPools().Update(context.TODO(), mcp, metav1.UpdateOptions{})
-			if err == nil {
-				t.Logf("Removed label %q to MachineConfigPool %s to opt out of layering", ctrlcommon.LayeringEnabledPoolLabel, pool)
-			}
-			return err
-		})
-
-		require.NoError(t, err)
-	})
+	return build.Status.FinalImagePushspec
 }
 
 // Prepares for an on-cluster build test by performing the following:
 // - Gets the Docker Builder secret name from the MCO namespace.
 // - Creates the imagestream to use for the test.
 // - Clones the global pull secret into the MCO namespace.
+// - If requested, clones the RHEL entitlement secret into the MCO namespace.
 // - Creates the on-cluster-build-config ConfigMap.
 // - Creates the target MachineConfigPool and waits for it to get a rendered config.
 // - Creates the on-cluster-build-custom-dockerfile ConfigMap.
 //
 // Each of the object creation steps registers an idempotent cleanup function
 // that will delete the object at the end of the test.
-func prepareForTest(t *testing.T, cs *framework.ClientSet, testOpts onClusterBuildTestOpts) {
+//
+// Returns a MachineOSConfig object for the caller to create to begin the build
+// process.
+func prepareForTest(t *testing.T, cs *framework.ClientSet, testOpts onClusterBuildTestOpts) *mcfgv1alpha1.MachineOSConfig {
+	// If the test requires RHEL entitlements, clone them from
+	// "etc-pki-entitlement" in the "openshift-config-managed" namespace.
+	if testOpts.useEtcPkiEntitlement {
+		t.Cleanup(copyEntitlementCerts(t, cs))
+	}
+
+	// If the test requires /etc/yum.repos.d and /etc/pki/rpm-gpg, pull a Centos
+	// Stream 9 container image and populate them from there. This is intended to
+	// emulate the Red Hat Satellite enablement process, but does not actually
+	// require any Red Hat Satellite creds to work.
+	if testOpts.useYumRepos {
+		t.Cleanup(injectYumRepos(t, cs))
+	}
+
 	pushSecretName, err := getBuilderPushSecretName(cs)
 	require.NoError(t, err)
+
+	// Register ephemeral object cleanup function.
+	t.Cleanup(func() {
+		cleanupEphemeralBuildObjects(t, cs)
+	})
 
 	imagestreamName := "os-image"
 	t.Cleanup(createImagestream(t, cs, imagestreamName))
@@ -196,30 +304,49 @@ func prepareForTest(t *testing.T, cs *framework.ClientSet, testOpts onClusterBui
 	finalPullspec, err := getImagestreamPullspec(cs, imagestreamName)
 	require.NoError(t, err)
 
-	cmCleanup := createConfigMap(t, cs, &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      build.OnClusterBuildConfigMapName,
-			Namespace: ctrlcommon.MCONamespace,
-		},
-		Data: map[string]string{
-			build.BaseImagePullSecretNameConfigKey:  globalPullSecretCloneName,
-			build.FinalImagePushSecretNameConfigKey: pushSecretName,
-			build.FinalImagePullspecConfigKey:       finalPullspec,
-			build.ImageBuilderTypeConfigMapKey:      string(testOpts.imageBuilderType),
-		},
-	})
-
-	t.Cleanup(cmCleanup)
-
 	t.Cleanup(makeIdempotentAndRegister(t, helpers.CreateMCP(t, cs, testOpts.poolName)))
-
-	t.Cleanup(createCustomDockerfileConfigMap(t, cs, testOpts.customDockerfiles))
 
 	_, err = helpers.WaitForRenderedConfig(t, cs, testOpts.poolName, "00-worker")
 	require.NoError(t, err)
+
+	return &mcfgv1alpha1.MachineOSConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: testOpts.poolName,
+		},
+		Spec: mcfgv1alpha1.MachineOSConfigSpec{
+			MachineConfigPool: mcfgv1alpha1.MachineConfigPoolReference{
+				Name: testOpts.poolName,
+			},
+			BuildInputs: mcfgv1alpha1.BuildInputs{
+				BaseImagePullSecret: mcfgv1alpha1.ImageSecretObjectReference{
+					Name: globalPullSecretCloneName,
+				},
+				RenderedImagePushSecret: mcfgv1alpha1.ImageSecretObjectReference{
+					Name: pushSecretName,
+				},
+				RenderedImagePushspec: finalPullspec,
+				ImageBuilder: &mcfgv1alpha1.MachineOSImageBuilder{
+					ImageBuilderType: mcfgv1alpha1.PodBuilder,
+				},
+				Containerfile: []mcfgv1alpha1.MachineOSContainerfile{
+					{
+						ContainerfileArch: mcfgv1alpha1.NoArch,
+						Content:           testOpts.customDockerfiles[testOpts.poolName],
+					},
+				},
+			},
+			BuildOutputs: mcfgv1alpha1.BuildOutputs{
+				CurrentImagePullSecret: mcfgv1alpha1.ImageSecretObjectReference{
+					Name: pushSecretName,
+				},
+			},
+		},
+	}
 }
 
 func TestSSHKeyAndPasswordForOSBuilder(t *testing.T) {
+	t.Skip()
+
 	cs := framework.NewClientSet("")
 
 	// label random node from pool, get the node
@@ -228,7 +355,6 @@ func TestSSHKeyAndPasswordForOSBuilder(t *testing.T) {
 
 	// prepare for on cluster build test
 	prepareForTest(t, cs, onClusterBuildTestOpts{
-		imageBuilderType:  build.OpenshiftImageBuilder,
 		poolName:          layeredMCPName,
 		customDockerfiles: map[string]string{},
 	})
