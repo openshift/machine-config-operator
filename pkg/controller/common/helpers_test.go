@@ -287,7 +287,6 @@ func TestMergeMachineConfigs(t *testing.T) {
 	require.Nil(t, err)
 	expectedMachineConfig := &mcfgv1.MachineConfig{
 		Spec: mcfgv1.MachineConfigSpec{
-			// TODO(jkyros): take this back out when we drop machine-os-content
 			OSImageURL:      GetDefaultBaseImageContainer(&cconfig.Spec),
 			KernelArguments: []string{},
 			Config: runtime.RawExtension{

@@ -210,7 +210,7 @@ func TestReconcilableDiff(t *testing.T) {
 	assert.Equal(t, diff.files, true)
 
 	newConfig = newMachineConfigFromFiles(oldFiles)
-	newConfig.Spec.OSImageURL = "example.com/machine-os-content:new"
+	newConfig.Spec.OSImageURL = "example.com/rhel-coreos:new"
 	diff, err = reconcilable(oldConfig, newConfig)
 	checkReconcilableResults(t, "os update", err)
 	assert.Equal(t, diff.osUpdate, true)
