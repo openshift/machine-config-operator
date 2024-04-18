@@ -1243,7 +1243,7 @@ func (dn *Daemon) RunFirstbootCompleteMachineconfig() error {
 	}
 
 	// Currently, we generally expect the bootimage to be older, but in the special
-	// case of having bootimage == machine-os-content, and no kernel arguments
+	// case of having bootimage == rhel-coreos, and no kernel arguments
 	// specified, then we don't need to do anything here.
 	mcDiffNotEmpty, err := dn.compareMachineConfig(oldConfig, &mc)
 	if err != nil {
