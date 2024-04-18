@@ -230,6 +230,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 					resource.MustParse(constants.MinFreeStorageAfterPrefetch),
 					constants.DefaultCRIOSocketPath,
 					constants.KubeletAuthFile,
+					constants.ContainerRegistryConfPath,
 					prefetchTimeout,
 					ctrlctx.FeatureGateAccess,
 				)

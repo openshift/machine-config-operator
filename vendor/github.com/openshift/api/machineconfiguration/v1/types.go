@@ -509,7 +509,7 @@ type MachineConfigPoolStatus struct {
 	// +listType=map
 	// +listMapKey=poolSynchronizerType
 	// +optional
-	PoolSynchronizersStatus []PoolSynchronizerStatus `json:"poolSynchronizersStatus"`
+	PoolSynchronizersStatus []PoolSynchronizerStatus `json:"poolSynchronizersStatus,omitempty"`
 }
 
 // +kubebuilder:validation:XValidation:rule="self.machineCount >= self.updatedMachineCount", message="machineCount must be greater than or equal to updatedMachineCount"

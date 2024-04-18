@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	configv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 
 	mcfgalphav1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	helpers "github.com/openshift/machine-config-operator/pkg/helpers"
@@ -53,7 +54,7 @@ func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
 			machineConfigStates = append(machineConfigStates, ms)
 		}
 	}
-	newStatus := calculateStatus(machineConfigStates, cc, pool, nodes)
+	newStatus := calculateStatus(fg, machineConfigStates, cc, pool, nodes)
 	if equality.Semantic.DeepEqual(pool.Status, newStatus) {
 		return nil
 	}
@@ -72,7 +73,7 @@ func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
 }
 
 //nolint:gocyclo
-func calculateStatus(mcs []*mcfgalphav1.MachineConfigNode, cconfig *mcfgv1.ControllerConfig, pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv1.MachineConfigPoolStatus {
+func calculateStatus(fg featuregates.FeatureGate, mcs []*mcfgalphav1.MachineConfigNode, cconfig *mcfgv1.ControllerConfig, pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv1.MachineConfigPoolStatus {
 	certExpirys := []mcfgv1.CertExpiry{}
 	if cconfig != nil {
 		for _, cert := range cconfig.Status.ControllerCertificates {
@@ -234,8 +235,13 @@ func calculateStatus(mcs []*mcfgalphav1.MachineConfigNode, cconfig *mcfgv1.Contr
 	// here we now set the MCP Degraded field, the node_controller is the one making the call right now
 	// but we might have a dedicated controller or control loop somewhere else that understands how to
 	// set Degraded. For now, the node_controller understand NodeDegraded & RenderDegraded = Degraded.
+
+	pinnedImageSetsDegraded := false
+	if fg.Enabled(configv1.FeatureGatePinnedImages) {
+		pinnedImageSetsDegraded = apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolPinnedImageSetsDegraded)
+	}
+
 	renderDegraded := apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolRenderDegraded)
-	pinnedImageSetsDegraded := apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolPinnedImageSetsDegraded)
 	if nodeDegraded || renderDegraded || pinnedImageSetsDegraded {
 		sdegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolDegraded, corev1.ConditionTrue, "", "")
 		apihelpers.SetMachineConfigPoolCondition(&status, *sdegraded)
