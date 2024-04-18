@@ -2,62 +2,72 @@ package daemon
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
-	"github.com/golang/groupcache/lru"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/informers"
+	"k8s.io/client-go/kubernetes/fake"
+	"k8s.io/client-go/util/workqueue"
+	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1"
+	apitest "k8s.io/cri-api/pkg/apis/testing"
+
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	fakemco "github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
 	mcfginformers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
 	"github.com/openshift/machine-config-operator/pkg/daemon/cri"
-	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/informers"
-	"k8s.io/client-go/kubernetes/fake"
-	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1"
-	v1 "k8s.io/cri-api/pkg/apis/runtime/v1"
-	apitest "k8s.io/cri-api/pkg/apis/testing"
-	"k8s.io/klog/v2"
-
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func TestMain(m *testing.M) {
-	klog.InitFlags(nil)
-	flag.Set("logtostderr", "true")
-	flag.Set("v", "2")
-	flag.Parse()
-	os.Exit(m.Run())
-}
-
-const authFileContents = `{"auths":{
+const (
+	authFileContents = `{"auths":{
 	"quay.io": {"auth": "Zm9vOmJhcg=="},
-	"quay.io:443": {"auth": "Zm9vOmJheg=="}
+	"quay.io:443": {"auth": "Zm9vOmJheg=="},
+	"registry.ci.openshift.org": {"auth": "Zm9vOnphcg=="}
 }}`
+
+	registryConfig = `unqualified-search-registries = ["registry.access.redhat.com", "docker.io"]
+short-name-mode = ""
+
+[[registry]]
+  prefix = ""
+  location = "example.io/digest-example/release"
+  blocked = true
+
+  [[registry.mirror]]
+    location = "registry.ci.openshift.org/ocp/release"
+    pull-from-mirror = "digest-only"`
+)
 
 func TestRegistryAuth(t *testing.T) {
 	require := require.New(t)
-	authFilePath := filepath.Join(t.TempDir(), "auth.json")
-	bogusFilePath := filepath.Join(t.TempDir(), "bogus.json")
+	tmpDir := t.TempDir()
+
+	authFilePath := filepath.Join(tmpDir, "auth.json")
+	bogusFilePath := filepath.Join(tmpDir, "bogus.json")
 	err := os.WriteFile(authFilePath, []byte(authFileContents), 0644)
+	require.NoError(err)
+	registryConfigPath := filepath.Join(tmpDir, "registries.conf")
+	err = os.WriteFile(registryConfigPath, []byte(registryConfig), 0644)
 	require.NoError(err)
 	tests := []struct {
 		name         string
 		authFile     string
 		image        string
-		wantAuth     v1.AuthConfig
+		wantAuth     *runtimeapi.AuthConfig
 		wantErr      error
 		wantImageErr error
 	}{
@@ -70,7 +80,7 @@ func TestRegistryAuth(t *testing.T) {
 			name:     "valid auth file",
 			authFile: authFilePath,
 			image:    "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:6134ca5fbcf8e4007de2d319758dcd7b4e5ded97a00c78a7ff490c1f56579d49",
-			wantAuth: v1.AuthConfig{
+			wantAuth: &runtimeapi.AuthConfig{
 				Username: "foo",
 				Password: "bar",
 			},
@@ -79,21 +89,30 @@ func TestRegistryAuth(t *testing.T) {
 			name:     "valid auth file with port",
 			authFile: authFilePath,
 			image:    "quay.io:443/openshift-release-dev/ocp-v4.0-art-dev@sha256:6134ca5fbcf8e4007de2d319758dcd7b4e5ded97a00c78a7ff490c1f56579d49",
-			wantAuth: v1.AuthConfig{
+			wantAuth: &runtimeapi.AuthConfig{
 				Username: "foo",
 				Password: "baz",
 			},
 		},
 		{
-			name:         "no valid registry auth for image",
-			authFile:     authFilePath,
-			image:        "docker.io/no/auth",
-			wantImageErr: errNoAuthForImage,
+			name:     "no valid registry auth for image",
+			authFile: authFilePath,
+			image:    "docker.io/no/auth",
+			wantAuth: nil,
+		},
+		{
+			name:     "mirrored registry send auth for mirror",
+			authFile: authFilePath,
+			image:    "example.io/digest-example/release@sha256:0704fcca246287435294dcf12b21825689c899c2365b6fc8d089d80efbae742a",
+			wantAuth: &runtimeapi.AuthConfig{
+				Username: "foo",
+				Password: "zar",
+			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			registry, err := newRegistryAuth(tt.authFile)
+			registry, err := newRegistryAuth(tt.authFile, registryConfigPath)
 			if tt.wantErr != nil {
 				require.ErrorIs(err, tt.wantErr)
 				return
@@ -105,92 +124,7 @@ func TestRegistryAuth(t *testing.T) {
 				return
 			}
 			require.NoError(err)
-			require.NotNil(cfg)
-			require.Equal(tt.wantAuth, *cfg)
-		})
-	}
-}
-
-func TestEnsurePinnedImageSetForNode(t *testing.T) {
-	require := require.New(t)
-	tests := []struct {
-		name               string
-		nodes              []runtime.Object
-		machineConfigPools []runtime.Object
-		wantValidTarget    bool
-		wantErr            error
-		wantNotFound       bool
-	}{
-		{
-			name: "happy path",
-			machineConfigPools: []runtime.Object{
-				fakeWorkerPoolPinnedImageSets,
-			},
-			nodes: []runtime.Object{
-				fakeStableStorageWorkerNode,
-			},
-			wantValidTarget: true,
-		},
-		{
-			name: "pool has no pinned image sets",
-			machineConfigPools: []runtime.Object{
-				fakeWorkerPoolNoPinnedImageSets,
-			},
-			nodes: []runtime.Object{
-				fakeStableStorageWorkerNode,
-			},
-			wantValidTarget: true,
-		},
-		{
-			name: "no matching pools for node",
-			machineConfigPools: []runtime.Object{
-				fakeMasterPoolPinnedImageSets,
-			},
-			nodes: []runtime.Object{
-				fakeStableStorageWorkerNode,
-			},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-
-			fakeMCOClient := fakemco.NewSimpleClientset(tt.machineConfigPools...)
-			fakeClient := fake.NewSimpleClientset(tt.nodes...)
-			sharedInformers := mcfginformers.NewSharedInformerFactory(fakeMCOClient, noResyncPeriodFunc())
-			informerFactory := informers.NewSharedInformerFactory(fakeClient, noResyncPeriodFunc())
-			mcpInformer := sharedInformers.Machineconfiguration().V1().MachineConfigPools()
-			nodeInformer := informerFactory.Core().V1().Nodes()
-
-			informerFactory.Start(ctx.Done())
-			informerFactory.WaitForCacheSync(ctx.Done())
-			sharedInformers.Start(ctx.Done())
-			sharedInformers.WaitForCacheSync(ctx.Done())
-
-			for _, mcp := range tt.machineConfigPools {
-				err := mcpInformer.Informer().GetIndexer().Add(mcp)
-				require.NoError(err)
-			}
-			for _, node := range tt.nodes {
-				err := nodeInformer.Informer().GetIndexer().Add(node)
-				require.NoError(err)
-			}
-
-			var localNodeName string
-			if len(tt.nodes) == 0 {
-				localNodeName = "bogus"
-			} else {
-				localNode, ok := tt.nodes[0].(*corev1.Node)
-				require.True(ok)
-				localNodeName = localNode.Name
-			}
-
-			pool := tt.machineConfigPools[0].(*mcfgv1.MachineConfigPool)
-			validTarget, err := validateTargetPoolForNode(localNodeName, nodeInformer.Lister(), pool)
-			require.NoError(err)
-			require.Equal(tt.wantValidTarget, validTarget)
-
+			require.Equal(tt.wantAuth, cfg)
 		})
 	}
 }
@@ -198,9 +132,13 @@ func TestEnsurePinnedImageSetForNode(t *testing.T) {
 func TestPrefetchImageSets(t *testing.T) {
 	require := require.New(t)
 
-	// populate authfile
-	authFilePath := filepath.Join(t.TempDir(), "auth.json")
+	// populate authfile and registry config
+	tmpDir := t.TempDir()
+	authFilePath := filepath.Join(tmpDir, "auth.json")
 	err := os.WriteFile(authFilePath, []byte(authFileContents), 0644)
+	require.NoError(err)
+	registryConfigPath := filepath.Join(tmpDir, "registries.conf")
+	err = os.WriteFile(registryConfigPath, []byte(registryConfig), 0644)
 	require.NoError(err)
 
 	tests := []struct {
@@ -380,6 +318,7 @@ func TestPrefetchImageSets(t *testing.T) {
 				nodeName:         localNodeName,
 				criClient:        criClient,
 				authFilePath:     tt.authFilePath,
+				registryCfgPath:  registryConfigPath,
 				imageSetLister:   imageSetInformer.Lister(),
 				imageSetSynced:   imageSetInformer.Informer().HasSynced,
 				nodeLister:       nodeInformer.Lister(),
@@ -391,7 +330,7 @@ func TestPrefetchImageSets(t *testing.T) {
 					Factor:   retryFactor,
 					Cap:      10 * time.Millisecond,
 				},
-				cache: lru.New(256),
+				cache: newImageCache(256),
 			}
 
 			imageSets := make([]*mcfgv1alpha1.PinnedImageSet, len(tt.imageSets))
@@ -417,53 +356,137 @@ func TestPrefetchImageSets(t *testing.T) {
 	}
 }
 
+func TestPinnedImageSetAddEventHandlers(t *testing.T) {
+	require := require.New(t)
+	tests := []struct {
+		name               string
+		nodes              []runtime.Object
+		machineConfigPools []runtime.Object
+		currentImageSet    *mcfgv1alpha1.PinnedImageSet
+		wantCacheElements  int
+	}{
+		{
+			name:               "happy path",
+			machineConfigPools: []runtime.Object{fakeWorkerPoolPinnedImageSets},
+			nodes:              []runtime.Object{fakeStableStorageWorkerNode},
+			wantCacheElements:  1,
+			currentImageSet:    workerPis,
+		},
+		{
+			name:               "worker pool with no pinned image sets",
+			machineConfigPools: []runtime.Object{fakeWorkerPoolNoPinnedImageSets},
+			nodes:              []runtime.Object{fakeStableStorageWorkerNode},
+			wantCacheElements:  0,
+			currentImageSet:    workerPis,
+		},
+		{
+			name:               "worker pool master pinned image sets",
+			machineConfigPools: []runtime.Object{fakeWorkerPoolNoPinnedImageSets},
+			nodes:              []runtime.Object{fakeStableStorageWorkerNode},
+			wantCacheElements:  0,
+			currentImageSet:    masterPis,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			fakeMCOClient := fakemco.NewSimpleClientset(tt.machineConfigPools...)
+			fakeClient := fake.NewSimpleClientset(tt.nodes...)
+			sharedInformers := mcfginformers.NewSharedInformerFactory(fakeMCOClient, noResyncPeriodFunc())
+			informerFactory := informers.NewSharedInformerFactory(fakeClient, noResyncPeriodFunc())
+			mcpInformer := sharedInformers.Machineconfiguration().V1().MachineConfigPools()
+			nodeInformer := informerFactory.Core().V1().Nodes()
+
+			informerFactory.Start(ctx.Done())
+			informerFactory.WaitForCacheSync(ctx.Done())
+			sharedInformers.Start(ctx.Done())
+			sharedInformers.WaitForCacheSync(ctx.Done())
+
+			for _, mcp := range tt.machineConfigPools {
+				err := mcpInformer.Informer().GetIndexer().Add(mcp)
+				require.NoError(err)
+			}
+			for _, node := range tt.nodes {
+				err := nodeInformer.Informer().GetIndexer().Add(node)
+				require.NoError(err)
+			}
+
+			nodeName := tt.nodes[0].(*corev1.Node).Name
+			p := &PinnedImageSetManager{
+				nodeName:   nodeName,
+				nodeLister: nodeInformer.Lister(),
+				mcpLister:  mcpInformer.Lister(),
+				queue:      workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "pinned-image-set-manager"),
+			}
+			p.enqueueMachineConfigPool = p.enqueue
+			p.addPinnedImageSet(tt.currentImageSet)
+			require.Equal(tt.wantCacheElements, p.queue.Len())
+		})
+	}
+}
+
+func TestEnsureCrioPinnedImagesConfigFile(t *testing.T) {
+	require := require.New(t)
+	tmpDir := t.TempDir()
+	imageNames := []string{
+		"quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		"quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		"quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+	}
+
+	newCfgBytes, err := createCrioConfigFileBytes(imageNames)
+	require.NoError(err)
+	testCfgPath := filepath.Join(tmpDir, "50-pinned-images")
+	err = os.WriteFile(testCfgPath, newCfgBytes, 0644)
+	require.NoError(err)
+	err = ensureCrioPinnedImagesConfigFile(testCfgPath, imageNames)
+	require.NoError(err)
+
+	imageNames = append(imageNames, "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd")
+	err = ensureCrioPinnedImagesConfigFile(testCfgPath, imageNames)
+	require.ErrorIs(err, os.ErrPermission) // this error is from atomic writer attempting to write.
+}
+
+func fakePinnedImageSet(name, image string, labels map[string]string) *mcfgv1alpha1.PinnedImageSet {
+	return &mcfgv1alpha1.PinnedImageSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   name,
+			Labels: labels,
+		},
+		Spec: mcfgv1alpha1.PinnedImageSetSpec{
+			PinnedImages: []mcfgv1alpha1.PinnedImageRef{
+				{
+					Name: image,
+				},
+			},
+		},
+	}
+}
+
 var (
-	fakeStableStorageWorkerNode = fakeNode(
-		"worker",
-		"100Gi",
-	).DeepCopy()
-
-	fakeWorkerPoolPinnedImageSets = fakeMachineConfigPool(
-		"worker",
-		map[string]string{
-			"pools.operator.machineconfiguration.openshift.io/worker": "",
-		},
-		[]mcfgv1.PinnedImageSetRef{
-			{
-				Name: "fake-pinned-images",
-			},
-		},
-	)
-
-	fakeWorkerPoolNoPinnedImageSets = fakeMachineConfigPool(
-		"worker",
-		map[string]string{
-			"pools.operator.machineconfiguration.openshift.io/worker": "",
-		},
-		[]mcfgv1.PinnedImageSetRef{},
-	)
-
-	fakeMasterPoolPinnedImageSets = fakeMachineConfigPool(
-		"master",
-		map[string]string{
-			"pools.operator.machineconfiguration.openshift.io/master": "",
-			"pinnedimageset-opt-in":                                   "true",
-		},
-		[]mcfgv1.PinnedImageSetRef{
-			{
-				Name: "fake-master-pinned-images",
-			},
-		},
-	)
+	masterPis                       = fakePinnedImageSet("master-set", "image1", map[string]string{"machineconfiguration.openshift.io/role": "master"})
+	workerPis                       = fakePinnedImageSet("worker-set", "image1", map[string]string{"machineconfiguration.openshift.io/role": "worker"})
+	fakeStableStorageWorkerNode     = fakeNode([]string{"worker"}, "100Gi")
+	fakeWorkerPoolPinnedImageSets   = fakeMachineConfigPool("worker", []mcfgv1.PinnedImageSetRef{{Name: "worker-set"}})
+	fakeWorkerPoolNoPinnedImageSets = fakeMachineConfigPool("worker", nil)
+	availableImage                  = "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+	// slowImage is a fake image that is used to block the image puller. This simulates a slow image pull of 1 seconds.
+	slowImage = "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
 )
 
-func fakeNode(role, allocatableStorage string) *corev1.Node {
+func fakeNode(roles []string, allocatableStorage string) *corev1.Node {
+	labels := map[string]string{}
+	for _, role := range roles {
+		labels[fmt.Sprintf("node-role.kubernetes.io/%s", role)] = ""
+	}
+
+	name := strings.Join(roles, "-")
 	return &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "test-" + role,
-			Labels: map[string]string{
-				fmt.Sprintf("node-role.kubernetes.io/%s", role): "",
-			},
+			Name:   "test-" + name,
+			Labels: labels,
 		},
 		Status: corev1.NodeStatus{
 			Capacity: corev1.ResourceList{
@@ -474,34 +497,29 @@ func fakeNode(role, allocatableStorage string) *corev1.Node {
 	}
 }
 
-func fakeMachineConfigPool(name string, labels map[string]string, pinnedImageSets []mcfgv1.PinnedImageSetRef) *mcfgv1.MachineConfigPool {
+func fakeMachineConfigPool(role string, pinnedImageSets []mcfgv1.PinnedImageSetRef) *mcfgv1.MachineConfigPool {
 	return &mcfgv1.MachineConfigPool{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:   name,
-			Labels: labels,
+			Name: role,
+			Labels: map[string]string{
+				fmt.Sprintf("pools.operator.machineconfiguration.openshift.io/%s", role): "",
+			},
 		},
 		Spec: mcfgv1.MachineConfigPoolSpec{
 			PinnedImageSets: pinnedImageSets,
 			MachineConfigSelector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					"machineconfiguration.openshift.io/role": name,
+					"machineconfiguration.openshift.io/role": role,
 				},
 			},
 			NodeSelector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					fmt.Sprintf("node-role.kubernetes.io/%s", name): "",
+					fmt.Sprintf("node-role.kubernetes.io/%s", role): "",
 				},
 			},
 		},
 	}
 }
-
-const (
-	availableImage   = "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:0000000000000000000000000000000000000000000000000000000000000000"
-	unavailableImage = "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-	// slowImage is a fake image that is used to block the image puller. This simulates a slow image pull of 1 seconds.
-	slowImage = "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
-)
 
 var _ runtimeapi.ImageServiceServer = (*FakeRuntime)(nil)
 

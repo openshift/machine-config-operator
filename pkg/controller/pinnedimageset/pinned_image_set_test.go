@@ -5,159 +5,90 @@ import (
 	"testing"
 	"time"
 
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	k8sfake "k8s.io/client-go/kubernetes/fake"
-	"k8s.io/client-go/tools/cache"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/kubernetes/fake"
 
-	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
-	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
-	informers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	fakemco "github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
+	mcfginformers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/require"
 )
 
-var (
-	alwaysReady        = func() bool { return true }
-	noResyncPeriodFunc = func() time.Duration { return 0 }
-	masterPoolSelector = metav1.AddLabelToSelector(&metav1.LabelSelector{}, "machineconfiguration.openshift.io/role", "master")
-)
-
-type fixture struct {
-	t *testing.T
-
-	client *fake.Clientset
-
-	mcpLister      []*mcfgv1.MachineConfigPool
-	imageSetLister []*mcfgv1alpha1.PinnedImageSet
-	mcpIndexer     cache.Indexer
-
-	objects []runtime.Object
-}
-
-func newFixture(t *testing.T) *fixture {
-	f := &fixture{}
-	f.t = t
-	f.objects = []runtime.Object{}
-	return f
-}
-
-func (f *fixture) newController() *Controller {
-	f.client = fake.NewSimpleClientset(f.objects...)
-
-	i := informers.NewSharedInformerFactory(f.client, noResyncPeriodFunc())
-
-	pisInformer := i.Machineconfiguration().V1alpha1().PinnedImageSets()
-	f.mcpIndexer = pisInformer.Informer().GetIndexer()
-
-	c := New(
-		pisInformer,
-		i.Machineconfiguration().V1().MachineConfigPools(),
-		k8sfake.NewSimpleClientset(),
-		f.client,
-	)
-
-	c.mcpListerSynced = alwaysReady
-	c.mcpListerSynced = alwaysReady
-	c.imageSetSynced = alwaysReady
-	c.eventRecorder = ctrlcommon.NamespacedEventRecorder(&record.FakeRecorder{})
-
-	stopCh := make(chan struct{})
-	defer close(stopCh)
-	i.Start(stopCh)
-	i.WaitForCacheSync(stopCh)
-
-	for _, c := range f.mcpLister {
-		i.Machineconfiguration().V1().MachineConfigPools().Informer().GetIndexer().Add(c)
-	}
-	for _, p := range f.imageSetLister {
-		f.mcpIndexer.Add(p)
-	}
-
-	return c
-}
-
-func (f *fixture) updatePinnedImageSet(pis *mcfgv1alpha1.PinnedImageSet) error {
-	return f.mcpIndexer.Update(pis)
-}
-
-func (f *fixture) deletePinnedImageSet(pis *mcfgv1alpha1.PinnedImageSet) error {
-	return f.mcpIndexer.Delete(pis)
-}
-
-func TestUpdateSpecNewPinnedImageSet(t *testing.T) {
+func TestSyncHandler(t *testing.T) {
 	require := require.New(t)
-	f := newFixture(t)
-	mcp := helpers.NewMachineConfigPool("test-cluster-master", masterPoolSelector, helpers.MasterSelector, "")
-	pis := fakePinnedImageSet("test-pinned-image-set", "master", map[string]string{"machineconfiguration.openshift.io/role": "master"})
-
-	f.mcpLister = append(f.mcpLister, mcp)
-	f.objects = append(f.objects, mcp)
-	f.imageSetLister = append(f.imageSetLister, pis)
-	f.objects = append(f.objects, pis)
-
-	c := f.newController()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	tests := []struct {
-		name         string
-		pis          *mcfgv1alpha1.PinnedImageSet
-		deletePis    *mcfgv1alpha1.PinnedImageSet
-		wantSpecPis  []mcfgv1.PinnedImageSetRef
-		wantErr      error
-		wantImageErr error
+		name              string
+		machineConfigPool runtime.Object
+		pis               runtime.Object
+		pinnedImageSets   []mcfgv1.PinnedImageSetRef
+		wantErr           error
 	}{
 		{
-			name: "happy path",
-			pis:  pis,
-			wantSpecPis: []mcfgv1.PinnedImageSetRef{
-				{
-					Name: pis.Name,
-				},
-			},
+			name:              "happy path",
+			machineConfigPool: masterPool,
+			pis:               masterPis,
+			pinnedImageSets:   []mcfgv1.PinnedImageSetRef{{Name: masterPis.Name}},
 		},
 		{
-			name:        "update labels to worker",
-			pis:         fakePinnedImageSet("test-pinned-image-set", "master", map[string]string{"machineconfiguration.openshift.io/role": "worker"}),
-			wantSpecPis: nil,
+			name:              "pool mismatch",
+			machineConfigPool: workerPool,
+			pis:               masterPis,
+			pinnedImageSets:   nil,
 		},
 		{
-			name: "multiple labels single match",
-			pis: fakePinnedImageSet("test-pinned-image-set", "infr", map[string]string{
-				"machineconfiguration.openshift.io/role": "master",
-				"test-label":                             "",
-			}),
-			wantSpecPis: []mcfgv1.PinnedImageSetRef{
-				{
-					Name: pis.Name,
-				},
-			},
+			name:              "no pinned image sets",
+			machineConfigPool: masterPool,
+			pis:               nil,
+			pinnedImageSets:   nil,
 		},
 		{
-			name:        "delete pinned image set",
-			deletePis:   pis,
-			wantSpecPis: nil,
+			name:              "custom infra pool",
+			machineConfigPool: infraPool,
+			pis:               infraPis,
+			pinnedImageSets:   []mcfgv1.PinnedImageSetRef{{Name: infraPis.Name}},
+		},
+		{
+			name:              "custom infra pool also gets worker pinned image sets",
+			machineConfigPool: infraPool,
+			pis:               workerPis,
+			pinnedImageSets:   []mcfgv1.PinnedImageSetRef{{Name: workerPis.Name}},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.deletePis != nil {
-				err := f.deletePinnedImageSet(tt.deletePis)
-				require.NoError(err)
-			} else {
-				err := f.updatePinnedImageSet(tt.pis)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			fakeClient := fake.NewSimpleClientset()
+			fakeMCOClient := fakemco.NewSimpleClientset(tt.machineConfigPool)
+			sharedInformers := mcfginformers.NewSharedInformerFactory(fakeMCOClient, noResyncPeriodFunc())
+			mcpInformer := sharedInformers.Machineconfiguration().V1().MachineConfigPools()
+			imageSetInformer := sharedInformers.Machineconfiguration().V1alpha1().PinnedImageSets()
+
+			sharedInformers.Start(ctx.Done())
+			sharedInformers.WaitForCacheSync(ctx.Done())
+
+			err := mcpInformer.Informer().GetIndexer().Add(tt.machineConfigPool)
+			require.NoError(err)
+
+			if tt.pis != nil {
+				err = imageSetInformer.Informer().GetIndexer().Add(tt.pis)
 				require.NoError(err)
 			}
-			err := c.syncHandler(mcp.Name)
+
+			c := New(imageSetInformer, mcpInformer, fakeClient, fakeMCOClient)
+			mcp, ok := tt.machineConfigPool.(*mcfgv1.MachineConfigPool)
+			require.True(ok)
+
+			err = c.syncHandler(mcp.Name)
 			require.NoError(err)
 
 			mcpNew, err := c.client.MachineconfigurationV1().MachineConfigPools().Get(ctx, mcp.Name, metav1.GetOptions{})
 			require.NoError(err)
-			require.Equal(mcpNew.Spec.PinnedImageSets, tt.wantSpecPis)
+			require.Equal(mcpNew.Spec.PinnedImageSets, tt.pinnedImageSets)
 		})
 	}
 }
@@ -177,3 +108,24 @@ func fakePinnedImageSet(name, image string, labels map[string]string) *mcfgv1alp
 		},
 	}
 }
+
+var (
+	noResyncPeriodFunc = func() time.Duration { return 0 }
+	masterPoolSelector = metav1.AddLabelToSelector(&metav1.LabelSelector{}, "machineconfiguration.openshift.io/role", "master")
+	workerPoolSelector = metav1.AddLabelToSelector(&metav1.LabelSelector{}, "machineconfiguration.openshift.io/role", "worker")
+	masterPis          = fakePinnedImageSet("master-set", "image1", map[string]string{"machineconfiguration.openshift.io/role": "master"})
+	infraPis           = fakePinnedImageSet("infra-set", "image1", map[string]string{"machineconfiguration.openshift.io/role": "infra"})
+	workerPis          = fakePinnedImageSet("worker-set", "image1", map[string]string{"machineconfiguration.openshift.io/role": "worker"})
+	masterPool         = helpers.NewMachineConfigPool("master", masterPoolSelector, helpers.MasterSelector, "")
+	workerPool         = helpers.NewMachineConfigPool("worker", workerPoolSelector, helpers.WorkerSelector, "")
+	infraPool          = helpers.NewMachineConfigPool("infra", infraPoolSelector, helpers.InfraSelector, "")
+	infraPoolSelector  = &metav1.LabelSelector{
+		MatchExpressions: []metav1.LabelSelectorRequirement{
+			{
+				Key:      "machineconfiguration.openshift.io/role",
+				Operator: metav1.LabelSelectorOpIn,
+				Values:   []string{"worker", "infra"},
+			},
+		},
+	}
+)

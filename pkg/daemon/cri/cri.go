@@ -41,6 +41,8 @@ type Client struct {
 	image runtimeapi.ImageServiceClient
 }
 
+// PullImage pulls the image from the container runtime. The auth parameter can
+// be nil if the image does not require authentication.
 func (c *Client) PullImage(ctx context.Context, image string, auth *runtimeapi.AuthConfig) error {
 	resp, err := c.image.PullImage(ctx, &runtimeapi.PullImageRequest{
 		Image: &runtimeapi.ImageSpec{

@@ -84,13 +84,6 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			ctrlctx.FeatureGateAccess,
 		)
 
-		pinnedImageSet := pinnedimageset.New(
-			ctrlctx.InformerFactory.Machineconfiguration().V1alpha1().PinnedImageSets(),
-			ctrlctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
-			ctrlctx.ClientBuilder.KubeClientOrDie("pinned-image-set-controller"),
-			ctrlctx.ClientBuilder.MachineConfigClientOrDie("pinned-image-set-controller"),
-		)
-
 		// Start the shared factory informers that you need to use in your controller
 		ctrlctx.InformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.KubeInformerFactory.Start(ctrlctx.Stop)
@@ -112,6 +105,19 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 
 			enabled, disabled := getEnabledDisabledFeatures(features)
 			klog.Infof("FeatureGates initialized: enabled=%v  disabled=%v", enabled, disabled)
+			if features.Enabled(configv1.FeatureGatePinnedImages) {
+				pinnedImageSet := pinnedimageset.New(
+					ctrlctx.InformerFactory.Machineconfiguration().V1alpha1().PinnedImageSets(),
+					ctrlctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
+					ctrlctx.ClientBuilder.KubeClientOrDie("pinned-image-set-controller"),
+					ctrlctx.ClientBuilder.MachineConfigClientOrDie("pinned-image-set-controller"),
+				)
+
+				go pinnedImageSet.Run(2, ctrlctx.Stop)
+				// start the informers again to enable feature gated types.
+				// see comments in SharedInformerFactory interface.
+				ctrlctx.InformerFactory.Start(ctrlctx.Stop)
+			}
 		case <-time.After(1 * time.Minute):
 			klog.Errorf("timed out waiting for FeatureGate detection")
 			os.Exit(1)
@@ -122,17 +128,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		}
 		go draincontroller.Run(5, ctrlctx.Stop)
 
-		fg, err := ctrlctx.FeatureGateAccess.CurrentFeatureGates()
-		if err != nil {
-			klog.Fatalf("Could not get feature gate: %v", err)
-		}
-		if fg.Enabled(configv1.FeatureGatePinnedImages) {
-			go pinnedImageSet.Run(2, ctrlctx.Stop)
-		} else {
-			klog.Infof("FeatureGate %s is disabled, not starting the pinned image set controller", configv1.FeatureGatePinnedImages)
-		}
-
-		// wait here in this function until the context gets cancelled (which tells us whe were being shut down)
+		// wait here in this function until the context gets cancelled (which tells us when we are being shut down)
 		<-ctx.Done()
 	}
 

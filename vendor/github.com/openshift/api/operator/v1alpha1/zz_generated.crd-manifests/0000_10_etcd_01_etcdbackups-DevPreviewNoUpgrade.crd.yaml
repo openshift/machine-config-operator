@@ -2,27 +2,29 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    api-approved.openshift.io: https://github.com/openshift/api/pull/470
+    api-approved.openshift.io: https://github.com/openshift/api/pull/1482
     api.openshift.io/merged-by-featuregates: "true"
     include.release.openshift.io/ibm-cloud-managed: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
-  name: featuregates.config.openshift.io
+    release.openshift.io/feature-set: DevPreviewNoUpgrade
+  name: etcdbackups.operator.openshift.io
 spec:
-  group: config.openshift.io
+  group: operator.openshift.io
   names:
-    kind: FeatureGate
-    listKind: FeatureGateList
-    plural: featuregates
-    singular: featuregate
+    kind: EtcdBackup
+    listKind: EtcdBackupList
+    plural: etcdbackups
+    singular: etcdbackup
   scope: Cluster
   versions:
-  - name: v1
+  - name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: "Feature holds cluster-wide information about feature gates.
-          \ The canonical name is `cluster` \n Compatibility level 1: Stable within
-          a major release for a minimum of 12 months or 3 minor releases (whichever
-          is longer)."
+        description: "# EtcdBackup provides configuration options and status for a
+          one-time backup attempt of the etcd cluster \n Compatibility level 4: No
+          compatibility is provided, the API can change at any point for any reason.
+          These capabilities should not be used by applications needing long term
+          support."
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
@@ -39,58 +41,43 @@ spec:
           spec:
             description: spec holds user settable values for configuration
             properties:
-              customNoUpgrade:
-                description: customNoUpgrade allows the enabling or disabling of any
-                  feature. Turning this feature set on IS NOT SUPPORTED, CANNOT BE
-                  UNDONE, and PREVENTS UPGRADES. Because of its nature, this setting
-                  cannot be validated.  If you have any typos or accidentally apply
-                  invalid combinations your cluster may fail in an unrecoverable way.  featureSet
-                  must equal "CustomNoUpgrade" must be set to use this field.
-                nullable: true
-                properties:
-                  disabled:
-                    description: disabled is a list of all feature gates that you
-                      want to force off
-                    items:
-                      description: FeatureGateName is a string to enforce patterns
-                        on the name of a FeatureGate
-                      pattern: ^([A-Za-z0-9-]+\.)*[A-Za-z0-9-]+\.?$
-                      type: string
-                    type: array
-                  enabled:
-                    description: enabled is a list of all feature gates that you want
-                      to force on
-                    items:
-                      description: FeatureGateName is a string to enforce patterns
-                        on the name of a FeatureGate
-                      pattern: ^([A-Za-z0-9-]+\.)*[A-Za-z0-9-]+\.?$
-                      type: string
-                    type: array
-                type: object
-              featureSet:
-                description: featureSet changes the list of features in the cluster.  The
-                  default is empty.  Be very careful adjusting this setting. Turning
-                  on or off features may cause irreversible changes in your cluster
-                  which cannot be undone.
+              pvcName:
+                description: PVCName specifies the name of the PersistentVolumeClaim
+                  (PVC) which binds a PersistentVolume where the etcd backup file
+                  would be saved The PVC itself must always be created in the "openshift-etcd"
+                  namespace If the PVC is left unspecified "" then the platform will
+                  choose a reasonable default location to save the backup. In the
+                  future this would be backups saved across the control-plane master
+                  nodes.
                 type: string
                 x-kubernetes-validations:
-                - message: CustomNoUpgrade may not be changed
-                  rule: 'oldSelf == ''CustomNoUpgrade'' ? self == ''CustomNoUpgrade''
-                    : true'
-                - message: TechPreviewNoUpgrade may not be changed
-                  rule: 'oldSelf == ''TechPreviewNoUpgrade'' ? self == ''TechPreviewNoUpgrade''
-                    : true'
-                - message: DevPreviewNoUpgrade may not be changed
-                  rule: 'oldSelf == ''DevPreviewNoUpgrade'' ? self == ''DevPreviewNoUpgrade''
-                    : true'
+                - message: pvcName is immutable once set
+                  rule: self == oldSelf
             type: object
           status:
             description: status holds observed values from the cluster. They may not
               be overridden.
             properties:
+              backupJob:
+                description: backupJob is the reference to the Job that executes the
+                  backup. Optional
+                properties:
+                  name:
+                    description: name is the name of the Job. Required
+                    type: string
+                  namespace:
+                    description: namespace is the namespace of the Job. this is always
+                      expected to be "openshift-etcd" since the user provided PVC
+                      is also required to be in "openshift-etcd" Required
+                    pattern: ^openshift-etcd$
+                    type: string
+                required:
+                - name
+                - namespace
+                type: object
               conditions:
-                description: 'conditions represent the observations of the current
-                  state. Known .status.conditions.type are: "DeterminationDegraded"'
+                description: conditions provide details on the status of the etcd
+                  backup job.
                 items:
                   description: "Condition contains details for one aspect of the current
                     state of this API Resource. --- This struct is intended for direct
@@ -160,58 +147,6 @@ spec:
                 type: array
                 x-kubernetes-list-map-keys:
                 - type
-                x-kubernetes-list-type: map
-              featureGates:
-                description: featureGates contains a list of enabled and disabled
-                  featureGates that are keyed by payloadVersion. Operators other than
-                  the CVO and cluster-config-operator, must read the .status.featureGates,
-                  locate the version they are managing, find the enabled/disabled
-                  featuregates and make the operand and operator match. The enabled/disabled
-                  values for a particular version may change during the life of the
-                  cluster as various .spec.featureSet values are selected. Operators
-                  may choose to restart their processes to pick up these changes,
-                  but remembering past enable/disable lists is beyond the scope of
-                  this API and is the responsibility of individual operators. Only
-                  featureGates with .version in the ClusterVersion.status will be
-                  present in this list.
-                items:
-                  properties:
-                    disabled:
-                      description: disabled is a list of all feature gates that are
-                        disabled in the cluster for the named version.
-                      items:
-                        properties:
-                          name:
-                            description: name is the name of the FeatureGate.
-                            pattern: ^([A-Za-z0-9-]+\.)*[A-Za-z0-9-]+\.?$
-                            type: string
-                        required:
-                        - name
-                        type: object
-                      type: array
-                    enabled:
-                      description: enabled is a list of all feature gates that are
-                        enabled in the cluster for the named version.
-                      items:
-                        properties:
-                          name:
-                            description: name is the name of the FeatureGate.
-                            pattern: ^([A-Za-z0-9-]+\.)*[A-Za-z0-9-]+\.?$
-                            type: string
-                        required:
-                        - name
-                        type: object
-                      type: array
-                    version:
-                      description: version matches the version provided by the ClusterVersion
-                        and in the ClusterOperator.Status.Versions field.
-                      type: string
-                  required:
-                  - version
-                  type: object
-                type: array
-                x-kubernetes-list-map-keys:
-                - version
                 x-kubernetes-list-type: map
             type: object
         required:

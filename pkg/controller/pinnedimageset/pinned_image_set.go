@@ -44,7 +44,7 @@ const (
 	delay = 5 * time.Second
 )
 
-// Controller defines the render controller.
+// Controller defines the pinned image set controller.
 type Controller struct {
 	client        mcfgclientset.Interface
 	eventRecorder record.EventRecorder
@@ -101,7 +101,7 @@ func New(
 	return ctrl
 }
 
-// Run executes the render controller.
+// Run executes the pinned image set controller.
 func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
@@ -353,7 +353,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 }
 
 func (ctrl *Controller) syncAvailableStatus(pool *mcfgv1.MachineConfigPool) error {
-	if apihelpers.IsMachineConfigPoolConditionFalse(pool.Status.Conditions, mcfgv1.MachineConfigPoolRenderDegraded) {
+	if apihelpers.IsMachineConfigPoolConditionFalse(pool.Status.Conditions, mcfgv1.MachineConfigPoolPinnedImageSetsDegraded) {
 		return nil
 	}
 	sdegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolPinnedImageSetsDegraded, corev1.ConditionFalse, "", "")

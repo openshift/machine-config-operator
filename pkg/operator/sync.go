@@ -1420,6 +1420,15 @@ func (optr *Operator) syncMachineConfigServer(config *renderConfig) error {
 func (optr *Operator) syncRequiredMachineConfigPools(config *renderConfig) error {
 	var lastErr error
 
+	fg, err := optr.fgAccessor.CurrentFeatureGates()
+	if err != nil {
+		return fmt.Errorf("could not get feature gates: %w", err)
+	}
+
+	if fg == nil {
+		return fmt.Errorf("received nil feature gates")
+	}
+
 	ctx := context.TODO()
 
 	// Calculate total timeout for "required"(aka master) nodes in the pool.
@@ -1499,7 +1508,7 @@ func (optr *Operator) syncRequiredMachineConfigPools(config *renderConfig) error
 					klog.Errorf("Failed to stamp bootimages configmap: %v", err)
 				}
 
-				if err := isMachineConfigPoolConfigurationValid(pool, version.Hash, releaseVersion, opURL, optr.mcLister.Get); err != nil {
+				if err := isMachineConfigPoolConfigurationValid(fg, pool, version.Hash, releaseVersion, opURL, optr.mcLister.Get); err != nil {
 					lastErr = fmt.Errorf("MachineConfigPool %s has not progressed to latest configuration: %w, retrying", pool.Name, err)
 					syncerr := optr.syncUpgradeableStatus()
 					if syncerr != nil {

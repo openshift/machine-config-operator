@@ -10,12 +10,16 @@ import (
 	"os"
 	"os/exec"
 	"reflect"
+	"sort"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/BurntSushi/toml"
 	"github.com/containers/image/v5/docker/reference"
+	"github.com/containers/image/v5/pkg/sysregistriesv2"
+	"github.com/containers/image/v5/types"
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	"github.com/golang/groupcache/lru"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -69,11 +73,10 @@ const (
 )
 
 var (
-	errInsufficientStorage       = errors.New("storage available is less than minimum required")
-	errFailedToPullImage         = errors.New("failed to pull image")
-	errNotFound                  = errors.New("not found")
-	errNoAuthForImage            = errors.New("no auth found for image")
-	errImageSetGenerationUpdated = errors.New("image set generation updated")
+	errInsufficientStorage = errors.New("storage available is less than minimum required")
+	errFailedToPullImage   = errors.New("failed to pull image")
+	errNotFound            = errors.New("not found")
+	errNoAuthForImage      = errors.New("no auth found for image")
 )
 
 // PinnedImageSetManager manages the prefetching of images.
@@ -100,6 +103,8 @@ type PinnedImageSetManager struct {
 	minStorageAvailableBytes resource.Quantity
 	// path to the authfile
 	authFilePath string
+	// path to the registry config file
+	registryCfgPath string
 	// endpoint of the container runtime service
 	runtimeEndpoint string
 	// timeout for the prefetch operation
@@ -108,7 +113,7 @@ type PinnedImageSetManager struct {
 	backoff wait.Backoff
 
 	// cache for reusable image information
-	cache *lru.Cache
+	cache *imageCache
 
 	syncHandler              func(string) error
 	enqueueMachineConfigPool func(*mcfgv1.MachineConfigPool)
@@ -129,8 +134,9 @@ func NewPinnedImageSetManager(
 	nodeInformer coreinformersv1.NodeInformer,
 	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
 	minStorageAvailableBytes resource.Quantity,
-	runtimeEndpoint string,
-	authFilePath string,
+	runtimeEndpoint,
+	authFilePath,
+	registryCfgPath string,
 	prefetchTimeout time.Duration,
 	featureGatesAccessor featuregates.FeatureGateAccess,
 ) *PinnedImageSetManager {
@@ -139,6 +145,7 @@ func NewPinnedImageSetManager(
 		mcfgClient:               mcfgClient,
 		runtimeEndpoint:          runtimeEndpoint,
 		authFilePath:             authFilePath,
+		registryCfgPath:          registryCfgPath,
 		prefetchTimeout:          prefetchTimeout,
 		minStorageAvailableBytes: minStorageAvailableBytes,
 		featureGatesAccessor:     featureGatesAccessor,
@@ -177,15 +184,9 @@ func NewPinnedImageSetManager(
 	p.mcpLister = mcpInformer.Lister()
 	p.mcpSynced = mcpInformer.Informer().HasSynced
 
-	p.cache = lru.New(256)
+	p.cache = newImageCache(256)
 
 	return p
-}
-
-type imageInfo struct {
-	Name   string
-	Size   int64
-	Pulled bool
 }
 
 func (p *PinnedImageSetManager) sync(key string) error {
@@ -212,9 +213,11 @@ func (p *PinnedImageSetManager) sync(key string) error {
 		if errors.Is(err, context.DeadlineExceeded) {
 			ctxErr := fmt.Errorf("requeue: prefetching images incomplete after: %v", p.prefetchTimeout)
 			p.updateStatusError(pools, ctxErr)
-			klog.Error(ctxErr)
+			klog.Info(ctxErr)
 			return ctxErr
 		}
+
+		klog.Errorf("Failed to prefetch and pin images: %v", err)
 		p.updateStatusError(pools, err)
 		return err
 	}
@@ -226,15 +229,6 @@ func (p *PinnedImageSetManager) sync(key string) error {
 func (p *PinnedImageSetManager) syncMachineConfigPools(ctx context.Context, pools []*mcfgv1.MachineConfigPool) error {
 	images := make([]mcfgv1alpha1.PinnedImageRef, 0, 100)
 	for _, pool := range pools {
-		validTarget, err := validateTargetPoolForNode(p.nodeName, p.nodeLister, pool)
-		if err != nil {
-			klog.Errorf("failed to validate pool %q: %v", pool.Name, err)
-			return err
-		}
-		if !validTarget {
-			continue
-		}
-
 		if err := p.syncMachineConfigPool(ctx, pool); err != nil {
 			return err
 		}
@@ -253,9 +247,10 @@ func (p *PinnedImageSetManager) syncMachineConfigPools(ctx context.Context, pool
 		}
 	}
 
-	// verify all images are pulled and available if not clear the cache and requeue
-	for _, image := range images {
-		exists, err := p.criClient.ImageStatus(ctx, image.Name)
+	// verify all images available if not clear the cache and requeue
+	imageNames := uniqueSortedImageNames(images)
+	for _, image := range imageNames {
+		exists, err := p.criClient.ImageStatus(ctx, image)
 		if err != nil {
 			return err
 		}
@@ -265,36 +260,14 @@ func (p *PinnedImageSetManager) syncMachineConfigPools(ctx context.Context, pool
 		}
 	}
 
-	//  write config and reload crio last to allow a window for kubelet to gc images in emergency
-	if err := p.ensureCrioPinnedImagesConfigFile(images); err != nil {
+	// write config and reload crio last to allow a window for kubelet to gc
+	// images in an emergency
+	if err := ensureCrioPinnedImagesConfigFile(crioPinnedImagesDropInFilePath, imageNames); err != nil {
 		klog.Errorf("failed to write crio config file: %v", err)
 		return err
 	}
 
 	return nil
-}
-
-// validateTargetPoolForNode checks if the node is a target for the given pool.
-func validateTargetPoolForNode(nodeName string, nodeLister corev1lister.NodeLister, pool *mcfgv1.MachineConfigPool) (bool, error) {
-	if pool.Spec.PinnedImageSets == nil {
-		return false, nil
-	}
-
-	selector, err := metav1.LabelSelectorAsSelector(pool.Spec.NodeSelector)
-	if err != nil {
-		return false, fmt.Errorf("invalid label selector: %w", err)
-	}
-
-	nodes, err := nodeLister.List(selector)
-	if err != nil {
-		return false, err
-	}
-
-	if !isNodeInPool(nodes, nodeName) {
-		return false, nil
-	}
-
-	return true, nil
 }
 
 func (p *PinnedImageSetManager) syncMachineConfigPool(ctx context.Context, pool *mcfgv1.MachineConfigPool) error {
@@ -319,40 +292,13 @@ func (p *PinnedImageSetManager) syncMachineConfigPool(ctx context.Context, pool 
 	return p.prefetchImageSets(ctx, imageSets...)
 }
 
-// prefetchImageSets schedules the prefetching of images for the given image sets and waits for completion.
-func (p *PinnedImageSetManager) prefetchImageSets(ctx context.Context, imageSets ...*mcfgv1alpha1.PinnedImageSet) error {
-	registryAuth, err := newRegistryAuth(p.authFilePath)
-	if err != nil {
-		return err
-	}
-
-	// monitor prefetch operations
-	monitor := newPrefetchMonitor()
-	for _, imageSet := range imageSets {
-		if err := p.scheduleWork(ctx, p.prefetchCh, registryAuth, imageSet.Spec.PinnedImages, monitor); err != nil {
-			return err
-		}
-	}
-
-	return monitor.WaitForDone()
-}
-
-func isNodeInPool(nodes []*corev1.Node, nodeName string) bool {
-	for _, n := range nodes {
-		if n.Name == nodeName {
-			return true
-		}
-	}
-	return false
-}
-
 func (p *PinnedImageSetManager) checkNodeAllocatableStorage(ctx context.Context, imageSet *mcfgv1alpha1.PinnedImageSet) error {
 	node, err := p.nodeLister.Get(p.nodeName)
 	if err != nil {
 		return fmt.Errorf("failed to get node %q: %w", p.nodeName, err)
 	}
 
-	storageCapacity, ok := node.Status.Capacity[corev1.ResourceEphemeralStorage]
+	storageCapacity, ok := node.Status.Allocatable[corev1.ResourceEphemeralStorage]
 	if !ok {
 		return fmt.Errorf("node %q has no ephemeral storage capacity", p.nodeName)
 	}
@@ -363,6 +309,96 @@ func (p *PinnedImageSetManager) checkNodeAllocatableStorage(ctx context.Context,
 	}
 
 	return p.checkImagePayloadStorage(ctx, imageSet.Spec.PinnedImages, capacity)
+}
+
+// prefetchImageSets schedules the prefetching of images for the given image sets and waits for completion.
+func (p *PinnedImageSetManager) prefetchImageSets(ctx context.Context, imageSets ...*mcfgv1alpha1.PinnedImageSet) error {
+	registryAuth, err := newRegistryAuth(p.authFilePath, p.registryCfgPath)
+	if err != nil {
+		return err
+	}
+
+	// monitor prefetch operations
+	monitor := newPrefetchMonitor()
+	for _, imageSet := range imageSets {
+		// this is forbidden by the API validation rules, but we should check anyway
+		if len(imageSet.Spec.PinnedImages) == 0 {
+			continue
+		}
+
+		cachedImage, ok := p.cache.Get(string(imageSet.UID))
+		if ok {
+			cachedImageSet := cachedImage.(mcfgv1alpha1.PinnedImageSet)
+			if imageSet.Generation == cachedImageSet.Generation {
+				klog.V(4).Infof("Skipping prefetch for image set %q, generation %d already complete", imageSet.Name, imageSet.Generation)
+				continue
+			}
+		}
+		if err := p.scheduleWork(ctx, p.prefetchCh, registryAuth, imageSet.Spec.PinnedImages, monitor); err != nil {
+			return err
+		}
+	}
+
+	if err := monitor.WaitForDone(); err != nil {
+		return err
+	}
+
+	// cache the completed image sets
+	for _, imageSet := range imageSets {
+		imageSetCache := imageSet.DeepCopy()
+		imageSetCache.Spec.PinnedImages = nil
+		p.cache.Add(string(imageSet.UID), *imageSet)
+	}
+
+	return nil
+}
+
+// scheduleWork schedules the prefetch work for the images and collects the first error encountered.
+func (p *PinnedImageSetManager) scheduleWork(ctx context.Context, prefetchCh chan prefetch, registryAuth *registryAuth, prefetchImages []mcfgv1alpha1.PinnedImageRef, monitor *prefetchMonitor) error {
+	totalImages := len(prefetchImages)
+	updateIncrement := totalImages / 4
+	if updateIncrement == 0 {
+		updateIncrement = 1 // Ensure there's at least one update if the image count is less than 4
+	}
+	scheduledImages := 0
+	for _, imageRef := range prefetchImages {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			image := imageRef.Name
+
+			// check cache if image is pulled
+			// this is an optimization to speedup prefetching after requeue
+			if value, found := p.cache.Get(image); found {
+				imageInfo, ok := value.(imageInfo)
+				if ok {
+					if imageInfo.Pulled {
+						scheduledImages++
+						continue
+					}
+				}
+			}
+
+			authConfig, err := registryAuth.getAuthConfigForImage(image)
+			if err != nil {
+				return fmt.Errorf("failed to get auth config for image %s: %w", image, err)
+			}
+			monitor.Add(1)
+			prefetchCh <- prefetch{
+				image:   image,
+				auth:    authConfig,
+				monitor: monitor,
+			}
+
+			scheduledImages++
+			// report status every 25% of images scheduled
+			if scheduledImages%updateIncrement == 0 {
+				klog.Infof("Completed scheduling %d%% of images", (scheduledImages*100)/totalImages)
+			}
+		}
+	}
+	return nil
 }
 
 func (p *PinnedImageSetManager) checkImagePayloadStorage(ctx context.Context, images []mcfgv1alpha1.PinnedImageRef, capacity int64) error {
@@ -421,59 +457,43 @@ func (p *PinnedImageSetManager) checkImagePayloadStorage(ctx context.Context, im
 	return nil
 }
 
-func isImageSetInPool(imageSet string, pool *mcfgv1.MachineConfigPool) bool {
-	for _, set := range pool.Spec.PinnedImageSets {
-		if set.Name == imageSet {
-			return true
-		}
-	}
-	return false
-}
-
-// ensureCrioPinnedImagesConfigFile creates the crio config file which populates pinned_images with a unique list of images then reloads crio.
-// If the list is empty, and a config exists on disk the file is removed and crio is reloaded.
-func (p *PinnedImageSetManager) ensureCrioPinnedImagesConfigFile(images []mcfgv1alpha1.PinnedImageRef) error {
-	hasCrioConfigFile, err := p.hasPinnedImagesConfigFile()
+// ensureCrioPinnedImagesConfigFile ensures the crio config file is up to date with the pinned images.
+func ensureCrioPinnedImagesConfigFile(path string, imageNames []string) error {
+	cfgExists, err := hasConfigFile(path)
 	if err != nil {
 		return fmt.Errorf("failed to check crio config file: %w", err)
 	}
 
-	// if there are no images and the config file exists, remove it
-	if len(images) == 0 {
-		if hasCrioConfigFile {
-			// remove the crio config file and reload crio
-			if err := p.deleteCrioConfigFile(); err != nil {
-				return fmt.Errorf("failed to remove crio config file: %w", err)
-			}
-			return p.crioReload()
+	if cfgExists && len(imageNames) == 0 {
+		if err := deleteCrioConfigFile(); err != nil {
+			return fmt.Errorf("failed to remove CRI-O config file: %w", err)
 		}
-		return nil
+		return crioReload()
 	}
 
-	// ensure list elements are unique
-	// assume the number of duplicates is small so preallocate makes sense
-	// for larger lists
-	seen := make(map[string]struct{}, len(images))
-	unique := make([]string, 0, len(images))
-	for _, image := range images {
-		if _, ok := seen[image.Name]; !ok {
-			seen[image.Name] = struct{}{}
-			unique = append(unique, image.Name)
+	var existingCfgBytes []byte
+	if cfgExists {
+		existingCfgBytes, err = os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("failed to read CRIO config file: %w", err)
 		}
 	}
 
-	// create ignition file for crio drop-in config. this is done to use the existing
-	// atomic writer functionality.
-	ignFile, err := createCrioConfigIgnitionFile(unique)
+	newCfgBytes, err := createCrioConfigFileBytes(imageNames)
 	if err != nil {
 		return fmt.Errorf("failed to create crio config ignition file: %w", err)
 	}
 
-	skipCertificateWrite := true
-	if err := writeFiles([]ign3types.File{ignFile}, skipCertificateWrite); err != nil {
-		return fmt.Errorf("failed to write crio config file: %w", err)
+	// if the existing config is the same as the new config, do nothing
+	if !bytes.Equal(bytes.TrimSpace(existingCfgBytes), bytes.TrimSpace(newCfgBytes)) {
+		ignFile := ctrlcommon.NewIgnFileBytes(path, newCfgBytes)
+		if err := writeFiles([]ign3types.File{ignFile}, true); err != nil {
+			return fmt.Errorf("failed to write CRIO config file: %w", err)
+		}
+		return crioReload()
 	}
-	return p.crioReload()
+
+	return nil
 }
 
 func (p *PinnedImageSetManager) updateStatusProgressingComplete(pools []*mcfgv1.MachineConfigPool, message string) {
@@ -483,7 +503,7 @@ func (p *PinnedImageSetManager) updateStatusProgressingComplete(pools []*mcfgv1.
 		return
 	}
 
-	applyCfg, imageSets, err := getImageSetApplyConfigs(p.imageSetLister, pools, nil)
+	applyCfg, imageSets, err := getImageSetMetadata(p.imageSetLister, pools, nil)
 	if err != nil {
 		klog.Errorf("Failed to get image set apply configs: %v", err)
 		return
@@ -536,7 +556,7 @@ func (p *PinnedImageSetManager) updateStatusError(pools []*mcfgv1.MachineConfigP
 		return
 	}
 
-	applyCfg, imageSets, err := getImageSetApplyConfigs(p.imageSetLister, pools, nil)
+	applyCfg, imageSets, err := getImageSetMetadata(p.imageSetLister, pools, nil)
 	if err != nil {
 		klog.Errorf("Failed to get image set apply configs: %v", err)
 		return
@@ -561,7 +581,7 @@ func (p *PinnedImageSetManager) updateStatusError(pools []*mcfgv1.MachineConfigP
 		klog.Errorf("Failed to updated machine config node: %v", err)
 	}
 
-	applyCfg, imageSets, err = getImageSetApplyConfigs(p.imageSetLister, pools, statusErr)
+	applyCfg, imageSets, err = getImageSetMetadata(p.imageSetLister, pools, statusErr)
 	if err != nil {
 		klog.Errorf("Failed to get image set apply configs: %v", err)
 		return
@@ -587,8 +607,8 @@ func (p *PinnedImageSetManager) updateStatusError(pools []*mcfgv1.MachineConfigP
 	}
 }
 
-// getImageSetApplyConfigs populates image set generation details for status updates to MachineConfigNode.
-func getImageSetApplyConfigs(imageSetLister mcfglistersv1alpha1.PinnedImageSetLister, pools []*mcfgv1.MachineConfigPool, statusErr error) ([]*machineconfigurationalphav1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration, []mcfgv1alpha1.MachineConfigNodeSpecPinnedImageSet, error) {
+// getImageSetMetadata populates observed pinned image set generation details for node level status updates to MachineConfigNode.
+func getImageSetMetadata(imageSetLister mcfglistersv1alpha1.PinnedImageSetLister, pools []*mcfgv1.MachineConfigPool, statusErr error) ([]*machineconfigurationalphav1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration, []mcfgv1alpha1.MachineConfigNodeSpecPinnedImageSet, error) {
 	var mcnImageSets []mcfgv1alpha1.MachineConfigNodeSpecPinnedImageSet
 	var imageSetApplyConfigs []*machineconfigurationalphav1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration
 	for _, pool := range pools {
@@ -643,6 +663,7 @@ func (p *PinnedImageSetManager) getWorkerCount() (int, error) {
 func (p *PinnedImageSetManager) resetWorkload(cancelFn context.CancelFunc) {
 	p.mu.Lock()
 	if p.cancelFn != nil {
+		klog.V(4).Info("Reset workload")
 		p.cancelFn()
 	}
 	p.cancelFn = cancelFn
@@ -650,9 +671,9 @@ func (p *PinnedImageSetManager) resetWorkload(cancelFn context.CancelFunc) {
 }
 
 func (p *PinnedImageSetManager) cancelWorkload(reason string) {
-	klog.Infof("Cancelling workload: %s", reason)
 	p.mu.Lock()
 	if p.cancelFn != nil {
+		klog.Infof("Cancelling workload: %s", reason)
 		p.cancelFn()
 		p.cancelFn = nil
 	}
@@ -670,7 +691,11 @@ func (p *PinnedImageSetManager) prefetchWorker(ctx context.Context) {
 
 		cachedImage, ok := p.cache.Get(task.image)
 		if ok {
-			imageInfo := cachedImage.(imageInfo)
+			imageInfo, ok := cachedImage.(imageInfo)
+			if !ok {
+				klog.Warningf("corrupted cache entry for image %q, deleting", task.image)
+				p.cache.Remove(task.image)
+			}
 			imageInfo.Pulled = true
 			p.cache.Add(task.image, imageInfo)
 		} else {
@@ -684,143 +709,6 @@ func (p *PinnedImageSetManager) prefetchWorker(ctx context.Context) {
 			return
 		}
 	}
-}
-
-// scheduleWork schedules the prefetch work for the images and collects the first error encountered.
-func (p *PinnedImageSetManager) scheduleWork(ctx context.Context, prefetchCh chan prefetch, registryAuth *registryAuth, prefetchImages []mcfgv1alpha1.PinnedImageRef, monitor *prefetchMonitor) error {
-	totalImages := len(prefetchImages)
-	updateIncrement := totalImages / 4
-	if updateIncrement == 0 {
-		updateIncrement = 1 // Ensure there's at least one update if the image count is less than 4
-	}
-	scheduledImages := 0
-	for _, imageRef := range prefetchImages {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-			image := imageRef.Name
-
-			// check cache if image is pulled
-			// this is an optimization to speedup prefetching after requeue
-			if value, found := p.cache.Get(image); found {
-				imageInfo, ok := value.(imageInfo)
-				if ok {
-					if imageInfo.Pulled {
-						scheduledImages++
-						if scheduledImages%updateIncrement == 0 {
-							klog.Infof("Completed scheduling %d%% of images", (scheduledImages*100)/totalImages)
-						}
-						continue
-					}
-				}
-			}
-
-			authConfig, err := registryAuth.getAuthConfigForImage(image)
-			if err != nil {
-				return fmt.Errorf("failed to get auth config for image %s: %w", image, err)
-			}
-			monitor.Add(1)
-			prefetchCh <- prefetch{
-				image:   image,
-				auth:    authConfig,
-				monitor: monitor,
-			}
-
-			scheduledImages++
-			// report status every 25% of images scheduled
-			if scheduledImages%updateIncrement == 0 {
-				klog.Infof("Completed scheduling %d%% of images", (scheduledImages*100)/totalImages)
-			}
-		}
-	}
-	return nil
-}
-
-// ensurePullImage first checks if the image exists locally and then will attempt to pull
-// the image from the container runtime with a retry/backoff.
-func ensurePullImage(ctx context.Context, client *cri.Client, backoff wait.Backoff, image string, authConfig *runtimeapi.AuthConfig) error {
-	exists, err := client.ImageStatus(ctx, image)
-	if err != nil {
-		return err
-	}
-	if exists {
-		klog.V(4).Infof("image %q already exists", image)
-		return nil
-	}
-
-	var lastErr error
-	tries := 0
-	err = wait.ExponentialBackoffWithContext(ctx, backoff, func(ctx context.Context) (bool, error) {
-		tries++
-		err := client.PullImage(ctx, image, authConfig)
-		if err != nil {
-			lastErr = err
-			return false, nil
-		}
-		return true, nil
-	})
-	// this is only an error if ctx has error or backoff limits are exceeded
-	if err != nil {
-		return fmt.Errorf("%w %q (%d tries): %w: %w", errFailedToPullImage, image, tries, err, lastErr)
-	}
-
-	// successful pull
-	klog.V(4).Infof("image %q pulled", image)
-	return nil
-}
-
-func (p *PinnedImageSetManager) crioReload() error {
-	serviceName := constants.CRIOServiceName
-	if err := reloadService(serviceName); err != nil {
-		return fmt.Errorf("could not apply update: reloading %s configuration failed. Error: %w", serviceName, err)
-	}
-	return nil
-}
-
-func (p *PinnedImageSetManager) deleteCrioConfigFile() error {
-	// remove the crio config file
-	if err := os.Remove(crioPinnedImagesDropInFilePath); err != nil {
-		return fmt.Errorf("failed to remove crio config file: %w", err)
-	}
-	klog.Infof("removed crio config file: %s", crioPinnedImagesDropInFilePath)
-
-	return nil
-}
-
-func (p *PinnedImageSetManager) hasPinnedImagesConfigFile() (bool, error) {
-	_, err := os.Stat(crioPinnedImagesDropInFilePath)
-	if os.IsNotExist(err) {
-		return false, nil
-	}
-	if err != nil {
-		return false, fmt.Errorf("failed to check crio config file: %w", err)
-	}
-
-	return true, nil
-}
-
-// createCrioConfigIgnitionFile creates an ignition file for the pinned-image crio config.
-func createCrioConfigIgnitionFile(images []string) (ign3types.File, error) {
-	type tomlConfig struct {
-		Crio struct {
-			Image struct {
-				PinnedImages []string `toml:"pinned_images,omitempty"`
-			} `toml:"image"`
-		} `toml:"crio"`
-	}
-
-	tomlConf := tomlConfig{}
-	tomlConf.Crio.Image.PinnedImages = images
-
-	// TODO: custom encoder that can write each image on newline
-	var buf bytes.Buffer
-	encoder := toml.NewEncoder(&buf)
-	if err := encoder.Encode(tomlConf); err != nil {
-		return ign3types.File{}, fmt.Errorf("failed to encode toml: %w", err)
-	}
-
-	return ctrlcommon.NewIgnFileBytes(crioPinnedImagesDropInFilePath, buf.Bytes()), nil
 }
 
 func (p *PinnedImageSetManager) Run(workers int, stopCh <-chan struct{}) {
@@ -1052,12 +940,12 @@ func (p *PinnedImageSetManager) deleteMachineConfigPool(obj interface{}) {
 		return
 	}
 
-	if err := p.deleteCrioConfigFile(); err != nil {
+	if err := deleteCrioConfigFile(); err != nil {
 		klog.Errorf("failed to delete crio config file: %v", err)
 		return
 	}
 
-	p.crioReload()
+	crioReload()
 }
 
 func (p *PinnedImageSetManager) enqueue(pool *mcfgv1.MachineConfigPool) {
@@ -1106,6 +994,184 @@ func (p *PinnedImageSetManager) handleErr(err error, key interface{}) {
 	p.queue.AddAfter(key, 1*time.Minute)
 }
 
+// ensurePullImage first checks if the image exists locally and then will attempt to pull
+// the image from the container runtime with a retry/backoff.
+func ensurePullImage(ctx context.Context, client *cri.Client, backoff wait.Backoff, image string, authConfig *runtimeapi.AuthConfig) error {
+	exists, err := client.ImageStatus(ctx, image)
+	if err != nil {
+		return err
+	}
+	if exists {
+		klog.V(4).Infof("image %q already exists", image)
+		return nil
+	}
+
+	var lastErr error
+	tries := 0
+	err = wait.ExponentialBackoffWithContext(ctx, backoff, func(ctx context.Context) (bool, error) {
+		tries++
+		err := client.PullImage(ctx, image, authConfig)
+		if err != nil {
+			lastErr = err
+			// fail fast if out of space
+			if isErrNoSpace(err) {
+				return false, err
+			}
+			return false, nil
+		}
+		return true, nil
+	})
+	// this is only an error if ctx has error or backoff limits are exceeded
+	if err != nil {
+		return fmt.Errorf("%w %q (%d tries): %w: %w", errFailedToPullImage, image, tries, err, lastErr)
+	}
+
+	// successful pull
+	klog.V(4).Infof("image %q pulled", image)
+	return nil
+}
+
+func isErrNoSpace(err error) bool {
+	if err == syscall.ENOSPC {
+		return true
+	}
+	if werr, ok := err.(*os.PathError); ok {
+		if werr.Err == syscall.ENOSPC {
+			return true
+		}
+	}
+	return false
+}
+
+func uniqueSortedImageNames(images []mcfgv1alpha1.PinnedImageRef) []string {
+	seen := make(map[string]struct{})
+	var unique []string
+
+	for _, image := range images {
+		if _, ok := seen[image.Name]; !ok {
+			seen[image.Name] = struct{}{}
+			unique = append(unique, image.Name)
+		}
+	}
+
+	sort.Strings(unique)
+
+	return unique
+}
+
+func crioReload() error {
+	serviceName := constants.CRIOServiceName
+	if err := reloadService(serviceName); err != nil {
+		return fmt.Errorf("could not apply update: reloading %s configuration failed. Error: %w", serviceName, err)
+	}
+	return nil
+}
+
+func deleteCrioConfigFile() error {
+	// remove the crio config file
+	if err := os.Remove(crioPinnedImagesDropInFilePath); err != nil {
+		return fmt.Errorf("failed to remove crio config file: %w", err)
+	}
+	klog.Infof("removed crio config file: %s", crioPinnedImagesDropInFilePath)
+
+	return nil
+}
+
+func hasConfigFile(path string) (bool, error) {
+	_, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("failed to check crio config file: %w", err)
+	}
+
+	return true, nil
+}
+
+// createCrioConfigFileBytes creates a crio config file with the pinned images.
+func createCrioConfigFileBytes(images []string) ([]byte, error) {
+	type tomlConfig struct {
+		Crio struct {
+			Image struct {
+				PinnedImages []string `toml:"pinned_images,omitempty"`
+			} `toml:"image"`
+		} `toml:"crio"`
+	}
+
+	tomlConf := tomlConfig{}
+	tomlConf.Crio.Image.PinnedImages = images
+
+	var buf bytes.Buffer
+	encoder := toml.NewEncoder(&buf)
+	if err := encoder.Encode(tomlConf); err != nil {
+		return nil, fmt.Errorf("failed to encode toml: %w", err)
+	}
+
+	return buf.Bytes(), nil
+}
+
+func isImageSetInPool(imageSet string, pool *mcfgv1.MachineConfigPool) bool {
+	for _, set := range pool.Spec.PinnedImageSets {
+		if set.Name == imageSet {
+			return true
+		}
+	}
+	return false
+}
+
+func isNodeInPool(nodes []*corev1.Node, nodeName string) bool {
+	for _, n := range nodes {
+		if n.Name == nodeName {
+			return true
+		}
+	}
+	return false
+}
+
+// imageCache is a thread-safe cache for storing image information.
+type imageCache struct {
+	mu    sync.RWMutex
+	cache *lru.Cache
+}
+
+func newImageCache(maxEntries int) *imageCache {
+	return &imageCache{
+		cache: lru.New(maxEntries),
+	}
+}
+
+func (c *imageCache) Add(key, value interface{}) {
+	c.mu.Lock()
+	c.cache.Add(key, value)
+	c.mu.Unlock()
+}
+
+func (c *imageCache) Get(key interface{}) (value interface{}, ok bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.cache.Get(key)
+}
+
+func (c *imageCache) Clear() {
+	c.mu.Lock()
+	c.cache.Clear()
+	c.mu.Unlock()
+}
+
+func (c *imageCache) Remove(key interface{}) {
+	c.mu.Lock()
+	c.cache.Remove(key)
+	c.mu.Unlock()
+}
+
+// imageInfo is used to store image information in the cache.
+type imageInfo struct {
+	Name   string
+	Size   int64
+	Pulled bool
+}
+
 func getImageSize(ctx context.Context, imageName, authFilePath string) (int64, error) {
 	args := []string{
 		"manifest",
@@ -1151,20 +1217,21 @@ func triggerMachineConfigPoolChange(old, new *mcfgv1.MachineConfigPool) bool {
 	if old.DeletionTimestamp != new.DeletionTimestamp {
 		return true
 	}
-	if !reflect.DeepEqual(old.Spec, new.Spec) {
+	if !reflect.DeepEqual(old.Spec.PinnedImageSets, new.Spec.PinnedImageSets) {
 		return true
 	}
 	return false
 }
 
-// registryAuth manages a map of registry to auth config.
+// registryAuth manages the registry authentication for pulling images.
 type registryAuth struct {
-	mu   sync.Mutex
+	mu   sync.RWMutex
 	auth map[string]*runtimeapi.AuthConfig
+	reg  map[string]*sysregistriesv2.Registry
 }
 
-func newRegistryAuth(authfile string) (*registryAuth, error) {
-	data, err := os.ReadFile(authfile)
+func newRegistryAuth(authFilePath, registryCfgPath string) (*registryAuth, error) {
+	data, err := os.ReadFile(authFilePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read authfile: %w", err)
 	}
@@ -1201,23 +1268,67 @@ func newRegistryAuth(authfile string) (*registryAuth, error) {
 		}
 	}
 
-	return &registryAuth{auth: authMap}, nil
+	sys := &types.SystemContext{
+		SystemRegistriesConfPath: registryCfgPath,
+	}
+	regs, err := sysregistriesv2.GetRegistries(sys)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get registries: %w", err)
+	}
+
+	regMap := make(map[string]*sysregistriesv2.Registry, len(regs))
+	for _, reg := range regs {
+		regMap[reg.Prefix] = &reg
+	}
+
+	return &registryAuth{auth: authMap, reg: regMap}, nil
+}
+
+func (r *registryAuth) getAuth(domain string) *runtimeapi.AuthConfig {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.auth[domain]
+}
+
+func (r *registryAuth) getRegistry(prefix string) *sysregistriesv2.Registry {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.reg[prefix]
 }
 
 func (r *registryAuth) getAuthConfigForImage(image string) (*runtimeapi.AuthConfig, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
 	parsed, err := reference.ParseNormalizedNamed(strings.TrimSpace(image))
 	if err != nil {
 		return nil, err
 	}
 
-	auth, ok := r.auth[reference.Domain(parsed)]
-	if !ok {
-		return nil, fmt.Errorf("%w: %q", errNoAuthForImage, image)
+	// check if the image is has a mirror if found match source to existing auth if possible
+	parts := strings.Split(image, "@")
+	registry := r.getRegistry(parts[0])
+	if registry != nil {
+		sources, err := registry.PullSourcesFromReference(parsed)
+		if err != nil {
+			return nil, err
+		}
+		for _, source := range sources {
+			pref, err := reference.ParseNamed(source.Endpoint.Location)
+			if err != nil {
+				return nil, err
+			}
+			if auth := r.getAuth(reference.Domain(pref)); auth != nil {
+				return auth, nil
+			}
+		}
 	}
-	return auth, nil
+
+	if auth := r.getAuth(reference.Domain(parsed)); auth != nil {
+		return auth, nil
+
+	}
+
+	// no auth found for the image this is not an error for public images
+	klog.V(4).Infof("no auth found for image: %s", image)
+	return nil, nil
 }
 
 // prefetch represents a task to prefetch an image.

@@ -7,6 +7,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	fakeconfigclientset "github.com/openshift/client-go/config/clientset/versioned/fake"
+	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
@@ -22,6 +23,9 @@ import (
 func TestMetrics(t *testing.T) {
 	optr := &Operator{
 		eventRecorder: &record.FakeRecorder{},
+		fgAccessor: featuregates.NewHardcodedFeatureGateAccess(
+			[]configv1.FeatureGateName{configv1.FeatureGatePinnedImages}, []configv1.FeatureGateName{},
+		),
 	}
 	optr.vStore = newVersionStore()
 
