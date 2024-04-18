@@ -36,6 +36,7 @@ import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	v1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 
+	mcoac "github.com/openshift/client-go/operator/applyconfigurations/operator/v1"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
 	mcoResourceApply "github.com/openshift/machine-config-operator/lib/resourceapply"
@@ -1952,4 +1953,42 @@ func cmToData(cm *corev1.ConfigMap, key string) ([]byte, error) {
 		return raw, nil
 	}
 	return nil, fmt.Errorf("%s not found in %s/%s", key, cm.Namespace, cm.Name)
+}
+
+// Validates configuration provided in the MachineConfiguration object's spec for each feature
+// and updates the status of the object as necessary
+func (optr *Operator) syncMachineConfiguration(_ *renderConfig) error {
+
+	// Grab the cluster CR
+	_, err := optr.mcopLister.Get(ctrlcommon.MCOOperatorKnobsObjectName)
+	if err != nil {
+		// Create one if it doesn't exist
+		if apierrors.IsNotFound(err) {
+			klog.Info("MachineConfiguration object doesn't exist; a new one will be created")
+			p := mcoac.MachineConfiguration(ctrlcommon.MCOOperatorKnobsObjectName).WithSpec(mcoac.MachineConfigurationSpec().WithManagementState("Managed"))
+			_, err := optr.mcopClient.OperatorV1().MachineConfigurations().Apply(context.TODO(), p, metav1.ApplyOptions{FieldManager: "machine-config-operator"})
+			if err != nil {
+				klog.Infof("applying mco object failed: %s", err)
+				return err
+			}
+			// This causes a re-sync and allows the cache for the lister to refresh.
+			return nil
+		}
+		return fmt.Errorf("grabbing MachineConfiguration/%s CR failed: %v", ctrlcommon.MCOOperatorKnobsObjectName, err)
+	}
+
+	fg, err := optr.fgAccessor.CurrentFeatureGates()
+	if err != nil {
+		klog.Errorf("Could not get fg: %v", err)
+		return err
+	}
+
+	// If FeatureGateNodeDisruptionPolicy feature gate is not enabled, no updates will need to be done for the MachineConfiguration object.
+	if !fg.Enabled(configv1.FeatureGateNodeDisruptionPolicy) {
+		return nil
+	}
+
+	// Do additional processing for feature gate related fields here
+
+	return nil
 }

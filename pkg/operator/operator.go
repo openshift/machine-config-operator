@@ -43,6 +43,10 @@ import (
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	mcfglistersalphav1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1"
+
+	mcopclientset "github.com/openshift/client-go/operator/clientset/versioned"
+	mcopinformersv1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1"
+	mcoplistersv1 "github.com/openshift/client-go/operator/listers/operator/v1"
 )
 
 const (
@@ -73,6 +77,7 @@ type Operator struct {
 	kubeClient    kubernetes.Interface
 	apiExtClient  apiextclientset.Interface
 	configClient  configclientset.Interface
+	mcopClient    mcopclientset.Interface
 	eventRecorder record.EventRecorder
 	libgoRecorder events.Recorder
 
@@ -98,6 +103,7 @@ type Operator struct {
 	mcoSecretLister  corelisterv1.SecretLister
 	ocSecretLister   corelisterv1.SecretLister
 	mcoCOLister      configlistersv1.ClusterOperatorLister
+	mcopLister       mcoplistersv1.MachineConfigurationLister
 
 	crdListerSynced                  cache.InformerSynced
 	deployListerSynced               cache.InformerSynced
@@ -122,7 +128,7 @@ type Operator struct {
 	mcoSecretListerSynced            cache.InformerSynced
 	ocSecretListerSynced             cache.InformerSynced
 	mcoCOListerSynced                cache.InformerSynced
-
+	mcopListerSynced                 cache.InformerSynced
 	// queue only ever has one item, but it has nice error handling backoff/retry semantics
 	queue workqueue.RateLimitingInterface
 
@@ -163,6 +169,8 @@ func New(
 	mcoSecretInformer coreinformersv1.SecretInformer,
 	ocSecretInformer coreinformersv1.SecretInformer,
 	mcoCOInformer configinformersv1.ClusterOperatorInformer,
+	mcopClient mcopclientset.Interface,
+	mcopInformer mcopinformersv1.MachineConfigurationInformer,
 	fgAccess featuregates.FeatureGateAccess,
 ) *Operator {
 	eventBroadcaster := record.NewBroadcaster()
@@ -178,6 +186,7 @@ func New(
 		kubeClient:    kubeClient,
 		apiExtClient:  apiExtClient,
 		configClient:  configClient,
+		mcopClient:    mcopClient,
 		eventRecorder: ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigoperator"})),
 		libgoRecorder: events.NewRecorder(kubeClient.CoreV1().Events(ctrlcommon.MCONamespace), "machine-config-operator", &corev1.ObjectReference{
 			Kind:       "Deployment",
@@ -221,6 +230,7 @@ func New(
 		mcoSecretInformer.Informer(),
 		ocSecretInformer.Informer(),
 		mcoCOInformer.Informer(),
+		mcopInformer.Informer(),
 	} {
 		i.AddEventHandler(optr.eventHandler())
 	}
@@ -270,6 +280,8 @@ func New(
 	optr.ocSecretListerSynced = ocSecretInformer.Informer().HasSynced
 	optr.mcoCOLister = mcoCOInformer.Lister()
 	optr.mcoCOListerSynced = mcoCOInformer.Informer().HasSynced
+	optr.mcopLister = mcopInformer.Lister()
+	optr.mcopListerSynced = mcopInformer.Informer().HasSynced
 
 	optr.vStore.Set("operator", version.ReleaseVersion)
 
@@ -313,7 +325,8 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 		optr.mcoSAListerSynced,
 		optr.mcoSecretListerSynced,
 		optr.ocSecretListerSynced,
-		optr.mcoCOListerSynced}
+		optr.mcoCOListerSynced,
+		optr.mcopListerSynced}
 
 	if !cache.WaitForCacheSync(stopCh,
 		cacheSynced...) {
@@ -429,6 +442,7 @@ func (optr *Operator) sync(key string) error {
 		{"MachineConfigController", optr.syncMachineConfigController},
 		{"MachineConfigServer", optr.syncMachineConfigServer},
 		{"MachineOSBuilder", optr.syncMachineOSBuilder},
+		{"MachineConfiguration", optr.syncMachineConfiguration},
 		// this check must always run last since it makes sure the pools are in sync/upgrading correctly
 		{"RequiredPools", optr.syncRequiredMachineConfigPools},
 	}
