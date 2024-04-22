@@ -20,6 +20,7 @@ import (
 	"time"
 
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
+	mcopclientset "github.com/openshift/client-go/operator/clientset/versioned"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
@@ -44,6 +45,7 @@ import (
 	mcfgalphav1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
+
 	mcoResourceRead "github.com/openshift/machine-config-operator/lib/resourceread"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
@@ -85,6 +87,9 @@ type Daemon struct {
 	kubeClient kubernetes.Interface
 
 	mcfgClient mcfgclientset.Interface
+
+	// mcopClient allows interaction with Openshift operator level objects, such as MachineConfiguration
+	mcopClient mcopclientset.Interface
 
 	// nodeLister is used to watch for updates via the informer
 	nodeLister       corev1lister.NodeLister
@@ -348,6 +353,7 @@ func (dn *Daemon) ClusterConnect(
 	mcInformer mcfginformersv1.MachineConfigInformer,
 	nodeInformer coreinformersv1.NodeInformer,
 	ccInformer mcfginformersv1.ControllerConfigInformer,
+	mcopClient mcopclientset.Interface,
 	kubeletHealthzEnabled bool,
 	kubeletHealthzEndpoint string,
 	featureGatesAccessor featuregates.FeatureGateAccess,
@@ -355,7 +361,7 @@ func (dn *Daemon) ClusterConnect(
 	dn.name = name
 	dn.kubeClient = kubeClient
 	dn.mcfgClient = mcfgClient
-
+	dn.mcopClient = mcopClient
 	// Other controllers start out with the default controller limiter which retries
 	// in milliseconds; since any change here will involve rebooting the node
 	// we don't need to react in milliseconds.  See also updateDelay above.

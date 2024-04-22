@@ -11,6 +11,8 @@ import (
 	opv1 "github.com/openshift/api/operator/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
 )
 
@@ -382,4 +384,15 @@ func convertSpecActiontoStatusAction(action opv1.NodeDisruptionPolicySpecAction)
 		klog.Fatal("Unexpected action type found in Node Disruption Status calculation")
 		return opv1.NodeDisruptionPolicyStatusAction{Type: opv1.RebootStatusAction}
 	}
+}
+
+// Checks if a list of NodeDisruptionActions contain any action from the set of target actions
+func CheckNodeDisruptionActionsForTargetActions(actions []opv1.NodeDisruptionPolicyStatusAction, targetActions ...opv1.NodeDisruptionPolicyStatusActionType) bool {
+
+	currentActions := sets.New[opv1.NodeDisruptionPolicyStatusActionType]()
+	for _, action := range actions {
+		currentActions.Insert(action.Type)
+	}
+
+	return currentActions.HasAny(targetActions...)
 }

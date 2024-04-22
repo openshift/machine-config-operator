@@ -19,6 +19,9 @@ rules:
   resourceNames: ["privileged"]
   resources: ["securitycontextconstraints"]
   verbs: ["use"]
+- apiGroups: ["operator.openshift.io"]
+  resources: ["machineconfigurations"]
+  verbs: ["get", "list", "watch"]
 - apiGroups:
   - authentication.k8s.io
   resources:
