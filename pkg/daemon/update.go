@@ -25,11 +25,17 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	kubeErrs "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/uuid"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
 
+	v1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgalphav1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 
+	opv1 "github.com/openshift/api/operator/v1"
+
+	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	pivottypes "github.com/openshift/machine-config-operator/pkg/daemon/pivot/types"
@@ -81,6 +87,146 @@ func restartService(name string) error {
 
 func reloadService(name string) error {
 	return runCmdSync("systemctl", "reload", name)
+}
+
+func reloadDaemon() error {
+	return runCmdSync("systemctl", constants.DaemonReloadCommand)
+}
+
+func (dn *Daemon) finishRebootlessUpdate() error {
+	// Get current state of node, in case of an error reboot
+	state, err := dn.getStateAndConfigs()
+	if err != nil {
+		return fmt.Errorf("could not apply update: error processing state and configs. Error: %w", err)
+	}
+
+	var inDesiredConfig bool
+	var missingODC bool
+	if missingODC, inDesiredConfig, err = dn.updateConfigAndState(state); err != nil {
+		return fmt.Errorf("could not apply update: setting node's state to Done failed. Error: %w", err)
+	}
+
+	if missingODC {
+		return fmt.Errorf("error updating state.currentconfig from on-disk currentconfig")
+	}
+
+	if inDesiredConfig {
+		// (re)start the config drift monitor since rebooting isn't needed.
+		dn.startConfigDriftMonitor()
+		return nil
+	}
+
+	// currentConfig != desiredConfig, kick off an update
+	return dn.triggerUpdateWithMachineConfig(state.currentConfig, state.desiredConfig, true)
+}
+
+func (dn *Daemon) executeReloadServiceNodeDisruptionAction(serviceName string, reloadErr error) error {
+	if reloadErr != nil {
+		if dn.nodeWriter != nil {
+			dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedServiceReload", fmt.Sprintf("Reloading service %s failed. Error: %v", serviceName, reloadErr))
+		}
+		return fmt.Errorf("could not apply update: reloading %s configuration failed. Error: %w", serviceName, reloadErr)
+	}
+
+	err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
+		&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdatePostActionComplete, Reason: string(mcfgalphav1.MachineConfigNodeUpdateReloaded), Message: fmt.Sprintf("Node has reloaded service %s", serviceName)},
+		&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateReloaded, Reason: fmt.Sprintf("%s%s", string(mcfgalphav1.MachineConfigNodeUpdatePostActionComplete), string(mcfgalphav1.MachineConfigNodeUpdateReloaded)), Message: fmt.Sprintf("Upgrade required a service %s reload. Completed this this as a post update action.", serviceName)},
+		metav1.ConditionTrue,
+		metav1.ConditionTrue,
+		dn.node,
+		dn.mcfgClient,
+		dn.featureGatesAccessor,
+	)
+	if err != nil {
+		klog.Errorf("Error making MCN for Reloading success: %v", err)
+	}
+
+	if dn.nodeWriter != nil {
+		dn.nodeWriter.Eventf(corev1.EventTypeNormal, "ServiceReload", "Config changes do not require reboot. Service %s was reloaded.", serviceName)
+	}
+	logSystem("%s service reloaded successfully!", serviceName)
+	return nil
+}
+
+// performPostConfigChangeNodeDisruptionAction takes action based on the cluster's Node disruption policies.
+// For non-reboot action, it applies configuration, updates node's config and state.
+// In the end uncordon node to schedule workload.
+// If at any point an error occurs, we reboot the node so that node has correct configuration.
+func (dn *Daemon) performPostConfigChangeNodeDisruptionAction(postConfigChangeActions []opv1.NodeDisruptionPolicyStatusAction, configName string) error {
+
+	logSystem("Executing performPostConfigChangeNodeDisruptionAction(drain already complete/skipped) for config %s", configName)
+	for _, action := range postConfigChangeActions {
+		logSystem("Executing postconfig action: %v for config %s", action.Type, configName)
+		if action.Type == opv1.RebootStatusAction {
+			err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
+				&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdatePostActionComplete, Reason: string(mcfgalphav1.MachineConfigNodeUpdateRebooted), Message: fmt.Sprintf("Node will reboot into config %s", configName)},
+				&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateRebooted, Reason: fmt.Sprintf("%s%s", string(mcfgalphav1.MachineConfigNodeUpdatePostActionComplete), string(mcfgalphav1.MachineConfigNodeUpdateRebooted)), Message: "Upgrade requires a reboot. Currently doing this as the post update action."},
+				metav1.ConditionUnknown,
+				metav1.ConditionUnknown,
+				dn.node,
+				dn.mcfgClient,
+				dn.featureGatesAccessor,
+			)
+			if err != nil {
+				klog.Errorf("Error making MCN for rebooting: %v", err)
+			}
+			logSystem("Rebooting node")
+			return dn.reboot(fmt.Sprintf("Node will reboot into config %s", configName))
+		} else if action.Type == opv1.NoneStatusAction {
+			if dn.nodeWriter != nil {
+				dn.nodeWriter.Eventf(corev1.EventTypeNormal, "SkipReboot", "Config changes do not require reboot.")
+			}
+			err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
+				&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdatePostActionComplete, Reason: "None", Message: "Changes do not require a reboot"},
+				nil,
+				metav1.ConditionTrue,
+				metav1.ConditionFalse,
+				dn.node,
+				dn.mcfgClient,
+				dn.featureGatesAccessor,
+			)
+			if err != nil {
+				klog.Errorf("Error making MCN for no post config change action: %v", err)
+			}
+			logSystem("Node has Desired Config %s, skipping reboot", configName)
+		} else if action.Type == opv1.RestartStatusAction {
+
+			serviceName := string(action.Restart.ServiceName)
+
+			if err := restartService(serviceName); err != nil {
+				if dn.nodeWriter != nil {
+					dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedServiceRestart", fmt.Sprintf("Restarting %s service failed. Error: %v", serviceName, err))
+				}
+				return fmt.Errorf("could not apply update: restarting %s service failed. Error: %w", serviceName, err)
+			}
+			// TODO: Add a new MCN Condition to the API for service restarts?
+			if dn.nodeWriter != nil {
+				dn.nodeWriter.Eventf(corev1.EventTypeNormal, "ServiceRestart", "Config changes do not require reboot. Service %s was restarted.", serviceName)
+			}
+			logSystem("%s service restarted successfully!", serviceName)
+
+		} else if action.Type == opv1.ReloadStatusAction {
+			// Execute a generic service reload defined by the action object
+			serviceName := string(action.Reload.ServiceName)
+			if err := dn.executeReloadServiceNodeDisruptionAction(serviceName, reloadService(serviceName)); err != nil {
+				return err
+			}
+
+		} else if action.Type == opv1.SpecialStatusAction {
+			// The special action type requires a CRIO reload
+			if err := dn.executeReloadServiceNodeDisruptionAction(constants.CRIOServiceName, reloadService(constants.CRIOServiceName)); err != nil {
+				return err
+			}
+		} else if action.Type == opv1.DaemonReloadStatusAction {
+			// Execute daemon-reload
+			if err := dn.executeReloadServiceNodeDisruptionAction(constants.DaemonReloadCommand, reloadDaemon()); err != nil {
+				return err
+			}
+		}
+	}
+
+	// We are here, which means a reboot was not needed to apply the configuration.
+	return dn.finishRebootlessUpdate()
 }
 
 // performPostConfigChangeAction takes action based on what postConfigChangeAction has been asked.
@@ -173,32 +319,9 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 		logSystem("%s config restarted successfully! Desired config %s has been applied, skipping reboot", serviceName, configName)
 
 	}
-	// We are here, which means reboot was not needed to apply the configuration.
 
-	// Get current state of node, in case of an error reboot
-	state, err := dn.getStateAndConfigs()
-	if err != nil {
-		return fmt.Errorf("could not apply update: error processing state and configs. Error: %w", err)
-	}
-
-	var inDesiredConfig bool
-	var missingODC bool
-	if missingODC, inDesiredConfig, err = dn.updateConfigAndState(state); err != nil {
-		return fmt.Errorf("could not apply update: setting node's state to Done failed. Error: %w", err)
-	}
-
-	if missingODC {
-		return fmt.Errorf("error updating state.currentconfig from on-disk currentconfig")
-	}
-
-	if inDesiredConfig {
-		// (re)start the config drift monitor since rebooting isn't needed.
-		dn.startConfigDriftMonitor()
-		return nil
-	}
-
-	// currentConfig != desiredConfig, kick off an update
-	return dn.triggerUpdateWithMachineConfig(state.currentConfig, state.desiredConfig, true)
+	// We are here, which means a reboot was not needed to apply the configuration.
+	return dn.finishRebootlessUpdate()
 }
 
 func setRunningKargsWithCmdline(config *mcfgv1.MachineConfig, requestedKargs []string, cmdline []byte) error {
@@ -438,7 +561,7 @@ func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newC
 	return nil
 }
 
-func calculatePostConfigChangeActionFromFileDiffs(diffFileSet []string) (actions []string) {
+func calculatePostConfigChangeActionFromMCDiffs(diffFileSet []string) (actions []string) {
 	filesPostConfigChangeActionNone := []string{
 		caBundleFilePath,
 		imageRegistryAuthFile,
@@ -457,6 +580,7 @@ func calculatePostConfigChangeActionFromFileDiffs(diffFileSet []string) (actions
 	}
 
 	actions = []string{postConfigChangeActionNone}
+
 	for _, path := range diffFileSet {
 		if ctrlcommon.InSlice(path, filesPostConfigChangeActionNone) {
 			continue
@@ -472,6 +596,96 @@ func calculatePostConfigChangeActionFromFileDiffs(diffFileSet []string) (actions
 		}
 	}
 	return
+}
+
+// calculatePostConfigChangeNodeDisruptionActionFromMCDiffs takes action based on the cluster's Node disruption policies.
+func calculatePostConfigChangeNodeDisruptionActionFromMCDiffs(diffSSH bool, diffFileSet, diffUnitSet []string, clusterPolicies opv1.NodeDisruptionPolicyClusterStatus) []opv1.NodeDisruptionPolicyStatusAction {
+	actions := []opv1.NodeDisruptionPolicyStatusAction{}
+
+	// Step through all file based policies, and build out the actions object
+	for _, diffPath := range diffFileSet {
+		pathFound := false
+		for _, policyFile := range clusterPolicies.Files {
+			klog.V(4).Infof("comparing policy path %s to diff path %s", policyFile.Path, diffPath)
+			if policyFile.Path == diffPath {
+				klog.Infof("NodeDisruptionPolicy found for diff file %s!", diffPath)
+				actions = append(actions, policyFile.Actions...)
+				pathFound = true
+				break
+			}
+		}
+		if !pathFound {
+			// Hack for https://github.com/openshift/machine-config-operator/pull/4160#discussion_r1548669673 here
+			// Changes to files in /etc/containers/registries.d should cause a CRIO reload
+			// This should be removed once NodeDisruptionPolicy can support directories and wildcards
+			if filepath.Dir(diffPath) == constants.SigstoreRegistriesConfigDir {
+				klog.Infof("Exception Action: diffPath %s is a subdir of %s, adding a CRIO reload", diffPath, constants.SigstoreRegistriesConfigDir)
+				actions = append(actions, opv1.NodeDisruptionPolicyStatusAction{Type: opv1.ReloadStatusAction, Reload: &opv1.ReloadService{
+					ServiceName: constants.CRIOServiceName,
+				}})
+				continue
+			}
+			// If this file path has no policy defined, default to reboot
+			klog.V(4).Infof("no policy found for diff path %s", diffPath)
+			return []opv1.NodeDisruptionPolicyStatusAction{{
+				Type: opv1.RebootStatusAction,
+			}}
+		}
+	}
+
+	// Step through all unit based policies, and build out the actions object
+	for _, diffUnit := range diffUnitSet {
+		unitFound := false
+		for _, policyUnit := range clusterPolicies.Units {
+			klog.V(4).Infof("comparing policy unit name %s to diff unit name %s", string(policyUnit.Name), diffUnit)
+			if string(policyUnit.Name) == diffUnit {
+				klog.Infof("NodeDisruptionPolicy found for diff unit %s!", diffUnit)
+				actions = append(actions, policyUnit.Actions...)
+				unitFound = true
+				break
+			}
+		}
+		if !unitFound {
+			// If this unit has no policy defined, default to reboot
+			klog.V(4).Infof("no policy found for diff unit %s", diffUnit)
+			return []opv1.NodeDisruptionPolicyStatusAction{{
+				Type: opv1.RebootStatusAction,
+			}}
+		}
+	}
+
+	// SSH only has one possible policy(and there is a default), so blindly add that if there is an SSH diff
+	if diffSSH {
+		klog.Infof("SSH diff detected, applying SSH policy")
+		actions = append(actions, clusterPolicies.SSHKey.Actions...)
+	}
+
+	// If any of the actions need a reboot, then just return a single Reboot action
+	if apihelpers.CheckNodeDisruptionActionsForTargetActions(actions, opv1.RebootStatusAction) {
+		return []opv1.NodeDisruptionPolicyStatusAction{{
+			Type: opv1.RebootStatusAction,
+		}}
+	}
+
+	// If there is a "None" action in conjunction with other kinds of actions, strip out the "None" action elements as it is redundant
+	if apihelpers.CheckNodeDisruptionActionsForTargetActions(actions, opv1.NoneStatusAction) {
+		if apihelpers.CheckNodeDisruptionActionsForTargetActions(actions, opv1.DrainStatusAction, opv1.ReloadStatusAction, opv1.RestartStatusAction, opv1.DaemonReloadStatusAction, opv1.SpecialStatusAction) {
+			finalActions := []opv1.NodeDisruptionPolicyStatusAction{}
+			for _, action := range actions {
+				if action.Type != opv1.NoneStatusAction {
+					finalActions = append(finalActions, action)
+				}
+			}
+			return finalActions
+		}
+		// If we're here, this means that the action list has only "None" actions; return a single "None" Action
+		return []opv1.NodeDisruptionPolicyStatusAction{{
+			Type: opv1.NoneStatusAction,
+		}}
+	}
+
+	// If we're here, return as is - this means action list had zero "None" actions in the list
+	return actions
 }
 
 func calculatePostConfigChangeAction(diff *machineConfigDiff, diffFileSet []string) ([]string, error) {
@@ -491,8 +705,86 @@ func calculatePostConfigChangeAction(diff *machineConfigDiff, diffFileSet []stri
 		return []string{postConfigChangeActionReboot}, nil
 	}
 
-	// We don't actually have to consider ssh keys changes, which is the only section of passwd that is allowed to change
-	return calculatePostConfigChangeActionFromFileDiffs(diffFileSet), nil
+	// Calculate actions based on file, unit and ssh diffs
+	return calculatePostConfigChangeActionFromMCDiffs(diffFileSet), nil
+}
+
+// calculatePostConfigChangeNodeDisruptionAction takes action based on the cluster's Node disruption policies.
+func (dn *Daemon) calculatePostConfigChangeNodeDisruptionAction(diff *machineConfigDiff, diffFileSet, diffUnitSet []string) ([]opv1.NodeDisruptionPolicyStatusAction, error) {
+
+	var mcop *opv1.MachineConfiguration
+	var err error
+	// Wait for mcop.Status.NodeDisruptionPolicyStatus to populate, otherwise error out. This shouldn't take very long
+	// as this is done by the operator sync loop, but may be extended if transitioning to TechPreview as the operator restarts,
+	if err = wait.PollUntilContextTimeout(context.TODO(), 5*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
+		mcop, err = dn.mcopClient.OperatorV1().MachineConfigurations().Get(context.TODO(), ctrlcommon.MCOOperatorKnobsObjectName, metav1.GetOptions{})
+		if err != nil {
+			klog.Errorf("calculating NodeDisruptionPolicies: MachineConfiguration/cluster has not been created yet")
+			err = fmt.Errorf("MachineConfiguration/cluster has not been created yet")
+			return false, nil
+		}
+		// There will always be atleast five file policies, if they don't exist, then the Status hasn't been populated yet
+		//
+		// TODO: When Conditions on this object are implemented; this check could be updated to only proceed when
+		// status.ObservedGeneration matches the last generation of MachineConfiguration
+		if len(mcop.Status.NodeDisruptionPolicyStatus.ClusterPolicies.Files) == 0 {
+			klog.Errorf("calculating NodeDisruptionPolicies: NodeDisruptionPolicyStatus has not been populated yet")
+			err = fmt.Errorf("NodeDisruptionPolicyStatus has not been populated yet")
+			return false, nil
+		}
+		return true, nil
+	}); err != nil {
+		klog.Errorf("NodeDisruptionPolicyStatus was not ready: %v", err)
+		err = fmt.Errorf("NodeDisruptionPolicyStatus was not ready: %v", err)
+		return nil, err
+	}
+
+	// Continue policy calculation if no errors were encountered in fetching the policy.
+	// If a machine-config-daemon-force file is present, it means the user wants to
+	// move to desired state without additional validation. We will reboot the node in
+	// this case regardless of what MachineConfig diff is.
+	klog.Infof("Calculating node disruption actions")
+	if _, err = os.Stat(constants.MachineConfigDaemonForceFile); err == nil {
+		if err = os.Remove(constants.MachineConfigDaemonForceFile); err != nil {
+			return []opv1.NodeDisruptionPolicyStatusAction{}, fmt.Errorf("failed to remove force validation file: %w", err)
+		}
+		klog.Infof("Setting post config change node disruption action to Reboot; %s present", constants.MachineConfigDaemonForceFile)
+		return []opv1.NodeDisruptionPolicyStatusAction{{
+			Type: opv1.RebootStatusAction,
+		}}, nil
+	}
+
+	if diff.osUpdate || diff.kargs || diff.fips || diff.kernelType || diff.extensions {
+		// must reboot
+		return []opv1.NodeDisruptionPolicyStatusAction{{
+			Type: opv1.RebootStatusAction,
+		}}, nil
+	}
+	if !diff.files && !diff.units && !diff.passwd {
+		// This is a diff which requires no actions
+		klog.Infof("No changes in files, units or SSH keys, no NodeDisruptionPolicies are in effect")
+		return []opv1.NodeDisruptionPolicyStatusAction{{
+			Type: opv1.NoneStatusAction,
+		}}, nil
+	}
+
+	// Calculate actions based on file, unit and ssh diffs
+	nodeDisruptionActions := calculatePostConfigChangeNodeDisruptionActionFromMCDiffs(diff.passwd, diffFileSet, diffUnitSet, mcop.Status.NodeDisruptionPolicyStatus.ClusterPolicies)
+
+	// Print out node disruption actions for debug purposes
+	klog.Infof("Calculated node disruption actions:")
+	for _, action := range nodeDisruptionActions {
+		if action.Type == opv1.ReloadStatusAction {
+			klog.Infof("%v - %v", action.Type, action.Reload.ServiceName)
+		} else if action.Type == opv1.RestartStatusAction {
+			klog.Infof("%v - %v", action.Type, action.Restart.ServiceName)
+		} else {
+			klog.Infof("%v", action.Type)
+		}
+	}
+
+	return nodeDisruptionActions, nil
+
 }
 
 // This is another update function implementation for the special case of
@@ -732,7 +1024,35 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	logSystem("Starting update from %s to %s: %+v", oldConfigName, newConfigName, diff)
 
 	diffFileSet := ctrlcommon.CalculateConfigFileDiffs(&oldIgnConfig, &newIgnConfig)
-	actions, err := calculatePostConfigChangeAction(diff, diffFileSet)
+	diffUnitSet := ctrlcommon.CalculateConfigUnitDiffs(&oldIgnConfig, &newIgnConfig)
+
+	var fg featuregates.FeatureGate
+
+	// This check is needed as featureGatesAccessor is not present during first boot. During firstboot
+	// the daemon will always do a reboot and NodeDisruptionPolicies are not active.
+	if dn.featureGatesAccessor != nil {
+		fg, err = dn.featureGatesAccessor.CurrentFeatureGates()
+		if err != nil {
+			klog.Errorf("Could not get fg: %v", err)
+			return err
+		}
+	}
+
+	var nodeDisruptionActions []opv1.NodeDisruptionPolicyStatusAction
+	var nodeDisruptionError error
+	var actions []string
+	// If FeatureGateNodeDisruptionPolicy is set, calculate NodeDisruptionPolicy based actions for this MC diff
+	if fg != nil && fg.Enabled(v1.FeatureGateNodeDisruptionPolicy) {
+		nodeDisruptionActions, nodeDisruptionError = dn.calculatePostConfigChangeNodeDisruptionAction(diff, diffFileSet, diffUnitSet)
+		if nodeDisruptionError != nil {
+			// TODO: Fallback to legacy path and signal failure here
+			klog.Errorf("could not calculate node disruption actions: %v", nodeDisruptionError)
+			actions, err = calculatePostConfigChangeAction(diff, diffFileSet)
+		}
+	} else {
+		actions, err = calculatePostConfigChangeAction(diff, diffFileSet)
+	}
+
 	if err != nil {
 		Nerr := upgrademonitor.GenerateAndApplyMachineConfigNodes(
 			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdatePrepared, Reason: string(mcfgalphav1.MachineConfigNodeUpdateCompatible), Message: "Update Failed during the Checking for Compatibility phase."},
@@ -749,15 +1069,24 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		return err
 	}
 
-	// Check and perform node drain if required
-	crioOverrideConfigmapExists, err := dn.hasImageRegistryDrainOverrideConfigMap()
-	if err != nil {
-		return err
-	}
-
-	drain, err := isDrainRequired(actions, diffFileSet, oldIgnConfig, newIgnConfig, crioOverrideConfigmapExists)
-	if err != nil {
-		return err
+	var drain bool
+	if fg != nil && fg.Enabled(v1.FeatureGateNodeDisruptionPolicy) && nodeDisruptionError == nil {
+		// Check actions list and perform node drain if required
+		drain, err = isDrainRequiredForNodeDisruptionActions(nodeDisruptionActions, oldIgnConfig, newIgnConfig)
+		if err != nil {
+			return err
+		}
+		klog.Infof("Drain calculated for node disruption: %v", drain)
+	} else {
+		// Check and perform node drain if required
+		crioOverrideConfigmapExists, err := dn.hasImageRegistryDrainOverrideConfigMap()
+		if err != nil {
+			return err
+		}
+		drain, err = isDrainRequired(actions, diffFileSet, oldIgnConfig, newIgnConfig, crioOverrideConfigmapExists)
+		if err != nil {
+			return err
+		}
 	}
 	err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
 		&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdatePrepared, Reason: string(mcfgalphav1.MachineConfigNodeUpdateCompatible), Message: "Update is Compatible."},
@@ -943,11 +1272,11 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		klog.Errorf("Error making MCN for Updated Files and OS: %v", err)
 	}
 
-	err = dn.performPostConfigChangeAction(actions, newConfig.GetName())
-	if err != nil {
-		return err
+	if fg != nil && fg.Enabled(v1.FeatureGateNodeDisruptionPolicy) && nodeDisruptionError == nil {
+		return dn.performPostConfigChangeNodeDisruptionAction(nodeDisruptionActions, newConfig.GetName())
 	}
-	return nil
+	// If we're here, FeatureGateNodeDisruptionPolicy is off/errored, so perform legacy action
+	return dn.performPostConfigChangeAction(actions, newConfig.GetName())
 }
 
 // This is currently a subsection copied over from update() since we need to be more nuanced. Should eventually

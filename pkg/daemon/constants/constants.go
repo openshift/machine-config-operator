@@ -108,4 +108,7 @@ const (
 
 	// CRIOServiceName is used to specify reloads and restarts of the CRI-O service
 	CRIOServiceName = "crio"
+
+	// DaemonReloadCommand is used to specify reloads and restarts of the systemd manager configuration
+	DaemonReloadCommand = "daemon-reload"
 )

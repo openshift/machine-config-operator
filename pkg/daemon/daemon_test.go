@@ -22,6 +22,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/diff"
 	kubeinformers "k8s.io/client-go/informers"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
+
+	mcopfake "github.com/openshift/client-go/operator/clientset/versioned/fake"
 	core "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/cache"
 
@@ -115,6 +117,7 @@ type fixture struct {
 
 	client     *fake.Clientset
 	kubeclient *k8sfake.Clientset
+	oclient    *mcopfake.Clientset
 
 	mcLister   []*mcfgv1.MachineConfig
 	nodeLister []*corev1.Node
@@ -124,6 +127,7 @@ type fixture struct {
 
 	objects     []runtime.Object
 	kubeobjects []runtime.Object
+	oObjects    []runtime.Object
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -142,6 +146,7 @@ var (
 func (f *fixture) newController() *Daemon {
 	f.client = fake.NewSimpleClientset(f.objects...)
 	f.kubeclient = k8sfake.NewSimpleClientset(f.kubeobjects...)
+	f.oclient = mcopfake.NewSimpleClientset(f.oObjects...)
 
 	i := informers.NewSharedInformerFactory(f.client, noResyncPeriodFunc())
 	k8sI := kubeinformers.NewSharedInformerFactory(f.kubeclient, noResyncPeriodFunc())
@@ -156,6 +161,7 @@ func (f *fixture) newController() *Daemon {
 		i.Machineconfiguration().V1().MachineConfigs(),
 		k8sI.Core().V1().Nodes(),
 		i.Machineconfiguration().V1().ControllerConfigs(),
+		f.oclient,
 		false,
 		"",
 		d.featureGatesAccessor,
