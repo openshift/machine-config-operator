@@ -847,7 +847,11 @@ func (ctrl *Controller) markBuildSucceeded(mosc *mcfgv1alpha1.MachineOSConfig, m
 			return err
 		}
 
-		sha, _ := ParseImagePullspec(mosc.Status.CurrentImagePullspec, digestConfigMap.Data["digest"])
+		sha, err := ParseImagePullspec(mosb.Spec.RenderedImagePushspec, digestConfigMap.Data["digest"])
+		if err != nil {
+			return err
+		}
+
 		// now, all we need is to make sure this is used all around. (node controller, getters, etc)
 		mosc.Status.CurrentImagePullspec = sha
 		mosb.Status.FinalImagePushspec = sha
