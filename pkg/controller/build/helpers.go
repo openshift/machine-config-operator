@@ -243,9 +243,9 @@ func ignoreIsNotFoundErr(err error) error {
 	return nil
 }
 
-// ValidateOnClusterBuildConfig validates the existence of the on-cluster-build-config ConfigMap and the presence of the secrets it refers to.
+// ValidateOnClusterBuildConfig validates the existence of the MachineOSConfig and the required build inputs.
 func ValidateOnClusterBuildConfig(kubeclient clientset.Interface, mcfgclient versioned.Interface, layeredMCPs []*mcfgv1.MachineConfigPool) error {
-	// Validate the presence of the on-cluster-build-config ConfigMap
+	// Validate the presence of the MachineOSConfig
 	machineOSConfigs, err := mcfgclient.MachineconfigurationV1alpha1().MachineOSConfigs().List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		return err
