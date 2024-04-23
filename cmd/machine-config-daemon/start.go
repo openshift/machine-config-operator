@@ -212,7 +212,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			klog.Fatalf("Could not get FG: %v", err)
 		} else {
 			klog.Infof("FeatureGates initialized: knownFeatureGates=%v", featureGates.KnownFeatures())
-			if featureGates.Enabled(configv1.FeatureGatePinnedImages) {
+			if featureGates.Enabled(configv1.FeatureGatePinnedImages) && featureGates.Enabled(configv1.FeatureGateMachineConfigNodes) {
 				klog.Infof("Feature enabled: %s", configv1.FeatureGatePinnedImages)
 				criClient, err := cri.NewClient(ctx, constants.DefaultCRIOSocketPath)
 				if err != nil {

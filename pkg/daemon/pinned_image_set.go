@@ -70,13 +70,17 @@ const (
 
 	// controller configuration
 	maxRetriesController = 15
+
+	// degrade the pool after max retry threshold
+	degradeAfterRetries = maxRetriesController
+	// mcn looks for conditions with this prefix if seen will degrade the pool
+	degradeMessagePrefix = "Error:"
 )
 
 var (
 	errInsufficientStorage = errors.New("storage available is less than minimum required")
 	errFailedToPullImage   = errors.New("failed to pull image")
 	errNotFound            = errors.New("not found")
-	errNoAuthForImage      = errors.New("no auth found for image")
 )
 
 // PinnedImageSetManager manages the prefetching of images.
@@ -190,7 +194,6 @@ func NewPinnedImageSetManager(
 }
 
 func (p *PinnedImageSetManager) sync(key string) error {
-	klog.V(4).Infof("Syncing PinnedImageSet for pool: %s", key)
 	node, err := p.nodeLister.Get(p.nodeName)
 	if err != nil {
 		return fmt.Errorf("failed to get node %q: %w", p.nodeName, err)
@@ -208,17 +211,18 @@ func (p *PinnedImageSetManager) sync(key string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), p.prefetchTimeout)
 	// cancel any currently running tasks in the worker pool
 	p.resetWorkload(cancel)
+	p.updateStatusProgressing()
 
 	if err := p.syncMachineConfigPools(ctx, pools); err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			ctxErr := fmt.Errorf("requeue: prefetching images incomplete after: %v", p.prefetchTimeout)
-			p.updateStatusError(pools, ctxErr)
+			p.updateStatusError(key, pools, ctxErr)
 			klog.Info(ctxErr)
 			return ctxErr
 		}
 
-		klog.Errorf("Failed to prefetch and pin images: %v", err)
-		p.updateStatusError(pools, err)
+		klog.Error(err)
+		p.updateStatusError(key, pools, err)
 		return err
 	}
 
@@ -496,6 +500,33 @@ func ensureCrioPinnedImagesConfigFile(path string, imageNames []string) error {
 	return nil
 }
 
+func (p *PinnedImageSetManager) updateStatusProgressing() {
+	node, err := p.nodeLister.Get(p.nodeName)
+	if err != nil {
+		klog.Errorf("Failed to get node %q: %v", p.nodeName, err)
+		return
+	}
+
+	err = upgrademonitor.UpdateMachineConfigNodeStatus(
+		&upgrademonitor.Condition{
+			State:   mcfgv1alpha1.MachineConfigNodePinnedImageSetsProgressing,
+			Reason:  "ImagePrefetch",
+			Message: fmt.Sprintf("node is prefetching images: %s", node.Name),
+		},
+		nil,
+		metav1.ConditionTrue,
+		metav1.ConditionUnknown,
+		node,
+		p.mcfgClient,
+		nil,
+		nil,
+		p.featureGatesAccessor,
+	)
+	if err != nil {
+		klog.Errorf("Failed to updated machine config node: %v", err)
+	}
+}
+
 func (p *PinnedImageSetManager) updateStatusProgressingComplete(pools []*mcfgv1.MachineConfigPool, message string) {
 	node, err := p.nodeLister.Get(p.nodeName)
 	if err != nil {
@@ -540,8 +571,8 @@ func (p *PinnedImageSetManager) updateStatusProgressingComplete(pools []*mcfgv1.
 		metav1.ConditionUnknown,
 		node,
 		p.mcfgClient,
-		applyCfg,
-		imageSets,
+		nil,
+		nil,
 		p.featureGatesAccessor,
 	)
 	if err != nil {
@@ -549,49 +580,32 @@ func (p *PinnedImageSetManager) updateStatusProgressingComplete(pools []*mcfgv1.
 	}
 }
 
-func (p *PinnedImageSetManager) updateStatusError(pools []*mcfgv1.MachineConfigPool, statusErr error) {
+func (p *PinnedImageSetManager) updateStatusError(key interface{}, pools []*mcfgv1.MachineConfigPool, statusErr error) {
 	node, err := p.nodeLister.Get(p.nodeName)
 	if err != nil {
 		klog.Errorf("Failed to get node %q: %v", p.nodeName, err)
 		return
 	}
 
-	applyCfg, imageSets, err := getImageSetMetadata(p.imageSetLister, pools, nil)
+	applyCfg, imageSets, err := getImageSetMetadata(p.imageSetLister, pools, statusErr)
 	if err != nil {
 		klog.Errorf("Failed to get image set apply configs: %v", err)
 		return
 	}
 
-	err = upgrademonitor.UpdateMachineConfigNodeStatus(
-		&upgrademonitor.Condition{
-			State:   mcfgv1alpha1.MachineConfigNodePinnedImageSetsProgressing,
-			Reason:  "ImagePrefetch",
-			Message: fmt.Sprintf("node is prefetching images: %s", node.Name),
-		},
-		nil,
-		metav1.ConditionTrue,
-		metav1.ConditionUnknown,
-		node,
-		p.mcfgClient,
-		applyCfg,
-		imageSets,
-		p.featureGatesAccessor,
-	)
-	if err != nil {
-		klog.Errorf("Failed to updated machine config node: %v", err)
-	}
-
-	applyCfg, imageSets, err = getImageSetMetadata(p.imageSetLister, pools, statusErr)
-	if err != nil {
-		klog.Errorf("Failed to get image set apply configs: %v", err)
-		return
+	var errMsg string
+	if p.queue.NumRequeues(key) >= degradeAfterRetries {
+		// degrade the pool after max retries
+		errMsg = fmt.Sprintf("%s %v", degradeMessagePrefix, statusErr)
+	} else {
+		errMsg = statusErr.Error()
 	}
 
 	err = upgrademonitor.UpdateMachineConfigNodeStatus(
 		&upgrademonitor.Condition{
 			State:   mcfgv1alpha1.MachineConfigNodePinnedImageSetsDegraded,
 			Reason:  "PrefetchFailed",
-			Message: "Error: " + statusErr.Error(),
+			Message: errMsg,
 		},
 		nil,
 		metav1.ConditionTrue,

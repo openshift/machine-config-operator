@@ -90,6 +90,7 @@ func calculateStatus(fg featuregates.FeatureGate, mcs []*mcfgalphav1.MachineConf
 	machineCount := int32(len(nodes))
 
 	var degradedMachines, readyMachines, updatedMachines, unavailableMachines, updatingMachines []*corev1.Node
+	var updatingPinnedImageSetMachines int32
 	// if we represent updating properly here, we will also represent updating properly in the CO
 	// so this solves the cordoning RFE and the upgradeable RFE
 	// updating == updatePrepared, updateExecuted, updatedComplete, postAction, cordoning, draining
@@ -113,10 +114,17 @@ func calculateStatus(fg featuregates.FeatureGate, mcs []*mcfgalphav1.MachineConf
 			// not ready yet
 			break
 		}
+		pinnedImageSetsUpdating := false
 		for _, cond := range state.Status.Conditions {
 			if strings.Contains(cond.Message, "Error:") {
 				degradedMachines = append(degradedMachines, ourNode)
 				continue
+			}
+			if fg.Enabled(configv1.FeatureGatePinnedImages) && cond.Status == metav1.ConditionTrue {
+				if mcfgalphav1.StateProgress(cond.Type) == mcfgalphav1.MachineConfigNodePinnedImageSetsProgressing ||
+					mcfgalphav1.StateProgress(cond.Type) == mcfgalphav1.MachineConfigNodePinnedImageSetsDegraded {
+					pinnedImageSetsUpdating = true
+				}
 			}
 			if cond.Status == metav1.ConditionUnknown {
 				switch mcfgalphav1.StateProgress(cond.Type) {
@@ -144,6 +152,9 @@ func calculateStatus(fg featuregates.FeatureGate, mcs []*mcfgalphav1.MachineConf
 					readyMachines = append(readyMachines, ourNode)
 				}
 			}
+		}
+		if pinnedImageSetsUpdating {
+			updatingPinnedImageSetMachines++
 		}
 	}
 	degradedMachineCount := int32(len(degradedMachines))
@@ -184,6 +195,20 @@ func calculateStatus(fg featuregates.FeatureGate, mcs []*mcfgalphav1.MachineConf
 		DegradedMachineCount:    degradedMachineCount,
 		CertExpirys:             certExpirys,
 	}
+
+	// update synchronizer status for pinned image sets
+	if fg.Enabled(configv1.FeatureGatePinnedImages) {
+		status.PoolSynchronizersStatus = []mcfgv1.PoolSynchronizerStatus{
+			{
+				PoolSynchronizerType:    mcfgv1.PinnedImageSets,
+				MachineCount:            int64(machineCount),
+				UpdatedMachineCount:     int64(machineCount - updatingPinnedImageSetMachines),
+				ReadyMachineCount:       int64(readyMachineCount),
+				UnavailableMachineCount: int64(unavailableMachineCount),
+			},
+		}
+	}
+
 	status.Configuration = pool.Status.Configuration
 
 	conditions := pool.Status.Conditions
