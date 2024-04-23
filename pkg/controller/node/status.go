@@ -168,8 +168,7 @@ func (ctrl *Controller) calculateStatus(mcs []*mcfgalphav1.MachineConfigNode, cc
 		readyMachines = getReadyMachines(pool, nodes, mosc, mosb, l)
 		readyMachineCount = int32(len(readyMachines))
 
-		layered := ctrl.IsLayeredPool(pool, mosc, mosb)
-		unavailableMachines = getUnavailableMachines(nodes, pool, layered, mosb)
+		unavailableMachines = getUnavailableMachines(nodes, pool, l, mosb)
 		unavailableMachineCount = int32(len(unavailableMachines))
 
 		degradedMachines = getDegradedMachines(nodes)
@@ -339,7 +338,7 @@ func getUpdatedMachines(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node, mo
 		lns := ctrlcommon.NewLayeredNodeState(node)
 		if mosb != nil && mosc != nil {
 			mosbState := ctrlcommon.NewMachineOSBuildState(mosb)
-			if layered && mosbState.IsBuildSuccess() && mosb.Spec.DesiredConfig.Name == pool.Status.Configuration.Name {
+			if layered && mosbState.IsBuildSuccess() && mosb.Spec.DesiredConfig.Name == pool.Spec.Configuration.Name {
 				updated = append(updated, node)
 			}
 		} else {
