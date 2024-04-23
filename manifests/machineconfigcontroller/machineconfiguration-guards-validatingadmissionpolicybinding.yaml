@@ -1,0 +1,7 @@
+apiVersion: admissionregistration.k8s.io/v1beta1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: "machine-configuration-guards-binding"
+spec:
+  policyName: "machine-configuration-guards"
+  validationActions: [Deny]
