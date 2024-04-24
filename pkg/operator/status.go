@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -22,6 +23,7 @@ import (
 
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	kcc "github.com/openshift/machine-config-operator/pkg/controller/kubelet-config"
 	"github.com/openshift/machine-config-operator/pkg/helpers"
 )
 
@@ -385,6 +387,135 @@ func (optr *Operator) syncMetrics() error {
 	return nil
 }
 
+func (optr *Operator) syncClusterFleetEvaluation() error {
+	co, err := optr.fetchClusterOperator()
+	if err != nil {
+		return err
+	}
+	if co == nil {
+		return nil
+	}
+
+	unexpectedEvaluations, err := optr.generateClusterFleetEvaluations()
+	if err != nil {
+		return err
+	}
+
+	status := configv1.ConditionFalse
+	reason := asExpectedReason
+	if len(unexpectedEvaluations) > 0 {
+		status = configv1.ConditionTrue
+		reason = evaluationToString(unexpectedEvaluations)
+	}
+
+	return optr.updateStatus(co, configv1.ClusterOperatorStatusCondition{
+		Type:   configv1.EvaluationConditionsDetected,
+		Status: status,
+		Reason: reason,
+	})
+}
+
+func evaluationToString(e []string) string {
+	if len(e) == 0 {
+		return ""
+	}
+	return strings.Join(e, "::")
+}
+
+// generateClusterFleetEvaluations is used to flag items where we may consider setting upgradeable=false
+// on the operator. We are also able to query telemetry for information on percentage of clusters migrated.
+func (optr *Operator) generateClusterFleetEvaluations() ([]string, error) {
+	evaluations := []string{}
+
+	enabled, err := optr.cfeEvalFailSwapOn()
+	if err != nil {
+		return evaluations, err
+	}
+	if enabled {
+		evaluations = append(evaluations, "failswapon: KubeletConfig setting is currently unsupported by OpenShift")
+	}
+
+	enabled, err = optr.cfeEvalRunc()
+	if err != nil {
+		return evaluations, err
+	}
+	if enabled {
+		evaluations = append(evaluations, "runc: transition to default crun")
+	}
+
+	enabled, err = optr.cfeEvalCgroupsV1()
+	if err != nil {
+		return evaluations, err
+	}
+	if enabled {
+		evaluations = append(evaluations, "cgroupsv1: support has been deprecated in favor of cgroupsv2")
+	}
+
+	sort.Strings(evaluations)
+
+	return evaluations, nil
+}
+
+func (optr *Operator) cfeEvalFailSwapOn() (bool, error) {
+	// check for nil so we do not have to mock within tests
+	if optr.mckLister == nil {
+		return false, nil
+	}
+	kubeletConfigs, err := optr.mckLister.List(labels.Everything())
+	if err != nil {
+		return false, err
+	}
+	for _, kubeletConfig := range kubeletConfigs {
+		if kubeletConfig.Spec.KubeletConfig == nil || kubeletConfig.Spec.KubeletConfig.Raw == nil {
+			continue
+		}
+		decodedKC, err := kcc.DecodeKubeletConfig(kubeletConfig.Spec.KubeletConfig.Raw)
+		if err != nil {
+			klog.V(2).Infof("could not decode KubeletConfig: %v", err)
+			continue
+		}
+		if decodedKC.FailSwapOn != nil && !*decodedKC.FailSwapOn {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (optr *Operator) cfeEvalRunc() (bool, error) {
+	// check for nil so we do not have to mock within tests
+	if optr.crcLister == nil {
+		return false, nil
+	}
+	containerConfigs, err := optr.crcLister.List(labels.Everything())
+	if err != nil {
+		return false, err
+	}
+	for _, containerConfig := range containerConfigs {
+		if containerConfig.Spec.ContainerRuntimeConfig == nil {
+			continue
+		}
+		if containerConfig.Spec.ContainerRuntimeConfig.DefaultRuntime == mcfgv1.ContainerRuntimeDefaultRuntimeRunc {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (optr *Operator) cfeEvalCgroupsV1() (bool, error) {
+	// check for nil so we do not have to mock within tests
+	if optr.nodeClusterLister == nil {
+		return false, nil
+	}
+	nodeClusterConfig, err := optr.nodeClusterLister.Get(ctrlcommon.ClusterNodeInstanceName)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return nodeClusterConfig.Spec.CgroupMode == configv1.CgroupModeV1, nil
+}
+
 // isKubeletSkewSupported checks the version skew of kube-apiserver and node kubelet version.
 // Returns the skew status. version skew > 2 is not supported.
 func (optr *Operator) isKubeletSkewSupported(pools []*mcfgv1.MachineConfigPool) (skewStatus string, coStatus configv1.ClusterOperatorStatusCondition, err error) {
@@ -541,13 +672,20 @@ func (optr *Operator) initializeClusterOperator() (*configv1.ClusterOperator, er
 		return nil, err
 	}
 	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{
-		Type: configv1.OperatorAvailable, Status: configv1.ConditionFalse})
+		Type: configv1.OperatorAvailable, Status: configv1.ConditionFalse,
+	})
 	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{
-		Type: configv1.OperatorProgressing, Status: configv1.ConditionFalse})
+		Type: configv1.OperatorProgressing, Status: configv1.ConditionFalse,
+	})
 	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{
-		Type: configv1.OperatorDegraded, Status: configv1.ConditionFalse})
+		Type: configv1.OperatorDegraded, Status: configv1.ConditionFalse,
+	})
 	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{
-		Type: configv1.OperatorUpgradeable, Status: configv1.ConditionUnknown, Reason: "NoData"})
+		Type: configv1.OperatorUpgradeable, Status: configv1.ConditionUnknown, Reason: "NoData",
+	})
+	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{
+		Type: configv1.EvaluationConditionsDetected, Status: configv1.ConditionFalse, Reason: asExpectedReason,
+	})
 
 	// RelatedObjects are consumed by https://github.com/openshift/must-gather
 	co.Status.RelatedObjects = []configv1.ObjectReference{

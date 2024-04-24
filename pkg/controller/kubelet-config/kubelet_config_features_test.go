@@ -183,7 +183,6 @@ func TestBootstrapFeaturesDefault(t *testing.T) {
 func TestBootstrapFeaturesCustomNoUpgrade(t *testing.T) {
 	for _, platform := range []configv1.PlatformType{configv1.AWSPlatformType, configv1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
-
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
@@ -205,7 +204,7 @@ func TestBootstrapFeaturesCustomNoUpgrade(t *testing.T) {
 				conf, err := ctrlcommon.DecodeIgnitionFileContents(regfile.Contents.Source, regfile.Contents.Compression)
 				require.NoError(t, err)
 
-				originalKubeConfig, err := decodeKubeletConfig(conf)
+				originalKubeConfig, err := DecodeKubeletConfig(conf)
 				require.NoError(t, err)
 
 				features := &osev1.FeatureGate{

@@ -60,10 +60,8 @@ const (
 	defaultOpenshiftTLSSecurityProfileConfig = "apiserver.v1.config.openshift.io"
 )
 
-var (
-	// controllerKind contains the schema.GroupVersionKind for this controller type.
-	controllerKind = mcfgv1.SchemeGroupVersion.WithKind("KubeletConfig")
-)
+// controllerKind contains the schema.GroupVersionKind for this controller type.
+var controllerKind = mcfgv1.SchemeGroupVersion.WithKind("KubeletConfig")
 
 var updateBackoff = wait.Backoff{
 	Steps:    5,
@@ -205,7 +203,6 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 
 	for i := 0; i < workers; i++ {
 		go wait.Until(ctrl.nodeConfigWorker, time.Second, stopCh)
-
 	}
 
 	<-stopCh
@@ -372,7 +369,7 @@ func generateOriginalKubeletConfigWithFeatureGates(cc *mcfgv1.ControllerConfig, 
 	if err != nil {
 		return nil, fmt.Errorf("could not decode the original Kubelet source string: %w", err)
 	}
-	originalKubeConfig, err := decodeKubeletConfig(contents)
+	originalKubeConfig, err := DecodeKubeletConfig(contents)
 	if err != nil {
 		return nil, fmt.Errorf("could not deserialize the Kubelet source: %w", err)
 	}

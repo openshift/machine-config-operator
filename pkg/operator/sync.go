@@ -194,6 +194,10 @@ func (optr *Operator) syncAll(syncFuncs []syncFunc) error {
 		return fmt.Errorf("error syncing metrics: %w", err)
 	}
 
+	if err := optr.syncClusterFleetEvaluation(); err != nil {
+		return fmt.Errorf("error running cluster fleet evaluation: %w", err)
+	}
+
 	if optr.inClusterBringup && syncErr.err == nil {
 		klog.Infof("Initialization complete")
 		optr.inClusterBringup = false
@@ -774,6 +778,7 @@ func (optr *Operator) syncMachineConfigNodes(_ *renderConfig) error {
 	}
 	return nil
 }
+
 func isApplyManifestErrorRetriable(err error) bool {
 	// Retry on brief rpc errors
 	// See https://issues.redhat.com/browse/OCPBUGS-24228 for more information.
@@ -881,7 +886,6 @@ func (optr *Operator) applyManifests(config *renderConfig, paths manifestPaths) 
 			}
 		}
 		fg, err := optr.fgAccessor.CurrentFeatureGates()
-
 		if err != nil {
 			return fmt.Errorf("could not get feature gates: %w", err)
 		}
@@ -921,7 +925,6 @@ func (optr *Operator) applyManifests(config *renderConfig, paths manifestPaths) 
 		}
 		return nil
 	})
-
 }
 
 // safetySyncControllerConfig is a special case render of the controllerconfig that we run when
@@ -954,7 +957,6 @@ func (optr *Operator) safetySyncControllerConfig(config *renderConfig) error {
 //
 //nolint:gocritic
 func (optr *Operator) syncControllerConfig(config *renderConfig) error {
-
 	ccBytes, err := renderAsset(config, "manifests/machineconfigcontroller/controllerconfig.yaml")
 	if err != nil {
 		return err
