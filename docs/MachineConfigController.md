@@ -116,7 +116,7 @@ Use kubernetes Deployment behavior for LabelSelector to find Pods.
 
 ### Generating desired MachineConfig
 
-Use the merging behavior defined in MachineConfig design document [here](./MachineConfiguration.md#how-to-create-generated-machineconfig) to create a single MachineConfig from all the MachineConfig objects that were selected above.
+Use the merging behavior defined in MachineConfig design document [here](./MachineConfig.md#how-to-create-generated-machineconfig) to create a single MachineConfig from all the MachineConfig objects that were selected above.
 
 #### Ordering the MachineConfigs
 
