@@ -7,7 +7,6 @@ import (
 	"strings"
 	"text/template"
 
-	buildv1 "github.com/openshift/api/build/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -52,14 +51,6 @@ type ImageBuildRequest struct {
 	Containerfile string
 }
 
-type BuildInputs struct {
-	onClusterBuildConfig *corev1.ConfigMap
-	osImageURL           *corev1.ConfigMap
-	customDockerfiles    *corev1.ConfigMap
-	pool                 *mcfgv1.MachineConfigPool
-	machineConfig        *mcfgv1.MachineConfig
-}
-
 // Constructs a simple ImageBuildRequest.
 func newImageBuildRequest(mosc *mcfgv1alpha1.MachineOSConfig, mosb *mcfgv1alpha1.MachineOSBuild) *ImageBuildRequest {
 	ibr := &ImageBuildRequest{
@@ -76,16 +67,6 @@ func newImageBuildRequest(mosc *mcfgv1alpha1.MachineOSConfig, mosb *mcfgv1alpha1
 	}
 
 	return ibr
-}
-
-// Populates the final image info from the on-cluster-build-config ConfigMap.
-func newFinalImageInfo(inputs *BuildInputs) ImageInfo {
-	return ImageInfo{
-		Pullspec: inputs.onClusterBuildConfig.Data[FinalImagePullspecConfigKey],
-		PullSecret: corev1.LocalObjectReference{
-			Name: inputs.onClusterBuildConfig.Data[FinalImagePushSecretNameConfigKey],
-		},
-	}
 }
 
 // Populates the base image info from both the on-cluster-build-config and
@@ -196,69 +177,6 @@ func (i ImageBuildRequest) renderDockerfile() (string, error) {
 	}
 
 	return out.String(), nil
-}
-
-// Creates an OpenShift Image Builder build object prewired with all ConfigMaps
-// / Secrets / etc.
-func (i ImageBuildRequest) toBuild() *buildv1.Build {
-	skipLayers := buildv1.ImageOptimizationSkipLayers
-
-	// The Build API requires the Dockerfile field to be set, even if you
-	// override it via a ConfigMap.
-	dockerfile := "FROM scratch"
-
-	return &buildv1.Build{
-		TypeMeta: metav1.TypeMeta{
-			Kind: "Build",
-		},
-		ObjectMeta: i.getObjectMeta(i.getBuildName()),
-		Spec: buildv1.BuildSpec{
-			CommonSpec: buildv1.CommonSpec{
-				// TODO: We may need to configure a Build Input here so we can wire up
-				// the pull secrets for the base OS image and the extensions image.
-				Source: buildv1.BuildSource{
-					Type:       buildv1.BuildSourceDockerfile,
-					Dockerfile: &dockerfile,
-					ConfigMaps: []buildv1.ConfigMapBuildSource{
-						{
-							// Provides the rendered MachineConfig in a gzipped /
-							// base64-encoded format.
-							ConfigMap: corev1.LocalObjectReference{
-								Name: i.getMCConfigMapName(),
-							},
-							DestinationDir: "machineconfig",
-						},
-						{
-							// Provides the rendered Dockerfile.
-							ConfigMap: corev1.LocalObjectReference{
-								Name: i.getDockerfileConfigMapName(),
-							},
-						},
-					},
-				},
-				Strategy: buildv1.BuildStrategy{
-					DockerStrategy: &buildv1.DockerBuildStrategy{
-						// Squashing layers is good as long as it doesn't cause problems with what
-						// the users want to do. It says "some syntax is not supported"
-						ImageOptimizationPolicy: &skipLayers,
-					},
-					Type: buildv1.DockerBuildStrategyType,
-				},
-				Output: buildv1.BuildOutput{
-					To: &corev1.ObjectReference{
-						Name: i.MachineOSConfig.Status.CurrentImagePullspec,
-						Kind: "DockerImage",
-					},
-					PushSecret: &corev1.LocalObjectReference{
-						Name: i.MachineOSConfig.Spec.BuildInputs.RenderedImagePushSecret.Name,
-					},
-					ImageLabels: []buildv1.ImageLabel{
-						{Name: "io.openshift.machineconfig.pool", Value: i.MachineOSConfig.Spec.MachineConfigPool.Name},
-					},
-				},
-			},
-		},
-	}
 }
 
 // Creates a custom image build pod to build the final OS image with all

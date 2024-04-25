@@ -1,10 +1,10 @@
 package common
 
 import (
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // This is intended to provide a singular way to interrogate MachineConfigPool
@@ -149,20 +149,73 @@ func getMachineConfigBuildConditions() []mcfgv1alpha1.BuildProgress {
 	}
 }
 
-/*
-func (l *MachineOSBuildState) IsInterrupted() bool {
-	return apihelpers.IsMachineConfigPoolConditionTrue(l.pool.Status.Conditions, mcfgv1.MachineConfigPoolBuildInterrupted)
+func IsPoolAnyDegraded(pool *mcfgv1.MachineConfigPool) bool {
+	condTypes := []mcfgv1.MachineConfigPoolConditionType{
+		mcfgv1.MachineConfigPoolDegraded,
+		mcfgv1.MachineConfigPoolNodeDegraded,
+		mcfgv1.MachineConfigPoolRenderDegraded,
+	}
+
+	for _, condType := range condTypes {
+		if apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, condType) {
+			return true
+		}
+	}
+
+	return false
 }
 
-func (l *MachineOSBuildState) IsDegraded() bool {
-	return apihelpers.IsMachineConfigPoolConditionTrue(l.pool.Status.Conditions, mcfgv1.MachineConfigPoolDegraded)
+// Determine if we have a config change.
+func IsPoolConfigChange(oldPool, curPool *mcfgv1.MachineConfigPool) bool {
+	return oldPool.Spec.Configuration.Name != curPool.Spec.Configuration.Name
 }
 
-func (l *MachineOSBuildState) IsNodeDegraded() bool {
-	return apihelpers.IsMachineConfigPoolConditionTrue(l.pool.Status.Conditions, mcfgv1.MachineConfigPoolNodeDegraded)
+func HasBuildObjectForCurrentMachineConfig(pool *mcfgv1.MachineConfigPool, mosb *mcfgv1alpha1.MachineOSBuild) bool {
+	return pool.Spec.Configuration.Name == mosb.Spec.DesiredConfig.Name
 }
 
-func (l *MachineOSBuildState) IsRenderDegraded() bool {
-	return apihelpers.IsMachineConfigPoolConditionTrue(l.pool.Status.Conditions, mcfgv1.MachineConfigPoolRenderDegraded)
+// Determines if we should do a build based upon the state of our
+// MachineConfigPool, the presence of a build pod, etc.
+func BuildDueToPoolChange(builder interface {
+	IsBuildRunning(*mcfgv1alpha1.MachineOSBuild, *mcfgv1alpha1.MachineOSConfig) (bool, error)
+}, oldPool, curPool *mcfgv1.MachineConfigPool, moscNew *mcfgv1alpha1.MachineOSConfig, mosbNew *mcfgv1alpha1.MachineOSBuild) (bool, error) {
+
+	moscState := NewMachineOSConfigState(moscNew)
+	mosbState := NewMachineOSBuildState(mosbNew)
+
+	// If we don't have a layered pool, we should not build.
+	poolStateSuggestsBuild := canPoolBuild(curPool, moscState, mosbState) &&
+		// If we have a config change or we're missing an image pullspec label, we
+		// should do a build.
+		(IsPoolConfigChange(oldPool, curPool) || !moscState.HasOSImage())
+
+	return poolStateSuggestsBuild, nil
+
 }
-*/
+
+// Checks our pool to see if we can do a build. We base this off of a few criteria:
+// 1. Is the pool opted into layering?
+// 2. Do we have an object reference to an in-progress build?
+// 3. Is the pool degraded?
+// 4. Is our build in a specific state?
+//
+// Returns true if we are able to build.
+func canPoolBuild(pool *mcfgv1.MachineConfigPool, moscNewState *MachineOSConfigState, mosbNewState *MachineOSBuildState) bool {
+	// If we don't have a layered pool, we should not build.
+	if !IsLayeredPool(moscNewState.Config, mosbNewState.Build) {
+		return false
+	}
+	// If the pool is degraded, we should not build.
+	if IsPoolAnyDegraded(pool) {
+		return false
+	}
+	// If the new pool has an ongoing build, we should not build
+	if mosbNewState.Build != nil {
+		return false
+	}
+	return true
+}
+
+func IsLayeredPool(mosc *mcfgv1alpha1.MachineOSConfig, mosb *mcfgv1alpha1.MachineOSBuild) bool {
+	return (mosc != nil || mosb != nil)
+}

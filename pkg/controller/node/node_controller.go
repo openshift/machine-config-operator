@@ -861,8 +861,10 @@ func (ctrl *Controller) GetConfigAndBuild(pool *mcfgv1.MachineConfigPool) (*mcfg
 
 	for _, build := range buildList.Items {
 		if build.Spec.MachineOSConfig.Name == ourConfig.Name {
-			ourBuild = &build
-			break
+			if build.Spec.DesiredConfig.Name == pool.Spec.Configuration.Name {
+				ourBuild = &build
+				break
+			}
 		}
 	}
 

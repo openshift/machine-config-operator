@@ -153,10 +153,10 @@ func (l *LayeredNodeState) SetDesiredStateFromMachineOSConfig(mosc *mcfgv1alpha1
 	}
 
 	node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] = mosb.Spec.DesiredConfig.Name
-	mosbs := NewMachineOSConfigState(mosc)
+	moscs := NewMachineOSConfigState(mosc)
 
-	if mosbs.HasOSImage() {
-		node.Annotations[daemonconsts.DesiredImageAnnotationKey] = mosbs.GetOSImage()
+	if moscs.HasOSImage() {
+		node.Annotations[daemonconsts.DesiredImageAnnotationKey] = moscs.GetOSImage()
 	} else {
 		delete(node.Annotations, daemonconsts.DesiredImageAnnotationKey)
 	}
