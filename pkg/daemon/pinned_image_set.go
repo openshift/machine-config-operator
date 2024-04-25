@@ -79,6 +79,7 @@ var (
 	errInsufficientStorage = errors.New("storage available is less than minimum required")
 	errFailedToPullImage   = errors.New("failed to pull image")
 	errNotFound            = errors.New("not found")
+	errRequeueAfterTimeout = errors.New("requeue: prefetching images incomplete after timeout")
 )
 
 // PinnedImageSetManager manages the prefetching of images.
@@ -193,7 +194,7 @@ func NewPinnedImageSetManager(
 
 func (p *PinnedImageSetManager) sync(key string) error {
 	klog.V(4).Infof("Syncing MachineConfigPool %q", key)
-	node, err := p.nodeLister.Get(p.nodeName)
+	node, err := p.getNodeWithRetry(p.nodeName)
 	if err != nil {
 		return fmt.Errorf("failed to get node %q: %w", p.nodeName, err)
 	}
@@ -216,7 +217,7 @@ func (p *PinnedImageSetManager) sync(key string) error {
 
 	if err := p.syncMachineConfigPools(ctx, pools); err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
-			ctxErr := fmt.Errorf("requeue: prefetching images incomplete after: %v", p.prefetchTimeout)
+			ctxErr := fmt.Errorf("%w: %v", errRequeueAfterTimeout, p.prefetchTimeout)
 			if err := p.updateStatusError(pools, ctxErr); err != nil {
 				klog.Errorf("failed to update status: %v", err)
 			}
@@ -377,6 +378,9 @@ func (p *PinnedImageSetManager) scheduleWork(ctx context.Context, prefetchCh cha
 	}
 	scheduledImages := 0
 	for _, imageRef := range prefetchImages {
+		if monitor.Drain() {
+			continue
+		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -669,7 +673,7 @@ func getImageSetMetadata(imageSetLister mcfglistersv1alpha1.PinnedImageSetLister
 
 // getWorkerCount returns the number of workers to use for prefetching images.
 func (p *PinnedImageSetManager) getWorkerCount() (int, error) {
-	node, err := p.nodeLister.Get(p.nodeName)
+	node, err := p.getNodeWithRetry(p.nodeName)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get node %q: %w", p.nodeName, err)
 	}
@@ -788,7 +792,7 @@ func (p *PinnedImageSetManager) addPinnedImageSet(obj interface{}) {
 		return
 	}
 
-	node, err := p.nodeLister.Get(p.nodeName)
+	node, err := p.getNodeWithRetry(p.nodeName)
 	if err != nil {
 		klog.Errorf("failed to get node %q: %v", p.nodeName, err)
 		return
@@ -827,7 +831,7 @@ func (p *PinnedImageSetManager) deletePinnedImageSet(obj interface{}) {
 		}
 	}
 
-	node, err := p.nodeLister.Get(p.nodeName)
+	node, err := p.getNodeWithRetry(p.nodeName)
 	if err != nil {
 		klog.Errorf("failed to get node %q: %v", p.nodeName, err)
 		return
@@ -851,6 +855,27 @@ func (p *PinnedImageSetManager) deletePinnedImageSet(obj interface{}) {
 	}
 }
 
+// getNodeWithRetry gets the node with retries. This avoids some races when the local node
+// is new but not found during startup.
+func (p *PinnedImageSetManager) getNodeWithRetry(nodeName string) (*corev1.Node,
+	error) {
+	var node *corev1.Node
+	err := wait.ExponentialBackoff(p.backoff, func() (bool, error) {
+		var err error
+		node, err = p.nodeLister.Get(nodeName)
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				// log warning and retry because we are tolerating unexpected behavior from the informer
+				klog.Warningf("Node %q not found, retrying", nodeName)
+				return false, nil
+			}
+			return false, err
+		}
+		return true, nil
+	})
+	return node, err
+}
+
 func (p *PinnedImageSetManager) updatePinnedImageSet(oldObj, newObj interface{}) {
 	oldImageSet := oldObj.(*mcfgv1alpha1.PinnedImageSet)
 	newImageSet := newObj.(*mcfgv1alpha1.PinnedImageSet)
@@ -860,7 +885,7 @@ func (p *PinnedImageSetManager) updatePinnedImageSet(oldObj, newObj interface{})
 		return
 	}
 
-	node, err := p.nodeLister.Get(p.nodeName)
+	node, err := p.getNodeWithRetry(p.nodeName)
 	if err != nil {
 		klog.Errorf("failed to get node %q: %v", p.nodeName, err)
 		return

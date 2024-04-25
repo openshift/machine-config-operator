@@ -348,7 +348,7 @@ func TestPrefetchImageSets(t *testing.T) {
 				nodeListerSynced: nodeInformer.Informer().HasSynced,
 				prefetchCh:       make(chan prefetch, defaultPrefetchWorkers*2),
 				backoff: wait.Backoff{
-					Steps:    1,
+					Steps:    maxRetries,
 					Duration: 10 * time.Millisecond,
 					Factor:   retryFactor,
 					Cap:      10 * time.Millisecond,
