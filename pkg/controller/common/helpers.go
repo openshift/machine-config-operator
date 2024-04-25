@@ -970,6 +970,8 @@ func dedupePasswdUserSSHKeys(passwdUser ign2types.PasswdUser) ign2types.PasswdUs
 
 // CalculateConfigFileDiffs compares the files present in two ignition configurations and returns the list of files
 // that are different between them
+//
+//nolint:dupl
 func CalculateConfigFileDiffs(oldIgnConfig, newIgnConfig *ign3types.Config) []string {
 	// Go through the files and see what is new or different
 	oldFileSet := make(map[string]ign3types.File)
@@ -986,8 +988,6 @@ func CalculateConfigFileDiffs(oldIgnConfig, newIgnConfig *ign3types.Config) []st
 	for path := range oldFileSet {
 		_, ok := newFileSet[path]
 		if !ok {
-			// debug: remove
-			klog.Infof("File diff: %v was deleted", path)
 			diffFileSet = append(diffFileSet, path)
 		}
 	}
@@ -996,16 +996,48 @@ func CalculateConfigFileDiffs(oldIgnConfig, newIgnConfig *ign3types.Config) []st
 	for path, newFile := range newFileSet {
 		oldFile, ok := oldFileSet[path]
 		if !ok {
-			// debug: remove
-			klog.Infof("File diff: %v was added", path)
 			diffFileSet = append(diffFileSet, path)
 		} else if !reflect.DeepEqual(oldFile, newFile) {
-			// debug: remove
-			klog.Infof("File diff: detected change to %v", newFile.Path)
 			diffFileSet = append(diffFileSet, path)
 		}
 	}
 	return diffFileSet
+}
+
+// CalculateConfigUnitDiffs compares the units present in two ignition configurations and returns the list of units
+// that are different between them
+//
+//nolint:dupl
+func CalculateConfigUnitDiffs(oldIgnConfig, newIgnConfig *ign3types.Config) []string {
+	// Go through the units and see what is new or different
+	oldUnitSet := make(map[string]ign3types.Unit)
+	for _, u := range oldIgnConfig.Systemd.Units {
+		oldUnitSet[u.Name] = u
+	}
+	newUnitSet := make(map[string]ign3types.Unit)
+	for _, u := range newIgnConfig.Systemd.Units {
+		newUnitSet[u.Name] = u
+	}
+	diffUnitSet := []string{}
+
+	// First check if any units were removed
+	for unit := range oldUnitSet {
+		_, ok := newUnitSet[unit]
+		if !ok {
+			diffUnitSet = append(diffUnitSet, unit)
+		}
+	}
+
+	// Now check if any units were added/changed
+	for name, newUnit := range newUnitSet {
+		oldUnit, ok := oldUnitSet[name]
+		if !ok {
+			diffUnitSet = append(diffUnitSet, name)
+		} else if !reflect.DeepEqual(oldUnit, newUnit) {
+			diffUnitSet = append(diffUnitSet, name)
+		}
+	}
+	return diffUnitSet
 }
 
 // NewIgnFile returns a simple ignition3 file from just path and file contents.

@@ -10,6 +10,8 @@ import (
 	"github.com/containers/image/v5/pkg/sysregistriesv2"
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	mcfgalphav1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+	opv1 "github.com/openshift/api/operator/v1"
+	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/upgrademonitor"
@@ -112,6 +114,24 @@ func (dn *Daemon) performDrain() error {
 	klog.Infof("Successful drain took %v seconds", t)
 
 	return nil
+}
+
+// isDrainRequiredForNodeDisruptionActions determines whether node drain is required or not to apply config changes for this set of NodeDisruptionActions
+func isDrainRequiredForNodeDisruptionActions(actions []opv1.NodeDisruptionPolicyStatusAction, oldIgnConfig, newIgnConfig ign3types.Config) (bool, error) {
+	klog.Infof("Checking drain required for node disruption actions")
+	if apihelpers.CheckNodeDisruptionActionsForTargetActions(actions, opv1.RebootStatusAction, opv1.DrainStatusAction) {
+		// We definitely want to perform drain for these cases
+		return true, nil
+	} else if apihelpers.CheckNodeDisruptionActionsForTargetActions(actions, opv1.SpecialStatusAction) {
+		// This is a specially reserved action for "/etc/containers/registries.conf" and for this action, drain may or may not be necessary
+		isSafe, err := isSafeContainerRegistryConfChanges(oldIgnConfig, newIgnConfig)
+		if err != nil {
+			return false, err
+		}
+		return !isSafe, nil
+	}
+	// If only other actions are being done, no drain is necessary
+	return false, nil
 }
 
 // isDrainRequired determines whether node drain is required or not to apply config changes.

@@ -182,6 +182,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		ctrlctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
 		ctrlctx.KubeInformerFactory.Core().V1().Nodes(),
 		ctrlctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
+		ctrlctx.ClientBuilder.OperatorClientOrDie(componentName),
 		startOpts.kubeletHealthzEnabled,
 		startOpts.kubeletHealthzEndpoint,
 		ctrlctx.FeatureGateAccess,
@@ -194,6 +195,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 	ctrlctx.KubeInformerFactory.Start(stopCh)
 	ctrlctx.KubeNamespacedInformerFactory.Start(stopCh)
 	ctrlctx.InformerFactory.Start(stopCh)
+	ctrlctx.OperatorInformerFactory.Start(stopCh)
 	close(ctrlctx.InformersStarted)
 
 	select {
