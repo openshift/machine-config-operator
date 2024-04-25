@@ -31,6 +31,7 @@ contents:
         "/etc/hostname",
     ]
     drop_infra_ctr = true
+    pids_limit = -1
 
     [crio.runtime.runtimes.runc]
     allowed_annotations = [
