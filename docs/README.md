@@ -68,7 +68,7 @@ for more information.
 # What to look at after creating a MachineConfig
 
 Once you create a MachineConfig fragment like the above, the controller will generate a new "rendered" version that will be used as a target.
-For more information, see [MachineConfiguration](/docs/MachineConfiguration.md).
+For more information, see [MachineConfig](/docs/MachineConfig.md).
 
 In particular, you should look at `oc describe machineconfigpool` and `oc describe clusteroperator/machine-config` as noted above.
 

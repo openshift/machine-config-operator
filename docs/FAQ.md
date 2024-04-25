@@ -73,7 +73,7 @@ of kubelet.
 
 ## Q: Can I use the MCO to re-partition or re-install?
 
-Not today.  The [MachineConfig](MachineConfiguration.md) doc discusses which sections
+Not today.  The [MachineConfig](MachineConfig.md) doc discusses which sections
 of the rendered Ignition can be changed, and that does not include e.g. the Ignition
 `storage` section.  For example, you cannot currently switch an existing worker
 node to be encrypted or use RAID after the fact - you must re-provision the system.
