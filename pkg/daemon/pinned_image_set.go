@@ -123,9 +123,12 @@ type PinnedImageSetManager struct {
 	queue                    workqueue.RateLimitingInterface
 	featureGatesAccessor     featuregates.FeatureGateAccess
 
-	// mutex to protect the cancelFn
+	// mutex protects cancelFn
 	mu       sync.Mutex
 	cancelFn context.CancelFunc
+
+	once         sync.Once
+	bootstrapped bool
 }
 
 // NewPinnedImageSetManager creates a new pinned image set manager.
@@ -173,6 +176,11 @@ func NewPinnedImageSetManager(
 		AddFunc:    p.addMachineConfigPool,
 		UpdateFunc: p.updateMachineConfigPool,
 		DeleteFunc: p.deleteMachineConfigPool,
+	})
+
+	nodeInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    p.handleNodeEvent,
+		UpdateFunc: func(oldObj, newObj interface{}) { p.handleNodeEvent(newObj) },
 	})
 
 	p.syncHandler = p.sync
@@ -910,6 +918,40 @@ func (p *PinnedImageSetManager) updatePinnedImageSet(oldObj, newObj interface{})
 			p.enqueueMachineConfigPool(pool)
 		}
 	}
+}
+
+func (p *PinnedImageSetManager) handleNodeEvent(newObj interface{}) {
+	newNode := newObj.(*corev1.Node)
+	if newNode.Name != p.nodeName {
+		return
+	}
+
+	pools, _, err := helpers.GetPoolsForNode(p.mcpLister, newNode)
+	if err != nil {
+		klog.Errorf("error finding pools for node %s: %v", newNode.Name, err)
+		return
+	}
+	if pools == nil {
+		return
+	}
+
+	// handle first sync during startup
+	if !p.isBootstrapped() {
+		for _, pool := range pools {
+			p.enqueueMachineConfigPool(pool)
+		}
+	}
+	p.setBootstrapped()
+}
+
+func (p *PinnedImageSetManager) isBootstrapped() bool {
+	return p.bootstrapped
+}
+
+func (p *PinnedImageSetManager) setBootstrapped() {
+	defer p.once.Do(func() {
+		p.bootstrapped = true
+	})
 }
 
 func (p *PinnedImageSetManager) addMachineConfigPool(obj interface{}) {
