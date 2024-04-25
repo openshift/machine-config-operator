@@ -88,9 +88,11 @@ func calculateStatus(fg featuregates.FeatureGate, mcs []*mcfgalphav1.MachineConf
 		}
 	}
 	machineCount := int32(len(nodes))
+	updatingPinnedImageSetMachines := int32(0)
 
 	var degradedMachines, readyMachines, updatedMachines, unavailableMachines, updatingMachines []*corev1.Node
-	var updatingPinnedImageSetMachines int32
+	degradedReasons := []string{}
+
 	// if we represent updating properly here, we will also represent updating properly in the CO
 	// so this solves the cordoning RFE and the upgradeable RFE
 	// updating == updatePrepared, updateExecuted, updatedComplete, postAction, cordoning, draining
@@ -114,18 +116,23 @@ func calculateStatus(fg featuregates.FeatureGate, mcs []*mcfgalphav1.MachineConf
 			// not ready yet
 			break
 		}
-		pinnedImageSetsUpdating := false
+		if fg.Enabled(configv1.FeatureGatePinnedImages) {
+			if isPinnedImageSetNodeUpdating(state) {
+				updatingPinnedImageSetMachines++
+			}
+		}
 		for _, cond := range state.Status.Conditions {
 			if strings.Contains(cond.Message, "Error:") {
 				degradedMachines = append(degradedMachines, ourNode)
+				// populate the degradedReasons from the MachineConfigNodePinnedImageSetsDegraded condition
+				if fg.Enabled(configv1.FeatureGatePinnedImages) {
+					if mcfgalphav1.StateProgress(cond.Type) == mcfgalphav1.MachineConfigNodePinnedImageSetsDegraded && cond.Status == metav1.ConditionTrue {
+						degradedReasons = append(degradedReasons, fmt.Sprintf("Node %s is reporting: %q", ourNode.Name, cond.Message))
+					}
+				}
 				continue
 			}
-			if fg.Enabled(configv1.FeatureGatePinnedImages) && cond.Status == metav1.ConditionTrue {
-				if mcfgalphav1.StateProgress(cond.Type) == mcfgalphav1.MachineConfigNodePinnedImageSetsProgressing ||
-					mcfgalphav1.StateProgress(cond.Type) == mcfgalphav1.MachineConfigNodePinnedImageSetsDegraded {
-					pinnedImageSetsUpdating = true
-				}
-			}
+
 			if cond.Status == metav1.ConditionUnknown {
 				switch mcfgalphav1.StateProgress(cond.Type) {
 				case mcfgalphav1.MachineConfigNodeUpdatePrepared:
@@ -153,9 +160,6 @@ func calculateStatus(fg featuregates.FeatureGate, mcs []*mcfgalphav1.MachineConf
 				}
 			}
 		}
-		if pinnedImageSetsUpdating {
-			updatingPinnedImageSetMachines++
-		}
 	}
 	degradedMachineCount := int32(len(degradedMachines))
 	updatedMachineCount := int32(len(updatedMachines))
@@ -178,7 +182,6 @@ func calculateStatus(fg featuregates.FeatureGate, mcs []*mcfgalphav1.MachineConf
 		degradedMachineCount = int32(len(degradedMachines))
 	}
 
-	degradedReasons := []string{}
 	for _, n := range degradedMachines {
 		reason, ok := n.Annotations[daemonconsts.MachineConfigDaemonReasonAnnotationKey]
 		if ok && reason != "" {
@@ -198,6 +201,7 @@ func calculateStatus(fg featuregates.FeatureGate, mcs []*mcfgalphav1.MachineConf
 
 	// update synchronizer status for pinned image sets
 	if fg.Enabled(configv1.FeatureGatePinnedImages) {
+		// TODO: update counts to be more granular
 		status.PoolSynchronizersStatus = []mcfgv1.PoolSynchronizerStatus{
 			{
 				PoolSynchronizerType:    mcfgv1.PinnedImageSets,
@@ -205,6 +209,7 @@ func calculateStatus(fg featuregates.FeatureGate, mcs []*mcfgalphav1.MachineConf
 				UpdatedMachineCount:     int64(machineCount - updatingPinnedImageSetMachines),
 				ReadyMachineCount:       int64(readyMachineCount),
 				UnavailableMachineCount: int64(unavailableMachineCount),
+				AvailableMachineCount:   int64(machineCount - unavailableMachineCount),
 			},
 		}
 	}
@@ -277,6 +282,16 @@ func calculateStatus(fg featuregates.FeatureGate, mcs []*mcfgalphav1.MachineConf
 	}
 
 	return status
+}
+
+func isPinnedImageSetNodeUpdating(mcs *mcfgalphav1.MachineConfigNode) bool {
+	var updating int32
+	for _, set := range mcs.Status.PinnedImageSets {
+		if set.CurrentGeneration != set.DesiredGeneration {
+			updating++
+		}
+	}
+	return updating > 0
 }
 
 func getPoolUpdateLine(pool *mcfgv1.MachineConfigPool) string {
