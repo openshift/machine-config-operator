@@ -15,6 +15,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	kubeinformers "k8s.io/client-go/informers"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
+
+	mcopfake "github.com/openshift/client-go/operator/clientset/versioned/fake"
 )
 
 type upgradeMonitorTestCase struct {
@@ -103,6 +105,8 @@ func (tc upgradeMonitorTestCase) run(t *testing.T) {
 	f.kubeobjects = []runtime.Object{}
 	f.client = fake.NewSimpleClientset(f.objects...)
 	f.kubeclient = k8sfake.NewSimpleClientset(f.kubeobjects...)
+
+	f.oclient = mcopfake.NewSimpleClientset(f.objects...)
 	fgAccess := featuregates.NewHardcodedFeatureGateAccess(
 		[]apicfgv1.FeatureGateName{
 			apicfgv1.FeatureGateMachineConfigNodes,
@@ -128,6 +132,7 @@ func (tc upgradeMonitorTestCase) run(t *testing.T) {
 		i.Machineconfiguration().V1().MachineConfigs(),
 		k8sI.Core().V1().Nodes(),
 		i.Machineconfiguration().V1().ControllerConfigs(),
+		f.oclient,
 		false,
 		"",
 		fgAccess,
