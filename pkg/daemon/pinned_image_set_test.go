@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -151,6 +152,7 @@ func TestPrefetchImageSets(t *testing.T) {
 		wantValidTarget         bool
 		wantErr                 error
 		wantNotFound            bool
+		wantNoSpace             bool
 		wantPulledImages        int
 	}{
 		{
@@ -261,6 +263,27 @@ func TestPrefetchImageSets(t *testing.T) {
 			registryAvailableImages: nil,
 			wantErr:                 os.ErrNotExist,
 		},
+		{
+			name:         "out of space should drain and return out of space error quickly",
+			authFilePath: authFilePath,
+			machineConfigPools: []runtime.Object{
+				fakeWorkerPoolPinnedImageSets,
+			},
+			nodes: []runtime.Object{
+				fakeStableStorageWorkerNode,
+			},
+			wantValidTarget: true,
+			imageSets: []runtime.Object{
+				&mcfgv1alpha1.PinnedImageSet{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "fake-pinned-images",
+					},
+					Spec: generateImageSetSpec(outOfDiskImage, 300),
+				},
+			},
+			registryAvailableImages: nil,
+			wantNoSpace:             true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -350,6 +373,10 @@ func TestPrefetchImageSets(t *testing.T) {
 				require.ErrorIs(err, tt.wantErr)
 				return
 			}
+			if tt.wantNoSpace {
+				require.True(isErrNoSpace(err))
+				return
+			}
 			require.NoError(err)
 			require.Equal(tt.wantPulledImages, runtime.imagesPulled())
 		})
@@ -427,6 +454,85 @@ func TestPinnedImageSetAddEventHandlers(t *testing.T) {
 	}
 }
 
+func TestCheckNodeAllocatableStorage(t *testing.T) {
+	require := require.New(t)
+	tests := []struct {
+		name           string
+		node           runtime.Object
+		pinnedImageSet *mcfgv1alpha1.PinnedImageSet
+		// uncompressed is x 2
+		imagesSizeCompressed        string
+		minFreeStorageAfterPrefetch string
+		wantErr                     error
+	}{
+		{
+			name:                        "happy path",
+			node:                        fakeNode([]string{"worker"}, "25Gi"),
+			pinnedImageSet:              workerPis,
+			imagesSizeCompressed:        "5Gi",
+			minFreeStorageAfterPrefetch: "10Gi",
+		},
+		{
+			name:                        "not enough storage",
+			node:                        fakeNode([]string{"worker"}, "25Gi"),
+			pinnedImageSet:              workerPis,
+			imagesSizeCompressed:        "10Gi",
+			minFreeStorageAfterPrefetch: "10Gi",
+			wantErr:                     errInsufficientStorage,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			fakeClient := fake.NewSimpleClientset(tt.node)
+			informerFactory := informers.NewSharedInformerFactory(fakeClient, noResyncPeriodFunc())
+			nodeInformer := informerFactory.Core().V1().Nodes()
+
+			informerFactory.Start(ctx.Done())
+			informerFactory.WaitForCacheSync(ctx.Done())
+
+			err := nodeInformer.Informer().GetIndexer().Add(tt.node)
+			require.NoError(err)
+
+			// setup fake cri runtime with client
+			runtime := newFakeRuntime([]string{availableImage}, []string{})
+			listener, err := newTestListener()
+			require.NoError(err)
+			err = runtime.Start(listener)
+			require.NoError(err)
+			defer runtime.Stop()
+			runtimeEndpoint := listener.Addr().String()
+
+			criClient, err := cri.NewClient(ctx, runtimeEndpoint)
+			require.NoError(err)
+
+			node := tt.node.(*corev1.Node)
+			p := &PinnedImageSetManager{
+				nodeName:                 node.Name,
+				cache:                    newImageCache(10),
+				nodeLister:               nodeInformer.Lister(),
+				criClient:                criClient,
+				minStorageAvailableBytes: resource.MustParse(tt.minFreeStorageAfterPrefetch),
+			}
+
+			imageSize := resource.MustParse(tt.imagesSizeCompressed)
+			size, ok := imageSize.AsInt64()
+			require.True(ok)
+
+			// populate the cache with the pinned image set image size
+			p.cache.Add("image1", imageInfo{Name: "image1", Size: size})
+
+			err = p.checkNodeAllocatableStorage(ctx, tt.pinnedImageSet)
+			if tt.wantErr != nil {
+				require.ErrorIs(err, tt.wantErr)
+				return
+			}
+			require.NoError(err)
+		})
+	}
+}
+
 func TestEnsureCrioPinnedImagesConfigFile(t *testing.T) {
 	require := require.New(t)
 	tmpDir := t.TempDir()
@@ -472,9 +578,23 @@ var (
 	fakeWorkerPoolPinnedImageSets   = fakeMachineConfigPool("worker", []mcfgv1.PinnedImageSetRef{{Name: "worker-set"}})
 	fakeWorkerPoolNoPinnedImageSets = fakeMachineConfigPool("worker", nil)
 	availableImage                  = "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+	outOfDiskImage                  = "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:1111111111111111111111111111111111111111111111111111111111111111"
 	// slowImage is a fake image that is used to block the image puller. This simulates a slow image pull of 1 seconds.
 	slowImage = "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
 )
+
+func generateImageSetSpec(imageName string, count int) mcfgv1alpha1.PinnedImageSetSpec {
+	pinnedImages := make([]mcfgv1alpha1.PinnedImageRef, count)
+	for i := 0; i < count; i++ {
+		pinnedImages[i] = mcfgv1alpha1.PinnedImageRef{
+			Name: imageName,
+		}
+	}
+
+	return mcfgv1alpha1.PinnedImageSetSpec{
+		PinnedImages: pinnedImages,
+	}
+}
 
 func fakeNode(roles []string, allocatableStorage string) *corev1.Node {
 	labels := map[string]string{}
@@ -489,7 +609,7 @@ func fakeNode(roles []string, allocatableStorage string) *corev1.Node {
 			Labels: labels,
 		},
 		Status: corev1.NodeStatus{
-			Capacity: corev1.ResourceList{
+			Allocatable: corev1.ResourceList{
 				corev1.ResourceStorage:          resource.MustParse(allocatableStorage),
 				corev1.ResourceEphemeralStorage: resource.MustParse(allocatableStorage),
 			},
@@ -591,7 +711,10 @@ func (*FakeRuntime) ListImages(context.Context, *runtimeapi.ListImagesRequest) (
 
 // PullImage implements v1.ImageServiceServer.
 func (r *FakeRuntime) PullImage(ctx context.Context, req *runtimeapi.PullImageRequest) (*runtimeapi.PullImageResponse, error) {
-	if req.Image.Image == slowImage {
+	switch req.Image.Image {
+	case outOfDiskImage:
+		return nil, fmt.Errorf("writing blob: storing blob to file \"/var/tmp/container_images_storage708850218/3\": write /var/tmp/container_images_storage708850218/3: %v", syscall.ENOSPC)
+	case slowImage:
 		time.Sleep(1 * time.Second)
 	}
 

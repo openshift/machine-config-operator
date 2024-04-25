@@ -71,8 +71,6 @@ const (
 	// controller configuration
 	maxRetriesController = 15
 
-	// degrade the pool after max retry threshold
-	degradeAfterRetries = maxRetriesController
 	// mcn looks for conditions with this prefix if seen will degrade the pool
 	degradeMessagePrefix = "Error:"
 )
@@ -194,6 +192,7 @@ func NewPinnedImageSetManager(
 }
 
 func (p *PinnedImageSetManager) sync(key string) error {
+	klog.V(4).Infof("Syncing MachineConfigPool %q", key)
 	node, err := p.nodeLister.Get(p.nodeName)
 	if err != nil {
 		return fmt.Errorf("failed to get node %q: %w", p.nodeName, err)
@@ -211,23 +210,28 @@ func (p *PinnedImageSetManager) sync(key string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), p.prefetchTimeout)
 	// cancel any currently running tasks in the worker pool
 	p.resetWorkload(cancel)
-	p.updateStatusProgressing()
+	if err := p.updateStatusProgressing(); err != nil {
+		klog.Errorf("failed to update status: %v", err)
+	}
 
 	if err := p.syncMachineConfigPools(ctx, pools); err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			ctxErr := fmt.Errorf("requeue: prefetching images incomplete after: %v", p.prefetchTimeout)
-			p.updateStatusError(key, pools, ctxErr)
+			if err := p.updateStatusError(pools, ctxErr); err != nil {
+				klog.Errorf("failed to update status: %v", err)
+			}
 			klog.Info(ctxErr)
 			return ctxErr
 		}
 
 		klog.Error(err)
-		p.updateStatusError(key, pools, err)
+		if err := p.updateStatusError(pools, err); err != nil {
+			klog.Errorf("failed to update status: %v", err)
+		}
 		return err
 	}
 
-	p.updateStatusProgressingComplete(pools, "All pinned image sets complete")
-	return nil
+	return p.updateStatusProgressingComplete(pools, "All pinned image sets complete")
 }
 
 func (p *PinnedImageSetManager) syncMachineConfigPools(ctx context.Context, pools []*mcfgv1.MachineConfigPool) error {
@@ -292,6 +296,8 @@ func (p *PinnedImageSetManager) syncMachineConfigPool(ctx context.Context, pool 
 		}
 		imageSets = append(imageSets, imageSet)
 	}
+	// images are cached with size information
+	p.cache.ClearDigests()
 
 	return p.prefetchImageSets(ctx, imageSets...)
 }
@@ -300,6 +306,11 @@ func (p *PinnedImageSetManager) checkNodeAllocatableStorage(ctx context.Context,
 	node, err := p.nodeLister.Get(p.nodeName)
 	if err != nil {
 		return fmt.Errorf("failed to get node %q: %w", p.nodeName, err)
+	}
+
+	// check if the node is ready
+	if err := checkNodeReady(node); err != nil {
+		return err
 	}
 
 	storageCapacity, ok := node.Status.Allocatable[corev1.ResourceEphemeralStorage]
@@ -426,7 +437,7 @@ func (p *PinnedImageSetManager) checkImagePayloadStorage(ctx context.Context, im
 			return err
 		}
 		if exists {
-			// dont account for storage if the image already exists
+			// do not calculate storage if the image already exists.
 			continue
 		}
 
@@ -441,7 +452,7 @@ func (p *PinnedImageSetManager) checkImagePayloadStorage(ctx context.Context, im
 			klog.Warningf("corrupted cache entry for image %q, deleting", imageName)
 			p.cache.Remove(imageName)
 		}
-		size, err := getImageSize(ctx, imageName, p.authFilePath)
+		size, err := p.getImageSize(ctx, imageName, p.authFilePath)
 		if err != nil {
 			return err
 		}
@@ -453,7 +464,8 @@ func (p *PinnedImageSetManager) checkImagePayloadStorage(ctx context.Context, im
 		requiredStorage += size * 2
 	}
 
-	if requiredStorage >= capacity-p.minStorageAvailableBytes.Value() {
+	minimumStorage := p.minStorageAvailableBytes.Value()
+	if requiredStorage >= capacity-minimumStorage {
 		klog.Errorf("%v capacity=%d, required=%d", errInsufficientStorage, capacity, requiredStorage+p.minStorageAvailableBytes.Value())
 		return errInsufficientStorage
 	}
@@ -496,18 +508,18 @@ func ensureCrioPinnedImagesConfigFile(path string, imageNames []string) error {
 		}
 		return crioReload()
 	}
+	klog.Infof("CRI-O config file is up to date, no reload required")
 
 	return nil
 }
 
-func (p *PinnedImageSetManager) updateStatusProgressing() {
+func (p *PinnedImageSetManager) updateStatusProgressing() error {
 	node, err := p.nodeLister.Get(p.nodeName)
 	if err != nil {
-		klog.Errorf("Failed to get node %q: %v", p.nodeName, err)
-		return
+		return fmt.Errorf("failed to get node %q: %w", p.nodeName, err)
 	}
 
-	err = upgrademonitor.UpdateMachineConfigNodeStatus(
+	return upgrademonitor.UpdateMachineConfigNodeStatus(
 		&upgrademonitor.Condition{
 			State:   mcfgv1alpha1.MachineConfigNodePinnedImageSetsProgressing,
 			Reason:  "ImagePrefetch",
@@ -522,22 +534,17 @@ func (p *PinnedImageSetManager) updateStatusProgressing() {
 		nil,
 		p.featureGatesAccessor,
 	)
-	if err != nil {
-		klog.Errorf("Failed to updated machine config node: %v", err)
-	}
 }
 
-func (p *PinnedImageSetManager) updateStatusProgressingComplete(pools []*mcfgv1.MachineConfigPool, message string) {
+func (p *PinnedImageSetManager) updateStatusProgressingComplete(pools []*mcfgv1.MachineConfigPool, message string) error {
 	node, err := p.nodeLister.Get(p.nodeName)
 	if err != nil {
-		klog.Errorf("Failed to get node %q: %v", p.nodeName, err)
-		return
+		return fmt.Errorf("failed to get node %q: %w", p.nodeName, err)
 	}
 
 	applyCfg, imageSets, err := getImageSetMetadata(p.imageSetLister, pools, nil)
 	if err != nil {
-		klog.Errorf("Failed to get image set apply configs: %v", err)
-		return
+		return fmt.Errorf("failed to get image set apply configs: %w", err)
 	}
 
 	err = upgrademonitor.UpdateMachineConfigNodeStatus(
@@ -560,7 +567,7 @@ func (p *PinnedImageSetManager) updateStatusProgressingComplete(pools []*mcfgv1.
 	}
 
 	// reset any degraded status
-	err = upgrademonitor.UpdateMachineConfigNodeStatus(
+	return upgrademonitor.UpdateMachineConfigNodeStatus(
 		&upgrademonitor.Condition{
 			State:   mcfgv1alpha1.MachineConfigNodePinnedImageSetsDegraded,
 			Reason:  "AsExpected",
@@ -575,33 +582,28 @@ func (p *PinnedImageSetManager) updateStatusProgressingComplete(pools []*mcfgv1.
 		nil,
 		p.featureGatesAccessor,
 	)
-	if err != nil {
-		klog.Errorf("Failed to updated machine config node: %v", err)
-	}
 }
 
-func (p *PinnedImageSetManager) updateStatusError(key interface{}, pools []*mcfgv1.MachineConfigPool, statusErr error) {
+func (p *PinnedImageSetManager) updateStatusError(pools []*mcfgv1.MachineConfigPool, statusErr error) error {
 	node, err := p.nodeLister.Get(p.nodeName)
 	if err != nil {
-		klog.Errorf("Failed to get node %q: %v", p.nodeName, err)
-		return
+		return fmt.Errorf("failed to get node %q: %w", p.nodeName, err)
 	}
 
 	applyCfg, imageSets, err := getImageSetMetadata(p.imageSetLister, pools, statusErr)
 	if err != nil {
-		klog.Errorf("Failed to get image set apply configs: %v", err)
-		return
+		return fmt.Errorf("failed to get image set apply configs: %w", err)
 	}
 
 	var errMsg string
-	if p.queue.NumRequeues(key) >= degradeAfterRetries {
-		// degrade the pool after max retries
+	if isErrNoSpace(statusErr) {
+		// degrade the pool if there is no space
 		errMsg = fmt.Sprintf("%s %v", degradeMessagePrefix, statusErr)
 	} else {
 		errMsg = statusErr.Error()
 	}
 
-	err = upgrademonitor.UpdateMachineConfigNodeStatus(
+	return upgrademonitor.UpdateMachineConfigNodeStatus(
 		&upgrademonitor.Condition{
 			State:   mcfgv1alpha1.MachineConfigNodePinnedImageSetsDegraded,
 			Reason:  "PrefetchFailed",
@@ -616,9 +618,19 @@ func (p *PinnedImageSetManager) updateStatusError(key interface{}, pools []*mcfg
 		imageSets,
 		p.featureGatesAccessor,
 	)
-	if err != nil {
-		klog.Errorf("Failed to updated machine config node: %v", err)
+}
+
+func checkNodeReady(node *corev1.Node) error {
+	for i := range node.Status.Conditions {
+		cond := &node.Status.Conditions[i]
+		if cond.Type == corev1.NodeReady && cond.Status != corev1.ConditionTrue {
+			return fmt.Errorf("node %s is reporting NotReady=%v", node.Name, cond.Status)
+		}
+		if cond.Type == corev1.NodeDiskPressure && cond.Status != corev1.ConditionFalse {
+			return fmt.Errorf("node %s is reporting OutOfDisk=%v", node.Name, cond.Status)
+		}
 	}
+	return nil
 }
 
 // getImageSetMetadata populates observed pinned image set generation details for node level status updates to MachineConfigNode.
@@ -697,6 +709,10 @@ func (p *PinnedImageSetManager) cancelWorkload(reason string) {
 // prefetchWorker is a worker that pulls images from the container runtime.
 func (p *PinnedImageSetManager) prefetchWorker(ctx context.Context) {
 	for task := range p.prefetchCh {
+		if task.monitor.Drain() {
+			task.monitor.Done()
+			continue
+		}
 		if err := ensurePullImage(ctx, p.criClient, p.backoff, task.image, task.auth); err != nil {
 			task.monitor.Error(err)
 			klog.Warningf("failed to prefetch image %q: %v", task.image, err)
@@ -1008,6 +1024,41 @@ func (p *PinnedImageSetManager) handleErr(err error, key interface{}) {
 	p.queue.AddAfter(key, 1*time.Minute)
 }
 
+func (p *PinnedImageSetManager) getImageSize(ctx context.Context, imageName, authFilePath string) (int64, error) {
+	args := []string{
+		"manifest",
+		"--log-level", "error", // suppress warn log output
+		"inspect",
+		"--authfile", authFilePath,
+		imageName,
+	}
+
+	output, err := exec.CommandContext(ctx, "podman", args...).CombinedOutput()
+	if err != nil && strings.Contains(err.Error(), "manifest unknown") {
+		return 0, errNotFound
+	}
+	if err != nil {
+		return 0, fmt.Errorf("failed to execute podman manifest inspect for %q: %w", imageName, err)
+	}
+
+	var manifest ocispec.Manifest
+	err = json.Unmarshal(output, &manifest)
+	if err != nil {
+		return 0, fmt.Errorf("failed to unmarshal manifest for %q: %w", imageName, err)
+	}
+
+	var totalSize int64
+	for _, layer := range manifest.Layers {
+		if p.cache.HasDigest(layer.Digest.String()) {
+			continue
+		}
+		totalSize += layer.Size
+		p.cache.AddDigest(layer.Digest.String())
+	}
+
+	return totalSize, nil
+}
+
 // ensurePullImage first checks if the image exists locally and then will attempt to pull
 // the image from the container runtime with a retry/backoff.
 func ensurePullImage(ctx context.Context, client *cri.Client, backoff wait.Backoff, image string, authConfig *runtimeapi.AuthConfig) error {
@@ -1046,14 +1097,13 @@ func ensurePullImage(ctx context.Context, client *cri.Client, backoff wait.Backo
 }
 
 func isErrNoSpace(err error) bool {
-	if err == syscall.ENOSPC {
+	if errors.Is(err, syscall.ENOSPC) {
 		return true
 	}
-	if werr, ok := err.(*os.PathError); ok {
-		if werr.Err == syscall.ENOSPC {
-			return true
-		}
+	if strings.Contains(err.Error(), "no space left on device") {
+		return true
 	}
+
 	return false
 }
 
@@ -1147,12 +1197,35 @@ func isNodeInPool(nodes []*corev1.Node, nodeName string) bool {
 type imageCache struct {
 	mu    sync.RWMutex
 	cache *lru.Cache
+	// digestSeen is used to track if a digest has been seen before.  This is
+	// used to avoid calculating the size of the same blob multiple times.
+	digestSeen map[string]struct{}
 }
 
 func newImageCache(maxEntries int) *imageCache {
 	return &imageCache{
-		cache: lru.New(maxEntries),
+		cache:      lru.New(maxEntries),
+		digestSeen: make(map[string]struct{}),
 	}
+}
+
+func (c *imageCache) HasDigest(digest string) bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	_, seen := c.digestSeen[digest]
+	return seen
+}
+
+func (c *imageCache) AddDigest(digest string) {
+	c.mu.Lock()
+	c.digestSeen[digest] = struct{}{}
+	c.mu.Unlock()
+}
+
+func (c *imageCache) ClearDigests() {
+	c.mu.Lock()
+	c.digestSeen = make(map[string]struct{})
+	c.mu.Unlock()
 }
 
 func (c *imageCache) Add(key, value interface{}) {
@@ -1170,6 +1243,7 @@ func (c *imageCache) Get(key interface{}) (value interface{}, ok bool) {
 func (c *imageCache) Clear() {
 	c.mu.Lock()
 	c.cache.Clear()
+	c.digestSeen = make(map[string]struct{})
 	c.mu.Unlock()
 }
 
@@ -1184,37 +1258,6 @@ type imageInfo struct {
 	Name   string
 	Size   int64
 	Pulled bool
-}
-
-func getImageSize(ctx context.Context, imageName, authFilePath string) (int64, error) {
-	args := []string{
-		"manifest",
-		"--log-level", "error", // suppress warn log output
-		"inspect",
-		"--authfile", authFilePath,
-		imageName,
-	}
-
-	output, err := exec.CommandContext(ctx, "podman", args...).CombinedOutput()
-	if err != nil && strings.Contains(err.Error(), "manifest unknown") {
-		return 0, errNotFound
-	}
-	if err != nil {
-		return 0, fmt.Errorf("failed to execute podman manifest inspect for %q: %w", imageName, err)
-	}
-
-	var manifest ocispec.Manifest
-	err = json.Unmarshal(output, &manifest)
-	if err != nil {
-		return 0, fmt.Errorf("failed to unmarshal manifest for %q: %w", imageName, err)
-	}
-
-	var totalSize int64
-	for _, layer := range manifest.Layers {
-		totalSize += layer.Size
-	}
-
-	return totalSize, nil
 }
 
 func triggerPinnedImageSetChange(old, new *mcfgv1alpha1.PinnedImageSet) bool {
@@ -1354,20 +1397,20 @@ type prefetch struct {
 
 // prefetchMonitor is used to monitor the status of prefetch operations.
 type prefetchMonitor struct {
-	once  sync.Once
-	errFn func(error)
-	err   error
 	wg    sync.WaitGroup
+	mu    sync.RWMutex
+	drain bool
+	err   error
 }
 
 func newPrefetchMonitor() *prefetchMonitor {
-	m := &prefetchMonitor{}
-	m.errFn = func(err error) {
-		m.once.Do(func() {
-			m.err = err
-		})
-	}
-	return m
+	return &prefetchMonitor{}
+}
+
+func (m *prefetchMonitor) Drain() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.drain
 }
 
 // Add increments the number of prefetch operations the monitor is waiting for.
@@ -1375,15 +1418,14 @@ func (m *prefetchMonitor) Add(i int) {
 	m.wg.Add(i)
 }
 
-func (m *prefetchMonitor) finalize(err error) {
-	m.once.Do(func() {
-		m.err = err
-	})
-}
-
 // Error is called when an error occurs during prefetching.
 func (m *prefetchMonitor) Error(err error) {
-	m.finalize(err)
+	m.mu.Lock()
+	if isErrNoSpace(err) {
+		m.drain = true
+	}
+	m.err = err
+	m.mu.Unlock()
 }
 
 // Done decrements the number of prefetch operations the monitor is waiting for.

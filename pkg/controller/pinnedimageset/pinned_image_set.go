@@ -191,7 +191,7 @@ func triggerPinnedImageSetChange(old, new *mcfgv1alpha1.PinnedImageSet) bool {
 	if old.DeletionTimestamp != new.DeletionTimestamp {
 		return true
 	}
-	if !reflect.DeepEqual(old.Spec, new.Spec) {
+	if !reflect.DeepEqual(old, new) {
 		return true
 	}
 	return false
