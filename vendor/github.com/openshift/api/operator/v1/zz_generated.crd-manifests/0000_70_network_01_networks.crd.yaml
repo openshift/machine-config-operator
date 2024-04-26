@@ -278,23 +278,15 @@ spec:
                                 maxLength: 18
                                 type: string
                                 x-kubernetes-validations:
-                                - message: CIDR format must contain exactly one '/'
-                                  rule: self.indexOf('/') == self.lastIndexOf('/')
+                                - message: Subnet must be in valid IPV4 CIDR format
+                                  rule: isCIDR(self) && cidr(self).ip().family() ==
+                                    4
                                 - message: subnet must be in the range /0 to /29 inclusive
-                                  rule: '[int(self.split(''/'')[1])].all(x, x <= 29
-                                    && x >= 0)'
-                                - message: a valid IPv4 address must contain 4 octets
-                                  rule: self.split('/')[0].split('.').size() == 4
-                                - message: first IP address octet must not contain
-                                    leading zeros, must be greater than 0 and less
-                                    or equal to 255
-                                  rule: '[self.findAll(''[0-9]+'')[0]].all(x, x !=
-                                    ''0'' && int(x) <= 255 && !x.startsWith(''0''))'
-                                - message: IP address octets must not contain leading
-                                    zeros, and must be less or equal to 255
-                                  rule: '[self.findAll(''[0-9]+'')[1], self.findAll(''[0-9]+'')[2],
-                                    self.findAll(''[0-9]+'')[3]].all(x, int(x) <=
-                                    255 && (x == ''0'' || !x.startsWith(''0'')))'
+                                  rule: isCIDR(self) && cidr(self).prefixLength()
+                                    <= 29
+                                - message: first IP address octet must not be 0
+                                  rule: isCIDR(self) && int(self.split('.')[0]) >
+                                    0
                             type: object
                           ipv6:
                             description: ipv6 allows users to configure IP settings
@@ -320,80 +312,13 @@ spec:
                                   Note that IPV6 dual addresses are not permitted
                                 type: string
                                 x-kubernetes-validations:
-                                - message: CIDR format must contain exactly one '/'
-                                  rule: self.indexOf('/') == self.lastIndexOf('/')
+                                - message: Subnet must be in valid IPV6 CIDR format
+                                  rule: isCIDR(self) && cidr(self).ip().family() ==
+                                    6
                                 - message: subnet must be in the range /0 to /125
                                     inclusive
-                                  rule: self.split('/').size() == 2 && [int(self.split('/')[1])].all(x,
-                                    x <= 125 && x >= 0)
-                                - message: IPv6 addresses must contain at most one
-                                    '::' and may only be shortened once
-                                  rule: self.indexOf('::') == self.lastIndexOf('::')
-                                - message: a valid IPv6 address must contain 8 segments
-                                    unless elided (::), in which case it must contain
-                                    at most 6 non-empty segments
-                                  rule: 'self.contains(''::'') ? self.split(''/'')[0].split('':'').size()
-                                    <= 8 : self.split(''/'')[0].split('':'').size()
-                                    == 8'
-                                - message: each segment of an IPv6 address must be
-                                    a hexadecimal number between 0 and FFFF, failed
-                                    on segment 1
-                                  rule: 'self.split(''/'')[0].split('':'').size()
-                                    >=1 ? [self.split(''/'')[0].split('':'', 8)[0]].all(x,
-                                    x == '''' || (x.matches(''^[0-9A-Fa-f]{1,4}$''))
-                                    && size(x)<5 ) : true'
-                                - message: each segment of an IPv6 address must be
-                                    a hexadecimal number between 0 and FFFF, failed
-                                    on segment 2
-                                  rule: 'self.split(''/'')[0].split('':'').size()
-                                    >=2 ? [self.split(''/'')[0].split('':'', 8)[1]].all(x,
-                                    x == '''' || (x.matches(''^[0-9A-Fa-f]{1,4}$''))
-                                    && size(x)<5 ) : true'
-                                - message: each segment of an IPv6 address must be
-                                    a hexadecimal number between 0 and FFFF, failed
-                                    on segment 3
-                                  rule: 'self.split(''/'')[0].split('':'').size()
-                                    >=3 ? [self.split(''/'')[0].split('':'', 8)[2]].all(x,
-                                    x == '''' || (x.matches(''^[0-9A-Fa-f]{1,4}$''))
-                                    && size(x)<5 ) : true'
-                                - message: each segment of an IPv6 address must be
-                                    a hexadecimal number between 0 and FFFF, failed
-                                    on segment 4
-                                  rule: 'self.split(''/'')[0].split('':'').size()
-                                    >=4 ? [self.split(''/'')[0].split('':'', 8)[3]].all(x,
-                                    x == '''' || (x.matches(''^[0-9A-Fa-f]{1,4}$''))
-                                    && size(x)<5 ) : true'
-                                - message: each segment of an IPv6 address must be
-                                    a hexadecimal number between 0 and FFFF, failed
-                                    on segment 5
-                                  rule: 'self.split(''/'')[0].split('':'').size()
-                                    >=5 ? [self.split(''/'')[0].split('':'', 8)[4]].all(x,
-                                    x == '''' || (x.matches(''^[0-9A-Fa-f]{1,4}$''))
-                                    && size(x)<5 ) : true'
-                                - message: each segment of an IPv6 address must be
-                                    a hexadecimal number between 0 and FFFF, failed
-                                    on segment 6
-                                  rule: 'self.split(''/'')[0].split('':'').size()
-                                    >=6 ? [self.split(''/'')[0].split('':'', 8)[5]].all(x,
-                                    x == '''' || (x.matches(''^[0-9A-Fa-f]{1,4}$''))
-                                    && size(x)<5 ) : true'
-                                - message: each segment of an IPv6 address must be
-                                    a hexadecimal number between 0 and FFFF, failed
-                                    on segment 7
-                                  rule: 'self.split(''/'')[0].split('':'').size()
-                                    >=7 ? [self.split(''/'')[0].split('':'', 8)[6]].all(x,
-                                    x == '''' || (x.matches(''^[0-9A-Fa-f]{1,4}$''))
-                                    && size(x)<5 ) : true'
-                                - message: each segment of an IPv6 address must be
-                                    a hexadecimal number between 0 and FFFF, failed
-                                    on segment 8
-                                  rule: 'self.split(''/'')[0].split('':'').size()
-                                    >=8 ? [self.split(''/'')[0].split('':'', 8)[7]].all(x,
-                                    x == '''' || (x.matches(''^[0-9A-Fa-f]{1,4}$''))
-                                    && size(x)<5 ) : true'
-                                - message: IPv6 dual addresses are not permitted,
-                                    value should not contain `.` characters
-                                  rule: '!self.contains(''.'')'
+                                  rule: isCIDR(self) && cidr(self).prefixLength()
+                                    <= 125
                             type: object
                           routingViaHost:
                             default: false
@@ -493,14 +418,10 @@ spec:
                             x-kubernetes-validations:
                             - message: Subnet must be in valid IPV4 CIDR format
                               rule: isCIDR(self) && cidr(self).ip().family() == 4
-                            - message: first IP address octet must not contain leading
-                                zeros, must be greater than 0 and less or equal to
-                                255
-                              rule: '[self.findAll(''[0-9]+'')[0]].all(x, x != ''0''
-                                && int(x) <= 255 && !x.startsWith(''0''))'
                             - message: subnet must be in the range /0 to /30 inclusive
-                              rule: '[int(self.split(''/'')[1])].all(x, x <= 30 &&
-                                x >= 0)'
+                              rule: isCIDR(self) && cidr(self).prefixLength() <= 30
+                            - message: first IP address octet must not be 0
+                              rule: isCIDR(self) && int(self.split('.')[0]) > 0
                           internalTransitSwitchSubnet:
                             description: internalTransitSwitchSubnet is a v4 subnet
                               in IPV4 CIDR format used internally by OVN-Kubernetes
@@ -521,14 +442,10 @@ spec:
                             x-kubernetes-validations:
                             - message: Subnet must be in valid IPV4 CIDR format
                               rule: isCIDR(self) && cidr(self).ip().family() == 4
-                            - message: first IP address octet must not contain leading
-                                zeros, must be greater than 0 and less or equal to
-                                255
-                              rule: '[self.findAll(''[0-9]+'')[0]].all(x, x != ''0''
-                                && int(x) <= 255 && !x.startsWith(''0''))'
                             - message: subnet must be in the range /0 to /30 inclusive
-                              rule: '[int(self.split(''/'')[1])].all(x, x <= 30 &&
-                                x >= 0)'
+                              rule: isCIDR(self) && cidr(self).prefixLength() <= 30
+                            - message: first IP address octet must not be 0
+                              rule: isCIDR(self) && int(self.split('.')[0]) > 0
                         type: object
                       ipv6:
                         description: ipv6 allows users to configure IP settings for
@@ -553,17 +470,7 @@ spec:
                             - message: Subnet must be in valid IPV6 CIDR format
                               rule: isCIDR(self) && cidr(self).ip().family() == 6
                             - message: subnet must be in the range /0 to /125 inclusive
-                              rule: self.split('/').size() == 2 && [int(self.split('/')[1])].all(x,
-                                x <= 125 && x >= 0)
-                            - message: a valid IPv6 address must contain 8 segments
-                                unless elided (::), in which case it must contain
-                                at most 6 non-empty segments
-                              rule: 'self.contains(''::'') ? self.split(''/'')[0].split('':'').size()
-                                <= 8 : self.split(''/'')[0].split('':'').size() ==
-                                8'
-                            - message: IPv6 dual addresses are not permitted, value
-                                should not contain `.` characters
-                              rule: '!self.contains(''.'')'
+                              rule: isCIDR(self) && cidr(self).prefixLength() <= 125
                           internalTransitSwitchSubnet:
                             description: internalTransitSwitchSubnet is a v4 subnet
                               in IPV4 CIDR format used internally by OVN-Kubernetes
@@ -586,17 +493,7 @@ spec:
                             - message: Subnet must be in valid IPV6 CIDR format
                               rule: isCIDR(self) && cidr(self).ip().family() == 6
                             - message: subnet must be in the range /0 to /125 inclusive
-                              rule: self.split('/').size() == 2 && [int(self.split('/')[1])].all(x,
-                                x <= 125 && x >= 0)
-                            - message: a valid IPv6 address must contain 8 segments
-                                unless elided (::), in which case it must contain
-                                at most 6 non-empty segments
-                              rule: 'self.contains(''::'') ? self.split(''/'')[0].split('':'').size()
-                                <= 8 : self.split(''/'')[0].split('':'').size() ==
-                                8'
-                            - message: IPv6 dual addresses are not permitted, value
-                                should not contain `.` characters
-                              rule: '!self.contains(''.'')'
+                              rule: isCIDR(self) && cidr(self).prefixLength() <= 125
                         type: object
                       mtu:
                         description: mtu is the MTU to use for the tunnel interface.
@@ -891,7 +788,7 @@ spec:
                 - message: networkType migration in mode other than 'Live' may not
                     be configured at the same time as mtu migration
                   rule: '!has(self.mtu) || !has(self.networkType) || self.networkType
-                    == '''' || has(self.mode) && self.mode == ''Live'''
+                    == "" || has(self.mode) && self.mode == ''Live'''
               observedConfig:
                 description: observedConfig holds a sparse config that controller
                   has observed from the cluster state.  It exists in spec because
