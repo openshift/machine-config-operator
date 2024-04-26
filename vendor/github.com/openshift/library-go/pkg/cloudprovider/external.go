@@ -4,22 +4,23 @@ import (
 	"fmt"
 
 	configv1 "github.com/openshift/api/config/v1"
+	features "github.com/openshift/api/features"
 )
 
 var (
 	// ExternalCloudProviderFeature is the name of the external cloud provider feature gate.
 	// This is used to flag to operators that the cluster should be using the external cloud-controller-manager
 	// rather than the in-tree cloud controller loops.
-	ExternalCloudProviderFeature = configv1.FeatureGateExternalCloudProvider
+	ExternalCloudProviderFeature = features.FeatureGateExternalCloudProvider
 
 	// ExternalCloudProviderFeatureAzure is the name of the external cloud provider feature gate for Azure.
-	ExternalCloudProviderFeatureAzure = configv1.FeatureGateExternalCloudProviderAzure
+	ExternalCloudProviderFeatureAzure = features.FeatureGateExternalCloudProviderAzure
 
 	// ExternalCloudProviderFeatureGCP is the name of the external cloud provider feature gate for GCP.
-	ExternalCloudProviderFeatureGCP = configv1.FeatureGateExternalCloudProviderGCP
+	ExternalCloudProviderFeatureGCP = features.FeatureGateExternalCloudProviderGCP
 
 	// ExternalCloudProviderFeatureExternal is the name of the external cloud provider feature gate for External platform.
-	ExternalCloudProviderFeatureExternal = configv1.FeatureGateExternalCloudProviderExternal
+	ExternalCloudProviderFeatureExternal = features.FeatureGateExternalCloudProviderExternal
 )
 
 // IsCloudProviderExternal is used to check whether external cloud provider settings should be used in a component.
