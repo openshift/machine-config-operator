@@ -1353,27 +1353,9 @@ func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error, errCh chan er
 		select {
 		case <-stopCh:
 			if dn.deferKubeletRestart {
-				// we also want to do this here just in case we miss a reboot
-				dn.deferKubeletRestart = false
-				err := os.Remove("/var/lib/kubelet/kubeconfig")
+				err := dn.kubeletRebootstrap(context.TODO())
 				if err != nil {
-					return fmt.Errorf("could not remove kubelet's kubeconfig file: %v", err)
-				}
-				if err := runCmdSync("systemctl", "restart", "kubelet"); err != nil {
 					return err
-				}
-				if err := wait.PollUntilContextTimeout(context.TODO(), 10*time.Second, 2*time.Minute, false, func(ctx context.Context) (bool, error) {
-					_, err := os.ReadFile("/var/lib/kubelet/kubeconfig")
-					if err != nil && os.IsNotExist(err) {
-						klog.Warningf("Failed to get kubeconfig file: %v", err)
-						return false, nil
-					} else if err != nil {
-						return false, fmt.Errorf("unexpected error reading kubeconfig file, %v", err)
-					}
-
-					return true, nil
-				}); err != nil {
-					return fmt.Errorf("something went wrong while waiting for kubeconfig file to generate: %v", err)
 				}
 			}
 			return nil
@@ -1383,37 +1365,43 @@ func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error, errCh chan er
 			// This channel gets errors from auxiliary goroutines like loginmonitor and kubehealth
 			klog.Warningf("Got an error from auxiliary tools: %v", err)
 		case err := <-errCh:
-			klog.Errorf("Fatal error from auxiliary tools: %v", err)
+			klog.Errorf("Got an error from auxiliary tools: %v", err)
 			// we do not want to fail on any .HandleError call. Need to only fail when it is a watcher
 			// we might want to remove this last one. We will see.
-			if strings.Contains(strings.ToLower(err.Error()), "failed to watch") || strings.Contains(strings.ToLower(err.Error()), "unknown authority") || strings.Contains(strings.ToLower(err.Error()), "error on the server") {
-				if dn.deferKubeletRestart {
-					dn.deferKubeletRestart = false
-					err = os.Remove("/var/lib/kubelet/kubeconfig")
-					if err != nil {
-						return fmt.Errorf("could not remove kubelet's kubeconfig file: %v", err)
-					}
-					if err := runCmdSync("systemctl", "restart", "kubelet"); err != nil {
-						return err
-					}
-					if err := wait.PollUntilContextTimeout(context.TODO(), 10*time.Second, 2*time.Minute, false, func(ctx context.Context) (bool, error) {
-						_, err := os.ReadFile("/var/lib/kubelet/kubeconfig")
-						if err != nil && os.IsNotExist(err) {
-							klog.Warningf("Failed to get kubeconfig file: %v", err)
-							return false, nil
-						} else if err != nil {
-							return false, fmt.Errorf("unexpected error reading kubeconfig file, %v", err)
-						}
-
-						return true, nil
-					}); err != nil {
-						return fmt.Errorf("something went wrong while waiting for kubeconfig file to generate: %v", err)
-					}
+			if dn.deferKubeletRestart && (strings.Contains(strings.ToLower(err.Error()), "failed to watch") || strings.Contains(strings.ToLower(err.Error()), "unknown authority") || strings.Contains(strings.ToLower(err.Error()), "error on the server")) {
+				err := dn.kubeletRebootstrap(context.TODO())
+				if err != nil {
+					return err
 				}
 				return ErrAuxiliary
 			}
 		}
 	}
+}
+
+func (dn *Daemon) kubeletRebootstrap(ctx context.Context) error {
+	dn.deferKubeletRestart = false
+	if err := os.Remove("/var/lib/kubelet/kubeconfig"); err != nil {
+		return fmt.Errorf("could not remove kubelet's kubeconfig file: %v", err)
+	}
+	if err := runCmdSync("systemctl", "restart", "kubelet"); err != nil {
+		return err
+	}
+	if err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 2*time.Minute, false, func(ctx context.Context) (bool, error) {
+		_, err := os.ReadFile("/var/lib/kubelet/kubeconfig")
+		if err != nil && os.IsNotExist(err) {
+			klog.Warningf("Failed to get kubeconfig file: %v", err)
+			return false, nil
+		} else if err != nil {
+			return false, fmt.Errorf("unexpected error reading kubeconfig file, %v", err)
+		}
+
+		return true, nil
+	}); err != nil {
+		return fmt.Errorf("something went wrong while waiting for kubeconfig file to generate: %v", err)
+	}
+
+	return nil
 }
 
 // Called whenever the on-disk config has drifted from the current machineconfig.
