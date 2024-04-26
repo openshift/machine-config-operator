@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/machine-config-operator/cmd/common"
 	"github.com/openshift/machine-config-operator/internal/clients"
@@ -16,6 +17,7 @@ import (
 	kubeletconfig "github.com/openshift/machine-config-operator/pkg/controller/kubelet-config"
 	machinesetbootimage "github.com/openshift/machine-config-operator/pkg/controller/machine-set-boot-image"
 	"github.com/openshift/machine-config-operator/pkg/controller/node"
+	"github.com/openshift/machine-config-operator/pkg/controller/pinnedimageset"
 	"github.com/openshift/machine-config-operator/pkg/controller/render"
 	"github.com/openshift/machine-config-operator/pkg/controller/template"
 	"github.com/openshift/machine-config-operator/pkg/version"
@@ -103,6 +105,19 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 
 			enabled, disabled := getEnabledDisabledFeatures(features)
 			klog.Infof("FeatureGates initialized: enabled=%v  disabled=%v", enabled, disabled)
+			if features.Enabled(configv1.FeatureGatePinnedImages) && features.Enabled(configv1.FeatureGateMachineConfigNodes) {
+				pinnedImageSet := pinnedimageset.New(
+					ctrlctx.InformerFactory.Machineconfiguration().V1alpha1().PinnedImageSets(),
+					ctrlctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
+					ctrlctx.ClientBuilder.KubeClientOrDie("pinned-image-set-controller"),
+					ctrlctx.ClientBuilder.MachineConfigClientOrDie("pinned-image-set-controller"),
+				)
+
+				go pinnedImageSet.Run(2, ctrlctx.Stop)
+				// start the informers again to enable feature gated types.
+				// see comments in SharedInformerFactory interface.
+				ctrlctx.InformerFactory.Start(ctrlctx.Stop)
+			}
 		case <-time.After(1 * time.Minute):
 			klog.Errorf("timed out waiting for FeatureGate detection")
 			os.Exit(1)
@@ -113,7 +128,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		}
 		go draincontroller.Run(5, ctrlctx.Stop)
 
-		// wait here in this function until the context gets cancelled (which tells us whe were being shut down)
+		// wait here in this function until the context gets cancelled (which tells us when we are being shut down)
 		<-ctx.Done()
 	}
 

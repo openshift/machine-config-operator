@@ -27,10 +27,13 @@ import (
 
 const (
 	OpenshiftConfigNamespace string = "openshift-config"
-
-	// TODO: Figure out how to obtain this value programmatically so we don't
-	// have to remember to increment it.
-	k8sVersion string = "1.26.1"
+	//
+	// Although the MCO has been bumped to 1.29.2, openshift-kubebuilder-tools
+	// does not have an archive for that kube version yet. For now, hardcode to match it.
+	// More info here:
+	// https://github.com/openshift/api/pull/1774
+	// https://github.com/openshift/api/blob/master/tools/publish-kubebuilder-tools/README.md#using-the-archives
+	k8sVersion string = "1.29.1"
 )
 
 // This is needed because both setup-envtest and the kubebuilder tools assume
@@ -82,7 +85,11 @@ func setupEnvTest(t *testing.T) (string, error) {
 		os.Setenv("HOME", homeDir)
 	}
 
-	cmd := exec.Command(setupEnvTestBinPath, "use", k8sVersion, "-p", "path")
+	// Use the remote-bucket flag to keep up with openshift/api's divergence
+	// More info:
+	// https://github.com/openshift/api/pull/1774,
+	// https://github.com/openshift/api/blob/master/tools/publish-kubebuilder-tools/README.md#using-the-archives
+	cmd := exec.Command(setupEnvTestBinPath, "use", k8sVersion, "-p", "path", "--remote-bucket", "openshift-kubebuilder-tools")
 	t.Log("Setting up EnvTest: $", cmd)
 
 	// We want to consume the path of where setup-envtest installed the

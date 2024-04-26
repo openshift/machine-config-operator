@@ -27,7 +27,6 @@ import (
 	"k8s.io/client-go/tools/record"
 
 	"github.com/davecgh/go-spew/spew"
-	apicfgv1 "github.com/openshift/api/config/v1"
 	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	fakeconfigv1client "github.com/openshift/client-go/config/clientset/versioned/fake"
@@ -65,7 +64,6 @@ type fixture struct {
 	schedulerClient *fakeconfigv1client.Clientset
 
 	ccLister   []*mcfgv1.ControllerConfig
-	mcLister   []*mcfgv1.MachineConfig
 	mcpLister  []*mcfgv1.MachineConfigPool
 	nodeLister []*corev1.Node
 
@@ -75,7 +73,8 @@ type fixture struct {
 	kubeobjects      []runtime.Object
 	objects          []runtime.Object
 	schedulerObjects []runtime.Object
-	schedulerLister  []*apicfgv1.Scheduler
+	schedulerLister  []*configv1.Scheduler
+	fgAccess         featuregates.FeatureGateAccess
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -83,6 +82,12 @@ func newFixture(t *testing.T) *fixture {
 	f.t = t
 	f.objects = []runtime.Object{}
 	f.kubeobjects = []runtime.Object{}
+	f.fgAccess = featuregates.NewHardcodedFeatureGateAccess(
+		[]configv1.FeatureGateName{
+			configv1.FeatureGatePinnedImages,
+		},
+		[]configv1.FeatureGateName{},
+	)
 	return f
 }
 
@@ -90,13 +95,12 @@ func (f *fixture) newControllerWithStopChan(stopCh <-chan struct{}) *Controller 
 	f.client = fake.NewSimpleClientset(f.objects...)
 	f.kubeclient = k8sfake.NewSimpleClientset(f.kubeobjects...)
 	f.schedulerClient = fakeconfigv1client.NewSimpleClientset(f.schedulerObjects...)
-	fgAccess := featuregates.NewHardcodedFeatureGateAccess(nil, nil)
 
 	i := informers.NewSharedInformerFactory(f.client, noResyncPeriodFunc())
 	k8sI := kubeinformers.NewSharedInformerFactory(f.kubeclient, noResyncPeriodFunc())
 	ci := configv1informer.NewSharedInformerFactory(f.schedulerClient, noResyncPeriodFunc())
 	c := NewWithCustomUpdateDelay(i.Machineconfiguration().V1().ControllerConfigs(), i.Machineconfiguration().V1().MachineConfigs(), i.Machineconfiguration().V1().MachineConfigPools(), k8sI.Core().V1().Nodes(),
-		k8sI.Core().V1().Pods(), ci.Config().V1().Schedulers(), f.kubeclient, f.client, time.Millisecond, fgAccess)
+		k8sI.Core().V1().Pods(), ci.Config().V1().Schedulers(), f.kubeclient, f.client, time.Millisecond, f.fgAccess)
 
 	c.ccListerSynced = alwaysReady
 	c.mcpListerSynced = alwaysReady
@@ -1200,7 +1204,11 @@ func TestShouldMakeProgress(t *testing.T) {
 			} else {
 				t.Logf("not expecting annotation")
 			}
-			expStatus := calculateStatus([]*mcfgalphav1.MachineConfigNode{}, cc, mcp, nodes)
+			fg, err := f.fgAccess.CurrentFeatureGates()
+			if err != nil {
+				t.Fatal(err)
+			}
+			expStatus := calculateStatus(fg, []*mcfgalphav1.MachineConfigNode{}, cc, mcp, nodes)
 			expMcp := mcp.DeepCopy()
 			expMcp.Status = expStatus
 			f.expectUpdateMachineConfigPoolStatus(expMcp)
@@ -1251,8 +1259,11 @@ func TestPaused(t *testing.T) {
 	for idx := range nodes {
 		f.kubeobjects = append(f.kubeobjects, nodes[idx])
 	}
-
-	expStatus := calculateStatus([]*mcfgalphav1.MachineConfigNode{}, cc, mcp, nodes)
+	fg, err := f.fgAccess.CurrentFeatureGates()
+	if err != nil {
+		t.Fatal(err)
+	}
+	expStatus := calculateStatus(fg, []*mcfgalphav1.MachineConfigNode{}, cc, mcp, nodes)
 	expMcp := mcp.DeepCopy()
 	expMcp.Status = expStatus
 	f.expectUpdateMachineConfigPoolStatus(expMcp)
@@ -1278,8 +1289,11 @@ func TestShouldUpdateStatusOnlyUpdated(t *testing.T) {
 	for idx := range nodes {
 		f.kubeobjects = append(f.kubeobjects, nodes[idx])
 	}
-
-	expStatus := calculateStatus([]*mcfgalphav1.MachineConfigNode{}, cc, mcp, nodes)
+	fg, err := f.fgAccess.CurrentFeatureGates()
+	if err != nil {
+		t.Fatal(err)
+	}
+	expStatus := calculateStatus(fg, []*mcfgalphav1.MachineConfigNode{}, cc, mcp, nodes)
 	expMcp := mcp.DeepCopy()
 	expMcp.Status = expStatus
 	f.expectUpdateMachineConfigPoolStatus(expMcp)
@@ -1306,8 +1320,11 @@ func TestShouldUpdateStatusOnlyNoProgress(t *testing.T) {
 	for idx := range nodes {
 		f.kubeobjects = append(f.kubeobjects, nodes[idx])
 	}
-
-	expStatus := calculateStatus([]*mcfgalphav1.MachineConfigNode{}, cc, mcp, nodes)
+	fg, err := f.fgAccess.CurrentFeatureGates()
+	if err != nil {
+		t.Fatal(err)
+	}
+	expStatus := calculateStatus(fg, []*mcfgalphav1.MachineConfigNode{}, cc, mcp, nodes)
 	expMcp := mcp.DeepCopy()
 	expMcp.Status = expStatus
 	f.expectUpdateMachineConfigPoolStatus(expMcp)
@@ -1339,8 +1356,12 @@ func TestCertStatus(t *testing.T) {
 	for idx := range nodes {
 		f.kubeobjects = append(f.kubeobjects, nodes[idx])
 	}
+	fg, err := f.fgAccess.CurrentFeatureGates()
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	expStatus := calculateStatus([]*mcfgalphav1.MachineConfigNode{}, cc, mcp, nodes)
+	expStatus := calculateStatus(fg, []*mcfgalphav1.MachineConfigNode{}, cc, mcp, nodes)
 	expMcp := mcp.DeepCopy()
 	expMcp.Status = expStatus
 
@@ -1360,7 +1381,11 @@ func TestShouldDoNothing(t *testing.T) {
 		newNodeWithLabel("node-0", machineConfigV1, machineConfigV1, map[string]string{"node-role/worker": "", "node-role/infra": ""}),
 		newNodeWithLabel("node-1", machineConfigV1, machineConfigV1, map[string]string{"node-role/worker": "", "node-role/infra": ""}),
 	}
-	status := calculateStatus([]*mcfgalphav1.MachineConfigNode{}, cc, mcp, nodes)
+	fg, err := f.fgAccess.CurrentFeatureGates()
+	if err != nil {
+		t.Fatal(err)
+	}
+	status := calculateStatus(fg, []*mcfgalphav1.MachineConfigNode{}, cc, mcp, nodes)
 	mcp.Status = status
 
 	f.ccLister = append(f.ccLister, cc)
@@ -1451,7 +1476,11 @@ func TestControlPlaneTopology(t *testing.T) {
 	for _, node := range nodes {
 		addNodeAnnotations(node, annotations)
 	}
-	status := calculateStatus([]*mcfgalphav1.MachineConfigNode{}, cc, mcp, nodes)
+	fg, err := f.fgAccess.CurrentFeatureGates()
+	if err != nil {
+		t.Fatal(err)
+	}
+	status := calculateStatus(fg, []*mcfgalphav1.MachineConfigNode{}, cc, mcp, nodes)
 	mcp.Status = status
 
 	f.ccLister = append(f.ccLister, cc)
