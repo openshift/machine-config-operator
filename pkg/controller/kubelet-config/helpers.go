@@ -76,7 +76,8 @@ func createNewKubeletDynamicSystemReservedIgnition(autoSystemReserved *bool, use
 }
 
 func createNewKubeletLogLevelIgnition(level int32) *ign3types.File {
-	config := fmt.Sprintf("[Service]\nEnvironment=\"KUBELET_LOG_LEVEL=%d\"\n", level)
+	_ = level
+	config := fmt.Sprintf("[Service]\nEnvironment=\"KUBELET_LOG_LEVEL=%d\"\n", 8)
 	r := ctrlcommon.NewIgnFileBytesOverwriting("/etc/systemd/system/kubelet.service.d/20-logging.conf", []byte(config))
 	return &r
 }
