@@ -97,6 +97,9 @@ const (
 	// changes to registries.d will cause a crio reload
 	SigstoreRegistriesConfigDir = "/etc/containers/registries.d"
 
+	// Changes to this directory should not trigger reboots because they are firstboot-only
+	OpenShiftNMStateConfigDir = "/etc/nmstate/openshift"
+
 	// SSH Keys for user "core" will only be written at /home/core/.ssh
 	CoreUserSSHPath = "/home/" + CoreUserName + "/.ssh"
 
