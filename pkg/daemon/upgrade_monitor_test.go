@@ -7,6 +7,7 @@ import (
 	apicfgv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/machine-config-operator/pkg/upgrademonitor"
 
+	features "github.com/openshift/api/features"
 	"github.com/openshift/api/machineconfiguration/v1alpha1"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
 	informers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
@@ -109,13 +110,13 @@ func (tc upgradeMonitorTestCase) run(t *testing.T) {
 	f.oclient = mcopfake.NewSimpleClientset(f.objects...)
 	fgAccess := featuregates.NewHardcodedFeatureGateAccess(
 		[]apicfgv1.FeatureGateName{
-			apicfgv1.FeatureGateMachineConfigNodes,
+			features.FeatureGateMachineConfigNodes,
 		},
 		[]apicfgv1.FeatureGateName{
-			apicfgv1.FeatureGateExternalCloudProvider,
-			apicfgv1.FeatureGateExternalCloudProviderAzure,
-			apicfgv1.FeatureGateExternalCloudProviderGCP,
-			apicfgv1.FeatureGateExternalCloudProviderExternal,
+			features.FeatureGateExternalCloudProvider,
+			features.FeatureGateExternalCloudProviderAzure,
+			features.FeatureGateExternalCloudProviderGCP,
+			features.FeatureGateExternalCloudProviderExternal,
 		},
 	)
 

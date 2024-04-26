@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	features "github.com/openshift/api/features"
 	machineconfigurationalphav1 "github.com/openshift/client-go/machineconfiguration/applyconfigurations/machineconfiguration/v1alpha1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
@@ -11,7 +12,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/utils/ptr"
 
-	v1 "github.com/openshift/api/config/v1"
 	mcfgalphav1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog/v2"
@@ -75,7 +75,7 @@ func generateAndApplyMachineConfigNodes(
 		klog.Errorf("Could not get fg: %v", err)
 		return err
 	}
-	if fg == nil || !fg.Enabled(v1.FeatureGateMachineConfigNodes) {
+	if fg == nil || !fg.Enabled(features.FeatureGateMachineConfigNodes) {
 		return nil
 	}
 
@@ -303,7 +303,7 @@ func GenerateAndApplyMachineConfigNodeSpec(fgAccessor featuregates.FeatureGateAc
 		klog.Errorf("Could not get fg: %v", err)
 		return err
 	}
-	if fg == nil || !fg.Enabled(v1.FeatureGateMachineConfigNodes) {
+	if fg == nil || !fg.Enabled(features.FeatureGateMachineConfigNodes) {
 		klog.Infof("MCN Featuregate is not enabled. Please enable the TechPreviewNoUpgrade featureset to use MachineConfigNodes")
 		return nil
 	}

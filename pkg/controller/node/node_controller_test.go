@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	features "github.com/openshift/api/features"
 	mcfgalphav1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 
@@ -84,7 +85,7 @@ func newFixture(t *testing.T) *fixture {
 	f.kubeobjects = []runtime.Object{}
 	f.fgAccess = featuregates.NewHardcodedFeatureGateAccess(
 		[]configv1.FeatureGateName{
-			configv1.FeatureGatePinnedImages,
+			features.FeatureGatePinnedImages,
 		},
 		[]configv1.FeatureGateName{},
 	)

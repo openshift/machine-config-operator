@@ -49,6 +49,7 @@ import (
 	"github.com/coreos/stream-metadata-go/stream"
 
 	osconfigv1 "github.com/openshift/api/config/v1"
+	features "github.com/openshift/api/features"
 )
 
 // Controller defines the machine-set-boot-image controller.
@@ -155,10 +156,10 @@ func New(
 			prevfeatureEnabled = false
 		} else {
 			prevfeatureEnabled = featuregates.NewFeatureGate(featureChange.Previous.Enabled, featureChange.Previous.Disabled).
-				Enabled(osconfigv1.FeatureGateManagedBootImages)
+				Enabled(features.FeatureGateManagedBootImages)
 		}
 		ctrl.featureEnabled = featuregates.NewFeatureGate(featureChange.New.Enabled, featureChange.New.Disabled).
-			Enabled(osconfigv1.FeatureGateManagedBootImages)
+			Enabled(features.FeatureGateManagedBootImages)
 		if !prevfeatureEnabled && ctrl.featureEnabled {
 			klog.Info("Trigger a sync as this feature was turned on")
 			ctrl.enqueueMAPIMachineSets()

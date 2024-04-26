@@ -11,7 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/client-go/tools/clientcmd"
 
-	configv1 "github.com/openshift/api/config/v1"
+	features "github.com/openshift/api/features"
 	"github.com/openshift/machine-config-operator/internal/clients"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon"
@@ -212,8 +212,8 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			klog.Fatalf("Could not get FG: %v", err)
 		} else {
 			klog.Infof("FeatureGates initialized: knownFeatureGates=%v", featureGates.KnownFeatures())
-			if featureGates.Enabled(configv1.FeatureGatePinnedImages) && featureGates.Enabled(configv1.FeatureGateMachineConfigNodes) {
-				klog.Infof("Feature enabled: %s", configv1.FeatureGatePinnedImages)
+			if featureGates.Enabled(features.FeatureGatePinnedImages) && featureGates.Enabled(features.FeatureGateMachineConfigNodes) {
+				klog.Infof("Feature enabled: %s", features.FeatureGatePinnedImages)
 				criClient, err := cri.NewClient(ctx, constants.DefaultCRIOSocketPath)
 				if err != nil {
 					klog.Fatalf("Failed to initialize CRI client: %v", err)
