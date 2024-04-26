@@ -634,6 +634,10 @@ func calculatePostConfigChangeNodeDisruptionActionFromMCDiffs(diffSSH bool, diff
 				}})
 				continue
 			}
+			if filepath.Dir(diffPath) == constants.OpenShiftNMStateConfigDir {
+				klog.Infof("Exception Action: diffPath %s is a subdir of %s, skipping reboot", diffPath, constants.OpenShiftNMStateConfigDir)
+				continue
+			}
 			// If this file path has no policy defined, default to reboot
 			klog.V(4).Infof("no policy found for diff path %s", diffPath)
 			return []opv1.NodeDisruptionPolicyStatusAction{{
