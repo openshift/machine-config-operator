@@ -273,7 +273,7 @@ func (p *PinnedImageSetManager) syncMachineConfigPools(ctx context.Context, pool
 		}
 		if !exists {
 			p.cache.Clear()
-			return errFailedToPullImage
+			return fmt.Errorf("%w: image removed during sync: %s", errFailedToPullImage, image)
 		}
 	}
 
@@ -497,6 +497,8 @@ func ensureCrioPinnedImagesConfigFile(path string, imageNames []string) error {
 			return fmt.Errorf("failed to remove CRI-O config file: %w", err)
 		}
 		return crioReload()
+	} else if len(imageNames) == 0 {
+		return nil
 	}
 
 	var existingCfgBytes []byte
@@ -1180,6 +1182,10 @@ func uniqueSortedImageNames(images []mcfgv1alpha1.PinnedImageRef) []string {
 
 	for _, image := range images {
 		if _, ok := seen[image.Name]; !ok {
+			trimmedName := strings.TrimSpace(image.Name)
+			if trimmedName == "" {
+				continue
+			}
 			seen[image.Name] = struct{}{}
 			unique = append(unique, image.Name)
 		}
