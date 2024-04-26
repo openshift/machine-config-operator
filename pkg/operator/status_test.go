@@ -21,6 +21,7 @@ import (
 
 	apicfgv1 "github.com/openshift/api/config/v1"
 	configv1 "github.com/openshift/api/config/v1"
+	features "github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	fakeconfigclientset "github.com/openshift/client-go/config/clientset/versioned/fake"
 	cov1helpers "github.com/openshift/library-go/pkg/config/clusteroperator/v1helpers"
@@ -193,8 +194,8 @@ func TestIsMachineConfigPoolConfigurationValid(t *testing.T) {
 
 			fgAccess := featuregates.NewHardcodedFeatureGateAccess(
 				[]apicfgv1.FeatureGateName{
-					apicfgv1.FeatureGateMachineConfigNodes,
-					apicfgv1.FeatureGatePinnedImages,
+					features.FeatureGateMachineConfigNodes,
+					features.FeatureGatePinnedImages,
 				},
 				[]apicfgv1.FeatureGateName{},
 			)
@@ -641,7 +642,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 		optr := &Operator{
 			eventRecorder: &record.FakeRecorder{},
 			fgAccessor: featuregates.NewHardcodedFeatureGateAccess(
-				[]configv1.FeatureGateName{configv1.FeatureGatePinnedImages}, []configv1.FeatureGateName{},
+				[]configv1.FeatureGateName{features.FeatureGatePinnedImages}, []configv1.FeatureGateName{},
 			),
 		}
 		optr.vStore = newVersionStore()
@@ -715,7 +716,7 @@ func TestInClusterBringUpStayOnErr(t *testing.T) {
 	optr := &Operator{
 		eventRecorder: &record.FakeRecorder{},
 		fgAccessor: featuregates.NewHardcodedFeatureGateAccess(
-			[]configv1.FeatureGateName{configv1.FeatureGatePinnedImages}, []configv1.FeatureGateName{},
+			[]configv1.FeatureGateName{features.FeatureGatePinnedImages}, []configv1.FeatureGateName{},
 		),
 	}
 	optr.vStore = newVersionStore()
@@ -780,7 +781,7 @@ func TestKubeletSkewUnSupported(t *testing.T) {
 	optr := &Operator{
 		eventRecorder: &record.FakeRecorder{},
 		fgAccessor: featuregates.NewHardcodedFeatureGateAccess(
-			[]configv1.FeatureGateName{configv1.FeatureGatePinnedImages}, []configv1.FeatureGateName{},
+			[]configv1.FeatureGateName{features.FeatureGatePinnedImages}, []configv1.FeatureGateName{},
 		),
 	}
 	optr.vStore = newVersionStore()
@@ -870,7 +871,7 @@ func TestCustomPoolKubeletSkewUnSupported(t *testing.T) {
 	optr := &Operator{
 		eventRecorder: &record.FakeRecorder{},
 		fgAccessor: featuregates.NewHardcodedFeatureGateAccess(
-			[]configv1.FeatureGateName{configv1.FeatureGatePinnedImages}, []configv1.FeatureGateName{},
+			[]configv1.FeatureGateName{features.FeatureGatePinnedImages}, []configv1.FeatureGateName{},
 		),
 	}
 	optr.vStore = newVersionStore()
@@ -960,7 +961,7 @@ func TestKubeletSkewSupported(t *testing.T) {
 	optr := &Operator{
 		eventRecorder: &record.FakeRecorder{},
 		fgAccessor: featuregates.NewHardcodedFeatureGateAccess(
-			[]configv1.FeatureGateName{configv1.FeatureGatePinnedImages}, []configv1.FeatureGateName{},
+			[]configv1.FeatureGateName{features.FeatureGatePinnedImages}, []configv1.FeatureGateName{},
 		),
 	}
 	optr.vStore = newVersionStore()

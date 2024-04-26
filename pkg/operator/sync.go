@@ -38,6 +38,7 @@ import (
 	v1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	opv1 "github.com/openshift/api/operator/v1"
 
+	features "github.com/openshift/api/features"
 	mcoac "github.com/openshift/client-go/operator/applyconfigurations/operator/v1"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
@@ -695,7 +696,7 @@ func (optr *Operator) syncMachineConfigNodes(_ *renderConfig) error {
 		klog.Errorf("Could not get fg: %v", err)
 		return err
 	}
-	if !fg.Enabled(configv1.FeatureGateMachineConfigNodes) {
+	if !fg.Enabled(features.FeatureGateMachineConfigNodes) {
 		return nil
 	}
 	nodes, err := optr.nodeLister.List(labels.Everything())
@@ -897,7 +898,7 @@ func (optr *Operator) applyManifests(config *renderConfig, paths manifestPaths) 
 		}
 
 		// Only sync validatingadmissionpolicy manifests if ValidatingAdmissionPolicy feature gate is enabled
-		if fg.Enabled(configv1.FeatureGateValidatingAdmissionPolicy) {
+		if fg.Enabled(features.FeatureGateValidatingAdmissionPolicy) {
 
 			// These new apply functions have a resource cache in case there are duplicate CRs
 			noCache := resourceapply.NewResourceCache()
@@ -1188,7 +1189,7 @@ func (optr *Operator) reconcileMachineOSBuilder(mob *appsv1.Deployment) error {
 	}
 
 	// Check if OnClusterBuild feature gate is enabled
-	if !fg.Enabled(configv1.FeatureGateOnClusterBuild) {
+	if !fg.Enabled(features.FeatureGateOnClusterBuild) {
 		return nil
 	}
 
@@ -2005,7 +2006,7 @@ func (optr *Operator) syncMachineConfiguration(_ *renderConfig) error {
 	}
 
 	// If FeatureGateNodeDisruptionPolicy feature gate is not enabled, no updates will need to be done for the MachineConfiguration object.
-	if !fg.Enabled(configv1.FeatureGateNodeDisruptionPolicy) {
+	if !fg.Enabled(features.FeatureGateNodeDisruptionPolicy) {
 		return nil
 	}
 

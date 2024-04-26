@@ -29,6 +29,7 @@ import (
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	apicfgv1 "github.com/openshift/api/config/v1"
 	apicfgv1alpha1 "github.com/openshift/api/config/v1alpha1"
+	features "github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	fakeconfigv1client "github.com/openshift/client-go/config/clientset/versioned/fake"
@@ -88,12 +89,12 @@ func newFixture(t *testing.T) *fixture {
 	f.t = t
 	f.objects = []runtime.Object{}
 	f.fgAccess = featuregates.NewHardcodedFeatureGateAccess(
-		[]apicfgv1.FeatureGateName{apicfgv1.FeatureGateSigstoreImageVerification},
+		[]apicfgv1.FeatureGateName{features.FeatureGateSigstoreImageVerification},
 		[]apicfgv1.FeatureGateName{
-			apicfgv1.FeatureGateExternalCloudProvider,
-			apicfgv1.FeatureGateExternalCloudProviderAzure,
-			apicfgv1.FeatureGateExternalCloudProviderGCP,
-			apicfgv1.FeatureGateExternalCloudProviderExternal,
+			features.FeatureGateExternalCloudProvider,
+			features.FeatureGateExternalCloudProviderAzure,
+			features.FeatureGateExternalCloudProviderGCP,
+			features.FeatureGateExternalCloudProviderExternal,
 		},
 	)
 	return f
@@ -1179,7 +1180,7 @@ func TestRunImageBootstrap(t *testing.T) {
 				// both registries.conf and policy.json as blocked
 				imgCfg := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"insecure-reg-1.io", "insecure-reg-2.io"}, BlockedRegistries: []string{"blocked-reg.io", "release-reg.io"}, ContainerRuntimeSearchRegistries: []string{"search-reg.io"}})
 				// set FeatureGateSigstoreImageVerification enabled for testing
-				fgAccess := featuregates.NewHardcodedFeatureGateAccess([]apicfgv1.FeatureGateName{apicfgv1.FeatureGateSigstoreImageVerification}, []apicfgv1.FeatureGateName{})
+				fgAccess := featuregates.NewHardcodedFeatureGateAccess([]apicfgv1.FeatureGateName{features.FeatureGateSigstoreImageVerification}, []apicfgv1.FeatureGateName{})
 
 				mcs, err := RunImageBootstrap("../../../templates", cc, pools, tc.icspRules, tc.idmsRules, tc.itmsRules, imgCfg, tc.clusterImagePolicies, fgAccess)
 				require.NoError(t, err)
