@@ -111,4 +111,14 @@ const (
 
 	// DaemonReloadCommand is used to specify reloads and restarts of the systemd manager configuration
 	DaemonReloadCommand = "daemon-reload"
+
+	// DefaultCRIOSocketPath is the default path to the CRI-O socket
+	DefaultCRIOSocketPath = "/var/run/crio/crio.sock"
+
+	// KubeletAuthFile is the path to the kubelet auth file.
+	KubeletAuthFile = "/var/lib/kubelet/config.json"
+
+	// MinFreeStorageAfterPrefetch is the minimum amount of storage
+	// available on the root filesystem after prefetching images.
+	MinFreeStorageAfterPrefetch = "16Gi"
 )

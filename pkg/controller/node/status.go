@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	configv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 
 	mcfgalphav1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	helpers "github.com/openshift/machine-config-operator/pkg/helpers"
@@ -53,7 +54,7 @@ func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
 			machineConfigStates = append(machineConfigStates, ms)
 		}
 	}
-	newStatus := calculateStatus(machineConfigStates, cc, pool, nodes)
+	newStatus := calculateStatus(fg, machineConfigStates, cc, pool, nodes)
 	if equality.Semantic.DeepEqual(pool.Status, newStatus) {
 		return nil
 	}
@@ -72,7 +73,7 @@ func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
 }
 
 //nolint:gocyclo
-func calculateStatus(mcs []*mcfgalphav1.MachineConfigNode, cconfig *mcfgv1.ControllerConfig, pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv1.MachineConfigPoolStatus {
+func calculateStatus(fg featuregates.FeatureGate, mcs []*mcfgalphav1.MachineConfigNode, cconfig *mcfgv1.ControllerConfig, pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv1.MachineConfigPoolStatus {
 	certExpirys := []mcfgv1.CertExpiry{}
 	if cconfig != nil {
 		for _, cert := range cconfig.Status.ControllerCertificates {
@@ -87,8 +88,11 @@ func calculateStatus(mcs []*mcfgalphav1.MachineConfigNode, cconfig *mcfgv1.Contr
 		}
 	}
 	machineCount := int32(len(nodes))
+	updatingPinnedImageSetMachines := int32(0)
 
 	var degradedMachines, readyMachines, updatedMachines, unavailableMachines, updatingMachines []*corev1.Node
+	degradedReasons := []string{}
+
 	// if we represent updating properly here, we will also represent updating properly in the CO
 	// so this solves the cordoning RFE and the upgradeable RFE
 	// updating == updatePrepared, updateExecuted, updatedComplete, postAction, cordoning, draining
@@ -112,11 +116,23 @@ func calculateStatus(mcs []*mcfgalphav1.MachineConfigNode, cconfig *mcfgv1.Contr
 			// not ready yet
 			break
 		}
+		if fg.Enabled(configv1.FeatureGatePinnedImages) {
+			if isPinnedImageSetNodeUpdating(state) {
+				updatingPinnedImageSetMachines++
+			}
+		}
 		for _, cond := range state.Status.Conditions {
 			if strings.Contains(cond.Message, "Error:") {
 				degradedMachines = append(degradedMachines, ourNode)
+				// populate the degradedReasons from the MachineConfigNodePinnedImageSetsDegraded condition
+				if fg.Enabled(configv1.FeatureGatePinnedImages) {
+					if mcfgalphav1.StateProgress(cond.Type) == mcfgalphav1.MachineConfigNodePinnedImageSetsDegraded && cond.Status == metav1.ConditionTrue {
+						degradedReasons = append(degradedReasons, fmt.Sprintf("Node %s is reporting: %q", ourNode.Name, cond.Message))
+					}
+				}
 				continue
 			}
+
 			if cond.Status == metav1.ConditionUnknown {
 				switch mcfgalphav1.StateProgress(cond.Type) {
 				case mcfgalphav1.MachineConfigNodeUpdatePrepared:
@@ -166,7 +182,6 @@ func calculateStatus(mcs []*mcfgalphav1.MachineConfigNode, cconfig *mcfgv1.Contr
 		degradedMachineCount = int32(len(degradedMachines))
 	}
 
-	degradedReasons := []string{}
 	for _, n := range degradedMachines {
 		reason, ok := n.Annotations[daemonconsts.MachineConfigDaemonReasonAnnotationKey]
 		if ok && reason != "" {
@@ -183,6 +198,22 @@ func calculateStatus(mcs []*mcfgalphav1.MachineConfigNode, cconfig *mcfgv1.Contr
 		DegradedMachineCount:    degradedMachineCount,
 		CertExpirys:             certExpirys,
 	}
+
+	// update synchronizer status for pinned image sets
+	if fg.Enabled(configv1.FeatureGatePinnedImages) {
+		// TODO: update counts to be more granular
+		status.PoolSynchronizersStatus = []mcfgv1.PoolSynchronizerStatus{
+			{
+				PoolSynchronizerType:    mcfgv1.PinnedImageSets,
+				MachineCount:            int64(machineCount),
+				UpdatedMachineCount:     int64(machineCount - updatingPinnedImageSetMachines),
+				ReadyMachineCount:       int64(readyMachineCount),
+				UnavailableMachineCount: int64(unavailableMachineCount),
+				AvailableMachineCount:   int64(machineCount - unavailableMachineCount),
+			},
+		}
+	}
+
 	status.Configuration = pool.Status.Configuration
 
 	conditions := pool.Status.Conditions
@@ -234,8 +265,14 @@ func calculateStatus(mcs []*mcfgalphav1.MachineConfigNode, cconfig *mcfgv1.Contr
 	// here we now set the MCP Degraded field, the node_controller is the one making the call right now
 	// but we might have a dedicated controller or control loop somewhere else that understands how to
 	// set Degraded. For now, the node_controller understand NodeDegraded & RenderDegraded = Degraded.
+
+	pinnedImageSetsDegraded := false
+	if fg.Enabled(configv1.FeatureGatePinnedImages) {
+		pinnedImageSetsDegraded = apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolPinnedImageSetsDegraded)
+	}
+
 	renderDegraded := apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolRenderDegraded)
-	if nodeDegraded || renderDegraded {
+	if nodeDegraded || renderDegraded || pinnedImageSetsDegraded {
 		sdegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolDegraded, corev1.ConditionTrue, "", "")
 		apihelpers.SetMachineConfigPoolCondition(&status, *sdegraded)
 
@@ -245,6 +282,16 @@ func calculateStatus(mcs []*mcfgalphav1.MachineConfigNode, cconfig *mcfgv1.Contr
 	}
 
 	return status
+}
+
+func isPinnedImageSetNodeUpdating(mcs *mcfgalphav1.MachineConfigNode) bool {
+	var updating int32
+	for _, set := range mcs.Status.PinnedImageSets {
+		if set.CurrentGeneration != set.DesiredGeneration {
+			updating++
+		}
+	}
+	return updating > 0
 }
 
 func getPoolUpdateLine(pool *mcfgv1.MachineConfigPool) string {

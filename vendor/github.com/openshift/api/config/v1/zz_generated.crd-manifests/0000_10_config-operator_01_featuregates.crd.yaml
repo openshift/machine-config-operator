@@ -80,6 +80,9 @@ spec:
                 - message: TechPreviewNoUpgrade may not be changed
                   rule: 'oldSelf == ''TechPreviewNoUpgrade'' ? self == ''TechPreviewNoUpgrade''
                     : true'
+                - message: DevPreviewNoUpgrade may not be changed
+                  rule: 'oldSelf == ''DevPreviewNoUpgrade'' ? self == ''DevPreviewNoUpgrade''
+                    : true'
             type: object
           status:
             description: status holds observed values from the cluster. They may not
