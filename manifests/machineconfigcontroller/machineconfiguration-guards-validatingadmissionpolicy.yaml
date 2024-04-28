@@ -1,0 +1,15 @@
+apiVersion: admissionregistration.k8s.io/v1beta1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: "machine-configuration-guards"
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups:   ["operator.openshift.io"]
+      apiVersions: ["v1"]
+      operations:  ["CREATE","UPDATE"]
+      resources:   ["machineconfigurations"]
+  validations:
+    - expression: "object.metadata.name=='cluster'"
+      message: "Only a single object of MachineConfiguration is allowed and it must be named cluster."
