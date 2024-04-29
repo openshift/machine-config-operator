@@ -154,9 +154,14 @@ func (dn *Daemon) executeReloadServiceNodeDisruptionAction(serviceName string, r
 // If at any point an error occurs, we reboot the node so that node has correct configuration.
 func (dn *Daemon) performPostConfigChangeNodeDisruptionAction(postConfigChangeActions []opv1.NodeDisruptionPolicyStatusAction, configName string) error {
 
-	logSystem("Executing performPostConfigChangeNodeDisruptionAction(drain already complete/skipped) for config %s", configName)
 	for _, action := range postConfigChangeActions {
-		logSystem("Executing postconfig action: %v for config %s", action.Type, configName)
+
+		// Drain is already completed at this stage and essentially a no-op for this loop, so no need to log that.
+		if action.Type == opv1.DrainStatusAction {
+			continue
+		}
+
+		logSystem("Performing post config change action: %v for config %s", action.Type, configName)
 		if action.Type == opv1.RebootStatusAction {
 			err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
 				&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdatePostActionComplete, Reason: string(mcfgalphav1.MachineConfigNodeUpdateRebooted), Message: fmt.Sprintf("Node will reboot into config %s", configName)},
@@ -608,7 +613,7 @@ func calculatePostConfigChangeNodeDisruptionActionFromMCDiffs(diffSSH bool, diff
 		for _, policyFile := range clusterPolicies.Files {
 			klog.V(4).Infof("comparing policy path %s to diff path %s", policyFile.Path, diffPath)
 			if policyFile.Path == diffPath {
-				klog.Infof("NodeDisruptionPolicy found for diff file %s!", diffPath)
+				klog.Infof("NodeDisruptionPolicy found for diff file %s", diffPath)
 				actions = append(actions, policyFile.Actions...)
 				pathFound = true
 				break
