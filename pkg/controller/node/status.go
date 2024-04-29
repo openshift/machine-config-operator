@@ -5,10 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	configv1 "github.com/openshift/api/config/v1"
-	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
-
+	features "github.com/openshift/api/features"
 	mcfgalphav1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	helpers "github.com/openshift/machine-config-operator/pkg/helpers"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
@@ -38,13 +37,13 @@ func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
 	list := fg.KnownFeatures()
 	mcnExists := false
 	for _, feature := range list {
-		if feature == configv1.FeatureGateMachineConfigNodes {
+		if feature == features.FeatureGateMachineConfigNodes {
 			mcnExists = true
 		}
 	}
 	if err != nil {
 		klog.Errorf("Could not get FG: %v", err)
-	} else if mcnExists && fg.Enabled(configv1.FeatureGateMachineConfigNodes) {
+	} else if mcnExists && fg.Enabled(features.FeatureGateMachineConfigNodes) {
 		for _, node := range nodes {
 			ms, err := ctrl.client.MachineconfigurationV1alpha1().MachineConfigNodes().Get(context.TODO(), node.Name, metav1.GetOptions{})
 			if err != nil {
@@ -116,7 +115,7 @@ func calculateStatus(fg featuregates.FeatureGate, mcs []*mcfgalphav1.MachineConf
 			// not ready yet
 			break
 		}
-		if fg.Enabled(configv1.FeatureGatePinnedImages) {
+		if fg.Enabled(features.FeatureGatePinnedImages) {
 			if isPinnedImageSetNodeUpdating(state) {
 				updatingPinnedImageSetMachines++
 			}
@@ -125,7 +124,7 @@ func calculateStatus(fg featuregates.FeatureGate, mcs []*mcfgalphav1.MachineConf
 			if strings.Contains(cond.Message, "Error:") {
 				degradedMachines = append(degradedMachines, ourNode)
 				// populate the degradedReasons from the MachineConfigNodePinnedImageSetsDegraded condition
-				if fg.Enabled(configv1.FeatureGatePinnedImages) {
+				if fg.Enabled(features.FeatureGatePinnedImages) {
 					if mcfgalphav1.StateProgress(cond.Type) == mcfgalphav1.MachineConfigNodePinnedImageSetsDegraded && cond.Status == metav1.ConditionTrue {
 						degradedReasons = append(degradedReasons, fmt.Sprintf("Node %s is reporting: %q", ourNode.Name, cond.Message))
 					}
@@ -200,7 +199,7 @@ func calculateStatus(fg featuregates.FeatureGate, mcs []*mcfgalphav1.MachineConf
 	}
 
 	// update synchronizer status for pinned image sets
-	if fg.Enabled(configv1.FeatureGatePinnedImages) {
+	if fg.Enabled(features.FeatureGatePinnedImages) {
 		// TODO: update counts to be more granular
 		status.PoolSynchronizersStatus = []mcfgv1.PoolSynchronizerStatus{
 			{
@@ -267,7 +266,7 @@ func calculateStatus(fg featuregates.FeatureGate, mcs []*mcfgalphav1.MachineConf
 	// set Degraded. For now, the node_controller understand NodeDegraded & RenderDegraded = Degraded.
 
 	pinnedImageSetsDegraded := false
-	if fg.Enabled(configv1.FeatureGatePinnedImages) {
+	if fg.Enabled(features.FeatureGatePinnedImages) {
 		pinnedImageSetsDegraded = apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolPinnedImageSetsDegraded)
 	}
 
