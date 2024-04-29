@@ -13,6 +13,7 @@ import (
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	apicfgv1 "github.com/openshift/api/config/v1"
 	apicfgv1alpha1 "github.com/openshift/api/config/v1alpha1"
+	features "github.com/openshift/api/features"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
 	configinformers "github.com/openshift/client-go/config/informers/externalversions"
@@ -337,7 +338,7 @@ func (ctrl *Controller) sigstoreAPIEnabled() bool {
 		klog.Infof("error getting current featuregates: %v", err)
 		return false
 	}
-	return featureGates.Enabled(apicfgv1.FeatureGateSigstoreImageVerification)
+	return featureGates.Enabled(features.FeatureGateSigstoreImageVerification)
 }
 
 func (ctrl *Controller) updateContainerRuntimeConfig(oldObj, newObj interface{}) {
@@ -1099,7 +1100,7 @@ func RunImageBootstrap(templateDir string, controllerConfig *mcfgv1.ControllerCo
 	if err != nil {
 		return nil, err
 	}
-	sigstoreAPIEnabled := featureGates.Enabled(apicfgv1.FeatureGateSigstoreImageVerification)
+	sigstoreAPIEnabled := featureGates.Enabled(features.FeatureGateSigstoreImageVerification)
 	if sigstoreAPIEnabled {
 		if clusterScopePolicies, err = getValidScopePolicies(clusterImagePolicies, controllerConfig.Spec.ReleaseImage, nil); err != nil {
 			return nil, err

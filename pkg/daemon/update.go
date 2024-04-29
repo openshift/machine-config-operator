@@ -28,7 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
 
-	v1 "github.com/openshift/api/config/v1"
+	features "github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgalphav1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
@@ -1047,7 +1047,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	var nodeDisruptionError error
 	var actions []string
 	// If FeatureGateNodeDisruptionPolicy is set, calculate NodeDisruptionPolicy based actions for this MC diff
-	if fg != nil && fg.Enabled(v1.FeatureGateNodeDisruptionPolicy) {
+	if fg != nil && fg.Enabled(features.FeatureGateNodeDisruptionPolicy) {
 		nodeDisruptionActions, nodeDisruptionError = dn.calculatePostConfigChangeNodeDisruptionAction(diff, diffFileSet, diffUnitSet)
 		if nodeDisruptionError != nil {
 			// TODO: Fallback to legacy path and signal failure here
@@ -1075,7 +1075,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	}
 
 	var drain bool
-	if fg != nil && fg.Enabled(v1.FeatureGateNodeDisruptionPolicy) && nodeDisruptionError == nil {
+	if fg != nil && fg.Enabled(features.FeatureGateNodeDisruptionPolicy) && nodeDisruptionError == nil {
 		// Check actions list and perform node drain if required
 		drain, err = isDrainRequiredForNodeDisruptionActions(nodeDisruptionActions, oldIgnConfig, newIgnConfig)
 		if err != nil {
@@ -1277,7 +1277,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		klog.Errorf("Error making MCN for Updated Files and OS: %v", err)
 	}
 
-	if fg != nil && fg.Enabled(v1.FeatureGateNodeDisruptionPolicy) && nodeDisruptionError == nil {
+	if fg != nil && fg.Enabled(features.FeatureGateNodeDisruptionPolicy) && nodeDisruptionError == nil {
 		return dn.performPostConfigChangeNodeDisruptionAction(nodeDisruptionActions, newConfig.GetName())
 	}
 	// If we're here, FeatureGateNodeDisruptionPolicy is off/errored, so perform legacy action

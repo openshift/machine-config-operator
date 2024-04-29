@@ -818,7 +818,7 @@ github.com/opencontainers/runc/libcontainer/user
 # github.com/opencontainers/runtime-spec v1.1.0
 ## explicit
 github.com/opencontainers/runtime-spec/specs-go
-# github.com/openshift/api v0.0.0-20240422085825-2624175e9673
+# github.com/openshift/api v0.0.0-20240425081546-8203151f085f
 ## explicit; go 1.21
 github.com/openshift/api
 github.com/openshift/api/annotations
@@ -840,6 +840,7 @@ github.com/openshift/api/config/v1alpha1/zz_generated.crd-manifests
 github.com/openshift/api/console
 github.com/openshift/api/console/v1
 github.com/openshift/api/console/v1alpha1
+github.com/openshift/api/features
 github.com/openshift/api/helm
 github.com/openshift/api/helm/v1beta1
 github.com/openshift/api/image
@@ -879,6 +880,8 @@ github.com/openshift/api/operatorcontrolplane
 github.com/openshift/api/operatorcontrolplane/v1alpha1
 github.com/openshift/api/osin
 github.com/openshift/api/osin/v1
+github.com/openshift/api/payload-command/render
+github.com/openshift/api/payload-command/render/renderassets
 github.com/openshift/api/pkg/serialization
 github.com/openshift/api/project
 github.com/openshift/api/project/v1
@@ -982,10 +985,7 @@ github.com/openshift/client-go/operator/informers/externalversions/operator/v1
 github.com/openshift/client-go/operator/informers/externalversions/operator/v1alpha1
 github.com/openshift/client-go/operator/listers/operator/v1
 github.com/openshift/client-go/operator/listers/operator/v1alpha1
-# github.com/openshift/cluster-config-operator v0.0.0-alpha.0.0.20231213185242-e4dc676febfe
-## explicit; go 1.20
-github.com/openshift/cluster-config-operator/pkg/operator/featuregates
-# github.com/openshift/library-go v0.0.0-20240412173449-eb2f24c36528
+# github.com/openshift/library-go v0.0.0-20240424194921-cb8aac942b79
 ## explicit; go 1.21
 github.com/openshift/library-go/pkg/certs
 github.com/openshift/library-go/pkg/cloudprovider
@@ -1005,7 +1005,6 @@ github.com/openshift/library-go/pkg/operator/resource/resourcehelper
 github.com/openshift/library-go/pkg/operator/resource/resourcemerge
 github.com/openshift/library-go/pkg/operator/resource/resourceread
 github.com/openshift/library-go/pkg/operator/resourcesynccontroller
-github.com/openshift/library-go/pkg/operator/status
 github.com/openshift/library-go/pkg/operator/v1helpers
 # github.com/openshift/runtime-utils v0.0.0-20230921210328-7bdb5b9c177b
 ## explicit; go 1.18

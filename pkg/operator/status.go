@@ -12,6 +12,7 @@ import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 
 	configv1 "github.com/openshift/api/config/v1"
+	features "github.com/openshift/api/features"
 	cov1helpers "github.com/openshift/library-go/pkg/config/clusteroperator/v1helpers"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	corev1 "k8s.io/api/core/v1"
@@ -828,7 +829,7 @@ func machineConfigPoolStatus(fg featuregates.FeatureGate, pool *mcfgv1.MachineCo
 	case apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolUpdating):
 		return fmt.Sprintf("%d (ready %d) out of %d nodes are updating to latest configuration %s", pool.Status.UpdatedMachineCount, pool.Status.ReadyMachineCount, pool.Status.MachineCount, pool.Spec.Configuration.Name)
 	default:
-		if fg.Enabled(configv1.FeatureGatePinnedImages) {
+		if fg.Enabled(features.FeatureGatePinnedImages) {
 			if apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolPinnedImageSetsDegraded) {
 				cond := apihelpers.GetMachineConfigPoolCondition(pool.Status, mcfgv1.MachineConfigPoolPinnedImageSetsDegraded)
 				return fmt.Sprintf("pool is degraded because pinned image sets failed with %q: %q", cond.Reason, cond.Message)

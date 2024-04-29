@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"testing"
 
+	features "github.com/openshift/api/features"
 	mcfgalphav1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 
 	apicfgv1 "github.com/openshift/api/config/v1"
@@ -942,8 +943,8 @@ func TestCalculateStatus(t *testing.T) {
 			}
 			fgAccess := featuregates.NewHardcodedFeatureGateAccess(
 				[]apicfgv1.FeatureGateName{
-					apicfgv1.FeatureGateMachineConfigNodes,
-					apicfgv1.FeatureGatePinnedImages,
+					features.FeatureGateMachineConfigNodes,
+					features.FeatureGatePinnedImages,
 				},
 				[]apicfgv1.FeatureGateName{},
 			)

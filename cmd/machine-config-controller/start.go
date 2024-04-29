@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	configv1 "github.com/openshift/api/config/v1"
+	features "github.com/openshift/api/features"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/machine-config-operator/cmd/common"
 	"github.com/openshift/machine-config-operator/internal/clients"
@@ -98,14 +98,14 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 
 		select {
 		case <-ctrlctx.FeatureGateAccess.InitialFeatureGatesObserved():
-			features, err := ctrlctx.FeatureGateAccess.CurrentFeatureGates()
+			fg, err := ctrlctx.FeatureGateAccess.CurrentFeatureGates()
 			if err != nil {
 				klog.Fatalf("unable to get initial features: %v", err)
 			}
 
-			enabled, disabled := getEnabledDisabledFeatures(features)
+			enabled, disabled := getEnabledDisabledFeatures(fg)
 			klog.Infof("FeatureGates initialized: enabled=%v  disabled=%v", enabled, disabled)
-			if features.Enabled(configv1.FeatureGatePinnedImages) && features.Enabled(configv1.FeatureGateMachineConfigNodes) {
+			if fg.Enabled(features.FeatureGatePinnedImages) && fg.Enabled(features.FeatureGateMachineConfigNodes) {
 				pinnedImageSet := pinnedimageset.New(
 					ctrlctx.InformerFactory.Machineconfiguration().V1alpha1().PinnedImageSets(),
 					ctrlctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),

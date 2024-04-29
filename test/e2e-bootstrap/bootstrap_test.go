@@ -15,10 +15,12 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	_ "github.com/openshift/api/config/v1/zz_generated.crd-manifests"
 	configv1alpha1 "github.com/openshift/api/config/v1alpha1"
+	features "github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	_ "github.com/openshift/api/operator/v1alpha1/zz_generated.crd-manifests"
-	featuregatescontroller "github.com/openshift/cluster-config-operator/pkg/operator/featuregates"
+	featuregatescontroller "github.com/openshift/api/payload-command/render"
+
 	"github.com/openshift/machine-config-operator/internal/clients"
 	"github.com/openshift/machine-config-operator/pkg/controller/bootstrap"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -574,18 +576,14 @@ func ensureFeatureGate(t *testing.T, clientSet *framework.ClientSet, objs ...run
 
 	currentFeatureSet := currentFg.Spec.FeatureSet
 
-	SelfManaged := configv1.ClusterProfileName("include.release.openshift.io/self-managed-high-availability")
+	SelfManaged := features.ClusterProfileName("include.release.openshift.io/self-managed-high-availability")
 	if err != nil {
 		t.Fatalf("Error retrieving current feature gates: %v", err)
 	}
-	featureGateEnabledDisabled, err := configv1.FeatureSets(configv1.ClusterProfileName(SelfManaged), currentFeatureSet)
-	require.NoError(t, err)
+	featureGateStatus, err := features.FeatureSets(features.ClusterProfileName(SelfManaged), currentFeatureSet)
 
-	featureSetMap := map[configv1.FeatureSet]*configv1.FeatureGateEnabledDisabled{
-		currentFeatureSet: featureGateEnabledDisabled,
-	}
-	currentDetails, err := featuregatescontroller.FeaturesGateDetailsFromFeatureSets(featureSetMap, currentFg, controllerConfig.Spec.ReleaseImage)
 	require.NoError(t, err)
+	currentDetails := featuregatescontroller.FeaturesGateDetailsFromFeatureSets(featureGateStatus, controllerConfig.Spec.ReleaseImage)
 
 	rawDetails := *currentDetails
 	rawDetails.Version = version.ReleaseVersion
