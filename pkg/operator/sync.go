@@ -191,6 +191,10 @@ func (optr *Operator) syncAll(syncFuncs []syncFunc) error {
 		return fmt.Errorf("error syncing metrics: %w", err)
 	}
 
+	if err := optr.syncClusterFleetEvaluation(); err != nil {
+		return fmt.Errorf("error running cluster fleet evaluation: %w", err)
+	}
+
 	if optr.inClusterBringup && syncErr.err == nil {
 		klog.Infof("Initialization complete")
 		optr.inClusterBringup = false

@@ -37,9 +37,7 @@ import (
 	"github.com/openshift/machine-config-operator/test/helpers"
 )
 
-var (
-	alwaysReady = func() bool { return true }
-)
+var alwaysReady = func() bool { return true }
 
 const (
 	templateDir = "../../../templates"
@@ -632,7 +630,7 @@ func TestKubeletConfigUpdates(t *testing.T) {
 
 			// Modify config
 			kcUpdate := kc1.DeepCopy()
-			kcDecoded, err := decodeKubeletConfig(kcUpdate.Spec.KubeletConfig.Raw)
+			kcDecoded, err := DecodeKubeletConfig(kcUpdate.Spec.KubeletConfig.Raw)
 			if err != nil {
 				t.Errorf("KubeletConfig could not be unmarshalled")
 			}

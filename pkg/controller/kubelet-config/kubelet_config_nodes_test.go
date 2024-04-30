@@ -33,7 +33,7 @@ func TestOriginalKubeletConfigDefaultNodeConfig(t *testing.T) {
 			}
 			contents, err := ctrlcommon.DecodeIgnitionFileContents(kubeletConfig.Contents.Source, kubeletConfig.Contents.Compression)
 			require.NoError(t, err)
-			originalKubeConfig, err := decodeKubeletConfig(contents)
+			originalKubeConfig, err := DecodeKubeletConfig(contents)
 			require.NoError(t, err)
 
 			if reflect.DeepEqual(originalKubeConfig.NodeStatusReportFrequency, metav1.Duration{osev1.DefaultNodeStatusUpdateFrequency}) {
