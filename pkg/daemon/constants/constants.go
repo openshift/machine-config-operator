@@ -109,6 +109,9 @@ const (
 	// CRIOServiceName is used to specify reloads and restarts of the CRI-O service
 	CRIOServiceName = "crio"
 
+	// CrioPinnedImagesDropInFilePath is the path to the drop-in file for pinned images
+	CrioPinnedImagesDropInFilePath = "/etc/crio/crio.conf.d/50-pinned-images"
+
 	// DaemonReloadCommand is used to specify reloads and restarts of the systemd manager configuration
 	DaemonReloadCommand = "daemon-reload"
 

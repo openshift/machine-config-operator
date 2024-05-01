@@ -60,8 +60,6 @@ const (
 	defaultControlPlaneWorkers      = 1
 	defaultPrefetchThrottleDuration = 1 * time.Second
 
-	crioPinnedImagesDropInFilePath = "/etc/crio/crio.conf.d/50-pinned-images"
-
 	// backoff configuration
 	maxRetries    = 5
 	retryDuration = 1 * time.Second
@@ -279,7 +277,7 @@ func (p *PinnedImageSetManager) syncMachineConfigPools(ctx context.Context, pool
 
 	// write config and reload crio last to allow a window for kubelet to gc
 	// images in an emergency
-	if err := ensureCrioPinnedImagesConfigFile(crioPinnedImagesDropInFilePath, imageNames); err != nil {
+	if err := ensureCrioPinnedImagesConfigFile(constants.CrioPinnedImagesDropInFilePath, imageNames); err != nil {
 		klog.Errorf("failed to write crio config file: %v", err)
 		return err
 	}
@@ -1206,10 +1204,10 @@ func crioReload() error {
 
 func deleteCrioConfigFile() error {
 	// remove the crio config file
-	if err := os.Remove(crioPinnedImagesDropInFilePath); err != nil {
+	if err := os.Remove(constants.CrioPinnedImagesDropInFilePath); err != nil {
 		return fmt.Errorf("failed to remove crio config file: %w", err)
 	}
-	klog.Infof("removed crio config file: %s", crioPinnedImagesDropInFilePath)
+	klog.Infof("removed crio config file: %s", constants.CrioPinnedImagesDropInFilePath)
 
 	return nil
 }
