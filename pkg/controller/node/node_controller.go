@@ -12,6 +12,7 @@ import (
 	helpers "github.com/openshift/machine-config-operator/pkg/helpers"
 
 	configv1 "github.com/openshift/api/config/v1"
+	features "github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	cligoinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
 	cligolistersv1 "github.com/openshift/client-go/config/listers/config/v1"
@@ -90,6 +91,7 @@ type Controller struct {
 	mcListerSynced   cache.InformerSynced
 	mcpListerSynced  cache.InformerSynced
 	nodeListerSynced cache.InformerSynced
+	mcnListerSynced  cache.InformerSynced
 
 	schedulerList         cligolistersv1.SchedulerLister
 	schedulerListerSynced cache.InformerSynced
@@ -587,10 +589,6 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 		}
 	}
 
-	if !changed {
-		return
-	}
-
 	pools, err := ctrl.getPoolsForNode(curNode)
 	if err != nil {
 		klog.Errorf("error finding pools for node: %v", err)
@@ -599,6 +597,25 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 	if pools == nil {
 		return
 	}
+
+	fg, err := ctrl.fgAcessor.CurrentFeatureGates()
+	if err != nil {
+		klog.Errorf("error getting feature gates: %v", err)
+		return
+	}
+
+	if fg.Enabled(features.FeatureGatePinnedImages) {
+		for _, pool := range pools {
+			if isPinnedImageSetsInProgressForPool(pool) {
+				changed = true
+			}
+		}
+	}
+
+	if !changed {
+		return
+	}
+
 	for _, pool := range pools {
 		ctrl.enqueueMachineConfigPool(pool)
 	}

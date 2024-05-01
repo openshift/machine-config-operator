@@ -219,7 +219,7 @@ func (p *PinnedImageSetManager) sync(key string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), p.prefetchTimeout)
 	// cancel any currently running tasks in the worker pool
 	p.resetWorkload(cancel)
-	if err := p.updateStatusProgressing(); err != nil {
+	if err := p.updateStatusProgressing(pools); err != nil {
 		klog.Errorf("failed to update status: %v", err)
 	}
 
@@ -527,11 +527,18 @@ func ensureCrioPinnedImagesConfigFile(path string, imageNames []string) error {
 	return nil
 }
 
-func (p *PinnedImageSetManager) updateStatusProgressing() error {
+func (p *PinnedImageSetManager) updateStatusProgressing(pools []*mcfgv1.MachineConfigPool) error {
 	node, err := p.nodeLister.Get(p.nodeName)
 	if err != nil {
 		return fmt.Errorf("failed to get node %q: %w", p.nodeName, err)
 	}
+
+	isComplete := false
+	applyCfg, err := p.getPinnedImageSetApplyConfigsForPools(pools, isComplete, nil)
+	if err != nil {
+		return fmt.Errorf("failed to get image set apply configs: %w", err)
+	}
+	imageSetSpec := getPinnedImageSetSpecForPools(pools)
 
 	return upgrademonitor.UpdateMachineConfigNodeStatus(
 		&upgrademonitor.Condition{
@@ -544,8 +551,8 @@ func (p *PinnedImageSetManager) updateStatusProgressing() error {
 		metav1.ConditionUnknown,
 		node,
 		p.mcfgClient,
-		nil,
-		nil,
+		applyCfg,
+		imageSetSpec,
 		p.featureGatesAccessor,
 	)
 }
@@ -556,10 +563,12 @@ func (p *PinnedImageSetManager) updateStatusProgressingComplete(pools []*mcfgv1.
 		return fmt.Errorf("failed to get node %q: %w", p.nodeName, err)
 	}
 
-	applyCfg, imageSets, err := getImageSetMetadata(p.imageSetLister, pools, nil)
+	isComplete := true
+	applyCfg, err := p.getPinnedImageSetApplyConfigsForPools(pools, isComplete, nil)
 	if err != nil {
 		return fmt.Errorf("failed to get image set apply configs: %w", err)
 	}
+	imageSetSpec := getPinnedImageSetSpecForPools(pools)
 
 	err = upgrademonitor.UpdateMachineConfigNodeStatus(
 		&upgrademonitor.Condition{
@@ -573,7 +582,7 @@ func (p *PinnedImageSetManager) updateStatusProgressingComplete(pools []*mcfgv1.
 		node,
 		p.mcfgClient,
 		applyCfg,
-		imageSets,
+		imageSetSpec,
 		p.featureGatesAccessor,
 	)
 	if err != nil {
@@ -604,10 +613,12 @@ func (p *PinnedImageSetManager) updateStatusError(pools []*mcfgv1.MachineConfigP
 		return fmt.Errorf("failed to get node %q: %w", p.nodeName, err)
 	}
 
-	applyCfg, imageSets, err := getImageSetMetadata(p.imageSetLister, pools, statusErr)
+	isComplete := false
+	applyCfg, err := p.getPinnedImageSetApplyConfigsForPools(pools, isComplete, statusErr)
 	if err != nil {
 		return fmt.Errorf("failed to get image set apply configs: %w", err)
 	}
+	imageSetSpec := getPinnedImageSetSpecForPools(pools)
 
 	var errMsg string
 	if isErrNoSpace(statusErr) {
@@ -629,9 +640,54 @@ func (p *PinnedImageSetManager) updateStatusError(pools []*mcfgv1.MachineConfigP
 		node,
 		p.mcfgClient,
 		applyCfg,
-		imageSets,
+		imageSetSpec,
 		p.featureGatesAccessor,
 	)
+}
+
+// getPinnedImageSetApplyConfigsForPools returns a list of MachineConfigNodeStatusPinnedImageSetApplyConfiguration for the given pools.
+func (p *PinnedImageSetManager) getPinnedImageSetApplyConfigsForPools(pools []*mcfgv1.MachineConfigPool, isCompleted bool, statusErr error) ([]*machineconfigurationalphav1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration, error) {
+	applyConfigs := make([]*machineconfigurationalphav1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration, 0)
+	for _, pool := range pools {
+		for _, imageSets := range pool.Spec.PinnedImageSets {
+			imageSet, err := p.imageSetLister.Get(imageSets.Name)
+			if err != nil {
+				if apierrors.IsNotFound(err) {
+					continue
+				}
+				return nil, err
+			}
+
+			config := p.createApplyConfigForImageSet(imageSet, isCompleted, statusErr)
+			applyConfigs = append(applyConfigs, config)
+		}
+	}
+	return applyConfigs, nil
+}
+
+func (p *PinnedImageSetManager) createApplyConfigForImageSet(imageSet *mcfgv1alpha1.PinnedImageSet, isCompleted bool, statusErr error) *machineconfigurationalphav1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration {
+	imageSetConfig := machineconfigurationalphav1.MachineConfigNodeStatusPinnedImageSet().
+		WithName(imageSet.Name).
+		WithDesiredGeneration(int32(imageSet.GetGeneration()))
+
+	if cachedImage, ok := p.cache.Get(string(imageSet.UID)); ok {
+		cachedImageSet := cachedImage.(mcfgv1alpha1.PinnedImageSet)
+		if imageSet.Generation == cachedImageSet.Generation {
+			// return cached value
+			imageSetConfig.CurrentGeneration = ptr.To(int32(imageSet.GetGeneration()))
+			return imageSetConfig
+		}
+	}
+
+	if statusErr != nil {
+		imageSetConfig.LastFailedGeneration = ptr.To(int32(imageSet.GetGeneration()))
+		imageSetConfig.LastFailedGenerationErrors = []string{statusErr.Error()}
+	} else if isCompleted {
+		// only set the current generation if prefetch is complete
+		imageSetConfig.CurrentGeneration = ptr.To(int32(imageSet.GetGeneration()))
+	}
+
+	return imageSetConfig
 }
 
 func checkNodeReady(node *corev1.Node) error {
@@ -645,40 +701,6 @@ func checkNodeReady(node *corev1.Node) error {
 		}
 	}
 	return nil
-}
-
-// getImageSetMetadata populates observed pinned image set generation details for node level status updates to MachineConfigNode.
-func getImageSetMetadata(imageSetLister mcfglistersv1alpha1.PinnedImageSetLister, pools []*mcfgv1.MachineConfigPool, statusErr error) ([]*machineconfigurationalphav1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration, []mcfgv1alpha1.MachineConfigNodeSpecPinnedImageSet, error) {
-	var mcnImageSets []mcfgv1alpha1.MachineConfigNodeSpecPinnedImageSet
-	var imageSetApplyConfigs []*machineconfigurationalphav1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration
-	for _, pool := range pools {
-		for _, imageSets := range pool.Spec.PinnedImageSets {
-			mcnImageSets = append(mcnImageSets, mcfgv1alpha1.MachineConfigNodeSpecPinnedImageSet{
-				Name: imageSets.Name,
-			})
-			imageSet, err := imageSetLister.Get(imageSets.Name)
-			if err != nil {
-				if apierrors.IsNotFound(err) {
-					continue
-				}
-				klog.Errorf("Error getting pinned image set: %v", err)
-				return nil, nil, err
-			}
-
-			imageSetConfig := machineconfigurationalphav1.MachineConfigNodeStatusPinnedImageSet().
-				WithName(imageSet.Name).
-				WithDesiredGeneration(int32(imageSet.GetGeneration()))
-			if statusErr != nil {
-				imageSetConfig.LastFailedGeneration = ptr.To(int32(imageSet.GetGeneration()))
-				imageSetConfig.LastFailedGenerationErrors = []string{statusErr.Error()}
-			} else {
-				imageSetConfig.CurrentGeneration = ptr.To(int32(imageSet.GetGeneration()))
-			}
-
-			imageSetApplyConfigs = append(imageSetApplyConfigs, imageSetConfig)
-		}
-	}
-	return imageSetApplyConfigs, mcnImageSets, nil
 }
 
 // getWorkerCount returns the number of workers to use for prefetching images.
@@ -1126,6 +1148,19 @@ func (p *PinnedImageSetManager) getImageSize(ctx context.Context, imageName, aut
 	}
 
 	return totalSize, nil
+}
+
+// getPinnedImageSetSpecForPools returns a list of MachineConfigNodeSpecPinnedImageSet for the given pools.
+func getPinnedImageSetSpecForPools(pools []*mcfgv1.MachineConfigPool) []mcfgv1alpha1.MachineConfigNodeSpecPinnedImageSet {
+	var mcnPinnedImageSetSpec []mcfgv1alpha1.MachineConfigNodeSpecPinnedImageSet
+	for _, pool := range pools {
+		for _, imageSets := range pool.Spec.PinnedImageSets {
+			mcnPinnedImageSetSpec = append(mcnPinnedImageSetSpec, mcfgv1alpha1.MachineConfigNodeSpecPinnedImageSet{
+				Name: imageSets.Name,
+			})
+		}
+	}
+	return mcnPinnedImageSetSpec
 }
 
 // ensurePullImage first checks if the image exists locally and then will attempt to pull

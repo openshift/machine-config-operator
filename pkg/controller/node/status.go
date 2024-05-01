@@ -5,20 +5,20 @@ import (
 	"fmt"
 	"strings"
 
-	features "github.com/openshift/api/features"
-	mcfgalphav1 "github.com/openshift/api/machineconfiguration/v1alpha1"
-	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
-	helpers "github.com/openshift/machine-config-operator/pkg/helpers"
-
-	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	"github.com/openshift/machine-config-operator/pkg/apihelpers"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
-	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog/v2"
+
+	features "github.com/openshift/api/features"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	mcfgalphav1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
+	"github.com/openshift/machine-config-operator/pkg/apihelpers"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
+	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
+	helpers "github.com/openshift/machine-config-operator/pkg/helpers"
 )
 
 // syncStatusOnly for MachineConfigNode
@@ -87,7 +87,7 @@ func calculateStatus(fg featuregates.FeatureGate, mcs []*mcfgalphav1.MachineConf
 		}
 	}
 	machineCount := int32(len(nodes))
-	updatingPinnedImageSetMachines := int32(0)
+	poolSynchronizer := newPoolSynchronizer(machineCount)
 
 	var degradedMachines, readyMachines, updatedMachines, unavailableMachines, updatingMachines []*corev1.Node
 	degradedReasons := []string{}
@@ -116,8 +116,8 @@ func calculateStatus(fg featuregates.FeatureGate, mcs []*mcfgalphav1.MachineConf
 			break
 		}
 		if fg.Enabled(features.FeatureGatePinnedImages) {
-			if isPinnedImageSetNodeUpdating(state) {
-				updatingPinnedImageSetMachines++
+			if isPinnedImageSetsUpdated(state) {
+				poolSynchronizer.SetUpdated(mcfgv1.PinnedImageSets)
 			}
 		}
 		for _, cond := range state.Status.Conditions {
@@ -200,12 +200,12 @@ func calculateStatus(fg featuregates.FeatureGate, mcs []*mcfgalphav1.MachineConf
 
 	// update synchronizer status for pinned image sets
 	if fg.Enabled(features.FeatureGatePinnedImages) {
-		// TODO: update counts to be more granular
+		syncStatus := poolSynchronizer.GetStatus(mcfgv1.PinnedImageSets)
 		status.PoolSynchronizersStatus = []mcfgv1.PoolSynchronizerStatus{
 			{
 				PoolSynchronizerType:    mcfgv1.PinnedImageSets,
-				MachineCount:            int64(machineCount),
-				UpdatedMachineCount:     int64(machineCount - updatingPinnedImageSetMachines),
+				MachineCount:            syncStatus.MachineCount,
+				UpdatedMachineCount:     syncStatus.UpdatedMachineCount,
 				ReadyMachineCount:       int64(readyMachineCount),
 				UnavailableMachineCount: int64(unavailableMachineCount),
 				AvailableMachineCount:   int64(machineCount - unavailableMachineCount),
@@ -216,9 +216,7 @@ func calculateStatus(fg featuregates.FeatureGate, mcs []*mcfgalphav1.MachineConf
 	status.Configuration = pool.Status.Configuration
 
 	conditions := pool.Status.Conditions
-	for i := range conditions {
-		status.Conditions = append(status.Conditions, conditions[i])
-	}
+	status.Conditions = append(status.Conditions, conditions...)
 
 	allUpdated := updatedMachineCount == machineCount &&
 		readyMachineCount == machineCount &&
@@ -281,16 +279,6 @@ func calculateStatus(fg featuregates.FeatureGate, mcs []*mcfgalphav1.MachineConf
 	}
 
 	return status
-}
-
-func isPinnedImageSetNodeUpdating(mcs *mcfgalphav1.MachineConfigNode) bool {
-	var updating int32
-	for _, set := range mcs.Status.PinnedImageSets {
-		if set.CurrentGeneration != set.DesiredGeneration {
-			updating++
-		}
-	}
-	return updating > 0
 }
 
 func getPoolUpdateLine(pool *mcfgv1.MachineConfigPool) string {
@@ -491,4 +479,55 @@ func getNamesFromNodes(nodes []*corev1.Node) []string {
 	}
 
 	return names
+}
+
+// newPoolSynchronizer creates a new pool synchronizer.
+func newPoolSynchronizer(machineCount int32) *poolSynchronizer {
+	return &poolSynchronizer{
+		synchronizers: map[mcfgv1.PoolSynchronizerType]*mcfgv1.PoolSynchronizerStatus{
+			mcfgv1.PinnedImageSets: {
+				PoolSynchronizerType: mcfgv1.PinnedImageSets,
+				MachineCount:         int64(machineCount),
+			},
+		},
+	}
+}
+
+// poolSynchronizer is a helper struct to track the status of multiple synchronizers for a pool.
+type poolSynchronizer struct {
+	synchronizers map[mcfgv1.PoolSynchronizerType]*mcfgv1.PoolSynchronizerStatus
+}
+
+// SetUpdated updates the updated machine count for the given synchronizer type.
+func (p *poolSynchronizer) SetUpdated(sType mcfgv1.PoolSynchronizerType) {
+	status := p.synchronizers[sType]
+	if status == nil {
+		return
+	}
+	status.UpdatedMachineCount++
+}
+
+func (p *poolSynchronizer) GetStatus(sType mcfgv1.PoolSynchronizerType) *mcfgv1.PoolSynchronizerStatus {
+	return p.synchronizers[sType]
+}
+
+// isPinnedImageSetNodeUpdated checks if the pinned image sets are updated for the node.
+func isPinnedImageSetsUpdated(mcn *mcfgalphav1.MachineConfigNode) bool {
+	updated := 0
+	for _, set := range mcn.Status.PinnedImageSets {
+		if set.DesiredGeneration > 0 && set.CurrentGeneration == set.DesiredGeneration {
+			updated++
+		}
+	}
+	return updated == len(mcn.Status.PinnedImageSets)
+}
+
+// isPinnedImageSetsInProgressForPool checks if the pinned image sets are in progress of reconciling for the pool.
+func isPinnedImageSetsInProgressForPool(pool *mcfgv1.MachineConfigPool) bool {
+	for _, status := range pool.Status.PoolSynchronizersStatus {
+		if status.PoolSynchronizerType == mcfgv1.PinnedImageSets && status.UpdatedMachineCount != status.MachineCount {
+			return true
+		}
+	}
+	return false
 }
