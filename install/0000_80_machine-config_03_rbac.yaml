@@ -71,3 +71,84 @@ subjects:
 - kind: ServiceAccount
   name: prometheus-k8s
   namespace: openshift-monitoring
+---
+# Role host-networking-services lets system:node read config maps. This is needed in order to allow
+# configuring log level (and in the future more parameters) of static pods deployed in the
+# openshift-*-infra namespace.
+# Because host networking components right now only run on on-prem platforms, we create RoleBinding
+# explicitly only in namespaces for OpenStack, BareMetal, vSphere and Nutanix.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: host-networking-services
+  annotations:
+    include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-developer: "true"
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: host-networking-system-node
+  namespace: openshift-openstack-infra
+  annotations:
+    include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-developer: "true"
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: system:nodes
+roleRef:
+  kind: ClusterRole
+  name: host-networking-services
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: host-networking-system-node
+  namespace: openshift-kni-infra
+  annotations:
+    include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-developer: "true"
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: system:nodes
+roleRef:
+  kind: ClusterRole
+  name: host-networking-services
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: host-networking-system-node
+  namespace: openshift-vsphere-infra
+  annotations:
+    include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-developer: "true"
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: system:nodes
+roleRef:
+  kind: ClusterRole
+  name: host-networking-services
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: host-networking-system-node
+  namespace: openshift-nutanix-infra
+  annotations:
+    include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-developer: "true"
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: system:nodes
+roleRef:
+  kind: ClusterRole
+  name: host-networking-services
