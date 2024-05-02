@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/x509"
 	"encoding/base64"
-	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -21,8 +20,6 @@ import (
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/jsonmergepatch"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/tools/cache"
 	clientcmdv1 "k8s.io/client-go/tools/clientcmd/api/v1"
@@ -117,8 +114,7 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 	var data []byte
 	kubeConfigDiff := false
 	allCertsThere := true
-	dontRestartKubelet := false
-	currentKC := clientcmdv1.Config{}
+	onDiskKC := clientcmdv1.Config{}
 
 	if currentNodeControllerConfigResource != controllerConfig.ObjectMeta.ResourceVersion || controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation] == ctrlcommon.ServiceCARotateTrue {
 		pathToData := make(map[string][]byte)
@@ -128,7 +124,7 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 		pathToData[cloudCABundleFilePath] = cloudCA
 		var err error
 		var cm *corev1.ConfigMap
-		var FullCA []string
+		var fullCA []string
 
 		if controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation] == ctrlcommon.ServiceCARotateTrue && dn.node.Annotations[constants.ControllerConfigSyncServerCA] != controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation] {
 			cm, cmErr = dn.kubeClient.CoreV1().ConfigMaps("openshift-machine-config-operator").Get(context.TODO(), "kubeconfig-data", v1.GetOptions{})
@@ -144,128 +140,79 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 						return err
 					}
 					if kcBytes != nil {
-						err = yaml.Unmarshal(kcBytes, &currentKC)
+						err = yaml.Unmarshal(kcBytes, &onDiskKC)
 						if err != nil {
 							return fmt.Errorf("could not unmarshal kubeconfig into struct. Data: %s, Error: %v", string(kcBytes), err)
 						}
-						kubeConfigDiff = !bytes.Equal(bytes.TrimSpace(currentKC.Clusters[0].Cluster.CertificateAuthorityData), bytes.TrimSpace(data))
-						// if bytes.Compare is 1 AND theres no new data we do not want to write to disk. Just keep the old contents they will work.
-						// disk (currentKC) should be longer than configmap (data)
-						// we need to get the current data (kubeconfig-data) and compare it to clusters[0] on disk
-						// if ALL of kubeconfig-data (per cert) is contained on disk, do nothing
-						numericalDiff := bytes.Compare(currentKC.Clusters[0].Cluster.CertificateAuthorityData, data)
-						// sometimes it seems some of the data here might be invalid.
-						if numericalDiff == 1 && len(currentKC.Clusters[0].Cluster.CertificateAuthorityData) > 0 {
-							certsConfigmap := strings.SplitAfter(strings.TrimSpace(string(data)), "-----END CERTIFICATE-----")
-							certsDisk := strings.SplitAfter(strings.TrimSpace(string(currentKC.Clusters[0].Cluster.CertificateAuthorityData)), "-----END CERTIFICATE-----")
-							// worst case scenario we are doubling the length
-							FullCA = make([]string, len(certsDisk)+len(certsConfigmap))
-							// write the whole old KC to this array. Then splice in new certs.
-							for i, ca := range certsDisk {
-								FullCA[i] = ca
-							}
-							for i, cert := range certsConfigmap {
-								// for each cert in the CM, we either ignore it OR splice it into the CertificateAuthorityData
-								// if on disk contains this cert, we are good
-								// if not, then that means we are adding certs.
-								if strings.Contains(strings.TrimSpace(string(currentKC.Clusters[0].Cluster.CertificateAuthorityData)), cert) {
-									continue
-								}
-								// we need to check for the subject.
-								b, _ := pem.Decode([]byte(cert))
-								if b == nil {
-									klog.Infof("Unable to decode cert into a pem block. Cert is either empty or invalid.")
+						kubeConfigDiff = !bytes.Equal(bytes.TrimSpace(onDiskKC.Clusters[0].Cluster.CertificateAuthorityData), bytes.TrimSpace(data))
+
+						// We should always write the latest certs from the configmap onto disk, but we should check what was changed/modified
+						// if any certs were added or updated, determine if we need to defer the kubelet restarting
+						certsConfigmap := strings.SplitAfter(strings.TrimSpace(string(data)), "-----END CERTIFICATE-----")
+						certsDisk := strings.SplitAfter(strings.TrimSpace(string(onDiskKC.Clusters[0].Cluster.CertificateAuthorityData)), "-----END CERTIFICATE-----")
+						var addedOrUpdatedCAs []string
+
+						for _, cert := range certsConfigmap {
+							found := false
+							for _, onDiskCert := range certsDisk {
+								if onDiskCert == cert {
+									found = true
 									break
 								}
-								c, err := x509.ParseCertificate(b.Bytes)
-								if err != nil {
-									logSystem("Malformed Cert, not syncing: %s", cert)
-									continue
-								}
-								replaced := false
-								for i, diskCert := range FullCA {
-									b, _ := pem.Decode([]byte(diskCert))
-									if b == nil {
-										klog.Infof("Unable to decode cert into a pem block. Cert is either empty or invalid.")
-										break
-									}
-									cDisk, err := x509.ParseCertificate(b.Bytes)
-									if err != nil {
-										logSystem("Malformed Cert, not syncing: %s", diskCert)
-										continue
-									}
-									// there seems to be some spacing issues. might need to fix this. Certs are clearly in both the on disk
-									// and the new data, but string comparisons return false.
-									if c.Subject.CommonName == cDisk.Subject.CommonName {
-										// this is the same cert, BUT since the above check didn't catch this, it means the content has changed
-										// the one thing we do not want is two certs, same subject, but one is incorrect.
-										// so we replace the final Array's entry with this one instead.
-										FullCA[i] = cert
-										replaced = true
-										break
-
-									}
-								}
-								logSystem("Cert not found in kubeconfig. This means we need to write to disk")
-
-								logSystem("Cert subject is: %s possibly skipping kubelet restart", c.Subject.CommonName)
-								if c.Subject.CommonName == "kube-apiserver-localhost-signer" || strings.Contains(c.Subject.CommonName, "openshift-kube-apiserver-operator_localhost") {
-									// this rotates randomly during upgrades. need to ignore. DO NOT restart kubelet until we error.
-									dontRestartKubelet = true
-									dn.deferKubeletRestart = true
-								} else {
-									dn.deferKubeletRestart = false
-								}
-								if replaced {
-									continue
-								}
-								// splice it in, best attempt at putting this where it should go
-								FullCA = append(FullCA[:i+1], FullCA[i:]...)
-								FullCA[i] = cert
+							}
+							if !found {
+								addedOrUpdatedCAs = append(addedOrUpdatedCAs, cert)
 								allCertsThere = false
-
 							}
 
+							b, _ := pem.Decode([]byte(cert))
+							if b == nil {
+								klog.Infof("Unable to decode cert into a pem block. Cert is either empty or invalid.")
+								break
+							}
+							_, err := x509.ParseCertificate(b.Bytes)
+							if err != nil {
+								logSystem("Malformed Cert, not syncing: %s", cert)
+								continue
+							}
+
+							fullCA = append(fullCA, cert)
 						}
+
+						dn.deferKubeletRestart = true
+						for _, cert := range addedOrUpdatedCAs {
+							b, _ := pem.Decode([]byte(cert))
+							if b == nil {
+								klog.Infof("Unable to decode cert into a pem block. Cert is either empty or invalid.")
+								break
+							}
+							c, err := x509.ParseCertificate(b.Bytes)
+							if err != nil {
+								logSystem("Malformed Cert, not syncing: %s", cert)
+								continue
+							}
+							logSystem("Cert not found in kubeconfig. This means we need to write to disk. Subject is: %s", c.Subject.CommonName)
+							// these rotate randomly during upgrades. need to ignore. DO NOT restart kubelet until we error.
+							if !strings.Contains(c.Subject.CommonName, "kube-apiserver-localhost-signer") && !strings.Contains(c.Subject.CommonName, "openshift-kube-apiserver-operator_localhost-recovery-serving-signer") {
+								logSystem("Need to restart kubelet")
+								dn.deferKubeletRestart = false
+							} else {
+								logSystem("Skipping kubelet restart")
+							}
+						}
+
 						if kubeConfigDiff && !allCertsThere {
-							// we can still have a scenario where we are adding 1 CA but dont want to remove all the old ones.
-							klog.Infof("On disk cert and configmap cert differ. Diff: %d (0 means same length, -1 means on disk is shorter than configmap 1 means on disk is longer than configmap)", numericalDiff)
 							var newData []byte
-							if currentKC.Clusters == nil {
+							if onDiskKC.Clusters == nil {
 								return errors.New("clusters cannot be nil")
 							}
 							// use ALL data we have, including new certs.
-							currentKC.Clusters[0].Cluster.CertificateAuthorityData = []byte(strings.Join(FullCA, ""))
-							// take data from currentKC which now has new ca in it and marshal it
-							newData, err = yaml.Marshal(currentKC)
+							onDiskKC.Clusters[0].Cluster.CertificateAuthorityData = []byte(strings.Join(fullCA, ""))
+							newData, err = yaml.Marshal(onDiskKC)
 							if err != nil {
 								return fmt.Errorf("could not marshal kubeconfig into bytes. Error: %v", err)
 							}
-							// take old kubeconfig-data cm and marshal it
-							oldCMBin, err := json.Marshal(cm)
-							if err != nil {
-								return fmt.Errorf("could not marshal old configmap %v", err)
-							}
-							// newCM == old kubeconfig-data and add in a kubeconfig field
-							newCM := cm
-							newCM.BinaryData["kubeconfig"], err = yaml.Marshal(currentKC)
-							if err != nil {
-								return fmt.Errorf("could not marshal new kubeconfig %v", err)
-							}
-							// marshal it
-							newCMBin, err := json.Marshal(newCM)
-							if err != nil {
-								return fmt.Errorf("could not marshal new configmap %v", err)
-							}
-							// patch kc data with old kubeconfig-data, new kubeconfig-data, and old kubeconfig-data
-							patch, err := jsonmergepatch.CreateThreeWayJSONMergePatch(oldCMBin, newCMBin, oldCMBin)
-							if err != nil {
-								return fmt.Errorf("could not create patch for kubeconfig-data %v", err)
-							}
-							_, err = dn.kubeClient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Patch(context.TODO(), "kubeconfig-data", types.MergePatchType, patch, v1.PatchOptions{})
-							if err != nil {
-								return fmt.Errorf("could not patch existing kubeconfig-data %v", err)
-							}
+
 							pathToData[kubeConfigPath] = newData
 							klog.Infof("Writing new Data to /etc/kubernetes/kubeconfig: %s", string(newData))
 						}
@@ -338,8 +285,8 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 	}
 
 	klog.Infof("Certificate was synced from controllerconfig resourceVersion %s", controllerConfig.ObjectMeta.ResourceVersion)
-	if controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation] == ctrlcommon.ServiceCARotateTrue && oldAnno != controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation] && cmErr == nil && kubeConfigDiff && !allCertsThere && !dontRestartKubelet {
-		if len(currentKC.Clusters[0].Cluster.CertificateAuthorityData) > 0 {
+	if controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation] == ctrlcommon.ServiceCARotateTrue && oldAnno != controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation] && cmErr == nil && kubeConfigDiff && !allCertsThere && !dn.deferKubeletRestart {
+		if len(onDiskKC.Clusters[0].Cluster.CertificateAuthorityData) > 0 {
 			logSystem("restarting kubelet due to server-ca rotation")
 			if err := runCmdSync("systemctl", "stop", "kubelet"); err != nil {
 				return err
@@ -357,7 +304,7 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 				return err
 			}
 			// set CA data to the one we just parsed above, the rest of the data should be preserved.
-			kubeletKC.Clusters[0].Cluster.CertificateAuthorityData = currentKC.Clusters[0].Cluster.CertificateAuthorityData
+			kubeletKC.Clusters[0].Cluster.CertificateAuthorityData = onDiskKC.Clusters[0].Cluster.CertificateAuthorityData
 			newData, err := yaml.Marshal(kubeletKC)
 			if err != nil {
 				return fmt.Errorf("could not marshal kubeconfig into bytes. Error: %v", err)
