@@ -1357,7 +1357,7 @@ func triggerMachineConfigPoolChange(old, new *mcfgv1.MachineConfigPool) bool {
 type registryAuth struct {
 	mu   sync.RWMutex
 	auth map[string]*runtimeapi.AuthConfig
-	reg  map[string]*sysregistriesv2.Registry
+	reg  map[string]sysregistriesv2.Registry
 }
 
 func newRegistryAuth(authFilePath, registryCfgPath string) (*registryAuth, error) {
@@ -1406,9 +1406,9 @@ func newRegistryAuth(authFilePath, registryCfgPath string) (*registryAuth, error
 		return nil, fmt.Errorf("failed to get registries: %w", err)
 	}
 
-	regMap := make(map[string]*sysregistriesv2.Registry, len(regs))
+	regMap := make(map[string]sysregistriesv2.Registry, len(regs))
 	for _, reg := range regs {
-		regMap[reg.Prefix] = &reg
+		regMap[reg.Prefix] = reg
 	}
 
 	return &registryAuth{auth: authMap, reg: regMap}, nil
@@ -1420,10 +1420,11 @@ func (r *registryAuth) getAuth(domain string) *runtimeapi.AuthConfig {
 	return r.auth[domain]
 }
 
-func (r *registryAuth) getRegistry(prefix string) *sysregistriesv2.Registry {
+func (r *registryAuth) getRegistry(prefix string) (sysregistriesv2.Registry, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	return r.reg[prefix]
+	reg, ok := r.reg[prefix]
+	return reg, ok
 }
 
 func (r *registryAuth) getAuthConfigForImage(image string) (*runtimeapi.AuthConfig, error) {
@@ -1432,33 +1433,73 @@ func (r *registryAuth) getAuthConfigForImage(image string) (*runtimeapi.AuthConf
 		return nil, err
 	}
 
-	// check if the image is has a mirror if found match source to existing auth if possible
-	parts := strings.Split(image, "@")
-	registry := r.getRegistry(parts[0])
-	if registry != nil {
-		sources, err := registry.PullSourcesFromReference(parsed)
-		if err != nil {
-			return nil, err
-		}
-		for _, source := range sources {
-			pref, err := reference.ParseNamed(source.Endpoint.Location)
-			if err != nil {
-				return nil, err
-			}
-			if auth := r.getAuth(reference.Domain(pref)); auth != nil {
-				return auth, nil
-			}
-		}
+	// check for registry defined auth of mirrored images
+	authConfig, err := r.getMirrorAuthConfig(parsed)
+	if err != nil {
+		return nil, err
+	}
+	if authConfig != nil {
+		return authConfig, nil
 	}
 
+	// check for auth of the image's domain
 	if auth := r.getAuth(reference.Domain(parsed)); auth != nil {
 		return auth, nil
 
 	}
 
-	// no auth found for the image this is not an error for public images
-	klog.V(4).Infof("no auth found for image: %s", image)
+	// public image or no auth found
 	return nil, nil
+}
+
+func (r *registryAuth) getMirrorAuthConfig(parsed reference.Named) (*runtimeapi.AuthConfig, error) {
+	registryNames := parseSupportedNames(parsed.Name())
+	for _, name := range registryNames {
+		if authConfig, err := r.authFromRegistry(name, parsed); err != nil || authConfig != nil {
+			return authConfig, err
+		}
+	}
+	return nil, nil
+}
+
+func (r *registryAuth) authFromRegistry(name string, parsed reference.Named) (*runtimeapi.AuthConfig, error) {
+	registry, found := r.getRegistry(name)
+	if !found {
+		return nil, nil
+	}
+
+	sources, err := registry.PullSourcesFromReference(parsed)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, source := range sources {
+		if authConfig := r.authFromSourceLocations(source.Endpoint.Location); authConfig != nil {
+			return authConfig, nil
+		}
+	}
+	return nil, nil
+}
+
+func (r *registryAuth) authFromSourceLocations(location string) *runtimeapi.AuthConfig {
+	locationNames := parseSupportedNames(location)
+	for _, locationName := range locationNames {
+		if auth := r.getAuth(locationName); auth != nil {
+			return auth
+		}
+	}
+	return nil
+}
+
+// parseSupportedNames populates a list of supported registry names from an image reference.
+func parseSupportedNames(name string) []string {
+	parts := strings.Split(name, "/")
+	baseDomain := parts[0]
+	if baseDomain == name {
+		return []string{name}
+	}
+
+	return []string{name, baseDomain}
 }
 
 // prefetch represents a task to prefetch an image.
