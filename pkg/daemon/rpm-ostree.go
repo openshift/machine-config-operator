@@ -236,12 +236,20 @@ func (r *RpmOstreeClient) IsNewEnoughForLayering() (bool, error) {
 	return false, nil
 }
 
-// RebaseLayered rebases system or errors if already rebased
+// RebaseLayered rebases system or errors if already rebased.
 func (r *RpmOstreeClient) RebaseLayered(imgURL string) (err error) {
 	// Try to re-link the merged pull secrets if they exist, since it could have been populated without a daemon reboot
 	useMergedPullSecrets()
 	klog.Infof("Executing rebase to %s", imgURL)
 	return runRpmOstree("rebase", "--experimental", "ostree-unverified-registry:"+imgURL)
+}
+
+// RebaseLayeredFromContainerStorage rebases the system from an existing local container storage image.
+func (r *RpmOstreeClient) RebaseLayeredFromContainerStorage(imgURL string) (err error) {
+	// Try to re-link the merged pull secrets if they exist, since it could have been populated without a daemon reboot
+	useMergedPullSecrets()
+	klog.Infof("Executing local container storage rebase to %s", imgURL)
+	return runRpmOstree("rebase", "--experimental", "ostree-unverified-image:containers-storage:"+imgURL)
 }
 
 // linkOstreeAuthFile gives the rpm-ostree client access to secrets in the file located at `path` by symlinking so that
