@@ -110,17 +110,12 @@ func (e *ErrInvalidImageBuilder) Error() string {
 }
 
 // Image builder constants.
-
 type ImageBuilderType string
-type BuildProgress string
 
 const (
 
 	// CustomPodImageBuilder is the constant indicating use of the custom pod image builder.
 	CustomPodImageBuilder ImageBuilderType = "CustomPodBuilder"
-	// Missing build progress constants from the API
-	MachineOSBuildReady     BuildProgress = "Ready"
-	MachineOSBuildRestarted BuildProgress = "Restarted"
 )
 
 var (
@@ -392,28 +387,9 @@ func (ctrl *Controller) customBuildPodUpdater(pod *corev1.Pod) error {
 
 	klog.V(4).Infof("Build pod (%s) is %s", pod.Name, pod.Status.Phase)
 
-	mosbs, err := ctrl.machineOSBuildLister.List(labels.Everything())
+	mosc, mosb, err := ctrl.getConfigAndBuildForPool(pool)
 	if err != nil {
 		return err
-	}
-	moscs, err := ctrl.machineOSConfigLister.List(labels.Everything())
-	if err != nil {
-		return err
-	}
-
-	var mosb *mcfgv1alpha1.MachineOSBuild
-	var mosc *mcfgv1alpha1.MachineOSConfig
-	for _, config := range moscs {
-		if config.Spec.MachineConfigPool.Name == pool.Name {
-			mosc = config
-			break
-		}
-	}
-	for _, build := range mosbs {
-		if build.Spec.MachineOSConfig.Name == mosc.Name {
-			mosb = build
-			break
-		}
 	}
 
 	mosbState := ctrlcommon.NewMachineOSBuildState(mosb)
@@ -479,11 +455,11 @@ func (ctrl *Controller) handleErr(err error, key interface{}) {
 }
 
 func (ctrl *Controller) syncMachineOSBuilder(key string) error {
-	// startTime := time.Now()
-	// klog.V(4).Infof("Started syncing build %q (%v)", key, startTime)
-	// defer func() {
-	// 	klog.V(4).Infof("Finished syncing machineOSBuilder %q (%v)", key, time.Since(startTime))
-	// }()
+	startTime := time.Now()
+	klog.V(4).Infof("Started syncing build %q (%v)", key, startTime)
+	defer func() {
+		klog.V(4).Infof("Finished syncing machineOSBuilder %q (%v)", key, time.Since(startTime))
+	}()
 
 	_, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
@@ -563,8 +539,18 @@ func (ctrl *Controller) updateMachineConfigPool(old, cur interface{}) {
 	curPool := cur.(*mcfgv1.MachineConfigPool).DeepCopy()
 	klog.V(4).Infof("Updating MachineConfigPool %s", oldPool.Name)
 
-	moscOld, mosbOld, _ := ctrl.getConfigAndBuildForPool(oldPool)
-	moscNew, mosbNew, _ := ctrl.getConfigAndBuildForPool(curPool)
+	moscOld, mosbOld, err := ctrl.getConfigAndBuildForPool(oldPool)
+	if err != nil {
+		klog.Errorln(err)
+		ctrl.handleErr(err, curPool.Name)
+		return
+	}
+	moscNew, mosbNew, err := ctrl.getConfigAndBuildForPool(curPool)
+	if err != nil {
+		klog.Errorln(err)
+		ctrl.handleErr(err, curPool.Name)
+		return
+	}
 
 	doABuild, err := ctrlcommon.BuildDueToPoolChange(ctrl.imageBuilder, oldPool, curPool, moscNew, mosbNew)
 	if err != nil {
@@ -573,13 +559,11 @@ func (ctrl *Controller) updateMachineConfigPool(old, cur interface{}) {
 		return
 	}
 
-	//reBuild := shouldWeRebuild(oldPool, curPool)
-
 	switch {
 	// We've transitioned from a layered pool to a non-layered pool.
 	case ctrlcommon.IsLayeredPool(moscOld, mosbOld) && !ctrlcommon.IsLayeredPool(moscNew, mosbNew):
 		klog.V(4).Infof("MachineConfigPool %s has opted out of layering", curPool.Name)
-		if err := ctrl.finalizeOptOut(moscNew, mosbNew, curPool); err != nil {
+		if err := ctrl.finalizeOptOut(moscNew, mosbNew); err != nil {
 			klog.Errorln(err)
 			ctrl.handleErr(err, curPool.Name)
 			return
@@ -596,20 +580,17 @@ func (ctrl *Controller) updateMachineConfigPool(old, cur interface{}) {
 		}
 		mosbNew.Status = *status
 
-		if err := ctrl.startBuildForMachineConfigPool(moscNew, mosbNew); err != nil {
-			ctrl.syncAvailableStatus(mosbNew)
-			klog.Errorln(err)
-			ctrl.handleErr(err, curPool.Name)
+		if startErr := ctrl.startBuildForMachineConfigPool(moscNew, mosbNew); startErr != nil {
+			syncErr := ctrl.syncAvailableStatus(mosbNew)
+			aggErr := aggerrors.NewAggregate([]error{
+				syncErr,
+				startErr,
+			})
+			klog.Errorln(aggErr)
+			ctrl.handleErr(aggErr, curPool.Name)
 			return
 		}
-	// // We need to restart build due to config change
-	// case reBuild:
-	// 	klog.V(4).Infof("MachineConfigPool %s requires a build restart", curPool.Name)
-	// 	if err := ctrl.restartBuildForMachineConfigPool(newPoolState(oldPool), newPoolState(curPool)); err != nil {
-	// 		klog.Errorln(err)
-	// 		ctrl.handleErr(err, curPool.Name)
-	// 	}
-	// Everything else.
+
 	default:
 		klog.V(4).Infof("MachineConfigPool %s up-to-date", curPool.Name)
 	}
@@ -645,12 +626,6 @@ func (ctrl *Controller) markBuildInterrupted(mosc *mcfgv1alpha1.MachineOSConfig,
 				Status:  metav1.ConditionTrue,
 				Reason:  "Interrupted",
 				Message: "Build Interrupted",
-			},
-			{
-				Type:    string(MachineOSBuildReady),
-				Status:  metav1.ConditionFalse,
-				Reason:  "Ready",
-				Message: "Build Ready",
 			},
 			{
 				Type:    string(mcfgv1alpha1.MachineOSBuildSucceeded),
@@ -699,12 +674,6 @@ func (ctrl *Controller) markBuildFailed(mosc *mcfgv1alpha1.MachineOSConfig, mosb
 				Message: "Build Interrupted",
 			},
 			{
-				Type:    string(MachineOSBuildReady),
-				Status:  metav1.ConditionFalse,
-				Reason:  "Ready",
-				Message: "Build Ready",
-			},
-			{
 				Type:    string(mcfgv1alpha1.MachineOSBuildSucceeded),
 				Status:  metav1.ConditionFalse,
 				Reason:  "Ready",
@@ -749,12 +718,6 @@ func (ctrl *Controller) markBuildInProgress(mosb *mcfgv1alpha1.MachineOSBuild) e
 				Status:  metav1.ConditionFalse,
 				Reason:  "Interrupted",
 				Message: "Build Interrupted",
-			},
-			{
-				Type:    string(MachineOSBuildReady),
-				Status:  metav1.ConditionFalse,
-				Reason:  "Ready",
-				Message: "Build Ready",
 			},
 			{
 				Type:    string(mcfgv1alpha1.MachineOSBuildSucceeded),
@@ -828,11 +791,9 @@ func (ctrl *Controller) postBuildCleanup(mosc *mcfgv1alpha1.MachineOSConfig, mos
 
 // If one wants to opt out, this removes all of the statuses and object
 // references from a given MachineConfigPool.
-func (ctrl *Controller) finalizeOptOut(mosc *mcfgv1alpha1.MachineOSConfig, mosb *mcfgv1alpha1.MachineOSBuild, pool *mcfgv1.MachineConfigPool) error {
-	if err := ctrl.postBuildCleanup(mosc, mosb, true); err != nil {
-		return err
-	}
-	return nil
+func (ctrl *Controller) finalizeOptOut(mosc *mcfgv1alpha1.MachineOSConfig, mosb *mcfgv1alpha1.MachineOSBuild) error {
+	err := ctrl.postBuildCleanup(mosc, mosb, true)
+	return err
 }
 
 // Marks a given MachineConfigPool as build successful and cleans up after itself.
@@ -847,7 +808,11 @@ func (ctrl *Controller) markBuildSucceeded(mosc *mcfgv1alpha1.MachineOSConfig, m
 			return err
 		}
 
-		sha, _ := ParseImagePullspec(mosc.Status.CurrentImagePullspec, digestConfigMap.Data["digest"])
+		sha, err := ParseImagePullspec(mosc.Spec.BuildInputs.RenderedImagePushspec, digestConfigMap.Data["digest"])
+		if err != nil {
+			return fmt.Errorf("could not create digested image pullspec from the pullspec %q and the digest %q: %w", mosc.Status.CurrentImagePullspec, digestConfigMap.Data["digest"], err)
+		}
+
 		// now, all we need is to make sure this is used all around. (node controller, getters, etc)
 		mosc.Status.CurrentImagePullspec = sha
 		mosb.Status.FinalImagePushspec = sha
@@ -882,12 +847,6 @@ func (ctrl *Controller) markBuildSucceeded(mosc *mcfgv1alpha1.MachineOSConfig, m
 				Status:  metav1.ConditionFalse,
 				Reason:  "Interrupted",
 				Message: "Build Interrupted",
-			},
-			{
-				Type:    string(MachineOSBuildReady),
-				Status:  metav1.ConditionTrue,
-				Reason:  "Ready",
-				Message: "Build Ready",
 			},
 			{
 				Type:    string(mcfgv1alpha1.MachineOSBuildSucceeded),
@@ -932,12 +891,6 @@ func (ctrl *Controller) markBuildPendingWithObjectRef(mosc *mcfgv1alpha1.Machine
 				Status:  metav1.ConditionFalse,
 				Reason:  "Interrupted",
 				Message: "Build Interrupted",
-			},
-			{
-				Type:    string(MachineOSBuildReady),
-				Status:  metav1.ConditionFalse,
-				Reason:  "Ready",
-				Message: "Build Ready",
 			},
 			{
 				Type:    string(mcfgv1alpha1.MachineOSBuildSucceeded),
@@ -1003,11 +956,11 @@ func (ctrl *Controller) prepareForBuild(mosb *mcfgv1alpha1.MachineOSBuild, mosc 
 	moscNew := mosc.DeepCopy()
 
 	url := newExtensionsImageInfo(osImageURL, mosc)
-	if len(moscNew.Spec.BuildInputs.BaseOSExtensionsImagePullspec) == 0 {
+	if moscNew.Spec.BuildInputs.BaseOSExtensionsImagePullspec == "" {
 		moscNew.Spec.BuildInputs.BaseOSExtensionsImagePullspec = url.Pullspec
 	}
 	url = newBaseImageInfo(osImageURL, mosc)
-	if len(moscNew.Spec.BuildInputs.BaseOSImagePullspec) == 0 {
+	if moscNew.Spec.BuildInputs.BaseOSImagePullspec == "" {
 		moscNew.Spec.BuildInputs.BaseOSImagePullspec = url.Pullspec
 		moscNew.Spec.BuildInputs.ReleaseVersion = osImageURL.Data[releaseVersionConfigKey]
 	}

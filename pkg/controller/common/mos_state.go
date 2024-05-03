@@ -33,44 +33,62 @@ func NewMachineOSBuildState(mosb *mcfgv1alpha1.MachineOSBuild) *MachineOSBuildSt
 }
 
 // Returns the OS image, if one is present.
-func (l *MachineOSConfigState) GetOSImage() string {
-	osImage := l.Config.Status.CurrentImagePullspec
+func (c *MachineOSConfigState) GetOSImage() string {
+	osImage := c.Config.Status.CurrentImagePullspec
 	return osImage
 }
 
+// Determines if a given MachineConfigPool has an available OS image. Returns
+// false if the annotation is missing or set to an empty string.
+func (c *MachineOSConfigState) HasOSImage() bool {
+	val := c.Config.Status.CurrentImagePullspec
+	return val != ""
+}
+
+// Clears the image pullspec annotation.
+func (c *MachineOSConfigState) ClearImagePullspec() {
+	c.Config.Spec.BuildInputs.RenderedImagePushspec = ""
+	c.Config.Status.CurrentImagePullspec = ""
+}
+
+// Clears all build object conditions.
+func (b *MachineOSBuildState) ClearAllBuildConditions() {
+	b.Build.Status.Conditions = clearAllBuildConditions(b.Build.Status.Conditions)
+}
+
 // Determines if an OS image build is a success.
-func (l *MachineOSBuildState) IsBuildSuccess() bool {
-	return apihelpers.IsMachineOSBuildConditionTrue(l.Build.Status.Conditions, mcfgv1alpha1.MachineOSBuildSucceeded)
+func (b *MachineOSBuildState) IsBuildSuccess() bool {
+	return apihelpers.IsMachineOSBuildConditionTrue(b.Build.Status.Conditions, mcfgv1alpha1.MachineOSBuildSucceeded)
 }
 
 // Determines if an OS image build is pending.
-func (l *MachineOSBuildState) IsBuildPending() bool {
-	return apihelpers.IsMachineOSBuildConditionTrue(l.Build.Status.Conditions, mcfgv1alpha1.MachineOSBuilding)
+func (b *MachineOSBuildState) IsBuildPending() bool {
+	return apihelpers.IsMachineOSBuildConditionTrue(b.Build.Status.Conditions, mcfgv1alpha1.MachineOSBuilding)
 }
 
 // Determines if an OS image build is in progress.
-func (l *MachineOSBuildState) IsBuilding() bool {
-	return apihelpers.IsMachineOSBuildConditionTrue(l.Build.Status.Conditions, mcfgv1alpha1.MachineOSBuilding)
+func (b *MachineOSBuildState) IsBuilding() bool {
+	return apihelpers.IsMachineOSBuildConditionTrue(b.Build.Status.Conditions, mcfgv1alpha1.MachineOSBuilding)
 }
 
 // Determines if an OS image build has failed.
-func (l *MachineOSBuildState) IsBuildFailure() bool {
-	return apihelpers.IsMachineOSBuildConditionTrue(l.Build.Status.Conditions, mcfgv1alpha1.MachineOSBuildFailed)
+func (b *MachineOSBuildState) IsBuildFailure() bool {
+	return apihelpers.IsMachineOSBuildConditionTrue(b.Build.Status.Conditions, mcfgv1alpha1.MachineOSBuildFailed)
 }
 
 // Determines if an OS image build has failed.
-func (l *MachineOSBuildState) IsBuildInterrupted() bool {
-	return apihelpers.IsMachineOSBuildConditionTrue(l.Build.Status.Conditions, mcfgv1alpha1.MachineOSBuildInterrupted)
+func (b *MachineOSBuildState) IsBuildInterrupted() bool {
+	return apihelpers.IsMachineOSBuildConditionTrue(b.Build.Status.Conditions, mcfgv1alpha1.MachineOSBuildInterrupted)
 }
 
-func (l *MachineOSBuildState) IsAnyDegraded() bool {
+func (b *MachineOSBuildState) IsAnyDegraded() bool {
 	condTypes := []mcfgv1alpha1.BuildProgress{
 		mcfgv1alpha1.MachineOSBuildFailed,
 		mcfgv1alpha1.MachineOSBuildInterrupted,
 	}
 
 	for _, condType := range condTypes {
-		if apihelpers.IsMachineOSBuildConditionTrue(l.Build.Status.Conditions, condType) {
+		if apihelpers.IsMachineOSBuildConditionTrue(b.Build.Status.Conditions, condType) {
 			return true
 		}
 	}
@@ -99,24 +117,6 @@ func isConditionEqual(cond1, cond2 metav1.Condition) bool {
 		cond1.Status == cond2.Status &&
 		cond1.Message == cond2.Message &&
 		cond1.Reason == cond2.Reason
-}
-
-// Determines if a given MachineConfigPool has an available OS image. Returns
-// false if the annotation is missing or set to an empty string.
-func (m *MachineOSConfigState) HasOSImage() bool {
-	val := m.Config.Status.CurrentImagePullspec
-	return val != ""
-}
-
-// Clears the image pullspec annotation.
-func (m *MachineOSConfigState) ClearImagePullspec() {
-	m.Config.Spec.BuildInputs.RenderedImagePushspec = ""
-	m.Config.Status.CurrentImagePullspec = ""
-}
-
-// Clears all build object conditions.
-func (m *MachineOSBuildState) ClearAllBuildConditions() {
-	m.Build.Status.Conditions = clearAllBuildConditions(m.Build.Status.Conditions)
 }
 
 func clearAllBuildConditions(inConditions []metav1.Condition) []metav1.Condition {
@@ -189,7 +189,14 @@ func BuildDueToPoolChange(builder interface {
 		// should do a build.
 		(IsPoolConfigChange(oldPool, curPool) || !moscState.HasOSImage())
 
-	return poolStateSuggestsBuild, nil
+	if !poolStateSuggestsBuild {
+		return false, nil
+	}
+
+	// If a build is found running, we should not do a build.
+	isRunning, err := builder.IsBuildRunning(mosbState.Build, moscState.Config)
+
+	return !isRunning, err
 
 }
 
