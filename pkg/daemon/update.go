@@ -2579,11 +2579,34 @@ func (dn *Daemon) updateLayeredOSToPullspec(newURL string) error {
 	// This currently will incur a double reboot; see https://github.com/coreos/rpm-ostree/issues/4018
 	if !newEnough {
 		logSystem("rpm-ostree is not new enough for layering; forcing an update via container")
-		if err := dn.InplaceUpdateViaNewContainer(newURL); err != nil {
+		return dn.InplaceUpdateViaNewContainer(newURL)
+	}
+
+	isOsImagePresent := false
+
+	// not set during firstboot
+	if dn.featureGatesAccessor != nil {
+		fg, err := dn.featureGatesAccessor.CurrentFeatureGates()
+		if err != nil {
 			return err
 		}
-	} else if err := dn.NodeUpdaterClient.RebaseLayered(newURL); err != nil {
-		return fmt.Errorf("failed to update OS to %s : %w", newURL, err)
+
+		if fg.Enabled(features.FeatureGatePinnedImages) {
+			isOsImagePresent, err = isImagePresent(newURL)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	if isOsImagePresent {
+		if err := dn.NodeUpdaterClient.RebaseLayeredFromContainerStorage(newURL); err != nil {
+			return fmt.Errorf("failed to update OS from local storage: %s: %w", newURL, err)
+		}
+	} else {
+		if err := dn.NodeUpdaterClient.RebaseLayered(newURL); err != nil {
+			return fmt.Errorf("failed to update OS to %s: %w", newURL, err)
+		}
 	}
 
 	return nil
