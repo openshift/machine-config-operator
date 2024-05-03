@@ -37,7 +37,8 @@ const (
 	authFileContents = `{"auths":{
 	"quay.io": {"auth": "Zm9vOmJhcg=="},
 	"quay.io:443": {"auth": "Zm9vOmJheg=="},
-	"registry.ci.openshift.org": {"auth": "Zm9vOnphcg=="}
+	"registry.ci.openshift.org": {"auth": "Zm9vOnphcg=="},
+	"ec2-18-226-52-10.us-east-2.compute.amazonaws.com:6002": {"auth": "em9vbTp6YW0="}
 }}`
 
 	registryConfig = `unqualified-search-registries = ["registry.access.redhat.com", "docker.io"]
@@ -50,13 +51,20 @@ short-name-mode = ""
 
   [[registry.mirror]]
     location = "registry.ci.openshift.org/ocp/release"
+    pull-from-mirror = "digest-only"
+
+[[registry]]
+  prefix = ""
+  location = "registry.stage.redhat.io"
+
+  [[registry.mirror]]
+    location = "ec2-18-226-52-10.us-east-2.compute.amazonaws.com:6002"
     pull-from-mirror = "digest-only"`
 )
 
 func TestRegistryAuth(t *testing.T) {
 	require := require.New(t)
 	tmpDir := t.TempDir()
-
 	authFilePath := filepath.Join(tmpDir, "auth.json")
 	bogusFilePath := filepath.Join(tmpDir, "bogus.json")
 	err := os.WriteFile(authFilePath, []byte(authFileContents), 0644)
@@ -108,6 +116,15 @@ func TestRegistryAuth(t *testing.T) {
 			wantAuth: &runtimeapi.AuthConfig{
 				Username: "foo",
 				Password: "zar",
+			},
+		},
+		{
+			name:     "multiple mirrored registry",
+			authFile: authFilePath,
+			image:    "registry.stage.redhat.io/digest-example/release@sha256:9ac31162cf7a997c1d3222c91f853de5d63c42981f8dc14e99beaf6aaaac4ecf",
+			wantAuth: &runtimeapi.AuthConfig{
+				Username: "zoom",
+				Password: "zam",
 			},
 		},
 	}
