@@ -1,0 +1,23 @@
+apiVersion: admissionregistration.k8s.io/v1beta1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: "mcn-guards"
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups:   ["machineconfiguration.openshift.io"]
+      apiVersions: ["v1alpha1"]
+      operations:  ["CREATE","UPDATE"]
+      resources:   ["machineconfignodes/status","machineconfignodes"]
+  validations:
+    # all requests should have a node-name claim, this prevents impersonation of the machine-config-daemon SA.
+    - expression: "has(request.userInfo.extra) && ('authentication.kubernetes.io/node-name' in request.userInfo.extra)"
+      message: "this user must have a \"authentication.kubernetes.io/node-name\" claim"
+    # all requests should originate from the MCN owner's node
+    - expression: "object.metadata.name == request.userInfo.extra[\"authentication.kubernetes.io/node-name\"][0]"
+      messageExpression: "'updates to MCN ' + string(object.metadata.name) + ' can only be done from the MCN\\'s owner node'"      
+  matchConditions:
+    # Only check requests from machine-config-daemon SA, this allows all other SAs with the correct RBAC to modify MCNs.
+    - name: "check-only-machine-config-daemon-requests"
+      expression: "request.userInfo.username == 'system:serviceaccount:openshift-machine-config-operator:machine-config-daemon'"
