@@ -193,7 +193,8 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 							}
 							logSystem("Cert not found in kubeconfig. This means we need to write to disk. Subject is: %s", c.Subject.CommonName)
 							// these rotate randomly during upgrades. need to ignore. DO NOT restart kubelet until we error.
-							if !strings.Contains(c.Subject.CommonName, "kube-apiserver-localhost-signer") && !strings.Contains(c.Subject.CommonName, "openshift-kube-apiserver-operator_localhost-recovery-serving-signer") {
+							// TODO(jerzhang): handle this better
+							if !strings.Contains(c.Subject.CommonName, "kube-apiserver-localhost-signer") && !strings.Contains(c.Subject.CommonName, "openshift-kube-apiserver-operator_localhost-recovery-serving-signer") && !strings.Contains(c.Subject.CommonName, "kube-apiserver-lb-signer") {
 								logSystem("Need to restart kubelet")
 								dn.deferKubeletRestart = false
 							} else {
