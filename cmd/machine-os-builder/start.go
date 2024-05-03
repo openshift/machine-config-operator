@@ -9,12 +9,14 @@ import (
 
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 
+	"github.com/openshift/machine-config-operator/cmd/common"
 	"github.com/openshift/machine-config-operator/internal/clients"
 	"github.com/openshift/machine-config-operator/pkg/controller/build"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/leaderelection"
 
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/spf13/cobra"
@@ -65,7 +67,7 @@ func getBuildControllerConfigMap(ctx context.Context, cb *clients.Builder) (*cor
 
 // Creates a new BuildController configured for a certain image builder based
 // upon the imageBuilderType key in the on-cluster-build-config ConfigMap.
-func getBuildController(ctx context.Context, cb *clients.Builder) ([]*build.Controller, error) {
+func getBuildControllers(ctx context.Context, cb *clients.Builder) ([]*build.Controller, error) {
 	machineOSConfigs, err := getMachineOSConfigs(ctx, cb)
 	if err != nil {
 		return nil, err
@@ -93,31 +95,50 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 	// To help debugging, immediately log version
 	klog.Infof("Version: %+v (%s)", version.Raw, version.Hash)
 
+	// This is the 'main' context that we thread through the build controller context and
+	// the leader elections. Cancelling this is "stop everything, we are shutting down".
 	ctx, cancel := context.WithCancel(context.Background())
 	cb, err := clients.NewBuilder("")
 	if err != nil {
 		klog.Fatalln(err)
 	}
 
-	controllers, err := getBuildController(ctx, cb)
-	if err != nil {
-		klog.Fatalln(err)
-		var invalidImageBuiler *build.ErrInvalidImageBuilder
-		if errors.As(err, &invalidImageBuiler) {
-			klog.Errorf("The user passed an invalid imageBuilderType of %s", invalidImageBuiler.InvalidType)
-			cancel()
-			os.Exit(255)
-		}
-	}
+	run := func(ctx context.Context) {
+		go common.SignalHandler(cancel)
 
-	// is this... allowed?
-	// since users can specify different settings per pool, we need to run a controller PER pool. Otherwise, settings will be conflated, as will failures and builds.
-	for _, ctrl := range controllers {
-		go ctrl.Run(ctx, 3)
+		controllers, err := getBuildControllers(ctx, cb)
+		if err != nil {
+			klog.Fatalln(err)
+			var invalidImageBuiler *build.ErrInvalidImageBuilder
+			if errors.As(err, &invalidImageBuiler) {
+				klog.Errorf("The user passed an invalid imageBuilderType of %s", invalidImageBuiler.InvalidType)
+				cancel()
+				os.Exit(255)
+			}
+		}
+		for _, ctrl := range controllers {
+			go ctrl.Run(ctx, 3)
+		}
 		<-ctx.Done()
 		cancel()
 	}
 
-	cancel()
+	leaderElectionCfg := common.GetLeaderElectionConfig(cb.GetBuilderConfig())
+
+	leaderelection.RunOrDie(ctx, leaderelection.LeaderElectionConfig{
+		Lock:            common.CreateResourceLock(cb, ctrlcommon.MCONamespace, componentName),
+		ReleaseOnCancel: true,
+		LeaseDuration:   leaderElectionCfg.LeaseDuration.Duration,
+		RenewDeadline:   leaderElectionCfg.RenewDeadline.Duration,
+		RetryPeriod:     leaderElectionCfg.RetryPeriod.Duration,
+		Callbacks: leaderelection.LeaderCallbacks{
+			OnStartedLeading: run,
+			OnStoppedLeading: func() {
+				klog.Infof("Stopped leading. MOB terminating.")
+				os.Exit(0)
+			},
+		},
+	})
+	panic("unreachable")
 
 }

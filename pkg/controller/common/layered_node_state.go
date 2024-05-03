@@ -90,7 +90,7 @@ func (l *LayeredNodeState) isImageAnnotationEqualToPool(anno string, mcp *mcfgv1
 
 	val, ok := l.node.Annotations[anno]
 
-	if lps.HasOSImage() {
+	if layered && lps.HasOSImage() {
 		// If the pool is layered and has an OS image, check that it equals the
 		// node annotations' value.
 		return lps.GetOSImage() == val
@@ -137,7 +137,7 @@ func (l *LayeredNodeState) SetDesiredStateFromPool(layered bool, mcp *mcfgv1.Mac
 
 	lps := NewLayeredPoolState(mcp)
 
-	if lps.HasOSImage() {
+	if layered && lps.HasOSImage() {
 		node.Annotations[daemonconsts.DesiredImageAnnotationKey] = lps.GetOSImage()
 	} else {
 		delete(node.Annotations, daemonconsts.DesiredImageAnnotationKey)

@@ -65,14 +65,20 @@ func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
 	newPool := pool
 	newPool.Status = newStatus
 	_, err = ctrl.client.MachineconfigurationV1().MachineConfigPools().UpdateStatus(context.TODO(), newPool, metav1.UpdateOptions{})
+	if err != nil {
+		return fmt.Errorf("could not update MachineConfigPool %q: %w", newPool.Name, err)
+	}
 
-	l := ctrl.IsLayeredPool(pool, mosc, mosb)
+	l, err := ctrl.IsLayeredPool(mosc, mosb)
+	if err != nil {
+		return fmt.Errorf("Failed to determine whether pool %s opts in to OCL due to an error: %s", pool.Name, err)
+	}
 
 	if pool.Spec.Configuration.Name != newPool.Spec.Configuration.Name {
-		ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, "Updating", "Pool %s now targeting %s", pool.Name, getPoolUpdateLine(newPool, mosc, mosb, l))
+		ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, "Updating", "Pool %s now targeting %s", pool.Name, getPoolUpdateLine(newPool, mosc, l))
 	}
 	if pool.Status.Configuration.Name != newPool.Status.Configuration.Name {
-		ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, "Completed", "Pool %s has completed update to %s", pool.Name, getPoolUpdateLine(newPool, mosc, mosb, l))
+		ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, "Completed", "Pool %s has completed update to %s", pool.Name, getPoolUpdateLine(newPool, mosc, l))
 	}
 	return err
 }
@@ -95,7 +101,7 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 	machineCount := int32(len(nodes))
 	poolSynchronizer := newPoolSynchronizer(machineCount)
 
-	l := ctrl.IsLayeredPool(pool, mosc, mosb)
+	l, _ := ctrl.IsLayeredPool(mosc, mosb)
 
 	var degradedMachines, readyMachines, updatedMachines, unavailableMachines, updatingMachines []*corev1.Node
 	degradedReasons := []string{}
@@ -233,7 +239,7 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 
 	if allUpdated {
 		//TODO: update api to only have one condition regarding status of update.
-		updatedMsg := fmt.Sprintf("All nodes are updated with %s", getPoolUpdateLine(pool, mosc, mosb, l))
+		updatedMsg := fmt.Sprintf("All nodes are updated with %s", getPoolUpdateLine(pool, mosc, l))
 		supdated := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdated, corev1.ConditionTrue, "", updatedMsg)
 		apihelpers.SetMachineConfigPoolCondition(&status, *supdated)
 
@@ -247,10 +253,10 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 		supdated := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdated, corev1.ConditionFalse, "", "")
 		apihelpers.SetMachineConfigPoolCondition(&status, *supdated)
 		if pool.Spec.Paused {
-			supdating := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionFalse, "", fmt.Sprintf("Pool is paused; will not update to %s", getPoolUpdateLine(pool, mosc, mosb, l)))
+			supdating := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionFalse, "", fmt.Sprintf("Pool is paused; will not update to %s", getPoolUpdateLine(pool, mosc, l)))
 			apihelpers.SetMachineConfigPoolCondition(&status, *supdating)
 		} else {
-			supdating := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionTrue, "", fmt.Sprintf("All nodes are updating to %s", getPoolUpdateLine(pool, mosc, mosb, l)))
+			supdating := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionTrue, "", fmt.Sprintf("All nodes are updating to %s", getPoolUpdateLine(pool, mosc, l)))
 			apihelpers.SetMachineConfigPoolCondition(&status, *supdating)
 		}
 	}
@@ -300,7 +306,7 @@ func isPinnedImageSetNodeUpdating(mcs *mcfgalphav1.MachineConfigNode) bool {
 	return updating > 0
 }
 
-func getPoolUpdateLine(pool *mcfgv1.MachineConfigPool, mosc *mcfgv1alpha1.MachineOSConfig, mosb *mcfgv1alpha1.MachineOSBuild, layered bool) string {
+func getPoolUpdateLine(pool *mcfgv1.MachineConfigPool, mosc *mcfgv1alpha1.MachineOSConfig, layered bool) string {
 	targetConfig := pool.Spec.Configuration.Name
 	mcLine := fmt.Sprintf("MachineConfig %s", targetConfig)
 
@@ -309,7 +315,7 @@ func getPoolUpdateLine(pool *mcfgv1.MachineConfigPool, mosc *mcfgv1alpha1.Machin
 	}
 
 	targetImage := mosc.Status.CurrentImagePullspec
-	if len(targetImage) == 0 {
+	if targetImage == "" {
 		return mcLine
 	}
 
@@ -385,11 +391,8 @@ func getUpdatedMachines(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node, mo
 			if layered && mosbState.IsBuildSuccess() && mosb.Spec.DesiredConfig.Name == pool.Spec.Configuration.Name {
 				updated = append(updated, node)
 			}
-		} else {
-			if lns.IsDoneAt(pool, layered) {
-				updated = append(updated, node)
-
-			}
+		} else if lns.IsDoneAt(pool, layered) {
+			updated = append(updated, node)
 		}
 	}
 	return updated

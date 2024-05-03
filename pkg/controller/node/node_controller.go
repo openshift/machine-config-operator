@@ -388,7 +388,7 @@ func (ctrl *Controller) addMachineOSBuild(obj interface{}) {
 	ctrl.enqueueMachineConfigPool(mcp)
 }
 
-func (ctrl *Controller) updateMachineOSBuild(old, cur interface{}) {
+func (ctrl *Controller) updateMachineOSBuild(_, cur interface{}) {
 	curMOSB := cur.(*mcfgv1alpha1.MachineOSBuild)
 
 	config, _ := ctrl.client.MachineconfigurationV1alpha1().MachineOSConfigs().Get(context.TODO(), curMOSB.Spec.MachineOSConfig.Name, metav1.GetOptions{})
@@ -881,13 +881,6 @@ func (ctrl *Controller) canLayeredPoolContinue(pool *mcfgv1.MachineConfigPool) (
 	}
 
 	cs := ctrlcommon.NewMachineOSConfigState(mosc)
-
-	// annoying that we need to either a) pass aroung mosb lister and mosb lister EVERYWHERE
-	// or b) need to retrv one or the other depending on which is passed into the func.
-	// would be nice if we could a) at least centralize this code: ctrl.GetConfigAndBuild(pool)
-	// if we did this, we could potentially, just pass the pool around (as we used to) and shell out to the listers in the func to get the obj assoc. with the pool
-	//owner := mosb.OwnerReferences[0]
-
 	bs := ctrlcommon.NewMachineOSBuildState(mosb)
 
 	hasImage := cs.HasOSImage()
@@ -969,8 +962,12 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	}
 
 	mosc, mosb, _ := ctrl.GetConfigAndBuild(pool)
+	layered, err := ctrl.IsLayeredPool(mosc, mosb)
+	if err != nil {
+		return fmt.Errorf("Failed to determine whether pool %s opts in to OCL due to an error: %s", pool.Name, err)
+	}
 
-	if ok := ctrl.IsLayeredPool(pool, mosc, mosb); ok {
+	if layered {
 		reason, canApplyUpdates, err := ctrl.canLayeredPoolContinue(pool)
 		if err != nil {
 			klog.Infof("Layered pool %s encountered an error: %s", pool.Name, err)
@@ -984,9 +981,9 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		}
 
 		klog.V(4).Infof("Continuing updates for layered pool %s", pool.Name)
-	} else {
-		klog.V(4).Infof("Pool %s is not layered", pool.Name)
 	}
+
+	klog.V(4).Infof("Pool %s is not layered", pool.Name)
 
 	nodes, err := ctrl.getNodesForPool(pool)
 	if err != nil {
@@ -1017,9 +1014,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		hasInProgressTaint := checkIfNodeHasInProgressTaint(node)
 
 		lns := ctrlcommon.NewLayeredNodeState(node)
-		config, build, _ := ctrl.GetConfigAndBuild(pool)
 
-		layered := ctrl.IsLayeredPool(pool, config, build)
 		if lns.IsDesiredEqualToPool(pool, layered) {
 			if hasInProgressTaint {
 				if err := ctrl.removeUpdateInProgressTaint(ctx, node.Name); err != nil {
@@ -1036,13 +1031,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 			}
 		}
 	}
-
-	// NOTE
-	// this needs to get triggered, the new os img needs to propogate here and be set on the candidate machines.
-	config, build, _ := ctrl.GetConfigAndBuild(pool)
-
-	layered := ctrl.IsLayeredPool(pool, config, build)
-	candidates, capacity := getAllCandidateMachines(layered, config, build, pool, nodes, maxunavail)
+	candidates, capacity := getAllCandidateMachines(layered, mosc, mosb, pool, nodes, maxunavail)
 	if len(candidates) > 0 {
 		zones := make(map[string]bool)
 		for _, candidate := range candidates {
@@ -1141,7 +1130,10 @@ func (ctrl *Controller) updateCandidateNode(mosc *mcfgv1alpha1.MachineOSConfig, 
 		}
 
 		lns := ctrlcommon.NewLayeredNodeState(oldNode)
-		layered := ctrl.IsLayeredPool(pool, mosc, mosb)
+		layered, err := ctrl.IsLayeredPool(mosc, mosb)
+		if err != nil {
+			return fmt.Errorf("Failed to determine whether pool %s opts in to OCL due to an error: %s", pool.Name, err)
+		}
 		if mosb == nil {
 			if lns.IsDesiredEqualToPool(pool, layered) {
 				// If the node's desired annotations match the pool, return directly without updating the node.
@@ -1298,17 +1290,17 @@ func (ctrl *Controller) updateCandidateMachines(pool *mcfgv1.MachineConfigPool, 
 func (ctrl *Controller) setDesiredAnnotations(pool *mcfgv1.MachineConfigPool, candidates []*corev1.Node) error {
 	eventName := "SetDesiredConfig"
 	config, build, _ := ctrl.GetConfigAndBuild(pool)
-
-	if layered := ctrl.IsLayeredPool(pool, config, build); layered {
+	layered, err := ctrl.IsLayeredPool(config, build)
+	if err != nil {
+		return fmt.Errorf("Failed to determine whether pool %s opts in to OCL due to an error: %s", pool.Name, err)
+	}
+	if layered {
 		eventName = "SetDesiredConfigAndOSImage"
-
 		klog.Infof("Continuing to sync layered MachineConfigPool %s", pool.Name)
 	}
-
 	for _, node := range candidates {
-		//ctrl.logPool(pool, "Setting node %s target to %s", node.Name, getPoolUpdateLine(pool))
 		if err := ctrl.updateCandidateNode(config, build, node.Name, pool); err != nil {
-			return fmt.Errorf("setting desired %s for node %s: %w", &pool.Spec.Configuration.Name, node.Name, err)
+			return fmt.Errorf("setting desired %s for node %s: %w", pool.Spec.Configuration.Name, node.Name, err)
 		}
 	}
 
@@ -1444,10 +1436,10 @@ func getErrorString(err error) string {
 	return ""
 }
 
-func (ctrl *Controller) IsLayeredPool(pool *mcfgv1.MachineConfigPool, mosc *mcfgv1alpha1.MachineOSConfig, mosb *mcfgv1alpha1.MachineOSBuild) bool {
+func (ctrl *Controller) IsLayeredPool(mosc *mcfgv1alpha1.MachineOSConfig, mosb *mcfgv1alpha1.MachineOSBuild) (bool, error) {
 	fg, err := ctrl.fgAcessor.CurrentFeatureGates()
 	if err != nil {
-		return false
+		return false, err
 	}
-	return (mosc != nil || mosb != nil) && fg.Enabled(configv1.FeatureGateOnClusterBuild)
+	return (mosc != nil || mosb != nil) && fg.Enabled(features.FeatureGateOnClusterBuild), nil
 }

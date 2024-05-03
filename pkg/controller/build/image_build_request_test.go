@@ -12,8 +12,8 @@ func TestImageBuildRequest(t *testing.T) {
 	t.Parallel()
 
 	mcp := newMachineConfigPool("worker", "rendered-worker-1")
-	machineOSConfig := getMachineOSConfig()
-	machineOSBuild := getMachineOSBuild(mcp.Spec.Configuration.Name)
+	machineOSConfig := newMachineOSConfig(mcp)
+	machineOSBuild := newMachineOSBuild(machineOSConfig, mcp)
 
 	ibr := newImageBuildRequestFromBuildInputs(machineOSBuild, machineOSConfig)
 
@@ -50,8 +50,8 @@ func TestImageBuildRequestMissingExtensionsImage(t *testing.T) {
 	t.Parallel()
 
 	mcp := newMachineConfigPool("worker", "rendered-worker-1")
-	machineOSConfig := getMachineOSConfig()
-	machineOSBuild := getMachineOSBuild(mcp.Spec.Configuration.Name)
+	machineOSConfig := newMachineOSConfig(mcp)
+	machineOSBuild := newMachineOSBuild(machineOSConfig, mcp)
 
 	ibr := newImageBuildRequestFromBuildInputs(machineOSBuild, machineOSConfig)
 

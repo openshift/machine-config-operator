@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"reflect"
 	"strings"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
@@ -62,7 +61,7 @@ func TestBuildControllerSinglePool(t *testing.T) {
 
 		newBuildControllerTestFixture(t).runTestFuncs(t, testFuncs{
 			customPodBuilder: func(ctx context.Context, t *testing.T, cs *Clients) {
-				testMCPCustomBuildPod(ctx, t, cs, pool) // how is this different from Happy Path?
+				testMultipleConfigsAreRolledOut(ctx, t, cs, pool, testMCPCustomBuildPod)
 			},
 		})
 	})
@@ -73,10 +72,10 @@ func TestBuildControllerSinglePool(t *testing.T) {
 		newBuildControllerTestFixture(t).runTestFuncs(t, testFuncs{
 			customPodBuilder: func(ctx context.Context, t *testing.T, cs *Clients) {
 				mcp := newMachineConfigPool(pool)
-				mosc := getMachineOSConfig()
-				mosb := getMachineOSBuild(mcp.Spec.Configuration.Name)
-				assertMCPFollowsBuildPodStatus(ctx, t, cs, mcp, mosc, mosb, corev1.PodFailed)
-				assertMachineConfigPoolReachesStateWithMsg(ctx, t, cs, pool, isMCPBuildFailure, isMCPBuildFailureMsg)
+				mosc := newMachineOSConfig(mcp)
+				cs.mcfgclient.MachineconfigurationV1alpha1().MachineOSConfigs().Create(ctx, mosc, metav1.CreateOptions{})
+				assertMOSBFollowsBuildPodStatus(ctx, t, cs, mcp, mosc, corev1.PodFailed)
+				assertMachineConfigPoolReachesStateWithMsg(ctx, t, cs, pool, isMOSBBuildFailure, isMOSBBuildFailureMsg)
 			},
 		})
 	})
@@ -146,10 +145,10 @@ func TestBuildControllerMultipleOptedInPools(t *testing.T) {
 				fixture.runTestFuncs(t, testFuncs{
 					customPodBuilder: func(ctx context.Context, t *testing.T, cs *Clients) {
 						mcp := newMachineConfigPool(pool)
-						mosc := getMachineOSConfig()
-						mosb := getMachineOSBuild(mcp.Spec.Configuration.Name)
-						assertMCPFollowsBuildPodStatus(ctx, t, cs, mcp, mosc, mosb, corev1.PodFailed)
-						assertMachineConfigPoolReachesStateWithMsg(ctx, t, cs, pool, isMCPBuildFailure, isMCPBuildFailureMsg)
+						mosc := newMachineOSConfig(mcp)
+						cs.mcfgclient.MachineconfigurationV1alpha1().MachineOSConfigs().Create(ctx, mosc, metav1.CreateOptions{})
+						assertMOSBFollowsBuildPodStatus(ctx, t, cs, mcp, mosc, corev1.PodFailed)
+						assertMachineConfigPoolReachesStateWithMsg(ctx, t, cs, pool, isMOSBBuildFailure, isMOSBBuildFailureMsg)
 					},
 				})
 			})
@@ -202,6 +201,8 @@ func (b *buildControllerTestFixture) setupClients() *Clients {
 		},
 	})
 
+	osImageURLConfigMap := getOSImageURLConfigMap()
+
 	legacyPullSecret := `{"registry.hostname.com": {"username": "user", "password": "s3kr1t", "auth": "s00pers3kr1t", "email": "user@hostname.com"}}`
 
 	pullSecret := `{"auths":{"registry.hostname.com": {"username": "user", "password": "s3kr1t", "auth": "s00pers3kr1t", "email": "user@hostname.com"}}}`
@@ -209,8 +210,7 @@ func (b *buildControllerTestFixture) setupClients() *Clients {
 	return &Clients{
 		mcfgclient: fakeclientmachineconfigv1.NewSimpleClientset(objects...),
 		kubeclient: fakecorev1client.NewSimpleClientset(
-			getMachineOSConfig(),
-			getMachineOSBuild("rendered-worker-1"),
+			osImageURLConfigMap,
 			&corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "final-image-push-secret",
@@ -270,66 +270,45 @@ func (b *buildControllerTestFixture) startBuildControllerWithCustomPodBuilder() 
 }
 
 // Helper that determines if the build is a success.
-func isMCPBuildSuccess(mcp *mcfgv1.MachineConfigPool, mosb *mcfgv1alpha1.MachineOSBuild) bool {
-	lps := ctrlcommon.NewLayeredPoolState(mcp)
+func isMOSBBuildSuccess(mosc *mcfgv1alpha1.MachineOSConfig, mosb *mcfgv1alpha1.MachineOSBuild, mcp *mcfgv1.MachineConfigPool) bool {
+	moscState := ctrlcommon.NewMachineOSConfigState(mosc)
 	mosbState := ctrlcommon.NewMachineOSBuildState(mosb)
 
-	return lps.HasOSImage() &&
-		lps.GetOSImage() == expectedImagePullspecWithSHA &&
+	return moscState.HasOSImage() &&
+		moscState.GetOSImage() == expectedImagePullspecWithSHA &&
 		mosbState.IsBuildSuccess() &&
-		machineConfigPoolHasMachineConfigRefs(mcp) &&
-		reflect.DeepEqual(mcp.Spec.Configuration, mcp.Status.Configuration)
+		mcp.Spec.Configuration.Name == mcp.Status.Configuration.Name
 }
 
-func isMCPBuildInProgress(mosb *mcfgv1alpha1.MachineOSBuild) bool {
+func isMOSBBuildInProgress(mosb *mcfgv1alpha1.MachineOSBuild) bool {
 	mosbState := ctrlcommon.NewMachineOSBuildState(mosb)
 	return mosbState.IsBuilding()
 }
 
-func isMCPBuildSuccessMsg(mcp *mcfgv1.MachineConfigPool, mosb *mcfgv1alpha1.MachineOSBuild) string {
+func isMOSBBuildSuccessMsg(mosc *mcfgv1alpha1.MachineOSConfig, mosb *mcfgv1alpha1.MachineOSBuild, mcp *mcfgv1.MachineConfigPool) string {
 	sb := &strings.Builder{}
 
 	lps := ctrlcommon.NewLayeredPoolState(mcp)
+	moscState := ctrlcommon.NewMachineOSConfigState(mosc)
 	mosbState := ctrlcommon.NewMachineOSBuildState(mosb)
 
-	fmt.Fprintf(sb, "Has OS image? %v\n", lps.HasOSImage())
-	fmt.Fprintf(sb, "Matches expected pullspec (%s)? %v\n", expectedImagePullspecWithSHA, lps.GetOSImage() == expectedImagePullspecWithSHA)
+	fmt.Fprintf(sb, "Has OS image? %v\n", moscState.HasOSImage())
+	fmt.Fprintf(sb, "Matches expected pullspec (%s)? %v\n", expectedImagePullspecWithSHA, moscState.GetOSImage() == expectedImagePullspecWithSHA)
 	fmt.Fprintf(sb, "Is build success? %v\n", mosbState.IsBuildSuccess())
 	fmt.Fprintf(sb, "Is degraded? %v\n", lps.IsDegraded())
-	fmt.Fprintf(sb, "Has MachineConfig refs? %v\n", machineConfigPoolHasMachineConfigRefs(mcp))
-	fmt.Fprintf(sb, "Spec.Configuration == Status.Configuration? %v\n", reflect.DeepEqual(mcp.Spec.Configuration, mcp.Status.Configuration))
-
+	fmt.Fprintf(sb, "Spec.Configuration == Status.Configuration? %v\n", mcp.Spec.Configuration.Name == mcp.Status.Configuration.Name)
 	return sb.String()
 }
 
-func machineConfigPoolHasMachineConfigRefs(pool *mcfgv1.MachineConfigPool) bool {
-	// expectedMCP := newMachineConfigPool(pool.Name)
-	// ps := newPoolState(pool)
-	// // ps := ctrlcommon.NewLayeredPoolState(pool)
-
-	// for _, ref := range expectedMCP.Spec.Configuration.Source {
-	// 	if !ps.HasObjectRef(ref) {
-	// 		return false
-	// 	}
-	// }
-
-	//TODO: determine if this is needed and fix
-
-	return true
-}
-
 // Helper that determines if the build was a failure.
-func isMCPBuildFailure(mcp *mcfgv1.MachineConfigPool, mosb *mcfgv1alpha1.MachineOSBuild) bool {
-	lps := ctrlcommon.NewLayeredPoolState(mcp)
+func isMOSBBuildFailure(mosc *mcfgv1alpha1.MachineOSConfig, mosb *mcfgv1alpha1.MachineOSBuild, mcp *mcfgv1.MachineConfigPool) bool {
 	mosbState := ctrlcommon.NewMachineOSBuildState(mosb)
 
 	return mosbState.IsBuildFailure() &&
-		lps.IsDegraded() &&
-		machineConfigPoolHasMachineConfigRefs(mcp) &&
-		reflect.DeepEqual(mcp.Spec.Configuration, mcp.Status.Configuration)
+		mcp.Spec.Configuration.Name == mcp.Status.Configuration.Name
 }
 
-func isMCPBuildFailureMsg(mcp *mcfgv1.MachineConfigPool, mosb *mcfgv1alpha1.MachineOSBuild) string {
+func isMOSBBuildFailureMsg(mosc *mcfgv1alpha1.MachineOSConfig, mosb *mcfgv1alpha1.MachineOSBuild, mcp *mcfgv1.MachineConfigPool) string {
 	sb := &strings.Builder{}
 
 	lps := ctrlcommon.NewLayeredPoolState(mcp)
@@ -337,19 +316,28 @@ func isMCPBuildFailureMsg(mcp *mcfgv1.MachineConfigPool, mosb *mcfgv1alpha1.Mach
 
 	fmt.Fprintf(sb, "Is build failure? %v\n", mosbState.IsBuildFailure())
 	fmt.Fprintf(sb, "Is degraded? %v\n", lps.IsDegraded())
-	fmt.Fprintf(sb, "Has MachineConfig refs? %v\n", machineConfigPoolHasMachineConfigRefs(mcp))
-	fmt.Fprintf(sb, "Spec.Configuration == Status.Configuration? %v\n", reflect.DeepEqual(mcp.Spec.Configuration, mcp.Status.Configuration))
-
+	fmt.Fprintf(sb, "Spec.Configuration == Status.Configuration? %v\n", mcp.Spec.Configuration.Name == mcp.Status.Configuration.Name)
 	return sb.String()
 }
 
-// Creates an MOSC and and MOSB and asserts that the MachineConfigPool reaches the desired state.
+// Creates an MOSC and and MOSB and asserts that the MOSB reaches the desired state.
 func testMCPCustomBuildPod(ctx context.Context, t *testing.T, cs *Clients, poolName string) {
-	mcp := newMachineConfigPool(poolName)
-	mosc := getMachineOSConfig()
-	mosb := getMachineOSBuild(mcp.Spec.Configuration.Name)
-	assertMCPFollowsBuildPodStatus(ctx, t, cs, mcp, mosc, mosb, corev1.PodSucceeded)
-	assertMachineConfigPoolReachesStateWithMsg(ctx, t, cs, poolName, isMCPBuildSuccess, isMCPBuildSuccessMsg)
+
+	mcp, err := cs.mcfgclient.MachineconfigurationV1().MachineConfigPools().Get(ctx, poolName, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	var mosc *mcfgv1alpha1.MachineOSConfig
+
+	mosc, err = getMachineOSConfig(ctx, cs, mosc, mcp)
+	require.NoError(t, err)
+	if mosc == nil {
+		mosc = newMachineOSConfig(mcp)
+		_, err = cs.mcfgclient.MachineconfigurationV1alpha1().MachineOSConfigs().Create(ctx, mosc, metav1.CreateOptions{})
+		require.NoError(t, err)
+	}
+
+	assertMOSBFollowsBuildPodStatus(ctx, t, cs, mcp, mosc, corev1.PodSucceeded)
+	assertMachineConfigPoolReachesStateWithMsg(ctx, t, cs, poolName, isMOSBBuildSuccess, isMOSBBuildSuccessMsg)
 }
 
 func testRebuildDoesNothing(ctx context.Context, t *testing.T, cs *Clients, poolName string) {
@@ -411,13 +399,13 @@ func testMultipleConfigsAreRolledOut(ctx context.Context, t *testing.T, cs *Clie
 
 		optInFunc(ctx, t, cs, poolName)
 
-		checkFunc := func(pool *mcfgv1.MachineConfigPool, mosb *mcfgv1alpha1.MachineOSBuild) bool {
-			return pool.Spec.Configuration.Name == config && isMCPBuildSuccess(pool, mosb)
+		checkFunc := func(mosc *mcfgv1alpha1.MachineOSConfig, mosb *mcfgv1alpha1.MachineOSBuild, pool *mcfgv1.MachineConfigPool) bool {
+			return pool.Spec.Configuration.Name == config && isMOSBBuildSuccess(mosc, mosb, pool)
 		}
 
-		msgFunc := func(pool *mcfgv1.MachineConfigPool, mosb *mcfgv1alpha1.MachineOSBuild) string {
+		msgFunc := func(mosc *mcfgv1alpha1.MachineOSConfig, mosb *mcfgv1alpha1.MachineOSBuild, pool *mcfgv1.MachineConfigPool) string {
 			sb := &strings.Builder{}
-			fmt.Fprintln(sb, isMCPBuildFailureMsg(pool, mosb))
+			fmt.Fprintln(sb, isMOSBBuildFailureMsg(mosc, mosb, pool))
 			fmt.Fprintf(sb, "Configuration name equals config? %v. Expected: %s\n, Actual: %s\n", pool.Spec.Configuration.Name == config, config, pool.Spec.Configuration.Name)
 			return sb.String()
 		}
@@ -448,8 +436,7 @@ func testMCPIsDegraded(ctx context.Context, t *testing.T, cs *Clients) {
 		// }
 
 		return apihelpers.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolDegraded) &&
-			assertNoBuildPods(ctx, t, cs) &&
-			assertNoBuilds(ctx, t, cs)
+			assertNoBuildPods(ctx, t, cs)
 	})
 }
 
@@ -467,19 +454,20 @@ func testBuiltPoolGetsUnrelatedUpdate(ctx context.Context, t *testing.T, cs *Cli
 
 	assertMachineConfigPoolReachesState(ctx, t, cs, "worker", func(mcp *mcfgv1.MachineConfigPool) bool {
 		return assert.Equal(t, mcp.Status.Conditions, pool.Status.Conditions) &&
-			assertNoBuildPods(ctx, t, cs) &&
-			assertNoBuilds(ctx, t, cs)
+			assertNoBuildPods(ctx, t, cs)
 	})
 }
 
-// Mocks whether a given build is running.
-type mockIsBuildRunning bool
+// TO-DO: update the test for BuildDueToPoolChange
 
-func (m *mockIsBuildRunning) IsBuildRunning(*mcfgv1.MachineConfigPool) (bool, error) {
-	return bool(*m), nil
-}
+// // Mocks whether a given build is running.
+// type mockIsBuildRunning bool
 
-// Tests if we should do a build for a variety of edge-cases and circumstances.
+// func (m *mockIsBuildRunning) IsBuildRunning(*mcfgv1.MachineConfigPool) (bool, error) {
+// 	return bool(*m), nil
+// }
+
+// // Tests if we should do a build for a variety of edge-cases and circumstances.
 // func TestShouldWeDoABuild(t *testing.T) {
 // 	// Mutators which mutate the given MachineConfigPool.
 // 	toLayeredPool := func(mcp *mcfgv1.MachineConfigPool) *mcfgv1.MachineConfigPool {

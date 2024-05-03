@@ -101,7 +101,7 @@ func (f *fixture) newControllerWithStopChan(stopCh <-chan struct{}) *Controller 
 	k8sI := kubeinformers.NewSharedInformerFactory(f.kubeclient, noResyncPeriodFunc())
 	ci := configv1informer.NewSharedInformerFactory(f.schedulerClient, noResyncPeriodFunc())
 	c := NewWithCustomUpdateDelay(i.Machineconfiguration().V1().ControllerConfigs(), i.Machineconfiguration().V1().MachineConfigs(), i.Machineconfiguration().V1().MachineConfigPools(), k8sI.Core().V1().Nodes(),
-		k8sI.Core().V1().Pods(), i.Machineconfiguration().V1alpha1().MachineOSBuilds(), ci.Config().V1().Schedulers(), f.kubeclient, f.client, time.Millisecond, fgAccess)
+		k8sI.Core().V1().Pods(), i.Machineconfiguration().V1alpha1().MachineOSBuilds(), ci.Config().V1().Schedulers(), f.kubeclient, f.client, time.Millisecond, f.fgAccess)
 
 	c.ccListerSynced = alwaysReady
 	c.mcpListerSynced = alwaysReady
@@ -1059,7 +1059,7 @@ func TestShouldMakeProgress(t *testing.T) {
 			expectTaintsAddPatch:  true,
 		},
 		{
-			description:             "node at desired config, no patch on annotation but taint should be removed", // failing
+			description:             "node at desired config, no patch on annotation but taint should be removed",
 			node:                    nodeWithDesiredConfigTaints.DeepCopy(),
 			expectAnnotationPatch:   false,
 			expectTaintsAddPatch:    false,
@@ -1067,7 +1067,7 @@ func TestShouldMakeProgress(t *testing.T) {
 			expectedNodeGet:         1,
 		},
 		{
-			description:           "node not at desired config, patch on annotation but not on taint", //failing
+			description:           "node not at desired config, patch on annotation but not on taint",
 			node:                  nodeWithNoDesiredConfigButTaints.DeepCopy(),
 			expectAnnotationPatch: true,
 			expectTaintsAddPatch:  false,
@@ -1218,7 +1218,11 @@ func TestShouldMakeProgress(t *testing.T) {
 				t.Logf("not expecting annotation")
 			}
 			c := f.newController()
-			expStatus := c.calculateStatus([]*mcfgalphav1.MachineConfigNode{}, cc, mcp, nodes, nil, nil)
+			fg, err := f.fgAccess.CurrentFeatureGates()
+			if err != nil {
+				t.Fatal(err)
+			}
+			expStatus := c.calculateStatus(fg, []*mcfgalphav1.MachineConfigNode{}, cc, mcp, nodes, nil, nil)
 			expMcp := mcp.DeepCopy()
 			expMcp.Status = expStatus
 			f.expectUpdateMachineConfigPoolStatus(expMcp)
@@ -1270,8 +1274,11 @@ func TestPaused(t *testing.T) {
 		f.kubeobjects = append(f.kubeobjects, nodes[idx])
 	}
 	c := f.newController()
-
-	expStatus := c.calculateStatus([]*mcfgalphav1.MachineConfigNode{}, cc, mcp, nodes, nil, nil)
+	fg, err := f.fgAccess.CurrentFeatureGates()
+	if err != nil {
+		t.Fatal(err)
+	}
+	expStatus := c.calculateStatus(fg, []*mcfgalphav1.MachineConfigNode{}, cc, mcp, nodes, nil, nil)
 	expMcp := mcp.DeepCopy()
 	expMcp.Status = expStatus
 	f.expectUpdateMachineConfigPoolStatus(expMcp)
@@ -1298,8 +1305,11 @@ func TestShouldUpdateStatusOnlyUpdated(t *testing.T) {
 		f.kubeobjects = append(f.kubeobjects, nodes[idx])
 	}
 	c := f.newController()
-
-	expStatus := c.calculateStatus([]*mcfgalphav1.MachineConfigNode{}, cc, mcp, nodes, nil, nil)
+	fg, err := f.fgAccess.CurrentFeatureGates()
+	if err != nil {
+		t.Fatal(err)
+	}
+	expStatus := c.calculateStatus(fg, []*mcfgalphav1.MachineConfigNode{}, cc, mcp, nodes, nil, nil)
 	expMcp := mcp.DeepCopy()
 	expMcp.Status = expStatus
 	f.expectUpdateMachineConfigPoolStatus(expMcp)
@@ -1327,8 +1337,11 @@ func TestShouldUpdateStatusOnlyNoProgress(t *testing.T) {
 		f.kubeobjects = append(f.kubeobjects, nodes[idx])
 	}
 	c := f.newController()
-
-	expStatus := c.calculateStatus([]*mcfgalphav1.MachineConfigNode{}, cc, mcp, nodes, nil, nil)
+	fg, err := f.fgAccess.CurrentFeatureGates()
+	if err != nil {
+		t.Fatal(err)
+	}
+	expStatus := c.calculateStatus(fg, []*mcfgalphav1.MachineConfigNode{}, cc, mcp, nodes, nil, nil)
 	expMcp := mcp.DeepCopy()
 	expMcp.Status = expStatus
 	f.expectUpdateMachineConfigPoolStatus(expMcp)
@@ -1361,8 +1374,11 @@ func TestCertStatus(t *testing.T) {
 		f.kubeobjects = append(f.kubeobjects, nodes[idx])
 	}
 	c := f.newController()
-
-	expStatus := c.calculateStatus([]*mcfgalphav1.MachineConfigNode{}, cc, mcp, nodes, nil, nil)
+	fg, err := f.fgAccess.CurrentFeatureGates()
+	if err != nil {
+		t.Fatal(err)
+	}
+	expStatus := c.calculateStatus(fg, []*mcfgalphav1.MachineConfigNode{}, cc, mcp, nodes, nil, nil)
 	expMcp := mcp.DeepCopy()
 	expMcp.Status = expStatus
 
