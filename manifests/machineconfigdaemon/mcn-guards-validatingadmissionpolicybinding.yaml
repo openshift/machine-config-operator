@@ -1,0 +1,7 @@
+apiVersion: admissionregistration.k8s.io/v1beta1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: "mcn-guards-binding"
+spec:
+  policyName: "mcn-guards"
+  validationActions: [Deny]
