@@ -121,7 +121,7 @@ func runBootstrapCmd(_ *cobra.Command, _ []string) {
 	if version.IsFCOS() {
 		baseOSContainerImageTag = "fedora-coreos"
 	} else if version.IsSCOS() {
-		baseOSContainerImageTag = "centos-stream-coreos-9"
+		baseOSContainerImageTag = "stream-coreos"
 	}
 
 	if bootstrapOpts.imageReferences != "" {
