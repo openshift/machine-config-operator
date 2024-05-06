@@ -37,7 +37,7 @@ RUN --mount=type=cache,target=/var/cache/dnf,z \
     sed -i 's/rhel-coreos/fedora-coreos/g' /manifests/*; \
     elif [ "${TAGS}" = "scos" ]; then \
     # rewrite image names for scos
-    sed -i 's/rhel-coreos/centos-stream-coreos-9/g' /manifests/*; fi && \
+    sed -i 's/rhel-coreos/stream-coreos/g' /manifests/*; fi && \
     dnf --setopt=keepcache=true -y install 'nmstate >= 2.2.10' && \
     if ! rpm -q util-linux; then dnf install --setopt=keepcache=true -y util-linux; fi
 # Copy the binaries *after* we install nmstate so we don't invalidate our cache for local builds.
