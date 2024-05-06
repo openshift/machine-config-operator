@@ -12,24 +12,22 @@ contents:
     fi
 
     if [ -e /etc/nmstate/openshift/applied ]; then
-      # Already done, don't apply again
+      echo "Configuration already applied, exiting"
       exit 0
     fi
 
     src_path="/etc/nmstate/openshift"
     dst_path="/etc/nmstate"
     hostname=$(hostname -s)
-    hostname_file="${hostname}.yml"
+    host_file="${hostname}.yml"
     cluster_file="cluster.yml"
     config_file=""
-    if [ -s "$src_path/$hostname_file" ]; then
+    if [ -s "$src_path/$host_file" ]; then
       config_file=$hostname_file
-    fi
-    if [ -s "$src_path/$cluster_file" ]; then
+    elif [ -s "$src_path/$cluster_file" ]; then
       config_file=$cluster_file
-    fi
-    if [ -z $config_file ]; then
-      # No config to apply
+    else
+      echo "No configuration found at $src_path/$host_file or $src_path/$cluster_file"
       exit 0
     fi
 
