@@ -1368,7 +1368,7 @@ func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error, errCh chan er
 			klog.Errorf("Got an error from auxiliary tools: %v", err)
 			// we do not want to fail on any .HandleError call. Need to only fail when it is a watcher
 			// we might want to remove this last one. We will see.
-			if dn.deferKubeletRestart && (strings.Contains(strings.ToLower(err.Error()), "failed to watch") || strings.Contains(strings.ToLower(err.Error()), "unknown authority") || strings.Contains(strings.ToLower(err.Error()), "error on the server")) {
+			if dn.deferKubeletRestart && strings.Contains(strings.ToLower(err.Error()), "x509") {
 				logSystem("Re-bootstrapping kubelet in response to deferred kubeconfig changes and %v", err)
 				err := dn.kubeletRebootstrap(context.TODO())
 				if err != nil {
