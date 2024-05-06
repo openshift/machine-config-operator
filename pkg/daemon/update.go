@@ -41,6 +41,7 @@ import (
 	pivottypes "github.com/openshift/machine-config-operator/pkg/daemon/pivot/types"
 	pivotutils "github.com/openshift/machine-config-operator/pkg/daemon/pivot/utils"
 	"github.com/openshift/machine-config-operator/pkg/upgrademonitor"
+	"github.com/openshift/machine-config-operator/test/helpers"
 )
 
 const (
@@ -71,6 +72,9 @@ const (
 	// ImageRegistryDrainOverrideConfigmap is the name of the Configmap a user can apply to force all
 	// image registry changes to not drain
 	ImageRegistryDrainOverrideConfigmap = "image-registry-override-drain"
+
+	// name of the systemd unit that re-bootstraps a node after reverting from layered to non-layered
+	layeringRevertSystemdUnitName = "machine-config-daemon-revert.service"
 )
 
 func getNodeRef(node *corev1.Node) *corev1.ObjectReference {
@@ -865,12 +869,25 @@ func (dn *Daemon) updateOnClusterBuild(oldConfig, newConfig *mcfgv1.MachineConfi
 	// If the new image pullspec is already on disk, do not attempt to re-apply
 	// it. rpm-ostree will throw an error as a result.
 	// See: https://issues.redhat.com/browse/OCPBUGS-18414.
-	if oldImage != newImage && newImage != "" {
+	if oldImage != newImage {
+		// If the new image field is empty, set it to the OS image URL value
+		// provided by the MachineConfig to do a rollback.
+		if newImage == "" {
+			klog.Infof("%s empty, reverting to osImageURL %s from MachineConfig %s", constants.DesiredImageAnnotationKey, newConfig.Spec.OSImageURL, newConfig.Name)
+			newImage = newConfig.Spec.OSImageURL
+		}
 		if err := dn.updateLayeredOSToPullspec(newImage); err != nil {
 			return err
 		}
 	} else {
 		klog.Infof("Image pullspecs equal, skipping rpm-ostree rebase")
+	}
+
+	// If the new OS image equals the OS image URL value, this means we're in a
+	// revert-from-layering situation. This also means we can return early after
+	// taking a different path.
+	if newImage == newConfig.Spec.OSImageURL {
+		return dn.finalizeRevertToNonLayering(newConfig)
 	}
 
 	// update files on disk that need updating
@@ -958,6 +975,40 @@ func (dn *Daemon) updateOnClusterBuild(oldConfig, newConfig *mcfgv1.MachineConfi
 	}()
 
 	return dn.reboot(fmt.Sprintf("Node will reboot into image %s / MachineConfig %s", newImage, newConfigName))
+}
+
+func (dn *Daemon) finalizeRevertToNonLayering(newConfig *mcfgv1.MachineConfig) error {
+	// First, we write the MachineConfig-encapsulated Ignition file. This is both
+	// the signal that the revert systemd unit should fire as well as the desired
+	// source of truth.
+	outBytes, err := json.Marshal(newConfig)
+	if err != nil {
+		return fmt.Errorf("could not marshal MachineConfig %q to JSON: %w", newConfig.Name, err)
+	}
+
+	if err := writeFileAtomicallyWithDefaults(constants.MachineConfigEncapsulatedPath, outBytes); err != nil {
+		return fmt.Errorf("could not write MachineConfig %q to %q: %w", newConfig.Name, constants.MachineConfigEncapsulatedPath, err)
+	}
+
+	klog.Infof("Wrote MachineConfig %q to %q", newConfig.Name, constants.MachineConfigEncapsulatedPath)
+
+	if err := dn.toggleRevertSystemdUnit(newConfig, true); err != nil {
+		return err
+	}
+
+	// Clear the current image field
+	odc := &onDiskConfig{
+		currentImage:  "",
+		currentConfig: newConfig,
+	}
+
+	if err := dn.storeCurrentConfigOnDisk(odc); err != nil {
+		return err
+	}
+
+	klog.Infof("Stored current config on disk")
+
+	return dn.reboot(fmt.Sprintf("Node will reboot into image %s / MachineConfig %s", newConfig.Spec.OSImageURL, newConfig.Name))
 }
 
 // Update the node to the provided node configuration.
@@ -2789,4 +2840,42 @@ func (dn *Daemon) hasImageRegistryDrainOverrideConfigMap() (bool, error) {
 	}
 
 	return false, fmt.Errorf("Error fetching image registry drain override configmap: %w", err)
+}
+
+func (dn *Daemon) toggleRevertSystemdUnit(mc *mcfgv1.MachineConfig, enabled bool) error {
+	clonedUnit, err := getRevertSystemdUnitFromMachineConfig(mc)
+	if err != nil {
+		return err
+	}
+
+	clonedUnit.Enabled = helpers.BoolToPtr(enabled)
+	clonedUnit.Mask = nil
+
+	if err := dn.writeUnits([]ign3types.Unit{*clonedUnit}); err != nil {
+		return err
+	}
+
+	if !enabled {
+		return os.RemoveAll(filepath.Join(pathSystemd, clonedUnit.Name))
+	}
+
+	return nil
+}
+
+func getRevertSystemdUnitFromMachineConfig(mc *mcfgv1.MachineConfig) (*ign3types.Unit, error) {
+	ignConfig, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, unit := range ignConfig.Systemd.Units {
+		unit := unit
+		if unit.Name == layeringRevertSystemdUnitName {
+			unit.Name = "machine-config-daemon-revert-layered.service"
+			unit.Mask = nil
+			return &unit, nil
+		}
+	}
+
+	return nil, fmt.Errorf("could not find %s in MachineConfig %s", layeringRevertSystemdUnitName, mc.Name)
 }
