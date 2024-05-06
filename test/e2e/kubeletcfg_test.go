@@ -33,7 +33,7 @@ func TestKubeletConfigDefaultUpdateFreq(t *testing.T) {
 	matchLabels["pools.operator.machineconfiguration.openshift.io/infra"] = ""
 	resources["cpu"] = "100m"
 	// this might get caught by the test below that says if default == current but that is ok since we want to make sure nodeStatusUpdateFrequency is 10s
-	kcRaw1, err := kcfg.EncodeKubeletConfig(&kubeletconfigv1beta1.KubeletConfiguration{}, kubeletconfigv1beta1.SchemeGroupVersion)
+	kcRaw1, err := kcfg.EncodeKubeletConfig(&kubeletconfigv1beta1.KubeletConfiguration{}, kubeletconfigv1beta1.SchemeGroupVersion, runtime.ContentTypeJSON)
 	require.Nil(t, err, "failed to encode kubelet config")
 	kc1 := &mcfgv1.KubeletConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-100"},
@@ -45,10 +45,10 @@ func TestKubeletConfigDefaultUpdateFreq(t *testing.T) {
 		},
 	}
 
-	runTestWithKubeletCfg(t, "resources", []string{`"?nodeStatusUpdateFrequency"?: (\S+)`}, []string{"nodeStatusUpdateFrequency"}, [][]string{{"\"10s\","}}, kc1, nil)
+	runTestWithKubeletCfg(t, "resources", []string{`"?nodeStatusUpdateFrequency"?: (\S+)`}, []string{"nodeStatusUpdateFrequency"}, [][]string{{"10s"}}, kc1, nil)
 }
 func TestKubeletConfigMaxPods(t *testing.T) {
-	kcRaw1, err := kcfg.EncodeKubeletConfig(&kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, kubeletconfigv1beta1.SchemeGroupVersion)
+	kcRaw1, err := kcfg.EncodeKubeletConfig(&kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, kubeletconfigv1beta1.SchemeGroupVersion, runtime.ContentTypeJSON)
 	require.Nil(t, err, "failed to encode kubelet config")
 	autoNodeSizing := true
 	kc1 := &mcfgv1.KubeletConfig{
@@ -60,7 +60,7 @@ func TestKubeletConfigMaxPods(t *testing.T) {
 			},
 		},
 	}
-	kcRaw2, err := kcfg.EncodeKubeletConfig(&kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 200}, kubeletconfigv1beta1.SchemeGroupVersion)
+	kcRaw2, err := kcfg.EncodeKubeletConfig(&kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 200}, kubeletconfigv1beta1.SchemeGroupVersion, runtime.ContentTypeJSON)
 	require.Nil(t, err, "failed to encode kubelet config")
 	kc2 := &mcfgv1.KubeletConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-200"},
@@ -71,7 +71,7 @@ func TestKubeletConfigMaxPods(t *testing.T) {
 		},
 	}
 
-	runTestWithKubeletCfg(t, "max-pods", []string{`"?maxPods"?: (\S+)`}, []string{"maxPods"}, [][]string{{"100,", "200,"}}, kc1, kc2)
+	runTestWithKubeletCfg(t, "max-pods", []string{`"?maxPods"?: (\S+)`}, []string{"maxPods"}, [][]string{{"100", "200"}}, kc1, kc2)
 }
 
 // runTestWithKubeletCfg creates a kubelet config and checks whether the expected updates were applied, then deletes the kubelet config and makes
@@ -155,7 +155,7 @@ func runTestWithKubeletCfg(t *testing.T, testName string, regexKey []string, str
 	for i, val := range regexKey {
 		out, found := getValueFromKubeletConfig(t, cs, node, val, stringKey[i], kubeletPath)
 		if found {
-			require.Equal(t, out, expectedConfVals[i][0], "value in kubelet config not updated as expected")
+			require.Equal(t, expectedConfVals[i][0], out, "value in kubelet config not updated as expected")
 		} else { // sometimes it seems regexp does not work here
 			require.True(t, strings.Contains(out, expectedConfVals[i][0]))
 		}

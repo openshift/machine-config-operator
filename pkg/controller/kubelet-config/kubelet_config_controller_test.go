@@ -164,7 +164,7 @@ func newControllerConfig(name string, platform osev1.PlatformType) *mcfgv1.Contr
 }
 
 func newKubeletConfig(name string, kubeconf *kubeletconfigv1beta1.KubeletConfiguration, selector *metav1.LabelSelector) *mcfgv1.KubeletConfig {
-	kcRaw, err := EncodeKubeletConfig(kubeconf, kubeletconfigv1beta1.SchemeGroupVersion)
+	kcRaw, err := EncodeKubeletConfig(kubeconf, kubeletconfigv1beta1.SchemeGroupVersion, runtime.ContentTypeJSON)
 	if err != nil {
 		panic(err)
 	}
@@ -637,7 +637,7 @@ func TestKubeletConfigUpdates(t *testing.T) {
 				t.Errorf("KubeletConfig could not be unmarshalled")
 			}
 			kcDecoded.MaxPods = 101
-			kcRaw, err := EncodeKubeletConfig(kcDecoded, kubeletconfigv1beta1.SchemeGroupVersion)
+			kcRaw, err := EncodeKubeletConfig(kcDecoded, kubeletconfigv1beta1.SchemeGroupVersion, runtime.ContentTypeJSON)
 			if err != nil {
 				t.Errorf("KubeletConfig could not be marshalled")
 			}
