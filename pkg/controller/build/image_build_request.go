@@ -20,7 +20,7 @@ const (
 	buildahImagePullspec      string = "quay.io/buildah/stable:latest"
 )
 
-//go:embed assets/Dockerfile.on-cluster-build-template
+//go:embed assets/Containerfile.on-cluster-build-template
 var dockerfileTemplate string
 
 //go:embed assets/wait.sh

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"flag"
-	"fmt"
 	"os"
 
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
@@ -13,8 +12,6 @@ import (
 	"github.com/openshift/machine-config-operator/internal/clients"
 	"github.com/openshift/machine-config-operator/pkg/controller/build"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/leaderelection"
 
@@ -47,26 +44,8 @@ func getMachineOSConfigs(ctx context.Context, cb *clients.Builder) (*mcfgv1alpha
 
 }
 
-// Checks if the on-cluster-build-config ConfigMap exists. If it exists, return the ConfigMap.
-// If not, return an error.
-func getBuildControllerConfigMap(ctx context.Context, cb *clients.Builder) (*corev1.ConfigMap, error) {
-	kubeclient := cb.KubeClientOrDie(componentName)
-	cmName := build.OnClusterBuildConfigMapName
-	cm, err := kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(ctx, cmName, metav1.GetOptions{})
-
-	if err != nil && apierrors.IsNotFound(err) {
-		return nil, fmt.Errorf("configmap %s does not exist. Please create it before opting into on-cluster builds", cmName)
-	}
-
-	if err != nil {
-		return nil, err
-	}
-
-	return cm, nil
-}
-
 // Creates a new BuildController configured for a certain image builder based
-// upon the imageBuilderType key in the on-cluster-build-config ConfigMap.
+// upon the imageBuilderType key in the MOSC.
 func getBuildControllers(ctx context.Context, cb *clients.Builder) ([]*build.Controller, error) {
 	machineOSConfigs, err := getMachineOSConfigs(ctx, cb)
 	if err != nil {
@@ -79,8 +58,12 @@ func getBuildControllers(ctx context.Context, cb *clients.Builder) ([]*build.Con
 
 	controllersToStart := []*build.Controller{}
 
-	for range machineOSConfigs.Items {
-		controllersToStart = append(controllersToStart, build.NewWithCustomPodBuilder(cfg, buildClients))
+	podRequestExisted := 0
+	for _, mosc := range machineOSConfigs.Items {
+		if mosc.Spec.BuildInputs.ImageBuilder.ImageBuilderType == mcfgv1alpha1.MachineOSImageBuilderType("PodImageBuilder") && podRequestExisted == 0 {
+			controllersToStart = append(controllersToStart, build.NewWithCustomPodBuilder(cfg, buildClients))
+			podRequestExisted++
+		}
 	}
 	return controllersToStart, nil
 }
@@ -139,6 +122,5 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			},
 		},
 	})
-	panic("unreachable")
 
 }

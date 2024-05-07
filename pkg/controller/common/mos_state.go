@@ -176,9 +176,7 @@ func HasBuildObjectForCurrentMachineConfig(pool *mcfgv1.MachineConfigPool, mosb 
 
 // Determines if we should do a build based upon the state of our
 // MachineConfigPool, the presence of a build pod, etc.
-func BuildDueToPoolChange(builder interface {
-	IsBuildRunning(*mcfgv1alpha1.MachineOSBuild, *mcfgv1alpha1.MachineOSConfig) (bool, error)
-}, oldPool, curPool *mcfgv1.MachineConfigPool, moscNew *mcfgv1alpha1.MachineOSConfig, mosbNew *mcfgv1alpha1.MachineOSBuild) (bool, error) {
+func BuildDueToPoolChange(oldPool, curPool *mcfgv1.MachineConfigPool, moscNew *mcfgv1alpha1.MachineOSConfig, mosbNew *mcfgv1alpha1.MachineOSBuild) bool {
 
 	moscState := NewMachineOSConfigState(moscNew)
 	mosbState := NewMachineOSBuildState(mosbNew)
@@ -189,14 +187,7 @@ func BuildDueToPoolChange(builder interface {
 		// should do a build.
 		(IsPoolConfigChange(oldPool, curPool) || !moscState.HasOSImage())
 
-	if !poolStateSuggestsBuild {
-		return false, nil
-	}
-
-	// If a build is found running, we should not do a build.
-	isRunning, err := builder.IsBuildRunning(mosbState.Build, moscState.Config)
-
-	return !isRunning, err
+	return poolStateSuggestsBuild
 
 }
 
