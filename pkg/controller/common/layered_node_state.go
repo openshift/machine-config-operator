@@ -7,6 +7,7 @@ import (
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/klog/v2"
 )
 
 // This is intended to provide a singular way to interrogate node objects to
@@ -89,8 +90,11 @@ func (l *LayeredNodeState) isImageAnnotationEqualToPool(anno string, mcp *mcfgv1
 	lps := NewLayeredPoolState(mcp)
 
 	val, ok := l.node.Annotations[anno]
+	if layered {
+		klog.V(4).Infof("Pool %s is layered pool, check isImageAnnotationEqualToPool ", mcp.Name)
+	}
 
-	if layered && lps.HasOSImage() {
+	if lps.HasOSImage() {
 		// If the pool is layered and has an OS image, check that it equals the
 		// node annotations' value.
 		return lps.GetOSImage() == val
@@ -137,7 +141,11 @@ func (l *LayeredNodeState) SetDesiredStateFromPool(layered bool, mcp *mcfgv1.Mac
 
 	lps := NewLayeredPoolState(mcp)
 
-	if layered && lps.HasOSImage() {
+	if layered {
+		klog.V(4).Infof("Pool %s is layered pool, check isImageAnnotationEqualToPool ", mcp.Name)
+	}
+
+	if lps.HasOSImage() {
 		node.Annotations[daemonconsts.DesiredImageAnnotationKey] = lps.GetOSImage()
 	} else {
 		delete(node.Annotations, daemonconsts.DesiredImageAnnotationKey)

@@ -42,7 +42,6 @@ func patchConfigMapForTest(t *testing.T, cs *framework.ClientSet) {
 			Namespace: ctrlcommon.MCONamespace,
 		},
 		Data: map[string]string{
-			build.ImageBuilderTypeConfigMapKey:      string(build.CustomPodImageBuilder),
 			build.BaseImagePullSecretNameConfigKey:  secretName,
 			build.FinalImagePushSecretNameConfigKey: secretName,
 			build.FinalImagePullspecConfigKey:       "registry.host.com/org/repo:tag",

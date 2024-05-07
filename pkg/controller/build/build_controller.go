@@ -577,12 +577,7 @@ func (ctrl *Controller) updateMachineConfigPool(old, cur interface{}) {
 		return
 	}
 
-	doABuild, err := ctrlcommon.BuildDueToPoolChange(ctrl.imageBuilder, oldPool, curPool, moscNew, mosbNew)
-	if err != nil {
-		klog.Errorln(err)
-		ctrl.handleErr(err, curPool.Name)
-		return
-	}
+	doABuild := ctrlcommon.BuildDueToPoolChange(oldPool, curPool, moscNew, mosbNew)
 
 	switch {
 	// We've transitioned from a layered pool to a non-layered pool.
@@ -1253,14 +1248,19 @@ func (ctrl *Controller) updateMachineOSConfig(old, cur interface{}) {
 }
 
 func (ctrl *Controller) deleteMachineOSConfig(cur interface{}) {
-	m, ok := cur.(*mcfgv1alpha1.MachineOSConfig)
+	mosc, ok := cur.(*mcfgv1alpha1.MachineOSConfig)
+	mcp, err := ctrl.mcpLister.Get(mosc.Spec.MachineConfigPool.Name)
+	if err != nil {
+		utilruntime.HandleError(fmt.Errorf("MachineOSConfig's MachineConfigPool cannot be found"))
+		return
+	}
 	// first, we need to stop and delete any existing builds.
-	mosb, err := ctrl.machineOSBuildLister.Get(fmt.Sprintf("%s-builder", m.Spec.MachineConfigPool.Name))
+	mosb, err := ctrl.machineOSBuildLister.Get(fmt.Sprintf("%s-%s-builder", mosc.Spec.MachineConfigPool.Name, mcp.Spec.Configuration.Name))
 	if err == nil {
-		if running, _ := ctrl.imageBuilder.IsBuildRunning(mosb, m); running {
+		if running, _ := ctrl.imageBuilder.IsBuildRunning(mosb, mosc); running {
 			// we need to stop the build.
-			ctrl.imageBuilder.DeleteBuildObject(mosb, m)
-			ctrl.markBuildInterrupted(m, mosb)
+			ctrl.imageBuilder.DeleteBuildObject(mosb, mosc)
+			ctrl.markBuildInterrupted(mosc, mosb)
 		}
 		ctrl.mcfgclient.MachineconfigurationV1alpha1().MachineOSBuilds().Delete(context.TODO(), mosb.Name, metav1.DeleteOptions{})
 	}
@@ -1270,13 +1270,13 @@ func (ctrl *Controller) deleteMachineOSConfig(cur interface{}) {
 			utilruntime.HandleError(fmt.Errorf("Couldn't get object from tombstone %#v", cur))
 			return
 		}
-		m, ok = tombstone.Obj.(*mcfgv1alpha1.MachineOSConfig)
+		mosc, ok = tombstone.Obj.(*mcfgv1alpha1.MachineOSConfig)
 		if !ok {
 			utilruntime.HandleError(fmt.Errorf("Tombstone contained object that is not a MachineOSConfig %#v", cur))
 			return
 		}
 	}
-	klog.V(4).Infof("Deleting MachineOSBuild %s", m.Name)
+	klog.V(4).Infof("Deleting MachineOSConfig %s", mosc.Name)
 }
 
 func (ctrl *Controller) updateMachineOSBuild(old, cur interface{}) {
@@ -1386,8 +1386,12 @@ func hasAllRequiredOSBuildLabels(labels map[string]string) bool {
 	return true
 }
 
-func (ctrl *Controller) doesMOSBExist(config *mcfgv1alpha1.MachineOSConfig) (*mcfgv1alpha1.MachineOSBuild, bool) {
-	mosb, err := ctrl.machineOSBuildLister.Get(fmt.Sprintf("%s-builder", config.Spec.MachineConfigPool.Name))
+func (ctrl *Controller) doesMOSBExist(mosc *mcfgv1alpha1.MachineOSConfig) (*mcfgv1alpha1.MachineOSBuild, bool) {
+	mcp, err := ctrl.mcpLister.Get(mosc.Spec.MachineConfigPool.Name)
+	if err != nil {
+		return nil, false
+	}
+	mosb, err := ctrl.machineOSBuildLister.Get(fmt.Sprintf("%s-%s-builder", mosc.Spec.MachineConfigPool.Name, mcp.Spec.Configuration.Name))
 	if err != nil && k8serrors.IsNotFound(err) {
 		return nil, false
 	} else if mosb != nil {
@@ -1470,8 +1474,8 @@ func (ctrl *Controller) getConfigAndBuildForPool(pool *mcfgv1.MachineConfigPool)
 // container statuses. Returns true if a single container is in an error state.
 func isBuildPodError(pod *corev1.Pod) bool {
 	errStates := map[string]struct{}{
-		"ErrImagePull":         struct{}{},
-		"CreateContainerError": struct{}{},
+		"ErrImagePull":         {},
+		"CreateContainerError": {},
 	}
 
 	for _, container := range pod.Status.ContainerStatuses {
