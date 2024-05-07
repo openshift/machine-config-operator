@@ -572,6 +572,9 @@ func calculatePostConfigChangeActionFromMCDiffs(diffFileSet []string) (actions [
 		imageRegistryAuthFile,
 		"/var/lib/kubelet/config.json",
 	}
+	directoriesPostConfigChangeActionNone := []string{
+		constants.OpenShiftNMStateConfigDir,
+	}
 	filesPostConfigChangeActionReloadCrio := []string{
 		constants.ContainerRegistryConfPath,
 		GPGNoRebootPath,
@@ -585,7 +588,6 @@ func calculatePostConfigChangeActionFromMCDiffs(diffFileSet []string) (actions [
 	}
 
 	actions = []string{postConfigChangeActionNone}
-
 	for _, path := range diffFileSet {
 		if ctrlcommon.InSlice(path, filesPostConfigChangeActionNone) {
 			continue
@@ -595,6 +597,8 @@ func calculatePostConfigChangeActionFromMCDiffs(diffFileSet []string) (actions [
 			actions = []string{postConfigChangeActionRestartCrio}
 		} else if ctrlcommon.InSlice(filepath.Dir(path), dirsPostConfigChangeActionReloadCrio) {
 			actions = []string{postConfigChangeActionReloadCrio}
+		} else if ctrlcommon.InSlice(filepath.Dir(path), directoriesPostConfigChangeActionNone) {
+			continue
 		} else {
 			actions = []string{postConfigChangeActionReboot}
 			return
@@ -628,6 +632,10 @@ func calculatePostConfigChangeNodeDisruptionActionFromMCDiffs(diffSSH bool, diff
 				actions = append(actions, opv1.NodeDisruptionPolicyStatusAction{Type: opv1.ReloadStatusAction, Reload: &opv1.ReloadService{
 					ServiceName: constants.CRIOServiceName,
 				}})
+				continue
+			}
+			if filepath.Dir(diffPath) == constants.OpenShiftNMStateConfigDir {
+				klog.Infof("Exception Action: diffPath %s is a subdir of %s, skipping reboot", diffPath, constants.OpenShiftNMStateConfigDir)
 				continue
 			}
 			// If this file path has no policy defined, default to reboot
