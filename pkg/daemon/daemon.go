@@ -2362,8 +2362,27 @@ func (dn *Daemon) prepUpdateFromCluster() (*updateFromCluster, error) {
 				klog.V(2).Info("No updating is required")
 				return nil, nil
 			}
+
 			// This seems like it shouldn't happen...let's just warn for now.
 			klog.Warningf("current+desiredConfig is %s but state is %s", currentConfigName, state)
+
+			if state == constants.MachineConfigDaemonStateWorking {
+				// ...but when it happens it could be that the nodeLister informer is not in sync, meaning the
+				// state found is Working from the previous sync, but it's actually Done. In that case it's dangerous
+				// to continue with the logic, as the daemon will call SetWorking again, and we end up in an
+				// infinite loop.
+				// To prevent this we sleep an arbitrary amount of time and read again from the informer
+				// to see if anything changed.
+				klog.V(2).Info("maybe it was just a fluke though, let's not hurry too much")
+				time.Sleep(12 * time.Second)
+
+				if node, err := dn.nodeLister.Get(dn.node.Name); err == nil {
+					if state, err := getNodeAnnotation(node, constants.MachineConfigDaemonStateAnnotationKey); err == nil && state == constants.MachineConfigDaemonStateDone {
+						klog.V(2).Info("No updating is required after all hehe")
+						return nil, nil
+					}
+				}
+			}
 		}
 	} else {
 		if desiredImage == odc.currentImage && desiredConfigName == currentConfigName {
