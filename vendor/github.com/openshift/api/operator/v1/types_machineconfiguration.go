@@ -57,8 +57,39 @@ type MachineConfigurationSpec struct {
 }
 
 type MachineConfigurationStatus struct {
-	// TODO tombstone this field
-	StaticPodOperatorStatus `json:",inline"`
+	// observedGeneration is the last generation change you've dealt with
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
+	// conditions is a list of conditions and their status
+	// +patchMergeKey=type
+	// +patchStrategy=merge
+	// +listType=map
+	// +listMapKey=type
+	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
+
+	// Previously there was a StaticPodOperatorStatus here for legacy reasons. Many of the fields within
+	// it are no longer relevant for the MachineConfiguration CRD's functions. The following remainder
+	// fields were tombstoned after lifting out StaticPodOperatorStatus. To avoid conflicts with
+	// serialisation, the following field names may never be used again.
+
+	// Tombstone: legacy field from StaticPodOperatorStatus
+	// Version string `json:"version,omitempty"`
+
+	// Tombstone: legacy field from StaticPodOperatorStatus
+	// ReadyReplicas int32 `json:"readyReplicas"`
+
+	// Tombstone: legacy field from StaticPodOperatorStatus
+	// Generations []GenerationStatus `json:"generations,omitempty"`
+
+	// Tombstone: legacy field from StaticPodOperatorStatus
+	// LatestAvailableRevision int32 `json:"latestAvailableRevision,omitempty"`
+
+	// Tombstone: legacy field from StaticPodOperatorStatus
+	// LatestAvailableRevisionReason string `json:"latestAvailableRevisionReason,omitempty"`
+
+	// Tombstone: legacy field from StaticPodOperatorStatus
+	// NodeStatuses []NodeStatus `json:"nodeStatuses,omitempty"`
 
 	// nodeDisruptionPolicyStatus status reflects what the latest cluster-validated policies are,
 	// and will be used by the Machine Config Daemon during future node updates.
