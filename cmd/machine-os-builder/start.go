@@ -14,8 +14,10 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/openshift/machine-config-operator/cmd/common"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/spf13/cobra"
+	"k8s.io/client-go/tools/leaderelection"
 	"k8s.io/klog/v2"
 )
 
@@ -89,6 +91,8 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 	// To help debugging, immediately log version
 	klog.Infof("Version: %+v (%s)", version.Raw, version.Hash)
 
+	// This is the 'main' context that we thread through the build controller context and
+	// the leader elections. Cancelling this is "stop everything, we are shutting down".
 	ctx, cancel := context.WithCancel(context.Background())
 
 	cb, err := clients.NewBuilder("")
@@ -96,18 +100,39 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		klog.Fatalln(err)
 	}
 
-	ctrl, err := getBuildController(ctx, cb)
-	if err != nil {
-		klog.Fatalln(err)
-		var invalidImageBuiler *build.ErrInvalidImageBuilder
-		if errors.As(err, &invalidImageBuiler) {
-			klog.Errorf("The user passed an invalid imageBuilderType of %s", invalidImageBuiler.InvalidType)
-			cancel()
-			os.Exit(255)
+	run := func(ctx context.Context) {
+		go common.SignalHandler(cancel)
+
+		ctrl, err := getBuildController(ctx, cb)
+		if err != nil {
+			klog.Fatalln(err)
+			var invalidImageBuiler *build.ErrInvalidImageBuilder
+			if errors.As(err, &invalidImageBuiler) {
+				klog.Errorf("The user passed an invalid imageBuilderType of %s", invalidImageBuiler.InvalidType)
+				cancel()
+				os.Exit(255)
+			}
 		}
+		go ctrl.Run(ctx, 5)
+		<-ctx.Done()
+		cancel()
 	}
 
-	go ctrl.Run(ctx, 5)
-	<-ctx.Done()
-	cancel()
+	leaderElectionCfg := common.GetLeaderElectionConfig(cb.GetBuilderConfig())
+
+	leaderelection.RunOrDie(ctx, leaderelection.LeaderElectionConfig{
+		Lock:            common.CreateResourceLock(cb, ctrlcommon.MCONamespace, componentName),
+		ReleaseOnCancel: true,
+		LeaseDuration:   leaderElectionCfg.LeaseDuration.Duration,
+		RenewDeadline:   leaderElectionCfg.RenewDeadline.Duration,
+		RetryPeriod:     leaderElectionCfg.RetryPeriod.Duration,
+		Callbacks: leaderelection.LeaderCallbacks{
+			OnStartedLeading: run,
+			OnStoppedLeading: func() {
+				klog.Infof("Stopped leading. MOB terminating.")
+				os.Exit(0)
+			},
+		},
+	})
+	panic("unreachable")
 }
