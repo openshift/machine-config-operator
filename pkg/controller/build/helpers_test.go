@@ -14,7 +14,6 @@ func TestValidateImagePullspecHasDigest(t *testing.T) {
 	validPullspecs := []string{
 		cm.Data[baseOSContainerImageConfigKey],
 		cm.Data[baseOSExtensionsContainerImageConfigKey],
-		cm.Data[osImageURLConfigKey],
 	}
 
 	for _, pullspec := range validPullspecs {
@@ -34,7 +33,7 @@ func TestValidateImagePullspecHasDigest(t *testing.T) {
 func TestParseImagePullspec(t *testing.T) {
 	t.Parallel()
 
-	out, err := parseImagePullspec(expectedImagePullspecWithTag, expectedImageSHA)
+	out, err := ParseImagePullspec(expectedImagePullspecWithTag, expectedImageSHA)
 	assert.NoError(t, err)
 	assert.Equal(t, expectedImagePullspecWithSHA, out)
 }
