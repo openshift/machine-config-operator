@@ -219,7 +219,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 					klog.Fatalf("Failed to initialize CRI client: %v", err)
 				}
 
-				prefetchTimeout := 2 * time.Minute
+				prefetchTimeout := 3 * time.Minute
 				pinnedImageSetManager := daemon.NewPinnedImageSetManager(
 					startOpts.nodeName,
 					criClient,

@@ -70,6 +70,7 @@ const (
 
 	// controller configuration
 	maxRetriesController = 15
+	cacheSize            = 1024
 
 	// mcn looks for conditions with this prefix if seen will degrade the pool
 	degradeMessagePrefix = "Error:"
@@ -195,7 +196,7 @@ func NewPinnedImageSetManager(
 	p.mcpLister = mcpInformer.Lister()
 	p.mcpSynced = mcpInformer.Informer().HasSynced
 
-	p.cache = newImageCache(256)
+	p.cache = newImageCache(cacheSize)
 
 	return p
 }
@@ -621,10 +622,15 @@ func (p *PinnedImageSetManager) updateStatusError(pools []*mcfgv1.MachineConfigP
 	imageSetSpec := getPinnedImageSetSpecForPools(pools)
 
 	var errMsg string
-	if isErrNoSpace(statusErr) {
+	switch {
+	case isErrNoSpace(statusErr):
 		// degrade the pool if there is no space
 		errMsg = fmt.Sprintf("%s %v", degradeMessagePrefix, statusErr)
-	} else {
+	case p.cache.EntryBalance() == 0:
+		// cache is full, notifying the user to remove images
+		errMsg = fmt.Sprintf("pinned image sets are too large to reconcile, consider removing images: %v", statusErr)
+		klog.Warning(errMsg)
+	default:
 		errMsg = statusErr.Error()
 	}
 
@@ -1125,11 +1131,17 @@ func (p *PinnedImageSetManager) getImageSize(ctx context.Context, imageName, aut
 	}
 
 	output, err := exec.CommandContext(ctx, "podman", args...).CombinedOutput()
-	if err != nil && strings.Contains(err.Error(), "manifest unknown") {
-		return 0, errNotFound
-	}
 	if err != nil {
-		return 0, fmt.Errorf("failed to execute podman manifest inspect for %q: %w", imageName, err)
+		var cmdErr error
+		if strings.Contains(err.Error(), "manifest unknown") {
+			cmdErr = errNotFound
+		} else if ctx.Err() != nil {
+			cmdErr = ctx.Err()
+		} else {
+			cmdErr = err
+		}
+
+		return 0, fmt.Errorf("failed to execute podman manifest inspect for %q: %w", imageName, cmdErr)
 	}
 
 	var manifest ocispec.Manifest
@@ -1359,6 +1371,13 @@ func (c *imageCache) Remove(key interface{}) {
 	c.mu.Lock()
 	c.cache.Remove(key)
 	c.mu.Unlock()
+}
+
+// EntryBalance returns the number of entries before the cache limit.
+func (c *imageCache) EntryBalance() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.cache.Len() - c.cache.MaxEntries
 }
 
 // imageInfo is used to store image information in the cache.
