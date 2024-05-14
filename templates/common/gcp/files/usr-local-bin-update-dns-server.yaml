@@ -1,0 +1,25 @@
+mode: 0755
+path: "/usr/local/bin/update-dns-server"
+contents:
+  inline: |
+    #!/bin/bash
+    # For GCP, updating the NetworkManager configuration file to
+    # include the IP address of the local node as the default DNS
+    # resolver when UserProvisionedDNS is enabled.
+    # A CoreDNS static pod running on the node is responsible for
+    # resolving the api, api-int and *.apps URLs.
+
+    mkdir -p /etc/NetworkManager/conf.d
+
+    cat <<EOF | tee /etc/NetworkManager/conf.d/dns-servers.conf
+    # Added by OpenShift
+    [global-dns-domain-*]
+    servers=$(ip --json route get 8.8.8.8 | jq -r ".[0].prefsrc"),169.254.169.254
+    EOF
+
+    # network manager may already be running at this point.
+    # reload to update /etc/resolv.conf with this configuration
+    nmcli general reload conf
+    nmcli general reload dns-rc
+
+    echo "Done updating dns-server.conf"
