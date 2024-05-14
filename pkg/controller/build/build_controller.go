@@ -1160,62 +1160,129 @@ func (ctrl *Controller) validatePullSecret(name string) (*corev1.Secret, error) 
 		return nil, err
 	}
 
-	oldSecretName := secret.Name
-
-	secret, err = canonicalizePullSecret(secret)
-	if err != nil {
-		return nil, err
-	}
-
 	// If a Docker pull secret lacks the top-level "auths" key, this means that
 	// it is a legacy-style pull secret. Buildah does not know how to correctly
 	// use one of these secrets. With that in mind, we "canonicalize" it, meaning
 	// we inject the existing legacy secret into a {"auths": {}} schema that
 	// Buildah can understand. We create a new K8s secret with this info and pass
 	// that secret into our image builder instead.
-	if strings.HasSuffix(secret.Name, canonicalSecretSuffix) {
-		klog.Infof("Found legacy-style secret %s, canonicalizing as %s", oldSecretName, secret.Name)
-		return ctrl.handleCanonicalizedPullSecret(secret)
+	canonicalized, err := canonicalizePullSecret(secret)
+	if err != nil {
+		return nil, err
 	}
 
-	return secret, nil
+	// If neither the secret from the API nor our canonicalization attempt are
+	// identified as canonicalized secrets, that means it does not need to be
+	// canonicalized. So we can return it as-is.
+	if !isCanonicalizedSecret(canonicalized) && !isCanonicalizedSecret(secret) {
+		return secret, nil
+	}
+
+	// If the secret from the API server is not canonicalized, but it is
+	// identified as canonicalized by our canonicalization attempt, that means
+	// the canonicalized secret needs to be created.
+	if isCanonicalizedSecret(canonicalized) && !isCanonicalizedSecret(secret) {
+		klog.Infof("Found legacy-style secret %s, canonicalizing as %s", secret.Name, canonicalized.Name)
+		return ctrl.handleCanonicalizedPullSecret(canonicalized)
+	}
+
+	// If we have a canonicalized secret, get the original secret name from the
+	// label, then retry validation with the original secret. This will cause the
+	// canonicalized secret to be updated if the original secret has changed.
+	return ctrl.validatePullSecret(canonicalized.Labels[originalSecretNameLabel])
 }
 
 // Attempt to create a canonicalized pull secret. If the secret already exsits, we should update it.
 func (ctrl *Controller) handleCanonicalizedPullSecret(secret *corev1.Secret) (*corev1.Secret, error) {
+	if err := validateCanonicalizedSecret(secret); err != nil {
+		return nil, fmt.Errorf("could not handle canonicalized secret: %w", err)
+	}
+
 	out, err := ctrl.kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(context.TODO(), secret.Name, metav1.GetOptions{})
-	if err != nil && !k8serrors.IsNotFound(err) {
-		return nil, fmt.Errorf("could not get canonical secret %q: %w", secret.Name, err)
+	// We found a canonicalized secret.
+	if err == nil {
+		// Check if the canonical secret from the API server matches the secret we
+		// got. If they match, we're done.
+		if bytes.Equal(secret.Data[corev1.DockerConfigJsonKey], out.Data[corev1.DockerConfigJsonKey]) && hasCanonicalizedSecretLabels(secret) {
+			klog.Infof("Canonical secret %q up-to-date", secret.Name)
+			return out, nil
+		}
+
+		// If they do not match, we need to do an update.
+		return ctrl.updateCanonicalizedSecret(secret)
 	}
 
 	// We don't have a canonical secret, so lets create one.
 	if k8serrors.IsNotFound(err) {
-		out, err = ctrl.kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Create(context.TODO(), secret, metav1.CreateOptions{})
-		if err != nil {
-			return nil, fmt.Errorf("could not create canonical secret %q: %w", secret.Name, err)
+		return ctrl.createCanonicalizedSecret(secret)
+	}
+
+	return nil, fmt.Errorf("could not get canonicalized secret %q: %w", secret.Name, err)
+}
+
+// Creates a canonicalized secret.
+func (ctrl *Controller) createCanonicalizedSecret(secret *corev1.Secret) (*corev1.Secret, error) {
+	if err := validateCanonicalizedSecret(secret); err != nil {
+		return nil, fmt.Errorf("could not create canonicalized secret: %w", err)
+	}
+
+	out, err := ctrl.kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Create(context.TODO(), secret, metav1.CreateOptions{})
+
+	// Secret creation was successful.
+	if err == nil {
+		klog.Infof("Created canonicalized secret %s", secret.Name)
+		return out, nil
+	}
+
+	// It is possible that BuildController could attempt to create the same
+	// canonicalized secret more than once if two (or more) MachineOSConfigs are
+	// created at the same time that specify the same secret which must be
+	// canonicalized.
+	//
+	// If this is the case, all subsequent secret creation attempts (after the
+	// first sucesssful attempt) will fail. In this situation, the best and
+	// simplest thing to do is to call ctrl.validatePullSecret() with the
+	// original secret name. This is because it is possible that the secret could
+	// have been updated and we should handle that more gracefully.
+	if k8serrors.IsAlreadyExists(err) {
+		klog.Infof("Canonicalized secret %s already exists", secret.Name)
+		return ctrl.validatePullSecret(secret.Labels[originalSecretNameLabel])
+	}
+
+	return nil, fmt.Errorf("could not create canonicalized secret %q: %w", secret.Name, err)
+}
+
+// Performs the update operation for updating the canonicalized secret. This is
+// wrapped in a retry.RetryOnConflict() function because it is possible that
+// BuildController might try to update this secret multiple times in rapid
+// succession.
+func (ctrl *Controller) updateCanonicalizedSecret(secret *corev1.Secret) (*corev1.Secret, error) {
+	if err := validateCanonicalizedSecret(secret); err != nil {
+		return nil, fmt.Errorf("could not update canonicalized secret: %w", err)
+	}
+
+	var out *corev1.Secret
+
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		found, err := ctrl.kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(context.TODO(), secret.Name, metav1.GetOptions{})
+		if err != nil && !k8serrors.IsNotFound(err) {
+			return fmt.Errorf("could not get canonical secret %q: %w", secret.Name, err)
 		}
 
-		klog.Infof("Created canonical secret %s", secret.Name)
-		return out, nil
-	}
+		found.Data = secret.Data
+		updated, err := ctrl.kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Update(context.TODO(), found, metav1.UpdateOptions{})
+		if err != nil {
+			return fmt.Errorf("could not update canonical secret %q: %w", secret.Name, err)
+		}
 
-	// Check if the canonical secret from the API server matches the one we have.
-	// If they match, then we don't need to do an update.
-	if bytes.Equal(secret.Data[corev1.DockerConfigJsonKey], out.Data[corev1.DockerConfigJsonKey]) {
-		klog.Infof("Canonical secret %q up-to-date", secret.Name)
-		return out, nil
-	}
+		out = updated
 
-	// If we got here, it means that our secret needs to be updated.
-	out.Data = secret.Data
-	out, err = ctrl.kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Update(context.TODO(), out, metav1.UpdateOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("could not update canonical secret %q: %w", secret.Name, err)
-	}
+		klog.Infof("Updated canonical secret %s", secret.Name)
 
-	klog.Infof("Updated canonical secret %s", secret.Name)
+		return nil
+	})
 
-	return out, nil
+	return out, err
 }
 
 func (ctrl *Controller) addMachineOSConfig(cur interface{}) {
