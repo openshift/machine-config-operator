@@ -83,30 +83,30 @@ type Operator struct {
 
 	syncHandler func(ic string) error
 
-	imgLister         configlistersv1.ImageLister
-	crdLister         apiextlistersv1.CustomResourceDefinitionLister
-	mcpLister         mcfglistersv1.MachineConfigPoolLister
-	msLister          mcfglistersalphav1.MachineConfigNodeLister
-	ccLister          mcfglistersv1.ControllerConfigLister
-	mcLister          mcfglistersv1.MachineConfigLister
-	deployLister      appslisterv1.DeploymentLister
-	daemonsetLister   appslisterv1.DaemonSetLister
-	infraLister       configlistersv1.InfrastructureLister
-	networkLister     configlistersv1.NetworkLister
-	mcoCmLister       corelisterv1.ConfigMapLister
-	clusterCmLister   corelisterv1.ConfigMapLister
-	proxyLister       configlistersv1.ProxyLister
-	oseKubeAPILister  corelisterv1.ConfigMapLister
-	nodeLister        corelisterv1.NodeLister
-	dnsLister         configlistersv1.DNSLister
-	mcoSALister       corelisterv1.ServiceAccountLister
-	mcoSecretLister   corelisterv1.SecretLister
-	ocSecretLister    corelisterv1.SecretLister
-	mcoCOLister       configlistersv1.ClusterOperatorLister
-	mcopLister        mcoplistersv1.MachineConfigurationLister
-	mckLister         mcfglistersv1.KubeletConfigLister
-	crcLister         mcfglistersv1.ContainerRuntimeConfigLister
-	nodeClusterLister configlistersv1.NodeLister
+	imgLister             configlistersv1.ImageLister
+	crdLister             apiextlistersv1.CustomResourceDefinitionLister
+	mcpLister             mcfglistersv1.MachineConfigPoolLister
+	msLister              mcfglistersalphav1.MachineConfigNodeLister
+	ccLister              mcfglistersv1.ControllerConfigLister
+	mcLister              mcfglistersv1.MachineConfigLister
+	deployLister          appslisterv1.DeploymentLister
+	daemonsetLister       appslisterv1.DaemonSetLister
+	infraLister           configlistersv1.InfrastructureLister
+	networkLister         configlistersv1.NetworkLister
+	mcoCmLister           corelisterv1.ConfigMapLister
+	clusterCmLister       corelisterv1.ConfigMapLister
+	proxyLister           configlistersv1.ProxyLister
+	oseKubeAPILister      corelisterv1.ConfigMapLister
+	nodeLister            corelisterv1.NodeLister
+	dnsLister             configlistersv1.DNSLister
+	mcoSALister           corelisterv1.ServiceAccountLister
+	mcoSecretLister       corelisterv1.SecretLister
+	ocSecretLister        corelisterv1.SecretLister
+	clusterOperatorLister configlistersv1.ClusterOperatorLister
+	mcopLister            mcoplistersv1.MachineConfigurationLister
+	mckLister             mcfglistersv1.KubeletConfigLister
+	crcLister             mcfglistersv1.ContainerRuntimeConfigLister
+	nodeClusterLister     configlistersv1.NodeLister
 
 	crdListerSynced                  cache.InformerSynced
 	deployListerSynced               cache.InformerSynced
@@ -130,7 +130,7 @@ type Operator struct {
 	mcoSAListerSynced                cache.InformerSynced
 	mcoSecretListerSynced            cache.InformerSynced
 	ocSecretListerSynced             cache.InformerSynced
-	mcoCOListerSynced                cache.InformerSynced
+	clusterOperatorListerSynced      cache.InformerSynced
 	mcopListerSynced                 cache.InformerSynced
 	mckListerSynced                  cache.InformerSynced
 	crcListerSynced                  cache.InformerSynced
@@ -175,7 +175,7 @@ func New(
 	mcoSAInformer coreinformersv1.ServiceAccountInformer,
 	mcoSecretInformer coreinformersv1.SecretInformer,
 	ocSecretInformer coreinformersv1.SecretInformer,
-	mcoCOInformer configinformersv1.ClusterOperatorInformer,
+	clusterOperatorInformer configinformersv1.ClusterOperatorInformer,
 	mcopClient mcopclientset.Interface,
 	mcopInformer mcopinformersv1.MachineConfigurationInformer,
 	fgAccess featuregates.FeatureGateAccess,
@@ -217,7 +217,7 @@ func New(
 		klog.Errorf("Could not modify scheme: %v", err)
 	}
 
-	informers := []cache.SharedIndexInformer{
+	for _, i := range []cache.SharedIndexInformer{
 		controllerConfigInformer.Informer(),
 		serviceAccountInfomer.Informer(),
 		crdInformer.Informer(),
@@ -239,17 +239,12 @@ func New(
 		mcoSAInformer.Informer(),
 		mcoSecretInformer.Informer(),
 		ocSecretInformer.Informer(),
-		mcoCOInformer.Informer(),
 		mcopInformer.Informer(),
 		mckInformer.Informer(),
 		crcInformer.Informer(),
 		nodeClusterInformer.Informer(),
-	}
-
-	// this is for the FG
-	//	informers = append(informers, moscInformer.Informer())
-
-	for _, i := range informers {
+		clusterOperatorInformer.Informer(),
+	} {
 		i.AddEventHandler(optr.eventHandler())
 	}
 
@@ -298,8 +293,8 @@ func New(
 	optr.mcoSecretListerSynced = mcoSecretInformer.Informer().HasSynced
 	optr.ocSecretLister = ocSecretInformer.Lister()
 	optr.ocSecretListerSynced = ocSecretInformer.Informer().HasSynced
-	optr.mcoCOLister = mcoCOInformer.Lister()
-	optr.mcoCOListerSynced = mcoCOInformer.Informer().HasSynced
+	optr.clusterOperatorLister = clusterOperatorInformer.Lister()
+	optr.clusterOperatorListerSynced = clusterOperatorInformer.Informer().HasSynced
 	optr.mcopLister = mcopInformer.Lister()
 	optr.mcopListerSynced = mcopInformer.Informer().HasSynced
 	optr.mckLister = mckInformer.Lister()
@@ -350,7 +345,7 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 		optr.mcoSAListerSynced,
 		optr.mcoSecretListerSynced,
 		optr.ocSecretListerSynced,
-		optr.mcoCOListerSynced,
+		optr.clusterOperatorListerSynced,
 		optr.mcopListerSynced,
 		optr.mckListerSynced,
 		optr.crcListerSynced,
