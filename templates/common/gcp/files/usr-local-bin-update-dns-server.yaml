@@ -1,0 +1,24 @@
+mode: 0755
+path: "/usr/local/bin/update-dns-server"
+contents:
+  inline: |
+    #!/bin/bash
+    
+    echo "Executing update-dns-server"
+
+    mkdir -p /etc/NetworkManager/conf.d
+
+    cat <<EOF | tee /etc/NetworkManager/conf.d/dns-servers.conf
+    # Added by OpenShift
+    [global-dns-domain-*]
+    servers=$(ip --json route get 8.8.8.8 | jq ".[0].prefsrc" | sed 's/"//g'),169.254.169.254
+    EOF
+
+    cat /etc/NetworkManager/conf.d/dns-servers.conf
+
+    # network manager may already be running at this point.
+    # reload to update /etc/resolv.conf with this configuration
+    nmcli general reload conf
+    nmcli general reload dns-rc
+
+    echo "Done updating dns-server.conf"
