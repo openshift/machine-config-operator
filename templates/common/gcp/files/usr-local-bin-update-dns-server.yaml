@@ -1,0 +1,23 @@
+mode: 0755
+path: "/usr/local/bin/update-dns-server"
+contents:
+  inline: |
+    #!/bin/bash
+    
+    echo "Executing update-dns-server"
+
+    mkdir -p /etc/NetworkManager/conf.d
+
+    echo "#Added by OpenShift" > /etc/NetworkManager/conf.d/dns-servers.conf
+    echo "[global-dns-domain-*]" >> /etc/NetworkManager/conf.d/dns-servers.conf
+
+    # 169.254.169.254 is the IP address of the GCP metadata server
+    echo "servers=$(ip --json route get 8.8.8.8 | jq /".[0].prefsrc/"" >> /etc/NetworkManager/conf.d/dns-servers.conf
+
+    cat /etc/NetworkManager/conf.d/dns-servers.conf
+
+    # network manager may already be running at this point.
+    # reload to update /etc/esolv.conf with this configuration
+    nmcli general reload dns-rc
+
+    echo "Done updating dns-server.conf
