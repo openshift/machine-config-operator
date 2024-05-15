@@ -736,13 +736,11 @@ func (dn *Daemon) calculatePostConfigChangeNodeDisruptionAction(diff *machineCon
 			err = fmt.Errorf("MachineConfiguration/cluster has not been created yet")
 			return false, nil
 		}
-		// There will always be atleast five file policies, if they don't exist, then the Status hasn't been populated yet
-		//
-		// TODO: When Conditions on this object are implemented; this check could be updated to only proceed when
-		// status.ObservedGeneration matches the last generation of MachineConfiguration
-		if len(mcop.Status.NodeDisruptionPolicyStatus.ClusterPolicies.Files) == 0 {
-			klog.Errorf("calculating NodeDisruptionPolicies: NodeDisruptionPolicyStatus has not been populated yet")
-			err = fmt.Errorf("NodeDisruptionPolicyStatus has not been populated yet")
+
+		// Ensure status.ObservedGeneration matches the last generation of MachineConfiguration
+		if mcop.Generation != mcop.Status.ObservedGeneration {
+			klog.Errorf("calculating NodeDisruptionPolicies: NodeDisruptionPolicyStatus is not up to date.")
+			err = fmt.Errorf("NodeDisruptionPolicyStatus is not up to date")
 			return false, nil
 		}
 		return true, nil
