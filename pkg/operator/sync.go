@@ -1932,7 +1932,9 @@ func (optr *Operator) getImageRegistryPullSecrets() ([]byte, error) {
 			return nil, fmt.Errorf("failed to retrieve image pull secret %s: %w", imagePullSecret.Name, err)
 		}
 		// merge the secret into the JSON map
-		ctrlcommon.MergeDockerConfigstoJSONMap(secret.Data[corev1.DockerConfigKey], dockerConfigJSON.Auths)
+		if err := ctrlcommon.MergeDockerConfigstoJSONMap(secret.Data[corev1.DockerConfigKey], dockerConfigJSON.Auths); err != nil {
+			return nil, fmt.Errorf("could not merge auths from secret %s: %w", imagePullSecret.Name, err)
+		}
 	}
 
 	// Fetch the cluster pull secret
