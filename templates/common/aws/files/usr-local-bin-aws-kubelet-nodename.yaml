@@ -44,5 +44,5 @@ contents:
     # For compatibility with the AWS in-tree provider
     # Set node name to be instance FQDN instead of the default hostname
     cat > "${NODEENV}" <<EOF
-    KUBELET_NODE_NAME=${HOSTNAME}
+    KUBELET_NODE_NAME=${HOSTNAME%% *}
     EOF
