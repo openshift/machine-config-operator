@@ -3,6 +3,7 @@ package e2e_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os/exec"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/util/retry"
 
 	e2eShared "github.com/openshift/machine-config-operator/test/e2e-shared-tests"
 	"k8s.io/apimachinery/pkg/util/uuid"
@@ -966,4 +968,152 @@ func assertExpectedPerms(t *testing.T, cs *framework.ClientSet, node corev1.Node
 
 	actualPerms := strings.Split(strings.TrimSuffix(helpers.ExecCmdOnNode(t, cs, node, "chroot", "/rootfs", "stat", "--format=%U %G %a", path), "\n"), " ")
 	assert.Equal(t, expectedPerms, actualPerms, "expected %s to have perms %v, got: %v", path, expectedPerms, actualPerms)
+}
+
+// Tests that changes to the internal image registry pull secret has the
+// desired effect on both the ControllerConfig and the individual nodes
+// filesystems.
+func TestInternalImageRegistryPullSecret(t *testing.T) {
+	cs := framework.NewClientSet("")
+
+	hostnames := []string{
+		"registry1.hostname.com",
+		"registry2.hostname.com",
+		"registry3.hostname.com",
+	}
+
+	filename := "/etc/mco/internal-registry-pull-secret.json"
+	canonicalizedFilename := filepath.Join("/rootfs", filename)
+
+	// For each hostname, we do the following (in parallel to make the test
+	// faster and ensure that we don't run into any unforeseen edge-cases):
+	//
+	// 1. Create a new secret with the sanitized hostname as the secret name.
+	// 2. Append the secret name to the machine-os-puller service account.
+	// 3. Wait for the ControllerConfig to pick up the new hostname.
+	// 4. Wait for each of the nodes to pick up the new hostname.
+	// 5. Delete the secret.
+	// 6. Remove the secret name from the machine-os-puller service account.
+	// 7. Wait for the ControllerConfig to lose the hostname.
+	// 8. Wait for each of the nodes to lose the new hostname.
+	for _, imageRegistryHostname := range hostnames {
+		imageRegistryHostname := imageRegistryHostname
+		t.Run(imageRegistryHostname, func(t *testing.T) {
+			t.Parallel()
+
+			revertFunc := setupForInternalImageRegistryPullSecretTest(t, cs, imageRegistryHostname)
+			t.Cleanup(revertFunc)
+
+			t.Logf("Waiting for ControllerConfig to get hostname %s", imageRegistryHostname)
+
+			helpers.AssertControllerConfigReachesExpectedState(t, cs, func(cc *mcfgv1.ControllerConfig) bool {
+				return strings.Contains(string(cc.Spec.InternalRegistryPullSecret), imageRegistryHostname)
+			})
+
+			t.Logf("Waiting for all nodes to get hostname %s", imageRegistryHostname)
+
+			helpers.AssertAllNodesReachExpectedState(t, cs, func(node corev1.Node) bool {
+				contents := helpers.ExecCmdOnNode(t, cs, node, "cat", canonicalizedFilename)
+				return strings.Contains(contents, imageRegistryHostname)
+			})
+
+			// Undo the change.
+			revertFunc()
+
+			t.Logf("Waiting for ControllerConfig to lose hostname %s", imageRegistryHostname)
+
+			helpers.AssertControllerConfigReachesExpectedState(t, cs, func(cc *mcfgv1.ControllerConfig) bool {
+				return !strings.Contains(string(cc.Spec.InternalRegistryPullSecret), imageRegistryHostname)
+			})
+
+			t.Logf("Waiting for all nodes to lose hostname %s", imageRegistryHostname)
+
+			helpers.AssertAllNodesReachExpectedState(t, cs, func(node corev1.Node) bool {
+				contents := helpers.ExecCmdOnNode(t, cs, node, "cat", canonicalizedFilename)
+				return !strings.Contains(contents, imageRegistryHostname)
+			})
+		})
+	}
+}
+
+// Creates a secret containing an arbitrary image registry hostname and appends
+// it to the machine-os-puller service account. Returns an idempotent function
+// which undoes these changes.
+func setupForInternalImageRegistryPullSecretTest(t *testing.T, cs *framework.ClientSet, imageRegistryHostname string) func() {
+	t.Helper()
+
+	serviceAccountName := "machine-os-puller"
+	secretName := strings.ReplaceAll(imageRegistryHostname, ".", "-")
+
+	auths := map[string]ctrlcommon.DockerConfigEntry{
+		imageRegistryHostname: ctrlcommon.DockerConfigEntry{
+			Username: "user",
+			Password: "secret",
+			Email:    "user@hostname.com",
+			Auth:     "auth",
+		},
+	}
+
+	authBytes, err := json.Marshal(auths)
+	require.NoError(t, err)
+
+	newSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      secretName,
+			Namespace: ctrlcommon.MCONamespace,
+		},
+		Type: corev1.SecretTypeDockercfg,
+		Data: map[string][]byte{
+			corev1.DockerConfigKey: authBytes,
+		},
+	}
+
+	_, err = cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace).Create(context.TODO(), newSecret, metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		sa, err := cs.CoreV1Interface.ServiceAccounts(ctrlcommon.MCONamespace).Get(context.TODO(), serviceAccountName, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+
+		sa.ImagePullSecrets = append(sa.ImagePullSecrets, corev1.LocalObjectReference{
+			Name: secretName,
+		})
+
+		_, err = cs.CoreV1Interface.ServiceAccounts(ctrlcommon.MCONamespace).Update(context.TODO(), sa, metav1.UpdateOptions{})
+		return err
+	})
+
+	require.NoError(t, err)
+
+	t.Logf("Added secret %s with registry hostname %s to %s serviceaccount", secretName, imageRegistryHostname, serviceAccountName)
+
+	return helpers.MakeIdempotent(func() {
+		err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+			sa, err := cs.CoreV1Interface.ServiceAccounts(ctrlcommon.MCONamespace).Get(context.TODO(), serviceAccountName, metav1.GetOptions{})
+			if err != nil {
+				return err
+			}
+
+			refs := []corev1.LocalObjectReference{}
+
+			for _, ref := range sa.ImagePullSecrets {
+				if ref.Name != secretName {
+					refs = append(refs, ref)
+				}
+			}
+
+			sa.ImagePullSecrets = refs
+
+			_, err = cs.CoreV1Interface.ServiceAccounts(ctrlcommon.MCONamespace).Update(context.TODO(), sa, metav1.UpdateOptions{})
+			return err
+		})
+
+		require.NoError(t, err)
+
+		require.NoError(t, cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace).Delete(context.TODO(), secretName, metav1.DeleteOptions{}))
+
+		t.Logf("Removed secret %s with hostname %s from %s service account", secretName, imageRegistryHostname, serviceAccountName)
+	})
 }

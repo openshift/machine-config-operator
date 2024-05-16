@@ -33,8 +33,7 @@ const (
 // RenderConfig is wrapper around ControllerConfigSpec.
 type RenderConfig struct {
 	*mcfgv1.ControllerConfigSpec
-	PullSecret                 string
-	InternalRegistryPullSecret string
+	PullSecret string
 
 	// no need to set this, will be automatically configured
 	Constants map[string]string
