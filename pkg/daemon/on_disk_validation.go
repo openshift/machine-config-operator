@@ -11,6 +11,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
 )
 
@@ -161,14 +162,27 @@ func checkV2Units(units []ign2types.Unit, systemdPath string) error {
 	return nil
 }
 
+// To transition certain files from being under MachineConfig management to
+// certificate_Writer, we must ignore these files at validation time since
+// there is the possibility that certificate_writer may write different
+// contents to the file during the transition.
+func getFilesToIgnore() sets.Set[string] {
+	return sets.New[string](
+		caBundleFilePath,
+		cloudCABundleFilePath,
+		imageRegistryAuthFile,
+	)
+}
+
 // checkV3Files validates the contents of all the files in the target config.
 // V3 files should not have any duplication anymore, so there is no need to
 // check for overwrites.
 func checkV3Files(files []ign3types.File) error {
+	filesToIgnore := getFilesToIgnore()
+
 	for _, f := range files {
-		if f.Path == caBundleFilePath || f.Path == cloudCABundleFilePath {
-			// TODO remove this special case once we have a better way to do this
-			klog.V(4).Infof("Skipping file %s during checkV3Files", caBundleFilePath)
+		if filesToIgnore.Has(f.Path) {
+			klog.V(4).Infof("Skipping file %s during checkV3Files", f.Path)
 			continue
 		}
 		if len(f.Append) > 0 {

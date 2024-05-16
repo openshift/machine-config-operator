@@ -123,9 +123,6 @@ func TestOnClusterBuildRollsOutImage(t *testing.T) {
 		helpers.DeleteNodeAndMachine(t, cs, node)
 	}))
 
-	// This is needed to work around https://issues.redhat.com/browse/OCPBUGS-33803.
-	t.Cleanup(writeInternalRegistryPullSecretToNode(t, cs, node))
-
 	helpers.LabelNode(t, cs, node, helpers.MCPNameToRole(layeredMCPName))
 	helpers.WaitForNodeImageChange(t, cs, node, imagePullspec)
 
