@@ -122,6 +122,7 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 		cloudCA := controllerConfig.Spec.CloudProviderCAData
 		pathToData[caBundleFilePath] = kubeAPIServerServingCABytes
 		pathToData[cloudCABundleFilePath] = cloudCA
+		pathToData[imageRegistryAuthFile] = controllerConfig.Spec.InternalRegistryPullSecret
 		var err error
 		var cm *corev1.ConfigMap
 		var fullCA []string
