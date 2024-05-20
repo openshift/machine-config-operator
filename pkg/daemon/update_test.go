@@ -487,6 +487,8 @@ func TestCalculatePostConfigChangeAction(t *testing.T) {
 		"policy2":         ctrlcommon.NewIgnFile("/etc/containers/policy.json", "policy2"),
 		"containers-gpg1": ctrlcommon.NewIgnFile("/etc/machine-config-daemon/no-reboot/containers-gpg.pub", "containers-gpg1"),
 		"containers-gpg2": ctrlcommon.NewIgnFile("/etc/machine-config-daemon/no-reboot/containers-gpg.pub", "containers-gpg2"),
+		"restart-crio1":   ctrlcommon.NewIgnFile("/etc/pki/ca-trust/source/anchors/openshift-config-user-ca-bundle.crt", "restart-crio1"),
+		"restart-crio2":   ctrlcommon.NewIgnFile("/etc/pki/ca-trust/source/anchors/openshift-config-user-ca-bundle.crt", "restart-crio2"),
 	}
 
 	tests := []struct {
@@ -565,6 +567,17 @@ func TestCalculatePostConfigChangeAction(t *testing.T) {
 			oldConfig:      helpers.NewMachineConfig("00-test", nil, "dummy://", []ign3types.File{files["containers-gpg1"]}),
 			newConfig:      helpers.NewMachineConfig("01-test", nil, "dummy://", []ign3types.File{files["containers-gpg2"]}),
 			expectedAction: []string{postConfigChangeActionReloadCrio},
+		},
+		{
+			// test that updating openshift-config-user-ca-bundle.crt is crio restart
+			oldConfig:      helpers.NewMachineConfig("00-test", nil, "dummy://", []ign3types.File{files["restart-crio1"]}),
+			newConfig:      helpers.NewMachineConfig("01-test", nil, "dummy://", []ign3types.File{files["restart-crio2"]}),
+			expectedAction: []string{postConfigChangeActionRestartCrio}},
+		{
+			// test that updating openshift-config-user-ca-bundle.crt is crio restart and that it overrides a following crio reload
+			oldConfig:      helpers.NewMachineConfig("00-test", nil, "dummy://", []ign3types.File{files["restart-crio1"]}),
+			newConfig:      helpers.NewMachineConfig("01-test", nil, "dummy://", []ign3types.File{files["restart-crio2"], files["containers-gpg1"]}),
+			expectedAction: []string{postConfigChangeActionRestartCrio},
 		},
 	}
 
