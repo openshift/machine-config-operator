@@ -591,12 +591,13 @@ func calculatePostConfigChangeActionFromMCDiffs(diffFileSet []string) (actions [
 	for _, path := range diffFileSet {
 		if ctrlcommon.InSlice(path, filesPostConfigChangeActionNone) {
 			continue
-		} else if ctrlcommon.InSlice(path, filesPostConfigChangeActionReloadCrio) {
-			actions = []string{postConfigChangeActionReloadCrio}
+		} else if ctrlcommon.InSlice(path, filesPostConfigChangeActionReloadCrio) || ctrlcommon.InSlice(filepath.Dir(path), dirsPostConfigChangeActionReloadCrio) {
+			// Don't override a restart CRIO action
+			if !ctrlcommon.InSlice(postConfigChangeActionRestartCrio, actions) {
+				actions = []string{postConfigChangeActionReloadCrio}
+			}
 		} else if ctrlcommon.InSlice(path, filesPostConfigChangeActionRestartCrio) {
 			actions = []string{postConfigChangeActionRestartCrio}
-		} else if ctrlcommon.InSlice(filepath.Dir(path), dirsPostConfigChangeActionReloadCrio) {
-			actions = []string{postConfigChangeActionReloadCrio}
 		} else if ctrlcommon.InSlice(filepath.Dir(path), directoriesPostConfigChangeActionNone) {
 			continue
 		} else {
