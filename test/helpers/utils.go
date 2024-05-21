@@ -1180,22 +1180,3 @@ func validateFeatureGatesEnabled(cs *framework.ClientSet, requiredFeatureGates .
 	disabledRequiredFeatures := requiredFeatures.Difference(enabledFeatures)
 	return fmt.Errorf("missing required FeatureGate(s): %v, have: %v", sets.List(disabledRequiredFeatures), sets.List(enabledFeatures))
 }
-
-// Writes a file to a given node. Returns an idempotent cleanup function.
-func WriteFileToNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, filename, contents string) func() {
-	t.Helper()
-
-	if !strings.HasPrefix(filename, "/rootfs") {
-		filename = filepath.Join("/rootfs", filename)
-	}
-
-	bashCmd := fmt.Sprintf("printf '%s' > %s", contents, filename)
-	t.Logf("Writing file %s to node %s", filename, node.Name)
-
-	ExecCmdOnNode(t, cs, node, "/bin/bash", "-c", bashCmd)
-
-	return MakeIdempotent(func() {
-		t.Logf("Removing file %s from node %s", filename, node.Name)
-		ExecCmdOnNode(t, cs, node, "rm", filename)
-	})
-}

@@ -640,16 +640,3 @@ func cloneSecret(t *testing.T, cs *framework.ClientSet, srcName, srcNamespace, d
 		t.Logf("Deleted cloned secret \"%s/%s\"", dstNamespace, dstName)
 	})
 }
-
-// Extracts the internal registry pull secret from the ControllerConfig and
-// writes it to the designated place on the nodes' filesystem. This is
-// needed to work around https://issues.redhat.com/browse/OCPBUGS-33803
-// until this bug can be resolved.
-func writeInternalRegistryPullSecretToNode(t *testing.T, cs *framework.ClientSet, node corev1.Node) func() {
-	cc, err := cs.ControllerConfigs().Get(context.TODO(), "machine-config-controller", metav1.GetOptions{})
-	require.NoError(t, err)
-
-	path := "/etc/mco/internal-registry-pull-secret.json"
-
-	return helpers.WriteFileToNode(t, cs, node, path, string(cc.Spec.InternalRegistryPullSecret))
-}
