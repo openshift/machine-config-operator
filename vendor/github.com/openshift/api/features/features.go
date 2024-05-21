@@ -203,6 +203,13 @@ var (
 						enableIn(configv1.Default, configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
 						mustRegister()
 
+	FeatureGateVSphereMultiVCenters = newFeatureGate("VSphereMultiVCenters").
+					reportProblemsToJiraComponent("splat").
+					contactPerson("vr4manta").
+					productScope(ocpSpecific).
+					enableIn(configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
+					mustRegister()
+
 	FeatureGateVSphereStaticIPs = newFeatureGate("VSphereStaticIPs").
 					reportProblemsToJiraComponent("splat").
 					contactPerson("rvanderp3").
@@ -239,6 +246,13 @@ var (
 						mustRegister()
 
 	FeatureGateHardwareSpeed = newFeatureGate("HardwareSpeed").
+					reportProblemsToJiraComponent("etcd").
+					contactPerson("hasbro17").
+					productScope(ocpSpecific).
+					enableIn(configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
+					mustRegister()
+
+	FeatureGateBackendQuotaGiB = newFeatureGate("EtcdBackendQuota").
 					reportProblemsToJiraComponent("etcd").
 					contactPerson("hasbro17").
 					productScope(ocpSpecific).
@@ -508,4 +522,11 @@ var (
 						contactPerson("rvanderp3").
 						productScope(ocpSpecific).
 						mustRegister()
+
+	FeatureGateChunkSizeMiB = newFeatureGate("ChunkSizeMiB").
+				reportProblemsToJiraComponent("Image Registry").
+				contactPerson("flavianmissi").
+				productScope(ocpSpecific).
+				enableIn(configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
+				mustRegister()
 )

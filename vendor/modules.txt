@@ -818,7 +818,7 @@ github.com/opencontainers/runc/libcontainer/user
 # github.com/opencontainers/runtime-spec v1.1.0
 ## explicit
 github.com/opencontainers/runtime-spec/specs-go
-# github.com/openshift/api v0.0.0-20240425081546-8203151f085f
+# github.com/openshift/api v0.0.0-20240508125607-95e22923d553
 ## explicit; go 1.21
 github.com/openshift/api
 github.com/openshift/api/annotations
