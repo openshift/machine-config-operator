@@ -3,17 +3,11 @@
 aliases:
   baremetal-approvers:
     - bfournie
-    - celebdor
     - cybertron
-    - dougsland
-    - hardys
     - mkowalski
   baremetal-reviewers:
     - bfournie
-    - celebdor
     - cybertron
-    - dougsland
-    - hardys
     - mkowalski
   openstack-approvers:
     - EmilienM
