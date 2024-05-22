@@ -104,18 +104,20 @@ const (
 	mobServiceAccountManifestPath                   = "manifests/machineosbuilder/sa.yaml"
 
 	// Machine Config Daemon manifest paths
-	mcdClusterRoleManifestPath                = "manifests/machineconfigdaemon/clusterrole.yaml"
-	mcdEventsClusterRoleManifestPath          = "manifests/machineconfigdaemon/events-clusterrole.yaml"
-	mcdEventsRoleBindingDefaultManifestPath   = "manifests/machineconfigdaemon/events-rolebinding-default.yaml"
-	mcdEventsRoleBindingTargetManifestPath    = "manifests/machineconfigdaemon/events-rolebinding-target.yaml"
-	mcdClusterRoleBindingManifestPath         = "manifests/machineconfigdaemon/clusterrolebinding.yaml"
-	mcdServiceAccountManifestPath             = "manifests/machineconfigdaemon/sa.yaml"
-	mcdDaemonsetManifestPath                  = "manifests/machineconfigdaemon/daemonset.yaml"
-	mcdKubeRbacProxyConfigMapPath             = "manifests/machineconfigdaemon/kube-rbac-proxy-config.yaml"
-	mcdKubeRbacProxyPrometheusRolePath        = "manifests/machineconfigdaemon/prometheus-rbac.yaml"
-	mcdKubeRbacProxyPrometheusRoleBindingPath = "manifests/machineconfigdaemon/prometheus-rolebinding-target.yaml"
-	mcdRolePath                               = "manifests/machineconfigdaemon/role.yaml"
-	mcdRoleBindingPath                        = "manifests/machineconfigdaemon/rolebinding.yaml"
+	mcdClusterRoleManifestPath                      = "manifests/machineconfigdaemon/clusterrole.yaml"
+	mcdEventsClusterRoleManifestPath                = "manifests/machineconfigdaemon/events-clusterrole.yaml"
+	mcdEventsRoleBindingDefaultManifestPath         = "manifests/machineconfigdaemon/events-rolebinding-default.yaml"
+	mcdEventsRoleBindingTargetManifestPath          = "manifests/machineconfigdaemon/events-rolebinding-target.yaml"
+	mcdClusterRoleBindingManifestPath               = "manifests/machineconfigdaemon/clusterrolebinding.yaml"
+	mcdServiceAccountManifestPath                   = "manifests/machineconfigdaemon/sa.yaml"
+	mcdDaemonsetManifestPath                        = "manifests/machineconfigdaemon/daemonset.yaml"
+	mcdKubeRbacProxyConfigMapPath                   = "manifests/machineconfigdaemon/kube-rbac-proxy-config.yaml"
+	mcdKubeRbacProxyPrometheusRolePath              = "manifests/machineconfigdaemon/prometheus-rbac.yaml"
+	mcdKubeRbacProxyPrometheusRoleBindingPath       = "manifests/machineconfigdaemon/prometheus-rolebinding-target.yaml"
+	mcdRolePath                                     = "manifests/machineconfigdaemon/role.yaml"
+	mcdRoleBindingPath                              = "manifests/machineconfigdaemon/rolebinding.yaml"
+	mcdMCNGuardValidatingAdmissionPolicyPath        = "manifests/machineconfigdaemon/mcn-guards-validatingadmissionpolicy.yaml"
+	mcdMCNGuardValidatingAdmissionPolicyBindingPath = "manifests/machineconfigdaemon/mcn-guards-validatingadmissionpolicybinding.yaml"
 
 	// Machine Config Server manifest paths
 	mcsClusterRoleManifestPath                    = "manifests/machineconfigserver/clusterrole.yaml"
@@ -1373,6 +1375,12 @@ func (optr *Operator) syncMachineConfigDaemon(config *renderConfig) error {
 		},
 		configMaps: []string{
 			mcdKubeRbacProxyConfigMapPath,
+		},
+		validatingAdmissionPolicies: []string{
+			mcdMCNGuardValidatingAdmissionPolicyPath,
+		},
+		validatingAdmissionPolicyBindings: []string{
+			mcdMCNGuardValidatingAdmissionPolicyBindingPath,
 		},
 	}
 
