@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -30,18 +31,11 @@ import (
 )
 
 // syncVersion handles reporting the version to the clusteroperator
-func (optr *Operator) syncVersion() error {
-	co, err := optr.fetchClusterOperator()
-	if err != nil {
-		return err
-	}
-	if co == nil {
-		return nil
-	}
+func (optr *Operator) syncVersion(co *configv1.ClusterOperator) {
 
 	// keep the old version and progressing if we fail progressing
 	if cov1helpers.IsStatusConditionTrue(co.Status.Conditions, configv1.OperatorProgressing) && cov1helpers.IsStatusConditionTrue(co.Status.Conditions, configv1.OperatorDegraded) {
-		return nil
+		return
 	}
 
 	if !optr.vStore.Equal(co.Status.Versions) {
@@ -51,29 +45,18 @@ func (optr *Operator) syncVersion() error {
 			Namespace: co.Namespace,
 			UID:       co.GetUID(),
 		}
-		optr.eventRecorder.Eventf(mcoObjectRef, corev1.EventTypeNormal, "OperatorVersionChanged", fmt.Sprintf("clusteroperator/machine-config-operator version changed from %v to %v", co.Status.Versions, optr.vStore.GetAll()))
+		optr.eventRecorder.Eventf(mcoObjectRef, corev1.EventTypeNormal, "OperatorVersionChanged", fmt.Sprintf("clusteroperator/machine-config version changed from %v to %v", co.Status.Versions, optr.vStore.GetAll()))
 	}
 
 	co.Status.Versions = optr.vStore.GetAll()
-	// TODO(runcom): abstract below with updateStatus
-	optr.setOperatorStatusExtension(&co.Status, nil)
-	_, err = optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(context.TODO(), co, metav1.UpdateOptions{})
-	return err
 }
 
 // syncRelatedObjects handles reporting the relatedObjects to the clusteroperator
-func (optr *Operator) syncRelatedObjects() error {
-	co, err := optr.fetchClusterOperator()
-	if err != nil {
-		return err
-	}
-	if co == nil {
-		return nil
-	}
+func (optr *Operator) syncRelatedObjects(co *configv1.ClusterOperator) {
 
-	coCopy := co.DeepCopy()
+	coStatusCopy := co.Status.DeepCopy()
 	// RelatedObjects are consumed by https://github.com/openshift/must-gather
-	co.Status.RelatedObjects = []configv1.ObjectReference{
+	coStatusCopy.RelatedObjects = []configv1.ObjectReference{
 		{Resource: "namespaces", Name: optr.namespace},
 		{Group: "machineconfiguration.openshift.io", Resource: "machineconfigpools"},
 		{Group: "machineconfiguration.openshift.io", Resource: "controllerconfigs"},
@@ -91,23 +74,14 @@ func (optr *Operator) syncRelatedObjects() error {
 		{Resource: "namespaces", Name: "openshift-cloud-platform-infra"},
 	}
 
-	if !equality.Semantic.DeepEqual(coCopy.Status.RelatedObjects, co.Status.RelatedObjects) {
-		_, err := optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(context.TODO(), co, metav1.UpdateOptions{})
-		return err
+	if !equality.Semantic.DeepEqual(coStatusCopy.RelatedObjects, co.Status.RelatedObjects) {
+		co.Status = *coStatusCopy
 	}
 
-	return nil
 }
 
 // syncAvailableStatus applies the new condition to the mco's ClusterOperator object.
-func (optr *Operator) syncAvailableStatus() error {
-	co, err := optr.fetchClusterOperator()
-	if err != nil {
-		return err
-	}
-	if co == nil {
-		return nil
-	}
+func (optr *Operator) syncAvailableStatus(co *configv1.ClusterOperator) {
 
 	// Based on Openshift Operator Guidance, Available = False is only necessary
 	// if a midnight admin page is required. In the MCO land, nothing quite reaches
@@ -115,29 +89,22 @@ func (optr *Operator) syncAvailableStatus() error {
 	// (which imply a working hours admin page)
 	// See https://issues.redhat.com/browse/OCPBUGS-9108 for more information.
 
-	coStatus := configv1.ClusterOperatorStatusCondition{
+	coStatusCondition := configv1.ClusterOperatorStatusCondition{
 		Type:    configv1.OperatorAvailable,
 		Status:  configv1.ConditionTrue,
 		Message: fmt.Sprintf("Cluster has deployed %s", co.Status.Versions),
 		Reason:  asExpectedReason,
 	}
 
-	return optr.updateStatus(co, coStatus)
+	cov1helpers.SetStatusCondition(&co.Status.Conditions, coStatusCondition)
 }
 
 // syncProgressingStatus applies the new condition to the mco's ClusterOperator object.
-func (optr *Operator) syncProgressingStatus() error {
-	co, err := optr.fetchClusterOperator()
-	if err != nil {
-		return err
-	}
-	if co == nil {
-		return nil
-	}
+func (optr *Operator) syncProgressingStatus(co *configv1.ClusterOperator) {
 
 	var (
-		optrVersion, _ = optr.vStore.Get("operator")
-		coStatus       = configv1.ClusterOperatorStatusCondition{
+		optrVersion, _    = optr.vStore.Get("operator")
+		coStatusCondition = configv1.ClusterOperatorStatusCondition{
 			Type:    configv1.OperatorProgressing,
 			Status:  configv1.ConditionFalse,
 			Message: fmt.Sprintf("Cluster version is %s", optrVersion),
@@ -151,65 +118,83 @@ func (optr *Operator) syncProgressingStatus() error {
 	)
 	if optr.vStore.Equal(co.Status.Versions) {
 		if optr.inClusterBringup {
-			optr.eventRecorder.Eventf(mcoObjectRef, corev1.EventTypeNormal, "OperatorVersionChanged", fmt.Sprintf("clusteroperator/machine-config-operator is bootstrapping to %v", optr.vStore.GetAll()))
-			coStatus.Message = fmt.Sprintf("Cluster is bootstrapping %s", optrVersion)
-			coStatus.Status = configv1.ConditionTrue
+			optr.eventRecorder.Eventf(mcoObjectRef, corev1.EventTypeNormal, "OperatorVersionChanged", fmt.Sprintf("clusteroperator/machine-config is bootstrapping to %v", optr.vStore.GetAll()))
+			coStatusCondition.Message = fmt.Sprintf("Cluster is bootstrapping %s", optrVersion)
+			coStatusCondition.Status = configv1.ConditionTrue
 		}
 	} else {
 		// we can still be progressing during a sync (e.g. wait for master pool sync)
 		// but we want to fire the event only once when we're actually setting progressing and we
 		// weren't progressing before.
 		if !cov1helpers.IsStatusConditionTrue(co.Status.Conditions, configv1.OperatorProgressing) {
-			optr.eventRecorder.Eventf(mcoObjectRef, corev1.EventTypeNormal, "OperatorVersionChanged", fmt.Sprintf("clusteroperator/machine-config-operator started a version change from %v to %v", co.Status.Versions, optr.vStore.GetAll()))
+			optr.eventRecorder.Eventf(mcoObjectRef, corev1.EventTypeNormal, "OperatorVersionChanged", fmt.Sprintf("clusteroperator/machine-config started a version change from %v to %v", co.Status.Versions, optr.vStore.GetAll()))
 		}
-		coStatus.Message = fmt.Sprintf("Working towards %s", optrVersion)
-		coStatus.Status = configv1.ConditionTrue
+		coStatusCondition.Message = fmt.Sprintf("Working towards %s", optrVersion)
+		coStatusCondition.Status = configv1.ConditionTrue
 	}
 
-	return optr.updateStatus(co, coStatus)
+	cov1helpers.SetStatusCondition(&co.Status.Conditions, coStatusCondition)
 }
 
-func (optr *Operator) updateStatus(co *configv1.ClusterOperator, status configv1.ClusterOperatorStatusCondition) error {
-	cov1helpers.SetStatusCondition(&co.Status.Conditions, status)
-	optr.setOperatorStatusExtension(&co.Status, nil)
-	_, err := optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(context.TODO(), co, metav1.UpdateOptions{})
-	return err
+// This function updates the Cluster Operator's status via an API call only if there is an actual
+// to the status. Returns the final ClusterOperator object and an error if any.
+func (optr *Operator) updateClusterOperatorStatus(co *configv1.ClusterOperator, statusUpdate *configv1.ClusterOperatorStatus, syncErr error) (*configv1.ClusterOperator, error) {
+	// Update the operator status extension. This fetchs all the MCP status, and appends a syncerror if any.
+	optr.setOperatorStatusExtension(statusUpdate, syncErr)
+
+	newCO := co.DeepCopy()
+	newCO.Status = *statusUpdate
+
+	if !reflect.DeepEqual(co.Status, newCO.Status) {
+		// Attempt first update with the object passed in as it is likely to be the latest.
+		klog.V(4).Infof("CO Status Update, old resource version %s", co.ResourceVersion)
+		updatedCO, updateErr := optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(context.TODO(), newCO, metav1.UpdateOptions{})
+		if apierrors.IsConflict(updateErr) {
+			// On conflict, fetch a fresh CO object and attempt update again.
+			co, getErr := optr.configClient.ConfigV1().ClusterOperators().Get(context.TODO(), co.Name, metav1.GetOptions{})
+			if getErr != nil {
+				return newCO, getErr
+			}
+			klog.V(4).Infof("CO Status Update conflict, re-attempting, new resource version %s", co.ResourceVersion)
+			// Refresh updatedCO with the latest CO object and the new status to be applied.
+			newCO = co.DeepCopy()
+			newCO.Status = *statusUpdate
+			// Attempt the update again.
+			updatedCO, updateErr = optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(context.TODO(), newCO, metav1.UpdateOptions{})
+		}
+		// Return the old object, if any errors. This is because the update call will return an empty object if it fails.
+		if updateErr != nil {
+			return co, updateErr
+		}
+		// If no error, return the updated object.
+		return updatedCO, nil
+	}
+	// If no update took place, return object as is.
+	return co, nil
 }
 
 const (
 	asExpectedReason = "AsExpected"
 )
 
-func (optr *Operator) clearDegradedStatus(task string) error {
-	co, err := optr.fetchClusterOperator()
-	if err != nil {
-		return err
-	}
-	if co == nil {
-		return nil
-	}
+func (optr *Operator) clearDegradedStatus(co *configv1.ClusterOperator, task string) *configv1.ClusterOperator {
 	if cov1helpers.IsStatusConditionFalse(co.Status.Conditions, configv1.OperatorDegraded) {
-		return nil
+		return co
 	}
 	degradedStatusCondition := cov1helpers.FindStatusCondition(co.Status.Conditions, configv1.OperatorDegraded)
 	if degradedStatusCondition == nil {
-		return nil
+		return co
 	}
 	if degradedStatusCondition.Reason != taskFailed(task) {
-		return nil
+		return co
 	}
-	return optr.syncDegradedStatus(syncError{})
+	newCO := co.DeepCopy()
+	optr.syncDegradedStatus(newCO, syncError{})
+	return newCO
 }
 
 // syncDegradedStatus applies the new condition to the mco's ClusterOperator object.
-func (optr *Operator) syncDegradedStatus(ierr syncError) (err error) {
-	co, err := optr.fetchClusterOperator()
-	if err != nil {
-		return err
-	}
-	if co == nil {
-		return nil
-	}
+func (optr *Operator) syncDegradedStatus(co *configv1.ClusterOperator, ierr syncError) {
 
 	optrVersion, _ := optr.vStore.Get("operator")
 	degraded := configv1.ConditionTrue
@@ -249,14 +234,13 @@ func (optr *Operator) syncDegradedStatus(ierr syncError) (err error) {
 		}
 	}
 
-	coStatus := configv1.ClusterOperatorStatusCondition{
+	coStatusCondition := configv1.ClusterOperatorStatusCondition{
 		Type:    configv1.OperatorDegraded,
 		Status:  degraded,
 		Message: message,
 		Reason:  reason,
 	}
-
-	return optr.updateStatus(co, coStatus)
+	cov1helpers.SetStatusCondition(&co.Status.Conditions, coStatusCondition)
 }
 
 const (
@@ -267,14 +251,7 @@ const (
 )
 
 // syncUpgradeableStatus applies the new condition to the mco's ClusterOperator object.
-func (optr *Operator) syncUpgradeableStatus() error {
-	co, err := optr.fetchClusterOperator()
-	if err != nil {
-		return err
-	}
-	if co == nil {
-		return nil
-	}
+func (optr *Operator) syncUpgradeableStatus(co *configv1.ClusterOperator) error {
 
 	pools, err := optr.mcpLister.List(labels.Everything())
 	if err != nil {
@@ -285,7 +262,7 @@ func (optr *Operator) syncUpgradeableStatus() error {
 	// determined, specific "Upgradeable=False" status can be added with messages for how admins
 	// can resolve it.
 	// [ref] https://github.com/openshift/cluster-version-operator/blob/8402d219f36fc79e03edf45918785376113f2cc1/docs/dev/clusteroperator.md#what-should-an-operator-report-with-clusteroperator-custom-resource
-	coStatus := configv1.ClusterOperatorStatusCondition{
+	coStatusCondition := configv1.ClusterOperatorStatusCondition{
 		Type:   configv1.OperatorUpgradeable,
 		Status: configv1.ConditionTrue,
 		Reason: asExpectedReason,
@@ -303,25 +280,25 @@ func (optr *Operator) syncUpgradeableStatus() error {
 		degraded = isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolDegraded)
 		// degraded should get top billing in the clusteroperator status, if we find this, set it and update
 		if degraded {
-			coStatus.Status = configv1.ConditionFalse
-			coStatus.Reason = "DegradedPool"
-			coStatus.Message = "One or more machine config pools are degraded, please see `oc get mcp` for further details and resolve before upgrading"
+			coStatusCondition.Status = configv1.ConditionFalse
+			coStatusCondition.Reason = "DegradedPool"
+			coStatusCondition.Message = "One or more machine config pools are degraded, please see `oc get mcp` for further details and resolve before upgrading"
 			break
 		}
 
 		if interrupted {
-			coStatus.Status = configv1.ConditionFalse
-			coStatus.Reason = "InterruptedBuild"
-			coStatus.Message = "One or more machine config pools' builds have been interrupted, please see `oc get mcp` for further details and resolve before upgrading"
+			coStatusCondition.Status = configv1.ConditionFalse
+			coStatusCondition.Reason = "InterruptedBuild"
+			coStatusCondition.Message = "One or more machine config pools' builds have been interrupted, please see `oc get mcp` for further details and resolve before upgrading"
 			break
 		}
 	}
 	// this should no longer trigger when adding a node to a pool. It should only trigger if the node actually has to go through an upgrade
 	// updating and degraded can occur together, in that case defer to the degraded Reason that is already set above
 	if updating && !degraded && !interrupted {
-		coStatus.Status = configv1.ConditionFalse
-		coStatus.Reason = "PoolUpdating"
-		coStatus.Message = "One or more machine config pools are updating, please see `oc get mcp` for further details"
+		coStatusCondition.Status = configv1.ConditionFalse
+		coStatusCondition.Reason = "PoolUpdating"
+		coStatusCondition.Message = "One or more machine config pools are updating, please see `oc get mcp` for further details"
 	}
 
 	// don't overwrite status if updating or degraded
@@ -329,18 +306,18 @@ func (optr *Operator) syncUpgradeableStatus() error {
 		skewStatus, status, err := optr.isKubeletSkewSupported(pools)
 		if err != nil {
 			klog.Errorf("Error checking version skew: %v, kubelet skew status: %v, status reason: %v, status message: %v", err, skewStatus, status.Reason, status.Message)
-			coStatus.Reason = status.Reason
-			coStatus.Message = status.Message
-			return optr.updateStatus(co, coStatus)
+			coStatusCondition.Reason = status.Reason
+			coStatusCondition.Message = status.Message
+			cov1helpers.SetStatusCondition(&co.Status.Conditions, coStatusCondition)
 		}
 		switch skewStatus {
 		case skewUnchecked:
-			coStatus.Reason = status.Reason
-			coStatus.Message = status.Message
-			return optr.updateStatus(co, coStatus)
+			coStatusCondition.Reason = status.Reason
+			coStatusCondition.Message = status.Message
+			cov1helpers.SetStatusCondition(&co.Status.Conditions, coStatusCondition)
 		case skewUnsupported:
-			coStatus.Reason = status.Reason
-			coStatus.Message = status.Message
+			coStatusCondition.Reason = status.Reason
+			coStatusCondition.Message = status.Message
 			mcoObjectRef := &corev1.ObjectReference{
 				Kind:      co.Kind,
 				Name:      co.Name,
@@ -348,16 +325,17 @@ func (optr *Operator) syncUpgradeableStatus() error {
 				UID:       co.GetUID(),
 			}
 			klog.Infof("kubelet skew status: %v, status reason: %v", skewStatus, status.Reason)
-			optr.eventRecorder.Eventf(mcoObjectRef, corev1.EventTypeWarning, coStatus.Reason, coStatus.Message)
-			return optr.updateStatus(co, coStatus)
+			optr.eventRecorder.Eventf(mcoObjectRef, corev1.EventTypeWarning, coStatusCondition.Reason, coStatusCondition.Message)
+			cov1helpers.SetStatusCondition(&co.Status.Conditions, coStatusCondition)
 		case skewPresent:
-			coStatus.Reason = status.Reason
-			coStatus.Message = status.Message
+			coStatusCondition.Reason = status.Reason
+			coStatusCondition.Message = status.Message
 			klog.Infof("kubelet skew status: %v, status reason: %v", skewStatus, status.Reason)
-			return optr.updateStatus(co, coStatus)
+			cov1helpers.SetStatusCondition(&co.Status.Conditions, coStatusCondition)
 		}
 	}
-	return optr.updateStatus(co, coStatus)
+	cov1helpers.SetStatusCondition(&co.Status.Conditions, coStatusCondition)
+	return nil
 }
 
 func (optr *Operator) syncMetrics() error {
@@ -389,14 +367,7 @@ func (optr *Operator) syncMetrics() error {
 	return nil
 }
 
-func (optr *Operator) syncClusterFleetEvaluation() error {
-	co, err := optr.fetchClusterOperator()
-	if err != nil {
-		return err
-	}
-	if co == nil {
-		return nil
-	}
+func (optr *Operator) syncClusterFleetEvaluation(co *configv1.ClusterOperator) error {
 
 	unexpectedEvaluations, err := optr.generateClusterFleetEvaluations()
 	if err != nil {
@@ -410,11 +381,14 @@ func (optr *Operator) syncClusterFleetEvaluation() error {
 		reason = evaluationToString(unexpectedEvaluations)
 	}
 
-	return optr.updateStatus(co, configv1.ClusterOperatorStatusCondition{
+	coStatusCondition := configv1.ClusterOperatorStatusCondition{
 		Type:   configv1.EvaluationConditionsDetected,
 		Status: status,
 		Reason: reason,
-	})
+	}
+
+	cov1helpers.SetStatusCondition(&co.Status.Conditions, coStatusCondition)
+	return nil
 }
 
 func evaluationToString(e []string) string {
@@ -522,7 +496,7 @@ func (optr *Operator) cfeEvalCgroupsV1() (bool, error) {
 // Returns the skew status. version skew > 2 is not supported.
 func (optr *Operator) isKubeletSkewSupported(pools []*mcfgv1.MachineConfigPool) (skewStatus string, coStatus configv1.ClusterOperatorStatusCondition, err error) {
 	coStatus = configv1.ClusterOperatorStatusCondition{}
-	kubeAPIServerStatus, err := optr.configClient.ConfigV1().ClusterOperators().Get(context.TODO(), "kube-apiserver", metav1.GetOptions{})
+	kubeAPIServerStatus, err := optr.clusterOperatorLister.Get("kube-apiserver")
 	if err != nil {
 		coStatus.Reason = skewUnchecked
 		coStatus.Message = fmt.Sprintf("An error occurred when checking kubelet version skew: %v", err)
@@ -649,7 +623,8 @@ func getMinimalSkewSupportNodeVersion(version string) string {
 }
 
 func (optr *Operator) fetchClusterOperator() (*configv1.ClusterOperator, error) {
-	co, err := optr.configClient.ConfigV1().ClusterOperators().Get(context.TODO(), optr.name, metav1.GetOptions{})
+	co, err := optr.clusterOperatorLister.Get(optr.name)
+
 	if meta.IsNoMatchError(err) {
 		return nil, nil
 	}
@@ -659,8 +634,7 @@ func (optr *Operator) fetchClusterOperator() (*configv1.ClusterOperator, error) 
 	if err != nil {
 		return nil, err
 	}
-	coCopy := co.DeepCopy()
-	return coCopy, nil
+	return co, nil
 }
 
 func (optr *Operator) initializeClusterOperator() (*configv1.ClusterOperator, error) {

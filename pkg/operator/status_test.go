@@ -24,6 +24,7 @@ import (
 	features "github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	fakeconfigclientset "github.com/openshift/client-go/config/clientset/versioned/fake"
+	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
 	cov1helpers "github.com/openshift/library-go/pkg/config/clusteroperator/v1helpers"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -281,7 +282,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 					syncFuncs: []syncFunc{
 						{
 							name: "fn1",
-							fn:   func(config *renderConfig) error { return errors.New("got err") },
+							fn:   func(config *renderConfig, co *configv1.ClusterOperator) error { return errors.New("got err") },
 						},
 					},
 					expectOperatorFail: true,
@@ -311,7 +312,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 					syncFuncs: []syncFunc{
 						{
 							name: "fn1",
-							fn:   func(config *renderConfig) error { return nil },
+							fn:   func(config *renderConfig, co *configv1.ClusterOperator) error { return nil },
 						},
 					},
 				},
@@ -345,7 +346,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 					syncFuncs: []syncFunc{
 						{
 							name: "fn1",
-							fn:   func(config *renderConfig) error { return nil },
+							fn:   func(config *renderConfig, co *configv1.ClusterOperator) error { return nil },
 						},
 					},
 				},
@@ -373,7 +374,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 					syncFuncs: []syncFunc{
 						{
 							name: "fn1",
-							fn:   func(config *renderConfig) error { return nil },
+							fn:   func(config *renderConfig, co *configv1.ClusterOperator) error { return nil },
 						},
 					},
 				},
@@ -407,7 +408,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 					syncFuncs: []syncFunc{
 						{
 							name: "fn1",
-							fn:   func(config *renderConfig) error { return nil },
+							fn:   func(config *renderConfig, co *configv1.ClusterOperator) error { return nil },
 						},
 					},
 				},
@@ -441,7 +442,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 					syncFuncs: []syncFunc{
 						{
 							name: "fn1",
-							fn:   func(config *renderConfig) error { return nil },
+							fn:   func(config *renderConfig, co *configv1.ClusterOperator) error { return nil },
 						},
 					},
 				},
@@ -472,7 +473,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 					syncFuncs: []syncFunc{
 						{
 							name: "fn1",
-							fn:   func(config *renderConfig) error { return errors.New("mock error") },
+							fn:   func(config *renderConfig, co *configv1.ClusterOperator) error { return errors.New("mock error") },
 						},
 					},
 				},
@@ -508,7 +509,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 					syncFuncs: []syncFunc{
 						{
 							name: "fn1",
-							fn:   func(config *renderConfig) error { return errors.New("error") },
+							fn:   func(config *renderConfig, co *configv1.ClusterOperator) error { return errors.New("error") },
 						},
 					},
 				},
@@ -540,7 +541,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 					syncFuncs: []syncFunc{
 						{
 							name: "fn1",
-							fn:   func(config *renderConfig) error { return errors.New("error") },
+							fn:   func(config *renderConfig, co *configv1.ClusterOperator) error { return errors.New("error") },
 						},
 					},
 				},
@@ -574,7 +575,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 					syncFuncs: []syncFunc{
 						{
 							name: "fn1",
-							fn:   func(config *renderConfig) error { return nil },
+							fn:   func(config *renderConfig, co *configv1.ClusterOperator) error { return nil },
 						},
 					},
 				},
@@ -604,7 +605,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 					syncFuncs: []syncFunc{
 						{
 							name: "fn1",
-							fn:   func(config *renderConfig) error { return errors.New("error") },
+							fn:   func(config *renderConfig, co *configv1.ClusterOperator) error { return errors.New("error") },
 						},
 					},
 				},
@@ -632,7 +633,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 					syncFuncs: []syncFunc{
 						{
 							name: "fn1",
-							fn:   func(config *renderConfig) error { return nil },
+							fn:   func(config *renderConfig, co *configv1.ClusterOperator) error { return nil },
 						},
 					},
 				},
@@ -680,6 +681,11 @@ func TestOperatorSyncStatus(t *testing.T) {
 				},
 			},
 		}
+
+		operatorIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+		optr.clusterOperatorLister = configlistersv1.NewClusterOperatorLister(operatorIndexer)
+		operatorIndexer.Add(co)
+		operatorIndexer.Add(kasOperator)
 
 		for j, sync := range testCase.syncs {
 			optr.inClusterBringup = sync.inClusterBringUp
@@ -752,7 +758,12 @@ func TestInClusterBringUpStayOnErr(t *testing.T) {
 	optr.configClient = fakeconfigclientset.NewSimpleClientset(co, kasOperator)
 	optr.inClusterBringup = true
 
-	fn1 := func(config *renderConfig) error {
+	operatorIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	optr.clusterOperatorLister = configlistersv1.NewClusterOperatorLister(operatorIndexer)
+	operatorIndexer.Add(co)
+	operatorIndexer.Add(kasOperator)
+
+	fn1 := func(config *renderConfig, co *configv1.ClusterOperator) error {
 		return errors.New("mocked fn1")
 	}
 	err := optr.syncAll([]syncFunc{{name: "mock1", fn: fn1}})
@@ -760,7 +771,7 @@ func TestInClusterBringUpStayOnErr(t *testing.T) {
 
 	assert.True(t, optr.inClusterBringup)
 
-	fn1 = func(config *renderConfig) error {
+	fn1 = func(config *renderConfig, co *configv1.ClusterOperator) error {
 		return nil
 	}
 	err = optr.syncAll([]syncFunc{{name: "mock1", fn: fn1}})
@@ -811,7 +822,12 @@ func TestKubeletSkewUnSupported(t *testing.T) {
 	optr.configClient = fakeClient
 	optr.inClusterBringup = true
 
-	fn1 := func(config *renderConfig) error {
+	operatorIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	optr.clusterOperatorLister = configlistersv1.NewClusterOperatorLister(operatorIndexer)
+	operatorIndexer.Add(co)
+	operatorIndexer.Add(kasOperator)
+
+	fn1 := func(config *renderConfig, co *configv1.ClusterOperator) error {
 		return errors.New("mocked fn1")
 	}
 	err := optr.syncAll([]syncFunc{{name: "mock1", fn: fn1}})
@@ -819,7 +835,7 @@ func TestKubeletSkewUnSupported(t *testing.T) {
 
 	assert.True(t, optr.inClusterBringup)
 
-	fn1 = func(config *renderConfig) error {
+	fn1 = func(config *renderConfig, co *configv1.ClusterOperator) error {
 		return nil
 	}
 	err = optr.syncAll([]syncFunc{{name: "mock1", fn: fn1}})
@@ -902,7 +918,12 @@ func TestCustomPoolKubeletSkewUnSupported(t *testing.T) {
 	optr.configClient = fakeClient
 	optr.inClusterBringup = true
 
-	fn1 := func(config *renderConfig) error {
+	operatorIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	optr.clusterOperatorLister = configlistersv1.NewClusterOperatorLister(operatorIndexer)
+	operatorIndexer.Add(co)
+	operatorIndexer.Add(kasOperator)
+
+	fn1 := func(config *renderConfig, co *configv1.ClusterOperator) error {
 		return errors.New("mocked fn1")
 	}
 	err := optr.syncAll([]syncFunc{{name: "mock1", fn: fn1}})
@@ -910,7 +931,7 @@ func TestCustomPoolKubeletSkewUnSupported(t *testing.T) {
 
 	assert.True(t, optr.inClusterBringup)
 
-	fn1 = func(config *renderConfig) error {
+	fn1 = func(config *renderConfig, co *configv1.ClusterOperator) error {
 		return nil
 	}
 	err = optr.syncAll([]syncFunc{{name: "mock1", fn: fn1}})
@@ -991,7 +1012,12 @@ func TestKubeletSkewSupported(t *testing.T) {
 	optr.configClient = fakeClient
 	optr.inClusterBringup = true
 
-	fn1 := func(config *renderConfig) error {
+	operatorIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	optr.clusterOperatorLister = configlistersv1.NewClusterOperatorLister(operatorIndexer)
+	operatorIndexer.Add(co)
+	operatorIndexer.Add(kasOperator)
+
+	fn1 := func(config *renderConfig, co *configv1.ClusterOperator) error {
 		return errors.New("mocked fn1")
 	}
 	err := optr.syncAll([]syncFunc{{name: "mock1", fn: fn1}})
@@ -999,7 +1025,7 @@ func TestKubeletSkewSupported(t *testing.T) {
 
 	assert.True(t, optr.inClusterBringup)
 
-	fn1 = func(config *renderConfig) error {
+	fn1 = func(config *renderConfig, co *configv1.ClusterOperator) error {
 		return nil
 	}
 	err = optr.syncAll([]syncFunc{{name: "mock1", fn: fn1}})

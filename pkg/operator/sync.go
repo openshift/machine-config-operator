@@ -136,7 +136,7 @@ const (
 
 type syncFunc struct {
 	name string
-	fn   func(config *renderConfig) error
+	fn   func(config *renderConfig, co *configv1.ClusterOperator) error
 }
 
 type syncError struct {
@@ -145,20 +145,38 @@ type syncError struct {
 }
 
 func (optr *Operator) syncAll(syncFuncs []syncFunc) error {
-	if err := optr.syncProgressingStatus(); err != nil {
-		return fmt.Errorf("error syncing progressing status: %w", err)
+
+	co, err := optr.fetchClusterOperator()
+	if err != nil {
+		return err
 	}
 
+	// Deepcopy the cluster operator object. Pass it through each of the sync functions below. Some of the sync functions
+	// will modify the object status as needed. This will be then used to perform a "batch" update to the object at the end of this
+	// function. This helps minimize API calls.
+	//
+	// Note: syncRequiredMachineConfigPools(one of the syncFuncs) will update the object prior to the batch update
+	// For syncRequiredMachineConfigPools, this is because the operator may be rolling out a new
+	// MachineConfig and may get "stuck" in the polling block within that function until all required pools are done updating.
+	// By updating within syncRequiredMachineConfigPools, the operator is able to provide faster updates during the progression
+	// of the pool update.
+
+	updatedCO := co.DeepCopy()
+
+	optr.syncProgressingStatus(updatedCO)
+
 	var syncErr syncError
+
 	for _, sf := range syncFuncs {
 		startTime := time.Now()
 		syncErr = syncError{
 			task: sf.name,
-			err:  sf.fn(optr.renderConfig),
+			err:  sf.fn(optr.renderConfig, updatedCO),
 		}
 		if optr.inClusterBringup {
 			klog.Infof("[init mode] synced %s in %v", sf.name, time.Since(startTime))
 		}
+
 		if syncErr.err != nil {
 			// Keep rendering controllerconfig if the daemon sync fails so (among other things)
 			// our certificates don't expire.
@@ -172,37 +190,38 @@ func (optr *Operator) syncAll(syncFuncs []syncFunc) error {
 			}
 			break
 		}
-		if err := optr.clearDegradedStatus(sf.name); err != nil {
-			return fmt.Errorf("error clearing degraded status: %w", err)
-		}
 	}
 
-	if err := optr.syncDegradedStatus(syncErr); err != nil {
-		return fmt.Errorf("error syncing degraded status: %w", err)
+	optr.syncDegradedStatus(updatedCO, syncErr)
+
+	optr.syncAvailableStatus(updatedCO)
+
+	optr.syncVersion(updatedCO)
+
+	optr.syncRelatedObjects(updatedCO)
+
+	syncUpgradeableStatusErr := optr.syncUpgradeableStatus(updatedCO)
+
+	syncClusterFleetEvaluationErr := optr.syncClusterFleetEvaluation(updatedCO)
+
+	// Batch update the Cluster Operator Status. This update will cause a resource conflict if
+	// syncRequiredMachineConfigPools has done an update prior to this. In such a case,
+	// updateClusterOperatorStatus will refetch the Cluster Operator object before updating the new status.
+	if _, err := optr.updateClusterOperatorStatus(co, &updatedCO.Status, nil); err != nil {
+		return fmt.Errorf("error updating cluster operator status: %w", err)
 	}
 
-	if err := optr.syncAvailableStatus(); err != nil {
-		return fmt.Errorf("error syncing available status: %w", err)
-	}
+	// Handle these errors after as CO status updates should have priority over this
+	if syncUpgradeableStatusErr != nil {
+		return fmt.Errorf("error syncingUpgradeableStatus: %w", syncUpgradeableStatusErr)
 
-	if err := optr.syncUpgradeableStatus(); err != nil {
-		return fmt.Errorf("error syncing upgradeble status: %w", err)
 	}
-
-	if err := optr.syncVersion(); err != nil {
-		return fmt.Errorf("error syncing version: %w", err)
-	}
-
-	if err := optr.syncRelatedObjects(); err != nil {
-		return fmt.Errorf("error syncing relatedObjects: %w", err)
+	if syncClusterFleetEvaluationErr != nil {
+		return fmt.Errorf("error updating cluster operator status: %w", syncClusterFleetEvaluationErr)
 	}
 
 	if err := optr.syncMetrics(); err != nil {
 		return fmt.Errorf("error syncing metrics: %w", err)
-	}
-
-	if err := optr.syncClusterFleetEvaluation(); err != nil {
-		return fmt.Errorf("error running cluster fleet evaluation: %w", err)
 	}
 
 	if optr.inClusterBringup && syncErr.err == nil {
@@ -260,7 +279,7 @@ func (optr *Operator) syncCloudConfig(spec *mcfgv1.ControllerConfigSpec, infra *
 }
 
 //nolint:gocyclo
-func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
+func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOperator) error {
 	if optr.inClusterBringup {
 		klog.V(4).Info("Starting inClusterBringup informers cache sync")
 		// sync now our own informers after having installed the CRDs
@@ -626,7 +645,7 @@ func getIgnitionHost(infraStatus *configv1.InfrastructureStatus) (string, error)
 	return ignitionHost, nil
 }
 
-func (optr *Operator) syncMachineConfigPools(config *renderConfig) error {
+func (optr *Operator) syncMachineConfigPools(config *renderConfig, _ *configv1.ClusterOperator) error {
 	mcps := []string{
 		"manifests/master.machineconfigpool.yaml",
 		"manifests/worker.machineconfigpool.yaml",
@@ -693,7 +712,8 @@ func (optr *Operator) syncMachineConfigPools(config *renderConfig) error {
 	return nil
 }
 
-func (optr *Operator) syncMachineConfigNodes(_ *renderConfig) error {
+// we need to mimic this
+func (optr *Operator) syncMachineConfigNodes(_ *renderConfig, _ *configv1.ClusterOperator) error {
 	fg, err := optr.fgAccessor.CurrentFeatureGates()
 	if err != nil {
 		klog.Errorf("Could not get fg: %v", err)
@@ -1083,7 +1103,7 @@ func (optr *Operator) syncControllerConfig(config *renderConfig) error {
 	return optr.waitForControllerConfigToBeCompleted(cc)
 }
 
-func (optr *Operator) syncMachineConfigController(config *renderConfig) error {
+func (optr *Operator) syncMachineConfigController(config *renderConfig, _ *configv1.ClusterOperator) error {
 	paths := manifestPaths{
 		clusterRoles: []string{
 			mccClusterRoleManifestPath,
@@ -1140,7 +1160,7 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig) error {
 }
 
 // syncs machine os builder
-func (optr *Operator) syncMachineOSBuilder(config *renderConfig) error {
+func (optr *Operator) syncMachineOSBuilder(config *renderConfig, _ *configv1.ClusterOperator) error {
 	klog.V(4).Info("Machine OS Builder sync started")
 	defer func() {
 		klog.V(4).Info("Machine OS Builder sync complete")
@@ -1351,7 +1371,7 @@ func (optr *Operator) getLayeredMachineConfigPools() ([]*mcfgv1.MachineConfigPoo
 	return pools, nil
 }
 
-func (optr *Operator) syncMachineConfigDaemon(config *renderConfig) error {
+func (optr *Operator) syncMachineConfigDaemon(config *renderConfig, _ *configv1.ClusterOperator) error {
 	paths := manifestPaths{
 		clusterRoles: []string{
 			mcdClusterRoleManifestPath,
@@ -1404,7 +1424,7 @@ func (optr *Operator) syncMachineConfigDaemon(config *renderConfig) error {
 	return nil
 }
 
-func (optr *Operator) syncMachineConfigServer(config *renderConfig) error {
+func (optr *Operator) syncMachineConfigServer(config *renderConfig, _ *configv1.ClusterOperator) error {
 	paths := manifestPaths{
 		clusterRoles: []string{
 			mcsClusterRoleManifestPath,
@@ -1445,7 +1465,7 @@ func (optr *Operator) syncMachineConfigServer(config *renderConfig) error {
 
 // syncRequiredMachineConfigPools ensures that all the nodes in machineconfigpools labeled with requiredForUpgradeMachineConfigPoolLabelKey
 // have updated to the latest configuration.
-func (optr *Operator) syncRequiredMachineConfigPools(config *renderConfig) error {
+func (optr *Operator) syncRequiredMachineConfigPools(config *renderConfig, co *configv1.ClusterOperator) error {
 	var lastErr error
 
 	fg, err := optr.fgAccessor.CurrentFeatureGates()
@@ -1481,24 +1501,16 @@ func (optr *Operator) syncRequiredMachineConfigPools(config *renderConfig) error
 		// This was needed in-case the cluster is mid-update when a new MachineConfiguration was applied.
 		// This prevents the need to wait for all the master nodes to update before the MachineConfiguration
 		// status is updated.
-		if err := optr.syncMachineConfiguration(config); err != nil {
+		if err := optr.syncMachineConfiguration(config, co); err != nil {
 			return false, err
 		}
 		if lastErr != nil {
-			co, err := optr.fetchClusterOperator()
+			// In this case, only the status extension field is updated.
+			newCOStatus := co.Status.DeepCopy()
+			co, err = optr.updateClusterOperatorStatus(co, newCOStatus, lastErr)
 			if err != nil {
 				errs := kubeErrs.NewAggregate([]error{err, lastErr})
-				lastErr = fmt.Errorf("failed to fetch clusteroperator: %w", errs)
-				return false, nil
-			}
-			if co == nil {
-				klog.Warning("no clusteroperator for machine-config")
-				return false, nil
-			}
-			optr.setOperatorStatusExtension(&co.Status, lastErr)
-			_, err = optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(ctx, co, metav1.UpdateOptions{})
-			if err != nil {
-				errs := kubeErrs.NewAggregate([]error{err, lastErr})
+				klog.Errorf("Error updating cluster operator status: %q", err)
 				lastErr = fmt.Errorf("failed to update clusteroperator: %w", errs)
 				return false, nil
 			}
@@ -1510,13 +1522,19 @@ func (optr *Operator) syncRequiredMachineConfigPools(config *renderConfig) error
 			return false, nil
 		}
 		for _, pool := range pools {
+
 			degraded := isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolDegraded)
 			if degraded {
 				lastErr = fmt.Errorf("error MachineConfigPool %s is not ready, retrying. Status: (pool degraded: %v total: %d, ready %d, updated: %d, unavailable: %d)", pool.Name, degraded, pool.Status.MachineCount, pool.Status.ReadyMachineCount, pool.Status.UpdatedMachineCount, pool.Status.UnavailableMachineCount)
 				klog.Errorf("Error syncing Required MachineConfigPools: %q", lastErr)
-				syncerr := optr.syncUpgradeableStatus()
+				newCO := co.DeepCopy()
+				syncerr := optr.syncUpgradeableStatus(newCO)
 				if syncerr != nil {
 					klog.Errorf("Error syncingUpgradeableStatus: %q", syncerr)
+				}
+				co, syncerr = optr.updateClusterOperatorStatus(co, &newCO.Status, lastErr)
+				if syncerr != nil {
+					klog.Errorf("Error updating cluster operator status: %q", syncerr)
 				}
 				return false, nil
 			}
@@ -1538,9 +1556,14 @@ func (optr *Operator) syncRequiredMachineConfigPools(config *renderConfig) error
 
 				if err := isMachineConfigPoolConfigurationValid(fg, pool, version.Hash, releaseVersion, opURL, optr.mcLister.Get); err != nil {
 					lastErr = fmt.Errorf("MachineConfigPool %s has not progressed to latest configuration: %w, retrying", pool.Name, err)
-					syncerr := optr.syncUpgradeableStatus()
+					newCO := co.DeepCopy()
+					syncerr := optr.syncUpgradeableStatus(newCO)
 					if syncerr != nil {
 						klog.Errorf("Error syncingUpgradeableStatus: %q", syncerr)
+					}
+					co, syncerr = optr.updateClusterOperatorStatus(co, &newCO.Status, lastErr)
+					if syncerr != nil {
+						klog.Errorf("Error updating cluster operator status: %q", syncerr)
 					}
 					return false, nil
 				}
@@ -1550,9 +1573,14 @@ func (optr *Operator) syncRequiredMachineConfigPools(config *renderConfig) error
 					continue
 				}
 				lastErr = fmt.Errorf("error required MachineConfigPool %s is not ready, retrying. Status: (total: %d, ready %d, updated: %d, unavailable: %d, degraded: %d)", pool.Name, pool.Status.MachineCount, pool.Status.ReadyMachineCount, pool.Status.UpdatedMachineCount, pool.Status.UnavailableMachineCount, pool.Status.DegradedMachineCount)
-				syncerr := optr.syncUpgradeableStatus()
+				newCO := co.DeepCopy()
+				syncerr := optr.syncUpgradeableStatus(newCO)
 				if syncerr != nil {
 					klog.Errorf("Error syncingUpgradeableStatus: %q", syncerr)
+				}
+				co, syncerr = optr.updateClusterOperatorStatus(co, &newCO.Status, lastErr)
+				if syncerr != nil {
+					klog.Errorf("Error updating cluster operator status: %q", syncerr)
 				}
 				// If we don't account for pause here, we will spin in this loop until we hit the 10 minute timeout because paused pools can't sync.
 				if pool.Spec.Paused {
@@ -1900,7 +1928,7 @@ func isPoolStatusConditionTrue(pool *mcfgv1.MachineConfigPool, conditionType mcf
 
 func (optr *Operator) getImageRegistryPullSecrets() ([]byte, error) {
 	// Check if image registry exists, if it doesn't we no-op
-	co, err := optr.mcoCOLister.Get("image-registry")
+	co, err := optr.clusterOperatorLister.Get("image-registry")
 
 	// returning no error in certain cases because image registry may become optional in the future
 	// More info at: https://issues.redhat.com/browse/IR-351
@@ -2004,7 +2032,7 @@ func cmToData(cm *corev1.ConfigMap, key string) ([]byte, error) {
 
 // Validates configuration provided in the MachineConfiguration object's spec for each feature
 // and updates the status of the object as necessary
-func (optr *Operator) syncMachineConfiguration(_ *renderConfig) error {
+func (optr *Operator) syncMachineConfiguration(_ *renderConfig, _ *configv1.ClusterOperator) error {
 
 	// Grab the cluster CR
 	mcop, err := optr.mcopLister.Get(ctrlcommon.MCOOperatorKnobsObjectName)
