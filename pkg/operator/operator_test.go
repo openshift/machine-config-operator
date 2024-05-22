@@ -8,6 +8,7 @@ import (
 	features "github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	fakeconfigclientset "github.com/openshift/client-go/config/clientset/versioned/fake"
+	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -61,10 +62,15 @@ func TestMetrics(t *testing.T) {
 		},
 	}
 
+	operatorIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	optr.clusterOperatorLister = configlistersv1.NewClusterOperatorLister(operatorIndexer)
+	operatorIndexer.Add(co)
+	operatorIndexer.Add(kasOperator)
+
 	optr.configClient = fakeconfigclientset.NewSimpleClientset(co, kasOperator)
 	err := optr.syncAll([]syncFunc{
 		{name: "fn1",
-			fn: func(config *renderConfig) error { return nil },
+			fn: func(config *renderConfig, co *configv1.ClusterOperator) error { return nil },
 		},
 	})
 	require.Nil(t, err)
