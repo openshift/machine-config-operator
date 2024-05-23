@@ -49,7 +49,6 @@ import (
 	"github.com/coreos/stream-metadata-go/stream"
 
 	osconfigv1 "github.com/openshift/api/config/v1"
-	features "github.com/openshift/api/features"
 )
 
 // Controller defines the machine-set-boot-image controller.
@@ -74,7 +73,6 @@ type Controller struct {
 	queue workqueue.RateLimitingInterface
 
 	featureGateAccess featuregates.FeatureGateAccess
-	featureEnabled    bool
 }
 
 const (
@@ -145,26 +143,6 @@ func New(
 	ctrl.mcopListerSynced = mcopInformer.Informer().HasSynced
 
 	ctrl.featureGateAccess = featureGateAccess
-
-	ctrl.featureEnabled = false
-	ctrl.featureGateAccess.SetChangeHandler(func(featureChange featuregates.FeatureChange) {
-		klog.InfoS("FeatureGates changed", "enabled", featureChange.New.Enabled, "disabled", featureChange.New.Disabled)
-
-		var prevfeatureEnabled bool
-		if featureChange.Previous == nil {
-			// When the initial featuregate is set, the previous version is nil. Default to the feature being disabled.
-			prevfeatureEnabled = false
-		} else {
-			prevfeatureEnabled = featuregates.NewFeatureGate(featureChange.Previous.Enabled, featureChange.Previous.Disabled).
-				Enabled(features.FeatureGateManagedBootImages)
-		}
-		ctrl.featureEnabled = featuregates.NewFeatureGate(featureChange.New.Enabled, featureChange.New.Disabled).
-			Enabled(features.FeatureGateManagedBootImages)
-		if !prevfeatureEnabled && ctrl.featureEnabled {
-			klog.Info("Trigger a sync as this feature was turned on")
-			ctrl.enqueueMAPIMachineSets()
-		}
-	})
 
 	return ctrl
 }
@@ -238,10 +216,7 @@ func (ctrl *Controller) handleErr(err error, key interface{}) {
 }
 
 func (ctrl *Controller) addMAPIMachineSet(obj interface{}) {
-	// No-op if feature is disabled
-	if !ctrl.featureEnabled {
-		return
-	}
+
 	machineSet := obj.(*machinev1beta1.MachineSet)
 
 	klog.Infof("MAPI MachineSet %s added, reconciling enrolled machine resources", machineSet.Name)
@@ -257,10 +232,6 @@ func (ctrl *Controller) addMAPIMachineSet(obj interface{}) {
 
 func (ctrl *Controller) updateMAPIMachineSet(oldMS, newMS interface{}) {
 
-	// No-op if feature is disabled
-	if !ctrl.featureEnabled {
-		return
-	}
 	oldMachineSet := oldMS.(*machinev1beta1.MachineSet)
 	newMachineSet := newMS.(*machinev1beta1.MachineSet)
 
@@ -281,10 +252,7 @@ func (ctrl *Controller) updateMAPIMachineSet(oldMS, newMS interface{}) {
 }
 
 func (ctrl *Controller) addConfigMap(obj interface{}) {
-	// No-op if feature is disabled
-	if !ctrl.featureEnabled {
-		return
-	}
+
 	configMap := obj.(*corev1.ConfigMap)
 
 	// Take no action if this isn't the "golden" config map
@@ -303,10 +271,7 @@ func (ctrl *Controller) addConfigMap(obj interface{}) {
 }
 
 func (ctrl *Controller) updateConfigMap(oldCM, newCM interface{}) {
-	// No-op if feature is disabled
-	if !ctrl.featureEnabled {
-		return
-	}
+
 	oldConfigMap := oldCM.(*corev1.ConfigMap)
 	newConfigMap := newCM.(*corev1.ConfigMap)
 
@@ -331,10 +296,6 @@ func (ctrl *Controller) updateConfigMap(oldCM, newCM interface{}) {
 }
 
 func (ctrl *Controller) addMachineConfiguration(obj interface{}) {
-	// No-op if feature is disabled
-	if !ctrl.featureEnabled {
-		return
-	}
 
 	machineConfiguration := obj.(*opv1.MachineConfiguration)
 
@@ -355,10 +316,6 @@ func (ctrl *Controller) addMachineConfiguration(obj interface{}) {
 
 func (ctrl *Controller) updateMachineConfiguration(oldMC, newMC interface{}) {
 
-	// No-op if feature is disabled
-	if !ctrl.featureEnabled {
-		return
-	}
 	oldMachineConfiguration := oldMC.(*opv1.MachineConfiguration)
 	newMachineConfiguration := newMC.(*opv1.MachineConfiguration)
 
