@@ -137,7 +137,7 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 		mergedData := append(controllerConfig.Spec.ImageRegistryBundleData, controllerConfig.Spec.ImageRegistryBundleUserData...)
 
 		entries, err := os.ReadDir("/etc/docker/certs.d")
-		if err != nil {
+		if err != nil && !os.IsNotExist(err) {
 			return err
 		}
 
