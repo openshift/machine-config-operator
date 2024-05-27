@@ -78,9 +78,49 @@ subjects:
 # Because host networking components right now only run on on-prem platforms, we create RoleBinding
 # explicitly only in namespaces for OpenStack, BareMetal, vSphere and Nutanix.
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
+kind: Role
 metadata:
   name: host-networking-services
+  namespace: openshift-openstack-infra
+  annotations:
+    include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-developer: "true"
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: host-networking-services
+  namespace: openshift-kni-infra
+  annotations:
+    include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-developer: "true"
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: host-networking-services
+  namespace: openshift-vsphere-infra
+  annotations:
+    include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-developer: "true"
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: host-networking-services
+  namespace: openshift-nutanix-infra
   annotations:
     include.release.openshift.io/self-managed-high-availability: "true"
     include.release.openshift.io/single-node-developer: "true"
@@ -102,7 +142,7 @@ subjects:
     kind: Group
     name: system:nodes
 roleRef:
-  kind: ClusterRole
+  kind: Role
   name: host-networking-services
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -118,7 +158,7 @@ subjects:
     kind: Group
     name: system:nodes
 roleRef:
-  kind: ClusterRole
+  kind: Role
   name: host-networking-services
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -134,7 +174,7 @@ subjects:
     kind: Group
     name: system:nodes
 roleRef:
-  kind: ClusterRole
+  kind: Role
   name: host-networking-services
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -150,5 +190,5 @@ subjects:
     kind: Group
     name: system:nodes
 roleRef:
-  kind: ClusterRole
+  kind: Role
   name: host-networking-services
