@@ -481,15 +481,18 @@ func updateControllerConfigCerts(config *mcfgv1.ControllerConfig) bool {
 
 func createNewCert(cert []byte, name string) []mcfgv1.ControllerCertificate {
 	certs := []mcfgv1.ControllerCertificate{}
-	for len(cert) > 0 {
+	var malformed bool
+
+	for len(cert) > 0 && !malformed {
 		b, next := pem.Decode(cert)
 		if b == nil {
-			klog.Infof("Unable to decode cert %s into a pem block. Cert is either empty or invalid.", string(cert))
+			klog.Infof("Unable to decode cert %s into a PEM block. Cert is either empty or invalid.", name)
 			break
 		}
 		c, err := x509.ParseCertificate(b.Bytes)
 		if err != nil {
-			klog.Infof("Malformed Cert, not syncing")
+			klog.Errorf("Malformed certificate '%s' detected and is not syncing. Error: %v, Cert data: %s", name, err, cert)
+			malformed = true
 			continue
 		}
 		cert = next
