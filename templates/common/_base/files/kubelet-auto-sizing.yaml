@@ -5,6 +5,8 @@ contents:
     #!/bin/bash
     set -e
     NODE_SIZES_ENV=${NODE_SIZES_ENV:-/etc/node-sizing.env}
+    NODE_AUTO_SIZING_VERSION=${NODE_AUTO_SIZING_VERSION:-1}
+    NODE_AUTO_SIZING_VERSION_FILE=${NODE_AUTO_SIZING_VERSION_FILE:-/etc/node-sizing-version.json}
     function dynamic_memory_sizing {
         total_memory=$(free -g|awk '/^Mem:/{print $2}')
         # total_memory=8 test the recommended values by modifying this value
@@ -113,6 +115,9 @@ contents:
         set_cpu $2
         set_es $3
     }
+    function create_version_file {
+        echo "{\"version\": $1}" > $2
+    }
 
     if [ $1 == "true" ]; then
         dynamic_node_sizing $4
@@ -121,4 +126,4 @@ contents:
     else
         echo "Unrecognized command line option. Valid options are \"true\" or \"false\""
     fi
-
+    create_version_file $NODE_AUTO_SIZING_VERSION $NODE_AUTO_SIZING_VERSION_FILE
