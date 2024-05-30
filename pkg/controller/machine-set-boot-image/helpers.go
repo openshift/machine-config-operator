@@ -71,7 +71,11 @@ func unmarshalStreamDataConfigMap(cm *corev1.ConfigMap, st interface{}) error {
 // This function checks if an array of machineManagers contains the target apigroup/resource and returns
 // a bool(success/fail), a label selector to filter the target resource and an error, if any.
 func getMachineResourceSelectorFromMachineManagers(machineManagers []opv1.MachineManager, apiGroup opv1.MachineManagerMachineSetsAPIGroupType, resource opv1.MachineManagerMachineSetsResourceType) (bool, labels.Selector, error) {
-
+	// If no machine managers exist; exit the enqueue process without errors.
+	if len(machineManagers) == 0 {
+		klog.Infof("No machine manager were found, so no MAPI machinesets will be enqueued.")
+		return false, labels.Nothing(), nil
+	}
 	for _, machineManager := range machineManagers {
 		if machineManager.APIGroup == apiGroup && machineManager.Resource == resource {
 			if machineManager.Selection.Mode == opv1.Partial {
@@ -82,7 +86,7 @@ func getMachineResourceSelectorFromMachineManagers(machineManagers []opv1.Machin
 			}
 		}
 	}
-	return false, nil, nil
+	return false, labels.Nothing(), nil
 }
 
 // Returns architecture type for a given machineset
