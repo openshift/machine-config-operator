@@ -1080,7 +1080,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		if err != nil {
 			return err
 		}
-		klog.Infof("Drain calculated for node disruption: %v", drain)
+		klog.Infof("Drain calculated for node disruption: %v for config %s", drain, newConfigName)
 	} else {
 		// Check and perform node drain if required
 		crioOverrideConfigmapExists, err := dn.hasImageRegistryDrainOverrideConfigMap()
