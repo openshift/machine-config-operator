@@ -41,6 +41,8 @@ import (
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
+	mcfginformersv1alpha1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1alpha1"
+
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	mcfglistersalphav1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1"
 
@@ -107,6 +109,7 @@ type Operator struct {
 	mckLister             mcfglistersv1.KubeletConfigLister
 	crcLister             mcfglistersv1.ContainerRuntimeConfigLister
 	nodeClusterLister     configlistersv1.NodeLister
+	moscLister        mcfglistersalphav1.MachineOSConfigLister
 
 	crdListerSynced                  cache.InformerSynced
 	deployListerSynced               cache.InformerSynced
@@ -135,6 +138,7 @@ type Operator struct {
 	mckListerSynced                  cache.InformerSynced
 	crcListerSynced                  cache.InformerSynced
 	nodeClusterListerSynced          cache.InformerSynced
+	moscListerSynced                 cache.InformerSynced
 
 	// queue only ever has one item, but it has nice error handling backoff/retry semantics
 	queue workqueue.RateLimitingInterface
@@ -182,6 +186,7 @@ func New(
 	mckInformer mcfginformersv1.KubeletConfigInformer,
 	crcInformer mcfginformersv1.ContainerRuntimeConfigInformer,
 	nodeClusterInformer configinformersv1.NodeInformer,
+	moscInformer mcfginformersv1alpha1.MachineOSConfigInformer,
 ) *Operator {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
@@ -244,7 +249,11 @@ func New(
 		crcInformer.Informer(),
 		nodeClusterInformer.Informer(),
 		clusterOperatorInformer.Informer(),
-	} {
+		// TODO: Figure out how to put this behind a feature gate.
+		moscInformer.Informer(),
+	}
+
+	for _, i := range informers {
 		i.AddEventHandler(optr.eventHandler())
 	}
 
@@ -301,6 +310,10 @@ func New(
 	optr.mckListerSynced = mckInformer.Informer().HasSynced
 	optr.crcLister = crcInformer.Lister()
 	optr.crcListerSynced = crcInformer.Informer().HasSynced
+
+	// TODO: Figure out how to put this behind a feature-gate.
+	optr.moscLister = moscInformer.Lister()
+	optr.moscListerSynced = moscInformer.Informer().HasSynced
 
 	optr.vStore.Set("operator", version.ReleaseVersion)
 

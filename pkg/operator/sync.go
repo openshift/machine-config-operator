@@ -35,6 +35,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	v1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	opv1 "github.com/openshift/api/operator/v1"
 
@@ -612,8 +613,13 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 		return err
 	}
 
+	moscs, err := optr.getMachineOSConfigs()
+	if err != nil {
+		return err
+	}
+
 	// create renderConfig
-	optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra.Status.APIServerInternalURL, pointerConfigData)
+	optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra.Status.APIServerInternalURL, pointerConfigData, moscs)
 	return nil
 }
 
@@ -1876,7 +1882,7 @@ func setGVK(obj runtime.Object, scheme *runtime.Scheme) error {
 	return nil
 }
 
-func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *RenderConfigImages, apiServerURL string, pointerConfigData []byte) *renderConfig {
+func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *RenderConfigImages, apiServerURL string, pointerConfigData []byte, moscs []*mcfgv1alpha1.MachineOSConfig) *renderConfig {
 	return &renderConfig{
 		TargetNamespace:        tnamespace,
 		Version:                version.Raw,
@@ -1886,6 +1892,7 @@ func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.C
 		KubeAPIServerServingCA: kubeAPIServerServingCA,
 		APIServerURL:           apiServerURL,
 		PointerConfig:          string(pointerConfigData),
+		MachineOSConfigs:       moscs,
 	}
 }
 
@@ -2087,4 +2094,30 @@ func (optr *Operator) syncMachineConfiguration(_ *renderConfig, _ *configv1.Clus
 	}
 
 	return nil
+}
+
+// Gets MachineOSConfigs from the lister, assuming that the OnClusterBuild
+// featuregate is enabled. Otherwise, returns a nil slice.
+func (optr *Operator) getMachineOSConfigs() ([]*mcfgv1alpha1.MachineOSConfig, error) {
+	isOnClusterBuildEnabled, err := optr.isOnClusterBuildEnabled()
+	if err != nil {
+		return nil, err
+	}
+
+	if !isOnClusterBuildEnabled {
+		return nil, nil
+	}
+
+	return optr.moscLister.List(labels.Everything())
+}
+
+// Determines if the OnclusterBuild featuregate is enabled. Returns any errors encountered.
+func (optr *Operator) isOnClusterBuildEnabled() (bool, error) {
+	fg, err := optr.fgAccessor.CurrentFeatureGates()
+	if err != nil {
+		klog.Errorf("Could not get fg: %v", err)
+		return false, err
+	}
+
+	return fg.Enabled(features.FeatureGateOnClusterBuild), nil
 }
