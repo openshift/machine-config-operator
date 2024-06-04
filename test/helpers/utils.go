@@ -10,6 +10,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -41,6 +43,9 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
+
+	opv1 "github.com/openshift/api/operator/v1"
+	mcoac "github.com/openshift/client-go/operator/applyconfigurations/operator/v1"
 )
 
 type CleanupFuncs struct {
@@ -760,6 +765,17 @@ func AssertFileNotOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node
 		assert.Contains(t, out, "No such file or directory", "expected command output to contain 'No such file or directory', got: %s", out)
 }
 
+// Asserts that a given file exists on the underlying node and returns the content of the file.
+func GetFileContentOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, path string) string {
+	t.Helper()
+
+	path = canonicalizeNodeFilePath(path)
+
+	out, err := ExecCmdOnNodeWithError(cs, node, "cat", path)
+	assert.NoError(t, err, "expected to find file %s on %s, got:\n%s", path, node.Name, out)
+	return out
+}
+
 // Adds the /rootfs onto a given file path, if not already present.
 func canonicalizeNodeFilePath(path string) string {
 	rootfs := "/rootfs"
@@ -1198,4 +1214,51 @@ func WriteFileToNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, fi
 		t.Logf("Removing file %s from node %s", filename, node.Name)
 		ExecCmdOnNode(t, cs, node, "rm", filename)
 	})
+}
+
+// AssertMCDLogsContain asserts that the MCD pod's logs contains a target string value
+func AssertMCDLogsContain(t *testing.T, cs *framework.ClientSet, mcdPod *corev1.Pod, node *corev1.Node, expectedContents string) {
+	t.Helper()
+	logs, err := cs.Pods(mcdPod.Namespace).GetLogs(mcdPod.Name, &corev1.PodLogOptions{
+		Container: "machine-config-daemon",
+	}).DoRaw(context.TODO())
+	if err != nil {
+		// common err is that the mcd went down mid cmd. Re-try for good measure
+		mcdPod, err = MCDForNode(cs, node)
+		require.Nil(t, err)
+		logs, err = cs.Pods(mcdPod.Namespace).GetLogs(mcdPod.Name, &corev1.PodLogOptions{
+			Container: "machine-config-daemon",
+		}).DoRaw(context.TODO())
+	}
+	require.Nil(t, err)
+
+	if !strings.Contains(string(logs), expectedContents) {
+		t.Fatalf("expected to find '%s' in logs for %s/%s", expectedContents, mcdPod.Namespace, mcdPod.Name)
+	}
+}
+
+func GetFunctionName(i interface{}) string {
+	strs := strings.Split((runtime.FuncForPC(reflect.ValueOf(i).Pointer()).Name()), ".")
+	return strs[len(strs)-1]
+}
+
+func ShuffleSlice(slice interface{}) {
+	v := reflect.ValueOf(slice)
+	rand.Shuffle(v.Len(), func(i, j int) {
+		vi := v.Index(i).Interface()
+		v.Index(i).Set(v.Index(j))
+		v.Index(j).Set(reflect.ValueOf(vi))
+	})
+}
+
+func GetActionApplyConfiguration(action opv1.NodeDisruptionPolicySpecAction) *mcoac.NodeDisruptionPolicySpecActionApplyConfiguration {
+	if action.Type == opv1.ReloadSpecAction {
+		reloadApplyConfiguration := mcoac.ReloadService().WithServiceName(action.Reload.ServiceName)
+		return mcoac.NodeDisruptionPolicySpecAction().WithType(action.Type).WithReload(reloadApplyConfiguration)
+	} else if action.Type == opv1.RestartSpecAction {
+		restartApplyConfiguration := mcoac.RestartService().WithServiceName(action.Restart.ServiceName)
+		return mcoac.NodeDisruptionPolicySpecAction().WithType(action.Type).WithRestart(restartApplyConfiguration)
+	} else {
+		return mcoac.NodeDisruptionPolicySpecAction().WithType(action.Type)
+	}
 }
