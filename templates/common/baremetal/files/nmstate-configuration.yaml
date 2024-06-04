@@ -37,4 +37,5 @@ contents:
     fi
 
     cp "$src_path/$config_file" /etc/nmstate
+    rm /etc/openvswitch/conf.db
     touch /etc/nmstate/openshift/applied
