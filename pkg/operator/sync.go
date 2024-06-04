@@ -1514,12 +1514,7 @@ func (optr *Operator) syncRequiredMachineConfigPools(config *renderConfig, co *c
 		if err := optr.syncMetrics(); err != nil {
 			return false, err
 		}
-		// This was needed in-case the cluster is mid-update when a new MachineConfiguration was applied.
-		// This prevents the need to wait for all the master nodes to update before the MachineConfiguration
-		// status is updated.
-		if err := optr.syncMachineConfiguration(config, co); err != nil {
-			return false, err
-		}
+
 		if lastErr != nil {
 			// In this case, only the status extension field is updated.
 			newCOStatus := co.Status.DeepCopy()
@@ -1530,6 +1525,18 @@ func (optr *Operator) syncRequiredMachineConfigPools(config *renderConfig, co *c
 				lastErr = fmt.Errorf("failed to update clusteroperator: %w", errs)
 				return false, nil
 			}
+		}
+
+		// This was needed in-case the cluster is doing a master pool update when a new MachineConfiguration was applied.
+		// This prevents the need to wait for all the master nodes (as the syncAll function of the operator will be
+		// "stuck" here in such a case) to update before the MachineConfiguration status is updated.
+		syncErr := optr.syncMachineConfiguration(config, co)
+		// Update the degrade condition if there was an error reported by syncMachineConfiguration
+		newCO := co.DeepCopy()
+		optr.syncDegradedStatus(newCO, syncError{task: "MachineConfiguration", err: syncErr})
+		co, syncErr = optr.updateClusterOperatorStatus(co, &newCO.Status, lastErr)
+		if syncErr != nil {
+			klog.Errorf("Error updating cluster operator status: %q", syncErr)
 		}
 
 		pools, err := optr.mcpLister.List(labels.Everything())
@@ -2080,26 +2087,33 @@ func (optr *Operator) syncMachineConfiguration(_ *renderConfig, _ *configv1.Clus
 	}
 
 	// If FeatureGateNodeDisruptionPolicy feature gate is not enabled, no updates will need to be done for the MachineConfiguration object.
-	if !fg.Enabled(features.FeatureGateNodeDisruptionPolicy) {
-		return nil
-	}
-
-	// Merges the cluster's default node disruption policies with the user defined policies, if any.
-	newMachineConfigurationStatus := opv1.MachineConfigurationStatus{
-		NodeDisruptionPolicyStatus: opv1.NodeDisruptionPolicyStatus{
+	if fg.Enabled(features.FeatureGateNodeDisruptionPolicy) {
+		// Merges the cluster's default node disruption policies with the user defined policies, if any.
+		newMachineConfigurationStatus := mcop.Status.DeepCopy()
+		newMachineConfigurationStatus.NodeDisruptionPolicyStatus = opv1.NodeDisruptionPolicyStatus{
 			ClusterPolicies: apihelpers.MergeClusterPolicies(mcop.Spec.NodeDisruptionPolicy),
-		},
-		ObservedGeneration: mcop.GetGeneration(),
+		}
+		newMachineConfigurationStatus.ObservedGeneration = mcop.GetGeneration()
+
+		// Check if any changes are required in the Status before making the API call.
+		if !reflect.DeepEqual(mcop.Status, *newMachineConfigurationStatus) {
+			klog.Infof("Updating MachineConfiguration status")
+			mcop.Status = *newMachineConfigurationStatus
+			mcop, err = optr.mcopClient.OperatorV1().MachineConfigurations().UpdateStatus(context.TODO(), mcop, metav1.UpdateOptions{})
+			if err != nil {
+				klog.Errorf("MachineConfiguration status apply failed: %v", err)
+				return nil
+			}
+		}
 	}
 
-	// Check if any changes are required in the Status before making the API call.
-	if !reflect.DeepEqual(mcop.Status, newMachineConfigurationStatus) {
-		klog.Infof("Updating MachineConfiguration status")
-		mcop.Status = newMachineConfigurationStatus
-		_, err = optr.mcopClient.OperatorV1().MachineConfigurations().UpdateStatus(context.TODO(), mcop, metav1.UpdateOptions{})
-		if err != nil {
-			klog.Errorf("MachineConfiguration status apply failed: %v", err)
-			return nil
+	// If FeatureGateManagedBootImages is enabled, check for opv1.MachineConfigurationBootImageUpdateDegraded condition being true
+	// and degrade operator if necessary
+	if fg.Enabled(features.FeatureGateManagedBootImages) {
+		for _, condition := range mcop.Status.Conditions {
+			if condition.Type == opv1.MachineConfigurationBootImageUpdateDegraded && condition.Status == metav1.ConditionTrue {
+				return fmt.Errorf("bootimage update failed: " + condition.Message)
+			}
 		}
 	}
 
