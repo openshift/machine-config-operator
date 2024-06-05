@@ -19,6 +19,7 @@ import (
 	"github.com/containers/image/v5/types"
 	storageconfig "github.com/containers/storage/pkg/config"
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
+	"github.com/ghodss/yaml"
 	apicfgv1 "github.com/openshift/api/config/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	"github.com/openshift/runtime-utils/pkg/registries"
@@ -56,6 +57,39 @@ var (
 	// Validation the source and mirror format for IDMS/ITMS already exists in the CRD. We need to keep this regex validation for ICSP
 	sourceRegex = regexp.MustCompile(`^\*(?:\.(?:[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]))+$|^((?:[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])(?:(?:\.(?:[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]))+)?(?::[0-9]+)?)(?:(?:/[a-z0-9]+(?:(?:(?:[._]|__|[-]*)[a-z0-9]+)+)?)+)?$`)
 	mirrorRegex = regexp.MustCompile(`^((?:[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])(?:(?:\.(?:[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]))+)?(?::[0-9]+)?)(?:(?:/[a-z0-9]+(?:(?:(?:[._]|__|[-]*)[a-z0-9]+)+)?)+)?$`)
+)
+
+var (
+	stargzService = `systemd:
+  units:
+  - name: stargz.service
+    enabled: true
+    contents: |
+      [Unit]
+      Description=Stargz Store plugin for CRI-O
+      Before=crio.service
+      After=network.target
+      [Service]
+      Type=notify
+      Environment=HOME=/root
+      Environment=STARGZ_VERSION=v0.13.0
+      Environment=STARGZ_SHA256=4f3133a225c424a3dd075029a50efc44d28033099aa27ddf22e48fd2764b5301
+      # 1. Ensure fuse kernel module is loaded
+      # 2. Download stargz archive and verify checksum
+      # 3. Unpack the binary
+      ExecStartPre=/bin/sh -xec 'modprobe fuse && \
+      curl -o /tmp/stargz.tar.gz -sL https://github.com/containerd/stargz-snapshotter/releases/download/${STARGZ_VERSION}/stargz-snapshotter-${STARGZ_VERSION}-linux-amd64.tar.gz && \
+      echo "${STARGZ_SHA256}  /tmp/stargz.tar.gz" | sha256sum -c && \
+      tar -C /usr/local/bin -xvf /tmp/stargz.tar.gz stargz-store && \
+      rm /tmp/stargz.tar.gz'
+      # Start stargz-store daemon
+      ExecStart=/usr/local/bin/stargz-store --log-level=debug --config=/etc/stargz-store/config.toml /var/lib/stargz-store/store
+      ExecStopPost=umount /var/lib/stargz-store/store
+      Restart=always
+      RestartSec=1
+      [Install]
+      WantedBy=multi-user.target
+`
 )
 
 // TOML-friendly explicit tables used for conversions.
@@ -139,6 +173,16 @@ func createNewIgnition(configs []generatedConfigFile) ign3types.Config {
 		}
 		configTempFile := ctrlcommon.NewIgnFileBytesOverwriting(ignConf.filePath, ignConf.data)
 		tempIgnConfig.Storage.Files = append(tempIgnConfig.Storage.Files, configTempFile)
+		if ignConf.filePath == storageConfigPath {
+			byteData, err := yaml.Marshal(stargzService)
+			if err == nil {
+				panic(err)
+			}
+			config, err := ctrlcommon.ParseAndConvertConfig(byteData)
+			if err == nil {
+				tempIgnConfig.Systemd.Units = append(tempIgnConfig.Systemd.Units, config.Systemd.Units...)
+			}
+		}
 	}
 
 	return tempIgnConfig
