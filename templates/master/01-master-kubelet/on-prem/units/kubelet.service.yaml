@@ -11,6 +11,11 @@ contents: |
   Type=notify
   ExecStartPre=/bin/mkdir --parents /etc/kubernetes/manifests
   ExecStartPre=-/usr/sbin/restorecon /usr/local/bin/kubenswrapper /usr/bin/kubensenter
+{{- if eq .IPFamilies "IPv6"}}
+  Environment="KUBELET_NODE_IP=::"
+{{- else}}
+  Environment="KUBELET_NODE_IP=0.0.0.0"
+{{- end}}
   EnvironmentFile=/etc/os-release
   EnvironmentFile=-/etc/kubernetes/kubelet-workaround
   EnvironmentFile=-/etc/kubernetes/kubelet-env
