@@ -211,7 +211,7 @@ func canonicalizePullSecret(secret *corev1.Secret) (*corev1.Secret, error) {
 		return nil, fmt.Errorf("could not locate key %q in %s", key, secret.Name)
 	}
 
-	canonicalizedSecretBytes, canonicalized, err := canonicalizePullSecretBytes(secretBytes)
+	canonicalizedSecretBytes, canonicalized, err := ctrlcommon.ConvertSecretToDockerconfigJSON(secretBytes)
 	if err != nil {
 		return nil, err
 	}
