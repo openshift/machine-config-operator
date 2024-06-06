@@ -5,4 +5,4 @@ contents: |
   Documentation=https://github.com/openshift/machine-config-operator/
   Requires=basic.target network-online.target
   Wants=NetworkManager-wait-online.service crio-wipe.service
-  Wants=rpc-statd.service
+  Wants=rpc-statd.service chrony-wait.service
