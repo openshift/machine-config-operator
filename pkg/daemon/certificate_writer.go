@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -27,6 +28,10 @@ import (
 )
 
 var ccRequeueDelay = 1 * time.Minute
+
+const (
+	osImagePullSecretDir string = "/run/os-image-pull-secrets"
+)
 
 func (dn *Daemon) handleControllerConfigEvent(obj interface{}) {
 	controllerConfig := obj.(*mcfgv1.ControllerConfig)
@@ -122,10 +127,16 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 		cloudCA := controllerConfig.Spec.CloudProviderCAData
 		pathToData[caBundleFilePath] = kubeAPIServerServingCABytes
 		pathToData[cloudCABundleFilePath] = cloudCA
-		pathToData[imageRegistryAuthFile] = controllerConfig.Spec.InternalRegistryPullSecret
 		var err error
 		var cm *corev1.ConfigMap
 		var fullCA []string
+
+		imageRegistryPullSecretData, err := reconcileOSImageRegistryPullSecretData(dn.node, controllerConfig, osImagePullSecretDir)
+		if err != nil {
+			return fmt.Errorf("could not reconcile OS image registry pull secret data: %w", err)
+		}
+
+		pathToData[imageRegistryAuthFile] = imageRegistryPullSecretData
 
 		if controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation] == ctrlcommon.ServiceCARotateTrue && dn.node.Annotations[constants.ControllerConfigSyncServerCA] != controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation] {
 			cm, cmErr = dn.kubeClient.CoreV1().ConfigMaps("openshift-machine-config-operator").Get(context.TODO(), "kubeconfig-data", v1.GetOptions{})
@@ -373,4 +384,156 @@ func writeToDisk(pathToData map[string][]byte) error {
 		}
 	}
 	return nil
+}
+
+// Reconciles and merges the secrets provided by the ControllerConfig along
+// with any mounted image pull secrets that the MCO may have configured the MCD
+// to use in a layered OS image scenario.
+func reconcileOSImageRegistryPullSecretData(node *corev1.Node, controllerCfg *mcfgv1.ControllerConfig, pathPrefix string) ([]byte, error) {
+	// First, check if the node is opted into layering by checking for the
+	// presence of the desired image annotation key. If not present, then no
+	// further reconciliation is necessary.
+	if _, ok := node.Annotations[constants.DesiredImageAnnotationKey]; !ok {
+		// Just use the internal image pull secrets to mimic the previous behavior.
+		return controllerCfg.Spec.InternalRegistryPullSecret, nil
+	}
+
+	// Next, get all of the node-roles that this node might have so we can
+	// resolve them to MachineConfigPools.
+	nodeRoles := getNodeRoles(node)
+
+	// This isn't likely to happen, but a guard clause here is nice.
+	if len(nodeRoles) == 0 {
+		return nil, fmt.Errorf("node %s has no node-role.kubernetes.io label", node.Name)
+	}
+
+	// Next, we need to read the secret from disk, if we can find one.
+	mountedSecret, err := readMountedSecretByNodeRole(nodeRoles, pathPrefix)
+	if err != nil {
+		return nil, err
+	}
+
+	// If there are no on-disk secrets, just use the internal image pull secrets
+	// as-is.
+	if len(mountedSecret) == 0 {
+		return controllerCfg.Spec.InternalRegistryPullSecret, nil
+	}
+
+	// Next, we need to merge the secret we just found with the contents of the
+	// InternalImagePullSecret field on the ControllerConfig object, ensuring
+	// that the values from the mounted secret override any values provided by
+	// the InternalImagePullSecret field.
+	merged, err := mergeMountedSecretsWithControllerConfig(mountedSecret, controllerCfg)
+	if err != nil {
+		return nil, fmt.Errorf("could not merge on-disk secrets with ControllerConfig: %w", err)
+	}
+
+	return merged, nil
+}
+
+// This iterates through all of the node roles until it finds a secret that
+// matches. We do this because we have to mount all of the secrets for all of
+// the MachineOSConfigs into each MCD pod. Additionally, we want to support the
+// case where someone uses wither a .dockercfg or .dockerconfigjson style
+// secret. However, it is possible that a different MachineOSConfig can specify
+// a different image pull secret. And it is also possible that a node can
+// belong to two MachineConfigPools.
+func readMountedSecretByNodeRole(nodeRoles []string, pathPrefix string) ([]byte, error) {
+	secretDir := filepath.Join(pathPrefix, osImagePullSecretDir)
+
+	// If this directory does not exist, it means that the MCD DaemonSet does not
+	// have the secrets mounted. In this case, just return an empty byte array.
+	// With the above annotation check, this might be redundant, but it shouldn't
+	// hurt anything by leaving it here.
+	_, err := os.Stat(secretDir)
+	if errors.Is(err, os.ErrNotExist) {
+		return []byte{}, nil
+	}
+
+	// Support both image secret types.
+	imagePullSecretKeys := []string{
+		corev1.DockerConfigJsonKey,
+		corev1.DockerConfigKey,
+	}
+
+	for _, key := range imagePullSecretKeys {
+		for _, nodeRole := range nodeRoles {
+			// This ends up being a concatentation of
+			// /run/os-image-pull-secrets/<poolname>/.dockerconfigjson or
+			// /run/os-image-pull-secrets/<poolname>/.dockercfg
+			path := filepath.Join(secretDir, nodeRole, key)
+
+			_, err := os.Stat(path)
+
+			// If the file exists, we've found it. Read it and stop here.
+			if err == nil {
+				klog.Infof("Merging image pull secrets from ControllerConfig with mounted secrets from %s", path)
+				return os.ReadFile(path)
+			}
+
+			// If the file does not exist, keep going until we find one that does.
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+
+			// If an unknown error has occurred, stop here and bail out.
+			if err != nil {
+				return nil, fmt.Errorf("could not stat %s: %w", path, err)
+			}
+		}
+	}
+
+	// If we get this far, it means we've exhausted all of our node roles and our
+	// secret keys without finding a suitable image pull secret. So error out
+	// here..
+	return nil, fmt.Errorf("no suitable image pull secret found given node role(s): %v", nodeRoles)
+}
+
+// Merges the mounted secret with the ones from the ControllerConfig, with the mounted ones taking priority.
+func mergeMountedSecretsWithControllerConfig(mountedSecret []byte, controllerCfg *mcfgv1.ControllerConfig) ([]byte, error) {
+	mountedSecrets, err := ctrlcommon.ToDockerConfigJSON(mountedSecret)
+	if err != nil {
+		return nil, fmt.Errorf("could not parse mounted secret: %w", err)
+	}
+
+	internalRegistryPullSecrets, err := ctrlcommon.ToDockerConfigJSON(controllerCfg.Spec.InternalRegistryPullSecret)
+	if err != nil {
+		return nil, fmt.Errorf("could not parse internal registry pull secret from ControllerConfig: %w", err)
+	}
+
+	out := &ctrlcommon.DockerConfigJSON{
+		Auths: ctrlcommon.DockerConfig{},
+	}
+
+	for key, internalRegistryAuth := range internalRegistryPullSecrets.Auths {
+		out.Auths[key] = internalRegistryAuth
+	}
+
+	for key, mountedSecretAuth := range mountedSecrets.Auths {
+		out.Auths[key] = mountedSecretAuth
+	}
+
+	return json.Marshal(out)
+}
+
+// Iterates through all of the labels on a given node, searching for the
+// "node-role.kubernetes.io" label, and extracting the role name from the
+// label. It is possible for a single node to have more than one node-role
+// label, so we extract them all.
+func getNodeRoles(node *corev1.Node) []string {
+	if node.Labels == nil {
+		return []string{}
+	}
+
+	nodeRoleLabel := "node-role.kubernetes.io/"
+
+	out := []string{}
+
+	for key := range node.Labels {
+		if strings.Contains(key, nodeRoleLabel) {
+			out = append(out, strings.ReplaceAll(key, nodeRoleLabel, ""))
+		}
+	}
+
+	return out
 }
