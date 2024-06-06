@@ -78,19 +78,22 @@ func New(
 		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-pinnedimagesetcontroller"),
 	}
 
+	ctrl.syncHandler = ctrl.syncMachineConfigPool
+	ctrl.enqueueMachineConfigPool = ctrl.enqueueDefault
+
+	// this must be done after the enqueueMachineConfigPool is configured to
+	// avoid panics when the event handler is called.
 	mcpInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.addMachineConfigPool,
 		UpdateFunc: ctrl.updateMachineConfigPool,
 		DeleteFunc: ctrl.deleteMachineConfigPool,
 	})
+
 	imageSetInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.addPinnedImageSet,
 		UpdateFunc: ctrl.updatePinnedImageSet,
 		DeleteFunc: ctrl.deletePinnedImageSet,
 	})
-
-	ctrl.syncHandler = ctrl.syncMachineConfigPool
-	ctrl.enqueueMachineConfigPool = ctrl.enqueueDefault
 
 	ctrl.mcpLister = mcpInformer.Lister()
 	ctrl.mcpListerSynced = mcpInformer.Informer().HasSynced
