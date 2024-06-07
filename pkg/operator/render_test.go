@@ -258,8 +258,9 @@ func TestRenderAsset(t *testing.T) {
 			// Test that machineconfigdaemon DaemonSets are rendered correctly with proxy config
 			Path: "manifests/machineconfigdaemon/daemonset.yaml",
 			RenderConfig: &renderConfig{
-				TargetNamespace: "testing-namespace",
-				ReleaseVersion:  "4.8.0-rc.0",
+				MachineOSConfigs: nil,
+				TargetNamespace:  "testing-namespace",
+				ReleaseVersion:   "4.8.0-rc.0",
 				Images: &RenderConfigImages{
 					MachineConfigOperator: "mco-operator-image",
 					KubeRbacProxy:         "kube-rbac-proxy-image",
@@ -341,8 +342,8 @@ func TestRenderAsset(t *testing.T) {
 				},
 			},
 			FindExpected: []string{
-				"- mountPath: /run/os-image-pull-secrets/pool-1/secret-1\n            name: secret-1",
-				"- mountPath: /run/os-image-pull-secrets/pool-2/secret-2\n            name: secret-2",
+				"- mountPath: /run/secrets/os-image-pull-secrets/pool-1\n            name: secret-1",
+				"- mountPath: /run/secrets/os-image-pull-secrets/pool-2\n            name: secret-2",
 				"- secret:\n            secretName: secret-1\n          name: secret-1",
 				"- secret:\n            secretName: secret-2\n          name: secret-2",
 			},

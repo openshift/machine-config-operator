@@ -43,7 +43,7 @@ spec:
             name: rootfs
             mountPropagation: HostToContainer
           {{- range .MachineOSConfigs }}
-          - mountPath: /run/os-image-pull-secrets/{{ .Spec.MachineConfigPool.Name }}/{{ .Spec.BuildOutputs.CurrentImagePullSecret.Name }}
+          - mountPath: /run/secrets/os-image-pull-secrets/{{ .Spec.MachineConfigPool.Name }}
             name: {{ .Spec.BuildOutputs.CurrentImagePullSecret.Name }}
           {{- end }}
         livenessProbe:

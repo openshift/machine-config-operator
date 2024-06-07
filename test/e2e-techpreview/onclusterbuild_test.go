@@ -4,8 +4,10 @@ import (
 	"context"
 	_ "embed"
 	"flag"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 
@@ -22,6 +24,7 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 const (
@@ -72,8 +75,8 @@ type onClusterBuildTestOpts struct {
 	// The custom Dockerfiles to use for the test. This is a map of MachineConfigPool name to Dockerfile content.
 	customDockerfiles map[string]string
 
-	// What node(s) should be targeted for the test.
-	targetNodes []*corev1.Node
+	// What node should be targeted for the test.
+	targetNode *corev1.Node
 
 	// What MachineConfigPool name to use for the test.
 	poolName string
@@ -159,6 +162,155 @@ func TestEntitledBuilds(t *testing.T) {
 	})
 }
 
+// This test asserts that any secrets attached to the MachineOSConfig are made
+// available to the MCD and get written to the node. Note: In this test, the
+// built image should not make it to the node before we've verified that the
+// MCD has performed the desired actions.
+func TestMCDGetsMachineOSConfigSecrets(t *testing.T) {
+	cs := framework.NewClientSet("")
+
+	secretName := "mosc-image-pull-secret"
+
+	// Create a dummy secret with a known hostname which will be assigned to the
+	// MachineOSConfig. This secret does not actually have to work for right now;
+	// we just need to make sure it lands on the node.
+	t.Cleanup(createSecret(t, cs, &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: secretName,
+		},
+		Type: corev1.SecretTypeDockerConfigJson,
+		Data: map[string][]byte{
+			corev1.DockerConfigJsonKey: []byte(`{"auths": {"registry.hostname.com": {"username": "user", "password": "password"}}}`),
+		},
+	}))
+
+	// Select a random node that we will opt into the layered pool. Note: If
+	// successful, this node will never actually get the new image because we
+	// will have halted the build process before that happens.
+	node := helpers.GetRandomNode(t, cs, "worker")
+
+	// Set up all of the objects needed for the build, including getting (but not
+	// yet applying) the MachineOSConfig.
+	mosc := prepareForTest(t, cs, onClusterBuildTestOpts{
+		poolName: layeredMCPName,
+		customDockerfiles: map[string]string{
+			layeredMCPName: yumReposDockerfile,
+		},
+		targetNode:  &node,
+		useYumRepos: true,
+	})
+
+	// Assign the secret name to the MachineOSConfig.
+	mosc.Spec.BuildOutputs.CurrentImagePullSecret.Name = secretName
+
+	// Create the MachineOSConfig which will start the build process.
+	t.Cleanup(createMachineOSConfig(t, cs, mosc))
+
+	// Wait for the build to start. We don't need to wait for it to complete
+	// since we're mostly concerned about whether the MCD on the node gets our
+	// dummy secret.
+	waitForBuildToStart(t, cs, layeredMCPName)
+
+	// Verifies that the MCD pod gets the appropriate secret volume and volume mount.
+	err := wait.PollImmediate(1*time.Second, 5*time.Minute, func() (bool, error) {
+		mcdPod, err := helpers.MCDForNode(cs, &node)
+
+		// If we can ignore this error, it means that the MCD is not ready yet, so
+		// return false here and try again later.
+		if err != nil && canIgnoreMCDForNodeError(err) {
+			return false, nil
+		}
+
+		if err != nil {
+			return false, err
+		}
+
+		return podHasExpectedSecretVolume(mcdPod, secretName) &&
+			podHasExpectedSecretVolumeMount(mcdPod, layeredMCPName, secretName), nil
+	})
+
+	require.NoError(t, err)
+
+	t.Logf("MCD pod has secret volume mount for %s", secretName)
+
+	// Wait for the MCD pod to write the dummy secret to the nodes' filesystem
+	// and validate that our dummy hostname is in there along with all of the
+	// ones in the ControllerConfig.
+	err = wait.PollImmediate(1*time.Second, 5*time.Minute, func() (bool, error) {
+		cfg, err := cs.ControllerConfigs().Get(context.TODO(), "machine-config-controller", metav1.GetOptions{})
+		require.NoError(t, err)
+
+		imagePullCfg, err := ctrlcommon.ToDockerConfigJSON(cfg.Spec.InternalRegistryPullSecret)
+		require.NoError(t, err)
+
+		hostnames := []string{
+			"registry.hostname.com",
+		}
+
+		for key := range imagePullCfg.Auths {
+			hostnames = append(hostnames, key)
+		}
+
+		filename := "/etc/mco/internal-registry-pull-secret.json"
+
+		contents := helpers.ExecCmdOnNode(t, cs, node, "cat", filepath.Join("/rootfs", filename))
+
+		for _, hostname := range hostnames {
+			if !strings.Contains(contents, hostname) {
+				return false, nil
+			}
+		}
+
+		t.Logf("All hostnames %v found in %q on node %q", hostnames, filename, node.Name)
+		return true, nil
+	})
+
+	require.NoError(t, err)
+
+	t.Logf("Node filesystem %s got secret from MachineOSConfig", node.Name)
+}
+
+// Determines if we can ignore the error returned by helpers.MCDForNode(). This
+// checks for a very specific condition that is encountered by this test. In
+// order for the MCD to get the secret from the MachineOSConfig, it must be
+// restarted. While it is restarting, it is possible that the node will
+// temporarily have two MCD pods associated with it; one is being created while
+// the other is being terminated.
+//
+// The helpers.MCDForNode() function cannot
+// distinguish between those scenarios, which is fine. But for the purposes of
+// this test, we should ignore that specific error because it means that the
+// MCD pod is not ready yet.
+//
+// Finally, it is worth noting that this is not the best way to compare errors,
+// but its acceptable for our purposes here.
+func canIgnoreMCDForNodeError(err error) bool {
+	return strings.Contains(err.Error(), "too many") &&
+		strings.Contains(err.Error(), "MCDs for node")
+}
+
+func podHasExpectedSecretVolume(pod *corev1.Pod, secretName string) bool {
+	for _, volume := range pod.Spec.Volumes {
+		if volume.Secret != nil && volume.Secret.SecretName == secretName {
+			return true
+		}
+	}
+
+	return false
+}
+
+func podHasExpectedSecretVolumeMount(pod *corev1.Pod, poolName, secretName string) bool {
+	for _, container := range pod.Spec.Containers {
+		for _, volumeMount := range container.VolumeMounts {
+			if volumeMount.Name == secretName && volumeMount.MountPath == filepath.Join("/run/secrets/os-image-pull-secrets", poolName) {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
 // Sets up and performs an on-cluster build for a given set of parameters.
 // Returns the built image pullspec for later consumption.
 func runOnClusterBuildTest(t *testing.T, testOpts onClusterBuildTestOpts) string {
@@ -184,24 +336,9 @@ func runOnClusterBuildTest(t *testing.T, testOpts onClusterBuildTestOpts) string
 	mobPodStreamerCtx, mobPodStreamerCancel := context.WithCancel(ctx)
 	t.Cleanup(mobPodStreamerCancel)
 
-	t.Logf("Wait for build to start")
-	waitForMachineOSBuildToReachState(t, cs, testOpts.poolName, func(mosb *mcfgv1alpha1.MachineOSBuild, err error) (bool, error) {
-		// If we had any errors retrieving the build, (other than it not existing yet), stop here.
-		if err != nil && !k8serrors.IsNotFound(err) {
-			return false, err
-		}
+	waitForBuildToStart(t, cs, testOpts.poolName)
 
-		// The build object has not been created yet, requeue and try again.
-		if mosb == nil && k8serrors.IsNotFound(err) {
-			t.Logf("MachineOSBuild does not exist yet, retrying...")
-			return false, nil
-		}
-
-		// At this point, the build object exists and we want to ensure that it is running.
-		return ctrlcommon.NewMachineOSBuildState(mosb).IsBuilding(), nil
-	})
-
-	t.Logf("Build started! Waiting for completion...")
+	t.Logf("Waiting for build completion...")
 
 	// Create a child context for the build pod log streamer. This is so we can
 	// cancel it independently of the parent context or the context for the
@@ -261,6 +398,32 @@ func runOnClusterBuildTest(t *testing.T, testOpts onClusterBuildTestOpts) string
 	return build.Status.FinalImagePushspec
 }
 
+func waitForBuildToStart(t *testing.T, cs *framework.ClientSet, poolName string) {
+	t.Helper()
+
+	t.Logf("Wait for build to start")
+
+	start := time.Now()
+
+	waitForMachineOSBuildToReachState(t, cs, poolName, func(mosb *mcfgv1alpha1.MachineOSBuild, err error) (bool, error) {
+		// If we had any errors retrieving the build, (other than it not existing yet), stop here.
+		if err != nil && !k8serrors.IsNotFound(err) {
+			return false, err
+		}
+
+		// The build object has not been created yet, requeue and try again.
+		if mosb == nil && k8serrors.IsNotFound(err) {
+			t.Logf("MachineOSBuild does not exist yet, retrying...")
+			return false, nil
+		}
+
+		// At this point, the build object exists and we want to ensure that it is running.
+		return ctrlcommon.NewMachineOSBuildState(mosb).IsBuilding(), nil
+	})
+
+	t.Logf("Build started in %s!", time.Since(start))
+}
+
 // Prepares for an on-cluster build test by performing the following:
 // - Gets the Docker Builder secret name from the MCO namespace.
 // - Creates the imagestream to use for the test.
@@ -306,7 +469,11 @@ func prepareForTest(t *testing.T, cs *framework.ClientSet, testOpts onClusterBui
 	finalPullspec, err := getImagestreamPullspec(cs, imagestreamName)
 	require.NoError(t, err)
 
-	t.Cleanup(makeIdempotentAndRegister(t, helpers.CreateMCP(t, cs, testOpts.poolName)))
+	if testOpts.targetNode != nil {
+		t.Cleanup(makeIdempotentAndRegister(t, helpers.CreatePoolWithNode(t, cs, testOpts.poolName, *testOpts.targetNode)))
+	} else {
+		t.Cleanup(makeIdempotentAndRegister(t, helpers.CreateMCP(t, cs, testOpts.poolName)))
+	}
 
 	_, err = helpers.WaitForRenderedConfig(t, cs, testOpts.poolName, "00-worker")
 	require.NoError(t, err)

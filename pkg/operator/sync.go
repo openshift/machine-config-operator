@@ -592,13 +592,23 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 		return err
 	}
 
-	moscs, err := optr.getMachineOSConfigs()
+	isOnClusterBuildEnabled, err := optr.isOnClusterBuildFeatureGateEnabled()
 	if err != nil {
 		return err
 	}
 
-	// create renderConfig
-	optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra.Status.APIServerInternalURL, pointerConfigData, moscs)
+	if isOnClusterBuildEnabled {
+		moscs, err := optr.getAndValidateMachineOSConfigs()
+		if err != nil {
+			return err
+		}
+
+		// create renderConfig
+		optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra.Status.APIServerInternalURL, pointerConfigData, moscs)
+	} else {
+		optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra.Status.APIServerInternalURL, pointerConfigData, nil)
+	}
+
 	return nil
 }
 
@@ -2058,9 +2068,9 @@ func (optr *Operator) syncMachineConfiguration(_ *renderConfig) error {
 }
 
 // Gets MachineOSConfigs from the lister, assuming that the OnClusterBuild
-// featuregate is enabled. Otherwise, returns a nil slice.
+// FeatureGate is enabled. Will return nil if the FeatureGate is not enabled.
 func (optr *Operator) getMachineOSConfigs() ([]*mcfgv1alpha1.MachineOSConfig, error) {
-	isOnClusterBuildEnabled, err := optr.isOnClusterBuildEnabled()
+	isOnClusterBuildEnabled, err := optr.isOnClusterBuildFeatureGateEnabled()
 	if err != nil {
 		return nil, err
 	}
@@ -2072,8 +2082,30 @@ func (optr *Operator) getMachineOSConfigs() ([]*mcfgv1alpha1.MachineOSConfig, er
 	return optr.moscLister.List(labels.Everything())
 }
 
-// Determines if the OnclusterBuild featuregate is enabled. Returns any errors encountered.
-func (optr *Operator) isOnClusterBuildEnabled() (bool, error) {
+// Fetches and validates the MachineOSConfigs. For now, validation consists of
+// ensuring that the secrets the MachineOSConfig was configured with exist.
+func (optr *Operator) getAndValidateMachineOSConfigs() ([]*mcfgv1alpha1.MachineOSConfig, error) {
+	moscs, err := optr.getMachineOSConfigs()
+
+	if err != nil {
+		return nil, err
+	}
+
+	if moscs == nil {
+		return nil, nil
+	}
+
+	for _, mosc := range moscs {
+		if err := build.ValidateMachineOSConfigFromListers(optr.mcpLister, optr.mcoSecretLister, mosc); err != nil {
+			return nil, fmt.Errorf("invalid MachineOSConfig %s: %w", mosc.Name, err)
+		}
+	}
+
+	return moscs, nil
+}
+
+// Determines if the OnclusterBuild FeatureGate is enabled. Returns any errors encountered.
+func (optr *Operator) isOnClusterBuildFeatureGateEnabled() (bool, error) {
 	fg, err := optr.fgAccessor.CurrentFeatureGates()
 	if err != nil {
 		klog.Errorf("Could not get fg: %v", err)

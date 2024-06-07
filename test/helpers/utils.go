@@ -612,6 +612,8 @@ func LabelNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, label st
 
 	require.Nil(t, err, "unable to label %s node %s with infra: %s", label, node.Name, err)
 
+	t.Logf("Applied label %q to node %s", label, node.Name)
+
 	return MakeIdempotent(func() {
 
 		err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
@@ -624,6 +626,7 @@ func LabelNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, label st
 			return err
 		})
 		require.Nil(t, err, "unable to remove label %q from node %q: %s", label, node.Name, err)
+		t.Logf("Removed label %q from node %s", label, node.Name)
 	})
 }
 

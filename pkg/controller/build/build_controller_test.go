@@ -193,6 +193,27 @@ func (b *buildControllerTestFixture) runTestFuncs(t *testing.T, tf testFuncs) {
 }
 
 func (b *buildControllerTestFixture) setupClients() *Clients {
+	return getClientsForTest()
+}
+
+func (b *buildControllerTestFixture) getConfig() BuildControllerConfig {
+	return BuildControllerConfig{
+		MaxRetries:  1,
+		UpdateDelay: testUpdateDelay,
+	}
+}
+
+func (b *buildControllerTestFixture) startBuildControllerWithCustomPodBuilder() *Clients {
+	clients := b.setupClients()
+
+	ctrl := NewWithCustomPodBuilder(b.getConfig(), clients)
+
+	go ctrl.Run(b.ctx, 5)
+
+	return clients
+}
+
+func getClientsForTest() *Clients {
 	objects := newMachineConfigPoolAndConfigs("master", "rendered-master-1")
 	objects = append(objects, newMachineConfigPoolAndConfigs("worker", "rendered-worker-1")...)
 	objects = append(objects, &mcfgv1.ControllerConfig{
@@ -233,6 +254,16 @@ func (b *buildControllerTestFixture) setupClients() *Clients {
 			},
 			&corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
+					Name:      "current-image-pull-secret",
+					Namespace: ctrlcommon.MCONamespace,
+				},
+				Data: map[string][]byte{
+					corev1.DockerConfigJsonKey: []byte(pullSecret),
+				},
+				Type: corev1.SecretTypeDockerConfigJson,
+			},
+			&corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
 					Name:      "etc-pki-entitlement",
 					Namespace: "openshift-config-managed",
 				},
@@ -250,23 +281,7 @@ func (b *buildControllerTestFixture) setupClients() *Clients {
 		),
 		buildclient: fakeclientbuildv1.NewSimpleClientset(),
 	}
-}
 
-func (b *buildControllerTestFixture) getConfig() BuildControllerConfig {
-	return BuildControllerConfig{
-		MaxRetries:  1,
-		UpdateDelay: testUpdateDelay,
-	}
-}
-
-func (b *buildControllerTestFixture) startBuildControllerWithCustomPodBuilder() *Clients {
-	clients := b.setupClients()
-
-	ctrl := NewWithCustomPodBuilder(b.getConfig(), clients)
-
-	go ctrl.Run(b.ctx, 5)
-
-	return clients
 }
 
 // Helper that determines if the build is a success.

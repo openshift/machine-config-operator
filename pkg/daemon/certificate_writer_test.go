@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -25,7 +24,6 @@ func TestImagePullSecretReconciliation(t *testing.T) {
 		controllerConfigSecretBytes []byte
 		expectedBytes               []byte
 		errExpected                 bool
-		unlayeredNode               bool
 	}{
 		// Tests that secrets from both the mounted secrets and ControllerConfig
 		// can be merged together without issue.
@@ -38,7 +36,7 @@ func TestImagePullSecretReconciliation(t *testing.T) {
 			// TODO(zzlotnik): Can we omit the unused fields?
 			expectedBytes: []byte(`{"auths":{"other-registry.hostname.com":{"username":"user","password":"secret","email":"","auth":""},"registry.hostname.com":{"username":"user","password":"secret","email":"","auth":""}}}`),
 		},
-		// Verifies that secrets from the mounted secret path take precedence over
+		// Tests that secrets from the mounted secret path take precedence over
 		// the ones from the ControllerConfig.
 		{
 			name:                        "mounted secret takes precedence",
@@ -48,7 +46,7 @@ func TestImagePullSecretReconciliation(t *testing.T) {
 			controllerConfigSecretBytes: []byte(`{"auths": {"registry.hostname.com": {"username": "other-user", "password": "other-secret"}}}`),
 			expectedBytes:               []byte(`{"auths":{"registry.hostname.com":{"username":"mounted-secret-user","password":"mounted-secret-secret","email":"","auth":""}}}`),
 		},
-		// Verifies that in the absence of mounted secrets, only the ones found on
+		// Tests that in the absence of mounted secrets, only the ones found on
 		// the ControllerConfig will be used.
 		{
 			name:                        "no mounted secrets",
@@ -56,7 +54,7 @@ func TestImagePullSecretReconciliation(t *testing.T) {
 			controllerConfigSecretBytes: []byte(`{"auths": {"registry.hostname.com": {"username": "user", "password": "secret"}}}`),
 			expectedBytes:               []byte(`{"auths": {"registry.hostname.com": {"username": "user", "password": "secret"}}}`),
 		},
-		// Verifies that if multiple node roles are found on a node (e.g., for
+		// Tests that if multiple node roles are found on a node (e.g., for
 		// control-plane nodes) and only one of them has a mounted secret, that it
 		// will be found.
 		{
@@ -68,7 +66,7 @@ func TestImagePullSecretReconciliation(t *testing.T) {
 			// TODO(zzlotnik): Can we omit the unused fields?
 			expectedBytes: []byte(`{"auths":{"other-registry.hostname.com":{"username":"user","password":"secret","email":"","auth":""},"registry.hostname.com":{"username":"user","password":"secret","email":"","auth":""}}}`),
 		},
-		// Verifies that legacy-style secrets (that is, secrets without a top-level
+		// Tests that legacy-style secrets (that is, secrets without a top-level
 		// {"auths": ...} key) are converted to a new-style secret and that any
 		// other secrets are correctly merged with them.
 		{
@@ -80,13 +78,13 @@ func TestImagePullSecretReconciliation(t *testing.T) {
 			// TODO(zzlotnik): Can we omit the unused fields?
 			expectedBytes: []byte(`{"auths":{"other-registry.hostname.com":{"username":"user","password":"secret","email":"","auth":""},"registry.hostname.com":{"username":"user","password":"secret","email":"","auth":""}}}`),
 		},
-		// Verifies that we get an error when a node does not have any node roles.
+		// Tests that we get an error when a node does not have any node roles.
 		{
 			name:        "zero node roles",
 			nodeRoles:   []string{},
 			errExpected: true,
 		},
-		// Verifies that we get an error when mounted secrets are composed of
+		// Tests that we get an error when mounted secrets are composed of
 		// invalid JSON. We don't have to worry about a similar case from
 		// ControllerConfig since by the time we've reached this point, the image
 		// pull secrets contained therein have already been parsed and validated.
@@ -97,18 +95,6 @@ func TestImagePullSecretReconciliation(t *testing.T) {
 			mountedSecretBytes:          []byte(`<invalid JSON>`),
 			controllerConfigSecretBytes: []byte(`{"auths":{"other-registry.hostname.com": {"username": "user", "password": "secret"}}}`),
 			errExpected:                 true,
-		},
-		// Tests that if a node is unlayered (does not have the desired image
-		// annotation), it ignores any MachineOSConfig secrets that are mounted
-		// into it.
-		{
-			name:                        "unlayered node",
-			nodeRoles:                   []string{"node-role.kubernetes.io/worker"},
-			writeMountedSecretBytes:     true,
-			mountedSecretBytes:          []byte(`{"auths": {"registry.hostname.com": {"username": "user", "password": "secret"}}}`),
-			controllerConfigSecretBytes: []byte(`{"auths": {"other-registry.hostname.com": {"username": "user", "password": "secret"}}}`),
-			expectedBytes:               []byte(`{"auths": {"other-registry.hostname.com": {"username": "user", "password": "secret"}}}`),
-			unlayeredNode:               true,
 		},
 	}
 
@@ -138,12 +124,6 @@ func TestImagePullSecretReconciliation(t *testing.T) {
 						node.Labels[nodeRole] = ""
 					}
 
-					if !testCase.unlayeredNode {
-						node.Annotations = map[string]string{
-							constants.DesiredImageAnnotationKey: "",
-						}
-					}
-
 					ctrlCfg := &mcfgv1.ControllerConfig{
 						Spec: mcfgv1.ControllerConfigSpec{
 							InternalRegistryPullSecret: testCase.controllerConfigSecretBytes,
@@ -151,6 +131,8 @@ func TestImagePullSecretReconciliation(t *testing.T) {
 					}
 
 					tmpDir := t.TempDir()
+
+					secretRoot := "/doesnt/exist"
 
 					if testCase.writeMountedSecretBytes {
 						nodeRoles := getNodeRoles(node)
@@ -162,14 +144,16 @@ func TestImagePullSecretReconciliation(t *testing.T) {
 							nodeRole = nodeRoles[len(nodeRoles)-1]
 						}
 
-						secretDir := filepath.Join(tmpDir, osImagePullSecretDir, nodeRole)
+						secretDir := filepath.Join(tmpDir, nodeRole)
 						secretPath := filepath.Join(secretDir, imagePullSecretKey)
 
 						require.NoError(t, os.MkdirAll(secretDir, 0o755))
 						require.NoError(t, os.WriteFile(secretPath, testCase.mountedSecretBytes, 0o755))
+
+						secretRoot = tmpDir
 					}
 
-					result, err := reconcileOSImageRegistryPullSecretData(node, ctrlCfg, tmpDir)
+					result, err := reconcileOSImageRegistryPullSecretData(node, ctrlCfg, secretRoot)
 
 					if testCase.errExpected {
 						assert.Error(t, err)
