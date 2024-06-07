@@ -617,6 +617,8 @@ func LabelNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, label st
 
 	require.Nil(t, err, "unable to label %s node %s with infra: %s", label, node.Name, err)
 
+	t.Logf("Applied label %q to node %s", label, node.Name)
+
 	return MakeIdempotent(func() {
 
 		err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
@@ -629,6 +631,7 @@ func LabelNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, label st
 			return err
 		})
 		require.Nil(t, err, "unable to remove label %q from node %q: %s", label, node.Name, err)
+		t.Logf("Removed label %q from node %s", label, node.Name)
 	})
 }
 
@@ -1216,53 +1219,6 @@ func WriteFileToNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, fi
 	})
 }
 
-// AssertMCDLogsContain asserts that the MCD pod's logs contains a target string value
-func AssertMCDLogsContain(t *testing.T, cs *framework.ClientSet, mcdPod *corev1.Pod, node *corev1.Node, expectedContents string) {
-	t.Helper()
-	logs, err := cs.Pods(mcdPod.Namespace).GetLogs(mcdPod.Name, &corev1.PodLogOptions{
-		Container: "machine-config-daemon",
-	}).DoRaw(context.TODO())
-	if err != nil {
-		// common err is that the mcd went down mid cmd. Re-try for good measure
-		mcdPod, err = MCDForNode(cs, node)
-		require.Nil(t, err)
-		logs, err = cs.Pods(mcdPod.Namespace).GetLogs(mcdPod.Name, &corev1.PodLogOptions{
-			Container: "machine-config-daemon",
-		}).DoRaw(context.TODO())
-	}
-	require.Nil(t, err)
-
-	if !strings.Contains(string(logs), expectedContents) {
-		t.Fatalf("expected to find '%s' in logs for %s/%s", expectedContents, mcdPod.Namespace, mcdPod.Name)
-	}
-}
-
-func GetFunctionName(i interface{}) string {
-	strs := strings.Split((runtime.FuncForPC(reflect.ValueOf(i).Pointer()).Name()), ".")
-	return strs[len(strs)-1]
-}
-
-func ShuffleSlice(slice interface{}) {
-	v := reflect.ValueOf(slice)
-	rand.Shuffle(v.Len(), func(i, j int) {
-		vi := v.Index(i).Interface()
-		v.Index(i).Set(v.Index(j))
-		v.Index(j).Set(reflect.ValueOf(vi))
-	})
-}
-
-func GetActionApplyConfiguration(action opv1.NodeDisruptionPolicySpecAction) *mcoac.NodeDisruptionPolicySpecActionApplyConfiguration {
-	if action.Type == opv1.ReloadSpecAction {
-		reloadApplyConfiguration := mcoac.ReloadService().WithServiceName(action.Reload.ServiceName)
-		return mcoac.NodeDisruptionPolicySpecAction().WithType(action.Type).WithReload(reloadApplyConfiguration)
-	} else if action.Type == opv1.RestartSpecAction {
-		restartApplyConfiguration := mcoac.RestartService().WithServiceName(action.Restart.ServiceName)
-		return mcoac.NodeDisruptionPolicySpecAction().WithType(action.Type).WithRestart(restartApplyConfiguration)
-	} else {
-		return mcoac.NodeDisruptionPolicySpecAction().WithType(action.Type)
-	}
-}
-
 // Polls the ControllerConfig and calls the provided condition function with
 // the ControllerConfig to determine if the ControllerConfig has reached the
 // expected state.
@@ -1318,4 +1274,51 @@ func AssertAllNodesReachExpectedState(t *testing.T, cs *framework.ClientSet, con
 	require.NoError(t, err, "%d nodes %v failed to reach desired state", nodes.Len()-nodesWithDesiredConfig.Len(), nodes.Difference(nodesWithDesiredConfig).UnsortedList())
 
 	t.Logf("All nodes reached desired state in %v", time.Since(start))
+}
+
+// AssertMCDLogsContain asserts that the MCD pod's logs contains a target string value
+func AssertMCDLogsContain(t *testing.T, cs *framework.ClientSet, mcdPod *corev1.Pod, node *corev1.Node, expectedContents string) {
+	t.Helper()
+	logs, err := cs.Pods(mcdPod.Namespace).GetLogs(mcdPod.Name, &corev1.PodLogOptions{
+		Container: "machine-config-daemon",
+	}).DoRaw(context.TODO())
+	if err != nil {
+		// common err is that the mcd went down mid cmd. Re-try for good measure
+		mcdPod, err = MCDForNode(cs, node)
+		require.Nil(t, err)
+		logs, err = cs.Pods(mcdPod.Namespace).GetLogs(mcdPod.Name, &corev1.PodLogOptions{
+			Container: "machine-config-daemon",
+		}).DoRaw(context.TODO())
+	}
+	require.Nil(t, err)
+
+	if !strings.Contains(string(logs), expectedContents) {
+		t.Fatalf("expected to find '%s' in logs for %s/%s", expectedContents, mcdPod.Namespace, mcdPod.Name)
+	}
+}
+
+func GetFunctionName(i interface{}) string {
+	strs := strings.Split((runtime.FuncForPC(reflect.ValueOf(i).Pointer()).Name()), ".")
+	return strs[len(strs)-1]
+}
+
+func ShuffleSlice(slice interface{}) {
+	v := reflect.ValueOf(slice)
+	rand.Shuffle(v.Len(), func(i, j int) {
+		vi := v.Index(i).Interface()
+		v.Index(i).Set(v.Index(j))
+		v.Index(j).Set(reflect.ValueOf(vi))
+	})
+}
+
+func GetActionApplyConfiguration(action opv1.NodeDisruptionPolicySpecAction) *mcoac.NodeDisruptionPolicySpecActionApplyConfiguration {
+	if action.Type == opv1.ReloadSpecAction {
+		reloadApplyConfiguration := mcoac.ReloadService().WithServiceName(action.Reload.ServiceName)
+		return mcoac.NodeDisruptionPolicySpecAction().WithType(action.Type).WithReload(reloadApplyConfiguration)
+	} else if action.Type == opv1.RestartSpecAction {
+		restartApplyConfiguration := mcoac.RestartService().WithServiceName(action.Restart.ServiceName)
+		return mcoac.NodeDisruptionPolicySpecAction().WithType(action.Type).WithRestart(restartApplyConfiguration)
+	} else {
+		return mcoac.NodeDisruptionPolicySpecAction().WithType(action.Type)
+	}
 }

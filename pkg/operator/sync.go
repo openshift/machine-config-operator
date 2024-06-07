@@ -2099,7 +2099,7 @@ func (optr *Operator) syncMachineConfiguration(_ *renderConfig, _ *configv1.Clus
 // Gets MachineOSConfigs from the lister, assuming that the OnClusterBuild
 // featuregate is enabled. Otherwise, returns a nil slice.
 func (optr *Operator) getMachineOSConfigs() ([]*mcfgv1alpha1.MachineOSConfig, error) {
-	isOnClusterBuildEnabled, err := optr.isOnClusterBuildEnabled()
+	isOnClusterBuildEnabled, err := optr.isOnClusterBuildFeatureGateEnabled()
 	if err != nil {
 		return nil, err
 	}
@@ -2112,7 +2112,7 @@ func (optr *Operator) getMachineOSConfigs() ([]*mcfgv1alpha1.MachineOSConfig, er
 }
 
 // Determines if the OnclusterBuild featuregate is enabled. Returns any errors encountered.
-func (optr *Operator) isOnClusterBuildEnabled() (bool, error) {
+func (optr *Operator) isOnClusterBuildFeatureGateEnabled() (bool, error) {
 	fg, err := optr.fgAccessor.CurrentFeatureGates()
 	if err != nil {
 		klog.Errorf("Could not get fg: %v", err)

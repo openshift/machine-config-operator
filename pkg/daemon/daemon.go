@@ -154,6 +154,9 @@ type Daemon struct {
 	initializeHealthServer bool
 
 	deferKubeletRestart bool
+
+	// Ensures that only a single syncOSImagePullSecrets call can run at a time.
+	osImageMux *sync.Mutex
 }
 
 // CoreOSDaemon protects the methods that should only be called on CoreOS variants
@@ -341,6 +344,7 @@ func New(
 		currentConfigPath:      currentConfigPath,
 		currentImagePath:       currentImagePath,
 		configDriftMonitor:     NewConfigDriftMonitor(),
+		osImageMux:             &sync.Mutex{},
 	}, nil
 }
 
@@ -738,6 +742,16 @@ func (dn *Daemon) syncNode(key string) error {
 			klog.Infof("Transitioned from degraded/unreconcilable reason %v -> %v", oldReason, newReason)
 		}
 		dn.node = node
+	}
+
+	// Sync our OS image pull secrets here. This will account for any changes to
+	// either the mounted secrets (which can change without a pod restart) or the
+	// ControllerConfig.
+	//
+	// I'm not sure if this needs to be done right here or as frequently as this,
+	// but it shouldn't cause too much impact.
+	if err := dn.syncOSImagePullSecrets(nil); err != nil {
+		return err
 	}
 
 	// Take care of the very first sync of the MCD on a node.
@@ -2421,6 +2435,11 @@ func (dn *Daemon) completeUpdate(desiredConfigName string) error {
 }
 
 func (dn *Daemon) triggerUpdate(currentConfig, desiredConfig *mcfgv1.MachineConfig, currentImage, desiredImage string) error {
+	// Before we do any updates, ensure that the image pull secrets that rpm-ostree uses are up-to-date.
+	if err := dn.syncOSImagePullSecrets(nil); err != nil {
+		return err
+	}
+
 	// If both of the image annotations are empty, this is a regular MachineConfig update.
 	if desiredImage == "" && currentImage == "" {
 		return dn.triggerUpdateWithMachineConfig(currentConfig, desiredConfig, true)
