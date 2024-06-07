@@ -341,8 +341,8 @@ func TestRenderAsset(t *testing.T) {
 				},
 			},
 			FindExpected: []string{
-				"- mountPath: /run/os-image-pull-secrets/pool-1/secret-1\n            name: secret-1",
-				"- mountPath: /run/os-image-pull-secrets/pool-2/secret-2\n            name: secret-2",
+				"- mountPath: /run/secrets/os-image-pull-secrets/pool-1\n            name: secret-1",
+				"- mountPath: /run/secrets/os-image-pull-secrets/pool-2\n            name: secret-2",
 				"- secret:\n            secretName: secret-1\n          name: secret-1",
 				"- secret:\n            secretName: secret-2\n          name: secret-2",
 			},
