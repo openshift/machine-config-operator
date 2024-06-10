@@ -133,6 +133,13 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 		}
 		tempIgnConfig := ctrlcommon.NewIgnConfig()
 		tempIgnConfig.Storage.Files = append(tempIgnConfig.Storage.Files, *cfgIgn)
+		// Enable auto node sizing by default
+		autoSizingReservedEnabled := true
+		userDefinedSystemReserved := make(map[string]string)
+		autoSizingReservedIgnition := createNewKubeletDynamicSystemReservedIgnition(&autoSizingReservedEnabled, userDefinedSystemReserved)
+		if autoSizingReservedIgnition != nil {
+			tempIgnConfig.Storage.Files = append(tempIgnConfig.Storage.Files, *autoSizingReservedIgnition)
+		}
 		rawCfgIgn, err := json.Marshal(tempIgnConfig)
 		if err != nil {
 			return err
@@ -307,6 +314,15 @@ func RunNodeConfigBootstrap(templateDir string, featureGateAccess featuregates.F
 		}
 		tempIgnConfig := ctrlcommon.NewIgnConfig()
 		tempIgnConfig.Storage.Files = append(tempIgnConfig.Storage.Files, *cfgIgn)
+
+		// Enable auto node sizing by default
+		autoSizingReservedEnabled := true
+		userDefinedSystemReserved := make(map[string]string)
+		autoSizingReservedIgnition := createNewKubeletDynamicSystemReservedIgnition(&autoSizingReservedEnabled, userDefinedSystemReserved)
+		if autoSizingReservedIgnition != nil {
+			tempIgnConfig.Storage.Files = append(tempIgnConfig.Storage.Files, *autoSizingReservedIgnition)
+		}
+
 		rawCfgIgn, err := json.Marshal(tempIgnConfig)
 		if err != nil {
 			return nil, err
