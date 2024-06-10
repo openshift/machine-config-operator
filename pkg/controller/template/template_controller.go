@@ -475,7 +475,7 @@ func updateControllerConfigCerts(config *mcfgv1.ControllerConfig) bool {
 		}
 		stillExists = false
 	}
-	config.Status.ControllerCertificates = append(newCtrlCerts, newImgCerts...)
+	config.Status.ControllerCertificates = append(config.Status.ControllerCertificates[:0], append(newCtrlCerts, newImgCerts...)...)
 	return modified
 }
 

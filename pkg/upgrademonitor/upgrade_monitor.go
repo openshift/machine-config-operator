@@ -14,6 +14,7 @@ import (
 
 	mcfgalphav1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	applyconfigurationsmeta "k8s.io/client-go/applyconfigurations/meta/v1"
 	"k8s.io/klog/v2"
 )
 
@@ -53,6 +54,26 @@ func UpdateMachineConfigNodeStatus(
 	fgAccessor featuregates.FeatureGateAccess,
 ) error {
 	return generateAndApplyMachineConfigNodes(parentCondition, childCondition, parentStatus, childStatus, node, mcfgClient, imageSetApplyConfig, imageSetSpec, fgAccessor)
+}
+
+// Helper function to convert metav1.Condition to ConditionApplyConfiguration
+func convertConditionToApplyConfiguration(condition metav1.Condition) *applyconfigurationsmeta.ConditionApplyConfiguration {
+	return &applyconfigurationsmeta.ConditionApplyConfiguration{
+		Type:               &condition.Type,
+		Status:             &condition.Status,
+		Reason:             &condition.Reason,
+		Message:            &condition.Message,
+		LastTransitionTime: &condition.LastTransitionTime,
+	}
+}
+
+// Helper function to convert a slice of metav1.Condition to a slice of *ConditionApplyConfiguration
+func convertConditionsToApplyConfigurations(conditions []metav1.Condition) []*applyconfigurationsmeta.ConditionApplyConfiguration {
+	var result []*applyconfigurationsmeta.ConditionApplyConfiguration
+	for _, condition := range conditions {
+		result = append(result, convertConditionToApplyConfiguration(condition))
+	}
+	return result
 }
 
 // nolint:gocyclo
@@ -173,7 +194,8 @@ func generateAndApplyMachineConfigNodes(
 		// look through all of the conditions for our current ones, update them accordingly
 		// also set all other ones to false and update last transition time.
 		for i, condition := range newMCNode.Status.Conditions {
-			if condition.Type == string(mcfgalphav1.MachineConfigNodeUpdated) && condition.Status == metav1.ConditionTrue && condition.Type != newParentCondition.Type {
+			switch {
+			case condition.Type == string(mcfgalphav1.MachineConfigNodeUpdated) && condition.Status == metav1.ConditionTrue && condition.Type != newParentCondition.Type:
 				// if this happens, it is because we manually updated the MCO.
 				// so, if we get a parent state == unknown or true or ANYTHING and updated also == true but it isn't the parent, set updated == false
 				newC := metav1.Condition{
@@ -184,10 +206,12 @@ func generateAndApplyMachineConfigNodes(
 					Status:             metav1.ConditionFalse,
 				}
 				newC.DeepCopyInto(&newMCNode.Status.Conditions[i])
-			} else if newChildCondition != nil && condition.Type == newChildCondition.Type {
+
+			case newChildCondition != nil && condition.Type == newChildCondition.Type:
 				foundChild = true
 				newChildCondition.DeepCopyInto(&condition)
-			} else if condition.Type == newParentCondition.Type {
+
+			case condition.Type == newParentCondition.Type:
 				foundParent = true
 				if !isParentConditionChanged(condition, newParentCondition) && !isSingletonCondition(singletonConditionTypes, condition.Type) {
 					// there is nothing to update. Return.
@@ -198,7 +222,8 @@ func generateAndApplyMachineConfigNodes(
 					return nil
 				}
 				newParentCondition.DeepCopyInto(&condition)
-			} else if condition.Status != metav1.ConditionFalse && reset {
+
+			case condition.Status != metav1.ConditionFalse && reset:
 				condition.Status = metav1.ConditionFalse
 				condition.Message = fmt.Sprintf("Action during update to %s: %s", newMCNode.Spec.ConfigVersion.Desired, condition.Message)
 				condition.LastTransitionTime = metav1.Now()
@@ -239,7 +264,8 @@ func generateAndApplyMachineConfigNodes(
 			statusconfigVersionApplyConfig = statusconfigVersionApplyConfig.WithCurrent(newMCNode.Status.ConfigVersion.Current)
 		}
 		statusApplyConfig := machineconfigurationalphav1.MachineConfigNodeStatus().
-			WithConditions(newMCNode.Status.Conditions...).
+			// WithConditions(newMCNode.Status.Conditions...).
+			WithConditions(convertConditionsToApplyConfigurations(newMCNode.Status.Conditions)...).
 			WithObservedGeneration(newMCNode.Generation + 1).
 			WithConfigVersion(statusconfigVersionApplyConfig)
 

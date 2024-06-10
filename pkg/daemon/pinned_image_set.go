@@ -179,7 +179,7 @@ func NewPinnedImageSetManager(
 
 	nodeInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    p.handleNodeEvent,
-		UpdateFunc: func(oldObj, newObj interface{}) { p.handleNodeEvent(newObj) },
+		UpdateFunc: func(_, newObj interface{}) { p.handleNodeEvent(newObj) },
 	})
 
 	imageSetInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{

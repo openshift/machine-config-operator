@@ -149,7 +149,7 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 			if cond.Status == metav1.ConditionUnknown {
 				switch mcfgalphav1.StateProgress(cond.Type) {
 				case mcfgalphav1.MachineConfigNodeUpdatePrepared:
-					updatingMachines = append(updatedMachines, ourNode)
+					updatingMachines = append(updatedMachines, ourNode) //nolint:gocritic
 				case mcfgalphav1.MachineConfigNodeUpdateExecuted:
 					updatingMachines = append(updatingMachines, ourNode)
 				case mcfgalphav1.MachineConfigNodeUpdatePostActionComplete:
@@ -157,10 +157,10 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 				case mcfgalphav1.MachineConfigNodeUpdateComplete:
 					updatingMachines = append(updatingMachines, ourNode)
 				case mcfgalphav1.MachineConfigNodeResumed:
-					updatedMachines = append(updatingMachines, ourNode)
+					updatingMachines = append(updatedMachines, ourNode) //nolint:gocritic
 					readyMachines = append(readyMachines, ourNode)
 				case mcfgalphav1.MachineConfigNodeUpdateCompatible:
-					updatedMachines = append(updatingMachines, ourNode)
+					updatingMachines = append(updatedMachines, ourNode) //nolint:gocritic
 				case mcfgalphav1.MachineConfigNodeUpdateDrained:
 					unavailableMachines = append(unavailableMachines, ourNode)
 					updatingMachines = append(updatingMachines, ourNode)

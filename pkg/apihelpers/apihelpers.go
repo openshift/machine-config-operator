@@ -115,7 +115,9 @@ func SetMachineConfigPoolCondition(status *mcfgv1.MachineConfigPoolStatus, condi
 		condition.LastTransitionTime = currentCond.LastTransitionTime
 	}
 	newConditions := filterOutMachineConfigPoolCondition(status.Conditions, condition.Type)
-	status.Conditions = append(newConditions, condition)
+	newConditions = append(newConditions, condition)
+	status.Conditions = newConditions
+
 }
 
 // RemoveMachineConfigPoolCondition removes the MachineConfigPool condition with the provided type.
@@ -219,7 +221,8 @@ func SetControllerConfigStatusCondition(status *mcfgv1.ControllerConfigStatus, c
 		condition.LastTransitionTime = currentCond.LastTransitionTime
 	}
 	newConditions := filterOutControllerConfigStatusCondition(status.Conditions, condition.Type)
-	status.Conditions = append(newConditions, condition)
+	newConditions = append(newConditions, condition)
+	status.Conditions = newConditions
 }
 
 // RemoveControllerConfigStatusCondition removes the ControllerConfigStatus condition with the provided type.

@@ -59,12 +59,14 @@ func NewBootstrapServer(dir, kubeconfig string, ircerts []string) (Server, error
 // 3. Load the machine config.
 // 4. Append the machine annotations file.
 // 5. Append the KubeConfig file.
+const yamlExt = ".yaml"
+
 func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*runtime.RawExtension, error) {
 	if cr.machineConfigPool != "master" {
 		return nil, fmt.Errorf("refusing to serve bootstrap configuration to pool %q", cr.machineConfigPool)
 	}
 	// 1. Read the Machine Config Pool object.
-	fileName := path.Join(bsc.serverBaseDir, "machine-pools", cr.machineConfigPool+".yaml")
+	fileName := path.Join(bsc.serverBaseDir, "machine-pools", cr.machineConfigPool+yamlExt)
 	klog.Infof("reading file %q", fileName)
 	data, err := os.ReadFile(fileName)
 	if os.IsNotExist(err) {
@@ -84,7 +86,7 @@ func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*runtime.RawExtension, er
 	currConf := mp.Status.Configuration.Name
 
 	// 2. Read the Machine Config object.
-	fileName = path.Join(bsc.serverBaseDir, "machine-configs", currConf+".yaml")
+	fileName = path.Join(bsc.serverBaseDir, "machine-configs", currConf+yamlExt)
 	klog.Infof("reading file %q", fileName)
 	data, err = os.ReadFile(fileName)
 	if os.IsNotExist(err) {
