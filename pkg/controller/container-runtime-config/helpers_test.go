@@ -5,7 +5,6 @@ import (
 	b64 "encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"reflect"
 	"testing"
@@ -728,7 +727,7 @@ func TestUpdatePolicyJSON(t *testing.T) {
 			)
 
 			if tt.clusterimagepolicy != nil {
-				clusterImagePolicies, policyerr = getValidScopePolicies([]*apicfgv1alpha1.ClusterImagePolicy{tt.clusterimagepolicy}, "release-reg.io/image/release", nil)
+				clusterImagePolicies, policyerr = getValidScopePolicies([]*apicfgv1alpha1.ClusterImagePolicy{tt.clusterimagepolicy})
 				require.NoError(t, policyerr)
 			}
 			got, err := updatePolicyJSON(templateBytes, tt.blocked, tt.allowed, "release-reg.io/image/release", clusterImagePolicies)
@@ -1212,7 +1211,6 @@ func TestGetValidScopePolicies(t *testing.T) {
 	type testcase struct {
 		name                  string
 		clusterImagePolicyCRs []*apicfgv1alpha1.ClusterImagePolicy
-		releaseImg            string
 		expectedScopePolicies map[string]signature.PolicyRequirements
 		errorExpected         bool
 	}
@@ -1228,27 +1226,16 @@ func TestGetValidScopePolicies(t *testing.T) {
 		{
 			name:                  "cluster CRs contain the same scope",
 			clusterImagePolicyCRs: []*apicfgv1alpha1.ClusterImagePolicy{&testCR0, &testCR1},
-			releaseImg:            "release-reg.io/image/release",
 			expectedScopePolicies: map[string]signature.PolicyRequirements{
 				"test0.com": {policyreq0, policyreq1},
 				"test1.com": {policyreq1},
 			},
 			errorExpected: false,
 		},
-		{
-			name:                  "clusterimagepolicy CRs has scope has super scope of release image",
-			clusterImagePolicyCRs: []*apicfgv1alpha1.ClusterImagePolicy{&testCR0, &testCR1},
-			releaseImg:            "test1.com/image/release",
-			expectedScopePolicies: map[string]signature.PolicyRequirements{
-				"test0.com": {policyreq0, policyreq1},
-			},
-			errorExpected: false,
-		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			gotScopePolicies, err := getValidScopePolicies(test.clusterImagePolicyCRs, test.releaseImg, nil)
-			fmt.Println(err)
+			gotScopePolicies, err := getValidScopePolicies(test.clusterImagePolicyCRs)
 			require.Equal(t, test.errorExpected, err != nil)
 			if !test.errorExpected {
 				require.Equal(t, test.expectedScopePolicies, gotScopePolicies)
@@ -1269,7 +1256,7 @@ func TestGenerateSigstoreRegistriesConfig(t *testing.T) {
     use-sigstore-attachments: true
 `)
 
-	clusterScopePolicies, err := getValidScopePolicies([]*apicfgv1alpha1.ClusterImagePolicy{&testClusterImagePolicyCR0, &testClusterImagePolicyCR1}, "release-reg.io/image/release", nil)
+	clusterScopePolicies, err := getValidScopePolicies([]*apicfgv1alpha1.ClusterImagePolicy{&testClusterImagePolicyCR0, &testClusterImagePolicyCR1})
 	require.NoError(t, err)
 	got, err := generateSigstoreRegistriesdConfig(clusterScopePolicies)
 	require.NoError(t, err)
@@ -1335,7 +1322,7 @@ func TestGeneratePolicyJSON(t *testing.T) {
 		  }
 	`)
 
-	clusterScopePolicies, err := getValidScopePolicies([]*apicfgv1alpha1.ClusterImagePolicy{&testImagePolicyCR0}, "release-reg.io/image/release", nil)
+	clusterScopePolicies, err := getValidScopePolicies([]*apicfgv1alpha1.ClusterImagePolicy{&testImagePolicyCR0})
 	require.NoError(t, err)
 
 	templateConfig := signature.Policy{

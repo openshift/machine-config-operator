@@ -496,7 +496,7 @@ func verifyRegistriesConfigAndPolicyJSONContents(t *testing.T, mc *mcfgv1.Machin
 	require.NoError(t, err)
 	assert.Equal(t, string(expectedRegistriesConf), string(registriesConf))
 
-	clusterScopePolicies, err := getValidScopePolicies(clusterImagePolicies, releaseImageReg, nil)
+	clusterScopePolicies, err := getValidScopePolicies(clusterImagePolicies)
 	require.NoError(t, err)
 
 	// Validate the policy.json contents if a change is expected from the tests
