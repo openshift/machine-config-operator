@@ -23,7 +23,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 	corev1 "k8s.io/api/core/v1"
-	apierrs "k8s.io/apimachinery/pkg/api/errors"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	aggerrs "k8s.io/apimachinery/pkg/util/errors"
@@ -564,7 +563,7 @@ func copyEntitlementCerts(t *testing.T, cs *framework.ClientSet) func() {
 		return cloneSecret(t, cs, name, namespace, name, ctrlcommon.MCONamespace)
 	}
 
-	if apierrs.IsNotFound(err) {
+	if k8serrors.IsNotFound(err) {
 		t.Logf("Secret %q not found in %q, skipping test", name, namespace)
 		t.Skip()
 		return func() {}

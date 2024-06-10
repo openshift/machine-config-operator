@@ -388,7 +388,7 @@ func assertNodeAndMCPIsDegraded(t *testing.T, cs *framework.ClientSet, node core
 	mcdPod, err := helpers.MCDForNode(cs, &node)
 	require.Nil(t, err)
 
-	assertLogsContain(t, cs, mcdPod, &node, logEntry)
+	helpers.AssertMCDLogsContain(t, cs, mcdPod, &node, logEntry)
 
 	// Assert that the MachineConfigPool eventually reaches a degraded state and has the config mismatch as the reason.
 	t.Log("Verifying MachineConfigPool becomes degraded due to config mismatch")

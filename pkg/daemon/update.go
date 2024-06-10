@@ -727,30 +727,27 @@ func calculatePostConfigChangeAction(diff *machineConfigDiff, diffFileSet []stri
 func (dn *Daemon) calculatePostConfigChangeNodeDisruptionAction(diff *machineConfigDiff, diffFileSet, diffUnitSet []string) ([]opv1.NodeDisruptionPolicyStatusAction, error) {
 
 	var mcop *opv1.MachineConfiguration
-	var err error
+	var pollErr error
 	// Wait for mcop.Status.NodeDisruptionPolicyStatus to populate, otherwise error out. This shouldn't take very long
 	// as this is done by the operator sync loop, but may be extended if transitioning to TechPreview as the operator restarts,
-	if err = wait.PollUntilContextTimeout(context.TODO(), 5*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
-		mcop, err = dn.mcopClient.OperatorV1().MachineConfigurations().Get(context.TODO(), ctrlcommon.MCOOperatorKnobsObjectName, metav1.GetOptions{})
-		if err != nil {
+	if err := wait.PollUntilContextTimeout(context.TODO(), 5*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
+		mcop, pollErr = dn.mcopClient.OperatorV1().MachineConfigurations().Get(context.TODO(), ctrlcommon.MCOOperatorKnobsObjectName, metav1.GetOptions{})
+		if pollErr != nil {
 			klog.Errorf("calculating NodeDisruptionPolicies: MachineConfiguration/cluster has not been created yet")
-			err = fmt.Errorf("MachineConfiguration/cluster has not been created yet")
+			pollErr = fmt.Errorf("MachineConfiguration/cluster has not been created yet")
 			return false, nil
 		}
-		// There will always be atleast five file policies, if they don't exist, then the Status hasn't been populated yet
-		//
-		// TODO: When Conditions on this object are implemented; this check could be updated to only proceed when
-		// status.ObservedGeneration matches the last generation of MachineConfiguration
-		if len(mcop.Status.NodeDisruptionPolicyStatus.ClusterPolicies.Files) == 0 {
-			klog.Errorf("calculating NodeDisruptionPolicies: NodeDisruptionPolicyStatus has not been populated yet")
-			err = fmt.Errorf("NodeDisruptionPolicyStatus has not been populated yet")
+
+		// Ensure status.ObservedGeneration matches the last generation of MachineConfiguration
+		if mcop.Generation != mcop.Status.ObservedGeneration {
+			klog.Errorf("calculating NodeDisruptionPolicies: NodeDisruptionPolicyStatus is not up to date.")
+			pollErr = fmt.Errorf("NodeDisruptionPolicyStatus is not up to date")
 			return false, nil
 		}
 		return true, nil
 	}); err != nil {
-		klog.Errorf("NodeDisruptionPolicyStatus was not ready: %v", err)
-		err = fmt.Errorf("NodeDisruptionPolicyStatus was not ready: %v", err)
-		return nil, err
+		klog.Errorf("NodeDisruptionPolicyStatus was not ready: %v", pollErr)
+		return nil, fmt.Errorf("NodeDisruptionPolicyStatus was not ready: %v", pollErr)
 	}
 
 	// Continue policy calculation if no errors were encountered in fetching the policy.
@@ -758,7 +755,7 @@ func (dn *Daemon) calculatePostConfigChangeNodeDisruptionAction(diff *machineCon
 	// move to desired state without additional validation. We will reboot the node in
 	// this case regardless of what MachineConfig diff is.
 	klog.Infof("Calculating node disruption actions")
-	if _, err = os.Stat(constants.MachineConfigDaemonForceFile); err == nil {
+	if _, err := os.Stat(constants.MachineConfigDaemonForceFile); err == nil {
 		if err = os.Remove(constants.MachineConfigDaemonForceFile); err != nil {
 			return []opv1.NodeDisruptionPolicyStatusAction{}, fmt.Errorf("failed to remove force validation file: %w", err)
 		}
@@ -1053,16 +1050,10 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	}
 
 	var nodeDisruptionActions []opv1.NodeDisruptionPolicyStatusAction
-	var nodeDisruptionError error
 	var actions []string
 	// If FeatureGateNodeDisruptionPolicy is set, calculate NodeDisruptionPolicy based actions for this MC diff
 	if fg != nil && fg.Enabled(features.FeatureGateNodeDisruptionPolicy) {
-		nodeDisruptionActions, nodeDisruptionError = dn.calculatePostConfigChangeNodeDisruptionAction(diff, diffFileSet, diffUnitSet)
-		if nodeDisruptionError != nil {
-			// TODO: Fallback to legacy path and signal failure here
-			klog.Errorf("could not calculate node disruption actions: %v", nodeDisruptionError)
-			actions, err = calculatePostConfigChangeAction(diff, diffFileSet)
-		}
+		nodeDisruptionActions, err = dn.calculatePostConfigChangeNodeDisruptionAction(diff, diffFileSet, diffUnitSet)
 	} else {
 		actions, err = calculatePostConfigChangeAction(diff, diffFileSet)
 	}
@@ -1084,13 +1075,13 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	}
 
 	var drain bool
-	if fg != nil && fg.Enabled(features.FeatureGateNodeDisruptionPolicy) && nodeDisruptionError == nil {
+	if fg != nil && fg.Enabled(features.FeatureGateNodeDisruptionPolicy) {
 		// Check actions list and perform node drain if required
 		drain, err = isDrainRequiredForNodeDisruptionActions(nodeDisruptionActions, oldIgnConfig, newIgnConfig)
 		if err != nil {
 			return err
 		}
-		klog.Infof("Drain calculated for node disruption: %v", drain)
+		klog.Infof("Drain calculated for node disruption: %v for config %s", drain, newConfigName)
 	} else {
 		// Check and perform node drain if required
 		crioOverrideConfigmapExists, err := dn.hasImageRegistryDrainOverrideConfigMap()
@@ -1286,7 +1277,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		klog.Errorf("Error making MCN for Updated Files and OS: %v", err)
 	}
 
-	if fg != nil && fg.Enabled(features.FeatureGateNodeDisruptionPolicy) && nodeDisruptionError == nil {
+	if fg != nil && fg.Enabled(features.FeatureGateNodeDisruptionPolicy) {
 		return dn.performPostConfigChangeNodeDisruptionAction(nodeDisruptionActions, newConfig.GetName())
 	}
 	// If we're here, FeatureGateNodeDisruptionPolicy is off/errored, so perform legacy action

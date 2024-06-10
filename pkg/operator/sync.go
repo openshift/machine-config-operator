@@ -2066,17 +2066,20 @@ func (optr *Operator) syncMachineConfiguration(_ *renderConfig, _ *configv1.Clus
 	}
 
 	// Merges the cluster's default node disruption policies with the user defined policies, if any.
-	newNodeDisruptionPolicyStatus := opv1.NodeDisruptionPolicyStatus{
-		ClusterPolicies: apihelpers.MergeClusterPolicies(mcop.Spec.NodeDisruptionPolicy),
+	newMachineConfigurationStatus := opv1.MachineConfigurationStatus{
+		NodeDisruptionPolicyStatus: opv1.NodeDisruptionPolicyStatus{
+			ClusterPolicies: apihelpers.MergeClusterPolicies(mcop.Spec.NodeDisruptionPolicy),
+		},
+		ObservedGeneration: mcop.GetGeneration(),
 	}
 
 	// Check if any changes are required in the Status before making the API call.
-	if !reflect.DeepEqual(mcop.Status.NodeDisruptionPolicyStatus, newNodeDisruptionPolicyStatus) {
-		klog.Infof("Updating NodeDisruptionPolicy status")
-		mcop.Status.NodeDisruptionPolicyStatus = newNodeDisruptionPolicyStatus
+	if !reflect.DeepEqual(mcop.Status, newMachineConfigurationStatus) {
+		klog.Infof("Updating MachineConfiguration status")
+		mcop.Status = newMachineConfigurationStatus
 		_, err = optr.mcopClient.OperatorV1().MachineConfigurations().UpdateStatus(context.TODO(), mcop, metav1.UpdateOptions{})
 		if err != nil {
-			klog.Errorf("NodeDisruptionPolicy status apply failed: %v", err)
+			klog.Errorf("MachineConfiguration status apply failed: %v", err)
 			return nil
 		}
 	}
