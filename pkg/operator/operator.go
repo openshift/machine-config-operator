@@ -401,7 +401,7 @@ func (optr *Operator) eventHandler() cache.ResourceEventHandler {
 		AddFunc: func(obj interface{}) {
 			optr.enqueue(obj)
 		},
-		UpdateFunc: func(old, new interface{}) {
+		UpdateFunc: func(_, new interface{}) {
 			optr.enqueue(new)
 		},
 		DeleteFunc: func(obj interface{}) {

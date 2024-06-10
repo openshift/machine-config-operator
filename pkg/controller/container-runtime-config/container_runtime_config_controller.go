@@ -1166,7 +1166,7 @@ func (ctrl *Controller) popFinalizerFromContainerRuntimeConfig(ctrCfg *mcfgv1.Co
 		}
 
 		ctrCfgTmp := newcfg.DeepCopy()
-		ctrCfgTmp.Finalizers = append(ctrCfg.Finalizers[:0], ctrCfg.Finalizers[1:]...)
+		ctrCfgTmp.Finalizers = append([]string{}, ctrCfg.Finalizers[1:]...)
 
 		modJSON, err := json.Marshal(ctrCfgTmp)
 		if err != nil {

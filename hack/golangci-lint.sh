@@ -11,6 +11,7 @@ REPO_ROOT=$(dirname "${BASH_SOURCE[0]}")/..
 
 GOTAGS="${1:-""}"
 ARTIFACT_DIR="${ARTIFACT_DIR:-""}"
+TIMEOUT="${2:-"10m"}" # Default timeout to 10 minutes if not provided
 
 if [ ! -n "$GOTAGS" ]; then
   echo "No Go tags provided"
@@ -20,7 +21,7 @@ fi
 cd "$REPO_ROOT"
 
 retval=0
-golangci-lint run --build-tags="$GOTAGS" || retval="$?";
+golangci-lint run --timeout="$TIMEOUT" --build-tags="$GOTAGS" || retval="$?";
 
 if [ -n "$ARTIFACT_DIR" ] && [ -d "$ARTIFACT_DIR" ]; then
   if [ "$ARTIFACT_DIR" != "$PWD" ]; then

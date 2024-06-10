@@ -107,7 +107,7 @@ func newNodeWriter(nodeName string, stopCh <-chan struct{}) (NodeWriter, error) 
 
 	nodeInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    nw.handleNodeWriterEvent,
-		UpdateFunc: func(oldObj, newObj interface{}) { nw.handleNodeWriterEvent(newObj) },
+		UpdateFunc: func(_, newObj interface{}) { nw.handleNodeWriterEvent(newObj) },
 	})
 
 	informer.Start(stopCh)

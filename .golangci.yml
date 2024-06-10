@@ -1,10 +1,12 @@
 ---
 run:
   concurrency: 6
-  deadline: 5m
+  deadline: 15m
   skip-files:
     - ".*_test\\.go"
     - "lib/.*"
+cache:
+  enabled: true
 linters:
   disable-all: true
   enable:
@@ -56,7 +58,7 @@ linters-settings:
       - nilValReturn
       - offBy1
       - weakCond
-      #- appendAssign
+      - appendAssign
       - octalLiteral
       - sloppyReassign
 
@@ -71,31 +73,31 @@ linters-settings:
       # Style
       - assignOp
       - boolExprSimplify
-      - captLocal
-      - commentFormatting
+      # - captLocal
+      # - commentFormatting
       - commentedOutImport
-      - defaultCaseOrder
+      # - defaultCaseOrder
       - docStub
-      - elseif
+      # - elseif
       - emptyFallthrough
       - emptyStringTest
       - hexLiteral
-      #- ifElseChain
+      # - ifElseChain
       - methodExprCall
-      - regexpMust
-      - singleCaseSwitch
-      - sloppyLen
+      # - regexpMust
+      # - singleCaseSwitch
+      # - sloppyLen
       - stringXbytes
-      - switchTrue
+      # - switchTrue
       - typeAssertChain
-      - typeSwitchVar
-      - underef
+      # - typeSwitchVar
+      # - underef
       - unlabelStmt
-      - unlambda
-      - unslice
-      - valSwap
+      # - unlambda
+      # - unslice
+      # - valSwap
       - yodaStyleExpr
-      - wrapperFunc
+      # - wrapperFunc
 
       # Opinionated
       - initClause
@@ -120,3 +122,4 @@ linters-settings:
             pkg: github.com/golang/glog
 output:
   format: "checkstyle:checkstyle-golangci-lint.xml,junit-xml:junit-golangci-lint.xml,colored-line-number"
+

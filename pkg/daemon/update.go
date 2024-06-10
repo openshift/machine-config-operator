@@ -153,7 +153,6 @@ func (dn *Daemon) executeReloadServiceNodeDisruptionAction(serviceName string, r
 // In the end uncordon node to schedule workload.
 // If at any point an error occurs, we reboot the node so that node has correct configuration.
 func (dn *Daemon) performPostConfigChangeNodeDisruptionAction(postConfigChangeActions []opv1.NodeDisruptionPolicyStatusAction, configName string) error {
-
 	for _, action := range postConfigChangeActions {
 
 		// Drain is already completed at this stage and essentially a no-op for this loop, so no need to log that.
@@ -162,7 +161,9 @@ func (dn *Daemon) performPostConfigChangeNodeDisruptionAction(postConfigChangeAc
 		}
 
 		logSystem("Performing post config change action: %v for config %s", action.Type, configName)
-		if action.Type == opv1.RebootStatusAction {
+
+		switch action.Type {
+		case opv1.RebootStatusAction:
 			err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
 				&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdatePostActionComplete, Reason: string(mcfgalphav1.MachineConfigNodeUpdateRebooted), Message: fmt.Sprintf("Node will reboot into config %s", configName)},
 				&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateRebooted, Reason: fmt.Sprintf("%s%s", string(mcfgalphav1.MachineConfigNodeUpdatePostActionComplete), string(mcfgalphav1.MachineConfigNodeUpdateRebooted)), Message: "Upgrade requires a reboot. Currently doing this as the post update action."},
@@ -177,7 +178,8 @@ func (dn *Daemon) performPostConfigChangeNodeDisruptionAction(postConfigChangeAc
 			}
 			logSystem("Rebooting node")
 			return dn.reboot(fmt.Sprintf("Node will reboot into config %s", configName))
-		} else if action.Type == opv1.NoneStatusAction {
+
+		case opv1.NoneStatusAction:
 			if dn.nodeWriter != nil {
 				dn.nodeWriter.Eventf(corev1.EventTypeNormal, "SkipReboot", "Config changes do not require reboot.")
 			}
@@ -194,8 +196,8 @@ func (dn *Daemon) performPostConfigChangeNodeDisruptionAction(postConfigChangeAc
 				klog.Errorf("Error making MCN for no post config change action: %v", err)
 			}
 			logSystem("Node has Desired Config %s, skipping reboot", configName)
-		} else if action.Type == opv1.RestartStatusAction {
 
+		case opv1.RestartStatusAction:
 			serviceName := string(action.Restart.ServiceName)
 
 			if err := restartService(serviceName); err != nil {
@@ -210,19 +212,20 @@ func (dn *Daemon) performPostConfigChangeNodeDisruptionAction(postConfigChangeAc
 			}
 			logSystem("%s service restarted successfully!", serviceName)
 
-		} else if action.Type == opv1.ReloadStatusAction {
+		case opv1.ReloadStatusAction:
 			// Execute a generic service reload defined by the action object
 			serviceName := string(action.Reload.ServiceName)
 			if err := dn.executeReloadServiceNodeDisruptionAction(serviceName, reloadService(serviceName)); err != nil {
 				return err
 			}
 
-		} else if action.Type == opv1.SpecialStatusAction {
+		case opv1.SpecialStatusAction:
 			// The special action type requires a CRIO reload
 			if err := dn.executeReloadServiceNodeDisruptionAction(constants.CRIOServiceName, reloadService(constants.CRIOServiceName)); err != nil {
 				return err
 			}
-		} else if action.Type == opv1.DaemonReloadStatusAction {
+
+		case opv1.DaemonReloadStatusAction:
 			// Execute daemon-reload
 			if err := dn.executeReloadServiceNodeDisruptionAction(constants.DaemonReloadCommand, reloadDaemon()); err != nil {
 				return err
@@ -589,23 +592,29 @@ func calculatePostConfigChangeActionFromMCDiffs(diffFileSet []string) (actions [
 
 	actions = []string{postConfigChangeActionNone}
 	for _, path := range diffFileSet {
-		if ctrlcommon.InSlice(path, filesPostConfigChangeActionNone) {
+		switch {
+		case ctrlcommon.InSlice(path, filesPostConfigChangeActionNone):
 			continue
-		} else if ctrlcommon.InSlice(path, filesPostConfigChangeActionReloadCrio) || ctrlcommon.InSlice(filepath.Dir(path), dirsPostConfigChangeActionReloadCrio) {
+
+		case ctrlcommon.InSlice(path, filesPostConfigChangeActionReloadCrio),
+			ctrlcommon.InSlice(filepath.Dir(path), dirsPostConfigChangeActionReloadCrio):
 			// Don't override a restart CRIO action
 			if !ctrlcommon.InSlice(postConfigChangeActionRestartCrio, actions) {
 				actions = []string{postConfigChangeActionReloadCrio}
 			}
-		} else if ctrlcommon.InSlice(path, filesPostConfigChangeActionRestartCrio) {
+
+		case ctrlcommon.InSlice(path, filesPostConfigChangeActionRestartCrio):
 			actions = []string{postConfigChangeActionRestartCrio}
-		} else if ctrlcommon.InSlice(filepath.Dir(path), directoriesPostConfigChangeActionNone) {
+
+		case ctrlcommon.InSlice(filepath.Dir(path), directoriesPostConfigChangeActionNone):
 			continue
-		} else {
+
+		default:
 			actions = []string{postConfigChangeActionReboot}
-			return
+			return actions
 		}
 	}
-	return
+	return actions
 }
 
 // calculatePostConfigChangeNodeDisruptionActionFromMCDiffs takes action based on the cluster's Node disruption policies.
@@ -730,7 +739,7 @@ func (dn *Daemon) calculatePostConfigChangeNodeDisruptionAction(diff *machineCon
 	var pollErr error
 	// Wait for mcop.Status.NodeDisruptionPolicyStatus to populate, otherwise error out. This shouldn't take very long
 	// as this is done by the operator sync loop, but may be extended if transitioning to TechPreview as the operator restarts,
-	if err := wait.PollUntilContextTimeout(context.TODO(), 5*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
+	if err := wait.PollUntilContextTimeout(context.TODO(), 5*time.Second, 2*time.Minute, true, func(_ context.Context) (bool, error) {
 		mcop, pollErr = dn.mcopClient.OperatorV1().MachineConfigurations().Get(context.TODO(), ctrlcommon.MCOOperatorKnobsObjectName, metav1.GetOptions{})
 		if pollErr != nil {
 			klog.Errorf("calculating NodeDisruptionPolicies: MachineConfiguration/cluster has not been created yet")
@@ -785,11 +794,12 @@ func (dn *Daemon) calculatePostConfigChangeNodeDisruptionAction(diff *machineCon
 	// Print out node disruption actions for debug purposes
 	klog.Infof("Calculated node disruption actions:")
 	for _, action := range nodeDisruptionActions {
-		if action.Type == opv1.ReloadStatusAction {
+		switch action.Type {
+		case opv1.ReloadStatusAction:
 			klog.Infof("%v - %v", action.Type, action.Reload.ServiceName)
-		} else if action.Type == opv1.RestartStatusAction {
+		case opv1.RestartStatusAction:
 			klog.Infof("%v - %v", action.Type, action.Restart.ServiceName)
-		} else {
+		default:
 			klog.Infof("%v", action.Type)
 		}
 	}
@@ -1917,11 +1927,12 @@ func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig ign3types.Config) e
 			// file instead of a file originally on disk. See https://bugzilla.redhat.com/show_bug.cgi?id=1814397
 			restore := false
 			rpmNotFound, isOwned, err := isFileOwnedByRPMPkg(f.Path)
-			if isOwned {
+			switch {
+			case isOwned:
 				// File is owned by an rpm
 				restore = true
-			} else if !isOwned && (err == nil) {
-				// Run on Fedora/RHEL - check whether the file exist in /usr/etc (on FCOS/RHCOS)
+			case !isOwned && err == nil:
+				// Run on Fedora/RHEL - check whether the file exists in /usr/etc (on FCOS/RHCOS)
 				if strings.HasPrefix(f.Path, "/etc") {
 					if _, err := os.Stat(withUsrPath(f.Path)); err != nil {
 						if !os.IsNotExist(err) {
@@ -1931,10 +1942,10 @@ func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig ign3types.Config) e
 						restore = true
 					}
 				}
-			} else if rpmNotFound {
+			case rpmNotFound:
 				// Run on non-Fedora/RHEL machine
 				klog.Infof("Running on non-Fedora/RHEL machine, skip file restoration.")
-			} else {
+			default:
 				return err
 			}
 
@@ -2534,19 +2545,19 @@ func (dn *Daemon) queueRevertKernelSwap() error {
 	// The only sane way to handle that is declarative drop-ins, but really we want to
 	// just go to deploying pre-built images and not doing per-node mutation with rpm-ostree
 	// at all.
-	if len(kernelOverrides) > 0 && len(kernelExtLayers) > 0 {
+	switch {
+	case len(kernelOverrides) > 0 && len(kernelExtLayers) > 0:
 		args := []string{"override", "reset"}
 		args = append(args, kernelOverrides...)
 		for _, pkg := range kernelExtLayers {
 			args = append(args, "--uninstall", pkg)
 		}
-		err := runRpmOstree(args...)
-		if err != nil {
+		if err := runRpmOstree(args...); err != nil {
 			return err
 		}
-	} else if len(kernelOverrides) > 0 || len(kernelExtLayers) > 0 {
+	case len(kernelOverrides) > 0 || len(kernelExtLayers) > 0:
 		klog.Infof("notice: detected %d kernel overrides and %d kernel-rt or kernel-64k layers", len(kernelOverrides), len(kernelExtLayers))
-	} else {
+	default:
 		klog.Infof("No kernel overrides or replacement detected")
 	}
 

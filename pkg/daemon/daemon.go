@@ -371,7 +371,7 @@ func (dn *Daemon) ClusterConnect(
 
 	nodeInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    dn.handleNodeEvent,
-		UpdateFunc: func(oldObj, newObj interface{}) { dn.handleNodeEvent(newObj) },
+		UpdateFunc: func(_, newObj interface{}) { dn.handleNodeEvent(newObj) },
 	})
 	dn.nodeLister = nodeInformer.Lister()
 	dn.nodeListerSynced = nodeInformer.Informer().HasSynced
@@ -381,7 +381,7 @@ func (dn *Daemon) ClusterConnect(
 	dn.ccQueue = workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter())
 	ccInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    dn.handleControllerConfigEvent,
-		UpdateFunc: func(oldObj, newObj interface{}) { dn.handleControllerConfigEvent(newObj) },
+		UpdateFunc: func(_, newObj interface{}) { dn.handleControllerConfigEvent(newObj) },
 		// In theory the configmap we care about shouldn't get deleted
 		DeleteFunc: dn.handleControllerConfigEvent,
 	})
@@ -425,7 +425,7 @@ func (dn *Daemon) HypershiftConnect(
 
 	nodeInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    dn.handleNodeEvent,
-		UpdateFunc: func(oldObj, newObj interface{}) { dn.handleNodeEvent(newObj) },
+		UpdateFunc: func(_, newObj interface{}) { dn.handleNodeEvent(newObj) },
 	})
 
 	dn.queue = workqueue.NewNamedRateLimitingQueue(workqueue.NewMaxOfRateLimiter(
@@ -843,7 +843,7 @@ func (dn *Daemon) syncNode(key string) error {
 		// we want to wait until we are done booting AND we only want to do this once
 		// we also want to give ourselves a little extra buffer. The corner case here is sometimes we get thru the first sync, and then the errors
 		// begin ~1 minute later. So, list some api items until then. if we get to here, then we must be safe.
-		if err := wait.PollUntilContextTimeout(context.TODO(), 10*time.Second, 1*time.Minute, false, func(ctx context.Context) (bool, error) {
+		if err := wait.PollUntilContextTimeout(context.TODO(), 10*time.Second, 1*time.Minute, false, func(_ context.Context) (bool, error) {
 			_, err := dn.ccLister.List(labels.Everything())
 			if err != nil {
 				return false, err
@@ -1388,7 +1388,7 @@ func (dn *Daemon) kubeletRebootstrap(ctx context.Context) error {
 	if err := runCmdSync("systemctl", "restart", "kubelet"); err != nil {
 		return err
 	}
-	if err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 2*time.Minute, false, func(ctx context.Context) (bool, error) {
+	if err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 2*time.Minute, false, func(_ context.Context) (bool, error) {
 		_, err := os.ReadFile("/var/lib/kubelet/kubeconfig")
 		if err != nil && os.IsNotExist(err) {
 			klog.Warningf("Failed to get kubeconfig file: %v", err)
@@ -1743,11 +1743,12 @@ func (dn *Daemon) LogSystemData() {
 	//
 	// also xref https://github.com/coreos/console-login-helper-messages/blob/e8a849f4c23910e7c556c10719911cc59873fc23/usr/share/console-login-helper-messages/profile.sh
 	failedServices, err := runGetOut("systemctl", "list-units", "--state=failed", "--no-legend")
-	if err != nil {
+	switch {
+	case err != nil:
 		klog.Errorf("Listing failed systemd services: %v", err)
-	} else if len(failedServices) > 0 {
+	case len(failedServices) > 0:
 		klog.Infof("systemctl --failed:\n" + string(failedServices))
-	} else {
+	default:
 		klog.Info("systemd service state: OK")
 	}
 }
@@ -1885,11 +1886,12 @@ func PersistNetworkInterfaces(osRoot string) error {
 
 	cmd := exec.Command(nmstateBinary, "persist-nic-names", "--root", osRoot, "--kargs-out", tmpKargs.Name())
 
-	if persisting {
+	switch {
+	case persisting:
 		klog.Info("Persisting NIC names for RHEL8 host system")
-	} else if cleanup {
+	case cleanup:
 		cmd.Args = append(cmd.Args, "--cleanup")
-	} else {
+	default:
 		return fmt.Errorf("Unexpected host OS %s", hostos.ToPrometheusLabel())
 	}
 
@@ -1919,15 +1921,16 @@ func PersistNetworkInterfaces(osRoot string) error {
 	kargs := strings.Split(string(kargsBuf), " ")
 
 	var rpmOstreeArgs []string
-	if persisting {
+	switch {
+	case persisting:
 		for _, karg := range kargs {
 			rpmOstreeArgs = append(rpmOstreeArgs, "--append", karg)
 		}
-	} else if cleanup {
+	case cleanup:
 		for _, karg := range kargs {
 			rpmOstreeArgs = append(rpmOstreeArgs, "--remove", karg)
 		}
-	} else {
+	default:
 		return fmt.Errorf("Unexpected host OS %s", hostos.ToPrometheusLabel())
 	}
 

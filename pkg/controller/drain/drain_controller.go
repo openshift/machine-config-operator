@@ -130,7 +130,7 @@ func New(
 
 	nodeInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.handleNodeEvent,
-		UpdateFunc: func(oldObj, newObj interface{}) { ctrl.handleNodeEvent(newObj) },
+		UpdateFunc: func(_, newObj interface{}) { ctrl.handleNodeEvent(newObj) },
 	})
 
 	ctrl.syncHandler = ctrl.syncNode
