@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/containers/image/v5/docker"
 	"github.com/containers/image/v5/docker/reference"
@@ -26,7 +27,48 @@ import (
 
 const (
 	canonicalSecretSuffix string = "-canonical"
+	// This label gets applied to all secrets that we've canonicalized as a way
+	// to indicate that we created and own them.
+	canonicalSecretLabel string = "machineconfiguration.openshift.io/canonicalizedSecret"
+	// This label is applied to all canonicalized secrets. Its value should
+	// contain the original name of the secret that has been canonicalized.
+	originalSecretNameLabel string = "machineconfiguration.openshift.io/originalSecretName"
 )
+
+// Determines if a secret has been canonicalized by us by checking both for the
+// suffix as well as the labels that we add to the canonicalized secret.
+func isCanonicalizedSecret(secret *corev1.Secret) bool {
+	return hasCanonicalizedSecretLabels(secret) && strings.HasSuffix(secret.Name, canonicalSecretSuffix)
+}
+
+// Determines if a secret has our canonicalized secret label.
+func hasCanonicalizedSecretLabels(secret *corev1.Secret) bool {
+	if secret.Labels == nil {
+		return false
+	}
+
+	labels := []string{
+		canonicalSecretLabel,
+		originalSecretNameLabel,
+	}
+
+	for _, label := range labels {
+		if _, ok := secret.Labels[label]; !ok {
+			return false
+		}
+	}
+
+	return true
+}
+
+// Validates whether a secret is canonicalized. Returns an error if not.
+func validateCanonicalizedSecret(secret *corev1.Secret) error {
+	if !isCanonicalizedSecret(secret) {
+		return fmt.Errorf("secret %q is not canonicalized", secret.Name)
+	}
+
+	return nil
+}
 
 // Compresses and base-64 encodes a given byte array. Ideal for loading an
 // arbitrary byte array into a ConfigMap or Secret.
@@ -154,7 +196,8 @@ func canonicalizePullSecretBytes(secretBytes []byte) ([]byte, bool, error) {
 }
 
 // Performs the above operation upon a given secret, potentially creating a new
-// secret for insertion with the suffix '-canonical' on its name.
+// secret for insertion with the suffix '-canonical' on its name and a label
+// indicating that we've canonicalized it.
 func canonicalizePullSecret(secret *corev1.Secret) (*corev1.Secret, error) {
 	secret = secret.DeepCopy()
 
@@ -181,6 +224,10 @@ func canonicalizePullSecret(secret *corev1.Secret) (*corev1.Secret, error) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("%s%s", secret.Name, canonicalSecretSuffix),
 			Namespace: secret.Namespace,
+			Labels: map[string]string{
+				canonicalSecretLabel:    "",
+				originalSecretNameLabel: secret.Name,
+			},
 		},
 		Data: map[string][]byte{
 			corev1.DockerConfigJsonKey: canonicalizedSecretBytes,

@@ -160,6 +160,8 @@ func TestCanonicalizePullSecret(t *testing.T) {
 
 			if testCase.expectCanonical {
 				assert.Contains(t, out.Name, "canonical")
+				assert.True(t, isCanonicalizedSecret(out))
+				assert.True(t, hasCanonicalizedSecretLabels(out))
 			}
 
 			for _, val := range out.Data {
