@@ -32,6 +32,7 @@ import (
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -381,38 +382,66 @@ func (ctrl *Controller) makeMasterNodeSchedulable(node *corev1.Node) error {
 
 func (ctrl *Controller) addMachineOSBuild(obj interface{}) {
 	curMOSB := obj.(*mcfgv1alpha1.MachineOSBuild)
+	klog.V(4).Infof("Adding MachineOSBuild %s", curMOSB.Name)
 
-	config, _ := ctrl.client.MachineconfigurationV1alpha1().MachineOSConfigs().Get(context.TODO(), curMOSB.Spec.MachineOSConfig.Name, metav1.GetOptions{})
-
-	mcp, _ := ctrl.mcpLister.Get(config.Spec.MachineConfigPool.Name)
+	config, err := ctrl.client.MachineconfigurationV1alpha1().MachineOSConfigs().Get(context.TODO(), curMOSB.Spec.MachineOSConfig.Name, metav1.GetOptions{})
+	if err != nil {
+		utilruntime.HandleError(fmt.Errorf("Couldn't get MachineOSConfig from MachineOSBuild %#v", curMOSB))
+		return
+	}
+	if config == nil {
+		utilruntime.HandleError(fmt.Errorf("Missing MachineOSConfig from MachineOSBuild %#v", curMOSB))
+		return
+	}
+	mcp, err := ctrl.mcpLister.Get(config.Spec.MachineConfigPool.Name)
+	if err != nil {
+		utilruntime.HandleError(fmt.Errorf("Couldn't get Machine Config Pool from MachineOSConfig %#v", config))
+		return
+	}
 	ctrl.enqueueMachineConfigPool(mcp)
 }
 
-func (ctrl *Controller) updateMachineOSBuild(_, cur interface{}) {
+func (ctrl *Controller) updateMachineOSBuild(old, cur interface{}) {
+	oldMOSB := old.(*mcfgv1alpha1.MachineOSBuild)
 	curMOSB := cur.(*mcfgv1alpha1.MachineOSBuild)
+	if equality.Semantic.DeepEqual(oldMOSB.Status, oldMOSB.Status) {
+		// we do not want to trigger an update func just for MOSB spec, we dont act on the spec
+		return
+	}
+	klog.V(4).Infof("Updating MachineOSBuild %s", oldMOSB.Name)
 
-	config, _ := ctrl.client.MachineconfigurationV1alpha1().MachineOSConfigs().Get(context.TODO(), curMOSB.Spec.MachineOSConfig.Name, metav1.GetOptions{})
-
-	mcp, _ := ctrl.mcpLister.Get(config.Spec.MachineConfigPool.Name)
+	config, err := ctrl.client.MachineconfigurationV1alpha1().MachineOSConfigs().Get(context.TODO(), curMOSB.Spec.MachineOSConfig.Name, metav1.GetOptions{})
+	if err != nil {
+		utilruntime.HandleError(fmt.Errorf("Couldn't get MachineOSConfig from MachineOSBuild %#v", curMOSB))
+		return
+	}
+	if config == nil {
+		utilruntime.HandleError(fmt.Errorf("Missing MachineOSConfig from MachineOSBuild %#v", curMOSB))
+		return
+	}
+	mcp, err := ctrl.mcpLister.Get(config.Spec.MachineConfigPool.Name)
+	if err != nil {
+		utilruntime.HandleError(fmt.Errorf("Couldn't get Machine Config Pool from MachineOSConfig %#v", config))
+		return
+	}
 	ctrl.enqueueMachineConfigPool(mcp)
 }
 
 func (ctrl *Controller) deleteMachineOSBuild(obj interface{}) {
-	pool, ok := obj.(*mcfgv1alpha1.MachineOSBuild)
+	curMOSB, ok := obj.(*mcfgv1alpha1.MachineOSBuild)
 	if !ok {
 		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
 		if !ok {
 			utilruntime.HandleError(fmt.Errorf("couldn't get object from tombstone %#v", obj))
 			return
 		}
-		pool, ok = tombstone.Obj.(*mcfgv1alpha1.MachineOSBuild)
+		curMOSB, ok = tombstone.Obj.(*mcfgv1alpha1.MachineOSBuild)
 		if !ok {
 			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not a MOSB %#v", obj))
 			return
 		}
 	}
-	klog.V(4).Infof("Deleting MachineConfigPool %s", pool.Name)
-	// TODO(abhinavdahiya): handle deletes.
+	klog.V(4).Infof("Deleting MachineOSBuild %s", curMOSB.Name)
 }
 
 func (ctrl *Controller) addMachineConfigPool(obj interface{}) {

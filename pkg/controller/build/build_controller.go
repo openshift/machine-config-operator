@@ -402,6 +402,9 @@ func (ctrl *Controller) customBuildPodUpdater(pod *corev1.Pod) error {
 	if err != nil {
 		return err
 	}
+	if mosc == nil || mosb == nil {
+		return fmt.Errorf("Missing MOSC/MOSB for pool %s", pool.Name)
+	}
 
 	// We cannot solely rely upon the pod phase to determine whether the build
 	// pod is in an error state. This is because it is possible for the build
