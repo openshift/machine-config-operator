@@ -49,23 +49,6 @@ p0     9s
 ```
 
 ## Validation and Troubleshooting
-The status.conditions.message field shows if the CR has conflicting scope(s). The below ClusterImagePolicy is in pending status because the scope for OCP release payload is skipped.
-
-```shell
-# the clusterimagepolicy has scope registry.build05.ci.openshift.org that is the OCP release payload repository
-$ oc describe clusterimagepolicy.config.openshift.io/p0
-...
-...
-Status:
-  Conditions:
-    Last Transition Time:  2024-02-04T03:24:36Z
-    Message:               has conflict scope(s) ["registry.build05.ci.openshift.org"] of Openshift payload repository registry.build05.ci.openshift.org/ci-ln-gfmf0yb/release, skip the scope(s)
-    Observed Generation:   1
-    Reason:                ConflictScopes
-    Status:                True
-    Type:                  Pending
-```
-
 The machine-config-controller logs will show the error message if the ClusterImagePolicy and Image CR has conflicting configurations. Controller will fail to roll out the CR. 
 - if blocked registries configured by Image CR exist, the clusterimagepolicy scopes must not equal to or nested under blockedRegistries
 - if allowed registries configured by Image CR exist, the clusterimagepolicy scopes nested under the allowedRegistries
