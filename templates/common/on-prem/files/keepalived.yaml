@@ -76,6 +76,12 @@ contents:
         env:
           - name: NSS_SDB_USE_CACHE
             value: "no"
+          - name: DISABLE_KEEPALIVED_LOGS
+            valueFrom:
+              configMapKeyRef:
+                name: logging
+                key: disable-keepalived-logs
+                optional: true
         command:
         - /bin/bash
         - -c
@@ -140,7 +146,11 @@ contents:
 
           trap sigterm_handler SIGTERM
           if [ -s "/etc/keepalived/keepalived.conf" ]; then
-              /usr/sbin/keepalived -f /etc/keepalived/keepalived.conf --dont-fork --vrrp --log-detail --log-console &
+              if [ "$DISABLE_KEEPALIVED_LOGS" = true ]; then
+                /usr/sbin/keepalived -f /etc/keepalived/keepalived.conf --dont-fork --vrrp &
+              else
+                /usr/sbin/keepalived -f /etc/keepalived/keepalived.conf --dont-fork --vrrp --log-detail --log-console &
+              fi
           fi
 
           rm -f "$keepalived_sock"
@@ -184,6 +194,12 @@ contents:
             value: "yes"
           - name: IS_BOOTSTRAP
             value: "no"
+          - name: ENABLE_NODEIP_DEBUG
+            valueFrom:
+              configMapKeyRef:
+                name: logging
+                key: enable-nodeip-debug
+                optional: true
         command:
         - /bin/bash
         - -c
