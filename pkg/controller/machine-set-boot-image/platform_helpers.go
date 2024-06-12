@@ -105,9 +105,56 @@ func checkMachineSet(infra *osconfigv1.Infrastructure, machineSet *machinev1beta
 	}
 }
 
-func reconcileAWS(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
-	klog.Infof("Skipping machineset %s, unsupported platform type AWS with %s arch", machineSet.Name, arch)
-	return false, nil, nil
+func reconcileAWS(machineSet *machinev1beta1.MachineSet, configMap *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
+	klog.Infof("Reconciling MAPI machineset %s on AWS, with arch %s", machineSet.Name, arch)
+
+	// First, unmarshal the AWS providerSpec
+	providerSpec := new(machinev1beta1.AWSMachineProviderConfig)
+	if err := unmarshalProviderSpec(machineSet, providerSpec); err != nil {
+		return false, nil, err
+	}
+
+	// Next, unmarshal the configmap into a stream object
+	streamData := new(stream.Stream)
+	if err := unmarshalStreamDataConfigMap(configMap, streamData); err != nil {
+		return false, nil, err
+	}
+	// Extract the region from the Placement field
+	region := providerSpec.Placement.Region
+
+	// Use the GetAwsRegionImage function to find the correct AMI for the region and architecture
+	awsRegionImage, err := streamData.GetAwsRegionImage(arch, region)
+	if err != nil {
+		return false, nil, fmt.Errorf("failed to get AMI for region %s: %v", region, err)
+	}
+
+	newami := awsRegionImage.Image
+
+	// Perform rest of bootimage logic here
+
+	patchRequired = false
+	newProviderSpec := providerSpec.DeepCopy()
+	currentAMI := *newProviderSpec.AMI.ID
+	if newami != currentAMI {
+		klog.Infof("New target boot image: %s: %s", region, newami)
+		klog.Infof("Current image: %s: %s", region, currentAMI)
+		patchRequired = true
+		newProviderSpec.AMI.ID = &newami
+	}
+
+	if newProviderSpec.UserDataSecret.Name != ManagedWorkerSecretName {
+		newProviderSpec.UserDataSecret.Name = ManagedWorkerSecretName
+		patchRequired = true
+	}
+
+	if patchRequired {
+		newMachineSet = machineSet.DeepCopy()
+		if err := marshalProviderSpec(newMachineSet, newProviderSpec); err != nil {
+			return false, nil, err
+		}
+	}
+
+	return patchRequired, newMachineSet, nil
 }
 
 func reconcileAzure(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
