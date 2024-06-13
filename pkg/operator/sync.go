@@ -613,7 +613,7 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 		return err
 	}
 
-	moscs, err := optr.getMachineOSConfigs()
+	moscs, err := optr.getAndValidateMachineOSConfigs()
 	if err != nil {
 		return err
 	}
@@ -2097,7 +2097,8 @@ func (optr *Operator) syncMachineConfiguration(_ *renderConfig, _ *configv1.Clus
 }
 
 // Gets MachineOSConfigs from the lister, assuming that the OnClusterBuild
-// featuregate is enabled. Otherwise, returns a nil slice.
+// featuregate is enabled. Passes each MachineOSConfig through an optional
+// filter function. If nil is passed, will return all found MachineOSConfigs.
 func (optr *Operator) getMachineOSConfigs() ([]*mcfgv1alpha1.MachineOSConfig, error) {
 	isOnClusterBuildEnabled, err := optr.isOnClusterBuildFeatureGateEnabled()
 	if err != nil {
@@ -2109,6 +2110,28 @@ func (optr *Operator) getMachineOSConfigs() ([]*mcfgv1alpha1.MachineOSConfig, er
 	}
 
 	return optr.moscLister.List(labels.Everything())
+}
+
+// Fetches and validates the MachineOSConfigs. For now, validation consists of
+// ensuring that the secrets the MachineOSConfig was configured with exist.
+func (optr *Operator) getAndValidateMachineOSConfigs() ([]*mcfgv1alpha1.MachineOSConfig, error) {
+	moscs, err := optr.getMachineOSConfigs()
+
+	if err != nil {
+		return nil, err
+	}
+
+	if moscs == nil {
+		return nil, nil
+	}
+
+	for _, mosc := range moscs {
+		if err := build.ValidateMachineOSConfigFromListers(optr.mcpLister, optr.mcoSecretLister, mosc); err != nil {
+			return nil, fmt.Errorf("invalid MachineOSConfig %s: %w", mosc.Name, err)
+		}
+	}
+
+	return moscs, nil
 }
 
 // Determines if the OnclusterBuild featuregate is enabled. Returns any errors encountered.

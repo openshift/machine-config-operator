@@ -64,6 +64,11 @@ func newMachineOSConfig(pool *mcfgv1.MachineConfigPool) *mcfgv1alpha1.MachineOSC
 				},
 				RenderedImagePushspec: expectedImagePullspecWithTag,
 			},
+			BuildOutputs: mcfgv1alpha1.BuildOutputs{
+				CurrentImagePullSecret: mcfgv1alpha1.ImageSecretObjectReference{
+					Name: "current-image-pull-secret",
+				},
+			},
 		},
 	}
 }
@@ -540,4 +545,25 @@ func mosbReachesExpectedBuildState(mcp *mcfgv1.MachineConfigPool, mosb *mcfgv1al
 
 	return true
 
+}
+
+func newSecret(name string, secretType corev1.SecretType, data []byte) *corev1.Secret {
+	s := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: ctrlcommon.MCONamespace,
+		},
+		Data: map[string][]byte{},
+		Type: secretType,
+	}
+
+	if secretType == corev1.SecretTypeDockercfg {
+		s.Data[corev1.DockerConfigKey] = data
+	}
+
+	if secretType == corev1.SecretTypeDockerConfigJson {
+		s.Data[corev1.DockerConfigJsonKey] = data
+	}
+
+	return s
 }
