@@ -1314,6 +1314,7 @@ func (dn *Daemon) InstallSignalHandler(signaled chan struct{}) {
 				dn.updateActiveLock.Unlock()
 				if updateActive {
 					klog.Info("Got SIGTERM, but actively updating")
+					dn.maybeEventf(corev1.EventTypeWarning, "GotSigtermDuringUpdate", "Got SIGTERM but actively updating")
 				} else {
 					close(signaled)
 					return
@@ -1329,6 +1330,13 @@ type pipeErrorHandler struct {
 
 func (e *pipeErrorHandler) handle(err error) {
 	e.pipe <- err
+}
+
+// Will emit an event via the nodewriter only if the nodewriter has been instantiated and is not nil.
+func (dn *Daemon) maybeEventf(eventtype, reason, messageFmt string, args ...interface{}) {
+	if dn.nodeWriter != nil {
+		dn.nodeWriter.Eventf(eventtype, reason, messageFmt, args...)
+	}
 }
 
 // Run finishes informer setup and then blocks, and the informer will be
