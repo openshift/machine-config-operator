@@ -2645,6 +2645,7 @@ func (dn *Daemon) catchIgnoreSIGTERM() {
 	}
 	klog.Info("Adding SIGTERM protection")
 	dn.updateActive = true
+	dn.maybeEventf(corev1.EventTypeNormal, "AddSigtermProtection", "Adding SIGTERM protection")
 }
 
 func (dn *Daemon) CancelSIGTERM() {
@@ -2652,6 +2653,7 @@ func (dn *Daemon) CancelSIGTERM() {
 	defer dn.updateActiveLock.Unlock()
 	if dn.updateActive {
 		klog.Info("Removing SIGTERM protection")
+		dn.maybeEventf(corev1.EventTypeNormal, "RemoveSigtermProtection", "Removing SIGTERM protection")
 		dn.updateActive = false
 	}
 }
