@@ -1,4 +1,4 @@
-apiVersion: admissionregistration.k8s.io/v1beta1
+apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
   name: "mcn-guards"
@@ -16,7 +16,7 @@ spec:
       message: "this user must have a \"authentication.kubernetes.io/node-name\" claim"
     # all requests should originate from the MCN owner's node
     - expression: "object.metadata.name == request.userInfo.extra[\"authentication.kubernetes.io/node-name\"][0]"
-      messageExpression: "'updates to MCN ' + string(object.metadata.name) + ' can only be done from the MCN\\'s owner node'"      
+      messageExpression: "'updates to MCN ' + string(object.metadata.name) + ' can only be done from the MCN\\'s owner node'"
   matchConditions:
     # Only check requests from machine-config-daemon SA, this allows all other SAs with the correct RBAC to modify MCNs.
     - name: "check-only-machine-config-daemon-requests"

@@ -930,8 +930,8 @@ func (optr *Operator) applyManifests(config *renderConfig, paths manifestPaths) 
 				if err != nil {
 					return err
 				}
-				vap := resourceread.ReadValidatingAdmissionPolicyV1beta1OrDie(vapBytes)
-				_, _, err = resourceapply.ApplyValidatingAdmissionPolicyV1beta1(context.TODO(), optr.kubeClient.AdmissionregistrationV1beta1(), optr.libgoRecorder, vap, noCache)
+				vap := resourceread.ReadValidatingAdmissionPolicyV1OrDie(vapBytes)
+				_, _, err = resourceapply.ApplyValidatingAdmissionPolicyV1(context.TODO(), optr.kubeClient.AdmissionregistrationV1(), optr.libgoRecorder, vap, noCache)
 				if err != nil {
 					return err
 				}
@@ -942,8 +942,8 @@ func (optr *Operator) applyManifests(config *renderConfig, paths manifestPaths) 
 				if err != nil {
 					return err
 				}
-				vapb := resourceread.ReadValidatingAdmissionPolicyBindingV1beta1OrDie(vapbBytes)
-				_, _, err = resourceapply.ApplyValidatingAdmissionPolicyBindingV1beta1(context.TODO(), optr.kubeClient.AdmissionregistrationV1beta1(), optr.libgoRecorder, vapb, noCache)
+				vapb := resourceread.ReadValidatingAdmissionPolicyBindingV1OrDie(vapbBytes)
+				_, _, err = resourceapply.ApplyValidatingAdmissionPolicyBindingV1(context.TODO(), optr.kubeClient.AdmissionregistrationV1(), optr.libgoRecorder, vapb, noCache)
 				if err != nil {
 					return err
 				}
