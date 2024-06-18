@@ -23,7 +23,7 @@ contents:
     cluster_file="cluster.yml"
     config_file=""
     if [ -s "$src_path/$host_file" ]; then
-      config_file=$hostname_file
+      config_file=$host_file
     elif [ -s "$src_path/$cluster_file" ]; then
       config_file=$cluster_file
     else
