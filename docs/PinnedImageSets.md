@@ -30,9 +30,11 @@ metadata:
   name: <pinned_image_set_name>
 spec:
   pinnedImages:
-  - name: "<release_images>" (2)
+  - name: "<release_and_payload_images>" (2)
 ```
 (1): Specify the machine config pool that the pinned images apply to. By default, `master` and `worker` pools are used.
-(2): Specify the release images to pin to the machine config pool. For example, `”(need example here)”`.
+(2): Specify the release and payload images to pin to the machine config pool.
 
-4. (needs more info) Start the cluster update.
+4. Perform a cluster update using one of the methods described in the OpenShift Container Platform product documentation. For example, you can use one of the following procedures:
+  * [Updating a cluster using the CLI](https://docs.openshift.com/container-platform/4.16/updating/updating_a_cluster/updating-cluster-cli.html)
+  * [Updating a cluster using the web console](https://docs.openshift.com/container-platform/4.16/updating/updating_a_cluster/updating-cluster-web-console.html)
