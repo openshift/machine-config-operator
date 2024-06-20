@@ -28,7 +28,7 @@ func TestRunKubeletBootstrap(t *testing.T) {
 				helpers.NewMachineConfigPool("custom", nil, customSelector, "v0"),
 			}
 
-			kcRaw, err := EncodeKubeletConfig(&kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, kubeletconfigv1beta1.SchemeGroupVersion)
+			kcRaw, err := EncodeKubeletConfig(&kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, kubeletconfigv1beta1.SchemeGroupVersion, runtime.ContentTypeJSON)
 			if err != nil {
 				panic(err)
 			}
@@ -83,25 +83,25 @@ func TestRunKubeletBootstrap(t *testing.T) {
 
 			for i := range mcs {
 				require.Equal(t, expectedMCNames[i], mcs[i].Name)
-				verifyKubeletConfigJSONContents(t, mcs[i], mcs[i].Name, cc.Spec.ReleaseImage)
+				verifyKubeletConfigYAMLContents(t, mcs[i], mcs[i].Name, cc.Spec.ReleaseImage)
 			}
 		})
 	}
 }
 
-func verifyKubeletConfigJSONContents(t *testing.T, mc *mcfgv1.MachineConfig, mcName string, releaseImageReg string) {
+func verifyKubeletConfigYAMLContents(t *testing.T, mc *mcfgv1.MachineConfig, mcName string, releaseImageReg string) {
 	ignCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
 	require.NoError(t, err)
 	regfile := ignCfg.Storage.Files[0]
 	conf, err := ctrlcommon.DecodeIgnitionFileContents(regfile.Contents.Source, regfile.Contents.Compression)
 	require.NoError(t, err)
-	require.Contains(t, string(conf), `"maxPods": 100`)
+	require.Contains(t, string(conf), `maxPods: 100`)
 }
 
 func TestGenerateDefaultManagedKeyKubelet(t *testing.T) {
 	workerPool := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 	masterPool := helpers.NewMachineConfigPool("master", nil, helpers.WorkerSelector, "v0")
-	kcRaw, err := EncodeKubeletConfig(&kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, kubeletconfigv1beta1.SchemeGroupVersion)
+	kcRaw, err := EncodeKubeletConfig(&kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, kubeletconfigv1beta1.SchemeGroupVersion, runtime.ContentTypeJSON)
 	if err != nil {
 		panic(err)
 	}
