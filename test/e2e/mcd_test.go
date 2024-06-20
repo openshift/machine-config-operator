@@ -1,11 +1,9 @@
 package e2e_test
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -26,6 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	machineclientset "github.com/openshift/client-go/machine/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
@@ -870,80 +869,48 @@ func TestMCDRotatesCerts(t *testing.T) {
 
 	err = helpers.WaitForCertStatusToChange(t, cs, oldData)
 	require.Nil(t, err)
-
 }
 
+// This test provisions a new node by using the MachineSet API to ensure that
+// the SSH is present on the node after first boot. This will eventually need
+// to migrate to using the Cluster API (CAPI) instead.
 func TestFirstBootHasSSHKeys(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
 	cs := framework.NewClientSet("")
-	outNodeYoungest := bytes.NewBuffer([]byte{})
-	// get nodes by newest
-	outNodeYoungest = runCmd(t, "oc get nodes --sort-by .metadata.creationTimestamp | tail -n 1")
-	outMSet := runCmd(t, "oc -n openshift-machine-api -o name get machinesets | head -n 1")
-	mset := strings.Trim(strings.Split(outMSet.String(), "/")[1], "\n")
-	runCmd(t, "oc scale --replicas=2  machineset "+mset+" -n openshift-machine-api")
-	// scale a 2nd machine
-	outNodeYoungestNew := &bytes.Buffer{}
-	nodeStr := strings.Split(outNodeYoungest.String(), " ")[0]
-	t.Cleanup(func() {
-		if len(outNodeYoungestNew.String()) > 0 && strings.Split(outNodeYoungestNew.String(), " ")[0] != nodeStr {
-			// scale down
-			outMSet = runCmd(t, "oc scale --replicas=1  machineset "+mset+" -n openshift-machine-api")
-			splitNodes := []string{}
-			if err := wait.PollUntilContextTimeout(context.TODO(), 2*time.Second, 20*time.Minute, false, func(ctx context.Context) (bool, error) {
-				// get all nodes
-				nodes := runCmd(t, "oc get nodes")
-				splitNodes = strings.Split(nodes.String(), "\n")
-				for _, n := range splitNodes {
-					// find the one with scheduling disabled and delete it
-					if strings.Contains(n, "SchedulingDisabled") {
-						return false, nil
-					}
-				}
-				return true, nil
-			}); err != nil {
-				t.Fatalf("did not get old node upon cleanup: %s", splitNodes)
-			}
-		}
 
-	})
-	nodeSplit := []string{"", ""}
-	if err := wait.PollUntilContextTimeout(context.TODO(), 2*time.Second, 20*time.Minute, false, func(ctx context.Context) (bool, error) {
-		outNodeYoungestNew = bytes.NewBuffer([]byte{})
-		// get nodes over and over
-		outNodeYoungestNew = runCmd(t, "oc get nodes --sort-by .metadata.creationTimestamp | tail -n 1")
-		nodeSplit = strings.SplitN(outNodeYoungestNew.String(), " ", 2)
-		// if node name != first node name and it is ready, we have a node
-		if nodeSplit[0] != nodeStr && strings.Contains(nodeSplit[1], "Ready") && !strings.Contains(nodeSplit[1], "NotReady") {
-			return true, nil
-		}
-		return false, nil
-	}); err != nil {
-		t.Fatal("did not get new node")
-	}
+	// This client is not part of framework.ClientSet, but we can instantiate it
+	// and use the config from our ClientSet.
+	machineclient := machineclientset.NewForConfigOrDie(cs.GetRestConfig())
 
-	nodes, err := helpers.GetNodesByRole(cs, "worker")
-	require.Nil(t, err)
-	foundNode := false
-	for _, node := range nodes {
-		if node.Name == nodeSplit[0] && strings.Contains(nodeSplit[1], "Ready") && !strings.Contains(nodeSplit[1], "NotReady") {
-			foundNode = true
-			out := helpers.ExecCmdOnNode(t, cs, node, "cat", "/rootfs/home/core/.ssh/authorized_keys.d/ignition")
-			t.Logf("Got ssh key file data: %s", out)
-			require.NotEmpty(t, out)
-		}
-	}
-	require.True(t, foundNode)
-}
+	// Any MachineSets returned by this list will be worker MachineSets. Control
+	// plane nodes are wrapped in a separate ControlPlaneMachineSet type with its
+	// own client methods.
+	machinesets, err := machineclient.MachineV1beta1().MachineSets("openshift-machine-api").List(ctx, metav1.ListOptions{})
+	require.NoError(t, err)
 
-func runCmd(t *testing.T, cmds string) *bytes.Buffer {
-	stdout := bytes.NewBuffer([]byte{})
-	stderr := bytes.NewBuffer([]byte{})
-	cmd := exec.Command("bash", "-c", cmds)
-	cmd.Stdout = stdout
-	cmd.Stderr = stderr
-	err := cmd.Run()
-	require.NoError(t, err, "Got stdout: %s and stderr: %s, error: %s", stdout.String(), stderr.String(), err)
-	return stdout
+	// Just grab the first MachineSet we get back. It doesn't matter which one we
+	// use for this test.
+	machineset := machinesets.Items[0]
+
+	// Scale up our MachineSet to add a new node to target for our test.
+	newNodes, cleanupFunc := helpers.ScaleMachineSetAndWaitForNodesToBeReady(t, cs, machineset.Name, *machineset.Spec.Replicas+1)
+	t.Cleanup(cleanupFunc)
+
+	newNode := newNodes[0]
+
+	sshKeyFile := "/home/core/.ssh/authorized_keys.d/ignition"
+
+	// Now that the new node is ready, ensure that the SSH key file is populated.
+	out := helpers.ExecCmdOnNode(t, cs, *newNode, "cat", filepath.Join("/rootfs", sshKeyFile))
+	t.Logf("Got ssh key file data: %s", out)
+	// TODO: Assert that the file contents equals the SSH key field on the
+	// MachineConfig. In theory, this may seem easy to do, but in practice it's a
+	// bit more involved because the SSH key field on MachineConfigs can accept
+	// multiple SSH keys per item with line breaks or single SSH keys
+	// one-per-line. For now, we just assert that the field is not empty.
+	assert.NotEmpty(t, out, "expected SSH key file %s on %s to contain SSH keys, but it was empty", sshKeyFile, newNode.Name)
 }
 
 func createMCToAddFileForRole(name, role, filename, data string) *mcfgv1.MachineConfig {
