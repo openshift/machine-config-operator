@@ -3,7 +3,6 @@ package kubeletconfig
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -79,12 +78,9 @@ func createNewKubeletLogLevelIgnition(level int32) *ign3types.File {
 	return &r
 }
 
-func createNewKubeletIgnition(jsonConfig []byte) *ign3types.File {
-	// Want the kubelet.conf file to have the pretty JSON formatting
-	buf := new(bytes.Buffer)
-	json.Indent(buf, jsonConfig, "", "  ")
+func createNewKubeletIgnition(yamlConfig []byte) *ign3types.File {
 
-	r := ctrlcommon.NewIgnFileBytesOverwriting("/etc/kubernetes/kubelet.conf", buf.Bytes())
+	r := ctrlcommon.NewIgnFileBytesOverwriting("/etc/kubernetes/kubelet.conf", yamlConfig)
 	return &r
 }
 
@@ -427,8 +423,8 @@ func DecodeKubeletConfig(data []byte) (*kubeletconfigv1beta1.KubeletConfiguratio
 	return config, nil
 }
 
-func EncodeKubeletConfig(internal *kubeletconfigv1beta1.KubeletConfiguration, targetVersion schema.GroupVersion) ([]byte, error) {
-	encoder, err := newKubeletconfigJSONEncoder(targetVersion)
+func EncodeKubeletConfig(internal *kubeletconfigv1beta1.KubeletConfiguration, targetVersion schema.GroupVersion, contentType string) ([]byte, error) {
+	encoder, err := newKubeletconfigJSONEncoder(targetVersion, contentType)
 	if err != nil {
 		return nil, err
 	}
@@ -439,20 +435,20 @@ func EncodeKubeletConfig(internal *kubeletconfigv1beta1.KubeletConfiguration, ta
 	return data, nil
 }
 
-func newKubeletconfigJSONEncoder(targetVersion schema.GroupVersion) (runtime.Encoder, error) {
+func newKubeletconfigJSONEncoder(targetVersion schema.GroupVersion, contentType string) (runtime.Encoder, error) {
 	scheme := runtime.NewScheme()
 	kubeletconfigv1beta1.AddToScheme(scheme)
 	codecs := serializer.NewCodecFactory(scheme)
-	info, ok := runtime.SerializerInfoForMediaType(codecs.SupportedMediaTypes(), runtime.ContentTypeJSON)
+	info, ok := runtime.SerializerInfoForMediaType(codecs.SupportedMediaTypes(), contentType)
 	if !ok {
-		return nil, fmt.Errorf("unsupported media type %q", runtime.ContentTypeJSON)
+		return nil, fmt.Errorf("unsupported media type %q", contentType)
 	}
 	return codecs.EncoderForVersion(info.Serializer, targetVersion), nil
 }
 
 // kubeletConfigToIgnFile converts a KubeletConfiguration to an Ignition File
 func kubeletConfigToIgnFile(cfg *kubeletconfigv1beta1.KubeletConfiguration) (*ign3types.File, error) {
-	cfgJSON, err := EncodeKubeletConfig(cfg, kubeletconfigv1beta1.SchemeGroupVersion)
+	cfgJSON, err := EncodeKubeletConfig(cfg, kubeletconfigv1beta1.SchemeGroupVersion, runtime.ContentTypeYAML)
 	if err != nil {
 		return nil, fmt.Errorf("could not encode kubelet configuration: %w", err)
 	}
