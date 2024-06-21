@@ -8,6 +8,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/golang/glog"
@@ -225,6 +226,18 @@ func writeUnit(u ign3types.Unit, systemdRoot string, isCoreOSVariant bool) error
 			isCoreOSVariant {
 			if err := createOrigFile(withUsrPath(fpath), fpath); err != nil {
 				return err
+			}
+		}
+		// If the unit is currently enabled, disable it before overwriting since we might be
+		// changing its WantedBy= or RequiredBy= directive (see OCPBUGS-33694). Later code will
+		// re-enable the new unit as directed by the MachineConfig.
+		cmd := exec.Command("systemctl", "is-enabled", u.Name)
+		out, _ := cmd.CombinedOutput()
+		if cmd.ProcessState.ExitCode() == 0 && strings.TrimSpace(string(out)) == "enabled" {
+			klog.Infof("Disabling systemd unit %s before re-writing it", u.Name)
+			disableOut, err := exec.Command("systemctl", "disable", u.Name).CombinedOutput()
+			if err != nil {
+				return fmt.Errorf("disabling %s failed: %w (output: %s)", u.Name, err, string(disableOut))
 			}
 		}
 		if err := writeFileAtomicallyWithDefaults(fpath, []byte(*u.Contents)); err != nil {
