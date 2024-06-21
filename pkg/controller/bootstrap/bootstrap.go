@@ -167,7 +167,7 @@ func (b *Bootstrap) Run(destDir string) error {
 		return fmt.Errorf("error creating feature gate access: %w", err)
 	}
 
-	iconfigs, err := template.RunBootstrap(b.templatesDir, cconfig, psraw)
+	iconfigs, err := template.RunBootstrap(b.templatesDir, cconfig, psraw, nil)
 	if err != nil {
 		return err
 	}
