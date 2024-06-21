@@ -53,10 +53,12 @@ import (
 	"k8s.io/client-go/tools/reference"
 	"k8s.io/klog/v2"
 
+	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	opv1 "github.com/openshift/api/operator/v1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
+	"github.com/openshift/library-go/pkg/crypto"
 )
 
 // strToPtr converts the input string to a pointer to itself
@@ -1239,4 +1241,43 @@ func FindClosestFilePolicyPathMatch(diffPath string, filePolicies []opv1.NodeDis
 		}
 	}
 	return matchFound, matchActions
+}
+
+// Extracts the minimum TLS version and cipher suites from apiServer object,
+func GetSecurityProfileCiphersFromAPIServer(apiServer *configv1.APIServer) (string, []string) {
+	// If no apiServer object exists, default to the intermediate profile by calling
+	// GetSecurityProfileCiphers with a nil object for TLSSecurityProfile
+	if apiServer == nil {
+		return GetSecurityProfileCiphers(nil)
+	}
+	return GetSecurityProfileCiphers(apiServer.Spec.TLSSecurityProfile)
+}
+
+// Extracts the minimum TLS version and cipher suites from TLSSecurityProfile object,
+// Converts the ciphers to IANA names as supported by Kube ServingInfo config.
+// If profile is nil, returns config defined by the Intermediate TLS Profile
+func GetSecurityProfileCiphers(profile *configv1.TLSSecurityProfile) (string, []string) {
+	var profileType configv1.TLSProfileType
+	if profile == nil {
+		profileType = configv1.TLSProfileIntermediateType
+	} else {
+		profileType = profile.Type
+	}
+
+	var profileSpec *configv1.TLSProfileSpec
+	if profileType == configv1.TLSProfileCustomType {
+		if profile.Custom != nil {
+			profileSpec = &profile.Custom.TLSProfileSpec
+		}
+	} else {
+		profileSpec = configv1.TLSProfiles[profileType]
+	}
+
+	// nothing found / custom type set but no actual custom spec
+	if profileSpec == nil {
+		profileSpec = configv1.TLSProfiles[configv1.TLSProfileIntermediateType]
+	}
+
+	// need to remap all Ciphers to their respective IANA names used by Go
+	return string(profileSpec.MinTLSVersion), crypto.OpenSSLToIANACipherSuites(profileSpec.Ciphers)
 }

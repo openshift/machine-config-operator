@@ -13,7 +13,6 @@ import (
 	"sort"
 	"time"
 
-	osev1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
@@ -23,6 +22,9 @@ import (
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"k8s.io/klog/v2"
 
+	configv1 "github.com/openshift/api/config/v1"
+	configinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
+	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -31,6 +33,9 @@ import (
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
 	clientset "k8s.io/client-go/kubernetes"
 	corev1clientset "k8s.io/client-go/kubernetes/typed/core/v1"
+
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
@@ -61,6 +66,9 @@ type Controller struct {
 	ccLister mcfglistersv1.ControllerConfigLister
 	mcLister mcfglistersv1.MachineConfigLister
 
+	apiserverLister       configlistersv1.APIServerLister
+	apiserverListerSynced cache.InformerSynced
+
 	ccListerSynced        cache.InformerSynced
 	mcListerSynced        cache.InformerSynced
 	secretsInformerSynced cache.InformerSynced
@@ -74,6 +82,7 @@ func New(
 	ccInformer mcfginformersv1.ControllerConfigInformer,
 	mcInformer mcfginformersv1.MachineConfigInformer,
 	secretsInformer coreinformersv1.SecretInformer,
+	apiserverInformer configinformersv1.APIServerInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
 ) *Controller {
@@ -108,6 +117,12 @@ func New(
 		DeleteFunc: ctrl.deleteSecret,
 	})
 
+	apiserverInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.addAPIServer,
+		UpdateFunc: ctrl.updateAPIServer,
+		DeleteFunc: ctrl.deleteAPIServer,
+	})
+
 	ctrl.syncHandler = ctrl.syncControllerConfig
 	ctrl.enqueueControllerConfig = ctrl.enqueue
 
@@ -116,6 +131,9 @@ func New(
 	ctrl.ccListerSynced = ccInformer.Informer().HasSynced
 	ctrl.mcListerSynced = mcInformer.Informer().HasSynced
 	ctrl.secretsInformerSynced = secretsInformer.Informer().HasSynced
+
+	ctrl.apiserverLister = apiserverInformer.Lister()
+	ctrl.apiserverListerSynced = apiserverInformer.Informer().HasSynced
 
 	return ctrl
 }
@@ -172,6 +190,53 @@ func (ctrl *Controller) deleteSecret(obj interface{}) {
 	}
 }
 
+func (ctrl *Controller) filterAPIServer(apiServer *configv1.APIServer) {
+	if apiServer.Name == "cluster" {
+		ctrl.enqueueController()
+		klog.Infof("Re-syncing ControllerConfig due to apiServer %s change", apiServer.Name)
+	}
+}
+
+func (ctrl *Controller) addAPIServer(obj interface{}) {
+	apiServer := obj.(*configv1.APIServer)
+	if apiServer.DeletionTimestamp != nil {
+		ctrl.deleteSecret(apiServer)
+		return
+	}
+	klog.V(4).Infof("Add API Server %v", apiServer)
+	ctrl.filterAPIServer(apiServer)
+}
+
+func (ctrl *Controller) updateAPIServer(old, cur interface{}) {
+
+	oldAPIServer := old.(*configv1.APIServer)
+	newAPIServer := cur.(*configv1.APIServer)
+	if !reflect.DeepEqual(oldAPIServer.Spec, newAPIServer.Spec) {
+		klog.V(4).Infof("Updating APIServer: %s", newAPIServer.Name)
+		ctrl.filterAPIServer(newAPIServer)
+	}
+
+}
+
+func (ctrl *Controller) deleteAPIServer(obj interface{}) {
+	apiServer, ok := obj.(*configv1.APIServer)
+	klog.V(4).Infof("Delete Secret %v", apiServer)
+
+	if !ok {
+		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("couldn't get object from tombstone %#v", obj))
+			return
+		}
+		apiServer, ok = tombstone.Obj.(*configv1.APIServer)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not a apiServer %#v", obj))
+			return
+		}
+	}
+	ctrl.filterAPIServer(apiServer)
+}
+
 func (ctrl *Controller) enqueueController() {
 	cfg, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
 	if err != nil {
@@ -183,8 +248,8 @@ func (ctrl *Controller) enqueueController() {
 }
 
 func (ctrl *Controller) updateFeature(old, cur interface{}) {
-	oldFeature := old.(*osev1.FeatureGate)
-	newFeature := cur.(*osev1.FeatureGate)
+	oldFeature := old.(*configv1.FeatureGate)
+	newFeature := cur.(*configv1.FeatureGate)
 	if !reflect.DeepEqual(oldFeature.Spec, newFeature.Spec) {
 		klog.V(4).Infof("Updating Feature: %s", newFeature.Name)
 		ctrl.enqueueController()
@@ -192,20 +257,20 @@ func (ctrl *Controller) updateFeature(old, cur interface{}) {
 }
 
 func (ctrl *Controller) addFeature(obj interface{}) {
-	features := obj.(*osev1.FeatureGate)
+	features := obj.(*configv1.FeatureGate)
 	klog.V(4).Infof("Adding Feature: %s", features.Name)
 	ctrl.enqueueController()
 }
 
 func (ctrl *Controller) deleteFeature(obj interface{}) {
-	features, ok := obj.(*osev1.FeatureGate)
+	features, ok := obj.(*configv1.FeatureGate)
 	if !ok {
 		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
 		if !ok {
 			utilruntime.HandleError(fmt.Errorf("couldn't get object from tombstone %#v", obj))
 			return
 		}
-		features, ok = tombstone.Obj.(*osev1.FeatureGate)
+		features, ok = tombstone.Obj.(*configv1.FeatureGate)
 		if !ok {
 			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not a FeatureGate %#v", obj))
 			return
@@ -560,7 +625,13 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 		clusterPullSecretRaw = clusterPullSecret.Data[corev1.DockerConfigJsonKey]
 	}
 
-	mcs, err := getMachineConfigsForControllerConfig(ctrl.templatesDir, cfg, clusterPullSecretRaw)
+	// Grab the tlsSecurityProfile from the apiserver object
+	apiServer, err := ctrl.apiserverLister.Get(ctrlcommon.APIServerInstanceName)
+	if err != nil && !apierrors.IsNotFound(err) {
+		return ctrl.syncFailingStatus(cfg, err)
+	}
+
+	mcs, err := getMachineConfigsForControllerConfig(ctrl.templatesDir, cfg, clusterPullSecretRaw, apiServer)
 	if err != nil {
 		return ctrl.syncFailingStatus(cfg, err)
 	}
@@ -579,14 +650,17 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 	return ctrl.syncCompletedStatus(cfg)
 }
 
-func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.ControllerConfig, clusterPullSecretRaw []byte) ([]*mcfgv1.MachineConfig, error) {
+func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.ControllerConfig, clusterPullSecretRaw []byte, apiServer *configv1.APIServer) ([]*mcfgv1.MachineConfig, error) {
 	buf := &bytes.Buffer{}
 	if err := json.Compact(buf, clusterPullSecretRaw); err != nil {
 		return nil, fmt.Errorf("couldn't compact pullsecret %q: %w", string(clusterPullSecretRaw), err)
 	}
+	tlsMinVersion, tlsCipherSuites := ctrlcommon.GetSecurityProfileCiphersFromAPIServer(apiServer)
 	rc := &RenderConfig{
 		ControllerConfigSpec: &config.Spec,
 		PullSecret:           string(buf.Bytes()),
+		TLSMinVersion:        tlsMinVersion,
+		TLSCipherSuites:      tlsCipherSuites,
 	}
 	mcs, err := generateTemplateMachineConfigs(rc, templatesDir)
 	if err != nil {
@@ -603,6 +677,6 @@ func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.Co
 }
 
 // RunBootstrap runs the tempate controller in boostrap mode.
-func RunBootstrap(templatesDir string, config *mcfgv1.ControllerConfig, pullSecretRaw []byte) ([]*mcfgv1.MachineConfig, error) {
-	return getMachineConfigsForControllerConfig(templatesDir, config, pullSecretRaw)
+func RunBootstrap(templatesDir string, config *mcfgv1.ControllerConfig, pullSecretRaw []byte, apiServer *configv1.APIServer) ([]*mcfgv1.MachineConfig, error) {
+	return getMachineConfigsForControllerConfig(templatesDir, config, pullSecretRaw, apiServer)
 }

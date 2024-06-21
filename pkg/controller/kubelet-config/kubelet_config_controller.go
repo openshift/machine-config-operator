@@ -39,7 +39,6 @@ import (
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
-	"github.com/openshift/library-go/pkg/crypto"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -54,10 +53,6 @@ const (
 	//
 	// 18 allows for retries up to about 10 minutes to allow for slower machines to catchup.
 	maxRetries = 18
-
-	// defaultOpenshiftTLSSecurityProfileConfig is the singleton object in
-	// Openshift containing the config for the tls security settings.
-	defaultOpenshiftTLSSecurityProfileConfig = "apiserver.v1.config.openshift.io"
 )
 
 // controllerKind contains the schema.GroupVersionKind for this controller type.
@@ -569,9 +564,9 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 
 		// Get the default API Server Security Profile
 		var profile *configv1.TLSSecurityProfile
-		if apiServerSettings, err := ctrl.apiserverLister.Get(defaultOpenshiftTLSSecurityProfileConfig); err != nil {
+		if apiServerSettings, err := ctrl.apiserverLister.Get(ctrlcommon.APIServerInstanceName); err != nil {
 			if !macherrors.IsNotFound(err) {
-				return ctrl.syncStatusOnly(cfg, err, "could not get the TLSSecurityProfile from %v: %v", defaultOpenshiftTLSSecurityProfileConfig, err)
+				return ctrl.syncStatusOnly(cfg, err, "could not get the TLSSecurityProfile from %v: %v", ctrlcommon.APIServerInstanceName, err)
 			}
 		} else {
 			profile = apiServerSettings.Spec.TLSSecurityProfile
@@ -580,7 +575,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			profile = cfg.Spec.TLSSecurityProfile
 		}
 		// Inject TLS Options from Spec
-		observedMinTLSVersion, observedCipherSuites := getSecurityProfileCiphers(profile)
+		observedMinTLSVersion, observedCipherSuites := ctrlcommon.GetSecurityProfileCiphers(profile)
 		originalKubeConfig.TLSMinVersion = observedMinTLSVersion
 		originalKubeConfig.TLSCipherSuites = observedCipherSuites
 
@@ -799,33 +794,4 @@ func (ctrl *Controller) getPoolsForKubeletConfig(config *mcfgv1.KubeletConfig) (
 	}
 
 	return pools, nil
-}
-
-// Extracts the minimum TLS version and cipher suites from TLSSecurityProfile object,
-// Converts the ciphers to IANA names as supported by Kube ServingInfo config.
-// If profile is nil, returns config defined by the Intermediate TLS Profile
-func getSecurityProfileCiphers(profile *configv1.TLSSecurityProfile) (string, []string) {
-	var profileType configv1.TLSProfileType
-	if profile == nil {
-		profileType = configv1.TLSProfileIntermediateType
-	} else {
-		profileType = profile.Type
-	}
-
-	var profileSpec *configv1.TLSProfileSpec
-	if profileType == configv1.TLSProfileCustomType {
-		if profile.Custom != nil {
-			profileSpec = &profile.Custom.TLSProfileSpec
-		}
-	} else {
-		profileSpec = configv1.TLSProfiles[profileType]
-	}
-
-	// nothing found / custom type set but no actual custom spec
-	if profileSpec == nil {
-		profileSpec = configv1.TLSProfiles[configv1.TLSProfileIntermediateType]
-	}
-
-	// need to remap all Ciphers to their respective IANA names used by Go
-	return string(profileSpec.MinTLSVersion), crypto.OpenSSLToIANACipherSuites(profileSpec.Ciphers)
 }

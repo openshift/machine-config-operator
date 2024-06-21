@@ -43,6 +43,8 @@ type renderConfig struct {
 	Constants              map[string]string
 	PointerConfig          string
 	MachineOSConfigs       []*mcfgv1alpha1.MachineOSConfig
+	TLSMinVersion          string
+	TLSCipherSuites        []string
 }
 
 type assetRenderer struct {
