@@ -568,7 +568,7 @@ func updatePolicyJSON(data []byte, internalBlocked, internalAllowed []string, re
 		}
 	}
 
-	policyJSON, err := json.Marshal(policyObj)
+	policyJSON, err := json.MarshalIndent(policyObj, "", "  ")
 	if err != nil {
 		return nil, err
 	}
