@@ -8,8 +8,10 @@ import (
 
 	"github.com/clarketm/json"
 	configv1 "github.com/openshift/api/config/v1"
+	fakeconfigv1client "github.com/openshift/client-go/config/clientset/versioned/fake"
 	oseconfigfake "github.com/openshift/client-go/config/clientset/versioned/fake"
 
+	configinformers "github.com/openshift/client-go/config/informers/externalversions"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -17,6 +19,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/diff"
 	coreinformersv1 "k8s.io/client-go/informers"
+
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 	core "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/cache"
@@ -37,9 +40,10 @@ var (
 type fixture struct {
 	t *testing.T
 
-	client     *fake.Clientset
-	kubeclient *k8sfake.Clientset
-	oseclient  *oseconfigfake.Clientset
+	client          *fake.Clientset
+	kubeclient      *k8sfake.Clientset
+	oseclient       *oseconfigfake.Clientset
+	apiserverclient *oseconfigfake.Clientset
 
 	ccLister []*mcfgv1.ControllerConfig
 	mcLister []*mcfgv1.MachineConfig
@@ -50,6 +54,7 @@ type fixture struct {
 	kubeobjects []runtime.Object
 	objects     []runtime.Object
 	oseobjects  []runtime.Object
+	apiservers  []runtime.Object
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -99,15 +104,19 @@ func (f *fixture) newController() *Controller {
 
 	f.kubeclient = k8sfake.NewSimpleClientset(f.kubeobjects...)
 	f.oseclient = oseconfigfake.NewSimpleClientset(f.oseobjects...)
+	f.apiserverclient = fakeconfigv1client.NewSimpleClientset(f.apiservers...)
 
 	cinformer := coreinformersv1.NewSharedInformerFactory(f.kubeclient, noResyncPeriodFunc())
+	apiserverinformer := configinformers.NewSharedInformerFactory(f.apiserverclient, noResyncPeriodFunc())
+
 	i := informers.NewSharedInformerFactory(f.client, noResyncPeriodFunc())
 	c := New(templateDir,
 		i.Machineconfiguration().V1().ControllerConfigs(), i.Machineconfiguration().V1().MachineConfigs(), cinformer.Core().V1().Secrets(),
-		f.kubeclient, f.client)
+		apiserverinformer.Config().V1().APIServers(), f.kubeclient, f.client)
 
 	c.ccListerSynced = alwaysReady
 	c.mcListerSynced = alwaysReady
+	c.apiserverListerSynced = alwaysReady
 	c.eventRecorder = &record.FakeRecorder{}
 
 	stopCh := make(chan struct{})
@@ -279,7 +288,7 @@ func TestCreatesMachineConfigs(t *testing.T) {
 	f.objects = append(f.objects, cc)
 	f.kubeobjects = append(f.kubeobjects, ps)
 
-	expMCs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`))
+	expMCs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -310,7 +319,7 @@ func TestDoNothing(t *testing.T) {
 	cc := newControllerConfig("test-cluster")
 	ps := newPullSecret("coreos-pull-secret", []byte(`{"dummy": "dummy"}`))
 
-	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`))
+	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -348,7 +357,7 @@ func TestRecreateMachineConfig(t *testing.T) {
 	cc := newControllerConfig("test-cluster")
 	ps := newPullSecret("coreos-pull-secret", []byte(`{"dummy": "dummy"}`))
 
-	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`))
+	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -387,7 +396,7 @@ func TestUpdateMachineConfig(t *testing.T) {
 	cc := newControllerConfig("test-cluster")
 	ps := newPullSecret("coreos-pull-secret", []byte(`{"dummy": "dummy"}`))
 
-	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`))
+	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -407,7 +416,7 @@ func TestUpdateMachineConfig(t *testing.T) {
 		f.objects = append(f.objects, mcs[idx])
 	}
 
-	expmcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`))
+	expmcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
