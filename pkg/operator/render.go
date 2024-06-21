@@ -80,6 +80,7 @@ func (a *assetRenderer) addTemplateFuncs() {
 	funcs["cloudPlatformAPIIntLoadBalancerIPs"] = cloudPlatformAPIIntLoadBalancerIPs
 	funcs["cloudPlatformAPILoadBalancerIPs"] = cloudPlatformAPILoadBalancerIPs
 	funcs["cloudPlatformIngressLoadBalancerIPs"] = cloudPlatformIngressLoadBalancerIPs
+	funcs["join"] = strings.Join
 
 	a.tmpl = a.tmpl.Funcs(funcs)
 }
