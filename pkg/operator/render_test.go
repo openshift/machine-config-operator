@@ -258,8 +258,9 @@ func TestRenderAsset(t *testing.T) {
 			// Test that machineconfigdaemon DaemonSets are rendered correctly with proxy config
 			Path: "manifests/machineconfigdaemon/daemonset.yaml",
 			RenderConfig: &renderConfig{
-				TargetNamespace: "testing-namespace",
-				ReleaseVersion:  "4.8.0-rc.0",
+				MachineOSConfigs: nil,
+				TargetNamespace:  "testing-namespace",
+				ReleaseVersion:   "4.8.0-rc.0",
 				Images: &RenderConfigImages{
 					MachineConfigOperator: "mco-operator-image",
 					KubeRbacProxy:         "kube-rbac-proxy-image",
