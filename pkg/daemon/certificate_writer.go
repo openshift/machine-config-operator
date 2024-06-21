@@ -380,7 +380,7 @@ func (dn *Daemon) syncOSImagePullSecrets(controllerConfig *mcfgv1.ControllerConf
 		return fmt.Errorf("could not write image pull secret data to node filesystem: %w", err)
 	}
 
-	klog.Infof("Synced image registry secrets to node filesystem in %s", imageRegistryAuthFile)
+	klog.V(4).Infof("Synced image registry secrets to node filesystem in %s", imageRegistryAuthFile)
 
 	return nil
 }
@@ -477,7 +477,7 @@ func readMountedSecretByNodeRole(nodeRoles []string, secretDirPath string) ([]by
 	// array.
 	_, err := os.Stat(secretDirPath)
 	if errors.Is(err, os.ErrNotExist) {
-		klog.Infof("Path %s does not exist", secretDirPath)
+		klog.V(4).Infof("Path %s does not exist", secretDirPath)
 		return nil, nil
 	}
 

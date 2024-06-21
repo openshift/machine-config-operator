@@ -613,13 +613,23 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 		return err
 	}
 
-	moscs, err := optr.getAndValidateMachineOSConfigs()
+	isOnClusterBuildEnabled, err := optr.isOnClusterBuildFeatureGateEnabled()
 	if err != nil {
 		return err
 	}
 
-	// create renderConfig
-	optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra.Status.APIServerInternalURL, pointerConfigData, moscs)
+	if isOnClusterBuildEnabled {
+		moscs, err := optr.getAndValidateMachineOSConfigs()
+		if err != nil {
+			return err
+		}
+
+		// create renderConfig
+		optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra.Status.APIServerInternalURL, pointerConfigData, moscs)
+	} else {
+		optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra.Status.APIServerInternalURL, pointerConfigData, nil)
+	}
+
 	return nil
 }
 
@@ -2097,8 +2107,7 @@ func (optr *Operator) syncMachineConfiguration(_ *renderConfig, _ *configv1.Clus
 }
 
 // Gets MachineOSConfigs from the lister, assuming that the OnClusterBuild
-// featuregate is enabled. Passes each MachineOSConfig through an optional
-// filter function. If nil is passed, will return all found MachineOSConfigs.
+// FeatureGate is enabled. Will return nil if the FeatureGate is not enabled.
 func (optr *Operator) getMachineOSConfigs() ([]*mcfgv1alpha1.MachineOSConfig, error) {
 	isOnClusterBuildEnabled, err := optr.isOnClusterBuildFeatureGateEnabled()
 	if err != nil {
@@ -2134,7 +2143,7 @@ func (optr *Operator) getAndValidateMachineOSConfigs() ([]*mcfgv1alpha1.MachineO
 	return moscs, nil
 }
 
-// Determines if the OnclusterBuild featuregate is enabled. Returns any errors encountered.
+// Determines if the OnclusterBuild FeatureGate is enabled. Returns any errors encountered.
 func (optr *Operator) isOnClusterBuildFeatureGateEnabled() (bool, error) {
 	fg, err := optr.fgAccessor.CurrentFeatureGates()
 	if err != nil {
