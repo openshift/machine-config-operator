@@ -1,0 +1,14 @@
+name: disable-mglru.service
+enabled: true
+contents: |
+  [Unit]
+  Description=Disables MGLRU on Openshfit
+  
+  [Service]
+  Type=oneshot
+  RemainAfterExit=yes
+  ExecStart=bash -c "echo 0 > /sys/kernel/mm/lru_gen/enabled"
+
+  
+  [Install]
+  WantedBy=multi-user.target
