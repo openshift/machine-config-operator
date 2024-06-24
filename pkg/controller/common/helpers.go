@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/tls"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -51,6 +52,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/tools/reference"
+	k8sapiflag "k8s.io/component-base/cli/flag"
 	"k8s.io/klog/v2"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -1280,4 +1282,22 @@ func GetSecurityProfileCiphers(profile *configv1.TLSSecurityProfile) (string, []
 
 	// need to remap all Ciphers to their respective IANA names used by Go
 	return string(profileSpec.MinTLSVersion), crypto.OpenSSLToIANACipherSuites(profileSpec.Ciphers)
+}
+
+// Converts tlsMinVersion and tlscipherSuites flags to a tlsConfig object that is used
+// by the http.Server() call used in apiserver.NewAPIServer() & apiserver.Serve()
+//
+//nolint:gosec
+func GetGoTLSConfig(tlsMinVersion string, tlscipherSuites []string) *tls.Config {
+	// Create tlsConfig from arguments, using k8sapiflag for the uint16 translation
+	tlsMinVersionID, tlsMinVersionErr := k8sapiflag.TLSVersion(tlsMinVersion)
+	tlscipherSuiteIDs, tlscipherSuiteIDsErr := k8sapiflag.TLSCipherSuites(tlscipherSuites)
+	// If any errors are encountered, log it and fallback to intermediate settings. This is very unlikely as tls arguments are guarded by API validation.
+	if tlsMinVersionErr != nil || tlscipherSuiteIDsErr != nil || len(tlscipherSuiteIDs) == 0 {
+		klog.Errorf("Error using provided tls arguments: tlsMinVersionErr: %v, tlscipherSuiteIDsErr: %v, tlscipherSuiteLength: %v", tlsMinVersionErr, tlscipherSuiteIDsErr, len(tlscipherSuiteIDs))
+		tlsMinVersionID, _ = k8sapiflag.TLSVersion(string(configv1.TLSProfiles[configv1.TLSProfileIntermediateType].MinTLSVersion))
+		tlscipherSuiteIDs, _ = k8sapiflag.TLSCipherSuites(configv1.TLSProfiles[configv1.TLSProfileIntermediateType].Ciphers)
+	}
+	// This causes a G402: TLS MinVersion too low. (gosec) verify error, possibly because the version is determined at runtime?
+	return &tls.Config{MinVersion: tlsMinVersionID, CipherSuites: tlscipherSuiteIDs}
 }
