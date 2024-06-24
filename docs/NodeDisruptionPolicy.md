@@ -42,9 +42,6 @@ status:
       files:
       - actions:
         - type: None
-        path: /etc/mco/internal-registry-pull-secret.json
-      - actions:
-        - type: None
         path: /var/lib/kubelet/config.json
       - actions:
         - reload:
@@ -105,9 +102,6 @@ status:
       - actions:
         - type: None
         path: /etc/my-file
-      - actions:
-        - type: None
-        path: /etc/mco/internal-registry-pull-secret.json
       - actions:
         - type: None
         path: /var/lib/kubelet/config.json

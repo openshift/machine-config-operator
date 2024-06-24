@@ -320,6 +320,16 @@ func getClientsForTest() *Clients {
 			},
 			&corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
+					Name:      "current-image-pull-secret",
+					Namespace: ctrlcommon.MCONamespace,
+				},
+				Data: map[string][]byte{
+					corev1.DockerConfigJsonKey: []byte(pullSecret),
+				},
+				Type: corev1.SecretTypeDockerConfigJson,
+			},
+			&corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
 					Name:      "etc-pki-entitlement",
 					Namespace: "openshift-config-managed",
 				},
