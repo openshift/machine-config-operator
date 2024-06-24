@@ -560,7 +560,7 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 		clusterPullSecretRaw = clusterPullSecret.Data[corev1.DockerConfigJsonKey]
 	}
 
-	mcs, err := getMachineConfigsForControllerConfig(ctrl.templatesDir, cfg, clusterPullSecretRaw, cfg.Spec.InternalRegistryPullSecret)
+	mcs, err := getMachineConfigsForControllerConfig(ctrl.templatesDir, cfg, clusterPullSecretRaw)
 	if err != nil {
 		return ctrl.syncFailingStatus(cfg, err)
 	}
@@ -579,15 +579,14 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 	return ctrl.syncCompletedStatus(cfg)
 }
 
-func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.ControllerConfig, clusterPullSecretRaw, internalRegistryPullSecretRaw []byte) ([]*mcfgv1.MachineConfig, error) {
+func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.ControllerConfig, clusterPullSecretRaw []byte) ([]*mcfgv1.MachineConfig, error) {
 	buf := &bytes.Buffer{}
 	if err := json.Compact(buf, clusterPullSecretRaw); err != nil {
 		return nil, fmt.Errorf("couldn't compact pullsecret %q: %w", string(clusterPullSecretRaw), err)
 	}
 	rc := &RenderConfig{
-		ControllerConfigSpec:       &config.Spec,
-		PullSecret:                 string(buf.Bytes()),
-		InternalRegistryPullSecret: string(internalRegistryPullSecretRaw),
+		ControllerConfigSpec: &config.Spec,
+		PullSecret:           string(buf.Bytes()),
 	}
 	mcs, err := generateTemplateMachineConfigs(rc, templatesDir)
 	if err != nil {
@@ -605,5 +604,5 @@ func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.Co
 
 // RunBootstrap runs the tempate controller in boostrap mode.
 func RunBootstrap(templatesDir string, config *mcfgv1.ControllerConfig, pullSecretRaw []byte) ([]*mcfgv1.MachineConfig, error) {
-	return getMachineConfigsForControllerConfig(templatesDir, config, pullSecretRaw, nil)
+	return getMachineConfigsForControllerConfig(templatesDir, config, pullSecretRaw)
 }

@@ -41,6 +41,7 @@ import (
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
+
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	mcfglistersalphav1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1"
 
@@ -107,6 +108,7 @@ type Operator struct {
 	mckLister             mcfglistersv1.KubeletConfigLister
 	crcLister             mcfglistersv1.ContainerRuntimeConfigLister
 	nodeClusterLister     configlistersv1.NodeLister
+	moscLister            mcfglistersalphav1.MachineOSConfigLister
 
 	crdListerSynced                  cache.InformerSynced
 	deployListerSynced               cache.InformerSynced
@@ -135,6 +137,7 @@ type Operator struct {
 	mckListerSynced                  cache.InformerSynced
 	crcListerSynced                  cache.InformerSynced
 	nodeClusterListerSynced          cache.InformerSynced
+	moscListerSynced                 cache.InformerSynced
 
 	// queue only ever has one item, but it has nice error handling backoff/retry semantics
 	queue workqueue.RateLimitingInterface
@@ -144,6 +147,8 @@ type Operator struct {
 	renderConfig *renderConfig
 
 	fgAccessor featuregates.FeatureGateAccess
+
+	ctrlctx *ctrlcommon.ControllerContext
 }
 
 // New returns a new machine config operator.
@@ -182,6 +187,7 @@ func New(
 	mckInformer mcfginformersv1.KubeletConfigInformer,
 	crcInformer mcfginformersv1.ContainerRuntimeConfigInformer,
 	nodeClusterInformer configinformersv1.NodeInformer,
+	ctrlctx *ctrlcommon.ControllerContext,
 ) *Operator {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
@@ -206,6 +212,7 @@ func New(
 		}),
 		queue:      workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigoperator"),
 		fgAccessor: fgAccess,
+		ctrlctx:    ctrlctx,
 	}
 
 	err := corev1.AddToScheme(scheme.Scheme)
@@ -217,7 +224,7 @@ func New(
 		klog.Errorf("Could not modify scheme: %v", err)
 	}
 
-	for _, i := range []cache.SharedIndexInformer{
+	informers := []cache.SharedIndexInformer{
 		controllerConfigInformer.Informer(),
 		serviceAccountInfomer.Informer(),
 		crdInformer.Informer(),
@@ -244,7 +251,9 @@ func New(
 		crcInformer.Informer(),
 		nodeClusterInformer.Informer(),
 		clusterOperatorInformer.Informer(),
-	} {
+	}
+
+	for _, i := range informers {
 		i.AddEventHandler(optr.eventHandler())
 	}
 
@@ -350,6 +359,23 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 		optr.mckListerSynced,
 		optr.crcListerSynced,
 		optr.nodeClusterListerSynced,
+	}
+
+	isOCBEnabled, err := optr.isOnClusterBuildFeatureGateEnabled()
+	if err != nil {
+		klog.Errorf("could not determine if on-cluster layering is enabled: %s", err)
+	}
+
+	if isOCBEnabled {
+		klog.Infof("On-cluster layering featuregate enabled, starting MachineOSConfig informer")
+		moscInformer := optr.ctrlctx.InformerFactory.Machineconfiguration().V1alpha1().MachineOSConfigs()
+		optr.moscLister = moscInformer.Lister()
+		optr.moscListerSynced = moscInformer.Informer().HasSynced
+		cacheSynced = append(cacheSynced, optr.moscListerSynced)
+		moscInformer.Informer().AddEventHandler(optr.eventHandler())
+		// We have to start this inofrmer ourselves because the caller has started
+		// all of the other informers before calling Run().
+		go moscInformer.Informer().Run(optr.ctrlctx.Stop)
 	}
 
 	if !cache.WaitForCacheSync(stopCh,

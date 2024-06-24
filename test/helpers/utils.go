@@ -617,6 +617,8 @@ func LabelNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, label st
 
 	require.Nil(t, err, "unable to label %s node %s with infra: %s", label, node.Name, err)
 
+	t.Logf("Applied label %q to node %s", label, node.Name)
+
 	return MakeIdempotent(func() {
 
 		err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
@@ -629,6 +631,7 @@ func LabelNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, label st
 			return err
 		})
 		require.Nil(t, err, "unable to remove label %q from node %q: %s", label, node.Name, err)
+		t.Logf("Removed label %q from node %s", label, node.Name)
 	})
 }
 
@@ -1214,6 +1217,63 @@ func WriteFileToNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, fi
 		t.Logf("Removing file %s from node %s", filename, node.Name)
 		ExecCmdOnNode(t, cs, node, "rm", filename)
 	})
+}
+
+// Polls the ControllerConfig and calls the provided condition function with
+// the ControllerConfig to determine if the ControllerConfig has reached the
+// expected state.
+func AssertControllerConfigReachesExpectedState(t *testing.T, cs *framework.ClientSet, condFunc func(*mcfgv1.ControllerConfig) bool) {
+	t.Helper()
+
+	start := time.Now()
+	err := wait.PollUntilContextTimeout(context.TODO(), 1*time.Second, 5*time.Minute, true, func(pCtx context.Context) (bool, error) {
+		cc, err := cs.ControllerConfigs().Get(pCtx, "machine-config-controller", metav1.GetOptions{})
+		require.NoError(t, err)
+
+		return condFunc(cc), nil
+	})
+
+	require.NoError(t, err, "ControllerConfig failed to reach expected state")
+	t.Logf("ControllerConfig reached expected state in %v", time.Since(start))
+}
+
+// Polls all of the nodes and calls the provided condition function with each
+// node to determine if the ControllerConfig has reached the expected state.
+// Once the node has reached the expected state, it is skipped over for future
+// iterations.
+func AssertAllNodesReachExpectedState(t *testing.T, cs *framework.ClientSet, condFunc func(corev1.Node) bool) {
+	t.Helper()
+
+	nodeList, err := cs.CoreV1Interface.Nodes().List(context.TODO(), metav1.ListOptions{})
+	require.NoError(t, err)
+
+	nodes := sets.New[string]()
+	for _, node := range nodeList.Items {
+		nodes.Insert(node.Name)
+	}
+
+	nodesWithDesiredConfig := sets.New[string]()
+
+	start := time.Now()
+
+	err = wait.PollUntilContextTimeout(context.TODO(), 1*time.Second, 5*time.Minute, true, func(_ context.Context) (bool, error) {
+		for _, node := range nodeList.Items {
+			if nodesWithDesiredConfig.Has(node.Name) {
+				continue
+			}
+
+			if condFunc(node) {
+				nodesWithDesiredConfig.Insert(node.Name)
+				t.Logf("Node %s reached desired state in %v", node.Name, time.Since(start))
+			}
+		}
+
+		return nodes.Equal(nodesWithDesiredConfig), nil
+	})
+
+	require.NoError(t, err, "%d nodes %v failed to reach desired state", nodes.Len()-nodesWithDesiredConfig.Len(), nodes.Difference(nodesWithDesiredConfig).UnsortedList())
+
+	t.Logf("All nodes reached desired state in %v", time.Since(start))
 }
 
 // AssertMCDLogsContain asserts that the MCD pod's logs contains a target string value

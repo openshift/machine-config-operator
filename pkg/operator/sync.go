@@ -35,6 +35,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	v1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	opv1 "github.com/openshift/api/operator/v1"
 
@@ -612,8 +613,23 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 		return err
 	}
 
-	// create renderConfig
-	optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra.Status.APIServerInternalURL, pointerConfigData)
+	isOnClusterBuildEnabled, err := optr.isOnClusterBuildFeatureGateEnabled()
+	if err != nil {
+		return err
+	}
+
+	if isOnClusterBuildEnabled {
+		moscs, err := optr.getAndValidateMachineOSConfigs()
+		if err != nil {
+			return err
+		}
+
+		// create renderConfig
+		optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra.Status.APIServerInternalURL, pointerConfigData, moscs)
+	} else {
+		optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra.Status.APIServerInternalURL, pointerConfigData, nil)
+	}
+
 	return nil
 }
 
@@ -1876,7 +1892,7 @@ func setGVK(obj runtime.Object, scheme *runtime.Scheme) error {
 	return nil
 }
 
-func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *RenderConfigImages, apiServerURL string, pointerConfigData []byte) *renderConfig {
+func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *RenderConfigImages, apiServerURL string, pointerConfigData []byte, moscs []*mcfgv1alpha1.MachineOSConfig) *renderConfig {
 	return &renderConfig{
 		TargetNamespace:        tnamespace,
 		Version:                version.Raw,
@@ -1886,6 +1902,7 @@ func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.C
 		KubeAPIServerServingCA: kubeAPIServerServingCA,
 		APIServerURL:           apiServerURL,
 		PointerConfig:          string(pointerConfigData),
+		MachineOSConfigs:       moscs,
 	}
 }
 
@@ -1968,7 +1985,9 @@ func (optr *Operator) getImageRegistryPullSecrets() ([]byte, error) {
 			return nil, fmt.Errorf("failed to retrieve image pull secret %s: %w", imagePullSecret.Name, err)
 		}
 		// merge the secret into the JSON map
-		ctrlcommon.MergeDockerConfigstoJSONMap(secret.Data[corev1.DockerConfigKey], dockerConfigJSON.Auths)
+		if err := ctrlcommon.MergeDockerConfigstoJSONMap(secret.Data[corev1.DockerConfigKey], dockerConfigJSON.Auths); err != nil {
+			return nil, fmt.Errorf("could not merge auths from secret %s: %w", imagePullSecret.Name, err)
+		}
 	}
 
 	// Fetch the cluster pull secret
@@ -2085,4 +2104,52 @@ func (optr *Operator) syncMachineConfiguration(_ *renderConfig, _ *configv1.Clus
 	}
 
 	return nil
+}
+
+// Gets MachineOSConfigs from the lister, assuming that the OnClusterBuild
+// FeatureGate is enabled. Will return nil if the FeatureGate is not enabled.
+func (optr *Operator) getMachineOSConfigs() ([]*mcfgv1alpha1.MachineOSConfig, error) {
+	isOnClusterBuildEnabled, err := optr.isOnClusterBuildFeatureGateEnabled()
+	if err != nil {
+		return nil, err
+	}
+
+	if !isOnClusterBuildEnabled {
+		return nil, nil
+	}
+
+	return optr.moscLister.List(labels.Everything())
+}
+
+// Fetches and validates the MachineOSConfigs. For now, validation consists of
+// ensuring that the secrets the MachineOSConfig was configured with exist.
+func (optr *Operator) getAndValidateMachineOSConfigs() ([]*mcfgv1alpha1.MachineOSConfig, error) {
+	moscs, err := optr.getMachineOSConfigs()
+
+	if err != nil {
+		return nil, err
+	}
+
+	if moscs == nil {
+		return nil, nil
+	}
+
+	for _, mosc := range moscs {
+		if err := build.ValidateMachineOSConfigFromListers(optr.mcpLister, optr.mcoSecretLister, mosc); err != nil {
+			return nil, fmt.Errorf("invalid MachineOSConfig %s: %w", mosc.Name, err)
+		}
+	}
+
+	return moscs, nil
+}
+
+// Determines if the OnclusterBuild FeatureGate is enabled. Returns any errors encountered.
+func (optr *Operator) isOnClusterBuildFeatureGateEnabled() (bool, error) {
+	fg, err := optr.fgAccessor.CurrentFeatureGates()
+	if err != nil {
+		klog.Errorf("Could not get fg: %v", err)
+		return false, err
+	}
+
+	return fg.Enabled(features.FeatureGateOnClusterBuild), nil
 }

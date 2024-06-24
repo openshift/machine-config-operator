@@ -7,6 +7,8 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+
 	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
 	mcfgv1resourceread "github.com/openshift/machine-config-operator/lib/resourceread"
 	"github.com/openshift/machine-config-operator/manifests"
@@ -214,78 +216,139 @@ func TestRenderAsset(t *testing.T) {
 	tests := []struct {
 		Path         string
 		RenderConfig *renderConfig
+		// Substrings expected to be present in the rendered template.
 		FindExpected []string
-		Error        bool
-	}{{
-		// Simple test
-		Path: "manifests/machineconfigcontroller/clusterrolebinding.yaml",
-		RenderConfig: &renderConfig{
-			TargetNamespace: "testing-namespace",
-		},
-		FindExpected: []string{"namespace: testing-namespace"},
-	}, {
-		// Nested field test
-		Path: "manifests/machineconfigcontroller/deployment.yaml",
-		RenderConfig: &renderConfig{
-			TargetNamespace: "testing-namespace",
-			ReleaseVersion:  "4.8.0-rc.0",
-			Images: &RenderConfigImages{
-				MachineConfigOperator: "mco-operator-image",
+		// Substrings expected not to be present in the rendered template.
+		NotFindExpected []string
+		Error           bool
+	}{
+		{
+			// Simple test
+			Path: "manifests/machineconfigcontroller/clusterrolebinding.yaml",
+			RenderConfig: &renderConfig{
+				TargetNamespace: "testing-namespace",
 			},
+			FindExpected: []string{"namespace: testing-namespace"},
 		},
-		FindExpected: []string{
-			"image: mco-operator-image",
-			"--payload-version=4.8.0-rc.0",
-		},
-	}, {
-		// Render same template as previous test
-		// But with a template field missing
-		Path: "manifests/machineconfigcontroller/deployment.yaml",
-		RenderConfig: &renderConfig{
-			TargetNamespace: "testing-namespace",
-		},
-		Error: true,
-	}, {
-		// Test that machineconfigdaemon DaemonSets are rendered correctly with proxy config
-		Path: "manifests/machineconfigdaemon/daemonset.yaml",
-		RenderConfig: &renderConfig{
-			TargetNamespace: "testing-namespace",
-			ReleaseVersion:  "4.8.0-rc.0",
-			Images: &RenderConfigImages{
-				MachineConfigOperator: "mco-operator-image",
-				KubeRbacProxy:         "kube-rbac-proxy-image",
-			},
-			ControllerConfig: mcfgv1.ControllerConfigSpec{
-				Proxy: &configv1.ProxyStatus{
-					HTTPSProxy: "https://i.am.a.proxy.server",
-					NoProxy:    "*", // See: https://bugzilla.redhat.com/show_bug.cgi?id=1947066
+		{
+			// Nested field test
+			Path: "manifests/machineconfigcontroller/deployment.yaml",
+			RenderConfig: &renderConfig{
+				TargetNamespace: "testing-namespace",
+				ReleaseVersion:  "4.8.0-rc.0",
+				Images: &RenderConfigImages{
+					MachineConfigOperator: "mco-operator-image",
 				},
 			},
-		},
-		FindExpected: []string{
-			"image: mco-operator-image",
-			"image: kube-rbac-proxy-image",
-			"- name: HTTPS_PROXY\n            value: https://i.am.a.proxy.server",
-			"- name: NO_PROXY\n            value: \"*\"", // Ensure the * is quoted: "*": https://bugzilla.redhat.com/show_bug.cgi?id=1947066
-			"--payload-version=4.8.0-rc.0",
-		},
-	}, {
-		// Bad path, will cause asset error
-		Path:  "BAD PATH",
-		Error: true,
-	}, {
-		Path: "manifests/bootstrap-pod-v2.yaml",
-		RenderConfig: &renderConfig{
-			TargetNamespace: "testing-namespace",
-			ReleaseVersion:  "4.8.0-rc.0",
-			Images: &RenderConfigImages{
-				MachineConfigOperator: "mco-operator-image",
+			FindExpected: []string{
+				"image: mco-operator-image",
+				"--payload-version=4.8.0-rc.0",
 			},
 		},
-		FindExpected: []string{
-			"--payload-version=4.8.0-rc.0",
+		{
+			// Render same template as previous test
+			// But with a template field missing
+			Path: "manifests/machineconfigcontroller/deployment.yaml",
+			RenderConfig: &renderConfig{
+				TargetNamespace: "testing-namespace",
+			},
+			Error: true,
 		},
-	}}
+		{
+			// Test that machineconfigdaemon DaemonSets are rendered correctly with proxy config
+			Path: "manifests/machineconfigdaemon/daemonset.yaml",
+			RenderConfig: &renderConfig{
+				MachineOSConfigs: nil,
+				TargetNamespace:  "testing-namespace",
+				ReleaseVersion:   "4.8.0-rc.0",
+				Images: &RenderConfigImages{
+					MachineConfigOperator: "mco-operator-image",
+					KubeRbacProxy:         "kube-rbac-proxy-image",
+				},
+				ControllerConfig: mcfgv1.ControllerConfigSpec{
+					Proxy: &configv1.ProxyStatus{
+						HTTPSProxy: "https://i.am.a.proxy.server",
+						NoProxy:    "*", // See: https://bugzilla.redhat.com/show_bug.cgi?id=1947066
+					},
+				},
+			},
+			FindExpected: []string{
+				"image: mco-operator-image",
+				"image: kube-rbac-proxy-image",
+				"- name: HTTPS_PROXY\n            value: https://i.am.a.proxy.server",
+				"- name: NO_PROXY\n            value: \"*\"", // Ensure the * is quoted: "*": https://bugzilla.redhat.com/show_bug.cgi?id=1947066
+				"--payload-version=4.8.0-rc.0",
+			},
+			NotFindExpected: []string{
+				"- mountPath: /run/pool-1/secret-1\n            name: secret-1",
+				"- mountPath: /run/pool-2/secret-2\n            name: secret-2",
+				"- secret:\n            secretName: secret-1\n          name: secret-1",
+				"- secret:\n            secretName: secret-2\n          name: secret-2",
+			},
+		},
+		{
+			// Bad path, will cause asset error
+			Path:  "BAD PATH",
+			Error: true,
+		},
+		{
+			Path: "manifests/bootstrap-pod-v2.yaml",
+			RenderConfig: &renderConfig{
+				TargetNamespace: "testing-namespace",
+				ReleaseVersion:  "4.8.0-rc.0",
+				Images: &RenderConfigImages{
+					MachineConfigOperator: "mco-operator-image",
+				},
+			},
+			FindExpected: []string{
+				"--payload-version=4.8.0-rc.0",
+			},
+		},
+		// Tests that the MCD DaemonSet gets MachineOSConfig secrets mounted into it.
+		{
+			Path: "manifests/machineconfigdaemon/daemonset.yaml",
+			RenderConfig: &renderConfig{
+				TargetNamespace: "testing-namespace",
+				ReleaseVersion:  "4.16.0-rc.1",
+				Images: &RenderConfigImages{
+					MachineConfigOperator: "mco-operator-image",
+					KubeRbacProxy:         "kube-rbac-proxy-image",
+				},
+				MachineOSConfigs: []*mcfgv1alpha1.MachineOSConfig{
+					{
+						Spec: mcfgv1alpha1.MachineOSConfigSpec{
+							MachineConfigPool: mcfgv1alpha1.MachineConfigPoolReference{
+								Name: "pool-1",
+							},
+							BuildOutputs: mcfgv1alpha1.BuildOutputs{
+								CurrentImagePullSecret: mcfgv1alpha1.ImageSecretObjectReference{
+									Name: "secret-1",
+								},
+							},
+						},
+					},
+					{
+						Spec: mcfgv1alpha1.MachineOSConfigSpec{
+							MachineConfigPool: mcfgv1alpha1.MachineConfigPoolReference{
+								Name: "pool-2",
+							},
+							BuildOutputs: mcfgv1alpha1.BuildOutputs{
+								CurrentImagePullSecret: mcfgv1alpha1.ImageSecretObjectReference{
+									Name: "secret-2",
+								},
+							},
+						},
+					},
+				},
+			},
+			FindExpected: []string{
+				"- mountPath: /run/secrets/os-image-pull-secrets/pool-1\n            name: secret-1",
+				"- mountPath: /run/secrets/os-image-pull-secrets/pool-2\n            name: secret-2",
+				"- secret:\n            secretName: secret-1\n          name: secret-1",
+				"- secret:\n            secretName: secret-2\n          name: secret-2",
+			},
+		},
+	}
 
 	for idx, test := range tests {
 		idx := idx
@@ -311,14 +374,17 @@ func TestRenderAsset(t *testing.T) {
 			if str == "" || len(str) == 0 {
 				t.Fatalf("Buffer is not a valid string!")
 			}
-			// Verify that all FindExpected values are actually in the string
-			if len(test.FindExpected) > 0 {
-				for _, itemToFind := range test.FindExpected {
-					if !strings.Contains(str, itemToFind) {
-						t.Fatalf("Rendered template does not contain expected values: %s, \nGot: %s", itemToFind, str)
-					}
-				}
+
+			// Verify that all FindExpected values are actually in the rendered string
+			for _, itemToFind := range test.FindExpected {
+				assert.Contains(t, str, itemToFind)
 			}
+
+			// Verify that none of the NotFindExpected values are in the rendered string
+			for _, itemNotToFind := range test.NotFindExpected {
+				assert.NotContains(t, str, itemNotToFind)
+			}
+
 			// Verify that the rendered template can be read.
 			// This aims to prevent bugs similar to https://bugzilla.redhat.com/show_bug.cgi?id=1947066
 			assertRenderedCanBeRead(t, buf)

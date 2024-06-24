@@ -9,6 +9,7 @@ import (
 	"k8s.io/klog/v2"
 
 	configv1 "github.com/openshift/api/config/v1"
+	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	configscheme "github.com/openshift/client-go/config/clientset/versioned/scheme"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -153,7 +154,7 @@ func RenderBootstrap(
 		templatectrl.KubeRbacProxyKey:       imgs.KubeRbacProxy,
 	}
 
-	config := getRenderConfig("", string(filesData[kubeAPIServerServingCA]), spec, &imgs.RenderConfigImages, infra.Status.APIServerInternalURL, nil)
+	config := getRenderConfig("", string(filesData[kubeAPIServerServingCA]), spec, &imgs.RenderConfigImages, infra.Status.APIServerInternalURL, nil, []*mcfgv1alpha1.MachineOSConfig{})
 
 	manifests := []manifest{
 		{
