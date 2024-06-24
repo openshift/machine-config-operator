@@ -33,34 +33,36 @@ type poolRequest struct {
 // APIServer provides the HTTP(s) endpoint
 // for providing the machine configs.
 type APIServer struct {
-	handler  http.Handler
-	port     int
-	insecure bool
-	cert     string
-	key      string
+	handler   http.Handler
+	port      int
+	insecure  bool
+	cert      string
+	key       string
+	tlsConfig *tls.Config
 }
 
 // NewAPIServer initializes a new API server
 // that runs the Machine Config Server as a
 // handler.
-func NewAPIServer(a *APIHandler, p int, is bool, c, k string) *APIServer {
+func NewAPIServer(a *APIHandler, p int, is bool, c, k string, t *tls.Config) *APIServer {
 	mux := http.NewServeMux()
 	mux.Handle("/config/", a)
 	mux.Handle("/healthz", &healthHandler{})
 	mux.Handle("/", &defaultHandler{})
 
 	return &APIServer{
-		handler:  mux,
-		port:     p,
-		insecure: is,
-		cert:     c,
-		key:      k,
+		handler:   mux,
+		port:      p,
+		insecure:  is,
+		cert:      c,
+		key:       k,
+		tlsConfig: t,
 	}
 }
 
 // Serve launches the API Server.
 func (a *APIServer) Serve() {
-	mcs := getHTTPServerCfg(fmt.Sprintf(":%v", a.port), a.handler)
+	mcs := getHTTPServerCfg(fmt.Sprintf(":%v", a.port), a.handler, a.tlsConfig)
 
 	klog.Infof("Launching server on %s", mcs.Addr)
 	if a.insecure {
@@ -372,7 +374,7 @@ func (h *defaultHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // getHTTPServerCfg returns the basic HTTP Server
-func getHTTPServerCfg(addr string, handler http.Handler) *http.Server {
+func getHTTPServerCfg(addr string, handler http.Handler, tlsConfig *tls.Config) *http.Server {
 	return &http.Server{
 		Addr:    addr,
 		Handler: handler,
@@ -380,10 +382,7 @@ func getHTTPServerCfg(addr string, handler http.Handler) *http.Server {
 		// Per https://golang.org/src/net/http/doc.go this is the runtime method of disabling HTTP/2
 		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler)),
 		// We don't want to allow 1.1 as that's old.  This was flagged in a security audit.
-		TLSConfig: &tls.Config{
-			MinVersion:   tls.VersionTLS12,
-			CipherSuites: cipherOrder(),
-		},
+		TLSConfig: tlsConfig,
 	}
 
 }

@@ -634,7 +634,7 @@ func TestAPIServer(t *testing.T) {
 			ms := &mockServer{
 				GetConfigFn: scenario.serverFunc,
 			}
-			server := NewAPIServer(NewServerAPIHandler(ms), 0, false, "", "")
+			server := NewAPIServer(NewServerAPIHandler(ms), 0, false, "", "", nil)
 			server.handler.ServeHTTP(w, scenario.request)
 
 			resp := w.Result()
@@ -672,6 +672,7 @@ EKTcWGekdmdDPsHloRNtsiCa697B2O9IFA==
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintln(w, "Hello, client")
 		}),
+		ctrlcommon.GetGoTLSConfig("", nil),
 	)
 
 	// Configure the TLS testing to allow

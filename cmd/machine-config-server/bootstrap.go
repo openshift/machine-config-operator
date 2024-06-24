@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/server"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/spf13/cobra"
@@ -44,9 +45,14 @@ func runBootstrapCmd(_ *cobra.Command, _ []string) {
 		klog.Exitf("Machine Config Server exited with error: %v", err)
 	}
 
+	// TODO: During bootstrap, the tls arguments will not be provided. The following function
+	// should default to the intermediate security profile until bootstrap tls arguments are implemented.
+	klog.Infof("Launching bootstrap server with tls min version: %v & cipher suites %v", rootOpts.tlsminversion, rootOpts.tlsciphersuites)
+	tlsConfig := ctrlcommon.GetGoTLSConfig(rootOpts.tlsminversion, rootOpts.tlsciphersuites)
+
 	apiHandler := server.NewServerAPIHandler(bs)
-	secureServer := server.NewAPIServer(apiHandler, rootOpts.sport, false, rootOpts.cert, rootOpts.key)
-	insecureServer := server.NewAPIServer(apiHandler, rootOpts.isport, true, "", "")
+	secureServer := server.NewAPIServer(apiHandler, rootOpts.sport, false, rootOpts.cert, rootOpts.key, tlsConfig)
+	insecureServer := server.NewAPIServer(apiHandler, rootOpts.isport, true, "", "", tlsConfig)
 
 	stopCh := make(chan struct{})
 	go secureServer.Serve()

@@ -24,6 +24,8 @@ spec:
           - "start"
           - "--apiserver-url={{.APIServerURL}}"
           - "--payload-version={{.ReleaseVersion}}"
+          - "--tls-cipher-suites={{join .TLSCipherSuites ","}}"
+          - "--tls-min-version={{.TLSMinVersion}}"
         resources:
           requests:
             cpu: 20m
