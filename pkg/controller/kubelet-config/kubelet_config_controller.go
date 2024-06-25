@@ -464,6 +464,11 @@ func generateFeatureMap(featuregateAccess featuregates.FeatureGateAccess, exclus
 	return &rv, nil
 }
 
+var (
+	// openshiftOnlyFeatureGates contains selection of featureGates which will be rejected by native kubelet
+	openshiftOnlyFeatureGates = []osev1.FeatureGateName{}
+)
+
 func generateKubeConfigIgnFromFeatures(cc *mcfgv1.ControllerConfig, templatesDir, role string, featureGateAccess featuregates.FeatureGateAccess, nodeConfig *osev1.Node) ([]byte, error) {
 	originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, templatesDir, role, featureGateAccess)
 	if err != nil {
@@ -537,6 +542,45 @@ func generateOriginalKubeletConfigIgn(cc *mcfgv1.ControllerConfig, templatesDir,
 		return gmcKubeletConfig, nil
 	}
 	return nil, fmt.Errorf("could not generate old kubelet config")
+}
+
+func RunFeatureGateBootstrap(templateDir string, featureGateAccess featuregates.FeatureGateAccess, nodeConfig *osev1.Node, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool) ([]*mcfgv1.MachineConfig, error) {
+	machineConfigs := []*mcfgv1.MachineConfig{}
+
+	for _, pool := range mcpPools {
+		role := pool.Name
+		if nodeConfig == nil {
+			nodeConfig = createNewDefaultNodeconfig()
+		}
+		rawCfgIgn, err := generateKubeConfigIgnFromFeatures(controllerConfig, templateDir, role, featureGateAccess, nodeConfig)
+		if err != nil {
+			return nil, err
+		}
+		if rawCfgIgn == nil {
+			continue
+		}
+
+		// Get MachineConfig
+		managedKey, err := getManagedFeaturesKey(pool, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		ignConfig := ctrlcommon.NewIgnConfig()
+		mc, err := ctrlcommon.MachineConfigFromIgnConfig(role, managedKey, ignConfig)
+		if err != nil {
+			return nil, err
+		}
+
+		mc.Spec.Config.Raw = rawCfgIgn
+		mc.ObjectMeta.Annotations = map[string]string{
+			ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,
+		}
+
+		machineConfigs = append(machineConfigs, mc)
+	}
+
+	return machineConfigs, nil
 }
 
 func (ctrl *Controller) syncStatusOnly(cfg *mcfgv1.KubeletConfig, err error, args ...interface{}) error {
