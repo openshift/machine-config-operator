@@ -183,6 +183,15 @@ func getOSVersion(or osrelease.OSRelease) string {
 			return strings.ReplaceAll(or.VERSION, openshiftVersion, "")
 		}
 	}
+	// 4.1 and 4.2 bootimages doesn't ship RHEL_VERSION and OPENSHIFT_VERSION
+	// into /etc/os-release and hence we need to interpret ourself RHEL Version
+	// from VERSION_ID . See https://issues.redhat.com/browse/OCPBUGS-28974
+	if or.VERSION_ID == "4.1" {
+		return "8.1"
+	}
+	if or.VERSION_ID == "4.2" {
+		return "8.2"
+	}
 
 	// Fallback to the VERSION_ID field
 	return or.VERSION_ID
