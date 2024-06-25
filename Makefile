@@ -24,7 +24,7 @@ GOTAGS = "containers_image_openpgp exclude_graphdriver_devicemapper exclude_grap
 
 all: binaries
 
-.PHONY: clean test test-unit test-e2e verify update install-tools
+.PHONY: clean test test-unit test-e2e verify update install-tools verify-e2e
 
 # Remove build artifaces
 # Example:
@@ -98,9 +98,29 @@ install-tools: install-golangci-lint install-setup-envtest install-go-junit-repo
 # Run verification steps
 # Example:
 #    make verify
-verify: install-tools
+verify: verify-e2e install-tools
 	./hack/golangci-lint.sh $(GOTAGS)
 	hack/verify-templates.sh
+
+# Function to filter out duplicates
+define uniq
+$(if $1,$(firstword $1) $(call uniq,$(filter-out $(firstword $1),$1)))
+endef
+
+# This target performs a test compilation of all of the files under the test/
+# directory to check for syntax errors or other simple-to-find issues. This is
+# primarily useful in CI where the tests will not be compiled and run until
+# after the test cluster is stood up. By running this with the rest of the
+# verification tasks, this can be identified much quicker.
+#
+# For any directories which contain *_test.go files, it passes them through the
+# go test command with the -c flag which will compile a test binary from those
+# tests, but not run them. For non _test.go files, it simply runs go build
+# against that directory.
+TEST_DIR=test
+verify-e2e:
+	$(foreach dirname, $(strip $(call uniq, $(dir $(wildcard $(TEST_DIR)/**/*_test.go)))), go test -v -c -tags $(GOTAGS) ./$(dirname);)
+	$(foreach dirname, $(strip $(call uniq, $(dir $(filter-out %_test.go,$(wildcard $(TEST_DIR)/**/*.go))))), go build -tags $(GOTAGS) -v ./$(dirname);)
 
 # Template for defining build targets for binaries.
 define target_template =
