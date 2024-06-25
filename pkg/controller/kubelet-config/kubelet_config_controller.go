@@ -81,8 +81,7 @@ type Controller struct {
 
 	eventRecorder record.EventRecorder
 
-	syncHandler          func(mcp string) error
-	enqueueKubeletConfig func(*mcfgv1.KubeletConfig)
+	syncHandler func(mcp string) error
 
 	ccLister       mcfglistersv1.ControllerConfigLister
 	ccListerSynced cache.InformerSynced
@@ -141,12 +140,12 @@ func New(
 	mkuInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			ctrl.handleAdd(obj, func(obj interface{}) {
-				ctrl.enqueueKubeletConfig(obj.(*mcfgv1.KubeletConfig))
+				ctrl.enqueue(obj, ctrl.queue)
 			}, "KubeletConfig")
 		},
 		UpdateFunc: func(old, cur interface{}) {
 			ctrl.handleUpdate(old, cur, func(obj interface{}) {
-				ctrl.enqueueKubeletConfig(obj.(*mcfgv1.KubeletConfig))
+				ctrl.enqueue(obj, ctrl.queue)
 			}, "KubeletConfig", func(old, cur interface{}) bool {
 				return kubeletConfigTriggerObjectChange(old.(*mcfgv1.KubeletConfig), cur.(*mcfgv1.KubeletConfig))
 			})
@@ -161,12 +160,12 @@ func New(
 	featInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			ctrl.handleAdd(obj, func(obj interface{}) {
-				ctrl.enqueueFeature(obj.(*osev1.FeatureGate))
+				ctrl.enqueue(obj, ctrl.featureQueue)
 			}, "Feature")
 		},
 		UpdateFunc: func(old, cur interface{}) {
 			ctrl.handleUpdate(old, cur, func(obj interface{}) {
-				ctrl.enqueueFeature(obj.(*osev1.FeatureGate))
+				ctrl.enqueue(obj, ctrl.featureQueue)
 			}, "Feature", func(old, cur interface{}) bool {
 				return !reflect.DeepEqual(old.(*osev1.FeatureGate).Spec, cur.(*osev1.FeatureGate).Spec)
 			})
@@ -186,7 +185,6 @@ func New(
 	})
 
 	ctrl.syncHandler = ctrl.syncKubeletConfig
-	ctrl.enqueueKubeletConfig = ctrl.enqueue
 
 	ctrl.mcpLister = mcpInformer.Lister()
 	ctrl.mcpListerSynced = mcpInformer.Informer().HasSynced
@@ -248,25 +246,6 @@ func kubeletConfigTriggerObjectChange(old, new *mcfgv1.KubeletConfig) bool {
 	return false
 }
 
-// func (ctrl *Controller) updateKubeletConfig(old, cur interface{}) {
-// 	oldConfig := old.(*mcfgv1.KubeletConfig)
-// 	newConfig := cur.(*mcfgv1.KubeletConfig)
-
-// 	if kubeletConfigTriggerObjectChange(oldConfig, newConfig) {
-// 		klog.V(4).Infof("Update KubeletConfig %s", oldConfig.Name)
-// 		ctrl.enqueueKubeletConfig(newConfig)
-// 	}
-// }
-
-// func (ctrl *Controller) updateFeature(old, cur interface{}) {
-// 	oldFeature := old.(*osev1.FeatureGate)
-// 	newFeature := cur.(*osev1.FeatureGate)
-// 	if !reflect.DeepEqual(oldFeature.Spec, newFeature.Spec) {
-// 		klog.V(4).Infof("Update Feature %s", newFeature.Name)
-// 		ctrl.enqueueFeature(newFeature)
-// 	}
-// }
-
 func (ctrl *Controller) handleUpdate(old, cur interface{}, enqueueFunc func(interface{}), resourceName string, triggerFunc func(interface{}, interface{}) bool) {
 	if triggerFunc(old, cur) {
 		klog.V(4).Infof("Update %s %s", resourceName, cur.(metav1.Object).GetName())
@@ -274,60 +253,10 @@ func (ctrl *Controller) handleUpdate(old, cur interface{}, enqueueFunc func(inte
 	}
 }
 
-// func (ctrl *Controller) addKubeletConfig(obj interface{}) {
-// 	cfg := obj.(*mcfgv1.KubeletConfig)
-// 	klog.V(4).Infof("Adding KubeletConfig %s", cfg.Name)
-// 	ctrl.enqueueKubeletConfig(cfg)
-// }
-
-// func (ctrl *Controller) addFeature(obj interface{}) {
-// 	features := obj.(*osev1.FeatureGate)
-// 	klog.V(4).Infof("Adding Feature %s", features.Name)
-// 	ctrl.enqueueFeature(features)
-// }
-
 func (ctrl *Controller) handleAdd(obj interface{}, enqueueFunc func(interface{}), resourceName string) {
 	klog.V(4).Infof("Adding %s %s", resourceName, obj.(metav1.Object).GetName())
 	enqueueFunc(obj)
 }
-
-// func (ctrl *Controller) deleteKubeletConfig(obj interface{}) {
-// 	cfg, ok := obj.(*mcfgv1.KubeletConfig)
-// 	if !ok {
-// 		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
-// 		if !ok {
-// 			utilruntime.HandleError(fmt.Errorf("couldn't get object from tombstone %#v", obj))
-// 			return
-// 		}
-// 		cfg, ok = tombstone.Obj.(*mcfgv1.KubeletConfig)
-// 		if !ok {
-// 			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not a KubeletConfig %#v", obj))
-// 			return
-// 		}
-// 	}
-// 	if err := ctrl.cascadeDelete(cfg); err != nil {
-// 		utilruntime.HandleError(fmt.Errorf("couldn't delete object %#v: %w", cfg, err))
-// 	} else {
-// 		klog.V(4).Infof("Deleted KubeletConfig %s and restored default config", cfg.Name)
-// 	}
-// }
-
-// func (ctrl *Controller) deleteFeature(obj interface{}) {
-// 	features, ok := obj.(*osev1.FeatureGate)
-// 	if !ok {
-// 		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
-// 		if !ok {
-// 			utilruntime.HandleError(fmt.Errorf("couldn't get object from tombstone %#v", obj))
-// 			return
-// 		}
-// 		features, ok = tombstone.Obj.(*osev1.FeatureGate)
-// 		if !ok {
-// 			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not a KubeletConfig %#v", obj))
-// 			return
-// 		}
-// 	}
-// 	klog.V(4).Infof("Deleted Feature %s and restored default config", features.Name)
-// }
 
 func (ctrl *Controller) handleDelete(obj interface{}, cascadeDeleteFunc func(interface{}) error, resourceName string) {
 	resource, ok := obj.(metav1.Object)
@@ -371,13 +300,13 @@ func (ctrl *Controller) cascadeDelete(cfg *mcfgv1.KubeletConfig) error {
 	return ctrl.popFinalizerFromKubeletConfig(cfg)
 }
 
-func (ctrl *Controller) enqueue(cfg *mcfgv1.KubeletConfig) {
-	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(cfg)
+func (ctrl *Controller) enqueue(obj interface{}, queue workqueue.RateLimitingInterface) {
+	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %w", cfg, err))
+		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %w", obj, err))
 		return
 	}
-	ctrl.queue.Add(key)
+	queue.Add(key)
 }
 
 func (ctrl *Controller) enqueueRateLimited(cfg *mcfgv1.KubeletConfig) {
@@ -432,15 +361,6 @@ func (ctrl *Controller) handleErr(queue workqueue.RateLimitingInterface, err err
 	klog.V(2).Infof("Dropping %q out of the queue: %v", key, err)
 	queue.Forget(key)
 	queue.AddAfter(key, 1*time.Minute)
-}
-
-func (ctrl *Controller) enqueueFeature(feat *osev1.FeatureGate) {
-	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(feat)
-	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %w", feat, err))
-		return
-	}
-	ctrl.featureQueue.Add(key)
 }
 
 func (ctrl *Controller) syncFeatureHandler(key string) error {
