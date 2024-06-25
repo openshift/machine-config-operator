@@ -162,19 +162,6 @@ func TestEntitledBuilds(t *testing.T) {
 	})
 }
 
-func TestControllerConfigStuff(t *testing.T) {
-	cs := framework.NewClientSet("")
-	cfg, err := cs.ControllerConfigs().Get(context.TODO(), "machine-config-controller", metav1.GetOptions{})
-	require.NoError(t, err)
-
-	imagePullCfg, err := ctrlcommon.ToDockerConfigJSON(cfg.Spec.InternalRegistryPullSecret)
-	require.NoError(t, err)
-
-	for key := range imagePullCfg.Auths {
-		t.Logf(key)
-	}
-}
-
 // This test asserts that any secrets attached to the MachineOSConfig are made
 // available to the MCD and get written to the node. Note: In this test, the
 // built image should not make it to the node before we've verified that the
