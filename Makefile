@@ -4,6 +4,8 @@ ALL_COMPONENTS = $(patsubst %,machine-config-%,$(MCO_COMPONENTS)) $(EXTRA_COMPON
 PREFIX ?= /usr
 GO111MODULE?=on
 
+GOTESTSUM_FORMAT = standard-verbose
+
 # Copied from coreos-assembler
 GOARCH := $(shell uname -m)
 ifeq ($(GOARCH),x86_64)
@@ -22,9 +24,13 @@ export GOLANGCI_LINT_CACHE=$(shell echo $${GOLANGCI_LINT_CACHE:-$$GOPATH/cache})
 
 GOTAGS = "containers_image_openpgp exclude_graphdriver_devicemapper exclude_graphdriver_btrfs containers_image_ostree_stub"
 
+GOTESTSUM_OPTS = --format $(GOTESTSUM_FORMAT) --junitfile "$(ARTIFACT_DIR)/$(@).xml"
+UNITTEST_TARGETS = ./cmd/... ./pkg/... ./lib/... ./test/helpers/...
+UNITTEST_OPTS = -v -count=1 -tags=$(GOTAGS)
+
 all: binaries
 
-.PHONY: clean test test-unit test-e2e verify update install-tools
+.PHONY: clean test test-unit test-unit-with-coverage test-e2e verify update install-tools
 
 # Remove build artifaces
 # Example:
@@ -46,9 +52,15 @@ image:
 # Run tests
 test: test-unit test-e2e
 
+ARTIFACT_DIR ?= $(CURDIR)
+
 # Unit tests only (no active cluster required)
-test-unit: install-go-junit-report
-	./hack/test-unit.sh $(@) $(GOTAGS)
+test-unit-old: install-gotestsum
+	gotestsum $(GOTESTSUM_OPTS) -- $(UNITTEST_OPTS) $(UNITTEST_TARGETS)
+
+test-unit: install-gotestsum
+	gotestsum $(GOTESTSUM_OPTS) -- $(UNITTEST_OPTS) -coverprofile="$(ARTIFACT_DIR)/mco-unit-test-coverage.out" $(UNITTEST_TARGETS)
+	go tool cover -html="$(ARTIFACT_DIR)/mco-unit-test-coverage.out" -o "$(ARTIFACT_DIR)/mco-unit-test-coverage.html"
 
 # Run the code generation tasks.
 # Example:
@@ -73,16 +85,6 @@ else
 	go install -mod= sigs.k8s.io/controller-runtime/tools/setup-envtest@v0.0.0-20240315194348-5aaf1190f880
 endif
 
-GO_JUNIT_REPORT := $(shell command -v go-junit-report 2> /dev/null)
-install-go-junit-report:
-ifdef GO_JUNIT_REPORT
-	@echo "Found go-junit-report"
-	go-junit-report --version
-else
-	@echo "Installing go-junit-report"
-	go install -mod= github.com/jstemmer/go-junit-report@latest
-endif
-
 GOLANGCI_LINT := $(shell command -v golangci-lint 2> /dev/null)
 install-golangci-lint:
 ifdef GOLANGCI_LINT
@@ -93,7 +95,17 @@ else
 	GO111MODULE=on go build -o $(GOPATH)/bin/golangci-lint ./vendor/github.com/golangci/golangci-lint/cmd/golangci-lint
 endif
 
-install-tools: install-golangci-lint install-setup-envtest install-go-junit-report
+GOTESTSUM := $(shell command -v gotestsum 2> /dev/null)
+install-gotestsum:
+ifdef GOTESTSUM
+	@echo "Found gotestsum"
+	gotestsum --version
+else
+	@echo "Installing gotestsum"
+	curl -L ""https://github.com/gotestyourself/gotestsum/releases/download/v1.12.0/gotestsum_1.12.0_linux_$(GOARCH).tar.gz" | tar zxv gotestsum && mv gotestsum $(GOPATH)/bin/gotestsum
+endif
+
+install-tools: install-golangci-lint install-setup-envtest install-gotestsum
 
 # Run verification steps
 # Example:
@@ -128,14 +140,14 @@ Dockerfile.rhel7: Dockerfile Makefile
 	 sed -e s,org/openshift/release,org/ocp/builder, -e s,/openshift/origin-v4.0:base,/ocp/4.0:base, < $<) > $@.tmp && mv $@.tmp $@
 
 # This was copied from https://github.com/openshift/cluster-image-registry-operator
-test-e2e: install-go-junit-report
-	set -o pipefail; go test -tags=$(GOTAGS) -failfast -timeout 170m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e/ ./test/e2e-techpreview-shared/ | ./hack/test-with-junit.sh $(@)
+test-e2e: install-gotestsum
+	gotestsum $(GOTESTSUM_OPTS) -- -tags=$(GOTAGS) -failfast -timeout 170m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e/ ./test/e2e-techpreview-shared/
 
-test-e2e-techpreview: install-go-junit-report
-	set -o pipefail; go test -tags=$(GOTAGS) -failfast -timeout 170m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-techpreview  ./test/e2e-techpreview-shared/ | ./hack/test-with-junit.sh $(@)
+test-e2e-techpreview: install-gotestsum
+	gotestsum $(GOTESTSUM_OPTS) -- -tags=$(GOTAGS) -failfast -timeout 170m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-techpreview  ./test/e2e-techpreview-shared/
 
-test-e2e-single-node: install-go-junit-report
-	set -o pipefail; go test -tags=$(GOTAGS) -failfast -timeout 120m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-single-node/ | ./hack/test-with-junit.sh $(@)
+test-e2e-single-node: install-gotestsum
+	gotestsum $(GOTESTSUM_OPTS) -- -tags=$(GOTAGS) -failfast -timeout 120m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-single-node/
 
-bootstrap-e2e: install-go-junit-report install-setup-envtest
-	set -o pipefail; go test -tags=$(GOTAGS) -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-bootstrap/ | ./hack/test-with-junit.sh $(@)
+bootstrap-e2e: install-setup-envtest install-gotestsum
+	gotestsum $(GOTESTSUM_OPTS) -- -tags=$(GOTAGS) -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-bootstrap/
