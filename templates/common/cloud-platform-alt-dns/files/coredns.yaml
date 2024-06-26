@@ -55,8 +55,6 @@ contents:
         terminationMessagePolicy: FallbackToLogsOnError
       containers:
       - name: coredns
-        securityContext:
-          privileged: true
         image: {{.Images.corednsImage}}
         args:
         - "--conf"
