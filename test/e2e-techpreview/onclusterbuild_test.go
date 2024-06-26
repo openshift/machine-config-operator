@@ -207,8 +207,10 @@ func TestMCDGetsMachineOSConfigSecrets(t *testing.T) {
 	t.Cleanup(createMachineOSConfig(t, cs, mosc))
 
 	// Wait for the build to start. We don't need to wait for it to complete
-	// since we're mostly concerned about whether the MCD on the node gets our
-	// dummy secret.
+	// since this test is primarily concerned about whether the MCD on the node
+	// gets our dummy secret or not. In the future, we should use a real secret
+	// and validate that the node can push and pull the image from it. We can
+	// simulate that by using an imagestream that lives in a different namespace.
 	waitForBuildToStart(t, cs, layeredMCPName)
 
 	// Verifies that the MCD pod gets the appropriate secret volume and volume mount.
@@ -225,49 +227,72 @@ func TestMCDGetsMachineOSConfigSecrets(t *testing.T) {
 			return false, err
 		}
 
+		// Return true when the following conditions are met:
+		// 1. The MCD pod has the expected secret volume.
+		// 2. The MCD pod has the expected secret volume mount.
+		// 3. All of the containers within the MCD pod are ready and running.
 		return podHasExpectedSecretVolume(mcdPod, secretName) &&
-			podHasExpectedSecretVolumeMount(mcdPod, layeredMCPName, secretName), nil
+			podHasExpectedSecretVolumeMount(mcdPod, layeredMCPName, secretName) &&
+			isMcdPodRunning(mcdPod), nil
 	})
 
 	require.NoError(t, err)
 
-	t.Logf("MCD pod has secret volume mount for %s", secretName)
+	t.Logf("MCD pod is running and has secret volume mount for %s", secretName)
+
+	// Get the internal image registry hostnames that we will ensure are present
+	// on the target node.
+	internalRegistryHostnames, err := getInternalRegistryHostnamesFromControllerConfig(cs)
+	require.NoError(t, err)
+
+	// Adds the dummy hostname to the expected internal registry hostname list.
+	// At this point, the ControllerConfig may already have our dummy
+	// hostname, but there is no harm if it is present in this list twice.
+	internalRegistryHostnames = append(internalRegistryHostnames, "registry.hostname.com")
 
 	// Wait for the MCD pod to write the dummy secret to the nodes' filesystem
 	// and validate that our dummy hostname is in there along with all of the
-	// ones in the ControllerConfig.
+	// ones from the ControllerConfig.
 	err = wait.PollImmediate(1*time.Second, 5*time.Minute, func() (bool, error) {
-		cfg, err := cs.ControllerConfigs().Get(context.TODO(), "machine-config-controller", metav1.GetOptions{})
-		require.NoError(t, err)
-
-		imagePullCfg, err := ctrlcommon.ToDockerConfigJSON(cfg.Spec.InternalRegistryPullSecret)
-		require.NoError(t, err)
-
-		hostnames := []string{
-			"registry.hostname.com",
-		}
-
-		for key := range imagePullCfg.Auths {
-			hostnames = append(hostnames, key)
-		}
-
 		filename := "/etc/mco/internal-registry-pull-secret.json"
 
 		contents := helpers.ExecCmdOnNode(t, cs, node, "cat", filepath.Join("/rootfs", filename))
 
-		for _, hostname := range hostnames {
+		for _, hostname := range internalRegistryHostnames {
 			if !strings.Contains(contents, hostname) {
 				return false, nil
 			}
 		}
 
-		t.Logf("All hostnames %v found in %q on node %q", hostnames, filename, node.Name)
+		t.Logf("All hostnames %v found in %q on node %q", internalRegistryHostnames, filename, node.Name)
 		return true, nil
 	})
 
 	require.NoError(t, err)
 
 	t.Logf("Node filesystem %s got secret from MachineOSConfig", node.Name)
+}
+
+// Returns a list of the hostnames provided by the InternalRegistryPullSecret
+// field on the ControllerConfig object.
+func getInternalRegistryHostnamesFromControllerConfig(cs *framework.ClientSet) ([]string, error) {
+	cfg, err := cs.ControllerConfigs().Get(context.TODO(), "machine-config-controller", metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	imagePullCfg, err := ctrlcommon.ToDockerConfigJSON(cfg.Spec.InternalRegistryPullSecret)
+	if err != nil {
+		return nil, err
+	}
+
+	hostnames := []string{}
+
+	for key := range imagePullCfg.Auths {
+		hostnames = append(hostnames, key)
+	}
+
+	return hostnames, nil
 }
 
 // Determines if we can ignore the error returned by helpers.MCDForNode(). This
@@ -309,6 +334,30 @@ func podHasExpectedSecretVolumeMount(pod *corev1.Pod, poolName, secretName strin
 	}
 
 	return false
+}
+
+// Determines whether a given MCD pod is running. Returns true only once all of
+// the container statuses are in a running state.
+func isMcdPodRunning(pod *corev1.Pod) bool {
+	for _, containerStatus := range pod.Status.ContainerStatuses {
+		if containerStatus.Ready != true {
+			return false
+		}
+
+		if containerStatus.Started == nil {
+			return false
+		}
+
+		if *containerStatus.Started != true {
+			return false
+		}
+
+		if containerStatus.State.Running == nil {
+			return false
+		}
+	}
+
+	return true
 }
 
 // Sets up and performs an on-cluster build for a given set of parameters.
