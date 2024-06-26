@@ -127,7 +127,8 @@ contents:
         imagePullPolicy: IfNotPresent
       - name: haproxy-monitor
         securityContext:
-          privileged: true
+          capabilities:
+            add: ["NET_ADMIN", "SYS_CHROOT"]
         image: {{ .Images.baremetalRuntimeCfgImage }}
         command:
         - monitor
