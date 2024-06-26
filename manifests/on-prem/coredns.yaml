@@ -62,7 +62,6 @@ spec:
   containers:
   - name: coredns
     securityContext:
-      privileged: true
       readOnlyRootFilesystem: false
     image: {{ .Images.CorednsBootstrap }}
     args:
