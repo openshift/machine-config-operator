@@ -24,7 +24,7 @@ export GOLANGCI_LINT_CACHE=$(shell echo $${GOLANGCI_LINT_CACHE:-$$GOPATH/cache})
 
 GOTAGS = "containers_image_openpgp exclude_graphdriver_devicemapper exclude_graphdriver_btrfs containers_image_ostree_stub"
 
-GOTESTSUM_OPTS = --format $(GOTESTSUM_FORMAT) --junitfile "$(ARTIFACT_DIR)/$(@).xml"
+GOTESTSUM_OPTS = --format $(GOTESTSUM_FORMAT) --junitfile "$(ARTIFACT_DIR)/junit-$(@).xml"
 UNITTEST_TARGETS = ./cmd/... ./pkg/... ./lib/... ./test/helpers/...
 UNITTEST_OPTS = -v -count=1 -tags=$(GOTAGS)
 
@@ -100,6 +100,7 @@ install-gotestsum:
 ifdef GOTESTSUM
 	@echo "Found gotestsum"
 	gotestsum --version
+	which gotestsum
 else
 	@echo "Installing gotestsum"
 	curl -L ""https://github.com/gotestyourself/gotestsum/releases/download/v1.12.0/gotestsum_1.12.0_linux_$(GOARCH).tar.gz" | tar zxv gotestsum && mv gotestsum $(GOPATH)/bin/gotestsum
