@@ -7,12 +7,10 @@ import (
 	"github.com/openshift/library-go/pkg/operator/events"
 	"github.com/openshift/library-go/pkg/operator/resource/resourcemerge"
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
-	admissionregistrationv1beta1 "k8s.io/api/admissionregistration/v1beta1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	admissionregistrationclientv1 "k8s.io/client-go/kubernetes/typed/admissionregistration/v1"
-	admissionregistrationclientv1beta1 "k8s.io/client-go/kubernetes/typed/admissionregistration/v1beta1"
 	"k8s.io/klog/v2"
 )
 
@@ -167,14 +165,14 @@ func copyValidatingWebhookCABundle(from, to *admissionregistrationv1.ValidatingW
 	}
 }
 
-// ApplyValidatingAdmissionPolicyV1beta1 ensures the form of the specified
+// ApplyValidatingAdmissionPolicyV1 ensures the form of the specified
 // validatingadmissionpolicyconfiguration is present in the API. If it does not exist,
 // it will be created. If it does exist, the metadata of the required
 // validatingadmissionpolicyconfiguration will be merged with the existing validatingadmissionpolicyconfiguration
 // and an update performed if the validatingadmissionpolicyconfiguration spec and metadata differ from
 // the previously required spec and metadata based on generation change.
-func ApplyValidatingAdmissionPolicyV1beta1(ctx context.Context, client admissionregistrationclientv1beta1.ValidatingAdmissionPoliciesGetter, recorder events.Recorder,
-	requiredOriginal *admissionregistrationv1beta1.ValidatingAdmissionPolicy, cache ResourceCache) (*admissionregistrationv1beta1.ValidatingAdmissionPolicy, bool, error) {
+func ApplyValidatingAdmissionPolicyV1(ctx context.Context, client admissionregistrationclientv1.ValidatingAdmissionPoliciesGetter, recorder events.Recorder,
+	requiredOriginal *admissionregistrationv1.ValidatingAdmissionPolicy, cache ResourceCache) (*admissionregistrationv1.ValidatingAdmissionPolicy, bool, error) {
 	if requiredOriginal == nil {
 		return nil, false, fmt.Errorf("Unexpected nil instead of an object")
 	}
@@ -183,7 +181,7 @@ func ApplyValidatingAdmissionPolicyV1beta1(ctx context.Context, client admission
 	if apierrors.IsNotFound(err) {
 		required := requiredOriginal.DeepCopy()
 		actual, err := client.ValidatingAdmissionPolicies().Create(
-			ctx, resourcemerge.WithCleanLabelsAndAnnotations(required).(*admissionregistrationv1beta1.ValidatingAdmissionPolicy), metav1.CreateOptions{})
+			ctx, resourcemerge.WithCleanLabelsAndAnnotations(required).(*admissionregistrationv1.ValidatingAdmissionPolicy), metav1.CreateOptions{})
 		reportCreateEvent(recorder, required, err)
 		if err != nil {
 			return nil, false, err
@@ -214,7 +212,7 @@ func ApplyValidatingAdmissionPolicyV1beta1(ctx context.Context, client admission
 	toWrite := existingCopy // shallow copy so the code reads easier
 	toWrite.Spec = required.Spec
 
-	klog.V(2).Infof("ValidatingAdmissionPolicyConfigurationV1beta1 %q changes: %v", required.GetNamespace()+"/"+required.GetName(), JSONPatchNoError(existing, toWrite))
+	klog.V(2).Infof("ValidatingAdmissionPolicyConfigurationV1 %q changes: %v", required.GetNamespace()+"/"+required.GetName(), JSONPatchNoError(existing, toWrite))
 
 	actual, err := client.ValidatingAdmissionPolicies().Update(ctx, toWrite, metav1.UpdateOptions{})
 	reportUpdateEvent(recorder, required, err)
@@ -226,14 +224,14 @@ func ApplyValidatingAdmissionPolicyV1beta1(ctx context.Context, client admission
 	return actual, true, nil
 }
 
-// ApplyValidatingAdmissionPolicyBindingV1beta1 ensures the form of the specified
+// ApplyValidatingAdmissionPolicyBindingV1 ensures the form of the specified
 // validatingadmissionpolicybindingconfiguration is present in the API. If it does not exist,
 // it will be created. If it does exist, the metadata of the required
 // validatingadmissionpolicybindingconfiguration will be merged with the existing validatingadmissionpolicybindingconfiguration
 // and an update performed if the validatingadmissionpolicybindingconfiguration spec and metadata differ from
 // the previously required spec and metadata based on generation change.
-func ApplyValidatingAdmissionPolicyBindingV1beta1(ctx context.Context, client admissionregistrationclientv1beta1.ValidatingAdmissionPolicyBindingsGetter, recorder events.Recorder,
-	requiredOriginal *admissionregistrationv1beta1.ValidatingAdmissionPolicyBinding, cache ResourceCache) (*admissionregistrationv1beta1.ValidatingAdmissionPolicyBinding, bool, error) {
+func ApplyValidatingAdmissionPolicyBindingV1(ctx context.Context, client admissionregistrationclientv1.ValidatingAdmissionPolicyBindingsGetter, recorder events.Recorder,
+	requiredOriginal *admissionregistrationv1.ValidatingAdmissionPolicyBinding, cache ResourceCache) (*admissionregistrationv1.ValidatingAdmissionPolicyBinding, bool, error) {
 	if requiredOriginal == nil {
 		return nil, false, fmt.Errorf("Unexpected nil instead of an object")
 	}
@@ -242,7 +240,7 @@ func ApplyValidatingAdmissionPolicyBindingV1beta1(ctx context.Context, client ad
 	if apierrors.IsNotFound(err) {
 		required := requiredOriginal.DeepCopy()
 		actual, err := client.ValidatingAdmissionPolicyBindings().Create(
-			ctx, resourcemerge.WithCleanLabelsAndAnnotations(required).(*admissionregistrationv1beta1.ValidatingAdmissionPolicyBinding), metav1.CreateOptions{})
+			ctx, resourcemerge.WithCleanLabelsAndAnnotations(required).(*admissionregistrationv1.ValidatingAdmissionPolicyBinding), metav1.CreateOptions{})
 		reportCreateEvent(recorder, required, err)
 		if err != nil {
 			return nil, false, err

@@ -494,3 +494,16 @@ const (
 	// Special represents an action that is internal to the MCO, and is not allowed in user defined NodeDisruption policies.
 	SpecialStatusAction NodeDisruptionPolicyStatusActionType = "Special"
 )
+
+// These strings will be used for MachineConfiguration Status conditions.
+const (
+	// MachineConfigurationBootImageUpdateDegraded means that the MCO ran into an error while reconciling boot images. This
+	// will cause the clusteroperators.config.openshift.io/machine-config to degrade. This  condition will indicate the cause
+	// of the degrade, the progress of the update and the generation of the boot images configmap that it degraded on.
+	MachineConfigurationBootImageUpdateDegraded string = "BootImageUpdateDegraded"
+
+	// MachineConfigurationBootImageUpdateProgressing means that the MCO is in the process of reconciling boot images. This
+	// will cause the clusteroperators.config.openshift.io/machine-config to be in a Progressing state. This condition will
+	// indicate the progress of the update and the generation of the boot images configmap that triggered this update.
+	MachineConfigurationBootImageUpdateProgressing string = "BootImageUpdateProgressing"
+)
