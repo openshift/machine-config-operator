@@ -23,6 +23,13 @@ const (
 	scos   string = "scos"
 )
 
+// OS Pretty Names
+const (
+	RHCOS string = "Red Hat Enterprise Linux CoreOS"
+	FCOS  string = "Fedora Linux"
+	SCOS  string = "CentOS Stream CoreOS"
+)
+
 // OperatingSystem is a wrapper around a subset of the os-release fields
 // and also tracks whether ostree is in use.
 type OperatingSystem struct {
