@@ -234,10 +234,10 @@ contents:
           exit 1
         fi
 
-        if nmcli connection show "$vlan_parent" &> /dev/null; then
+        if nmcli connection show uuid "$vlan_parent" &> /dev/null; then
           # if the VLAN connection is configured with a connection UUID as parent, we need to find the underlying device
           # and create the bridge against it, as the parent connection can be replaced by another bridge.
-          vlan_parent=$(nmcli --get-values GENERAL.DEVICES conn show ${vlan_parent})
+          vlan_parent=$(nmcli --get-values GENERAL.DEVICES conn show uuid ${vlan_parent})
         fi
 
         extra_phys_args=( dev "${vlan_parent}" id "${vlan_id}" )
