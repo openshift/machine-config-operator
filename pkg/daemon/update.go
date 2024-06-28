@@ -1427,6 +1427,28 @@ func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig ign3types.Config) e
 		}
 	}
 
+	if err := dn.workaroundOcpBugs33694(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// Previous versions of the MCD leaked some enablement symlinks. We clean a
+// known problematic subset of those here. See also:
+// https://issues.redhat.com/browse/OCPBUGS-33694?focusedId=24917003#comment-24917003
+func (dn *Daemon) workaroundOcpBugs33694() error {
+	stalePaths := []string{
+		"/etc/systemd/system/network-online.target.requires/node-valid-hostname.service",
+		"/etc/systemd/system/network-online.target.wants/ovs-configuration.service",
+	}
+	for _, path := range stalePaths {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("error deleting %s: %w", path, err)
+		} else if err == nil {
+			klog.Infof("Removed stale symlink %q", path)
+		}
+	}
 	return nil
 }
 
