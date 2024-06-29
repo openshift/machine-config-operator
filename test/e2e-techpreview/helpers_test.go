@@ -28,7 +28,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	aggerrs "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/klog/v2"
 	"sigs.k8s.io/yaml"
 )
 
@@ -111,7 +110,7 @@ func createConfigMap(t *testing.T, cs *framework.ClientSet, cm *corev1.ConfigMap
 
 	return makeIdempotentAndRegister(t, func() {
 		require.NoError(t, cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace).Delete(context.TODO(), cm.Name, metav1.DeleteOptions{}))
-		klog.Infof("Deleted ConfigMap %q", cm.Name)
+		t.Logf("Deleted ConfigMap %q", cm.Name)
 	})
 }
 
@@ -639,17 +638,4 @@ func cloneSecret(t *testing.T, cs *framework.ClientSet, srcName, srcNamespace, d
 		cleanup()
 		t.Logf("Deleted cloned secret \"%s/%s\"", dstNamespace, dstName)
 	})
-}
-
-// Extracts the internal registry pull secret from the ControllerConfig and
-// writes it to the designated place on the nodes' filesystem. This is
-// needed to work around https://issues.redhat.com/browse/OCPBUGS-33803
-// until this bug can be resolved.
-func writeInternalRegistryPullSecretToNode(t *testing.T, cs *framework.ClientSet, node corev1.Node) func() {
-	cc, err := cs.ControllerConfigs().Get(context.TODO(), "machine-config-controller", metav1.GetOptions{})
-	require.NoError(t, err)
-
-	path := "/etc/mco/internal-registry-pull-secret.json"
-
-	return helpers.WriteFileToNode(t, cs, node, path, string(cc.Spec.InternalRegistryPullSecret))
 }

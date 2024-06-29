@@ -1318,13 +1318,16 @@ func (ctrl *Controller) updateCandidateMachines(pool *mcfgv1.MachineConfigPool, 
 
 func (ctrl *Controller) setDesiredAnnotations(pool *mcfgv1.MachineConfigPool, candidates []*corev1.Node) error {
 	eventName := "SetDesiredConfig"
+	updateName := fmt.Sprintf("MachineConfig: %s", pool.Spec.Configuration.Name)
 	config, build, _ := ctrl.GetConfigAndBuild(pool)
 	layered, err := ctrl.IsLayeredPool(config, build)
+
 	if err != nil {
 		return fmt.Errorf("Failed to determine whether pool %s opts in to OCL due to an error: %s", pool.Name, err)
 	}
 	if layered {
 		eventName = "SetDesiredConfigAndOSImage"
+		updateName = fmt.Sprintf("%s / Image: %s", updateName, ctrlcommon.NewMachineOSConfigState(config).GetOSImage())
 		klog.Infof("Continuing to sync layered MachineConfigPool %s", pool.Name)
 	}
 	for _, node := range candidates {
@@ -1335,9 +1338,9 @@ func (ctrl *Controller) setDesiredAnnotations(pool *mcfgv1.MachineConfigPool, ca
 
 	if len(candidates) == 1 {
 		candidate := candidates[0]
-		ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, eventName, "Targeted node %s to %s", candidate.Name, &pool.Spec.Configuration.Name)
+		ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, eventName, "Targeted node %s to %s", candidate.Name, updateName)
 	} else {
-		ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, eventName, "Set target for %d nodes to %s", len(candidates), &pool.Spec.Configuration.Name)
+		ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, eventName, "Set target for %d nodes to %s", len(candidates), updateName)
 	}
 
 	return nil

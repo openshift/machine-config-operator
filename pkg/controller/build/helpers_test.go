@@ -1,9 +1,14 @@
 package build
 
 import (
+	"context"
 	"testing"
 
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -164,6 +169,75 @@ func TestCanonicalizePullSecret(t *testing.T) {
 
 			for _, val := range out.Data {
 				assert.JSONEq(t, newSecret, string(val))
+			}
+		})
+	}
+}
+
+func TestValidateOnClusterBuildConfig(t *testing.T) {
+	t.Parallel()
+
+	newMosc := func() *mcfgv1alpha1.MachineOSConfig {
+		return newMachineOSConfig(newMachineConfigPool("worker"))
+	}
+
+	testCases := []struct {
+		name            string
+		errExpected     bool
+		secretsToDelete []string
+		mosc            func() *mcfgv1alpha1.MachineOSConfig
+	}{
+		{
+			name: "happy path",
+			mosc: newMosc,
+		},
+		{
+			name:            "missing secret",
+			secretsToDelete: []string{"current-image-pull-secret"},
+			mosc:            newMosc,
+			errExpected:     true,
+		},
+		{
+			name: "missing MachineOSConfig",
+			mosc: func() *mcfgv1alpha1.MachineOSConfig {
+				mosc := newMosc()
+				mosc.Name = "other-machineosconfig"
+				mosc.Spec.MachineConfigPool.Name = "other-machineconfigpool"
+				return mosc
+			},
+			errExpected: true,
+		},
+		{
+			name: "malformed image pullspec",
+			mosc: func() *mcfgv1alpha1.MachineOSConfig {
+				mosc := newMosc()
+				mosc.Spec.BuildInputs.RenderedImagePushspec = "malformed-image-pullspec"
+				return mosc
+			},
+			errExpected: true,
+		},
+	}
+
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			clients := getClientsForTest()
+
+			_, err := clients.mcfgclient.MachineconfigurationV1alpha1().MachineOSConfigs().Create(context.TODO(), testCase.mosc(), metav1.CreateOptions{})
+			require.NoError(t, err)
+
+			for _, secret := range testCase.secretsToDelete {
+				err := clients.kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Delete(context.TODO(), secret, metav1.DeleteOptions{})
+				require.NoError(t, err)
+			}
+
+			err = ValidateOnClusterBuildConfig(clients.kubeclient, clients.mcfgclient, []*mcfgv1.MachineConfigPool{newMachineConfigPool("worker")})
+			if testCase.errExpected {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
 			}
 		})
 	}

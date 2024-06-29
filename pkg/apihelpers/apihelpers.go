@@ -22,14 +22,6 @@ var (
 	defaultClusterPolicies = opv1.NodeDisruptionPolicyClusterStatus{
 		Files: []opv1.NodeDisruptionPolicyStatusFile{
 			{
-				Path: "/etc/mco/internal-registry-pull-secret.json",
-				Actions: []opv1.NodeDisruptionPolicyStatusAction{
-					{
-						Type: opv1.NoneStatusAction,
-					},
-				},
-			},
-			{
 				Path: "/var/lib/kubelet/config.json",
 				Actions: []opv1.NodeDisruptionPolicyStatusAction{
 					{
