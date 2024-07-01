@@ -187,7 +187,7 @@ func RenderBootstrap(
 		var b []byte
 		var err error
 		switch {
-		case len(m.name) > 0:
+		case m.name != "":
 			klog.Info(m.name)
 			b, err = renderAsset(config, m.name)
 			if err != nil {
@@ -326,7 +326,7 @@ func getPlatformManifests(manifests []manifest, platformName string, lbType conf
 		corefileName = "manifests/on-prem/coredns-corefile.tmpl"
 	}
 
-	platformManifests := append(manifests,
+	platformManifests := append([]manifest{},
 		manifest{
 			name:     corednsName,
 			filename: platformName + "/manifests/coredns.yaml",
@@ -336,6 +336,7 @@ func getPlatformManifests(manifests []manifest, platformName string, lbType conf
 			filename: platformName + "/static-pod-resources/coredns/Corefile.tmpl",
 		},
 	)
+
 	if lbType == configv1.LoadBalancerTypeOpenShiftManagedDefault || lbType == "" {
 		platformManifests = append(platformManifests,
 			manifest{
@@ -348,5 +349,6 @@ func getPlatformManifests(manifests []manifest, platformName string, lbType conf
 			},
 		)
 	}
-	return platformManifests
+
+	return append(manifests, platformManifests...)
 }

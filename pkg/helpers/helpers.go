@@ -68,9 +68,11 @@ func GetPoolsForNode(mcpLister v1.MachineConfigPoolLister, node *corev1.Node) ([
 	if master == nil && custom == nil && worker == nil {
 		return nil, nil, nil
 	}
-	if len(custom) > 1 {
+
+	switch {
+	case len(custom) > 1:
 		return nil, nil, fmt.Errorf("node %s belongs to %d custom roles, cannot proceed with this Node", node.Name, len(custom))
-	} else if len(custom) == 1 {
+	case len(custom) == 1:
 		pls := []*mcfgv1.MachineConfigPool{}
 		if master != nil {
 			// if we have a custom pool and master, defer to master and return.
@@ -87,17 +89,18 @@ func GetPoolsForNode(mcpLister v1.MachineConfigPoolLister, node *corev1.Node) ([
 		// this allows us to have master, worker, infra but be in the master pool.
 		// or if !worker and !master then we just use the custom pool.
 		return pls, &metricValue, nil
-	} else if master != nil {
+	case master != nil:
 		// In the case where a node is both master/worker, have it live under
 		// the master pool. This occurs in CodeReadyContainers and general
 		// "single node" deployments, which one may want to do for testing bare
 		// metal, etc.
 		metricValue = 0
 		return []*mcfgv1.MachineConfigPool{master}, &metricValue, nil
+	default:
+		// Otherwise, it's a worker with no custom roles.
+		metricValue = 0
+		return []*mcfgv1.MachineConfigPool{worker}, &metricValue, nil
 	}
-	// Otherwise, it's a worker with no custom roles.
-	metricValue = 0
-	return []*mcfgv1.MachineConfigPool{worker}, &metricValue, nil
 }
 
 // isWindows checks if given node is a Windows node or a Linux node
@@ -149,11 +152,12 @@ func ListPools(node *corev1.Node, mcpLister v1.MachineConfigPoolLister) (*mcfgv1
 	var master, worker *mcfgv1.MachineConfigPool
 	var custom []*mcfgv1.MachineConfigPool
 	for _, pool := range pools {
-		if pool.Name == ctrlcommon.MachineConfigPoolMaster {
+		switch pool.Name {
+		case ctrlcommon.MachineConfigPoolMaster:
 			master = pool
-		} else if pool.Name == ctrlcommon.MachineConfigPoolWorker {
+		case ctrlcommon.MachineConfigPoolWorker:
 			worker = pool
-		} else {
+		default:
 			custom = append(custom, pool)
 		}
 	}

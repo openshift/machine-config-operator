@@ -12,7 +12,8 @@ import "go/token"
 // which should be a constant, may be used to classify them.
 // It is primarily intended to make it easy to look up documentation.
 //
-// If End is provided, the diagnostic is specified to apply to the range between
+// All Pos values are interpreted relative to Pass.Fset. If End is
+// provided, the diagnostic is specified to apply to the range between
 // Pos and End.
 type Diagnostic struct {
 	Pos      token.Pos
@@ -31,14 +32,14 @@ type Diagnostic struct {
 	// see https://pkg.go.dev/net/url#URL.ResolveReference.
 	URL string
 
-	// SuggestedFixes contains suggested fixes for a diagnostic
-	// which can be used to perform edits to a file that address
-	// the diagnostic.
-	//
-	// Diagnostics should not contain SuggestedFixes that overlap.
-	SuggestedFixes []SuggestedFix // optional
+	// SuggestedFixes is an optional list of fixes to address the
+	// problem described by the diagnostic, each one representing
+	// an alternative strategy; at most one may be applied.
+	SuggestedFixes []SuggestedFix
 
-	Related []RelatedInformation // optional
+	// Related contains optional secondary positions and messages
+	// related to the primary diagnostic.
+	Related []RelatedInformation
 }
 
 // RelatedInformation contains information related to a diagnostic.
@@ -55,8 +56,7 @@ type RelatedInformation struct {
 // user can choose to apply to their code. Usually the SuggestedFix is
 // meant to fix the issue flagged by the diagnostic.
 //
-// TextEdits for a SuggestedFix should not overlap,
-// nor contain edits for other packages.
+// The TextEdits must not overlap, nor contain edits for other packages.
 type SuggestedFix struct {
 	// A description for this suggested fix to be shown to a user deciding
 	// whether to accept it.

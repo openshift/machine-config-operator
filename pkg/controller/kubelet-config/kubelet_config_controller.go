@@ -709,8 +709,7 @@ func (ctrl *Controller) popFinalizerFromKubeletConfig(kc *mcfgv1.KubeletConfig) 
 		}
 
 		kcTmp := newcfg.DeepCopy()
-		kcTmp.Finalizers = append(kc.Finalizers[:0], kc.Finalizers[1:]...)
-
+		kcTmp.Finalizers = append([]string{}, kc.Finalizers[1:]...)
 		modJSON, err := json.Marshal(kcTmp)
 		if err != nil {
 			return err

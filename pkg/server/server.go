@@ -49,14 +49,14 @@ type Server interface {
 func getAppenders(currMachineConfig string, version *semver.Version, f kubeconfigFunc, certs []string, serverDir string) []appenderFunc {
 	appenders := []appenderFunc{
 		// append machine annotations file.
-		func(cfg *ign3types.Config, mc *mcfgv1.MachineConfig) error {
+		func(cfg *ign3types.Config, _ *mcfgv1.MachineConfig) error {
 			return appendNodeAnnotations(cfg, currMachineConfig)
 		},
 		// append kubeconfig.
-		func(cfg *ign3types.Config, mc *mcfgv1.MachineConfig) error { return appendKubeConfig(cfg, f) },
+		func(cfg *ign3types.Config, _ *mcfgv1.MachineConfig) error { return appendKubeConfig(cfg, f) },
 		// append the machineconfig content
 		appendInitialMachineConfig,
-		func(cfg *ign3types.Config, mc *mcfgv1.MachineConfig) error { return appendCerts(cfg, certs, serverDir) },
+		func(cfg *ign3types.Config, _ *mcfgv1.MachineConfig) error { return appendCerts(cfg, certs, serverDir) },
 		// This has to come last!!!
 		func(cfg *ign3types.Config, mc *mcfgv1.MachineConfig) error {
 			return appendEncapsulated(cfg, mc, version)

@@ -60,7 +60,6 @@ func isArgInUse(arg, cmdLinePath string) (bool, error) {
 	return false, nil
 }
 
-// parseTuningFile parses the kernel argument tuning file
 func parseTuningFile(tuningFilePath, cmdLinePath string) ([]types.TuneArgument, []types.TuneArgument, error) {
 	addArguments := []types.TuneArgument{}
 	deleteArguments := []types.TuneArgument{}
@@ -86,7 +85,8 @@ func parseTuningFile(tuningFilePath, cmdLinePath string) ([]types.TuneArgument, 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := scanner.Text()
-		if strings.HasPrefix(line, "ADD ") {
+		switch {
+		case strings.HasPrefix(line, "ADD "):
 			// NOTE: Today only specific bare kernel arguments are allowed so
 			// there is not a need to split on =.
 			key := strings.TrimSpace(line[len("ADD "):])
@@ -108,7 +108,7 @@ func parseTuningFile(tuningFilePath, cmdLinePath string) ([]types.TuneArgument, 
 			} else {
 				klog.Infof("%s not an allowlisted kernel argument", key)
 			}
-		} else if strings.HasPrefix(line, "DELETE ") {
+		case strings.HasPrefix(line, "DELETE "):
 			// NOTE: Today only specific bare kernel arguments are allowed so
 			// there is not a need to split on =.
 			key := strings.TrimSpace(line[len("DELETE "):])
@@ -129,7 +129,7 @@ func parseTuningFile(tuningFilePath, cmdLinePath string) ([]types.TuneArgument, 
 			} else {
 				klog.Infof("%s not an allowlisted kernel argument", key)
 			}
-		} else {
+		default:
 			klog.V(2).Infof(`skipping malformed line in %s: "%s"`, tuningFilePath, line)
 		}
 	}

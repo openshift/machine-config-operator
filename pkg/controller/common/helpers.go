@@ -96,7 +96,7 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.Contro
 	}
 	sort.SliceStable(workerConfigs, func(i, j int) bool { return workerConfigs[i].Name < workerConfigs[j].Name })
 	sort.SliceStable(otherConfigs, func(i, j int) bool { return otherConfigs[i].Name < otherConfigs[j].Name })
-	configs = append(workerConfigs, otherConfigs...)
+	configs = append(configs[:0], append(workerConfigs, otherConfigs...)...)
 
 	var fips bool
 	var kernelType string

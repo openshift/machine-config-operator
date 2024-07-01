@@ -83,10 +83,11 @@ func createOrigFile(fromPath, fpath string) error {
 	// be files that were shipped _with_ the underlying OS (e.g. a default chrony config).
 	if _, err := os.Stat(fpath); err == nil {
 		rpmNotFound, isOwned, err := isFileOwnedByRPMPkg(fpath)
-		if isOwned {
+		switch {
+		case isOwned:
 			// File is owned by an rpm
 			orig = true
-		} else if !isOwned && (err == nil) {
+		case !isOwned && err == nil:
 			// Run on Fedora/RHEL - check whether the file exist in /usr/etc (on FCOS/RHCOS)
 			if strings.HasPrefix(fpath, "/etc") {
 				if _, err := os.Stat(withUsrPath(fpath)); err != nil {
@@ -97,10 +98,10 @@ func createOrigFile(fromPath, fpath string) error {
 					orig = true
 				}
 			}
-		} else if rpmNotFound {
+		case rpmNotFound:
 			// Run on non-Fedora/RHEL machine
 			klog.Infof("Running on non-Fedora/RHEL, skip orig file preservation.")
-		} else {
+		default:
 			return err
 		}
 	} else if !os.IsNotExist(err) {

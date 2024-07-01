@@ -1352,21 +1352,22 @@ func sortNodeList(nodes []*corev1.Node) []*corev1.Node {
 	sort.Slice(nodes, func(i, j int) bool {
 		iZone, iOk := nodes[i].Labels[zoneLabel]
 		jZone, jOk := nodes[j].Labels[zoneLabel]
-		// if both nodes have zone label, sort by zone, push nodes without label to end of list
-		if iOk && jOk {
+
+		switch {
+		case iOk && jOk:
 			if iZone == jZone {
-				// if nodes have same labels sortby creationTime oldest to newest
+				// if nodes have same labels, sort by creationTime oldest to newest
 				return nodes[i].GetObjectMeta().GetCreationTimestamp().Time.Before(nodes[j].GetObjectMeta().GetCreationTimestamp().Time)
 			}
 			return iZone < jZone
-		} else if jOk {
+		case jOk:
 			return false
-		} else if !iOk && !jOk {
-			// if nodes have no labels sortby creationTime oldest to newest
+		case !iOk && !jOk:
+			// if nodes have no labels, sort by creationTime oldest to newest
 			return nodes[i].GetObjectMeta().GetCreationTimestamp().Time.Before(nodes[j].GetObjectMeta().GetCreationTimestamp().Time)
+		default:
+			return true
 		}
-
-		return true
 	})
 	return nodes
 }
