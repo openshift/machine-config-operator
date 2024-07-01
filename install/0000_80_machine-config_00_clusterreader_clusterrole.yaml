@@ -52,6 +52,7 @@ rules:
       - featuregates 
       - nodes
       - nodes/status
+      - apiservers
     verbs:
       - get
       - list

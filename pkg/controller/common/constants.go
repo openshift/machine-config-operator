@@ -40,6 +40,9 @@ const (
 	// ClusterNodeInstanceName is a singleton name for node configuration
 	ClusterNodeInstanceName = "cluster"
 
+	// APIServerInstanceName is a singleton name for APIServer configuration
+	APIServerInstanceName = "cluster"
+
 	// MachineConfigPoolMaster is the MachineConfigPool name given to the master
 	MachineConfigPoolMaster = "master"
 
