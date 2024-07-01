@@ -225,6 +225,11 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	listerCaches := []cache.InformerSynced{ctrl.mcpListerSynced, ctrl.mccrListerSynced, ctrl.ccListerSynced,
 		ctrl.imgListerSynced, ctrl.icspListerSynced, ctrl.idmsListerSynced, ctrl.itmsListerSynced, ctrl.clusterVersionListerSynced}
 
+	featureGates, err := ctrl.featureGateAccess.CurrentFeatureGates()
+	if err != nil {
+		klog.Fatalf("error getting current featuregates: %v, %v", featureGates, err)
+	}
+
 	if ctrl.sigstoreAPIEnabled() {
 		ctrl.addImagePolicyObservers()
 		klog.Info("addded image policy observers with sigstore featuregate enabled")
