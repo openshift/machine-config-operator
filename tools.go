@@ -7,6 +7,7 @@ package tools
 import (
 	_ "github.com/golangci/golangci-lint/cmd/golangci-lint"
 	// Code generators built at runtime.
+	_ "github.com/containers/kubensmnt/utils/systemd"
 	_ "github.com/openshift/api/config/v1alpha1/zz_generated.crd-manifests"
 	_ "github.com/openshift/api/machineconfiguration/v1/zz_generated.crd-manifests"
 	_ "github.com/openshift/api/machineconfiguration/v1alpha1/zz_generated.crd-manifests"
@@ -18,9 +19,6 @@ import (
 	_ "k8s.io/code-generator/cmd/defaulter-gen"
 	_ "k8s.io/code-generator/cmd/informer-gen"
 	_ "k8s.io/code-generator/cmd/lister-gen"
-
-	// TODO: Investigate openapi-gen
-	// _ "k8s.io/code-generator/cmd/openapi-gen"
-
-	_ "github.com/containers/kubensmnt/utils/systemd"
+	_ "k8s.io/code-generator/cmd/openapi-gen"
+	_ "sigs.k8s.io/controller-runtime/tools/setup-envtest"
 )
