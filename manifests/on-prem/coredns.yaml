@@ -23,6 +23,9 @@ spec:
   - name: manifests
     hostPath:
       path: "/opt/openshift/manifests"
+  - name: nodeip-configuration
+    hostPath:
+      path: "/run/nodeip-configuration"
   initContainers:
   - name: render-config
     image: {{ .Images.BaremetalRuntimeCfgBootstrap }}
@@ -52,6 +55,9 @@ spec:
     - name: manifests
       mountPath: "/opt/openshift/manifests"
       mountPropagation: HostToContainer
+    - name: nodeip-configuration
+      mountPath: "/run/nodeip-configuration"
+      mountPropagation: HostToContainer
     imagePullPolicy: IfNotPresent
   containers:
   - name: coredns
@@ -69,6 +75,9 @@ spec:
     volumeMounts:
     - name: conf-dir
       mountPath: "/etc/coredns"
+    - name: nodeip-configuration
+      mountPath: "/run/nodeip-configuration"
+      mountPropagation: HostToContainer
     livenessProbe:
       httpGet:
         path: /health
