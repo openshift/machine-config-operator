@@ -11,6 +11,7 @@ func SubstituteAndCopyFiles(assetInputDir, assetOutputDir, featureSet, clusterPr
 	manifestPredicates := []FileContentsPredicate{
 		InstallerFeatureSet(featureSet),
 		ClusterProfile(clusterProfile),
+		BootstrapRequiredCRD(),
 	}
 
 	// write assets

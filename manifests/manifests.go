@@ -17,7 +17,7 @@ func ReadFile(name string) ([]byte, error) {
 func AllManifests() ([]string, error) {
 	manifests := []string{}
 
-	err := fs.WalkDir(f, ".", func(path string, d fs.DirEntry, err error) error {
+	err := fs.WalkDir(f, ".", func(path string, d fs.DirEntry, _ error) error {
 		if d.IsDir() {
 			return nil
 		}

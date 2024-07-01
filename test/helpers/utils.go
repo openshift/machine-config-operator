@@ -505,7 +505,7 @@ func GetMonitoringToken(_ *testing.T, cs *framework.ClientSet) (string, error) {
 // WaitForCertStatusToChange queries a controllerconfig until the ControllerCertificates changes.
 func WaitForCertStatusToChange(t *testing.T, cs *framework.ClientSet, oldData string) error {
 	ctx := context.TODO()
-	if err := wait.PollUntilContextTimeout(ctx, 2*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
+	if err := wait.PollUntilContextTimeout(ctx, 2*time.Second, 2*time.Minute, true, func(_ context.Context) (bool, error) {
 		controllerConfig, err := cs.ControllerConfigs().Get(context.TODO(), "machine-config-controller", metav1.GetOptions{})
 		require.Nil(t, err)
 
@@ -530,7 +530,7 @@ func WaitForCertStatusToChange(t *testing.T, cs *framework.ClientSet, oldData st
 }
 
 func WaitForCADataToAppear(t *testing.T, cs *framework.ClientSet) error {
-	err := wait.PollUntilContextTimeout(context.TODO(), 2*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
+	err := wait.PollUntilContextTimeout(context.TODO(), 2*time.Second, 2*time.Minute, true, func(_ context.Context) (bool, error) {
 		controllerConfig, err := cs.ControllerConfigs().Get(context.TODO(), "machine-config-controller", metav1.GetOptions{})
 		require.Nil(t, err)
 		nodes, err := GetNodesByRole(cs, "worker")
@@ -1315,10 +1315,10 @@ func GetActionApplyConfiguration(action opv1.NodeDisruptionPolicySpecAction) *mc
 	if action.Type == opv1.ReloadSpecAction {
 		reloadApplyConfiguration := mcoac.ReloadService().WithServiceName(action.Reload.ServiceName)
 		return mcoac.NodeDisruptionPolicySpecAction().WithType(action.Type).WithReload(reloadApplyConfiguration)
-	} else if action.Type == opv1.RestartSpecAction {
+	}
+	if action.Type == opv1.RestartSpecAction {
 		restartApplyConfiguration := mcoac.RestartService().WithServiceName(action.Restart.ServiceName)
 		return mcoac.NodeDisruptionPolicySpecAction().WithType(action.Type).WithRestart(restartApplyConfiguration)
-	} else {
-		return mcoac.NodeDisruptionPolicySpecAction().WithType(action.Type)
 	}
+	return mcoac.NodeDisruptionPolicySpecAction().WithType(action.Type)
 }

@@ -143,10 +143,12 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// we know we're at 3.4 in code.. serve directly, parsing is expensive...
 	// we're doing it during an HTTP request, and most notably before we write the HTTP headers
 	var serveConf *runtime.RawExtension
-	if reqConfigVer.Equal(*semver.New("3.4.0")) {
+
+	switch {
+	case reqConfigVer.Equal(*semver.New("3.4.0")):
 		serveConf = conf
 
-	} else if reqConfigVer.Equal(*semver.New("3.3.0")) {
+	case reqConfigVer.Equal(*semver.New("3.3.0")):
 		converted33, err := ctrlcommon.ConvertRawExtIgnitionToV3_3(conf)
 		if err != nil {
 			w.Header().Set("Content-Length", "0")
@@ -155,7 +157,8 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		serveConf = &converted33
-	} else if reqConfigVer.Equal(*semver.New("3.2.0")) {
+
+	case reqConfigVer.Equal(*semver.New("3.2.0")):
 		converted32, err := ctrlcommon.ConvertRawExtIgnitionToV3_2(conf)
 		if err != nil {
 			w.Header().Set("Content-Length", "0")
@@ -164,7 +167,8 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		serveConf = &converted32
-	} else if reqConfigVer.Equal(*semver.New("3.1.0")) {
+
+	case reqConfigVer.Equal(*semver.New("3.1.0")):
 		converted31, err := ctrlcommon.ConvertRawExtIgnitionToV3_1(conf)
 		if err != nil {
 			w.Header().Set("Content-Length", "0")
@@ -172,9 +176,9 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			klog.Errorf("couldn't convert config for req: %v, error: %v", cr, err)
 			return
 		}
-
 		serveConf = &converted31
-	} else {
+
+	default:
 		// Can only be 2.2 here
 		converted2, err := ctrlcommon.ConvertRawExtIgnitionToV2_2(conf)
 		if err != nil {
@@ -183,7 +187,6 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			klog.Errorf("couldn't convert config for req: %v, error: %v", cr, err)
 			return
 		}
-
 		serveConf = &converted2
 	}
 
@@ -314,20 +317,23 @@ func detectSpecVersionFromAcceptHeader(acceptHeader string) (*semver.Version, er
 
 	for _, header := range headers {
 		if header.MIMESubtype == "vnd.coreos.ignition+json" && header.SemVer != nil {
-			if !header.SemVer.LessThan(*v3_4) && header.SemVer.LessThan(*semver.New("4.0.0")) {
+			switch {
+			case !header.SemVer.LessThan(*v3_4) && header.SemVer.LessThan(*semver.New("4.0.0")):
 				return v3_4, nil
-			} else if !header.SemVer.LessThan(*v3_3) && header.SemVer.LessThan(*v3_4) {
+			case !header.SemVer.LessThan(*v3_3) && header.SemVer.LessThan(*v3_4):
 				return v3_3, nil
-			} else if !header.SemVer.LessThan(*v3_2) && header.SemVer.LessThan(*v3_3) {
+			case !header.SemVer.LessThan(*v3_2) && header.SemVer.LessThan(*v3_3):
 				return v3_2, nil
-			} else if !header.SemVer.LessThan(*v3_1) && header.SemVer.LessThan(*v3_2) {
+			case !header.SemVer.LessThan(*v3_1) && header.SemVer.LessThan(*v3_2):
 				return v3_1, nil
-			} else if !header.SemVer.LessThan(*v2_2) && header.SemVer.LessThan(*semver.New("3.0.0")) {
+			case !header.SemVer.LessThan(*v2_2) && header.SemVer.LessThan(*semver.New("3.0.0")):
 				return v2_2, nil
+			default:
+				ignVersionError = fmt.Errorf("unsupported Ignition version in Accept header: %s", acceptHeader)
 			}
-			ignVersionError = fmt.Errorf("unsupported Ignition version in Accept header: %s", acceptHeader)
 		}
 	}
+
 	// return error if version of Ignition MIME subtype is not supported
 	if ignVersionError != nil {
 		return nil, ignVersionError

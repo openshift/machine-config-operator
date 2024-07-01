@@ -26,6 +26,7 @@ import (
 	mcopclientset "github.com/openshift/client-go/operator/clientset/versioned"
 
 	mcoac "github.com/openshift/client-go/operator/applyconfigurations/operator/v1"
+	applymetav1 "k8s.io/client-go/applyconfigurations/meta/v1"
 )
 
 func TestBootImageReconciliationonSingleMachineSet(t *testing.T) {
@@ -43,7 +44,20 @@ func TestBootImageReconciliationonSingleMachineSet(t *testing.T) {
 
 	// Update the machineconfiguration object to opt-in the label
 	machineConfigurationClient := mcopclientset.NewForConfigOrDie(cs.GetRestConfig())
-	p := mcoac.MachineConfiguration("cluster").WithSpec(mcoac.MachineConfigurationSpec().WithManagementState("Managed").WithManagedBootImages(mcoac.ManagedBootImages().WithMachineManagers(mcoac.MachineManager().WithAPIGroup(opv1.MachineAPI).WithResource(opv1.MachineSets).WithSelection(mcoac.MachineManagerSelector().WithMode(opv1.Partial).WithPartial(mcoac.PartialSelector().WithMachineResourceSelector(*metav1.AddLabelToSelector(&metav1.LabelSelector{}, "test", "fake-update-on")))))))
+	labelSelector := metav1.AddLabelToSelector(&metav1.LabelSelector{}, "test", "fake-update-on")
+	applyLabelSelector := applymetav1.LabelSelector().WithMatchLabels(labelSelector.MatchLabels)
+
+	p := mcoac.MachineConfiguration("cluster").WithSpec(mcoac.MachineConfigurationSpec().
+		WithManagementState("Managed").
+		WithManagedBootImages(mcoac.ManagedBootImages().
+			WithMachineManagers(mcoac.MachineManager().
+				WithAPIGroup(opv1.MachineAPI).
+				WithResource(opv1.MachineSets).
+				WithSelection(mcoac.MachineManagerSelector().
+					WithMode(opv1.Partial).
+					WithPartial(mcoac.PartialSelector().
+						WithMachineResourceSelector(applyLabelSelector))))))
+
 	_, err := machineConfigurationClient.OperatorV1().MachineConfigurations().Apply(context.TODO(), p, metav1.ApplyOptions{FieldManager: "machine-config-operator"})
 	require.Nil(t, err, "updating machineconfiguration boot image knob failed")
 	t.Logf("Updated machine configuration knob to target one machineset for boot image updates")

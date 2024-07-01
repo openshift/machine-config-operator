@@ -136,10 +136,11 @@ func isDrainRequiredForNodeDisruptionActions(actions []opv1.NodeDisruptionPolicy
 
 // isDrainRequired determines whether node drain is required or not to apply config changes.
 func isDrainRequired(actions, diffFileSet []string, oldIgnConfig, newIgnConfig ign3types.Config, overrideImageRegistryDrain bool) (bool, error) {
-	if ctrlcommon.InSlice(postConfigChangeActionReboot, actions) {
+	switch {
+	case ctrlcommon.InSlice(postConfigChangeActionReboot, actions):
 		// Node is going to reboot, we definitely want to perform drain
 		return true, nil
-	} else if ctrlcommon.InSlice(postConfigChangeActionReloadCrio, actions) || ctrlcommon.InSlice(postConfigChangeActionRestartCrio, actions) {
+	case ctrlcommon.InSlice(postConfigChangeActionReloadCrio, actions), ctrlcommon.InSlice(postConfigChangeActionRestartCrio, actions):
 		// Drain may or may not be necessary in case of container registry config changes.
 		if ctrlcommon.InSlice(constants.ContainerRegistryConfPath, diffFileSet) {
 			if overrideImageRegistryDrain {
@@ -153,11 +154,12 @@ func isDrainRequired(actions, diffFileSet []string, oldIgnConfig, newIgnConfig i
 			return !isSafe, nil
 		}
 		return false, nil
-	} else if ctrlcommon.InSlice(postConfigChangeActionNone, actions) {
+	case ctrlcommon.InSlice(postConfigChangeActionNone, actions):
 		return false, nil
+	default:
+		// For any unhandled cases, default to drain
+		return true, nil
 	}
-	// For any unhandled cases, default to drain
-	return true, nil
 }
 
 // isSafeContainerRegistryConfChanges looks inside old and new versions of registries.conf file.

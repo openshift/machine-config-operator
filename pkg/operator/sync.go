@@ -369,7 +369,7 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 		}
 	}
 
-	mergedData := append(imgRegistryData, imgRegistryUsrData...)
+	mergedData := append([]mcfgv1.ImageRegistryBundle{}, append(imgRegistryData, imgRegistryUsrData...)...)
 	caData := make(map[string]string, len(mergedData))
 	for _, CA := range mergedData {
 		caData[CA.File] = string(CA.Data)
@@ -1041,7 +1041,7 @@ func (optr *Operator) syncControllerConfig(config *renderConfig) error {
 				newData := true
 				for newData {
 					klog.Infof("Polling for new data in kube-apiserver-server-ca")
-					if err := wait.PollUntilContextTimeout(context.TODO(), 15*time.Second, 1*time.Minute, false, func(ctx context.Context) (bool, error) {
+					if err := wait.PollUntilContextTimeout(context.TODO(), 15*time.Second, 1*time.Minute, false, func(_ context.Context) (bool, error) {
 						newData = false
 						// pull off of API not a lister
 						kubeConfigData, err := optr.kubeClient.CoreV1().ConfigMaps("openshift-config-managed").Get(context.TODO(), "kube-apiserver-server-ca", metav1.GetOptions{})
@@ -1510,7 +1510,7 @@ func (optr *Operator) syncRequiredMachineConfigPools(config *renderConfig, co *c
 	}
 
 	// Let's start with a 10 minute timeout per "required" node.
-	if err := wait.PollUntilContextTimeout(ctx, time.Second, time.Duration(requiredMachineCount*10)*time.Minute, false, func(ctx context.Context) (bool, error) {
+	if err := wait.PollUntilContextTimeout(ctx, time.Second, time.Duration(requiredMachineCount*10)*time.Minute, false, func(_ context.Context) (bool, error) {
 		if err := optr.syncMetrics(); err != nil {
 			return false, err
 		}
@@ -1808,15 +1808,15 @@ func (optr *Operator) stampBootImagesCM(pool *mcfgv1.MachineConfigPool) error {
 func getCAsFromConfigMap(cm *corev1.ConfigMap, key string) ([]byte, error) {
 	if bd, bdok := cm.BinaryData[key]; bdok {
 		return bd, nil
-	} else if d, dok := cm.Data[key]; dok {
+	}
+	if d, dok := cm.Data[key]; dok {
 		raw, err := base64.StdEncoding.DecodeString(d)
 		if err != nil {
 			return []byte(d), nil
 		}
 		return raw, nil
-	} else {
-		return nil, fmt.Errorf("%s not found in %s/%s", key, cm.Namespace, cm.Name)
 	}
+	return nil, fmt.Errorf("%s not found in %s/%s", key, cm.Namespace, cm.Name)
 }
 
 func (optr *Operator) getCloudConfigFromConfigMap(namespace, name, key string) (string, error) {

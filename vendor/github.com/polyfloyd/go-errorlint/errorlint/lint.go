@@ -20,7 +20,8 @@ func (l ByPosition) Less(i, j int) bool {
 }
 
 func LintFmtErrorfCalls(fset *token.FileSet, info types.Info, multipleWraps bool) []analysis.Diagnostic {
-	lints := []analysis.Diagnostic{}
+	var lints []analysis.Diagnostic
+
 	for expr, t := range info.Types {
 		// Search for error expressions that are the result of fmt.Errorf
 		// invocations.
@@ -158,10 +159,10 @@ func isFmtErrorfCallExpr(info types.Info, expr ast.Expr) (*ast.CallExpr, bool) {
 	return nil, false
 }
 
-func LintErrorComparisons(fset *token.FileSet, info *TypesInfoExt) []analysis.Diagnostic {
-	lints := []analysis.Diagnostic{}
+func LintErrorComparisons(info *TypesInfoExt) []analysis.Diagnostic {
+	var lints []analysis.Diagnostic
 
-	for expr := range info.Types {
+	for expr := range info.TypesInfo.Types {
 		// Find == and != operations.
 		binExpr, ok := expr.(*ast.BinaryExpr)
 		if !ok {
@@ -171,15 +172,15 @@ func LintErrorComparisons(fset *token.FileSet, info *TypesInfoExt) []analysis.Di
 			continue
 		}
 		// Comparing errors with nil is okay.
-		if isNilComparison(binExpr) {
+		if isNil(binExpr.X) || isNil(binExpr.Y) {
 			continue
 		}
 		// Find comparisons of which one side is a of type error.
-		if !isErrorComparison(info.Info, binExpr) {
+		if !isErrorType(info.TypesInfo, binExpr.X) && !isErrorType(info.TypesInfo, binExpr.Y) {
 			continue
 		}
 		// Some errors that are returned from some functions are exempt.
-		if isAllowedErrorComparison(info, binExpr) {
+		if isAllowedErrorComparison(info, binExpr.X, binExpr.Y) {
 			continue
 		}
 		// Comparisons that happen in `func (type) Is(error) bool` are okay.
@@ -193,20 +194,36 @@ func LintErrorComparisons(fset *token.FileSet, info *TypesInfoExt) []analysis.Di
 		})
 	}
 
-	for scope := range info.Scopes {
+	for scope := range info.TypesInfo.Scopes {
 		// Find value switch blocks.
 		switchStmt, ok := scope.(*ast.SwitchStmt)
 		if !ok {
 			continue
 		}
 		// Check whether the switch operates on an error type.
-		if switchStmt.Tag == nil {
+		if !isErrorType(info.TypesInfo, switchStmt.Tag) {
 			continue
 		}
-		tagType := info.Types[switchStmt.Tag]
-		if tagType.Type.String() != "error" {
+
+		var problematicCaseClause *ast.CaseClause
+	outer:
+		for _, stmt := range switchStmt.Body.List {
+			caseClause := stmt.(*ast.CaseClause)
+			for _, caseExpr := range caseClause.List {
+				if isNil(caseExpr) {
+					continue
+				}
+				// Some errors that are returned from some functions are exempt.
+				if !isAllowedErrorComparison(info, switchStmt.Tag, caseExpr) {
+					problematicCaseClause = caseClause
+					break outer
+				}
+			}
+		}
+		if problematicCaseClause == nil {
 			continue
 		}
+		// Comparisons that happen in `func (type) Is(error) bool` are okay.
 		if isNodeInErrorIsFunc(info, switchStmt) {
 			continue
 		}
@@ -214,29 +231,22 @@ func LintErrorComparisons(fset *token.FileSet, info *TypesInfoExt) []analysis.Di
 		if switchComparesNonNil(switchStmt) {
 			lints = append(lints, analysis.Diagnostic{
 				Message: "switch on an error will fail on wrapped errors. Use errors.Is to check for specific errors",
-				Pos:     switchStmt.Pos(),
+				Pos:     problematicCaseClause.Pos(),
 			})
 		}
-
 	}
 
 	return lints
 }
 
-func isNilComparison(binExpr *ast.BinaryExpr) bool {
-	if ident, ok := binExpr.X.(*ast.Ident); ok && ident.Name == "nil" {
-		return true
-	}
-	if ident, ok := binExpr.Y.(*ast.Ident); ok && ident.Name == "nil" {
-		return true
-	}
-	return false
+func isNil(ex ast.Expr) bool {
+	ident, ok := ex.(*ast.Ident)
+	return ok && ident.Name == "nil"
 }
 
-func isErrorComparison(info types.Info, binExpr *ast.BinaryExpr) bool {
-	tx := info.Types[binExpr.X]
-	ty := info.Types[binExpr.Y]
-	return tx.Type.String() == "error" || ty.Type.String() == "error"
+func isErrorType(info *types.Info, ex ast.Expr) bool {
+	t := info.Types[ex].Type
+	return t != nil && t.String() == "error"
 }
 
 func isNodeInErrorIsFunc(info *TypesInfoExt, node ast.Node) bool {
@@ -252,11 +262,11 @@ func isNodeInErrorIsFunc(info *TypesInfoExt, node ast.Node) bool {
 		return false
 	}
 	// There should be 1 argument of type error.
-	if ii := funcDecl.Type.Params.List; len(ii) != 1 || info.Types[ii[0].Type].Type.String() != "error" {
+	if ii := funcDecl.Type.Params.List; len(ii) != 1 || info.TypesInfo.Types[ii[0].Type].Type.String() != "error" {
 		return false
 	}
 	// The return type should be bool.
-	if ii := funcDecl.Type.Results.List; len(ii) != 1 || info.Types[ii[0].Type].Type.String() != "bool" {
+	if ii := funcDecl.Type.Results.List; len(ii) != 1 || info.TypesInfo.Types[ii[0].Type].Type.String() != "bool" {
 		return false
 	}
 
@@ -288,10 +298,10 @@ func switchComparesNonNil(switchStmt *ast.SwitchStmt) bool {
 	return false
 }
 
-func LintErrorTypeAssertions(fset *token.FileSet, info types.Info) []analysis.Diagnostic {
-	lints := []analysis.Diagnostic{}
+func LintErrorTypeAssertions(fset *token.FileSet, info *TypesInfoExt) []analysis.Diagnostic {
+	var lints []analysis.Diagnostic
 
-	for expr := range info.Types {
+	for expr := range info.TypesInfo.Types {
 		// Find type assertions.
 		typeAssert, ok := expr.(*ast.TypeAssertExpr)
 		if !ok {
@@ -299,7 +309,16 @@ func LintErrorTypeAssertions(fset *token.FileSet, info types.Info) []analysis.Di
 		}
 
 		// Find type assertions that operate on values of type error.
-		if !isErrorTypeAssertion(info, typeAssert) {
+		if !isErrorTypeAssertion(*info.TypesInfo, typeAssert) {
+			continue
+		}
+
+		if isNodeInErrorIsFunc(info, typeAssert) {
+			continue
+		}
+
+		// If the asserted type is not an error, allow the expression.
+		if !implementsError(info.TypesInfo.Types[typeAssert.Type].Type) {
 			continue
 		}
 
@@ -309,7 +328,7 @@ func LintErrorTypeAssertions(fset *token.FileSet, info types.Info) []analysis.Di
 		})
 	}
 
-	for scope := range info.Scopes {
+	for scope := range info.TypesInfo.Scopes {
 		// Find type switches.
 		typeSwitch, ok := scope.(*ast.TypeSwitchStmt)
 		if !ok {
@@ -326,7 +345,11 @@ func LintErrorTypeAssertions(fset *token.FileSet, info types.Info) []analysis.Di
 		}
 
 		// Check whether the type switch is on a value of type error.
-		if !isErrorTypeAssertion(info, typeAssert) {
+		if !isErrorTypeAssertion(*info.TypesInfo, typeAssert) {
+			continue
+		}
+
+		if isNodeInErrorIsFunc(info, typeSwitch) {
 			continue
 		}
 

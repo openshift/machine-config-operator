@@ -44,7 +44,8 @@ func SetMachineOSBuildCondition(status *mcfgv1alpha1.MachineOSBuildStatus, condi
 
 	// this may not be necessary
 	newConditions := filterOutMachineOSBuildCondition(status.Conditions, mcfgv1alpha1.BuildProgress(condition.Type))
-	status.Conditions = append(newConditions, condition)
+	newConditions = append(newConditions, condition)
+	status.Conditions = newConditions
 }
 
 // RemoveMachineOSBuildCondition removes the MachineOSBuild condition with the provided type.
