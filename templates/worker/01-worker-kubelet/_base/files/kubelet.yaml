@@ -16,6 +16,9 @@ contents:
     clusterDomain: cluster.local
     containerLogMaxSize: 50Mi
     enableSystemLogQuery: true
+    enforceNodeAllocatable:
+      - "pods"
+      - "system-reserved"
     maxPods: 250
     kubeAPIQPS: 50
     kubeAPIBurst: 100
@@ -25,6 +28,7 @@ contents:
     serializeImagePulls: false
     staticPodPath: /etc/kubernetes/manifests
     systemCgroups: /system.slice
+    systemReservedCgroup: /system.slice
     nodeStatusUpdateFrequency: 10s
     nodeStatusReportFrequency: 5m
     serverTLSBootstrap: true
