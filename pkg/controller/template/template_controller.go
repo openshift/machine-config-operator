@@ -489,13 +489,13 @@ func createNewCert(cert []byte, name string) []mcfgv1.ControllerCertificate {
 			klog.Infof("Unable to decode cert %s into a PEM block. Cert is either empty or invalid.", name)
 			break
 		}
+		cert = next
 		c, err := x509.ParseCertificate(b.Bytes)
 		if err != nil {
 			klog.Errorf("Malformed certificate '%s' detected and is not syncing. Error: %v, Cert data: %s", name, err, cert)
 			malformed = true
 			continue
 		}
-		cert = next
 		certs = append(certs, mcfgv1.ControllerCertificate{
 			Subject:    c.Subject.String(),
 			Signer:     c.Issuer.String(),
