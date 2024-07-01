@@ -31,6 +31,7 @@ import (
 	kubeletconfigv1beta1 "k8s.io/kubelet/config/v1beta1"
 
 	configv1 "github.com/openshift/api/config/v1"
+	osev1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
 	oseinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
@@ -80,8 +81,7 @@ type Controller struct {
 
 	eventRecorder record.EventRecorder
 
-	syncHandler          func(mcp string) error
-	enqueueKubeletConfig func(*mcfgv1.KubeletConfig)
+	syncHandler func(mcp string) error
 
 	ccLister       mcfglistersv1.ControllerConfigLister
 	ccListerSynced cache.InformerSynced
@@ -138,15 +138,44 @@ func New(
 	}
 
 	mkuInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    ctrl.addKubeletConfig,
-		UpdateFunc: ctrl.updateKubeletConfig,
-		DeleteFunc: ctrl.deleteKubeletConfig,
+		AddFunc: func(obj interface{}) {
+			ctrl.handleAdd(obj, func(obj interface{}) {
+				ctrl.enqueue(obj, ctrl.queue)
+			}, "KubeletConfig")
+		},
+		UpdateFunc: func(old, cur interface{}) {
+			ctrl.handleUpdate(old, cur, func(obj interface{}) {
+				ctrl.enqueue(obj, ctrl.queue)
+			}, "KubeletConfig", func(old, cur interface{}) bool {
+				return kubeletConfigTriggerObjectChange(old.(*mcfgv1.KubeletConfig), cur.(*mcfgv1.KubeletConfig))
+			})
+		},
+		DeleteFunc: func(obj interface{}) {
+			ctrl.handleDelete(obj, func(obj interface{}) error {
+				return ctrl.cascadeDelete(obj.(*mcfgv1.KubeletConfig))
+			}, "KubeletConfig")
+		},
 	})
 
 	featInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    ctrl.addFeature,
-		UpdateFunc: ctrl.updateFeature,
-		DeleteFunc: ctrl.deleteFeature,
+		AddFunc: func(obj interface{}) {
+			ctrl.handleAdd(obj, func(obj interface{}) {
+				ctrl.enqueue(obj, ctrl.featureQueue)
+			}, "Feature")
+		},
+		UpdateFunc: func(old, cur interface{}) {
+			ctrl.handleUpdate(old, cur, func(obj interface{}) {
+				ctrl.enqueue(obj, ctrl.featureQueue)
+			}, "Feature", func(old, cur interface{}) bool {
+				return !reflect.DeepEqual(old.(*osev1.FeatureGate).Spec, cur.(*osev1.FeatureGate).Spec)
+			})
+		},
+		DeleteFunc: func(obj interface{}) {
+			ctrl.handleDelete(obj, func(obj interface{}) error {
+				// No cascade delete logic for Feature
+				return nil
+			}, "Feature")
+		},
 	})
 
 	nodeConfigInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -156,7 +185,6 @@ func New(
 	})
 
 	ctrl.syncHandler = ctrl.syncKubeletConfig
-	ctrl.enqueueKubeletConfig = ctrl.enqueue
 
 	ctrl.mcpLister = mcpInformer.Lister()
 	ctrl.mcpListerSynced = mcpInformer.Informer().HasSynced
@@ -194,11 +222,11 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer klog.Info("Shutting down MachineConfigController-KubeletConfigController")
 
 	for i := 0; i < workers; i++ {
-		go wait.Until(ctrl.worker, time.Second, stopCh)
+		go wait.Until(func() { ctrl.genericWorker(ctrl.queue, ctrl.syncHandler) }, time.Second, stopCh)
 	}
 
 	for i := 0; i < workers; i++ {
-		go wait.Until(ctrl.featureWorker, time.Second, stopCh)
+		go wait.Until(func() { ctrl.genericWorker(ctrl.featureQueue, ctrl.syncFeatureHandler) }, time.Second, stopCh)
 	}
 
 	for i := 0; i < workers; i++ {
@@ -218,40 +246,36 @@ func kubeletConfigTriggerObjectChange(old, new *mcfgv1.KubeletConfig) bool {
 	return false
 }
 
-func (ctrl *Controller) updateKubeletConfig(old, cur interface{}) {
-	oldConfig := old.(*mcfgv1.KubeletConfig)
-	newConfig := cur.(*mcfgv1.KubeletConfig)
-
-	if kubeletConfigTriggerObjectChange(oldConfig, newConfig) {
-		klog.V(4).Infof("Update KubeletConfig %s", oldConfig.Name)
-		ctrl.enqueueKubeletConfig(newConfig)
+func (ctrl *Controller) handleUpdate(old, cur interface{}, enqueueFunc func(interface{}), resourceName string, triggerFunc func(interface{}, interface{}) bool) {
+	if triggerFunc(old, cur) {
+		klog.V(4).Infof("Update %s %s", resourceName, cur.(metav1.Object).GetName())
+		enqueueFunc(cur)
 	}
 }
 
-func (ctrl *Controller) addKubeletConfig(obj interface{}) {
-	cfg := obj.(*mcfgv1.KubeletConfig)
-	klog.V(4).Infof("Adding KubeletConfig %s", cfg.Name)
-	ctrl.enqueueKubeletConfig(cfg)
+func (ctrl *Controller) handleAdd(obj interface{}, enqueueFunc func(interface{}), resourceName string) {
+	klog.V(4).Infof("Adding %s %s", resourceName, obj.(metav1.Object).GetName())
+	enqueueFunc(obj)
 }
 
-func (ctrl *Controller) deleteKubeletConfig(obj interface{}) {
-	cfg, ok := obj.(*mcfgv1.KubeletConfig)
+func (ctrl *Controller) handleDelete(obj interface{}, cascadeDeleteFunc func(interface{}) error, resourceName string) {
+	resource, ok := obj.(metav1.Object)
 	if !ok {
 		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
 		if !ok {
 			utilruntime.HandleError(fmt.Errorf("couldn't get object from tombstone %#v", obj))
 			return
 		}
-		cfg, ok = tombstone.Obj.(*mcfgv1.KubeletConfig)
+		resource, ok = tombstone.Obj.(metav1.Object)
 		if !ok {
-			utilruntime.HandleError(fmt.Errorf("Tombstone contained object that is not a KubeletConfig %#v", obj))
+			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not a %s %#v", resourceName, obj))
 			return
 		}
 	}
-	if err := ctrl.cascadeDelete(cfg); err != nil {
-		utilruntime.HandleError(fmt.Errorf("couldn't delete object %#v: %w", cfg, err))
+	if err := cascadeDeleteFunc(resource); err != nil {
+		utilruntime.HandleError(fmt.Errorf("couldn't delete object %#v: %w", resource, err))
 	} else {
-		klog.V(4).Infof("Deleted KubeletConfig %s and restored default config", cfg.Name)
+		klog.V(4).Infof("Deleted %s %s and restored default config", resourceName, resource.GetName())
 	}
 }
 
@@ -276,13 +300,13 @@ func (ctrl *Controller) cascadeDelete(cfg *mcfgv1.KubeletConfig) error {
 	return ctrl.popFinalizerFromKubeletConfig(cfg)
 }
 
-func (ctrl *Controller) enqueue(cfg *mcfgv1.KubeletConfig) {
-	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(cfg)
+func (ctrl *Controller) enqueue(obj interface{}, queue workqueue.RateLimitingInterface) {
+	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %w", cfg, err))
+		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %w", obj, err))
 		return
 	}
-	ctrl.queue.Add(key)
+	queue.Add(key)
 }
 
 func (ctrl *Controller) enqueueRateLimited(cfg *mcfgv1.KubeletConfig) {
@@ -296,63 +320,177 @@ func (ctrl *Controller) enqueueRateLimited(cfg *mcfgv1.KubeletConfig) {
 
 // worker runs a worker thread that just dequeues items, processes them, and marks them done.
 // It enforces that the syncHandler is never invoked concurrently with the same key.
-func (ctrl *Controller) worker() {
-	for ctrl.processNextWorkItem() {
+func (ctrl *Controller) genericWorker(queue workqueue.RateLimitingInterface, syncHandler func(string) error) {
+	for ctrl.processNextWorkItem(queue, syncHandler) {
 	}
 }
 
-func (ctrl *Controller) processNextWorkItem() bool {
-	key, quit := ctrl.queue.Get()
+func (ctrl *Controller) processNextWorkItem(queue workqueue.RateLimitingInterface, syncHandler func(string) error) bool {
+	key, quit := queue.Get()
 	if quit {
 		return false
 	}
-	defer ctrl.queue.Done(key)
+	defer queue.Done(key)
 
-	err := ctrl.syncHandler(key.(string))
-	ctrl.handleErr(err, key)
+	err := syncHandler(key.(string))
+	ctrl.handleErr(queue, err, key)
 
 	return true
 }
 
-func (ctrl *Controller) handleErr(err error, key interface{}) {
+func (ctrl *Controller) handleErr(queue workqueue.RateLimitingInterface, err error, key interface{}) {
 	if err == nil {
-		ctrl.queue.Forget(key)
+		queue.Forget(key)
 		return
 	}
 
-	if _, ok := err.(*forgetError); ok {
-		ctrl.queue.Forget(key)
-		return
+	if queue == ctrl.queue {
+		if _, ok := err.(*forgetError); ok {
+			queue.Forget(key)
+			return
+		}
 	}
 
-	if ctrl.queue.NumRequeues(key) < maxRetries {
-		klog.V(2).Infof("Error syncing kubeletconfig %v: %v", key, err)
-		ctrl.queue.AddRateLimited(key)
+	if queue.NumRequeues(key) < maxRetries {
+		klog.V(2).Infof("Error syncing %v: %v", key, err)
+		queue.AddRateLimited(key)
 		return
 	}
 
 	utilruntime.HandleError(err)
-	klog.V(2).Infof("Dropping kubeletconfig %q out of the queue: %v", key, err)
-	ctrl.queue.Forget(key)
-	ctrl.queue.AddAfter(key, 1*time.Minute)
+	klog.V(2).Infof("Dropping %q out of the queue: %v", key, err)
+	queue.Forget(key)
+	queue.AddAfter(key, 1*time.Minute)
 }
 
-func (ctrl *Controller) handleFeatureErr(err error, key interface{}) {
-	if err == nil {
-		ctrl.featureQueue.Forget(key)
-		return
+func (ctrl *Controller) syncFeatureHandler(key string) error {
+	startTime := time.Now()
+	klog.V(4).Infof("Started syncing feature handler %q (%v)", key, startTime)
+	defer func() {
+		klog.V(4).Infof("Finished syncing feature handler %q (%v)", key, time.Since(startTime))
+	}()
+
+	cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
+	if err != nil {
+		return fmt.Errorf("could not get ControllerConfig: %w", err)
 	}
 
-	if ctrl.featureQueue.NumRequeues(key) < maxRetries {
-		klog.V(2).Infof("Error syncing kubeletconfig %v: %v", key, err)
-		ctrl.featureQueue.AddRateLimited(key)
-		return
+	// Find all MachineConfigPools
+	mcpPools, err := ctrl.mcpLister.List(labels.Everything())
+	if err != nil {
+		return err
 	}
 
-	utilruntime.HandleError(err)
-	klog.V(2).Infof("Dropping featureconfig %q out of the queue: %v", key, err)
-	ctrl.featureQueue.Forget(key)
-	ctrl.featureQueue.AddAfter(key, 1*time.Minute)
+	for _, pool := range mcpPools {
+		var nodeConfig *osev1.Node
+		role := pool.Name
+		// Fetch the Node Config object
+		nodeConfig, err = ctrl.nodeConfigLister.Get(ctrlcommon.ClusterNodeInstanceName)
+		if macherrors.IsNotFound(err) {
+			nodeConfig = createNewDefaultNodeconfig()
+		}
+		// Get MachineConfig
+		managedKey, err := getManagedFeaturesKey(pool, ctrl.client)
+		if err != nil {
+			return err
+		}
+		mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), managedKey, metav1.GetOptions{})
+		if err != nil && !macherrors.IsNotFound(err) {
+			return err
+		}
+		isNotFound := macherrors.IsNotFound(err)
+		if isNotFound {
+			ignConfig := ctrlcommon.NewIgnConfig()
+			mc, err = ctrlcommon.MachineConfigFromIgnConfig(role, managedKey, ignConfig)
+			if err != nil {
+				return err
+			}
+		}
+
+		rawCfgIgn, err := generateKubeConfigIgnFromFeatures(cc, ctrl.templatesDir, role, ctrl.featureGateAccess, nodeConfig)
+		if err != nil {
+			return err
+		}
+		if rawCfgIgn == nil {
+			continue
+		}
+
+		mc.Spec.Config.Raw = rawCfgIgn
+		mc.ObjectMeta.Annotations = map[string]string{
+			ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,
+		}
+		// Create or Update, on conflict retry
+		if err := retry.RetryOnConflict(updateBackoff, func() error {
+			var err error
+			if isNotFound {
+				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), mc, metav1.CreateOptions{})
+			} else {
+				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Update(context.TODO(), mc, metav1.UpdateOptions{})
+			}
+			return err
+		}); err != nil {
+			return fmt.Errorf("could not Create/Update MachineConfig: %w", err)
+		}
+		klog.Infof("Applied FeatureSet %v on MachineConfigPool %v", key, pool.Name)
+		ctrlcommon.UpdateStateMetric(ctrlcommon.MCCSubControllerState, "machine-config-controller-kubelet-config", "Sync FeatureSet", pool.Name)
+	}
+	return ctrl.cleanUpDuplicatedMC(managedFeaturesKeyPrefix)
+}
+
+//nolint:gocritic
+func generateFeatureMap(featuregateAccess featuregates.FeatureGateAccess, exclusions ...osev1.FeatureGateName) (*map[string]bool, error) {
+	rv := make(map[string]bool)
+	if !featuregateAccess.AreInitialFeatureGatesObserved() {
+		return nil, fmt.Errorf("initial feature gates are not observed")
+	}
+
+	features, err := featuregateAccess.CurrentFeatureGates()
+	if err != nil {
+		return nil, fmt.Errorf("could not get current feature gates: %w", err)
+	}
+
+	for _, feat := range features.KnownFeatures() {
+		if features.Enabled(feat) {
+			rv[string(feat)] = true
+		} else {
+			rv[string(feat)] = false
+		}
+	}
+
+	// Remove features excluded due to being breaking for some reason
+	for _, excluded := range exclusions {
+		delete(rv, string(excluded))
+	}
+	return &rv, nil
+}
+
+var (
+	// openshiftOnlyFeatureGates contains selection of featureGates which will be rejected by native kubelet
+	openshiftOnlyFeatureGates = []osev1.FeatureGateName{}
+)
+
+func generateKubeConfigIgnFromFeatures(cc *mcfgv1.ControllerConfig, templatesDir, role string, featureGateAccess featuregates.FeatureGateAccess, nodeConfig *osev1.Node) ([]byte, error) {
+	originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, templatesDir, role, featureGateAccess)
+	if err != nil {
+		return nil, err
+	}
+	if nodeConfig != nil && role == ctrlcommon.MachineConfigPoolWorker {
+		updateOriginalKubeConfigwithNodeConfig(nodeConfig, originalKubeConfig)
+	}
+
+	// Encode the new config into raw JSON
+	cfgIgn, err := kubeletConfigToIgnFile(originalKubeConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	tempIgnConfig := ctrlcommon.NewIgnConfig()
+	tempIgnConfig.Storage.Files = append(tempIgnConfig.Storage.Files, *cfgIgn)
+	rawCfgIgn, err := json.Marshal(tempIgnConfig)
+	if err != nil {
+		return nil, err
+	}
+	return rawCfgIgn, nil
 }
 
 // generateOriginalKubeletConfigWithFeatureGates generates a KubeletConfig and ensure the correct feature gates are set
@@ -404,6 +542,45 @@ func generateOriginalKubeletConfigIgn(cc *mcfgv1.ControllerConfig, templatesDir,
 		return gmcKubeletConfig, nil
 	}
 	return nil, fmt.Errorf("could not generate old kubelet config")
+}
+
+func RunFeatureGateBootstrap(templateDir string, featureGateAccess featuregates.FeatureGateAccess, nodeConfig *osev1.Node, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool) ([]*mcfgv1.MachineConfig, error) {
+	machineConfigs := []*mcfgv1.MachineConfig{}
+
+	for _, pool := range mcpPools {
+		role := pool.Name
+		if nodeConfig == nil {
+			nodeConfig = createNewDefaultNodeconfig()
+		}
+		rawCfgIgn, err := generateKubeConfigIgnFromFeatures(controllerConfig, templateDir, role, featureGateAccess, nodeConfig)
+		if err != nil {
+			return nil, err
+		}
+		if rawCfgIgn == nil {
+			continue
+		}
+
+		// Get MachineConfig
+		managedKey, err := getManagedFeaturesKey(pool, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		ignConfig := ctrlcommon.NewIgnConfig()
+		mc, err := ctrlcommon.MachineConfigFromIgnConfig(role, managedKey, ignConfig)
+		if err != nil {
+			return nil, err
+		}
+
+		mc.Spec.Config.Raw = rawCfgIgn
+		mc.ObjectMeta.Annotations = map[string]string{
+			ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,
+		}
+
+		machineConfigs = append(machineConfigs, mc)
+	}
+
+	return machineConfigs, nil
 }
 
 func (ctrl *Controller) syncStatusOnly(cfg *mcfgv1.KubeletConfig, err error, args ...interface{}) error {
