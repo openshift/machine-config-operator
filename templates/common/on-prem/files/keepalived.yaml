@@ -71,7 +71,8 @@ contents:
       containers:
       - name: keepalived
         securityContext:
-          privileged: true
+          capabilities:
+            add: ["NET_ADMIN", "NET_RAW"]
         image: {{.Images.keepalivedImage}}
         env:
           - name: NSS_SDB_USE_CACHE
@@ -176,8 +177,6 @@ contents:
         terminationMessagePolicy: FallbackToLogsOnError
         imagePullPolicy: IfNotPresent
       - name: keepalived-monitor
-        securityContext:
-          privileged: true
         image: {{ .Images.baremetalRuntimeCfgImage }}
         env:
           - name: ENABLE_UNICAST
