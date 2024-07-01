@@ -44,5 +44,9 @@ contents:
     iface=$(get_nodeip_hint_interface "${ip_hint_file}")
 
     echo "Node IP interface determined as: ${iface}. Enabling IP forwarding..."
-    echo "1" > /proc/sys/net/ipv4/conf/"${iface}"/forwarding
-    echo "1" > /proc/sys/net/ipv6/conf/"${iface}"/forwarding
+    file_paths=("/proc/sys/net/ipv4/conf/${iface}/forwarding" "/proc/sys/net/ipv6/conf/${iface}/forwarding")
+    for file_path in "${file_paths[@]}"; do
+        if [ -f "${file_path}" ]; then
+            echo "1" > "${file_path}"
+        fi
+    done
