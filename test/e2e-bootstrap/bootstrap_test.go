@@ -444,6 +444,9 @@ func newTestFixture(t *testing.T, cfg *rest.Config, objs []runtime.Object) *fixt
 	ctrlctx.ConfigInformerFactory.Start(ctrlctx.Stop)
 	ctrlctx.OperatorInformerFactory.Start(ctrlctx.Stop)
 
+	err := ctrlcommon.WaitForFeatureGatesReady(ctx, ctrlctx.FeatureGateAccess)
+	require.NoError(t, err, "FeatureGates should be available before proceeding")
+
 	close(ctrlctx.InformersStarted)
 
 	for _, c := range controllers {
