@@ -26,7 +26,7 @@ all: binaries
 
 .PHONY: clean test test-unit test-e2e verify update install-tools
 
-# Remove build artifaces
+# Remove build artifacts
 # Example:
 #    make clean
 #
@@ -56,6 +56,7 @@ test-unit: install-go-junit-report
 update:
 	hack/update-templates.sh
 	hack/crds-sync.sh
+
 go-deps:
 	go mod tidy
 	go mod vendor
@@ -65,12 +66,19 @@ go-deps:
 	chmod +x ./vendor/k8s.io/code-generator/generate-internal-groups.sh
 
 SETUP_ENVTEST := $(shell command -v setup-envtest 2> /dev/null)
+# Use the script to find the correct version
+SETUP_ENVTEST_VERSION := $(shell ./hack/find-setup-envtest-version.sh)
+
 install-setup-envtest:
 ifdef SETUP_ENVTEST
 	@echo "Found setup-envtest"
 else
-	@echo "Installing setup-envtest"
-	go install -mod= sigs.k8s.io/controller-runtime/tools/setup-envtest@v0.0.0-20240315194348-5aaf1190f880
+	@if [ -z "$(SETUP_ENVTEST_VERSION)" ]; then \
+		echo "Error: Unable to determine controller-runtime version with setup-envtest"; \
+		exit 1; \
+	fi
+	@echo "Installing setup-envtest version $(SETUP_ENVTEST_VERSION)"
+	go install -mod= sigs.k8s.io/controller-runtime/tools/setup-envtest@$(SETUP_ENVTEST_VERSION)
 endif
 
 GO_JUNIT_REPORT := $(shell command -v go-junit-report 2> /dev/null)
