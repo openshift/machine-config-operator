@@ -1007,7 +1007,7 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 			return nil, fmt.Errorf("could not update policy json with new changes: %w", err)
 		}
 		// generates configuration under /etc/containers/registries.d to enable sigstore verification
-		sigstoreRegistriesConfigYaml, err = generateSigstoreRegistriesdConfig(clusterScopePolicies)
+		sigstoreRegistriesConfigYaml, err = generateSigstoreRegistriesdConfig(clusterScopePolicies, icspRules, idmsRules, itmsRules)
 		if err != nil {
 			return nil, err
 		}

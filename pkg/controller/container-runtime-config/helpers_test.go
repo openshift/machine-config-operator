@@ -523,6 +523,23 @@ func clusterImagePolicyTestCRs() map[string]apicfgv1alpha1.ClusterImagePolicy {
 				},
 			},
 		},
+		"test-cr2": {
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "test-cr2",
+			},
+			Spec: apicfgv1alpha1.ClusterImagePolicySpec{
+				Scopes: []apicfgv1alpha1.ImageScope{"a/a1/a2"},
+				Policy: apicfgv1alpha1.Policy{
+					RootOfTrust: apicfgv1alpha1.PolicyRootOfTrust{
+						PolicyType: apicfgv1alpha1.PublicKeyRootOfTrust,
+						PublicKey: &apicfgv1alpha1.PublicKey{
+							KeyData:      testKeyData,
+							RekorKeyData: testRekorKeyData,
+						},
+					},
+				},
+			},
+		},
 	}
 	return testClusterImagePolicyCRs
 }
@@ -1247,20 +1264,327 @@ func TestGetValidScopePolicies(t *testing.T) {
 func TestGenerateSigstoreRegistriesConfig(t *testing.T) {
 	testClusterImagePolicyCR0 := clusterImagePolicyTestCRs()["test-cr0"]
 	testClusterImagePolicyCR1 := clusterImagePolicyTestCRs()["test-cr1"]
+	testClusterImagePolicyCR2 := clusterImagePolicyTestCRs()["test-cr2"]
 
-	expectSigstoreRegistriesConfig := []byte(
-		`docker:
+	clusterScopePolicies, err := getValidScopePolicies([]*apicfgv1alpha1.ClusterImagePolicy{&testClusterImagePolicyCR0, &testClusterImagePolicyCR1, &testClusterImagePolicyCR2})
+	require.NoError(t, err)
+
+	releventMirrorClusterScopePolicies, err := getValidScopePolicies([]*apicfgv1alpha1.ClusterImagePolicy{&testClusterImagePolicyCR2})
+	require.NoError(t, err)
+
+	type testcase struct {
+		name                             string
+		clusterScopePolices              map[string]signature.PolicyRequirements
+		icspRules                        []*apioperatorsv1alpha1.ImageContentSourcePolicy
+		idmsRules                        []*apicfgv1.ImageDigestMirrorSet
+		itmsRules                        []*apicfgv1.ImageTagMirrorSet
+		expectedSigstoreRegistriesConfig []byte
+	}
+
+	testcases := []testcase{
+		{
+			name:                "cip objects exist, icsp/idms/itms are empty",
+			clusterScopePolices: clusterScopePolicies,
+			expectedSigstoreRegistriesConfig: []byte(
+				`docker:
+  a/a1/a2:
+    use-sigstore-attachments: true
   test0.com:
     use-sigstore-attachments: true
   test1.com:
     use-sigstore-attachments: true
-`)
+`),
+		},
+		{
+			name:                "cip has no scope overlap with icsp/idms/itms",
+			clusterScopePolices: clusterScopePolicies,
+			icspRules: []*apioperatorsv1alpha1.ImageContentSourcePolicy{
+				{
+					Spec: apioperatorsv1alpha1.ImageContentSourcePolicySpec{
+						RepositoryDigestMirrors: []apioperatorsv1alpha1.RepositoryDigestMirrors{
+							{Source: "x/x1/x2", Mirrors: []string{"x-x1-x2-mirror"}},
+						},
+					},
+				},
+			},
+			idmsRules: []*apicfgv1.ImageDigestMirrorSet{
+				{
+					Spec: apicfgv1.ImageDigestMirrorSetSpec{
+						ImageDigestMirrors: []apicfgv1.ImageDigestMirrors{ // other.com is neither insecure nor blocked
+							{Source: "y/y1/y2", Mirrors: []apicfgv1.ImageMirror{"y-y1-y2-mirror"}},
+						},
+					},
+				},
+			},
+			itmsRules: []*apicfgv1.ImageTagMirrorSet{
+				{
+					Spec: apicfgv1.ImageTagMirrorSetSpec{
+						ImageTagMirrors: []apicfgv1.ImageTagMirrors{
+							{Source: "z/z1/z2", Mirrors: []apicfgv1.ImageMirror{"z/z1/z2-mirror"}},
+						},
+					},
+				},
+			},
+			expectedSigstoreRegistriesConfig: []byte(
+				`docker:
+  a/a1/a2:
+    use-sigstore-attachments: true
+  test0.com:
+    use-sigstore-attachments: true
+  test1.com:
+    use-sigstore-attachments: true
+`),
+		},
+		{
+			name:                "only one source overlaps the scope, a/a1/a2 < the icsp source",
+			clusterScopePolices: releventMirrorClusterScopePolicies,
+			icspRules: []*apioperatorsv1alpha1.ImageContentSourcePolicy{
+				{
+					Spec: apioperatorsv1alpha1.ImageContentSourcePolicySpec{
+						RepositoryDigestMirrors: []apioperatorsv1alpha1.RepositoryDigestMirrors{
+							{Source: "a/a1/a2/a3", Mirrors: []string{"a-a1-a2-a3-mirror"}},
+							{Source: "x/x1/x2", Mirrors: []string{"x-x1-x2-mirror"}},
+						},
+					},
+				},
+			},
+			expectedSigstoreRegistriesConfig: []byte(
+				`docker:
+  a-a1-a2-a3-mirror:
+    use-sigstore-attachments: true
+  a/a1/a2:
+    use-sigstore-attachments: true
+`),
+		},
+		{
+			name:                "overlap exists, a/a1/a2 < multiple icsp sources",
+			clusterScopePolices: releventMirrorClusterScopePolicies,
+			icspRules: []*apioperatorsv1alpha1.ImageContentSourcePolicy{
+				{
+					Spec: apioperatorsv1alpha1.ImageContentSourcePolicySpec{
+						RepositoryDigestMirrors: []apioperatorsv1alpha1.RepositoryDigestMirrors{
+							{Source: "a/a1/a2/a3", Mirrors: []string{"a-a1-a2-a3-mirror"}},
+							{Source: "a/a1/a2/a3-1", Mirrors: []string{"a-a1-a2-a3-1-mirror"}},
+							{Source: "x/x1/x2", Mirrors: []string{"x-x1-x2-mirror"}},
+						},
+					},
+				},
+			},
+			expectedSigstoreRegistriesConfig: []byte(
+				`docker:
+  a-a1-a2-a3-1-mirror:
+    use-sigstore-attachments: true
+  a-a1-a2-a3-mirror:
+    use-sigstore-attachments: true
+  a/a1/a2:
+    use-sigstore-attachments: true
+`),
+		},
+		{
+			name:                "overlap exists, a/a1/a2 > multiple icsp sources",
+			clusterScopePolices: releventMirrorClusterScopePolicies,
+			icspRules: []*apioperatorsv1alpha1.ImageContentSourcePolicy{
+				{
+					Spec: apioperatorsv1alpha1.ImageContentSourcePolicySpec{
+						RepositoryDigestMirrors: []apioperatorsv1alpha1.RepositoryDigestMirrors{
+							{Source: "a", Mirrors: []string{"a-mirror"}},
+							{Source: "a/a1", Mirrors: []string{"a-a1-mirror"}},
+							{Source: "x/x1/x2", Mirrors: []string{"x-x1-x2-mirror"}},
+						},
+					},
+				},
+			},
+			expectedSigstoreRegistriesConfig: []byte(
+				`docker:
+  a-a1-mirror:
+    use-sigstore-attachments: true
+  a/a1/a2:
+    use-sigstore-attachments: true
+`),
+		},
+		{
+			name:                "only one source overlaps scope, a/a1/a2 > the icsp source",
+			clusterScopePolices: releventMirrorClusterScopePolicies,
+			icspRules: []*apioperatorsv1alpha1.ImageContentSourcePolicy{
+				{
+					Spec: apioperatorsv1alpha1.ImageContentSourcePolicySpec{
+						RepositoryDigestMirrors: []apioperatorsv1alpha1.RepositoryDigestMirrors{
+							{Source: "a", Mirrors: []string{"a-mirror"}},
+							{Source: "x/x1/x2", Mirrors: []string{"x-x1-x2-mirror"}},
+						},
+					},
+				},
+			},
+			expectedSigstoreRegistriesConfig: []byte(
+				`docker:
+  a-mirror:
+    use-sigstore-attachments: true
+  a/a1/a2:
+    use-sigstore-attachments: true
+`),
+		},
+		{
+			name:                "overlap exists, a/a1/a2 > and < icsp sources",
+			clusterScopePolices: releventMirrorClusterScopePolicies,
+			icspRules: []*apioperatorsv1alpha1.ImageContentSourcePolicy{
+				{
+					Spec: apioperatorsv1alpha1.ImageContentSourcePolicySpec{
+						RepositoryDigestMirrors: []apioperatorsv1alpha1.RepositoryDigestMirrors{
+							{Source: "a", Mirrors: []string{"a-mirror"}},
+							{Source: "a/a1", Mirrors: []string{"a-a1-mirror"}},
+							{Source: "a/a1/a2/a3", Mirrors: []string{"a-a1-a2-a3-mirror"}},
+							{Source: "x/x1/x2", Mirrors: []string{"x-x1-x2-mirror"}},
+						},
+					},
+				},
+			},
+			expectedSigstoreRegistriesConfig: []byte(
+				`docker:
+  a-a1-a2-a3-mirror:
+    use-sigstore-attachments: true
+  a-a1-mirror:
+    use-sigstore-attachments: true
+  a/a1/a2:
+    use-sigstore-attachments: true
+`),
+		},
+		{
+			name:                "overlap exists, a/a1/a2 >= and <= icsp sources",
+			clusterScopePolices: releventMirrorClusterScopePolicies,
+			icspRules: []*apioperatorsv1alpha1.ImageContentSourcePolicy{
+				{
+					Spec: apioperatorsv1alpha1.ImageContentSourcePolicySpec{
+						RepositoryDigestMirrors: []apioperatorsv1alpha1.RepositoryDigestMirrors{
+							{Source: "a", Mirrors: []string{"a-mirror"}},
+							{Source: "a/a1", Mirrors: []string{"a-a1-mirror"}},
+							{Source: "a/a1/a2", Mirrors: []string{"a-a1-a2-mirror"}},
+							{Source: "a/a1/a2/a3", Mirrors: []string{"a-a1-a2-a3-mirror"}},
+							{Source: "x/x1/x2", Mirrors: []string{"x-x1-x2-mirror"}},
+						},
+					},
+				},
+			},
+			expectedSigstoreRegistriesConfig: []byte(
+				`docker:
+  a-a1-a2-a3-mirror:
+    use-sigstore-attachments: true
+  a-a1-a2-mirror:
+    use-sigstore-attachments: true
+  a/a1/a2:
+    use-sigstore-attachments: true
+`),
+		},
+		{
+			name:                "overlap exists, a/a1/a2 > and < idms sources",
+			clusterScopePolices: releventMirrorClusterScopePolicies,
+			idmsRules: []*apicfgv1.ImageDigestMirrorSet{
+				{
+					Spec: apicfgv1.ImageDigestMirrorSetSpec{
+						ImageDigestMirrors: []apicfgv1.ImageDigestMirrors{
+							{Source: "a", Mirrors: []apicfgv1.ImageMirror{"a-mirror"}},
+							{Source: "a/a1", Mirrors: []apicfgv1.ImageMirror{"a-a1-mirror"}},
+							{Source: "a/a1/a2/a3", Mirrors: []apicfgv1.ImageMirror{"a-a1-a2-a3-mirror"}},
+							{Source: "x/x1/x2", Mirrors: []apicfgv1.ImageMirror{"x-x1-x2-mirror"}},
+						},
+					},
+				},
+			},
+			expectedSigstoreRegistriesConfig: []byte(
+				`docker:
+  a-a1-a2-a3-mirror:
+    use-sigstore-attachments: true
+  a-a1-mirror:
+    use-sigstore-attachments: true
+  a/a1/a2:
+    use-sigstore-attachments: true
+`),
+		},
+		{
+			name:                "overlap exists, a/a1/a2 >= and <= idms sources",
+			clusterScopePolices: releventMirrorClusterScopePolicies,
+			idmsRules: []*apicfgv1.ImageDigestMirrorSet{
+				{
+					Spec: apicfgv1.ImageDigestMirrorSetSpec{
+						ImageDigestMirrors: []apicfgv1.ImageDigestMirrors{
+							{Source: "a", Mirrors: []apicfgv1.ImageMirror{"a-mirror"}},
+							{Source: "a/a1", Mirrors: []apicfgv1.ImageMirror{"a-a1-mirror"}},
+							{Source: "a/a1/a2", Mirrors: []apicfgv1.ImageMirror{"a-a1-a2-mirror"}},
+							{Source: "a/a1/a2/a3", Mirrors: []apicfgv1.ImageMirror{"a-a1-a2-a3-mirror"}},
+							{Source: "x/x1/x2", Mirrors: []apicfgv1.ImageMirror{"x-x1-x2-mirror"}},
+						},
+					},
+				},
+			},
+			expectedSigstoreRegistriesConfig: []byte(
+				`docker:
+  a-a1-a2-a3-mirror:
+    use-sigstore-attachments: true
+  a-a1-a2-mirror:
+    use-sigstore-attachments: true
+  a/a1/a2:
+    use-sigstore-attachments: true
+`),
+		},
+		{
+			name:                "overlap exists, a/a1/a2 > and < itms sources",
+			clusterScopePolices: releventMirrorClusterScopePolicies,
+			itmsRules: []*apicfgv1.ImageTagMirrorSet{
+				{
+					Spec: apicfgv1.ImageTagMirrorSetSpec{
+						ImageTagMirrors: []apicfgv1.ImageTagMirrors{
+							{Source: "a", Mirrors: []apicfgv1.ImageMirror{"a-mirror"}},
+							{Source: "a/a1", Mirrors: []apicfgv1.ImageMirror{"a-a1-mirror"}},
+							{Source: "a/a1/a2/a3", Mirrors: []apicfgv1.ImageMirror{"a-a1-a2-a3-mirror"}},
+							{Source: "x/x1/x2", Mirrors: []apicfgv1.ImageMirror{"x-x1-x2-mirror"}},
+						},
+					},
+				},
+			},
+			expectedSigstoreRegistriesConfig: []byte(
+				`docker:
+  a-a1-a2-a3-mirror:
+    use-sigstore-attachments: true
+  a-a1-mirror:
+    use-sigstore-attachments: true
+  a/a1/a2:
+    use-sigstore-attachments: true
+`),
+		},
+		{
+			name:                "overlap exists, a/a1/a2 >= and <= itms sources",
+			clusterScopePolices: releventMirrorClusterScopePolicies,
+			itmsRules: []*apicfgv1.ImageTagMirrorSet{
+				{
+					Spec: apicfgv1.ImageTagMirrorSetSpec{
+						ImageTagMirrors: []apicfgv1.ImageTagMirrors{
+							{Source: "a", Mirrors: []apicfgv1.ImageMirror{"a-mirror"}},
+							{Source: "a/a1", Mirrors: []apicfgv1.ImageMirror{"a-a1-mirror"}},
+							{Source: "a/a1/a2", Mirrors: []apicfgv1.ImageMirror{"a-a1-a2-mirror"}},
+							{Source: "a/a1/a2/a3", Mirrors: []apicfgv1.ImageMirror{"a-a1-a2-a3-mirror"}},
+							{Source: "x/x1/x2", Mirrors: []apicfgv1.ImageMirror{"x-x1-x2-mirror"}},
+						},
+					},
+				},
+			},
+			expectedSigstoreRegistriesConfig: []byte(
+				`docker:
+  a-a1-a2-a3-mirror:
+    use-sigstore-attachments: true
+  a-a1-a2-mirror:
+    use-sigstore-attachments: true
+  a/a1/a2:
+    use-sigstore-attachments: true
+`),
+		},
+	}
 
-	clusterScopePolicies, err := getValidScopePolicies([]*apicfgv1alpha1.ClusterImagePolicy{&testClusterImagePolicyCR0, &testClusterImagePolicyCR1})
-	require.NoError(t, err)
-	got, err := generateSigstoreRegistriesdConfig(clusterScopePolicies)
-	require.NoError(t, err)
-	require.Equal(t, string(expectSigstoreRegistriesConfig), string(got))
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := generateSigstoreRegistriesdConfig(tc.clusterScopePolices, tc.icspRules, tc.idmsRules, tc.itmsRules)
+			require.NoError(t, err)
+			require.Equal(t, string(tc.expectedSigstoreRegistriesConfig), string(got))
+		})
+	}
 }
 
 func TestGeneratePolicyJSON(t *testing.T) {

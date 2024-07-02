@@ -534,7 +534,7 @@ func verifyRegistriesConfigAndPolicyJSONContents(t *testing.T, mc *mcfgv1.Machin
 	}
 
 	if verifyImagePoliciesRegistriesConfig {
-		expectedRegistriesConfd, err := generateSigstoreRegistriesdConfig(clusterScopePolicies)
+		expectedRegistriesConfd, err := generateSigstoreRegistriesdConfig(clusterScopePolicies, icsps, idmss, itmss)
 		require.NoError(t, err)
 		foundFile := false
 
@@ -1790,6 +1790,57 @@ func TestClusterImagePolicyCreate(t *testing.T) {
 
 			for _, mcName := range []string{mcs1.Name, mcs2.Name} {
 				f.verifyRegistriesConfigAndPolicyJSONContents(t, mcName, imgcfg1, nil, nil, nil, clusterimgPolicy, cc.Spec.ReleaseImage, true, true, true)
+			}
+		})
+	}
+}
+
+func TestSigstoreRegistriesConfigIDMSandCIPCreate(t *testing.T) {
+	for _, platform := range []apicfgv1.PlatformType{apicfgv1.AWSPlatformType, apicfgv1.NonePlatformType, "unrecognized"} {
+		t.Run(string(platform), func(t *testing.T) {
+			f := newFixture(t)
+
+			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
+			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
+			imgcfg1 := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"blah.io"}, AllowedRegistries: []string{"example.com"}, ContainerRuntimeSearchRegistries: []string{"search-reg.io"}})
+
+			cvcfg1 := newClusterVersionConfig("version", "test.io/myuser/myimage:test")
+			keyReg1, _ := getManagedKeyReg(mcp, nil)
+			keyReg2, _ := getManagedKeyReg(mcp2, nil)
+
+			mcs1 := helpers.NewMachineConfig(keyReg1, map[string]string{"node-role": "master"}, "dummy://", []ign3types.File{{}})
+			mcs2 := helpers.NewMachineConfig(keyReg2, map[string]string{"node-role": "worker"}, "dummy://", []ign3types.File{{}})
+
+			// idms source is the same as cip scope
+			idms := newIDMS("built-in", []apicfgv1.ImageDigestMirrors{
+				{Source: "built-in-source.example.com", Mirrors: []apicfgv1.ImageMirror{"built-in-mirror.example.com"}},
+			})
+			clusterimgPolicy := newClusterImagePolicyWithPublicKey("built-in-source.example.com", []string{"example.com"}, []byte("foo bar"))
+			f.ccLister = append(f.ccLister, cc)
+			f.mcpLister = append(f.mcpLister, mcp)
+			f.mcpLister = append(f.mcpLister, mcp2)
+			f.imgLister = append(f.imgLister, imgcfg1)
+			f.idmsLister = append(f.idmsLister, idms)
+			f.clusterImagePolicyLister = append(f.clusterImagePolicyLister, clusterimgPolicy)
+			f.cvLister = append(f.cvLister, cvcfg1)
+			f.imgObjects = append(f.imgObjects, imgcfg1)
+
+			f.expectGetMachineConfigAction(mcs1)
+			f.expectGetMachineConfigAction(mcs1)
+			f.expectGetMachineConfigAction(mcs1)
+			f.expectCreateMachineConfigAction(mcs1)
+
+			f.expectGetMachineConfigAction(mcs2)
+			f.expectGetMachineConfigAction(mcs2)
+			f.expectGetMachineConfigAction(mcs2)
+
+			f.expectCreateMachineConfigAction(mcs2)
+
+			f.run("")
+
+			for _, mcName := range []string{mcs1.Name, mcs2.Name} {
+				f.verifyRegistriesConfigAndPolicyJSONContents(t, mcName, imgcfg1, nil, idms, nil, clusterimgPolicy, cc.Spec.ReleaseImage, true, true, true)
 			}
 		})
 	}

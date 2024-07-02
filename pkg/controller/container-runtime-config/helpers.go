@@ -933,7 +933,7 @@ func validateClusterImagePolicyWithAllowedBlockedRegistries(clusterScopePolicies
 	return nil
 }
 
-func generateSigstoreRegistriesdConfig(clusterScopePolicies map[string]signature.PolicyRequirements) ([]byte, error) {
+func generateSigstoreRegistriesdConfig(clusterScopePolicies map[string]signature.PolicyRequirements, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy, idmsRules []*apicfgv1.ImageDigestMirrorSet, itmsRules []*apicfgv1.ImageTagMirrorSet) ([]byte, error) {
 	if len(clusterScopePolicies) == 0 {
 		return nil, nil
 	}
@@ -944,6 +944,7 @@ func generateSigstoreRegistriesdConfig(clusterScopePolicies map[string]signature
 	}
 	for scope := range clusterScopePolicies {
 		registriesDockerConfig[scope] = sigstoreAttachment
+		addScopeMirrorsSigstoreRegistriesdConfig(registriesDockerConfig, scope, icspRules, idmsRules, itmsRules, sigstoreAttachment)
 	}
 
 	registriesConfig := &registriesConfig{}
@@ -953,4 +954,109 @@ func generateSigstoreRegistriesdConfig(clusterScopePolicies map[string]signature
 		return nil, fmt.Errorf("error marshalling regisres configuration for sigstore (cluster)imagepolicies: %w", err)
 	}
 	return data, nil
+}
+
+func addScopeMirrorsSigstoreRegistriesdConfig(registriesDockerConfig map[string]dockerConfig, scope string, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy, idmsRules []*apicfgv1.ImageDigestMirrorSet, itmsRules []*apicfgv1.ImageTagMirrorSet, sigstoreAttachment dockerConfig) {
+	for _, icsp := range icspRules {
+		scopeIsSource := false
+		for _, rdm := range icsp.Spec.RepositoryDigestMirrors {
+			if strings.HasPrefix(rdm.Source, scope) {
+				for _, mirror := range rdm.Mirrors {
+					registriesDockerConfig[mirror] = sigstoreAttachment
+				}
+				if rdm.Source == scope {
+					scopeIsSource = true
+				}
+			}
+		}
+		if scopeIsSource {
+			continue
+		}
+
+		maxSourceLen := 0
+		var mirrors []string
+		for _, rdm := range icsp.Spec.RepositoryDigestMirrors {
+			if strings.HasPrefix(scope, rdm.Source) {
+				if len(rdm.Source) > maxSourceLen {
+					maxSourceLen = len(rdm.Source)
+					mirrors = rdm.Mirrors
+				}
+			}
+		}
+		if maxSourceLen > 0 {
+			for _, mirror := range mirrors {
+				registriesDockerConfig[mirror] = sigstoreAttachment
+			}
+		}
+	}
+
+	for _, idms := range idmsRules {
+		scopeIsSource := false
+		for _, idm := range idms.Spec.ImageDigestMirrors {
+			if strings.HasPrefix(idm.Source, scope) {
+				for _, mirror := range idm.Mirrors {
+					m := string(mirror)
+					registriesDockerConfig[m] = sigstoreAttachment
+				}
+				if idm.Source == scope {
+					scopeIsSource = true
+				}
+			}
+		}
+		if scopeIsSource {
+			continue
+		}
+
+		maxSourceLen := 0
+		var mirrors []apicfgv1.ImageMirror
+		for _, idm := range idms.Spec.ImageDigestMirrors {
+			if strings.HasPrefix(scope, idm.Source) {
+				if len(idm.Source) > maxSourceLen {
+					maxSourceLen = len(idm.Source)
+					mirrors = idm.Mirrors
+				}
+			}
+		}
+		if maxSourceLen > 0 {
+			for _, mirror := range mirrors {
+				m := string(mirror)
+				registriesDockerConfig[m] = sigstoreAttachment
+			}
+		}
+	}
+
+	for _, itms := range itmsRules {
+		scopeIsSource := false
+		for _, itm := range itms.Spec.ImageTagMirrors {
+			if strings.HasPrefix(itm.Source, scope) {
+				for _, mirror := range itm.Mirrors {
+					m := string(mirror)
+					registriesDockerConfig[m] = sigstoreAttachment
+				}
+				if itm.Source == scope {
+					scopeIsSource = true
+				}
+			}
+		}
+		if scopeIsSource {
+			continue
+		}
+
+		maxSourceLen := 0
+		var mirrors []apicfgv1.ImageMirror
+		for _, itm := range itms.Spec.ImageTagMirrors {
+			if strings.HasPrefix(scope, itm.Source) {
+				if len(itm.Source) > maxSourceLen {
+					maxSourceLen = len(itm.Source)
+					mirrors = itm.Mirrors
+				}
+			}
+		}
+		if maxSourceLen > 0 {
+			for _, mirror := range mirrors {
+				m := string(mirror)
+				registriesDockerConfig[m] = sigstoreAttachment
+			}
+		}
+	}
 }
