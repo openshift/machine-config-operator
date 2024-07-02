@@ -45,10 +45,19 @@ func runBootstrapCmd(_ *cobra.Command, _ []string) {
 		klog.Exitf("Machine Config Server exited with error: %v", err)
 	}
 
-	// TODO: During bootstrap, the tls arguments will not be provided. The following function
-	// should default to the intermediate security profile until bootstrap tls arguments are implemented.
-	klog.Infof("Launching bootstrap server with tls min version: %v & cipher suites %v", rootOpts.tlsminversion, rootOpts.tlsciphersuites)
-	tlsConfig := ctrlcommon.GetGoTLSConfig(rootOpts.tlsminversion, rootOpts.tlsciphersuites)
+	// Read-in bootstrap apiserver file /etc/mcs/bootstrap/api-server/apiserver.yaml.
+	apiServer, err := ctrlcommon.GetBootstrapAPIServer()
+	if err != nil {
+		// If an error happened, log it. Exiting here would end the installation which may not be desirable.
+		// In such cases of error, the MCS will default to using the intermediate tls profile as apiServer==nil
+		klog.Infof("error found during grabbing apiserver from bootstrap manifest %v", err)
+	}
+
+	// Determine tls settings from APIServer object.
+	// If apiServer==nil, this call will default to the intermediate profile
+	tlsminversion, tlsciphersuites := ctrlcommon.GetSecurityProfileCiphersFromAPIServer(apiServer)
+	klog.Infof("Launching bootstrap server with tls min version: %v & cipher suites %v", tlsminversion, tlsciphersuites)
+	tlsConfig := ctrlcommon.GetGoTLSConfig(tlsminversion, tlsciphersuites)
 
 	apiHandler := server.NewServerAPIHandler(bs)
 	secureServer := server.NewAPIServer(apiHandler, rootOpts.sport, false, rootOpts.cert, rootOpts.key, tlsConfig)
