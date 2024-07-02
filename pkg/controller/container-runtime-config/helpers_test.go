@@ -20,9 +20,11 @@ import (
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/exp/maps"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/diff"
+	"k8s.io/apimachinery/pkg/util/yaml"
 )
 
 func TestUpdateRegistriesConfig(t *testing.T) {
@@ -518,6 +520,23 @@ func clusterImagePolicyTestCRs() map[string]apicfgv1alpha1.ClusterImagePolicy {
 						PolicyMatchRemapIdentity: &apicfgv1alpha1.PolicyMatchRemapIdentity{
 							Prefix:       "test-remap-prefix",
 							SignedPrefix: "test-remap-signed-prefix",
+						},
+					},
+				},
+			},
+		},
+		"test-cr2": {
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "test-cr2",
+			},
+			Spec: apicfgv1alpha1.ClusterImagePolicySpec{
+				Scopes: []apicfgv1alpha1.ImageScope{"a.com/a1/a2", "a.com/a1/a2@sha256:0000000000000000000000000000000000000000000000000000000000000000", "*.example.com", "policy.scope", "foo.example.com/ns/repo"},
+				Policy: apicfgv1alpha1.Policy{
+					RootOfTrust: apicfgv1alpha1.PolicyRootOfTrust{
+						PolicyType: apicfgv1alpha1.PublicKeyRootOfTrust,
+						PublicKey: &apicfgv1alpha1.PublicKey{
+							KeyData:      testKeyData,
+							RekorKeyData: testRekorKeyData,
 						},
 					},
 				},
@@ -1245,22 +1264,144 @@ func TestGetValidScopePolicies(t *testing.T) {
 }
 
 func TestGenerateSigstoreRegistriesConfig(t *testing.T) {
-	testClusterImagePolicyCR0 := clusterImagePolicyTestCRs()["test-cr0"]
-	testClusterImagePolicyCR1 := clusterImagePolicyTestCRs()["test-cr1"]
 
-	expectSigstoreRegistriesConfig := []byte(
-		`docker:
-  test0.com:
-    use-sigstore-attachments: true
-  test1.com:
-    use-sigstore-attachments: true
-`)
+	// testcase CIP scopes:
+	// "a.com/a1/a2",
+	// "a.com/a1/a2@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+	// "*.example.com",
+	// "foo.example.com/ns/repo",
+	// "policy.scope"
+	testClusterImagePolicyCR2 := clusterImagePolicyTestCRs()["test-cr2"]
 
-	clusterScopePolicies, err := getValidScopePolicies([]*apicfgv1alpha1.ClusterImagePolicy{&testClusterImagePolicyCR0, &testClusterImagePolicyCR1})
+	clusterScopePolicies, err := getValidScopePolicies([]*apicfgv1alpha1.ClusterImagePolicy{&testClusterImagePolicyCR2})
 	require.NoError(t, err)
-	got, err := generateSigstoreRegistriesdConfig(clusterScopePolicies)
-	require.NoError(t, err)
-	require.Equal(t, string(expectSigstoreRegistriesConfig), string(got))
+
+	type testcase struct {
+		name                                   string
+		clusterScopePolicies                   map[string]signature.PolicyRequirements
+		icspRules                              []*apioperatorsv1alpha1.ImageContentSourcePolicy
+		idmsRules                              []*apicfgv1.ImageDigestMirrorSet
+		itmsRules                              []*apicfgv1.ImageTagMirrorSet
+		expectedSigstoreRegistriesConfigScopes []string
+	}
+
+	testcases := []testcase{
+		{
+			name:                                   "cip objects exist, icsp/idms/itms are empty",
+			clusterScopePolicies:                   clusterScopePolicies,
+			expectedSigstoreRegistriesConfigScopes: []string{"*.example.com", "a.com/a1/a2", "a.com/a1/a2@sha256:0000000000000000000000000000000000000000000000000000000000000000", "foo.example.com/ns/repo", "policy.scope"},
+		},
+		{
+			name:                 "cip has no revelant registries mirrors",
+			clusterScopePolicies: clusterScopePolicies,
+			icspRules: []*apioperatorsv1alpha1.ImageContentSourcePolicy{
+				{
+					Spec: apioperatorsv1alpha1.ImageContentSourcePolicySpec{
+						RepositoryDigestMirrors: []apioperatorsv1alpha1.RepositoryDigestMirrors{
+							{Source: "x.com/x1/x2", Mirrors: []string{"x-x1-x2.mirror/x1/x2"}},
+						},
+					},
+				},
+			},
+			idmsRules: []*apicfgv1.ImageDigestMirrorSet{
+				{
+					Spec: apicfgv1.ImageDigestMirrorSetSpec{
+						ImageDigestMirrors: []apicfgv1.ImageDigestMirrors{ // other.com is neither insecure nor blocked
+							{Source: "y.com/y1/y2", Mirrors: []apicfgv1.ImageMirror{"y-y1-y2.mirror/y1/y2"}},
+						},
+					},
+				},
+			},
+			itmsRules: []*apicfgv1.ImageTagMirrorSet{
+				{
+					Spec: apicfgv1.ImageTagMirrorSetSpec{
+						ImageTagMirrors: []apicfgv1.ImageTagMirrors{
+							{Source: "z.com/z1/z2", Mirrors: []apicfgv1.ImageMirror{"z-z1-z2.mirror/z1/z2"}},
+						},
+					},
+				},
+			},
+			expectedSigstoreRegistriesConfigScopes: []string{"*.example.com", "a.com/a1/a2", "a.com/a1/a2@sha256:0000000000000000000000000000000000000000000000000000000000000000", "foo.example.com/ns/repo", "policy.scope"},
+		},
+		{
+			name:                 "cip scope a.com/a1/a2 is super scope of registries sources",
+			clusterScopePolicies: clusterScopePolicies,
+			idmsRules: []*apicfgv1.ImageDigestMirrorSet{
+				{
+					Spec: apicfgv1.ImageDigestMirrorSetSpec{
+						ImageDigestMirrors: []apicfgv1.ImageDigestMirrors{
+							{Source: "a.com/a1/a2", Mirrors: []apicfgv1.ImageMirror{"a-a1-a2.mirror/a1/a2"}},
+							{Source: "a.com/a1/a2/a3", Mirrors: []apicfgv1.ImageMirror{"a-a1-a2-a3.mirror/m1/m2/m3"}},
+							{Source: "a.com/a1/a2/a3-1", Mirrors: []apicfgv1.ImageMirror{"a-a1-a2-a3-1.mirror/m1/m2/m3"}},
+							{Source: "x.com/x1/x2", Mirrors: []apicfgv1.ImageMirror{"x-x1-x2.mirror/m1/m2"}},
+						},
+					},
+				},
+			},
+			expectedSigstoreRegistriesConfigScopes: []string{"*.example.com", "a-a1-a2-a3-1.mirror/m1/m2/m3", "a-a1-a2-a3.mirror/m1/m2/m3", "a-a1-a2.mirror/a1/a2", "a.com/a1/a2", "a.com/a1/a2/a3", "a.com/a1/a2/a3-1", "a.com/a1/a2@sha256:0000000000000000000000000000000000000000000000000000000000000000", "foo.example.com/ns/repo", "policy.scope"},
+		},
+		{
+			name:                 "cip scope a.com/a1/a2 nested in registries sources",
+			clusterScopePolicies: clusterScopePolicies,
+			idmsRules: []*apicfgv1.ImageDigestMirrorSet{
+				{
+					Spec: apicfgv1.ImageDigestMirrorSetSpec{
+						ImageDigestMirrors: []apicfgv1.ImageDigestMirrors{
+							{Source: "a.com", Mirrors: []apicfgv1.ImageMirror{"a.mirror"}},
+							{Source: "a.com/a1", Mirrors: []apicfgv1.ImageMirror{"a-a1.mirror/a1"}},
+							{Source: "x.com/x1/x2", Mirrors: []apicfgv1.ImageMirror{"x-x1-x2.mirror/x1/x2"}},
+						},
+					},
+				},
+			},
+			expectedSigstoreRegistriesConfigScopes: []string{"*.example.com", "a-a1.mirror/a1/a2", "a.com/a1/a2", "a.com/a1/a2@sha256:0000000000000000000000000000000000000000000000000000000000000000", "policy.scope", "foo.example.com/ns/repo"},
+		},
+		{
+			name:                 "cip wildcard scope *.example.com is the mirror source",
+			clusterScopePolicies: clusterScopePolicies,
+			idmsRules: []*apicfgv1.ImageDigestMirrorSet{
+				{
+					Spec: apicfgv1.ImageDigestMirrorSetSpec{
+						ImageDigestMirrors: []apicfgv1.ImageDigestMirrors{
+							{Source: "*.example.com", Mirrors: []apicfgv1.ImageMirror{"our.mirror/example"}},
+						},
+					},
+				},
+			},
+			expectedSigstoreRegistriesConfigScopes: []string{"*.example.com", "a.com/a1/a2", "a.com/a1/a2@sha256:0000000000000000000000000000000000000000000000000000000000000000", "policy.scope", "foo.example.com/ns/repo", "our.mirror/example/ns/repo", "our.mirror/example"},
+		},
+		{
+			name:                 "cip scope *.example.com and mirror source have wildcard matching",
+			clusterScopePolicies: clusterScopePolicies,
+			idmsRules: []*apicfgv1.ImageDigestMirrorSet{
+				{
+					Spec: apicfgv1.ImageDigestMirrorSetSpec{
+						ImageDigestMirrors: []apicfgv1.ImageDigestMirrors{
+							{Source: "a.example.com", Mirrors: []apicfgv1.ImageMirror{"a-example.mirror"}},
+							{Source: "*.x.example.com", Mirrors: []apicfgv1.ImageMirror{"matched.example.mirror", "star-x.example.mirror"}},
+							{Source: "*.scope", Mirrors: []apicfgv1.ImageMirror{"start-scope.mirror"}},
+							{Source: "x/x1/x2", Mirrors: []apicfgv1.ImageMirror{"x-x1-x2.mirror/x1/x2"}},
+						},
+					},
+				},
+			},
+			expectedSigstoreRegistriesConfigScopes: []string{"*.example.com", "a-example.mirror", "a.com/a1/a2", "a.com/a1/a2@sha256:0000000000000000000000000000000000000000000000000000000000000000", "a.example.com", "star-x.example.mirror", "matched.example.mirror", "policy.scope", "start-scope.mirror", "foo.example.com/ns/repo"},
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			registriesTOML, err := updateRegistriesConfig(templateRegistriesConfig, nil, nil, tc.icspRules, tc.idmsRules, tc.itmsRules)
+			require.NoError(t, err)
+			got, err := generateSigstoreRegistriesdConfig(tc.clusterScopePolicies, registriesTOML)
+			require.NoError(t, err)
+
+			gotRegistriesCfg := &registriesConfig{}
+			err = yaml.Unmarshal(got, &gotRegistriesCfg)
+			require.NoError(t, err)
+			assert.ElementsMatch(t, tc.expectedSigstoreRegistriesConfigScopes, maps.Keys(gotRegistriesCfg.Docker))
+		})
+	}
 }
 
 func TestGeneratePolicyJSON(t *testing.T) {
