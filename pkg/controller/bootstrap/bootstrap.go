@@ -90,6 +90,7 @@ func (b *Bootstrap) Run(destDir string) error {
 		itmsRules            []*apicfgv1.ImageTagMirrorSet
 		clusterImagePolicies []*apicfgv1alpha1.ClusterImagePolicy
 		imgCfg               *apicfgv1.Image
+		apiServer            *apicfgv1.APIServer
 	)
 	for _, info := range infos {
 		if info.IsDir() {
@@ -147,6 +148,10 @@ func (b *Bootstrap) Run(destDir string) error {
 				if obj.GetName() == ctrlcommon.ClusterNodeInstanceName {
 					nodeConfig = obj
 				}
+			case *apicfgv1.APIServer:
+				if obj.GetName() == ctrlcommon.APIServerInstanceName {
+					apiServer = obj
+				}
 			default:
 				klog.Infof("skipping %q [%d] manifest because of unhandled %T", file.Name(), idx+1, obji)
 			}
@@ -167,7 +172,7 @@ func (b *Bootstrap) Run(destDir string) error {
 		return fmt.Errorf("error creating feature gate access: %w", err)
 	}
 
-	iconfigs, err := template.RunBootstrap(b.templatesDir, cconfig, psraw, nil)
+	iconfigs, err := template.RunBootstrap(b.templatesDir, cconfig, psraw, apiServer)
 	if err != nil {
 		return err
 	}
