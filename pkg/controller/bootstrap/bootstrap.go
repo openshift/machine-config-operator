@@ -277,6 +277,29 @@ func (b *Bootstrap) Run(destDir string) error {
 			return err
 		}
 	}
+
+	// If an apiServer object exists, write it to /etc/mcs/bootstrap/api-server/api-server.yaml
+	// so that bootstrap MCS can consume it
+	if apiServer != nil {
+		buf := bytes.Buffer{}
+		encoder := codecFactory.EncoderForVersion(serializer, apicfgv1.GroupVersion)
+		err = encoder.Encode(apiServer, &buf)
+		if err != nil {
+			return err
+		}
+		apiserverDir := filepath.Join(destDir, "api-server")
+		if err := os.MkdirAll(apiserverDir, 0o764); err != nil {
+			return err
+		}
+		// Disable gosec here to avoid throwing
+		// G306: Expect WriteFile permissions to be 0600 or less
+		// #nosec
+		klog.Infof("writing the following apiserver object to disk: %s", string(buf.Bytes()))
+		if err := os.WriteFile(filepath.Join(apiserverDir, "api-server.yaml"), buf.Bytes(), 0o664); err != nil {
+			return err
+		}
+	}
+
 	buf := bytes.Buffer{}
 	err = encoder.Encode(cconfig, &buf)
 	if err != nil {
@@ -286,6 +309,7 @@ func (b *Bootstrap) Run(destDir string) error {
 	if err := os.MkdirAll(cconfigDir, 0o764); err != nil {
 		return err
 	}
+
 	klog.Infof("writing the following controllerConfig to disk: %s", string(buf.Bytes()))
 	return os.WriteFile(filepath.Join(cconfigDir, "machine-config-controller.yaml"), buf.Bytes(), 0o664)
 

@@ -1301,3 +1301,20 @@ func GetGoTLSConfig(tlsMinVersion string, tlscipherSuites []string) *tls.Config 
 	// This causes a G402: TLS MinVersion too low. (gosec) verify error, possibly because the version is determined at runtime?
 	return &tls.Config{MinVersion: tlsMinVersionID, CipherSuites: tlscipherSuiteIDs}
 }
+
+func GetBootstrapAPIServer() (*configv1.APIServer, error) {
+	apiserverData, err := os.ReadFile(APIServerBootstrapFileLocation)
+	if os.IsNotExist(err) {
+		// This is not an error; it just means that an APIServer manifest was not provided at install time
+		klog.Infof("No bootstrap apiserver manifest found, bootstrap MCS will use defaults")
+		return nil, nil
+	} else if err != nil {
+		return nil, fmt.Errorf("error getting apiserver from disk: %w", err)
+	}
+	klog.Infof("Reading in bootstrap apiserver manifest was successful")
+	apiserver := new(configv1.APIServer)
+	if err := yaml.Unmarshal(apiserverData, &apiserver); err != nil {
+		return nil, fmt.Errorf("unmarshal into apiserver failed %w", err)
+	}
+	return apiserver, nil
+}
