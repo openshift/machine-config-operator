@@ -8,7 +8,6 @@ import (
 	"time"
 
 	features "github.com/openshift/api/features"
-	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/machine-config-operator/cmd/common"
 	"github.com/openshift/machine-config-operator/internal/clients"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -103,7 +102,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 				klog.Fatalf("unable to get initial features: %v", err)
 			}
 
-			enabled, disabled := getEnabledDisabledFeatures(fg)
+			enabled, disabled := ctrlcommon.GetEnabledDisabledFeatures(fg)
 			klog.Infof("FeatureGates initialized: enabled=%v  disabled=%v", enabled, disabled)
 			if fg.Enabled(features.FeatureGatePinnedImages) && fg.Enabled(features.FeatureGateMachineConfigNodes) {
 				pinnedImageSet := pinnedimageset.New(
@@ -229,19 +228,4 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 	)
 
 	return controllers
-}
-
-func getEnabledDisabledFeatures(features featuregates.FeatureGate) ([]string, []string) {
-	var enabled []string
-	var disabled []string
-
-	for _, feature := range features.KnownFeatures() {
-		if features.Enabled(feature) {
-			enabled = append(enabled, string(feature))
-		} else {
-			disabled = append(disabled, string(feature))
-		}
-	}
-
-	return enabled, disabled
 }
