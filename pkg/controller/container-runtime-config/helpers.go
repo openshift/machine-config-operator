@@ -957,106 +957,90 @@ func generateSigstoreRegistriesdConfig(clusterScopePolicies map[string]signature
 }
 
 func addScopeMirrorsSigstoreRegistriesdConfig(registriesDockerConfig map[string]dockerConfig, scope string, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy, idmsRules []*apicfgv1.ImageDigestMirrorSet, itmsRules []*apicfgv1.ImageTagMirrorSet, sigstoreAttachment dockerConfig) {
-	for _, icsp := range icspRules {
+	type sourceMirrors struct {
+		source  string
+		mirrors []string
+	}
+
+	processRulesElement := func(rule []sourceMirrors) bool {
 		scopeIsSource := false
-		for _, rdm := range icsp.Spec.RepositoryDigestMirrors {
-			if strings.HasPrefix(rdm.Source, scope) {
-				for _, mirror := range rdm.Mirrors {
+		for _, r := range rule {
+			if strings.HasPrefix(r.source, scope) {
+				for _, mirror := range r.mirrors {
 					registriesDockerConfig[mirror] = sigstoreAttachment
 				}
-				if rdm.Source == scope {
+				if r.source == scope {
 					scopeIsSource = true
 				}
 			}
 		}
-		if scopeIsSource {
-			continue
-		}
+		return scopeIsSource
+	}
 
+	findLongestPrefixSource := func(rule []sourceMirrors) []string {
 		maxSourceLen := 0
-		var mirrors []string
-		for _, rdm := range icsp.Spec.RepositoryDigestMirrors {
-			if strings.HasPrefix(scope, rdm.Source) {
-				if len(rdm.Source) > maxSourceLen {
-					maxSourceLen = len(rdm.Source)
-					mirrors = rdm.Mirrors
+		var bestMirrors []string
+		for _, r := range rule {
+			if strings.HasPrefix(scope, r.source) {
+				if len(r.source) > maxSourceLen {
+					maxSourceLen = len(r.source)
+					bestMirrors = r.mirrors
 				}
 			}
 		}
-		if maxSourceLen > 0 {
-			for _, mirror := range mirrors {
-				registriesDockerConfig[mirror] = sigstoreAttachment
-			}
+		return bestMirrors
+	}
+
+	for _, icsp := range icspRules {
+		icspRule := make([]sourceMirrors, len(icsp.Spec.RepositoryDigestMirrors))
+		for i, rdm := range icsp.Spec.RepositoryDigestMirrors {
+			icspRule[i].source = rdm.Source
+			icspRule[i].mirrors = rdm.Mirrors
+		}
+		if processRulesElement(icspRule) {
+			continue
+		}
+		bestMirrors := findLongestPrefixSource(icspRule)
+		for _, mirror := range bestMirrors {
+			registriesDockerConfig[mirror] = sigstoreAttachment
 		}
 	}
 
 	for _, idms := range idmsRules {
-		scopeIsSource := false
-		for _, idm := range idms.Spec.ImageDigestMirrors {
-			if strings.HasPrefix(idm.Source, scope) {
-				for _, mirror := range idm.Mirrors {
-					m := string(mirror)
-					registriesDockerConfig[m] = sigstoreAttachment
-				}
-				if idm.Source == scope {
-					scopeIsSource = true
-				}
+		idmsRule := make([]sourceMirrors, len(idms.Spec.ImageDigestMirrors))
+		for i, idm := range idms.Spec.ImageDigestMirrors {
+			idmsRule[i].source = idm.Source
+			var mirrors []string
+			for _, mirror := range idm.Mirrors {
+				mirrors = append(mirrors, string(mirror))
 			}
+			idmsRule[i].mirrors = mirrors
 		}
-		if scopeIsSource {
+		if processRulesElement(idmsRule) {
 			continue
 		}
-
-		maxSourceLen := 0
-		var mirrors []apicfgv1.ImageMirror
-		for _, idm := range idms.Spec.ImageDigestMirrors {
-			if strings.HasPrefix(scope, idm.Source) {
-				if len(idm.Source) > maxSourceLen {
-					maxSourceLen = len(idm.Source)
-					mirrors = idm.Mirrors
-				}
-			}
-		}
-		if maxSourceLen > 0 {
-			for _, mirror := range mirrors {
-				m := string(mirror)
-				registriesDockerConfig[m] = sigstoreAttachment
-			}
+		bestMirrors := findLongestPrefixSource(idmsRule)
+		for _, mirror := range bestMirrors {
+			registriesDockerConfig[mirror] = sigstoreAttachment
 		}
 	}
 
 	for _, itms := range itmsRules {
-		scopeIsSource := false
-		for _, itm := range itms.Spec.ImageTagMirrors {
-			if strings.HasPrefix(itm.Source, scope) {
-				for _, mirror := range itm.Mirrors {
-					m := string(mirror)
-					registriesDockerConfig[m] = sigstoreAttachment
-				}
-				if itm.Source == scope {
-					scopeIsSource = true
-				}
+		itmsRule := make([]sourceMirrors, len(itms.Spec.ImageTagMirrors))
+		for i, itm := range itms.Spec.ImageTagMirrors {
+			itmsRule[i].source = itm.Source
+			var mirrors []string
+			for _, mirror := range itm.Mirrors {
+				mirrors = append(mirrors, string(mirror))
 			}
+			itmsRule[i].mirrors = mirrors
 		}
-		if scopeIsSource {
+		if processRulesElement(itmsRule) {
 			continue
 		}
-
-		maxSourceLen := 0
-		var mirrors []apicfgv1.ImageMirror
-		for _, itm := range itms.Spec.ImageTagMirrors {
-			if strings.HasPrefix(scope, itm.Source) {
-				if len(itm.Source) > maxSourceLen {
-					maxSourceLen = len(itm.Source)
-					mirrors = itm.Mirrors
-				}
-			}
-		}
-		if maxSourceLen > 0 {
-			for _, mirror := range mirrors {
-				m := string(mirror)
-				registriesDockerConfig[m] = sigstoreAttachment
-			}
+		bestMirrors := findLongestPrefixSource(itmsRule)
+		for _, mirror := range bestMirrors {
+			registriesDockerConfig[mirror] = sigstoreAttachment
 		}
 	}
 }
