@@ -27,7 +27,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 	kubeletconfigv1beta1 "k8s.io/kubelet/config/v1beta1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
@@ -173,7 +173,7 @@ func newKubeletConfig(name string, kubeconf *kubeletconfigv1beta1.KubeletConfigu
 		TypeMeta:   metav1.TypeMeta{APIVersion: mcfgv1.SchemeGroupVersion.String()},
 		ObjectMeta: metav1.ObjectMeta{Name: name, UID: types.UID(utilrand.String(5)), Generation: 1, CreationTimestamp: metav1.Now()},
 		Spec: mcfgv1.KubeletConfigSpec{
-			LogLevel: pointer.Int32Ptr(2),
+			LogLevel: ptr.To[int32](2),
 			KubeletConfig: &runtime.RawExtension{
 				Raw: kcRaw,
 			},
@@ -557,7 +557,7 @@ func TestKubeletConfiglogFile(t *testing.T) {
 				TypeMeta:   metav1.TypeMeta{APIVersion: mcfgv1.SchemeGroupVersion.String()},
 				ObjectMeta: metav1.ObjectMeta{Name: "kubulet-log", UID: types.UID(utilrand.String(5)), Generation: 1},
 				Spec: mcfgv1.KubeletConfigSpec{
-					LogLevel:                  pointer.Int32Ptr(5),
+					LogLevel:                  ptr.To[int32](5),
 					MachineConfigPoolSelector: metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""),
 				},
 				Status: mcfgv1.KubeletConfigStatus{},
