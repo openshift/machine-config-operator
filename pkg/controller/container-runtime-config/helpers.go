@@ -63,6 +63,39 @@ var (
 	reasonConflictScopes = "ConflictScopes"
 )
 
+var (
+	stargzService = `systemd:
+  units:
+  - name: stargz.service
+    enabled: true
+    contents: |
+      [Unit]
+      Description=Stargz Store plugin for CRI-O
+      Before=crio.service
+      After=network.target
+      [Service]
+      Type=notify
+      Environment=HOME=/root
+      Environment=STARGZ_VERSION=v0.13.0
+      Environment=STARGZ_SHA256=4f3133a225c424a3dd075029a50efc44d28033099aa27ddf22e48fd2764b5301
+      # 1. Ensure fuse kernel module is loaded
+      # 2. Download stargz archive and verify checksum
+      # 3. Unpack the binary
+      ExecStartPre=/bin/sh -xec 'modprobe fuse && \
+      curl -o /tmp/stargz.tar.gz -sL https://github.com/containerd/stargz-snapshotter/releases/download/${STARGZ_VERSION}/stargz-snapshotter-${STARGZ_VERSION}-linux-amd64.tar.gz && \
+      echo "${STARGZ_SHA256}  /tmp/stargz.tar.gz" | sha256sum -c && \
+      tar -C /usr/local/bin -xvf /tmp/stargz.tar.gz stargz-store && \
+      rm /tmp/stargz.tar.gz'
+      # Start stargz-store daemon
+      ExecStart=/usr/local/bin/stargz-store --log-level=debug --config=/etc/stargz-store/config.toml /var/lib/stargz-store/store
+      ExecStopPost=umount /var/lib/stargz-store/store
+      Restart=always
+      RestartSec=1
+      [Install]
+      WantedBy=multi-user.target
+`
+)
+
 // TOML-friendly explicit tables used for conversions.
 type tomlConfigStorage struct {
 	Storage struct {
@@ -151,6 +184,16 @@ func createNewIgnition(configs []generatedConfigFile) ign3types.Config {
 		}
 		configTempFile := ctrlcommon.NewIgnFileBytesOverwriting(ignConf.filePath, ignConf.data)
 		tempIgnConfig.Storage.Files = append(tempIgnConfig.Storage.Files, configTempFile)
+		if ignConf.filePath == storageConfigPath {
+			byteData, err := yaml.Marshal(stargzService)
+			if err == nil {
+				panic(err)
+			}
+			config, err := ctrlcommon.ParseAndConvertConfig(byteData)
+			if err == nil {
+				tempIgnConfig.Systemd.Units = append(tempIgnConfig.Systemd.Units, config.Systemd.Units...)
+			}
+		}
 	}
 
 	return tempIgnConfig
@@ -444,6 +487,16 @@ func createCRIODropinFiles(cfg *mcfgv1.ContainerRuntimeConfig) []generatedConfig
 			klog.V(2).Infoln(cfg, err, "error updating user changes for default-runtime to crio.conf.d: %v", err)
 		}
 	}
+	tomlConf := tomlConfigStorage{}
+	tomlConf.Storage.Driver = "overlay"
+	tomlConf.Storage.GraphRoot = "/var/lib/containers/storage"
+	tomlConf.Storage.RunRoot = "/run/containers/storage"
+	tomlConf.Storage.Options.AdditionalLayerStores = []string{"/var/lib/stargz-store/store:ref"}
+	generatedConfigFileList, err = addTOMLgeneratedConfigFile(generatedConfigFileList, storageConfigPath, tomlConf)
+	if err != nil {
+		klog.V(2).Infoln(cfg, err, "error updating estargz changes: %v", err)
+	}
+
 	return generatedConfigFileList
 }
 
