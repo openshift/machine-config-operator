@@ -3,6 +3,7 @@ EXTRA_COMPONENTS = apiserver-watcher machine-os-builder
 ALL_COMPONENTS = $(patsubst %,machine-config-%,$(MCO_COMPONENTS)) $(EXTRA_COMPONENTS)
 PREFIX ?= /usr
 GO111MODULE?=on
+PROJECT_DIR := $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))
 
 # Copied from coreos-assembler
 GOARCH := $(shell uname -m)
@@ -64,13 +65,16 @@ go-deps:
 	chmod +x ./vendor/k8s.io/code-generator/generate-groups.sh
 	chmod +x ./vendor/k8s.io/code-generator/generate-internal-groups.sh
 
+# ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
+ENVTEST_K8S_VERSION = 1.30.1
+ENVTEST = go run ${PROJECT_DIR}/vendor/sigs.k8s.io/controller-runtime/tools/setup-envtest
 SETUP_ENVTEST := $(shell command -v setup-envtest 2> /dev/null)
 install-setup-envtest:
 ifdef SETUP_ENVTEST
 	@echo "Found setup-envtest"
 else
 	@echo "Installing setup-envtest"
-	go install -mod= sigs.k8s.io/controller-runtime/tools/setup-envtest@v0.0.0-20240315194348-5aaf1190f880
+	go install sigs.k8s.io/controller-runtime/tools/setup-envtest
 endif
 
 GO_JUNIT_REPORT := $(shell command -v go-junit-report 2> /dev/null)
@@ -93,7 +97,7 @@ else
 	GO111MODULE=on go build -o $(GOPATH)/bin/golangci-lint ./vendor/github.com/golangci/golangci-lint/cmd/golangci-lint
 endif
 
-install-tools: install-golangci-lint install-setup-envtest install-go-junit-report
+install-tools: install-golangci-lint install-go-junit-report install-setup-envtest
 
 # Run verification steps
 # Example:
@@ -138,4 +142,8 @@ test-e2e-single-node: install-go-junit-report
 	set -o pipefail; go test -tags=$(GOTAGS) -failfast -timeout 120m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-single-node/ | ./hack/test-with-junit.sh $(@)
 
 bootstrap-e2e: install-go-junit-report install-setup-envtest
-	set -o pipefail; go test -tags=$(GOTAGS) -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-bootstrap/ | ./hack/test-with-junit.sh $(@)
+	@echo "Setting up KUBEBUILDER_ASSETS"
+	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --remote-bucket openshift-kubebuilder-tools --use-deprecated-gcs --bin-dir $(PROJECT_DIR)/bin -p path)" && \
+	echo "KUBEBUILDER_ASSETS=$$KUBEBUILDER_ASSETS" && \
+	set -o pipefail && \
+	KUBEBUILDER_ASSETS=$$KUBEBUILDER_ASSETS go test -tags=$(GOTAGS) -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-bootstrap/ | ./hack/test-with-junit.sh $(@)
