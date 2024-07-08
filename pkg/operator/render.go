@@ -275,7 +275,10 @@ func onPremPlatformIngressIP(cfg mcfgv1.ControllerConfigSpec) (interface{}, erro
 		case configv1.OvirtPlatformType:
 			return cfg.Infra.Status.PlatformStatus.Ovirt.IngressIPs[0], nil
 		case configv1.OpenStackPlatformType:
-			return cfg.Infra.Status.PlatformStatus.OpenStack.IngressIPs[0], nil
+			if len(cfg.Infra.Status.PlatformStatus.OpenStack.IngressIPs) > 0 {
+				return cfg.Infra.Status.PlatformStatus.OpenStack.IngressIPs[0], nil
+			}
+			return nil, nil
 		case configv1.VSpherePlatformType:
 			if len(cfg.Infra.Status.PlatformStatus.VSphere.IngressIPs) > 0 {
 				return cfg.Infra.Status.PlatformStatus.VSphere.IngressIPs[0], nil
@@ -299,7 +302,10 @@ func onPremPlatformIngressIPs(cfg mcfgv1.ControllerConfigSpec) (interface{}, err
 		case configv1.OvirtPlatformType:
 			return cfg.Infra.Status.PlatformStatus.Ovirt.IngressIPs, nil
 		case configv1.OpenStackPlatformType:
-			return cfg.Infra.Status.PlatformStatus.OpenStack.IngressIPs, nil
+			if cfg.Infra.Status.PlatformStatus.OpenStack.IngressIPs != nil {
+				return cfg.Infra.Status.PlatformStatus.OpenStack.IngressIPs, nil
+			}
+			return []string{}, nil
 		case configv1.VSpherePlatformType:
 			if cfg.Infra.Status.PlatformStatus.VSphere.IngressIPs != nil {
 				return cfg.Infra.Status.PlatformStatus.VSphere.IngressIPs, nil
@@ -326,7 +332,10 @@ func onPremPlatformAPIServerInternalIP(cfg mcfgv1.ControllerConfigSpec) (interfa
 		case configv1.OvirtPlatformType:
 			return cfg.Infra.Status.PlatformStatus.Ovirt.APIServerInternalIPs[0], nil
 		case configv1.OpenStackPlatformType:
-			return cfg.Infra.Status.PlatformStatus.OpenStack.APIServerInternalIPs[0], nil
+			if len(cfg.Infra.Status.PlatformStatus.OpenStack.APIServerInternalIPs) > 0 {
+				return cfg.Infra.Status.PlatformStatus.OpenStack.APIServerInternalIPs[0], nil
+			}
+			return nil, nil
 		case configv1.VSpherePlatformType:
 			if len(cfg.Infra.Status.PlatformStatus.VSphere.APIServerInternalIPs) > 0 {
 				return cfg.Infra.Status.PlatformStatus.VSphere.APIServerInternalIPs[0], nil
@@ -350,7 +359,10 @@ func onPremPlatformAPIServerInternalIPs(cfg mcfgv1.ControllerConfigSpec) (interf
 		case configv1.OvirtPlatformType:
 			return cfg.Infra.Status.PlatformStatus.Ovirt.APIServerInternalIPs, nil
 		case configv1.OpenStackPlatformType:
-			return cfg.Infra.Status.PlatformStatus.OpenStack.APIServerInternalIPs, nil
+			if cfg.Infra.Status.PlatformStatus.OpenStack.APIServerInternalIPs != nil {
+				return cfg.Infra.Status.PlatformStatus.OpenStack.APIServerInternalIPs, nil
+			}
+			return []string{}, nil
 		case configv1.VSpherePlatformType:
 			if cfg.Infra.Status.PlatformStatus.VSphere.APIServerInternalIPs != nil {
 				return cfg.Infra.Status.PlatformStatus.VSphere.APIServerInternalIPs, nil
