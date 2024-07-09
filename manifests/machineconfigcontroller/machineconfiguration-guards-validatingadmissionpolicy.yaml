@@ -5,11 +5,15 @@ metadata:
 spec:
   failurePolicy: Fail
   matchConstraints:
+    matchPolicy: Equivalent
+    namespaceSelector: {}
+    objectSelector: {}
     resourceRules:
     - apiGroups:   ["operator.openshift.io"]
       apiVersions: ["v1"]
       operations:  ["CREATE","UPDATE"]
       resources:   ["machineconfigurations"]
+      scope: "*"
   validations:
     - expression: "object.metadata.name=='cluster'"
       message: "Only a single object of MachineConfiguration is allowed and it must be named cluster."

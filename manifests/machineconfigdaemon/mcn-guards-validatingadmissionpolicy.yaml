@@ -5,11 +5,15 @@ metadata:
 spec:
   failurePolicy: Fail
   matchConstraints:
+    matchPolicy: Equivalent
+    namespaceSelector: {}
+    objectSelector: {}    
     resourceRules:
     - apiGroups:   ["machineconfiguration.openshift.io"]
       apiVersions: ["v1alpha1"]
       operations:  ["CREATE","UPDATE"]
       resources:   ["machineconfignodes/status","machineconfignodes"]
+      scope: "*"
   validations:
     # all requests should have a node-name claim, this prevents impersonation of the machine-config-daemon SA.
     - expression: "has(request.userInfo.extra) && ('authentication.kubernetes.io/node-name' in request.userInfo.extra)"
