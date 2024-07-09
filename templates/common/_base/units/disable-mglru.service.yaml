@@ -7,7 +7,7 @@ contents: |
   [Service]
   Type=oneshot
   RemainAfterExit=yes
-  ExecStart=bash -c "echo 0 > /sys/kernel/mm/lru_gen/enabled"
+  ExecStart=/bin/bash -c "if [ -f "/sys/kernel/mm/lru_gen/enabled" ]; then echo 0 > /sys/kernel/mm/lru_gen/enabled; fi"
 
   
   [Install]
