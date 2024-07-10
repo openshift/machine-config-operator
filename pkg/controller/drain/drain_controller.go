@@ -3,9 +3,7 @@ package drain
 import (
 	"context"
 	"encoding/json"
-
 	"fmt"
-
 	"strings"
 	"time"
 
@@ -14,10 +12,9 @@ import (
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/upgrademonitor"
-	corev1 "k8s.io/api/core/v1"
+
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -25,6 +22,8 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	"k8s.io/apimachinery/pkg/util/wait"
+
+	corev1 "k8s.io/api/core/v1"
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
 	clientset "k8s.io/client-go/kubernetes"
 	coreclientsetv1 "k8s.io/client-go/kubernetes/typed/core/v1"
@@ -129,8 +128,8 @@ func New(
 	}
 
 	nodeInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    ctrl.handleNodeEvent,
-		UpdateFunc: func(_, newObj interface{}) { ctrl.handleNodeEvent(newObj) },
+		AddFunc:    func(newObj interface{}) { ctrl.handleNodeEvent(nil, newObj) },
+		UpdateFunc: func(oldObj, newObj interface{}) { ctrl.handleNodeEvent(oldObj, newObj) },
 	})
 
 	ctrl.syncHandler = ctrl.syncNode
@@ -182,30 +181,25 @@ func (ctrl *Controller) logNode(node *corev1.Node, format string, args ...interf
 	klog.Infof("node %s: %s", node.Name, msg)
 }
 
-func (ctrl *Controller) handleNodeEvent(node interface{}) {
-	n := node.(*corev1.Node)
-	klog.V(4).Infof("Updating Node %s", n.Name)
-	ctrl.enqueueNode(n)
-}
+func (ctrl *Controller) handleNodeEvent(oldObj, newObj interface{}) {
 
-func (ctrl *Controller) enqueue(node *corev1.Node) {
-	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(node)
-	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("Couldn't get key for object %#v: %v", node, err))
+	var oldNode, newNode *corev1.Node
+
+	newNode = newObj.(*corev1.Node)
+	klog.V(4).Infof("Updating Node (drain controller) %s", newNode.Name)
+
+	if oldObj != nil {
+		oldNode = oldObj.(*corev1.Node)
+	} else {
+		ctrl.enqueueNode(newNode)
 		return
 	}
 
-	ctrl.queue.Add(key)
-}
-
-func (ctrl *Controller) enqueueRateLimited(node *corev1.Node) {
-	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(node)
-	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("Couldn't get key for object %#v: %v", node, err))
+	// If the desiredDrain annotation are identical between oldNode and newNode, no new action is required by the drain controller
+	if oldNode.Annotations[daemonconsts.DesiredDrainerAnnotationKey] == newNode.Annotations[daemonconsts.DesiredDrainerAnnotationKey] {
 		return
 	}
-
-	ctrl.queue.AddRateLimited(key)
+	ctrl.enqueueNode(newNode)
 }
 
 // enqueueAfter will enqueue a pool after the provided amount of time.
@@ -424,7 +418,7 @@ func (ctrl *Controller) drainNode(node *corev1.Node, drainer *drain.Helper) erro
 	ctrl.logNode(node, "initiating drain")
 	err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
 		&upgrademonitor.Condition{State: v1alpha1.MachineConfigNodeUpdateExecuted, Reason: string(v1alpha1.MachineConfigNodeUpdateDrained), Message: fmt.Sprintf("Draining Node as part of update executed phase")},
-		&upgrademonitor.Condition{State: v1alpha1.MachineConfigNodeUpdateDrained, Reason: fmt.Sprintf("%s%s", string(v1alpha1.MachineConfigNodeUpdateExecuted), string(v1alpha1.MachineConfigNodeUpdateDrained)), Message: fmt.Sprintf("Draining node. The drain will not be complete until desired drainer %s matches current drainer %s", node.Annotations[constants.DesiredDrainerAnnotationKey], node.Annotations[constants.LastAppliedDrainerAnnotationKey])},
+		&upgrademonitor.Condition{State: v1alpha1.MachineConfigNodeUpdateDrained, Reason: fmt.Sprintf("%s%s", string(v1alpha1.MachineConfigNodeUpdateExecuted), string(v1alpha1.MachineConfigNodeUpdateDrained)), Message: fmt.Sprintf("Draining node. The drain will not be complete until desired drainer %s matches current drainer %s", node.Annotations[daemonconsts.DesiredDrainerAnnotationKey], node.Annotations[daemonconsts.LastAppliedDrainerAnnotationKey])},
 		metav1.ConditionUnknown,
 		metav1.ConditionUnknown,
 		node,
@@ -451,7 +445,7 @@ func (ctrl *Controller) drainNode(node *corev1.Node, drainer *drain.Helper) erro
 
 		nErr := upgrademonitor.GenerateAndApplyMachineConfigNodes(
 			&upgrademonitor.Condition{State: v1alpha1.MachineConfigNodeUpdateExecuted, Reason: string(v1alpha1.MachineConfigNodeUpdateDrained), Message: fmt.Sprintf("Node Drain has not succeeded")},
-			&upgrademonitor.Condition{State: v1alpha1.MachineConfigNodeUpdateDrained, Reason: fmt.Sprintf("%s%s", string(v1alpha1.MachineConfigNodeUpdateExecuted), string(v1alpha1.MachineConfigNodeUpdateDrained)), Message: fmt.Sprintf("Error: Node Drain has not succeeded. Error is: %s The drain will not be complete until desired drainer %s matches current drainer %s", err.Error(), node.Annotations[constants.DesiredDrainerAnnotationKey], node.Annotations[constants.LastAppliedDrainerAnnotationKey])},
+			&upgrademonitor.Condition{State: v1alpha1.MachineConfigNodeUpdateDrained, Reason: fmt.Sprintf("%s%s", string(v1alpha1.MachineConfigNodeUpdateExecuted), string(v1alpha1.MachineConfigNodeUpdateDrained)), Message: fmt.Sprintf("Error: Node Drain has not succeeded. Error is: %s The drain will not be complete until desired drainer %s matches current drainer %s", err.Error(), node.Annotations[daemonconsts.DesiredDrainerAnnotationKey], node.Annotations[daemonconsts.LastAppliedDrainerAnnotationKey])},
 			metav1.ConditionUnknown,
 			metav1.ConditionUnknown,
 			node,
@@ -467,7 +461,7 @@ func (ctrl *Controller) drainNode(node *corev1.Node, drainer *drain.Helper) erro
 	}
 	err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
 		&upgrademonitor.Condition{State: v1alpha1.MachineConfigNodeUpdateExecuted, Reason: string(v1alpha1.MachineConfigNodeUpdateDrained), Message: fmt.Sprintf("Drained Node as part of update executed phase")},
-		&upgrademonitor.Condition{State: v1alpha1.MachineConfigNodeUpdateDrained, Reason: fmt.Sprintf("%s%s", string(v1alpha1.MachineConfigNodeUpdateExecuted), string(v1alpha1.MachineConfigNodeUpdateDrained)), Message: fmt.Sprintf("Drained node. The drain is complete as the desired drainer matches current drainer: %s", node.Annotations[constants.DesiredDrainerAnnotationKey])},
+		&upgrademonitor.Condition{State: v1alpha1.MachineConfigNodeUpdateDrained, Reason: fmt.Sprintf("%s%s", string(v1alpha1.MachineConfigNodeUpdateExecuted), string(v1alpha1.MachineConfigNodeUpdateDrained)), Message: fmt.Sprintf("Drained node. The drain is complete as the desired drainer matches current drainer: %s", node.Annotations[daemonconsts.DesiredDrainerAnnotationKey])},
 		metav1.ConditionUnknown,
 		metav1.ConditionTrue,
 		node,
