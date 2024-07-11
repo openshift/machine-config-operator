@@ -90,3 +90,11 @@ const (
 	ServiceCARotateTrue  = "true"
 	ServiceCARotateFalse = "false"
 )
+
+// Commonly-used MCO ConfigMap names
+const (
+	// The name of the machine-config-operator-images ConfigMap.
+	MachineConfigOperatorImagesConfigMapName string = "machine-config-operator-images"
+	// The name of the machine-config-osimageurl ConfigMap.
+	MachineConfigOSImageURLConfigMapName string = "machine-config-osimageurl"
+)

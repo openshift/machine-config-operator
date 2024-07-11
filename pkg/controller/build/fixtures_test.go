@@ -29,16 +29,6 @@ const (
 	testUpdateDelay time.Duration = time.Millisecond * 5
 )
 
-func getCustomDockerfileConfigMap(poolToDockerfile map[string]string) *corev1.ConfigMap {
-	return &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      customDockerfileConfigMapName,
-			Namespace: ctrlcommon.MCONamespace,
-		},
-		Data: poolToDockerfile,
-	}
-}
-
 func newMachineOSConfig(pool *mcfgv1.MachineConfigPool) *mcfgv1alpha1.MachineOSConfig {
 	return &mcfgv1alpha1.MachineOSConfig{
 		TypeMeta: metav1.TypeMeta{
@@ -156,29 +146,27 @@ func getMachineOSBuild(ctx context.Context, cs *Clients, config *mcfgv1alpha1.Ma
 func getOSImageURLConfigMap() *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      machineConfigOSImageURLConfigMapName,
+			Name:      ctrlcommon.MachineConfigOSImageURLConfigMapName,
 			Namespace: ctrlcommon.MCONamespace,
 		},
 		Data: map[string]string{
-			baseOSContainerImageConfigKey:           "registry.ci.openshift.org/ocp/4.14-2023-05-29-125629@sha256:12e89d631c0ca1700262583acfb856b6e7dbe94800cb38035d68ee5cc912411c",
-			baseOSExtensionsContainerImageConfigKey: "registry.ci.openshift.org/ocp/4.14-2023-05-29-125629@sha256:5b6d901069e640fc53d2e971fa1f4802bf9dea1a4ffba67b8a17eaa7d8dfa336",
-			// osImageURLConfigKey:                     "registry.ci.openshift.org/ocp/4.14-2023-05-29-125629@sha256:4f7792412d1559bf0a996edeff5e836e210f6d77df94b552a3866144d043bce1",
-			releaseVersionConfigKey: "4.14.0-0.ci-2023-05-29-125629",
+			"baseOSContainerImage":           "registry.ci.openshift.org/ocp/4.14-2023-05-29-125629@sha256:12e89d631c0ca1700262583acfb856b6e7dbe94800cb38035d68ee5cc912411c",
+			"baseOSExtensionsContainerImage": "registry.ci.openshift.org/ocp/4.14-2023-05-29-125629@sha256:5b6d901069e640fc53d2e971fa1f4802bf9dea1a4ffba67b8a17eaa7d8dfa336",
+			"osImageURL":                     "",
+			"releaseVersion":                 "4.14.0-0.ci-2023-05-29-125629",
 		},
 	}
 }
 
-// Gets an example on-cluster-build-config ConfigMap.
-func getOnClusterBuildConfigMap() *corev1.ConfigMap {
+// Gets an example machine.config.operator-images ConfigMap.
+func getImagesConfigMap() *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      OnClusterBuildConfigMapName,
+			Name:      ctrlcommon.MachineConfigOperatorImagesConfigMapName,
 			Namespace: ctrlcommon.MCONamespace,
 		},
 		Data: map[string]string{
-			BaseImagePullSecretNameConfigKey:  "base-image-pull-secret",
-			FinalImagePushSecretNameConfigKey: "final-image-push-secret",
-			FinalImagePullspecConfigKey:       expectedImagePullspecWithTag,
+			"images.json": `{"machineConfigOperator": "mco.image.pullspec"}`,
 		},
 	}
 }

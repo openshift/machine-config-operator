@@ -227,8 +227,9 @@ func canonicalizePullSecret(secret *corev1.Secret) (*corev1.Secret, error) {
 			Name:      fmt.Sprintf("%s%s", secret.Name, canonicalSecretSuffix),
 			Namespace: secret.Namespace,
 			Labels: map[string]string{
-				canonicalSecretLabel:    "",
-				originalSecretNameLabel: secret.Name,
+				canonicalSecretLabel:      "",
+				originalSecretNameLabel:   secret.Name,
+				onClusterLayeringLabelKey: "",
 			},
 		},
 		Data: map[string][]byte{

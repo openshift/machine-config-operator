@@ -288,6 +288,8 @@ func getClientsForTest() *Clients {
 		},
 	})
 
+	imagesConfigMap := getImagesConfigMap()
+
 	osImageURLConfigMap := getOSImageURLConfigMap()
 
 	legacyPullSecret := `{"registry.hostname.com": {"username": "user", "password": "s3kr1t", "auth": "s00pers3kr1t", "email": "user@hostname.com"}}`
@@ -297,6 +299,7 @@ func getClientsForTest() *Clients {
 	return &Clients{
 		mcfgclient: fakeclientmachineconfigv1.NewSimpleClientset(objects...),
 		kubeclient: fakecorev1client.NewSimpleClientset(
+			imagesConfigMap,
 			osImageURLConfigMap,
 			&corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{

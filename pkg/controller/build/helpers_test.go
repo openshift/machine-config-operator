@@ -14,11 +14,9 @@ import (
 )
 
 func TestValidateImagePullspecHasDigest(t *testing.T) {
-	cm := getOSImageURLConfigMap()
-
 	validPullspecs := []string{
-		cm.Data[baseOSContainerImageConfigKey],
-		cm.Data[baseOSExtensionsContainerImageConfigKey],
+		"registry.ci.openshift.org/ocp/4.14-2023-05-29-125629@sha256:12e89d631c0ca1700262583acfb856b6e7dbe94800cb38035d68ee5cc912411c",
+		"registry.ci.openshift.org/ocp/4.14-2023-05-29-125629@sha256:5b6d901069e640fc53d2e971fa1f4802bf9dea1a4ffba67b8a17eaa7d8dfa336",
 	}
 
 	for _, pullspec := range validPullspecs {

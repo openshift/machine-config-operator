@@ -60,7 +60,7 @@ func ParseImagesFromBytes(in []byte) (*Images, error) {
 
 // Reads the contents of the provided ConfigMap into an Images struct.
 func ParseImagesFromConfigMap(cm *corev1.ConfigMap) (*Images, error) {
-	if err := validateMCOConfigMap(cm, "machine-config-operator-images", []string{"images.json"}, nil); err != nil {
+	if err := validateMCOConfigMap(cm, MachineConfigOperatorImagesConfigMapName, []string{"images.json"}, nil); err != nil {
 		return nil, err
 	}
 
@@ -79,7 +79,7 @@ type OSImageURLConfig struct {
 func ParseOSImageURLConfigMap(cm *corev1.ConfigMap) (*OSImageURLConfig, error) {
 	reqKeys := []string{"baseOSContainerImage", "baseOSExtensionsContainerImage", "osImageURL", "releaseVersion"}
 
-	if err := validateMCOConfigMap(cm, "machine-config-osimageurl", reqKeys, nil); err != nil {
+	if err := validateMCOConfigMap(cm, MachineConfigOSImageURLConfigMapName, reqKeys, nil); err != nil {
 		return nil, err
 	}
 
