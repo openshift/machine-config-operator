@@ -20,6 +20,12 @@ const (
 	buildahImagePullspec      string = "quay.io/buildah/stable:latest"
 )
 
+//go:embed assets/subuid
+var subuidFile string
+
+//go:embed assets/subgid
+var subgidFile string
+
 //go:embed assets/Containerfile.on-cluster-build-template
 var dockerfileTemplate string
 
@@ -501,6 +507,17 @@ func (i ImageBuildRequest) getObjectMeta(name string) metav1.ObjectMeta {
 	}
 
 	return objectMeta
+}
+
+func (i ImageBuildRequest) getBuildahConfigMap() *corev1.ConfigMap {
+	name := fmt.Sprintf("buildah-config-%s", i.MachineOSBuild.Spec.DesiredConfig.Name)
+	return &corev1.ConfigMap{
+		ObjectMeta: i.getObjectMeta(name),
+		Data: map[string]string{
+			"subuid": subuidFile,
+			"subgid": subgidFile,
+		},
+	}
 }
 
 // Computes the Dockerfile ConfigMap name based upon the MachineConfigPool name.
