@@ -20,6 +20,7 @@ import (
 	storageconfig "github.com/containers/storage/pkg/config"
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	"github.com/ghodss/yaml"
+	"github.com/opencontainers/go-digest"
 	apicfgv1 "github.com/openshift/api/config/v1"
 	apicfgv1alpha1 "github.com/openshift/api/config/v1alpha1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
@@ -933,17 +934,73 @@ func validateClusterImagePolicyWithAllowedBlockedRegistries(clusterScopePolicies
 	return nil
 }
 
-func generateSigstoreRegistriesdConfig(clusterScopePolicies map[string]signature.PolicyRequirements) ([]byte, error) {
+func generateSigstoreRegistriesdConfig(clusterScopePolicies map[string]signature.PolicyRequirements, registriesTOML []byte) ([]byte, error) {
 	if len(clusterScopePolicies) == 0 {
 		return nil, nil
 	}
 
-	registriesDockerConfig := make(map[string]dockerConfig)
-	sigstoreAttachment := dockerConfig{
-		UseSigstoreAttachments: true,
+	var (
+		err                    error
+		tmpFile                *os.File
+		registriesConf         = sysregistriesv2.V2RegistriesConf{}
+		registriesDockerConfig = make(map[string]dockerConfig)
+		sigstoreAttachment     = dockerConfig{
+			UseSigstoreAttachments: true,
+		}
+	)
+
+	if registriesTOML != nil {
+		tmpFile, err = os.CreateTemp("", "regtemp")
+		if err != nil {
+			return nil, err
+		}
+		defer func() {
+			tmpFile.Close()
+			os.Remove(tmpFile.Name())
+		}()
+
+		_, err = tmpFile.Write(registriesTOML)
+		if err != nil {
+			return nil, err
+		}
+
+		if _, err := toml.NewDecoder(bytes.NewBuffer(registriesTOML)).Decode(&registriesConf); err != nil {
+			return nil, fmt.Errorf("error decoding registries config: %w", err)
+		}
 	}
-	for scope := range clusterScopePolicies {
-		registriesDockerConfig[scope] = sigstoreAttachment
+
+	for policyScope := range clusterScopePolicies {
+		registriesDockerConfig[policyScope] = sigstoreAttachment
+		if registriesTOML == nil {
+			continue
+		}
+		sysContext := &types.SystemContext{
+			SystemRegistriesConfPath:    tmpFile.Name(),
+			SystemRegistriesConfDirPath: os.DevNull,
+		}
+		parentReg, err := sysregistriesv2.FindRegistry(sysContext, policyScope)
+		if err != nil {
+			return nil, err
+		}
+
+		if err = addScopeMirrorsSigstoreRegistriesdConfig(registriesDockerConfig, policyScope, parentReg, sigstoreAttachment); err != nil {
+			return nil, fmt.Errorf("error adding clusterimagepolicy scope %s relevant mirrors: %w", policyScope, err)
+		}
+		for _, reg := range registriesConf.Registries {
+			scope := reg.Location
+			if reg.Prefix != "" {
+				scope = reg.Prefix
+			}
+			if runtimeutils.ScopeIsNestedInsideScope(scope, policyScope) && scope != policyScope {
+				nestedReg, err := sysregistriesv2.FindRegistry(sysContext, scope)
+				if err != nil {
+					return nil, err
+				}
+				if err = addScopeMirrorsSigstoreRegistriesdConfig(registriesDockerConfig, scope, nestedReg, sigstoreAttachment); err != nil {
+					return nil, fmt.Errorf("error adding clusterimagepolicy scope %s relevant mirrors: %w", policyScope, err)
+				}
+			}
+		}
 	}
 
 	registriesConfig := &registriesConfig{}
@@ -953,4 +1010,69 @@ func generateSigstoreRegistriesdConfig(clusterScopePolicies map[string]signature
 		return nil, fmt.Errorf("error marshalling regisres configuration for sigstore (cluster)imagepolicies: %w", err)
 	}
 	return data, nil
+}
+
+func addScopeMirrorsSigstoreRegistriesdConfig(registriesDockerConfig map[string]dockerConfig, scope string, reg *sysregistriesv2.Registry, sigstoreAttachment dockerConfig) error {
+	if reg == nil {
+		return nil
+	}
+	dummyDigest := "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	dummyTag := "aaa"
+	dummyPath := "/a"
+	dummyPrefix := "matched"
+	addedDummy := false
+
+	if strings.HasPrefix(scope, "*.") {
+		scope = strings.Replace(scope, "*", dummyPrefix, 1)
+	}
+
+	if !strings.Contains(scope, "/") {
+		scope += dummyPath
+		addedDummy = true
+	}
+
+	scopeRef, err := reference.Parse(scope)
+	if err != nil {
+		return fmt.Errorf("error parsing scope %s: %w", scope, err)
+	}
+
+	namedScopeRef, ok := scopeRef.(reference.Named)
+	if !ok {
+		return fmt.Errorf("scope %s is not a named reference", scope)
+	}
+	repo := reference.TrimNamed(namedScopeRef)
+
+	d, _ := digest.Parse(dummyDigest)
+	digestRef, err := reference.WithDigest(repo, d)
+	if err != nil {
+		return fmt.Errorf("error parsing digest name for scope %s: %w", scope, err)
+	}
+	tagRef, err := reference.WithTag(repo, dummyTag)
+	if err != nil {
+		return fmt.Errorf("error parsing tag name for scope %s: %w", scope, err)
+	}
+
+	digestSources, err := reg.PullSourcesFromReference(digestRef)
+	if err != nil {
+		return fmt.Errorf("error getting digest sources for scope %s: %w", scope, err)
+	}
+	tagSources, err := reg.PullSourcesFromReference(tagRef)
+	if err != nil {
+		return fmt.Errorf("error getting tag sources for scope %s: %w", scope, err)
+	}
+	for _, s := range append(digestSources, tagSources...) {
+		endpoint := s.Reference.Name()
+		if addedDummy {
+			endpoint = strings.TrimSuffix(endpoint, dummyPath)
+		}
+		// "Location" is empty if the matched Registry source containers a wildcard, only add mirrors in this case
+		// caller has unconditionally configured attachments for ClusterImagePolicy scopes in registriesDockerConfig[policyScope].
+		// If a dummyPrefix was added to process a wildcard Registry entry, we only want to configure the mirror endpoints, if any;
+		// we do not want to add a new entry for exactly dummyPrefix + originalScope.
+		if s.Endpoint.Location == "" {
+			continue
+		}
+		registriesDockerConfig[endpoint] = sigstoreAttachment
+	}
+	return nil
 }
