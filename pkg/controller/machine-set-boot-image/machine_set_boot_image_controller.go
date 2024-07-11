@@ -120,16 +120,19 @@ func New(
 	mapiMachineSetInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.addMAPIMachineSet,
 		UpdateFunc: ctrl.updateMAPIMachineSet,
+		DeleteFunc: ctrl.deleteMAPIMachineSet,
 	})
 
 	mcoCmInfomer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.addConfigMap,
 		UpdateFunc: ctrl.updateConfigMap,
+		DeleteFunc: ctrl.deleteConfigMap,
 	})
 
 	mcopInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.addMachineConfiguration,
 		UpdateFunc: ctrl.updateMachineConfiguration,
+		DeleteFunc: ctrl.deleteMachineConfiguration,
 	})
 
 	ctrl.mcoCmLister = mcoCmInfomer.Lister()
@@ -194,6 +197,18 @@ func (ctrl *Controller) updateMAPIMachineSet(oldMS, newMS interface{}) {
 	go func() { ctrl.syncMAPIMachineSets("MAPIMachinesetUpdated") }()
 }
 
+func (ctrl *Controller) deleteMAPIMachineSet(deletedMS interface{}) {
+
+	deletedMachineSet := deletedMS.(*machinev1beta1.MachineSet)
+
+	klog.Infof("MachineSet %s deleted, reconciling enrolled machineset resources", deletedMachineSet.Name)
+
+	// Update all machinesets. This prevents needing to maintain a local
+	// store of machineset conditions. As this is using a lister, it is relatively inexpensive to do
+	// this.
+	go func() { ctrl.syncMAPIMachineSets("MAPIMachinesetDeleted") }()
+}
+
 func (ctrl *Controller) addConfigMap(obj interface{}) {
 
 	configMap := obj.(*corev1.ConfigMap)
@@ -230,6 +245,21 @@ func (ctrl *Controller) updateConfigMap(oldCM, newCM interface{}) {
 	// Update all machinesets since the "golden" configmap has been updated
 	// TODO: Add go routines for CAPI resources here
 	go func() { ctrl.syncMAPIMachineSets("BootImageConfigMapUpdated") }()
+}
+
+func (ctrl *Controller) deleteConfigMap(obj interface{}) {
+
+	configMap := obj.(*corev1.ConfigMap)
+
+	// Take no action if this isn't the "golden" config map
+	if configMap.Name != ctrlcommon.BootImagesConfigMapName {
+		return
+	}
+
+	klog.Infof("configMap %s deleted, reconciling enrolled machine resources", configMap.Name)
+
+	// Update all machinesets since the "golden" configmap has been deleted
+	go func() { ctrl.syncMAPIMachineSets("BootImageConfigMapDeleted") }()
 }
 
 func (ctrl *Controller) addMachineConfiguration(obj interface{}) {
@@ -270,6 +300,23 @@ func (ctrl *Controller) updateMachineConfiguration(oldMC, newMC interface{}) {
 	// Update all machinesets since the boot images configuration knob was updated
 	// TODO: Add go routines for CAPI resources here
 	go func() { ctrl.syncMAPIMachineSets("BootImageUpdateConfigurationUpdated") }()
+}
+
+func (ctrl *Controller) deleteMachineConfiguration(obj interface{}) {
+
+	machineConfiguration := obj.(*opv1.MachineConfiguration)
+
+	// Take no action if this isn't the "cluster" level MachineConfiguration object
+	if machineConfiguration.Name != ctrlcommon.MCOOperatorKnobsObjectName {
+		klog.V(4).Infof("MachineConfiguration %s deleted, but does not match %s, skipping bootimage sync", machineConfiguration.Name, ctrlcommon.MCOOperatorKnobsObjectName)
+		return
+	}
+
+	klog.Infof("Bootimages management configuration has been deleted, reconciling enrolled machine resources")
+
+	// Update/Check machinesets since the boot images configuration knob was updated
+	// TODO: Add go routines for CAPI resources here
+	go func() { ctrl.syncMAPIMachineSets("BootImageUpdateConfigurationDeleted") }()
 }
 
 // syncMAPIMachineSets will attempt to enqueue every machineset
