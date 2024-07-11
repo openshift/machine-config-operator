@@ -1769,7 +1769,7 @@ func (optr *Operator) waitForControllerConfigToBeCompleted(resource *mcfgv1.Cont
 
 // getOsImageURLs returns (new type, new extensions, old type) for operating system update images.
 func (optr *Operator) getOsImageURLs(namespace string) (string, string, error) {
-	cm, err := optr.mcoCmLister.ConfigMaps(namespace).Get(osImageConfigMapName)
+	cm, err := optr.mcoCmLister.ConfigMaps(namespace).Get(ctrlcommon.MachineConfigOSImageURLConfigMapName)
 	if err != nil {
 		return "", "", err
 	}

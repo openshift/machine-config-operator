@@ -10,6 +10,7 @@ import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -17,14 +18,7 @@ import (
 const (
 	mcPoolAnnotation          string = "machineconfiguration.openshift.io/pool"
 	machineConfigJSONFilename string = "machineconfig.json.gz"
-	buildahImagePullspec      string = "quay.io/buildah/stable:latest"
 )
-
-//go:embed assets/subuid
-var subuidFile string
-
-//go:embed assets/subgid
-var subgidFile string
 
 //go:embed assets/Containerfile.on-cluster-build-template
 var dockerfileTemplate string
@@ -48,6 +42,8 @@ type ImageInfo struct {
 
 // Represents the request to build a layered OS image.
 type ImageBuildRequest struct {
+	// The MCO image pullspec
+	MCOImagePullspec string
 	// The target Build object
 	MachineOSBuild *mcfgv1alpha1.MachineOSBuild
 	// the cofig the build is based off of
@@ -78,28 +74,6 @@ func newImageBuildRequest(mosc *mcfgv1alpha1.MachineOSConfig, mosb *mcfgv1alpha1
 	}
 
 	return ibr
-}
-
-// Populates the base image info from both the on-cluster-build-config and
-// machine-config-osimageurl ConfigMaps.
-func newBaseImageInfo(osImageURL *corev1.ConfigMap, mosc *mcfgv1alpha1.MachineOSConfig) ImageInfo {
-	return ImageInfo{
-		Pullspec: osImageURL.Data[baseOSContainerImageConfigKey],
-		PullSecret: corev1.LocalObjectReference{
-			Name: mosc.Spec.BuildInputs.BaseImagePullSecret.Name,
-		},
-	}
-}
-
-// Populates the extensions image info from both the on-cluster-build-config
-// and machine-config-osimageurl ConfigMaps.
-func newExtensionsImageInfo(osImageURL *corev1.ConfigMap, mosc *mcfgv1alpha1.MachineOSConfig) ImageInfo {
-	return ImageInfo{
-		Pullspec: osImageURL.Data[baseOSExtensionsContainerImageConfigKey],
-		PullSecret: corev1.LocalObjectReference{
-			Name: mosc.Spec.BuildInputs.BaseImagePullSecret.Name,
-		},
-	}
 }
 
 // Constructs an ImageBuildRequest with all of the images populated from ConfigMaps
@@ -233,6 +207,10 @@ func (i ImageBuildRequest) toBuildahPod() *corev1.Pod {
 		{
 			Name:  "FINAL_IMAGE_PUSH_CREDS",
 			Value: "/tmp/final-image-push-creds/config.json",
+		},
+		{
+			Name:  "BUILDAH_ISOLATION",
+			Value: "chroot",
 		},
 	}
 
@@ -445,7 +423,7 @@ func (i ImageBuildRequest) toBuildahPod() *corev1.Pod {
 					// This container performs the image build / push process.
 					Name: "image-build",
 					// TODO: Figure out how to not hard-code this here.
-					Image:           buildahImagePullspec,
+					Image:           i.MCOImagePullspec,
 					Env:             env,
 					Command:         append(command, buildahBuildScript),
 					ImagePullPolicy: corev1.PullAlways,
@@ -483,12 +461,15 @@ func (i ImageBuildRequest) getObjectMeta(name string) metav1.ObjectMeta {
 		Name:      name,
 		Namespace: ctrlcommon.MCONamespace,
 		Labels: map[string]string{
-			ctrlcommon.OSImageBuildPodLabel: "",
-			targetMachineConfigPoolLabel:    i.MachineOSConfig.Spec.MachineConfigPool.Name,
-			desiredConfigLabel:              i.MachineOSBuild.Spec.DesiredConfig.Name,
+			ctrlcommon.OSImageBuildPodLabel:                "",
+			daemonconsts.DesiredMachineConfigAnnotationKey: i.MachineOSBuild.Spec.DesiredConfig.Name,
+			onClusterLayeringLabelKey:                      "",
+			targetMachineConfigPoolLabelKey:                i.MachineOSConfig.Spec.MachineConfigPool.Name,
 		},
 		Annotations: map[string]string{
-			mcPoolAnnotation: "",
+			mcPoolAnnotation:                 "",
+			machineOSConfigNameAnnotationKey: i.MachineOSConfig.Name,
+			machineOSBuildNameAnnotationKey:  i.MachineOSBuild.Name,
 		},
 	}
 
@@ -507,17 +488,6 @@ func (i ImageBuildRequest) getObjectMeta(name string) metav1.ObjectMeta {
 	}
 
 	return objectMeta
-}
-
-func (i ImageBuildRequest) getBuildahConfigMap() *corev1.ConfigMap {
-	name := fmt.Sprintf("buildah-config-%s", i.MachineOSBuild.Spec.DesiredConfig.Name)
-	return &corev1.ConfigMap{
-		ObjectMeta: i.getObjectMeta(name),
-		Data: map[string]string{
-			"subuid": subuidFile,
-			"subgid": subgidFile,
-		},
-	}
 }
 
 // Computes the Dockerfile ConfigMap name based upon the MachineConfigPool name.

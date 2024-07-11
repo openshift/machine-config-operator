@@ -45,6 +45,8 @@ import (
 	coreinformers "k8s.io/client-go/informers"
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
 
+	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
+
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -55,49 +57,16 @@ import (
 	"github.com/openshift/machine-config-operator/internal/clients"
 )
 
+// Annotations to add to all objects BuildController creates.
 const (
-	targetMachineConfigPoolLabel = "machineconfiguration.openshift.io/targetMachineConfigPool"
-	// TODO(zzlotnik): Is there a constant for this someplace else?
-	desiredConfigLabel = "machineconfiguration.openshift.io/desiredConfig"
+	machineOSBuildNameAnnotationKey  = "machineconfiguration.openshift.io/machine-os-build"
+	machineOSConfigNameAnnotationKey = "machineconfiguration.openshift.io/machine-os-config"
 )
 
-// on-cluster-build-custom-dockerfile ConfigMap name.
+// Labels to add to all objects BuildController creates.
 const (
-	customDockerfileConfigMapName = "on-cluster-build-custom-dockerfile"
-)
-
-// on-cluster-build-config ConfigMap keys.
-const (
-	// Name of ConfigMap which contains knobs for configuring the build controller.
-	OnClusterBuildConfigMapName = "on-cluster-build-config"
-
-	// The on-cluster-build-config ConfigMap key which contains a K8s secret capable of pulling of the base OS image.
-	BaseImagePullSecretNameConfigKey = "baseImagePullSecretName"
-
-	// The on-cluster-build-config ConfigMap key which contains a K8s secret capable of pushing the final OS image.
-	FinalImagePushSecretNameConfigKey = "finalImagePushSecretName"
-
-	// The on-cluster-build-config ConfigMap key which contains the pullspec of where to push the final OS image (e.g., registry.hostname.com/org/repo:tag).
-	FinalImagePullspecConfigKey = "finalImagePullspec"
-)
-
-// machine-config-osimageurl ConfigMap keys.
-const (
-	// TODO: Is this a constant someplace else?
-	machineConfigOSImageURLConfigMapName = "machine-config-osimageurl"
-
-	// The machine-config-osimageurl ConfigMap key which contains the pullspec of the base OS image (e.g., registry.hostname.com/org/repo:tag).
-	baseOSContainerImageConfigKey = "baseOSContainerImage"
-
-	// The machine-config-osimageurl ConfigMap key which contains the pullspec of the base OS image (e.g., registry.hostname.com/org/repo:tag).
-	baseOSExtensionsContainerImageConfigKey = "baseOSExtensionsContainerImage"
-
-	// The machine-config-osimageurl ConfigMap key which contains the current OpenShift release version.
-	releaseVersionConfigKey = "releaseVersion"
-
-	// The machine-config-osimageurl ConfigMap key which contains the osImageURL
-	// value. I don't think we actually use this anywhere though.
-	osImageURLConfigKey = "osImageURL"
+	onClusterLayeringLabelKey       = "machineconfiguration.openshift.io/on-cluster-layering"
+	targetMachineConfigPoolLabelKey = "machineconfiguration.openshift.io/targetMachineConfigPool"
 )
 
 const (
@@ -391,7 +360,7 @@ func (ctrl *Controller) processNextMosWorkItem() bool {
 
 // Reconciles the MachineConfigPool state with the state of a custom pod object.
 func (ctrl *Controller) customBuildPodUpdater(pod *corev1.Pod) error {
-	pool, err := ctrl.mcfgclient.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), pod.Labels[targetMachineConfigPoolLabel], metav1.GetOptions{})
+	pool, err := ctrl.mcfgclient.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), pod.Labels[targetMachineConfigPoolLabelKey], metav1.GetOptions{})
 	if err != nil {
 		return err
 	}
@@ -967,25 +936,50 @@ func (ctrl *Controller) updateConfigAndBuild(mosc *mcfgv1alpha1.MachineOSConfig,
 	return ctrl.syncAvailableStatus(newMosb)
 }
 
+func (ctrl *Controller) getOSImageURLConfig() (*ctrlcommon.OSImageURLConfig, error) {
+	cm, err := ctrl.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), ctrlcommon.MachineConfigOSImageURLConfigMapName, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("could not get ConfigMap %s: %w", ctrlcommon.MachineConfigOSImageURLConfigMapName, err)
+	}
+
+	return ctrlcommon.ParseOSImageURLConfigMap(cm)
+}
+
+func (ctrl *Controller) getImagesConfig() (*ctrlcommon.Images, error) {
+	cm, err := ctrl.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), ctrlcommon.MachineConfigOperatorImagesConfigMapName, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("could not get configmap %s: %w", ctrlcommon.MachineConfigOperatorImagesConfigMapName, err)
+	}
+
+	return ctrlcommon.ParseImagesFromConfigMap(cm)
+}
+
 // Prepares all of the objects needed to perform an image build.
 func (ctrl *Controller) prepareForBuild(mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig) (ImageBuildRequest, error) {
 	ibr := newImageBuildRequestFromBuildInputs(mosb, mosc)
 
-	// populate the "optional" fields, if the user did not specify them
-	osImageURL, err := ctrl.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), machineConfigOSImageURLConfigMapName, metav1.GetOptions{})
+	imagesConfig, err := ctrl.getImagesConfig()
 	if err != nil {
-		return ibr, fmt.Errorf("could not get OS image URL: %w", err)
+		return ibr, fmt.Errorf("could not get images.json config: %w", err)
 	}
+
+	ibr.MCOImagePullspec = imagesConfig.MachineConfigOperator
+
+	// populate the "optional" fields, if the user did not specify them
+	osImageURLConfig, err := ctrl.getOSImageURLConfig()
+	if err != nil {
+		return ibr, fmt.Errorf("could not get osImageURL config: %w", err)
+	}
+
 	moscNew := mosc.DeepCopy()
 
-	url := newExtensionsImageInfo(osImageURL, mosc)
 	if moscNew.Spec.BuildInputs.BaseOSExtensionsImagePullspec == "" {
-		moscNew.Spec.BuildInputs.BaseOSExtensionsImagePullspec = url.Pullspec
+		moscNew.Spec.BuildInputs.BaseOSExtensionsImagePullspec = osImageURLConfig.BaseOSExtensionsContainerImage
 	}
-	url = newBaseImageInfo(osImageURL, mosc)
+
 	if moscNew.Spec.BuildInputs.BaseOSImagePullspec == "" {
-		moscNew.Spec.BuildInputs.BaseOSImagePullspec = url.Pullspec
-		moscNew.Spec.BuildInputs.ReleaseVersion = osImageURL.Data[releaseVersionConfigKey]
+		moscNew.Spec.BuildInputs.BaseOSImagePullspec = osImageURLConfig.BaseOSContainerImage
+		moscNew.Spec.BuildInputs.ReleaseVersion = osImageURLConfig.ReleaseVersion
 	}
 
 	etcPkiEntitlements, err := ctrl.getOptionalSecret(etcPkiEntitlementSecretName)
@@ -1439,12 +1433,13 @@ func shouldWeDoABuild(builder interface {
 	return false, nil
 }
 
-// Determines if a pod or build is managed by this controller by examining its labels.
+// Determines if an object is managed by this controller by examining its labels.
 func hasAllRequiredOSBuildLabels(labels map[string]string) bool {
 	requiredLabels := []string{
 		ctrlcommon.OSImageBuildPodLabel,
-		targetMachineConfigPoolLabel,
-		desiredConfigLabel,
+		daemonconsts.DesiredMachineConfigAnnotationKey,
+		onClusterLayeringLabelKey,
+		targetMachineConfigPoolLabelKey,
 	}
 
 	for _, label := range requiredLabels {
