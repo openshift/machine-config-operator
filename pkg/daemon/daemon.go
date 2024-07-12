@@ -1099,7 +1099,7 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 		return nil
 	}
 
-	klog.Infof("Update is reconcilable. Diff: %v", mcDiff)
+	klog.Infof("Update is reconcilable. Diff: %+v", mcDiff)
 
 	// This should be eventually de-duplicated with the update() function.
 	oldIgnConfig, err := ctrlcommon.ParseAndConvertConfig(currentConfig.Spec.Config.Raw)
