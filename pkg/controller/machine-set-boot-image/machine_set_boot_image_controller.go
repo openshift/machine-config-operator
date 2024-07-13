@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
-	"strings"
+	"sync"
 	"time"
 
 	opv1 "github.com/openshift/api/operator/v1"
@@ -16,12 +16,10 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
-	kruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	kubeErrs "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/jsonmergepatch"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
 	clientset "k8s.io/client-go/kubernetes"
@@ -29,14 +27,11 @@ import (
 	corelisterv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
-	"k8s.io/client-go/util/workqueue"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 	"k8s.io/kubectl/pkg/scheme"
-	"sigs.k8s.io/yaml"
 
 	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-
 	machineclientset "github.com/openshift/client-go/machine/clientset/versioned"
 	mapimachineinformers "github.com/openshift/client-go/machine/informers/externalversions/machine/v1beta1"
 	machinelisters "github.com/openshift/client-go/machine/listers/machine/v1beta1"
@@ -44,12 +39,7 @@ import (
 
 	mcopinformersv1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1"
 	mcoplistersv1 "github.com/openshift/client-go/operator/listers/operator/v1"
-
-	archtranslater "github.com/coreos/stream-metadata-go/arch"
-	"github.com/coreos/stream-metadata-go/stream"
-
-	osconfigv1 "github.com/openshift/api/config/v1"
-	features "github.com/openshift/api/features"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 )
 
 // Controller defines the machine-set-boot-image controller.
@@ -69,17 +59,28 @@ type Controller struct {
 	infraListerSynced          cache.InformerSynced
 	mcopListerSynced           cache.InformerSynced
 
-	syncHandler func(ms string) error
-
-	queue workqueue.RateLimitingInterface
+	mapiStats                  MachineResourceStats
+	capiMachineSetStats        MachineResourceStats
+	capiMachineDeploymentStats MachineResourceStats
+	conditionMutex             sync.Mutex
+	mapiSyncMutex              sync.Mutex
 
 	featureGateAccess featuregates.FeatureGateAccess
-	featureEnabled    bool
+}
+
+// Stats structure for local bookkeeping of machine resources
+type MachineResourceStats struct {
+	inProgress   int
+	erroredCount int
+	totalCount   int
+}
+
+// Helper function that checks if all resources have been evaluated
+func (mrs MachineResourceStats) isFinished() bool {
+	return mrs.totalCount == (mrs.inProgress + mrs.erroredCount)
 }
 
 const (
-	// maxRetries is the number of times a machineset will be retried before dropping out of queue
-	maxRetries = 5
 	// Name of machine api namespace
 	MachineAPINamespace = "openshift-machine-api"
 
@@ -114,25 +115,25 @@ func New(
 		machineClient: machineClient,
 		mcopClient:    mcopClient,
 		eventRecorder: ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-machinesetbootimagecontroller"})),
-		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-machinesetbootimagecontroller"),
 	}
 
 	mapiMachineSetInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.addMAPIMachineSet,
 		UpdateFunc: ctrl.updateMAPIMachineSet,
+		DeleteFunc: ctrl.deleteMAPIMachineSet,
 	})
 
 	mcoCmInfomer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.addConfigMap,
 		UpdateFunc: ctrl.updateConfigMap,
+		DeleteFunc: ctrl.deleteConfigMap,
 	})
 
 	mcopInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.addMachineConfiguration,
 		UpdateFunc: ctrl.updateMachineConfiguration,
+		DeleteFunc: ctrl.deleteMachineConfiguration,
 	})
-
-	ctrl.syncHandler = ctrl.syncMachineResource
 
 	ctrl.mcoCmLister = mcoCmInfomer.Lister()
 	ctrl.mapiMachineSetLister = mapiMachineSetInformer.Lister()
@@ -146,33 +147,12 @@ func New(
 
 	ctrl.featureGateAccess = featureGateAccess
 
-	ctrl.featureEnabled = false
-	ctrl.featureGateAccess.SetChangeHandler(func(featureChange featuregates.FeatureChange) {
-		klog.InfoS("FeatureGates changed", "enabled", featureChange.New.Enabled, "disabled", featureChange.New.Disabled)
-
-		var prevfeatureEnabled bool
-		if featureChange.Previous == nil {
-			// When the initial featuregate is set, the previous version is nil. Default to the feature being disabled.
-			prevfeatureEnabled = false
-		} else {
-			prevfeatureEnabled = featuregates.NewFeatureGate(featureChange.Previous.Enabled, featureChange.Previous.Disabled).
-				Enabled(features.FeatureGateManagedBootImages)
-		}
-		ctrl.featureEnabled = featuregates.NewFeatureGate(featureChange.New.Enabled, featureChange.New.Disabled).
-			Enabled(features.FeatureGateManagedBootImages)
-		if !prevfeatureEnabled && ctrl.featureEnabled {
-			klog.Info("Trigger a sync as this feature was turned on")
-			ctrl.enqueueMAPIMachineSets()
-		}
-	})
-
 	return ctrl
 }
 
 // Run executes the machine-set-boot-image controller.
-func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
+func (ctrl *Controller) Run(stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
-	defer ctrl.queue.ShutDown()
 
 	if !cache.WaitForCacheSync(stopCh, ctrl.mcoCmListerSynced, ctrl.mapiMachineSetListerSynced, ctrl.infraListerSynced, ctrl.mcopListerSynced) {
 		return
@@ -181,67 +161,11 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	klog.Info("Starting MachineConfigController-MachineSetBootImageController")
 	defer klog.Info("Shutting down MachineConfigController-MachineSetBootImageController")
 
-	for i := 0; i < workers; i++ {
-		go wait.Until(ctrl.worker, time.Second, stopCh)
-	}
-
 	<-stopCh
 }
 
-// worker runs a worker thread that just dequeues items, processes them, and marks them done.
-// It enforces that the syncHandler is never invoked concurrently with the same key.
-func (ctrl *Controller) worker() {
-	for ctrl.processNextWorkItem() {
-	}
-}
-
-func (ctrl *Controller) processNextWorkItem() bool {
-	key, quit := ctrl.queue.Get()
-	if quit {
-		return false
-	}
-	defer ctrl.queue.Done(key)
-
-	err := ctrl.syncHandler(key.(string))
-	ctrl.handleErr(err, key)
-
-	return true
-}
-
-func (ctrl *Controller) handleErr(err error, key interface{}) {
-
-	_, msName, splitErr := cache.SplitMetaNamespaceKey(key.(string))
-	if splitErr != nil {
-		klog.V(2).Infof("Exception %v handling error during machineset sync %v: %v", splitErr, key, err)
-		return
-	}
-
-	if err == nil {
-		ctrl.queue.Forget(key)
-		// Clear any errors as this machineset was successfully patched
-		ctrlcommon.MCCBootImageUpdateErr.WithLabelValues(msName).Set(0)
-		return
-	}
-
-	// Increment error on this machineset
-	ctrlcommon.MCCBootImageUpdateErr.WithLabelValues(msName).Inc()
-	if ctrl.queue.NumRequeues(key) < maxRetries {
-		klog.V(2).Infof("Error syncing machineset %v: %v", key, err)
-		ctrl.queue.AddRateLimited(key)
-		return
-	}
-
-	utilruntime.HandleError(err)
-	klog.V(2).Infof("Dropping machineset %q out of the work queue: %v", key, err)
-	ctrl.queue.Forget(key)
-	ctrl.queue.AddAfter(key, 1*time.Minute)
-}
-
 func (ctrl *Controller) addMAPIMachineSet(obj interface{}) {
-	// No-op if feature is disabled
-	if !ctrl.featureEnabled {
-		return
-	}
+
 	machineSet := obj.(*machinev1beta1.MachineSet)
 
 	klog.Infof("MAPI MachineSet %s added, reconciling enrolled machine resources", machineSet.Name)
@@ -249,23 +173,19 @@ func (ctrl *Controller) addMAPIMachineSet(obj interface{}) {
 	// Update/Check all machinesets instead of just this one. This prevents needing to maintain a local
 	// store of machineset conditions. As this is using a lister, it is relatively inexpensive to do
 	// this.
-	err := ctrl.enqueueMAPIMachineSets()
-	if err != nil {
-		klog.Errorf("Error enqueuing MAPI machinesets: %v", err)
-	}
+	go func() { ctrl.syncMAPIMachineSets("MAPIMachinesetAdded") }()
 }
 
 func (ctrl *Controller) updateMAPIMachineSet(oldMS, newMS interface{}) {
 
-	// No-op if feature is disabled
-	if !ctrl.featureEnabled {
-		return
-	}
 	oldMachineSet := oldMS.(*machinev1beta1.MachineSet)
 	newMachineSet := newMS.(*machinev1beta1.MachineSet)
 
-	// Only take action if the there is an actual change in the MachineSet's Spec, or a change in the labels
-	if oldMachineSet.Generation == newMachineSet.Generation && reflect.DeepEqual(oldMachineSet.Labels, newMachineSet.Labels) {
+	// Don't take action if the there is no change in the MachineSet's ProviderSpec, labels, annotations and ownerreferences
+	if reflect.DeepEqual(oldMachineSet.Spec.Template.Spec.ProviderSpec, newMachineSet.Spec.Template.Spec.ProviderSpec) &&
+		reflect.DeepEqual(oldMachineSet.GetLabels(), newMachineSet.GetLabels()) &&
+		reflect.DeepEqual(oldMachineSet.GetAnnotations(), newMachineSet.GetAnnotations()) &&
+		reflect.DeepEqual(oldMachineSet.GetOwnerReferences(), newMachineSet.GetOwnerReferences()) {
 		return
 	}
 
@@ -274,45 +194,44 @@ func (ctrl *Controller) updateMAPIMachineSet(oldMS, newMS interface{}) {
 	// Update all machinesets instead of just this one. This prevents needing to maintain a local
 	// store of machineset conditions. As this is using a lister, it is relatively inexpensive to do
 	// this.
-	err := ctrl.enqueueMAPIMachineSets()
-	if err != nil {
-		klog.Errorf("Error enqueuing MAPI machinesets: %v", err)
-	}
+	go func() { ctrl.syncMAPIMachineSets("MAPIMachinesetUpdated") }()
+}
+
+func (ctrl *Controller) deleteMAPIMachineSet(deletedMS interface{}) {
+
+	deletedMachineSet := deletedMS.(*machinev1beta1.MachineSet)
+
+	klog.Infof("MachineSet %s deleted, reconciling enrolled machineset resources", deletedMachineSet.Name)
+
+	// Update all machinesets. This prevents needing to maintain a local
+	// store of machineset conditions. As this is using a lister, it is relatively inexpensive to do
+	// this.
+	go func() { ctrl.syncMAPIMachineSets("MAPIMachinesetDeleted") }()
 }
 
 func (ctrl *Controller) addConfigMap(obj interface{}) {
-	// No-op if feature is disabled
-	if !ctrl.featureEnabled {
-		return
-	}
+
 	configMap := obj.(*corev1.ConfigMap)
 
 	// Take no action if this isn't the "golden" config map
 	if configMap.Name != ctrlcommon.BootImagesConfigMapName {
-		klog.V(4).Infof("configMap %s added, but does not match %s, skipping bootimage sync", configMap.Name, ctrlcommon.BootImagesConfigMapName)
 		return
 	}
 
 	klog.Infof("configMap %s added, reconciling enrolled machine resources", configMap.Name)
 
-	// Update all machinesets since the "golden" configmap has been updated
-	err := ctrl.enqueueMAPIMachineSets()
-	if err != nil {
-		klog.Errorf("Error enqueuing MAPI machinesets: %v", err)
-	}
+	// Update all machinesets since the "golden" configmap has been added
+	// TODO: Add go routines for CAPI resources here
+	go func() { ctrl.syncMAPIMachineSets("BootImageConfigMapAdded") }()
 }
 
 func (ctrl *Controller) updateConfigMap(oldCM, newCM interface{}) {
-	// No-op if feature is disabled
-	if !ctrl.featureEnabled {
-		return
-	}
+
 	oldConfigMap := oldCM.(*corev1.ConfigMap)
 	newConfigMap := newCM.(*corev1.ConfigMap)
 
 	// Take no action if this isn't the "golden" config map
 	if oldConfigMap.Name != ctrlcommon.BootImagesConfigMapName {
-		klog.V(4).Infof("configMap %s updated, but does not match %s, skipping bootimage sync", oldConfigMap.Name, ctrlcommon.BootImagesConfigMapName)
 		return
 	}
 
@@ -324,17 +243,26 @@ func (ctrl *Controller) updateConfigMap(oldCM, newCM interface{}) {
 	klog.Infof("configMap %s updated, reconciling enrolled machine resources", oldConfigMap.Name)
 
 	// Update all machinesets since the "golden" configmap has been updated
-	err := ctrl.enqueueMAPIMachineSets()
-	if err != nil {
-		klog.Errorf("Error enqueuing MAPI machinesets: %v", err)
+	// TODO: Add go routines for CAPI resources here
+	go func() { ctrl.syncMAPIMachineSets("BootImageConfigMapUpdated") }()
+}
+
+func (ctrl *Controller) deleteConfigMap(obj interface{}) {
+
+	configMap := obj.(*corev1.ConfigMap)
+
+	// Take no action if this isn't the "golden" config map
+	if configMap.Name != ctrlcommon.BootImagesConfigMapName {
+		return
 	}
+
+	klog.Infof("configMap %s deleted, reconciling enrolled machine resources", configMap.Name)
+
+	// Update all machinesets since the "golden" configmap has been deleted
+	go func() { ctrl.syncMAPIMachineSets("BootImageConfigMapDeleted") }()
 }
 
 func (ctrl *Controller) addMachineConfiguration(obj interface{}) {
-	// No-op if feature is disabled
-	if !ctrl.featureEnabled {
-		return
-	}
 
 	machineConfiguration := obj.(*opv1.MachineConfiguration)
 
@@ -347,18 +275,12 @@ func (ctrl *Controller) addMachineConfiguration(obj interface{}) {
 	klog.Infof("Bootimages management configuration has been added, reconciling enrolled machine resources")
 
 	// Update/Check machinesets since the boot images configuration knob was updated
-	err := ctrl.enqueueMAPIMachineSets()
-	if err != nil {
-		klog.Errorf("Error enqueuing MAPI machinesets: %v", err)
-	}
+	// TODO: Add go routines for CAPI resources here
+	go func() { ctrl.syncMAPIMachineSets("BootImageUpdateConfigurationAdded") }()
 }
 
 func (ctrl *Controller) updateMachineConfiguration(oldMC, newMC interface{}) {
 
-	// No-op if feature is disabled
-	if !ctrl.featureEnabled {
-		return
-	}
 	oldMachineConfiguration := oldMC.(*opv1.MachineConfiguration)
 	newMachineConfiguration := newMC.(*opv1.MachineConfiguration)
 
@@ -376,138 +298,111 @@ func (ctrl *Controller) updateMachineConfiguration(oldMC, newMC interface{}) {
 	klog.Infof("Bootimages management configuration has been updated, reconciling enrolled machine resources")
 
 	// Update all machinesets since the boot images configuration knob was updated
-	err := ctrl.enqueueMAPIMachineSets()
-	if err != nil {
-		klog.Errorf("Error enqueuing MAPI machinesets: %v", err)
-	}
+	// TODO: Add go routines for CAPI resources here
+	go func() { ctrl.syncMAPIMachineSets("BootImageUpdateConfigurationUpdated") }()
 }
 
-// This function adds MAPI machinesets to the workqueue
-func (ctrl *Controller) enqueueMAPIMachineSet(ms *machinev1beta1.MachineSet) {
-	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(ms)
-	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %w", ms, err))
+func (ctrl *Controller) deleteMachineConfiguration(obj interface{}) {
+
+	machineConfiguration := obj.(*opv1.MachineConfiguration)
+
+	// Take no action if this isn't the "cluster" level MachineConfiguration object
+	if machineConfiguration.Name != ctrlcommon.MCOOperatorKnobsObjectName {
+		klog.V(4).Infof("MachineConfiguration %s deleted, but does not match %s, skipping bootimage sync", machineConfiguration.Name, ctrlcommon.MCOOperatorKnobsObjectName)
 		return
 	}
 
-	ctrl.queue.Add(key)
+	klog.Infof("Bootimages management configuration has been deleted, reconciling enrolled machine resources")
+
+	// Update/Check machinesets since the boot images configuration knob was updated
+	// TODO: Add go routines for CAPI resources here
+	go func() { ctrl.syncMAPIMachineSets("BootImageUpdateConfigurationDeleted") }()
 }
 
-// syncMachineSet will attempt to enqueue every machineset
-func (ctrl *Controller) enqueueMAPIMachineSets() error {
+// syncMAPIMachineSets will attempt to enqueue every machineset
+func (ctrl *Controller) syncMAPIMachineSets(reason string) {
+
+	ctrl.mapiSyncMutex.Lock()
+	defer ctrl.mapiSyncMutex.Unlock()
 
 	// Grab the global operator knobs
 	mcop, err := ctrl.mcopLister.Get(ctrlcommon.MCOOperatorKnobsObjectName)
 	if err != nil {
-		return fmt.Errorf("failed to fetch MachineConfiguration knobs list while enqueueing MAPI MachineSets %w", err)
-	}
-
-	// If no machine managers exist; exit the enqueue process.
-	if len(mcop.Spec.ManagedBootImages.MachineManagers) == 0 {
-		klog.Infof("No MAPI machineset manager was found, so no MAPI machinesets will be enqueued.")
-		return nil
+		if apierrors.IsNotFound(err) {
+			// This typically means the cache for the knobs lister is empty; don't error on this. If this
+			// object doesn't exist, something else has gone wrong in the operator's syncMachineConfiguration loop
+			klog.Infof("MachineConfiguration knobs was not found, so no MAPI machinesets will be enqueued.")
+		} else {
+			klog.Errorf("failed to fetch MachineConfiguration knobs while enqueueing MAPI MachineSets %v", err)
+			ctrl.updateConditions(reason, fmt.Errorf("failed to fetch MachineConfiguration knobs while enqueueing MAPI MachineSets %v", err), opv1.MachineConfigurationBootImageUpdateDegraded)
+		}
+		return
 	}
 
 	machineManagerFound, machineResourceSelector, err := getMachineResourceSelectorFromMachineManagers(mcop.Spec.ManagedBootImages.MachineManagers, opv1.MachineAPI, opv1.MachineSets)
 	if err != nil {
-		return fmt.Errorf("failed to create a machineset selector while enqueueing MAPI machineset %w", err)
+		klog.Errorf("failed to create a machineset selector while enqueueing MAPI machineset %v", err)
+		ctrl.updateConditions(reason, fmt.Errorf("failed to create a machineset selector while enqueueing MAPI machineset %v", err), opv1.MachineConfigurationBootImageUpdateDegraded)
+		return
 	}
 	if !machineManagerFound {
-		klog.Infof("No MAPI machineset manager was found, so no MAPI machinesets will be enqueued.")
-		return nil
+		klog.Infof("No MAPI machineset manager was found, so no MAPI machinesets will be enrolled.")
 	}
 
-	machineSets, err := ctrl.mapiMachineSetLister.List(machineResourceSelector)
+	mapiMachineSets, err := ctrl.mapiMachineSetLister.List(machineResourceSelector)
 	if err != nil {
-		return fmt.Errorf("failed to fetch MachineSet list while enqueueing MAPI MachineSets %w", err)
+		klog.Errorf("failed to fetch MachineSet list while enqueueing MAPI MachineSets %v", err)
+		ctrl.updateConditions(reason, fmt.Errorf("failed to fetch MachineSet list while enqueueing MAPI MachineSets %v", err), opv1.MachineConfigurationBootImageUpdateDegraded)
+		return
 	}
 
-	klog.Infof("Reconciling %d MAPI MachineSet(s)", len(machineSets))
-	for _, machineSet := range machineSets {
-		ctrl.enqueueMAPIMachineSet(machineSet)
+	// If no machine resources were enrolled; exit the enqueue process without errors.
+	if len(mapiMachineSets) == 0 {
+		klog.Infof("No MAPI machinesets were enrolled, so no MAPI machinesets will be enqueued.")
 	}
 
-	return nil
-}
+	// Reset stats before initiating reconciliation loop
+	ctrl.mapiStats.inProgress = 0
+	ctrl.mapiStats.totalCount = len(mapiMachineSets)
+	ctrl.mapiStats.erroredCount = 0
 
-// This function checks if an array of machineManagers contains the target apigroup/resource and returns
-// a bool(success/fail), a label selector to filter the target resource and an error, if any.
-func getMachineResourceSelectorFromMachineManagers(machineManagers []opv1.MachineManager, apiGroup opv1.MachineManagerMachineSetsAPIGroupType, resource opv1.MachineManagerMachineSetsResourceType) (bool, labels.Selector, error) {
+	// Signal start of reconciliation process, by setting progressing to true
+	var syncErrors []error
+	ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateProgressing)
 
-	for _, machineManager := range machineManagers {
-		if machineManager.APIGroup == apiGroup && machineManager.Resource == resource {
-			if machineManager.Selection.Mode == opv1.Partial {
-				selector, err := metav1.LabelSelectorAsSelector(machineManager.Selection.Partial.MachineResourceSelector)
-				return true, selector, err
-			} else if machineManager.Selection.Mode == opv1.All {
-				return true, labels.Everything(), nil
-			}
+	for _, machineSet := range mapiMachineSets {
+		err := ctrl.syncMAPIMachineSet(machineSet)
+		if err == nil {
+			ctrl.mapiStats.inProgress++
+		} else {
+			klog.Errorf("Error syncing MAPI MachineSet %v", err)
+			syncErrors = append(syncErrors, fmt.Errorf("error syncing MAPI MachineSet %s: %v", machineSet.Name, err))
+			ctrl.mapiStats.erroredCount++
 		}
+		// Update progressing conditions every step of the loop
+		ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateProgressing)
 	}
-	return false, nil, nil
+	// Update/Clear degrade conditions based on errors from this loop
+	ctrl.updateConditions(reason, kubeErrs.NewAggregate(syncErrors), opv1.MachineConfigurationBootImageUpdateDegraded)
 }
 
-// syncMachineResource will attempt to reconcile the machineresource with the given key.
-// This function is not meant to be invoked concurrently with the same key.
-func (ctrl *Controller) syncMachineResource(key string) error {
+// syncMAPIMachineSet will attempt to reconcile the provided machineset
+func (ctrl *Controller) syncMAPIMachineSet(machineSet *machinev1beta1.MachineSet) error {
 
-	// TODO: lower this level of all info logs in this function
 	startTime := time.Now()
-	klog.V(4).Infof("Started syncing machineset %q (%v)", key, startTime)
+	klog.V(4).Infof("Started syncing MAPI machineset %q (%v)", machineSet.Name, startTime)
 	defer func() {
-		klog.V(4).Infof("Finished syncing machineset %q (%v)", key, time.Since(startTime))
+		klog.V(4).Infof("Finished syncing MAPI machineset %q (%v)", machineSet.Name, time.Since(startTime))
 	}()
-
-	// Fetch the bootimage configmap
-	configMap, err := ctrl.mcoCmLister.ConfigMaps(ctrlcommon.MCONamespace).Get(ctrlcommon.BootImagesConfigMapName)
-	if configMap == nil || err != nil {
-		return fmt.Errorf("failed to fetch coreos-bootimages config map during machineset sync: %w", err)
-	}
-
-	// Take no action if the MCO hash version stored in the configmap does not match the current controller
-	// version. This is done by the operator when a master node successfully updates to a new image. This is
-	// to prevent machinesets from being updated before the operator itself has updated.
-
-	versionHashFromCM, versionHashFound := configMap.Data[ctrlcommon.MCOVersionHashKey]
-	if !versionHashFound {
-		return fmt.Errorf("failed to find mco version hash in %s configmap, sync will exit to wait for the MCO upgrade to complete", ctrlcommon.BootImagesConfigMapName)
-	}
-	if versionHashFromCM != operatorversion.Hash {
-		return fmt.Errorf("mismatch between MCO hash version stored in configmap and current MCO version; sync will exit to wait for the MCO upgrade to complete")
-	}
-	releaseVersionFromCM, releaseVersionFound := configMap.Data[ctrlcommon.MCOReleaseImageVersionKey]
-	if !releaseVersionFound {
-		return fmt.Errorf("failed to find mco release version in %s configmap, sync will exit to wait for the MCO upgrade to complete", ctrlcommon.BootImagesConfigMapName)
-	}
-	if releaseVersionFromCM != operatorversion.ReleaseVersion {
-		return fmt.Errorf("mismatch between MCO release version stored in configmap and current MCO release version; sync will exit to wait for the MCO upgrade to complete")
-	}
-
-	// TODO: Also check against the release version stored in the configmap under releaseVersion. This is currently broken as the version
-	// stored is "0.0.1-snapshot" and does not reflect the correct value. Tracked in this bug https://issues.redhat.com/browse/OCPBUGS-19824
-	// The current hash and version check should be enough to skate by for now, but fixing this would be additional safety - djoshy
-
-	// When adding support for multiple kinds of machine resources, the "key" format can be updated to enclose the kind of machine resource. Once decoded,
-	// an appropriate processing function can be called. For now only MAPI machinesets are supported, so proceed assuming that.
-	namespace, name, err := cache.SplitMetaNamespaceKey(key)
-	if err != nil {
-		return err
-	}
-
-	// Fetch the machineset
-	machineSet, err := ctrl.mapiMachineSetLister.MachineSets(namespace).Get(name)
-	if machineSet == nil || apierrors.IsNotFound(err) {
-		return fmt.Errorf("failed to fetch machineset object during machineset sync: %w", err)
-	}
 
 	// If the machineset has an owner reference, exit and report error. This means
 	// that the machineset may be managed by another workflow and should not be reconciled.
 	if len(machineSet.GetOwnerReferences()) != 0 {
-		return fmt.Errorf("machineset object has an unexpected owner reference : %v and will not be updated. Please remove this machineset from boot image management to avoid errors", machineSet.GetOwnerReferences()[0])
+		return fmt.Errorf("unexpected OwnerReference: %v. Please remove this machineset from boot image management to avoid errors", machineSet.GetOwnerReferences()[0].Kind+"/"+machineSet.GetOwnerReferences()[0].Name)
 	}
 
 	// Fetch the architecture type of this machineset
-	arch, err := ctrl.getArchFromMachineSet(machineSet)
+	arch, err := getArchFromMachineSet(machineSet)
 	if err != nil {
 		return fmt.Errorf("failed to fetch arch during machineset sync: %w", err)
 	}
@@ -517,6 +412,50 @@ func (ctrl *Controller) syncMachineResource(key string) error {
 	if err != nil {
 		return fmt.Errorf("failed to fetch infra object during machineset sync: %w", err)
 	}
+
+	// Wait until the MCO hash version stored in the configmap matches the current MCO
+	// version. This is done by the operator when a master node successfully updates to a new image. This is
+	// to prevent machinesets from being updated before the operator itself has updated.
+	// Could return an error(and cause degrade) immediately here, but seems excessive. Waiting with a timeout
+	// is a bit more graceful.
+	var configMap *corev1.ConfigMap
+	var pollError error
+	klog.Infof("Waiting until coreos-bootimages config map has been stamped by the current version hash (%s) of the operator", operatorversion.Hash)
+	if err = wait.PollUntilContextTimeout(context.TODO(), 1*time.Minute, 15*time.Minute, true, func(_ context.Context) (bool, error) {
+		// Fetch the bootimage configmap
+		configMap, err = ctrl.mcoCmLister.ConfigMaps(ctrlcommon.MCONamespace).Get(ctrlcommon.BootImagesConfigMapName)
+		if configMap == nil || err != nil {
+			pollError = fmt.Errorf("failed to fetch coreos-bootimages config map during machineset sync: %w", err)
+			return false, nil
+		}
+		versionHashFromCM, versionHashFound := configMap.Data[ctrlcommon.MCOVersionHashKey]
+		if !versionHashFound {
+			pollError = fmt.Errorf("failed to find mco version hash in %s configmap, sync will exit to wait for the MCO upgrade to complete", ctrlcommon.BootImagesConfigMapName)
+			return false, nil
+		}
+		if versionHashFromCM != operatorversion.Hash {
+			pollError = fmt.Errorf("mismatch between MCO hash version stored in configmap and current MCO version; sync will exit to wait for the MCO upgrade to complete")
+			return false, nil
+		}
+		releaseVersionFromCM, releaseVersionFound := configMap.Data[ctrlcommon.MCOReleaseImageVersionKey]
+		if !releaseVersionFound {
+			pollError = fmt.Errorf("failed to find mco release version in %s configmap, sync will exit to wait for the MCO upgrade to complete", ctrlcommon.BootImagesConfigMapName)
+			return false, nil
+		}
+		if releaseVersionFromCM != operatorversion.ReleaseVersion {
+			pollError = fmt.Errorf("mismatch between MCO release version stored in configmap and current MCO release version; sync will exit to wait for the MCO upgrade to complete")
+			return false, nil
+		}
+		return true, nil
+
+	}); err != nil {
+		klog.Errorf("Timed out waiting for coreos-bootimages config map: %v", pollError)
+		return fmt.Errorf("timed out waiting for coreos-bootimages config map: %v", pollError)
+	}
+
+	// TODO: Also check against the release version stored in the configmap under releaseVersion. This is currently broken as the version
+	// stored is "0.0.1-snapshot" and does not reflect the correct value. Tracked in this bug https://issues.redhat.com/browse/OCPBUGS-19824
+	// The current hash and version check should be enough to skate by for now, but fixing this would be additional safety - djoshy
 
 	// Check if the this MachineSet requires an update
 	patchRequired, newMachineSet, err := checkMachineSet(infra, machineSet, configMap, arch)
@@ -531,27 +470,6 @@ func (ctrl *Controller) syncMachineResource(key string) error {
 	}
 	klog.Infof("No patching required for MAPI machineset %s", machineSet.Name)
 	return nil
-}
-
-// Returns architecture type for a given machineset
-func (ctrl *Controller) getArchFromMachineSet(machineset *machinev1beta1.MachineSet) (arch string, err error) {
-
-	// Valid set of machineset/node architectures
-	validArchSet := sets.New[string]("arm64", "s390x", "amd64", "ppc64le")
-	// Check if the annotation enclosing arch label is present on this machineset
-	archLabel, archLabelMatch := machineset.Annotations[MachineSetArchAnnotationKey]
-	if archLabelMatch {
-		// Grab arch value from the annotation and check if it is valid
-		_, archLabelValue, archLabelValueFound := strings.Cut(archLabel, ArchLabelKey)
-		if archLabelValueFound && validArchSet.Has(archLabelValue) {
-			return archtranslater.RpmArch(archLabelValue), nil
-		}
-		return "", fmt.Errorf("invalid architecture value found in annotation: %s ", archLabel)
-	}
-	// If no arch annotation was found on the machineset, default to the control plane arch.
-	// return the architecture of the node running this pod, which will always be a control plane node.
-	klog.Infof("Defaulting to control plane architecture")
-	return archtranslater.CurrentRpmArch(), nil
 }
 
 // This function patches the machineset object using the machineClient
@@ -577,220 +495,96 @@ func (ctrl *Controller) patchMachineSet(oldMachineSet, newMachineSet *machinev1b
 	return nil
 }
 
-// This function calls the appropriate reconcile function based on the infra type
-// On success, it will return a bool indicating if a patch is required, and an updated
-// machineset object if any. It will return an error if any of the above steps fail.
-func checkMachineSet(infra *osconfigv1.Infrastructure, machineSet *machinev1beta1.MachineSet, configMap *corev1.ConfigMap, arch string) (bool, *machinev1beta1.MachineSet, error) {
-	switch infra.Status.PlatformStatus.Type {
-	case osconfigv1.AWSPlatformType:
-		return reconcileAWS(machineSet, configMap, arch)
-	case osconfigv1.AzurePlatformType:
-		return reconcileAzure(machineSet, configMap, arch)
-	case osconfigv1.BareMetalPlatformType:
-		return reconcileBareMetal(machineSet, configMap, arch)
-	case osconfigv1.AlibabaCloudPlatformType:
-		return reconcileAliBaba(machineSet, configMap, arch)
-	case osconfigv1.OpenStackPlatformType:
-		return reconcileOpenStack(machineSet, configMap, arch)
-	case osconfigv1.EquinixMetalPlatformType:
-		return reconcileEquinixMetal(machineSet, configMap, arch)
-	case osconfigv1.GCPPlatformType:
-		return reconcileGCP(machineSet, configMap, arch)
-	case osconfigv1.KubevirtPlatformType:
-		return reconcileKubevirt(machineSet, configMap, arch)
-	case osconfigv1.IBMCloudPlatformType:
-		return reconcileIBMCCloud(machineSet, configMap, arch)
-	case osconfigv1.LibvirtPlatformType:
-		return reconcileLibvirt(machineSet, configMap, arch)
-	case osconfigv1.VSpherePlatformType:
-		return reconcileVSphere(machineSet, configMap, arch)
-	case osconfigv1.NutanixPlatformType:
-		return reconcileNutanix(machineSet, configMap, arch)
-	case osconfigv1.OvirtPlatformType:
-		return reconcileOvirt(machineSet, configMap, arch)
-	case osconfigv1.ExternalPlatformType:
-		return reconcileExternal(machineSet, configMap, arch)
-	case osconfigv1.PowerVSPlatformType:
-		return reconcilePowerVS(machineSet, configMap, arch)
-	case osconfigv1.NonePlatformType:
-		return reconcileNone(machineSet, configMap, arch)
-	default:
-		return unmarshalToFindPlatform(machineSet, configMap, arch)
-	}
-}
-
-// This function unmarshals the machineset's provider spec into
-// a ProviderSpec object. Returns an error if providerSpec field is nil,
-// or the unmarshal fails
-func unmarshalProviderSpec(ms *machinev1beta1.MachineSet, providerSpec interface{}) error {
-	if ms.Spec.Template.Spec.ProviderSpec.Value == nil {
-		return fmt.Errorf("providerSpec field was empty")
-	}
-	if err := yaml.Unmarshal(ms.Spec.Template.Spec.ProviderSpec.Value.Raw, &providerSpec); err != nil {
-		return fmt.Errorf("unmarshal into providerSpec failedL %w", err)
-	}
-	return nil
-}
-
-// This function marshals the ProviderSpec object into a MachineSet object.
-// Returns an error if ProviderSpec or MachineSet is nil, or if the marshal fails
-func marshalProviderSpec(ms *machinev1beta1.MachineSet, providerSpec interface{}) error {
-	if ms == nil {
-		return fmt.Errorf("MachineSet object was nil")
-	}
-	if providerSpec == nil {
-		return fmt.Errorf("ProviderSpec object was nil")
-	}
-	rawBytes, err := json.Marshal(providerSpec)
+func (ctrl *Controller) updateConditions(newReason string, syncError error, targetConditionType string) {
+	ctrl.conditionMutex.Lock()
+	defer ctrl.conditionMutex.Unlock()
+	mcop, err := ctrl.mcopClient.OperatorV1().MachineConfigurations().Get(context.TODO(), ctrlcommon.MCOOperatorKnobsObjectName, metav1.GetOptions{})
 	if err != nil {
-		return fmt.Errorf("marshal into machineset failed: %w", err)
+		klog.Errorf("error updating progressing condition: %s", err)
+		return
 	}
-	ms.Spec.Template.Spec.ProviderSpec.Value = &kruntime.RawExtension{Raw: rawBytes}
-	return nil
-}
-
-// This function unmarshals the golden stream configmap into a coreos
-// stream object. Returns an error if the unmarshal fails.
-func unmarshalStreamDataConfigMap(cm *corev1.ConfigMap, st interface{}) error {
-	if err := json.Unmarshal([]byte(cm.Data[StreamConfigMapKey]), &st); err != nil {
-		return fmt.Errorf("failed to parse CoreOS stream metadata: %w", err)
-	}
-	return nil
-}
-
-// GCP reconciliation function. Key points:
-// -GCP images aren't region specific
-// -GCPMachineProviderSpec.Disk(s) stores actual bootimage URL
-// -identical for x86_64/amd64 and aarch64/arm64
-func reconcileGCP(machineSet *machinev1beta1.MachineSet, configMap *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
-	klog.Infof("Reconciling MAPI machineset %s on GCP, with arch %s", machineSet.Name, arch)
-
-	// First, unmarshal the GCP providerSpec
-	providerSpec := new(machinev1beta1.GCPMachineProviderSpec)
-	if err := unmarshalProviderSpec(machineSet, providerSpec); err != nil {
-		return false, nil, err
+	newConditions := mcop.Status.DeepCopy().Conditions
+	// If no conditions exist, populate some sane defaults
+	if newConditions == nil {
+		newConditions = getDefaultConditions()
 	}
 
-	// Next, unmarshal the configmap into a stream object
-	streamData := new(stream.Stream)
-	if err := unmarshalStreamDataConfigMap(configMap, streamData); err != nil {
-		return false, nil, err
-	}
-
-	// Construct the new target bootimage from the configmap
-	// This formatting is based on how the installer constructs
-	// the boot image during cluster bootstrap
-	newBootImage := fmt.Sprintf("projects/%s/global/images/%s", streamData.Architectures[arch].Images.Gcp.Project, streamData.Architectures[arch].Images.Gcp.Name)
-
-	// Grab what the current bootimage is, compare to the newBootImage
-	// There is typically only one element in this Disk array, assume multiple to be safe
-	patchRequired = false
-	newProviderSpec := providerSpec.DeepCopy()
-	for idx, disk := range newProviderSpec.Disks {
-		if newBootImage != disk.Image {
-			klog.Infof("New target boot image: %s", newBootImage)
-			klog.Infof("Current image: %s", disk.Image)
-			patchRequired = true
-			newProviderSpec.Disks[idx].Image = newBootImage
+	for i, condition := range newConditions {
+		if condition.Type == targetConditionType {
+			if condition.Type == opv1.MachineConfigurationBootImageUpdateProgressing {
+				newConditions[i].Message = fmt.Sprintf("Reconciled %d of %d MAPI MachineSets | Reconciled %d of %d CAPI MachineSets | Reconciled %d of %d CAPI MachineDeployments", ctrl.mapiStats.inProgress, ctrl.mapiStats.totalCount, ctrl.capiMachineSetStats.inProgress, ctrl.capiMachineSetStats.totalCount, ctrl.capiMachineDeploymentStats.inProgress, ctrl.capiMachineDeploymentStats.totalCount)
+				newConditions[i].Reason = newReason
+				// If all machine resources have been processed, then the controller is no longer progressing.
+				if ctrl.mapiStats.isFinished() && ctrl.capiMachineSetStats.isFinished() && ctrl.capiMachineDeploymentStats.isFinished() {
+					newConditions[i].Status = metav1.ConditionFalse
+				} else {
+					newConditions[i].Status = metav1.ConditionTrue
+				}
+			} else if condition.Type == opv1.MachineConfigurationBootImageUpdateDegraded {
+				if syncError == nil {
+					newConditions[i].Message = fmt.Sprintf("%d Degraded MAPI MachineSets | %d Degraded CAPI MachineSets | %d CAPI MachineDeployments", ctrl.mapiStats.erroredCount, ctrl.capiMachineSetStats.erroredCount, ctrl.capiMachineDeploymentStats.erroredCount)
+				} else {
+					newConditions[i].Message = fmt.Sprintf("%d Degraded MAPI MachineSets | %d Degraded CAPI MachineSets | %d CAPI MachineDeployments | Error(s): %s", ctrl.mapiStats.erroredCount, ctrl.capiMachineSetStats.erroredCount, ctrl.capiMachineDeploymentStats.erroredCount, syncError.Error())
+				}
+				newConditions[i].Reason = newReason
+				if syncError != nil {
+					newConditions[i].Status = metav1.ConditionTrue
+				} else {
+					newConditions[i].Status = metav1.ConditionFalse
+				}
+			}
+			// Check if there is a change in the condition before updating LastTransitionTime
+			if len(mcop.Status.Conditions) == 0 || !reflect.DeepEqual(newConditions[i], mcop.Status.Conditions[i]) {
+				newConditions[i].LastTransitionTime = metav1.Now()
+			}
+			break
 		}
 	}
-
-	// For now, hardcode to the managed worker secret, until Custom Pool Booting is implemented. When that happens, this will have to
-	// respect the pool this machineset is targeted for.
-	if newProviderSpec.UserDataSecret.Name != ManagedWorkerSecretName {
-		newProviderSpec.UserDataSecret.Name = ManagedWorkerSecretName
-		patchRequired = true
+	// Only make an API call if there is an update to the Conditions field
+	if !reflect.DeepEqual(newConditions, mcop.Status.Conditions) {
+		ctrl.updateMachineConfigurationStatus(mcop, newConditions)
 	}
+}
 
-	// If patch is required, marshal the new providerspec into the machineset
-	if patchRequired {
-		newMachineSet = machineSet.DeepCopy()
-		if err := marshalProviderSpec(newMachineSet, newProviderSpec); err != nil {
-			return false, nil, err
+func (ctrl *Controller) updateMachineConfigurationStatus(mcop *opv1.MachineConfiguration, newConditions []metav1.Condition) {
+
+	// Using a retry here as there may be concurrent reconiliation loops updating conditions for multiple
+	// resources at the same time and their local stores may be out of date
+	if !reflect.DeepEqual(mcop.Status.Conditions, newConditions) {
+		klog.Infof("%v", newConditions)
+		if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+			mcop, err := ctrl.mcopClient.OperatorV1().MachineConfigurations().Get(context.TODO(), ctrlcommon.MCOOperatorKnobsObjectName, metav1.GetOptions{})
+			if err != nil {
+				return err
+			}
+			mcop.Status.Conditions = newConditions
+			_, err = ctrl.mcopClient.OperatorV1().MachineConfigurations().UpdateStatus(context.TODO(), mcop, metav1.UpdateOptions{})
+			if err != nil {
+				return err
+			}
+			return nil
+		}); err != nil {
+			klog.Errorf("error updating MachineConfiguration status: %v", err)
 		}
 	}
-	return patchRequired, newMachineSet, nil
 }
 
-func reconcileAWS(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
-	klog.Infof("Skipping machineset %s, unsupported platform type AWS with %s arch", machineSet.Name, arch)
-	return false, nil, nil
-}
+func getDefaultConditions() []metav1.Condition {
+	// These are boilerplate conditions, with no machine resources enrolled.
+	return []metav1.Condition{
+		{
+			Type:               opv1.MachineConfigurationBootImageUpdateProgressing,
+			Message:            "Reconciled 0 of 0 MAPI MachineSets | Reconciled 0 of 0 CAPI MachineSets | Reconciled 0 of 0 CAPI MachineDeployments",
+			Reason:             "NA",
+			LastTransitionTime: metav1.Now(),
+			Status:             metav1.ConditionFalse,
+		},
+		{
+			Type:               opv1.MachineConfigurationBootImageUpdateDegraded,
+			Message:            "0 Degraded MAPI MachineSets | 0 Degraded CAPI MachineSets | 0 CAPI MachineDeployments",
+			Reason:             "NA",
+			LastTransitionTime: metav1.Now(),
+			Status:             metav1.ConditionFalse,
+		}}
 
-func reconcileAzure(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
-	klog.Infof("Skipping machineset %s, unsupported platform type Azure with %s arch", machineSet.Name, arch)
-	return false, nil, nil
-}
-
-func reconcileBareMetal(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
-	klog.Infof("Skipping machineset %s, unsupported platform type BareMetal with %s arch", machineSet.Name, arch)
-	return false, nil, nil
-}
-
-func reconcileAliBaba(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
-	klog.Infof("Skipping machineset %s, unsupported platform type AliBaba with %s arch", machineSet.Name, arch)
-	return false, nil, nil
-}
-
-func reconcileOpenStack(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
-	klog.Infof("Skipping machineset %s, unsupported platform type OpenStack with %s arch", machineSet.Name, arch)
-	return false, nil, nil
-}
-
-func reconcileEquinixMetal(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
-	klog.Infof("Skipping machineset %s, unsupported platform type EquinixMetal with %s arch", machineSet.Name, arch)
-	return false, nil, nil
-}
-
-func reconcileKubevirt(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
-	klog.Infof("Skipping machineset %s, unsupported platform type Kubevirt with %s arch", machineSet.Name, arch)
-	return false, nil, nil
-}
-
-func reconcileIBMCCloud(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
-	klog.Infof("Skipping machineset %s, unsupported platform type IBMCCloud with %s arch", machineSet.Name, arch)
-	return false, nil, nil
-}
-
-func reconcileLibvirt(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
-	klog.Infof("Skipping machineset %s, unsupported platform type Libvirt with %s arch", machineSet.Name, arch)
-	return false, nil, nil
-}
-
-func reconcileVSphere(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
-	klog.Infof("Skipping machineset %s, unsupported platform type VSphere with %s arch", machineSet.Name, arch)
-	return false, nil, nil
-}
-
-func reconcileNutanix(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
-	klog.Infof("Skipping machineset %s, unsupported platform type Nutanix with %s arch", machineSet.Name, arch)
-	return false, nil, nil
-}
-
-func reconcileOvirt(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
-	klog.Infof("Skipping machineset %s, unsupported platform type Ovirt with %s arch", machineSet.Name, arch)
-	return false, nil, nil
-}
-
-func reconcilePowerVS(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
-	klog.Infof("Skipping machineset %s, unsupported platform type PowerVS with %s arch", machineSet.Name, arch)
-	return false, nil, nil
-}
-
-func reconcileExternal(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
-	klog.Infof("Skipping machineset %s, unsupported platform type External with %s arch", machineSet.Name, arch)
-	return false, nil, nil
-}
-
-func reconcileNone(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
-	klog.Infof("Skipping machineset %s, unsupported platform type None with %s arch", machineSet.Name, arch)
-	return false, nil, nil
-}
-
-// TODO - unmarshal the providerspec into each ProviderSpec type until it succeeds,
-// and then call the appropriate reconcile function. This is needed for multi platform
-// support
-func unmarshalToFindPlatform(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
-	klog.Infof("Skipping machineset %s, unknown platform type with %s arch", machineSet.Name, arch)
-	return false, nil, nil
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/jsonmergepatch"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/yaml"
 
 	kruntime "k8s.io/apimachinery/pkg/runtime"
@@ -24,6 +26,8 @@ import (
 	opv1 "github.com/openshift/api/operator/v1"
 	machineClientv1beta1 "github.com/openshift/client-go/machine/clientset/versioned/typed/machine/v1beta1"
 	mcopclientset "github.com/openshift/client-go/operator/clientset/versioned"
+
+	cov1helpers "github.com/openshift/library-go/pkg/config/clusteroperator/v1helpers"
 
 	mcoac "github.com/openshift/client-go/operator/applyconfigurations/operator/v1"
 	applymetav1 "k8s.io/client-go/applyconfigurations/meta/v1"
@@ -144,6 +148,89 @@ func TestBootImageReconciliationonNoMachineSets(t *testing.T) {
 		verifyMachineSet(t, cs, ms, machineClient, false)
 	}
 
+}
+
+func TestBootImageDegradeCondition(t *testing.T) {
+
+	cs := framework.NewClientSet("")
+
+	// Check if the cluster is running on GCP platform
+	if !verifyGCPPlatform(t, cs) {
+		return
+	}
+
+	machineClient := machineClientv1beta1.NewForConfigOrDie(cs.GetRestConfig())
+	oref := []metav1.OwnerReference{{APIVersion: "test", Kind: "test", Name: "test", UID: "test"}}
+
+	// Update the machineconfiguration object to opt-in all machinesets
+	machineConfigurationClient := mcopclientset.NewForConfigOrDie(cs.GetRestConfig())
+	p := mcoac.MachineConfiguration("cluster").WithSpec(mcoac.MachineConfigurationSpec().WithManagementState("Managed").WithManagedBootImages(mcoac.ManagedBootImages().WithMachineManagers(mcoac.MachineManager().WithAPIGroup(opv1.MachineAPI).WithResource(opv1.MachineSets).WithSelection(mcoac.MachineManagerSelector().WithMode(opv1.All)))))
+	_, err := machineConfigurationClient.OperatorV1().MachineConfigurations().Apply(context.TODO(), p, metav1.ApplyOptions{FieldManager: "machine-config-operator"})
+	require.Nil(t, err, "updating machineconfiguration boot image knob failed")
+	t.Logf("Updated machine configuration knob to target all machinesets for boot image updates")
+
+	// Pick a random machineset to test
+	machineSetUnderTest := getRandomMachineSet(t, machineClient)
+	t.Logf("MachineSet under test: %s", machineSetUnderTest.Name)
+
+	// Set an ownership label on this machineset
+	newMachineSet := machineSetUnderTest.DeepCopy()
+	newMachineSet.SetOwnerReferences(oref)
+	err = patchMachineSet(&machineSetUnderTest, newMachineSet, machineClient)
+	require.Nil(t, err, "patching machineset for adding owner reference failed")
+	t.Logf("Added ownerreference to MachineSet %s", machineSetUnderTest.Name)
+
+	var pollError error
+	// Use a polling function as the CO may take a few seconds to update
+	if err = wait.PollUntilContextTimeout(context.TODO(), 2*time.Second, 20*time.Second, false, func(ctx context.Context) (bool, error) {
+		// Check that the cluster operator is degraded
+		co, getErr := cs.ConfigV1Interface.ClusterOperators().Get(context.TODO(), "machine-config", metav1.GetOptions{})
+		require.NoError(t, getErr, "failed to grab cluster operator")
+
+		if cov1helpers.IsStatusConditionFalse(co.Status.Conditions, osconfigv1.OperatorDegraded) {
+			pollError = fmt.Errorf("Cluster Operator has not degraded")
+			return false, nil
+		}
+
+		degradedCondition := cov1helpers.FindStatusCondition(co.Status.Conditions, osconfigv1.OperatorDegraded)
+		if !strings.Contains(degradedCondition.Message, "error syncing MAPI MachineSet "+newMachineSet.Name+": unexpected OwnerReference: test/test") {
+			pollError = fmt.Errorf("Cluster Operator condition does not have the correct message")
+			return false, nil
+		}
+
+		return true, nil
+	}); err != nil {
+		t.Fatalf("Timed out waiting for cluster operator to degrade: %v", pollError)
+	}
+
+	t.Logf("Succesfully verified that the operator degraded")
+
+	// Remove the ownerreference on the machineneset
+	machineSetUnderTestUpdated, err := machineClient.MachineSets("openshift-machine-api").Get(context.TODO(), machineSetUnderTest.Name, metav1.GetOptions{})
+	require.Nil(t, err, "failed to re-fetch machineset under test")
+	newMachineSet = machineSetUnderTestUpdated.DeepCopy()
+	newMachineSet.SetOwnerReferences(nil)
+	err = patchMachineSet(machineSetUnderTestUpdated, newMachineSet, machineClient)
+	require.Nil(t, err, "patching machineset while removing ownerreference failed")
+
+	t.Logf("Removed ownerreference on MachineSet %s", machineSetUnderTest.Name)
+
+	// Verify that the cluster operator is no longer degraded
+	// Use a polling function as the CO may take a few seconds to update
+	if err = wait.PollUntilContextTimeout(context.TODO(), 2*time.Second, 20*time.Second, false, func(ctx context.Context) (bool, error) {
+		// Check that the cluster operator is degraded
+		co, getErr := cs.ConfigV1Interface.ClusterOperators().Get(context.TODO(), "machine-config", metav1.GetOptions{})
+		require.NoError(t, getErr, "failed to grab cluster operator")
+
+		if cov1helpers.IsStatusConditionTrue(co.Status.Conditions, osconfigv1.OperatorDegraded) {
+			pollError = fmt.Errorf("Cluster Operator is still degraded")
+			return false, nil
+		}
+		return true, nil
+	}); err != nil {
+		t.Fatalf("Timed out waiting for cluster operator to not be degraded: %v", pollError)
+	}
+	t.Logf("Succesfully verified that the operator is no longer degraded")
 }
 
 // This function verifies if the boot image values of the MachineSet are in an expected state

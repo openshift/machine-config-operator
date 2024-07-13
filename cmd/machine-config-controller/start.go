@@ -90,7 +90,6 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		ctrlctx.OperatorInformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.ConfigInformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.KubeNamespacedInformerFactory.Start(ctrlctx.Stop)
-		ctrlctx.MachineInformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.KubeMAOSharedInformer.Start(ctrlctx.Stop)
 
 		close(ctrlctx.InformersStarted)
@@ -117,6 +116,27 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 				// see comments in SharedInformerFactory interface.
 				ctrlctx.InformerFactory.Start(ctrlctx.Stop)
 			}
+
+			if fg.Enabled(features.FeatureGateManagedBootImages) {
+				machineSetBootImage := machinesetbootimage.New(
+					ctrlctx.ClientBuilder.KubeClientOrDie("machine-set-boot-image-controller"),
+					ctrlctx.ClientBuilder.MachineClientOrDie("machine-set-boot-image-controller"),
+					ctrlctx.KubeNamespacedInformerFactory.Core().V1().ConfigMaps(),
+					ctrlctx.MachineInformerFactory.Machine().V1beta1().MachineSets(),
+					ctrlctx.ConfigInformerFactory.Config().V1().Infrastructures(),
+					ctrlctx.ClientBuilder.OperatorClientOrDie(componentName),
+					ctrlctx.OperatorInformerFactory.Operator().V1().MachineConfigurations(),
+					ctrlctx.FeatureGateAccess,
+				)
+				go machineSetBootImage.Run(ctrlctx.Stop)
+				// start the informers again to enable feature gated types.
+				// see comments in SharedInformerFactory interface.
+				ctrlctx.KubeNamespacedInformerFactory.Start(ctrlctx.Stop)
+				ctrlctx.MachineInformerFactory.Start(ctrlctx.Stop)
+				ctrlctx.ConfigInformerFactory.Start(ctrlctx.Stop)
+				ctrlctx.OperatorInformerFactory.Start(ctrlctx.Stop)
+			}
+
 		case <-time.After(1 * time.Minute):
 			klog.Errorf("timed out waiting for FeatureGate detection")
 			os.Exit(1)
@@ -213,16 +233,6 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.ConfigInformerFactory.Config().V1().Schedulers(),
 			ctx.ClientBuilder.KubeClientOrDie("node-update-controller"),
 			ctx.ClientBuilder.MachineConfigClientOrDie("node-update-controller"),
-			ctx.FeatureGateAccess,
-		),
-		machinesetbootimage.New(
-			ctx.ClientBuilder.KubeClientOrDie("machine-set-boot-image-controller"),
-			ctx.ClientBuilder.MachineClientOrDie("machine-set-boot-image-controller"),
-			ctx.KubeNamespacedInformerFactory.Core().V1().ConfigMaps(),
-			ctx.MachineInformerFactory.Machine().V1beta1().MachineSets(),
-			ctx.ConfigInformerFactory.Config().V1().Infrastructures(),
-			ctx.ClientBuilder.OperatorClientOrDie(componentName),
-			ctx.OperatorInformerFactory.Operator().V1().MachineConfigurations(),
 			ctx.FeatureGateAccess,
 		),
 	)

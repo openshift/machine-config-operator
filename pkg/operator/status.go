@@ -137,7 +137,7 @@ func (optr *Operator) syncProgressingStatus(co *configv1.ClusterOperator) {
 }
 
 // This function updates the Cluster Operator's status via an API call only if there is an actual
-// to the status. Returns the final ClusterOperator object and an error if any.
+// update to the status. Returns the final ClusterOperator object and an error if any.
 func (optr *Operator) updateClusterOperatorStatus(co *configv1.ClusterOperator, statusUpdate *configv1.ClusterOperatorStatus, syncErr error) (*configv1.ClusterOperator, error) {
 	// Update the operator status extension. This fetchs all the MCP status, and appends a syncerror if any.
 	optr.setOperatorStatusExtension(statusUpdate, syncErr)
@@ -177,22 +177,6 @@ const (
 	asExpectedReason = "AsExpected"
 )
 
-func (optr *Operator) clearDegradedStatus(co *configv1.ClusterOperator, task string) *configv1.ClusterOperator {
-	if cov1helpers.IsStatusConditionFalse(co.Status.Conditions, configv1.OperatorDegraded) {
-		return co
-	}
-	degradedStatusCondition := cov1helpers.FindStatusCondition(co.Status.Conditions, configv1.OperatorDegraded)
-	if degradedStatusCondition == nil {
-		return co
-	}
-	if degradedStatusCondition.Reason != taskFailed(task) {
-		return co
-	}
-	newCO := co.DeepCopy()
-	optr.syncDegradedStatus(newCO, syncError{})
-	return newCO
-}
-
 // syncDegradedStatus applies the new condition to the mco's ClusterOperator object.
 func (optr *Operator) syncDegradedStatus(co *configv1.ClusterOperator, ierr syncError) {
 
@@ -209,14 +193,6 @@ func (optr *Operator) syncDegradedStatus(co *configv1.ClusterOperator, ierr sync
 			message = fmt.Sprintf("Unable to apply %s: %v", optrVersion, ierr.err.Error())
 		}
 		reason = taskFailed(ierr.task)
-		mcoObjectRef := &corev1.ObjectReference{
-			Kind:      co.Kind,
-			Name:      co.Name,
-			Namespace: co.Namespace,
-			UID:       co.GetUID(),
-		}
-		degradedReason := fmt.Sprintf("OperatorDegraded: %s", reason)
-		optr.eventRecorder.Eventf(mcoObjectRef, corev1.EventTypeWarning, degradedReason, message)
 
 		// set progressing
 		if cov1helpers.IsStatusConditionTrue(co.Status.Conditions, configv1.OperatorProgressing) {
@@ -234,13 +210,28 @@ func (optr *Operator) syncDegradedStatus(co *configv1.ClusterOperator, ierr sync
 		}
 	}
 
-	coStatusCondition := configv1.ClusterOperatorStatusCondition{
+	coDegradedCondition := configv1.ClusterOperatorStatusCondition{
 		Type:    configv1.OperatorDegraded,
 		Status:  degraded,
 		Message: message,
 		Reason:  reason,
 	}
-	cov1helpers.SetStatusCondition(&co.Status.Conditions, coStatusCondition)
+
+	oldCODegradedCondition := cov1helpers.FindStatusCondition(co.Status.Conditions, configv1.OperatorDegraded)
+	// Only post an event if there is a change in the degraded condition message/reason and the status is being set to true
+	// Otherwise, this is not a new condition, and posting an event will just spam the operator log/events every sync loop
+	if ((oldCODegradedCondition == nil) || (oldCODegradedCondition.Message != coDegradedCondition.Message) || (oldCODegradedCondition.Reason != coDegradedCondition.Reason)) && degraded == configv1.ConditionTrue {
+		degradedReason := fmt.Sprintf("OperatorDegraded: %s", reason)
+		mcoObjectRef := &corev1.ObjectReference{
+			Kind:      co.Kind,
+			Name:      co.Name,
+			Namespace: co.Namespace,
+			UID:       co.GetUID(),
+		}
+		optr.eventRecorder.Eventf(mcoObjectRef, corev1.EventTypeWarning, degradedReason, message)
+
+	}
+	cov1helpers.SetStatusCondition(&co.Status.Conditions, coDegradedCondition)
 }
 
 const (
