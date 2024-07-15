@@ -85,6 +85,9 @@ spec:
                   rule: 'oldSelf == ''DevPreviewNoUpgrade'' ? self == ''DevPreviewNoUpgrade''
                     : true'
             type: object
+            x-kubernetes-validations:
+            - message: .spec.featureSet cannot be removed
+              rule: 'has(oldSelf.featureSet) ? has(self.featureSet) : true'
           status:
             description: status holds observed values from the cluster. They may not
               be overridden.

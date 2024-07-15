@@ -7,6 +7,7 @@ metadata:
     capability.openshift.io/name: Ingress
     include.release.openshift.io/ibm-cloud-managed: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
+    release.openshift.io/feature-set: DevPreviewNoUpgrade
   name: ingresscontrollers.operator.openshift.io
 spec:
   group: operator.openshift.io
@@ -246,6 +247,7 @@ spec:
                           type: string
                         nullable: true
                         type: array
+                        x-kubernetes-list-type: atomic
                       dnsManagementPolicy:
                         default: Managed
                         description: 'dnsManagementPolicy indicates if the lifecycle
@@ -285,11 +287,162 @@ spec:
                                       to change.
                                     format: duration
                                     type: string
+                                  subnets:
+                                    description: "subnets specifies the subnets to
+                                      which the load balancer will attach. The subnets
+                                      may be specified by either their ID or name.
+                                      The total number of subnets is limited to 10.
+                                      \n In order for the load balancer to be provisioned
+                                      with subnets, each subnet must exist, each subnet
+                                      must be from a different availability zone,
+                                      and the load balancer service must be recreated
+                                      to pick up new values. \n When omitted from
+                                      the spec, the subnets will be auto-discovered
+                                      for each availability zone. Auto-discovered
+                                      subnets are not reported in the status of the
+                                      IngressController object."
+                                    properties:
+                                      ids:
+                                        description: ids specifies a list of AWS subnets
+                                          by subnet ID. Subnet IDs must start with
+                                          "subnet-", consist only of alphanumeric
+                                          characters, must be exactly 24 characters
+                                          long, must be unique, and the total number
+                                          of subnets specified by ids and names must
+                                          not exceed 10.
+                                        items:
+                                          description: AWSSubnetID is a reference
+                                            to an AWS subnet ID.
+                                          maxLength: 24
+                                          minLength: 24
+                                          pattern: ^subnet-[0-9A-Za-z]+$
+                                          type: string
+                                        maxItems: 10
+                                        type: array
+                                        x-kubernetes-list-type: atomic
+                                        x-kubernetes-validations:
+                                        - message: subnet ids cannot contain duplicates
+                                          rule: self.all(x, self.exists_one(y, x ==
+                                            y))
+                                      names:
+                                        description: names specifies a list of AWS
+                                          subnets by subnet name. Subnet names must
+                                          not start with "subnet-", must not include
+                                          commas, must be under 256 characters in
+                                          length, must be unique, and the total number
+                                          of subnets specified by ids and names must
+                                          not exceed 10.
+                                        items:
+                                          description: AWSSubnetName is a reference
+                                            to an AWS subnet name.
+                                          maxLength: 256
+                                          minLength: 1
+                                          type: string
+                                          x-kubernetes-validations:
+                                          - message: subnet name cannot contain a
+                                              comma
+                                            rule: '!self.contains('','')'
+                                          - message: subnet name cannot start with
+                                              'subnet-'
+                                            rule: '!self.startsWith(''subnet-'')'
+                                        maxItems: 10
+                                        type: array
+                                        x-kubernetes-list-type: atomic
+                                        x-kubernetes-validations:
+                                        - message: subnet names cannot contain duplicates
+                                          rule: self.all(x, self.exists_one(y, x ==
+                                            y))
+                                    type: object
+                                    x-kubernetes-validations:
+                                    - message: the total number of subnets cannot
+                                        exceed 10
+                                      rule: 'has(self.ids) && has(self.names) ? size(self.ids
+                                        + self.names) <= 10 : true'
+                                    - message: must specify at least 1 subnet name
+                                        or id
+                                      rule: has(self.ids) && self.ids.size() > 0 ||
+                                        has(self.names) && self.names.size() > 0
                                 type: object
                               networkLoadBalancer:
                                 description: networkLoadBalancerParameters holds configuration
                                   parameters for an AWS network load balancer. Present
                                   only if type is NLB.
+                                properties:
+                                  subnets:
+                                    description: "subnets specifies the subnets to
+                                      which the load balancer will attach. The subnets
+                                      may be specified by either their ID or name.
+                                      The total number of subnets is limited to 10.
+                                      \n In order for the load balancer to be provisioned
+                                      with subnets, each subnet must exist, each subnet
+                                      must be from a different availability zone,
+                                      and the load balancer service must be recreated
+                                      to pick up new values. \n When omitted from
+                                      the spec, the subnets will be auto-discovered
+                                      for each availability zone. Auto-discovered
+                                      subnets are not reported in the status of the
+                                      IngressController object."
+                                    properties:
+                                      ids:
+                                        description: ids specifies a list of AWS subnets
+                                          by subnet ID. Subnet IDs must start with
+                                          "subnet-", consist only of alphanumeric
+                                          characters, must be exactly 24 characters
+                                          long, must be unique, and the total number
+                                          of subnets specified by ids and names must
+                                          not exceed 10.
+                                        items:
+                                          description: AWSSubnetID is a reference
+                                            to an AWS subnet ID.
+                                          maxLength: 24
+                                          minLength: 24
+                                          pattern: ^subnet-[0-9A-Za-z]+$
+                                          type: string
+                                        maxItems: 10
+                                        type: array
+                                        x-kubernetes-list-type: atomic
+                                        x-kubernetes-validations:
+                                        - message: subnet ids cannot contain duplicates
+                                          rule: self.all(x, self.exists_one(y, x ==
+                                            y))
+                                      names:
+                                        description: names specifies a list of AWS
+                                          subnets by subnet name. Subnet names must
+                                          not start with "subnet-", must not include
+                                          commas, must be under 256 characters in
+                                          length, must be unique, and the total number
+                                          of subnets specified by ids and names must
+                                          not exceed 10.
+                                        items:
+                                          description: AWSSubnetName is a reference
+                                            to an AWS subnet name.
+                                          maxLength: 256
+                                          minLength: 1
+                                          type: string
+                                          x-kubernetes-validations:
+                                          - message: subnet name cannot contain a
+                                              comma
+                                            rule: '!self.contains('','')'
+                                          - message: subnet name cannot start with
+                                              'subnet-'
+                                            rule: '!self.startsWith(''subnet-'')'
+                                        maxItems: 10
+                                        type: array
+                                        x-kubernetes-list-type: atomic
+                                        x-kubernetes-validations:
+                                        - message: subnet names cannot contain duplicates
+                                          rule: self.all(x, self.exists_one(y, x ==
+                                            y))
+                                    type: object
+                                    x-kubernetes-validations:
+                                    - message: the total number of subnets cannot
+                                        exceed 10
+                                      rule: 'has(self.ids) && has(self.names) ? size(self.ids
+                                        + self.names) <= 10 : true'
+                                    - message: must specify at least 1 subnet name
+                                        or id
+                                      rule: has(self.ids) && self.ids.size() > 0 ||
+                                        has(self.names) && self.names.size() > 0
                                 type: object
                               type:
                                 description: "type is the type of AWS load balancer
@@ -878,6 +1031,7 @@ spec:
                       type: string
                     nullable: true
                     type: array
+                    x-kubernetes-list-type: atomic
                   uniqueId:
                     description: "uniqueId describes configuration for a custom HTTP
                       header that the ingress controller should inject into incoming
@@ -1084,6 +1238,7 @@ spec:
                         maxItems: 1
                         nullable: true
                         type: array
+                        x-kubernetes-list-type: atomic
                       httpCaptureHeaders:
                         description: "httpCaptureHeaders defines HTTP headers that
                           should be captured in access logs.  If this field is empty,
@@ -1122,6 +1277,7 @@ spec:
                               type: object
                             nullable: true
                             type: array
+                            x-kubernetes-list-type: atomic
                           response:
                             description: "response specifies which HTTP response headers
                               to capture. \n If this field is empty, no response headers
@@ -1151,6 +1307,7 @@ spec:
                               type: object
                             nullable: true
                             type: array
+                            x-kubernetes-list-type: atomic
                         type: object
                       httpLogFormat:
                         description: "httpLogFormat specifies the format of the log
@@ -1340,6 +1497,7 @@ spec:
                           type: string
                       type: object
                     type: array
+                    x-kubernetes-list-type: atomic
                 type: object
               replicas:
                 description: "replicas is the desired number of ingress controller
@@ -1464,6 +1622,7 @@ spec:
                         items:
                           type: string
                         type: array
+                        x-kubernetes-list-type: atomic
                       minTLSVersion:
                         description: "minTLSVersion is used to specify the minimal
                           version of the TLS protocol that is negotiated during the
@@ -1784,6 +1943,9 @@ spec:
                   - type
                   type: object
                 type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
               domain:
                 description: domain is the actual domain in use.
                 type: string
@@ -1889,6 +2051,7 @@ spec:
                           type: string
                         nullable: true
                         type: array
+                        x-kubernetes-list-type: atomic
                       dnsManagementPolicy:
                         default: Managed
                         description: 'dnsManagementPolicy indicates if the lifecycle
@@ -1928,11 +2091,162 @@ spec:
                                       to change.
                                     format: duration
                                     type: string
+                                  subnets:
+                                    description: "subnets specifies the subnets to
+                                      which the load balancer will attach. The subnets
+                                      may be specified by either their ID or name.
+                                      The total number of subnets is limited to 10.
+                                      \n In order for the load balancer to be provisioned
+                                      with subnets, each subnet must exist, each subnet
+                                      must be from a different availability zone,
+                                      and the load balancer service must be recreated
+                                      to pick up new values. \n When omitted from
+                                      the spec, the subnets will be auto-discovered
+                                      for each availability zone. Auto-discovered
+                                      subnets are not reported in the status of the
+                                      IngressController object."
+                                    properties:
+                                      ids:
+                                        description: ids specifies a list of AWS subnets
+                                          by subnet ID. Subnet IDs must start with
+                                          "subnet-", consist only of alphanumeric
+                                          characters, must be exactly 24 characters
+                                          long, must be unique, and the total number
+                                          of subnets specified by ids and names must
+                                          not exceed 10.
+                                        items:
+                                          description: AWSSubnetID is a reference
+                                            to an AWS subnet ID.
+                                          maxLength: 24
+                                          minLength: 24
+                                          pattern: ^subnet-[0-9A-Za-z]+$
+                                          type: string
+                                        maxItems: 10
+                                        type: array
+                                        x-kubernetes-list-type: atomic
+                                        x-kubernetes-validations:
+                                        - message: subnet ids cannot contain duplicates
+                                          rule: self.all(x, self.exists_one(y, x ==
+                                            y))
+                                      names:
+                                        description: names specifies a list of AWS
+                                          subnets by subnet name. Subnet names must
+                                          not start with "subnet-", must not include
+                                          commas, must be under 256 characters in
+                                          length, must be unique, and the total number
+                                          of subnets specified by ids and names must
+                                          not exceed 10.
+                                        items:
+                                          description: AWSSubnetName is a reference
+                                            to an AWS subnet name.
+                                          maxLength: 256
+                                          minLength: 1
+                                          type: string
+                                          x-kubernetes-validations:
+                                          - message: subnet name cannot contain a
+                                              comma
+                                            rule: '!self.contains('','')'
+                                          - message: subnet name cannot start with
+                                              'subnet-'
+                                            rule: '!self.startsWith(''subnet-'')'
+                                        maxItems: 10
+                                        type: array
+                                        x-kubernetes-list-type: atomic
+                                        x-kubernetes-validations:
+                                        - message: subnet names cannot contain duplicates
+                                          rule: self.all(x, self.exists_one(y, x ==
+                                            y))
+                                    type: object
+                                    x-kubernetes-validations:
+                                    - message: the total number of subnets cannot
+                                        exceed 10
+                                      rule: 'has(self.ids) && has(self.names) ? size(self.ids
+                                        + self.names) <= 10 : true'
+                                    - message: must specify at least 1 subnet name
+                                        or id
+                                      rule: has(self.ids) && self.ids.size() > 0 ||
+                                        has(self.names) && self.names.size() > 0
                                 type: object
                               networkLoadBalancer:
                                 description: networkLoadBalancerParameters holds configuration
                                   parameters for an AWS network load balancer. Present
                                   only if type is NLB.
+                                properties:
+                                  subnets:
+                                    description: "subnets specifies the subnets to
+                                      which the load balancer will attach. The subnets
+                                      may be specified by either their ID or name.
+                                      The total number of subnets is limited to 10.
+                                      \n In order for the load balancer to be provisioned
+                                      with subnets, each subnet must exist, each subnet
+                                      must be from a different availability zone,
+                                      and the load balancer service must be recreated
+                                      to pick up new values. \n When omitted from
+                                      the spec, the subnets will be auto-discovered
+                                      for each availability zone. Auto-discovered
+                                      subnets are not reported in the status of the
+                                      IngressController object."
+                                    properties:
+                                      ids:
+                                        description: ids specifies a list of AWS subnets
+                                          by subnet ID. Subnet IDs must start with
+                                          "subnet-", consist only of alphanumeric
+                                          characters, must be exactly 24 characters
+                                          long, must be unique, and the total number
+                                          of subnets specified by ids and names must
+                                          not exceed 10.
+                                        items:
+                                          description: AWSSubnetID is a reference
+                                            to an AWS subnet ID.
+                                          maxLength: 24
+                                          minLength: 24
+                                          pattern: ^subnet-[0-9A-Za-z]+$
+                                          type: string
+                                        maxItems: 10
+                                        type: array
+                                        x-kubernetes-list-type: atomic
+                                        x-kubernetes-validations:
+                                        - message: subnet ids cannot contain duplicates
+                                          rule: self.all(x, self.exists_one(y, x ==
+                                            y))
+                                      names:
+                                        description: names specifies a list of AWS
+                                          subnets by subnet name. Subnet names must
+                                          not start with "subnet-", must not include
+                                          commas, must be under 256 characters in
+                                          length, must be unique, and the total number
+                                          of subnets specified by ids and names must
+                                          not exceed 10.
+                                        items:
+                                          description: AWSSubnetName is a reference
+                                            to an AWS subnet name.
+                                          maxLength: 256
+                                          minLength: 1
+                                          type: string
+                                          x-kubernetes-validations:
+                                          - message: subnet name cannot contain a
+                                              comma
+                                            rule: '!self.contains('','')'
+                                          - message: subnet name cannot start with
+                                              'subnet-'
+                                            rule: '!self.startsWith(''subnet-'')'
+                                        maxItems: 10
+                                        type: array
+                                        x-kubernetes-list-type: atomic
+                                        x-kubernetes-validations:
+                                        - message: subnet names cannot contain duplicates
+                                          rule: self.all(x, self.exists_one(y, x ==
+                                            y))
+                                    type: object
+                                    x-kubernetes-validations:
+                                    - message: the total number of subnets cannot
+                                        exceed 10
+                                      rule: 'has(self.ids) && has(self.names) ? size(self.ids
+                                        + self.names) <= 10 : true'
+                                    - message: must specify at least 1 subnet name
+                                        or id
+                                      rule: has(self.ids) && self.ids.size() > 0 ||
+                                        has(self.names) && self.names.size() > 0
                                 type: object
                               type:
                                 description: "type is the type of AWS load balancer
@@ -2246,6 +2560,7 @@ spec:
                     items:
                       type: string
                     type: array
+                    x-kubernetes-list-type: atomic
                   minTLSVersion:
                     description: "minTLSVersion is used to specify the minimal version
                       of the TLS protocol that is negotiated during the TLS handshake.
