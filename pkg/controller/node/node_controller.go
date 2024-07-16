@@ -1060,6 +1060,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 			}
 		}
 	}
+	time.Sleep(30 * time.Second)
 	candidates, capacity := getAllCandidateMachines(layered, mosc, mosb, pool, nodes, maxunavail)
 	if len(candidates) > 0 {
 		zones := make(map[string]bool)
