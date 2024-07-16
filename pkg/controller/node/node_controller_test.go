@@ -604,6 +604,17 @@ func TestGetCandidateMachines(t *testing.T) {
 		otherCandidates: nil,
 		capacity:        0,
 	}, {
+		name:     "node-0 is unavailable and should be skipped over",
+		progress: 2,
+		nodes: []*corev1.Node{
+			newNodeWithReady("node-0", machineConfigV0, machineConfigV0, corev1.ConditionFalse),
+			newNodeWithReady("node-1", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+			newNodeWithReady("node-2", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+		},
+		expected:        []string{"node-1"},
+		otherCandidates: []string{"node-2"},
+		capacity:        1,
+	}, {
 		name:     "node-2 is going to change config, so we can only progress one more",
 		progress: 3,
 		nodes: []*corev1.Node{
@@ -699,14 +710,14 @@ func TestGetCandidateMachines(t *testing.T) {
 			helpers.NewNodeBuilder("node-1").WithEqualConfigsAndImages(machineConfigV1, imageV1).WithNodeNotReady().Node(),
 			helpers.NewNodeBuilder("node-2").WithConfigs(machineConfigV0, machineConfigV1).WithImages(imageV0, imageV1).WithNodeReady().Node(),
 			helpers.NewNodeBuilder("node-3").WithEqualConfigsAndImages(machineConfigV0, imageV0).WithNodeNotReady().Node(),
-			helpers.NewNodeBuilder("node-4").WithEqualConfigsAndImages(machineConfigV0, imageV0).WithNodeNotReady().Node(),
-			helpers.NewNodeBuilder("node-5").WithEqualConfigsAndImages(machineConfigV0, imageV0).WithNodeNotReady().Node(),
-			helpers.NewNodeBuilder("node-6").WithEqualConfigsAndImages(machineConfigV0, imageV0).WithNodeNotReady().Node(),
+			helpers.NewNodeBuilder("node-4").WithEqualConfigsAndImages(machineConfigV0, imageV0).WithNodeReady().Node(),
+			helpers.NewNodeBuilder("node-5").WithEqualConfigsAndImages(machineConfigV0, imageV0).WithNodeReady().Node(),
+			helpers.NewNodeBuilder("node-6").WithEqualConfigsAndImages(machineConfigV0, imageV0).WithNodeReady().Node(),
 			helpers.NewNodeBuilder("node-7").WithEqualConfigsAndImages(machineConfigV1, imageV1).WithNodeReady().Node(),
 			helpers.NewNodeBuilder("node-8").WithEqualConfigsAndImages(machineConfigV1, imageV1).WithNodeReady().Node(),
 		},
-		expected:        []string{"node-3", "node-4"},
-		otherCandidates: []string{"node-5", "node-6"},
+		expected:        []string{"node-4", "node-5"},
+		otherCandidates: []string{"node-6"},
 		capacity:        2,
 		layeredPool:     true,
 	}}
