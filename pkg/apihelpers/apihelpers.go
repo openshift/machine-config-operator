@@ -9,6 +9,7 @@ import (
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	opv1 "github.com/openshift/api/operator/v1"
+	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -22,7 +23,7 @@ var (
 	defaultClusterPolicies = opv1.NodeDisruptionPolicyClusterStatus{
 		Files: []opv1.NodeDisruptionPolicyStatusFile{
 			{
-				Path: "/var/lib/kubelet/config.json",
+				Path: constants.KubeletAuthFile,
 				Actions: []opv1.NodeDisruptionPolicyStatusAction{
 					{
 						Type: opv1.NoneStatusAction,
@@ -30,7 +31,7 @@ var (
 				},
 			},
 			{
-				Path: "/etc/machine-config-daemon/no-reboot/containers-gpg.pub",
+				Path: constants.GPGNoRebootPath,
 				Actions: []opv1.NodeDisruptionPolicyStatusAction{
 					{
 						Type: opv1.ReloadStatusAction,
@@ -41,7 +42,7 @@ var (
 				},
 			},
 			{
-				Path: "/etc/containers/policy.json",
+				Path: constants.ContainerRegistryPolicyPath,
 				Actions: []opv1.NodeDisruptionPolicyStatusAction{
 					{
 						Type: opv1.ReloadStatusAction,
@@ -52,10 +53,46 @@ var (
 				},
 			},
 			{
-				Path: "/etc/containers/registries.conf",
+				Path: constants.ContainerRegistryConfPath,
 				Actions: []opv1.NodeDisruptionPolicyStatusAction{
 					{
 						Type: opv1.SpecialStatusAction,
+					},
+				},
+			},
+			{
+				Path: constants.SigstoreRegistriesConfigDir,
+				Actions: []opv1.NodeDisruptionPolicyStatusAction{
+					{
+						Type: opv1.ReloadStatusAction,
+						Reload: &opv1.ReloadService{
+							ServiceName: "crio.service",
+						},
+					},
+				},
+			},
+			{
+				Path: constants.OpenShiftNMStateConfigDir,
+				Actions: []opv1.NodeDisruptionPolicyStatusAction{
+					{
+						Type: opv1.NoneStatusAction,
+					},
+				},
+			},
+			{
+				Path: constants.UserCABundlePath,
+				Actions: []opv1.NodeDisruptionPolicyStatusAction{
+					{
+						Type: opv1.RestartStatusAction,
+						Restart: &opv1.RestartService{
+							ServiceName: "coreos-update-ca-trust.service",
+						},
+					},
+					{
+						Type: opv1.RestartStatusAction,
+						Restart: &opv1.RestartService{
+							ServiceName: "crio.service",
+						},
 					},
 				},
 			},
