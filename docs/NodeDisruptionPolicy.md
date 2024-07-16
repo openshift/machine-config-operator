@@ -27,11 +27,11 @@ $ oc get MachineConfiguration/cluster -o yaml
 apiVersion: operator.openshift.io/v1
 kind: MachineConfiguration
 metadata:
-  creationTimestamp: "2024-04-16T15:02:37Z"
-  generation: 4
+  creationTimestamp: "2024-07-11T13:44:07Z"
+  generation: 9
   name: cluster
-  resourceVersion: "261205"
-  uid: 2c67b155-1898-452f-adbd-ed376afc0ea2
+  resourceVersion: "239810"
+  uid: 2f31b426-8d50-414a-a46a-463269686b2f
 spec:
   logLevel: Normal
   managementState: Managed
@@ -56,10 +56,27 @@ status:
       - actions:
         - type: Special
         path: /etc/containers/registries.conf
+      - actions:
+        - reload:
+            serviceName: crio.service
+          type: Reload
+        path: /etc/containers/registries.d
+      - actions:
+        - type: None
+        path: /etc/nmstate/openshift
+      - actions:
+        - restart:
+            serviceName: coreos-update-ca-trust.service
+          type: Restart
+        - restart:
+            serviceName: crio.service
+          type: Restart
+        path: /etc/pki/ca-trust/source/anchors/openshift-config-user-ca-bundle.crt
       sshkey:
         actions:
         - type: None
-  readyReplicas: 0
+  observedGeneration: 9
+
 ```
 Say, for instance the user applied the following MachineConfiguration:
 ```
@@ -81,27 +98,24 @@ $ oc get MachineConfiguration/cluster -o yaml
 apiVersion: operator.openshift.io/v1
 kind: MachineConfiguration
 metadata:
-  creationTimestamp: "2024-04-16T15:02:37Z"
-  generation: 4
+  creationTimestamp: "2024-07-11T13:44:07Z"
+  generation: 10
   name: cluster
-  resourceVersion: "261205"
-  uid: 2c67b155-1898-452f-adbd-ed376afc0ea2
+  resourceVersion: "240452"
+  uid: 2f31b426-8d50-414a-a46a-463269686b2f
 spec:
-  nodeDisruptionPolicy:
-    files:
-      - path: /etc/my-file
-        actions:
-          - type: None
   logLevel: Normal
   managementState: Managed
+  nodeDisruptionPolicy:
+    files:
+    - actions:
+      - type: None
+      path: /etc/my-file
   operatorLogLevel: Normal
 status:
   nodeDisruptionPolicyStatus:
     clusterPolicies:
       files:
-      - actions:
-        - type: None
-        path: /etc/my-file
       - actions:
         - type: None
         path: /var/lib/kubelet/config.json
@@ -118,16 +132,35 @@ status:
       - actions:
         - type: Special
         path: /etc/containers/registries.conf
+      - actions:
+        - reload:
+            serviceName: crio.service
+          type: Reload
+        path: /etc/containers/registries.d
+      - actions:
+        - type: None
+        path: /etc/nmstate/openshift
+      - actions:
+        - restart:
+            serviceName: coreos-update-ca-trust.service
+          type: Restart
+        - restart:
+            serviceName: crio.service
+          type: Restart
+        path: /etc/pki/ca-trust/source/anchors/openshift-config-user-ca-bundle.crt
+      - actions:
+        - type: None
+        path: /etc/my-file
       sshkey:
         actions:
         - type: None
-  readyReplicas: 0
+  observedGeneration: 10
 
 ```
 
 
 For this initial implementation the policy supports MachineConfig changes to the following:
-- Files
+- Files & Directories
 - Units
 - sshKeys
 
