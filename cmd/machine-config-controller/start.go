@@ -117,7 +117,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 				ctrlctx.InformerFactory.Start(ctrlctx.Stop)
 			}
 
-			if fg.Enabled(features.FeatureGateManagedBootImages) {
+			if ctrlcommon.IsBootImageControllerRequired(ctrlctx) {
 				machineSetBootImage := machinesetbootimage.New(
 					ctrlctx.ClientBuilder.KubeClientOrDie("machine-set-boot-image-controller"),
 					ctrlctx.ClientBuilder.MachineClientOrDie("machine-set-boot-image-controller"),

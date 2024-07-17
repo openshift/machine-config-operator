@@ -346,7 +346,7 @@ func (ctrl *Controller) syncMAPIMachineSets(reason string) {
 		return
 	}
 	if !machineManagerFound {
-		klog.Infof("No MAPI machineset manager was found, so no MAPI machinesets will be enrolled.")
+		klog.V(4).Infof("No MAPI machineset manager was found, so no MAPI machinesets will be enrolled.")
 	}
 
 	mapiMachineSets, err := ctrl.mapiMachineSetLister.List(machineResourceSelector)
@@ -551,7 +551,7 @@ func (ctrl *Controller) updateMachineConfigurationStatus(mcop *opv1.MachineConfi
 	// Using a retry here as there may be concurrent reconiliation loops updating conditions for multiple
 	// resources at the same time and their local stores may be out of date
 	if !reflect.DeepEqual(mcop.Status.Conditions, newConditions) {
-		klog.Infof("%v", newConditions)
+		klog.V(4).Infof("%v", newConditions)
 		if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 			mcop, err := ctrl.mcopClient.OperatorV1().MachineConfigurations().Get(context.TODO(), ctrlcommon.MCOOperatorKnobsObjectName, metav1.GetOptions{})
 			if err != nil {
