@@ -152,18 +152,18 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 
 	if startOpts.hypershiftDesiredConfigMap != "" {
 		// This is a hypershift-mode daemon
-		ctx := ctrlcommon.CreateControllerContext(ctx, cb)
+		ctx := ctrlcommon.CreateControllerContext(ctx, cb, "")
 		err := dn.HypershiftConnect(
 			startOpts.nodeName,
 			kubeClient,
-			ctx.KubeInformerFactory.Core().V1().Nodes(),
+			ctx.DaemonNodeInformerFactory.Core().V1().Nodes(),
 			startOpts.hypershiftDesiredConfigMap,
 		)
 		if err != nil {
 			ctrlcommon.WriteTerminationError(err)
 		}
 
-		ctx.KubeInformerFactory.Start(stopCh)
+		ctx.DaemonNodeInformerFactory.Start(stopCh)
 		close(ctx.InformersStarted)
 
 		if err := dn.RunHypershift(stopCh, exitCh); err != nil {
@@ -175,7 +175,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 	// Start local metrics listener
 	go ctrlcommon.StartMetricsListener(startOpts.promMetricsURL, stopCh, daemon.RegisterMCDMetrics)
 
-	ctrlctx := ctrlcommon.CreateControllerContext(ctx, cb)
+	ctrlctx := ctrlcommon.CreateControllerContext(ctx, cb, startOpts.nodeName)
 
 	// create the daemon instance. this also initializes kube client items
 	// which need to come from the container and not the chroot.
@@ -184,7 +184,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		kubeClient,
 		ctrlctx.ClientBuilder.MachineConfigClientOrDie(componentName),
 		ctrlctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
-		ctrlctx.KubeInformerFactory.Core().V1().Nodes(),
+		ctrlctx.DaemonNodeInformerFactory.Core().V1().Nodes(),
 		ctrlctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
 		ctrlctx.ClientBuilder.OperatorClientOrDie(componentName),
 		startOpts.kubeletHealthzEnabled,
@@ -198,6 +198,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 	// start config informer early because feature gate depends on it
 	ctrlctx.ConfigInformerFactory.Start(ctrlctx.Stop)
 	ctrlctx.KubeInformerFactory.Start(stopCh)
+	ctrlctx.DaemonNodeInformerFactory.Start(stopCh)
 	ctrlctx.KubeNamespacedInformerFactory.Start(stopCh)
 	ctrlctx.InformerFactory.Start(stopCh)
 	ctrlctx.OperatorInformerFactory.Start(stopCh)

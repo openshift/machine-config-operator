@@ -52,7 +52,7 @@ func getBuildControllers(ctx context.Context, cb *clients.Builder) ([]*build.Con
 		return nil, err
 	}
 
-	ctrlCtx := ctrlcommon.CreateControllerContext(ctx, cb)
+	ctrlCtx := ctrlcommon.CreateControllerContext(ctx, cb, "")
 	buildClients := build.NewClientsFromControllerContext(ctrlCtx)
 	cfg := build.DefaultBuildControllerConfig()
 

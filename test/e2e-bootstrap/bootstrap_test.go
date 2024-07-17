@@ -425,7 +425,7 @@ func compareRenderedConfigPool(t *testing.T, clientSet *framework.ClientSet, des
 func newTestFixture(t *testing.T, cfg *rest.Config, objs []runtime.Object) *fixture {
 	ctx, stop := context.WithCancel(context.Background())
 	cb := clients.BuilderFromConfig(cfg)
-	ctrlctx := ctrlcommon.CreateControllerContext(ctx, cb)
+	ctrlctx := ctrlcommon.CreateControllerContext(ctx, cb, "")
 
 	clientSet := framework.NewClientSetFromConfig(cfg)
 

@@ -50,6 +50,7 @@ type ControllerContext struct {
 	NamespacedInformerFactory                           mcfginformers.SharedInformerFactory
 	InformerFactory                                     mcfginformers.SharedInformerFactory
 	KubeInformerFactory                                 informers.SharedInformerFactory
+	DaemonNodeInformerFactory                           informers.SharedInformerFactory
 	KubeNamespacedInformerFactory                       informers.SharedInformerFactory
 	OpenShiftConfigKubeNamespacedInformerFactory        informers.SharedInformerFactory
 	OpenShiftKubeAPIServerKubeNamespacedInformerFactory informers.SharedInformerFactory
@@ -71,7 +72,7 @@ type ControllerContext struct {
 }
 
 // CreateControllerContext creates the ControllerContext with the ClientBuilder.
-func CreateControllerContext(ctx context.Context, cb *clients.Builder) *ControllerContext {
+func CreateControllerContext(ctx context.Context, cb *clients.Builder, nodeName string) *ControllerContext {
 	client := cb.MachineConfigClientOrDie("machine-config-shared-informer")
 	kubeClient := cb.KubeClientOrDie("kube-shared-informer")
 	apiExtClient := cb.APIExtClientOrDie("apiext-shared-informer")
@@ -81,6 +82,10 @@ func CreateControllerContext(ctx context.Context, cb *clients.Builder) *Controll
 	sharedInformers := mcfginformers.NewSharedInformerFactory(client, resyncPeriod()())
 	sharedNamespacedInformers := mcfginformers.NewFilteredSharedInformerFactory(client, resyncPeriod()(), MCONamespace, nil)
 	kubeSharedInformer := informers.NewSharedInformerFactory(kubeClient, resyncPeriod()())
+	daemonNodeInformer := informers.NewSharedInformerFactoryWithOptions(kubeClient, resyncPeriod()(), informers.WithTweakListOptions(func(options *metav1.ListOptions) {
+		options.FieldSelector = fields.OneTermEqualSelector("metadata.name", nodeName).String()
+	}))
+
 	kubeNamespacedSharedInformer := informers.NewFilteredSharedInformerFactory(kubeClient, resyncPeriod()(), MCONamespace, nil)
 	openShiftConfigKubeNamespacedSharedInformer := informers.NewFilteredSharedInformerFactory(kubeClient, resyncPeriod()(), "openshift-config", nil)
 	openShiftKubeAPIServerKubeNamespacedSharedInformer := informers.NewFilteredSharedInformerFactory(kubeClient,
@@ -132,6 +137,7 @@ func CreateControllerContext(ctx context.Context, cb *clients.Builder) *Controll
 		NamespacedInformerFactory:                           sharedNamespacedInformers,
 		InformerFactory:                                     sharedInformers,
 		KubeInformerFactory:                                 kubeSharedInformer,
+		DaemonNodeInformerFactory:                           daemonNodeInformer,
 		KubeNamespacedInformerFactory:                       kubeNamespacedSharedInformer,
 		OpenShiftConfigKubeNamespacedInformerFactory:        openShiftConfigKubeNamespacedSharedInformer,
 		OpenShiftKubeAPIServerKubeNamespacedInformerFactory: openShiftKubeAPIServerKubeNamespacedSharedInformer,
