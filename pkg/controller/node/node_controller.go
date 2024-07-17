@@ -1038,29 +1038,34 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	// Taint all the nodes in the node pool, irrespective of their upgrade status.
 	ctx := context.TODO()
 	for _, node := range nodes {
-		// All the nodes that need to be upgraded should have `NodeUpdateInProgressTaint` so that they're less likely
-		// to be chosen during the scheduling cycle.
-		hasInProgressTaint := checkIfNodeHasInProgressTaint(node)
+		_, retryErr := internal.UpdateNodeRetry(ctrl.kubeClient.CoreV1().Nodes(), ctrl.nodeLister, node.Name, func(node *corev1.Node) {
+			hasInProgressTaint := checkIfNodeHasInProgressTaint(node)
 
-		lns := ctrlcommon.NewLayeredNodeState(node)
+			lns := ctrlcommon.NewLayeredNodeState(node)
 
-		if lns.IsDesiredEqualToPool(pool, layered) {
-			if hasInProgressTaint {
-				if err := ctrl.removeUpdateInProgressTaint(ctx, node.Name); err != nil {
-					err = fmt.Errorf("failed removing %s taint for node %s: %w", constants.NodeUpdateInProgressTaint.Key, node.Name, err)
-					klog.Error(err)
+			if lns.IsDesiredEqualToPool(pool, layered) {
+				if hasInProgressTaint {
+					if err := ctrl.removeUpdateInProgressTaint(ctx, node.Name); err != nil {
+						err = fmt.Errorf("failed removing %s taint for node %s: %w", constants.NodeUpdateInProgressTaint.Key, node.Name, err)
+						klog.Error(err)
+					}
+				}
+			} else {
+				if !hasInProgressTaint {
+					if err := ctrl.setUpdateInProgressTaint(ctx, node.Name); err != nil {
+						err = fmt.Errorf("failed applying %s taint for node %s: %w", constants.NodeUpdateInProgressTaint.Key, node.Name, err)
+						klog.Error(err)
+					}
 				}
 			}
-		} else {
-			if !hasInProgressTaint {
-				if err := ctrl.setUpdateInProgressTaint(ctx, node.Name); err != nil {
-					err = fmt.Errorf("failed applying %s taint for node %s: %w", constants.NodeUpdateInProgressTaint.Key, node.Name, err)
-					klog.Error(err)
-				}
-			}
+		})
+
+		if retryErr != nil {
+			klog.Errorf("Failed to update node %s: %v", node.Name, retryErr)
+			return retryErr
 		}
 	}
-	time.Sleep(30 * time.Second)
+
 	candidates, capacity := getAllCandidateMachines(layered, mosc, mosb, pool, nodes, maxunavail)
 	if len(candidates) > 0 {
 		zones := make(map[string]bool)
