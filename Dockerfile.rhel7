@@ -19,7 +19,10 @@ FROM registry.ci.openshift.org/ocp/4.15:base
 ARG TAGS=""
 COPY --from=builder /go/src/github.com/openshift/machine-config-operator/instroot.tar /tmp/instroot.tar
 RUN cd / && tar xf /tmp/instroot.tar && rm -f /tmp/instroot.tar
+COPY --from=rhel9-builder /go/src/github.com/openshift/machine-config-operator/instroot/usr/bin/machine-config-controller /usr/bin/machine-config-controller.rhel9
 COPY --from=rhel9-builder /go/src/github.com/openshift/machine-config-operator/instroot/usr/bin/machine-config-daemon /usr/bin/machine-config-daemon.rhel9
+COPY --from=rhel9-builder /go/src/github.com/openshift/machine-config-operator/instroot/usr/bin/machine-config-operator /usr/bin/machine-config-operator.rhel9
+COPY --from=rhel9-builder /go/src/github.com/openshift/machine-config-operator/instroot/usr/bin/machine-config-server /usr/bin/machine-config-server.rhel9
 COPY install /manifests
 
 RUN if [ "${TAGS}" = "fcos" ]; then \
