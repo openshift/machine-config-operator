@@ -10,14 +10,8 @@ import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-)
-
-const (
-	mcPoolAnnotation          string = "machineconfiguration.openshift.io/pool"
-	machineConfigJSONFilename string = "machineconfig.json.gz"
 )
 
 //go:embed assets/Containerfile.on-cluster-build-template
@@ -338,16 +332,16 @@ func (i ImageBuildRequest) toBuildahPod() *corev1.Pod {
 		})
 
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name:      etcPkiEntitlementSecretName,
+			Name:      EtcPkiEntitlementSecretName,
 			MountPath: mountPoint,
 		})
 
 		volumes = append(volumes, corev1.Volume{
-			Name: etcPkiEntitlementSecretName,
+			Name: EtcPkiEntitlementSecretName,
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
 					DefaultMode: &mountMode,
-					SecretName:  etcPkiEntitlementSecretName,
+					SecretName:  EtcPkiEntitlementSecretName,
 				},
 			},
 		})
@@ -363,17 +357,17 @@ func (i ImageBuildRequest) toBuildahPod() *corev1.Pod {
 		})
 
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name:      etcYumReposDConfigMapName,
+			Name:      EtcYumReposDConfigMapName,
 			MountPath: mountPoint,
 		})
 
 		volumes = append(volumes, corev1.Volume{
-			Name: etcYumReposDConfigMapName,
+			Name: EtcYumReposDConfigMapName,
 			VolumeSource: corev1.VolumeSource{
 				ConfigMap: &corev1.ConfigMapVolumeSource{
 					DefaultMode: &mountMode,
 					LocalObjectReference: corev1.LocalObjectReference{
-						Name: etcYumReposDConfigMapName,
+						Name: EtcYumReposDConfigMapName,
 					},
 				},
 			},
@@ -390,16 +384,16 @@ func (i ImageBuildRequest) toBuildahPod() *corev1.Pod {
 		})
 
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name:      etcPkiRpmGpgSecretName,
+			Name:      EtcPkiRpmGpgSecretName,
 			MountPath: mountPoint,
 		})
 
 		volumes = append(volumes, corev1.Volume{
-			Name: etcPkiRpmGpgSecretName,
+			Name: EtcPkiRpmGpgSecretName,
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
 					DefaultMode: &mountMode,
-					SecretName:  etcPkiRpmGpgSecretName,
+					SecretName:  EtcPkiRpmGpgSecretName,
 				},
 			},
 		})
@@ -421,8 +415,7 @@ func (i ImageBuildRequest) toBuildahPod() *corev1.Pod {
 			Containers: []corev1.Container{
 				{
 					// This container performs the image build / push process.
-					Name: "image-build",
-					// TODO: Figure out how to not hard-code this here.
+					Name:            "image-build",
 					Image:           i.MCOImagePullspec,
 					Env:             env,
 					Command:         append(command, buildahBuildScript),
@@ -461,30 +454,27 @@ func (i ImageBuildRequest) getObjectMeta(name string) metav1.ObjectMeta {
 		Name:      name,
 		Namespace: ctrlcommon.MCONamespace,
 		Labels: map[string]string{
-			ctrlcommon.OSImageBuildPodLabel:                "",
-			daemonconsts.DesiredMachineConfigAnnotationKey: i.MachineOSBuild.Spec.DesiredConfig.Name,
-			onClusterLayeringLabelKey:                      "",
-			targetMachineConfigPoolLabelKey:                i.MachineOSConfig.Spec.MachineConfigPool.Name,
+			EphemeralBuildObjectLabelKey:    "",
+			OnClusterLayeringLabelKey:       "",
+			RenderedMachineConfigLabelKey:   i.MachineOSBuild.Spec.DesiredConfig.Name,
+			TargetMachineConfigPoolLabelKey: i.MachineOSConfig.Spec.MachineConfigPool.Name,
 		},
 		Annotations: map[string]string{
-			mcPoolAnnotation:                 "",
 			machineOSConfigNameAnnotationKey: i.MachineOSConfig.Name,
 			machineOSBuildNameAnnotationKey:  i.MachineOSBuild.Name,
 		},
 	}
 
-	hasOptionalBuildInputTemplate := "machineconfiguration.openshift.io/has-%s"
-
 	if i.HasEtcPkiEntitlementKeys {
-		objectMeta.Annotations[fmt.Sprintf(hasOptionalBuildInputTemplate, etcPkiEntitlementSecretName)] = ""
+		objectMeta.Annotations[EtcPkiEntitlementAnnotationKey] = ""
 	}
 
 	if i.HasEtcYumReposDConfigs {
-		objectMeta.Annotations[fmt.Sprintf(hasOptionalBuildInputTemplate, etcYumReposDConfigMapName)] = ""
+		objectMeta.Annotations[EtcYumReposDAnnotationKey] = ""
 	}
 
 	if i.HasEtcPkiRpmGpgKeys {
-		objectMeta.Annotations[fmt.Sprintf(hasOptionalBuildInputTemplate, etcPkiRpmGpgSecretName)] = ""
+		objectMeta.Annotations[EtcPkiRpmGpgAnnotationKey] = ""
 	}
 
 	return objectMeta

@@ -61,8 +61,6 @@ const (
 	// TODO(zzlotnik): Determine if we should use this still.
 	ExperimentalNewestLayeredImageEquivalentConfigAnnotationKey = "machineconfiguration.openshift.io/newestImageEquivalentConfig"
 
-	OSImageBuildPodLabel = "machineconfiguration.openshift.io/buildPod"
-
 	// InternalMCOIgnitionVersion is the ignition version that the MCO converts everything to internally. The intent here is that
 	// we should be able to update this constant when we bump the internal ignition version instead of having to hunt down all of
 	// the version references and figure out "was this supposed to be explicitly 3.4.0 or just the default version which happens
