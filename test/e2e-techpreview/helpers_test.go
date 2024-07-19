@@ -132,19 +132,48 @@ func copyGlobalPullSecret(t *testing.T, cs *framework.ClientSet) func() {
 	return cloneSecret(t, cs, "pull-secret", "openshift-config", globalPullSecretCloneName, ctrlcommon.MCONamespace)
 }
 
-func waitForMachineOSBuildToReachState(t *testing.T, cs *framework.ClientSet, poolName string, condFunc func(*mcfgv1alpha1.MachineOSBuild, error) (bool, error)) {
+// Computes the name of the currently-running MachineOSBuild given the name of a MachineConfigPool.
+func getMachineOSBuildNameForPool(cs *framework.ClientSet, poolName string) (string, error) {
 	mcp, err := cs.MachineconfigurationV1Interface.MachineConfigPools().Get(context.TODO(), poolName, metav1.GetOptions{})
-	require.NoError(t, err)
+	if err != nil {
+		return "", err
+	}
 
-	mosbName := fmt.Sprintf("%s-%s-builder", poolName, mcp.Spec.Configuration.Name)
+	return fmt.Sprintf("%s-%s-builder", poolName, mcp.Spec.Configuration.Name), nil
+}
 
-	err = wait.PollImmediate(1*time.Second, 10*time.Minute, func() (bool, error) {
+// Waits for the provided MachineOSBuild to reach the desired state as
+// determined by the condFunc provided by the caller. Will return the
+// MachineOSBuild object in the final state.
+func waitForMachineOSBuildToReachState(t *testing.T, cs *framework.ClientSet, mosb *mcfgv1alpha1.MachineOSBuild, condFunc func(*mcfgv1alpha1.MachineOSBuild, error) (bool, error)) *mcfgv1alpha1.MachineOSBuild {
+	mosbName := mosb.Name
+
+	var finalMosb *mcfgv1alpha1.MachineOSBuild
+
+	start := time.Now()
+
+	err := wait.PollImmediate(1*time.Second, 10*time.Minute, func() (bool, error) {
 		mosb, err := cs.MachineconfigurationV1alpha1Interface.MachineOSBuilds().Get(context.TODO(), mosbName, metav1.GetOptions{})
+		// Pass in a DeepCopy of the object so that the caller cannot inadvertantly
+		// mutate it and cause false results.
+		reached, err := condFunc(mosb.DeepCopy(), err)
+		if reached {
+			// If we've reached the desired state, grab the MachineOSBuild to return
+			// to the caller.
+			finalMosb = mosb
+		}
 
-		return condFunc(mosb, err)
+		// Return these as-is.
+		return reached, err
 	})
 
+	if err == nil {
+		t.Logf("MachineOSBuild %q reached desired state after %s", mosbName, time.Since(start))
+	}
+
 	require.NoError(t, err, "MachineOSBuild %q did not reach desired state", mosbName)
+
+	return finalMosb
 }
 
 // Waits for the target MachineConfigPool to reach a state defined in a supplied function.
@@ -176,7 +205,16 @@ func makeIdempotentAndRegister(t *testing.T, cleanupFunc func()) func() {
 // TOOD: Refactor into smaller functions.
 func cleanupEphemeralBuildObjects(t *testing.T, cs *framework.ClientSet) {
 	// TODO: Instantiate this by using the label selector library.
-	labelSelector := "machineconfiguration.openshift.io/desiredConfig,machineconfiguration.openshift.io/buildPod,machineconfiguration.openshift.io/targetMachineConfigPool"
+	labelSelector := "machineconfiguration.openshift.io/desiredConfig,machineconfiguration.openshift.io/buildPod,machineconfiguration.openshift.io/targetMachineConfigPool,machineconfiguration.openshift.io/on-cluster-layering"
+
+	// Any secrets that get created by BuildController should have different
+	// label selectors since they're produced differently.
+	// TODO: Export these as constants from the BuildController library so we can keep them centrally updated.
+	secretList, err := cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace).List(context.TODO(), metav1.ListOptions{
+		LabelSelector: "machineconfiguration.openshift.io/canonicalizedSecret,machineconfiguration.openshift.io/on-cluster-layering,machineconfiguration.openshift.io/originalSecretName",
+	})
+
+	require.NoError(t, err)
 
 	cmList, err := cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace).List(context.TODO(), metav1.ListOptions{
 		LabelSelector: labelSelector,
@@ -196,6 +234,10 @@ func cleanupEphemeralBuildObjects(t *testing.T, cs *framework.ClientSet) {
 	moscList, err := cs.MachineconfigurationV1alpha1Interface.MachineOSConfigs().List(context.TODO(), metav1.ListOptions{})
 	require.NoError(t, err)
 
+	if len(secretList.Items) == 0 {
+		t.Logf("No build-time secrets to clean up")
+	}
+
 	if len(cmList.Items) == 0 {
 		t.Logf("No ephemeral ConfigMaps to clean up")
 	}
@@ -210,6 +252,11 @@ func cleanupEphemeralBuildObjects(t *testing.T, cs *framework.ClientSet) {
 
 	if len(moscList.Items) == 0 {
 		t.Logf("No MachineOSConfigs to clean up")
+	}
+
+	for _, item := range secretList.Items {
+		t.Logf("Cleaning up build-time Secret %s", item.Name)
+		require.NoError(t, cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace).Delete(context.TODO(), item.Name, metav1.DeleteOptions{}))
 	}
 
 	for _, item := range cmList.Items {
@@ -412,8 +459,8 @@ func streamMachineOSBuilderPodLogsToFile(ctx context.Context, t *testing.T, cs *
 
 // Streams the logs for all of the containers running in the build pod. The pod
 // logs can provide a valuable window into how / why a given build failed.
-func streamBuildPodLogsToFile(ctx context.Context, t *testing.T, cs *framework.ClientSet, pool *mcfgv1.MachineConfigPool) error {
-	podName := fmt.Sprintf("build-%s", pool.Spec.Configuration.Name)
+func streamBuildPodLogsToFile(ctx context.Context, t *testing.T, cs *framework.ClientSet, mosb *mcfgv1alpha1.MachineOSBuild) error {
+	podName := mosb.Status.BuilderReference.PodImageBuilder.Name
 
 	pod, err := cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace).Get(ctx, podName, metav1.GetOptions{})
 	if err != nil {
