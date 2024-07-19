@@ -173,7 +173,8 @@ func TestCanonicalizedSecrets(t *testing.T) {
 		assert.Contains(t, s.Name, canonicalSecretSuffix)
 		assert.True(t, isCanonicalizedSecret(s))
 		assert.True(t, hasCanonicalizedSecretLabels(s))
-		assert.Equal(t, s.Labels[originalSecretNameLabel], legacyPullSecretName)
+		assert.Equal(t, s.Labels[OriginalSecretNameLabelKey], legacyPullSecretName)
+		assert.True(t, IsObjectCreatedByBuildController(s))
 	}
 
 	testFunc := func(t *testing.T) {

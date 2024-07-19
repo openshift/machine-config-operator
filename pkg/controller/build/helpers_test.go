@@ -165,6 +165,7 @@ func TestCanonicalizePullSecret(t *testing.T) {
 				assert.Contains(t, out.Name, "canonical")
 				assert.True(t, isCanonicalizedSecret(out))
 				assert.True(t, hasCanonicalizedSecretLabels(out))
+				assert.True(t, IsObjectCreatedByBuildController(out))
 			}
 
 			for _, val := range out.Data {
@@ -239,6 +240,56 @@ func TestValidateOnClusterBuildConfig(t *testing.T) {
 			} else {
 				assert.NoError(t, err)
 			}
+		})
+	}
+}
+
+func TestIsObjectCreatedByBuildController(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name     string
+		obj      metav1.Object
+		expected bool
+	}{
+		{
+			name:     "MachineOSBuild",
+			obj:      &mcfgv1alpha1.MachineOSBuild{},
+			expected: true,
+		},
+		{
+			name: "Canonical Secret",
+			obj: newCanonicalSecret(&corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "pull-secret",
+				},
+			}, []byte{}),
+			expected: true,
+		},
+		{
+			name: "Non-canonical secret",
+			obj: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "pull-secret",
+				},
+			},
+		},
+		{
+			name:     "Build pod",
+			obj:      newImageBuildRequest(&mcfgv1alpha1.MachineOSConfig{}, &mcfgv1alpha1.MachineOSBuild{}).toBuildPod(),
+			expected: true,
+		},
+		{
+			name: "Normal pod",
+			obj:  &corev1.Pod{},
+		},
+	}
+
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, IsObjectCreatedByBuildController(testCase.obj), testCase.expected)
 		})
 	}
 }

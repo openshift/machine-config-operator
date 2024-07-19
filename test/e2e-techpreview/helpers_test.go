@@ -17,6 +17,7 @@ import (
 	imagev1 "github.com/openshift/api/image/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+	"github.com/openshift/machine-config-operator/pkg/controller/build"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/openshift/machine-config-operator/test/helpers"
@@ -204,14 +205,12 @@ func makeIdempotentAndRegister(t *testing.T, cleanupFunc func()) func() {
 
 // TOOD: Refactor into smaller functions.
 func cleanupEphemeralBuildObjects(t *testing.T, cs *framework.ClientSet) {
-	// TODO: Instantiate this by using the label selector library.
-	labelSelector := "machineconfiguration.openshift.io/desiredConfig,machineconfiguration.openshift.io/buildPod,machineconfiguration.openshift.io/targetMachineConfigPool,machineconfiguration.openshift.io/on-cluster-layering"
+	labelSelector := build.OSBuildSelector().String()
 
 	// Any secrets that get created by BuildController should have different
 	// label selectors since they're produced differently.
-	// TODO: Export these as constants from the BuildController library so we can keep them centrally updated.
-	secretList, err := cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace).List(context.TODO(), metav1.ListOptions{
-		LabelSelector: "machineconfiguration.openshift.io/canonicalizedSecret,machineconfiguration.openshift.io/on-cluster-layering,machineconfiguration.openshift.io/originalSecretName",
+	secretList, err := cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace).List(context.TODO(), metav1.ListOptions{
+		LabelSelector: build.CanonicalizedSecretSelector().String(),
 	})
 
 	require.NoError(t, err)
@@ -298,15 +297,15 @@ func getBuildArtifactDir(t *testing.T) string {
 	return cwd
 }
 
-// Writes any ephemeral ConfigMaps that got created as part of the build
-// process to a file. Also writes the build pod spec.
+// Writes any ephemeral build objects to disk as YAML files.
 func writeBuildArtifactsToFiles(t *testing.T, cs *framework.ClientSet, poolName string) {
-	pool, err := cs.MachineconfigurationV1Interface.MachineConfigPools().Get(context.TODO(), poolName, metav1.GetOptions{})
-	require.NoError(t, err)
+	lo := metav1.ListOptions{
+		LabelSelector: build.OSBuildSelector().String(),
+	}
 
-	err = aggerrs.NewAggregate([]error{
-		writeConfigMapsToFile(t, cs, pool),
-		writePodSpecToFile(t, cs, pool),
+	err := aggerrs.NewAggregate([]error{
+		writeConfigMapsToFile(t, cs, lo),
+		writeBuildPodsToFile(t, cs, lo),
 		writeMachineOSBuildsToFile(t, cs),
 		writeMachineOSConfigsToFile(t, cs),
 	})
@@ -326,16 +325,7 @@ func writeMachineOSBuildsToFile(t *testing.T, cs *framework.ClientSet) error {
 		return nil
 	}
 
-	for _, mosb := range mosbList.Items {
-		mosb := mosb
-		filename := fmt.Sprintf("%s-%s-MachineOSBuild.yaml", t.Name(), mosb.Name)
-		t.Logf("Writing MachineOSBuild %s to %s", mosb.Name, filename)
-		if err := dumpObjectToYAMLFile(t, &mosb, filename); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return dumpObjectToYAMLFile(t, mosbList, "machineosbuilds")
 }
 
 // Writes all MachineOSConfigs to a file.
@@ -350,97 +340,60 @@ func writeMachineOSConfigsToFile(t *testing.T, cs *framework.ClientSet) error {
 		return nil
 	}
 
-	for _, mosc := range moscList.Items {
-		mosc := mosc
-		filename := fmt.Sprintf("%s-%s-MachineOSConfig.yaml", t.Name(), mosc.Name)
-		t.Logf("Writing MachineOSConfig %s to %s", mosc.Name, filename)
-		if err := dumpObjectToYAMLFile(t, &mosc, filename); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return dumpObjectToYAMLFile(t, moscList, "machineosconfigs")
 }
 
-// Writes the ephemeral ConfigMaps to a file, if found.
-func writeConfigMapsToFile(t *testing.T, cs *framework.ClientSet, pool *mcfgv1.MachineConfigPool) error {
-	configmaps := []string{
-		fmt.Sprintf("dockerfile-%s", pool.Spec.Configuration.Name),
-		fmt.Sprintf("mc-%s", pool.Spec.Configuration.Name),
-		fmt.Sprintf("digest-%s", pool.Spec.Configuration.Name),
+// Writes all ConfigMaps that match the OS Build labels to files.
+func writeConfigMapsToFile(t *testing.T, cs *framework.ClientSet, lo metav1.ListOptions) error {
+	cmList, err := cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace).List(context.TODO(), lo)
+
+	if err != nil {
+		return err
 	}
 
-	dirPath := getBuildArtifactDir(t)
-
-	for _, configmap := range configmaps {
-		if err := writeConfigMapToFile(t, cs, configmap, dirPath); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// Writes a given ConfigMap to a file.
-func writeConfigMapToFile(t *testing.T, cs *framework.ClientSet, configmapName, dirPath string) error {
-	cm, err := cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), configmapName, metav1.GetOptions{})
-	if k8serrors.IsNotFound(err) {
-		t.Logf("ConfigMap %q not found, skipping retrieval", configmapName)
+	if len(cmList.Items) == 0 {
+		t.Logf("No ConfigMaps matching label selector %q found", lo.LabelSelector)
 		return nil
 	}
 
-	if err != nil && !k8serrors.IsNotFound(err) {
-		return fmt.Errorf("could not get configmap %s: %w", configmapName, err)
-	}
-
-	filename := filepath.Join(dirPath, fmt.Sprintf("%s-%s-configmap.yaml", t.Name(), configmapName))
-	t.Logf("Writing configmap (%s) contents to %s", configmapName, filename)
-	return dumpObjectToYAMLFile(t, cm, filename)
+	return dumpObjectToYAMLFile(t, cmList, "configmaps")
 }
 
-// Wrttes a pod spec to a file.
-func writePodSpecToFile(t *testing.T, cs *framework.ClientSet, pool *mcfgv1.MachineConfigPool) error {
-	dirPath := getBuildArtifactDir(t)
-
-	podName := fmt.Sprintf("build-%s", pool.Spec.Configuration.Name)
-
-	pod, err := cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace).Get(context.TODO(), podName, metav1.GetOptions{})
-	if err == nil {
-		podFilename := filepath.Join(dirPath, fmt.Sprintf("%s-%s-pod.yaml", t.Name(), pod.Name))
-		t.Logf("Writing spec for pod %s to %s", pod.Name, podFilename)
-		return dumpObjectToYAMLFile(t, pod, podFilename)
+// Wrttes all pod specs that match the OS Build labels to files.
+func writeBuildPodsToFile(t *testing.T, cs *framework.ClientSet, lo metav1.ListOptions) error {
+	podList, err := cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace).List(context.TODO(), lo)
+	if err != nil {
+		return err
 	}
 
-	if k8serrors.IsNotFound(err) {
-		t.Logf("Pod spec for %s not found, skipping", pod.Name)
+	if len(podList.Items) == 0 {
+		t.Logf("No pods matching label selector %q found", lo.LabelSelector)
 		return nil
 	}
 
-	return err
+	return dumpObjectToYAMLFile(t, podList, "pods")
 }
 
 // Dumps a struct to the provided filename in YAML format, while ensuring that
 // the filename contains both the name of the current-running test as well as
 // the destination directory path.
-func dumpObjectToYAMLFile(t *testing.T, obj interface{ GetName() string }, filename string) error {
+func dumpObjectToYAMLFile(t *testing.T, obj interface{}, kind string) error {
 	dirPath := getBuildArtifactDir(t)
 
-	// If we don't have the name of the test embedded in the filename, add it.
-	if !strings.Contains(filename, t.Name()) {
-		filename = fmt.Sprintf("%s-%s", t.Name(), filename)
-	}
-
-	// If we don't have the destination directory in the filename, add it.
-	if !strings.Contains(filename, dirPath) {
-		filename = filepath.Join(dirPath, filename)
-	}
+	filename := fmt.Sprintf("%s-%s.yaml", t.Name(), kind)
+	filename = filepath.Join(dirPath, filename)
 
 	out, err := yaml.Marshal(obj)
 	if err != nil {
 		return err
 	}
 
-	return os.WriteFile(filename, out, 0o755)
+	err = os.WriteFile(filename, out, 0o755)
+	if err == nil {
+		t.Logf("Wrote %s", filename)
+	}
+
+	return err
 }
 
 // Streams the logs from the Machine OS Builder pod containers to a set of
