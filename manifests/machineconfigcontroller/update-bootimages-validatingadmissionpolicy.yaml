@@ -8,11 +8,15 @@ spec:
     apiVersion: config.openshift.io/v1
     kind: Infrastructure
   matchConstraints:
+    matchPolicy: Equivalent
+    namespaceSelector: {}
+    objectSelector: {}
     resourceRules:
     - apiGroups:   ["operator.openshift.io"]
       apiVersions: ["v1"]
       operations:  ["CREATE","UPDATE"]
       resources:   ["machineconfigurations"]
+      scope: "*"
   validations:
     - expression: "!has(object.spec.managedBootImages) || (has(object.spec.managedBootImages) && params.status.platformStatus.type in ['GCP'])"
       message: "This feature is only supported on these platforms: GCP"
