@@ -1354,6 +1354,7 @@ func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error, errCh chan er
 
 	if dn.kubeletHealthzEnabled {
 		klog.Info("Enabling Kubelet Healthz Monitor")
+		klog.Info("Dalia was here :-D")
 		go dn.runKubeletHealthzMonitor(stopCh, dn.exitCh)
 	}
 

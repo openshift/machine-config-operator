@@ -13,6 +13,9 @@ import (
 // +openshift:api-approved.openshift.io=https://github.com/openshift/api/pull/1596
 // +openshift:file-pattern=cvoRunLevel=0000_80,operatorName=machine-config,operatorOrdering=01
 // +openshift:enable:FeatureGate=MachineConfigNodes
+// +kubebuilder:printcolumn:name="MCP",type="string",JSONPath=.spec.pool.name,priority=1
+// +kubebuilder:printcolumn:name="DesiredConfig",type="string",JSONPath=.spec.configVersion.desired,priority=1
+// +kubebuilder:printcolumn:name="CurrentConfig",type="string",JSONPath=.status.configVersion.current,priority=1
 // +kubebuilder:printcolumn:name="Updated",type="string",JSONPath=.status.conditions[?(@.type=="Updated")].status
 // +kubebuilder:printcolumn:name="UpdatePrepared",type="string",JSONPath=.status.conditions[?(@.type=="UpdatePrepared")].status
 // +kubebuilder:printcolumn:name="UpdateExecuted",type="string",JSONPath=.status.conditions[?(@.type=="UpdateExecuted")].status

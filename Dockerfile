@@ -1,5 +1,5 @@
 # Use RHEL 9 as the primary builder base for the Machine Config Operator
-FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.22-openshift-4.17 AS rhel9-builder
+FROM registry.ci.openshift.org/ocp-multi/builder:rhel-9-golang-latest-openshift-4.16 AS rhel9-builder
 ARG TAGS=""
 WORKDIR /go/src/github.com/openshift/machine-config-operator
 COPY . .
@@ -12,7 +12,7 @@ RUN --mount=type=cache,target=/go/rhel9/.cache,z \
     make install DESTDIR=./instroot-rhel9 && tar -C instroot-rhel9 -cf instroot-rhel9.tar .
 
 # Add a RHEL 8 builder to compile the RHEL 8 compatible binaries
-FROM registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.22-openshift-4.17 AS rhel8-builder
+FROM registry.ci.openshift.org/ocp-multi/builder:rhel-9-golang-latest-openshift-4.16 AS rhel8-builder
 ARG TAGS=""
 WORKDIR /go/src/github.com/openshift/machine-config-operator
 # Copy the RHEL 8 machine-config-daemon binary and rename
@@ -23,7 +23,7 @@ RUN --mount=type=cache,target=/go/rhel8/.cache,z \
     --mount=type=cache,target=/go/rhel8/pkg/mod,z \
     make install DESTDIR=./instroot-rhel8 && tar -C instroot-rhel8 -cf instroot-rhel8.tar .
 
-FROM registry.ci.openshift.org/ocp/4.17:base-rhel9
+FROM registry.ci.openshift.org/ocp-arm64/4.16-art-latest-arm64:machine-config-operator
 ARG TAGS=""
 COPY install /manifests
 RUN --mount=type=cache,target=/var/cache/dnf,z \
@@ -36,9 +36,7 @@ RUN --mount=type=cache,target=/var/cache/dnf,z \
     sed -i 's/rhel-coreos/fedora-coreos/g' /manifests/*; \
     elif [ "${TAGS}" = "scos" ]; then \
     # rewrite image names for scos
-    sed -i 's/rhel-coreos/stream-coreos/g' /manifests/*; fi && \
-    dnf --setopt=keepcache=true -y install 'nmstate >= 2.2.10' && \
-    if ! rpm -q util-linux; then dnf install --setopt=keepcache=true -y util-linux; fi
+    sed -i 's/rhel-coreos/centos-stream-coreos-9/g' /manifests/*; fi 
 # Copy the binaries *after* we install nmstate so we don't invalidate our cache for local builds.
 COPY --from=rhel9-builder /go/src/github.com/openshift/machine-config-operator/instroot-rhel9.tar /tmp/instroot-rhel9.tar
 RUN cd / && tar xf /tmp/instroot-rhel9.tar && rm -f /tmp/instroot-rhel9.tar
