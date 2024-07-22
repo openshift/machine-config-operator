@@ -12,6 +12,7 @@ import (
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 )
 
 //go:embed assets/Containerfile.on-cluster-build-template
@@ -185,6 +186,13 @@ func (i ImageBuildRequest) toBuildahPod() *corev1.Pod {
 		{
 			Name:  "DIGEST_CONFIGMAP_NAME",
 			Value: i.getDigestConfigMapName(),
+		},
+		{
+			Name: "DIGEST_CONFIGMAP_LABELS",
+			// Gets the labels for all objects created by ImageBuildRequest, converts
+			// them into a string representation, and replaces the separating commas
+			// with spaces.
+			Value: strings.ReplaceAll(labels.Set(i.getLabelsForObjectMeta()).String(), ",", " "),
 		},
 		{
 			Name:  "HOME",
@@ -434,9 +442,9 @@ func (i ImageBuildRequest) toBuildahPod() *corev1.Pod {
 					// ConfigMap from the digestfile that Buildah creates, which allows
 					// us to avoid parsing log files.
 					Name:            "wait-for-done",
-					Env:             env,
 					Command:         append(command, waitScript),
 					Image:           i.MachineOSConfig.Spec.BuildInputs.BaseOSImagePullspec,
+					Env:             env,
 					ImagePullPolicy: corev1.PullAlways,
 					SecurityContext: securityContext,
 					VolumeMounts:    volumeMounts,
@@ -448,36 +456,48 @@ func (i ImageBuildRequest) toBuildahPod() *corev1.Pod {
 	}
 }
 
-// Constructs a common metav1.ObjectMeta object with the namespace, labels, and annotations set.
-func (i ImageBuildRequest) getObjectMeta(name string) metav1.ObjectMeta {
-	objectMeta := metav1.ObjectMeta{
-		Name:      name,
-		Namespace: ctrlcommon.MCONamespace,
-		Labels: map[string]string{
-			EphemeralBuildObjectLabelKey:    "",
-			OnClusterLayeringLabelKey:       "",
-			RenderedMachineConfigLabelKey:   i.MachineOSBuild.Spec.DesiredConfig.Name,
-			TargetMachineConfigPoolLabelKey: i.MachineOSConfig.Spec.MachineConfigPool.Name,
-		},
-		Annotations: map[string]string{
-			machineOSConfigNameAnnotationKey: i.MachineOSConfig.Name,
-			machineOSBuildNameAnnotationKey:  i.MachineOSBuild.Name,
-		},
+// Populates the labels map for all objects created by ImageBuildRequest
+func (i ImageBuildRequest) getLabelsForObjectMeta() map[string]string {
+	return map[string]string{
+		EphemeralBuildObjectLabelKey:    "",
+		OnClusterLayeringLabelKey:       "",
+		RenderedMachineConfigLabelKey:   i.MachineOSBuild.Spec.DesiredConfig.Name,
+		TargetMachineConfigPoolLabelKey: i.MachineOSConfig.Spec.MachineConfigPool.Name,
+	}
+}
+
+// Populates the annotations map for all objects created by ImageBuildRequest.
+// Conditionally sets annotations for entitled builds if the appropriate
+// secrets / ConfigMaps are present.
+func (i ImageBuildRequest) getAnnotationsForObjectMeta() map[string]string {
+	annos := map[string]string{
+		machineOSConfigNameAnnotationKey: i.MachineOSConfig.Name,
+		machineOSBuildNameAnnotationKey:  i.MachineOSBuild.Name,
 	}
 
 	if i.HasEtcPkiEntitlementKeys {
-		objectMeta.Annotations[EtcPkiEntitlementAnnotationKey] = ""
+		annos[EtcPkiEntitlementAnnotationKey] = ""
 	}
 
 	if i.HasEtcYumReposDConfigs {
-		objectMeta.Annotations[EtcYumReposDAnnotationKey] = ""
+		annos[EtcYumReposDAnnotationKey] = ""
 	}
 
 	if i.HasEtcPkiRpmGpgKeys {
-		objectMeta.Annotations[EtcPkiRpmGpgAnnotationKey] = ""
+		annos[EtcPkiRpmGpgAnnotationKey] = ""
 	}
 
-	return objectMeta
+	return annos
+}
+
+// Constructs a common metav1.ObjectMeta object with the namespace, labels, and annotations set.
+func (i ImageBuildRequest) getObjectMeta(name string) metav1.ObjectMeta {
+	return metav1.ObjectMeta{
+		Name:        name,
+		Namespace:   ctrlcommon.MCONamespace,
+		Labels:      i.getLabelsForObjectMeta(),
+		Annotations: i.getAnnotationsForObjectMeta(),
+	}
 }
 
 // Computes the Dockerfile ConfigMap name based upon the MachineConfigPool name.
