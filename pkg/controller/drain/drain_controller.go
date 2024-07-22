@@ -278,6 +278,22 @@ func (ctrl *Controller) syncNode(key string) error {
 		return err
 	}
 
+	// Determine the MCP for this node
+	var pool string
+	if _, ok := node.Labels["node-role.kubernetes.io/worker"]; ok {
+		pool = "worker"
+	} else if _, ok := node.Labels["node-role.kubernetes.io/master"]; ok {
+		pool = "master"
+	} else {
+		pool = "unknown"
+	}
+
+	// Update the MachineConfigNode status with the MCP
+	err = ctrl.updateMachineConfigNodeStatus(node, pool)
+	if err != nil {
+		return err
+	}
+
 	desiredState := node.Annotations[daemonconsts.DesiredDrainerAnnotationKey]
 	if desiredState == node.Annotations[daemonconsts.LastAppliedDrainerAnnotationKey] {
 		klog.V(4).Infof("Node %v has the correct drain", key)
@@ -561,6 +577,43 @@ func (ctrl *Controller) cordonOrUncordonNode(desired bool, node *corev1.Node, dr
 			return fmt.Errorf("node %s: failed to %s (%d tries): %v", node.Name, verb, ctrl.cfg.CordonOrUncordonBackoff.Steps, errs)
 		}
 		return fmt.Errorf("node %s: failed to %s: %v", node.Name, verb, err)
+	}
+
+	return nil
+}
+
+// Update the MachineConfigNode status with the MCP
+func (ctrl *Controller) updateMachineConfigNodeStatus(node *corev1.Node, pool string) error {
+	mcn, err := ctrl.client.MachineconfigurationV1alpha1().MachineConfigNodes().Get(context.TODO(), node.Name, metav1.GetOptions{})
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			mcn = &v1alpha1.MachineConfigNode{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: node.Name,
+				},
+				Spec: v1alpha1.MachineConfigNodeSpec{
+					Node: v1alpha1.MCOObjectReference{
+						Name: node.Name,
+					},
+					Pool: v1alpha1.MCOObjectReference{
+						Name: pool,
+					},
+				},
+			}
+			_, err := ctrl.client.MachineconfigurationV1alpha1().MachineConfigNodes().Create(context.TODO(), mcn, metav1.CreateOptions{})
+			if err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
+	} else {
+		mcnCopy := mcn.DeepCopy()
+		mcnCopy.Spec.Pool.Name = pool
+		_, err = ctrl.client.MachineconfigurationV1alpha1().MachineConfigNodes().Update(context.TODO(), mcnCopy, metav1.UpdateOptions{})
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil

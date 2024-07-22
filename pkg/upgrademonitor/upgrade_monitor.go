@@ -257,6 +257,9 @@ func generateAndApplyMachineConfigNodes(
 		newMCNode.Status.ConfigVersion.Desired = NotYetSet
 	}
 
+	// Ensure the MCP information is included in the status
+	newMCNode.Spec.Pool = mcfgalphav1.MCOObjectReference{Name: pool}
+
 	// if we do not need a new MCN, generate the apply configurations for this object
 	if !needNewMCNode {
 		statusconfigVersionApplyConfig := machineconfigurationalphav1.MachineConfigNodeStatusMachineConfigVersion().WithDesired(newMCNode.Status.ConfigVersion.Desired)
@@ -264,7 +267,6 @@ func generateAndApplyMachineConfigNodes(
 			statusconfigVersionApplyConfig = statusconfigVersionApplyConfig.WithCurrent(newMCNode.Status.ConfigVersion.Current)
 		}
 		statusApplyConfig := machineconfigurationalphav1.MachineConfigNodeStatus().
-			// WithConditions(newMCNode.Status.Conditions...).
 			WithConditions(convertConditionsToApplyConfigurations(newMCNode.Status.Conditions)...).
 			WithObservedGeneration(newMCNode.Generation + 1).
 			WithConfigVersion(statusconfigVersionApplyConfig)
@@ -285,7 +287,12 @@ func generateAndApplyMachineConfigNodes(
 			}
 		}
 
-		mcnodeApplyConfig := machineconfigurationalphav1.MachineConfigNode(newMCNode.Name).WithStatus(statusApplyConfig)
+		specApplyConfig := machineconfigurationalphav1.MachineConfigNodeSpec().
+			WithConfigVersion(machineconfigurationalphav1.MachineConfigNodeSpecMachineConfigVersion().WithDesired(newMCNode.Spec.ConfigVersion.Desired)).
+			WithNode(machineconfigurationalphav1.MCOObjectReference().WithName(newMCNode.Spec.Node.Name)).
+			WithPool(machineconfigurationalphav1.MCOObjectReference().WithName(newMCNode.Spec.Pool.Name))
+
+		mcnodeApplyConfig := machineconfigurationalphav1.MachineConfigNode(newMCNode.Name).WithStatus(statusApplyConfig).WithSpec(specApplyConfig)
 		_, err := mcfgClient.MachineconfigurationV1alpha1().MachineConfigNodes().ApplyStatus(context.TODO(), mcnodeApplyConfig, metav1.ApplyOptions{FieldManager: "machine-config-operator", Force: true})
 		if err != nil {
 			klog.Errorf("Error applying MCN status: %v", err)
