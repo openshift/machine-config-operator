@@ -2,10 +2,12 @@ package helpers
 
 import (
 	"fmt"
+	"strings"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	v1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/daemon/osrelease"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	corev1listers "k8s.io/client-go/listers/core/v1"
@@ -103,6 +105,19 @@ func GetPoolsForNode(mcpLister v1.MachineConfigPoolLister, node *corev1.Node) ([
 	}
 }
 
+func GetPoolNamesForNode(mcpLister v1.MachineConfigPoolLister, node *corev1.Node) ([]string, error) {
+	pools, _, err := GetPoolsForNode(mcpLister, node)
+	if err != nil {
+		return nil, err
+	}
+
+	var names []string
+	for _, pool := range pools {
+		names = append(names, pool.Name)
+	}
+	return names, nil
+}
+
 // isWindows checks if given node is a Windows node or a Linux node
 func IsWindows(node *corev1.Node) bool {
 	windowsOsValue := "windows"
@@ -163,4 +178,17 @@ func ListPools(node *corev1.Node, mcpLister v1.MachineConfigPoolLister) (*mcfgv1
 	}
 
 	return master, worker, custom, nil
+}
+
+// IsCoreOSNode checks whether the pretty name of a node matches any of the
+// coreos based image names
+func IsCoreOSNode(node *corev1.Node) bool {
+	validOSImages := []string{osrelease.RHCOS, osrelease.FCOS, osrelease.SCOS}
+
+	for _, img := range validOSImages {
+		if strings.Contains(node.Status.NodeInfo.OSImage, img) {
+			return true
+		}
+	}
+	return false
 }
