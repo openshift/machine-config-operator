@@ -64,10 +64,6 @@ const (
 	// Rebooting is still the default scenario for any other change
 	postConfigChangeActionReboot = "reboot"
 
-	// GPGNoRebootPath is the path MCO expects will contain GPG key updates. MCO will attempt to only reload crio for
-	// changes to this path. Note that other files added to the parent directory will not be handled specially
-	GPGNoRebootPath = "/etc/machine-config-daemon/no-reboot/containers-gpg.pub"
-
 	// ImageRegistryDrainOverrideConfigmap is the name of the Configmap a user can apply to force all
 	// image registry changes to not drain
 	ImageRegistryDrainOverrideConfigmap = "image-registry-override-drain"
@@ -572,18 +568,18 @@ func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newC
 func calculatePostConfigChangeActionFromMCDiffs(diffFileSet []string) (actions []string) {
 	filesPostConfigChangeActionNone := []string{
 		caBundleFilePath,
-		"/var/lib/kubelet/config.json",
+		constants.KubeletAuthFile,
 	}
 	directoriesPostConfigChangeActionNone := []string{
 		constants.OpenShiftNMStateConfigDir,
 	}
 	filesPostConfigChangeActionReloadCrio := []string{
 		constants.ContainerRegistryConfPath,
-		GPGNoRebootPath,
-		"/etc/containers/policy.json",
+		constants.GPGNoRebootPath,
+		constants.ContainerRegistryPolicyPath,
 	}
 	filesPostConfigChangeActionRestartCrio := []string{
-		"/etc/pki/ca-trust/source/anchors/openshift-config-user-ca-bundle.crt",
+		constants.UserCABundlePath,
 	}
 	dirsPostConfigChangeActionReloadCrio := []string{
 		constants.SigstoreRegistriesConfigDir,
@@ -622,31 +618,11 @@ func calculatePostConfigChangeNodeDisruptionActionFromMCDiffs(diffSSH bool, diff
 
 	// Step through all file based policies, and build out the actions object
 	for _, diffPath := range diffFileSet {
-		pathFound := false
-		for _, policyFile := range clusterPolicies.Files {
-			klog.V(4).Infof("comparing policy path %s to diff path %s", policyFile.Path, diffPath)
-			if policyFile.Path == diffPath {
-				klog.Infof("NodeDisruptionPolicy found for diff file %s", diffPath)
-				actions = append(actions, policyFile.Actions...)
-				pathFound = true
-				break
-			}
-		}
-		if !pathFound {
-			// Hack for https://github.com/openshift/machine-config-operator/pull/4160#discussion_r1548669673 here
-			// Changes to files in /etc/containers/registries.d should cause a CRIO reload
-			// This should be removed once NodeDisruptionPolicy can support directories and wildcards
-			if filepath.Dir(diffPath) == constants.SigstoreRegistriesConfigDir {
-				klog.Infof("Exception Action: diffPath %s is a subdir of %s, adding a CRIO reload", diffPath, constants.SigstoreRegistriesConfigDir)
-				actions = append(actions, opv1.NodeDisruptionPolicyStatusAction{Type: opv1.ReloadStatusAction, Reload: &opv1.ReloadService{
-					ServiceName: constants.CRIOServiceName,
-				}})
-				continue
-			}
-			if filepath.Dir(diffPath) == constants.OpenShiftNMStateConfigDir {
-				klog.Infof("Exception Action: diffPath %s is a subdir of %s, skipping reboot", diffPath, constants.OpenShiftNMStateConfigDir)
-				continue
-			}
+		pathFound, actionsFound := ctrlcommon.FindClosestFilePolicyPathMatch(diffPath, clusterPolicies.Files)
+		if pathFound {
+			klog.Infof("NodeDisruptionPolicy %v found for diff file %s", actionsFound, diffPath)
+			actions = append(actions, actionsFound...)
+		} else {
 			// If this file path has no policy defined, default to reboot
 			klog.V(4).Infof("no policy found for diff path %s", diffPath)
 			return []opv1.NodeDisruptionPolicyStatusAction{{
@@ -661,7 +637,7 @@ func calculatePostConfigChangeNodeDisruptionActionFromMCDiffs(diffSSH bool, diff
 		for _, policyUnit := range clusterPolicies.Units {
 			klog.V(4).Infof("comparing policy unit name %s to diff unit name %s", string(policyUnit.Name), diffUnit)
 			if string(policyUnit.Name) == diffUnit {
-				klog.Infof("NodeDisruptionPolicy found for diff unit %s!", diffUnit)
+				klog.Infof("NodeDisruptionPolicy %v found for diff unit %s!", policyUnit.Actions, diffUnit)
 				actions = append(actions, policyUnit.Actions...)
 				unitFound = true
 				break
@@ -678,7 +654,7 @@ func calculatePostConfigChangeNodeDisruptionActionFromMCDiffs(diffSSH bool, diff
 
 	// SSH only has one possible policy(and there is a default), so blindly add that if there is an SSH diff
 	if diffSSH {
-		klog.Infof("SSH diff detected, applying SSH policy")
+		klog.Infof("SSH diff detected, applying SSH policy %v", clusterPolicies.SSHKey.Actions)
 		actions = append(actions, clusterPolicies.SSHKey.Actions...)
 	}
 

@@ -94,8 +94,14 @@ const (
 	// changes to registries.conf will cause a crio reload and require extra logic about whether to drain
 	ContainerRegistryConfPath = "/etc/containers/registries.conf"
 
+	// changes to registries.conf will cause a crio reload
+	ContainerRegistryPolicyPath = "/etc/containers/policy.json"
+
 	// changes to registries.d will cause a crio reload
 	SigstoreRegistriesConfigDir = "/etc/containers/registries.d"
+
+	// changes to openshift-config-user-ca-bundle.crt will cause an update-ca-trust and crio restart
+	UserCABundlePath = "/etc/pki/ca-trust/source/anchors/openshift-config-user-ca-bundle.crt"
 
 	// Changes to this directory should not trigger reboots because they are firstboot-only
 	OpenShiftNMStateConfigDir = "/etc/nmstate/openshift"
@@ -124,4 +130,8 @@ const (
 	// MinFreeStorageAfterPrefetch is the minimum amount of storage
 	// available on the root filesystem after prefetching images.
 	MinFreeStorageAfterPrefetch = "16Gi"
+
+	// GPGNoRebootPath is the path MCO expects will contain GPG key updates. MCO will attempt to only reload crio for
+	// changes to this path. Note that other files added to the parent directory will not be handled specially
+	GPGNoRebootPath = "/etc/machine-config-daemon/no-reboot/containers-gpg.pub"
 )

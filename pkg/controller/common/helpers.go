@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"net/url"
 	"os"
+	"path/filepath"
 	"reflect"
 
 	"sort"
@@ -53,6 +54,7 @@ import (
 	"k8s.io/klog/v2"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	opv1 "github.com/openshift/api/operator/v1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 )
@@ -1205,4 +1207,36 @@ func DoARebuild(pool *mcfgv1.MachineConfigPool) bool {
 	_, ok := pool.Labels[RebuildPoolLabel]
 	return ok
 
+}
+
+// isSubdirectory checks if targetPath is a subdirectory of dirPath.
+func IsSubdirectory(dirPath, targetPath string) bool {
+	// Clean and add trailing separator to dirPath to ensure proper matching
+	dirPath = filepath.Clean(dirPath) + string(filepath.Separator)
+	targetPath = filepath.Clean(targetPath)
+
+	// Check if targetPath has dirPath as its prefix
+	return strings.HasPrefix(targetPath, dirPath)
+}
+
+func FindClosestFilePolicyPathMatch(diffPath string, filePolicies []opv1.NodeDisruptionPolicyStatusFile) (bool, []opv1.NodeDisruptionPolicyStatusAction) {
+	matchLength := 0
+	matchFound := false
+	matchActions := []opv1.NodeDisruptionPolicyStatusAction{}
+
+	for _, filePolicy := range filePolicies {
+		klog.V(4).Infof("comparing policy path %s to diff path %s", filePolicy.Path, diffPath)
+		// Check if either of the following are true:
+		// (i) if diffPath and filePolicy.Path are an exact match
+		// (ii) if diffPath is a subdir of filePolicy.Path
+		if (diffPath == filePolicy.Path) || IsSubdirectory(filePolicy.Path, diffPath) {
+			// If a match was found, compare the length so the longest match is preserved
+			if len(filePolicy.Path) > matchLength {
+				matchFound = true
+				matchLength = len(filePolicy.Path)
+				matchActions = filePolicy.Actions
+			}
+		}
+	}
+	return matchFound, matchActions
 }
