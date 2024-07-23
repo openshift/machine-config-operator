@@ -342,6 +342,7 @@ type NodePlacement struct {
 	// See https://kubernetes.io/docs/concepts/configuration/taint-and-toleration/
 	//
 	// +optional
+	// +listType=atomic
 	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
 }
 
@@ -413,6 +414,7 @@ type LoadBalancerStrategy struct {
 	//
 	// +nullable
 	// +optional
+	// +listType=atomic
 	AllowedSourceRanges []CIDR `json:"allowedSourceRanges,omitempty"`
 
 	// providerParameters holds desired load balancer information specific to
@@ -556,6 +558,52 @@ const (
 	AWSNetworkLoadBalancer AWSLoadBalancerType = "NLB"
 )
 
+// AWSSubnets contains a list of references to AWS subnets by
+// ID or name.
+// +kubebuilder:validation:XValidation:rule=`has(self.ids) && has(self.names) ? size(self.ids + self.names) <= 10 : true`,message="the total number of subnets cannot exceed 10"
+// +kubebuilder:validation:XValidation:rule=`has(self.ids) && self.ids.size() > 0 || has(self.names) && self.names.size() > 0`,message="must specify at least 1 subnet name or id"
+type AWSSubnets struct {
+	// ids specifies a list of AWS subnets by subnet ID.
+	// Subnet IDs must start with "subnet-", consist only
+	// of alphanumeric characters, must be exactly 24
+	// characters long, must be unique, and the total
+	// number of subnets specified by ids and names
+	// must not exceed 10.
+	//
+	// +optional
+	// +listType=atomic
+	// +kubebuilder:validation:XValidation:rule=`self.all(x, self.exists_one(y, x == y))`,message="subnet ids cannot contain duplicates"
+	// + Note: Though it may seem redundant, MaxItems is necessary to prevent exceeding of the cost budget for the validation rules.
+	// +kubebuilder:validation:MaxItems=10
+	IDs []AWSSubnetID `json:"ids,omitempty"`
+
+	// names specifies a list of AWS subnets by subnet name.
+	// Subnet names must not start with "subnet-", must not
+	// include commas, must be under 256 characters in length,
+	// must be unique, and the total number of subnets
+	// specified by ids and names must not exceed 10.
+	//
+	// +optional
+	// +listType=atomic
+	// +kubebuilder:validation:XValidation:rule=`self.all(x, self.exists_one(y, x == y))`,message="subnet names cannot contain duplicates"
+	// + Note: Though it may seem redundant, MaxItems is necessary to prevent exceeding of the cost budget for the validation rules.
+	// +kubebuilder:validation:MaxItems=10
+	Names []AWSSubnetName `json:"names,omitempty"`
+}
+
+// AWSSubnetID is a reference to an AWS subnet ID.
+// +kubebuilder:validation:MinLength=24
+// +kubebuilder:validation:MaxLength=24
+// +kubebuilder:validation:Pattern=`^subnet-[0-9A-Za-z]+$`
+type AWSSubnetID string
+
+// AWSSubnetName is a reference to an AWS subnet name.
+// +kubebuilder:validation:MinLength=1
+// +kubebuilder:validation:MaxLength=256
+// +kubebuilder:validation:XValidation:rule=`!self.contains(',')`,message="subnet name cannot contain a comma"
+// +kubebuilder:validation:XValidation:rule=`!self.startsWith('subnet-')`,message="subnet name cannot start with 'subnet-'"
+type AWSSubnetName string
+
 // GCPLoadBalancerParameters provides configuration settings that are
 // specific to GCP load balancers.
 type GCPLoadBalancerParameters struct {
@@ -630,11 +678,44 @@ type AWSClassicLoadBalancerParameters struct {
 	// +kubebuilder:validation:Format=duration
 	// +optional
 	ConnectionIdleTimeout metav1.Duration `json:"connectionIdleTimeout,omitempty"`
+
+	// subnets specifies the subnets to which the load balancer will
+	// attach. The subnets may be specified by either their
+	// ID or name. The total number of subnets is limited to 10.
+	//
+	// In order for the load balancer to be provisioned with subnets,
+	// each subnet must exist, each subnet must be from a different
+	// availability zone, and the load balancer service must be
+	// recreated to pick up new values.
+	//
+	// When omitted from the spec, the subnets will be auto-discovered
+	// for each availability zone. Auto-discovered subnets are not reported
+	// in the status of the IngressController object.
+	//
+	// +optional
+	// +openshift:enable:FeatureGate=IngressControllerLBSubnetsAWS
+	Subnets *AWSSubnets `json:"subnets,omitempty"`
 }
 
 // AWSNetworkLoadBalancerParameters holds configuration parameters for an
 // AWS Network load balancer.
 type AWSNetworkLoadBalancerParameters struct {
+	// subnets specifies the subnets to which the load balancer will
+	// attach. The subnets may be specified by either their
+	// ID or name. The total number of subnets is limited to 10.
+	//
+	// In order for the load balancer to be provisioned with subnets,
+	// each subnet must exist, each subnet must be from a different
+	// availability zone, and the load balancer service must be
+	// recreated to pick up new values.
+	//
+	// When omitted from the spec, the subnets will be auto-discovered
+	// for each availability zone. Auto-discovered subnets are not reported
+	// in the status of the IngressController object.
+	//
+	// +optional
+	// +openshift:enable:FeatureGate=IngressControllerLBSubnetsAWS
+	Subnets *AWSSubnets `json:"subnets,omitempty"`
 }
 
 // HostNetworkStrategy holds parameters for the HostNetwork endpoint publishing
@@ -1129,6 +1210,7 @@ type IngressControllerCaptureHTTPHeaders struct {
 	//
 	// +nullable
 	// +optional
+	// +listType=atomic
 	Request []IngressControllerCaptureHTTPHeader `json:"request,omitempty"`
 
 	// response specifies which HTTP response headers to capture.
@@ -1137,6 +1219,7 @@ type IngressControllerCaptureHTTPHeaders struct {
 	//
 	// +nullable
 	// +optional
+	// +listType=atomic
 	Response []IngressControllerCaptureHTTPHeader `json:"response,omitempty"`
 }
 
@@ -1263,6 +1346,7 @@ type AccessLogging struct {
 	// +nullable
 	// +optional
 	// +kubebuilder:validation:MaxItems=1
+	// +listType=atomic
 	HTTPCaptureCookies []IngressControllerCaptureHTTPCookie `json:"httpCaptureCookies,omitempty"`
 
 	// logEmptyRequests specifies how connections on which no request is
@@ -1402,6 +1486,7 @@ type IngressControllerHTTPHeaders struct {
 	//
 	// +nullable
 	// +optional
+	// +listType=atomic
 	HeaderNameCaseAdjustments []IngressControllerHTTPHeaderNameCaseAdjustment `json:"headerNameCaseAdjustments,omitempty"`
 
 	// actions specifies options for modifying headers and their values.
@@ -1865,6 +1950,8 @@ type IngressControllerStatus struct {
 	//     * DNS is managed.
 	//     * DNS records have been successfully created.
 	//   - False if any of those conditions are unsatisfied.
+	// +listType=map
+	// +listMapKey=type
 	Conditions []OperatorCondition `json:"conditions,omitempty"`
 
 	// tlsProfile is the TLS connection configuration that is in effect.
