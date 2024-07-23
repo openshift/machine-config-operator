@@ -16,6 +16,7 @@ import (
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	opv1 "github.com/openshift/api/operator/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/osrelease"
 	"github.com/openshift/machine-config-operator/test/helpers"
@@ -706,4 +707,124 @@ func TestIsImagePresent(t *testing.T) {
 	imagePresent, err = isImagePresent("quay.io/openshift-release-dev/test-false")
 	assert.Nil(t, err)
 	assert.False(t, imagePresent)
+}
+
+func TestFindClosestFilePolicyPathMatch(t *testing.T) {
+
+	policyActions := map[string][]opv1.NodeDisruptionPolicyStatusAction{
+		"Empty":       {},
+		"None":        {{Type: opv1.NoneStatusAction}},
+		"Reboot":      {{Type: opv1.RebootStatusAction}},
+		"RestartCrio": {{Type: opv1.RestartStatusAction, Restart: &opv1.RestartService{ServiceName: "crio.service"}}},
+		"ReloadCrio":  {{Type: opv1.ReloadStatusAction, Reload: &opv1.ReloadService{ServiceName: "crio.service"}}}}
+
+	tests := []struct {
+		diffPath             string
+		filePolicies         []opv1.NodeDisruptionPolicyStatusFile
+		expectedPathFound    bool
+		expectedActionsFound []opv1.NodeDisruptionPolicyStatusAction
+	}{
+		{
+			// test that an file with no policies returns no actions
+			diffPath: "/etc/mco/test",
+			filePolicies: []opv1.NodeDisruptionPolicyStatusFile{
+				{
+					Path:    "/etc/example",
+					Actions: policyActions["None"],
+				},
+			},
+			expectedPathFound:    false,
+			expectedActionsFound: policyActions["Empty"],
+		},
+		{
+			// test that a file with a valid policy returns the correct actions
+			diffPath: "/etc/mco/test1",
+			filePolicies: []opv1.NodeDisruptionPolicyStatusFile{
+				{
+					Path:    "/etc/mco/test1",
+					Actions: policyActions["None"],
+				},
+				{
+					Path:    "/etc/mco/test2",
+					Actions: policyActions["Reboot"],
+				},
+			},
+			expectedPathFound:    true,
+			expectedActionsFound: policyActions["None"],
+		},
+		{
+			// test that a file with multiple path policies returns the correct actions(closest match)
+			diffPath: "/etc/mco/f1/f2/example",
+			filePolicies: []opv1.NodeDisruptionPolicyStatusFile{
+				{
+					Path:    "/etc/mco/f1",
+					Actions: policyActions["None"],
+				},
+				{
+					Path:    "/etc/mco/f1/f2",
+					Actions: policyActions["Reboot"],
+				},
+				{
+					Path:    "/etc/mco/f1/f2/f3",
+					Actions: policyActions["ReloadCrio"],
+				},
+			},
+			expectedPathFound:    true,
+			expectedActionsFound: policyActions["Reboot"],
+		},
+		{
+			// test that a file with multiple path policies returns the correct actions when there is an exact match
+			diffPath: "/etc/mco/f1/f2/f3",
+			filePolicies: []opv1.NodeDisruptionPolicyStatusFile{
+				{
+					Path:    "/etc/mco/f1",
+					Actions: policyActions["None"],
+				},
+				{
+					Path:    "/etc/mco/f1/f2",
+					Actions: policyActions["Reboot"],
+				},
+				{
+					Path:    "/etc/mco/f1/f2/f3",
+					Actions: policyActions["ReloadCrio"],
+				},
+			},
+			expectedPathFound:    true,
+			expectedActionsFound: policyActions["ReloadCrio"],
+		},
+		{
+			// test that a file with a partial parent dir match, but no actual dir match does not return any action
+			diffPath: "/etc/mco/f1/f2/f3",
+			filePolicies: []opv1.NodeDisruptionPolicyStatusFile{
+				{
+					Path:    "/etc/mco/f1/test",
+					Actions: policyActions["None"],
+				},
+				{
+					Path:    "/etc/mco/f1/f2/test",
+					Actions: policyActions["Reboot"],
+				},
+				{
+					Path:    "/etc/mco/f1/f2/f3/f4",
+					Actions: policyActions["ReloadCrio"],
+				},
+			},
+			expectedPathFound:    false,
+			expectedActionsFound: policyActions["Empty"],
+		},
+	}
+
+	for idx, test := range tests {
+		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
+
+			pathFound, actionsFound := ctrlcommon.FindClosestFilePolicyPathMatch(test.diffPath, test.filePolicies)
+
+			if !reflect.DeepEqual(test.expectedPathFound, pathFound) {
+				t.Errorf("Failed finding node disruption file policy action: expected: %v but result is: %v.", test.expectedPathFound, pathFound)
+			}
+			if !reflect.DeepEqual(test.expectedActionsFound, actionsFound) {
+				t.Errorf("Failed calculating node disruption file policy action: expected: %v but result is: %v.", test.expectedActionsFound, actionsFound)
+			}
+		})
+	}
 }
