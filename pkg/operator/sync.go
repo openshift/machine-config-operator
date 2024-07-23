@@ -50,6 +50,7 @@ import (
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	templatectrl "github.com/openshift/machine-config-operator/pkg/controller/template"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
+	"github.com/openshift/machine-config-operator/pkg/helpers"
 	"github.com/openshift/machine-config-operator/pkg/server"
 	"github.com/openshift/machine-config-operator/pkg/upgrademonitor"
 	"github.com/openshift/machine-config-operator/pkg/version"
@@ -1240,6 +1241,14 @@ func (optr *Operator) reconcileMachineOSBuilder(mob *appsv1.Deployment) error {
 		return fmt.Errorf("could not get layered MachineConfigPools: %w", err)
 	}
 
+	// If layeredMCP is found, verify that the node is coreos based as non coreos OS images
+	// cannot handle layered builds
+	if len(layeredMCPs) > 0 {
+		if err := optr.validateLayeredPoolNodes(layeredMCPs); err != nil {
+			return err
+		}
+	}
+
 	isRunning, err := optr.isMachineOSBuilderRunning(mob)
 	// An unknown error occurred. Bail out here.
 	if err != nil && !apierrors.IsNotFound(err) {
@@ -1268,6 +1277,31 @@ func (optr *Operator) reconcileMachineOSBuilder(mob *appsv1.Deployment) error {
 	// if we are in ocb, but for some reason we dont need to do an update to the deployment, we still need to validate config
 	if len(layeredMCPs) != 0 {
 		return build.ValidateOnClusterBuildConfig(optr.kubeClient, optr.client, layeredMCPs)
+	}
+	return nil
+}
+
+// Validate that the nodes part of layered pools are coreos based
+func (optr *Operator) validateLayeredPoolNodes(layeredMCPs []*mcfgv1.MachineConfigPool) error {
+	nodes, err := optr.GetAllManagedNodes(layeredMCPs)
+	if err != nil {
+		return fmt.Errorf("could not get nodes in layered MachineConfigPools: %w", err)
+	}
+	// Error out if any of the nodes in the pool where OCL is enabled is a non-coreos node
+	errNodes := []error{}
+	for _, node := range nodes {
+		if !helpers.IsCoreOSNode(node) {
+			poolNames, err := helpers.GetPoolNamesForNode(optr.mcpLister, node)
+			if err != nil {
+				return err
+			}
+			err = fmt.Errorf("non-CoreOS OS %q detected on node %q in MachineConfigPool(s) %q", node.Status.NodeInfo.OSImage, node.Name, poolNames)
+			errNodes = append(errNodes, err)
+		}
+	}
+
+	if len(errNodes) > 0 {
+		return fmt.Errorf("on-cluster layering is only supported on CoreOS-based nodes: %w", kubeErrs.NewAggregate(errNodes))
 	}
 	return nil
 }
