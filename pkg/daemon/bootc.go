@@ -2,60 +2,157 @@ package daemon
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
-	"os"
 	"os/exec"
-	"strings"
+	"time"
 
-	"github.com/containers/image/v5/types"
 	"k8s.io/klog/v2"
 )
 
-// rpmOstreeState houses zero or more RpmOstreeDeployments
-// Subset of `bootc status --json`
-// https://github.com/projectatomic/rpm-ostree/blob/bce966a9812df141d38e3290f845171ec745aa4e/src/daemon/rpmostreed-deployment-utils.c#L227
-type rpmOstreeState struct {
-	Deployments []RpmOstreeDeployment
-	Transaction *[]string
+// bootc-client-go.go
+// BootcStatus summarizes the current worldview of the bootc status --json.
+type BootcStatus struct {
+	APIVersion string   `json:"apiVersion"`
+	Kind       string   `json:"kind"`
+	Metadata   Metadata `json:"metadata"`
+	Spec       Spec     `json:"spec"`
+	Status     Status   `json:"status"`
 }
 
-// RpmOstreeDeployment represents a single deployment on a node
-type RpmOstreeDeployment struct {
-	ID                      string   `json:"id"`
-	OSName                  string   `json:"osname"`
-	Serial                  int32    `json:"serial"`
-	Checksum                string   `json:"checksum"`
-	BaseChecksum            string   `json:"base-checksum,omitempty"`
-	Version                 string   `json:"version"`
-	Timestamp               uint64   `json:"timestamp"`
-	Booted                  bool     `json:"booted"`
-	Staged                  bool     `json:"staged"`
-	LiveReplaced            string   `json:"live-replaced,omitempty"`
-	Origin                  string   `json:"origin"`
-	CustomOrigin            []string `json:"custom-origin"`
-	ContainerImageReference string   `json:"container-image-reference"`
+type Metadata struct {
+	Name string `json:"name"`
 }
 
-// NewNodeImageUpdaterClient is an interface describing how to interact with the host
-// around content deployment
-type NodeImageUpdaterClient interface {
-	Initialize() error
-	GetStatus() (string, error)
-	GetBootedOSImageURL() (string, string, string, error)
-	Rebase(string, string) (bool, error)
-	RebaseLayered(string) error
-	IsBootableImage(string) (bool, error)
-	GetBootedAndStagedDeployment() (*RpmOstreeDeployment, *RpmOstreeDeployment, error)
+// Spec collects the host specification
+// This mirrors https://github.com/containers/bootc/blob/94521ecb19b8d0f2bfc36220322c60cafa036296/lib/src/spec.rs#L46
+type Spec struct {
+	Image     ImageReference `json:"image"`
+	BootOrder string         `json:"bootOrder"`
 }
 
-// BootcClient provides all bootc related methods in one structure.
+// Status collects the status of the host system
+// This mirrors https://github.com/containers/bootc/blob/94521ecb19b8d0f2bfc36220322c60cafa036296/lib/src/spec.rs#L132
+type Status struct {
+	Staged         *BootEntry `json:"staged,omitempty"`
+	Booted         *BootEntry `json:"booted,omitempty"`
+	Rollback       *BootEntry `json:"rollback,omitempty"`
+	RollbackQueued bool       `json:"rollbackQueued"`
+	Type           *string    `json:"type,omitempty"`
+}
 
-type BootcClient struct{}
+// BootEntry represents a bootable entry
+// This mirrors https://github.com/containers/bootc/blob/94521ecb19b8d0f2bfc36220322c60cafa036296/lib/src/spec.rs#L106
+type BootEntry struct {
+	Image        *ImageStatus     `json:"image,omitempty"`
+	CachedUpdate *ImageStatus     `json:"cachedUpdate,omitempty"`
+	Incompatible bool             `json:"incompatible"`
+	Pinned       bool             `json:"pinned"`
+	Ostree       *BootEntryOstree `json:"ostree,omitempty"`
+}
 
-// NewNodeUpdaterClient returns a new instance of the default DeploymentClient (BootcClient)
-func NewNodeImageUpdaterClient() NodeImageUpdaterClient {
-	return &BootcClient{}
+// BootEntryOstree represents a bootable entry
+// This mirrors https://github.com/containers/bootc/blob/94521ecb19b8d0f2bfc36220322c60cafa036296/lib/src/spec.rs#L96
+type BootEntryOstree struct {
+	Checksum     string `json:"checksum"`
+	DeploySerial uint32 `json:"deploy_serial"`
+}
+
+// ImageStatus represents the status of the booted image
+// This mirrors https://github.com/containers/bootc/blob/94521ecb19b8d0f2bfc36220322c60cafa036296/lib/src/spec.rs#L82
+type ImageStatus struct {
+	Image       ImageReference `json:"image"`
+	Version     *string        `json:"version,omitempty"`
+	Timestamp   *time.Time     `json:"timestamp,omitempty"`
+	ImageDigest string         `json:"imageDigest"`
+}
+
+// Client is a handle for interacting with an bootc based system.
+type Client struct {
+	clientid string
+}
+
+// NewClient creates a new bootc client.  The client identifier should be a short, unique and ideally machine-readable string.
+// This could be as simple as `examplecorp-management-agent`.
+// If you want to be more verbose, you could use a URL, e.g. `https://gitlab.com/examplecorp/management-agent`.
+func NewClient(id string) Client {
+	return Client{
+		clientid: id,
+	}
+}
+
+func (client *Client) newCmd(args ...string) *exec.Cmd {
+	r := exec.Command("bootc", args...)
+	r.Env = append(r.Env, "BOOTC_CLIENT_ID", client.clientid)
+	return r
+}
+
+func (client *Client) run(args ...string) error {
+	c := client.newCmd(args...)
+	return c.Run()
+}
+
+// QueryStatus loads the current system state.
+func (client *Client) QueryStatus() (*BootcStatus, error) {
+	var q BootcStatus
+	c := client.newCmd("status", "--json")
+	buf, err := c.Output()
+	if err != nil {
+		return nil, err
+	}
+
+	if err := json.Unmarshal(buf, &q); err != nil {
+		return nil, fmt.Errorf("failed to parse `bootc status --json` output: %w", err)
+	}
+
+	return &q, nil
+}
+
+// GetBootedImage finds the booted image, or returns nil if none is found.
+func (s *Status) GetBootedImage() *BootEntry {
+	return s.Booted
+}
+
+// GetStagedImage finds the staged image for the next boot, or returns nil if none is found.
+func (s *Status) GetStagedImage() *BootEntry {
+	return s.Staged
+}
+
+// GetRollbackImage finds the rollback deployment, or returns nil if none is found.
+func (s *Status) GetRollbackImage() *BootEntry {
+	return s.Rollback
+}
+
+// GetBaseChecksum returns the ostree commit used as a base.
+func (b *BootEntry) GetBaseChecksum() string {
+	return b.Ostree.Checksum
+}
+
+// GetContainerImageReference returns the the container image reference.
+func (b *BootEntry) GetContainerImageReference() string {
+	return b.Image.Image.Image
+}
+
+// imgref.go
+// ImageReference captures an image signature verification policy alongside an image reference.
+// This mirrors https://github.com/containers/bootc/blob/94521ecb19b8d0f2bfc36220322c60cafa036296/lib/src/spec.rs#L69
+type ImageReference struct {
+	Image     string          `json:"image"`
+	Transport string          `json:"transport"`
+	Signature *ImageSignature `json:"signature,omitempty"`
+}
+
+// ImageSignature mirrors https://github.com/containers/bootc/blob/94521ecb19b8d0f2bfc36220322c60cafa036296/lib/src/spec.rs#L57
+// Same as https://docs.rs/ostree-ext/latest/ostree_ext/container/enum.SignatureSource.html
+type ImageSignature struct {
+	AllowInsecure bool
+	OstreeRemote  string
+}
+
+// bootc.go
+
+// BootcClient provides all Bootc related methods in one structure.
+type BootcClient struct {
+	client Client
 }
 
 // Synchronously invoke bootc, writing its stdout to our stdout,
@@ -65,261 +162,67 @@ func runBootc(args ...string) error {
 	return runCmdSync("bootc", args...)
 }
 
-func (r *RpmOstreeClient) loadStatus() (*rpmOstreeState, error) {
-	var rosState rpmOstreeState
-	output, err := runGetOut("rpm-ostree", "status", "--json")
-	if err != nil {
-		return nil, err
-	}
-
-	if err := json.Unmarshal(output, &rosState); err != nil {
-		return nil, fmt.Errorf("failed to parse `rpm-ostree status --json` output (%s): %w", truncate(string(output), 30), err)
-	}
-
-	return &rosState, nil
-}
-
-func (r *RpmOstreeClient) Initialize() error {
-	if err := bug2111817Workaround(); err != nil {
-		return err
-	}
-
+func (b *BootcClient) Initialize() error {
 	// Commands like update and rebase need the pull secrets to pull images and manifests,
 	// make sure we get access to them when we Initialize
-	err := useKubeletConfigSecrets()
+	err := useMergedPullSecrets(bootcSystem)
 	if err != nil {
-		return fmt.Errorf("Error while ensuring access to kublet config.json pull secrets: %w", err)
+		return fmt.Errorf("Error while ensuring access to pull secrets: %w", err)
 	}
-
 	return nil
 }
 
-// GetBootedDeployment returns the current deployment found
-func (r *RpmOstreeClient) GetBootedAndStagedDeployment() (booted, staged *RpmOstreeDeployment, err error) {
-	status, err := r.loadStatus()
+// GetBootedAndStagedImage returns the current booted and staged image found
+func (b *BootcClient) GetBootedAndStagedImage() (*BootEntry, *BootEntry, error) {
+	status, err := b.client.QueryStatus()
 	if err != nil {
 		return nil, nil, err
 	}
-
-	booted, err = status.getBootedDeployment()
-	staged = status.getStagedDeployment()
-
-	return
+	return status.Status.GetBootedImage(), status.Status.GetStagedImage(), nil
 }
 
-// GetStatus returns multi-line human-readable text describing system status
-// Bootc is working on status update: https://github.com/containers/bootc/issues/408
-func (r *BootcClient) GetStatus() (string, error) {
-	output, err := runGetOut("bootc", "status")
+// // GetStatus returns multi-line human-readable text describing system status
+// // Bootc is working on status update: https://github.com/containers/bootc/issues/408
+// func (r *BootcClient) GetStatus() (string, error) {
+// 	output, err := runGetOut("bootc", "status")
+// 	if err != nil {
+// 		return "", err
+// 	}
+
+// 	return string(output), nil
+// }
+
+// GetBootedImageInfo() returns the image URL as well as the image version(for logging) and the ostree commit (for comparisons)
+func (b *BootcClient) GetBootedImageInfo() (*BootedImageInfo, error) {
+	bootedImage, _, err := b.GetBootedAndStagedImage()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-
-	return string(output), nil
-}
-
-// GetBootedOSImageURL returns the image URL as well as the OSTree version(for logging) and the ostree commit (for comparisons)
-// Returns the empty string if the host doesn't have a custom origin that matches pivot://
-// (This could be the case for e.g. FCOS, or a future RHCOS which comes not-pivoted by default)
-func (r *RpmOstreeClient) GetBootedOSImageURL() (string, string, string, error) {
-	bootedDeployment, _, err := r.GetBootedAndStagedDeployment()
-	if err != nil {
-		return "", "", "", err
-	}
-
-	// TODO(jkyros): take this out, I just want to see when/why it's empty?
-	j, _ := json.MarshalIndent(bootedDeployment, "", "    ")
-	klog.Infof("%s", j)
-
-	// the canonical image URL is stored in the custom origin field.
-
 	osImageURL := ""
-	if len(bootedDeployment.CustomOrigin) > 0 {
-		if strings.HasPrefix(bootedDeployment.CustomOrigin[0], "pivot://") {
-			osImageURL = bootedDeployment.CustomOrigin[0][len("pivot://"):]
-		}
+	if bootedImage.GetContainerImageReference() != "" {
+		osImageURL = bootedImage.GetContainerImageReference()
 	}
-
-	// we have container images now, make sure we can parse those too
-	if bootedDeployment.ContainerImageReference != "" {
-		// right now they start with "ostree-unverified-registry:", so scrape that off
-		tokens := strings.SplitN(bootedDeployment.ContainerImageReference, ":", 2)
-		if len(tokens) > 1 {
-			osImageURL = tokens[1]
-		}
-	}
-
-	// BaseChecksum is populated if the system has been modified in a way that changes the base checksum
-	// (like via an RPM install) so prefer BaseCheksum that if it's present, otherwise just use Checksum.
-	baseChecksum := bootedDeployment.Checksum
-	if bootedDeployment.BaseChecksum != "" {
-		baseChecksum = bootedDeployment.BaseChecksum
-	}
-
-	return osImageURL, bootedDeployment.Version, baseChecksum, nil
-}
-
-// Rebase potentially rebases system if not already rebased.
-func (r *RpmOstreeClient) Rebase(imgURL, osImageContentDir string) (changed bool, err error) {
-	var (
-		ostreeCsum    string
-		ostreeVersion string
-	)
-	defaultDeployment, _, err := r.GetBootedAndStagedDeployment()
-	if err != nil {
-		return
-	}
-
-	previousPivot := ""
-	if len(defaultDeployment.CustomOrigin) > 0 {
-		if strings.HasPrefix(defaultDeployment.CustomOrigin[0], "pivot://") {
-			previousPivot = defaultDeployment.CustomOrigin[0][len("pivot://"):]
-			klog.Infof("Previous pivot: %s", previousPivot)
-		} else {
-			klog.Infof("Previous custom origin: %s", defaultDeployment.CustomOrigin[0])
-		}
+	var baseChecksum string
+	if bootedImage.Ostree != nil {
+		baseChecksum = bootedImage.GetBaseChecksum()
 	} else {
-		klog.Info("Current origin is not custom")
+		baseChecksum = ""
 	}
 
-	var imageData *types.ImageInspectInfo
-	if imageData, err = imageInspect(imgURL); err != nil {
-		if err != nil {
-			var podmanImgData *imageInspection
-			klog.Infof("Falling back to using podman inspect")
-			if podmanImgData, err = podmanInspect(imgURL); err != nil {
-				return
-			}
-			ostreeCsum = podmanImgData.Labels["com.coreos.ostree-commit"]
-			ostreeVersion = podmanImgData.Labels["version"]
-		}
-	} else {
-		ostreeCsum = imageData.Labels["com.coreos.ostree-commit"]
-		ostreeVersion = imageData.Labels["version"]
+	bootedImageInfo := BootedImageInfo{
+		OSImageURL:   osImageURL,
+		ImageVersion: *bootedImage.Image.Version,
+		BaseChecksum: baseChecksum,
 	}
-	// We may have pulled in OSContainer image as fallback during podmanCopy() or podmanInspect()
-	defer exec.Command("podman", "rmi", imgURL).Run()
-
-	repo := fmt.Sprintf("%s/srv/repo", osImageContentDir)
-
-	// Now we need to figure out the commit to rebase to
-	// Commit label takes priority
-	if ostreeCsum != "" {
-		if ostreeVersion != "" {
-			klog.Infof("Pivoting to: %s (%s)", ostreeVersion, ostreeCsum)
-		} else {
-			klog.Infof("Pivoting to: %s", ostreeCsum)
-		}
-	} else {
-		klog.Infof("No com.coreos.ostree-commit label found in metadata! Inspecting...")
-		var refText []byte
-		refText, err = runGetOut("ostree", "refs", "--repo", repo)
-		if err != nil {
-			return
-		}
-		refs := strings.Split(strings.TrimSpace(string(refText)), "\n")
-		if len(refs) == 1 {
-			klog.Infof("Using ref %s", refs[0])
-			var ostreeCsumBytes []byte
-			ostreeCsumBytes, err = runGetOut("ostree", "rev-parse", "--repo", repo, refs[0])
-			if err != nil {
-				return
-			}
-			ostreeCsum = strings.TrimSpace(string(ostreeCsumBytes))
-		} else if len(refs) > 1 {
-			err = fmt.Errorf("multiple refs found in repo")
-			return
-		} else {
-			// XXX: in the future, possibly scan the repo to find a unique .commit object
-			err = fmt.Errorf("no refs found in repo")
-			return
-		}
-	}
-
-	// This will be what will be displayed in `rpm-ostree status` as the "origin spec"
-	customURL := fmt.Sprintf("pivot://%s", imgURL)
-	klog.Infof("Executing rebase from repo path %s with customImageURL %s and checksum %s", repo, customURL, ostreeCsum)
-
-	args := []string{"rebase", "--experimental", fmt.Sprintf("%s:%s", repo, ostreeCsum),
-		"--custom-origin-url", customURL, "--custom-origin-description", "Managed by machine-config-operator"}
-
-	if err = runRpmOstree(args...); err != nil {
-		return
-	}
-
-	changed = true
-	return
+	return &bootedImageInfo, nil
 }
 
-// IsBootableImage determines if the image is a bootable (new container formet) image, or a wrapper (old container format)
-func (r *RpmOstreeClient) IsBootableImage(imgURL string) (bool, error) {
-
-	// TODO(jkyros): This is duplicated-ish from Rebase(), do we still need to carry this around?
-	var isBootableImage string
-	var imageData *types.ImageInspectInfo
-	var err error
-	if imageData, err = imageInspect(imgURL); err != nil {
-		if err != nil {
-			var podmanImgData *imageInspection
-			klog.Infof("Falling back to using podman inspect")
-
-			if podmanImgData, err = podmanInspect(imgURL); err != nil {
-				return false, err
-			}
-			isBootableImage = podmanImgData.Labels["ostree.bootable"]
-		}
-	} else {
-		isBootableImage = imageData.Labels["ostree.bootable"]
+// Switch target a new container image reference to boot for the system or errors if already switched.
+func (b *BootcClient) Switch(imgURL string) error {
+	// Try to re-link the merged pull secrets if they exist, since it could have been populated without a daemon reboot
+	if err := useMergedPullSecrets(bootcSystem); err != nil {
+		return fmt.Errorf("Error while ensuring access to pull secrets: %w", err)
 	}
-	// We may have pulled in OSContainer image as fallback during podmanCopy() or podmanInspect()
-	defer exec.Command("podman", "rmi", imgURL).Run()
-
-	return isBootableImage == "true", nil
-}
-
-// RebaseLayered rebases system or errors if already rebased
-func (r *RpmOstreeClient) RebaseLayered(imgURL string) (err error) {
-	klog.Infof("Executing rebase to %s", imgURL)
-	return runRpmOstree("rebase", "--experimental", "ostree-unverified-registry:"+imgURL)
-}
-
-// useKubeletConfigSecrets gives the rpm-ostree client access to secrets in the kubelet config.json by symlinking so that
-// rpm-ostree can use those secrets to pull images. It does this by symlinking the kubelet's config.json into /run/ostree.
-func useKubeletConfigSecrets() error {
-	if _, err := os.Stat("/run/ostree/auth.json"); err != nil {
-
-		if errors.Is(err, os.ErrNotExist) {
-
-			err := os.MkdirAll("/run/ostree", 0o544)
-			if err != nil {
-				return err
-			}
-
-			err = os.Symlink(kubeletAuthFile, "/run/ostree/auth.json")
-			if err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func (state *rpmOstreeState) getBootedDeployment() (*RpmOstreeDeployment, error) {
-	for num := range state.Deployments {
-		deployment := state.Deployments[num]
-		if deployment.Booted {
-			return &deployment, nil
-		}
-	}
-	return &RpmOstreeDeployment{}, fmt.Errorf("not currently booted in a deployment")
-}
-
-func (state *rpmOstreeState) getStagedDeployment() *RpmOstreeDeployment {
-	for num := range state.Deployments {
-		deployment := state.Deployments[num]
-		if deployment.Staged {
-			return &deployment
-		}
-	}
-	return &RpmOstreeDeployment{}
+	klog.Infof("Executing switch to %s", imgURL)
+	return runBootc("switch", imgURL)
 }
