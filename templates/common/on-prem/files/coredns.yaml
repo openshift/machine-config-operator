@@ -67,8 +67,6 @@ contents:
         imagePullPolicy: IfNotPresent
       containers:
       - name: coredns
-        securityContext:
-          privileged: true
         image: {{.Images.corednsImage}}
         args:
         - "--conf"
@@ -95,8 +93,6 @@ contents:
         terminationMessagePolicy: FallbackToLogsOnError
         imagePullPolicy: IfNotPresent
       - name: coredns-monitor
-        securityContext:
-          privileged: true
         image: {{ .Images.baremetalRuntimeCfgImage }}
         command:
         - corednsmonitor
