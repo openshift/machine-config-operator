@@ -51,7 +51,7 @@ func RunKubeletBootstrap(templateDir string, kubeletConfigs []*mcfgv1.KubeletCon
 			}
 			if kubeletConfig.Spec.TLSSecurityProfile != nil {
 				// Inject TLS Options from Spec
-				observedMinTLSVersion, observedCipherSuites := getSecurityProfileCiphers(kubeletConfig.Spec.TLSSecurityProfile)
+				observedMinTLSVersion, observedCipherSuites := ctrlcommon.GetSecurityProfileCiphers(kubeletConfig.Spec.TLSSecurityProfile)
 				originalKubeConfig.TLSMinVersion = observedMinTLSVersion
 				originalKubeConfig.TLSCipherSuites = observedCipherSuites
 			}

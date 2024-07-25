@@ -72,7 +72,7 @@ func newFixture(t *testing.T) *fixture {
 	f.apiserverLister = []*osev1.APIServer{
 		{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: defaultOpenshiftTLSSecurityProfileConfig,
+				Name: ctrlcommon.APIServerInstanceName,
 			},
 		},
 	}

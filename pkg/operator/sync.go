@@ -539,7 +539,7 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 	imgs.BaseOSExtensionsContainerImage = osextensionscontainer
 
 	// sync up the ControllerConfigSpec
-	infra, network, proxy, dns, err := optr.getGlobalConfig()
+	infra, network, proxy, dns, apiServer, err := optr.getGlobalConfig()
 	if err != nil {
 		return err
 	}
@@ -626,9 +626,9 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 		}
 
 		// create renderConfig
-		optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra.Status.APIServerInternalURL, pointerConfigData, moscs)
+		optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra.Status.APIServerInternalURL, pointerConfigData, moscs, apiServer)
 	} else {
-		optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra.Status.APIServerInternalURL, pointerConfigData, nil)
+		optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra.Status.APIServerInternalURL, pointerConfigData, nil, apiServer)
 	}
 
 	return nil
@@ -1875,24 +1875,28 @@ func getCloudConfigFromConfigMap(cm *corev1.ConfigMap, key string) (string, erro
 	return "", fmt.Errorf("%s not found in %s/%s", key, cm.Namespace, cm.Name)
 }
 
-// getGlobalConfig gets global configuration for the cluster, namely, the Infrastructure and Network types.
+// getGlobalConfig gets global configuration for the cluster, namely, the Infrastructure, Network and the APIServer types.
 // Each type of global configuration is named `cluster` for easy discovery in the cluster.
-func (optr *Operator) getGlobalConfig() (*configv1.Infrastructure, *configv1.Network, *configv1.Proxy, *configv1.DNS, error) {
+func (optr *Operator) getGlobalConfig() (*configv1.Infrastructure, *configv1.Network, *configv1.Proxy, *configv1.DNS, *configv1.APIServer, error) {
 	infra, err := optr.infraLister.Get("cluster")
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, err
 	}
 	network, err := optr.networkLister.Get("cluster")
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, err
 	}
 	proxy, err := optr.proxyLister.Get("cluster")
 	if err != nil && !apierrors.IsNotFound(err) {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, err
 	}
 	dns, err := optr.dnsLister.Get("cluster")
 	if err != nil && !apierrors.IsNotFound(err) {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, err
+	}
+	apiServer, err := optr.apiserverLister.Get(ctrlcommon.APIServerInstanceName)
+	if err != nil && !apierrors.IsNotFound(err) {
+		return nil, nil, nil, nil, nil, err
 	}
 
 	// the client removes apiversion/kind (gvk) from all objects during decoding and re-adds it when they are reencoded for
@@ -1902,15 +1906,15 @@ func (optr *Operator) getGlobalConfig() (*configv1.Infrastructure, *configv1.Net
 	infra = infra.DeepCopy()
 	err = setGVK(infra, configclientscheme.Scheme)
 	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("Failed setting gvk for infra object: %w", err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("Failed setting gvk for infra object: %w", err)
 	}
 	dns = dns.DeepCopy()
 	err = setGVK(dns, configclientscheme.Scheme)
 	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("Failed setting gvk for dns object: %w", err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("Failed setting gvk for dns object: %w", err)
 	}
 
-	return infra, network, proxy, dns, nil
+	return infra, network, proxy, dns, apiServer, nil
 }
 
 // setGVK sets the group/version/kind of an object based on the supplied client schema. This
@@ -1933,7 +1937,8 @@ func setGVK(obj runtime.Object, scheme *runtime.Scheme) error {
 	return nil
 }
 
-func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *RenderConfigImages, apiServerURL string, pointerConfigData []byte, moscs []*mcfgv1alpha1.MachineOSConfig) *renderConfig {
+func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *RenderConfigImages, apiServerURL string, pointerConfigData []byte, moscs []*mcfgv1alpha1.MachineOSConfig, apiServer *configv1.APIServer) *renderConfig {
+	tlsMinVersion, tlsCipherSuites := ctrlcommon.GetSecurityProfileCiphersFromAPIServer(apiServer)
 	return &renderConfig{
 		TargetNamespace:        tnamespace,
 		Version:                version.Raw,
@@ -1944,6 +1949,8 @@ func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.C
 		APIServerURL:           apiServerURL,
 		PointerConfig:          string(pointerConfigData),
 		MachineOSConfigs:       moscs,
+		TLSMinVersion:          tlsMinVersion,
+		TLSCipherSuites:        tlsCipherSuites,
 	}
 }
 
