@@ -74,10 +74,6 @@ contents:
         ensure_rule nat PREROUTING -m comment --comment 'gcp LB vip DNAT' -j ${CHAIN_NAME}
         ensure_rule nat OUTPUT -m comment --comment 'gcp LB vip DNAT for local clients' -j ${CHAIN_NAME}-local
 
-        # Need this so that existing flows (with an entry in conntrack) continue to be
-        # balanced, even if the DNAT entry is removed
-        ensure_rule filter INPUT -m comment --comment 'gcp LB vip existing' -m addrtype ! --dst-type LOCAL -m state --state ESTABLISHED,RELATED -j ACCEPT
-
         # If a connection for a VIP comes in while we have no rewrite rule for that VIP,
         # we would think the VIP is an external host and so forward the connection back
         # off the node. In the specific case of connections from the GCP LB health

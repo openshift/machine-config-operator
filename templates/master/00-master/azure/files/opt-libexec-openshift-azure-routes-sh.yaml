@@ -97,13 +97,6 @@ contents:
 
         ensure_rule4 nat OUTPUT -m comment --comment 'azure LB vip overriding for local clients' -j ${CHAIN_NAME}
         ensure_rule6 nat OUTPUT -m comment --comment 'azure LB vip overriding for local clients' -j ${CHAIN_NAME}
-
-        # Need this so that existing flows (with an entry in conntrack) continue,
-        # even if the iptables rule is removed
-        ensure_rule4 filter FORWARD -m comment --comment 'azure LB vip existing' -m addrtype ! --dst-type LOCAL -m state --state ESTABLISHED,RELATED -j ACCEPT
-        ensure_rule6 filter FORWARD -m comment --comment 'azure LB vip existing' -m addrtype ! --dst-type LOCAL -m state --state ESTABLISHED,RELATED -j ACCEPT
-        ensure_rule4 filter OUTPUT -m comment --comment 'azure LB vip existing' -m addrtype ! --dst-type LOCAL -m state --state ESTABLISHED,RELATED -j ACCEPT
-        ensure_rule6 filter OUTPUT -m comment --comment 'azure LB vip existing' -m addrtype ! --dst-type LOCAL -m state --state ESTABLISHED,RELATED -j ACCEPT
     }
 
     remove_stale() {
