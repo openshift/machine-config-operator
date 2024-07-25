@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/tls"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -51,12 +52,15 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/tools/reference"
+	k8sapiflag "k8s.io/component-base/cli/flag"
 	"k8s.io/klog/v2"
 
+	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	opv1 "github.com/openshift/api/operator/v1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
+	"github.com/openshift/library-go/pkg/crypto"
 )
 
 // strToPtr converts the input string to a pointer to itself
@@ -1239,4 +1243,78 @@ func FindClosestFilePolicyPathMatch(diffPath string, filePolicies []opv1.NodeDis
 		}
 	}
 	return matchFound, matchActions
+}
+
+// Extracts the minimum TLS version and cipher suites from apiServer object,
+func GetSecurityProfileCiphersFromAPIServer(apiServer *configv1.APIServer) (string, []string) {
+	// If no apiServer object exists, default to the intermediate profile by calling
+	// GetSecurityProfileCiphers with a nil object for TLSSecurityProfile
+	if apiServer == nil {
+		return GetSecurityProfileCiphers(nil)
+	}
+	return GetSecurityProfileCiphers(apiServer.Spec.TLSSecurityProfile)
+}
+
+// Extracts the minimum TLS version and cipher suites from TLSSecurityProfile object,
+// Converts the ciphers to IANA names as supported by Kube ServingInfo config.
+// If profile is nil, returns config defined by the Intermediate TLS Profile
+func GetSecurityProfileCiphers(profile *configv1.TLSSecurityProfile) (string, []string) {
+	var profileType configv1.TLSProfileType
+	if profile == nil {
+		profileType = configv1.TLSProfileIntermediateType
+	} else {
+		profileType = profile.Type
+	}
+
+	var profileSpec *configv1.TLSProfileSpec
+	if profileType == configv1.TLSProfileCustomType {
+		if profile.Custom != nil {
+			profileSpec = &profile.Custom.TLSProfileSpec
+		}
+	} else {
+		profileSpec = configv1.TLSProfiles[profileType]
+	}
+
+	// nothing found / custom type set but no actual custom spec
+	if profileSpec == nil {
+		profileSpec = configv1.TLSProfiles[configv1.TLSProfileIntermediateType]
+	}
+
+	// need to remap all Ciphers to their respective IANA names used by Go
+	return string(profileSpec.MinTLSVersion), crypto.OpenSSLToIANACipherSuites(profileSpec.Ciphers)
+}
+
+// Converts tlsMinVersion and tlscipherSuites flags to a tlsConfig object that is used
+// by the http.Server() call used in apiserver.NewAPIServer() & apiserver.Serve()
+//
+//nolint:gosec
+func GetGoTLSConfig(tlsMinVersion string, tlscipherSuites []string) *tls.Config {
+	// Create tlsConfig from arguments, using k8sapiflag for the uint16 translation
+	tlsMinVersionID, tlsMinVersionErr := k8sapiflag.TLSVersion(tlsMinVersion)
+	tlscipherSuiteIDs, tlscipherSuiteIDsErr := k8sapiflag.TLSCipherSuites(tlscipherSuites)
+	// If any errors are encountered, log it and fallback to intermediate settings. This is very unlikely as tls arguments are guarded by API validation.
+	if tlsMinVersionErr != nil || tlscipherSuiteIDsErr != nil || len(tlscipherSuiteIDs) == 0 {
+		klog.Errorf("Error using provided tls arguments: tlsMinVersionErr: %v, tlscipherSuiteIDsErr: %v, tlscipherSuiteLength: %v", tlsMinVersionErr, tlscipherSuiteIDsErr, len(tlscipherSuiteIDs))
+		tlsMinVersionID, _ = k8sapiflag.TLSVersion(string(configv1.TLSProfiles[configv1.TLSProfileIntermediateType].MinTLSVersion))
+		tlscipherSuiteIDs, _ = k8sapiflag.TLSCipherSuites(configv1.TLSProfiles[configv1.TLSProfileIntermediateType].Ciphers)
+	}
+	// This causes a G402: TLS MinVersion too low. (gosec) verify error, possibly because the version is determined at runtime?
+	return &tls.Config{MinVersion: tlsMinVersionID, CipherSuites: tlscipherSuiteIDs}
+}
+
+func GetBootstrapAPIServer() (*configv1.APIServer, error) {
+	apiserverData, err := os.ReadFile(APIServerBootstrapFileLocation)
+	if os.IsNotExist(err) {
+		// This is not an error; it just means that an APIServer manifest was not provided at install time
+		klog.Infof("No bootstrap apiserver manifest found, bootstrap MCS will use defaults")
+		return nil, nil
+	} else if err != nil {
+		return nil, fmt.Errorf("error getting apiserver from disk: %w", err)
+	}
+	klog.Infof("Reading in bootstrap apiserver manifest was successful")
+	apiserver := new(configv1.APIServer)
+	if err := yaml.Unmarshal(apiserverData, &apiserver); err != nil {
+		return nil, fmt.Errorf("unmarshal into apiserver failed %w", err)
+	}
+	return apiserver, nil
 }

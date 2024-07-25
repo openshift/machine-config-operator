@@ -43,6 +43,8 @@ type renderConfig struct {
 	Constants              map[string]string
 	PointerConfig          string
 	MachineOSConfigs       []*mcfgv1alpha1.MachineOSConfig
+	TLSMinVersion          string
+	TLSCipherSuites        []string
 }
 
 type assetRenderer struct {
@@ -78,6 +80,7 @@ func (a *assetRenderer) addTemplateFuncs() {
 	funcs["cloudPlatformAPIIntLoadBalancerIPs"] = cloudPlatformAPIIntLoadBalancerIPs
 	funcs["cloudPlatformAPILoadBalancerIPs"] = cloudPlatformAPILoadBalancerIPs
 	funcs["cloudPlatformIngressLoadBalancerIPs"] = cloudPlatformIngressLoadBalancerIPs
+	funcs["join"] = strings.Join
 
 	a.tmpl = a.tmpl.Funcs(funcs)
 }

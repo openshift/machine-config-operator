@@ -109,6 +109,7 @@ type Operator struct {
 	crcLister             mcfglistersv1.ContainerRuntimeConfigLister
 	nodeClusterLister     configlistersv1.NodeLister
 	moscLister            mcfglistersalphav1.MachineOSConfigLister
+	apiserverLister       configlistersv1.APIServerLister
 
 	crdListerSynced                  cache.InformerSynced
 	deployListerSynced               cache.InformerSynced
@@ -138,6 +139,7 @@ type Operator struct {
 	crcListerSynced                  cache.InformerSynced
 	nodeClusterListerSynced          cache.InformerSynced
 	moscListerSynced                 cache.InformerSynced
+	apiserverListerSynced            cache.InformerSynced
 
 	// queue only ever has one item, but it has nice error handling backoff/retry semantics
 	queue workqueue.RateLimitingInterface
@@ -187,6 +189,7 @@ func New(
 	mckInformer mcfginformersv1.KubeletConfigInformer,
 	crcInformer mcfginformersv1.ContainerRuntimeConfigInformer,
 	nodeClusterInformer configinformersv1.NodeInformer,
+	apiserverInformer configinformersv1.APIServerInformer,
 	ctrlctx *ctrlcommon.ControllerContext,
 ) *Operator {
 	eventBroadcaster := record.NewBroadcaster()
@@ -251,8 +254,8 @@ func New(
 		crcInformer.Informer(),
 		nodeClusterInformer.Informer(),
 		clusterOperatorInformer.Informer(),
+		apiserverInformer.Informer(),
 	}
-
 	for _, i := range informers {
 		i.AddEventHandler(optr.eventHandler())
 	}
@@ -310,6 +313,8 @@ func New(
 	optr.mckListerSynced = mckInformer.Informer().HasSynced
 	optr.crcLister = crcInformer.Lister()
 	optr.crcListerSynced = crcInformer.Informer().HasSynced
+	optr.apiserverLister = apiserverInformer.Lister()
+	optr.apiserverListerSynced = apiserverInformer.Informer().HasSynced
 
 	optr.vStore.Set("operator", version.ReleaseVersion)
 

@@ -60,7 +60,8 @@ contents:
         - --client-ca-file=/etc/kubernetes/kubelet-ca.crt
         - --logtostderr=true
         - --kubeconfig=/var/lib/kubelet/kubeconfig
-        - --tls-cipher-suites=TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305
+        - --tls-cipher-suites={{join .TLSCipherSuites ","}} 
+        - --tls-min-version={{.TLSMinVersion}}
         - --upstream=http://127.0.0.1:9537
         - --tls-cert-file=/var/lib/kubelet/pki/kubelet-server-current.pem
         - --tls-private-key-file=/var/lib/kubelet/pki/kubelet-server-current.pem
