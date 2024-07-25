@@ -31,9 +31,6 @@ const (
 	// The MachineConfigPool to create for the tests.
 	layeredMCPName string = "layered"
 
-	// The ImageStream name to use for the tests.
-	imagestreamName string = "os-image"
-
 	// The name of the global pull secret copy to use for the tests.
 	globalPullSecretCloneName string = "global-pull-secret-copy"
 )
@@ -68,7 +65,7 @@ func init() {
 }
 
 // Holds elements common for each on-cluster build tests.
-type onClusterBuildTestOpts struct {
+type onClusterLayeringTestOpts struct {
 	// Which image builder type to use for the test.
 	imageBuilderType mcfgv1alpha1.MachineOSImageBuilderType
 
@@ -91,7 +88,7 @@ type onClusterBuildTestOpts struct {
 func TestOnClusterBuildsOnOKD(t *testing.T) {
 	skipOnOCP(t)
 
-	runOnClusterBuildTest(t, onClusterBuildTestOpts{
+	runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
 		poolName: layeredMCPName,
 		customDockerfiles: map[string]string{
 			layeredMCPName: okdFcosDockerfile,
@@ -101,7 +98,7 @@ func TestOnClusterBuildsOnOKD(t *testing.T) {
 
 // Tests tha an on-cluster build can be performed with the Custom Pod Builder.
 func TestOnClusterBuildsCustomPodBuilder(t *testing.T) {
-	runOnClusterBuildTest(t, onClusterBuildTestOpts{
+	runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
 		poolName: layeredMCPName,
 		customDockerfiles: map[string]string{
 			layeredMCPName: cowsayDockerfile,
@@ -112,7 +109,7 @@ func TestOnClusterBuildsCustomPodBuilder(t *testing.T) {
 // Tests that an on-cluster build can be performed and that the resulting image
 // is rolled out to an opted-in node.
 func TestOnClusterBuildRollsOutImage(t *testing.T) {
-	imagePullspec := runOnClusterBuildTest(t, onClusterBuildTestOpts{
+	imagePullspec := runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
 		poolName: layeredMCPName,
 		customDockerfiles: map[string]string{
 			layeredMCPName: cowsayDockerfile,
@@ -138,7 +135,7 @@ func TestOnClusterBuildRollsOutImage(t *testing.T) {
 // simulating a build where someone has added this content; usually a Red Hat
 // Satellite user.
 func TestYumReposBuilds(t *testing.T) {
-	runOnClusterBuildTest(t, onClusterBuildTestOpts{
+	runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
 		poolName: layeredMCPName,
 		customDockerfiles: map[string]string{
 			layeredMCPName: yumReposDockerfile,
@@ -153,7 +150,7 @@ func TestYumReposBuilds(t *testing.T) {
 func TestEntitledBuilds(t *testing.T) {
 	skipOnOKD(t)
 
-	runOnClusterBuildTest(t, onClusterBuildTestOpts{
+	runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
 		poolName: layeredMCPName,
 		customDockerfiles: map[string]string{
 			layeredMCPName: entitledDockerfile,
@@ -176,7 +173,8 @@ func TestMCDGetsMachineOSConfigSecrets(t *testing.T) {
 	// we just need to make sure it lands on the node.
 	t.Cleanup(createSecret(t, cs, &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: secretName,
+			Name:      secretName,
+			Namespace: ctrlcommon.MCONamespace,
 		},
 		Type: corev1.SecretTypeDockerConfigJson,
 		Data: map[string][]byte{
@@ -191,7 +189,7 @@ func TestMCDGetsMachineOSConfigSecrets(t *testing.T) {
 
 	// Set up all of the objects needed for the build, including getting (but not
 	// yet applying) the MachineOSConfig.
-	mosc := prepareForTest(t, cs, onClusterBuildTestOpts{
+	mosc := prepareForOnClusterLayeringTest(t, cs, onClusterLayeringTestOpts{
 		poolName: layeredMCPName,
 		customDockerfiles: map[string]string{
 			layeredMCPName: yumReposDockerfile,
@@ -362,7 +360,7 @@ func isMcdPodRunning(pod *corev1.Pod) bool {
 
 // Sets up and performs an on-cluster build for a given set of parameters.
 // Returns the built image pullspec for later consumption.
-func runOnClusterBuildTest(t *testing.T, testOpts onClusterBuildTestOpts) string {
+func runOnClusterLayeringTest(t *testing.T, testOpts onClusterLayeringTestOpts) string {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel = makeIdempotentAndRegister(t, cancel)
 
@@ -375,7 +373,7 @@ func runOnClusterBuildTest(t *testing.T, testOpts onClusterBuildTestOpts) string
 
 	t.Logf("Running with ImageBuilder type: %s", imageBuilder)
 
-	mosc := prepareForTest(t, cs, testOpts)
+	mosc := prepareForOnClusterLayeringTest(t, cs, testOpts)
 
 	// Create our MachineOSConfig and ensure that it is deleted after the test is
 	// finished.
@@ -559,7 +557,7 @@ func getMachineConfigOSImageURL(cs *framework.ClientSet) (*ctrlcommon.OSImageURL
 //
 // Returns a MachineOSConfig object for the caller to create to begin the build
 // process.
-func prepareForTest(t *testing.T, cs *framework.ClientSet, testOpts onClusterBuildTestOpts) *mcfgv1alpha1.MachineOSConfig {
+func prepareForOnClusterLayeringTest(t *testing.T, cs *framework.ClientSet, testOpts onClusterLayeringTestOpts) *mcfgv1alpha1.MachineOSConfig {
 	// If the test requires RHEL entitlements, clone them from
 	// "etc-pki-entitlement" in the "openshift-config-managed" namespace.
 	if testOpts.useEtcPkiEntitlement {
@@ -574,21 +572,20 @@ func prepareForTest(t *testing.T, cs *framework.ClientSet, testOpts onClusterBui
 		t.Cleanup(injectYumRepos(t, cs))
 	}
 
-	pushSecretName, err := getBuilderPushSecretName(cs)
-	require.NoError(t, err)
-
 	// Register ephemeral object cleanup function.
 	t.Cleanup(func() {
 		cleanupEphemeralBuildObjects(t, cs)
 	})
 
-	imagestreamName := "os-image"
-	t.Cleanup(createImagestream(t, cs, imagestreamName))
+	imagestreamObjMeta := metav1.ObjectMeta{
+		Name:      "os-image",
+		Namespace: strings.ToLower(t.Name()),
+	}
+
+	pushSecretName, finalPullspec, imagestreamCleanupFunc := setupImageStream(t, cs, imagestreamObjMeta)
+	t.Cleanup(imagestreamCleanupFunc)
 
 	t.Cleanup(copyGlobalPullSecret(t, cs))
-
-	finalPullspec, err := getImagestreamPullspec(cs, imagestreamName)
-	require.NoError(t, err)
 
 	if testOpts.targetNode != nil {
 		t.Cleanup(makeIdempotentAndRegister(t, helpers.CreatePoolWithNode(t, cs, testOpts.poolName, *testOpts.targetNode)))
@@ -596,10 +593,10 @@ func prepareForTest(t *testing.T, cs *framework.ClientSet, testOpts onClusterBui
 		t.Cleanup(makeIdempotentAndRegister(t, helpers.CreateMCP(t, cs, testOpts.poolName)))
 	}
 
-	_, err = helpers.WaitForRenderedConfig(t, cs, testOpts.poolName, "00-worker")
+	_, err := helpers.WaitForRenderedConfig(t, cs, testOpts.poolName, "00-worker")
 	require.NoError(t, err)
 
-	return &mcfgv1alpha1.MachineOSConfig{
+	mosc := &mcfgv1alpha1.MachineOSConfig{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: testOpts.poolName,
 		},
@@ -632,6 +629,10 @@ func prepareForTest(t *testing.T, cs *framework.ClientSet, testOpts onClusterBui
 			},
 		},
 	}
+
+	helpers.SetMetadataOnObject(t, mosc)
+
+	return mosc
 }
 
 func TestSSHKeyAndPasswordForOSBuilder(t *testing.T) {
@@ -644,7 +645,7 @@ func TestSSHKeyAndPasswordForOSBuilder(t *testing.T) {
 	osNode := helpers.GetSingleNodeByRole(t, cs, layeredMCPName)
 
 	// prepare for on cluster build test
-	prepareForTest(t, cs, onClusterBuildTestOpts{
+	prepareForOnClusterLayeringTest(t, cs, onClusterLayeringTestOpts{
 		poolName:          layeredMCPName,
 		customDockerfiles: map[string]string{},
 	})
@@ -676,6 +677,8 @@ func TestSSHKeyAndPasswordForOSBuilder(t *testing.T) {
 			},
 		},
 	}
+
+	helpers.SetMetadataOnObject(t, testConfig)
 
 	// Create the MachineConfig and wait for the configuration to be applied
 	_, err := cs.MachineConfigs().Create(context.TODO(), testConfig, metav1.CreateOptions{})
