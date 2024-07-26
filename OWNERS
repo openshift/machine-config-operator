@@ -1,20 +1,14 @@
 # See the OWNERS docs: https://git.k8s.io/community/contributors/guide/owners.md
 
 approvers:
-  - cdoern
   - djoshy
   - dkhater-redhat
-  - sinnykumari
   - yuqi-zhang
   - cheesesashimi
-  - jkyros
 reviewers:
-  - cdoern
   - djoshy
   - dkhater-redhat
-  - sinnykumari
   - yuqi-zhang
   - cheesesashimi
-  - jkyros
 
 component: "Machine Config Operator"
