@@ -145,33 +145,50 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 				}
 				continue
 			}
+			/*
+				// TODO: (djoshy) Rework this block to use MCN conditions correctly. See: https://issues.redhat.com/browse/MCO-1228
 
-			if cond.Status == metav1.ConditionUnknown {
-				switch mcfgalphav1.StateProgress(cond.Type) {
-				case mcfgalphav1.MachineConfigNodeUpdatePrepared:
-					updatingMachines = append(updatedMachines, ourNode) //nolint:gocritic
-				case mcfgalphav1.MachineConfigNodeUpdateExecuted:
-					updatingMachines = append(updatingMachines, ourNode)
-				case mcfgalphav1.MachineConfigNodeUpdatePostActionComplete:
-					updatingMachines = append(updatingMachines, ourNode)
-				case mcfgalphav1.MachineConfigNodeUpdateComplete:
-					updatingMachines = append(updatingMachines, ourNode)
-				case mcfgalphav1.MachineConfigNodeResumed:
-					updatingMachines = append(updatedMachines, ourNode) //nolint:gocritic
-					readyMachines = append(readyMachines, ourNode)
-				case mcfgalphav1.MachineConfigNodeUpdateCompatible:
-					updatingMachines = append(updatedMachines, ourNode) //nolint:gocritic
-				case mcfgalphav1.MachineConfigNodeUpdateDrained:
-					unavailableMachines = append(unavailableMachines, ourNode)
-					updatingMachines = append(updatingMachines, ourNode)
-				case mcfgalphav1.MachineConfigNodeUpdateCordoned:
-					unavailableMachines = append(unavailableMachines, ourNode)
-					updatingMachines = append(updatingMachines, ourNode)
-				case mcfgalphav1.MachineConfigNodeUpdated:
-					updatedMachines = append(updatedMachines, ourNode)
-					readyMachines = append(readyMachines, ourNode)
+				// Specifically, the main concerns for the following block are:
+				// (i) Why are only unknown conditions being evaluated? Shouldn't True/False conditions be used?
+				// (ii) Multiple conditions can be unknown at the same time, resulting in certain machines being double counted
+
+				// Some background:
+				// The MCN conditions are used to feed MCP statuses if the machine counts add up correctly to the total node count.
+				// If this check fails, node conditions are used to determine machine counts. The MCN counts calculated in this block
+				// seem incorrect most of the time, so the controller almost always defaults to using the node condition based counts.
+				// On occasion, the MCN counts cause a false positive in aformentioned check, resulting in invalid values for the MCP
+				// statuses. Commenting out this block will force the controller to always use node condition based counts to feed the
+				// MCP status.
+
+
+				if cond.Status == metav1.ConditionUnknown {
+					// This switch case will cause a node to be double counted, maybe use a hash for node count
+					switch mcfgalphav1.StateProgress(cond.Type) {
+					case mcfgalphav1.MachineConfigNodeUpdatePrepared:
+						updatingMachines = append(updatedMachines, ourNode) //nolint:gocritic
+					case mcfgalphav1.MachineConfigNodeUpdateExecuted:
+						updatingMachines = append(updatingMachines, ourNode)
+					case mcfgalphav1.MachineConfigNodeUpdatePostActionComplete:
+						updatingMachines = append(updatingMachines, ourNode)
+					case mcfgalphav1.MachineConfigNodeUpdateComplete:
+						updatingMachines = append(updatingMachines, ourNode)
+					case mcfgalphav1.MachineConfigNodeResumed:
+						updatingMachines = append(updatedMachines, ourNode) //nolint:gocritic
+						readyMachines = append(readyMachines, ourNode)
+					case mcfgalphav1.MachineConfigNodeUpdateCompatible:
+						updatingMachines = append(updatedMachines, ourNode) //nolint:gocritic
+					case mcfgalphav1.MachineConfigNodeUpdateDrained:
+						unavailableMachines = append(unavailableMachines, ourNode)
+						updatingMachines = append(updatingMachines, ourNode)
+					case mcfgalphav1.MachineConfigNodeUpdateCordoned:
+						unavailableMachines = append(unavailableMachines, ourNode)
+						updatingMachines = append(updatingMachines, ourNode)
+					case mcfgalphav1.MachineConfigNodeUpdated:
+						updatedMachines = append(updatedMachines, ourNode)
+						readyMachines = append(readyMachines, ourNode)
+					}
 				}
-			}
+			*/
 		}
 	}
 	degradedMachineCount := int32(len(degradedMachines))
