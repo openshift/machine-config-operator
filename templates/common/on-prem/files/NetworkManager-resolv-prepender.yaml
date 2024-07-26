@@ -27,16 +27,32 @@ contents:
 
     export IP4_DOMAINS IP6_DOMAINS
     export -f resolv_prepender
-    # Given an overall Network Manager dispatcher timeout of 90 seconds, and multiple events which
-    # may occur within this time period, we must enforce a time limit for each event. As some
-    # events cannot happen in the same transaction, we are not simply dividing timeout by their
-    # number (e.g. "up" and "reapply" don't contribute to the same timeout like  "dhcp*-change").
+
+    # For RHEL8 with NetworkManager >= 1.36 and RHEL9 with NetworkManager >=1.42 we can use simplified logic
+    # of observing only a single "dns-change" event. Older version of NetworkManager require however that we
+    # react on a set of multiple events. Once dns-change event is detected we create a flag file to ignore
+    # subsequent up&co. events as undesired.
+    #
+    # Given an overall Network Manager dispatcher timeout of 90 seconds, we are enforcing a slightly shorter
+    # timeout for the observed events.
     case "$STATUS" in
-      up|dhcp4-change|dhcp6-change|reapply)
+      dns-change)
         >&2 echo "NM resolv-prepender triggered by ${IFACE} ${STATUS}."
-        if ! timeout 30s bash -c resolv_prepender; then
+        if [ ! -f "/run/networkmanager-dns-event-detected" ]; then
+          touch /run/networkmanager-dns-event-detected
+        fi
+        if ! timeout 60s bash -c resolv_prepender; then
+          >&2 echo "NM resolv-prepender: Timeout occurred"
+          exit 1
+        fi
+      ;;
+      up|dhcp4-change|dhcp6-change|reapply)
+        if [ ! -f "/run/networkmanager-dns-event-detected" ]; then
+          >&2 echo "NM resolv-prepender triggered by ${IFACE} ${STATUS}."
+          if ! timeout 30s bash -c resolv_prepender; then
             >&2 echo "NM resolv-prepender: Timeout occurred"
             exit 1
+          fi
         fi
         # If $DHCP6_FQDN_FQDN is not empty and is not localhost.localdomain and static hostname was not already set
         if [[ -n "$DHCP6_FQDN_FQDN" && "$DHCP6_FQDN_FQDN" != "localhost.localdomain" && "$DHCP6_FQDN_FQDN" =~ "." ]] ; then
@@ -47,6 +63,9 @@ contents:
               systemd-run --property=Type=oneshot --unit resolve-prepender-hostnamectl -Pq \
                   hostnamectl set-hostname --static --transient $DHCP6_FQDN_FQDN
            fi
+        fi
+        if [[ "$STATUS" == "up" ]] && [[ $IFACE == "br-ex" ]]; then
+            touch /run/nodeip-configuration/br-ex-up
         fi
       ;;
       *)
