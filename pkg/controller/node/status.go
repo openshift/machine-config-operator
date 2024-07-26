@@ -145,33 +145,42 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 				}
 				continue
 			}
+			/*
+				// TODO: Retool this block to use MCN conditions correctly. See: https://issues.redhat.com/browse/MCO-1228
+				// Commenting out this block as it will cause node condition based machine counts to be used. The only exception in this case
+				// would be if all nodes are degraded by MachineConfigNodePinnedImageSetsDegraded, which is fine and should not affect this bug.
+				// The main concerns for the following block are:
+				// (i) Why only unknown conditions being evaluated? Shouldn't True/False conditions be used?
+				// (ii) multiple conditions can be unknown at the same time, resulting in certain machines being double counted
 
-			if cond.Status == metav1.ConditionUnknown {
-				switch mcfgalphav1.StateProgress(cond.Type) {
-				case mcfgalphav1.MachineConfigNodeUpdatePrepared:
-					updatingMachines = append(updatedMachines, ourNode) //nolint:gocritic
-				case mcfgalphav1.MachineConfigNodeUpdateExecuted:
-					updatingMachines = append(updatingMachines, ourNode)
-				case mcfgalphav1.MachineConfigNodeUpdatePostActionComplete:
-					updatingMachines = append(updatingMachines, ourNode)
-				case mcfgalphav1.MachineConfigNodeUpdateComplete:
-					updatingMachines = append(updatingMachines, ourNode)
-				case mcfgalphav1.MachineConfigNodeResumed:
-					updatingMachines = append(updatedMachines, ourNode) //nolint:gocritic
-					readyMachines = append(readyMachines, ourNode)
-				case mcfgalphav1.MachineConfigNodeUpdateCompatible:
-					updatingMachines = append(updatedMachines, ourNode) //nolint:gocritic
-				case mcfgalphav1.MachineConfigNodeUpdateDrained:
-					unavailableMachines = append(unavailableMachines, ourNode)
-					updatingMachines = append(updatingMachines, ourNode)
-				case mcfgalphav1.MachineConfigNodeUpdateCordoned:
-					unavailableMachines = append(unavailableMachines, ourNode)
-					updatingMachines = append(updatingMachines, ourNode)
-				case mcfgalphav1.MachineConfigNodeUpdated:
-					updatedMachines = append(updatedMachines, ourNode)
-					readyMachines = append(readyMachines, ourNode)
+				if cond.Status == metav1.ConditionUnknown {
+					// This switch case will cause a node to be double counted, maybe use a hash for node count
+					switch mcfgalphav1.StateProgress(cond.Type) {
+					case mcfgalphav1.MachineConfigNodeUpdatePrepared:
+						updatingMachines = append(updatedMachines, ourNode) //nolint:gocritic
+					case mcfgalphav1.MachineConfigNodeUpdateExecuted:
+						updatingMachines = append(updatingMachines, ourNode)
+					case mcfgalphav1.MachineConfigNodeUpdatePostActionComplete:
+						updatingMachines = append(updatingMachines, ourNode)
+					case mcfgalphav1.MachineConfigNodeUpdateComplete:
+						updatingMachines = append(updatingMachines, ourNode)
+					case mcfgalphav1.MachineConfigNodeResumed:
+						updatingMachines = append(updatedMachines, ourNode) //nolint:gocritic
+						readyMachines = append(readyMachines, ourNode)
+					case mcfgalphav1.MachineConfigNodeUpdateCompatible:
+						updatingMachines = append(updatedMachines, ourNode) //nolint:gocritic
+					case mcfgalphav1.MachineConfigNodeUpdateDrained:
+						unavailableMachines = append(unavailableMachines, ourNode)
+						updatingMachines = append(updatingMachines, ourNode)
+					case mcfgalphav1.MachineConfigNodeUpdateCordoned:
+						unavailableMachines = append(unavailableMachines, ourNode)
+						updatingMachines = append(updatingMachines, ourNode)
+					case mcfgalphav1.MachineConfigNodeUpdated:
+						updatedMachines = append(updatedMachines, ourNode)
+						readyMachines = append(readyMachines, ourNode)
+					}
 				}
-			}
+			*/
 		}
 	}
 	degradedMachineCount := int32(len(degradedMachines))
