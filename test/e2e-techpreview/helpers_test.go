@@ -27,7 +27,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	aggerrs "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/klog/v2"
 	"sigs.k8s.io/yaml"
 )
 
@@ -110,7 +109,7 @@ func createConfigMap(t *testing.T, cs *framework.ClientSet, cm *corev1.ConfigMap
 
 	return makeIdempotentAndRegister(t, func() {
 		require.NoError(t, cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace).Delete(context.TODO(), cm.Name, metav1.DeleteOptions{}))
-		klog.Infof("Deleted ConfigMap %q", cm.Name)
+		t.Logf("Deleted ConfigMap %q", cm.Name)
 	})
 }
 
