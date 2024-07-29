@@ -17,7 +17,7 @@ import (
 	imagev1 "github.com/openshift/api/image/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
-	"github.com/openshift/machine-config-operator/pkg/controller/build"
+	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/openshift/machine-config-operator/test/helpers"
@@ -312,12 +312,12 @@ func makeIdempotentAndRegister(t *testing.T, cleanupFunc func()) func() {
 
 // TOOD: Refactor into smaller functions.
 func cleanupEphemeralBuildObjects(t *testing.T, cs *framework.ClientSet) {
-	labelSelector := build.OSBuildSelector().String()
+	labelSelector := constants.OSBuildSelector().String()
 
 	// Any secrets that get created by BuildController should have different
 	// label selectors since they're produced differently.
 	secretList, err := cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace).List(context.TODO(), metav1.ListOptions{
-		LabelSelector: build.CanonicalizedSecretSelector().String(),
+		LabelSelector: constants.CanonicalizedSecretSelector().String(),
 	})
 
 	require.NoError(t, err)
@@ -389,7 +389,7 @@ func cleanupEphemeralBuildObjects(t *testing.T, cs *framework.ClientSet) {
 // Writes any ephemeral build objects to disk as YAML files.
 func writeBuildArtifactsToFiles(t *testing.T, cs *framework.ClientSet, poolName string) {
 	lo := metav1.ListOptions{
-		LabelSelector: build.OSBuildSelector().String(),
+		LabelSelector: constants.OSBuildSelector().String(),
 	}
 
 	archiveName := fmt.Sprintf("%s-build-artifacts.tar.gz", helpers.SanitizeTestName(t))
