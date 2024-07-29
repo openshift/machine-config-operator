@@ -8,6 +8,7 @@ import (
 
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
+	"github.com/openshift/machine-config-operator/pkg/controller/build/buildrequest"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -187,29 +188,25 @@ func (ctrl *PodBuildController) Run(ctx context.Context, workers int) {
 }
 
 // Deletes the underlying build pod.
-func (ctrl *PodBuildController) DeleteBuildObject(mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig) error {
+func (ctrl *PodBuildController) DeleteBuildObject(mosb *mcfgv1alpha1.MachineOSBuild, _ *mcfgv1alpha1.MachineOSConfig) error {
 	// We want to ignore when a pod or ConfigMap is deleted if it is not found.
 	// This is because when a pool is opted out of layering *after* a successful
 	// build, no pod nor ConfigMap will remain. So we want to be able to
 	// idempotently call this function in that case.
 	return aggerrors.AggregateGoroutines(
 		func() error {
-			ibr := newImageBuildRequest(mosc, mosb)
-			return ignoreIsNotFoundErr(ctrl.kubeclient.CoreV1().Pods(ctrlcommon.MCONamespace).Delete(context.TODO(), ibr.getBuildName(), metav1.DeleteOptions{}))
+			return ignoreIsNotFoundErr(ctrl.kubeclient.CoreV1().Pods(ctrlcommon.MCONamespace).Delete(context.TODO(), buildrequest.GetBuildPodName(mosb), metav1.DeleteOptions{}))
 		},
 		func() error {
-			ibr := newImageBuildRequest(mosc, mosb)
-			return ignoreIsNotFoundErr(ctrl.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Delete(context.TODO(), ibr.getDigestConfigMapName(), metav1.DeleteOptions{}))
+			return ignoreIsNotFoundErr(ctrl.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Delete(context.TODO(), buildrequest.GetDigestConfigMapName(mosb), metav1.DeleteOptions{}))
 		},
 	)
 }
 
 // Determines if a build is currently running by looking for a corresponding pod.
-func (ctrl *PodBuildController) IsBuildRunning(mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig) (bool, error) {
-	ibr := newImageBuildRequest(mosc, mosb)
-
+func (ctrl *PodBuildController) IsBuildRunning(mosb *mcfgv1alpha1.MachineOSBuild, _ *mcfgv1alpha1.MachineOSConfig) (bool, error) {
 	// First check if we have a build in progress for this MachineConfigPool and rendered config.
-	_, err := ctrl.kubeclient.CoreV1().Pods(ctrlcommon.MCONamespace).Get(context.TODO(), ibr.getBuildName(), metav1.GetOptions{})
+	_, err := ctrl.kubeclient.CoreV1().Pods(ctrlcommon.MCONamespace).Get(context.TODO(), buildrequest.GetBuildPodName(mosb), metav1.GetOptions{})
 	if err != nil && !k8serrors.IsNotFound(err) {
 		return false, err
 	}
@@ -218,8 +215,12 @@ func (ctrl *PodBuildController) IsBuildRunning(mosb *mcfgv1alpha1.MachineOSBuild
 }
 
 // Starts a new build pod, assuming one is not found first. In that case, it returns an object reference to the preexisting build pod.
-func (ctrl *PodBuildController) StartBuild(ibr ImageBuildRequest) (*corev1.ObjectReference, error) {
-	targetMC := ibr.MachineOSBuild.Spec.DesiredConfig.Name
+func (ctrl *PodBuildController) StartBuild(ibr buildrequest.BuildRequest) (*corev1.ObjectReference, error) {
+	ibrOpts := ibr.Opts()
+
+	targetMC := ibrOpts.MachineOSBuild.Spec.DesiredConfig.Name
+
+	buildPod := ibr.BuildPod()
 
 	// TODO: Find a constant for this:
 	if !strings.HasPrefix(targetMC, "rendered-") {
@@ -227,27 +228,27 @@ func (ctrl *PodBuildController) StartBuild(ibr ImageBuildRequest) (*corev1.Objec
 	}
 
 	// First check if we have a build in progress for this MachineConfigPool and rendered config.
-	pod, err := ctrl.kubeclient.CoreV1().Pods(ctrlcommon.MCONamespace).Get(context.TODO(), ibr.getBuildName(), metav1.GetOptions{})
+	pod, err := ctrl.kubeclient.CoreV1().Pods(ctrlcommon.MCONamespace).Get(context.TODO(), buildPod.Name, metav1.GetOptions{})
 	if err != nil && !k8serrors.IsNotFound(err) {
 		return nil, err
 	}
 
 	// This means we found a preexisting build pod.
 	if pod != nil && err == nil && hasAllRequiredOSBuildLabels(pod.Labels) {
-		klog.Infof("Found preexisting build pod (%s) for pool %s", pod.Name, ibr.MachineOSConfig.Spec.MachineConfigPool.Name)
+		klog.Infof("Found preexisting build pod (%s) for pool %s", pod.Name, ibrOpts.MachineOSConfig.Spec.MachineConfigPool.Name)
 		return toObjectRef(pod), nil
 	}
 
-	klog.Infof("Starting build for pool %s", ibr.MachineOSConfig.Spec.MachineConfigPool.Name)
-	klog.Infof("Build pod name: %s", ibr.getBuildName())
-	klog.Infof("Final image will be pushed to %q, using secret %q", ibr.MachineOSConfig.Status.CurrentImagePullspec, ibr.MachineOSConfig.Spec.BuildOutputs.CurrentImagePullSecret.Name)
+	klog.Infof("Starting build for pool %s", ibrOpts.MachineOSConfig.Spec.MachineConfigPool.Name)
+	klog.Infof("Build pod name: %s", buildPod.Name)
+	klog.Infof("Final image will be pushed to %q, using secret %q", ibrOpts.MachineOSConfig.Status.CurrentImagePullspec, ibrOpts.MachineOSConfig.Spec.BuildOutputs.CurrentImagePullSecret.Name)
 
-	pod, err = ctrl.kubeclient.CoreV1().Pods(ctrlcommon.MCONamespace).Create(context.TODO(), ibr.toBuildPod(), metav1.CreateOptions{})
+	pod, err = ctrl.kubeclient.CoreV1().Pods(ctrlcommon.MCONamespace).Create(context.TODO(), buildPod, metav1.CreateOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("could not create build pod: %w", err)
 	}
 
-	klog.Infof("Build started for pool %s in %s!", ibr.MachineOSConfig.Spec.MachineConfigPool.Name, pod.Name)
+	klog.Infof("Build started for pool %s in %s!", ibrOpts.MachineOSConfig.Spec.MachineConfigPool.Name, pod.Name)
 
 	return toObjectRef(pod), nil
 }
