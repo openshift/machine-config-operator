@@ -49,6 +49,7 @@ type ControllerContext struct {
 
 	NamespacedInformerFactory                           mcfginformers.SharedInformerFactory
 	InformerFactory                                     mcfginformers.SharedInformerFactory
+	TechPreviewInformerFactory                          mcfginformers.SharedInformerFactory
 	KubeInformerFactory                                 informers.SharedInformerFactory
 	KubeNamespacedInformerFactory                       informers.SharedInformerFactory
 	OpenShiftConfigKubeNamespacedInformerFactory        informers.SharedInformerFactory
@@ -79,6 +80,7 @@ func CreateControllerContext(ctx context.Context, cb *clients.Builder) *Controll
 	operatorClient := cb.OperatorClientOrDie("operator-shared-informer")
 	machineClient := cb.MachineClientOrDie("machine-shared-informer")
 	sharedInformers := mcfginformers.NewSharedInformerFactory(client, resyncPeriod()())
+	sharedTechPreviewInformers := mcfginformers.NewSharedInformerFactory(client, resyncPeriod()())
 	sharedNamespacedInformers := mcfginformers.NewFilteredSharedInformerFactory(client, resyncPeriod()(), MCONamespace, nil)
 	kubeSharedInformer := informers.NewSharedInformerFactory(kubeClient, resyncPeriod()())
 	kubeNamespacedSharedInformer := informers.NewFilteredSharedInformerFactory(kubeClient, resyncPeriod()(), MCONamespace, nil)
@@ -131,6 +133,7 @@ func CreateControllerContext(ctx context.Context, cb *clients.Builder) *Controll
 		ClientBuilder:                                       cb,
 		NamespacedInformerFactory:                           sharedNamespacedInformers,
 		InformerFactory:                                     sharedInformers,
+		TechPreviewInformerFactory:                          sharedTechPreviewInformers,
 		KubeInformerFactory:                                 kubeSharedInformer,
 		KubeNamespacedInformerFactory:                       kubeNamespacedSharedInformer,
 		OpenShiftConfigKubeNamespacedInformerFactory:        openShiftConfigKubeNamespacedSharedInformer,
