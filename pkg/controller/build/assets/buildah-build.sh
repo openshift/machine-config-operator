@@ -8,6 +8,25 @@ set -xeuo
 ETC_PKI_ENTITLEMENT_MOUNTPOINT="${ETC_PKI_ENTITLEMENT_MOUNTPOINT:-}"
 ETC_PKI_RPM_GPG_MOUNTPOINT="${ETC_PKI_RPM_GPG_MOUNTPOINT:-}"
 ETC_YUM_REPOS_D_MOUNTPOINT="${ETC_YUM_REPOS_D_MOUNTPOINT:-}"
+MAX_RETRIES="${MAX_RETRIES:-3}"
+
+# Retry a command up to a specific number of times until it exits successfully.
+# Adapted from https://gist.github.com/sj26/88e1c6584397bb7c13bd11108a579746
+function retry {
+  local count=0
+
+  until "$@"; do
+    exit=$?
+    count=$((count + 1))
+    if [ $count -lt $MAX_RETRIES ]; then
+      echo "Retry $count/$MAX_RETRIES exited $exit, retrying..."
+    else
+      echo "Retry $count/$MAX_RETRIES exited $exit, no more retries left."
+      return $exit
+    fi
+  done
+  return 0
+}
 
 build_context="$HOME/context"
 
@@ -69,10 +88,10 @@ if [[ -n "$ETC_PKI_RPM_GPG_MOUNTPOINT" ]] && [[ -d "$ETC_PKI_RPM_GPG_MOUNTPOINT"
 fi
 
 # Build our image.
-buildah bud "${build_args[@]}" "$build_context"
+retry buildah bud "${build_args[@]}" "$build_context"
 
 # Push our built image.
-buildah push \
+retry buildah push \
 	--storage-driver vfs \
 	--authfile="$FINAL_IMAGE_PUSH_CREDS" \
 	--digestfile="/tmp/done/digestfile" \
