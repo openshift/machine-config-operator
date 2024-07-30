@@ -293,6 +293,25 @@ spec:
                                   parameters for an AWS network load balancer. Present
                                   only if type is NLB.
                                 type: object
+                                x-kubernetes-validations:
+                                - message: number of subnets must be equal to number
+                                    of eipAllocations
+                                  rule: 'has(self.subnets) && has(self.subnets.ids)
+                                    && has(self.subnets.names) && has(self.eipAllocations)
+                                    ? size(self.subnets.ids + self.subnets.names)
+                                    == size(self.eipAllocations) : true'
+                                - message: number of subnets must be equal to number
+                                    of eipAllocations
+                                  rule: 'has(self.subnets) && has(self.subnets.ids)
+                                    && !has(self.subnets.names) && has(self.eipAllocations)
+                                    ? size(self.subnets.ids) == size(self.eipAllocations)
+                                    : true'
+                                - message: number of subnets must be equal to number
+                                    of eipAllocations
+                                  rule: 'has(self.subnets) && has(self.subnets.names)
+                                    && !has(self.subnets.ids) && has(self.eipAllocations)
+                                    ? size(self.subnets.names) == size(self.eipAllocations)
+                                    : true'
                               type:
                                 description: "type is the type of AWS load balancer
                                   to instantiate for an ingresscontroller. \n Valid
@@ -396,6 +415,11 @@ spec:
                     - dnsManagementPolicy
                     - scope
                     type: object
+                    x-kubernetes-validations:
+                    - message: eipAllocations are forbidden when the scope is Internal.
+                      rule: '!has(self.scope) || self.scope != ''Internal'' || !has(self.providerParameters)
+                        || !has(self.providerParameters.aws) || !has(self.providerParameters.aws.networkLoadBalancer)
+                        || !has(self.providerParameters.aws.networkLoadBalancer.eipAllocations)'
                   nodePort:
                     description: nodePort holds parameters for the NodePortService
                       endpoint publishing strategy. Present only if type is NodePortService.
@@ -1946,6 +1970,25 @@ spec:
                                   parameters for an AWS network load balancer. Present
                                   only if type is NLB.
                                 type: object
+                                x-kubernetes-validations:
+                                - message: number of subnets must be equal to number
+                                    of eipAllocations
+                                  rule: 'has(self.subnets) && has(self.subnets.ids)
+                                    && has(self.subnets.names) && has(self.eipAllocations)
+                                    ? size(self.subnets.ids + self.subnets.names)
+                                    == size(self.eipAllocations) : true'
+                                - message: number of subnets must be equal to number
+                                    of eipAllocations
+                                  rule: 'has(self.subnets) && has(self.subnets.ids)
+                                    && !has(self.subnets.names) && has(self.eipAllocations)
+                                    ? size(self.subnets.ids) == size(self.eipAllocations)
+                                    : true'
+                                - message: number of subnets must be equal to number
+                                    of eipAllocations
+                                  rule: 'has(self.subnets) && has(self.subnets.names)
+                                    && !has(self.subnets.ids) && has(self.eipAllocations)
+                                    ? size(self.subnets.names) == size(self.eipAllocations)
+                                    : true'
                               type:
                                 description: "type is the type of AWS load balancer
                                   to instantiate for an ingresscontroller. \n Valid
@@ -2049,6 +2092,11 @@ spec:
                     - dnsManagementPolicy
                     - scope
                     type: object
+                    x-kubernetes-validations:
+                    - message: eipAllocations are forbidden when the scope is Internal.
+                      rule: '!has(self.scope) || self.scope != ''Internal'' || !has(self.providerParameters)
+                        || !has(self.providerParameters.aws) || !has(self.providerParameters.aws.networkLoadBalancer)
+                        || !has(self.providerParameters.aws.networkLoadBalancer.eipAllocations)'
                   nodePort:
                     description: nodePort holds parameters for the NodePortService
                       endpoint publishing strategy. Present only if type is NodePortService.
