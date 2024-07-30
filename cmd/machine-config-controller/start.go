@@ -137,6 +137,10 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 				ctrlctx.OperatorInformerFactory.Start(ctrlctx.Stop)
 			}
 
+			if fg.Enabled(features.FeatureGateOnClusterBuild) {
+				ctrlctx.TechPreviewInformerFactory.Start(ctrlctx.Stop)
+			}
+
 		case <-time.After(1 * time.Minute):
 			klog.Errorf("timed out waiting for FeatureGate detection")
 			os.Exit(1)
@@ -230,7 +234,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
 			ctx.KubeInformerFactory.Core().V1().Nodes(),
 			ctx.KubeInformerFactory.Core().V1().Pods(),
-			ctx.InformerFactory.Machineconfiguration().V1alpha1().MachineOSBuilds(),
+			ctx.TechPreviewInformerFactory.Machineconfiguration().V1alpha1().MachineOSBuilds(),
 			ctx.ConfigInformerFactory.Config().V1().Schedulers(),
 			ctx.ClientBuilder.KubeClientOrDie("node-update-controller"),
 			ctx.ClientBuilder.MachineConfigClientOrDie("node-update-controller"),

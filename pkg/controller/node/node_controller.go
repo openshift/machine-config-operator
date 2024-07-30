@@ -404,7 +404,7 @@ func (ctrl *Controller) addMachineOSBuild(obj interface{}) {
 func (ctrl *Controller) updateMachineOSBuild(old, cur interface{}) {
 	oldMOSB := old.(*mcfgv1alpha1.MachineOSBuild)
 	curMOSB := cur.(*mcfgv1alpha1.MachineOSBuild)
-	if equality.Semantic.DeepEqual(oldMOSB.Status, oldMOSB.Status) {
+	if equality.Semantic.DeepEqual(oldMOSB.Status, curMOSB.Status) {
 		// we do not want to trigger an update func just for MOSB spec, we dont act on the spec
 		return
 	}
