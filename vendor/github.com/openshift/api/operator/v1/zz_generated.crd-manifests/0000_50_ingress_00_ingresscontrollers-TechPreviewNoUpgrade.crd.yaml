@@ -368,6 +368,44 @@ spec:
                                   parameters for an AWS network load balancer. Present
                                   only if type is NLB.
                                 properties:
+                                  eipAllocations:
+                                    description: "eipAllocations is a list of IDs
+                                      for Elastic IP (EIP) addresses that are assigned
+                                      to the Network Load Balancer. The following
+                                      restrictions apply: \n eipAllocations can only
+                                      be used with external scope, not internal. An
+                                      EIP can be allocated to only a single IngressController.
+                                      The number of EIP allocations must match the
+                                      number of subnets that are used for the load
+                                      balancer. Each EIP allocation must be unique.
+                                      A maximum of 10 EIP allocations are permitted.
+                                      \n See https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/elastic-ip-addresses-eip.html
+                                      for general information about configuration,
+                                      characteristics, and limitations of Elastic
+                                      IP addresses."
+                                    items:
+                                      description: EIPAllocation is an ID for an Elastic
+                                        IP (EIP) address that can be allocated to
+                                        an ELB in the AWS environment. Values must
+                                        begin with `eipalloc-` followed by exactly
+                                        17 hexadecimal (`[0-9a-fA-F]`) characters.
+                                      maxLength: 26
+                                      minLength: 26
+                                      type: string
+                                      x-kubernetes-validations:
+                                      - message: eipAllocations should start with
+                                          'eipalloc-'
+                                        rule: self.startsWith('eipalloc-')
+                                      - message: eipAllocations must be 'eipalloc-'
+                                          followed by exactly 17 hexadecimal characters
+                                          (0-9, a-f, A-F)
+                                        rule: self.split("-", 2)[1].matches('[0-9a-fA-F]{17}$')
+                                    maxItems: 10
+                                    type: array
+                                    x-kubernetes-list-type: atomic
+                                    x-kubernetes-validations:
+                                    - message: eipAllocations cannot contain duplicates
+                                      rule: self.all(x, self.exists_one(y, x == y))
                                   subnets:
                                     description: "subnets specifies the subnets to
                                       which the load balancer will attach. The subnets
@@ -444,6 +482,25 @@ spec:
                                       rule: has(self.ids) && self.ids.size() > 0 ||
                                         has(self.names) && self.names.size() > 0
                                 type: object
+                                x-kubernetes-validations:
+                                - message: number of subnets must be equal to number
+                                    of eipAllocations
+                                  rule: 'has(self.subnets) && has(self.subnets.ids)
+                                    && has(self.subnets.names) && has(self.eipAllocations)
+                                    ? size(self.subnets.ids + self.subnets.names)
+                                    == size(self.eipAllocations) : true'
+                                - message: number of subnets must be equal to number
+                                    of eipAllocations
+                                  rule: 'has(self.subnets) && has(self.subnets.ids)
+                                    && !has(self.subnets.names) && has(self.eipAllocations)
+                                    ? size(self.subnets.ids) == size(self.eipAllocations)
+                                    : true'
+                                - message: number of subnets must be equal to number
+                                    of eipAllocations
+                                  rule: 'has(self.subnets) && has(self.subnets.names)
+                                    && !has(self.subnets.ids) && has(self.eipAllocations)
+                                    ? size(self.subnets.names) == size(self.eipAllocations)
+                                    : true'
                               type:
                                 description: "type is the type of AWS load balancer
                                   to instantiate for an ingresscontroller. \n Valid
@@ -547,6 +604,11 @@ spec:
                     - dnsManagementPolicy
                     - scope
                     type: object
+                    x-kubernetes-validations:
+                    - message: eipAllocations are forbidden when the scope is Internal.
+                      rule: '!has(self.scope) || self.scope != ''Internal'' || !has(self.providerParameters)
+                        || !has(self.providerParameters.aws) || !has(self.providerParameters.aws.networkLoadBalancer)
+                        || !has(self.providerParameters.aws.networkLoadBalancer.eipAllocations)'
                   nodePort:
                     description: nodePort holds parameters for the NodePortService
                       endpoint publishing strategy. Present only if type is NodePortService.
@@ -2172,6 +2234,44 @@ spec:
                                   parameters for an AWS network load balancer. Present
                                   only if type is NLB.
                                 properties:
+                                  eipAllocations:
+                                    description: "eipAllocations is a list of IDs
+                                      for Elastic IP (EIP) addresses that are assigned
+                                      to the Network Load Balancer. The following
+                                      restrictions apply: \n eipAllocations can only
+                                      be used with external scope, not internal. An
+                                      EIP can be allocated to only a single IngressController.
+                                      The number of EIP allocations must match the
+                                      number of subnets that are used for the load
+                                      balancer. Each EIP allocation must be unique.
+                                      A maximum of 10 EIP allocations are permitted.
+                                      \n See https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/elastic-ip-addresses-eip.html
+                                      for general information about configuration,
+                                      characteristics, and limitations of Elastic
+                                      IP addresses."
+                                    items:
+                                      description: EIPAllocation is an ID for an Elastic
+                                        IP (EIP) address that can be allocated to
+                                        an ELB in the AWS environment. Values must
+                                        begin with `eipalloc-` followed by exactly
+                                        17 hexadecimal (`[0-9a-fA-F]`) characters.
+                                      maxLength: 26
+                                      minLength: 26
+                                      type: string
+                                      x-kubernetes-validations:
+                                      - message: eipAllocations should start with
+                                          'eipalloc-'
+                                        rule: self.startsWith('eipalloc-')
+                                      - message: eipAllocations must be 'eipalloc-'
+                                          followed by exactly 17 hexadecimal characters
+                                          (0-9, a-f, A-F)
+                                        rule: self.split("-", 2)[1].matches('[0-9a-fA-F]{17}$')
+                                    maxItems: 10
+                                    type: array
+                                    x-kubernetes-list-type: atomic
+                                    x-kubernetes-validations:
+                                    - message: eipAllocations cannot contain duplicates
+                                      rule: self.all(x, self.exists_one(y, x == y))
                                   subnets:
                                     description: "subnets specifies the subnets to
                                       which the load balancer will attach. The subnets
@@ -2248,6 +2348,25 @@ spec:
                                       rule: has(self.ids) && self.ids.size() > 0 ||
                                         has(self.names) && self.names.size() > 0
                                 type: object
+                                x-kubernetes-validations:
+                                - message: number of subnets must be equal to number
+                                    of eipAllocations
+                                  rule: 'has(self.subnets) && has(self.subnets.ids)
+                                    && has(self.subnets.names) && has(self.eipAllocations)
+                                    ? size(self.subnets.ids + self.subnets.names)
+                                    == size(self.eipAllocations) : true'
+                                - message: number of subnets must be equal to number
+                                    of eipAllocations
+                                  rule: 'has(self.subnets) && has(self.subnets.ids)
+                                    && !has(self.subnets.names) && has(self.eipAllocations)
+                                    ? size(self.subnets.ids) == size(self.eipAllocations)
+                                    : true'
+                                - message: number of subnets must be equal to number
+                                    of eipAllocations
+                                  rule: 'has(self.subnets) && has(self.subnets.names)
+                                    && !has(self.subnets.ids) && has(self.eipAllocations)
+                                    ? size(self.subnets.names) == size(self.eipAllocations)
+                                    : true'
                               type:
                                 description: "type is the type of AWS load balancer
                                   to instantiate for an ingresscontroller. \n Valid
@@ -2351,6 +2470,11 @@ spec:
                     - dnsManagementPolicy
                     - scope
                     type: object
+                    x-kubernetes-validations:
+                    - message: eipAllocations are forbidden when the scope is Internal.
+                      rule: '!has(self.scope) || self.scope != ''Internal'' || !has(self.providerParameters)
+                        || !has(self.providerParameters.aws) || !has(self.providerParameters.aws.networkLoadBalancer)
+                        || !has(self.providerParameters.aws.networkLoadBalancer.eipAllocations)'
                   nodePort:
                     description: nodePort holds parameters for the NodePortService
                       endpoint publishing strategy. Present only if type is NodePortService.

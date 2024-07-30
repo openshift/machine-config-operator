@@ -57,6 +57,13 @@ var (
 				enableIn(configv1.DevPreviewNoUpgrade).
 				mustRegister()
 
+	FeatureGateSetEIPForNLBIngressController = newFeatureGate("SetEIPForNLBIngressController").
+							reportProblemsToJiraComponent("Networking / router").
+							contactPerson("miheer").
+							productScope(ocpSpecific).
+							enableIn(configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
+							mustRegister()
+
 	FeatureGateOpenShiftPodSecurityAdmission = newFeatureGate("OpenShiftPodSecurityAdmission").
 							reportProblemsToJiraComponent("auth").
 							contactPerson("stlaz").
@@ -324,7 +331,7 @@ var (
 					reportProblemsToJiraComponent("MachineConfigOperator").
 					contactPerson("djoshy").
 					productScope(ocpSpecific).
-					enableIn(configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
+					enableIn(configv1.Default, configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
 					mustRegister()
 
 	FeatureGateManagedBootImagesAWS = newFeatureGate("ManagedBootImagesAWS").
@@ -458,7 +465,7 @@ var (
 					reportProblemsToJiraComponent("MachineConfigOperator").
 					contactPerson("jerzhang").
 					productScope(ocpSpecific).
-					enableIn(configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
+					enableIn(configv1.Default, configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
 					mustRegister()
 
 	FeatureGateMetricsCollectionProfiles = newFeatureGate("MetricsCollectionProfiles").
