@@ -474,6 +474,9 @@ func prepareForTest(t *testing.T, cs *framework.ClientSet, testOpts onClusterBui
 	pushSecretName, err := getBuilderPushSecretName(cs)
 	require.NoError(t, err)
 
+	// REMOVE AFTER https://github.com/openshift/machine-config-operator/pull/4471 LANDS!
+	require.NoError(t, cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace).Delete(context.TODO(), pushSecretName, metav1.DeleteOptions{}))
+
 	// Register ephemeral object cleanup function.
 	t.Cleanup(func() {
 		cleanupEphemeralBuildObjects(t, cs)
