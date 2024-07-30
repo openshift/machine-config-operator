@@ -197,6 +197,17 @@ func (i ImageBuildRequest) toBuildPod() *corev1.Pod {
 // nolint:dupl // I don't want to deduplicate this yet since there are still some unknowns.
 func (i ImageBuildRequest) toBuildahPod() *corev1.Pod {
 	env := []corev1.EnvVar{
+		// How many times the build / push steps should be retried. In the future,
+		// this should be wired up to the MachineOSConfig or other higher-level
+		// API. This is useful for retrying builds / pushes when they fail due to a
+		// transient condition such as a temporary network issue. It does *NOT*
+		// handle situations where the build pod is evicted or rescheduled. A
+		// higher-level abstraction will be needed such as a Kubernetes Job
+		// (https://kubernetes.io/docs/concepts/workloads/controllers/job/).
+		{
+			Name:  "MAX_RETRIES",
+			Value: "3",
+		},
 		{
 			Name:  "DIGEST_CONFIGMAP_NAME",
 			Value: i.getDigestConfigMapName(),
