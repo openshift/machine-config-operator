@@ -45,14 +45,13 @@ func TestFeatureGateDrift(t *testing.T) {
 			ctrl := f.newController(fgAccess)
 
 			// Generate kubelet config with feature gates applied
-			kubeletConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, "master", fgAccess)
+			kubeletConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, "master", fgAccess, nil)
 			require.NoError(t, err)
 
 			t.Logf("Generated Kubelet Config Feature Gates: %v", kubeletConfig.FeatureGates)
 
 			defaultFeatureGates, err := generateFeatureMap(fgAccess)
 			require.NoError(t, err)
-
 			t.Logf("Expected Feature Gates: %v", *defaultFeatureGates)
 
 			if !reflect.DeepEqual(kubeletConfig.FeatureGates, *defaultFeatureGates) {
@@ -171,7 +170,7 @@ func TestBootstrapFeaturesDefault(t *testing.T) {
 
 			fgAccess := featuregates.NewHardcodedFeatureGateAccess(nil, nil)
 
-			mcs, err := RunFeatureGateBootstrap("../../../templates", fgAccess, nil, cc, mcps)
+			mcs, err := RunFeatureGateBootstrap("../../../templates", fgAccess, nil, cc, mcps, nil)
 			if err != nil {
 				t.Errorf("could not run feature gate bootstrap: %v", err)
 			}
@@ -192,7 +191,7 @@ func TestBootstrapFeaturesCustomNoUpgrade(t *testing.T) {
 
 			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"CSIMigration"}, nil)
 
-			mcs, err := RunFeatureGateBootstrap("../../../templates", fgAccess, nil, cc, mcps)
+			mcs, err := RunFeatureGateBootstrap("../../../templates", fgAccess, nil, cc, mcps, nil)
 			if err != nil {
 				t.Errorf("could not run feature gate bootstrap: %v", err)
 			}
