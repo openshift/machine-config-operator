@@ -9,6 +9,10 @@ contents: |
 
   [Service]
   # Need oneshot to delay kubelet
+  # We would use Type=notify so that systemd keeps retrying until we succeed (and makes sure the dependent
+  # services start correctly if we succeeded only after a retry). But this service uses a custom ExecStart
+  # with the infinite until...do loop that reinvents the whole retrying mechanism. For this reason Type=oneshot
+  # and Type=notify do not make difference.
   Type=oneshot
   # Would prefer to do Restart=on-failure instead of this bash retry loop, but
   # the version of systemd we have right now doesn't support it. It should be

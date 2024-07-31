@@ -17,7 +17,10 @@ contents: |
 
   [Service]
   # Need oneshot to delay kubelet
-  Type=oneshot
+  # but we use Type=notify so that systemd keeps retrying until we succeed. With
+  # Type=oneshot, it also keeps retrying, but will never start follow-up services
+  # that depend on us if we fail once.
+  Type=notify
   ExecStart=/usr/local/bin/configure-ovs.sh {{.NetworkType}}
   StandardOutput=journal+console
   StandardError=journal+console
