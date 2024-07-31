@@ -1108,6 +1108,11 @@ func getAllCandidateMachines(pool *mcfgv1.MachineConfigPool, nodesInPool []*core
 			}
 			continue
 		}
+		// Ignore nodes that are currently mid-update or unscheduled
+		if !isNodeReady(node) {
+			klog.V(4).Infof("node %s skipped during candidate selection as it is currently unscheduled", node.Name)
+			continue
+		}
 		nodes = append(nodes, node)
 	}
 	// Nodes which are failing to target this config also count against
