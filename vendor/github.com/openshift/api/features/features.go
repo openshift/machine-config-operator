@@ -348,13 +348,6 @@ var (
 					enableIn(configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
 					mustRegister()
 
-	FeatureGateBootcNodeManagement = newFeatureGate("BootcNodeManagement").
-					reportProblemsToJiraComponent("MachineConfigOperator").
-					contactPerson("inesqyx").
-					productScope(ocpSpecific).
-					enableIn(configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
-					mustRegister()
-
 	FeatureGateSignatureStores = newFeatureGate("SignatureStores").
 					reportProblemsToJiraComponent("Cluster Version Operator").
 					contactPerson("lmohanty").
