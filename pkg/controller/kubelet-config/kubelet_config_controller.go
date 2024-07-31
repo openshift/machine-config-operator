@@ -31,6 +31,7 @@ import (
 	kubeletconfigv1beta1 "k8s.io/kubelet/config/v1beta1"
 
 	configv1 "github.com/openshift/api/config/v1"
+	osev1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
 	oseinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
@@ -352,8 +353,8 @@ func (ctrl *Controller) handleFeatureErr(err error, key interface{}) {
 
 // generateOriginalKubeletConfigWithFeatureGates generates a KubeletConfig and ensure the correct feature gates are set
 // based on the given FeatureGate.
-func generateOriginalKubeletConfigWithFeatureGates(cc *mcfgv1.ControllerConfig, templatesDir, role string, featureGateAccess featuregates.FeatureGateAccess) (*kubeletconfigv1beta1.KubeletConfiguration, error) {
-	originalKubeletIgn, err := generateOriginalKubeletConfigIgn(cc, templatesDir, role)
+func generateOriginalKubeletConfigWithFeatureGates(cc *mcfgv1.ControllerConfig, templatesDir, role string, featureGateAccess featuregates.FeatureGateAccess, apiServer *configv1.APIServer) (*kubeletconfigv1beta1.KubeletConfiguration, error) {
+	originalKubeletIgn, err := generateOriginalKubeletConfigIgn(cc, templatesDir, role, apiServer)
 	if err != nil {
 		return nil, fmt.Errorf("could not generate the original Kubelet config ignition: %w", err)
 	}
@@ -383,9 +384,10 @@ func generateOriginalKubeletConfigWithFeatureGates(cc *mcfgv1.ControllerConfig, 
 	return originalKubeConfig, nil
 }
 
-func generateOriginalKubeletConfigIgn(cc *mcfgv1.ControllerConfig, templatesDir, role string) (*ign3types.File, error) {
+func generateOriginalKubeletConfigIgn(cc *mcfgv1.ControllerConfig, templatesDir, role string, apiServer *osev1.APIServer) (*ign3types.File, error) {
 	// Render the default templates
-	rc := &mtmpl.RenderConfig{ControllerConfigSpec: &cc.Spec}
+	tlsMinVersion, tlsCipherSuites := ctrlcommon.GetSecurityProfileCiphersFromAPIServer(apiServer)
+	rc := &mtmpl.RenderConfig{ControllerConfigSpec: &cc.Spec, TLSMinVersion: tlsMinVersion, TLSCipherSuites: tlsCipherSuites}
 	generatedConfigs, err := mtmpl.GenerateMachineConfigsForRole(rc, role, templatesDir)
 	if err != nil {
 		return nil, fmt.Errorf("GenerateMachineConfigsforRole failed with error: %w", err)
@@ -526,6 +528,12 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		nodeConfig = createNewDefaultNodeconfig()
 	}
 
+	// Grab APIServer to populate TLS settings in the default kubelet config
+	apiServer, err := ctrl.apiserverLister.Get(ctrlcommon.APIServerInstanceName)
+	if err != nil && !macherrors.IsNotFound(err) {
+		return ctrl.syncStatusOnly(cfg, err, "could not get the TLSSecurityProfile from %v: %v", ctrlcommon.APIServerInstanceName, err)
+	}
+
 	for _, pool := range mcpPools {
 		if pool.Spec.Configuration.Name == "" {
 			updateDelay := 5 * time.Second
@@ -553,7 +561,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			return fmt.Errorf("could not get ControllerConfig %w", err)
 		}
 
-		originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, role, ctrl.featureGateAccess)
+		originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, role, ctrl.featureGateAccess, apiServer)
 		if err != nil {
 			return ctrl.syncStatusOnly(cfg, err, "could not get original kubelet config: %v", err)
 		}
@@ -562,22 +570,13 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			updateOriginalKubeConfigwithNodeConfig(nodeConfig, originalKubeConfig)
 		}
 
-		// Get the default API Server Security Profile
-		var profile *configv1.TLSSecurityProfile
-		if apiServerSettings, err := ctrl.apiserverLister.Get(ctrlcommon.APIServerInstanceName); err != nil {
-			if !macherrors.IsNotFound(err) {
-				return ctrl.syncStatusOnly(cfg, err, "could not get the TLSSecurityProfile from %v: %v", ctrlcommon.APIServerInstanceName, err)
-			}
-		} else {
-			profile = apiServerSettings.Spec.TLSSecurityProfile
-		}
+		// If the provided kubeletconfig has a TLS profile, override the one generated from templates.
 		if cfg.Spec.TLSSecurityProfile != nil {
-			profile = cfg.Spec.TLSSecurityProfile
+			klog.Infof("Using tlsSecurityProfile provided by KubeletConfig %s", cfg.Name)
+			observedMinTLSVersion, observedCipherSuites := ctrlcommon.GetSecurityProfileCiphers(cfg.Spec.TLSSecurityProfile)
+			originalKubeConfig.TLSMinVersion = observedMinTLSVersion
+			originalKubeConfig.TLSCipherSuites = observedCipherSuites
 		}
-		// Inject TLS Options from Spec
-		observedMinTLSVersion, observedCipherSuites := ctrlcommon.GetSecurityProfileCiphers(profile)
-		originalKubeConfig.TLSMinVersion = observedMinTLSVersion
-		originalKubeConfig.TLSCipherSuites = observedCipherSuites
 
 		kubeletIgnition, logLevelIgnition, autoSizingReservedIgnition, err := generateKubeletIgnFiles(cfg, originalKubeConfig)
 		if err != nil {
