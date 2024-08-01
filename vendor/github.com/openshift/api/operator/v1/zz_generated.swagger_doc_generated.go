@@ -205,6 +205,25 @@ func (AddPage) SwaggerDoc() map[string]string {
 	return map_AddPage
 }
 
+var map_Capability = map[string]string{
+	"":           "Capabilities contains set of UI capabilities and their state in the console UI.",
+	"name":       "name is the unique name of a capability. Available capabilities are LightspeedButton.",
+	"visibility": "visibility defines the visibility state of the capability.",
+}
+
+func (Capability) SwaggerDoc() map[string]string {
+	return map_Capability
+}
+
+var map_CapabilityVisibility = map[string]string{
+	"":      "CapabilityVisibility defines the criteria to enable/disable a capability.",
+	"state": "state defines if the capability is enabled or disabled in the console UI. Enabling the capability in the console UI is represented by the \"Enabled\" value. Disabling the capability in the console UI is represented by the \"Disabled\" value.",
+}
+
+func (CapabilityVisibility) SwaggerDoc() map[string]string {
+	return map_CapabilityVisibility
+}
+
 var map_Console = map[string]string{
 	"":         "Console provides a means to configure an operator to manage the console.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
 	"metadata": "metadata is the standard object's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
@@ -226,6 +245,7 @@ func (ConsoleConfigRoute) SwaggerDoc() map[string]string {
 
 var map_ConsoleCustomization = map[string]string{
 	"":                     "ConsoleCustomization defines a list of optional configuration for the console UI.",
+	"capabilities":         "capabilities defines an array of capabilities that can be interacted with in the console UI. Each capability defines a visual state that can be interacted with the console to render in the UI. Available capabilities are LightspeedButton. Each of the available capabilities may appear only once in the list.",
 	"brand":                "brand is the default branding of the web console which can be overridden by providing the brand field.  There is a limited set of specific brand options. This field controls elements of the console such as the logo. Invalid value will prevent a console rollout.",
 	"documentationBaseURL": "documentationBaseURL links to external documentation are shown in various sections of the web console.  Providing documentationBaseURL will override the default documentation URL. Invalid value will prevent a console rollout.",
 	"customProductName":    "customProductName is the name that will be displayed in page titles, logo alt text, and the about dialog instead of the normal OpenShift product name.",
