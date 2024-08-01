@@ -85,6 +85,11 @@ func (in *AWSNetworkLoadBalancerParameters) DeepCopyInto(out *AWSNetworkLoadBala
 		*out = new(AWSSubnets)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.EIPAllocations != nil {
+		in, out := &in.EIPAllocations, &out.EIPAllocations
+		*out = make([]EIPAllocation, len(*in))
+		copy(*out, *in)
+	}
 	return
 }
 
