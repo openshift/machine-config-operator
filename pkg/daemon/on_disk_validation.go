@@ -15,6 +15,10 @@ import (
 	"k8s.io/klog/v2"
 )
 
+func ValidateOnDiskState(currentConfig *mcfgv1.MachineConfig) error {
+	return validateOnDiskState(currentConfig, pathSystemd)
+}
+
 // Validates that the on-disk state matches a given MachineConfig.
 func validateOnDiskState(currentConfig *mcfgv1.MachineConfig, systemdPath string) error {
 	// And the rest of the disk state

@@ -1043,9 +1043,13 @@ func GetOSReleaseForNode(t *testing.T, cs *framework.ClientSet, node corev1.Node
 }
 
 func mcdForNode(cs *framework.ClientSet, node *corev1.Node) (*corev1.Pod, error) {
+	return mcdForNodeName(cs, node.Name)
+}
+
+func mcdForNodeName(cs *framework.ClientSet, nodeName string) (*corev1.Pod, error) {
 	// find the MCD pod that has spec.nodeNAME = node.Name and get its name:
 	listOptions := metav1.ListOptions{
-		FieldSelector: fields.SelectorFromSet(fields.Set{"spec.nodeName": node.Name}).String(),
+		FieldSelector: fields.SelectorFromSet(fields.Set{"spec.nodeName": nodeName}).String(),
 	}
 	listOptions.LabelSelector = labels.SelectorFromSet(labels.Set{"k8s-app": "machine-config-daemon"}).String()
 
@@ -1055,9 +1059,9 @@ func mcdForNode(cs *framework.ClientSet, node *corev1.Node) (*corev1.Pod, error)
 	}
 	if len(mcdList.Items) != 1 {
 		if len(mcdList.Items) == 0 {
-			return nil, fmt.Errorf("failed to find MCD for node %s", node.Name)
+			return nil, fmt.Errorf("failed to find MCD for node %s", nodeName)
 		}
-		return nil, fmt.Errorf("too many (%d) MCDs for node %s", len(mcdList.Items), node.Name)
+		return nil, fmt.Errorf("too many (%d) MCDs for node %s", len(mcdList.Items), nodeName)
 	}
 	return &mcdList.Items[0], nil
 }
