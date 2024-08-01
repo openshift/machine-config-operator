@@ -151,6 +151,12 @@ func New(
 		DeleteFunc: ctrl.deleteNodeConfig,
 	})
 
+	apiserverInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.addAPIServer,
+		UpdateFunc: ctrl.updateAPIServer,
+		DeleteFunc: ctrl.deleteAPIServer,
+	})
+
 	ctrl.syncHandler = ctrl.syncKubeletConfig
 	ctrl.enqueueKubeletConfig = ctrl.enqueue
 
@@ -202,6 +208,61 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	}
 
 	<-stopCh
+}
+func (ctrl *Controller) filterAPIServer(apiServer *configv1.APIServer) {
+	if apiServer.Name != "cluster" {
+		return
+	}
+	klog.Infof("Re-syncing all kubelet config controller generated MachineConfigs due to apiServer %s change", apiServer.Name)
+	// sync the node config controller. This also calls back the sync function
+	// for the kubelet config controller and feature gate controller, so no need
+	// to do them here again. Do a direct get call here in case the node config
+	// lister's cache is empty.
+	if nodeConfig, err := ctrl.configClient.ConfigV1().Nodes().Get(context.TODO(), ctrlcommon.ClusterNodeInstanceName, metav1.GetOptions{}); err != nil {
+		utilruntime.HandleError(fmt.Errorf("could not get NodeConfigs, err: %v", err))
+	} else {
+		ctrl.enqueueNodeConfig(nodeConfig)
+	}
+
+}
+
+func (ctrl *Controller) updateAPIServer(old, cur interface{}) {
+	oldAPIServer := old.(*configv1.APIServer)
+	newAPIServer := cur.(*configv1.APIServer)
+
+	if !reflect.DeepEqual(oldAPIServer.Spec, newAPIServer.Spec) {
+		klog.V(4).Infof("Updating APIServer: %s", newAPIServer.Name)
+		ctrl.filterAPIServer(newAPIServer)
+	}
+}
+
+func (ctrl *Controller) addAPIServer(obj interface{}) {
+	apiServer := obj.(*configv1.APIServer)
+	if apiServer.DeletionTimestamp != nil {
+		ctrl.deleteAPIServer(apiServer)
+		return
+	}
+	klog.V(4).Infof("Add API Server %v", apiServer)
+	ctrl.filterAPIServer(apiServer)
+}
+
+func (ctrl *Controller) deleteAPIServer(obj interface{}) {
+	apiServer, ok := obj.(*configv1.APIServer)
+	klog.V(4).Infof("Delete API Server %v", apiServer)
+
+	if !ok {
+		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("couldn't get object from tombstone %#v", obj))
+			return
+		}
+		apiServer, ok = tombstone.Obj.(*configv1.APIServer)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not a apiServer %#v", obj))
+			return
+		}
+	}
+	ctrl.filterAPIServer(apiServer)
 }
 
 func kubeletConfigTriggerObjectChange(old, new *mcfgv1.KubeletConfig) bool {
