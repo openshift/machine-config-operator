@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -26,13 +27,18 @@ func UpdateNodeRetry(client corev1client.NodeInterface, lister corev1lister.Node
 		if err != nil {
 			return err
 		}
+
+		nodeClone := n.DeepCopy()
+		f(nodeClone)
+
+		if reflect.DeepEqual(n, nodeClone) {
+			return nil
+		}
+
 		oldNode, err := json.Marshal(n)
 		if err != nil {
 			return err
 		}
-
-		nodeClone := n.DeepCopy()
-		f(nodeClone)
 
 		newNode, err := json.Marshal(nodeClone)
 		if err != nil {
