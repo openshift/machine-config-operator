@@ -27,10 +27,6 @@ func (l *LayeredPoolState) GetOSImage() string {
 // Determines if a given MachineConfigPool has an available OS image. Returns
 // false if the annotation is missing or set to an empty string.
 func (l *LayeredPoolState) HasOSImage() bool {
-	if l.pool.Labels == nil {
-		return false
-	}
-
 	val, ok := l.pool.Annotations[ExperimentalNewestLayeredImageEquivalentConfigAnnotationKey]
 	return ok && val != ""
 }
