@@ -560,6 +560,17 @@ func TestGetCandidateMachines(t *testing.T) {
 		otherCandidates: nil,
 		capacity:        0,
 	}, {
+		// node-0 is unavailable and should be skipped over
+		progress: 2,
+		nodes: []*corev1.Node{
+			newNodeWithReady("node-0", "v0", "v0", corev1.ConditionFalse),
+			newNodeWithReady("node-1", "v0", "v0", corev1.ConditionTrue),
+			newNodeWithReady("node-2", "v0", "v0", corev1.ConditionTrue),
+		},
+		expected:        []string{"node-1"},
+		otherCandidates: []string{"node-2"},
+		capacity:        1,
+	}, {
 		// node-2 is going to change config, so we can only progress one more
 		progress: 3,
 		nodes: []*corev1.Node{
