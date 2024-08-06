@@ -156,6 +156,72 @@ func TestBuildControllerMultipleOptedInPools(t *testing.T) {
 	})
 }
 
+// Tests that if multiple goroutines attempt to create or update a
+// canonicalized secret that all requests are successful.
+func TestCanonicalizedSecrets(t *testing.T) {
+	t.Parallel()
+
+	clients := getClientsForTest()
+	bc := NewWithCustomPodBuilder(BuildControllerConfig{MaxRetries: 1, UpdateDelay: testUpdateDelay}, clients)
+
+	legacyPullSecretName := "final-image-push-secret"
+
+	assertIsCanonicalSecret := func(t *testing.T, s *corev1.Secret) {
+		// We expect the returned secret to contain the canonical suffix, to have
+		// the canonical labels, and to generally be recognized as a canonical
+		// secret.
+		assert.Contains(t, s.Name, canonicalSecretSuffix)
+		assert.True(t, isCanonicalizedSecret(s))
+		assert.True(t, hasCanonicalizedSecretLabels(s))
+		assert.Equal(t, s.Labels[originalSecretNameLabel], legacyPullSecretName)
+	}
+
+	testFunc := func(t *testing.T) {
+		t.Parallel()
+
+		out, err := bc.validatePullSecret(legacyPullSecretName)
+		assert.NoError(t, err)
+
+		assertIsCanonicalSecret(t, out)
+
+		// Next, we change the original secret to validate that the canonicalized secret also gets the update.
+		secret, err := clients.kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(context.TODO(), legacyPullSecretName, metav1.GetOptions{})
+		require.NoError(t, err)
+
+		secret.Data[corev1.DockerConfigKey] = []byte(`{"updated.hostname.com": {"username": "user", "password": "s3kr1t", "auth": "s00pers3kr1t", "email": "user@hostname.com"}}`)
+
+		_, err = clients.kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Update(context.TODO(), secret, metav1.UpdateOptions{})
+		require.NoError(t, err)
+
+		// We look up the secret by its canonicalized name because once
+		// BuildController canonicalizes a secret, it updates the MachineOSConfig
+		// with the canonicalized name. That means that when it is retrieved again
+		// for the next build, it is retrieved by its canonicalized name.
+		out, err = bc.validatePullSecret(legacyPullSecretName + canonicalSecretSuffix)
+		assert.NoError(t, err)
+
+		assertIsCanonicalSecret(t, out)
+		assert.Contains(t, string(out.Data[corev1.DockerConfigJsonKey]), "updated.hostname.com")
+
+		// We also query the API server for the canonical version of this secret to
+		// ensure that it is actually updated.
+		secret, err = clients.kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(context.TODO(), legacyPullSecretName+canonicalSecretSuffix, metav1.GetOptions{})
+		require.NoError(t, err)
+
+		assertIsCanonicalSecret(t, secret)
+		assert.Contains(t, string(secret.Data[corev1.DockerConfigJsonKey]), "updated.hostname.com")
+	}
+
+	// We run the test function 10 times in parallel against the same
+	// BuildController instance. Doing this simulates BuildController having to
+	// handle multiple secret canonicalization attempts, similar to if someone
+	// were to oc apply a YAML document containing at least two MachineOSConfigs
+	// which reference the same legacy pull secret.
+	for i := 0; i <= 10; i++ {
+		t.Run("", testFunc)
+	}
+}
+
 // Holds a name and function to implement a given BuildController test.
 type buildControllerTestFixture struct {
 	ctx                    context.Context
