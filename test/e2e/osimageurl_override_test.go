@@ -77,7 +77,7 @@ func assertNodeDoesNotHaveBinaries(t *testing.T, cs *framework.ClientSet, node c
 // the osImageURL with the provided OS image name.
 func applyCustomOSToNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, osImageURL, poolName string) func() {
 	getRpmOstreeStatus := func() string {
-		return helpers.ExecCmdOnNode(t, cs, node, "chroot", "/rootfs", "rpm-ostree", "status")
+		return helpers.ExecCmdOnNode(t, cs, node, "rpm-ostree", "status")
 	}
 
 	// Do a pre-run assertion to ensure that we are not in the new OS image.

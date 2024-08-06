@@ -129,7 +129,7 @@ func TestOnClusterBuildRollsOutImage(t *testing.T) {
 	helpers.LabelNode(t, cs, node, helpers.MCPNameToRole(layeredMCPName))
 	helpers.WaitForNodeImageChange(t, cs, node, imagePullspec)
 
-	t.Log(helpers.ExecCmdOnNode(t, cs, node, "chroot", "/rootfs", "cowsay", "Moo!"))
+	t.Log(helpers.ExecCmdOnNode(t, cs, node, "cowsay", "Moo!"))
 }
 
 // This test extracts the /etc/yum.repos.d and /etc/pki/rpm-gpg content from a
@@ -256,7 +256,7 @@ func TestMCDGetsMachineOSConfigSecrets(t *testing.T) {
 	err = wait.PollImmediate(1*time.Second, 5*time.Minute, func() (bool, error) {
 		filename := "/etc/mco/internal-registry-pull-secret.json"
 
-		contents := helpers.ExecCmdOnNode(t, cs, node, "cat", filepath.Join("/rootfs", filename))
+		contents := helpers.ExecCmdOnNode(t, cs, node, "cat", filename)
 
 		for _, hostname := range internalRegistryHostnames {
 			if !strings.Contains(contents, hostname) {
@@ -583,7 +583,7 @@ func TestSSHKeyAndPasswordForOSBuilder(t *testing.T) {
 	passwordHash := "testpassword11"
 
 	// retreive initial etc/shadow contents
-	initialEtcShadowContents := helpers.ExecCmdOnNode(t, cs, osNode, "grep", "^core:", "/rootfs/etc/shadow")
+	initialEtcShadowContents := helpers.ExecCmdOnNode(t, cs, osNode, "grep", "^core:", "/etc/shadow")
 
 	testIgnConfig.Passwd.Users = []ign3types.PasswdUser{
 		{
@@ -623,13 +623,13 @@ func TestSSHKeyAndPasswordForOSBuilder(t *testing.T) {
 	// Validate the SSH key and password
 	osNode = helpers.GetSingleNodeByRole(t, cs, layeredMCPName) // Re-fetch node with updated configurations
 
-	foundSSHKey := helpers.ExecCmdOnNode(t, cs, osNode, "cat", "/rootfs/home/core/.ssh/authorized_keys.d/ignition")
+	foundSSHKey := helpers.ExecCmdOnNode(t, cs, osNode, "cat", "/home/core/.ssh/authorized_keys.d/ignition")
 	if !strings.Contains(foundSSHKey, sshKeyContent) {
 		t.Fatalf("updated ssh key not found, got %s", foundSSHKey)
 	}
 	t.Logf("updated ssh hash found, got %s", foundSSHKey)
 
-	currentEtcShadowContents := helpers.ExecCmdOnNode(t, cs, osNode, "grep", "^core:", "/rootfs/etc/shadow")
+	currentEtcShadowContents := helpers.ExecCmdOnNode(t, cs, osNode, "grep", "^core:", "/etc/shadow")
 	if currentEtcShadowContents == initialEtcShadowContents {
 		t.Fatalf("updated password hash not found in /etc/shadow, got %s", currentEtcShadowContents)
 	}

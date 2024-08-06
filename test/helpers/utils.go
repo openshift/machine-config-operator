@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
-	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -535,9 +533,14 @@ func WaitForCADataToAppear(t *testing.T, cs *framework.ClientSet) error {
 		require.Nil(t, err)
 		nodes, err := GetNodesByRole(cs, "worker")
 		require.Nil(t, err)
+		ne, err := NewNodeExecForNode(t, cs, nodes[0])
+		require.NoError(t, err)
 		for _, cert := range controllerConfig.Spec.ImageRegistryBundleUserData {
-			foundCA, _ := ExecCmdOnNodeWithError(cs, nodes[0], "ls", canonicalizeNodeFilePath(filepath.Join("/etc/docker/certs.d", cert.File)))
-			if strings.Contains(foundCA, "ca.crt") {
+			foundCA, _ := ne.ExecuteCommand(ExecOpts{
+				Command: []string{"ls", filepath.Join("/etc/docker/certs.d", cert.File)},
+			})
+
+			if strings.Contains(foundCA.Combined.String(), "ca.crt") {
 				return true, nil
 			}
 		}
@@ -749,9 +752,7 @@ func CreateMC(name, role string) *mcfgv1.MachineConfig {
 func AssertFileOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, path string) bool {
 	t.Helper()
 
-	path = canonicalizeNodeFilePath(path)
-
-	out, err := ExecCmdOnNodeWithError(cs, node, "stat", path)
+	out, err := ExecCmdOnNodeWithError(t, cs, node, "stat", path)
 
 	return assert.NoError(t, err, "expected to find file %s on %s, got:\n%s\nError: %s", path, node.Name, out, err)
 }
@@ -760,9 +761,7 @@ func AssertFileOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, p
 func AssertFileNotOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, path string) bool {
 	t.Helper()
 
-	path = canonicalizeNodeFilePath(path)
-
-	out, err := ExecCmdOnNodeWithError(cs, node, "stat", path)
+	out, err := ExecCmdOnNodeWithError(t, cs, node, "stat", path)
 
 	return assert.Error(t, err, "expected not to find file %s on %s, got:\n%s", path, node.Name, out) &&
 		assert.Contains(t, out, "No such file or directory", "expected command output to contain 'No such file or directory', got: %s", out)
@@ -772,93 +771,48 @@ func AssertFileNotOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node
 func GetFileContentOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, path string) string {
 	t.Helper()
 
-	path = canonicalizeNodeFilePath(path)
-
-	out, err := ExecCmdOnNodeWithError(cs, node, "cat", path)
+	out, err := ExecCmdOnNodeWithError(t, cs, node, "cat", path)
 	assert.NoError(t, err, "expected to find file %s on %s, got:\n%s", path, node.Name, out)
 	return out
 }
 
-// Adds the /rootfs onto a given file path, if not already present.
-func canonicalizeNodeFilePath(path string) string {
-	rootfs := "/rootfs"
-
-	if !strings.HasPrefix(path, rootfs) {
-		return filepath.Join(rootfs, path)
-	}
-
-	return path
-}
-
 // ExecCmdOnNode finds a node's mcd, and oc rsh's into it to execute a command on the node
-// all commands should use /rootfs as root
+// Do not use /rootfs for any commands or files since it will be automatically added.
 func ExecCmdOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, subArgs ...string) string {
 	t.Helper()
 
-	cmd, err := execCmdOnNode(cs, node, subArgs...)
-	require.Nil(t, err, "could not prepare to exec cmd %v on node %s: %s", subArgs, node.Name, err)
-	cmd.Stderr = os.Stderr
+	ne, err := NewNodeExecForNode(t, cs, node)
+	require.NoError(t, err)
 
-	out, err := cmd.Output()
-	if err != nil {
-		// common err is that the mcd went down mid cmd. Re-try for good measure
-		cmd, err = execCmdOnNode(cs, node, subArgs...)
-		require.Nil(t, err, "could not prepare to exec cmd %v on node %s: %s", subArgs, node.Name, err)
-		out, err = cmd.Output()
-
+	opts := ExecOpts{
+		Command: subArgs,
 	}
-	require.Nil(t, err, "failed to exec cmd %v on node %s: %s", subArgs, node.Name, string(out))
-	return string(out)
+
+	results, err := ne.ExecuteCommand(opts)
+
+	if err != nil {
+		results, err = ne.ExecuteCommand(opts)
+		require.NoError(t, err)
+	}
+
+	require.NoError(t, err, "failed to exec cmd %v on node %s: %s", subArgs, node.Name, results.Combined.String())
+	return results.Combined.String()
 }
 
 // ExecCmdOnNodeWithError behaves like ExecCmdOnNode, with the exception that
 // any errors are returned to the caller for inspection. This allows one to
 // execute a command that is expected to fail; e.g., stat /nonexistant/file.
-func ExecCmdOnNodeWithError(cs *framework.ClientSet, node corev1.Node, subArgs ...string) (string, error) {
-	cmd, err := execCmdOnNode(cs, node, subArgs...)
-	if err != nil {
-		return "", err
-	}
+func ExecCmdOnNodeWithError(t *testing.T, cs *framework.ClientSet, node corev1.Node, subArgs ...string) (string, error) {
+	t.Helper()
 
-	out, err := cmd.CombinedOutput()
-	return string(out), err
-}
+	ne, err := NewNodeExecForNode(t, cs, node)
+	require.NoError(t, err)
 
-// ExecCmdOnNode finds a node's mcd, and oc rsh's into it to execute a command on the node
-// all commands should use /rootfs as root
-func execCmdOnNode(cs *framework.ClientSet, node corev1.Node, subArgs ...string) (*exec.Cmd, error) {
-	// Check for an oc binary in $PATH.
-	path, err := exec.LookPath("oc")
-	if err != nil {
-		return nil, fmt.Errorf("could not locate oc command: %w", err)
-	}
+	results, err := ne.ExecuteCommand(ExecOpts{
+		Command: subArgs,
+	})
 
-	// Get the kubeconfig file path
-	kubeconfig, err := cs.GetKubeconfig()
-	if err != nil {
-		return nil, fmt.Errorf("could not get kubeconfig: %w", err)
-	}
-
-	mcd, err := mcdForNode(cs, &node)
-	if err != nil {
-		return nil, fmt.Errorf("could not get MCD for node %s: %w", node.Name, err)
-	}
-
-	mcdName := mcd.ObjectMeta.Name
-
-	entryPoint := path
-	args := []string{"rsh",
-		"-n", "openshift-machine-config-operator",
-		"-c", "machine-config-daemon",
-		mcdName}
-	args = append(args, subArgs...)
-
-	cmd := exec.Command(entryPoint, args...)
-	// If one passes a path to a kubeconfig via NewClientSet instead of setting
-	// $KUBECONFIG, oc will be unaware of it. To remedy, we explicitly set
-	// KUBECONFIG to the value held by the clientset.
-	cmd.Env = append(cmd.Env, "KUBECONFIG="+kubeconfig)
-	return cmd, nil
+	return results.Combined.String(), err
 }
 
 // IsOKDCluster checks whether the Upstream field on the CV spec references an OKD release controller
@@ -957,7 +911,7 @@ func MCDForNode(cs *framework.ClientSet, node *corev1.Node) (*corev1.Pod, error)
 // system has been up.
 // See: https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/6/html/deployment_guide/s2-proc-uptime
 func GetNodeUptime(t *testing.T, cs *framework.ClientSet, node corev1.Node) float64 {
-	output := ExecCmdOnNode(t, cs, node, "cat", "/rootfs/proc/uptime")
+	output := ExecCmdOnNode(t, cs, node, "cat", "/proc/uptime")
 	uptimeString := strings.Split(output, " ")[0]
 	uptime, err := strconv.ParseFloat(uptimeString, 64)
 	require.Nil(t, err)
@@ -1029,8 +983,8 @@ type NodeOSRelease struct {
 // Retrieves the /etc/os-release and /usr/lib/os-release file contents on a
 // given node and parses it through the OperatingSystem code.
 func GetOSReleaseForNode(t *testing.T, cs *framework.ClientSet, node corev1.Node) NodeOSRelease {
-	etcOSReleaseContent := ExecCmdOnNode(t, cs, node, "cat", filepath.Join("/rootfs", osrelease.EtcOSReleasePath))
-	libOSReleaseContent := ExecCmdOnNode(t, cs, node, "cat", filepath.Join("/rootfs", osrelease.LibOSReleasePath))
+	etcOSReleaseContent := ExecCmdOnNode(t, cs, node, "cat", osrelease.EtcOSReleasePath)
+	libOSReleaseContent := ExecCmdOnNode(t, cs, node, "cat", osrelease.LibOSReleasePath)
 
 	os, err := osrelease.LoadOSRelease(etcOSReleaseContent, libOSReleaseContent)
 	require.NoError(t, err)
@@ -1207,10 +1161,6 @@ func validateFeatureGatesEnabled(cs *framework.ClientSet, requiredFeatureGates .
 // Writes a file to a given node. Returns an idempotent cleanup function.
 func WriteFileToNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, filename, contents string) func() {
 	t.Helper()
-
-	if !strings.HasPrefix(filename, "/rootfs") {
-		filename = filepath.Join("/rootfs", filename)
-	}
 
 	bashCmd := fmt.Sprintf("printf '%s' > %s", contents, filename)
 	t.Logf("Writing file %s to node %s", filename, node.Name)
