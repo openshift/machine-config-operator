@@ -63,10 +63,6 @@ const (
 	postConfigChangeActionRestartCrio = "restart crio"
 	// Rebooting is still the default scenario for any other change
 	postConfigChangeActionReboot = "reboot"
-
-	// ImageRegistryDrainOverrideConfigmap is the name of the Configmap a user can apply to force all
-	// image registry changes to not drain
-	ImageRegistryDrainOverrideConfigmap = "image-registry-override-drain"
 )
 
 func getNodeRef(node *corev1.Node) *corev1.ObjectReference {
@@ -2813,7 +2809,7 @@ func (dn *Daemon) hasImageRegistryDrainOverrideConfigMap() (bool, error) {
 		return false, nil
 	}
 
-	_, err := dn.kubeClient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), ImageRegistryDrainOverrideConfigmap, metav1.GetOptions{})
+	_, err := dn.kubeClient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), constants.ImageRegistryDrainOverrideConfigmap, metav1.GetOptions{})
 	if err == nil {
 		return true, nil
 	}

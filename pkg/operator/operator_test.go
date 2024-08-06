@@ -50,6 +50,9 @@ func TestMetrics(t *testing.T) {
 		},
 	})
 
+	configMapIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	optr.mcoCmLister = corelisterv1.NewConfigMapLister(configMapIndexer)
+
 	coName := fmt.Sprintf("test-%s", uuid.NewUUID())
 	co := &configv1.ClusterOperator{ObjectMeta: metav1.ObjectMeta{Name: coName}}
 	optr.name = coName

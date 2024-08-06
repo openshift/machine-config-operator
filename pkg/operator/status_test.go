@@ -687,6 +687,9 @@ func TestOperatorSyncStatus(t *testing.T) {
 		operatorIndexer.Add(co)
 		operatorIndexer.Add(kasOperator)
 
+		configMapIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+		optr.mcoCmLister = corelisterv1.NewConfigMapLister(configMapIndexer)
+
 		for j, sync := range testCase.syncs {
 			optr.inClusterBringup = sync.inClusterBringUp
 			if sync.nextVersion != "" {
@@ -763,6 +766,9 @@ func TestInClusterBringUpStayOnErr(t *testing.T) {
 	operatorIndexer.Add(co)
 	operatorIndexer.Add(kasOperator)
 
+	configMapIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	optr.mcoCmLister = corelisterv1.NewConfigMapLister(configMapIndexer)
+
 	fn1 := func(config *renderConfig, co *configv1.ClusterOperator) error {
 		return errors.New("mocked fn1")
 	}
@@ -826,6 +832,9 @@ func TestKubeletSkewUnSupported(t *testing.T) {
 	optr.clusterOperatorLister = configlistersv1.NewClusterOperatorLister(operatorIndexer)
 	operatorIndexer.Add(co)
 	operatorIndexer.Add(kasOperator)
+
+	configMapIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	optr.mcoCmLister = corelisterv1.NewConfigMapLister(configMapIndexer)
 
 	fn1 := func(config *renderConfig, co *configv1.ClusterOperator) error {
 		return errors.New("mocked fn1")
@@ -923,6 +932,9 @@ func TestCustomPoolKubeletSkewUnSupported(t *testing.T) {
 	operatorIndexer.Add(co)
 	operatorIndexer.Add(kasOperator)
 
+	configMapIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	optr.mcoCmLister = corelisterv1.NewConfigMapLister(configMapIndexer)
+
 	fn1 := func(config *renderConfig, co *configv1.ClusterOperator) error {
 		return errors.New("mocked fn1")
 	}
@@ -1016,6 +1028,9 @@ func TestKubeletSkewSupported(t *testing.T) {
 	optr.clusterOperatorLister = configlistersv1.NewClusterOperatorLister(operatorIndexer)
 	operatorIndexer.Add(co)
 	operatorIndexer.Add(kasOperator)
+
+	configMapIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	optr.mcoCmLister = corelisterv1.NewConfigMapLister(configMapIndexer)
 
 	fn1 := func(config *renderConfig, co *configv1.ClusterOperator) error {
 		return errors.New("mocked fn1")
