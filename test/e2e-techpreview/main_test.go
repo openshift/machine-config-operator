@@ -11,7 +11,7 @@ func TestMain(m *testing.M) {
 
 	// Ensure required feature gates are set.
 	// Add any new feature gates to the test here, and remove them as features are GAed.
-	helpers.MustHaveFeatureGatesEnabled("ManagedBootImages", "OnClusterBuild", "MachineConfigNodes", "NodeDisruptionPolicy")
+	helpers.MustHaveFeatureGatesEnabled("OnClusterBuild", "MachineConfigNodes")
 
 	os.Exit(m.Run())
 }
