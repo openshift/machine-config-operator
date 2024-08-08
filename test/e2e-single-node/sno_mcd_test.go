@@ -85,7 +85,7 @@ func TestKernelArguments(t *testing.T) {
 	node := helpers.GetSingleNodeByRole(t, cs, "master")
 	assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
 	assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
-	kargs := helpers.ExecCmdOnNode(t, cs, node, "cat", "/rootfs/proc/cmdline")
+	kargs := helpers.ExecCmdOnNode(t, cs, node, "cat", "/proc/cmdline")
 	expectedKernelArgs := []string{"foo=bar", "foo=baz", "baz=test", "bar=hello world"}
 	for _, v := range expectedKernelArgs {
 		if !strings.Contains(kargs, v) {
@@ -105,7 +105,7 @@ func TestKernelArguments(t *testing.T) {
 	node = helpers.GetSingleNodeByRole(t, cs, "master")
 	assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], oldMasterRenderedConfig)
 	assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
-	kargs = helpers.ExecCmdOnNode(t, cs, node, "cat", "/rootfs/proc/cmdline")
+	kargs = helpers.ExecCmdOnNode(t, cs, node, "cat", "/proc/cmdline")
 
 	for _, v := range expectedKernelArgs {
 		if strings.Contains(kargs, v) {
@@ -150,7 +150,7 @@ func TestKernelType(t *testing.T) {
 	assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
 	assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
 
-	kernelInfo := helpers.ExecCmdOnNode(t, cs, node, "chroot", "/rootfs", "rpm", "-qa", "kernel-rt-core")
+	kernelInfo := helpers.ExecCmdOnNode(t, cs, node, "rpm", "-qa", "kernel-rt-core")
 	if !strings.Contains(kernelInfo, "kernel-rt-core") {
 		t.Fatalf("Node %s doesn't have expected kernel", node.Name)
 	}
@@ -171,7 +171,7 @@ func TestKernelType(t *testing.T) {
 	assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], oldMasterRenderedConfig)
 	assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
 
-	kernelInfo = helpers.ExecCmdOnNode(t, cs, node, "chroot", "/rootfs", "rpm", "-qa", "kernel-rt-core")
+	kernelInfo = helpers.ExecCmdOnNode(t, cs, node, "rpm", "-qa", "kernel-rt-core")
 	if strings.Contains(kernelInfo, "kernel-rt-core") {
 		t.Fatalf("Node %s did not rollback successfully", node.Name)
 	}
@@ -212,7 +212,7 @@ func TestExtensions(t *testing.T) {
 	assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
 	assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
 
-	installedPackages := helpers.ExecCmdOnNode(t, cs, node, "chroot", "/rootfs", "rpm", "-q", "crun-wasm", "libreswan", "usbguard", "kernel-devel", "kernel-headers", "krb5-workstation", "libkadm5")
+	installedPackages := helpers.ExecCmdOnNode(t, cs, node, "rpm", "-q", "crun-wasm", "libreswan", "usbguard", "kernel-devel", "kernel-headers", "krb5-workstation", "libkadm5")
 	expectedPackages := []string{"crun-wasm", "libreswan", "usbguard", "kernel-devel", "kernel-headers", "krb5-workstation", "libkadm5"}
 	for _, v := range expectedPackages {
 		if !strings.Contains(installedPackages, v) {
@@ -237,7 +237,7 @@ func TestExtensions(t *testing.T) {
 	assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], oldMasterRenderedConfig)
 	assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
 
-	installedPackages = helpers.ExecCmdOnNode(t, cs, node, "chroot", "/rootfs", "rpm", "-qa", "crun-wasm", "libreswan", "usbguard", "kernel-devel", "kernel-headers", "krb5-workstation", "libkadm5")
+	installedPackages = helpers.ExecCmdOnNode(t, cs, node, "rpm", "-qa", "crun-wasm", "libreswan", "usbguard", "kernel-devel", "kernel-headers", "krb5-workstation", "libkadm5")
 	for _, v := range expectedPackages {
 		if strings.Contains(installedPackages, v) {
 			t.Fatalf("Node %s did not rollback successfully", node.Name)
@@ -257,7 +257,7 @@ func TestNoReboot(t *testing.T) {
 	oldMasterRenderedConfig := mcp.Status.Configuration.Name
 
 	node := helpers.GetSingleNodeByRole(t, cs, "master")
-	output := helpers.ExecCmdOnNode(t, cs, node, "cat", "/rootfs/proc/uptime")
+	output := helpers.ExecCmdOnNode(t, cs, node, "cat", "/proc/uptime")
 	oldTime := strings.Split(output, " ")[0]
 	t.Logf("Node %s initial uptime: %s", node.Name, oldTime)
 
@@ -272,14 +272,14 @@ func TestNoReboot(t *testing.T) {
 	if sshPaths.Expected == constants.RHCOS9SSHKeyPath {
 		// Write an SSH key to the old location on the node because the update process should remove this file.
 		t.Logf("Writing SSH key to %s to ensure that it will be removed later", sshPaths.NotExpected)
-		bashCmd := fmt.Sprintf("printf '%s' > %s", sshKeyContent, filepath.Join("/rootfs", sshPaths.NotExpected))
+		bashCmd := fmt.Sprintf("printf '%s' > %s", sshKeyContent, filepath.Join("", sshPaths.NotExpected))
 		helpers.ExecCmdOnNode(t, cs, node, "/bin/bash", "-c", bashCmd)
 	}
 
 	// Delete the expected SSH keys directory to ensure that the directories are
 	// (re)created correctly by the MCD. This targets the upgrade case where that
 	// directory may not previously exist.
-	helpers.ExecCmdOnNode(t, cs, node, "rm", "-rf", filepath.Join("/rootfs", filepath.Dir(sshPaths.Expected)))
+	helpers.ExecCmdOnNode(t, cs, node, "rm", "-rf", filepath.Join("", filepath.Dir(sshPaths.Expected)))
 
 	// Adding authorized key for user core
 	testIgnConfig := ctrlcommon.NewIgnConfig()
@@ -319,13 +319,13 @@ func TestNoReboot(t *testing.T) {
 	helpers.AssertFileOnNode(t, cs, node, sshPaths.Expected)
 	helpers.AssertFileNotOnNode(t, cs, node, sshPaths.NotExpected)
 
-	foundSSHKey := helpers.ExecCmdOnNode(t, cs, node, "cat", filepath.Join("/rootfs", sshPaths.Expected))
+	foundSSHKey := helpers.ExecCmdOnNode(t, cs, node, "cat", filepath.Join("", sshPaths.Expected))
 	if !strings.Contains(foundSSHKey, sshKeyContent) {
 		t.Fatalf("updated ssh keys not found in authorized_keys, got %s", foundSSHKey)
 	}
 	t.Logf("Node %s has SSH key", node.Name)
 
-	output = helpers.ExecCmdOnNode(t, cs, node, "cat", "/rootfs/proc/uptime")
+	output = helpers.ExecCmdOnNode(t, cs, node, "cat", "/proc/uptime")
 	newTime := strings.Split(output, " ")[0]
 
 	// To ensure we didn't reboot, new uptime should be greater than old uptime
@@ -359,7 +359,7 @@ func TestNoReboot(t *testing.T) {
 	assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], oldMasterRenderedConfig)
 	assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
 
-	foundSSHKey = helpers.ExecCmdOnNode(t, cs, node, "cat", filepath.Join("/rootfs", sshPaths.Expected))
+	foundSSHKey = helpers.ExecCmdOnNode(t, cs, node, "cat", filepath.Join("", sshPaths.Expected))
 	if strings.Contains(foundSSHKey, sshKeyContent) {
 		t.Fatalf("Node %s did not rollback successfully", node.Name)
 	}
@@ -370,7 +370,7 @@ func TestNoReboot(t *testing.T) {
 	t.Logf("Node %s has successfully rolled back", node.Name)
 
 	// Ensure that node didn't reboot during rollback
-	output = helpers.ExecCmdOnNode(t, cs, node, "cat", "/rootfs/proc/uptime")
+	output = helpers.ExecCmdOnNode(t, cs, node, "cat", "/proc/uptime")
 	newTime = strings.Split(output, " ")[0]
 
 	uptimeNew, err = strconv.ParseFloat(newTime, 64)

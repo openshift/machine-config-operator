@@ -3,7 +3,6 @@ package e2e_shared_test
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -236,7 +235,7 @@ func (c configDriftTest) Run(t *testing.T) {
 
 				c.runDegradeAndRecover(t, configDriftFilename, configDriftFileContents, func() {
 					t.Logf("Setting forcefile to initiate recovery (%s)", constants.MachineConfigDaemonForceFile)
-					helpers.ExecCmdOnNode(t, c.ClientSet, c.node, "touch", filepath.Join("/rootfs", constants.MachineConfigDaemonForceFile))
+					helpers.ExecCmdOnNode(t, c.ClientSet, c.node, "touch", constants.MachineConfigDaemonForceFile)
 				})
 			},
 		},
@@ -359,10 +358,6 @@ func (c configDriftTest) runDegradeAndRecover(t *testing.T, filename, expectedFi
 
 func mutateFileOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, filename, contents string) {
 	t.Helper()
-
-	if !strings.HasPrefix(filename, "/rootfs") {
-		filename = filepath.Join("/rootfs", filename)
-	}
 
 	bashCmd := fmt.Sprintf("printf '%s' > %s", contents, filename)
 	t.Logf("Setting contents of %s on %s to %s", filename, node.Name, contents)

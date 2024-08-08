@@ -3,7 +3,6 @@ package e2e_test
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -227,7 +226,7 @@ func getMCFromCtrcfg(t *testing.T, cs *framework.ClientSet, ctrcfgName string) (
 // regexKey is expected to be in the form `key = (\S+)` to search for the value of key
 func getValueFromCrioConfig(t *testing.T, cs *framework.ClientSet, node corev1.Node, regexKey, confPath string) string {
 	// get the contents of the crio.conf on nodeName
-	out := helpers.ExecCmdOnNode(t, cs, node, "cat", filepath.Join("/rootfs", confPath))
+	out := helpers.ExecCmdOnNode(t, cs, node, "cat", confPath)
 
 	// search based on the regex key. The output should have two members:
 	// one with the entire line `value = key` and one with just the key, in that order
@@ -242,7 +241,7 @@ func getValueFromCrioConfig(t *testing.T, cs *framework.ClientSet, node corev1.N
 // fileExists checks whether overrideFile exists in /etc/crio/crio.conf.d
 func fileExists(t *testing.T, cs *framework.ClientSet, node corev1.Node, overrideFile string) bool {
 	// get the contents of the crio drop in directory
-	out := helpers.ExecCmdOnNode(t, cs, node, "ls", filepath.Join("/rootfs", crioDropinDir))
+	out := helpers.ExecCmdOnNode(t, cs, node, "ls", crioDropinDir)
 
 	// Check if the overrideFile name exists in the output
 	return strings.Contains(string(out), overrideFile)
@@ -321,7 +320,7 @@ func createICSPWithConfig(t *testing.T, cs *framework.ClientSet, name string, co
 
 func getValueFromRegistriesConfig(t *testing.T, cs *framework.ClientSet, node corev1.Node, searchKey, confPath string) string {
 	// get the contents of the registries.conf on nodeName
-	out := helpers.ExecCmdOnNode(t, cs, node, "cat", filepath.Join("/rootfs", confPath))
+	out := helpers.ExecCmdOnNode(t, cs, node, "cat", confPath)
 
 	// search based on the regex key. The output should have two members:
 	// one with the entire line `value = key` and one with just the key, in that order

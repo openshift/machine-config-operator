@@ -219,7 +219,6 @@ func TestImageRegistryMergedCM(t *testing.T) {
 
 	patchBytes, err := jsonmergepatch.CreateThreeWayJSONMergePatch(cfgJson, newCfgJson, cfgJson)
 
-	//	patchBytes, err := strategicpatch.CreateTwoWayMergePatch(cfgJson, newCfgJson, v1.Image{})
 	require.Nil(t, err)
 	_, err = cs.ConfigV1Interface.Images().Patch(context.TODO(), "cluster", types.MergePatchType, patchBytes, metav1.PatchOptions{})
 	require.Nil(t, err)
@@ -247,16 +246,22 @@ func TestImageRegistryMergedCM(t *testing.T) {
 
 	//mcd, err := helpers.MCDForNode(cs, &nodes[0])
 
+	ne, err := helpers.NewNodeExecForNode(t, cs, nodes[0])
+	require.NoError(t, err)
+
 	err = wait.PollUntilContextTimeout(context.TODO(), 2*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
-		out, err := helpers.ExecCmdOnNodeWithError(cs, nodes[0], "ls", "/rootfs/etc/docker/certs.d")
+		out, err := ne.ExecuteCommand(helpers.ExecOpts{
+			Command: []string{"ls", "/etc/docker/certs.d"},
+		})
+
 		if err != nil {
 			t.Logf("Error while exec'ing on node. Probably transient due to commands being executed: %s", err.Error())
 			nodes, err = helpers.GetNodesByRole(cs, "worker")
 			require.Nil(t, err)
 			return false, nil
 		}
-		t.Logf("OUTPUT: %s", out)
-		return strings.Contains(out, "foo"), nil
+		t.Logf("OUTPUT: %s", out.Combined.String())
+		return strings.Contains(out.Combined.String(), "foo"), nil
 	})
 
 	cfg, err = cs.ConfigV1Interface.Images().Get(context.TODO(), "cluster", metav1.GetOptions{})
@@ -289,7 +294,7 @@ func TestImageRegistryMergedCM(t *testing.T) {
 	})
 
 	err = wait.PollUntilContextTimeout(context.TODO(), 2*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
-		out := helpers.ExecCmdOnNode(t, cs, nodes[0], "ls", "/rootfs/etc/docker/certs.d")
+		out := helpers.ExecCmdOnNode(t, cs, nodes[0], "ls", "/etc/docker/certs.d")
 		return !strings.Contains(out, "foo"), nil
 	})
 	err = cs.CoreV1Interface.ConfigMaps("openshift-config").Delete(context.TODO(), "mcotestingca", metav1.DeleteOptions{})

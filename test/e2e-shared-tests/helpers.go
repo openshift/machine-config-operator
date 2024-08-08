@@ -3,7 +3,6 @@ package e2e_shared_test
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -22,16 +21,15 @@ func MutateNodeAndWait(t *testing.T, cs *framework.ClientSet, node *corev1.Node,
 	t.Helper()
 
 	filename := "/etc/containers/storage.conf"
-	nodeFilename := filepath.Join("/rootfs", filename)
 	t.Logf("Mutating %q on %s", filename, node.Name)
 
-	mutateCmd := fmt.Sprintf("printf '%s' >> %s", "wrong-data-here", nodeFilename)
+	mutateCmd := fmt.Sprintf("printf '%s' >> %s", "wrong-data-here", filename)
 	helpers.ExecCmdOnNode(t, cs, *node, "/bin/bash", "-c", mutateCmd)
 	assertNodeAndMCPIsDegraded(t, cs, *node, *pool, filename)
 
 	return helpers.MakeIdempotent(func() {
 		t.Logf("Restoring %q on %s", filename, node.Name)
-		recoverCmd := fmt.Sprintf("sed -e s/wrong-data-here//g -i %s", nodeFilename)
+		recoverCmd := fmt.Sprintf("sed -e s/wrong-data-here//g -i %s", filename)
 		helpers.ExecCmdOnNode(t, cs, *node, "/bin/bash", "-c", recoverCmd)
 		assertNodeAndMCPIsRecovered(t, cs, *node, *pool)
 	})

@@ -160,7 +160,7 @@ func TestKernelArguments(t *testing.T) {
 	infraNode := helpers.GetSingleNodeByRole(t, cs, "infra")
 	assert.Equal(t, infraNode.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
 	assert.Equal(t, infraNode.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
-	kargs := helpers.ExecCmdOnNode(t, cs, infraNode, "cat", "/rootfs/proc/cmdline")
+	kargs := helpers.ExecCmdOnNode(t, cs, infraNode, "cat", "/proc/cmdline")
 	expectedKernelArgs := []string{"nosmt", "foo=bar", "foo=baz", "baz=test", "bar=hello world"}
 	for _, v := range expectedKernelArgs {
 		if !strings.Contains(kargs, v) {
@@ -251,7 +251,7 @@ func TestKernelType(t *testing.T) {
 	assert.Equal(t, infraNode.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
 	assert.Equal(t, infraNode.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
 
-	kernelInfo := helpers.ExecCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-qa", "kernel-rt-core")
+	kernelInfo := helpers.ExecCmdOnNode(t, cs, infraNode, "rpm", "-qa", "kernel-rt-core")
 	if !strings.Contains(kernelInfo, "kernel-rt-core") {
 		t.Fatalf("Node %s doesn't have expected kernel", infraNode.Name)
 	}
@@ -274,7 +274,7 @@ func TestKernelType(t *testing.T) {
 
 	assert.Equal(t, infraNode.Annotations[constants.CurrentMachineConfigAnnotationKey], oldInfraRenderedConfig)
 	assert.Equal(t, infraNode.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
-	kernelInfo = helpers.ExecCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-qa", "kernel-rt-core")
+	kernelInfo = helpers.ExecCmdOnNode(t, cs, infraNode, "rpm", "-qa", "kernel-rt-core")
 	if strings.Contains(kernelInfo, "kernel-rt-core") {
 		t.Fatalf("Node %s did not rollback successfully", infraNode.Name)
 	}
@@ -357,11 +357,11 @@ func TestExtensions(t *testing.T) {
 	if isOKD {
 		// OKD does not support grouped extensions yet, so installing kernel-devel will not also pull in kernel-headers
 		// "sandboxed-containers" extension is not available on OKD
-		installedPackages = helpers.ExecCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-q", "crun-wasm", "libreswan", "usbguard", "kernel-devel")
+		installedPackages = helpers.ExecCmdOnNode(t, cs, infraNode, "rpm", "-q", "crun-wasm", "libreswan", "usbguard", "kernel-devel")
 		// "kerberos" extension is not available on OKD
 		expectedPackages = []string{"libreswan", "usbguard", "kernel-devel"}
 	} else {
-		installedPackages = helpers.ExecCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-q", "crun-wasm", "libreswan", "usbguard", "kernel-devel", "kernel-headers", "kata-containers", "krb5-workstation", "libkadm5")
+		installedPackages = helpers.ExecCmdOnNode(t, cs, infraNode, "rpm", "-q", "crun-wasm", "libreswan", "usbguard", "kernel-devel", "kernel-headers", "kata-containers", "krb5-workstation", "libkadm5")
 		expectedPackages = []string{"crun-wasm", "libreswan", "usbguard", "kernel-devel", "kernel-headers", "kata-containers", "krb5-workstation", "libkadm5"}
 
 	}
@@ -394,9 +394,9 @@ func TestExtensions(t *testing.T) {
 	if isOKD {
 		// OKD does not support grouped extensions yet, so installing kernel-devel will not also pull in kernel-headers
 		// "sandboxed-containers" extension is not available on OKD
-		installedPackages = helpers.ExecCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-qa", "usbguard", "kernel-devel")
+		installedPackages = helpers.ExecCmdOnNode(t, cs, infraNode, "rpm", "-qa", "usbguard", "kernel-devel")
 	} else {
-		installedPackages = helpers.ExecCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-qa", "usbguard", "kernel-devel", "kernel-headers", "kata-containers", "krb5-workstation", "libkadm5")
+		installedPackages = helpers.ExecCmdOnNode(t, cs, infraNode, "rpm", "-qa", "usbguard", "kernel-devel", "kernel-headers", "kata-containers", "krb5-workstation", "libkadm5")
 	}
 	for _, v := range expectedPackages {
 		if strings.Contains(installedPackages, v) {
@@ -458,7 +458,7 @@ func TestNoReboot(t *testing.T) {
 	if sshPaths.Expected == constants.RHCOS9SSHKeyPath {
 		// Write an SSH key to the old location on the node because the update process should remove this file.
 		t.Logf("Writing SSH key to %s to ensure that it will be removed later", sshPaths.NotExpected)
-		bashCmd := fmt.Sprintf("printf '%s' > %s", sshKeyContent, filepath.Join("/rootfs", sshPaths.NotExpected))
+		bashCmd := fmt.Sprintf("printf '%s' > %s", sshKeyContent, filepath.Join("", sshPaths.NotExpected))
 		helpers.ExecCmdOnNode(t, cs, infraNode, "/bin/bash", "-c", bashCmd)
 	}
 
@@ -466,12 +466,12 @@ func TestNoReboot(t *testing.T) {
 	// (re)created correctly by the MCD. This targets the upgrade case where that
 	// directory may not previously exist. Note: This will need to be revisited
 	// once Config Drift Monitor is aware of SSH keys.
-	helpers.ExecCmdOnNode(t, cs, infraNode, "rm", "-rf", filepath.Join("/rootfs", filepath.Dir(sshPaths.Expected)))
+	helpers.ExecCmdOnNode(t, cs, infraNode, "rm", "-rf", filepath.Join("", filepath.Dir(sshPaths.Expected)))
 
-	output := helpers.ExecCmdOnNode(t, cs, infraNode, "cat", "/rootfs/proc/uptime")
+	output := helpers.ExecCmdOnNode(t, cs, infraNode, "cat", "/proc/uptime")
 	oldTime := strings.Split(output, " ")[0]
 	t.Logf("Node %s initial uptime: %s", infraNode.Name, oldTime)
-	initialEtcShadowContents := helpers.ExecCmdOnNode(t, cs, infraNode, "grep", "^core:", "/rootfs/etc/shadow")
+	initialEtcShadowContents := helpers.ExecCmdOnNode(t, cs, infraNode, "grep", "^core:", "/etc/shadow")
 
 	// Adding authorized key for user core
 	testIgnConfig := ctrlcommon.NewIgnConfig()
@@ -516,7 +516,7 @@ func TestNoReboot(t *testing.T) {
 	helpers.AssertFileOnNode(t, cs, infraNode, sshPaths.Expected)
 	helpers.AssertFileNotOnNode(t, cs, infraNode, sshPaths.NotExpected)
 
-	foundSSHKey := helpers.ExecCmdOnNode(t, cs, infraNode, "cat", filepath.Join("/rootfs", sshPaths.Expected))
+	foundSSHKey := helpers.ExecCmdOnNode(t, cs, infraNode, "cat", filepath.Join("", sshPaths.Expected))
 	if !strings.Contains(foundSSHKey, sshKeyContent) {
 		t.Fatalf("updated ssh keys not found in authorized_keys, got %s", foundSSHKey)
 	}
@@ -531,7 +531,7 @@ func TestNoReboot(t *testing.T) {
 
 	assertExpectedPerms(t, cs, infraNode, sshPaths.Expected, []string{constants.CoreUserName, constants.CoreGroupName, "600"})
 
-	currentEtcShadowContents := helpers.ExecCmdOnNode(t, cs, infraNode, "grep", "^core:", "/rootfs/etc/shadow")
+	currentEtcShadowContents := helpers.ExecCmdOnNode(t, cs, infraNode, "grep", "^core:", "/etc/shadow")
 
 	if currentEtcShadowContents == initialEtcShadowContents {
 		t.Fatalf("updated password hash not found in etc/shadow, got %s", currentEtcShadowContents)
@@ -539,7 +539,7 @@ func TestNoReboot(t *testing.T) {
 
 	t.Logf("Node %s has Password Hash", infraNode.Name)
 
-	output = helpers.ExecCmdOnNode(t, cs, infraNode, "cat", "/rootfs/proc/uptime")
+	output = helpers.ExecCmdOnNode(t, cs, infraNode, "cat", "/proc/uptime")
 	newTime := strings.Split(output, " ")[0]
 
 	// To ensure we didn't reboot, new uptime should be greater than old uptime
@@ -573,7 +573,7 @@ func TestNoReboot(t *testing.T) {
 	assert.Equal(t, infraNode.Annotations[constants.CurrentMachineConfigAnnotationKey], oldInfraRenderedConfig)
 	assert.Equal(t, infraNode.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
 
-	foundSSHKey = helpers.ExecCmdOnNode(t, cs, infraNode, "cat", filepath.Join("/rootfs", sshPaths.Expected))
+	foundSSHKey = helpers.ExecCmdOnNode(t, cs, infraNode, "cat", filepath.Join("", sshPaths.Expected))
 	if strings.Contains(foundSSHKey, sshKeyContent) {
 		t.Fatalf("Node %s did not rollback successfully", infraNode.Name)
 	}
@@ -584,7 +584,7 @@ func TestNoReboot(t *testing.T) {
 	t.Logf("Node %s has successfully rolled back", infraNode.Name)
 
 	// Ensure that node didn't reboot during rollback
-	output = helpers.ExecCmdOnNode(t, cs, infraNode, "cat", "/rootfs/proc/uptime")
+	output = helpers.ExecCmdOnNode(t, cs, infraNode, "cat", "/proc/uptime")
 	newTime = strings.Split(output, " ")[0]
 
 	uptimeNew, err = strconv.ParseFloat(newTime, 64)
@@ -613,7 +613,7 @@ func TestNoReboot(t *testing.T) {
 	err = helpers.WaitForPoolComplete(t, cs, "infra", oldInfraRenderedConfig)
 	require.Nil(t, err)
 
-	rollbackEtcShadowContents := helpers.ExecCmdOnNode(t, cs, infraNode, "grep", "^core:", "/rootfs/etc/shadow")
+	rollbackEtcShadowContents := helpers.ExecCmdOnNode(t, cs, infraNode, "grep", "^core:", "/etc/shadow")
 	assert.Equal(t, initialEtcShadowContents, rollbackEtcShadowContents)
 }
 
@@ -718,7 +718,7 @@ func TestDontDeleteRPMFiles(t *testing.T) {
 	assert.Equal(t, infraNode.Annotations[constants.CurrentMachineConfigAnnotationKey], oldInfraRenderedConfig)
 	assert.Equal(t, infraNode.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
 
-	found := helpers.ExecCmdOnNode(t, cs, infraNode, "cat", "/rootfs/etc/motd")
+	found := helpers.ExecCmdOnNode(t, cs, infraNode, "cat", "/etc/motd")
 	if strings.Contains(found, "mco-test") {
 		t.Fatalf("updated file doesn't contain expected data, got %s", found)
 	}
@@ -795,13 +795,13 @@ func TestIgn3Cfg(t *testing.T) {
 
 	sshPaths := helpers.GetSSHPaths(helpers.GetOSReleaseForNode(t, cs, infraNode).OS)
 
-	foundSSH := helpers.ExecCmdOnNode(t, cs, infraNode, "grep", "1234_test_ign3", filepath.Join("/rootfs", sshPaths.Expected))
+	foundSSH := helpers.ExecCmdOnNode(t, cs, infraNode, "grep", "1234_test_ign3", filepath.Join("", sshPaths.Expected))
 	if !strings.Contains(foundSSH, "1234_test_ign3") {
 		t.Fatalf("updated ssh keys not found in authorized_keys, got %s", foundSSH)
 	}
 	t.Logf("Node %s has SSH key", infraNode.Name)
 
-	foundFile := helpers.ExecCmdOnNode(t, cs, infraNode, "cat", "/rootfs/etc/testfileconfig")
+	foundFile := helpers.ExecCmdOnNode(t, cs, infraNode, "cat", "/etc/testfileconfig")
 	if !strings.Contains(foundFile, "test-ign3-stuff") {
 		t.Fatalf("updated file doesn't contain expected data, got %s", foundFile)
 	}
@@ -862,7 +862,7 @@ func TestMCDRotatesCerts(t *testing.T) {
 	if err := wait.PollImmediate(5*time.Second, 15*time.Second, func() (bool, error) {
 		inClusterCert, err := helpers.GetKubeletCABundleFromConfigmap(cs)
 		require.Nil(t, err)
-		onDiskCert := helpers.ExecCmdOnNode(t, cs, selectedNode, "cat", "/rootfs/etc/kubernetes/kubelet-ca.crt")
+		onDiskCert := helpers.ExecCmdOnNode(t, cs, selectedNode, "cat", "/etc/kubernetes/kubelet-ca.crt")
 		return (onDiskCert == inClusterCert), nil
 	}); err != nil {
 		t.Errorf("Mismatch between on disk cert and in cluster cert: %v", err)
@@ -927,7 +927,7 @@ func TestFirstBootHasSSHKeys(t *testing.T) {
 	for _, node := range nodes {
 		if node.Name == nodeSplit[0] && strings.Contains(nodeSplit[1], "Ready") && !strings.Contains(nodeSplit[1], "NotReady") {
 			foundNode = true
-			out := helpers.ExecCmdOnNode(t, cs, node, "cat", "/rootfs/home/core/.ssh/authorized_keys.d/ignition")
+			out := helpers.ExecCmdOnNode(t, cs, node, "cat", "/home/core/.ssh/authorized_keys.d/ignition")
 			t.Logf("Got ssh key file data: %s", out)
 			require.NotEmpty(t, out)
 		}
@@ -966,7 +966,7 @@ func createMCToAddFile(name, filename, data string) *mcfgv1.MachineConfig {
 func assertExpectedPerms(t *testing.T, cs *framework.ClientSet, node corev1.Node, path string, expectedPerms []string) {
 	t.Helper()
 
-	actualPerms := strings.Split(strings.TrimSuffix(helpers.ExecCmdOnNode(t, cs, node, "chroot", "/rootfs", "stat", "--format=%U %G %a", path), "\n"), " ")
+	actualPerms := strings.Split(strings.TrimSuffix(helpers.ExecCmdOnNode(t, cs, node, "stat", "--format=%U %G %a", path), "\n"), " ")
 	assert.Equal(t, expectedPerms, actualPerms, "expected %s to have perms %v, got: %v", path, expectedPerms, actualPerms)
 }
 
@@ -983,7 +983,6 @@ func TestInternalImageRegistryPullSecret(t *testing.T) {
 	}
 
 	filename := "/etc/mco/internal-registry-pull-secret.json"
-	canonicalizedFilename := filepath.Join("/rootfs", filename)
 
 	// For each hostname, we do the following (in parallel to make the test
 	// faster and ensure that we don't run into any unforeseen edge-cases):
@@ -1013,7 +1012,7 @@ func TestInternalImageRegistryPullSecret(t *testing.T) {
 			t.Logf("Waiting for all nodes to get hostname %s", imageRegistryHostname)
 
 			helpers.AssertAllNodesReachExpectedState(t, cs, func(node corev1.Node) bool {
-				contents := helpers.ExecCmdOnNode(t, cs, node, "cat", canonicalizedFilename)
+				contents := helpers.ExecCmdOnNode(t, cs, node, "cat", filename)
 				return strings.Contains(contents, imageRegistryHostname)
 			})
 
@@ -1029,7 +1028,7 @@ func TestInternalImageRegistryPullSecret(t *testing.T) {
 			t.Logf("Waiting for all nodes to lose hostname %s", imageRegistryHostname)
 
 			helpers.AssertAllNodesReachExpectedState(t, cs, func(node corev1.Node) bool {
-				contents := helpers.ExecCmdOnNode(t, cs, node, "cat", canonicalizedFilename)
+				contents := helpers.ExecCmdOnNode(t, cs, node, "cat", filename)
 				return !strings.Contains(contents, imageRegistryHostname)
 			})
 		})

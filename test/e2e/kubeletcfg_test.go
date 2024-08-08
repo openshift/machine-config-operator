@@ -3,7 +3,6 @@ package e2e_test
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -288,7 +287,7 @@ func getMCFromKubeletCfg(t *testing.T, cs *framework.ClientSet, kcName string) (
 // regexKey is expected to be in the form `"key": (\S+)` to search for the value of key
 func getValueFromKubeletConfig(t *testing.T, cs *framework.ClientSet, node corev1.Node, regexKey, stringKey, confPath string) (string, bool) {
 	// get the contents of the kubelet.conf on nodeName
-	out := helpers.ExecCmdOnNode(t, cs, node, "cat", filepath.Join("/rootfs", confPath))
+	out := helpers.ExecCmdOnNode(t, cs, node, "cat", confPath)
 	t.Log(out)
 
 	// search based on the regex key. The output should have two members:

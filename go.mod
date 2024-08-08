@@ -90,6 +90,7 @@ require (
 	github.com/go-openapi/strfmt v0.21.7 // indirect
 	github.com/go-openapi/validate v0.22.1 // indirect
 	github.com/go-viper/mapstructure/v2 v2.0.0 // indirect
+	github.com/godbus/dbus v0.0.0-20181025153459-66d97aec3384 // indirect
 	github.com/golangci/modinfo v0.3.4 // indirect
 	github.com/golangci/plugin-module-register v0.1.1 // indirect
 	github.com/google/btree v1.0.1 // indirect

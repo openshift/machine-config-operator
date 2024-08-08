@@ -4,5 +4,8 @@ _output
 .vscode/
 junit*.xml
 checkstyle*.xml
+test/e2e-techpreview/Test*.log
+test/e2e-techpreview/Test*.yaml
+test/e2e-techpreview-shared/*.log
 mco-unit-test-coverage.out
 mco-unit-test-coverage.html
