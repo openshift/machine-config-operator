@@ -177,6 +177,9 @@ contents:
         terminationMessagePolicy: FallbackToLogsOnError
         imagePullPolicy: IfNotPresent
       - name: keepalived-monitor
+        securityContext:
+          capabilities:
+            add: ["NET_ADMIN", "SYS_CHROOT"]
         image: {{ .Images.baremetalRuntimeCfgImage }}
         env:
           - name: ENABLE_UNICAST
