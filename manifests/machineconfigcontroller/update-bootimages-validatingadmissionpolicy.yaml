@@ -18,5 +18,5 @@ spec:
       resources:   ["machineconfigurations"]
       scope: "*"
   validations:
-    - expression: "!has(object.spec.managedBootImages) || (has(object.spec.managedBootImages) && params.status.platformStatus.type in ['GCP'])"
-      message: "This feature is only supported on these platforms: GCP"
+    - expression: "!has(object.spec.managedBootImages) || (has(object.spec.managedBootImages) && params.status.platformStatus.type in ['GCP','AWS'])"
+      message: "This feature is only supported on these platforms: GCP, AWS"
