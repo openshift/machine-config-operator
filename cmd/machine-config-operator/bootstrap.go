@@ -10,6 +10,7 @@ import (
 
 	imagev1 "github.com/openshift/api/image/v1"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/operator"
 	"github.com/openshift/machine-config-operator/pkg/version"
 )
@@ -151,8 +152,8 @@ func runBootstrapCmd(_ *cobra.Command, _ []string) {
 		}
 	}
 
-	imgs := operator.Images{
-		RenderConfigImages: operator.RenderConfigImages{
+	imgs := ctrlcommon.Images{
+		RenderConfigImages: ctrlcommon.RenderConfigImages{
 			MachineConfigOperator:          bootstrapOpts.mcoImage,
 			KeepalivedBootstrap:            bootstrapOpts.keepalivedImage,
 			CorednsBootstrap:               bootstrapOpts.corednsImage,
@@ -162,7 +163,7 @@ func runBootstrapCmd(_ *cobra.Command, _ []string) {
 			BaseOSContainerImage:           bootstrapOpts.baseOSContainerImage,
 			BaseOSExtensionsContainerImage: bootstrapOpts.baseOSExtensionsContainerImage,
 		},
-		ControllerConfigImages: operator.ControllerConfigImages{
+		ControllerConfigImages: ctrlcommon.ControllerConfigImages{
 			InfraImage:          bootstrapOpts.infraImage,
 			Keepalived:          bootstrapOpts.keepalivedImage,
 			Coredns:             bootstrapOpts.corednsImage,

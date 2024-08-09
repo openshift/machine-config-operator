@@ -38,7 +38,13 @@ RUN --mount=type=cache,target=/var/cache/dnf,z \
     # rewrite image names for scos
     sed -i 's/rhel-coreos/stream-coreos/g' /manifests/*; fi && \
     dnf --setopt=keepcache=true -y install 'nmstate >= 2.2.10' && \
-    if ! rpm -q util-linux; then dnf install --setopt=keepcache=true -y util-linux; fi
+    if ! rpm -q util-linux; then dnf install --setopt=keepcache=true -y util-linux; fi && \
+    # We also need to install fuse-overlayfs and cpp for Buildah to work correctly.
+    if ! rpm -q buildah; then dnf install --setopt=keepcache=true -y buildah fuse-overlayfs cpp --exclude container-selinux; fi && \
+    # Create the build user which will be used for doing OS image builds. We
+    # use the username "build" and the uid 1000 since this matches what is in
+    # the official Buildah image.
+    useradd --uid 1000 build
 # Copy the binaries *after* we install nmstate so we don't invalidate our cache for local builds.
 COPY --from=rhel9-builder /go/src/github.com/openshift/machine-config-operator/instroot-rhel9.tar /tmp/instroot-rhel9.tar
 RUN cd / && tar xf /tmp/instroot-rhel9.tar && rm -f /tmp/instroot-rhel9.tar

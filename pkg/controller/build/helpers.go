@@ -5,7 +5,6 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -21,21 +20,61 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/selection"
 	k8stypes "k8s.io/apimachinery/pkg/types"
 	clientset "k8s.io/client-go/kubernetes"
 	corelisterv1 "k8s.io/client-go/listers/core/v1"
 )
 
-const (
-	canonicalSecretSuffix string = "-canonical"
-	// This label gets applied to all secrets that we've canonicalized as a way
-	// to indicate that we created and own them.
-	canonicalSecretLabel string = "machineconfiguration.openshift.io/canonicalizedSecret"
-	// This label is applied to all canonicalized secrets. Its value should
-	// contain the original name of the secret that has been canonicalized.
-	originalSecretNameLabel string = "machineconfiguration.openshift.io/originalSecretName"
-)
+// Returns a selector with the appropriate labels for an OS build object label
+// query.
+func OSBuildSelector() labels.Selector {
+	return labelsToSelector([]string{
+		OnClusterLayeringLabelKey,
+		RenderedMachineConfigLabelKey,
+		TargetMachineConfigPoolLabelKey,
+	})
+}
+
+// Returns a selector with the appropriate labels for an ephemeral build object
+// label query.
+func EphemeralBuildObjectSelector() labels.Selector {
+	return labelsToSelector([]string{
+		EphemeralBuildObjectLabelKey,
+		OnClusterLayeringLabelKey,
+		RenderedMachineConfigLabelKey,
+		TargetMachineConfigPoolLabelKey,
+	})
+}
+
+// Returns a selector with the appropriate labels for a canonicalized secret
+// label query.
+func CanonicalizedSecretSelector() labels.Selector {
+	return labelsToSelector([]string{
+		CanonicalSecretLabelKey,
+		OriginalSecretNameLabelKey,
+		OnClusterLayeringLabelKey,
+	})
+}
+
+// Takes a list of label keys and converts them into a Selector object that
+// will require all label keys to be present.
+func labelsToSelector(requiredLabels []string) labels.Selector {
+	reqs := []labels.Requirement{}
+
+	for _, label := range requiredLabels {
+		req, err := labels.NewRequirement(label, selection.Exists, []string{})
+		if err != nil {
+			panic(err)
+		}
+
+		reqs = append(reqs, *req)
+	}
+
+	return labels.NewSelector().Add(reqs...)
+}
 
 // Determines if a secret has been canonicalized by us by checking both for the
 // suffix as well as the labels that we add to the canonicalized secret.
@@ -45,22 +84,7 @@ func isCanonicalizedSecret(secret *corev1.Secret) bool {
 
 // Determines if a secret has our canonicalized secret label.
 func hasCanonicalizedSecretLabels(secret *corev1.Secret) bool {
-	if secret.Labels == nil {
-		return false
-	}
-
-	labels := []string{
-		canonicalSecretLabel,
-		originalSecretNameLabel,
-	}
-
-	for _, label := range labels {
-		if _, ok := secret.Labels[label]; !ok {
-			return false
-		}
-	}
-
-	return true
+	return CanonicalizedSecretSelector().Matches(labels.Set(secret.Labels))
 }
 
 // Validates whether a secret is canonicalized. Returns an error if not.
@@ -161,42 +185,6 @@ func ParseImagePullspec(pullspec, imageSHA string) (string, error) {
 	return parseImagePullspecWithDigest(pullspec, imageDigest)
 }
 
-// Converts a legacy Docker pull secret into a more modern representation.
-// Essentially, it converts {"registry.hostname.com": {"username": "user"...}}
-// into {"auths": {"registry.hostname.com": {"username": "user"...}}}. If it
-// encounters a pull secret already in this configuration, it will return the
-// input secret as-is. Returns either the supplied data or the newly-configured
-// representation of said data, a boolean to indicate whether it was converted,
-// and any errors resulting from the conversion process.
-func canonicalizePullSecretBytes(secretBytes []byte) ([]byte, bool, error) {
-	type newStyleAuth struct {
-		Auths map[string]interface{} `json:"auths,omitempty"`
-	}
-
-	// Try marshaling the new-style secret first:
-	newStyleDecoded := &newStyleAuth{}
-	if err := json.Unmarshal(secretBytes, newStyleDecoded); err != nil {
-		return nil, false, fmt.Errorf("could not decode new-style pull secret: %w", err)
-	}
-
-	// We have an new-style secret, so we can just return here.
-	if len(newStyleDecoded.Auths) != 0 {
-		return secretBytes, false, nil
-	}
-
-	// We need to convert the legacy-style secret to the new-style.
-	oldStyleDecoded := map[string]interface{}{}
-	if err := json.Unmarshal(secretBytes, &oldStyleDecoded); err != nil {
-		return nil, false, fmt.Errorf("could not decode legacy-style pull secret: %w", err)
-	}
-
-	out, err := json.Marshal(&newStyleAuth{
-		Auths: oldStyleDecoded,
-	})
-
-	return out, err == nil, err
-}
-
 // Performs the above operation upon a given secret, potentially creating a new
 // secret for insertion with the suffix '-canonical' on its name and a label
 // indicating that we've canonicalized it.
@@ -222,22 +210,28 @@ func canonicalizePullSecret(secret *corev1.Secret) (*corev1.Secret, error) {
 		return secret, nil
 	}
 
-	out := &corev1.Secret{
+	return newCanonicalSecret(secret, canonicalizedSecretBytes), nil
+}
+
+// Creates a new canonicalized secret with the appropriate suffix, labels, etc.
+// Does *not* validate whether the inputted secret bytes are in the correct
+// format.
+func newCanonicalSecret(secret *corev1.Secret, secretBytes []byte) *corev1.Secret {
+	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("%s%s", secret.Name, canonicalSecretSuffix),
 			Namespace: secret.Namespace,
 			Labels: map[string]string{
-				canonicalSecretLabel:    "",
-				originalSecretNameLabel: secret.Name,
+				CanonicalSecretLabelKey:    "",
+				OriginalSecretNameLabelKey: secret.Name,
+				OnClusterLayeringLabelKey:  "",
 			},
 		},
 		Data: map[string][]byte{
-			corev1.DockerConfigJsonKey: canonicalizedSecretBytes,
+			corev1.DockerConfigJsonKey: secretBytes,
 		},
 		Type: corev1.SecretTypeDockerConfigJson,
 	}
-
-	return out, nil
 }
 
 // Looks up a given secret key for a given secret type and validates that the
@@ -393,4 +387,31 @@ func validateSecret(secretGetter func(string) (*corev1.Secret, error), mosc *mcf
 	}
 
 	return nil
+}
+
+// Determines if a given object was created by BuildController. This is mostly
+// useful for tests and other helpers that may need to clean up after a failed
+// run. It first determines if the object is an ephemeral build object, next it
+// checks whether the object has all of the required labels, next it checks if
+// the object is a canonicalized secret, and finally, it checks whether the
+// object is a MachineOSBuild.
+func IsObjectCreatedByBuildController(obj metav1.Object) bool {
+	if isEphemeralBuildObject(obj) {
+		return true
+	}
+
+	if hasAllRequiredOSBuildLabels(obj.GetLabels()) {
+		return true
+	}
+
+	secret, ok := obj.(*corev1.Secret)
+	if ok && isCanonicalizedSecret(secret) {
+		return true
+	}
+
+	if _, ok := obj.(*mcfgv1alpha1.MachineOSBuild); ok {
+		return true
+	}
+
+	return false
 }

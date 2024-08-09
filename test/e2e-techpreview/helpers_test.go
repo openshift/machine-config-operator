@@ -17,6 +17,7 @@ import (
 	imagev1 "github.com/openshift/api/image/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+	"github.com/openshift/machine-config-operator/pkg/controller/build"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/openshift/machine-config-operator/test/helpers"
@@ -30,7 +31,13 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
+const (
+	clonedSecretLabelKey string = "machineconfiguration.openshift.io/cloned-secret"
+)
+
 func createMachineOSConfig(t *testing.T, cs *framework.ClientSet, mosc *mcfgv1alpha1.MachineOSConfig) func() {
+	helpers.SetMetadataOnObject(t, mosc)
+
 	_, err := cs.MachineconfigurationV1alpha1Interface.MachineOSConfigs().Create(context.TODO(), mosc, metav1.CreateOptions{})
 	require.NoError(t, err)
 
@@ -42,109 +49,239 @@ func createMachineOSConfig(t *testing.T, cs *framework.ClientSet, mosc *mcfgv1al
 	})
 }
 
-// Identifies a secret in the MCO namespace that has permissions to push to the ImageStream used for the test.
-func getBuilderPushSecretName(cs *framework.ClientSet) (string, error) {
-	secrets, err := cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace).List(context.TODO(), metav1.ListOptions{})
-	if err != nil {
-		return "", err
+// Sets up the ImageStream in the desired namesspace. If in a different
+// namespace than the MCO, it will create the namespace and clone the pull
+// secret into the MCO namespace. Returns the name of the push secret used, the
+// image pullspec, and an idempotent cleanup function.
+func setupImageStream(t *testing.T, cs *framework.ClientSet, objMeta metav1.ObjectMeta) (string, string, func()) {
+	t.Helper()
+
+	cleanups := helpers.NewCleanupFuncs()
+
+	pushSecretName := ""
+
+	// If no namespace is provided, default to the MCO namespace.
+	if objMeta.Namespace == "" {
+		objMeta.Namespace = ctrlcommon.MCONamespace
 	}
 
-	for _, secret := range secrets.Items {
-		if strings.HasPrefix(secret.Name, "builder-dockercfg") {
-			return secret.Name, nil
+	builderSAObjMeta := metav1.ObjectMeta{
+		Namespace: objMeta.Namespace,
+		Name:      "builder",
+	}
+
+	// If we're told to use a different namespace than the MCO namespace, we need
+	// to do some additional steps.
+	if objMeta.Namespace != ctrlcommon.MCONamespace {
+		// Create the namespace.
+		cleanups.Add(createNamespace(t, cs, objMeta))
+
+		// Get the builder secret name.
+		origPushSecretName, err := getBuilderPushSecretName(cs, builderSAObjMeta)
+		require.NoError(t, err)
+
+		src := metav1.ObjectMeta{
+			Name:      origPushSecretName,
+			Namespace: objMeta.Namespace,
 		}
+
+		dst := metav1.ObjectMeta{
+			Name:      "builder-push-secret",
+			Namespace: ctrlcommon.MCONamespace,
+		}
+
+		// Clone the builder secret into the MCO namespace.
+		cleanups.Add(cloneSecret(t, cs, src, dst))
+
+		pushSecretName = dst.Name
+	} else {
+		// If we're running in the MCO namespace, all we need to do is get the
+		// builder push secret name.
+		origPushSecretName, err := getBuilderPushSecretName(cs, builderSAObjMeta)
+		require.NoError(t, err)
+
+		pushSecretName = origPushSecretName
 	}
 
-	return "", fmt.Errorf("could not find matching secret name in namespace %s", ctrlcommon.MCONamespace)
+	// Create the Imagestream.
+	pullspec, isCleanupFunc := createImagestream(t, cs, objMeta)
+	cleanups.Add(isCleanupFunc)
+
+	return pushSecretName, pullspec, makeIdempotentAndRegister(t, cleanups.Run)
 }
 
-// Gets the ImageStream pullspec for the ImageStream used for the test.
-func getImagestreamPullspec(cs *framework.ClientSet, name string) (string, error) {
-	is, err := cs.ImageV1Interface.ImageStreams(ctrlcommon.MCONamespace).Get(context.TODO(), name, metav1.GetOptions{})
+// Gets the builder service account for a given namespace so we can get the
+// image push secret that is bound to it. We poll for it because if this is
+// done in a new namespace, there could be a slight delay between the time that
+// the namespace is created and all of the various service accounts, etc. are
+// created as well. This image push secret allows us to push to the
+// ImageStream.
+func getBuilderPushSecretName(cs *framework.ClientSet, objMeta metav1.ObjectMeta) (string, error) {
+	name := ""
+
+	err := wait.PollImmediate(1*time.Second, 1*time.Minute, func() (bool, error) {
+		builderSA, err := cs.CoreV1Interface.ServiceAccounts(objMeta.Namespace).Get(context.TODO(), objMeta.Name, metav1.GetOptions{})
+		if err != nil && !k8serrors.IsNotFound(err) {
+			return false, err
+		}
+
+		if builderSA == nil {
+			return false, nil
+		}
+
+		if len(builderSA.ImagePullSecrets) == 0 {
+			return false, nil
+		}
+
+		if builderSA.ImagePullSecrets[0].Name == "" {
+			return false, nil
+		}
+
+		name = builderSA.ImagePullSecrets[0].Name
+		return true, nil
+	})
+
 	if err != nil {
 		return "", err
 	}
 
-	return fmt.Sprintf("%s:latest", is.Status.DockerImageRepository), nil
+	return name, nil
 }
 
-// Creates an OpenShift ImageStream in the MCO namespace for the test and
-// registers a cleanup function.
-func createImagestream(t *testing.T, cs *framework.ClientSet, name string) func() {
-	is := &imagev1.ImageStream{
+// Creates a namespace. Returns an idempotent cleanup function.
+func createNamespace(t *testing.T, cs *framework.ClientSet, objMeta metav1.ObjectMeta) func() {
+	ns := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: ctrlcommon.MCONamespace,
+			Name: objMeta.Namespace,
 		},
 	}
 
-	_, err := cs.ImageV1Interface.ImageStreams(ctrlcommon.MCONamespace).Create(context.TODO(), is, metav1.CreateOptions{})
-	require.NoError(t, err)
+	helpers.SetMetadataOnObject(t, ns)
 
-	t.Logf("Created ImageStream %q", name)
+	_, err := cs.CoreV1Interface.Namespaces().Create(context.TODO(), ns, metav1.CreateOptions{})
+	require.NoError(t, err)
+	t.Logf("Created namespace %q", ns.Name)
 
 	return makeIdempotentAndRegister(t, func() {
-		require.NoError(t, cs.ImageV1Interface.ImageStreams(ctrlcommon.MCONamespace).Delete(context.TODO(), name, metav1.DeleteOptions{}))
-		t.Logf("Deleted ImageStream %q", name)
+		require.NoError(t, cs.CoreV1Interface.Namespaces().Delete(context.TODO(), ns.Name, metav1.DeleteOptions{}))
+		t.Logf("Deleted namespace %q", ns.Name)
 	})
 }
 
-// Creates the on-cluster-build-custom-dockerfile ConfigMap and registers a cleanup function.
-func createCustomDockerfileConfigMap(t *testing.T, cs *framework.ClientSet, customDockerfiles map[string]string) func() {
-	return createConfigMap(t, cs, &corev1.ConfigMap{
+// Creates an OpenShift ImageStream in the MCO namespace for the test and
+// registers a cleanup function. Returns the pullspec with the latest tag for
+// the newly-created ImageStream.
+func createImagestream(t *testing.T, cs *framework.ClientSet, objMeta metav1.ObjectMeta) (string, func()) {
+	is := &imagev1.ImageStream{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "on-cluster-build-custom-dockerfile",
-			Namespace: ctrlcommon.MCONamespace,
+			Name:      objMeta.Name,
+			Namespace: objMeta.Namespace,
 		},
-		Data: customDockerfiles,
+	}
+
+	helpers.SetMetadataOnObject(t, is)
+
+	created, err := cs.ImageV1Interface.ImageStreams(is.Namespace).Create(context.TODO(), is, metav1.CreateOptions{})
+	require.NoError(t, err)
+	require.NotEmpty(t, created.Status.DockerImageRepository)
+
+	pullspec := fmt.Sprintf("%s:latest", created.Status.DockerImageRepository)
+	t.Logf("Created ImageStream \"%s/%s\", has pullspec %q", is.Namespace, is.Name, pullspec)
+
+	return pullspec, makeIdempotentAndRegister(t, func() {
+		require.NoError(t, cs.ImageV1Interface.ImageStreams(is.Namespace).Delete(context.TODO(), is.Name, metav1.DeleteOptions{}))
+		t.Logf("Deleted ImageStream \"%s/%s\"", is.Namespace, is.Name)
 	})
 }
 
 // Creates a given ConfigMap and registers a cleanup function to delete it.
 func createConfigMap(t *testing.T, cs *framework.ClientSet, cm *corev1.ConfigMap) func() {
-	_, err := cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace).Create(context.TODO(), cm, metav1.CreateOptions{})
+	helpers.SetMetadataOnObject(t, cm)
+
+	_, err := cs.CoreV1Interface.ConfigMaps(cm.Namespace).Create(context.TODO(), cm, metav1.CreateOptions{})
 	require.NoError(t, err)
 
-	t.Logf("Created ConfigMap %q", cm.Name)
+	t.Logf("Created ConfigMap \"%s/%s\"", cm.Namespace, cm.Name)
 
 	return makeIdempotentAndRegister(t, func() {
-		require.NoError(t, cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace).Delete(context.TODO(), cm.Name, metav1.DeleteOptions{}))
-		t.Logf("Deleted ConfigMap %q", cm.Name)
+		require.NoError(t, cs.CoreV1Interface.ConfigMaps(cm.Namespace).Delete(context.TODO(), cm.Name, metav1.DeleteOptions{}))
+		t.Logf("Deleted ConfigMap \"%s/%s\"", cm.Namespace, cm.Name)
 	})
 }
 
 // Creates a given Secret and registers a cleanup function to delete it.
 func createSecret(t *testing.T, cs *framework.ClientSet, secret *corev1.Secret) func() {
-	_, err := cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace).Create(context.TODO(), secret, metav1.CreateOptions{})
+	helpers.SetMetadataOnObject(t, secret)
+
+	_, err := cs.CoreV1Interface.Secrets(secret.Namespace).Create(context.TODO(), secret, metav1.CreateOptions{})
 	require.NoError(t, err)
 
-	t.Logf("Created secret %q", secret.Name)
+	t.Logf("Created secret \"%s/%s\"", secret.Namespace, secret.Name)
 
 	return makeIdempotentAndRegister(t, func() {
 		require.NoError(t, cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace).Delete(context.TODO(), secret.Name, metav1.DeleteOptions{}))
-		t.Logf("Deleted secret %q", secret.Name)
+		t.Logf("Deleted secret \"%s/%s\"", secret.Namespace, secret.Name)
 	})
 }
 
 // Copies the global pull secret from openshift-config/pull-secret into the MCO
 // namespace so that it can be used by the build processes.
 func copyGlobalPullSecret(t *testing.T, cs *framework.ClientSet) func() {
-	return cloneSecret(t, cs, "pull-secret", "openshift-config", globalPullSecretCloneName, ctrlcommon.MCONamespace)
+	src := metav1.ObjectMeta{
+		Name:      "pull-secret",
+		Namespace: "openshift-config",
+	}
+
+	dst := metav1.ObjectMeta{
+		Name:      globalPullSecretCloneName,
+		Namespace: ctrlcommon.MCONamespace,
+	}
+
+	return cloneSecret(t, cs, src, dst)
 }
 
-func waitForMachineOSBuildToReachState(t *testing.T, cs *framework.ClientSet, poolName string, condFunc func(*mcfgv1alpha1.MachineOSBuild, error) (bool, error)) {
+// Computes the name of the currently-running MachineOSBuild given the name of a MachineConfigPool.
+func getMachineOSBuildNameForPool(cs *framework.ClientSet, poolName string) (string, error) {
 	mcp, err := cs.MachineconfigurationV1Interface.MachineConfigPools().Get(context.TODO(), poolName, metav1.GetOptions{})
-	require.NoError(t, err)
+	if err != nil {
+		return "", err
+	}
 
-	mosbName := fmt.Sprintf("%s-%s-builder", poolName, mcp.Spec.Configuration.Name)
+	return fmt.Sprintf("%s-%s-builder", poolName, mcp.Spec.Configuration.Name), nil
+}
 
-	err = wait.PollImmediate(1*time.Second, 10*time.Minute, func() (bool, error) {
+// Waits for the provided MachineOSBuild to reach the desired state as
+// determined by the condFunc provided by the caller. Will return the
+// MachineOSBuild object in the final state.
+func waitForMachineOSBuildToReachState(t *testing.T, cs *framework.ClientSet, mosb *mcfgv1alpha1.MachineOSBuild, condFunc func(*mcfgv1alpha1.MachineOSBuild, error) (bool, error)) *mcfgv1alpha1.MachineOSBuild {
+	mosbName := mosb.Name
+
+	var finalMosb *mcfgv1alpha1.MachineOSBuild
+
+	start := time.Now()
+
+	err := wait.PollImmediate(1*time.Second, 10*time.Minute, func() (bool, error) {
 		mosb, err := cs.MachineconfigurationV1alpha1Interface.MachineOSBuilds().Get(context.TODO(), mosbName, metav1.GetOptions{})
+		// Pass in a DeepCopy of the object so that the caller cannot inadvertantly
+		// mutate it and cause false results.
+		reached, err := condFunc(mosb.DeepCopy(), err)
+		if reached {
+			// If we've reached the desired state, grab the MachineOSBuild to return
+			// to the caller.
+			finalMosb = mosb
+		}
 
-		return condFunc(mosb, err)
+		// Return these as-is.
+		return reached, err
 	})
 
+	if err == nil {
+		t.Logf("MachineOSBuild %q reached desired state after %s", mosbName, time.Since(start))
+	}
+
 	require.NoError(t, err, "MachineOSBuild %q did not reach desired state", mosbName)
+
+	return finalMosb
 }
 
 // Waits for the target MachineConfigPool to reach a state defined in a supplied function.
@@ -175,8 +312,15 @@ func makeIdempotentAndRegister(t *testing.T, cleanupFunc func()) func() {
 
 // TOOD: Refactor into smaller functions.
 func cleanupEphemeralBuildObjects(t *testing.T, cs *framework.ClientSet) {
-	// TODO: Instantiate this by using the label selector library.
-	labelSelector := "machineconfiguration.openshift.io/desiredConfig,machineconfiguration.openshift.io/buildPod,machineconfiguration.openshift.io/targetMachineConfigPool"
+	labelSelector := build.OSBuildSelector().String()
+
+	// Any secrets that get created by BuildController should have different
+	// label selectors since they're produced differently.
+	secretList, err := cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace).List(context.TODO(), metav1.ListOptions{
+		LabelSelector: build.CanonicalizedSecretSelector().String(),
+	})
+
+	require.NoError(t, err)
 
 	cmList, err := cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace).List(context.TODO(), metav1.ListOptions{
 		LabelSelector: labelSelector,
@@ -196,6 +340,10 @@ func cleanupEphemeralBuildObjects(t *testing.T, cs *framework.ClientSet) {
 	moscList, err := cs.MachineconfigurationV1alpha1Interface.MachineOSConfigs().List(context.TODO(), metav1.ListOptions{})
 	require.NoError(t, err)
 
+	if len(secretList.Items) == 0 {
+		t.Logf("No build-time secrets to clean up")
+	}
+
 	if len(cmList.Items) == 0 {
 		t.Logf("No ephemeral ConfigMaps to clean up")
 	}
@@ -210,6 +358,11 @@ func cleanupEphemeralBuildObjects(t *testing.T, cs *framework.ClientSet) {
 
 	if len(moscList.Items) == 0 {
 		t.Logf("No MachineOSConfigs to clean up")
+	}
+
+	for _, item := range secretList.Items {
+		t.Logf("Cleaning up build-time Secret %s", item.Name)
+		require.NoError(t, cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace).Delete(context.TODO(), item.Name, metav1.DeleteOptions{}))
 	}
 
 	for _, item := range cmList.Items {
@@ -251,15 +404,15 @@ func getBuildArtifactDir(t *testing.T) string {
 	return cwd
 }
 
-// Writes any ephemeral ConfigMaps that got created as part of the build
-// process to a file. Also writes the build pod spec.
+// Writes any ephemeral build objects to disk as YAML files.
 func writeBuildArtifactsToFiles(t *testing.T, cs *framework.ClientSet, poolName string) {
-	pool, err := cs.MachineconfigurationV1Interface.MachineConfigPools().Get(context.TODO(), poolName, metav1.GetOptions{})
-	require.NoError(t, err)
+	lo := metav1.ListOptions{
+		LabelSelector: build.OSBuildSelector().String(),
+	}
 
-	err = aggerrs.NewAggregate([]error{
-		writeConfigMapsToFile(t, cs, pool),
-		writePodSpecToFile(t, cs, pool),
+	err := aggerrs.NewAggregate([]error{
+		writeConfigMapsToFile(t, cs, lo),
+		writeBuildPodsToFile(t, cs, lo),
 		writeMachineOSBuildsToFile(t, cs),
 		writeMachineOSConfigsToFile(t, cs),
 	})
@@ -279,16 +432,7 @@ func writeMachineOSBuildsToFile(t *testing.T, cs *framework.ClientSet) error {
 		return nil
 	}
 
-	for _, mosb := range mosbList.Items {
-		mosb := mosb
-		filename := fmt.Sprintf("%s-%s-MachineOSBuild.yaml", t.Name(), mosb.Name)
-		t.Logf("Writing MachineOSBuild %s to %s", mosb.Name, filename)
-		if err := dumpObjectToYAMLFile(t, &mosb, filename); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return dumpObjectToYAMLFile(t, mosbList, "machineosbuilds")
 }
 
 // Writes all MachineOSConfigs to a file.
@@ -303,97 +447,60 @@ func writeMachineOSConfigsToFile(t *testing.T, cs *framework.ClientSet) error {
 		return nil
 	}
 
-	for _, mosc := range moscList.Items {
-		mosc := mosc
-		filename := fmt.Sprintf("%s-%s-MachineOSConfig.yaml", t.Name(), mosc.Name)
-		t.Logf("Writing MachineOSConfig %s to %s", mosc.Name, filename)
-		if err := dumpObjectToYAMLFile(t, &mosc, filename); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return dumpObjectToYAMLFile(t, moscList, "machineosconfigs")
 }
 
-// Writes the ephemeral ConfigMaps to a file, if found.
-func writeConfigMapsToFile(t *testing.T, cs *framework.ClientSet, pool *mcfgv1.MachineConfigPool) error {
-	configmaps := []string{
-		fmt.Sprintf("dockerfile-%s", pool.Spec.Configuration.Name),
-		fmt.Sprintf("mc-%s", pool.Spec.Configuration.Name),
-		fmt.Sprintf("digest-%s", pool.Spec.Configuration.Name),
+// Writes all ConfigMaps that match the OS Build labels to files.
+func writeConfigMapsToFile(t *testing.T, cs *framework.ClientSet, lo metav1.ListOptions) error {
+	cmList, err := cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace).List(context.TODO(), lo)
+
+	if err != nil {
+		return err
 	}
 
-	dirPath := getBuildArtifactDir(t)
-
-	for _, configmap := range configmaps {
-		if err := writeConfigMapToFile(t, cs, configmap, dirPath); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// Writes a given ConfigMap to a file.
-func writeConfigMapToFile(t *testing.T, cs *framework.ClientSet, configmapName, dirPath string) error {
-	cm, err := cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), configmapName, metav1.GetOptions{})
-	if k8serrors.IsNotFound(err) {
-		t.Logf("ConfigMap %q not found, skipping retrieval", configmapName)
+	if len(cmList.Items) == 0 {
+		t.Logf("No ConfigMaps matching label selector %q found", lo.LabelSelector)
 		return nil
 	}
 
-	if err != nil && !k8serrors.IsNotFound(err) {
-		return fmt.Errorf("could not get configmap %s: %w", configmapName, err)
-	}
-
-	filename := filepath.Join(dirPath, fmt.Sprintf("%s-%s-configmap.yaml", t.Name(), configmapName))
-	t.Logf("Writing configmap (%s) contents to %s", configmapName, filename)
-	return dumpObjectToYAMLFile(t, cm, filename)
+	return dumpObjectToYAMLFile(t, cmList, "configmaps")
 }
 
-// Wrttes a pod spec to a file.
-func writePodSpecToFile(t *testing.T, cs *framework.ClientSet, pool *mcfgv1.MachineConfigPool) error {
-	dirPath := getBuildArtifactDir(t)
-
-	podName := fmt.Sprintf("build-%s", pool.Spec.Configuration.Name)
-
-	pod, err := cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace).Get(context.TODO(), podName, metav1.GetOptions{})
-	if err == nil {
-		podFilename := filepath.Join(dirPath, fmt.Sprintf("%s-%s-pod.yaml", t.Name(), pod.Name))
-		t.Logf("Writing spec for pod %s to %s", pod.Name, podFilename)
-		return dumpObjectToYAMLFile(t, pod, podFilename)
+// Wrttes all pod specs that match the OS Build labels to files.
+func writeBuildPodsToFile(t *testing.T, cs *framework.ClientSet, lo metav1.ListOptions) error {
+	podList, err := cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace).List(context.TODO(), lo)
+	if err != nil {
+		return err
 	}
 
-	if k8serrors.IsNotFound(err) {
-		t.Logf("Pod spec for %s not found, skipping", pod.Name)
+	if len(podList.Items) == 0 {
+		t.Logf("No pods matching label selector %q found", lo.LabelSelector)
 		return nil
 	}
 
-	return err
+	return dumpObjectToYAMLFile(t, podList, "pods")
 }
 
 // Dumps a struct to the provided filename in YAML format, while ensuring that
 // the filename contains both the name of the current-running test as well as
 // the destination directory path.
-func dumpObjectToYAMLFile(t *testing.T, obj interface{ GetName() string }, filename string) error {
+func dumpObjectToYAMLFile(t *testing.T, obj interface{}, kind string) error {
 	dirPath := getBuildArtifactDir(t)
 
-	// If we don't have the name of the test embedded in the filename, add it.
-	if !strings.Contains(filename, t.Name()) {
-		filename = fmt.Sprintf("%s-%s", t.Name(), filename)
-	}
-
-	// If we don't have the destination directory in the filename, add it.
-	if !strings.Contains(filename, dirPath) {
-		filename = filepath.Join(dirPath, filename)
-	}
+	filename := fmt.Sprintf("%s-%s.yaml", t.Name(), kind)
+	filename = filepath.Join(dirPath, filename)
 
 	out, err := yaml.Marshal(obj)
 	if err != nil {
 		return err
 	}
 
-	return os.WriteFile(filename, out, 0o755)
+	err = os.WriteFile(filename, out, 0o755)
+	if err == nil {
+		t.Logf("Wrote %s", filename)
+	}
+
+	return err
 }
 
 // Streams the logs from the Machine OS Builder pod containers to a set of
@@ -412,8 +519,8 @@ func streamMachineOSBuilderPodLogsToFile(ctx context.Context, t *testing.T, cs *
 
 // Streams the logs for all of the containers running in the build pod. The pod
 // logs can provide a valuable window into how / why a given build failed.
-func streamBuildPodLogsToFile(ctx context.Context, t *testing.T, cs *framework.ClientSet, pool *mcfgv1.MachineConfigPool) error {
-	podName := fmt.Sprintf("build-%s", pool.Spec.Configuration.Name)
+func streamBuildPodLogsToFile(ctx context.Context, t *testing.T, cs *framework.ClientSet, mosb *mcfgv1alpha1.MachineOSBuild) error {
+	podName := mosb.Status.BuilderReference.PodImageBuilder.Name
 
 	pod, err := cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace).Get(ctx, podName, metav1.GetOptions{})
 	if err != nil {
@@ -554,21 +661,28 @@ func convertFilesFromContainerImageToBytesMap(t *testing.T, pullspec, containerF
 //
 // Registers and returns a cleanup function to remove the certificate(s) after test completion.
 func copyEntitlementCerts(t *testing.T, cs *framework.ClientSet) func() {
-	namespace := "openshift-config-managed"
-	name := "etc-pki-entitlement"
+	src := metav1.ObjectMeta{
+		Name:      "etc-pki-entitlement",
+		Namespace: "openshift-config-managed",
+	}
 
-	_, err := cs.CoreV1Interface.Secrets(namespace).Get(context.TODO(), name, metav1.GetOptions{})
+	dst := metav1.ObjectMeta{
+		Name:      src.Name,
+		Namespace: ctrlcommon.MCONamespace,
+	}
+
+	_, err := cs.CoreV1Interface.Secrets(src.Namespace).Get(context.TODO(), src.Name, metav1.GetOptions{})
 	if err == nil {
-		return cloneSecret(t, cs, name, namespace, name, ctrlcommon.MCONamespace)
+		return cloneSecret(t, cs, src, dst)
 	}
 
 	if k8serrors.IsNotFound(err) {
-		t.Logf("Secret %q not found in %q, skipping test", name, namespace)
+		t.Logf("Secret %q not found in %q, skipping test", src.Name, src.Namespace)
 		t.Skip()
 		return func() {}
 	}
 
-	t.Fatalf("could not get %q from %q: %s", name, namespace, err)
+	t.Fatalf("could not get %q from %q: %s", src.Name, src.Namespace, err)
 	return func() {}
 }
 
@@ -617,24 +731,27 @@ func injectYumRepos(t *testing.T, cs *framework.ClientSet) func() {
 // Clones a given secret from a given namespace into the MCO namespace.
 // Registers and returns a cleanup function to delete the secret upon test
 // completion.
-func cloneSecret(t *testing.T, cs *framework.ClientSet, srcName, srcNamespace, dstName, dstNamespace string) func() {
-	secret, err := cs.CoreV1Interface.Secrets(srcNamespace).Get(context.TODO(), srcName, metav1.GetOptions{})
+func cloneSecret(t *testing.T, cs *framework.ClientSet, src, dst metav1.ObjectMeta) func() {
+	secret, err := cs.CoreV1Interface.Secrets(src.Namespace).Get(context.TODO(), src.Name, metav1.GetOptions{})
 	require.NoError(t, err)
 
 	secretCopy := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      dstName,
-			Namespace: dstNamespace,
+			Name:      dst.Name,
+			Namespace: dst.Namespace,
+			Labels: map[string]string{
+				clonedSecretLabelKey: "",
+			},
 		},
 		Data: secret.Data,
 		Type: secret.Type,
 	}
 
 	cleanup := createSecret(t, cs, secretCopy)
-	t.Logf("Cloned \"%s/%s\" to \"%s/%s\"", srcNamespace, srcName, dstNamespace, dstName)
+	t.Logf("Cloned \"%s/%s\" to \"%s/%s\"", src.Namespace, src.Name, dst.Namespace, dst.Name)
 
 	return makeIdempotentAndRegister(t, func() {
 		cleanup()
-		t.Logf("Deleted cloned secret \"%s/%s\"", dstNamespace, dstName)
+		t.Logf("Deleted cloned secret \"%s/%s\"", dst.Namespace, dst.Name)
 	})
 }

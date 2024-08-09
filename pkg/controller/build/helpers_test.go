@@ -14,11 +14,9 @@ import (
 )
 
 func TestValidateImagePullspecHasDigest(t *testing.T) {
-	cm := getOSImageURLConfigMap()
-
 	validPullspecs := []string{
-		cm.Data[baseOSContainerImageConfigKey],
-		cm.Data[baseOSExtensionsContainerImageConfigKey],
+		"registry.ci.openshift.org/ocp/4.14-2023-05-29-125629@sha256:12e89d631c0ca1700262583acfb856b6e7dbe94800cb38035d68ee5cc912411c",
+		"registry.ci.openshift.org/ocp/4.14-2023-05-29-125629@sha256:5b6d901069e640fc53d2e971fa1f4802bf9dea1a4ffba67b8a17eaa7d8dfa336",
 	}
 
 	for _, pullspec := range validPullspecs {
@@ -167,6 +165,7 @@ func TestCanonicalizePullSecret(t *testing.T) {
 				assert.Contains(t, out.Name, "canonical")
 				assert.True(t, isCanonicalizedSecret(out))
 				assert.True(t, hasCanonicalizedSecretLabels(out))
+				assert.True(t, IsObjectCreatedByBuildController(out))
 			}
 
 			for _, val := range out.Data {
@@ -241,6 +240,56 @@ func TestValidateOnClusterBuildConfig(t *testing.T) {
 			} else {
 				assert.NoError(t, err)
 			}
+		})
+	}
+}
+
+func TestIsObjectCreatedByBuildController(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name     string
+		obj      metav1.Object
+		expected bool
+	}{
+		{
+			name:     "MachineOSBuild",
+			obj:      &mcfgv1alpha1.MachineOSBuild{},
+			expected: true,
+		},
+		{
+			name: "Canonical Secret",
+			obj: newCanonicalSecret(&corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "pull-secret",
+				},
+			}, []byte{}),
+			expected: true,
+		},
+		{
+			name: "Non-canonical secret",
+			obj: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "pull-secret",
+				},
+			},
+		},
+		{
+			name:     "Build pod",
+			obj:      newImageBuildRequest(&mcfgv1alpha1.MachineOSConfig{}, &mcfgv1alpha1.MachineOSBuild{}).toBuildPod(),
+			expected: true,
+		},
+		{
+			name: "Normal pod",
+			obj:  &corev1.Pod{},
+		},
+	}
+
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, IsObjectCreatedByBuildController(testCase.obj), testCase.expected)
 		})
 	}
 }
