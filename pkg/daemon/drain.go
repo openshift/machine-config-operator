@@ -144,7 +144,7 @@ func isDrainRequired(actions, diffFileSet []string, oldIgnConfig, newIgnConfig i
 		// Drain may or may not be necessary in case of container registry config changes.
 		if ctrlcommon.InSlice(constants.ContainerRegistryConfPath, diffFileSet) {
 			if overrideImageRegistryDrain {
-				klog.Warningf("Drain was skipped for this image registry update due to the configmap %s being present. This may not be a safe change", ImageRegistryDrainOverrideConfigmap)
+				klog.Warningf("Drain was skipped for this image registry update due to the configmap %s being present. This may not be a safe change", constants.ImageRegistryDrainOverrideConfigmap)
 				return false, nil
 			}
 			isSafe, err := isSafeContainerRegistryConfChanges(oldIgnConfig, newIgnConfig)
