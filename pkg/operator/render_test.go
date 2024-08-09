@@ -12,6 +12,7 @@ import (
 	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
 	mcfgv1resourceread "github.com/openshift/machine-config-operator/lib/resourceread"
 	"github.com/openshift/machine-config-operator/manifests"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -105,7 +106,7 @@ func TestRenderAllManifests(t *testing.T) {
 
 	renderConfig := &renderConfig{
 		TargetNamespace: "testing-namespace",
-		Images: &RenderConfigImages{
+		Images: &ctrlcommon.RenderConfigImages{
 			MachineConfigOperator: "mco-operator-image",
 			KubeRbacProxy:         "kube-rbac-proxy-image",
 			KeepalivedBootstrap:   "keepalived-bootstrap-image",
@@ -141,7 +142,7 @@ func TestRenderAllManifests(t *testing.T) {
 		Role             string
 		PointerConfig    string
 		ControllerConfig mcfgv1.ControllerConfigSpec
-		Images           *RenderConfigImages
+		Images           *ctrlcommon.RenderConfigImages
 	}{
 		Role:             "control-plane",
 		PointerConfig:    "cG9pbnRlci1jb25maWctZGF0YQo=", // This must be Base64-encoded
@@ -236,7 +237,7 @@ func TestRenderAsset(t *testing.T) {
 			RenderConfig: &renderConfig{
 				TargetNamespace: "testing-namespace",
 				ReleaseVersion:  "4.8.0-rc.0",
-				Images: &RenderConfigImages{
+				Images: &ctrlcommon.RenderConfigImages{
 					MachineConfigOperator: "mco-operator-image",
 				},
 			},
@@ -261,7 +262,7 @@ func TestRenderAsset(t *testing.T) {
 				MachineOSConfigs: nil,
 				TargetNamespace:  "testing-namespace",
 				ReleaseVersion:   "4.8.0-rc.0",
-				Images: &RenderConfigImages{
+				Images: &ctrlcommon.RenderConfigImages{
 					MachineConfigOperator: "mco-operator-image",
 					KubeRbacProxy:         "kube-rbac-proxy-image",
 				},
@@ -296,7 +297,7 @@ func TestRenderAsset(t *testing.T) {
 			RenderConfig: &renderConfig{
 				TargetNamespace: "testing-namespace",
 				ReleaseVersion:  "4.8.0-rc.0",
-				Images: &RenderConfigImages{
+				Images: &ctrlcommon.RenderConfigImages{
 					MachineConfigOperator: "mco-operator-image",
 				},
 			},
@@ -310,7 +311,7 @@ func TestRenderAsset(t *testing.T) {
 			RenderConfig: &renderConfig{
 				TargetNamespace: "testing-namespace",
 				ReleaseVersion:  "4.16.0-rc.1",
-				Images: &RenderConfigImages{
+				Images: &ctrlcommon.RenderConfigImages{
 					MachineConfigOperator: "mco-operator-image",
 					KubeRbacProxy:         "kube-rbac-proxy-image",
 				},
@@ -565,7 +566,7 @@ func TestRenderCloudAltDNSManifests(t *testing.T) {
 	IngressLBIP2 := configv1.IP("10.10.10.5")
 	renderConfig := &renderConfig{
 		TargetNamespace: "testing-namespace",
-		Images: &RenderConfigImages{
+		Images: &ctrlcommon.RenderConfigImages{
 			MachineConfigOperator: "mco-operator-image",
 			KubeRbacProxy:         "kube-rbac-proxy-image",
 			KeepalivedBootstrap:   "keepalived-bootstrap-image",
@@ -613,7 +614,7 @@ func TestRenderCloudAltDNSManifests(t *testing.T) {
 		Role             string
 		PointerConfig    string
 		ControllerConfig mcfgv1.ControllerConfigSpec
-		Images           *RenderConfigImages
+		Images           *ctrlcommon.RenderConfigImages
 	}{
 		Role:             "control-plane",
 		PointerConfig:    "cG9pbnRlci1jb25maWctZGF0YQo=", // This must be Base64-encoded

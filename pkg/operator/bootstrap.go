@@ -15,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
 
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	templatectrl "github.com/openshift/machine-config-operator/pkg/controller/template"
 )
 
@@ -32,7 +33,7 @@ func RenderBootstrap(
 	infraFile, networkFile, dnsFile,
 	cloudConfigFile, cloudProviderCAFile,
 	mcsCAFile, kubeAPIServerServingCA, pullSecretFile string,
-	imgs *Images,
+	imgs *ctrlcommon.Images,
 	destinationDir, releaseImage string,
 ) error {
 	filesData := map[string][]byte{}

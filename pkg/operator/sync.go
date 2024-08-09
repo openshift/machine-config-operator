@@ -296,8 +296,9 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 	if err != nil {
 		return err
 	}
-	imgs := Images{}
-	if err := json.Unmarshal(imgsRaw, &imgs); err != nil {
+
+	imgs, err := ctrlcommon.ParseImagesFromBytes(imgsRaw)
+	if err != nil {
 		return err
 	}
 
@@ -1768,20 +1769,22 @@ func (optr *Operator) waitForControllerConfigToBeCompleted(resource *mcfgv1.Cont
 
 // getOsImageURLs returns (new type, new extensions, old type) for operating system update images.
 func (optr *Operator) getOsImageURLs(namespace string) (string, string, error) {
-	cm, err := optr.mcoCmLister.ConfigMaps(namespace).Get(osImageConfigMapName)
+	cm, err := optr.mcoCmLister.ConfigMaps(namespace).Get(ctrlcommon.MachineConfigOSImageURLConfigMapName)
 	if err != nil {
 		return "", "", err
 	}
-	releaseVersion := cm.Data["releaseVersion"]
-	optrVersion, _ := optr.vStore.Get("operator")
-	if releaseVersion != optrVersion {
-		return "", "", fmt.Errorf("refusing to read osImageURL version %q, operator version %q", releaseVersion, optrVersion)
+
+	cfg, err := ctrlcommon.ParseOSImageURLConfigMap(cm)
+	if err != nil {
+		return "", "", err
 	}
 
-	baseOSImage := cm.Data["baseOSContainerImage"]
-	extensionsImage := cm.Data["baseOSExtensionsContainerImage"]
+	optrVersion, _ := optr.vStore.Get("operator")
+	if cfg.ReleaseVersion != optrVersion {
+		return "", "", fmt.Errorf("refusing to read osImageURL version %q, operator version %q", cfg.ReleaseVersion, optrVersion)
+	}
 
-	return baseOSImage, extensionsImage, nil
+	return cfg.BaseOSContainerImage, cfg.BaseOSExtensionsContainerImage, nil
 }
 
 func (optr *Operator) getCAsFromConfigMap(namespace, name, key string) ([]byte, error) {
@@ -1937,7 +1940,7 @@ func setGVK(obj runtime.Object, scheme *runtime.Scheme) error {
 	return nil
 }
 
-func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *RenderConfigImages, apiServerURL string, pointerConfigData []byte, moscs []*mcfgv1alpha1.MachineOSConfig, apiServer *configv1.APIServer) *renderConfig {
+func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *ctrlcommon.RenderConfigImages, apiServerURL string, pointerConfigData []byte, moscs []*mcfgv1alpha1.MachineOSConfig, apiServer *configv1.APIServer) *renderConfig {
 	tlsMinVersion, tlsCipherSuites := ctrlcommon.GetSecurityProfileCiphersFromAPIServer(apiServer)
 	return &renderConfig{
 		TargetNamespace:        tnamespace,

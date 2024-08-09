@@ -48,6 +48,17 @@ import (
 	mcoac "github.com/openshift/client-go/operator/applyconfigurations/operator/v1"
 )
 
+const (
+	// Annotation which should be added to all objects created by an e2e test such as
+	// ConfigMaps, MachineConfigs, MachineConfigPools, etc.
+	UsedByE2ETestAnnoKey string = "machineconfiguration.openshift.io/used-by-e2e-test"
+
+	// We have a separate label key so that we can do a label selector query. We
+	// don't attach the test name to this label key because the test name may
+	// contain invalid characters such as slashes or underscores.
+	UsedByE2ETestLabelKey string = UsedByE2ETestAnnoKey
+)
+
 type CleanupFuncs struct {
 	funcs []func()
 }
@@ -69,6 +80,8 @@ func NewCleanupFuncs() CleanupFuncs {
 }
 
 func ApplyMC(t *testing.T, cs *framework.ClientSet, mc *mcfgv1.MachineConfig) func() {
+	SetMetadataOnObject(t, mc)
+
 	_, err := cs.MachineConfigs().Create(context.TODO(), mc, metav1.CreateOptions{})
 	require.Nil(t, err)
 
@@ -611,6 +624,7 @@ func LabelNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, label st
 			return err
 		}
 		n.Labels[label] = ""
+		SetMetadataOnObject(t, n)
 		_, err = cs.CoreV1Interface.Nodes().Update(ctx, n, metav1.UpdateOptions{})
 		return err
 	})
@@ -627,6 +641,8 @@ func LabelNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, label st
 				return err
 			}
 			delete(n.Labels, label)
+			delete(n.Labels, UsedByE2ETestLabelKey)
+			delete(n.Annotations, UsedByE2ETestAnnoKey)
 			_, err = cs.CoreV1Interface.Nodes().Update(ctx, n, metav1.UpdateOptions{})
 			return err
 		})
@@ -695,6 +711,8 @@ func CreateMCP(t *testing.T, cs *framework.ClientSet, mcpName string) func() {
 	}
 	infraMCP.ObjectMeta.Labels = make(map[string]string)
 	infraMCP.ObjectMeta.Labels[mcpName] = ""
+
+	SetMetadataOnObject(t, infraMCP)
 
 	_, err := cs.MachineConfigPools().Create(context.TODO(), infraMCP, metav1.CreateOptions{})
 	switch {
@@ -1321,4 +1339,34 @@ func GetActionApplyConfiguration(action opv1.NodeDisruptionPolicySpecAction) *mc
 		return mcoac.NodeDisruptionPolicySpecAction().WithType(action.Type).WithRestart(restartApplyConfiguration)
 	}
 	return mcoac.NodeDisruptionPolicySpecAction().WithType(action.Type)
+}
+
+// Sets labels on any object that is created for this test. Includes the name
+// of the currently running test. This is intended to aid debugging failed
+// tests.
+func SetMetadataOnObject(t *testing.T, obj metav1.Object) {
+	setAnnotationsOnObject(t, obj)
+	setLabelsOnObject(obj)
+}
+
+func setAnnotationsOnObject(t *testing.T, obj metav1.Object) {
+	annos := obj.GetAnnotations()
+	if annos == nil {
+		annos = map[string]string{}
+	}
+
+	annos[UsedByE2ETestAnnoKey] = t.Name()
+
+	obj.SetAnnotations(annos)
+}
+
+func setLabelsOnObject(obj metav1.Object) {
+	labels := obj.GetLabels()
+	if labels == nil {
+		labels = map[string]string{}
+	}
+
+	labels[UsedByE2ETestLabelKey] = ""
+
+	obj.SetLabels(labels)
 }
