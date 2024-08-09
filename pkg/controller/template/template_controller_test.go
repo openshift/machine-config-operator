@@ -280,6 +280,7 @@ func (f *fixture) expectUpdateControllerConfigStatus(status *mcfgv1.ControllerCo
 }
 
 func TestCreatesMachineConfigs(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	cc := newControllerConfig("test-cluster")
 	ps := newPullSecret("coreos-pull-secret", []byte(`{"dummy": "dummy"}`))
@@ -315,6 +316,7 @@ func TestCreatesMachineConfigs(t *testing.T) {
 }
 
 func TestDoNothing(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	cc := newControllerConfig("test-cluster")
 	ps := newPullSecret("coreos-pull-secret", []byte(`{"dummy": "dummy"}`))
@@ -353,6 +355,7 @@ func TestDoNothing(t *testing.T) {
 }
 
 func TestRecreateMachineConfig(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	cc := newControllerConfig("test-cluster")
 	ps := newPullSecret("coreos-pull-secret", []byte(`{"dummy": "dummy"}`))
@@ -392,6 +395,7 @@ func TestRecreateMachineConfig(t *testing.T) {
 }
 
 func TestUpdateMachineConfig(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	cc := newControllerConfig("test-cluster")
 	ps := newPullSecret("coreos-pull-secret", []byte(`{"dummy": "dummy"}`))

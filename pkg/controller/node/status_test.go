@@ -20,6 +20,7 @@ import (
 )
 
 func TestIsNodeReady(t *testing.T) {
+	t.Parallel()
 	nodeList := &corev1.NodeList{
 		Items: []corev1.Node{
 			// node1 considered

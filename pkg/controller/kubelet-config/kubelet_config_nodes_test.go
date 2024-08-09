@@ -20,8 +20,11 @@ import (
 )
 
 func TestOriginalKubeletConfigDefaultNodeConfig(t *testing.T) {
+	t.Parallel()
 	for _, platform := range []configv1.PlatformType{configv1.AWSPlatformType, configv1.NonePlatformType, "unrecognized"} {
+		platform := platform
 		t.Run(string(platform), func(t *testing.T) {
+			t.Parallel()
 			f := newFixture(t)
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			f.ccLister = append(f.ccLister, cc)
@@ -46,8 +49,11 @@ func TestOriginalKubeletConfigDefaultNodeConfig(t *testing.T) {
 }
 
 func TestNodeConfigDefault(t *testing.T) {
+	t.Parallel()
 	for _, platform := range []configv1.PlatformType{configv1.AWSPlatformType, configv1.NonePlatformType, "unrecognized"} {
+		platform := platform
 		t.Run(string(platform), func(t *testing.T) {
+			t.Parallel()
 			f := newFixture(t)
 			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"Example"}, nil)
 			f.newController(fgAccess)
@@ -80,6 +86,7 @@ func TestNodeConfigDefault(t *testing.T) {
 }
 
 func TestBootstrapNodeConfigDefault(t *testing.T) {
+	t.Parallel()
 	configNodeCgroupDefault := createNewDefaultNodeconfig()
 	configNodeCgroupV1 := createNewDefaultNodeconfigWithCgroup(osev1.CgroupModeV1)
 	configNodeCgroupV2 := createNewDefaultNodeconfigWithCgroup(osev1.CgroupModeV2)
@@ -107,7 +114,9 @@ func TestBootstrapNodeConfigDefault(t *testing.T) {
 	}
 
 	for _, platform := range []configv1.PlatformType{configv1.AWSPlatformType, configv1.NonePlatformType, "unrecognized"} {
+		platform := platform
 		t.Run(string(platform), func(t *testing.T) {
+			t.Parallel()
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp1 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
@@ -134,8 +143,11 @@ func TestBootstrapNodeConfigDefault(t *testing.T) {
 }
 
 func TestBootstrapNoNodeConfig(t *testing.T) {
+	t.Parallel()
 	for _, platform := range []configv1.PlatformType{configv1.AWSPlatformType, configv1.NonePlatformType, "unrecognized"} {
+		platform := platform
 		t.Run(string(platform), func(t *testing.T) {
+			t.Parallel()
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			mcps := []*mcfgv1.MachineConfigPool{mcp}
@@ -152,8 +164,11 @@ func TestBootstrapNoNodeConfig(t *testing.T) {
 }
 
 func TestNodeConfigCustom(t *testing.T) {
+	t.Parallel()
 	for _, platform := range []configv1.PlatformType{configv1.AWSPlatformType, configv1.NonePlatformType, "unrecognized"} {
+		platform := platform
 		t.Run(string(platform), func(t *testing.T) {
+			t.Parallel()
 			f := newFixture(t)
 			features := &osev1.FeatureGate{
 				ObjectMeta: metav1.ObjectMeta{

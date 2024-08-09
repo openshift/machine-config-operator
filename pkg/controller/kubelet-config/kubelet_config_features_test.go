@@ -21,8 +21,11 @@ import (
 )
 
 func TestFeatureGateDrift(t *testing.T) {
+	t.Parallel()
 	for _, platform := range []configv1.PlatformType{configv1.AWSPlatformType, configv1.NonePlatformType, "unrecognized"} {
+		platform := platform
 		t.Run(string(platform), func(t *testing.T) {
+			t.Parallel()
 			f := newFixture(t)
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			f.ccLister = append(f.ccLister, cc)
@@ -63,8 +66,11 @@ func TestFeatureGateDrift(t *testing.T) {
 }
 
 func TestFeaturesDefault(t *testing.T) {
+	t.Parallel()
 	for _, platform := range []configv1.PlatformType{configv1.AWSPlatformType, configv1.NonePlatformType, "unrecognized"} {
+		platform := platform
 		t.Run(string(platform), func(t *testing.T) {
+			t.Parallel()
 			f := newFixture(t)
 			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"CSIMigration"}, nil)
 			f.newController(fgAccess)
@@ -107,8 +113,11 @@ func TestFeaturesDefault(t *testing.T) {
 }
 
 func TestFeaturesCustomNoUpgrade(t *testing.T) {
+	t.Parallel()
 	for _, platform := range []configv1.PlatformType{configv1.AWSPlatformType, configv1.NonePlatformType, "unrecognized"} {
+		platform := platform
 		t.Run(string(platform), func(t *testing.T) {
+			t.Parallel()
 			features := &osev1.FeatureGate{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: ctrlcommon.ClusterFeatureInstanceName,
@@ -162,8 +171,11 @@ func TestFeaturesCustomNoUpgrade(t *testing.T) {
 }
 
 func TestBootstrapFeaturesDefault(t *testing.T) {
+	t.Parallel()
 	for _, platform := range []configv1.PlatformType{configv1.AWSPlatformType, configv1.NonePlatformType, "unrecognized"} {
+		platform := platform
 		t.Run(string(platform), func(t *testing.T) {
+			t.Parallel()
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
@@ -183,8 +195,11 @@ func TestBootstrapFeaturesDefault(t *testing.T) {
 }
 
 func TestBootstrapFeaturesCustomNoUpgrade(t *testing.T) {
+	t.Parallel()
 	for _, platform := range []configv1.PlatformType{configv1.AWSPlatformType, configv1.NonePlatformType, "unrecognized"} {
+		platform := platform
 		t.Run(string(platform), func(t *testing.T) {
+			t.Parallel()
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
@@ -240,8 +255,11 @@ func TestBootstrapFeaturesCustomNoUpgrade(t *testing.T) {
 }
 
 func TestFeaturesCustomNoUpgradeRemoveUnmanagedMC(t *testing.T) {
+	t.Parallel()
 	for _, platform := range []configv1.PlatformType{configv1.AWSPlatformType, configv1.NonePlatformType, "unrecognized"} {
+		platform := platform
 		t.Run(string(platform), func(t *testing.T) {
+			t.Parallel()
 			features := &osev1.FeatureGate{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: ctrlcommon.ClusterFeatureInstanceName,

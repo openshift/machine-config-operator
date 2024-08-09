@@ -1361,6 +1361,7 @@ func TestShouldUpdateStatusOnlyNoProgress(t *testing.T) {
 }
 
 func TestCertStatus(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	cc := newControllerConfig(ctrlcommon.ControllerConfigName, configv1.TopologyMode(""))
 

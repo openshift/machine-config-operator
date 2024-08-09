@@ -28,6 +28,7 @@ import (
 )
 
 func TestUpdateRegistriesConfig(t *testing.T) {
+	t.Parallel()
 	templateConfig := sysregistriesv2.V2RegistriesConf{ // This matches templates/*/01-*-container-runtime/_base/files/container-registries.yaml
 		UnqualifiedSearchRegistries: []string{"registry.access.redhat.com", "docker.io"},
 	}
@@ -439,7 +440,9 @@ func TestUpdateRegistriesConfig(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got, err := updateRegistriesConfig(templateBytes, tt.insecure, tt.blocked, tt.icspRules, tt.idmsRules, tt.itmsRules)
 			if err != nil {
 				t.Errorf("updateRegistriesConfig() error = %v", err)
@@ -547,6 +550,7 @@ func clusterImagePolicyTestCRs() map[string]apicfgv1alpha1.ClusterImagePolicy {
 }
 
 func TestUpdatePolicyJSON(t *testing.T) {
+	t.Parallel()
 	testClusterImagePolicyCR := clusterImagePolicyTestCRs()["test-cr0"]
 	expectSigRequirement, policyerr := policyItemFromSpec(testClusterImagePolicyCR.Spec.Policy)
 	require.NoError(t, policyerr)
@@ -738,7 +742,9 @@ func TestUpdatePolicyJSON(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
 			var (
 				clusterImagePolicies map[string]signature.PolicyRequirements
@@ -777,6 +783,7 @@ func TestUpdatePolicyJSON(t *testing.T) {
 }
 
 func TestValidateRegistriesConfScopes(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		insecure    []string
 		blocked     []string
@@ -968,6 +975,7 @@ func TestValidateRegistriesConfScopes(t *testing.T) {
 }
 
 func TestGetValidBlockAndAllowedRegistries(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name, releaseImg                                                  string
 		imgSpec                                                           *apicfgv1.ImageSpec
@@ -1095,7 +1103,9 @@ func TestGetValidBlockAndAllowedRegistries(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			gotRegistries, gotPolicy, gotAllowed, err := getValidBlockedAndAllowedRegistries(tt.releaseImg, tt.imgSpec, nil, tt.idmsRules)
 			if (err != nil && !tt.expectedErr) || (err == nil && tt.expectedErr) {
 				t.Errorf("getValidBlockedRegistries() error = %v", err)
@@ -1109,6 +1119,7 @@ func TestGetValidBlockAndAllowedRegistries(t *testing.T) {
 }
 
 func TestCreateCRIODropinFiles(t *testing.T) {
+	t.Parallel()
 	zeroLogSizeMax := resource.MustParse("0k")
 	validLogSizeMax := resource.MustParse("10G")
 
@@ -1169,6 +1180,7 @@ func TestCreateCRIODropinFiles(t *testing.T) {
 }
 
 func TestUpdateStorageConfig(t *testing.T) {
+	t.Parallel()
 	templateStorageConfig := tomlConfigStorage{}
 	buf := bytes.Buffer{}
 	err := toml.NewEncoder(&buf).Encode(templateStorageConfig)
@@ -1227,6 +1239,7 @@ func TestUpdateStorageConfig(t *testing.T) {
 }
 
 func TestGetValidScopePolicies(t *testing.T) {
+	t.Parallel()
 	type testcase struct {
 		name                  string
 		clusterImagePolicyCRs []*apicfgv1alpha1.ClusterImagePolicy
@@ -1253,7 +1266,9 @@ func TestGetValidScopePolicies(t *testing.T) {
 		},
 	}
 	for _, test := range tests {
+		test := test
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			gotScopePolicies, err := getValidScopePolicies(test.clusterImagePolicyCRs)
 			require.Equal(t, test.errorExpected, err != nil)
 			if !test.errorExpected {
@@ -1264,6 +1279,7 @@ func TestGetValidScopePolicies(t *testing.T) {
 }
 
 func TestGenerateSigstoreRegistriesConfig(t *testing.T) {
+	t.Parallel()
 
 	// testcase CIP scopes:
 	// "a.com/a1/a2",
@@ -1390,7 +1406,9 @@ func TestGenerateSigstoreRegistriesConfig(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
+		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			registriesTOML, err := updateRegistriesConfig(templateRegistriesConfig, nil, nil, tc.icspRules, tc.idmsRules, tc.itmsRules)
 			require.NoError(t, err)
 			got, err := generateSigstoreRegistriesdConfig(tc.clusterScopePolicies, registriesTOML)
@@ -1405,6 +1423,7 @@ func TestGenerateSigstoreRegistriesConfig(t *testing.T) {
 }
 
 func TestGeneratePolicyJSON(t *testing.T) {
+	t.Parallel()
 
 	testImagePolicyCR0 := clusterImagePolicyTestCRs()["test-cr0"]
 
@@ -1486,6 +1505,7 @@ func TestGeneratePolicyJSON(t *testing.T) {
 }
 
 func TestValidateClusterImagePolicyWithAllowedBlockedRegistries(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name                 string
 		allowed              []string
@@ -1548,7 +1568,9 @@ func TestValidateClusterImagePolicyWithAllowedBlockedRegistries(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			err := validateClusterImagePolicyWithAllowedBlockedRegistries(tt.clusterScopePolicies, tt.allowed, tt.blocked)
 			if err == nil && tt.errorExpected {
 				t.Errorf("validateClusterImagePolicyWithAllowedBlockedRegistries() error = %v", err)
