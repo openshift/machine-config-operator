@@ -4,7 +4,7 @@ contents:
   inline: |
     #!/bin/bash
 
-    # Update iptables rules based on google cloud load balancer VIPS
+    # Update nftables rules based on google cloud load balancer VIPS
     #
     # This is needed because the GCP L3 load balancer doesn't actually do DNAT;
     # the destination IP address is still the VIP. Normally, there is an agent that
@@ -18,8 +18,6 @@ contents:
     #
     # Additionally, clients can write a file to /run/cloud-routes/$IP.down to force
     # a VIP as down. This is useful for graceful shutdown / upgrade.
-    #
-    # ~cdc~
 
     set -e
 
@@ -44,79 +42,45 @@ contents:
         fi
     }
 
-    CHAIN_NAME="gcp-vips"
+    TABLE_NAME="gcp-vips"
+    EXTERNAL_VIPS_CHAIN="external-vips"
+    LOCAL_VIPS_CHAIN="local-vips"
     RUN_DIR="/run/cloud-routes"
 
-    # Create a chan if it doesn't exist
-    ensure_chain() {
-        local table="${1}"
-        local chain="${2}"
-
-        if ! iptables -w -t "${table}" -S "${chain}" &> /dev/null ; then
-            iptables -w -t "${table}" -N "${chain}";
-        fi;
-    }
-
-    ensure_rule() {
-        local table="${1}"
-        local chain="${2}"
-        shift 2
-
-        if ! iptables -w -t "${table}" -C "${chain}" "$@" &> /dev/null; then
-            iptables -w -t "${table}" -A "${chain}" "$@"
-        fi
-    }
-
-    # set the chain, ensure entry rules, ensure ESTABLISHED rule
+    # Set up base table and rules
     initialize() {
-        ensure_chain nat "${CHAIN_NAME}"
-        ensure_chain nat "${CHAIN_NAME}-local"
-        ensure_rule nat PREROUTING -m comment --comment 'gcp LB vip DNAT' -j ${CHAIN_NAME}
-        ensure_rule nat OUTPUT -m comment --comment 'gcp LB vip DNAT for local clients' -j ${CHAIN_NAME}-local
+        nft -f - <<EOF
+            add table ip ${TABLE_NAME} { comment "apiserver loadbalancer routing helper"; }
+            add chain ip ${TABLE_NAME} ${EXTERNAL_VIPS_CHAIN} { type nat hook prerouting priority dstnat; comment "gcp LB vip DNAT for external clients"; }
+            add chain ip ${TABLE_NAME} ${LOCAL_VIPS_CHAIN} { type nat hook output priority dstnat; comment "gcp LB vip DNAT for local clients"; }
 
-        # Need this so that existing flows (with an entry in conntrack) continue to be
-        # balanced, even if the DNAT entry is removed
-        ensure_rule filter INPUT -m comment --comment 'gcp LB vip existing' -m addrtype ! --dst-type LOCAL -m state --state ESTABLISHED,RELATED -j ACCEPT
-
-        # bz1925698: GCP LBs can create stale entries causing apiservers disruption
-        # The GCP LB Health Check polls continuously the LB VIP assigned to the VM
-        # but, if the LB VIP is down, we are not handling the VIP traffic and
-        # the traffic can hairpin, leaving stale conntrack entries on the host.
-        # xref: https://bugzilla.redhat.com/show_bug.cgi?id=1925698#c29
-        # Deleting conntrack entries solves the problem, but it also affects other connections
-        # directed to the LB vips, causing unexpected networks disruptions.
-        # The solution is to not FORWARD GCP HealthCheckers traffic, because that traffic 
-        # is only directed to the host, and it must go to the INPUT chain.
-        # xref: https://bugzilla.redhat.com/show_bug.cgi?id=1930457#c8
-        # The HealthCheck origin ip-ranges are documented: 130.211.0.0/22 and 35.191.0.0/16
-        # xref: https://cloud.google.com/load-balancing/docs/health-check-concepts#ip-ranges
-        ensure_rule filter FORWARD -m comment --comment 'gcp HealthCheck traffic' -s 35.191.0.0/16 -j DROP
-        ensure_rule filter FORWARD -m comment --comment 'gcp HealthCheck traffic' -s 130.211.0.0/22 -j DROP
+            # If a connection for a VIP comes in while we have no rewrite rule for that VIP,
+            # we would think the VIP is an external host and so forward the connection back
+            # off the node. In the specific case of connections from the GCP LB health
+            # checkers to the VIP, this would result in a bad conntrack entry being created
+            # and then never deleted even after the VIP rule was installed, because the health
+            # checker only uses a small range of source ports, so newer health checks would
+            # keep refreshing the bad conntrack entry created by the first failed health
+            # check. As a result, we would end up persistently failing some percentage of
+            # health checks. See https://bugzilla.redhat.com/show_bug.cgi?id=1925698,
+            # https://bugzilla.redhat.com/show_bug.cgi?id=1930457.
+            #
+            # The fix here is a rule that drops health check probes if we notice that we're
+            # about to forward them off-node, which then prevents the bad conntrack entries
+            # from being created. The HealthCheck origin ip-ranges are documented:
+            # https://cloud.google.com/load-balancing/docs/health-check-concepts#ip-ranges
+            add chain ip ${TABLE_NAME} forward { type filter hook forward priority filter; comment "gcp HealthCheck traffic"; }
+            add rule ip ${TABLE_NAME} forward ip saddr 35.191.0.0/16 drop
+            add rule ip ${TABLE_NAME} forward ip saddr 130.211.0.0/22 drop
+    EOF
 
         mkdir -p "${RUN_DIR}"
-    }
-
-    remove_stale() {
-        ## find extra iptables rules
-        for ipt_vip in $(iptables -w -t nat -S "${CHAIN_NAME}" | awk '$4{print $4}' | awk -F/ '{print $1}'); do
-            if [[ -z "${vips[${ipt_vip}]}" ]]; then
-                echo removing stale vip "${ipt_vip}" for external clients
-                iptables -w -t nat -D "${CHAIN_NAME}" --dst "${ipt_vip}" -j REDIRECT
-            fi
-        done
-        for ipt_vip in $(iptables -w -t nat -S "${CHAIN_NAME}-local" | awk '$4{print $4}' | awk -F/ '{print $1}'); do
-            if [[ -z "${vips[${ipt_vip}]}" ]] || [[ "${vips[${ipt_vip}]}" = down ]]; then
-                echo removing stale vip "${ipt_vip}" for local clients
-                iptables -w -t nat -D "${CHAIN_NAME}-local" --dst "${ipt_vip}" -j REDIRECT
-            fi
-        done
     }
 
     remove_stale_routes() {
         ## find extra ovn routes
         local ovnkContainerID=$(crictl ps --name ovnkube-controller | awk '{ print $1 }' | tail -n+2)
         if [ -z "${ovnkContainerID}" ]; then
-            echo "Plugin is SDN, nothing to do.. exiting"
             return
         fi
         echo "Found ovnkube-controller pod... ${ovnkContainerID}"
@@ -133,22 +97,34 @@ contents:
         done
     }
 
-    add_rules() {
+    sync_rules() {
+        # Construct the VIP lists. (The nftables syntax allows a trailing comma.)
+        external_vips=""
+        local_vips=""
         for vip in "${!vips[@]}"; do
-            echo "ensuring rule for ${vip} for external clients"
-            ensure_rule nat "${CHAIN_NAME}" --dst "${vip}" -j REDIRECT
-
+            external_vips="${vip}, ${external_vips}"
             if [[ "${vips[${vip}]}" != down ]]; then
-                echo "ensuring rule for ${vip} for internal clients"
-                ensure_rule nat "${CHAIN_NAME}-local" --dst "${vip}" -j REDIRECT
+                local_vips="${vip}, ${local_vips}"
             fi
         done
+
+        echo "synchronizing external VIPs to (${external_vips}), local VIPs to (${local_vips})"
+        {
+            echo "flush chain ip ${TABLE_NAME} ${EXTERNAL_VIPS_CHAIN}"
+            if [[ -n "${external_vips}" ]]; then
+                echo "add rule ip ${TABLE_NAME} ${EXTERNAL_VIPS_CHAIN} ip daddr { ${external_vips} } redirect"
+            fi
+            echo "flush chain ip ${TABLE_NAME} ${LOCAL_VIPS_CHAIN}"
+            if [[ -n "${local_vips}" ]]; then
+                echo "add rule ip ${TABLE_NAME} ${LOCAL_VIPS_CHAIN} ip daddr { ${local_vips} } redirect"
+            fi
+        } | nft -f -
     }
 
     add_routes() {
         local ovnkContainerID=$(crictl ps --name ovnkube-controller | awk '{ print $1 }' | tail -n+2)
         if [ -z "${ovnkContainerID}" ]; then
-            echo "Plugin is SDN, nothing to do.. exiting"
+            echo "OVN-Kubernetes is not running; no routes to add."
             return
         fi
         echo "Found ovnkube-controller pod... ${ovnkContainerID}"
@@ -173,14 +149,13 @@ contents:
     }
 
     clear_rules() {
-        iptables -t nat -F "${CHAIN_NAME}" || true
-        iptables -t nat -F "${CHAIN_NAME}-local" || true
+        nft delete table ip "${TABLE_NAME}" || true
     }
 
     clear_routes() {
         local ovnkContainerID=$(crictl ps --name ovnkube-controller | awk '{ print $1 }' | tail -n+2)
         if [ -z "${ovnkContainerID}" ]; then
-            echo "Plugin is SDN, nothing to do.. exiting"
+            echo "OVN-Kubernetes is not running; no routes to remove."
             return
         fi
         echo "Found ovnkube-controller pod... ${ovnkContainerID}"
@@ -188,7 +163,7 @@ contents:
         crictl exec -i ${ovnkContainerID} ovn-nbctl lr-policy-del ovn_cluster_router 1010 || true
     }
 
-    # out paramater: vips
+    # out parameter: vips
     list_lb_ips() {
         for k in "${!vips[@]}"; do
             unset vips["${k}"]
@@ -237,9 +212,8 @@ contents:
         initialize
         while :; do
           list_lb_ips
-          remove_stale
+          sync_rules
           remove_stale_routes # needed for OVN-Kubernetes plugin's routingViaHost=false mode
-          add_rules
           add_routes # needed for OVN-Kubernetes plugin's routingViaHost=false mode
           echo "done applying vip rules"
           sleep_or_watch
