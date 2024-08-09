@@ -67,6 +67,12 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 		return err
 	}
 
+	// Grab APIServer to populate TLS settings in the default kubelet config
+	apiServer, err := ctrl.apiserverLister.Get(ctrlcommon.APIServerInstanceName)
+	if err != nil && !errors.IsNotFound(err) {
+		return fmt.Errorf("could not get the TLSSecurityProfile from %v: %v", ctrlcommon.APIServerInstanceName, err)
+	}
+
 	for _, pool := range mcpPools {
 		var nodeConfig *osev1.Node
 		role := pool.Name
@@ -93,7 +99,7 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 			}
 		}
 
-		rawCfgIgn, err := generateKubeConfigIgnFromFeatures(cc, ctrl.templatesDir, role, ctrl.featureGateAccess, nodeConfig)
+		rawCfgIgn, err := generateKubeConfigIgnFromFeatures(cc, ctrl.templatesDir, role, ctrl.featureGateAccess, nodeConfig, apiServer)
 		if err != nil {
 			return err
 		}
@@ -194,8 +200,8 @@ func generateFeatureMap(featuregateAccess featuregates.FeatureGateAccess, exclus
 	return &rv, nil
 }
 
-func generateKubeConfigIgnFromFeatures(cc *mcfgv1.ControllerConfig, templatesDir, role string, featureGateAccess featuregates.FeatureGateAccess, nodeConfig *osev1.Node) ([]byte, error) {
-	originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, templatesDir, role, featureGateAccess)
+func generateKubeConfigIgnFromFeatures(cc *mcfgv1.ControllerConfig, templatesDir, role string, featureGateAccess featuregates.FeatureGateAccess, nodeConfig *osev1.Node, apiServer *osev1.APIServer) ([]byte, error) {
+	originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, templatesDir, role, featureGateAccess, apiServer)
 	if err != nil {
 		return nil, err
 	}
@@ -218,7 +224,7 @@ func generateKubeConfigIgnFromFeatures(cc *mcfgv1.ControllerConfig, templatesDir
 	return rawCfgIgn, nil
 }
 
-func RunFeatureGateBootstrap(templateDir string, featureGateAccess featuregates.FeatureGateAccess, nodeConfig *osev1.Node, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool) ([]*mcfgv1.MachineConfig, error) {
+func RunFeatureGateBootstrap(templateDir string, featureGateAccess featuregates.FeatureGateAccess, nodeConfig *osev1.Node, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool, apiServer *osev1.APIServer) ([]*mcfgv1.MachineConfig, error) {
 	machineConfigs := []*mcfgv1.MachineConfig{}
 
 	for _, pool := range mcpPools {
@@ -226,7 +232,7 @@ func RunFeatureGateBootstrap(templateDir string, featureGateAccess featuregates.
 		if nodeConfig == nil {
 			nodeConfig = createNewDefaultNodeconfig()
 		}
-		rawCfgIgn, err := generateKubeConfigIgnFromFeatures(controllerConfig, templateDir, role, featureGateAccess, nodeConfig)
+		rawCfgIgn, err := generateKubeConfigIgnFromFeatures(controllerConfig, templateDir, role, featureGateAccess, nodeConfig, apiServer)
 		if err != nil {
 			return nil, err
 		}

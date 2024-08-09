@@ -200,7 +200,7 @@ func (ctrl *Controller) filterAPIServer(apiServer *configv1.APIServer) {
 func (ctrl *Controller) addAPIServer(obj interface{}) {
 	apiServer := obj.(*configv1.APIServer)
 	if apiServer.DeletionTimestamp != nil {
-		ctrl.deleteSecret(apiServer)
+		ctrl.deleteAPIServer(apiServer)
 		return
 	}
 	klog.V(4).Infof("Add API Server %v", apiServer)
@@ -220,7 +220,7 @@ func (ctrl *Controller) updateAPIServer(old, cur interface{}) {
 
 func (ctrl *Controller) deleteAPIServer(obj interface{}) {
 	apiServer, ok := obj.(*configv1.APIServer)
-	klog.V(4).Infof("Delete Secret %v", apiServer)
+	klog.V(4).Infof("Delete API Server %v", apiServer)
 
 	if !ok {
 		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)

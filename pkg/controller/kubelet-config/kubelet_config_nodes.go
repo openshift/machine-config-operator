@@ -88,6 +88,12 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 		return err
 	}
 
+	// Grab APIServer to populate TLS settings in the default kubelet config
+	apiServer, err := ctrl.apiserverLister.Get(ctrlcommon.APIServerInstanceName)
+	if err != nil && !errors.IsNotFound(err) {
+		return fmt.Errorf("could not get the TLSSecurityProfile from %v: %v", ctrlcommon.APIServerInstanceName, err)
+	}
+
 	for _, pool := range mcpPools {
 		role := pool.Name
 		// Get MachineConfig
@@ -107,7 +113,7 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 				return err
 			}
 		}
-		originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, role, ctrl.featureGateAccess)
+		originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, role, ctrl.featureGateAccess, apiServer)
 		if err != nil {
 			return err
 		}
@@ -265,7 +271,7 @@ func (ctrl *Controller) deleteNodeConfig(obj interface{}) {
 	klog.V(4).Infof("Deleted node config %s and restored default config", nodeConfig.Name)
 }
 
-func RunNodeConfigBootstrap(templateDir string, featureGateAccess featuregates.FeatureGateAccess, cconfig *mcfgv1.ControllerConfig, nodeConfig *osev1.Node, mcpPools []*mcfgv1.MachineConfigPool) ([]*mcfgv1.MachineConfig, error) {
+func RunNodeConfigBootstrap(templateDir string, featureGateAccess featuregates.FeatureGateAccess, cconfig *mcfgv1.ControllerConfig, nodeConfig *osev1.Node, mcpPools []*mcfgv1.MachineConfigPool, apiServer *osev1.APIServer) ([]*mcfgv1.MachineConfig, error) {
 	if nodeConfig == nil {
 		return nil, fmt.Errorf("nodes.config.openshift.io resource not found")
 	}
@@ -284,7 +290,7 @@ func RunNodeConfigBootstrap(templateDir string, featureGateAccess featuregates.F
 		if err != nil {
 			return nil, err
 		}
-		originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cconfig, templateDir, role, featureGateAccess)
+		originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cconfig, templateDir, role, featureGateAccess, apiServer)
 		if err != nil {
 			return nil, err
 		}

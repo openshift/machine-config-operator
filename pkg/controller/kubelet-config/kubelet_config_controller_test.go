@@ -1092,3 +1092,156 @@ func TestCleanUpDuplicatedMC(t *testing.T) {
 		})
 	}
 }
+
+// This test ensures that that the rendering works properly for all types of TLS security profiles
+func TestKubeletConfigTLSRender(t *testing.T) {
+	TestCases := []struct {
+		name      string
+		apiserver *osev1.APIServer
+	}{
+		{
+			name:      "Empty API server object",
+			apiserver: &osev1.APIServer{ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.APIServerInstanceName}},
+		},
+		{
+			name:      "Empty TLS profile",
+			apiserver: &osev1.APIServer{ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.APIServerInstanceName}},
+		},
+		{
+			name: "Old TLS profile",
+			apiserver: &osev1.APIServer{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.APIServerInstanceName},
+				Spec: osev1.APIServerSpec{
+					TLSSecurityProfile: &osev1.TLSSecurityProfile{Type: osev1.TLSProfileOldType},
+				},
+			},
+		},
+		{
+			name: "Intermediate TLS profile",
+			apiserver: &osev1.APIServer{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.APIServerInstanceName},
+				Spec: osev1.APIServerSpec{
+					TLSSecurityProfile: &osev1.TLSSecurityProfile{Type: osev1.TLSProfileIntermediateType},
+				},
+			},
+		},
+		{
+			name: "Custom TLS profile",
+			apiserver: &osev1.APIServer{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.APIServerInstanceName},
+				Spec: osev1.APIServerSpec{
+					TLSSecurityProfile: &osev1.TLSSecurityProfile{
+						Type: osev1.TLSProfileCustomType,
+						Custom: &osev1.CustomTLSProfile{
+							TLSProfileSpec: osev1.TLSProfileSpec{
+								Ciphers: []string{
+									"TLS_AES_128_GCM_SHA256",
+									"TLS_AES_256_GCM_SHA384",
+									"TLS_CHACHA20_POLY1305_SHA256",
+									"ECDHE-ECDSA-AES128-GCM-SHA256",
+									"ECDHE-RSA-AES128-GCM-SHA256",
+									"ECDHE-ECDSA-AES256-GCM-SHA384",
+								},
+								MinTLSVersion: osev1.VersionTLS12,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	for _, testCase := range TestCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			f := newFixture(t)
+			cc := newControllerConfig(ctrlcommon.ControllerConfigName, osev1.AWSPlatformType)
+			f.ccLister = append(f.ccLister, cc)
+
+			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"Example"}, nil)
+			ctrl := f.newController(fgAccess)
+
+			kubeletConfig, err := generateOriginalKubeletConfigIgn(cc, ctrl.templatesDir, "master", testCase.apiserver)
+			if err != nil {
+				t.Errorf("could not generate kubelet config from templates %v", err)
+			}
+			contents, err := ctrlcommon.DecodeIgnitionFileContents(kubeletConfig.Contents.Source, kubeletConfig.Contents.Compression)
+			require.NoError(t, err)
+			originalKubeConfig, err := DecodeKubeletConfig(contents)
+			require.NoError(t, err)
+
+			// Generate expected profiles from helper function
+			var expectedTLSCipherSuites []string
+			var expectedTLSMinVersion string
+			// Use an intermediate profile for the nil cases
+			if testCase.apiserver == nil || testCase.apiserver.Spec.TLSSecurityProfile == nil {
+				expectedTLSMinVersion, expectedTLSCipherSuites = ctrlcommon.GetSecurityProfileCiphers(&osev1.TLSSecurityProfile{Type: osev1.TLSProfileIntermediateType})
+			} else {
+				expectedTLSMinVersion, expectedTLSCipherSuites = ctrlcommon.GetSecurityProfileCiphers(testCase.apiserver.Spec.TLSSecurityProfile)
+			}
+
+			require.Equal(t, originalKubeConfig.TLSCipherSuites, expectedTLSCipherSuites)
+			require.Equal(t, originalKubeConfig.TLSMinVersion, expectedTLSMinVersion)
+
+		})
+	}
+}
+
+// This test ensures that a user defined kubeletConfiguration with a TLS profile will override
+// the TLS profile specified by the APIServer object
+func TestKubeletConfigTLSOverride(t *testing.T) {
+
+	f := newFixture(t)
+	fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"Example"}, nil)
+	f.newController(fgAccess)
+	cc := newControllerConfig(ctrlcommon.ControllerConfigName, osev1.AWSPlatformType)
+	mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
+	f.apiserverLister = []*osev1.APIServer{
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: ctrlcommon.APIServerInstanceName,
+			},
+			Spec: osev1.APIServerSpec{
+				TLSSecurityProfile: &osev1.TLSSecurityProfile{Type: osev1.TLSProfileOldType},
+			},
+		},
+	}
+
+	f.ccLister = append(f.ccLister, cc)
+	f.mcpLister = append(f.mcpLister, mcp)
+
+	overrideTLSMinVersion, overrideTLSCiphers := ctrlcommon.GetSecurityProfileCiphers(&osev1.TLSSecurityProfile{Type: osev1.TLSProfileIntermediateType})
+	userDefinedKC := newKubeletConfig("tls-override", &kubeletconfigv1beta1.KubeletConfiguration{TLSCipherSuites: overrideTLSCiphers, TLSMinVersion: overrideTLSMinVersion}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
+
+	f.mckLister = append(f.mckLister, userDefinedKC)
+	f.objects = append(f.objects, userDefinedKC)
+
+	ctrl := f.newController(fgAccess)
+
+	if err := ctrl.syncHandler(getKey(userDefinedKC, t)); err != nil {
+		t.Errorf("syncHandler returned: %v", err)
+	}
+
+	// Grab the MachineConfig generated by the controller, and decode the content of the kubelet config file
+	generatedConfig, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), "99-master-generated-kubelet", metav1.GetOptions{})
+	require.NoError(t, err)
+
+	generatedIgnConfig, err := ctrlcommon.ParseAndConvertConfig(generatedConfig.Spec.Config.Raw)
+	require.NoError(t, err)
+	var kubeletConfigFile ign3types.File
+	for _, file := range generatedIgnConfig.Storage.Files {
+		if file.Path == "/etc/kubernetes/kubelet.conf" {
+			kubeletConfigFile = file
+		}
+	}
+	require.NotEmpty(t, kubeletConfigFile)
+
+	// Decode this to a native KubeletConfiguration object
+	contents, err := ctrlcommon.DecodeIgnitionFileContents(kubeletConfigFile.Contents.Source, kubeletConfigFile.Contents.Compression)
+	require.NoError(t, err)
+	kc, err := DecodeKubeletConfig(contents)
+	require.NoError(t, err)
+	require.Equal(t, kc.TLSCipherSuites, overrideTLSCiphers)
+	require.Equal(t, kc.TLSMinVersion, overrideTLSMinVersion)
+
+}
