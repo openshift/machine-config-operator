@@ -145,33 +145,42 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 				}
 				continue
 			}
+			/*
+				// TODO: Retool this block to use MCN conditions correctly. See: https://issues.redhat.com/browse/MCO-1228
+				// Commenting out this block as it will cause node condition based machine counts to be used. The only exception in this case
+				// would be if all nodes are degraded by MachineConfigNodePinnedImageSetsDegraded, which is fine and should not affect this bug.
+				// The main concerns for the following block are:
+				// (i) Why only unknown conditions being evaluated? Shouldn't True/False conditions be used?
+				// (ii) multiple conditions can be unknown at the same time, resulting in certain machines being double counted
 
-			if cond.Status == metav1.ConditionUnknown {
-				switch mcfgalphav1.StateProgress(cond.Type) {
-				case mcfgalphav1.MachineConfigNodeUpdatePrepared:
-					updatingMachines = append(updatedMachines, ourNode) //nolint:gocritic
-				case mcfgalphav1.MachineConfigNodeUpdateExecuted:
-					updatingMachines = append(updatingMachines, ourNode)
-				case mcfgalphav1.MachineConfigNodeUpdatePostActionComplete:
-					updatingMachines = append(updatingMachines, ourNode)
-				case mcfgalphav1.MachineConfigNodeUpdateComplete:
-					updatingMachines = append(updatingMachines, ourNode)
-				case mcfgalphav1.MachineConfigNodeResumed:
-					updatingMachines = append(updatedMachines, ourNode) //nolint:gocritic
-					readyMachines = append(readyMachines, ourNode)
-				case mcfgalphav1.MachineConfigNodeUpdateCompatible:
-					updatingMachines = append(updatedMachines, ourNode) //nolint:gocritic
-				case mcfgalphav1.MachineConfigNodeUpdateDrained:
-					unavailableMachines = append(unavailableMachines, ourNode)
-					updatingMachines = append(updatingMachines, ourNode)
-				case mcfgalphav1.MachineConfigNodeUpdateCordoned:
-					unavailableMachines = append(unavailableMachines, ourNode)
-					updatingMachines = append(updatingMachines, ourNode)
-				case mcfgalphav1.MachineConfigNodeUpdated:
-					updatedMachines = append(updatedMachines, ourNode)
-					readyMachines = append(readyMachines, ourNode)
+				if cond.Status == metav1.ConditionUnknown {
+					// This switch case will cause a node to be double counted, maybe use a hash for node count
+					switch mcfgalphav1.StateProgress(cond.Type) {
+					case mcfgalphav1.MachineConfigNodeUpdatePrepared:
+						updatingMachines = append(updatedMachines, ourNode) //nolint:gocritic
+					case mcfgalphav1.MachineConfigNodeUpdateExecuted:
+						updatingMachines = append(updatingMachines, ourNode)
+					case mcfgalphav1.MachineConfigNodeUpdatePostActionComplete:
+						updatingMachines = append(updatingMachines, ourNode)
+					case mcfgalphav1.MachineConfigNodeUpdateComplete:
+						updatingMachines = append(updatingMachines, ourNode)
+					case mcfgalphav1.MachineConfigNodeResumed:
+						updatingMachines = append(updatedMachines, ourNode) //nolint:gocritic
+						readyMachines = append(readyMachines, ourNode)
+					case mcfgalphav1.MachineConfigNodeUpdateCompatible:
+						updatingMachines = append(updatedMachines, ourNode) //nolint:gocritic
+					case mcfgalphav1.MachineConfigNodeUpdateDrained:
+						unavailableMachines = append(unavailableMachines, ourNode)
+						updatingMachines = append(updatingMachines, ourNode)
+					case mcfgalphav1.MachineConfigNodeUpdateCordoned:
+						unavailableMachines = append(unavailableMachines, ourNode)
+						updatingMachines = append(updatingMachines, ourNode)
+					case mcfgalphav1.MachineConfigNodeUpdated:
+						updatedMachines = append(updatedMachines, ourNode)
+						readyMachines = append(readyMachines, ourNode)
+					}
 				}
-			}
+			*/
 		}
 	}
 	degradedMachineCount := int32(len(degradedMachines))
@@ -339,7 +348,7 @@ func isNodeManaged(node *corev1.Node) bool {
 }
 
 // isNodeDone returns true if the current == desired and the MCD has marked done.
-func isNodeDone(node *corev1.Node) bool {
+func isNodeDone(node *corev1.Node, layered bool) bool {
 	if node.Annotations == nil {
 		return false
 	}
@@ -352,12 +361,32 @@ func isNodeDone(node *corev1.Node) bool {
 		return false
 	}
 
+	if layered {
+		// If these annotations can't be found and the pool is layered, this is
+		// is the very first time the node is being opted into layering, so
+		// make it available for an update.
+
+		// The MachineConfig annotations are loaded on boot-up by the daemon which
+		// currently doesn't happen for the Image annotations.
+		cimage, ok := node.Annotations[daemonconsts.CurrentImageAnnotationKey]
+		if !ok || cimage == "" {
+			return true
+		}
+		dimage, ok := node.Annotations[daemonconsts.DesiredImageAnnotationKey]
+		if !ok || dimage == "" {
+			return true
+		}
+		if cimage != dimage {
+			return false
+		}
+	}
+
 	return cconfig == dconfig && isNodeMCDState(node, daemonconsts.MachineConfigDaemonStateDone)
 }
 
 // isNodeDoneAt checks whether a node is fully updated to a targetConfig
-func isNodeDoneAt(node *corev1.Node, pool *mcfgv1.MachineConfigPool) bool {
-	return isNodeDone(node) && node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey] == pool.Spec.Configuration.Name
+func isNodeDoneAt(node *corev1.Node, pool *mcfgv1.MachineConfigPool, layered bool) bool {
+	return isNodeDone(node, layered) && node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey] == pool.Spec.Configuration.Name
 }
 
 // isNodeMCDState checks the MCD state against the state parameter
@@ -388,7 +417,8 @@ func getUpdatedMachines(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node, mo
 		lns := ctrlcommon.NewLayeredNodeState(node)
 		if mosb != nil && mosc != nil {
 			mosbState := ctrlcommon.NewMachineOSBuildState(mosb)
-			if layered && mosbState.IsBuildSuccess() && mosb.Spec.DesiredConfig.Name == pool.Spec.Configuration.Name {
+			// It seems like pool image annotations are no longer being used, so node specific checks were required here
+			if layered && mosbState.IsBuildSuccess() && mosb.Spec.DesiredConfig.Name == pool.Spec.Configuration.Name && isNodeDoneAt(node, pool, layered) && lns.IsCurrentImageEqualToBuild(mosc) {
 				updated = append(updated, node)
 			}
 		} else if lns.IsDoneAt(pool, layered) {
@@ -441,13 +471,13 @@ func isNodeReady(node *corev1.Node) bool {
 
 // isNodeUnavailable is a helper function for getUnavailableMachines
 // See the docs of getUnavailableMachines for more info
-func isNodeUnavailable(node *corev1.Node) bool {
+func isNodeUnavailable(node *corev1.Node, layered bool) bool {
 	// Unready nodes are unavailable
 	if !isNodeReady(node) {
 		return true
 	}
-	// Ready nodes are not unavailable
-	if isNodeDone(node) {
+	// If the node is working towards a new image/MC, it is not available
+	if isNodeDone(node, layered) {
 		return false
 	}
 	// Now we know the node isn't ready - the current config must not
@@ -471,17 +501,13 @@ func getUnavailableMachines(nodes []*corev1.Node, pool *mcfgv1.MachineConfigPool
 			mosbState := ctrlcommon.NewMachineOSBuildState(mosb)
 			// if node is unavail, desiredConfigs match, and the build is a success, then we are unavail.
 			// not sure on this one honestly
-			if layered && isNodeUnavailable(node) && mosb.Spec.DesiredConfig.Name == pool.Status.Configuration.Name && mosbState.IsBuildSuccess() {
+			if layered && isNodeUnavailable(node, layered) && mosb.Spec.DesiredConfig.Name == pool.Spec.Configuration.Name && mosbState.IsBuildSuccess() {
 				unavail = append(unavail, node)
 			}
-		} else {
-			lns := ctrlcommon.NewLayeredNodeState(node)
-			if lns.IsUnavailable(pool, layered) {
-				unavail = append(unavail, node)
-			}
+		} else if isNodeUnavailable(node, layered) {
+			unavail = append(unavail, node)
 		}
 	}
-
 	return unavail
 }
 
