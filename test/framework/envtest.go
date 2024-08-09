@@ -383,6 +383,14 @@ func CreateObjects(t *testing.T, clientSet *ClientSet, objs ...runtime.Object) {
 				clientSet.ConfigV1Interface.Nodes().Update(ctx, tObj, metav1.UpdateOptions{})
 			}
 			require.NoError(t, err)
+		case *configv1.APIServer:
+			_, err := clientSet.ConfigV1Interface.APIServers().Get(ctx, "cluster", metav1.GetOptions{})
+			if errors.IsNotFound(err) {
+				_, err = clientSet.ConfigV1Interface.APIServers().Create(ctx, tObj, metav1.CreateOptions{})
+			} else {
+				clientSet.ConfigV1Interface.APIServers().Update(ctx, tObj, metav1.UpdateOptions{})
+			}
+			require.NoError(t, err)
 		default:
 			t.Errorf("Unknown object type %T", obj)
 		}
