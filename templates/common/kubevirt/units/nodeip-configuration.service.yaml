@@ -9,7 +9,10 @@ contents: |
 
   [Service]
   # Need oneshot to delay kubelet
-  Type=oneshot
+  # but we use Type=notify so that systemd keeps retrying until we succeed. With
+  # Type=oneshot, it also keeps retrying, but will never start follow-up services
+  # that depend on us if we fail once.
+  Type=notify
   # Would prefer to do Restart=on-failure instead of this bash retry loop, but
   # the version of systemd we have right now doesn't support it. It should be
   # available in systemd v244 and higher.
