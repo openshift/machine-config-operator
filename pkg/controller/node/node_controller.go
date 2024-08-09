@@ -99,7 +99,7 @@ type Controller struct {
 	mcpListerSynced  cache.InformerSynced
 	nodeListerSynced cache.InformerSynced
 	mcnListerSynced  cache.InformerSynced
-	mosbListerSynced cache.InformerSynced
+	moscListerSynced cache.InformerSynced
 
 	schedulerList         cligolistersv1.SchedulerLister
 	schedulerListerSynced cache.InformerSynced
@@ -119,7 +119,7 @@ func New(
 	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
 	nodeInformer coreinformersv1.NodeInformer,
 	podInformer coreinformersv1.PodInformer,
-	mosbInformer mcfginformersv1alpha1.MachineOSBuildInformer,
+	moscInformer mcfginformersv1alpha1.MachineOSConfigInformer,
 	schedulerInformer cligoinformersv1.SchedulerInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
@@ -129,7 +129,7 @@ func New(
 		ccInformer,
 		mcInformer,
 		mcpInformer,
-		mosbInformer,
+		moscInformer,
 		nodeInformer,
 		podInformer,
 		schedulerInformer,
@@ -146,7 +146,7 @@ func NewWithCustomUpdateDelay(
 	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
 	nodeInformer coreinformersv1.NodeInformer,
 	podInformer coreinformersv1.PodInformer,
-	mosbInformer mcfginformersv1alpha1.MachineOSBuildInformer,
+	moscInformer mcfginformersv1alpha1.MachineOSConfigInformer,
 	schedulerInformer cligoinformersv1.SchedulerInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
@@ -157,7 +157,7 @@ func NewWithCustomUpdateDelay(
 		ccInformer,
 		mcInformer,
 		mcpInformer,
-		mosbInformer,
+		moscInformer,
 		nodeInformer,
 		podInformer,
 		schedulerInformer,
@@ -173,7 +173,7 @@ func newController(
 	ccInformer mcfginformersv1.ControllerConfigInformer,
 	mcInformer mcfginformersv1.MachineConfigInformer,
 	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
-	mosbInformer mcfginformersv1alpha1.MachineOSBuildInformer,
+	moscInformer mcfginformersv1alpha1.MachineOSConfigInformer,
 	nodeInformer coreinformersv1.NodeInformer,
 	podInformer coreinformersv1.PodInformer,
 	schedulerInformer cligoinformersv1.SchedulerInformer,
@@ -194,10 +194,9 @@ func newController(
 		updateDelay:   updateDelay,
 		fgAcessor:     fgAccessor,
 	}
-	mosbInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    ctrl.addMachineOSBuild,
-		UpdateFunc: ctrl.updateMachineOSBuild,
-		DeleteFunc: ctrl.deleteMachineOSBuild,
+	moscInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.addMachineOSConfig,
+		UpdateFunc: ctrl.updateMachineOSConfig,
 	})
 	mcpInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.addMachineConfigPool,
@@ -227,7 +226,7 @@ func newController(
 	ctrl.mcListerSynced = mcInformer.Informer().HasSynced
 	ctrl.mcpListerSynced = mcpInformer.Informer().HasSynced
 	ctrl.nodeListerSynced = nodeInformer.Informer().HasSynced
-	ctrl.mosbListerSynced = mosbInformer.Informer().HasSynced
+	ctrl.moscListerSynced = moscInformer.Informer().HasSynced
 
 	ctrl.schedulerList = schedulerInformer.Lister()
 	ctrl.schedulerListerSynced = schedulerInformer.Informer().HasSynced
@@ -380,50 +379,32 @@ func (ctrl *Controller) makeMasterNodeSchedulable(node *corev1.Node) error {
 	return nil
 }
 
-func (ctrl *Controller) addMachineOSBuild(obj interface{}) {
-	curMOSB := obj.(*mcfgv1alpha1.MachineOSBuild)
-	klog.V(4).Infof("Adding MachineOSBuild %s", curMOSB.Name)
-
-	config, err := ctrl.client.MachineconfigurationV1alpha1().MachineOSConfigs().Get(context.TODO(), curMOSB.Spec.MachineOSConfig.Name, metav1.GetOptions{})
+func (ctrl *Controller) addMachineOSConfig(obj interface{}) {
+	curMOSC := obj.(*mcfgv1alpha1.MachineOSConfig)
+	klog.V(4).Infof("Adding MachineOSConfig %s", curMOSC.Name)
+	mcp, err := ctrl.mcpLister.Get(curMOSC.Spec.MachineConfigPool.Name)
 	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("Couldn't get MachineOSConfig from MachineOSBuild %#v", curMOSB))
+		utilruntime.HandleError(fmt.Errorf("Couldn't get MachineConfigPool from MachineOSConfig %#v", curMOSC))
 		return
 	}
-	if config == nil {
-		utilruntime.HandleError(fmt.Errorf("Missing MachineOSConfig from MachineOSBuild %#v", curMOSB))
-		return
-	}
-	mcp, err := ctrl.mcpLister.Get(config.Spec.MachineConfigPool.Name)
-	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("Couldn't get Machine Config Pool from MachineOSConfig %#v", config))
-		return
-	}
+	klog.V(4).Infof("MachineConfigPool %s opt in to OCL", mcp.Name)
 	ctrl.enqueueMachineConfigPool(mcp)
 }
 
-func (ctrl *Controller) updateMachineOSBuild(old, cur interface{}) {
-	oldMOSB := old.(*mcfgv1alpha1.MachineOSBuild)
-	curMOSB := cur.(*mcfgv1alpha1.MachineOSBuild)
-	if equality.Semantic.DeepEqual(oldMOSB.Status, curMOSB.Status) {
-		// we do not want to trigger an update func just for MOSB spec, we dont act on the spec
+func (ctrl *Controller) updateMachineOSConfig(old, cur interface{}) {
+	oldMOSC := old.(*mcfgv1alpha1.MachineOSConfig)
+	curMOSC := cur.(*mcfgv1alpha1.MachineOSConfig)
+	if equality.Semantic.DeepEqual(oldMOSC.Status.CurrentImagePullspec, curMOSC.Status.CurrentImagePullspec) {
+		// we do not want to trigger an update func just if the image is not ready
 		return
 	}
-	klog.V(4).Infof("Updating MachineOSBuild %s", oldMOSB.Name)
-
-	config, err := ctrl.client.MachineconfigurationV1alpha1().MachineOSConfigs().Get(context.TODO(), curMOSB.Spec.MachineOSConfig.Name, metav1.GetOptions{})
+	klog.V(4).Infof("Updating MachineOSConfig %s", oldMOSC.Name)
+	mcp, err := ctrl.mcpLister.Get(curMOSC.Spec.MachineConfigPool.Name)
 	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("Couldn't get MachineOSConfig from MachineOSBuild %#v", curMOSB))
+		utilruntime.HandleError(fmt.Errorf("Couldn't get Machine Config Pool from MachineOSConfig %#v", curMOSC))
 		return
 	}
-	if config == nil {
-		utilruntime.HandleError(fmt.Errorf("Missing MachineOSConfig from MachineOSBuild %#v", curMOSB))
-		return
-	}
-	mcp, err := ctrl.mcpLister.Get(config.Spec.MachineConfigPool.Name)
-	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("Couldn't get Machine Config Pool from MachineOSConfig %#v", config))
-		return
-	}
+	klog.V(4).Infof("Image is ready for MachineConfigPool %s", mcp.Name)
 	ctrl.enqueueMachineConfigPool(mcp)
 }
 
