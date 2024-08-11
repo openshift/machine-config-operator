@@ -30,7 +30,6 @@ contents:
     absent_mount_sources_to_reject = [
         "/etc/hostname",
     ]
-    default_runtime = "crun"
     drop_infra_ctr = true
 
     [crio.runtime.runtimes.runc]
