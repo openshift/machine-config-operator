@@ -1425,7 +1425,7 @@ func (dn *Daemon) workaroundOcpBugs33694() error {
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("error deleting %s: %w", path, err)
 		} else if err == nil {
-			klog.Infof("Removed stale symlink %q", path)
+			glog.Infof("Removed stale symlink %q", path)
 		}
 	}
 	return nil

@@ -234,7 +234,7 @@ func writeUnit(u ign3types.Unit, systemdRoot string, isCoreOSVariant bool) error
 		cmd := exec.Command("systemctl", "is-enabled", u.Name)
 		out, _ := cmd.CombinedOutput()
 		if cmd.ProcessState.ExitCode() == 0 && strings.TrimSpace(string(out)) == "enabled" {
-			klog.Infof("Disabling systemd unit %s before re-writing it", u.Name)
+			glog.Infof("Disabling systemd unit %s before re-writing it", u.Name)
 			disableOut, err := exec.Command("systemctl", "disable", u.Name).CombinedOutput()
 			if err != nil {
 				return fmt.Errorf("disabling %s failed: %w (output: %s)", u.Name, err, string(disableOut))
