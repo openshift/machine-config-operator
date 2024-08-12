@@ -1478,7 +1478,7 @@ func (dn *Daemon) startConfigDriftMonitor() {
 
 	opts := ConfigDriftMonitorOpts{
 		OnDrift:       dn.onConfigDrift,
-		SystemdPath:   pathSystemd,
+		RootPath:      "/",
 		ErrChan:       dn.exitCh,
 		MachineConfig: odc.currentConfig,
 	}
@@ -2294,7 +2294,7 @@ func (dn *Daemon) runOnceFromIgnition(ignConfig ign3types.Config) error {
 	if err := dn.writeFiles(ignConfig.Storage.Files, false); err != nil {
 		return err
 	}
-	if err := dn.writeUnits(ignConfig.Systemd.Units); err != nil {
+	if err := dn.writeUnits(ignConfig.Systemd.Units, "/"); err != nil {
 		return err
 	}
 	// Unconditionally remove this file in the once-from (classic RHEL)
@@ -2556,7 +2556,7 @@ func (dn *Daemon) validateOnDiskStateImpl(currentConfig *mcfgv1.MachineConfig, i
 		}
 	}
 
-	return validateOnDiskState(currentConfig, pathSystemd)
+	return validateOnDiskState(currentConfig, "/")
 }
 
 // validateOnDiskState compares the on-disk state against what a configuration

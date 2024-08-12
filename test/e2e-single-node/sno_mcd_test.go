@@ -276,10 +276,7 @@ func TestNoReboot(t *testing.T) {
 		helpers.ExecCmdOnNode(t, cs, node, "/bin/bash", "-c", bashCmd)
 	}
 
-	// Delete the expected SSH keys directory to ensure that the directories are
-	// (re)created correctly by the MCD. This targets the upgrade case where that
-	// directory may not previously exist.
-	helpers.ExecCmdOnNode(t, cs, node, "rm", "-rf", filepath.Join("/rootfs", filepath.Dir(sshPaths.Expected)))
+	require.Equal(t, sshPaths.Expected, constants.RHCOS9SSHKeyPath)
 
 	// Adding authorized key for user core
 	testIgnConfig := ctrlcommon.NewIgnConfig()

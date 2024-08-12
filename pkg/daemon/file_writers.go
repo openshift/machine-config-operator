@@ -187,9 +187,10 @@ func writeFileAtomically(fpath string, b []byte, dirMode, fileMode os.FileMode, 
 }
 
 // write dropins to disk
-func writeDropins(u ign3types.Unit, systemdRoot string, isCoreOSVariant bool) error {
+func writeDropins(u ign3types.Unit, rootPath string, isCoreOSVariant bool) error {
+	systemdPath := getSystemdPath(rootPath)
 	for i := range u.Dropins {
-		dpath := filepath.Join(systemdRoot, u.Name+".d", u.Dropins[i].Name)
+		dpath := filepath.Join(systemdPath, u.Name+".d", u.Dropins[i].Name)
 		if u.Dropins[i].Contents == nil || *u.Dropins[i].Contents == "" {
 			klog.Infof("Dropin for %s has no content, skipping write", u.Dropins[i].Name)
 			if _, err := os.Stat(dpath); err != nil {
@@ -265,13 +266,14 @@ func writeFiles(files []ign3types.File, skipCertificateWrite bool) error {
 }
 
 // writeUnit writes a systemd unit and its dropins to disk
-func writeUnit(u ign3types.Unit, systemdRoot string, isCoreOSVariant bool) error {
-	if err := writeDropins(u, systemdRoot, isCoreOSVariant); err != nil {
+func writeUnit(u ign3types.Unit, rootPath string, isCoreOSVariant bool) error {
+	if err := writeDropins(u, rootPath, isCoreOSVariant); err != nil {
 		return err
 	}
 
 	// write (or cleanup) path in /etc/systemd/system
-	fpath := filepath.Join(systemdRoot, u.Name)
+	systemdPath := getSystemdPath(rootPath)
+	fpath := filepath.Join(systemdPath, u.Name)
 	if u.Mask != nil && *u.Mask {
 		// if the unit is masked, symlink fpath to /dev/null and return early.
 
@@ -331,9 +333,9 @@ func writeUnit(u ign3types.Unit, systemdRoot string, isCoreOSVariant bool) error
 }
 
 // writeUnits writes systemd units and their dropins to disk
-func writeUnits(units []ign3types.Unit, systemdRoot string, isCoreOSVariant bool) error {
+func writeUnits(units []ign3types.Unit, rootPath string, isCoreOSVariant bool) error {
 	for _, u := range units {
-		if err := writeUnit(u, systemdRoot, isCoreOSVariant); err != nil {
+		if err := writeUnit(u, rootPath, isCoreOSVariant); err != nil {
 			return err
 		}
 	}

@@ -1802,7 +1802,7 @@ func (dn *Daemon) updateFiles(oldIgnConfig, newIgnConfig ign3types.Config, skipC
 	if err := dn.writeFiles(newIgnConfig.Storage.Files, skipCertificateWrite); err != nil {
 		return err
 	}
-	if err := dn.writeUnits(newIgnConfig.Systemd.Units); err != nil {
+	if err := dn.writeUnits(newIgnConfig.Systemd.Units, "/"); err != nil {
 		return err
 	}
 	return dn.deleteStaleData(oldIgnConfig, newIgnConfig)
@@ -2121,14 +2121,14 @@ func (dn *Daemon) presetUnit(unit ign3types.Unit) error {
 }
 
 // writeUnits writes the systemd units to disk
-func (dn *Daemon) writeUnits(units []ign3types.Unit) error {
+func (dn *Daemon) writeUnits(units []ign3types.Unit, rootPath string) error {
 	var enabledUnits []string
 	var disabledUnits []string
 
 	isCoreOSVariant := dn.os.IsCoreOSVariant()
 
 	for _, u := range units {
-		if err := writeUnit(u, pathSystemd, isCoreOSVariant); err != nil {
+		if err := writeUnit(u, rootPath, isCoreOSVariant); err != nil {
 			return fmt.Errorf("daemon could not write systemd unit: %w", err)
 		}
 		// if the unit doesn't note if it should be enabled or disabled then
@@ -2335,7 +2335,7 @@ func (dn *Daemon) updateSSHKeys(newUsers, oldUsers []ign3types.PasswdUser) error
 	var concatSSHKeys string
 	for _, u := range newUsers {
 		for _, k := range u.SSHAuthorizedKeys {
-			concatSSHKeys = concatSSHKeys + string(k) + "\n"
+			concatSSHKeys = concatSSHKeys + strings.TrimSpace(string(k)) + "\n"
 		}
 	}
 
