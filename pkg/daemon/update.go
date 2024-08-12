@@ -1456,7 +1456,7 @@ func (dn *Daemon) workaroundOcpBugs33694() error {
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("error deleting %s: %w", path, err)
 		} else if err == nil {
-			klog.Infof("Removed stale symlink %q", path)
+			glog.Infof("Removed stale symlink %q", path)
 		}
 	}
 	return nil
@@ -1605,7 +1605,7 @@ func (dn *Daemon) writeUnits(units []ign3types.Unit) error {
 			cmd := exec.Command("systemctl", "is-enabled", u.Name)
 			out, _ := cmd.CombinedOutput()
 			if cmd.ProcessState.ExitCode() == 0 && strings.TrimSpace(string(out)) == "enabled" {
-				klog.Infof("Disabling systemd unit %s before re-writing it", u.Name)
+				glog.Infof("Disabling systemd unit %s before re-writing it", u.Name)
 				disableOut, err := exec.Command("systemctl", "disable", u.Name).CombinedOutput()
 				if err != nil {
 					return fmt.Errorf("disabling %s failed: %w (output: %s)", u.Name, err, string(disableOut))
