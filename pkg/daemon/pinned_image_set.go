@@ -169,6 +169,15 @@ func NewPinnedImageSetManager(
 	p.syncHandler = p.sync
 	p.enqueueMachineConfigPool = p.enqueue
 
+	p.imageSetLister = imageSetInformer.Lister()
+	p.imageSetSynced = imageSetInformer.Informer().HasSynced
+
+	p.nodeLister = nodeInformer.Lister()
+	p.nodeListerSynced = nodeInformer.Informer().HasSynced
+
+	p.mcpLister = mcpInformer.Lister()
+	p.mcpSynced = mcpInformer.Informer().HasSynced
+
 	// this must be done after the enqueueMachineConfigPool is configured to
 	// avoid panics when the event handler is called.
 	mcpInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -187,15 +196,6 @@ func NewPinnedImageSetManager(
 		UpdateFunc: p.updatePinnedImageSet,
 		DeleteFunc: p.deletePinnedImageSet,
 	})
-
-	p.imageSetLister = imageSetInformer.Lister()
-	p.imageSetSynced = imageSetInformer.Informer().HasSynced
-
-	p.nodeLister = nodeInformer.Lister()
-	p.nodeListerSynced = nodeInformer.Informer().HasSynced
-
-	p.mcpLister = mcpInformer.Lister()
-	p.mcpSynced = mcpInformer.Informer().HasSynced
 
 	p.cache = newImageCache(256)
 
