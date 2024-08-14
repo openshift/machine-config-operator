@@ -4,6 +4,7 @@ contents:
   inline: |
     [crio]
     internal_wipe = true
+    internal_repair = true
 
     [crio.api]
     stream_address = "127.0.0.1"
