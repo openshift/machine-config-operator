@@ -70,6 +70,55 @@ spec:
                   aws:
                     description: aws is used to configure the AWS CSI driver.
                     properties:
+                      efsVolumeMetrics:
+                        description: efsVolumeMetrics sets the configuration for collecting
+                          metrics from EFS volumes used by the EFS CSI Driver.
+                        properties:
+                          recursiveWalk:
+                            description: recursiveWalk provides additional configuration
+                              for collecting volume metrics in the AWS EFS CSI Driver
+                              when the state is set to RecursiveWalk.
+                            properties:
+                              fsRateLimit:
+                                description: fsRateLimit defines the rate limit, in
+                                  goroutines per file system, for processing volume
+                                  metrics. When omitted, this means no opinion and
+                                  the platform is left to choose a reasonable default,
+                                  which is subject to change over time. The current
+                                  default is 5. The valid range is from 1 to 100 goroutines.
+                                format: int32
+                                maximum: 100
+                                minimum: 1
+                                type: integer
+                              refreshPeriodMinutes:
+                                description: refreshPeriodMinutes specifies the frequency,
+                                  in minutes, at which volume metrics are refreshed.
+                                  When omitted, this means no opinion and the platform
+                                  is left to choose a reasonable default, which is
+                                  subject to change over time. The current default
+                                  is 240. The valid range is from 1 to 43200 minutes
+                                  (30 days).
+                                format: int32
+                                maximum: 43200
+                                minimum: 1
+                                type: integer
+                            type: object
+                          state:
+                            description: 'state defines the state of metric collection
+                              in the AWS EFS CSI Driver. This field is required and
+                              must be set to one of the following values: Disabled
+                              or RecursiveWalk. Disabled means no metrics collection
+                              will be performed. This is the default value. RecursiveWalk
+                              means the AWS EFS CSI Driver will recursively scan volumes
+                              to collect metrics. This process may result in high
+                              CPU and memory usage, depending on the volume size.'
+                            enum:
+                            - RecursiveWalk
+                            - Disabled
+                            type: string
+                        required:
+                        - state
+                        type: object
                       kmsKeyARN:
                         description: kmsKeyARN sets the cluster default storage class
                           to encrypt volumes with a user-defined KMS key, rather than
