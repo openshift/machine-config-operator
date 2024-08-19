@@ -248,9 +248,9 @@ spec:
                 type: object
               networkType:
                 description: 'NetworkType is the plugin that is to be deployed (e.g.
-                  OpenShiftSDN). This should match a value that the cluster-network-operator
+                  OVNKubernetes). This should match a value that the cluster-network-operator
                   understands, or else no networking will be installed. Currently
-                  supported values are: - OpenShiftSDN This field is immutable after
+                  supported values are: - OVNKubernetes This field is immutable after
                   installation.'
                 type: string
               serviceNetwork:
@@ -303,10 +303,7 @@ spec:
                 type: integer
               conditions:
                 description: 'conditions represents the observations of a network.config
-                  current state. Known .status.conditions.type are: "NetworkTypeMigrationInProgress",
-                  "NetworkTypeMigrationMTUReady", "NetworkTypeMigrationTargetCNIAvailable",
-                  "NetworkTypeMigrationTargetCNIInUse", "NetworkTypeMigrationOriginalCNIPurged"
-                  and "NetworkDiagnosticsAvailable"'
+                  current state. Known .status.conditions.type are: "NetworkDiagnosticsAvailable"'
                 items:
                   description: "Condition contains details for one aspect of the current
                     state of this API Resource. --- This struct is intended for direct
@@ -381,7 +378,7 @@ spec:
                 description: Migration contains the cluster network migration configuration.
                 properties:
                   mtu:
-                    description: MTU contains the MTU migration configuration.
+                    description: MTU is the MTU configuration that is being deployed.
                     properties:
                       machine:
                         description: Machine contains MTU migration configuration
@@ -415,15 +412,13 @@ spec:
                         type: object
                     type: object
                   networkType:
-                    description: 'NetworkType is the target plugin that is to be deployed.
-                      Currently supported values are: OpenShiftSDN, OVNKubernetes'
-                    enum:
-                    - OpenShiftSDN
-                    - OVNKubernetes
+                    description: 'NetworkType is the target plugin that is being deployed.
+                      DEPRECATED: network type migration is no longer supported, so
+                      this should always be unset.'
                     type: string
                 type: object
               networkType:
-                description: NetworkType is the plugin that is deployed (e.g. OpenShiftSDN).
+                description: NetworkType is the plugin that is deployed (e.g. OVNKubernetes).
                 type: string
               serviceNetwork:
                 description: IP address pool for services. Currently, we only support

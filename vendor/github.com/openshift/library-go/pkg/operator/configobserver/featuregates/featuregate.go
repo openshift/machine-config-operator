@@ -2,9 +2,9 @@ package featuregates
 
 import (
 	"fmt"
+	"slices"
 
 	configv1 "github.com/openshift/api/config/v1"
-	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 // FeatureGate indicates whether a given feature is enabled or not
@@ -17,22 +17,22 @@ type FeatureGate interface {
 }
 
 type featureGate struct {
-	enabled  sets.Set[configv1.FeatureGateName]
-	disabled sets.Set[configv1.FeatureGateName]
+	enabled  []configv1.FeatureGateName
+	disabled []configv1.FeatureGateName
 }
 
 func NewFeatureGate(enabled, disabled []configv1.FeatureGateName) FeatureGate {
 	return &featureGate{
-		enabled:  sets.New[configv1.FeatureGateName](enabled...),
-		disabled: sets.New[configv1.FeatureGateName](disabled...),
+		enabled:  enabled,
+		disabled: disabled,
 	}
 }
 
 func (f *featureGate) Enabled(key configv1.FeatureGateName) bool {
-	if f.enabled.Has(key) {
+	if slices.Contains(f.enabled, key) {
 		return true
 	}
-	if f.disabled.Has(key) {
+	if slices.Contains(f.disabled, key) {
 		return false
 	}
 
@@ -40,9 +40,9 @@ func (f *featureGate) Enabled(key configv1.FeatureGateName) bool {
 }
 
 func (f *featureGate) KnownFeatures() []configv1.FeatureGateName {
-	allKnown := sets.New[string]()
-	allKnown.Insert(FeatureGateNamesToStrings(f.enabled.UnsortedList())...)
-	allKnown.Insert(FeatureGateNamesToStrings(f.disabled.UnsortedList())...)
+	allKnown := make([]configv1.FeatureGateName, 0, len(f.enabled)+len(f.disabled))
+	allKnown = append(allKnown, f.enabled...)
+	allKnown = append(allKnown, f.disabled...)
 
-	return StringsToFeatureGateNames(sets.List(allKnown))
+	return allKnown
 }
