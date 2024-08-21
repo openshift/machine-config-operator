@@ -280,6 +280,8 @@ contents:
         iface_type=tun
         tun_mode=$(nmcli --get-values tun.mode -e no connection show ${old_conn})
         extra_phys_args+=( tun.mode "${tun_mode}" )
+      elif [ "$(nmcli --get-values connection.type conn show ${old_conn})" == "bridge" ]; then
+        iface_type=bridge
       else
         iface_type=802-3-ethernet
       fi
