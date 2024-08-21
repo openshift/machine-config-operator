@@ -146,6 +146,8 @@ Etcd is co-located on master nodes as static pods. The draining behavior defined
 
 ## Rebootless Updates
 
+As of Openshift 4.17, the MCO has added a new feature called NodeDisruptionPolicy, which allows the cluster admin to define custom behaviours during MachineConfig updates. The default policies used by NodeDisruptionPolicy reflect the behaviors mentioned below. More details about NodeDisruptionPolicy can be found [here](./NodeDisruptionPolicy.md).
+
 As of Openshift 4.7, the MCD gained the functionality to apply select MachineConfig updates without a full reboot flow (drain -> update -> reboot). The MCD now calculates a diff between the current and desired configurations, and it uses any changes to select one of the options listed below. For any change not listed below, or if a forcefile was set, the MCD will trigger the full reboot flow.
 
 The updated list of optimized updates and behaviour (as of Openshift 4.10) is as follows:
