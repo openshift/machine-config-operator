@@ -2180,7 +2180,7 @@ func (dn *Daemon) writeFiles(files []ign3types.File, skipCertificateWrite bool) 
 // Ensures that both the SSH root directory (/home/core/.ssh) as well as any
 // subdirectories are created with the correct (0700) permissions.
 func createSSHKeyDir(authKeyDir string) error {
-	klog.Infof("Creating missing SSH key dir at %s", authKeyDir)
+	klog.Infof("Creating missing SSH key dir at %q", authKeyDir)
 
 	mkdir := func(dir string) error {
 		return exec.Command("runuser", "-u", constants.CoreUserName, "--", "mkdir", "-m", "0700", "-p", dir).Run()
@@ -2631,6 +2631,7 @@ func runCmdSync(cmdName string, args ...string) error {
 // Log a message to the systemd journal as well as our stdout
 func logSystem(format string, a ...interface{}) {
 	message := fmt.Sprintf(format, a...)
+	message = fmt.Sprintf("%q", message)
 	klog.Info(message)
 	// Since we're chrooted into the host rootfs with /run mounted,
 	// we can just talk to the journald socket.  Doing this as a
