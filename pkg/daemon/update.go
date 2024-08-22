@@ -1056,19 +1056,19 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	}
 
 	var drain bool
+	crioOverrideConfigmapExists, err := dn.hasImageRegistryDrainOverrideConfigMap()
+	if err != nil {
+		return err
+	}
 	if fg != nil && fg.Enabled(features.FeatureGateNodeDisruptionPolicy) {
 		// Check actions list and perform node drain if required
-		drain, err = isDrainRequiredForNodeDisruptionActions(nodeDisruptionActions, oldIgnConfig, newIgnConfig)
+		drain, err = isDrainRequiredForNodeDisruptionActions(nodeDisruptionActions, oldIgnConfig, newIgnConfig, crioOverrideConfigmapExists)
 		if err != nil {
 			return err
 		}
 		klog.Infof("Drain calculated for node disruption: %v for config %s", drain, newConfigName)
 	} else {
 		// Check and perform node drain if required
-		crioOverrideConfigmapExists, err := dn.hasImageRegistryDrainOverrideConfigMap()
-		if err != nil {
-			return err
-		}
 		drain, err = isDrainRequired(actions, diffFileSet, oldIgnConfig, newIgnConfig, crioOverrideConfigmapExists)
 		if err != nil {
 			return err
