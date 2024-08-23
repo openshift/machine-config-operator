@@ -9,7 +9,7 @@ require (
 	github.com/ashcrow/osrelease v0.0.0-20180626175927-9b292693c55c
 	github.com/clarketm/json v1.17.1
 	github.com/containers/common v0.57.1
-	github.com/containers/image/v5 v5.29.0
+	github.com/containers/image/v5 v5.29.4
 	github.com/containers/kubensmnt v1.2.0
 	github.com/containers/storage v1.51.0
 	github.com/coreos/fcct v0.5.0
