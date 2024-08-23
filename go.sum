@@ -110,8 +110,8 @@ github.com/clarketm/json v1.17.1/go.mod h1:ynr2LRfb0fQU34l07csRNBTcivjySLLiY1YzQ
 github.com/client9/misspell v0.3.4/go.mod h1:qj6jICC3Q7zFZvVWo7KLAzC3yx5G7kyvSDkc90ppPyw=
 github.com/containers/common v0.57.1 h1:KWAs4PMPgBFmBV4QNbXhUB8TqvlgR95BJN2sbbXkWHY=
 github.com/containers/common v0.57.1/go.mod h1:t/Z+/sFrapvFMEJe3YnecN49/Tae2wYEQShbEN6SRaU=
-github.com/containers/image/v5 v5.29.0 h1:9+nhS/ZM7c4Kuzu5tJ0NMpxrgoryOJ2HAYTgG8Ny7j4=
-github.com/containers/image/v5 v5.29.0/go.mod h1:kQ7qcDsps424ZAz24thD+x7+dJw1vgur3A9tTDsj97E=
+github.com/containers/image/v5 v5.29.4 h1:EbYrwOscTvzeCXt4149OtU74T/ZuohEottcs/hz47O4=
+github.com/containers/image/v5 v5.29.4/go.mod h1:kQ7qcDsps424ZAz24thD+x7+dJw1vgur3A9tTDsj97E=
 github.com/containers/kubensmnt v1.2.0 h1:BDtkaOFQ5fN7FnB9kC6peMW50KkwI1KI8E9ROBFeQIg=
 github.com/containers/kubensmnt v1.2.0/go.mod h1:1/HG09N/a1+WSD3zkurzeWtqlKRSfUUnlIF/08zloqk=
 github.com/containers/libtrust v0.0.0-20230121012942-c1716e8a8d01 h1:Qzk5C6cYglewc+UyGf6lc8Mj2UaPTHy/iF2De0/77CA=
