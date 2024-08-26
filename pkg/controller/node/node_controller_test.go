@@ -725,9 +725,9 @@ func TestGetCandidateMachines(t *testing.T) {
 			helpers.NewNodeBuilder("node-7").WithEqualConfigsAndImages(machineConfigV1, imageV1).WithNodeReady().Node(),
 			helpers.NewNodeBuilder("node-8").WithEqualConfigsAndImages(machineConfigV1, imageV1).WithNodeReady().Node(),
 		},
-		expected:        []string{"node-4", "node-5"},
-		otherCandidates: []string{"node-6"},
-		capacity:        2,
+		expected:        []string{"node-4"},
+		otherCandidates: []string{"node-5", "node-6"},
+		capacity:        1,
 		layeredPool:     true,
 	}, {
 		// Targets https://issues.redhat.com/browse/OCPBUGS-24705.
@@ -752,9 +752,9 @@ func TestGetCandidateMachines(t *testing.T) {
 				WithMCDState(daemonconsts.MachineConfigDaemonStateDone).
 				Node(),
 		},
-		expected:        nil,
-		otherCandidates: nil,
-		capacity:        0,
+		expected:        []string{"node-1"},
+		otherCandidates: []string{"node-2"},
+		capacity:        1,
 		layeredPool:     true,
 	}, {
 		// Targets https://issues.redhat.com/browse/OCPBUGS-24705.
@@ -799,11 +799,15 @@ func TestGetCandidateMachines(t *testing.T) {
 			pool := pb.MachineConfigPool()
 
 			// TODO: Double check that mosb, mosc should be nil here and layered should be false
+			// NOTE: By doing this, we end up ignoring all the layered checks(only MCs diffs will be done to
+			// determine if a node is available and ready for an update). This will need to reworked.
 			got := getCandidateMachines(pool, nil, nil, test.nodes, test.progress, false)
 			nodeNames := getNamesFromNodes(got)
 			assert.Equal(t, test.expected, nodeNames)
 
 			// TODO: Double check that mosb, mosc should be nil here and layered should be false
+			// NOTE: By doing this, we end up ignoring all the layered checks(only MCs diffs will be done to
+			// determine if a node is available and ready for an update). This will need to reworked.
 			allCandidates, capacity := getAllCandidateMachines(false, nil, nil, pool, test.nodes, test.progress)
 			assert.Equal(t, test.capacity, capacity)
 			var otherCandidates []string
