@@ -59,6 +59,10 @@ func (l *LayeredNodeState) isDesiredImageEqualToBuild(mosc *mcfgv1alpha1.Machine
 	return l.isImageAnnotationEqualToBuild(daemonconsts.DesiredImageAnnotationKey, mosc)
 }
 
+func (l *LayeredNodeState) IsCurrentImageEqualToBuild(mosc *mcfgv1alpha1.MachineOSConfig) bool {
+	return l.isImageAnnotationEqualToBuild(daemonconsts.CurrentImageAnnotationKey, mosc)
+}
+
 func (l *LayeredNodeState) isDesiredMachineConfigEqualToBuild(mosb *mcfgv1alpha1.MachineOSBuild) bool {
 	return l.node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] == mosb.Spec.DesiredConfig.Name
 
