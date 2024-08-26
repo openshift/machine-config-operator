@@ -57,6 +57,8 @@ const (
 	// don't attach the test name to this label key because the test name may
 	// contain invalid characters such as slashes or underscores.
 	UsedByE2ETestLabelKey string = UsedByE2ETestAnnoKey
+
+	machineAPINamespace string = "openshift-machine-api"
 )
 
 type CleanupFuncs struct {
@@ -1158,7 +1160,8 @@ func dumpPool(pool *mcfgv1.MachineConfigPool, silentNil bool) string {
 // e2e-layering tests cannot cleanly undo layering at this time, so we destroy
 // the node / machine.
 func DeleteNodeAndMachine(t *testing.T, cs *framework.ClientSet, node corev1.Node) {
-	machineAPINamespace := "openshift-machine-api"
+	t.Helper()
+
 	machineID := strings.ReplaceAll(node.Annotations["machine.openshift.io/machine"], machineAPINamespace+"/", "")
 
 	ctx := context.Background()
@@ -1176,6 +1179,146 @@ func DeleteNodeAndMachine(t *testing.T, cs *framework.ClientSet, node corev1.Nod
 		})
 
 	require.NoError(t, delErr)
+}
+
+// Sets the MachineSet to the desired number of replicas. Note: Does not wait
+// for new nodes to become available nor does not wait for nodes to be scaled
+// back down. Returns a function that will scale the nodes back to the original
+// MachineSet replica value.
+func ScaleMachineSet(t *testing.T, cs *framework.ClientSet, machinesetName string, desiredReplicas int32) func() {
+	t.Helper()
+
+	machineclient := machineClientv1beta1.NewForConfigOrDie(cs.GetRestConfig())
+
+	machineset, err := machineclient.MachineSets(machineAPINamespace).Get(context.TODO(), machinesetName, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	originalReplicaCount := *machineset.Spec.Replicas
+	t.Logf("MachineSet %s has original replica count of %d. Scaling to %d replicas.", machinesetName, originalReplicaCount, desiredReplicas)
+
+	machineset.Spec.Replicas = &desiredReplicas
+
+	_, err = machineclient.MachineSets(machineAPINamespace).Update(context.TODO(), machineset, metav1.UpdateOptions{})
+	require.NoError(t, err)
+
+	return func() {
+		machineset, err := machineclient.MachineSets(machineAPINamespace).Get(context.TODO(), machinesetName, metav1.GetOptions{})
+		require.NoError(t, err)
+
+		machineset.Spec.Replicas = &originalReplicaCount
+
+		_, err = machineclient.MachineSets(machineAPINamespace).Update(context.TODO(), machineset, metav1.UpdateOptions{})
+		require.NoError(t, err)
+
+		t.Logf("Scaled MachineSet %s back to the original replica count of %d", machinesetName, originalReplicaCount)
+	}
+}
+
+// Performs the same task as ScaleMachineSet, but waits for the new nodes to
+// all be ready before returning. Returns a list of new nodes as well as a
+// function that will scale the nodes back down and delete the underlying
+// machines / nodes.
+func ScaleMachineSetAndWaitForNodesToBeReady(t *testing.T, cs *framework.ClientSet, machinesetName string, desiredReplicas int32) ([]*corev1.Node, func()) {
+	nodes, err := cs.CoreV1Interface.Nodes().List(context.TODO(), metav1.ListOptions{})
+	require.NoError(t, err)
+
+	// Get a set of current node names before we scale up any additional nodes.
+	originalNodes := sets.New[string]()
+	for _, node := range nodes.Items {
+		originalNodes.Insert(node.Name)
+	}
+
+	start := time.Now()
+
+	// Start the scale-up process
+	scaledownFunc := ScaleMachineSet(t, cs, machinesetName, desiredReplicas)
+
+	// New nodes means that the node is not part of the original set of nodes
+	// that the cluster had before we began the scale-up process.
+	newNodes := sets.New[string]()
+
+	// Ready nodes means nodes that are "ready".
+	readyNodes := sets.New[string]()
+
+	// This is the final list of new and ready nodes that is returned to the caller.
+	out := []*corev1.Node{}
+
+	t.Log("Waiting for new node(s) to be ready")
+
+	// Poll until the new nodes are present.
+	err = wait.PollUntilContextTimeout(context.TODO(), 2*time.Second, 20*time.Minute, false, func(ctx context.Context) (bool, error) {
+		nodes, err := cs.CoreV1Interface.Nodes().List(ctx, metav1.ListOptions{})
+		if err != nil {
+			return false, err
+		}
+
+		// If we have the same number of nodes that we started with, this means the
+		// new node(s) haven't been created yet. We can return early here because
+		// there's nothing to validate.
+		if len(nodes.Items) == originalNodes.Len() {
+			return false, nil
+		}
+
+		for _, node := range nodes.Items {
+			// Ignore the original cluster nodes before scaling up.
+			if originalNodes.Has(node.Name) {
+				continue
+			}
+
+			// We've already verified that this node is ready, skip it.
+			if readyNodes.Has(node.Name) {
+				continue
+			}
+
+			// If we don't have the node name in the originalNodes set, it means that
+			// we've found a new node.
+			if !originalNodes.Has(node.Name) && !newNodes.Has(node.Name) {
+				t.Logf("Found new node %s after %v", node.Name, time.Since(start))
+				newNodes.Insert(node.Name)
+			}
+
+			// If this is a new node and we haven't verified that it's ready yet, but
+			// it is indeed ready, lets add it to our list of ready nodes.
+			if newNodes.Has(node.Name) && !readyNodes.Has(node.Name) && isNodeReady(node) {
+				t.Logf("Node %s is ready after %v", node.Name, time.Since(start))
+				node := node
+				readyNodes.Insert(node.Name)
+				out = append(out, &node)
+			}
+		}
+
+		// If the ready nodes are equal to the new nodes, we're done.
+		return readyNodes.Equal(newNodes), nil
+	})
+
+	require.NoError(t, err)
+
+	t.Logf("%d new nodes(s) %v ready after %s", readyNodes.Len(), sets.List(readyNodes), time.Since(start))
+
+	return out, func() {
+		// Call the scaledown function returned from the ScaleMachineSet function.
+		scaledownFunc()
+
+		// While one should wait for the node to be cordoned and drained, this
+		// takes additional time to do and can slow down e2e execution. Instead of
+		// doing that, we can explcitly delete the node and Machine objects with no
+		// consequences to the MCO.
+		for _, node := range out {
+			DeleteNodeAndMachine(t, cs, *node)
+		}
+	}
+}
+
+// Determines if a given node is ready based upon the kubelet being ready.
+func isNodeReady(node corev1.Node) bool {
+	for _, condition := range node.Status.Conditions {
+		if condition.Reason == "KubeletReady" && condition.Status == "True" && condition.Type == "Ready" {
+			return true
+
+		}
+	}
+
+	return false
 }
 
 // MustHaveFeatureGatesEnabled fatally exits the test if any feature gate in requiredFeatureGates is not enabled.
