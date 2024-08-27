@@ -85,7 +85,7 @@ var (
 					{
 						Type: opv1.RestartStatusAction,
 						Restart: &opv1.RestartService{
-							ServiceName: "coreos-update-ca-trust.service",
+							ServiceName: constants.UpdateCATrustServiceName,
 						},
 					},
 					{
