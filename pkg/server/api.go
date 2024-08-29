@@ -395,6 +395,12 @@ func cipherOrder() []uint16 {
 		if strings.HasSuffix(c.Name, "CBC_SHA") {
 			return false
 		}
+		if c.Name == "TLS_RSA_WITH_AES_128_GCM_SHA256" {
+			return false
+		}
+		if c.Name == "TLS_RSA_WITH_AES_256_GCM_SHA384" {
+			return false
+		}
 		// 3DES is considered insecure
 		if strings.Contains(c.Name, "3DES") {
 			return false
