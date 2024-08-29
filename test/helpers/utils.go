@@ -20,6 +20,7 @@ import (
 
 	authenticationv1 "k8s.io/api/authentication/v1"
 	aggerrs "k8s.io/apimachinery/pkg/util/errors"
+	"sigs.k8s.io/yaml"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	"github.com/davecgh/go-spew/spew"
@@ -647,7 +648,7 @@ func GetRandomNode(t *testing.T, cs *framework.ClientSet, pool string) corev1.No
 
 	var targetNode corev1.Node
 
-	err := wait.PollUntilContextTimeout(context.TODO(), 2*time.Second, waitPeriod, true, func(ctx context.Context) (bool, error) {
+	err := wait.PollUntilContextTimeout(context.TODO(), 2*time.Second, waitPeriod, true, func(_ context.Context) (bool, error) {
 		if node := getRandomNode(t, cs, pool); isNodeReady(node) {
 			targetNode = node
 			return true, nil
@@ -1479,22 +1480,32 @@ func AssertAllNodesReachExpectedState(t *testing.T, cs *framework.ClientSet, con
 // AssertMCDLogsContain asserts that the MCD pod's logs contains a target string value
 func AssertMCDLogsContain(t *testing.T, cs *framework.ClientSet, mcdPod *corev1.Pod, node *corev1.Node, expectedContents string) {
 	t.Helper()
+
+	mcdLogs := getMCDLogs(t, cs, mcdPod, node)
+
+	assert.Contains(t, mcdLogs, expectedContents, "expected to find '%s' in logs for %s/%s", expectedContents, mcdPod.Namespace, mcdPod.Name)
+}
+
+func getMCDLogs(t *testing.T, cs *framework.ClientSet, mcdPod *corev1.Pod, node *corev1.Node) string {
+	t.Helper()
+
+	ctx := context.Background()
+
 	logs, err := cs.Pods(mcdPod.Namespace).GetLogs(mcdPod.Name, &corev1.PodLogOptions{
 		Container: "machine-config-daemon",
-	}).DoRaw(context.TODO())
-	if err != nil {
-		// common err is that the mcd went down mid cmd. Re-try for good measure
-		mcdPod, err = MCDForNode(cs, node)
-		require.Nil(t, err)
-		logs, err = cs.Pods(mcdPod.Namespace).GetLogs(mcdPod.Name, &corev1.PodLogOptions{
-			Container: "machine-config-daemon",
-		}).DoRaw(context.TODO())
+	}).DoRaw(ctx)
+	if err == nil {
+		return string(logs)
 	}
-	require.Nil(t, err)
 
-	if !strings.Contains(string(logs), expectedContents) {
-		t.Fatalf("expected to find '%s' in logs for %s/%s", expectedContents, mcdPod.Namespace, mcdPod.Name)
-	}
+	// common err is that the mcd went down mid cmd. Re-try for good measure
+	mcdPod, err = MCDForNode(cs, node)
+	require.Nil(t, err)
+	logs, err = cs.Pods(mcdPod.Namespace).GetLogs(mcdPod.Name, &corev1.PodLogOptions{
+		Container: "machine-config-daemon",
+	}).DoRaw(ctx)
+	require.NoError(t, err)
+	return string(logs)
 }
 
 func GetFunctionName(i interface{}) string {
@@ -1521,6 +1532,116 @@ func GetActionApplyConfiguration(action opv1.NodeDisruptionPolicySpecAction) *mc
 		return mcoac.NodeDisruptionPolicySpecAction().WithType(action.Type).WithRestart(restartApplyConfiguration)
 	}
 	return mcoac.NodeDisruptionPolicySpecAction().WithType(action.Type)
+}
+
+// Collects information from a node during a failed test that could be useful
+// for debugging why the test failed.
+// TODO: Wire this up to all of our tests so that we can get this info.
+func CollectDebugInfoFromNode(t *testing.T, cs *framework.ClientSet, node *corev1.Node) {
+	t.Helper()
+
+	name := fmt.Sprintf("%s-%s", SanitizeTestName(t), node.Name)
+	archiveName := fmt.Sprintf("%s.tar.gz", name)
+
+	archive, err := NewArtifactArchive(t, archiveName)
+	require.NoError(t, err)
+
+	execCmdWithErr := func(cmd ...string) string {
+		output, err := ExecCmdOnNodeWithError(cs, *node, cmd...)
+		if err != nil {
+			t.Logf("could not execute command: %s", strings.Join(cmd, " "))
+		}
+		return output
+	}
+
+	listDir := func(name string) string {
+		return execCmdWithErr("ls", "-la", filepath.Join("/rootfs", name))
+	}
+
+	catFileWithErr := func(name string) (string, error) {
+		return ExecCmdOnNodeWithError(cs, *node, "cat", filepath.Join("/rootfs", name))
+	}
+
+	runCmd := func(cmd []string) string {
+		cmd = append([]string{"chroot", "/rootfs"}, cmd...)
+		return execCmdWithErr(cmd...)
+	}
+
+	mcdPod, err := MCDForNode(cs, node)
+	require.NoError(t, err)
+
+	writeFileToArchive := func(path, contents string) {
+		archiveFilename := filepath.Join(archive.StagingDir(), path)
+		require.NoError(t, err, os.MkdirAll(filepath.Dir(archiveFilename), 0o755))
+		require.NoError(t, os.WriteFile(archiveFilename, []byte(contents), 0o755))
+		t.Logf("Wrote %s", archiveFilename)
+	}
+
+	writeNodeFileToArchive := func(path, contents string) {
+		writeFileToArchive(filepath.Join(node.Name, path), contents)
+	}
+
+	itemsToWrite := map[string]string{
+		"ssh-ls.log":                       listDir("/home/core/.ssh"),
+		"etc-mco-ls.log":                   listDir("/etc/mco"),
+		"etc-ls.log":                       listDir("/etc"),
+		"etc-machine-config-daemon-ls.log": listDir("/etc/machine-config-daemon"),
+		"journalctl-listboots.log":         runCmd([]string{"journalctl", "--list-boots"}),
+		"rpm-ostree-status.log":            runCmd([]string{"rpm-ostree", "status"}),
+		"mcd.log":                          getMCDLogs(t, cs, mcdPod, node),
+	}
+
+	for filename, contents := range itemsToWrite {
+		writeFileToArchive(filepath.Join("state", filename), contents)
+	}
+
+	nodeFilesToWrite := []string{
+		"/etc/machine-config-daemon/currentconfig",
+		"/etc/os-release",
+		"/usr/lib/osrelease",
+		constants.RHCOS8SSHKeyPath,
+		constants.RHCOS9SSHKeyPath,
+		"/etc/machine-config-daemon/node-annotation.json.bak",
+		"/etc/ignition-machine-config-encapsulated.json.bak",
+	}
+
+	for _, filename := range nodeFilesToWrite {
+		contents, err := catFileWithErr(filename)
+		if err != nil {
+			t.Logf("could not get file %s from node, skipping", filename)
+			continue
+		}
+		writeNodeFileToArchive(filename, contents)
+	}
+
+	ctx := context.Background()
+
+	updatedNode, err := cs.CoreV1Interface.Nodes().Get(ctx, node.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	mc, err := cs.MachineConfigs().Get(ctx, node.Annotations["machineconfiguration.openshift.io/desiredConfig"], metav1.GetOptions{})
+	require.NoError(t, err)
+
+	mcp, err := cs.MachineConfigPools().Get(ctx, "worker", metav1.GetOptions{})
+	require.NoError(t, err)
+
+	objectsToWrite := map[string]interface{}{
+		"node.yaml":          updatedNode,
+		"machineconfig.yaml": mc,
+		"mcp.yaml":           mcp,
+	}
+
+	for filename, object := range objectsToWrite {
+		out, err := yaml.Marshal(object)
+		require.NoError(t, err)
+		writeFileToArchive(filepath.Join("objects", filename), string(out))
+	}
+
+	// Consider retrieving the MachineConfig contents from the node filesystem
+	// once the circular import between this package (test/helpers) and
+	// ctrlcommon (pkg/controller/common) is resolved.
+
+	require.NoError(t, archive.WriteArchive())
 }
 
 // Sets labels on any object that is created for this test. Includes the name

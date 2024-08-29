@@ -896,9 +896,14 @@ func TestFirstBootHasSSHKeys(t *testing.T) {
 
 	// Scale up our MachineSet to add a new node to target for our test.
 	newNodes, cleanupFunc := helpers.ScaleMachineSetAndWaitForNodesToBeReady(t, cs, machineset.Name, *machineset.Spec.Replicas+1)
-	t.Cleanup(cleanupFunc)
-
 	newNode := newNodes[0]
+	t.Cleanup(func() {
+		if t.Failed() {
+			helpers.CollectDebugInfoFromNode(t, cs, newNode)
+		}
+
+		cleanupFunc()
+	})
 
 	sshKeyFile := "/home/core/.ssh/authorized_keys.d/ignition"
 

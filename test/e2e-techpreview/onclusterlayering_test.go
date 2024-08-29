@@ -4,6 +4,9 @@ import (
 	"context"
 	_ "embed"
 	"flag"
+	"fmt"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -405,6 +408,12 @@ func runOnClusterLayeringTest(t *testing.T, testOpts onClusterLayeringTestOpts) 
 	buildPodWatcherShutdown := makeIdempotentAndRegister(t, buildPodStreamerCancel)
 	defer buildPodWatcherShutdown()
 
+	dirPath, err := helpers.GetBuildArtifactDir(t)
+	require.NoError(t, err)
+
+	podLogsDirPath := filepath.Join(dirPath, "pod-logs")
+	require.NoError(t, os.MkdirAll(podLogsDirPath, 0o755))
+
 	// In the event of a test failure, we want to dump all of the build artifacts
 	// to files for easy reference later.
 	t.Cleanup(func() {
@@ -417,7 +426,7 @@ func runOnClusterLayeringTest(t *testing.T, testOpts onClusterLayeringTestOpts) 
 	// for each container in the build pod. So they must run in a separate
 	// Goroutine so that the rest of the test can continue.
 	go func() {
-		err := streamBuildPodLogsToFile(buildPodStreamerCtx, t, cs, startedBuild)
+		err := streamBuildPodLogsToFile(buildPodStreamerCtx, t, cs, startedBuild, podLogsDirPath)
 		require.NoError(t, err, "expected no error, got %s", err)
 	}()
 
@@ -426,7 +435,7 @@ func runOnClusterLayeringTest(t *testing.T, testOpts onClusterLayeringTestOpts) 
 	// above, we need to run this in a separate Goroutine so that the test is not
 	// blocked.
 	go func() {
-		err := streamMachineOSBuilderPodLogsToFile(mobPodStreamerCtx, t, cs)
+		err := streamMachineOSBuilderPodLogsToFile(mobPodStreamerCtx, t, cs, podLogsDirPath)
 		require.NoError(t, err, "expected no error, got: %s", err)
 	}()
 
@@ -435,7 +444,27 @@ func runOnClusterLayeringTest(t *testing.T, testOpts onClusterLayeringTestOpts) 
 
 	t.Logf("MachineOSBuild %q has completed and produced image: %s", finishedBuild.Name, finishedBuild.Status.FinalImagePushspec)
 
+	require.NoError(t, archiveBuildPodLogs(t, podLogsDirPath))
+
 	return finishedBuild.Status.FinalImagePushspec
+}
+
+func archiveBuildPodLogs(t *testing.T, podLogsDirPath string) error {
+	archiveName := fmt.Sprintf("%s-pod-logs.tar.gz", helpers.SanitizeTestName(t))
+
+	archive, err := helpers.NewArtifactArchive(t, archiveName)
+	if err != nil {
+		return err
+	}
+
+	cmd := exec.Command("mv", podLogsDirPath, archive.StagingDir())
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Logf(string(output))
+		return err
+	}
+
+	return archive.WriteArchive()
 }
 
 // Waits for the build to start and returns the started MachineOSBuild object.
