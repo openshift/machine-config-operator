@@ -25,7 +25,7 @@ contents:
         >&2 echo "NM resolv-prepender: Checking if baremetal runtime cfg image already exists"
         if ! /usr/bin/podman image exists "{{ .Images.baremetalRuntimeCfgImage }}"; then
           >&2 echo "NM resolv-prepender: Starting download of baremetal runtime cfg image"
-          while ! /usr/bin/podman pull --authfile /var/lib/kubelet/config.json "{{ .Images.baremetalRuntimeCfgImage }}"; do sleep 1; done
+          while ! /usr/bin/podman pull --signature-policy /etc/machine-config-daemon/policy-for-old-podman.json --authfile /var/lib/kubelet/config.json "{{ .Images.baremetalRuntimeCfgImage }}"; do sleep 1; done
           >&2 echo "NM resolv-prepender: Download of baremetal runtime cfg image completed"
         else
           >&2 echo "NM resolv-prepender: Image exists, no need to download"
