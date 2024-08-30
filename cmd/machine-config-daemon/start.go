@@ -240,6 +240,25 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 				// see comments in SharedInformerFactory interface.
 				ctrlctx.InformerFactory.Start(stopCh)
 			}
+			if featureGates.Enabled(features.FeatureGateBootcNodeManagement) {
+				klog.Infof("Feature enabled: %s", features.FeatureGateBootcNodeManagement)
+				var nodeBootcClient *daemon.BootcClient
+				//hostos := osrelease.OperatingSystem{}
+				//if hostos.IsCoreOSVariant() {
+				nodeBootcClientVal := daemon.NewNodeBootcClient()
+				nodeBootcClient = &nodeBootcClientVal
+				err := nodeBootcClient.Initialize()
+				if err != nil {
+					klog.Fatalf("error initializing bootc: %w", err)
+				}
+				bootedImageInfo, err := nodeBootcClient.GetBootedImageInfo()
+				if err != nil {
+					klog.Fatalf("error reading osImageURL from bootc: %w", err)
+				}
+				klog.Infof("Booted osImageURL: %s (%s) %s", bootedImageInfo.OSImageURL, bootedImageInfo.ImageVersion, bootedImageInfo.BaseChecksum)
+				dn.NodeBootcClient = nodeBootcClient
+				//}
+			}
 		}
 	case <-time.After(1 * time.Minute):
 		klog.Fatalf("Could not get FG, timed out: %v", err)

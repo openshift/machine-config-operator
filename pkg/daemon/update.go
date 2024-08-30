@@ -2514,7 +2514,7 @@ func (dn *Daemon) InplaceUpdateViaNewContainer(target string) error {
 
 // queueRevertKernelSwap undoes the layering of the RT kernel or kernel-64k hugepages
 func (dn *Daemon) queueRevertKernelSwap() error {
-	booted, _, err := dn.NodeUpdaterClient.GetBootedAndStagedDeployment()
+	booted, _, err := dn.NodeOstreeClient.GetBootedAndStagedDeployment()
 	if err != nil {
 		return err
 	}
@@ -2570,17 +2570,6 @@ func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 }
 
 func (dn *Daemon) updateLayeredOSToPullspec(newURL string) error {
-	newEnough, err := dn.NodeUpdaterClient.IsNewEnoughForLayering()
-	if err != nil {
-		return err
-	}
-	// If the host isn't new enough to understand the new container model natively, run as a privileged container.
-	// See https://github.com/coreos/rpm-ostree/pull/3961 and https://issues.redhat.com/browse/MCO-356
-	// This currently will incur a double reboot; see https://github.com/coreos/rpm-ostree/issues/4018
-	if !newEnough {
-		logSystem("rpm-ostree is not new enough for layering; forcing an update via container")
-		return dn.InplaceUpdateViaNewContainer(newURL)
-	}
 
 	isOsImagePresent := false
 
@@ -2599,16 +2588,34 @@ func (dn *Daemon) updateLayeredOSToPullspec(newURL string) error {
 		}
 	}
 
-	if isOsImagePresent {
-		if err := dn.NodeUpdaterClient.RebaseLayeredFromContainerStorage(newURL); err != nil {
-			return fmt.Errorf("failed to update OS from local storage: %s: %w", newURL, err)
-		}
-	} else {
-		if err := dn.NodeUpdaterClient.RebaseLayered(newURL); err != nil {
+	if dn.NodeBootcClient != nil {
+		klog.Infof("Image update done by bootc switch")
+		if err := dn.NodeBootcClient.Switch(newURL); err != nil {
 			return fmt.Errorf("failed to update OS to %s: %w", newURL, err)
 		}
-	}
+	} else {
+		newEnough, err := dn.NodeOstreeClient.IsNewEnoughForLayering()
+		if err != nil {
+			return err
+		}
+		// If the host isn't new enough to understand the new container model natively, run as a privileged container.
+		// See https://github.com/coreos/rpm-ostree/pull/3961 and https://issues.redhat.com/browse/MCO-356
+		// This currently will incur a double reboot; see https://github.com/coreos/rpm-ostree/issues/4018
+		if !newEnough {
+			logSystem("rpm-ostree is not new enough for layering; forcing an update via container")
+			return dn.InplaceUpdateViaNewContainer(newURL)
+		}
 
+		if isOsImagePresent {
+			if err := dn.NodeOstreeClient.RebaseLayeredFromContainerStorage(newURL); err != nil {
+				return fmt.Errorf("failed to update OS from local storage: %s: %w", newURL, err)
+			}
+		} else {
+			if err := dn.NodeOstreeClient.RebaseLayered(newURL); err != nil {
+				return fmt.Errorf("failed to update OS to %s: %w", newURL, err)
+			}
+		}
+	}
 	return nil
 }
 
