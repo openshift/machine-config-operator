@@ -1,0 +1,7 @@
+apiVersion: admissionregistration.k8s.io/v1beta1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: "custom-machine-config-pool-selector-binding"
+spec:
+  policyName: "custom-machine-config-pool-selector"
+  validationActions: [Deny]

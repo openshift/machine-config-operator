@@ -1,0 +1,40 @@
+apiVersion: admissionregistration.k8s.io/v1beta1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: "custom-machine-config-pool-selector"
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    matchPolicy: Equivalent
+    namespaceSelector: {}
+    objectSelector: {}
+    resourceRules:
+    - apiGroups:   ["machineconfiguration.openshift.io"]
+      apiVersions: ["v1"]
+      operations:  ["CREATE","UPDATE"]
+      resources:   ["machineconfigpools"]
+      scope: "*"
+  validations:
+    - expression:
+        (
+          has(object.spec.machineConfigSelector.matchLabels) &&
+          (
+            (object.spec.machineConfigSelector.matchLabels["machineconfiguration.openshift.io/role"] == "master")
+            ||
+            (object.spec.machineConfigSelector.matchLabels["machineconfiguration.openshift.io/role"] == "worker")
+          )
+        )
+        ||
+        (
+          has(object.spec.machineConfigSelector.matchExpressions) &&
+          (
+            (object.spec.machineConfigSelector.matchExpressions.exists(
+              e, e.key == "machineconfiguration.openshift.io/role" && e.operator == "In" && "worker" in e.values)
+            )
+            ||
+            (object.spec.machineConfigSelector.matchExpressions.exists(
+              e, e.key == "machineconfiguration.openshift.io/role" && e.operator == "NotIn" && !("worker" in e.values))
+            )
+          )
+        )
+      message: "All custom MachineConfigPools must inherit from the worker pool and must have a machineConfigSelector that matches for a 'machineconfiguration.openshift.io/role: worker' label"
