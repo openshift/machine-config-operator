@@ -15,12 +15,15 @@ import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 
+	"github.com/openshift/machine-config-operator/test/fixtures"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	ctrlcommonconfigs "github.com/openshift/machine-config-operator/pkg/controller/common/configs"
+	ctrlcommonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -174,7 +177,7 @@ func TestMCDGetsMachineOSConfigSecrets(t *testing.T) {
 	t.Cleanup(createSecret(t, cs, &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      secretName,
-			Namespace: ctrlcommon.MCONamespace,
+			Namespace: ctrlcommonconsts.MCONamespace,
 		},
 		Type: corev1.SecretTypeDockerConfigJson,
 		Data: map[string][]byte{
@@ -508,7 +511,7 @@ func assertBuildPodIsAsExpected(t *testing.T, cs *framework.ClientSet, mosb *mcf
 	mcoImages, err := getMachineConfigOperatorImages(cs)
 	require.NoError(t, err)
 
-	buildPod, err := cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace).Get(context.TODO(), mosb.Status.BuilderReference.PodImageBuilder.Name, metav1.GetOptions{})
+	buildPod, err := cs.CoreV1Interface.Pods(ctrlcommonconsts.MCONamespace).Get(context.TODO(), mosb.Status.BuilderReference.PodImageBuilder.Name, metav1.GetOptions{})
 	require.NoError(t, err)
 
 	assertContainerIsUsingExpectedImage := func(c corev1.Container, containerName, expectedImage string) {
@@ -525,7 +528,7 @@ func assertBuildPodIsAsExpected(t *testing.T, cs *framework.ClientSet, mosb *mcf
 
 // Gets and parses the Images data from the machine-config-operator-images configmap.
 func getMachineConfigOperatorImages(cs *framework.ClientSet) (*ctrlcommon.Images, error) {
-	cm, err := cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), ctrlcommon.MachineConfigOperatorImagesConfigMapName, metav1.GetOptions{})
+	cm, err := cs.CoreV1Interface.ConfigMaps(ctrlcommonconsts.MCONamespace).Get(context.TODO(), ctrlcommonconsts.MachineConfigOperatorImagesConfigMapName, metav1.GetOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -535,7 +538,7 @@ func getMachineConfigOperatorImages(cs *framework.ClientSet) (*ctrlcommon.Images
 
 // Gets and parses the OSImageURL data from the machine-config-osimageurl configmap.
 func getMachineConfigOSImageURL(cs *framework.ClientSet) (*ctrlcommon.OSImageURLConfig, error) {
-	cm, err := cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), ctrlcommon.MachineConfigOSImageURLConfigMapName, metav1.GetOptions{})
+	cm, err := cs.CoreV1Interface.ConfigMaps(ctrlcommonconsts.MCONamespace).Get(context.TODO(), ctrlcommonconsts.MachineConfigOSImageURLConfigMapName, metav1.GetOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -651,7 +654,7 @@ func TestSSHKeyAndPasswordForOSBuilder(t *testing.T) {
 	})
 
 	// Set up Ignition config with the desired SSH key and password
-	testIgnConfig := ctrlcommon.NewIgnConfig()
+	testIgnConfig := ctrlcommonconfigs.NewIgnConfig()
 	sshKeyContent := "testsshkey11"
 	passwordHash := "testpassword11"
 
@@ -673,7 +676,7 @@ func TestSSHKeyAndPasswordForOSBuilder(t *testing.T) {
 		},
 		Spec: mcfgv1.MachineConfigSpec{
 			Config: runtime.RawExtension{
-				Raw: helpers.MarshalOrDie(testIgnConfig),
+				Raw: fixtures.MarshalOrDie(testIgnConfig),
 			},
 		},
 	}

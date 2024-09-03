@@ -17,7 +17,7 @@ import (
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	ctrlcommonconfigs "github.com/openshift/machine-config-operator/pkg/controller/common/configs"
 )
 
 func TestMain(m *testing.M) {
@@ -277,7 +277,7 @@ func TestGenerateMachineConfigs(t *testing.T) {
 				t.Fatal("role label missing")
 			}
 
-			ign, err := ctrlcommon.ParseAndConvertConfig(cfg.Spec.Config.Raw)
+			ign, err := ctrlcommonconfigs.ParseAndConvertConfig(cfg.Spec.Config.Raw)
 			if err != nil {
 				t.Errorf("Failed to parse Ignition config for %s, %s, error: %v", config, cfg.Name, err)
 			}

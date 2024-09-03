@@ -12,6 +12,7 @@ import (
 
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	ctrlcommonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	corev1 "k8s.io/api/core/v1"
 	apiextclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
@@ -204,10 +205,10 @@ func New(
 		configClient:  configClient,
 		mcopClient:    mcopClient,
 		eventRecorder: ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigoperator"})),
-		libgoRecorder: events.NewRecorder(kubeClient.CoreV1().Events(ctrlcommon.MCONamespace), "machine-config-operator", &corev1.ObjectReference{
+		libgoRecorder: events.NewRecorder(kubeClient.CoreV1().Events(ctrlcommonconsts.MCONamespace), "machine-config-operator", &corev1.ObjectReference{
 			Kind:       "Deployment",
 			Name:       "machine-config-operator",
-			Namespace:  ctrlcommon.MCONamespace,
+			Namespace:  ctrlcommonconsts.MCONamespace,
 			APIVersion: "apps/v1",
 		}),
 		queue:      workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigoperator"),

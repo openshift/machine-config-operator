@@ -48,6 +48,8 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	"github.com/openshift/machine-config-operator/pkg/controller/build"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	ctrlcommonconfigs "github.com/openshift/machine-config-operator/pkg/controller/common/configs"
+	ctrlcommonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	templatectrl "github.com/openshift/machine-config-operator/pkg/controller/template"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/helpers"
@@ -606,7 +608,7 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 		return err
 	}
 
-	pointerConfig, err := ctrlcommon.PointerConfig(ignitionHost, rootCA)
+	pointerConfig, err := ctrlcommonconfigs.PointerConfig(ignitionHost, rootCA)
 	if err != nil {
 		return err
 	}
@@ -978,7 +980,7 @@ func (optr *Operator) safetySyncControllerConfig(config *renderConfig) error {
 	klog.Infof("Performing safety controllerconfig sync")
 
 	// If we have an existing controllerconfig, we might be able to keep rendering
-	existingCc, err := optr.ccLister.Get(ctrlcommon.ControllerConfigName)
+	existingCc, err := optr.ccLister.Get(ctrlcommonconsts.ControllerConfigName)
 	if err != nil {
 		return err
 	}
@@ -1025,7 +1027,7 @@ func (optr *Operator) syncControllerConfig(config *renderConfig) error {
 					Name: "kubeconfig-data",
 				},
 			}
-			mcoCM, getErr := optr.kubeClient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), "kubeconfig-data", metav1.GetOptions{})
+			mcoCM, getErr := optr.kubeClient.CoreV1().ConfigMaps(ctrlcommonconsts.MCONamespace).Get(context.TODO(), "kubeconfig-data", metav1.GetOptions{})
 			if getErr != nil {
 				klog.Errorf("Issue getting the kubeconfig-data configmap: %v", getErr)
 				if !apierrors.IsNotFound(getErr) && !apierrors.IsTimeout(getErr) && !apierrors.IsServerTimeout(getErr) {
@@ -1085,7 +1087,7 @@ func (optr *Operator) syncControllerConfig(config *renderConfig) error {
 				if err != nil {
 					return fmt.Errorf("Could not create a three way json merge patch: %w", err)
 				}
-				_, err = optr.kubeClient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Patch(context.TODO(), "kubeconfig-data", types.MergePatchType, patchBytes, metav1.PatchOptions{})
+				_, err = optr.kubeClient.CoreV1().ConfigMaps(ctrlcommonconsts.MCONamespace).Patch(context.TODO(), "kubeconfig-data", types.MergePatchType, patchBytes, metav1.PatchOptions{})
 				if err != nil {
 					return fmt.Errorf("Could not patch kubeconfig-data with data %s: %w", string(patchBytes), err)
 				}
@@ -1094,7 +1096,7 @@ func (optr *Operator) syncControllerConfig(config *renderConfig) error {
 				binData := make(map[string][]byte)
 				binData["ca-bundle.crt"] = data
 				cmNew.BinaryData = binData
-				_, err := optr.kubeClient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Create(context.TODO(), &cmNew, metav1.CreateOptions{})
+				_, err := optr.kubeClient.CoreV1().ConfigMaps(ctrlcommonconsts.MCONamespace).Create(context.TODO(), &cmNew, metav1.CreateOptions{})
 				if err != nil {
 					return fmt.Errorf("Could not make kubeconfig-data CM, %v", err)
 				}
@@ -1105,14 +1107,14 @@ func (optr *Operator) syncControllerConfig(config *renderConfig) error {
 	}
 	cc.Annotations[daemonconsts.GeneratedByVersionAnnotationKey] = version.Raw
 	if editCCAnno {
-		cc.Annotations[ctrlcommon.ServiceCARotateAnnotation] = ctrlcommon.ServiceCARotateTrue
+		cc.Annotations[ctrlcommonconsts.ServiceCARotateAnnotation] = ctrlcommonconsts.ServiceCARotateTrue
 	} else {
-		cc.Annotations[ctrlcommon.ServiceCARotateAnnotation] = ctrlcommon.ServiceCARotateFalse
+		cc.Annotations[ctrlcommonconsts.ServiceCARotateAnnotation] = ctrlcommonconsts.ServiceCARotateFalse
 	}
 	// add ocp release version as annotation to controller config, for use when
 	// annotating rendered configs with same.
 	optrVersion, _ := optr.vStore.Get("operator")
-	cc.Annotations[ctrlcommon.ReleaseImageVersionAnnotationKey] = optrVersion
+	cc.Annotations[ctrlcommonconsts.ReleaseImageVersionAnnotationKey] = optrVersion
 
 	_, _, err = mcoResourceApply.ApplyControllerConfig(optr.client.MachineconfigurationV1(), cc)
 	if err != nil {
@@ -1309,12 +1311,12 @@ func (optr *Operator) validateLayeredPoolNodes(layeredMCPs []*mcfgv1.MachineConf
 
 // Delete the Machine OS Builder Deployment
 func (optr *Operator) stopMachineOSBuilderDeployment(name string) error {
-	return optr.kubeClient.AppsV1().Deployments(ctrlcommon.MCONamespace).Delete(context.TODO(), name, metav1.DeleteOptions{})
+	return optr.kubeClient.AppsV1().Deployments(ctrlcommonconsts.MCONamespace).Delete(context.TODO(), name, metav1.DeleteOptions{})
 }
 
 // Determines if the Machine OS Builder has the correct replica count.
 func (optr *Operator) hasCorrectReplicaCount(mob *appsv1.Deployment) bool {
-	apiMob, err := optr.deployLister.Deployments(ctrlcommon.MCONamespace).Get(mob.Name)
+	apiMob, err := optr.deployLister.Deployments(ctrlcommonconsts.MCONamespace).Get(mob.Name)
 	if err == nil && *apiMob.Spec.Replicas == 1 {
 		return true
 	}
@@ -1338,7 +1340,7 @@ func (optr *Operator) updateMachineOSBuilderDeployment(mob *appsv1.Deployment, r
 		},
 	}
 
-	_, err = optr.kubeClient.AppsV1().Deployments(ctrlcommon.MCONamespace).UpdateScale(context.TODO(), mob.Name, scale, metav1.UpdateOptions{})
+	_, err = optr.kubeClient.AppsV1().Deployments(ctrlcommonconsts.MCONamespace).UpdateScale(context.TODO(), mob.Name, scale, metav1.UpdateOptions{})
 	if err != nil {
 		return fmt.Errorf("could not scale Machine OS Builder: %w", err)
 	}
@@ -1356,7 +1358,7 @@ func (optr *Operator) updateMachineOSBuilderDeployment(mob *appsv1.Deployment, r
 // we have. If an error is encountered, it is assumed that no Deployments are
 // running.
 func (optr *Operator) isMachineOSBuilderRunning(mob *appsv1.Deployment) (bool, error) {
-	apiMob, err := optr.deployLister.Deployments(ctrlcommon.MCONamespace).Get(mob.Name)
+	apiMob, err := optr.deployLister.Deployments(ctrlcommonconsts.MCONamespace).Get(mob.Name)
 
 	if err == nil && *apiMob.Spec.Replicas != 0 {
 		return true, nil
@@ -1390,9 +1392,9 @@ func (optr *Operator) startMachineOSBuilderDeployment(mob *appsv1.Deployment, la
 // Returns an empty list if none have opted in.
 func (optr *Operator) getLayeredMachineConfigPools() ([]*mcfgv1.MachineConfigPool, error) {
 	// TODO: Once https://github.com/openshift/machine-config-operator/pull/3731
-	// lands, change this to consume ctrlcommon.LayeringEnabledPoolLabel instead
+	// lands, change this to consume ctrlcommonconsts.LayeringEnabledPoolLabel instead
 	// of having this hard-coded here.
-	requirement, err := labels.NewRequirement(ctrlcommon.LayeringEnabledPoolLabel, selection.Exists, []string{})
+	requirement, err := labels.NewRequirement(ctrlcommonconsts.LayeringEnabledPoolLabel, selection.Exists, []string{})
 	if err != nil {
 		return []*mcfgv1.MachineConfigPool{}, err
 	}
@@ -1769,7 +1771,7 @@ func (optr *Operator) waitForControllerConfigToBeCompleted(resource *mcfgv1.Cont
 
 // getOsImageURLs returns (new type, new extensions, old type) for operating system update images.
 func (optr *Operator) getOsImageURLs(namespace string) (string, string, error) {
-	cm, err := optr.mcoCmLister.ConfigMaps(namespace).Get(ctrlcommon.MachineConfigOSImageURLConfigMapName)
+	cm, err := optr.mcoCmLister.ConfigMaps(namespace).Get(ctrlcommonconsts.MachineConfigOSImageURLConfigMapName)
 	if err != nil {
 		return "", "", err
 	}
@@ -1807,12 +1809,12 @@ func (optr *Operator) stampBootImagesCM(pool *mcfgv1.MachineConfigPool) error {
 	if err != nil {
 		return fmt.Errorf("failed to grab rendered MC %s, error: %w", pool.Spec.Configuration.Name, err)
 	}
-	if renderedMC.Annotations[ctrlcommon.ReleaseImageVersionAnnotationKey] != version.ReleaseVersion {
-		klog.V(4).Infof("rendered MC release version %s mismatch with operator release version %s", renderedMC.Annotations[ctrlcommon.ReleaseImageVersionAnnotationKey], version.ReleaseVersion)
+	if renderedMC.Annotations[ctrlcommonconsts.ReleaseImageVersionAnnotationKey] != version.ReleaseVersion {
+		klog.V(4).Infof("rendered MC release version %s mismatch with operator release version %s", renderedMC.Annotations[ctrlcommonconsts.ReleaseImageVersionAnnotationKey], version.ReleaseVersion)
 		return nil
 	}
-	if renderedMC.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey] != version.Hash {
-		klog.V(4).Infof("rendered MC commit hash %s mismatch with operator release commit hash %s", renderedMC.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey], version.Hash)
+	if renderedMC.Annotations[ctrlcommonconsts.GeneratedByControllerVersionAnnotationKey] != version.Hash {
+		klog.V(4).Infof("rendered MC commit hash %s mismatch with operator release commit hash %s", renderedMC.Annotations[ctrlcommonconsts.GeneratedByControllerVersionAnnotationKey], version.Hash)
 		return nil
 	}
 
@@ -1820,12 +1822,12 @@ func (optr *Operator) stampBootImagesCM(pool *mcfgv1.MachineConfigPool) error {
 	// to ensure we are not checking an older "Updated" condition and the MCP fields haven't caught up yet
 	if (apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolUpdating) && pool.Status.UpdatedMachineCount > 0) ||
 		(apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolUpdated) && (pool.Spec.Configuration.Name == pool.Status.Configuration.Name)) {
-		cm, err := optr.clusterCmLister.ConfigMaps(ctrlcommon.MCONamespace).Get(ctrlcommon.BootImagesConfigMapName)
+		cm, err := optr.clusterCmLister.ConfigMaps(ctrlcommonconsts.MCONamespace).Get(ctrlcommonconsts.BootImagesConfigMapName)
 		if err != nil {
 			return fmt.Errorf("failed to grab boot images configmap: %w", err)
 		}
-		storedVersionHashFromCM, storedVersionHashFound := cm.Data[ctrlcommon.MCOVersionHashKey]
-		releaseVersionFromCM, releaseVersionFound := cm.Data[ctrlcommon.MCOReleaseImageVersionKey]
+		storedVersionHashFromCM, storedVersionHashFound := cm.Data[ctrlcommonconsts.MCOVersionHashKey]
+		releaseVersionFromCM, releaseVersionFound := cm.Data[ctrlcommonconsts.MCOReleaseImageVersionKey]
 
 		if storedVersionHashFound && releaseVersionFound {
 			// No need to update if the existing versions are a match, exit
@@ -1835,11 +1837,11 @@ func (optr *Operator) stampBootImagesCM(pool *mcfgv1.MachineConfigPool) error {
 		}
 
 		// Stamp the configmap with newest commit hash and OCP release version
-		cm.Data[ctrlcommon.MCOVersionHashKey] = version.Hash
-		cm.Data[ctrlcommon.MCOReleaseImageVersionKey] = version.ReleaseVersion
+		cm.Data[ctrlcommonconsts.MCOVersionHashKey] = version.Hash
+		cm.Data[ctrlcommonconsts.MCOReleaseImageVersionKey] = version.ReleaseVersion
 
 		// Update the ConfigMap
-		_, err = optr.kubeClient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Update(context.TODO(), cm, metav1.UpdateOptions{})
+		_, err = optr.kubeClient.CoreV1().ConfigMaps(ctrlcommonconsts.MCONamespace).Update(context.TODO(), cm, metav1.UpdateOptions{})
 		if err != nil {
 			return fmt.Errorf("failed to update bootimages configmap %w", err)
 		}
@@ -1897,7 +1899,7 @@ func (optr *Operator) getGlobalConfig() (*configv1.Infrastructure, *configv1.Net
 	if err != nil && !apierrors.IsNotFound(err) {
 		return nil, nil, nil, nil, nil, err
 	}
-	apiServer, err := optr.apiserverLister.Get(ctrlcommon.APIServerInstanceName)
+	apiServer, err := optr.apiserverLister.Get(ctrlcommonconsts.APIServerInstanceName)
 	if err != nil && !apierrors.IsNotFound(err) {
 		return nil, nil, nil, nil, nil, err
 	}
@@ -2105,14 +2107,14 @@ func cmToData(cm *corev1.ConfigMap, key string) ([]byte, error) {
 func (optr *Operator) syncMachineConfiguration(_ *renderConfig, _ *configv1.ClusterOperator) error {
 
 	// Grab the cluster CR
-	mcop, err := optr.mcopLister.Get(ctrlcommon.MCOOperatorKnobsObjectName)
+	mcop, err := optr.mcopLister.Get(ctrlcommonconsts.MCOOperatorKnobsObjectName)
 	if err != nil {
 		// Create one if it doesn't exist
 		if apierrors.IsNotFound(err) {
 			klog.Info("MachineConfiguration object doesn't exist; a new one will be created")
 			// Using server-side apply here as the NodeDisruption API has a rule technicality which prevents apply using a template manifest like the MCO typically does
 			// [spec.nodeDisruptionPolicy.sshkey.actions: Required value, <nil>: Invalid value: "null"]
-			p := mcoac.MachineConfiguration(ctrlcommon.MCOOperatorKnobsObjectName).WithSpec(mcoac.MachineConfigurationSpec().WithManagementState("Managed"))
+			p := mcoac.MachineConfiguration(ctrlcommonconsts.MCOOperatorKnobsObjectName).WithSpec(mcoac.MachineConfigurationSpec().WithManagementState("Managed"))
 			_, err := optr.mcopClient.OperatorV1().MachineConfigurations().Apply(context.TODO(), p, metav1.ApplyOptions{FieldManager: "machine-config-operator"})
 			if err != nil {
 				klog.Infof("applying mco object failed: %s", err)
@@ -2121,7 +2123,7 @@ func (optr *Operator) syncMachineConfiguration(_ *renderConfig, _ *configv1.Clus
 			// This causes a re-sync and allows the cache for the lister to refresh.
 			return nil
 		}
-		return fmt.Errorf("grabbing MachineConfiguration/%s CR failed: %v", ctrlcommon.MCOOperatorKnobsObjectName, err)
+		return fmt.Errorf("grabbing MachineConfiguration/%s CR failed: %v", ctrlcommonconsts.MCOOperatorKnobsObjectName, err)
 	}
 
 	fg, err := optr.fgAccessor.CurrentFeatureGates()

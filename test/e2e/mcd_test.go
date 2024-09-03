@@ -20,6 +20,7 @@ import (
 	"k8s.io/client-go/util/retry"
 
 	e2eShared "github.com/openshift/machine-config-operator/test/e2e-shared-tests"
+	"github.com/openshift/machine-config-operator/test/helpers"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
 
@@ -27,9 +28,11 @@ import (
 	machineclientset "github.com/openshift/client-go/machine/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	ctrlcommonconfigs "github.com/openshift/machine-config-operator/pkg/controller/common/configs"
+	ctrlcommonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
+	"github.com/openshift/machine-config-operator/test/fixtures"
 	"github.com/openshift/machine-config-operator/test/framework"
-	"github.com/openshift/machine-config-operator/test/helpers"
 )
 
 // Test case for https://github.com/openshift/machine-config-operator/issues/358
@@ -40,7 +43,7 @@ func TestMCDToken(t *testing.T) {
 		LabelSelector: labels.SelectorFromSet(labels.Set{"k8s-app": "machine-config-daemon"}).String(),
 	}
 
-	mcdList, err := cs.Pods(ctrlcommon.MCONamespace).List(context.TODO(), listOptions)
+	mcdList, err := cs.Pods(ctrlcommonconsts.MCONamespace).List(context.TODO(), listOptions)
 	require.Nil(t, err)
 
 	for _, pod := range mcdList.Items {
@@ -141,7 +144,7 @@ func TestKernelArguments(t *testing.T) {
 		},
 		Spec: mcfgv1.MachineConfigSpec{
 			Config: runtime.RawExtension{
-				Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
+				Raw: fixtures.MarshalOrDie(ctrlcommonconfigs.NewIgnConfig()),
 			},
 			KernelArguments: []string{"nosmt", "foo=bar", "foo=baz", " baz=test bar=hello world"},
 		},
@@ -231,7 +234,7 @@ func TestKernelType(t *testing.T) {
 		},
 		Spec: mcfgv1.MachineConfigSpec{
 			Config: runtime.RawExtension{
-				Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
+				Raw: fixtures.MarshalOrDie(ctrlcommonconfigs.NewIgnConfig()),
 			},
 			KernelType: "realtime",
 		},
@@ -329,7 +332,7 @@ func TestExtensions(t *testing.T) {
 		},
 		Spec: mcfgv1.MachineConfigSpec{
 			Config: runtime.RawExtension{
-				Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
+				Raw: fixtures.MarshalOrDie(ctrlcommonconfigs.NewIgnConfig()),
 			},
 			Extensions: []string{"wasm", "ipsec", "usbguard", "kerberos", "kernel-devel", "sandboxed-containers"},
 		},
@@ -473,7 +476,7 @@ func TestNoReboot(t *testing.T) {
 	initialEtcShadowContents := helpers.ExecCmdOnNode(t, cs, infraNode, "grep", "^core:", "/rootfs/etc/shadow")
 
 	// Adding authorized key for user core
-	testIgnConfig := ctrlcommon.NewIgnConfig()
+	testIgnConfig := ctrlcommonconfigs.NewIgnConfig()
 	testPasswdHash := "testpass"
 
 	testIgnConfig.Passwd.Users = []ign3types.PasswdUser{
@@ -491,7 +494,7 @@ func TestNoReboot(t *testing.T) {
 		},
 		Spec: mcfgv1.MachineConfigSpec{
 			Config: runtime.RawExtension{
-				Raw: helpers.MarshalOrDie(testIgnConfig),
+				Raw: fixtures.MarshalOrDie(testIgnConfig),
 			},
 		},
 	}
@@ -620,10 +623,10 @@ func TestPoolDegradedOnFailToRender(t *testing.T) {
 	cs := framework.NewClientSet("")
 
 	mcadd := createMCToAddFile("add-a-file", "/etc/mytestconfs", "test")
-	ignCfg, err := ctrlcommon.ParseAndConvertConfig(mcadd.Spec.Config.Raw)
+	ignCfg, err := ctrlcommonconfigs.ParseAndConvertConfig(mcadd.Spec.Config.Raw)
 	require.Nil(t, err, "failed to parse ignition config")
 	ignCfg.Ignition.Version = "" // invalid, won't render
-	rawIgnCfg := helpers.MarshalOrDie(ignCfg)
+	rawIgnCfg := fixtures.MarshalOrDie(ignCfg)
 	mcadd.Spec.Config.Raw = rawIgnCfg
 
 	// create the dummy MC now
@@ -774,7 +777,7 @@ func TestIgn3Cfg(t *testing.T) {
 	tempFile := ign3types.File{Node: ign3types.Node{Path: "/etc/testfileconfig"},
 		FileEmbedded1: ign3types.FileEmbedded1{Contents: ign3types.Resource{Source: &testfiledata}, Mode: &mode}}
 	testIgn3Config.Storage.Files = append(testIgn3Config.Storage.Files, tempFile)
-	rawIgnConfig := helpers.MarshalOrDie(testIgn3Config)
+	rawIgnConfig := fixtures.MarshalOrDie(testIgn3Config)
 	mcadd.Spec.Config.Raw = rawIgnConfig
 
 	_, err := cs.MachineConfigs().Create(context.TODO(), mcadd, metav1.CreateOptions{})
@@ -916,10 +919,10 @@ func TestFirstBootHasSSHKeys(t *testing.T) {
 func createMCToAddFileForRole(name, role, filename, data string) *mcfgv1.MachineConfig {
 	mcadd := helpers.CreateMC(fmt.Sprintf("%s-%s", name, uuid.NewUUID()), role)
 
-	ignConfig := ctrlcommon.NewIgnConfig()
-	ignFile := helpers.CreateIgn3File(filename, "data:,"+data, 420)
+	ignConfig := ctrlcommonconfigs.NewIgnConfig()
+	ignFile := fixtures.CreateIgn3File(filename, "data:,"+data, 420)
 	ignConfig.Storage.Files = append(ignConfig.Storage.Files, ignFile)
-	rawIgnConfig := helpers.MarshalOrDie(ignConfig)
+	rawIgnConfig := fixtures.MarshalOrDie(ignConfig)
 	mcadd.Spec.Config.Raw = rawIgnConfig
 	return mcadd
 }
@@ -1013,7 +1016,7 @@ func setupForInternalImageRegistryPullSecretTest(t *testing.T, cs *framework.Cli
 	secretName := strings.ReplaceAll(imageRegistryHostname, ".", "-")
 
 	auths := map[string]ctrlcommon.DockerConfigEntry{
-		imageRegistryHostname: ctrlcommon.DockerConfigEntry{
+		imageRegistryHostname: {
 			Username: "user",
 			Password: "secret",
 			Email:    "user@hostname.com",
@@ -1027,7 +1030,7 @@ func setupForInternalImageRegistryPullSecretTest(t *testing.T, cs *framework.Cli
 	newSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      secretName,
-			Namespace: ctrlcommon.MCONamespace,
+			Namespace: ctrlcommonconsts.MCONamespace,
 		},
 		Type: corev1.SecretTypeDockercfg,
 		Data: map[string][]byte{
@@ -1035,11 +1038,11 @@ func setupForInternalImageRegistryPullSecretTest(t *testing.T, cs *framework.Cli
 		},
 	}
 
-	_, err = cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace).Create(context.TODO(), newSecret, metav1.CreateOptions{})
+	_, err = cs.CoreV1Interface.Secrets(ctrlcommonconsts.MCONamespace).Create(context.TODO(), newSecret, metav1.CreateOptions{})
 	require.NoError(t, err)
 
 	err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		sa, err := cs.CoreV1Interface.ServiceAccounts(ctrlcommon.MCONamespace).Get(context.TODO(), serviceAccountName, metav1.GetOptions{})
+		sa, err := cs.CoreV1Interface.ServiceAccounts(ctrlcommonconsts.MCONamespace).Get(context.TODO(), serviceAccountName, metav1.GetOptions{})
 		if err != nil {
 			return err
 		}
@@ -1048,7 +1051,7 @@ func setupForInternalImageRegistryPullSecretTest(t *testing.T, cs *framework.Cli
 			Name: secretName,
 		})
 
-		_, err = cs.CoreV1Interface.ServiceAccounts(ctrlcommon.MCONamespace).Update(context.TODO(), sa, metav1.UpdateOptions{})
+		_, err = cs.CoreV1Interface.ServiceAccounts(ctrlcommonconsts.MCONamespace).Update(context.TODO(), sa, metav1.UpdateOptions{})
 		return err
 	})
 
@@ -1058,7 +1061,7 @@ func setupForInternalImageRegistryPullSecretTest(t *testing.T, cs *framework.Cli
 
 	return helpers.MakeIdempotent(func() {
 		err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-			sa, err := cs.CoreV1Interface.ServiceAccounts(ctrlcommon.MCONamespace).Get(context.TODO(), serviceAccountName, metav1.GetOptions{})
+			sa, err := cs.CoreV1Interface.ServiceAccounts(ctrlcommonconsts.MCONamespace).Get(context.TODO(), serviceAccountName, metav1.GetOptions{})
 			if err != nil {
 				return err
 			}
@@ -1073,13 +1076,13 @@ func setupForInternalImageRegistryPullSecretTest(t *testing.T, cs *framework.Cli
 
 			sa.ImagePullSecrets = refs
 
-			_, err = cs.CoreV1Interface.ServiceAccounts(ctrlcommon.MCONamespace).Update(context.TODO(), sa, metav1.UpdateOptions{})
+			_, err = cs.CoreV1Interface.ServiceAccounts(ctrlcommonconsts.MCONamespace).Update(context.TODO(), sa, metav1.UpdateOptions{})
 			return err
 		})
 
 		require.NoError(t, err)
 
-		require.NoError(t, cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace).Delete(context.TODO(), secretName, metav1.DeleteOptions{}))
+		require.NoError(t, cs.CoreV1Interface.Secrets(ctrlcommonconsts.MCONamespace).Delete(context.TODO(), secretName, metav1.DeleteOptions{}))
 
 		t.Logf("Removed secret %s with hostname %s from %s service account", secretName, imageRegistryHostname, serviceAccountName)
 	})

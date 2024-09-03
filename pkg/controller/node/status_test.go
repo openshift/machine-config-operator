@@ -13,6 +13,7 @@ import (
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
+	"github.com/openshift/machine-config-operator/test/fixtures"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
@@ -62,7 +63,7 @@ func TestIsNodeReady(t *testing.T) {
 }
 
 func newLayeredNode(name string, currentConfig, desiredConfig, currentImage, desiredImage string) *corev1.Node {
-	nb := helpers.NewNodeBuilder(name)
+	nb := fixtures.NewNodeBuilder(name)
 	nb.WithCurrentConfig(currentConfig)
 	nb.WithDesiredConfig(desiredConfig)
 	nb.WithCurrentImage(currentImage)
@@ -71,22 +72,22 @@ func newLayeredNode(name string, currentConfig, desiredConfig, currentImage, des
 }
 
 func newNode(name string, currentConfig, desiredConfig string) *corev1.Node {
-	nb := helpers.NewNodeBuilder(name)
+	nb := fixtures.NewNodeBuilder(name)
 	nb.WithCurrentConfig(currentConfig)
 	nb.WithDesiredConfig(desiredConfig)
 	return nb.Node()
 }
 
 func newNodeWithLabels(name string, labels map[string]string) *corev1.Node {
-	return helpers.NewNodeBuilder(name).WithLabels(labels).Node()
+	return fixtures.NewNodeBuilder(name).WithLabels(labels).Node()
 }
 
 func newNodeWithAnnotations(name string, annotations map[string]string) *corev1.Node {
-	return helpers.NewNodeBuilder(name).WithAnnotations(annotations).Node()
+	return fixtures.NewNodeBuilder(name).WithAnnotations(annotations).Node()
 }
 
 func newLayeredNodeWithLabel(name string, currentConfig, desiredConfig, currentImage, desiredImage string, labels map[string]string) *corev1.Node {
-	nb := helpers.NewNodeBuilder(name)
+	nb := fixtures.NewNodeBuilder(name)
 	nb.WithCurrentConfig(currentConfig)
 	nb.WithDesiredConfig(desiredConfig)
 	nb.WithCurrentImage(currentImage)
@@ -96,7 +97,7 @@ func newLayeredNodeWithLabel(name string, currentConfig, desiredConfig, currentI
 }
 
 func newNodeWithLabel(name string, currentConfig, desiredConfig string, labels map[string]string) *corev1.Node {
-	nb := helpers.NewNodeBuilder(name)
+	nb := fixtures.NewNodeBuilder(name)
 	nb.WithCurrentConfig(currentConfig)
 	nb.WithDesiredConfig(desiredConfig)
 	nb.WithLabels(labels)
@@ -104,7 +105,7 @@ func newNodeWithLabel(name string, currentConfig, desiredConfig string, labels m
 }
 
 func newLayeredNodeWithReady(name string, currentConfig, desiredConfig, currentImage, desiredImage string, status corev1.ConditionStatus) *corev1.Node {
-	nb := helpers.NewNodeBuilder(name)
+	nb := fixtures.NewNodeBuilder(name)
 	nb.WithCurrentConfig(currentConfig)
 	nb.WithDesiredConfig(desiredConfig)
 	nb.WithCurrentImage(currentImage)
@@ -114,7 +115,7 @@ func newLayeredNodeWithReady(name string, currentConfig, desiredConfig, currentI
 }
 
 func newNodeWithReady(name string, currentConfig, desiredConfig string, status corev1.ConditionStatus) *corev1.Node {
-	nb := helpers.NewNodeBuilder(name)
+	nb := fixtures.NewNodeBuilder(name)
 	nb.WithCurrentConfig(currentConfig)
 	nb.WithDesiredConfig(desiredConfig)
 	nb.WithStatus(corev1.NodeStatus{Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: status}}})
@@ -122,14 +123,14 @@ func newNodeWithReady(name string, currentConfig, desiredConfig string, status c
 }
 
 func newNodeWithDaemonState(name string, currentConfig, desiredConfig, dstate string) *corev1.Node {
-	nb := helpers.NewNodeBuilder(name)
+	nb := fixtures.NewNodeBuilder(name)
 	nb.WithConfigs(currentConfig, desiredConfig)
 	nb.WithMCDState(dstate)
 	return nb.Node()
 }
 
 func newNodeWithReadyAndDaemonState(name string, currentConfig, desiredConfig string, status corev1.ConditionStatus, dstate string) *corev1.Node {
-	nb := helpers.NewNodeBuilder(name)
+	nb := fixtures.NewNodeBuilder(name)
 	nb.WithCurrentConfig(currentConfig)
 	nb.WithDesiredConfig(desiredConfig)
 	nb.WithStatus(corev1.NodeStatus{Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: status}}})
@@ -267,7 +268,7 @@ func TestGetUpdatedMachines(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			poolBuilder := helpers.NewMachineConfigPoolBuilder("").WithMachineConfig(test.currentConfig)
+			poolBuilder := fixtures.NewMachineConfigPoolBuilder("").WithMachineConfig(test.currentConfig)
 			if test.layeredPool {
 				poolBuilder.WithLayeringEnabled()
 			}
@@ -392,7 +393,7 @@ func TestGetReadyMachines(t *testing.T) {
 			t.Parallel()
 
 			// If we declare a current image for our pool, the pool must be layered.
-			poolBuilder := helpers.NewMachineConfigPoolBuilder("").WithMachineConfig(test.currentConfig)
+			poolBuilder := fixtures.NewMachineConfigPoolBuilder("").WithMachineConfig(test.currentConfig)
 			if test.currentImage != "" {
 				poolBuilder.WithImage(test.currentImage)
 			}
@@ -478,42 +479,42 @@ func TestGetUnavailableMachines(t *testing.T) {
 	}, {
 		name: "1 layered node updated, 1 updating, but one updated node is NotReady",
 		nodes: []*corev1.Node{
-			helpers.NewNodeBuilder("node-0").WithConfigs(machineConfigV0, machineConfigV1).WithImages(imageV0, imageV1).Node(),
-			helpers.NewNodeBuilder("node-1").WithEqualConfigsAndImages(machineConfigV1, imageV1).Node(),
-			helpers.NewNodeBuilder("node-2").WithEqualConfigsAndImages(machineConfigV1, imageV1).WithNodeNotReady().Node(),
+			fixtures.NewNodeBuilder("node-0").WithConfigs(machineConfigV0, machineConfigV1).WithImages(imageV0, imageV1).Node(),
+			fixtures.NewNodeBuilder("node-1").WithEqualConfigsAndImages(machineConfigV1, imageV1).Node(),
+			fixtures.NewNodeBuilder("node-2").WithEqualConfigsAndImages(machineConfigV1, imageV1).WithNodeNotReady().Node(),
 		},
 		unavail:              []string{"node-0", "node-2"},
 		layeredPoolWithImage: true,
 	}, {
 		name: "Mismatched unlayered node and layered pool with image available",
 		nodes: []*corev1.Node{
-			helpers.NewNodeBuilder("node-0").WithConfigs(machineConfigV0, machineConfigV1).WithImages(imageV0, imageV1).Node(),
-			helpers.NewNodeBuilder("node-1").WithEqualConfigsAndImages(machineConfigV1, imageV1).Node(),
-			helpers.NewNodeBuilder("node-2").WithEqualConfigsAndImages(machineConfigV1, imageV1).WithNodeNotReady().Node(),
-			helpers.NewNodeBuilder("node-3").WithEqualConfigs(machineConfigV0).WithNodeNotReady().Node(),
-			helpers.NewNodeBuilder("node-4").WithEqualConfigs(machineConfigV0).WithNodeReady().Node(),
+			fixtures.NewNodeBuilder("node-0").WithConfigs(machineConfigV0, machineConfigV1).WithImages(imageV0, imageV1).Node(),
+			fixtures.NewNodeBuilder("node-1").WithEqualConfigsAndImages(machineConfigV1, imageV1).Node(),
+			fixtures.NewNodeBuilder("node-2").WithEqualConfigsAndImages(machineConfigV1, imageV1).WithNodeNotReady().Node(),
+			fixtures.NewNodeBuilder("node-3").WithEqualConfigs(machineConfigV0).WithNodeNotReady().Node(),
+			fixtures.NewNodeBuilder("node-4").WithEqualConfigs(machineConfigV0).WithNodeReady().Node(),
 		},
 		unavail:              []string{"node-0", "node-2"},
 		layeredPoolWithImage: true,
 	}, {
 		name: "Mismatched unlayered node and layered pool with image unavailable",
 		nodes: []*corev1.Node{
-			helpers.NewNodeBuilder("node-0").WithConfigs(machineConfigV0, machineConfigV1).WithImages(imageV0, imageV1).Node(),
-			helpers.NewNodeBuilder("node-1").WithEqualConfigsAndImages(machineConfigV1, imageV1).Node(),
-			helpers.NewNodeBuilder("node-2").WithEqualConfigsAndImages(machineConfigV1, imageV1).WithNodeNotReady().Node(),
-			helpers.NewNodeBuilder("node-3").WithEqualConfigs(machineConfigV0).WithNodeNotReady().Node(),
-			helpers.NewNodeBuilder("node-4").WithEqualConfigs(machineConfigV0).WithNodeReady().Node(),
+			fixtures.NewNodeBuilder("node-0").WithConfigs(machineConfigV0, machineConfigV1).WithImages(imageV0, imageV1).Node(),
+			fixtures.NewNodeBuilder("node-1").WithEqualConfigsAndImages(machineConfigV1, imageV1).Node(),
+			fixtures.NewNodeBuilder("node-2").WithEqualConfigsAndImages(machineConfigV1, imageV1).WithNodeNotReady().Node(),
+			fixtures.NewNodeBuilder("node-3").WithEqualConfigs(machineConfigV0).WithNodeNotReady().Node(),
+			fixtures.NewNodeBuilder("node-4").WithEqualConfigs(machineConfigV0).WithNodeReady().Node(),
 		},
 		unavail:     []string{"node-3"},
 		layeredPool: true,
 	}, {
 		name: "Mismatched layered node and unlayered pool",
 		nodes: []*corev1.Node{
-			helpers.NewNodeBuilder("node-0").WithConfigs(machineConfigV0, machineConfigV1).Node(),
-			helpers.NewNodeBuilder("node-1").WithEqualConfigs(machineConfigV1).Node(),
-			helpers.NewNodeBuilder("node-2").WithEqualConfigs(machineConfigV1).WithEqualImages(imageV1).WithNodeNotReady().Node(),
-			helpers.NewNodeBuilder("node-3").WithEqualConfigs(machineConfigV0).WithEqualImages(imageV1).WithNodeNotReady().Node(),
-			helpers.NewNodeBuilder("node-4").WithEqualConfigs(machineConfigV0).WithEqualImages(imageV1).WithNodeReady().Node(),
+			fixtures.NewNodeBuilder("node-0").WithConfigs(machineConfigV0, machineConfigV1).Node(),
+			fixtures.NewNodeBuilder("node-1").WithEqualConfigs(machineConfigV1).Node(),
+			fixtures.NewNodeBuilder("node-2").WithEqualConfigs(machineConfigV1).WithEqualImages(imageV1).WithNodeNotReady().Node(),
+			fixtures.NewNodeBuilder("node-3").WithEqualConfigs(machineConfigV0).WithEqualImages(imageV1).WithNodeNotReady().Node(),
+			fixtures.NewNodeBuilder("node-4").WithEqualConfigs(machineConfigV0).WithEqualImages(imageV1).WithNodeReady().Node(),
 		},
 		unavail: []string{"node-0"},
 	}, {
@@ -521,21 +522,21 @@ func TestGetUnavailableMachines(t *testing.T) {
 		name: "nodes working toward layered should not be considered available",
 		nodes: []*corev1.Node{
 			// Need to set WithNodeReady() on all nodes to avoid short-circuiting.
-			helpers.NewNodeBuilder("node-0").
+			fixtures.NewNodeBuilder("node-0").
 				WithEqualConfigs(machineConfigV0).
 				WithNodeReady().
 				Node(),
-			helpers.NewNodeBuilder("node-1").
+			fixtures.NewNodeBuilder("node-1").
 				WithEqualConfigs(machineConfigV0).
 				WithNodeReady().
 				Node(),
-			helpers.NewNodeBuilder("node-2").
+			fixtures.NewNodeBuilder("node-2").
 				WithEqualConfigs(machineConfigV0).
 				WithDesiredImage(imageV1).
 				WithMCDState(daemonconsts.MachineConfigDaemonStateWorking).
 				WithNodeReady().
 				Node(),
-			helpers.NewNodeBuilder("node-3").
+			fixtures.NewNodeBuilder("node-3").
 				WithEqualConfigs(machineConfigV0).
 				WithDesiredImage(imageV1).WithCurrentImage("").
 				WithNodeReady().
@@ -548,23 +549,23 @@ func TestGetUnavailableMachines(t *testing.T) {
 		name: "nodes with desiredImage annotation that have not yet started working should not be considered available",
 		nodes: []*corev1.Node{
 			// Need to set WithNodeReady() on all nodes to avoid short-circuiting.
-			helpers.NewNodeBuilder("node-0").
+			fixtures.NewNodeBuilder("node-0").
 				WithEqualConfigs(machineConfigV0).
 				WithMCDState(daemonconsts.MachineConfigDaemonStateDone).
 				WithNodeReady().
 				Node(),
-			helpers.NewNodeBuilder("node-1").
+			fixtures.NewNodeBuilder("node-1").
 				WithEqualConfigs(machineConfigV0).
 				WithMCDState(daemonconsts.MachineConfigDaemonStateDone).
 				WithNodeReady().
 				Node(),
-			helpers.NewNodeBuilder("node-2").
+			fixtures.NewNodeBuilder("node-2").
 				WithEqualConfigs(machineConfigV0).
 				WithDesiredImage(imageV1).
 				WithMCDState(daemonconsts.MachineConfigDaemonStateDone).
 				WithNodeReady().
 				Node(),
-			helpers.NewNodeBuilder("node-3").
+			fixtures.NewNodeBuilder("node-3").
 				WithEqualConfigs(machineConfigV0).
 				WithDesiredImage(imageV1).WithCurrentImage("").
 				WithMCDState(daemonconsts.MachineConfigDaemonStateDone).
@@ -582,7 +583,7 @@ func TestGetUnavailableMachines(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			pb := helpers.NewMachineConfigPoolBuilder("")
+			pb := fixtures.NewMachineConfigPoolBuilder("")
 
 			if test.layeredPool {
 				pb.WithLayeringEnabled()

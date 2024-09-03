@@ -14,7 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/diff"
 
 	mcoResourceRead "github.com/openshift/machine-config-operator/lib/resourceread"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	ctrlcommonconfigs "github.com/openshift/machine-config-operator/pkg/controller/common/configs"
 )
 
 func TestParseManifests(t *testing.T) {
@@ -178,7 +178,7 @@ func TestBootstrapRun(t *testing.T) {
 
 			// Ensure that generated registries.conf corresponds to the testdata ImageContentSourcePolicy
 			var registriesConfig *ign3types.File
-			ignCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
+			ignCfg, err := ctrlcommonconfigs.ParseAndConvertConfig(mc.Spec.Config.Raw)
 			require.NoError(t, err)
 			for i := range ignCfg.Storage.Files {
 				f := &ignCfg.Storage.Files[i]
@@ -188,7 +188,7 @@ func TestBootstrapRun(t *testing.T) {
 				require.False(t, f.Path == "/etc/kubernetes/kubelet-ca.crt")
 			}
 			require.NotNil(t, registriesConfig)
-			contents, err := ctrlcommon.DecodeIgnitionFileContents(registriesConfig.Contents.Source, registriesConfig.Contents.Compression)
+			contents, err := ctrlcommonconfigs.DecodeIgnitionFileContents(registriesConfig.Contents.Source, registriesConfig.Contents.Compression)
 			require.NoError(t, err)
 			// Only a minimal presence check; more comprehensive tests that the contents correspond to the ICSP semantics are
 			// maintained in pkg/controller/container-runtime-config.

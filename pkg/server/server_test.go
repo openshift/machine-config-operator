@@ -23,7 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	ctrlcommonconfigs "github.com/openshift/machine-config-operator/pkg/controller/common/configs"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 )
 
@@ -53,7 +53,7 @@ func TestEncapsulated(t *testing.T) {
 	mc := new(mcfgv1.MachineConfig)
 	err = yaml.Unmarshal([]byte(mcData), mc)
 	assert.Nil(t, err)
-	mcIgnCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
+	mcIgnCfg, err := ctrlcommonconfigs.ParseAndConvertConfig(mc.Spec.Config.Raw)
 	if err != nil {
 		t.Errorf("decoding Ignition Config failed: %s", err)
 	}
@@ -61,7 +61,7 @@ func TestEncapsulated(t *testing.T) {
 	assert.Equal(t, mcIgnCfg.Storage.Files[0].Path, "/etc/coreos/update.conf")
 
 	origMc := mc.DeepCopy()
-	origIgnCfg, err := ctrlcommon.ParseAndConvertConfig(origMc.Spec.Config.Raw)
+	origIgnCfg, err := ctrlcommonconfigs.ParseAndConvertConfig(origMc.Spec.Config.Raw)
 	if err != nil {
 		t.Errorf("decoding Ignition Config failed: %s", err)
 	}
@@ -79,7 +79,7 @@ func TestEncapsulated(t *testing.T) {
 	t.Logf("vers: %v\n", vers)
 	for _, v := range vers {
 		major := v.Slice()[0]
-		mcIgnCfg, err = ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
+		mcIgnCfg, err = ctrlcommonconfigs.ParseAndConvertConfig(mc.Spec.Config.Raw)
 		assert.Nil(t, err)
 		err = appendEncapsulated(&mcIgnCfg, mc, v)
 		if err != nil {
@@ -143,7 +143,7 @@ func TestBootstrapServer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error while unmarshaling machine-config: %s, err: %v", mcPath, err)
 	}
-	mcIgnCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
+	mcIgnCfg, err := ctrlcommonconfigs.ParseAndConvertConfig(mc.Spec.Config.Raw)
 	if err != nil {
 		t.Errorf("decoding Ignition Config failed: %s", err)
 	}
@@ -186,11 +186,11 @@ func TestBootstrapServer(t *testing.T) {
 	}
 
 	// assert on the output.
-	ignCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
+	ignCfg, err := ctrlcommonconfigs.ParseAndConvertConfig(mc.Spec.Config.Raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	resCfg, err := ctrlcommon.ParseAndConvertConfig(res.Raw)
+	resCfg, err := ctrlcommonconfigs.ParseAndConvertConfig(res.Raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -339,7 +339,7 @@ func TestClusterServer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error while unmarshaling machine-config: %s, err: %v", mcPath, err)
 	}
-	mcIgnCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
+	mcIgnCfg, err := ctrlcommonconfigs.ParseAndConvertConfig(mc.Spec.Config.Raw)
 	if err != nil {
 		t.Errorf("decoding Ignition Config failed: %s", err)
 	}
@@ -368,11 +368,11 @@ func TestClusterServer(t *testing.T) {
 		t.Fatalf("expected err to be nil, received: %v", err)
 	}
 
-	ignCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
+	ignCfg, err := ctrlcommonconfigs.ParseAndConvertConfig(mc.Spec.Config.Raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	resCfg, err := ctrlcommon.ParseAndConvertConfig(res.Raw)
+	resCfg, err := ctrlcommonconfigs.ParseAndConvertConfig(res.Raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -386,7 +386,7 @@ func TestClusterServer(t *testing.T) {
 		}
 		foundEncapsulated = true
 		encapMc := new(mcfgv1.MachineConfig)
-		contents, err := ctrlcommon.DecodeIgnitionFileContents(f.Contents.Source, f.Contents.Compression)
+		contents, err := ctrlcommonconfigs.DecodeIgnitionFileContents(f.Contents.Source, f.Contents.Compression)
 		assert.Nil(t, err)
 		err = yaml.Unmarshal([]byte(contents), encapMc)
 		assert.Nil(t, err)

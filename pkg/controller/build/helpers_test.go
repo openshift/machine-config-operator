@@ -6,7 +6,7 @@ import (
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	ctrlcommonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -230,7 +230,7 @@ func TestValidateOnClusterBuildConfig(t *testing.T) {
 			require.NoError(t, err)
 
 			for _, secret := range testCase.secretsToDelete {
-				err := clients.kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Delete(context.TODO(), secret, metav1.DeleteOptions{})
+				err := clients.kubeclient.CoreV1().Secrets(ctrlcommonconsts.MCONamespace).Delete(context.TODO(), secret, metav1.DeleteOptions{})
 				require.NoError(t, err)
 			}
 

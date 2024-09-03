@@ -5,22 +5,23 @@ import (
 	"reflect"
 	"testing"
 
+	coreosutils "github.com/coreos/ignition/config/util"
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	"github.com/openshift/machine-config-operator/test/helpers"
+	ctrlcommonconfigs "github.com/openshift/machine-config-operator/pkg/controller/common/configs"
+	"github.com/openshift/machine-config-operator/test/fixtures"
 	"github.com/vincent-petithory/dataurl"
 )
 
 func TestIsDrainRequired(t *testing.T) {
 	machineConfigs := map[string]*mcfgv1.MachineConfig{
-		"mc1": helpers.NewMachineConfig("01-test", nil, "dummy://", []ign3types.File{{
+		"mc1": fixtures.NewMachineConfig("01-test", nil, "dummy://", []ign3types.File{{
 			Node: ign3types.Node{
 				Path: "/etc/containers/registries.conf",
 			},
 			FileEmbedded1: ign3types.FileEmbedded1{
 				Contents: ign3types.Resource{
-					Source: helpers.StrToPtr(dataurl.EncodeBytes([]byte(`
+					Source: coreosutils.StrToPtr(dataurl.EncodeBytes([]byte(`
 unqualified-search-registries = ["example.com", "foo.com"]
 
 [[registry]]
@@ -42,13 +43,13 @@ unqualified-search-registries = ["example.com", "foo.com"]
 			},
 		}}),
 
-		"mc2": helpers.NewMachineConfig("02-test", nil, "dummy://", []ign3types.File{{
+		"mc2": fixtures.NewMachineConfig("02-test", nil, "dummy://", []ign3types.File{{
 			Node: ign3types.Node{
 				Path: "/etc/containers/registries.conf",
 			},
 			FileEmbedded1: ign3types.FileEmbedded1{
 				Contents: ign3types.Resource{
-					Source: helpers.StrToPtr(dataurl.EncodeBytes([]byte(`
+					Source: coreosutils.StrToPtr(dataurl.EncodeBytes([]byte(`
 unqualified-search-registries = ["example.com", "foo.com"]
 
 [[registry]]
@@ -74,13 +75,13 @@ location = "example.com/repo1/test-img1"
 			},
 		}}),
 
-		"mc3": helpers.NewMachineConfig("03-test", nil, "dummy://", []ign3types.File{{
+		"mc3": fixtures.NewMachineConfig("03-test", nil, "dummy://", []ign3types.File{{
 			Node: ign3types.Node{
 				Path: "/etc/containers/registries.conf",
 			},
 			FileEmbedded1: ign3types.FileEmbedded1{
 				Contents: ign3types.Resource{
-					Source: helpers.StrToPtr(dataurl.EncodeBytes([]byte(`
+					Source: coreosutils.StrToPtr(dataurl.EncodeBytes([]byte(`
 unqualified-search-registries = ["example.com", "foo.com"]
 
 [[registry]]
@@ -94,13 +95,13 @@ unqualified-search-registries = ["example.com", "foo.com"]
 			},
 		}}),
 
-		"mc4": helpers.NewMachineConfig("04-test", nil, "dummy://", []ign3types.File{{
+		"mc4": fixtures.NewMachineConfig("04-test", nil, "dummy://", []ign3types.File{{
 			Node: ign3types.Node{
 				Path: "/etc/containers/registries.conf",
 			},
 			FileEmbedded1: ign3types.FileEmbedded1{
 				Contents: ign3types.Resource{
-					Source: helpers.StrToPtr(dataurl.EncodeBytes([]byte(`
+					Source: coreosutils.StrToPtr(dataurl.EncodeBytes([]byte(`
 unqualified-search-registries = ["example.com", "foo.com", "bar.com"]
 
 [[registry]]
@@ -115,13 +116,13 @@ unqualified-search-registries = ["example.com", "foo.com", "bar.com"]
 			},
 		}}),
 
-		"mc5": helpers.NewMachineConfig("05-test", nil, "dummy://", []ign3types.File{{
+		"mc5": fixtures.NewMachineConfig("05-test", nil, "dummy://", []ign3types.File{{
 			Node: ign3types.Node{
 				Path: "/etc/containers/registries.conf",
 			},
 			FileEmbedded1: ign3types.FileEmbedded1{
 				Contents: ign3types.Resource{
-					Source: helpers.StrToPtr(dataurl.EncodeBytes([]byte(`
+					Source: coreosutils.StrToPtr(dataurl.EncodeBytes([]byte(`
 unqualified-search-registries = ["example.com", "foo.com"]
 
 [[registry]]
@@ -136,13 +137,13 @@ unqualified-search-registries = ["example.com", "foo.com"]
 			},
 		}}),
 
-		"mc6": helpers.NewMachineConfig("06-test", nil, "dummy://", []ign3types.File{{
+		"mc6": fixtures.NewMachineConfig("06-test", nil, "dummy://", []ign3types.File{{
 			Node: ign3types.Node{
 				Path: "/etc/containers/registries.conf",
 			},
 			FileEmbedded1: ign3types.FileEmbedded1{
 				Contents: ign3types.Resource{
-					Source: helpers.StrToPtr(dataurl.EncodeBytes([]byte(`
+					Source: coreosutils.StrToPtr(dataurl.EncodeBytes([]byte(`
 unqualified-search-registries = ["example.com", "foo.com"]
 
 [[registry]]
@@ -161,13 +162,13 @@ location = "example.com/repo1/test-img1"
 			},
 		}}),
 
-		"mc7": helpers.NewMachineConfig("07-test", nil, "dummy://", []ign3types.File{{
+		"mc7": fixtures.NewMachineConfig("07-test", nil, "dummy://", []ign3types.File{{
 			Node: ign3types.Node{
 				Path: "/etc/containers/registries.conf",
 			},
 			FileEmbedded1: ign3types.FileEmbedded1{
 				Contents: ign3types.Resource{
-					Source: helpers.StrToPtr(dataurl.EncodeBytes([]byte(`
+					Source: coreosutils.StrToPtr(dataurl.EncodeBytes([]byte(`
 unqualified-search-registries = ["example.com", "foo.com"]
 
 [[registry]]
@@ -189,13 +190,13 @@ location = "mirror.com/repo1/test-img1"
 			},
 		}}),
 
-		"mc8": helpers.NewMachineConfig("08-test", nil, "dummy://", []ign3types.File{{
+		"mc8": fixtures.NewMachineConfig("08-test", nil, "dummy://", []ign3types.File{{
 			Node: ign3types.Node{
 				Path: "/etc/containers/registries.conf",
 			},
 			FileEmbedded1: ign3types.FileEmbedded1{
 				Contents: ign3types.Resource{
-					Source: helpers.StrToPtr(dataurl.EncodeBytes([]byte(`
+					Source: coreosutils.StrToPtr(dataurl.EncodeBytes([]byte(`
 unqualified-search-registries = ["example.com", "foo.com"]
 
 [[registry]]
@@ -205,13 +206,13 @@ location = "example.com/repo/test-img"
 				},
 			},
 		}}),
-		"mc9": helpers.NewMachineConfig("09-test", nil, "dummy://", []ign3types.File{{
+		"mc9": fixtures.NewMachineConfig("09-test", nil, "dummy://", []ign3types.File{{
 			Node: ign3types.Node{
 				Path: "/etc/containers/registries.conf",
 			},
 			FileEmbedded1: ign3types.FileEmbedded1{
 				Contents: ign3types.Resource{
-					Source: helpers.StrToPtr(dataurl.EncodeBytes([]byte(`
+					Source: coreosutils.StrToPtr(dataurl.EncodeBytes([]byte(`
 unqualified-search-registries = ["example.com", "foo.com"]
 
 [[registry]]
@@ -222,13 +223,13 @@ blocked = true
 				},
 			},
 		}}),
-		"mc10": helpers.NewMachineConfig("10-test", nil, "dummy://", []ign3types.File{{
+		"mc10": fixtures.NewMachineConfig("10-test", nil, "dummy://", []ign3types.File{{
 			Node: ign3types.Node{
 				Path: "/etc/containers/registries.conf",
 			},
 			FileEmbedded1: ign3types.FileEmbedded1{
 				Contents: ign3types.Resource{
-					Source: helpers.StrToPtr(dataurl.EncodeBytes([]byte(`
+					Source: coreosutils.StrToPtr(dataurl.EncodeBytes([]byte(`
 unqualified-search-registries = ["example.com", "foo.com"]
 
 [[registry]]
@@ -238,13 +239,13 @@ location = "example.com/repo/test-img"
 				},
 			},
 		}}),
-		"mc11": helpers.NewMachineConfig("11-test", nil, "dummy://", []ign3types.File{{
+		"mc11": fixtures.NewMachineConfig("11-test", nil, "dummy://", []ign3types.File{{
 			Node: ign3types.Node{
 				Path: "/etc/containers/registries.conf",
 			},
 			FileEmbedded1: ign3types.FileEmbedded1{
 				Contents: ign3types.Resource{
-					Source: helpers.StrToPtr(dataurl.EncodeBytes([]byte(`
+					Source: coreosutils.StrToPtr(dataurl.EncodeBytes([]byte(`
 unqualified-search-registries = ["example.com", "foo.com"]
 
 [[registry]]
@@ -263,13 +264,13 @@ blocked = true
 				},
 			},
 		}}),
-		"mc12": helpers.NewMachineConfig("12-test", nil, "dummy://", []ign3types.File{{
+		"mc12": fixtures.NewMachineConfig("12-test", nil, "dummy://", []ign3types.File{{
 			Node: ign3types.Node{
 				Path: "/etc/containers/registries.conf",
 			},
 			FileEmbedded1: ign3types.FileEmbedded1{
 				Contents: ign3types.Resource{
-					Source: helpers.StrToPtr(dataurl.EncodeBytes([]byte(`
+					Source: coreosutils.StrToPtr(dataurl.EncodeBytes([]byte(`
 unqualified-search-registries = ["example.com", "foo.com"]
 
 [[registry]]
@@ -283,13 +284,13 @@ location = "mirror.com/repo/test-img"
 				},
 			},
 		}}),
-		"mc13": helpers.NewMachineConfig("13-test", nil, "dummy://", []ign3types.File{{
+		"mc13": fixtures.NewMachineConfig("13-test", nil, "dummy://", []ign3types.File{{
 			Node: ign3types.Node{
 				Path: "/etc/containers/registries.conf",
 			},
 			FileEmbedded1: ign3types.FileEmbedded1{
 				Contents: ign3types.Resource{
-					Source: helpers.StrToPtr(dataurl.EncodeBytes([]byte(`
+					Source: coreosutils.StrToPtr(dataurl.EncodeBytes([]byte(`
 unqualified-search-registries = ["example.com", "foo.com"]
 
 [[registry]]
@@ -305,13 +306,13 @@ location = "mirror.com/repo/test-img-13"
 				},
 			},
 		}}),
-		"mc14": helpers.NewMachineConfig("14-test", nil, "dummy://", []ign3types.File{{
+		"mc14": fixtures.NewMachineConfig("14-test", nil, "dummy://", []ign3types.File{{
 			Node: ign3types.Node{
 				Path: "/etc/containers/registries.conf",
 			},
 			FileEmbedded1: ign3types.FileEmbedded1{
 				Contents: ign3types.Resource{
-					Source: helpers.StrToPtr(dataurl.EncodeBytes([]byte(`
+					Source: coreosutils.StrToPtr(dataurl.EncodeBytes([]byte(`
 unqualified-search-registries = ["example.com", "foo.com"]
 
 [[registry]]
@@ -459,15 +460,15 @@ location = "mirror.com/repo/test-img-14"
 
 	for idx, test := range tests {
 		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
-			oldIgnConfig, err := ctrlcommon.ParseAndConvertConfig(test.oldConfig.Spec.Config.Raw)
+			oldIgnConfig, err := ctrlcommonconfigs.ParseAndConvertConfig(test.oldConfig.Spec.Config.Raw)
 			if err != nil {
 				t.Errorf("parsing old Ignition config failed: %v", err)
 			}
-			newIgnConfig, err := ctrlcommon.ParseAndConvertConfig(test.newConfig.Spec.Config.Raw)
+			newIgnConfig, err := ctrlcommonconfigs.ParseAndConvertConfig(test.newConfig.Spec.Config.Raw)
 			if err != nil {
 				t.Errorf("parsing new Ignition config failed: %v", err)
 			}
-			diffFileSet := ctrlcommon.CalculateConfigFileDiffs(&oldIgnConfig, &newIgnConfig)
+			diffFileSet := ctrlcommonconfigs.CalculateConfigFileDiffs(&oldIgnConfig, &newIgnConfig)
 			drain, err := isDrainRequired(test.actions, diffFileSet, oldIgnConfig, newIgnConfig, false)
 			if !reflect.DeepEqual(test.expectedAction, drain) {
 				t.Errorf("Failed determining drain behavior: expected: %v but result is: %v. Error: %v", test.expectedAction, drain, err)

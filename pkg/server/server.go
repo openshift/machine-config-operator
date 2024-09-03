@@ -15,7 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	ctrlcommonconfigs "github.com/openshift/machine-config-operator/pkg/controller/common/configs"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 )
 
@@ -94,7 +94,7 @@ func appendEncapsulated(conf *ign3types.Config, mc *mcfgv1.MachineConfig, versio
 	// we're just adding a version to make it be a valid MachineConfig which currently
 	// requires an empty Ignition version.
 	if version == nil || version.Slice()[0] == 3 {
-		tmpIgnCfg := ctrlcommon.NewIgnConfig()
+		tmpIgnCfg := ctrlcommonconfigs.NewIgnConfig()
 		rawTmpIgnCfg, err = json.Marshal(tmpIgnCfg)
 		if err != nil {
 			return fmt.Errorf("error marshalling Ignition config: %w", err)

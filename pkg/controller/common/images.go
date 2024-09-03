@@ -5,6 +5,7 @@ import (
 
 	"encoding/json"
 
+	"github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	corev1 "k8s.io/api/core/v1"
 )
 
@@ -60,7 +61,7 @@ func ParseImagesFromBytes(in []byte) (*Images, error) {
 
 // Reads the contents of the provided ConfigMap into an Images struct.
 func ParseImagesFromConfigMap(cm *corev1.ConfigMap) (*Images, error) {
-	if err := validateMCOConfigMap(cm, MachineConfigOperatorImagesConfigMapName, []string{"images.json"}, nil); err != nil {
+	if err := validateMCOConfigMap(cm, constants.MachineConfigOperatorImagesConfigMapName, []string{"images.json"}, nil); err != nil {
 		return nil, err
 	}
 
@@ -79,7 +80,7 @@ type OSImageURLConfig struct {
 func ParseOSImageURLConfigMap(cm *corev1.ConfigMap) (*OSImageURLConfig, error) {
 	reqKeys := []string{"baseOSContainerImage", "baseOSExtensionsContainerImage", "osImageURL", "releaseVersion"}
 
-	if err := validateMCOConfigMap(cm, MachineConfigOSImageURLConfigMapName, reqKeys, nil); err != nil {
+	if err := validateMCOConfigMap(cm, constants.MachineConfigOSImageURLConfigMapName, reqKeys, nil); err != nil {
 		return nil, err
 	}
 
@@ -101,8 +102,8 @@ func validateMCOConfigMap(cm *corev1.ConfigMap, name string, reqDataKeys, reqBin
 		return fmt.Errorf("invalid ConfigMap, expected %s", name)
 	}
 
-	if cm.Namespace != MCONamespace {
-		return fmt.Errorf("invalid namespace, expected %s", MCONamespace)
+	if cm.Namespace != constants.MCONamespace {
+		return fmt.Errorf("invalid namespace, expected %s", constants.MCONamespace)
 	}
 
 	if reqDataKeys != nil {

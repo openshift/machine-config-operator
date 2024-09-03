@@ -27,8 +27,8 @@ import (
 	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
 	cov1helpers "github.com/openshift/library-go/pkg/config/clusteroperator/v1helpers"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	"github.com/openshift/machine-config-operator/test/helpers"
+	ctrlcommonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
+	"github.com/openshift/machine-config-operator/test/fixtures"
 )
 
 func TestIsMachineConfigPoolConfigurationValid(t *testing.T) {
@@ -168,13 +168,13 @@ func TestIsMachineConfigPoolConfigurationValid(t *testing.T) {
 					if c.name == name {
 						annos := map[string]string{}
 						if c.version != "" {
-							annos[ctrlcommon.GeneratedByControllerVersionAnnotationKey] = c.version
+							annos[ctrlcommonconsts.GeneratedByControllerVersionAnnotationKey] = c.version
 						}
 						if c.releaseVersion != "" {
-							annos[ctrlcommon.ReleaseImageVersionAnnotationKey] = c.releaseVersion
+							annos[ctrlcommonconsts.ReleaseImageVersionAnnotationKey] = c.releaseVersion
 						}
 						if c.osimageurlOverridden {
-							annos[ctrlcommon.OSImageURLOverriddenKey] = "true"
+							annos[ctrlcommonconsts.OSImageURLOverriddenKey] = "true"
 						}
 						return &mcfgv1.MachineConfig{
 							ObjectMeta: metav1.ObjectMeta{
@@ -649,8 +649,8 @@ func TestOperatorSyncStatus(t *testing.T) {
 		optr.vStore = newVersionStore()
 		optr.mcpLister = &mockMCPLister{
 			pools: []*mcfgv1.MachineConfigPool{
-				helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
-				helpers.NewMachineConfigPool("workers", nil, helpers.WorkerSelector, "v0"),
+				fixtures.NewMachineConfigPool("master", nil, fixtures.MasterSelector, "v0"),
+				fixtures.NewMachineConfigPool("workers", nil, fixtures.WorkerSelector, "v0"),
 			},
 		}
 
@@ -729,8 +729,8 @@ func TestInClusterBringUpStayOnErr(t *testing.T) {
 	optr.vStore.Set("operator", "test-version")
 	optr.mcpLister = &mockMCPLister{
 		pools: []*mcfgv1.MachineConfigPool{
-			helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
-			helpers.NewMachineConfigPool("workers", nil, helpers.WorkerSelector, "v0"),
+			fixtures.NewMachineConfigPool("master", nil, fixtures.MasterSelector, "v0"),
+			fixtures.NewMachineConfigPool("workers", nil, fixtures.WorkerSelector, "v0"),
 		},
 	}
 	nodeIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
@@ -799,8 +799,8 @@ func TestKubeletSkewUnSupported(t *testing.T) {
 	optr.vStore.Set("operator", "test-version")
 	optr.mcpLister = &mockMCPLister{
 		pools: []*mcfgv1.MachineConfigPool{
-			helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
-			helpers.NewMachineConfigPool("workers", nil, helpers.WorkerSelector, "v0"),
+			fixtures.NewMachineConfigPool("master", nil, fixtures.MasterSelector, "v0"),
+			fixtures.NewMachineConfigPool("workers", nil, fixtures.WorkerSelector, "v0"),
 		},
 	}
 	nodeIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
@@ -894,9 +894,9 @@ func TestCustomPoolKubeletSkewUnSupported(t *testing.T) {
 	optr.vStore.Set("operator", "test-version")
 	optr.mcpLister = &mockMCPLister{
 		pools: []*mcfgv1.MachineConfigPool{
-			helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
-			helpers.NewMachineConfigPool("workers", nil, helpers.WorkerSelector, "v0"),
-			helpers.NewMachineConfigPool("custom", nil, customSelector, "v0"),
+			fixtures.NewMachineConfigPool("master", nil, fixtures.MasterSelector, "v0"),
+			fixtures.NewMachineConfigPool("workers", nil, fixtures.WorkerSelector, "v0"),
+			fixtures.NewMachineConfigPool("custom", nil, customSelector, "v0"),
 		},
 	}
 	nodeIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
@@ -989,8 +989,8 @@ func TestKubeletSkewSupported(t *testing.T) {
 	optr.vStore.Set("operator", "test-version")
 	optr.mcpLister = &mockMCPLister{
 		pools: []*mcfgv1.MachineConfigPool{
-			helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
-			helpers.NewMachineConfigPool("workers", nil, helpers.WorkerSelector, "v0"),
+			fixtures.NewMachineConfigPool("master", nil, fixtures.MasterSelector, "v0"),
+			fixtures.NewMachineConfigPool("workers", nil, fixtures.WorkerSelector, "v0"),
 		},
 	}
 	nodeIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})

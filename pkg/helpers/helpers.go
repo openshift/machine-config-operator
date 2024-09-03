@@ -6,7 +6,7 @@ import (
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	v1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	ctrlcommonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	"github.com/openshift/machine-config-operator/pkg/daemon/osrelease"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -168,9 +168,9 @@ func ListPools(node *corev1.Node, mcpLister v1.MachineConfigPoolLister) (*mcfgv1
 	var custom []*mcfgv1.MachineConfigPool
 	for _, pool := range pools {
 		switch pool.Name {
-		case ctrlcommon.MachineConfigPoolMaster:
+		case ctrlcommonconsts.MachineConfigPoolMaster:
 			master = pool
-		case ctrlcommon.MachineConfigPoolWorker:
+		case ctrlcommonconsts.MachineConfigPoolWorker:
 			worker = pool
 		default:
 			custom = append(custom, pool)
