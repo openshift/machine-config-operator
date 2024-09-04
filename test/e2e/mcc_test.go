@@ -9,7 +9,8 @@ import (
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	ctrlcommonconfigs "github.com/openshift/machine-config-operator/pkg/controller/common/configs"
+	"github.com/openshift/machine-config-operator/test/fixtures"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/require"
@@ -29,14 +30,14 @@ func TestMCCReconcileAfterBadMC(t *testing.T) {
 
 	// create a MC that contains a valid ignition config but is not reconcilable
 	mcadd := createMCToAddFile("add-a-file", "/etc/mytestconfs", "test")
-	ignCfg, err := ctrlcommon.ParseAndConvertConfig(mcadd.Spec.Config.Raw)
+	ignCfg, err := ctrlcommonconfigs.ParseAndConvertConfig(mcadd.Spec.Config.Raw)
 	require.Nil(t, err, "failed to parse ignition config")
 	ignCfg.Storage.Disks = []ign3types.Disk{
 		{
 			Device: "/one",
 		},
 	}
-	rawIgnCfg := helpers.MarshalOrDie(ignCfg)
+	rawIgnCfg := fixtures.MarshalOrDie(ignCfg)
 	mcadd.Spec.Config.Raw = rawIgnCfg
 
 	workerOldMc := helpers.GetMcName(t, cs, "worker")

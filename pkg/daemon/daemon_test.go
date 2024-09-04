@@ -11,7 +11,7 @@ import (
 
 	ign2types "github.com/coreos/ignition/config/v2_2/types"
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	ctrlcommonconfigs "github.com/openshift/machine-config-operator/pkg/controller/common/configs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/vincent-petithory/dataurl"
@@ -27,11 +27,12 @@ import (
 	core "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/cache"
 
+	coreosutils "github.com/coreos/ignition/config/util"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
 	informers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
-	"github.com/openshift/machine-config-operator/test/helpers"
+	"github.com/openshift/machine-config-operator/test/fixtures"
 )
 
 var pathtests = []struct {
@@ -70,7 +71,7 @@ func TestValidateFiles(t *testing.T) {
 			},
 			FileEmbedded1: ign3types.FileEmbedded1{
 				Contents: ign3types.Resource{
-					Source: helpers.StrToPtr(dataurl.EncodeBytes([]byte("hello world\n"))),
+					Source: coreosutils.StrToPtr(dataurl.EncodeBytes([]byte("hello world\n"))),
 				},
 				Mode: &fileMode,
 			},
@@ -331,11 +332,11 @@ func newNode(annotations map[string]string) *corev1.Node {
 }
 
 func TestSetRunningKargs(t *testing.T) {
-	oldIgnCfg := ctrlcommon.NewIgnConfig()
-	oldConfig := helpers.CreateMachineConfigFromIgnition(oldIgnCfg)
+	oldIgnCfg := ctrlcommonconfigs.NewIgnConfig()
+	oldConfig := fixtures.CreateMachineConfigFromIgnition(oldIgnCfg)
 	oldConfig.ObjectMeta = metav1.ObjectMeta{Name: "oldconfig"}
-	newIgnCfg := ctrlcommon.NewIgnConfig()
-	newConfig := helpers.CreateMachineConfigFromIgnition(newIgnCfg)
+	newIgnCfg := ctrlcommonconfigs.NewIgnConfig()
+	newConfig := fixtures.CreateMachineConfigFromIgnition(newIgnCfg)
 	newConfig.ObjectMeta = metav1.ObjectMeta{Name: "newconfig"}
 	diff, err := newMachineConfigDiff(oldConfig, newConfig)
 	assert.Nil(t, err)
@@ -513,7 +514,7 @@ func TestPrepUpdateFromClusterOnDiskDrift(t *testing.T) {
 		t.Run("", func(t *testing.T) {
 			t.Parallel()
 
-			onDiskMC := helpers.NewMachineConfig(test.onDiskMCName, nil, "", nil)
+			onDiskMC := fixtures.NewMachineConfig(test.onDiskMCName, nil, "", nil)
 			currentConfigPath := filepath.Join(t.TempDir(), "currentconfig")
 			currentConfigFile, err := os.Create(currentConfigPath)
 			require.NoError(t, err)
@@ -528,8 +529,8 @@ func TestPrepUpdateFromClusterOnDiskDrift(t *testing.T) {
 
 			f := newFixture(t)
 			node := newNode(test.annotations)
-			f.objects = append(f.objects, helpers.NewMachineConfig("test1", nil, "", nil))
-			f.objects = append(f.objects, helpers.NewMachineConfig("test2", nil, "", nil))
+			f.objects = append(f.objects, fixtures.NewMachineConfig("test1", nil, "", nil))
+			f.objects = append(f.objects, fixtures.NewMachineConfig("test2", nil, "", nil))
 			dn := f.newController()
 			dn.node = node
 			dn.currentConfigPath = currentConfigPath

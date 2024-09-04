@@ -37,6 +37,8 @@ import (
 
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	ctrlcommonconfigs "github.com/openshift/machine-config-operator/pkg/controller/common/configs"
+	ctrlcommonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	pivottypes "github.com/openshift/machine-config-operator/pkg/daemon/pivot/types"
 	pivotutils "github.com/openshift/machine-config-operator/pkg/daemon/pivot/utils"
@@ -238,7 +240,7 @@ func (dn *Daemon) performPostConfigChangeNodeDisruptionAction(postConfigChangeAc
 // In the end uncordon node to schedule workload.
 // If at any point an error occurs, we reboot the node so that node has correct configuration.
 func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string, configName string) error {
-	if ctrlcommon.InSlice(postConfigChangeActionReboot, postConfigChangeActions) {
+	if ctrlcommonconfigs.InSlice(postConfigChangeActionReboot, postConfigChangeActions) {
 		err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
 			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdatePostActionComplete, Reason: string(mcfgalphav1.MachineConfigNodeUpdateRebooted), Message: fmt.Sprintf("Node will reboot into config %s", configName)},
 			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateRebooted, Reason: fmt.Sprintf("%s%s", string(mcfgalphav1.MachineConfigNodeUpdatePostActionComplete), string(mcfgalphav1.MachineConfigNodeUpdateRebooted)), Message: "Upgrade requires a reboot. Currently doing this as the post update action."},
@@ -255,7 +257,7 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 		return dn.reboot(fmt.Sprintf("Node will reboot into config %s", configName))
 	}
 
-	if ctrlcommon.InSlice(postConfigChangeActionNone, postConfigChangeActions) {
+	if ctrlcommonconfigs.InSlice(postConfigChangeActionNone, postConfigChangeActions) {
 		if dn.nodeWriter != nil {
 			dn.nodeWriter.Eventf(corev1.EventTypeNormal, "SkipReboot", "Config changes do not require reboot.")
 		}
@@ -274,7 +276,7 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 		logSystem("Node has Desired Config %s, skipping reboot", configName)
 	}
 
-	if ctrlcommon.InSlice(postConfigChangeActionReloadCrio, postConfigChangeActions) {
+	if ctrlcommonconfigs.InSlice(postConfigChangeActionReloadCrio, postConfigChangeActions) {
 		serviceName := constants.CRIOServiceName
 
 		if err := reloadService(serviceName); err != nil {
@@ -303,7 +305,7 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 		logSystem("%s config reloaded successfully! Desired config %s has been applied, skipping reboot", serviceName, configName)
 	}
 
-	if ctrlcommon.InSlice(postConfigChangeActionRestartCrio, postConfigChangeActions) {
+	if ctrlcommonconfigs.InSlice(postConfigChangeActionRestartCrio, postConfigChangeActions) {
 		cmd := exec.Command("update-ca-trust")
 		var stderr bytes.Buffer
 		cmd.Stdout = os.Stdout
@@ -355,7 +357,7 @@ func canonicalizeEmptyMC(config *mcfgv1.MachineConfig) *mcfgv1.MachineConfig {
 	if config != nil {
 		return config
 	}
-	newIgnCfg := ctrlcommon.NewIgnConfig()
+	newIgnCfg := ctrlcommonconfigs.NewIgnConfig()
 	rawNewIgnCfg, err := json.Marshal(newIgnCfg)
 	if err != nil {
 		// This should never happen
@@ -513,8 +515,8 @@ func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newC
 	// if they were in use, so we also need to preserve that behavior.
 	// https://issues.redhat.com/browse/OCPBUGS-4049
 	if mcDiff.osUpdate || mcDiff.extensions || mcDiff.kernelType || mcDiff.kargs ||
-		canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelTypeRealtime ||
-		canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelType64kPages ||
+		canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommonconsts.KernelTypeRealtime ||
+		canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommonconsts.KernelType64kPages ||
 		len(newConfig.Spec.Extensions) > 0 {
 
 		// Throw started/staged events only if there is any update required for the OS
@@ -588,20 +590,20 @@ func calculatePostConfigChangeActionFromMCDiffs(diffFileSet []string) (actions [
 	actions = []string{postConfigChangeActionNone}
 	for _, path := range diffFileSet {
 		switch {
-		case ctrlcommon.InSlice(path, filesPostConfigChangeActionNone):
+		case ctrlcommonconfigs.InSlice(path, filesPostConfigChangeActionNone):
 			continue
 
-		case ctrlcommon.InSlice(path, filesPostConfigChangeActionReloadCrio),
-			ctrlcommon.InSlice(filepath.Dir(path), dirsPostConfigChangeActionReloadCrio):
+		case ctrlcommonconfigs.InSlice(path, filesPostConfigChangeActionReloadCrio),
+			ctrlcommonconfigs.InSlice(filepath.Dir(path), dirsPostConfigChangeActionReloadCrio):
 			// Don't override a restart CRIO action
-			if !ctrlcommon.InSlice(postConfigChangeActionRestartCrio, actions) {
+			if !ctrlcommonconfigs.InSlice(postConfigChangeActionRestartCrio, actions) {
 				actions = []string{postConfigChangeActionReloadCrio}
 			}
 
-		case ctrlcommon.InSlice(path, filesPostConfigChangeActionRestartCrio):
+		case ctrlcommonconfigs.InSlice(path, filesPostConfigChangeActionRestartCrio):
 			actions = []string{postConfigChangeActionRestartCrio}
 
-		case ctrlcommon.InSlice(filepath.Dir(path), directoriesPostConfigChangeActionNone):
+		case ctrlcommonconfigs.InSlice(filepath.Dir(path), directoriesPostConfigChangeActionNone):
 			continue
 
 		default:
@@ -715,7 +717,7 @@ func (dn *Daemon) calculatePostConfigChangeNodeDisruptionAction(diff *machineCon
 	// Wait for mcop.Status.NodeDisruptionPolicyStatus to populate, otherwise error out. This shouldn't take very long
 	// as this is done by the operator sync loop, but may be extended if transitioning to TechPreview as the operator restarts,
 	if err := wait.PollUntilContextTimeout(context.TODO(), 5*time.Second, 2*time.Minute, true, func(_ context.Context) (bool, error) {
-		mcop, pollErr = dn.mcopClient.OperatorV1().MachineConfigurations().Get(context.TODO(), ctrlcommon.MCOOperatorKnobsObjectName, metav1.GetOptions{})
+		mcop, pollErr = dn.mcopClient.OperatorV1().MachineConfigurations().Get(context.TODO(), ctrlcommonconsts.MCOOperatorKnobsObjectName, metav1.GetOptions{})
 		if pollErr != nil {
 			klog.Errorf("calculating NodeDisruptionPolicies: MachineConfiguration/cluster has not been created yet")
 			pollErr = fmt.Errorf("MachineConfiguration/cluster has not been created yet")
@@ -816,11 +818,11 @@ func (dn *Daemon) updateOnClusterBuild(oldConfig, newConfig *mcfgv1.MachineConfi
 	oldConfigName := oldConfig.GetName()
 	newConfigName := newConfig.GetName()
 
-	oldIgnConfig, err := ctrlcommon.ParseAndConvertConfig(oldConfig.Spec.Config.Raw)
+	oldIgnConfig, err := ctrlcommonconfigs.ParseAndConvertConfig(oldConfig.Spec.Config.Raw)
 	if err != nil {
 		return fmt.Errorf("parsing old Ignition config failed: %w", err)
 	}
-	newIgnConfig, err := ctrlcommon.ParseAndConvertConfig(newConfig.Spec.Config.Raw)
+	newIgnConfig, err := ctrlcommonconfigs.ParseAndConvertConfig(newConfig.Spec.Config.Raw)
 	if err != nil {
 		return fmt.Errorf("parsing new Ignition config failed: %w", err)
 	}
@@ -982,11 +984,11 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	oldConfigName := oldConfig.GetName()
 	newConfigName := newConfig.GetName()
 
-	oldIgnConfig, err := ctrlcommon.ParseAndConvertConfig(oldConfig.Spec.Config.Raw)
+	oldIgnConfig, err := ctrlcommonconfigs.ParseAndConvertConfig(oldConfig.Spec.Config.Raw)
 	if err != nil {
 		return fmt.Errorf("parsing old Ignition config failed: %w", err)
 	}
-	newIgnConfig, err := ctrlcommon.ParseAndConvertConfig(newConfig.Spec.Config.Raw)
+	newIgnConfig, err := ctrlcommonconfigs.ParseAndConvertConfig(newConfig.Spec.Config.Raw)
 	if err != nil {
 		return fmt.Errorf("parsing new Ignition config failed: %w", err)
 	}
@@ -1019,8 +1021,8 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 
 	logSystem("Starting update from %s to %s: %+v", oldConfigName, newConfigName, diff)
 
-	diffFileSet := ctrlcommon.CalculateConfigFileDiffs(&oldIgnConfig, &newIgnConfig)
-	diffUnitSet := ctrlcommon.CalculateConfigUnitDiffs(&oldIgnConfig, &newIgnConfig)
+	diffFileSet := ctrlcommonconfigs.CalculateConfigFileDiffs(&oldIgnConfig, &newIgnConfig)
+	diffUnitSet := ctrlcommonconfigs.CalculateConfigUnitDiffs(&oldIgnConfig, &newIgnConfig)
 
 	var fg featuregates.FeatureGate
 
@@ -1273,11 +1275,11 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 // de-dupe the functions.
 // See: https://issues.redhat.com/browse/MCO-810
 func (dn *Daemon) updateHypershift(oldConfig, newConfig *mcfgv1.MachineConfig, diff *machineConfigDiff) (retErr error) {
-	oldIgnConfig, err := ctrlcommon.ParseAndConvertConfig(oldConfig.Spec.Config.Raw)
+	oldIgnConfig, err := ctrlcommonconfigs.ParseAndConvertConfig(oldConfig.Spec.Config.Raw)
 	if err != nil {
 		return fmt.Errorf("parsing old Ignition config failed: %w", err)
 	}
-	newIgnConfig, err := ctrlcommon.ParseAndConvertConfig(newConfig.Spec.Config.Raw)
+	newIgnConfig, err := ctrlcommonconfigs.ParseAndConvertConfig(newConfig.Spec.Config.Raw)
 	if err != nil {
 		return fmt.Errorf("parsing new Ignition config failed: %w", err)
 	}
@@ -1399,21 +1401,21 @@ func (mcDiff *machineConfigDiff) osChangesString() string {
 
 // canonicalizeKernelType returns a valid kernelType. We consider empty("") and default kernelType as same
 func canonicalizeKernelType(kernelType string) string {
-	if kernelType == ctrlcommon.KernelTypeRealtime {
-		return ctrlcommon.KernelTypeRealtime
-	} else if kernelType == ctrlcommon.KernelType64kPages {
-		return ctrlcommon.KernelType64kPages
+	if kernelType == ctrlcommonconsts.KernelTypeRealtime {
+		return ctrlcommonconsts.KernelTypeRealtime
+	} else if kernelType == ctrlcommonconsts.KernelType64kPages {
+		return ctrlcommonconsts.KernelType64kPages
 	}
-	return ctrlcommon.KernelTypeDefault
+	return ctrlcommonconsts.KernelTypeDefault
 }
 
 // newMachineConfigDiff compares two MachineConfig objects.
 func newMachineConfigDiff(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineConfigDiff, error) {
-	oldIgn, err := ctrlcommon.ParseAndConvertConfig(oldConfig.Spec.Config.Raw)
+	oldIgn, err := ctrlcommonconfigs.ParseAndConvertConfig(oldConfig.Spec.Config.Raw)
 	if err != nil {
 		return nil, fmt.Errorf("parsing old Ignition config failed with error: %w", err)
 	}
-	newIgn, err := ctrlcommon.ParseAndConvertConfig(newConfig.Spec.Config.Raw)
+	newIgn, err := ctrlcommonconfigs.ParseAndConvertConfig(newConfig.Spec.Config.Raw)
 	if err != nil {
 		return nil, fmt.Errorf("parsing new Ignition config failed with error: %w", err)
 	}
@@ -1453,7 +1455,7 @@ func newMachineConfigDiff(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineC
 // (/proc/sys/crypto/fips_enabled) and can determine if there is a mismatch
 // between the MachineConfig and the actual on-disk state.
 func reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineConfigDiff, error) {
-	if err := ctrlcommon.IsRenderedConfigReconcilable(oldConfig, newConfig); err != nil {
+	if err := ctrlcommonconfigs.IsRenderedConfigReconcilable(oldConfig, newConfig); err != nil {
 		return nil, fmt.Errorf("configs %s, %s are not reconcilable: %w", oldConfig.Name, newConfig.Name, err)
 	}
 
@@ -1736,12 +1738,12 @@ func (dn *CoreOSDaemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig)
 
 	// In the OS update path, we removed overrides for kernel-rt.  So if the target (new) config
 	// is also default (i.e. throughput) then we have nothing to do.
-	if newKtype == ctrlcommon.KernelTypeDefault {
+	if newKtype == ctrlcommonconsts.KernelTypeDefault {
 		return nil
 	}
 
 	// 64K memory pages kernel is only supported for aarch64
-	if newKtype == ctrlcommon.KernelType64kPages && goruntime.GOARCH != "arm64" {
+	if newKtype == ctrlcommonconsts.KernelType64kPages && goruntime.GOARCH != "arm64" {
 		return fmt.Errorf("64k-pages is only supported for aarch64 architecture")
 	}
 
@@ -1758,7 +1760,7 @@ func (dn *CoreOSDaemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig)
 		logSystem("Re-applying kernel type %s", newKtype)
 	}
 
-	if newKtype == ctrlcommon.KernelTypeRealtime {
+	if newKtype == ctrlcommonconsts.KernelTypeRealtime {
 		// Switch to RT kernel
 		args := []string{"override", "remove"}
 		args = append(args, defaultKernel...)
@@ -1767,7 +1769,7 @@ func (dn *CoreOSDaemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig)
 		}
 
 		return runRpmOstree(args...)
-	} else if newKtype == ctrlcommon.KernelType64kPages {
+	} else if newKtype == ctrlcommonconsts.KernelType64kPages {
 		// Switch to 64k pages kernel
 		args := []string{"override", "remove"}
 		args = append(args, defaultKernel...)
@@ -2814,7 +2816,7 @@ func (dn *Daemon) hasImageRegistryDrainOverrideConfigMap() (bool, error) {
 		return false, nil
 	}
 
-	_, err := dn.kubeClient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), ImageRegistryDrainOverrideConfigmap, metav1.GetOptions{})
+	_, err := dn.kubeClient.CoreV1().ConfigMaps(ctrlcommonconsts.MCONamespace).Get(context.TODO(), ImageRegistryDrainOverrideConfigmap, metav1.GetOptions{})
 	if err == nil {
 		return true, nil
 	}

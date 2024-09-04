@@ -12,6 +12,7 @@ import (
 	"github.com/openshift/machine-config-operator/internal/clients"
 	"github.com/openshift/machine-config-operator/pkg/controller/build"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	ctrlcommonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/leaderelection"
 
@@ -109,7 +110,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 	leaderElectionCfg := common.GetLeaderElectionConfig(cb.GetBuilderConfig())
 
 	leaderelection.RunOrDie(ctx, leaderelection.LeaderElectionConfig{
-		Lock:            common.CreateResourceLock(cb, ctrlcommon.MCONamespace, componentName),
+		Lock:            common.CreateResourceLock(cb, ctrlcommonconsts.MCONamespace, componentName),
 		ReleaseOnCancel: true,
 		LeaseDuration:   leaderElectionCfg.LeaseDuration.Duration,
 		RenewDeadline:   leaderElectionCfg.RenewDeadline.Duration,

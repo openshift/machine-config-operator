@@ -1,0 +1,223 @@
+package configs
+
+import (
+	"testing"
+
+	coreosutils "github.com/coreos/ignition/config/util"
+	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
+	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
+	testfixtures "github.com/openshift/machine-config-operator/test/fixtures"
+)
+
+// TestReconcilable attempts to verify the conditions in which configs would and would not be
+// reconcilable. Welcome to the longest unittest you've ever read.
+func TestIsRenderedConfigReconcilable(t *testing.T) {
+	oldIgnCfg := NewIgnConfig()
+	// oldConfig is the current config of the fake system
+	oldConfig := testfixtures.CreateMachineConfigFromIgnition(oldIgnCfg)
+	newIgnCfg := NewIgnConfig()
+
+	// Set improper version
+	newIgnCfg.Ignition.Version = "4.0.0"
+
+	// newConfig is the config that is being requested to apply to the system
+	newConfig := testfixtures.CreateMachineConfigFromIgnition(newIgnCfg)
+	// Verify Ignition version mismatch react as expected
+	isReconcilable := IsRenderedConfigReconcilable(oldConfig, newConfig)
+	checkIrreconcilableResults(t, "Ignition", isReconcilable)
+	//reset to proper Ignition version
+	newIgnCfg.Ignition.Version = ign3types.MaxVersion.String()
+	newConfig = testfixtures.CreateMachineConfigFromIgnition(newIgnCfg)
+	isReconcilable = IsRenderedConfigReconcilable(oldConfig, newConfig)
+	checkReconcilableResults(t, "Ignition", isReconcilable)
+
+	// Verify Disk changes react as expected
+	oldIgnCfg.Storage.Disks = []ign3types.Disk{
+		{
+			Device: "/one",
+		},
+	}
+	oldConfig = testfixtures.CreateMachineConfigFromIgnition(oldIgnCfg)
+	isReconcilable = IsRenderedConfigReconcilable(oldConfig, newConfig)
+	checkIrreconcilableResults(t, "Disk", isReconcilable)
+
+	// Match storage disks
+	newIgnCfg.Storage.Disks = oldIgnCfg.Storage.Disks
+	newConfig = testfixtures.CreateMachineConfigFromIgnition(newIgnCfg)
+	isReconcilable = IsRenderedConfigReconcilable(oldConfig, newConfig)
+	checkReconcilableResults(t, "Disk", isReconcilable)
+
+	// Verify Filesystems changes react as expected
+	oldIgnCfg.Storage.Filesystems = []ign3types.Filesystem{
+		{
+			Device: "/dev/sda1",
+			Format: coreosutils.StrToPtr("ext4"),
+			Path:   coreosutils.StrToPtr("/foo/bar"),
+		},
+	}
+	oldConfig = testfixtures.CreateMachineConfigFromIgnition(oldIgnCfg)
+	isReconcilable = IsRenderedConfigReconcilable(oldConfig, newConfig)
+	checkIrreconcilableResults(t, "Filesystem", isReconcilable)
+
+	// Match Storage filesystems
+	newIgnCfg.Storage.Filesystems = oldIgnCfg.Storage.Filesystems
+	newConfig = testfixtures.CreateMachineConfigFromIgnition(newIgnCfg)
+	isReconcilable = IsRenderedConfigReconcilable(oldConfig, newConfig)
+	checkReconcilableResults(t, "Filesystem", isReconcilable)
+
+	// Verify Raid changes react as expected
+	var stripe = "stripe"
+	oldIgnCfg.Storage.Raid = []ign3types.Raid{
+		{
+			Name:    "data",
+			Level:   &stripe,
+			Devices: []ign3types.Device{"/dev/vda", "/dev/vdb"},
+		},
+	}
+	oldConfig = testfixtures.CreateMachineConfigFromIgnition(oldIgnCfg)
+	isReconcilable = IsRenderedConfigReconcilable(oldConfig, newConfig)
+	checkIrreconcilableResults(t, "Raid", isReconcilable)
+
+	// Match storage raid
+	newIgnCfg.Storage.Raid = oldIgnCfg.Storage.Raid
+	newConfig = testfixtures.CreateMachineConfigFromIgnition(newIgnCfg)
+	isReconcilable = IsRenderedConfigReconcilable(oldConfig, newConfig)
+	checkReconcilableResults(t, "Raid", isReconcilable)
+
+	// Verify Passwd Groups changes unsupported
+	oldIgnCfg = NewIgnConfig()
+	oldConfig = testfixtures.CreateMachineConfigFromIgnition(oldIgnCfg)
+	newIgnCfg = NewIgnConfig()
+	newConfig = testfixtures.CreateMachineConfigFromIgnition(newIgnCfg)
+
+	isReconcilable = IsRenderedConfigReconcilable(oldConfig, newConfig)
+	checkReconcilableResults(t, "PasswdGroups", isReconcilable)
+
+	tempGroup := ign3types.PasswdGroup{}
+	tempGroup.Name = "testGroup"
+	newIgnCfg.Passwd.Groups = []ign3types.PasswdGroup{tempGroup}
+	newConfig = testfixtures.CreateMachineConfigFromIgnition(newIgnCfg)
+	isReconcilable = IsRenderedConfigReconcilable(oldConfig, newConfig)
+	checkIrreconcilableResults(t, "PasswdGroups", isReconcilable)
+
+	// Verify Ignition kernelArguments changes unsupported
+	oldIgnCfg = NewIgnConfig()
+	oldConfig = testfixtures.CreateMachineConfigFromIgnition(oldIgnCfg)
+	newIgnCfg = NewIgnConfig()
+	newIgnCfg.KernelArguments.ShouldExist = []ign3types.KernelArgument{"foo=bar"}
+	newIgnCfg.KernelArguments.ShouldNotExist = []ign3types.KernelArgument{"baz=foo"}
+
+	newConfig = testfixtures.CreateMachineConfigFromIgnition(newIgnCfg)
+
+	isReconcilable = IsRenderedConfigReconcilable(oldConfig, newConfig)
+	checkIrreconcilableResults(t, "KernelArguments", isReconcilable)
+
+	// Verify Tang changes are supported (even though we don't do anything with them yet)
+	oldIgnCfg = NewIgnConfig()
+	oldIgnCfg.Storage.Luks = []ign3types.Luks{
+		{
+			Clevis: ign3types.Clevis{
+				Custom: ign3types.ClevisCustom{},
+				Tang: []ign3types.Tang{
+					{
+						URL:           "https://tang.example.com",
+						Advertisement: coreosutils.StrToPtr(`{"payload": "...", "protected": "...", "signature": "..."}`),
+						Thumbprint:    coreosutils.StrToPtr("TREPLACE-THIS-WITH-YOUR-TANG-THUMBPRINT"),
+					},
+				},
+			},
+			Device: coreosutils.StrToPtr("/dev/sdb"),
+			Name:   "luks-tang",
+		},
+	}
+	oldConfig = testfixtures.CreateMachineConfigFromIgnition(oldIgnCfg)
+	newIgnCfg = NewIgnConfig()
+	newConfig = testfixtures.CreateMachineConfigFromIgnition(newIgnCfg)
+
+	isReconcilable = IsRenderedConfigReconcilable(oldConfig, newConfig)
+	checkReconcilableResults(t, "LuksClevisTang", isReconcilable)
+
+	// FIPS changes are not reconcilable
+	oldConfig = testfixtures.CreateMachineConfigFromIgnition(NewIgnConfig())
+	newIgnCfg = NewIgnConfig()
+	newConfig = testfixtures.CreateMachineConfigFromIgnition(newIgnCfg)
+	newConfig.Spec.FIPS = true
+
+	isReconcilable = IsRenderedConfigReconcilable(oldConfig, newConfig)
+	checkIrreconcilableResults(t, "FIPS", isReconcilable)
+
+	// Cannot use MachineConfigs to create the forcefile.
+	oldConfig = testfixtures.CreateMachineConfigFromIgnition(NewIgnConfig())
+	newIgnCfg = NewIgnConfig()
+	newIgnCfg.Storage.Files = []ign3types.File{
+		testfixtures.CreateIgn3File(constants.MachineConfigDaemonForceFile, "", 644),
+	}
+
+	checkIrreconcilableResults(t, "forcefile", isReconcilable)
+}
+
+func TestReconcilableSSH(t *testing.T) {
+	// Check that updating SSH Key of user core supported
+	oldIgnCfg := NewIgnConfig()
+	oldMcfg := testfixtures.CreateMachineConfigFromIgnition(oldIgnCfg)
+	tempUser1 := ign3types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"5678", "abc"}}
+	newIgnCfg := NewIgnConfig()
+	newIgnCfg.Passwd.Users = []ign3types.PasswdUser{tempUser1}
+	newMcfg := testfixtures.CreateMachineConfigFromIgnition(newIgnCfg)
+	errMsg := IsRenderedConfigReconcilable(oldMcfg, newMcfg)
+	checkReconcilableResults(t, "SSH", errMsg)
+
+	// 	Check that updating User with User that is not core is not supported
+	tempUser2 := ign3types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"1234"}}
+	oldIgnCfg.Passwd.Users = append(oldIgnCfg.Passwd.Users, tempUser2)
+	oldMcfg = testfixtures.CreateMachineConfigFromIgnition(oldIgnCfg)
+	tempUser3 := ign3types.PasswdUser{Name: "another user", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"5678"}}
+	newIgnCfg.Passwd.Users[0] = tempUser3
+	newMcfg = testfixtures.CreateMachineConfigFromIgnition(newIgnCfg)
+	errMsg = IsRenderedConfigReconcilable(oldMcfg, newMcfg)
+	checkIrreconcilableResults(t, "SSH", errMsg)
+
+	// check that we cannot make updates if any other Passwd.User field is changed.
+	tempUser4 := ign3types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"5678"}, HomeDir: coreosutils.StrToPtr("somedir")}
+	newIgnCfg.Passwd.Users[0] = tempUser4
+	newMcfg = testfixtures.CreateMachineConfigFromIgnition(newIgnCfg)
+	errMsg = IsRenderedConfigReconcilable(oldMcfg, newMcfg)
+	checkIrreconcilableResults(t, "SSH", errMsg)
+
+	// check that we cannot add a user or have len(Passwd.Users)> 1
+	tempUser5 := ign3types.PasswdUser{Name: "some user", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"5678"}}
+	newIgnCfg.Passwd.Users = append(newIgnCfg.Passwd.Users, tempUser5)
+	newMcfg = testfixtures.CreateMachineConfigFromIgnition(newIgnCfg)
+	errMsg = IsRenderedConfigReconcilable(oldMcfg, newMcfg)
+	checkIrreconcilableResults(t, "SSH", errMsg)
+
+	// check that user is not attempting to remove the only sshkey from core user
+	tempUser6 := ign3types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{}}
+	newIgnCfg.Passwd.Users[0] = tempUser6
+	newIgnCfg.Passwd.Users = newIgnCfg.Passwd.Users[:len(newIgnCfg.Passwd.Users)-1]
+	newMcfg = testfixtures.CreateMachineConfigFromIgnition(newIgnCfg)
+	errMsg = IsRenderedConfigReconcilable(oldMcfg, newMcfg)
+	checkIrreconcilableResults(t, "SSH", errMsg)
+
+	//check that empty Users does not cause panic
+	newIgnCfg.Passwd.Users = nil
+	newMcfg = testfixtures.CreateMachineConfigFromIgnition(newIgnCfg)
+	errMsg = IsRenderedConfigReconcilable(oldMcfg, newMcfg)
+	checkReconcilableResults(t, "SSH", errMsg)
+}
+
+// checkReconcilableResults is a shortcut for verifying results that should be reconcilable
+func checkReconcilableResults(t *testing.T, key string, reconcilableError error) {
+	if reconcilableError != nil {
+		t.Errorf("%s values should be reconcilable. Received error: %v", key, reconcilableError)
+	}
+}
+
+// checkIrreconcilableResults is a shortcut for verifing results that should be irreconcilable
+func checkIrreconcilableResults(t *testing.T, key string, reconcilableError error) {
+	if reconcilableError == nil {
+		t.Errorf("Different %s values should not be reconcilable.", key)
+	}
+
+	t.Logf("Received error: %s", reconcilableError)
+}

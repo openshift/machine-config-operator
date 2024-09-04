@@ -25,6 +25,8 @@ import (
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	ctrlcommonconfigs "github.com/openshift/machine-config-operator/pkg/controller/common/configs"
+	ctrlcommonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 )
 
 const (
@@ -68,26 +70,26 @@ func createNewKubeletDynamicSystemReservedIgnition(autoSystemReserved *bool, use
 	config := fmt.Sprintf("NODE_SIZING_ENABLED=%s\nSYSTEM_RESERVED_MEMORY=%s\nSYSTEM_RESERVED_CPU=%s\nSYSTEM_RESERVED_ES=%s\n",
 		autoNodeSizing, systemReservedMemory, systemReservedCPU, systemReservedEphemeralStorage)
 
-	r := ctrlcommon.NewIgnFileBytesOverwriting("/etc/node-sizing-enabled.env", []byte(config))
+	r := ctrlcommonconfigs.NewIgnFileBytesOverwriting("/etc/node-sizing-enabled.env", []byte(config))
 	return &r
 }
 
 func createNewKubeletLogLevelIgnition(level int32) *ign3types.File {
 	config := fmt.Sprintf("[Service]\nEnvironment=\"KUBELET_LOG_LEVEL=%d\"\n", level)
-	r := ctrlcommon.NewIgnFileBytesOverwriting("/etc/systemd/system/kubelet.service.d/20-logging.conf", []byte(config))
+	r := ctrlcommonconfigs.NewIgnFileBytesOverwriting("/etc/systemd/system/kubelet.service.d/20-logging.conf", []byte(config))
 	return &r
 }
 
 func createNewKubeletIgnition(yamlConfig []byte) *ign3types.File {
 
-	r := ctrlcommon.NewIgnFileBytesOverwriting("/etc/kubernetes/kubelet.conf", yamlConfig)
+	r := ctrlcommonconfigs.NewIgnFileBytesOverwriting("/etc/kubernetes/kubelet.conf", yamlConfig)
 	return &r
 }
 
 func createNewDefaultFeatureGate() *osev1.FeatureGate {
 	return &osev1.FeatureGate{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: ctrlcommon.ClusterFeatureInstanceName,
+			Name: ctrlcommonconsts.ClusterFeatureInstanceName,
 		},
 		Spec: osev1.FeatureGateSpec{
 			FeatureGateSelection: osev1.FeatureGateSelection{
@@ -100,7 +102,7 @@ func createNewDefaultFeatureGate() *osev1.FeatureGate {
 func createNewDefaultNodeconfig() *osev1.Node {
 	return &osev1.Node{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: ctrlcommon.ClusterNodeInstanceName,
+			Name: ctrlcommonconsts.ClusterNodeInstanceName,
 		},
 		Spec: osev1.NodeSpec{},
 	}
@@ -109,7 +111,7 @@ func createNewDefaultNodeconfig() *osev1.Node {
 func createNewDefaultNodeconfigWithCgroup(mode osev1.CgroupMode) *osev1.Node {
 	return &osev1.Node{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: ctrlcommon.ClusterNodeInstanceName,
+			Name: ctrlcommonconsts.ClusterNodeInstanceName,
 		},
 		Spec: osev1.NodeSpec{
 			CgroupMode: mode,
@@ -118,7 +120,7 @@ func createNewDefaultNodeconfigWithCgroup(mode osev1.CgroupMode) *osev1.Node {
 }
 
 func getConfigNode(ctrl *Controller, key string) (*osev1.Node, error) {
-	nodeConfig, err := ctrl.nodeConfigLister.Get(ctrlcommon.ClusterNodeInstanceName)
+	nodeConfig, err := ctrl.nodeConfigLister.Get(ctrlcommonconsts.ClusterNodeInstanceName)
 	if errors.IsNotFound(err) {
 		return nil, fmt.Errorf("missing node configuration, key: %v", key)
 	} else if err != nil {
@@ -168,14 +170,14 @@ func updateMachineConfigwithCgroup(node *osev1.Node, mc *mcfgv1.MachineConfig) e
 
 	for _, arg := range mc.Spec.KernelArguments {
 		// only append the args we want to keep, omitting the undesired
-		if !ctrlcommon.InSlice(arg, kernelArgsToRemove) {
+		if !ctrlcommonconfigs.InSlice(arg, kernelArgsToRemove) {
 			adjustedKernelArgs = append(adjustedKernelArgs, arg)
 		}
 	}
 
 	for _, arg := range kernelArgsToAdd {
 		// add the additional that aren't already there
-		if !ctrlcommon.InSlice(arg, adjustedKernelArgs) {
+		if !ctrlcommonconfigs.InSlice(arg, adjustedKernelArgs) {
 			adjustedKernelArgs = append(adjustedKernelArgs, arg)
 		}
 	}
@@ -185,7 +187,7 @@ func updateMachineConfigwithCgroup(node *osev1.Node, mc *mcfgv1.MachineConfig) e
 }
 
 func findKubeletConfig(mc *mcfgv1.MachineConfig) (*ign3types.File, error) {
-	ignCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
+	ignCfg, err := ctrlcommonconfigs.ParseAndConvertConfig(mc.Spec.Config.Raw)
 	if err != nil {
 		return nil, fmt.Errorf("parsing Kubelet Ignition config failed with error: %w", err)
 	}
@@ -226,7 +228,7 @@ func getManagedKubeletConfigKey(pool *mcfgv1.MachineConfigPool, client mcfgclien
 		if kc.Name != cfg.Name {
 			continue
 		}
-		val, ok := kc.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
+		val, ok := kc.GetAnnotations()[ctrlcommonconsts.MCNameSuffixAnnotationKey]
 		if !ok {
 			break
 		}
@@ -241,12 +243,12 @@ func getManagedKubeletConfigKey(pool *mcfgv1.MachineConfigPool, client mcfgclien
 
 	// If we are here, this means that
 	// 1. a new kubelet config was created, so we have to calculate the suffix value for its MC name
-	// 2. or this is an existing kubeletconfig did not get ctrlcommon.MCNameSuffixAnnotationKey set, so we have to set the MCNameSuffixAnnotationKey to the machineconfig suffix it was rendered to, assume for existing kubeletconfig, cfg.Finalizers with the largest suffix is the machine config the kcfg was rendered to
+	// 2. or this is an existing kubeletconfig did not get ctrlcommonconsts.MCNameSuffixAnnotationKey set, so we have to set the MCNameSuffixAnnotationKey to the machineconfig suffix it was rendered to, assume for existing kubeletconfig, cfg.Finalizers with the largest suffix is the machine config the kcfg was rendered to
 	// if the kubelet config is the only one in the list, mc name should not suffixed since cfg is the first kubelet config to be created
 	if len(kcList) == 1 {
 		return ctrlcommon.GetManagedKey(pool, client, managedKubeletConfigKeyPrefix, "kubelet", getManagedKubeletConfigKeyDeprecated(pool))
 	}
-	// if cfg is not a newly created kubeletconfig and did not get ctrlcommon.MCNameSuffixAnnotationKey
+	// if cfg is not a newly created kubeletconfig and did not get ctrlcommonconsts.MCNameSuffixAnnotationKey
 	// but has been rendered to a machineconfig, its len(cfg.Finalizers) > 0
 	if notLatestKubeletConfigInPool(kcList, cfg) {
 		finalizers := cfg.GetFinalizers()
@@ -297,7 +299,7 @@ func getManagedKubeletConfigKey(pool *mcfgv1.MachineConfigPool, client mcfgclien
 	suffixNum := 0
 	// Go through the list of kubelet config objects created and get the max suffix value currently created
 	for _, item := range kcList {
-		val, ok := item.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
+		val, ok := item.GetAnnotations()[ctrlcommonconsts.MCNameSuffixAnnotationKey]
 		if ok && val != "" {
 			// Convert the suffix value to int so we can look through the list and grab the max suffix created so far
 			intVal, err := strconv.Atoi(val)
@@ -315,7 +317,7 @@ func getManagedKubeletConfigKey(pool *mcfgv1.MachineConfigPool, client mcfgclien
 	// then if the user creates a kc-new it will map to mc-3. This is what we want as the latest kubelet config created should be higher in priority
 	// so that those changes can be rolled out to the nodes. But users will have to be mindful of how many kubelet config CRs they create. Don't think
 	// anyone should ever have the need to create 10 when they can simply update an existing kubelet config unless it is to apply to another pool.
-	if suffixNum+1 > ctrlcommon.MaxMCNameSuffix {
+	if suffixNum+1 > ctrlcommonconsts.MaxMCNameSuffix {
 		return "", fmt.Errorf("max number of supported kubelet config (10) has been reached. Please delete old kubelet configs before retrying")
 	}
 	// Return the default MC name with the suffixNum+1 value appended to it

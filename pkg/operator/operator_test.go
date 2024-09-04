@@ -10,7 +10,7 @@ import (
 	fakeconfigclientset "github.com/openshift/client-go/config/clientset/versioned/fake"
 	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
-	"github.com/openshift/machine-config-operator/test/helpers"
+	"github.com/openshift/machine-config-operator/test/fixtures"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -31,7 +31,7 @@ func TestMetrics(t *testing.T) {
 	}
 	optr.vStore = newVersionStore()
 
-	p1, p2 := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"), helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
+	p1, p2 := fixtures.NewMachineConfigPool("master", nil, fixtures.MasterSelector, "v0"), fixtures.NewMachineConfigPool("worker", nil, fixtures.WorkerSelector, "v0")
 	p2.Status.MachineCount = 2
 	p2.Status.UpdatedMachineCount = 1
 	p2.Status.DegradedMachineCount = 1

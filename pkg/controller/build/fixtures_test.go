@@ -13,8 +13,10 @@ import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	testhelpers "github.com/openshift/machine-config-operator/test/helpers"
+	ctrlcommonconfigs "github.com/openshift/machine-config-operator/pkg/controller/common/configs"
+	ctrlcommonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
+	testfixtures "github.com/openshift/machine-config-operator/test/fixtures"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -146,8 +148,8 @@ func getMachineOSBuild(ctx context.Context, cs *Clients, config *mcfgv1alpha1.Ma
 func getOSImageURLConfigMap() *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      ctrlcommon.MachineConfigOSImageURLConfigMapName,
-			Namespace: ctrlcommon.MCONamespace,
+			Name:      ctrlcommonconsts.MachineConfigOSImageURLConfigMapName,
+			Namespace: ctrlcommonconsts.MCONamespace,
 		},
 		Data: map[string]string{
 			"baseOSContainerImage":           "registry.ci.openshift.org/ocp/4.14-2023-05-29-125629@sha256:12e89d631c0ca1700262583acfb856b6e7dbe94800cb38035d68ee5cc912411c",
@@ -162,8 +164,8 @@ func getOSImageURLConfigMap() *corev1.ConfigMap {
 func getImagesConfigMap() *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      ctrlcommon.MachineConfigOperatorImagesConfigMapName,
-			Namespace: ctrlcommon.MCONamespace,
+			Name:      ctrlcommonconsts.MachineConfigOperatorImagesConfigMapName,
+			Namespace: ctrlcommonconsts.MCONamespace,
 		},
 		Data: map[string]string{
 			"images.json": `{"machineConfigOperator": "mco.image.pullspec"}`,
@@ -186,10 +188,10 @@ func newMachineConfigPoolAndConfigs(name string, params ...string) []runtime.Obj
 		}
 
 		filename := fmt.Sprintf("/etc/%s", childConfig.Name)
-		file := ctrlcommon.NewIgnFile(filename, childConfig.Name)
+		file := ctrlcommonconfigs.NewIgnFile(filename, childConfig.Name)
 		files = append(files, file)
 
-		out = append(out, testhelpers.NewMachineConfig(
+		out = append(out, testfixtures.NewMachineConfig(
 			childConfig.Name,
 			map[string]string{
 				"machineconfiguration.openshift.io/role": name,
@@ -199,11 +201,11 @@ func newMachineConfigPoolAndConfigs(name string, params ...string) []runtime.Obj
 	}
 
 	// Create a rendered MachineConfig to accompany our MachineConfigPool.
-	out = append(out, testhelpers.NewMachineConfig(
+	out = append(out, testfixtures.NewMachineConfig(
 		mcp.Spec.Configuration.Name,
 		map[string]string{
-			ctrlcommon.GeneratedByControllerVersionAnnotationKey: "version-number",
-			"machineconfiguration.openshift.io/role":             name,
+			ctrlcommonconsts.GeneratedByControllerVersionAnnotationKey: "version-number",
+			"machineconfiguration.openshift.io/role":                   name,
 		},
 		"",
 		files))
@@ -234,7 +236,7 @@ func newMachineConfigPool(name string, params ...string) *mcfgv1.MachineConfigPo
 
 	poolSelector := metav1.AddLabelToSelector(&metav1.LabelSelector{}, mcfgv1.MachineConfigRoleLabelKey, name)
 
-	mcp := testhelpers.NewMachineConfigPool(name, poolSelector, nodeSelector, renderedConfigName)
+	mcp := testfixtures.NewMachineConfigPool(name, poolSelector, nodeSelector, renderedConfigName)
 	mcp.Spec.Configuration.Source = append(mcp.Spec.Configuration.Source, childConfigs...)
 	mcp.Status.Configuration.Source = append(mcp.Status.Configuration.Source, childConfigs...)
 
@@ -308,7 +310,7 @@ func assertNoBuildPods(ctx context.Context, t *testing.T, cs *Clients) bool {
 
 	buildPodNames := []string{}
 
-	podList, err := cs.kubeclient.CoreV1().Pods(ctrlcommon.MCONamespace).List(ctx, metav1.ListOptions{})
+	podList, err := cs.kubeclient.CoreV1().Pods(ctrlcommonconsts.MCONamespace).List(ctx, metav1.ListOptions{})
 	require.NoError(t, err)
 
 	for _, pod := range podList.Items {
@@ -342,7 +344,7 @@ func assertConfigMapsCreated(ctx context.Context, t *testing.T, cs *Clients, ibr
 	}
 
 	err := wait.PollImmediateInfiniteWithContext(ctx, pollInterval, func(ctx context.Context) (bool, error) {
-		configmapList, err := cs.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).List(ctx, metav1.ListOptions{})
+		configmapList, err := cs.kubeclient.CoreV1().ConfigMaps(ctrlcommonconsts.MCONamespace).List(ctx, metav1.ListOptions{})
 		if err != nil {
 			return false, err
 		}
@@ -370,7 +372,7 @@ func assertBuildPodIsCreated(ctx context.Context, t *testing.T, cs *Clients, ibr
 	var podNames []string
 
 	err := wait.PollImmediateInfiniteWithContext(ctx, pollInterval, func(ctx context.Context) (bool, error) {
-		podList, err := cs.kubeclient.CoreV1().Pods(ctrlcommon.MCONamespace).List(ctx, metav1.ListOptions{})
+		podList, err := cs.kubeclient.CoreV1().Pods(ctrlcommonconsts.MCONamespace).List(ctx, metav1.ListOptions{})
 		if err != nil {
 			return false, err
 		}
@@ -444,7 +446,7 @@ func assertMOSBFollowsBuildPodStatus(ctx context.Context, t *testing.T, cs *Clie
 	// Cycle through each of the build pod phases.
 	for _, phase := range podPhases {
 		// Get the build pod by name.
-		buildPod, err := cs.kubeclient.CoreV1().Pods(ctrlcommon.MCONamespace).Get(ctx, buildPodName, metav1.GetOptions{})
+		buildPod, err := cs.kubeclient.CoreV1().Pods(ctrlcommonconsts.MCONamespace).Get(ctx, buildPodName, metav1.GetOptions{})
 		require.NoError(t, err)
 
 		// Set the pod phase and update it.
@@ -456,17 +458,17 @@ func assertMOSBFollowsBuildPodStatus(ctx context.Context, t *testing.T, cs *Clie
 			cm := &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      ibr.getDigestConfigMapName(),
-					Namespace: ctrlcommon.MCONamespace,
+					Namespace: ctrlcommonconsts.MCONamespace,
 				},
 				Data: map[string]string{
 					"digest": expectedImageSHA,
 				},
 			}
-			_, cmErr := cs.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Create(ctx, cm, metav1.CreateOptions{})
+			_, cmErr := cs.kubeclient.CoreV1().ConfigMaps(ctrlcommonconsts.MCONamespace).Create(ctx, cm, metav1.CreateOptions{})
 			require.NoError(t, cmErr)
 		}
 
-		_, err = cs.kubeclient.CoreV1().Pods(ctrlcommon.MCONamespace).UpdateStatus(ctx, buildPod, metav1.UpdateOptions{})
+		_, err = cs.kubeclient.CoreV1().Pods(ctrlcommonconsts.MCONamespace).UpdateStatus(ctx, buildPod, metav1.UpdateOptions{})
 		require.NoError(t, err)
 
 		// Look up the expected MCP condition for our current pod phase.
@@ -481,7 +483,7 @@ func assertMOSBFollowsBuildPodStatus(ctx context.Context, t *testing.T, cs *Clie
 	}
 
 	// Find out what happened to the build pod.
-	_, err = cs.kubeclient.CoreV1().Pods(ctrlcommon.MCONamespace).Get(ctx, buildPodName, metav1.GetOptions{})
+	_, err = cs.kubeclient.CoreV1().Pods(ctrlcommonconsts.MCONamespace).Get(ctx, buildPodName, metav1.GetOptions{})
 	switch endingPhase {
 	case corev1.PodSucceeded:
 
@@ -539,7 +541,7 @@ func newSecret(name string, secretType corev1.SecretType, data []byte) *corev1.S
 	s := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: ctrlcommon.MCONamespace,
+			Namespace: ctrlcommonconsts.MCONamespace,
 		},
 		Data: map[string][]byte{},
 		Type: secretType,

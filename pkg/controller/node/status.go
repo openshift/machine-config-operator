@@ -17,6 +17,7 @@ import (
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	ctrlcommonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	helpers "github.com/openshift/machine-config-operator/pkg/helpers"
@@ -24,7 +25,7 @@ import (
 
 // syncStatusOnly for MachineConfigNode
 func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
-	cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
+	cc, err := ctrl.ccLister.Get(ctrlcommonconsts.ControllerConfigName)
 	if err != nil {
 		return err
 	}

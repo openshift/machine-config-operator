@@ -17,6 +17,7 @@ import (
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	ctrlcommonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -295,7 +296,7 @@ func ValidateOnClusterBuildConfig(kubeclient clientset.Interface, mcfgclient ver
 	}
 
 	secretGetter := func(name string) (*corev1.Secret, error) {
-		return kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(context.TODO(), name, metav1.GetOptions{})
+		return kubeclient.CoreV1().Secrets(ctrlcommonconsts.MCONamespace).Get(context.TODO(), name, metav1.GetOptions{})
 	}
 
 	moscForPoolExists := false
@@ -361,7 +362,7 @@ func ValidateMachineOSConfigFromListers(mcpLister mcfglistersv1.MachineConfigPoo
 	}
 
 	secretGetter := func(name string) (*corev1.Secret, error) {
-		return secretLister.Secrets(ctrlcommon.MCONamespace).Get(name)
+		return secretLister.Secrets(ctrlcommonconsts.MCONamespace).Get(name)
 	}
 
 	return validateMachineOSConfig(mcpGetter, secretGetter, mosc)

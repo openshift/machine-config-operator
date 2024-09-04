@@ -15,7 +15,7 @@ import (
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
 
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	ctrlcommonconfigs "github.com/openshift/machine-config-operator/pkg/controller/common/configs"
 )
 
 const (
@@ -151,7 +151,7 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		serveConf = conf
 
 	case reqConfigVer.Equal(*semver.New("3.3.0")):
-		converted33, err := ctrlcommon.ConvertRawExtIgnitionToV3_3(conf)
+		converted33, err := ctrlcommonconfigs.ConvertRawExtIgnitionToV3_3(conf)
 		if err != nil {
 			w.Header().Set("Content-Length", "0")
 			w.WriteHeader(http.StatusInternalServerError)
@@ -161,7 +161,7 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		serveConf = &converted33
 
 	case reqConfigVer.Equal(*semver.New("3.2.0")):
-		converted32, err := ctrlcommon.ConvertRawExtIgnitionToV3_2(conf)
+		converted32, err := ctrlcommonconfigs.ConvertRawExtIgnitionToV3_2(conf)
 		if err != nil {
 			w.Header().Set("Content-Length", "0")
 			w.WriteHeader(http.StatusInternalServerError)
@@ -171,7 +171,7 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		serveConf = &converted32
 
 	case reqConfigVer.Equal(*semver.New("3.1.0")):
-		converted31, err := ctrlcommon.ConvertRawExtIgnitionToV3_1(conf)
+		converted31, err := ctrlcommonconfigs.ConvertRawExtIgnitionToV3_1(conf)
 		if err != nil {
 			w.Header().Set("Content-Length", "0")
 			w.WriteHeader(http.StatusInternalServerError)
@@ -182,7 +182,7 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	default:
 		// Can only be 2.2 here
-		converted2, err := ctrlcommon.ConvertRawExtIgnitionToV2_2(conf)
+		converted2, err := ctrlcommonconfigs.ConvertRawExtIgnitionToV2_2(conf)
 		if err != nil {
 			w.Header().Set("Content-Length", "0")
 			w.WriteHeader(http.StatusInternalServerError)
