@@ -20,6 +20,7 @@ import (
 
 	authenticationv1 "k8s.io/api/authentication/v1"
 	aggerrs "k8s.io/apimachinery/pkg/util/errors"
+	"sigs.k8s.io/yaml"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	"github.com/davecgh/go-spew/spew"
@@ -322,7 +323,7 @@ func WaitForNodeConfigAndImageChange(t *testing.T, cs *framework.ClientSet, node
 			return false, err
 		}
 
-		return hasNodeConfigChanged(*n, mcName) && hasNodeImageChanged(*n, image), nil
+		return hasNodeConfigChanged(*n, mcName) && hasNodeImageChanged(*n, image) && isMCDDone(*n), nil
 	})
 
 	if err != nil {
@@ -344,7 +345,7 @@ func WaitForNodeImageChange(t *testing.T, cs *framework.ClientSet, node corev1.N
 			return false, err
 		}
 
-		return hasNodeImageChanged(*n, image), nil
+		return hasNodeImageChanged(*n, image) && isMCDDone(*n), nil
 	})
 
 	if err != nil {
@@ -366,7 +367,7 @@ func WaitForNodeConfigChange(t *testing.T, cs *framework.ClientSet, node corev1.
 			return false, err
 		}
 
-		return hasNodeConfigChanged(*n, mcName), nil
+		return hasNodeConfigChanged(*n, mcName) && isMCDDone(*n), nil
 	})
 
 	if err != nil {
@@ -375,26 +376,6 @@ func WaitForNodeConfigChange(t *testing.T, cs *framework.ClientSet, node corev1.
 
 	t.Logf("Node %s changed config to %s (waited %v)", node.Name, mcName, time.Since(startTime))
 	return nil
-}
-
-// Determines whether a node has changed configs.
-func hasNodeConfigChanged(node corev1.Node, mcName string) bool {
-	current := node.Annotations[constants.CurrentMachineConfigAnnotationKey]
-	desired := node.Annotations[constants.DesiredMachineConfigAnnotationKey]
-
-	state := node.Annotations[constants.MachineConfigDaemonStateAnnotationKey]
-
-	return current == desired && desired == mcName && state == constants.MachineConfigDaemonStateDone
-}
-
-// Determines whether a node has changed images.
-func hasNodeImageChanged(node corev1.Node, image string) bool {
-	current := node.Annotations[constants.CurrentImageAnnotationKey]
-	desired := node.Annotations[constants.DesiredImageAnnotationKey]
-
-	state := node.Annotations[constants.MachineConfigDaemonStateAnnotationKey]
-
-	return current == desired && desired == image && state == constants.MachineConfigDaemonStateDone
 }
 
 // WaitForPoolComplete polls a pool until it has completed any update
@@ -653,8 +634,35 @@ func LabelNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, label st
 	})
 }
 
-// Gets a random node from a given pool
+// Gets a random node from a given pool. Checks for whether the node is ready
+// and if no nodes are ready, it will poll for up to 5 minutes for a node to
+// become available.
 func GetRandomNode(t *testing.T, cs *framework.ClientSet, pool string) corev1.Node {
+	if node := getRandomNode(t, cs, pool); isNodeReady(node) {
+		return node
+	}
+
+	waitPeriod := time.Minute * 5
+
+	t.Logf("No ready nodes found for pool %s, waiting up to %s for a ready node to become available", pool, waitPeriod)
+
+	var targetNode corev1.Node
+
+	err := wait.PollUntilContextTimeout(context.TODO(), 2*time.Second, waitPeriod, true, func(_ context.Context) (bool, error) {
+		if node := getRandomNode(t, cs, pool); isNodeReady(node) {
+			targetNode = node
+			return true, nil
+		}
+
+		return false, nil
+	})
+
+	require.NoError(t, err, "no ready nodes found in pool %s after %s", pool, waitPeriod)
+	return targetNode
+}
+
+// Gets a random node from a given pool.
+func getRandomNode(t *testing.T, cs *framework.ClientSet, pool string) corev1.Node {
 	nodes, err := GetNodesByRole(cs, pool)
 	require.Nil(t, err)
 	require.NotEmpty(t, nodes)
@@ -1182,9 +1190,9 @@ func DeleteNodeAndMachine(t *testing.T, cs *framework.ClientSet, node corev1.Nod
 }
 
 // Sets the MachineSet to the desired number of replicas. Note: Does not wait
-// for new nodes to become available nor does not wait for nodes to be scaled
-// back down. Returns a function that will scale the nodes back to the original
-// MachineSet replica value.
+// for new nodes to become available and does not wait for nodes to be scaled
+// back down. Returns an idempotent function that will scale the nodes back to
+// the original MachineSet replica value.
 func ScaleMachineSet(t *testing.T, cs *framework.ClientSet, machinesetName string, desiredReplicas int32) func() {
 	t.Helper()
 
@@ -1201,7 +1209,7 @@ func ScaleMachineSet(t *testing.T, cs *framework.ClientSet, machinesetName strin
 	_, err = machineclient.MachineSets(machineAPINamespace).Update(context.TODO(), machineset, metav1.UpdateOptions{})
 	require.NoError(t, err)
 
-	return func() {
+	return MakeIdempotent(func() {
 		machineset, err := machineclient.MachineSets(machineAPINamespace).Get(context.TODO(), machinesetName, metav1.GetOptions{})
 		require.NoError(t, err)
 
@@ -1211,22 +1219,23 @@ func ScaleMachineSet(t *testing.T, cs *framework.ClientSet, machinesetName strin
 		require.NoError(t, err)
 
 		t.Logf("Scaled MachineSet %s back to the original replica count of %d", machinesetName, originalReplicaCount)
-	}
+	})
 }
 
 // Performs the same task as ScaleMachineSet, but waits for the new nodes to
-// all be ready before returning. Returns a list of new nodes as well as a
-// function that will scale the nodes back down and delete the underlying
-// machines / nodes.
+// all be ready before returning. Returns a list of new nodes as well as an
+// idempotent scaledown function that will scale the nodes back down and wait
+// for all of the nodes to be ready.
 func ScaleMachineSetAndWaitForNodesToBeReady(t *testing.T, cs *framework.ClientSet, machinesetName string, desiredReplicas int32) ([]*corev1.Node, func()) {
-	nodes, err := cs.CoreV1Interface.Nodes().List(context.TODO(), metav1.ListOptions{})
+	t.Helper()
+
+	ctx := context.Background()
+
+	nodes, err := cs.CoreV1Interface.Nodes().List(ctx, metav1.ListOptions{})
 	require.NoError(t, err)
 
 	// Get a set of current node names before we scale up any additional nodes.
-	originalNodes := sets.New[string]()
-	for _, node := range nodes.Items {
-		originalNodes.Insert(node.Name)
-	}
+	originalNodes := nodeListToSet(nodes)
 
 	start := time.Now()
 
@@ -1245,17 +1254,18 @@ func ScaleMachineSetAndWaitForNodesToBeReady(t *testing.T, cs *framework.ClientS
 
 	t.Log("Waiting for new node(s) to be ready")
 
-	// Poll until the new nodes are present.
-	err = wait.PollUntilContextTimeout(context.TODO(), 2*time.Second, 20*time.Minute, false, func(ctx context.Context) (bool, error) {
+	// Poll until the new nodes are present and ready.
+	err = wait.PollUntilContextTimeout(ctx, 2*time.Second, 20*time.Minute, false, func(ctx context.Context) (bool, error) {
 		nodes, err := cs.CoreV1Interface.Nodes().List(ctx, metav1.ListOptions{})
 		if err != nil {
 			return false, err
 		}
 
-		// If we have the same number of nodes that we started with, this means the
-		// new node(s) haven't been created yet. We can return early here because
-		// there's nothing to validate.
-		if len(nodes.Items) == originalNodes.Len() {
+		// If we have the same nodes that we started with, it means new node(s)
+		// haven't been created yet. We can return early from the polling function
+		// because there's nothing to validate.
+		currentNodes := nodeListToSet(nodes)
+		if currentNodes.Equal(originalNodes) {
 			return false, nil
 		}
 
@@ -1295,30 +1305,63 @@ func ScaleMachineSetAndWaitForNodesToBeReady(t *testing.T, cs *framework.ClientS
 
 	t.Logf("%d new nodes(s) %v ready after %s", readyNodes.Len(), sets.List(readyNodes), time.Since(start))
 
-	return out, func() {
+	scaledownAndWaitFunc := MakeIdempotent(func() {
+		scaledownStart := time.Now()
+
+		// Mark the new machines for deletion priority.
+		for _, nodeName := range newNodes.UnsortedList() {
+			require.NoError(t, setDeletionAnnotationOnMachineForNode(ctx, cs, nodeName))
+		}
+
 		// Call the scaledown function returned from the ScaleMachineSet function.
 		scaledownFunc()
 
-		// While one should wait for the node to be cordoned and drained, this
-		// takes additional time to do and can slow down e2e execution. Instead of
-		// doing that, we can explcitly delete the node and Machine objects with no
-		// consequences to the MCO.
-		for _, node := range out {
-			DeleteNodeAndMachine(t, cs, *node)
-		}
-	}
+		waitTime := 5 * time.Minute
+
+		t.Logf("Waiting up to %s for all nodes to be ready after scaledown of MachineSet %s", waitTime, machinesetName)
+
+		// Wait for the nodes to be deleted and all nodes to be ready before we
+		// continue further.
+		err := wait.PollUntilContextTimeout(ctx, 2*time.Second, waitTime, true, func(ctx context.Context) (bool, error) {
+			nodes, err := cs.CoreV1Interface.Nodes().List(ctx, metav1.ListOptions{})
+			if err != nil {
+				return false, err
+			}
+
+			// Once we have the same number of nodes we started with and all of our
+			// nodes are ready, we are done.
+			return len(nodes.Items) == originalNodes.Len() && isAllNodesReady(nodes), nil
+		})
+
+		require.NoError(t, err)
+
+		t.Logf("Scaledown complete after %s", time.Since(scaledownStart))
+	})
+
+	return out, scaledownAndWaitFunc
 }
 
-// Determines if a given node is ready based upon the kubelet being ready.
-func isNodeReady(node corev1.Node) bool {
-	for _, condition := range node.Status.Conditions {
-		if condition.Reason == "KubeletReady" && condition.Status == "True" && condition.Type == "Ready" {
-			return true
-
-		}
+// Sets the delete-machine annotation on the underlying Machine object for a
+// given node so that the Machine API will prioritize that machine for deletion
+// when we scale back down.
+// See: https://docs.openshift.com/container-platform/4.16/machine_management/deleting-machine.html
+func setDeletionAnnotationOnMachineForNode(ctx context.Context, cs *framework.ClientSet, nodeName string) error {
+	node, err := cs.CoreV1Interface.Nodes().Get(ctx, nodeName, metav1.GetOptions{})
+	if err != nil {
+		return err
 	}
 
-	return false
+	machineID := strings.ReplaceAll(node.Annotations["machine.openshift.io/machine"], machineAPINamespace+"/", "")
+	machineClient := machineClientv1beta1.NewForConfigOrDie(cs.GetRestConfig())
+
+	m, err := machineClient.Machines(machineAPINamespace).Get(ctx, machineID, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+
+	m.Annotations["machine.openshift.io/delete-machine"] = "true"
+	_, err = machineClient.Machines(machineAPINamespace).Update(ctx, m, metav1.UpdateOptions{})
+	return err
 }
 
 // MustHaveFeatureGatesEnabled fatally exits the test if any feature gate in requiredFeatureGates is not enabled.
@@ -1408,10 +1451,7 @@ func AssertAllNodesReachExpectedState(t *testing.T, cs *framework.ClientSet, con
 	nodeList, err := cs.CoreV1Interface.Nodes().List(context.TODO(), metav1.ListOptions{})
 	require.NoError(t, err)
 
-	nodes := sets.New[string]()
-	for _, node := range nodeList.Items {
-		nodes.Insert(node.Name)
-	}
+	allNodes := nodeListToSet(nodeList)
 
 	nodesWithDesiredConfig := sets.New[string]()
 
@@ -1429,10 +1469,10 @@ func AssertAllNodesReachExpectedState(t *testing.T, cs *framework.ClientSet, con
 			}
 		}
 
-		return nodes.Equal(nodesWithDesiredConfig), nil
+		return allNodes.Equal(nodesWithDesiredConfig), nil
 	})
 
-	require.NoError(t, err, "%d nodes %v failed to reach desired state", nodes.Len()-nodesWithDesiredConfig.Len(), nodes.Difference(nodesWithDesiredConfig).UnsortedList())
+	require.NoError(t, err, "%d nodes %v failed to reach desired state", allNodes.Len()-nodesWithDesiredConfig.Len(), allNodes.Difference(nodesWithDesiredConfig).UnsortedList())
 
 	t.Logf("All nodes reached desired state in %v", time.Since(start))
 }
@@ -1440,22 +1480,32 @@ func AssertAllNodesReachExpectedState(t *testing.T, cs *framework.ClientSet, con
 // AssertMCDLogsContain asserts that the MCD pod's logs contains a target string value
 func AssertMCDLogsContain(t *testing.T, cs *framework.ClientSet, mcdPod *corev1.Pod, node *corev1.Node, expectedContents string) {
 	t.Helper()
+
+	mcdLogs := getMCDLogs(t, cs, mcdPod, node)
+
+	assert.Contains(t, mcdLogs, expectedContents, "expected to find '%s' in logs for %s/%s", expectedContents, mcdPod.Namespace, mcdPod.Name)
+}
+
+func getMCDLogs(t *testing.T, cs *framework.ClientSet, mcdPod *corev1.Pod, node *corev1.Node) string {
+	t.Helper()
+
+	ctx := context.Background()
+
 	logs, err := cs.Pods(mcdPod.Namespace).GetLogs(mcdPod.Name, &corev1.PodLogOptions{
 		Container: "machine-config-daemon",
-	}).DoRaw(context.TODO())
-	if err != nil {
-		// common err is that the mcd went down mid cmd. Re-try for good measure
-		mcdPod, err = MCDForNode(cs, node)
-		require.Nil(t, err)
-		logs, err = cs.Pods(mcdPod.Namespace).GetLogs(mcdPod.Name, &corev1.PodLogOptions{
-			Container: "machine-config-daemon",
-		}).DoRaw(context.TODO())
+	}).DoRaw(ctx)
+	if err == nil {
+		return string(logs)
 	}
-	require.Nil(t, err)
 
-	if !strings.Contains(string(logs), expectedContents) {
-		t.Fatalf("expected to find '%s' in logs for %s/%s", expectedContents, mcdPod.Namespace, mcdPod.Name)
-	}
+	// common err is that the mcd went down mid cmd. Re-try for good measure
+	mcdPod, err = MCDForNode(cs, node)
+	require.Nil(t, err)
+	logs, err = cs.Pods(mcdPod.Namespace).GetLogs(mcdPod.Name, &corev1.PodLogOptions{
+		Container: "machine-config-daemon",
+	}).DoRaw(ctx)
+	require.NoError(t, err)
+	return string(logs)
 }
 
 func GetFunctionName(i interface{}) string {
@@ -1482,6 +1532,116 @@ func GetActionApplyConfiguration(action opv1.NodeDisruptionPolicySpecAction) *mc
 		return mcoac.NodeDisruptionPolicySpecAction().WithType(action.Type).WithRestart(restartApplyConfiguration)
 	}
 	return mcoac.NodeDisruptionPolicySpecAction().WithType(action.Type)
+}
+
+// Collects information from a node during a failed test that could be useful
+// for debugging why the test failed.
+// TODO: Wire this up to all of our tests so that we can get this info.
+func CollectDebugInfoFromNode(t *testing.T, cs *framework.ClientSet, node *corev1.Node) {
+	t.Helper()
+
+	name := fmt.Sprintf("%s-%s", SanitizeTestName(t), node.Name)
+	archiveName := fmt.Sprintf("%s.tar.gz", name)
+
+	archive, err := NewArtifactArchive(t, archiveName)
+	require.NoError(t, err)
+
+	execCmdWithErr := func(cmd ...string) string {
+		output, err := ExecCmdOnNodeWithError(cs, *node, cmd...)
+		if err != nil {
+			t.Logf("could not execute command: %s", strings.Join(cmd, " "))
+		}
+		return output
+	}
+
+	listDir := func(name string) string {
+		return execCmdWithErr("ls", "-la", filepath.Join("/rootfs", name))
+	}
+
+	catFileWithErr := func(name string) (string, error) {
+		return ExecCmdOnNodeWithError(cs, *node, "cat", filepath.Join("/rootfs", name))
+	}
+
+	runCmd := func(cmd []string) string {
+		cmd = append([]string{"chroot", "/rootfs"}, cmd...)
+		return execCmdWithErr(cmd...)
+	}
+
+	mcdPod, err := MCDForNode(cs, node)
+	require.NoError(t, err)
+
+	writeFileToArchive := func(path, contents string) {
+		archiveFilename := filepath.Join(archive.StagingDir(), path)
+		require.NoError(t, err, os.MkdirAll(filepath.Dir(archiveFilename), 0o755))
+		require.NoError(t, os.WriteFile(archiveFilename, []byte(contents), 0o755))
+		t.Logf("Wrote %s", archiveFilename)
+	}
+
+	writeNodeFileToArchive := func(path, contents string) {
+		writeFileToArchive(filepath.Join(node.Name, path), contents)
+	}
+
+	itemsToWrite := map[string]string{
+		"ssh-ls.log":                       listDir("/home/core/.ssh"),
+		"etc-mco-ls.log":                   listDir("/etc/mco"),
+		"etc-ls.log":                       listDir("/etc"),
+		"etc-machine-config-daemon-ls.log": listDir("/etc/machine-config-daemon"),
+		"journalctl-listboots.log":         runCmd([]string{"journalctl", "--list-boots"}),
+		"rpm-ostree-status.log":            runCmd([]string{"rpm-ostree", "status"}),
+		"mcd.log":                          getMCDLogs(t, cs, mcdPod, node),
+	}
+
+	for filename, contents := range itemsToWrite {
+		writeFileToArchive(filepath.Join("state", filename), contents)
+	}
+
+	nodeFilesToWrite := []string{
+		"/etc/machine-config-daemon/currentconfig",
+		"/etc/os-release",
+		"/usr/lib/osrelease",
+		constants.RHCOS8SSHKeyPath,
+		constants.RHCOS9SSHKeyPath,
+		"/etc/machine-config-daemon/node-annotation.json.bak",
+		"/etc/ignition-machine-config-encapsulated.json.bak",
+	}
+
+	for _, filename := range nodeFilesToWrite {
+		contents, err := catFileWithErr(filename)
+		if err != nil {
+			t.Logf("could not get file %s from node, skipping", filename)
+			continue
+		}
+		writeNodeFileToArchive(filename, contents)
+	}
+
+	ctx := context.Background()
+
+	updatedNode, err := cs.CoreV1Interface.Nodes().Get(ctx, node.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	mc, err := cs.MachineConfigs().Get(ctx, node.Annotations["machineconfiguration.openshift.io/desiredConfig"], metav1.GetOptions{})
+	require.NoError(t, err)
+
+	mcp, err := cs.MachineConfigPools().Get(ctx, "worker", metav1.GetOptions{})
+	require.NoError(t, err)
+
+	objectsToWrite := map[string]interface{}{
+		"node.yaml":          updatedNode,
+		"machineconfig.yaml": mc,
+		"mcp.yaml":           mcp,
+	}
+
+	for filename, object := range objectsToWrite {
+		out, err := yaml.Marshal(object)
+		require.NoError(t, err)
+		writeFileToArchive(filepath.Join("objects", filename), string(out))
+	}
+
+	// Consider retrieving the MachineConfig contents from the node filesystem
+	// once the circular import between this package (test/helpers) and
+	// ctrlcommon (pkg/controller/common) is resolved.
+
+	require.NoError(t, archive.WriteArchive())
 }
 
 // Sets labels on any object that is created for this test. Includes the name
@@ -1512,4 +1672,16 @@ func setLabelsOnObject(obj metav1.Object) {
 	labels[UsedByE2ETestLabelKey] = ""
 
 	obj.SetLabels(labels)
+}
+
+// Converts a given NodeList to a Set.
+// See: https://github.com/kubernetes/apimachinery/tree/master/pkg/util/sets
+func nodeListToSet(nodeList *corev1.NodeList) sets.Set[string] {
+	nodes := sets.New[string]()
+
+	for _, node := range nodeList.Items {
+		nodes.Insert(node.Name)
+	}
+
+	return nodes
 }
