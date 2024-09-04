@@ -386,42 +386,31 @@ func cleanupEphemeralBuildObjects(t *testing.T, cs *framework.ClientSet) {
 	}
 }
 
-// Determines where to write the build logs in the event of a failure.
-// ARTIFACT_DIR is a well-known env var provided by the OpenShift CI system.
-// Writing to the path in this env var will ensure that any files written to
-// that path end up in the OpenShift CI GCP bucket for later viewing.
-//
-// If this env var is not set, these files will be written to the current
-// working directory.
-func getBuildArtifactDir(t *testing.T) string {
-	artifactDir := os.Getenv("ARTIFACT_DIR")
-	if artifactDir != "" {
-		return artifactDir
-	}
-
-	cwd, err := os.Getwd()
-	require.NoError(t, err)
-	return cwd
-}
-
 // Writes any ephemeral build objects to disk as YAML files.
 func writeBuildArtifactsToFiles(t *testing.T, cs *framework.ClientSet, poolName string) {
 	lo := metav1.ListOptions{
 		LabelSelector: build.OSBuildSelector().String(),
 	}
 
-	err := aggerrs.NewAggregate([]error{
-		writeConfigMapsToFile(t, cs, lo),
-		writeBuildPodsToFile(t, cs, lo),
-		writeMachineOSBuildsToFile(t, cs),
-		writeMachineOSConfigsToFile(t, cs),
+	archiveName := fmt.Sprintf("%s-build-artifacts.tar.gz", helpers.SanitizeTestName(t))
+
+	archive, err := helpers.NewArtifactArchive(t, archiveName)
+	require.NoError(t, err)
+
+	err = aggerrs.NewAggregate([]error{
+		writeConfigMapsToFile(t, cs, lo, archive.StagingDir()),
+		writeBuildPodsToFile(t, cs, lo, archive.StagingDir()),
+		writeMachineOSBuildsToFile(t, cs, archive.StagingDir()),
+		writeMachineOSConfigsToFile(t, cs, archive.StagingDir()),
 	})
 
 	require.NoError(t, err, "could not write build artifacts to files, got: %s", err)
+
+	require.NoError(t, archive.WriteArchive(), "could not write archive")
 }
 
 // Writes all MachineOSBuilds to a file.
-func writeMachineOSBuildsToFile(t *testing.T, cs *framework.ClientSet) error {
+func writeMachineOSBuildsToFile(t *testing.T, cs *framework.ClientSet, archiveDir string) error {
 	mosbList, err := cs.MachineconfigurationV1alpha1Interface.MachineOSBuilds().List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		return err
@@ -432,11 +421,11 @@ func writeMachineOSBuildsToFile(t *testing.T, cs *framework.ClientSet) error {
 		return nil
 	}
 
-	return dumpObjectToYAMLFile(t, mosbList, "machineosbuilds")
+	return dumpObjectToYAMLFile(t, mosbList, filepath.Join(archiveDir, "machineosbuilds.yaml"))
 }
 
 // Writes all MachineOSConfigs to a file.
-func writeMachineOSConfigsToFile(t *testing.T, cs *framework.ClientSet) error {
+func writeMachineOSConfigsToFile(t *testing.T, cs *framework.ClientSet, archiveDir string) error {
 	moscList, err := cs.MachineconfigurationV1alpha1Interface.MachineOSConfigs().List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		return err
@@ -447,11 +436,11 @@ func writeMachineOSConfigsToFile(t *testing.T, cs *framework.ClientSet) error {
 		return nil
 	}
 
-	return dumpObjectToYAMLFile(t, moscList, "machineosconfigs")
+	return dumpObjectToYAMLFile(t, moscList, filepath.Join(archiveDir, "machineosconfigs.yaml"))
 }
 
 // Writes all ConfigMaps that match the OS Build labels to files.
-func writeConfigMapsToFile(t *testing.T, cs *framework.ClientSet, lo metav1.ListOptions) error {
+func writeConfigMapsToFile(t *testing.T, cs *framework.ClientSet, lo metav1.ListOptions, archiveDir string) error {
 	cmList, err := cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace).List(context.TODO(), lo)
 
 	if err != nil {
@@ -463,11 +452,11 @@ func writeConfigMapsToFile(t *testing.T, cs *framework.ClientSet, lo metav1.List
 		return nil
 	}
 
-	return dumpObjectToYAMLFile(t, cmList, "configmaps")
+	return dumpObjectToYAMLFile(t, cmList, filepath.Join(archiveDir, "configmaps.yaml"))
 }
 
 // Wrttes all pod specs that match the OS Build labels to files.
-func writeBuildPodsToFile(t *testing.T, cs *framework.ClientSet, lo metav1.ListOptions) error {
+func writeBuildPodsToFile(t *testing.T, cs *framework.ClientSet, lo metav1.ListOptions, archiveDir string) error {
 	podList, err := cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace).List(context.TODO(), lo)
 	if err != nil {
 		return err
@@ -478,35 +467,28 @@ func writeBuildPodsToFile(t *testing.T, cs *framework.ClientSet, lo metav1.ListO
 		return nil
 	}
 
-	return dumpObjectToYAMLFile(t, podList, "pods")
+	return dumpObjectToYAMLFile(t, podList, filepath.Join(archiveDir, "pods.yaml"))
 }
 
-// Dumps a struct to the provided filename in YAML format, while ensuring that
-// the filename contains both the name of the current-running test as well as
-// the destination directory path.
-func dumpObjectToYAMLFile(t *testing.T, obj interface{}, kind string) error {
-	dirPath := getBuildArtifactDir(t)
-
-	filename := fmt.Sprintf("%s-%s.yaml", t.Name(), kind)
-	filename = filepath.Join(dirPath, filename)
+// Dumps a struct to the provided filename in YAML format, creating any
+// parent directories as needed.
+func dumpObjectToYAMLFile(t *testing.T, obj interface{}, filename string) error {
+	if err := os.MkdirAll(filepath.Dir(filename), 0o755); err != nil {
+		return err
+	}
 
 	out, err := yaml.Marshal(obj)
 	if err != nil {
 		return err
 	}
 
-	err = os.WriteFile(filename, out, 0o755)
-	if err == nil {
-		t.Logf("Wrote %s", filename)
-	}
-
-	return err
+	return os.WriteFile(filename, out, 0o755)
 }
 
 // Streams the logs from the Machine OS Builder pod containers to a set of
 // files. This can provide a valuable window into how / why the e2e test suite
 // failed.
-func streamMachineOSBuilderPodLogsToFile(ctx context.Context, t *testing.T, cs *framework.ClientSet) error {
+func streamMachineOSBuilderPodLogsToFile(ctx context.Context, t *testing.T, cs *framework.ClientSet, dirPath string) error {
 	pods, err := cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace).List(ctx, metav1.ListOptions{
 		LabelSelector: "k8s-app=machine-os-builder",
 	})
@@ -514,12 +496,12 @@ func streamMachineOSBuilderPodLogsToFile(ctx context.Context, t *testing.T, cs *
 	require.NoError(t, err)
 
 	mobPod := &pods.Items[0]
-	return streamPodContainerLogsToFile(ctx, t, cs, mobPod)
+	return streamPodContainerLogsToFile(ctx, t, cs, mobPod, dirPath)
 }
 
 // Streams the logs for all of the containers running in the build pod. The pod
 // logs can provide a valuable window into how / why a given build failed.
-func streamBuildPodLogsToFile(ctx context.Context, t *testing.T, cs *framework.ClientSet, mosb *mcfgv1alpha1.MachineOSBuild) error {
+func streamBuildPodLogsToFile(ctx context.Context, t *testing.T, cs *framework.ClientSet, mosb *mcfgv1alpha1.MachineOSBuild, dirPath string) error {
 	podName := mosb.Status.BuilderReference.PodImageBuilder.Name
 
 	pod, err := cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace).Get(ctx, podName, metav1.GetOptions{})
@@ -527,12 +509,12 @@ func streamBuildPodLogsToFile(ctx context.Context, t *testing.T, cs *framework.C
 		return fmt.Errorf("could not get pod %s: %w", podName, err)
 	}
 
-	return streamPodContainerLogsToFile(ctx, t, cs, pod)
+	return streamPodContainerLogsToFile(ctx, t, cs, pod, dirPath)
 }
 
 // Attaches a follower to each of the containers within a given pod in order to
 // stream their logs to disk for future debugging.
-func streamPodContainerLogsToFile(ctx context.Context, t *testing.T, cs *framework.ClientSet, pod *corev1.Pod) error {
+func streamPodContainerLogsToFile(ctx context.Context, t *testing.T, cs *framework.ClientSet, pod *corev1.Pod, dirPath string) error {
 	errGroup, egCtx := errgroup.WithContext(ctx)
 
 	for _, container := range pod.Spec.Containers {
@@ -543,7 +525,7 @@ func streamPodContainerLogsToFile(ctx context.Context, t *testing.T, cs *framewo
 		// blocks the current Goroutine. So we run each log stream operation in a
 		// separate Goroutine to avoid blocking the main Goroutine.
 		errGroup.Go(func() error {
-			return streamContainerLogToFile(egCtx, t, cs, pod, container)
+			return streamContainerLogToFile(egCtx, t, cs, pod, container, dirPath)
 		})
 	}
 
@@ -556,9 +538,7 @@ func streamPodContainerLogsToFile(ctx context.Context, t *testing.T, cs *framewo
 }
 
 // Streams the logs for a given container to a file.
-func streamContainerLogToFile(ctx context.Context, t *testing.T, cs *framework.ClientSet, pod *corev1.Pod, container corev1.Container) error {
-	dirPath := getBuildArtifactDir(t)
-
+func streamContainerLogToFile(ctx context.Context, t *testing.T, cs *framework.ClientSet, pod *corev1.Pod, container corev1.Container, dirPath string) error {
 	logger, err := cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace).GetLogs(pod.Name, &corev1.PodLogOptions{
 		Container: container.Name,
 		Follow:    true,
@@ -571,6 +551,7 @@ func streamContainerLogToFile(ctx context.Context, t *testing.T, cs *framework.C
 	}
 
 	filename := filepath.Join(dirPath, fmt.Sprintf("%s-%s-%s.log", t.Name(), pod.Name, container.Name))
+
 	file, err := os.Create(filename)
 	if err != nil {
 		return err

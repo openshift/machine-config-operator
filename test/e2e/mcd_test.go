@@ -896,21 +896,59 @@ func TestFirstBootHasSSHKeys(t *testing.T) {
 
 	// Scale up our MachineSet to add a new node to target for our test.
 	newNodes, cleanupFunc := helpers.ScaleMachineSetAndWaitForNodesToBeReady(t, cs, machineset.Name, *machineset.Spec.Replicas+1)
-	t.Cleanup(cleanupFunc)
-
 	newNode := newNodes[0]
+	t.Cleanup(func() {
+		if t.Failed() {
+			helpers.CollectDebugInfoFromNode(t, cs, newNode)
+		}
 
-	sshKeyFile := "/home/core/.ssh/authorized_keys.d/ignition"
+		cleanupFunc()
+	})
 
-	// Now that the new node is ready, ensure that the SSH key file is populated.
-	out := helpers.ExecCmdOnNode(t, cs, *newNode, "cat", filepath.Join("/rootfs", sshKeyFile))
-	t.Logf("Got ssh key file data: %s", out)
-	// TODO: Assert that the file contents equals the SSH key field on the
-	// MachineConfig. In theory, this may seem easy to do, but in practice it's a
-	// bit more involved because the SSH key field on MachineConfigs can accept
-	// multiple SSH keys per item with line breaks or single SSH keys
-	// one-per-line. For now, we just assert that the field is not empty.
-	assert.NotEmpty(t, out, "expected SSH key file %s on %s to contain SSH keys, but it was empty", sshKeyFile, newNode.Name)
+	sshKeyFileExistsOnNode := func(keyPath string) bool {
+		_, err := helpers.ExecCmdOnNodeWithError(cs, *newNode, "stat", filepath.Join("/rootfs", keyPath))
+		return err == nil
+	}
+
+	assertSSHKeyContents := func(keyPath string) {
+		// Now that the new node is ready, ensure that the SSH key file is populated.
+		out := helpers.ExecCmdOnNode(t, cs, *newNode, "cat", filepath.Join("/rootfs", keyPath))
+		t.Logf("Got ssh key file data: %s", out)
+		// TODO: Assert that the file contents equals the SSH key field on the
+		// MachineConfig. In theory, this may seem easy to do, but in practice it's a
+		// bit more involved because the SSH key field on MachineConfigs can accept
+		// multiple SSH keys per item with line breaks or single SSH keys
+		// one-per-line. For now, we just assert that the field is not empty.
+		assert.NotEmpty(t, out, "expected SSH key file %s on %s to contain SSH keys, but it was empty", keyPath, newNode.Name)
+	}
+
+	isFound := false
+	isFoundRhcos8KeyPath := false
+	isFoundRhcos9KeyPath := false
+
+	if sshKeyFileExistsOnNode(constants.RHCOS8SSHKeyPath) {
+		assertSSHKeyContents(constants.RHCOS8SSHKeyPath)
+		isFound = true
+		isFoundRhcos8KeyPath = true
+	}
+
+	if sshKeyFileExistsOnNode(constants.RHCOS9SSHKeyPath) {
+		assertSSHKeyContents(constants.RHCOS9SSHKeyPath)
+		isFound = true
+		isFoundRhcos9KeyPath = true
+	}
+
+	if isFound {
+		t.Logf("SSH keys found on node in RHCOS8 location %v / RHCOS9 location %v", isFoundRhcos8KeyPath, isFoundRhcos9KeyPath)
+	} else {
+		t.Logf("Neither %s or %s exists on the node", constants.RHCOS8SSHKeyPath, constants.RHCOS9SSHKeyPath)
+		t.FailNow()
+	}
+}
+
+func sshKeyFileExistsOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, path string) bool {
+	_, err := helpers.ExecCmdOnNodeWithError(cs, node, "stat", filepath.Join("/rootfs", path))
+	return err == nil
 }
 
 func createMCToAddFileForRole(name, role, filename, data string) *mcfgv1.MachineConfig {
