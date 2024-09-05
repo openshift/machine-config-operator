@@ -28,20 +28,33 @@ contents:
     fi
 
     # For compatibility with the OpenStack in-tree provider
-    # Set node name to be instance name instead of the default FQDN hostname
-    while true; do
-        if [ "$SINGLE_STACK_IPV6" = true ]
-        then
-            hostname=$(curl http://[fe80::a9fe:a9fe%25br-ex]:80/openstack/2012-08-10/meta_data.json | jq -re .name)
-        else
-            # https://docs.openstack.org/nova/victoria/user/metadata.html#metadata-openstack-format
-            hostname=$(curl -s http://169.254.169.254/openstack/2012-08-10/meta_data.json | jq -re .name)
-        fi
+    # Set node name to be instance name instead of the default FQDN hostname.
+    # Try to get the hostname from config drive first if it's available
+    # or fallback to the metadata service.
+    if [ -f "/host/var/config/openstack/2012-08-10/meta_data.json" ]; then
+        # https://docs.openstack.org/nova/victoria/user/metadata.html#metadata-openstack-format
+        hostname=$(jq -re .name /host/var/config/openstack/2012-08-10/meta_data.json)
         if [[ -z "${hostname}" ]]; then
-            sleep 5
-            continue
+            echo "Failed to get hostname from /host/var/config/openstack/2018-08-10/meta_data.json"
+            exit 1
         fi
 
         echo "KUBELET_NODE_NAME=${hostname}" > ${NODEENV}
-        break
-    done
+    else
+        while true; do
+            if [ "$SINGLE_STACK_IPV6" = true ]
+            then
+                hostname=$(curl http://[fe80::a9fe:a9fe%25br-ex]:80/openstack/2012-08-10/meta_data.json | jq -re .name)
+            else
+                # https://docs.openstack.org/nova/victoria/user/metadata.html#metadata-openstack-format
+                hostname=$(curl -s http://169.254.169.254/openstack/2012-08-10/meta_data.json | jq -re .name)
+            fi
+            if [[ -z "${hostname}" ]]; then
+                sleep 5
+                continue
+            fi
+
+            echo "KUBELET_NODE_NAME=${hostname}" > ${NODEENV}
+            break
+        done
+    fi
