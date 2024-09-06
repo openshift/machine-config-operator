@@ -90,12 +90,7 @@ func newFixture(t *testing.T) *fixture {
 	f.objects = []runtime.Object{}
 	f.fgAccess = featuregates.NewHardcodedFeatureGateAccess(
 		[]apicfgv1.FeatureGateName{features.FeatureGateSigstoreImageVerification},
-		[]apicfgv1.FeatureGateName{
-			features.FeatureGateExternalCloudProvider,
-			features.FeatureGateExternalCloudProviderAzure,
-			features.FeatureGateExternalCloudProviderGCP,
-			features.FeatureGateExternalCloudProviderExternal,
-		},
+		[]apicfgv1.FeatureGateName{},
 	)
 	return f
 }

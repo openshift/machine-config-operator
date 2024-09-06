@@ -112,12 +112,7 @@ func (tc upgradeMonitorTestCase) run(t *testing.T) {
 		[]apicfgv1.FeatureGateName{
 			features.FeatureGateMachineConfigNodes,
 		},
-		[]apicfgv1.FeatureGateName{
-			features.FeatureGateExternalCloudProvider,
-			features.FeatureGateExternalCloudProviderAzure,
-			features.FeatureGateExternalCloudProviderGCP,
-			features.FeatureGateExternalCloudProviderExternal,
-		},
+		[]apicfgv1.FeatureGateName{},
 	)
 
 	i := informers.NewSharedInformerFactory(f.client, noResyncPeriodFunc())
