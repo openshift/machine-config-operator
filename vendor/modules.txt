@@ -161,7 +161,7 @@ github.com/clarketm/json
 # github.com/containers/common v0.57.1
 ## explicit; go 1.18
 github.com/containers/common/pkg/retry
-# github.com/containers/image/v5 v5.29.0
+# github.com/containers/image/v5 v5.29.4
 ## explicit; go 1.19
 github.com/containers/image/v5/docker
 github.com/containers/image/v5/docker/policyconfiguration
