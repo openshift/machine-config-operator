@@ -30,8 +30,13 @@ contents:
     # For compatibility with the OpenStack in-tree provider
     # Set node name to be instance name instead of the default FQDN hostname
     while true; do
-        # https://docs.openstack.org/nova/victoria/user/metadata.html#metadata-openstack-format
-        hostname=$(curl -s http://169.254.169.254/openstack/2012-08-10/meta_data.json | jq -re .name)
+        if [ "$SINGLE_STACK_IPV6" = true ]
+        then
+            hostname=$(curl http://[fe80::a9fe:a9fe%25br-ex]:80/openstack/2012-08-10/meta_data.json | jq -re .name)
+        else
+            # https://docs.openstack.org/nova/victoria/user/metadata.html#metadata-openstack-format
+            hostname=$(curl -s http://169.254.169.254/openstack/2012-08-10/meta_data.json | jq -re .name)
+        fi
         if [[ -z "${hostname}" ]]; then
             sleep 5
             continue

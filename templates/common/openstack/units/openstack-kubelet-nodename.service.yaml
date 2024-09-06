@@ -9,6 +9,11 @@ contents: |
   Before=kubelet-dependencies.target
 
   [Service]
+{{- if eq .IPFamilies "IPv6"}}
+  Environment="SINGLE_STACK_IPV6=true"
+{{- else}}
+  Environment="SINGLE_STACK_IPV6=false"
+{{- end}}
   ExecStart=/usr/local/bin/openstack-kubelet-nodename
   Type=oneshot
 
