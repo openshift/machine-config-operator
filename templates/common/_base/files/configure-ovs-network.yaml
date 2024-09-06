@@ -286,6 +286,12 @@ contents:
         iface_type=802-3-ethernet
       fi
 
+      # TODO: Should this persist all ethtool options?
+      ethtool_offload_opts=$(nmcli --get-values ethtool.feature-esp-tx-csum-hw-offload conn show ${old_conn})
+      if [ -n "$ethtool_offload_opts" ]; then
+        extra_phys_args+=( ethtool.feature-esp-tx-csum-hw-offload "${ethtool_offload_opts}" )
+      fi
+
       if [ ! "${clone_mac:-}" = "0" ]; then
         # In active-backup link aggregation, with fail_over_mac mode enabled,
         # cloning the mac address is not supported. It is possible then that
