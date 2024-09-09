@@ -54,7 +54,7 @@ func UpdateNodeRetry(client corev1client.NodeInterface, lister corev1lister.Node
 		return err
 	}); err != nil {
 		// may be conflict if max retries were hit
-		return nil, fmt.Errorf("unable to update node %q: %w", node, err)
+		return nil, fmt.Errorf("unable to update node %q: %w", nodeName, err)
 	}
 	return node, nil
 }
