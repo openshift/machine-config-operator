@@ -3,8 +3,9 @@ enabled: true
 contents: |
   [Unit]
   Description=Fetch kubelet node name from OpenStack metadata
-  # Wait for NetworkManager to report it's online
-  After=NetworkManager-wait-online.service
+  # Wait for NetworkManager and wait-for-br-ex-up to report it's online
+  Wants=wait-for-br-ex-up.service
+  After=NetworkManager-wait-online.service wait-for-br-ex-up.service
   # Run before kubelet
   Before=kubelet-dependencies.target
 
