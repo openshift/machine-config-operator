@@ -6,6 +6,7 @@ metadata:
     api.openshift.io/merged-by-featuregates: "true"
     include.release.openshift.io/ibm-cloud-managed: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
+    release.openshift.io/feature-set: Default
   name: networks.operator.openshift.io
 spec:
   group: operator.openshift.io
@@ -90,6 +91,7 @@ spec:
                                         type: string
                                     type: object
                                   type: array
+                                  x-kubernetes-list-type: atomic
                                 dns:
                                   description: DNS configures DNS for the interface
                                   properties:
@@ -103,12 +105,14 @@ spec:
                                       items:
                                         type: string
                                       type: array
+                                      x-kubernetes-list-type: atomic
                                     search:
                                       description: Search configures priority ordered
                                         search domains for short hostname lookups
                                       items:
                                         type: string
                                       type: array
+                                      x-kubernetes-list-type: atomic
                                   type: object
                                 routes:
                                   description: Routes configures IP routes for the
@@ -128,6 +132,7 @@ spec:
                                         type: string
                                     type: object
                                   type: array
+                                  x-kubernetes-list-type: atomic
                               type: object
                             type:
                               description: Type is the type of IPAM module will be
@@ -155,13 +160,17 @@ spec:
                       description: type is the type of network The supported values
                         are NetworkTypeRaw, NetworkTypeSimpleMacvlan
                       type: string
+                  required:
+                  - name
                   type: object
                 type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
               clusterNetwork:
                 description: clusterNetwork is the IP address pool to use for pod
-                  IPs. Some network providers, e.g. OpenShift SDN, support multiple
-                  ClusterNetworks. Others only support one. This is equivalent to
-                  the cluster-cidr.
+                  IPs. Some network providers support multiple ClusterNetworks. Others
+                  only support one. This is equivalent to the cluster-cidr.
                 items:
                   description: ClusterNetworkEntry is a subnet from which to allocate
                     PodIPs. A network of size HostPrefix (in CIDR notation) will be
@@ -177,12 +186,15 @@ spec:
                       type: integer
                   type: object
                 type: array
+                x-kubernetes-list-type: atomic
               defaultNetwork:
                 description: defaultNetwork is the "default" network that all pods
                   will receive
                 properties:
                   openshiftSDNConfig:
-                    description: openShiftSDNConfig configures the openshift-sdn plugin
+                    description: 'openShiftSDNConfig was previously used to configure
+                      the openshift-sdn plugin. DEPRECATED: OpenShift SDN is no longer
+                      supported.'
                     properties:
                       enableUnidling:
                         description: enableUnidling controls whether or not the service
@@ -200,11 +212,10 @@ spec:
                         minimum: 0
                         type: integer
                       useExternalOpenvswitch:
-                        description: 'useExternalOpenvswitch used to control whether
+                        description: useExternalOpenvswitch used to control whether
                           the operator would deploy an OVS DaemonSet itself or expect
                           someone else to start OVS. As of 4.6, OVS is always run
-                          as a system service, and this flag is ignored. DEPRECATED:
-                          non-functional as of 4.6'
+                          as a system service, and this flag is ignored.
                         type: boolean
                       vxlanPort:
                         description: vxlanPort is the port to use for all vxlan packets.
@@ -361,6 +372,7 @@ spec:
                                   type: integer
                               type: object
                             type: array
+                            x-kubernetes-list-type: atomic
                           hybridOverlayVXLANPort:
                             description: HybridOverlayVXLANPort defines the VXLAN
                               port number to be used by the additional overlay network.
@@ -577,8 +589,8 @@ spec:
                 description: deployKubeProxy specifies whether or not a standalone
                   kube-proxy should be deployed by the operator. Some network providers
                   include kube-proxy or similar functionality. If unset, the plugin
-                  will attempt to select the correct value, which is false when OpenShift
-                  SDN and ovn-kubernetes are used and true otherwise.
+                  will attempt to select the correct value, which is false when ovn-kubernetes
+                  is used and true otherwise.
                 type: boolean
               disableMultiNetwork:
                 description: disableMultiNetwork specifies whether or not multiple
@@ -611,6 +623,7 @@ spec:
                         maxItems: 10
                         minItems: 1
                         type: array
+                        x-kubernetes-list-type: atomic
                     type: object
                   netFlow:
                     description: netFlow defines the NetFlow configuration.
@@ -625,6 +638,7 @@ spec:
                         maxItems: 10
                         minItems: 1
                         type: array
+                        x-kubernetes-list-type: atomic
                     type: object
                   sFlow:
                     description: sFlow defines the SFlow configuration.
@@ -638,13 +652,13 @@ spec:
                         maxItems: 10
                         minItems: 1
                         type: array
+                        x-kubernetes-list-type: atomic
                     type: object
                 type: object
               kubeProxyConfig:
-                description: kubeProxyConfig lets us configure desired proxy configuration.
-                  If not specified, sensible defaults will be chosen by OpenShift
-                  directly. Not consumed by all network providers - currently only
-                  openshift-sdn.
+                description: kubeProxyConfig lets us configure desired proxy configuration,
+                  if deployKubeProxy is true. If not specified, sensible defaults
+                  will be chosen by OpenShift directly.
                 properties:
                   bindAddress:
                     description: The address to "bind" on Defaults to 0.0.0.0
@@ -663,6 +677,7 @@ spec:
                       items:
                         type: string
                       type: array
+                      x-kubernetes-list-type: atomic
                     description: Any additional arguments to pass to the kubeproxy
                       process
                     type: object
@@ -687,50 +702,40 @@ spec:
                 pattern: ^(Managed|Unmanaged|Force|Removed)$
                 type: string
               migration:
-                description: migration enables and configures the cluster network
-                  migration. The migration procedure allows to change the network
-                  type and the MTU.
+                description: migration enables and configures cluster network migration,
+                  for network changes that cannot be made instantly.
                 properties:
                   features:
-                    description: features contains the features migration configuration.
-                      Set this to migrate feature configuration when changing the
-                      cluster default network provider. if unset, the default operation
-                      is to migrate all the configuration of supported features.
+                    description: 'features was previously used to configure which
+                      network plugin features would be migrated in a network type
+                      migration. DEPRECATED: network type migration is no longer supported,
+                      and setting this to a non-empty value will result in the network
+                      operator rejecting the configuration.'
                     properties:
                       egressFirewall:
                         default: true
-                        description: egressFirewall specifies whether or not the Egress
-                          Firewall configuration is migrated automatically when changing
-                          the cluster default network provider. If unset, this property
-                          defaults to 'true' and Egress Firewall configure is migrated.
+                        description: 'egressFirewall specified whether or not the
+                          Egress Firewall configuration was migrated. DEPRECATED:
+                          network type migration is no longer supported.'
                         type: boolean
                       egressIP:
                         default: true
-                        description: egressIP specifies whether or not the Egress
-                          IP configuration is migrated automatically when changing
-                          the cluster default network provider. If unset, this property
-                          defaults to 'true' and Egress IP configure is migrated.
+                        description: 'egressIP specified whether or not the Egress
+                          IP configuration was migrated. DEPRECATED: network type
+                          migration is no longer supported.'
                         type: boolean
                       multicast:
                         default: true
-                        description: multicast specifies whether or not the multicast
-                          configuration is migrated automatically when changing the
-                          cluster default network provider. If unset, this property
-                          defaults to 'true' and multicast configure is migrated.
+                        description: 'multicast specified whether or not the multicast
+                          configuration was migrated. DEPRECATED: network type migration
+                          is no longer supported.'
                         type: boolean
                     type: object
                   mode:
-                    description: mode indicates the mode of network migration. The
-                      supported values are "Live", "Offline" and omitted. A "Live"
-                      migration operation will not cause service interruption by migrating
-                      the CNI of each node one by one. The cluster network will work
-                      as normal during the network migration. An "Offline" migration
-                      operation will cause service interruption. During an "Offline"
-                      migration, two rounds of node reboots are required. The cluster
-                      network will be malfunctioning during the network migration.
-                      When omitted, this means no opinion and the platform is left
-                      to choose a reasonable default which is subject to change over
-                      time. The current default value is "Offline".
+                    description: 'mode indicates the mode of network type migration.
+                      DEPRECATED: network type migration is no longer supported, and
+                      setting this to a non-empty value will result in the network
+                      operator rejecting the configuration.'
                     enum:
                     - Live
                     - Offline
@@ -778,11 +783,10 @@ spec:
                         type: object
                     type: object
                   networkType:
-                    description: networkType is the target type of network migration.
-                      Set this to the target network type to allow changing the default
-                      network. If unset, the operation of changing cluster default
-                      network plugin will be rejected. The supported values are OpenShiftSDN,
-                      OVNKubernetes
+                    description: 'networkType was previously used when changing the
+                      default network type. DEPRECATED: network type migration is
+                      no longer supported, and setting this to a non-empty value will
+                      result in the network operator rejecting the configuration.'
                     type: string
                 type: object
                 x-kubernetes-validations:
@@ -818,6 +822,7 @@ spec:
                 items:
                   type: string
                 type: array
+                x-kubernetes-list-type: atomic
               unsupportedConfigOverrides:
                 description: unsupportedConfigOverrides overrides the final configuration
                   that was computed by the operator. Red Hat does not support the
