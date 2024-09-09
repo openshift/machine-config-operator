@@ -20,6 +20,18 @@ spec:
   scope: Cluster
   versions:
   - additionalPrinterColumns:
+    - jsonPath: .spec.pool.name
+      name: PoolName
+      priority: 0
+      type: string
+    - jsonPath: .spec.configVersion.desired
+      name: DesiredConfig
+      priority: 0
+      type: string
+    - jsonPath: .status.configVersion.current
+      name: CurrentConfig
+      priority: 0
+      type: string
     - jsonPath: .status.conditions[?(@.type=="Updated")].status
       name: Updated
       type: string
