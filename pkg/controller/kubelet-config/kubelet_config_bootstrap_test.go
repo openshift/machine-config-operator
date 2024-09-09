@@ -18,10 +18,14 @@ import (
 )
 
 func TestRunKubeletBootstrap(t *testing.T) {
+	t.Parallel()
+
 	customSelector := metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/custom", "")
 
 	for _, platform := range []configv1.PlatformType{configv1.AWSPlatformType, configv1.NonePlatformType, "unrecognized"} {
+		platform := platform
 		t.Run(string(platform), func(t *testing.T) {
+			t.Parallel()
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			pools := []*mcfgv1.MachineConfigPool{
 				helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
@@ -100,6 +104,8 @@ func verifyKubeletConfigYAMLContents(t *testing.T, mc *mcfgv1.MachineConfig, mcN
 }
 
 func TestGenerateDefaultManagedKeyKubelet(t *testing.T) {
+	t.Parallel()
+
 	workerPool := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 	masterPool := helpers.NewMachineConfigPool("master", nil, helpers.WorkerSelector, "v0")
 	kcRaw, err := EncodeKubeletConfig(&kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, kubeletconfigv1beta1.SchemeGroupVersion, runtime.ContentTypeJSON)
@@ -199,8 +205,12 @@ func TestGenerateDefaultManagedKeyKubelet(t *testing.T) {
 }
 
 func TestAddKubeletCfgAfterBootstrapKubeletCfg(t *testing.T) {
+	t.Parallel()
+
 	for _, platform := range []configv1.PlatformType{configv1.AWSPlatformType, configv1.NonePlatformType, "unrecognized"} {
+		platform := platform
 		t.Run(string(platform), func(t *testing.T) {
+			t.Parallel()
 			f := newFixture(t)
 			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"Example"}, nil)
 			f.newController(fgAccess)

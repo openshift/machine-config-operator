@@ -416,8 +416,11 @@ func (f *fixture) resetActions() {
 var kcfgPatchBytes = []byte(`{"metadata":{"finalizers":["99-master-generated-kubelet"]}}`)
 
 func TestKubeletConfigCreate(t *testing.T) {
+	t.Parallel()
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
+		platform := platform
 		t.Run(string(platform), func(t *testing.T) {
+			t.Parallel()
 			f := newFixture(t)
 			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"Example"}, nil)
 			f.newController(fgAccess)
@@ -451,8 +454,11 @@ func TestKubeletConfigCreate(t *testing.T) {
 }
 
 func TestKubeletConfigMultiCreate(t *testing.T) {
+	t.Parallel()
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
+		platform := platform
 		t.Run(string(platform), func(t *testing.T) {
+			t.Parallel()
 			f := newFixture(t)
 			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"Example"}, nil)
 			f.newController(fgAccess)
@@ -501,8 +507,11 @@ func generateManagedKey(kcfg *mcfgv1.KubeletConfig, generation uint64) string {
 }
 
 func TestKubeletConfigAutoSizingReserved(t *testing.T) {
+	t.Parallel()
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
+		platform := platform
 		t.Run(string(platform), func(t *testing.T) {
+			t.Parallel()
 			f := newFixture(t)
 			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"Example"}, nil)
 			f.newController(fgAccess)
@@ -545,8 +554,11 @@ func TestKubeletConfigAutoSizingReserved(t *testing.T) {
 }
 
 func TestKubeletConfiglogFile(t *testing.T) {
+	t.Parallel()
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
+		platform := platform
 		t.Run(string(platform), func(t *testing.T) {
+			t.Parallel()
 			f := newFixture(t)
 			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"Example"}, nil)
 			f.newController(fgAccess)
@@ -588,8 +600,11 @@ func TestKubeletConfiglogFile(t *testing.T) {
 }
 
 func TestKubeletConfigUpdates(t *testing.T) {
+	t.Parallel()
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
+		platform := platform
 		t.Run(string(platform), func(t *testing.T) {
+			t.Parallel()
 			f := newFixture(t)
 			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"Example"}, nil)
 			f.newController(fgAccess)
@@ -675,6 +690,8 @@ func TestKubeletConfigUpdates(t *testing.T) {
 }
 
 func TestKubeletConfigDenylistedOptions(t *testing.T) {
+	t.Parallel()
+
 	failureTests := []struct {
 		name   string
 		config *kubeletconfigv1beta1.KubeletConfiguration
@@ -745,8 +762,11 @@ func TestKubeletConfigDenylistedOptions(t *testing.T) {
 }
 
 func TestKubeletFeatureExists(t *testing.T) {
+	t.Parallel()
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "Unrecognized"} {
+		platform := platform
 		t.Run(string(platform), func(t *testing.T) {
+			t.Parallel()
 			f := newFixture(t)
 			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"Example"}, nil)
 			f.newController(fgAccess)
@@ -810,6 +830,7 @@ func getKeyFromConfigNode(node *osev1.Node, t *testing.T) string {
 }
 
 func TestCleanUpStatusConditions(t *testing.T) {
+	t.Parallel()
 	type status struct {
 		curtStatus   []mcfgv1.KubeletConfigCondition
 		newStatus    mcfgv1.KubeletConfigCondition
@@ -889,8 +910,11 @@ func TestCleanUpStatusConditions(t *testing.T) {
 }
 
 func TestKubeletConfigResync(t *testing.T) {
+	t.Parallel()
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
+		platform := platform
 		t.Run(string(platform), func(t *testing.T) {
+			t.Parallel()
 			f := newFixture(t)
 			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"Example"}, nil)
 			f.newController(fgAccess)
@@ -954,8 +978,11 @@ func TestKubeletConfigResync(t *testing.T) {
 }
 
 func TestAddAnnotationExistingKubeletConfig(t *testing.T) {
+	t.Parallel()
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
+		platform := platform
 		t.Run(string(platform), func(t *testing.T) {
+			t.Parallel()
 			f := newFixture(t)
 			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"Example"}, nil)
 			f.newController(fgAccess)
@@ -1015,6 +1042,7 @@ func TestAddAnnotationExistingKubeletConfig(t *testing.T) {
 // TestCleanUpDuplicatedMC test the function removes the MC from the MC list
 // if the MC is of old GeneratedByControllerVersionAnnotationKey.
 func TestCleanUpDuplicatedMC(t *testing.T) {
+	t.Parallel()
 	v := version.Hash
 	version.Hash = "3.2.0"
 	versionDegrade := "3.1.0"
@@ -1022,7 +1050,9 @@ func TestCleanUpDuplicatedMC(t *testing.T) {
 		version.Hash = v
 	}()
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
+		platform := platform
 		t.Run(string(platform), func(t *testing.T) {
+			t.Parallel()
 			f := newFixture(t)
 			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"Example"}, nil)
 			f.newController(fgAccess)

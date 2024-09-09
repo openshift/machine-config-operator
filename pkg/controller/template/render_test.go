@@ -26,6 +26,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestCloudProvider(t *testing.T) {
+	t.Parallel()
 	dummyTemplate := []byte(`{{cloudProvider .}}`)
 
 	cases := []struct {
@@ -68,7 +69,9 @@ func TestCloudProvider(t *testing.T) {
 	}}
 	for idx, c := range cases {
 		name := fmt.Sprintf("case #%d", idx)
+		c := c
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			config := &mcfgv1.ControllerConfig{
 				Spec: mcfgv1.ControllerConfigSpec{
 					Infra: &configv1.Infrastructure{
@@ -95,6 +98,7 @@ func TestCloudProvider(t *testing.T) {
 }
 
 func TestCredentialProviderConfigFlag(t *testing.T) {
+	t.Parallel()
 	dummyTemplate := []byte(`{{credentialProviderConfigFlag .}}`)
 
 	testCases := []struct {
@@ -129,7 +133,9 @@ func TestCredentialProviderConfigFlag(t *testing.T) {
 
 	for idx, c := range testCases {
 		name := fmt.Sprintf("case #%d: %s", idx, c.platform)
+		c := c
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			config := &mcfgv1.ControllerConfig{
 				Spec: mcfgv1.ControllerConfigSpec{
 					Infra: &configv1.Infrastructure{
@@ -156,6 +162,7 @@ func TestCredentialProviderConfigFlag(t *testing.T) {
 }
 
 func TestSkipMissing(t *testing.T) {
+	t.Parallel()
 	dummyTemplate := `{{skip "%s"}}`
 
 	cases := []struct {
@@ -184,6 +191,7 @@ func TestSkipMissing(t *testing.T) {
 	for idx, c := range cases {
 		name := fmt.Sprintf("case #%d", idx)
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			tmpl := []byte(fmt.Sprintf(dummyTemplate, c.key))
 			got, err := renderTemplate(RenderConfig{}, name, tmpl)
 			if err != nil && !c.err {
@@ -219,6 +227,7 @@ var (
 )
 
 func TestInvalidPlatform(t *testing.T) {
+	t.Parallel()
 	controllerConfig, err := controllerConfigFromFile(configs["aws"])
 	if err != nil {
 		t.Fatalf("failed to get controllerconfig config: %v", err)
@@ -248,6 +257,7 @@ func TestInvalidPlatform(t *testing.T) {
 }
 
 func TestGenerateMachineConfigs(t *testing.T) {
+	t.Parallel()
 	for test, config := range configs {
 		controllerConfig, err := controllerConfigFromFile(config)
 		if err != nil {
@@ -346,6 +356,7 @@ func TestGenerateMachineConfigs(t *testing.T) {
 }
 
 func TestGetPaths(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		platform configv1.PlatformType
 		topology configv1.TopologyMode
@@ -365,7 +376,9 @@ func TestGetPaths(t *testing.T) {
 	}}
 	for idx, c := range cases {
 		name := fmt.Sprintf("case #%d", idx)
+		c := c
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			config := &mcfgv1.ControllerConfig{
 				Spec: mcfgv1.ControllerConfigSpec{
 					Infra: &configv1.Infrastructure{

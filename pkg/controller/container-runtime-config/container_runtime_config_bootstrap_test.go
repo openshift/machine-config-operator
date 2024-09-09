@@ -12,8 +12,11 @@ import (
 )
 
 func TestAddKubeletCfgAfterBootstrapKubeletCfg(t *testing.T) {
+	t.Parallel()
 	for _, platform := range []apicfgv1.PlatformType{apicfgv1.AWSPlatformType, apicfgv1.NonePlatformType, "unrecognized"} {
+		platform := platform
 		t.Run(string(platform), func(t *testing.T) {
+			t.Parallel()
 			f := newFixture(t)
 			f.newController()
 

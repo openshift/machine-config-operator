@@ -245,6 +245,7 @@ func newControllerConfig(name string) *mcfgv1.ControllerConfig {
 }
 
 func TestCreatesGeneratedMachineConfig(t *testing.T) {
+
 	f := newFixture(t)
 	mcp := helpers.NewMachineConfigPool("test-cluster-master", helpers.MasterSelector, nil, "")
 	files := []ign3types.File{{
@@ -286,6 +287,7 @@ func TestCreatesGeneratedMachineConfig(t *testing.T) {
 // Testing that ignition validation in generateRenderedMachineConfig() correctly finds MCs that contain invalid ignconfigs.
 // generateRenderedMachineConfig should return an error when one of the MCs in configs contains an invalid ignconfig.
 func TestIgnValidationGenerateRenderedMachineConfig(t *testing.T) {
+
 	mcp := helpers.NewMachineConfigPool("test-cluster-master", helpers.MasterSelector, nil, "")
 	files := []ign3types.File{{
 		Node: ign3types.Node{
@@ -329,6 +331,7 @@ func TestIgnValidationGenerateRenderedMachineConfig(t *testing.T) {
 }
 
 func TestUpdatesGeneratedMachineConfig(t *testing.T) {
+
 	f := newFixture(t)
 	mcp := helpers.NewMachineConfigPool("test-cluster-master", helpers.MasterSelector, nil, "")
 	files := []ign3types.File{{

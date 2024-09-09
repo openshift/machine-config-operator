@@ -559,8 +559,11 @@ var ctrcfgPatchBytes = []byte("{\"metadata\":{\"finalizers\":[\"99-master-genera
 // TestContainerRuntimeConfigCreate ensures that a create happens when an existing containerruntime config is created.
 // It tests that the necessary get, create, and update steps happen in the correct order.
 func TestContainerRuntimeConfigCreate(t *testing.T) {
+	t.Parallel()
 	for _, platform := range []apicfgv1.PlatformType{apicfgv1.AWSPlatformType, apicfgv1.NonePlatformType, "unrecognized"} {
+		platform := platform
 		t.Run(string(platform), func(t *testing.T) {
+			t.Parallel()
 			f := newFixture(t)
 			f.newController()
 
@@ -599,8 +602,11 @@ func TestContainerRuntimeConfigCreate(t *testing.T) {
 // TestContainerRuntimeConfigUpdate ensures that an update happens when an existing containerruntime config is updated.
 // It tests that the necessary get, create, and update steps happen in the correct order.
 func TestContainerRuntimeConfigUpdate(t *testing.T) {
+	t.Parallel()
 	for _, platform := range []apicfgv1.PlatformType{apicfgv1.AWSPlatformType, apicfgv1.NonePlatformType, "unrecognized"} {
+		platform := platform
 		t.Run(string(platform), func(t *testing.T) {
+			t.Parallel()
 			f := newFixture(t)
 			f.newController()
 
@@ -683,8 +689,11 @@ func TestContainerRuntimeConfigUpdate(t *testing.T) {
 // TestImageConfigCreate ensures that a create happens when an image config is created.
 // It tests that the necessary get, create, and update steps happen in the correct order.
 func TestImageConfigCreate(t *testing.T) {
+	t.Parallel()
 	for _, platform := range []apicfgv1.PlatformType{apicfgv1.AWSPlatformType, apicfgv1.NonePlatformType, "unrecognized"} {
+		platform := platform
 		t.Run(string(platform), func(t *testing.T) {
+			t.Parallel()
 			f := newFixture(t)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
@@ -725,8 +734,11 @@ func TestImageConfigCreate(t *testing.T) {
 // TestImageConfigUpdate ensures that an update happens when an existing image config is updated.
 // It tests that the necessary get, create, and update steps happen in the correct order.
 func TestImageConfigUpdate(t *testing.T) {
+	t.Parallel()
 	for _, platform := range []apicfgv1.PlatformType{apicfgv1.AWSPlatformType, apicfgv1.NonePlatformType, "unrecognized"} {
+		platform := platform
 		t.Run(string(platform), func(t *testing.T) {
+			t.Parallel()
 			f := newFixture(t)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
@@ -821,8 +833,11 @@ func TestImageConfigUpdate(t *testing.T) {
 // TestICSPUpdate ensures that an update happens when an existing ICSP is updated.
 // It tests that the necessary get, create, and update steps happen in the correct order.
 func TestICSPUpdate(t *testing.T) {
+	t.Parallel()
 	for _, platform := range []apicfgv1.PlatformType{apicfgv1.AWSPlatformType, apicfgv1.NonePlatformType, "unrecognized"} {
+		platform := platform
 		t.Run(string(platform), func(t *testing.T) {
+			t.Parallel()
 			f := newFixture(t)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
@@ -924,8 +939,11 @@ func TestICSPUpdate(t *testing.T) {
 }
 
 func TestIDMSUpdate(t *testing.T) {
+	t.Parallel()
 	for _, platform := range []apicfgv1.PlatformType{apicfgv1.AWSPlatformType, apicfgv1.NonePlatformType, "unrecognized"} {
+		platform := platform
 		t.Run(string(platform), func(t *testing.T) {
+			t.Parallel()
 			f := newFixture(t)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
@@ -1027,8 +1045,11 @@ func TestIDMSUpdate(t *testing.T) {
 }
 
 func TestITMSUpdate(t *testing.T) {
+	t.Parallel()
 	for _, platform := range []apicfgv1.PlatformType{apicfgv1.AWSPlatformType, apicfgv1.NonePlatformType, "unrecognized"} {
+		platform := platform
 		t.Run(string(platform), func(t *testing.T) {
+			t.Parallel()
 			f := newFixture(t)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
@@ -1130,8 +1151,10 @@ func TestITMSUpdate(t *testing.T) {
 }
 
 func TestRunImageBootstrap(t *testing.T) {
+	t.Parallel()
 	testClusterImagePolicy := clusterImagePolicyTestCRs()["test-cr0"]
 	for _, platform := range []apicfgv1.PlatformType{apicfgv1.AWSPlatformType, apicfgv1.NonePlatformType, "unrecognized"} {
+		platform := platform
 		for _, tc := range []struct {
 			icspRules            []*apioperatorsv1alpha1.ImageContentSourcePolicy
 			idmsRules            []*apicfgv1.ImageDigestMirrorSet
@@ -1169,8 +1192,10 @@ func TestRunImageBootstrap(t *testing.T) {
 				},
 			},
 		} {
+			tc := tc
 
 			t.Run(string(platform), func(t *testing.T) {
+				t.Parallel()
 				cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 				pools := []*mcfgv1.MachineConfigPool{
 					helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
@@ -1206,6 +1231,7 @@ func TestRunImageBootstrap(t *testing.T) {
 // TestRegistriesValidation tests the validity of registries allowed to be listed
 // under blocked registries
 func TestRegistriesValidation(t *testing.T) {
+	t.Parallel()
 	failureTests := []struct {
 		name      string
 		config    *apicfgv1.RegistrySources
@@ -1323,6 +1349,7 @@ func TestRegistriesValidation(t *testing.T) {
 // TestContainerRuntimeConfigOptions tests the validity of allowed and not allowed values
 // for the options in containerruntime config
 func TestContainerRuntimeConfigOptions(t *testing.T) {
+	t.Parallel()
 	var (
 		invalidPidsLimit int64 = 10
 		validPidsLimit   int64 = 2048
@@ -1423,6 +1450,7 @@ func TestContainerRuntimeConfigOptions(t *testing.T) {
 }
 
 func TestMarshalResourceQuantityOptionsJSON(t *testing.T) {
+	t.Parallel()
 	var (
 		validLogSizeMax  = resource.MustParse("10k")
 		validOverlaySize = resource.MustParse("10G")
@@ -1504,8 +1532,11 @@ func generateManagedKey(ctrcfg *mcfgv1.ContainerRuntimeConfig, generation uint64
 }
 
 func TestCtrruntimeConfigMultiCreate(t *testing.T) {
+	t.Parallel()
 	for _, platform := range []apicfgv1.PlatformType{apicfgv1.AWSPlatformType, apicfgv1.NonePlatformType, "unrecognized"} {
+		platform := platform
 		t.Run(string(platform), func(t *testing.T) {
+			t.Parallel()
 			f := newFixture(t)
 			f.newController()
 
@@ -1549,8 +1580,11 @@ func TestCtrruntimeConfigMultiCreate(t *testing.T) {
 }
 
 func TestContainerruntimeConfigResync(t *testing.T) {
+	t.Parallel()
 	for _, platform := range []apicfgv1.PlatformType{apicfgv1.AWSPlatformType, apicfgv1.NonePlatformType, "unrecognized"} {
+		platform := platform
 		t.Run(string(platform), func(t *testing.T) {
+			t.Parallel()
 			f := newFixture(t)
 			f.newController()
 
@@ -1613,8 +1647,11 @@ func TestContainerruntimeConfigResync(t *testing.T) {
 }
 
 func TestAddAnnotationExistingContainerRuntimeConfig(t *testing.T) {
+	t.Parallel()
 	for _, platform := range []apicfgv1.PlatformType{apicfgv1.AWSPlatformType, apicfgv1.NonePlatformType, "unrecognized"} {
+		platform := platform
 		t.Run(string(platform), func(t *testing.T) {
+			t.Parallel()
 			f := newFixture(t)
 			f.newController()
 
@@ -1672,6 +1709,7 @@ func TestAddAnnotationExistingContainerRuntimeConfig(t *testing.T) {
 // TestCleanUpDuplicatedMC test the function removes the MC from the MC list
 // if the MC is of old GeneratedByControllerVersionAnnotationKey.
 func TestCleanUpDuplicatedMC(t *testing.T) {
+	t.Parallel()
 	v := version.Hash
 	version.Hash = "3.2.0"
 	versionDegrade := "3.1.0"
@@ -1679,7 +1717,9 @@ func TestCleanUpDuplicatedMC(t *testing.T) {
 		version.Hash = v
 	}()
 	for _, platform := range []apicfgv1.PlatformType{apicfgv1.AWSPlatformType, apicfgv1.NonePlatformType, "unrecognized"} {
+		platform := platform
 		t.Run(string(platform), func(t *testing.T) {
+			t.Parallel()
 			f := newFixture(t)
 			f.newController()
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
@@ -1750,8 +1790,11 @@ func TestCleanUpDuplicatedMC(t *testing.T) {
 }
 
 func TestClusterImagePolicyCreate(t *testing.T) {
+	t.Parallel()
 	for _, platform := range []apicfgv1.PlatformType{apicfgv1.AWSPlatformType, apicfgv1.NonePlatformType, "unrecognized"} {
+		platform := platform
 		t.Run(string(platform), func(t *testing.T) {
+			t.Parallel()
 			f := newFixture(t)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
@@ -1796,8 +1839,11 @@ func TestClusterImagePolicyCreate(t *testing.T) {
 }
 
 func TestSigstoreRegistriesConfigIDMSandCIPCreate(t *testing.T) {
+	t.Parallel()
 	for _, platform := range []apicfgv1.PlatformType{apicfgv1.AWSPlatformType, apicfgv1.NonePlatformType, "unrecognized"} {
+		platform := platform
 		t.Run(string(platform), func(t *testing.T) {
+			t.Parallel()
 			f := newFixture(t)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)

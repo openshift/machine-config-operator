@@ -18,6 +18,7 @@ import (
 )
 
 func TestParseManifests(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		raw  string
@@ -145,7 +146,9 @@ spec:
 		}},
 	}}
 	for _, test := range tests {
+		test := test
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			got, err := parseManifests("dummy-file-name", strings.NewReader(test.raw))
 			if err != nil {
 				t.Fatalf("failed to parse manifest: %v", err)
@@ -158,16 +161,17 @@ spec:
 }
 
 func TestBootstrapRun(t *testing.T) {
-	destDir, err := os.MkdirTemp("", "controller-bootstrap")
-	require.NoError(t, err)
-	defer os.RemoveAll(destDir)
-
-	bootstrap := New("../../../templates", "testdata/bootstrap", "testdata/bootstrap/machineconfigcontroller-pull-secret")
-	err = bootstrap.Run(destDir)
-	require.NoError(t, err)
+	t.Parallel()
 
 	for _, poolName := range []string{"master", "worker"} {
+		poolName := poolName
 		t.Run(poolName, func(t *testing.T) {
+			t.Parallel()
+			destDir := t.TempDir()
+
+			bootstrap := New("../../../templates", "testdata/bootstrap", "testdata/bootstrap/machineconfigcontroller-pull-secret")
+			require.NoError(t, bootstrap.Run(destDir))
+
 			paths, err := filepath.Glob(filepath.Join(destDir, "machine-configs", fmt.Sprintf("rendered-%s-*.yaml", poolName)))
 			require.NoError(t, err)
 			require.Len(t, paths, 1)
