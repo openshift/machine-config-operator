@@ -1277,34 +1277,42 @@ func (ctrl *Controller) updateMachineOSConfig(old, cur interface{}) {
 
 func (ctrl *Controller) deleteMachineOSConfig(cur interface{}) {
 	mosc, ok := cur.(*mcfgv1alpha1.MachineOSConfig)
+	if !ok {
+		tombstone, ok := cur.(cache.DeletedFinalStateUnknown)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("couldn't get object from tombstone %#v", cur))
+			return
+		}
+		mosc, ok = tombstone.Obj.(*mcfgv1alpha1.MachineOSConfig)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not a MachineOSConfig %#v", cur))
+			return
+		}
+	}
+	klog.V(4).Infof("Deleting MachineOSConfig %s", mosc.Name)
+
+	// Get the associated MachineConfigPool and MachineOSBuild
 	mcp, err := ctrl.mcpLister.Get(mosc.Spec.MachineConfigPool.Name)
 	if err != nil {
 		utilruntime.HandleError(fmt.Errorf("MachineOSConfig's MachineConfigPool cannot be found"))
 		return
 	}
-	// first, we need to stop and delete any existing builds.
+
 	mosb, err := ctrl.machineOSBuildLister.Get(fmt.Sprintf("%s-%s-builder", mosc.Spec.MachineConfigPool.Name, mcp.Spec.Configuration.Name))
 	if err == nil {
 		if running, _ := ctrl.imageBuilder.IsBuildRunning(mosb, mosc); running {
-			// we need to stop the build.
+			// Stop and delete the build if it is running
 			ctrl.imageBuilder.DeleteBuildObject(mosb, mosc)
 			ctrl.markBuildInterrupted(mosc, mosb)
 		}
 		ctrl.mcfgclient.MachineconfigurationV1alpha1().MachineOSBuilds().Delete(context.TODO(), mosb.Name, metav1.DeleteOptions{})
 	}
-	if !ok {
-		tombstone, ok := cur.(cache.DeletedFinalStateUnknown)
-		if !ok {
-			utilruntime.HandleError(fmt.Errorf("Couldn't get object from tombstone %#v", cur))
-			return
-		}
-		mosc, ok = tombstone.Obj.(*mcfgv1alpha1.MachineOSConfig)
-		if !ok {
-			utilruntime.HandleError(fmt.Errorf("Tombstone contained object that is not a MachineOSConfig %#v", cur))
-			return
-		}
+
+	// Clean up associated ConfigMaps
+	err = ctrl.postBuildCleanup(mosc, mosb, false)
+	if err != nil {
+		klog.Errorf("Failed to clean up resources for MOSC %s: %v", mosc.Name, err)
 	}
-	klog.V(4).Infof("Deleting MachineOSConfig %s", mosc.Name)
 }
 
 func (ctrl *Controller) updateMachineOSBuild(old, cur interface{}) {
