@@ -184,6 +184,10 @@ contents:
             value: "yes"
           - name: IS_BOOTSTRAP
             value: "no"
+          - name: POD_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
         command:
         - /bin/bash
         - -c
