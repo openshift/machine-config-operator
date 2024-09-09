@@ -81,17 +81,19 @@ spec:
                     description: capabilities defines an array of capabilities that
                       can be interacted with in the console UI. Each capability defines
                       a visual state that can be interacted with the console to render
-                      in the UI. Available capabilities are LightspeedButton. Each
-                      of the available capabilities may appear only once in the list.
+                      in the UI. Available capabilities are LightspeedButton and GettingStartedBanner.
+                      Each of the available capabilities may appear only once in the
+                      list.
                     items:
                       description: Capabilities contains set of UI capabilities and
                         their state in the console UI.
                       properties:
                         name:
                           description: name is the unique name of a capability. Available
-                            capabilities are LightspeedButton.
+                            capabilities are LightspeedButton and GettingStartedBanner.
                           enum:
                           - LightspeedButton
+                          - GettingStartedBanner
                           type: string
                         visibility:
                           description: visibility defines the visibility state of
@@ -114,7 +116,7 @@ spec:
                       - name
                       - visibility
                       type: object
-                    maxItems: 1
+                    maxItems: 2
                     minItems: 1
                     type: array
                     x-kubernetes-list-map-keys:

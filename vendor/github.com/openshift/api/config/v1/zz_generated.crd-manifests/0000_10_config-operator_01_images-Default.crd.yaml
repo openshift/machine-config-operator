@@ -7,6 +7,7 @@ metadata:
     include.release.openshift.io/ibm-cloud-managed: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
     release.openshift.io/bootstrap-required: "true"
+    release.openshift.io/feature-set: Default
   name: images.config.openshift.io
 spec:
   group: config.openshift.io
@@ -82,6 +83,7 @@ spec:
                       type: boolean
                   type: object
                 type: array
+                x-kubernetes-list-type: atomic
               externalRegistryHostnames:
                 description: externalRegistryHostnames provides the hostnames for
                   the default external image registry. The external hostname should
@@ -91,6 +93,7 @@ spec:
                 items:
                   type: string
                 type: array
+                x-kubernetes-list-type: atomic
               registrySources:
                 description: registrySources contains configuration that determines
                   how the container runtime should treat individual registries when
@@ -106,6 +109,7 @@ spec:
                     items:
                       type: string
                     type: array
+                    x-kubernetes-list-type: atomic
                   blockedRegistries:
                     description: "blockedRegistries cannot be used for image pull
                       and push actions. All other registries are permitted. \n Only
@@ -113,6 +117,7 @@ spec:
                     items:
                       type: string
                     type: array
+                    x-kubernetes-list-type: atomic
                   containerRuntimeSearchRegistries:
                     description: 'containerRuntimeSearchRegistries are registries
                       that will be searched when pulling images that do not have fully
@@ -132,6 +137,7 @@ spec:
                     items:
                       type: string
                     type: array
+                    x-kubernetes-list-type: atomic
                 type: object
             type: object
           status:
@@ -147,6 +153,7 @@ spec:
                 items:
                   type: string
                 type: array
+                x-kubernetes-list-type: atomic
               internalRegistryHostname:
                 description: internalRegistryHostname sets the hostname for the default
                   internal image registry. The value must be in "hostname[:port]"

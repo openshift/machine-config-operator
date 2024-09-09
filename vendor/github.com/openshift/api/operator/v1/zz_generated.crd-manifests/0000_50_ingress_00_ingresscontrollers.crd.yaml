@@ -7,7 +7,6 @@ metadata:
     capability.openshift.io/name: Ingress
     include.release.openshift.io/ibm-cloud-managed: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
-    release.openshift.io/feature-set: CustomNoUpgrade
   name: ingresscontrollers.operator.openshift.io
 spec:
   group: operator.openshift.io

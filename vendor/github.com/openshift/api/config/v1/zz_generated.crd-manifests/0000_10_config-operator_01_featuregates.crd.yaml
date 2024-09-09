@@ -73,6 +73,11 @@ spec:
                   default is empty.  Be very careful adjusting this setting. Turning
                   on or off features may cause irreversible changes in your cluster
                   which cannot be undone.
+                enum:
+                - CustomNoUpgrade
+                - DevPreviewNoUpgrade
+                - TechPreviewNoUpgrade
+                - ""
                 type: string
                 x-kubernetes-validations:
                 - message: CustomNoUpgrade may not be changed
