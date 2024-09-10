@@ -938,6 +938,14 @@ func (dn *Daemon) updateOnClusterBuild(oldConfig, newConfig *mcfgv1.MachineConfi
 		}
 	}()
 
+	// Update the kernal args if there is a difference
+	if diff.kargs && dn.os.IsCoreOSVariant() {
+		coreOSDaemon := CoreOSDaemon{dn}
+		if err := coreOSDaemon.updateKernelArguments(oldConfig.Spec.KernelArguments, newConfig.Spec.KernelArguments); err != nil {
+			return err
+		}
+	}
+
 	// Ideally we would want to update kernelArguments only via MachineConfigs.
 	// We are keeping this to maintain compatibility and OKD requirement.
 	if err := UpdateTuningArgs(KernelTuningFile, CmdLineFile); err != nil {
