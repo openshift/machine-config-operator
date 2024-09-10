@@ -1,5 +1,5 @@
 name: on-prem-resolv-prepender.path
-enabled: true
+enabled: {{if gt (len (onPremPlatformAPIServerInternalIPs .)) 0}}true{{else}}false{{end}}
 contents: |
   [Unit]
   Description=Watches for changes in /var/run/NetworkManager/resolv.conf according to on-prem IPI needs
