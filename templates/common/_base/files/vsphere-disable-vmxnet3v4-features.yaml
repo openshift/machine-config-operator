@@ -7,12 +7,40 @@ contents:
       # https://bugzilla.redhat.com/show_bug.cgi?id=1941714
       # https://bugzilla.redhat.com/show_bug.cgi?id=1935539
       # https://bugzilla.redhat.com/show_bug.cgi?id=1987108
+      # https://issues.redhat.com/browse/SPLAT-1409
 
       driver=$(nmcli -t -m tabular -f general.driver dev show "${DEVICE_IFACE}")
 
-      if [[ "$2" == "up" && "${driver}" == "vmxnet3" ]]; then
+      if [[ "$2" != "up" ]]; then
+        exit
+      fi
+      
+      if [[ "${driver}" == "vmxnet3" ]]; then
         logger -s "99-vsphere-disable-tx-udp-tnl triggered by ${2} on device ${DEVICE_IFACE}."
         ethtool -K ${DEVICE_IFACE} tx-udp_tnl-segmentation off
         ethtool -K ${DEVICE_IFACE} tx-udp_tnl-csum-segmentation off
         ethtool -K ${DEVICE_IFACE} tx-checksum-ip-generic off
+        ethtool -K ${DEVICE_IFACE} tx-esp-segmentation off
+        ethtool -K ${DEVICE_IFACE} esp-hw-offload off
+        ethtool -K ${DEVICE_IFACE} esp-tx-csum-hw-offload off
+
+        exit
       fi
+
+      # disable ESP offload also in bonds as they don't seem to honor the slave
+      # configuration
+      if [[ "${driver}" == "bond" ]]; then
+        for slave in $(nmcli -g BOND.SLAVES dev show "${DEVICE_IFACE}"); do
+          driver=$(nmcli -t -m tabular -f general.driver dev show "${slave}")
+          if [[ "${driver}" == "vmxnet3" ]]; then
+            logger -s "99-vsphere-disable-tx-udp-tnl triggered by ${2} on device ${DEVICE_IFACE}."
+            ethtool -K ${DEVICE_IFACE} tx-esp-segmentation off
+            ethtool -K ${DEVICE_IFACE} esp-hw-offload off
+            ethtool -K ${DEVICE_IFACE} esp-tx-csum-hw-offload off
+          
+            exit
+          fi
+        done
+      fi
+
+
