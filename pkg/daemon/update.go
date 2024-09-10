@@ -936,6 +936,23 @@ func (dn *Daemon) updateOnClusterBuild(oldConfig, newConfig *mcfgv1.MachineConfi
 		return err
 	}
 
+	// Determine the pool (worker or master) based on the node's labels
+	pool := ""
+	var ok bool
+	if dn.node != nil {
+		if _, ok = dn.node.Labels["node-role.kubernetes.io/worker"]; ok {
+			pool = "worker"
+		} else if _, ok = dn.node.Labels["node-role.kubernetes.io/master"]; ok {
+			pool = "master"
+		}
+	}
+
+	// Ensure the MCN spec is updated with the correct desiredConfig
+	err = upgrademonitor.GenerateAndApplyMachineConfigNodeSpec(dn.featureGatesAccessor, pool, dn.node, dn.mcfgClient)
+	if err != nil {
+		return fmt.Errorf("error updating MCN spec for node %s: %w", dn.node.Name, err)
+	}
+
 	defer func() {
 		if retErr != nil {
 			odc.currentConfig = oldConfig
