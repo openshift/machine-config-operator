@@ -1633,6 +1633,14 @@ func (s *stateAndConfigs) getCurrentName() string {
 	return fmt.Sprintf("MachineConfig: %s / Image: %s", s.currentConfig.GetName(), s.currentImage)
 }
 
+func (s *stateAndConfigs) getDesiredName() string {
+	if s.desiredImage == "" {
+		return fmt.Sprintf("MachineConfig: %s", s.desiredConfig.GetName())
+	}
+
+	return fmt.Sprintf("MachineConfig: %s / Image: %s", s.desiredConfig.GetName(), s.desiredImage)
+}
+
 func (dn *Daemon) getStateAndConfigs() (*stateAndConfigs, error) {
 	_, err := os.Lstat(constants.InitialNodeAnnotationsFilePath)
 	var bootstrapping bool
@@ -2220,7 +2228,13 @@ func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, bool, erro
 		if err != nil {
 			klog.Errorf("Error making MCN for Resumed true: %v", err)
 		}
-		klog.Infof("Completing update to target %s", state.getCurrentName())
+
+		if state.currentConfig.GetName() == state.getDesiredName() {
+			klog.Infof("No update required, configuration is already at desired state: %s", state.getCurrentName())
+		} else {
+			klog.Infof("Completing update to target %s", state.getCurrentName())
+		}
+
 		if err := dn.completeUpdate(state.currentConfig.GetName()); err != nil {
 			UpdateStateMetric(mcdUpdateState, "", err.Error())
 			return missingODC, inDesiredConfig, err
@@ -2244,8 +2258,6 @@ func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, bool, erro
 				return missingODC, inDesiredConfig, fmt.Errorf("error setting node's state to Done: %w", err)
 			}
 		}
-
-		klog.Infof("In desired state %s", state.getCurrentName())
 		UpdateStateMetric(mcdUpdateState, state.getCurrentName(), "")
 	}
 
