@@ -8,7 +8,10 @@ contents: |
   Before=node-valid-hostname.service
 
   [Service]
-  Type=oneshot
+  # We use Type=notify so that systemd keeps retrying until we succeed. With
+  # Type=oneshot, it also keeps retrying, but will never start follow-up services
+  # that depend on us if we fail once.
+  Type=notify
   ExecStart=/usr/local/bin/wait-for-br-ex-up.sh
 
   [Install]

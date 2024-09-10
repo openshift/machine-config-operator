@@ -8,7 +8,10 @@ contents: |
   After=crio-wipe.service
   StartLimitIntervalSec=0
   [Service]
-  Type=oneshot
+  # We use Type=notify so that systemd keeps retrying until we succeed. With
+  # Type=oneshot, it also keeps retrying, but will never start follow-up services
+  # that depend on us if we fail once.
+  Type=notify
   Restart=on-failure
   RestartSec=10
   ExecStart=/usr/local/bin/resolv-prepender.sh
