@@ -100,6 +100,9 @@ const (
 	// changes to registries.d will cause a crio reload
 	SigstoreRegistriesConfigDir = "/etc/containers/registries.d"
 
+	// changes to /etc/crio/policies will cause a crio reload
+	CrioPoliciesDir = "/etc/crio/policies"
+
 	// changes to openshift-config-user-ca-bundle.crt will cause an update-ca-trust and crio restart
 	UserCABundlePath = "/etc/pki/ca-trust/source/anchors/openshift-config-user-ca-bundle.crt"
 

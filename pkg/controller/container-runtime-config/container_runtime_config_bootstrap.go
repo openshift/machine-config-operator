@@ -54,9 +54,6 @@ func RunContainerRuntimeBootstrap(templateDir string, crconfigs []*mcfgv1.Contai
 			}
 
 			ctrRuntimeConfigIgn := createNewIgnition(configFileList)
-			if err != nil {
-				return nil, fmt.Errorf("could not marshal container runtime ignition: %w", err)
-			}
 			managedKey, err := generateBootstrapManagedKeyContainerConfig(pool, managedKeyExist)
 			if err != nil {
 				return nil, fmt.Errorf("could not marshal container runtime ignition: %w", err)
