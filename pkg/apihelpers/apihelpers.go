@@ -72,6 +72,17 @@ var (
 				},
 			},
 			{
+				Path: constants.CrioPoliciesDir,
+				Actions: []opv1.NodeDisruptionPolicyStatusAction{
+					{
+						Type: opv1.ReloadStatusAction,
+						Reload: &opv1.ReloadService{
+							ServiceName: "crio.service",
+						},
+					},
+				},
+			},
+			{
 				Path: constants.OpenShiftNMStateConfigDir,
 				Actions: []opv1.NodeDisruptionPolicyStatusAction{
 					{
