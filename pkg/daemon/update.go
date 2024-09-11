@@ -63,10 +63,6 @@ const (
 	postConfigChangeActionRestartCrio = "restart crio"
 	// Rebooting is still the default scenario for any other change
 	postConfigChangeActionReboot = "reboot"
-
-	// ImageRegistryDrainOverrideConfigmap is the name of the Configmap a user can apply to force all
-	// image registry changes to not drain
-	ImageRegistryDrainOverrideConfigmap = "image-registry-override-drain"
 )
 
 func getNodeRef(node *corev1.Node) *corev1.ObjectReference {
@@ -1076,19 +1072,19 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	}
 
 	var drain bool
+	crioOverrideConfigmapExists, err := dn.hasImageRegistryDrainOverrideConfigMap()
+	if err != nil {
+		return err
+	}
 	if fg != nil && fg.Enabled(features.FeatureGateNodeDisruptionPolicy) {
 		// Check actions list and perform node drain if required
-		drain, err = isDrainRequiredForNodeDisruptionActions(nodeDisruptionActions, oldIgnConfig, newIgnConfig)
+		drain, err = isDrainRequiredForNodeDisruptionActions(nodeDisruptionActions, oldIgnConfig, newIgnConfig, crioOverrideConfigmapExists)
 		if err != nil {
 			return err
 		}
 		klog.Infof("Drain calculated for node disruption: %v for config %s", drain, newConfigName)
 	} else {
 		// Check and perform node drain if required
-		crioOverrideConfigmapExists, err := dn.hasImageRegistryDrainOverrideConfigMap()
-		if err != nil {
-			return err
-		}
 		drain, err = isDrainRequired(actions, diffFileSet, oldIgnConfig, newIgnConfig, crioOverrideConfigmapExists)
 		if err != nil {
 			return err
@@ -2830,7 +2826,7 @@ func (dn *Daemon) hasImageRegistryDrainOverrideConfigMap() (bool, error) {
 		return false, nil
 	}
 
-	_, err := dn.kubeClient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), ImageRegistryDrainOverrideConfigmap, metav1.GetOptions{})
+	_, err := dn.kubeClient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), constants.ImageRegistryDrainOverrideConfigmap, metav1.GetOptions{})
 	if err == nil {
 		return true, nil
 	}
