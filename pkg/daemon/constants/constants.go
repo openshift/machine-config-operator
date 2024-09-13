@@ -121,6 +121,13 @@ const (
 	// DaemonReloadCommand is used to specify reloads and restarts of the systemd manager configuration
 	DaemonReloadCommand = "daemon-reload"
 
+	// UpdateCATrustServiceName is a service present on CoresOS nodes that runs the update-ca-trust command
+	UpdateCATrustServiceName = "coreos-update-ca-trust.service"
+
+	// UpdateCATrustCommand will be used to run update-ca-trust directly. This is a fallback for scenarios
+	// where the above service doesn't exist, for example on RHEL nodes.
+	UpdateCATrustCommand = "update-ca-trust"
+
 	// DefaultCRIOSocketPath is the default path to the CRI-O socket
 	DefaultCRIOSocketPath = "/var/run/crio/crio.sock"
 

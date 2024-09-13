@@ -193,10 +193,26 @@ func (dn *Daemon) performPostConfigChangeNodeDisruptionAction(postConfigChangeAc
 			serviceName := string(action.Restart.ServiceName)
 
 			if err := restartService(serviceName); err != nil {
-				if dn.nodeWriter != nil {
-					dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedServiceRestart", fmt.Sprintf("Restarting %s service failed. Error: %v", serviceName, err))
+				// On RHEL nodes, this service is not available and will error out.
+				// In those cases, directly run the command instead of using the service
+				if serviceName == constants.UpdateCATrustServiceName {
+					logSystem("Error executing %s unit, falling back to command", serviceName)
+					cmd := exec.Command(constants.UpdateCATrustCommand)
+					var stderr bytes.Buffer
+					cmd.Stdout = os.Stdout
+					cmd.Stderr = &stderr
+					if err := cmd.Run(); err != nil {
+						if dn.nodeWriter != nil {
+							dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedServiceRestart", fmt.Sprintf("Restarting %s service failed. Error: %v", serviceName, err))
+						}
+						return fmt.Errorf("error running %s: %s: %w", constants.UpdateCATrustCommand, stderr.String(), err)
+					}
+				} else {
+					if dn.nodeWriter != nil {
+						dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedServiceRestart", fmt.Sprintf("Restarting %s service failed. Error: %v", serviceName, err))
+					}
+					return fmt.Errorf("could not apply update: restarting %s service failed. Error: %w", serviceName, err)
 				}
-				return fmt.Errorf("could not apply update: restarting %s service failed. Error: %w", serviceName, err)
 			}
 			// TODO: Add a new MCN Condition to the API for service restarts?
 			if dn.nodeWriter != nil {
@@ -300,12 +316,12 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 	}
 
 	if ctrlcommon.InSlice(postConfigChangeActionRestartCrio, postConfigChangeActions) {
-		cmd := exec.Command("update-ca-trust")
+		cmd := exec.Command(constants.UpdateCATrustCommand)
 		var stderr bytes.Buffer
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = &stderr
 		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("error running update-ca-trust: %s: %w", string(stderr.Bytes()), err)
+			return fmt.Errorf("error running %s: %s: %w", constants.UpdateCATrustCommand, string(stderr.Bytes()), err)
 		}
 
 		serviceName := constants.CRIOServiceName
