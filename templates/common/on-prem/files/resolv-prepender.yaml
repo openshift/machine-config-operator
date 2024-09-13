@@ -81,7 +81,6 @@ contents:
                         rm -f "${KNICONFDONEPATH}"
                         # Copy tmp file contents to preserve permissions and SELinux label
                         cat "${KNICONFTMPPATH}" > "${KNICONFPATH}"
-                        rm -rf "${KNICONFTMPPATH}"
                     fi
 
                     if [[ ! -f "${KNICONFDONEPATH}" ]]; then
@@ -91,6 +90,7 @@ contents:
                         fi
                         touch "${KNICONFDONEPATH}"
                     fi
+                    rm -rf "${KNICONFTMPPATH}"
                 else
                     >&2 echo "NM resolv-prepender: Prepending 'nameserver $NAMESERVER_IP' to /etc/resolv.conf (other nameservers from /var/run/NetworkManager/resolv.conf)"
                     RESOLVCONFTMPPATH="$(mktemp)"
@@ -118,6 +118,7 @@ contents:
                       nmcli general reload dns-rc
                     fi
                     touch "${KNICONFDONEPATH}"
+                    rm -rf "${RESOLVCONFTMPPATH}"
                 fi
             fi
     }
