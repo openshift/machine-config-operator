@@ -31,16 +31,38 @@ contents:
     # Set node name to be instance name instead of the default FQDN hostname.
     # Try to get the hostname from config drive first if it's available
     # or fallback to the metadata service.
-    if [ -f "/host/var/config/openstack/2012-08-10/meta_data.json" ]; then
+    # We'll first try to use config-drive: if a block device is found with a specific label,
+    # we'll mount it and unmount it when not needed anymore. This is because the config drive is
+    # unmounted by cloud-init.
+    # If config-drive isn't found, then we'll try to reach the metadata server.
+    if [ -n "$(blkid -t LABEL="config-2" -odevice)" ]; then
+        config_drive_label="config-2"
+    elif [ -n "$(blkid -t LABEL="CONFIG-2" -odevice)" ]; then
+        config_drive_label="CONFIG-2"
+    fi
+
+    if [ -n "${config_drive_label}" ]; then
+        echo "Using config drive to get the hostname"
+        tmp_mount="$(mktemp -d)"
+        mount -o ro -t auto "/dev/disk/by-label/${config_drive_label}" "${tmp_mount}"
+        meta_data_file="$tmp_mount/openstack/2012-08-10/meta_data.json"
+        if [ ! -f "${meta_data_file}" ]; then
+            echo "Failed to find ${meta_data_file}"
+            umount "${tmp_mount}" && rmdir "${tmp_mount}"
+            exit 1
+        fi
         # https://docs.openstack.org/nova/victoria/user/metadata.html#metadata-openstack-format
-        hostname=$(jq -re .name /host/var/config/openstack/2012-08-10/meta_data.json)
+        hostname=$(jq -re .name "${meta_data_file}")
         if [[ -z "${hostname}" ]]; then
-            echo "Failed to get hostname from /host/var/config/openstack/2018-08-10/meta_data.json"
+            echo "Failed to get hostname from $meta_data_file"
+            umount "${tmp_mount}" && rmdir "${tmp_mount}"
             exit 1
         fi
 
         echo "KUBELET_NODE_NAME=${hostname}" > ${NODEENV}
+        umount "${tmp_mount}" && rmdir "${tmp_mount}"
     else
+        echo "Using metadata service to get the hostname"
         while true; do
             if [ "$SINGLE_STACK_IPV6" = true ]
             then
