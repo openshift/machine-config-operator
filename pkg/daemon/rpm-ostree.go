@@ -19,8 +19,8 @@ type RpmOstreeClient struct {
 	client rpmostreeclient.Client
 }
 
-// NewNodeUpdaterClient is a wrapper to create an RpmOstreeClient
-func NewNodeUpdaterClient() RpmOstreeClient {
+// NewNodeOstreeClient is a wrapper to create an RpmOstreeClient
+func NewNodeOstreeClient() RpmOstreeClient {
 	return RpmOstreeClient{
 		client: rpmostreeclient.NewClient("machine-config-daemon"),
 	}
