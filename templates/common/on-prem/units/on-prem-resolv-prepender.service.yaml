@@ -9,7 +9,13 @@ contents: |
   StartLimitIntervalSec=0
   [Service]
   Type=oneshot
-  Restart=on-failure
-  RestartSec=10
-  ExecStart=/usr/local/bin/resolv-prepender.sh
+  # Would prefer to do Restart=on-failure instead of this bash retry loop, but
+  # the version of systemd we have right now doesn't support it. It should be
+  # available in systemd v244 and higher.
+  ExecStart=/bin/bash -c " \
+    until \
+    /usr/local/bin/resolv-prepender.sh; \
+    do \
+    sleep 10; \
+    done"
   EnvironmentFile=/run/resolv-prepender/env
