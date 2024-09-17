@@ -9,9 +9,15 @@ contents: |
 
   [Service]
   Type=oneshot
-  Restart=on-failure
-  RestartSec=10
-  ExecStart=/usr/local/bin/wait-for-primary-ip.sh
+  # Would prefer to do Restart=on-failure instead of this bash retry loop, but
+  # the version of systemd we have right now doesn't support it. It should be
+  # available in systemd v244 and higher.
+  ExecStart=/bin/bash -c " \
+    until \
+    /usr/local/bin/wait-for-primary-ip.sh; \
+    do \
+    sleep 10; \
+    done"
   StandardOutput=journal+console
   StandardError=journal+console
 
