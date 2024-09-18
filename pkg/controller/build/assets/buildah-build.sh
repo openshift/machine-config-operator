@@ -10,6 +10,10 @@ ETC_PKI_RPM_GPG_MOUNTPOINT="${ETC_PKI_RPM_GPG_MOUNTPOINT:-}"
 ETC_YUM_REPOS_D_MOUNTPOINT="${ETC_YUM_REPOS_D_MOUNTPOINT:-}"
 MAX_RETRIES="${MAX_RETRIES:-3}"
 
+export HTTP_PROXY="${HTTP_PROXY:-}"
+export HTTPS_PROXY="${HTTPS_PROXY:-}"
+export NO_PROXY="${NO_PROXY:-}"
+
 # Retry a command up to a specific number of times until it exits successfully.
 # Adapted from https://gist.github.com/sj26/88e1c6584397bb7c13bd11108a579746
 function retry {
@@ -43,6 +47,9 @@ build_args=(
 	--authfile="$BASE_IMAGE_PULL_CREDS"
 	--tag "$TAG"
 	--file="$build_context/Dockerfile"
+	--build-arg HTTP_PROXY="$HTTP_PROXY"
+	--build-arg HTTPS_PROXY="$HTTPS_PROXY"
+	--build-arg NO_PROXY="$NO_PROXY"
 )
 
 mount_opts="z,rw"

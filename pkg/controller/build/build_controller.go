@@ -922,6 +922,13 @@ func (ctrl *Controller) getImagesConfig() (*ctrlcommon.Images, error) {
 func (ctrl *Controller) prepareForBuild(mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig) (ImageBuildRequest, error) {
 	ibr := newImageBuildRequestFromBuildInputs(mosb, mosc)
 
+	cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
+	if err != nil {
+		return ibr, fmt.Errorf("could not get controller config: %w", err)
+	}
+
+	ibr.Proxy = cc.Spec.Proxy
+
 	imagesConfig, err := ctrl.getImagesConfig()
 	if err != nil {
 		return ibr, fmt.Errorf("could not get images.json config: %w", err)

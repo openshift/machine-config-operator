@@ -7,6 +7,7 @@ import (
 	"strings"
 	"text/template"
 
+	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -51,6 +52,8 @@ type ImageBuildRequest struct {
 	HasEtcYumReposDConfigs bool
 	// Has /etc/pki/rpm-gpg configs
 	HasEtcPkiRpmGpgKeys bool
+	// Proxy Configurations
+	Proxy *configv1.ProxyStatus
 }
 
 // Constructs a simple ImageBuildRequest.
@@ -171,6 +174,12 @@ func (i ImageBuildRequest) toBuildPod() *corev1.Pod {
 // the official Buildah image.
 // nolint:dupl // I don't want to deduplicate this yet since there are still some unknowns.
 func (i ImageBuildRequest) toBuildahPod() *corev1.Pod {
+	var httpProxy, httpsProxy, noProxy string
+	if i.Proxy != nil {
+		httpProxy = i.Proxy.HTTPProxy
+		httpsProxy = i.Proxy.HTTPSProxy
+		noProxy = i.Proxy.NoProxy
+	}
 	env := []corev1.EnvVar{
 		// How many times the build / push steps should be retried. In the future,
 		// this should be wired up to the MachineOSConfig or other higher-level
@@ -213,6 +222,18 @@ func (i ImageBuildRequest) toBuildahPod() *corev1.Pod {
 		{
 			Name:  "BUILDAH_ISOLATION",
 			Value: "chroot",
+		},
+		{
+			Name:  "HTTP_PROXY",
+			Value: httpProxy,
+		},
+		{
+			Name:  "HTTPS_PROXY",
+			Value: httpsProxy,
+		},
+		{
+			Name:  "NO_PROXY",
+			Value: noProxy,
 		},
 	}
 
