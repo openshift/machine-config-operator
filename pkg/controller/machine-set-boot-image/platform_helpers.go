@@ -48,13 +48,6 @@ func reconcileGCP(machineSet *machinev1beta1.MachineSet, configMap *corev1.Confi
 		}
 	}
 
-	// For now, hardcode to the managed worker secret, until Custom Pool Booting is implemented. When that happens, this will have to
-	// respect the pool this machineset is targeted for.
-	if newProviderSpec.UserDataSecret.Name != ManagedWorkerSecretName {
-		newProviderSpec.UserDataSecret.Name = ManagedWorkerSecretName
-		patchRequired = true
-	}
-
 	// If patch is required, marshal the new providerspec into the machineset
 	if patchRequired {
 		newMachineSet = machineSet.DeepCopy()
@@ -140,11 +133,6 @@ func reconcileAWS(machineSet *machinev1beta1.MachineSet, configMap *corev1.Confi
 		klog.Infof("Current image: %s: %s", region, currentAMI)
 		patchRequired = true
 		newProviderSpec.AMI.ID = &newami
-	}
-
-	if newProviderSpec.UserDataSecret.Name != ManagedWorkerSecretName {
-		newProviderSpec.UserDataSecret.Name = ManagedWorkerSecretName
-		patchRequired = true
 	}
 
 	if patchRequired {
