@@ -70,7 +70,7 @@ var (
 			Name: "mcd_local_unsupported_packages",
 			Help: "Total number of locally layered unsupported packages installed on the node",
 		},
-		[]string{"vendor"})
+		[]string{"node"})
 )
 
 // Updates metric with new labels & timestamp, deletes any existing

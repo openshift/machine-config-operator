@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -2812,73 +2813,79 @@ func cipherOrder() []uint16 {
 	return append(first, second...)
 }
 
-type rpmOstreeStatus struct {
-	Deployments []struct {
-		RequestedPackages []string `json:"requested-local-packages"`
-	} `json:"deployments"`
+type Deployment struct {
+	Booted                             bool     `json:"booted"`
+	RequestedPackages                  []string `json:"requested-packages"`
+	RequestedLocalPackages             []string `json:"requested-local-packages"`
+	RequestedLocalFileoverridePackages []string `json:"requested-local-fileoverride-packages"`
+	RequestedBaseRemovals              []string `json:"requested-base-removals"`
+	RequestedBaseLocalReplacements     []string `json:"requested-base-local-replacements"`
+}
+
+type rpmOstreePackageStatus struct {
+	Deployments []Deployment `json:"deployments"`
 }
 
 func (dn *Daemon) getUnsupportedPackages() {
+	// Check if rpm-ostree command exists
+	if _, err := exec.LookPath("rpm-ostree"); err != nil {
+		klog.Infof("rpm-ostree command not found, skipping unsupported package check")
+		unsupportedPackages.WithLabelValues(dn.name).Set(0)
+		return
+	}
+
 	cmd := exec.Command("rpm-ostree", "status", "--json")
 	output, err := cmd.Output()
 	if err != nil {
 		klog.Errorf("Failed to run rpm-ostree status: %v", err)
+		unsupportedPackages.WithLabelValues(dn.name).Set(0)
 		return
 	}
 
-	var status rpmOstreeStatus
+	var status rpmOstreePackageStatus
 	if err := json.Unmarshal(output, &status); err != nil {
 		klog.Errorf("Failed to parse rpm-ostree status output: %v", err)
 		return
 	}
 
-	supportedExtensions := getSupportedExtensions()
-	supportedExtensionNames := make(map[string]bool)
-	for ext := range supportedExtensions {
-		supportedExtensionNames[ext] = true
-	}
-
-	if len(status.Deployments) > 0 {
-		requestedLocalPackages := status.Deployments[0].RequestedPackages
-		klog.Infof("Found %d requested local packages in the first deployment", len(requestedLocalPackages))
-
-		// Reset the unsupportedPackagesByVendor metric to start fresh
-		unsupportedPackages.Reset()
-
-		for _, pkg := range requestedLocalPackages {
-			// Check if the package is in the supported list
-			if supportedExtensionNames[pkg] {
-				continue
-			}
-
-			// Find vendor for unsupported packages
-			vendor, err := dn.getPackageVendor(pkg)
-			if err != nil {
-				klog.Errorf("Failed to get vendor for package %s: %v", pkg, err)
-				vendor = "" // Set vendor as empty if not found
-			}
-
-			unsupportedPackages.WithLabelValues(vendor).Inc()
+	// Find the booted deployment
+	var activeDeployment *Deployment
+	for _, dep := range status.Deployments {
+		if dep.Booted {
+			activeDeployment = &dep
+			break
 		}
-	} else {
-		klog.Warning("No deployments found in rpm-ostree status")
 	}
-}
-
-func (dn *Daemon) getPackageVendor(packageName string) (string, error) {
-	cmd := exec.Command("rpm", "-qi", packageName)
-	output, err := cmd.Output()
-	if err != nil {
-		return "", fmt.Errorf("failed to query package %s: %v", packageName, err)
+	if activeDeployment == nil {
+		klog.Warning("No booted deployment found in rpm-ostree status")
+		return
 	}
 
-	lines := strings.Split(string(output), "\n")
-	for _, line := range lines {
-		if strings.HasPrefix(line, "Vendor") {
-			vendor := strings.TrimSpace(strings.Split(line, ":")[1])
-			return vendor, nil
+	supportedPackages := make(map[string]bool)
+	for _, packages := range getSupportedExtensions() {
+		for _, pkg := range packages {
+			supportedPackages[pkg] = true
 		}
 	}
 
-	return "", fmt.Errorf("vendor information not found for package %s", packageName)
+	unsupportedPackageCount := 0
+	allPackageChanges := slices.Concat(
+		activeDeployment.RequestedPackages,
+		activeDeployment.RequestedLocalPackages,
+		activeDeployment.RequestedLocalFileoverridePackages,
+		activeDeployment.RequestedBaseRemovals,
+		activeDeployment.RequestedBaseLocalReplacements,
+	)
+	klog.Infof("Found %d requested local packages in the booted deployment", len(allPackageChanges))
+
+	for _, pkg := range allPackageChanges {
+		// Check if the package is in the supported list
+		if supportedPackages[pkg] {
+			continue
+		}
+
+		unsupportedPackageCount++
+		klog.Infof("Unsupported package %s", pkg)
+	}
+	unsupportedPackages.WithLabelValues(dn.name).Set(float64(unsupportedPackageCount))
 }
