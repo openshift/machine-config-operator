@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -1367,6 +1368,9 @@ func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error, errCh chan er
 	if !cache.WaitForCacheSync(stopCh, dn.nodeListerSynced, dn.mcListerSynced, dn.ccListerSynced) {
 		return fmt.Errorf("failed to sync initial listers cache")
 	}
+
+	// Collect metrics
+	dn.getUnsupportedPackages()
 
 	go wait.Until(dn.worker, time.Second, stopCh)
 	go wait.Until(dn.controllerConfigWorker, time.Second, stopCh)
@@ -2807,4 +2811,83 @@ func cipherOrder() []uint16 {
 	}
 
 	return append(first, second...)
+}
+
+type Deployment struct {
+	Booted                             bool     `json:"booted"`
+	RequestedPackages                  []string `json:"requested-packages"`
+	RequestedLocalPackages             []string `json:"requested-local-packages"`
+	RequestedLocalFileoverridePackages []string `json:"requested-local-fileoverride-packages"`
+	RequestedBaseRemovals              []string `json:"requested-base-removals"`
+	RequestedBaseLocalReplacements     []string `json:"requested-base-local-replacements"`
+}
+
+type rpmOstreePackageStatus struct {
+	Deployments []Deployment `json:"deployments"`
+}
+
+func (dn *Daemon) getUnsupportedPackages() {
+	// Check if rpm-ostree command exists
+	if _, err := exec.LookPath("rpm-ostree"); err != nil {
+		klog.Infof("rpm-ostree command not found, skipping unsupported package check")
+		unsupportedPackages.WithLabelValues(dn.name).Set(0)
+		return
+	}
+
+	cmd := exec.Command("rpm-ostree", "status", "--json")
+	output, err := cmd.Output()
+	if err != nil {
+		klog.Errorf("Failed to run rpm-ostree status: %v", err)
+		unsupportedPackages.WithLabelValues(dn.name).Set(0)
+		return
+	}
+
+	var status rpmOstreePackageStatus
+	if err := json.Unmarshal(output, &status); err != nil {
+		klog.Errorf("Failed to parse rpm-ostree status output: %v", err)
+		return
+	}
+
+	// Find the booted deployment
+	var activeDeployment *Deployment
+	for _, dep := range status.Deployments {
+		if dep.Booted {
+			activeDeployment = &dep
+			break
+		}
+	}
+	if activeDeployment == nil {
+		klog.Warning("No booted deployment found in rpm-ostree status")
+		return
+	}
+
+	supportedPackages := make(map[string]bool)
+	for _, packages := range getSupportedExtensions() {
+		for _, pkg := range packages {
+			supportedPackages[pkg] = true
+		}
+	}
+
+	unsupportedPackageCount := 0
+	allPackageChanges := slices.Concat(
+		activeDeployment.RequestedPackages,
+		activeDeployment.RequestedLocalPackages,
+		activeDeployment.RequestedLocalFileoverridePackages,
+		activeDeployment.RequestedBaseRemovals,
+		activeDeployment.RequestedBaseLocalReplacements,
+	)
+	klog.Infof("Found %d requested local packages in the booted deployment", len(allPackageChanges))
+
+	for _, pkg := range allPackageChanges {
+		// Check if the package is in the supported list
+		if supportedPackages[pkg] {
+			continue
+		}
+
+		unsupportedPackageCount++
+		klog.Infof("Unsupported package %s", pkg)
+
+	}
+	unsupportedPackages.WithLabelValues(dn.name).Set(float64(unsupportedPackageCount))
+
 }
