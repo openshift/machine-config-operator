@@ -557,6 +557,7 @@ func (ctrl *Controller) logPoolNode(pool *mcfgv1.MachineConfigPool, node *corev1
 	klog.Infof("Pool %s%s: node %s: %s", pool.Name, zonemsg, node.Name, msg)
 }
 
+//nolint:gocyclo
 func (ctrl *Controller) updateNode(old, cur interface{}) {
 	oldNode := old.(*corev1.Node)
 	curNode := cur.(*corev1.Node)
@@ -586,6 +587,26 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 		ctrl.logPoolNode(pool, curNode, "changed from pool %s", oldPool.Name)
 		// Let's also make sure the old pool node counts/status get updated
 		ctrl.enqueueMachineConfigPool(oldPool)
+	} else if err != nil {
+		// getPrimaryPoolForNode may error due to multiple custom pools. In this scenario, let's
+		// queue all of them so that when the node attempts to exit from this error state, the MCP
+		// statuses are updated correctly.
+		klog.Errorf("error fetching old primary pool for node %s, attempting to sync all old pools", oldNode.Name)
+		masterPool, workerPool, customPools, listErr := helpers.ListPools(oldNode, ctrl.mcpLister)
+		if listErr == nil {
+			for _, pool := range customPools {
+				ctrl.enqueueMachineConfigPool(pool)
+			}
+			if masterPool != nil {
+				ctrl.enqueueMachineConfigPool(masterPool)
+			}
+			if workerPool != nil {
+				ctrl.enqueueMachineConfigPool(workerPool)
+			}
+		} else {
+			klog.Errorf("error listing old pools %v for node %s", listErr, oldNode.Name)
+		}
+
 	}
 
 	var changed bool
