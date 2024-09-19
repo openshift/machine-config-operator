@@ -2468,10 +2468,11 @@ func (dn *Daemon) getUnsupportedPackages() {
 		return
 	}
 
-	supportedExtensions := getSupportedExtensions()
-	supportedExtensionNames := make(map[string]bool)
-	for ext := range supportedExtensions {
-		supportedExtensionNames[ext] = true
+	supportedPackages := make(map[string]bool)
+	for _, packages := range getSupportedExtensions() {
+		for _, pkg := range packages {
+			supportedPackages[pkg] = true
+		}
 	}
 
 	unsupportedPackageCount := 0
@@ -2484,7 +2485,7 @@ func (dn *Daemon) getUnsupportedPackages() {
 
 	for _, pkg := range allPackageChanges {
 		// Check if the package is in the supported list
-		if supportedExtensionNames[pkg] {
+		if supportedPackages[pkg] {
 			continue
 		}
 
