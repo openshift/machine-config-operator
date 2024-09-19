@@ -57,6 +57,14 @@ var (
 			Name: "mcd_config_drift",
 			Help: "timestamp for config drift",
 		})
+
+	// unsupportedPackages counts the number of unsupported packages installed on the node, categorized by vendor
+	unsupportedPackages = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "mcd_local_unsupported_packages",
+			Help: "Total number of locally layered unsupported packages installed on the node",
+		},
+		[]string{"node"})
 )
 
 // Updates metric with new labels & timestamp, deletes any existing
@@ -78,6 +86,7 @@ func RegisterMCDMetrics() error {
 		mcdRebootErr,
 		mcdUpdateState,
 		mcdConfigDrift,
+		unsupportedPackages,
 	})
 
 	if err != nil {
