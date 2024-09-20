@@ -595,8 +595,8 @@ github.com/opencontainers/runc v1.1.12 h1:BOIssBaW1La0/qbNZHXOOa71dZfZEQOzW7dqQf
 github.com/opencontainers/runc v1.1.12/go.mod h1:S+lQwSfncpBha7XTy/5lBwWgm5+y5Ma/O44Ekby9FK8=
 github.com/opencontainers/runtime-spec v1.1.0 h1:HHUyrt9mwHUjtasSbXSMvs4cyFxh+Bll4AjJ9odEGpg=
 github.com/opencontainers/runtime-spec v1.1.0/go.mod h1:jwyrGlmzljRJv/Fgzds9SsS/C5hL+LL3ko9hs6T5lQ0=
-github.com/openshift/api v0.0.0-20240904015708-69df64132c91 h1:PfPpMwHR8iAxQuLpQt+x9f3PAIeSPG2BLQd69p+NQHw=
-github.com/openshift/api v0.0.0-20240904015708-69df64132c91/go.mod h1:OOh6Qopf21pSzqNVCB5gomomBXb8o5sGKZxG2KNpaXM=
+github.com/openshift/api v0.0.0-20240919193929-2669d1ebc910 h1:8pA9Ugq0hhUbVaVWi5lgF4PGaV1ozpTI1NYn/QWqspg=
+github.com/openshift/api v0.0.0-20240919193929-2669d1ebc910/go.mod h1:OOh6Qopf21pSzqNVCB5gomomBXb8o5sGKZxG2KNpaXM=
 github.com/openshift/client-go v0.0.0-20240904134955-cd42fd3d7408 h1:xHOmkHjN0AFEXo4qCpSAdntIGZfD9UShjnAer+IGXUo=
 github.com/openshift/client-go v0.0.0-20240904134955-cd42fd3d7408/go.mod h1:D3yfotGqRY1LWaHcoSCeadhdyvfrQWYJXui1M+JqKvY=
 github.com/openshift/kube-openapi v0.0.0-20230816122517-ffc8f001abb0 h1:GPlAy197Jkr+D0T2FNWanamraTdzS/r9ZkT29lxvHaA=
