@@ -19,3 +19,6 @@ exclude:
     # Ignoring CWE-916 (Use of Password Hash With Insufficient Computational
     # Effort). We are not hashing passwords with MD5.
     - 'pkg/controller/render/hash.go'
+    # Ignoring CWE-916 (Use of Password Hash With Insufficient Computational
+    # Effort). We are not hashing passwords with MD5.
+    - 'pkg/controller/build/buildrequest/machineosbuild.go'
