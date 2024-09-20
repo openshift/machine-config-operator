@@ -44,6 +44,10 @@ message IDRange {
 // Compatibility level 2: Stable within a major release for a minimum of 9 months or 3 minor releases (whichever is longer).
 // +openshift:compatibility-gen:level=2
 message PodSecurityPolicyReview {
+  // metadata is the standard object's metadata.
+  // More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+  optional k8s.io.apimachinery.pkg.apis.meta.v1.ObjectMeta metadata = 3;
+
   // spec is the PodSecurityPolicy to check.
   optional PodSecurityPolicyReviewSpec spec = 1;
 
@@ -77,6 +81,10 @@ message PodSecurityPolicyReviewStatus {
 // Compatibility level 2: Stable within a major release for a minimum of 9 months or 3 minor releases (whichever is longer).
 // +openshift:compatibility-gen:level=2
 message PodSecurityPolicySelfSubjectReview {
+  // metadata is the standard object's metadata.
+  // More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+  optional k8s.io.apimachinery.pkg.apis.meta.v1.ObjectMeta metadata = 3;
+
   // spec defines specification the PodSecurityPolicySelfSubjectReview.
   optional PodSecurityPolicySelfSubjectReviewSpec spec = 1;
 
@@ -95,6 +103,10 @@ message PodSecurityPolicySelfSubjectReviewSpec {
 // Compatibility level 2: Stable within a major release for a minimum of 9 months or 3 minor releases (whichever is longer).
 // +openshift:compatibility-gen:level=2
 message PodSecurityPolicySubjectReview {
+  // metadata is the standard object's metadata.
+  // More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+  optional k8s.io.apimachinery.pkg.apis.meta.v1.ObjectMeta metadata = 3;
+
   // spec defines specification for the PodSecurityPolicySubjectReview.
   optional PodSecurityPolicySubjectReviewSpec spec = 1;
 
