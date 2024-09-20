@@ -32,6 +32,14 @@ func NewMachineOSBuildState(mosb *mcfgv1alpha1.MachineOSBuild) *MachineOSBuildSt
 	}
 }
 
+func NewMachineOSBuildStateFromStatus(status mcfgv1alpha1.MachineOSBuildStatus) *MachineOSBuildState {
+	return &MachineOSBuildState{
+		Build: &mcfgv1alpha1.MachineOSBuild{
+			Status: status,
+		},
+	}
+}
+
 // Returns the OS image, if one is present.
 func (c *MachineOSConfigState) GetOSImage() string {
 	osImage := c.Config.Status.CurrentImagePullspec
@@ -66,6 +74,11 @@ func (b *MachineOSBuildState) IsBuildPending() bool {
 	return apihelpers.IsMachineOSBuildConditionTrue(b.Build.Status.Conditions, mcfgv1alpha1.MachineOSBuilding)
 }
 
+// Determines if an OS image build is prepared.
+func (b *MachineOSBuildState) IsBuildPrepared() bool {
+	return apihelpers.IsMachineOSBuildConditionTrue(b.Build.Status.Conditions, mcfgv1alpha1.MachineOSBuildPrepared)
+}
+
 // Determines if an OS image build is in progress.
 func (b *MachineOSBuildState) IsBuilding() bool {
 	return apihelpers.IsMachineOSBuildConditionTrue(b.Build.Status.Conditions, mcfgv1alpha1.MachineOSBuilding)
@@ -79,6 +92,65 @@ func (b *MachineOSBuildState) IsBuildFailure() bool {
 // Determines if an OS image build has failed.
 func (b *MachineOSBuildState) IsBuildInterrupted() bool {
 	return apihelpers.IsMachineOSBuildConditionTrue(b.Build.Status.Conditions, mcfgv1alpha1.MachineOSBuildInterrupted)
+}
+
+// Determines if an OS image build has build conditions set on it.
+func (b *MachineOSBuildState) HasBuildConditions() bool {
+	return len(b.Build.Status.Conditions) != 0
+}
+
+// Determines if an OS image build is in its initial state with all conditions false.
+func (b *MachineOSBuildState) IsInInitialState() bool {
+	for _, status := range getMachineConfigBuildConditions() {
+		if apihelpers.IsMachineOSBuildConditionTrue(b.Build.Status.Conditions, status) {
+			return false
+		}
+	}
+
+	return true
+}
+
+// Determines if an OS image build is in its terminal state where build success, build failure, or build interrupted condition is set.
+func (b *MachineOSBuildState) IsInTerminalState() bool {
+	return b.GetTerminalState() != ""
+}
+
+// Determines if an OS image build is in a transient state where it is either prepared, pending, or running.
+func (b *MachineOSBuildState) IsInTransientState() bool {
+	return b.GetTransientState() != ""
+}
+
+// Gets the transient state, if any is set. Otherwise, returns an empty string.
+func (b *MachineOSBuildState) GetTransientState() mcfgv1alpha1.BuildProgress {
+	transientStates := []mcfgv1alpha1.BuildProgress{
+		mcfgv1alpha1.MachineOSBuilding,
+		mcfgv1alpha1.MachineOSBuildPrepared,
+	}
+
+	for _, transientState := range transientStates {
+		if apihelpers.IsMachineOSBuildConditionTrue(b.Build.Status.Conditions, transientState) {
+			return transientState
+		}
+	}
+
+	return ""
+}
+
+// Gets the current terminal state, if any is set. Otherwise, returns an empty string.
+func (b *MachineOSBuildState) GetTerminalState() mcfgv1alpha1.BuildProgress {
+	terminalStates := []mcfgv1alpha1.BuildProgress{
+		mcfgv1alpha1.MachineOSBuildSucceeded,
+		mcfgv1alpha1.MachineOSBuildFailed,
+		mcfgv1alpha1.MachineOSBuildInterrupted,
+	}
+
+	for _, terminalState := range terminalStates {
+		if apihelpers.IsMachineOSBuildConditionTrue(b.Build.Status.Conditions, terminalState) {
+			return terminalState
+		}
+	}
+
+	return ""
 }
 
 func (b *MachineOSBuildState) IsAnyDegraded() bool {
