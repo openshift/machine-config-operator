@@ -11,6 +11,7 @@ import (
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
+	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -56,10 +57,6 @@ type optsGetter struct {
 
 // TODO: Deduplicate this.
 func (o *optsGetter) validateMachineOSConfig(mosc *mcfgv1alpha1.MachineOSConfig) error {
-	if mosc.Status.CurrentImagePullspec == "" {
-		return fmt.Errorf("currentImagePullspec empty for MachineOSConfig %s", mosc.Name)
-	}
-
 	if mosc.Spec.BuildInputs.BaseImagePullSecret.Name == "" {
 		return fmt.Errorf("baseImagePullSecret empty for MachineOSConfig %s", mosc.Name)
 	}
@@ -68,13 +65,12 @@ func (o *optsGetter) validateMachineOSConfig(mosc *mcfgv1alpha1.MachineOSConfig)
 		return fmt.Errorf("renderedImagePushSecret empty for MachineOSConfig %s", mosc.Name)
 	}
 
-	if _, err := reference.ParseNamed(mosc.Spec.BuildInputs.RenderedImagePushspec); err != nil {
-		return fmt.Errorf("invalid renderedImagePushspec for MachineOSConfig %s: %w", mosc.Name, err)
+	if mosc.Spec.BuildInputs.RenderedImagePushspec == "" {
+		return fmt.Errorf("renderedImagePushspec empty for MachineOSConfig %s", mosc.Name)
 	}
 
-	// This status field should be set before we try to do the build.
-	if _, err := reference.ParseNamed(mosc.Status.CurrentImagePullspec); err != nil {
-		return fmt.Errorf("invalid currentImagePullspec for MachineOSConfig %s: %w", mosc.Name, err)
+	if _, err := reference.ParseNamed(mosc.Spec.BuildInputs.RenderedImagePushspec); err != nil {
+		return fmt.Errorf("invalid renderedImagePushspec for MachineOSConfig %s: %w", mosc.Name, err)
 	}
 
 	return nil
@@ -90,12 +86,12 @@ func (o *optsGetter) getOpts(ctx context.Context, mosb *mcfgv1alpha1.MachineOSBu
 		return nil, fmt.Errorf("unable to resolve entitlements for MachineOSBuild %s", mosb.Name)
 	}
 
-	imagesConfig, err := o.getImagesConfig(ctx)
+	imagesConfig, err := ctrlcommon.GetImagesConfig(ctx, o.kubeclient)
 	if err != nil {
 		return nil, fmt.Errorf("could not get images.json config: %w", err)
 	}
 
-	osImageURLConfig, err := o.getOSImageURLConfig(ctx)
+	osImageURLConfig, err := ctrlcommon.GetOSImageURLConfig(ctx, o.kubeclient)
 	if err != nil {
 		return nil, fmt.Errorf("could not get osImageURL config: %w", err)
 	}
@@ -132,29 +128,11 @@ func (o *optsGetter) getValidatedSecret(ctx context.Context, name string) (*core
 		return nil, fmt.Errorf("could not fetch secret %s: %w", name, err)
 	}
 
-	if err := ValidatePullSecret(secret); err != nil {
+	if err := utils.ValidatePullSecret(secret); err != nil {
 		return nil, fmt.Errorf("could not validate secret %s: %w", name, err)
 	}
 
 	return secret, nil
-}
-
-func (o *optsGetter) getOSImageURLConfig(ctx context.Context) (*ctrlcommon.OSImageURLConfig, error) {
-	cm, err := o.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(ctx, ctrlcommon.MachineConfigOSImageURLConfigMapName, metav1.GetOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("could not get ConfigMap %s: %w", ctrlcommon.MachineConfigOSImageURLConfigMapName, err)
-	}
-
-	return ctrlcommon.ParseOSImageURLConfigMap(cm)
-}
-
-func (o *optsGetter) getImagesConfig(ctx context.Context) (*ctrlcommon.Images, error) {
-	cm, err := o.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(ctx, ctrlcommon.MachineConfigOperatorImagesConfigMapName, metav1.GetOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("could not get configmap %s: %w", ctrlcommon.MachineConfigOperatorImagesConfigMapName, err)
-	}
-
-	return ctrlcommon.ParseImagesFromConfigMap(cm)
 }
 
 func (o *optsGetter) resolveEntitlements(ctx context.Context) (*BuildRequestOpts, error) {

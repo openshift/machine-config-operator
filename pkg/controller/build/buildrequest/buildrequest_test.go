@@ -6,7 +6,7 @@ import (
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
-	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
+	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/assert"
@@ -143,11 +143,14 @@ func TestImageBuildRequest(t *testing.T) {
 				assert.NotContains(t, containerfile, content)
 			}
 
-			buildPod := br.BuildPod()
+			buildPod := br.Builder().GetObject().(*corev1.Pod)
 
-			assert.Equal(t, "containerfile-rendered-worker-1", configmaps[0].Name)
-			assert.Equal(t, "mc-rendered-worker-1", configmaps[1].Name)
-			assert.Equal(t, "build-rendered-worker-1", buildPod.Name)
+			_, err = NewBuilder(buildPod)
+			assert.NoError(t, err)
+
+			assert.Equal(t, "containerfile-worker-afc35db0f874c9bfdc586e6ba39f1504", configmaps[0].Name)
+			assert.Equal(t, "mc-worker-afc35db0f874c9bfdc586e6ba39f1504", configmaps[1].Name)
+			assert.Equal(t, "build-worker-afc35db0f874c9bfdc586e6ba39f1504", buildPod.Name)
 
 			secrets, err := br.Secrets()
 			assert.NoError(t, err)
@@ -161,17 +164,17 @@ func TestImageBuildRequest(t *testing.T) {
 			}
 
 			for _, object := range objects {
-				assert.True(t, constants.EphemeralBuildObjectSelector().Matches(labels.Set(object.GetLabels())))
-				assert.True(t, constants.OSBuildSelector().Matches(labels.Set(object.GetLabels())))
-				assert.True(t, constants.IsObjectCreatedByBuildController(object))
+				assert.True(t, utils.EphemeralBuildObjectSelector().Matches(labels.Set(object.GetLabels())))
+				assert.True(t, utils.OSBuildSelector().Matches(labels.Set(object.GetLabels())))
+				assert.True(t, utils.IsObjectCreatedByBuildController(object))
 			}
 
 			for _, secret := range secrets {
 				assertSecretInCorrectFormat(t, secret)
 			}
 
-			assert.Equal(t, secrets[0].Name, "base-rendered-worker-1")
-			assert.Equal(t, secrets[1].Name, "final-rendered-worker-1")
+			assert.Equal(t, secrets[0].Name, "base-worker-afc35db0f874c9bfdc586e6ba39f1504")
+			assert.Equal(t, secrets[1].Name, "final-worker-afc35db0f874c9bfdc586e6ba39f1504")
 
 			assertBuildPodIsCorrect(t, buildPod, opts)
 		})
@@ -181,7 +184,7 @@ func TestImageBuildRequest(t *testing.T) {
 func assertSecretInCorrectFormat(t *testing.T, secret *corev1.Secret) {
 	t.Helper()
 
-	assert.True(t, constants.CanonicalizedSecretSelector().Matches(labels.Set(secret.GetLabels())))
+	assert.True(t, utils.CanonicalizedSecretSelector().Matches(labels.Set(secret.GetLabels())))
 	assert.Equal(t, secret.Type, corev1.SecretTypeDockerConfigJson)
 	assert.NotEqual(t, secret.Type, corev1.SecretTypeDockercfg)
 	assert.Contains(t, secret.Data, corev1.DockerConfigJsonKey)
@@ -223,7 +226,7 @@ func assertBuildPodIsCorrect(t *testing.T, buildPod *corev1.Pod, opts BuildReque
 		Name: "final-image-push-creds",
 		VolumeSource: corev1.VolumeSource{
 			Secret: &corev1.SecretVolumeSource{
-				SecretName: "final-rendered-worker-1",
+				SecretName: "final-worker-afc35db0f874c9bfdc586e6ba39f1504",
 				Items: []corev1.KeyToPath{
 					{
 						Key:  corev1.DockerConfigJsonKey,
@@ -238,7 +241,7 @@ func assertBuildPodIsCorrect(t *testing.T, buildPod *corev1.Pod, opts BuildReque
 		Name: "base-image-pull-creds",
 		VolumeSource: corev1.VolumeSource{
 			Secret: &corev1.SecretVolumeSource{
-				SecretName: "base-rendered-worker-1",
+				SecretName: "base-worker-afc35db0f874c9bfdc586e6ba39f1504",
 				Items: []corev1.KeyToPath{
 					{
 						Key:  corev1.DockerConfigJsonKey,
@@ -268,7 +271,7 @@ func assertBuildPodMatchesExpectations(t *testing.T, shouldBePresent bool, build
 
 		assert.Contains(t, container.Env, corev1.EnvVar{
 			Name:  "TAG",
-			Value: "registry.hostname.com/org/repo:rendered-worker-1",
+			Value: "registry.hostname.com/org/repo:worker-afc35db0f874c9bfdc586e6ba39f1504",
 		})
 	}
 }
@@ -292,15 +295,19 @@ RUN rpm-ostree install && \
 
 	mosc := layeredBuilder.MachineOSConfig()
 	mosc.Spec.BuildInputs.ReleaseVersion = releaseVersion
-	mosc.Status.CurrentImagePullspec = "registry.hostname.com/org/repo:rendered-worker-1"
 
 	legacySecret := `{"registry.hostname.com": {"username": "user", "password": "s3kr1t", "auth": "s00pers3kr1t", "email": "user@hostname.com"}}`
 	newSecret := `{"auths":` + legacySecret + `}`
 
+	mosb := layeredBuilder.MachineOSBuild()
+	// Note: This is set statically so that the test suite is less brittle.
+	mosb.Name = "worker-afc35db0f874c9bfdc586e6ba39f1504"
+	mosb.Spec.RenderedImagePushspec = "registry.hostname.com/org/repo:worker-afc35db0f874c9bfdc586e6ba39f1504"
+
 	return BuildRequestOpts{
 		MachineConfig:   &mcfgv1.MachineConfig{},
 		MachineOSConfig: mosc,
-		MachineOSBuild:  layeredBuilder.MachineOSBuild(),
+		MachineOSBuild:  mosb,
 		Images: &ctrlcommon.Images{
 			RenderConfigImages: ctrlcommon.RenderConfigImages{
 				MachineConfigOperator: mcoImagePullspec,

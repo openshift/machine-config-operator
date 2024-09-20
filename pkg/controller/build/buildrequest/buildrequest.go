@@ -12,6 +12,7 @@ import (
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
+	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -43,7 +44,7 @@ type buildRequestImpl struct {
 }
 
 // Constructs an imageBuildRequest from the Kube API server.
-func newBuildRequestFromAPI(ctx context.Context, kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig) (BuildRequest, error) {
+func NewBuildRequestFromAPI(ctx context.Context, kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig) (BuildRequest, error) {
 	opts, err := newBuildRequestOptsFromAPI(ctx, kubeclient, mcfgclient, mosb, mosc)
 	if err != nil {
 		return nil, err
@@ -75,8 +76,8 @@ func (br buildRequestImpl) Opts() BuildRequestOpts {
 }
 
 // Creates the Build Pod object.
-func (br buildRequestImpl) BuildPod() *corev1.Pod {
-	return br.toBuildahPod()
+func (br buildRequestImpl) Builder() Builder {
+	return newBuilder(br.toBuildahPod())
 }
 
 // Takes the configured secrets and creates an ephemeral clone of them, canonicalizing them, if needed.
@@ -287,7 +288,7 @@ func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
 		},
 		{
 			Name:  "TAG",
-			Value: br.opts.MachineOSConfig.Status.CurrentImagePullspec,
+			Value: br.opts.MachineOSBuild.Spec.RenderedImagePushspec,
 		},
 		{
 			Name:  "BASE_IMAGE_PULL_CREDS",
@@ -496,6 +497,8 @@ func (br buildRequestImpl) getLabelsForObjectMeta() map[string]string {
 		constants.OnClusterLayeringLabelKey:       "",
 		constants.RenderedMachineConfigLabelKey:   br.opts.MachineOSBuild.Spec.DesiredConfig.Name,
 		constants.TargetMachineConfigPoolLabelKey: br.opts.MachineOSConfig.Spec.MachineConfigPool.Name,
+		constants.MachineOSConfigNameLabelKey:     br.opts.MachineOSConfig.Name,
+		constants.MachineOSBuildNameLabelKey:      br.opts.MachineOSBuild.Name,
 	}
 }
 
@@ -535,27 +538,27 @@ func (br buildRequestImpl) getObjectMeta(name string) metav1.ObjectMeta {
 
 // Computes the Containerfile ConfigMap name based upon the MachineConfigPool name.
 func (br buildRequestImpl) getContainerfileConfigMapName() string {
-	return GetContainerfileConfigMapName(br.opts.MachineOSBuild)
+	return utils.GetContainerfileConfigMapName(br.opts.MachineOSBuild)
 }
 
 // Computes the MachineConfig ConfigMap name based upon the MachineConfigPool name.
 func (br buildRequestImpl) getMCConfigMapName() string {
-	return GetMCConfigMapName(br.opts.MachineOSBuild)
+	return utils.GetMCConfigMapName(br.opts.MachineOSBuild)
 }
 
 // Computes the build name based upon the MachineConfigPool name.
 func (br buildRequestImpl) getBuildName() string {
-	return GetBuildPodName(br.opts.MachineOSBuild)
+	return utils.GetBuildPodName(br.opts.MachineOSBuild)
 }
 
 func (br buildRequestImpl) getDigestConfigMapName() string {
-	return GetDigestConfigMapName(br.opts.MachineOSBuild)
+	return utils.GetDigestConfigMapName(br.opts.MachineOSBuild)
 }
 
 func (br buildRequestImpl) getBasePullSecretName() string {
-	return GetBasePullSecretName(br.opts.MachineOSBuild)
+	return utils.GetBasePullSecretName(br.opts.MachineOSBuild)
 }
 
 func (br buildRequestImpl) getFinalPushSecretName() string {
-	return GetFinalPushSecretName(br.opts.MachineOSBuild)
+	return utils.GetFinalPushSecretName(br.opts.MachineOSBuild)
 }
