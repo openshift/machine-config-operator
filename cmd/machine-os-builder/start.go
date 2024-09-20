@@ -2,17 +2,13 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"os"
-
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 
 	"github.com/openshift/machine-config-operator/cmd/common"
 	"github.com/openshift/machine-config-operator/internal/clients"
 	"github.com/openshift/machine-config-operator/pkg/controller/build"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/leaderelection"
 
 	"github.com/openshift/machine-config-operator/pkg/version"
@@ -38,36 +34,6 @@ func init() {
 	startCmd.PersistentFlags().StringVar(&startOpts.kubeconfig, "kubeconfig", "", "Kubeconfig file to access a remote cluster (testing only)")
 }
 
-func getMachineOSConfigs(ctx context.Context, cb *clients.Builder) (*mcfgv1alpha1.MachineOSConfigList, error) {
-	mcfgClient := cb.MachineConfigClientOrDie(componentName)
-	return mcfgClient.MachineconfigurationV1alpha1().MachineOSConfigs().List(ctx, metav1.ListOptions{})
-
-}
-
-// Creates a new BuildController configured for a certain image builder based
-// upon the imageBuilderType key in the MOSC.
-func getBuildControllers(ctx context.Context, cb *clients.Builder) ([]*build.Controller, error) {
-	machineOSConfigs, err := getMachineOSConfigs(ctx, cb)
-	if err != nil {
-		return nil, err
-	}
-
-	ctrlCtx := ctrlcommon.CreateControllerContext(ctx, cb)
-	buildClients := build.NewClientsFromControllerContext(ctrlCtx)
-	cfg := build.DefaultBuildControllerConfig()
-
-	controllersToStart := []*build.Controller{}
-
-	podRequestExisted := 0
-	for _, mosc := range machineOSConfigs.Items {
-		if mosc.Spec.BuildInputs.ImageBuilder.ImageBuilderType == mcfgv1alpha1.MachineOSImageBuilderType("PodImageBuilder") && podRequestExisted == 0 {
-			controllersToStart = append(controllersToStart, build.NewWithCustomPodBuilder(cfg, buildClients))
-			podRequestExisted++
-		}
-	}
-	return controllersToStart, nil
-}
-
 func runStartCmd(_ *cobra.Command, _ []string) {
 	flag.Set("v", "4")
 	flag.Set("logtostderr", "true")
@@ -89,19 +55,11 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 	run := func(ctx context.Context) {
 		go common.SignalHandler(cancel)
 
-		controllers, err := getBuildControllers(ctx, cb)
-		if err != nil {
-			klog.Fatalln(err)
-			var invalidImageBuiler *build.ErrInvalidImageBuilder
-			if errors.As(err, &invalidImageBuiler) {
-				klog.Errorf("The user passed an invalid imageBuilderType of %s", invalidImageBuiler.InvalidType)
-				cancel()
-				os.Exit(255)
-			}
-		}
-		for _, ctrl := range controllers {
-			go ctrl.Run(ctx, 3)
-		}
+		ctrlCtx := ctrlcommon.CreateControllerContext(ctx, cb)
+
+		ctrl := build.NewOSBuildControllerFromControllerContext(ctrlCtx)
+		ctrl.Run(ctx, 3)
+
 		<-ctx.Done()
 		cancel()
 	}
@@ -117,7 +75,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: run,
 			OnStoppedLeading: func() {
-				klog.Infof("Stopped leading. MOB terminating.")
+				klog.Infof("Stopped leading; machine-os-builder terminating.")
 				os.Exit(0)
 			},
 		},

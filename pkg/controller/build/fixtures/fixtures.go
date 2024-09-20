@@ -1,11 +1,10 @@
-package buildrequest
+package fixtures
 
 import (
 	"fmt"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	fakeclientmachineconfigv1 "github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -17,26 +16,37 @@ import (
 	fakecorev1client "k8s.io/client-go/kubernetes/fake"
 )
 
-type addlObjects struct {
-	kubeObjects []runtime.Object
-	mcfgObjects []runtime.Object
+// Gets the kubeclient and mcfgclients needed for a test with the default Kube
+// objects in them.
+func GetClientsForTest() (clientset.Interface, mcfgclientset.Interface, *LayeredObjectsForTest) {
+	return GetClientsForTestWithAdditionalObjects([]runtime.Object{}, []runtime.Object{})
 }
 
-func getClientsForTest(addlObjects addlObjects) (clientset.Interface, mcfgclientset.Interface) {
-	lobj := newLayeredObjectsForTest("worker")
+// Gets the kubeclient and mcfgclient, adds any additional objects to them, and
+// also returns the LayeredObjectsForTest which are instantiated assuming the
+// pool name "worker".
+func GetClientsForTestWithAdditionalObjects(addlKubeObjects, addlMcfgObjects []runtime.Object) (clientset.Interface, mcfgclientset.Interface, *LayeredObjectsForTest) {
+	lobj := NewLayeredObjectsForTest("worker")
 
-	mcfgObjects := append(addlObjects.mcfgObjects, lobj.toRuntimeObjects()...)
+	mcfgObjects := append(addlMcfgObjects, lobj.ToRuntimeObjects()...) //nolint:gocritic // It's not supposed to be assigned to the same slice.
 	mcfgObjects = append(mcfgObjects, &mcfgv1.ControllerConfig{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "machine-config-controller",
 		},
 	})
 
+	addlKubeObjects = append(defaultKubeObjects(), addlKubeObjects...)
+
+	return fakecorev1client.NewSimpleClientset(addlKubeObjects...), fakeclientmachineconfigv1.NewSimpleClientset(mcfgObjects...), &lobj
+}
+
+// Constructs all of the default ConfigMaps, secrets, etc. that are assumed to be present.
+func defaultKubeObjects() []runtime.Object {
 	legacyPullSecret := `{"registry.hostname.com": {"username": "user", "password": "s3kr1t", "auth": "s00pers3kr1t", "email": "user@hostname.com"}}`
 
 	pullSecret := `{"auths":{"registry.hostname.com": {"username": "user", "password": "s3kr1t", "auth": "s00pers3kr1t", "email": "user@hostname.com"}}}`
 
-	kubeObjects := append(addlObjects.kubeObjects, []runtime.Object{
+	return []runtime.Object{
 		getImagesConfigMap(),
 		getOSImageURLConfigMap(),
 		&corev1.Secret{
@@ -75,9 +85,7 @@ func getClientsForTest(addlObjects addlObjects) (clientset.Interface, mcfgclient
 				Namespace: ctrlcommon.MCONamespace,
 			},
 		},
-	}...)
-
-	return fakecorev1client.NewSimpleClientset(kubeObjects...), fakeclientmachineconfigv1.NewSimpleClientset(mcfgObjects...)
+	}
 }
 
 // Generates MachineConfigs from the given MachineConfigPool for insertion.
@@ -144,59 +152,5 @@ func getImagesConfigMap() *corev1.ConfigMap {
 		Data: map[string]string{
 			"images.json": `{"machineConfigOperator": "mco.image.pullspec"}`,
 		},
-	}
-}
-
-type layeredObjectsForTest struct {
-	mcp  *mcfgv1.MachineConfigPool
-	mcs  []*mcfgv1.MachineConfig
-	mosc *mcfgv1alpha1.MachineOSConfig
-	mosb *mcfgv1alpha1.MachineOSBuild
-}
-
-func (l *layeredObjectsForTest) toRuntimeObjects() []runtime.Object {
-	out := []runtime.Object{l.mcp}
-
-	for _, item := range l.mcs {
-		out = append(out, item)
-	}
-
-	return out
-}
-
-func newLayeredObjectsForTest(poolName string) layeredObjectsForTest {
-	renderedConfigName := fmt.Sprintf("rendered-%s-1", poolName)
-	layeredBuilder := testhelpers.NewLayeredBuilder(poolName).
-		WithDesiredConfig(renderedConfigName)
-
-	layeredBuilder.MachineOSConfigBuilder().
-		WithMachineConfigPool(poolName).
-		WithBaseImagePullSecret("base-image-pull-secret").
-		WithRenderedImagePushSecret("final-image-push-secret").
-		WithCurrentImagePullSecret("current-image-pull-secret").
-		WithRenderedImagePushspec("registry.hostname.com/org/repo:latest").
-		WithCurrentImagePullspec(fmt.Sprintf("registry.hostname.com/org/repo:%s", renderedConfigName))
-
-	childConfigNames := []string{}
-	for i := 1; i <= 5; i++ {
-		childConfigNames = append(childConfigNames, fmt.Sprintf("%s-config-%d", poolName, i))
-	}
-
-	nodeRoleLabel := fmt.Sprintf("node-role.kubernetes.io/%s", poolName)
-	nodeSelector := metav1.AddLabelToSelector(&metav1.LabelSelector{}, nodeRoleLabel, "")
-
-	layeredBuilder.MachineConfigPoolBuilder().
-		WithChildConfigs(childConfigNames).
-		WithNodeSelector(nodeSelector)
-
-	mcp := layeredBuilder.MachineConfigPool()
-	mosc := layeredBuilder.MachineOSConfig()
-	mosb := layeredBuilder.MachineOSBuild()
-
-	return layeredObjectsForTest{
-		mcp:  mcp,
-		mosc: mosc,
-		mosb: mosb,
-		mcs:  newMachineConfigsFromPool(mcp),
 	}
 }

@@ -37,6 +37,11 @@ func NewMachineOSConfigBuilder(name string) *MachineOSConfigBuilder {
 	}
 }
 
+func (m *MachineOSConfigBuilder) WithReleaseVersion(version string) *MachineOSConfigBuilder {
+	m.mosc.Spec.BuildInputs.ReleaseVersion = version
+	return m
+}
+
 func (m *MachineOSConfigBuilder) WithBaseOSImagePullspec(pullspec string) *MachineOSConfigBuilder {
 	m.mosc.Spec.BuildInputs.BaseOSImagePullspec = pullspec
 	return m

@@ -12,6 +12,7 @@ import (
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
+	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -43,7 +44,7 @@ type buildRequestImpl struct {
 }
 
 // Constructs an imageBuildRequest from the Kube API server.
-func newBuildRequestFromAPI(ctx context.Context, kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig) (BuildRequest, error) {
+func NewBuildRequestFromAPI(ctx context.Context, kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig) (BuildRequest, error) {
 	opts, err := newBuildRequestOptsFromAPI(ctx, kubeclient, mcfgclient, mosb, mosc)
 	if err != nil {
 		return nil, err
@@ -75,8 +76,8 @@ func (br buildRequestImpl) Opts() BuildRequestOpts {
 }
 
 // Creates the Build Pod object.
-func (br buildRequestImpl) BuildPod() *corev1.Pod {
-	return br.toBuildahPod()
+func (br buildRequestImpl) Builder() Builder {
+	return newBuilder(br.toBuildahPod())
 }
 
 // Takes the configured secrets and creates an ephemeral clone of them, canonicalizing them, if needed.
@@ -210,9 +211,9 @@ func (br buildRequestImpl) renderContainerfile() (string, error) {
 		MachineOSBuild:    br.opts.MachineOSBuild,
 		MachineOSConfig:   br.opts.MachineOSConfig,
 		UserContainerfile: br.userContainerfile,
-		ReleaseVersion:    br.getReleaseVersion(),
-		BaseOSImage:       br.getBaseOSImagePullspec(),
-		ExtensionsImage:   br.getExtensionsImagePullspec(),
+		ReleaseVersion:    br.opts.getReleaseVersion(),
+		BaseOSImage:       br.opts.getBaseOSImagePullspec(),
+		ExtensionsImage:   br.opts.getExtensionsImagePullspec(),
 	}
 
 	if err := tmpl.Execute(out, items); err != nil {
@@ -220,36 +221,6 @@ func (br buildRequestImpl) renderContainerfile() (string, error) {
 	}
 
 	return out.String(), nil
-}
-
-// Gets the extensions image pullspec from the MachineOSConfig if available.
-// Otherwise, it defaults to the value from the osimageurl ConfigMap.
-func (br buildRequestImpl) getExtensionsImagePullspec() string {
-	if br.opts.MachineOSConfig.Spec.BuildInputs.BaseOSExtensionsImagePullspec != "" {
-		return br.opts.MachineOSConfig.Spec.BuildInputs.BaseOSExtensionsImagePullspec
-	}
-
-	return br.opts.OSImageURLConfig.BaseOSExtensionsContainerImage
-}
-
-// Gets the base OS image pullspec from the MachineOSConfig if available.
-// Otherwise, it defaults to the value from the osimageurl ConfigMap.
-func (br buildRequestImpl) getBaseOSImagePullspec() string {
-	if br.opts.MachineOSConfig.Spec.BuildInputs.BaseOSImagePullspec != "" {
-		return br.opts.MachineOSConfig.Spec.BuildInputs.BaseOSImagePullspec
-	}
-
-	return br.opts.OSImageURLConfig.BaseOSContainerImage
-}
-
-// Gets the release version value from the MachineOSConfig if available.
-// Otherwise, it defaults to the value from the osimageurl ConfigMap.
-func (br buildRequestImpl) getReleaseVersion() string {
-	if br.opts.MachineOSConfig.Spec.BuildInputs.ReleaseVersion != "" {
-		return br.opts.MachineOSConfig.Spec.BuildInputs.ReleaseVersion
-	}
-
-	return br.opts.OSImageURLConfig.ReleaseVersion
 }
 
 // We're able to run the Buildah image in an unprivileged pod provided that the
@@ -287,7 +258,7 @@ func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
 		},
 		{
 			Name:  "TAG",
-			Value: br.opts.MachineOSConfig.Status.CurrentImagePullspec,
+			Value: br.opts.MachineOSBuild.Spec.RenderedImagePushspec,
 		},
 		{
 			Name:  "BASE_IMAGE_PULL_CREDS",
@@ -476,7 +447,7 @@ func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
 					// us to avoid parsing log files.
 					Name:            "wait-for-done",
 					Command:         append(command, waitScript),
-					Image:           br.getBaseOSImagePullspec(),
+					Image:           br.opts.getBaseOSImagePullspec(),
 					Env:             env,
 					ImagePullPolicy: corev1.PullAlways,
 					SecurityContext: securityContext,
@@ -496,6 +467,8 @@ func (br buildRequestImpl) getLabelsForObjectMeta() map[string]string {
 		constants.OnClusterLayeringLabelKey:       "",
 		constants.RenderedMachineConfigLabelKey:   br.opts.MachineOSBuild.Spec.DesiredConfig.Name,
 		constants.TargetMachineConfigPoolLabelKey: br.opts.MachineOSConfig.Spec.MachineConfigPool.Name,
+		constants.MachineOSConfigNameLabelKey:     br.opts.MachineOSConfig.Name,
+		constants.MachineOSBuildNameLabelKey:      br.opts.MachineOSBuild.Name,
 	}
 }
 
@@ -535,27 +508,27 @@ func (br buildRequestImpl) getObjectMeta(name string) metav1.ObjectMeta {
 
 // Computes the Containerfile ConfigMap name based upon the MachineConfigPool name.
 func (br buildRequestImpl) getContainerfileConfigMapName() string {
-	return GetContainerfileConfigMapName(br.opts.MachineOSBuild)
+	return utils.GetContainerfileConfigMapName(br.opts.MachineOSBuild)
 }
 
 // Computes the MachineConfig ConfigMap name based upon the MachineConfigPool name.
 func (br buildRequestImpl) getMCConfigMapName() string {
-	return GetMCConfigMapName(br.opts.MachineOSBuild)
+	return utils.GetMCConfigMapName(br.opts.MachineOSBuild)
 }
 
 // Computes the build name based upon the MachineConfigPool name.
 func (br buildRequestImpl) getBuildName() string {
-	return GetBuildPodName(br.opts.MachineOSBuild)
+	return utils.GetBuildPodName(br.opts.MachineOSBuild)
 }
 
 func (br buildRequestImpl) getDigestConfigMapName() string {
-	return GetDigestConfigMapName(br.opts.MachineOSBuild)
+	return utils.GetDigestConfigMapName(br.opts.MachineOSBuild)
 }
 
 func (br buildRequestImpl) getBasePullSecretName() string {
-	return GetBasePullSecretName(br.opts.MachineOSBuild)
+	return utils.GetBasePullSecretName(br.opts.MachineOSBuild)
 }
 
 func (br buildRequestImpl) getFinalPushSecretName() string {
-	return GetFinalPushSecretName(br.opts.MachineOSBuild)
+	return utils.GetFinalPushSecretName(br.opts.MachineOSBuild)
 }
