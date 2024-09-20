@@ -54,6 +54,8 @@ type ImageBuildRequest struct {
 	HasEtcPkiRpmGpgKeys bool
 	// Proxy Configurations
 	Proxy *configv1.ProxyStatus
+	// Additional trust bundles for proxy (user defined)
+	AdditionalTrustBundle []byte
 }
 
 // Constructs a simple ImageBuildRequest.
@@ -108,6 +110,19 @@ func (i ImageBuildRequest) dockerfileToConfigMap() (*corev1.ConfigMap, error) {
 	}
 
 	return configmap, nil
+}
+
+// Gets the Additional Trust Bundle and injects it into a ConfigMap for consumption by the image builder.
+func (i ImageBuildRequest) additionalTrustBundleToConfigMap() *corev1.ConfigMap {
+	configmap := &corev1.ConfigMap{
+		TypeMeta:   metav1.TypeMeta{},
+		ObjectMeta: i.getObjectMeta(i.getAdditionalTrustBundleConfigMapName()),
+		BinaryData: map[string][]byte{
+			"openshift-config-user-ca-bundle.crt": i.AdditionalTrustBundle,
+		},
+	}
+
+	return configmap
 }
 
 // Stuffs a given MachineConfig into a ConfigMap, gzipping and base64-encoding it.
@@ -237,13 +252,7 @@ func (i ImageBuildRequest) toBuildahPod() *corev1.Pod {
 		},
 	}
 
-	var uid int64 = 1000
-	var gid int64 = 1000
-
-	securityContext := &corev1.SecurityContext{
-		RunAsUser:  &uid,
-		RunAsGroup: &gid,
-	}
+	securityContext := &corev1.SecurityContext{}
 
 	command := []string{"/bin/bash", "-c"}
 
@@ -255,6 +264,10 @@ func (i ImageBuildRequest) toBuildahPod() *corev1.Pod {
 		{
 			Name:      "dockerfile",
 			MountPath: "/tmp/dockerfile",
+		},
+		{
+			Name:      "additional-trust-bundle",
+			MountPath: "/etc/pki/ca-trust/source/anchors",
 		},
 		{
 			Name:      "base-image-pull-creds",
@@ -290,6 +303,17 @@ func (i ImageBuildRequest) toBuildahPod() *corev1.Pod {
 				ConfigMap: &corev1.ConfigMapVolumeSource{
 					LocalObjectReference: corev1.LocalObjectReference{
 						Name: i.getMCConfigMapName(),
+					},
+				},
+			},
+		},
+		{
+			// Provides the user defined Additional Trust Bundle
+			Name: "additional-trust-bundle",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: i.getAdditionalTrustBundleConfigMapName(),
 					},
 				},
 			},
@@ -519,6 +543,11 @@ func (i ImageBuildRequest) getObjectMeta(name string) metav1.ObjectMeta {
 		Labels:      i.getLabelsForObjectMeta(),
 		Annotations: i.getAnnotationsForObjectMeta(),
 	}
+}
+
+// Computes the AdditionalTrustBundle ConfigMap name based upon the MachineConfigPool name.
+func (i ImageBuildRequest) getAdditionalTrustBundleConfigMapName() string {
+	return fmt.Sprintf("additionaltrustbundle-%s", i.MachineOSBuild.Spec.DesiredConfig.Name)
 }
 
 // Computes the Dockerfile ConfigMap name based upon the MachineConfigPool name.
