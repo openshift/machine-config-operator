@@ -18,6 +18,14 @@ const (
 	MachineOSBuildNameAnnotationKey  = "machineconfiguration.openshift.io/machine-os-build"
 	MachineOSConfigNameAnnotationKey = "machineconfiguration.openshift.io/machine-os-config"
 	MachineOSConfigNameLabelKey      = MachineOSConfigNameAnnotationKey
+	MachineOSBuildNameLabelKey       = MachineOSBuildNameAnnotationKey
+)
+
+// The MachineOSConfig will get updated with this annotation once a
+// MachineOSBuild has been created and assigned to it. We should probably
+// make this a field on the Status object.
+const (
+	CurrentMachineOSBuildAnnotationKey string = "machineconfiguration.openshift.io/current-machine-os-build"
 )
 
 // Entitled build secret names
@@ -34,7 +42,6 @@ const (
 
 // Canonical secrets
 const (
-	canonicalSecretSuffix string = "-canonical"
 	// This label gets applied to all secrets that we've canonicalized as a way
 	// to indicate that we created and own them.
 	CanonicalSecretLabelKey string = "machineconfiguration.openshift.io/canonicalizedSecret"

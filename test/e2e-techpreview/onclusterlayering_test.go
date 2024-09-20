@@ -24,8 +24,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/openshift/machine-config-operator/pkg/controller/build/buildrequest"
+	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -100,7 +101,7 @@ func TestOnClusterBuildsOnOKD(t *testing.T) {
 	})
 }
 
-// Tests tha an on-cluster build can be performed with the Custom Pod Builder.
+// Tests that an on-cluster build can be performed with the Custom Pod Builder.
 func TestOnClusterBuildsCustomPodBuilder(t *testing.T) {
 	runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
 		poolName: layeredMCPName,
@@ -180,6 +181,99 @@ func TestEntitledBuilds(t *testing.T) {
 	})
 }
 
+// This test verifies that if a change is made to a given MachineOSConfig, that
+// any in-progress builds are terminated and that only the latest change is
+// being built.
+func TestMachineOSConfigChangeRestartsBuild(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel = makeIdempotentAndRegister(t, cancel)
+
+	cs := framework.NewClientSet("")
+
+	mosc := prepareForOnClusterLayeringTest(t, cs, onClusterLayeringTestOpts{
+		poolName: layeredMCPName,
+		customDockerfiles: map[string]string{
+			layeredMCPName: cowsayDockerfile,
+		},
+	})
+
+	t.Cleanup(createMachineOSConfig(t, cs, mosc))
+
+	mcp, err := cs.MachineconfigurationV1Interface.MachineConfigPools().Get(ctx, layeredMCPName, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	firstMosb := buildrequest.NewMachineOSBuildFromAPIOrDie(ctx, cs.GetKubeclient(), mosc, mcp)
+
+	// First, we get a MachineOSBuild started as usual.
+	waitForBuildToStart(t, cs, firstMosb)
+
+	// Next, we update the Containerfile.
+	t.Logf("Initial build has started, updating Containerfile...")
+
+	apiMosc := helpers.SetContainerfileContentsOnMachineOSConfig(ctx, t, cs.GetMcfgclient(), mosc, "FROM configs AS final\nRUN echo 'hello' > /etc/hello")
+
+	moscChangeMosb := buildrequest.NewMachineOSBuildFromAPIOrDie(ctx, cs.GetKubeclient(), apiMosc, mcp)
+
+	t.Logf("Containerfile is updated, waiting for new build %s to start", moscChangeMosb.Name)
+
+	// Wait for the second build to start.
+	waitForBuildToStart(t, cs, moscChangeMosb)
+
+	t.Logf("Waiting for initial MachineOSBuild %s to be deleted", firstMosb.Name)
+
+	// Wait for the first build to be deleted.
+	waitForBuildToBeDeleted(t, cs, firstMosb)
+
+	// Ensure that the second build still exists.
+	_, err = cs.MachineconfigurationV1alpha1Interface.MachineOSBuilds().Get(context.TODO(), moscChangeMosb.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+}
+
+// This test verifies that a change to the MachineConfigPool, such as the
+// presence of a new rendered MachineConfig, will halt the currently running
+// build, replacing it with a new build instead.
+func TestMachineConfigPoolChangeRestartsBuild(t *testing.T) {
+	cs := framework.NewClientSet("")
+
+	mosc := prepareForOnClusterLayeringTest(t, cs, onClusterLayeringTestOpts{
+		poolName: layeredMCPName,
+		customDockerfiles: map[string]string{
+			layeredMCPName: cowsayDockerfile,
+		},
+	})
+
+	t.Cleanup(createMachineOSConfig(t, cs, mosc))
+
+	// Wait for the first build to start.
+	firstMosb := waitForBuildToStartForPoolAndConfig(t, cs, layeredMCPName, mosc.Name)
+
+	// Once the first build has started, we create a new MachineConfig, wait for
+	// the rendered config to appear, then we check that a new MachineOSBuild has
+	// started for that new MachineConfig.
+	mcName := "new-machineconfig"
+	mc := newMachineConfig("new-machineconfig", layeredMCPName)
+
+	mcCleanupFunc := helpers.ApplyMC(t, cs, mc)
+	t.Cleanup(func() {
+		mcCleanupFunc()
+		t.Logf("Deleted MachineConfig %s", mc.Name)
+	})
+
+	t.Logf("Created new MachineConfig %q", mcName)
+
+	_, err := helpers.WaitForRenderedConfig(t, cs, layeredMCPName, mcName)
+	require.NoError(t, err)
+
+	// We wait for the first build to be deleted.
+	waitForBuildToBeDeleted(t, cs, firstMosb)
+
+	// Next, we wait for the new build to be started.
+	secondMosb := waitForBuildToStartForPoolAndConfig(t, cs, layeredMCPName, mosc.Name)
+
+	_, err = cs.MachineconfigurationV1alpha1Interface.MachineOSBuilds().Get(context.TODO(), secondMosb.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+}
+
 // This test asserts that any secrets attached to the MachineOSConfig are made
 // available to the MCD and get written to the node. Note: In this test, the
 // built image should not make it to the node before we've verified that the
@@ -230,7 +324,7 @@ func TestMCDGetsMachineOSConfigSecrets(t *testing.T) {
 	// gets our dummy secret or not. In the future, we should use a real secret
 	// and validate that the node can push and pull the image from it. We can
 	// simulate that by using an imagestream that lives in a different namespace.
-	waitForBuildToStart(t, cs, layeredMCPName)
+	waitForBuildToStartForPoolAndConfig(t, cs, layeredMCPName, mosc.Name)
 
 	// Verifies that the MCD pod gets the appropriate secret volume and volume mount.
 	err := wait.PollImmediate(1*time.Second, 5*time.Minute, func() (bool, error) {
@@ -407,7 +501,7 @@ func runOnClusterLayeringTest(t *testing.T, testOpts onClusterLayeringTestOpts) 
 	t.Cleanup(mobPodStreamerCancel)
 
 	// Wait for the build to start
-	startedBuild := waitForBuildToStart(t, cs, testOpts.poolName)
+	startedBuild := waitForBuildToStartForPoolAndConfig(t, cs, testOpts.poolName, mosc.Name)
 	t.Logf("MachineOSBuild %q has started", startedBuild.Name)
 
 	// Assert that the build pod has certain properties and configuration.
@@ -486,14 +580,21 @@ func archiveBuildPodLogs(t *testing.T, podLogsDirPath string) error {
 }
 
 // Waits for the build to start and returns the started MachineOSBuild object.
-func waitForBuildToStart(t *testing.T, cs *framework.ClientSet, poolName string) *mcfgv1alpha1.MachineOSBuild {
+func waitForBuildToStartForPoolAndConfig(t *testing.T, cs *framework.ClientSet, poolName, moscName string) *mcfgv1alpha1.MachineOSBuild {
 	t.Helper()
 
-	t.Logf("Wait for build to start")
+	var mosbName string
 
-	// Get the name for the MachineOSBuild based upon the MachineConfigPool name.
-	mosbName, err := getMachineOSBuildNameForPool(cs, poolName)
-	require.NoError(t, err)
+	require.NoError(t, wait.PollImmediate(time.Second, time.Minute, func() (bool, error) {
+		// Get the name for the MachineOSBuild based upon the MachineConfigPool and MachineOSConfig state.
+		name, err := getMachineOSBuildNameForPool(cs, poolName, moscName)
+		if err != nil {
+			return false, nil
+		}
+
+		mosbName = name
+		return true, nil
+	}))
 
 	// Create a "dummy" MachineOSBuild object with just the name field set so
 	// that waitForMachineOSBuildToReachState() can use it.
@@ -503,43 +604,75 @@ func waitForBuildToStart(t *testing.T, cs *framework.ClientSet, poolName string)
 		},
 	}
 
-	return waitForMachineOSBuildToReachState(t, cs, mosb, func(mosb *mcfgv1alpha1.MachineOSBuild, err error) (bool, error) {
-		// If we had any errors retrieving the build, (other than it not existing yet), stop here.
-		if err != nil && !k8serrors.IsNotFound(err) {
-			return false, err
-		}
+	return waitForBuildToStart(t, cs, mosb)
+}
 
-		// The build object has not been created yet, requeue and try again.
-		if mosb == nil && k8serrors.IsNotFound(err) {
-			t.Logf("MachineOSBuild does not exist yet, retrying...")
-			return false, nil
-		}
+// Waits for a MachineOSBuild to start building.
+func waitForBuildToStart(t *testing.T, cs *framework.ClientSet, build *mcfgv1alpha1.MachineOSBuild) *mcfgv1alpha1.MachineOSBuild {
+	t.Helper()
 
-		// At this point, the build object exists and we want to ensure that it is running.
-		if ctrlcommon.NewMachineOSBuildState(mosb).IsBuilding() {
-			return true, nil
-		}
+	t.Logf("Waiting for MachineOSBuild %s to start", build.Name)
 
-		return false, nil
-	})
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*5)
+	defer cancel()
+
+	start := time.Now()
+
+	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx)
+	kubeassert.Eventually().MachineOSBuildExists(build)
+	t.Logf("MachineOSBuild %s created after %s", build.Name, time.Since(start))
+	kubeassert.Eventually().MachineOSBuildIsRunning(build)
+	t.Logf("MachineOSBuild %s running after %s", build.Name, time.Since(start))
+
+	mosb, err := cs.MachineconfigurationV1alpha1Interface.MachineOSBuilds().Get(ctx, build.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	kubeassert.PodExists(utils.GetBuildPodName(mosb))
+	t.Logf("Build pod %s running after %s", utils.GetBuildPodName(mosb), time.Since(start))
+
+	return mosb
+}
+
+// Waits for a MachineOSBuild to be deleted.
+func waitForBuildToBeDeleted(t *testing.T, cs *framework.ClientSet, build *mcfgv1alpha1.MachineOSBuild) {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*5)
+	defer cancel()
+
+	t.Logf("Waiting for MachineOSBuild %s to be deleted", build.Name)
+
+	start := time.Now()
+	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx)
+	kubeassert.Eventually().MachineOSBuildDoesNotExist(build)
+	t.Logf("MachineOSBuild %s deleted after %s", build.Name, time.Since(start))
+
+	kubeassert.Eventually().PodDoesNotExist(utils.GetBuildPodName(build))
+	t.Logf("Build pod %s deleted after %s", utils.GetBuildPodName(build), time.Since(start))
 }
 
 // Waits for the given MachineOSBuild to complete and returns the completed
 // MachineOSBuild object.
 func waitForBuildToComplete(t *testing.T, cs *framework.ClientSet, startedBuild *mcfgv1alpha1.MachineOSBuild) *mcfgv1alpha1.MachineOSBuild {
-	return waitForMachineOSBuildToReachState(t, cs, startedBuild, func(mosb *mcfgv1alpha1.MachineOSBuild, err error) (bool, error) {
-		if err != nil {
-			return false, err
-		}
+	t.Helper()
 
-		state := ctrlcommon.NewMachineOSBuildState(mosb)
+	t.Logf("Waiting for MachineOSBuild %s to complete", startedBuild.Name)
 
-		if state.IsBuildFailure() {
-			t.Fatalf("MachineOSBuild %q unexpectedly failed", mosb.Name)
-		}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*20)
+	defer cancel()
 
-		return state.IsBuildSuccess(), nil
-	})
+	start := time.Now()
+
+	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx)
+	kubeassert.Eventually().MachineOSBuildIsSuccessful(startedBuild)
+	t.Logf("MachineOSBuild %s successful after %s", startedBuild.Name, time.Since(start))
+	kubeassert.Eventually().PodDoesNotExist(utils.GetBuildPodName(startedBuild))
+	t.Logf("Build pod %s deleted after %s", utils.GetBuildPodName(startedBuild), time.Since(start))
+
+	mosb, err := cs.MachineconfigurationV1alpha1Interface.MachineOSBuilds().Get(ctx, startedBuild.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	return mosb
 }
 
 // Validates that the build pod is configured correctly. In this case,
@@ -549,10 +682,10 @@ func waitForBuildToComplete(t *testing.T, cs *framework.ClientSet, startedBuild 
 func assertBuildPodIsAsExpected(t *testing.T, cs *framework.ClientSet, mosb *mcfgv1alpha1.MachineOSBuild) {
 	t.Helper()
 
-	osImageURLConfig, err := getMachineConfigOSImageURL(cs)
+	osImageURLConfig, err := ctrlcommon.GetOSImageURLConfig(context.TODO(), cs.GetKubeclient())
 	require.NoError(t, err)
 
-	mcoImages, err := getMachineConfigOperatorImages(cs)
+	mcoImages, err := ctrlcommon.GetImagesConfig(context.TODO(), cs.GetKubeclient())
 	require.NoError(t, err)
 
 	buildPod, err := cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace).Get(context.TODO(), mosb.Status.BuilderReference.PodImageBuilder.Name, metav1.GetOptions{})
@@ -568,26 +701,6 @@ func assertBuildPodIsAsExpected(t *testing.T, cs *framework.ClientSet, mosb *mcf
 		assertContainerIsUsingExpectedImage(container, "image-build", mcoImages.MachineConfigOperator)
 		assertContainerIsUsingExpectedImage(container, "wait-for-done", osImageURLConfig.BaseOSContainerImage)
 	}
-}
-
-// Gets and parses the Images data from the machine-config-operator-images configmap.
-func getMachineConfigOperatorImages(cs *framework.ClientSet) (*ctrlcommon.Images, error) {
-	cm, err := cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), ctrlcommon.MachineConfigOperatorImagesConfigMapName, metav1.GetOptions{})
-	if err != nil {
-		return nil, err
-	}
-
-	return ctrlcommon.ParseImagesFromConfigMap(cm)
-}
-
-// Gets and parses the OSImageURL data from the machine-config-osimageurl configmap.
-func getMachineConfigOSImageURL(cs *framework.ClientSet) (*ctrlcommon.OSImageURLConfig, error) {
-	cm, err := cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), ctrlcommon.MachineConfigOSImageURLConfigMapName, metav1.GetOptions{})
-	if err != nil {
-		return nil, err
-	}
-
-	return ctrlcommon.ParseOSImageURLConfigMap(cm)
 }
 
 // Prepares for an on-cluster build test by performing the following:

@@ -71,7 +71,7 @@ func (a *ArtifactArchive) WriteArchive() error {
 	cmd := exec.Command("tar", "-cvzf", a.archiveName, "-C", a.stagingDir, ".")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		a.t.Logf(string(output))
+		a.t.Log(string(output))
 		return err
 	}
 

@@ -4,89 +4,20 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/containers/image/v5/docker"
 	"github.com/containers/image/v5/docker/reference"
-	"github.com/opencontainers/go-digest"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
-	"github.com/openshift/machine-config-operator/pkg/controller/build/buildrequest"
+	"github.com/openshift/machine-config-operator/pkg/apihelpers"
+	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	k8stypes "k8s.io/apimachinery/pkg/types"
 	clientset "k8s.io/client-go/kubernetes"
 	corelisterv1 "k8s.io/client-go/listers/core/v1"
 )
-
-func validateImageHasDigestedPullspec(pullspec string) error {
-	tagged, err := docker.ParseReference("//" + pullspec)
-	if err != nil {
-		return err
-	}
-
-	switch tagged.DockerReference().(type) {
-	case reference.Tagged:
-		return fmt.Errorf("expected a pullspec with a SHA256 digest, got %q", pullspec)
-	case reference.Digested:
-		return nil
-	default:
-		return fmt.Errorf("unknown image reference spec %q", pullspec)
-	}
-}
-
-// Replaces any tags on the image pullspec with the provided image digest.
-func parseImagePullspecWithDigest(pullspec string, imageDigest digest.Digest) (string, error) {
-	named, err := reference.ParseNamed(pullspec)
-	if err != nil {
-		return "", err
-	}
-
-	canonical, err := reference.WithDigest(reference.TrimNamed(named), imageDigest)
-	if err != nil {
-		return "", err
-	}
-
-	return canonical.String(), nil
-}
-
-// Parses an image pullspec from a string and an image SHA and replaces any
-// tags on the pullspec with the provided image SHA.
-func ParseImagePullspec(pullspec, imageSHA string) (string, error) {
-	imageDigest, err := digest.Parse(imageSHA)
-	if err != nil {
-		return "", err
-	}
-
-	return parseImagePullspecWithDigest(pullspec, imageDigest)
-}
-
-// Converts a given Kube object into an object reference.
-func toObjectRef(obj interface {
-	GetName() string
-	GetNamespace() string
-	GetUID() k8stypes.UID
-	GetObjectKind() schema.ObjectKind
-}) *corev1.ObjectReference {
-	return &corev1.ObjectReference{
-		Kind:      obj.GetObjectKind().GroupVersionKind().Kind,
-		Name:      obj.GetName(),
-		Namespace: obj.GetNamespace(),
-		UID:       obj.GetUID(),
-	}
-}
-
-// Returns any supplied error except ones that match k8serrors.IsNotFound().
-func ignoreIsNotFoundErr(err error) error {
-	if err != nil && !k8serrors.IsNotFound(err) {
-		return err
-	}
-
-	return nil
-}
 
 // ValidateOnClusterBuildConfig validates the existence of the MachineOSConfig and the required build inputs.
 func ValidateOnClusterBuildConfig(kubeclient clientset.Interface, mcfgclient versioned.Interface, layeredMCPs []*mcfgv1.MachineConfigPool) error {
@@ -184,5 +115,53 @@ func validateSecret(secretGetter func(string) (*corev1.Secret, error), mosc *mcf
 		return fmt.Errorf("could not get secret %s for MachineOSConfig %s: %w", secretName, mosc.Name, err)
 	}
 
-	return buildrequest.ValidatePullSecret(secret)
+	return utils.ValidatePullSecret(secret)
+}
+
+func isMachineOSBuildAnythingButSucceeded(mosb *mcfgv1alpha1.MachineOSBuild) bool {
+	// If there are no conditions, it means the build has not yet run.
+	if len(mosb.Status.Conditions) == 0 {
+		return false
+	}
+
+	// If the build succeeded, then we don't need to do anything further.
+	if apihelpers.IsMachineOSBuildConditionTrue(mosb.Status.Conditions, mcfgv1alpha1.MachineOSBuildSucceeded) {
+		return false
+	}
+
+	buildStatuses := []mcfgv1alpha1.BuildProgress{
+		mcfgv1alpha1.MachineOSBuildPrepared,
+		mcfgv1alpha1.MachineOSBuilding,
+		mcfgv1alpha1.MachineOSBuildInterrupted,
+		mcfgv1alpha1.MachineOSBuildFailed,
+	}
+
+	// If any of the above build statuses is true, it means a build is in progress.
+	for _, buildStatus := range buildStatuses {
+		if apihelpers.IsMachineOSBuildConditionTrue(mosb.Status.Conditions, buildStatus) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func getMachineOSConfigNames(moscList []*mcfgv1alpha1.MachineOSConfig) []string {
+	out := []string{}
+
+	for _, mosc := range moscList {
+		out = append(out, mosc.Name)
+	}
+
+	return out
+}
+
+func getMachineOSBuildNames(mosbList []*mcfgv1alpha1.MachineOSBuild) []string {
+	out := []string{}
+
+	for _, mosc := range mosbList {
+		out = append(out, mosc.Name)
+	}
+
+	return out
 }
