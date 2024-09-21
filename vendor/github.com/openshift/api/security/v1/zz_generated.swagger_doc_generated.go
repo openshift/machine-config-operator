@@ -41,9 +41,10 @@ func (IDRange) SwaggerDoc() map[string]string {
 }
 
 var map_PodSecurityPolicyReview = map[string]string{
-	"":       "PodSecurityPolicyReview checks which service accounts (not users, since that would be cluster-wide) can create the `PodTemplateSpec` in question.\n\nCompatibility level 2: Stable within a major release for a minimum of 9 months or 3 minor releases (whichever is longer).",
-	"spec":   "spec is the PodSecurityPolicy to check.",
-	"status": "status represents the current information/status for the PodSecurityPolicyReview.",
+	"":         "PodSecurityPolicyReview checks which service accounts (not users, since that would be cluster-wide) can create the `PodTemplateSpec` in question.\n\nCompatibility level 2: Stable within a major release for a minimum of 9 months or 3 minor releases (whichever is longer).",
+	"metadata": "metadata is the standard object's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
+	"spec":     "spec is the PodSecurityPolicy to check.",
+	"status":   "status represents the current information/status for the PodSecurityPolicyReview.",
 }
 
 func (PodSecurityPolicyReview) SwaggerDoc() map[string]string {
@@ -70,9 +71,10 @@ func (PodSecurityPolicyReviewStatus) SwaggerDoc() map[string]string {
 }
 
 var map_PodSecurityPolicySelfSubjectReview = map[string]string{
-	"":       "PodSecurityPolicySelfSubjectReview checks whether this user/SA tuple can create the PodTemplateSpec\n\nCompatibility level 2: Stable within a major release for a minimum of 9 months or 3 minor releases (whichever is longer).",
-	"spec":   "spec defines specification the PodSecurityPolicySelfSubjectReview.",
-	"status": "status represents the current information/status for the PodSecurityPolicySelfSubjectReview.",
+	"":         "PodSecurityPolicySelfSubjectReview checks whether this user/SA tuple can create the PodTemplateSpec\n\nCompatibility level 2: Stable within a major release for a minimum of 9 months or 3 minor releases (whichever is longer).",
+	"metadata": "metadata is the standard object's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
+	"spec":     "spec defines specification the PodSecurityPolicySelfSubjectReview.",
+	"status":   "status represents the current information/status for the PodSecurityPolicySelfSubjectReview.",
 }
 
 func (PodSecurityPolicySelfSubjectReview) SwaggerDoc() map[string]string {
@@ -89,9 +91,10 @@ func (PodSecurityPolicySelfSubjectReviewSpec) SwaggerDoc() map[string]string {
 }
 
 var map_PodSecurityPolicySubjectReview = map[string]string{
-	"":       "PodSecurityPolicySubjectReview checks whether a particular user/SA tuple can create the PodTemplateSpec.\n\nCompatibility level 2: Stable within a major release for a minimum of 9 months or 3 minor releases (whichever is longer).",
-	"spec":   "spec defines specification for the PodSecurityPolicySubjectReview.",
-	"status": "status represents the current information/status for the PodSecurityPolicySubjectReview.",
+	"":         "PodSecurityPolicySubjectReview checks whether a particular user/SA tuple can create the PodTemplateSpec.\n\nCompatibility level 2: Stable within a major release for a minimum of 9 months or 3 minor releases (whichever is longer).",
+	"metadata": "metadata is the standard object's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
+	"spec":     "spec defines specification for the PodSecurityPolicySubjectReview.",
+	"status":   "status represents the current information/status for the PodSecurityPolicySubjectReview.",
 }
 
 func (PodSecurityPolicySubjectReview) SwaggerDoc() map[string]string {
