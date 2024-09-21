@@ -115,12 +115,13 @@ func NewTestEnv(t *testing.T) *envtest.Environment {
 	return &envtest.Environment{
 		CRDInstallOptions: envtest.CRDInstallOptions{
 			Paths: []string{
-				filepath.Join("..", "..", "install"),
-				filepath.Join("..", "..", "manifests", "controllerconfig.crd.yaml"),
 				filepath.Join("..", "..", "vendor", "github.com", "openshift", "api", "config", "v1"),
 				filepath.Join("..", "..", "vendor", "github.com", "openshift", "api", "operator", "v1alpha1"),
-				filepath.Join("..", "..", "vendor", "github.com", "openshift", "api", "config", "v1", "zz_generated.crd-manifests"),
 				filepath.Join("..", "..", "vendor", "github.com", "openshift", "api", "operator", "v1alpha1", "zz_generated.crd-manifests"),
+				filepath.Join("..", "..", "vendor", "github.com", "openshift", "api", "config", "v1", "zz_generated.crd-manifests"),
+				filepath.Join("..", "..", "vendor", "github.com", "openshift", "api", "config", "v1alpha1", "zz_generated.crd-manifests"),
+				filepath.Join("..", "..", "vendor", "github.com", "openshift", "api", "machineconfiguration", "v1", "zz_generated.crd-manifests"),
+				filepath.Join("..", "..", "vendor", "github.com", "openshift", "api", "machineconfiguration", "v1alpha1", "zz_generated.crd-manifests"),
 			},
 			CleanUpAfterUse: true,
 		},

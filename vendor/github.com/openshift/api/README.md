@@ -4,7 +4,7 @@ This repo holds the API type definitions and serialization code used by [openshi
 APIs in this repo ship inside OCP payloads.
 
 ## Adding new FeatureGates
-Add your FeatureGate to feature_gates.go.
+Add your FeatureGate to `features.go`.
 The threshold for merging a fully disabled or TechPreview FeatureGate is an open enhancement.
 To promote to Default on any ClusterProfile, the threshold is 99% passing tests on all platforms or QE sign off.
 
