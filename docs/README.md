@@ -1,5 +1,5 @@
 # machine-config-operator
-
+Don't merge this
 OpenShift 4 is an [operator-focused platform](https://blog.openshift.com/openshift-4-a-noops-platform/),
 and the Machine Config operator extends that to the operating system itself,
 managing updates and configuration changes to essentially everything between the kernel and kubelet.
