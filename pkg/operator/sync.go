@@ -93,6 +93,8 @@ const (
 	mccKubeRbacProxyPrometheusRoleBindingPath                         = "manifests/machineconfigcontroller/prometheus-rolebinding-target.yaml"
 	mccMachineConfigurationGuardsValidatingAdmissionPolicyPath        = "manifests/machineconfigcontroller/machineconfiguration-guards-validatingadmissionpolicy.yaml"
 	mccMachineConfigurationGuardsValidatingAdmissionPolicyBindingPath = "manifests/machineconfigcontroller/machineconfiguration-guards-validatingadmissionpolicybinding.yaml"
+	mccMachineConfigPoolSelectorValidatingAdmissionPolicyPath         = "manifests/machineconfigcontroller/custom-machine-config-pool-selector-validatingadmissionpolicy.yaml"
+	mccMachineConfigPoolSelectorValidatingAdmissionPolicyBindingPath  = "manifests/machineconfigcontroller/custom-machine-config-pool-selector-validatingadmissionpolicybinding.yaml"
 	mccUpdateBootImagesValidatingAdmissionPolicyPath                  = "manifests/machineconfigcontroller/update-bootimages-validatingadmissionpolicy.yaml"
 	mccUpdateBootImagesValidatingAdmissionPolicyBindingPath           = "manifests/machineconfigcontroller/update-bootimages-validatingadmissionpolicybinding.yaml"
 
@@ -1149,10 +1151,12 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig, _ *confi
 		validatingAdmissionPolicies: []string{
 			mccMachineConfigurationGuardsValidatingAdmissionPolicyPath,
 			mccUpdateBootImagesValidatingAdmissionPolicyPath,
+			mccMachineConfigPoolSelectorValidatingAdmissionPolicyPath,
 		},
 		validatingAdmissionPolicyBindings: []string{
 			mccMachineConfigurationGuardsValidatingAdmissionPolicyBindingPath,
 			mccUpdateBootImagesValidatingAdmissionPolicyBindingPath,
+			mccMachineConfigPoolSelectorValidatingAdmissionPolicyBindingPath,
 		},
 	}
 	if err := optr.applyManifests(config, paths); err != nil {
