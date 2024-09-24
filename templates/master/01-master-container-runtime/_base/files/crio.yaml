@@ -17,7 +17,7 @@ contents:
     default_env = [
         "NSS_SDB_USE_CACHE=no",
     ]
-    default_runtime = "runc"
+    default_runtime = "crun"
     log_level = "info"
     cgroup_manager = "systemd"
     default_sysctls = [
