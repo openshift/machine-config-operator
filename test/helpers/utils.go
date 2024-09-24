@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"math/rand"
@@ -45,6 +46,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 
+	rpmostreeclient "github.com/coreos/rpmostree-client-go/pkg/client"
 	opv1 "github.com/openshift/api/operator/v1"
 	mcoac "github.com/openshift/client-go/operator/applyconfigurations/operator/v1"
 )
@@ -837,6 +839,72 @@ func ExecCmdOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, subA
 	}
 	require.Nil(t, err, "failed to exec cmd %v on node %s: %s", subArgs, node.Name, string(out))
 	return string(out)
+}
+
+// Gets the rpm-ostree status for a given node.
+func GetRPMOStreeStatusForNode(t *testing.T, cs *framework.ClientSet, node corev1.Node) *rpmostreeclient.Status {
+	status, err := getRPMOStreeStatusForNode(cs, node)
+	require.NoError(t, err)
+
+	return status
+}
+
+// Internal-only version of GetRPMOStreeStatusForNode()
+func getRPMOStreeStatusForNode(cs *framework.ClientSet, node corev1.Node) (*rpmostreeclient.Status, error) {
+	cmd, err := execCmdOnNode(cs, node, "chroot", "/rootfs", "rpm-ostree", "status", "--json")
+	if err != nil {
+		return nil, fmt.Errorf("could not construct command: %w", err)
+	}
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("could not execute command %s on node %s: %w", cmd.String(), node.Name, err)
+	}
+
+	status := &rpmostreeclient.Status{}
+
+	if err := json.Unmarshal(output, status); err != nil {
+		return nil, fmt.Errorf("could not parse rpm-ostree status for node %s: %w", node.Name, err)
+	}
+
+	return status, nil
+}
+
+// Gets the currently booted rpmostree deployment for a given node.
+func getBootedRPMOstreeDeployment(cs *framework.ClientSet, node corev1.Node) (*rpmostreeclient.Deployment, error) {
+	status, err := getRPMOStreeStatusForNode(cs, node)
+	if err != nil {
+		return nil, fmt.Errorf("could not get rpm-ostree status for node %s: %w", node.Name, err)
+	}
+
+	for _, deployment := range status.Deployments {
+		deployment := deployment
+		if deployment.Booted {
+			return &deployment, nil
+		}
+	}
+
+	return nil, fmt.Errorf("no booted deployments found on node %s", node.Name)
+}
+
+// Asserts that a given node is booted into a specific image. This works by
+// examining the rpm-ostree status and determining if the currently booted
+// deployment is the expected image.
+func AssertNodeBootedIntoImage(t *testing.T, cs *framework.ClientSet, node corev1.Node, expectedImagePullspec string) bool {
+	deployment, err := getBootedRPMOstreeDeployment(cs, node)
+	require.NoError(t, err)
+
+	return assert.Contains(t, deployment.ContainerImageReference, expectedImagePullspec, "expected node %q to be booted into image %q, got %q", node.Name, expectedImagePullspec, deployment.ContainerImageReference)
+}
+
+// Asserts that a given node is not booted into a specific image. This works by
+// examining the rpm-ostree status and determining if the currently booted
+// deployment is the expected image.
+func AssertNodeNotBootedIntoImage(t *testing.T, cs *framework.ClientSet, node corev1.Node, unexpectedImagePullspec string) bool {
+	deployment, err := getBootedRPMOstreeDeployment(cs, node)
+	require.NoError(t, err)
+
+	return assert.NotContains(t, deployment.ContainerImageReference, unexpectedImagePullspec, "expected node %q not to be booted into %q", node.Name, unexpectedImagePullspec)
 }
 
 // ExecCmdOnNodeWithError behaves like ExecCmdOnNode, with the exception that

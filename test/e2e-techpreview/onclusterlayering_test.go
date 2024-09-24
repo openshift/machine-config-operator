@@ -18,6 +18,7 @@ import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 
+	"github.com/openshift/machine-config-operator/pkg/daemon/runtimeassets"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/assert"
@@ -122,14 +123,31 @@ func TestOnClusterBuildRollsOutImage(t *testing.T) {
 	cs := framework.NewClientSet("")
 	node := helpers.GetRandomNode(t, cs, "worker")
 
-	t.Cleanup(makeIdempotentAndRegister(t, func() {
-		helpers.DeleteNodeAndMachine(t, cs, node)
-	}))
-
-	helpers.LabelNode(t, cs, node, helpers.MCPNameToRole(layeredMCPName))
+	unlabelFunc := makeIdempotentAndRegister(t, helpers.LabelNode(t, cs, node, helpers.MCPNameToRole(layeredMCPName)))
 	helpers.WaitForNodeImageChange(t, cs, node, imagePullspec)
 
+	helpers.AssertNodeBootedIntoImage(t, cs, node, imagePullspec)
+	t.Logf("Node %s is booted into image %q", node.Name, imagePullspec)
+
 	t.Log(helpers.ExecCmdOnNode(t, cs, node, "chroot", "/rootfs", "cowsay", "Moo!"))
+
+	unlabelFunc()
+
+	assertNodeRevertsToNonLayered(t, cs, node)
+}
+
+func assertNodeRevertsToNonLayered(t *testing.T, cs *framework.ClientSet, node corev1.Node) {
+	workerMCName := helpers.GetMcName(t, cs, "worker")
+	workerMC, err := cs.MachineConfigs().Get(context.TODO(), workerMCName, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	helpers.WaitForNodeConfigAndImageChange(t, cs, node, workerMCName, "")
+
+	helpers.AssertNodeBootedIntoImage(t, cs, node, workerMC.Spec.OSImageURL)
+	t.Logf("Node %s has reverted to OS image %q", node.Name, workerMC.Spec.OSImageURL)
+
+	helpers.AssertFileNotOnNode(t, cs, node, filepath.Join("/etc/systemd/system", runtimeassets.RevertServiceName))
+	helpers.AssertFileNotOnNode(t, cs, node, runtimeassets.RevertServiceMachineConfigFile)
 }
 
 // This test extracts the /etc/yum.repos.d and /etc/pki/rpm-gpg content from a
