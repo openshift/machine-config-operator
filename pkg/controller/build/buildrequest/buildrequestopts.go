@@ -85,7 +85,7 @@ func (o *optsGetter) getOpts(ctx context.Context, mosb *mcfgv1alpha1.MachineOSBu
 		return nil, err
 	}
 
-	opts, err := o.resolveEntitlements(ctx)
+	opts, err := o.resolveEntitlements(ctx, mosc)
 	if err != nil {
 		return nil, fmt.Errorf("unable to resolve entitlements for MachineOSBuild %s", mosb.Name)
 	}
@@ -157,10 +157,10 @@ func (o *optsGetter) getImagesConfig(ctx context.Context) (*ctrlcommon.Images, e
 	return ctrlcommon.ParseImagesFromConfigMap(cm)
 }
 
-func (o *optsGetter) resolveEntitlements(ctx context.Context) (*BuildRequestOpts, error) {
+func (o *optsGetter) resolveEntitlements(ctx context.Context, mosc *mcfgv1alpha1.MachineOSConfig) (*BuildRequestOpts, error) {
 	opts := &BuildRequestOpts{}
 
-	etcPkiEntitlements, err := o.getOptionalSecret(ctx, constants.EtcPkiEntitlementSecretName)
+	etcPkiEntitlements, err := o.getOptionalSecret(ctx, constants.EtcPkiEntitlementSecretName+"-"+mosc.Spec.MachineConfigPool.Name)
 	if err != nil {
 		return nil, err
 	}
