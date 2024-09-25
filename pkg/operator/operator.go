@@ -100,6 +100,7 @@ type Operator struct {
 	mcoSALister           corelisterv1.ServiceAccountLister
 	mcoSecretLister       corelisterv1.SecretLister
 	ocSecretLister        corelisterv1.SecretLister
+	ocManagedSecretLister corelisterv1.SecretLister
 	clusterOperatorLister configlistersv1.ClusterOperatorLister
 	mcopLister            mcoplistersv1.MachineConfigurationLister
 	mckLister             mcfglistersv1.KubeletConfigLister
@@ -130,6 +131,7 @@ type Operator struct {
 	mcoSAListerSynced                cache.InformerSynced
 	mcoSecretListerSynced            cache.InformerSynced
 	ocSecretListerSynced             cache.InformerSynced
+	ocManagedSecretListerSynced      cache.InformerSynced
 	clusterOperatorListerSynced      cache.InformerSynced
 	mcopListerSynced                 cache.InformerSynced
 	mckListerSynced                  cache.InformerSynced
@@ -179,6 +181,7 @@ func New(
 	mcoSAInformer coreinformersv1.ServiceAccountInformer,
 	mcoSecretInformer coreinformersv1.SecretInformer,
 	ocSecretInformer coreinformersv1.SecretInformer,
+	ocManagedSecretInformer coreinformersv1.SecretInformer,
 	clusterOperatorInformer configinformersv1.ClusterOperatorInformer,
 	mcopClient mcopclientset.Interface,
 	mcopInformer mcopinformersv1.MachineConfigurationInformer,
@@ -248,6 +251,7 @@ func New(
 		mcoSAInformer.Informer(),
 		mcoSecretInformer.Informer(),
 		ocSecretInformer.Informer(),
+		ocManagedSecretInformer.Informer(),
 		mcopInformer.Informer(),
 		mckInformer.Informer(),
 		crcInformer.Informer(),
@@ -304,6 +308,8 @@ func New(
 	optr.mcoSecretListerSynced = mcoSecretInformer.Informer().HasSynced
 	optr.ocSecretLister = ocSecretInformer.Lister()
 	optr.ocSecretListerSynced = ocSecretInformer.Informer().HasSynced
+	optr.ocManagedSecretLister = ocManagedSecretInformer.Lister()
+	optr.ocManagedSecretListerSynced = ocManagedSecretInformer.Informer().HasSynced
 	optr.clusterOperatorLister = clusterOperatorInformer.Lister()
 	optr.clusterOperatorListerSynced = clusterOperatorInformer.Informer().HasSynced
 	optr.mcopLister = mcopInformer.Lister()
@@ -359,6 +365,7 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 		optr.mcoSAListerSynced,
 		optr.mcoSecretListerSynced,
 		optr.ocSecretListerSynced,
+		optr.ocManagedSecretListerSynced,
 		optr.clusterOperatorListerSynced,
 		optr.mcopListerSynced,
 		optr.mckListerSynced,

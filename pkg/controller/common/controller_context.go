@@ -53,6 +53,7 @@ type ControllerContext struct {
 	KubeInformerFactory                                 informers.SharedInformerFactory
 	KubeNamespacedInformerFactory                       informers.SharedInformerFactory
 	OpenShiftConfigKubeNamespacedInformerFactory        informers.SharedInformerFactory
+	OpenShiftConfigManagedKubeNamespacedInformerFactory informers.SharedInformerFactory
 	OpenShiftKubeAPIServerKubeNamespacedInformerFactory informers.SharedInformerFactory
 	APIExtInformerFactory                               apiextinformers.SharedInformerFactory
 	ConfigInformerFactory                               configinformers.SharedInformerFactory
@@ -85,6 +86,7 @@ func CreateControllerContext(ctx context.Context, cb *clients.Builder) *Controll
 	kubeSharedInformer := informers.NewSharedInformerFactory(kubeClient, resyncPeriod()())
 	kubeNamespacedSharedInformer := informers.NewFilteredSharedInformerFactory(kubeClient, resyncPeriod()(), MCONamespace, nil)
 	openShiftConfigKubeNamespacedSharedInformer := informers.NewFilteredSharedInformerFactory(kubeClient, resyncPeriod()(), "openshift-config", nil)
+	openShiftConfigManagedKubeNamespacedSharedInformer := informers.NewFilteredSharedInformerFactory(kubeClient, resyncPeriod()(), OpenshiftConfigManagedNamespace, nil)
 	openShiftKubeAPIServerKubeNamespacedSharedInformer := informers.NewFilteredSharedInformerFactory(kubeClient,
 		resyncPeriod()(),
 		"openshift-kube-apiserver-operator",
@@ -138,6 +140,7 @@ func CreateControllerContext(ctx context.Context, cb *clients.Builder) *Controll
 		KubeNamespacedInformerFactory:                       kubeNamespacedSharedInformer,
 		OpenShiftConfigKubeNamespacedInformerFactory:        openShiftConfigKubeNamespacedSharedInformer,
 		OpenShiftKubeAPIServerKubeNamespacedInformerFactory: openShiftKubeAPIServerKubeNamespacedSharedInformer,
+		OpenShiftConfigManagedKubeNamespacedInformerFactory: openShiftConfigManagedKubeNamespacedSharedInformer,
 		APIExtInformerFactory:                               apiExtSharedInformer,
 		ConfigInformerFactory:                               configSharedInformer,
 		OperatorInformerFactory:                             operatorSharedInformer,
