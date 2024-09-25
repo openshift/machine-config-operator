@@ -2703,9 +2703,7 @@ data:
         ],
         "schemaVersion": 14,
         "style": "dark",
-        "tags": [
-            "node-cluster-mixin"
-        ],
+        "tags": [],
         "templating": {
             "list": [
                 {
@@ -2793,7 +2791,7 @@ metadata:
     include.release.openshift.io/self-managed-high-availability: "true"
     include.release.openshift.io/single-node-developer: "true"
   labels:
-    app.kubernetes.io/part-of: openshift-monitoring
+    app.kubernetes.io/part-of: openshift-machine-config-operator
     console.openshift.io/dashboard: "true"
   name: node-cluster
   namespace: openshift-config-managed
