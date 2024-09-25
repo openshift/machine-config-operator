@@ -396,7 +396,7 @@ func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
 		opts := optsForEtcPkiEntitlements()
 		env = append(env, opts.envVar())
 		volumeMounts = append(volumeMounts, opts.volumeMount())
-		volumes = append(volumes, opts.volumeForSecret())
+		volumes = append(volumes, opts.volumeForSecret(constants.EtcPkiEntitlementSecretName+"-"+br.opts.MachineOSConfig.Spec.MachineConfigPool.Name))
 	}
 
 	// If the etc-yum-repos-d ConfigMap is found, mount it into the build pod.
@@ -412,7 +412,7 @@ func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
 		opts := optsForEtcRpmGpgKeys()
 		env = append(env, opts.envVar())
 		volumeMounts = append(volumeMounts, opts.volumeMount())
-		volumes = append(volumes, opts.volumeForSecret())
+		volumes = append(volumes, opts.volumeForSecret(constants.EtcPkiRpmGpgSecretName))
 	}
 
 	// TODO: We need pull creds with permissions to pull the base image. By

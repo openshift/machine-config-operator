@@ -166,7 +166,7 @@ func (o *optsGetter) getOpts(ctx context.Context, mosb *mcfgv1alpha1.MachineOSBu
 		return nil, fmt.Errorf("could not validate MachineOSBuild: %w", err)
 	}
 
-	opts, err := o.resolveEntitlements(ctx)
+	opts, err := o.resolveEntitlements(ctx, mosc)
 	if err != nil {
 		return nil, fmt.Errorf("unable to resolve entitlements for MachineOSBuild %s: %w", mosb.Name, err)
 	}
@@ -223,10 +223,10 @@ func (o *optsGetter) getValidatedSecret(ctx context.Context, name string) (*core
 
 // Determines whether the build makes use of entitlements based upon the
 // presence (or lack thereof) of specific configmaps and secrets.
-func (o *optsGetter) resolveEntitlements(ctx context.Context) (*BuildRequestOpts, error) {
+func (o *optsGetter) resolveEntitlements(ctx context.Context, mosc *mcfgv1alpha1.MachineOSConfig) (*BuildRequestOpts, error) {
 	opts := &BuildRequestOpts{}
 
-	etcPkiEntitlements, err := o.getOptionalSecret(ctx, constants.EtcPkiEntitlementSecretName)
+	etcPkiEntitlements, err := o.getOptionalSecret(ctx, constants.EtcPkiEntitlementSecretName+"-"+mosc.Spec.MachineConfigPool.Name)
 	if err != nil {
 		return nil, fmt.Errorf("could not determine status of optional Secret %q: %w", constants.EtcPkiEntitlementSecretName, err)
 	}
