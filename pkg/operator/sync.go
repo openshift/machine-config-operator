@@ -1260,6 +1260,11 @@ func (optr *Operator) reconcileMachineOSBuilder(mob *appsv1.Deployment) error {
 		return fmt.Errorf("could not determine if Machine OS Builder is running: %w", err)
 	}
 
+	// Reconcile etc-pki-entitlement secrets in the MCO namespace, if required.
+	if err := optr.reconcileSimpleContentAccessSecrets(layeredMCPs); err != nil {
+		return fmt.Errorf("could not reconcile etc-pki-entitlement secrets: %w", err)
+	}
+
 	// If we have opted-in pools and the Machine OS Builder deployment is either
 	// not running or doesn't have the correct replica count, scale it up.
 	correctReplicaCount := optr.hasCorrectReplicaCount(mob)
@@ -1367,6 +1372,78 @@ func (optr *Operator) isMachineOSBuilderRunning(mob *appsv1.Deployment) (bool, e
 	}
 
 	return false, err
+}
+
+func (optr *Operator) reconcileSimpleContentAccessSecrets(layeredMCPs []*mcfgv1.MachineConfigPool) error {
+
+	// Create set of layered and non layeredPools
+	layeredPoolSet := sets.New(layeredMCPs...)
+	allMCP, err := optr.mcpLister.List(labels.Everything())
+	if err != nil {
+		return err
+	}
+	allPoolSet := sets.New(allMCP...)
+	nonLayeredPoolSet := allPoolSet.Difference(layeredPoolSet)
+
+	// For all non-layered pools, if the secret exists, delete it.
+	for _, pool := range nonLayeredPoolSet.UnsortedList() {
+		secretName := ctrlcommon.SimpleContentAccessSecretName + "-" + pool.Name
+		_, err := optr.mcoSecretLister.Secrets(ctrlcommon.MCONamespace).Get(secretName)
+		if apierrors.IsNotFound(err) {
+			continue
+		} else if err != nil {
+			return err
+		}
+		if deleteErr := optr.kubeClient.CoreV1().Secrets(ctrlcommon.MCONamespace).Delete(context.TODO(), secretName, metav1.DeleteOptions{}); deleteErr != nil {
+			return deleteErr
+		}
+		klog.Infof("deleting %s", secretName)
+	}
+
+	// Now check if the Simple Content Access Secret "etc-pki-entitlement" secret exists
+	simpleContentAccessSecret, err := optr.ocManagedSecretLister.Secrets(ctrlcommon.OpenshiftConfigManagedNamespace).Get(ctrlcommon.SimpleContentAccessSecretName)
+	if apierrors.IsNotFound(err) {
+		// exit early, this cluster does not have RHEL entitlements
+		klog.Infof("Exiting early due to lack of RHEL entitlements")
+		return nil
+	} else if err != nil {
+		return err
+	}
+
+	// For all layered pools, create/update the secret
+	for _, pool := range layeredPoolSet.UnsortedList() {
+		secretName := ctrlcommon.SimpleContentAccessSecretName + "-" + pool.Name
+
+		// Create a clone of simpleContentAccessSecret, modify it to be in the MCO namespace with the new name
+		clonedSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      secretName,
+				Namespace: ctrlcommon.MCONamespace,
+			},
+			Data: simpleContentAccessSecret.Data,
+			Type: corev1.SecretTypeOpaque,
+		}
+
+		currentSecret, err := optr.mcoSecretLister.Secrets(ctrlcommon.MCONamespace).Get(secretName)
+		switch {
+		case apierrors.IsNotFound(err):
+			// The secret doesn't exist, so create one for this pool
+			if _, createErr := optr.kubeClient.CoreV1().Secrets(ctrlcommon.MCONamespace).Create(context.TODO(), clonedSecret, metav1.CreateOptions{}); createErr != nil {
+				return createErr
+			}
+			klog.Infof("creating %s", secretName)
+		case err != nil:
+			return err
+		case !reflect.DeepEqual(currentSecret.Data, clonedSecret.Data):
+			// An update to the secret is required
+			if _, updateErr := optr.kubeClient.CoreV1().Secrets(ctrlcommon.MCONamespace).Update(context.TODO(), clonedSecret, metav1.UpdateOptions{}); updateErr != nil {
+				return updateErr
+			}
+			klog.Infof("updating %s", secretName)
+		}
+	}
+
+	return nil
 }
 
 // Updates the Machine OS Builder Deployment, creating it if it does not exist.
