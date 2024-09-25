@@ -188,6 +188,20 @@ func NewMachineConfigPool(name string, mcSelector, nodeSelector *metav1.LabelSel
 	}
 }
 
+func NewOpaqueSecret(name, namespace, content string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Data: map[string][]byte{
+			"entitlement-key.pem": []byte(content),
+			"entitlement.pem":     []byte(content),
+		},
+		Type: corev1.SecretTypeOpaque,
+	}
+}
+
 // CreateMachineConfigFromIgnitionWithMetadata returns a MachineConfig object from an Ignition config, name, and role label
 func CreateMachineConfigFromIgnitionWithMetadata(ignCfg interface{}, name, role string) *mcfgv1.MachineConfig {
 	return &mcfgv1.MachineConfig{
