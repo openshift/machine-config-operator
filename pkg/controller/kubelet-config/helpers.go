@@ -33,6 +33,9 @@ const (
 	managedFeaturesKeyPrefix      = "98"
 	managedKubeletConfigKeyPrefix = "99"
 	protectKernelDefaultsStr      = "\"protectKernelDefaults\":false"
+	cgroupsV1DeprecationMsg       = "cgroups v1 support will soon be deprecated in Openshift, consider switching to cgroups v2"
+	cgroupModeCondType            = "CGroupMode"
+	cgroupCondReason              = "CGroupModeV1"
 )
 
 func createNewKubeletDynamicSystemReservedIgnition(autoSystemReserved *bool, userDefinedSystemReserved map[string]string) *ign3types.File {
