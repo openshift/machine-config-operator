@@ -66,7 +66,19 @@ contents:
         while true; do
             if [ "$SINGLE_STACK_IPV6" = true ]
             then
-                hostname=$(curl http://[fe80::a9fe:a9fe%25br-ex]:80/openstack/2012-08-10/meta_data.json | jq -re .name)
+                metadata_ip6="fe80::a9fe:a9fe"
+                # `ip route show to match` returns this:
+                # <subnet or name> via <gateway ip> dev <nic> proto dhcp src <ip> metric <metric>
+                # so the nic name is the first item after "dev"
+                while read nic; do
+                    # "curl" will return a non-zero exit code if the metadata is not reachable which would stop the script too soon.
+                    # We also want to give a change (5 seconds) to reach the metadata before we consider that the given URL is not usable.
+                    # Once hostname was found with a given nic, we just move on.
+                    set +e
+                    hostname=$(curl --connect-timeout 5 -s http://[${metadata_ip6}%25${nic}]:80/openstack/2012-08-10/meta_data.json | jq -re .name)
+                    set -e
+                    [ ! -z "${hostname}" ] && break
+                done < <(ip -6 route show to match ${metadata_ip6} | awk '{for(i=1;i<NF;i++) if ($i == "dev") print $(i+1)}')
             else
                 # https://docs.openstack.org/nova/victoria/user/metadata.html#metadata-openstack-format
                 hostname=$(curl -s http://169.254.169.254/openstack/2012-08-10/meta_data.json | jq -re .name)

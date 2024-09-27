@@ -3,9 +3,8 @@ enabled: true
 contents: |
   [Unit]
   Description=Fetch kubelet node name from OpenStack metadata
-  # Wait for NetworkManager and wait-for-br-ex-up to report it's online
-  Wants=wait-for-br-ex-up.service
-  After=NetworkManager-wait-online.service wait-for-br-ex-up.service
+  # Wait for NetworkManager to report it's online
+  After=NetworkManager-wait-online.service
   # Run before kubelet
   Before=kubelet-dependencies.target
 
@@ -15,8 +14,17 @@ contents: |
 {{- else}}
   Environment="SINGLE_STACK_IPV6=false"
 {{- end}}
-  ExecStart=/usr/local/bin/openstack-kubelet-nodename
+  # Would prefer to do Restart=on-failure instead of this bash retry loop, but
+  # the version of systemd we have right now doesn't support it. It should be
+  # available in systemd v244 and higher.
+  ExecStart=/bin/bash -c " \
+  until \
+  /usr/local/bin/openstack-kubelet-nodename; \
+  do \
+  sleep 10; \
+  done"
   Type=oneshot
+  TimeoutSec=600
 
   [Install]
   WantedBy=kubelet-dependencies.target
