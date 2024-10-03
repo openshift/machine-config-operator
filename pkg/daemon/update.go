@@ -1436,6 +1436,29 @@ func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig ign3types.Config) e
 		}
 	}
 
+	// nolint:revive // because i disagree that returning this directly would be cleaner
+	if err := dn.workaroundOcpBugs33694(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// Previous versions of the MCD leaked some enablement symlinks. We clean a
+// known problematic subset of those here. See also:
+// https://issues.redhat.com/browse/OCPBUGS-33694?focusedId=24917003#comment-24917003
+func (dn *Daemon) workaroundOcpBugs33694() error {
+	stalePaths := []string{
+		"/etc/systemd/system/network-online.target.requires/node-valid-hostname.service",
+		"/etc/systemd/system/network-online.target.wants/ovs-configuration.service",
+	}
+	for _, path := range stalePaths {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("error deleting %s: %w", path, err)
+		} else if err == nil {
+			glog.Infof("Removed stale symlink %q", path)
+		}
+	}
 	return nil
 }
 
@@ -1574,6 +1597,18 @@ func (dn *Daemon) writeUnits(units []ign3types.Unit) error {
 				dn.os.IsCoreOSVariant() {
 				if err := createOrigFile("/usr"+fpath, fpath); err != nil {
 					return err
+				}
+			}
+			// If the unit is currently enabled, disable it before overwriting since we might be
+			// changing its WantedBy= or RequiredBy= directive (see OCPBUGS-33694). Later code will
+			// re-enable the new unit as directed by the MachineConfig.
+			cmd := exec.Command("systemctl", "is-enabled", u.Name)
+			out, _ := cmd.CombinedOutput()
+			if cmd.ProcessState.ExitCode() == 0 && strings.TrimSpace(string(out)) == "enabled" {
+				glog.Infof("Disabling systemd unit %s before re-writing it", u.Name)
+				disableOut, err := exec.Command("systemctl", "disable", u.Name).CombinedOutput()
+				if err != nil {
+					return fmt.Errorf("disabling %s failed: %w (output: %s)", u.Name, err, string(disableOut))
 				}
 			}
 			if err := writeFileAtomicallyWithDefaults(fpath, []byte(*u.Contents)); err != nil {
