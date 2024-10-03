@@ -10,7 +10,6 @@ import (
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -22,6 +21,9 @@ import (
 
 const (
 	pollInterval time.Duration = time.Millisecond
+
+	// Importing ctrlcommon will cause a circular import issue. To avoid that, we set / use this constant instead.
+	mcoNamespace string = "openshift-machine-config-operator"
 )
 
 type Assertions struct {
@@ -149,7 +151,7 @@ func (a *Assertions) MachineOSBuildIsDeleted(ctx context.Context, mosb *mcfgv1al
 
 func (a *Assertions) SecretReachesState(ctx context.Context, name string, stateFunc func(*corev1.Secret, error) (bool, error), msgAndArgs ...interface{}) {
 	err := wait.PollImmediateInfiniteWithContext(ctx, a.pollInterval, func(ctx context.Context) (bool, error) {
-		secret, err := a.kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(ctx, name, metav1.GetOptions{})
+		secret, err := a.kubeclient.CoreV1().Secrets(mcoNamespace).Get(ctx, name, metav1.GetOptions{})
 		return stateFunc(secret, err)
 	})
 
@@ -159,7 +161,7 @@ func (a *Assertions) SecretReachesState(ctx context.Context, name string, stateF
 
 func (a *Assertions) ConfigMapReachesState(ctx context.Context, name string, stateFunc func(*corev1.ConfigMap, error) (bool, error), msgAndArgs ...interface{}) {
 	err := wait.PollImmediateInfiniteWithContext(ctx, a.pollInterval, func(ctx context.Context) (bool, error) {
-		cm, err := a.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(ctx, name, metav1.GetOptions{})
+		cm, err := a.kubeclient.CoreV1().ConfigMaps(mcoNamespace).Get(ctx, name, metav1.GetOptions{})
 		return stateFunc(cm, err)
 	})
 
@@ -169,7 +171,7 @@ func (a *Assertions) ConfigMapReachesState(ctx context.Context, name string, sta
 
 func (a *Assertions) BuildPodReachesState(ctx context.Context, podName string, stateFunc func(*corev1.Pod, error) (bool, error), msgAndArgs ...interface{}) {
 	err := wait.PollImmediateInfiniteWithContext(ctx, a.pollInterval, func(ctx context.Context) (bool, error) {
-		pod, err := a.kubeclient.CoreV1().Pods(ctrlcommon.MCONamespace).Get(ctx, podName, metav1.GetOptions{})
+		pod, err := a.kubeclient.CoreV1().Pods(mcoNamespace).Get(ctx, podName, metav1.GetOptions{})
 		return stateFunc(pod, err)
 	})
 
