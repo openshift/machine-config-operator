@@ -3,13 +3,11 @@ package imagebuilder
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/openshift/machine-config-operator/pkg/controller/build/fixtures"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	k8serrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
@@ -29,6 +27,8 @@ func TestPreparer(t *testing.T) {
 	lobj2 := fixtures.NewLayeredObjectsForTest("second-worker")
 
 	kubeclient, mcfgclient, _ := fixtures.GetClientsForTestWithAdditionalObjects([]runtime.Object{}, lobj2.ToRuntimeObjects())
+
+	kubeassert := framework.Assert(t, time.Millisecond, kubeclient, mcfgclient)
 
 	// Create two preparers assigned to their own MachineOSBuild though sharing
 	// the same kubeclient and mcfgclient objects.
@@ -68,13 +68,11 @@ func TestPreparer(t *testing.T) {
 		// After preparing for both, ensure that the expected configmaps and secrets
 		// are present for both MachineOSBuilds.
 		for _, expectedConfigMap := range expectedConfigMaps {
-			_, err := kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(ctx, expectedConfigMap, metav1.GetOptions{})
-			require.NoError(t, err)
+			kubeassert.ConfigMapIsCreated(ctx, expectedConfigMap)
 		}
 
 		for _, expectedSecret := range expectedSecrets {
-			_, err := kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(ctx, expectedSecret, metav1.GetOptions{})
-			require.NoError(t, err)
+			kubeassert.SecretIsCreated(ctx, expectedSecret)
 		}
 	})
 
@@ -85,25 +83,19 @@ func TestPreparer(t *testing.T) {
 		// Ensure that only the objects from the first MachineOSBuild are gone and
 		// that the other objects remain.
 		for _, expectedConfigMap := range expectedConfigMaps[0:1] {
-			_, err := kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(ctx, expectedConfigMap, metav1.GetOptions{})
-			assert.NotNil(t, err)
-			assert.True(t, k8serrors.IsNotFound(err))
+			kubeassert.ConfigMapIsDeleted(ctx, expectedConfigMap)
 		}
 
 		for _, expectedConfigMap := range expectedConfigMaps[2:] {
-			_, err := kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(ctx, expectedConfigMap, metav1.GetOptions{})
-			require.NoError(t, err)
+			kubeassert.ConfigMapIsCreated(ctx, expectedConfigMap)
 		}
 
 		for _, expectedSecret := range expectedSecrets[0:1] {
-			_, err := kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(ctx, expectedSecret, metav1.GetOptions{})
-			assert.NotNil(t, err)
-			assert.True(t, k8serrors.IsNotFound(err))
+			kubeassert.SecretIsDeleted(ctx, expectedSecret)
 		}
 
 		for _, expectedSecret := range expectedSecrets[2:] {
-			_, err := kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(ctx, expectedSecret, metav1.GetOptions{})
-			require.NoError(t, err)
+			kubeassert.SecretIsCreated(ctx, expectedSecret)
 		}
 
 		// Next, clean up the ephemeral objects from the second MachineOSBuild.
@@ -111,15 +103,11 @@ func TestPreparer(t *testing.T) {
 
 		// This time, ensure that *all* ephemeral objects are gone.
 		for _, expectedConfigMap := range expectedConfigMaps {
-			_, err := kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(ctx, expectedConfigMap, metav1.GetOptions{})
-			assert.NotNil(t, err)
-			assert.True(t, k8serrors.IsNotFound(err))
+			kubeassert.ConfigMapIsDeleted(ctx, expectedConfigMap)
 		}
 
 		for _, expectedSecret := range expectedSecrets {
-			_, err := kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(ctx, expectedSecret, metav1.GetOptions{})
-			assert.NotNil(t, err)
-			assert.True(t, k8serrors.IsNotFound(err))
+			kubeassert.SecretIsDeleted(ctx, expectedSecret)
 		}
 	})
 }

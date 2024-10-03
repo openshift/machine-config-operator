@@ -8,20 +8,19 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
-	k8serrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/fixtures"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/test/framework"
 )
 
 func TestImageBuilder(t *testing.T) {
 	t.Parallel()
 
 	kubeclient, mcfgclient, lobj := fixtures.GetClientsForTest()
+	kubeassert := framework.Assert(t, time.Millisecond, kubeclient, mcfgclient)
 
 	pim := NewPodImageBuilder(kubeclient, mcfgclient, lobj.MachineOSBuild, lobj.MachineOSConfig)
 
@@ -30,8 +29,9 @@ func TestImageBuilder(t *testing.T) {
 
 	assert.NoError(t, pim.Start(ctx))
 
-	_, err := kubeclient.CoreV1().Pods(ctrlcommon.MCONamespace).Get(ctx, utils.GetBuildPodName(lobj.MachineOSBuild), metav1.GetOptions{})
-	require.NoError(t, err)
+	buildPodName := utils.GetBuildPodName(lobj.MachineOSBuild)
+
+	kubeassert.BuildPodIsCreated(ctx, buildPodName)
 
 	podPhases := []corev1.PodPhase{
 		corev1.PodPending,
@@ -70,8 +70,7 @@ func TestImageBuilder(t *testing.T) {
 
 	require.NoError(t, pim.Clean(ctx))
 
-	_, err = kubeclient.CoreV1().Pods(ctrlcommon.MCONamespace).Get(ctx, utils.GetBuildPodName(lobj.MachineOSBuild), metav1.GetOptions{})
-	assert.True(t, k8serrors.IsNotFound(err))
+	kubeassert.BuildPodIsDeleted(ctx, buildPodName)
 
 	require.NoError(t, pim.Stop(ctx))
 }
@@ -88,12 +87,14 @@ func TestImageBuilderCanCleanWithOnlyMachineOSBuild(t *testing.T) {
 
 	assert.NoError(t, pim.Start(ctx))
 
-	_, err := kubeclient.CoreV1().Pods(ctrlcommon.MCONamespace).Get(ctx, utils.GetBuildPodName(lobj.MachineOSBuild), metav1.GetOptions{})
-	require.NoError(t, err)
+	buildPodName := utils.GetBuildPodName(lobj.MachineOSBuild)
+
+	kubeassert := framework.Assert(t, time.Millisecond, kubeclient, mcfgclient)
+
+	kubeassert.BuildPodIsCreated(ctx, buildPodName)
 
 	cleaner := NewPodImageBuildCleaner(kubeclient, mcfgclient, lobj.MachineOSBuild)
 	assert.NoError(t, cleaner.Clean(ctx))
 
-	_, err = kubeclient.CoreV1().Pods(ctrlcommon.MCONamespace).Get(ctx, utils.GetBuildPodName(lobj.MachineOSBuild), metav1.GetOptions{})
-	assert.True(t, k8serrors.IsNotFound(err))
+	kubeassert.BuildPodIsDeleted(ctx, buildPodName)
 }
