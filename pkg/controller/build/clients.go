@@ -11,8 +11,6 @@ import (
 	corelistersv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 
-	buildclientset "github.com/openshift/client-go/build/clientset/versioned"
-
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	mcfginformers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
@@ -44,9 +42,8 @@ type BuildControllerConfig struct {
 
 // Holds each of the clients used by the Build Controller and its subcontrollers.
 type Clients struct {
-	mcfgclient  mcfgclientset.Interface
-	kubeclient  clientset.Interface
-	buildclient buildclientset.Interface
+	mcfgclient mcfgclientset.Interface
+	kubeclient clientset.Interface
 }
 
 func NewClientsFromControllerContext(ctrlCtx *ctrlcommon.ControllerContext) *Clients {
@@ -55,9 +52,8 @@ func NewClientsFromControllerContext(ctrlCtx *ctrlcommon.ControllerContext) *Cli
 
 func NewClients(cb *clients.Builder) *Clients {
 	return &Clients{
-		mcfgclient:  cb.MachineConfigClientOrDie("machine-os-builder"),
-		kubeclient:  cb.KubeClientOrDie("machine-os-builder"),
-		buildclient: cb.BuildClientOrDie("machine-os-builder"),
+		mcfgclient: cb.MachineConfigClientOrDie("machine-os-builder"),
+		kubeclient: cb.KubeClientOrDie("machine-os-builder"),
 	}
 }
 
@@ -103,6 +99,7 @@ func (i *informers) start(ctx context.Context) {
 	}
 }
 
+// Instantiates the required listers from the informers.
 func (i *informers) listers() *listers {
 	return &listers{
 		machineOSBuildLister:    i.machineOSBuildInformer.Lister(),
@@ -113,6 +110,7 @@ func (i *informers) listers() *listers {
 	}
 }
 
+// Holds all of the required listers so that they can be passed around and reused.
 type listers struct {
 	machineOSBuildLister    mcfglistersv1alpha1.MachineOSBuildLister
 	machineOSConfigLister   mcfglistersv1alpha1.MachineOSConfigLister

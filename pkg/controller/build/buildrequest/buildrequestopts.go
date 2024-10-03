@@ -76,8 +76,20 @@ func (o *optsGetter) validateMachineOSConfig(mosc *mcfgv1alpha1.MachineOSConfig)
 	return nil
 }
 
+func (o *optsGetter) validateMachineOSBuild(mosb *mcfgv1alpha1.MachineOSBuild) error {
+	if mosb.Spec.DesiredConfig.Name == "" {
+		return fmt.Errorf("desiredConfig.name empty for MachineOSBuild %s:", mosb.Name)
+	}
+
+	return nil
+}
+
 func (o *optsGetter) getOpts(ctx context.Context, mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig) (*BuildRequestOpts, error) {
 	if err := o.validateMachineOSConfig(mosc); err != nil {
+		return nil, err
+	}
+
+	if err := o.validateMachineOSBuild(mosb); err != nil {
 		return nil, err
 	}
 

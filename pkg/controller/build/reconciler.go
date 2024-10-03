@@ -25,6 +25,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+const (
+	addingVerb   string = "Adding"
+	updatingVerb string = "Updating"
+	deletingVerb string = "Deleting"
+)
+
 type reconciler interface {
 	AddMachineOSBuild(context.Context, *mcfgv1alpha1.MachineOSBuild) error
 	UpdateMachineOSBuild(context.Context, *mcfgv1alpha1.MachineOSBuild, *mcfgv1alpha1.MachineOSBuild) error
@@ -40,91 +46,70 @@ type reconciler interface {
 	UpdateMachineConfigPool(context.Context, *mcfgv1.MachineConfigPool, *mcfgv1.MachineConfigPool) error
 }
 
-type detailLine struct {
-	machineConfig     string
-	machineOSConfig   string
-	machineOSBuild    string
-	machineConfigPool string
-}
-
-func newDetailLine(mosc *mcfgv1alpha1.MachineOSConfig, mosb *mcfgv1alpha1.MachineOSBuild, mcp *mcfgv1.MachineConfigPool) *detailLine {
-	return &detailLine{
-		machineConfig:     mcp.Spec.Configuration.Name,
-		machineConfigPool: mcp.Name,
-		machineOSConfig:   mosc.Name,
-		machineOSBuild:    mosb.Name,
-	}
-}
-
-func (d *detailLine) String() string {
-	return fmt.Sprintf("<MachineConfig: %q, MachineOSConfig: %q, MachineOSBuild: %q, MachineConfigPool %q>", d.machineConfig, d.machineOSConfig, d.machineOSBuild, d.machineConfigPool)
-}
-
+// Holds the implementation of the buildReconciler. The buildReconciler's job
+// is to respond to incoming events in a specific way. By doing this, the
+// reconciliation process has a clear entrypoint for each incoming event.
 type buildReconciler struct {
 	*Clients
 	*listers
 }
 
+// Instantiates a new reconciler instance. This returns an interface to
+// disallow access to its private methods.
 func newBuildReconciler(c *Clients, l *listers) reconciler {
+	return newBuildReconcilerAsStruct(c, l)
+}
+
+func newBuildReconcilerAsStruct(c *Clients, l *listers) *buildReconciler {
 	return &buildReconciler{
 		Clients: c,
 		listers: l,
 	}
 }
 
-func (m *buildReconciler) timeObjectOperation(obj kubeObject, op string, toRun func() error) error {
-	start := time.Now()
-
-	kind, err := utils.GetKindForObject(obj)
-	if err != nil && kind == "" {
-		kind = "<unknown object kind>"
-	}
-
-	klog.Infof("%s %s %q", op, kind, obj.GetName())
-	defer func() {
-		klog.Infof("Finished %s %s %q after %s", strings.ToLower(op), kind, obj.GetName(), time.Since(start))
-	}()
-
-	return toRun()
-}
-
-func (m *buildReconciler) AddMachineOSConfig(ctx context.Context, mosc *mcfgv1alpha1.MachineOSConfig) error {
-	return m.timeObjectOperation(mosc, "Adding", func() error {
-		return m.createMachineOSBuild(ctx, mosc)
+// Executes whenever a new MachineOSConfig is added.
+func (b *buildReconciler) AddMachineOSConfig(ctx context.Context, mosc *mcfgv1alpha1.MachineOSConfig) error {
+	return b.timeObjectOperation(mosc, addingVerb, func() error {
+		return b.createMachineOSBuild(ctx, mosc)
 	})
 }
 
-func (m *buildReconciler) UpdateMachineOSConfig(ctx context.Context, old, cur *mcfgv1alpha1.MachineOSConfig) error {
-	return m.timeObjectOperation(cur, "Updating", func() error {
-		return m.updateMachineOSConfig(ctx, old, cur)
+// Executes whenever an existing MachineOSConfig is updated.
+func (b *buildReconciler) UpdateMachineOSConfig(ctx context.Context, old, cur *mcfgv1alpha1.MachineOSConfig) error {
+	return b.timeObjectOperation(cur, updatingVerb, func() error {
+		return b.updateMachineOSConfig(ctx, old, cur)
 	})
 }
 
-func (m *buildReconciler) updateMachineOSConfig(ctx context.Context, old, cur *mcfgv1alpha1.MachineOSConfig) error {
+// Executes whenever a MachineOSConfig is updated. If the build inputs have changeg, a new MachineOSBuild should be created.
+func (b *buildReconciler) updateMachineOSConfig(ctx context.Context, old, cur *mcfgv1alpha1.MachineOSConfig) error {
 	if !equality.Semantic.DeepEqual(old.Spec.BuildInputs, cur.Spec.BuildInputs) {
 		klog.Infof("Detected MachineOSConfig change for %s", cur.Name)
-		return m.createMachineOSBuild(ctx, cur)
+		return b.createMachineOSBuild(ctx, cur)
 	}
 
 	return nil
 }
 
-func (m *buildReconciler) DeleteMachineOSConfig(ctx context.Context, mosc *mcfgv1alpha1.MachineOSConfig) error {
-	return m.timeObjectOperation(mosc, "Deleting", func() error {
-		return m.deleteMachineOSConfig(ctx, mosc)
+// Executes whenever a MachineOSConfig is deleted. This deletes all
+// MachineOSBuilds (and the underlying associated build objects).
+func (b *buildReconciler) DeleteMachineOSConfig(ctx context.Context, mosc *mcfgv1alpha1.MachineOSConfig) error {
+	return b.timeObjectOperation(mosc, deletingVerb, func() error {
+		return b.deleteMachineOSConfig(ctx, mosc)
 	})
 }
 
-func (m *buildReconciler) deleteMachineOSConfig(ctx context.Context, mosc *mcfgv1alpha1.MachineOSConfig) error {
+// Performs the deletion reconcilation of the MachineOSConfig.
+func (b *buildReconciler) deleteMachineOSConfig(ctx context.Context, mosc *mcfgv1alpha1.MachineOSConfig) error {
 	klog.Infof("Removing MachineOSBuild(s) associated with non-existent MachineOSConfig %s", mosc.Name)
 
-	mosbList, err := m.machineOSBuildLister.List(utils.MachineOSBuildForPoolSelector(mosc))
+	mosbList, err := b.machineOSBuildLister.List(utils.MachineOSBuildForPoolSelector(mosc))
 	if err != nil {
 		return fmt.Errorf("could not list MachineOSBuilds for MachineOSConfig %s: %w", mosc.Name, err)
 	}
 
 	for _, mosb := range mosbList {
-		if err := m.deleteMachineOSBuildAndBuilder(ctx, mosb); err != nil {
+		if err := b.deleteMachineOSBuildAndBuilder(ctx, mosb); err != nil {
 			return fmt.Errorf("could not delete MachineOSBuild %s for MachineOSConfig %s: %w", mosb.Name, mosc.Name, err)
 		}
 	}
@@ -132,44 +117,53 @@ func (m *buildReconciler) deleteMachineOSConfig(ctx context.Context, mosc *mcfgv
 	return nil
 }
 
-func (m *buildReconciler) AddPod(ctx context.Context, pod *corev1.Pod) error {
-	return m.timeObjectOperation(pod, "Adding", func() error {
-		return m.updateMachineOSBuildWithStatus(ctx, pod)
+// Executes whenever a new build pod is detected and updates the MachineOSBuild
+// with any status changes.
+func (b *buildReconciler) AddPod(ctx context.Context, pod *corev1.Pod) error {
+	return b.timeObjectOperation(pod, addingVerb, func() error {
+		return b.updateMachineOSBuildWithStatus(ctx, pod)
 	})
 }
 
-func (m *buildReconciler) UpdatePod(ctx context.Context, _, curPod *corev1.Pod) error {
-	return m.timeObjectOperation(curPod, "Updating", func() error {
-		return m.updateMachineOSBuildWithStatus(ctx, curPod)
+// Executes whenever a build pod is updated. Updates the MachhineOSBuild object
+// with the pod status.
+func (b *buildReconciler) UpdatePod(ctx context.Context, _, curPod *corev1.Pod) error {
+	return b.timeObjectOperation(curPod, updatingVerb, func() error {
+		return b.updateMachineOSBuildWithStatus(ctx, curPod)
 	})
 }
 
-func (m *buildReconciler) AddMachineOSBuild(ctx context.Context, mosb *mcfgv1alpha1.MachineOSBuild) error {
-	return m.timeObjectOperation(mosb, "Adding", func() error {
-		return m.startBuild(ctx, mosb)
+// Executes whenever a new MachineOSBuild is added. It starts executing the
+// build in response to a new MachineOSBuild being created.
+func (b *buildReconciler) AddMachineOSBuild(ctx context.Context, mosb *mcfgv1alpha1.MachineOSBuild) error {
+	return b.timeObjectOperation(mosb, addingVerb, func() error {
+		return b.startBuild(ctx, mosb)
 	})
 }
 
-func (m *buildReconciler) UpdateMachineOSBuild(ctx context.Context, old, cur *mcfgv1alpha1.MachineOSBuild) error {
-	return m.timeObjectOperation(cur, "Updating", func() error {
-		return m.updateMachineOSBuild(ctx, old, cur)
+// Executes whenever a MachineOSBuild is updated.
+func (b *buildReconciler) UpdateMachineOSBuild(ctx context.Context, old, cur *mcfgv1alpha1.MachineOSBuild) error {
+	return b.timeObjectOperation(cur, updatingVerb, func() error {
+		return b.updateMachineOSBuild(ctx, old, cur)
 	})
 }
 
-func (m *buildReconciler) updateMachineOSBuild(ctx context.Context, _, current *mcfgv1alpha1.MachineOSBuild) error {
-	mosc, err := m.getMachineOSConfigForMachineOSBuild(current)
+// Performs the reconciliation whenever the MachineOSBuild is updated, such as
+// cleaning up the build artifacts upon success.
+func (b *buildReconciler) updateMachineOSBuild(ctx context.Context, _, current *mcfgv1alpha1.MachineOSBuild) error {
+	mosc, err := b.getMachineOSConfigForMachineOSBuild(current)
 	if err != nil {
 		return err
 	}
 
 	if apihelpers.IsMachineOSBuildConditionTrue(current.Status.Conditions, mcfgv1alpha1.MachineOSBuildSucceeded) {
 		klog.Infof("MachineOSBuild %s succeeded, cleaning up all ephemeral objects used for the build", current.Name)
-		if err := imagebuilder.NewPodImageBuilder(m.kubeclient, m.mcfgclient, current, mosc).Clean(ctx); err != nil {
+		if err := imagebuilder.NewPodImageBuilder(b.kubeclient, b.mcfgclient, current, mosc).Clean(ctx); err != nil {
 			return err
 		}
 
 		return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-			newMosc, err := m.machineOSConfigLister.Get(mosc.Name)
+			newMosc, err := b.machineOSConfigLister.Get(mosc.Name)
 			if err != nil {
 				return err
 			}
@@ -177,7 +171,7 @@ func (m *buildReconciler) updateMachineOSBuild(ctx context.Context, _, current *
 			copied := newMosc.DeepCopy()
 			copied.Status.CurrentImagePullspec = current.Status.FinalImagePushspec
 
-			_, err = m.mcfgclient.MachineconfigurationV1alpha1().MachineOSConfigs().UpdateStatus(ctx, copied, metav1.UpdateOptions{})
+			_, err = b.mcfgclient.MachineconfigurationV1alpha1().MachineOSConfigs().UpdateStatus(ctx, copied, metav1.UpdateOptions{})
 			if err == nil {
 				klog.Infof("Updated status on MachineOSConfig %s", mosc.Name)
 			}
@@ -189,34 +183,40 @@ func (m *buildReconciler) updateMachineOSBuild(ctx context.Context, _, current *
 	return nil
 }
 
-func (m *buildReconciler) DeleteMachineOSBuild(ctx context.Context, mosb *mcfgv1alpha1.MachineOSBuild) error {
-	return m.timeObjectOperation(mosb, "Deleting", func() error {
-		return m.deleteMachineOSBuildAndBuilder(ctx, mosb)
+// Executes whenever a MachineOSBuild is deleted by cleaning up any remaining build artifacts that may be left behind.
+func (b *buildReconciler) DeleteMachineOSBuild(ctx context.Context, mosb *mcfgv1alpha1.MachineOSBuild) error {
+	return b.timeObjectOperation(mosb, deletingVerb, func() error {
+		return b.deleteMachineOSBuildAndBuilder(ctx, mosb)
 	})
 }
 
-func (m *buildReconciler) UpdateMachineConfigPool(ctx context.Context, oldMCP, curMCP *mcfgv1.MachineConfigPool) error {
-	return m.timeObjectOperation(curMCP, "Updating", func() error {
-		return m.updateMachineConfigPool(ctx, oldMCP, curMCP)
+// Executes whenever a MachineConfigPool is updated .
+func (b *buildReconciler) UpdateMachineConfigPool(ctx context.Context, oldMCP, curMCP *mcfgv1.MachineConfigPool) error {
+	return b.timeObjectOperation(curMCP, updatingVerb, func() error {
+		return b.updateMachineConfigPool(ctx, oldMCP, curMCP)
 	})
 }
 
-func (m *buildReconciler) updateMachineConfigPool(ctx context.Context, oldMCP, curMCP *mcfgv1.MachineConfigPool) error {
+// Performs the reconciliation whenever a MachineConfigPool is updated.
+// Sepcifically, whenever a new rendered MachineConfig is applied, it will
+// create a new MachineOSBuild in response.
+func (b *buildReconciler) updateMachineConfigPool(ctx context.Context, oldMCP, curMCP *mcfgv1.MachineConfigPool) error {
 	if oldMCP.Spec.Configuration.Name != curMCP.Spec.Configuration.Name {
 		klog.Infof("Rendered config for pool %s changed from %s to %s", curMCP.Name, oldMCP.Spec.Configuration.Name, curMCP.Spec.Configuration.Name)
-		return m.createMachineOSBuildForPoolChange(ctx, curMCP)
+		return b.createMachineOSBuildForPoolChange(ctx, curMCP)
 	}
 
 	return nil
 }
 
-func (m *buildReconciler) getMachineOSConfigForMachineOSBuild(mosb *mcfgv1alpha1.MachineOSBuild) (*mcfgv1alpha1.MachineOSConfig, error) {
+// Resolves the MachineOSConfig for a given MachineOSBuild.
+func (b *buildReconciler) getMachineOSConfigForMachineOSBuild(mosb *mcfgv1alpha1.MachineOSBuild) (*mcfgv1alpha1.MachineOSConfig, error) {
 	moscName, ok := mosb.Labels[constants.MachineOSConfigNameLabelKey]
 	if moscName == "" || !ok {
 		return nil, fmt.Errorf("MachineOSBuild is missing label %s", constants.MachineOSConfigNameLabelKey)
 	}
 
-	mosc, err := m.machineOSConfigLister.Get(moscName)
+	mosc, err := b.machineOSConfigLister.Get(moscName)
 	if err != nil {
 		return nil, fmt.Errorf("could not get MachineOSConfig %s for MachineOSBuild: %w", moscName, err)
 	}
@@ -224,25 +224,26 @@ func (m *buildReconciler) getMachineOSConfigForMachineOSBuild(mosb *mcfgv1alpha1
 	return mosc, nil
 }
 
-func (m *buildReconciler) startBuild(ctx context.Context, mosb *mcfgv1alpha1.MachineOSBuild) error {
-	mosc, err := m.getMachineOSConfigForMachineOSBuild(mosb)
+// Starts executing a build for a given MachineOSBuild.
+func (b *buildReconciler) startBuild(ctx context.Context, mosb *mcfgv1alpha1.MachineOSBuild) error {
+	mosc, err := b.getMachineOSConfigForMachineOSBuild(mosb)
 	if err != nil {
 		return err
 	}
 
 	// If there are any other in-progress builds for this MachineOSConfig, stop them first.
-	if err := m.deleteOtherBuildsForMachineOSConfig(ctx, mosb, mosc); err != nil {
+	if err := b.deleteOtherBuildsForMachineOSConfig(ctx, mosb, mosc); err != nil {
 		return fmt.Errorf("could not reconcile all MachineOSBuilds for MachineOSConfig %s: %w", mosc.Name, err)
 	}
 
 	// Next, create our new MachineOSBuild.
-	if err := imagebuilder.NewPodImageBuilder(m.kubeclient, m.mcfgclient, mosb, mosc).Start(ctx); err != nil {
+	if err := imagebuilder.NewPodImageBuilder(b.kubeclient, b.mcfgclient, mosb, mosc).Start(ctx); err != nil {
 		return err
 	}
 
 	klog.Infof("Started new build %s for MachineOSBuild", utils.GetBuildPodName(mosb))
 
-	// Update our MachineOSConfig.
+	// Update the MachineOSConfig with an annotation indicating what the currently running build is.
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		moscCopy := mosc.DeepCopy()
 
@@ -257,20 +258,21 @@ func (m *buildReconciler) startBuild(ctx context.Context, mosb *mcfgv1alpha1.Mac
 		}
 
 		moscCopy.Annotations[constants.CurrentMachineOSBuildAnnotationKey] = mosb.Name
-		_, err = m.mcfgclient.MachineconfigurationV1alpha1().MachineOSConfigs().Update(ctx, moscCopy, metav1.UpdateOptions{})
+		_, err = b.mcfgclient.MachineconfigurationV1alpha1().MachineOSConfigs().Update(ctx, moscCopy, metav1.UpdateOptions{})
 		return err
 	})
 }
 
-func (m *buildReconciler) createMachineOSBuildForPoolChange(ctx context.Context, mcp *mcfgv1.MachineConfigPool) error {
-	moscList, err := m.machineOSConfigLister.List(labels.Everything())
+// Creates a MachineOSBuild in response to MachineConfigPool changes.
+func (b *buildReconciler) createMachineOSBuildForPoolChange(ctx context.Context, mcp *mcfgv1.MachineConfigPool) error {
+	moscList, err := b.machineOSConfigLister.List(labels.Everything())
 	if err != nil {
 		return err
 	}
 
 	for _, mosc := range moscList {
 		if mosc.Spec.MachineConfigPool.Name == mcp.Name {
-			return m.createMachineOSBuild(ctx, mosc.DeepCopy())
+			return b.createMachineOSBuild(ctx, mosc.DeepCopy())
 		}
 	}
 
@@ -279,8 +281,9 @@ func (m *buildReconciler) createMachineOSBuildForPoolChange(ctx context.Context,
 	return nil
 }
 
-func (m *buildReconciler) createMachineOSBuild(ctx context.Context, mosc *mcfgv1alpha1.MachineOSConfig) error {
-	mcp, err := m.machineConfigPoolLister.Get(mosc.Spec.MachineConfigPool.Name)
+// Executes whenever a new MachineOSBuild is created.
+func (b *buildReconciler) createMachineOSBuild(ctx context.Context, mosc *mcfgv1alpha1.MachineOSConfig) error {
+	mcp, err := b.machineConfigPoolLister.Get(mosc.Spec.MachineConfigPool.Name)
 	if err != nil {
 		return fmt.Errorf("could not get MachineConfigPool %s for MachineOSConfig %s: %w", mosc.Spec.MachineConfigPool.Name, mosc.Name, err)
 	}
@@ -289,12 +292,12 @@ func (m *buildReconciler) createMachineOSBuild(ctx context.Context, mosc *mcfgv1
 		return errors.Join(fmt.Errorf("MachineConfigPool %s is degraded", mcp.Name), ctrlcommon.ErrDropFromQueue)
 	}
 
-	osImageURLs, err := ctrlcommon.GetOSImageURLConfig(ctx, m.kubeclient)
+	osImageURLs, err := ctrlcommon.GetOSImageURLConfig(ctx, b.kubeclient)
 	if err != nil {
 		return fmt.Errorf("could not get OSImageURLConfig: %w", err)
 	}
 
-	imagesConfig, err := ctrlcommon.GetImagesConfig(ctx, m.kubeclient)
+	imagesConfig, err := ctrlcommon.GetImagesConfig(ctx, b.kubeclient)
 	if err != nil {
 		return fmt.Errorf("could not get Images config: %w", err)
 	}
@@ -312,9 +315,9 @@ func (m *buildReconciler) createMachineOSBuild(ctx context.Context, mosc *mcfgv1
 		return fmt.Errorf("could not instantiate new MachineOSBuild: %w", err)
 	}
 
-	_, err = m.machineOSBuildLister.Get(mosb.Name)
+	_, err = b.machineOSBuildLister.Get(mosb.Name)
 	if k8serrors.IsNotFound(err) {
-		_, err := m.mcfgclient.MachineconfigurationV1alpha1().MachineOSBuilds().Create(ctx, mosb, metav1.CreateOptions{})
+		_, err := b.mcfgclient.MachineconfigurationV1alpha1().MachineOSBuilds().Create(ctx, mosb, metav1.CreateOptions{})
 		if err == nil {
 			klog.Infof("New MachineOSBuild created: %s", mosb.Name)
 			return nil
@@ -329,14 +332,15 @@ func (m *buildReconciler) createMachineOSBuild(ctx context.Context, mosc *mcfgv1
 	return err
 }
 
-func (m *buildReconciler) updateMachineOSBuildWithStatus(ctx context.Context, obj metav1.Object) error {
+// Gets the status from the running build and applies it to the MachineOSBuild.
+func (b *buildReconciler) updateMachineOSBuildWithStatus(ctx context.Context, obj metav1.Object) error {
 	builder, err := buildrequest.NewBuilder(obj)
 	if err != nil {
 		klog.Infof("%s does not have the required metadata: %s", obj.GetName(), err.Error())
 		return nil
 	}
 
-	mosb, err := m.getMachineOSBuildForBuilder(builder)
+	mosb, err := b.getMachineOSBuildForBuilder(builder)
 	if err != nil {
 		// If we can't find the MachineOSConfig at this point, it means that it was
 		// probably deleted. Instead of trying to reconcile the status, we'll drop
@@ -348,7 +352,7 @@ func (m *buildReconciler) updateMachineOSBuildWithStatus(ctx context.Context, ob
 		return err
 	}
 
-	mosc, err := m.getMachineOSConfigForBuilder(builder)
+	mosc, err := b.getMachineOSConfigForBuilder(builder)
 	if err != nil {
 		// If we can't find the MachineOSConfig at this point, it means that it was
 		// probably deleted. Instead of trying to reconcile the status, we'll drop
@@ -360,7 +364,7 @@ func (m *buildReconciler) updateMachineOSBuildWithStatus(ctx context.Context, ob
 		return err
 	}
 
-	observer := imagebuilder.NewPodImageBuildObserver(m.kubeclient, m.mcfgclient, mosb, mosc)
+	observer := imagebuilder.NewPodImageBuildObserver(b.kubeclient, b.mcfgclient, mosb, mosc)
 
 	status, err := observer.MachineOSBuildStatus(ctx)
 	if err != nil {
@@ -368,7 +372,7 @@ func (m *buildReconciler) updateMachineOSBuildWithStatus(ctx context.Context, ob
 	}
 
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		newMosb, err := m.machineOSBuildLister.Get(mosb.Name)
+		newMosb, err := b.machineOSBuildLister.Get(mosb.Name)
 		if err != nil {
 			return err
 		}
@@ -385,7 +389,7 @@ func (m *buildReconciler) updateMachineOSBuildWithStatus(ctx context.Context, ob
 		bs.Build.Status.BuildEnd = status.BuildEnd
 		bs.Build.Status.BuilderReference = status.BuilderReference
 
-		_, err = m.mcfgclient.MachineconfigurationV1alpha1().MachineOSBuilds().UpdateStatus(ctx, bs.Build, metav1.UpdateOptions{})
+		_, err = b.mcfgclient.MachineconfigurationV1alpha1().MachineOSBuilds().UpdateStatus(ctx, bs.Build, metav1.UpdateOptions{})
 		if err == nil {
 			klog.Infof("Updated status on MachineOSBuild %s", bs.Build.Name)
 		}
@@ -394,6 +398,7 @@ func (m *buildReconciler) updateMachineOSBuildWithStatus(ctx context.Context, ob
 	})
 }
 
+// Resolves the MachineOSBuild for a given builder.
 func (p *buildReconciler) getMachineOSBuildForBuilder(builder buildrequest.Builder) (*mcfgv1alpha1.MachineOSBuild, error) {
 	mosbName, err := builder.MachineOSBuild()
 	if err != nil {
@@ -408,6 +413,7 @@ func (p *buildReconciler) getMachineOSBuildForBuilder(builder buildrequest.Build
 	return mosb.DeepCopy(), nil
 }
 
+// Resolves the MachineOSConfig for a given builder.
 func (p *buildReconciler) getMachineOSConfigForBuilder(builder buildrequest.Builder) (*mcfgv1alpha1.MachineOSConfig, error) {
 	moscName, err := builder.MachineOSConfig()
 	if err != nil {
@@ -422,22 +428,24 @@ func (p *buildReconciler) getMachineOSConfigForBuilder(builder buildrequest.Buil
 	return mosc.DeepCopy(), nil
 }
 
-func (m *buildReconciler) deleteMachineOSBuildAndBuilder(ctx context.Context, mosb *mcfgv1alpha1.MachineOSBuild) error {
-	if err := imagebuilder.NewPodImageBuildCleaner(m.kubeclient, m.mcfgclient, mosb).Clean(ctx); err != nil {
+// Deletes the MachineOSBuild as well as the underlying builder objects.
+func (b *buildReconciler) deleteMachineOSBuildAndBuilder(ctx context.Context, mosb *mcfgv1alpha1.MachineOSBuild) error {
+	if err := imagebuilder.NewPodImageBuildCleaner(b.kubeclient, b.mcfgclient, mosb).Clean(ctx); err != nil {
 		return fmt.Errorf("could not clean build %s: %w", mosb.Name, err)
 	}
 
-	if err := m.deleteMachineOSBuild(ctx, mosb); err != nil {
+	if err := b.deleteMachineOSBuild(ctx, mosb); err != nil {
 		return fmt.Errorf("could not delete MachineOSBuild %s: %w", mosb.Name, err)
 	}
 
 	return nil
 }
 
-func (m *buildReconciler) deleteMachineOSBuild(ctx context.Context, mosb *mcfgv1alpha1.MachineOSBuild) error {
+// Deletes the MachineOSBuild.
+func (b *buildReconciler) deleteMachineOSBuild(ctx context.Context, mosb *mcfgv1alpha1.MachineOSBuild) error {
 	moscName := mosb.Labels[constants.MachineOSConfigNameLabelKey]
 
-	err := m.mcfgclient.MachineconfigurationV1alpha1().MachineOSBuilds().Delete(ctx, mosb.Name, metav1.DeleteOptions{})
+	err := b.mcfgclient.MachineconfigurationV1alpha1().MachineOSBuilds().Delete(ctx, mosb.Name, metav1.DeleteOptions{})
 	if err == nil {
 		klog.Infof("Deleted MachineOSBuild %s for MachineOSConfig %s", mosb.Name, moscName)
 		return nil
@@ -451,8 +459,9 @@ func (m *buildReconciler) deleteMachineOSBuild(ctx context.Context, mosb *mcfgv1
 	return fmt.Errorf("could not delete MachineOSBuild %s for MachineOSConfig %s: %w", mosb.Name, moscName, err)
 }
 
-func (m *buildReconciler) deleteOtherBuildsForMachineOSConfig(ctx context.Context, newMosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig) error {
-	mosbList, err := m.getMachineOSBuildsForMachineOSConfig(mosc)
+// Finds any other running builds for a given MachineOSConfig and deletes them.
+func (b *buildReconciler) deleteOtherBuildsForMachineOSConfig(ctx context.Context, newMosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig) error {
+	mosbList, err := b.getMachineOSBuildsForMachineOSConfig(mosc)
 	if err != nil {
 		return fmt.Errorf("could not get MachineOSBuilds for MachineOSConfig %s: %w", mosc.Name, err)
 	}
@@ -466,7 +475,7 @@ func (m *buildReconciler) deleteOtherBuildsForMachineOSConfig(ctx context.Contex
 		// If the build is in any other state except for "success", delete it.
 		if isMachineOSBuildAnythingButSucceeded(mosb) {
 			klog.Infof("Found running MachineOSBuild %s for MachineOSConfig %s, deleting...", mosb.Name, mosc.Name)
-			if err := m.deleteMachineOSBuildAndBuilder(ctx, mosb); err != nil {
+			if err := b.deleteMachineOSBuildAndBuilder(ctx, mosb); err != nil {
 				return fmt.Errorf("could not delete running MachineOSBuild %s: %w", mosb.Name, err)
 			}
 		}
@@ -475,35 +484,38 @@ func (m *buildReconciler) deleteOtherBuildsForMachineOSConfig(ctx context.Contex
 	return nil
 }
 
-func (m *buildReconciler) getMachineOSBuild(name string) (*mcfgv1alpha1.MachineOSBuild, error) {
-	mosb, err := m.machineOSBuildLister.Get(name)
-	if err == nil {
-		return mosb, nil
-	}
-
-	if k8serrors.IsNotFound(err) {
-		return nil, nil
-	}
-
-	return nil, err
-}
-
-func (m *buildReconciler) doesMachineOSBuildExist(name string) (bool, error) {
-	mosb, err := m.getMachineOSBuild(name)
-	if err != nil {
-		return false, err
-	}
-
-	return mosb != nil, nil
-}
-
-func (m *buildReconciler) getMachineOSBuildsForMachineOSConfig(mosc *mcfgv1alpha1.MachineOSConfig) ([]*mcfgv1alpha1.MachineOSBuild, error) {
+// Gets a list of MachineOSBuilds for a given MachineOSConfig.
+func (b *buildReconciler) getMachineOSBuildsForMachineOSConfig(mosc *mcfgv1alpha1.MachineOSConfig) ([]*mcfgv1alpha1.MachineOSBuild, error) {
 	sel := utils.MachineOSBuildForPoolSelector(mosc)
 
-	mosbList, err := m.machineOSBuildLister.List(sel)
+	mosbList, err := b.machineOSBuildLister.List(sel)
 	if err != nil {
 		return nil, fmt.Errorf("could not get MachineOSBuilds for MachineOSConfig %s: %w", mosc.Name, err)
 	}
 
 	return mosbList, nil
+}
+
+// Times how long a given operation takes to complete.
+func (b *buildReconciler) timeObjectOperation(obj kubeObject, op string, toRun func() error) error {
+	start := time.Now()
+
+	kind, err := utils.GetKindForObject(obj)
+	if err != nil && kind == "" {
+		kind = "<unknown object kind>"
+	}
+
+	detail := fmt.Sprintf("%s %s %q", op, kind, obj.GetName())
+
+	klog.Infof(detail)
+
+	defer func() {
+		klog.Infof("Finished %s %s %q after %s", strings.ToLower(op), kind, obj.GetName(), time.Since(start))
+	}()
+
+	if err := toRun(); err != nil {
+		return fmt.Errorf("%s failed: %w", detail, err)
+	}
+
+	return nil
 }
