@@ -3,6 +3,7 @@ package build
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/containers/image/v5/docker/reference"
@@ -345,6 +346,7 @@ func (ctrl *Controller) customBuildPodUpdater(pod *corev1.Pod) error {
 	// still running. The pod phase in this state will still be "Running" as
 	// opposed to error.
 	if isBuildPodError(pod) {
+		klog.Errorln(getBuildPodErrorString(pod))
 		if err := ctrl.markBuildFailed(mosc, mosb); err != nil {
 			return err
 		}
@@ -1226,6 +1228,24 @@ func isBuildPodError(pod *corev1.Pod) bool {
 	}
 
 	return false
+}
+
+func getBuildPodErrorString(pod *corev1.Pod) string {
+	out := []string{
+		fmt.Sprintf("pod %s is in error state as follows", pod.Name),
+	}
+
+	for _, container := range pod.Status.ContainerStatuses {
+		if container.State.Waiting != nil {
+			out = append(out, fmt.Sprintf("container %q is waiting because of reason %q", container.Name, container.State.Waiting.Reason))
+		}
+
+		if container.State.Terminated != nil && container.State.Terminated.ExitCode != 0 {
+			out = append(out, fmt.Sprintf("container %q is terminated with exit code %d", container.Name, container.State.Terminated.ExitCode))
+		}
+	}
+
+	return strings.Join(out, ": ")
 }
 
 // Computes the name for the MachineOSBuild object. In the future, this will
