@@ -4,8 +4,8 @@ package v1
 
 import (
 	v1 "github.com/openshift/api/operator/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/client-go/listers"
 	"k8s.io/client-go/tools/cache"
 )
 
@@ -23,30 +23,10 @@ type ClusterCSIDriverLister interface {
 
 // clusterCSIDriverLister implements the ClusterCSIDriverLister interface.
 type clusterCSIDriverLister struct {
-	indexer cache.Indexer
+	listers.ResourceIndexer[*v1.ClusterCSIDriver]
 }
 
 // NewClusterCSIDriverLister returns a new ClusterCSIDriverLister.
 func NewClusterCSIDriverLister(indexer cache.Indexer) ClusterCSIDriverLister {
-	return &clusterCSIDriverLister{indexer: indexer}
-}
-
-// List lists all ClusterCSIDrivers in the indexer.
-func (s *clusterCSIDriverLister) List(selector labels.Selector) (ret []*v1.ClusterCSIDriver, err error) {
-	err = cache.ListAll(s.indexer, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1.ClusterCSIDriver))
-	})
-	return ret, err
-}
-
-// Get retrieves the ClusterCSIDriver from the index for a given name.
-func (s *clusterCSIDriverLister) Get(name string) (*v1.ClusterCSIDriver, error) {
-	obj, exists, err := s.indexer.GetByKey(name)
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
-		return nil, errors.NewNotFound(v1.Resource("clustercsidriver"), name)
-	}
-	return obj.(*v1.ClusterCSIDriver), nil
+	return &clusterCSIDriverLister{listers.New[*v1.ClusterCSIDriver](indexer, v1.Resource("clustercsidriver"))}
 }

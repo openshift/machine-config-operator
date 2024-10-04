@@ -245,3 +245,27 @@ func ApplyDaemonSetWithForce(ctx context.Context, client appsclientv1.DaemonSets
 	resourcehelper.ReportUpdateEvent(recorder, required, err)
 	return actual, true, err
 }
+
+func DeleteDeployment(ctx context.Context, client appsclientv1.DeploymentsGetter, recorder events.Recorder, required *appsv1.Deployment) (*appsv1.Deployment, bool, error) {
+	err := client.Deployments(required.Namespace).Delete(ctx, required.Name, metav1.DeleteOptions{})
+	if err != nil && apierrors.IsNotFound(err) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	resourcehelper.ReportDeleteEvent(recorder, required, err)
+	return nil, true, nil
+}
+
+func DeleteDaemonSet(ctx context.Context, client appsclientv1.DaemonSetsGetter, recorder events.Recorder, required *appsv1.DaemonSet) (*appsv1.DaemonSet, bool, error) {
+	err := client.DaemonSets(required.Namespace).Delete(ctx, required.Name, metav1.DeleteOptions{})
+	if err != nil && apierrors.IsNotFound(err) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	resourcehelper.ReportDeleteEvent(recorder, required, err)
+	return nil, true, nil
+}

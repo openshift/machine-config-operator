@@ -6,13 +6,13 @@ import (
 	v1 "github.com/openshift/api/operator/v1"
 )
 
-// AdditionalRoutingCapabilitiesApplyConfiguration represents an declarative configuration of the AdditionalRoutingCapabilities type for use
+// AdditionalRoutingCapabilitiesApplyConfiguration represents a declarative configuration of the AdditionalRoutingCapabilities type for use
 // with apply.
 type AdditionalRoutingCapabilitiesApplyConfiguration struct {
 	Providers []v1.RoutingCapabilitiesProvider `json:"providers,omitempty"`
 }
 
-// AdditionalRoutingCapabilitiesApplyConfiguration constructs an declarative configuration of the AdditionalRoutingCapabilities type for use with
+// AdditionalRoutingCapabilitiesApplyConfiguration constructs a declarative configuration of the AdditionalRoutingCapabilities type for use with
 // apply.
 func AdditionalRoutingCapabilities() *AdditionalRoutingCapabilitiesApplyConfiguration {
 	return &AdditionalRoutingCapabilitiesApplyConfiguration{}
