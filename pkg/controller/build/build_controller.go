@@ -772,6 +772,7 @@ func (ctrl *Controller) markBuildSucceeded(mosc *mcfgv1alpha1.MachineOSConfig, m
 
 		// now, all we need is to make sure this is used all around. (node controller, getters, etc)
 		mosc.Status.CurrentImagePullspec = sha
+		mosc.Status.ObservedGeneration += mosc.GetGeneration()
 		mosb.Status.FinalImagePushspec = sha
 
 		if err := ctrl.postBuildCleanup(mosc, mosb, false); err != nil {
