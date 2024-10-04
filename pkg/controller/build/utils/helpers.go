@@ -11,6 +11,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
+// Gets the Kind for a given object by constructing a new Scheme and adding all
+// of the objects to it.
 func GetKindForObject(obj runtime.Object) (string, error) {
 	s := runtime.NewScheme()
 	corev1.AddToScheme(s)
@@ -85,6 +87,7 @@ func getFieldFromMachineOSBuild(mosb *mcfgv1alpha1.MachineOSBuild) string {
 	return mosb.Name
 }
 
+// Validates that a given secret is an image pull secret.
 func ValidatePullSecret(secret *corev1.Secret) error {
 	_, err := GetPullSecretKey(secret)
 

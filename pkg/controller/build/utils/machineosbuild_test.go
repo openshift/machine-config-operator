@@ -13,6 +13,7 @@ import (
 	testhelpers "github.com/openshift/machine-config-operator/test/helpers"
 )
 
+// Tests that a MachineOSBuild can be constructed correctly.
 func TestMachineOSBuild(t *testing.T) {
 	t.Parallel()
 
