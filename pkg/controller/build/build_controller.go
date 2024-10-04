@@ -345,7 +345,7 @@ func (ctrl *Controller) customBuildPodUpdater(pod *corev1.Pod) error {
 	// container to enter an error state while the wait-for-done container is
 	// still running. The pod phase in this state will still be "Running" as
 	// opposed to error.
-	if isBuildPodError(pod) {
+	if isBuildPodError(pod) && pod.Status.Phase != corev1.PodPending {
 		klog.Errorln(getBuildPodErrorString(pod))
 		if err := ctrl.markBuildFailed(mosc, mosb); err != nil {
 			return err
