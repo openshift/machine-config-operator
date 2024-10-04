@@ -274,7 +274,7 @@ func TestMachineConfigPoolChangeRestartsBuild(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func mosbIsDeleted(mosb *mcfgv1alpha1.MachineOSBuild, err error) (bool, error) {
+func mosbDoesNotExist(mosb *mcfgv1alpha1.MachineOSBuild, err error) (bool, error) {
 	if err == nil {
 		return false, nil
 	}
@@ -630,16 +630,16 @@ func waitForBuildToStart(t *testing.T, cs *framework.ClientSet, build *mcfgv1alp
 
 	start := time.Now()
 
-	kubeassert := framework.AssertClientSet(t, time.Second, cs)
-	kubeassert.MachineOSBuildIsCreated(ctx, build)
+	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx)
+	kubeassert.Eventually().MachineOSBuildExists(build)
 	t.Logf("MachineOSBuild %s created after %s", build.Name, time.Since(start))
-	kubeassert.MachineOSBuildIsRunning(ctx, build)
+	kubeassert.Eventually().MachineOSBuildIsRunning(build)
 	t.Logf("MachineOSBuild %s running after %s", build.Name, time.Since(start))
 
 	mosb, err := cs.MachineconfigurationV1alpha1Interface.MachineOSBuilds().Get(ctx, build.Name, metav1.GetOptions{})
 	require.NoError(t, err)
 
-	kubeassert.BuildPodIsCreated(ctx, utils.GetBuildPodName(mosb))
+	kubeassert.PodExists(utils.GetBuildPodName(mosb))
 	t.Logf("Build pod %s running after %s", utils.GetBuildPodName(mosb), time.Since(start))
 
 	return mosb
@@ -655,11 +655,11 @@ func waitForBuildToBeDeleted(t *testing.T, cs *framework.ClientSet, build *mcfgv
 	t.Logf("Waiting for MachineOSBuild %s to be deleted", build.Name)
 
 	start := time.Now()
-	kubeassert := framework.AssertClientSet(t, time.Second, cs)
-	kubeassert.MachineOSBuildIsDeleted(ctx, build)
+	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx)
+	kubeassert.Eventually().MachineOSBuildDoesNotExist(build)
 	t.Logf("MachineOSBuild %s deleted after %s", build.Name, time.Since(start))
 
-	kubeassert.BuildPodIsDeleted(ctx, utils.GetBuildPodName(build))
+	kubeassert.Eventually().PodDoesNotExist(utils.GetBuildPodName(build))
 	t.Logf("Build pod %s deleted after %s", utils.GetBuildPodName(build), time.Since(start))
 }
 
@@ -675,10 +675,10 @@ func waitForBuildToComplete(t *testing.T, cs *framework.ClientSet, startedBuild 
 
 	start := time.Now()
 
-	kubeassert := framework.AssertClientSet(t, time.Second, cs)
-	kubeassert.MachineOSBuildIsSuccessful(ctx, startedBuild)
+	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx)
+	kubeassert.Eventually().MachineOSBuildIsSuccessful(startedBuild)
 	t.Logf("MachineOSBuild %s successful after %s", startedBuild.Name, time.Since(start))
-	kubeassert.BuildPodIsDeleted(ctx, utils.GetBuildPodName(startedBuild))
+	kubeassert.Eventually().PodDoesNotExist(utils.GetBuildPodName(startedBuild))
 	t.Logf("Build pod %s deleted after %s", utils.GetBuildPodName(startedBuild), time.Since(start))
 
 	mosb, err := cs.MachineconfigurationV1alpha1Interface.MachineOSBuilds().Get(ctx, startedBuild.Name, metav1.GetOptions{})

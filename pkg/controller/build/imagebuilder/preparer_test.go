@@ -7,7 +7,7 @@ import (
 
 	"github.com/openshift/machine-config-operator/pkg/controller/build/buildrequest"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/fixtures"
-	"github.com/openshift/machine-config-operator/test/framework"
+	testhelpers "github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -28,7 +28,7 @@ func TestPreparer(t *testing.T) {
 	addlObjects := append(lobj2.ToRuntimeObjects(), lobj3.ToRuntimeObjects()...)
 	kubeclient, mcfgclient, _ := fixtures.GetClientsForTestWithAdditionalObjects([]runtime.Object{}, addlObjects)
 
-	kubeassert := framework.Assert(t, time.Millisecond, kubeclient, mcfgclient)
+	kubeassert := testhelpers.Assert(t, kubeclient, mcfgclient).WithContext(ctx).Now()
 
 	// Create three preparers assigned to their own MachineOSBuild though sharing
 	// the same kubeclient and mcfgclient objects.
@@ -92,7 +92,7 @@ func TestPreparer(t *testing.T) {
 	assertObjectsAreRemovedByCleaner(ctx, t, kubeassert, br3)
 }
 
-func assertObjectsAreCreatedByPreparer(ctx context.Context, t *testing.T, kubeassert *framework.Assertions, br buildrequest.BuildRequest) {
+func assertObjectsAreCreatedByPreparer(ctx context.Context, t *testing.T, kubeassert *testhelpers.Assertions, br buildrequest.BuildRequest) {
 	configmaps, err := br.ConfigMaps()
 	require.NoError(t, err)
 
@@ -100,15 +100,15 @@ func assertObjectsAreCreatedByPreparer(ctx context.Context, t *testing.T, kubeas
 	require.NoError(t, err)
 
 	for _, expectedConfigMap := range configmaps {
-		kubeassert.ConfigMapIsCreated(ctx, expectedConfigMap.Name)
+		kubeassert.WithContext(ctx).Now().ConfigMapExists(expectedConfigMap.Name)
 	}
 
 	for _, expectedSecret := range secrets {
-		kubeassert.SecretIsCreated(ctx, expectedSecret.Name)
+		kubeassert.WithContext(ctx).Now().SecretExists(expectedSecret.Name)
 	}
 }
 
-func assertObjectsAreRemovedByCleaner(ctx context.Context, t *testing.T, kubeassert *framework.Assertions, br buildrequest.BuildRequest) {
+func assertObjectsAreRemovedByCleaner(ctx context.Context, t *testing.T, kubeassert *testhelpers.Assertions, br buildrequest.BuildRequest) {
 	configmaps, err := br.ConfigMaps()
 	require.NoError(t, err)
 
@@ -116,10 +116,10 @@ func assertObjectsAreRemovedByCleaner(ctx context.Context, t *testing.T, kubeass
 	require.NoError(t, err)
 
 	for _, expectedConfigMap := range configmaps {
-		kubeassert.ConfigMapIsDeleted(ctx, expectedConfigMap.Name)
+		kubeassert.WithContext(ctx).Now().ConfigMapDoesNotExist(expectedConfigMap.Name)
 	}
 
 	for _, expectedSecret := range secrets {
-		kubeassert.SecretIsDeleted(ctx, expectedSecret.Name)
+		kubeassert.WithContext(ctx).Now().SecretDoesNotExist(expectedSecret.Name)
 	}
 }

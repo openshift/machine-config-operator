@@ -13,25 +13,26 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/fixtures"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
-	"github.com/openshift/machine-config-operator/test/framework"
+	testhelpers "github.com/openshift/machine-config-operator/test/helpers"
 )
 
 func TestPodImageBuilder(t *testing.T) {
 	t.Parallel()
 
 	kubeclient, mcfgclient, lobj := fixtures.GetClientsForTest()
-	kubeassert := framework.Assert(t, time.Millisecond, kubeclient, mcfgclient)
 
 	pim := NewPodImageBuilder(kubeclient, mcfgclient, lobj.MachineOSBuild, lobj.MachineOSConfig)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	t.Cleanup(cancel)
 
+	kubeassert := testhelpers.Assert(t, kubeclient, mcfgclient).WithContext(ctx)
+
 	assert.NoError(t, pim.Start(ctx))
 
 	buildPodName := utils.GetBuildPodName(lobj.MachineOSBuild)
 
-	kubeassert.BuildPodIsCreated(ctx, buildPodName)
+	kubeassert.Now().PodExists(buildPodName)
 	assertObjectsAreCreatedByPreparer(ctx, t, kubeassert, pim.(*podImageBuilder).buildrequest)
 
 	podPhases := []corev1.PodPhase{
@@ -51,7 +52,8 @@ func TestPodImageBuilder(t *testing.T) {
 
 	require.NoError(t, pim.Clean(ctx))
 
-	kubeassert.BuildPodIsDeleted(ctx, buildPodName)
+	kubeassert.Now().PodDoesNotExist(buildPodName)
+
 	assertObjectsAreRemovedByCleaner(ctx, t, kubeassert, pim.(*podImageBuilder).buildrequest)
 
 	require.NoError(t, pim.Stop(ctx))
@@ -97,14 +99,14 @@ func TestPodImageBuilderCanCleanWithOnlyMachineOSBuild(t *testing.T) {
 
 	buildPodName := utils.GetBuildPodName(lobj.MachineOSBuild)
 
-	kubeassert := framework.Assert(t, time.Millisecond, kubeclient, mcfgclient)
+	kubeassert := testhelpers.Assert(t, kubeclient, mcfgclient).WithContext(ctx)
 
-	kubeassert.BuildPodIsCreated(ctx, buildPodName)
+	kubeassert.PodExists(buildPodName)
 	assertObjectsAreCreatedByPreparer(ctx, t, kubeassert, pim.(*podImageBuilder).buildrequest)
 
 	cleaner := NewPodImageBuildCleaner(kubeclient, mcfgclient, lobj.MachineOSBuild)
 	assert.NoError(t, cleaner.Clean(ctx))
 
-	kubeassert.BuildPodIsDeleted(ctx, buildPodName)
+	kubeassert.PodDoesNotExist(buildPodName)
 	assertObjectsAreRemovedByCleaner(ctx, t, kubeassert, pim.(*podImageBuilder).buildrequest)
 }

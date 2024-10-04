@@ -14,7 +14,6 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/controller/build/fixtures"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	"github.com/openshift/machine-config-operator/test/framework"
 	testhelpers "github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -59,13 +58,13 @@ func TestBuildControllerDeletesRunningBuildBeforeStartingANewOne(t *testing.T) {
 	initialBuildPodName := utils.GetBuildPodName(initialMosb)
 
 	// After creating the new MachineOSConfig, a MachineOSBuild should be created.
-	kubeassert.MachineOSBuildIsCreated(ctx, initialMosb, "Initial MachineOSBuild not created for MachineOSConfig %s", mosc.Name)
+	kubeassert.MachineOSBuildExists(initialMosb, "Initial MachineOSBuild not created for MachineOSConfig %s", mosc.Name)
 	// After a new MachineOSBuild is created, a pod should be created.
-	kubeassert.BuildPodIsCreated(ctx, initialBuildPodName, "Initial build pod %s did not get created for MachineOSConfig %s", initialBuildPodName, mosc.Name)
+	kubeassert.PodExists(initialBuildPodName, "Initial build pod %s did not get created for MachineOSConfig %s", initialBuildPodName, mosc.Name)
 	// Set the running status on the pod.
 	fixtures.SetPodPhase(ctx, t, clients.kubeclient, initialMosb, corev1.PodRunning)
 	// The MachineOSBuild should be running.
-	kubeassert.MachineOSBuildIsRunning(ctx, initialMosb, "Expected the MachineOSBuild %s status to be running", initialMosb.Name)
+	kubeassert.MachineOSBuildIsRunning(initialMosb, "Expected the MachineOSBuild %s status to be running", initialMosb.Name)
 
 	// Now that the build is in the running state, we update the MachineOSConfig.
 	apiMosc := testhelpers.SetContainerfileContentsOnMachineOSConfig(ctx, t, clients.mcfgclient, mosc, "FROM configs AS final\nRUN echo 'helloworld' > /etc/helloworld")
@@ -77,17 +76,17 @@ func TestBuildControllerDeletesRunningBuildBeforeStartingANewOne(t *testing.T) {
 	buildPodName := utils.GetBuildPodName(mosb)
 
 	// After creating the new MachineOSConfig, a MachineOSBuild should be created.
-	kubeassert.MachineOSBuildIsCreated(ctx, mosb, "MachineOSBuild not created for MachineOSConfig %s change", mosc.Name)
+	kubeassert.MachineOSBuildExists(mosb, "MachineOSBuild not created for MachineOSConfig %s change", mosc.Name)
 	// After a new MachineOSBuild is created, a pod should be created.
-	kubeassert.BuildPodIsCreated(ctx, buildPodName, "Build pod did not get created for MachineOSConfig %s change", mosc.Name)
+	kubeassert.PodExists(buildPodName, "Build pod did not get created for MachineOSConfig %s change", mosc.Name)
 	// Set the running status on the pod.
 	fixtures.SetPodPhase(ctx, t, clients.kubeclient, mosb, corev1.PodRunning)
 	// The MachineOSBuild should be running.
-	kubeassert.MachineOSBuildIsRunning(ctx, mosb, "Expected the MachineOSBuild %s status to be running", mosb.Name)
+	kubeassert.MachineOSBuildIsRunning(mosb, "Expected the MachineOSBuild %s status to be running", mosb.Name)
 
 	// AFter the new build starts, the old build should be deleted.
-	kubeassert.MachineOSBuildIsDeleted(ctx, initialMosb, "Expected the initial MachineOSBuild %s to be deleted", initialMosb.Name)
-	kubeassert.BuildPodIsDeleted(ctx, initialBuildPodName, "Expected the initial build pod %s to be deleted", initialBuildPodName)
+	kubeassert.MachineOSBuildDoesNotExist(initialMosb, "Expected the initial MachineOSBuild %s to be deleted", initialMosb.Name)
+	kubeassert.PodDoesNotExist(initialBuildPodName, "Expected the initial build pod %s to be deleted", initialBuildPodName)
 }
 
 // This test validates that the BuildController will not touch old successful builds.
@@ -100,10 +99,10 @@ func TestBuildControllerLeavesSuccessfulBuildAlone(t *testing.T) {
 	poolName := "worker"
 
 	clients, firstMosc, firstMosb, mcp, kubeassert := setupBuildControllerForTestWithBuild(ctx, t, poolName)
-	kubeassert.MachineOSBuildIsCreated(ctx, firstMosb)
-	kubeassert.BuildPodIsCreated(ctx, utils.GetBuildPodName(firstMosb))
+	kubeassert.MachineOSBuildExists(firstMosb)
+	kubeassert.PodExists(utils.GetBuildPodName(firstMosb))
 	fixtures.SetPodPhase(ctx, t, clients.kubeclient, firstMosb, corev1.PodSucceeded)
-	kubeassert.MachineOSBuildIsSuccessful(ctx, firstMosb)
+	kubeassert.MachineOSBuildIsSuccessful(firstMosb)
 
 	// Ensures that we have detected the first build.
 	isMachineOSBuildReachedExpectedCount(ctx, t, clients.mcfgclient, firstMosc, 1)
@@ -111,8 +110,8 @@ func TestBuildControllerLeavesSuccessfulBuildAlone(t *testing.T) {
 	// Next, we create the second build which we just leave running.
 	secondMosc := testhelpers.SetContainerfileContentsOnMachineOSConfig(ctx, t, clients.mcfgclient, firstMosc, "FROM configs AS final\nRUN echo 'hello' > /etc/hello")
 	secondMosb := utils.NewMachineOSBuildFromAPIOrDie(ctx, clients.kubeclient, secondMosc, mcp)
-	kubeassert.MachineOSBuildIsCreated(ctx, secondMosb)
-	kubeassert.BuildPodIsCreated(ctx, utils.GetBuildPodName(secondMosb))
+	kubeassert.MachineOSBuildExists(secondMosb)
+	kubeassert.PodExists(utils.GetBuildPodName(secondMosb))
 	fixtures.SetPodPhase(ctx, t, clients.kubeclient, secondMosb, corev1.PodRunning)
 
 	// Ensure that the build count has increased.
@@ -121,13 +120,13 @@ func TestBuildControllerLeavesSuccessfulBuildAlone(t *testing.T) {
 	// Next, we create the third build.
 	thirdMosc := testhelpers.SetContainerfileContentsOnMachineOSConfig(ctx, t, clients.mcfgclient, secondMosc, "FROM configs AS final\nRUN echo 'helloworld' > /etc/helloworld")
 	thirdMosb := utils.NewMachineOSBuildFromAPIOrDie(ctx, clients.kubeclient, thirdMosc, mcp)
-	kubeassert.MachineOSBuildIsCreated(ctx, thirdMosb)
-	kubeassert.BuildPodIsCreated(ctx, utils.GetBuildPodName(thirdMosb))
+	kubeassert.MachineOSBuildExists(thirdMosb)
+	kubeassert.PodExists(utils.GetBuildPodName(thirdMosb))
 	fixtures.SetPodPhase(ctx, t, clients.kubeclient, thirdMosb, corev1.PodRunning)
 
 	// We ensure that the second build is deleted.
-	kubeassert.MachineOSBuildIsDeleted(ctx, secondMosb)
-	kubeassert.BuildPodIsDeleted(ctx, utils.GetBuildPodName(secondMosb))
+	kubeassert.MachineOSBuildDoesNotExist(secondMosb)
+	kubeassert.PodDoesNotExist(utils.GetBuildPodName(secondMosb))
 
 	// Ensure that the build count has not changed due to the second build being cancelled..
 	isMachineOSBuildReachedExpectedCount(ctx, t, clients.mcfgclient, thirdMosc, 2)
@@ -145,16 +144,16 @@ func TestBuildControllerFailure(t *testing.T) {
 	poolName := "worker"
 
 	clients, _, mosb, _, kubeassert := setupBuildControllerForTestWithBuild(ctx, t, poolName)
-	kubeassert.MachineOSBuildIsCreated(ctx, mosb)
-	kubeassert.BuildPodIsCreated(ctx, utils.GetBuildPodName(mosb))
+	kubeassert.MachineOSBuildExists(mosb)
+	kubeassert.PodExists(utils.GetBuildPodName(mosb))
 	fixtures.SetPodPhase(ctx, t, clients.kubeclient, mosb, corev1.PodFailed)
-	kubeassert.MachineOSBuildIsFailure(ctx, mosb)
+	kubeassert.MachineOSBuildIsFailure(mosb)
 
-	kubeassert.BuildPodIsCreated(ctx, utils.GetBuildPodName(mosb))
-	kubeassert.ConfigMapIsCreated(ctx, utils.GetContainerfileConfigMapName(mosb))
-	kubeassert.ConfigMapIsCreated(ctx, utils.GetMCConfigMapName(mosb))
-	kubeassert.SecretIsCreated(ctx, utils.GetBasePullSecretName(mosb))
-	kubeassert.SecretIsCreated(ctx, utils.GetFinalPushSecretName(mosb))
+	kubeassert.PodExists(utils.GetBuildPodName(mosb))
+	kubeassert.ConfigMapExists(utils.GetContainerfileConfigMapName(mosb))
+	kubeassert.ConfigMapExists(utils.GetMCConfigMapName(mosb))
+	kubeassert.SecretExists(utils.GetBasePullSecretName(mosb))
+	kubeassert.SecretExists(utils.GetFinalPushSecretName(mosb))
 }
 
 // This test validates that the BuildController does the following:
@@ -182,15 +181,15 @@ func TestBuildController(t *testing.T) {
 
 	buildPodName := utils.GetBuildPodName(mosb)
 	// After creating the new MachineOSConfig, a MachineOSBuild should be created.
-	kubeassert.MachineOSBuildIsCreated(ctx, mosb, "Initial MachineOSBuild %s not created for MachineOSConfig %s", mosb.Name, mosc.Name)
+	kubeassert.MachineOSBuildExists(mosb, "Initial MachineOSBuild %s not created for MachineOSConfig %s", mosb.Name, mosc.Name)
 	// After a new MachineOSBuild is created, a pod should be created.
-	kubeassert.BuildPodIsCreated(ctx, buildPodName, "Initial build pod %s did not get created for MachineOSConfig %s", buildPodName, mosc.Name)
+	kubeassert.PodExists(buildPodName, "Initial build pod %s did not get created for MachineOSConfig %s", buildPodName, mosc.Name)
 	// Set the successful status on the pod.
 	fixtures.SetPodPhase(ctx, t, clients.kubeclient, mosb, corev1.PodSucceeded)
 	// The MachineOSBuild should be successful.
-	kubeassert.MachineOSBuildIsSuccessful(ctx, mosb, "Expected the MachineOSBuild %s status to be successful", mosb.Name)
+	kubeassert.MachineOSBuildIsSuccessful(mosb, "Expected the MachineOSBuild %s status to be successful", mosb.Name)
 	// And the build pod should be deleted.
-	kubeassert.BuildPodIsDeleted(ctx, buildPodName, "Expected the build pod %s to be deleted", buildPodName)
+	kubeassert.PodDoesNotExist(buildPodName, "Expected the build pod %s to be deleted", buildPodName)
 
 	// Next, update the BuildInputs section on the MachineOSConfig and verify
 	// that a new MachineOSBuild is produced from it. We'll do this 10 times.
@@ -203,19 +202,19 @@ func TestBuildController(t *testing.T) {
 		mosb := utils.NewMachineOSBuildFromAPIOrDie(ctx, clients.kubeclient, apiMosc, apiMCP)
 		buildPodName := utils.GetBuildPodName(mosb)
 		// After creating the new MachineOSConfig, a MachineOSBuild should be created.
-		kubeassert.MachineOSBuildIsCreated(ctx, mosb, "MachineOSBuild not created for MachineOSConfig %s change", mosc.Name)
+		kubeassert.MachineOSBuildExists(mosb, "MachineOSBuild not created for MachineOSConfig %s change", mosc.Name)
 
 		assertBuildObjectsAreCreated(ctx, t, kubeassert, mosb)
 		// After a new MachineOSBuild is created, a pod should be created.
-		kubeassert.BuildPodIsCreated(ctx, buildPodName, "Build pod did not get created for MachineOSConfig %s change", mosc.Name)
+		kubeassert.PodExists(buildPodName, "Build pod did not get created for MachineOSConfig %s change", mosc.Name)
 		// Set the successful status on the pod.
 		fixtures.SetPodPhase(ctx, t, clients.kubeclient, mosb, corev1.PodSucceeded)
 		// The MachineOSBuild should be successful.
-		kubeassert.MachineOSBuildIsSuccessful(ctx, mosb, "Expected the MachineOSBuild %s status to be successful", mosb.Name)
+		kubeassert.MachineOSBuildIsSuccessful(mosb, "Expected the MachineOSBuild %s status to be successful", mosb.Name)
 		// And the build pod should be deleted.
 
 		assertBuildObjectsAreDeleted(ctx, t, kubeassert, mosb)
-		kubeassert.BuildPodIsDeleted(ctx, buildPodName, "Expected the build pod %s to be deleted", buildPodName)
+		kubeassert.PodDoesNotExist(buildPodName, "Expected the build pod %s to be deleted", buildPodName)
 	}
 
 	// Next, update the rendered MachineConfig on the MachineConfigPool and verify that a new MachineOSBuild is produced. We'll do this 10 times.
@@ -228,15 +227,15 @@ func TestBuildController(t *testing.T) {
 		mosb := utils.NewMachineOSBuildFromAPIOrDie(ctx, clients.kubeclient, apiMosc, apiMCP)
 		buildPodName := utils.GetBuildPodName(mosb)
 		// After updating the MachineConfigPool, a new MachineOSBuild should get created.
-		kubeassert.MachineOSBuildIsCreated(ctx, mosb, "New MachineOSBuild for MachineConfigPool %q update for MachineOSConfig %q never gets created", mcp.Name, mosc.Name)
+		kubeassert.MachineOSBuildExists(mosb, "New MachineOSBuild for MachineConfigPool %q update for MachineOSConfig %q never gets created", mcp.Name, mosc.Name)
 		// After a new MachineOSBuild is created, a pod should be created.
-		kubeassert.BuildPodIsCreated(ctx, buildPodName, "Build pod did not get created for MachineConfigPool %q change", mcp.Name)
+		kubeassert.PodExists(buildPodName, "Build pod did not get created for MachineConfigPool %q change", mcp.Name)
 		// Set the successful status on the pod.
 		fixtures.SetPodPhase(ctx, t, clients.kubeclient, mosb, corev1.PodSucceeded)
 		// The MachineOSBuild should be successful.
-		kubeassert.MachineOSBuildIsSuccessful(ctx, mosb, "Expected the MachineOSBuild %s status to be successful", mosb.Name)
+		kubeassert.MachineOSBuildIsSuccessful(mosb, "Expected the MachineOSBuild %s status to be successful", mosb.Name)
 		// And the build pod should be deleted.
-		kubeassert.BuildPodIsDeleted(ctx, buildPodName, "Expected the build pod %s to be deleted", buildPodName)
+		kubeassert.PodDoesNotExist(buildPodName, "Expected the build pod %s to be deleted", buildPodName)
 	}
 
 	// Now, we delete the MachineOSConfig and we expect that all
@@ -247,27 +246,27 @@ func TestBuildController(t *testing.T) {
 	isMachineOSBuildReachedExpectedCount(ctx, t, clients.mcfgclient, mosc, 0)
 }
 
-func assertBuildObjectsAreCreated(ctx context.Context, t *testing.T, kubeassert *framework.Assertions, mosb *mcfgv1alpha1.MachineOSBuild) {
+func assertBuildObjectsAreCreated(ctx context.Context, t *testing.T, kubeassert *testhelpers.Assertions, mosb *mcfgv1alpha1.MachineOSBuild) {
 	t.Helper()
 
-	kubeassert.BuildPodIsCreated(ctx, utils.GetBuildPodName(mosb))
-	kubeassert.ConfigMapIsCreated(ctx, utils.GetContainerfileConfigMapName(mosb))
-	kubeassert.ConfigMapIsCreated(ctx, utils.GetMCConfigMapName(mosb))
-	kubeassert.SecretIsCreated(ctx, utils.GetBasePullSecretName(mosb))
-	kubeassert.SecretIsCreated(ctx, utils.GetFinalPushSecretName(mosb))
+	kubeassert.PodExists(utils.GetBuildPodName(mosb))
+	kubeassert.ConfigMapExists(utils.GetContainerfileConfigMapName(mosb))
+	kubeassert.ConfigMapExists(utils.GetMCConfigMapName(mosb))
+	kubeassert.SecretExists(utils.GetBasePullSecretName(mosb))
+	kubeassert.SecretExists(utils.GetFinalPushSecretName(mosb))
 }
 
-func assertBuildObjectsAreDeleted(ctx context.Context, t *testing.T, kubeassert *framework.Assertions, mosb *mcfgv1alpha1.MachineOSBuild) {
+func assertBuildObjectsAreDeleted(ctx context.Context, t *testing.T, kubeassert *testhelpers.Assertions, mosb *mcfgv1alpha1.MachineOSBuild) {
 	t.Helper()
 
-	kubeassert.BuildPodIsDeleted(ctx, utils.GetBuildPodName(mosb))
-	kubeassert.ConfigMapIsDeleted(ctx, utils.GetContainerfileConfigMapName(mosb))
-	kubeassert.ConfigMapIsDeleted(ctx, utils.GetMCConfigMapName(mosb))
-	kubeassert.SecretIsDeleted(ctx, utils.GetBasePullSecretName(mosb))
-	kubeassert.SecretIsDeleted(ctx, utils.GetFinalPushSecretName(mosb))
+	kubeassert.PodDoesNotExist(utils.GetBuildPodName(mosb))
+	kubeassert.ConfigMapDoesNotExist(utils.GetContainerfileConfigMapName(mosb))
+	kubeassert.ConfigMapDoesNotExist(utils.GetMCConfigMapName(mosb))
+	kubeassert.SecretDoesNotExist(utils.GetBasePullSecretName(mosb))
+	kubeassert.SecretDoesNotExist(utils.GetFinalPushSecretName(mosb))
 }
 
-func setupBuildControllerForTest(ctx context.Context, t *testing.T) (*Clients, *framework.Assertions, *fixtures.LayeredObjectsForTest) {
+func setupBuildControllerForTest(ctx context.Context, t *testing.T) (*Clients, *testhelpers.Assertions, *fixtures.LayeredObjectsForTest) {
 	kubeclient, mcfgclient, lobj := fixtures.GetClientsForTest()
 
 	clients := &Clients{
@@ -285,12 +284,12 @@ func setupBuildControllerForTest(ctx context.Context, t *testing.T) (*Clients, *
 
 	go ctrl.Run(ctx, 5)
 
-	kubeassert := framework.Assert(t, time.Millisecond, clients.kubeclient, clients.mcfgclient)
+	kubeassert := testhelpers.Assert(t, clients.kubeclient, clients.mcfgclient).WithContext(ctx).Eventually().WithPollInterval(time.Millisecond)
 
 	return clients, kubeassert, lobj
 }
 
-func setupBuildControllerForTestWithBuild(ctx context.Context, t *testing.T, poolName string) (*Clients, *mcfgv1alpha1.MachineOSConfig, *mcfgv1alpha1.MachineOSBuild, *mcfgv1.MachineConfigPool, *framework.Assertions) {
+func setupBuildControllerForTestWithBuild(ctx context.Context, t *testing.T, poolName string) (*Clients, *mcfgv1alpha1.MachineOSConfig, *mcfgv1alpha1.MachineOSBuild, *mcfgv1.MachineConfigPool, *testhelpers.Assertions) {
 	clients, kubeassert, lobj := setupBuildControllerForTest(ctx, t)
 
 	mcp := lobj.MachineConfigPool
