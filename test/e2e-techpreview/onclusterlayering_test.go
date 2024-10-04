@@ -24,7 +24,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/openshift/machine-config-operator/pkg/controller/build/buildrequest"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -640,8 +639,8 @@ func waitForBuildToStart(t *testing.T, cs *framework.ClientSet, build *mcfgv1alp
 	mosb, err := cs.MachineconfigurationV1alpha1Interface.MachineOSBuilds().Get(ctx, build.Name, metav1.GetOptions{})
 	require.NoError(t, err)
 
-	kubeassert.BuildPodIsCreated(ctx, buildrequest.GetBuildPodName(mosb))
-	t.Logf("Build pod %s running after %s", buildrequest.GetBuildPodName(mosb), time.Since(start))
+	kubeassert.BuildPodIsCreated(ctx, utils.GetBuildPodName(mosb))
+	t.Logf("Build pod %s running after %s", utils.GetBuildPodName(mosb), time.Since(start))
 
 	return mosb
 }
@@ -660,8 +659,8 @@ func waitForBuildToBeDeleted(t *testing.T, cs *framework.ClientSet, build *mcfgv
 	kubeassert.MachineOSBuildIsDeleted(ctx, build)
 	t.Logf("MachineOSBuild %s deleted after %s", build.Name, time.Since(start))
 
-	kubeassert.BuildPodIsDeleted(ctx, buildrequest.GetBuildPodName(build))
-	t.Logf("Build pod %s deleted after %s", buildrequest.GetBuildPodName(build), time.Since(start))
+	kubeassert.BuildPodIsDeleted(ctx, utils.GetBuildPodName(build))
+	t.Logf("Build pod %s deleted after %s", utils.GetBuildPodName(build), time.Since(start))
 }
 
 // Waits for the given MachineOSBuild to complete and returns the completed
@@ -679,8 +678,8 @@ func waitForBuildToComplete(t *testing.T, cs *framework.ClientSet, startedBuild 
 	kubeassert := framework.AssertClientSet(t, time.Second, cs)
 	kubeassert.MachineOSBuildIsSuccessful(ctx, startedBuild)
 	t.Logf("MachineOSBuild %s successful after %s", startedBuild.Name, time.Since(start))
-	kubeassert.BuildPodIsDeleted(ctx, buildrequest.GetBuildPodName(startedBuild))
-	t.Logf("Build pod %s deleted after %s", buildrequest.GetBuildPodName(startedBuild), time.Since(start))
+	kubeassert.BuildPodIsDeleted(ctx, utils.GetBuildPodName(startedBuild))
+	t.Logf("Build pod %s deleted after %s", utils.GetBuildPodName(startedBuild), time.Since(start))
 
 	mosb, err := cs.MachineconfigurationV1alpha1Interface.MachineOSBuilds().Get(ctx, startedBuild.Name, metav1.GetOptions{})
 	require.NoError(t, err)
