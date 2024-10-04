@@ -27,20 +27,22 @@ var servicecatalogapiserversKind = v1.SchemeGroupVersion.WithKind("ServiceCatalo
 
 // Get takes name of the serviceCatalogAPIServer, and returns the corresponding serviceCatalogAPIServer object, and an error if there is any.
 func (c *FakeServiceCatalogAPIServers) Get(ctx context.Context, name string, options metav1.GetOptions) (result *v1.ServiceCatalogAPIServer, err error) {
+	emptyResult := &v1.ServiceCatalogAPIServer{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootGetAction(servicecatalogapiserversResource, name), &v1.ServiceCatalogAPIServer{})
+		Invokes(testing.NewRootGetActionWithOptions(servicecatalogapiserversResource, name, options), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.ServiceCatalogAPIServer), err
 }
 
 // List takes label and field selectors, and returns the list of ServiceCatalogAPIServers that match those selectors.
 func (c *FakeServiceCatalogAPIServers) List(ctx context.Context, opts metav1.ListOptions) (result *v1.ServiceCatalogAPIServerList, err error) {
+	emptyResult := &v1.ServiceCatalogAPIServerList{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootListAction(servicecatalogapiserversResource, servicecatalogapiserversKind, opts), &v1.ServiceCatalogAPIServerList{})
+		Invokes(testing.NewRootListActionWithOptions(servicecatalogapiserversResource, servicecatalogapiserversKind, opts), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 
 	label, _, _ := testing.ExtractFromListOptions(opts)
@@ -59,36 +61,39 @@ func (c *FakeServiceCatalogAPIServers) List(ctx context.Context, opts metav1.Lis
 // Watch returns a watch.Interface that watches the requested serviceCatalogAPIServers.
 func (c *FakeServiceCatalogAPIServers) Watch(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error) {
 	return c.Fake.
-		InvokesWatch(testing.NewRootWatchAction(servicecatalogapiserversResource, opts))
+		InvokesWatch(testing.NewRootWatchActionWithOptions(servicecatalogapiserversResource, opts))
 }
 
 // Create takes the representation of a serviceCatalogAPIServer and creates it.  Returns the server's representation of the serviceCatalogAPIServer, and an error, if there is any.
 func (c *FakeServiceCatalogAPIServers) Create(ctx context.Context, serviceCatalogAPIServer *v1.ServiceCatalogAPIServer, opts metav1.CreateOptions) (result *v1.ServiceCatalogAPIServer, err error) {
+	emptyResult := &v1.ServiceCatalogAPIServer{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootCreateAction(servicecatalogapiserversResource, serviceCatalogAPIServer), &v1.ServiceCatalogAPIServer{})
+		Invokes(testing.NewRootCreateActionWithOptions(servicecatalogapiserversResource, serviceCatalogAPIServer, opts), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.ServiceCatalogAPIServer), err
 }
 
 // Update takes the representation of a serviceCatalogAPIServer and updates it. Returns the server's representation of the serviceCatalogAPIServer, and an error, if there is any.
 func (c *FakeServiceCatalogAPIServers) Update(ctx context.Context, serviceCatalogAPIServer *v1.ServiceCatalogAPIServer, opts metav1.UpdateOptions) (result *v1.ServiceCatalogAPIServer, err error) {
+	emptyResult := &v1.ServiceCatalogAPIServer{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootUpdateAction(servicecatalogapiserversResource, serviceCatalogAPIServer), &v1.ServiceCatalogAPIServer{})
+		Invokes(testing.NewRootUpdateActionWithOptions(servicecatalogapiserversResource, serviceCatalogAPIServer, opts), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.ServiceCatalogAPIServer), err
 }
 
 // UpdateStatus was generated because the type contains a Status member.
 // Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-func (c *FakeServiceCatalogAPIServers) UpdateStatus(ctx context.Context, serviceCatalogAPIServer *v1.ServiceCatalogAPIServer, opts metav1.UpdateOptions) (*v1.ServiceCatalogAPIServer, error) {
+func (c *FakeServiceCatalogAPIServers) UpdateStatus(ctx context.Context, serviceCatalogAPIServer *v1.ServiceCatalogAPIServer, opts metav1.UpdateOptions) (result *v1.ServiceCatalogAPIServer, err error) {
+	emptyResult := &v1.ServiceCatalogAPIServer{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootUpdateSubresourceAction(servicecatalogapiserversResource, "status", serviceCatalogAPIServer), &v1.ServiceCatalogAPIServer{})
+		Invokes(testing.NewRootUpdateSubresourceActionWithOptions(servicecatalogapiserversResource, "status", serviceCatalogAPIServer, opts), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.ServiceCatalogAPIServer), err
 }
@@ -102,7 +107,7 @@ func (c *FakeServiceCatalogAPIServers) Delete(ctx context.Context, name string, 
 
 // DeleteCollection deletes a collection of objects.
 func (c *FakeServiceCatalogAPIServers) DeleteCollection(ctx context.Context, opts metav1.DeleteOptions, listOpts metav1.ListOptions) error {
-	action := testing.NewRootDeleteCollectionAction(servicecatalogapiserversResource, listOpts)
+	action := testing.NewRootDeleteCollectionActionWithOptions(servicecatalogapiserversResource, opts, listOpts)
 
 	_, err := c.Fake.Invokes(action, &v1.ServiceCatalogAPIServerList{})
 	return err
@@ -110,10 +115,11 @@ func (c *FakeServiceCatalogAPIServers) DeleteCollection(ctx context.Context, opt
 
 // Patch applies the patch and returns the patched serviceCatalogAPIServer.
 func (c *FakeServiceCatalogAPIServers) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts metav1.PatchOptions, subresources ...string) (result *v1.ServiceCatalogAPIServer, err error) {
+	emptyResult := &v1.ServiceCatalogAPIServer{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootPatchSubresourceAction(servicecatalogapiserversResource, name, pt, data, subresources...), &v1.ServiceCatalogAPIServer{})
+		Invokes(testing.NewRootPatchSubresourceActionWithOptions(servicecatalogapiserversResource, name, pt, data, opts, subresources...), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.ServiceCatalogAPIServer), err
 }
@@ -131,10 +137,11 @@ func (c *FakeServiceCatalogAPIServers) Apply(ctx context.Context, serviceCatalog
 	if name == nil {
 		return nil, fmt.Errorf("serviceCatalogAPIServer.Name must be provided to Apply")
 	}
+	emptyResult := &v1.ServiceCatalogAPIServer{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootPatchSubresourceAction(servicecatalogapiserversResource, *name, types.ApplyPatchType, data), &v1.ServiceCatalogAPIServer{})
+		Invokes(testing.NewRootPatchSubresourceActionWithOptions(servicecatalogapiserversResource, *name, types.ApplyPatchType, data, opts.ToPatchOptions()), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.ServiceCatalogAPIServer), err
 }
@@ -153,10 +160,11 @@ func (c *FakeServiceCatalogAPIServers) ApplyStatus(ctx context.Context, serviceC
 	if name == nil {
 		return nil, fmt.Errorf("serviceCatalogAPIServer.Name must be provided to Apply")
 	}
+	emptyResult := &v1.ServiceCatalogAPIServer{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootPatchSubresourceAction(servicecatalogapiserversResource, *name, types.ApplyPatchType, data, "status"), &v1.ServiceCatalogAPIServer{})
+		Invokes(testing.NewRootPatchSubresourceActionWithOptions(servicecatalogapiserversResource, *name, types.ApplyPatchType, data, opts.ToPatchOptions(), "status"), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.ServiceCatalogAPIServer), err
 }

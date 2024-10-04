@@ -27,20 +27,22 @@ var etcdbackupsKind = v1alpha1.SchemeGroupVersion.WithKind("EtcdBackup")
 
 // Get takes name of the etcdBackup, and returns the corresponding etcdBackup object, and an error if there is any.
 func (c *FakeEtcdBackups) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.EtcdBackup, err error) {
+	emptyResult := &v1alpha1.EtcdBackup{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootGetAction(etcdbackupsResource, name), &v1alpha1.EtcdBackup{})
+		Invokes(testing.NewRootGetActionWithOptions(etcdbackupsResource, name, options), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1alpha1.EtcdBackup), err
 }
 
 // List takes label and field selectors, and returns the list of EtcdBackups that match those selectors.
 func (c *FakeEtcdBackups) List(ctx context.Context, opts v1.ListOptions) (result *v1alpha1.EtcdBackupList, err error) {
+	emptyResult := &v1alpha1.EtcdBackupList{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootListAction(etcdbackupsResource, etcdbackupsKind, opts), &v1alpha1.EtcdBackupList{})
+		Invokes(testing.NewRootListActionWithOptions(etcdbackupsResource, etcdbackupsKind, opts), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 
 	label, _, _ := testing.ExtractFromListOptions(opts)
@@ -59,36 +61,39 @@ func (c *FakeEtcdBackups) List(ctx context.Context, opts v1.ListOptions) (result
 // Watch returns a watch.Interface that watches the requested etcdBackups.
 func (c *FakeEtcdBackups) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
 	return c.Fake.
-		InvokesWatch(testing.NewRootWatchAction(etcdbackupsResource, opts))
+		InvokesWatch(testing.NewRootWatchActionWithOptions(etcdbackupsResource, opts))
 }
 
 // Create takes the representation of a etcdBackup and creates it.  Returns the server's representation of the etcdBackup, and an error, if there is any.
 func (c *FakeEtcdBackups) Create(ctx context.Context, etcdBackup *v1alpha1.EtcdBackup, opts v1.CreateOptions) (result *v1alpha1.EtcdBackup, err error) {
+	emptyResult := &v1alpha1.EtcdBackup{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootCreateAction(etcdbackupsResource, etcdBackup), &v1alpha1.EtcdBackup{})
+		Invokes(testing.NewRootCreateActionWithOptions(etcdbackupsResource, etcdBackup, opts), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1alpha1.EtcdBackup), err
 }
 
 // Update takes the representation of a etcdBackup and updates it. Returns the server's representation of the etcdBackup, and an error, if there is any.
 func (c *FakeEtcdBackups) Update(ctx context.Context, etcdBackup *v1alpha1.EtcdBackup, opts v1.UpdateOptions) (result *v1alpha1.EtcdBackup, err error) {
+	emptyResult := &v1alpha1.EtcdBackup{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootUpdateAction(etcdbackupsResource, etcdBackup), &v1alpha1.EtcdBackup{})
+		Invokes(testing.NewRootUpdateActionWithOptions(etcdbackupsResource, etcdBackup, opts), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1alpha1.EtcdBackup), err
 }
 
 // UpdateStatus was generated because the type contains a Status member.
 // Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-func (c *FakeEtcdBackups) UpdateStatus(ctx context.Context, etcdBackup *v1alpha1.EtcdBackup, opts v1.UpdateOptions) (*v1alpha1.EtcdBackup, error) {
+func (c *FakeEtcdBackups) UpdateStatus(ctx context.Context, etcdBackup *v1alpha1.EtcdBackup, opts v1.UpdateOptions) (result *v1alpha1.EtcdBackup, err error) {
+	emptyResult := &v1alpha1.EtcdBackup{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootUpdateSubresourceAction(etcdbackupsResource, "status", etcdBackup), &v1alpha1.EtcdBackup{})
+		Invokes(testing.NewRootUpdateSubresourceActionWithOptions(etcdbackupsResource, "status", etcdBackup, opts), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1alpha1.EtcdBackup), err
 }
@@ -102,7 +107,7 @@ func (c *FakeEtcdBackups) Delete(ctx context.Context, name string, opts v1.Delet
 
 // DeleteCollection deletes a collection of objects.
 func (c *FakeEtcdBackups) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
-	action := testing.NewRootDeleteCollectionAction(etcdbackupsResource, listOpts)
+	action := testing.NewRootDeleteCollectionActionWithOptions(etcdbackupsResource, opts, listOpts)
 
 	_, err := c.Fake.Invokes(action, &v1alpha1.EtcdBackupList{})
 	return err
@@ -110,10 +115,11 @@ func (c *FakeEtcdBackups) DeleteCollection(ctx context.Context, opts v1.DeleteOp
 
 // Patch applies the patch and returns the patched etcdBackup.
 func (c *FakeEtcdBackups) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1alpha1.EtcdBackup, err error) {
+	emptyResult := &v1alpha1.EtcdBackup{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootPatchSubresourceAction(etcdbackupsResource, name, pt, data, subresources...), &v1alpha1.EtcdBackup{})
+		Invokes(testing.NewRootPatchSubresourceActionWithOptions(etcdbackupsResource, name, pt, data, opts, subresources...), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1alpha1.EtcdBackup), err
 }
@@ -131,10 +137,11 @@ func (c *FakeEtcdBackups) Apply(ctx context.Context, etcdBackup *operatorv1alpha
 	if name == nil {
 		return nil, fmt.Errorf("etcdBackup.Name must be provided to Apply")
 	}
+	emptyResult := &v1alpha1.EtcdBackup{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootPatchSubresourceAction(etcdbackupsResource, *name, types.ApplyPatchType, data), &v1alpha1.EtcdBackup{})
+		Invokes(testing.NewRootPatchSubresourceActionWithOptions(etcdbackupsResource, *name, types.ApplyPatchType, data, opts.ToPatchOptions()), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1alpha1.EtcdBackup), err
 }
@@ -153,10 +160,11 @@ func (c *FakeEtcdBackups) ApplyStatus(ctx context.Context, etcdBackup *operatorv
 	if name == nil {
 		return nil, fmt.Errorf("etcdBackup.Name must be provided to Apply")
 	}
+	emptyResult := &v1alpha1.EtcdBackup{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootPatchSubresourceAction(etcdbackupsResource, *name, types.ApplyPatchType, data, "status"), &v1alpha1.EtcdBackup{})
+		Invokes(testing.NewRootPatchSubresourceActionWithOptions(etcdbackupsResource, *name, types.ApplyPatchType, data, opts.ToPatchOptions(), "status"), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1alpha1.EtcdBackup), err
 }

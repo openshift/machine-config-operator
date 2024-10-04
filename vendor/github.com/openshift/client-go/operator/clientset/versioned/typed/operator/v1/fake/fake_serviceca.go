@@ -27,20 +27,22 @@ var servicecasKind = v1.SchemeGroupVersion.WithKind("ServiceCA")
 
 // Get takes name of the serviceCA, and returns the corresponding serviceCA object, and an error if there is any.
 func (c *FakeServiceCAs) Get(ctx context.Context, name string, options metav1.GetOptions) (result *v1.ServiceCA, err error) {
+	emptyResult := &v1.ServiceCA{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootGetAction(servicecasResource, name), &v1.ServiceCA{})
+		Invokes(testing.NewRootGetActionWithOptions(servicecasResource, name, options), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.ServiceCA), err
 }
 
 // List takes label and field selectors, and returns the list of ServiceCAs that match those selectors.
 func (c *FakeServiceCAs) List(ctx context.Context, opts metav1.ListOptions) (result *v1.ServiceCAList, err error) {
+	emptyResult := &v1.ServiceCAList{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootListAction(servicecasResource, servicecasKind, opts), &v1.ServiceCAList{})
+		Invokes(testing.NewRootListActionWithOptions(servicecasResource, servicecasKind, opts), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 
 	label, _, _ := testing.ExtractFromListOptions(opts)
@@ -59,36 +61,39 @@ func (c *FakeServiceCAs) List(ctx context.Context, opts metav1.ListOptions) (res
 // Watch returns a watch.Interface that watches the requested serviceCAs.
 func (c *FakeServiceCAs) Watch(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error) {
 	return c.Fake.
-		InvokesWatch(testing.NewRootWatchAction(servicecasResource, opts))
+		InvokesWatch(testing.NewRootWatchActionWithOptions(servicecasResource, opts))
 }
 
 // Create takes the representation of a serviceCA and creates it.  Returns the server's representation of the serviceCA, and an error, if there is any.
 func (c *FakeServiceCAs) Create(ctx context.Context, serviceCA *v1.ServiceCA, opts metav1.CreateOptions) (result *v1.ServiceCA, err error) {
+	emptyResult := &v1.ServiceCA{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootCreateAction(servicecasResource, serviceCA), &v1.ServiceCA{})
+		Invokes(testing.NewRootCreateActionWithOptions(servicecasResource, serviceCA, opts), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.ServiceCA), err
 }
 
 // Update takes the representation of a serviceCA and updates it. Returns the server's representation of the serviceCA, and an error, if there is any.
 func (c *FakeServiceCAs) Update(ctx context.Context, serviceCA *v1.ServiceCA, opts metav1.UpdateOptions) (result *v1.ServiceCA, err error) {
+	emptyResult := &v1.ServiceCA{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootUpdateAction(servicecasResource, serviceCA), &v1.ServiceCA{})
+		Invokes(testing.NewRootUpdateActionWithOptions(servicecasResource, serviceCA, opts), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.ServiceCA), err
 }
 
 // UpdateStatus was generated because the type contains a Status member.
 // Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-func (c *FakeServiceCAs) UpdateStatus(ctx context.Context, serviceCA *v1.ServiceCA, opts metav1.UpdateOptions) (*v1.ServiceCA, error) {
+func (c *FakeServiceCAs) UpdateStatus(ctx context.Context, serviceCA *v1.ServiceCA, opts metav1.UpdateOptions) (result *v1.ServiceCA, err error) {
+	emptyResult := &v1.ServiceCA{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootUpdateSubresourceAction(servicecasResource, "status", serviceCA), &v1.ServiceCA{})
+		Invokes(testing.NewRootUpdateSubresourceActionWithOptions(servicecasResource, "status", serviceCA, opts), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.ServiceCA), err
 }
@@ -102,7 +107,7 @@ func (c *FakeServiceCAs) Delete(ctx context.Context, name string, opts metav1.De
 
 // DeleteCollection deletes a collection of objects.
 func (c *FakeServiceCAs) DeleteCollection(ctx context.Context, opts metav1.DeleteOptions, listOpts metav1.ListOptions) error {
-	action := testing.NewRootDeleteCollectionAction(servicecasResource, listOpts)
+	action := testing.NewRootDeleteCollectionActionWithOptions(servicecasResource, opts, listOpts)
 
 	_, err := c.Fake.Invokes(action, &v1.ServiceCAList{})
 	return err
@@ -110,10 +115,11 @@ func (c *FakeServiceCAs) DeleteCollection(ctx context.Context, opts metav1.Delet
 
 // Patch applies the patch and returns the patched serviceCA.
 func (c *FakeServiceCAs) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts metav1.PatchOptions, subresources ...string) (result *v1.ServiceCA, err error) {
+	emptyResult := &v1.ServiceCA{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootPatchSubresourceAction(servicecasResource, name, pt, data, subresources...), &v1.ServiceCA{})
+		Invokes(testing.NewRootPatchSubresourceActionWithOptions(servicecasResource, name, pt, data, opts, subresources...), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.ServiceCA), err
 }
@@ -131,10 +137,11 @@ func (c *FakeServiceCAs) Apply(ctx context.Context, serviceCA *operatorv1.Servic
 	if name == nil {
 		return nil, fmt.Errorf("serviceCA.Name must be provided to Apply")
 	}
+	emptyResult := &v1.ServiceCA{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootPatchSubresourceAction(servicecasResource, *name, types.ApplyPatchType, data), &v1.ServiceCA{})
+		Invokes(testing.NewRootPatchSubresourceActionWithOptions(servicecasResource, *name, types.ApplyPatchType, data, opts.ToPatchOptions()), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.ServiceCA), err
 }
@@ -153,10 +160,11 @@ func (c *FakeServiceCAs) ApplyStatus(ctx context.Context, serviceCA *operatorv1.
 	if name == nil {
 		return nil, fmt.Errorf("serviceCA.Name must be provided to Apply")
 	}
+	emptyResult := &v1.ServiceCA{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootPatchSubresourceAction(servicecasResource, *name, types.ApplyPatchType, data, "status"), &v1.ServiceCA{})
+		Invokes(testing.NewRootPatchSubresourceActionWithOptions(servicecasResource, *name, types.ApplyPatchType, data, opts.ToPatchOptions(), "status"), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.ServiceCA), err
 }

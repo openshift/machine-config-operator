@@ -28,22 +28,24 @@ var buildsKind = v1.SchemeGroupVersion.WithKind("Build")
 
 // Get takes name of the build, and returns the corresponding build object, and an error if there is any.
 func (c *FakeBuilds) Get(ctx context.Context, name string, options metav1.GetOptions) (result *v1.Build, err error) {
+	emptyResult := &v1.Build{}
 	obj, err := c.Fake.
-		Invokes(testing.NewGetAction(buildsResource, c.ns, name), &v1.Build{})
+		Invokes(testing.NewGetActionWithOptions(buildsResource, c.ns, name, options), emptyResult)
 
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.Build), err
 }
 
 // List takes label and field selectors, and returns the list of Builds that match those selectors.
 func (c *FakeBuilds) List(ctx context.Context, opts metav1.ListOptions) (result *v1.BuildList, err error) {
+	emptyResult := &v1.BuildList{}
 	obj, err := c.Fake.
-		Invokes(testing.NewListAction(buildsResource, buildsKind, c.ns, opts), &v1.BuildList{})
+		Invokes(testing.NewListActionWithOptions(buildsResource, buildsKind, c.ns, opts), emptyResult)
 
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 
 	label, _, _ := testing.ExtractFromListOptions(opts)
@@ -62,40 +64,43 @@ func (c *FakeBuilds) List(ctx context.Context, opts metav1.ListOptions) (result 
 // Watch returns a watch.Interface that watches the requested builds.
 func (c *FakeBuilds) Watch(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error) {
 	return c.Fake.
-		InvokesWatch(testing.NewWatchAction(buildsResource, c.ns, opts))
+		InvokesWatch(testing.NewWatchActionWithOptions(buildsResource, c.ns, opts))
 
 }
 
 // Create takes the representation of a build and creates it.  Returns the server's representation of the build, and an error, if there is any.
 func (c *FakeBuilds) Create(ctx context.Context, build *v1.Build, opts metav1.CreateOptions) (result *v1.Build, err error) {
+	emptyResult := &v1.Build{}
 	obj, err := c.Fake.
-		Invokes(testing.NewCreateAction(buildsResource, c.ns, build), &v1.Build{})
+		Invokes(testing.NewCreateActionWithOptions(buildsResource, c.ns, build, opts), emptyResult)
 
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.Build), err
 }
 
 // Update takes the representation of a build and updates it. Returns the server's representation of the build, and an error, if there is any.
 func (c *FakeBuilds) Update(ctx context.Context, build *v1.Build, opts metav1.UpdateOptions) (result *v1.Build, err error) {
+	emptyResult := &v1.Build{}
 	obj, err := c.Fake.
-		Invokes(testing.NewUpdateAction(buildsResource, c.ns, build), &v1.Build{})
+		Invokes(testing.NewUpdateActionWithOptions(buildsResource, c.ns, build, opts), emptyResult)
 
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.Build), err
 }
 
 // UpdateStatus was generated because the type contains a Status member.
 // Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-func (c *FakeBuilds) UpdateStatus(ctx context.Context, build *v1.Build, opts metav1.UpdateOptions) (*v1.Build, error) {
+func (c *FakeBuilds) UpdateStatus(ctx context.Context, build *v1.Build, opts metav1.UpdateOptions) (result *v1.Build, err error) {
+	emptyResult := &v1.Build{}
 	obj, err := c.Fake.
-		Invokes(testing.NewUpdateSubresourceAction(buildsResource, "status", c.ns, build), &v1.Build{})
+		Invokes(testing.NewUpdateSubresourceActionWithOptions(buildsResource, "status", c.ns, build, opts), emptyResult)
 
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.Build), err
 }
@@ -110,7 +115,7 @@ func (c *FakeBuilds) Delete(ctx context.Context, name string, opts metav1.Delete
 
 // DeleteCollection deletes a collection of objects.
 func (c *FakeBuilds) DeleteCollection(ctx context.Context, opts metav1.DeleteOptions, listOpts metav1.ListOptions) error {
-	action := testing.NewDeleteCollectionAction(buildsResource, c.ns, listOpts)
+	action := testing.NewDeleteCollectionActionWithOptions(buildsResource, c.ns, opts, listOpts)
 
 	_, err := c.Fake.Invokes(action, &v1.BuildList{})
 	return err
@@ -118,11 +123,12 @@ func (c *FakeBuilds) DeleteCollection(ctx context.Context, opts metav1.DeleteOpt
 
 // Patch applies the patch and returns the patched build.
 func (c *FakeBuilds) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts metav1.PatchOptions, subresources ...string) (result *v1.Build, err error) {
+	emptyResult := &v1.Build{}
 	obj, err := c.Fake.
-		Invokes(testing.NewPatchSubresourceAction(buildsResource, c.ns, name, pt, data, subresources...), &v1.Build{})
+		Invokes(testing.NewPatchSubresourceActionWithOptions(buildsResource, c.ns, name, pt, data, opts, subresources...), emptyResult)
 
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.Build), err
 }
@@ -140,11 +146,12 @@ func (c *FakeBuilds) Apply(ctx context.Context, build *buildv1.BuildApplyConfigu
 	if name == nil {
 		return nil, fmt.Errorf("build.Name must be provided to Apply")
 	}
+	emptyResult := &v1.Build{}
 	obj, err := c.Fake.
-		Invokes(testing.NewPatchSubresourceAction(buildsResource, c.ns, *name, types.ApplyPatchType, data), &v1.Build{})
+		Invokes(testing.NewPatchSubresourceActionWithOptions(buildsResource, c.ns, *name, types.ApplyPatchType, data, opts.ToPatchOptions()), emptyResult)
 
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.Build), err
 }
@@ -163,33 +170,36 @@ func (c *FakeBuilds) ApplyStatus(ctx context.Context, build *buildv1.BuildApplyC
 	if name == nil {
 		return nil, fmt.Errorf("build.Name must be provided to Apply")
 	}
+	emptyResult := &v1.Build{}
 	obj, err := c.Fake.
-		Invokes(testing.NewPatchSubresourceAction(buildsResource, c.ns, *name, types.ApplyPatchType, data, "status"), &v1.Build{})
+		Invokes(testing.NewPatchSubresourceActionWithOptions(buildsResource, c.ns, *name, types.ApplyPatchType, data, opts.ToPatchOptions(), "status"), emptyResult)
 
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.Build), err
 }
 
 // UpdateDetails takes the representation of a build and updates it. Returns the server's representation of the build, and an error, if there is any.
 func (c *FakeBuilds) UpdateDetails(ctx context.Context, buildName string, build *v1.Build, opts metav1.UpdateOptions) (result *v1.Build, err error) {
+	emptyResult := &v1.Build{}
 	obj, err := c.Fake.
-		Invokes(testing.NewUpdateSubresourceAction(buildsResource, "details", c.ns, build), &v1.Build{})
+		Invokes(testing.NewUpdateSubresourceActionWithOptions(buildsResource, "details", c.ns, build, opts), &v1.Build{})
 
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.Build), err
 }
 
 // Clone takes the representation of a buildRequest and creates it.  Returns the server's representation of the build, and an error, if there is any.
 func (c *FakeBuilds) Clone(ctx context.Context, buildName string, buildRequest *v1.BuildRequest, opts metav1.CreateOptions) (result *v1.Build, err error) {
+	emptyResult := &v1.Build{}
 	obj, err := c.Fake.
-		Invokes(testing.NewCreateSubresourceAction(buildsResource, buildName, "clone", c.ns, buildRequest), &v1.Build{})
+		Invokes(testing.NewCreateSubresourceActionWithOptions(buildsResource, buildName, "clone", c.ns, buildRequest, opts), emptyResult)
 
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.Build), err
 }

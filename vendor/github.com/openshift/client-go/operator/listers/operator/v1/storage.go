@@ -4,8 +4,8 @@ package v1
 
 import (
 	v1 "github.com/openshift/api/operator/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/client-go/listers"
 	"k8s.io/client-go/tools/cache"
 )
 
@@ -23,30 +23,10 @@ type StorageLister interface {
 
 // storageLister implements the StorageLister interface.
 type storageLister struct {
-	indexer cache.Indexer
+	listers.ResourceIndexer[*v1.Storage]
 }
 
 // NewStorageLister returns a new StorageLister.
 func NewStorageLister(indexer cache.Indexer) StorageLister {
-	return &storageLister{indexer: indexer}
-}
-
-// List lists all Storages in the indexer.
-func (s *storageLister) List(selector labels.Selector) (ret []*v1.Storage, err error) {
-	err = cache.ListAll(s.indexer, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1.Storage))
-	})
-	return ret, err
-}
-
-// Get retrieves the Storage from the index for a given name.
-func (s *storageLister) Get(name string) (*v1.Storage, error) {
-	obj, exists, err := s.indexer.GetByKey(name)
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
-		return nil, errors.NewNotFound(v1.Resource("storage"), name)
-	}
-	return obj.(*v1.Storage), nil
+	return &storageLister{listers.New[*v1.Storage](indexer, v1.Resource("storage"))}
 }

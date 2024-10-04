@@ -6,14 +6,14 @@ import (
 	v1 "github.com/openshift/api/operator/v1"
 )
 
-// CapabilityApplyConfiguration represents an declarative configuration of the Capability type for use
+// CapabilityApplyConfiguration represents a declarative configuration of the Capability type for use
 // with apply.
 type CapabilityApplyConfiguration struct {
 	Name       *v1.ConsoleCapabilityName               `json:"name,omitempty"`
 	Visibility *CapabilityVisibilityApplyConfiguration `json:"visibility,omitempty"`
 }
 
-// CapabilityApplyConfiguration constructs an declarative configuration of the Capability type for use with
+// CapabilityApplyConfiguration constructs a declarative configuration of the Capability type for use with
 // apply.
 func Capability() *CapabilityApplyConfiguration {
 	return &CapabilityApplyConfiguration{}

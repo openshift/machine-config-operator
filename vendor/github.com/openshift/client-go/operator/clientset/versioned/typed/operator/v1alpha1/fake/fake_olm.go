@@ -27,20 +27,22 @@ var olmsKind = v1alpha1.SchemeGroupVersion.WithKind("OLM")
 
 // Get takes name of the oLM, and returns the corresponding oLM object, and an error if there is any.
 func (c *FakeOLMs) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.OLM, err error) {
+	emptyResult := &v1alpha1.OLM{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootGetAction(olmsResource, name), &v1alpha1.OLM{})
+		Invokes(testing.NewRootGetActionWithOptions(olmsResource, name, options), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1alpha1.OLM), err
 }
 
 // List takes label and field selectors, and returns the list of OLMs that match those selectors.
 func (c *FakeOLMs) List(ctx context.Context, opts v1.ListOptions) (result *v1alpha1.OLMList, err error) {
+	emptyResult := &v1alpha1.OLMList{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootListAction(olmsResource, olmsKind, opts), &v1alpha1.OLMList{})
+		Invokes(testing.NewRootListActionWithOptions(olmsResource, olmsKind, opts), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 
 	label, _, _ := testing.ExtractFromListOptions(opts)
@@ -59,36 +61,39 @@ func (c *FakeOLMs) List(ctx context.Context, opts v1.ListOptions) (result *v1alp
 // Watch returns a watch.Interface that watches the requested oLMs.
 func (c *FakeOLMs) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
 	return c.Fake.
-		InvokesWatch(testing.NewRootWatchAction(olmsResource, opts))
+		InvokesWatch(testing.NewRootWatchActionWithOptions(olmsResource, opts))
 }
 
 // Create takes the representation of a oLM and creates it.  Returns the server's representation of the oLM, and an error, if there is any.
 func (c *FakeOLMs) Create(ctx context.Context, oLM *v1alpha1.OLM, opts v1.CreateOptions) (result *v1alpha1.OLM, err error) {
+	emptyResult := &v1alpha1.OLM{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootCreateAction(olmsResource, oLM), &v1alpha1.OLM{})
+		Invokes(testing.NewRootCreateActionWithOptions(olmsResource, oLM, opts), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1alpha1.OLM), err
 }
 
 // Update takes the representation of a oLM and updates it. Returns the server's representation of the oLM, and an error, if there is any.
 func (c *FakeOLMs) Update(ctx context.Context, oLM *v1alpha1.OLM, opts v1.UpdateOptions) (result *v1alpha1.OLM, err error) {
+	emptyResult := &v1alpha1.OLM{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootUpdateAction(olmsResource, oLM), &v1alpha1.OLM{})
+		Invokes(testing.NewRootUpdateActionWithOptions(olmsResource, oLM, opts), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1alpha1.OLM), err
 }
 
 // UpdateStatus was generated because the type contains a Status member.
 // Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-func (c *FakeOLMs) UpdateStatus(ctx context.Context, oLM *v1alpha1.OLM, opts v1.UpdateOptions) (*v1alpha1.OLM, error) {
+func (c *FakeOLMs) UpdateStatus(ctx context.Context, oLM *v1alpha1.OLM, opts v1.UpdateOptions) (result *v1alpha1.OLM, err error) {
+	emptyResult := &v1alpha1.OLM{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootUpdateSubresourceAction(olmsResource, "status", oLM), &v1alpha1.OLM{})
+		Invokes(testing.NewRootUpdateSubresourceActionWithOptions(olmsResource, "status", oLM, opts), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1alpha1.OLM), err
 }
@@ -102,7 +107,7 @@ func (c *FakeOLMs) Delete(ctx context.Context, name string, opts v1.DeleteOption
 
 // DeleteCollection deletes a collection of objects.
 func (c *FakeOLMs) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
-	action := testing.NewRootDeleteCollectionAction(olmsResource, listOpts)
+	action := testing.NewRootDeleteCollectionActionWithOptions(olmsResource, opts, listOpts)
 
 	_, err := c.Fake.Invokes(action, &v1alpha1.OLMList{})
 	return err
@@ -110,10 +115,11 @@ func (c *FakeOLMs) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, 
 
 // Patch applies the patch and returns the patched oLM.
 func (c *FakeOLMs) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1alpha1.OLM, err error) {
+	emptyResult := &v1alpha1.OLM{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootPatchSubresourceAction(olmsResource, name, pt, data, subresources...), &v1alpha1.OLM{})
+		Invokes(testing.NewRootPatchSubresourceActionWithOptions(olmsResource, name, pt, data, opts, subresources...), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1alpha1.OLM), err
 }
@@ -131,10 +137,11 @@ func (c *FakeOLMs) Apply(ctx context.Context, oLM *operatorv1alpha1.OLMApplyConf
 	if name == nil {
 		return nil, fmt.Errorf("oLM.Name must be provided to Apply")
 	}
+	emptyResult := &v1alpha1.OLM{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootPatchSubresourceAction(olmsResource, *name, types.ApplyPatchType, data), &v1alpha1.OLM{})
+		Invokes(testing.NewRootPatchSubresourceActionWithOptions(olmsResource, *name, types.ApplyPatchType, data, opts.ToPatchOptions()), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1alpha1.OLM), err
 }
@@ -153,10 +160,11 @@ func (c *FakeOLMs) ApplyStatus(ctx context.Context, oLM *operatorv1alpha1.OLMApp
 	if name == nil {
 		return nil, fmt.Errorf("oLM.Name must be provided to Apply")
 	}
+	emptyResult := &v1alpha1.OLM{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootPatchSubresourceAction(olmsResource, *name, types.ApplyPatchType, data, "status"), &v1alpha1.OLM{})
+		Invokes(testing.NewRootPatchSubresourceActionWithOptions(olmsResource, *name, types.ApplyPatchType, data, opts.ToPatchOptions(), "status"), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1alpha1.OLM), err
 }
