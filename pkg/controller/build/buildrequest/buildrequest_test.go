@@ -30,8 +30,8 @@ func expectedContents() []string {
 	}
 }
 
-// Tests that Image Build Requests is constructed as expected.
-func TestImageBuildRequest(t *testing.T) {
+// Tests that the BuildRequest is constructed as expected.
+func TestBuildRequest(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {

@@ -76,6 +76,7 @@ func (o *optsGetter) validateMachineOSConfig(mosc *mcfgv1alpha1.MachineOSConfig)
 	return nil
 }
 
+// Validates that the required fields on a MachineOSBuild are set before beginning the build.
 func (o *optsGetter) validateMachineOSBuild(mosb *mcfgv1alpha1.MachineOSBuild) error {
 	if mosb.Spec.DesiredConfig.Name == "" {
 		return fmt.Errorf("desiredConfig.name empty for MachineOSBuild %s:", mosb.Name)
@@ -84,6 +85,7 @@ func (o *optsGetter) validateMachineOSBuild(mosb *mcfgv1alpha1.MachineOSBuild) e
 	return nil
 }
 
+// Gets the BuildRequestOpts after making API queries to get all of the necessary info required.
 func (o *optsGetter) getOpts(ctx context.Context, mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig) (*BuildRequestOpts, error) {
 	if err := o.validateMachineOSConfig(mosc); err != nil {
 		return nil, err
@@ -134,6 +136,7 @@ func (o *optsGetter) getOpts(ctx context.Context, mosb *mcfgv1alpha1.MachineOSBu
 	return opts, nil
 }
 
+// Gets an image pull secret and validates that it is usable.
 func (o *optsGetter) getValidatedSecret(ctx context.Context, name string) (*corev1.Secret, error) {
 	secret, err := o.kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
@@ -147,6 +150,8 @@ func (o *optsGetter) getValidatedSecret(ctx context.Context, name string) (*core
 	return secret, nil
 }
 
+// Determines whether the build makes use of entitlements based upon the
+// presence (or lack thereof) of specific configmaps and secrets.
 func (o *optsGetter) resolveEntitlements(ctx context.Context) (*BuildRequestOpts, error) {
 	opts := &BuildRequestOpts{}
 

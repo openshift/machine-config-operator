@@ -12,11 +12,8 @@ type BuildRequest interface {
 	ConfigMaps() ([]*corev1.ConfigMap, error)
 }
 
-// Thin wrapper on top of Pods and other executable Kube
-// objects.
-//
-// TODO: Figure out how to distinguish between this and ephemeral build objects
-// such as ConfigMaps and Secrets.
+// Thin wrapper on top of Pods, Jobs, and other executable Kube objects. See
+// builder.go for more info.
 type Builder interface {
 	MachineOSConfig() (string, error)
 	MachineOSBuild() (string, error)
