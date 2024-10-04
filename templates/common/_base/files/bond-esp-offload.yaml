@@ -1,0 +1,44 @@
+mode: 0744
+path: "/etc/NetworkManager/dispatcher.d/99-bond-esp-offload"
+contents:
+    inline: |
+      #!/bin/bash
+
+      # It has been observed that the kernel enables ESP offloads of bond
+      # devices in active/backup mode even if slaves apparently don't support
+      # it. It's unclear if this is expected behavior but we have had problems
+      # with the resulting configuration in vsphere. So set ESP offload features
+      # off in bond devices if they are off in slave devices for the time being.
+      # https://issues.redhat.com/browse/RHEL-58811
+
+      if [[ "$2" != "up" ]]; then
+        exit
+      fi
+
+      driver=$(nmcli -t -m tabular -f general.driver dev show "$DEVICE_IFACE")
+
+      if [[ "$driver" != "bond" ]]; then
+        exit
+      fi
+
+      bond="$DEVICE_IFACE"
+      for feature in tx-esp-segmentation esp-hw-offload esp-tx-csum-hw-offload; do
+
+        if ethtool -k "$bond" | grep -qE "^${feature}: off"; then
+          # already disabled, nothing to do
+          continue
+        fi
+        
+        for slave in $(nmcli -g BOND.SLAVES dev show "$DEVICE_IFACE"); do
+
+          if ! ethtool -k "$slave" | grep -qE "^${feature}: off"; then
+            # enabled in slave, nothing to do
+            continue
+          fi
+
+          logger -t bond-esp-offload -s "Bond link $slave has $feature off, setting master $DEVICE_IFACE $feature off"
+          ethtool -K "$bond" "$feature" off
+
+          break
+        done
+      done
