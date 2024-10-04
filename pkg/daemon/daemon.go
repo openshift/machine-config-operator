@@ -1337,7 +1337,7 @@ type pipeErrorHandler struct {
 	pipe chan error
 }
 
-func (e *pipeErrorHandler) handle(err error) {
+func (e *pipeErrorHandler) handle(ctx context.Context, err error, msg string, keysAndValues ...interface{}) {
 	e.pipe <- err
 }
 
