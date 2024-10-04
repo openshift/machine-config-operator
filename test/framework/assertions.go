@@ -123,6 +123,10 @@ func (a *Assertions) MachineOSConfigIsDeleted(ctx context.Context, mosb *mcfgv1a
 	a.MachineOSConfigReachesState(ctx, mosb, stateFunc, msgAndArgs...)
 }
 
+func (a *Assertions) MachineOSBuildIsFailure(ctx context.Context, mosb *mcfgv1alpha1.MachineOSBuild, msgAndArgs ...interface{}) {
+	a.machineOSBuildHasConditionTrue(ctx, mosb, mcfgv1alpha1.MachineOSBuildFailed, msgAndArgs...)
+}
+
 func (a *Assertions) MachineOSBuildIsSuccessful(ctx context.Context, mosb *mcfgv1alpha1.MachineOSBuild, msgAndArgs ...interface{}) {
 	a.machineOSBuildHasConditionTrue(ctx, mosb, mcfgv1alpha1.MachineOSBuildSucceeded, msgAndArgs...)
 }

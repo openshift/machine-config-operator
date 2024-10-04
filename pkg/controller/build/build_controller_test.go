@@ -56,10 +56,6 @@ func TestBuildControllerDeletesRunningBuildBeforeStartingANewOne(t *testing.T) {
 
 	clients, mosc, initialMosb, mcp, kubeassert := setupBuildControllerForTestWithBuild(ctx, t, poolName)
 
-	getMachineOSBuild := func(cfg *mcfgv1alpha1.MachineOSConfig, pool *mcfgv1.MachineConfigPool) *mcfgv1alpha1.MachineOSBuild {
-		return utils.NewMachineOSBuildFromAPIOrDie(ctx, clients.kubeclient, cfg, pool)
-	}
-
 	initialBuildPodName := utils.GetBuildPodName(initialMosb)
 
 	// After creating the new MachineOSConfig, a MachineOSBuild should be created.
@@ -77,7 +73,7 @@ func TestBuildControllerDeletesRunningBuildBeforeStartingANewOne(t *testing.T) {
 	apiMosc, err := clients.mcfgclient.MachineconfigurationV1alpha1().MachineOSConfigs().Update(ctx, apiMosc, metav1.UpdateOptions{})
 	require.NoError(t, err)
 
-	mosb := getMachineOSBuild(apiMosc, mcp)
+	mosb := utils.NewMachineOSBuildFromAPIOrDie(ctx, clients.kubeclient, apiMosc, mcp)
 	buildPodName := utils.GetBuildPodName(mosb)
 
 	// After creating the new MachineOSConfig, a MachineOSBuild should be created.
@@ -137,6 +133,30 @@ func TestBuildControllerLeavesSuccessfulBuildAlone(t *testing.T) {
 	isMachineOSBuildReachedExpectedCount(ctx, t, clients.mcfgclient, thirdMosc, 2)
 }
 
+// This test validates that when a build fails, all of the objects are left
+// behind unless someone makes a change to the MachineOSConfig or
+// MachineConfigPool.
+func TestBuildControllerFailure(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	t.Cleanup(cancel)
+
+	poolName := "worker"
+
+	clients, _, mosb, _, kubeassert := setupBuildControllerForTestWithBuild(ctx, t, poolName)
+	kubeassert.MachineOSBuildIsCreated(ctx, mosb)
+	kubeassert.BuildPodIsCreated(ctx, utils.GetBuildPodName(mosb))
+	fixtures.SetPodPhase(ctx, t, clients.kubeclient, mosb, corev1.PodFailed)
+	kubeassert.MachineOSBuildIsFailure(ctx, mosb)
+
+	kubeassert.BuildPodIsCreated(ctx, utils.GetBuildPodName(mosb))
+	kubeassert.ConfigMapIsCreated(ctx, utils.GetContainerfileConfigMapName(mosb))
+	kubeassert.ConfigMapIsCreated(ctx, utils.GetMCConfigMapName(mosb))
+	kubeassert.SecretIsCreated(ctx, utils.GetBasePullSecretName(mosb))
+	kubeassert.SecretIsCreated(ctx, utils.GetFinalPushSecretName(mosb))
+}
+
 // This test validates that the BuildController does the following:
 // 1. Creates a new MachineOSBuild for a given MachineOSConfig whenever the
 // MachineOSConfig is updated.
@@ -158,11 +178,7 @@ func TestBuildController(t *testing.T) {
 		return fmt.Sprintf("rendered-%s-%d", poolName, num)
 	}
 
-	getMachineOSBuild := func(mosc *mcfgv1alpha1.MachineOSConfig, mcp *mcfgv1.MachineConfigPool) *mcfgv1alpha1.MachineOSBuild {
-		return utils.NewMachineOSBuildFromAPIOrDie(ctx, clients.kubeclient, mosc, mcp)
-	}
-
-	mosb := getMachineOSBuild(mosc, mcp)
+	mosb := utils.NewMachineOSBuildFromAPIOrDie(ctx, clients.kubeclient, mosc, mcp)
 
 	buildPodName := utils.GetBuildPodName(mosb)
 	// After creating the new MachineOSConfig, a MachineOSBuild should be created.
@@ -184,10 +200,12 @@ func TestBuildController(t *testing.T) {
 		apiMCP, err := clients.mcfgclient.MachineconfigurationV1().MachineConfigPools().Get(ctx, apiMosc.Spec.MachineConfigPool.Name, metav1.GetOptions{})
 		require.NoError(t, err)
 
-		mosb := getMachineOSBuild(apiMosc, apiMCP)
+		mosb := utils.NewMachineOSBuildFromAPIOrDie(ctx, clients.kubeclient, apiMosc, apiMCP)
 		buildPodName := utils.GetBuildPodName(mosb)
 		// After creating the new MachineOSConfig, a MachineOSBuild should be created.
 		kubeassert.MachineOSBuildIsCreated(ctx, mosb, "MachineOSBuild not created for MachineOSConfig %s change", mosc.Name)
+
+		assertBuildObjectsAreCreated(ctx, t, kubeassert, mosb)
 		// After a new MachineOSBuild is created, a pod should be created.
 		kubeassert.BuildPodIsCreated(ctx, buildPodName, "Build pod did not get created for MachineOSConfig %s change", mosc.Name)
 		// Set the successful status on the pod.
@@ -195,6 +213,8 @@ func TestBuildController(t *testing.T) {
 		// The MachineOSBuild should be successful.
 		kubeassert.MachineOSBuildIsSuccessful(ctx, mosb, "Expected the MachineOSBuild %s status to be successful", mosb.Name)
 		// And the build pod should be deleted.
+
+		assertBuildObjectsAreDeleted(ctx, t, kubeassert, mosb)
 		kubeassert.BuildPodIsDeleted(ctx, buildPodName, "Expected the build pod %s to be deleted", buildPodName)
 	}
 
@@ -205,7 +225,7 @@ func TestBuildController(t *testing.T) {
 
 		apiMCP := insertNewRenderedMachineConfigAndUpdatePool(ctx, t, clients.mcfgclient, mosc.Spec.MachineConfigPool.Name, getConfigNameForPool(i+2))
 
-		mosb := getMachineOSBuild(apiMosc, apiMCP)
+		mosb := utils.NewMachineOSBuildFromAPIOrDie(ctx, clients.kubeclient, apiMosc, apiMCP)
 		buildPodName := utils.GetBuildPodName(mosb)
 		// After updating the MachineConfigPool, a new MachineOSBuild should get created.
 		kubeassert.MachineOSBuildIsCreated(ctx, mosb, "New MachineOSBuild for MachineConfigPool %q update for MachineOSConfig %q never gets created", mcp.Name, mosc.Name)
@@ -225,6 +245,26 @@ func TestBuildController(t *testing.T) {
 	require.NoError(t, err)
 
 	isMachineOSBuildReachedExpectedCount(ctx, t, clients.mcfgclient, mosc, 0)
+}
+
+func assertBuildObjectsAreCreated(ctx context.Context, t *testing.T, kubeassert *framework.Assertions, mosb *mcfgv1alpha1.MachineOSBuild) {
+	t.Helper()
+
+	kubeassert.BuildPodIsCreated(ctx, utils.GetBuildPodName(mosb))
+	kubeassert.ConfigMapIsCreated(ctx, utils.GetContainerfileConfigMapName(mosb))
+	kubeassert.ConfigMapIsCreated(ctx, utils.GetMCConfigMapName(mosb))
+	kubeassert.SecretIsCreated(ctx, utils.GetBasePullSecretName(mosb))
+	kubeassert.SecretIsCreated(ctx, utils.GetFinalPushSecretName(mosb))
+}
+
+func assertBuildObjectsAreDeleted(ctx context.Context, t *testing.T, kubeassert *framework.Assertions, mosb *mcfgv1alpha1.MachineOSBuild) {
+	t.Helper()
+
+	kubeassert.BuildPodIsDeleted(ctx, utils.GetBuildPodName(mosb))
+	kubeassert.ConfigMapIsDeleted(ctx, utils.GetContainerfileConfigMapName(mosb))
+	kubeassert.ConfigMapIsDeleted(ctx, utils.GetMCConfigMapName(mosb))
+	kubeassert.SecretIsDeleted(ctx, utils.GetBasePullSecretName(mosb))
+	kubeassert.SecretIsDeleted(ctx, utils.GetFinalPushSecretName(mosb))
 }
 
 func setupBuildControllerForTest(ctx context.Context, t *testing.T) (*Clients, *framework.Assertions, *fixtures.LayeredObjectsForTest) {
