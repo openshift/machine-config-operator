@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
+// Provides consistently instantiated objects for use in a given test.
 type LayeredObjectsForTest struct {
 	MachineConfigPool *mcfgv1.MachineConfigPool
 	MachineConfigs    []*mcfgv1.MachineConfig
@@ -19,6 +20,8 @@ type LayeredObjectsForTest struct {
 	MachineOSBuild    *mcfgv1alpha1.MachineOSBuild
 }
 
+// Converts the MachineConfigPool and MachineConfigs into a []runtime.Object
+// array, suitable for passing into mcfgclient when instantiated.
 func (l *LayeredObjectsForTest) ToRuntimeObjects() []runtime.Object {
 	out := []runtime.Object{l.MachineConfigPool}
 
@@ -29,6 +32,8 @@ func (l *LayeredObjectsForTest) ToRuntimeObjects() []runtime.Object {
 	return out
 }
 
+// Constructs a MachineOSConfig, MachineOSBuild, MachineConfigPool, and
+// MachineConfigs with all of the objects' default fields being populated.
 func NewLayeredObjectsForTest(poolName string) LayeredObjectsForTest {
 	renderedConfigName := fmt.Sprintf("rendered-%s-1", poolName)
 	layeredBuilder := testhelpers.NewLayeredBuilder(poolName).

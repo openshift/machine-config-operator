@@ -13,6 +13,7 @@ import (
 	clientset "k8s.io/client-go/kubernetes"
 )
 
+// Sets the provided pod phase on a given pod under test. If successful, it will also insert the digestfile ConfigMap.
 func SetPodPhase(ctx context.Context, t *testing.T, kubeclient clientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild, phase corev1.PodPhase) {
 	podName := fmt.Sprintf("build-%s", mosb.Name)
 	digestName := fmt.Sprintf("digest-%s", mosb.Name)

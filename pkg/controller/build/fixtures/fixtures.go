@@ -16,14 +16,15 @@ import (
 	fakecorev1client "k8s.io/client-go/kubernetes/fake"
 )
 
-func GetEmptyClientsForTest() (clientset.Interface, mcfgclientset.Interface) {
-	return fakecorev1client.NewSimpleClientset(), fakeclientmachineconfigv1.NewSimpleClientset()
-}
-
+// Gets the kubeclient and mcfgclients needed for a test with the default Kube
+// objects in them.
 func GetClientsForTest() (clientset.Interface, mcfgclientset.Interface, *LayeredObjectsForTest) {
 	return GetClientsForTestWithAdditionalObjects([]runtime.Object{}, []runtime.Object{})
 }
 
+// Gets the kubeclient and mcfgclient, adds any additional objects to them, and
+// also returns the LayeredObjectsForTest which are instantiated assuming the
+// pool name "worker".
 func GetClientsForTestWithAdditionalObjects(addlKubeObjects, addlMcfgObjects []runtime.Object) (clientset.Interface, mcfgclientset.Interface, *LayeredObjectsForTest) {
 	lobj := NewLayeredObjectsForTest("worker")
 
@@ -34,11 +35,18 @@ func GetClientsForTestWithAdditionalObjects(addlKubeObjects, addlMcfgObjects []r
 		},
 	})
 
+	addlKubeObjects = append(defaultKubeObjects(), addlKubeObjects...)
+
+	return fakecorev1client.NewSimpleClientset(addlKubeObjects...), fakeclientmachineconfigv1.NewSimpleClientset(mcfgObjects...), &lobj
+}
+
+// Constructs all of the default ConfigMaps, secrets, etc. that are assumed to be present.
+func defaultKubeObjects() []runtime.Object {
 	legacyPullSecret := `{"registry.hostname.com": {"username": "user", "password": "s3kr1t", "auth": "s00pers3kr1t", "email": "user@hostname.com"}}`
 
 	pullSecret := `{"auths":{"registry.hostname.com": {"username": "user", "password": "s3kr1t", "auth": "s00pers3kr1t", "email": "user@hostname.com"}}}`
 
-	kubeObjects := append(addlKubeObjects, []runtime.Object{
+	return []runtime.Object{
 		getImagesConfigMap(),
 		getOSImageURLConfigMap(),
 		&corev1.Secret{
@@ -77,9 +85,7 @@ func GetClientsForTestWithAdditionalObjects(addlKubeObjects, addlMcfgObjects []r
 				Namespace: ctrlcommon.MCONamespace,
 			},
 		},
-	}...)
-
-	return fakecorev1client.NewSimpleClientset(kubeObjects...), fakeclientmachineconfigv1.NewSimpleClientset(mcfgObjects...), &lobj
+	}
 }
 
 // Generates MachineConfigs from the given MachineConfigPool for insertion.
