@@ -17,64 +17,43 @@ import (
 	"k8s.io/klog/v2"
 )
 
+// Holds an implementation of the Cleaner interface that solely cleans up the
+// ephemeral build objects that were created.
 type cleanerImpl struct {
-	mosb       *mcfgv1alpha1.MachineOSBuild
-	mosc       *mcfgv1alpha1.MachineOSConfig
-	kubeclient clientset.Interface
-	mcfgclient mcfgclientset.Interface
-	builder    buildrequest.Builder
+	*baseImageBuilder
 }
 
-func NewCleaner(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig) Cleaner {
-	c := &cleanerImpl{
-		kubeclient: kubeclient,
-		mcfgclient: mcfgclient,
-		mosb:       mosb.DeepCopy(),
-	}
-
-	if mosc != nil {
-		c.mosc = mosc.DeepCopy()
-	}
-
-	return c
-}
-
-func NewCleanerFromBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, builder buildrequest.Builder) Cleaner {
+// Constructs an instance of the cleaner from the MachineOSBuild and
+// MachineOSConfig objects. It is possible that the MachineOSConfig can be nil,
+// which this tolerates.
+func newCleaner(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig) Cleaner {
 	return &cleanerImpl{
-		kubeclient: kubeclient,
-		mcfgclient: mcfgclient,
-		builder:    builder,
+		baseImageBuilder: newBaseImageBuilder(kubeclient, mcfgclient, mosb, mosc, nil),
 	}
 }
 
-func (c *cleanerImpl) getSelectorForDeletion() (labels.Selector, error) {
-	if c.mosb != nil {
-		return utils.EphemeralBuildObjectSelectorForSpecificBuild(c.mosb, c.mosc)
+// Constructs an instance of the cleaner using a Builder object. This will
+// refer to fields on the Builder object to delete ephemeral build objects
+// instead of a MachineOSConfig or MachineOSBuild.
+func newCleanerFromBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, builder buildrequest.Builder) Cleaner {
+	return &cleanerImpl{
+		baseImageBuilder: newBaseImageBuilder(kubeclient, mcfgclient, nil, nil, builder),
 	}
-
-	return ephemeralBuildObjectSelectorForBuilder(c.builder)
 }
 
-func (c *cleanerImpl) getMachineOSBuildName() (string, error) {
-	if c.mosb != nil {
-		return c.mosb.Name, nil
-	}
-
-	return c.builder.MachineOSBuild()
-}
-
+// Removes all of the ephemeral build objects that were created for the build.
 func (c *cleanerImpl) Clean(ctx context.Context) error {
 	mosbName, err := c.getMachineOSBuildName()
 	if err != nil {
 		return err
 	}
 
-	klog.Infof("Cleaning up ephemeral objects from build %q", mosbName)
-
 	selector, err := c.getSelectorForDeletion()
 	if err != nil {
 		return fmt.Errorf("could not instantiate selector: %w", err)
 	}
+
+	klog.Infof("Cleaning up ephemeral objects from build %q using selector %q", mosbName, selector.String())
 
 	configmaps, err := c.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).List(ctx, metav1.ListOptions{
 		LabelSelector: selector.String(),
@@ -99,6 +78,8 @@ func (c *cleanerImpl) Clean(ctx context.Context) error {
 	return nil
 }
 
+// Deletes a given ConfigMap and tolerates that it was not found so that if
+// this is called more than once, it will not error.
 func (c *cleanerImpl) deleteConfigMap(ctx context.Context, cmName, mosbName string) error {
 	err := c.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Delete(ctx, cmName, metav1.DeleteOptions{})
 	if err == nil {
@@ -113,6 +94,8 @@ func (c *cleanerImpl) deleteConfigMap(ctx context.Context, cmName, mosbName stri
 	return err
 }
 
+// Deletes a given Secret and tolerates that it was not found so that if
+// this is called more than once, it will not error.
 func (c *cleanerImpl) deleteSecret(ctx context.Context, secretName, mosbName string) error {
 	err := c.kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Delete(ctx, secretName, metav1.DeleteOptions{})
 	if err == nil {
@@ -125,6 +108,18 @@ func (c *cleanerImpl) deleteSecret(ctx context.Context, secretName, mosbName str
 	}
 
 	return err
+}
+
+// Instantiates the selector to use for looking up ConfigMaps and Secrets to
+// delete. It will either use the MachineOSBuild / MachineOSConfig objects or
+// it will get those fields from the Builder object.
+func (c *cleanerImpl) getSelectorForDeletion() (labels.Selector, error) {
+	if c.mosb != nil {
+		// This function can tolerate having MachineOSConfig be nil.
+		return utils.EphemeralBuildObjectSelectorForSpecificBuild(c.mosb, c.mosc)
+	}
+
+	return ephemeralBuildObjectSelectorForBuilder(c.builder)
 }
 
 // Resolve circular import issues.

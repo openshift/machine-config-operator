@@ -16,14 +16,17 @@ import (
 	clientset "k8s.io/client-go/kubernetes"
 )
 
+// Holds the common objects and methods needed to implement an ImageBuilder.
 type baseImageBuilder struct {
-	kubeclient clientset.Interface
-	mcfgclient mcfgclientset.Interface
-	mosb       *mcfgv1alpha1.MachineOSBuild
-	mosc       *mcfgv1alpha1.MachineOSConfig
-	builder    buildrequest.Builder
+	kubeclient   clientset.Interface
+	mcfgclient   mcfgclientset.Interface
+	mosb         *mcfgv1alpha1.MachineOSBuild
+	mosc         *mcfgv1alpha1.MachineOSConfig
+	builder      buildrequest.Builder
+	buildrequest buildrequest.BuildRequest
 }
 
+// Constructs a baseImageBuilder, deep-copying objects as needed.
 func newBaseImageBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig, builder buildrequest.Builder) *baseImageBuilder {
 	b := &baseImageBuilder{
 		kubeclient: kubeclient,
@@ -42,6 +45,15 @@ func newBaseImageBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientse
 	return b
 }
 
+// Constructs a baseImageBuilder and also instantiates a Cleaner instance based upon the object state.
+func newBaseImageBuilderWithCleaner(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig, builder buildrequest.Builder) (*baseImageBuilder, Cleaner) {
+	b := newBaseImageBuilder(kubeclient, mcfgclient, mosb, mosc, builder)
+	return b, &cleanerImpl{
+		baseImageBuilder: b,
+	}
+}
+
+// Represents the successful conditions for a MachineOSBuild.
 func (b *baseImageBuilder) succeededConditions() []metav1.Condition {
 	return []metav1.Condition{
 		{
@@ -77,6 +89,7 @@ func (b *baseImageBuilder) succeededConditions() []metav1.Condition {
 	}
 }
 
+// Represents the pending conditions for a MachineOSBuild.
 func (b *baseImageBuilder) pendingConditions() []metav1.Condition {
 	return []metav1.Condition{
 		{
@@ -112,6 +125,7 @@ func (b *baseImageBuilder) pendingConditions() []metav1.Condition {
 	}
 }
 
+// Represents the running conditions for a MachineOSBuild.
 func (b *baseImageBuilder) runningConditions() []metav1.Condition {
 	return []metav1.Condition{
 		{
@@ -147,6 +161,7 @@ func (b *baseImageBuilder) runningConditions() []metav1.Condition {
 	}
 }
 
+// Represents the failure conditions for a MachineOSBuild.
 func (b *baseImageBuilder) failedConditions() []metav1.Condition {
 	return []metav1.Condition{
 		{
@@ -182,11 +197,16 @@ func (b *baseImageBuilder) failedConditions() []metav1.Condition {
 	}
 }
 
+// Represents a builder object that has a GroupVersionKind method on it; which
+// anything that has metav1.TypeMeta instance included should have..
 type kubeObject interface {
 	metav1.Object
 	GroupVersionKind() schema.GroupVersionKind
 }
 
+// Computes the MachineOSBuild status given the build status as well as the
+// conditions. Also fetches the final image pullspec from the digestfile
+// ConfigMap.
 func (b *baseImageBuilder) getMachineOSBuildStatus(ctx context.Context, obj kubeObject, buildStatus mcfgv1alpha1.BuildProgress, conditions []metav1.Condition) (mcfgv1alpha1.MachineOSBuildStatus, error) {
 	now := metav1.Now()
 
@@ -222,6 +242,7 @@ func (b *baseImageBuilder) getMachineOSBuildStatus(ctx context.Context, obj kube
 
 }
 
+// Attaches the MachineOSBuild name onto an error, if possible.
 func (b *baseImageBuilder) addMachineOSBuildNameToError(err error) error {
 	buildName, buildNameErr := b.getMachineOSBuildName()
 	if buildNameErr != nil {
@@ -231,18 +252,8 @@ func (b *baseImageBuilder) addMachineOSBuildNameToError(err error) error {
 	return fmt.Errorf("MachineOSBuild %q encountered an error: %w", buildName, err)
 }
 
-func (b *baseImageBuilder) clean(ctx context.Context, ib ImageBuilder) error {
-	return errors.Join(ib.Stop(ctx), b.getCleaner().Clean(ctx))
-}
-
-func (b *baseImageBuilder) getCleaner() Cleaner {
-	if b.mosb != nil {
-		return NewCleaner(b.kubeclient, b.mcfgclient, b.mosb, b.mosc)
-	}
-
-	return NewCleanerFromBuilder(b.kubeclient, b.mcfgclient, b.builder)
-}
-
+// Gets the digestfile ConfigMap name either directly from the MachineOSBuild
+// or by getting the MachineOSBuild name from the Builder and computing it.
 func (b *baseImageBuilder) getDigestConfigMapName() (string, error) {
 	if b.mosb != nil {
 		return utils.GetDigestConfigMapName(b.mosb), nil
@@ -257,10 +268,11 @@ func (b *baseImageBuilder) getDigestConfigMapName() (string, error) {
 	return fmt.Sprintf("digest-%s", mosbName), nil
 }
 
+// Gets the final image pullspec from the digestfile ConfigMap.
 func (b *baseImageBuilder) getFinalImagePullspec(ctx context.Context) (string, error) {
 	name, err := b.getDigestConfigMapName()
 	if err != nil {
-		return "", fmt.Errorf("could not get digest configmab name: %w", err)
+		return "", fmt.Errorf("could not get digest configmap name: %w", err)
 	}
 
 	digestConfigMap, err := b.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(ctx, name, metav1.GetOptions{})
@@ -276,6 +288,8 @@ func (b *baseImageBuilder) getFinalImagePullspec(ctx context.Context) (string, e
 	return sha, nil
 }
 
+// Gets the name of the MachineOSBuild name either directly from the
+// MachineOSBuild or from the Builder object.
 func (b *baseImageBuilder) getMachineOSBuildName() (string, error) {
 	if b.mosb != nil {
 		return b.mosb.Name, nil
@@ -284,6 +298,19 @@ func (b *baseImageBuilder) getMachineOSBuildName() (string, error) {
 	return b.builder.MachineOSBuild()
 }
 
+// Gets the name of the MachineOSConfig name either directly from the
+// MachineOSConfig or from the Builder object.
+func (b *baseImageBuilder) getMachineOSConfigName() (string, error) {
+	if b.mosc != nil {
+		return b.mosc.Name, nil
+	}
+
+	return b.builder.MachineOSBuild()
+}
+
+// Gets the name of the builder execution unit (could be a Pod or Job) by
+// either looking for the MachineOSBuild name and computing it or by getting it
+// directly from the Builder object.
 func (b *baseImageBuilder) getBuilderName() string {
 	if b.mosb != nil {
 		return utils.GetBuildPodName(b.mosb)
@@ -292,6 +319,8 @@ func (b *baseImageBuilder) getBuilderName() string {
 	return b.builder.GetObject().GetName()
 }
 
+// Prepares to run a given build by instantiating and running the preparer. It
+// then returns a Builder object whose concrete type must be a Pod (for now).
 func (b *baseImageBuilder) prepareForBuild(ctx context.Context) (buildrequest.Builder, error) {
 	preparer := NewPreparer(b.kubeclient, b.mcfgclient, b.mosb, b.mosc)
 
@@ -299,6 +328,8 @@ func (b *baseImageBuilder) prepareForBuild(ctx context.Context) (buildrequest.Bu
 	if err != nil {
 		return nil, err
 	}
+
+	b.buildrequest = br
 
 	builder := br.Builder()
 

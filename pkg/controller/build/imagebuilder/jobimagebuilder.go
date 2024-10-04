@@ -2,6 +2,7 @@ package imagebuilder
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
@@ -19,30 +20,31 @@ import (
 // I AM NOT COMPLETELY IMPLEMENTED YET!!!
 type jobImageBuilder struct {
 	*baseImageBuilder
+	cleaner Cleaner
+}
+
+func newJobImageBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig, builder buildrequest.Builder) *jobImageBuilder {
+	b, c := newBaseImageBuilderWithCleaner(kubeclient, mcfgclient, mosb, mosc, builder)
+	return &jobImageBuilder{
+		baseImageBuilder: b,
+		cleaner:          c,
+	}
 }
 
 func NewJobImageBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig) ImageBuilder {
-	return &jobImageBuilder{
-		baseImageBuilder: newBaseImageBuilder(kubeclient, mcfgclient, mosb, mosc, nil),
-	}
+	return newJobImageBuilder(kubeclient, mcfgclient, mosb, mosc, nil)
 }
 
 func NewJobImageBuildObserver(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig) ImageBuildObserver {
-	return &jobImageBuilder{
-		baseImageBuilder: newBaseImageBuilder(kubeclient, mcfgclient, mosb, mosc, nil),
-	}
+	return newJobImageBuilder(kubeclient, mcfgclient, mosb, mosc, nil)
 }
 
 func NewJobImageBuildCleaner(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild) Cleaner {
-	return &jobImageBuilder{
-		baseImageBuilder: newBaseImageBuilder(kubeclient, mcfgclient, mosb, nil, nil),
-	}
+	return newJobImageBuilder(kubeclient, mcfgclient, mosb, nil, nil)
 }
 
 func NewJobImageBuildCleanerFromBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, builder buildrequest.Builder) Cleaner {
-	return &jobImageBuilder{
-		baseImageBuilder: newBaseImageBuilder(kubeclient, mcfgclient, nil, nil, builder),
-	}
+	return newJobImageBuilder(kubeclient, mcfgclient, nil, nil, builder)
 }
 
 func (j *jobImageBuilder) Start(ctx context.Context) error {
@@ -125,17 +127,20 @@ func (j *jobImageBuilder) stop(ctx context.Context) error {
 }
 
 func (j *jobImageBuilder) Clean(ctx context.Context) error {
-	if err := j.clean(ctx, j); err != nil {
-		return j.addMachineOSBuildNameToError(fmt.Errorf("could not clean job: %w", err))
+	err := errors.Join(j.Stop(ctx), j.cleaner.Clean(ctx))
+	if err != nil {
+		return j.addMachineOSBuildNameToError(fmt.Errorf("could clean up job: %w", err))
 	}
 
 	return nil
 }
 
+// Implement Me
 func (j *jobImageBuilder) Status(ctx context.Context) (mcfgv1alpha1.BuildProgress, error) {
 	return mcfgv1alpha1.MachineOSBuildSucceeded, nil
 }
 
+// Implement Me
 func (j *jobImageBuilder) MachineOSBuildStatus(ctx context.Context) (mcfgv1alpha1.MachineOSBuildStatus, error) {
 	return mcfgv1alpha1.MachineOSBuildStatus{}, nil
 }

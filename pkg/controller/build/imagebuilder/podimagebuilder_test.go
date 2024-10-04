@@ -16,7 +16,7 @@ import (
 	"github.com/openshift/machine-config-operator/test/framework"
 )
 
-func TestImageBuilder(t *testing.T) {
+func TestPodImageBuilder(t *testing.T) {
 	t.Parallel()
 
 	kubeclient, mcfgclient, lobj := fixtures.GetClientsForTest()
@@ -32,6 +32,7 @@ func TestImageBuilder(t *testing.T) {
 	buildPodName := utils.GetBuildPodName(lobj.MachineOSBuild)
 
 	kubeassert.BuildPodIsCreated(ctx, buildPodName)
+	assertObjectsAreCreatedByPreparer(ctx, t, kubeassert, pim.(*podImageBuilder).buildrequest)
 
 	podPhases := []corev1.PodPhase{
 		corev1.PodPending,
@@ -40,6 +41,23 @@ func TestImageBuilder(t *testing.T) {
 		corev1.PodFailed,
 	}
 
+	for _, podPhase := range podPhases {
+		fixtures.SetPodPhase(ctx, t, kubeclient, lobj.MachineOSBuild, podPhase)
+		assertObserverCanGetPodStatus(ctx, t, pim, podPhase)
+
+		obs := NewPodImageBuildObserver(kubeclient, mcfgclient, lobj.MachineOSBuild, lobj.MachineOSConfig)
+		assertObserverCanGetPodStatus(ctx, t, obs, podPhase)
+	}
+
+	require.NoError(t, pim.Clean(ctx))
+
+	kubeassert.BuildPodIsDeleted(ctx, buildPodName)
+	assertObjectsAreRemovedByCleaner(ctx, t, kubeassert, pim.(*podImageBuilder).buildrequest)
+
+	require.NoError(t, pim.Stop(ctx))
+}
+
+func assertObserverCanGetPodStatus(ctx context.Context, t *testing.T, obs ImageBuildObserver, podPhase corev1.PodPhase) {
 	buildprogressToPodPhases := map[mcfgv1alpha1.BuildProgress]corev1.PodPhase{
 		mcfgv1alpha1.MachineOSBuildPrepared:  corev1.PodPending,
 		mcfgv1alpha1.MachineOSBuilding:       corev1.PodRunning,
@@ -47,35 +65,25 @@ func TestImageBuilder(t *testing.T) {
 		mcfgv1alpha1.MachineOSBuildSucceeded: corev1.PodSucceeded,
 	}
 
-	for _, podPhase := range podPhases {
-		fixtures.SetPodPhase(ctx, t, kubeclient, lobj.MachineOSBuild, podPhase)
+	buildprogress, err := obs.Status(ctx)
+	require.NoError(t, err)
 
-		buildprogress, err := pim.Status(ctx)
-		require.NoError(t, err)
+	assert.Equal(t, buildprogressToPodPhases[buildprogress], podPhase)
 
-		assert.Equal(t, buildprogressToPodPhases[buildprogress], podPhase)
+	mosbStatus, err := obs.MachineOSBuildStatus(ctx)
+	require.NoError(t, err)
 
-		mosbStatus, err := pim.MachineOSBuildStatus(ctx)
-		require.NoError(t, err)
+	assert.True(t, apihelpers.IsMachineOSBuildConditionTrue(mosbStatus.Conditions, buildprogress))
 
-		assert.True(t, apihelpers.IsMachineOSBuildConditionTrue(mosbStatus.Conditions, buildprogress))
+	assert.NotNil(t, mosbStatus.BuilderReference)
 
-		assert.NotNil(t, mosbStatus.BuilderReference)
-
-		if podPhase == corev1.PodSucceeded {
-			assert.NotNil(t, mosbStatus.BuildEnd)
-			assert.Equal(t, "registry.hostname.com/org/repo@sha256:628e4e8f0a78d91015c6cebeee95931ae2e8defe5dfb4ced4a82830e08937573", mosbStatus.FinalImagePushspec)
-		}
+	if podPhase == corev1.PodSucceeded {
+		assert.NotNil(t, mosbStatus.BuildEnd)
+		assert.Equal(t, "registry.hostname.com/org/repo@sha256:628e4e8f0a78d91015c6cebeee95931ae2e8defe5dfb4ced4a82830e08937573", mosbStatus.FinalImagePushspec)
 	}
-
-	require.NoError(t, pim.Clean(ctx))
-
-	kubeassert.BuildPodIsDeleted(ctx, buildPodName)
-
-	require.NoError(t, pim.Stop(ctx))
 }
 
-func TestImageBuilderCanCleanWithOnlyMachineOSBuild(t *testing.T) {
+func TestPodImageBuilderCanCleanWithOnlyMachineOSBuild(t *testing.T) {
 	t.Parallel()
 
 	kubeclient, mcfgclient, lobj := fixtures.GetClientsForTest()
@@ -92,9 +100,11 @@ func TestImageBuilderCanCleanWithOnlyMachineOSBuild(t *testing.T) {
 	kubeassert := framework.Assert(t, time.Millisecond, kubeclient, mcfgclient)
 
 	kubeassert.BuildPodIsCreated(ctx, buildPodName)
+	assertObjectsAreCreatedByPreparer(ctx, t, kubeassert, pim.(*podImageBuilder).buildrequest)
 
 	cleaner := NewPodImageBuildCleaner(kubeclient, mcfgclient, lobj.MachineOSBuild)
 	assert.NoError(t, cleaner.Clean(ctx))
 
 	kubeassert.BuildPodIsDeleted(ctx, buildPodName)
+	assertObjectsAreRemovedByCleaner(ctx, t, kubeassert, pim.(*podImageBuilder).buildrequest)
 }
