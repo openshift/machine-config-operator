@@ -4,8 +4,8 @@ package v1
 
 import (
 	v1 "github.com/openshift/api/operator/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/client-go/listers"
 	"k8s.io/client-go/tools/cache"
 )
 
@@ -23,30 +23,10 @@ type KubeSchedulerLister interface {
 
 // kubeSchedulerLister implements the KubeSchedulerLister interface.
 type kubeSchedulerLister struct {
-	indexer cache.Indexer
+	listers.ResourceIndexer[*v1.KubeScheduler]
 }
 
 // NewKubeSchedulerLister returns a new KubeSchedulerLister.
 func NewKubeSchedulerLister(indexer cache.Indexer) KubeSchedulerLister {
-	return &kubeSchedulerLister{indexer: indexer}
-}
-
-// List lists all KubeSchedulers in the indexer.
-func (s *kubeSchedulerLister) List(selector labels.Selector) (ret []*v1.KubeScheduler, err error) {
-	err = cache.ListAll(s.indexer, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1.KubeScheduler))
-	})
-	return ret, err
-}
-
-// Get retrieves the KubeScheduler from the index for a given name.
-func (s *kubeSchedulerLister) Get(name string) (*v1.KubeScheduler, error) {
-	obj, exists, err := s.indexer.GetByKey(name)
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
-		return nil, errors.NewNotFound(v1.Resource("kubescheduler"), name)
-	}
-	return obj.(*v1.KubeScheduler), nil
+	return &kubeSchedulerLister{listers.New[*v1.KubeScheduler](indexer, v1.Resource("kubescheduler"))}
 }

@@ -4,8 +4,8 @@ package v1
 
 import (
 	v1 "github.com/openshift/api/operator/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/client-go/listers"
 	"k8s.io/client-go/tools/cache"
 )
 
@@ -23,30 +23,10 @@ type ServiceCatalogAPIServerLister interface {
 
 // serviceCatalogAPIServerLister implements the ServiceCatalogAPIServerLister interface.
 type serviceCatalogAPIServerLister struct {
-	indexer cache.Indexer
+	listers.ResourceIndexer[*v1.ServiceCatalogAPIServer]
 }
 
 // NewServiceCatalogAPIServerLister returns a new ServiceCatalogAPIServerLister.
 func NewServiceCatalogAPIServerLister(indexer cache.Indexer) ServiceCatalogAPIServerLister {
-	return &serviceCatalogAPIServerLister{indexer: indexer}
-}
-
-// List lists all ServiceCatalogAPIServers in the indexer.
-func (s *serviceCatalogAPIServerLister) List(selector labels.Selector) (ret []*v1.ServiceCatalogAPIServer, err error) {
-	err = cache.ListAll(s.indexer, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1.ServiceCatalogAPIServer))
-	})
-	return ret, err
-}
-
-// Get retrieves the ServiceCatalogAPIServer from the index for a given name.
-func (s *serviceCatalogAPIServerLister) Get(name string) (*v1.ServiceCatalogAPIServer, error) {
-	obj, exists, err := s.indexer.GetByKey(name)
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
-		return nil, errors.NewNotFound(v1.Resource("servicecatalogapiserver"), name)
-	}
-	return obj.(*v1.ServiceCatalogAPIServer), nil
+	return &serviceCatalogAPIServerLister{listers.New[*v1.ServiceCatalogAPIServer](indexer, v1.Resource("servicecatalogapiserver"))}
 }

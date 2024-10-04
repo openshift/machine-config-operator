@@ -2,14 +2,14 @@
 
 package v1
 
-// AWSCSIDriverConfigSpecApplyConfiguration represents an declarative configuration of the AWSCSIDriverConfigSpec type for use
+// AWSCSIDriverConfigSpecApplyConfiguration represents a declarative configuration of the AWSCSIDriverConfigSpec type for use
 // with apply.
 type AWSCSIDriverConfigSpecApplyConfiguration struct {
 	KMSKeyARN        *string                                `json:"kmsKeyARN,omitempty"`
 	EFSVolumeMetrics *AWSEFSVolumeMetricsApplyConfiguration `json:"efsVolumeMetrics,omitempty"`
 }
 
-// AWSCSIDriverConfigSpecApplyConfiguration constructs an declarative configuration of the AWSCSIDriverConfigSpec type for use with
+// AWSCSIDriverConfigSpecApplyConfiguration constructs a declarative configuration of the AWSCSIDriverConfigSpec type for use with
 // apply.
 func AWSCSIDriverConfigSpec() *AWSCSIDriverConfigSpecApplyConfiguration {
 	return &AWSCSIDriverConfigSpecApplyConfiguration{}

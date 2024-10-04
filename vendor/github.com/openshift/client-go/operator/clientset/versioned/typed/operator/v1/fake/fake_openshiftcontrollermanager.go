@@ -27,20 +27,22 @@ var openshiftcontrollermanagersKind = v1.SchemeGroupVersion.WithKind("OpenShiftC
 
 // Get takes name of the openShiftControllerManager, and returns the corresponding openShiftControllerManager object, and an error if there is any.
 func (c *FakeOpenShiftControllerManagers) Get(ctx context.Context, name string, options metav1.GetOptions) (result *v1.OpenShiftControllerManager, err error) {
+	emptyResult := &v1.OpenShiftControllerManager{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootGetAction(openshiftcontrollermanagersResource, name), &v1.OpenShiftControllerManager{})
+		Invokes(testing.NewRootGetActionWithOptions(openshiftcontrollermanagersResource, name, options), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.OpenShiftControllerManager), err
 }
 
 // List takes label and field selectors, and returns the list of OpenShiftControllerManagers that match those selectors.
 func (c *FakeOpenShiftControllerManagers) List(ctx context.Context, opts metav1.ListOptions) (result *v1.OpenShiftControllerManagerList, err error) {
+	emptyResult := &v1.OpenShiftControllerManagerList{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootListAction(openshiftcontrollermanagersResource, openshiftcontrollermanagersKind, opts), &v1.OpenShiftControllerManagerList{})
+		Invokes(testing.NewRootListActionWithOptions(openshiftcontrollermanagersResource, openshiftcontrollermanagersKind, opts), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 
 	label, _, _ := testing.ExtractFromListOptions(opts)
@@ -59,36 +61,39 @@ func (c *FakeOpenShiftControllerManagers) List(ctx context.Context, opts metav1.
 // Watch returns a watch.Interface that watches the requested openShiftControllerManagers.
 func (c *FakeOpenShiftControllerManagers) Watch(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error) {
 	return c.Fake.
-		InvokesWatch(testing.NewRootWatchAction(openshiftcontrollermanagersResource, opts))
+		InvokesWatch(testing.NewRootWatchActionWithOptions(openshiftcontrollermanagersResource, opts))
 }
 
 // Create takes the representation of a openShiftControllerManager and creates it.  Returns the server's representation of the openShiftControllerManager, and an error, if there is any.
 func (c *FakeOpenShiftControllerManagers) Create(ctx context.Context, openShiftControllerManager *v1.OpenShiftControllerManager, opts metav1.CreateOptions) (result *v1.OpenShiftControllerManager, err error) {
+	emptyResult := &v1.OpenShiftControllerManager{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootCreateAction(openshiftcontrollermanagersResource, openShiftControllerManager), &v1.OpenShiftControllerManager{})
+		Invokes(testing.NewRootCreateActionWithOptions(openshiftcontrollermanagersResource, openShiftControllerManager, opts), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.OpenShiftControllerManager), err
 }
 
 // Update takes the representation of a openShiftControllerManager and updates it. Returns the server's representation of the openShiftControllerManager, and an error, if there is any.
 func (c *FakeOpenShiftControllerManagers) Update(ctx context.Context, openShiftControllerManager *v1.OpenShiftControllerManager, opts metav1.UpdateOptions) (result *v1.OpenShiftControllerManager, err error) {
+	emptyResult := &v1.OpenShiftControllerManager{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootUpdateAction(openshiftcontrollermanagersResource, openShiftControllerManager), &v1.OpenShiftControllerManager{})
+		Invokes(testing.NewRootUpdateActionWithOptions(openshiftcontrollermanagersResource, openShiftControllerManager, opts), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.OpenShiftControllerManager), err
 }
 
 // UpdateStatus was generated because the type contains a Status member.
 // Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-func (c *FakeOpenShiftControllerManagers) UpdateStatus(ctx context.Context, openShiftControllerManager *v1.OpenShiftControllerManager, opts metav1.UpdateOptions) (*v1.OpenShiftControllerManager, error) {
+func (c *FakeOpenShiftControllerManagers) UpdateStatus(ctx context.Context, openShiftControllerManager *v1.OpenShiftControllerManager, opts metav1.UpdateOptions) (result *v1.OpenShiftControllerManager, err error) {
+	emptyResult := &v1.OpenShiftControllerManager{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootUpdateSubresourceAction(openshiftcontrollermanagersResource, "status", openShiftControllerManager), &v1.OpenShiftControllerManager{})
+		Invokes(testing.NewRootUpdateSubresourceActionWithOptions(openshiftcontrollermanagersResource, "status", openShiftControllerManager, opts), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.OpenShiftControllerManager), err
 }
@@ -102,7 +107,7 @@ func (c *FakeOpenShiftControllerManagers) Delete(ctx context.Context, name strin
 
 // DeleteCollection deletes a collection of objects.
 func (c *FakeOpenShiftControllerManagers) DeleteCollection(ctx context.Context, opts metav1.DeleteOptions, listOpts metav1.ListOptions) error {
-	action := testing.NewRootDeleteCollectionAction(openshiftcontrollermanagersResource, listOpts)
+	action := testing.NewRootDeleteCollectionActionWithOptions(openshiftcontrollermanagersResource, opts, listOpts)
 
 	_, err := c.Fake.Invokes(action, &v1.OpenShiftControllerManagerList{})
 	return err
@@ -110,10 +115,11 @@ func (c *FakeOpenShiftControllerManagers) DeleteCollection(ctx context.Context, 
 
 // Patch applies the patch and returns the patched openShiftControllerManager.
 func (c *FakeOpenShiftControllerManagers) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts metav1.PatchOptions, subresources ...string) (result *v1.OpenShiftControllerManager, err error) {
+	emptyResult := &v1.OpenShiftControllerManager{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootPatchSubresourceAction(openshiftcontrollermanagersResource, name, pt, data, subresources...), &v1.OpenShiftControllerManager{})
+		Invokes(testing.NewRootPatchSubresourceActionWithOptions(openshiftcontrollermanagersResource, name, pt, data, opts, subresources...), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.OpenShiftControllerManager), err
 }
@@ -131,10 +137,11 @@ func (c *FakeOpenShiftControllerManagers) Apply(ctx context.Context, openShiftCo
 	if name == nil {
 		return nil, fmt.Errorf("openShiftControllerManager.Name must be provided to Apply")
 	}
+	emptyResult := &v1.OpenShiftControllerManager{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootPatchSubresourceAction(openshiftcontrollermanagersResource, *name, types.ApplyPatchType, data), &v1.OpenShiftControllerManager{})
+		Invokes(testing.NewRootPatchSubresourceActionWithOptions(openshiftcontrollermanagersResource, *name, types.ApplyPatchType, data, opts.ToPatchOptions()), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.OpenShiftControllerManager), err
 }
@@ -153,10 +160,11 @@ func (c *FakeOpenShiftControllerManagers) ApplyStatus(ctx context.Context, openS
 	if name == nil {
 		return nil, fmt.Errorf("openShiftControllerManager.Name must be provided to Apply")
 	}
+	emptyResult := &v1.OpenShiftControllerManager{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootPatchSubresourceAction(openshiftcontrollermanagersResource, *name, types.ApplyPatchType, data, "status"), &v1.OpenShiftControllerManager{})
+		Invokes(testing.NewRootPatchSubresourceActionWithOptions(openshiftcontrollermanagersResource, *name, types.ApplyPatchType, data, opts.ToPatchOptions(), "status"), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.OpenShiftControllerManager), err
 }

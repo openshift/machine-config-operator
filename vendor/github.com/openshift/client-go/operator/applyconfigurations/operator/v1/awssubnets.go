@@ -6,14 +6,14 @@ import (
 	v1 "github.com/openshift/api/operator/v1"
 )
 
-// AWSSubnetsApplyConfiguration represents an declarative configuration of the AWSSubnets type for use
+// AWSSubnetsApplyConfiguration represents a declarative configuration of the AWSSubnets type for use
 // with apply.
 type AWSSubnetsApplyConfiguration struct {
 	IDs   []v1.AWSSubnetID   `json:"ids,omitempty"`
 	Names []v1.AWSSubnetName `json:"names,omitempty"`
 }
 
-// AWSSubnetsApplyConfiguration constructs an declarative configuration of the AWSSubnets type for use with
+// AWSSubnetsApplyConfiguration constructs a declarative configuration of the AWSSubnets type for use with
 // apply.
 func AWSSubnets() *AWSSubnetsApplyConfiguration {
 	return &AWSSubnetsApplyConfiguration{}
