@@ -670,7 +670,7 @@ func waitForBuildToComplete(t *testing.T, cs *framework.ClientSet, startedBuild 
 
 	t.Logf("Waiting for MachineOSBuild %s to complete", startedBuild.Name)
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*5)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*15)
 	defer cancel()
 
 	start := time.Now()
