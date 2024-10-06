@@ -1,0 +1,19 @@
+mode: 0644
+path: "/etc/containers/storage.conf"
+contents:
+  inline: |
+    [storage]
+    driver = "overlay"
+    runroot = "/var/run/containers/storage"
+    graphroot = "/var/lib/containers/storage"
+
+    [storage.options]
+    additionalimagestores = []
+    size = ""
+
+    [storage.options.overlay]
+    use_composefs = "true"
+    skip_mount_home = "true"
+
+    [storage.options.pull_options]
+    convert_images = "true"
