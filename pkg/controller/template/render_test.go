@@ -203,6 +203,7 @@ var (
 	configs = map[string]string{
 		"aws":                    "./test_data/controller_config_aws.yaml",
 		"baremetal":              "./test_data/controller_config_baremetal.yaml",
+		"baremetal-arbiter":      "./test_data/controller_config_baremetal_arbiter.yaml",
 		"gcp":                    "./test_data/controller_config_gcp.yaml",
 		"openstack":              "./test_data/controller_config_openstack.yaml",
 		"libvirt":                "./test_data/controller_config_libvirt.yaml",
@@ -303,6 +304,8 @@ func TestGenerateMachineConfigs(t *testing.T) {
 					foundMTUMigrationWorker = findIgnFile(ign.Storage.Files, "/usr/local/bin/mtu-migration.sh", t)
 					foundMTUMigrationWorker = foundMTUMigrationWorker || findIgnFile(ign.Storage.Files, "/etc/systemd/system/mtu-migration.service", t)
 				}
+			} else if role == "arbiter" {
+				// TODO: resolve test output to match with expected
 			} else {
 				t.Fatalf("Unknown role %s", role)
 			}

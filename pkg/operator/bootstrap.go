@@ -182,6 +182,13 @@ func RenderBootstrap(
 		},
 	}
 
+	if infra.Status.ControlPlaneTopology == configv1.HighlyAvailableArbiterMode {
+		manifests = append(manifests, manifest{
+			name:     "manifests/arbiter.machineconfigpool.yaml",
+			filename: "bootstrap/manifests/arbiter.machineconfigpool.yaml",
+		})
+	}
+
 	manifests = appendManifestsByPlatform(manifests, *infra)
 
 	for _, m := range manifests {

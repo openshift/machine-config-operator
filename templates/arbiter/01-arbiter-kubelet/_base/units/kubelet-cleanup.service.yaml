@@ -1,0 +1,14 @@
+name: kubelet-cleanup.service
+enabled: true
+contents: |
+  [Unit]
+  Description=Kubernetes Kubelet After Reboot Cleanup
+  Before=kubelet.service
+
+  [Service]
+  Type=oneshot
+  ExecStart=/bin/rm -f /var/lib/kubelet/cpu_manager_state
+  ExecStart=/bin/rm -f /var/lib/kubelet/memory_manager_state
+
+  [Install]
+  WantedBy=multi-user.target

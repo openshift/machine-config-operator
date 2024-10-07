@@ -809,7 +809,21 @@ spec:
                                         IAM - https://cloud.ibm.com/apidocs/iam-identity-token-api
                                         ResourceController - https://cloud.ibm.com/apidocs/resource-controller/resource-controller
                                         Power Cloud - https://cloud.ibm.com/apidocs/power-cloud
-                                      pattern: ^[a-z0-9-]+$
+                                      enum:
+                                      - CIS
+                                      - COS
+                                      - COSConfig
+                                      - DNSServices
+                                      - GlobalCatalog
+                                      - GlobalSearch
+                                      - GlobalTagging
+                                      - HyperProtect
+                                      - IAM
+                                      - KeyProtect
+                                      - Power
+                                      - ResourceController
+                                      - ResourceManager
+                                      - VPC
                                       type: string
                                     url:
                                       description: |-
@@ -1239,6 +1253,7 @@ spec:
                           its components are not visible within the cluster.
                         enum:
                         - HighlyAvailable
+                        - HighlyAvailableArbiter
                         - SingleReplica
                         - External
                         type: string
@@ -2427,7 +2442,21 @@ spec:
                                         IAM - https://cloud.ibm.com/apidocs/iam-identity-token-api
                                         ResourceController - https://cloud.ibm.com/apidocs/resource-controller/resource-controller
                                         Power Cloud - https://cloud.ibm.com/apidocs/power-cloud
-                                      pattern: ^[a-z0-9-]+$
+                                      enum:
+                                      - CIS
+                                      - COS
+                                      - COSConfig
+                                      - DNSServices
+                                      - GlobalCatalog
+                                      - GlobalSearch
+                                      - GlobalTagging
+                                      - HyperProtect
+                                      - IAM
+                                      - KeyProtect
+                                      - Power
+                                      - ResourceController
+                                      - ResourceManager
+                                      - VPC
                                       type: string
                                     url:
                                       description: |-
