@@ -33,8 +33,8 @@ build_context="$HOME/context"
 # Create a directory to hold our build context.
 mkdir -p "$build_context/machineconfig"
 
-# Copy the Dockerfile and Machineconfigs from configmaps into our build context.
-cp /tmp/dockerfile/Dockerfile "$build_context"
+# Copy the Containerfile and Machineconfigs from configmaps into our build context.
+cp /tmp/containerfile/Containerfile "$build_context"
 cp /tmp/machineconfig/machineconfig.json.gz "$build_context/machineconfig/"
 
 build_args=(
@@ -42,7 +42,7 @@ build_args=(
 	--storage-driver vfs
 	--authfile="$BASE_IMAGE_PULL_CREDS"
 	--tag "$TAG"
-	--file="$build_context/Dockerfile"
+	--file="$build_context/Containerfile"
 )
 
 mount_opts="z,rw"

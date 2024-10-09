@@ -14,10 +14,11 @@ import (
 	"testing"
 	"time"
 
+	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	imagev1 "github.com/openshift/api/image/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
-	"github.com/openshift/machine-config-operator/pkg/controller/build"
+	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/openshift/machine-config-operator/test/helpers"
@@ -26,6 +27,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	aggerrs "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/yaml"
@@ -240,48 +242,35 @@ func copyGlobalPullSecret(t *testing.T, cs *framework.ClientSet) func() {
 	return cloneSecret(t, cs, src, dst)
 }
 
-// Computes the name of the currently-running MachineOSBuild given the name of a MachineConfigPool.
-func getMachineOSBuildNameForPool(cs *framework.ClientSet, poolName string) (string, error) {
+// Computes the name of the currently-running MachineOSBuild given a MachineConfigPool and MachineOSConfig.
+func getMachineOSBuildNameForPool(cs *framework.ClientSet, poolName, moscName string) (string, error) {
 	mcp, err := cs.MachineconfigurationV1Interface.MachineConfigPools().Get(context.TODO(), poolName, metav1.GetOptions{})
 	if err != nil {
 		return "", err
 	}
 
-	return fmt.Sprintf("%s-%s-builder", poolName, mcp.Spec.Configuration.Name), nil
-}
-
-// Waits for the provided MachineOSBuild to reach the desired state as
-// determined by the condFunc provided by the caller. Will return the
-// MachineOSBuild object in the final state.
-func waitForMachineOSBuildToReachState(t *testing.T, cs *framework.ClientSet, mosb *mcfgv1alpha1.MachineOSBuild, condFunc func(*mcfgv1alpha1.MachineOSBuild, error) (bool, error)) *mcfgv1alpha1.MachineOSBuild {
-	mosbName := mosb.Name
-
-	var finalMosb *mcfgv1alpha1.MachineOSBuild
-
-	start := time.Now()
-
-	err := wait.PollImmediate(1*time.Second, 10*time.Minute, func() (bool, error) {
-		mosb, err := cs.MachineconfigurationV1alpha1Interface.MachineOSBuilds().Get(context.TODO(), mosbName, metav1.GetOptions{})
-		// Pass in a DeepCopy of the object so that the caller cannot inadvertantly
-		// mutate it and cause false results.
-		reached, err := condFunc(mosb.DeepCopy(), err)
-		if reached {
-			// If we've reached the desired state, grab the MachineOSBuild to return
-			// to the caller.
-			finalMosb = mosb
-		}
-
-		// Return these as-is.
-		return reached, err
-	})
-
-	if err == nil {
-		t.Logf("MachineOSBuild %q reached desired state after %s", mosbName, time.Since(start))
+	mosc, err := cs.MachineconfigurationV1alpha1Interface.MachineOSConfigs().Get(context.TODO(), moscName, metav1.GetOptions{})
+	if err != nil {
+		return "", err
 	}
 
-	require.NoError(t, err, "MachineOSBuild %q did not reach desired state", mosbName)
+	mosbs, err := cs.MachineconfigurationV1alpha1Interface.MachineOSBuilds().List(context.TODO(), metav1.ListOptions{
+		LabelSelector: utils.MachineOSBuildSelector(mosc, mcp).String(),
+	})
 
-	return finalMosb
+	if err != nil {
+		return "", err
+	}
+
+	if len(mosbs.Items) == 1 {
+		return mosbs.Items[0].Name, nil
+	}
+
+	if len(mosbs.Items) == 0 {
+		return "", fmt.Errorf("no MachineOSBuild found for MachineOSConfig %s, MachineConfigPool %s, rendered MachineConfig %s", mosc.Name, mcp.Name, mcp.Spec.Configuration.Name)
+	}
+
+	return "", fmt.Errorf("found multiple MachineOSBuilds for MachineOSConfig %s, MachineConfigPool %s, rendered MachineConfig %s", mosc.Name, mcp.Name, mcp.Spec.Configuration.Name)
 }
 
 // Waits for the target MachineConfigPool to reach a state defined in a supplied function.
@@ -312,12 +301,12 @@ func makeIdempotentAndRegister(t *testing.T, cleanupFunc func()) func() {
 
 // TOOD: Refactor into smaller functions.
 func cleanupEphemeralBuildObjects(t *testing.T, cs *framework.ClientSet) {
-	labelSelector := build.OSBuildSelector().String()
+	labelSelector := utils.OSBuildSelector().String()
 
 	// Any secrets that get created by BuildController should have different
 	// label selectors since they're produced differently.
 	secretList, err := cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace).List(context.TODO(), metav1.ListOptions{
-		LabelSelector: build.CanonicalizedSecretSelector().String(),
+		LabelSelector: utils.CanonicalizedSecretSelector().String(),
 	})
 
 	require.NoError(t, err)
@@ -362,34 +351,89 @@ func cleanupEphemeralBuildObjects(t *testing.T, cs *framework.ClientSet) {
 
 	for _, item := range secretList.Items {
 		t.Logf("Cleaning up build-time Secret %s", item.Name)
-		require.NoError(t, cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace).Delete(context.TODO(), item.Name, metav1.DeleteOptions{}))
+		require.NoError(t, deleteObject(context.TODO(), t, &item, cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace)))
 	}
 
 	for _, item := range cmList.Items {
 		t.Logf("Cleaning up ephemeral ConfigMap %q", item.Name)
-		require.NoError(t, cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace).Delete(context.TODO(), item.Name, metav1.DeleteOptions{}))
+		require.NoError(t, deleteObject(context.TODO(), t, &item, cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace)))
 	}
 
 	for _, item := range podList.Items {
 		t.Logf("Cleaning up build pod %q", item.Name)
-		require.NoError(t, cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace).Delete(context.TODO(), item.Name, metav1.DeleteOptions{}))
+		require.NoError(t, deleteObject(context.TODO(), t, &item, cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace)))
 	}
 
 	for _, item := range moscList.Items {
 		t.Logf("Cleaning up MachineOSConfig %q", item.Name)
-		require.NoError(t, cs.MachineconfigurationV1alpha1Interface.MachineOSConfigs().Delete(context.TODO(), item.Name, metav1.DeleteOptions{}))
+		require.NoError(t, deleteObject(context.TODO(), t, &item, cs.MachineconfigurationV1alpha1Interface.MachineOSConfigs()))
 	}
 
 	for _, item := range mosbList.Items {
 		t.Logf("Cleaning up MachineOSBuild %q", item.Name)
-		require.NoError(t, cs.MachineconfigurationV1alpha1Interface.MachineOSBuilds().Delete(context.TODO(), item.Name, metav1.DeleteOptions{}))
+		require.NoError(t, deleteObject(context.TODO(), t, &item, cs.MachineconfigurationV1alpha1Interface.MachineOSBuilds()))
 	}
+}
+
+type kubeObject interface {
+	runtime.Object
+	GetName() string
+}
+
+func deleteObject(ctx context.Context, t *testing.T, obj kubeObject, deleter interface {
+	Delete(context.Context, string, metav1.DeleteOptions) error
+}) error {
+	err := deleter.Delete(ctx, obj.GetName(), metav1.DeleteOptions{})
+
+	kind, err := utils.GetKindForObject(obj)
+	if err != nil && kind == "" {
+		kind = "<unknown>"
+	}
+
+	if err == nil {
+		t.Logf("Cleaned up %s %q", kind, obj.GetName())
+		return nil
+	}
+
+	if k8serrors.IsNotFound(err) {
+		t.Logf("%s %q already cleaned up", kind, obj.GetName())
+		return nil
+	}
+
+	return err
+}
+
+func ignoreErrNotFound(t *testing.T, err error) error {
+	if k8serrors.IsNotFound(err) {
+		t.Logf("")
+		return nil
+	}
+
+	return err
+}
+
+// Determines where to write the build logs in the event of a failure.
+// ARTIFACT_DIR is a well-known env var provided by the OpenShift CI system.
+// Writing to the path in this env var will ensure that any files written to
+// that path end up in the OpenShift CI GCP bucket for later viewing.
+//
+// If this env var is not set, these files will be written to the current
+// working directory.
+func getBuildArtifactDir(t *testing.T) string {
+	artifactDir := os.Getenv("ARTIFACT_DIR")
+	if artifactDir != "" {
+		return artifactDir
+	}
+
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+	return cwd
 }
 
 // Writes any ephemeral build objects to disk as YAML files.
 func writeBuildArtifactsToFiles(t *testing.T, cs *framework.ClientSet, poolName string) {
 	lo := metav1.ListOptions{
-		LabelSelector: build.OSBuildSelector().String(),
+		LabelSelector: utils.OSBuildSelector().String(),
 	}
 
 	archiveName := fmt.Sprintf("%s-build-artifacts.tar.gz", helpers.SanitizeTestName(t))
@@ -735,4 +779,23 @@ func cloneSecret(t *testing.T, cs *framework.ClientSet, src, dst metav1.ObjectMe
 		cleanup()
 		t.Logf("Deleted cloned secret \"%s/%s\"", dst.Namespace, dst.Name)
 	})
+}
+
+func newMachineConfig(name, pool string) *mcfgv1.MachineConfig {
+	mode := 420
+	testfiledata := fmt.Sprintf("data:,%s-%s", name, pool)
+	path := fmt.Sprintf("/etc/%s-%s", name, pool)
+	file := ign3types.File{
+		Node: ign3types.Node{
+			Path: path,
+		},
+		FileEmbedded1: ign3types.FileEmbedded1{
+			Contents: ign3types.Resource{
+				Source: &testfiledata,
+			},
+			Mode: &mode,
+		},
+	}
+
+	return helpers.NewMachineConfig(name, helpers.MCLabelForRole(pool), "", []ign3types.File{file})
 }
