@@ -4,8 +4,8 @@ package v1
 
 import (
 	v1 "github.com/openshift/api/machineconfiguration/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/client-go/listers"
 	"k8s.io/client-go/tools/cache"
 )
 
@@ -23,30 +23,10 @@ type MachineConfigPoolLister interface {
 
 // machineConfigPoolLister implements the MachineConfigPoolLister interface.
 type machineConfigPoolLister struct {
-	indexer cache.Indexer
+	listers.ResourceIndexer[*v1.MachineConfigPool]
 }
 
 // NewMachineConfigPoolLister returns a new MachineConfigPoolLister.
 func NewMachineConfigPoolLister(indexer cache.Indexer) MachineConfigPoolLister {
-	return &machineConfigPoolLister{indexer: indexer}
-}
-
-// List lists all MachineConfigPools in the indexer.
-func (s *machineConfigPoolLister) List(selector labels.Selector) (ret []*v1.MachineConfigPool, err error) {
-	err = cache.ListAll(s.indexer, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1.MachineConfigPool))
-	})
-	return ret, err
-}
-
-// Get retrieves the MachineConfigPool from the index for a given name.
-func (s *machineConfigPoolLister) Get(name string) (*v1.MachineConfigPool, error) {
-	obj, exists, err := s.indexer.GetByKey(name)
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
-		return nil, errors.NewNotFound(v1.Resource("machineconfigpool"), name)
-	}
-	return obj.(*v1.MachineConfigPool), nil
+	return &machineConfigPoolLister{listers.New[*v1.MachineConfigPool](indexer, v1.Resource("machineconfigpool"))}
 }
