@@ -110,7 +110,7 @@ spec:
     image: {{ .Images.BaremetalRuntimeCfgBootstrap }}
     env:
       - name: ENABLE_UNICAST
-        value: "yes"
+        value: {{ if isSingleReplicaTopology .ControllerConfig }}"no"{{ else }}"yes"{{ end }}
       - name: IS_BOOTSTRAP
         value: "yes"
       - name: POD_NAMESPACE

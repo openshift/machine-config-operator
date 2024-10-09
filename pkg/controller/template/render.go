@@ -345,6 +345,7 @@ func renderTemplate(config RenderConfig, path string, b []byte) ([]byte, error) 
 	funcs["cloudPlatformAPILoadBalancerIPs"] = cloudPlatformAPILoadBalancerIPs
 	funcs["cloudPlatformIngressLoadBalancerIPs"] = cloudPlatformIngressLoadBalancerIPs
 	funcs["join"] = strings.Join
+	funcs["isSingleReplicaTopology"] = isSingleReplicaTopology
 	tmpl, err := template.New(path).Funcs(funcs).Parse(string(b))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse template %s: %w", path, err)
@@ -760,4 +761,8 @@ func cloudPlatformLoadBalancerIPState(cfg RenderConfig) LoadBalancerIPState {
 		}
 	}
 	return lbIPState
+}
+
+func isSingleReplicaTopology(cfg RenderConfig) bool {
+	return cfg.Infra.Status.InfrastructureTopology == configv1.SingleReplicaTopologyMode
 }
