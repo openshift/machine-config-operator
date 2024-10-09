@@ -6,13 +6,13 @@ import (
 	v1 "github.com/openshift/api/operator/v1"
 )
 
-// CapabilityVisibilityApplyConfiguration represents an declarative configuration of the CapabilityVisibility type for use
+// CapabilityVisibilityApplyConfiguration represents a declarative configuration of the CapabilityVisibility type for use
 // with apply.
 type CapabilityVisibilityApplyConfiguration struct {
 	State *v1.CapabilityState `json:"state,omitempty"`
 }
 
-// CapabilityVisibilityApplyConfiguration constructs an declarative configuration of the CapabilityVisibility type for use with
+// CapabilityVisibilityApplyConfiguration constructs a declarative configuration of the CapabilityVisibility type for use with
 // apply.
 func CapabilityVisibility() *CapabilityVisibilityApplyConfiguration {
 	return &CapabilityVisibilityApplyConfiguration{}

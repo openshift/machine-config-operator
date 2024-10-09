@@ -4,8 +4,8 @@ package v1alpha1
 
 import (
 	v1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/client-go/listers"
 	"k8s.io/client-go/tools/cache"
 )
 
@@ -23,30 +23,10 @@ type MachineOSBuildLister interface {
 
 // machineOSBuildLister implements the MachineOSBuildLister interface.
 type machineOSBuildLister struct {
-	indexer cache.Indexer
+	listers.ResourceIndexer[*v1alpha1.MachineOSBuild]
 }
 
 // NewMachineOSBuildLister returns a new MachineOSBuildLister.
 func NewMachineOSBuildLister(indexer cache.Indexer) MachineOSBuildLister {
-	return &machineOSBuildLister{indexer: indexer}
-}
-
-// List lists all MachineOSBuilds in the indexer.
-func (s *machineOSBuildLister) List(selector labels.Selector) (ret []*v1alpha1.MachineOSBuild, err error) {
-	err = cache.ListAll(s.indexer, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1alpha1.MachineOSBuild))
-	})
-	return ret, err
-}
-
-// Get retrieves the MachineOSBuild from the index for a given name.
-func (s *machineOSBuildLister) Get(name string) (*v1alpha1.MachineOSBuild, error) {
-	obj, exists, err := s.indexer.GetByKey(name)
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
-		return nil, errors.NewNotFound(v1alpha1.Resource("machineosbuild"), name)
-	}
-	return obj.(*v1alpha1.MachineOSBuild), nil
+	return &machineOSBuildLister{listers.New[*v1alpha1.MachineOSBuild](indexer, v1alpha1.Resource("machineosbuild"))}
 }

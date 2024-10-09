@@ -6,14 +6,14 @@ import (
 	operatorv1 "github.com/openshift/api/operator/v1"
 )
 
-// AWSNetworkLoadBalancerParametersApplyConfiguration represents an declarative configuration of the AWSNetworkLoadBalancerParameters type for use
+// AWSNetworkLoadBalancerParametersApplyConfiguration represents a declarative configuration of the AWSNetworkLoadBalancerParameters type for use
 // with apply.
 type AWSNetworkLoadBalancerParametersApplyConfiguration struct {
 	Subnets        *AWSSubnetsApplyConfiguration `json:"subnets,omitempty"`
 	EIPAllocations []operatorv1.EIPAllocation    `json:"eipAllocations,omitempty"`
 }
 
-// AWSNetworkLoadBalancerParametersApplyConfiguration constructs an declarative configuration of the AWSNetworkLoadBalancerParameters type for use with
+// AWSNetworkLoadBalancerParametersApplyConfiguration constructs a declarative configuration of the AWSNetworkLoadBalancerParameters type for use with
 // apply.
 func AWSNetworkLoadBalancerParameters() *AWSNetworkLoadBalancerParametersApplyConfiguration {
 	return &AWSNetworkLoadBalancerParametersApplyConfiguration{}
