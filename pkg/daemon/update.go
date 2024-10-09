@@ -1775,6 +1775,7 @@ func getSupportedExtensions() map[string][]string {
 		"kerberos":             {"krb5-workstation", "libkadm5"},
 		"kernel-devel":         {"kernel-devel", "kernel-headers"},
 		"sandboxed-containers": {"kata-containers"},
+		"sysstat":              {"sysstat"},
 	}
 }
 
