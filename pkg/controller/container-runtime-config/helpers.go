@@ -437,13 +437,15 @@ func createCRIODropinFiles(cfg *mcfgv1.ContainerRuntimeConfig) []generatedConfig
 			klog.V(2).Infoln(cfg, err, "error updating user changes for log-size-max to crio.conf.d: %v", err)
 		}
 	}
-	if ctrcfg.DefaultRuntime != mcfgv1.ContainerRuntimeDefaultRuntimeEmpty {
-		tomlConf := tomlConfigCRIODefaultRuntime{}
-		tomlConf.Crio.Runtime.DefaultRuntime = string(ctrcfg.DefaultRuntime)
-		generatedConfigFileList, err = addTOMLgeneratedConfigFile(generatedConfigFileList, CRIODropInFilePathDefaultRuntime, tomlConf)
-		if err != nil {
-			klog.V(2).Infoln(cfg, err, "error updating user changes for default-runtime to crio.conf.d: %v", err)
-		}
+
+	if ctrcfg.DefaultRuntime == mcfgv1.ContainerRuntimeDefaultRuntimeCrun {
+		ctrcfg.DefaultRuntime = mcfgv1.ContainerRuntimeDefaultRuntimeDefault
+	}
+	tomlConf := tomlConfigCRIODefaultRuntime{}
+	tomlConf.Crio.Runtime.DefaultRuntime = string(ctrcfg.DefaultRuntime)
+	generatedConfigFileList, err = addTOMLgeneratedConfigFile(generatedConfigFileList, CRIODropInFilePathDefaultRuntime, tomlConf)
+	if err != nil {
+		klog.V(2).Infoln(cfg, err, "error updating user changes for default-runtime to crio.conf.d: %v", err)
 	}
 	return generatedConfigFileList
 }

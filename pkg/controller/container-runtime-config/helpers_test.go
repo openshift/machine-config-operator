@@ -1147,6 +1147,25 @@ func TestCreateCRIODropinFiles(t *testing.T) {
 		},
 	}
 
+	defaultRuntimeTests := []struct {
+		name     string
+		cfg      *mcfgv1.ContainerRuntimeConfiguration
+		filepath string
+		want     []byte
+	}{
+		{
+			name: "01-ctrcfg-defaultRuntime created for valid DefaultRuntime (crun)",
+			cfg: &mcfgv1.ContainerRuntimeConfiguration{
+				DefaultRuntime: mcfgv1.ContainerRuntimeDefaultRuntimeCrun,
+			},
+			filepath: CRIODropInFilePathDefaultRuntime,
+			want: []byte(`[crio]
+  [crio.runtime]
+    default_runtime = "runc"
+`),
+		},
+	}
+
 	for _, test := range zeroValueTests {
 		ctrcfg := newContainerRuntimeConfig(test.name, test.cfg, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "", ""))
 		files := createCRIODropinFiles(ctrcfg)
@@ -1158,6 +1177,16 @@ func TestCreateCRIODropinFiles(t *testing.T) {
 	}
 
 	for _, test := range validValueTests {
+		ctrcfg := newContainerRuntimeConfig(test.name, test.cfg, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "", ""))
+		files := createCRIODropinFiles(ctrcfg)
+		for _, file := range files {
+			if file.filePath == test.filepath {
+				require.Equal(t, test.want, file.data, "createCRIODropinFiles() Diff, want %v, got %v", test.want, string(file.data))
+			}
+		}
+	}
+
+	for _, test := range defaultRuntimeTests {
 		ctrcfg := newContainerRuntimeConfig(test.name, test.cfg, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "", ""))
 		files := createCRIODropinFiles(ctrcfg)
 		for _, file := range files {
