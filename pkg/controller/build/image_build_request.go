@@ -7,6 +7,7 @@ import (
 	"strings"
 	"text/template"
 
+	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -51,6 +52,10 @@ type ImageBuildRequest struct {
 	HasEtcYumReposDConfigs bool
 	// Has /etc/pki/rpm-gpg configs
 	HasEtcPkiRpmGpgKeys bool
+	// Proxy Configurations
+	Proxy *configv1.ProxyStatus
+	// Additional trust bundles for proxy (user defined)
+	AdditionalTrustBundle []byte
 }
 
 // Constructs a simple ImageBuildRequest.
@@ -105,6 +110,19 @@ func (i ImageBuildRequest) dockerfileToConfigMap() (*corev1.ConfigMap, error) {
 	}
 
 	return configmap, nil
+}
+
+// Gets the Additional Trust Bundle and injects it into a ConfigMap for consumption by the image builder.
+func (i ImageBuildRequest) additionalTrustBundleToConfigMap() *corev1.ConfigMap {
+	configmap := &corev1.ConfigMap{
+		TypeMeta:   metav1.TypeMeta{},
+		ObjectMeta: i.getObjectMeta(i.getAdditionalTrustBundleConfigMapName()),
+		BinaryData: map[string][]byte{
+			"openshift-config-user-ca-bundle.crt": i.AdditionalTrustBundle,
+		},
+	}
+
+	return configmap
 }
 
 // Stuffs a given MachineConfig into a ConfigMap, gzipping and base64-encoding it.
@@ -171,6 +189,12 @@ func (i ImageBuildRequest) toBuildPod() *corev1.Pod {
 // the official Buildah image.
 // nolint:dupl // I don't want to deduplicate this yet since there are still some unknowns.
 func (i ImageBuildRequest) toBuildahPod() *corev1.Pod {
+	var httpProxy, httpsProxy, noProxy string
+	if i.Proxy != nil {
+		httpProxy = i.Proxy.HTTPProxy
+		httpsProxy = i.Proxy.HTTPSProxy
+		noProxy = i.Proxy.NoProxy
+	}
 	env := []corev1.EnvVar{
 		// How many times the build / push steps should be retried. In the future,
 		// this should be wired up to the MachineOSConfig or other higher-level
@@ -214,15 +238,21 @@ func (i ImageBuildRequest) toBuildahPod() *corev1.Pod {
 			Name:  "BUILDAH_ISOLATION",
 			Value: "chroot",
 		},
+		{
+			Name:  "HTTP_PROXY",
+			Value: httpProxy,
+		},
+		{
+			Name:  "HTTPS_PROXY",
+			Value: httpsProxy,
+		},
+		{
+			Name:  "NO_PROXY",
+			Value: noProxy,
+		},
 	}
 
-	var uid int64 = 1000
-	var gid int64 = 1000
-
-	securityContext := &corev1.SecurityContext{
-		RunAsUser:  &uid,
-		RunAsGroup: &gid,
-	}
+	securityContext := &corev1.SecurityContext{}
 
 	command := []string{"/bin/bash", "-c"}
 
@@ -234,6 +264,10 @@ func (i ImageBuildRequest) toBuildahPod() *corev1.Pod {
 		{
 			Name:      "dockerfile",
 			MountPath: "/tmp/dockerfile",
+		},
+		{
+			Name:      "additional-trust-bundle",
+			MountPath: "/etc/pki/ca-trust/source/anchors",
 		},
 		{
 			Name:      "base-image-pull-creds",
@@ -269,6 +303,17 @@ func (i ImageBuildRequest) toBuildahPod() *corev1.Pod {
 				ConfigMap: &corev1.ConfigMapVolumeSource{
 					LocalObjectReference: corev1.LocalObjectReference{
 						Name: i.getMCConfigMapName(),
+					},
+				},
+			},
+		},
+		{
+			// Provides the user defined Additional Trust Bundle
+			Name: "additional-trust-bundle",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: i.getAdditionalTrustBundleConfigMapName(),
 					},
 				},
 			},
@@ -498,6 +543,11 @@ func (i ImageBuildRequest) getObjectMeta(name string) metav1.ObjectMeta {
 		Labels:      i.getLabelsForObjectMeta(),
 		Annotations: i.getAnnotationsForObjectMeta(),
 	}
+}
+
+// Computes the AdditionalTrustBundle ConfigMap name based upon the MachineConfigPool name.
+func (i ImageBuildRequest) getAdditionalTrustBundleConfigMapName() string {
+	return fmt.Sprintf("additionaltrustbundle-%s", i.MachineOSBuild.Spec.DesiredConfig.Name)
 }
 
 // Computes the Dockerfile ConfigMap name based upon the MachineConfigPool name.

@@ -922,6 +922,14 @@ func (ctrl *Controller) getImagesConfig() (*ctrlcommon.Images, error) {
 func (ctrl *Controller) prepareForBuild(mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig) (ImageBuildRequest, error) {
 	ibr := newImageBuildRequestFromBuildInputs(mosb, mosc)
 
+	cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
+	if err != nil {
+		return ibr, fmt.Errorf("could not get controller config: %w", err)
+	}
+
+	ibr.Proxy = cc.Spec.Proxy
+	ibr.AdditionalTrustBundle = cc.Spec.AdditionalTrustBundle
+
 	imagesConfig, err := ctrl.getImagesConfig()
 	if err != nil {
 		return ibr, fmt.Errorf("could not get images.json config: %w", err)
@@ -998,6 +1006,14 @@ func (ctrl *Controller) prepareForBuild(mosb *mcfgv1alpha1.MachineOSBuild, mosc 
 	}
 
 	klog.Infof("Stored Dockerfile for build %s in ConfigMap %s for build", ibr.getBuildName(), dockerfileConfigMap.Name)
+
+	additionalTrustBundleConfigMap := ibr.additionalTrustBundleToConfigMap()
+	_, err = ctrl.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Create(context.TODO(), additionalTrustBundleConfigMap, metav1.CreateOptions{})
+	if err != nil {
+		return ImageBuildRequest{}, fmt.Errorf("could not load rendered Additional Trust Bundle %s into configmap: %w", additionalTrustBundleConfigMap.Name, err)
+	}
+
+	klog.Infof("Stored Additional Trust Bundle for build %s in ConfigMap %s for build", ibr.getBuildName(), additionalTrustBundleConfigMap.Name)
 
 	return ibr, nil
 }
