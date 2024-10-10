@@ -31,6 +31,7 @@ spec:
         - "start"
         - "--images-json=/etc/mco/images/images.json"
         - "--payload-version=0.0.1-snapshot"
+        - "--operator-image=placeholder.url.oc.will.replace.this.org/placeholdernamespace:kube-rbac-proxy"
         resources:
           requests:
             cpu: 20m
@@ -38,6 +39,8 @@ spec:
         env:
           - name: RELEASE_VERSION
             value: "0.0.1-snapshot"
+          - name: OPERATOR_IMAGE_AS_AN_ENV_VAR_IF_YOU_PREFER_THAT_OVER_COMMAND_LINE_OPTIONS
+            value: placeholder.url.oc.will.replace.this.org/placeholdernamespace:machine-config-operator
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - name: images

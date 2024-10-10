@@ -48,7 +48,7 @@ func (optr *Operator) syncVersion(co *configv1.ClusterOperator) {
 		}
 		optr.eventRecorder.Eventf(mcoObjectRef, corev1.EventTypeNormal, "OperatorVersionChanged", fmt.Sprintf("clusteroperator/machine-config version changed from %v to %v", co.Status.Versions, optr.vStore.GetAll()))
 	}
-
+	// FIXME: I haven't found where 'operator' gets bumped on reconcile-success, but wherever that is should also set operator-image to the passed-in pullspec at that point.
 	co.Status.Versions = optr.vStore.GetAll()
 }
 
