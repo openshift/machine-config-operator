@@ -22,6 +22,7 @@ var (
 func init() {
 	rootCmd.PersistentFlags().AddGoFlagSet(flag.CommandLine)
 	rootCmd.PersistentFlags().StringVar(&version.ReleaseVersion, "payload-version", version.ReleaseVersion, "Version of the openshift release")
+	rootCmd.PersistentFlags().StringVar(&version.OperatorImage, "operator-image", version.OperatorImage, "Image pullspec for the current machine-config operator")
 }
 
 func main() {

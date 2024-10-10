@@ -14,6 +14,10 @@ var (
 	// This will be injected by the payload build process.
 	ReleaseVersion = "0.0.1-snapshot"
 
+	// OperatorImage is the image pullspec for the current machine-config operator.
+	// This will be injected by the payload build process.
+	OperatorImage = "placeholder.url.oc.will.replace.this.org/placeholdernamespace:was-not-built-properly"
+
 	// Raw is the string representation of the version. This will be replaced
 	// with the calculated version at build time.
 	Raw = "v0.0.0-was-not-built-properly"
