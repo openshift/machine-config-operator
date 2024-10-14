@@ -344,7 +344,11 @@ func (ctrl *Controller) customBuildPodUpdater(pod *corev1.Pod) error {
 	// container to enter an error state while the wait-for-done container is
 	// still running. The pod phase in this state will still be "Running" as
 	// opposed to error.
-	if isBuildPodError(pod) {
+	//
+	// Sometimes, the wait-for-done container might take a few tries to pull, so
+	// provided that the pod is still pending, we should ignore any image pull
+	// errors.
+	if isBuildPodError(pod) && pod.Status.Phase != corev1.PodPending {
 		if err := ctrl.markBuildFailed(mosc, mosb); err != nil {
 			return err
 		}
@@ -772,6 +776,8 @@ func (ctrl *Controller) markBuildSucceeded(mosc *mcfgv1alpha1.MachineOSConfig, m
 		// now, all we need is to make sure this is used all around. (node controller, getters, etc)
 		mosc.Status.CurrentImagePullspec = sha
 		mosb.Status.FinalImagePushspec = sha
+		// Not sure if this is correct way to do this.
+		mosc.Status.ObservedGeneration += mosc.GetGeneration()
 
 		if err := ctrl.postBuildCleanup(mosc, mosb, false); err != nil {
 			return fmt.Errorf("could not do post-build cleanup: %w", err)
