@@ -10,7 +10,8 @@ import (
 )
 
 const (
-	componentName = "machine-config-controller"
+	componentName      = "machine-config-controller"
+	componentNamespace = "openshift-machine-config-operator"
 )
 
 var (

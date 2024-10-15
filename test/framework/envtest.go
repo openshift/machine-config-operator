@@ -156,7 +156,8 @@ func CheckCleanEnvironment(t *testing.T, clientSet *ClientSet) {
 
 	mcList, err := clientSet.MachineConfigs().List(ctx, metav1.ListOptions{})
 	require.NoError(t, err)
-	require.Len(t, mcList.Items, 0)
+	// 2 99-poolname-generated-crio-default-container-runtime mc should exist
+	require.Len(t, mcList.Items, 2)
 	// ######################################
 	// END: machineconfiguration.openshift.io
 	// ######################################
