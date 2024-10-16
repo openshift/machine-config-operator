@@ -6,6 +6,7 @@ approvers:
   - yuqi-zhang
   - cheesesashimi
   - umohnani8
+  - LorbusChris
   - RishabhSaini
 reviewers:
   - djoshy
@@ -13,6 +14,7 @@ reviewers:
   - yuqi-zhang
   - cheesesashimi
   - umohnani8
+  - LorbusChris
   - RishabhSaini
 
 component: "Machine Config Operator"
