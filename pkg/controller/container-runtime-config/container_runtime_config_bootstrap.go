@@ -47,11 +47,10 @@ func RunContainerRuntimeBootstrap(templateDir string, crconfigs []*mcfgv1.Contai
 					configFileList = append(configFileList, generatedConfigFile{filePath: storageConfigPath, data: storageTOML})
 				}
 			}
+
 			// Create the cri-o drop-in files
-			if ctrcfg.LogLevel != "" || ctrcfg.PidsLimit != nil || (ctrcfg.LogSizeMax != nil && !ctrcfg.LogSizeMax.IsZero()) || ctrcfg.DefaultRuntime != mcfgv1.ContainerRuntimeDefaultRuntimeEmpty {
-				crioFileConfigs := createCRIODropinFiles(cfg)
-				configFileList = append(configFileList, crioFileConfigs...)
-			}
+			crioFileConfigs := createCRIODropinFiles(nil, cfg)
+			configFileList = append(configFileList, crioFileConfigs...)
 
 			ctrRuntimeConfigIgn := createNewIgnition(configFileList)
 			if err != nil {

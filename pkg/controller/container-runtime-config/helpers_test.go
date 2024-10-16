@@ -1149,7 +1149,7 @@ func TestCreateCRIODropinFiles(t *testing.T) {
 
 	for _, test := range zeroValueTests {
 		ctrcfg := newContainerRuntimeConfig(test.name, test.cfg, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "", ""))
-		files := createCRIODropinFiles(ctrcfg)
+		files := createCRIODropinFiles(nil, ctrcfg)
 		for _, file := range files {
 			if file.filePath == test.filepath {
 				t.Errorf("%s: failed. should not have created dropin file", test.name)
@@ -1159,7 +1159,7 @@ func TestCreateCRIODropinFiles(t *testing.T) {
 
 	for _, test := range validValueTests {
 		ctrcfg := newContainerRuntimeConfig(test.name, test.cfg, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "", ""))
-		files := createCRIODropinFiles(ctrcfg)
+		files := createCRIODropinFiles(nil, ctrcfg)
 		for _, file := range files {
 			if file.filePath == test.filepath {
 				require.Equal(t, test.want, file.data, "createCRIODropinFiles() Diff, want %v, got %v", test.want, string(file.data))
@@ -1562,5 +1562,66 @@ func TestValidateClusterImagePolicyWithAllowedBlockedRegistries(t *testing.T) {
 				return
 			}
 		})
+	}
+}
+
+func TestSelectContainerRuntime(t *testing.T) {
+	////
+	clusterVersionOlderCluster4_4_to_4_18 := apicfgv1.ClusterVersion{
+		Status: apicfgv1.ClusterVersionStatus{
+			History: []apicfgv1.UpdateHistory{
+				{Version: "4.18.0"},
+				{Version: "4.4.0"},
+			},
+		},
+	}
+	if selectContainerRuntime(&clusterVersionOlderCluster4_4_to_4_18, nil) != mcfgv1.ContainerRuntimeDefaultRuntimeRunc {
+		t.Error("4.4 to 4.18 upgrade should be runc")
+		return
+	}
+
+	////
+	clusterVersionOlderCluster4_17_to_4_18 := apicfgv1.ClusterVersion{
+		Status: apicfgv1.ClusterVersionStatus{
+			History: []apicfgv1.UpdateHistory{
+				{Version: "4.18.0"},
+				{Version: "4.17.0"},
+			},
+		},
+	}
+	if selectContainerRuntime(&clusterVersionOlderCluster4_17_to_4_18, nil) != mcfgv1.ContainerRuntimeDefaultRuntimeRunc {
+		t.Error("4.17 to 4.18 upgrade should be runc")
+		return
+	}
+
+	////
+	clusterVersionOlderCluster4_18_to_4_19 := apicfgv1.ClusterVersion{
+		Status: apicfgv1.ClusterVersionStatus{
+			History: []apicfgv1.UpdateHistory{
+				{Version: "4.18.0"},
+				{Version: "4.19.0"},
+			},
+		},
+	}
+	if selectContainerRuntime(&clusterVersionOlderCluster4_18_to_4_19, nil) != mcfgv1.ContainerRuntimeDefaultRuntimeCrun {
+		t.Error("4.18 to 4.19 upgrade should be crun")
+		return
+	}
+
+	////
+	var clusterVersionIsNil *apicfgv1.ClusterVersion
+	if selectContainerRuntime(clusterVersionIsNil, nil) != mcfgv1.ContainerRuntimeDefaultRuntimeCrun {
+		t.Error("nil clusterversion should be the default")
+		return
+	}
+
+	//// override the cluster version check with the containerruntimeconfiguration
+	runtimeName := "test-me"
+	ctrcfg := mcfgv1.ContainerRuntimeConfiguration{
+		DefaultRuntime: mcfgv1.ContainerRuntimeDefaultRuntime(runtimeName),
+	}
+	if selectContainerRuntime(clusterVersionIsNil, &ctrcfg) != runtimeName {
+		t.Errorf("nil clusterversion with ctrcfg override should be %s", runtimeName)
+		return
 	}
 }
