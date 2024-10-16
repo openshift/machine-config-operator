@@ -6,11 +6,13 @@ approvers:
   - yuqi-zhang
   - cheesesashimi
   - umohnani8
+  - RishabhSaini
 reviewers:
   - djoshy
   - dkhater-redhat
   - yuqi-zhang
   - cheesesashimi
   - umohnani8
+  - RishabhSaini
 
 component: "Machine Config Operator"
