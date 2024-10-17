@@ -4,8 +4,8 @@ package v1
 
 import (
 	v1 "github.com/openshift/api/operator/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/client-go/listers"
 	"k8s.io/client-go/tools/cache"
 )
 
@@ -22,25 +22,17 @@ type IngressControllerLister interface {
 
 // ingressControllerLister implements the IngressControllerLister interface.
 type ingressControllerLister struct {
-	indexer cache.Indexer
+	listers.ResourceIndexer[*v1.IngressController]
 }
 
 // NewIngressControllerLister returns a new IngressControllerLister.
 func NewIngressControllerLister(indexer cache.Indexer) IngressControllerLister {
-	return &ingressControllerLister{indexer: indexer}
-}
-
-// List lists all IngressControllers in the indexer.
-func (s *ingressControllerLister) List(selector labels.Selector) (ret []*v1.IngressController, err error) {
-	err = cache.ListAll(s.indexer, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1.IngressController))
-	})
-	return ret, err
+	return &ingressControllerLister{listers.New[*v1.IngressController](indexer, v1.Resource("ingresscontroller"))}
 }
 
 // IngressControllers returns an object that can list and get IngressControllers.
 func (s *ingressControllerLister) IngressControllers(namespace string) IngressControllerNamespaceLister {
-	return ingressControllerNamespaceLister{indexer: s.indexer, namespace: namespace}
+	return ingressControllerNamespaceLister{listers.NewNamespaced[*v1.IngressController](s.ResourceIndexer, namespace)}
 }
 
 // IngressControllerNamespaceLister helps list and get IngressControllers.
@@ -58,26 +50,5 @@ type IngressControllerNamespaceLister interface {
 // ingressControllerNamespaceLister implements the IngressControllerNamespaceLister
 // interface.
 type ingressControllerNamespaceLister struct {
-	indexer   cache.Indexer
-	namespace string
-}
-
-// List lists all IngressControllers in the indexer for a given namespace.
-func (s ingressControllerNamespaceLister) List(selector labels.Selector) (ret []*v1.IngressController, err error) {
-	err = cache.ListAllByNamespace(s.indexer, s.namespace, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1.IngressController))
-	})
-	return ret, err
-}
-
-// Get retrieves the IngressController from the indexer for a given namespace and name.
-func (s ingressControllerNamespaceLister) Get(name string) (*v1.IngressController, error) {
-	obj, exists, err := s.indexer.GetByKey(s.namespace + "/" + name)
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
-		return nil, errors.NewNotFound(v1.Resource("ingresscontroller"), name)
-	}
-	return obj.(*v1.IngressController), nil
+	listers.ResourceIndexer[*v1.IngressController]
 }
