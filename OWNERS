@@ -7,6 +7,7 @@ approvers:
   - cheesesashimi
   - umohnani8
   - LorbusChris
+  - RishabhSaini
 reviewers:
   - djoshy
   - dkhater-redhat
@@ -14,5 +15,6 @@ reviewers:
   - cheesesashimi
   - umohnani8
   - LorbusChris
+  - RishabhSaini
 
 component: "Machine Config Operator"
