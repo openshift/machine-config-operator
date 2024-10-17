@@ -70,7 +70,7 @@ type Controller struct {
 	ccLister       mcfglistersv1.ControllerConfigLister
 	ccListerSynced cache.InformerSynced
 
-	queue workqueue.RateLimitingInterface
+	queue workqueue.TypedRateLimitingInterface[string]
 }
 
 // New returns a new render controller.
@@ -88,7 +88,9 @@ func New(
 	ctrl := &Controller{
 		client:        mcfgClient,
 		eventRecorder: ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-rendercontroller"})),
-		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-rendercontroller"),
+		queue: workqueue.NewTypedRateLimitingQueueWithConfig(
+			workqueue.DefaultTypedControllerRateLimiter[string](),
+			workqueue.TypedRateLimitingQueueConfig[string]{Name: "machineconfigcontroller-rendercontroller"}),
 	}
 
 	mcpInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -364,13 +366,13 @@ func (ctrl *Controller) processNextWorkItem() bool {
 	}
 	defer ctrl.queue.Done(key)
 
-	err := ctrl.syncHandler(key.(string))
+	err := ctrl.syncHandler(key)
 	ctrl.handleErr(err, key)
 
 	return true
 }
 
-func (ctrl *Controller) handleErr(err error, key interface{}) {
+func (ctrl *Controller) handleErr(err error, key string) {
 	if err == nil {
 		ctrl.queue.Forget(key)
 		return

@@ -113,7 +113,7 @@ type Controller struct {
 	mcpListerSynced             cache.InformerSynced
 	podListerSynced             cache.InformerSynced
 
-	mosQueue workqueue.RateLimitingInterface
+	mosQueue workqueue.TypedRateLimitingInterface[string]
 
 	config           BuildControllerConfig
 	imageBuilder     ImageBuilder
@@ -210,8 +210,10 @@ func newBuildController(
 		informers:     newInformers(clients),
 		Clients:       clients,
 		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineosbuilder-buildcontroller"}),
-		mosQueue:      workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineosbuilder"),
-		config:        ctrlConfig,
+		mosQueue: workqueue.NewTypedRateLimitingQueueWithConfig(
+			workqueue.DefaultTypedControllerRateLimiter[string](),
+			workqueue.TypedRateLimitingQueueConfig[string]{Name: "machineosbuilder"}),
+		config: ctrlConfig,
 	}
 
 	ctrl.syncHandler = ctrl.syncMachineOSBuilder
@@ -316,7 +318,7 @@ func (ctrl *Controller) processNextMosWorkItem() bool {
 	}
 	defer ctrl.mosQueue.Done(key)
 
-	err := ctrl.syncHandler(key.(string))
+	err := ctrl.syncHandler(key)
 	ctrl.handleErr(err, key)
 
 	return true
@@ -397,7 +399,7 @@ func (ctrl *Controller) handleConfigMapError(pools []*mcfgv1.MachineConfigPool, 
 
 }
 
-func (ctrl *Controller) handleErr(err error, key interface{}) {
+func (ctrl *Controller) handleErr(err error, key string) {
 	if err == nil {
 		ctrl.mosQueue.Forget(key)
 		return

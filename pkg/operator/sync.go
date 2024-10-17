@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
@@ -2161,7 +2162,7 @@ func (optr *Operator) syncMachineConfiguration(_ *renderConfig, _ *configv1.Clus
 	if fg.Enabled(features.FeatureGateManagedBootImages) {
 		for _, condition := range mcop.Status.Conditions {
 			if condition.Type == opv1.MachineConfigurationBootImageUpdateDegraded && condition.Status == metav1.ConditionTrue {
-				return fmt.Errorf("bootimage update failed: " + condition.Message)
+				return errors.New("bootimage update failed: " + condition.Message)
 			}
 		}
 	}

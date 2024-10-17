@@ -104,7 +104,7 @@ type Controller struct {
 	schedulerList         cligolistersv1.SchedulerLister
 	schedulerListerSynced cache.InformerSynced
 
-	queue workqueue.RateLimitingInterface
+	queue workqueue.TypedRateLimitingInterface[string]
 
 	fgAcessor featuregates.FeatureGateAccess
 
@@ -190,9 +190,11 @@ func newController(
 		client:        mcfgClient,
 		kubeClient:    kubeClient,
 		eventRecorder: ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-nodecontroller"})),
-		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-nodecontroller"),
-		updateDelay:   updateDelay,
-		fgAcessor:     fgAccessor,
+		queue: workqueue.NewTypedRateLimitingQueueWithConfig(
+			workqueue.DefaultTypedControllerRateLimiter[string](),
+			workqueue.TypedRateLimitingQueueConfig[string]{Name: "machineconfigcontroller-nodecontroller"}),
+		updateDelay: updateDelay,
+		fgAcessor:   fgAccessor,
 	}
 	moscInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.addMachineOSConfig,
@@ -656,7 +658,7 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 				changedMsg = fmt.Sprintf("lost annotation %s", anno)
 				controlPlaneChangedMsg = fmt.Sprintf("Node %s no longer has %s", curNode.Name, anno)
 			}
-			ctrl.logPoolNode(pool, curNode, changedMsg)
+			ctrl.logPoolNode(pool, curNode, "%s", changedMsg)
 			changed = true
 			// For the control plane, emit events for these since they're important
 			if pool.Name == ctrlcommon.MachineConfigPoolMaster {
@@ -834,13 +836,13 @@ func (ctrl *Controller) processNextWorkItem() bool {
 	}
 	defer ctrl.queue.Done(key)
 
-	err := ctrl.syncHandler(key.(string))
+	err := ctrl.syncHandler(key)
 	ctrl.handleErr(err, key)
 
 	return true
 }
 
-func (ctrl *Controller) handleErr(err error, key interface{}) {
+func (ctrl *Controller) handleErr(err error, key string) {
 	if err == nil {
 		ctrl.queue.Forget(key)
 		return
