@@ -118,8 +118,8 @@ type Controller struct {
 
 	featureGateAccess featuregates.FeatureGateAccess
 
-	queue    workqueue.RateLimitingInterface
-	imgQueue workqueue.RateLimitingInterface
+	queue    workqueue.TypedRateLimitingInterface[string]
+	imgQueue workqueue.TypedRateLimitingInterface[string]
 }
 
 // New returns a new container runtime config controller
@@ -148,8 +148,10 @@ func New(
 		client:        mcfgClient,
 		configClient:  configClient,
 		eventRecorder: ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-containerruntimeconfigcontroller"})),
-		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-containerruntimeconfigcontroller"),
-		imgQueue:      workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
+		queue: workqueue.NewTypedRateLimitingQueueWithConfig(
+			workqueue.DefaultTypedControllerRateLimiter[string](),
+			workqueue.TypedRateLimitingQueueConfig[string]{Name: "machineconfigcontroller-containerruntimeconfigcontroller"}),
+		imgQueue: workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]()),
 	}
 
 	mcrInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -425,7 +427,7 @@ func (ctrl *Controller) processNextWorkItem() bool {
 	}
 	defer ctrl.queue.Done(key)
 
-	err := ctrl.syncHandler(key.(string))
+	err := ctrl.syncHandler(key)
 	ctrl.handleErr(err, key)
 
 	return true
@@ -438,13 +440,13 @@ func (ctrl *Controller) processNextImgWorkItem() bool {
 	}
 	defer ctrl.imgQueue.Done(key)
 
-	err := ctrl.syncImgHandler(key.(string))
+	err := ctrl.syncImgHandler(key)
 	ctrl.handleImgErr(err, key)
 
 	return true
 }
 
-func (ctrl *Controller) handleErr(err error, key interface{}) {
+func (ctrl *Controller) handleErr(err error, key string) {
 	if err == nil {
 		ctrl.queue.Forget(key)
 		return
@@ -462,7 +464,7 @@ func (ctrl *Controller) handleErr(err error, key interface{}) {
 	ctrl.queue.AddAfter(key, 1*time.Minute)
 }
 
-func (ctrl *Controller) handleImgErr(err error, key interface{}) {
+func (ctrl *Controller) handleImgErr(err error, key string) {
 	if err == nil {
 		ctrl.imgQueue.Forget(key)
 		return

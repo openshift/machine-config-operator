@@ -120,7 +120,7 @@ type PinnedImageSetManager struct {
 
 	syncHandler              func(string) error
 	enqueueMachineConfigPool func(*mcfgv1.MachineConfigPool)
-	queue                    workqueue.RateLimitingInterface
+	queue                    workqueue.TypedRateLimitingInterface[string]
 	featureGatesAccessor     featuregates.FeatureGateAccess
 
 	// mutex protects cancelFn
@@ -155,9 +155,11 @@ func NewPinnedImageSetManager(
 		prefetchTimeout:          prefetchTimeout,
 		minStorageAvailableBytes: minStorageAvailableBytes,
 		featureGatesAccessor:     featureGatesAccessor,
-		queue:                    workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "pinned-image-set-manager"),
-		prefetchCh:               make(chan prefetch, defaultPrefetchWorkers*2),
-		criClient:                criClient,
+		queue: workqueue.NewTypedRateLimitingQueueWithConfig[string](
+			workqueue.DefaultTypedControllerRateLimiter[string](),
+			workqueue.TypedRateLimitingQueueConfig[string]{Name: "pinned-image-set-manager"}),
+		prefetchCh: make(chan prefetch, defaultPrefetchWorkers*2),
+		criClient:  criClient,
 		backoff: wait.Backoff{
 			Steps:    maxRetries,
 			Duration: retryDuration,
@@ -1094,12 +1096,12 @@ func (p *PinnedImageSetManager) processNextItem() bool {
 	}
 	defer p.queue.Done(key)
 
-	err := p.syncHandler(key.(string))
+	err := p.syncHandler(key)
 	p.handleErr(err, key)
 	return true
 }
 
-func (p *PinnedImageSetManager) handleErr(err error, key interface{}) {
+func (p *PinnedImageSetManager) handleErr(err error, key string) {
 	if err == nil {
 		p.queue.Forget(key)
 		return
@@ -1112,7 +1114,7 @@ func (p *PinnedImageSetManager) handleErr(err error, key interface{}) {
 	}
 	utilruntime.HandleError(err)
 
-	klog.Warningf(fmt.Sprintf(" failed: %s max retries: %d", key, maxRetriesController))
+	klog.Warningf(" failed: %s max retries: %d", key, maxRetriesController)
 	p.queue.Forget(key)
 	p.queue.AddAfter(key, 1*time.Minute)
 }
