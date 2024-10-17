@@ -1,0 +1,6 @@
+name: ipsec.service
+dropins:
+  - name: 01-after-configure-ovs.conf
+    contents: |
+      [Unit]
+      After=ovs-configuration.service
