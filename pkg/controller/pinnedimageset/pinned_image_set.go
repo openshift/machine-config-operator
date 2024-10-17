@@ -58,7 +58,7 @@ type Controller struct {
 	imageSetLister mcfglistersv1alpha1.PinnedImageSetLister
 	imageSetSynced cache.InformerSynced
 
-	queue workqueue.RateLimitingInterface
+	queue workqueue.TypedRateLimitingInterface[string]
 }
 
 // New returns a new pinned image set controller.
@@ -75,7 +75,9 @@ func New(
 	ctrl := &Controller{
 		client:        mcfgClient,
 		eventRecorder: ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-pinnedimagesetcontroller"})),
-		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-pinnedimagesetcontroller"),
+		queue: workqueue.NewTypedRateLimitingQueueWithConfig(
+			workqueue.DefaultTypedControllerRateLimiter[string](),
+			workqueue.TypedRateLimitingQueueConfig[string]{Name: "machineconfigcontroller-pinnedimagesetcontroller"}),
 	}
 
 	ctrl.syncHandler = ctrl.syncMachineConfigPool
@@ -284,13 +286,13 @@ func (ctrl *Controller) processNextWorkItem() bool {
 	}
 	defer ctrl.queue.Done(key)
 
-	err := ctrl.syncHandler(key.(string))
+	err := ctrl.syncHandler(key)
 	ctrl.handleErr(err, key)
 
 	return true
 }
 
-func (ctrl *Controller) handleErr(err error, key interface{}) {
+func (ctrl *Controller) handleErr(err error, key string) {
 	if err == nil {
 		ctrl.queue.Forget(key)
 		return

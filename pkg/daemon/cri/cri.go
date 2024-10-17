@@ -113,7 +113,7 @@ func (c *Client) ImageFsInfo(ctx context.Context) (*runtimeapi.ImageFsInfoRespon
 }
 
 // NewClientConn creates a new grpc client connection to the container runtime service. support unix, http and https scheme.
-func newClientConn(ctx context.Context, target string) (conn *grpc.ClientConn, err error) {
+func newClientConn(_ context.Context, target string) (conn *grpc.ClientConn, err error) {
 	backoff := backoff.DefaultConfig
 	backoff.BaseDelay = baseBackoffDelay
 	backoff.MaxDelay = maxBackoffDelay
@@ -142,7 +142,7 @@ func newClientConn(ctx context.Context, target string) (conn *grpc.ClientConn, e
 		grpc.WithContextDialer(dialerFn),
 	)
 
-	return grpc.DialContext(ctx, target, dialOpts...)
+	return grpc.NewClient(target, dialOpts...)
 }
 
 func (c *Client) Close() error {

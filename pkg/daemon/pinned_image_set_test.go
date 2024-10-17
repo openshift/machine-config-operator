@@ -462,7 +462,9 @@ func TestPinnedImageSetAddEventHandlers(t *testing.T) {
 				nodeName:   nodeName,
 				nodeLister: nodeInformer.Lister(),
 				mcpLister:  mcpInformer.Lister(),
-				queue:      workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "pinned-image-set-manager"),
+				queue: workqueue.NewTypedRateLimitingQueueWithConfig[string](
+					workqueue.DefaultTypedControllerRateLimiter[string](),
+					workqueue.TypedRateLimitingQueueConfig[string]{Name: "pinned-image-set-manager"}),
 				backoff: wait.Backoff{
 					Steps:    maxRetries,
 					Duration: 10 * time.Millisecond,

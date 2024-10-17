@@ -6,7 +6,7 @@ import (
 	operatorv1 "github.com/openshift/api/operator/v1"
 )
 
-// OVNKubernetesConfigApplyConfiguration represents an declarative configuration of the OVNKubernetesConfig type for use
+// OVNKubernetesConfigApplyConfiguration represents a declarative configuration of the OVNKubernetesConfig type for use
 // with apply.
 type OVNKubernetesConfigApplyConfiguration struct {
 	MTU                 *uint32                                    `json:"mtu,omitempty"`
@@ -23,7 +23,7 @@ type OVNKubernetesConfigApplyConfiguration struct {
 	RouteAdvertisements *operatorv1.RouteAdvertisementsEnablement  `json:"routeAdvertisements,omitempty"`
 }
 
-// OVNKubernetesConfigApplyConfiguration constructs an declarative configuration of the OVNKubernetesConfig type for use with
+// OVNKubernetesConfigApplyConfiguration constructs a declarative configuration of the OVNKubernetesConfig type for use with
 // apply.
 func OVNKubernetesConfig() *OVNKubernetesConfigApplyConfiguration {
 	return &OVNKubernetesConfigApplyConfiguration{}

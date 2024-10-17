@@ -74,13 +74,13 @@ func (dn *Daemon) processNextControllerConfigWorkItem() bool {
 	}
 	defer dn.ccQueue.Done(key)
 
-	err := dn.syncControllerConfigHandler(key.(string))
+	err := dn.syncControllerConfigHandler(key)
 	dn.handleControllerConfigErr(err, key)
 
 	return true
 }
 
-func (dn *Daemon) handleControllerConfigErr(err error, key interface{}) {
+func (dn *Daemon) handleControllerConfigErr(err error, key string) {
 	if err == nil {
 		dn.ccQueue.Forget(key)
 		return

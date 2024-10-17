@@ -6,14 +6,14 @@ import (
 	v1 "github.com/openshift/api/operator/v1"
 )
 
-// AWSEFSVolumeMetricsApplyConfiguration represents an declarative configuration of the AWSEFSVolumeMetrics type for use
+// AWSEFSVolumeMetricsApplyConfiguration represents a declarative configuration of the AWSEFSVolumeMetrics type for use
 // with apply.
 type AWSEFSVolumeMetricsApplyConfiguration struct {
 	State         *v1.AWSEFSVolumeMetricsState                              `json:"state,omitempty"`
 	RecursiveWalk *AWSEFSVolumeMetricsRecursiveWalkConfigApplyConfiguration `json:"recursiveWalk,omitempty"`
 }
 
-// AWSEFSVolumeMetricsApplyConfiguration constructs an declarative configuration of the AWSEFSVolumeMetrics type for use with
+// AWSEFSVolumeMetricsApplyConfiguration constructs a declarative configuration of the AWSEFSVolumeMetrics type for use with
 // apply.
 func AWSEFSVolumeMetrics() *AWSEFSVolumeMetricsApplyConfiguration {
 	return &AWSEFSVolumeMetricsApplyConfiguration{}

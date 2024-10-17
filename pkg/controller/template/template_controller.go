@@ -73,7 +73,7 @@ type Controller struct {
 	mcListerSynced        cache.InformerSynced
 	secretsInformerSynced cache.InformerSynced
 
-	queue workqueue.RateLimitingInterface
+	queue workqueue.TypedRateLimitingInterface[string]
 }
 
 // New returns a new template controller.
@@ -95,7 +95,9 @@ func New(
 		client:        mcfgClient,
 		kubeClient:    kubeClient,
 		eventRecorder: ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-templatecontroller"})),
-		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-templatecontroller"),
+		queue: workqueue.NewTypedRateLimitingQueueWithConfig[string](
+			workqueue.DefaultTypedControllerRateLimiter[string](),
+			workqueue.TypedRateLimitingQueueConfig[string]{Name: "machineconfigcontroller-templatecontroller"}),
 	}
 
 	ccInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -459,13 +461,13 @@ func (ctrl *Controller) processNextWorkItem() bool {
 	}
 	defer ctrl.queue.Done(key)
 
-	err := ctrl.syncHandler(key.(string))
+	err := ctrl.syncHandler(key)
 	ctrl.handleErr(err, key)
 
 	return true
 }
 
-func (ctrl *Controller) handleErr(err error, key interface{}) {
+func (ctrl *Controller) handleErr(err error, key string) {
 	if err == nil {
 		ctrl.queue.Forget(key)
 		return
