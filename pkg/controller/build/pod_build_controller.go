@@ -42,7 +42,7 @@ type PodBuildController struct {
 
 	podListerSynced cache.InformerSynced
 
-	queue workqueue.RateLimitingInterface
+	queue workqueue.TypedRateLimitingInterface[string]
 
 	config BuildControllerConfig
 }
@@ -63,9 +63,11 @@ func newPodBuildController(
 		Clients:       clients,
 		informers:     newInformers(clients),
 		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineosbuilder-podbuildcontroller"}),
-		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineosbuilder-podbuildcontroller"),
-		config:        ctrlConfig,
-		podHandler:    podHandler,
+		queue: workqueue.NewTypedRateLimitingQueueWithConfig(
+			workqueue.DefaultTypedControllerRateLimiter[string](),
+			workqueue.TypedRateLimitingQueueConfig[string]{Name: "machineosbuilder-podbuildcontroller"}),
+		config:     ctrlConfig,
+		podHandler: podHandler,
 	}
 
 	// As an aside, why doesn't the constructor here set up all the informers?
@@ -286,7 +288,7 @@ func (ctrl *PodBuildController) updatePod(oldObj, curObj interface{}) {
 	ctrl.enqueuePod(curPod)
 }
 
-func (ctrl *PodBuildController) handleErr(err error, key interface{}) {
+func (ctrl *PodBuildController) handleErr(err error, key string) {
 	if err == nil {
 		ctrl.queue.Forget(key)
 		return
@@ -329,7 +331,7 @@ func (ctrl *PodBuildController) processNextWorkItem() bool {
 	}
 	defer ctrl.queue.Done(key)
 
-	err := ctrl.syncHandler(key.(string))
+	err := ctrl.syncHandler(key)
 	ctrl.handleErr(err, key)
 
 	return true

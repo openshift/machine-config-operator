@@ -139,7 +139,7 @@ type Operator struct {
 	apiserverListerSynced            cache.InformerSynced
 
 	// queue only ever has one item, but it has nice error handling backoff/retry semantics
-	queue workqueue.RateLimitingInterface
+	queue workqueue.TypedRateLimitingInterface[string]
 
 	stopCh <-chan struct{}
 
@@ -210,7 +210,9 @@ func New(
 			Namespace:  ctrlcommon.MCONamespace,
 			APIVersion: "apps/v1",
 		}),
-		queue:      workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigoperator"),
+		queue: workqueue.NewTypedRateLimitingQueueWithConfig(
+			workqueue.DefaultTypedControllerRateLimiter[string](),
+			workqueue.TypedRateLimitingQueueConfig[string]{Name: "machineconfigoperator"}),
 		fgAccessor: fgAccess,
 		ctrlctx:    ctrlctx,
 	}
@@ -450,13 +452,13 @@ func (optr *Operator) processNextWorkItem() bool {
 	}
 	defer optr.queue.Done(key)
 
-	err := optr.syncHandler(key.(string))
+	err := optr.syncHandler(key)
 	optr.handleErr(err, key)
 
 	return true
 }
 
-func (optr *Operator) handleErr(err error, key interface{}) {
+func (optr *Operator) handleErr(err error, key string) {
 	if err == nil {
 		optr.queue.Forget(key)
 		return

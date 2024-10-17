@@ -44,7 +44,7 @@ func (ctrl *Controller) processNextFeatureWorkItem() bool {
 	}
 	defer ctrl.featureQueue.Done(key)
 
-	err := ctrl.syncFeatureHandler(key.(string))
+	err := ctrl.syncFeatureHandler(key)
 	ctrl.handleFeatureErr(err, key)
 	return true
 }
