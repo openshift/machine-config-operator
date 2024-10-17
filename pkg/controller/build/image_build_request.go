@@ -340,16 +340,16 @@ func (i ImageBuildRequest) toBuildahPod() *corev1.Pod {
 		})
 
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name:      EtcPkiEntitlementSecretName,
+			Name:      ctrlcommon.SimpleContentAccessSecretName,
 			MountPath: mountPoint,
 		})
 
 		volumes = append(volumes, corev1.Volume{
-			Name: EtcPkiEntitlementSecretName,
+			Name: ctrlcommon.SimpleContentAccessSecretName,
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
 					DefaultMode: &mountMode,
-					SecretName:  EtcPkiEntitlementSecretName,
+					SecretName:  ctrlcommon.SimpleContentAccessSecretName + "-" + i.MachineOSConfig.Spec.MachineConfigPool.Name,
 				},
 			},
 		})

@@ -952,7 +952,7 @@ func (ctrl *Controller) prepareForBuild(mosb *mcfgv1alpha1.MachineOSBuild, mosc 
 		moscNew.Spec.BuildInputs.ReleaseVersion = osImageURLConfig.ReleaseVersion
 	}
 
-	etcPkiEntitlements, err := ctrl.getOptionalSecret(EtcPkiEntitlementSecretName)
+	etcPkiEntitlements, err := ctrl.getOptionalSecret(EtcPkiEntitlementSecretName + "-" + mosc.Spec.MachineConfigPool.Name)
 	if err != nil {
 		return ImageBuildRequest{}, err
 	}
