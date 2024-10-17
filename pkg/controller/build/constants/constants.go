@@ -1,4 +1,4 @@
-package build
+package constants
 
 // Label that associates any objects with on-cluster layering. Should be added
 // to every object that BuildController creates or manages, ephemeral or not.
@@ -6,17 +6,18 @@ const (
 	OnClusterLayeringLabelKey = "machineconfiguration.openshift.io/on-cluster-layering"
 )
 
-// Labels to add to all ephemeral build objects the BuildController creates.
+// Labels added to all ephemeral build objects the BuildController creates.
 const (
 	EphemeralBuildObjectLabelKey    = "machineconfiguration.openshift.io/ephemeral-build-object"
 	RenderedMachineConfigLabelKey   = "machineconfiguration.openshift.io/rendered-machine-config"
 	TargetMachineConfigPoolLabelKey = "machineconfiguration.openshift.io/target-machine-config-pool"
 )
 
-// Annotations to add to all ephemeral build objects BuildController creates.
+// Annotations added to all ephemeral build objects BuildController creates.
 const (
-	machineOSBuildNameAnnotationKey  = "machineconfiguration.openshift.io/machine-os-build"
-	machineOSConfigNameAnnotationKey = "machineconfiguration.openshift.io/machine-os-config"
+	MachineOSBuildNameAnnotationKey  = "machineconfiguration.openshift.io/machine-os-build"
+	MachineOSConfigNameAnnotationKey = "machineconfiguration.openshift.io/machine-os-config"
+	MachineOSConfigNameLabelKey      = MachineOSConfigNameAnnotationKey
 )
 
 // Entitled build secret names
@@ -40,11 +41,6 @@ const (
 	// This label is applied to all canonicalized secrets. Its value should
 	// contain the original name of the secret that has been canonicalized.
 	OriginalSecretNameLabelKey string = "machineconfiguration.openshift.io/originalSecretName"
-)
-
-const (
-	// Filename for the machineconfig JSON tarball expected by the build pod
-	machineConfigJSONFilename string = "machineconfig.json.gz"
 )
 
 // Entitled build annotation keys

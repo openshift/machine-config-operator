@@ -12,7 +12,6 @@ import (
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
-	fakeclientbuildv1 "github.com/openshift/client-go/build/clientset/versioned/fake"
 	fakeclientmachineconfigv1 "github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
 	testhelpers "github.com/openshift/machine-config-operator/test/helpers"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -22,6 +21,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
+	"github.com/openshift/machine-config-operator/pkg/controller/build/buildrequest"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 
@@ -61,6 +61,7 @@ func TestBuildControllerSinglePool(t *testing.T) {
 
 		newBuildControllerTestFixture(t).runTestFuncs(t, testFuncs{
 			customPodBuilder: func(ctx context.Context, t *testing.T, cs *Clients) {
+
 				testMultipleConfigsAreRolledOut(ctx, t, cs, pool, testMCPCustomBuildPod)
 			},
 		})
@@ -71,6 +72,7 @@ func TestBuildControllerSinglePool(t *testing.T) {
 
 		newBuildControllerTestFixture(t).runTestFuncs(t, testFuncs{
 			customPodBuilder: func(ctx context.Context, t *testing.T, cs *Clients) {
+
 				mcp := newMachineConfigPool(pool)
 				mosc := newMachineOSConfig(mcp)
 				cs.mcfgclient.MachineconfigurationV1alpha1().MachineOSConfigs().Create(ctx, mosc, metav1.CreateOptions{})
@@ -156,73 +158,6 @@ func TestBuildControllerMultipleOptedInPools(t *testing.T) {
 	})
 }
 
-// Tests that if multiple goroutines attempt to create or update a
-// canonicalized secret that all requests are successful.
-func TestCanonicalizedSecrets(t *testing.T) {
-	t.Parallel()
-
-	clients := getClientsForTest()
-	bc := NewWithCustomPodBuilder(BuildControllerConfig{MaxRetries: 1, UpdateDelay: testUpdateDelay}, clients)
-
-	legacyPullSecretName := "final-image-push-secret"
-
-	assertIsCanonicalSecret := func(t *testing.T, s *corev1.Secret) {
-		// We expect the returned secret to contain the canonical suffix, to have
-		// the canonical labels, and to generally be recognized as a canonical
-		// secret.
-		assert.Contains(t, s.Name, canonicalSecretSuffix)
-		assert.True(t, isCanonicalizedSecret(s))
-		assert.True(t, hasCanonicalizedSecretLabels(s))
-		assert.Equal(t, s.Labels[OriginalSecretNameLabelKey], legacyPullSecretName)
-		assert.True(t, IsObjectCreatedByBuildController(s))
-	}
-
-	testFunc := func(t *testing.T) {
-		t.Parallel()
-
-		out, err := bc.validatePullSecret(legacyPullSecretName)
-		assert.NoError(t, err)
-
-		assertIsCanonicalSecret(t, out)
-
-		// Next, we change the original secret to validate that the canonicalized secret also gets the update.
-		secret, err := clients.kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(context.TODO(), legacyPullSecretName, metav1.GetOptions{})
-		require.NoError(t, err)
-
-		secret.Data[corev1.DockerConfigKey] = []byte(`{"updated.hostname.com": {"username": "user", "password": "s3kr1t", "auth": "s00pers3kr1t", "email": "user@hostname.com"}}`)
-
-		_, err = clients.kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Update(context.TODO(), secret, metav1.UpdateOptions{})
-		require.NoError(t, err)
-
-		// We look up the secret by its canonicalized name because once
-		// BuildController canonicalizes a secret, it updates the MachineOSConfig
-		// with the canonicalized name. That means that when it is retrieved again
-		// for the next build, it is retrieved by its canonicalized name.
-		out, err = bc.validatePullSecret(legacyPullSecretName + canonicalSecretSuffix)
-		assert.NoError(t, err)
-
-		assertIsCanonicalSecret(t, out)
-		assert.Contains(t, string(out.Data[corev1.DockerConfigJsonKey]), "updated.hostname.com")
-
-		// We also query the API server for the canonical version of this secret to
-		// ensure that it is actually updated.
-		secret, err = clients.kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(context.TODO(), legacyPullSecretName+canonicalSecretSuffix, metav1.GetOptions{})
-		require.NoError(t, err)
-
-		assertIsCanonicalSecret(t, secret)
-		assert.Contains(t, string(secret.Data[corev1.DockerConfigJsonKey]), "updated.hostname.com")
-	}
-
-	// We run the test function 10 times in parallel against the same
-	// BuildController instance. Doing this simulates BuildController having to
-	// handle multiple secret canonicalization attempts, similar to if someone
-	// were to oc apply a YAML document containing at least two MachineOSConfigs
-	// which reference the same legacy pull secret.
-	for i := 0; i <= 10; i++ {
-		t.Run("", testFunc)
-	}
-}
-
 // Holds a name and function to implement a given BuildController test.
 type buildControllerTestFixture struct {
 	ctx                    context.Context
@@ -253,10 +188,7 @@ func newBuildControllerTestFixture(t *testing.T) *buildControllerTestFixture {
 }
 
 func (b *buildControllerTestFixture) runTestFuncs(t *testing.T, tf testFuncs) {
-	t.Run("CustomBuildPod", func(t *testing.T) {
-		t.Parallel()
-		tf.customPodBuilder(b.ctx, t, b.customPodBuilderClient)
-	})
+	tf.customPodBuilder(b.ctx, t, b.customPodBuilderClient)
 }
 
 func (b *buildControllerTestFixture) setupClients() *Clients {
@@ -293,8 +225,6 @@ func getClientsForTest() *Clients {
 
 	osImageURLConfigMap := getOSImageURLConfigMap()
 
-	legacyPullSecret := `{"registry.hostname.com": {"username": "user", "password": "s3kr1t", "auth": "s00pers3kr1t", "email": "user@hostname.com"}}`
-
 	pullSecret := `{"auths":{"registry.hostname.com": {"username": "user", "password": "s3kr1t", "auth": "s00pers3kr1t", "email": "user@hostname.com"}}}`
 
 	return &Clients{
@@ -308,7 +238,7 @@ func getClientsForTest() *Clients {
 					Namespace: ctrlcommon.MCONamespace,
 				},
 				Data: map[string][]byte{
-					corev1.DockerConfigKey: []byte(legacyPullSecret),
+					corev1.DockerConfigKey: []byte(pullSecret),
 				},
 				Type: corev1.SecretTypeDockercfg,
 			},
@@ -349,9 +279,7 @@ func getClientsForTest() *Clients {
 				},
 			},
 		),
-		buildclient: fakeclientbuildv1.NewSimpleClientset(),
 	}
-
 }
 
 // Helper that determines if the build is a success.
@@ -543,125 +471,72 @@ func testBuiltPoolGetsUnrelatedUpdate(ctx context.Context, t *testing.T, cs *Cli
 	})
 }
 
-// TO-DO: update the test for BuildDueToPoolChange
+var _ ImageBuilder = &fakeImageBuilder{}
 
-// // Mocks whether a given build is running.
-// type mockIsBuildRunning bool
+type fakeImageBuilder struct {
+	objectReference *corev1.ObjectReference
+	isBuildRunning  bool
+}
 
-// func (m *mockIsBuildRunning) IsBuildRunning(*mcfgv1.MachineConfigPool) (bool, error) {
-// 	return bool(*m), nil
-// }
+func (f *fakeImageBuilder) Run(_ context.Context, _ int) {}
 
-// // Tests if we should do a build for a variety of edge-cases and circumstances.
-// func TestShouldWeDoABuild(t *testing.T) {
-// 	// Mutators which mutate the given MachineConfigPool.
-// 	toLayeredPool := func(mcp *mcfgv1.MachineConfigPool) *mcfgv1.MachineConfigPool {
-// 		mcp.Labels[ctrlcommon.LayeringEnabledPoolLabel] = ""
-// 		return mcp
-// 	}
+func (f *fakeImageBuilder) StartBuild(_ buildrequest.BuildRequest) (*corev1.ObjectReference, error) {
+	return f.objectReference, nil
+}
 
-// 	toLayeredPoolWithImagePullspec := func(mcp *mcfgv1.MachineConfigPool) *mcfgv1.MachineConfigPool {
-// 		mcp = toLayeredPool(mcp)
-// 		ps := newPoolState(mcp)
-// 		ps.SetImagePullspec("image-pullspec")
-// 		return ps.MachineConfigPool()
-// 	}
+func (f *fakeImageBuilder) IsBuildRunning(_ *mcfgv1alpha1.MachineOSBuild, _ *mcfgv1alpha1.MachineOSConfig) (bool, error) {
+	return f.isBuildRunning, nil
+}
 
-// 	toLayeredPoolWithConditionsSet := func(mcp *mcfgv1.MachineConfigPool, conditions []mcfgv1.MachineConfigPoolCondition) *mcfgv1.MachineConfigPool {
-// 		mcp = toLayeredPoolWithImagePullspec(mcp)
-// 		ps := newPoolState(mcp)
-// 		ps.SetBuildConditions(conditions)
-// 		return ps.MachineConfigPool()
-// 	}
+func (f *fakeImageBuilder) DeleteBuildObject(_ *mcfgv1alpha1.MachineOSBuild, _ *mcfgv1alpha1.MachineOSConfig) error {
+	return nil
+}
 
-// 	type shouldWeBuildTestCase struct {
-// 		name         string
-// 		oldPool      *mcfgv1.MachineConfigPool
-// 		curPool      *mcfgv1.MachineConfigPool
-// 		buildRunning bool
-// 		expected     bool
-// 	}
+func TestShouldWeDoABuild(t *testing.T) {
+	testCases := []struct {
+		name        string
+		fakeBuilder *fakeImageBuilder
+		expected    bool
+		oldMOSB     *mcfgv1alpha1.MachineOSBuild
+		newMOSB     *mcfgv1alpha1.MachineOSBuild
+		mosc        *mcfgv1alpha1.MachineOSConfig
+	}{
+		{
+			name:    "No MOSB update with no build running",
+			oldMOSB: testhelpers.NewMachineOSBuildBuilder("").MachineOSBuild(),
+			newMOSB: testhelpers.NewMachineOSBuildBuilder("").MachineOSBuild(),
+			fakeBuilder: &fakeImageBuilder{
+				isBuildRunning: false,
+			},
+		},
+		{
+			name:    "MOSB update with no build running",
+			oldMOSB: testhelpers.NewMachineOSBuildBuilder("").WithDesiredConfig("desired-config-1").MachineOSBuild(),
+			newMOSB: testhelpers.NewMachineOSBuildBuilder("").WithDesiredConfig("desired-config-2").MachineOSBuild(),
+			fakeBuilder: &fakeImageBuilder{
+				isBuildRunning: false,
+			},
+			expected: true,
+		},
+		{
+			name:    "MOSB update with with build running",
+			oldMOSB: testhelpers.NewMachineOSBuildBuilder("").WithDesiredConfig("desired-config-1").MachineOSBuild(),
+			newMOSB: testhelpers.NewMachineOSBuildBuilder("").WithDesiredConfig("desired-config-2").MachineOSBuild(),
+			fakeBuilder: &fakeImageBuilder{
+				isBuildRunning: true,
+			},
+		},
+	}
 
-// 	testCases := []shouldWeBuildTestCase{
-// 		{
-// 			name:     "Non-layered pool",
-// 			oldPool:  newMachineConfigPool("worker", "rendered-worker-1"),
-// 			curPool:  newMachineConfigPool("worker", "rendered-worker-1"),
-// 			expected: false,
-// 		},
-// 		{
-// 			name:     "Layered pool config change with missing image pullspec",
-// 			oldPool:  toLayeredPool(newMachineConfigPool("worker", "rendered-worker-1")),
-// 			curPool:  toLayeredPool(newMachineConfigPool("worker", "rendered-worker-2")),
-// 			expected: true,
-// 		},
-// 		{
-// 			name:     "Layered pool with no config change and missing image pullspec",
-// 			oldPool:  toLayeredPool(newMachineConfigPool("worker", "rendered-worker-1")),
-// 			curPool:  toLayeredPool(newMachineConfigPool("worker", "rendered-worker-1")),
-// 			expected: true,
-// 		},
-// 		{
-// 			name:    "Layered pool with image pullspec",
-// 			oldPool: toLayeredPoolWithImagePullspec(newMachineConfigPool("worker", "rendered-worker-1")),
-// 			curPool: toLayeredPoolWithImagePullspec(newMachineConfigPool("worker", "rendered-worker-1")),
-// 		},
-// 		{
-// 			name:         "Layered pool with build pod",
-// 			oldPool:      toLayeredPoolWithImagePullspec(newMachineConfigPool("worker", "rendered-worker-1")),
-// 			curPool:      toLayeredPoolWithImagePullspec(newMachineConfigPool("worker", "rendered-worker-1")),
-// 			buildRunning: true,
-// 			expected:     false,
-// 		},
-// 		{
-// 			name: "Layered pool with prior successful build and config change",
-// 			oldPool: toLayeredPoolWithConditionsSet(newMachineConfigPool("worker", "rendered-worker-1"), []mcfgv1.MachineConfigPoolCondition{
-// 				{
-// 					Type:   mcfgv1.MachineConfigPoolBuildSuccess,
-// 					Status: corev1.ConditionTrue,
-// 				},
-// 			}),
-// 			curPool:  toLayeredPoolWithImagePullspec(newMachineConfigPool("worker", "rendered-worker-2")),
-// 			expected: true,
-// 		},
-// 	}
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
 
-// 	// Generate additional test cases programmatically.
-// 	buildStates := map[mcfgv1.MachineConfigPoolConditionType]string{
-// 		mcfgv1.MachineConfigPoolBuildFailed:    "failed",
-// 		mcfgv1.MachineConfigPoolBuildPending:   "pending",
-// 		mcfgv1.MachineConfigPoolBuilding:       "in progress",
-// 		mcfgv1.MachineConfigPoolDegraded:       "degraded",
-// 		mcfgv1.MachineConfigPoolNodeDegraded:   "node degraded",
-// 		mcfgv1.MachineConfigPoolRenderDegraded: "render degraded",
-// 	}
+			result, err := shouldWeDoABuild(testCase.fakeBuilder, testCase.mosc, testCase.oldMOSB, testCase.newMOSB)
+			assert.NoError(t, err)
+			assert.Equal(t, testCase.expected, result)
+		})
+	}
 
-// 	for conditionType, name := range buildStates {
-// 		conditions := []mcfgv1.MachineConfigPoolCondition{
-// 			{
-// 				Type:   conditionType,
-// 				Status: corev1.ConditionTrue,
-// 			},
-// 		}
-
-// 		testCases = append(testCases, shouldWeBuildTestCase{
-// 			name:     fmt.Sprintf("Layered pool with %s build", name),
-// 			oldPool:  toLayeredPoolWithConditionsSet(newMachineConfigPool("worker", "rendered-worker-1"), conditions),
-// 			curPool:  toLayeredPoolWithConditionsSet(newMachineConfigPool("worker", "rendered-worker-1"), conditions),
-// 			expected: false,
-// 		})
-// 	}
-
-// 	for _, testCase := range testCases {
-// 		testCase := testCase
-// 		t.Run(testCase.name, func(t *testing.T) {
-// 			t.Parallel()
-
-// 			mb := mockIsBuildRunning(testCase.buildRunning)
-
-// 			doABuild, err := shouldWeDoABuild(&mb, testCase.oldPool, testCase.curPool)
-// 			assert.NoError(t, err)
-// 			assert.Equal(t, testCase.expected, doABuild)
-// 		})
-// 	}
-// }
+}

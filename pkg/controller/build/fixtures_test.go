@@ -13,6 +13,7 @@ import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
+	"github.com/openshift/machine-config-operator/pkg/controller/build/buildrequest"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	testhelpers "github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/assert"
@@ -323,7 +324,7 @@ func assertNoBuildPods(ctx context.Context, t *testing.T, cs *Clients) bool {
 }
 
 // Asserts that ConfigMaps were created.
-func assertConfigMapsCreated(ctx context.Context, t *testing.T, cs *Clients, ibr ImageBuildRequest) bool {
+func assertConfigMapsCreated(ctx context.Context, t *testing.T, cs *Clients, mosb *mcfgv1alpha1.MachineOSBuild) bool {
 	t.Helper()
 
 	isFound := func(name string, configmapList *corev1.ConfigMapList) bool {
@@ -337,8 +338,8 @@ func assertConfigMapsCreated(ctx context.Context, t *testing.T, cs *Clients, ibr
 	}
 
 	expectedConfigmaps := map[string]bool{
-		ibr.getDockerfileConfigMapName(): false,
-		ibr.getMCConfigMapName():         false,
+		buildrequest.GetContainerfileConfigMapName(mosb): false,
+		buildrequest.GetMCConfigMapName(mosb):            false,
 	}
 
 	err := wait.PollImmediateInfiniteWithContext(ctx, pollInterval, func(ctx context.Context) (bool, error) {
@@ -362,10 +363,8 @@ func assertConfigMapsCreated(ctx context.Context, t *testing.T, cs *Clients, ibr
 }
 
 // Polls until a build pod is created.
-func assertBuildPodIsCreated(ctx context.Context, t *testing.T, cs *Clients, ibr ImageBuildRequest) bool {
+func assertBuildPodIsCreated(ctx context.Context, t *testing.T, cs *Clients, buildPodName string) bool {
 	t.Helper()
-
-	buildPodName := ibr.getBuildName()
 
 	var podNames []string
 
@@ -427,16 +426,15 @@ func assertMOSBFollowsBuildPodStatus(ctx context.Context, t *testing.T, cs *Clie
 	mosb, err := getMachineOSBuild(ctx, cs, mosc, mcp)
 	outcome = assert.NoError(t, err)
 
-	ibr := newImageBuildRequest(mosc, mosb)
-	buildPodName := ibr.getBuildName()
+	buildPodName := buildrequest.GetBuildPodName(mosb)
 
 	// Wait for the build pod to be created.
-	outcome = assertBuildPodIsCreated(ctx, t, cs, *ibr)
+	outcome = assertBuildPodIsCreated(ctx, t, cs, buildPodName)
 	if !outcome {
 		return outcome
 	}
 
-	outcome = assertConfigMapsCreated(ctx, t, cs, *ibr)
+	outcome = assertConfigMapsCreated(ctx, t, cs, mosb)
 	if !outcome {
 		return false
 	}
@@ -455,7 +453,7 @@ func assertMOSBFollowsBuildPodStatus(ctx context.Context, t *testing.T, cs *Clie
 		if phase == corev1.PodSucceeded {
 			cm := &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      ibr.getDigestConfigMapName(),
+					Name:      buildrequest.GetDigestConfigMapName(mosb),
 					Namespace: ctrlcommon.MCONamespace,
 				},
 				Data: map[string]string{

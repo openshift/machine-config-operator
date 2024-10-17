@@ -1,10 +1,8 @@
 package build
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/containers/image/v5/docker/reference"
@@ -52,6 +50,8 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"github.com/openshift/machine-config-operator/internal/clients"
+	"github.com/openshift/machine-config-operator/pkg/controller/build/buildrequest"
+	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 )
 
 type ErrInvalidImageBuilder struct {
@@ -87,7 +87,7 @@ type BuildControllerConfig struct {
 
 type ImageBuilder interface {
 	Run(context.Context, int)
-	StartBuild(ImageBuildRequest) (*corev1.ObjectReference, error)
+	StartBuild(buildrequest.BuildRequest) (*corev1.ObjectReference, error)
 	IsBuildRunning(*mcfgv1alpha1.MachineOSBuild, *mcfgv1alpha1.MachineOSConfig) (bool, error)
 	DeleteBuildObject(*mcfgv1alpha1.MachineOSBuild, *mcfgv1alpha1.MachineOSConfig) error
 }
@@ -324,7 +324,7 @@ func (ctrl *Controller) processNextMosWorkItem() bool {
 
 // Reconciles the MachineConfigPool state with the state of a custom pod object.
 func (ctrl *Controller) customBuildPodUpdater(pod *corev1.Pod) error {
-	pool, err := ctrl.mcfgclient.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), pod.Labels[TargetMachineConfigPoolLabelKey], metav1.GetOptions{})
+	pool, err := ctrl.mcfgclient.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), pod.Labels[constants.TargetMachineConfigPoolLabelKey], metav1.GetOptions{})
 	if err != nil {
 		return err
 	}
@@ -472,9 +472,7 @@ func (ctrl *Controller) syncMachineOSBuilder(key string) error {
 					if doABuild {
 						ctrl.startBuildForMachineConfigPool(machineOSConfig, machineOSBuild)
 					}
-
 				}
-
 			}
 		}
 	} else {
@@ -484,7 +482,7 @@ func (ctrl *Controller) syncMachineOSBuilder(key string) error {
 		var status *mcfgv1alpha1.MachineOSBuildStatus
 		machineOSBuild, buildExists = ctrl.doesMOSBExist(machineOSConfig)
 		if !buildExists {
-			machineOSBuild, status, err = ctrl.CreateBuildFromConfig(machineOSConfig)
+			machineOSBuild, status, err = ctrl.createBuildFromConfig(machineOSConfig)
 			if err != nil {
 				return err
 			}
@@ -532,7 +530,7 @@ func (ctrl *Controller) updateMachineConfigPool(old, cur interface{}) {
 	case doABuild:
 		klog.V(4).Infof("MachineConfigPool %s has changed, requiring a build", curPool.Name)
 		var status *mcfgv1alpha1.MachineOSBuildStatus
-		mosbNew, status, err = ctrl.CreateBuildFromConfig(moscNew)
+		mosbNew, status, err = ctrl.createBuildFromConfig(moscNew)
 		if err != nil {
 			klog.Errorln(err)
 			ctrl.handleErr(err, curPool.Name)
@@ -698,7 +696,7 @@ func (ctrl *Controller) postBuildCleanup(mosc *mcfgv1alpha1.MachineOSConfig, mos
 		err := ctrl.imageBuilder.DeleteBuildObject(mosb, mosc)
 
 		if err == nil {
-			klog.Infof("Deleted build object %s", newImageBuildRequest(mosc, mosb).getBuildName())
+			klog.Infof("Deleted build object %s", buildrequest.GetBuildPodName(mosb))
 		}
 
 		return err
@@ -706,12 +704,13 @@ func (ctrl *Controller) postBuildCleanup(mosc *mcfgv1alpha1.MachineOSConfig, mos
 
 	// Delete the ConfigMap containing the MachineConfig.
 	deleteMCConfigMap := func() error {
-		ibr := newImageBuildRequest(mosc, mosb)
+		cmName := buildrequest.GetMCConfigMapName(mosb)
+		podName := buildrequest.GetBuildPodName(mosb)
 
-		err := ctrl.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Delete(context.TODO(), ibr.getMCConfigMapName(), metav1.DeleteOptions{})
+		err := ctrl.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Delete(context.TODO(), cmName, metav1.DeleteOptions{})
 
 		if err == nil {
-			klog.Infof("Deleted MachineConfig ConfigMap %s for build %s", ibr.getMCConfigMapName(), ibr.getBuildName())
+			klog.Infof("Deleted MachineConfig ConfigMap %s for build %s", cmName, podName)
 		}
 
 		return err
@@ -719,12 +718,13 @@ func (ctrl *Controller) postBuildCleanup(mosc *mcfgv1alpha1.MachineOSConfig, mos
 
 	// Delete the ConfigMap containing the rendered Dockerfile.
 	deleteDockerfileConfigMap := func() error {
-		ibr := newImageBuildRequest(mosc, mosb)
+		cmName := buildrequest.GetContainerfileConfigMapName(mosb)
+		podName := buildrequest.GetBuildPodName(mosb)
 
-		err := ctrl.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Delete(context.TODO(), ibr.getDockerfileConfigMapName(), metav1.DeleteOptions{})
+		err := ctrl.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Delete(context.TODO(), cmName, metav1.DeleteOptions{})
 
 		if err == nil {
-			klog.Infof("Deleted Dockerfile ConfigMap %s for build %s", ibr.getDockerfileConfigMapName(), ibr.getBuildName())
+			klog.Infof("Deleted Dockerfile ConfigMap %s for build %s", cmName, podName)
 		}
 
 		return err
@@ -762,8 +762,7 @@ func (ctrl *Controller) markBuildSucceeded(mosc *mcfgv1alpha1.MachineOSConfig, m
 
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		// REPLACE FINAL PULLSPEC WITH SHA HERE USING ctrl.imagebuilder.FinalPullspec
-		ibr := newImageBuildRequest(mosc, mosb)
-		digestConfigMap, err := ctrl.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), ibr.getDigestConfigMapName(), metav1.GetOptions{})
+		digestConfigMap, err := ctrl.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), buildrequest.GetDigestConfigMapName(mosb), metav1.GetOptions{})
 		if err != nil {
 			return err
 		}
@@ -862,15 +861,6 @@ func (ctrl *Controller) markBuildPendingWithObjectRef(mosc *mcfgv1alpha1.Machine
 			},
 		})
 
-		mcp, err := ctrl.mcfgclient.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), mosc.Spec.MachineConfigPool.Name, metav1.GetOptions{})
-		if err != nil {
-			return err
-		}
-
-		mcp.Spec.Configuration.Source = append(mcp.Spec.Configuration.Source, objRef)
-		ctrl.mcfgclient.MachineconfigurationV1().MachineConfigPools().Update(context.TODO(), mcp, metav1.UpdateOptions{})
-		// add obj ref to mosc
-
 		if bs.Build.Status.BuilderReference == nil {
 			mosb.Status.BuilderReference = &mcfgv1alpha1.MachineOSBuilderReference{ImageBuilderType: mosc.Spec.BuildInputs.ImageBuilder.ImageBuilderType, PodImageBuilder: &mcfgv1alpha1.ObjectReference{
 				Name:      objRef.Name,
@@ -906,140 +896,9 @@ func (ctrl *Controller) updateConfigAndBuild(mosc *mcfgv1alpha1.MachineOSConfig,
 	return ctrl.syncAvailableStatus(newMosb)
 }
 
-func (ctrl *Controller) getOSImageURLConfig() (*ctrlcommon.OSImageURLConfig, error) {
-	cm, err := ctrl.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), ctrlcommon.MachineConfigOSImageURLConfigMapName, metav1.GetOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("could not get ConfigMap %s: %w", ctrlcommon.MachineConfigOSImageURLConfigMapName, err)
-	}
-
-	return ctrlcommon.ParseOSImageURLConfigMap(cm)
-}
-
-func (ctrl *Controller) getImagesConfig() (*ctrlcommon.Images, error) {
-	cm, err := ctrl.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), ctrlcommon.MachineConfigOperatorImagesConfigMapName, metav1.GetOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("could not get configmap %s: %w", ctrlcommon.MachineConfigOperatorImagesConfigMapName, err)
-	}
-
-	return ctrlcommon.ParseImagesFromConfigMap(cm)
-}
-
 // Prepares all of the objects needed to perform an image build.
-func (ctrl *Controller) prepareForBuild(mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig) (ImageBuildRequest, error) {
-	ibr := newImageBuildRequestFromBuildInputs(mosb, mosc)
-
-	imagesConfig, err := ctrl.getImagesConfig()
-	if err != nil {
-		return ibr, fmt.Errorf("could not get images.json config: %w", err)
-	}
-
-	ibr.MCOImagePullspec = imagesConfig.MachineConfigOperator
-
-	// populate the "optional" fields, if the user did not specify them
-	osImageURLConfig, err := ctrl.getOSImageURLConfig()
-	if err != nil {
-		return ibr, fmt.Errorf("could not get osImageURL config: %w", err)
-	}
-
-	moscNew := mosc.DeepCopy()
-
-	if moscNew.Spec.BuildInputs.BaseOSExtensionsImagePullspec == "" {
-		moscNew.Spec.BuildInputs.BaseOSExtensionsImagePullspec = osImageURLConfig.BaseOSExtensionsContainerImage
-	}
-
-	if moscNew.Spec.BuildInputs.BaseOSImagePullspec == "" {
-		moscNew.Spec.BuildInputs.BaseOSImagePullspec = osImageURLConfig.BaseOSContainerImage
-		moscNew.Spec.BuildInputs.ReleaseVersion = osImageURLConfig.ReleaseVersion
-	}
-
-	etcPkiEntitlements, err := ctrl.getOptionalSecret(EtcPkiEntitlementSecretName)
-	if err != nil {
-		return ImageBuildRequest{}, err
-	}
-
-	ibr.HasEtcPkiEntitlementKeys = etcPkiEntitlements != nil
-
-	etcPkiRpmGpgKeys, err := ctrl.getOptionalSecret(EtcPkiRpmGpgSecretName)
-	if err != nil {
-		return ImageBuildRequest{}, err
-	}
-
-	ibr.HasEtcPkiRpmGpgKeys = etcPkiRpmGpgKeys != nil
-
-	etcYumReposDConfigs, err := ctrl.getOptionalConfigMap(EtcYumReposDConfigMapName)
-	if err != nil {
-		return ImageBuildRequest{}, err
-	}
-
-	ibr.HasEtcYumReposDConfigs = etcYumReposDConfigs != nil
-
-	// make sure to get these new settings
-	ibr.MachineOSConfig = moscNew
-
-	mc, err := ctrl.mcfgclient.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), mosb.Spec.DesiredConfig.Name, metav1.GetOptions{})
-	if err != nil {
-		return ibr, err
-	}
-
-	mcConfigMap, err := ibr.toConfigMap(mc) // ??????
-	if err != nil {
-		return ImageBuildRequest{}, fmt.Errorf("could not convert MachineConfig %s into ConfigMap: %w", mosb.Spec.DesiredConfig.Name, err) // ????
-	}
-
-	_, err = ctrl.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Create(context.TODO(), mcConfigMap, metav1.CreateOptions{})
-	if err != nil {
-		return ImageBuildRequest{}, fmt.Errorf("could not load rendered MachineConfig %s into configmap: %w", mcConfigMap.Name, err)
-	}
-
-	klog.Infof("Stored MachineConfig %s in ConfigMap %s for build", mosb.Spec.DesiredConfig.Name, mcConfigMap.Name)
-
-	dockerfileConfigMap, err := ibr.dockerfileToConfigMap()
-	if err != nil {
-		return ImageBuildRequest{}, fmt.Errorf("could not generate Dockerfile ConfigMap: %w", err)
-	}
-
-	_, err = ctrl.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Create(context.TODO(), dockerfileConfigMap, metav1.CreateOptions{})
-	if err != nil {
-		return ImageBuildRequest{}, fmt.Errorf("could not load rendered Dockerfile %s into configmap: %w", dockerfileConfigMap.Name, err)
-	}
-
-	klog.Infof("Stored Dockerfile for build %s in ConfigMap %s for build", ibr.getBuildName(), dockerfileConfigMap.Name)
-
-	return ibr, nil
-}
-
-// Fetches an optional secret to inject into the build. Returns a nil error if
-// the secret is not found.
-func (ctrl *Controller) getOptionalSecret(secretName string) (*corev1.Secret, error) {
-	optionalSecret, err := ctrl.kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(context.TODO(), secretName, metav1.GetOptions{})
-	if err == nil {
-		klog.Infof("Optional build secret %q found, will include in build", secretName)
-		return optionalSecret, nil
-	}
-
-	if k8serrors.IsNotFound(err) {
-		klog.Infof("Could not find optional secret %q, will not include in build", secretName)
-		return nil, nil
-	}
-
-	return nil, fmt.Errorf("could not retrieve optional secret: %s: %w", secretName, err)
-}
-
-// Fetches an optional ConfigMap to inject into the build. Returns a nil error if
-// the ConfigMap is not found.
-func (ctrl *Controller) getOptionalConfigMap(configmapName string) (*corev1.ConfigMap, error) {
-	optionalConfigMap, err := ctrl.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), configmapName, metav1.GetOptions{})
-	if err == nil {
-		klog.Infof("Optional build ConfigMap %q found, will include in build", configmapName)
-		return optionalConfigMap, nil
-	}
-
-	if k8serrors.IsNotFound(err) {
-		klog.Infof("Could not find ConfigMap %q, will not include in build", configmapName)
-		return nil, nil
-	}
-
-	return nil, fmt.Errorf("could not retrieve optional ConfigMap: %s: %w", configmapName, err)
+func (ctrl *Controller) prepareForBuild(mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig) (buildrequest.BuildRequest, error) {
+	return buildrequest.NewPreparer(ctrl.kubeclient, ctrl.mcfgclient, mosb, mosc).Prepare(context.TODO())
 }
 
 // Determines if we should run a build, then starts a build pod to perform the
@@ -1056,6 +915,7 @@ func (ctrl *Controller) startBuildForMachineConfigPool(mosc *mcfgv1alpha1.Machin
 	if err != nil {
 		return err
 	}
+
 	// Replace the user-supplied tag (if present) with the name of the
 	// rendered MachineConfig for uniqueness. This will also allow us to
 	// eventually do a pre-build registry query to determine if we need to
@@ -1071,33 +931,6 @@ func (ctrl *Controller) startBuildForMachineConfigPool(mosc *mcfgv1alpha1.Machin
 	}
 
 	ourConfig.Status.CurrentImagePullspec = tagged.String()
-	secrets := make(map[string]string)
-	secrets["push"] = ourConfig.Spec.BuildInputs.RenderedImagePushSecret.Name
-	secrets["pull"] = ourConfig.Spec.BuildInputs.BaseImagePullSecret.Name
-	updateMOSC := false
-	for key, s := range secrets {
-		if s == "" {
-			continue
-		}
-		newS, err := ctrl.validatePullSecret(s)
-		if err != nil {
-			return err
-		}
-
-		if strings.Contains(newS.Name, "canonical") {
-			updateMOSC = true
-			klog.Infof("Updating build controller config to indicate we have a canonicalized secret %s", newS.Name)
-			switch key {
-			case "push":
-				ourConfig.Spec.BuildInputs.RenderedImagePushSecret.Name = newS.Name
-			case "pull":
-				ourConfig.Spec.BuildInputs.BaseImagePullSecret.Name = newS.Name
-			}
-		}
-	}
-
-	// ok
-	// we need to 1) replace tag
 
 	ibr, err := ctrl.prepareForBuild(mosb, ourConfig)
 	if err != nil {
@@ -1105,7 +938,6 @@ func (ctrl *Controller) startBuildForMachineConfigPool(mosc *mcfgv1alpha1.Machin
 	}
 
 	objRef, err := ctrl.imageBuilder.StartBuild(ibr)
-
 	if err != nil {
 		return err
 	}
@@ -1114,142 +946,8 @@ func (ctrl *Controller) startBuildForMachineConfigPool(mosc *mcfgv1alpha1.Machin
 	if err != nil {
 		return err
 	}
-	if updateMOSC {
-		return ctrl.updateConfigSpec(ourConfig)
-	}
-	return nil
-}
 
-// Ensure that the supplied pull secret exists, is in the correct format, etc.
-func (ctrl *Controller) validatePullSecret(name string) (*corev1.Secret, error) {
-	secret, err := ctrl.kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(context.TODO(), name, metav1.GetOptions{})
-	if err != nil {
-		return nil, err
-	}
-
-	// If a Docker pull secret lacks the top-level "auths" key, this means that
-	// it is a legacy-style pull secret. Buildah does not know how to correctly
-	// use one of these secrets. With that in mind, we "canonicalize" it, meaning
-	// we inject the existing legacy secret into a {"auths": {}} schema that
-	// Buildah can understand. We create a new K8s secret with this info and pass
-	// that secret into our image builder instead.
-	canonicalized, err := canonicalizePullSecret(secret)
-	if err != nil {
-		return nil, err
-	}
-
-	// If neither the secret from the API nor our canonicalization attempt are
-	// identified as canonicalized secrets, that means it does not need to be
-	// canonicalized. So we can return it as-is.
-	if !isCanonicalizedSecret(canonicalized) && !isCanonicalizedSecret(secret) {
-		return secret, nil
-	}
-
-	// If the secret from the API server is not canonicalized, but it is
-	// identified as canonicalized by our canonicalization attempt, that means
-	// the canonicalized secret needs to be created.
-	if isCanonicalizedSecret(canonicalized) && !isCanonicalizedSecret(secret) {
-		klog.Infof("Found legacy-style secret %s, canonicalizing as %s", secret.Name, canonicalized.Name)
-		return ctrl.handleCanonicalizedPullSecret(canonicalized)
-	}
-
-	// If we have a canonicalized secret, get the original secret name from the
-	// label, then retry validation with the original secret. This will cause the
-	// canonicalized secret to be updated if the original secret has changed.
-	return ctrl.validatePullSecret(canonicalized.Labels[OriginalSecretNameLabelKey])
-}
-
-// Attempt to create a canonicalized pull secret. If the secret already exsits, we should update it.
-func (ctrl *Controller) handleCanonicalizedPullSecret(secret *corev1.Secret) (*corev1.Secret, error) {
-	if err := validateCanonicalizedSecret(secret); err != nil {
-		return nil, fmt.Errorf("could not handle canonicalized secret: %w", err)
-	}
-
-	out, err := ctrl.kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(context.TODO(), secret.Name, metav1.GetOptions{})
-	// We found a canonicalized secret.
-	if err == nil {
-		// Check if the canonical secret from the API server matches the secret we
-		// got. If they match, we're done.
-		if bytes.Equal(secret.Data[corev1.DockerConfigJsonKey], out.Data[corev1.DockerConfigJsonKey]) && hasCanonicalizedSecretLabels(secret) {
-			klog.Infof("Canonical secret %q up-to-date", secret.Name)
-			return out, nil
-		}
-
-		// If they do not match, we need to do an update.
-		return ctrl.updateCanonicalizedSecret(secret)
-	}
-
-	// We don't have a canonical secret, so lets create one.
-	if k8serrors.IsNotFound(err) {
-		return ctrl.createCanonicalizedSecret(secret)
-	}
-
-	return nil, fmt.Errorf("could not get canonicalized secret %q: %w", secret.Name, err)
-}
-
-// Creates a canonicalized secret.
-func (ctrl *Controller) createCanonicalizedSecret(secret *corev1.Secret) (*corev1.Secret, error) {
-	if err := validateCanonicalizedSecret(secret); err != nil {
-		return nil, fmt.Errorf("could not create canonicalized secret: %w", err)
-	}
-
-	out, err := ctrl.kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Create(context.TODO(), secret, metav1.CreateOptions{})
-
-	// Secret creation was successful.
-	if err == nil {
-		klog.Infof("Created canonicalized secret %s", secret.Name)
-		return out, nil
-	}
-
-	// It is possible that BuildController could attempt to create the same
-	// canonicalized secret more than once if two (or more) MachineOSConfigs are
-	// created at the same time that specify the same secret which must be
-	// canonicalized.
-	//
-	// If this is the case, all subsequent secret creation attempts (after the
-	// first sucesssful attempt) will fail. In this situation, the best and
-	// simplest thing to do is to call ctrl.validatePullSecret() with the
-	// original secret name. This is because it is possible that the secret could
-	// have been updated and we should handle that more gracefully.
-	if k8serrors.IsAlreadyExists(err) {
-		klog.Infof("Canonicalized secret %s already exists", secret.Name)
-		return ctrl.validatePullSecret(secret.Labels[OriginalSecretNameLabelKey])
-	}
-
-	return nil, fmt.Errorf("could not create canonicalized secret %q: %w", secret.Name, err)
-}
-
-// Performs the update operation for updating the canonicalized secret. This is
-// wrapped in a retry.RetryOnConflict() function because it is possible that
-// BuildController might try to update this secret multiple times in rapid
-// succession.
-func (ctrl *Controller) updateCanonicalizedSecret(secret *corev1.Secret) (*corev1.Secret, error) {
-	if err := validateCanonicalizedSecret(secret); err != nil {
-		return nil, fmt.Errorf("could not update canonicalized secret: %w", err)
-	}
-
-	var out *corev1.Secret
-
-	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		found, err := ctrl.kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(context.TODO(), secret.Name, metav1.GetOptions{})
-		if err != nil && !k8serrors.IsNotFound(err) {
-			return fmt.Errorf("could not get canonical secret %q: %w", secret.Name, err)
-		}
-
-		found.Data = secret.Data
-		updated, err := ctrl.kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Update(context.TODO(), found, metav1.UpdateOptions{})
-		if err != nil {
-			return fmt.Errorf("could not update canonical secret %q: %w", secret.Name, err)
-		}
-
-		out = updated
-
-		klog.Infof("Updated canonical secret %s", secret.Name)
-
-		return nil
-	})
-
-	return out, err
+	return ctrl.updateConfigSpec(ourConfig)
 }
 
 func (ctrl *Controller) addMachineOSConfig(cur interface{}) {
@@ -1303,8 +1001,8 @@ func (ctrl *Controller) deleteMachineOSConfig(cur interface{}) {
 		utilruntime.HandleError(fmt.Errorf("MachineOSConfig's MachineConfigPool cannot be found"))
 		return
 	}
-
-	mosb, err := ctrl.machineOSBuildLister.Get(fmt.Sprintf("%s-%s-builder", mosc.Spec.MachineConfigPool.Name, mcp.Spec.Configuration.Name))
+	// first, we need to stop and delete any existing builds.
+	mosb, err := ctrl.machineOSBuildLister.Get(getMOSBName(mosc, mcp))
 	if err == nil {
 		if running, _ := ctrl.imageBuilder.IsBuildRunning(mosb, mosc); running {
 			// Stop and delete the build if it is running
@@ -1391,7 +1089,7 @@ func configChangeCauseBuild(old, cur *mcfgv1alpha1.MachineOSConfig) bool {
 }
 
 // Determines if we should do a build based upon the state of our
-// MachineConfigPool, the presence of a build pod, etc.
+// MachineOSConfig, MachineOSBuild, the presence of a build pod, etc.
 func shouldWeDoABuild(builder interface {
 	IsBuildRunning(*mcfgv1alpha1.MachineOSBuild, *mcfgv1alpha1.MachineOSConfig) (bool, error)
 }, mosc *mcfgv1alpha1.MachineOSConfig, oldMOSB, curMOSB *mcfgv1alpha1.MachineOSBuild) (bool, error) {
@@ -1413,12 +1111,12 @@ func shouldWeDoABuild(builder interface {
 
 // Determines if an object is an ephemeral build object by examining its labels.
 func isEphemeralBuildObject(obj metav1.Object) bool {
-	return EphemeralBuildObjectSelector().Matches(labels.Set(obj.GetLabels()))
+	return constants.EphemeralBuildObjectSelector().Matches(labels.Set(obj.GetLabels()))
 }
 
 // Determines if an object is managed by this controller by examining its labels.
 func hasAllRequiredOSBuildLabels(inLabels map[string]string) bool {
-	return OSBuildSelector().Matches(labels.Set(inLabels))
+	return constants.OSBuildSelector().Matches(labels.Set(inLabels))
 }
 
 func (ctrl *Controller) doesMOSBExist(mosc *mcfgv1alpha1.MachineOSConfig) (*mcfgv1alpha1.MachineOSBuild, bool) {
@@ -1426,7 +1124,8 @@ func (ctrl *Controller) doesMOSBExist(mosc *mcfgv1alpha1.MachineOSConfig) (*mcfg
 	if err != nil {
 		return nil, false
 	}
-	mosb, err := ctrl.machineOSBuildLister.Get(fmt.Sprintf("%s-%s-builder", mosc.Spec.MachineConfigPool.Name, mcp.Spec.Configuration.Name))
+
+	mosb, err := ctrl.machineOSBuildLister.Get(getMOSBName(mosc, mcp))
 	if err != nil && k8serrors.IsNotFound(err) {
 		return nil, false
 	} else if mosb != nil {
@@ -1435,19 +1134,26 @@ func (ctrl *Controller) doesMOSBExist(mosc *mcfgv1alpha1.MachineOSConfig) (*mcfg
 	return nil, false
 }
 
-func (ctrl *Controller) CreateBuildFromConfig(config *mcfgv1alpha1.MachineOSConfig) (*mcfgv1alpha1.MachineOSBuild, *mcfgv1alpha1.MachineOSBuildStatus, error) {
+func (ctrl *Controller) createBuildFromConfig(config *mcfgv1alpha1.MachineOSConfig) (*mcfgv1alpha1.MachineOSBuild, *mcfgv1alpha1.MachineOSBuildStatus, error) {
 	mcp, err := ctrl.mcpLister.Get(config.Spec.MachineConfigPool.Name)
 	if err != nil {
 		return nil, nil, err
 	}
 	now := metav1.Now()
+
+	mosbLabels, err := labels.ConvertSelectorToLabelsMap(constants.MachineOSBuildSelector(config, mcp).String())
+	if err != nil {
+		return nil, nil, fmt.Errorf("could not get labels: %w", err)
+	}
+
 	build := mcfgv1alpha1.MachineOSBuild{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "MachineOSBuild",
 			APIVersion: "machineconfiguration.openshift.io/v1alpha1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name: fmt.Sprintf("%s-%s-builder", config.Spec.MachineConfigPool.Name, mcp.Spec.Configuration.Name),
+			Name:   getMOSBName(config, mcp),
+			Labels: mosbLabels,
 		},
 		Spec: mcfgv1alpha1.MachineOSBuildSpec{
 			RenderedImagePushspec: config.Spec.BuildInputs.RenderedImagePushspec,
@@ -1526,4 +1232,10 @@ func isBuildPodError(pod *corev1.Pod) bool {
 	}
 
 	return false
+}
+
+// Computes the name for the MachineOSBuild object. In the future, this will
+// use a hashing function similar to rendered MachineConfigs.
+func getMOSBName(mosc *mcfgv1alpha1.MachineOSConfig, mcp *mcfgv1.MachineConfigPool) string {
+	return fmt.Sprintf("%s-%s-builder", mosc.Spec.MachineConfigPool.Name, mcp.Spec.Configuration.Name)
 }
