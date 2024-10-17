@@ -155,10 +155,17 @@ type BootcClient struct {
 	client Client
 }
 
+// NewNodeBootcClient is a wrapper to create an RpmOstreeClient
+func NewNodeBootcClient() BootcClient {
+	return BootcClient{
+		client: NewClient("machine-config-daemon"),
+	}
+}
+
 // Synchronously invoke bootc, writing its stdout to our stdout,
 // and gathering stderr into a buffer which will be returned in err
 // in case of error.
-func runBootc(args ...string) error {
+func (b *BootcClient) runBootc(args ...string) error {
 	return runCmdSync("bootc", args...)
 }
 
@@ -181,16 +188,16 @@ func (b *BootcClient) GetBootedAndStagedImage() (*BootEntry, *BootEntry, error) 
 	return status.Status.GetBootedImage(), status.Status.GetStagedImage(), nil
 }
 
-// // GetStatus returns multi-line human-readable text describing system status
-// // Bootc is working on status update: https://github.com/containers/bootc/issues/408
-// func (r *BootcClient) GetStatus() (string, error) {
-// 	output, err := runGetOut("bootc", "status")
-// 	if err != nil {
-// 		return "", err
-// 	}
+// GetStatus returns multi-line human-readable text describing system status
+// Bootc is working on status update: https://github.com/containers/bootc/issues/408
+func (r *BootcClient) GetStatus() (string, error) {
+	output, err := runGetOut("bootc", "status")
+	if err != nil {
+		return "", err
+	}
 
-// 	return string(output), nil
-// }
+	return string(output), nil
+}
 
 // GetBootedImageInfo() returns the image URL as well as the image version(for logging) and the ostree commit (for comparisons)
 func (b *BootcClient) GetBootedImageInfo() (*BootedImageInfo, error) {
@@ -224,5 +231,5 @@ func (b *BootcClient) Switch(imgURL string) error {
 		return fmt.Errorf("Error while ensuring access to pull secrets: %w", err)
 	}
 	klog.Infof("Executing switch to %s", imgURL)
-	return runBootc("switch", imgURL)
+	return b.runBootc("switch", imgURL)
 }
