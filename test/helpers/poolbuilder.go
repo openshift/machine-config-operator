@@ -28,6 +28,7 @@ type MachineConfigPoolBuilder struct {
 	conditions     []*mcfgv1.MachineConfigPoolCondition
 	maxUnavailable *intstr.IntOrString
 	paused         bool
+	childConfigs   []corev1.ObjectReference
 }
 
 func NewMachineConfigPoolBuilder(name string) *MachineConfigPoolBuilder {
@@ -100,6 +101,21 @@ func (m *MachineConfigPoolBuilder) WithLabels(labels map[string]string) *Machine
 	return m
 }
 
+func (m *MachineConfigPoolBuilder) WithChildConfigs(names []string) *MachineConfigPoolBuilder {
+	if m.childConfigs == nil {
+		m.childConfigs = []corev1.ObjectReference{}
+	}
+
+	for _, name := range names {
+		m.childConfigs = append(m.childConfigs, corev1.ObjectReference{
+			Name: name,
+			Kind: "MachineConfig",
+		})
+	}
+
+	return m
+}
+
 func (m *MachineConfigPoolBuilder) isBuildConditionType(condType mcfgv1.MachineConfigPoolConditionType) bool {
 	buildConditionTypes := map[mcfgv1.MachineConfigPoolConditionType]struct{}{
 		mcfgv1.MachineConfigPoolBuildPending: {},
@@ -167,6 +183,11 @@ func (m *MachineConfigPoolBuilder) MachineConfigPool() *mcfgv1.MachineConfigPool
 		for _, condition := range m.conditions {
 			apihelpers.SetMachineConfigPoolCondition(&mcp.Status, *condition)
 		}
+	}
+
+	if m.childConfigs != nil {
+		mcp.Spec.Configuration.Source = m.childConfigs
+		mcp.Status.Configuration.Source = m.childConfigs
 	}
 
 	return mcp
