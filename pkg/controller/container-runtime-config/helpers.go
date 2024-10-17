@@ -18,6 +18,7 @@ import (
 	signature "github.com/containers/image/v5/signature"
 	"github.com/containers/image/v5/types"
 	storageconfig "github.com/containers/storage/pkg/config"
+	"github.com/coreos/go-semver/semver"
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	"github.com/ghodss/yaml"
 	"github.com/opencontainers/go-digest"
@@ -407,7 +408,7 @@ func addTOMLgeneratedConfigFile(configFileList []generatedConfigFile, path strin
 // We create different drop-in files for each CRI-O field that can be changed by the ctrcfg CR
 // this ensures that we don't have to rely on hard coded defaults that might cause problems
 // in future if something in cri-o or the templates used by the MCO changes
-func createCRIODropinFiles(cfg *mcfgv1.ContainerRuntimeConfig) []generatedConfigFile {
+func createCRIODropinFiles(clusterVersion *apicfgv1.ClusterVersion, cfg *mcfgv1.ContainerRuntimeConfig) []generatedConfigFile {
 	var (
 		generatedConfigFileList []generatedConfigFile
 		err                     error
@@ -437,15 +438,40 @@ func createCRIODropinFiles(cfg *mcfgv1.ContainerRuntimeConfig) []generatedConfig
 			klog.V(2).Infoln(cfg, err, "error updating user changes for log-size-max to crio.conf.d: %v", err)
 		}
 	}
-	if ctrcfg.DefaultRuntime != mcfgv1.ContainerRuntimeDefaultRuntimeEmpty {
-		tomlConf := tomlConfigCRIODefaultRuntime{}
-		tomlConf.Crio.Runtime.DefaultRuntime = string(ctrcfg.DefaultRuntime)
-		generatedConfigFileList, err = addTOMLgeneratedConfigFile(generatedConfigFileList, CRIODropInFilePathDefaultRuntime, tomlConf)
-		if err != nil {
-			klog.V(2).Infoln(cfg, err, "error updating user changes for default-runtime to crio.conf.d: %v", err)
-		}
+	tomlConf := tomlConfigCRIODefaultRuntime{}
+	tomlConf.Crio.Runtime.DefaultRuntime = selectContainerRuntime(clusterVersion, ctrcfg)
+	generatedConfigFileList, err = addTOMLgeneratedConfigFile(generatedConfigFileList, CRIODropInFilePathDefaultRuntime, tomlConf)
+	if err != nil {
+		klog.V(2).Infoln(cfg, err, "error updating user changes for default-runtime to crio.conf.d: %v", err)
 	}
 	return generatedConfigFileList
+}
+
+func selectContainerRuntime(clusterVersion *apicfgv1.ClusterVersion, ctrcfg *mcfgv1.ContainerRuntimeConfiguration) string {
+	clusterBornDateIsOlderThan418 := false
+	if clusterVersion != nil {
+		if len(clusterVersion.Status.History) > 0 {
+			versions := semver.Versions{}
+			for _, v := range clusterVersion.Status.History {
+				versions = append(versions, semver.New(v.Version))
+			}
+			semver.Sort(versions)
+			clusterBornDateIsOlderThan418 = versions[0].LessThan(*semver.New("4.18.0"))
+		}
+	}
+
+	// If the cluster is older than 4.18, then default to runc, override if ctrcfg is set
+	defaultRuntime := mcfgv1.ContainerRuntimeDefaultRuntimeDefault
+	if ctrcfg != nil {
+		defaultRuntime = string(ctrcfg.DefaultRuntime)
+	} else if clusterBornDateIsOlderThan418 {
+		defaultRuntime = mcfgv1.ContainerRuntimeDefaultRuntimeRunc
+	} else {
+		defaultRuntime = mcfgv1.ContainerRuntimeDefaultRuntimeCrun
+		// TODO make this mcfgv1.ContainerRuntimeDefaultRuntimeDefault
+	}
+
+	return defaultRuntime
 }
 
 // updateSearchRegistriesConfig gets the ContainerRuntimeSearchRegistries data from the Image CRD

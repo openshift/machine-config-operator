@@ -636,6 +636,14 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 		return ctrl.syncStatusOnly(cfg, err)
 	}
 
+	// Fetch the ClusterVersionConfig
+	clusterVersionCfg, err := ctrl.clusterVersionLister.Get("version")
+	if err != nil && errors.IsNotFound(err) {
+		klog.Infof("ClusterVersionConfig 'version' does not exist or has been deleted... continuing")
+	} else if err != nil {
+		return err
+	}
+
 	for _, pool := range mcpPools {
 		role := pool.Name
 		// Get MachineConfig
@@ -676,10 +684,8 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 		}
 
 		// Create the cri-o drop-in files
-		if ctrcfg.LogLevel != "" || ctrcfg.PidsLimit != nil || (ctrcfg.LogSizeMax != nil && !ctrcfg.LogSizeMax.IsZero()) || ctrcfg.DefaultRuntime != mcfgv1.ContainerRuntimeDefaultRuntimeEmpty {
-			crioFileConfigs := createCRIODropinFiles(cfg)
-			configFileList = append(configFileList, crioFileConfigs...)
-		}
+		crioFileConfigs := createCRIODropinFiles(clusterVersionCfg, cfg)
+		configFileList = append(configFileList, crioFileConfigs...)
 
 		if isNotFound {
 			tempIgnCfg := ctrlcommon.NewIgnConfig()
