@@ -314,6 +314,7 @@ func New(
 	optr.apiserverListerSynced = apiserverInformer.Informer().HasSynced
 
 	optr.vStore.Set("operator", version.ReleaseVersion)
+	optr.vStore.Set("operator-image", version.OperatorImage)
 
 	return optr
 }
