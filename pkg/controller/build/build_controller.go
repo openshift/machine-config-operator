@@ -324,19 +324,11 @@ func (ctrl *Controller) processNextMosWorkItem() bool {
 
 // Reconciles the MachineConfigPool state with the state of a custom pod object.
 func (ctrl *Controller) customBuildPodUpdater(pod *corev1.Pod) error {
-	pool, err := ctrl.mcfgclient.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), pod.Labels[constants.TargetMachineConfigPoolLabelKey], metav1.GetOptions{})
-	if err != nil {
-		return err
-	}
-
 	klog.V(4).Infof("Build pod (%s) is %s", pod.Name, pod.Status.Phase)
 
-	mosc, mosb, err := ctrl.getConfigAndBuildForPool(pool)
-	if err != nil {
-		return err
-	}
-	if mosc == nil || mosb == nil {
-		return fmt.Errorf("Missing MOSC/MOSB for pool %s", pool.Name)
+	mosc, mosb, err := ctrl.getConfigAndBuildFromBuildPodAnnotations(pod)
+	if err != nil || mosc == nil || mosb == nil {
+		return fmt.Errorf("Missing MOSC/MOSB for pod:%s due to:%v", pod.Name, err)
 	}
 
 	// We cannot solely rely upon the pod phase to determine whether the build
@@ -1172,6 +1164,18 @@ func (ctrl *Controller) createBuildFromConfig(config *mcfgv1alpha1.MachineOSConf
 	}
 	mosb, err := ctrl.mcfgclient.MachineconfigurationV1alpha1().MachineOSBuilds().Create(context.TODO(), &build, metav1.CreateOptions{})
 	return mosb, &build.Status, err
+}
+
+func (ctrl *Controller) getConfigAndBuildFromBuildPodAnnotations(pod *corev1.Pod) (*mcfgv1alpha1.MachineOSConfig, *mcfgv1alpha1.MachineOSBuild, error) {
+	mosc, err := ctrl.mcfgclient.MachineconfigurationV1alpha1().MachineOSConfigs().Get(context.TODO(), pod.ObjectMeta.Annotations[constants.MachineOSConfigNameAnnotationKey], metav1.GetOptions{})
+	if err != nil {
+		return nil, nil, err
+	}
+	mosb, err := ctrl.mcfgclient.MachineconfigurationV1alpha1().MachineOSBuilds().Get(context.TODO(), pod.ObjectMeta.Annotations[constants.MachineOSBuildNameAnnotationKey], metav1.GetOptions{})
+	if err != nil {
+		return nil, nil, err
+	}
+	return mosc, mosb, nil
 }
 
 func (ctrl *Controller) getConfigAndBuildForPool(pool *mcfgv1.MachineConfigPool) (*mcfgv1alpha1.MachineOSConfig, *mcfgv1alpha1.MachineOSBuild, error) {
