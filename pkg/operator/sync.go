@@ -943,33 +943,29 @@ func (optr *Operator) applyManifests(config *renderConfig, paths manifestPaths) 
 			return fmt.Errorf("received nil feature gates")
 		}
 
-		// Only sync validatingadmissionpolicy manifests if ValidatingAdmissionPolicy feature gate is enabled
-		if fg.Enabled(features.FeatureGateValidatingAdmissionPolicy) {
-
-			// These new apply functions have a resource cache in case there are duplicate CRs
-			noCache := resourceapply.NewResourceCache()
-			for _, path := range paths.validatingAdmissionPolicies {
-				vapBytes, err := renderAsset(config, path)
-				if err != nil {
-					return err
-				}
-				vap := resourceread.ReadValidatingAdmissionPolicyV1beta1OrDie(vapBytes)
-				_, _, err = resourceapply.ApplyValidatingAdmissionPolicyV1beta1(context.TODO(), optr.kubeClient.AdmissionregistrationV1beta1(), optr.libgoRecorder, vap, noCache)
-				if err != nil {
-					return err
-				}
+		// These new apply functions have a resource cache in case there are duplicate CRs
+		noCache := resourceapply.NewResourceCache()
+		for _, path := range paths.validatingAdmissionPolicies {
+			vapBytes, err := renderAsset(config, path)
+			if err != nil {
+				return err
 			}
+			vap := resourceread.ReadValidatingAdmissionPolicyV1OrDie(vapBytes)
+			_, _, err = resourceapply.ApplyValidatingAdmissionPolicyV1(context.TODO(), optr.kubeClient.AdmissionregistrationV1(), optr.libgoRecorder, vap, noCache)
+			if err != nil {
+				return err
+			}
+		}
 
-			for _, path := range paths.validatingAdmissionPolicyBindings {
-				vapbBytes, err := renderAsset(config, path)
-				if err != nil {
-					return err
-				}
-				vapb := resourceread.ReadValidatingAdmissionPolicyBindingV1beta1OrDie(vapbBytes)
-				_, _, err = resourceapply.ApplyValidatingAdmissionPolicyBindingV1beta1(context.TODO(), optr.kubeClient.AdmissionregistrationV1beta1(), optr.libgoRecorder, vapb, noCache)
-				if err != nil {
-					return err
-				}
+		for _, path := range paths.validatingAdmissionPolicyBindings {
+			vapbBytes, err := renderAsset(config, path)
+			if err != nil {
+				return err
+			}
+			vapb := resourceread.ReadValidatingAdmissionPolicyBindingV1OrDie(vapbBytes)
+			_, _, err = resourceapply.ApplyValidatingAdmissionPolicyBindingV1(context.TODO(), optr.kubeClient.AdmissionregistrationV1(), optr.libgoRecorder, vapb, noCache)
+			if err != nil {
+				return err
 			}
 		}
 		return nil
