@@ -93,6 +93,8 @@ const (
 	mccKubeRbacProxyPrometheusRoleBindingPath                         = "manifests/machineconfigcontroller/prometheus-rolebinding-target.yaml"
 	mccMachineConfigurationGuardsValidatingAdmissionPolicyPath        = "manifests/machineconfigcontroller/machineconfiguration-guards-validatingadmissionpolicy.yaml"
 	mccMachineConfigurationGuardsValidatingAdmissionPolicyBindingPath = "manifests/machineconfigcontroller/machineconfiguration-guards-validatingadmissionpolicybinding.yaml"
+	mccMachineConfigPoolSelectorValidatingAdmissionPolicyPath         = "manifests/machineconfigcontroller/custom-machine-config-pool-selector-validatingadmissionpolicy.yaml"
+	mccMachineConfigPoolSelectorValidatingAdmissionPolicyBindingPath  = "manifests/machineconfigcontroller/custom-machine-config-pool-selector-validatingadmissionpolicybinding.yaml"
 	mccUpdateBootImagesValidatingAdmissionPolicyPath                  = "manifests/machineconfigcontroller/update-bootimages-validatingadmissionpolicy.yaml"
 	mccUpdateBootImagesValidatingAdmissionPolicyBindingPath           = "manifests/machineconfigcontroller/update-bootimages-validatingadmissionpolicybinding.yaml"
 
@@ -1149,10 +1151,12 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig, _ *confi
 		validatingAdmissionPolicies: []string{
 			mccMachineConfigurationGuardsValidatingAdmissionPolicyPath,
 			mccUpdateBootImagesValidatingAdmissionPolicyPath,
+			mccMachineConfigPoolSelectorValidatingAdmissionPolicyPath,
 		},
 		validatingAdmissionPolicyBindings: []string{
 			mccMachineConfigurationGuardsValidatingAdmissionPolicyBindingPath,
 			mccUpdateBootImagesValidatingAdmissionPolicyBindingPath,
+			mccMachineConfigPoolSelectorValidatingAdmissionPolicyBindingPath,
 		},
 	}
 	if err := optr.applyManifests(config, paths); err != nil {
@@ -1565,13 +1569,14 @@ func (optr *Operator) syncRequiredMachineConfigPools(config *renderConfig, co *c
 		// This was needed in-case the cluster is doing a master pool update when a new MachineConfiguration was applied.
 		// This prevents the need to wait for all the master nodes (as the syncAll function of the operator will be
 		// "stuck" here in such a case) to update before the MachineConfiguration status is updated.
-		syncErr := optr.syncMachineConfiguration(config, co)
-		// Update the degrade condition if there was an error reported by syncMachineConfiguration
-		newCO := co.DeepCopy()
-		optr.syncDegradedStatus(newCO, syncError{task: "MachineConfiguration", err: syncErr})
-		co, syncErr = optr.updateClusterOperatorStatus(co, &newCO.Status, lastErr)
-		if syncErr != nil {
-			klog.Errorf("Error updating cluster operator status: %q", syncErr)
+		if syncErr := optr.syncMachineConfiguration(config, co); syncErr != nil {
+			// Update the degrade condition if there was an error reported by syncMachineConfiguration
+			newCO := co.DeepCopy()
+			optr.syncDegradedStatus(newCO, syncError{task: "MachineConfiguration", err: syncErr})
+			co, syncErr = optr.updateClusterOperatorStatus(co, &newCO.Status, lastErr)
+			if syncErr != nil {
+				klog.Errorf("Error updating cluster operator status: %q", syncErr)
+			}
 		}
 
 		pools, err := optr.mcpLister.List(labels.Everything())

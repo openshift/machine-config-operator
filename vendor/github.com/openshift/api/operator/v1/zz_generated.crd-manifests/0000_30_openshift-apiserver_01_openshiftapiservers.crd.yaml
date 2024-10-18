@@ -150,9 +150,19 @@ spec:
                       description: resource is the resource type of the thing you're
                         tracking
                       type: string
+                  required:
+                  - group
+                  - name
+                  - namespace
+                  - resource
                   type: object
                 type: array
-                x-kubernetes-list-type: atomic
+                x-kubernetes-list-map-keys:
+                - group
+                - resource
+                - namespace
+                - name
+                x-kubernetes-list-type: map
               latestAvailableRevision:
                 description: latestAvailableRevision is the latest revision used as
                   suffix of revisioned secrets like encryption-config. A new revision

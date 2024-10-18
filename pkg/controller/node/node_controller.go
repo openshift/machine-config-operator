@@ -557,6 +557,7 @@ func (ctrl *Controller) logPoolNode(pool *mcfgv1.MachineConfigPool, node *corev1
 	klog.Infof("Pool %s%s: node %s: %s", pool.Name, zonemsg, node.Name, msg)
 }
 
+//nolint:gocyclo
 func (ctrl *Controller) updateNode(old, cur interface{}) {
 	oldNode := old.(*corev1.Node)
 	curNode := cur.(*corev1.Node)
@@ -582,10 +583,30 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 
 	// Let's be verbose when a node changes pool
 	oldPool, err := ctrl.getPrimaryPoolForNode(oldNode)
-	if err == nil && oldPool.Name != pool.Name {
+	if err == nil && oldPool != nil && oldPool.Name != pool.Name {
 		ctrl.logPoolNode(pool, curNode, "changed from pool %s", oldPool.Name)
 		// Let's also make sure the old pool node counts/status get updated
 		ctrl.enqueueMachineConfigPool(oldPool)
+	} else if err != nil {
+		// getPrimaryPoolForNode may error due to multiple custom pools. In this scenario, let's
+		// queue all of them so that when the node attempts to exit from this error state, the MCP
+		// statuses are updated correctly.
+		klog.Errorf("error fetching old primary pool for node %s, attempting to sync all old pools", oldNode.Name)
+		masterPool, workerPool, customPools, listErr := helpers.ListPools(oldNode, ctrl.mcpLister)
+		if listErr == nil {
+			for _, pool := range customPools {
+				ctrl.enqueueMachineConfigPool(pool)
+			}
+			if masterPool != nil {
+				ctrl.enqueueMachineConfigPool(masterPool)
+			}
+			if workerPool != nil {
+				ctrl.enqueueMachineConfigPool(workerPool)
+			}
+		} else {
+			klog.Errorf("error listing old pools %v for node %s", listErr, oldNode.Name)
+		}
+
 	}
 
 	var changed bool
@@ -606,7 +627,7 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 
 	// Specifically log when a node has completed an update so the MCC logs are a useful central aggregate of state changes
 	if oldNode.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey] != oldNode.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] &&
-		isNodeDone(curNode) {
+		isNodeDone(curNode, false) {
 		ctrl.logPoolNode(pool, curNode, "Completed update to %s", curNode.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey])
 		changed = true
 	} else {
@@ -991,9 +1012,9 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		}
 
 		klog.V(4).Infof("Continuing updates for layered pool %s", pool.Name)
+	} else {
+		klog.V(4).Infof("Pool %s is not layered", pool.Name)
 	}
-
-	klog.V(4).Infof("Pool %s is not layered", pool.Name)
 
 	nodes, err := ctrl.getNodesForPool(pool)
 	if err != nil {
@@ -1147,7 +1168,7 @@ func (ctrl *Controller) updateCandidateNode(mosc *mcfgv1alpha1.MachineOSConfig, 
 		if mosb == nil {
 			if lns.IsDesiredEqualToPool(pool, layered) {
 				// If the node's desired annotations match the pool, return directly without updating the node.
-				klog.Infof("no update is needed")
+				klog.V(4).Infof("Pool %s: node %s: no update is needed", pool.Name, nodeName)
 				return nil
 
 			}
@@ -1156,7 +1177,7 @@ func (ctrl *Controller) updateCandidateNode(mosc *mcfgv1alpha1.MachineOSConfig, 
 		} else {
 			if lns.IsDesiredEqualToBuild(mosc, mosb) {
 				// If the node's desired annotations match the pool, return directly without updating the node.
-				klog.Infof("no update is needed")
+				klog.V(4).Infof("Pool %s: node %s: no update is needed", pool.Name, nodeName)
 				return nil
 			}
 			// ensure this is happening. it might not be.
@@ -1188,7 +1209,7 @@ func (ctrl *Controller) updateCandidateNode(mosc *mcfgv1alpha1.MachineOSConfig, 
 func getAllCandidateMachines(layered bool, config *mcfgv1alpha1.MachineOSConfig, build *mcfgv1alpha1.MachineOSBuild, pool *mcfgv1.MachineConfigPool, nodesInPool []*corev1.Node, maxUnavailable int) ([]*corev1.Node, uint) {
 	unavail := getUnavailableMachines(nodesInPool, pool, layered, build)
 	if len(unavail) >= maxUnavailable {
-		klog.Infof("No nodes available for updates")
+		klog.V(4).Infof("Pool %s: No nodes available for updates", pool.Name)
 		return nil, 0
 	}
 	capacity := maxUnavailable - len(unavail)
@@ -1207,7 +1228,7 @@ func getAllCandidateMachines(layered bool, config *mcfgv1alpha1.MachineOSConfig,
 		} else {
 			if lns.IsDesiredEqualToBuild(config, build) {
 				// If the node's desired annotations match the pool, return directly without updating the node.
-				klog.Infof("no update is needed")
+				klog.V(4).Infof("Pool %s: layered node %s: no update is needed", pool.Name, node.Name)
 				continue
 			}
 		}
@@ -1216,6 +1237,7 @@ func getAllCandidateMachines(layered bool, config *mcfgv1alpha1.MachineOSConfig,
 			klog.V(4).Infof("node %s skipped during candidate selection as it is currently unscheduled", node.Name)
 			continue
 		}
+		klog.V(4).Infof("Pool %s: selected candidate node %s", pool.Name, node.Name)
 		nodes = append(nodes, node)
 	}
 	// Nodes which are failing to target this config also count against

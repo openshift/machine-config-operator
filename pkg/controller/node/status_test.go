@@ -493,7 +493,7 @@ func TestGetUnavailableMachines(t *testing.T) {
 			helpers.NewNodeBuilder("node-3").WithEqualConfigs(machineConfigV0).WithNodeNotReady().Node(),
 			helpers.NewNodeBuilder("node-4").WithEqualConfigs(machineConfigV0).WithNodeReady().Node(),
 		},
-		unavail:              []string{"node-0", "node-2"},
+		unavail:              []string{"node-0", "node-2", "node-3"},
 		layeredPoolWithImage: true,
 	}, {
 		name: "Mismatched unlayered node and layered pool with image unavailable",
@@ -502,9 +502,9 @@ func TestGetUnavailableMachines(t *testing.T) {
 			helpers.NewNodeBuilder("node-1").WithEqualConfigsAndImages(machineConfigV1, imageV1).Node(),
 			helpers.NewNodeBuilder("node-2").WithEqualConfigsAndImages(machineConfigV1, imageV1).WithNodeNotReady().Node(),
 			helpers.NewNodeBuilder("node-3").WithEqualConfigs(machineConfigV0).WithNodeNotReady().Node(),
-			helpers.NewNodeBuilder("node-4").WithEqualConfigs(machineConfigV0).WithNodeReady().Node(),
+			helpers.NewNodeBuilder("node-4").WithEqualConfigsAndImages(machineConfigV0, imageV1).WithNodeReady().Node(),
 		},
-		unavail:     []string{"node-3"},
+		unavail:     []string{"node-0", "node-2", "node-3"},
 		layeredPool: true,
 	}, {
 		name: "Mismatched layered node and unlayered pool",
@@ -515,7 +515,7 @@ func TestGetUnavailableMachines(t *testing.T) {
 			helpers.NewNodeBuilder("node-3").WithEqualConfigs(machineConfigV0).WithEqualImages(imageV1).WithNodeNotReady().Node(),
 			helpers.NewNodeBuilder("node-4").WithEqualConfigs(machineConfigV0).WithEqualImages(imageV1).WithNodeReady().Node(),
 		},
-		unavail: []string{"node-0"},
+		unavail: []string{"node-0", "node-2", "node-3"},
 	}, {
 		// Targets https://issues.redhat.com/browse/OCPBUGS-24705.
 		name: "nodes working toward layered should not be considered available",
@@ -550,11 +550,13 @@ func TestGetUnavailableMachines(t *testing.T) {
 			// Need to set WithNodeReady() on all nodes to avoid short-circuiting.
 			helpers.NewNodeBuilder("node-0").
 				WithEqualConfigs(machineConfigV0).
+				WithDesiredImage(imageV0).WithCurrentImage(imageV0).
 				WithMCDState(daemonconsts.MachineConfigDaemonStateDone).
 				WithNodeReady().
 				Node(),
 			helpers.NewNodeBuilder("node-1").
 				WithEqualConfigs(machineConfigV0).
+				WithDesiredImage(imageV0).WithCurrentImage(imageV0).
 				WithMCDState(daemonconsts.MachineConfigDaemonStateDone).
 				WithNodeReady().
 				Node(),
@@ -566,11 +568,12 @@ func TestGetUnavailableMachines(t *testing.T) {
 				Node(),
 			helpers.NewNodeBuilder("node-3").
 				WithEqualConfigs(machineConfigV0).
-				WithDesiredImage(imageV1).WithCurrentImage("").
+				WithDesiredImage(imageV1).WithCurrentImage(imageV0).
 				WithMCDState(daemonconsts.MachineConfigDaemonStateDone).
 				WithNodeReady().
 				Node(),
 		},
+		layeredPool:          true,
 		layeredPoolWithImage: true,
 		unavail:              []string{"node-2", "node-3"},
 	},

@@ -354,6 +354,10 @@ type SecurityContextConstraintsList struct {
 type PodSecurityPolicySubjectReview struct {
 	metav1.TypeMeta `json:",inline"`
 
+	// metadata is the standard object's metadata.
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,3,opt,name=metadata"`
+
 	// spec defines specification for the PodSecurityPolicySubjectReview.
 	Spec PodSecurityPolicySubjectReviewSpec `json:"spec" protobuf:"bytes,1,opt,name=spec"`
 
@@ -403,6 +407,10 @@ type PodSecurityPolicySubjectReviewStatus struct {
 type PodSecurityPolicySelfSubjectReview struct {
 	metav1.TypeMeta `json:",inline"`
 
+	// metadata is the standard object's metadata.
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,3,opt,name=metadata"`
+
 	// spec defines specification the PodSecurityPolicySelfSubjectReview.
 	Spec PodSecurityPolicySelfSubjectReviewSpec `json:"spec" protobuf:"bytes,1,opt,name=spec"`
 
@@ -426,6 +434,10 @@ type PodSecurityPolicySelfSubjectReviewSpec struct {
 // +openshift:compatibility-gen:level=2
 type PodSecurityPolicyReview struct {
 	metav1.TypeMeta `json:",inline"`
+
+	// metadata is the standard object's metadata.
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,3,opt,name=metadata"`
 
 	// spec is the PodSecurityPolicy to check.
 	Spec PodSecurityPolicyReviewSpec `json:"spec" protobuf:"bytes,1,opt,name=spec"`

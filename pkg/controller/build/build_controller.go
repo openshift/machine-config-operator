@@ -344,7 +344,11 @@ func (ctrl *Controller) customBuildPodUpdater(pod *corev1.Pod) error {
 	// container to enter an error state while the wait-for-done container is
 	// still running. The pod phase in this state will still be "Running" as
 	// opposed to error.
-	if isBuildPodError(pod) {
+	//
+	// Sometimes, the wait-for-done container might take a few tries to pull, so
+	// provided that the pod is still pending, we should ignore any image pull
+	// errors.
+	if isBuildPodError(pod) && pod.Status.Phase != corev1.PodPending {
 		if err := ctrl.markBuildFailed(mosc, mosb); err != nil {
 			return err
 		}
@@ -772,6 +776,8 @@ func (ctrl *Controller) markBuildSucceeded(mosc *mcfgv1alpha1.MachineOSConfig, m
 		// now, all we need is to make sure this is used all around. (node controller, getters, etc)
 		mosc.Status.CurrentImagePullspec = sha
 		mosb.Status.FinalImagePushspec = sha
+		// Not sure if this is correct way to do this.
+		mosc.Status.ObservedGeneration += mosc.GetGeneration()
 
 		if err := ctrl.postBuildCleanup(mosc, mosb, false); err != nil {
 			return fmt.Errorf("could not do post-build cleanup: %w", err)
@@ -1277,34 +1283,42 @@ func (ctrl *Controller) updateMachineOSConfig(old, cur interface{}) {
 
 func (ctrl *Controller) deleteMachineOSConfig(cur interface{}) {
 	mosc, ok := cur.(*mcfgv1alpha1.MachineOSConfig)
+	if !ok {
+		tombstone, ok := cur.(cache.DeletedFinalStateUnknown)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("couldn't get object from tombstone %#v", cur))
+			return
+		}
+		mosc, ok = tombstone.Obj.(*mcfgv1alpha1.MachineOSConfig)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not a MachineOSConfig %#v", cur))
+			return
+		}
+	}
+	klog.V(4).Infof("Deleting MachineOSConfig %s", mosc.Name)
+
+	// Get the associated MachineConfigPool and MachineOSBuild
 	mcp, err := ctrl.mcpLister.Get(mosc.Spec.MachineConfigPool.Name)
 	if err != nil {
 		utilruntime.HandleError(fmt.Errorf("MachineOSConfig's MachineConfigPool cannot be found"))
 		return
 	}
-	// first, we need to stop and delete any existing builds.
+
 	mosb, err := ctrl.machineOSBuildLister.Get(fmt.Sprintf("%s-%s-builder", mosc.Spec.MachineConfigPool.Name, mcp.Spec.Configuration.Name))
 	if err == nil {
 		if running, _ := ctrl.imageBuilder.IsBuildRunning(mosb, mosc); running {
-			// we need to stop the build.
+			// Stop and delete the build if it is running
 			ctrl.imageBuilder.DeleteBuildObject(mosb, mosc)
 			ctrl.markBuildInterrupted(mosc, mosb)
 		}
 		ctrl.mcfgclient.MachineconfigurationV1alpha1().MachineOSBuilds().Delete(context.TODO(), mosb.Name, metav1.DeleteOptions{})
 	}
-	if !ok {
-		tombstone, ok := cur.(cache.DeletedFinalStateUnknown)
-		if !ok {
-			utilruntime.HandleError(fmt.Errorf("Couldn't get object from tombstone %#v", cur))
-			return
-		}
-		mosc, ok = tombstone.Obj.(*mcfgv1alpha1.MachineOSConfig)
-		if !ok {
-			utilruntime.HandleError(fmt.Errorf("Tombstone contained object that is not a MachineOSConfig %#v", cur))
-			return
-		}
+
+	// Clean up associated ConfigMaps
+	err = ctrl.postBuildCleanup(mosc, mosb, false)
+	if err != nil {
+		klog.Errorf("Failed to clean up resources for MOSC %s: %v", mosc.Name, err)
 	}
-	klog.V(4).Infof("Deleting MachineOSConfig %s", mosc.Name)
 }
 
 func (ctrl *Controller) updateMachineOSBuild(old, cur interface{}) {

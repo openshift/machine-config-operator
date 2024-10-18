@@ -1,0 +1,29 @@
+# This systemd unit is intended to help revert from a layered state to a
+# non-layered state. It is heavily based upon the
+# machine-config-daemon-firstboot.service.yaml found in:
+# templates/common/_base/units/machine-config-daemon-firstboot.service.yaml
+name: {{ .ServiceName }}
+enabled: true
+contents: |
+  [Unit]
+  Description=Machine Config Daemon Revert
+  # Make sure it runs only on OSTree booted system
+  ConditionPathExists=/run/ostree-booted
+  # Removal of this file signals firstboot completion
+  ConditionPathExists={{ .RevertServiceMachineConfigFile }}
+  After=network.target
+
+  [Service]
+  Type=oneshot
+  RemainAfterExit=yes
+  # Disable existing repos (if any) so that OS extensions would use embedded RPMs only
+  ExecStartPre=-/usr/bin/sh -c "sed -i 's/enabled=1/enabled=0/' /etc/yum.repos.d/*.repo"
+  # Run this via podman because we want to use the nmstatectl binary in our container
+  ExecStart=/usr/bin/podman run --authfile=/var/lib/kubelet/config.json --rm --privileged --net=host -v /:/rootfs  --entrypoint machine-config-daemon '{{ .MCOImage }}' firstboot-complete-machineconfig --persist-nics --machineconfig-file {{ .RevertServiceMachineConfigFile }}
+  ExecStart=/usr/bin/podman run --authfile=/var/lib/kubelet/config.json --rm --privileged --pid=host --net=host -v /:/rootfs  --entrypoint machine-config-daemon '{{ .MCOImage }}' firstboot-complete-machineconfig --machineconfig-file {{ .RevertServiceMachineConfigFile }}
+  {{if .Proxy -}}
+  EnvironmentFile=/etc/mco/proxy.env
+  {{end -}}
+
+  [Install]
+  RequiredBy=multi-user.target

@@ -9,6 +9,7 @@ contents: |
   Type=oneshot
   ExecStart=/bin/rm -f /var/lib/kubelet/cpu_manager_state
   ExecStart=/bin/rm -f /var/lib/kubelet/memory_manager_state
+  ExecStart=-/bin/rm -f /var/lib/kubelet/dra_manager_state
 
   [Install]
   WantedBy=multi-user.target

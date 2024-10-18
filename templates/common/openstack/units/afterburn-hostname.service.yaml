@@ -9,19 +9,21 @@ contents: |
   After=NetworkManager-wait-online.service
   # Run before hostname checks
   Before=node-valid-hostname.service
-  # Allow 120 retries (10 minutes at 5 seconds per retry)
-  StartLimitIntervalSec=infinity
-  StartLimitBurst=120
 
   [Service]
-  ExecStart=/usr/local/bin/openstack-afterburn-hostname
+  # Would prefer to do Restart=on-failure instead of this bash retry loop, but
+  # the version of systemd we have right now doesn't support it. It should be
+  # available in systemd v244 and higher.
+  ExecStart=/bin/bash -c " \
+  until \
+  /usr/local/bin/openstack-afterburn-hostname; \
+  do \
+  sleep 10; \
+  done"
   Type=oneshot
+  TimeoutSec=600
   # Show as active after exit since we change state
   RemainAfterExit=true
-  # Retry every 5 seconds on failure without marking the service as failed
-  Restart=on-failure
-  RestartMode=direct
-  RestartSec=5
 
   [Install]
   WantedBy=network-online.target
