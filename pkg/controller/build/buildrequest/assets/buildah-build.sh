@@ -5,10 +5,31 @@
 # custom build pod.
 set -xeuo
 
+DEST=/etc/pki/ca-trust/extracted
+
+# Prevent p11-kit from reading user configuration files.
+export P11_KIT_NO_USER_CONFIG=1
+
+# OpenSSL PEM bundle that includes trust flags
+/usr/bin/p11-kit extract --format=openssl-bundle --filter=certificates --overwrite --comment $DEST/openssl/ca-bundle.trust.crt
+/usr/bin/p11-kit extract --format=pem-bundle --filter=ca-anchors --overwrite --comment --purpose server-auth $DEST/pem/tls-ca-bundle.pem
+
+su -m build << 'EOF'
+set -xeuo
+
+build_context="$HOME/context"
+
+# Create a directory to hold our build context.
+mkdir -p "$build_context/machineconfig"
+
 ETC_PKI_ENTITLEMENT_MOUNTPOINT="${ETC_PKI_ENTITLEMENT_MOUNTPOINT:-}"
 ETC_PKI_RPM_GPG_MOUNTPOINT="${ETC_PKI_RPM_GPG_MOUNTPOINT:-}"
 ETC_YUM_REPOS_D_MOUNTPOINT="${ETC_YUM_REPOS_D_MOUNTPOINT:-}"
 MAX_RETRIES="${MAX_RETRIES:-3}"
+
+export HTTP_PROXY="${HTTP_PROXY:-}"
+export HTTPS_PROXY="${HTTPS_PROXY:-}"
+export NO_PROXY="${NO_PROXY:-}"
 
 # Retry a command up to a specific number of times until it exits successfully.
 # Adapted from https://gist.github.com/sj26/88e1c6584397bb7c13bd11108a579746
@@ -28,14 +49,10 @@ function retry {
   return 0
 }
 
-build_context="$HOME/context"
-
-# Create a directory to hold our build context.
-mkdir -p "$build_context/machineconfig"
-
-# Copy the Containerfile and Machineconfigs from configmaps into our build context.
+# Copy the Containerfile, Machineconfigs and Additional Trust Bundle from configmaps into our build context.
 cp /tmp/containerfile/Containerfile "$build_context"
 cp /tmp/machineconfig/machineconfig.json.gz "$build_context/machineconfig/"
+cp /etc/pki/ca-trust/source/anchors/openshift-config-user-ca-bundle.crt "$build_context"
 
 build_args=(
 	--log-level=DEBUG
@@ -43,6 +60,9 @@ build_args=(
 	--authfile="$BASE_IMAGE_PULL_CREDS"
 	--tag "$TAG"
 	--file="$build_context/Containerfile"
+	--build-arg HTTP_PROXY="$HTTP_PROXY"
+	--build-arg HTTPS_PROXY="$HTTPS_PROXY"
+	--build-arg NO_PROXY="$NO_PROXY"
 )
 
 mount_opts="z,rw"
@@ -96,3 +116,4 @@ retry buildah push \
 	--authfile="$FINAL_IMAGE_PUSH_CREDS" \
 	--digestfile="/tmp/done/digestfile" \
 	--cert-dir /var/run/secrets/kubernetes.io/serviceaccount "$TAG"
+EOF
