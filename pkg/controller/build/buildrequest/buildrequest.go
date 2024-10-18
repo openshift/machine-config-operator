@@ -99,7 +99,7 @@ func (br buildRequestImpl) Secrets() ([]*corev1.Secret, error) {
 }
 
 // Creates all of the ConfigMap objects needed for the build such as the
-// Containerfile and MachineConfig ConfigMaps.
+// Containerfile, MachineConfig and AdditionalTrustBundle ConfigMaps.
 func (br buildRequestImpl) ConfigMaps() ([]*corev1.ConfigMap, error) {
 	containerfile, err := br.containerfileToConfigMap()
 	if err != nil {
@@ -115,7 +115,9 @@ func (br buildRequestImpl) ConfigMaps() ([]*corev1.ConfigMap, error) {
 		return nil, fmt.Errorf("could not convert MachineConfig into ConfigMap %q: %w", br.getMCConfigMapName(), err)
 	}
 
-	return []*corev1.ConfigMap{containerfile, machineconfig}, nil
+	additionaltrustbundle := br.additionaltrustbundleToConfigMap()
+
+	return []*corev1.ConfigMap{containerfile, machineconfig, additionaltrustbundle}, nil
 }
 
 func (br buildRequestImpl) canonicalizeSecret(name string, secret *corev1.Secret) (*corev1.Secret, error) {
@@ -183,6 +185,19 @@ func (br buildRequestImpl) machineconfigToConfigMap(mc *mcfgv1.MachineConfig) (*
 	return configmap, nil
 }
 
+// Gets the Additional Trust Bundle and injects it into a ConfigMap for consumption by the image builder.
+func (br buildRequestImpl) additionaltrustbundleToConfigMap() *corev1.ConfigMap {
+	configmap := &corev1.ConfigMap{
+		TypeMeta:   metav1.TypeMeta{},
+		ObjectMeta: br.getObjectMeta(br.getAdditionalTrustBundleConfigMapName()),
+		BinaryData: map[string][]byte{
+			"openshift-config-user-ca-bundle.crt": br.opts.AdditionalTrustBundle,
+		},
+	}
+
+	return configmap
+}
+
 // Renders our Containerfile template.
 //
 // TODO: Figure out how to parse the Containerfile using
@@ -233,6 +248,12 @@ func (br buildRequestImpl) renderContainerfile() (string, error) {
 // the official Buildah image.
 // nolint:dupl // I don't want to deduplicate this yet since there are still some unknowns.
 func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
+	var httpProxy, httpsProxy, noProxy string
+	if br.opts.Proxy != nil {
+		httpProxy = br.opts.Proxy.HTTPProxy
+		httpsProxy = br.opts.Proxy.HTTPSProxy
+		noProxy = br.opts.Proxy.NoProxy
+	}
 	env := []corev1.EnvVar{
 		// How many times the build / push steps should be retried. In the future,
 		// this should be wired up to the MachineOSConfig or other higher-level
@@ -276,15 +297,21 @@ func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
 			Name:  "BUILDAH_ISOLATION",
 			Value: "chroot",
 		},
+		{
+			Name:  "HTTP_PROXY",
+			Value: httpProxy,
+		},
+		{
+			Name:  "HTTPS_PROXY",
+			Value: httpsProxy,
+		},
+		{
+			Name:  "NO_PROXY",
+			Value: noProxy,
+		},
 	}
 
-	var uid int64 = 1000
-	var gid int64 = 1000
-
-	securityContext := &corev1.SecurityContext{
-		RunAsUser:  &uid,
-		RunAsGroup: &gid,
-	}
+	securityContext := &corev1.SecurityContext{}
 
 	command := []string{"/bin/bash", "-c"}
 
@@ -296,6 +323,10 @@ func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
 		{
 			Name:      "containerfile",
 			MountPath: "/tmp/containerfile",
+		},
+		{
+			Name:      "additional-trust-bundle",
+			MountPath: "/etc/pki/ca-trust/source/anchors",
 		},
 		{
 			Name:      "base-image-pull-creds",
@@ -331,6 +362,17 @@ func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
 				ConfigMap: &corev1.ConfigMapVolumeSource{
 					LocalObjectReference: corev1.LocalObjectReference{
 						Name: br.getMCConfigMapName(),
+					},
+				},
+			},
+		},
+		{
+			// Provides the user defined Additional Trust Bundle
+			Name: "additional-trust-bundle",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: br.getAdditionalTrustBundleConfigMapName(),
 					},
 				},
 			},
@@ -508,6 +550,11 @@ func (br buildRequestImpl) getObjectMeta(name string) metav1.ObjectMeta {
 		Labels:      br.getLabelsForObjectMeta(),
 		Annotations: br.getAnnotationsForObjectMeta(),
 	}
+}
+
+// Computes the AdditionalTrustBundle ConfigMap name based upon the MachineConfigPool name.
+func (br buildRequestImpl) getAdditionalTrustBundleConfigMapName() string {
+	return utils.GetAdditionalTrustBundleConfigMapName(br.opts.MachineOSBuild)
 }
 
 // Computes the Containerfile ConfigMap name based upon the MachineConfigPool name.
