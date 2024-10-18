@@ -7,6 +7,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/distribution/reference"
+	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
@@ -36,6 +37,11 @@ type BuildRequestOpts struct { //nolint:revive // This name is fine.
 	HasEtcYumReposDConfigs bool
 	// Has /etc/pki/rpm-gpg configs
 	HasEtcPkiRpmGpgKeys bool
+
+	// Proxy Configurations
+	Proxy *configv1.ProxyStatus
+	// Additional trust bundles for proxy (user defined)
+	AdditionalTrustBundle []byte
 }
 
 // Gets the extensions image pullspec from the MachineOSConfig if available.
@@ -196,6 +202,11 @@ func (o *optsGetter) getOpts(ctx context.Context, mosb *mcfgv1alpha1.MachineOSBu
 		return nil, fmt.Errorf("could not retrieve machineconfig %s: %w", mosb.Spec.DesiredConfig.Name, err)
 	}
 
+	cc, err := o.mcfgclient.MachineconfigurationV1().ControllerConfigs().Get(ctx, ctrlcommon.ControllerConfigName, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("could not retrieve controllerconfig %s: %w", ctrlcommon.ControllerConfigName, err)
+	}
+
 	opts.Images = imagesConfig
 	opts.MachineConfig = mc
 	opts.OSImageURLConfig = osImageURLConfig
@@ -203,6 +214,8 @@ func (o *optsGetter) getOpts(ctx context.Context, mosb *mcfgv1alpha1.MachineOSBu
 	opts.FinalImagePushSecret = finalImagePushSecret
 	opts.MachineOSConfig = mosc.DeepCopy()
 	opts.MachineOSBuild = mosb.DeepCopy()
+	opts.Proxy = cc.Spec.Proxy
+	opts.AdditionalTrustBundle = cc.Spec.AdditionalTrustBundle
 
 	return opts, nil
 }
