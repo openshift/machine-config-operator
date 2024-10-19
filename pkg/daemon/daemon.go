@@ -1377,6 +1377,9 @@ func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error, errCh chan er
 		return fmt.Errorf("failed to sync initial listers cache")
 	}
 
+	// Collect metrics
+	dn.getUnsupportedPackages()
+
 	go wait.Until(dn.worker, time.Second, stopCh)
 	go wait.Until(dn.controllerConfigWorker, time.Second, stopCh)
 
@@ -2806,4 +2809,75 @@ func cipherOrder() []uint16 {
 	}
 
 	return append(first, second...)
+}
+
+type rpmOstreeStatus struct {
+	Deployments []struct {
+		RequestedPackages []string `json:"requested-local-packages"`
+	} `json:"deployments"`
+}
+
+func (dn *Daemon) getUnsupportedPackages() {
+	cmd := exec.Command("rpm-ostree", "status", "--json")
+	output, err := cmd.Output()
+	if err != nil {
+		klog.Errorf("Failed to run rpm-ostree status: %v", err)
+		return
+	}
+
+	var status rpmOstreeStatus
+	if err := json.Unmarshal(output, &status); err != nil {
+		klog.Errorf("Failed to parse rpm-ostree status output: %v", err)
+		return
+	}
+
+	supportedExtensions := getSupportedExtensions()
+	supportedExtensionNames := make(map[string]bool)
+	for ext := range supportedExtensions {
+		supportedExtensionNames[ext] = true
+	}
+
+	if len(status.Deployments) > 0 {
+		requestedLocalPackages := status.Deployments[0].RequestedPackages
+		klog.Infof("Found %d requested local packages in the first deployment", len(requestedLocalPackages))
+
+		// Reset the unsupportedPackagesByVendor metric to start fresh
+		unsupportedPackages.Reset()
+
+		for _, pkg := range requestedLocalPackages {
+			// Check if the package is in the supported list
+			if supportedExtensionNames[pkg] {
+				continue
+			}
+
+			// Find vendor for unsupported packages
+			vendor, err := dn.getPackageVendor(pkg)
+			if err != nil {
+				klog.Errorf("Failed to get vendor for package %s: %v", pkg, err)
+				vendor = "" // Set vendor as empty if not found
+			}
+
+			unsupportedPackages.WithLabelValues(vendor).Inc()
+		}
+	} else {
+		klog.Warning("No deployments found in rpm-ostree status")
+	}
+}
+
+func (dn *Daemon) getPackageVendor(packageName string) (string, error) {
+	cmd := exec.Command("rpm", "-qi", packageName)
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to query package %s: %v", packageName, err)
+	}
+
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		if strings.HasPrefix(line, "Vendor") {
+			vendor := strings.TrimSpace(strings.Split(line, ":")[1])
+			return vendor, nil
+		}
+	}
+
+	return "", fmt.Errorf("vendor information not found for package %s", packageName)
 }
