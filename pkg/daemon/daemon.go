@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -2811,9 +2812,14 @@ func cipherOrder() []uint16 {
 	return append(first, second...)
 }
 
-type rpmOstreeStatus struct {
+type rpmOstreePackageStatus struct {
 	Deployments []struct {
-		RequestedPackages []string `json:"requested-local-packages"`
+		RequestedPackages                  []string `json:"requested-packages"`
+		RequestedLocalPackages             []string `json:"requested-local-packages"`
+		RequestedLocalFileoverridePackages []string `json:"requested-local-fileoverride-packages"`
+		RequestedBaseRemovals              []string `json:"requested-base-removals"`
+		RequestedBaseLocalReplacements     []string `json:"requested-base-local-replacements"`
+		RequestedModules                   []string `json:"requested-modules"`
 	} `json:"deployments"`
 }
 
@@ -2825,7 +2831,7 @@ func (dn *Daemon) getUnsupportedPackages() {
 		return
 	}
 
-	var status rpmOstreeStatus
+	var status rpmOstreePackageStatus
 	if err := json.Unmarshal(output, &status); err != nil {
 		klog.Errorf("Failed to parse rpm-ostree status output: %v", err)
 		return
@@ -2837,28 +2843,32 @@ func (dn *Daemon) getUnsupportedPackages() {
 		supportedExtensionNames[ext] = true
 	}
 
+	unsupportedPackageCount := 0
 	if len(status.Deployments) > 0 {
-		requestedLocalPackages := status.Deployments[0].RequestedPackages
-		klog.Infof("Found %d requested local packages in the first deployment", len(requestedLocalPackages))
+		allPackageChanges := slices.Concat(status.Deployments[0].RequestedPackages,
+			status.Deployments[0].RequestedLocalPackages,
+			status.Deployments[0].RequestedLocalFileoverridePackages,
+			status.Deployments[0].RequestedBaseRemovals,
+			status.Deployments[0].RequestedBaseLocalReplacements)
+		klog.Infof("Found %d requested local packages in the first deployment", len(allPackageChanges))
 
-		// Reset the unsupportedPackagesByVendor metric to start fresh
-		unsupportedPackages.Reset()
-
-		for _, pkg := range requestedLocalPackages {
+		for _, pkg := range allPackageChanges {
 			// Check if the package is in the supported list
 			if supportedExtensionNames[pkg] {
 				continue
 			}
 
+			unsupportedPackageCount++
 			// Find vendor for unsupported packages
 			vendor, err := dn.getPackageVendor(pkg)
 			if err != nil {
 				klog.Errorf("Failed to get vendor for package %s: %v", pkg, err)
-				vendor = "" // Set vendor as empty if not found
+			} else {
+				klog.Infof("Unsupported package %s from vendor %s", pkg, vendor)
 			}
-
-			unsupportedPackages.WithLabelValues(vendor).Inc()
 		}
+
+		unsupportedPackages.WithLabelValues(dn.name).Set(float64(unsupportedPackageCount))
 	} else {
 		klog.Warning("No deployments found in rpm-ostree status")
 	}
