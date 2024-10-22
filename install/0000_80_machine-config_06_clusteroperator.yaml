@@ -11,6 +11,8 @@ status:
   versions:
     - name: operator
       version: "0.0.1-snapshot"
+    - name: operator-image
+      version: placeholder.url.oc.will.replace.this.org/placeholdernamespace:machine-config-operator
   relatedObjects:
     - group: ""
       name: openshift-machine-config-operator
