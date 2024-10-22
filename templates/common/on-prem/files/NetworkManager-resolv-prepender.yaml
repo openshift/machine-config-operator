@@ -12,17 +12,11 @@ contents:
       mkdir -p /run/resolv-prepender
       echo "IP4_DOMAINS=$IP4_DOMAINS" > /run/resolv-prepender/env.new
       echo "IP6_DOMAINS=$IP6_DOMAINS" >> /run/resolv-prepender/env.new
-      # If we changed the environment, we should restart the service to pick up the
-      # new values. However, if the image hasn't been pulled successfully yet we can't
-      # restart the service or we may interrupt the pull and end up with a corrupt image.
-      # We're better off with incorrect search domains for a while than wedging the
-      # system with a bad image.
-      if ! diff -q /run/resolv-prepender/env /run/resolv-prepender/env.new && /usr/bin/podman image exists "{{ .Images.baremetalRuntimeCfgImage }}"; then
-        >&2 echo "NM resolv-prepender: Environment variable(s) changed. Restarting service."
-        systemctl is-active on-prem-resolv-prepender && systemctl kill on-prem-resolv-prepender
+
+      if ! diff -q /run/resolv-prepender/env /run/resolv-prepender/env.new; then
+        >&2 echo "NM resolv-prepender: Environment variable(s) changed. Systemd path unit will pick the change."
+        mv -f /run/resolv-prepender/env.new /run/resolv-prepender/env
       fi
-      mv -f /run/resolv-prepender/env.new /run/resolv-prepender/env
-      systemctl start --no-block on-prem-resolv-prepender
     }
 
     export IP4_DOMAINS IP6_DOMAINS
@@ -34,7 +28,8 @@ contents:
     # subsequent up&co. events as undesired.
     #
     # Given an overall Network Manager dispatcher timeout of 90 seconds, we are enforcing a slightly shorter
-    # timeout for the observed events.
+    # timeout for the observed events. It is not really required because all we do in this function is to write a file.
+    # We could get rid of this timeout completely, but it also does not cost much to keep it.
     case "$STATUS" in
       dns-change)
         >&2 echo "NM resolv-prepender triggered by ${IFACE} ${STATUS}."
@@ -46,6 +41,7 @@ contents:
           exit 1
         fi
       ;;
+
       up|dhcp4-change|dhcp6-change|reapply)
         if [ ! -f "/run/networkmanager-dns-event-detected" ]; then
           >&2 echo "NM resolv-prepender triggered by ${IFACE} ${STATUS}."
@@ -54,6 +50,7 @@ contents:
             exit 1
           fi
         fi
+
         # If $DHCP6_FQDN_FQDN is not empty and is not localhost.localdomain and static hostname was not already set
         if [[ -n "$DHCP6_FQDN_FQDN" && "$DHCP6_FQDN_FQDN" != "localhost.localdomain" && "$DHCP6_FQDN_FQDN" =~ "." ]] ; then
            STATIC_HOSTNAME="$(test ! -e /etc/hostname && echo -n || cat /etc/hostname | xargs)"
@@ -64,6 +61,7 @@ contents:
                   hostnamectl set-hostname --static --transient $DHCP6_FQDN_FQDN
            fi
         fi
+
         if [[ "$STATUS" == "up" ]] && [[ $IFACE == "br-ex" ]]; then
             touch /run/nodeip-configuration/br-ex-up
         fi
