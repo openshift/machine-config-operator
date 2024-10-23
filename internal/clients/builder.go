@@ -35,13 +35,19 @@ func (cb *Builder) MachineConfigClient(name string) (mcfgclientset.Interface, er
 
 // KubeClientOrDie returns the kubernetes client interface for general kubernetes objects.
 func (cb *Builder) KubeClientOrDie(name string) kubernetes.Interface {
-	return kubernetes.NewForConfigOrDie(rest.AddUserAgent(cb.config, name))
+	config := rest.CopyConfig(cb.config)
+	config.AcceptContentTypes = "application/vnd.kubernetes.protobuf,application/json"
+	config.ContentType = "application/vnd.kubernetes.protobuf"
+	return kubernetes.NewForConfigOrDie(rest.AddUserAgent(config, name))
 }
 
 // KubeClient is used in onceFrom mode where we can or cannot have a cluster ready
 // based on the configuration provided
 func (cb *Builder) KubeClient(name string) (kubernetes.Interface, error) {
-	return kubernetes.NewForConfig(rest.AddUserAgent(cb.config, name))
+	config := rest.CopyConfig(cb.config)
+	config.AcceptContentTypes = "application/vnd.kubernetes.protobuf,application/json"
+	config.ContentType = "application/vnd.kubernetes.protobuf"
+	return kubernetes.NewForConfig(rest.AddUserAgent(config, name))
 }
 
 // ConfigClientOrDie returns the config client interface for openshift
