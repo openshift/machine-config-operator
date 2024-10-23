@@ -5,7 +5,7 @@ contents:
     global
       stats socket /var/lib/haproxy/run/haproxy.sock  mode 600 level admin expose-fd listeners
     defaults
-      maxconn 20000
+      maxconn 40000
       mode    tcp
       log     /var/run/haproxy/haproxy-log.sock local0 notice alert
       log-format "%ci:%cp -> %fi:%fp [%t] %ft %b/%s %Tw/%Tc/%Tt %B %ts %ac/%fc/%bc/%sc/%rc %sq/%bq"
