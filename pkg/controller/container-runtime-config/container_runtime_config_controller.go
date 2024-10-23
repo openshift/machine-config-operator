@@ -26,6 +26,7 @@ import (
 	operatorlistersv1alpha1 "github.com/openshift/client-go/operator/listers/operator/v1alpha1"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -62,6 +63,7 @@ const (
 	maxRetries = 15
 
 	builtInLabelKey = "machineconfiguration.openshift.io/mco-built-in"
+	configMapName   = "crio-default-container-runtime"
 )
 
 var (
@@ -78,9 +80,11 @@ var updateBackoff = wait.Backoff{
 // Controller defines the container runtime config controller.
 type Controller struct {
 	templatesDir string
+	namespace    string
 
 	client        mcfgclientset.Interface
 	configClient  configclientset.Interface
+	kubeClient    clientset.Interface
 	eventRecorder record.EventRecorder
 
 	syncHandler                   func(mcp string) error
@@ -124,7 +128,7 @@ type Controller struct {
 
 // New returns a new container runtime config controller
 func New(
-	templatesDir string,
+	templatesDir, namespace string,
 	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
 	ccInformer mcfginformersv1.ControllerConfigInformer,
 	mcrInformer mcfginformersv1.ContainerRuntimeConfigInformer,
@@ -145,11 +149,13 @@ func New(
 
 	ctrl := &Controller{
 		templatesDir:  templatesDir,
+		namespace:     namespace,
 		client:        mcfgClient,
 		configClient:  configClient,
 		eventRecorder: ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-containerruntimeconfigcontroller"})),
 		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-containerruntimeconfigcontroller"),
 		imgQueue:      workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
+		kubeClient:    kubeClient,
 	}
 
 	mcrInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -209,6 +215,7 @@ func New(
 
 	ctrl.clusterVersionLister = clusterVersionInformer.Lister()
 	ctrl.clusterVersionListerSynced = clusterVersionInformer.Informer().HasSynced
+	ctrl.queue.Add("force-sync-on-upgrade")
 
 	ctrl.featureGateAccess = featureGateAccess
 
@@ -587,6 +594,15 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 		klog.V(4).Infof("Finished syncing ContainerRuntimeconfig %q (%v)", key, time.Since(startTime))
 	}()
 
+	// create the MC for the drop in default-container-runtime crio.conf file
+	if err := ctrl.createDefaultContainerRuntimeMC(); err != nil {
+		return fmt.Errorf("failed to create the crio-default-container-runtime MC: %v", err)
+	}
+
+	if key == "force-sync-on-upgrade" {
+		return nil
+	}
+
 	_, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		return err
@@ -630,12 +646,6 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 		return ctrl.syncStatusOnly(cfg, err)
 	}
 
-	if len(mcpPools) == 0 {
-		err := fmt.Errorf("containerRuntimeConfig %v does not match any MachineConfigPools", key)
-		klog.V(2).Infof("%v", err)
-		return ctrl.syncStatusOnly(cfg, err)
-	}
-
 	for _, pool := range mcpPools {
 		role := pool.Name
 		// Get MachineConfig
@@ -651,9 +661,8 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 		// If we have seen this generation and the sync didn't fail, then skip
 		if !isNotFound && cfg.Status.ObservedGeneration >= cfg.Generation && cfg.Status.Conditions[len(cfg.Status.Conditions)-1].Type == mcfgv1.ContainerRuntimeConfigSuccess {
 			// But we still need to compare the generated controller version because during an upgrade we need a new one
-			mcCtrlVersion := mc.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey]
-			if mcCtrlVersion == version.Hash {
-				return nil
+			if mc.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey] == version.Hash {
+				continue
 			}
 		}
 		// Generate the original ContainerRuntimeConfig
@@ -740,6 +749,7 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 		klog.Infof("Applied ContainerRuntimeConfig %v on MachineConfigPool %v", key, pool.Name)
 		ctrlcommon.UpdateStateMetric(ctrlcommon.MCCSubControllerState, "machine-config-controller-container-runtime-config", "Sync Container Runtime Config", pool.Name)
 	}
+
 	if err := ctrl.cleanUpDuplicatedMC(); err != nil {
 		return err
 	}
@@ -1024,6 +1034,86 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 
 	registriesIgn := createNewIgnition(generatedConfigFileList)
 	return &registriesIgn, nil
+}
+
+func (ctrl *Controller) createDefaultContainerRuntimeMC() error {
+	// Check if the crio-default-container-runtime config map exists in the openshift-machine-config-operator namespace
+	defaultContainerRuntimeCM, err := ctrl.kubeClient.CoreV1().ConfigMaps(ctrl.namespace).Get(context.TODO(), configMapName, metav1.GetOptions{})
+	if err != nil && !errors.IsNotFound(err) {
+		return fmt.Errorf("error checking for %s config map: %v", configMapName, err)
+	}
+	// If the crio-default-container-runtime config map exists, the MC was already created, so skip creating it again.
+	if defaultContainerRuntimeCM != nil && !errors.IsNotFound(err) {
+		return nil
+	}
+
+	sel, err := metav1.LabelSelectorAsSelector(metav1.AddLabelToSelector(&metav1.LabelSelector{}, builtInLabelKey, ""))
+	if err != nil {
+		return err
+	}
+	// Find all the MachineConfigPools
+	mcpPoolsAll, err := ctrl.mcpLister.List(sel)
+	if err != nil {
+		return err
+	}
+
+	// Create the crio-default-container-runtime MC for all the available pools
+	for _, pool := range mcpPoolsAll {
+		managedKey := getManagedKeyDefaultContainerRuntime(pool)
+		mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), managedKey, metav1.GetOptions{})
+		if err != nil && !errors.IsNotFound(err) {
+			return fmt.Errorf("error checking for %s machine config: %v", managedKey, err)
+		}
+		// continue to the next MC if this already exists
+		if mc != nil && !errors.IsNotFound(err) {
+			continue
+		}
+
+		tempIgnCfg := ctrlcommon.NewIgnConfig()
+		mc, err = ctrlcommon.MachineConfigFromIgnConfig(pool.Name, managedKey, tempIgnCfg)
+		if err != nil {
+			return fmt.Errorf("could not create crio-default-container-runtime MachineConfig from new Ignition config: %v", err)
+		}
+		rawRuntimeIgnition, err := json.Marshal(createNewIgnition(createDefaultContainerRuntimeFile()))
+		if err != nil {
+			return fmt.Errorf("error marshalling crio-default-container-runtime config ignition: %v", err)
+		}
+		mc.Spec.Config.Raw = rawRuntimeIgnition
+		// Create the crio-default-container-runtime MC
+		if err := retry.RetryOnConflict(updateBackoff, func() error {
+			_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), mc, metav1.CreateOptions{})
+			return err
+		}); err != nil {
+			return fmt.Errorf("could not create MachineConfig for crio-default-container-runtime: %v", err)
+		}
+		klog.Infof("Applied default runtime MC %v on MachineConfigPool %v", managedKey, pool.Name)
+	}
+
+	// Create the config map for crio-default-container-runtime so we know that the crio-default-container-runtime MC has been created
+	if defaultContainerRuntimeCM == nil {
+		defaultContainerRuntimeCM = &v1.ConfigMap{}
+	}
+
+	defaultContainerRuntimeCM.Name = configMapName
+	defaultContainerRuntimeCM.Namespace = ctrl.namespace
+	if _, err := ctrl.kubeClient.CoreV1().ConfigMaps(ctrl.namespace).Create(context.TODO(), defaultContainerRuntimeCM, metav1.CreateOptions{}); err != nil {
+		return fmt.Errorf("error creating %s config map: %v", configMapName, err)
+	}
+	return nil
+}
+
+// RunDefaultContainerRuntimeBootstrap creates the crio-default-container-runtime mc on bootstrap
+func RunDefaultContainerRuntimeBootstrap(mcpPools []*mcfgv1.MachineConfigPool) ([]*mcfgv1.MachineConfig, error) {
+	var res []*mcfgv1.MachineConfig
+	for _, pool := range mcpPools {
+		defaultContainerRuntimeIgn := createNewIgnition(createDefaultContainerRuntimeFile())
+		mc, err := ctrlcommon.MachineConfigFromIgnConfig(pool.Name, getManagedKeyDefaultContainerRuntime(pool), defaultContainerRuntimeIgn)
+		if err != nil {
+			return nil, fmt.Errorf("could not create MachineConfig from new Ignition config: %v", err)
+		}
+		res = append(res, mc)
+	}
+	return res, nil
 }
 
 // getValidScopePolicies returns a map[scope]policyRequirement from ClusterImagePolicy
