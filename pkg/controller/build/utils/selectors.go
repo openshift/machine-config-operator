@@ -1,21 +1,33 @@
-package constants
+package utils
 
 import (
 	"strings"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/selection"
 )
 
+func GetMachineOSBuildLabels(mosc *mcfgv1alpha1.MachineOSConfig, mcp *mcfgv1.MachineConfigPool) map[string]string {
+	return map[string]string{
+		constants.TargetMachineConfigPoolLabelKey: mcp.Name,
+		constants.RenderedMachineConfigLabelKey:   mcp.Spec.Configuration.Name,
+		constants.MachineOSConfigNameLabelKey:     mosc.Name,
+	}
+}
+
 func MachineOSBuildSelector(mosc *mcfgv1alpha1.MachineOSConfig, mcp *mcfgv1.MachineConfigPool) labels.Selector {
+	return labels.SelectorFromSet(GetMachineOSBuildLabels(mosc, mcp))
+}
+
+func MachineOSBuildForPoolSelector(mosc *mcfgv1alpha1.MachineOSConfig) labels.Selector {
 	return labels.SelectorFromSet(map[string]string{
-		TargetMachineConfigPoolLabelKey: mcp.Name,
-		RenderedMachineConfigLabelKey:   mcp.Spec.Configuration.Name,
-		MachineOSConfigNameLabelKey:     mosc.Name,
+		constants.TargetMachineConfigPoolLabelKey: mosc.Spec.MachineConfigPool.Name,
+		constants.MachineOSConfigNameLabelKey:     mosc.Name,
 	})
 }
 
@@ -23,9 +35,9 @@ func MachineOSBuildSelector(mosc *mcfgv1alpha1.MachineOSConfig, mcp *mcfgv1.Mach
 // query.
 func OSBuildSelector() labels.Selector {
 	return labelsToSelector([]string{
-		OnClusterLayeringLabelKey,
-		RenderedMachineConfigLabelKey,
-		TargetMachineConfigPoolLabelKey,
+		constants.OnClusterLayeringLabelKey,
+		constants.RenderedMachineConfigLabelKey,
+		constants.TargetMachineConfigPoolLabelKey,
 	})
 }
 
@@ -33,25 +45,25 @@ func OSBuildSelector() labels.Selector {
 // label query.
 func EphemeralBuildObjectSelector() labels.Selector {
 	return labelsToSelector([]string{
-		EphemeralBuildObjectLabelKey,
-		OnClusterLayeringLabelKey,
-		RenderedMachineConfigLabelKey,
-		TargetMachineConfigPoolLabelKey,
+		constants.EphemeralBuildObjectLabelKey,
+		constants.OnClusterLayeringLabelKey,
+		constants.RenderedMachineConfigLabelKey,
+		constants.TargetMachineConfigPoolLabelKey,
 	})
 }
 
 func EphemeralBuildObjectSelectorForSpecificBuild(mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig) (labels.Selector, error) {
 	selector := labelsToSelector([]string{
-		EphemeralBuildObjectLabelKey,
-		OnClusterLayeringLabelKey,
+		constants.EphemeralBuildObjectLabelKey,
+		constants.OnClusterLayeringLabelKey,
 	})
 
-	renderedMCSelector, err := labels.NewRequirement(RenderedMachineConfigLabelKey, selection.Equals, []string{mosb.Spec.DesiredConfig.Name})
+	renderedMCSelector, err := labels.NewRequirement(constants.RenderedMachineConfigLabelKey, selection.Equals, []string{mosb.Spec.DesiredConfig.Name})
 	if err != nil {
 		return nil, err
 	}
 
-	mcpSelector, err := labels.NewRequirement(TargetMachineConfigPoolLabelKey, selection.Equals, []string{mosc.Spec.MachineConfigPool.Name})
+	mcpSelector, err := getMachineConfigPoolSelectorFromMachineOSConfigOrMachineOSBuild(mosb, mosc)
 	if err != nil {
 		return nil, err
 	}
@@ -59,13 +71,26 @@ func EphemeralBuildObjectSelectorForSpecificBuild(mosb *mcfgv1alpha1.MachineOSBu
 	return selector.Add(*renderedMCSelector, *mcpSelector), nil
 }
 
+func getMachineConfigPoolSelectorFromMachineOSConfigOrMachineOSBuild(mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig) (*labels.Requirement, error) {
+	if mosc != nil {
+		return labels.NewRequirement(constants.TargetMachineConfigPoolLabelKey, selection.Equals, []string{mosc.Spec.MachineConfigPool.Name})
+	}
+
+	val, err := GetRequiredLabelValueFromObject(mosb, constants.TargetMachineConfigPoolLabelKey)
+	if err != nil {
+		return nil, err
+	}
+
+	return labels.NewRequirement(constants.TargetMachineConfigPoolLabelKey, selection.Equals, []string{val})
+}
+
 // Returns a selector with the appropriate labels for a canonicalized secret
 // label query.
 func CanonicalizedSecretSelector() labels.Selector {
 	return labelsToSelector([]string{
-		CanonicalSecretLabelKey,
-		OriginalSecretNameLabelKey,
-		OnClusterLayeringLabelKey,
+		constants.CanonicalSecretLabelKey,
+		constants.OriginalSecretNameLabelKey,
+		constants.OnClusterLayeringLabelKey,
 	})
 }
 
@@ -116,7 +141,7 @@ func IsObjectCreatedByBuildController(obj metav1.Object) bool {
 // Determines if a secret has been canonicalized by us by checking both for the
 // suffix as well as the labels that we add to the canonicalized secret.
 func isCanonicalizedSecret(secret *corev1.Secret) bool {
-	return hasCanonicalizedSecretLabels(secret) && strings.HasSuffix(secret.Name, canonicalSecretSuffix)
+	return hasCanonicalizedSecretLabels(secret) && strings.HasSuffix(secret.Name, "-canonical")
 }
 
 // Determines if a secret has our canonicalized secret label.

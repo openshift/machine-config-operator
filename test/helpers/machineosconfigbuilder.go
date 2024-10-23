@@ -17,7 +17,9 @@ func NewMachineOSConfigBuilder(name string) *MachineOSConfigBuilder {
 				APIVersion: "machineconfiguration.openshift.io/v1alpha1",
 			},
 			ObjectMeta: metav1.ObjectMeta{
-				Name: name,
+				Name:        name,
+				Labels:      map[string]string{},
+				Annotations: map[string]string{},
 			},
 			Spec: mcfgv1alpha1.MachineOSConfigSpec{
 				MachineConfigPool: mcfgv1alpha1.MachineConfigPoolReference{},
@@ -35,6 +37,11 @@ func NewMachineOSConfigBuilder(name string) *MachineOSConfigBuilder {
 			},
 		},
 	}
+}
+
+func (m *MachineOSConfigBuilder) WithReleaseVersion(version string) *MachineOSConfigBuilder {
+	m.mosc.Spec.BuildInputs.ReleaseVersion = version
+	return m
 }
 
 func (m *MachineOSConfigBuilder) WithBaseOSImagePullspec(pullspec string) *MachineOSConfigBuilder {
@@ -86,6 +93,22 @@ func (m *MachineOSConfigBuilder) WithCurrentImagePullspec(pullspec string) *Mach
 
 func (m *MachineOSConfigBuilder) WithCurrentImagePullSecret(name string) *MachineOSConfigBuilder {
 	m.mosc.Spec.BuildOutputs.CurrentImagePullSecret.Name = name
+	return m
+}
+
+func (m *MachineOSConfigBuilder) WithAnnotations(annos map[string]string) *MachineOSConfigBuilder {
+	for k, v := range annos {
+		m.mosc.Annotations[k] = v
+	}
+
+	return m
+}
+
+func (m *MachineOSConfigBuilder) WithLabels(labels map[string]string) *MachineOSConfigBuilder {
+	for k, v := range labels {
+		m.mosc.Labels[k] = v
+	}
+
 	return m
 }
 

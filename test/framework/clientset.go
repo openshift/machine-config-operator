@@ -7,10 +7,13 @@ import (
 	clientbuildv1 "github.com/openshift/client-go/build/clientset/versioned/typed/build/v1"
 	clientconfigv1 "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
 	clientimagev1 "github.com/openshift/client-go/image/clientset/versioned/typed/image/v1"
+	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	clientmachineconfigv1 "github.com/openshift/client-go/machineconfiguration/clientset/versioned/typed/machineconfiguration/v1"
 	clientmachineconfigv1alpha1 "github.com/openshift/client-go/machineconfiguration/clientset/versioned/typed/machineconfiguration/v1alpha1"
 	clientoperatorsv1alpha1 "github.com/openshift/client-go/operator/clientset/versioned/typed/operator/v1alpha1"
 	clientapiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/typed/apiextensions/v1"
+	"k8s.io/client-go/kubernetes"
+	clientset "k8s.io/client-go/kubernetes"
 	appsv1client "k8s.io/client-go/kubernetes/typed/apps/v1"
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/rest"
@@ -30,6 +33,8 @@ type ClientSet struct {
 	clientmachineconfigv1alpha1.MachineconfigurationV1alpha1Interface
 	kubeconfig string
 	config     *rest.Config
+	kubeclient clientset.Interface
+	mcfgclient mcfgclientset.Interface
 }
 
 // Allows the instantiation of additional clients with the same config.
@@ -43,6 +48,14 @@ func (cs *ClientSet) GetKubeconfig() (string, error) {
 	}
 
 	return "", fmt.Errorf("no kubeconfig found; are you running a custom config or in-cluster?")
+}
+
+func (cs *ClientSet) GetKubeclient() clientset.Interface {
+	return cs.kubeclient
+}
+
+func (cs *ClientSet) GetMcfgclient() mcfgclientset.Interface {
+	return cs.mcfgclient
 }
 
 // NewClientSet returns a *ClientBuilder with the given kubeconfig.
@@ -73,16 +86,21 @@ func NewClientSet(kubeconfig string) *ClientSet {
 
 // NewClientSetFromConfig returns a *ClientBuilder with the given rest config.
 func NewClientSetFromConfig(config *rest.Config) *ClientSet {
+	kubeclient := kubernetes.NewForConfigOrDie(config)
+	mcfgclient := mcfgclientset.NewForConfigOrDie(config)
+
 	return &ClientSet{
-		CoreV1Interface:                       corev1client.NewForConfigOrDie(config),
-		AppsV1Interface:                       appsv1client.NewForConfigOrDie(config),
+		CoreV1Interface:                       kubeclient.CoreV1(),
+		AppsV1Interface:                       kubeclient.AppsV1(),
 		ConfigV1Interface:                     clientconfigv1.NewForConfigOrDie(config),
-		MachineconfigurationV1Interface:       clientmachineconfigv1.NewForConfigOrDie(config),
+		MachineconfigurationV1Interface:       mcfgclient.MachineconfigurationV1(),
 		ApiextensionsV1Interface:              clientapiextensionsv1.NewForConfigOrDie(config),
 		OperatorV1alpha1Interface:             clientoperatorsv1alpha1.NewForConfigOrDie(config),
 		BuildV1Interface:                      clientbuildv1.NewForConfigOrDie(config),
 		ImageV1Interface:                      clientimagev1.NewForConfigOrDie(config),
-		MachineconfigurationV1alpha1Interface: clientmachineconfigv1alpha1.NewForConfigOrDie(config),
+		MachineconfigurationV1alpha1Interface: mcfgclient.MachineconfigurationV1alpha1(),
 		config:                                config,
+		kubeclient:                            kubeclient,
+		mcfgclient:                            mcfgclient,
 	}
 }

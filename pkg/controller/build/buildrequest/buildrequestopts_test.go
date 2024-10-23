@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
+	"github.com/openshift/machine-config-operator/pkg/controller/build/fixtures"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
@@ -112,13 +113,9 @@ func TestBuildRequestOpts(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			t.Cleanup(cancel)
 
-			kubeclient, mcfgclient := getClientsForTest(addlObjects{
-				kubeObjects: testCase.addlObjects,
-			})
+			kubeclient, mcfgclient, lobj, _ := fixtures.GetClientsForTestWithAdditionalObjects(t, testCase.addlObjects, []runtime.Object{})
 
-			lobj := newLayeredObjectsForTest("worker")
-
-			brOpts, err := newBuildRequestOptsFromAPI(ctx, kubeclient, mcfgclient, lobj.mosb, lobj.mosc)
+			brOpts, err := newBuildRequestOptsFromAPI(ctx, kubeclient, mcfgclient, lobj.MachineOSBuild, lobj.MachineOSConfig)
 			assert.NoError(t, err)
 
 			if testCase.addlAsserts != nil {
@@ -135,8 +132,4 @@ func TestBuildRequestOpts(t *testing.T) {
 			assert.NotNil(t, brOpts.FinalImagePushSecret)
 		})
 	}
-}
-
-func TestGetOpts(t *testing.T) {
-
 }

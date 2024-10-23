@@ -20,8 +20,9 @@ func NewMachineOSBuildBuilder(name string) *MachineOSBuildBuilder {
 				APIVersion: "machineconfiguration.openshift.io/v1alpha1",
 			},
 			ObjectMeta: metav1.ObjectMeta{
-				// Name: fmt.Sprintf("%s-%s-builder", config.Spec.MachineConfigPool.Name, pool.Spec.Configuration.Name),
-				Name: name,
+				Name:        name,
+				Labels:      map[string]string{},
+				Annotations: map[string]string{},
 			},
 			Spec: mcfgv1alpha1.MachineOSBuildSpec{
 				Version:          1,
@@ -39,6 +40,11 @@ func NewMachineOSBuildBuilderFromMachineConfigPool(mcp *mcfgv1.MachineConfigPool
 	return m
 }
 
+func (m *MachineOSBuildBuilder) WithName(name string) *MachineOSBuildBuilder {
+	m.mosb.Name = name
+	return m
+}
+
 func (m *MachineOSBuildBuilder) WithRenderedImagePushspec(pushspec string) *MachineOSBuildBuilder {
 	m.mosb.Spec.RenderedImagePushspec = pushspec
 	return m
@@ -51,6 +57,22 @@ func (m *MachineOSBuildBuilder) WithMachineOSConfig(name string) *MachineOSBuild
 
 func (m *MachineOSBuildBuilder) WithDesiredConfig(name string) *MachineOSBuildBuilder {
 	m.mosb.Spec.DesiredConfig.Name = name
+	return m
+}
+
+func (m *MachineOSBuildBuilder) WithAnnotations(annos map[string]string) *MachineOSBuildBuilder {
+	for k, v := range annos {
+		m.mosb.Annotations[k] = v
+	}
+
+	return m
+}
+
+func (m *MachineOSBuildBuilder) WithLabels(labels map[string]string) *MachineOSBuildBuilder {
+	for k, v := range labels {
+		m.mosb.Labels[k] = v
+	}
+
 	return m
 }
 
