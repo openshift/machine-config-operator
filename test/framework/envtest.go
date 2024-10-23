@@ -33,7 +33,8 @@ const (
 	// More info here:
 	// https://github.com/openshift/api/pull/1774
 	// https://github.com/openshift/api/blob/master/tools/publish-kubebuilder-tools/README.md#using-the-archives
-	k8sVersion string = "1.29.1"
+	// https://groups.google.com/a/redhat.com/g/aos-devel/c/JXtIlYlFbDA
+	k8sVersion string = "1.31.1"
 )
 
 // This is needed because both setup-envtest and the kubebuilder tools assume
@@ -89,7 +90,8 @@ func setupEnvTest(t *testing.T) (string, error) {
 	// More info:
 	// https://github.com/openshift/api/pull/1774,
 	// https://github.com/openshift/api/blob/master/tools/publish-kubebuilder-tools/README.md#using-the-archives
-	cmd := exec.Command(setupEnvTestBinPath, "use", k8sVersion, "-p", "path", "--remote-bucket", "openshift-kubebuilder-tools")
+	// https://groups.google.com/a/redhat.com/g/aos-devel/c/JXtIlYlFbDA
+	cmd := exec.Command(setupEnvTestBinPath, "use", k8sVersion, "--index", "https://raw.githubusercontent.com/openshift/api/master/envtest-releases.yaml")
 	t.Log("Setting up EnvTest: $", cmd)
 
 	// We want to consume the path of where setup-envtest installed the

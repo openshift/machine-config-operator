@@ -27,20 +27,22 @@ var configsKind = v1.SchemeGroupVersion.WithKind("Config")
 
 // Get takes name of the config, and returns the corresponding config object, and an error if there is any.
 func (c *FakeConfigs) Get(ctx context.Context, name string, options metav1.GetOptions) (result *v1.Config, err error) {
+	emptyResult := &v1.Config{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootGetAction(configsResource, name), &v1.Config{})
+		Invokes(testing.NewRootGetActionWithOptions(configsResource, name, options), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.Config), err
 }
 
 // List takes label and field selectors, and returns the list of Configs that match those selectors.
 func (c *FakeConfigs) List(ctx context.Context, opts metav1.ListOptions) (result *v1.ConfigList, err error) {
+	emptyResult := &v1.ConfigList{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootListAction(configsResource, configsKind, opts), &v1.ConfigList{})
+		Invokes(testing.NewRootListActionWithOptions(configsResource, configsKind, opts), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 
 	label, _, _ := testing.ExtractFromListOptions(opts)
@@ -59,36 +61,39 @@ func (c *FakeConfigs) List(ctx context.Context, opts metav1.ListOptions) (result
 // Watch returns a watch.Interface that watches the requested configs.
 func (c *FakeConfigs) Watch(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error) {
 	return c.Fake.
-		InvokesWatch(testing.NewRootWatchAction(configsResource, opts))
+		InvokesWatch(testing.NewRootWatchActionWithOptions(configsResource, opts))
 }
 
 // Create takes the representation of a config and creates it.  Returns the server's representation of the config, and an error, if there is any.
 func (c *FakeConfigs) Create(ctx context.Context, config *v1.Config, opts metav1.CreateOptions) (result *v1.Config, err error) {
+	emptyResult := &v1.Config{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootCreateAction(configsResource, config), &v1.Config{})
+		Invokes(testing.NewRootCreateActionWithOptions(configsResource, config, opts), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.Config), err
 }
 
 // Update takes the representation of a config and updates it. Returns the server's representation of the config, and an error, if there is any.
 func (c *FakeConfigs) Update(ctx context.Context, config *v1.Config, opts metav1.UpdateOptions) (result *v1.Config, err error) {
+	emptyResult := &v1.Config{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootUpdateAction(configsResource, config), &v1.Config{})
+		Invokes(testing.NewRootUpdateActionWithOptions(configsResource, config, opts), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.Config), err
 }
 
 // UpdateStatus was generated because the type contains a Status member.
 // Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-func (c *FakeConfigs) UpdateStatus(ctx context.Context, config *v1.Config, opts metav1.UpdateOptions) (*v1.Config, error) {
+func (c *FakeConfigs) UpdateStatus(ctx context.Context, config *v1.Config, opts metav1.UpdateOptions) (result *v1.Config, err error) {
+	emptyResult := &v1.Config{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootUpdateSubresourceAction(configsResource, "status", config), &v1.Config{})
+		Invokes(testing.NewRootUpdateSubresourceActionWithOptions(configsResource, "status", config, opts), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.Config), err
 }
@@ -102,7 +107,7 @@ func (c *FakeConfigs) Delete(ctx context.Context, name string, opts metav1.Delet
 
 // DeleteCollection deletes a collection of objects.
 func (c *FakeConfigs) DeleteCollection(ctx context.Context, opts metav1.DeleteOptions, listOpts metav1.ListOptions) error {
-	action := testing.NewRootDeleteCollectionAction(configsResource, listOpts)
+	action := testing.NewRootDeleteCollectionActionWithOptions(configsResource, opts, listOpts)
 
 	_, err := c.Fake.Invokes(action, &v1.ConfigList{})
 	return err
@@ -110,10 +115,11 @@ func (c *FakeConfigs) DeleteCollection(ctx context.Context, opts metav1.DeleteOp
 
 // Patch applies the patch and returns the patched config.
 func (c *FakeConfigs) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts metav1.PatchOptions, subresources ...string) (result *v1.Config, err error) {
+	emptyResult := &v1.Config{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootPatchSubresourceAction(configsResource, name, pt, data, subresources...), &v1.Config{})
+		Invokes(testing.NewRootPatchSubresourceActionWithOptions(configsResource, name, pt, data, opts, subresources...), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.Config), err
 }
@@ -131,10 +137,11 @@ func (c *FakeConfigs) Apply(ctx context.Context, config *operatorv1.ConfigApplyC
 	if name == nil {
 		return nil, fmt.Errorf("config.Name must be provided to Apply")
 	}
+	emptyResult := &v1.Config{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootPatchSubresourceAction(configsResource, *name, types.ApplyPatchType, data), &v1.Config{})
+		Invokes(testing.NewRootPatchSubresourceActionWithOptions(configsResource, *name, types.ApplyPatchType, data, opts.ToPatchOptions()), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.Config), err
 }
@@ -153,10 +160,11 @@ func (c *FakeConfigs) ApplyStatus(ctx context.Context, config *operatorv1.Config
 	if name == nil {
 		return nil, fmt.Errorf("config.Name must be provided to Apply")
 	}
+	emptyResult := &v1.Config{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootPatchSubresourceAction(configsResource, *name, types.ApplyPatchType, data, "status"), &v1.Config{})
+		Invokes(testing.NewRootPatchSubresourceActionWithOptions(configsResource, *name, types.ApplyPatchType, data, opts.ToPatchOptions(), "status"), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.Config), err
 }

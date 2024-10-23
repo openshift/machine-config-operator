@@ -7,7 +7,7 @@ import (
 	operatorv1 "github.com/openshift/api/operator/v1"
 )
 
-// ConsoleCustomizationApplyConfiguration represents an declarative configuration of the ConsoleCustomization type for use
+// ConsoleCustomizationApplyConfiguration represents a declarative configuration of the ConsoleCustomization type for use
 // with apply.
 type ConsoleCustomizationApplyConfiguration struct {
 	Capabilities         []CapabilityApplyConfiguration                          `json:"capabilities,omitempty"`
@@ -22,7 +22,7 @@ type ConsoleCustomizationApplyConfiguration struct {
 	Perspectives         []PerspectiveApplyConfiguration                         `json:"perspectives,omitempty"`
 }
 
-// ConsoleCustomizationApplyConfiguration constructs an declarative configuration of the ConsoleCustomization type for use with
+// ConsoleCustomizationApplyConfiguration constructs a declarative configuration of the ConsoleCustomization type for use with
 // apply.
 func ConsoleCustomization() *ConsoleCustomizationApplyConfiguration {
 	return &ConsoleCustomizationApplyConfiguration{}
