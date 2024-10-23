@@ -89,6 +89,7 @@ func (b *Bootstrap) Run(destDir string) error {
 		idmsRules            []*apicfgv1.ImageDigestMirrorSet
 		itmsRules            []*apicfgv1.ImageTagMirrorSet
 		clusterImagePolicies []*apicfgv1alpha1.ClusterImagePolicy
+		imagePolicies        []*apicfgv1alpha1.ImagePolicy
 		imgCfg               *apicfgv1.Image
 		apiServer            *apicfgv1.APIServer
 	)
@@ -140,6 +141,8 @@ func (b *Bootstrap) Run(destDir string) error {
 				imgCfg = obj
 			case *apicfgv1alpha1.ClusterImagePolicy:
 				clusterImagePolicies = append(clusterImagePolicies, obj)
+			case *apicfgv1alpha1.ImagePolicy:
+				imagePolicies = append(imagePolicies, obj)
 			case *apicfgv1.FeatureGate:
 				if obj.GetName() == ctrlcommon.ClusterFeatureInstanceName {
 					featureGate = obj
@@ -180,7 +183,7 @@ func (b *Bootstrap) Run(destDir string) error {
 
 	configs = append(configs, iconfigs...)
 
-	rconfigs, err := containerruntimeconfig.RunImageBootstrap(b.templatesDir, cconfig, pools, icspRules, idmsRules, itmsRules, imgCfg, clusterImagePolicies, fgAccess)
+	rconfigs, err := containerruntimeconfig.RunImageBootstrap(b.templatesDir, cconfig, pools, icspRules, idmsRules, itmsRules, imgCfg, clusterImagePolicies, imagePolicies, fgAccess)
 	if err != nil {
 		return err
 	}
