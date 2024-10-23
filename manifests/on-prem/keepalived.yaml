@@ -113,6 +113,10 @@ spec:
         value: "yes"
       - name: IS_BOOTSTRAP
         value: "yes"
+      - name: POD_NAMESPACE
+        valueFrom:
+          fieldRef:
+            fieldPath: metadata.namespace
     command:
     - dynkeepalived
     - "/etc/kubernetes/kubeconfig"
