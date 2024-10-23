@@ -80,6 +80,9 @@ func newNodeWriter(nodeName string, stopCh <-chan struct{}) (NodeWriter, error) 
 	if err != nil {
 		return &clusterNodeWriter{}, err
 	}
+	config = rest.CopyConfig(config)
+	config.AcceptContentTypes = "application/vnd.kubernetes.protobuf,application/json"
+	config.ContentType = "application/vnd.kubernetes.protobuf"
 	kubeClient, err := kubernetes.NewForConfig(rest.AddUserAgent(config, "machine-config-daemon"))
 	if err != nil {
 		return &clusterNodeWriter{}, err
