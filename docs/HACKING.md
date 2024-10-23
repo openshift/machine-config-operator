@@ -299,10 +299,6 @@ code related to upgrades.  For this, see https://github.com/coreos/coreos-assemb
 But let's assume you have a custom container and have pushed to a registry, for
 this example `quay.io/example/rhel-coreos:latest`.
 
-Once you have an oscontainer, you can again use `oc debug node/` and  `pivot` to directly switch
-to the target oscontainer, e.g. `rpm-ostree rebase --experimental ostree-unverified-registry:quay.io/example/rhel-coreos:latest`.
-If you choose this path though the MCD will go degraded until you revert the change.
-
 If you want to roll it out to the entire cluster using the MCO, first scale down the CVO:
 `oc -n openshift-cluster-version scale --replicas=0 deploy/cluster-version-operator`.
 

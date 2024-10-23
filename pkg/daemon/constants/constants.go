@@ -67,10 +67,6 @@ const (
 	// to initial system settings
 	IgnitionSystemdPresetFile = "/etc/systemd/system-preset/20-ignition.preset"
 
-	// EtcPivotFile is used by the `pivot` command
-	// For more information, see https://github.com/openshift/pivot/pull/25/commits/c77788a35d7ee4058d1410e89e6c7937bca89f6c#diff-04c6e90faac2675aa89e2176d2eec7d8R44
-	EtcPivotFile = "/etc/pivot/image-pullspec"
-
 	// MachineConfigEncapsulatedPath contains all of the data from a MachineConfig object
 	// except the Spec/Config object; this supports inverting+encapsulating a MachineConfig
 	// object so that Ignition can process it on first boot, and then the MCD can act on
