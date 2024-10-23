@@ -31,7 +31,7 @@ func TestBuildRequestOpts(t *testing.T) {
 			addlObjects: []runtime.Object{
 				&corev1.Secret{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      constants.EtcPkiEntitlementSecretName,
+						Name:      constants.EtcPkiEntitlementSecretName + "-" + ctrlcommon.MachineConfigPoolWorker,
 						Namespace: ctrlcommon.MCONamespace,
 					},
 				},
@@ -91,7 +91,7 @@ func TestBuildRequestOpts(t *testing.T) {
 				},
 				&corev1.Secret{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      constants.EtcPkiEntitlementSecretName,
+						Name:      constants.EtcPkiEntitlementSecretName + "-" + ctrlcommon.MachineConfigPoolWorker,
 						Namespace: ctrlcommon.MCONamespace,
 					},
 				},
@@ -116,7 +116,7 @@ func TestBuildRequestOpts(t *testing.T) {
 				kubeObjects: testCase.addlObjects,
 			})
 
-			lobj := newLayeredObjectsForTest("worker")
+			lobj := newLayeredObjectsForTest(ctrlcommon.MachineConfigPoolWorker)
 
 			brOpts, err := newBuildRequestOptsFromAPI(ctx, kubeclient, mcfgclient, lobj.mosb, lobj.mosc)
 			assert.NoError(t, err)
