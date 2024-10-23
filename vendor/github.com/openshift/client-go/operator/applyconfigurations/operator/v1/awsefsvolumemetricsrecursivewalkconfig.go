@@ -2,14 +2,14 @@
 
 package v1
 
-// AWSEFSVolumeMetricsRecursiveWalkConfigApplyConfiguration represents an declarative configuration of the AWSEFSVolumeMetricsRecursiveWalkConfig type for use
+// AWSEFSVolumeMetricsRecursiveWalkConfigApplyConfiguration represents a declarative configuration of the AWSEFSVolumeMetricsRecursiveWalkConfig type for use
 // with apply.
 type AWSEFSVolumeMetricsRecursiveWalkConfigApplyConfiguration struct {
 	RefreshPeriodMinutes *int32 `json:"refreshPeriodMinutes,omitempty"`
 	FSRateLimit          *int32 `json:"fsRateLimit,omitempty"`
 }
 
-// AWSEFSVolumeMetricsRecursiveWalkConfigApplyConfiguration constructs an declarative configuration of the AWSEFSVolumeMetricsRecursiveWalkConfig type for use with
+// AWSEFSVolumeMetricsRecursiveWalkConfigApplyConfiguration constructs a declarative configuration of the AWSEFSVolumeMetricsRecursiveWalkConfig type for use with
 // apply.
 func AWSEFSVolumeMetricsRecursiveWalkConfig() *AWSEFSVolumeMetricsRecursiveWalkConfigApplyConfiguration {
 	return &AWSEFSVolumeMetricsRecursiveWalkConfigApplyConfiguration{}
