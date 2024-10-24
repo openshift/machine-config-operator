@@ -15,7 +15,6 @@ import (
 	"time"
 
 	imagev1 "github.com/openshift/api/image/v1"
-	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -282,20 +281,6 @@ func waitForMachineOSBuildToReachState(t *testing.T, cs *framework.ClientSet, mo
 	require.NoError(t, err, "MachineOSBuild %q did not reach desired state", mosbName)
 
 	return finalMosb
-}
-
-// Waits for the target MachineConfigPool to reach a state defined in a supplied function.
-func waitForPoolToReachState(t *testing.T, cs *framework.ClientSet, poolName string, condFunc func(*mcfgv1.MachineConfigPool) bool) {
-	err := wait.PollImmediate(1*time.Second, 10*time.Minute, func() (bool, error) {
-		mcp, err := cs.MachineconfigurationV1Interface.MachineConfigPools().Get(context.TODO(), poolName, metav1.GetOptions{})
-		if err != nil {
-			return false, err
-		}
-
-		return condFunc(mcp), nil
-	})
-
-	require.NoError(t, err, "MachineConfigPool %q did not reach desired state", poolName)
 }
 
 // Registers a cleanup function, making it idempotent, and wiring up the
