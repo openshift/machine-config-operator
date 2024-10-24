@@ -370,12 +370,59 @@ func TestDeletedBuilderInterruptsMachineOSBuild(t *testing.T) {
 	t.Logf("MachineOSBuild %q has started", startedBuild.Name)
 
 	// Delete the builder
-	err := cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace).Delete(ctx, utils.GetBuildPodName(startedBuild), metav1.DeleteOptions{})
+	err := cs.BatchV1Interface.Jobs(ctrlcommon.MCONamespace).Delete(ctx, utils.GetBuildJobName(startedBuild), metav1.DeleteOptions{})
 	require.NoError(t, err)
 
 	// Wait for the build to be interrupted.
 	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx).Eventually()
 	kubeassert.MachineOSBuildIsInterrupted(startedBuild)
+}
+
+// This test validates that when a running build pod is deleted, the
+// Job associated with the MachineOSBuild creates a new pod and the
+// MachineOSBuild still reports its state as building.
+func TestDeletedPodDoesNotInterruptMachineOSBuild(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	cs := framework.NewClientSet("")
+
+	poolName := layeredMCPName
+
+	mosc := prepareForOnClusterLayeringTest(t, cs, onClusterLayeringTestOpts{
+		poolName: poolName,
+		customDockerfiles: map[string]string{
+			layeredMCPName: cowsayDockerfile,
+		},
+	})
+
+	// Create our MachineOSConfig and ensure that it is deleted after the test is
+	// finished.
+	t.Cleanup(createMachineOSConfig(t, cs, mosc))
+
+	// Wait for the build to start
+	startedBuild := waitForBuildToStartForPoolAndConfig(t, cs, poolName, mosc.Name)
+	t.Logf("MachineOSBuild %q has started", startedBuild.Name)
+
+	// Get the pod created by the build Job
+	pod, err := getPodFromJob(ctx, cs, utils.GetBuildJobName(startedBuild))
+	require.NoError(t, err)
+
+	// Delete the pod
+	err = cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace).Delete(ctx, pod.Name, metav1.DeleteOptions{})
+	require.NoError(t, err)
+
+	// Wait a few seconds to ensure that a new pod is created
+	time.Sleep(time.Second * 5)
+
+	// Ensure the build is still running
+	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx).Eventually()
+	kubeassert.MachineOSBuildIsRunning(startedBuild)
+
+	// Check that a new pod was created
+	podNew, err := getPodFromJob(ctx, cs, utils.GetBuildJobName(startedBuild))
+	require.NoError(t, err)
+	assert.NotEqual(t, podNew, pod)
 }
 
 // This test validates that when a running MachineOSBuild is deleted that it will be recreated.
@@ -401,7 +448,7 @@ func TestDeletedTransientMachineOSBuildIsRecreated(t *testing.T) {
 	// Wait for the build to start
 	firstMosb := waitForBuildToStartForPoolAndConfig(t, cs, poolName, mosc.Name)
 
-	firstPod, err := cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace).Get(ctx, utils.GetBuildPodName(firstMosb), metav1.GetOptions{})
+	firstJob, err := cs.BatchV1Interface.Jobs(ctrlcommon.MCONamespace).Get(ctx, utils.GetBuildJobName(firstMosb), metav1.GetOptions{})
 	require.NoError(t, err)
 
 	// Delete the MachineOSBuild.
@@ -410,24 +457,27 @@ func TestDeletedTransientMachineOSBuildIsRecreated(t *testing.T) {
 
 	// Wait a few seconds for the MachineOSBuild deletion to complete.
 	time.Sleep(time.Second * 5)
+	// Ensure that the Job is deleted as this might take some time
+	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx).Eventually()
+	kubeassert.Eventually().JobDoesNotExist(firstJob.Name)
 
 	// Wait for a new MachineOSBuild to start in its place.
 	secondMosb := waitForBuildToStartForPoolAndConfig(t, cs, poolName, mosc.Name)
 
-	secondPod, err := cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace).Get(ctx, utils.GetBuildPodName(secondMosb), metav1.GetOptions{})
+	secondJob, err := cs.BatchV1Interface.Jobs(ctrlcommon.MCONamespace).Get(ctx, utils.GetBuildJobName(secondMosb), metav1.GetOptions{})
 	require.NoError(t, err)
 
 	assert.Equal(t, firstMosb.Name, secondMosb.Name)
 	assert.NotEqual(t, firstMosb.UID, secondMosb.UID)
 
-	assert.Equal(t, firstPod.Name, secondPod.Name)
-	assert.NotEqual(t, firstPod.UID, secondPod.UID)
+	assert.Equal(t, firstJob.Name, secondJob.Name)
+	assert.NotEqual(t, firstJob.UID, secondJob.UID)
 }
 
 func assertBuildObjectsAreCreated(t *testing.T, kubeassert *helpers.Assertions, mosb *mcfgv1alpha1.MachineOSBuild) {
 	t.Helper()
 
-	kubeassert.PodExists(utils.GetBuildPodName(mosb))
+	kubeassert.JobExists(utils.GetBuildJobName(mosb))
 	kubeassert.ConfigMapExists(utils.GetContainerfileConfigMapName(mosb))
 	kubeassert.ConfigMapExists(utils.GetMCConfigMapName(mosb))
 	kubeassert.SecretExists(utils.GetBasePullSecretName(mosb))
@@ -437,7 +487,7 @@ func assertBuildObjectsAreCreated(t *testing.T, kubeassert *helpers.Assertions, 
 func assertBuildObjectsAreDeleted(t *testing.T, kubeassert *helpers.Assertions, mosb *mcfgv1alpha1.MachineOSBuild) {
 	t.Helper()
 
-	kubeassert.PodDoesNotExist(utils.GetBuildPodName(mosb))
+	kubeassert.JobDoesNotExist(utils.GetBuildJobName(mosb))
 	kubeassert.ConfigMapDoesNotExist(utils.GetContainerfileConfigMapName(mosb))
 	kubeassert.ConfigMapDoesNotExist(utils.GetMCConfigMapName(mosb))
 	kubeassert.SecretDoesNotExist(utils.GetBasePullSecretName(mosb))
@@ -674,8 +724,8 @@ func runOnClusterLayeringTest(t *testing.T, testOpts onClusterLayeringTestOpts) 
 	startedBuild := waitForBuildToStartForPoolAndConfig(t, cs, testOpts.poolName, mosc.Name)
 	t.Logf("MachineOSBuild %q has started", startedBuild.Name)
 
-	// Assert that the build pod has certain properties and configuration.
-	assertBuildPodIsAsExpected(t, cs, startedBuild)
+	// Assert that the build job has certain properties and configuration.
+	assertBuildJobIsAsExpected(t, cs, startedBuild)
 
 	t.Logf("Waiting for build completion...")
 
@@ -793,6 +843,16 @@ func waitForBuildToStart(t *testing.T, cs *framework.ClientSet, build *mcfgv1alp
 	t.Logf("MachineOSBuild %s created after %s", build.Name, time.Since(start))
 	kubeassert.Eventually().MachineOSBuildIsRunning(build)
 	t.Logf("MachineOSBuild %s running after %s", build.Name, time.Since(start))
+	// The Job reports running before the pod is fully up and running, so the mosb ends up in building status
+	// however, since we are streaming container logs we might hit a race where the container has not started yet
+	// so add a check to ensure that the pod is up an running also
+	kubeassert.Eventually().JobExists(utils.GetBuildJobName(build))
+	t.Logf("Build job %s created after %s", utils.GetBuildJobName(build), time.Since(start))
+	// Get the pod created by the job
+	buildPod, err := getPodFromJob(context.TODO(), cs, utils.GetBuildJobName(build))
+	require.NoError(t, err)
+	kubeassert.Eventually().PodIsRunning(buildPod.Name)
+	t.Logf("Build pod %s running after %s", buildPod.Name, time.Since(start))
 
 	mosb, err := cs.MachineconfigurationV1alpha1Interface.MachineOSBuilds().Get(ctx, build.Name, metav1.GetOptions{})
 	require.NoError(t, err)
@@ -834,7 +894,7 @@ func waitForBuildToComplete(t *testing.T, cs *framework.ClientSet, startedBuild 
 	start := time.Now()
 
 	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx)
-	kubeassert.Eventually().MachineOSBuildIsSuccessful(startedBuild)
+	kubeassert.Eventually().MachineOSBuildIsSuccessful(startedBuild) //foo
 	t.Logf("MachineOSBuild %s successful after %s", startedBuild.Name, time.Since(start))
 	assertBuildObjectsAreDeleted(t, kubeassert.Eventually(), startedBuild)
 	t.Logf("Build objects deleted after %s", time.Since(start))
@@ -845,11 +905,11 @@ func waitForBuildToComplete(t *testing.T, cs *framework.ClientSet, startedBuild 
 	return mosb
 }
 
-// Validates that the build pod is configured correctly. In this case,
+// Validates that the build job is configured correctly. In this case,
 // "correctly" means that it has the correct container images. Future
 // assertions could include things like ensuring that the proper volume mounts
 // are present, etc.
-func assertBuildPodIsAsExpected(t *testing.T, cs *framework.ClientSet, mosb *mcfgv1alpha1.MachineOSBuild) {
+func assertBuildJobIsAsExpected(t *testing.T, cs *framework.ClientSet, mosb *mcfgv1alpha1.MachineOSBuild) {
 	t.Helper()
 
 	osImageURLConfig, err := ctrlcommon.GetOSImageURLConfig(context.TODO(), cs.GetKubeclient())
@@ -858,7 +918,7 @@ func assertBuildPodIsAsExpected(t *testing.T, cs *framework.ClientSet, mosb *mcf
 	mcoImages, err := ctrlcommon.GetImagesConfig(context.TODO(), cs.GetKubeclient())
 	require.NoError(t, err)
 
-	buildPod, err := cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace).Get(context.TODO(), mosb.Status.BuilderReference.PodImageBuilder.Name, metav1.GetOptions{})
+	buildPod, err := getPodFromJob(context.TODO(), cs, mosb.Status.BuilderReference.PodImageBuilder.Name)
 	require.NoError(t, err)
 
 	assertContainerIsUsingExpectedImage := func(c corev1.Container, containerName, expectedImage string) {

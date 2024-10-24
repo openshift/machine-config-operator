@@ -9,45 +9,61 @@ import (
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/stretchr/testify/require"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	apitypes "k8s.io/apimachinery/pkg/types"
 	clientset "k8s.io/client-go/kubernetes"
 )
 
-// Sets the provided pod phase on a given pod under test. If successful, it will also insert the digestfile ConfigMap.
-func SetPodPhase(ctx context.Context, t *testing.T, kubeclient clientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild, phase corev1.PodPhase) {
-	require.NoError(t, setPodPhase(ctx, kubeclient, mosb, phase))
+// JobStatus is used to set the active, succeeded, and failed fields for the k8s Job
+// Status so that we can parse those to imitate Job phases for testing purposes
+type JobStatus struct {
+	Active                        int32
+	Succeeded                     int32
+	Failed                        int32
+	UncountedTerminatedPodsFailed string
+}
 
-	if phase == corev1.PodSucceeded {
+// Sets the provided job status on a given job under test. If successful, it will also insert the digestfile ConfigMap.
+func SetJobStatus(ctx context.Context, t *testing.T, kubeclient clientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild, jobStatus JobStatus) {
+	require.NoError(t, setJobStatusFields(ctx, kubeclient, mosb, jobStatus))
+
+	if jobStatus.Succeeded == 1 {
 		require.NoError(t, createDigestfileConfigMap(ctx, kubeclient, mosb))
 	} else {
 		require.NoError(t, deleteDigestfileConfigMap(ctx, kubeclient, mosb))
 	}
 }
 
-func SetPodDeletionTimestamp(ctx context.Context, t *testing.T, kubeclient clientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild, timestamp *metav1.Time) {
-	podName := fmt.Sprintf("build-%s", mosb.Name)
+func SetJobDeletionTimestamp(ctx context.Context, t *testing.T, kubeclient clientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild, timestamp *metav1.Time) {
+	jobName := fmt.Sprintf("build-%s", mosb.Name)
 
-	p, err := kubeclient.CoreV1().Pods(ctrlcommon.MCONamespace).Get(ctx, podName, metav1.GetOptions{})
+	j, err := kubeclient.BatchV1().Jobs(ctrlcommon.MCONamespace).Get(ctx, jobName, metav1.GetOptions{})
 	require.NoError(t, err)
 
-	p.SetDeletionTimestamp(timestamp)
+	j.SetDeletionTimestamp(timestamp)
 
-	_, err = kubeclient.CoreV1().Pods(ctrlcommon.MCONamespace).UpdateStatus(ctx, p, metav1.UpdateOptions{})
+	_, err = kubeclient.BatchV1().Jobs(ctrlcommon.MCONamespace).UpdateStatus(ctx, j, metav1.UpdateOptions{})
 	require.NoError(t, err)
 }
 
-func setPodPhase(ctx context.Context, kubeclient clientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild, phase corev1.PodPhase) error {
-	podName := fmt.Sprintf("build-%s", mosb.Name)
+func setJobStatusFields(ctx context.Context, kubeclient clientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild, jobStatus JobStatus) error {
+	jobName := fmt.Sprintf("build-%s", mosb.Name)
 
-	p, err := kubeclient.CoreV1().Pods(ctrlcommon.MCONamespace).Get(ctx, podName, metav1.GetOptions{})
+	j, err := kubeclient.BatchV1().Jobs(ctrlcommon.MCONamespace).Get(ctx, jobName, metav1.GetOptions{})
 	if err != nil {
 		return err
 	}
 
-	p.Status.Phase = phase
-	_, err = kubeclient.CoreV1().Pods(ctrlcommon.MCONamespace).UpdateStatus(ctx, p, metav1.UpdateOptions{})
+	j.Status.Active = jobStatus.Active
+	j.Status.Succeeded = jobStatus.Succeeded
+	j.Status.Failed = jobStatus.Failed
+	if jobStatus.UncountedTerminatedPodsFailed != "" {
+		j.Status.UncountedTerminatedPods = &batchv1.UncountedTerminatedPods{Failed: []apitypes.UID{apitypes.UID(jobStatus.UncountedTerminatedPodsFailed)}}
+	}
+	_, err = kubeclient.BatchV1().Jobs(ctrlcommon.MCONamespace).UpdateStatus(ctx, j, metav1.UpdateOptions{})
 	return err
 }
 

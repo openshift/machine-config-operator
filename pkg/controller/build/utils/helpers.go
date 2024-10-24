@@ -7,6 +7,7 @@ import (
 	"github.com/opencontainers/go-digest"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
@@ -16,6 +17,7 @@ import (
 func GetKindForObject(obj runtime.Object) (string, error) {
 	s := runtime.NewScheme()
 	corev1.AddToScheme(s)
+	batchv1.AddToScheme(s)
 	mcfgv1.AddToScheme(s)
 	mcfgv1alpha1.AddToScheme(s)
 
@@ -63,8 +65,8 @@ func GetMCConfigMapName(mosb *mcfgv1alpha1.MachineOSBuild) string {
 	return fmt.Sprintf("mc-%s", getFieldFromMachineOSBuild(mosb))
 }
 
-// Computes the build pod name.
-func GetBuildPodName(mosb *mcfgv1alpha1.MachineOSBuild) string {
+// Computes the build job name.
+func GetBuildJobName(mosb *mcfgv1alpha1.MachineOSBuild) string {
 	return fmt.Sprintf("build-%s", getFieldFromMachineOSBuild(mosb))
 }
 

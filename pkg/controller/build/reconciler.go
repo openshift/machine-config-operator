@@ -14,7 +14,7 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/controller/build/imagebuilder"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	corev1 "k8s.io/api/core/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
@@ -40,9 +40,9 @@ type reconciler interface {
 	UpdateMachineOSConfig(context.Context, *mcfgv1alpha1.MachineOSConfig, *mcfgv1alpha1.MachineOSConfig) error
 	DeleteMachineOSConfig(context.Context, *mcfgv1alpha1.MachineOSConfig) error
 
-	AddPod(context.Context, *corev1.Pod) error
-	UpdatePod(context.Context, *corev1.Pod, *corev1.Pod) error
-	DeletePod(context.Context, *corev1.Pod) error
+	AddJob(context.Context, *batchv1.Job) error
+	UpdateJob(context.Context, *batchv1.Job, *batchv1.Job) error
+	DeleteJob(context.Context, *batchv1.Job) error
 
 	UpdateMachineConfigPool(context.Context, *mcfgv1.MachineConfigPool, *mcfgv1.MachineConfigPool) error
 }
@@ -132,28 +132,32 @@ func (b *buildReconciler) deleteMachineOSConfig(ctx context.Context, mosc *mcfgv
 	return nil
 }
 
-// Executes whenever a new build pod is detected and updates the MachineOSBuild
+// Executes whenever a new build Job is detected and updates the MachineOSBuild
 // with any status changes.
-func (b *buildReconciler) AddPod(ctx context.Context, pod *corev1.Pod) error {
-	return b.timeObjectOperation(pod, addingVerb, func() error {
-		// TODO: Fix this so that we get initial pod state when the pod is created.
-		klog.Infof("Adding build pod %q", pod.Name)
+func (b *buildReconciler) AddJob(ctx context.Context, job *batchv1.Job) error {
+	return b.timeObjectOperation(job, addingVerb, func() error {
+		klog.Infof("Adding build job %q", job.Name)
 		return b.syncAll(ctx)
 	})
 }
 
-// Executes whenever a build pod is updated. Updates the MachhineOSBuild object
-// with the pod status.
-func (b *buildReconciler) UpdatePod(ctx context.Context, oldPod, curPod *corev1.Pod) error {
-	return b.timeObjectOperation(curPod, updatingVerb, func() error {
-		return b.updateMachineOSBuildWithStatusIfNeeded(ctx, oldPod, curPod)
+// Executes whenever a build Job is updated
+func (b *buildReconciler) UpdateJob(ctx context.Context, oldJob, curJob *batchv1.Job) error {
+	return b.timeObjectOperation(curJob, updatingVerb, func() error {
+		return b.updateMachineOSBuildWithStatusIfNeeded(ctx, oldJob, curJob)
 	})
 }
 
-func (b *buildReconciler) DeletePod(ctx context.Context, pod *corev1.Pod) error {
-	return b.timeObjectOperation(pod, deletingVerb, func() error {
-		// TODO: Determine if there is anything we need to do once the build pod is deleted.
-		klog.Infof("Pod %q deleted", pod.Name)
+// Executes whenever a build Job is deleted
+func (b *buildReconciler) DeleteJob(ctx context.Context, job *batchv1.Job) error {
+	return b.timeObjectOperation(job, deletingVerb, func() error {
+		// Set the DeletionTimestamp so that we can set the build status to interrupted
+		job.SetDeletionTimestamp(&metav1.Time{Time: time.Now()})
+		err := b.updateMachineOSBuildWithStatus(ctx, job)
+		if err != nil {
+			return err
+		}
+		klog.Infof("Job %q deleted", job.Name)
 		return b.syncAll(ctx)
 	})
 }
@@ -214,7 +218,7 @@ func (b *buildReconciler) updateMachineOSBuild(ctx context.Context, old, current
 	// final image pushspec onto the MachineOSConfig object.
 	if !oldState.IsBuildSuccess() && curState.IsBuildSuccess() {
 		klog.Infof("MachineOSBuild %s succeeded, cleaning up all ephemeral objects used for the build", current.Name)
-		if err := imagebuilder.NewPodImageBuilder(b.kubeclient, b.mcfgclient, current, mosc).Clean(ctx); err != nil {
+		if err := imagebuilder.NewJobImageBuilder(b.kubeclient, b.mcfgclient, current, mosc).Clean(ctx); err != nil {
 			return err
 		}
 
@@ -318,11 +322,11 @@ func (b *buildReconciler) startBuild(ctx context.Context, mosb *mcfgv1alpha1.Mac
 	}
 
 	// Next, create our new MachineOSBuild.
-	if err := imagebuilder.NewPodImageBuilder(b.kubeclient, b.mcfgclient, mosb, mosc).Start(ctx); err != nil {
+	if err := imagebuilder.NewJobImageBuilder(b.kubeclient, b.mcfgclient, mosb, mosc).Start(ctx); err != nil {
 		return fmt.Errorf("imagebuilder could not start build for MachineOSBuild %q: %w", mosb.Name, err)
 	}
 
-	klog.Infof("Started new build %s for MachineOSBuild", utils.GetBuildPodName(mosb))
+	klog.Infof("Started new build %s for MachineOSBuild", utils.GetBuildJobName(mosb))
 
 	if err := b.updateMachineOSConfigStatus(ctx, mosc, mosb); err != nil {
 		return fmt.Errorf("could not update MachineOSConfig %q status for MachineOSBuild %q: %w", mosc.Name, mosb.Name, err)
@@ -483,7 +487,7 @@ func (b *buildReconciler) getMachineOSBuildStatusForBuilder(ctx context.Context,
 		return mcfgv1alpha1.MachineOSBuildStatus{}, nil, fmt.Errorf("could not get MachineOSConfig or MachineOSBuild for builder: %w", err)
 	}
 
-	observer := imagebuilder.NewPodImageBuildObserverFromBuilder(b.kubeclient, b.mcfgclient, mosb, mosc, builder)
+	observer := imagebuilder.NewJobImageBuildObserverFromBuilder(b.kubeclient, b.mcfgclient, mosb, mosc, builder)
 
 	status, err := observer.MachineOSBuildStatus(ctx)
 	if err != nil {
@@ -656,7 +660,7 @@ func (b *buildReconciler) getMachineOSConfigForBuilder(builder buildrequest.Buil
 
 // Deletes the underlying build objects for a given MachineOSBuild.
 func (b *buildReconciler) deleteBuilderForMachineOSBuild(ctx context.Context, mosb *mcfgv1alpha1.MachineOSBuild) error {
-	if err := imagebuilder.NewPodImageBuildCleaner(b.kubeclient, b.mcfgclient, mosb).Clean(ctx); err != nil {
+	if err := imagebuilder.NewJobImageBuildCleaner(b.kubeclient, b.mcfgclient, mosb).Clean(ctx); err != nil {
 		return fmt.Errorf("could not clean build %s: %w", mosb.Name, err)
 	}
 
@@ -832,7 +836,7 @@ func (b *buildReconciler) syncMachineOSBuild(ctx context.Context, mosb *mcfgv1al
 				return ignoreErrIsNotFound(fmt.Errorf("could not sync MachineOSBuild %q: %w", mosb.Name, err))
 			}
 
-			observer := imagebuilder.NewPodImageBuildObserver(b.kubeclient, b.mcfgclient, mosb, mosc)
+			observer := imagebuilder.NewJobImageBuildObserver(b.kubeclient, b.mcfgclient, mosb, mosc)
 
 			exists, err := observer.Exists(ctx)
 			if err != nil {

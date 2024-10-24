@@ -22,6 +22,7 @@ function retry {
       echo "Retry $count/$MAX_RETRIES exited $exit, retrying..."
     else
       echo "Retry $count/$MAX_RETRIES exited $exit, no more retries left."
+	  echo $exit > /tmp/done/errorfile
       return $exit
     fi
   done
