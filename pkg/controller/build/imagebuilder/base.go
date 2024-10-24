@@ -379,12 +379,12 @@ func (b *baseImageBuilder) getMachineOSConfigName() (string, error) {
 	return b.builder.MachineOSBuild()
 }
 
-// Gets the name of the builder execution unit (could be a Pod or Job) by
+// Gets the name of the builder execution unit by
 // either looking for the MachineOSBuild name and computing it or by getting it
 // directly from the Builder object.
 func (b *baseImageBuilder) getBuilderName() string {
 	if b.mosb != nil {
-		return utils.GetBuildPodName(b.mosb)
+		return utils.GetBuildJobName(b.mosb)
 	}
 
 	return b.builder.GetObject().GetName()

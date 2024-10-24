@@ -14,6 +14,7 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -33,7 +34,7 @@ var buildahBuildScript string
 var podmanBuildScript string
 
 const (
-	// Filename for the machineconfig JSON tarball expected by the build pod
+	// Filename for the machineconfig JSON tarball expected by the build job
 	machineConfigJSONFilename string = "machineconfig.json.gz"
 )
 
@@ -75,9 +76,9 @@ func (br buildRequestImpl) Opts() BuildRequestOpts {
 	return br.opts
 }
 
-// Creates the Build Pod object.
+// Creates the Build Job object.
 func (br buildRequestImpl) Builder() Builder {
-	return newBuilder(br.toBuildahPod())
+	return newBuilder(br.podToJob(br.toBuildahPod()))
 }
 
 // Takes the configured secrets and creates an ephemeral clone of them, canonicalizing them, if needed.
@@ -225,6 +226,30 @@ func (br buildRequestImpl) renderContainerfile() (string, error) {
 	}
 
 	return out.String(), nil
+}
+
+// podToJob creates a Job with the spec of the given Pod
+func (br buildRequestImpl) podToJob(pod *corev1.Pod) *batchv1.Job {
+	// Set the backoffLimit to 3 so the job will retry 4 times before reporting a failure
+	var backoffLimit int32 = 3
+	// Set completion to 1 so that as soon as the pod has completed successfully the job is
+	// considered a success
+	var completions int32 = 1
+	return &batchv1.Job{
+		ObjectMeta: pod.ObjectMeta,
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "batch/v1",
+			Kind:       "Job",
+		},
+		Spec: batchv1.JobSpec{
+			BackoffLimit: &backoffLimit,
+			Completions:  &completions,
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{},
+				Spec:       pod.Spec,
+			},
+		},
+	}
 }
 
 // We're able to run the Buildah image in an unprivileged pod provided that the
@@ -522,7 +547,7 @@ func (br buildRequestImpl) getMCConfigMapName() string {
 
 // Computes the build name based upon the MachineConfigPool name.
 func (br buildRequestImpl) getBuildName() string {
-	return utils.GetBuildPodName(br.opts.MachineOSBuild)
+	return utils.GetBuildJobName(br.opts.MachineOSBuild)
 }
 
 func (br buildRequestImpl) getDigestConfigMapName() string {

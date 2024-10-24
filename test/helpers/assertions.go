@@ -12,6 +12,7 @@ import (
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -211,6 +212,63 @@ func (a *Assertions) PodDoesNotExist(podName string, msgAndArgs ...interface{}) 
 	a.podReachesState(podName, stateFunc, msgAndArgs...)
 }
 
+// Asserts that a Pod is running.
+func (a *Assertions) PodIsRunning(podName string, msgAndArgs ...interface{}) {
+	a.t.Helper()
+
+	isPodRunning := func(pod *corev1.Pod) bool {
+		if pod == nil {
+			return false
+		}
+
+		return pod.Status.Phase == corev1.PodRunning
+	}
+
+	isPodContainersRunning := func(pod *corev1.Pod) bool {
+		if pod == nil {
+			return false
+		}
+		for _, ctr := range pod.Status.ContainerStatuses {
+			if ctr.State.Running == nil || ctr.State.Waiting != nil || ctr.State.Terminated != nil {
+				return false
+			}
+		}
+		return true
+	}
+	stateFunc := func(pod *corev1.Pod, err error) (bool, error) {
+		if a.poll {
+			exists, err := a.created(err)
+			if exists && err == nil {
+				return isPodRunning(pod) && isPodContainersRunning(pod), nil
+			}
+			return exists, err
+		}
+		return err == nil, err
+	}
+
+	a.podReachesState(podName, stateFunc, msgAndArgs...)
+}
+
+// Asserts that a Job is created.
+func (a *Assertions) JobExists(jobName string, msgAndArgs ...interface{}) {
+	a.t.Helper()
+	stateFunc := func(_ *batchv1.Job, err error) (bool, error) {
+		return a.created(err)
+	}
+
+	a.jobReachesState(jobName, stateFunc, msgAndArgs...)
+}
+
+// Asserts that a Job is deleted.
+func (a *Assertions) JobDoesNotExist(jobName string, msgAndArgs ...interface{}) {
+	a.t.Helper()
+	stateFunc := func(_ *batchv1.Job, err error) (bool, error) {
+		return a.deleted(err)
+	}
+
+	a.jobReachesState(jobName, stateFunc, msgAndArgs...)
+}
+
 // Asserts that a MachineOSConfig is created.
 func (a *Assertions) MachineOSConfigExists(mosb *mcfgv1alpha1.MachineOSConfig, msgAndArgs ...interface{}) {
 	a.t.Helper()
@@ -316,6 +374,22 @@ func (a *Assertions) podReachesState(podName string, stateFunc func(*corev1.Pod,
 	})
 
 	msgAndArgs = prefixMsgAndArgs(fmt.Sprintf("Build pod %s did not reach specified state", podName), msgAndArgs)
+	require.NoError(a.t, err, msgAndArgs...)
+}
+
+// Asserts that a Job reaches the desired state.
+func (a *Assertions) jobReachesState(jobName string, stateFunc func(*batchv1.Job, error) (bool, error), msgAndArgs ...interface{}) {
+	a.t.Helper()
+
+	ctx, cancel := a.getContextAndCancel()
+	defer cancel()
+
+	err := wait.PollUntilContextCancel(ctx, a.getPollInterval(), true, func(ctx context.Context) (bool, error) {
+		pod, err := a.kubeclient.BatchV1().Jobs(mcoNamespace).Get(ctx, jobName, metav1.GetOptions{})
+		return a.handleStateFuncResult(stateFunc(pod, err))
+	})
+
+	msgAndArgs = prefixMsgAndArgs(fmt.Sprintf("Build job %s did not reach specified state", jobName), msgAndArgs)
 	require.NoError(a.t, err, msgAndArgs...)
 }
 
