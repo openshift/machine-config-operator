@@ -4,8 +4,8 @@ package v1
 
 import (
 	v1 "github.com/openshift/api/operator/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/client-go/listers"
 	"k8s.io/client-go/tools/cache"
 )
 
@@ -23,30 +23,10 @@ type CSISnapshotControllerLister interface {
 
 // cSISnapshotControllerLister implements the CSISnapshotControllerLister interface.
 type cSISnapshotControllerLister struct {
-	indexer cache.Indexer
+	listers.ResourceIndexer[*v1.CSISnapshotController]
 }
 
 // NewCSISnapshotControllerLister returns a new CSISnapshotControllerLister.
 func NewCSISnapshotControllerLister(indexer cache.Indexer) CSISnapshotControllerLister {
-	return &cSISnapshotControllerLister{indexer: indexer}
-}
-
-// List lists all CSISnapshotControllers in the indexer.
-func (s *cSISnapshotControllerLister) List(selector labels.Selector) (ret []*v1.CSISnapshotController, err error) {
-	err = cache.ListAll(s.indexer, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1.CSISnapshotController))
-	})
-	return ret, err
-}
-
-// Get retrieves the CSISnapshotController from the index for a given name.
-func (s *cSISnapshotControllerLister) Get(name string) (*v1.CSISnapshotController, error) {
-	obj, exists, err := s.indexer.GetByKey(name)
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
-		return nil, errors.NewNotFound(v1.Resource("csisnapshotcontroller"), name)
-	}
-	return obj.(*v1.CSISnapshotController), nil
+	return &cSISnapshotControllerLister{listers.New[*v1.CSISnapshotController](indexer, v1.Resource("csisnapshotcontroller"))}
 }

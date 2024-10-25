@@ -6,7 +6,7 @@ import (
 	v1 "github.com/openshift/api/operator/v1"
 )
 
-// AWSLoadBalancerParametersApplyConfiguration represents an declarative configuration of the AWSLoadBalancerParameters type for use
+// AWSLoadBalancerParametersApplyConfiguration represents a declarative configuration of the AWSLoadBalancerParameters type for use
 // with apply.
 type AWSLoadBalancerParametersApplyConfiguration struct {
 	Type                          *v1.AWSLoadBalancerType                             `json:"type,omitempty"`
@@ -14,7 +14,7 @@ type AWSLoadBalancerParametersApplyConfiguration struct {
 	NetworkLoadBalancerParameters *AWSNetworkLoadBalancerParametersApplyConfiguration `json:"networkLoadBalancer,omitempty"`
 }
 
-// AWSLoadBalancerParametersApplyConfiguration constructs an declarative configuration of the AWSLoadBalancerParameters type for use with
+// AWSLoadBalancerParametersApplyConfiguration constructs a declarative configuration of the AWSLoadBalancerParameters type for use with
 // apply.
 func AWSLoadBalancerParameters() *AWSLoadBalancerParametersApplyConfiguration {
 	return &AWSLoadBalancerParametersApplyConfiguration{}

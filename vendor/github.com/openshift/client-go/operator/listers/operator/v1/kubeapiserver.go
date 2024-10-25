@@ -4,8 +4,8 @@ package v1
 
 import (
 	v1 "github.com/openshift/api/operator/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/client-go/listers"
 	"k8s.io/client-go/tools/cache"
 )
 
@@ -23,30 +23,10 @@ type KubeAPIServerLister interface {
 
 // kubeAPIServerLister implements the KubeAPIServerLister interface.
 type kubeAPIServerLister struct {
-	indexer cache.Indexer
+	listers.ResourceIndexer[*v1.KubeAPIServer]
 }
 
 // NewKubeAPIServerLister returns a new KubeAPIServerLister.
 func NewKubeAPIServerLister(indexer cache.Indexer) KubeAPIServerLister {
-	return &kubeAPIServerLister{indexer: indexer}
-}
-
-// List lists all KubeAPIServers in the indexer.
-func (s *kubeAPIServerLister) List(selector labels.Selector) (ret []*v1.KubeAPIServer, err error) {
-	err = cache.ListAll(s.indexer, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1.KubeAPIServer))
-	})
-	return ret, err
-}
-
-// Get retrieves the KubeAPIServer from the index for a given name.
-func (s *kubeAPIServerLister) Get(name string) (*v1.KubeAPIServer, error) {
-	obj, exists, err := s.indexer.GetByKey(name)
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
-		return nil, errors.NewNotFound(v1.Resource("kubeapiserver"), name)
-	}
-	return obj.(*v1.KubeAPIServer), nil
+	return &kubeAPIServerLister{listers.New[*v1.KubeAPIServer](indexer, v1.Resource("kubeapiserver"))}
 }

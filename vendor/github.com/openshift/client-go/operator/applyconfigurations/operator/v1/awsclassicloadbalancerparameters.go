@@ -6,14 +6,14 @@ import (
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// AWSClassicLoadBalancerParametersApplyConfiguration represents an declarative configuration of the AWSClassicLoadBalancerParameters type for use
+// AWSClassicLoadBalancerParametersApplyConfiguration represents a declarative configuration of the AWSClassicLoadBalancerParameters type for use
 // with apply.
 type AWSClassicLoadBalancerParametersApplyConfiguration struct {
 	ConnectionIdleTimeout *v1.Duration                  `json:"connectionIdleTimeout,omitempty"`
 	Subnets               *AWSSubnetsApplyConfiguration `json:"subnets,omitempty"`
 }
 
-// AWSClassicLoadBalancerParametersApplyConfiguration constructs an declarative configuration of the AWSClassicLoadBalancerParameters type for use with
+// AWSClassicLoadBalancerParametersApplyConfiguration constructs a declarative configuration of the AWSClassicLoadBalancerParameters type for use with
 // apply.
 func AWSClassicLoadBalancerParameters() *AWSClassicLoadBalancerParametersApplyConfiguration {
 	return &AWSClassicLoadBalancerParametersApplyConfiguration{}

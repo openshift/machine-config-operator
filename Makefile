@@ -65,7 +65,7 @@ go-deps:
 	chmod +x ./vendor/k8s.io/code-generator/generate-internal-groups.sh
 
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
-ENVTEST_K8S_VERSION = 1.30.1
+ENVTEST_K8S_VERSION = 1.31.1
 ENVTEST = go run ${PROJECT_DIR}/vendor/sigs.k8s.io/controller-runtime/tools/setup-envtest
 SETUP_ENVTEST := $(shell command -v setup-envtest 2> /dev/null)
 install-setup-envtest:
@@ -142,7 +142,7 @@ test-e2e-single-node: install-go-junit-report
 
 bootstrap-e2e: install-go-junit-report install-setup-envtest
 	@echo "Setting up KUBEBUILDER_ASSETS"
-	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --remote-bucket openshift-kubebuilder-tools --use-deprecated-gcs --bin-dir $(PROJECT_DIR)/bin -p path)" && \
+	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --index https://raw.githubusercontent.com/openshift/api/master/envtest-releases.yaml --bin-dir $(PROJECT_DIR)/bin -p path)" && \
 	echo "KUBEBUILDER_ASSETS=$$KUBEBUILDER_ASSETS" && \
 	set -o pipefail && \
 	KUBEBUILDER_ASSETS=$$KUBEBUILDER_ASSETS go test -tags=$(GOTAGS) -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-bootstrap/ | ./hack/test-with-junit.sh $(@)

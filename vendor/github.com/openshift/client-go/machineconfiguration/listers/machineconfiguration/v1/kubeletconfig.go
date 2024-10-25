@@ -4,8 +4,8 @@ package v1
 
 import (
 	v1 "github.com/openshift/api/machineconfiguration/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/client-go/listers"
 	"k8s.io/client-go/tools/cache"
 )
 
@@ -23,30 +23,10 @@ type KubeletConfigLister interface {
 
 // kubeletConfigLister implements the KubeletConfigLister interface.
 type kubeletConfigLister struct {
-	indexer cache.Indexer
+	listers.ResourceIndexer[*v1.KubeletConfig]
 }
 
 // NewKubeletConfigLister returns a new KubeletConfigLister.
 func NewKubeletConfigLister(indexer cache.Indexer) KubeletConfigLister {
-	return &kubeletConfigLister{indexer: indexer}
-}
-
-// List lists all KubeletConfigs in the indexer.
-func (s *kubeletConfigLister) List(selector labels.Selector) (ret []*v1.KubeletConfig, err error) {
-	err = cache.ListAll(s.indexer, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1.KubeletConfig))
-	})
-	return ret, err
-}
-
-// Get retrieves the KubeletConfig from the index for a given name.
-func (s *kubeletConfigLister) Get(name string) (*v1.KubeletConfig, error) {
-	obj, exists, err := s.indexer.GetByKey(name)
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
-		return nil, errors.NewNotFound(v1.Resource("kubeletconfig"), name)
-	}
-	return obj.(*v1.KubeletConfig), nil
+	return &kubeletConfigLister{listers.New[*v1.KubeletConfig](indexer, v1.Resource("kubeletconfig"))}
 }

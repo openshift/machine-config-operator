@@ -28,22 +28,24 @@ var buildconfigsKind = v1.SchemeGroupVersion.WithKind("BuildConfig")
 
 // Get takes name of the buildConfig, and returns the corresponding buildConfig object, and an error if there is any.
 func (c *FakeBuildConfigs) Get(ctx context.Context, name string, options metav1.GetOptions) (result *v1.BuildConfig, err error) {
+	emptyResult := &v1.BuildConfig{}
 	obj, err := c.Fake.
-		Invokes(testing.NewGetAction(buildconfigsResource, c.ns, name), &v1.BuildConfig{})
+		Invokes(testing.NewGetActionWithOptions(buildconfigsResource, c.ns, name, options), emptyResult)
 
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.BuildConfig), err
 }
 
 // List takes label and field selectors, and returns the list of BuildConfigs that match those selectors.
 func (c *FakeBuildConfigs) List(ctx context.Context, opts metav1.ListOptions) (result *v1.BuildConfigList, err error) {
+	emptyResult := &v1.BuildConfigList{}
 	obj, err := c.Fake.
-		Invokes(testing.NewListAction(buildconfigsResource, buildconfigsKind, c.ns, opts), &v1.BuildConfigList{})
+		Invokes(testing.NewListActionWithOptions(buildconfigsResource, buildconfigsKind, c.ns, opts), emptyResult)
 
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 
 	label, _, _ := testing.ExtractFromListOptions(opts)
@@ -62,40 +64,43 @@ func (c *FakeBuildConfigs) List(ctx context.Context, opts metav1.ListOptions) (r
 // Watch returns a watch.Interface that watches the requested buildConfigs.
 func (c *FakeBuildConfigs) Watch(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error) {
 	return c.Fake.
-		InvokesWatch(testing.NewWatchAction(buildconfigsResource, c.ns, opts))
+		InvokesWatch(testing.NewWatchActionWithOptions(buildconfigsResource, c.ns, opts))
 
 }
 
 // Create takes the representation of a buildConfig and creates it.  Returns the server's representation of the buildConfig, and an error, if there is any.
 func (c *FakeBuildConfigs) Create(ctx context.Context, buildConfig *v1.BuildConfig, opts metav1.CreateOptions) (result *v1.BuildConfig, err error) {
+	emptyResult := &v1.BuildConfig{}
 	obj, err := c.Fake.
-		Invokes(testing.NewCreateAction(buildconfigsResource, c.ns, buildConfig), &v1.BuildConfig{})
+		Invokes(testing.NewCreateActionWithOptions(buildconfigsResource, c.ns, buildConfig, opts), emptyResult)
 
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.BuildConfig), err
 }
 
 // Update takes the representation of a buildConfig and updates it. Returns the server's representation of the buildConfig, and an error, if there is any.
 func (c *FakeBuildConfigs) Update(ctx context.Context, buildConfig *v1.BuildConfig, opts metav1.UpdateOptions) (result *v1.BuildConfig, err error) {
+	emptyResult := &v1.BuildConfig{}
 	obj, err := c.Fake.
-		Invokes(testing.NewUpdateAction(buildconfigsResource, c.ns, buildConfig), &v1.BuildConfig{})
+		Invokes(testing.NewUpdateActionWithOptions(buildconfigsResource, c.ns, buildConfig, opts), emptyResult)
 
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.BuildConfig), err
 }
 
 // UpdateStatus was generated because the type contains a Status member.
 // Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-func (c *FakeBuildConfigs) UpdateStatus(ctx context.Context, buildConfig *v1.BuildConfig, opts metav1.UpdateOptions) (*v1.BuildConfig, error) {
+func (c *FakeBuildConfigs) UpdateStatus(ctx context.Context, buildConfig *v1.BuildConfig, opts metav1.UpdateOptions) (result *v1.BuildConfig, err error) {
+	emptyResult := &v1.BuildConfig{}
 	obj, err := c.Fake.
-		Invokes(testing.NewUpdateSubresourceAction(buildconfigsResource, "status", c.ns, buildConfig), &v1.BuildConfig{})
+		Invokes(testing.NewUpdateSubresourceActionWithOptions(buildconfigsResource, "status", c.ns, buildConfig, opts), emptyResult)
 
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.BuildConfig), err
 }
@@ -110,7 +115,7 @@ func (c *FakeBuildConfigs) Delete(ctx context.Context, name string, opts metav1.
 
 // DeleteCollection deletes a collection of objects.
 func (c *FakeBuildConfigs) DeleteCollection(ctx context.Context, opts metav1.DeleteOptions, listOpts metav1.ListOptions) error {
-	action := testing.NewDeleteCollectionAction(buildconfigsResource, c.ns, listOpts)
+	action := testing.NewDeleteCollectionActionWithOptions(buildconfigsResource, c.ns, opts, listOpts)
 
 	_, err := c.Fake.Invokes(action, &v1.BuildConfigList{})
 	return err
@@ -118,11 +123,12 @@ func (c *FakeBuildConfigs) DeleteCollection(ctx context.Context, opts metav1.Del
 
 // Patch applies the patch and returns the patched buildConfig.
 func (c *FakeBuildConfigs) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts metav1.PatchOptions, subresources ...string) (result *v1.BuildConfig, err error) {
+	emptyResult := &v1.BuildConfig{}
 	obj, err := c.Fake.
-		Invokes(testing.NewPatchSubresourceAction(buildconfigsResource, c.ns, name, pt, data, subresources...), &v1.BuildConfig{})
+		Invokes(testing.NewPatchSubresourceActionWithOptions(buildconfigsResource, c.ns, name, pt, data, opts, subresources...), emptyResult)
 
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.BuildConfig), err
 }
@@ -140,11 +146,12 @@ func (c *FakeBuildConfigs) Apply(ctx context.Context, buildConfig *buildv1.Build
 	if name == nil {
 		return nil, fmt.Errorf("buildConfig.Name must be provided to Apply")
 	}
+	emptyResult := &v1.BuildConfig{}
 	obj, err := c.Fake.
-		Invokes(testing.NewPatchSubresourceAction(buildconfigsResource, c.ns, *name, types.ApplyPatchType, data), &v1.BuildConfig{})
+		Invokes(testing.NewPatchSubresourceActionWithOptions(buildconfigsResource, c.ns, *name, types.ApplyPatchType, data, opts.ToPatchOptions()), emptyResult)
 
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.BuildConfig), err
 }
@@ -163,22 +170,24 @@ func (c *FakeBuildConfigs) ApplyStatus(ctx context.Context, buildConfig *buildv1
 	if name == nil {
 		return nil, fmt.Errorf("buildConfig.Name must be provided to Apply")
 	}
+	emptyResult := &v1.BuildConfig{}
 	obj, err := c.Fake.
-		Invokes(testing.NewPatchSubresourceAction(buildconfigsResource, c.ns, *name, types.ApplyPatchType, data, "status"), &v1.BuildConfig{})
+		Invokes(testing.NewPatchSubresourceActionWithOptions(buildconfigsResource, c.ns, *name, types.ApplyPatchType, data, opts.ToPatchOptions(), "status"), emptyResult)
 
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.BuildConfig), err
 }
 
 // Instantiate takes the representation of a buildRequest and creates it.  Returns the server's representation of the build, and an error, if there is any.
 func (c *FakeBuildConfigs) Instantiate(ctx context.Context, buildConfigName string, buildRequest *v1.BuildRequest, opts metav1.CreateOptions) (result *v1.Build, err error) {
+	emptyResult := &v1.Build{}
 	obj, err := c.Fake.
-		Invokes(testing.NewCreateSubresourceAction(buildconfigsResource, buildConfigName, "instantiate", c.ns, buildRequest), &v1.Build{})
+		Invokes(testing.NewCreateSubresourceActionWithOptions(buildconfigsResource, buildConfigName, "instantiate", c.ns, buildRequest, opts), emptyResult)
 
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.Build), err
 }
