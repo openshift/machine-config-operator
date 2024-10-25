@@ -6,7 +6,7 @@ import (
 	operatorv1 "github.com/openshift/api/operator/v1"
 )
 
-// NetworkMigrationApplyConfiguration represents an declarative configuration of the NetworkMigration type for use
+// NetworkMigrationApplyConfiguration represents a declarative configuration of the NetworkMigration type for use
 // with apply.
 type NetworkMigrationApplyConfiguration struct {
 	MTU         *MTUMigrationApplyConfiguration      `json:"mtu,omitempty"`
@@ -15,7 +15,7 @@ type NetworkMigrationApplyConfiguration struct {
 	Mode        *operatorv1.NetworkMigrationMode     `json:"mode,omitempty"`
 }
 
-// NetworkMigrationApplyConfiguration constructs an declarative configuration of the NetworkMigration type for use with
+// NetworkMigrationApplyConfiguration constructs a declarative configuration of the NetworkMigration type for use with
 // apply.
 func NetworkMigration() *NetworkMigrationApplyConfiguration {
 	return &NetworkMigrationApplyConfiguration{}

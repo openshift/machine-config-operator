@@ -97,9 +97,9 @@ type Controller struct {
 	apiserverLister       oselistersv1.APIServerLister
 	apiserverListerSynced cache.InformerSynced
 
-	queue           workqueue.RateLimitingInterface
-	featureQueue    workqueue.RateLimitingInterface
-	nodeConfigQueue workqueue.RateLimitingInterface
+	queue           workqueue.TypedRateLimitingInterface[string]
+	featureQueue    workqueue.TypedRateLimitingInterface[string]
+	nodeConfigQueue workqueue.TypedRateLimitingInterface[string]
 
 	featureGateAccess featuregates.FeatureGateAccess
 }
@@ -123,13 +123,19 @@ func New(
 	eventBroadcaster.StartRecordingToSink(&coreclientsetv1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 
 	ctrl := &Controller{
-		templatesDir:      templatesDir,
-		client:            mcfgClient,
-		configClient:      configclient,
-		eventRecorder:     ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-kubeletconfigcontroller"})),
-		queue:             workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-kubeletconfigcontroller"),
-		featureQueue:      workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-featurecontroller"),
-		nodeConfigQueue:   workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-nodeConfigcontroller"),
+		templatesDir:  templatesDir,
+		client:        mcfgClient,
+		configClient:  configclient,
+		eventRecorder: ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-kubeletconfigcontroller"})),
+		queue: workqueue.NewTypedRateLimitingQueueWithConfig(
+			workqueue.DefaultTypedControllerRateLimiter[string](),
+			workqueue.TypedRateLimitingQueueConfig[string]{Name: "machineconfigcontroller-kubeletconfigcontroller"}),
+		featureQueue: workqueue.NewTypedRateLimitingQueueWithConfig(
+			workqueue.DefaultTypedControllerRateLimiter[string](),
+			workqueue.TypedRateLimitingQueueConfig[string]{Name: "machineconfigcontroller-featurecontroller"}),
+		nodeConfigQueue: workqueue.NewTypedRateLimitingQueueWithConfig(
+			workqueue.DefaultTypedControllerRateLimiter[string](),
+			workqueue.TypedRateLimitingQueueConfig[string]{Name: "machineconfigcontroller-nodeConfigcontroller"}),
 		featureGateAccess: fgAccess,
 	}
 
@@ -365,13 +371,13 @@ func (ctrl *Controller) processNextWorkItem() bool {
 	}
 	defer ctrl.queue.Done(key)
 
-	err := ctrl.syncHandler(key.(string))
+	err := ctrl.syncHandler(key)
 	ctrl.handleErr(err, key)
 
 	return true
 }
 
-func (ctrl *Controller) handleErr(err error, key interface{}) {
+func (ctrl *Controller) handleErr(err error, key string) {
 	if err == nil {
 		ctrl.queue.Forget(key)
 		return
@@ -394,7 +400,7 @@ func (ctrl *Controller) handleErr(err error, key interface{}) {
 	ctrl.queue.AddAfter(key, 1*time.Minute)
 }
 
-func (ctrl *Controller) handleFeatureErr(err error, key interface{}) {
+func (ctrl *Controller) handleFeatureErr(err error, key string) {
 	if err == nil {
 		ctrl.featureQueue.Forget(key)
 		return

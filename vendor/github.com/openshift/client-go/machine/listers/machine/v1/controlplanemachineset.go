@@ -4,8 +4,8 @@ package v1
 
 import (
 	v1 "github.com/openshift/api/machine/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/client-go/listers"
 	"k8s.io/client-go/tools/cache"
 )
 
@@ -22,25 +22,17 @@ type ControlPlaneMachineSetLister interface {
 
 // controlPlaneMachineSetLister implements the ControlPlaneMachineSetLister interface.
 type controlPlaneMachineSetLister struct {
-	indexer cache.Indexer
+	listers.ResourceIndexer[*v1.ControlPlaneMachineSet]
 }
 
 // NewControlPlaneMachineSetLister returns a new ControlPlaneMachineSetLister.
 func NewControlPlaneMachineSetLister(indexer cache.Indexer) ControlPlaneMachineSetLister {
-	return &controlPlaneMachineSetLister{indexer: indexer}
-}
-
-// List lists all ControlPlaneMachineSets in the indexer.
-func (s *controlPlaneMachineSetLister) List(selector labels.Selector) (ret []*v1.ControlPlaneMachineSet, err error) {
-	err = cache.ListAll(s.indexer, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1.ControlPlaneMachineSet))
-	})
-	return ret, err
+	return &controlPlaneMachineSetLister{listers.New[*v1.ControlPlaneMachineSet](indexer, v1.Resource("controlplanemachineset"))}
 }
 
 // ControlPlaneMachineSets returns an object that can list and get ControlPlaneMachineSets.
 func (s *controlPlaneMachineSetLister) ControlPlaneMachineSets(namespace string) ControlPlaneMachineSetNamespaceLister {
-	return controlPlaneMachineSetNamespaceLister{indexer: s.indexer, namespace: namespace}
+	return controlPlaneMachineSetNamespaceLister{listers.NewNamespaced[*v1.ControlPlaneMachineSet](s.ResourceIndexer, namespace)}
 }
 
 // ControlPlaneMachineSetNamespaceLister helps list and get ControlPlaneMachineSets.
@@ -58,26 +50,5 @@ type ControlPlaneMachineSetNamespaceLister interface {
 // controlPlaneMachineSetNamespaceLister implements the ControlPlaneMachineSetNamespaceLister
 // interface.
 type controlPlaneMachineSetNamespaceLister struct {
-	indexer   cache.Indexer
-	namespace string
-}
-
-// List lists all ControlPlaneMachineSets in the indexer for a given namespace.
-func (s controlPlaneMachineSetNamespaceLister) List(selector labels.Selector) (ret []*v1.ControlPlaneMachineSet, err error) {
-	err = cache.ListAllByNamespace(s.indexer, s.namespace, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1.ControlPlaneMachineSet))
-	})
-	return ret, err
-}
-
-// Get retrieves the ControlPlaneMachineSet from the indexer for a given namespace and name.
-func (s controlPlaneMachineSetNamespaceLister) Get(name string) (*v1.ControlPlaneMachineSet, error) {
-	obj, exists, err := s.indexer.GetByKey(s.namespace + "/" + name)
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
-		return nil, errors.NewNotFound(v1.Resource("controlplanemachineset"), name)
-	}
-	return obj.(*v1.ControlPlaneMachineSet), nil
+	listers.ResourceIndexer[*v1.ControlPlaneMachineSet]
 }

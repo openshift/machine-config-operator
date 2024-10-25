@@ -124,9 +124,9 @@ type Daemon struct {
 	// or the very first instance grabbed when the daemon starts
 	node *corev1.Node
 
-	queue       workqueue.RateLimitingInterface
-	ccQueue     workqueue.RateLimitingInterface
-	cmQueue     workqueue.RateLimitingInterface
+	queue       workqueue.TypedRateLimitingInterface[string]
+	ccQueue     workqueue.TypedRateLimitingInterface[string]
+	cmQueue     workqueue.TypedRateLimitingInterface[string]
 	enqueueNode func(*corev1.Node)
 	syncHandler func(node string) error
 
@@ -369,9 +369,10 @@ func (dn *Daemon) ClusterConnect(
 	// Other controllers start out with the default controller limiter which retries
 	// in milliseconds; since any change here will involve rebooting the node
 	// we don't need to react in milliseconds.  See also updateDelay above.
-	dn.queue = workqueue.NewNamedRateLimitingQueue(workqueue.NewMaxOfRateLimiter(
-		&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(rate.Limit(updateDelay), 1)},
-		workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, maxUpdateBackoff)), "machineconfigdaemon")
+	dn.queue = workqueue.NewTypedRateLimitingQueueWithConfig[string](workqueue.NewTypedMaxOfRateLimiter[string](
+		&workqueue.TypedBucketRateLimiter[string]{Limiter: rate.NewLimiter(rate.Limit(updateDelay), 1)},
+		workqueue.NewTypedItemExponentialFailureRateLimiter[string](1*time.Second, maxUpdateBackoff)),
+		workqueue.TypedRateLimitingQueueConfig[string]{Name: "machineconfigdaemon"})
 
 	nodeInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    dn.handleNodeEvent,
@@ -381,8 +382,7 @@ func (dn *Daemon) ClusterConnect(
 	dn.nodeListerSynced = nodeInformer.Informer().HasSynced
 	dn.mcLister = mcInformer.Lister()
 	dn.mcListerSynced = mcInformer.Informer().HasSynced
-
-	dn.ccQueue = workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter())
+	dn.ccQueue = workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]())
 	ccInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    dn.handleControllerConfigEvent,
 		UpdateFunc: func(_, newObj interface{}) { dn.handleControllerConfigEvent(newObj) },
@@ -432,9 +432,10 @@ func (dn *Daemon) HypershiftConnect(
 		UpdateFunc: func(_, newObj interface{}) { dn.handleNodeEvent(newObj) },
 	})
 
-	dn.queue = workqueue.NewNamedRateLimitingQueue(workqueue.NewMaxOfRateLimiter(
-		&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(rate.Limit(updateDelay), 1)},
-		workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, maxUpdateBackoff)), "machineconfigdaemon")
+	dn.queue = workqueue.NewTypedRateLimitingQueueWithConfig[string](workqueue.NewTypedMaxOfRateLimiter[string](
+		&workqueue.TypedBucketRateLimiter[string]{Limiter: rate.NewLimiter(rate.Limit(updateDelay), 1)},
+		workqueue.NewTypedItemExponentialFailureRateLimiter[string](1*time.Second, maxUpdateBackoff)),
+		workqueue.TypedRateLimitingQueueConfig[string]{Name: "machineconfigdaemon"})
 
 	dn.enqueueNode = dn.enqueueDefault
 	dn.syncHandler = dn.syncNodeHypershift
@@ -585,13 +586,13 @@ func (dn *Daemon) processNextWorkItem() bool {
 	}
 	defer dn.queue.Done(key)
 
-	err := dn.syncHandler(key.(string))
+	err := dn.syncHandler(key)
 	dn.handleErr(err, key)
 
 	return true
 }
 
-func (dn *Daemon) handleErr(err error, key interface{}) {
+func (dn *Daemon) handleErr(err error, key string) {
 	if err == nil {
 		dn.queue.Forget(key)
 		return
@@ -1337,7 +1338,7 @@ type pipeErrorHandler struct {
 	pipe chan error
 }
 
-func (e *pipeErrorHandler) handle(err error) {
+func (e *pipeErrorHandler) handle(_ context.Context, err error, _ string, _ ...interface{}) {
 	e.pipe <- err
 }
 
@@ -1767,7 +1768,7 @@ func (dn *Daemon) LogSystemData() {
 	if err != nil {
 		klog.Errorf("Listing boots: %v", err)
 	}
-	klog.Infof("journalctl --list-boots:\n" + string(boots))
+	klog.Info("journalctl --list-boots:\n" + string(boots))
 
 	// Since nothing in the cluster today watches systemd units, let's
 	// at least capture them in our logs to start.  See also
@@ -1781,7 +1782,7 @@ func (dn *Daemon) LogSystemData() {
 	case err != nil:
 		klog.Errorf("Listing failed systemd services: %v", err)
 	case len(failedServices) > 0:
-		klog.Infof("systemctl --failed:\n" + string(failedServices))
+		klog.Info("systemctl --failed:\n" + string(failedServices))
 	default:
 		klog.Info("systemd service state: OK")
 	}
@@ -2446,7 +2447,7 @@ func (dn *Daemon) completeUpdate(desiredConfigName string) error {
 		if wait.Interrupted(err) {
 			failMsg := fmt.Sprintf("failed to uncordon node: %s after 10 minutes. Please see machine-config-controller logs for more information", dn.node.Name)
 			dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedToUncordon", failMsg)
-			return fmt.Errorf(failMsg)
+			return errors.New(failMsg)
 		}
 		return fmt.Errorf("something went wrong while attempting to uncordon node: %v", err)
 	}

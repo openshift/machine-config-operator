@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"time"
@@ -102,7 +103,7 @@ func (dn *Daemon) performDrain() error {
 			failMsg := fmt.Sprintf("failed to drain node: %s after 1 hour. Please see machine-config-controller logs for more information", dn.node.Name)
 			dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedToDrain", failMsg)
 
-			return fmt.Errorf(failMsg)
+			return errors.New(failMsg)
 
 		}
 		return fmt.Errorf("Something went wrong while attempting to drain node: %v", err)

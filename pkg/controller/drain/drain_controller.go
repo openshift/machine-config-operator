@@ -98,7 +98,7 @@ type Controller struct {
 	nodeLister       corelisterv1.NodeLister
 	nodeListerSynced cache.InformerSynced
 
-	queue         workqueue.RateLimitingInterface
+	queue         workqueue.TypedRateLimitingInterface[string]
 	ongoingDrains map[string]time.Time
 
 	cfg Config
@@ -119,10 +119,12 @@ func New(
 	eventBroadcaster.StartRecordingToSink(&coreclientsetv1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 
 	ctrl := &Controller{
-		client:               mcfgClient,
-		kubeClient:           kubeClient,
-		eventRecorder:        ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-nodecontroller"})),
-		queue:                workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-nodecontroller"),
+		client:        mcfgClient,
+		kubeClient:    kubeClient,
+		eventRecorder: ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-nodecontroller"})),
+		queue: workqueue.NewTypedRateLimitingQueueWithConfig(
+			workqueue.DefaultTypedControllerRateLimiter[string](),
+			workqueue.TypedRateLimitingQueueConfig[string]{Name: "machineconfigcontroller-draincontroller"}),
 		cfg:                  cfg,
 		featureGatesAccessor: fgAccessor,
 	}
@@ -232,13 +234,13 @@ func (ctrl *Controller) processNextWorkItem() bool {
 	}
 	defer ctrl.queue.Done(key)
 
-	err := ctrl.syncHandler(key.(string))
+	err := ctrl.syncHandler(key)
 	ctrl.handleErr(err, key)
 
 	return true
 }
 
-func (ctrl *Controller) handleErr(err error, key interface{}) {
+func (ctrl *Controller) handleErr(err error, key string) {
 	if err == nil {
 		ctrl.queue.Forget(key)
 		return

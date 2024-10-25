@@ -127,6 +127,11 @@ type OperatorStatus struct {
 	// readyReplicas indicates how many replicas are ready and at the desired state
 	ReadyReplicas int32 `json:"readyReplicas"`
 
+	// latestAvailableRevision is the deploymentID of the most recent deployment
+	// +optional
+	// +kubebuilder:validation:XValidation:rule="self >= oldSelf",message="must only increase"
+	LatestAvailableRevision int32 `json:"latestAvailableRevision,omitempty"`
+
 	// generations are used to determine when an item needs to be reconciled or has changed in a way that needs a reaction.
 	// +listType=map
 	// +listMapKey=group
@@ -173,12 +178,34 @@ var (
 
 // OperatorCondition is just the standard condition fields.
 type OperatorCondition struct {
+	// type of condition in CamelCase or in foo.example.com/CamelCase.
+	// ---
+	// Many .condition.type values are consistent across resources like Available, but because arbitrary conditions can be
+	// useful (see .node.status.conditions), the ability to deconflict is important.
+	// The regex it matches is (dns1123SubdomainFmt/)?(qualifiedNameFmt)
+	// +required
 	// +kubebuilder:validation:Required
-	Type               string          `json:"type"`
-	Status             ConditionStatus `json:"status"`
-	LastTransitionTime metav1.Time     `json:"lastTransitionTime,omitempty"`
-	Reason             string          `json:"reason,omitempty"`
-	Message            string          `json:"message,omitempty"`
+	// +kubebuilder:validation:Pattern=`^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$`
+	// +kubebuilder:validation:MaxLength=316
+	Type string `json:"type" protobuf:"bytes,1,opt,name=type"`
+
+	// status of the condition, one of True, False, Unknown.
+	// +required
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Enum=True;False;Unknown
+	Status ConditionStatus `json:"status"`
+
+	// lastTransitionTime is the last time the condition transitioned from one status to another.
+	// This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+	// +required
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Type=string
+	// +kubebuilder:validation:Format=date-time
+	LastTransitionTime metav1.Time `json:"lastTransitionTime,omitempty"`
+
+	Reason string `json:"reason,omitempty"`
+
+	Message string `json:"message,omitempty"`
 }
 
 type ConditionStatus string
@@ -210,10 +237,6 @@ type StaticPodOperatorSpec struct {
 // node status must be tracked.
 type StaticPodOperatorStatus struct {
 	OperatorStatus `json:",inline"`
-
-	// latestAvailableRevision is the deploymentID of the most recent deployment
-	// +optional
-	LatestAvailableRevision int32 `json:"latestAvailableRevision,omitempty"`
 
 	// latestAvailableRevisionReason describe the detailed reason for the most recent deployment
 	// +optional

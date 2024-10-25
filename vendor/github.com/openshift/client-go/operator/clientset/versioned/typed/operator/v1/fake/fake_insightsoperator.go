@@ -27,20 +27,22 @@ var insightsoperatorsKind = v1.SchemeGroupVersion.WithKind("InsightsOperator")
 
 // Get takes name of the insightsOperator, and returns the corresponding insightsOperator object, and an error if there is any.
 func (c *FakeInsightsOperators) Get(ctx context.Context, name string, options metav1.GetOptions) (result *v1.InsightsOperator, err error) {
+	emptyResult := &v1.InsightsOperator{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootGetAction(insightsoperatorsResource, name), &v1.InsightsOperator{})
+		Invokes(testing.NewRootGetActionWithOptions(insightsoperatorsResource, name, options), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.InsightsOperator), err
 }
 
 // List takes label and field selectors, and returns the list of InsightsOperators that match those selectors.
 func (c *FakeInsightsOperators) List(ctx context.Context, opts metav1.ListOptions) (result *v1.InsightsOperatorList, err error) {
+	emptyResult := &v1.InsightsOperatorList{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootListAction(insightsoperatorsResource, insightsoperatorsKind, opts), &v1.InsightsOperatorList{})
+		Invokes(testing.NewRootListActionWithOptions(insightsoperatorsResource, insightsoperatorsKind, opts), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 
 	label, _, _ := testing.ExtractFromListOptions(opts)
@@ -59,36 +61,39 @@ func (c *FakeInsightsOperators) List(ctx context.Context, opts metav1.ListOption
 // Watch returns a watch.Interface that watches the requested insightsOperators.
 func (c *FakeInsightsOperators) Watch(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error) {
 	return c.Fake.
-		InvokesWatch(testing.NewRootWatchAction(insightsoperatorsResource, opts))
+		InvokesWatch(testing.NewRootWatchActionWithOptions(insightsoperatorsResource, opts))
 }
 
 // Create takes the representation of a insightsOperator and creates it.  Returns the server's representation of the insightsOperator, and an error, if there is any.
 func (c *FakeInsightsOperators) Create(ctx context.Context, insightsOperator *v1.InsightsOperator, opts metav1.CreateOptions) (result *v1.InsightsOperator, err error) {
+	emptyResult := &v1.InsightsOperator{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootCreateAction(insightsoperatorsResource, insightsOperator), &v1.InsightsOperator{})
+		Invokes(testing.NewRootCreateActionWithOptions(insightsoperatorsResource, insightsOperator, opts), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.InsightsOperator), err
 }
 
 // Update takes the representation of a insightsOperator and updates it. Returns the server's representation of the insightsOperator, and an error, if there is any.
 func (c *FakeInsightsOperators) Update(ctx context.Context, insightsOperator *v1.InsightsOperator, opts metav1.UpdateOptions) (result *v1.InsightsOperator, err error) {
+	emptyResult := &v1.InsightsOperator{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootUpdateAction(insightsoperatorsResource, insightsOperator), &v1.InsightsOperator{})
+		Invokes(testing.NewRootUpdateActionWithOptions(insightsoperatorsResource, insightsOperator, opts), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.InsightsOperator), err
 }
 
 // UpdateStatus was generated because the type contains a Status member.
 // Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-func (c *FakeInsightsOperators) UpdateStatus(ctx context.Context, insightsOperator *v1.InsightsOperator, opts metav1.UpdateOptions) (*v1.InsightsOperator, error) {
+func (c *FakeInsightsOperators) UpdateStatus(ctx context.Context, insightsOperator *v1.InsightsOperator, opts metav1.UpdateOptions) (result *v1.InsightsOperator, err error) {
+	emptyResult := &v1.InsightsOperator{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootUpdateSubresourceAction(insightsoperatorsResource, "status", insightsOperator), &v1.InsightsOperator{})
+		Invokes(testing.NewRootUpdateSubresourceActionWithOptions(insightsoperatorsResource, "status", insightsOperator, opts), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.InsightsOperator), err
 }
@@ -102,7 +107,7 @@ func (c *FakeInsightsOperators) Delete(ctx context.Context, name string, opts me
 
 // DeleteCollection deletes a collection of objects.
 func (c *FakeInsightsOperators) DeleteCollection(ctx context.Context, opts metav1.DeleteOptions, listOpts metav1.ListOptions) error {
-	action := testing.NewRootDeleteCollectionAction(insightsoperatorsResource, listOpts)
+	action := testing.NewRootDeleteCollectionActionWithOptions(insightsoperatorsResource, opts, listOpts)
 
 	_, err := c.Fake.Invokes(action, &v1.InsightsOperatorList{})
 	return err
@@ -110,10 +115,11 @@ func (c *FakeInsightsOperators) DeleteCollection(ctx context.Context, opts metav
 
 // Patch applies the patch and returns the patched insightsOperator.
 func (c *FakeInsightsOperators) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts metav1.PatchOptions, subresources ...string) (result *v1.InsightsOperator, err error) {
+	emptyResult := &v1.InsightsOperator{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootPatchSubresourceAction(insightsoperatorsResource, name, pt, data, subresources...), &v1.InsightsOperator{})
+		Invokes(testing.NewRootPatchSubresourceActionWithOptions(insightsoperatorsResource, name, pt, data, opts, subresources...), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.InsightsOperator), err
 }
@@ -131,10 +137,11 @@ func (c *FakeInsightsOperators) Apply(ctx context.Context, insightsOperator *ope
 	if name == nil {
 		return nil, fmt.Errorf("insightsOperator.Name must be provided to Apply")
 	}
+	emptyResult := &v1.InsightsOperator{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootPatchSubresourceAction(insightsoperatorsResource, *name, types.ApplyPatchType, data), &v1.InsightsOperator{})
+		Invokes(testing.NewRootPatchSubresourceActionWithOptions(insightsoperatorsResource, *name, types.ApplyPatchType, data, opts.ToPatchOptions()), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.InsightsOperator), err
 }
@@ -153,10 +160,11 @@ func (c *FakeInsightsOperators) ApplyStatus(ctx context.Context, insightsOperato
 	if name == nil {
 		return nil, fmt.Errorf("insightsOperator.Name must be provided to Apply")
 	}
+	emptyResult := &v1.InsightsOperator{}
 	obj, err := c.Fake.
-		Invokes(testing.NewRootPatchSubresourceAction(insightsoperatorsResource, *name, types.ApplyPatchType, data, "status"), &v1.InsightsOperator{})
+		Invokes(testing.NewRootPatchSubresourceActionWithOptions(insightsoperatorsResource, *name, types.ApplyPatchType, data, opts.ToPatchOptions(), "status"), emptyResult)
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1.InsightsOperator), err
 }
