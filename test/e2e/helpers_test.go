@@ -16,6 +16,7 @@ import (
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	imagev1 "github.com/openshift/api/image/v1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
