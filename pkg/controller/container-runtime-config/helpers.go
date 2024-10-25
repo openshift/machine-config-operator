@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"strconv"
@@ -35,6 +36,7 @@ import (
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 )
 
 const (
@@ -58,10 +60,11 @@ const (
 var (
 	// sourceRegex and mirrorRegex pattern should stay the same with https://github.com/openshift/api/blob/ef62af078a9387e739abd99ec1d80e9129bb5475/config/v1/types_image_digest_mirror_set.go
 	// Validation the source and mirror format for IDMS/ITMS already exists in the CRD. We need to keep this regex validation for ICSP
-	sourceRegex          = regexp.MustCompile(`^\*(?:\.(?:[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]))+$|^((?:[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])(?:(?:\.(?:[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]))+)?(?::[0-9]+)?)(?:(?:/[a-z0-9]+(?:(?:(?:[._]|__|[-]*)[a-z0-9]+)+)?)+)?$`)
-	mirrorRegex          = regexp.MustCompile(`^((?:[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])(?:(?:\.(?:[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]))+)?(?::[0-9]+)?)(?:(?:/[a-z0-9]+(?:(?:(?:[._]|__|[-]*)[a-z0-9]+)+)?)+)?$`)
-	errParsingReference  = errors.New("error parsing reference of release image")
-	reasonConflictScopes = "ConflictScopes"
+	sourceRegex                    = regexp.MustCompile(`^\*(?:\.(?:[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]))+$|^((?:[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])(?:(?:\.(?:[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]))+)?(?::[0-9]+)?)(?:(?:/[a-z0-9]+(?:(?:(?:[._]|__|[-]*)[a-z0-9]+)+)?)+)?$`)
+	mirrorRegex                    = regexp.MustCompile(`^((?:[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])(?:(?:\.(?:[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]))+)?(?::[0-9]+)?)(?:(?:/[a-z0-9]+(?:(?:(?:[._]|__|[-]*)[a-z0-9]+)+)?)+)?$`)
+	errParsingReference            = errors.New("error parsing reference of release image")
+	namespacedPolicyFilePathFormat = filepath.FromSlash(constants.CrioPoliciesDir + "/%s.json")
+	reasonConflictScopes           = "ConflictScopes"
 )
 
 // TOML-friendly explicit tables used for conversions.
@@ -506,12 +509,12 @@ func updatePolicyJSON(data []byte, internalBlocked, internalAllowed []string, re
 		}
 	}
 
-	if err := validateClusterImagePolicyWithAllowedBlockedRegistries(clusterScopePolicies, internalAllowed, internalBlocked); err != nil {
+	if err := validateImagePolicyWithAllowedBlockedRegistries(clusterScopePolicies, nil, internalAllowed, internalBlocked); err != nil {
 		return nil, err
 	}
-	// Return original data if neither allowed or blocked registries are configured
-	// Note: this is just for testing, the controller does not call this function till
-	// either allowed or blocked registries are configured
+	// Return original data if neither allowed or blocked registries or clusterimagepolicy are configured
+	// Note: this ensures that the genetateNamespacedPolicyJSONs can inherite the cluster wide template policy.json, the controller does not call this function till
+	// allowed or blocked registries or clusterimagepolicy or imagepolicy are configured
 	if internalAllowed == nil && internalBlocked == nil && len(clusterScopePolicies) == 0 {
 		return data, nil
 	}
@@ -905,7 +908,7 @@ func policyItemFromSpec(policy apicfgv1alpha1.Policy) (signature.PolicyRequireme
 	return sigstorePolicyRequirement, nil
 }
 
-func validateClusterImagePolicyWithAllowedBlockedRegistries(clusterScopePolicies map[string]signature.PolicyRequirements, allowedRegs, policyBlocked []string) error {
+func validateImagePolicyWithAllowedBlockedRegistries(clusterScopePolicies map[string]signature.PolicyRequirements, scopeNamespacePolicies map[string]map[string]signature.PolicyRequirements, allowedRegs, policyBlocked []string) error {
 	if len(allowedRegs) == 0 && len(policyBlocked) == 0 {
 		return nil
 	}
@@ -931,16 +934,40 @@ func validateClusterImagePolicyWithAllowedBlockedRegistries(clusterScopePolicies
 
 		}
 	}
+
+	for scope := range scopeNamespacePolicies {
+		scopeNestedInAllowed := false
+		for _, reg := range allowedRegs {
+			if runtimeutils.ScopeIsNestedInsideScope(scope, reg) {
+				scopeNestedInAllowed = true
+				break
+			}
+		}
+		if len(allowedRegs) > 0 && !scopeNestedInAllowed {
+			return fmt.Errorf("imagePolicy configured for the scope %s is not nested inside allowedRegistries", scope)
+		}
+	}
+
+	for scope := range scopeNamespacePolicies {
+		for _, reg := range policyBlocked {
+			if runtimeutils.ScopeIsNestedInsideScope(scope, reg) {
+				return fmt.Errorf("imagePolicy configured for the scope %s is nested inside blockedRegistries", scope)
+			}
+
+		}
+	}
+
 	return nil
 }
 
-func generateSigstoreRegistriesdConfig(clusterScopePolicies map[string]signature.PolicyRequirements, registriesTOML []byte) ([]byte, error) {
-	if len(clusterScopePolicies) == 0 {
+func generateSigstoreRegistriesdConfig(clusterScopePolicies map[string]signature.PolicyRequirements, scopeNamespacePolicies map[string]map[string]signature.PolicyRequirements, registriesTOML []byte) ([]byte, error) {
+	if len(clusterScopePolicies) == 0 && len(scopeNamespacePolicies) == 0 {
 		return nil, nil
 	}
 
 	var (
 		err                    error
+		policyScopes           []string
 		tmpFile                *os.File
 		registriesConf         = sysregistriesv2.V2RegistriesConf{}
 		registriesDockerConfig = make(map[string]dockerConfig)
@@ -948,6 +975,13 @@ func generateSigstoreRegistriesdConfig(clusterScopePolicies map[string]signature
 			UseSigstoreAttachments: true,
 		}
 	)
+
+	for scope := range clusterScopePolicies {
+		policyScopes = append(policyScopes, scope)
+	}
+	for scope := range scopeNamespacePolicies {
+		policyScopes = append(policyScopes, scope)
+	}
 
 	if registriesTOML != nil {
 		tmpFile, err = os.CreateTemp("", "regtemp")
@@ -969,7 +1003,7 @@ func generateSigstoreRegistriesdConfig(clusterScopePolicies map[string]signature
 		}
 	}
 
-	for policyScope := range clusterScopePolicies {
+	for _, policyScope := range policyScopes {
 		registriesDockerConfig[policyScope] = sigstoreAttachment
 		if registriesTOML == nil {
 			continue
@@ -1075,4 +1109,77 @@ func addScopeMirrorsSigstoreRegistriesdConfig(registriesDockerConfig map[string]
 		registriesDockerConfig[endpoint] = sigstoreAttachment
 	}
 	return nil
+}
+
+// updateNamespacedPolicyJSONs generates per-namespace policy jsons based on the cluster override policy json.
+// Caller should make sure the clusterOverridePolicyJSON is not empty.
+func updateNamespacedPolicyJSONs(clusterOverridePolicyJSON []byte, internalBlocked, internalAllowed []string, scopeNamespacePolicies map[string]map[string]signature.PolicyRequirements) (map[string][]byte, error) {
+	if len(clusterOverridePolicyJSON) == 0 {
+		return nil, fmt.Errorf("cluster override policy is empty")
+	}
+	if err := validateImagePolicyWithAllowedBlockedRegistries(nil, scopeNamespacePolicies, internalAllowed, internalBlocked); err != nil {
+		return nil, err
+	}
+
+	// collects imagepolicies from map[scope][namespace]policyRequirement into map[namespace]map[scope]policyRequirements for generating per-namespace policy json file.
+	namespacedPolicies := make(map[string]map[string]signature.PolicyRequirements)
+	for scope, policies := range scopeNamespacePolicies {
+		for namespace, requirements := range policies {
+			if namespacedPolicies[namespace] == nil {
+				namespacedPolicies[namespace] = make(map[string]signature.PolicyRequirements)
+			}
+			namespacedPolicies[namespace][scope] = append(namespacedPolicies[namespace][scope], requirements...)
+		}
+	}
+
+	namespacedPolicyJSONs := make(map[string][]byte)
+	decoder := json.NewDecoder(bytes.NewBuffer(clusterOverridePolicyJSON))
+
+	for namespace, requirements := range namespacedPolicies {
+
+		policyObj := &signature.Policy{}
+		err := decoder.Decode(policyObj)
+		if err != nil {
+			return nil, fmt.Errorf("error decoding policy json for namespaced policies: %w", err)
+		}
+
+		if policyObj.Transports == nil {
+			policyObj.Transports = make(map[string]signature.PolicyTransportScopes)
+		}
+		if _, ok := policyObj.Transports["docker"]; !ok {
+			policyObj.Transports["docker"] = make(map[string]signature.PolicyRequirements)
+		}
+		for scope, requirement := range requirements {
+			policyObj.Transports["docker"][scope] = append(policyObj.Transports["docker"][scope], requirement...)
+		}
+
+		if _, ok := policyObj.Transports["atomic"]; !ok {
+			policyObj.Transports["atomic"] = make(map[string]signature.PolicyRequirements)
+		}
+		for scope, requirement := range requirements {
+			if strings.Count(scope, "/") >= 3 {
+				continue
+			}
+			policyObj.Transports["atomic"][scope] = append(policyObj.Transports["atomic"][scope], requirement...)
+		}
+
+		data, err := json.MarshalIndent(policyObj, "", " ")
+		if err != nil {
+			return nil, fmt.Errorf("error marshalling policy json for namespaced policies: %w", err)
+		}
+		namespacedPolicyJSONs[namespace] = data
+	}
+	return namespacedPolicyJSONs, nil
+}
+
+func imagePolicyConfigFileList(namespaceJSONs map[string][]byte) []generatedConfigFile {
+	var namespacedPolicyConfigFileList []generatedConfigFile
+	for namespace, data := range namespaceJSONs {
+		namespacedPolicyFilePath := fmt.Sprintf(namespacedPolicyFilePathFormat, namespace)
+		namespacedPolicyConfigFileList = append(namespacedPolicyConfigFileList, generatedConfigFile{
+			filePath: namespacedPolicyFilePath,
+			data:     data,
+		})
+	}
+	return namespacedPolicyConfigFileList
 }

@@ -20,6 +20,7 @@ import (
 	cligoinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
 	cligolistersv1 "github.com/openshift/client-go/config/listers/config/v1"
 	cligolistersv1alpha1 "github.com/openshift/client-go/config/listers/config/v1alpha1"
+	runtimeutils "github.com/openshift/runtime-utils/pkg/registries"
 
 	operatorinformersv1alpha1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1alpha1"
 
@@ -48,6 +49,7 @@ import (
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
+	apihelpers "github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	mtmpl "github.com/openshift/machine-config-operator/pkg/controller/template"
 	"github.com/openshift/machine-config-operator/pkg/version"
@@ -108,7 +110,10 @@ type Controller struct {
 	configInformerFactory          configinformers.SharedInformerFactory
 	clusterImagePolicyLister       cligolistersv1alpha1.ClusterImagePolicyLister
 	clusterImagePolicyListerSynced cache.InformerSynced
-	addedPolicyObservers           bool
+
+	imagePolicyLister       cligolistersv1alpha1.ImagePolicyLister
+	imagePolicyListerSynced cache.InformerSynced
+	addedPolicyObservers    bool
 
 	mcpLister       mcfglistersv1.MachineConfigPoolLister
 	mcpListerSynced cache.InformerSynced
@@ -229,7 +234,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 		ctrl.addImagePolicyObservers()
 		klog.Info("addded image policy observers with sigstore featuregate enabled")
 		ctrl.configInformerFactory.Start(stopCh)
-		listerCaches = append(listerCaches, ctrl.clusterImagePolicyListerSynced)
+		listerCaches = append(listerCaches, ctrl.clusterImagePolicyListerSynced, ctrl.imagePolicyListerSynced)
 		ctrl.addedPolicyObservers = true
 	}
 
@@ -316,6 +321,14 @@ func (ctrl *Controller) addImagePolicyObservers() {
 	})
 	ctrl.clusterImagePolicyLister = ctrl.configInformerFactory.Config().V1alpha1().ClusterImagePolicies().Lister()
 	ctrl.clusterImagePolicyListerSynced = ctrl.configInformerFactory.Config().V1alpha1().ClusterImagePolicies().Informer().HasSynced
+
+	ctrl.configInformerFactory.Config().V1alpha1().ImagePolicies().Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.imagePolicyAdded,
+		UpdateFunc: ctrl.imagePolicyUpdated,
+		DeleteFunc: ctrl.imagePolicyDeleted,
+	})
+	ctrl.imagePolicyLister = ctrl.configInformerFactory.Config().V1alpha1().ImagePolicies().Lister()
+	ctrl.imagePolicyListerSynced = ctrl.configInformerFactory.Config().V1alpha1().ImagePolicies().Informer().HasSynced
 }
 
 func (ctrl *Controller) clusterImagePolicyAdded(_ interface{}) {
@@ -327,6 +340,18 @@ func (ctrl *Controller) clusterImagePolicyUpdated(_, _ interface{}) {
 }
 
 func (ctrl *Controller) clusterImagePolicyDeleted(_ interface{}) {
+	ctrl.imgQueue.Add("openshift-config")
+}
+
+func (ctrl *Controller) imagePolicyAdded(_ interface{}) {
+	ctrl.imgQueue.Add("openshift-config")
+}
+
+func (ctrl *Controller) imagePolicyUpdated(_, _ interface{}) {
+	ctrl.imgQueue.Add("openshift-config")
+}
+
+func (ctrl *Controller) imagePolicyDeleted(_ interface{}) {
 	ctrl.imgQueue.Add("openshift-config")
 }
 
@@ -847,6 +872,8 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 		releaseImage                                  string
 		clusterImagePolicies                          []*apicfgv1alpha1.ClusterImagePolicy
 		clusterScopePolicies                          map[string]signature.PolicyRequirements
+		imagePolicies                                 []*apicfgv1alpha1.ImagePolicy
+		scopeNamespacePolicies                        map[string]map[string]signature.PolicyRequirements
 	)
 
 	if ctrl.sigstoreAPIEnabled() && ctrl.addedPolicyObservers {
@@ -854,6 +881,15 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 		clusterImagePolicies, err = ctrl.clusterImagePolicyLister.List(labels.Everything())
 		if err != nil && errors.IsNotFound(err) {
 			clusterImagePolicies = []*apicfgv1alpha1.ClusterImagePolicy{}
+		} else if err != nil {
+			return nil
+		}
+		// Find all ImagePolicy objects
+		imagePolicies, err = ctrl.imagePolicyLister.List(labels.Everything())
+		if err != nil && errors.IsNotFound(err) {
+			imagePolicies = []*apicfgv1alpha1.ImagePolicy{}
+		} else if err != nil {
+			return nil
 		}
 	}
 
@@ -871,7 +907,7 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 		}
 	}
 
-	if clusterScopePolicies, err = getValidScopePolicies(clusterImagePolicies); err != nil {
+	if clusterScopePolicies, scopeNamespacePolicies, err = getValidScopePolicies(clusterImagePolicies, imagePolicies, ctrl); err != nil {
 		return err
 	}
 
@@ -902,7 +938,7 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 		if err := retry.RetryOnConflict(updateBackoff, func() error {
 			registriesIgn, err := registriesConfigIgnition(ctrl.templatesDir, controllerConfig, role, releaseImage,
 				imgcfg.Spec.RegistrySources.InsecureRegistries, registriesBlocked, policyBlocked, allowedRegs,
-				imgcfg.Spec.RegistrySources.ContainerRuntimeSearchRegistries, icspRules, idmsRules, itmsRules, clusterScopePolicies)
+				imgcfg.Spec.RegistrySources.ContainerRuntimeSearchRegistries, icspRules, idmsRules, itmsRules, clusterScopePolicies, scopeNamespacePolicies)
 			if err != nil {
 				return err
 			}
@@ -966,12 +1002,13 @@ func (ctrl *Controller) syncIgnitionConfig(managedKey string, ignFile *ign3types
 func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.ControllerConfig, role, releaseImage string,
 	insecureRegs, registriesBlocked, policyBlocked, allowedRegs, searchRegs []string,
 	icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy, idmsRules []*apicfgv1.ImageDigestMirrorSet, itmsRules []*apicfgv1.ImageTagMirrorSet,
-	clusterScopePolicies map[string]signature.PolicyRequirements) (*ign3types.Config, error) {
+	clusterScopePolicies map[string]signature.PolicyRequirements, scopeNamespacePolicies map[string]map[string]signature.PolicyRequirements) (*ign3types.Config, error) {
 
 	var (
 		registriesTOML               []byte
 		policyJSON                   []byte
 		sigstoreRegistriesConfigYaml []byte
+		namespacedPolicyJSONs        map[string][]byte
 		err                          error
 	)
 
@@ -994,7 +1031,7 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 			return nil, fmt.Errorf("could not update registries config with new changes: %w", err)
 		}
 	}
-	if policyBlocked != nil || allowedRegs != nil || len(clusterScopePolicies) > 0 {
+	if policyBlocked != nil || allowedRegs != nil || len(clusterScopePolicies) > 0 || len(scopeNamespacePolicies) > 0 {
 		if originalPolicyIgn.Contents.Source == nil {
 			return nil, fmt.Errorf("original policy json is empty")
 		}
@@ -1006,8 +1043,13 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 		if err != nil {
 			return nil, fmt.Errorf("could not update policy json with new changes: %w", err)
 		}
+		// namespacePolicyJSONs inherite the cluster override policyJSON
+		namespacedPolicyJSONs, err = updateNamespacedPolicyJSONs(policyJSON, policyBlocked, allowedRegs, scopeNamespacePolicies)
+		if err != nil {
+			return nil, fmt.Errorf("could not update namespace policy JSON from imagepolicy: %w", err)
+		}
 		// generates configuration under /etc/containers/registries.d to enable sigstore verification
-		sigstoreRegistriesConfigYaml, err = generateSigstoreRegistriesdConfig(clusterScopePolicies, registriesTOML)
+		sigstoreRegistriesConfigYaml, err = generateSigstoreRegistriesdConfig(clusterScopePolicies, scopeNamespacePolicies, registriesTOML)
 		if err != nil {
 			return nil, err
 		}
@@ -1018,6 +1060,8 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 		{filePath: policyConfigPath, data: policyJSON},
 		{filePath: sigstoreRegistriesConfigFilePath, data: sigstoreRegistriesConfigYaml},
 	}
+	generatedImagePolicyConfigFileList := imagePolicyConfigFileList(namespacedPolicyJSONs)
+	generatedConfigFileList = append(generatedConfigFileList, generatedImagePolicyConfigFileList...)
 	if searchRegs != nil {
 		generatedConfigFileList = append(generatedConfigFileList, updateSearchRegistriesConfig(searchRegs)...)
 	}
@@ -1026,13 +1070,16 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 	return &registriesIgn, nil
 }
 
-// getValidScopePolicies returns a map[scope]policyRequirement from ClusterImagePolicy
-func getValidScopePolicies(clusterImagePolicies []*apicfgv1alpha1.ClusterImagePolicy) (map[string]signature.PolicyRequirements, error) {
+// getValidScopePolicies returns a map[scope]policyRequirement from ClusterImagePolicy, a map[scope][namespace]policyRequirement from ImagePolicy CRs.
+// It skips ImagePolicy scopes that conflict with ClusterImagePolicy scopes and logs the conflicting scopes in the ImagePolicy Status.
+func getValidScopePolicies(clusterImagePolicies []*apicfgv1alpha1.ClusterImagePolicy, imagePolicies []*apicfgv1alpha1.ImagePolicy, ctrl *Controller) (map[string]signature.PolicyRequirements, map[string]map[string]signature.PolicyRequirements, error) {
 	clusterScopePolicies := make(map[string]signature.PolicyRequirements)
+	namespacePolicies := make(map[string]map[string]signature.PolicyRequirements)
+
 	for _, clusterImagePolicy := range clusterImagePolicies {
 		sigstoreSignedPolicyItem, err := policyItemFromSpec(clusterImagePolicy.Spec.Policy)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		for _, scope := range clusterImagePolicy.Spec.Scopes {
 			scopeStr := string(scope)
@@ -1040,13 +1087,66 @@ func getValidScopePolicies(clusterImagePolicies []*apicfgv1alpha1.ClusterImagePo
 		}
 	}
 
-	return clusterScopePolicies, nil
+	for _, imagePolicy := range imagePolicies {
+		namespace := imagePolicy.ObjectMeta.Namespace
+		sigstoreSignedPolicyItem, err := policyItemFromSpec(imagePolicy.Spec.Policy)
+		if err != nil {
+			return nil, nil, err
+		}
+		// skip adding scope to namespacePolicies if it conflicting with clusterimagepolicy scopes
+		// but collect conflictScopes for status update
+		var conflictScopes []string
+	outerScope:
+		for _, scope := range imagePolicy.Spec.Scopes {
+			scopeStr := string(scope)
+			for clusterScope := range clusterScopePolicies {
+				if runtimeutils.ScopeIsNestedInsideScope(scopeStr, clusterScope) {
+					conflictScopes = append(conflictScopes, scopeStr)
+					continue outerScope
+				}
+			}
+			if _, ok := namespacePolicies[scopeStr]; !ok {
+				namespacePolicies[scopeStr] = make(map[string]signature.PolicyRequirements)
+			}
+			namespacePolicies[scopeStr][namespace] = append(namespacePolicies[scopeStr][namespace], sigstoreSignedPolicyItem)
+		}
+		if ctrl != nil {
+			if len(conflictScopes) > 0 {
+				msg := fmt.Sprintf("has conflicting scope(s) %q that equal to or nest inside existing clusterimagepolicy, only policy from clusterimagepolicy scope(s) will be applied", conflictScopes)
+				klog.V(2).Info(msg)
+				ctrl.syncImagePolicyStatusOnly(namespace, imagePolicy.ObjectMeta.Name, apicfgv1alpha1.ImagePolicyPending, reasonConflictScopes, msg, metav1.ConditionFalse)
+			}
+		}
+	}
+
+	return clusterScopePolicies, namespacePolicies, nil
+}
+
+func (ctrl *Controller) syncImagePolicyStatusOnly(namespace, imagepolicy, conditionType, reason, msg string, status metav1.ConditionStatus) {
+	statusUpdateErr := retry.RetryOnConflict(updateBackoff, func() error {
+		newImagePolicy, err := ctrl.configClient.ConfigV1alpha1().ImagePolicies(namespace).Get(context.TODO(), imagepolicy, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+
+		newCondition := apihelpers.NewCondition(conditionType, status, reason, msg)
+		if newImagePolicy.GetGeneration() != newCondition.ObservedGeneration {
+			newCondition.ObservedGeneration = newImagePolicy.GetGeneration()
+		}
+		newImagePolicy.Status.Conditions = []metav1.Condition{*newCondition}
+		_, updateErr := ctrl.configClient.ConfigV1alpha1().ImagePolicies(namespace).UpdateStatus(context.TODO(), newImagePolicy, metav1.UpdateOptions{})
+		return updateErr
+	})
+	if statusUpdateErr != nil {
+		klog.Warningf("error updating imagepolicy status: %v", statusUpdateErr)
+	}
 }
 
 // RunImageBootstrap generates MachineConfig objects for mcpPools that would have been generated by syncImageConfig,
 // except that mcfgv1.Image is not available.
 func RunImageBootstrap(templateDir string, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy,
-	idmsRules []*apicfgv1.ImageDigestMirrorSet, itmsRules []*apicfgv1.ImageTagMirrorSet, imgCfg *apicfgv1.Image, clusterImagePolicies []*apicfgv1alpha1.ClusterImagePolicy, featureGateAccess featuregates.FeatureGateAccess) ([]*mcfgv1.MachineConfig, error) {
+	idmsRules []*apicfgv1.ImageDigestMirrorSet, itmsRules []*apicfgv1.ImageTagMirrorSet, imgCfg *apicfgv1.Image, clusterImagePolicies []*apicfgv1alpha1.ClusterImagePolicy, imagePolicies []*apicfgv1alpha1.ImagePolicy,
+	featureGateAccess featuregates.FeatureGateAccess) ([]*mcfgv1.MachineConfig, error) {
 
 	var (
 		insecureRegs, registriesBlocked, policyBlocked, allowedRegs, searchRegs []string
@@ -1054,13 +1154,14 @@ func RunImageBootstrap(templateDir string, controllerConfig *mcfgv1.ControllerCo
 	)
 
 	clusterScopePolicies := map[string]signature.PolicyRequirements{}
+	scopeNamespacePolicies := map[string]map[string]signature.PolicyRequirements{}
 	featureGates, err := featureGateAccess.CurrentFeatureGates()
 	if err != nil {
 		return nil, err
 	}
 	sigstoreAPIEnabled := featureGates.Enabled(features.FeatureGateSigstoreImageVerification)
 	if sigstoreAPIEnabled {
-		if clusterScopePolicies, err = getValidScopePolicies(clusterImagePolicies); err != nil {
+		if clusterScopePolicies, scopeNamespacePolicies, err = getValidScopePolicies(clusterImagePolicies, imagePolicies, nil); err != nil {
 			return nil, err
 		}
 	}
@@ -1086,7 +1187,7 @@ func RunImageBootstrap(templateDir string, controllerConfig *mcfgv1.ControllerCo
 			return nil, err
 		}
 		registriesIgn, err := registriesConfigIgnition(templateDir, controllerConfig, role, controllerConfig.Spec.ReleaseImage,
-			insecureRegs, registriesBlocked, policyBlocked, allowedRegs, searchRegs, icspRules, idmsRules, itmsRules, clusterScopePolicies)
+			insecureRegs, registriesBlocked, policyBlocked, allowedRegs, searchRegs, icspRules, idmsRules, itmsRules, clusterScopePolicies, scopeNamespacePolicies)
 		if err != nil {
 			return nil, err
 		}
