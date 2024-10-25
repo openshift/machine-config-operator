@@ -67,6 +67,8 @@ type fixture struct {
 	ccLister   []*mcfgv1.ControllerConfig
 	mcpLister  []*mcfgv1.MachineConfigPool
 	nodeLister []*corev1.Node
+	// moscLister []*mcfgv1alpha1.MachineOSConfig
+	// mosbLister []*mcfgv1alpha1.MachineOSBuild
 
 	kubeactions []core.Action
 	actions     []core.Action
@@ -101,7 +103,7 @@ func (f *fixture) newControllerWithStopChan(stopCh <-chan struct{}) *Controller 
 	k8sI := kubeinformers.NewSharedInformerFactory(f.kubeclient, noResyncPeriodFunc())
 	ci := configv1informer.NewSharedInformerFactory(f.schedulerClient, noResyncPeriodFunc())
 	c := NewWithCustomUpdateDelay(i.Machineconfiguration().V1().ControllerConfigs(), i.Machineconfiguration().V1().MachineConfigs(), i.Machineconfiguration().V1().MachineConfigPools(), k8sI.Core().V1().Nodes(),
-		k8sI.Core().V1().Pods(), i.Machineconfiguration().V1alpha1().MachineOSConfigs(), ci.Config().V1().Schedulers(), f.kubeclient, f.client, time.Millisecond, f.fgAccess)
+		k8sI.Core().V1().Pods(), i.Machineconfiguration().V1alpha1().MachineOSConfigs(), i.Machineconfiguration().V1alpha1().MachineOSBuilds(), ci.Config().V1().Schedulers(), f.kubeclient, f.client, time.Millisecond, f.fgAccess)
 
 	c.ccListerSynced = alwaysReady
 	c.mcpListerSynced = alwaysReady
