@@ -169,7 +169,8 @@ The "None" action only performs the corresponding file write; it does not trigge
 The "Reload Crio" action performs the file write and runs a `systemctl reload crio`. It does not trigger a drain or a reboot for changes to the following items:
 
 1. Container signing GPG keys: these can be changed by pointing `/etc/containers/policy.json` to `/etc/machine-config-daemon/no-reboot/containers-gpg.pub` and storing keys in the latter file. Changes to either file trigger the "Reload Crio" action
-2. **Selected** `/etc/containers/registries.conf` changes: this file is generally changed via ICSP object changes. Only the following changes will avoid a drain:
+2. Namespaced containers signing policies: these policy files located under `/etc/crio/policies` directory. Changes to files under this directory trigger the "Reload Crio" action
+3. **Selected** `/etc/containers/registries.conf` changes: this file is generally changed via ICSP object changes. Only the following changes will avoid a drain:
    - addition of a registry with `pull-from-mirror=digest-only` for each mirror
    - addition of a mirror with `pull-from-mirror=digest-only` in a registry
    - appending items in the `unqualified-search-registries` list
