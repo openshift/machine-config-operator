@@ -1,0 +1,11 @@
+# Compile machine-config-test-extension binary
+FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.22-openshift-4.18 AS builder
+RUN mkdir -p /go/src/github.com/openshift/machine-config-operator
+WORKDIR /go/src/github.com/openshift/machine-config-operator
+COPY . .
+RUN cd ginkgo-test && \
+    make go-mod-tidy && \
+    make build
+
+FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.22-openshift-4.18
+COPY --from=builder /go/src/github.com/openshift/machine-config-operator/ginkgo-test/bin/machine-config-test-extension /usr/bin

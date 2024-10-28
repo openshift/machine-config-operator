@@ -23,6 +23,15 @@ RUN --mount=type=cache,target=/go/rhel8/.cache,z \
     --mount=type=cache,target=/go/rhel8/pkg/mod,z \
     make install DESTDIR=./instroot-rhel8 && tar -C instroot-rhel8 -cf instroot-rhel8.tar .
 
+# Compile machine-config-test-extension binary
+FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.22-openshift-4.18 AS test-extension-builder
+RUN mkdir -p /go/src/github.com/openshift/machine-config-operator
+WORKDIR /go/src/github.com/openshift/machine-config-operator
+COPY . .
+RUN cd ginkgo-test && \
+    make go-mod-tidy && \
+    make build
+
 FROM registry.ci.openshift.org/ocp/4.18:base-rhel9
 ARG TAGS=""
 COPY install /manifests
@@ -51,5 +60,8 @@ RUN cd / && tar xf /tmp/instroot-rhel9.tar && rm -f /tmp/instroot-rhel9.tar
 # Copy the RHEL 8 machine-config-daemon binary and rename
 COPY --from=rhel8-builder /go/src/github.com/openshift/machine-config-operator/instroot-rhel8/usr/bin/machine-config-daemon /usr/bin/machine-config-daemon.rhel8
 COPY templates /etc/mcc/templates
+COPY --from=test-extension-builder /go/src/github.com/openshift/machine-config-operator/ginkgo-test/bin/machine-config-test-extension /usr/bin
 ENTRYPOINT ["/usr/bin/machine-config-operator"]
 LABEL io.openshift.release.operator true
+
+
