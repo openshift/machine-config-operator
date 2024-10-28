@@ -1,44 +1,32 @@
 mode: 0744
-path: "/etc/NetworkManager/dispatcher.d/99-bond-esp-offload"
+path: "/etc/NetworkManager/dispatcher.d/99-esp-offload"
 contents:
     inline: |
       #!/bin/bash
 
-      # It has been observed that the kernel enables ESP offloads of bond
-      # devices in active/backup mode even if slaves apparently don't support
-      # it. It's unclear if this is expected behavior but we have had problems
-      # with the resulting configuration in vsphere. So set ESP offload features
-      # off in bond devices if they are off in slave devices for the time being.
+      # ESP offload, either in actual hardware or as part as GRO (generic
+      # recieve offload) does not work for interfaces attached to an OVS bridge
+      # so turn it off for the time being.
       # https://issues.redhat.com/browse/RHEL-58811
+      
+      # Depends on ipsec service drop-in to start it after configure-ovs to make
+      # sure offloads are disabled before ipsec starts.
 
       if [[ "$2" != "up" ]]; then
         exit
       fi
 
-      driver=$(nmcli -t -m tabular -f general.driver dev show "$DEVICE_IFACE")
+      device=$DEVICE_IFACE
+      kind_slave=$(ip -j -d link show "$device" | jq -r '.[0] | .linkinfo.info_slave_kind // empty')
 
-      if [[ "$driver" != "bond" ]]; then
-        exit
-      fi
-
-      bond="$DEVICE_IFACE"
-      for feature in tx-esp-segmentation esp-hw-offload esp-tx-csum-hw-offload; do
-
-        if ethtool -k "$bond" | grep -qE "^${feature}: off"; then
-          # already disabled, nothing to do
-          continue
-        fi
-        
-        for slave in $(nmcli -g BOND.SLAVES dev show "$DEVICE_IFACE"); do
-
-          if ! ethtool -k "$slave" | grep -qE "^${feature}: off"; then
-            # enabled in slave, nothing to do
+      if [ "$kind_slave" = "openvswitch" ]; then
+        for feature in tx-esp-segmentation esp-hw-offload esp-tx-csum-hw-offload; do
+          if ethtool -k "$device" | grep -qE "^${feature}: off"; then
+            # already disabled, nothing to do
             continue
           fi
-
-          logger -t bond-esp-offload -s "Bond link $slave has $feature off, setting master $DEVICE_IFACE $feature off"
-          ethtool -K "$bond" "$feature" off
-
-          break
+          
+          logger -t 99-esp-offload -s "Setting $feature off for $device: unsupported when attached to Open vSwitch bridge"
+          ethtool -K "$device" "$feature" off
         done
-      done
+      fi
