@@ -13,6 +13,7 @@ import (
 
 	// If using ginkgo, import your tests here
 
+	"github.com/openshift/machine-config-operator/ginkgo-test/pkg/version"
 	_ "github.com/openshift/machine-config-operator/ginkgo-test/test/extended/mco"
 	exutil "github.com/openshift/machine-config-operator/ginkgo-test/test/extended/util"
 )
@@ -23,6 +24,10 @@ func main() {
 
 	// You can declare multiple extensions, but most people will probably only need to create one.
 	ext := e.NewExtension("openshift", "payload", "mco-tests")
+	// set source code info, will be replaced by ldflags
+	ext.Source.BuildDate = version.BuildDate
+	ext.Source.Commit = version.CommitFromGit
+	ext.Source.GitTreeState = version.GitTreeState
 
 	// add smoke test suite to do health check
 	ext.AddSuite(e.Suite{

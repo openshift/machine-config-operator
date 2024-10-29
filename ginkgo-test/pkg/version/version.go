@@ -26,9 +26,9 @@ import (
 )
 
 var (
-	// commitFromGit is a constant representing the source version that
+	// CommitFromGit is a constant representing the source version that
 	// generated this build. It should be set during build via -ldflags.
-	commitFromGit string
+	CommitFromGit string
 	// versionFromGit is a constant representing the version tag that
 	// generated this build. It should be set during build via -ldflags.
 	versionFromGit = "unknown"
@@ -37,9 +37,9 @@ var (
 	// minor version
 	minorFromGit string
 	// build date in ISO8601 format, output of $(date -u +'%Y-%m-%dT%H:%M:%SZ')
-	buildDate string
+	BuildDate string
 	// state of git tree, either "clean" or "dirty"
-	gitTreeState string
+	GitTreeState string
 )
 
 // Get returns the overall codebase version. It's for detecting
@@ -48,10 +48,10 @@ func Get() version.Info {
 	return version.Info{
 		Major:        majorFromGit,
 		Minor:        minorFromGit,
-		GitCommit:    commitFromGit,
+		GitCommit:    CommitFromGit,
 		GitVersion:   versionFromGit,
-		GitTreeState: gitTreeState,
-		BuildDate:    buildDate,
+		GitTreeState: GitTreeState,
+		BuildDate:    BuildDate,
 		GoVersion:    runtime.Version(),
 		Compiler:     runtime.Compiler,
 		Platform:     fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH),
@@ -66,7 +66,7 @@ func init() {
 		},
 		[]string{"major", "minor", "gitCommit", "gitVersion"},
 	)
-	buildInfo.WithLabelValues(majorFromGit, minorFromGit, commitFromGit, versionFromGit).Set(1)
+	buildInfo.WithLabelValues(majorFromGit, minorFromGit, CommitFromGit, versionFromGit).Set(1)
 
 	// we're ok with an error here for now because test-integration illegally runs the same process
 	prometheus.Register(buildInfo)
