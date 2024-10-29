@@ -68,6 +68,8 @@ func newStorageVersions(c *InternalV1alpha1Client) *storageVersions {
 			scheme.ParameterCodec,
 			"",
 			func() *v1alpha1.StorageVersion { return &v1alpha1.StorageVersion{} },
-			func() *v1alpha1.StorageVersionList { return &v1alpha1.StorageVersionList{} }),
+			func() *v1alpha1.StorageVersionList { return &v1alpha1.StorageVersionList{} },
+			gentype.PrefersProtobuf[*v1alpha1.StorageVersion](),
+		),
 	}
 }

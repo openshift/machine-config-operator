@@ -68,6 +68,8 @@ func newNodes(c *CoreV1Client) *nodes {
 			scheme.ParameterCodec,
 			"",
 			func() *v1.Node { return &v1.Node{} },
-			func() *v1.NodeList { return &v1.NodeList{} }),
+			func() *v1.NodeList { return &v1.NodeList{} },
+			gentype.PrefersProtobuf[*v1.Node](),
+		),
 	}
 }

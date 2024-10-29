@@ -68,6 +68,8 @@ func newServiceCIDRs(c *NetworkingV1alpha1Client) *serviceCIDRs {
 			scheme.ParameterCodec,
 			"",
 			func() *v1alpha1.ServiceCIDR { return &v1alpha1.ServiceCIDR{} },
-			func() *v1alpha1.ServiceCIDRList { return &v1alpha1.ServiceCIDRList{} }),
+			func() *v1alpha1.ServiceCIDRList { return &v1alpha1.ServiceCIDRList{} },
+			gentype.PrefersProtobuf[*v1alpha1.ServiceCIDR](),
+		),
 	}
 }

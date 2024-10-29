@@ -64,6 +64,8 @@ func newEndpoints(c *CoreV1Client, namespace string) *endpoints {
 			scheme.ParameterCodec,
 			namespace,
 			func() *v1.Endpoints { return &v1.Endpoints{} },
-			func() *v1.EndpointsList { return &v1.EndpointsList{} }),
+			func() *v1.EndpointsList { return &v1.EndpointsList{} },
+			gentype.PrefersProtobuf[*v1.Endpoints](),
+		),
 	}
 }

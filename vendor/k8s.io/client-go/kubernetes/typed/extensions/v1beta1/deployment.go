@@ -74,7 +74,9 @@ func newDeployments(c *ExtensionsV1beta1Client, namespace string) *deployments {
 			scheme.ParameterCodec,
 			namespace,
 			func() *v1beta1.Deployment { return &v1beta1.Deployment{} },
-			func() *v1beta1.DeploymentList { return &v1beta1.DeploymentList{} }),
+			func() *v1beta1.DeploymentList { return &v1beta1.DeploymentList{} },
+			gentype.PrefersProtobuf[*v1beta1.Deployment](),
+		),
 	}
 }
 
@@ -82,6 +84,7 @@ func newDeployments(c *ExtensionsV1beta1Client, namespace string) *deployments {
 func (c *deployments) GetScale(ctx context.Context, deploymentName string, options v1.GetOptions) (result *v1beta1.Scale, err error) {
 	result = &v1beta1.Scale{}
 	err = c.GetClient().Get().
+		UseProtobufAsDefault().
 		Namespace(c.GetNamespace()).
 		Resource("deployments").
 		Name(deploymentName).
@@ -96,6 +99,7 @@ func (c *deployments) GetScale(ctx context.Context, deploymentName string, optio
 func (c *deployments) UpdateScale(ctx context.Context, deploymentName string, scale *v1beta1.Scale, opts v1.UpdateOptions) (result *v1beta1.Scale, err error) {
 	result = &v1beta1.Scale{}
 	err = c.GetClient().Put().
+		UseProtobufAsDefault().
 		Namespace(c.GetNamespace()).
 		Resource("deployments").
 		Name(deploymentName).
@@ -121,6 +125,7 @@ func (c *deployments) ApplyScale(ctx context.Context, deploymentName string, sca
 
 	result = &v1beta1.Scale{}
 	err = c.GetClient().Patch(types.ApplyPatchType).
+		UseProtobufAsDefault().
 		Namespace(c.GetNamespace()).
 		Resource("deployments").
 		Name(deploymentName).

@@ -64,6 +64,8 @@ func newCSINodes(c *StorageV1beta1Client) *cSINodes {
 			scheme.ParameterCodec,
 			"",
 			func() *v1beta1.CSINode { return &v1beta1.CSINode{} },
-			func() *v1beta1.CSINodeList { return &v1beta1.CSINodeList{} }),
+			func() *v1beta1.CSINodeList { return &v1beta1.CSINodeList{} },
+			gentype.PrefersProtobuf[*v1beta1.CSINode](),
+		),
 	}
 }

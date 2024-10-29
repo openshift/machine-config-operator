@@ -74,7 +74,9 @@ func newStatefulSets(c *AppsV1beta2Client, namespace string) *statefulSets {
 			scheme.ParameterCodec,
 			namespace,
 			func() *v1beta2.StatefulSet { return &v1beta2.StatefulSet{} },
-			func() *v1beta2.StatefulSetList { return &v1beta2.StatefulSetList{} }),
+			func() *v1beta2.StatefulSetList { return &v1beta2.StatefulSetList{} },
+			gentype.PrefersProtobuf[*v1beta2.StatefulSet](),
+		),
 	}
 }
 
@@ -82,6 +84,7 @@ func newStatefulSets(c *AppsV1beta2Client, namespace string) *statefulSets {
 func (c *statefulSets) GetScale(ctx context.Context, statefulSetName string, options v1.GetOptions) (result *v1beta2.Scale, err error) {
 	result = &v1beta2.Scale{}
 	err = c.GetClient().Get().
+		UseProtobufAsDefault().
 		Namespace(c.GetNamespace()).
 		Resource("statefulsets").
 		Name(statefulSetName).
@@ -96,6 +99,7 @@ func (c *statefulSets) GetScale(ctx context.Context, statefulSetName string, opt
 func (c *statefulSets) UpdateScale(ctx context.Context, statefulSetName string, scale *v1beta2.Scale, opts v1.UpdateOptions) (result *v1beta2.Scale, err error) {
 	result = &v1beta2.Scale{}
 	err = c.GetClient().Put().
+		UseProtobufAsDefault().
 		Namespace(c.GetNamespace()).
 		Resource("statefulsets").
 		Name(statefulSetName).
@@ -121,6 +125,7 @@ func (c *statefulSets) ApplyScale(ctx context.Context, statefulSetName string, s
 
 	result = &v1beta2.Scale{}
 	err = c.GetClient().Patch(types.ApplyPatchType).
+		UseProtobufAsDefault().
 		Namespace(c.GetNamespace()).
 		Resource("statefulsets").
 		Name(statefulSetName).

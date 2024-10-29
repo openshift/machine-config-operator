@@ -52,6 +52,8 @@ func newLocalSubjectAccessReviews(c *AuthorizationV1beta1Client, namespace strin
 			c.RESTClient(),
 			scheme.ParameterCodec,
 			namespace,
-			func() *v1beta1.LocalSubjectAccessReview { return &v1beta1.LocalSubjectAccessReview{} }),
+			func() *v1beta1.LocalSubjectAccessReview { return &v1beta1.LocalSubjectAccessReview{} },
+			gentype.PrefersProtobuf[*v1beta1.LocalSubjectAccessReview](),
+		),
 	}
 }

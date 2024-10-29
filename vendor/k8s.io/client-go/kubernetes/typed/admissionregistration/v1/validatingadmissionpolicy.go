@@ -68,6 +68,8 @@ func newValidatingAdmissionPolicies(c *AdmissionregistrationV1Client) *validatin
 			scheme.ParameterCodec,
 			"",
 			func() *v1.ValidatingAdmissionPolicy { return &v1.ValidatingAdmissionPolicy{} },
-			func() *v1.ValidatingAdmissionPolicyList { return &v1.ValidatingAdmissionPolicyList{} }),
+			func() *v1.ValidatingAdmissionPolicyList { return &v1.ValidatingAdmissionPolicyList{} },
+			gentype.PrefersProtobuf[*v1.ValidatingAdmissionPolicy](),
+		),
 	}
 }

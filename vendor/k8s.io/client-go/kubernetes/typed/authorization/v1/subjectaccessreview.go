@@ -52,6 +52,8 @@ func newSubjectAccessReviews(c *AuthorizationV1Client) *subjectAccessReviews {
 			c.RESTClient(),
 			scheme.ParameterCodec,
 			"",
-			func() *v1.SubjectAccessReview { return &v1.SubjectAccessReview{} }),
+			func() *v1.SubjectAccessReview { return &v1.SubjectAccessReview{} },
+			gentype.PrefersProtobuf[*v1.SubjectAccessReview](),
+		),
 	}
 }

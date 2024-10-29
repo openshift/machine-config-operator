@@ -20,6 +20,7 @@ require (
 	github.com/coreos/rpmostree-client-go v0.0.0-20230914135003-fae0786302f7
 	github.com/coreos/stream-metadata-go v0.4.3
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
+	github.com/distribution/reference v0.5.0
 	github.com/fsnotify/fsnotify v1.7.0
 	github.com/ghodss/yaml v1.0.1-0.20190212211648-25d852aebe32
 	github.com/golangci/golangci-lint v1.59.1
@@ -75,7 +76,6 @@ require (
 	github.com/chai2010/gettext-go v1.0.2 // indirect
 	github.com/ckaznocha/intrange v0.1.2 // indirect
 	github.com/cyberphone/json-canonicalization v0.0.0-20231011164504-785e29786b46 // indirect
-	github.com/distribution/reference v0.5.0 // indirect
 	github.com/exponent-io/jsonpath v0.0.0-20151013193312-d6023ce2651d // indirect
 	github.com/fxamacker/cbor/v2 v2.7.0 // indirect
 	github.com/ghostiam/protogetter v0.3.6 // indirect
@@ -347,3 +347,5 @@ require (
 )
 
 replace k8s.io/kube-openapi => github.com/openshift/kube-openapi v0.0.0-20230816122517-ffc8f001abb0
+
+replace k8s.io/client-go => github.com/vrutkovs/client-go v0.0.0-20241029114452-7f4b7d7b258d

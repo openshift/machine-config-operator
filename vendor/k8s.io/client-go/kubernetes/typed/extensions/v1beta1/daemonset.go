@@ -68,6 +68,8 @@ func newDaemonSets(c *ExtensionsV1beta1Client, namespace string) *daemonSets {
 			scheme.ParameterCodec,
 			namespace,
 			func() *v1beta1.DaemonSet { return &v1beta1.DaemonSet{} },
-			func() *v1beta1.DaemonSetList { return &v1beta1.DaemonSetList{} }),
+			func() *v1beta1.DaemonSetList { return &v1beta1.DaemonSetList{} },
+			gentype.PrefersProtobuf[*v1beta1.DaemonSet](),
+		),
 	}
 }

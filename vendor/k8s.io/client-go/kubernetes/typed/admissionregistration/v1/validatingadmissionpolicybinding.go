@@ -64,6 +64,8 @@ func newValidatingAdmissionPolicyBindings(c *AdmissionregistrationV1Client) *val
 			scheme.ParameterCodec,
 			"",
 			func() *v1.ValidatingAdmissionPolicyBinding { return &v1.ValidatingAdmissionPolicyBinding{} },
-			func() *v1.ValidatingAdmissionPolicyBindingList { return &v1.ValidatingAdmissionPolicyBindingList{} }),
+			func() *v1.ValidatingAdmissionPolicyBindingList { return &v1.ValidatingAdmissionPolicyBindingList{} },
+			gentype.PrefersProtobuf[*v1.ValidatingAdmissionPolicyBinding](),
+		),
 	}
 }

@@ -64,6 +64,8 @@ func newValidatingWebhookConfigurations(c *AdmissionregistrationV1Client) *valid
 			scheme.ParameterCodec,
 			"",
 			func() *v1.ValidatingWebhookConfiguration { return &v1.ValidatingWebhookConfiguration{} },
-			func() *v1.ValidatingWebhookConfigurationList { return &v1.ValidatingWebhookConfigurationList{} }),
+			func() *v1.ValidatingWebhookConfigurationList { return &v1.ValidatingWebhookConfigurationList{} },
+			gentype.PrefersProtobuf[*v1.ValidatingWebhookConfiguration](),
+		),
 	}
 }
