@@ -115,6 +115,9 @@ type Controller struct {
 	// updateDelay is a pause to deal with churn in MachineConfigs; see
 	// https://github.com/openshift/machine-config-operator/issues/301
 	updateDelay time.Duration
+
+	mosbInformer mcfginformersv1alpha1.MachineOSBuildInformer
+	moscInformer mcfginformersv1alpha1.MachineOSConfigInformer
 }
 
 func New(
@@ -202,19 +205,12 @@ func newController(
 		queue: workqueue.NewTypedRateLimitingQueueWithConfig(
 			workqueue.DefaultTypedControllerRateLimiter[string](),
 			workqueue.TypedRateLimitingQueueConfig[string]{Name: "machineconfigcontroller-nodecontroller"}),
-		updateDelay: updateDelay,
-		fgAcessor:   fgAccessor,
+		updateDelay:  updateDelay,
+		fgAcessor:    fgAccessor,
+		mosbInformer: mosbInformer,
+		moscInformer: moscInformer,
 	}
-	moscInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    ctrl.addMachineOSConfig,
-		UpdateFunc: ctrl.updateMachineOSConfig,
-		DeleteFunc: ctrl.deleteMachineOSConfig,
-	})
-	mosbInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    ctrl.addMachineOSBuild,
-		UpdateFunc: ctrl.updateMachineOSBuild,
-		DeleteFunc: ctrl.deleteMachineOSBuild,
-	})
+
 	mcpInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.addMachineConfigPool,
 		UpdateFunc: ctrl.updateMachineConfigPool,
@@ -230,7 +226,16 @@ func newController(
 		UpdateFunc: ctrl.checkMasterNodesOnUpdate,
 		DeleteFunc: ctrl.checkMasterNodesOnDelete,
 	})
-
+	ctrl.moscInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.addMachineOSConfig,
+		UpdateFunc: ctrl.updateMachineOSConfig,
+		DeleteFunc: ctrl.deleteMachineOSConfig,
+	})
+	ctrl.mosbInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.addMachineOSBuild,
+		UpdateFunc: ctrl.updateMachineOSBuild,
+		DeleteFunc: ctrl.deleteMachineOSBuild,
+	})
 	ctrl.syncHandler = ctrl.syncMachineConfigPool
 	ctrl.enqueueMachineConfigPool = ctrl.enqueueDefault
 
@@ -239,8 +244,9 @@ func newController(
 	ctrl.mcpLister = mcpInformer.Lister()
 	ctrl.nodeLister = nodeInformer.Lister()
 	ctrl.podLister = podInformer.Lister()
-	ctrl.moscLister = moscInformer.Lister()
-	ctrl.mosbLister = mosbInformer.Lister()
+	ctrl.moscLister = ctrl.moscInformer.Lister()
+	ctrl.mosbLister = ctrl.mosbInformer.Lister()
+
 	ctrl.ccListerSynced = ccInformer.Informer().HasSynced
 	ctrl.mcListerSynced = mcInformer.Informer().HasSynced
 	ctrl.mcpListerSynced = mcpInformer.Informer().HasSynced
@@ -259,7 +265,36 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.mcpListerSynced, ctrl.nodeListerSynced, ctrl.schedulerListerSynced, ctrl.moscListerSynced, ctrl.mosbListerSynced) {
+	syncedListers := []cache.InformerSynced{
+		ctrl.ccListerSynced,
+		ctrl.mcListerSynced,
+		ctrl.mcpListerSynced,
+		ctrl.nodeListerSynced,
+		ctrl.schedulerListerSynced,
+	}
+
+	isOCLEnabled, err := ctrl.isOnClusterBuildFeatureGateEnabled()
+	if err != nil {
+		klog.Errorf("could not determine if on-cluster layering is enabled: %s", err)
+	}
+
+	if isOCLEnabled {
+		klog.Infof("On-cluster layering featuregate enabled, starting MachineOSConfig and MachineOSBuild informers")
+		// If the informer factory was already started before these were wired up,
+		// such as in cmd/machine-config-controller/start.go, calling Run() again
+		// will cause a benign warning message to be displayed in the console:
+		//
+		// "The sharedIndexInformer has started, run more than once is not allowed"
+		// Source: https://github.com/kubernetes/client-go/blob/d7104c6737bcbb386044ceecd8909a79b6166328/tools/cache/shared_informer.go#L462-L465
+		go ctrl.moscInformer.Informer().Run(stopCh)
+		go ctrl.mosbInformer.Informer().Run(stopCh)
+		syncedListers = append(syncedListers, []cache.InformerSynced{
+			ctrl.moscListerSynced,
+			ctrl.mosbListerSynced,
+		}...)
+	}
+
+	if !cache.WaitForCacheSync(stopCh, syncedListers...) {
 		return
 	}
 
@@ -467,8 +502,7 @@ func (ctrl *Controller) addMachineOSBuild(obj interface{}) {
 	klog.V(4).Infof("MachineConfigPool %s has new MachineOSBuild %s", mcp.Name, mosb.Name)
 }
 
-func (ctrl *Controller) updateMachineOSBuild(old, cur interface{}) {
-	// oldMosb := old.(*mcfgv1alpha1.MachineOSBuild)
+func (ctrl *Controller) updateMachineOSBuild(_, cur interface{}) {
 	curMosb := cur.(*mcfgv1alpha1.MachineOSBuild)
 	klog.V(4).Infof("MachineOSBuild updated %q", curMosb.Name)
 
@@ -898,6 +932,15 @@ func (ctrl *Controller) enqueueAfter(pool *mcfgv1.MachineConfigPool, after time.
 }
 
 func (ctrl *Controller) enqueueMachineConfigPoolForMachineOSConfig(mosc *mcfgv1alpha1.MachineOSConfig) (*mcfgv1.MachineConfigPool, error) {
+	isOCLEnabled, err := ctrl.isOnClusterBuildFeatureGateEnabled()
+	if err != nil {
+		return nil, fmt.Errorf("could not determine if OCL is enabled: %s", err)
+	}
+
+	if !isOCLEnabled {
+		return nil, nil
+	}
+
 	mcp, err := buildutils.GetMachineConfigPoolForMachineOSConfig(mosc, ctrl.getListers())
 	if err != nil {
 		return nil, err
@@ -908,6 +951,15 @@ func (ctrl *Controller) enqueueMachineConfigPoolForMachineOSConfig(mosc *mcfgv1a
 }
 
 func (ctrl *Controller) enqueueMachineConfigPoolForMachineOSBuild(mosb *mcfgv1alpha1.MachineOSBuild) (*mcfgv1.MachineConfigPool, error) {
+	isOCLEnabled, err := ctrl.isOnClusterBuildFeatureGateEnabled()
+	if err != nil {
+		return nil, fmt.Errorf("could not determine if OCL is enabled: %s", err)
+	}
+
+	if !isOCLEnabled {
+		return nil, nil
+	}
+
 	mcp, err := buildutils.GetMachineConfigPoolForMachineOSBuild(mosb, ctrl.getListers())
 	if err != nil {
 		return nil, err
@@ -968,7 +1020,17 @@ func (ctrl *Controller) handleErr(err error, key string) {
 // ready so we can update both the nodes' desired MachineConfig and desired
 // image annotations simultaneously.
 func (ctrl *Controller) getConfigAndBuild(pool *mcfgv1.MachineConfigPool) (*mcfgv1alpha1.MachineOSConfig, *mcfgv1alpha1.MachineOSBuild, error) {
-	mosc, mosb, err := ctrl.getConfigAndBuildStrict(pool)
+	isOCLEnabled, err := ctrl.isOnClusterBuildFeatureGateEnabled()
+	if err != nil {
+		return nil, nil, fmt.Errorf("could not determine if OCL is enabled: %w", err)
+	}
+
+	if !isOCLEnabled {
+		// If OCL is not enabled, don't try to look up the values.
+		return nil, nil, nil
+	}
+
+	mosc, mosb, err := buildutils.GetMachineOSConfigAndMachineOSBuildForMachineConfigPool(pool, ctrl.getListers())
 
 	// The rest of NodeController seems to assume that having mosc / mosb be nil
 	// is a sign that they were not found. So we'll eat the IsNotFound error
@@ -978,10 +1040,6 @@ func (ctrl *Controller) getConfigAndBuild(pool *mcfgv1.MachineConfigPool) (*mcfg
 	}
 
 	return mosc, mosb, nil
-}
-
-func (ctrl *Controller) getConfigAndBuildStrict(pool *mcfgv1.MachineConfigPool) (*mcfgv1alpha1.MachineOSConfig, *mcfgv1alpha1.MachineOSBuild, error) {
-	return buildutils.GetMachineOSConfigAndMachineOSBuildForMachineConfigPool(pool, ctrl.getListers())
 }
 
 func (ctrl *Controller) canLayeredPoolContinue(pool *mcfgv1.MachineConfigPool) (string, bool, error) {
@@ -1587,4 +1645,13 @@ func (ctrl *Controller) isLayeredPool(pool *mcfgv1.MachineConfigPool) (bool, err
 	}
 
 	return (mosc != nil || mosb != nil) && fg.Enabled(features.FeatureGateOnClusterBuild), nil
+}
+
+func (ctrl *Controller) isOnClusterBuildFeatureGateEnabled() (bool, error) {
+	fg, err := ctrl.fgAcessor.CurrentFeatureGates()
+	if err != nil {
+		return false, err
+	}
+
+	return fg.Enabled(features.FeatureGateOnClusterBuild), nil
 }

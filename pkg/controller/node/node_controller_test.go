@@ -86,9 +86,12 @@ func newFixture(t *testing.T) *fixture {
 	f.objects = []runtime.Object{}
 	f.kubeobjects = []runtime.Object{}
 	f.fgAccess = featuregates.NewHardcodedFeatureGateAccess(
+		// Enabled FeatureGates
 		[]configv1.FeatureGateName{
 			features.FeatureGatePinnedImages,
+			features.FeatureGateOnClusterBuild,
 		},
+		// Disabled FeatureGates
 		[]configv1.FeatureGateName{},
 	)
 	return f
@@ -100,10 +103,18 @@ func (f *fixture) newControllerWithStopChan(stopCh <-chan struct{}) *Controller 
 	f.schedulerClient = fakeconfigv1client.NewSimpleClientset(f.schedulerObjects...)
 
 	i := informers.NewSharedInformerFactory(f.client, noResyncPeriodFunc())
+
+	// FeatureGate informer factory. In ctrlcommon.ControllerContext, this
+	// informer is only started when the featuregates are enabled. Here, we just
+	// alias it to the default McfgInformerFactory since all of the
+	// NodeController tests seem to assume that the requisite FeatureGates are
+	// enabled.
+	fgi := i
+
 	k8sI := kubeinformers.NewSharedInformerFactory(f.kubeclient, noResyncPeriodFunc())
 	ci := configv1informer.NewSharedInformerFactory(f.schedulerClient, noResyncPeriodFunc())
 	c := NewWithCustomUpdateDelay(i.Machineconfiguration().V1().ControllerConfigs(), i.Machineconfiguration().V1().MachineConfigs(), i.Machineconfiguration().V1().MachineConfigPools(), k8sI.Core().V1().Nodes(),
-		k8sI.Core().V1().Pods(), i.Machineconfiguration().V1alpha1().MachineOSConfigs(), i.Machineconfiguration().V1alpha1().MachineOSBuilds(), ci.Config().V1().Schedulers(), f.kubeclient, f.client, time.Millisecond, f.fgAccess)
+		k8sI.Core().V1().Pods(), fgi.Machineconfiguration().V1alpha1().MachineOSConfigs(), fgi.Machineconfiguration().V1alpha1().MachineOSBuilds(), ci.Config().V1().Schedulers(), f.kubeclient, f.client, time.Millisecond, f.fgAccess)
 
 	c.ccListerSynced = alwaysReady
 	c.mcpListerSynced = alwaysReady
@@ -131,7 +142,6 @@ func (f *fixture) newControllerWithStopChan(stopCh <-chan struct{}) *Controller 
 	}
 
 	return c
-
 }
 
 func (f *fixture) newController() *Controller {
