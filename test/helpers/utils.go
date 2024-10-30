@@ -380,6 +380,40 @@ func WaitForNodeConfigChange(t *testing.T, cs *framework.ClientSet, node corev1.
 	return nil
 }
 
+func WaitForNodeReady(t *testing.T, cs *framework.ClientSet, node corev1.Node) error {
+	startTime := time.Now()
+	ctx := context.TODO()
+
+	err := wait.PollUntilContextTimeout(ctx, 5*time.Second, 30*time.Minute, true, func(ctx context.Context) (bool, error) {
+		time.Sleep(10 * time.Second)
+
+		n, err := cs.CoreV1Interface.Nodes().Get(ctx, node.Name, metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+
+		nodeReady := false
+		for _, condition := range n.Status.Conditions {
+			if condition.Type == corev1.NodeReady && condition.Status == corev1.ConditionTrue {
+				nodeReady = true
+			}
+		}
+
+		if nodeReady {
+			return true, nil
+		}
+
+		return false, nil
+	})
+
+	if err != nil {
+		return fmt.Errorf("node %s did not become ready (waited %v): %w", node.Name, time.Since(startTime), err)
+	}
+
+	t.Logf("Node %s is now ready (waited %v)", node.Name, time.Since(startTime))
+	return nil
+}
+
 // WaitForPoolComplete polls a pool until it has completed any update
 func WaitForPoolCompleteAny(t *testing.T, cs *framework.ClientSet, pool string) error {
 	ctx := context.TODO()

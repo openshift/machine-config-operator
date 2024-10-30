@@ -3,6 +3,7 @@ package e2e_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strconv"
@@ -1121,4 +1122,186 @@ func setupForInternalImageRegistryPullSecretTest(t *testing.T, cs *framework.Cli
 
 		t.Logf("Removed secret %s with hostname %s from %s service account", secretName, imageRegistryHostname, serviceAccountName)
 	})
+}
+
+func TestInstallRPMAndCheckMCDMetrics(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*20)
+	t.Cleanup(cancel)
+
+	// Start a goroutine to check for context timeout
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+					t.Fatalf("Test deadline exceeded")
+				}
+				return
+			default:
+				time.Sleep(time.Second)
+			}
+		}
+	}()
+
+	cs := framework.NewClientSet("")
+	t.Log("Starting test: TestInstallRPMAndCheckMCDMetrics")
+
+	// Select a random worker node
+	t.Log("Selecting a random worker node to check the installation")
+	node := helpers.GetRandomNode(t, cs, "worker")
+	t.Logf("Selected node: %s", node.Name)
+
+	// Define cleanup function to uninstall the RPM and reboot the node
+	uninstallRpmFunc := helpers.MakeIdempotent(func() {
+		t.Log("Starting cleanup: Uninstalling the RPM")
+
+		err := helpers.WaitForNodeReady(t, cs, node)
+		if err != nil {
+			t.Logf("Node %s is not ready: %v.", node.Name, err)
+			return
+		}
+
+		uninstallCmd := []string{
+			"chroot", "/rootfs", "rpm-ostree", "uninstall", "epel-release",
+		}
+
+		_, err = helpers.ExecCmdOnNodeWithError(cs, node, uninstallCmd...)
+		if err != nil {
+			t.Logf("Failed to uninstall RPM package on node %s: %v", node.Name, err)
+			return
+		}
+		t.Log("RPM package uninstalled successfully")
+
+		t.Logf("Rebooting node %s to apply the changes", node.Name)
+
+		rebootCmd := []string{
+			"chroot", "/rootfs", "sudo", "systemctl", "reboot",
+		}
+
+		_, err = helpers.ExecCmdOnNodeWithError(cs, node, rebootCmd...)
+		if err != nil {
+			t.Logf("Failed to reboot node %s: %v", node.Name, err)
+			return
+		}
+
+		err = helpers.WaitForNodeReady(t, cs, node)
+		if err != nil {
+			t.Logf("Node %s is not ready after reboot: %v.", node.Name, err)
+			return
+		}
+		t.Logf("Node %s rebooted successfully and RPM package is removed", node.Name)
+	})
+
+	// Register the uninstall function for cleanup
+	t.Cleanup(uninstallRpmFunc)
+
+	// Download the RPM package on the node
+	t.Logf("Downloading the RPM package on node %s", node.Name)
+	downloadCmd := []string{
+		"chroot", "/rootfs", "curl", "-KL", "https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm", "-o", "/tmp/epel-release-latest-9.noarch.rpm",
+	}
+
+	_, err := helpers.ExecCmdOnNodeWithError(cs, node, downloadCmd...)
+	require.NoError(t, err, "Failed to download RPM package on node %s: %v", node.Name, err)
+	t.Logf("RPM package downloaded successfully")
+
+	// Reboot the node to apply changes
+	t.Logf("Rebooting node %s to apply the changes", node.Name)
+	rebootCmd := []string{
+		"chroot", "/rootfs", "sudo", "systemctl", "reboot",
+	}
+
+	t.Logf("Executing rpm-ostree install command on node %s", node.Name)
+	// Install the RPM package
+	installCmd := []string{
+		"chroot", "/rootfs", "rpm-ostree", "install", "/tmp/epel-release-latest-9.noarch.rpm",
+	}
+
+	out, err := helpers.ExecCmdOnNodeWithError(cs, node, installCmd...)
+	if err != nil {
+		t.Fatalf("Failed to install RPM package on node %s: %v. Output: %s", node.Name, err, out)
+	}
+	t.Logf("Output from rpm-ostree install: %s", out)
+
+	// Reboot the node to apply the changes
+	t.Logf("Rebooting node %s to apply the layered package", node.Name)
+	_, err = helpers.ExecCmdOnNodeWithError(cs, node, rebootCmd...)
+	require.NoError(t, err, "Failed to reboot node %s: %v", node.Name, err)
+	t.Logf("Reboot command issued successfully")
+	t.Logf("Waiting for node %s to be ready after reboot", node.Name)
+	require.NoError(t, helpers.WaitForNodeReady(t, cs, node))
+
+	// Wait for the MCD to detect the change and update metrics
+	t.Logf("Waiting for MCD metrics to reflect the installed package")
+	ctx, cancel = context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	err = wait.PollUntilContextTimeout(ctx, 30*time.Second, 10*time.Minute, true, func(ctx context.Context) (done bool, err error) {
+		cmd := []string{
+			"curl", "-s", "http://127.0.0.1:8797/metrics",
+		}
+
+		out, err := helpers.ExecCmdOnNodeWithError(cs, node, cmd...)
+		if err != nil {
+			t.Logf("Error executing curl on node %s: %v", node.Name, err)
+			return false, nil
+		}
+
+		// Check for the metric
+		metricName := "mcd_local_unsupported_packages"
+		if !strings.Contains(out, metricName) {
+			t.Logf("Metric %s not found in metrics output", metricName)
+			return false, nil
+		}
+
+		// Parse the metric to make sure it reflects the installed package
+		metricLine := findMetricLine(out, metricName)
+		if metricLine == "" {
+			t.Logf("Metric %s line not found in metrics output", metricName)
+			return false, nil
+		}
+
+		// Get the metric value
+		metricValue, err := parseMetricValue(metricLine)
+		if err != nil {
+			t.Logf("Failed to parse metric value: %v", err)
+			return false, nil
+		}
+
+		if metricValue == 1 {
+			t.Logf("Metric %s value is 1, test passed", metricName)
+			return true, nil
+		}
+
+		t.Logf("Metric %s value is %d, expected 1", metricName, metricValue)
+		return false, nil
+	})
+
+	require.NoError(t, err, "Failed to verify MCD metrics for unsupported packages on node %s", node.Name)
+
+	t.Log("Test completed successfully")
+}
+
+// Helper function to find the metric line in the metrics output
+func findMetricLine(metricsOutput, metricName string) string {
+	lines := strings.Split(metricsOutput, "\n")
+	for _, line := range lines {
+		if strings.HasPrefix(line, metricName) {
+			return line
+		}
+	}
+	return ""
+}
+
+// Helper function to parse the metric value from the metric line
+func parseMetricValue(metricLine string) (int, error) {
+	parts := strings.Fields(metricLine)
+	if len(parts) < 2 {
+		return 0, fmt.Errorf("invalid metric line: %s", metricLine)
+	}
+	value, err := strconv.Atoi(parts[len(parts)-1])
+	if err != nil {
+		return 0, err
+	}
+	return value, nil
 }
