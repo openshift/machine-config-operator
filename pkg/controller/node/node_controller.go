@@ -21,6 +21,7 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
 	mcfglistersv1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
+	v1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -493,6 +494,7 @@ func (ctrl *Controller) logPoolNode(pool *mcfgv1.MachineConfigPool, node *corev1
 	klog.Infof("Pool %s%s: node %s: %s", pool.Name, zonemsg, node.Name, msg)
 }
 
+//nolint:gocyclo
 func (ctrl *Controller) updateNode(old, cur interface{}) {
 	oldNode := old.(*corev1.Node)
 	curNode := cur.(*corev1.Node)
@@ -521,6 +523,26 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 		ctrl.logPoolNode(pool, curNode, "changed from pool %s", oldPool.Name)
 		// Let's also make sure the old pool node counts/status get updated
 		ctrl.enqueueMachineConfigPool(oldPool)
+	} else if err != nil {
+		// getPrimaryPoolForNode may error due to multiple custom pools. In this scenario, let's
+		// queue all of them so that when the node attempts to exit from this error state, the MCP
+		// statuses are updated correctly.
+		klog.Errorf("error fetching old primary pool for node %s, attempting to sync all old pools", oldNode.Name)
+		masterPool, workerPool, customPools, listErr := ListPools(oldNode, ctrl.mcpLister)
+		if listErr == nil {
+			for _, pool := range customPools {
+				ctrl.enqueueMachineConfigPool(pool)
+			}
+			if masterPool != nil {
+				ctrl.enqueueMachineConfigPool(masterPool)
+			}
+			if workerPool != nil {
+				ctrl.enqueueMachineConfigPool(workerPool)
+			}
+		} else {
+			klog.Errorf("error listing old pools %v for node %s", listErr, oldNode.Name)
+		}
+
 	}
 
 	var changed bool
@@ -743,6 +765,58 @@ func (ctrl *Controller) getPrimaryPoolForNode(node *corev1.Node) (*mcfgv1.Machin
 		return nil, nil
 	}
 	return pools[0], nil
+}
+
+// isWindows checks if given node is a Windows node or a Linux node
+func IsWindows(node *corev1.Node) bool {
+	windowsOsValue := "windows"
+	if value, ok := node.ObjectMeta.Labels["kubernetes.io/os"]; ok {
+		return value == windowsOsValue
+	}
+	// All the nodes should have a OS label populated by kubelet, if not just to maintain
+	// backwards compatibility, we can returning true here.
+	return false
+}
+
+func ListPools(node *corev1.Node, mcpLister v1.MachineConfigPoolLister) (*mcfgv1.MachineConfigPool, *mcfgv1.MachineConfigPool, []*mcfgv1.MachineConfigPool, error) {
+	if IsWindows(node) {
+		// This is not an error, is this a Windows Node and it won't be managed by MCO. We're explicitly logging
+		// here at a high level to disambiguate this from other pools = nil  scenario
+		klog.V(4).Infof("Node %v is a windows node so won't be managed by MCO", node.Name)
+		return nil, nil, nil, nil
+	}
+	pl, err := mcpLister.List(labels.Everything())
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	var pools []*mcfgv1.MachineConfigPool
+	for _, p := range pl {
+		selector, err := metav1.LabelSelectorAsSelector(p.Spec.NodeSelector)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("invalid label selector: %w", err)
+		}
+		// If a pool with a nil or empty selector creeps in, it should match nothing, not everything.
+		if selector.Empty() || !selector.Matches(labels.Set(node.Labels)) {
+			continue
+		}
+		pools = append(pools, p)
+	}
+	if len(pools) == 0 {
+		// This is not an error, as there might be nodes in cluster that are not managed by machineconfigpool.
+		return nil, nil, nil, nil
+	}
+	var master, worker *mcfgv1.MachineConfigPool
+	var custom []*mcfgv1.MachineConfigPool
+	for _, pool := range pools {
+		if pool.Name == ctrlcommon.MachineConfigPoolMaster {
+			master = pool
+		} else if pool.Name == ctrlcommon.MachineConfigPoolWorker {
+			worker = pool
+		} else {
+			custom = append(custom, pool)
+		}
+	}
+	return master, worker, custom, nil
 }
 
 func (ctrl *Controller) enqueue(pool *mcfgv1.MachineConfigPool) {
