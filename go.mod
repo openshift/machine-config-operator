@@ -127,6 +127,7 @@ require (
 	github.com/sourcegraph/conc v0.3.0 // indirect
 	github.com/t-yuki/gocover-cobertura v0.0.0-20180217150009-aaee18c8195c // indirect
 	github.com/timonwong/loggercheck v0.9.4 // indirect
+	github.com/vmware/govmomi v0.45.1 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/xen0n/gosmopolitan v1.2.2 // indirect
 	github.com/xlab/treeprint v1.2.0 // indirect
