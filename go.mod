@@ -34,7 +34,7 @@ require (
 	github.com/onsi/gomega v1.36.2
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/openshift-eng/openshift-tests-extension v0.0.0-20250522124649-4ffcd156ec7c
-	github.com/openshift/api v0.0.0-20250425163235-9b80d67473bc
+	github.com/openshift/api v0.0.0-20250507083537-f1581277fdec
 	github.com/openshift/client-go v0.0.0-20250425165505-5f55ff6979a1
 	github.com/openshift/library-go v0.0.0-20250129210218-fe56c2cf5d70
 	github.com/openshift/runtime-utils v0.0.0-20230921210328-7bdb5b9c177b
@@ -45,6 +45,7 @@ require (
 	github.com/stretchr/testify v1.10.0
 	github.com/tidwall/sjson v1.2.5
 	github.com/vincent-petithory/dataurl v1.0.0
+	github.com/vmware/govmomi v0.45.1
 	golang.org/x/net v0.37.0
 	golang.org/x/time v0.9.0
 	google.golang.org/grpc v1.69.4
@@ -332,7 +333,7 @@ require (
 	github.com/opencontainers/image-spec v1.1.0
 	github.com/opencontainers/runtime-spec v1.2.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.3 // indirect
-	github.com/pkg/errors v0.9.1 // indirect
+	github.com/pkg/errors v0.9.1
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/polyfloyd/go-errorlint v1.7.0 // indirect
 	github.com/proglottis/gpgme v0.1.4 // indirect
@@ -385,7 +386,7 @@ require (
 	golang.org/x/mod v0.22.0 // indirect
 	golang.org/x/oauth2 v0.25.0 // indirect
 	golang.org/x/sync v0.12.0
-	golang.org/x/sys v0.31.0 // indirect
+	golang.org/x/sys v0.31.0
 	golang.org/x/term v0.30.0 // indirect
 	golang.org/x/text v0.23.0 // indirect
 	golang.org/x/tools v0.29.0 // indirect
