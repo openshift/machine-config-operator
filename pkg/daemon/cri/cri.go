@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/resolver"
 	"google.golang.org/grpc/status"
 
 	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1"
@@ -141,6 +142,7 @@ func newClientConn(_ context.Context, target string) (conn *grpc.ClientConn, err
 		grpc.WithConnectParams(connParams),
 		grpc.WithContextDialer(dialerFn),
 	)
+	resolver.SetDefaultScheme("passthrough")
 
 	return grpc.NewClient(target, dialOpts...)
 }
