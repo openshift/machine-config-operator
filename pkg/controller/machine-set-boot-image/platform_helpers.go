@@ -1,10 +1,14 @@
 package machineset
 
 import (
+	"context"
 	"fmt"
+	"strings"
 
 	"github.com/coreos/stream-metadata-go/stream"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 
 	osconfigv1 "github.com/openshift/api/config/v1"
@@ -68,7 +72,7 @@ func reconcileGCP(machineSet *machinev1beta1.MachineSet, configMap *corev1.Confi
 // This function calls the appropriate reconcile function based on the infra type
 // On success, it will return a bool indicating if a patch is required, and an updated
 // machineset object if any. It will return an error if any of the above steps fail.
-func checkMachineSet(infra *osconfigv1.Infrastructure, machineSet *machinev1beta1.MachineSet, configMap *corev1.ConfigMap, arch string) (bool, *machinev1beta1.MachineSet, error) {
+func checkMachineSet(infra *osconfigv1.Infrastructure, machineSet *machinev1beta1.MachineSet, configMap *corev1.ConfigMap, arch string, kubeClient clientset.Interface) (bool, *machinev1beta1.MachineSet, error) {
 	switch infra.Status.PlatformStatus.Type {
 	case osconfigv1.AWSPlatformType:
 		return reconcileAWS(machineSet, configMap, arch)
@@ -89,7 +93,7 @@ func checkMachineSet(infra *osconfigv1.Infrastructure, machineSet *machinev1beta
 	case osconfigv1.LibvirtPlatformType:
 		return reconcileLibvirt(machineSet, configMap, arch)
 	case osconfigv1.VSpherePlatformType:
-		return reconcileVSphere(machineSet, configMap, arch)
+		return reconcileVSphere(machineSet, infra, configMap, arch, kubeClient)
 	case osconfigv1.NutanixPlatformType:
 		return reconcileNutanix(machineSet, configMap, arch)
 	case osconfigv1.OvirtPlatformType:
@@ -192,9 +196,62 @@ func reconcileLibvirt(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap
 	return false, nil, nil
 }
 
-func reconcileVSphere(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
-	klog.Infof("Skipping machineset %s, unsupported platform type VSphere with %s arch", machineSet.Name, arch)
-	return false, nil, nil
+func reconcileVSphere(machineSet *machinev1beta1.MachineSet, infra *osconfigv1.Infrastructure, configMap *corev1.ConfigMap, arch string, kubeClient clientset.Interface) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
+	klog.Infof("Reconciling MAPI machineset %s on vSphere, with arch %s", machineSet.Name, arch)
+
+	// First, unmarshal the VSphere providerSpec
+	providerSpec := new(machinev1beta1.VSphereMachineProviderSpec)
+	if err := unmarshalProviderSpec(machineSet, providerSpec); err != nil {
+		return false, nil, err
+	}
+
+	// Next, unmarshal the configmap into a stream object
+	streamData := new(stream.Stream)
+	if err := unmarshalStreamDataConfigMap(configMap, streamData); err != nil {
+		return false, nil, err
+	}
+
+	streamArch, err := streamData.GetArchitecture(arch)
+	if err != nil {
+		return false, nil, err
+	}
+
+	artifacts := streamArch.Artifacts["vmware"]
+	if artifacts.Release == "" {
+		return false, nil, fmt.Errorf("%s: artifact '%s' not found", streamData.FormatPrefix(arch), "vmware")
+	}
+
+	patchRequired = false
+	newProviderSpec := providerSpec.DeepCopy()
+
+	if !strings.Contains(providerSpec.Template, artifacts.Release) {
+		// Fetch the creds configmap
+		credsSc, err := kubeClient.CoreV1().Secrets("kube-system").Get(context.TODO(), "vsphere-creds", metav1.GetOptions{})
+		if credsSc == nil || err != nil {
+			return false, nil, fmt.Errorf("failed to fetch vsphere-creds Secret during machineset sync: %w", err)
+		}
+		newBootImg, err := createNewVMTemplate(streamData, providerSpec, infra, credsSc, arch, artifacts.Release)
+		if err != nil {
+			return false, nil, err
+		}
+		newProviderSpec.Template = newBootImg
+		patchRequired = true
+	}
+
+	if newProviderSpec.UserDataSecret.Name != ManagedWorkerSecretName {
+		newProviderSpec.UserDataSecret.Name = ManagedWorkerSecretName
+		patchRequired = true
+	}
+
+	// If patch is required, marshal the new providerspec into the machineset
+	if patchRequired {
+		newMachineSet = machineSet.DeepCopy()
+		if err := marshalProviderSpec(newMachineSet, newProviderSpec); err != nil {
+			return false, nil, err
+		}
+	}
+
+	return patchRequired, newMachineSet, nil
 }
 
 func reconcileNutanix(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
