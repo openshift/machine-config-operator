@@ -462,10 +462,16 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 		}
 	}
 
-	// sync up CAs
-	rootCA, err := optr.getCAsFromConfigMap("kube-system", "root-ca", "ca.crt")
+	// Sync up machine-config-server-ca bundle
+	// Attempt the managed bundle in the MCO namespace first. If not found, use the unmanaged rootCA bundle instead
+	machineConfigServerCABundle, err := optr.getCAsFromConfigMap(ctrlcommon.MCONamespace, ctrlcommon.MachineConfigServerCAName, "ca-bundle.crt")
 	if err != nil {
-		return err
+		if apierrors.IsNotFound(err) {
+			machineConfigServerCABundle, err = optr.getCAsFromConfigMap("kube-system", ctrlcommon.RootCAConfigMapName, "ca.crt")
+		}
+		if err != nil {
+			return err
+		}
 	}
 
 	bootstrapComplete := false
@@ -531,9 +537,6 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 		internalRegistryPullSecret = nil
 	}
 
-	bundle := make([]byte, 0)
-	bundle = append(bundle, rootCA...)
-
 	// sync up os image url
 	// TODO: this should probably be part of the imgs
 	oscontainer, osextensionscontainer, err := optr.getOsImageURLs(optr.namespace)
@@ -587,7 +590,7 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 	}
 
 	spec.KubeAPIServerServingCAData = kubeAPIServerServingCABytes
-	spec.RootCAData = bundle
+	spec.RootCAData = machineConfigServerCABundle
 	spec.ImageRegistryBundleData = imgRegistryData
 	spec.ImageRegistryBundleUserData = imgRegistryUsrData
 	spec.PullSecret = &corev1.ObjectReference{Namespace: "openshift-config", Name: "pull-secret"}
@@ -610,7 +613,7 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 		return err
 	}
 
-	pointerConfig, err := ctrlcommon.PointerConfig(ignitionHost, rootCA)
+	pointerConfig, err := ctrlcommon.PointerConfig(ignitionHost, machineConfigServerCABundle)
 	if err != nil {
 		return err
 	}
