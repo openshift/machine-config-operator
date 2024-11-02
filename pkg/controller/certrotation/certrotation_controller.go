@@ -23,6 +23,8 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
+	machineclientset "github.com/openshift/client-go/machine/clientset/versioned"
+
 	"github.com/openshift/library-go/pkg/controller/factory"
 	"github.com/openshift/library-go/pkg/operator/certrotation"
 	"github.com/openshift/library-go/pkg/operator/events"
@@ -67,6 +69,7 @@ type CertRotationController struct {
 func New(
 	kubeClient kubernetes.Interface,
 	configClient configclientset.Interface,
+	machineClient machineclientset.Interface,
 	maoSecretInformer coreinformersv1.SecretInformer,
 	mcoSecretInformer coreinformersv1.SecretInformer,
 	mcoConfigMapInfomer coreinformersv1.ConfigMapInformer,
@@ -158,7 +161,13 @@ func New(
 		recorder,
 		NewCertRotationStatusReporter(),
 	)
-	c.certRotators = append(c.certRotators, machineConfigServerCertRotator)
+	// Skip rotating this cert if the cluster does not use MachineSets
+	if hasFunctionalMachineAPI(machineClient) || hasFunctionalClusterAPI() {
+		klog.Infof("Adding MCS CA/TLS cert rotator")
+		c.certRotators = append(c.certRotators, machineConfigServerCertRotator)
+	} else {
+		klog.Infof("MCS CA/TLS cert rotator not added")
+	}
 
 	return c, nil
 }
@@ -179,6 +188,12 @@ func (c *CertRotationController) Run(ctx context.Context, workers int) {
 	klog.Infof("Starting %s", componentName)
 	defer klog.Infof("Shutting down %s", componentName)
 	c.WaitForReady(ctx.Done())
+
+	if len(c.certRotators) == 0 {
+		// If there are no cert rotators, we can shutdown
+		klog.Infof("No cert rotators needed, shutting down")
+		return
+	}
 
 	if err := c.PreFlightChecks(); err != nil {
 		utilruntime.HandleError(err)

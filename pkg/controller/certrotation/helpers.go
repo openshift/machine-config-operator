@@ -1,20 +1,16 @@
 package certrotationcontroller
 
 import (
+	"context"
 	"encoding/json"
 
+	machineclientset "github.com/openshift/client-go/machine/clientset/versioned"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/klog/v2"
-)
-
-const (
-	// Name of machine api namespace
-	MachineAPINamespace = "openshift-machine-api"
-	// Selection label for master machines
-	mapiMasterMachineLabelSelector = "machine.openshift.io/cluster-api-machine-role=master"
 )
 
 func isUserDataSecret(secret corev1.Secret) bool {
@@ -43,4 +39,19 @@ func isUserDataSecret(secret corev1.Secret) bool {
 		return false
 	}
 	return true
+}
+
+func hasFunctionalMachineAPI(machineClient machineclientset.Interface) bool {
+	machinesets, err := machineClient.MachineV1beta1().MachineSets(ctrlcommon.MachineAPINamespace).List(context.Background(), metav1.ListOptions{})
+	// If we can't list machinesets, we consider the Machine API non-functional
+	if err != nil {
+		klog.Errorf("Error listing machines in namespace %s: %v", ctrlcommon.MachineAPINamespace, err)
+		return false
+	}
+	// If there are any machinesets, we consider the Machine API functional
+	return len(machinesets.Items) != 0
+}
+
+func hasFunctionalClusterAPI() bool {
+	return false
 }

@@ -87,6 +87,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		certrotationcontroller, err := certrotationcontroller.New(
 			ctrlctx.ClientBuilder.KubeClientOrDie("cert-rotation-controller"),
 			ctrlctx.ClientBuilder.ConfigClientOrDie("cert-rotation-controller"),
+			ctrlctx.ClientBuilder.MachineClientOrDie("cert-rotation-controller"),
 			ctrlctx.KubeMAOSharedInformer.Core().V1().Secrets(),
 			ctrlctx.KubeNamespacedInformerFactory.Core().V1().Secrets(),
 			ctrlctx.KubeNamespacedInformerFactory.Core().V1().ConfigMaps(),
