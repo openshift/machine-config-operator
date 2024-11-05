@@ -1,0 +1,26 @@
+apiVersion: template.openshift.io/v1
+kind: Template
+metadata:
+  name: add-additional-ssh-auth-key
+objects:
+  - kind: MachineConfig
+    apiVersion: machineconfiguration.openshift.io/v1
+    metadata:
+      labels:
+        machineconfiguration.openshift.io/role: "${POOL}"
+      name: "${NAME}"
+    spec:
+      config:
+        ignition:
+          version: 3.2.0
+        passwd:
+          users:
+          - name: core
+            sshAuthorizedKeys:
+            - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCWkwurd8TNAi+D7ffvyDdhGBSQtJx3/Yedlwvvha0q772vLlOAGlKCw4dajKy6qty1/GGQDgTJ17h3C9TEArI8ZqILnyydeY56DL+ELN3dtGBVof/N2qtW0+SmEnd1Mi7Qy5Tx4e/GVmB3NgX9szwNOVXhebzgBsXc9x+RtCVLPLC8J+qqSdTUZ0UfJsh2ptlQLGHmmTpF//QlJ1tngvAFeCOxJUhrLAa37P9MtFsiNk31EfKyBk3eIdZljTERmqFaoJCohsFFEdO7tVgU6p5NwniAyBGZVjZBzjELoI1aZ+/g9yReIScxl1R6PWqEzcU6lGo2hInnb6nuZFGb+90D
+              openshift-qe@redhat.com
+            - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDPmGf/sfIYog1KaHj50H0vaDRITn4Wa8RN9bgc2jj6SejvxhAWZVc4BrRst6BdhGr34IowkZmz76ba9jfa4nGm2HNd+CGqf6KmUhwPjF9oJNjy3z5zT2i903OZii35MUnJl056YXgKYpN96WAD5LVOKop/+7Soxq4PW8TtVZeSpHiPNI28XiIdyqGLzJerhlgPLZBsNO0JcVH1DYLd/c4fh5GDLutszZH/dzAX5RmvN1P/cHie+BnkbgNx91NbrOLTrV5m3nY2End5uGDl8zhaGQ2BX2TmnMqWyxYkYuzNmQFprHMNCCpqLshFGRvCFZGpc6L/72mlpcJubzBF0t5Z
+              mco_test@redhat.com
+parameters:
+  - name: NAME
+  - name: POOL

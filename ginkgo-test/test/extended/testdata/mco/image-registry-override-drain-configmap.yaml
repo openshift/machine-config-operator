@@ -1,0 +1,15 @@
+apiVersion: template.openshift.io/v1
+kind: Template
+metadata:
+  name: add-ignition-kernel-arguments
+objects:
+  - apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: "${NAME}"
+      namespace: "${NAMESPACE}"
+parameters:
+  - name: NAME
+    value: image-registry-override-drain
+  - name: NAMESPACE
+    value: openshift-machine-config-operator
