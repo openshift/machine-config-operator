@@ -10,11 +10,11 @@ contents:
     # The "container storage" table contains all of the server options.
     [storage]
 
-    # Default Storage Driver
+    # Default storage driver, must be set for proper operation.
     driver = "overlay"
 
     # Temporary storage location
-    runroot = "/var/run/containers/storage"
+    runroot = "/run/containers/storage"
 
     # Primary Read/Write location of container storage
     graphroot = "/var/lib/containers/storage"
@@ -26,10 +26,6 @@ contents:
     # Must be comma separated list.
     additionalimagestores = [
     ]
-
-    # Size is used to set a maximum size of the container image.  Only supported by
-    # certain container storage drivers.
-    size = ""
 
     # Remap-UIDs/GIDs is the mapping from UIDs/GIDs as they should appear inside of
     # a container, to UIDs/GIDs as they should appear outside of the container, and
@@ -47,10 +43,29 @@ contents:
     # range that matches the specified name, and using the length of that range.
     # Additional ranges are then assigned, using the ranges which specify the
     # lowest host-level IDs first, to the lowest not-yet-mapped container-level ID,
-    # until all of the entries have been used for maps.
+    # until all of the entries have been used for maps. This setting overrides the
+    # Remap-UIDs/GIDs setting.
     #
     # remap-user = "storage"
     # remap-group = "storage"
+
+    [storage.options.pull_options]
+    # Options controlling how storage is populated when pulling images.
+
+    # Enable the "zstd:chunked" feature, which allows partial pulls, reusing
+    # content that already exists on the system. This is disabled by default,
+    # and must be explicitly enabled to be used. For more on zstd:chunked, see
+    # https://github.com/containers/storage/blob/main/docs/containers-storage-zstd-chunked.md
+    enable_partial_images = "false"
+
+    # Tells containers/storage to use hard links rather then create new files in
+    # the image, if an identical file already existed in storage.
+    use_hard_links = "false"
+
+    # Path to an ostree repository that might have
+    # previously pulled content which can be used when attempting to avoid
+    # pulling content from the container registry.
+    ostree_repos = ""
 
     [storage.options.overlay]
     # Storage Options for overlay
@@ -58,66 +73,6 @@ contents:
     # Do not create a PRIVATE bind mount on the home directory.
     skip_mount_home = "true"
 
-    [storage.options.thinpool]
-    # Storage Options for thinpool
-
-    # autoextend_percent determines the amount by which pool needs to be
-    # grown. This is specified in terms of % of pool size. So a value of 20 means
-    # that when threshold is hit, pool will be grown by 20% of existing
-    # pool size.
-    # autoextend_percent = "20"
-
-    # autoextend_threshold determines the pool extension threshold in terms
-    # of percentage of pool size. For example, if threshold is 60, that means when
-    # pool is 60% full, threshold has been hit.
-    # autoextend_threshold = "80"
-
-    # basesize specifies the size to use when creating the base device, which
-    # limits the size of images and containers.
-    # basesize = "10G"
-
-    # blocksize specifies a custom blocksize to use for the thin pool.
-    # blocksize="64k"
-
-    # directlvm_device specifies a custom block storage device to use for the
-    # thin pool. Required if you setup devicemapper
-    # directlvm_device = ""
-
-    # directlvm_device_force wipes device even if device already has a filesystem
-    # directlvm_device_force = "True"
-
-    # fs specifies the filesystem type to use for the base device.
-    # fs="xfs"
-
-    # log_level sets the log level of devicemapper.
-    # 0: LogLevelSuppress 0 (Default)
-    # 2: LogLevelFatal
-    # 3: LogLevelErr
-    # 4: LogLevelWarn
-    # 5: LogLevelNotice
-    # 6: LogLevelInfo
-    # 7: LogLevelDebug
-    # log_level = "7"
-
-    # min_free_space specifies the min free space percent in a thin pool require for
-    # new device creation to succeed. Valid values are from 0% - 99%.
-    # Value 0% disables
-    # min_free_space = "10%"
-
-    # mkfsarg specifies extra mkfs arguments to be used when creating the base
-    # device.
-    # mkfsarg = ""
-
-    # mountopt specifies extra mount options used when mounting the thin devices.
-    # mountopt = ""
-
-    # use_deferred_removal Marking device for deferred removal
-    # use_deferred_removal = "True"
-
-    # use_deferred_deletion Marking device for deferred deletion
-    # use_deferred_deletion = "True"
-
-    # xfs_nospace_max_retries specifies the maximum number of retries XFS should
-    # attempt to complete IO when ENOSPC (no space) error is returned by
-    # underlying storage device.
-    # xfs_nospace_max_retries = "0"
+    # Size is used to set a maximum size of the container image.  Only supported by
+    # certain container storage drivers.
+    size = ""
