@@ -28,6 +28,10 @@ contents:
     nodeStatusUpdateFrequency: 10s
     nodeStatusReportFrequency: 5m
     serverTLSBootstrap: true
+    systemReservedCgroup: "/system.slice"
+    enforceNodeAllocatable:
+      - pods
+      - system-reserved-compressible
     tlsMinVersion: {{.TLSMinVersion}}
     tlsCipherSuites:
       {{- range .TLSCipherSuites }}
