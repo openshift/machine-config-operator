@@ -6,8 +6,10 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/api/features"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 var (
@@ -46,8 +48,19 @@ func (o *WriteFeatureSets) Run() error {
 	}
 
 	statusByClusterProfileByFeatureSet := features.AllFeatureSets()
+	newLegacyFeatureGates := sets.Set[string]{}
 	for clusterProfile, byFeatureSet := range statusByClusterProfileByFeatureSet {
 		for featureSetName, featureGateStatuses := range byFeatureSet {
+			for _, curr := range featureGateStatuses.Enabled {
+				if curr.EnhancementPR == "FeatureGate predates 4.18" {
+					newLegacyFeatureGates.Insert(string(curr.FeatureGateAttributes.Name))
+				}
+			}
+			for _, curr := range featureGateStatuses.Disabled {
+				if curr.EnhancementPR == "FeatureGate predates 4.18" {
+					newLegacyFeatureGates.Insert(string(curr.FeatureGateAttributes.Name))
+				}
+			}
 			currentDetails := FeaturesGateDetailsFromFeatureSets(featureGateStatuses, o.PayloadVersion)
 
 			featureGateInstance := &configv1.FeatureGate{
@@ -83,6 +96,16 @@ func (o *WriteFeatureSets) Run() error {
 				return fmt.Errorf("error writing FeatureGate manifest: %w", err)
 			}
 		}
+	}
+
+	if illegalNewFeatureGates := newLegacyFeatureGates.Difference(legacyFeatureGates); len(illegalNewFeatureGates) > 0 {
+		shameText := `If you are reading this, it is because you have tried to bypass the enhancement check for a new feature and caught by the backstop check.
+Take the time to write up what you're going to accomplish and how we'll know it works in https://github.com/openshift/enhancements/.
+If we don't know what we're trying to build and we don't know how to confirm it works as designed, we cannot expect to be successful delivering new features.
+Complaints can be directed to @deads2k, approvers must not merge this PR.`
+		err := fmt.Errorf(shameText+"\nFeatureGates: %v", strings.Join(illegalNewFeatureGates.UnsortedList(), ", "))
+		return err
+
 	}
 
 	return nil
