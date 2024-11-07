@@ -11,23 +11,29 @@ import (
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/util/uuid"
 )
 
-func TestConfigDriftMonitor(t *testing.T) {
-	// Our errors. Their contents don't matter because we're not basing our
-	// assertions off of their contents. Instead, we're more concerned about
-	// their types.
-	fileErr := &configDriftErr{&fileConfigDriftErr{fmt.Errorf("file error")}}
-	unitErr := &configDriftErr{&unitConfigDriftErr{fmt.Errorf("unit error")}}
+// Our errors. Their contents don't matter because we're not basing our
+// assertions off of their contents. Instead, we're more concerned about
+// their types.
+var fileErr = &configDriftErr{&fileConfigDriftErr{fmt.Errorf("file error")}}
+var unitErr = &configDriftErr{&unitConfigDriftErr{fmt.Errorf("unit error")}}
+var sshErr = &configDriftErr{&sshConfigDriftErr{fmt.Errorf("ssh error")}}
 
+func TestConfigDriftMonitor(t *testing.T) {
 	// Filesystem Mutators
 	// These are closures to avoid namespace collisions and pollution since
 	// they're not useful outside of this test.
 	changeFileContent := func(path string) error {
+		return os.WriteFile(path, []byte("notthecontents"), defaultFilePermissions)
+	}
+
+	changeSSHFileContent := func(path string) error {
 		return os.WriteFile(path, []byte("notthecontents"), defaultFilePermissions)
 	}
 
@@ -67,6 +73,16 @@ func TestConfigDriftMonitor(t *testing.T) {
 	// Note: We try to run the testcases in parallel for speed with each one
 	// mutating its own temp directory.
 	testCases := []configDriftMonitorTestCase{
+		{
+			name:          "ssh file content drift",
+			expectedErr:   sshErr,
+			mutateSSHFile: changeSSHFileContent,
+		},
+		{
+			name:          "ssh file touch",
+			mutateSSHFile: touchFile,
+		},
+
 		// Ignition File
 		// These target the file called /etc/a-config-file defined by the test
 		// fixture.
@@ -219,8 +235,7 @@ func TestConfigDriftMonitor(t *testing.T) {
 			tmpDir := t.TempDir()
 
 			testCase.tmpDir = tmpDir
-			testCase.systemdPath = filepath.Join(tmpDir, pathSystemd)
-
+			testCase.rootPath = tmpDir
 			testCase.run(t)
 		})
 	}
@@ -235,8 +250,9 @@ type configDriftMonitorTestCase struct {
 	// The tmpdir for the test case (assigned at runtime)
 	tmpDir string
 	// The systemdroot for the test case (assigned at runtime)
-	systemdPath string
+	rootPath string
 	// Only one of these may be used per testcase:
+	mutateSSHFile func(string) error
 	// The mutation to apply to the Ignition file
 	mutateFile func(string) error
 	// The mutation to apply to the compressed Ignition file
@@ -302,7 +318,7 @@ func (tc configDriftMonitorTestCase) run(t *testing.T) {
 	// Configure the config drift monitor
 	opts := ConfigDriftMonitorOpts{
 		ErrChan:       errChan,
-		SystemdPath:   tc.systemdPath,
+		RootPath:      tc.rootPath,
 		MachineConfig: mc,
 		OnDrift: func(err error) {
 			go func() {
@@ -321,6 +337,28 @@ func (tc configDriftMonitorTestCase) run(t *testing.T) {
 
 	// Mutate the filesystem
 	require.Nil(t, tc.mutate(ignConfig))
+
+	errVODS := validateOnDiskState(mc, tc.rootPath)
+	switch e := errVODS.(type) {
+	case *fileConfigDriftErr:
+		if tc.expectedErr.Error() != fileErr.Error() {
+			t.Errorf("Unexpected error type %T from validateOnStateDisk", fileErr)
+		}
+	case *unitConfigDriftErr:
+		if tc.expectedErr.Error() != unitErr.Error() {
+			t.Errorf("Unexpected error type %T from validateOnStateDisk", unitErr)
+		}
+	case *sshConfigDriftErr:
+		if tc.expectedErr.Error() != sshErr.Error() {
+			t.Errorf("Unexpected error type %T from validateOnStateDisk", sshErr)
+		}
+	case nil:
+		if tc.expectedErr != nil {
+			t.Errorf("Unexpected error type %T from validateOnStateDisk", nil)
+		}
+	default:
+		t.Errorf("Unexpected error type from validateOnStateDisk:%T with error:%s", errVODS, e)
+	}
 
 	// TODO: Figure out a value to make this work on Macs because they take
 	// longer to report the filesystem activity.
@@ -384,6 +422,17 @@ func (tc configDriftMonitorTestCase) getIgnConfig(t *testing.T) ign3types.Config
 		Ignition: ign3types.Ignition{
 			Version: ign3types.MaxVersion.String(),
 		},
+		Passwd: ign3types.Passwd{
+			Users: []ign3types.PasswdUser{
+				{
+					Name: "core",
+					SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{
+						"ssh-ed25519 BBBBC3NzaC1lADI1NTE5AAAAIDz5C5ogUiAs9DGmAD+NE2KkcbT7u71V0pYhO2ZYlgBq user@user.com",
+						"other",
+					},
+				},
+			},
+		},
 		Storage: ign3types.Storage{
 			Files: []ign3types.File{
 				setDefaultUIDandGID(helpers.CreateEncodedIgn3File("/etc/a-config-file", "thefilecontents", int(defaultFilePermissions))),
@@ -423,17 +472,21 @@ func (tc configDriftMonitorTestCase) mutate(ignConfig ign3types.Config) error {
 		return tc.mutateFile(ignConfig.Storage.Files[0].Path)
 	}
 
+	if tc.mutateSSHFile != nil {
+		return tc.mutateSSHFile(filepath.Join(tc.rootPath, constants.RHCOS9SSHKeyPath))
+	}
+
 	if tc.mutateCompressedFile != nil {
 		return tc.mutateCompressedFile(ignConfig.Storage.Files[1].Path)
 	}
 
 	if tc.mutateDropin != nil {
-		dropinPath := getIgn3SystemdDropinPath(tc.systemdPath, ignConfig.Systemd.Units[0], ignConfig.Systemd.Units[0].Dropins[0])
+		dropinPath := getIgn3SystemdDropinPath(tc.rootPath, ignConfig.Systemd.Units[0], ignConfig.Systemd.Units[0].Dropins[0])
 		return tc.mutateDropin(dropinPath)
 	}
 
 	if tc.mutateUnit != nil {
-		unitPath := getIgn3SystemdUnitPath(tc.systemdPath, ignConfig.Systemd.Units[0])
+		unitPath := getIgn3SystemdUnitPath(tc.rootPath, ignConfig.Systemd.Units[0])
 		return tc.mutateUnit(unitPath)
 	}
 
@@ -489,6 +542,10 @@ func (tc *configDriftMonitorTestCase) writeIgnitionConfig(t *testing.T, ignConfi
 		defer cleanup()
 	}
 
+	if err := createFalseSSHKeyDir(tc.tmpDir, ignConfig.Passwd.Users[0].SSHAuthorizedKeys); err != nil {
+		return fmt.Errorf("could not write ignition core SSH files: %w", err)
+	}
+
 	// Write files the same way the MCD does.
 	// NOTE: We manually handle the errors here because using require.Nil or
 	// require.NoError will skip the deferred functions, which is undesirable.
@@ -497,10 +554,31 @@ func (tc *configDriftMonitorTestCase) writeIgnitionConfig(t *testing.T, ignConfi
 	}
 
 	// Write systemd units the same way the MCD does.
-	if err := writeUnits(ignConfig.Systemd.Units, tc.systemdPath, true); err != nil {
+	if err := writeUnits(ignConfig.Systemd.Units, tc.rootPath, true); err != nil {
 		return fmt.Errorf("could not write systemd units: %w", err)
 	}
 
+	return nil
+}
+
+func createFalseSSHKeyDir(rootPath string, content []ign3types.SSHAuthorizedKey) error {
+	fpath := filepath.Join(rootPath, "/home/core/.ssh/authorized_keys.d/ignition")
+	dir := filepath.Dir(fpath)
+	err := os.MkdirAll(dir, 0755)
+	if err != nil {
+		return fmt.Errorf("error: %w", err)
+	}
+	file, err := os.Create(fpath)
+	if err != nil {
+		return fmt.Errorf("error: %w", err)
+	}
+	defer file.Close()
+	for _, line := range content {
+		_, err := file.WriteString(string(line) + "\n")
+		if err != nil {
+			return fmt.Errorf("error: %w", err)
+		}
+	}
 	return nil
 }
 

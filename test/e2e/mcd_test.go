@@ -462,11 +462,7 @@ func TestNoReboot(t *testing.T) {
 		helpers.ExecCmdOnNode(t, cs, infraNode, "/bin/bash", "-c", bashCmd)
 	}
 
-	// Delete the expected SSH keys directory to ensure that the directories are
-	// (re)created correctly by the MCD. This targets the upgrade case where that
-	// directory may not previously exist. Note: This will need to be revisited
-	// once Config Drift Monitor is aware of SSH keys.
-	helpers.ExecCmdOnNode(t, cs, infraNode, "rm", "-rf", filepath.Join("/rootfs", filepath.Dir(sshPaths.Expected)))
+	require.Equal(t, sshPaths.Expected, constants.RHCOS9SSHKeyPath)
 
 	output := helpers.ExecCmdOnNode(t, cs, infraNode, "cat", "/rootfs/proc/uptime")
 	oldTime := strings.Split(output, " ")[0]
