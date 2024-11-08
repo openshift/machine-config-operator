@@ -2589,7 +2589,9 @@ spec:
                   - type
                   type: object
                 type: array
-                x-kubernetes-list-type: atomic
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
               controllerCertificates:
                 description: controllerCertificates represents the latest available
                   observations of the automatically rotating certificates in the MCO.
