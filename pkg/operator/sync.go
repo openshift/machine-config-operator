@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -2178,7 +2179,13 @@ func (optr *Operator) getMachineOSConfigs() ([]*mcfgv1alpha1.MachineOSConfig, er
 		return nil, nil
 	}
 
-	return optr.moscLister.List(labels.Everything())
+	moscs, err := optr.moscLister.List(labels.Everything())
+	if err != nil {
+		return nil, err
+	}
+
+	sort.Slice(moscs, func(i, j int) bool { return moscs[i].Name < moscs[j].Name })
+	return moscs, nil
 }
 
 // Fetches and validates the MachineOSConfigs. For now, validation consists of
