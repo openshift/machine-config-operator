@@ -471,7 +471,7 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 
 	// Let's be verbose when a node changes pool
 	oldPool, err := ctrl.getPrimaryPoolForNode(oldNode)
-	if err == nil && oldPool.Name != pool.Name {
+	if err == nil && oldPool != nil && oldPool.Name != pool.Name {
 		ctrl.logPoolNode(pool, curNode, "changed from pool %s", oldPool.Name)
 		// Let's also make sure the old pool node counts/status get updated
 		ctrl.enqueueMachineConfigPool(oldPool)
