@@ -55,7 +55,7 @@ func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
 		}
 	}
 
-	mosc, mosb, _ := ctrl.GetConfigAndBuild(pool)
+	mosc, mosb, _ := ctrl.getConfigAndBuild(pool)
 
 	newStatus := ctrl.calculateStatus(fg, machineConfigStates, cc, pool, nodes, mosc, mosb)
 	if equality.Semantic.DeepEqual(pool.Status, newStatus) {
@@ -69,7 +69,7 @@ func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
 		return fmt.Errorf("could not update MachineConfigPool %q: %w", newPool.Name, err)
 	}
 
-	l, err := ctrl.IsLayeredPool(mosc, mosb)
+	l, err := ctrl.isLayeredPool(newPool)
 	if err != nil {
 		return fmt.Errorf("Failed to determine whether pool %s opts in to OCL due to an error: %s", pool.Name, err)
 	}
@@ -101,7 +101,10 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 	machineCount := int32(len(nodes))
 	poolSynchronizer := newPoolSynchronizer(machineCount)
 
-	l, _ := ctrl.IsLayeredPool(mosc, mosb)
+	l, err := ctrl.isLayeredPool(pool)
+	if err != nil {
+		klog.Error(err)
+	}
 
 	var degradedMachines, readyMachines, updatedMachines, unavailableMachines, updatingMachines []*corev1.Node
 	degradedReasons := []string{}

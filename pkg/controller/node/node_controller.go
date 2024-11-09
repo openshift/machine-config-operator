@@ -51,6 +51,8 @@ import (
 	clientretry "k8s.io/client-go/util/retry"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
+
+	buildutils "github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 )
 
 const (
@@ -93,12 +95,14 @@ type Controller struct {
 	nodeLister corelisterv1.NodeLister
 	podLister  corelisterv1.PodLister
 	mosbLister mcfglistersv1alpha1.MachineOSBuildLister
+	moscLister mcfglistersv1alpha1.MachineOSConfigLister
 
 	ccListerSynced   cache.InformerSynced
 	mcListerSynced   cache.InformerSynced
 	mcpListerSynced  cache.InformerSynced
 	nodeListerSynced cache.InformerSynced
 	mcnListerSynced  cache.InformerSynced
+	mosbListerSynced cache.InformerSynced
 	moscListerSynced cache.InformerSynced
 
 	schedulerList         cligolistersv1.SchedulerLister
@@ -111,6 +115,9 @@ type Controller struct {
 	// updateDelay is a pause to deal with churn in MachineConfigs; see
 	// https://github.com/openshift/machine-config-operator/issues/301
 	updateDelay time.Duration
+
+	mosbInformer mcfginformersv1alpha1.MachineOSBuildInformer
+	moscInformer mcfginformersv1alpha1.MachineOSConfigInformer
 }
 
 func New(
@@ -120,6 +127,7 @@ func New(
 	nodeInformer coreinformersv1.NodeInformer,
 	podInformer coreinformersv1.PodInformer,
 	moscInformer mcfginformersv1alpha1.MachineOSConfigInformer,
+	mosbInformer mcfginformersv1alpha1.MachineOSBuildInformer,
 	schedulerInformer cligoinformersv1.SchedulerInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
@@ -130,6 +138,7 @@ func New(
 		mcInformer,
 		mcpInformer,
 		moscInformer,
+		mosbInformer,
 		nodeInformer,
 		podInformer,
 		schedulerInformer,
@@ -147,6 +156,7 @@ func NewWithCustomUpdateDelay(
 	nodeInformer coreinformersv1.NodeInformer,
 	podInformer coreinformersv1.PodInformer,
 	moscInformer mcfginformersv1alpha1.MachineOSConfigInformer,
+	mosbInformer mcfginformersv1alpha1.MachineOSBuildInformer,
 	schedulerInformer cligoinformersv1.SchedulerInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
@@ -158,6 +168,7 @@ func NewWithCustomUpdateDelay(
 		mcInformer,
 		mcpInformer,
 		moscInformer,
+		mosbInformer,
 		nodeInformer,
 		podInformer,
 		schedulerInformer,
@@ -174,6 +185,7 @@ func newController(
 	mcInformer mcfginformersv1.MachineConfigInformer,
 	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
 	moscInformer mcfginformersv1alpha1.MachineOSConfigInformer,
+	mosbInformer mcfginformersv1alpha1.MachineOSBuildInformer,
 	nodeInformer coreinformersv1.NodeInformer,
 	podInformer coreinformersv1.PodInformer,
 	schedulerInformer cligoinformersv1.SchedulerInformer,
@@ -193,13 +205,12 @@ func newController(
 		queue: workqueue.NewTypedRateLimitingQueueWithConfig(
 			workqueue.DefaultTypedControllerRateLimiter[string](),
 			workqueue.TypedRateLimitingQueueConfig[string]{Name: "machineconfigcontroller-nodecontroller"}),
-		updateDelay: updateDelay,
-		fgAcessor:   fgAccessor,
+		updateDelay:  updateDelay,
+		fgAcessor:    fgAccessor,
+		mosbInformer: mosbInformer,
+		moscInformer: moscInformer,
 	}
-	moscInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    ctrl.addMachineOSConfig,
-		UpdateFunc: ctrl.updateMachineOSConfig,
-	})
+
 	mcpInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.addMachineConfigPool,
 		UpdateFunc: ctrl.updateMachineConfigPool,
@@ -215,7 +226,16 @@ func newController(
 		UpdateFunc: ctrl.checkMasterNodesOnUpdate,
 		DeleteFunc: ctrl.checkMasterNodesOnDelete,
 	})
-
+	ctrl.moscInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.addMachineOSConfig,
+		UpdateFunc: ctrl.updateMachineOSConfig,
+		DeleteFunc: ctrl.deleteMachineOSConfig,
+	})
+	ctrl.mosbInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.addMachineOSBuild,
+		UpdateFunc: ctrl.updateMachineOSBuild,
+		DeleteFunc: ctrl.deleteMachineOSBuild,
+	})
 	ctrl.syncHandler = ctrl.syncMachineConfigPool
 	ctrl.enqueueMachineConfigPool = ctrl.enqueueDefault
 
@@ -224,11 +244,15 @@ func newController(
 	ctrl.mcpLister = mcpInformer.Lister()
 	ctrl.nodeLister = nodeInformer.Lister()
 	ctrl.podLister = podInformer.Lister()
+	ctrl.moscLister = ctrl.moscInformer.Lister()
+	ctrl.mosbLister = ctrl.mosbInformer.Lister()
+
 	ctrl.ccListerSynced = ccInformer.Informer().HasSynced
 	ctrl.mcListerSynced = mcInformer.Informer().HasSynced
 	ctrl.mcpListerSynced = mcpInformer.Informer().HasSynced
 	ctrl.nodeListerSynced = nodeInformer.Informer().HasSynced
 	ctrl.moscListerSynced = moscInformer.Informer().HasSynced
+	ctrl.mosbListerSynced = mosbInformer.Informer().HasSynced
 
 	ctrl.schedulerList = schedulerInformer.Lister()
 	ctrl.schedulerListerSynced = schedulerInformer.Informer().HasSynced
@@ -241,7 +265,36 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.mcpListerSynced, ctrl.nodeListerSynced, ctrl.schedulerListerSynced) {
+	syncedListers := []cache.InformerSynced{
+		ctrl.ccListerSynced,
+		ctrl.mcListerSynced,
+		ctrl.mcpListerSynced,
+		ctrl.nodeListerSynced,
+		ctrl.schedulerListerSynced,
+	}
+
+	isOCLEnabled, err := ctrl.isOnClusterBuildFeatureGateEnabled()
+	if err != nil {
+		klog.Errorf("could not determine if on-cluster layering is enabled: %s", err)
+	}
+
+	if isOCLEnabled {
+		klog.Infof("On-cluster layering featuregate enabled, starting MachineOSConfig and MachineOSBuild informers")
+		// If the informer factory was already started before these were wired up,
+		// such as in cmd/machine-config-controller/start.go, calling Run() again
+		// will cause a benign warning message to be displayed in the console:
+		//
+		// "The sharedIndexInformer has started, run more than once is not allowed"
+		// Source: https://github.com/kubernetes/client-go/blob/d7104c6737bcbb386044ceecd8909a79b6166328/tools/cache/shared_informer.go#L462-L465
+		go ctrl.moscInformer.Informer().Run(stopCh)
+		go ctrl.mosbInformer.Informer().Run(stopCh)
+		syncedListers = append(syncedListers, []cache.InformerSynced{
+			ctrl.moscListerSynced,
+			ctrl.mosbListerSynced,
+		}...)
+	}
+
+	if !cache.WaitForCacheSync(stopCh, syncedListers...) {
 		return
 	}
 
@@ -382,49 +435,110 @@ func (ctrl *Controller) makeMasterNodeSchedulable(node *corev1.Node) error {
 }
 
 func (ctrl *Controller) addMachineOSConfig(obj interface{}) {
-	curMOSC := obj.(*mcfgv1alpha1.MachineOSConfig)
-	klog.V(4).Infof("Adding MachineOSConfig %s", curMOSC.Name)
-	mcp, err := ctrl.mcpLister.Get(curMOSC.Spec.MachineConfigPool.Name)
+	curMosc := obj.(*mcfgv1alpha1.MachineOSConfig)
+	klog.V(4).Infof("Adding MachineOSConfig %s", curMosc.Name)
+
+	mcp, err := ctrl.enqueueMachineConfigPoolForMachineOSConfig(curMosc)
 	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("Couldn't get MachineConfigPool from MachineOSConfig %#v", curMOSC))
+		utilruntime.HandleError(fmt.Errorf("could not enqueue MachineConfigPool for MachineOSConfig %s: %w", curMosc.Name, err))
 		return
 	}
+
 	klog.V(4).Infof("MachineConfigPool %s opt in to OCL", mcp.Name)
-	ctrl.enqueueMachineConfigPool(mcp)
 }
 
 func (ctrl *Controller) updateMachineOSConfig(old, cur interface{}) {
-	oldMOSC := old.(*mcfgv1alpha1.MachineOSConfig)
-	curMOSC := cur.(*mcfgv1alpha1.MachineOSConfig)
-	if equality.Semantic.DeepEqual(oldMOSC.Status.CurrentImagePullspec, curMOSC.Status.CurrentImagePullspec) {
+	oldMosc := old.(*mcfgv1alpha1.MachineOSConfig)
+	curMosc := cur.(*mcfgv1alpha1.MachineOSConfig)
+	if equality.Semantic.DeepEqual(oldMosc.Status.CurrentImagePullspec, curMosc.Status.CurrentImagePullspec) {
 		// we do not want to trigger an update func just if the image is not ready
 		return
 	}
-	klog.V(4).Infof("Updating MachineOSConfig %s", oldMOSC.Name)
-	mcp, err := ctrl.mcpLister.Get(curMOSC.Spec.MachineConfigPool.Name)
+	klog.V(4).Infof("Updating MachineOSConfig %s", oldMosc.Name)
+
+	mcp, err := ctrl.enqueueMachineConfigPoolForMachineOSConfig(curMosc)
 	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("Couldn't get Machine Config Pool from MachineOSConfig %#v", curMOSC))
+		utilruntime.HandleError(fmt.Errorf("could not enqueue MachineConfigPool for MachineOSConfig %s: %w", curMosc.Name, err))
 		return
 	}
+
 	klog.V(4).Infof("Image is ready for MachineConfigPool %s", mcp.Name)
-	ctrl.enqueueMachineConfigPool(mcp)
 }
 
-func (ctrl *Controller) deleteMachineOSBuild(obj interface{}) {
-	curMOSB, ok := obj.(*mcfgv1alpha1.MachineOSBuild)
+func (ctrl *Controller) deleteMachineOSConfig(obj interface{}) {
+	mosc, ok := obj.(*mcfgv1alpha1.MachineOSConfig)
 	if !ok {
 		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
 		if !ok {
 			utilruntime.HandleError(fmt.Errorf("couldn't get object from tombstone %#v", obj))
 			return
 		}
-		curMOSB, ok = tombstone.Obj.(*mcfgv1alpha1.MachineOSBuild)
+		mosc, ok = tombstone.Obj.(*mcfgv1alpha1.MachineOSConfig)
 		if !ok {
-			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not a MOSB %#v", obj))
+			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not a Mosb %#v", obj))
 			return
 		}
 	}
-	klog.V(4).Infof("Deleting MachineOSBuild %s", curMOSB.Name)
+
+	klog.V(4).Infof("MachineOSConfig %q deleted", mosc.Name)
+
+	_, err := ctrl.enqueueMachineConfigPoolForMachineOSConfig(mosc)
+	if err != nil {
+		utilruntime.HandleError(fmt.Errorf("could not enqueue MachineConfigPool for MachineOSConfig %s: %w", mosc.Name, err))
+		return
+	}
+}
+
+func (ctrl *Controller) addMachineOSBuild(obj interface{}) {
+	mosb := obj.(*mcfgv1alpha1.MachineOSBuild)
+	klog.V(4).Infof("MachineOSBuild %q added", mosb.Name)
+
+	mcp, err := ctrl.enqueueMachineConfigPoolForMachineOSBuild(mosb)
+	if err != nil {
+		utilruntime.HandleError(fmt.Errorf("could not enqueue MachineConfigPool for MachineOSBuild %s: %w", mosb.Name, err))
+		return
+	}
+
+	klog.V(4).Infof("MachineConfigPool %s has new MachineOSBuild %s", mcp.Name, mosb.Name)
+}
+
+func (ctrl *Controller) updateMachineOSBuild(_, cur interface{}) {
+	curMosb := cur.(*mcfgv1alpha1.MachineOSBuild)
+	klog.V(4).Infof("MachineOSBuild updated %q", curMosb.Name)
+
+	mcp, err := ctrl.enqueueMachineConfigPoolForMachineOSBuild(curMosb)
+	if err != nil {
+		utilruntime.HandleError(fmt.Errorf("could not enqueue MachineConfigPool for MachineOSBuild %s: %w", curMosb.Name, err))
+		return
+	}
+
+	klog.V(4).Infof("MachineConfigPool %s has updated MachineOSBuild %s", mcp.Name, curMosb.Name)
+}
+
+func (ctrl *Controller) deleteMachineOSBuild(obj interface{}) {
+	curMosb, ok := obj.(*mcfgv1alpha1.MachineOSBuild)
+	if !ok {
+		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("couldn't get object from tombstone %#v", obj))
+			return
+		}
+		curMosb, ok = tombstone.Obj.(*mcfgv1alpha1.MachineOSBuild)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not a Mosb %#v", obj))
+			return
+		}
+	}
+
+	klog.V(4).Infof("Deleting MachineOSBuild %s", curMosb.Name)
+
+	mcp, err := ctrl.enqueueMachineConfigPoolForMachineOSBuild(curMosb)
+	if err != nil {
+		utilruntime.HandleError(fmt.Errorf("could not enqueue MachineConfigPool for MachineOSBuild %s: %w", curMosb.Name, err))
+		return
+	}
+
+	klog.V(4).Infof("MachineConfigPool %s has deleted MachineOSBuild %s", mcp.Name, curMosb.Name)
 }
 
 func (ctrl *Controller) addMachineConfigPool(obj interface{}) {
@@ -817,6 +931,44 @@ func (ctrl *Controller) enqueueAfter(pool *mcfgv1.MachineConfigPool, after time.
 	ctrl.queue.AddAfter(key, after)
 }
 
+func (ctrl *Controller) enqueueMachineConfigPoolForMachineOSConfig(mosc *mcfgv1alpha1.MachineOSConfig) (*mcfgv1.MachineConfigPool, error) {
+	isOCLEnabled, err := ctrl.isOnClusterBuildFeatureGateEnabled()
+	if err != nil {
+		return nil, fmt.Errorf("could not determine if OCL is enabled: %s", err)
+	}
+
+	if !isOCLEnabled {
+		return nil, nil
+	}
+
+	mcp, err := buildutils.GetMachineConfigPoolForMachineOSConfig(mosc, ctrl.getListers())
+	if err != nil {
+		return nil, err
+	}
+
+	ctrl.enqueueDefault(mcp)
+	return mcp, nil
+}
+
+func (ctrl *Controller) enqueueMachineConfigPoolForMachineOSBuild(mosb *mcfgv1alpha1.MachineOSBuild) (*mcfgv1.MachineConfigPool, error) {
+	isOCLEnabled, err := ctrl.isOnClusterBuildFeatureGateEnabled()
+	if err != nil {
+		return nil, fmt.Errorf("could not determine if OCL is enabled: %s", err)
+	}
+
+	if !isOCLEnabled {
+		return nil, nil
+	}
+
+	mcp, err := buildutils.GetMachineConfigPoolForMachineOSBuild(mosb, ctrl.getListers())
+	if err != nil {
+		return nil, err
+	}
+
+	ctrl.enqueueDefault(mcp)
+	return mcp, nil
+}
+
 // enqueueDefault calls a default enqueue function
 func (ctrl *Controller) enqueueDefault(pool *mcfgv1.MachineConfigPool) {
 	ctrl.enqueueAfter(pool, ctrl.updateDelay)
@@ -867,47 +1019,35 @@ func (ctrl *Controller) handleErr(err error, key string) {
 // 2. If a MachineConfig changes, we should wait for the OS image build to be
 // ready so we can update both the nodes' desired MachineConfig and desired
 // image annotations simultaneously.
-
-func (ctrl *Controller) GetConfigAndBuild(pool *mcfgv1.MachineConfigPool) (*mcfgv1alpha1.MachineOSConfig, *mcfgv1alpha1.MachineOSBuild, error) {
-	var ourConfig *mcfgv1alpha1.MachineOSConfig
-	var ourBuild *mcfgv1alpha1.MachineOSBuild
-	configList, err := ctrl.client.MachineconfigurationV1alpha1().MachineOSConfigs().List(context.TODO(), metav1.ListOptions{})
+func (ctrl *Controller) getConfigAndBuild(pool *mcfgv1.MachineConfigPool) (*mcfgv1alpha1.MachineOSConfig, *mcfgv1alpha1.MachineOSBuild, error) {
+	isOCLEnabled, err := ctrl.isOnClusterBuildFeatureGateEnabled()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("could not determine if OCL is enabled: %w", err)
 	}
 
-	for _, config := range configList.Items {
-		if config.Spec.MachineConfigPool.Name == pool.Name {
-			ourConfig = &config
-			break
-		}
-	}
-
-	if ourConfig == nil {
+	if !isOCLEnabled {
+		// If OCL is not enabled, don't try to look up the values.
 		return nil, nil, nil
 	}
 
-	buildList, err := ctrl.client.MachineconfigurationV1alpha1().MachineOSBuilds().List(context.TODO(), metav1.ListOptions{})
-	if err != nil {
+	mosc, mosb, err := buildutils.GetMachineOSConfigAndMachineOSBuildForMachineConfigPool(pool, ctrl.getListers())
+
+	// The rest of NodeController seems to assume that having mosc / mosb be nil
+	// is a sign that they were not found. So we'll eat the IsNotFound error
+	// here.
+	if err != nil && !errors.IsNotFound(err) {
 		return nil, nil, err
 	}
 
-	for _, build := range buildList.Items {
-		if build.Spec.MachineOSConfig.Name == ourConfig.Name {
-			if build.Spec.DesiredConfig.Name == pool.Spec.Configuration.Name {
-				ourBuild = &build
-				break
-			}
-		}
-	}
-
-	return ourConfig, ourBuild, nil
-
+	return mosc, mosb, nil
 }
 
 func (ctrl *Controller) canLayeredPoolContinue(pool *mcfgv1.MachineConfigPool) (string, bool, error) {
 
-	mosc, mosb, _ := ctrl.GetConfigAndBuild(pool)
+	mosc, mosb, err := ctrl.getConfigAndBuild(pool)
+	if err != nil {
+		return "Could not get MachineOSConfig / MachineOSBuild", false, err
+	}
 
 	if mosc == nil || mosb == nil {
 		return "No MachineOSConfig or Build for this pool", false, nil
@@ -994,8 +1134,8 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		return ctrl.syncStatusOnly(pool)
 	}
 
-	mosc, mosb, _ := ctrl.GetConfigAndBuild(pool)
-	layered, err := ctrl.IsLayeredPool(mosc, mosb)
+	mosc, mosb, _ := ctrl.getConfigAndBuild(pool)
+	layered, err := ctrl.isLayeredPool(pool)
 	if err != nil {
 		return fmt.Errorf("Failed to determine whether pool %s opts in to OCL due to an error: %s", pool.Name, err)
 	}
@@ -1149,7 +1289,7 @@ func (ctrl *Controller) setClusterConfigAnnotation(nodes []*corev1.Node) error {
 	return nil
 }
 
-// updateCandidateNode needs to understand MOSB
+// updateCandidateNode needs to understand Mosb
 // specifically, the LayeredNodeState probably needs to understand mosb
 func (ctrl *Controller) updateCandidateNode(mosc *mcfgv1alpha1.MachineOSConfig, mosb *mcfgv1alpha1.MachineOSBuild, nodeName string, pool *mcfgv1.MachineConfigPool) error {
 	return clientretry.RetryOnConflict(constants.NodeUpdateBackoff, func() error {
@@ -1163,7 +1303,7 @@ func (ctrl *Controller) updateCandidateNode(mosc *mcfgv1alpha1.MachineOSConfig, 
 		}
 
 		lns := ctrlcommon.NewLayeredNodeState(oldNode)
-		layered, err := ctrl.IsLayeredPool(mosc, mosb)
+		layered, err := ctrl.isLayeredPool(pool)
 		if err != nil {
 			return fmt.Errorf("Failed to determine whether pool %s opts in to OCL due to an error: %s", pool.Name, err)
 		}
@@ -1302,7 +1442,7 @@ func (ctrl *Controller) filterControlPlaneCandidateNodes(pool *mcfgv1.MachineCon
 }
 
 // SetDesiredStateFromPool in old mco explains how this works. Somehow you need to NOT FAIL if the mosb doesn't exist. So
-// we still need to base this whole things on pools but IsLayeredPool == does mosb exist
+// we still need to base this whole things on pools but isLayeredPool == does mosb exist
 // updateCandidateMachines sets the desiredConfig annotation the candidate machines
 func (ctrl *Controller) updateCandidateMachines(pool *mcfgv1.MachineConfigPool, candidates []*corev1.Node, capacity uint) error {
 	if pool.Name == ctrlcommon.MachineConfigPoolMaster {
@@ -1329,17 +1469,23 @@ func (ctrl *Controller) updateCandidateMachines(pool *mcfgv1.MachineConfigPool, 
 func (ctrl *Controller) setDesiredAnnotations(pool *mcfgv1.MachineConfigPool, candidates []*corev1.Node) error {
 	eventName := "SetDesiredConfig"
 	updateName := fmt.Sprintf("MachineConfig: %s", pool.Spec.Configuration.Name)
-	config, build, _ := ctrl.GetConfigAndBuild(pool)
-	layered, err := ctrl.IsLayeredPool(config, build)
 
+	config, build, err := ctrl.getConfigAndBuild(pool)
+	if err != nil {
+		return fmt.Errorf("could not get MachineOSConfig / MachineOSBuild for MachineConfigPool %s: %w", pool.Name, err)
+	}
+
+	layered, err := ctrl.isLayeredPool(pool)
 	if err != nil {
 		return fmt.Errorf("Failed to determine whether pool %s opts in to OCL due to an error: %s", pool.Name, err)
 	}
+
 	if layered {
 		eventName = "SetDesiredConfigAndOSImage"
 		updateName = fmt.Sprintf("%s / Image: %s", updateName, ctrlcommon.NewMachineOSConfigState(config).GetOSImage())
 		klog.Infof("Continuing to sync layered MachineConfigPool %s", pool.Name)
 	}
+
 	for _, node := range candidates {
 		if err := ctrl.updateCandidateNode(config, build, node.Name, pool); err != nil {
 			return fmt.Errorf("setting desired %s for node %s: %w", pool.Spec.Configuration.Name, node.Name, err)
@@ -1456,6 +1602,14 @@ func (ctrl *Controller) removeUpdateInProgressTaint(ctx context.Context, nodeNam
 	})
 }
 
+func (ctrl *Controller) getListers() *buildutils.Listers {
+	return &buildutils.Listers{
+		MachineOSBuildLister:    ctrl.mosbLister,
+		MachineOSConfigLister:   ctrl.moscLister,
+		MachineConfigPoolLister: ctrl.mcpLister,
+	}
+}
+
 func maxUnavailable(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) (int, error) {
 	intOrPercent := intstrutil.FromInt(1)
 	if pool.Spec.MaxUnavailable != nil {
@@ -1479,10 +1633,25 @@ func getErrorString(err error) string {
 	return ""
 }
 
-func (ctrl *Controller) IsLayeredPool(mosc *mcfgv1alpha1.MachineOSConfig, mosb *mcfgv1alpha1.MachineOSBuild) (bool, error) {
+func (ctrl *Controller) isLayeredPool(pool *mcfgv1.MachineConfigPool) (bool, error) {
 	fg, err := ctrl.fgAcessor.CurrentFeatureGates()
 	if err != nil {
 		return false, err
 	}
+
+	mosc, mosb, err := ctrl.getConfigAndBuild(pool)
+	if err != nil {
+		return false, err
+	}
+
 	return (mosc != nil || mosb != nil) && fg.Enabled(features.FeatureGateOnClusterBuild), nil
+}
+
+func (ctrl *Controller) isOnClusterBuildFeatureGateEnabled() (bool, error) {
+	fg, err := ctrl.fgAcessor.CurrentFeatureGates()
+	if err != nil {
+		return false, err
+	}
+
+	return fg.Enabled(features.FeatureGateOnClusterBuild), nil
 }
