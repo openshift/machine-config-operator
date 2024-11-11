@@ -598,7 +598,7 @@ func TestGetUnavailableMachines(t *testing.T) {
 
 			pool := pb.MachineConfigPool()
 
-			unavailableNodes := getUnavailableMachines(test.nodes, pool, test.layeredPool, nil)
+			unavailableNodes := getUnavailableMachines(test.nodes, pool, test.layeredPool)
 			assertExpectedNodes(t, test.unavail, unavailableNodes)
 		})
 	}

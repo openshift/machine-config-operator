@@ -206,7 +206,7 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 		readyMachines = getReadyMachines(pool, nodes, mosc, mosb, l)
 		readyMachineCount = int32(len(readyMachines))
 
-		unavailableMachines = getUnavailableMachines(nodes, pool, l, mosb)
+		unavailableMachines = getUnavailableMachines(nodes, pool, l)
 		unavailableMachineCount = int32(len(unavailableMachines))
 
 		degradedMachines = getDegradedMachines(nodes)
@@ -507,18 +507,24 @@ func isNodeUnavailable(node *corev1.Node, layered bool) bool {
 // node *may* go unschedulable in the future, so we don't want to
 // potentially start another node update exceeding our maxUnavailable.
 // Somewhat the opposite of getReadyNodes().
-func getUnavailableMachines(nodes []*corev1.Node, pool *mcfgv1.MachineConfigPool, layered bool, mosb *mcfgv1alpha1.MachineOSBuild) []*corev1.Node {
+func getUnavailableMachines(nodes []*corev1.Node, pool *mcfgv1.MachineConfigPool, layered bool) []*corev1.Node {
 	var unavail []*corev1.Node
 	for _, node := range nodes {
-		if mosb != nil {
-			mosbState := ctrlcommon.NewMachineOSBuildState(mosb)
-			// if node is unavail, desiredConfigs match, and the build is a success, then we are unavail.
-			// not sure on this one honestly
-			if layered && isNodeUnavailable(node, layered) && mosb.Spec.DesiredConfig.Name == pool.Spec.Configuration.Name && mosbState.IsBuildSuccess() {
-				unavail = append(unavail, node)
-			}
-		} else if isNodeUnavailable(node, layered) {
+		// check if the nodes are not ready
+		if !isNodeReady(node) {
 			unavail = append(unavail, node)
+			continue
+		}
+		// check if the node as the NodeUpdateInProgressTaint
+		if checkIfNodeHasInProgressTaint(node) {
+			unavail = append(unavail, node)
+			continue
+		}
+		// check if the nodes desired config doesnt match the pools desired config
+		lns := ctrlcommon.NewLayeredNodeState(node)
+		if !lns.IsDesiredEqualToPool(pool, layered) {
+			unavail = append(unavail, node)
+			continue
 		}
 	}
 	return unavail
