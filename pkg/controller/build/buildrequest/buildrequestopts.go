@@ -74,6 +74,14 @@ func (b BuildRequestOpts) getReleaseVersion() string {
 	return b.OSImageURLConfig.ReleaseVersion
 }
 
+// Gets the extensions from the MachineConfig if available.
+func (b BuildRequestOpts) getExtensions() []string {
+	if len(b.MachineConfig.Spec.Extensions) > 0 {
+		return b.MachineConfig.Spec.Extensions
+	}
+	return []string{}
+}
+
 // Gets all of the image build request opts from the Kube API server.
 func newBuildRequestOptsFromAPI(ctx context.Context, kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig) (*BuildRequestOpts, error) {
 	og := optsGetter{
