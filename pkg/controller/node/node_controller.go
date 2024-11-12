@@ -199,6 +199,7 @@ func newController(
 	moscInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.addMachineOSConfig,
 		UpdateFunc: ctrl.updateMachineOSConfig,
+		DeleteFunc: ctrl.deleteMachineOSConfig,
 	})
 	mcpInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.addMachineConfigPool,
@@ -407,6 +408,30 @@ func (ctrl *Controller) updateMachineOSConfig(old, cur interface{}) {
 		return
 	}
 	klog.V(4).Infof("Image is ready for MachineConfigPool %s", mcp.Name)
+	ctrl.enqueueMachineConfigPool(mcp)
+}
+
+func (ctrl *Controller) deleteMachineOSConfig(cur interface{}) {
+	curMOSC, ok := cur.(*mcfgv1alpha1.MachineOSConfig)
+	if !ok {
+		tombstone, ok := cur.(cache.DeletedFinalStateUnknown)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("couldn't get object from tombstone %#v", cur))
+			return
+		}
+		curMOSC, ok = tombstone.Obj.(*mcfgv1alpha1.MachineOSConfig)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not a MachineOSConfig %#v", cur))
+			return
+		}
+	}
+	klog.V(4).Infof("Deleting MachineOSConfig %s", curMOSC.Name)
+
+	mcp, err := ctrl.mcpLister.Get(curMOSC.Spec.MachineConfigPool.Name)
+	if err != nil {
+		utilruntime.HandleError(fmt.Errorf("Couldn't get MachineConfigPool from MachineOSConfig %#v", curMOSC))
+		return
+	}
 	ctrl.enqueueMachineConfigPool(mcp)
 }
 
