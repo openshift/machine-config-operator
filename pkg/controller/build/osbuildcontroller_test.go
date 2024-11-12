@@ -433,6 +433,34 @@ func TestOSBuildController(t *testing.T) {
 	})
 }
 
+// Validates that when a MachineOSConfig gets the rebuild annotation that the
+// MachineOSBuild associated with it is deleted and then rebuilt.
+func TestOSBuildControllerRebuildAnnotation(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	t.Cleanup(cancel)
+
+	_, mcfgclient, mosc, mosb, _, kubeassert := setupOSBuildControllerForTestWithSuccessfulBuild(ctx, t, "worker")
+	assertBuildObjectsAreDeleted(ctx, t, kubeassert, mosb)
+
+	apiMosc, err := mcfgclient.MachineconfigurationV1alpha1().MachineOSConfigs().Get(ctx, mosc.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	apiMosc.Annotations[constants.RebuildMachineOSConfigAnnotationKey] = ""
+
+	_, err = mcfgclient.MachineconfigurationV1alpha1().MachineOSConfigs().Update(ctx, apiMosc, metav1.UpdateOptions{})
+	require.NoError(t, err)
+
+	assertBuildObjectsAreCreated(ctx, t, kubeassert, mosb)
+
+	apiMosc, err = mcfgclient.MachineconfigurationV1alpha1().MachineOSConfigs().Get(ctx, mosc.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	assert.NotContains(t, apiMosc.GetAnnotations(), constants.RebuildMachineOSConfigAnnotationKey)
+
+}
+
 func assertBuildObjectsAreCreated(ctx context.Context, t *testing.T, kubeassert *testhelpers.Assertions, mosb *mcfgv1alpha1.MachineOSBuild) {
 	t.Helper()
 
