@@ -91,6 +91,15 @@ func (b *buildReconciler) UpdateMachineOSConfig(ctx context.Context, old, cur *m
 // Executes whenever a MachineOSConfig is updated. If the build inputs have
 // changed, a new MachineOSBuild should be created.
 func (b *buildReconciler) updateMachineOSConfig(ctx context.Context, old, cur *mcfgv1alpha1.MachineOSConfig) error {
+	// If we have gained the rebuild annotation, we should delete the current MachineOSBuild associated with this MachineOSConfig.
+	if !hasRebuildAnnotation(old) && hasRebuildAnnotation(cur) {
+		if err := b.rebuildMachineOSConfig(ctx, cur); err != nil {
+			return fmt.Errorf("could not rebuild MachineOSConfig %q: %w", cur.Name, err)
+		}
+
+		return nil
+	}
+
 	// Whenever the build inputs have changed, create a new MachineOSBuild.
 	if !equality.Semantic.DeepEqual(old.Spec.BuildInputs, cur.Spec.BuildInputs) {
 		klog.Infof("Detected MachineOSConfig change for %s", cur.Name)
@@ -98,6 +107,37 @@ func (b *buildReconciler) updateMachineOSConfig(ctx context.Context, old, cur *m
 	}
 
 	return b.syncMachineOSConfigs(ctx)
+}
+
+// Rebuilds the most current build associated with a MachineOSConfig whenever
+// the rebuild annotation is applied. This is done by deleting the current
+// MachineOSBuild and allowing the controller to replace it with a new one.
+func (b *buildReconciler) rebuildMachineOSConfig(ctx context.Context, mosc *mcfgv1alpha1.MachineOSConfig) error {
+	klog.Infof("MachineOSConfig %q has rebuild annotation (%q)", mosc.Name, constants.RebuildMachineOSConfigAnnotationKey)
+
+	if !hasCurrentBuildAnnotation(mosc) {
+		klog.Infof("MachineOSConfig %q does not have current build annotation (%q) set, skipping rebuild", mosc.Name, constants.CurrentMachineOSBuildAnnotationKey)
+		return nil
+	}
+
+	mosbName := mosc.Annotations[constants.CurrentMachineOSBuildAnnotationKey]
+
+	mosb, err := b.machineOSBuildLister.Get(mosbName)
+	if err != nil {
+		return ignoreErrIsNotFound(fmt.Errorf("cannot rebuild MachineOSConfig %q: %w", mosc.Name, err))
+	}
+
+	if err := b.deleteMachineOSBuild(ctx, mosb); err != nil {
+		return fmt.Errorf("could not delete MachineOSBuild %q for MachineOSConfig %q: %w", mosb.Name, mosc.Name, err)
+	}
+
+	if err := b.createNewMachineOSBuildOrReuseExisting(ctx, mosc); err != nil {
+		return fmt.Errorf("could not create new MachineOSBuild for MachineOSConfig %q: %w", mosc.Name, err)
+	}
+
+	klog.Infof("MachineOSConfig %q is now rebuilding", mosc.Name)
+
+	return nil
 }
 
 // Runs whenever a new MachineOSConfig is added. Determines if a new
@@ -237,23 +277,34 @@ func (b *buildReconciler) updateMachineOSConfigStatus(ctx context.Context, mosc 
 		return err
 	}
 
+	annoUpdateNeeded := false
+
+	if hasRebuildAnnotation(mosc) {
+		delete(mosc.Annotations, constants.RebuildMachineOSConfigAnnotationKey)
+		annoUpdateNeeded = true
+		klog.Infof("Cleared rebuild annotation (%q) on MachineOSConfig %q", constants.RebuildMachineOSConfigAnnotationKey, mosc.Name)
+	}
+
 	if !isCurrentBuildAnnotationEqual(mosc, mosb) {
-		// If the current build annotation is not equal, do an update and reuse the
-		// returned MachineOSBuild for the status update, if needed.
 		metav1.SetMetaDataAnnotation(&mosc.ObjectMeta, constants.CurrentMachineOSBuildAnnotationKey, mosb.Name)
+		annoUpdateNeeded = true
+		klog.Infof("Set current build on MachineOSConfig %q to MachineOSBuild %q", mosc.Name, mosb.Name)
+	}
+
+	if annoUpdateNeeded {
 		updatedMosc, err := b.mcfgclient.MachineconfigurationV1alpha1().MachineOSConfigs().Update(ctx, mosc, metav1.UpdateOptions{})
 		if err != nil {
-			return fmt.Errorf("could not set current build annotation on MachineOSConfig %q: %w", mosc.Name, err)
+			return fmt.Errorf("could not update annotations on MachineOSConfig %q: %w", mosc.Name, err)
 		}
 
-		klog.Infof("Set current build on MachineOSConfig %q to MachineOSBuild %q", mosc.Name, mosb.Name)
+		klog.Infof("Updated annotations on MachineOSConfig %q", mosc.Name)
 
 		mosc = updatedMosc
 	}
 
 	// Skip the status update if final image pushspec hasn't been set yet.
 	if mosb.Status.FinalImagePushspec == "" {
-		klog.Infof("MachineOSBuild %q has empty final image pushspec, skipping MachineOSConfig %q update", mosb.Name, mosc.Name)
+		klog.Infof("MachineOSBuild %q has empty final image pushspec, skipping MachineOSConfig %q status update", mosb.Name, mosc.Name)
 		return nil
 	}
 
