@@ -211,6 +211,7 @@ func (br buildRequestImpl) renderContainerfile() (string, error) {
 		ReleaseVersion    string
 		BaseOSImage       string
 		ExtensionsImage   string
+		Extensions        []string
 	}{
 		MachineOSBuild:    br.opts.MachineOSBuild,
 		MachineOSConfig:   br.opts.MachineOSConfig,
@@ -218,6 +219,7 @@ func (br buildRequestImpl) renderContainerfile() (string, error) {
 		ReleaseVersion:    br.opts.getReleaseVersion(),
 		BaseOSImage:       br.opts.getBaseOSImagePullspec(),
 		ExtensionsImage:   br.opts.getExtensionsImagePullspec(),
+		Extensions:        br.opts.getExtensions(),
 	}
 
 	if err := tmpl.Execute(out, items); err != nil {
