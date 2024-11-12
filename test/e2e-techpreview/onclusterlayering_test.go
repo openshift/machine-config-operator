@@ -25,6 +25,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/openshift/machine-config-operator/pkg/controller/build/buildrequest"
+	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -93,7 +94,7 @@ type onClusterLayeringTestOpts struct {
 	useExtensions bool
 }
 
-func TestOnClusterBuildsOnOKD(t *testing.T) {
+func TestOnClusterLayeringOnOKD(t *testing.T) {
 	skipOnOCP(t)
 
 	runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
@@ -105,13 +106,30 @@ func TestOnClusterBuildsOnOKD(t *testing.T) {
 }
 
 // Tests that an on-cluster build can be performed with the Custom Pod Builder.
-func TestOnClusterBuildsCustomPodBuilder(t *testing.T) {
+func TestOnClusterLayering(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
 	runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
 		poolName: layeredMCPName,
 		customDockerfiles: map[string]string{
 			layeredMCPName: cowsayDockerfile,
 		},
 	})
+
+	t.Logf("Applying rebuild annotation (%q) to MachineOSConfig (%q) to cause a rebuild", constants.RebuildMachineOSConfigAnnotationKey, layeredMCPName)
+
+	cs := framework.NewClientSet("")
+
+	mosc, err := cs.MachineconfigurationV1alpha1Interface.MachineOSConfigs().Get(ctx, layeredMCPName, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	mosc.Annotations[constants.RebuildMachineOSConfigAnnotationKey] = ""
+
+	_, err = cs.MachineconfigurationV1alpha1Interface.MachineOSConfigs().Update(ctx, mosc, metav1.UpdateOptions{})
+	require.NoError(t, err)
+
+	waitForBuildToStartForPoolAndConfig(t, cs, layeredMCPName, layeredMCPName)
 }
 
 // Tests that an on-cluster build can be performed and that the resulting image
