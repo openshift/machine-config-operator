@@ -1,9 +1,12 @@
 package operator
 
 import (
+	"context"
 	"testing"
 
 	configv1 "github.com/openshift/api/config/v1"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -11,6 +14,9 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	fakeclientmachineconfigv1 "github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
+
+	mcfginformers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
 )
 
 func TestSyncCloudConfig(t *testing.T) {
@@ -152,5 +158,107 @@ func withCABundle(caBundle string) kubeCloudConfigOption {
 			kubeCloudConfig.Data = map[string]string{}
 		}
 		kubeCloudConfig.Data["ca-bundle.pem"] = caBundle
+	}
+}
+
+func TestReconcileSimpleContentAccessSecret(t *testing.T) {
+	masterPool := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
+	workerPool := helpers.NewMachineConfigPool("worker", nil, helpers.MasterSelector, "v0")
+	infraPool := helpers.NewMachineConfigPool("infra", nil, helpers.MasterSelector, "v0")
+	entitlementSecret := helpers.NewOpaqueSecret(ctrlcommon.SimpleContentAccessSecretName, ctrlcommon.OpenshiftConfigManagedNamespace, "abc")
+	workerEntitlementSecret := helpers.NewOpaqueSecret(ctrlcommon.SimpleContentAccessSecretName+"-"+workerPool.Name, ctrlcommon.MCONamespace, "abc")
+	infraEntitlementSecret := helpers.NewOpaqueSecret(ctrlcommon.SimpleContentAccessSecretName+"-"+infraPool.Name, ctrlcommon.MCONamespace, "abc")
+	outOfDateInfraEntitlementSecret := helpers.NewOpaqueSecret(ctrlcommon.SimpleContentAccessSecretName+"-"+infraPool.Name, ctrlcommon.MCONamespace, "123")
+
+	cases := []struct {
+		name               string
+		mcoSecrets         []*corev1.Secret
+		ocManagedSecrets   []*corev1.Secret
+		expectedMCOSecrets []corev1.Secret
+		layeredMCPs        []*mcfgv1.MachineConfigPool
+	}{
+		{
+			name:               "no entitlement secret on cluster, with opted-in pool",
+			ocManagedSecrets:   []*corev1.Secret{},
+			mcoSecrets:         []*corev1.Secret{},
+			expectedMCOSecrets: []corev1.Secret{},
+			layeredMCPs:        []*mcfgv1.MachineConfigPool{infraPool.DeepCopy()},
+		},
+		{
+			name:               "entitlement secret on cluster, with opted-in pool",
+			ocManagedSecrets:   []*corev1.Secret{entitlementSecret.DeepCopy()},
+			mcoSecrets:         []*corev1.Secret{},
+			layeredMCPs:        []*mcfgv1.MachineConfigPool{infraPool.DeepCopy()},
+			expectedMCOSecrets: []corev1.Secret{*infraEntitlementSecret.DeepCopy()},
+		},
+		{
+			name:               "entitlement secret on cluster, with multiple opted-in pools",
+			ocManagedSecrets:   []*corev1.Secret{entitlementSecret.DeepCopy()},
+			mcoSecrets:         []*corev1.Secret{},
+			layeredMCPs:        []*mcfgv1.MachineConfigPool{workerPool.DeepCopy(), infraPool.DeepCopy()},
+			expectedMCOSecrets: []corev1.Secret{*workerEntitlementSecret.DeepCopy(), *infraEntitlementSecret.DeepCopy()},
+		},
+		{
+			name:               "entitlement and cloned secret on cluster, with no opted-in pools",
+			ocManagedSecrets:   []*corev1.Secret{entitlementSecret.DeepCopy()},
+			mcoSecrets:         []*corev1.Secret{infraEntitlementSecret.DeepCopy()},
+			layeredMCPs:        []*mcfgv1.MachineConfigPool{},
+			expectedMCOSecrets: []corev1.Secret{},
+		},
+		{
+			name:               "entitlement and cloned secret on cluster, with an outdated cloned secret",
+			ocManagedSecrets:   []*corev1.Secret{entitlementSecret.DeepCopy()},
+			mcoSecrets:         []*corev1.Secret{outOfDateInfraEntitlementSecret.DeepCopy()},
+			layeredMCPs:        []*mcfgv1.MachineConfigPool{infraPool.DeepCopy()},
+			expectedMCOSecrets: []corev1.Secret{*infraEntitlementSecret.DeepCopy()},
+		},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			// Create fake kube client & informers
+			kubeClient := fake.NewSimpleClientset()
+			sharedInformerFactory := informers.NewSharedInformerFactory(kubeClient, 0)
+			mcoSecretInformer := sharedInformerFactory.Core().V1().Secrets()
+			ocManagedSecretInformer := sharedInformerFactory.Core().V1().Secrets()
+
+			// Add secrets to informer and client
+			for _, secret := range tc.mcoSecrets {
+				mcoSecretInformer.Informer().GetIndexer().Add(secret)
+				_, err := kubeClient.CoreV1().Secrets(ctrlcommon.MCONamespace).Create(context.TODO(), secret, metav1.CreateOptions{})
+				assert.NoError(t, err)
+			}
+			for _, secret := range tc.ocManagedSecrets {
+				ocManagedSecretInformer.Informer().GetIndexer().Add(secret)
+				_, err := kubeClient.CoreV1().Secrets(ctrlcommon.OpenshiftConfigManagedNamespace).Create(context.TODO(), secret, metav1.CreateOptions{})
+				assert.NoError(t, err)
+			}
+
+			// Create MCO specific clients
+			mcfgClient := fakeclientmachineconfigv1.NewSimpleClientset()
+			mcfgInformerFactory := mcfginformers.NewFilteredSharedInformerFactory(mcfgClient, 0, ctrlcommon.MCONamespace, nil)
+			mcpInformer := mcfgInformerFactory.Machineconfiguration().V1().MachineConfigPools()
+
+			// Add all pools to mcpInformer
+			mcpInformer.Informer().GetIndexer().Add(masterPool)
+			mcpInformer.Informer().GetIndexer().Add(workerPool)
+			mcpInformer.Informer().GetIndexer().Add(infraPool)
+
+			optr := &Operator{
+				client:                mcfgClient,
+				kubeClient:            kubeClient,
+				mcpLister:             mcpInformer.Lister(),
+				mcoSecretLister:       mcoSecretInformer.Lister(),
+				ocManagedSecretLister: ocManagedSecretInformer.Lister(),
+			}
+			err := optr.reconcileSimpleContentAccessSecrets(tc.layeredMCPs)
+			assert.NoError(t, err)
+
+			// Verify secrets in MCO namespace are as expected
+			secrets, err := kubeClient.CoreV1().Secrets(ctrlcommon.MCONamespace).List(context.TODO(), metav1.ListOptions{})
+			assert.NoError(t, err)
+			assert.ElementsMatch(t, secrets.Items, tc.expectedMCOSecrets)
+		})
 	}
 }
