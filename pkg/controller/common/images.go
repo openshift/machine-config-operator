@@ -1,11 +1,15 @@
 package common
 
 import (
+	"context"
 	"fmt"
 
 	"encoding/json"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	clientset "k8s.io/client-go/kubernetes"
 )
 
 // Images contain data derived from what github.com/openshift/installer's
@@ -122,4 +126,24 @@ func validateMCOConfigMap(cm *corev1.ConfigMap, name string, reqDataKeys, reqBin
 	}
 
 	return nil
+}
+
+// Gets and parses the OSImageURL data from the machine-config-osimageurl ConfigMap.
+func GetOSImageURLConfig(ctx context.Context, kubeclient clientset.Interface) (*OSImageURLConfig, error) {
+	cm, err := kubeclient.CoreV1().ConfigMaps(MCONamespace).Get(ctx, MachineConfigOSImageURLConfigMapName, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("could not get ConfigMap %s: %w", MachineConfigOSImageURLConfigMapName, err)
+	}
+
+	return ParseOSImageURLConfigMap(cm)
+}
+
+// Gets and parse the Images data from the machine-config-operator-images ConfigMap.
+func GetImagesConfig(ctx context.Context, kubeclient clientset.Interface) (*Images, error) {
+	cm, err := kubeclient.CoreV1().ConfigMaps(MCONamespace).Get(ctx, MachineConfigOperatorImagesConfigMapName, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("could not get configmap %s: %w", MachineConfigOperatorImagesConfigMapName, err)
+	}
+
+	return ParseImagesFromConfigMap(cm)
 }

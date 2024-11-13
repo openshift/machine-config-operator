@@ -6,9 +6,9 @@ import (
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
-	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
+	"github.com/openshift/machine-config-operator/pkg/controller/build/fixtures"
+	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -16,23 +16,22 @@ import (
 )
 
 const (
-	baseOSImagePullspec           string = "registry.ci.openshift.org/ocp/4.14-2023-05-29-125629@sha256:12e89d631c0ca1700262583acfb856b6e7dbe94800cb38035d68ee5cc912411c"
-	baseOSExtensionsImagePullspec string = "registry.ci.openshift.org/ocp/4.14-2023-05-29-125629@sha256:5b6d901069e640fc53d2e971fa1f4802bf9dea1a4ffba67b8a17eaa7d8dfa336"
-	mcoImagePullspec              string = "registry.ci.openshift.org/ocp/4.14-2023-05-29-125629@sha256:87980e0edfc86d01182f70c53527f74b5b01df00fe6d47668763d228d4de43a9"
-	releaseVersion                string = "release-version"
+	mcoImagePullspec = "registry.hostname.com/org/repo@sha256:87980e0edfc86d01182f70c53527f74b5b01df00fe6d47668763d228d4de43a9"
 )
 
-func expectedContents() []string {
-	return []string{
-		fmt.Sprintf("FROM %s AS extract", baseOSImagePullspec),
-		fmt.Sprintf("FROM %s AS configs", baseOSImagePullspec),
-		fmt.Sprintf("LABEL baseOSContainerImage=%s", baseOSImagePullspec),
-	}
-}
-
-// Tests that Image Build Requests is constructed as expected.
-func TestImageBuildRequest(t *testing.T) {
+// Tests that the BuildRequest is constructed as expected.
+func TestBuildRequest(t *testing.T) {
 	t.Parallel()
+
+	osImageURLConfig := fixtures.OSImageURLConfig()
+
+	expectedContents := func() []string {
+		return []string{
+			fmt.Sprintf("FROM %s AS extract", osImageURLConfig.BaseOSContainerImage),
+			fmt.Sprintf("FROM %s AS configs", osImageURLConfig.BaseOSContainerImage),
+			fmt.Sprintf("LABEL baseOSContainerImage=%s", osImageURLConfig.BaseOSContainerImage),
+		}
+	}
 
 	testCases := []struct {
 		name                            string
@@ -44,18 +43,18 @@ func TestImageBuildRequest(t *testing.T) {
 			name:     "With extensions image",
 			optsFunc: getBuildRequestOpts,
 			expectedContainerfileContents: append(expectedContents(), []string{
-				fmt.Sprintf("FROM %s AS extensions", baseOSExtensionsImagePullspec),
+				fmt.Sprintf("FROM %s AS extensions", osImageURLConfig.BaseOSExtensionsContainerImage),
 			}...),
 		},
 		{
 			name: "Missing extensions image",
 			optsFunc: func() BuildRequestOpts {
 				opts := getBuildRequestOpts()
-				opts.MachineOSConfig.Spec.BuildInputs.BaseOSExtensionsImagePullspec = ""
+				opts.OSImageURLConfig.BaseOSExtensionsContainerImage = ""
 				return opts
 			},
 			unexpectedContainerfileContents: []string{
-				fmt.Sprintf("FROM %s AS extensions", baseOSExtensionsImagePullspec),
+				fmt.Sprintf("FROM %s AS extensions", osImageURLConfig.BaseOSContainerImage),
 			},
 		},
 		{
@@ -93,21 +92,19 @@ func TestImageBuildRequest(t *testing.T) {
 			},
 		},
 		{
-			name: "OSImageURLConfig options are used instead",
+			name: "MachineOSConfig-provided options override OSImageURLConfig defaults",
 			optsFunc: func() BuildRequestOpts {
 				opts := getBuildRequestOpts()
-				opts.MachineOSConfig.Spec.BuildInputs.BaseOSImagePullspec = ""
-				opts.OSImageURLConfig.BaseOSContainerImage = "base-os-image-from-osimageurlconfig"
-				opts.MachineOSConfig.Spec.BuildInputs.BaseOSExtensionsImagePullspec = ""
-				opts.OSImageURLConfig.BaseOSExtensionsContainerImage = "base-os-image-from-osimageurlconfig"
-				opts.MachineOSConfig.Spec.BuildInputs.ReleaseVersion = ""
-				opts.OSImageURLConfig.ReleaseVersion = "custom-release-version"
+				opts.MachineOSConfig.Spec.BuildInputs.BaseOSImagePullspec = "base-os-image-from-machineosconfig"
+				opts.MachineOSConfig.Spec.BuildInputs.BaseOSExtensionsImagePullspec = "base-ext-image-from-machineosconfig"
+				opts.MachineOSConfig.Spec.BuildInputs.ReleaseVersion = "release-version-from-machineosconfig"
 				return opts
 			},
 			expectedContainerfileContents: []string{
-				"FROM base-os-image-from-osimageurlconfig AS extract",
-				"FROM base-os-image-from-osimageurlconfig AS configs",
-				"LABEL releaseversion=custom-release-version",
+				"FROM base-os-image-from-machineosconfig AS extract",
+				"FROM base-os-image-from-machineosconfig AS configs",
+				"FROM base-ext-image-from-machineosconfig AS extensions",
+				"LABEL releaseversion=release-version-from-machineosconfig",
 			},
 			unexpectedContainerfileContents: expectedContents(),
 		},
@@ -143,11 +140,14 @@ func TestImageBuildRequest(t *testing.T) {
 				assert.NotContains(t, containerfile, content)
 			}
 
-			buildPod := br.BuildPod()
+			buildPod := br.Builder().GetObject().(*corev1.Pod)
 
-			assert.Equal(t, "containerfile-rendered-worker-1", configmaps[0].Name)
-			assert.Equal(t, "mc-rendered-worker-1", configmaps[1].Name)
-			assert.Equal(t, "build-rendered-worker-1", buildPod.Name)
+			_, err = NewBuilder(buildPod)
+			assert.NoError(t, err)
+
+			assert.Equal(t, "containerfile-worker-afc35db0f874c9bfdc586e6ba39f1504", configmaps[0].Name)
+			assert.Equal(t, "mc-worker-afc35db0f874c9bfdc586e6ba39f1504", configmaps[1].Name)
+			assert.Equal(t, "build-worker-afc35db0f874c9bfdc586e6ba39f1504", buildPod.Name)
 
 			secrets, err := br.Secrets()
 			assert.NoError(t, err)
@@ -161,17 +161,17 @@ func TestImageBuildRequest(t *testing.T) {
 			}
 
 			for _, object := range objects {
-				assert.True(t, constants.EphemeralBuildObjectSelector().Matches(labels.Set(object.GetLabels())))
-				assert.True(t, constants.OSBuildSelector().Matches(labels.Set(object.GetLabels())))
-				assert.True(t, constants.IsObjectCreatedByBuildController(object))
+				assert.True(t, utils.EphemeralBuildObjectSelector().Matches(labels.Set(object.GetLabels())))
+				assert.True(t, utils.OSBuildSelector().Matches(labels.Set(object.GetLabels())))
+				assert.True(t, utils.IsObjectCreatedByBuildController(object))
 			}
 
 			for _, secret := range secrets {
 				assertSecretInCorrectFormat(t, secret)
 			}
 
-			assert.Equal(t, secrets[0].Name, "base-rendered-worker-1")
-			assert.Equal(t, secrets[1].Name, "final-rendered-worker-1")
+			assert.Equal(t, secrets[0].Name, "base-worker-afc35db0f874c9bfdc586e6ba39f1504")
+			assert.Equal(t, secrets[1].Name, "final-worker-afc35db0f874c9bfdc586e6ba39f1504")
 
 			assertBuildPodIsCorrect(t, buildPod, opts)
 		})
@@ -181,7 +181,7 @@ func TestImageBuildRequest(t *testing.T) {
 func assertSecretInCorrectFormat(t *testing.T, secret *corev1.Secret) {
 	t.Helper()
 
-	assert.True(t, constants.CanonicalizedSecretSelector().Matches(labels.Set(secret.GetLabels())))
+	assert.True(t, utils.CanonicalizedSecretSelector().Matches(labels.Set(secret.GetLabels())))
 	assert.Equal(t, secret.Type, corev1.SecretTypeDockerConfigJson)
 	assert.NotEqual(t, secret.Type, corev1.SecretTypeDockercfg)
 	assert.Contains(t, secret.Data, corev1.DockerConfigJsonKey)
@@ -213,8 +213,8 @@ func assertBuildPodIsCorrect(t *testing.T, buildPod *corev1.Pod, opts BuildReque
 
 	assert.Equal(t, buildPod.Spec.Containers[0].Image, mcoImagePullspec)
 	expectedPullspecs := []string{
-		"base-os-image-from-osimageurlconfig",
-		baseOSImagePullspec,
+		"base-os-image-from-machineosconfig",
+		fixtures.OSImageURLConfig().BaseOSContainerImage,
 	}
 
 	assert.Contains(t, expectedPullspecs, buildPod.Spec.Containers[1].Image)
@@ -223,7 +223,7 @@ func assertBuildPodIsCorrect(t *testing.T, buildPod *corev1.Pod, opts BuildReque
 		Name: "final-image-push-creds",
 		VolumeSource: corev1.VolumeSource{
 			Secret: &corev1.SecretVolumeSource{
-				SecretName: "final-rendered-worker-1",
+				SecretName: "final-worker-afc35db0f874c9bfdc586e6ba39f1504",
 				Items: []corev1.KeyToPath{
 					{
 						Key:  corev1.DockerConfigJsonKey,
@@ -238,7 +238,7 @@ func assertBuildPodIsCorrect(t *testing.T, buildPod *corev1.Pod, opts BuildReque
 		Name: "base-image-pull-creds",
 		VolumeSource: corev1.VolumeSource{
 			Secret: &corev1.SecretVolumeSource{
-				SecretName: "base-rendered-worker-1",
+				SecretName: "base-worker-afc35db0f874c9bfdc586e6ba39f1504",
 				Items: []corev1.KeyToPath{
 					{
 						Key:  corev1.DockerConfigJsonKey,
@@ -268,7 +268,7 @@ func assertBuildPodMatchesExpectations(t *testing.T, shouldBePresent bool, build
 
 		assert.Contains(t, container.Env, corev1.EnvVar{
 			Name:  "TAG",
-			Value: "registry.hostname.com/org/repo:rendered-worker-1",
+			Value: "registry.hostname.com/org/repo:worker-afc35db0f874c9bfdc586e6ba39f1504",
 		})
 	}
 }
@@ -278,35 +278,28 @@ func getBuildRequestOpts() BuildRequestOpts {
 RUN rpm-ostree install && \
 	ostree container commit`
 
-	layeredBuilder := helpers.NewLayeredBuilder("worker")
+	layeredObjects := fixtures.NewObjectBuildersForTest("worker")
+	layeredObjects.MachineOSConfigBuilder.
+		WithContainerfile(mcfgv1alpha1.NoArch, containerfileContents)
 
-	layeredBuilder.MachineConfigPoolBuilder().WithMachineConfig("rendered-worker-1")
-
-	layeredBuilder.MachineOSConfigBuilder().
-		WithBaseOSImagePullspec(baseOSImagePullspec).
-		WithBaseImagePullSecret("base-image-pull-secret").
-		WithRenderedImagePushSecret("final-image-push-secret").
-		WithCurrentImagePullSecret("current-image-pull-secret").
-		WithContainerfile(mcfgv1alpha1.NoArch, containerfileContents).
-		WithExtensionsImagePullspec(baseOSExtensionsImagePullspec)
-
-	mosc := layeredBuilder.MachineOSConfig()
-	mosc.Spec.BuildInputs.ReleaseVersion = releaseVersion
-	mosc.Status.CurrentImagePullspec = "registry.hostname.com/org/repo:rendered-worker-1"
+	layeredObjects.MachineOSBuildBuilder.
+		// Note: This is set statically so that the test suite is less brittle.
+		WithName("worker-afc35db0f874c9bfdc586e6ba39f1504").
+		WithRenderedImagePushspec("registry.hostname.com/org/repo:worker-afc35db0f874c9bfdc586e6ba39f1504")
 
 	legacySecret := `{"registry.hostname.com": {"username": "user", "password": "s3kr1t", "auth": "s00pers3kr1t", "email": "user@hostname.com"}}`
 	newSecret := `{"auths":` + legacySecret + `}`
 
 	return BuildRequestOpts{
 		MachineConfig:   &mcfgv1.MachineConfig{},
-		MachineOSConfig: mosc,
-		MachineOSBuild:  layeredBuilder.MachineOSBuild(),
+		MachineOSConfig: layeredObjects.MachineOSConfigBuilder.MachineOSConfig(),
+		MachineOSBuild:  layeredObjects.MachineOSBuildBuilder.MachineOSBuild(),
 		Images: &ctrlcommon.Images{
 			RenderConfigImages: ctrlcommon.RenderConfigImages{
 				MachineConfigOperator: mcoImagePullspec,
 			},
 		},
-		OSImageURLConfig: &ctrlcommon.OSImageURLConfig{},
+		OSImageURLConfig: fixtures.OSImageURLConfig(),
 		BaseImagePullSecret: &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "base-image-pull-secret",

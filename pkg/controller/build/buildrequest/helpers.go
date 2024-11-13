@@ -11,58 +11,12 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+	"github.com/containers/image/v5/docker"
+	"github.com/distribution/reference"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
+	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 )
-
-// Computes the Containerfile ConfigMap name.
-func GetContainerfileConfigMapName(mosb *mcfgv1alpha1.MachineOSBuild) string {
-	return fmt.Sprintf("containerfile-%s", getFieldFromMachineOSBuild(mosb))
-}
-
-// Computes the MachineConfig ConfigMap name.
-func GetMCConfigMapName(mosb *mcfgv1alpha1.MachineOSBuild) string {
-	return fmt.Sprintf("mc-%s", getFieldFromMachineOSBuild(mosb))
-}
-
-// Computes the build pod name.
-func GetBuildPodName(mosb *mcfgv1alpha1.MachineOSBuild) string {
-	return fmt.Sprintf("build-%s", getFieldFromMachineOSBuild(mosb))
-}
-
-// Computes the digest configmap name.
-func GetDigestConfigMapName(mosb *mcfgv1alpha1.MachineOSBuild) string {
-	return fmt.Sprintf("digest-%s", getFieldFromMachineOSBuild(mosb))
-}
-
-// Computes the base image pull secret name.
-func GetBasePullSecretName(mosb *mcfgv1alpha1.MachineOSBuild) string {
-	return fmt.Sprintf("base-%s", getFieldFromMachineOSBuild(mosb))
-}
-
-// Computes the final image push secret name.
-func GetFinalPushSecretName(mosb *mcfgv1alpha1.MachineOSBuild) string {
-	return fmt.Sprintf("final-%s", getFieldFromMachineOSBuild(mosb))
-}
-
-func ValidatePullSecret(secret *corev1.Secret) error {
-	_, err := getPullSecretKey(secret)
-
-	if err != nil {
-		return fmt.Errorf("invalid secret %s: %w", secret.Name, err)
-	}
-
-	return nil
-}
-
-// Gets the field from the MachineOSBuild that is used for naming the ephemeral
-// build objects. For now, we're using the DesiredConfig name from the
-// MachineConfig, but arguably, we should be using the name of the
-// MachineOSBuild object instead.
-func getFieldFromMachineOSBuild(mosb *mcfgv1alpha1.MachineOSBuild) string {
-	return mosb.Spec.DesiredConfig.Name
-}
 
 // Compresses and base-64 encodes a given byte array. Ideal for loading an
 // arbitrary byte array into a ConfigMap or Secret.
@@ -117,7 +71,7 @@ func compress(r io.Reader, w io.Writer) error {
 func canonicalizePullSecret(secret *corev1.Secret) (*corev1.Secret, error) {
 	secret = secret.DeepCopy()
 
-	key, err := getPullSecretKey(secret)
+	key, err := utils.GetPullSecretKey(secret)
 	if err != nil {
 		return nil, err
 	}
@@ -156,30 +110,18 @@ func newCanonicalSecret(secret *corev1.Secret, secretBytes []byte) *corev1.Secre
 	}
 }
 
-// Looks up a given secret key for a given secret type and validates that the
-// key is present and the secret is a non-zero length. Returns an error if it
-// is the incorrect secret type, missing the appropriate key, or the secret is
-// a zero-length.
-func getPullSecretKey(secret *corev1.Secret) (string, error) {
-	if secret.Type != corev1.SecretTypeDockerConfigJson && secret.Type != corev1.SecretTypeDockercfg {
-		return "", fmt.Errorf("unknown secret type %s", secret.Type)
+func validateImageHasDigestedPullspec(pullspec string) error {
+	tagged, err := docker.ParseReference("//" + pullspec)
+	if err != nil {
+		return err
 	}
 
-	secretTypes := map[corev1.SecretType]string{
-		corev1.SecretTypeDockercfg:        corev1.DockerConfigKey,
-		corev1.SecretTypeDockerConfigJson: corev1.DockerConfigJsonKey,
+	switch tagged.DockerReference().(type) {
+	case reference.Tagged:
+		return fmt.Errorf("expected a pullspec with a SHA256 digest, got %q", pullspec)
+	case reference.Digested:
+		return nil
+	default:
+		return fmt.Errorf("unknown image reference spec %q", pullspec)
 	}
-
-	key := secretTypes[secret.Type]
-
-	val, ok := secret.Data[key]
-	if !ok {
-		return "", fmt.Errorf("missing %q in %s", key, secret.Name)
-	}
-
-	if len(val) == 0 {
-		return "", fmt.Errorf("empty value %q in %s", key, secret.Name)
-	}
-
-	return key, nil
 }
