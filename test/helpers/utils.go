@@ -23,6 +23,10 @@ import (
 	aggerrs "k8s.io/apimachinery/pkg/util/errors"
 	"sigs.k8s.io/yaml"
 
+	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
+
+	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	"github.com/davecgh/go-spew/spew"
 	configv1 "github.com/openshift/api/config/v1"
@@ -1786,4 +1790,23 @@ func nodeListToSet(nodeList *corev1.NodeList) sets.Set[string] {
 	}
 
 	return nodes
+}
+
+func SetContainerfileContentsOnMachineOSConfig(ctx context.Context, t *testing.T, mcfgclient mcfgclientset.Interface, mosc *mcfgv1alpha1.MachineOSConfig, contents string) *mcfgv1alpha1.MachineOSConfig {
+	t.Helper()
+
+	apiMosc, err := mcfgclient.MachineconfigurationV1alpha1().MachineOSConfigs().Get(ctx, mosc.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	apiMosc.Spec.BuildInputs.Containerfile = []mcfgv1alpha1.MachineOSContainerfile{
+		{
+			ContainerfileArch: mcfgv1alpha1.NoArch,
+			Content:           contents,
+		},
+	}
+
+	apiMosc, err = mcfgclient.MachineconfigurationV1alpha1().MachineOSConfigs().Update(ctx, apiMosc, metav1.UpdateOptions{})
+	require.NoError(t, err)
+
+	return apiMosc
 }
