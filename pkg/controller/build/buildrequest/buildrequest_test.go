@@ -6,6 +6,7 @@ import (
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/fixtures"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -193,7 +194,7 @@ func assertBuildPodIsCorrect(t *testing.T, buildPod *corev1.Pod, opts BuildReque
 	etcRpmGpgKeysOpts := optsForEtcRpmGpgKeys()
 	assertBuildPodMatchesExpectations(t, opts.HasEtcPkiRpmGpgKeys, buildPod,
 		etcRpmGpgKeysOpts.envVar(),
-		etcRpmGpgKeysOpts.volumeForSecret(),
+		etcRpmGpgKeysOpts.volumeForSecret(constants.EtcPkiRpmGpgSecretName),
 		etcRpmGpgKeysOpts.volumeMount(),
 	)
 
@@ -207,7 +208,7 @@ func assertBuildPodIsCorrect(t *testing.T, buildPod *corev1.Pod, opts BuildReque
 	etcPkiEntitlementKeysOpts := optsForEtcPkiEntitlements()
 	assertBuildPodMatchesExpectations(t, opts.HasEtcPkiEntitlementKeys, buildPod,
 		etcPkiEntitlementKeysOpts.envVar(),
-		etcPkiEntitlementKeysOpts.volumeForSecret(),
+		etcPkiEntitlementKeysOpts.volumeForSecret(constants.EtcPkiEntitlementSecretName+"-"+opts.MachineOSConfig.Spec.MachineConfigPool.Name),
 		etcPkiEntitlementKeysOpts.volumeMount(),
 	)
 
