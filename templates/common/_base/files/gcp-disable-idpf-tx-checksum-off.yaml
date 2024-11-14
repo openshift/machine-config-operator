@@ -1,0 +1,13 @@
+mode: 0744
+path: "/etc/NetworkManager/dispatcher.d/99-gcp-disable-idpf-tx-checksum-off"
+contents:
+  inline: |
+    #!/bin/bash
+    # Workaround:
+    # https://issues.redhat.com/browse/OCPBUGS-38779
+    
+    driver=$(nmcli -t -m tabular -f general.driver dev show "${DEVICE_IFACE}")
+
+    if [[ "$2" == "up" && "${driver}" == "idpf" ]]; then
+      ethtool -K ${DEVICE_IFACE} tx-checksumming off
+    fi
