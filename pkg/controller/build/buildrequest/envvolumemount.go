@@ -62,13 +62,13 @@ func (e *envVolumeAndMountOpts) volumeForConfigMap() corev1.Volume {
 }
 
 // Constructs the volume object to refer to a Secret.
-func (e *envVolumeAndMountOpts) volumeForSecret() corev1.Volume {
+func (e *envVolumeAndMountOpts) volumeForSecret(secretName string) corev1.Volume {
 	return corev1.Volume{
 		Name: e.name,
 		VolumeSource: corev1.VolumeSource{
 			Secret: &corev1.SecretVolumeSource{
 				DefaultMode: e.mountMode(),
-				SecretName:  e.name,
+				SecretName:  secretName,
 			},
 		},
 	}
