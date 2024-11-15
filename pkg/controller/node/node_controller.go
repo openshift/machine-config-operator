@@ -997,7 +997,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	mosc, mosb, _ := ctrl.GetConfigAndBuild(pool)
 	layered, err := ctrl.IsLayeredPool(mosc, mosb)
 	if err != nil {
-		return fmt.Errorf("Failed to determine whether pool %s opts in to OCL due to an error: %s", pool.Name, err)
+		return fmt.Errorf("failed to determine whether pool %s opts in to OCL due to an error: %s", pool.Name, err)
 	}
 
 	if layered {
@@ -1073,7 +1073,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 				zones[zone] = true
 			}
 		}
-		ctrl.logPool(pool, "%d candidate nodes in %d zones for update, capacity: %d", len(candidates), len(zones), capacity)
+		klog.Infof("%s: %d candidate nodes in %d zones for update, capacity: %d", pool.Name, len(candidates), len(zones), capacity)
 		if err := ctrl.updateCandidateMachines(pool, candidates, capacity); err != nil {
 			if syncErr := ctrl.syncStatusOnly(pool); syncErr != nil {
 				errs := kubeErrs.NewAggregate([]error{syncErr, err})
@@ -1165,8 +1165,11 @@ func (ctrl *Controller) updateCandidateNode(mosc *mcfgv1alpha1.MachineOSConfig, 
 		lns := ctrlcommon.NewLayeredNodeState(oldNode)
 		layered, err := ctrl.IsLayeredPool(mosc, mosb)
 		if err != nil {
-			return fmt.Errorf("Failed to determine whether pool %s opts in to OCL due to an error: %s", pool.Name, err)
+			return fmt.Errorf("failed to determine whether pool %s opts in to OCL due to an error: %s", pool.Name, err)
 		}
+
+		klog.Infof("updateCandidateNode: node=%s, pool=%s, layered=%t, mosbIsNil=%t", nodeName, pool.Name, layered, (mosb == nil))
+
 		if mosb == nil {
 			if lns.IsDesiredEqualToPool(pool, layered) {
 				// If the node's desired annotations match the pool, return directly without updating the node.
@@ -1209,20 +1212,39 @@ func (ctrl *Controller) updateCandidateNode(mosc *mcfgv1alpha1.MachineOSConfig, 
 // getAllCandidateMachines returns all possible nodes which can be updated to the target config, along with a maximum
 // capacity.  It is the reponsibility of the caller to choose a subset of the nodes given the capacity.
 func getAllCandidateMachines(layered bool, config *mcfgv1alpha1.MachineOSConfig, build *mcfgv1alpha1.MachineOSBuild, pool *mcfgv1.MachineConfigPool, nodesInPool []*corev1.Node, maxUnavailable int) ([]*corev1.Node, uint) {
-	unavail := getUnavailableMachines(nodesInPool, pool, layered, build)
-	if len(unavail) >= maxUnavailable {
-		klog.V(4).Infof("Pool %s: No nodes available for updates", pool.Name)
+	// Find all nodes that are “unavailable” (already updating, not ready, etc.)
+	unavail := getUnavailableMachines(nodesInPool, layered)
+
+	initialCapacity := maxUnavailable - len(unavail)
+	if initialCapacity <= 0 {
+		klog.Infof("Pool %s: No capacity available for updates (unavailable: %d, max: %d)", pool.Name, len(unavail), maxUnavailable)
 		return nil, 0
 	}
-	capacity := maxUnavailable - len(unavail)
-	failingThisConfig := 0
+
+	if len(unavail) >= maxUnavailable {
+		klog.Infof("Pool %s: No nodes available for updates", pool.Name)
+		return nil, 0
+	}
+
+	klog.Infof("maxUnavailable is %d and unavail is %d (getAllCandidateMachines)", maxUnavailable, len(unavail))
+	capacity := initialCapacity
+	klog.Infof("calculated initialcapacity is %d (getAllCandidateMachines)", capacity)
+
 	// We only look at nodes which aren't already targeting our desired config
+	failingThisConfig := 0
 	var nodes []*corev1.Node
+
+	// Collect new nodes which aren’t “done” (i.e. not matching the desired config).
+	//    But short-circuit if we already picked 'capacity' nodes.
 	for _, node := range nodesInPool {
+		if len(nodes) >= capacity {
+			klog.Infof("Already picked %d nodes, capacity is %d, stopping", len(nodes), capacity)
+			break
+		}
 		lns := ctrlcommon.NewLayeredNodeState(node)
 		if !layered {
 			if lns.IsDesiredEqualToPool(pool, layered) {
-				if isNodeMCDFailing(node) {
+				if isNodeMCDFailing(node) || isNodeQueuedForUpdate(node) {
 					failingThisConfig++
 				}
 				continue
@@ -1236,22 +1258,56 @@ func getAllCandidateMachines(layered bool, config *mcfgv1alpha1.MachineOSConfig,
 		}
 		// Ignore nodes that are currently mid-update or unscheduled
 		if !isNodeReady(node) {
-			klog.V(4).Infof("node %s skipped during candidate selection as it is currently unscheduled", node.Name)
+			klog.Infof("node %s skipped during candidate selection as it is not ready", node.Name)
 			continue
 		}
-		klog.V(4).Infof("Pool %s: selected candidate node %s", pool.Name, node.Name)
+		klog.Infof("Pool %s: selected candidate node %s", pool.Name, node.Name)
 		nodes = append(nodes, node)
+		klog.Infof("selected %s total candidate nodes", nodes)
 	}
-	// Nodes which are failing to target this config also count against
-	// availability - it might be a transient issue, and if the issue
-	// clears we don't want multiple to update at once.
-	if failingThisConfig >= capacity {
-		return nil, 0
-	}
-	capacity -= failingThisConfig
+
+	capacity = initialCapacity - failingThisConfig
+	klog.Infof("calculated capacity after failingThisConfig is %d (getAllCandidateMachines)", capacity)
+
 	return nodes, uint(capacity)
 }
 
+func (ctrl *Controller) SetNodeAnnotations(nodeName string, annotations map[string]string) error {
+	if err := clientretry.RetryOnConflict(clientretry.DefaultBackoff, func() error {
+		n, err := ctrl.kubeClient.CoreV1().Nodes().Get(context.TODO(), nodeName, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		oldNode, err := json.Marshal(n)
+		if err != nil {
+			return err
+		}
+
+		nodeClone := n.DeepCopy()
+		for k, v := range annotations {
+			nodeClone.Annotations[k] = v
+		}
+
+		newNode, err := json.Marshal(nodeClone)
+		if err != nil {
+			return err
+		}
+
+		patchBytes, err := strategicpatch.CreateTwoWayMergePatch(oldNode, newNode, corev1.Node{})
+		if err != nil {
+			return fmt.Errorf("node %s: failed to create patch for: %v", nodeName, err)
+		}
+
+		_, err = ctrl.kubeClient.CoreV1().Nodes().Patch(context.TODO(), nodeName, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
+		return err
+	}); err != nil {
+		// may be conflict if max retries were hit
+		return fmt.Errorf("node %s: unable to update: %v", nodeName, err)
+	}
+	return nil
+}
+
+// NOTE: This is only used in the test suite. This needs to be moved there
 // getCandidateMachines returns the maximum subset of nodes which can be updated to the target config given availability constraints.
 func getCandidateMachines(pool *mcfgv1.MachineConfigPool, config *mcfgv1alpha1.MachineOSConfig, build *mcfgv1alpha1.MachineOSBuild, nodesInPool []*corev1.Node, maxUnavailable int, layered bool) []*corev1.Node {
 	nodes, capacity := getAllCandidateMachines(layered, config, build, pool, nodesInPool, maxUnavailable)
@@ -1313,27 +1369,49 @@ func (ctrl *Controller) updateCandidateMachines(pool *mcfgv1.MachineConfigPool, 
 		}
 		// In practice right now these counts will be 1 but let's stay general to support 5 etcd nodes in the future
 		ctrl.logPool(pool, "filtered to %d candidate nodes for update, capacity: %d", len(candidates), capacity)
-	}
-	if capacity < uint(len(candidates)) {
-		// when list is longer than maxUnavailable, rollout nodes in zone order, zones without zone label
-		// are done last from oldest to youngest. this reduces likelihood of randomly picking nodes
-		// across multiple zones that run the same types of pods resulting in an outage in HA clusters
-		candidates = sortNodeList(candidates)
-
-		candidates = candidates[:capacity]
+		klog.Infof("Filtered to %d candidate nodes for update, capacity: %d [updateCandidateMachines]", len(candidates), capacity)
 	}
 
-	return ctrl.setDesiredAnnotations(pool, candidates)
+	allPoolNodes, err := ctrl.getNodesForPool(pool)
+	if err != nil {
+		return err
+	}
+	unavailableCount := len(getUnavailableMachines(allPoolNodes, false))
+	klog.Infof("Total unavailable nodes for pool %s: %d [updateCandidateMachines]", pool.Name, unavailableCount)
+
+	nodesToUpdate := []*corev1.Node{}
+	for _, candidate := range candidates {
+		// Check the sum of (already unavailable) + (about-to-be-updated)
+		if uint(len(nodesToUpdate)+unavailableCount) >= capacity {
+			klog.Infof("Reached capacity limit (%d nodes), stopping selection [updateCandidateMachines]", capacity)
+			break
+		}
+		nodesToUpdate = append(nodesToUpdate, candidate)
+
+		// annotate selected node
+		annotations := map[string]string{daemonconsts.UpdateQueuedAnnotationKey: "true"}
+		if err := ctrl.SetNodeAnnotations(candidate.Name, annotations); err != nil {
+			klog.Errorf("Failed to annotate node %s as queued: %v", candidate.Name, err)
+			continue
+		}
+		klog.Infof("Selected node %s for update (current selection count: %d) [updateCandidateMachines]",
+			candidate.Name, len(nodesToUpdate))
+	}
+
+	klog.Infof("Final list of nodes to update in pool %s: %d nodes (capacity: %d) [updateCandidateMachines]",
+		pool.Name, len(nodesToUpdate), capacity)
+	return ctrl.setDesiredAnnotations(pool, nodesToUpdate)
 }
 
 func (ctrl *Controller) setDesiredAnnotations(pool *mcfgv1.MachineConfigPool, candidates []*corev1.Node) error {
+	klog.Infof("setDesiredAnnotations called for pool %s with %d candidates", pool.Name, len(candidates))
 	eventName := "SetDesiredConfig"
 	updateName := fmt.Sprintf("MachineConfig: %s", pool.Spec.Configuration.Name)
 	config, build, _ := ctrl.GetConfigAndBuild(pool)
 	layered, err := ctrl.IsLayeredPool(config, build)
 
 	if err != nil {
-		return fmt.Errorf("Failed to determine whether pool %s opts in to OCL due to an error: %s", pool.Name, err)
+		return fmt.Errorf("failed to determine whether pool %s opts in to OCL due to an error: %s", pool.Name, err)
 	}
 	if layered {
 		eventName = "SetDesiredConfigAndOSImage"
@@ -1344,16 +1422,42 @@ func (ctrl *Controller) setDesiredAnnotations(pool *mcfgv1.MachineConfigPool, ca
 		if err := ctrl.updateCandidateNode(config, build, node.Name, pool); err != nil {
 			return fmt.Errorf("setting desired %s for node %s: %w", pool.Spec.Configuration.Name, node.Name, err)
 		}
+		if isNodeDone(node, layered) {
+			klog.Infof("Node %s is done with update, removing '%s' annotation", node.Name, daemonconsts.UpdateQueuedAnnotationKey)
+			ctrl.removeQueuedAnnotationIfNeeded(node)
+		}
 	}
 
 	if len(candidates) == 1 {
 		candidate := candidates[0]
 		ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, eventName, "Targeted node %s to %s", candidate.Name, updateName)
+		klog.Infof("Node %s marked for update with desired config %s [setDesiredAnnotations]", candidate.Name, updateName)
 	} else {
 		ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, eventName, "Set target for %d nodes to %s", len(candidates), updateName)
+		klog.Infof("%d nodes in pool %s marked for update with desired config %s [setDesiredAnnotations]", len(candidates), pool.Name, updateName)
 	}
 
 	return nil
+}
+
+func (ctrl *Controller) removeQueuedAnnotationIfNeeded(node *corev1.Node) {
+
+	if node.Annotations[daemonconsts.UpdateQueuedAnnotationKey] == "true" {
+		klog.Infof("Node %s completed update => removing '%s' annotation", node.Name, daemonconsts.UpdateQueuedAnnotationKey)
+		if !isNodeDone(node, false) {
+			klog.Infof("Node %s is not done, skipping queued annotation removal", node.Name)
+			return
+		}
+		newAnnotations := map[string]string{
+			daemonconsts.UpdateQueuedAnnotationKey: "",
+		}
+		if err := ctrl.SetNodeAnnotations(node.Name, newAnnotations); err != nil {
+			klog.Errorf("Failed to remove updateQueued annotation from node %s: %v", node.Name, err)
+		} else {
+			klog.Infof("Removed '%s' annotation from node %s [removeQueuedAnnotationIfNeeded]",
+				daemonconsts.UpdateQueuedAnnotationKey, node.Name)
+		}
+	}
 }
 
 // sortNodeList sorts the list of candidate nodes by label topology.kubernetes.io/zone

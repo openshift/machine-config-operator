@@ -595,10 +595,9 @@ func TestGetUnavailableMachines(t *testing.T) {
 				pb.WithLayeringEnabled()
 				pb.WithImage(imageV1)
 			}
+			// pool := pb.MachineConfigPool()
 
-			pool := pb.MachineConfigPool()
-
-			unavailableNodes := getUnavailableMachines(test.nodes, pool, test.layeredPool, nil)
+			unavailableNodes := getUnavailableMachines(test.nodes, test.layeredPool)
 			assertExpectedNodes(t, test.unavail, unavailableNodes)
 		})
 	}

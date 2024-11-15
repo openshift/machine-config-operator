@@ -38,7 +38,8 @@ const (
 	ControllerConfigSyncServerCA = "machineconfiguration.openshift.io/lastObservedServerCAAnnotation"
 	// GeneratedByVersionAnnotationKey is used to tag the controllerconfig to synchronize the MCO and MCC
 	GeneratedByVersionAnnotationKey = "machineconfiguration.openshift.io/generated-by-version"
-
+	// UpdateQueuedAnnotationKey is set on a node to indicate that it is queued for an update.
+	UpdateQueuedAnnotationKey = "machineconfiguration.openshift.io/update-queued"
 	// MachineConfigDaemonStateWorking is set by daemon when it is beginning to apply an update.
 	MachineConfigDaemonStateWorking = "Working"
 	// MachineConfigDaemonStateDone is set by daemon when it is done applying an update.

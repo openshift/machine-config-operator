@@ -206,7 +206,7 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 		readyMachines = getReadyMachines(pool, nodes, mosc, mosb, l)
 		readyMachineCount = int32(len(readyMachines))
 
-		unavailableMachines = getUnavailableMachines(nodes, pool, l, mosb)
+		unavailableMachines = getUnavailableMachines(nodes, l)
 		unavailableMachineCount = int32(len(unavailableMachines))
 
 		degradedMachines = getDegradedMachines(nodes)
@@ -357,6 +357,9 @@ func isNodeManaged(node *corev1.Node) bool {
 
 // isNodeDone returns true if the current == desired and the MCD has marked done.
 func isNodeDone(node *corev1.Node, layered bool) bool {
+	klog.Infof("Checking if node %s is done: current=%s, desired=%s",
+		node.Name, node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey],
+		node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey])
 	if node.Annotations == nil {
 		return false
 	}
@@ -419,6 +422,12 @@ func isNodeMCDFailing(node *corev1.Node) bool {
 	}
 	return isNodeMCDState(node, daemonconsts.MachineConfigDaemonStateDegraded) ||
 		isNodeMCDState(node, daemonconsts.MachineConfigDaemonStateUnreconcilable)
+}
+
+func isNodeQueuedForUpdate(node *corev1.Node) bool {
+	queued := node.Annotations[daemonconsts.UpdateQueuedAnnotationKey] == "true"
+	klog.Infof("Node %s queued for update: %t [isNodeQueuedForUpdate]", node.Name, queued)
+	return queued
 }
 
 // getUpdatedMachines filters the provided nodes to return the nodes whose
@@ -487,8 +496,16 @@ func isNodeReady(node *corev1.Node) bool {
 func isNodeUnavailable(node *corev1.Node, layered bool) bool {
 	// Unready nodes are unavailable
 	if !isNodeReady(node) {
+		klog.Infof("[isNodeUnavailable] Node %s is NOT ready => unavailable", node.Name)
 		return true
 	}
+
+	//debugging line
+	if isNodeMCDState(node, daemonconsts.MachineConfigDaemonStateWorking) {
+		klog.Infof("Node %s is unavailable: node is in MCD state=Working", node.Name)
+		return true
+	}
+
 	// If the node is working towards a new image/MC, it is not available
 	if isNodeDone(node, layered) {
 		return false
@@ -502,25 +519,20 @@ func isNodeUnavailable(node *corev1.Node, layered bool) bool {
 }
 
 // getUnavailableMachines returns the set of nodes which are
-// either marked unscheduleable, or have a MCD actively working.
+// either marked unschedulable, or have a MCD actively working.
 // If the MCD is actively working (or hasn't started) then the
-// node *may* go unschedulable in the future, so we don't want to
+// node *may* go unschdedulable in the future, so we don't want to
 // potentially start another node update exceeding our maxUnavailable.
 // Somewhat the opposite of getReadyNodes().
-func getUnavailableMachines(nodes []*corev1.Node, pool *mcfgv1.MachineConfigPool, layered bool, mosb *mcfgv1alpha1.MachineOSBuild) []*corev1.Node {
+func getUnavailableMachines(nodes []*corev1.Node, layered bool) []*corev1.Node {
 	var unavail []*corev1.Node
+	klog.Infof("getUnavailableMachines: checking %d nodes (layered=%t)", len(nodes), layered)
 	for _, node := range nodes {
-		if mosb != nil {
-			mosbState := ctrlcommon.NewMachineOSBuildState(mosb)
-			// if node is unavail, desiredConfigs match, and the build is a success, then we are unavail.
-			// not sure on this one honestly
-			if layered && isNodeUnavailable(node, layered) && mosb.Spec.DesiredConfig.Name == pool.Spec.Configuration.Name && mosbState.IsBuildSuccess() {
-				unavail = append(unavail, node)
-			}
-		} else if isNodeUnavailable(node, layered) {
+		if !isNodeReady(node) || isNodeMCDFailing(node) || isNodeQueuedForUpdate(node) {
 			unavail = append(unavail, node)
 		}
 	}
+	klog.Infof("Total unavailable nodes (getUnavailableMachines): %d", len(unavail))
 	return unavail
 }
 
