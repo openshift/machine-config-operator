@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	apierrs "k8s.io/apimachinery/pkg/api/errors"
 
 	"github.com/openshift/machine-config-operator/test/framework"
@@ -75,9 +75,9 @@ func getLabelsForClonedObject(addlLabels map[string]string) map[string]string {
 }
 
 func createSecret(cs *framework.ClientSet, s *corev1.Secret) error {
-	_, err := cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace).Create(context.TODO(), s, metav1.CreateOptions{})
+	_, err := cs.CoreV1Interface.Secrets(commonconsts.MCONamespace).Create(context.TODO(), s, metav1.CreateOptions{})
 	if err == nil {
-		klog.Infof("Created secret %q in namespace %q", s.Name, ctrlcommon.MCONamespace)
+		klog.Infof("Created secret %q in namespace %q", s.Name, commonconsts.MCONamespace)
 		return nil
 	}
 
@@ -85,13 +85,13 @@ func createSecret(cs *framework.ClientSet, s *corev1.Secret) error {
 		return err
 	}
 
-	secret, err := cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace).Get(context.TODO(), s.Name, metav1.GetOptions{})
+	secret, err := cs.CoreV1Interface.Secrets(commonconsts.MCONamespace).Get(context.TODO(), s.Name, metav1.GetOptions{})
 	if err != nil {
 		return err
 	}
 
 	if _, ok := secret.Labels[RecreatableSecretLabelKey]; ok {
-		if err := cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace).Delete(context.TODO(), s.Name, metav1.DeleteOptions{}); err != nil {
+		if err := cs.CoreV1Interface.Secrets(commonconsts.MCONamespace).Delete(context.TODO(), s.Name, metav1.DeleteOptions{}); err != nil {
 			return err
 		}
 

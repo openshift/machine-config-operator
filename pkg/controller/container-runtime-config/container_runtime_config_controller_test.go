@@ -42,6 +42,7 @@ import (
 	operatorinformer "github.com/openshift/client-go/operator/informers/externalversions"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/openshift/machine-config-operator/test/helpers"
@@ -638,7 +639,7 @@ func TestContainerRuntimeConfigCreate(t *testing.T) {
 			nine := resource.MustParse("9k")
 			three := resource.MustParse("3G")
 
-			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			cc := newControllerConfig(commonconsts.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			ctrcfg1 := newContainerRuntimeConfig("set-log-level", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug", LogSizeMax: &nine, OverlaySize: &three}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
@@ -678,7 +679,7 @@ func TestContainerRuntimeConfigUpdate(t *testing.T) {
 			nine := resource.MustParse("9k")
 			three := resource.MustParse("3G")
 
-			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			cc := newControllerConfig(commonconsts.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			ctrcfg1 := newContainerRuntimeConfig("set-log-level", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug", LogSizeMax: &nine, OverlaySize: &three}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
@@ -764,7 +765,7 @@ func TestImageConfigCreate(t *testing.T) {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
 
-			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			cc := newControllerConfig(commonconsts.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			imgcfg1 := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"blah.io"}, AllowedRegistries: []string{"allow.io"}, ContainerRuntimeSearchRegistries: []string{"search-reg.io"}})
@@ -812,7 +813,7 @@ func TestImageConfigUpdate(t *testing.T) {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
 
-			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			cc := newControllerConfig(commonconsts.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			imgcfg1 := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"blah.io"}, AllowedRegistries: []string{"allow.io"}, ContainerRuntimeSearchRegistries: []string{"search-reg.io"}})
@@ -914,7 +915,7 @@ func TestICSPUpdate(t *testing.T) {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
 
-			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			cc := newControllerConfig(commonconsts.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			imgcfg1 := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"blah.io"}})
@@ -1023,7 +1024,7 @@ func TestIDMSUpdate(t *testing.T) {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
 
-			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			cc := newControllerConfig(commonconsts.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			imgcfg1 := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"blah.io"}})
@@ -1132,7 +1133,7 @@ func TestITMSUpdate(t *testing.T) {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
 
-			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			cc := newControllerConfig(commonconsts.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			imgcfg1 := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"blah.io"}})
@@ -1279,7 +1280,7 @@ func TestRunImageBootstrap(t *testing.T) {
 		} {
 
 			t.Run(string(platform), func(t *testing.T) {
-				cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+				cc := newControllerConfig(commonconsts.ControllerConfigName, platform)
 				pools := []*mcfgv1.MachineConfigPool{
 					helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
 					helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0"),
@@ -1621,7 +1622,7 @@ func TestCtrruntimeConfigMultiCreate(t *testing.T) {
 			f := newFixture(t)
 			f.newController()
 
-			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			cc := newControllerConfig(commonconsts.ControllerConfigName, platform)
 			f.ccLister = append(f.ccLister, cc)
 
 			ctrcfgCount := 30
@@ -1666,7 +1667,7 @@ func TestContainerruntimeConfigResync(t *testing.T) {
 			f := newFixture(t)
 			f.newController()
 
-			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			cc := newControllerConfig(commonconsts.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			ccr1 := newContainerRuntimeConfig("log-level-1", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
@@ -1698,10 +1699,10 @@ func TestContainerruntimeConfigResync(t *testing.T) {
 				t.Errorf("syncHandler returned: %v", err)
 			}
 
-			val := ccr2.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
+			val := ccr2.GetAnnotations()[commonconsts.MCNameSuffixAnnotationKey]
 			require.Equal(t, "1", val)
 
-			val = ccr1.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
+			val = ccr1.GetAnnotations()[commonconsts.MCNameSuffixAnnotationKey]
 			require.Equal(t, "", val)
 
 			// resync kc1 and kc2
@@ -1710,7 +1711,7 @@ func TestContainerruntimeConfigResync(t *testing.T) {
 			if err != nil {
 				t.Errorf("syncHandler returned: %v", err)
 			}
-			val = ccr1.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
+			val = ccr1.GetAnnotations()[commonconsts.MCNameSuffixAnnotationKey]
 			require.Equal(t, "", val)
 
 			c = f.newController()
@@ -1718,7 +1719,7 @@ func TestContainerruntimeConfigResync(t *testing.T) {
 			if err != nil {
 				t.Errorf("syncHandler returned: %v", err)
 			}
-			val = ccr2.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
+			val = ccr2.GetAnnotations()[commonconsts.MCNameSuffixAnnotationKey]
 			require.Equal(t, "1", val)
 		})
 	}
@@ -1730,7 +1731,7 @@ func TestAddAnnotationExistingContainerRuntimeConfig(t *testing.T) {
 			f := newFixture(t)
 			f.newController()
 
-			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			cc := newControllerConfig(commonconsts.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 
@@ -1739,7 +1740,7 @@ func TestAddAnnotationExistingContainerRuntimeConfig(t *testing.T) {
 			ctrc := newContainerRuntimeConfig("log-level", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
 			ctrc.Finalizers = []string{ctrMCKey}
 			ctrc1 := newContainerRuntimeConfig("log-level-1", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
-			ctrc1.SetAnnotations(map[string]string{ctrlcommon.MCNameSuffixAnnotationKey: "1"})
+			ctrc1.SetAnnotations(map[string]string{commonconsts.MCNameSuffixAnnotationKey: "1"})
 			ctrc1.Finalizers = []string{ctr1MCKey}
 			ctrcfgMC := helpers.NewMachineConfig(ctrMCKey, map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{{}})
 
@@ -1751,9 +1752,9 @@ func TestAddAnnotationExistingContainerRuntimeConfig(t *testing.T) {
 
 			// ctrc created before ctrc1,
 			// make sure ccr does not have annotation machineconfiguration.openshift.io/mc-name-suffix before sync, ccr1 has annotation machineconfiguration.openshift.io/mc-name-suffix
-			_, ok := ctrc.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
+			_, ok := ctrc.GetAnnotations()[commonconsts.MCNameSuffixAnnotationKey]
 			require.False(t, ok)
-			val := ctrc1.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
+			val := ctrc1.GetAnnotations()[commonconsts.MCNameSuffixAnnotationKey]
 			require.Equal(t, "1", val)
 
 			// no new machine config will be created
@@ -1772,7 +1773,7 @@ func TestAddAnnotationExistingContainerRuntimeConfig(t *testing.T) {
 			f.validateActions()
 
 			// ctrc annotation machineconfiguration.openshift.io/mc-name-suffix after sync
-			val = ctrc.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
+			val = ctrc.GetAnnotations()[commonconsts.MCNameSuffixAnnotationKey]
 			require.Equal(t, "", val)
 			ctrcFinalizers := ctrc.GetFinalizers()
 			require.Equal(t, 1, len(ctrcFinalizers))
@@ -1794,7 +1795,7 @@ func TestCleanUpDuplicatedMC(t *testing.T) {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
 			f.newController()
-			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			cc := newControllerConfig(commonconsts.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)
@@ -1804,7 +1805,7 @@ func TestCleanUpDuplicatedMC(t *testing.T) {
 			// expect result: 99-master-generated-containerruntime will be deleted
 			ccr1 := newContainerRuntimeConfig("log-level-1", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
 			ccr1.SetAnnotations(map[string]string{
-				ctrlcommon.MCNameSuffixAnnotationKey: "1",
+				commonconsts.MCNameSuffixAnnotationKey: "1",
 			})
 			f.mccrLister = append(f.mccrLister, ccr1)
 			f.objects = append(f.objects, ccr1)
@@ -1816,7 +1817,7 @@ func TestCleanUpDuplicatedMC(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{Name: "99-master-generated-containerruntime", UID: types.UID(utilrand.String(5))},
 			}
 			machineConfigDegrade.Annotations = make(map[string]string)
-			machineConfigDegrade.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey] = versionDegrade
+			machineConfigDegrade.Annotations[commonconsts.GeneratedByControllerVersionAnnotationKey] = versionDegrade
 			ctrl.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), &machineConfigDegrade, metav1.CreateOptions{})
 
 			// MC will be upgraded
@@ -1824,7 +1825,7 @@ func TestCleanUpDuplicatedMC(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{Name: "99-master-generated-containerruntime-1", UID: types.UID(utilrand.String(5))},
 			}
 			machineConfigUpgrade.Annotations = make(map[string]string)
-			machineConfigUpgrade.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey] = versionDegrade
+			machineConfigUpgrade.Annotations[commonconsts.GeneratedByControllerVersionAnnotationKey] = versionDegrade
 			ctrl.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), &machineConfigUpgrade, metav1.CreateOptions{})
 
 			// machine config has no substring "generated-xxx" will stay
@@ -1832,7 +1833,7 @@ func TestCleanUpDuplicatedMC(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{Name: "custom-containerruntime", UID: types.UID(utilrand.String(5))},
 			}
 			machineConfigDegradeNotGen.Annotations = make(map[string]string)
-			machineConfigDegradeNotGen.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey] = versionDegrade
+			machineConfigDegradeNotGen.Annotations[commonconsts.GeneratedByControllerVersionAnnotationKey] = versionDegrade
 			ctrl.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), &machineConfigDegradeNotGen, metav1.CreateOptions{})
 
 			// before the upgrade, 3 machine config exist
@@ -1872,7 +1873,7 @@ func TestClusterImagePolicyCreate(t *testing.T) {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
 
-			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			cc := newControllerConfig(commonconsts.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			imgcfg1 := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"blah.io"}, AllowedRegistries: []string{"example.com"}, ContainerRuntimeSearchRegistries: []string{"search-reg.io"}})
@@ -1924,7 +1925,7 @@ func TestSigstoreRegistriesConfigIDMSandCIPCreate(t *testing.T) {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
 
-			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			cc := newControllerConfig(commonconsts.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			imgcfg1 := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"blah.io"}, AllowedRegistries: []string{"example.com"}, ContainerRuntimeSearchRegistries: []string{"search-reg.io"}})
@@ -1983,7 +1984,7 @@ func TestImagePolicyCreate(t *testing.T) {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
 
-			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			cc := newControllerConfig(commonconsts.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			imgcfg1 := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"blah.io"}, AllowedRegistries: []string{"example.com"}, ContainerRuntimeSearchRegistries: []string{"search-reg.io"}})

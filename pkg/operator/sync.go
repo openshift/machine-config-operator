@@ -50,9 +50,9 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	"github.com/openshift/machine-config-operator/pkg/controller/build"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	templatectrl "github.com/openshift/machine-config-operator/pkg/controller/template"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
-	"github.com/openshift/machine-config-operator/pkg/helpers"
 	"github.com/openshift/machine-config-operator/pkg/server"
 	"github.com/openshift/machine-config-operator/pkg/upgrademonitor"
 	"github.com/openshift/machine-config-operator/pkg/version"
@@ -970,7 +970,7 @@ func (optr *Operator) safetySyncControllerConfig(config *renderConfig) error {
 	klog.Infof("Performing safety controllerconfig sync")
 
 	// If we have an existing controllerconfig, we might be able to keep rendering
-	existingCc, err := optr.ccLister.Get(ctrlcommon.ControllerConfigName)
+	existingCc, err := optr.ccLister.Get(commonconsts.ControllerConfigName)
 	if err != nil {
 		return err
 	}
@@ -1017,7 +1017,7 @@ func (optr *Operator) syncControllerConfig(config *renderConfig) error {
 					Name: "kubeconfig-data",
 				},
 			}
-			mcoCM, getErr := optr.kubeClient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), "kubeconfig-data", metav1.GetOptions{})
+			mcoCM, getErr := optr.kubeClient.CoreV1().ConfigMaps(commonconsts.MCONamespace).Get(context.TODO(), "kubeconfig-data", metav1.GetOptions{})
 			if getErr != nil {
 				klog.Errorf("Issue getting the kubeconfig-data configmap: %v", getErr)
 				if !apierrors.IsNotFound(getErr) && !apierrors.IsTimeout(getErr) && !apierrors.IsServerTimeout(getErr) {
@@ -1077,7 +1077,7 @@ func (optr *Operator) syncControllerConfig(config *renderConfig) error {
 				if err != nil {
 					return fmt.Errorf("Could not create a three way json merge patch: %w", err)
 				}
-				_, err = optr.kubeClient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Patch(context.TODO(), "kubeconfig-data", types.MergePatchType, patchBytes, metav1.PatchOptions{})
+				_, err = optr.kubeClient.CoreV1().ConfigMaps(commonconsts.MCONamespace).Patch(context.TODO(), "kubeconfig-data", types.MergePatchType, patchBytes, metav1.PatchOptions{})
 				if err != nil {
 					return fmt.Errorf("Could not patch kubeconfig-data with data %s: %w", string(patchBytes), err)
 				}
@@ -1086,7 +1086,7 @@ func (optr *Operator) syncControllerConfig(config *renderConfig) error {
 				binData := make(map[string][]byte)
 				binData["ca-bundle.crt"] = data
 				cmNew.BinaryData = binData
-				_, err := optr.kubeClient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Create(context.TODO(), &cmNew, metav1.CreateOptions{})
+				_, err := optr.kubeClient.CoreV1().ConfigMaps(commonconsts.MCONamespace).Create(context.TODO(), &cmNew, metav1.CreateOptions{})
 				if err != nil {
 					return fmt.Errorf("Could not make kubeconfig-data CM, %v", err)
 				}
@@ -1097,14 +1097,14 @@ func (optr *Operator) syncControllerConfig(config *renderConfig) error {
 	}
 	cc.Annotations[daemonconsts.GeneratedByVersionAnnotationKey] = version.Raw
 	if editCCAnno {
-		cc.Annotations[ctrlcommon.ServiceCARotateAnnotation] = ctrlcommon.ServiceCARotateTrue
+		cc.Annotations[commonconsts.ServiceCARotateAnnotation] = commonconsts.ServiceCARotateTrue
 	} else {
-		cc.Annotations[ctrlcommon.ServiceCARotateAnnotation] = ctrlcommon.ServiceCARotateFalse
+		cc.Annotations[commonconsts.ServiceCARotateAnnotation] = commonconsts.ServiceCARotateFalse
 	}
 	// add ocp release version as annotation to controller config, for use when
 	// annotating rendered configs with same.
 	optrVersion, _ := optr.vStore.Get("operator")
-	cc.Annotations[ctrlcommon.ReleaseImageVersionAnnotationKey] = optrVersion
+	cc.Annotations[commonconsts.ReleaseImageVersionAnnotationKey] = optrVersion
 
 	_, _, err = mcoResourceApply.ApplyControllerConfig(optr.client.MachineconfigurationV1(), cc)
 	if err != nil {
@@ -1293,8 +1293,8 @@ func (optr *Operator) validateLayeredPoolNodes(layeredMCPs []*mcfgv1.MachineConf
 	// Error out if any of the nodes in the pool where OCL is enabled is a non-coreos node
 	errNodes := []error{}
 	for _, node := range nodes {
-		if !helpers.IsCoreOSNode(node) {
-			poolNames, err := helpers.GetPoolNamesForNode(optr.mcpLister, node)
+		if !ctrlcommon.IsCoreOSNode(node) {
+			poolNames, err := ctrlcommon.GetPoolNamesForNode(optr.mcpLister, node)
 			if err != nil {
 				return err
 			}
@@ -1311,12 +1311,12 @@ func (optr *Operator) validateLayeredPoolNodes(layeredMCPs []*mcfgv1.MachineConf
 
 // Delete the Machine OS Builder Deployment
 func (optr *Operator) stopMachineOSBuilderDeployment(name string) error {
-	return optr.kubeClient.AppsV1().Deployments(ctrlcommon.MCONamespace).Delete(context.TODO(), name, metav1.DeleteOptions{})
+	return optr.kubeClient.AppsV1().Deployments(commonconsts.MCONamespace).Delete(context.TODO(), name, metav1.DeleteOptions{})
 }
 
 // Determines if the Machine OS Builder has the correct replica count.
 func (optr *Operator) hasCorrectReplicaCount(mob *appsv1.Deployment) bool {
-	apiMob, err := optr.deployLister.Deployments(ctrlcommon.MCONamespace).Get(mob.Name)
+	apiMob, err := optr.deployLister.Deployments(commonconsts.MCONamespace).Get(mob.Name)
 	if err == nil && *apiMob.Spec.Replicas == 1 {
 		return true
 	}
@@ -1340,7 +1340,7 @@ func (optr *Operator) updateMachineOSBuilderDeployment(mob *appsv1.Deployment, r
 		},
 	}
 
-	_, err = optr.kubeClient.AppsV1().Deployments(ctrlcommon.MCONamespace).UpdateScale(context.TODO(), mob.Name, scale, metav1.UpdateOptions{})
+	_, err = optr.kubeClient.AppsV1().Deployments(commonconsts.MCONamespace).UpdateScale(context.TODO(), mob.Name, scale, metav1.UpdateOptions{})
 	if err != nil {
 		return fmt.Errorf("could not scale Machine OS Builder: %w", err)
 	}
@@ -1358,7 +1358,7 @@ func (optr *Operator) updateMachineOSBuilderDeployment(mob *appsv1.Deployment, r
 // we have. If an error is encountered, it is assumed that no Deployments are
 // running.
 func (optr *Operator) isMachineOSBuilderRunning(mob *appsv1.Deployment) (bool, error) {
-	apiMob, err := optr.deployLister.Deployments(ctrlcommon.MCONamespace).Get(mob.Name)
+	apiMob, err := optr.deployLister.Deployments(commonconsts.MCONamespace).Get(mob.Name)
 
 	if err == nil && *apiMob.Spec.Replicas != 0 {
 		return true, nil
@@ -1389,21 +1389,21 @@ func (optr *Operator) reconcileSimpleContentAccessSecrets(layeredMCPs []*mcfgv1.
 
 	// For all non-layered pools, if the secret exists, delete it.
 	for _, poolName := range nonLayeredPoolSet.UnsortedList() {
-		secretName := ctrlcommon.SimpleContentAccessSecretName + "-" + poolName
-		_, err := optr.mcoSecretLister.Secrets(ctrlcommon.MCONamespace).Get(secretName)
+		secretName := commonconsts.SimpleContentAccessSecretName + "-" + poolName
+		_, err := optr.mcoSecretLister.Secrets(commonconsts.MCONamespace).Get(secretName)
 		if apierrors.IsNotFound(err) {
 			continue
 		} else if err != nil {
 			return err
 		}
-		if deleteErr := optr.kubeClient.CoreV1().Secrets(ctrlcommon.MCONamespace).Delete(context.TODO(), secretName, metav1.DeleteOptions{}); deleteErr != nil {
+		if deleteErr := optr.kubeClient.CoreV1().Secrets(commonconsts.MCONamespace).Delete(context.TODO(), secretName, metav1.DeleteOptions{}); deleteErr != nil {
 			return deleteErr
 		}
 		klog.Infof("deleting %s", secretName)
 	}
 
 	// Now check if the Simple Content Access Secret "etc-pki-entitlement" secret exists
-	simpleContentAccessSecret, err := optr.ocManagedSecretLister.Secrets(ctrlcommon.OpenshiftConfigManagedNamespace).Get(ctrlcommon.SimpleContentAccessSecretName)
+	simpleContentAccessSecret, err := optr.ocManagedSecretLister.Secrets(commonconsts.OpenshiftConfigManagedNamespace).Get(commonconsts.SimpleContentAccessSecretName)
 	if apierrors.IsNotFound(err) {
 		// exit early, this cluster does not have RHEL entitlements
 		klog.V(4).Infof("Exiting early due to lack of RHEL entitlements")
@@ -1414,23 +1414,23 @@ func (optr *Operator) reconcileSimpleContentAccessSecrets(layeredMCPs []*mcfgv1.
 
 	// For all layered pools, create/update the secret
 	for _, poolName := range layeredPoolSet.UnsortedList() {
-		secretName := ctrlcommon.SimpleContentAccessSecretName + "-" + poolName
+		secretName := commonconsts.SimpleContentAccessSecretName + "-" + poolName
 
 		// Create a clone of simpleContentAccessSecret, modify it to be in the MCO namespace with the new name
 		clonedSecret := &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      secretName,
-				Namespace: ctrlcommon.MCONamespace,
+				Namespace: commonconsts.MCONamespace,
 			},
 			Data: simpleContentAccessSecret.Data,
 			Type: corev1.SecretTypeOpaque,
 		}
 
-		currentSecret, err := optr.mcoSecretLister.Secrets(ctrlcommon.MCONamespace).Get(secretName)
+		currentSecret, err := optr.mcoSecretLister.Secrets(commonconsts.MCONamespace).Get(secretName)
 		switch {
 		case apierrors.IsNotFound(err):
 			// The secret doesn't exist, so create one for this pool
-			if _, createErr := optr.kubeClient.CoreV1().Secrets(ctrlcommon.MCONamespace).Create(context.TODO(), clonedSecret, metav1.CreateOptions{}); createErr != nil {
+			if _, createErr := optr.kubeClient.CoreV1().Secrets(commonconsts.MCONamespace).Create(context.TODO(), clonedSecret, metav1.CreateOptions{}); createErr != nil {
 				return createErr
 			}
 			klog.Infof("creating %s", secretName)
@@ -1438,7 +1438,7 @@ func (optr *Operator) reconcileSimpleContentAccessSecrets(layeredMCPs []*mcfgv1.
 			return err
 		case !reflect.DeepEqual(currentSecret.Data, clonedSecret.Data):
 			// An update to the secret is required
-			if _, updateErr := optr.kubeClient.CoreV1().Secrets(ctrlcommon.MCONamespace).Update(context.TODO(), clonedSecret, metav1.UpdateOptions{}); updateErr != nil {
+			if _, updateErr := optr.kubeClient.CoreV1().Secrets(commonconsts.MCONamespace).Update(context.TODO(), clonedSecret, metav1.UpdateOptions{}); updateErr != nil {
 				return updateErr
 			}
 			klog.Infof("updating %s", secretName)
@@ -1475,7 +1475,7 @@ func (optr *Operator) getLayeredMachineConfigPools() ([]*mcfgv1.MachineConfigPoo
 	// TODO: Once https://github.com/openshift/machine-config-operator/pull/3731
 	// lands, change this to consume ctrlcommon.LayeringEnabledPoolLabel instead
 	// of having this hard-coded here.
-	requirement, err := labels.NewRequirement(ctrlcommon.LayeringEnabledPoolLabel, selection.Exists, []string{})
+	requirement, err := labels.NewRequirement(commonconsts.LayeringEnabledPoolLabel, selection.Exists, []string{})
 	if err != nil {
 		return []*mcfgv1.MachineConfigPool{}, err
 	}
@@ -1864,7 +1864,7 @@ func (optr *Operator) waitForControllerConfigToBeCompleted(resource *mcfgv1.Cont
 
 // getOsImageURLs returns (new type, new extensions, old type) for operating system update images.
 func (optr *Operator) getOsImageURLs(namespace string) (string, string, error) {
-	cm, err := optr.mcoCmLister.ConfigMaps(namespace).Get(ctrlcommon.MachineConfigOSImageURLConfigMapName)
+	cm, err := optr.mcoCmLister.ConfigMaps(namespace).Get(commonconsts.MachineConfigOSImageURLConfigMapName)
 	if err != nil {
 		return "", "", err
 	}
@@ -1902,12 +1902,12 @@ func (optr *Operator) stampBootImagesCM(pool *mcfgv1.MachineConfigPool) error {
 	if err != nil {
 		return fmt.Errorf("failed to grab rendered MC %s, error: %w", pool.Spec.Configuration.Name, err)
 	}
-	if renderedMC.Annotations[ctrlcommon.ReleaseImageVersionAnnotationKey] != version.ReleaseVersion {
-		klog.V(4).Infof("rendered MC release version %s mismatch with operator release version %s", renderedMC.Annotations[ctrlcommon.ReleaseImageVersionAnnotationKey], version.ReleaseVersion)
+	if renderedMC.Annotations[commonconsts.ReleaseImageVersionAnnotationKey] != version.ReleaseVersion {
+		klog.V(4).Infof("rendered MC release version %s mismatch with operator release version %s", renderedMC.Annotations[commonconsts.ReleaseImageVersionAnnotationKey], version.ReleaseVersion)
 		return nil
 	}
-	if renderedMC.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey] != version.Hash {
-		klog.V(4).Infof("rendered MC commit hash %s mismatch with operator release commit hash %s", renderedMC.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey], version.Hash)
+	if renderedMC.Annotations[commonconsts.GeneratedByControllerVersionAnnotationKey] != version.Hash {
+		klog.V(4).Infof("rendered MC commit hash %s mismatch with operator release commit hash %s", renderedMC.Annotations[commonconsts.GeneratedByControllerVersionAnnotationKey], version.Hash)
 		return nil
 	}
 
@@ -1915,12 +1915,12 @@ func (optr *Operator) stampBootImagesCM(pool *mcfgv1.MachineConfigPool) error {
 	// to ensure we are not checking an older "Updated" condition and the MCP fields haven't caught up yet
 	if (apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolUpdating) && pool.Status.UpdatedMachineCount > 0) ||
 		(apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolUpdated) && (pool.Spec.Configuration.Name == pool.Status.Configuration.Name)) {
-		cm, err := optr.clusterCmLister.ConfigMaps(ctrlcommon.MCONamespace).Get(ctrlcommon.BootImagesConfigMapName)
+		cm, err := optr.clusterCmLister.ConfigMaps(commonconsts.MCONamespace).Get(commonconsts.BootImagesConfigMapName)
 		if err != nil {
 			return fmt.Errorf("failed to grab boot images configmap: %w", err)
 		}
-		storedVersionHashFromCM, storedVersionHashFound := cm.Data[ctrlcommon.MCOVersionHashKey]
-		releaseVersionFromCM, releaseVersionFound := cm.Data[ctrlcommon.MCOReleaseImageVersionKey]
+		storedVersionHashFromCM, storedVersionHashFound := cm.Data[commonconsts.MCOVersionHashKey]
+		releaseVersionFromCM, releaseVersionFound := cm.Data[commonconsts.MCOReleaseImageVersionKey]
 
 		if storedVersionHashFound && releaseVersionFound {
 			// No need to update if the existing versions are a match, exit
@@ -1930,11 +1930,11 @@ func (optr *Operator) stampBootImagesCM(pool *mcfgv1.MachineConfigPool) error {
 		}
 
 		// Stamp the configmap with newest commit hash and OCP release version
-		cm.Data[ctrlcommon.MCOVersionHashKey] = version.Hash
-		cm.Data[ctrlcommon.MCOReleaseImageVersionKey] = version.ReleaseVersion
+		cm.Data[commonconsts.MCOVersionHashKey] = version.Hash
+		cm.Data[commonconsts.MCOReleaseImageVersionKey] = version.ReleaseVersion
 
 		// Update the ConfigMap
-		_, err = optr.kubeClient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Update(context.TODO(), cm, metav1.UpdateOptions{})
+		_, err = optr.kubeClient.CoreV1().ConfigMaps(commonconsts.MCONamespace).Update(context.TODO(), cm, metav1.UpdateOptions{})
 		if err != nil {
 			return fmt.Errorf("failed to update bootimages configmap %w", err)
 		}
@@ -1992,7 +1992,7 @@ func (optr *Operator) getGlobalConfig() (*configv1.Infrastructure, *configv1.Net
 	if err != nil && !apierrors.IsNotFound(err) {
 		return nil, nil, nil, nil, nil, err
 	}
-	apiServer, err := optr.apiserverLister.Get(ctrlcommon.APIServerInstanceName)
+	apiServer, err := optr.apiserverLister.Get(commonconsts.APIServerInstanceName)
 	if err != nil && !apierrors.IsNotFound(err) {
 		return nil, nil, nil, nil, nil, err
 	}
@@ -2200,14 +2200,14 @@ func cmToData(cm *corev1.ConfigMap, key string) ([]byte, error) {
 func (optr *Operator) syncMachineConfiguration(_ *renderConfig, _ *configv1.ClusterOperator) error {
 
 	// Grab the cluster CR
-	mcop, err := optr.mcopLister.Get(ctrlcommon.MCOOperatorKnobsObjectName)
+	mcop, err := optr.mcopLister.Get(commonconsts.MCOOperatorKnobsObjectName)
 	if err != nil {
 		// Create one if it doesn't exist
 		if apierrors.IsNotFound(err) {
 			klog.Info("MachineConfiguration object doesn't exist; a new one will be created")
 			// Using server-side apply here as the NodeDisruption API has a rule technicality which prevents apply using a template manifest like the MCO typically does
 			// [spec.nodeDisruptionPolicy.sshkey.actions: Required value, <nil>: Invalid value: "null"]
-			p := mcoac.MachineConfiguration(ctrlcommon.MCOOperatorKnobsObjectName).WithSpec(mcoac.MachineConfigurationSpec().WithManagementState("Managed"))
+			p := mcoac.MachineConfiguration(commonconsts.MCOOperatorKnobsObjectName).WithSpec(mcoac.MachineConfigurationSpec().WithManagementState("Managed"))
 			_, err := optr.mcopClient.OperatorV1().MachineConfigurations().Apply(context.TODO(), p, metav1.ApplyOptions{FieldManager: "machine-config-operator"})
 			if err != nil {
 				klog.Infof("applying mco object failed: %s", err)
@@ -2216,7 +2216,7 @@ func (optr *Operator) syncMachineConfiguration(_ *renderConfig, _ *configv1.Clus
 			// This causes a re-sync and allows the cache for the lister to refresh.
 			return nil
 		}
-		return fmt.Errorf("grabbing MachineConfiguration/%s CR failed: %v", ctrlcommon.MCOOperatorKnobsObjectName, err)
+		return fmt.Errorf("grabbing MachineConfiguration/%s CR failed: %v", commonconsts.MCOOperatorKnobsObjectName, err)
 	}
 
 	fg, err := optr.fgAccessor.CurrentFeatureGates()

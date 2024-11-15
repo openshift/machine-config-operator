@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	"github.com/openshift/machine-config-operator/test/framework"
 	corev1 "k8s.io/api/core/v1"
 
@@ -18,7 +18,7 @@ import (
 )
 
 func writeBuilderSecretToTempDir(cs *framework.ClientSet, hostname string) (string, error) {
-	secrets, err := cs.Secrets(ctrlcommon.MCONamespace).List(context.TODO(), metav1.ListOptions{})
+	secrets, err := cs.Secrets(commonconsts.MCONamespace).List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		return "", err
 	}

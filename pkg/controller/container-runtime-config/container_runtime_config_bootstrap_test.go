@@ -5,7 +5,7 @@ import (
 
 	apicfgv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -17,7 +17,7 @@ func TestAddKubeletCfgAfterBootstrapKubeletCfg(t *testing.T) {
 			f := newFixture(t)
 			f.newController()
 
-			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			cc := newControllerConfig(commonconsts.ControllerConfigName, platform)
 			pools := []*mcfgv1.MachineConfigPool{
 				helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
 			}
@@ -50,7 +50,7 @@ func TestAddKubeletCfgAfterBootstrapKubeletCfg(t *testing.T) {
 			if err != nil {
 				t.Errorf("syncHandler returned: %v", err)
 			}
-			val := ctrcfg.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
+			val := ctrcfg.GetAnnotations()[commonconsts.MCNameSuffixAnnotationKey]
 			require.Equal(t, "", val)
 		})
 	}

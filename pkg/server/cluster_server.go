@@ -14,6 +14,7 @@ import (
 
 	"github.com/openshift/machine-config-operator/internal/clients"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/informers"
@@ -137,14 +138,14 @@ func (cs *clusterServer) GetConfig(cr poolRequest) (*runtime.RawExtension, error
 	// Update the kubelet cert bundle to the latest in the controllerconfig, in case the pool was paused
 	// This also means that the /etc/mcs-machine-config-content.json written to disk will be a lie
 	// TODO(jerzhang): improve this process once we have a proper cert management model
-	cc, err := cs.controllerConfigLister.Get(ctrlcommon.ControllerConfigName)
+	cc, err := cs.controllerConfigLister.Get(commonconsts.ControllerConfigName)
 	if err != nil {
 		return nil, fmt.Errorf("could not get controllerconfig: %w", err)
 	}
 
 	// we cannot mock this in a test env
 	if cs.configMapLister != nil {
-		cm, err := cs.configMapLister.ConfigMaps(ctrlcommon.MCONamespace).Get("kubeconfig-data")
+		cm, err := cs.configMapLister.ConfigMaps(commonconsts.MCONamespace).Get("kubeconfig-data")
 		if err != nil {
 			klog.Errorf("Could not get kubeconfig data: %v", err)
 		} else {

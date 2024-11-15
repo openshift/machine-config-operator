@@ -20,6 +20,7 @@ import (
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	mcoResourceApply "github.com/openshift/machine-config-operator/lib/resourceapply"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	"k8s.io/klog/v2"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -181,7 +182,7 @@ func (ctrl *Controller) deleteSecret(obj interface{}) {
 	}
 
 	if secret.Name == "pull-secret" {
-		cfg, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
+		cfg, err := ctrl.ccLister.Get(commonconsts.ControllerConfigName)
 		if err != nil {
 			utilruntime.HandleError(fmt.Errorf("couldn't get ControllerConfig on secret callback %#w", err))
 			return
@@ -240,7 +241,7 @@ func (ctrl *Controller) deleteAPIServer(obj interface{}) {
 }
 
 func (ctrl *Controller) enqueueController() {
-	cfg, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
+	cfg, err := ctrl.ccLister.Get(commonconsts.ControllerConfigName)
 	if err != nil {
 		utilruntime.HandleError(fmt.Errorf("couldn't get ControllerConfig on dependency callback %#w", err))
 		return
@@ -628,7 +629,7 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 	}
 
 	// Grab the tlsSecurityProfile from the apiserver object
-	apiServer, err := ctrl.apiserverLister.Get(ctrlcommon.APIServerInstanceName)
+	apiServer, err := ctrl.apiserverLister.Get(commonconsts.APIServerInstanceName)
 	if err != nil && !apierrors.IsNotFound(err) {
 		return ctrl.syncFailingStatus(cfg, err)
 	}

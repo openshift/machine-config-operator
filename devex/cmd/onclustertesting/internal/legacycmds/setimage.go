@@ -6,7 +6,7 @@ import (
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/machine-config-operator/devex/internal/pkg/utils"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
@@ -77,7 +77,7 @@ func addImageToLayeredPool(cs *framework.ClientSet, pullspec, targetPool string)
 			mcp.Annotations = map[string]string{}
 		}
 
-		mcp.Annotations[ctrlcommon.ExperimentalNewestLayeredImageEquivalentConfigAnnotationKey] = pullspec
+		mcp.Annotations[commonconsts.ExperimentalNewestLayeredImageEquivalentConfigAnnotationKey] = pullspec
 		mcp, err = cs.MachineConfigPools().Update(context.TODO(), mcp, metav1.UpdateOptions{})
 		if err != nil {
 			return err
@@ -109,7 +109,7 @@ func optInPool(cs *framework.ClientSet, targetPool string) error {
 			mcp.Labels = map[string]string{}
 		}
 
-		mcp.Labels[ctrlcommon.LayeringEnabledPoolLabel] = ""
+		mcp.Labels[commonconsts.LayeringEnabledPoolLabel] = ""
 
 		klog.Infof("Opted MachineConfigPool %q into layering", mcp.Name)
 		_, err = cs.MachineConfigPools().Update(context.TODO(), mcp, metav1.UpdateOptions{})

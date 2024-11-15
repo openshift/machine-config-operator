@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/machine-config-operator/pkg/controller/common/fixtures"
 	"github.com/openshift/machine-config-operator/test/helpers"
@@ -103,7 +103,7 @@ func TestValidateIgnition(t *testing.T) {
 	require.NotNil(t, isValid2)
 
 	// Test that a valid ignition config returns nil
-	testIgn3Config.Ignition.Version = InternalMCOIgnitionVersion
+	testIgn3Config.Ignition.Version = commonconsts.InternalMCOIgnitionVersion
 	mode := 420
 	testfiledata := "data:,greatconfigstuff"
 	tempFile := ign3types.File{Node: ign3types.Node{Path: "/etc/testfileconfig"},
@@ -168,7 +168,7 @@ func TestParseAndConvert(t *testing.T) {
 	testIgn3Config := ign3types.Config{}
 	tempUser := ign3types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"5678", "abc"}}
 	testIgn3Config.Passwd.Users = []ign3types.PasswdUser{tempUser}
-	testIgn3Config.Ignition.Version = InternalMCOIgnitionVersion
+	testIgn3Config.Ignition.Version = commonconsts.InternalMCOIgnitionVersion
 
 	// Make a Ign2 comp config
 	testIgn2Config := ign2types.Config{}
@@ -196,7 +196,7 @@ func TestParseAndConvert(t *testing.T) {
 	assert.Equal(t, testIgn3Config, convertedIgn)
 
 	// Make a valid Ign 3.2 cfg
-	testIgn3Config.Ignition.Version = InternalMCOIgnitionVersion
+	testIgn3Config.Ignition.Version = commonconsts.InternalMCOIgnitionVersion
 	// turn it into a raw []byte
 	rawIgn = helpers.MarshalOrDie(testIgn3Config)
 	// check that it was parsed successfully
@@ -211,7 +211,7 @@ func TestParseAndConvert(t *testing.T) {
 	// check that it was parsed successfully back to the default version
 	convertedIgn, err = ParseAndConvertConfig(rawIgn)
 	require.Nil(t, err)
-	testIgn3Config.Ignition.Version = InternalMCOIgnitionVersion
+	testIgn3Config.Ignition.Version = commonconsts.InternalMCOIgnitionVersion
 	assert.Equal(t, testIgn3Config, convertedIgn)
 
 	// Make a valid Ign 3.0 cfg
@@ -221,7 +221,7 @@ func TestParseAndConvert(t *testing.T) {
 	// check that it was parsed successfully back to the default version
 	convertedIgn, err = ParseAndConvertConfig(rawIgn)
 	require.Nil(t, err)
-	testIgn3Config.Ignition.Version = InternalMCOIgnitionVersion
+	testIgn3Config.Ignition.Version = commonconsts.InternalMCOIgnitionVersion
 	assert.Equal(t, testIgn3Config, convertedIgn)
 
 	// Make a valid Ign 3.3 cfg
@@ -231,7 +231,7 @@ func TestParseAndConvert(t *testing.T) {
 	// check that it was parsed successfully back to the default version
 	convertedIgn, err = ParseAndConvertConfig(rawIgn)
 	require.Nil(t, err)
-	testIgn3Config.Ignition.Version = InternalMCOIgnitionVersion
+	testIgn3Config.Ignition.Version = commonconsts.InternalMCOIgnitionVersion
 	assert.Equal(t, testIgn3Config, convertedIgn)
 
 	// Make a valid Ign 3.4 cfg
@@ -241,7 +241,7 @@ func TestParseAndConvert(t *testing.T) {
 	// check that it was parsed successfully back to the default version
 	convertedIgn, err = ParseAndConvertConfig(rawIgn)
 	require.Nil(t, err)
-	testIgn3Config.Ignition.Version = InternalMCOIgnitionVersion
+	testIgn3Config.Ignition.Version = commonconsts.InternalMCOIgnitionVersion
 	assert.Equal(t, testIgn3Config, convertedIgn)
 
 	// Make a bad Ign3 cfg
@@ -266,7 +266,7 @@ func TestMergeMachineConfigs(t *testing.T) {
 	machineConfigFIPS := &mcfgv1.MachineConfig{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   "fips",
-			Labels: map[string]string{MachineConfigRoleLabel: MachineConfigPoolWorker},
+			Labels: map[string]string{commonconsts.MachineConfigRoleLabel: commonconsts.MachineConfigPoolWorker},
 		},
 		Spec: mcfgv1.MachineConfigSpec{
 			FIPS: fips,
@@ -293,7 +293,7 @@ func TestMergeMachineConfigs(t *testing.T) {
 				Raw: rawOutIgn,
 			},
 			FIPS:       fips,
-			KernelType: KernelTypeDefault,
+			KernelType: commonconsts.KernelTypeDefault,
 			Extensions: []string{},
 		},
 	}
@@ -307,7 +307,7 @@ func TestMergeMachineConfigs(t *testing.T) {
 	machineConfigOSImageURL := &mcfgv1.MachineConfig{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   "osimageurl",
-			Labels: map[string]string{MachineConfigRoleLabel: MachineConfigPoolWorker},
+			Labels: map[string]string{commonconsts.MachineConfigRoleLabel: commonconsts.MachineConfigPoolWorker},
 		},
 		Spec: mcfgv1.MachineConfigSpec{
 			OSImageURL: "overriddenURL",
@@ -316,7 +316,7 @@ func TestMergeMachineConfigs(t *testing.T) {
 	machineConfigKernelArgs := &mcfgv1.MachineConfig{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   "kargs",
-			Labels: map[string]string{MachineConfigRoleLabel: MachineConfigPoolWorker},
+			Labels: map[string]string{commonconsts.MachineConfigRoleLabel: commonconsts.MachineConfigPoolWorker},
 		},
 		Spec: mcfgv1.MachineConfigSpec{
 			KernelArguments: kargs,
@@ -325,16 +325,16 @@ func TestMergeMachineConfigs(t *testing.T) {
 	machineConfigKernelType := &mcfgv1.MachineConfig{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   "kerneltype",
-			Labels: map[string]string{MachineConfigRoleLabel: MachineConfigPoolWorker},
+			Labels: map[string]string{commonconsts.MachineConfigRoleLabel: commonconsts.MachineConfigPoolWorker},
 		},
 		Spec: mcfgv1.MachineConfigSpec{
-			KernelType: KernelTypeRealtime,
+			KernelType: commonconsts.KernelTypeRealtime,
 		},
 	}
 	machineConfigExtensions := &mcfgv1.MachineConfig{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   "extension",
-			Labels: map[string]string{MachineConfigRoleLabel: MachineConfigPoolWorker},
+			Labels: map[string]string{commonconsts.MachineConfigRoleLabel: commonconsts.MachineConfigPoolWorker},
 		},
 		Spec: mcfgv1.MachineConfigSpec{
 			Extensions: extensions,
@@ -350,7 +350,7 @@ func TestMergeMachineConfigs(t *testing.T) {
 				{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"1234"}},
 			},
 		},
-	}, "ssh", MachineConfigPoolWorker)
+	}, "ssh", commonconsts.MachineConfigPoolWorker)
 
 	machineConfigIgnPasswdHashUser := helpers.CreateMachineConfigFromIgnitionWithMetadata(ign3types.Config{
 		Ignition: ign3types.Ignition{
@@ -361,14 +361,14 @@ func TestMergeMachineConfigs(t *testing.T) {
 				{Name: "core", PasswordHash: helpers.StrToPtr("testpass")},
 			},
 		},
-	}, "passwd", MachineConfigPoolWorker)
+	}, "passwd", commonconsts.MachineConfigPoolWorker)
 
 	// we added some v3 specific logic for kargs, make sure we didn't break the v2 path
 	machineConfigIgnV2Merge := helpers.CreateMachineConfigFromIgnitionWithMetadata(ign2types.Config{
 		Ignition: ign2types.Ignition{
 			Version: ign2types.MaxVersion.String(),
 		},
-	}, "v2", MachineConfigPoolWorker)
+	}, "v2", commonconsts.MachineConfigPoolWorker)
 
 	machineConfigIgn := helpers.CreateMachineConfigFromIgnitionWithMetadata(ign3types.Config{
 		Ignition: ign3types.Ignition{
@@ -379,7 +379,7 @@ func TestMergeMachineConfigs(t *testing.T) {
 				{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"5678"}},
 			},
 		},
-	}, "ssh", MachineConfigPoolWorker)
+	}, "ssh", commonconsts.MachineConfigPoolWorker)
 
 	// Now merge all of the above
 	inMachineConfigs = []*mcfgv1.MachineConfig{
@@ -414,7 +414,7 @@ func TestMergeMachineConfigs(t *testing.T) {
 				}),
 			},
 			FIPS:       true,
-			KernelType: KernelTypeRealtime,
+			KernelType: commonconsts.KernelTypeRealtime,
 			Extensions: extensions,
 		},
 	}
@@ -437,7 +437,7 @@ func TestMergeMachineConfigs(t *testing.T) {
 				helpers.CreateIgn3File(filePath1, testDataOld, mode),
 			},
 		},
-	}, "aaa", MachineConfigPoolWorker)
+	}, "aaa", commonconsts.MachineConfigPoolWorker)
 	machineConfigWorker2 := helpers.CreateMachineConfigFromIgnitionWithMetadata(ign3types.Config{
 		Ignition: ign3types.Ignition{
 			Version: ign3types.MaxVersion.String(),
@@ -447,7 +447,7 @@ func TestMergeMachineConfigs(t *testing.T) {
 				helpers.CreateIgn3File(filePath1, testDataNew, mode),
 			},
 		},
-	}, "bbb", MachineConfigPoolWorker)
+	}, "bbb", commonconsts.MachineConfigPoolWorker)
 	machineConfigWorker3 := helpers.CreateMachineConfigFromIgnitionWithMetadata(ign3types.Config{
 		Ignition: ign3types.Ignition{
 			Version: ign3types.MaxVersion.String(),
@@ -457,7 +457,7 @@ func TestMergeMachineConfigs(t *testing.T) {
 				helpers.CreateIgn3File(filePath2, testDataOld, mode),
 			},
 		},
-	}, "ddd", MachineConfigPoolWorker)
+	}, "ddd", commonconsts.MachineConfigPoolWorker)
 	machineConfigInfra := helpers.CreateMachineConfigFromIgnitionWithMetadata(ign3types.Config{
 		Ignition: ign3types.Ignition{
 			Version: ign3types.MaxVersion.String(),
@@ -526,7 +526,7 @@ func TestMergeMachineConfigs(t *testing.T) {
 				}),
 			},
 			FIPS:       false,
-			KernelType: KernelTypeDefault,
+			KernelType: commonconsts.KernelTypeDefault,
 			Extensions: []string{},
 		},
 	}
@@ -659,12 +659,12 @@ func TestSetDefaultFileOverwrite(t *testing.T) {
 	// Set up two Ignition configs, one with overwrite: no default, overwrite: false (to be passed to MergeMachineConfigs)
 	// and one with a overwrite: true, overwrite: false (the expected output)
 	testIgn3ConfigPreMerge := ign3types.Config{}
-	testIgn3ConfigPreMerge.Ignition.Version = InternalMCOIgnitionVersion
+	testIgn3ConfigPreMerge.Ignition.Version = commonconsts.InternalMCOIgnitionVersion
 	testIgn3ConfigPreMerge.Storage.Files = append(testIgn3ConfigPreMerge.Storage.Files, tempFileNoDefault)
 	testIgn3ConfigPreMerge.Storage.Files = append(testIgn3ConfigPreMerge.Storage.Files, tempFileOverwriteFalse)
 
 	testIgn3ConfigPostMerge := ign3types.Config{}
-	testIgn3ConfigPostMerge.Ignition.Version = InternalMCOIgnitionVersion
+	testIgn3ConfigPostMerge.Ignition.Version = commonconsts.InternalMCOIgnitionVersion
 	testIgn3ConfigPostMerge.Storage.Files = append(testIgn3ConfigPostMerge.Storage.Files, tempFileOvewriteTrue)
 	testIgn3ConfigPostMerge.Storage.Files = append(testIgn3ConfigPostMerge.Storage.Files, tempFileOverwriteFalse)
 
@@ -673,7 +673,7 @@ func TestSetDefaultFileOverwrite(t *testing.T) {
 	machineConfigPreMerge := &mcfgv1.MachineConfig{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   "overwrite",
-			Labels: map[string]string{"machineconfiguration.openshift.io/role": MachineConfigPoolWorker},
+			Labels: map[string]string{"machineconfiguration.openshift.io/role": commonconsts.MachineConfigPoolWorker},
 		},
 		Spec: mcfgv1.MachineConfigSpec{
 			Config: runtime.RawExtension{
@@ -693,7 +693,7 @@ func TestSetDefaultFileOverwrite(t *testing.T) {
 	expectedMachineConfig := &mcfgv1.MachineConfig{
 		Spec: mcfgv1.MachineConfigSpec{
 			KernelArguments: []string{},
-			KernelType:      KernelTypeDefault,
+			KernelType:      commonconsts.KernelTypeDefault,
 			Extensions:      []string{},
 			Config: runtime.RawExtension{
 				Raw: rawOutIgnPostMerge,
@@ -706,7 +706,7 @@ func TestSetDefaultFileOverwrite(t *testing.T) {
 // TestIgnitionMergeCompressed tests https://github.com/coreos/butane/issues/332
 func TestIgnitionMergeCompressed(t *testing.T) {
 	testIgn3Config := ign3types.Config{}
-	testIgn3Config.Ignition.Version = InternalMCOIgnitionVersion
+	testIgn3Config.Ignition.Version = commonconsts.InternalMCOIgnitionVersion
 	mode := 420
 	testfiledata := "data:;base64,H4sIAAAAAAAAA0vLz+cCAKhlMn4EAAAA"
 	compression := "gzip"
@@ -715,7 +715,7 @@ func TestIgnitionMergeCompressed(t *testing.T) {
 	testIgn3Config.Storage.Files = append(testIgn3Config.Storage.Files, tempFile)
 
 	testIgn3Config2 := ign3types.Config{}
-	testIgn3Config2.Ignition.Version = InternalMCOIgnitionVersion
+	testIgn3Config2.Ignition.Version = commonconsts.InternalMCOIgnitionVersion
 	testIgn3Config2.Storage.Files = append(testIgn3Config2.Storage.Files, NewIgnFile("/etc/testfileconfig", "hello world"))
 
 	merged := ign3.Merge(testIgn3Config, testIgn3Config2)
@@ -734,11 +734,11 @@ func TestCalculateConfigFileDiffs(t *testing.T) {
 	newTempFile := NewIgnFile("/etc/kubernetes/kubelet-ca.crt", "newcertificates")
 
 	// Make an "old" config with the existing file in it
-	testIgn3ConfigOld.Ignition.Version = InternalMCOIgnitionVersion
+	testIgn3ConfigOld.Ignition.Version = commonconsts.InternalMCOIgnitionVersion
 	testIgn3ConfigOld.Storage.Files = append(testIgn3ConfigOld.Storage.Files, oldTempFile)
 
 	// Make a "new" config with a change to that file
-	testIgn3ConfigNew.Ignition.Version = InternalMCOIgnitionVersion
+	testIgn3ConfigNew.Ignition.Version = commonconsts.InternalMCOIgnitionVersion
 	testIgn3ConfigNew.Storage.Files = append(testIgn3ConfigNew.Storage.Files, newTempFile)
 
 	// If it works, it should notice the file changed

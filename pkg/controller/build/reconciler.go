@@ -14,6 +14,7 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/controller/build/imagebuilder"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	state "github.com/openshift/machine-config-operator/pkg/controller/common/state"
 	batchv1 "k8s.io/api/batch/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -231,8 +232,8 @@ func (b *buildReconciler) updateMachineOSBuild(ctx context.Context, old, current
 		return ignoreErrIsNotFound(fmt.Errorf("could not update MachineOSBuild %q: %w", current.Name, err))
 	}
 
-	oldState := ctrlcommon.NewMachineOSBuildState(old)
-	curState := ctrlcommon.NewMachineOSBuildState(current)
+	oldState := state.NewMachineOSBuildState(old)
+	curState := state.NewMachineOSBuildState(current)
 
 	if !oldState.HasBuildConditions() && curState.HasBuildConditions() &&
 		!oldState.IsInInitialState() && curState.IsInInitialState() {
@@ -436,7 +437,7 @@ func (b *buildReconciler) createNewMachineOSBuildOrReuseExisting(ctx context.Con
 	}
 
 	// TODO: Consider what we should do in the event of a degraded MachineConfigPool.
-	if ctrlcommon.IsPoolAnyDegraded(mcp) {
+	if state.IsPoolAnyDegraded(mcp) {
 		return fmt.Errorf("MachineConfigPool %s is degraded", mcp.Name)
 	}
 
@@ -494,7 +495,7 @@ func (b *buildReconciler) createNewMachineOSBuildOrReuseExisting(ctx context.Con
 
 // Determines if a preexising MachineOSBuild can be reused and if possible, does it.
 func (b *buildReconciler) reuseExistingMachineOSBuildIfPossible(ctx context.Context, mosc *mcfgv1alpha1.MachineOSConfig, existingMosb *mcfgv1alpha1.MachineOSBuild) error {
-	existingMosbState := ctrlcommon.NewMachineOSBuildState(existingMosb)
+	existingMosbState := state.NewMachineOSBuildState(existingMosb)
 
 	canBeReused := false
 
@@ -618,7 +619,7 @@ func (b *buildReconciler) setStatusOnMachineOSBuildIfNeeded(ctx context.Context,
 		return err
 	}
 
-	bs := ctrlcommon.NewMachineOSBuildState(mosb)
+	bs := state.NewMachineOSBuildState(mosb)
 
 	bs.SetBuildConditions(curStatus.Conditions)
 
@@ -752,7 +753,7 @@ func (b *buildReconciler) deleteOtherBuildsForMachineOSConfig(ctx context.Contex
 			continue
 		}
 
-		mosbState := ctrlcommon.NewMachineOSBuildState(mosb)
+		mosbState := state.NewMachineOSBuildState(mosb)
 
 		// If the build is in any other state except for "success", delete it.
 		if !mosbState.IsBuildSuccess() {
@@ -881,7 +882,7 @@ func (b *buildReconciler) syncMachineOSBuild(ctx context.Context, mosb *mcfgv1al
 			return nil
 		}
 
-		mosbState := ctrlcommon.NewMachineOSBuildState(mosb)
+		mosbState := state.NewMachineOSBuildState(mosb)
 
 		if mosbState.IsInTerminalState() {
 			return nil

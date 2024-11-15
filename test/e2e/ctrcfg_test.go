@@ -11,7 +11,7 @@ import (
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	ctrcfg "github.com/openshift/machine-config-operator/pkg/controller/container-runtime-config"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/openshift/machine-config-operator/test/helpers"
@@ -185,7 +185,7 @@ func createCtrcfgWithConfig(t *testing.T, cs *framework.ClientSet, name, key str
 	// the priority order
 	if suffix != "" {
 		ctrcfg.Annotations = map[string]string{
-			ctrlcommon.MCNameSuffixAnnotationKey: suffix,
+			commonconsts.MCNameSuffixAnnotationKey: suffix,
 		}
 	}
 

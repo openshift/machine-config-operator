@@ -28,6 +28,7 @@ import (
 	machineclientset "github.com/openshift/client-go/machine/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/openshift/machine-config-operator/test/helpers"
@@ -41,7 +42,7 @@ func TestMCDToken(t *testing.T) {
 		LabelSelector: labels.SelectorFromSet(labels.Set{"k8s-app": "machine-config-daemon"}).String(),
 	}
 
-	mcdList, err := cs.Pods(ctrlcommon.MCONamespace).List(context.TODO(), listOptions)
+	mcdList, err := cs.Pods(commonconsts.MCONamespace).List(context.TODO(), listOptions)
 	require.Nil(t, err)
 
 	for _, pod := range mcdList.Items {
@@ -1052,7 +1053,7 @@ func setupForInternalImageRegistryPullSecretTest(t *testing.T, cs *framework.Cli
 	secretName := strings.ReplaceAll(imageRegistryHostname, ".", "-")
 
 	auths := map[string]ctrlcommon.DockerConfigEntry{
-		imageRegistryHostname: ctrlcommon.DockerConfigEntry{
+		imageRegistryHostname: {
 			Username: "user",
 			Password: "secret",
 			Email:    "user@hostname.com",
@@ -1066,7 +1067,7 @@ func setupForInternalImageRegistryPullSecretTest(t *testing.T, cs *framework.Cli
 	newSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      secretName,
-			Namespace: ctrlcommon.MCONamespace,
+			Namespace: commonconsts.MCONamespace,
 		},
 		Type: corev1.SecretTypeDockercfg,
 		Data: map[string][]byte{
@@ -1074,11 +1075,11 @@ func setupForInternalImageRegistryPullSecretTest(t *testing.T, cs *framework.Cli
 		},
 	}
 
-	_, err = cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace).Create(context.TODO(), newSecret, metav1.CreateOptions{})
+	_, err = cs.CoreV1Interface.Secrets(commonconsts.MCONamespace).Create(context.TODO(), newSecret, metav1.CreateOptions{})
 	require.NoError(t, err)
 
 	err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		sa, err := cs.CoreV1Interface.ServiceAccounts(ctrlcommon.MCONamespace).Get(context.TODO(), serviceAccountName, metav1.GetOptions{})
+		sa, err := cs.CoreV1Interface.ServiceAccounts(commonconsts.MCONamespace).Get(context.TODO(), serviceAccountName, metav1.GetOptions{})
 		if err != nil {
 			return err
 		}
@@ -1087,7 +1088,7 @@ func setupForInternalImageRegistryPullSecretTest(t *testing.T, cs *framework.Cli
 			Name: secretName,
 		})
 
-		_, err = cs.CoreV1Interface.ServiceAccounts(ctrlcommon.MCONamespace).Update(context.TODO(), sa, metav1.UpdateOptions{})
+		_, err = cs.CoreV1Interface.ServiceAccounts(commonconsts.MCONamespace).Update(context.TODO(), sa, metav1.UpdateOptions{})
 		return err
 	})
 
@@ -1097,7 +1098,7 @@ func setupForInternalImageRegistryPullSecretTest(t *testing.T, cs *framework.Cli
 
 	return helpers.MakeIdempotent(func() {
 		err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-			sa, err := cs.CoreV1Interface.ServiceAccounts(ctrlcommon.MCONamespace).Get(context.TODO(), serviceAccountName, metav1.GetOptions{})
+			sa, err := cs.CoreV1Interface.ServiceAccounts(commonconsts.MCONamespace).Get(context.TODO(), serviceAccountName, metav1.GetOptions{})
 			if err != nil {
 				return err
 			}
@@ -1112,13 +1113,13 @@ func setupForInternalImageRegistryPullSecretTest(t *testing.T, cs *framework.Cli
 
 			sa.ImagePullSecrets = refs
 
-			_, err = cs.CoreV1Interface.ServiceAccounts(ctrlcommon.MCONamespace).Update(context.TODO(), sa, metav1.UpdateOptions{})
+			_, err = cs.CoreV1Interface.ServiceAccounts(commonconsts.MCONamespace).Update(context.TODO(), sa, metav1.UpdateOptions{})
 			return err
 		})
 
 		require.NoError(t, err)
 
-		require.NoError(t, cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace).Delete(context.TODO(), secretName, metav1.DeleteOptions{}))
+		require.NoError(t, cs.CoreV1Interface.Secrets(commonconsts.MCONamespace).Delete(context.TODO(), secretName, metav1.DeleteOptions{}))
 
 		t.Logf("Removed secret %s with hostname %s from %s service account", secretName, imageRegistryHostname, serviceAccountName)
 	})

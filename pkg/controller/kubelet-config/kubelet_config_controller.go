@@ -43,6 +43,7 @@ import (
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	mtmpl "github.com/openshift/machine-config-operator/pkg/controller/template"
 	"github.com/openshift/machine-config-operator/pkg/version"
 )
@@ -224,7 +225,7 @@ func (ctrl *Controller) filterAPIServer(apiServer *configv1.APIServer) {
 	// for the kubelet config controller and feature gate controller, so no need
 	// to do them here again. Do a direct get call here in case the node config
 	// lister's cache is empty.
-	if nodeConfig, err := ctrl.configClient.ConfigV1().Nodes().Get(context.TODO(), ctrlcommon.ClusterNodeInstanceName, metav1.GetOptions{}); err != nil {
+	if nodeConfig, err := ctrl.configClient.ConfigV1().Nodes().Get(context.TODO(), commonconsts.ClusterNodeInstanceName, metav1.GetOptions{}); err != nil {
 		utilruntime.HandleError(fmt.Errorf("could not get NodeConfigs, err: %v", err))
 	} else {
 		ctrl.enqueueNodeConfig(nodeConfig)
@@ -537,7 +538,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 	}()
 
 	// Wait to apply a kubelet config if the controller config is not completed
-	if err := apihelpers.IsControllerConfigCompleted(ctrlcommon.ControllerConfigName, ctrl.ccLister.Get); err != nil {
+	if err := apihelpers.IsControllerConfigCompleted(commonconsts.ControllerConfigName, ctrl.ccLister.Get); err != nil {
 		return err
 	}
 
@@ -590,15 +591,15 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 	}
 
 	// Fetch the NodeConfig
-	nodeConfig, err := ctrl.nodeConfigLister.Get(ctrlcommon.ClusterNodeInstanceName)
+	nodeConfig, err := ctrl.nodeConfigLister.Get(commonconsts.ClusterNodeInstanceName)
 	if macherrors.IsNotFound(err) {
 		nodeConfig = createNewDefaultNodeconfig()
 	}
 
 	// Grab APIServer to populate TLS settings in the default kubelet config
-	apiServer, err := ctrl.apiserverLister.Get(ctrlcommon.APIServerInstanceName)
+	apiServer, err := ctrl.apiserverLister.Get(commonconsts.APIServerInstanceName)
 	if err != nil && !macherrors.IsNotFound(err) {
-		return ctrl.syncStatusOnly(cfg, err, "could not get the TLSSecurityProfile from %v: %v", ctrlcommon.APIServerInstanceName, err)
+		return ctrl.syncStatusOnly(cfg, err, "could not get the TLSSecurityProfile from %v: %v", commonconsts.APIServerInstanceName, err)
 	}
 
 	for _, pool := range mcpPools {
@@ -623,7 +624,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		isNotFound := macherrors.IsNotFound(err)
 
 		// Generate the original KubeletConfig
-		cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
+		cc, err := ctrl.ccLister.Get(commonconsts.ControllerConfigName)
 		if err != nil {
 			return fmt.Errorf("could not get ControllerConfig %w", err)
 		}
@@ -633,7 +634,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			return ctrl.syncStatusOnly(cfg, err, "could not get original kubelet config: %v", err)
 		}
 		// updating the originalKubeConfig based on the nodeConfig on a worker node
-		if role == ctrlcommon.MachineConfigPoolWorker {
+		if role == commonconsts.MachineConfigPoolWorker {
 			updateOriginalKubeConfigwithNodeConfig(nodeConfig, originalKubeConfig)
 		}
 
@@ -658,12 +659,12 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			}
 			mc.ObjectMeta.UID = uuid.NewUUID()
 		}
-		_, ok := cfg.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
+		_, ok := cfg.GetAnnotations()[commonconsts.MCNameSuffixAnnotationKey]
 		arr := strings.Split(managedKey, "-")
 		// the first managed key value 99-poolname-generated-kubelet does not have a suffix
 		// set "" as suffix annotation to the kubelet config object
 		if _, err := strconv.Atoi(arr[len(arr)-1]); err != nil && !ok {
-			if err := ctrl.addAnnotation(cfg, ctrlcommon.MCNameSuffixAnnotationKey, ""); err != nil {
+			if err := ctrl.addAnnotation(cfg, commonconsts.MCNameSuffixAnnotationKey, ""); err != nil {
 				return ctrl.syncStatusOnly(cfg, err, "could not update annotation for kubeletConfig")
 			}
 		}
@@ -672,7 +673,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		if len(arr) > 4 && !ok {
 			_, err := strconv.Atoi(arr[len(arr)-1])
 			if err == nil {
-				if err := ctrl.addAnnotation(cfg, ctrlcommon.MCNameSuffixAnnotationKey, arr[len(arr)-1]); err != nil {
+				if err := ctrl.addAnnotation(cfg, commonconsts.MCNameSuffixAnnotationKey, arr[len(arr)-1]); err != nil {
 					return ctrl.syncStatusOnly(cfg, err, "could not update annotation for kubeletConfig")
 				}
 			}
@@ -696,7 +697,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		mc.Spec.Config.Raw = rawIgn
 
 		mc.SetAnnotations(map[string]string{
-			ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,
+			commonconsts.GeneratedByControllerVersionAnnotationKey: version.Hash,
 		})
 		oref := metav1.NewControllerRef(cfg, controllerKind)
 		mc.SetOwnerReferences([]metav1.OwnerReference{*oref})
@@ -745,7 +746,7 @@ func (ctrl *Controller) cleanUpDuplicatedMC(prefix string) error {
 			continue
 		}
 		// delete the mc if its degraded
-		if mc.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey] != version.Hash {
+		if mc.Annotations[commonconsts.GeneratedByControllerVersionAnnotationKey] != version.Hash {
 			if err := ctrl.client.MachineconfigurationV1().MachineConfigs().Delete(context.TODO(), mc.Name, metav1.DeleteOptions{}); err != nil && !macherrors.IsNotFound(err) {
 				return fmt.Errorf("error deleting degraded kubelet machine config %s: %w", mc.Name, err)
 			}

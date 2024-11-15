@@ -27,7 +27,7 @@ import (
 	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
 	cov1helpers "github.com/openshift/library-go/pkg/config/clusteroperator/v1helpers"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	"github.com/openshift/machine-config-operator/test/helpers"
 )
 
@@ -168,13 +168,13 @@ func TestIsMachineConfigPoolConfigurationValid(t *testing.T) {
 					if c.name == name {
 						annos := map[string]string{}
 						if c.version != "" {
-							annos[ctrlcommon.GeneratedByControllerVersionAnnotationKey] = c.version
+							annos[commonconsts.GeneratedByControllerVersionAnnotationKey] = c.version
 						}
 						if c.releaseVersion != "" {
-							annos[ctrlcommon.ReleaseImageVersionAnnotationKey] = c.releaseVersion
+							annos[commonconsts.ReleaseImageVersionAnnotationKey] = c.releaseVersion
 						}
 						if c.osimageurlOverridden {
-							annos[ctrlcommon.OSImageURLOverriddenKey] = "true"
+							annos[commonconsts.OSImageURLOverriddenKey] = "true"
 						}
 						return &mcfgv1.MachineConfig{
 							ObjectMeta: metav1.ObjectMeta{

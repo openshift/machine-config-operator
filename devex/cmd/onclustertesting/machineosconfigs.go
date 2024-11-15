@@ -9,7 +9,7 @@ import (
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	clientmachineconfigv1alpha1 "github.com/openshift/client-go/machineconfiguration/clientset/versioned/typed/machineconfiguration/v1alpha1"
 	"github.com/openshift/machine-config-operator/devex/internal/pkg/utils"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonstate "github.com/openshift/machine-config-operator/pkg/controller/common/state"
 	"github.com/openshift/machine-config-operator/test/framework"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -180,7 +180,7 @@ func waitForBuildToComplete(ctx context.Context, cs *framework.ClientSet, poolNa
 			klog.Infof("Build %s exists after %s", mosb.Name, time.Since(start))
 		}
 
-		state := ctrlcommon.NewMachineOSBuildState(mosb)
+		state := commonstate.NewMachineOSBuildState(mosb)
 
 		if !isPending && state.IsBuildPending() {
 			isPending = true

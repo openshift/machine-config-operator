@@ -13,7 +13,7 @@ import (
 	"github.com/openshift/machine-config-operator/devex/internal/pkg/containers"
 	"github.com/openshift/machine-config-operator/devex/internal/pkg/rollout"
 	"github.com/openshift/machine-config-operator/devex/internal/pkg/utils"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -209,7 +209,7 @@ func buildLocallyAndPushIntoCluster(cs *framework.ClientSet, buildOpts localBuil
 		}
 	}()
 
-	extPullspec := fmt.Sprintf("%s/%s/machine-config-operator:latest", extHostname, ctrlcommon.MCONamespace)
+	extPullspec := fmt.Sprintf("%s/%s/machine-config-operator:latest", extHostname, commonconsts.MCONamespace)
 
 	opts := builders.Opts{
 		RepoRoot:       buildOpts.repoRoot,

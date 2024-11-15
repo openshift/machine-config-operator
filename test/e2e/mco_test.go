@@ -9,7 +9,7 @@ import (
 	"time"
 
 	v1 "github.com/openshift/api/config/v1"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	"github.com/openshift/machine-config-operator/pkg/controller/node"
 	e2e_shared_test "github.com/openshift/machine-config-operator/test/e2e-shared-tests"
 	"github.com/openshift/machine-config-operator/test/framework"
@@ -35,7 +35,7 @@ func TestClusterOperatorRelatedObjects(t *testing.T) {
 	}
 	var foundNS bool
 	for _, ro := range co.Status.RelatedObjects {
-		if ro.Resource == "namespaces" && ro.Name == ctrlcommon.MCONamespace {
+		if ro.Resource == "namespaces" && ro.Name == commonconsts.MCONamespace {
 			foundNS = true
 		}
 	}
@@ -100,7 +100,7 @@ func CheckMasterIsAlreadySchedulable(master *corev1.Node) bool {
 	_, hasWorkerLabel := master.Labels[node.WorkerLabel]
 	hasMasterTaint := false
 	for _, taint := range master.Spec.Taints {
-		if taint.Key == ctrlcommon.MasterLabel && taint.Effect == corev1.TaintEffectNoSchedule {
+		if taint.Key == commonconsts.MasterLabel && taint.Effect == corev1.TaintEffectNoSchedule {
 			hasMasterTaint = true
 		}
 	}

@@ -49,6 +49,7 @@ import (
 
 	mcoResourceRead "github.com/openshift/machine-config-operator/lib/resourceread"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/upgrademonitor"
 
@@ -649,14 +650,14 @@ func (dn *Daemon) initializeNode() error {
 		return nil
 	}
 	// Some parts of the MCO dispatch on whether or not we're managing a control plane node
-	if _, isControlPlane := dn.node.Labels[ctrlcommon.MasterLabel]; isControlPlane {
+	if _, isControlPlane := dn.node.Labels[commonconsts.MasterLabel]; isControlPlane {
 		klog.Infof("Node %s is part of the control plane", dn.node.Name)
 		if err := dn.initializeControlPlane(); err != nil {
 			return err
 		}
 		dn.isControlPlane = true
 	} else {
-		klog.Infof("Node %s is not labeled %s", dn.node.Name, ctrlcommon.MasterLabel)
+		klog.Infof("Node %s is not labeled %s", dn.node.Name, commonconsts.MasterLabel)
 	}
 	dn.nodeInitialized = true
 	return nil

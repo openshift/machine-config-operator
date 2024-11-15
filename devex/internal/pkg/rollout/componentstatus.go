@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	"github.com/openshift/machine-config-operator/test/framework"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -56,7 +56,7 @@ func WaitForRolloutToComplete(cs *framework.ClientSet, digestedPullspec string, 
 }
 
 func isAllPodsForComponentUpdated(ctx context.Context, cs *framework.ClientSet, componentName, digestedPullspec string) (bool, error) {
-	pods, err := cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace).List(ctx, metav1.ListOptions{
+	pods, err := cs.CoreV1Interface.Pods(commonconsts.MCONamespace).List(ctx, metav1.ListOptions{
 		LabelSelector: fmt.Sprintf("k8s-app=%s", componentName),
 	})
 
@@ -105,7 +105,7 @@ func isPodOnLatestPullspec(pod *corev1.Pod, componentName, digestedPullspec stri
 }
 
 func isDeploymenttUpToDate(ctx context.Context, cs *framework.ClientSet, componentName, digestedPullspec string) (bool, error) {
-	dp, err := cs.AppsV1Interface.Deployments(ctrlcommon.MCONamespace).Get(ctx, componentName, metav1.GetOptions{})
+	dp, err := cs.AppsV1Interface.Deployments(commonconsts.MCONamespace).Get(ctx, componentName, metav1.GetOptions{})
 	if err != nil {
 		return false, err
 	}
@@ -118,7 +118,7 @@ func isDeploymenttUpToDate(ctx context.Context, cs *framework.ClientSet, compone
 }
 
 func isDaemonsetUpToDate(ctx context.Context, cs *framework.ClientSet, componentName, digestedPullspec string) (bool, error) {
-	ds, err := cs.AppsV1Interface.DaemonSets(ctrlcommon.MCONamespace).Get(ctx, componentName, metav1.GetOptions{})
+	ds, err := cs.AppsV1Interface.DaemonSets(commonconsts.MCONamespace).Get(ctx, componentName, metav1.GetOptions{})
 	if err != nil {
 		return false, err
 	}

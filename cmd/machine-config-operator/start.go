@@ -9,6 +9,7 @@ import (
 	"github.com/openshift/machine-config-operator/cmd/common"
 	"github.com/openshift/machine-config-operator/internal/clients"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	"github.com/openshift/machine-config-operator/pkg/operator"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/spf13/cobra"
@@ -68,7 +69,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		ctrlctx := ctrlcommon.CreateControllerContext(ctx, cb)
 
 		controller := operator.New(
-			ctrlcommon.MCONamespace, componentName,
+			commonconsts.MCONamespace, componentName,
 			startOpts.imagesFile,
 			ctrlctx.NamespacedInformerFactory.Machineconfiguration().V1().MachineConfigPools(),
 			ctrlctx.NamespacedInformerFactory.Machineconfiguration().V1().MachineConfigs(),
@@ -143,7 +144,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 	leaderElectionCfg := common.GetLeaderElectionConfig(cb.GetBuilderConfig())
 
 	leaderelection.RunOrDie(runContext, leaderelection.LeaderElectionConfig{
-		Lock:            common.CreateResourceLock(cb, ctrlcommon.MCONamespace, componentName),
+		Lock:            common.CreateResourceLock(cb, commonconsts.MCONamespace, componentName),
 		ReleaseOnCancel: true,
 		LeaseDuration:   leaderElectionCfg.LeaseDuration.Duration,
 		RenewDeadline:   leaderElectionCfg.RenewDeadline.Duration,

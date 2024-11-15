@@ -36,6 +36,7 @@ import (
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 )
 
@@ -233,7 +234,7 @@ func getManagedKeyCtrCfg(pool *mcfgv1.MachineConfigPool, client mcfgclientset.In
 		if ctrcfg.Name != cfg.Name {
 			continue
 		}
-		val, ok := ctrcfg.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
+		val, ok := ctrcfg.GetAnnotations()[commonconsts.MCNameSuffixAnnotationKey]
 		if !ok {
 			break
 		}
@@ -248,12 +249,12 @@ func getManagedKeyCtrCfg(pool *mcfgv1.MachineConfigPool, client mcfgclientset.In
 
 	// If we are here, this means that
 	// 1. a new containerruntime config was created, so we have to calculate the suffix value for its MC name
-	// 2. or this is an existing containerruntime config did not get ctrlcommon.MCNameSuffixAnnotationKey set, so we have to set the MCNameSuffixAnnotationKey to the machineconfig suffix it was rendered to, assume for existing containerruntime config, cfg.Finalizers with the largest suffix is the machine config the ctrcfg was rendered to
+	// 2. or this is an existing containerruntime config did not get commonconsts.MCNameSuffixAnnotationKey set, so we have to set the MCNameSuffixAnnotationKey to the machineconfig suffix it was rendered to, assume for existing containerruntime config, cfg.Finalizers with the largest suffix is the machine config the ctrcfg was rendered to
 	// if the containerruntime config is the only one in the list, mc name should not suffixed since cfg is the first containerruntime config to be created
 	if len(ctrcfgList) == 1 {
 		return ctrlcommon.GetManagedKey(pool, client, "99", "containerruntime", getManagedKeyCtrCfgDeprecated(pool))
 	}
-	// if cfg is not a newly created containerruntime config and did not get ctrlcommon.MCNameSuffixAnnotationKey
+	// if cfg is not a newly created containerruntime config and did not get commonconsts.MCNameSuffixAnnotationKey
 	// but has been rendered to a machineconfig, its len(cfg.Finalizers) > 0
 	if notLatestContainerRuntimeConfigInPool(ctrcfgList, cfg) {
 		finalizers := cfg.GetFinalizers()
@@ -303,7 +304,7 @@ func getManagedKeyCtrCfg(pool *mcfgv1.MachineConfigPool, client mcfgclientset.In
 	suffixNum := 0
 	// Go through the list of ctrcfg objects created and get the max suffix value currently created
 	for _, item := range ctrcfgList {
-		val, ok := item.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
+		val, ok := item.GetAnnotations()[commonconsts.MCNameSuffixAnnotationKey]
 		if ok && val != "" {
 			// Convert the suffix value to int so we can look through the list and grab the max suffix created so far
 			intVal, err := strconv.Atoi(val)
@@ -320,7 +321,7 @@ func getManagedKeyCtrCfg(pool *mcfgv1.MachineConfigPool, client mcfgclientset.In
 	// then if the user creates a ctrcfg-new it will map to mc-3. This is what we want as the latest ctrcfg created should be higher in priority
 	// so that those changes can be rolled out to the nodes. But users will have to be mindful of how many ctrcfg CRs they create. Don't think
 	// anyone should ever have the need to create 10 when they can simply update an existing ctrcfg unless it is to apply to another pool.
-	if suffixNum+1 > ctrlcommon.MaxMCNameSuffix {
+	if suffixNum+1 > commonconsts.MaxMCNameSuffix {
 		return "", fmt.Errorf("max number of supported ctrcfgs (10) has been reached. Please delete old ctrcfgs before retrying")
 	}
 	// Return the default MC name with the suffixNum+1 value appended to it

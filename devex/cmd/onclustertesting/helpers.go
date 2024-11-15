@@ -13,7 +13,7 @@ import (
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	buildconstants "github.com/openshift/machine-config-operator/pkg/controller/build/constants"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -278,7 +278,7 @@ func deleteBuildObjectsForSelector(cs *framework.ClientSet, selector labels.Sele
 func cleanupPods(cs *framework.ClientSet, selector labels.Selector) error {
 	eg := errgroup.Group{}
 
-	pods, err := cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace).List(context.TODO(), metav1.ListOptions{
+	pods, err := cs.CoreV1Interface.Pods(commonconsts.MCONamespace).List(context.TODO(), metav1.ListOptions{
 		LabelSelector: selector.String(),
 	})
 
@@ -289,7 +289,7 @@ func cleanupPods(cs *framework.ClientSet, selector labels.Selector) error {
 	for _, pod := range pods.Items {
 		pod := pod
 		eg.Go(func() error {
-			return deleteObjectAndIgnoreIfNotFound(&pod, cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace))
+			return deleteObjectAndIgnoreIfNotFound(&pod, cs.CoreV1Interface.Pods(commonconsts.MCONamespace))
 		})
 	}
 
@@ -307,7 +307,7 @@ func cleanupPods(cs *framework.ClientSet, selector labels.Selector) error {
 func cleanupConfigMaps(cs *framework.ClientSet, selector labels.Selector) error {
 	eg := errgroup.Group{}
 
-	configMaps, err := cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace).List(context.TODO(), metav1.ListOptions{
+	configMaps, err := cs.CoreV1Interface.ConfigMaps(commonconsts.MCONamespace).List(context.TODO(), metav1.ListOptions{
 		LabelSelector: selector.String(),
 	})
 
@@ -318,7 +318,7 @@ func cleanupConfigMaps(cs *framework.ClientSet, selector labels.Selector) error 
 	for _, configMap := range configMaps.Items {
 		configMap := configMap
 		eg.Go(func() error {
-			return deleteObjectAndIgnoreIfNotFound(&configMap, cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace))
+			return deleteObjectAndIgnoreIfNotFound(&configMap, cs.CoreV1Interface.ConfigMaps(commonconsts.MCONamespace))
 		})
 	}
 
@@ -336,7 +336,7 @@ func cleanupConfigMaps(cs *framework.ClientSet, selector labels.Selector) error 
 func cleanupSecrets(cs *framework.ClientSet, selector labels.Selector) error {
 	eg := errgroup.Group{}
 
-	secrets, err := cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace).List(context.TODO(), metav1.ListOptions{
+	secrets, err := cs.CoreV1Interface.Secrets(commonconsts.MCONamespace).List(context.TODO(), metav1.ListOptions{
 		LabelSelector: selector.String(),
 	})
 
@@ -347,7 +347,7 @@ func cleanupSecrets(cs *framework.ClientSet, selector labels.Selector) error {
 	for _, secret := range secrets.Items {
 		secret := secret
 		eg.Go(func() error {
-			return deleteObjectAndIgnoreIfNotFound(&secret, cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace))
+			return deleteObjectAndIgnoreIfNotFound(&secret, cs.CoreV1Interface.Secrets(commonconsts.MCONamespace))
 		})
 	}
 
@@ -365,7 +365,7 @@ func cleanupSecrets(cs *framework.ClientSet, selector labels.Selector) error {
 func cleanupImagestreams(cs *framework.ClientSet, selector labels.Selector) error {
 	eg := errgroup.Group{}
 
-	isList, err := cs.ImageV1Interface.ImageStreams(ctrlcommon.MCONamespace).List(context.TODO(), metav1.ListOptions{
+	isList, err := cs.ImageV1Interface.ImageStreams(commonconsts.MCONamespace).List(context.TODO(), metav1.ListOptions{
 		LabelSelector: selector.String(),
 	})
 
@@ -376,7 +376,7 @@ func cleanupImagestreams(cs *framework.ClientSet, selector labels.Selector) erro
 	for _, is := range isList.Items {
 		is := is
 		eg.Go(func() error {
-			return deleteObjectAndIgnoreIfNotFound(&is, cs.ImageV1Interface.ImageStreams(ctrlcommon.MCONamespace))
+			return deleteObjectAndIgnoreIfNotFound(&is, cs.ImageV1Interface.ImageStreams(commonconsts.MCONamespace))
 		})
 	}
 
