@@ -1,4 +1,4 @@
-package common
+package state
 
 // func TestMachineOSBuildState(t *testing.T) {
 // 	t.Parallel()

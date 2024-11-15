@@ -12,6 +12,7 @@ import (
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -85,7 +86,7 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 		}
 	}
 	// Fetch the controllerconfig
-	cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
+	cc, err := ctrl.ccLister.Get(commonconsts.ControllerConfigName)
 	if err != nil {
 		return fmt.Errorf("could not get ControllerConfig, err: %w", err)
 	}
@@ -96,9 +97,9 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 	}
 
 	// Grab APIServer to populate TLS settings in the default kubelet config
-	apiServer, err := ctrl.apiserverLister.Get(ctrlcommon.APIServerInstanceName)
+	apiServer, err := ctrl.apiserverLister.Get(commonconsts.APIServerInstanceName)
 	if err != nil && !errors.IsNotFound(err) {
-		return fmt.Errorf("could not get the TLSSecurityProfile from %v: %v", ctrlcommon.APIServerInstanceName, err)
+		return fmt.Errorf("could not get the TLSSecurityProfile from %v: %v", commonconsts.APIServerInstanceName, err)
 	}
 
 	for _, pool := range mcpPools {
@@ -125,7 +126,7 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 			return err
 		}
 		// the workerlatencyprofile's configuration change will be applied only on the worker nodes.
-		if role == ctrlcommon.MachineConfigPoolWorker {
+		if role == commonconsts.MachineConfigPoolWorker {
 			// updating the kubelet configuration with the Node specific configuration.
 			err = updateOriginalKubeConfigwithNodeConfig(nodeConfig, originalKubeConfig)
 			if err != nil {
@@ -133,7 +134,7 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 			}
 		}
 		// The following code updates the MC with the relevant CGroups version
-		if role == ctrlcommon.MachineConfigPoolWorker || role == ctrlcommon.MachineConfigPoolMaster {
+		if role == commonconsts.MachineConfigPoolWorker || role == commonconsts.MachineConfigPoolMaster {
 			err = updateMachineConfigwithCgroup(nodeConfig, mc)
 			if err != nil {
 				return err
@@ -152,7 +153,7 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 		}
 		mc.Spec.Config.Raw = rawCfgIgn
 		mc.ObjectMeta.Annotations = map[string]string{
-			ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,
+			commonconsts.GeneratedByControllerVersionAnnotationKey: version.Hash,
 		}
 		// Create or Update, on conflict retry
 		if err := retry.RetryOnConflict(updateBackoff, func() error {
@@ -183,7 +184,7 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 	}
 
 	// syncing the featuregate controller
-	features, err := ctrl.featLister.Get(ctrlcommon.ClusterFeatureInstanceName)
+	features, err := ctrl.featLister.Get(commonconsts.ClusterFeatureInstanceName)
 	if err == nil {
 		err := ctrl.syncFeatureHandler(features.Name)
 		if err != nil {
@@ -232,8 +233,8 @@ func (ctrl *Controller) updateNodeConfig(old, cur interface{}) {
 		utilruntime.HandleError(fmt.Errorf("Couldn't retrieve the new object from the Update Node Config event %#v", cur))
 		return
 	}
-	if newNode.Name != ctrlcommon.ClusterNodeInstanceName {
-		message := fmt.Sprintf("The node.config.openshift.io \"%v\" is invalid: metadata.name Invalid value: \"%v\" : must be \"%v\"", newNode.Name, newNode.Name, ctrlcommon.ClusterNodeInstanceName)
+	if newNode.Name != commonconsts.ClusterNodeInstanceName {
+		message := fmt.Sprintf("The node.config.openshift.io \"%v\" is invalid: metadata.name Invalid value: \"%v\" : must be \"%v\"", newNode.Name, newNode.Name, commonconsts.ClusterNodeInstanceName)
 		ctrl.eventRecorder.Eventf(oldNode, corev1.EventTypeNormal, "ActionProhibited", message)
 		klog.V(2).Infof("%s", message)
 		return
@@ -269,8 +270,8 @@ func (ctrl *Controller) addNodeConfig(obj interface{}) {
 		utilruntime.HandleError(fmt.Errorf("Couldn't retrieve the object from the Add Node Config event %#v", obj))
 		return
 	}
-	if nodeConfig.Name != ctrlcommon.ClusterNodeInstanceName {
-		message := fmt.Sprintf("The node.config.openshift.io \"%v\" is invalid: metadata.name Invalid value: \"%v\" : must be \"%v\"", nodeConfig.Name, nodeConfig.Name, ctrlcommon.ClusterNodeInstanceName)
+	if nodeConfig.Name != commonconsts.ClusterNodeInstanceName {
+		message := fmt.Sprintf("The node.config.openshift.io \"%v\" is invalid: metadata.name Invalid value: \"%v\" : must be \"%v\"", nodeConfig.Name, nodeConfig.Name, commonconsts.ClusterNodeInstanceName)
 		klog.V(2).Info(message)
 		ctrl.eventRecorder.Eventf(nodeConfig, corev1.EventTypeNormal, "ActionProhibited", message)
 		return
@@ -319,7 +320,7 @@ func RunNodeConfigBootstrap(templateDir string, featureGateAccess featuregates.F
 		if err != nil {
 			return nil, err
 		}
-		if role == ctrlcommon.MachineConfigPoolWorker {
+		if role == commonconsts.MachineConfigPoolWorker {
 			// updating the kubelet configuration with the Node specific configuration.
 			err = updateOriginalKubeConfigwithNodeConfig(nodeConfig, originalKubeConfig)
 			if err != nil {
@@ -344,7 +345,7 @@ func RunNodeConfigBootstrap(templateDir string, featureGateAccess featuregates.F
 		}
 		mc.Spec.Config.Raw = rawCfgIgn
 		mc.ObjectMeta.Annotations = map[string]string{
-			ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,
+			commonconsts.GeneratedByControllerVersionAnnotationKey: version.Hash,
 		}
 		configs = append(configs, mc)
 	}

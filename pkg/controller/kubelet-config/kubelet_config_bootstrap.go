@@ -8,6 +8,7 @@ import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -46,7 +47,7 @@ func RunKubeletBootstrap(templateDir string, kubeletConfigs []*mcfgv1.KubeletCon
 				return nil, err
 			}
 			// updating the originalKubeConfig based on the nodeConfig on a worker node
-			if role == ctrlcommon.MachineConfigPoolWorker {
+			if role == commonconsts.MachineConfigPoolWorker {
 				updateOriginalKubeConfigwithNodeConfig(nodeConfig, originalKubeConfig)
 			}
 			if kubeletConfig.Spec.TLSSecurityProfile != nil {
@@ -83,7 +84,7 @@ func RunKubeletBootstrap(templateDir string, kubeletConfigs []*mcfgv1.KubeletCon
 			// the first managed key value 99-poolname-generated-kubelet does not have a suffix
 			// set "" as suffix annotation to the kubelet config object
 			kubeletConfig.SetAnnotations(map[string]string{
-				ctrlcommon.MCNameSuffixAnnotationKey: "",
+				commonconsts.MCNameSuffixAnnotationKey: "",
 			})
 			ignConfig := ctrlcommon.NewIgnConfig()
 			mc, err := ctrlcommon.MachineConfigFromIgnConfig(role, managedKey, ignConfig)
@@ -92,7 +93,7 @@ func RunKubeletBootstrap(templateDir string, kubeletConfigs []*mcfgv1.KubeletCon
 			}
 			mc.Spec.Config.Raw = rawIgn
 			mc.SetAnnotations(map[string]string{
-				ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,
+				commonconsts.GeneratedByControllerVersionAnnotationKey: version.Hash,
 			})
 			oref := metav1.OwnerReference{
 				APIVersion: controllerKind.GroupVersion().String(),

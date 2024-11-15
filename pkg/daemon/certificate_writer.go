@@ -19,6 +19,7 @@ import (
 	"github.com/ghodss/yaml"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -99,13 +100,13 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 	startTime := time.Now()
 	klog.V(4).Infof("Started syncing ControllerConfig %q (%v)", key, startTime)
 
-	if key != ctrlcommon.ControllerConfigName {
+	if key != commonconsts.ControllerConfigName {
 		// In theory there are no other ControllerConfigs other than the machine-config one
 		// but to future-proof just in case, we don't need to sync on other changes
 		return nil
 	}
 
-	controllerConfig, err := dn.ccLister.Get(ctrlcommon.ControllerConfigName)
+	controllerConfig, err := dn.ccLister.Get(commonconsts.ControllerConfigName)
 	if err != nil {
 		return fmt.Errorf("could not get ControllerConfig: %v", err)
 	}
@@ -125,7 +126,7 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 	allCertsThere := true
 	onDiskKC := clientcmdv1.Config{}
 
-	if currentNodeControllerConfigResource != controllerConfig.ObjectMeta.ResourceVersion || controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation] == ctrlcommon.ServiceCARotateTrue {
+	if currentNodeControllerConfigResource != controllerConfig.ObjectMeta.ResourceVersion || controllerConfig.Annotations[commonconsts.ServiceCARotateAnnotation] == commonconsts.ServiceCARotateTrue {
 		pathToData := make(map[string][]byte)
 		kubeAPIServerServingCABytes := controllerConfig.Spec.KubeAPIServerServingCAData
 		cloudCA := controllerConfig.Spec.CloudProviderCAData
@@ -141,7 +142,7 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 			return err
 		}
 
-		if controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation] == ctrlcommon.ServiceCARotateTrue && dn.node.Annotations[constants.ControllerConfigSyncServerCA] != controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation] {
+		if controllerConfig.Annotations[commonconsts.ServiceCARotateAnnotation] == commonconsts.ServiceCARotateTrue && dn.node.Annotations[constants.ControllerConfigSyncServerCA] != controllerConfig.Annotations[commonconsts.ServiceCARotateAnnotation] {
 			cm, cmErr = dn.kubeClient.CoreV1().ConfigMaps("openshift-machine-config-operator").Get(context.TODO(), "kubeconfig-data", v1.GetOptions{})
 			if cmErr != nil {
 				klog.Errorf("Error retrieving kubeconfig-data. %v", cmErr)
@@ -292,8 +293,8 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 	annos := map[string]string{
 		constants.ControllerConfigResourceVersionKey: controllerConfig.ObjectMeta.ResourceVersion,
 	}
-	if dn.node.Annotations[constants.ControllerConfigSyncServerCA] != controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation] {
-		annos[constants.ControllerConfigSyncServerCA] = controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation]
+	if dn.node.Annotations[constants.ControllerConfigSyncServerCA] != controllerConfig.Annotations[commonconsts.ServiceCARotateAnnotation] {
+		annos[constants.ControllerConfigSyncServerCA] = controllerConfig.Annotations[commonconsts.ServiceCARotateAnnotation]
 
 	}
 	if _, err := dn.nodeWriter.SetAnnotations(annos); err != nil {
@@ -301,7 +302,7 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 	}
 
 	klog.Infof("Certificate was synced from controllerconfig resourceVersion %s", controllerConfig.ObjectMeta.ResourceVersion)
-	if controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation] == ctrlcommon.ServiceCARotateTrue && oldAnno != controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation] && cmErr == nil && kubeConfigDiff && !allCertsThere && !dn.deferKubeletRestart {
+	if controllerConfig.Annotations[commonconsts.ServiceCARotateAnnotation] == commonconsts.ServiceCARotateTrue && oldAnno != controllerConfig.Annotations[commonconsts.ServiceCARotateAnnotation] && cmErr == nil && kubeConfigDiff && !allCertsThere && !dn.deferKubeletRestart {
 		if len(onDiskKC.Clusters[0].Cluster.CertificateAuthorityData) > 0 {
 			logSystem("restarting kubelet due to server-ca rotation")
 			if err := runCmdSync("systemctl", "stop", "kubelet"); err != nil {
@@ -363,7 +364,7 @@ func (dn *Daemon) syncOSImagePullSecrets(controllerConfig *mcfgv1.ControllerConf
 	defer dn.osImageMux.Unlock()
 
 	if controllerConfig == nil {
-		cfg, err := dn.ccLister.Get(ctrlcommon.ControllerConfigName)
+		cfg, err := dn.ccLister.Get(commonconsts.ControllerConfigName)
 		if err != nil {
 			return fmt.Errorf("could not get ControllerConfig: %v", err)
 		}

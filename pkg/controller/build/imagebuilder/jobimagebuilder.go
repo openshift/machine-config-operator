@@ -8,7 +8,7 @@ import (
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/buildrequest"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	batchv1 "k8s.io/api/batch/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -98,7 +98,7 @@ func (j *jobImageBuilder) start(ctx context.Context) (*batchv1.Job, error) {
 
 	buildJob := builder.GetObject().(*batchv1.Job)
 
-	bj, err := j.kubeclient.BatchV1().Jobs(ctrlcommon.MCONamespace).Create(ctx, buildJob, metav1.CreateOptions{})
+	bj, err := j.kubeclient.BatchV1().Jobs(commonconsts.MCONamespace).Create(ctx, buildJob, metav1.CreateOptions{})
 	if err == nil {
 		klog.Infof("Build job %q created for MachineOSBuild %q", bj.Name, mosbName)
 		return bj, nil
@@ -117,7 +117,7 @@ func (j *jobImageBuilder) getBuildJobStrict(ctx context.Context) (*batchv1.Job, 
 		return nil, fmt.Errorf("imagebuilder missing name for MachineOSBuild or builder")
 	}
 
-	return j.kubeclient.BatchV1().Jobs(ctrlcommon.MCONamespace).Get(ctx, j.getBuilderName(), metav1.GetOptions{})
+	return j.kubeclient.BatchV1().Jobs(commonconsts.MCONamespace).Get(ctx, j.getBuilderName(), metav1.GetOptions{})
 }
 
 // Gets the build job but returns nil if it is not found.
@@ -261,7 +261,7 @@ func (j *jobImageBuilder) stop(ctx context.Context) error {
 	buildJobName := j.getBuilderName()
 
 	propagationPolicy := metav1.DeletePropagationForeground
-	err = j.kubeclient.BatchV1().Jobs(ctrlcommon.MCONamespace).Delete(ctx, buildJobName, metav1.DeleteOptions{PropagationPolicy: &propagationPolicy})
+	err = j.kubeclient.BatchV1().Jobs(commonconsts.MCONamespace).Delete(ctx, buildJobName, metav1.DeleteOptions{PropagationPolicy: &propagationPolicy})
 	if err == nil {
 		klog.Infof("Deleted build job %s for MachineOSBuild %s", buildJobName, mosbName)
 		return nil

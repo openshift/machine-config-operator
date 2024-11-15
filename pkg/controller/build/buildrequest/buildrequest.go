@@ -13,8 +13,8 @@ import (
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	batchv1 "k8s.io/api/batch/v1"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -578,7 +578,7 @@ func (br buildRequestImpl) getAnnotationsForObjectMeta() map[string]string {
 func (br buildRequestImpl) getObjectMeta(name string) metav1.ObjectMeta {
 	return metav1.ObjectMeta{
 		Name:        name,
-		Namespace:   ctrlcommon.MCONamespace,
+		Namespace:   commonconsts.MCONamespace,
 		Labels:      br.getLabelsForObjectMeta(),
 		Annotations: br.getAnnotationsForObjectMeta(),
 	}

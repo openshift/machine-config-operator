@@ -14,6 +14,7 @@ import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	"github.com/openshift/machine-config-operator/test/helpers"
 )
 
@@ -22,7 +23,7 @@ func TestRunKubeletBootstrap(t *testing.T) {
 
 	for _, platform := range []configv1.PlatformType{configv1.AWSPlatformType, configv1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
-			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			cc := newControllerConfig(commonconsts.ControllerConfigName, platform)
 			pools := []*mcfgv1.MachineConfigPool{
 				helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
 				helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0"),
@@ -205,7 +206,7 @@ func TestAddKubeletCfgAfterBootstrapKubeletCfg(t *testing.T) {
 			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"Example"}, nil)
 			f.newController(fgAccess)
 
-			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			cc := newControllerConfig(commonconsts.ControllerConfigName, platform)
 			pools := []*mcfgv1.MachineConfigPool{
 				helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
 			}
@@ -238,7 +239,7 @@ func TestAddKubeletCfgAfterBootstrapKubeletCfg(t *testing.T) {
 			if err != nil {
 				t.Errorf("syncHandler returned: %v", err)
 			}
-			val := kc.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
+			val := kc.GetAnnotations()[commonconsts.MCNameSuffixAnnotationKey]
 			require.Equal(t, "", val)
 		})
 	}
