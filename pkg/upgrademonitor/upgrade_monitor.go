@@ -16,6 +16,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	applyconfigurationsmeta "k8s.io/client-go/applyconfigurations/meta/v1"
 	"k8s.io/klog/v2"
+
+	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 )
 
 const NotYetSet = "NotYetSet"
@@ -239,10 +241,10 @@ func generateAndApplyMachineConfigNodes(
 	}
 
 	// for now, keep spec and status aligned
-	if node.Annotations["machineconfiguration.openshift.io/currentConfig"] != "" {
+	if node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey] != "" {
 		newMCNode.Status.ConfigVersion = mcfgalphav1.MachineConfigNodeStatusMachineConfigVersion{
 			Desired: newMCNode.Status.ConfigVersion.Desired,
-			Current: node.Annotations["machineconfiguration.openshift.io/currentConfig"],
+			Current: node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey],
 		}
 	} else {
 		newMCNode.Status.ConfigVersion = mcfgalphav1.MachineConfigNodeStatusMachineConfigVersion{
@@ -251,8 +253,8 @@ func generateAndApplyMachineConfigNodes(
 	}
 	// if the update is compatible, we can set the desired to the one being used in the update
 	// this happens either if we get prepared == true OR literally any other parent condition, since if we get past prepared, then the desiredConfig is correct.
-	if newParentCondition.Type == string(mcfgalphav1.MachineConfigNodeUpdatePrepared) && newParentCondition.Status == metav1.ConditionTrue || newParentCondition.Type != string(mcfgalphav1.MachineConfigNodeUpdatePrepared) && node.Annotations["machineconfiguration.openshift.io/desiredConfig"] != "" {
-		newMCNode.Status.ConfigVersion.Desired = node.Annotations["machineconfiguration.openshift.io/desiredConfig"]
+	if newParentCondition.Type == string(mcfgalphav1.MachineConfigNodeUpdatePrepared) && newParentCondition.Status == metav1.ConditionTrue || newParentCondition.Type != string(mcfgalphav1.MachineConfigNodeUpdatePrepared) && node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] != "" {
+		newMCNode.Status.ConfigVersion.Desired = node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey]
 	} else if newMCNode.Status.ConfigVersion.Desired == "" {
 		newMCNode.Status.ConfigVersion.Desired = NotYetSet
 	}
@@ -260,7 +262,7 @@ func generateAndApplyMachineConfigNodes(
 	// if we do not need a new MCN, generate the apply configurations for this object
 	if !needNewMCNode {
 		statusconfigVersionApplyConfig := machineconfigurationalphav1.MachineConfigNodeStatusMachineConfigVersion().WithDesired(newMCNode.Status.ConfigVersion.Desired)
-		if node.Annotations["machineconfiguration.openshift.io/currentConfig"] != "" {
+		if node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey] != "" {
 			statusconfigVersionApplyConfig = statusconfigVersionApplyConfig.WithCurrent(newMCNode.Status.ConfigVersion.Current)
 		}
 		statusApplyConfig := machineconfigurationalphav1.MachineConfigNodeStatus().
@@ -294,7 +296,7 @@ func generateAndApplyMachineConfigNodes(
 	} else if node.Status.Phase != corev1.NodePending && node.Status.Phase != corev1.NodePhase("Provisioning") {
 		// there are cases where we get here before the MCO has settled and applied all of the MCnodes.
 		newMCNode.Spec.ConfigVersion = mcfgalphav1.MachineConfigNodeSpecMachineConfigVersion{
-			Desired: node.Annotations["machineconfiguration.openshift.io/desiredConfig"],
+			Desired: node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey],
 		}
 		if newMCNode.Spec.ConfigVersion.Desired == "" {
 			newMCNode.Spec.ConfigVersion.Desired = NotYetSet
@@ -362,9 +364,15 @@ func GenerateAndApplyMachineConfigNodeSpec(fgAccessor featuregates.FeatureGateAc
 			UID:        node.ObjectMeta.UID,
 		},
 	}
+
 	newMCNode.Spec.ConfigVersion = mcfgalphav1.MachineConfigNodeSpecMachineConfigVersion{
-		Desired: node.Annotations["machineconfiguration.openshift.io/desiredConfig"],
+		Desired: node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey],
 	}
+	// Set desired config to NotYetSet if the annotation is empty to satisfy API validation
+	if newMCNode.Spec.ConfigVersion.Desired == "" {
+		newMCNode.Spec.ConfigVersion.Desired = NotYetSet
+	}
+
 	newMCNode.Spec.Pool = mcfgalphav1.MCOObjectReference{
 		Name: pool,
 	}
