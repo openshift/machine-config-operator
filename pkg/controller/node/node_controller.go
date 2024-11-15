@@ -1211,7 +1211,7 @@ func (ctrl *Controller) updateCandidateNode(mosc *mcfgv1alpha1.MachineOSConfig, 
 func getAllCandidateMachines(layered bool, config *mcfgv1alpha1.MachineOSConfig, build *mcfgv1alpha1.MachineOSBuild, pool *mcfgv1.MachineConfigPool, nodesInPool []*corev1.Node, maxUnavailable int) ([]*corev1.Node, uint) {
 	unavail := getUnavailableMachines(nodesInPool, pool, layered, build)
 	if len(unavail) >= maxUnavailable {
-		klog.V(4).Infof("Pool %s: No nodes available for updates", pool.Name)
+		klog.Infof("Pool %s: No nodes available for updates (getUnavailableMachines)", pool.Name)
 		return nil, 0
 	}
 	capacity := maxUnavailable - len(unavail)
@@ -1221,37 +1221,52 @@ func getAllCandidateMachines(layered bool, config *mcfgv1alpha1.MachineOSConfig,
 	for _, node := range nodesInPool {
 		lns := ctrlcommon.NewLayeredNodeState(node)
 		if !layered {
+			klog.Infof("not in layered state")
 			if lns.IsDesiredEqualToPool(pool, layered) {
+				klog.Infof("Pool %s: Layered node %s: no update needed (getUnavailableMachines)", pool.Name, node.Name)
 				if isNodeMCDFailing(node) {
 					failingThisConfig++
 				}
 				continue
 			}
 		} else {
+			klog.Infof("in layered state")
 			if lns.IsDesiredEqualToBuild(config, build) {
 				// If the node's desired annotations match the pool, return directly without updating the node.
-				klog.V(4).Infof("Pool %s: layered node %s: no update is needed", pool.Name, node.Name)
+				klog.Infof("Pool %s: layered node %s: no update is needed (getUnavailableMachines)", pool.Name, node.Name)
 				continue
 			}
 		}
-		// Ignore nodes that are currently mid-update or unscheduled
-		if !isNodeReady(node) {
-			klog.V(4).Infof("node %s skipped during candidate selection as it is currently unscheduled", node.Name)
+		// Skip nodes that are currently being updated
+		if isNodeMCDState(node, daemonconsts.MachineConfigDaemonStateWorking) {
+			klog.Infof("node %s skipped during candidate selection as it is currently being updated (getUnavailableMachines)", node.Name)
 			continue
 		}
-		klog.V(4).Infof("Pool %s: selected candidate node %s", pool.Name, node.Name)
+		// Ignore nodes that are currently mid-update or unscheduled
+		if !isNodeReady(node) {
+			klog.Infof("node %s skipped during candidate selection as it is currently unscheduled (getUnavailableMachines)", node.Name)
+			continue
+		}
+		klog.Infof("Pool %s: selected candidate node %s", pool.Name, node.Name)
 		nodes = append(nodes, node)
 	}
+
+	klog.Infof("Pool %s: Total candidates before capacity adjustment(getUnavailableMachines): %v", pool.Name, getNamesFromNodes(nodes))
+	klog.Infof("Pool %s: Failing nodes(getUnavailableMachines): %d", pool.Name, failingThisConfig)
 	// Nodes which are failing to target this config also count against
 	// availability - it might be a transient issue, and if the issue
 	// clears we don't want multiple to update at once.
 	if failingThisConfig >= capacity {
+		klog.Infof("Pool %s: Capacity fully consumed by failing nodes (getUnavailableMachines)", pool.Name)
 		return nil, 0
 	}
 	capacity -= failingThisConfig
+	klog.Infof("Pool %s: Final capacity (getUnavailableMachines): %d", pool.Name, capacity)
+
 	return nodes, uint(capacity)
 }
 
+// NOTE: This is only used in the test suite. This needs to be moved there
 // getCandidateMachines returns the maximum subset of nodes which can be updated to the target config given availability constraints.
 func getCandidateMachines(pool *mcfgv1.MachineConfigPool, config *mcfgv1alpha1.MachineOSConfig, build *mcfgv1alpha1.MachineOSBuild, nodesInPool []*corev1.Node, maxUnavailable int, layered bool) []*corev1.Node {
 	nodes, capacity := getAllCandidateMachines(layered, config, build, pool, nodesInPool, maxUnavailable)

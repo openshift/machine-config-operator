@@ -485,6 +485,7 @@ func isNodeReady(node *corev1.Node) bool {
 // isNodeUnavailable is a helper function for getUnavailableMachines
 // See the docs of getUnavailableMachines for more info
 func isNodeUnavailable(node *corev1.Node, layered bool) bool {
+	klog.Infof("Checking if node %s is unavailable (isNodeUnavailable): layered=%v", node.Name, layered)
 	// Unready nodes are unavailable
 	if !isNodeReady(node) {
 		return true
@@ -515,12 +516,15 @@ func getUnavailableMachines(nodes []*corev1.Node, pool *mcfgv1.MachineConfigPool
 			// if node is unavail, desiredConfigs match, and the build is a success, then we are unavail.
 			// not sure on this one honestly
 			if layered && isNodeUnavailable(node, layered) && mosb.Spec.DesiredConfig.Name == pool.Spec.Configuration.Name && mosbState.IsBuildSuccess() {
+				klog.Infof("Node %s marked as unavailable (getUnavailableMachines): layered=%v, desiredConfig=%s, poolConfig=%s, buildSuccess=%v", node.Name, layered, mosb.Spec.DesiredConfig.Name, pool.Spec.Configuration.Name, mosbState.IsBuildSuccess())
 				unavail = append(unavail, node)
 			}
 		} else if isNodeUnavailable(node, layered) {
+			klog.Infof("Node %s marked as unavailable (getUnavailableMachines): layered=%v, no MachineOSBuild present", node.Name, layered)
 			unavail = append(unavail, node)
 		}
 	}
+	klog.Infof("Total unavailable nodes (getUnavailableMachines): %d", len(unavail))
 	return unavail
 }
 
