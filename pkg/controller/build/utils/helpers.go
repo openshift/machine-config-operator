@@ -53,6 +53,11 @@ func parseImagePullspecWithDigest(pullspec string, imageDigest digest.Digest) (s
 	return canonical.String(), nil
 }
 
+// Computes the AdditionalTrustBundle ConfigMap name based upon the MachineConfigPool name.
+func GetAdditionalTrustBundleConfigMapName(mosb *mcfgv1alpha1.MachineOSBuild) string {
+	return fmt.Sprintf("additionaltrustbundle-%s", getFieldFromMachineOSBuild(mosb))
+}
+
 // Computes the Containerfile ConfigMap name.
 func GetContainerfileConfigMapName(mosb *mcfgv1alpha1.MachineOSBuild) string {
 	return fmt.Sprintf("containerfile-%s", getFieldFromMachineOSBuild(mosb))
