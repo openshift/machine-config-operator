@@ -29,6 +29,9 @@ COPY --from=extract /etc/machine-config-daemon/currentconfig /etc/machine-config
 RUN container="oci" exec -a ignition-apply /usr/lib/dracut/modules.d/30ignition/ignition --ignore-unsupported <(cat /etc/machine-config-daemon/currentconfig | jq '.spec.config') && \
 	ostree container commit
 
+COPY ./openshift-config-user-ca-bundle.crt /etc/pki/ca-trust/source/anchors/openshift-config-user-ca-bundle.crt
+RUN update-ca-trust
+
 LABEL machineconfig={{.MachineOSBuild.Spec.DesiredConfig.Name}}
 LABEL machineconfigpool={{.MachineOSConfig.Spec.MachineConfigPool.Name}}
 LABEL releaseversion={{.ReleaseVersion}}
