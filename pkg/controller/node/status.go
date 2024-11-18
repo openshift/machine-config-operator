@@ -250,23 +250,62 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 	conditions := pool.Status.Conditions
 	status.Conditions = append(status.Conditions, conditions...)
 
+	buildInProgress := false
+	buildSucceeded := false
+
+	if mosb != nil {
+		mosbState := ctrlcommon.NewMachineOSBuildState(mosb)
+		if mosbState.IsBuilding() {
+			buildInProgress = true
+			klog.Info("MOSB Building")
+		}
+		if mosbState.IsBuildSuccess() {
+			buildSucceeded = true
+			klog.Info("MOSB Success")
+		}
+	}
+
 	allUpdated := updatedMachineCount == machineCount &&
 		readyMachineCount == machineCount &&
 		unavailableMachineCount == 0
 
-	if allUpdated {
+	switch {
+	case buildInProgress:
+		updatingMsg := fmt.Sprintf("MachineOSBuilder is building a new image for %s", getPoolUpdateLine(pool, mosc, l))
+		supdating := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionTrue, "BuildingImage", updatingMsg)
+		apihelpers.SetMachineConfigPoolCondition(&status, *supdating)
+
+		// Ensure Updated=False while build is ongoing
+		supdated := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdated, corev1.ConditionFalse, "BuildingImage", "Build is in progress")
+		apihelpers.SetMachineConfigPoolCondition(&status, *supdated)
+		klog.Infof("MCP %s reporting Updating=true due to build in progress", pool.Name)
+
+	case !buildSucceeded && mosb != nil:
+		// Build has not succeeded yet (could be pending or failed)
+		updatingMsg := fmt.Sprintf("MachineOSBuilder has not completed building a new image for %s", getPoolUpdateLine(pool, mosc, l))
+		supdating := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionTrue, "PendingBuild", updatingMsg)
+		apihelpers.SetMachineConfigPoolCondition(&status, *supdating)
+
+		// Set Updated=False
+		supdated := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdated, corev1.ConditionFalse, "PendingBuild", "Build is pending")
+		apihelpers.SetMachineConfigPoolCondition(&status, *supdated)
+		klog.Infof("MCP %s reporting Updating=true due to pending build", pool.Name)
+
+	case (buildSucceeded || mosb == nil) && allUpdated:
 		//TODO: update api to only have one condition regarding status of update.
 		updatedMsg := fmt.Sprintf("All nodes are updated with %s", getPoolUpdateLine(pool, mosc, l))
-		supdated := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdated, corev1.ConditionTrue, "", updatedMsg)
+		supdated := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdated, corev1.ConditionTrue, "Updated", updatedMsg)
 		apihelpers.SetMachineConfigPoolCondition(&status, *supdated)
 
-		supdating := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionFalse, "", "")
+		supdating := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionFalse, "Updated", "")
 		apihelpers.SetMachineConfigPoolCondition(&status, *supdating)
+		klog.Infof("MCP %s reporting Updated=true and Updating=false", pool.Name)
+
 		if status.Configuration.Name != pool.Spec.Configuration.Name || !equality.Semantic.DeepEqual(status.Configuration.Source, pool.Spec.Configuration.Source) {
 			klog.Infof("Pool %s: %s", pool.Name, updatedMsg)
 			status.Configuration = pool.Spec.Configuration
 		}
-	} else {
+	default:
 		supdated := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdated, corev1.ConditionFalse, "", "")
 		apihelpers.SetMachineConfigPoolCondition(&status, *supdated)
 		if pool.Spec.Paused {
