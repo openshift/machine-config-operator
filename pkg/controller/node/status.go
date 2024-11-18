@@ -250,11 +250,39 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 	conditions := pool.Status.Conditions
 	status.Conditions = append(status.Conditions, conditions...)
 
+	building := false
+
+	// Helper function to find a condition by type
+	findCondition := func(conditions []metav1.Condition, conditionType string) *metav1.Condition {
+		for i := range conditions {
+			if conditions[i].Type == conditionType {
+				return &conditions[i]
+			}
+		}
+		return nil
+	}
+
+	if mosb != nil {
+		buildingCondition := findCondition(mosb.Status.Conditions, string(mcfgalphav1.MachineOSBuilding))
+		if buildingCondition != nil && buildingCondition.Status == metav1.ConditionTrue {
+			building = true
+		}
+	}
+
 	allUpdated := updatedMachineCount == machineCount &&
 		readyMachineCount == machineCount &&
 		unavailableMachineCount == 0
 
-	if allUpdated {
+	if building {
+		// Set Updating=True with a message
+		updatingMsg := fmt.Sprintf("MachineOSBuilder is building a new image for %s", pool.Name)
+		supdating := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionTrue, "", updatingMsg)
+		apihelpers.SetMachineConfigPoolCondition(&status, *supdating)
+
+		// Set Updated=False
+		supdated := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdated, corev1.ConditionFalse, "", "")
+		apihelpers.SetMachineConfigPoolCondition(&status, *supdated)
+	} else if allUpdated {
 		//TODO: update api to only have one condition regarding status of update.
 		updatedMsg := fmt.Sprintf("All nodes are updated with %s", getPoolUpdateLine(pool, mosc, l))
 		supdated := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdated, corev1.ConditionTrue, "", updatedMsg)
