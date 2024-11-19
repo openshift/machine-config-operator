@@ -855,32 +855,34 @@ func (dn *Daemon) updateOnClusterBuild(oldConfig, newConfig *mcfgv1.MachineConfi
 	}
 
 	if oldImage == newImage && newImage != "" {
-		if oldImage == "" {
-			logSystem("Starting transition to %q", newImage)
-		} else {
-			logSystem("Starting transition from %q to %q", oldImage, newImage)
-		}
+		logSystem("Starting transition from %q to %q", oldImage, newImage)
 	}
 
 	if err := dn.performDrain(); err != nil {
 		return err
 	}
 
+	if oldImage == "" {
+		oldImage = dn.bootedOSImageURL
+		klog.Infof("Set oldImage to booted OS image URL: %s", oldImage)
+	}
+
 	// If the new image pullspec is already on disk, do not attempt to re-apply
 	// it. rpm-ostree will throw an error as a result.
 	// See: https://issues.redhat.com/browse/OCPBUGS-18414.
-	if oldImage != newImage {
+	if oldImage == newImage {
+		klog.Infof("Image pullspecs equal, skipping rpm-ostree rebase")
+	} else {
 		// If the new image field is empty, set it to the OS image URL value
 		// provided by the MachineConfig to do a rollback.
 		if newImage == "" {
 			klog.Infof("%s empty, reverting to osImageURL %s from MachineConfig %s", constants.DesiredImageAnnotationKey, newConfig.Spec.OSImageURL, newConfig.Name)
 			newImage = newConfig.Spec.OSImageURL
 		}
+		// Proceed with the rebase since images are different
 		if err := dn.updateLayeredOSToPullspec(newImage); err != nil {
 			return err
 		}
-	} else {
-		klog.Infof("Image pullspecs equal, skipping rpm-ostree rebase")
 	}
 
 	// If the new OS image equals the OS image URL value, this means we're in a
@@ -2694,6 +2696,11 @@ func (dn *Daemon) updateLayeredOSToPullspec(newURL string) error {
 		}
 	} else {
 		if err := dn.NodeUpdaterClient.RebaseLayered(newURL); err != nil {
+			if strings.Contains(err.Error(), "Old and new refs are equal") {
+				klog.Infof("Old and new refs are equal; skipping rebase")
+			} else {
+				return fmt.Errorf("failed to update OS to %s: %w", newURL, err)
+			}
 			return fmt.Errorf("failed to update OS to %s: %w", newURL, err)
 		}
 	}
