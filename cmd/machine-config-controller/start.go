@@ -10,6 +10,7 @@ import (
 	features "github.com/openshift/api/features"
 	"github.com/openshift/machine-config-operator/cmd/common"
 	"github.com/openshift/machine-config-operator/internal/clients"
+	certrotationcontroller "github.com/openshift/machine-config-operator/pkg/controller/certrotation"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	containerruntimeconfig "github.com/openshift/machine-config-operator/pkg/controller/container-runtime-config"
 	"github.com/openshift/machine-config-operator/pkg/controller/drain"
@@ -83,6 +84,18 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			ctrlctx.FeatureGateAccess,
 		)
 
+		certrotationcontroller, err := certrotationcontroller.New(
+			ctrlctx.ClientBuilder.KubeClientOrDie("cert-rotation-controller"),
+			ctrlctx.ClientBuilder.ConfigClientOrDie("cert-rotation-controller"),
+			ctrlctx.ClientBuilder.MachineClientOrDie("cert-rotation-controller"),
+			ctrlctx.KubeMAOSharedInformer.Core().V1().Secrets(),
+			ctrlctx.KubeNamespacedInformerFactory.Core().V1().Secrets(),
+			ctrlctx.KubeNamespacedInformerFactory.Core().V1().ConfigMaps(),
+		)
+		if err != nil {
+			klog.Fatalf("unable to start cert rotation controller: %v", err)
+		}
+
 		// Start the shared factory informers that you need to use in your controller
 		ctrlctx.InformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.KubeInformerFactory.Start(ctrlctx.Stop)
@@ -150,6 +163,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			go c.Run(2, ctrlctx.Stop)
 		}
 		go draincontroller.Run(5, ctrlctx.Stop)
+		go certrotationcontroller.Run(ctx, 1)
 
 		// wait here in this function until the context gets cancelled (which tells us when we are being shut down)
 		<-ctx.Done()
