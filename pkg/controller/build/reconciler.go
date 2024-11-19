@@ -471,6 +471,10 @@ func (b *buildReconciler) createNewMachineOSBuildOrReuseExisting(ctx context.Con
 		return fmt.Errorf("could not instantiate new MachineOSBuild: %w", err)
 	}
 
+	// Set owner reference of the machineOSBuild to the machineOSConfig that created this
+	oref := metav1.NewControllerRef(mosc, mcfgv1.SchemeGroupVersion.WithKind("MachineOSConfig"))
+	mosb.SetOwnerReferences([]metav1.OwnerReference{*oref})
+
 	existingMosb, err := b.machineOSBuildLister.Get(mosb.Name)
 	if err != nil && !k8serrors.IsNotFound(err) {
 		return fmt.Errorf("could not get MachineOSBuild: %w", err)
