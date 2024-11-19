@@ -306,9 +306,19 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 		return err
 	}
 
-	optrVersion, _ := optr.vStore.Get("operator")
-	if imgs.ReleaseVersion != optrVersion {
-		return fmt.Errorf("refusing to read images.json version %q, operator version %q", imgs.ReleaseVersion, optrVersion)
+	// Do a short retry loop here as there can be a rare race between the machine-config-operator-images configmap and
+	// the operator deployment when they are updated. An immediate degrade would be undesirable in such cases.
+	if err := wait.PollUntilContextTimeout(context.TODO(), 1*time.Second, 3*time.Second, true, func(_ context.Context) (bool, error) {
+		optrVersion, exists := optr.vStore.Get("operator")
+		if !exists {
+			return false, fmt.Errorf("operator version not found")
+		}
+		if imgs.ReleaseVersion != optrVersion {
+			return false, fmt.Errorf("refusing to read images.json version %q, operator version %q", imgs.ReleaseVersion, optrVersion)
+		}
+		return true, nil
+	}); err != nil {
+		return fmt.Errorf("timed out: %v", err)
 	}
 
 	// handle image registry certificates.
