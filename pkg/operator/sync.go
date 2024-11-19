@@ -1261,6 +1261,16 @@ func (optr *Operator) reconcileMachineOSBuilder(mob *appsv1.Deployment) error {
 		return fmt.Errorf("could not reconcile global pull secret copy: %w", err)
 	}
 
+	// Set the owner ref of the machine-os-builder deployment to the MOSC
+	if len(layeredMCPs) > 0 {
+		mosc, err := build.GetMachineOSConfigForPool(optr.client, layeredMCPs)
+		if err != nil {
+			return err
+		}
+		oref := metav1.NewControllerRef(mosc, mcfgv1.SchemeGroupVersion.WithKind("MachineOSConfig"))
+		mob.SetOwnerReferences([]metav1.OwnerReference{*oref})
+	}
+
 	// If we have opted-in pools and the Machine OS Builder deployment is either
 	// not running or doesn't have the correct replica count, scale it up.
 	correctReplicaCount := optr.hasCorrectReplicaCount(mob)
