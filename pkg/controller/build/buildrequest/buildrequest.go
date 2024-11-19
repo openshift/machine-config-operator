@@ -254,8 +254,16 @@ func (br buildRequestImpl) podToJob(pod *corev1.Pod) *batchv1.Job {
 	// Set completion to 1 so that as soon as the pod has completed successfully the job is
 	// considered a success
 	var completions int32 = 1
+	// Set the owner ref of the job to the MOSB
+	oref := metav1.NewControllerRef(br.opts.MachineOSBuild, mcfgv1.SchemeGroupVersion.WithKind("MachineOSBuild"))
 	return &batchv1.Job{
-		ObjectMeta: pod.ObjectMeta,
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            pod.ObjectMeta.Name,
+			Namespace:       pod.ObjectMeta.Namespace,
+			Labels:          pod.ObjectMeta.Labels,
+			Annotations:     pod.ObjectMeta.Annotations,
+			OwnerReferences: []metav1.OwnerReference{*oref},
+		},
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "batch/v1",
 			Kind:       "Job",
