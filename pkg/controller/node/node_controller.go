@@ -1234,6 +1234,11 @@ func getAllCandidateMachines(layered bool, config *mcfgv1alpha1.MachineOSConfig,
 				continue
 			}
 		}
+		// Skip nodes that are currently being updated
+		if isNodeMCDState(node, daemonconsts.MachineConfigDaemonStateWorking) {
+			klog.V(4).Infof("node %s skipped during candidate selection as it is currently being updated", node.Name)
+			continue
+		}
 		// Ignore nodes that are currently mid-update or unscheduled
 		if !isNodeReady(node) {
 			klog.V(4).Infof("node %s skipped during candidate selection as it is currently unscheduled", node.Name)
