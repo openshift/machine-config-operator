@@ -22,5 +22,22 @@ spec:
         args:
         - start
         - -v4
+        resources:
+          requests:
+            cpu: 20m
+            memory: 50Mi
+        terminationMessagePolicy: FallbackToLogsOnError
       serviceAccountName: machine-os-builder
       priorityClassName: "system-cluster-critical"
+      tolerations:
+      - key: node-role.kubernetes.io/master
+        operator: Exists
+        effect: "NoSchedule"
+      - key: "node.kubernetes.io/unreachable"
+        operator: "Exists"
+        effect: "NoExecute"
+        tolerationSeconds: 120
+      - key: "node.kubernetes.io/not-ready"
+        operator: "Exists"
+        effect: "NoExecute"
+        tolerationSeconds: 120
