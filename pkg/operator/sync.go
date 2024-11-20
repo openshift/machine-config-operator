@@ -1731,6 +1731,9 @@ func (optr *Operator) syncRequiredMachineConfigPools(config *renderConfig, co *c
 				}
 				// If we don't account for pause here, we will spin in this loop until we hit the 10 minute timeout because paused pools can't sync.
 				if pool.Spec.Paused {
+					if isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolUpdated) {
+						return false, fmt.Errorf("the required MachineConfigPool %s was paused with no pending updates; no further syncing will occur until it is unpaused", pool.Name)
+					}
 					return false, fmt.Errorf("error required MachineConfigPool %s is paused and cannot sync until it is unpaused", pool.Name)
 				}
 				return false, nil
