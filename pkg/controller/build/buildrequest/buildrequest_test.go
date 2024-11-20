@@ -11,6 +11,7 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/stretchr/testify/assert"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -141,14 +142,14 @@ func TestBuildRequest(t *testing.T) {
 				assert.NotContains(t, containerfile, content)
 			}
 
-			buildPod := br.Builder().GetObject().(*corev1.Pod)
+			buildJob := br.Builder().GetObject().(*batchv1.Job)
 
-			_, err = NewBuilder(buildPod)
+			_, err = NewBuilder(buildJob)
 			assert.NoError(t, err)
 
 			assert.Equal(t, "containerfile-worker-afc35db0f874c9bfdc586e6ba39f1504", configmaps[0].Name)
 			assert.Equal(t, "mc-worker-afc35db0f874c9bfdc586e6ba39f1504", configmaps[1].Name)
-			assert.Equal(t, "build-worker-afc35db0f874c9bfdc586e6ba39f1504", buildPod.Name)
+			assert.Equal(t, "build-worker-afc35db0f874c9bfdc586e6ba39f1504", buildJob.Name)
 
 			secrets, err := br.Secrets()
 			assert.NoError(t, err)
@@ -156,7 +157,7 @@ func TestBuildRequest(t *testing.T) {
 			objects := []metav1.Object{
 				configmaps[0],
 				configmaps[1],
-				buildPod,
+				buildJob,
 				secrets[0],
 				secrets[1],
 			}
@@ -174,7 +175,7 @@ func TestBuildRequest(t *testing.T) {
 			assert.Equal(t, secrets[0].Name, "base-worker-afc35db0f874c9bfdc586e6ba39f1504")
 			assert.Equal(t, secrets[1].Name, "final-worker-afc35db0f874c9bfdc586e6ba39f1504")
 
-			assertBuildPodIsCorrect(t, buildPod, opts)
+			assertBuildJobIsCorrect(t, buildJob, opts)
 		})
 	}
 }
@@ -190,37 +191,37 @@ func assertSecretInCorrectFormat(t *testing.T, secret *corev1.Secret) {
 	assert.JSONEq(t, string(secret.Data[corev1.DockerConfigJsonKey]), `{"auths":{"registry.hostname.com": {"username": "user", "password": "s3kr1t", "auth": "s00pers3kr1t", "email": "user@hostname.com"}}}`)
 }
 
-func assertBuildPodIsCorrect(t *testing.T, buildPod *corev1.Pod, opts BuildRequestOpts) {
+func assertBuildJobIsCorrect(t *testing.T, buildJob *batchv1.Job, opts BuildRequestOpts) {
 	etcRpmGpgKeysOpts := optsForEtcRpmGpgKeys()
-	assertBuildPodMatchesExpectations(t, opts.HasEtcPkiRpmGpgKeys, buildPod,
+	assertBuildJobMatchesExpectations(t, opts.HasEtcPkiRpmGpgKeys, buildJob,
 		etcRpmGpgKeysOpts.envVar(),
 		etcRpmGpgKeysOpts.volumeForSecret(constants.EtcPkiRpmGpgSecretName),
 		etcRpmGpgKeysOpts.volumeMount(),
 	)
 
 	etcYumReposDOpts := optsForEtcYumReposD()
-	assertBuildPodMatchesExpectations(t, opts.HasEtcYumReposDConfigs, buildPod,
+	assertBuildJobMatchesExpectations(t, opts.HasEtcYumReposDConfigs, buildJob,
 		etcYumReposDOpts.envVar(),
 		etcYumReposDOpts.volumeForConfigMap(),
 		etcYumReposDOpts.volumeMount(),
 	)
 
 	etcPkiEntitlementKeysOpts := optsForEtcPkiEntitlements()
-	assertBuildPodMatchesExpectations(t, opts.HasEtcPkiEntitlementKeys, buildPod,
+	assertBuildJobMatchesExpectations(t, opts.HasEtcPkiEntitlementKeys, buildJob,
 		etcPkiEntitlementKeysOpts.envVar(),
 		etcPkiEntitlementKeysOpts.volumeForSecret(constants.EtcPkiEntitlementSecretName+"-"+opts.MachineOSConfig.Spec.MachineConfigPool.Name),
 		etcPkiEntitlementKeysOpts.volumeMount(),
 	)
 
-	assert.Equal(t, buildPod.Spec.Containers[0].Image, mcoImagePullspec)
+	assert.Equal(t, buildJob.Spec.Template.Spec.Containers[0].Image, mcoImagePullspec)
 	expectedPullspecs := []string{
 		"base-os-image-from-machineosconfig",
 		fixtures.OSImageURLConfig().BaseOSContainerImage,
 	}
 
-	assert.Contains(t, expectedPullspecs, buildPod.Spec.Containers[1].Image)
+	assert.Contains(t, expectedPullspecs, buildJob.Spec.Template.Spec.Containers[1].Image)
 
-	assertPodHasVolume(t, buildPod, corev1.Volume{
+	assertPodHasVolume(t, buildJob.Spec.Template.Spec, corev1.Volume{
 		Name: "final-image-push-creds",
 		VolumeSource: corev1.VolumeSource{
 			Secret: &corev1.SecretVolumeSource{
@@ -235,7 +236,7 @@ func assertBuildPodIsCorrect(t *testing.T, buildPod *corev1.Pod, opts BuildReque
 		},
 	})
 
-	assertPodHasVolume(t, buildPod, corev1.Volume{
+	assertPodHasVolume(t, buildJob.Spec.Template.Spec, corev1.Volume{
 		Name: "base-image-pull-creds",
 		VolumeSource: corev1.VolumeSource{
 			Secret: &corev1.SecretVolumeSource{
@@ -251,20 +252,20 @@ func assertBuildPodIsCorrect(t *testing.T, buildPod *corev1.Pod, opts BuildReque
 	})
 }
 
-func assertPodHasVolume(t *testing.T, pod *corev1.Pod, volume corev1.Volume) {
-	assert.Contains(t, pod.Spec.Volumes, volume)
+func assertPodHasVolume(t *testing.T, pod corev1.PodSpec, volume corev1.Volume) {
+	assert.Contains(t, pod.Volumes, volume)
 }
 
-func assertBuildPodMatchesExpectations(t *testing.T, shouldBePresent bool, buildPod *corev1.Pod, envvar corev1.EnvVar, volume corev1.Volume, volumeMount corev1.VolumeMount) {
-	for _, container := range buildPod.Spec.Containers {
+func assertBuildJobMatchesExpectations(t *testing.T, shouldBePresent bool, buildJob *batchv1.Job, envvar corev1.EnvVar, volume corev1.Volume, volumeMount corev1.VolumeMount) {
+	for _, container := range buildJob.Spec.Template.Spec.Containers {
 		if shouldBePresent {
 			assert.Contains(t, container.Env, envvar)
 			assert.Contains(t, container.VolumeMounts, volumeMount)
-			assertPodHasVolume(t, buildPod, volume)
+			assertPodHasVolume(t, buildJob.Spec.Template.Spec, volume)
 		} else {
 			assert.NotContains(t, container.Env, envvar)
 			assert.NotContains(t, container.VolumeMounts, volumeMount)
-			assert.NotContains(t, buildPod.Spec.Volumes, volume)
+			assert.NotContains(t, buildJob.Spec.Template.Spec.Volumes, volume)
 		}
 
 		assert.Contains(t, container.Env, corev1.EnvVar{

@@ -15,6 +15,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	clientset "k8s.io/client-go/kubernetes"
 	appsv1client "k8s.io/client-go/kubernetes/typed/apps/v1"
+	batchv1client "k8s.io/client-go/kubernetes/typed/batch/v1"
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -23,6 +24,7 @@ import (
 
 type ClientSet struct {
 	corev1client.CoreV1Interface
+	batchv1client.BatchV1Interface
 	appsv1client.AppsV1Interface
 	clientconfigv1.ConfigV1Interface
 	clientmachineconfigv1.MachineconfigurationV1Interface
@@ -91,6 +93,7 @@ func NewClientSetFromConfig(config *rest.Config) *ClientSet {
 
 	return &ClientSet{
 		CoreV1Interface:                       kubeclient.CoreV1(),
+		BatchV1Interface:                      kubeclient.BatchV1(),
 		AppsV1Interface:                       kubeclient.AppsV1(),
 		ConfigV1Interface:                     clientconfigv1.NewForConfigOrDie(config),
 		MachineconfigurationV1Interface:       mcfgclient.MachineconfigurationV1(),

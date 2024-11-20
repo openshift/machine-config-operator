@@ -8,10 +8,22 @@
 # that the build operation is complete.
 set -euo
 
-# Wait until the done file appears.
-while [ ! -f "/tmp/done/digestfile" ]
-do
-	sleep 1
+# Wait for either the digestfile or an errorfile
+while true; do
+  if [ -f "/tmp/done/digestfile" ]; then
+    # If digestfile is found, break the loop and proceed
+    echo "Digest file found. Proceeding with ConfigMap creation."
+    break
+  elif [ -f "/tmp/done/errorfile" ]; then
+    # If errorfile is found, exit the script with an error
+    echo "Error file found. Exiting."
+    # Delete the error file so that when a build pod is scheduled again
+    # on the same node, it doesn't error out immediately
+    # /tmp should be automatically cleared up on reboot but let's manually clean up as well
+    rm /tmp/done/errorfile
+    exit 1
+  fi
+  sleep 1
 done
 
 # Inject the contents of the digestfile into a ConfigMap.

@@ -15,6 +15,7 @@ import (
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -112,10 +113,10 @@ func newOSBuildController(
 		DeleteFunc: ctrl.deleteMachineOSConfig,
 	})
 
-	ctrl.podInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    ctrl.addPod,
-		UpdateFunc: ctrl.updatePod,
-		DeleteFunc: ctrl.deletePod,
+	ctrl.jobInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.addJob,
+		UpdateFunc: ctrl.updateJob,
+		DeleteFunc: ctrl.deleteJob,
 	})
 
 	ctrl.machineConfigPoolInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -236,26 +237,26 @@ func (ctrl *OSBuildController) deleteMachineOSBuild(cur interface{}) {
 	})
 }
 
-func (ctrl *OSBuildController) addPod(cur interface{}) {
-	pod := cur.(*corev1.Pod)
-	ctrl.enqueueFuncForObject(pod, func(ctx context.Context) error {
-		return ctrl.buildReconciler.AddPod(ctx, pod)
+func (ctrl *OSBuildController) addJob(cur interface{}) {
+	job := cur.(*batchv1.Job)
+	ctrl.enqueueFuncForObject(job, func(ctx context.Context) error {
+		return ctrl.buildReconciler.AddJob(ctx, job)
 	})
 }
 
-func (ctrl *OSBuildController) updatePod(old, cur interface{}) {
-	oldPod := old.(*corev1.Pod)
-	curPod := cur.(*corev1.Pod)
+func (ctrl *OSBuildController) updateJob(old, cur interface{}) {
+	oldJob := old.(*batchv1.Job)
+	curJob := cur.(*batchv1.Job)
 
-	ctrl.enqueueFuncForObject(curPod, func(ctx context.Context) error {
-		return ctrl.buildReconciler.UpdatePod(ctx, oldPod, curPod)
+	ctrl.enqueueFuncForObject(curJob, func(ctx context.Context) error {
+		return ctrl.buildReconciler.UpdateJob(ctx, oldJob, curJob)
 	})
 }
 
-func (ctrl *OSBuildController) deletePod(cur interface{}) {
-	pod := cur.(*corev1.Pod)
-	ctrl.enqueueFuncForObject(pod, func(ctx context.Context) error {
-		return ctrl.buildReconciler.DeletePod(ctx, pod)
+func (ctrl *OSBuildController) deleteJob(cur interface{}) {
+	job := cur.(*batchv1.Job)
+	ctrl.enqueueFuncForObject(job, func(ctx context.Context) error {
+		return ctrl.buildReconciler.DeleteJob(ctx, job)
 	})
 }
 
