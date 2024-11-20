@@ -271,6 +271,15 @@ func appendManifestsByPlatform(manifests []manifest, infra configv1.Infrastructu
 			manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.GCPPlatformType)), lbType)
 		}
 	}
+	if infra.Status.PlatformStatus.AWS != nil {
+		// Generate just the CoreDNS manifests for the AWS platform only when the DNSType is `ClusterHosted`.
+		if infra.Status.PlatformStatus.AWS.CloudLoadBalancerConfig != nil && infra.Status.PlatformStatus.AWS.CloudLoadBalancerConfig.DNSType == configv1.ClusterHostedDNSType {
+			// We do not need the keepalived manifests to be generated because the cloud default Load Balancers are in use.
+			// So, setting the lbType to `UserManaged` although the default cloud LBs are not user managed.
+			lbType = configv1.LoadBalancerTypeUserManaged
+			manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.AWSPlatformType)), lbType)
+		}
+	}
 
 	return manifests
 }
@@ -301,7 +310,7 @@ func getPlatformManifests(manifests []manifest, platformName string, lbType conf
 	var corednsName string
 	var corefileName string
 	switch platformName {
-	case strings.ToLower(string(configv1.GCPPlatformType)):
+	case strings.ToLower(string(configv1.GCPPlatformType)), strings.ToLower(string(configv1.AWSPlatformType)):
 		corednsName = "manifests/cloud-platform-alt-dns/coredns.yaml"
 		corefileName = "manifests/cloud-platform-alt-dns/coredns-corefile.tmpl"
 	default:
