@@ -64,3 +64,9 @@ rules:
   - leases
   verbs:
   - "*"
+- apiGroups:
+  - batch
+  resources:
+  - jobs
+  verbs:
+  - "*"

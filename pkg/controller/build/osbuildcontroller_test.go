@@ -20,7 +20,6 @@ import (
 	testhelpers "github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	clientset "k8s.io/client-go/kubernetes"
@@ -77,16 +76,16 @@ func TestOSBuildControllerDeletesRunningBuildBeforeStartingANewOne(t *testing.T)
 		require.NoError(t, err)
 
 		mosb := buildrequest.NewMachineOSBuildFromAPIOrDie(ctx, kubeclient, apiMosc, mcp)
-		buildPodName := utils.GetBuildPodName(mosb)
+		buildJobName := utils.GetBuildJobName(mosb)
 
 		// After creating the new MachineOSConfig, a MachineOSBuild should be created.
 		kubeassert.MachineOSBuildExists(mosb, "MachineOSBuild not created for MachineOSConfig %s change", mosc.Name)
 
-		// After a new MachineOSBuild is created, a pod should be created.
-		kubeassert.PodExists(buildPodName, "Build pod did not get created for MachineOSConfig %s change", mosc.Name)
+		// After a new MachineOSBuild is created, a job should be created.
+		kubeassert.JobExists(buildJobName, "Build job did not get created for MachineOSConfig %s change", mosc.Name)
 
-		// Set the running status on the pod.
-		fixtures.SetPodPhase(ctx, t, kubeclient, mosb, corev1.PodRunning)
+		// Set the running status on the job.
+		fixtures.SetJobStatus(ctx, t, kubeclient, mosb, fixtures.JobStatus{Active: 1})
 
 		// The MachineOSBuild should be running.
 		kubeassert.MachineOSBuildIsRunning(mosb, "Expected the MachineOSBuild %s status to be running", mosb.Name)
@@ -106,13 +105,13 @@ func TestOSBuildControllerDeletesRunningBuildBeforeStartingANewOne(t *testing.T)
 
 		mosb := buildrequest.NewMachineOSBuildFromAPIOrDie(ctx, kubeclient, mosc, apiMCP)
 
-		buildPodName := utils.GetBuildPodName(mosb)
+		buildJobName := utils.GetBuildJobName(mosb)
 
 		// After updating the MachineConfigPool, a new MachineOSBuild should get created.
 		kubeassert.MachineOSBuildExists(mosb, "New MachineOSBuild for MachineConfigPool %q update for MachineOSConfig %q never gets created", mcp.Name, mosc.Name)
 
-		// After a new MachineOSBuild is created, a pod should be created.
-		kubeassert.PodExists(buildPodName, "Build pod did not get created for MachineConfigPool %q change", mcp.Name)
+		// After a new MachineOSBuild is created, a job should be created.
+		kubeassert.JobExists(buildJobName, "Build job did not get created for MachineConfigPool %q change", mcp.Name)
 
 		// After the new build starts, the old build should be deleted.
 		kubeassert.MachineOSBuildDoesNotExist(initialMosb, "Expected the initial MachineOSBuild %s to be deleted", initialMosb.Name)
@@ -148,11 +147,11 @@ func TestOSBuildControllerLeavesSuccessfulBuildAlone(t *testing.T) {
 		// Ensure that the MachineOSBuild exists.
 		kubeassert.MachineOSBuildExists(mosb)
 
-		// Ensure that the build pod exists.
-		kubeassert.PodExists(utils.GetBuildPodName(mosb))
+		// Ensure that the build job exists.
+		kubeassert.JobExists(utils.GetBuildJobName(mosb))
 
-		// Set the pod phase to running.
-		fixtures.SetPodPhase(ctx, t, kubeclient, mosb, corev1.PodRunning)
+		// Set the job status to running.
+		fixtures.SetJobStatus(ctx, t, kubeclient, mosb, fixtures.JobStatus{Active: 1})
 
 		// Ensure that the MachineOSBuild gets the running status.
 		kubeassert.MachineOSBuildIsRunning(mosb)
@@ -172,7 +171,7 @@ func TestOSBuildControllerLeavesSuccessfulBuildAlone(t *testing.T) {
 
 	// We ensure that the second build is deleted.
 	kubeassert.Now().MachineOSBuildDoesNotExist(secondMosb)
-	kubeassert.Now().PodDoesNotExist(utils.GetBuildPodName(secondMosb))
+	kubeassert.Now().JobDoesNotExist(utils.GetBuildJobName(secondMosb))
 
 	// We ensure that the first build is still present.
 	kubeassert.Now().MachineOSBuildExists(firstMosb)
@@ -182,9 +181,9 @@ func TestOSBuildControllerLeavesSuccessfulBuildAlone(t *testing.T) {
 	isMachineOSBuildReachedExpectedCount(ctx, t, mcfgclient, thirdMosc, 2)
 
 	// Set the third build as successful.
-	fixtures.SetPodPhase(ctx, t, kubeclient, thirdMosb, corev1.PodSucceeded)
+	fixtures.SetJobStatus(ctx, t, kubeclient, thirdMosb, fixtures.JobStatus{Succeeded: 1})
 	kubeassert.MachineOSBuildIsSuccessful(thirdMosb)
-	kubeassert.PodDoesNotExist(utils.GetBuildPodName(thirdMosb))
+	kubeassert.JobDoesNotExist(utils.GetBuildJobName(thirdMosb))
 
 	// Ensure that the build count has not changed due to the third build completing.
 	isMachineOSBuildReachedExpectedCount(ctx, t, mcfgclient, thirdMosc, 2)
@@ -223,10 +222,10 @@ func TestOSBuildControllerFailure(t *testing.T) {
 
 		// Ensure that the MachineOSBuild exists.
 		kubeassert.MachineOSBuildExists(newMosb)
-		// Ensure that the build pod exists.
-		kubeassert.PodExists(utils.GetBuildPodName(newMosb))
-		// Set the pod phase to running.
-		fixtures.SetPodPhase(ctx, t, kubeclient, newMosb, corev1.PodRunning)
+		// Ensure that the build job exists.
+		kubeassert.JobExists(utils.GetBuildJobName(newMosb))
+		// Set the job status to running.
+		fixtures.SetJobStatus(ctx, t, kubeclient, newMosb, fixtures.JobStatus{Active: 1})
 		// Ensure that the MachineOSBuild gets the running status.
 		kubeassert.MachineOSBuildIsRunning(newMosb)
 
@@ -243,11 +242,11 @@ func TestOSBuildControllerFailure(t *testing.T) {
 		apiMCP := insertNewRenderedMachineConfigAndUpdatePool(ctx, t, mcfgclient, mosc.Spec.MachineConfigPool.Name, "rendered-worker-2")
 
 		mosb := buildrequest.NewMachineOSBuildFromAPIOrDie(ctx, kubeclient, mosc, apiMCP)
-		buildPodName := utils.GetBuildPodName(mosb)
+		buildJobName := utils.GetBuildJobName(mosb)
 		// After updating the MachineConfigPool, a new MachineOSBuild should get created.
 		kubeassert.MachineOSBuildExists(mosb, "New MachineOSBuild for MachineConfigPool %q update for MachineOSConfig %q never gets created", mcp.Name, mosc.Name)
-		// After a new MachineOSBuild is created, a pod should be created.
-		kubeassert.PodExists(buildPodName, "Build pod did not get created for MachineConfigPool %q change", mcp.Name)
+		// After a new MachineOSBuild is created, a job should be created.
+		kubeassert.JobExists(buildJobName, "Build job did not get created for MachineConfigPool %q change", mcp.Name)
 
 		// Ensure that the old build was cleared.
 		kubeassert.MachineOSBuildDoesNotExist(failedMosb)
@@ -294,10 +293,10 @@ func TestOSBuildControllerReusesPreviouslyBuiltImage(t *testing.T) {
 
 	// Ensure that the MachineOSBuild exists.
 	kubeassert.MachineOSBuildExists(newMosb)
-	// Ensure that the build pod exists.
-	kubeassert.PodExists(utils.GetBuildPodName(newMosb))
-	// Set the pod phase to succeeded.
-	fixtures.SetPodPhase(ctx, t, kubeclient, newMosb, corev1.PodSucceeded)
+	// Ensure that the build job exists.
+	kubeassert.JobExists(utils.GetBuildJobName(newMosb))
+	// Set the job status to succeeded.
+	fixtures.SetJobStatus(ctx, t, kubeclient, newMosb, fixtures.JobStatus{Succeeded: 1})
 	// Ensure that the MachineOSBuild gets the successful status.
 	kubeassert.MachineOSBuildIsSuccessful(newMosb)
 
@@ -369,20 +368,20 @@ func TestOSBuildController(t *testing.T) {
 			require.NoError(t, err)
 
 			mosb := buildrequest.NewMachineOSBuildFromAPIOrDie(ctx, kubeclient, apiMosc, apiMCP)
-			buildPodName := utils.GetBuildPodName(mosb)
+			buildJobName := utils.GetBuildJobName(mosb)
 			// After creating the new MachineOSConfig, a MachineOSBuild should be created.
 			kubeassert.MachineOSBuildExists(mosb, "MachineOSBuild not created for MachineOSConfig %s change, iteration %d", mosc.Name, i)
 
 			assertBuildObjectsAreCreated(ctx, t, kubeassert, mosb)
-			// After a new MachineOSBuild is created, a pod should be created.
-			kubeassert.PodExists(buildPodName, "Build pod did not get created for MachineOSConfig %s change", mosc.Name)
-			// Set the successful status on the pod.
-			fixtures.SetPodPhase(ctx, t, kubeclient, mosb, corev1.PodSucceeded)
+			// After a new MachineOSBuild is created, a job should be created.
+			kubeassert.JobExists(buildJobName, "Build job did not get created for MachineOSConfig %s change", mosc.Name)
+			// Set the successful status on the job.
+			fixtures.SetJobStatus(ctx, t, kubeclient, mosb, fixtures.JobStatus{Succeeded: 1})
 			// The MachineOSBuild should be successful.
 			kubeassert.MachineOSBuildIsSuccessful(mosb, "Expected the MachineOSBuild %s status to be successful", mosb.Name)
-			// And the build pod should be deleted.
+			// And the build job should be deleted.
 			assertBuildObjectsAreDeleted(ctx, t, kubeassert, mosb)
-			kubeassert.PodDoesNotExist(buildPodName, "Expected the build pod %s to be deleted", buildPodName)
+			kubeassert.JobDoesNotExist(buildJobName, "Expected the build job %s to be deleted", buildJobName)
 
 			// Ensure that the MachineOSBuild count increases with each successful build.
 			isMachineOSBuildReachedExpectedCount(ctx, t, mcfgclient, apiMosc, i+2)
@@ -409,17 +408,17 @@ func TestOSBuildController(t *testing.T) {
 			apiMCP := insertNewRenderedMachineConfigAndUpdatePool(ctx, t, mcfgclient, mosc.Spec.MachineConfigPool.Name, getConfigNameForPool(i+2))
 
 			mosb := buildrequest.NewMachineOSBuildFromAPIOrDie(ctx, kubeclient, apiMosc, apiMCP)
-			buildPodName := utils.GetBuildPodName(mosb)
+			buildJobName := utils.GetBuildJobName(mosb)
 			// After updating the MachineConfigPool, a new MachineOSBuild should get created.
 			kubeassert.MachineOSBuildExists(mosb, "New MachineOSBuild for MachineConfigPool %q update for MachineOSConfig %q never gets created", mcp.Name, mosc.Name)
-			// After a new MachineOSBuild is created, a pod should be created.
-			kubeassert.PodExists(buildPodName, "Build pod did not get created for MachineConfigPool %q change", mcp.Name)
-			// Set the successful status on the pod.
-			fixtures.SetPodPhase(ctx, t, kubeclient, mosb, corev1.PodSucceeded)
+			// After a new MachineOSBuild is created, a job should be created.
+			kubeassert.JobExists(buildJobName, "Build job did not get created for MachineConfigPool %q change", mcp.Name)
+			// Set the successful status on the job.
+			fixtures.SetJobStatus(ctx, t, kubeclient, mosb, fixtures.JobStatus{Succeeded: 1})
 			// The MachineOSBuild should be successful.
 			kubeassert.MachineOSBuildIsSuccessful(mosb, "Expected the MachineOSBuild %s status to be successful", mosb.Name)
-			// And the build pod should be deleted.
-			kubeassert.PodDoesNotExist(buildPodName, "Expected the build pod %s to be deleted", buildPodName)
+			// And the build job should be deleted.
+			kubeassert.JobDoesNotExist(buildJobName, "Expected the build job %s to be deleted", buildJobName)
 
 			// Ensure that the MachineOSBuild count increases with each successful build.
 			isMachineOSBuildReachedExpectedCount(ctx, t, mcfgclient, apiMosc, i+2)
@@ -437,7 +436,7 @@ func TestOSBuildController(t *testing.T) {
 func assertBuildObjectsAreCreated(ctx context.Context, t *testing.T, kubeassert *testhelpers.Assertions, mosb *mcfgv1alpha1.MachineOSBuild) {
 	t.Helper()
 
-	kubeassert.PodExists(utils.GetBuildPodName(mosb))
+	kubeassert.JobExists(utils.GetBuildJobName(mosb))
 	kubeassert.ConfigMapExists(utils.GetContainerfileConfigMapName(mosb))
 	kubeassert.ConfigMapExists(utils.GetMCConfigMapName(mosb))
 	kubeassert.SecretExists(utils.GetBasePullSecretName(mosb))
@@ -447,7 +446,7 @@ func assertBuildObjectsAreCreated(ctx context.Context, t *testing.T, kubeassert 
 func assertBuildObjectsAreDeleted(ctx context.Context, t *testing.T, kubeassert *testhelpers.Assertions, mosb *mcfgv1alpha1.MachineOSBuild) {
 	t.Helper()
 
-	kubeassert.PodDoesNotExist(utils.GetBuildPodName(mosb))
+	kubeassert.JobDoesNotExist(utils.GetBuildJobName(mosb))
 	kubeassert.ConfigMapDoesNotExist(utils.GetContainerfileConfigMapName(mosb))
 	kubeassert.ConfigMapDoesNotExist(utils.GetMCConfigMapName(mosb))
 	kubeassert.SecretDoesNotExist(utils.GetBasePullSecretName(mosb))
@@ -494,16 +493,16 @@ func setupOSBuildControllerForTestWithRunningBuild(ctx context.Context, t *testi
 
 	kubeclient, mcfgclient, mosc, mosb, mcp, kubeassert := setupOSBuildControllerForTestWithBuild(ctx, t, poolName)
 
-	initialBuildPodName := utils.GetBuildPodName(mosb)
+	initialBuildJobName := utils.GetBuildJobName(mosb)
 
 	// After creating the new MachineOSConfig, a MachineOSBuild should be created.
 	kubeassert.MachineOSBuildExists(mosb, "Initial MachineOSBuild not created for MachineOSConfig %s", mosc.Name)
 
-	// After a new MachineOSBuild is created, a pod should be created.
-	kubeassert.PodExists(initialBuildPodName, "Initial build pod %s did not get created for MachineOSConfig %s", initialBuildPodName, mosc.Name)
+	// After a new MachineOSBuild is created, a job should be created.
+	kubeassert.JobExists(initialBuildJobName, "Initial build job %s did not get created for MachineOSConfig %s", initialBuildJobName, mosc.Name)
 
-	// Set the running status on the pod.
-	fixtures.SetPodPhase(ctx, t, kubeclient, mosb, corev1.PodRunning)
+	// Set the running status on the job.
+	fixtures.SetJobStatus(ctx, t, kubeclient, mosb, fixtures.JobStatus{Active: 1})
 
 	// The MachineOSBuild should be running.
 	kubeassert.Eventually().WithContext(ctx).MachineOSBuildIsRunning(mosb, "Expected the MachineOSBuild %s status to be running", mosb.Name)
@@ -517,10 +516,10 @@ func setupOSBuildControllerForTestWithSuccessfulBuild(ctx context.Context, t *te
 	kubeclient, mcfgclient, mosc, mosb, mcp, kubeassert := setupOSBuildControllerForTestWithRunningBuild(ctx, t, poolName)
 
 	kubeassert.MachineOSBuildExists(mosb)
-	kubeassert.PodExists(utils.GetBuildPodName(mosb))
-	fixtures.SetPodPhase(ctx, t, kubeclient, mosb, corev1.PodSucceeded)
-	kubeassert.Eventually().WithContext(ctx).MachineOSBuildIsSuccessful(mosb)
-	kubeassert.Eventually().WithContext(ctx).PodDoesNotExist(utils.GetBuildPodName(mosb))
+	kubeassert.JobExists(utils.GetBuildJobName(mosb))
+	fixtures.SetJobStatus(ctx, t, kubeclient, mosb, fixtures.JobStatus{Succeeded: 1})
+	kubeassert.MachineOSBuildIsSuccessful(mosb)
+	kubeassert.JobDoesNotExist(utils.GetBuildJobName(mosb))
 
 	return kubeclient, mcfgclient, mosc, mosb, mcp, kubeassert
 }
@@ -530,16 +529,16 @@ func setupOSBuildControllerForTestWithFailedBuild(ctx context.Context, t *testin
 
 	kubeclient, mcfgclient, mosc, mosb, mcp, kubeassert := setupOSBuildControllerForTestWithBuild(ctx, t, poolName)
 
-	initialBuildPodName := utils.GetBuildPodName(mosb)
+	initialBuildJobName := utils.GetBuildJobName(mosb)
 
 	// After creating the new MachineOSConfig, a MachineOSBuild should be created.
 	kubeassert.MachineOSBuildExists(mosb, "Initial MachineOSBuild not created for MachineOSConfig %s", mosc.Name)
-	// After a new MachineOSBuild is created, a pod should be created.
-	kubeassert.PodExists(initialBuildPodName, "Initial build pod %s did not get created for MachineOSConfig %s", initialBuildPodName, mosc.Name)
-	// Set the running status on the pod.
-	fixtures.SetPodPhase(ctx, t, kubeclient, mosb, corev1.PodFailed)
-	// The MachineOSBuild should be failed.
-	kubeassert.MachineOSBuildIsFailure(mosb, "Expected the MachineOSBuild %s status to be failure", mosb.Name)
+	// After a new MachineOSBuild is created, a job should be created.
+	kubeassert.JobExists(initialBuildJobName, "Initial build job %s did not get created for MachineOSConfig %s", initialBuildJobName, mosc.Name)
+	// Set the running status on the job.
+	fixtures.SetJobStatus(ctx, t, kubeclient, mosb, fixtures.JobStatus{Active: 1})
+	// The MachineOSBuild should be running.
+	kubeassert.MachineOSBuildIsRunning(mosb, "Expected the MachineOSBuild %s status to be running", mosb.Name)
 
 	return kubeclient, mcfgclient, mosc, mosb, mcp, kubeassert
 }

@@ -516,14 +516,41 @@ func streamMachineOSBuilderPodLogsToFile(ctx context.Context, t *testing.T, cs *
 // Streams the logs for all of the containers running in the build pod. The pod
 // logs can provide a valuable window into how / why a given build failed.
 func streamBuildPodLogsToFile(ctx context.Context, t *testing.T, cs *framework.ClientSet, mosb *mcfgv1alpha1.MachineOSBuild, dirPath string) error {
-	podName := mosb.Status.BuilderReference.PodImageBuilder.Name
+	jobName := mosb.Status.BuilderReference.PodImageBuilder.Name
 
-	pod, err := cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace).Get(ctx, podName, metav1.GetOptions{})
+	pod, err := getPodFromJob(ctx, cs, jobName)
 	if err != nil {
-		return fmt.Errorf("could not get pod %s: %w", podName, err)
+		return err
 	}
 
 	return streamPodContainerLogsToFile(ctx, t, cs, pod, dirPath)
+}
+
+func getPodFromJob(ctx context.Context, cs *framework.ClientSet, jobName string) (*corev1.Pod, error) {
+	job, err := cs.BatchV1Interface.Jobs(ctrlcommon.MCONamespace).Get(ctx, jobName, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("could not get job %s: %w", job, err)
+	}
+
+	podList, err := cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace).List(ctx, metav1.ListOptions{LabelSelector: fmt.Sprintf("job-name=%s", jobName)})
+	if err != nil {
+		return nil, fmt.Errorf("could not get pods with job label %s: %w", jobName, err)
+	}
+
+	if podList != nil {
+		if len(podList.Items) == 1 {
+			return &podList.Items[0], nil
+		}
+
+		// this is needed when we test the case for a new pod being created after deleting the existing one
+		// as sometimes it takes time for the old pod to be completely deleted
+		for _, pod := range podList.Items {
+			if pod.Status.Phase == corev1.PodRunning {
+				return &pod, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("no pod found for job %s", jobName)
 }
 
 // Attaches a follower to each of the containers within a given pod in order to
@@ -558,11 +585,10 @@ func streamContainerLogToFile(ctx context.Context, t *testing.T, cs *framework.C
 		Follow:    true,
 	}).Stream(ctx)
 
-	defer logger.Close()
-
 	if err != nil {
 		return fmt.Errorf("could not get logs for container %s in pod %s: %w", container.Name, pod.Name, err)
 	}
+	defer logger.Close()
 
 	filename := filepath.Join(dirPath, fmt.Sprintf("%s-%s-%s.log", t.Name(), pod.Name, container.Name))
 
