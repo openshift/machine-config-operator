@@ -600,6 +600,10 @@ func ValidateMachineConfig(cfg mcfgv1.MachineConfigSpec) error {
 		return fmt.Errorf("kernelType=%s is invalid", cfg.KernelType)
 	}
 
+	if err := ValidateMachineConfigExtensions(cfg); err != nil {
+		return err
+	}
+
 	if cfg.Config.Raw != nil {
 		ignCfg, err := IgnParseWrapper(cfg.Config.Raw)
 		if err != nil {
