@@ -74,12 +74,13 @@ func (b BuildRequestOpts) getReleaseVersion() string {
 	return b.OSImageURLConfig.ReleaseVersion
 }
 
-// Gets the extensions from the MachineConfig if available.
-func (b BuildRequestOpts) getExtensions() []string {
-	if len(b.MachineConfig.Spec.Extensions) > 0 {
-		return b.MachineConfig.Spec.Extensions
+// Gets the packages for the extensions from the MachineConfig, if available.
+func (b BuildRequestOpts) getExtensionsPackages() ([]string, error) {
+	if len(b.MachineConfig.Spec.Extensions) == 0 {
+		return nil, nil
 	}
-	return []string{}
+
+	return ctrlcommon.GetPackagesForSupportedExtensions(b.MachineConfig.Spec.Extensions)
 }
 
 // Gets all of the image build request opts from the Kube API server.

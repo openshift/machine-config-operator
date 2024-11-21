@@ -214,6 +214,11 @@ func (br buildRequestImpl) renderContainerfile() (string, error) {
 		return "", fmt.Errorf("could not parse containerfile template: %w", err)
 	}
 
+	extPkgs, err := br.opts.getExtensionsPackages()
+	if err != nil {
+		return "", err
+	}
+
 	out := &strings.Builder{}
 
 	// This anonymous struct is necessary because templates cannot access
@@ -221,21 +226,21 @@ func (br buildRequestImpl) renderContainerfile() (string, error) {
 	// default to a value from a different location, it makes more sense for us
 	// to implement that logic in Go as opposed to the Go template language.
 	items := struct {
-		MachineOSBuild    *mcfgv1alpha1.MachineOSBuild
-		MachineOSConfig   *mcfgv1alpha1.MachineOSConfig
-		UserContainerfile string
-		ReleaseVersion    string
-		BaseOSImage       string
-		ExtensionsImage   string
-		Extensions        []string
+		MachineOSBuild     *mcfgv1alpha1.MachineOSBuild
+		MachineOSConfig    *mcfgv1alpha1.MachineOSConfig
+		UserContainerfile  string
+		ReleaseVersion     string
+		BaseOSImage        string
+		ExtensionsImage    string
+		ExtensionsPackages []string
 	}{
-		MachineOSBuild:    br.opts.MachineOSBuild,
-		MachineOSConfig:   br.opts.MachineOSConfig,
-		UserContainerfile: br.userContainerfile,
-		ReleaseVersion:    br.opts.getReleaseVersion(),
-		BaseOSImage:       br.opts.getBaseOSImagePullspec(),
-		ExtensionsImage:   br.opts.getExtensionsImagePullspec(),
-		Extensions:        br.opts.getExtensions(),
+		MachineOSBuild:     br.opts.MachineOSBuild,
+		MachineOSConfig:    br.opts.MachineOSConfig,
+		UserContainerfile:  br.userContainerfile,
+		ReleaseVersion:     br.opts.getReleaseVersion(),
+		BaseOSImage:        br.opts.getBaseOSImagePullspec(),
+		ExtensionsImage:    br.opts.getExtensionsImagePullspec(),
+		ExtensionsPackages: extPkgs,
 	}
 
 	if err := tmpl.Execute(out, items); err != nil {

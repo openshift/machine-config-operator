@@ -21,6 +21,24 @@ const (
 	mcoImagePullspec = "registry.hostname.com/org/repo@sha256:87980e0edfc86d01182f70c53527f74b5b01df00fe6d47668763d228d4de43a9"
 )
 
+// Validates that if an invalid extension is provided that the ConfigMap
+// generation fails and the error contains the names of the invalid extensions.
+func TestBuildRequestInvalidExtensions(t *testing.T) {
+	t.Parallel()
+
+	opts := getBuildRequestOpts()
+	opts.MachineConfig.Spec.Extensions = []string{"invalid-ext1", "invalid-ext2"}
+
+	br := newBuildRequest(opts)
+
+	_, err := br.ConfigMaps()
+	assert.Error(t, err)
+
+	for _, ext := range opts.MachineConfig.Spec.Extensions {
+		assert.Contains(t, err.Error(), ext)
+	}
+}
+
 // Tests that the BuildRequest is constructed as expected.
 func TestBuildRequest(t *testing.T) {
 	t.Parallel()
@@ -50,7 +68,19 @@ func TestBuildRequest(t *testing.T) {
 			},
 			expectedContainerfileContents: append(expectedContents(), []string{
 				fmt.Sprintf("RUN --mount=type=bind,from=%s", osImageURLConfig.BaseOSExtensionsContainerImage),
-				"extensions=\"usbguard\"",
+				`extensions="usbguard"`,
+			}...),
+		},
+		{
+			name: "With extensions image and resolved extensions packages",
+			optsFunc: func() BuildRequestOpts {
+				opts := getBuildRequestOpts()
+				opts.MachineConfig.Spec.Extensions = []string{"kerberos", "usbguard"}
+				return opts
+			},
+			expectedContainerfileContents: append(expectedContents(), []string{
+				fmt.Sprintf("RUN --mount=type=bind,from=%s", osImageURLConfig.BaseOSExtensionsContainerImage),
+				`extensions="krb5-workstation libkadm5 usbguard"`,
 			}...),
 		},
 		{
