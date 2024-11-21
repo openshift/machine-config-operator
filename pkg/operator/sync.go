@@ -277,7 +277,7 @@ func (optr *Operator) syncCloudConfig(spec *mcfgv1.ControllerConfigSpec, infra *
 		spec.CloudProviderConfig = cc
 	}
 
-	caCert, err := ctrlcommon.GetCAsFromConfigMap(cm, "ca-bundle.pem")
+	caCert, err := getCAsFromConfigMap(cm, "ca-bundle.pem")
 	if err == nil {
 		spec.CloudProviderCAData = caCert
 	}
@@ -462,16 +462,10 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 		}
 	}
 
-	// Sync up machine-config-server-ca bundle
-	// Attempt the managed bundle in the MCO namespace first. If not found, use the unmanaged rootCA bundle instead
-	machineConfigServerCABundle, err := optr.getCAsFromConfigMap(ctrlcommon.MCONamespace, ctrlcommon.MachineConfigServerCAName, "ca-bundle.crt")
+	// sync up CAs
+	rootCA, err := optr.getCAsFromConfigMap("kube-system", "root-ca", "ca.crt")
 	if err != nil {
-		if apierrors.IsNotFound(err) {
-			machineConfigServerCABundle, err = optr.getCAsFromConfigMap("kube-system", ctrlcommon.RootCAConfigMapName, "ca.crt")
-		}
-		if err != nil {
-			return err
-		}
+		return err
 	}
 
 	bootstrapComplete := false
@@ -537,6 +531,9 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 		internalRegistryPullSecret = nil
 	}
 
+	bundle := make([]byte, 0)
+	bundle = append(bundle, rootCA...)
+
 	// sync up os image url
 	// TODO: this should probably be part of the imgs
 	oscontainer, osextensionscontainer, err := optr.getOsImageURLs(optr.namespace)
@@ -590,7 +587,7 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 	}
 
 	spec.KubeAPIServerServingCAData = kubeAPIServerServingCABytes
-	spec.RootCAData = machineConfigServerCABundle
+	spec.RootCAData = bundle
 	spec.ImageRegistryBundleData = imgRegistryData
 	spec.ImageRegistryBundleUserData = imgRegistryUsrData
 	spec.PullSecret = &corev1.ObjectReference{Namespace: "openshift-config", Name: "pull-secret"}
@@ -613,7 +610,7 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 		return err
 	}
 
-	pointerConfig, err := ctrlcommon.PointerConfig(ignitionHost, machineConfigServerCABundle)
+	pointerConfig, err := ctrlcommon.PointerConfig(ignitionHost, rootCA)
 	if err != nil {
 		return err
 	}
@@ -1884,7 +1881,7 @@ func (optr *Operator) getCAsFromConfigMap(namespace, name, key string) ([]byte, 
 	if err != nil {
 		return nil, err
 	}
-	return ctrlcommon.GetCAsFromConfigMap(cm, key)
+	return getCAsFromConfigMap(cm, key)
 }
 
 // This function stamps the current operator version and commit hash in the boot images configmap
@@ -1939,6 +1936,20 @@ func (optr *Operator) stampBootImagesCM(pool *mcfgv1.MachineConfigPool) error {
 
 	}
 	return nil
+}
+
+func getCAsFromConfigMap(cm *corev1.ConfigMap, key string) ([]byte, error) {
+	if bd, bdok := cm.BinaryData[key]; bdok {
+		return bd, nil
+	}
+	if d, dok := cm.Data[key]; dok {
+		raw, err := base64.StdEncoding.DecodeString(d)
+		if err != nil {
+			return []byte(d), nil
+		}
+		return raw, nil
+	}
+	return nil, fmt.Errorf("%s not found in %s/%s", key, cm.Namespace, cm.Name)
 }
 
 func (optr *Operator) getCloudConfigFromConfigMap(namespace, name, key string) (string, error) {
