@@ -161,8 +161,8 @@ func New(
 		recorder,
 		NewCertRotationStatusReporter(),
 	)
-	// Skip rotating this cert if the cluster does not use MachineSets
-	if hasFunctionalMachineAPI(machineClient) || hasFunctionalClusterAPI() {
+	// Skip rotating this cert if the cluster does not use MachineSets or if the platform is BareMetal
+	if (hasFunctionalMachineAPI(machineClient) || hasFunctionalClusterAPI()) && !IsBareMetalPlatform(cfg) {
 		klog.Infof("Adding MCS CA/TLS cert rotator")
 		c.certRotators = append(c.certRotators, machineConfigServerCertRotator)
 	} else {
@@ -259,6 +259,13 @@ func getServerIPsFromInfra(cfg *configv1.Infrastructure) []string {
 	default:
 		return []string{}
 	}
+}
+
+func IsBareMetalPlatform(cfg *configv1.Infrastructure) bool {
+	if cfg.Status.PlatformStatus == nil {
+		return false
+	}
+	return cfg.Status.PlatformStatus.Type == configv1.BareMetalPlatformType
 }
 
 func (c *CertRotationController) StartInformers() error {
