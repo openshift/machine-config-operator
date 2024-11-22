@@ -612,6 +612,63 @@ func ValidateMachineConfig(cfg mcfgv1.MachineConfigSpec) error {
 	return nil
 }
 
+// Validates that a given MachineConfig's extensions are supported.
+func ValidateMachineConfigExtensions(cfg mcfgv1.MachineConfigSpec) error {
+	return validateExtensions(cfg.Extensions)
+}
+
+func validateExtensions(exts []string) error {
+	supportedExtensions := SupportedExtensions()
+	invalidExts := []string{}
+	for _, ext := range exts {
+		if _, ok := supportedExtensions[ext]; !ok {
+			invalidExts = append(invalidExts, ext)
+		}
+	}
+	if len(invalidExts) != 0 {
+		return fmt.Errorf("invalid extensions found: %v", invalidExts)
+	}
+	return nil
+}
+
+// Resolves a list of supported extensions to the individual packages required
+// for each of those extensions. Returns an error is any of the supplied
+// extensions is invalid.
+func GetPackagesForSupportedExtensions(exts []string) ([]string, error) {
+	if err := validateExtensions(exts); err != nil {
+		return nil, err
+	}
+
+	pkgs := []string{}
+
+	supported := SupportedExtensions()
+	for _, ext := range exts {
+		for _, pkg := range supported[ext] {
+			pkgs = append(pkgs, pkg)
+		}
+	}
+
+	return pkgs, nil
+}
+
+// Returns list of extensions possible to install on a CoreOS based system.
+func SupportedExtensions() map[string][]string {
+	// In future when list of extensions grow, it will make
+	// more sense to populate it in a dynamic way.
+
+	// These are RHCOS supported extensions.
+	// Each extension keeps a list of packages required to get enabled on host.
+	return map[string][]string{
+		"wasm":                 {"crun-wasm"},
+		"ipsec":                {"NetworkManager-libreswan", "libreswan"},
+		"usbguard":             {"usbguard"},
+		"kerberos":             {"krb5-workstation", "libkadm5"},
+		"kernel-devel":         {"kernel-devel", "kernel-headers"},
+		"sandboxed-containers": {"kata-containers"},
+		"sysstat":              {"sysstat"},
+	}
+}
+
 // IgnParseWrapper parses rawIgn for both V2 and V3 ignition configs and returns
 // a V2 or V3 Config or an error. This wrapper is necessary since V2 and V3 use different parsers.
 func IgnParseWrapper(rawIgn []byte) (interface{}, error) {
