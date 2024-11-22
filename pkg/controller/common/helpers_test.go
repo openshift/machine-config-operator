@@ -793,3 +793,92 @@ func TestParseAndConvertGzippedConfig(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateMachineConfigExtensions(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name        string
+		extensions  []string
+		errExpected bool
+	}{
+		{
+			name:       "Supported",
+			extensions: []string{"sysstat", "sandboxed-containers"},
+		},
+		{
+			name:        "Unsupported",
+			extensions:  []string{"unsupported1", "unsupported2"},
+			errExpected: true,
+		},
+	}
+
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			mcfgSpec := mcfgv1.MachineConfigSpec{
+				Extensions: testCase.extensions,
+			}
+
+			err := ValidateMachineConfigExtensions(mcfgSpec)
+
+			if testCase.errExpected {
+				assert.Error(t, err)
+				for _, ext := range testCase.extensions {
+					assert.Contains(t, err.Error(), ext)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestGetPackagesForSupportedExtensions(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name             string
+		extensions       []string
+		expectedPackages []string
+		errExpected      bool
+	}{
+		{
+			name:        "Unsupported extension",
+			extensions:  []string{"unsupported"},
+			errExpected: true,
+		},
+		{
+			name:             "Supported single package extension",
+			extensions:       []string{"wasm"},
+			expectedPackages: []string{"crun-wasm"},
+		},
+		{
+			name:             "Supported single multi-package extension",
+			extensions:       []string{"kerberos"},
+			expectedPackages: []string{"krb5-workstation", "libkadm5"},
+		},
+		{
+			name:             "Supported multiple multi-package extensions",
+			extensions:       []string{"ipsec", "kerberos"},
+			expectedPackages: []string{"NetworkManager-libreswan", "libreswan", "krb5-workstation", "libkadm5"},
+		},
+	}
+
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			pkgs, err := GetPackagesForSupportedExtensions(testCase.extensions)
+			if testCase.errExpected {
+				assert.Error(t, err)
+				return
+			}
+
+			assert.NoError(t, err)
+			assert.Equal(t, testCase.expectedPackages, pkgs)
+		})
+	}
+}
