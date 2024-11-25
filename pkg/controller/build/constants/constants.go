@@ -28,6 +28,12 @@ const (
 	CurrentMachineOSBuildAnnotationKey string = "machineconfiguration.openshift.io/current-machine-os-build"
 )
 
+// When this annotation is added to a MachineOSConfig, the current
+// MachineOSBuild will be deleted, which will cause a rebuild to occur.
+const (
+	RebuildMachineOSConfigAnnotationKey string = "machineconfiguration.openshift.io/rebuild"
+)
+
 // Entitled build secret names
 const (
 	// Name of the etc-pki-entitlement secret from the openshift-config-managed namespace.
