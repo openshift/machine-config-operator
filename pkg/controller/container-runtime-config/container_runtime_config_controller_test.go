@@ -1801,6 +1801,8 @@ func TestClusterImagePolicyCreate(t *testing.T) {
 
 			mcs1 := helpers.NewMachineConfig(keyReg1, map[string]string{"node-role": "master"}, "dummy://", []ign3types.File{{}})
 			mcs2 := helpers.NewMachineConfig(keyReg2, map[string]string{"node-role": "worker"}, "dummy://", []ign3types.File{{}})
+			defaultContainermcs1 := helpers.NewMachineConfig("99-master-generated-crio-default-container-runtime", nil, "dummy://", []ign3types.File{{}})
+			defaultContainermcs2 := helpers.NewMachineConfig("99-worker-generated-crio-default-container-runtime", nil, "dummy://", []ign3types.File{{}})
 
 			clusterimgPolicy := newClusterImagePolicyWithPublicKey("image-policy", []string{"example.com"}, []byte("foo bar"))
 			f.ccLister = append(f.ccLister, cc)
@@ -1821,6 +1823,10 @@ func TestClusterImagePolicyCreate(t *testing.T) {
 			f.expectGetMachineConfigAction(mcs2)
 
 			f.expectCreateMachineConfigAction(mcs2)
+			f.expectGetMachineConfigAction(defaultContainermcs1)
+			f.expectCreateMachineConfigAction(defaultContainermcs1)
+			f.expectGetMachineConfigAction(defaultContainermcs2)
+			f.expectCreateMachineConfigAction(defaultContainermcs2)
 
 			f.run("")
 
@@ -1847,6 +1853,8 @@ func TestSigstoreRegistriesConfigIDMSandCIPCreate(t *testing.T) {
 
 			mcs1 := helpers.NewMachineConfig(keyReg1, map[string]string{"node-role": "master"}, "dummy://", []ign3types.File{{}})
 			mcs2 := helpers.NewMachineConfig(keyReg2, map[string]string{"node-role": "worker"}, "dummy://", []ign3types.File{{}})
+			defaultContainermcs1 := helpers.NewMachineConfig("99-master-generated-crio-default-container-runtime", nil, "dummy://", []ign3types.File{{}})
+			defaultContainermcs2 := helpers.NewMachineConfig("99-worker-generated-crio-default-container-runtime", nil, "dummy://", []ign3types.File{{}})
 
 			// idms source is the same as cip scope
 			idms := newIDMS("built-in", []apicfgv1.ImageDigestMirrors{
@@ -1872,6 +1880,10 @@ func TestSigstoreRegistriesConfigIDMSandCIPCreate(t *testing.T) {
 			f.expectGetMachineConfigAction(mcs2)
 
 			f.expectCreateMachineConfigAction(mcs2)
+			f.expectGetMachineConfigAction(defaultContainermcs1)
+			f.expectCreateMachineConfigAction(defaultContainermcs1)
+			f.expectGetMachineConfigAction(defaultContainermcs2)
+			f.expectCreateMachineConfigAction(defaultContainermcs2)
 
 			f.run("")
 

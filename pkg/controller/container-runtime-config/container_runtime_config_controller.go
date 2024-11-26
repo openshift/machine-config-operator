@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -600,6 +601,15 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 		return err
 	}
 
+	// create the MC for the drop in default-container-runtime crio.conf file
+	if err := ctrl.createDefaultContainerRuntimeMC(); err != nil {
+		return fmt.Errorf("failed to create the crio-default-container-runtime MC: %w", err)
+	}
+
+	if key == forceSyncOnUpgrade {
+		return nil
+	}
+
 	// Fetch the ContainerRuntimeConfig
 	cfg, err := ctrl.mccrLister.Get(name)
 	if errors.IsNotFound(err) {
@@ -624,15 +634,6 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 	// Validate the ContainerRuntimeConfig CR
 	if err := validateUserContainerRuntimeConfig(cfg); err != nil {
 		return ctrl.syncStatusOnly(cfg, err)
-	}
-
-	// create the MC for the drop in default-container-runtime crio.conf file
-	if err := ctrl.createDefaultContainerRuntimeMC(cfg); err != nil {
-		return fmt.Errorf("failed to create the crio-default-container-runtime MC: %w", err)
-	}
-
-	if key == forceSyncOnUpgrade {
-		return nil
 	}
 
 	// Get ControllerConfig
@@ -1043,7 +1044,7 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 	return &registriesIgn, nil
 }
 
-func (ctrl *Controller) createDefaultContainerRuntimeMC(cfg *mcfgv1.ContainerRuntimeConfig) error {
+func (ctrl *Controller) createDefaultContainerRuntimeMC() error {
 	// Check if the crio-default-container-runtime config map exists in the openshift-machine-config-operator namespace
 	defaultContainerRuntimeCM, err := ctrl.kubeClient.CoreV1().ConfigMaps(ctrl.namespace).Get(context.TODO(), configMapName, metav1.GetOptions{})
 	if err != nil && !errors.IsNotFound(err) {
@@ -1078,49 +1079,38 @@ func (ctrl *Controller) createDefaultContainerRuntimeMC(cfg *mcfgv1.ContainerRun
 		if mc != nil && !errors.IsNotFound(err) {
 			continue
 		}
-		// Check if ContainerRuntimeConfig exists
-		managedKeyForCtr, err := getManagedKeyCtrCfg(pool, ctrl.client, cfg)
+
+		// Determine the container runtime for the final runtime configuration.
+		currentDefaultRuntime, err := ctrl.determineContainerRuntimeForFinalRuntimeConfig(pool)
 		if err != nil {
-			return ctrl.syncStatusOnly(cfg, err, "could not get ctrcfg key: %v", err)
-		}
-		exists, err := ctrl.containerRuntimeConfigExists(managedKeyForCtr)
-		if err != nil {
-			return fmt.Errorf("error checking for ContainerRuntimeConfig %s: %w", managedKey, err)
-		}
-		if exists {
-			klog.Infof("ContainerRuntimeConfig %s already exists, checking default_runtime setting", managedKey)
-			if cfg.Spec.ContainerRuntimeConfig.DefaultRuntime == mcfgv1.ContainerRuntimeDefaultRuntimeEmpty {
-				klog.Infof("default_runtime is not set in ContainerRuntimeConfig %s, updating it", managedKeyForCtr)
-				// Update the default_runtime setting
-				cfg.Spec.ContainerRuntimeConfig.DefaultRuntime = mcfgv1.ContainerRuntimeDefaultRuntimeRunc
-				if _, err := ctrl.client.MachineconfigurationV1().ContainerRuntimeConfigs().Update(context.TODO(), cfg, metav1.UpdateOptions{}); err != nil {
-					return fmt.Errorf("error updating ContainerRuntimeConfig %s: %w", managedKeyForCtr, err)
-				}
-				klog.Infof("Updated default_runtime in ContainerRuntimeConfig %s", managedKeyForCtr)
-			} else {
-				klog.Infof("default_runtime is already set in ContainerRuntimeConfig %s, skipping MachineConfig creation", managedKeyForCtr)
-				continue
-			}
+			return fmt.Errorf("could not determine final runtime config for pool %s: %w", pool.Name, err)
 		}
 
-		tempIgnCfg := ctrlcommon.NewIgnConfig()
-		mc, err = ctrlcommon.MachineConfigFromIgnConfig(pool.Name, managedKey, tempIgnCfg)
-		if err != nil {
-			return fmt.Errorf("could not create crio-default-container-runtime MachineConfig from new Ignition config: %w", err)
+		if currentDefaultRuntime == mcfgv1.ContainerRuntimeDefaultRuntimeEmpty {
+			klog.Infof("default_runtime is not set in any existing MachineConfigs for pool %s, updating it", pool.Name)
+			// Update the default_runtime setting
+			tempIgnCfg := ctrlcommon.NewIgnConfig()
+			mc, err = ctrlcommon.MachineConfigFromIgnConfig(pool.Name, managedKey, tempIgnCfg)
+			if err != nil {
+				return fmt.Errorf("could not create crio-default-container-runtime MachineConfig from new Ignition config: %w", err)
+			}
+			rawRuntimeIgnition, err := json.Marshal(createNewIgnition(createDefaultContainerRuntimeFile()))
+			if err != nil {
+				return fmt.Errorf("error marshalling crio-default-container-runtime config ignition: %w", err)
+			}
+			mc.Spec.Config.Raw = rawRuntimeIgnition
+			// Create the crio-default-container-runtime MC
+			if err := retry.RetryOnConflict(updateBackoff, func() error {
+				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), mc, metav1.CreateOptions{})
+				return err
+			}); err != nil {
+				return fmt.Errorf("could not create MachineConfig for crio-default-container-runtime: %w", err)
+			}
+			klog.Infof("Applied default runtime MC %v on MachineConfigPool %v", managedKey, pool.Name)
+		} else {
+			klog.Infof("default_runtime is already set in existing MachineConfigs for pool %s, skipping MachineConfig creation", pool.Name)
+			continue
 		}
-		rawRuntimeIgnition, err := json.Marshal(createNewIgnition(createDefaultContainerRuntimeFile()))
-		if err != nil {
-			return fmt.Errorf("error marshalling crio-default-container-runtime config ignition: %w", err)
-		}
-		mc.Spec.Config.Raw = rawRuntimeIgnition
-		// Create the crio-default-container-runtime MC
-		if err := retry.RetryOnConflict(updateBackoff, func() error {
-			_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), mc, metav1.CreateOptions{})
-			return err
-		}); err != nil {
-			return fmt.Errorf("could not create MachineConfig for crio-default-container-runtime: %w", err)
-		}
-		klog.Infof("Applied default runtime MC %v on MachineConfigPool %v", managedKey, pool.Name)
 	}
 
 	// Create the config map for crio-default-container-runtime so we know that the crio-default-container-runtime MC has been created
@@ -1136,15 +1126,65 @@ func (ctrl *Controller) createDefaultContainerRuntimeMC(cfg *mcfgv1.ContainerRun
 	return nil
 }
 
-func (ctrl *Controller) containerRuntimeConfigExists(name string) (bool, error) {
-	_, err := ctrl.client.MachineconfigurationV1().ContainerRuntimeConfigs().Get(context.TODO(), name, metav1.GetOptions{})
+func (ctrl *Controller) determineContainerRuntimeForFinalRuntimeConfig(pool *mcfgv1.MachineConfigPool) (mcfgv1.ContainerRuntimeDefaultRuntime, error) {
+	// Retrieve all ContainerRuntimeConfig objects for the pool
+	ctrcfgListAll, err := ctrl.client.MachineconfigurationV1().ContainerRuntimeConfigs().List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
-		if errors.IsNotFound(err) {
-			return false, nil
-		}
-		return false, err
+		return "", fmt.Errorf("error listing container runtime configs: %w", err)
 	}
-	return true, nil
+
+	var ctrcfgList []mcfgv1.ContainerRuntimeConfig
+	for _, ctrcfg := range ctrcfgListAll.Items {
+		selector, err := metav1.LabelSelectorAsSelector(ctrcfg.Spec.MachineConfigPoolSelector)
+		if err != nil {
+			return "", fmt.Errorf("invalid label selector: %w", err)
+		}
+		if selector.Empty() || !selector.Matches(labels.Set(pool.Labels)) {
+			continue
+		}
+		ctrcfgList = append(ctrcfgList, ctrcfg)
+	}
+	// Determine the final runtime configuration
+	var currentDefaultRuntime mcfgv1.ContainerRuntimeDefaultRuntime
+	var machineConfigs []*mcfgv1.MachineConfig
+
+	for _, ctrcfg := range ctrcfgList {
+		finalizers := ctrcfg.GetFinalizers()
+		for _, finalizer := range finalizers {
+			mcName := finalizer
+			mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), mcName, metav1.GetOptions{})
+			if err != nil {
+				return "", fmt.Errorf("error getting MachineConfig %s: %w", mcName, err)
+			}
+			machineConfigs = append(machineConfigs, mc)
+		}
+	}
+
+	// Sort MachineConfigs in alphanumeric order
+	sort.Slice(machineConfigs, func(i, j int) bool {
+		return machineConfigs[i].Name < machineConfigs[j].Name
+	})
+
+	// Determine the final runtime configuration based on the last-applied MachineConfig
+	for i := len(machineConfigs) - 1; i >= 0; i-- {
+		mc := machineConfigs[i]
+		if mc.Spec.Config.Raw != nil {
+			ignConfig, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
+			if err != nil {
+				return "", fmt.Errorf("error unmarshalling Ignition config: %w", err)
+			}
+			for _, file := range ignConfig.Storage.Files {
+				if file.Path == CRIODropInFilePathDefaultRuntime && file.Contents.Source != nil {
+					currentDefaultRuntime = mcfgv1.ContainerRuntimeDefaultRuntime(*file.Contents.Source)
+					break
+				}
+			}
+		}
+		if currentDefaultRuntime != mcfgv1.ContainerRuntimeDefaultRuntimeEmpty {
+			break
+		}
+	}
+	return currentDefaultRuntime, nil
 }
 
 // RunDefaultContainerRuntimeBootstrap creates the crio-default-container-runtime mc on bootstrap
