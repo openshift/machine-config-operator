@@ -1126,6 +1126,15 @@ func TestKubeletConfigTLSRender(t *testing.T) {
 			},
 		},
 		{
+			name: "Modern TLS profile",
+			apiserver: &osev1.APIServer{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.APIServerInstanceName},
+				Spec: osev1.APIServerSpec{
+					TLSSecurityProfile: &osev1.TLSSecurityProfile{Type: osev1.TLSProfileModernType},
+				},
+			},
+		},
+		{
 			name: "Custom TLS profile",
 			apiserver: &osev1.APIServer{
 				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.APIServerInstanceName},
