@@ -827,29 +827,11 @@ func (optr *Operator) syncMachineConfigNodes(_ *renderConfig, _ *configv1.Cluste
 	return nil
 }
 
-func isApplyManifestErrorRetriable(err error) bool {
-	// Retry on brief rpc errors
-	// See https://issues.redhat.com/browse/OCPBUGS-24228 for more information.
-	// String compare isn't great, but could not find a good error type for this in the standard libraries
-	if strings.Contains(err.Error(), "rpc error") {
-		return true
-	}
-	// Retry on resource conflict errors, i.e "the object has been modified; please apply your changes to the latest version and try again"
-	// See last few comments on https://issues.redhat.com/browse/OCPBUGS-9108 for more information
-	if apierrors.IsConflict(err) {
-		return true
-	}
-	// Add any other errors to be added to the retry here.
-
-	klog.Infof("Skipping retry in ApplyManifests for error: %s", err)
-	return false
-}
-
 //nolint:gocyclo
 func (optr *Operator) applyManifests(config *renderConfig, paths manifestPaths) error {
 	// Retry in case this is a short lived, transient issue.
 	// This does an exponential retry, up to 5 times before it eventually times out and causing a degrade.
-	return retry.OnError(retry.DefaultRetry, isApplyManifestErrorRetriable, func() error {
+	return retry.OnError(retry.DefaultRetry, mcoResourceApply.IsApplyErrorRetriable, func() error {
 		for _, path := range paths.clusterRoles {
 			crBytes, err := renderAsset(config, path)
 			if err != nil {
@@ -1167,9 +1149,12 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig, _ *confi
 	}
 	mcc := resourceread.ReadDeploymentV1OrDie(mccBytes)
 
-	_, updated, err := mcoResourceApply.ApplyDeployment(optr.kubeClient.AppsV1(), mcc)
-	if err != nil {
+	var updated bool
+	if retryErr := retry.OnError(retry.DefaultRetry, mcoResourceApply.IsApplyErrorRetriable, func() error {
+		_, updated, err = mcoResourceApply.ApplyDeployment(optr.kubeClient.AppsV1(), mcc)
 		return err
+	}); retryErr != nil {
+		return retryErr
 	}
 	if updated {
 		if err := optr.waitForDeploymentRollout(mcc); err != nil {
@@ -1552,9 +1537,13 @@ func (optr *Operator) syncMachineConfigDaemon(config *renderConfig, _ *configv1.
 		return err
 	}
 	d := resourceread.ReadDaemonSetV1OrDie(dBytes)
-	_, updated, err := mcoResourceApply.ApplyDaemonSet(optr.kubeClient.AppsV1(), d)
-	if err != nil {
+
+	var updated bool
+	if retryErr := retry.OnError(retry.DefaultRetry, mcoResourceApply.IsApplyErrorRetriable, func() error {
+		_, updated, err = mcoResourceApply.ApplyDaemonSet(optr.kubeClient.AppsV1(), d)
 		return err
+	}); retryErr != nil {
+		return retryErr
 	}
 	if updated {
 		return optr.waitForDaemonsetRollout(d)
@@ -1591,9 +1580,13 @@ func (optr *Operator) syncMachineConfigServer(config *renderConfig, _ *configv1.
 		return err
 	}
 	d := resourceread.ReadDaemonSetV1OrDie(dBytes)
-	_, updated, err := mcoResourceApply.ApplyDaemonSet(optr.kubeClient.AppsV1(), d)
-	if err != nil {
+
+	var updated bool
+	if retryErr := retry.OnError(retry.DefaultRetry, mcoResourceApply.IsApplyErrorRetriable, func() error {
+		_, updated, err = mcoResourceApply.ApplyDaemonSet(optr.kubeClient.AppsV1(), d)
 		return err
+	}); retryErr != nil {
+		return retryErr
 	}
 	if updated {
 		return optr.waitForDaemonsetRollout(d)
