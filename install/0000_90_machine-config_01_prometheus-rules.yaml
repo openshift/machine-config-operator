@@ -110,7 +110,7 @@ spec:
             namespace: openshift-machine-config-operator
             severity: warning
           annotations:
-            summary: "This keeps track of Kubelet health failures, and tallys them. The warning is triggered if 2 or more failures occur."
+            summary: "This keeps track of Kubelet health failures, and tallies them. The warning is triggered if 2 or more failures occur."
             description: "Kubelet health failure threshold reached"
     - name: system-memory-exceeds-reservation
       rules:
@@ -122,7 +122,7 @@ spec:
             namespace: openshift-machine-config-operator
             severity: warning
           annotations:
-            summary: "Alerts the user when, for 15 miutes, a specific node is using more memory than is reserved"
+            summary: "Alerts the user when, for 15 minutes, a specific node is using more memory than is reserved"
             description: "System memory usage of {{ $value | humanize }} on {{ $labels.node }} exceeds 95% of the reservation. Reserved memory ensures system processes can function even when the node is fully allocated and protects against workload out of memory events impacting the proper functioning of the node. The default reservation is expected to be sufficient for most configurations and should be increased (https://docs.openshift.com/container-platform/latest/nodes/nodes/nodes-nodes-managing.html) when running nodes with high numbers of pods (either due to rate of change or at steady state)."
     - name: high-overall-control-plane-memory
       rules:
@@ -182,7 +182,7 @@ spec:
               Extreme memory utilization per node within control plane nodes is extremely high, and could impact responsiveness and stability.
             description: >-
               The memory utilization per instance within control plane nodes influence the stability, and responsiveness of the cluster.
-              This can lead to cluster instability and slow responses from kube-apiserver or failing requests specially on etcd.
+              This can lead to cluster instability and slow responses from kube-apiserver or failing requests especially on etcd.
               Moreover, OOM kill is expected which negatively influences the pod scheduling.
               If this happens on container level, the descheduler will not be able to detect it, as it works on the pod level.
               To fix this, increase memory of the affected node of control plane nodes.
