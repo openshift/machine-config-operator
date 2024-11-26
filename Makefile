@@ -140,6 +140,9 @@ test-e2e-techpreview: install-go-junit-report
 test-e2e-single-node: install-go-junit-report
 	set -o pipefail; go test -tags=$(GOTAGS) -failfast -timeout 120m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-single-node/ | ./hack/test-with-junit.sh $(@)
 
+test-e2e-ocl: install-go-junit-report
+	set -o pipefail; go test -tags=$(GOTAGS) -failfast -timeout 120m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-ocl/ | ./hack/test-with-junit.sh $(@)
+
 bootstrap-e2e: install-go-junit-report install-setup-envtest
 	@echo "Setting up KUBEBUILDER_ASSETS"
 	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --index https://raw.githubusercontent.com/openshift/api/master/envtest-releases.yaml --bin-dir $(PROJECT_DIR)/bin -p path)" && \
