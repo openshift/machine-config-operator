@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"math/rand"
 	"os"
 	"os/exec"
@@ -29,7 +28,6 @@ import (
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	"github.com/davecgh/go-spew/spew"
-	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	machineClientv1beta1 "github.com/openshift/client-go/machine/clientset/versioned/typed/machine/v1beta1"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
@@ -1468,46 +1466,6 @@ func setDeletionAnnotationOnMachineForNode(ctx context.Context, cs *framework.Cl
 	m.Annotations["machine.openshift.io/delete-machine"] = "true"
 	_, err = machineClient.Machines(machineAPINamespace).Update(ctx, m, metav1.UpdateOptions{})
 	return err
-}
-
-// MustHaveFeatureGatesEnabled fatally exits the test if any feature gate in requiredFeatureGates is not enabled.
-func MustHaveFeatureGatesEnabled(requiredFeatureGates ...configv1.FeatureGateName) {
-	cs := framework.NewClientSet("")
-	if err := validateFeatureGatesEnabled(cs, requiredFeatureGates...); err != nil {
-		log.Fatalln(err)
-	}
-	log.Printf("All required featuregates %v present!", requiredFeatureGates)
-}
-
-// Validates if feature gates listed in requiredFeatureGates are enabled.
-func validateFeatureGatesEnabled(cs *framework.ClientSet, requiredFeatureGates ...configv1.FeatureGateName) error {
-	currentFeatureGates, err := cs.ConfigV1Interface.FeatureGates().Get(context.TODO(), "cluster", metav1.GetOptions{})
-	if err != nil {
-		return fmt.Errorf("failed to fetch feature gates: %w", err)
-	}
-
-	// This uses the new Go generics to construct a typed set of
-	// FeatureGateNames. Under the hood, sets are map[T]struct{}{} where
-	// only the keys matter and one cannot have duplicate keys. Perfect for our use-case!
-	enabledFeatures := sets.New[configv1.FeatureGateName]()
-
-	// Load all of the feature gate names into our set. Duplicates will be
-	// automatically be ignored.
-	for _, currentFeatureGateDetails := range currentFeatureGates.Status.FeatureGates {
-		for _, enabled := range currentFeatureGateDetails.Enabled {
-			enabledFeatures.Insert(enabled.Name)
-		}
-	}
-
-	// If we have all of the required feature gates, we're done!
-	if enabledFeatures.HasAll(requiredFeatureGates...) {
-		return nil
-	}
-
-	// If we don't, lets diff against what we have vs. what we want and return that information.
-	requiredFeatures := sets.New[configv1.FeatureGateName](requiredFeatureGates...)
-	disabledRequiredFeatures := requiredFeatures.Difference(enabledFeatures)
-	return fmt.Errorf("missing required FeatureGate(s): %v, have: %v", sets.List(disabledRequiredFeatures), sets.List(enabledFeatures))
 }
 
 // Writes a file to a given node. Returns an idempotent cleanup function.
