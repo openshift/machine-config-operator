@@ -1,4 +1,4 @@
-package e2e_techpreview_test
+package e2e_ocl_test
 
 import (
 	"os"
