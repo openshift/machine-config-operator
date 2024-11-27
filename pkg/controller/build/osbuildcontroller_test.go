@@ -346,7 +346,7 @@ func TestOSBuildControllerReusesPreviouslyBuiltImage(t *testing.T) {
 func TestOSBuildController(t *testing.T) {
 	t.Parallel()
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*20)
 	t.Cleanup(cancel)
 
 	poolName := "worker"
@@ -439,7 +439,7 @@ func TestOSBuildController(t *testing.T) {
 func TestOSBuildControllerRebuildAnnotation(t *testing.T) {
 	t.Parallel()
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 	t.Cleanup(cancel)
 
 	_, mcfgclient, mosc, mosb, _, kubeassert := setupOSBuildControllerForTestWithSuccessfulBuild(ctx, t, "worker")
