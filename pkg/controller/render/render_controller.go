@@ -68,6 +68,12 @@ type Controller struct {
 	ccLister       mcfglistersv1.ControllerConfigLister
 	ccListerSynced cache.InformerSynced
 
+	crcLister       mcfglistersv1.ContainerRuntimeConfigLister
+	crcListerSynced cache.InformerSynced
+
+	mckLister       mcfglistersv1.KubeletConfigLister
+	mckListerSynced cache.InformerSynced
+
 	queue workqueue.RateLimitingInterface
 }
 
@@ -76,6 +82,8 @@ func New(
 	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
 	mcInformer mcfginformersv1.MachineConfigInformer,
 	ccInformer mcfginformersv1.ControllerConfigInformer,
+	crcInformer mcfginformersv1.ContainerRuntimeConfigInformer,
+	mckInformer mcfginformersv1.KubeletConfigInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
 ) *Controller {
@@ -109,6 +117,10 @@ func New(
 	ctrl.mcListerSynced = mcInformer.Informer().HasSynced
 	ctrl.ccLister = ccInformer.Lister()
 	ctrl.ccListerSynced = ccInformer.Informer().HasSynced
+	ctrl.crcLister = crcInformer.Lister()
+	ctrl.crcListerSynced = crcInformer.Informer().HasSynced
+	ctrl.mckLister = mckInformer.Lister()
+	ctrl.mckListerSynced = mckInformer.Informer().HasSynced
 
 	return ctrl
 }
@@ -424,6 +436,10 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 
 	// TODO(runcom): add tests in render_controller_test.go for this condition
 	if err := mcfgv1.IsControllerConfigCompleted(ctrlcommon.ControllerConfigName, ctrl.ccLister.Get); err != nil {
+		return err
+	}
+
+	if err := apihelpers.AreMCGeneratingSubControllersCompleted(ctrl.crcLister.List, ctrl.mckLister.List, selector); err != nil {
 		return err
 	}
 
