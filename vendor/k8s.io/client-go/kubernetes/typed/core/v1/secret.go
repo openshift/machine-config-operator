@@ -64,6 +64,8 @@ func newSecrets(c *CoreV1Client, namespace string) *secrets {
 			scheme.ParameterCodec,
 			namespace,
 			func() *v1.Secret { return &v1.Secret{} },
-			func() *v1.SecretList { return &v1.SecretList{} }),
+			func() *v1.SecretList { return &v1.SecretList{} },
+			gentype.PrefersProtobuf[*v1.Secret](),
+		),
 	}
 }

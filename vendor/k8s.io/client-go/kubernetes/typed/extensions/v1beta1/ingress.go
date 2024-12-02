@@ -68,6 +68,8 @@ func newIngresses(c *ExtensionsV1beta1Client, namespace string) *ingresses {
 			scheme.ParameterCodec,
 			namespace,
 			func() *v1beta1.Ingress { return &v1beta1.Ingress{} },
-			func() *v1beta1.IngressList { return &v1beta1.IngressList{} }),
+			func() *v1beta1.IngressList { return &v1beta1.IngressList{} },
+			gentype.PrefersProtobuf[*v1beta1.Ingress](),
+		),
 	}
 }

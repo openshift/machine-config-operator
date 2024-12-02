@@ -64,6 +64,8 @@ func newClusterRoleBindings(c *RbacV1Client) *clusterRoleBindings {
 			scheme.ParameterCodec,
 			"",
 			func() *v1.ClusterRoleBinding { return &v1.ClusterRoleBinding{} },
-			func() *v1.ClusterRoleBindingList { return &v1.ClusterRoleBindingList{} }),
+			func() *v1.ClusterRoleBindingList { return &v1.ClusterRoleBindingList{} },
+			gentype.PrefersProtobuf[*v1.ClusterRoleBinding](),
+		),
 	}
 }

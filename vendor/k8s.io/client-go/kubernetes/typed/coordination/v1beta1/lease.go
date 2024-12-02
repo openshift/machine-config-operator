@@ -64,6 +64,8 @@ func newLeases(c *CoordinationV1beta1Client, namespace string) *leases {
 			scheme.ParameterCodec,
 			namespace,
 			func() *v1beta1.Lease { return &v1beta1.Lease{} },
-			func() *v1beta1.LeaseList { return &v1beta1.LeaseList{} }),
+			func() *v1beta1.LeaseList { return &v1beta1.LeaseList{} },
+			gentype.PrefersProtobuf[*v1beta1.Lease](),
+		),
 	}
 }

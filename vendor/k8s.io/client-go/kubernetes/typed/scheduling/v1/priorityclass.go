@@ -64,6 +64,8 @@ func newPriorityClasses(c *SchedulingV1Client) *priorityClasses {
 			scheme.ParameterCodec,
 			"",
 			func() *v1.PriorityClass { return &v1.PriorityClass{} },
-			func() *v1.PriorityClassList { return &v1.PriorityClassList{} }),
+			func() *v1.PriorityClassList { return &v1.PriorityClassList{} },
+			gentype.PrefersProtobuf[*v1.PriorityClass](),
+		),
 	}
 }

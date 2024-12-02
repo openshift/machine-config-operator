@@ -68,6 +68,8 @@ func newStatefulSets(c *AppsV1beta1Client, namespace string) *statefulSets {
 			scheme.ParameterCodec,
 			namespace,
 			func() *v1beta1.StatefulSet { return &v1beta1.StatefulSet{} },
-			func() *v1beta1.StatefulSetList { return &v1beta1.StatefulSetList{} }),
+			func() *v1beta1.StatefulSetList { return &v1beta1.StatefulSetList{} },
+			gentype.PrefersProtobuf[*v1beta1.StatefulSet](),
+		),
 	}
 }

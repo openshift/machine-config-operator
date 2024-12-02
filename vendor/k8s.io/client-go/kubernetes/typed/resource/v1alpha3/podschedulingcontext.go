@@ -68,6 +68,8 @@ func newPodSchedulingContexts(c *ResourceV1alpha3Client, namespace string) *podS
 			scheme.ParameterCodec,
 			namespace,
 			func() *v1alpha3.PodSchedulingContext { return &v1alpha3.PodSchedulingContext{} },
-			func() *v1alpha3.PodSchedulingContextList { return &v1alpha3.PodSchedulingContextList{} }),
+			func() *v1alpha3.PodSchedulingContextList { return &v1alpha3.PodSchedulingContextList{} },
+			gentype.PrefersProtobuf[*v1alpha3.PodSchedulingContext](),
+		),
 	}
 }

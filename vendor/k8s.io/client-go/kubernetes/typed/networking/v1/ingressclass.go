@@ -64,6 +64,8 @@ func newIngressClasses(c *NetworkingV1Client) *ingressClasses {
 			scheme.ParameterCodec,
 			"",
 			func() *v1.IngressClass { return &v1.IngressClass{} },
-			func() *v1.IngressClassList { return &v1.IngressClassList{} }),
+			func() *v1.IngressClassList { return &v1.IngressClassList{} },
+			gentype.PrefersProtobuf[*v1.IngressClass](),
+		),
 	}
 }

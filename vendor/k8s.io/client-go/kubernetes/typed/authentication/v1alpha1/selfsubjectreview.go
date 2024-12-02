@@ -52,6 +52,8 @@ func newSelfSubjectReviews(c *AuthenticationV1alpha1Client) *selfSubjectReviews 
 			c.RESTClient(),
 			scheme.ParameterCodec,
 			"",
-			func() *v1alpha1.SelfSubjectReview { return &v1alpha1.SelfSubjectReview{} }),
+			func() *v1alpha1.SelfSubjectReview { return &v1alpha1.SelfSubjectReview{} },
+			gentype.PrefersProtobuf[*v1alpha1.SelfSubjectReview](),
+		),
 	}
 }

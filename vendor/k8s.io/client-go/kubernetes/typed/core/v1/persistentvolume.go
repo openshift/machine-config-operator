@@ -68,6 +68,8 @@ func newPersistentVolumes(c *CoreV1Client) *persistentVolumes {
 			scheme.ParameterCodec,
 			"",
 			func() *v1.PersistentVolume { return &v1.PersistentVolume{} },
-			func() *v1.PersistentVolumeList { return &v1.PersistentVolumeList{} }),
+			func() *v1.PersistentVolumeList { return &v1.PersistentVolumeList{} },
+			gentype.PrefersProtobuf[*v1.PersistentVolume](),
+		),
 	}
 }

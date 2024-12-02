@@ -64,6 +64,8 @@ func newRoleBindings(c *RbacV1alpha1Client, namespace string) *roleBindings {
 			scheme.ParameterCodec,
 			namespace,
 			func() *v1alpha1.RoleBinding { return &v1alpha1.RoleBinding{} },
-			func() *v1alpha1.RoleBindingList { return &v1alpha1.RoleBindingList{} }),
+			func() *v1alpha1.RoleBindingList { return &v1alpha1.RoleBindingList{} },
+			gentype.PrefersProtobuf[*v1alpha1.RoleBinding](),
+		),
 	}
 }

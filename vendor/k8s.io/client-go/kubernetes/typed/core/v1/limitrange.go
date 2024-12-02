@@ -64,6 +64,8 @@ func newLimitRanges(c *CoreV1Client, namespace string) *limitRanges {
 			scheme.ParameterCodec,
 			namespace,
 			func() *v1.LimitRange { return &v1.LimitRange{} },
-			func() *v1.LimitRangeList { return &v1.LimitRangeList{} }),
+			func() *v1.LimitRangeList { return &v1.LimitRangeList{} },
+			gentype.PrefersProtobuf[*v1.LimitRange](),
+		),
 	}
 }
