@@ -36,8 +36,9 @@ contents:
       stats refresh 30s
       stats auth Username:Password
     backend masters
+       timeout check 10s
        option  httpchk GET /readyz HTTP/1.0
        balance roundrobin
     {{`{{- range .LBConfig.Backends }}
-       server {{ .Host }} {{ .Address }}:{{ .Port }} weight 1 verify none check check-ssl inter 1s fall 2 rise 3
+       server {{ .Host }} {{ .Address }}:{{ .Port }} weight 1 verify none check check-ssl inter 5s fall 3 rise 1
     {{- end }}`}}
