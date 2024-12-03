@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"sort"
 	"time"
 
 	mcoResourceApply "github.com/openshift/machine-config-operator/lib/resourceapply"
@@ -433,6 +434,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	if len(mcs) == 0 {
 		return ctrl.syncFailingStatus(pool, fmt.Errorf("no MachineConfigs found matching selector %v", selector))
 	}
+	sort.SliceStable(mcs, func(i, j int) bool { return mcs[i].Name < mcs[j].Name })
 
 	if err := ctrl.syncGeneratedMachineConfig(pool, mcs); err != nil {
 		return ctrl.syncFailingStatus(pool, err)
