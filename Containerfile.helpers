@@ -1,0 +1,28 @@
+FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.22-builder-multi-openshift-4.18 AS fetcher
+WORKDIR /oc
+RUN <<EOF
+#!/usr/bin/env bash
+set -xeuo pipefail
+
+if [[ "$(uname -m)" == "x86_64" ]]; then
+  curl -L "https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable/openshift-client-linux.tar.gz" | tar xz
+fi
+if [[ "$(uname -m)" == "aarch64" ]]; then
+  curl -L "https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable/openshift-client-linux-arm64.tar.gz" | tar xz
+fi
+EOF
+
+FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.22-builder-multi-openshift-4.18 AS builder
+ENV GOCACHE="/go/.cache" \
+    GOMODCACHE="/go/pkg/mod"
+WORKDIR /go/src/github.com/openshift/machine-config-operator
+COPY . .
+RUN --mount=type=cache,target=/go/.cache,z \
+    --mount=type=cache,target=/go/pkg/mod,z \
+    make install-helpers DESTDIR=/helpers
+
+FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.22-builder-multi-openshift-4.18 AS final
+
+COPY --from=fetcher /oc/oc /usr/local/bin/oc
+COPY --from=fetcher /oc/kubectl /usr/local/bin/kubectl
+COPY --from=builder /helpers/usr/bin /usr/bin
