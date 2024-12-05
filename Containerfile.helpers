@@ -1,0 +1,31 @@
+FROM quay.io/fedora/fedora:40 AS fetcher
+WORKDIR /oc
+RUN <<EOF
+#!/usr/bin/env bash
+set -xeuo pipefail
+
+if [[ "$(uname -m)" == "x86_64" ]]; then
+  curl -L "https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable/openshift-client-linux.tar.gz" | tar xz
+fi
+if [[ "$(uname -m)" == "aarch64" ]]; then
+  curl -L "https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable/openshift-client-linux-arm64.tar.gz" | tar xz
+fi
+EOF
+
+FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.20-openshift-4.14 AS builder
+WORKDIR /go/src/github.com/openshift/machine-config-operator
+COPY . .
+RUN go mod vendor
+RUN make helpers
+FROM quay.io/fedora/fedora:40 AS final
+WORKDIR /usr/local/bin
+
+COPY --from=fetcher /oc/oc /usr/local/bin/oc
+COPY --from=fetcher /oc/kubectl /usr/local/bin/kubectl
+
+COPY --from=builder /go/src/github.com/openshift/machine-config-operator/_output/helpers/cluster-lifecycle /usr/local/bin/cluster-lifecycle
+COPY --from=builder /go/src/github.com/openshift/machine-config-operator/_output/helpers/mco-builder /usr/local/bin/mco-builder
+COPY --from=builder /go/src/github.com/openshift/machine-config-operator/_output/helpers/mco-push /usr/local/bin/mco-push
+COPY --from=builder /go/src/github.com/openshift/machine-config-operator/_output/helpers/onclustertesting /usr/local/bin/onclustertesting
+COPY --from=builder /go/src/github.com/openshift/machine-config-operator/_output/helpers/run-on-all-nodes /usr/local/bin/run-on-all-nodes
+COPY --from=builder /go/src/github.com/openshift/machine-config-operator/_output/helpers/wait-for-mcp /usr/local/bin/wait-for-mcp
