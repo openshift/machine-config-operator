@@ -47,6 +47,7 @@ import (
 	validate3 "github.com/coreos/ignition/v2/config/validate"
 	"github.com/ghodss/yaml"
 	"github.com/vincent-petithory/dataurl"
+	corev1 "k8s.io/api/core/v1"
 	kerr "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -1374,4 +1375,18 @@ func GetBootstrapAPIServer() (*configv1.APIServer, error) {
 		return nil, fmt.Errorf("unmarshal into apiserver failed %w", err)
 	}
 	return apiserver, nil
+}
+
+func GetCAsFromConfigMap(cm *corev1.ConfigMap, key string) ([]byte, error) {
+	if bd, bdok := cm.BinaryData[key]; bdok {
+		return bd, nil
+	}
+	if d, dok := cm.Data[key]; dok {
+		raw, err := base64.StdEncoding.DecodeString(d)
+		if err != nil {
+			return []byte(d), nil
+		}
+		return raw, nil
+	}
+	return nil, fmt.Errorf("%s not found in %s/%s", key, cm.Namespace, cm.Name)
 }
