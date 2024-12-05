@@ -40,6 +40,16 @@ const (
 	clonedSecretLabelKey string = "machineconfiguration.openshift.io/cloned-secret"
 )
 
+func applyMC(t *testing.T, cs *framework.ClientSet, mc *mcfgv1.MachineConfig) func() {
+	cleanupFunc := helpers.ApplyMC(t, cs, mc)
+	t.Logf("Created new MachineConfig %q", mc.Name)
+
+	return makeIdempotentAndRegister(t, func() {
+		cleanupFunc()
+		t.Logf("Deleted MachineConfig %q", mc.Name)
+	})
+}
+
 func createMachineOSConfig(t *testing.T, cs *framework.ClientSet, mosc *mcfgv1alpha1.MachineOSConfig) func() {
 	helpers.SetMetadataOnObject(t, mosc)
 
@@ -257,16 +267,27 @@ func waitForPoolToReachState(t *testing.T, cs *framework.ClientSet, poolName str
 	require.NoError(t, err, "MachineConfigPool %q did not reach desired state", poolName)
 }
 
-// Registers a cleanup function, making it idempotent, and wiring up the
-// skip-cleanup flag to it which will cause cleanup to be skipped, if set.
+// Registers a cleanup function, making it idempotent, and wiring up the skip
+// cleanup checks which will cause cleanup to be skipped under certain
+// conditions.
 func makeIdempotentAndRegister(t *testing.T, cleanupFunc func()) func() {
-	out := helpers.MakeIdempotent(func() {
-		if !skipCleanup {
-			cleanupFunc()
-		}
-	})
-	t.Cleanup(out)
-	return out
+	cfg := helpers.IdempotentConfig{
+		SkipAlways:        skipCleanupAlways,
+		SkipOnlyOnFailure: skipCleanupOnlyAfterFailure,
+	}
+
+	return helpers.MakeConfigurableIdempotentAndRegister(t, cfg, cleanupFunc)
+}
+
+// Registers a cleanup function, making it idempotent and ensures that it will
+// always be run, regardless of skip cleanup opts or whether we're in CI.
+//
+// Note: Use this wrapper only in cases where you want to ensure that a
+// function is only called once despite there being multiple calls to the
+// returned function. If there is only one call to the returned function
+// anyway, use t.Cleanup() instead for clarity.
+func makeIdempotentAndRegisterAlwaysRun(t *testing.T, cleanupFunc func()) func() {
+	return helpers.MakeIdempotentAndRegister(t, cleanupFunc)
 }
 
 // TOOD: Refactor into smaller functions.

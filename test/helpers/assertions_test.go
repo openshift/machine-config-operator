@@ -13,9 +13,11 @@ import (
 )
 
 type mockTesting struct {
+	failed          bool
 	isFailNowCalled bool
 	isHelperCalled  bool
 	isErrorfCalled  bool
+	cleanupFunc     func()
 	errorfFormat    string
 	errorfArgs      []interface{}
 }
@@ -26,8 +28,10 @@ func (m *mockTesting) Errorf(format string, args ...interface{}) {
 	m.errorfArgs = args
 }
 
-func (m *mockTesting) Helper()  { m.isHelperCalled = true }
-func (m *mockTesting) FailNow() { m.isFailNowCalled = true }
+func (m *mockTesting) Helper()          { m.isHelperCalled = true }
+func (m *mockTesting) FailNow()         { m.isFailNowCalled = true }
+func (m *mockTesting) Cleanup(f func()) { m.cleanupFunc = f }
+func (m *mockTesting) Failed() bool     { return m.failed }
 
 // For now, this test will primarily concern itself with whether the various
 // objects on the Assertion struct are set correctly. This is because failed

@@ -97,19 +97,6 @@ func ApplyMC(t *testing.T, cs *framework.ClientSet, mc *mcfgv1.MachineConfig) fu
 	}
 }
 
-// Ensures that a given cleanup function only runs once; even if called
-// multiple times.
-func MakeIdempotent(f func()) func() {
-	hasRun := false
-
-	return func() {
-		if !hasRun {
-			f()
-			hasRun = true
-		}
-	}
-}
-
 // Applies a MachineConfig to a given MachineConfigPool, if a MachineConfig is
 // provided. If a MachineConfig is not provided (i.e., nil), it will skip the
 // apply process and wait for the MachineConfigPool to include the "00-worker"
