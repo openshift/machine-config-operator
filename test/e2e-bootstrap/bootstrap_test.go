@@ -54,8 +54,8 @@ const (
 	componentNamespace       = "openshift-machine-config-operator"
 	pollInterval             = 200 * time.Millisecond
 	pollTimeout              = 30 * time.Second
-	containerRuntimeMCMaster = "99-master-generated-crio-default-container-runtime"
-	containerRuntimeMCWorker = "99-worker-generated-crio-default-container-runtime"
+	containerRuntimeMCMaster = "00-override-master-generated-crio-default-container-runtime"
+	containerRuntimeMCWorker = "00-override-worker-generated-crio-default-container-runtime"
 )
 
 var (
@@ -345,7 +345,7 @@ spec:
 			objs := append([]runtime.Object{}, baseTestManifests...)
 			objs = append(objs, loadRawManifests(t, tc.manifests)...)
 
-			containerRuntimeRawIgnition := []byte(`{"ignition":{"version":"3.2.0"},"storage":{"files":[{"overwrite":true,"path":"/etc/crio/crio.conf.d/01-mc-defaultContainerRuntimeRunc","contents":{"compression":"","source":"data:text/plain;charset=utf-8;base64,W2NyaW9dCiAgW2NyaW8ucnVudGltZV0KICAgIGRlZmF1bHRfcnVudGltZSA9ICJydW5jIgo="},"mode":420}]}}`)
+			containerRuntimeRawIgnition := []byte(`{"ignition":{"version":"3.2.0"},"storage":{"files":[{"overwrite":true,"path":"/etc/crio/crio.conf.d/01-ctrcfg-defaultRuntime","contents":{"compression":"","source":"data:text/plain;charset=utf-8;base64,W2NyaW9dCiAgW2NyaW8ucnVudGltZV0KICAgIGRlZmF1bHRfcnVudGltZSA9ICJydW5jIgo="},"mode":420}]}}`)
 			masterInheritableMC, err := ctrlcommon.MachineConfigFromRawIgnConfig("master", containerRuntimeMCMaster, containerRuntimeRawIgnition)
 			require.NoError(t, err)
 

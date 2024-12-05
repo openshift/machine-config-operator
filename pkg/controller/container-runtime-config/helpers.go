@@ -47,13 +47,12 @@ const (
 	policyConfigPath                       = "/etc/containers/policy.json"
 	// CRIODropInFilePathLogLevel is the path at which changes to the crio config for log-level
 	// will be dropped in this is exported so that we can use it in the e2e-tests
-	CRIODropInFilePathLogLevel                    = "/etc/crio/crio.conf.d/01-ctrcfg-logLevel"
-	crioDropInFilePathPidsLimit                   = "/etc/crio/crio.conf.d/01-ctrcfg-pidsLimit"
-	crioDropInFilePathLogSizeMax                  = "/etc/crio/crio.conf.d/01-ctrcfg-logSizeMax"
-	CRIODropInFilePathDefaultRuntime              = "/etc/crio/crio.conf.d/01-ctrcfg-defaultRuntime"
-	CRIODropInFilePathDefaultContainerRuntimeRunc = "/etc/crio/crio.conf.d/01-mc-defaultContainerRuntimeRunc"
-	imagepolicyType                               = "sigstoreSigned"
-	sigstoreRegistriesConfigFilePath              = "/etc/containers/registries.d/sigstore-registries.yaml"
+	CRIODropInFilePathLogLevel       = "/etc/crio/crio.conf.d/01-ctrcfg-logLevel"
+	crioDropInFilePathPidsLimit      = "/etc/crio/crio.conf.d/01-ctrcfg-pidsLimit"
+	crioDropInFilePathLogSizeMax     = "/etc/crio/crio.conf.d/01-ctrcfg-logSizeMax"
+	CRIODropInFilePathDefaultRuntime = "/etc/crio/crio.conf.d/01-ctrcfg-defaultRuntime"
+	imagepolicyType                  = "sigstoreSigned"
+	sigstoreRegistriesConfigFilePath = "/etc/containers/registries.d/sigstore-registries.yaml"
 )
 
 var (
@@ -344,7 +343,7 @@ func getManagedKeyReg(pool *mcfgv1.MachineConfigPool, client mcfgclientset.Inter
 }
 
 func getManagedKeyDefaultContainerRuntime(pool *mcfgv1.MachineConfigPool) string {
-	return fmt.Sprintf("99-%s-generated-crio-default-container-runtime", pool.Name)
+	return fmt.Sprintf("00-override-%s-generated-crio-default-container-runtime", pool.Name)
 }
 
 func wrapErrorWithCondition(err error, args ...interface{}) mcfgv1.ContainerRuntimeConfigCondition {
@@ -457,7 +456,7 @@ func createDefaultContainerRuntimeFile() []generatedConfigFile {
 	generatedConfigFileList := make([]generatedConfigFile, 0)
 	tomlConf := tomlConfigCRIODefaultRuntime{}
 	tomlConf.Crio.Runtime.DefaultRuntime = mcfgv1.ContainerRuntimeDefaultRuntimeRunc
-	generatedConfigFileList, err := addTOMLgeneratedConfigFile(generatedConfigFileList, CRIODropInFilePathDefaultContainerRuntimeRunc, tomlConf)
+	generatedConfigFileList, err := addTOMLgeneratedConfigFile(generatedConfigFileList, CRIODropInFilePathDefaultRuntime, tomlConf)
 	if err != nil {
 		klog.V(2).Infoln(err, "error setting default-container-runtime to crio.conf.d: %v", err)
 	}

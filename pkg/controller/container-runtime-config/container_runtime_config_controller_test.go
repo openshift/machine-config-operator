@@ -1771,7 +1771,7 @@ func TestCleanUpDuplicatedMC(t *testing.T) {
 			assert.Equal(t, 3, len(mcList.Items))
 			actual := make(map[string]mcfgv1.MachineConfig)
 			for _, mc := range mcList.Items {
-				if mc.Name == "99-master-generated-crio-default-container-runtime" {
+				if mc.Name == "00-override-master-generated-crio-default-container-runtime" {
 					continue
 				}
 				require.GreaterOrEqual(t, len(mc.Annotations), 1)
@@ -1801,8 +1801,8 @@ func TestClusterImagePolicyCreate(t *testing.T) {
 
 			mcs1 := helpers.NewMachineConfig(keyReg1, map[string]string{"node-role": "master"}, "dummy://", []ign3types.File{{}})
 			mcs2 := helpers.NewMachineConfig(keyReg2, map[string]string{"node-role": "worker"}, "dummy://", []ign3types.File{{}})
-			defaultContainermcs1 := helpers.NewMachineConfig("99-master-generated-crio-default-container-runtime", nil, "dummy://", []ign3types.File{{}})
-			defaultContainermcs2 := helpers.NewMachineConfig("99-worker-generated-crio-default-container-runtime", nil, "dummy://", []ign3types.File{{}})
+			defaultContainermcs1 := helpers.NewMachineConfig("00-override-master-generated-crio-default-container-runtime", nil, "dummy://", []ign3types.File{{}})
+			defaultContainermcs2 := helpers.NewMachineConfig("00-override-worker-generated-crio-default-container-runtime", nil, "dummy://", []ign3types.File{{}})
 
 			clusterimgPolicy := newClusterImagePolicyWithPublicKey("image-policy", []string{"example.com"}, []byte("foo bar"))
 			f.ccLister = append(f.ccLister, cc)
@@ -1853,8 +1853,8 @@ func TestSigstoreRegistriesConfigIDMSandCIPCreate(t *testing.T) {
 
 			mcs1 := helpers.NewMachineConfig(keyReg1, map[string]string{"node-role": "master"}, "dummy://", []ign3types.File{{}})
 			mcs2 := helpers.NewMachineConfig(keyReg2, map[string]string{"node-role": "worker"}, "dummy://", []ign3types.File{{}})
-			defaultContainermcs1 := helpers.NewMachineConfig("99-master-generated-crio-default-container-runtime", nil, "dummy://", []ign3types.File{{}})
-			defaultContainermcs2 := helpers.NewMachineConfig("99-worker-generated-crio-default-container-runtime", nil, "dummy://", []ign3types.File{{}})
+			defaultContainermcs1 := helpers.NewMachineConfig("00-override-master-generated-crio-default-container-runtime", nil, "dummy://", []ign3types.File{{}})
+			defaultContainermcs2 := helpers.NewMachineConfig("00-override-worker-generated-crio-default-container-runtime", nil, "dummy://", []ign3types.File{{}})
 
 			// idms source is the same as cip scope
 			idms := newIDMS("built-in", []apicfgv1.ImageDigestMirrors{
