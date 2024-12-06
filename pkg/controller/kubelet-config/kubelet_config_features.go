@@ -19,6 +19,7 @@ import (
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	"github.com/openshift/machine-config-operator/pkg/version"
 )
 
@@ -56,7 +57,7 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 		klog.V(4).Infof("Finished syncing feature handler %q (%v)", key, time.Since(startTime))
 	}()
 
-	cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
+	cc, err := ctrl.ccLister.Get(commonconsts.ControllerConfigName)
 	if err != nil {
 		return fmt.Errorf("could not get ControllerConfig: %w", err)
 	}
@@ -68,16 +69,16 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 	}
 
 	// Grab APIServer to populate TLS settings in the default kubelet config
-	apiServer, err := ctrl.apiserverLister.Get(ctrlcommon.APIServerInstanceName)
+	apiServer, err := ctrl.apiserverLister.Get(commonconsts.APIServerInstanceName)
 	if err != nil && !errors.IsNotFound(err) {
-		return fmt.Errorf("could not get the TLSSecurityProfile from %v: %v", ctrlcommon.APIServerInstanceName, err)
+		return fmt.Errorf("could not get the TLSSecurityProfile from %v: %v", commonconsts.APIServerInstanceName, err)
 	}
 
 	for _, pool := range mcpPools {
 		var nodeConfig *osev1.Node
 		role := pool.Name
 		// Fetch the Node Config object
-		nodeConfig, err = ctrl.nodeConfigLister.Get(ctrlcommon.ClusterNodeInstanceName)
+		nodeConfig, err = ctrl.nodeConfigLister.Get(commonconsts.ClusterNodeInstanceName)
 		if errors.IsNotFound(err) {
 			nodeConfig = createNewDefaultNodeconfig()
 		}
@@ -109,7 +110,7 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 
 		mc.Spec.Config.Raw = rawCfgIgn
 		mc.ObjectMeta.Annotations = map[string]string{
-			ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,
+			commonconsts.GeneratedByControllerVersionAnnotationKey: version.Hash,
 		}
 		// Create or Update, on conflict retry
 		if err := retry.RetryOnConflict(updateBackoff, func() error {
@@ -205,7 +206,7 @@ func generateKubeConfigIgnFromFeatures(cc *mcfgv1.ControllerConfig, templatesDir
 	if err != nil {
 		return nil, err
 	}
-	if nodeConfig != nil && role == ctrlcommon.MachineConfigPoolWorker {
+	if nodeConfig != nil && role == commonconsts.MachineConfigPoolWorker {
 		updateOriginalKubeConfigwithNodeConfig(nodeConfig, originalKubeConfig)
 	}
 
@@ -254,7 +255,7 @@ func RunFeatureGateBootstrap(templateDir string, featureGateAccess featuregates.
 
 		mc.Spec.Config.Raw = rawCfgIgn
 		mc.ObjectMeta.Annotations = map[string]string{
-			ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,
+			commonconsts.GeneratedByControllerVersionAnnotationKey: version.Hash,
 		}
 
 		machineConfigs = append(machineConfigs, mc)

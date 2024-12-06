@@ -40,6 +40,7 @@ import (
 	mcopinformersv1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1"
 	mcoplistersv1 "github.com/openshift/client-go/operator/listers/operator/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 )
 
 // Controller defines the machine-set-boot-image controller.
@@ -214,7 +215,7 @@ func (ctrl *Controller) addConfigMap(obj interface{}) {
 	configMap := obj.(*corev1.ConfigMap)
 
 	// Take no action if this isn't the "golden" config map
-	if configMap.Name != ctrlcommon.BootImagesConfigMapName {
+	if configMap.Name != commonconsts.BootImagesConfigMapName {
 		return
 	}
 
@@ -231,7 +232,7 @@ func (ctrl *Controller) updateConfigMap(oldCM, newCM interface{}) {
 	newConfigMap := newCM.(*corev1.ConfigMap)
 
 	// Take no action if this isn't the "golden" config map
-	if oldConfigMap.Name != ctrlcommon.BootImagesConfigMapName {
+	if oldConfigMap.Name != commonconsts.BootImagesConfigMapName {
 		return
 	}
 
@@ -252,7 +253,7 @@ func (ctrl *Controller) deleteConfigMap(obj interface{}) {
 	configMap := obj.(*corev1.ConfigMap)
 
 	// Take no action if this isn't the "golden" config map
-	if configMap.Name != ctrlcommon.BootImagesConfigMapName {
+	if configMap.Name != commonconsts.BootImagesConfigMapName {
 		return
 	}
 
@@ -267,8 +268,8 @@ func (ctrl *Controller) addMachineConfiguration(obj interface{}) {
 	machineConfiguration := obj.(*opv1.MachineConfiguration)
 
 	// Take no action if this isn't the "cluster" level MachineConfiguration object
-	if machineConfiguration.Name != ctrlcommon.MCOOperatorKnobsObjectName {
-		klog.V(4).Infof("MachineConfiguration %s updated, but does not match %s, skipping bootimage sync", machineConfiguration.Name, ctrlcommon.MCOOperatorKnobsObjectName)
+	if machineConfiguration.Name != commonconsts.MCOOperatorKnobsObjectName {
+		klog.V(4).Infof("MachineConfiguration %s updated, but does not match %s, skipping bootimage sync", machineConfiguration.Name, commonconsts.MCOOperatorKnobsObjectName)
 		return
 	}
 
@@ -285,8 +286,8 @@ func (ctrl *Controller) updateMachineConfiguration(oldMC, newMC interface{}) {
 	newMachineConfiguration := newMC.(*opv1.MachineConfiguration)
 
 	// Take no action if this isn't the "cluster" level MachineConfiguration object
-	if oldMachineConfiguration.Name != ctrlcommon.MCOOperatorKnobsObjectName {
-		klog.V(4).Infof("MachineConfiguration %s updated, but does not match %s, skipping bootimage sync", oldMachineConfiguration.Name, ctrlcommon.MCOOperatorKnobsObjectName)
+	if oldMachineConfiguration.Name != commonconsts.MCOOperatorKnobsObjectName {
+		klog.V(4).Infof("MachineConfiguration %s updated, but does not match %s, skipping bootimage sync", oldMachineConfiguration.Name, commonconsts.MCOOperatorKnobsObjectName)
 		return
 	}
 
@@ -307,8 +308,8 @@ func (ctrl *Controller) deleteMachineConfiguration(obj interface{}) {
 	machineConfiguration := obj.(*opv1.MachineConfiguration)
 
 	// Take no action if this isn't the "cluster" level MachineConfiguration object
-	if machineConfiguration.Name != ctrlcommon.MCOOperatorKnobsObjectName {
-		klog.V(4).Infof("MachineConfiguration %s deleted, but does not match %s, skipping bootimage sync", machineConfiguration.Name, ctrlcommon.MCOOperatorKnobsObjectName)
+	if machineConfiguration.Name != commonconsts.MCOOperatorKnobsObjectName {
+		klog.V(4).Infof("MachineConfiguration %s deleted, but does not match %s, skipping bootimage sync", machineConfiguration.Name, commonconsts.MCOOperatorKnobsObjectName)
 		return
 	}
 
@@ -326,7 +327,7 @@ func (ctrl *Controller) syncMAPIMachineSets(reason string) {
 	defer ctrl.mapiSyncMutex.Unlock()
 
 	// Grab the global operator knobs
-	mcop, err := ctrl.mcopLister.Get(ctrlcommon.MCOOperatorKnobsObjectName)
+	mcop, err := ctrl.mcopLister.Get(commonconsts.MCOOperatorKnobsObjectName)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			// This typically means the cache for the knobs lister is empty; don't error on this. If this
@@ -423,23 +424,23 @@ func (ctrl *Controller) syncMAPIMachineSet(machineSet *machinev1beta1.MachineSet
 	klog.Infof("Waiting until coreos-bootimages config map has been stamped by the current version hash (%s) of the operator", operatorversion.Hash)
 	if err = wait.PollUntilContextTimeout(context.TODO(), 1*time.Minute, 15*time.Minute, true, func(_ context.Context) (bool, error) {
 		// Fetch the bootimage configmap
-		configMap, err = ctrl.mcoCmLister.ConfigMaps(ctrlcommon.MCONamespace).Get(ctrlcommon.BootImagesConfigMapName)
+		configMap, err = ctrl.mcoCmLister.ConfigMaps(commonconsts.MCONamespace).Get(commonconsts.BootImagesConfigMapName)
 		if configMap == nil || err != nil {
 			pollError = fmt.Errorf("failed to fetch coreos-bootimages config map during machineset sync: %w", err)
 			return false, nil
 		}
-		versionHashFromCM, versionHashFound := configMap.Data[ctrlcommon.MCOVersionHashKey]
+		versionHashFromCM, versionHashFound := configMap.Data[commonconsts.MCOVersionHashKey]
 		if !versionHashFound {
-			pollError = fmt.Errorf("failed to find mco version hash in %s configmap, sync will exit to wait for the MCO upgrade to complete", ctrlcommon.BootImagesConfigMapName)
+			pollError = fmt.Errorf("failed to find mco version hash in %s configmap, sync will exit to wait for the MCO upgrade to complete", commonconsts.BootImagesConfigMapName)
 			return false, nil
 		}
 		if versionHashFromCM != operatorversion.Hash {
 			pollError = fmt.Errorf("mismatch between MCO hash version stored in configmap and current MCO version; sync will exit to wait for the MCO upgrade to complete")
 			return false, nil
 		}
-		releaseVersionFromCM, releaseVersionFound := configMap.Data[ctrlcommon.MCOReleaseImageVersionKey]
+		releaseVersionFromCM, releaseVersionFound := configMap.Data[commonconsts.MCOReleaseImageVersionKey]
 		if !releaseVersionFound {
-			pollError = fmt.Errorf("failed to find mco release version in %s configmap, sync will exit to wait for the MCO upgrade to complete", ctrlcommon.BootImagesConfigMapName)
+			pollError = fmt.Errorf("failed to find mco release version in %s configmap, sync will exit to wait for the MCO upgrade to complete", commonconsts.BootImagesConfigMapName)
 			return false, nil
 		}
 		if releaseVersionFromCM != operatorversion.ReleaseVersion {
@@ -498,7 +499,7 @@ func (ctrl *Controller) patchMachineSet(oldMachineSet, newMachineSet *machinev1b
 func (ctrl *Controller) updateConditions(newReason string, syncError error, targetConditionType string) {
 	ctrl.conditionMutex.Lock()
 	defer ctrl.conditionMutex.Unlock()
-	mcop, err := ctrl.mcopClient.OperatorV1().MachineConfigurations().Get(context.TODO(), ctrlcommon.MCOOperatorKnobsObjectName, metav1.GetOptions{})
+	mcop, err := ctrl.mcopClient.OperatorV1().MachineConfigurations().Get(context.TODO(), commonconsts.MCOOperatorKnobsObjectName, metav1.GetOptions{})
 	if err != nil {
 		klog.Errorf("error updating progressing condition: %s", err)
 		return
@@ -553,7 +554,7 @@ func (ctrl *Controller) updateMachineConfigurationStatus(mcop *opv1.MachineConfi
 	if !reflect.DeepEqual(mcop.Status.Conditions, newConditions) {
 		klog.V(4).Infof("%v", newConditions)
 		if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-			mcop, err := ctrl.mcopClient.OperatorV1().MachineConfigurations().Get(context.TODO(), ctrlcommon.MCOOperatorKnobsObjectName, metav1.GetOptions{})
+			mcop, err := ctrl.mcopClient.OperatorV1().MachineConfigurations().Get(context.TODO(), commonconsts.MCOOperatorKnobsObjectName, metav1.GetOptions{})
 			if err != nil {
 				return err
 			}

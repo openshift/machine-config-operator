@@ -34,6 +34,7 @@ import (
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
 	informers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/openshift/machine-config-operator/test/helpers"
 )
@@ -72,7 +73,7 @@ func newFixture(t *testing.T) *fixture {
 	f.apiserverLister = []*osev1.APIServer{
 		{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: ctrlcommon.APIServerInstanceName,
+				Name: commonconsts.APIServerInstanceName,
 			},
 		},
 	}
@@ -422,7 +423,7 @@ func TestKubeletConfigCreate(t *testing.T) {
 			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"Example"}, nil)
 			f.newController(fgAccess)
 
-			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			cc := newControllerConfig(commonconsts.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			kc1 := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
@@ -457,7 +458,7 @@ func TestKubeletConfigMultiCreate(t *testing.T) {
 			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"Example"}, nil)
 			f.newController(fgAccess)
 
-			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			cc := newControllerConfig(commonconsts.ControllerConfigName, platform)
 			f.ccLister = append(f.ccLister, cc)
 
 			kcCount := 30
@@ -507,7 +508,7 @@ func TestKubeletConfigAutoSizingReserved(t *testing.T) {
 			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"Example"}, nil)
 			f.newController(fgAccess)
 
-			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			cc := newControllerConfig(commonconsts.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			autoSizingReservedEnabled := true
@@ -551,7 +552,7 @@ func TestKubeletConfiglogFile(t *testing.T) {
 			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"Example"}, nil)
 			f.newController(fgAccess)
 
-			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			cc := newControllerConfig(commonconsts.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			kc1 := &mcfgv1.KubeletConfig{
@@ -594,7 +595,7 @@ func TestKubeletConfigUpdates(t *testing.T) {
 			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"Example"}, nil)
 			f.newController(fgAccess)
 
-			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			cc := newControllerConfig(commonconsts.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			kc1 := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
@@ -751,7 +752,7 @@ func TestKubeletFeatureExists(t *testing.T) {
 			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"Example"}, nil)
 			f.newController(fgAccess)
 
-			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			cc := newControllerConfig(commonconsts.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			kc1 := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
@@ -895,7 +896,7 @@ func TestKubeletConfigResync(t *testing.T) {
 			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"Example"}, nil)
 			f.newController(fgAccess)
 
-			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			cc := newControllerConfig(commonconsts.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			kc1 := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
@@ -927,10 +928,10 @@ func TestKubeletConfigResync(t *testing.T) {
 				t.Errorf("syncHandler returned: %v", err)
 			}
 
-			val := kc2.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
+			val := kc2.GetAnnotations()[commonconsts.MCNameSuffixAnnotationKey]
 			require.Equal(t, "1", val)
 
-			val = kc1.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
+			val = kc1.GetAnnotations()[commonconsts.MCNameSuffixAnnotationKey]
 			require.Equal(t, "", val)
 
 			// resync kc1 and kc2
@@ -939,7 +940,7 @@ func TestKubeletConfigResync(t *testing.T) {
 			if err != nil {
 				t.Errorf("syncHandler returned: %v", err)
 			}
-			val = kc1.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
+			val = kc1.GetAnnotations()[commonconsts.MCNameSuffixAnnotationKey]
 			require.Equal(t, "", val)
 
 			c = f.newController(fgAccess)
@@ -947,7 +948,7 @@ func TestKubeletConfigResync(t *testing.T) {
 			if err != nil {
 				t.Errorf("syncHandler returned: %v", err)
 			}
-			val = kc2.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
+			val = kc2.GetAnnotations()[commonconsts.MCNameSuffixAnnotationKey]
 			require.Equal(t, "1", val)
 		})
 	}
@@ -960,7 +961,7 @@ func TestAddAnnotationExistingKubeletConfig(t *testing.T) {
 			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"Example"}, nil)
 			f.newController(fgAccess)
 
-			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			cc := newControllerConfig(commonconsts.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 
@@ -969,7 +970,7 @@ func TestAddAnnotationExistingKubeletConfig(t *testing.T) {
 			kc := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
 			kc.Finalizers = []string{kcMCKey}
 			kc1 := newKubeletConfig("smaller-max-pods-1", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 200}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
-			kc1.SetAnnotations(map[string]string{ctrlcommon.MCNameSuffixAnnotationKey: "1"})
+			kc1.SetAnnotations(map[string]string{commonconsts.MCNameSuffixAnnotationKey: "1"})
 			kc1.Finalizers = []string{kc1MCKey}
 			kcMC := helpers.NewMachineConfig(kcMCKey, map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{{}})
 
@@ -981,9 +982,9 @@ func TestAddAnnotationExistingKubeletConfig(t *testing.T) {
 
 			// kc created before kc1,
 			// make sure kc does not have annotation machineconfiguration.openshift.io/mc-name-suffix before sync, kc1 has annotation machineconfiguration.openshift.io/mc-name-suffix
-			_, ok := kc.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
+			_, ok := kc.GetAnnotations()[commonconsts.MCNameSuffixAnnotationKey]
 			require.False(t, ok)
-			val := kc1.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
+			val := kc1.GetAnnotations()[commonconsts.MCNameSuffixAnnotationKey]
 			require.Equal(t, "1", val)
 
 			// no new machine config will be created
@@ -1003,7 +1004,7 @@ func TestAddAnnotationExistingKubeletConfig(t *testing.T) {
 			f.validateActions()
 
 			// kc annotation machineconfiguration.openshift.io/mc-name-suffix after sync
-			val = kc.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
+			val = kc.GetAnnotations()[commonconsts.MCNameSuffixAnnotationKey]
 			require.Equal(t, "", val)
 			kcFinalizers := kc.GetFinalizers()
 			require.Equal(t, 1, len(kcFinalizers))
@@ -1026,7 +1027,7 @@ func TestCleanUpDuplicatedMC(t *testing.T) {
 			f := newFixture(t)
 			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"Example"}, nil)
 			f.newController(fgAccess)
-			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			cc := newControllerConfig(commonconsts.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)
@@ -1036,7 +1037,7 @@ func TestCleanUpDuplicatedMC(t *testing.T) {
 			// expect result: 99-master-generated-kubelet will be deleted
 			kc1 := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
 			kc1.SetAnnotations(map[string]string{
-				ctrlcommon.MCNameSuffixAnnotationKey: "1",
+				commonconsts.MCNameSuffixAnnotationKey: "1",
 			})
 			f.mckLister = append(f.mckLister, kc1)
 			f.objects = append(f.objects, kc1)
@@ -1048,7 +1049,7 @@ func TestCleanUpDuplicatedMC(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{Name: "99-master-generated-kubelet", UID: types.UID(utilrand.String(5))},
 			}
 			machineConfigDegrade.Annotations = make(map[string]string)
-			machineConfigDegrade.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey] = versionDegrade
+			machineConfigDegrade.Annotations[commonconsts.GeneratedByControllerVersionAnnotationKey] = versionDegrade
 			ctrl.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), &machineConfigDegrade, metav1.CreateOptions{})
 
 			// MC will be upgraded
@@ -1056,7 +1057,7 @@ func TestCleanUpDuplicatedMC(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{Name: "99-master-generated-kubelet-1", UID: types.UID(utilrand.String(5))},
 			}
 			machineConfigUpgrade.Annotations = make(map[string]string)
-			machineConfigUpgrade.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey] = versionDegrade
+			machineConfigUpgrade.Annotations[commonconsts.GeneratedByControllerVersionAnnotationKey] = versionDegrade
 			ctrl.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), &machineConfigUpgrade, metav1.CreateOptions{})
 
 			// machine config has no substring "generated-xxx" will stay
@@ -1064,7 +1065,7 @@ func TestCleanUpDuplicatedMC(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{Name: "custom-kubelet", UID: types.UID(utilrand.String(5))},
 			}
 			machineConfigDegradeNotGen.Annotations = make(map[string]string)
-			machineConfigDegradeNotGen.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey] = versionDegrade
+			machineConfigDegradeNotGen.Annotations[commonconsts.GeneratedByControllerVersionAnnotationKey] = versionDegrade
 			ctrl.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), &machineConfigDegradeNotGen, metav1.CreateOptions{})
 
 			// before the upgrade, 3 machine config exist
@@ -1101,16 +1102,16 @@ func TestKubeletConfigTLSRender(t *testing.T) {
 	}{
 		{
 			name:      "Empty API server object",
-			apiserver: &osev1.APIServer{ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.APIServerInstanceName}},
+			apiserver: &osev1.APIServer{ObjectMeta: metav1.ObjectMeta{Name: commonconsts.APIServerInstanceName}},
 		},
 		{
 			name:      "Empty TLS profile",
-			apiserver: &osev1.APIServer{ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.APIServerInstanceName}},
+			apiserver: &osev1.APIServer{ObjectMeta: metav1.ObjectMeta{Name: commonconsts.APIServerInstanceName}},
 		},
 		{
 			name: "Old TLS profile",
 			apiserver: &osev1.APIServer{
-				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.APIServerInstanceName},
+				ObjectMeta: metav1.ObjectMeta{Name: commonconsts.APIServerInstanceName},
 				Spec: osev1.APIServerSpec{
 					TLSSecurityProfile: &osev1.TLSSecurityProfile{Type: osev1.TLSProfileOldType},
 				},
@@ -1119,7 +1120,7 @@ func TestKubeletConfigTLSRender(t *testing.T) {
 		{
 			name: "Intermediate TLS profile",
 			apiserver: &osev1.APIServer{
-				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.APIServerInstanceName},
+				ObjectMeta: metav1.ObjectMeta{Name: commonconsts.APIServerInstanceName},
 				Spec: osev1.APIServerSpec{
 					TLSSecurityProfile: &osev1.TLSSecurityProfile{Type: osev1.TLSProfileIntermediateType},
 				},
@@ -1128,7 +1129,7 @@ func TestKubeletConfigTLSRender(t *testing.T) {
 		{
 			name: "Custom TLS profile",
 			apiserver: &osev1.APIServer{
-				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.APIServerInstanceName},
+				ObjectMeta: metav1.ObjectMeta{Name: commonconsts.APIServerInstanceName},
 				Spec: osev1.APIServerSpec{
 					TLSSecurityProfile: &osev1.TLSSecurityProfile{
 						Type: osev1.TLSProfileCustomType,
@@ -1155,7 +1156,7 @@ func TestKubeletConfigTLSRender(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 			f := newFixture(t)
-			cc := newControllerConfig(ctrlcommon.ControllerConfigName, osev1.AWSPlatformType)
+			cc := newControllerConfig(commonconsts.ControllerConfigName, osev1.AWSPlatformType)
 			f.ccLister = append(f.ccLister, cc)
 
 			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"Example"}, nil)
@@ -1194,12 +1195,12 @@ func TestKubeletConfigTLSOverride(t *testing.T) {
 	f := newFixture(t)
 	fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"Example"}, nil)
 	f.newController(fgAccess)
-	cc := newControllerConfig(ctrlcommon.ControllerConfigName, osev1.AWSPlatformType)
+	cc := newControllerConfig(commonconsts.ControllerConfigName, osev1.AWSPlatformType)
 	mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 	f.apiserverLister = []*osev1.APIServer{
 		{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: ctrlcommon.APIServerInstanceName,
+				Name: commonconsts.APIServerInstanceName,
 			},
 			Spec: osev1.APIServerSpec{
 				TLSSecurityProfile: &osev1.TLSSecurityProfile{Type: osev1.TLSProfileOldType},

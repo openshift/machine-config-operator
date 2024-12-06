@@ -10,7 +10,7 @@ import (
 	"time"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	kcfg "github.com/openshift/machine-config-operator/pkg/controller/kubelet-config"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/openshift/machine-config-operator/test/helpers"
@@ -246,7 +246,7 @@ func createKcWithConfig(t *testing.T, cs *framework.ClientSet, name, key string,
 	// the priority order
 	if suffix != "" {
 		kc.Annotations = map[string]string{
-			ctrlcommon.MCNameSuffixAnnotationKey: suffix,
+			commonconsts.MCNameSuffixAnnotationKey: suffix,
 		}
 	}
 

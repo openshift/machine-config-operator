@@ -1,4 +1,4 @@
-package common
+package state
 
 import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"

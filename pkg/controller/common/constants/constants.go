@@ -1,4 +1,4 @@
-package common
+package constants
 
 const (
 	// MCONamespace is the namespace that should be used for all API objects owned by the MCO by default

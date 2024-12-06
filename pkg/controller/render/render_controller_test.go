@@ -28,6 +28,7 @@ import (
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
 	informers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/openshift/machine-config-operator/test/helpers"
@@ -260,7 +261,7 @@ func TestCreatesGeneratedMachineConfig(t *testing.T) {
 		helpers.NewMachineConfig("00-test-cluster-master", map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{files[0]}),
 		helpers.NewMachineConfig("05-extra-master", map[string]string{"node-role/master": ""}, "dummy://1", []ign3types.File{files[1]}),
 	}
-	cc := newControllerConfig(ctrlcommon.ControllerConfigName)
+	cc := newControllerConfig(commonconsts.ControllerConfigName)
 
 	f.ccLister = append(f.ccLister, cc)
 	f.mcpLister = append(f.mcpLister, mcp)
@@ -300,7 +301,7 @@ func TestIgnValidationGenerateRenderedMachineConfig(t *testing.T) {
 		helpers.NewMachineConfig("00-test-cluster-master", map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{files[0]}),
 		helpers.NewMachineConfig("05-extra-master", map[string]string{"node-role/master": ""}, "dummy://1", []ign3types.File{files[1]}),
 	}
-	cc := newControllerConfig(ctrlcommon.ControllerConfigName)
+	cc := newControllerConfig(commonconsts.ControllerConfigName)
 
 	_, err := generateRenderedMachineConfig(mcp, mcs, cc)
 	require.Nil(t, err)
@@ -346,7 +347,7 @@ func TestUpdatesGeneratedMachineConfig(t *testing.T) {
 		helpers.NewMachineConfig("00-test-cluster-master", map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{files[0]}),
 		helpers.NewMachineConfig("05-extra-master", map[string]string{"node-role/master": ""}, "dummy://1", []ign3types.File{files[1]}),
 	}
-	cc := newControllerConfig(ctrlcommon.ControllerConfigName)
+	cc := newControllerConfig(commonconsts.ControllerConfigName)
 
 	gmc, err := generateRenderedMachineConfig(mcp, mcs, cc)
 	if err != nil {
@@ -389,7 +390,7 @@ func TestGenerateMachineConfigOverrideOSImageURL(t *testing.T) {
 		helpers.NewMachineConfig("00-test-cluster-master-0", map[string]string{"node-role/master": ""}, "dummy-change", []ign3types.File{}),
 	}
 
-	cc := newControllerConfig(ctrlcommon.ControllerConfigName)
+	cc := newControllerConfig(commonconsts.ControllerConfigName)
 
 	gmc, err := generateRenderedMachineConfig(mcp, mcs, cc)
 	if err != nil {
@@ -411,13 +412,13 @@ func TestVersionSkew(t *testing.T) {
 		helpers.NewMachineConfig("00-test-cluster-master-0", map[string]string{"node-role/master": ""}, "dummy-change", []ign3types.File{}),
 	}
 
-	cc := newControllerConfig(ctrlcommon.ControllerConfigName)
+	cc := newControllerConfig(commonconsts.ControllerConfigName)
 	cc.Annotations[daemonconsts.GeneratedByVersionAnnotationKey] = "different-version"
 	_, err := generateRenderedMachineConfig(mcp, mcs, cc)
 	require.NotNil(t, err)
 
 	// Now the same thing without overriding the version
-	cc = newControllerConfig(ctrlcommon.ControllerConfigName)
+	cc = newControllerConfig(commonconsts.ControllerConfigName)
 	gmc, err := generateRenderedMachineConfig(mcp, mcs, cc)
 	require.Nil(t, err)
 	require.NotNil(t, gmc)
@@ -426,17 +427,17 @@ func TestVersionSkew(t *testing.T) {
 func TestGenerateRenderedConfigOnLatestControllerVersionOnly(t *testing.T) {
 	mcp := helpers.NewMachineConfigPool("test-cluster-master", helpers.MasterSelector, nil, "")
 	mcs := []*mcfgv1.MachineConfig{
-		helpers.NewMachineConfigWithAnnotation("00-updated-conf", map[string]string{"node-role/master": ""}, map[string]string{ctrlcommon.GeneratedByControllerVersionAnnotationKey: "2"}, "dummy-test-1", []ign3types.File{}),
-		helpers.NewMachineConfigWithAnnotation("00-old-conf", map[string]string{"node-role/master": ""}, map[string]string{ctrlcommon.GeneratedByControllerVersionAnnotationKey: "1"}, "dummy-change", []ign3types.File{}),
+		helpers.NewMachineConfigWithAnnotation("00-updated-conf", map[string]string{"node-role/master": ""}, map[string]string{commonconsts.GeneratedByControllerVersionAnnotationKey: "2"}, "dummy-test-1", []ign3types.File{}),
+		helpers.NewMachineConfigWithAnnotation("00-old-conf", map[string]string{"node-role/master": ""}, map[string]string{commonconsts.GeneratedByControllerVersionAnnotationKey: "1"}, "dummy-change", []ign3types.File{}),
 	}
 	version.Hash = "2"
-	cc := newControllerConfig(ctrlcommon.ControllerConfigName)
+	cc := newControllerConfig(commonconsts.ControllerConfigName)
 	_, err := generateRenderedMachineConfig(mcp, mcs, cc)
 	require.NotNil(t, err)
 
 	mcs = []*mcfgv1.MachineConfig{
-		helpers.NewMachineConfigWithAnnotation("00-updated-conf", map[string]string{"node-role/master": ""}, map[string]string{ctrlcommon.GeneratedByControllerVersionAnnotationKey: "2"}, "dummy-test-1", []ign3types.File{}),
-		helpers.NewMachineConfigWithAnnotation("99-user-conf", map[string]string{"node-role/master": ""}, map[string]string{ctrlcommon.GeneratedByControllerVersionAnnotationKey: ""}, "user-data", []ign3types.File{}),
+		helpers.NewMachineConfigWithAnnotation("00-updated-conf", map[string]string{"node-role/master": ""}, map[string]string{commonconsts.GeneratedByControllerVersionAnnotationKey: "2"}, "dummy-test-1", []ign3types.File{}),
+		helpers.NewMachineConfigWithAnnotation("99-user-conf", map[string]string{"node-role/master": ""}, map[string]string{commonconsts.GeneratedByControllerVersionAnnotationKey: ""}, "user-data", []ign3types.File{}),
 	}
 	_, err = generateRenderedMachineConfig(mcp, mcs, cc)
 	require.Nil(t, err)
@@ -460,7 +461,7 @@ func TestDoNothing(t *testing.T) {
 		helpers.NewMachineConfig("00-test-cluster-master", map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{files[0]}),
 		helpers.NewMachineConfig("05-extra-master", map[string]string{"node-role/master": ""}, "dummy://1", []ign3types.File{files[1]}),
 	}
-	cc := newControllerConfig(ctrlcommon.ControllerConfigName)
+	cc := newControllerConfig(commonconsts.ControllerConfigName)
 
 	gmc, err := generateRenderedMachineConfig(mcp, mcs, cc)
 	if err != nil {
@@ -565,7 +566,7 @@ func TestGenerateMachineConfigValidation(t *testing.T) {
 
 	mcs[1].Spec.FIPS = true
 
-	cc := newControllerConfig(ctrlcommon.ControllerConfigName)
+	cc := newControllerConfig(commonconsts.ControllerConfigName)
 
 	gmc, err := generateAndValidateRenderedMachineConfig(currentMC, mcp, mcs, cc)
 	assert.Error(t, err)

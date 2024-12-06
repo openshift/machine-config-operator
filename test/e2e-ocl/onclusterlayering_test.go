@@ -28,6 +28,7 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -410,7 +411,7 @@ func TestDeletedBuilderInterruptsMachineOSBuild(t *testing.T) {
 	t.Logf("MachineOSBuild %q has started", startedBuild.Name)
 
 	// Delete the builder
-	err := cs.BatchV1Interface.Jobs(ctrlcommon.MCONamespace).Delete(ctx, utils.GetBuildJobName(startedBuild), metav1.DeleteOptions{})
+	err := cs.BatchV1Interface.Jobs(commonconsts.MCONamespace).Delete(ctx, utils.GetBuildJobName(startedBuild), metav1.DeleteOptions{})
 	require.NoError(t, err)
 
 	// Wait for the build to be interrupted.
@@ -488,7 +489,7 @@ func TestDeletedTransientMachineOSBuildIsRecreated(t *testing.T) {
 	// Wait for the build to start
 	firstMosb := waitForBuildToStartForPoolAndConfig(t, cs, poolName, mosc.Name)
 
-	firstJob, err := cs.BatchV1Interface.Jobs(ctrlcommon.MCONamespace).Get(ctx, utils.GetBuildJobName(firstMosb), metav1.GetOptions{})
+	firstJob, err := cs.BatchV1Interface.Jobs(commonconsts.MCONamespace).Get(ctx, utils.GetBuildJobName(firstMosb), metav1.GetOptions{})
 	require.NoError(t, err)
 
 	// Delete the MachineOSBuild.
@@ -504,7 +505,7 @@ func TestDeletedTransientMachineOSBuildIsRecreated(t *testing.T) {
 	// Wait for a new MachineOSBuild to start in its place.
 	secondMosb := waitForBuildToStartForPoolAndConfig(t, cs, poolName, mosc.Name)
 
-	secondJob, err := cs.BatchV1Interface.Jobs(ctrlcommon.MCONamespace).Get(ctx, utils.GetBuildJobName(secondMosb), metav1.GetOptions{})
+	secondJob, err := cs.BatchV1Interface.Jobs(commonconsts.MCONamespace).Get(ctx, utils.GetBuildJobName(secondMosb), metav1.GetOptions{})
 	require.NoError(t, err)
 
 	assert.Equal(t, firstMosb.Name, secondMosb.Name)
@@ -549,7 +550,7 @@ func TestMCDGetsMachineOSConfigSecrets(t *testing.T) {
 	t.Cleanup(createSecret(t, cs, &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      secretName,
-			Namespace: ctrlcommon.MCONamespace,
+			Namespace: commonconsts.MCONamespace,
 		},
 		Type: corev1.SecretTypeDockerConfigJson,
 		Data: map[string][]byte{
