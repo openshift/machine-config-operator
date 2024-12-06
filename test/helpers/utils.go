@@ -110,6 +110,17 @@ func MakeIdempotent(f func()) func() {
 	}
 }
 
+// Ensures that a given cleanup function only runs once; even if called once.
+// When the provided skipFunc returns true, executing the cleanup will be
+// skipped. The skipFunc will also only be executed once.
+func MakeIdempotentSkippable(skipFunc func() bool, f func()) func() {
+	return MakeIdempotent(func() {
+		if !skipFunc() {
+			f()
+		}
+	})
+}
+
 // Applies a MachineConfig to a given MachineConfigPool, if a MachineConfig is
 // provided. If a MachineConfig is not provided (i.e., nil), it will skip the
 // apply process and wait for the MachineConfigPool to include the "00-worker"
