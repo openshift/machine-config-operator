@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
+	"dario.cat/mergo"
 	"github.com/clarketm/json"
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
-	"github.com/imdario/mergo"
 	corev1 "k8s.io/api/core/v1"
 	macherrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
