@@ -12,6 +12,7 @@ import (
 	"github.com/clarketm/json"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	k8sv1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -63,6 +64,7 @@ type fixture struct {
 	client         *fake.Clientset
 	imgClient      *fakeconfigv1client.Clientset
 	operatorClient *fakeoperatorclient.Clientset
+	kubeClient     *k8sfake.Clientset
 
 	ccLister                 []*mcfgv1.ControllerConfig
 	mcpLister                []*mcfgv1.MachineConfigPool
@@ -82,6 +84,7 @@ type fixture struct {
 	objects         []runtime.Object
 	imgObjects      []runtime.Object
 	operatorObjects []runtime.Object
+	k8sObjects      []runtime.Object
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -98,6 +101,15 @@ func newFixture(t *testing.T) *fixture {
 		},
 	)
 	return f
+}
+
+func newConfigMap(name string) *k8sv1.ConfigMap {
+	return &k8sv1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: "openshift-machine-config-operator",
+		},
+	}
 }
 
 func (f *fixture) validateActions() {
@@ -239,11 +251,12 @@ func (f *fixture) newController() *Controller {
 	f.client = fake.NewSimpleClientset(f.objects...)
 	f.imgClient = fakeconfigv1client.NewSimpleClientset(f.imgObjects...)
 	f.operatorClient = fakeoperatorclient.NewSimpleClientset(f.operatorObjects...)
+	f.kubeClient = k8sfake.NewSimpleClientset(f.k8sObjects...)
 
 	i := informers.NewSharedInformerFactory(f.client, noResyncPeriodFunc())
 	ci := configv1informer.NewSharedInformerFactory(f.imgClient, noResyncPeriodFunc())
 	oi := operatorinformer.NewSharedInformerFactory(f.operatorClient, noResyncPeriodFunc())
-	c := New(templateDir,
+	c := New(templateDir, "openshift-machine-config-operator",
 		i.Machineconfiguration().V1().MachineConfigPools(),
 		i.Machineconfiguration().V1().ControllerConfigs(),
 		i.Machineconfiguration().V1().ContainerRuntimeConfigs(),
@@ -253,7 +266,7 @@ func (f *fixture) newController() *Controller {
 		ci,
 		oi.Operator().V1alpha1().ImageContentSourcePolicies(),
 		ci.Config().V1().ClusterVersions(),
-		k8sfake.NewSimpleClientset(), f.client, f.imgClient,
+		f.kubeClient, f.client, f.imgClient,
 		f.fgAccess,
 	)
 
@@ -575,12 +588,14 @@ func TestContainerRuntimeConfigCreate(t *testing.T) {
 			mcs1 := helpers.NewMachineConfig(getManagedKeyCtrCfgDeprecated(mcp), map[string]string{"node-role": "master"}, "dummy://", []ign3types.File{{}})
 			mcs2 := mcs1.DeepCopy()
 			mcs2.Name = ctrCfgKey
+			cm := newConfigMap("crio-default-container-runtime")
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)
 			f.mcpLister = append(f.mcpLister, mcp2)
 			f.mccrLister = append(f.mccrLister, ctrcfg1)
 			f.objects = append(f.objects, ctrcfg1)
+			f.k8sObjects = append(f.k8sObjects, cm)
 
 			f.expectGetMachineConfigAction(mcs2)
 			f.expectGetMachineConfigAction(mcs1)
@@ -615,12 +630,14 @@ func TestContainerRuntimeConfigUpdate(t *testing.T) {
 			mcs := helpers.NewMachineConfig(getManagedKeyCtrCfgDeprecated(mcp), map[string]string{"node-role": "master"}, "dummy://", []ign3types.File{{}})
 			mcsUpdate := mcs.DeepCopy()
 			mcsUpdate.Name = keyCtrCfg
+			cm := newConfigMap("crio-default-container-runtime")
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)
 			f.mcpLister = append(f.mcpLister, mcp2)
 			f.mccrLister = append(f.mccrLister, ctrcfg1)
 			f.objects = append(f.objects, ctrcfg1)
+			f.k8sObjects = append(f.k8sObjects, cm)
 
 			f.expectGetMachineConfigAction(mcsUpdate)
 			f.expectGetMachineConfigAction(mcs)
@@ -654,6 +671,7 @@ func TestContainerRuntimeConfigUpdate(t *testing.T) {
 			f.mcpLister = append(f.mcpLister, mcp2)
 			f.mccrLister = append(f.mccrLister, ctrcfgUpdate)
 			f.objects = append(f.objects, mcsUpdate, ctrcfgUpdate)
+			f.k8sObjects = append(f.k8sObjects, cm)
 
 			c = f.newController()
 			stopCh = make(chan struct{})
@@ -713,7 +731,15 @@ func TestImageConfigCreate(t *testing.T) {
 			f.expectGetMachineConfigAction(mcs2)
 			f.expectCreateMachineConfigAction(mcs2)
 
-			f.run("cluster")
+			c := f.newController()
+			stopCh := make(chan struct{})
+			err := c.syncImgHandler("cluster")
+			if err != nil {
+				t.Errorf("syncImgHandler returned %v", err)
+			}
+
+			f.validateActions()
+			close(stopCh)
 
 			for _, mcName := range []string{mcs1.Name, mcs2.Name} {
 				f.verifyRegistriesConfigAndPolicyJSONContents(t, mcName, imgcfg1, nil, nil, nil, nil, cc.Spec.ReleaseImage, true, true, false)
@@ -1512,6 +1538,9 @@ func TestCtrruntimeConfigMultiCreate(t *testing.T) {
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			f.ccLister = append(f.ccLister, cc)
 
+			cm := newConfigMap("crio-default-container-runtime")
+			f.k8sObjects = []runtime.Object{cm}
+
 			ctrcfgCount := 30
 			for i := 0; i < ctrcfgCount; i++ {
 				f.resetActions()
@@ -1528,6 +1557,7 @@ func TestCtrruntimeConfigMultiCreate(t *testing.T) {
 				f.mcpLister = append(f.mcpLister, mcp)
 				f.mccrLister = append(f.mccrLister, ccr)
 				f.objects = append(f.objects, ccr)
+				f.k8sObjects = []runtime.Object{cm}
 
 				mcs := helpers.NewMachineConfig(generateManagedKey(ccr, 1), labelSelector.MatchLabels, "dummy://", []ign3types.File{{}})
 				mcsDeprecated := mcs.DeepCopy()
@@ -1559,7 +1589,7 @@ func TestContainerruntimeConfigResync(t *testing.T) {
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			ccr1 := newContainerRuntimeConfig("log-level-1", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
 			ccr2 := newContainerRuntimeConfig("log-level-2", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
-
+			cm := newConfigMap("crio-default-container-runtime")
 			ctrConfigKey, _ := getManagedKeyCtrCfg(mcp, f.client, ccr1)
 			mcs := helpers.NewMachineConfig(ctrConfigKey, map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{{}})
 			mcsDeprecated := mcs.DeepCopy()
@@ -1570,6 +1600,7 @@ func TestContainerruntimeConfigResync(t *testing.T) {
 			f.mcpLister = append(f.mcpLister, mcp2)
 			f.mccrLister = append(f.mccrLister, ccr1)
 			f.objects = append(f.objects, ccr1)
+			f.k8sObjects = []runtime.Object{cm}
 
 			c := f.newController()
 			err := c.syncHandler(getKey(ccr1, t))
@@ -1630,12 +1661,14 @@ func TestAddAnnotationExistingContainerRuntimeConfig(t *testing.T) {
 			ctrc1.SetAnnotations(map[string]string{ctrlcommon.MCNameSuffixAnnotationKey: "1"})
 			ctrc1.Finalizers = []string{ctr1MCKey}
 			ctrcfgMC := helpers.NewMachineConfig(ctrMCKey, map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{{}})
+			cm := newConfigMap("crio-default-container-runtime")
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)
 			f.mcpLister = append(f.mcpLister, mcp2)
 			f.mccrLister = append(f.mccrLister, ctrc, ctrc1)
 			f.objects = append(f.objects, ctrc, ctrc1, ctrcfgMC)
+			f.k8sObjects = []runtime.Object{cm}
 
 			// ctrc created before ctrc1,
 			// make sure ccr does not have annotation machineconfiguration.openshift.io/mc-name-suffix before sync, ccr1 has annotation machineconfiguration.openshift.io/mc-name-suffix
@@ -1735,9 +1768,12 @@ func TestCleanUpDuplicatedMC(t *testing.T) {
 			// successful test: only custom and upgraded MCs stay
 			mcList, err = ctrl.client.MachineconfigurationV1().MachineConfigs().List(context.TODO(), metav1.ListOptions{})
 			require.NoError(t, err)
-			assert.Equal(t, 2, len(mcList.Items))
+			assert.Equal(t, 3, len(mcList.Items))
 			actual := make(map[string]mcfgv1.MachineConfig)
 			for _, mc := range mcList.Items {
+				if mc.Name == "00-override-master-generated-crio-default-container-runtime" {
+					continue
+				}
 				require.GreaterOrEqual(t, len(mc.Annotations), 1)
 				actual[mc.Name] = mc
 			}
@@ -1765,6 +1801,8 @@ func TestClusterImagePolicyCreate(t *testing.T) {
 
 			mcs1 := helpers.NewMachineConfig(keyReg1, map[string]string{"node-role": "master"}, "dummy://", []ign3types.File{{}})
 			mcs2 := helpers.NewMachineConfig(keyReg2, map[string]string{"node-role": "worker"}, "dummy://", []ign3types.File{{}})
+			defaultContainermcs1 := helpers.NewMachineConfig("00-override-master-generated-crio-default-container-runtime", nil, "dummy://", []ign3types.File{{}})
+			defaultContainermcs2 := helpers.NewMachineConfig("00-override-worker-generated-crio-default-container-runtime", nil, "dummy://", []ign3types.File{{}})
 
 			clusterimgPolicy := newClusterImagePolicyWithPublicKey("image-policy", []string{"example.com"}, []byte("foo bar"))
 			f.ccLister = append(f.ccLister, cc)
@@ -1785,6 +1823,10 @@ func TestClusterImagePolicyCreate(t *testing.T) {
 			f.expectGetMachineConfigAction(mcs2)
 
 			f.expectCreateMachineConfigAction(mcs2)
+			f.expectGetMachineConfigAction(defaultContainermcs1)
+			f.expectCreateMachineConfigAction(defaultContainermcs1)
+			f.expectGetMachineConfigAction(defaultContainermcs2)
+			f.expectCreateMachineConfigAction(defaultContainermcs2)
 
 			f.run("")
 
@@ -1811,6 +1853,8 @@ func TestSigstoreRegistriesConfigIDMSandCIPCreate(t *testing.T) {
 
 			mcs1 := helpers.NewMachineConfig(keyReg1, map[string]string{"node-role": "master"}, "dummy://", []ign3types.File{{}})
 			mcs2 := helpers.NewMachineConfig(keyReg2, map[string]string{"node-role": "worker"}, "dummy://", []ign3types.File{{}})
+			defaultContainermcs1 := helpers.NewMachineConfig("00-override-master-generated-crio-default-container-runtime", nil, "dummy://", []ign3types.File{{}})
+			defaultContainermcs2 := helpers.NewMachineConfig("00-override-worker-generated-crio-default-container-runtime", nil, "dummy://", []ign3types.File{{}})
 
 			// idms source is the same as cip scope
 			idms := newIDMS("built-in", []apicfgv1.ImageDigestMirrors{
@@ -1836,6 +1880,10 @@ func TestSigstoreRegistriesConfigIDMSandCIPCreate(t *testing.T) {
 			f.expectGetMachineConfigAction(mcs2)
 
 			f.expectCreateMachineConfigAction(mcs2)
+			f.expectGetMachineConfigAction(defaultContainermcs1)
+			f.expectCreateMachineConfigAction(defaultContainermcs1)
+			f.expectGetMachineConfigAction(defaultContainermcs2)
+			f.expectCreateMachineConfigAction(defaultContainermcs2)
 
 			f.run("")
 
