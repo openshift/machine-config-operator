@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
-	helpers "github.com/openshift/machine-config-operator/pkg/helpers"
 
 	configv1 "github.com/openshift/api/config/v1"
 	features "github.com/openshift/api/features"
@@ -621,7 +620,7 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 		// queue all of them so that when the node attempts to exit from this error state, the MCP
 		// statuses are updated correctly.
 		klog.Errorf("error fetching old primary pool for node %s, attempting to sync all old pools", oldNode.Name)
-		masterPool, workerPool, customPools, listErr := helpers.ListPools(oldNode, ctrl.mcpLister)
+		masterPool, workerPool, customPools, listErr := ctrlcommon.ListPools(oldNode, ctrl.mcpLister)
 		if listErr == nil {
 			for _, pool := range customPools {
 				ctrl.enqueueMachineConfigPool(pool)
@@ -788,7 +787,7 @@ func (ctrl *Controller) deleteNode(obj interface{}) {
 // and where a custom role may be used. It returns a slice of all the pools the node belongs to.
 // It also ignores the Windows nodes.
 func (ctrl *Controller) getPoolsForNode(node *corev1.Node) ([]*mcfgv1.MachineConfigPool, error) {
-	pools, metric, err := helpers.GetPoolsForNode(ctrl.mcpLister, node)
+	pools, metric, err := ctrlcommon.GetPoolsForNode(ctrl.mcpLister, node)
 	if err != nil {
 		return nil, err
 	}

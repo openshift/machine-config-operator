@@ -53,7 +53,6 @@ import (
 	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	templatectrl "github.com/openshift/machine-config-operator/pkg/controller/template"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
-	"github.com/openshift/machine-config-operator/pkg/helpers"
 	"github.com/openshift/machine-config-operator/pkg/server"
 	"github.com/openshift/machine-config-operator/pkg/upgrademonitor"
 	"github.com/openshift/machine-config-operator/pkg/version"
@@ -1284,8 +1283,8 @@ func (optr *Operator) validateLayeredPoolNodes(layeredMCPs []*mcfgv1.MachineConf
 	// Error out if any of the nodes in the pool where OCL is enabled is a non-coreos node
 	errNodes := []error{}
 	for _, node := range nodes {
-		if !helpers.IsCoreOSNode(node) {
-			poolNames, err := helpers.GetPoolNamesForNode(optr.mcpLister, node)
+		if !ctrlcommon.IsCoreOSNode(node) {
+			poolNames, err := ctrlcommon.GetPoolNamesForNode(optr.mcpLister, node)
 			if err != nil {
 				return err
 			}

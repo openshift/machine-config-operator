@@ -16,11 +16,11 @@ import (
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	state "github.com/openshift/machine-config-operator/pkg/controller/common/state"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
-	helpers "github.com/openshift/machine-config-operator/pkg/helpers"
 )
 
 // syncStatusOnly for MachineConfigNode
@@ -342,7 +342,7 @@ func getPoolUpdateLine(pool *mcfgv1.MachineConfigPool, mosc *mcfgv1alpha1.Machin
 
 // isNodeManaged checks whether the MCD has ever run on a node
 func isNodeManaged(node *corev1.Node) bool {
-	if helpers.IsWindows(node) {
+	if ctrlcommon.IsWindows(node) {
 		klog.V(4).Infof("Node %v is a windows node so won't be managed by MCO", node.Name)
 		return false
 	}

@@ -12,7 +12,6 @@ import (
 	mcfgalphav1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 
-	pkghelpers "github.com/openshift/machine-config-operator/pkg/helpers"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -35,6 +34,7 @@ import (
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
 	informers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
 	"github.com/openshift/machine-config-operator/pkg/constants"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	state "github.com/openshift/machine-config-operator/pkg/controller/common/state"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
@@ -307,7 +307,7 @@ func TestGetNodesForPool(t *testing.T) {
 		{
 			// Mixed cluster with both Windows and Linux worker nodes. Only Linux nodes should be managed by MCO
 			pool:     helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, machineConfigV0),
-			nodes:    append(newMixedNodeSet(3, map[string]string{"node-role/master": ""}, map[string]string{"node-role/worker": "", "node-role/infra": ""}), newNodeWithLabels("windowsNode", map[string]string{pkghelpers.OSLabel: "windows"})),
+			nodes:    append(newMixedNodeSet(3, map[string]string{"node-role/master": ""}, map[string]string{"node-role/worker": "", "node-role/infra": ""}), newNodeWithLabels("windowsNode", map[string]string{ctrlcommon.OSLabel: "windows"})),
 			expected: 3,
 			err:      false,
 		},

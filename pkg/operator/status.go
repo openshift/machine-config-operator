@@ -25,10 +25,10 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	kcc "github.com/openshift/machine-config-operator/pkg/controller/kubelet-config"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
-	"github.com/openshift/machine-config-operator/pkg/helpers"
 )
 
 // syncVersion handles reporting the version to the clusteroperator
@@ -347,7 +347,7 @@ func (optr *Operator) syncMetrics() error {
 			}
 		}
 
-		nodes, _ := helpers.GetNodesForPool(optr.mcpLister, optr.nodeLister, pool)
+		nodes, _ := ctrlcommon.GetNodesForPool(optr.mcpLister, optr.nodeLister, pool)
 		for _, node := range nodes {
 			mcoState.WithLabelValues(node.Name, pool.Name, string(cond.Type), cond.Reason).SetToCurrentTime()
 		}
