@@ -1,7 +1,24 @@
 package machineset
 
 import (
+	"archive/tar"
+	"context"
+	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"os"
+	"path"
+	"strings"
+	"sync/atomic"
+	"time"
+
+	"github.com/vmware/govmomi"
+	"github.com/vmware/govmomi/find"
+	"github.com/vmware/govmomi/ovf"
+	"github.com/vmware/govmomi/vim25/soap"
+	"github.com/vmware/govmomi/vim25/types"
 
 	"github.com/coreos/stream-metadata-go/stream"
 	corev1 "k8s.io/api/core/v1"
@@ -192,9 +209,348 @@ func reconcileLibvirt(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap
 	return false, nil, nil
 }
 
-func reconcileVSphere(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
-	klog.Infof("Skipping machineset %s, unsupported platform type VSphere with %s arch", machineSet.Name, arch)
-	return false, nil, nil
+type ProgressReader struct {
+	io.Reader
+	Reporter func(r int64)
+}
+
+func getTotalBytesRead(totalBytes *int64) int64 {
+	return atomic.LoadInt64(totalBytes)
+}
+
+func incrementTotalBytesRead(totalBytesRead *int64, n int64) {
+	atomic.StoreInt64(totalBytesRead, getTotalBytesRead(totalBytesRead)+n)
+}
+
+func upload(ctx context.Context, client *govmomi.Client, item types.OvfFileItem, f io.Reader, rawURL string, size int64, totalBytesRead *int64) error {
+	u, err := client.Client.ParseURL(rawURL)
+	if err != nil {
+		return err
+	}
+	url := u.String()
+	c := client.Client.Client
+
+	param := soap.Upload{
+		ContentLength: size,
+	}
+
+	if item.Create {
+		param.Method = "PUT"
+		param.Headers = map[string]string{
+			"Overwrite": "t",
+		}
+	} else {
+		param.Method = "POST"
+		param.Type = "application/x-vnd.vmware-streamVmdk"
+	}
+
+	pr := &ProgressReader{f, func(r int64) {
+		incrementTotalBytesRead(totalBytesRead, r)
+	}}
+	f = pr
+
+	req, err := http.NewRequest(param.Method, url, f)
+	if err != nil {
+		return err
+	}
+
+	req = req.WithContext(ctx)
+	req.ContentLength = param.ContentLength
+	req.Header.Set("Content-Type", param.Type)
+
+	for k, v := range param.Headers {
+		req.Header.Add(k, v)
+	}
+	if param.Ticket != nil {
+		req.AddCookie(param.Ticket)
+	}
+
+	res, err := c.Client.Do(req)
+	if err != nil {
+		return err
+	}
+
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(res.Body)
+
+	switch res.StatusCode {
+	case http.StatusOK:
+	case http.StatusCreated:
+	default:
+		err = errors.New(res.Status)
+	}
+	return err
+}
+
+func findAndUploadDiskFromOva(client *govmomi.Client, ovaFile io.Reader, diskName string, ovfFileItem types.OvfFileItem, deviceObj types.HttpNfcLeaseDeviceUrl, currBytesRead *int64) error {
+	ovaReader := tar.NewReader(ovaFile)
+	for {
+		fileHdr, err := ovaReader.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		if fileHdr.Name == diskName {
+			err = upload(context.Background(), client, ovfFileItem, ovaReader, deviceObj.Url, ovfFileItem.Size, currBytesRead)
+			if err != nil {
+				return fmt.Errorf("error while uploading the file %s %s", diskName, err)
+			}
+			return nil
+		}
+	}
+	return fmt.Errorf("disk %s not found inside ova", diskName)
+}
+
+func uploadOvaDisksFromLocal(client *govmomi.Client, filePath string, ovfFileItem types.OvfFileItem, deviceObj types.HttpNfcLeaseDeviceUrl, currBytesRead *int64) error {
+	diskName := ovfFileItem.Path
+	ovaFile, err := os.Open(filePath)
+	if err != nil {
+		return err
+	}
+	defer func(ovaFile *os.File) {
+		_ = ovaFile.Close()
+	}(ovaFile)
+
+	err = findAndUploadDiskFromOva(client, ovaFile, diskName, ovfFileItem, deviceObj, currBytesRead)
+	return err
+}
+
+func getOvfDescriptorFromOva(ovaFile io.Reader) (string, error) {
+	ovaReader := tar.NewReader(ovaFile)
+	for {
+		fileHdr, err := ovaReader.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return "", err
+		}
+		if strings.HasSuffix(fileHdr.Name, ".ovf") {
+			content, _ := io.ReadAll(ovaReader)
+			ovfDescriptor := string(content)
+			return ovfDescriptor, nil
+		}
+	}
+	return "", fmt.Errorf("ovf file not found inside the ova")
+}
+
+func createNewVMTemplateWithName(name string, streamData *stream.Stream, providerSpec *machinev1beta1.VSphereMachineProviderSpec, arch string) error {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Find and download the relevant OVA file
+	ova, err := streamData.QueryDisk(arch, "vmware", "ova")
+	if err != nil {
+		return err
+	}
+
+	klog.Infof("Downloading %s\n", ova.Location)
+	ovaPath, err := ova.Download(".")
+	if err != nil {
+		return fmt.Errorf("Failed to download %s: %w", ova.Location, err)
+	}
+	klog.Infof("Downloaded %s\n", ovaPath)
+
+	// Get the client
+	if providerSpec.Workspace.Server == "" {
+		return fmt.Errorf("Error: IP address or FQDN of the vSphere endpoint is not provided")
+	}
+	vcenterURL, err := url.Parse(providerSpec.Workspace.Server)
+	if err != nil {
+		return err
+	}
+	client, err := govmomi.NewClient(ctx, vcenterURL, true)
+	if err != nil {
+		return err
+	}
+
+	// Resource Pool
+	finder := find.NewFinder(client.Client, false)
+	resourcePool, err := finder.ResourcePool(ctx, providerSpec.Workspace.ResourcePool)
+	if err != nil {
+		return err
+	}
+
+	// Folder
+	finder = find.NewFinder(client.Client, false)
+	folder, err := finder.Folder(ctx, providerSpec.Workspace.Folder)
+	if err != nil {
+		return err
+	}
+
+	// DataStore
+	finder = find.NewFinder(client.Client, false)
+	dataStore, err := finder.Datastore(ctx, providerSpec.Workspace.Datastore)
+	if err != nil {
+		return err
+	}
+
+	// OVF Descriptor
+	ovaFile, err := os.Open(ovaPath)
+	defer func(ovaFile *os.File) {
+		_ = ovaFile.Close()
+	}(ovaFile)
+	if err != nil {
+		return err
+	}
+	ovfDescriptor, err := getOvfDescriptorFromOva(ovaFile)
+	if err != nil {
+		return err
+	}
+
+	// Import Spec Parameters
+	importSpecParam := types.OvfCreateImportSpecParams{
+		EntityName: name,
+	}
+
+	// Import Spec
+	ovfManager := ovf.NewManager(client.Client)
+	spec, err := ovfManager.CreateImportSpec(ctx, ovfDescriptor, resourcePool.Reference(), dataStore.Reference(), importSpecParam)
+	if err != nil {
+		return err
+	}
+
+	nfcLease, err := resourcePool.ImportVApp(ctx, spec.ImportSpec, folder, nil)
+	if err != nil {
+		return err
+	}
+
+	leaseInfo, err := nfcLease.Wait(ctx, spec.FileItem)
+	if err != nil {
+		return err
+	}
+
+	u := nfcLease.StartUpdater(ctx, leaseInfo)
+	defer u.Done()
+
+	var totalBytes int64
+	var currBytesRead int64
+
+	for _, ovfFileItem := range spec.FileItem {
+		totalBytes += ovfFileItem.Size
+	}
+	klog.Infof("Total size of files to upload is %v bytes", totalBytes)
+
+	statusChannel := make(chan bool)
+	// Create a go routine to update progress regularly
+	go func() {
+		for {
+			select {
+			case <-statusChannel:
+				break
+			default:
+				if totalBytes == 0 {
+					_ = nfcLease.Progress(context.Background(), 100)
+					return
+				}
+				klog.Infof("Uploaded %v of %v Bytes", getTotalBytesRead(&currBytesRead), totalBytes)
+				progress := (getTotalBytesRead(&currBytesRead) / totalBytes) * 100
+				_ = nfcLease.Progress(context.Background(), int32(progress))
+				time.Sleep(10 * time.Second)
+			}
+		}
+	}()
+
+	for _, ovfFileItem := range spec.FileItem {
+		for _, deviceObj := range leaseInfo.DeviceUrl {
+			if ovfFileItem.DeviceId != deviceObj.ImportKey {
+				continue
+			}
+			err = uploadOvaDisksFromLocal(client, ovaPath, ovfFileItem, deviceObj, &currBytesRead)
+			if err != nil {
+				return fmt.Errorf("error while uploading the disk %s %s", ovfFileItem.Path, err)
+			}
+			klog.Info(" DEBUG : Completed uploading the vmdk file", ovfFileItem.Path)
+		}
+	}
+
+	klog.Infof("the vm %s has been successfully created", name)
+
+	err = nfcLease.Complete(ctx)
+	if err != nil {
+		return fmt.Errorf("error while completing the VM creation")
+	}
+
+	// DataCenter
+	finder = find.NewFinder(client.Client, false)
+	dataCenter, err := finder.Datacenter(ctx, providerSpec.Workspace.Datacenter)
+	if err != nil {
+		return err
+	}
+
+	searchPath := name
+	if folder != nil && folder.InventoryPath != "" {
+		searchPath = path.Join(folder.InventoryPath, searchPath)
+	}
+
+	// VM
+	finder = find.NewFinder(client.Client, false)
+	if dataCenter != nil {
+		finder.SetDatacenter(dataCenter)
+	}
+	vm, err := finder.VirtualMachine(ctx, searchPath)
+	if err != nil {
+		return err
+	}
+
+	err = vm.MarkAsTemplate(ctx)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func reconcileVSphere(machineSet *machinev1beta1.MachineSet, configMap *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
+	klog.Infof("Reconciling MAPI machineset %s on vSphere, with arch %s", machineSet.Name, arch)
+
+	// First, unmarshal the VSphere providerSpec
+	providerSpec := new(machinev1beta1.VSphereMachineProviderSpec)
+	if err := unmarshalProviderSpec(machineSet, providerSpec); err != nil {
+		return false, nil, err
+	}
+
+	// Next, unmarshal the configmap into a stream object
+	streamData := new(stream.Stream)
+	if err := unmarshalStreamDataConfigMap(configMap, streamData); err != nil {
+		return false, nil, err
+	}
+
+	newBootImg := fmt.Sprintf("%s-%s-rhcos", streamData.Architectures[arch].Artifacts["vmware"].Release, "clsuterName")
+
+	err = createNewVMTemplateWithName(newBootImg, streamData, providerSpec, arch)
+	if err != nil {
+		return false, nil, err
+	}
+
+	patchRequired = false
+	newProviderSpec := providerSpec.DeepCopy()
+
+	currentBootImg := newProviderSpec.Template
+	if newBootImg != currentBootImg {
+		klog.Infof("New target boot image: %s", newBootImg)
+		klog.Infof("Current image: %s", currentBootImg)
+		patchRequired = true
+		newProviderSpec.Template = newBootImg
+	}
+
+	if newProviderSpec.UserDataSecret.Name != ManagedWorkerSecretName {
+		newProviderSpec.UserDataSecret.Name = ManagedWorkerSecretName
+		patchRequired = true
+	}
+
+	// If patch is required, marshal the new providerspec into the machineset
+	if patchRequired {
+		newMachineSet = machineSet.DeepCopy()
+		if err := marshalProviderSpec(newMachineSet, newProviderSpec); err != nil {
+			return false, nil, err
+		}
+	}
+
+	return patchRequired, newMachineSet, nil
 }
 
 func reconcileNutanix(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
