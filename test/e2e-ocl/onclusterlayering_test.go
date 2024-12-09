@@ -491,6 +491,8 @@ func TestDeletedTransientMachineOSBuildIsRecreated(t *testing.T) {
 	err = cs.MachineconfigurationV1alpha1Interface.MachineOSBuilds().Delete(ctx, firstMosb.Name, metav1.DeleteOptions{})
 	require.NoError(t, err)
 
+	t.Logf("MachineOSBuild %q deleted", firstMosb.Name)
+
 	// Wait a few seconds for the MachineOSBuild deletion to complete.
 	time.Sleep(time.Second * 10)
 	// Ensure that the Job is deleted as this might take some time

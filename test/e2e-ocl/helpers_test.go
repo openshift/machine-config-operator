@@ -308,6 +308,12 @@ func cleanupEphemeralBuildObjects(t *testing.T, cs *framework.ClientSet) {
 
 	require.NoError(t, err)
 
+	jobList, err := cs.BatchV1Interface.Jobs(ctrlcommon.MCONamespace).List(context.TODO(), metav1.ListOptions{
+		LabelSelector: labelSelector,
+	})
+
+	require.NoError(t, err)
+
 	podList, err := cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace).List(context.TODO(), metav1.ListOptions{
 		LabelSelector: labelSelector,
 	})
@@ -326,6 +332,10 @@ func cleanupEphemeralBuildObjects(t *testing.T, cs *framework.ClientSet) {
 
 	if len(cmList.Items) == 0 {
 		t.Logf("No ephemeral ConfigMaps to clean up")
+	}
+
+	if len(jobList.Items) == 0 {
+		t.Logf("No ephemeral Jobs to clean up")
 	}
 
 	if len(podList.Items) == 0 {
@@ -350,6 +360,14 @@ func cleanupEphemeralBuildObjects(t *testing.T, cs *framework.ClientSet) {
 		require.NoError(t, deleteObject(context.TODO(), t, &item, cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace)))
 	}
 
+	for _, item := range jobList.Items {
+		t.Logf("Cleaning up build job %q", item.Name)
+		bgDeletion := metav1.DeletePropagationBackground
+		require.NoError(t, deleteObjectWithOpts(context.TODO(), t, &item, cs.BatchV1Interface.Jobs(ctrlcommon.MCONamespace), metav1.DeleteOptions{
+			PropagationPolicy: &bgDeletion,
+		}))
+	}
+
 	for _, item := range podList.Items {
 		t.Logf("Cleaning up build pod %q", item.Name)
 		require.NoError(t, deleteObject(context.TODO(), t, &item, cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace)))
@@ -366,20 +384,26 @@ func cleanupEphemeralBuildObjects(t *testing.T, cs *framework.ClientSet) {
 	}
 }
 
+type deleter interface {
+	Delete(context.Context, string, metav1.DeleteOptions) error
+}
+
 type kubeObject interface {
 	runtime.Object
 	GetName() string
 }
 
-func deleteObject(ctx context.Context, t *testing.T, obj kubeObject, deleter interface {
-	Delete(context.Context, string, metav1.DeleteOptions) error
-}) error {
-	err := deleter.Delete(ctx, obj.GetName(), metav1.DeleteOptions{})
+func deleteObject(ctx context.Context, t *testing.T, obj kubeObject, deleter deleter) error {
+	return deleteObjectWithOpts(ctx, t, obj, deleter, metav1.DeleteOptions{})
+}
 
+func deleteObjectWithOpts(ctx context.Context, t *testing.T, obj kubeObject, deleter deleter, opts metav1.DeleteOptions) error {
 	kind, err := utils.GetKindForObject(obj)
 	if err != nil && kind == "" {
 		kind = "<unknown>"
 	}
+
+	err = deleter.Delete(ctx, obj.GetName(), opts)
 
 	if err == nil {
 		t.Logf("Cleaned up %s %q", kind, obj.GetName())
@@ -388,15 +412,6 @@ func deleteObject(ctx context.Context, t *testing.T, obj kubeObject, deleter int
 
 	if k8serrors.IsNotFound(err) {
 		t.Logf("%s %q already cleaned up", kind, obj.GetName())
-		return nil
-	}
-
-	return err
-}
-
-func ignoreErrNotFound(t *testing.T, err error) error {
-	if k8serrors.IsNotFound(err) {
-		t.Logf("")
 		return nil
 	}
 
