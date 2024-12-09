@@ -573,7 +573,7 @@ contents:
         # But set the entry in master_interfaces to true if this is a slave
         # Also set autoconnect to yes
         local active_state=$(nmcli -g GENERAL.STATE conn show "$conn")
-        if [ "$active_state" == "activated" ] || [ "$active_state" == "activating" ]; then
+        if [ "$active_state" == "activated" ]; then
           echo "Connection $conn already activated"
           if $is_slave; then
             master_interfaces[$master_interface]=true
