@@ -64,13 +64,11 @@ type Controller struct {
 	enqueueControllerConfig func(*mcfgv1.ControllerConfig)
 
 	ccLister mcfglistersv1.ControllerConfigLister
-	mcLister mcfglistersv1.MachineConfigLister
 
 	apiserverLister       configlistersv1.APIServerLister
 	apiserverListerSynced cache.InformerSynced
 
 	ccListerSynced        cache.InformerSynced
-	mcListerSynced        cache.InformerSynced
 	secretsInformerSynced cache.InformerSynced
 
 	queue workqueue.TypedRateLimitingInterface[string]
@@ -80,7 +78,6 @@ type Controller struct {
 func New(
 	templatesDir string,
 	ccInformer mcfginformersv1.ControllerConfigInformer,
-	mcInformer mcfginformersv1.MachineConfigInformer,
 	secretsInformer coreinformersv1.SecretInformer,
 	apiserverInformer configinformersv1.APIServerInformer,
 	kubeClient clientset.Interface,
@@ -107,12 +104,6 @@ func New(
 		DeleteFunc: ctrl.deleteControllerConfig,
 	})
 
-	mcInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    ctrl.addMachineConfig,
-		UpdateFunc: ctrl.updateMachineConfig,
-		DeleteFunc: ctrl.deleteMachineConfig,
-	})
-
 	secretsInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.addSecret,
 		UpdateFunc: ctrl.updateSecret,
@@ -129,9 +120,7 @@ func New(
 	ctrl.enqueueControllerConfig = ctrl.enqueue
 
 	ctrl.ccLister = ccInformer.Lister()
-	ctrl.mcLister = mcInformer.Lister()
 	ctrl.ccListerSynced = ccInformer.Informer().HasSynced
-	ctrl.mcListerSynced = mcInformer.Informer().HasSynced
 	ctrl.secretsInformerSynced = secretsInformer.Informer().HasSynced
 
 	ctrl.apiserverLister = apiserverInformer.Lister()
@@ -287,7 +276,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.secretsInformerSynced) {
+	if !cache.WaitForCacheSync(stopCh, ctrl.ccListerSynced, ctrl.secretsInformerSynced) {
 		return
 	}
 
@@ -310,8 +299,20 @@ func (ctrl *Controller) addControllerConfig(obj interface{}) {
 func (ctrl *Controller) updateControllerConfig(old, cur interface{}) {
 	oldCfg := old.(*mcfgv1.ControllerConfig)
 	curCfg := cur.(*mcfgv1.ControllerConfig)
-	klog.V(4).Infof("Updating ControllerConfig %s", oldCfg.Name)
-	ctrl.enqueueControllerConfig(curCfg)
+	if controllerConfigTriggerObjectChange(oldCfg, curCfg) {
+		klog.V(4).Infof("Updating ControllerConfig %s", oldCfg.Name)
+		ctrl.enqueueControllerConfig(curCfg)
+	}
+}
+
+func controllerConfigTriggerObjectChange(oldControllerConfig, newControllerConfig *mcfgv1.ControllerConfig) bool {
+	if oldControllerConfig.DeletionTimestamp != newControllerConfig.DeletionTimestamp {
+		return true
+	}
+	if !reflect.DeepEqual(oldControllerConfig.Spec, newControllerConfig.Spec) {
+		return true
+	}
+	return false
 }
 
 func (ctrl *Controller) deleteControllerConfig(obj interface{}) {
@@ -330,90 +331,6 @@ func (ctrl *Controller) deleteControllerConfig(obj interface{}) {
 	}
 	klog.V(4).Infof("Deleting ControllerConfig %s", cfg.Name)
 	// TODO(abhinavdahiya): handle deletes.
-}
-
-func (ctrl *Controller) addMachineConfig(obj interface{}) {
-	mc := obj.(*mcfgv1.MachineConfig)
-	if mc.DeletionTimestamp != nil {
-		ctrl.deleteMachineConfig(mc)
-		return
-	}
-
-	if controllerRef := metav1.GetControllerOf(mc); controllerRef != nil {
-		cfg := ctrl.resolveControllerRef(controllerRef)
-		if cfg == nil {
-			return
-		}
-		klog.V(4).Infof("MachineConfig %s added", mc.Name)
-		ctrl.enqueueControllerConfig(cfg)
-		return
-	}
-
-	// No adopting.
-}
-
-func (ctrl *Controller) updateMachineConfig(_, cur interface{}) {
-	curMC := cur.(*mcfgv1.MachineConfig)
-
-	if controllerRef := metav1.GetControllerOf(curMC); controllerRef != nil {
-		cfg := ctrl.resolveControllerRef(controllerRef)
-		if cfg == nil {
-			return
-		}
-		klog.V(4).Infof("MachineConfig %s updated", curMC.Name)
-		ctrl.enqueueControllerConfig(cfg)
-		return
-	}
-
-	// No adopting.
-}
-
-func (ctrl *Controller) deleteMachineConfig(obj interface{}) {
-	mc, ok := obj.(*mcfgv1.MachineConfig)
-
-	if !ok {
-		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
-		if !ok {
-			utilruntime.HandleError(fmt.Errorf("couldn't get object from tombstone %#v", obj))
-			return
-		}
-		mc, ok = tombstone.Obj.(*mcfgv1.MachineConfig)
-		if !ok {
-			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not a MachineConfig %#v", obj))
-			return
-		}
-	}
-
-	controllerRef := metav1.GetControllerOf(mc)
-	if controllerRef == nil {
-		// No controller should care about orphans being deleted.
-		return
-	}
-	cfg := ctrl.resolveControllerRef(controllerRef)
-	if cfg == nil {
-		return
-	}
-	klog.V(4).Infof("MachineConfig %s deleted.", mc.Name)
-	ctrl.enqueueControllerConfig(cfg)
-}
-
-func (ctrl *Controller) resolveControllerRef(controllerRef *metav1.OwnerReference) *mcfgv1.ControllerConfig {
-	// We can't look up by UID, so look up by Name and then verify UID.
-	// Don't even try to look up by Name if it's the wrong Kind.
-	if controllerRef.Kind != controllerKind.Kind {
-		return nil
-	}
-	cfg, err := ctrl.ccLister.Get(controllerRef.Name)
-	if err != nil {
-		return nil
-	}
-
-	if cfg.UID != controllerRef.UID {
-		// The controller we found with this Name is not the same one that the
-		// ControllerRef points to.
-		return nil
-	}
-	return cfg
 }
 
 func (ctrl *Controller) enqueue(config *mcfgv1.ControllerConfig) {
