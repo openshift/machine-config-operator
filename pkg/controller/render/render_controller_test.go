@@ -550,7 +550,7 @@ func TestMachineConfigsNoBailWithoutPool(t *testing.T) {
 	c.addMachineConfig(mc)
 	c.updateMachineConfig(mc, mc)
 	c.deleteMachineConfig(mc)
-	require.Len(t, queue, 3)
+	require.Len(t, queue, 2)
 }
 
 func TestGenerateMachineConfigValidation(t *testing.T) {
