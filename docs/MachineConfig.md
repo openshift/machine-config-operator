@@ -210,6 +210,7 @@ RHCOS is a minimal OCP focused OS which provides capabilities common across all 
 | 4.11          |  `usbguard`, `sandboxed-containers`, `kerberos`   |
 | 4.14          |  `usbguard`, `sandboxed-containers`, `kerberos`, `ipsec`, `wasm`   |
 | 4.17          |  `usbguard`, `sandboxed-containers`, `kerberos`, `ipsec`, `wasm` , `sysstat`   |
+| 4.19          |  `usbguard`, `sandboxed-containers`, `kerberos`, `ipsec`, `wasm` , `sysstat`, `sanlock`, `lvm2-lockd`   |
 
 Extensions can be installed by creating a MachineConfig object. Extensions can be enabled as both day1 and day2. Check [installer guide](https://github.com/openshift/installer/blob/master/docs/user/customization.md#Enabling-RHCOS-Extensions) to enable extensions during cluster install.
 
