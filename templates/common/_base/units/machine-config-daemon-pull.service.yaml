@@ -15,7 +15,7 @@ contents: |
   [Service]
   Type=oneshot
   RemainAfterExit=yes
-  ExecStart=/bin/sh -c "while ! /usr/bin/podman pull --authfile=/var/lib/kubelet/config.json '{{ .Images.machineConfigOperator }}'; do sleep 1; done"
+  ExecStart=/bin/sh -c "while ! /usr/bin/podman pull --signature-policy /etc/machine-config-daemon/policy-for-old-podman.json --authfile=/var/lib/kubelet/config.json '{{ .Images.machineConfigOperator }}'; do sleep 1; done"
   {{if .Proxy -}}
   EnvironmentFile=/etc/mco/proxy.env
   {{end -}}
