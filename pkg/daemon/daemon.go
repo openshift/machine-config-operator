@@ -1374,6 +1374,7 @@ func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error, errCh chan er
 	defer utilruntime.HandleCrash()
 	defer dn.queue.ShutDown()
 	defer dn.ccQueue.ShutDown()
+	defer dn.preserveDaemonLogs()
 
 	if !cache.WaitForCacheSync(stopCh, dn.nodeListerSynced, dn.mcListerSynced, dn.ccListerSynced) {
 		return fmt.Errorf("failed to sync initial listers cache")
@@ -2888,4 +2889,52 @@ func (dn *Daemon) getUnsupportedPackages() {
 		klog.Infof("Unsupported package %s", pkg)
 	}
 	unsupportedPackages.WithLabelValues(dn.name).Set(float64(unsupportedPackageCount))
+}
+
+func (dn *Daemon) preserveDaemonLogs() {
+	// Find current daemon log location
+	var currentLogLocation, logDir string
+	if walkErr := filepath.WalkDir("/var/log/pods/", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if strings.Contains(d.Name(), "openshift-machine-config-operator_machine-config-daemon-") {
+			currentLogLocation = path
+			logDir = d.Name()
+		}
+		return nil
+	}); walkErr != nil {
+		klog.Errorf("Daemon logs could could not be found due to error: %v", walkErr)
+		return
+	}
+
+	baseDir := "/etc/machine-config-daemon/previous-logs/"
+	// Remove the old logs if it exists
+	if err := os.RemoveAll(baseDir); err != nil {
+		klog.Errorf("Failed to clear out old daemon logs: %v", err)
+		return
+	}
+
+	// Ensure the base directory exists
+	if err := os.MkdirAll(baseDir, 0o755); err != nil {
+		klog.Errorf("Failed to create logs directory: %v", err)
+		return
+	}
+
+	// Create a context with a timeout
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	// Create preservation location; this will change based on the daemon name/uid
+	preservationLocation := baseDir + logDir
+	cmd := exec.CommandContext(ctx, "cp", "--recursive", currentLogLocation, preservationLocation)
+	if err := cmd.Run(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			klog.Errorf("Timeout reached: Daemon logs from %s could not be preserved at %s", currentLogLocation, preservationLocation)
+		} else {
+			klog.Errorf("Daemon logs from %s could not be preserved at %s due to error: %v", currentLogLocation, preservationLocation, err)
+		}
+	} else {
+		klog.Infof("Daemon logs from %s preserved at %s", currentLogLocation, preservationLocation)
+	}
 }
