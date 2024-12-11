@@ -133,7 +133,7 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 			}
 		}
 		// The following code updates the MC with the relevant CGroups version
-		if role == ctrlcommon.MachineConfigPoolWorker || role == ctrlcommon.MachineConfigPoolMaster {
+		if role == ctrlcommon.MachineConfigPoolWorker || role == ctrlcommon.MachineConfigPoolMaster || role == ctrlcommon.MachineConfigPoolArbiter {
 			err = updateMachineConfigwithCgroup(nodeConfig, mc)
 			if err != nil {
 				return err

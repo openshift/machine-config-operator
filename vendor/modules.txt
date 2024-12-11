@@ -968,7 +968,7 @@ github.com/opencontainers/runc/libcontainer/user
 # github.com/opencontainers/runtime-spec v1.1.0
 ## explicit
 github.com/opencontainers/runtime-spec/specs-go
-# github.com/openshift/api v0.0.0-20241106222702-2429e35d6633
+# github.com/openshift/api v0.0.0-20241106222702-2429e35d6633 => github.com/eggfoobar/api v0.0.0-20241119015136-658bfe25c7bb
 ## explicit; go 1.22.0
 github.com/openshift/api
 github.com/openshift/api/annotations
@@ -1057,11 +1057,6 @@ github.com/openshift/client-go/build/applyconfigurations/internal
 github.com/openshift/client-go/build/clientset/versioned
 github.com/openshift/client-go/build/clientset/versioned/scheme
 github.com/openshift/client-go/build/clientset/versioned/typed/build/v1
-github.com/openshift/client-go/build/informers/externalversions
-github.com/openshift/client-go/build/informers/externalversions/build
-github.com/openshift/client-go/build/informers/externalversions/build/v1
-github.com/openshift/client-go/build/informers/externalversions/internalinterfaces
-github.com/openshift/client-go/build/listers/build/v1
 github.com/openshift/client-go/config/applyconfigurations
 github.com/openshift/client-go/config/applyconfigurations/config/v1
 github.com/openshift/client-go/config/applyconfigurations/config/v1alpha1
@@ -1085,17 +1080,13 @@ github.com/openshift/client-go/image/applyconfigurations/internal
 github.com/openshift/client-go/image/clientset/versioned
 github.com/openshift/client-go/image/clientset/versioned/scheme
 github.com/openshift/client-go/image/clientset/versioned/typed/image/v1
-github.com/openshift/client-go/machine/applyconfigurations
 github.com/openshift/client-go/machine/applyconfigurations/internal
 github.com/openshift/client-go/machine/applyconfigurations/machine/v1
 github.com/openshift/client-go/machine/applyconfigurations/machine/v1beta1
 github.com/openshift/client-go/machine/clientset/versioned
-github.com/openshift/client-go/machine/clientset/versioned/fake
 github.com/openshift/client-go/machine/clientset/versioned/scheme
 github.com/openshift/client-go/machine/clientset/versioned/typed/machine/v1
-github.com/openshift/client-go/machine/clientset/versioned/typed/machine/v1/fake
 github.com/openshift/client-go/machine/clientset/versioned/typed/machine/v1beta1
-github.com/openshift/client-go/machine/clientset/versioned/typed/machine/v1beta1/fake
 github.com/openshift/client-go/machine/informers/externalversions
 github.com/openshift/client-go/machine/informers/externalversions/internalinterfaces
 github.com/openshift/client-go/machine/informers/externalversions/machine
@@ -2577,3 +2568,4 @@ sigs.k8s.io/yaml
 sigs.k8s.io/yaml/goyaml.v2
 sigs.k8s.io/yaml/goyaml.v3
 # k8s.io/kube-openapi => github.com/openshift/kube-openapi v0.0.0-20230816122517-ffc8f001abb0
+# github.com/openshift/api => github.com/eggfoobar/api v0.0.0-20241119015136-658bfe25c7bb
