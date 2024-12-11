@@ -56,8 +56,19 @@ contents:
       fi 
     done
 
+    # AWS may return multiple, space separate hostnames, ensure we only use the first of these.
+    # REF: OCPBUGS-10498.
+    HOSTNAME=${HOSTNAME%% *}
+
+    # AWS validates DHCP option custom domain names if you create them via the console so that they do not contain
+    # trailing periods. However, if you use the CLI, you can avoid this validation and create a DHCP option set with
+    # a trailing period.
+    # Trailing periods are not compatible with Kube DNS1123 subdomain validation that is used for node names.
+    # Remove trailing periods from the hostname. REF: OCPBUGS-45306.
+    HOSTNAME=${HOSTNAME%%.}
+
     # For compatibility with the AWS in-tree provider
     # Set node name to be instance FQDN instead of the default hostname
     cat > "${NODEENV}" <<EOF
-    KUBELET_NODE_NAME=${HOSTNAME%% *}
+    KUBELET_NODE_NAME=${HOSTNAME}
     EOF
