@@ -569,6 +569,13 @@ contents:
           fi
         fi
 
+        # slaves should implicitly activate, give them a chance to do so
+        if $is_slave; then
+          if ! timeout 5 bash -c "while ! nmcli -g GENERAL.STATE conn show "$conn" | grep activated; do sleep 1; done"; then
+            echo "WARNING: slave $conn did not implicitly activate in 5s, activating explicitly."
+          fi
+        fi
+
         # Do not activate interfaces that are already active
         # But set the entry in master_interfaces to true if this is a slave
         # Also set autoconnect to yes
