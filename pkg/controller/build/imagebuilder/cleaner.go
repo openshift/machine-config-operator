@@ -9,7 +9,7 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/controller/build/buildrequest"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -55,7 +55,7 @@ func (c *cleanerImpl) Clean(ctx context.Context) error {
 
 	klog.Infof("Cleaning up ephemeral objects from build %q using selector %q", mosbName, selector.String())
 
-	configmaps, err := c.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).List(ctx, metav1.ListOptions{
+	configmaps, err := c.kubeclient.CoreV1().ConfigMaps(commonconsts.MCONamespace).List(ctx, metav1.ListOptions{
 		LabelSelector: selector.String(),
 	})
 
@@ -69,7 +69,7 @@ func (c *cleanerImpl) Clean(ctx context.Context) error {
 		}
 	}
 
-	secrets, err := c.kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).List(ctx, metav1.ListOptions{
+	secrets, err := c.kubeclient.CoreV1().Secrets(commonconsts.MCONamespace).List(ctx, metav1.ListOptions{
 		LabelSelector: selector.String(),
 	})
 
@@ -89,7 +89,7 @@ func (c *cleanerImpl) Clean(ctx context.Context) error {
 // Deletes a given ConfigMap and tolerates that it was not found so that if
 // this is called more than once, it will not error.
 func (c *cleanerImpl) deleteConfigMap(ctx context.Context, cmName, mosbName string) error {
-	err := c.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Delete(ctx, cmName, metav1.DeleteOptions{})
+	err := c.kubeclient.CoreV1().ConfigMaps(commonconsts.MCONamespace).Delete(ctx, cmName, metav1.DeleteOptions{})
 	if err == nil {
 		klog.Infof("Deleted ephemeral ConfigMap %q for build %q", cmName, mosbName)
 		return nil
@@ -105,7 +105,7 @@ func (c *cleanerImpl) deleteConfigMap(ctx context.Context, cmName, mosbName stri
 // Deletes a given Secret and tolerates that it was not found so that if
 // this is called more than once, it will not error.
 func (c *cleanerImpl) deleteSecret(ctx context.Context, secretName, mosbName string) error {
-	err := c.kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Delete(ctx, secretName, metav1.DeleteOptions{})
+	err := c.kubeclient.CoreV1().Secrets(commonconsts.MCONamespace).Delete(ctx, secretName, metav1.DeleteOptions{})
 	if err == nil {
 		klog.Infof("Deleted ephemeral secret %q for build %q", secretName, mosbName)
 		return nil

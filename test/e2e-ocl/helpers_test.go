@@ -23,6 +23,7 @@ import (
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/require"
@@ -67,7 +68,7 @@ func setupImageStream(t *testing.T, cs *framework.ClientSet, objMeta metav1.Obje
 
 	// If no namespace is provided, default to the MCO namespace.
 	if objMeta.Namespace == "" {
-		objMeta.Namespace = ctrlcommon.MCONamespace
+		objMeta.Namespace = commonconsts.MCONamespace
 	}
 
 	builderSAObjMeta := metav1.ObjectMeta{
@@ -77,7 +78,7 @@ func setupImageStream(t *testing.T, cs *framework.ClientSet, objMeta metav1.Obje
 
 	// If we're told to use a different namespace than the MCO namespace, we need
 	// to do some additional steps.
-	if objMeta.Namespace != ctrlcommon.MCONamespace {
+	if objMeta.Namespace != commonconsts.MCONamespace {
 		// Create the namespace.
 		cleanups.Add(createNamespace(t, cs, objMeta))
 
@@ -96,7 +97,7 @@ func setupImageStream(t *testing.T, cs *framework.ClientSet, objMeta metav1.Obje
 		ServiceAccount: builderSAObjMeta,
 		Lifetime:       "24h",
 		Secret: metav1.ObjectMeta{
-			Namespace: ctrlcommon.MCONamespace,
+			Namespace: commonconsts.MCONamespace,
 			Name:      pushSecretName,
 		},
 	}
@@ -191,7 +192,7 @@ func createSecret(t *testing.T, cs *framework.ClientSet, secret *corev1.Secret) 
 	t.Logf("Created secret \"%s/%s\"", secret.Namespace, secret.Name)
 
 	return makeIdempotentAndRegister(t, func() {
-		require.NoError(t, cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace).Delete(context.TODO(), secret.Name, metav1.DeleteOptions{}))
+		require.NoError(t, cs.CoreV1Interface.Secrets(commonconsts.MCONamespace).Delete(context.TODO(), secret.Name, metav1.DeleteOptions{}))
 		t.Logf("Deleted secret \"%s/%s\"", secret.Namespace, secret.Name)
 	})
 }
@@ -206,7 +207,7 @@ func copyGlobalPullSecret(t *testing.T, cs *framework.ClientSet) func() {
 
 	dst := metav1.ObjectMeta{
 		Name:      globalPullSecretCloneName,
-		Namespace: ctrlcommon.MCONamespace,
+		Namespace: commonconsts.MCONamespace,
 	}
 
 	return cloneSecret(t, cs, src, dst)
@@ -275,19 +276,19 @@ func cleanupEphemeralBuildObjects(t *testing.T, cs *framework.ClientSet) {
 
 	// Any secrets that get created by BuildController should have different
 	// label selectors since they're produced differently.
-	secretList, err := cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace).List(context.TODO(), metav1.ListOptions{
+	secretList, err := cs.CoreV1Interface.Secrets(commonconsts.MCONamespace).List(context.TODO(), metav1.ListOptions{
 		LabelSelector: utils.CanonicalizedSecretSelector().String(),
 	})
 
 	require.NoError(t, err)
 
-	cmList, err := cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace).List(context.TODO(), metav1.ListOptions{
+	cmList, err := cs.CoreV1Interface.ConfigMaps(commonconsts.MCONamespace).List(context.TODO(), metav1.ListOptions{
 		LabelSelector: labelSelector,
 	})
 
 	require.NoError(t, err)
 
-	podList, err := cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace).List(context.TODO(), metav1.ListOptions{
+	podList, err := cs.CoreV1Interface.Pods(commonconsts.MCONamespace).List(context.TODO(), metav1.ListOptions{
 		LabelSelector: labelSelector,
 	})
 
@@ -321,17 +322,17 @@ func cleanupEphemeralBuildObjects(t *testing.T, cs *framework.ClientSet) {
 
 	for _, item := range secretList.Items {
 		t.Logf("Cleaning up build-time Secret %s", item.Name)
-		require.NoError(t, deleteObject(context.TODO(), t, &item, cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace)))
+		require.NoError(t, deleteObject(context.TODO(), t, &item, cs.CoreV1Interface.Secrets(commonconsts.MCONamespace)))
 	}
 
 	for _, item := range cmList.Items {
 		t.Logf("Cleaning up ephemeral ConfigMap %q", item.Name)
-		require.NoError(t, deleteObject(context.TODO(), t, &item, cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace)))
+		require.NoError(t, deleteObject(context.TODO(), t, &item, cs.CoreV1Interface.ConfigMaps(commonconsts.MCONamespace)))
 	}
 
 	for _, item := range podList.Items {
 		t.Logf("Cleaning up build pod %q", item.Name)
-		require.NoError(t, deleteObject(context.TODO(), t, &item, cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace)))
+		require.NoError(t, deleteObject(context.TODO(), t, &item, cs.CoreV1Interface.Pods(commonconsts.MCONamespace)))
 	}
 
 	for _, item := range moscList.Items {
@@ -455,7 +456,7 @@ func writeMachineOSConfigsToFile(t *testing.T, cs *framework.ClientSet, archiveD
 
 // Writes all ConfigMaps that match the OS Build labels to files.
 func writeConfigMapsToFile(t *testing.T, cs *framework.ClientSet, lo metav1.ListOptions, archiveDir string) error {
-	cmList, err := cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace).List(context.TODO(), lo)
+	cmList, err := cs.CoreV1Interface.ConfigMaps(commonconsts.MCONamespace).List(context.TODO(), lo)
 
 	if err != nil {
 		return err
@@ -471,7 +472,7 @@ func writeConfigMapsToFile(t *testing.T, cs *framework.ClientSet, lo metav1.List
 
 // Wrttes all pod specs that match the OS Build labels to files.
 func writeBuildPodsToFile(t *testing.T, cs *framework.ClientSet, lo metav1.ListOptions, archiveDir string) error {
-	podList, err := cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace).List(context.TODO(), lo)
+	podList, err := cs.CoreV1Interface.Pods(commonconsts.MCONamespace).List(context.TODO(), lo)
 	if err != nil {
 		return err
 	}
@@ -503,7 +504,7 @@ func dumpObjectToYAMLFile(t *testing.T, obj interface{}, filename string) error 
 // files. This can provide a valuable window into how / why the e2e test suite
 // failed.
 func streamMachineOSBuilderPodLogsToFile(ctx context.Context, t *testing.T, cs *framework.ClientSet, dirPath string) error {
-	pods, err := cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace).List(ctx, metav1.ListOptions{
+	pods, err := cs.CoreV1Interface.Pods(commonconsts.MCONamespace).List(ctx, metav1.ListOptions{
 		LabelSelector: "k8s-app=machine-os-builder",
 	})
 
@@ -580,7 +581,7 @@ func streamPodContainerLogsToFile(ctx context.Context, t *testing.T, cs *framewo
 
 // Streams the logs for a given container to a file.
 func streamContainerLogToFile(ctx context.Context, t *testing.T, cs *framework.ClientSet, pod *corev1.Pod, container corev1.Container, dirPath string) error {
-	logger, err := cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace).GetLogs(pod.Name, &corev1.PodLogOptions{
+	logger, err := cs.CoreV1Interface.Pods(commonconsts.MCONamespace).GetLogs(pod.Name, &corev1.PodLogOptions{
 		Container: container.Name,
 		Follow:    true,
 	}).Stream(ctx)
@@ -689,7 +690,7 @@ func copyEntitlementCerts(t *testing.T, cs *framework.ClientSet) func() {
 
 	dst := metav1.ObjectMeta{
 		Name:      src.Name,
-		Namespace: ctrlcommon.MCONamespace,
+		Namespace: commonconsts.MCONamespace,
 	}
 
 	_, err := cs.CoreV1Interface.Secrets(src.Namespace).Get(context.TODO(), src.Name, metav1.GetOptions{})
@@ -725,7 +726,7 @@ func injectYumRepos(t *testing.T, cs *framework.ClientSet) func() {
 	configMapCleanupFunc := createConfigMap(t, cs, &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "etc-yum-repos-d",
-			Namespace: ctrlcommon.MCONamespace,
+			Namespace: commonconsts.MCONamespace,
 		},
 		// Note: Even though the BuildController retrieves this ConfigMap, it only
 		// does so to determine whether or not it is present. It does not look at
@@ -738,7 +739,7 @@ func injectYumRepos(t *testing.T, cs *framework.ClientSet) func() {
 	secretCleanupFunc := createSecret(t, cs, &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "etc-pki-rpm-gpg",
-			Namespace: ctrlcommon.MCONamespace,
+			Namespace: commonconsts.MCONamespace,
 		},
 		Data: rpmGpgContents,
 	})
