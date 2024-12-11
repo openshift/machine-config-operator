@@ -114,6 +114,18 @@ endef
 $(foreach C, $(EXTRA_COMPONENTS), $(eval $(call target_template,$(C))))
 $(foreach C, $(MCO_COMPONENTS), $(eval $(call target_template,$(patsubst %,machine-config-%,$(C)))))
 
+HELPERS_DIR := hack/cmd
+HELPER_BINARIES := $(notdir $(wildcard $(HELPERS_DIR)/*))
+
+.PHONY: helpers
+helpers: $(patsubst %,_build-%,$(HELPER_BINARIES))
+
+_build-%:
+	@echo "Building helper $*..."
+	GO111MODULE=on go build -mod=vendor -o _output/linux/$(GOARCH)/$* ./$(HELPERS_DIR)/$*
+	mkdir -p _output/helpers
+	cp _output/linux/$(GOARCH)/$* _output/helpers/$*
+
 .PHONY: binaries install
 
 # Build all binaries:
