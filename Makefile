@@ -41,9 +41,9 @@ clean:
 _build-component-%:
 	WHAT_PATH=cmd/$* WHAT=$(basename $*) hack/build-go.sh
 
-# Build the helpers under hack/cmd.
+# Build the helpers under devex/cmd.
 _build-helper-%:
-	WHAT_PATH=hack/cmd/$* WHAT=$(basename $*) hack/build-go.sh
+	WHAT_PATH=devex/cmd/$* WHAT=$(basename $*) hack/build-go.sh
 
 # Use podman to build the image.
 image:
@@ -112,7 +112,7 @@ verify: install-tools
 	# Conditionally tries to build the helper binaries in CI.
 	hack/verify-helpers.sh
 
-HELPERS_DIR := hack/cmd
+HELPERS_DIR := devex/cmd
 HELPER_BINARIES := $(notdir $(wildcard $(HELPERS_DIR)/*))
 
 .PHONY: helpers
@@ -142,7 +142,7 @@ $(foreach C, $(HELPER_BINARIES), $(eval $(call helper_target_template,$(C))))
 #    make binaries
 binaries: $(patsubst %,_build-component-%,$(ALL_COMPONENTS))
 
-# Installs the helper binaries from hack/cmd.
+# Installs the helper binaries from devex/cmd.
 install-helpers: helpers
 	for helper in $(HELPER_BINARIES); do \
 		install -D -m 0755 _output/linux/$(GOARCH)/$${helper} $(DESTDIR)$(PREFIX)/bin/$${helper}; \
