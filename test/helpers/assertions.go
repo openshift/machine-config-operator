@@ -57,6 +57,8 @@ type TestingT interface {
 	assert.TestingT
 	Helper()
 	FailNow()
+	Cleanup(func())
+	Failed() bool
 }
 
 // Instantiates the Assertions struct using a ClientSet object.

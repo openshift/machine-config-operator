@@ -63,11 +63,14 @@ var (
 	okdFcosDockerfile string
 )
 
-var skipCleanup bool
+var skipCleanupAlways bool
+var skipCleanupOnlyAfterFailure bool
 
 func init() {
 	// Skips running the cleanup functions. Useful for debugging tests.
-	flag.BoolVar(&skipCleanup, "skip-cleanup", false, "Skips running the cleanup functions")
+	flag.BoolVar(&skipCleanupAlways, "skip-cleanup", false, "Skips running cleanups regardless of outcome")
+	// Skips running the cleanup function only when the test fails.
+	flag.BoolVar(&skipCleanupOnlyAfterFailure, "skip-cleanup-on-failure", false, "Skips running cleanups only after failure")
 }
 
 // Holds elements common for each on-cluster build tests.
@@ -146,7 +149,7 @@ func TestOnClusterBuildRollsOutImageWithExtensionsInstalled(t *testing.T) {
 	cs := framework.NewClientSet("")
 	node := helpers.GetRandomNode(t, cs, "worker")
 
-	unlabelFunc := makeIdempotentAndRegister(t, helpers.LabelNode(t, cs, node, helpers.MCPNameToRole(layeredMCPName)))
+	unlabelFunc := makeIdempotentAndRegisterAlwaysRun(t, helpers.LabelNode(t, cs, node, helpers.MCPNameToRole(layeredMCPName)))
 	helpers.WaitForNodeImageChange(t, cs, node, imagePullspec)
 
 	helpers.AssertNodeBootedIntoImage(t, cs, node, imagePullspec)
@@ -226,7 +229,7 @@ func TestEntitledBuilds(t *testing.T) {
 // being built.
 func TestMachineOSConfigChangeRestartsBuild(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel = makeIdempotentAndRegister(t, cancel)
+	t.Cleanup(cancel)
 
 	cs := framework.NewClientSet("")
 
@@ -237,7 +240,7 @@ func TestMachineOSConfigChangeRestartsBuild(t *testing.T) {
 		},
 	})
 
-	t.Cleanup(createMachineOSConfig(t, cs, mosc))
+	createMachineOSConfig(t, cs, mosc)
 
 	mcp, err := cs.MachineconfigurationV1Interface.MachineConfigPools().Get(ctx, layeredMCPName, metav1.GetOptions{})
 	require.NoError(t, err)
@@ -286,7 +289,7 @@ func TestMachineConfigPoolChangeRestartsBuild(t *testing.T) {
 		},
 	})
 
-	t.Cleanup(createMachineOSConfig(t, cs, mosc))
+	createMachineOSConfig(t, cs, mosc)
 
 	// Wait for the first build to start.
 	firstMosb := waitForBuildToStartForPoolAndConfig(t, cs, layeredMCPName, mosc.Name)
@@ -295,15 +298,8 @@ func TestMachineConfigPoolChangeRestartsBuild(t *testing.T) {
 	// the rendered config to appear, then we check that a new MachineOSBuild has
 	// started for that new MachineConfig.
 	mcName := "new-machineconfig"
-	mc := newMachineConfig("new-machineconfig", layeredMCPName)
-
-	mcCleanupFunc := helpers.ApplyMC(t, cs, mc)
-	t.Cleanup(func() {
-		mcCleanupFunc()
-		t.Logf("Deleted MachineConfig %s", mc.Name)
-	})
-
-	t.Logf("Created new MachineConfig %q", mcName)
+	mc := newMachineConfig(mcName, layeredMCPName)
+	applyMC(t, cs, mc)
 
 	_, err := helpers.WaitForRenderedConfig(t, cs, layeredMCPName, mcName)
 	require.NoError(t, err)
@@ -344,7 +340,7 @@ func TestGracefulBuildFailureRecovery(t *testing.T) {
 
 	mosc.Spec.BuildInputs.BaseOSImagePullspec = pullspec
 
-	t.Cleanup(createMachineOSConfig(t, cs, mosc))
+	createMachineOSConfig(t, cs, mosc)
 
 	// Wait for the build to start.
 	firstMosb := waitForBuildToStartForPoolAndConfig(t, cs, layeredMCPName, mosc.Name)
@@ -403,7 +399,7 @@ func TestDeletedBuilderInterruptsMachineOSBuild(t *testing.T) {
 
 	// Create our MachineOSConfig and ensure that it is deleted after the test is
 	// finished.
-	t.Cleanup(createMachineOSConfig(t, cs, mosc))
+	createMachineOSConfig(t, cs, mosc)
 
 	// Wait for the build to start
 	startedBuild := waitForBuildToStartForPoolAndConfig(t, cs, poolName, mosc.Name)
@@ -438,7 +434,7 @@ func TestDeletedPodDoesNotInterruptMachineOSBuild(t *testing.T) {
 
 	// Create our MachineOSConfig and ensure that it is deleted after the test is
 	// finished.
-	t.Cleanup(createMachineOSConfig(t, cs, mosc))
+	createMachineOSConfig(t, cs, mosc)
 
 	// Wait for the build to start
 	startedBuild := waitForBuildToStartForPoolAndConfig(t, cs, poolName, mosc.Name)
@@ -483,7 +479,7 @@ func TestDeletedTransientMachineOSBuildIsRecreated(t *testing.T) {
 
 	// Create our MachineOSConfig and ensure that it is deleted after the test is
 	// finished.
-	t.Cleanup(createMachineOSConfig(t, cs, mosc))
+	createMachineOSConfig(t, cs, mosc)
 
 	// Wait for the build to start
 	firstMosb := waitForBuildToStartForPoolAndConfig(t, cs, poolName, mosc.Name)
@@ -495,8 +491,10 @@ func TestDeletedTransientMachineOSBuildIsRecreated(t *testing.T) {
 	err = cs.MachineconfigurationV1alpha1Interface.MachineOSBuilds().Delete(ctx, firstMosb.Name, metav1.DeleteOptions{})
 	require.NoError(t, err)
 
+	t.Logf("MachineOSBuild %q deleted", firstMosb.Name)
+
 	// Wait a few seconds for the MachineOSBuild deletion to complete.
-	time.Sleep(time.Second * 10)
+	time.Sleep(time.Second * 5)
 	// Ensure that the Job is deleted as this might take some time
 	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx).Eventually()
 	kubeassert.Eventually().JobDoesNotExist(firstJob.Name)
@@ -546,7 +544,7 @@ func TestMCDGetsMachineOSConfigSecrets(t *testing.T) {
 	// Create a dummy secret with a known hostname which will be assigned to the
 	// MachineOSConfig. This secret does not actually have to work for right now;
 	// we just need to make sure it lands on the node.
-	t.Cleanup(createSecret(t, cs, &corev1.Secret{
+	createSecret(t, cs, &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      secretName,
 			Namespace: ctrlcommon.MCONamespace,
@@ -555,7 +553,7 @@ func TestMCDGetsMachineOSConfigSecrets(t *testing.T) {
 		Data: map[string][]byte{
 			corev1.DockerConfigJsonKey: []byte(`{"auths": {"registry.hostname.com": {"username": "user", "password": "password"}}}`),
 		},
-	}))
+	})
 
 	// Select a random node that we will opt into the layered pool. Note: If
 	// successful, this node will never actually get the new image because we
@@ -577,7 +575,7 @@ func TestMCDGetsMachineOSConfigSecrets(t *testing.T) {
 	mosc.Spec.BuildOutputs.CurrentImagePullSecret.Name = secretName
 
 	// Create the MachineOSConfig which will start the build process.
-	t.Cleanup(createMachineOSConfig(t, cs, mosc))
+	createMachineOSConfig(t, cs, mosc)
 
 	// Wait for the build to start. We don't need to wait for it to complete
 	// since this test is primarily concerned about whether the MCD on the node
@@ -737,7 +735,7 @@ func isMcdPodRunning(pod *corev1.Pod) bool {
 // Returns the built image pullspec for later consumption.
 func runOnClusterLayeringTest(t *testing.T, testOpts onClusterLayeringTestOpts) string {
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel = makeIdempotentAndRegister(t, cancel)
+	t.Cleanup(cancel)
 
 	cs := framework.NewClientSet("")
 
@@ -750,9 +748,8 @@ func runOnClusterLayeringTest(t *testing.T, testOpts onClusterLayeringTestOpts) 
 
 	mosc := prepareForOnClusterLayeringTest(t, cs, testOpts)
 
-	// Create our MachineOSConfig and ensure that it is deleted after the test is
-	// finished.
-	t.Cleanup(createMachineOSConfig(t, cs, mosc))
+	// Create our MachineOSConfig.
+	createMachineOSConfig(t, cs, mosc)
 
 	// Create a child context for the machine-os-builder pod log streamer. We
 	// create it here because we want the cancellation to run before the
@@ -777,7 +774,7 @@ func runOnClusterLayeringTest(t *testing.T, testOpts onClusterLayeringTestOpts) 
 	// We wire this to both t.Cleanup() as well as defer because we want to
 	// cancel this context either at the end of this function or when the test
 	// fails, whichever comes first.
-	buildPodWatcherShutdown := makeIdempotentAndRegister(t, buildPodStreamerCancel)
+	buildPodWatcherShutdown := makeIdempotentAndRegisterAlwaysRun(t, buildPodStreamerCancel)
 	defer buildPodWatcherShutdown()
 
 	dirPath, err := helpers.GetBuildArtifactDir(t)
@@ -873,7 +870,7 @@ func waitForBuildToStart(t *testing.T, cs *framework.ClientSet, build *mcfgv1alp
 
 	t.Logf("Waiting for MachineOSBuild %s to start", build.Name)
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*10)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*5)
 	defer cancel()
 
 	start := time.Now()
@@ -907,7 +904,7 @@ func waitForBuildToStart(t *testing.T, cs *framework.ClientSet, build *mcfgv1alp
 func waitForBuildToBeDeleted(t *testing.T, cs *framework.ClientSet, build *mcfgv1alpha1.MachineOSBuild) {
 	t.Helper()
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*10)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*5)
 	defer cancel()
 
 	t.Logf("Waiting for MachineOSBuild %s to be deleted", build.Name)
@@ -991,7 +988,7 @@ func prepareForOnClusterLayeringTest(t *testing.T, cs *framework.ClientSet, test
 	// If the test requires RHEL entitlements, clone them from
 	// "etc-pki-entitlement" in the "openshift-config-managed" namespace.
 	if testOpts.useEtcPkiEntitlement {
-		t.Cleanup(copyEntitlementCerts(t, cs))
+		copyEntitlementCerts(t, cs)
 	}
 
 	// If the test requires /etc/yum.repos.d and /etc/pki/rpm-gpg, pull a Centos
@@ -999,11 +996,11 @@ func prepareForOnClusterLayeringTest(t *testing.T, cs *framework.ClientSet, test
 	// emulate the Red Hat Satellite enablement process, but does not actually
 	// require any Red Hat Satellite creds to work.
 	if testOpts.useYumRepos {
-		t.Cleanup(injectYumRepos(t, cs))
+		injectYumRepos(t, cs)
 	}
 
 	// Register ephemeral object cleanup function.
-	t.Cleanup(func() {
+	makeIdempotentAndRegister(t, func() {
 		cleanupEphemeralBuildObjects(t, cs)
 	})
 
@@ -1012,15 +1009,14 @@ func prepareForOnClusterLayeringTest(t *testing.T, cs *framework.ClientSet, test
 		Namespace: strings.ToLower(t.Name()),
 	}
 
-	pushSecretName, finalPullspec, imagestreamCleanupFunc := setupImageStream(t, cs, imagestreamObjMeta)
-	t.Cleanup(imagestreamCleanupFunc)
+	pushSecretName, finalPullspec, _ := setupImageStream(t, cs, imagestreamObjMeta)
 
-	t.Cleanup(copyGlobalPullSecret(t, cs))
+	copyGlobalPullSecret(t, cs)
 
 	if testOpts.targetNode != nil {
-		t.Cleanup(makeIdempotentAndRegister(t, helpers.CreatePoolWithNode(t, cs, testOpts.poolName, *testOpts.targetNode)))
+		makeIdempotentAndRegister(t, helpers.CreatePoolWithNode(t, cs, testOpts.poolName, *testOpts.targetNode))
 	} else {
-		t.Cleanup(makeIdempotentAndRegister(t, helpers.CreateMCP(t, cs, testOpts.poolName)))
+		makeIdempotentAndRegister(t, helpers.CreateMCP(t, cs, testOpts.poolName))
 	}
 
 	if testOpts.useExtensions {
@@ -1039,12 +1035,8 @@ func prepareForOnClusterLayeringTest(t *testing.T, cs *framework.ClientSet, test
 
 		helpers.SetMetadataOnObject(t, extensionsMC)
 		// Apply the extensions MC
-		mcCleanupFunc := helpers.ApplyMC(t, cs, extensionsMC)
-		t.Cleanup(func() {
-			mcCleanupFunc()
-			t.Logf("Deleted MachineConfig %s", extensionsMC.Name)
-		})
-		t.Logf("Created new MachineConfig %q", extensionsMC.Name)
+		applyMC(t, cs, extensionsMC)
+
 		// Wait for rendered config to finish creating
 		renderedConfig, err := helpers.WaitForRenderedConfig(t, cs, testOpts.poolName, extensionsMC.Name)
 		require.NoError(t, err)
@@ -1139,9 +1131,7 @@ func TestSSHKeyAndPasswordForOSBuilder(t *testing.T) {
 	helpers.SetMetadataOnObject(t, testConfig)
 
 	// Create the MachineConfig and wait for the configuration to be applied
-	_, err := cs.MachineConfigs().Create(context.TODO(), testConfig, metav1.CreateOptions{})
-	require.Nil(t, err, "failed to create MC")
-	t.Logf("Created %s", testConfig.Name)
+	mcCleanupFunc := applyMC(t, cs, testConfig)
 
 	// wait for rendered config to finish creating
 	renderedConfig, err := helpers.WaitForRenderedConfig(t, cs, layeredMCPName, testConfig.Name)
@@ -1174,10 +1164,6 @@ func TestSSHKeyAndPasswordForOSBuilder(t *testing.T) {
 
 	t.Cleanup(func() {
 		unlabelFunc()
-		if err := cs.MachineConfigs().Delete(context.TODO(), testConfig.Name, metav1.DeleteOptions{}); err != nil {
-			t.Error(err)
-		}
-		// delete()
-		t.Logf("Deleted MachineConfig %s", testConfig.Name)
+		mcCleanupFunc()
 	})
 }
