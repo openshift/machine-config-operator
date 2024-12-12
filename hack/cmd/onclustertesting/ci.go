@@ -156,7 +156,9 @@ func waitForPoolsToComplete(cs *framework.ClientSet, pools []string) error {
 		pool := pool
 
 		eg.Go(func() error {
-			return rollout.WaitForMachineConfigPoolUpdateToComplete(cs, time.Minute*30, pool)
+			// TODO: Figure out why WaitForMachineConfigPoolToComplete() is not
+			// showing control-plane node status when nodes are considered.
+			return rollout.WaitForOnlyMachineConfigPoolToComplete(cs, pool, time.Minute*30)
 		})
 	}
 
