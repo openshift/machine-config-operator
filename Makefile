@@ -1,3 +1,6 @@
+E2E_ROOT_DIR = ./test
+E2E_SUITES = $(notdir $(wildcard $(E2E_ROOT_DIR)/e2e*))
+
 MCO_COMPONENTS = daemon controller server operator
 EXTRA_COMPONENTS = apiserver-watcher machine-os-builder
 ALL_COMPONENTS = $(patsubst %,machine-config-%,$(MCO_COMPONENTS)) $(EXTRA_COMPONENTS)
@@ -44,6 +47,10 @@ _build-component-%:
 # Build the helpers under devex/cmd.
 _build-helper-%:
 	WHAT_PATH=devex/cmd/$* WHAT=$(basename $*) hack/build-go.sh
+
+# Verify that an e2e test is valid Golang by doing a trial compilation.
+_verify-e2e-%:
+	go test -c -tags=$(GOTAGS) -o _output/$* ./test/$*/...
 
 # Use podman to build the image.
 image:
@@ -103,14 +110,23 @@ endif
 
 install-tools: install-golangci-lint install-go-junit-report install-setup-envtest
 
-# Run verification steps
-# Example:
-#    make verify
-verify: install-tools
+# Runs golangci-lint
+lint: install-tools
 	./hack/golangci-lint.sh $(GOTAGS)
+
+# Verifies templates.
+verify-templates:
 	hack/verify-templates.sh
+
+# Verifies devex helpers
+verify-helpers:
 	# Conditionally tries to build the helper binaries in CI.
 	hack/verify-helpers.sh
+
+# Runs all verification steps
+# Example:
+#    make verify
+verify: install-tools verify-e2e lint verify-templates verify-helpers
 
 HELPERS_DIR := devex/cmd
 HELPER_BINARIES := $(notdir $(wildcard $(HELPERS_DIR)/*))
@@ -135,6 +151,14 @@ endef
 # Create a target for each component
 $(foreach C, $(HELPER_BINARIES), $(eval $(call helper_target_template,$(C))))
 
+define verify_e2e_target_template =
+ .PHONY: $(1)
+ $(1): _verify-e2e-$(1)
+endef
+# Create a target for each e2e suite
+$(foreach C, $(E2E_SUITES), $(eval $(call verify_e2e_target_template,$(C))))
+
+
 .PHONY: binaries helpers install
 
 # Build all binaries:
@@ -156,6 +180,9 @@ install: binaries
 Dockerfile.rhel7: Dockerfile Makefile
 	(echo '# THIS FILE IS GENERATED FROM '$<' DO NOT EDIT' && \
 	 sed -e s,org/openshift/release,org/ocp/builder, -e s,/openshift/origin-v4.0:base,/ocp/4.0:base, < $<) > $@.tmp && mv $@.tmp $@
+
+# Validates that all of the e2e test suites are valid Golang by performing a test compilation.
+verify-e2e: $(patsubst %,_verify-e2e-%,$(E2E_SUITES))
 
 # This was copied from https://github.com/openshift/cluster-image-registry-operator
 test-e2e: install-go-junit-report
