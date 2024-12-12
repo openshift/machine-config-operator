@@ -5,18 +5,123 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 
 	ign2types "github.com/coreos/ignition/config/v2_2/types"
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
+	"github.com/coreos/vcontext/path"
 	"github.com/google/go-cmp/cmp"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
 )
 
+// Match the file captured in the event -> correspoding MC spec
+func validateOnDiskStateForEvent(currentConfig *mcfgv1.MachineConfig, rootPath string, path path.ContextPath) error {
+	ignconfigi, err := ctrlcommon.IgnParseWrapper(currentConfig.Spec.Config.Raw)
+	if err != nil {
+		return fmt.Errorf("failed to parse Ignition for validation: %w", err)
+	}
+	switch typedConfig := ignconfigi.(type) {
+	case ign3types.Config:
+		value, err := getValueInMCForPath(ignconfigi.(ign3types.Config), path)
+		if err != nil {
+			return fmt.Errorf("failed to get value: %w", err)
+		}
+		switch path.Tag {
+		case "passwd":
+			v, ok := value.([]ign3types.SSHAuthorizedKey)
+			if !ok {
+				return fmt.Errorf("failed to convert to Ignition 3 SSHAuthorizedKey Type")
+			}
+			if err := checkV3Passwd(v, filepath.Join(rootPath, constants.RHCOS9SSHKeyPath)); err != nil {
+				return &sshConfigDriftErr{err}
+			}
+		case "files":
+			v, ok := value.(ign3types.File)
+			if !ok {
+				return fmt.Errorf("failed to convert to Ignition 3 File Type")
+			}
+			if err := checkV3File(v); err != nil {
+				return &fileConfigDriftErr{err}
+			}
+
+		case "units":
+			v, ok := value.(ign3types.Unit)
+			if !ok {
+				return fmt.Errorf("failed to convert to Ignition 3 Unit Type")
+			}
+			if err := checkV3Unit(v, rootPath); err != nil {
+				return &unitConfigDriftErr{err}
+			}
+
+		case "dropins":
+			unitPath, err := getMCUnitPathFromDropinPath(path)
+			if err != nil {
+				return fmt.Errorf("failed to get value: %w", err)
+			}
+			unitValue, err := getValueInMCForPath(ignconfigi.(ign3types.Config), unitPath)
+			if err != nil {
+				return fmt.Errorf("failed to get value: %w", err)
+			}
+			unit, ok := unitValue.(ign3types.Unit)
+			if !ok {
+				return fmt.Errorf("failed to convert to Ignition 3 Unit Type")
+			}
+
+			v, ok := value.(ign3types.Dropin)
+			if !ok {
+				return fmt.Errorf("failed to convert to Ignition 3 Dropin Type")
+			}
+			if err := checkV3Dropin(rootPath, unit, v); err != nil {
+				return &unitConfigDriftErr{err}
+			}
+
+		default:
+			return fmt.Errorf("unknown tag")
+
+		}
+		return nil
+	default:
+		return fmt.Errorf("unexpected type for ignition config: %v", typedConfig)
+	}
+}
+
+func getMCUnitPathFromDropinPath(dropinPath path.ContextPath) (path.ContextPath, error) {
+	if dropinPath.Len() < 2 {
+		return path.New(""), fmt.Errorf("dropinPath:%s is too short ", dropinPath.Path)
+	}
+	return dropinPath.Pop().Pop(), nil
+}
+
+// Retrieves the value, located by the path, in the Machine Config
+// Reflection is required because the path is unknown at compile time and we need to navigate dynamically
+// through the Machine Config to get the value. For example give a path ("Systemd", "Units", 1, "Dropins", 0)
+// is navigated by config.Systemd.Units[1].Dropins[0]
+func getValueInMCForPath(config ign3types.Config, path path.ContextPath) (interface{}, error) {
+	val := reflect.ValueOf(config)
+	for _, p := range path.Path {
+		switch v := p.(type) {
+		case string:
+			val = val.FieldByName(v)
+		case int:
+			val = val.Index(v)
+		default:
+			return nil, fmt.Errorf("unsupported path element type: %T", v)
+		}
+
+		if !val.IsValid() {
+			return nil, fmt.Errorf("invalid path element: %v", p)
+		}
+	}
+	return val.Interface(), nil
+}
+
 // Validates that the on-disk state matches a given MachineConfig.
-func validateOnDiskState(currentConfig *mcfgv1.MachineConfig, systemdPath string) error {
+func validateOnDiskState(currentConfig *mcfgv1.MachineConfig, rootPath string) error {
 	// And the rest of the disk state
 	// We want to verify the disk state in the spec version that it was created with,
 	// to remove possibilities of behaviour changes due to translation
@@ -27,18 +132,24 @@ func validateOnDiskState(currentConfig *mcfgv1.MachineConfig, systemdPath string
 
 	switch typedConfig := ignconfigi.(type) {
 	case ign3types.Config:
+		if err := checkV3Passwd(ignconfigi.(ign3types.Config).Passwd.Users[0].SSHAuthorizedKeys, filepath.Join(rootPath, constants.RHCOS9SSHKeyPath)); err != nil {
+			return &sshConfigDriftErr{err}
+		}
 		if err := checkV3Files(ignconfigi.(ign3types.Config).Storage.Files); err != nil {
 			return &fileConfigDriftErr{err}
 		}
-		if err := checkV3Units(ignconfigi.(ign3types.Config).Systemd.Units, systemdPath); err != nil {
+		if err := checkV3Units(ignconfigi.(ign3types.Config).Systemd.Units, rootPath); err != nil {
 			return &unitConfigDriftErr{err}
 		}
 		return nil
 	case ign2types.Config:
+		if err := checkV3Passwd(ignconfigi.(ign3types.Config).Passwd.Users[0].SSHAuthorizedKeys, filepath.Join(rootPath, constants.RHCOS9SSHKeyPath)); err != nil {
+			return &sshConfigDriftErr{err}
+		}
 		if err := checkV2Files(ignconfigi.(ign2types.Config).Storage.Files); err != nil {
 			return &fileConfigDriftErr{err}
 		}
-		if err := checkV2Units(ignconfigi.(ign2types.Config).Systemd.Units, systemdPath); err != nil {
+		if err := checkV2Units(ignconfigi.(ign2types.Config).Systemd.Units, rootPath); err != nil {
 			return &unitConfigDriftErr{err}
 		}
 		return nil
@@ -47,9 +158,38 @@ func validateOnDiskState(currentConfig *mcfgv1.MachineConfig, systemdPath string
 	}
 }
 
+func checkV3Passwd(sshKeys []ign3types.SSHAuthorizedKey, filePath string) error {
+	_, err := os.Lstat(filePath)
+	if err != nil {
+		return fmt.Errorf("could not stat file %q: %w", filePath, err)
+	}
+	contents, err := os.ReadFile(filePath)
+	if err != nil {
+		return fmt.Errorf("could not read file %q: %w", filePath, err)
+	}
+	fileLines := strings.Split(strings.TrimSpace(string(contents)), "\n")
+	for i, fileKey := range fileLines {
+		// Check if we've exhausted the array of keys
+		if i >= len(sshKeys) {
+			return fmt.Errorf("more lines in file %q than in the rendered MC config", filePath)
+		}
+
+		// Compare the current line with the corresponding SSH key from the array
+		if strings.TrimSpace(fileKey) != strings.TrimSpace(string(sshKeys[i])) {
+			return fmt.Errorf("mismatch at line %d between file %q and MC config", i+1, filePath)
+		}
+	}
+
+	// Check if the file has fewer lines than the array
+	if len(fileLines) < len(sshKeys) {
+		return fmt.Errorf("more keys in MC than in file %q", filePath)
+	}
+	return nil
+}
+
 // Checks that the ondisk state for a systemd dropin matches the expected state.
-func checkV3Dropin(systemdPath string, unit ign3types.Unit, dropin ign3types.Dropin) error {
-	path := getIgn3SystemdDropinPath(systemdPath, unit, dropin)
+func checkV3Dropin(rootPath string, unit ign3types.Unit, dropin ign3types.Dropin) error {
+	path := getIgn3SystemdDropinPath(rootPath, unit, dropin)
 
 	var content string
 	if dropin.Contents == nil {
@@ -73,9 +213,9 @@ func checkV3Dropin(systemdPath string, unit ign3types.Unit, dropin ign3types.Dro
 
 // checkV3Units validates the contents of an individual unit in the
 // target config and returns nil if they match.
-func checkV3Unit(unit ign3types.Unit, systemdPath string) error {
+func checkV3Unit(unit ign3types.Unit, rootPath string) error {
 	for _, dropin := range unit.Dropins {
-		if err := checkV3Dropin(systemdPath, unit, dropin); err != nil {
+		if err := checkV3Dropin(rootPath, unit, dropin); err != nil {
 			return err
 		}
 	}
@@ -85,7 +225,7 @@ func checkV3Unit(unit ign3types.Unit, systemdPath string) error {
 		return nil
 	}
 
-	path := getIgn3SystemdUnitPath(systemdPath, unit)
+	path := getIgn3SystemdUnitPath(rootPath, unit)
 	if unit.Mask != nil && *unit.Mask {
 		link, err := filepath.EvalSymlinks(path)
 		if err != nil {
@@ -106,9 +246,9 @@ func checkV3Unit(unit ign3types.Unit, systemdPath string) error {
 
 // checkV3Units validates the contents of all the units in the
 // target config and returns nil if they match.
-func checkV3Units(units []ign3types.Unit, systemdPath string) error {
+func checkV3Units(units []ign3types.Unit, rootPath string) error {
 	for _, unit := range units {
-		if err := checkV3Unit(unit, systemdPath); err != nil {
+		if err := checkV3Unit(unit, rootPath); err != nil {
 			return err
 		}
 	}
@@ -118,9 +258,9 @@ func checkV3Units(units []ign3types.Unit, systemdPath string) error {
 
 // checkV2Units validates the contents of a given unit in the
 // target config and returns nil if they match.
-func checkV2Unit(unit ign2types.Unit, systemdPath string) error {
+func checkV2Unit(unit ign2types.Unit, rootPath string) error {
 	for _, dropin := range unit.Dropins {
-		path := getIgn2SystemdDropinPath(systemdPath, unit, dropin)
+		path := getIgn2SystemdDropinPath(rootPath, unit, dropin)
 		if err := checkFileContentsAndMode(path, []byte(dropin.Contents), defaultFilePermissions); err != nil {
 			return err
 		}
@@ -131,7 +271,7 @@ func checkV2Unit(unit ign2types.Unit, systemdPath string) error {
 		return nil
 	}
 
-	path := getIgn2SystemdUnitPath(systemdPath, unit)
+	path := getIgn2SystemdUnitPath(rootPath, unit)
 	if unit.Mask {
 		link, err := filepath.EvalSymlinks(path)
 		if err != nil {
@@ -152,9 +292,9 @@ func checkV2Unit(unit ign2types.Unit, systemdPath string) error {
 
 // checkV2Units validates the contents of all the units in the
 // target config and returns nil if they match.
-func checkV2Units(units []ign2types.Unit, systemdPath string) error {
+func checkV2Units(units []ign2types.Unit, rootPath string) error {
 	for _, unit := range units {
-		if err := checkV2Unit(unit, systemdPath); err != nil {
+		if err := checkV2Unit(unit, rootPath); err != nil {
 			return err
 		}
 	}
@@ -174,29 +314,36 @@ func getFilesToIgnore() sets.Set[string] {
 	)
 }
 
+func checkV3File(f ign3types.File) error {
+	filesToIgnore := getFilesToIgnore()
+	if filesToIgnore.Has(f.Path) {
+		klog.V(4).Infof("Skipping file %s during checkV3Files", f.Path)
+		return nil
+	}
+	if len(f.Append) > 0 {
+		return fmt.Errorf("found an append section when checking files. Append is not supported")
+	}
+	mode := defaultFilePermissions
+	if f.Mode != nil {
+		mode = os.FileMode(*f.Mode)
+	}
+	contents, err := ctrlcommon.DecodeIgnitionFileContents(f.Contents.Source, f.Contents.Compression)
+	if err != nil {
+		return fmt.Errorf("couldn't decode file %q: %w", f.Path, err)
+	}
+	if err := checkFileContentsAndMode(f.Path, contents, mode); err != nil {
+		return err
+	}
+	return nil
+}
+
 // checkV3Files validates the contents of all the files in the target config.
 // V3 files should not have any duplication anymore, so there is no need to
 // check for overwrites.
 func checkV3Files(files []ign3types.File) error {
-	filesToIgnore := getFilesToIgnore()
-
 	for _, f := range files {
-		if filesToIgnore.Has(f.Path) {
-			klog.V(4).Infof("Skipping file %s during checkV3Files", f.Path)
-			continue
-		}
-		if len(f.Append) > 0 {
-			return fmt.Errorf("found an append section when checking files. Append is not supported")
-		}
-		mode := defaultFilePermissions
-		if f.Mode != nil {
-			mode = os.FileMode(*f.Mode)
-		}
-		contents, err := ctrlcommon.DecodeIgnitionFileContents(f.Contents.Source, f.Contents.Compression)
+		err := checkV3File(f)
 		if err != nil {
-			return fmt.Errorf("couldn't decode file %q: %w", f.Path, err)
-		}
-		if err := checkFileContentsAndMode(f.Path, contents, mode); err != nil {
 			return err
 		}
 	}
@@ -255,30 +402,26 @@ func checkFileContentsAndMode(filePath string, expectedContent []byte, mode os.F
 }
 
 // Gets the absolute path for a systemd unit and dropin, given a root path.
-func getIgn2SystemdDropinPath(systemdPath string, unit ign2types.Unit, dropin ign2types.SystemdDropin) string {
-	return filepath.Join(getSystemdPath(systemdPath), unit.Name+".d", dropin.Name)
+func getIgn2SystemdDropinPath(rootPath string, unit ign2types.Unit, dropin ign2types.SystemdDropin) string {
+	return filepath.Join(getSystemdPath(rootPath), unit.Name+".d", dropin.Name)
 }
 
 // Gets the absolute path for a systemd unit and dropin, given a root path.
-func getIgn3SystemdDropinPath(systemdPath string, unit ign3types.Unit, dropin ign3types.Dropin) string {
-	return filepath.Join(getSystemdPath(systemdPath), unit.Name+".d", dropin.Name)
+func getIgn3SystemdDropinPath(rootPath string, unit ign3types.Unit, dropin ign3types.Dropin) string {
+	return filepath.Join(getSystemdPath(rootPath), unit.Name+".d", dropin.Name)
 }
 
 // Computes the absolute path for a given system unit file.
-func getIgn2SystemdUnitPath(systemdPath string, unit ign2types.Unit) string {
-	return filepath.Join(getSystemdPath(systemdPath), unit.Name)
+func getIgn2SystemdUnitPath(rootPath string, unit ign2types.Unit) string {
+	return filepath.Join(getSystemdPath(rootPath), unit.Name)
 }
 
 // Computes the absolute path for a given system unit file.
-func getIgn3SystemdUnitPath(systemdPath string, unit ign3types.Unit) string {
-	return filepath.Join(getSystemdPath(systemdPath), unit.Name)
+func getIgn3SystemdUnitPath(rootPath string, unit ign3types.Unit) string {
+	return filepath.Join(getSystemdPath(rootPath), unit.Name)
 }
 
 // Gets the systemd path. Defaults to pathSystemd, if empty.
-func getSystemdPath(systemdPath string) string {
-	if systemdPath == "" {
-		systemdPath = pathSystemd
-	}
-
-	return systemdPath
+func getSystemdPath(rootPath string) string {
+	return filepath.Join(rootPath, pathSystemd)
 }
