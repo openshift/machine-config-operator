@@ -40,6 +40,16 @@ const (
 	clonedSecretLabelKey string = "machineconfiguration.openshift.io/cloned-secret"
 )
 
+func applyMC(t *testing.T, cs *framework.ClientSet, mc *mcfgv1.MachineConfig) func() {
+	cleanupFunc := helpers.ApplyMC(t, cs, mc)
+	t.Logf("Created new MachineConfig %q", mc.Name)
+
+	return makeIdempotentAndRegister(t, func() {
+		cleanupFunc()
+		t.Logf("Deleted MachineConfig %q", mc.Name)
+	})
+}
+
 func createMachineOSConfig(t *testing.T, cs *framework.ClientSet, mosc *mcfgv1alpha1.MachineOSConfig) func() {
 	helpers.SetMetadataOnObject(t, mosc)
 
@@ -257,16 +267,27 @@ func waitForPoolToReachState(t *testing.T, cs *framework.ClientSet, poolName str
 	require.NoError(t, err, "MachineConfigPool %q did not reach desired state", poolName)
 }
 
-// Registers a cleanup function, making it idempotent, and wiring up the
-// skip-cleanup flag to it which will cause cleanup to be skipped, if set.
+// Registers a cleanup function, making it idempotent, and wiring up the skip
+// cleanup checks which will cause cleanup to be skipped under certain
+// conditions.
 func makeIdempotentAndRegister(t *testing.T, cleanupFunc func()) func() {
-	out := helpers.MakeIdempotent(func() {
-		if !skipCleanup {
-			cleanupFunc()
-		}
-	})
-	t.Cleanup(out)
-	return out
+	cfg := helpers.IdempotentConfig{
+		SkipAlways:        skipCleanupAlways,
+		SkipOnlyOnFailure: skipCleanupOnlyAfterFailure,
+	}
+
+	return helpers.MakeConfigurableIdempotentAndRegister(t, cfg, cleanupFunc)
+}
+
+// Registers a cleanup function, making it idempotent and ensures that it will
+// always be run, regardless of skip cleanup opts or whether we're in CI.
+//
+// Note: Use this wrapper only in cases where you want to ensure that a
+// function is only called once despite there being multiple calls to the
+// returned function. If there is only one call to the returned function
+// anyway, use t.Cleanup() instead for clarity.
+func makeIdempotentAndRegisterAlwaysRun(t *testing.T, cleanupFunc func()) func() {
+	return helpers.MakeIdempotentAndRegister(t, cleanupFunc)
 }
 
 // TOOD: Refactor into smaller functions.
@@ -282,6 +303,12 @@ func cleanupEphemeralBuildObjects(t *testing.T, cs *framework.ClientSet) {
 	require.NoError(t, err)
 
 	cmList, err := cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace).List(context.TODO(), metav1.ListOptions{
+		LabelSelector: labelSelector,
+	})
+
+	require.NoError(t, err)
+
+	jobList, err := cs.BatchV1Interface.Jobs(ctrlcommon.MCONamespace).List(context.TODO(), metav1.ListOptions{
 		LabelSelector: labelSelector,
 	})
 
@@ -307,6 +334,10 @@ func cleanupEphemeralBuildObjects(t *testing.T, cs *framework.ClientSet) {
 		t.Logf("No ephemeral ConfigMaps to clean up")
 	}
 
+	if len(jobList.Items) == 0 {
+		t.Logf("No ephemeral Jobs to clean up")
+	}
+
 	if len(podList.Items) == 0 {
 		t.Logf("No build pods to clean up")
 	}
@@ -329,6 +360,14 @@ func cleanupEphemeralBuildObjects(t *testing.T, cs *framework.ClientSet) {
 		require.NoError(t, deleteObject(context.TODO(), t, &item, cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace)))
 	}
 
+	for _, item := range jobList.Items {
+		t.Logf("Cleaning up build job %q", item.Name)
+		bgDeletion := metav1.DeletePropagationBackground
+		require.NoError(t, deleteObjectWithOpts(context.TODO(), t, &item, cs.BatchV1Interface.Jobs(ctrlcommon.MCONamespace), metav1.DeleteOptions{
+			PropagationPolicy: &bgDeletion,
+		}))
+	}
+
 	for _, item := range podList.Items {
 		t.Logf("Cleaning up build pod %q", item.Name)
 		require.NoError(t, deleteObject(context.TODO(), t, &item, cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace)))
@@ -345,20 +384,26 @@ func cleanupEphemeralBuildObjects(t *testing.T, cs *framework.ClientSet) {
 	}
 }
 
+type deleter interface {
+	Delete(context.Context, string, metav1.DeleteOptions) error
+}
+
 type kubeObject interface {
 	runtime.Object
 	GetName() string
 }
 
-func deleteObject(ctx context.Context, t *testing.T, obj kubeObject, deleter interface {
-	Delete(context.Context, string, metav1.DeleteOptions) error
-}) error {
-	err := deleter.Delete(ctx, obj.GetName(), metav1.DeleteOptions{})
+func deleteObject(ctx context.Context, t *testing.T, obj kubeObject, deleter deleter) error {
+	return deleteObjectWithOpts(ctx, t, obj, deleter, metav1.DeleteOptions{})
+}
 
+func deleteObjectWithOpts(ctx context.Context, t *testing.T, obj kubeObject, deleter deleter, opts metav1.DeleteOptions) error {
 	kind, err := utils.GetKindForObject(obj)
 	if err != nil && kind == "" {
 		kind = "<unknown>"
 	}
+
+	err = deleter.Delete(ctx, obj.GetName(), opts)
 
 	if err == nil {
 		t.Logf("Cleaned up %s %q", kind, obj.GetName())
@@ -367,15 +412,6 @@ func deleteObject(ctx context.Context, t *testing.T, obj kubeObject, deleter int
 
 	if k8serrors.IsNotFound(err) {
 		t.Logf("%s %q already cleaned up", kind, obj.GetName())
-		return nil
-	}
-
-	return err
-}
-
-func ignoreErrNotFound(t *testing.T, err error) error {
-	if k8serrors.IsNotFound(err) {
-		t.Logf("")
 		return nil
 	}
 
