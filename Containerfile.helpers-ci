@@ -1,0 +1,11 @@
+FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.22-builder-multi-openshift-4.18 AS builder
+ENV GOCACHE="/go/.cache" \
+    GOMODCACHE="/go/pkg/mod"
+WORKDIR /go/src/github.com/openshift/machine-config-operator
+COPY . .
+RUN --mount=type=cache,target=/go/.cache,z \
+    --mount=type=cache,target=/go/pkg/mod,z \
+    make install-helpers DESTDIR=/helpers
+
+FROM registry.ci.openshift.org/ocp/builder:rhel-9-enterprise-base-multi-openshift-4.18 AS final
+COPY --from=builder /helpers/usr/bin /usr/bin
