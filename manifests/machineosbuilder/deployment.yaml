@@ -14,6 +14,7 @@ spec:
         k8s-app: machine-os-builder
       annotations:
         target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
+        openshift.io/required-scc: anyuid
     spec:
       containers:
       - name: machine-os-builder
