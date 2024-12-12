@@ -868,6 +868,19 @@ func (b *buildReconciler) syncMachineOSBuilds(ctx context.Context) error {
 // builder associated with it that one should be created.
 func (b *buildReconciler) syncMachineOSBuild(ctx context.Context, mosb *mcfgv1alpha1.MachineOSBuild) error {
 	return b.timeObjectOperation(mosb, syncingVerb, func() error {
+
+		// It could be the case that the MCP the mosb in queue was targeting no longer is valid
+		mcp, err := b.machineConfigPoolLister.Get(mosb.ObjectMeta.Labels[constants.TargetMachineConfigPoolLabelKey])
+		if err != nil {
+			return fmt.Errorf("could not get MachineConfigPool from MachineOSBuild %q: %w", mosb.Name, err)
+		}
+
+		// An mosb which had previously been forgotten by the queue and is no longer desired by the mcp should not build
+		if mosb.ObjectMeta.Labels[constants.RenderedMachineConfigLabelKey] != mcp.Spec.Configuration.Name {
+			klog.Infof("The MachineOSBuild %q which builds the rendered Machine Config %q is no longer desired by the MCP %q", mosb.Name, mosb.ObjectMeta.Labels[constants.RenderedMachineConfigLabelKey], mosb.ObjectMeta.Labels[constants.TargetMachineConfigPoolLabelKey])
+			return nil
+		}
+
 		mosbState := ctrlcommon.NewMachineOSBuildState(mosb)
 
 		if mosbState.IsInTerminalState() {
