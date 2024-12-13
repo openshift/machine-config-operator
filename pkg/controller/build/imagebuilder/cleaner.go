@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/buildrequest"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
@@ -26,7 +26,7 @@ type cleanerImpl struct {
 // Constructs an instance of the cleaner from the MachineOSBuild and
 // MachineOSConfig objects. It is possible that the MachineOSConfig can be nil,
 // which this tolerates.
-func newCleaner(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig) Cleaner {
+func newCleaner(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1.MachineOSBuild, mosc *mcfgv1.MachineOSConfig) Cleaner {
 	return &cleanerImpl{
 		baseImageBuilder: newBaseImageBuilder(kubeclient, mcfgclient, mosb, mosc, nil),
 	}

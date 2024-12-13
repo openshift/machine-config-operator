@@ -13,9 +13,7 @@ import (
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	mcfginformers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
-	mcfginformersv1alpha1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1alpha1"
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
-	mcfglistersv1alpha1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1"
 
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -26,8 +24,8 @@ type informers struct {
 	controllerConfigInformer  mcfginformersv1.ControllerConfigInformer
 	machineConfigPoolInformer mcfginformersv1.MachineConfigPoolInformer
 	jobInformer               batchinformersv1.JobInformer
-	machineOSBuildInformer    mcfginformersv1alpha1.MachineOSBuildInformer
-	machineOSConfigInformer   mcfginformersv1alpha1.MachineOSConfigInformer
+	machineOSBuildInformer    mcfginformersv1.MachineOSBuildInformer
+	machineOSConfigInformer   mcfginformersv1.MachineOSConfigInformer
 	toStart                   []interface{ Start(<-chan struct{}) }
 	hasSynced                 []cache.InformerSynced
 }
@@ -52,8 +50,8 @@ func (i *informers) listers() *listers {
 
 // Holds all of the required listers so that they can be passed around and reused.
 type listers struct {
-	machineOSBuildLister    mcfglistersv1alpha1.MachineOSBuildLister
-	machineOSConfigLister   mcfglistersv1alpha1.MachineOSConfigLister
+	machineOSBuildLister    mcfglistersv1.MachineOSBuildLister
+	machineOSConfigLister   mcfglistersv1.MachineOSConfigLister
 	machineConfigPoolLister mcfglistersv1.MachineConfigPoolLister
 	jobLister               batchlisterv1.JobLister
 	controllerConfigLister  mcfglistersv1.ControllerConfigLister
@@ -85,8 +83,8 @@ func newInformers(mcfgclient mcfgclientset.Interface, kubeclient clientset.Inter
 
 	controllerConfigInformer := mcoInformerFactory.Machineconfiguration().V1().ControllerConfigs()
 	machineConfigPoolInformer := mcoInformerFactory.Machineconfiguration().V1().MachineConfigPools()
-	machineOSBuildInformer := mcoInformerFactory.Machineconfiguration().V1alpha1().MachineOSBuilds()
-	machineOSConfigInformer := mcoInformerFactory.Machineconfiguration().V1alpha1().MachineOSConfigs()
+	machineOSBuildInformer := mcoInformerFactory.Machineconfiguration().V1().MachineOSBuilds()
+	machineOSConfigInformer := mcoInformerFactory.Machineconfiguration().V1().MachineOSConfigs()
 	jobInformer := coreInformerFactory.Batch().V1().Jobs()
 
 	return &informers{

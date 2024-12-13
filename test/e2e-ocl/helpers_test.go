@@ -20,7 +20,6 @@ import (
 	"github.com/distribution/reference"
 	imagev1 "github.com/openshift/api/image/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/test/framework"
@@ -50,16 +49,16 @@ func applyMC(t *testing.T, cs *framework.ClientSet, mc *mcfgv1.MachineConfig) fu
 	})
 }
 
-func createMachineOSConfig(t *testing.T, cs *framework.ClientSet, mosc *mcfgv1alpha1.MachineOSConfig) func() {
+func createMachineOSConfig(t *testing.T, cs *framework.ClientSet, mosc *mcfgv1.MachineOSConfig) func() {
 	helpers.SetMetadataOnObject(t, mosc)
 
-	_, err := cs.MachineconfigurationV1alpha1Interface.MachineOSConfigs().Create(context.TODO(), mosc, metav1.CreateOptions{})
+	_, err := cs.MachineconfigurationV1Interface.MachineOSConfigs().Create(context.TODO(), mosc, metav1.CreateOptions{})
 	require.NoError(t, err)
 
 	t.Logf("Created MachineOSConfig %q", mosc.Name)
 
 	return makeIdempotentAndRegister(t, func() {
-		require.NoError(t, cs.MachineconfigurationV1alpha1Interface.MachineOSConfigs().Delete(context.TODO(), mosc.Name, metav1.DeleteOptions{}))
+		require.NoError(t, cs.MachineconfigurationV1Interface.MachineOSConfigs().Delete(context.TODO(), mosc.Name, metav1.DeleteOptions{}))
 		t.Logf("Deleted MachineOSConfig %q", mosc.Name)
 	})
 }
@@ -229,12 +228,12 @@ func getMachineOSBuildNameForPool(cs *framework.ClientSet, poolName, moscName st
 		return "", err
 	}
 
-	mosc, err := cs.MachineconfigurationV1alpha1Interface.MachineOSConfigs().Get(context.TODO(), moscName, metav1.GetOptions{})
+	mosc, err := cs.MachineconfigurationV1Interface.MachineOSConfigs().Get(context.TODO(), moscName, metav1.GetOptions{})
 	if err != nil {
 		return "", err
 	}
 
-	mosbs, err := cs.MachineconfigurationV1alpha1Interface.MachineOSBuilds().List(context.TODO(), metav1.ListOptions{
+	mosbs, err := cs.MachineconfigurationV1Interface.MachineOSBuilds().List(context.TODO(), metav1.ListOptions{
 		LabelSelector: utils.MachineOSBuildSelector(mosc, mcp).String(),
 	})
 
@@ -320,10 +319,10 @@ func cleanupEphemeralBuildObjects(t *testing.T, cs *framework.ClientSet) {
 
 	require.NoError(t, err)
 
-	mosbList, err := cs.MachineconfigurationV1alpha1Interface.MachineOSBuilds().List(context.TODO(), metav1.ListOptions{})
+	mosbList, err := cs.MachineconfigurationV1Interface.MachineOSBuilds().List(context.TODO(), metav1.ListOptions{})
 	require.NoError(t, err)
 
-	moscList, err := cs.MachineconfigurationV1alpha1Interface.MachineOSConfigs().List(context.TODO(), metav1.ListOptions{})
+	moscList, err := cs.MachineconfigurationV1Interface.MachineOSConfigs().List(context.TODO(), metav1.ListOptions{})
 	require.NoError(t, err)
 
 	if len(secretList.Items) == 0 {
@@ -375,12 +374,12 @@ func cleanupEphemeralBuildObjects(t *testing.T, cs *framework.ClientSet) {
 
 	for _, item := range moscList.Items {
 		t.Logf("Cleaning up MachineOSConfig %q", item.Name)
-		require.NoError(t, deleteObject(context.TODO(), t, &item, cs.MachineconfigurationV1alpha1Interface.MachineOSConfigs()))
+		require.NoError(t, deleteObject(context.TODO(), t, &item, cs.MachineconfigurationV1Interface.MachineOSConfigs()))
 	}
 
 	for _, item := range mosbList.Items {
 		t.Logf("Cleaning up MachineOSBuild %q", item.Name)
-		require.NoError(t, deleteObject(context.TODO(), t, &item, cs.MachineconfigurationV1alpha1Interface.MachineOSBuilds()))
+		require.NoError(t, deleteObject(context.TODO(), t, &item, cs.MachineconfigurationV1Interface.MachineOSBuilds()))
 	}
 }
 
@@ -461,7 +460,7 @@ func writeBuildArtifactsToFiles(t *testing.T, cs *framework.ClientSet, poolName 
 
 // Writes all MachineOSBuilds to a file.
 func writeMachineOSBuildsToFile(t *testing.T, cs *framework.ClientSet, archiveDir string) error {
-	mosbList, err := cs.MachineconfigurationV1alpha1Interface.MachineOSBuilds().List(context.TODO(), metav1.ListOptions{})
+	mosbList, err := cs.MachineconfigurationV1Interface.MachineOSBuilds().List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		return err
 	}
@@ -476,7 +475,7 @@ func writeMachineOSBuildsToFile(t *testing.T, cs *framework.ClientSet, archiveDi
 
 // Writes all MachineOSConfigs to a file.
 func writeMachineOSConfigsToFile(t *testing.T, cs *framework.ClientSet, archiveDir string) error {
-	moscList, err := cs.MachineconfigurationV1alpha1Interface.MachineOSConfigs().List(context.TODO(), metav1.ListOptions{})
+	moscList, err := cs.MachineconfigurationV1Interface.MachineOSConfigs().List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		return err
 	}
@@ -551,8 +550,8 @@ func streamMachineOSBuilderPodLogsToFile(ctx context.Context, t *testing.T, cs *
 
 // Streams the logs for all of the containers running in the build pod. The pod
 // logs can provide a valuable window into how / why a given build failed.
-func streamBuildPodLogsToFile(ctx context.Context, t *testing.T, cs *framework.ClientSet, mosb *mcfgv1alpha1.MachineOSBuild, dirPath string) error {
-	jobName := mosb.Status.BuilderReference.PodImageBuilder.Name
+func streamBuildPodLogsToFile(ctx context.Context, t *testing.T, cs *framework.ClientSet, mosb *mcfgv1.MachineOSBuild, dirPath string) error {
+	jobName := mosb.Status.Builder.Job.Name
 
 	pod, err := getPodFromJob(ctx, cs, jobName)
 	if err != nil {

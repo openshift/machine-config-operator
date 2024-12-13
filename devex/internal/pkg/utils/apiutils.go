@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	"github.com/openshift/machine-config-operator/test/framework"
 	apierrs "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -21,7 +20,7 @@ type notFoundErr struct {
 func newNotFoundErr(resource, poolName string) error {
 	return &notFoundErr{
 		poolName: poolName,
-		err:      apierrs.NewNotFound(mcfgv1alpha1.GroupVersion.WithResource(resource).GroupResource(), ""),
+		err:      apierrs.NewNotFound(mcfgv1.GroupVersion.WithResource(resource).GroupResource(), ""),
 	}
 }
 
@@ -47,7 +46,7 @@ func IsMachineConfigPoolLayered(ctx context.Context, cs *framework.ClientSet, mc
 	return mosc != nil && !IsNotFoundErr(err), nil
 }
 
-func GetMachineOSBuildForPoolName(ctx context.Context, cs *framework.ClientSet, poolName string) (*mcfgv1alpha1.MachineOSBuild, error) {
+func GetMachineOSBuildForPoolName(ctx context.Context, cs *framework.ClientSet, poolName string) (*mcfgv1.MachineOSBuild, error) {
 	mcp, err := cs.MachineConfigPools().Get(ctx, poolName, metav1.GetOptions{})
 	if err != nil {
 		return nil, err
@@ -56,7 +55,7 @@ func GetMachineOSBuildForPoolName(ctx context.Context, cs *framework.ClientSet, 
 	return GetMachineOSBuildForPool(ctx, cs, mcp)
 }
 
-func GetMachineOSConfigForPoolName(ctx context.Context, cs *framework.ClientSet, poolName string) (*mcfgv1alpha1.MachineOSConfig, error) {
+func GetMachineOSConfigForPoolName(ctx context.Context, cs *framework.ClientSet, poolName string) (*mcfgv1.MachineOSConfig, error) {
 	mcp, err := cs.MachineConfigPools().Get(ctx, poolName, metav1.GetOptions{})
 	if err != nil {
 		return nil, err
@@ -65,15 +64,15 @@ func GetMachineOSConfigForPoolName(ctx context.Context, cs *framework.ClientSet,
 	return GetMachineOSConfigForPool(ctx, cs, mcp)
 }
 
-func GetMachineOSBuildForPool(ctx context.Context, cs *framework.ClientSet, mcp *mcfgv1.MachineConfigPool) (*mcfgv1alpha1.MachineOSBuild, error) {
-	mosbList, err := cs.MachineOSBuilds().List(ctx, metav1.ListOptions{})
+func GetMachineOSBuildForPool(ctx context.Context, cs *framework.ClientSet, mcp *mcfgv1.MachineConfigPool) (*mcfgv1.MachineOSBuild, error) {
+	mosbList, err := cs.MachineconfigurationV1Interface.MachineOSBuilds().List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, err
 	}
 
 	for _, mosb := range mosbList.Items {
 		mosb := mosb
-		if mosb.Spec.DesiredConfig.Name == mcp.Spec.Configuration.Name {
+		if mosb.Spec.MachineConfig.Name == mcp.Spec.Configuration.Name {
 			return &mosb, nil
 		}
 	}
@@ -81,8 +80,8 @@ func GetMachineOSBuildForPool(ctx context.Context, cs *framework.ClientSet, mcp 
 	return nil, newNotFoundErr("machineosbuilds", mcp.Name)
 }
 
-func GetMachineOSConfigForPool(ctx context.Context, cs *framework.ClientSet, mcp *mcfgv1.MachineConfigPool) (*mcfgv1alpha1.MachineOSConfig, error) {
-	moscList, err := cs.MachineOSConfigs().List(ctx, metav1.ListOptions{})
+func GetMachineOSConfigForPool(ctx context.Context, cs *framework.ClientSet, mcp *mcfgv1.MachineConfigPool) (*mcfgv1.MachineOSConfig, error) {
+	moscList, err := cs.MachineconfigurationV1Interface.MachineOSConfigs().List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, err
 	}

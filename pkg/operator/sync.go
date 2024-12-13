@@ -37,7 +37,6 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	v1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	opv1 "github.com/openshift/api/operator/v1"
 
@@ -2035,7 +2034,7 @@ func setGVK(obj runtime.Object, scheme *runtime.Scheme) error {
 	return nil
 }
 
-func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *ctrlcommon.RenderConfigImages, apiServerURL string, pointerConfigData []byte, moscs []*mcfgv1alpha1.MachineOSConfig, apiServer *configv1.APIServer) *renderConfig {
+func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *ctrlcommon.RenderConfigImages, apiServerURL string, pointerConfigData []byte, moscs []*mcfgv1.MachineOSConfig, apiServer *configv1.APIServer) *renderConfig {
 	tlsMinVersion, tlsCipherSuites := ctrlcommon.GetSecurityProfileCiphersFromAPIServer(apiServer)
 	return &renderConfig{
 		TargetNamespace:        tnamespace,
@@ -2261,7 +2260,7 @@ func (optr *Operator) syncMachineConfiguration(_ *renderConfig, _ *configv1.Clus
 
 // Gets MachineOSConfigs from the lister, assuming that the OnClusterBuild
 // FeatureGate is enabled. Will return nil if the FeatureGate is not enabled.
-func (optr *Operator) getMachineOSConfigs() ([]*mcfgv1alpha1.MachineOSConfig, error) {
+func (optr *Operator) getMachineOSConfigs() ([]*mcfgv1.MachineOSConfig, error) {
 	isOnClusterBuildEnabled, err := optr.isOnClusterBuildFeatureGateEnabled()
 	if err != nil {
 		return nil, err
@@ -2282,7 +2281,7 @@ func (optr *Operator) getMachineOSConfigs() ([]*mcfgv1alpha1.MachineOSConfig, er
 
 // Fetches and validates the MachineOSConfigs. For now, validation consists of
 // ensuring that the secrets the MachineOSConfig was configured with exist.
-func (optr *Operator) getAndValidateMachineOSConfigs() ([]*mcfgv1alpha1.MachineOSConfig, error) {
+func (optr *Operator) getAndValidateMachineOSConfigs() ([]*mcfgv1.MachineOSConfig, error) {
 	moscs, err := optr.getMachineOSConfigs()
 
 	if err != nil {
