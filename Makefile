@@ -1,6 +1,7 @@
 MCO_COMPONENTS = daemon controller server operator
 EXTRA_COMPONENTS = apiserver-watcher machine-os-builder
 ALL_COMPONENTS = $(patsubst %,machine-config-%,$(MCO_COMPONENTS)) $(EXTRA_COMPONENTS)
+ALL_COMPONENTS_PATHS = $(patsubst %,cmd/%,$(ALL_COMPONENTS))
 PREFIX ?= /usr
 GO111MODULE?=on
 PROJECT_DIR := $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))
@@ -36,9 +37,13 @@ clean:
 
 # Build machine configs. Intended to be called via another target.
 # Example:
-#    make _build-machine-config-operator
-_build-%:
-	WHAT=$* hack/build-go.sh
+#    make _build-component-machine-config-operator
+_build-component-%:
+	WHAT_PATH=cmd/$* WHAT=$(basename $*) hack/build-go.sh
+
+# Build the helpers under hack/cmd.
+_build-helper-%:
+	WHAT_PATH=hack/cmd/$* WHAT=$(basename $*) hack/build-go.sh
 
 # Use podman to build the image.
 image:
@@ -104,22 +109,44 @@ install-tools: install-golangci-lint install-go-junit-report install-setup-envte
 verify: install-tools
 	./hack/golangci-lint.sh $(GOTAGS)
 	hack/verify-templates.sh
+	# Conditionally tries to build the helper binaries in CI.
+	hack/verify-helpers.sh
+
+HELPERS_DIR := hack/cmd
+HELPER_BINARIES := $(notdir $(wildcard $(HELPERS_DIR)/*))
+
+.PHONY: helpers
+helpers: $(patsubst %,_build-helper-%,$(HELPER_BINARIES))
 
 # Template for defining build targets for binaries.
 define target_template =
  .PHONY: $(1)
- $(1): _build-$(1)
+ $(1): _build-component-$(1)
 endef
 # Create a target for each component
 $(foreach C, $(EXTRA_COMPONENTS), $(eval $(call target_template,$(C))))
 $(foreach C, $(MCO_COMPONENTS), $(eval $(call target_template,$(patsubst %,machine-config-%,$(C)))))
 
-.PHONY: binaries install
+# Template for defining build targets for helper binaries.
+define helper_target_template =
+ .PHONY: $(1)
+ $(1): _build-helper-$(1)
+endef
+# Create a target for each component
+$(foreach C, $(HELPER_BINARIES), $(eval $(call helper_target_template,$(C))))
+
+.PHONY: binaries helpers install
 
 # Build all binaries:
 # Example:
 #    make binaries
-binaries: $(patsubst %,_build-%,$(ALL_COMPONENTS))
+binaries: $(patsubst %,_build-component-%,$(ALL_COMPONENTS))
+
+# Installs the helper binaries from hack/cmd.
+install-helpers: helpers
+	for helper in $(HELPER_BINARIES); do \
+		install -D -m 0755 _output/linux/$(GOARCH)/$${helper} $(DESTDIR)$(PREFIX)/bin/$${helper}; \
+	done
 
 install: binaries
 	for component in $(ALL_COMPONENTS); do \
