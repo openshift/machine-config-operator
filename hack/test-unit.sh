@@ -17,7 +17,7 @@ COVERAGE_REPORT="mco-unit-test-coverage.out"
 
 function run_tests() {
   test_opts=("$@")
-  CGO_ENABLED=0 go test "${test_opts[@]}" -tags="$GOTAGS" './cmd/...' './pkg/...' './lib/...' './test/helpers/...' | ./hack/test-with-junit.sh "$MAKEFILE_TARGET"
+  CGO_ENABLED=0 go test "${test_opts[@]}" -tags="$GOTAGS" './hack/...' './cmd/...' './pkg/...' './lib/...' './test/helpers/...' | ./hack/test-with-junit.sh "$MAKEFILE_TARGET"
 }
 
 function run_tests_with_coverage() {
