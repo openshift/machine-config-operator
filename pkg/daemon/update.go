@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/clarketm/json"
+	"github.com/coreos/go-semver/semver"
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -2548,7 +2549,11 @@ func (dn *Daemon) InplaceUpdateViaNewContainer(target string) error {
 
 	systemdPodmanArgs := []string{"--unit", "machine-config-daemon-update-rpmostree-via-container", "-p", "EnvironmentFile=-/etc/mco/proxy.env", "--collect", "--wait", "--", "podman"}
 	pullArgs := append([]string{}, systemdPodmanArgs...)
-	pullArgs = append(pullArgs, "pull", "--authfile", "/var/lib/kubelet/config.json", target)
+	pullArgs = append(pullArgs, "pull", "--authfile", "/var/lib/kubelet/config.json")
+	if !podmanSupportsSigstore() {
+		pullArgs = append(pullArgs, "--signature-policy", "/etc/machine-config-daemon/policy-for-old-podman.json")
+	}
+	pullArgs = append(pullArgs, target)
 	err = runCmdSync("systemd-run", pullArgs...)
 	if err != nil {
 		return err
@@ -2682,6 +2687,21 @@ func runCmdSync(cmdName string, args ...string) error {
 	}
 
 	return nil
+}
+
+func podmanSupportsSigstore() bool {
+	// https://issues.redhat.com/browse/OCPBUGS-38809 failed for base image 4.11 or older, OCP 4.12 is with podman 4.4.1
+	// returns false if podman version is less than 4.4.1
+	cmd := exec.Command("podman", "version", "-f", "{{.APIVersion}}")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		klog.Errorf("failed to run podman version: %v", err)
+		return false
+	}
+	sigstorePodman := "4.4.1"
+	// Example version format: 5.3.0-rc1
+	imgPodmanVersion := strings.TrimSpace(string(out))
+	return semver.New(imgPodmanVersion).Compare(*semver.New(sigstorePodman)) >= 0
 }
 
 // Log a message to the systemd journal as well as our stdout
