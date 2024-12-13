@@ -578,6 +578,46 @@ var schemaYAML = typed.YAMLObject(`types:
       type:
         scalar: string
       default: ""
+- name: com.github.openshift.api.config.v1.ClusterMonitoring
+  map:
+    fields:
+    - name: apiVersion
+      type:
+        scalar: string
+    - name: kind
+      type:
+        scalar: string
+    - name: metadata
+      type:
+        namedType: io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta
+      default: {}
+    - name: spec
+      type:
+        namedType: com.github.openshift.api.config.v1.ClusterMonitoringSpec
+      default: {}
+    - name: status
+      type:
+        namedType: com.github.openshift.api.config.v1.ClusterMonitoringStatus
+      default: {}
+- name: com.github.openshift.api.config.v1.ClusterMonitoringSpec
+  map:
+    fields:
+    - name: userDefined
+      type:
+        namedType: com.github.openshift.api.config.v1.UserDefinedMonitoring
+      default: {}
+- name: com.github.openshift.api.config.v1.ClusterMonitoringStatus
+  map:
+    elementType:
+      scalar: untyped
+      list:
+        elementType:
+          namedType: __untyped_atomic_
+        elementRelationship: atomic
+      map:
+        elementType:
+          namedType: __untyped_deduced_
+        elementRelationship: separable
 - name: com.github.openshift.api.config.v1.ClusterNetworkEntry
   map:
     fields:
@@ -3368,6 +3408,13 @@ var schemaYAML = typed.YAMLObject(`types:
         scalar: boolean
       default: false
     - name: version
+      type:
+        scalar: string
+      default: ""
+- name: com.github.openshift.api.config.v1.UserDefinedMonitoring
+  map:
+    fields:
+    - name: mode
       type:
         scalar: string
       default: ""

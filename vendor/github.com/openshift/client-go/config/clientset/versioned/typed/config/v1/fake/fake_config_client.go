@@ -24,6 +24,10 @@ func (c *FakeConfigV1) Builds() v1.BuildInterface {
 	return &FakeBuilds{c}
 }
 
+func (c *FakeConfigV1) ClusterMonitorings() v1.ClusterMonitoringInterface {
+	return &FakeClusterMonitorings{c}
+}
+
 func (c *FakeConfigV1) ClusterOperators() v1.ClusterOperatorInterface {
 	return &FakeClusterOperators{c}
 }
