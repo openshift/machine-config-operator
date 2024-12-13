@@ -166,9 +166,9 @@ func TestReconcileSimpleContentAccessSecret(t *testing.T) {
 	workerPool := helpers.NewMachineConfigPool("worker", nil, helpers.MasterSelector, "v0")
 	infraPool := helpers.NewMachineConfigPool("infra", nil, helpers.MasterSelector, "v0")
 	entitlementSecret := helpers.NewOpaqueSecret(ctrlcommon.SimpleContentAccessSecretName, ctrlcommon.OpenshiftConfigManagedNamespace, "abc")
-	workerEntitlementSecret := helpers.NewOpaqueSecret(ctrlcommon.SimpleContentAccessSecretName+"-"+workerPool.Name, ctrlcommon.MCONamespace, "abc")
-	infraEntitlementSecret := helpers.NewOpaqueSecret(ctrlcommon.SimpleContentAccessSecretName+"-"+infraPool.Name, ctrlcommon.MCONamespace, "abc")
-	outOfDateInfraEntitlementSecret := helpers.NewOpaqueSecret(ctrlcommon.SimpleContentAccessSecretName+"-"+infraPool.Name, ctrlcommon.MCONamespace, "123")
+	workerEntitlementSecret := helpers.NewOpaqueSecretWithOwnerPool(ctrlcommon.SimpleContentAccessSecretName+"-"+workerPool.Name, ctrlcommon.MCONamespace, "abc", *workerPool)
+	infraEntitlementSecret := helpers.NewOpaqueSecretWithOwnerPool(ctrlcommon.SimpleContentAccessSecretName+"-"+infraPool.Name, ctrlcommon.MCONamespace, "abc", *infraPool)
+	outOfDateInfraEntitlementSecret := helpers.NewOpaqueSecretWithOwnerPool(ctrlcommon.SimpleContentAccessSecretName+"-"+infraPool.Name, ctrlcommon.MCONamespace, "123", *infraPool)
 
 	cases := []struct {
 		name               string

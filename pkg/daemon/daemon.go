@@ -756,7 +756,7 @@ func (dn *Daemon) syncNode(key string) error {
 	//
 	// I'm not sure if this needs to be done right here or as frequently as this,
 	// but it shouldn't cause too much impact.
-	if err := dn.syncOSImagePullSecrets(nil); err != nil {
+	if err := dn.syncInternalRegistryPullSecrets(nil); err != nil {
 		return err
 	}
 
@@ -2540,7 +2540,7 @@ func (dn *Daemon) completeUpdate(desiredConfigName string) error {
 
 func (dn *Daemon) triggerUpdate(currentConfig, desiredConfig *mcfgv1.MachineConfig, currentImage, desiredImage string) error {
 	// Before we do any updates, ensure that the image pull secrets that rpm-ostree uses are up-to-date.
-	if err := dn.syncOSImagePullSecrets(nil); err != nil {
+	if err := dn.syncInternalRegistryPullSecrets(nil); err != nil {
 		return err
 	}
 

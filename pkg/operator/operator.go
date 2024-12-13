@@ -106,7 +106,7 @@ type Operator struct {
 	mckLister             mcfglistersv1.KubeletConfigLister
 	crcLister             mcfglistersv1.ContainerRuntimeConfigLister
 	nodeClusterLister     configlistersv1.NodeLister
-	moscLister            mcfglistersalphav1.MachineOSConfigLister
+	moscLister            mcfglistersv1.MachineOSConfigLister
 	apiserverLister       configlistersv1.APIServerLister
 
 	crdListerSynced                  cache.InformerSynced
@@ -380,7 +380,7 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 
 	if isOCBEnabled {
 		klog.Infof("On-cluster layering featuregate enabled, starting MachineOSConfig informer")
-		moscInformer := optr.ctrlctx.InformerFactory.Machineconfiguration().V1alpha1().MachineOSConfigs()
+		moscInformer := optr.ctrlctx.InformerFactory.Machineconfiguration().V1().MachineOSConfigs()
 		optr.moscLister = moscInformer.Lister()
 		optr.moscListerSynced = moscInformer.Informer().HasSynced
 		cacheSynced = append(cacheSynced, optr.moscListerSynced)
