@@ -14,15 +14,12 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	features "github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
-	mcfginformersv1alpha1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1alpha1"
 
 	cligoinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
 	cligolistersv1 "github.com/openshift/client-go/config/listers/config/v1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
-	mcfglistersv1alpha1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1"
 
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
@@ -92,7 +89,6 @@ type Controller struct {
 	mcpLister  mcfglistersv1.MachineConfigPoolLister
 	nodeLister corelisterv1.NodeLister
 	podLister  corelisterv1.PodLister
-	mosbLister mcfglistersv1alpha1.MachineOSBuildLister
 
 	ccListerSynced   cache.InformerSynced
 	mcListerSynced   cache.InformerSynced
@@ -119,7 +115,7 @@ func New(
 	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
 	nodeInformer coreinformersv1.NodeInformer,
 	podInformer coreinformersv1.PodInformer,
-	moscInformer mcfginformersv1alpha1.MachineOSConfigInformer,
+	moscInformer mcfginformersv1.MachineOSConfigInformer,
 	schedulerInformer cligoinformersv1.SchedulerInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
@@ -146,7 +142,7 @@ func NewWithCustomUpdateDelay(
 	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
 	nodeInformer coreinformersv1.NodeInformer,
 	podInformer coreinformersv1.PodInformer,
-	moscInformer mcfginformersv1alpha1.MachineOSConfigInformer,
+	moscInformer mcfginformersv1.MachineOSConfigInformer,
 	schedulerInformer cligoinformersv1.SchedulerInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
@@ -173,7 +169,7 @@ func newController(
 	ccInformer mcfginformersv1.ControllerConfigInformer,
 	mcInformer mcfginformersv1.MachineConfigInformer,
 	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
-	moscInformer mcfginformersv1alpha1.MachineOSConfigInformer,
+	moscInformer mcfginformersv1.MachineOSConfigInformer,
 	nodeInformer coreinformersv1.NodeInformer,
 	podInformer coreinformersv1.PodInformer,
 	schedulerInformer cligoinformersv1.SchedulerInformer,
@@ -383,7 +379,7 @@ func (ctrl *Controller) makeMasterNodeSchedulable(node *corev1.Node) error {
 }
 
 func (ctrl *Controller) addMachineOSConfig(obj interface{}) {
-	curMOSC := obj.(*mcfgv1alpha1.MachineOSConfig)
+	curMOSC := obj.(*mcfgv1.MachineOSConfig)
 	klog.V(4).Infof("Adding MachineOSConfig %s", curMOSC.Name)
 	mcp, err := ctrl.mcpLister.Get(curMOSC.Spec.MachineConfigPool.Name)
 	if err != nil {
@@ -395,9 +391,9 @@ func (ctrl *Controller) addMachineOSConfig(obj interface{}) {
 }
 
 func (ctrl *Controller) updateMachineOSConfig(old, cur interface{}) {
-	oldMOSC := old.(*mcfgv1alpha1.MachineOSConfig)
-	curMOSC := cur.(*mcfgv1alpha1.MachineOSConfig)
-	if equality.Semantic.DeepEqual(oldMOSC.Status.CurrentImagePullspec, curMOSC.Status.CurrentImagePullspec) {
+	oldMOSC := old.(*mcfgv1.MachineOSConfig)
+	curMOSC := cur.(*mcfgv1.MachineOSConfig)
+	if equality.Semantic.DeepEqual(oldMOSC.Status.CurrentImagePullSpec, curMOSC.Status.CurrentImagePullSpec) {
 		// we do not want to trigger an update func just if the image is not ready
 		return
 	}
@@ -412,14 +408,14 @@ func (ctrl *Controller) updateMachineOSConfig(old, cur interface{}) {
 }
 
 func (ctrl *Controller) deleteMachineOSConfig(cur interface{}) {
-	curMOSC, ok := cur.(*mcfgv1alpha1.MachineOSConfig)
+	curMOSC, ok := cur.(*mcfgv1.MachineOSConfig)
 	if !ok {
 		tombstone, ok := cur.(cache.DeletedFinalStateUnknown)
 		if !ok {
 			utilruntime.HandleError(fmt.Errorf("couldn't get object from tombstone %#v", cur))
 			return
 		}
-		curMOSC, ok = tombstone.Obj.(*mcfgv1alpha1.MachineOSConfig)
+		curMOSC, ok = tombstone.Obj.(*mcfgv1.MachineOSConfig)
 		if !ok {
 			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not a MachineOSConfig %#v", cur))
 			return
@@ -436,14 +432,14 @@ func (ctrl *Controller) deleteMachineOSConfig(cur interface{}) {
 }
 
 func (ctrl *Controller) deleteMachineOSBuild(obj interface{}) {
-	curMOSB, ok := obj.(*mcfgv1alpha1.MachineOSBuild)
+	curMOSB, ok := obj.(*mcfgv1.MachineOSBuild)
 	if !ok {
 		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
 		if !ok {
 			utilruntime.HandleError(fmt.Errorf("couldn't get object from tombstone %#v", obj))
 			return
 		}
-		curMOSB, ok = tombstone.Obj.(*mcfgv1alpha1.MachineOSBuild)
+		curMOSB, ok = tombstone.Obj.(*mcfgv1.MachineOSBuild)
 		if !ok {
 			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not a MOSB %#v", obj))
 			return
@@ -893,10 +889,10 @@ func (ctrl *Controller) handleErr(err error, key string) {
 // ready so we can update both the nodes' desired MachineConfig and desired
 // image annotations simultaneously.
 
-func (ctrl *Controller) GetConfigAndBuild(pool *mcfgv1.MachineConfigPool) (*mcfgv1alpha1.MachineOSConfig, *mcfgv1alpha1.MachineOSBuild, error) {
-	var ourConfig *mcfgv1alpha1.MachineOSConfig
-	var ourBuild *mcfgv1alpha1.MachineOSBuild
-	configList, err := ctrl.client.MachineconfigurationV1alpha1().MachineOSConfigs().List(context.TODO(), metav1.ListOptions{})
+func (ctrl *Controller) GetConfigAndBuild(pool *mcfgv1.MachineConfigPool) (*mcfgv1.MachineOSConfig, *mcfgv1.MachineOSBuild, error) {
+	var ourConfig *mcfgv1.MachineOSConfig
+	var ourBuild *mcfgv1.MachineOSBuild
+	configList, err := ctrl.client.MachineconfigurationV1().MachineOSConfigs().List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -912,14 +908,14 @@ func (ctrl *Controller) GetConfigAndBuild(pool *mcfgv1.MachineConfigPool) (*mcfg
 		return nil, nil, nil
 	}
 
-	buildList, err := ctrl.client.MachineconfigurationV1alpha1().MachineOSBuilds().List(context.TODO(), metav1.ListOptions{})
+	buildList, err := ctrl.client.MachineconfigurationV1().MachineOSBuilds().List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		return nil, nil, err
 	}
 
 	for _, build := range buildList.Items {
 		if build.Spec.MachineOSConfig.Name == ourConfig.Name {
-			if build.Spec.DesiredConfig.Name == pool.Spec.Configuration.Name {
+			if build.Spec.MachineConfig.Name == pool.Spec.Configuration.Name {
 				ourBuild = &build
 				break
 			}
@@ -1176,7 +1172,7 @@ func (ctrl *Controller) setClusterConfigAnnotation(nodes []*corev1.Node) error {
 
 // updateCandidateNode needs to understand MOSB
 // specifically, the LayeredNodeState probably needs to understand mosb
-func (ctrl *Controller) updateCandidateNode(mosc *mcfgv1alpha1.MachineOSConfig, mosb *mcfgv1alpha1.MachineOSBuild, nodeName string, pool *mcfgv1.MachineConfigPool) error {
+func (ctrl *Controller) updateCandidateNode(mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild, nodeName string, pool *mcfgv1.MachineConfigPool) error {
 	return clientretry.RetryOnConflict(constants.NodeUpdateBackoff, func() error {
 		oldNode, err := ctrl.kubeClient.CoreV1().Nodes().Get(context.TODO(), nodeName, metav1.GetOptions{})
 		if err != nil {
@@ -1233,7 +1229,7 @@ func (ctrl *Controller) updateCandidateNode(mosc *mcfgv1alpha1.MachineOSConfig, 
 
 // getAllCandidateMachines returns all possible nodes which can be updated to the target config, along with a maximum
 // capacity.  It is the reponsibility of the caller to choose a subset of the nodes given the capacity.
-func getAllCandidateMachines(layered bool, config *mcfgv1alpha1.MachineOSConfig, build *mcfgv1alpha1.MachineOSBuild, pool *mcfgv1.MachineConfigPool, nodesInPool []*corev1.Node, maxUnavailable int) ([]*corev1.Node, uint) {
+func getAllCandidateMachines(layered bool, config *mcfgv1.MachineOSConfig, build *mcfgv1.MachineOSBuild, pool *mcfgv1.MachineConfigPool, nodesInPool []*corev1.Node, maxUnavailable int) ([]*corev1.Node, uint) {
 	unavail := getUnavailableMachines(nodesInPool, pool, layered, build)
 	if len(unavail) >= maxUnavailable {
 		klog.V(4).Infof("Pool %s: No nodes available for updates", pool.Name)
@@ -1278,7 +1274,7 @@ func getAllCandidateMachines(layered bool, config *mcfgv1alpha1.MachineOSConfig,
 }
 
 // getCandidateMachines returns the maximum subset of nodes which can be updated to the target config given availability constraints.
-func getCandidateMachines(pool *mcfgv1.MachineConfigPool, config *mcfgv1alpha1.MachineOSConfig, build *mcfgv1alpha1.MachineOSBuild, nodesInPool []*corev1.Node, maxUnavailable int, layered bool) []*corev1.Node {
+func getCandidateMachines(pool *mcfgv1.MachineConfigPool, config *mcfgv1.MachineOSConfig, build *mcfgv1.MachineOSBuild, nodesInPool []*corev1.Node, maxUnavailable int, layered bool) []*corev1.Node {
 	nodes, capacity := getAllCandidateMachines(layered, config, build, pool, nodesInPool, maxUnavailable)
 	if uint(len(nodes)) < capacity {
 		return nodes
@@ -1504,7 +1500,7 @@ func getErrorString(err error) string {
 	return ""
 }
 
-func (ctrl *Controller) IsLayeredPool(mosc *mcfgv1alpha1.MachineOSConfig, mosb *mcfgv1alpha1.MachineOSBuild) (bool, error) {
+func (ctrl *Controller) IsLayeredPool(mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild) (bool, error) {
 	fg, err := ctrl.fgAcessor.CurrentFeatureGates()
 	if err != nil {
 		return false, err

@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
@@ -51,20 +50,20 @@ func (l *LayeredNodeState) IsDesiredEqualToPool(mcp *mcfgv1.MachineConfigPool, l
 	return l.isDesiredMachineConfigEqualToPool(mcp) && l.isDesiredImageEqualToPool(mcp, layered)
 }
 
-func (l *LayeredNodeState) IsDesiredEqualToBuild(mosc *mcfgv1alpha1.MachineOSConfig, mosb *mcfgv1alpha1.MachineOSBuild) bool {
+func (l *LayeredNodeState) IsDesiredEqualToBuild(mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild) bool {
 	return l.isDesiredImageEqualToBuild(mosc) && l.isDesiredMachineConfigEqualToBuild(mosb)
 }
 
-func (l *LayeredNodeState) isDesiredImageEqualToBuild(mosc *mcfgv1alpha1.MachineOSConfig) bool {
+func (l *LayeredNodeState) isDesiredImageEqualToBuild(mosc *mcfgv1.MachineOSConfig) bool {
 	return l.isImageAnnotationEqualToBuild(daemonconsts.DesiredImageAnnotationKey, mosc)
 }
 
-func (l *LayeredNodeState) IsCurrentImageEqualToBuild(mosc *mcfgv1alpha1.MachineOSConfig) bool {
+func (l *LayeredNodeState) IsCurrentImageEqualToBuild(mosc *mcfgv1.MachineOSConfig) bool {
 	return l.isImageAnnotationEqualToBuild(daemonconsts.CurrentImageAnnotationKey, mosc)
 }
 
-func (l *LayeredNodeState) isDesiredMachineConfigEqualToBuild(mosb *mcfgv1alpha1.MachineOSBuild) bool {
-	return l.node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] == mosb.Spec.DesiredConfig.Name
+func (l *LayeredNodeState) isDesiredMachineConfigEqualToBuild(mosb *mcfgv1.MachineOSBuild) bool {
+	return l.node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] == mosb.Spec.MachineConfig.Name
 
 }
 
@@ -108,7 +107,7 @@ func (l *LayeredNodeState) isImageAnnotationEqualToPool(anno string, mcp *mcfgv1
 	return val == "" || !ok
 }
 
-func (l *LayeredNodeState) isImageAnnotationEqualToBuild(anno string, mosc *mcfgv1alpha1.MachineOSConfig) bool {
+func (l *LayeredNodeState) isImageAnnotationEqualToBuild(anno string, mosc *mcfgv1.MachineOSConfig) bool {
 	mosbs := NewMachineOSConfigState(mosc)
 
 	val, ok := l.node.Annotations[anno]
@@ -158,13 +157,13 @@ func (l *LayeredNodeState) SetDesiredStateFromPool(layered bool, mcp *mcfgv1.Mac
 	l.node = node
 }
 
-func (l *LayeredNodeState) SetDesiredStateFromMachineOSConfig(mosc *mcfgv1alpha1.MachineOSConfig, mosb *mcfgv1alpha1.MachineOSBuild) {
+func (l *LayeredNodeState) SetDesiredStateFromMachineOSConfig(mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild) {
 	node := l.Node()
 	if node.Annotations == nil {
 		node.Annotations = map[string]string{}
 	}
 
-	node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] = mosb.Spec.DesiredConfig.Name
+	node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] = mosb.Spec.MachineConfig.Name
 	moscs := NewMachineOSConfigState(mosc)
 
 	if moscs.HasOSImage() {

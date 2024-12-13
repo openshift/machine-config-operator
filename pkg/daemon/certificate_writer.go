@@ -137,7 +137,7 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 
 		// If the ControllerConfig version changed, we should sync our OS image
 		// pull secrets, since they could have changed.
-		if err := dn.syncOSImagePullSecrets(controllerConfig); err != nil {
+		if err := dn.syncInternalRegistryPullSecrets(controllerConfig); err != nil {
 			return err
 		}
 
@@ -349,16 +349,12 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 }
 
 // Syncs the OS image pull secrets to disk under
-// /etc/mco/internal-registry-pull-secret.json. Uses the internal image
-// registry as well as secrets mounted into the MCD pod under a specific path.
-// If the mounted secrets are not present, it will default to using solely the
-// contents of the ControllerConfig. This will run during the
-// certificate_writer sync loop as well as during an OS update. We may also
-// want to wire it up to fsnotify so that it runs whenever the mounted secrets
-// do. Because this can execute across multiple Goroutines, a Daemon-level
-// mutex (osImageMux) is used to ensure that only one call can execute at any
-// given time.
-func (dn *Daemon) syncOSImagePullSecrets(controllerConfig *mcfgv1.ControllerConfig) error {
+// /etc/mco/internal-registry-pull-secret.json using the contents of the
+// ControllerConfig. This will run during the certificate_writer sync loop
+// as well as during an OS update. Because this can execute across multiple
+// Goroutines, a Daemon-level mutex (osImageMux) is used to ensure that only
+// one call can execute at any given time.
+func (dn *Daemon) syncInternalRegistryPullSecrets(controllerConfig *mcfgv1.ControllerConfig) error {
 	dn.osImageMux.Lock()
 	defer dn.osImageMux.Unlock()
 
@@ -371,16 +367,11 @@ func (dn *Daemon) syncOSImagePullSecrets(controllerConfig *mcfgv1.ControllerConf
 		controllerConfig = cfg
 	}
 
-	merged, err := reconcileOSImageRegistryPullSecretData(dn.node, controllerConfig, osImagePullSecretDir)
-	if err != nil {
-		return fmt.Errorf("could not reconcile OS image registry pull secret data: %w", err)
-	}
-
-	if err := writeToDisk(map[string][]byte{imageRegistryAuthFile: merged}); err != nil {
+	if err := writeToDisk(map[string][]byte{internalRegistryAuthFile: controllerConfig.Spec.InternalRegistryPullSecret}); err != nil {
 		return fmt.Errorf("could not write image pull secret data to node filesystem: %w", err)
 	}
 
-	klog.V(4).Infof("Synced image registry secrets to node filesystem in %s", imageRegistryAuthFile)
+	klog.V(4).Infof("Synced image registry secrets to node filesystem in %s", internalRegistryAuthFile)
 
 	return nil
 }

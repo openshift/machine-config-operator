@@ -9,7 +9,6 @@ import (
 	"text/template"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
@@ -45,7 +44,7 @@ type buildRequestImpl struct {
 }
 
 // Constructs an imageBuildRequest from the Kube API server.
-func NewBuildRequestFromAPI(ctx context.Context, kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig) (BuildRequest, error) {
+func NewBuildRequestFromAPI(ctx context.Context, kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1.MachineOSBuild, mosc *mcfgv1.MachineOSConfig) (BuildRequest, error) {
 	opts, err := newBuildRequestOptsFromAPI(ctx, kubeclient, mcfgclient, mosb, mosc)
 	if err != nil {
 		return nil, err
@@ -61,8 +60,8 @@ func newBuildRequest(opts BuildRequestOpts) BuildRequest {
 	}
 
 	// only support noArch for now
-	for _, file := range opts.MachineOSConfig.Spec.BuildInputs.Containerfile {
-		if file.ContainerfileArch == mcfgv1alpha1.NoArch {
+	for _, file := range opts.MachineOSConfig.Spec.Containerfile {
+		if file.ContainerfileArch == mcfgv1.NoArch {
 			br.userContainerfile = file.Content
 			break
 		}
@@ -226,10 +225,9 @@ func (br buildRequestImpl) renderContainerfile() (string, error) {
 	// default to a value from a different location, it makes more sense for us
 	// to implement that logic in Go as opposed to the Go template language.
 	items := struct {
-		MachineOSBuild     *mcfgv1alpha1.MachineOSBuild
-		MachineOSConfig    *mcfgv1alpha1.MachineOSConfig
+		MachineOSBuild     *mcfgv1.MachineOSBuild
+		MachineOSConfig    *mcfgv1.MachineOSConfig
 		UserContainerfile  string
-		ReleaseVersion     string
 		BaseOSImage        string
 		ExtensionsImage    string
 		ExtensionsPackages []string
@@ -237,9 +235,8 @@ func (br buildRequestImpl) renderContainerfile() (string, error) {
 		MachineOSBuild:     br.opts.MachineOSBuild,
 		MachineOSConfig:    br.opts.MachineOSConfig,
 		UserContainerfile:  br.userContainerfile,
-		ReleaseVersion:     br.opts.getReleaseVersion(),
-		BaseOSImage:        br.opts.getBaseOSImagePullspec(),
-		ExtensionsImage:    br.opts.getExtensionsImagePullspec(),
+		BaseOSImage:        br.opts.OSImageURLConfig.BaseOSContainerImage,
+		ExtensionsImage:    br.opts.OSImageURLConfig.BaseOSExtensionsContainerImage,
 		ExtensionsPackages: extPkgs,
 	}
 
@@ -315,7 +312,7 @@ func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
 		},
 		{
 			Name:  "TAG",
-			Value: br.opts.MachineOSBuild.Spec.RenderedImagePushspec,
+			Value: string(br.opts.MachineOSBuild.Spec.RenderedImagePushSpec),
 		},
 		{
 			Name:  "BASE_IMAGE_PULL_CREDS",
@@ -525,7 +522,7 @@ func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
 					// us to avoid parsing log files.
 					Name:            "wait-for-done",
 					Command:         append(command, waitScript),
-					Image:           br.opts.getBaseOSImagePullspec(),
+					Image:           br.opts.OSImageURLConfig.BaseOSContainerImage,
 					Env:             env,
 					ImagePullPolicy: corev1.PullAlways,
 					SecurityContext: securityContext,
@@ -543,7 +540,7 @@ func (br buildRequestImpl) getLabelsForObjectMeta() map[string]string {
 	return map[string]string{
 		constants.EphemeralBuildObjectLabelKey:    "",
 		constants.OnClusterLayeringLabelKey:       "",
-		constants.RenderedMachineConfigLabelKey:   br.opts.MachineOSBuild.Spec.DesiredConfig.Name,
+		constants.RenderedMachineConfigLabelKey:   br.opts.MachineOSBuild.Spec.MachineConfig.Name,
 		constants.TargetMachineConfigPoolLabelKey: br.opts.MachineOSConfig.Spec.MachineConfigPool.Name,
 		constants.MachineOSConfigNameLabelKey:     br.opts.MachineOSConfig.Name,
 		constants.MachineOSBuildNameLabelKey:      br.opts.MachineOSBuild.Name,

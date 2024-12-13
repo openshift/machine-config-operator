@@ -201,6 +201,30 @@ func NewOpaqueSecret(name, namespace, content string) *corev1.Secret {
 		Type: corev1.SecretTypeOpaque,
 	}
 }
+func NewOpaqueSecretWithOwnerPool(name, namespace, content string, pool mcfgv1.MachineConfigPool) *corev1.Secret {
+	// Work around https://github.com/kubernetes/kubernetes/issues/3030 and https://github.com/kubernetes/kubernetes/issues/80609
+	pool.APIVersion = mcfgv1.GroupVersion.String()
+	pool.Kind = "MachineConfigPool"
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: pool.APIVersion,
+					Kind:       pool.Kind,
+					Name:       pool.ObjectMeta.Name,
+					UID:        pool.ObjectMeta.UID,
+				},
+			},
+		},
+		Data: map[string][]byte{
+			"entitlement-key.pem": []byte(content),
+			"entitlement.pem":     []byte(content),
+		},
+		Type: corev1.SecretTypeOpaque,
+	}
+}
 
 // CreateMachineConfigFromIgnitionWithMetadata returns a MachineConfig object from an Ignition config, name, and role label
 func CreateMachineConfigFromIgnitionWithMetadata(ignCfg interface{}, name, role string) *mcfgv1.MachineConfig {

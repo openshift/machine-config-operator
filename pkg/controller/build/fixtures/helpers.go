@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"testing"
 
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/stretchr/testify/require"
 	batchv1 "k8s.io/api/batch/v1"
@@ -27,7 +27,7 @@ type JobStatus struct {
 }
 
 // Sets the provided job status on a given job under test. If successful, it will also insert the digestfile ConfigMap.
-func SetJobStatus(ctx context.Context, t *testing.T, kubeclient clientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild, jobStatus JobStatus) {
+func SetJobStatus(ctx context.Context, t *testing.T, kubeclient clientset.Interface, mosb *mcfgv1.MachineOSBuild, jobStatus JobStatus) {
 	require.NoError(t, setJobStatusFields(ctx, kubeclient, mosb, jobStatus))
 
 	if jobStatus.Succeeded == 1 {
@@ -37,7 +37,7 @@ func SetJobStatus(ctx context.Context, t *testing.T, kubeclient clientset.Interf
 	}
 }
 
-func SetJobDeletionTimestamp(ctx context.Context, t *testing.T, kubeclient clientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild, timestamp *metav1.Time) {
+func SetJobDeletionTimestamp(ctx context.Context, t *testing.T, kubeclient clientset.Interface, mosb *mcfgv1.MachineOSBuild, timestamp *metav1.Time) {
 	jobName := fmt.Sprintf("build-%s", mosb.Name)
 
 	j, err := kubeclient.BatchV1().Jobs(ctrlcommon.MCONamespace).Get(ctx, jobName, metav1.GetOptions{})
@@ -49,7 +49,7 @@ func SetJobDeletionTimestamp(ctx context.Context, t *testing.T, kubeclient clien
 	require.NoError(t, err)
 }
 
-func setJobStatusFields(ctx context.Context, kubeclient clientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild, jobStatus JobStatus) error {
+func setJobStatusFields(ctx context.Context, kubeclient clientset.Interface, mosb *mcfgv1.MachineOSBuild, jobStatus JobStatus) error {
 	jobName := fmt.Sprintf("build-%s", mosb.Name)
 
 	j, err := kubeclient.BatchV1().Jobs(ctrlcommon.MCONamespace).Get(ctx, jobName, metav1.GetOptions{})
@@ -67,11 +67,11 @@ func setJobStatusFields(ctx context.Context, kubeclient clientset.Interface, mos
 	return err
 }
 
-func createDigestfileConfigMap(ctx context.Context, kubeclient clientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild) error {
+func createDigestfileConfigMap(ctx context.Context, kubeclient clientset.Interface, mosb *mcfgv1.MachineOSBuild) error {
 	return createDigestfileConfigMapWithDigest(ctx, kubeclient, mosb, getDigest(mosb.Name))
 }
 
-func createDigestfileConfigMapWithDigest(ctx context.Context, kubeclient clientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild, digest string) error {
+func createDigestfileConfigMapWithDigest(ctx context.Context, kubeclient clientset.Interface, mosb *mcfgv1.MachineOSBuild, digest string) error {
 	digestName := fmt.Sprintf("digest-%s", mosb.Name)
 
 	cm := &corev1.ConfigMap{
@@ -92,7 +92,7 @@ func createDigestfileConfigMapWithDigest(ctx context.Context, kubeclient clients
 	return nil
 }
 
-func deleteDigestfileConfigMap(ctx context.Context, kubeclient clientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild) error {
+func deleteDigestfileConfigMap(ctx context.Context, kubeclient clientset.Interface, mosb *mcfgv1.MachineOSBuild) error {
 	digestName := fmt.Sprintf("digest-%s", mosb.Name)
 	err := kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Delete(ctx, digestName, metav1.DeleteOptions{})
 	if err != nil && !k8serrors.IsNotFound(err) {
