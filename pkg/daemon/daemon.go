@@ -751,8 +751,7 @@ func (dn *Daemon) syncNode(key string) error {
 	}
 
 	// Sync our OS image pull secrets here. This will account for any changes to
-	// either the mounted secrets (which can change without a pod restart) or the
-	// ControllerConfig.
+	// the ControllerConfig.
 	//
 	// I'm not sure if this needs to be done right here or as frequently as this,
 	// but it shouldn't cause too much impact.
