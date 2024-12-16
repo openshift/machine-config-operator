@@ -37,6 +37,7 @@ import (
 
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	pivottypes "github.com/openshift/machine-config-operator/pkg/daemon/pivot/types"
 	pivotutils "github.com/openshift/machine-config-operator/pkg/daemon/pivot/utils"
@@ -526,8 +527,8 @@ func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newC
 	// if they were in use, so we also need to preserve that behavior.
 	// https://issues.redhat.com/browse/OCPBUGS-4049
 	if mcDiff.osUpdate || mcDiff.extensions || mcDiff.kernelType || mcDiff.kargs ||
-		canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelTypeRealtime ||
-		canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelType64kPages ||
+		canonicalizeKernelType(newConfig.Spec.KernelType) == commonconsts.KernelTypeRealtime ||
+		canonicalizeKernelType(newConfig.Spec.KernelType) == commonconsts.KernelType64kPages ||
 		len(newConfig.Spec.Extensions) > 0 {
 
 		// Throw started/staged events only if there is any update required for the OS
@@ -728,7 +729,7 @@ func (dn *Daemon) calculatePostConfigChangeNodeDisruptionAction(diff *machineCon
 	// Wait for mcop.Status.NodeDisruptionPolicyStatus to populate, otherwise error out. This shouldn't take very long
 	// as this is done by the operator sync loop, but may be extended if transitioning to TechPreview as the operator restarts,
 	if err := wait.PollUntilContextTimeout(context.TODO(), 5*time.Second, 2*time.Minute, true, func(_ context.Context) (bool, error) {
-		mcop, pollErr = dn.mcopClient.OperatorV1().MachineConfigurations().Get(context.TODO(), ctrlcommon.MCOOperatorKnobsObjectName, metav1.GetOptions{})
+		mcop, pollErr = dn.mcopClient.OperatorV1().MachineConfigurations().Get(context.TODO(), commonconsts.MCOOperatorKnobsObjectName, metav1.GetOptions{})
 		if pollErr != nil {
 			klog.Errorf("calculating NodeDisruptionPolicies: MachineConfiguration/cluster has not been created yet")
 			pollErr = fmt.Errorf("MachineConfiguration/cluster has not been created yet")
@@ -1487,12 +1488,12 @@ func (mcDiff *machineConfigDiff) osChangesString() string {
 
 // canonicalizeKernelType returns a valid kernelType. We consider empty("") and default kernelType as same
 func canonicalizeKernelType(kernelType string) string {
-	if kernelType == ctrlcommon.KernelTypeRealtime {
-		return ctrlcommon.KernelTypeRealtime
-	} else if kernelType == ctrlcommon.KernelType64kPages {
-		return ctrlcommon.KernelType64kPages
+	if kernelType == commonconsts.KernelTypeRealtime {
+		return commonconsts.KernelTypeRealtime
+	} else if kernelType == commonconsts.KernelType64kPages {
+		return commonconsts.KernelType64kPages
 	}
-	return ctrlcommon.KernelTypeDefault
+	return commonconsts.KernelTypeDefault
 }
 
 // newMachineConfigDiff compares two MachineConfig objects.
@@ -1792,12 +1793,12 @@ func (dn *CoreOSDaemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig)
 
 	// In the OS update path, we removed overrides for kernel-rt.  So if the target (new) config
 	// is also default (i.e. throughput) then we have nothing to do.
-	if newKtype == ctrlcommon.KernelTypeDefault {
+	if newKtype == commonconsts.KernelTypeDefault {
 		return nil
 	}
 
 	// 64K memory pages kernel is only supported for aarch64
-	if newKtype == ctrlcommon.KernelType64kPages && goruntime.GOARCH != "arm64" {
+	if newKtype == commonconsts.KernelType64kPages && goruntime.GOARCH != "arm64" {
 		return fmt.Errorf("64k-pages is only supported for aarch64 architecture")
 	}
 
@@ -1814,7 +1815,7 @@ func (dn *CoreOSDaemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig)
 		logSystem("Re-applying kernel type %s", newKtype)
 	}
 
-	if newKtype == ctrlcommon.KernelTypeRealtime {
+	if newKtype == commonconsts.KernelTypeRealtime {
 		// Switch to RT kernel
 		args := []string{"override", "remove"}
 		args = append(args, defaultKernel...)
@@ -1823,7 +1824,7 @@ func (dn *CoreOSDaemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig)
 		}
 
 		return runRpmOstree(args...)
-	} else if newKtype == ctrlcommon.KernelType64kPages {
+	} else if newKtype == commonconsts.KernelType64kPages {
 		// Switch to 64k pages kernel
 		args := []string{"override", "remove"}
 		args = append(args, defaultKernel...)
@@ -2870,7 +2871,7 @@ func (dn *Daemon) hasImageRegistryDrainOverrideConfigMap() (bool, error) {
 		return false, nil
 	}
 
-	_, err := dn.kubeClient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), constants.ImageRegistryDrainOverrideConfigmap, metav1.GetOptions{})
+	_, err := dn.kubeClient.CoreV1().ConfigMaps(commonconsts.MCONamespace).Get(context.TODO(), constants.ImageRegistryDrainOverrideConfigmap, metav1.GetOptions{})
 	if err == nil {
 		return true, nil
 	}
@@ -2889,9 +2890,9 @@ func (dn *Daemon) hasImageRegistryDrainOverrideConfigMap() (bool, error) {
 // 2. Generate the Ignition config from the ControllerConfig.
 // 3. Writes the new systemd unit to disk and enables it.
 func (dn *Daemon) enableRevertSystemdUnit() error {
-	ctrlcfg, err := dn.ccLister.Get(ctrlcommon.ControllerConfigName)
+	ctrlcfg, err := dn.ccLister.Get(commonconsts.ControllerConfigName)
 	if err != nil {
-		return fmt.Errorf("could not get controllerconfig %s: %w", ctrlcommon.ControllerConfigName, err)
+		return fmt.Errorf("could not get controllerconfig %s: %w", commonconsts.ControllerConfigName, err)
 	}
 
 	revertService, err := runtimeassets.NewRevertService(ctrlcfg)

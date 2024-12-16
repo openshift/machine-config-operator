@@ -7,7 +7,7 @@ import (
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/buildrequest"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -79,7 +79,7 @@ func (p *preparerImpl) createEphemeralBuildObjects(ctx context.Context, br build
 }
 
 func (p *preparerImpl) createSecret(ctx context.Context, s *corev1.Secret) error {
-	_, err := p.kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Create(ctx, s, metav1.CreateOptions{})
+	_, err := p.kubeclient.CoreV1().Secrets(commonconsts.MCONamespace).Create(ctx, s, metav1.CreateOptions{})
 	if err == nil {
 		klog.Infof("Created ephemeral secret %q for build %q", s.Name, p.mosb.Name)
 		return nil
@@ -93,7 +93,7 @@ func (p *preparerImpl) createSecret(ctx context.Context, s *corev1.Secret) error
 }
 
 func (p *preparerImpl) createConfigMap(ctx context.Context, cm *corev1.ConfigMap) error {
-	_, err := p.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Create(ctx, cm, metav1.CreateOptions{})
+	_, err := p.kubeclient.CoreV1().ConfigMaps(commonconsts.MCONamespace).Create(ctx, cm, metav1.CreateOptions{})
 	if err == nil {
 		klog.Infof("Created ephemeral ConfigMap %q for build %q", cm.Name, p.mosb.Name)
 		return nil

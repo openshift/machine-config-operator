@@ -5,6 +5,7 @@ import (
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -61,14 +62,14 @@ func RunContainerRuntimeBootstrap(templateDir string, crconfigs []*mcfgv1.Contai
 			// the first managed key value 99-poolname-generated-containerruntime does not have a suffix
 			// set "" as suffix annotation to the containerruntime config object
 			cfg.SetAnnotations(map[string]string{
-				ctrlcommon.MCNameSuffixAnnotationKey: "",
+				commonconsts.MCNameSuffixAnnotationKey: "",
 			})
 			mc, err := ctrlcommon.MachineConfigFromIgnConfig(role, managedKey, ctrRuntimeConfigIgn)
 			if err != nil {
 				return nil, fmt.Errorf("could not create MachineConfig from new Ignition config: %w", err)
 			}
 			mc.SetAnnotations(map[string]string{
-				ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,
+				commonconsts.GeneratedByControllerVersionAnnotationKey: version.Hash,
 			})
 			oref := metav1.OwnerReference{
 				APIVersion: controllerKind.GroupVersion().String(),

@@ -6,7 +6,7 @@ import (
 
 	"github.com/containers/image/v5/docker/reference"
 	imagev1 "github.com/openshift/api/image/v1"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	"github.com/openshift/machine-config-operator/test/framework"
 	apierrs "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -15,7 +15,7 @@ import (
 
 const (
 	imagestreamName     string = "os-image"
-	imagestreamPullspec string = "image-registry.openshift-image-registry.svc:5000/" + ctrlcommon.MCONamespace + "/" + imagestreamName + ":latest"
+	imagestreamPullspec string = "image-registry.openshift-image-registry.svc:5000/" + commonconsts.MCONamespace + "/" + imagestreamName + ":latest"
 )
 
 func createImagestreamAndGetPullspec(cs *framework.ClientSet, name string) (string, error) {
@@ -27,7 +27,7 @@ func createImagestreamAndGetPullspec(cs *framework.ClientSet, name string) (stri
 }
 
 func getImagestreamPullspec(cs *framework.ClientSet, name string) (string, error) {
-	is, err := cs.ImageV1Interface.ImageStreams(ctrlcommon.MCONamespace).Get(context.TODO(), name, metav1.GetOptions{})
+	is, err := cs.ImageV1Interface.ImageStreams(commonconsts.MCONamespace).Get(context.TODO(), name, metav1.GetOptions{})
 	if err != nil {
 		return "", err
 	}
@@ -54,14 +54,14 @@ func createImagestream(cs *framework.ClientSet, name string) error {
 	is := &imagev1.ImageStream{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: ctrlcommon.MCONamespace,
+			Namespace: commonconsts.MCONamespace,
 			Labels: map[string]string{
 				createdByOnClusterBuildsHelper: "",
 			},
 		},
 	}
 
-	created, err := cs.ImageV1Interface.ImageStreams(ctrlcommon.MCONamespace).Create(context.TODO(), is, metav1.CreateOptions{})
+	created, err := cs.ImageV1Interface.ImageStreams(commonconsts.MCONamespace).Create(context.TODO(), is, metav1.CreateOptions{})
 	if err == nil {
 		klog.Infof("Imagestream %q created", name)
 		return nil

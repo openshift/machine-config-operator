@@ -17,6 +17,7 @@ import (
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	"github.com/openshift/machine-config-operator/test/helpers"
 )
 
@@ -24,12 +25,12 @@ func TestFeatureGateDrift(t *testing.T) {
 	for _, platform := range []configv1.PlatformType{configv1.AWSPlatformType, configv1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
-			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			cc := newControllerConfig(commonconsts.ControllerConfigName, platform)
 			f.ccLister = append(f.ccLister, cc)
 
 			features := &osev1.FeatureGate{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: ctrlcommon.ClusterFeatureInstanceName,
+					Name: commonconsts.ClusterFeatureInstanceName,
 				},
 				Spec: osev1.FeatureGateSpec{
 					FeatureGateSelection: osev1.FeatureGateSelection{
@@ -68,7 +69,7 @@ func TestFeaturesDefault(t *testing.T) {
 			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"CSIMigration"}, nil)
 			f.newController(fgAccess)
 
-			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			cc := newControllerConfig(commonconsts.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			kc1 := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
@@ -110,7 +111,7 @@ func TestFeaturesCustomNoUpgrade(t *testing.T) {
 		t.Run(string(platform), func(t *testing.T) {
 			features := &osev1.FeatureGate{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: ctrlcommon.ClusterFeatureInstanceName,
+					Name: commonconsts.ClusterFeatureInstanceName,
 				},
 				Spec: osev1.FeatureGateSpec{
 					FeatureGateSelection: osev1.FeatureGateSelection{
@@ -126,7 +127,7 @@ func TestFeaturesCustomNoUpgrade(t *testing.T) {
 			f := newFixture(t)
 			f.newController(fgAccess)
 
-			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			cc := newControllerConfig(commonconsts.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			kc1 := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
@@ -163,7 +164,7 @@ func TestFeaturesCustomNoUpgrade(t *testing.T) {
 func TestBootstrapFeaturesDefault(t *testing.T) {
 	for _, platform := range []configv1.PlatformType{configv1.AWSPlatformType, configv1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
-			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			cc := newControllerConfig(commonconsts.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			mcps := []*mcfgv1.MachineConfigPool{mcp, mcp2}
@@ -184,7 +185,7 @@ func TestBootstrapFeaturesDefault(t *testing.T) {
 func TestBootstrapFeaturesCustomNoUpgrade(t *testing.T) {
 	for _, platform := range []configv1.PlatformType{configv1.AWSPlatformType, configv1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
-			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			cc := newControllerConfig(commonconsts.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			mcps := []*mcfgv1.MachineConfigPool{mcp, mcp2}
@@ -210,7 +211,7 @@ func TestBootstrapFeaturesCustomNoUpgrade(t *testing.T) {
 
 				features := &osev1.FeatureGate{
 					ObjectMeta: metav1.ObjectMeta{
-						Name: ctrlcommon.ClusterFeatureInstanceName,
+						Name: commonconsts.ClusterFeatureInstanceName,
 					},
 					Spec: osev1.FeatureGateSpec{
 						FeatureGateSelection: osev1.FeatureGateSelection{
@@ -243,7 +244,7 @@ func TestFeaturesCustomNoUpgradeRemoveUnmanagedMC(t *testing.T) {
 		t.Run(string(platform), func(t *testing.T) {
 			features := &osev1.FeatureGate{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: ctrlcommon.ClusterFeatureInstanceName,
+					Name: commonconsts.ClusterFeatureInstanceName,
 				},
 				Spec: osev1.FeatureGateSpec{
 					FeatureGateSelection: osev1.FeatureGateSelection{
@@ -260,7 +261,7 @@ func TestFeaturesCustomNoUpgradeRemoveUnmanagedMC(t *testing.T) {
 			f := newFixture(t)
 			f.newController(fgAccess)
 
-			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			cc := newControllerConfig(commonconsts.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			mcp3 := helpers.NewMachineConfigPool("custom", nil, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/custom", ""), "v0")

@@ -6,9 +6,9 @@ import (
 
 	"encoding/json"
 
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	clientset "k8s.io/client-go/kubernetes"
 )
 
@@ -64,7 +64,7 @@ func ParseImagesFromBytes(in []byte) (*Images, error) {
 
 // Reads the contents of the provided ConfigMap into an Images struct.
 func ParseImagesFromConfigMap(cm *corev1.ConfigMap) (*Images, error) {
-	if err := validateMCOConfigMap(cm, MachineConfigOperatorImagesConfigMapName, []string{"images.json"}, nil); err != nil {
+	if err := validateMCOConfigMap(cm, commonconsts.MachineConfigOperatorImagesConfigMapName, []string{"images.json"}, nil); err != nil {
 		return nil, err
 	}
 
@@ -83,7 +83,7 @@ type OSImageURLConfig struct {
 func ParseOSImageURLConfigMap(cm *corev1.ConfigMap) (*OSImageURLConfig, error) {
 	reqKeys := []string{"baseOSContainerImage", "baseOSExtensionsContainerImage", "osImageURL", "releaseVersion"}
 
-	if err := validateMCOConfigMap(cm, MachineConfigOSImageURLConfigMapName, reqKeys, nil); err != nil {
+	if err := validateMCOConfigMap(cm, commonconsts.MachineConfigOSImageURLConfigMapName, reqKeys, nil); err != nil {
 		return nil, err
 	}
 
@@ -105,8 +105,8 @@ func validateMCOConfigMap(cm *corev1.ConfigMap, name string, reqDataKeys, reqBin
 		return fmt.Errorf("invalid ConfigMap, expected %s", name)
 	}
 
-	if cm.Namespace != MCONamespace {
-		return fmt.Errorf("invalid namespace, expected %s", MCONamespace)
+	if cm.Namespace != commonconsts.MCONamespace {
+		return fmt.Errorf("invalid namespace, expected %s", commonconsts.MCONamespace)
 	}
 
 	if reqDataKeys != nil {
@@ -130,9 +130,9 @@ func validateMCOConfigMap(cm *corev1.ConfigMap, name string, reqDataKeys, reqBin
 
 // Gets and parses the OSImageURL data from the machine-config-osimageurl ConfigMap.
 func GetOSImageURLConfig(ctx context.Context, kubeclient clientset.Interface) (*OSImageURLConfig, error) {
-	cm, err := kubeclient.CoreV1().ConfigMaps(MCONamespace).Get(ctx, MachineConfigOSImageURLConfigMapName, metav1.GetOptions{})
+	cm, err := kubeclient.CoreV1().ConfigMaps(commonconsts.MCONamespace).Get(ctx, commonconsts.MachineConfigOSImageURLConfigMapName, metav1.GetOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("could not get ConfigMap %s: %w", MachineConfigOSImageURLConfigMapName, err)
+		return nil, fmt.Errorf("could not get ConfigMap %s: %w", commonconsts.MachineConfigOSImageURLConfigMapName, err)
 	}
 
 	return ParseOSImageURLConfigMap(cm)
@@ -140,9 +140,9 @@ func GetOSImageURLConfig(ctx context.Context, kubeclient clientset.Interface) (*
 
 // Gets and parse the Images data from the machine-config-operator-images ConfigMap.
 func GetImagesConfig(ctx context.Context, kubeclient clientset.Interface) (*Images, error) {
-	cm, err := kubeclient.CoreV1().ConfigMaps(MCONamespace).Get(ctx, MachineConfigOperatorImagesConfigMapName, metav1.GetOptions{})
+	cm, err := kubeclient.CoreV1().ConfigMaps(commonconsts.MCONamespace).Get(ctx, commonconsts.MachineConfigOperatorImagesConfigMapName, metav1.GetOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("could not get configmap %s: %w", MachineConfigOperatorImagesConfigMapName, err)
+		return nil, fmt.Errorf("could not get configmap %s: %w", commonconsts.MachineConfigOperatorImagesConfigMapName, err)
 	}
 
 	return ParseImagesFromConfigMap(cm)

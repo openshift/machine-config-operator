@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/openshift/machine-config-operator/devex/internal/pkg/utils"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -75,12 +75,12 @@ func extractBuildObjectsForTargetPool(cs *framework.ClientSet, targetPool, targe
 func extractBuildObjectsForRenderedMC(cs *framework.ClientSet, mcName, targetDir string) error {
 	ctx := context.Background()
 
-	dockerfileCM, err := cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace).Get(ctx, "dockerfile-"+mcName, metav1.GetOptions{})
+	dockerfileCM, err := cs.CoreV1Interface.ConfigMaps(commonconsts.MCONamespace).Get(ctx, "dockerfile-"+mcName, metav1.GetOptions{})
 	if err != nil {
 		return err
 	}
 
-	mcCM, err := cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace).Get(ctx, "mc-"+mcName, metav1.GetOptions{})
+	mcCM, err := cs.CoreV1Interface.ConfigMaps(commonconsts.MCONamespace).Get(ctx, "mc-"+mcName, metav1.GetOptions{})
 	if err != nil {
 		return err
 	}

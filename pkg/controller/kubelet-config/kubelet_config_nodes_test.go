@@ -16,6 +16,7 @@ import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	"github.com/openshift/machine-config-operator/test/helpers"
 )
 
@@ -23,7 +24,7 @@ func TestOriginalKubeletConfigDefaultNodeConfig(t *testing.T) {
 	for _, platform := range []configv1.PlatformType{configv1.AWSPlatformType, configv1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
-			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			cc := newControllerConfig(commonconsts.ControllerConfigName, platform)
 			f.ccLister = append(f.ccLister, cc)
 
 			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"Example"}, nil)
@@ -52,7 +53,7 @@ func TestNodeConfigDefault(t *testing.T) {
 			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"Example"}, nil)
 			f.newController(fgAccess)
 
-			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			cc := newControllerConfig(commonconsts.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			kc := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/worker", ""))
 			kubeletConfigKey, err := getManagedKubeletConfigKey(mcp, f.client, kc)
@@ -108,7 +109,7 @@ func TestBootstrapNodeConfigDefault(t *testing.T) {
 
 	for _, platform := range []configv1.PlatformType{configv1.AWSPlatformType, configv1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
-			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			cc := newControllerConfig(commonconsts.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp1 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			mcps := []*mcfgv1.MachineConfigPool{mcp}
@@ -136,7 +137,7 @@ func TestBootstrapNodeConfigDefault(t *testing.T) {
 func TestBootstrapNoNodeConfig(t *testing.T) {
 	for _, platform := range []configv1.PlatformType{configv1.AWSPlatformType, configv1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
-			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			cc := newControllerConfig(commonconsts.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			mcps := []*mcfgv1.MachineConfigPool{mcp}
 
@@ -157,7 +158,7 @@ func TestNodeConfigCustom(t *testing.T) {
 			f := newFixture(t)
 			features := &osev1.FeatureGate{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: ctrlcommon.ClusterFeatureInstanceName,
+					Name: commonconsts.ClusterFeatureInstanceName,
 				},
 				Spec: osev1.FeatureGateSpec{
 					FeatureGateSelection: osev1.FeatureGateSelection{
@@ -171,7 +172,7 @@ func TestNodeConfigCustom(t *testing.T) {
 			fgAccess := featuregates.NewHardcodedFeatureGateAccess(features.Spec.FeatureGateSelection.CustomNoUpgrade.Enabled, features.Spec.FeatureGateSelection.CustomNoUpgrade.Disabled)
 			f.newController(fgAccess)
 
-			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			cc := newControllerConfig(commonconsts.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			mcp1 := helpers.NewMachineConfigPool("custom", nil, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/custom", ""), "v0")
 
@@ -192,7 +193,7 @@ func TestNodeConfigCustom(t *testing.T) {
 
 			nodeConfig := &osev1.Node{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: ctrlcommon.ClusterNodeInstanceName,
+					Name: commonconsts.ClusterNodeInstanceName,
 				},
 				Spec: osev1.NodeSpec{
 					CgroupMode: "v1",
