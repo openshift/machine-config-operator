@@ -1,0 +1,156 @@
+mode: 0644
+path: "/etc/kubernetes/static-pod-resources/keepalived/keepalived.conf.tmpl"
+contents:
+  inline: |
+    global_defs {
+        enable_script_security
+        script_user root
+        max_auto_priority -1
+        vrrp_garp_master_refresh 60
+    }
+
+    # These are separate checks to provide the following behavior:
+    # If the loadbalancer is healthy then all is well regardless
+    # of what the local API status is. Both checks will return success and
+    # we'll have the maximum priority. This means as long as there is a node
+    # with a functional loadbalancer it will get the VIP.
+    # If all of the loadbalancers go down but the local API is still running,
+    # the _both check will still succeed and allow any node with a functional
+    # API to take the VIP. This isn't preferred because it means all API
+    # traffic will go through one node, but at least it keeps the API available.
+    vrrp_script chk_ocp_lb {
+        script "/usr/bin/timeout 1.9 /etc/keepalived/chk_ocp_script.sh"
+        interval 2
+        weight 20
+        rise 3
+        fall 3
+    }
+
+    vrrp_script chk_ocp_both {
+        script "/usr/bin/timeout 1.9 /etc/keepalived/chk_ocp_script_both.sh"
+        interval 2
+        # Use a smaller weight for this check so it won't trigger the move from
+        # bootstrap to master by itself.
+        weight 5
+        rise 3
+        fall 3
+    }
+
+    vrrp_script chk_mcs {
+        script "/usr/bin/timeout 1.9 /etc/keepalived/chk_mcs_script.sh"
+        interval 2
+        weight 3
+        rise 3
+        fall 3
+    }
+
+    # TODO: Improve this check. The port is assumed to be alive.
+    # Need to assess what is the ramification if the port is not there.
+    vrrp_script chk_ingress_ready {
+        script "/usr/bin/timeout 0.9 /usr/bin/curl -o /dev/null -Lfs http://localhost:1936/healthz/ready"
+        interval 1
+        weight 10
+        rise 3
+        fall 2
+    }
+
+    vrrp_script chk_ingress {
+        script "/usr/bin/timeout 0.9 /usr/bin/curl -o /dev/null -Lfs http://localhost:1936/healthz"
+        interval 1
+        rise 3
+        fall 2
+    }
+
+    vrrp_script chk_default_ingress {
+        script "/usr/bin/timeout 4.9 /etc/keepalived/chk_default_ingress.sh"
+        interval 5
+        weight 50
+        rise 3
+        fall 2
+    }
+
+    {{`{{ range $i, $config := .Configs }}`}}
+    {{`{{$nonVirtualIP := .NonVirtualIP}}`}}
+
+    {{`{{$participateInAPIVRPP := not .EnableUnicast}}`}}
+    {{`{{- if .EnableUnicast}}
+    {{- range .LBConfig.Backends}}
+    {{- if eq $nonVirtualIP .Address}}
+    {{$participateInAPIVRPP = true}}
+    {{- end}}
+    {{- end}}
+    {{- end}}`}}
+
+    {{`{{if $participateInAPIVRPP}}`}}
+    vrrp_instance {{`{{ .Cluster.Name }}`}}_API_{{`{{$i}}`}} {
+        state BACKUP
+        interface {{`{{ .VRRPInterface }}`}}
+        virtual_router_id {{`{{ .Cluster.APIVirtualRouterID }}`}}
+        priority 40
+        advert_int 1
+        {{`{{if .EnableUnicast}}`}}
+        unicast_src_ip {{`{{.NonVirtualIP}}`}}
+        unicast_peer {
+            {{`{{- range .LBConfig.Backends -}}
+            {{- if ne $nonVirtualIP .Address}}
+            {{.Address}}
+            {{- end}}
+            {{- end}}`}}
+        }
+        {{`{{end}}`}}
+        authentication {
+            auth_type PASS
+            auth_pass {{`{{ .Cluster.Name }}`}}_api_vip
+        }
+        virtual_ipaddress {
+            {{`{{ .Cluster.APIVIP }}`}}/{{`{{ .Cluster.VIPNetmask }}`}} label vip
+        }
+        track_script {
+            chk_ocp_lb
+            chk_ocp_both
+            chk_mcs
+        }
+    }
+    {{`{{end}}`}}
+
+    {{`{{$participateInIngressVRPP := not .EnableUnicast}}`}}
+    {{`{{- if .EnableUnicast}}
+    {{- range .IngressConfig.Peers}}
+    {{- if eq $nonVirtualIP .}}
+    {{$participateInIngressVRPP = true}}
+    {{- end}}
+    {{- end}}
+    {{- end}}`}}
+
+    {{`{{if $participateInIngressVRPP}}`}}
+    vrrp_instance {{`{{ .Cluster.Name }}`}}_INGRESS_{{`{{$i}}`}} {
+        state BACKUP
+        interface {{`{{ .VRRPInterface }}`}}
+        virtual_router_id {{`{{ .Cluster.IngressVirtualRouterID }}`}}
+        priority 20
+        advert_int 1
+        {{`{{if .EnableUnicast}}`}}
+        unicast_src_ip {{`{{.NonVirtualIP}}`}}
+        unicast_peer {
+            {{`{{- range .IngressConfig.Peers}}
+            {{- if ne $nonVirtualIP .}}
+            {{.}}
+            {{- end}}
+            {{- end}}`}}
+        }
+        {{`{{end}}`}}
+        authentication {
+            auth_type PASS
+            auth_pass {{`{{ .Cluster.Name }}`}}_ingress_vip
+        }
+        virtual_ipaddress {
+            {{`{{ .Cluster.IngressVIP }}`}}/{{`{{ .Cluster.VIPNetmask }}`}} label vip
+        }
+        track_script {
+            chk_ingress
+            chk_ingress_ready
+            chk_default_ingress
+        }
+    }
+    {{`{{ end }}`}}
+    {{`{{ end }}`}}

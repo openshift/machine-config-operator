@@ -80,6 +80,11 @@ func generateTemplateMachineConfigs(config *RenderConfig, templateDir string) ([
 			continue
 		}
 
+		// Avoid creating resources for non arbiter deployments
+		if role == "arbiter" && config.Infra.Status.ControlPlaneTopology != configv1.HighlyAvailableArbiterMode {
+			continue
+		}
+
 		roleConfigs, err := GenerateMachineConfigsForRole(config, role, templateDir)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create MachineConfig for role %s: %w", role, err)
@@ -102,7 +107,7 @@ func generateTemplateMachineConfigs(config *RenderConfig, templateDir string) ([
 func GenerateMachineConfigsForRole(config *RenderConfig, role, templateDir string) ([]*mcfgv1.MachineConfig, error) {
 	rolePath := role
 	//nolint:goconst
-	if role != "worker" && role != "master" {
+	if role != "worker" && role != "master" && role != "arbiter" {
 		// custom pools are only allowed to be worker's children
 		// and can reuse the worker templates
 		rolePath = "worker"
