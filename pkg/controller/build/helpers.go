@@ -71,8 +71,11 @@ func validateMachineOSConfig(mcpGetter func(string) (*mcfgv1.MachineConfigPool, 
 	}
 
 	secretFields := map[string]string{
-		mosc.Spec.BaseImagePullSecret.Name:     "baseImagePullSecret",
 		mosc.Spec.RenderedImagePushSecret.Name: "renderedImagePushSecret",
+	}
+	// Add base image pull secret if it has been defined in the MOSC
+	if mosc.Spec.BaseImagePullSecret != nil {
+		secretFields[mosc.Spec.BaseImagePullSecret.Name] = "baseImagePullSecret"
 	}
 
 	for secretName, fieldName := range secretFields {
