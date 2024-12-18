@@ -608,6 +608,12 @@ func ValidateMachineConfig(cfg mcfgv1.MachineConfigSpec) error {
 		if err := ValidateIgnition(ignCfg); err != nil {
 			return err
 		}
+		// Validate MC extensions are in allowlist
+		if len(cfg.Extensions) > 0 {
+			if err := ValidateMachineConfigExtensions(cfg); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
