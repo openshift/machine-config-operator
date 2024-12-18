@@ -71,7 +71,6 @@ func validateMachineOSConfig(mcpGetter func(string) (*mcfgv1.MachineConfigPool, 
 	}
 
 	secretFields := map[string]string{
-		mosc.Spec.BaseImagePullSecret.Name:     "baseImagePullSecret",
 		mosc.Spec.RenderedImagePushSecret.Name: "renderedImagePushSecret",
 	}
 
