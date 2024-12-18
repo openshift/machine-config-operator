@@ -116,11 +116,6 @@ spec:
         - configMap:
             name: kube-rbac-proxy
           name: mcd-auth-proxy-config
-        {{- range .MachineOSConfigs }}
-        - secret:
-            secretName: {{ .Spec.BuildOutputs.CurrentImagePullSecret.Name }}
-          name: {{ .Spec.BuildOutputs.CurrentImagePullSecret.Name }}
-        {{- end }}
       tolerations:
       # MCD needs to run everywhere. Tolerate all taints.
       - operator: Exists

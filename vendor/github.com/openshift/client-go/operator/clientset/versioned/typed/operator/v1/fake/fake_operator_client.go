@@ -76,6 +76,10 @@ func (c *FakeOperatorV1) Networks() v1.NetworkInterface {
 	return &FakeNetworks{c}
 }
 
+func (c *FakeOperatorV1) OLMs() v1.OLMInterface {
+	return &FakeOLMs{c}
+}
+
 func (c *FakeOperatorV1) OpenShiftAPIServers() v1.OpenShiftAPIServerInterface {
 	return &FakeOpenShiftAPIServers{c}
 }
