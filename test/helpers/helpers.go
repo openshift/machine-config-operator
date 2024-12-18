@@ -226,6 +226,19 @@ func NewOpaqueSecretWithOwnerPool(name, namespace, content string, pool mcfgv1.M
 	}
 }
 
+func NewDockerCfgJSONSecret(name, namespace, content string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Data: map[string][]byte{
+			".dockerconfigjson": []byte(content),
+		},
+		Type: corev1.SecretTypeDockerConfigJson,
+	}
+}
+
 // CreateMachineConfigFromIgnitionWithMetadata returns a MachineConfig object from an Ignition config, name, and role label
 func CreateMachineConfigFromIgnitionWithMetadata(ignCfg interface{}, name, role string) *mcfgv1.MachineConfig {
 	return &mcfgv1.MachineConfig{
