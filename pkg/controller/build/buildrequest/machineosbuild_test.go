@@ -28,7 +28,7 @@ func TestMachineOSBuild(t *testing.T) {
 	}
 
 	// Some of the test cases expect the hash name to be the same. This is that hash value.
-	expectedCommonHashName := "worker-d6e1cf069939c5cda06064edf431689c"
+	expectedCommonHashName := "worker-2ab43b54f9fb493af95d32937247895a"
 
 	testCases := []struct {
 		name         string
@@ -227,7 +227,7 @@ func TestMachineOSBuild(t *testing.T) {
 			assert.Equal(t, testCase.expectedName, mosb.Name)
 
 			expectedPullspec := fmt.Sprintf("registry.hostname.com/org/repo:%s", testCase.expectedName)
-			assert.Equal(t, expectedPullspec, mosb.Spec.RenderedImagePushSpec)
+			assert.Equal(t, expectedPullspec, string(mosb.Spec.RenderedImagePushSpec))
 			assert.Equal(t, testCase.opts.MachineConfigPool.Spec.Configuration.Name, mosb.Spec.MachineConfig.Name)
 			assert.NotNil(t, mosb.Status.BuildStart)
 
