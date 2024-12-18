@@ -15,7 +15,9 @@ contents: |
   [Service]
   Type=oneshot
   RemainAfterExit=yes
-  ExecStart=/bin/sh -c "while ! /usr/bin/podman pull --authfile=/var/lib/kubelet/config.json '{{ .Images.machineConfigOperator }}'; do sleep 1; done"
+  ExecStartPre=/bin/sh -c '/usr/bin/podman -v | /bin/awk '\''{split($3, version, "-"); clean_version = version[1]; split(clean_version, current, /\./); split("4.4.1", target, /\./); for (i = 1; i <= 3; i++) {if ((current[i] + 0) < (target[i] + 0)) {print "--signature-policy /etc/machine-config-daemon/policy-for-old-podman.json"; exit} else if ((current[i] + 0) > (target[i] + 0)) {exit}}}'\'' > /tmp/podman_policy_args'
+  ExecStart=/bin/sh -c "while ! /usr/bin/podman pull $(cat /tmp/podman_policy_args) --authfile=/var/lib/kubelet/config.json '{{ .Images.machineConfigOperator }}'; do sleep 1; done"
+  
   {{if .Proxy -}}
   EnvironmentFile=/etc/mco/proxy.env
   {{end -}}
