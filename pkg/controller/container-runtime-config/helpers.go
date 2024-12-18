@@ -342,6 +342,12 @@ func getManagedKeyReg(pool *mcfgv1.MachineConfigPool, client mcfgclientset.Inter
 	return ctrlcommon.GetManagedKey(pool, client, "99", "registries", getManagedKeyRegDeprecated(pool))
 }
 
+func getManagedKeyDefaultContainerRuntime(pool *mcfgv1.MachineConfigPool) string {
+	// The "00-override" ensures this config is applied between "00-default" and "01-ctrcfg-defaultRuntime".
+	// This guarantees user-defined ctrcfg settings always override machine-config defaults.
+	return fmt.Sprintf("00-override-%s-generated-crio-default-container-runtime", pool.Name)
+}
+
 func wrapErrorWithCondition(err error, args ...interface{}) mcfgv1.ContainerRuntimeConfigCondition {
 	var condition *mcfgv1.ContainerRuntimeConfigCondition
 	if err != nil {
@@ -444,6 +450,17 @@ func createCRIODropinFiles(cfg *mcfgv1.ContainerRuntimeConfig) []generatedConfig
 		if err != nil {
 			klog.V(2).Infoln(cfg, err, "error updating user changes for default-runtime to crio.conf.d: %v", err)
 		}
+	}
+	return generatedConfigFileList
+}
+
+func createDefaultContainerRuntimeFile() []generatedConfigFile {
+	generatedConfigFileList := make([]generatedConfigFile, 0)
+	tomlConf := tomlConfigCRIODefaultRuntime{}
+	tomlConf.Crio.Runtime.DefaultRuntime = mcfgv1.ContainerRuntimeDefaultRuntimeRunc
+	generatedConfigFileList, err := addTOMLgeneratedConfigFile(generatedConfigFileList, CRIODropInFilePathDefaultRuntime, tomlConf)
+	if err != nil {
+		klog.V(2).Infoln(err, "error setting default-container-runtime to crio.conf.d: %v", err)
 	}
 	return generatedConfigFileList
 }
