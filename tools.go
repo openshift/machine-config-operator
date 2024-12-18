@@ -5,7 +5,6 @@
 package tools
 
 import (
-	_ "github.com/golangci/golangci-lint/cmd/golangci-lint"
 	// Code generators built at runtime.
 	_ "github.com/openshift/api/config/v1alpha1/zz_generated.crd-manifests"
 	_ "github.com/openshift/api/machineconfiguration/v1/zz_generated.crd-manifests"
