@@ -3,6 +3,7 @@ module github.com/openshift/machine-config-operator
 go 1.22.4
 
 require (
+	dario.cat/mergo v1.0.1
 	github.com/BurntSushi/toml v1.4.0
 	github.com/InVisionApp/go-health v2.1.0+incompatible
 	github.com/apparentlymart/go-cidr v1.0.0
@@ -26,7 +27,6 @@ require (
 	github.com/golangci/golangci-lint v1.59.1
 	github.com/google/go-cmp v0.6.0
 	github.com/google/renameio v0.1.0
-	github.com/imdario/mergo v0.3.16
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/openshift/api v0.0.0-20241106222702-2429e35d6633
 	github.com/openshift/client-go v0.0.0-20241001162912-da6d55e4611f
@@ -96,6 +96,7 @@ require (
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
 	github.com/gorilla/websocket v1.5.0 // indirect
 	github.com/gregjones/httpcache v0.0.0-20180305231024-9cad4c3443a7 // indirect
+	github.com/imdario/mergo v0.3.16 // indirect
 	github.com/jjti/go-spancheck v0.6.1 // indirect
 	github.com/karamaru-alpha/copyloopvar v1.1.0 // indirect
 	github.com/kkHAIKE/contextcheck v1.1.5 // indirect
