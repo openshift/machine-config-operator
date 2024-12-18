@@ -139,16 +139,6 @@ func defaultKubeObjects() []runtime.Object {
 			},
 			Type: corev1.SecretTypeDockerConfigJson,
 		},
-		&corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      currentImagePullSecretName,
-				Namespace: ctrlcommon.MCONamespace,
-			},
-			Data: map[string][]byte{
-				corev1.DockerConfigJsonKey: []byte(pullSecret),
-			},
-			Type: corev1.SecretTypeDockerConfigJson,
-		},
 		&corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "machine-config-operator",

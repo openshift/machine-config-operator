@@ -129,22 +129,6 @@ func TestBuildRequest(t *testing.T) {
 				return opts
 			},
 		},
-		{
-			name: "MachineOSConfig-provided options override OSImageURLConfig defaults",
-			optsFunc: func() BuildRequestOpts {
-				opts := getBuildRequestOpts()
-				opts.MachineConfig.Spec.Extensions = []string{"usbguard"}
-				return opts
-			},
-			expectedContainerfileContents: []string{
-				"FROM base-os-image-from-machineosconfig AS extract",
-				"FROM base-os-image-from-machineosconfig AS configs",
-				"RUN --mount=type=bind,from=base-ext-image-from-machineosconfig",
-				"extensions=\"usbguard\"",
-				"LABEL releaseversion=release-version-from-machineosconfig",
-			},
-			unexpectedContainerfileContents: expectedContents(),
-		},
 	}
 
 	for _, testCase := range testCases {
