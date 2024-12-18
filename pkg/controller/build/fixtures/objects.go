@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	baseImagePullSecretName  string = "base-image-pull-secret"
+	BaseImagePullSecretName  string = "base-image-pull-secret"
 	finalImagePushSecretName string = "final-image-push-secret"
 )
 
@@ -86,7 +86,6 @@ func NewObjectBuildersForTest(poolName string) ObjectBuildersForTest {
 
 	moscBuilder := testhelpers.NewMachineOSConfigBuilder(moscName).
 		WithMachineConfigPool(poolName).
-		WithBaseImagePullSecret(baseImagePullSecretName).
 		WithRenderedImagePushSecret(finalImagePushSecretName).
 		WithRenderedImagePushSpec("registry.hostname.com/org/repo:latest").
 		WithContainerfile(mcfgv1.NoArch, "FROM configs AS final\n\nRUN echo 'hi' > /etc/hi")
@@ -131,7 +130,17 @@ func defaultKubeObjects() []runtime.Object {
 		},
 		&corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      baseImagePullSecretName,
+				Name:      BaseImagePullSecretName,
+				Namespace: ctrlcommon.MCONamespace,
+			},
+			Data: map[string][]byte{
+				corev1.DockerConfigJsonKey: []byte(pullSecret),
+			},
+			Type: corev1.SecretTypeDockerConfigJson,
+		},
+		&corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      ctrlcommon.GlobalPullSecretCopyName,
 				Namespace: ctrlcommon.MCONamespace,
 			},
 			Data: map[string][]byte{
