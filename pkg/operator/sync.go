@@ -1251,6 +1251,11 @@ func (optr *Operator) reconcileMachineOSBuilder(mob *appsv1.Deployment) error {
 		return fmt.Errorf("could not reconcile etc-pki-entitlement secrets: %w", err)
 	}
 
+	// Create/Deletes the global pull secret copy in the MCO namespace, depending on layered pool count.
+	if err := optr.reconcileGlobalPullSecretCopy(layeredMCPs); err != nil {
+		return fmt.Errorf("could not reconcile global pull secret copy: %w", err)
+	}
+
 	// If we have opted-in pools and the Machine OS Builder deployment is either
 	// not running or doesn't have the correct replica count, scale it up.
 	correctReplicaCount := optr.hasCorrectReplicaCount(mob)
@@ -1452,6 +1457,57 @@ func (optr *Operator) reconcileSimpleContentAccessSecrets(layeredMCPs []*mcfgv1.
 			}
 			klog.Infof("updating %s", secretName)
 		}
+	}
+
+	return nil
+}
+
+func (optr *Operator) reconcileGlobalPullSecretCopy(layeredMCPs []*mcfgv1.MachineConfigPool) error {
+	secretCopyExists := true
+	currentSecretCopy, err := optr.mcoSecretLister.Secrets(ctrlcommon.MCONamespace).Get(ctrlcommon.GlobalPullSecretCopyName)
+	if apierrors.IsNotFound(err) {
+		secretCopyExists = false
+	} else if err != nil {
+		return err
+	}
+
+	if len(layeredMCPs) == 0 {
+		// If the secret copy doesn't exist, nothing to do here
+		if !secretCopyExists {
+			return nil
+		}
+		klog.Infof("deleting %s", ctrlcommon.GlobalPullSecretCopyName)
+		return optr.kubeClient.CoreV1().Secrets(ctrlcommon.MCONamespace).Delete(context.TODO(), ctrlcommon.GlobalPullSecretCopyName, metav1.DeleteOptions{})
+	}
+
+	// Atleast one pool is opted-in, let's create or update the copy if needed. First, grab the global pull secret.
+	globalPullSecret, err := optr.ocSecretLister.Secrets(ctrlcommon.OpenshiftConfigNamespace).Get("pull-secret")
+	if err != nil {
+		return fmt.Errorf("error fetching cluster pull secret: %w", err)
+	}
+
+	// Create a clone of clusterPullSecret, and modify it to be in the MCO namespace.
+	globalPullSecretCopy := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      ctrlcommon.GlobalPullSecretCopyName,
+			Namespace: ctrlcommon.MCONamespace,
+		},
+		Data: globalPullSecret.Data,
+		Type: corev1.SecretTypeDockerConfigJson,
+	}
+
+	// If the secret copy doesn't exist, create it.
+	if !secretCopyExists {
+		klog.Infof("creating %s", ctrlcommon.GlobalPullSecretCopyName)
+		_, err := optr.kubeClient.CoreV1().Secrets(ctrlcommon.MCONamespace).Create(context.TODO(), globalPullSecretCopy, metav1.CreateOptions{})
+		return err
+	}
+
+	// If it does exist, check if an update is required before making the update call.
+	if !reflect.DeepEqual(currentSecretCopy.Data, globalPullSecret.Data) {
+		klog.Infof("updating %s", ctrlcommon.GlobalPullSecretCopyName)
+		_, err := optr.kubeClient.CoreV1().Secrets(ctrlcommon.MCONamespace).Update(context.TODO(), globalPullSecretCopy, metav1.UpdateOptions{})
+		return err
 	}
 
 	return nil

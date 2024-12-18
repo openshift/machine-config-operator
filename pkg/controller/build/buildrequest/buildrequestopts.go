@@ -30,6 +30,8 @@ type BuildRequestOpts struct { //nolint:revive // This name is fine.
 	BaseImagePullSecret  *corev1.Secret
 	FinalImagePushSecret *corev1.Secret
 
+	// Has user defined base image pull secret
+	hasUserDefinedBaseImagePullSecret bool
 	// Has /etc/pki/entitlement
 	HasEtcPkiEntitlementKeys bool
 	// Has /etc/yum.repos.d configs
@@ -108,10 +110,6 @@ func (o *optsGetter) validateMachineOSConfig(mosc *mcfgv1.MachineOSConfig) error
 		return fmt.Errorf("expected MachineOSConfig not to be nil")
 	}
 
-	if mosc.Spec.BaseImagePullSecret.Name == "" {
-		return fmt.Errorf("baseImagePullSecret empty for MachineOSConfig %s", mosc.Name)
-	}
-
 	if mosc.Spec.RenderedImagePushSecret.Name == "" {
 		return fmt.Errorf("renderedImagePushSecret empty for MachineOSConfig %s", mosc.Name)
 	}
@@ -165,7 +163,18 @@ func (o *optsGetter) getOpts(ctx context.Context, mosb *mcfgv1.MachineOSBuild, m
 		return nil, fmt.Errorf("could not get osImageURL config: %w", err)
 	}
 
-	baseImagePullSecret, err := o.getValidatedSecret(ctx, mosc.Spec.BaseImagePullSecret.Name)
+	var baseImagePullSecretName string
+	// Check if a base image pull secret was provided
+	opts.hasUserDefinedBaseImagePullSecret = mosc.Spec.BaseImagePullSecret != nil
+	if opts.hasUserDefinedBaseImagePullSecret {
+		baseImagePullSecretName = mosc.Spec.BaseImagePullSecret.Name
+	} else {
+		// If not provided, fall back to the global pull secret copy in the MCO namespace
+		klog.Infof("BaseImagePullSecret not defined for MachineOSConfig %s, falling back to global pull secret", mosc.Name)
+		baseImagePullSecretName = ctrlcommon.GlobalPullSecretCopyName
+	}
+
+	baseImagePullSecret, err := o.getValidatedSecret(ctx, baseImagePullSecretName)
 	if err != nil {
 		return nil, fmt.Errorf("could not get base image pull secret %s: %w", mosc.Spec.BaseImagePullSecret.Name, err)
 	}

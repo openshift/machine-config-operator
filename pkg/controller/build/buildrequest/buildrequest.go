@@ -486,11 +486,6 @@ func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
 		volumes = append(volumes, opts.volumeForSecret(constants.EtcPkiRpmGpgSecretName))
 	}
 
-	// TODO: We need pull creds with permissions to pull the base image. By
-	// default, none of the MCO pull secrets can directly pull it. We can use the
-	// pull-secret creds from openshift-config to do that, though we'll need to
-	// mirror those creds into the MCO namespace. The operator portion of the MCO
-	// has some logic to detect whenever that secret changes.
 	return &corev1.Pod{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "v1",
