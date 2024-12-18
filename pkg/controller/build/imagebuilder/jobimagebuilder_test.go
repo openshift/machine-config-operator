@@ -213,7 +213,7 @@ func assertObserverCanGetJobStatus(ctx context.Context, t *testing.T, obs ImageB
 
 	if jobPhase == jobSucceeded {
 		assert.NotNil(t, mosbStatus.BuildEnd)
-		assert.Equal(t, "registry.hostname.com/org/repo@sha256:e1992921cba73d9e74e46142eca5946df8a895bfd4419fc8b5c6422d5e7192e6", mosbStatus.DigestedImagePushSpec)
+		assert.Equal(t, "registry.hostname.com/org/repo@sha256:e1992921cba73d9e74e46142eca5946df8a895bfd4419fc8b5c6422d5e7192e6", string(mosbStatus.DigestedImagePushSpec))
 	}
 
 	assertMachineOSBuildStateMapsToCommonState(ctx, t, obs)

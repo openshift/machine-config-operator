@@ -28,7 +28,7 @@ func TestMachineOSBuild(t *testing.T) {
 	}
 
 	// Some of the test cases expect the hash name to be the same. This is that hash value.
-	expectedCommonHashName := "worker-d6e1cf069939c5cda06064edf431689c"
+	expectedCommonHashName := "worker-2ab43b54f9fb493af95d32937247895a"
 
 	testCases := []struct {
 		name         string
@@ -80,111 +80,6 @@ func TestMachineOSBuild(t *testing.T) {
 				OSImageURLConfig:  fixtures.OSImageURLConfig(),
 			},
 		},
-		/* QOCL: Clarify if we want to update or remove these tests as a whole.
-		{
-			name:         "Base OS image pullspec provided by MachineOSConfig equal to OSImageURLConfig",
-			expectedName: expectedCommonHashName,
-			opts: MachineOSBuildOpts{
-				MachineConfigPool: getMachineConfigPool(),
-				MachineOSConfig: testhelpers.NewMachineOSConfigBuilder(poolName).
-					WithMachineConfigPool(poolName).
-					WithBaseOSImagePullspec(fixtures.BaseOSContainerImage).
-					MachineOSConfig(),
-				OSImageURLConfig: fixtures.OSImageURLConfig(),
-			},
-		},
-		{
-			name:         "Extensions image provided by provided by MachineOSConfig equal to OSImageURLConfig",
-			expectedName: expectedCommonHashName,
-			opts: MachineOSBuildOpts{
-				MachineConfigPool: getMachineConfigPool(),
-				MachineOSConfig: testhelpers.NewMachineOSConfigBuilder(poolName).
-					WithMachineConfigPool(poolName).
-					WithExtensionsImagePullspec(fixtures.BaseOSExtensionsContainerImage).
-					MachineOSConfig(),
-				OSImageURLConfig: fixtures.OSImageURLConfig(),
-			},
-		},
-		{
-			name:         "Release version provided by MachineOSConfig equal to OSImageURLConfig",
-			expectedName: expectedCommonHashName,
-			opts: MachineOSBuildOpts{
-				MachineConfigPool: getMachineConfigPool(),
-				MachineOSConfig: testhelpers.NewMachineOSConfigBuilder(poolName).
-					WithMachineConfigPool(poolName).
-					WithReleaseVersion(fixtures.ReleaseVersion).
-					MachineOSConfig(),
-				OSImageURLConfig: fixtures.OSImageURLConfig(),
-			},
-		},
-		{
-			name:         "All values provided by MachineOSConfig equal to OSImageURLConfig values",
-			expectedName: expectedCommonHashName,
-			opts: MachineOSBuildOpts{
-				MachineConfigPool: getMachineConfigPool(),
-				MachineOSConfig: testhelpers.NewMachineOSConfigBuilder(poolName).
-					WithMachineConfigPool(poolName).
-					WithBaseOSImagePullspec(fixtures.BaseOSContainerImage).
-					WithExtensionsImagePullspec(fixtures.BaseOSExtensionsContainerImage).
-					WithReleaseVersion(fixtures.ReleaseVersion).
-					MachineOSConfig(),
-				OSImageURLConfig: fixtures.OSImageURLConfig(),
-			},
-		},
-		// These cases ensure that should the value on the MachineOSConfig differ
-		// from what is in the OSImageURLConfig (provided it is not empty!), the
-		// hash will change.
-		{
-			name:         "Custom base OS image pullspec provided by MachineOSConfig",
-			expectedName: "worker-45358521eec36e094dfba3d48f67bf2e",
-			opts: MachineOSBuildOpts{
-				MachineConfigPool: getMachineConfigPool(),
-				MachineOSConfig: testhelpers.NewMachineOSConfigBuilder(poolName).
-					WithMachineConfigPool(poolName).
-					WithBaseOSImagePullspec("registry.hostname.com/org/repo:custom-os-image").
-					MachineOSConfig(),
-				OSImageURLConfig: fixtures.OSImageURLConfig(),
-			},
-		},
-		{
-			name:         "Custom extensions image provided by provided by MachineOSConfig",
-			expectedName: "worker-e091d5caee71326bd29f9e30997eda11",
-			opts: MachineOSBuildOpts{
-				MachineConfigPool: getMachineConfigPool(),
-				MachineOSConfig: testhelpers.NewMachineOSConfigBuilder(poolName).
-					WithMachineConfigPool(poolName).
-					WithExtensionsImagePullspec("registry.hostname.com/org/repo:custom-extensions-image").
-					MachineOSConfig(),
-				OSImageURLConfig: fixtures.OSImageURLConfig(),
-			},
-		},
-		{
-			name:         "Custom release version provided by MachineOSConfig",
-			expectedName: "worker-33f019b45084bba3d6e6dfaf0a2335b0",
-			opts: MachineOSBuildOpts{
-				MachineConfigPool: getMachineConfigPool(),
-				MachineOSConfig: testhelpers.NewMachineOSConfigBuilder(poolName).
-					WithMachineConfigPool(poolName).
-					WithReleaseVersion("custom-release-version").
-					MachineOSConfig(),
-				OSImageURLConfig: fixtures.OSImageURLConfig(),
-			},
-		},
-		{
-			name:         "All custom values provided by MachineOSConfig",
-			expectedName: "worker-b9833dc380a7c5892856202669afae9c",
-			opts: MachineOSBuildOpts{
-				MachineConfigPool: getMachineConfigPool(),
-				MachineOSConfig: testhelpers.NewMachineOSConfigBuilder(poolName).
-					WithMachineConfigPool(poolName).
-					WithBaseOSImagePullspec("registry.hostname.com/org/repo:custom-os-image").
-					WithExtensionsImagePullspec("registry.hostname.com/org/repo:custom-extensions-image").
-					WithReleaseVersion("custom-release-version").
-					MachineOSConfig(),
-				OSImageURLConfig: fixtures.OSImageURLConfig(),
-			},
-		},
-		*/
 		// These cases ensure that pausing the MachineConfigPool does not affect the hash.
 		{
 			name:         "Unpaused MachineConfigPool",
@@ -227,7 +122,7 @@ func TestMachineOSBuild(t *testing.T) {
 			assert.Equal(t, testCase.expectedName, mosb.Name)
 
 			expectedPullspec := fmt.Sprintf("registry.hostname.com/org/repo:%s", testCase.expectedName)
-			assert.Equal(t, expectedPullspec, mosb.Spec.RenderedImagePushSpec)
+			assert.Equal(t, expectedPullspec, string(mosb.Spec.RenderedImagePushSpec))
 			assert.Equal(t, testCase.opts.MachineConfigPool.Spec.Configuration.Name, mosb.Spec.MachineConfig.Name)
 			assert.NotNil(t, mosb.Status.BuildStart)
 

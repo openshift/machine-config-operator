@@ -35,7 +35,6 @@ type clients struct {
 // This test validates that the OSBuildController does nothing unless
 // there is a matching MachineOSConfig for a given MachineConfigPool.
 func TestOSBuildControllerDoesNothing(t *testing.T) {
-	t.Parallel()
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	t.Cleanup(cancel)
@@ -56,7 +55,6 @@ func TestOSBuildControllerDoesNothing(t *testing.T) {
 // when a new MachineOSBuild for a givee MachineOSConfig is created or a new
 // rendered MachineConfig is detected on the associated MachineConfigPool.
 func TestOSBuildControllerDeletesRunningBuildBeforeStartingANewOne(t *testing.T) {
-	t.Parallel()
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	t.Cleanup(cancel)
@@ -64,7 +62,6 @@ func TestOSBuildControllerDeletesRunningBuildBeforeStartingANewOne(t *testing.T)
 	poolName := "worker"
 
 	t.Run("MachineOSConfig change", func(t *testing.T) {
-		t.Parallel()
 
 		kubeclient, mcfgclient, mosc, initialMosb, mcp, kubeassert, _ := setupOSBuildControllerForTestWithRunningBuild(ctx, t, poolName)
 
@@ -96,7 +93,6 @@ func TestOSBuildControllerDeletesRunningBuildBeforeStartingANewOne(t *testing.T)
 	})
 
 	t.Run("MachineConfig change", func(t *testing.T) {
-		t.Parallel()
 
 		kubeclient, mcfgclient, mosc, initialMosb, mcp, kubeassert, _ := setupOSBuildControllerForTestWithRunningBuild(ctx, t, poolName)
 
@@ -123,7 +119,6 @@ func TestOSBuildControllerDeletesRunningBuildBeforeStartingANewOne(t *testing.T)
 // builds but will still clear running builds before statring a new build for
 // the same MachineOSConfig.
 func TestOSBuildControllerLeavesSuccessfulBuildAlone(t *testing.T) {
-	t.Parallel()
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	t.Cleanup(cancel)
@@ -192,7 +187,6 @@ func TestOSBuildControllerLeavesSuccessfulBuildAlone(t *testing.T) {
 // behind unless someone makes a change to the MachineOSConfig or
 // MachineConfigPool.
 func TestOSBuildControllerFailure(t *testing.T) {
-	t.Parallel()
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	t.Cleanup(cancel)
@@ -200,7 +194,6 @@ func TestOSBuildControllerFailure(t *testing.T) {
 	poolName := "worker"
 
 	t.Run("Failed build objects remain", func(t *testing.T) {
-		t.Parallel()
 
 		_, _, _, failedMosb, _, kubeassert := setupOSBuildControllerForTestWithFailedBuild(ctx, t, poolName)
 
@@ -209,7 +202,6 @@ func TestOSBuildControllerFailure(t *testing.T) {
 	})
 
 	t.Run("MachineOSConfig change clears failed build", func(t *testing.T) {
-		t.Parallel()
 
 		kubeclient, mcfgclient, mosc, failedMosb, mcp, kubeassert := setupOSBuildControllerForTestWithFailedBuild(ctx, t, poolName)
 
@@ -234,7 +226,6 @@ func TestOSBuildControllerFailure(t *testing.T) {
 	})
 
 	t.Run("MachineConfig change clears failed build", func(t *testing.T) {
-		t.Parallel()
 
 		kubeclient, mcfgclient, mosc, failedMosb, mcp, kubeassert := setupOSBuildControllerForTestWithFailedBuild(ctx, t, poolName)
 
@@ -256,7 +247,6 @@ func TestOSBuildControllerFailure(t *testing.T) {
 // This test checks that a previously built MachineOSBuild can be reused
 // without performing another build provided that the hashed name is the same.
 func TestOSBuildControllerReusesPreviouslyBuiltImage(t *testing.T) {
-	t.Parallel()
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	t.Cleanup(cancel)
@@ -343,7 +333,6 @@ func TestOSBuildControllerReusesPreviouslyBuiltImage(t *testing.T) {
 // whenever the MachineOSConfig itself is deleted.
 
 func TestOSBuildController(t *testing.T) {
-	t.Parallel()
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	t.Cleanup(cancel)
@@ -355,7 +344,6 @@ func TestOSBuildController(t *testing.T) {
 	}
 
 	t.Run("MachineOSConfig changes creates a new MachineOSBuild", func(t *testing.T) {
-		t.Parallel()
 
 		kubeclient, mcfgclient, mosc, _, _, kubeassert := setupOSBuildControllerForTestWithSuccessfulBuild(ctx, t, poolName)
 
@@ -396,7 +384,6 @@ func TestOSBuildController(t *testing.T) {
 	})
 
 	t.Run("MachineConfig changes creates a new MachineOSBuild", func(t *testing.T) {
-		t.Parallel()
 
 		kubeclient, mcfgclient, mosc, _, mcp, kubeassert := setupOSBuildControllerForTestWithSuccessfulBuild(ctx, t, poolName)
 
@@ -426,7 +413,7 @@ func TestOSBuildController(t *testing.T) {
 
 		// Now, we delete the MachineOSConfig and we expect that all
 		// MachineOSBuilds that were created from it are also deleted.
-		err := mcfgclient.MachineconfigurationV1alpha1().MachineOSConfigs().Delete(ctx, mosc.Name, metav1.DeleteOptions{})
+		err := mcfgclient.MachineconfigurationV1().MachineOSConfigs().Delete(ctx, mosc.Name, metav1.DeleteOptions{})
 		require.NoError(t, err)
 
 		isMachineOSBuildReachedExpectedCount(ctx, t, mcfgclient, mosc, 0)
@@ -436,7 +423,6 @@ func TestOSBuildController(t *testing.T) {
 // Validates that when a MachineOSConfig gets the rebuild annotation that the
 // MachineOSBuild associated with it is deleted and then rebuilt.
 func TestOSBuildControllerRebuildAnnotation(t *testing.T) {
-	t.Parallel()
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	t.Cleanup(cancel)
@@ -462,7 +448,6 @@ func TestOSBuildControllerRebuildAnnotation(t *testing.T) {
 }
 
 func TestOSBuildControllerBuildFailedDoesNotCascade(t *testing.T) {
-	t.Parallel()
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	t.Cleanup(cancel)
@@ -689,18 +674,6 @@ func isMachineOSBuildReachedExpectedCount(ctx context.Context, t *testing.T, mcf
 	require.NoError(t, err, "MachineOSBuild count did not reach expected value %d", expected)
 }
 
-func setImagePushspecOnMachineOSBuild(ctx context.Context, mcfgclient mcfgclientset.Interface, mosb *mcfgv1.MachineOSBuild, pushspec string) error {
-	apiMosb, err := mcfgclient.MachineconfigurationV1alpha1().MachineOSBuilds().Get(ctx, mosb.Name, metav1.GetOptions{})
-	if err != nil {
-		return err
-	}
-
-	apiMosb.Status.FinalImagePushspec = pushspec
-
-	_, err = mcfgclient.MachineconfigurationV1alpha1().MachineOSBuilds().UpdateStatus(ctx, apiMosb, metav1.UpdateOptions{})
-	return err
-}
-
 func assertMachineOSConfigGetsBuiltImagePushspec(ctx context.Context, t *testing.T, mcfgclient mcfgclientset.Interface, mosc *mcfgv1.MachineOSConfig, pullspec string) {
 	t.Helper()
 
@@ -717,7 +690,8 @@ func assertMachineOSConfigGetsBuiltImagePushspec(ctx context.Context, t *testing
 		return string(apiMosc.Status.CurrentImagePullSpec) == pullspec, nil
 	})
 
-	require.NoError(t, err, "expected: %q, got: %q", pullspec, foundMosc.Status.CurrentImagePullSpec)
+	require.NoError(t, err)
+	require.Equal(t, pullspec, string(foundMosc.Status.CurrentImagePullSpec))
 }
 
 func assertMachineOSConfigGetsCurrentBuildAnnotation(ctx context.Context, t *testing.T, mcfgclient mcfgclientset.Interface, mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild) {
