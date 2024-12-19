@@ -14,6 +14,7 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	chelpers "github.com/openshift/machine-config-operator/pkg/controller/common"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -77,9 +78,60 @@ func (br buildRequestImpl) Opts() BuildRequestOpts {
 	return br.opts
 }
 
-// Creates the Build Job object.
-func (br buildRequestImpl) Builder() Builder {
-	return newBuilder(br.podToJob(br.toBuildahPod()))
+// Creates the Build object.
+func (br buildRequestImpl) Builder(kubeclient clientset.Interface) (Builder, error) {
+	if br.opts.MachineOSConfig.Spec.ImageBuilder.ImageBuilderType == mcfgv1.PipelineBuilder {
+		return newBuilder(br.createPipelineRun(kubeclient))
+	}
+	return newBuilder(br.podToJob(br.toBuildahPod()), nil)
+}
+
+func (br buildRequestImpl) createPipelineRun(kubeclient clientset.Interface) (*tektonv1.PipelineRun, error) {
+	// TODO(rsaini) create pipeline run object and return
+
+	containerfile, err := kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), br.getContainerfileConfigMapName(), metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("could not get rendered containerfile: %w", err)
+	}
+
+	pipelineRun := &tektonv1.PipelineRun{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "build-and-push-pipelinerun",
+			Namespace: ctrlcommon.MCONamespace,
+		},
+		Spec: tektonv1.PipelineRunSpec{
+			PipelineRef: &tektonv1.PipelineRef{Name: "build-and-push-pipeline"},
+			Params: []tektonv1.Param{
+				{Name: "logLevel", Value: tektonv1.ParamValue{StringVal: "DEBUG"}},
+				{Name: "storageDriver", Value: tektonv1.ParamValue{StringVal: "vfs"}},
+				{Name: "authfileBuild", Value: tektonv1.ParamValue{StringVal: "/tmp/base-image-pull-creds/config.json"}},
+				{Name: "authfilePush", Value: tektonv1.ParamValue{StringVal: "/tmp/final-image-push-creds/config.json"}},
+				{Name: "tag", Value: tektonv1.ParamValue{StringVal: string(br.opts.MachineOSBuild.Spec.RenderedImagePushSpec)}},
+				{Name: "containerFile", Value: tektonv1.ParamValue{StringVal: containerfile.Data["Containerfile"]}},
+				{Name: "buildContext", Value: tektonv1.ParamValue{StringVal: "$HOME/context"}},
+				{Name: "image", Value: tektonv1.ParamValue{StringVal: br.opts.OSImageURLConfig.BaseOSContainerImage}},
+			},
+			Workspaces: []tektonv1.WorkspaceBinding{
+				{
+					Name: "source",
+					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+						ClaimName: "source-pvc",
+					},
+				},
+			},
+		},
+	}
+
+	if br.opts.Proxy != nil {
+		proxyParams := []tektonv1.Param{
+			{Name: "httpProxy", Value: tektonv1.ParamValue{StringVal: br.opts.Proxy.HTTPProxy}},
+			{Name: "httpsProxy", Value: tektonv1.ParamValue{StringVal: br.opts.Proxy.HTTPSProxy}},
+			{Name: "noProxy", Value: tektonv1.ParamValue{StringVal: br.opts.Proxy.NoProxy}},
+		}
+		pipelineRun.Spec.Params = append(pipelineRun.Spec.Params, proxyParams...)
+	}
+
+	return pipelineRun, nil
 }
 
 // Takes the configured secrets and creates an ephemeral clone of them, canonicalizing them, if needed.
@@ -740,7 +792,7 @@ func (br buildRequestImpl) getEtcRegistriesConfigMapName() string {
 
 // Computes the build name based upon the MachineConfigPool name.
 func (br buildRequestImpl) getBuildName() string {
-	return utils.GetBuildJobName(br.opts.MachineOSBuild)
+	return utils.GetBuildName(br.opts.MachineOSBuild)
 }
 
 func (br buildRequestImpl) getDigestConfigMapName() string {

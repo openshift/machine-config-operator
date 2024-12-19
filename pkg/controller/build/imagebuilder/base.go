@@ -11,7 +11,6 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	batchv1 "k8s.io/api/batch/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	clientset "k8s.io/client-go/kubernetes"
@@ -96,13 +95,13 @@ func (b *baseImageBuilder) getMachineOSBuildStatus(ctx context.Context, obj kube
 
 	out.Conditions = conditions
 	out.Builder = &mcfgv1.MachineOSBuilderReference{
-		ImageBuilderType: mcfgv1.JobBuilder,
+		ImageBuilderType: b.mosc.Spec.ImageBuilder.ImageBuilderType,
 		// TODO: Should we clear this whenever the build is complete?
 		Job: &mcfgv1.ObjectReference{
 			Name:      obj.GetName(),
-			Group:     batchv1.SchemeGroupVersion.Group,
+			Group:     obj.GroupVersionKind().Group,
 			Namespace: obj.GetNamespace(),
-			Resource:  "jobs",
+			Resource:  obj.GetResourceVersion(),
 		},
 	}
 
@@ -190,7 +189,7 @@ func (b *baseImageBuilder) getBuilderUID() (string, error) {
 // directly from the Builder object.
 func (b *baseImageBuilder) getBuilderName() string {
 	if b.mosb != nil {
-		return utils.GetBuildJobName(b.mosb)
+		return utils.GetBuildName(b.mosb)
 	}
 
 	return b.builder.GetObject().GetName()
@@ -207,6 +206,5 @@ func (b *baseImageBuilder) prepareForBuild(ctx context.Context) (buildrequest.Bu
 	}
 
 	b.buildrequest = br
-
-	return br.Builder(), nil
+	return br.Builder(b.kubeclient)
 }
