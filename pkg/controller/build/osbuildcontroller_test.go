@@ -20,8 +20,11 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	testhelpers "github.com/openshift/machine-config-operator/test/helpers"
+	fakeolmclientset "github.com/operator-framework/operator-lifecycle-manager/pkg/api/client/clientset/versioned/fake"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	fakepipelineoperatorclientset "github.com/tektoncd/operator/pkg/client/clientset/versioned/fake"
+	faketektonclientset "github.com/tektoncd/pipeline/pkg/client/clientset/versioned/fake"
 	batchv1 "k8s.io/api/batch/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -43,7 +46,7 @@ func TestOSBuildControllerDoesNothing(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	t.Cleanup(cancel)
 
-	_, mcfgclient, _, _, _, _, _ := setupOSBuildControllerForTest(ctx, t)
+	_, mcfgclient, _, _, _, _, _, _, _, _ := setupOSBuildControllerForTest(ctx, t)
 
 	// i needs to be set to 2 because rendered-worker-1 already exists.
 	for i := 2; i <= 10; i++ {
@@ -67,7 +70,7 @@ func TestOSBuildControllerDeletesRunningBuildBeforeStartingANewOne(t *testing.T)
 
 	t.Run("MachineOSConfig change", func(t *testing.T) {
 
-		kubeclient, mcfgclient, _, _, mosc, initialMosb, mcp, kubeassert, _ := setupOSBuildControllerForTestWithRunningBuild(ctx, t, poolName)
+		kubeclient, mcfgclient, _, _, _, _, _, mosc, initialMosb, mcp, kubeassert, _ := setupOSBuildControllerForTestWithRunningBuild(ctx, t, poolName)
 
 		// Now that the build is in the running state, we update the MachineOSConfig.
 		apiMosc := testhelpers.SetContainerfileContentsOnMachineOSConfig(ctx, t, mcfgclient, mosc, "FROM configs AS final\nRUN echo 'helloworld' > /etc/helloworld")
@@ -76,7 +79,7 @@ func TestOSBuildControllerDeletesRunningBuildBeforeStartingANewOne(t *testing.T)
 		require.NoError(t, err)
 
 		mosb := buildrequest.NewMachineOSBuildFromAPIOrDie(ctx, kubeclient, apiMosc, mcp)
-		buildJobName := utils.GetBuildJobName(mosb)
+		buildJobName := utils.GetBuildName(mosb)
 
 		// After creating the new MachineOSConfig, a MachineOSBuild should be created.
 		kubeassert.MachineOSBuildExists(mosb, "MachineOSBuild not created for MachineOSConfig %s change", mosc.Name)
@@ -98,13 +101,13 @@ func TestOSBuildControllerDeletesRunningBuildBeforeStartingANewOne(t *testing.T)
 
 	t.Run("MachineConfig change", func(t *testing.T) {
 
-		kubeclient, mcfgclient, _, _, mosc, initialMosb, mcp, kubeassert, _ := setupOSBuildControllerForTestWithRunningBuild(ctx, t, poolName)
+		kubeclient, mcfgclient, _, _, _, _, _, mosc, initialMosb, mcp, kubeassert, _ := setupOSBuildControllerForTestWithRunningBuild(ctx, t, poolName)
 
 		apiMCP := insertNewRenderedMachineConfigAndUpdatePool(ctx, t, mcfgclient, mosc.Spec.MachineConfigPool.Name, "rendered-worker-2")
 
 		mosb := buildrequest.NewMachineOSBuildFromAPIOrDie(ctx, kubeclient, mosc, apiMCP)
 
-		buildJobName := utils.GetBuildJobName(mosb)
+		buildJobName := utils.GetBuildName(mosb)
 
 		// After updating the MachineConfigPool, a new MachineOSBuild should get created.
 		kubeassert.MachineOSBuildExists(mosb, "New MachineOSBuild for MachineConfigPool %q update for MachineOSConfig %q never gets created", mcp.Name, mosc.Name)
@@ -129,7 +132,7 @@ func TestOSBuildControllerLeavesSuccessfulBuildAlone(t *testing.T) {
 
 	poolName := "worker"
 
-	kubeclient, mcfgclient, _, _, firstMosc, firstMosb, mcp, kubeassert := setupOSBuildControllerForTestWithSuccessfulBuild(ctx, t, poolName)
+	kubeclient, mcfgclient, _, _, _, _, _, firstMosc, firstMosb, mcp, kubeassert := setupOSBuildControllerForTestWithSuccessfulBuild(ctx, t, poolName)
 
 	// Ensures that we have detected the first build.
 	isMachineOSBuildReachedExpectedCount(ctx, t, mcfgclient, firstMosc, 1)
@@ -146,7 +149,7 @@ func TestOSBuildControllerLeavesSuccessfulBuildAlone(t *testing.T) {
 		kubeassert.MachineOSBuildExists(mosb)
 
 		// Ensure that the build job exists.
-		kubeassert.JobExists(utils.GetBuildJobName(mosb))
+		kubeassert.JobExists(utils.GetBuildName(mosb))
 
 		// Set the job status to running.
 		fixtures.SetJobStatus(ctx, t, kubeclient, mosb, fixtures.JobStatus{Active: 1})
@@ -169,7 +172,7 @@ func TestOSBuildControllerLeavesSuccessfulBuildAlone(t *testing.T) {
 
 	// We ensure that the second build is deleted.
 	kubeassert.Now().MachineOSBuildDoesNotExist(secondMosb)
-	kubeassert.Now().JobDoesNotExist(utils.GetBuildJobName(secondMosb))
+	kubeassert.Now().JobDoesNotExist(utils.GetBuildName(secondMosb))
 
 	// We ensure that the first build is still present.
 	kubeassert.Now().MachineOSBuildExists(firstMosb)
@@ -181,7 +184,7 @@ func TestOSBuildControllerLeavesSuccessfulBuildAlone(t *testing.T) {
 	// Set the third build as successful.
 	fixtures.SetJobStatus(ctx, t, kubeclient, thirdMosb, fixtures.JobStatus{Succeeded: 1})
 	kubeassert.MachineOSBuildIsSuccessful(thirdMosb)
-	kubeassert.JobDoesNotExist(utils.GetBuildJobName(thirdMosb))
+	kubeassert.JobDoesNotExist(utils.GetBuildName(thirdMosb))
 
 	// Ensure that the build count has not changed due to the third build completing.
 	isMachineOSBuildReachedExpectedCount(ctx, t, mcfgclient, thirdMosc, 2)
@@ -199,7 +202,7 @@ func TestOSBuildControllerFailure(t *testing.T) {
 
 	t.Run("Failed build objects remain", func(t *testing.T) {
 
-		_, _, _, _, _, failedMosb, _, kubeassert := setupOSBuildControllerForTestWithFailedBuild(ctx, t, poolName)
+		_, _, _, _, _, _, _, _, failedMosb, _, kubeassert := setupOSBuildControllerForTestWithFailedBuild(ctx, t, poolName)
 
 		// Ensure that even after failure, the build objects remain.
 		assertBuildObjectsAreCreated(ctx, t, kubeassert, failedMosb)
@@ -207,7 +210,7 @@ func TestOSBuildControllerFailure(t *testing.T) {
 
 	t.Run("MachineOSConfig change clears failed build", func(t *testing.T) {
 
-		kubeclient, mcfgclient, _, _, mosc, failedMosb, mcp, kubeassert := setupOSBuildControllerForTestWithFailedBuild(ctx, t, poolName)
+		kubeclient, mcfgclient, _, _, _, _, _, mosc, failedMosb, mcp, kubeassert := setupOSBuildControllerForTestWithFailedBuild(ctx, t, poolName)
 
 		// Modify the MachineOSConfig to start a new build.
 		newMosc := testhelpers.SetContainerfileContentsOnMachineOSConfig(ctx, t, mcfgclient, mosc, "FROM configs AS final\nRUN echo 'helloworld' > /etc/helloworld")
@@ -218,7 +221,7 @@ func TestOSBuildControllerFailure(t *testing.T) {
 		// Ensure that the MachineOSBuild exists.
 		kubeassert.MachineOSBuildExists(newMosb)
 		// Ensure that the build job exists.
-		kubeassert.JobExists(utils.GetBuildJobName(newMosb))
+		kubeassert.JobExists(utils.GetBuildName(newMosb))
 		// Set the job status to running.
 		fixtures.SetJobStatus(ctx, t, kubeclient, newMosb, fixtures.JobStatus{Active: 1})
 		// Ensure that the MachineOSBuild gets the running status.
@@ -231,12 +234,12 @@ func TestOSBuildControllerFailure(t *testing.T) {
 
 	t.Run("MachineConfig change clears failed build", func(t *testing.T) {
 
-		kubeclient, mcfgclient, _, _, mosc, failedMosb, mcp, kubeassert := setupOSBuildControllerForTestWithFailedBuild(ctx, t, poolName)
+		kubeclient, mcfgclient, _, _, _, _, _, mosc, failedMosb, mcp, kubeassert := setupOSBuildControllerForTestWithFailedBuild(ctx, t, poolName)
 
 		apiMCP := insertNewRenderedMachineConfigAndUpdatePool(ctx, t, mcfgclient, mosc.Spec.MachineConfigPool.Name, "rendered-worker-2")
 
 		mosb := buildrequest.NewMachineOSBuildFromAPIOrDie(ctx, kubeclient, mosc, apiMCP)
-		buildJobName := utils.GetBuildJobName(mosb)
+		buildJobName := utils.GetBuildName(mosb)
 		// After updating the MachineConfigPool, a new MachineOSBuild should get created.
 		kubeassert.MachineOSBuildExists(mosb, "New MachineOSBuild for MachineConfigPool %q update for MachineOSConfig %q never gets created", mcp.Name, mosc.Name)
 		// After a new MachineOSBuild is created, a job should be created.
@@ -269,7 +272,7 @@ func TestOSBuildController(t *testing.T) {
 
 	t.Run("MachineOSConfig changes creates a new MachineOSBuild", func(t *testing.T) {
 
-		kubeclient, mcfgclient, _, _, mosc, _, _, kubeassert := setupOSBuildControllerForTestWithSuccessfulBuild(ctx, t, poolName)
+		kubeclient, mcfgclient, _, _, _, _, _, mosc, _, _, kubeassert := setupOSBuildControllerForTestWithSuccessfulBuild(ctx, t, poolName)
 
 		// Update the BuildInputs section on the MachineOSConfig and verify that a
 		// new MachineOSBuild is produced from it. We'll do this 10 times.
@@ -280,7 +283,7 @@ func TestOSBuildController(t *testing.T) {
 			require.NoError(t, err)
 
 			mosb := buildrequest.NewMachineOSBuildFromAPIOrDie(ctx, kubeclient, apiMosc, apiMCP)
-			buildJobName := utils.GetBuildJobName(mosb)
+			buildJobName := utils.GetBuildName(mosb)
 			// After creating the new MachineOSConfig, a MachineOSBuild should be created.
 			kubeassert.MachineOSBuildExists(mosb, "MachineOSBuild not created for MachineOSConfig %s change, iteration %d", mosc.Name, i)
 
@@ -309,7 +312,7 @@ func TestOSBuildController(t *testing.T) {
 
 	t.Run("MachineConfig changes creates a new MachineOSBuild", func(t *testing.T) {
 
-		kubeclient, mcfgclient, _, _, mosc, _, mcp, kubeassert := setupOSBuildControllerForTestWithSuccessfulBuild(ctx, t, poolName)
+		kubeclient, mcfgclient, _, _, _, _, _, mosc, _, mcp, kubeassert := setupOSBuildControllerForTestWithSuccessfulBuild(ctx, t, poolName)
 
 		// Update the rendered MachineConfig on the MachineConfigPool and verify that a new MachineOSBuild is produced. We'll do this 10 times.
 		for i := 0; i <= 5; i++ {
@@ -319,7 +322,7 @@ func TestOSBuildController(t *testing.T) {
 			apiMCP := insertNewRenderedMachineConfigAndUpdatePool(ctx, t, mcfgclient, mosc.Spec.MachineConfigPool.Name, getConfigNameForPool(i+2))
 
 			mosb := buildrequest.NewMachineOSBuildFromAPIOrDie(ctx, kubeclient, apiMosc, apiMCP)
-			buildJobName := utils.GetBuildJobName(mosb)
+			buildJobName := utils.GetBuildName(mosb)
 			// After updating the MachineConfigPool, a new MachineOSBuild should get created.
 			kubeassert.MachineOSBuildExists(mosb, "New MachineOSBuild for MachineConfigPool %q update for MachineOSConfig %q never gets created", mcp.Name, mosc.Name)
 			// After a new MachineOSBuild is created, a job should be created.
@@ -353,7 +356,7 @@ func TestOSBuildControllerBuildFailedDoesNotCascade(t *testing.T) {
 	faultyMC := "rendered-undesiredFaultyMC"
 
 	// Create a MOSC to enable OCL and let it produce a new MOSB in Running State
-	_, mcfgclient, _, _, mosc, mosb, mcp, _, ctrl := setupOSBuildControllerForTestWithRunningBuild(ctx, t, poolName)
+	_, mcfgclient, _, _, _, _, _, mosc, mosb, mcp, _, ctrl := setupOSBuildControllerForTestWithRunningBuild(ctx, t, poolName)
 	assertMachineOSConfigGetsCurrentBuildAnnotation(ctx, t, mcfgclient, mosc, mosb)
 
 	found := func(item *mcfgv1.MachineOSBuild, list []mcfgv1.MachineOSBuild) bool {
@@ -428,7 +431,7 @@ func TestOSBuildControllerReconcilesMachineConfigPoolsAfterRestart(t *testing.T)
 	// Gets an OSBuildController with a running job.
 	ctrlCtx, ctrlCtxCancel := context.WithCancel(ctx)
 	t.Cleanup(ctrlCtxCancel)
-	kubeclient, mcfgclient, imageclient, routeclient, mosc, firstMosb, mcp, kubeassert, _ := setupOSBuildControllerForTestWithRunningBuild(ctrlCtx, t, poolName)
+	kubeclient, mcfgclient, imageclient, routeclient, pipelineoperatorclient, olmclient, tektonclient, mosc, firstMosb, mcp, kubeassert, _ := setupOSBuildControllerForTestWithRunningBuild(ctrlCtx, t, poolName)
 
 	// Stop the OSBuildController.
 	ctrlCtxCancel()
@@ -442,20 +445,20 @@ func TestOSBuildControllerReconcilesMachineConfigPoolsAfterRestart(t *testing.T)
 	// Ensure that everything still exists.
 	kubeassert = kubeassert.Eventually().WithContext(ctx)
 	kubeassert.MachineOSBuildExists(firstMosb)
-	kubeassert.JobExists(utils.GetBuildJobName(firstMosb))
+	kubeassert.JobExists(utils.GetBuildName(firstMosb))
 
 	// Start OSBuildController (really, get a new instance backed by the same
 	// fakeclients as used above).
-	_, stop := startController(ctx, t, kubeclient, mcfgclient, imageclient, routeclient)
+	_, stop := startController(ctx, t, kubeclient, mcfgclient, imageclient, routeclient, pipelineoperatorclient, olmclient, tektonclient)
 	t.Cleanup(stop)
 
 	// Assert that the second MachineOSBuild and its job gets created.
 	kubeassert.MachineOSBuildExists(secondMosb)
-	kubeassert.JobExists(utils.GetBuildJobName(secondMosb))
+	kubeassert.JobExists(utils.GetBuildName(secondMosb))
 
 	// Assert that the first MachineOSBuild goes away.
 	kubeassert.MachineOSBuildDoesNotExist(firstMosb)
-	kubeassert.JobDoesNotExist(utils.GetBuildJobName(firstMosb))
+	kubeassert.JobDoesNotExist(utils.GetBuildName(firstMosb))
 }
 
 // This scenario tests the case where the controller restarts and a running job
@@ -478,7 +481,7 @@ func TestOSBuildControllerReconcilesJobsAfterRestart(t *testing.T) {
 			conditions: []metav1.Condition{},
 			assertions: func(kubeassert *testhelpers.Assertions, mosb *mcfgv1.MachineOSBuild) {
 				kubeassert.MachineOSBuildIsRunning(mosb)
-				kubeassert.JobExists(utils.GetBuildJobName(mosb))
+				kubeassert.JobExists(utils.GetBuildName(mosb))
 			},
 		},
 		{
@@ -487,7 +490,7 @@ func TestOSBuildControllerReconcilesJobsAfterRestart(t *testing.T) {
 			conditions: apihelpers.MachineOSBuildInitialConditions(),
 			assertions: func(kubeassert *testhelpers.Assertions, mosb *mcfgv1.MachineOSBuild) {
 				kubeassert.MachineOSBuildIsRunning(mosb)
-				kubeassert.JobExists(utils.GetBuildJobName(mosb))
+				kubeassert.JobExists(utils.GetBuildName(mosb))
 			},
 		},
 		{
@@ -496,7 +499,7 @@ func TestOSBuildControllerReconcilesJobsAfterRestart(t *testing.T) {
 			conditions: apihelpers.MachineOSBuildRunningConditions(),
 			assertions: func(kubeassert *testhelpers.Assertions, mosb *mcfgv1.MachineOSBuild) {
 				kubeassert.MachineOSBuildIsSuccessful(mosb)
-				kubeassert.JobDoesNotExist(utils.GetBuildJobName(mosb))
+				kubeassert.JobDoesNotExist(utils.GetBuildName(mosb))
 			},
 		},
 	}
@@ -508,7 +511,7 @@ func TestOSBuildControllerReconcilesJobsAfterRestart(t *testing.T) {
 
 			poolName := "worker"
 
-			kubeclient, mcfgclient, imageclient, routeclient, lobj, kubeassert := fixtures.GetClientsForTest(t)
+			kubeclient, mcfgclient, imageclient, routeclient, pipelineoperatorclient, olmclient, tektonclient, lobj, kubeassert := fixtures.GetClientsForTest(t)
 
 			kubeassert = kubeassert.Eventually().WithContext(ctx).WithPollInterval(time.Millisecond)
 			mcp := lobj.MachineConfigPool
@@ -534,15 +537,16 @@ func TestOSBuildControllerReconcilesJobsAfterRestart(t *testing.T) {
 			br, err := buildrequest.NewBuildRequestFromAPI(ctx, kubeclient, mcfgclient, apiMosb, mosc)
 			require.NoError(t, err)
 
-			buildJob := br.Builder().GetObject().(*batchv1.Job)
+			builder, err := br.Builder(kubeclient)
+			require.NoError(t, err)
 
-			_, err = kubeclient.BatchV1().Jobs(ctrlcommon.MCONamespace).Create(ctx, buildJob, metav1.CreateOptions{})
+			_, err = kubeclient.BatchV1().Jobs(ctrlcommon.MCONamespace).Create(ctx, builder.GetObject().(*batchv1.Job), metav1.CreateOptions{})
 			require.NoError(t, err)
 
 			fixtures.SetJobStatus(ctx, t, kubeclient, mosb, testCase.jobStatus)
 
 			// Start the build controller
-			_, stop := startController(ctx, t, kubeclient, mcfgclient, imageclient, routeclient)
+			_, stop := startController(ctx, t, kubeclient, mcfgclient, imageclient, routeclient, pipelineoperatorclient, olmclient, tektonclient)
 			t.Cleanup(stop)
 
 			kubeassert.MachineOSBuildExists(mosb)
@@ -554,7 +558,7 @@ func TestOSBuildControllerReconcilesJobsAfterRestart(t *testing.T) {
 func assertBuildObjectsAreCreated(ctx context.Context, t *testing.T, kubeassert *testhelpers.Assertions, mosb *mcfgv1.MachineOSBuild) {
 	t.Helper()
 
-	kubeassert.JobExists(utils.GetBuildJobName(mosb))
+	kubeassert.JobExists(utils.GetBuildName(mosb))
 	kubeassert.ConfigMapExists(utils.GetContainerfileConfigMapName(mosb))
 	kubeassert.ConfigMapExists(utils.GetMCConfigMapName(mosb))
 	kubeassert.SecretExists(utils.GetBasePullSecretName(mosb))
@@ -564,7 +568,7 @@ func assertBuildObjectsAreCreated(ctx context.Context, t *testing.T, kubeassert 
 func assertBuildObjectsAreDeleted(ctx context.Context, t *testing.T, kubeassert *testhelpers.Assertions, mosb *mcfgv1.MachineOSBuild) {
 	t.Helper()
 
-	kubeassert.JobDoesNotExist(utils.GetBuildJobName(mosb))
+	kubeassert.JobDoesNotExist(utils.GetBuildName(mosb))
 	kubeassert.ConfigMapDoesNotExist(utils.GetContainerfileConfigMapName(mosb))
 	kubeassert.ConfigMapDoesNotExist(utils.GetMCConfigMapName(mosb))
 	kubeassert.SecretDoesNotExist(utils.GetBasePullSecretName(mosb))
@@ -576,7 +580,16 @@ func assertBuildObjectsAreDeleted(ctx context.Context, t *testing.T, kubeassert 
 // context as well as the OSBuildController instance. Useful for testing
 // scenarios where it might be desirable to start and stop the
 // OSBuildController.
-func startController(ctx context.Context, t *testing.T, kubeclient *fakecorev1client.Clientset, mcfgclient *fakeclientmachineconfigv1.Clientset, imageclient *fakeclientimagev1.Clientset, routeclient *fakeclientroutev1.Clientset) (*OSBuildController, func()) {
+func startController(
+	ctx context.Context,
+	t *testing.T,
+	kubeclient *fakecorev1client.Clientset,
+	mcfgclient *fakeclientmachineconfigv1.Clientset,
+	imageclient *fakeclientimagev1.Clientset,
+	routeclient *fakeclientroutev1.Clientset,
+	pipelineoperatorclient *fakepipelineoperatorclientset.Clientset,
+	olmclient *fakeolmclientset.Clientset,
+	tektonclient *faketektonclientset.Clientset) (*OSBuildController, func()) {
 	ctrlCtx, ctrlCtxCancel := context.WithCancel(ctx)
 
 	cfg := Config{
@@ -584,7 +597,7 @@ func startController(ctx context.Context, t *testing.T, kubeclient *fakecorev1cl
 		UpdateDelay: 0,
 	}
 
-	ctrl := newOSBuildController(cfg, mcfgclient, kubeclient, imageclient, routeclient)
+	ctrl := newOSBuildController(cfg, mcfgclient, kubeclient, imageclient, routeclient, pipelineoperatorclient, olmclient, tektonclient)
 
 	// Use a work queue which is tuned for testing.
 	ctrl.execQueue = ctrlcommon.NewWrappedQueueForTesting(t)
@@ -594,18 +607,18 @@ func startController(ctx context.Context, t *testing.T, kubeclient *fakecorev1cl
 	return ctrl, ctrlCtxCancel
 }
 
-func setupOSBuildControllerForTest(ctx context.Context, t *testing.T) (*fakecorev1client.Clientset, *fakeclientmachineconfigv1.Clientset, *fakeclientimagev1.Clientset, *fakeclientroutev1.Clientset, *testhelpers.Assertions, *fixtures.ObjectsForTest, *OSBuildController) {
-	kubeclient, mcfgclient, imageclient, routeclient, lobj, kubeassert := fixtures.GetClientsForTest(t)
+func setupOSBuildControllerForTest(ctx context.Context, t *testing.T) (*fakecorev1client.Clientset, *fakeclientmachineconfigv1.Clientset, *fakeclientimagev1.Clientset, *fakeclientroutev1.Clientset, *fakepipelineoperatorclientset.Clientset, *fakeolmclientset.ClientSet, *faketektonclientset.Clientset, *testhelpers.Assertions, *fixtures.ObjectsForTest, *OSBuildController) {
+	kubeclient, mcfgclient, imageclient, routeclient, pipelineoperatorclient, olmclient, tektonclient, lobj, kubeassert := fixtures.GetClientsForTest(t)
 
-	ctrl, _ := startController(ctx, t, kubeclient, mcfgclient, imageclient, routeclient)
+	ctrl, _ := startController(ctx, t, kubeclient, mcfgclient, imageclient, routeclient, pipelineoperatorclient, olmclient, tektonclient)
 
 	kubeassert = kubeassert.Eventually().WithContext(ctx).WithPollInterval(time.Millisecond)
 
-	return kubeclient, mcfgclient, imageclient, routeclient, kubeassert, lobj, ctrl
+	return kubeclient, mcfgclient, imageclient, routeclient, pipelineoperatorclient, olmclient, tektonclient, kubeassert, lobj, ctrl
 }
 
-func setupOSBuildControllerForTestWithBuild(ctx context.Context, t *testing.T, poolName string) (*fakecorev1client.Clientset, *fakeclientmachineconfigv1.Clientset, *fakeclientimagev1.Clientset, *fakeclientroutev1.Clientset, *mcfgv1.MachineOSConfig, *mcfgv1.MachineOSBuild, *mcfgv1.MachineConfigPool, *testhelpers.Assertions, *OSBuildController) {
-	kubeclient, mcfgclient, imageclient, routeclient, kubeassert, lobj, ctrl := setupOSBuildControllerForTest(ctx, t)
+func setupOSBuildControllerForTestWithBuild(ctx context.Context, t *testing.T, poolName string) (*fakecorev1client.Clientset, *fakeclientmachineconfigv1.Clientset, *fakeclientimagev1.Clientset, *fakeclientroutev1.Clientset, *fakepipelineoperatorclientset.Clientset, *fakeolmclientset.ClientSet, *faketektonclientset.Clientset, *mcfgv1.MachineOSConfig, *mcfgv1.MachineOSBuild, *mcfgv1.MachineConfigPool, *testhelpers.Assertions, *OSBuildController) {
+	kubeclient, mcfgclient, imageclient, routeclient, pipelineoperatorclient, olmclient, tektonclient, kubeassert, lobj, ctrl := setupOSBuildControllerForTest(ctx, t)
 
 	mcp := lobj.MachineConfigPool
 	mosc := lobj.MachineOSConfig
@@ -616,15 +629,15 @@ func setupOSBuildControllerForTestWithBuild(ctx context.Context, t *testing.T, p
 
 	mosb := buildrequest.NewMachineOSBuildFromAPIOrDie(ctx, kubeclient, mosc, mcp)
 
-	return kubeclient, mcfgclient, imageclient, routeclient, mosc, mosb, mcp, kubeassert.WithPollInterval(time.Millisecond * 10).WithContext(ctx).Eventually(), ctrl
+	return kubeclient, mcfgclient, imageclient, routeclient, pipelineoperatorclient, olmclient, tektonclient, mosc, mosb, mcp, kubeassert.WithPollInterval(time.Millisecond * 10).WithContext(ctx).Eventually(), ctrl
 }
 
-func setupOSBuildControllerForTestWithRunningBuild(ctx context.Context, t *testing.T, poolName string) (*fakecorev1client.Clientset, *fakeclientmachineconfigv1.Clientset, *fakeclientimagev1.Clientset, *fakeclientroutev1.Clientset, *mcfgv1.MachineOSConfig, *mcfgv1.MachineOSBuild, *mcfgv1.MachineConfigPool, *testhelpers.Assertions, *OSBuildController) {
+func setupOSBuildControllerForTestWithRunningBuild(ctx context.Context, t *testing.T, poolName string) (*fakecorev1client.Clientset, *fakeclientmachineconfigv1.Clientset, *fakeclientimagev1.Clientset, *fakeclientroutev1.Clientset, *fakepipelineoperatorclientset.Clientset, *fakeolmclientset.ClientSet, *faketektonclientset.Clientset, *mcfgv1.MachineOSConfig, *mcfgv1.MachineOSBuild, *mcfgv1.MachineConfigPool, *testhelpers.Assertions, *OSBuildController) {
 	t.Helper()
 
-	kubeclient, mcfgclient, imageclient, routeclient, mosc, mosb, mcp, kubeassert, ctrl := setupOSBuildControllerForTestWithBuild(ctx, t, poolName)
+	kubeclient, mcfgclient, imageclient, routeclient, pipelineoperatorclient, olmclient, tektonclient, mosc, mosb, mcp, kubeassert, ctrl := setupOSBuildControllerForTestWithBuild(ctx, t, poolName)
 
-	initialBuildJobName := utils.GetBuildJobName(mosb)
+	initialBuildJobName := utils.GetBuildName(mosb)
 
 	// After creating the new MachineOSConfig, a MachineOSBuild should be created.
 	kubeassert.MachineOSBuildExists(mosb, "Initial MachineOSBuild not created for MachineOSConfig %s", mosc.Name)
@@ -638,29 +651,29 @@ func setupOSBuildControllerForTestWithRunningBuild(ctx context.Context, t *testi
 	// The MachineOSBuild should be running.
 	kubeassert.Eventually().WithContext(ctx).MachineOSBuildIsRunning(mosb, "Expected the MachineOSBuild %s status to be running", mosb.Name)
 
-	return kubeclient, mcfgclient, imageclient, routeclient, mosc, mosb, mcp, kubeassert, ctrl
+	return kubeclient, mcfgclient, imageclient, routeclient, pipelineoperatorclient, olmclient, tektonclient, mosc, mosb, mcp, kubeassert, ctrl
 }
 
-func setupOSBuildControllerForTestWithSuccessfulBuild(ctx context.Context, t *testing.T, poolName string) (*fakecorev1client.Clientset, *fakeclientmachineconfigv1.Clientset, *fakeclientimagev1.Clientset, *fakeclientroutev1.Clientset, *mcfgv1.MachineOSConfig, *mcfgv1.MachineOSBuild, *mcfgv1.MachineConfigPool, *testhelpers.Assertions) {
+func setupOSBuildControllerForTestWithSuccessfulBuild(ctx context.Context, t *testing.T, poolName string) (*fakecorev1client.Clientset, *fakeclientmachineconfigv1.Clientset, *fakeclientimagev1.Clientset, *fakeclientroutev1.Clientset, *fakepipelineoperatorclientset.Clientset, *fakeolmclientset.ClientSet, *faketektonclientset.Clientset, *mcfgv1.MachineOSConfig, *mcfgv1.MachineOSBuild, *mcfgv1.MachineConfigPool, *testhelpers.Assertions) {
 	t.Helper()
 
-	kubeclient, mcfgclient, imageclient, routeclient, mosc, mosb, mcp, kubeassert, _ := setupOSBuildControllerForTestWithRunningBuild(ctx, t, poolName)
+	kubeclient, mcfgclient, imageclient, routeclient, pipelineoperatorclient, olmclient, tektonclient, mosc, mosb, mcp, kubeassert, _ := setupOSBuildControllerForTestWithRunningBuild(ctx, t, poolName)
 
 	kubeassert.MachineOSBuildExists(mosb)
-	kubeassert.JobExists(utils.GetBuildJobName(mosb))
+	kubeassert.JobExists(utils.GetBuildName(mosb))
 	fixtures.SetJobStatus(ctx, t, kubeclient, mosb, fixtures.JobStatus{Succeeded: 1})
 	kubeassert.MachineOSBuildIsSuccessful(mosb)
-	kubeassert.JobDoesNotExist(utils.GetBuildJobName(mosb))
+	kubeassert.JobDoesNotExist(utils.GetBuildName(mosb))
 
-	return kubeclient, mcfgclient, imageclient, routeclient, mosc, mosb, mcp, kubeassert
+	return kubeclient, mcfgclient, imageclient, routeclient, pipelineoperatorclient, olmclient, tektonclient, mosc, mosb, mcp, kubeassert
 }
 
-func setupOSBuildControllerForTestWithFailedBuild(ctx context.Context, t *testing.T, poolName string) (*fakecorev1client.Clientset, *fakeclientmachineconfigv1.Clientset, *fakeclientimagev1.Clientset, *fakeclientroutev1.Clientset, *mcfgv1.MachineOSConfig, *mcfgv1.MachineOSBuild, *mcfgv1.MachineConfigPool, *testhelpers.Assertions) {
+func setupOSBuildControllerForTestWithFailedBuild(ctx context.Context, t *testing.T, poolName string) (*fakecorev1client.Clientset, *fakeclientmachineconfigv1.Clientset, *fakeclientimagev1.Clientset, *fakeclientroutev1.Clientset, *fakepipelineoperatorclientset.Clientset, *fakeolmclientset.ClientSet, *faketektonclientset.Clientset, *mcfgv1.MachineOSConfig, *mcfgv1.MachineOSBuild, *mcfgv1.MachineConfigPool, *testhelpers.Assertions) {
 	t.Helper()
 
-	kubeclient, mcfgclient, imageclient, routeclient, mosc, mosb, mcp, kubeassert, _ := setupOSBuildControllerForTestWithBuild(ctx, t, poolName)
+	kubeclient, mcfgclient, imageclient, routeclient, pipelineoperatorclient, olmclient, tektonclient, mosc, mosb, mcp, kubeassert, _ := setupOSBuildControllerForTestWithBuild(ctx, t, poolName)
 
-	initialBuildJobName := utils.GetBuildJobName(mosb)
+	initialBuildJobName := utils.GetBuildName(mosb)
 
 	// After creating the new MachineOSConfig, a MachineOSBuild should be created.
 	kubeassert.MachineOSBuildExists(mosb, "Initial MachineOSBuild not created for MachineOSConfig %s", mosc.Name)
@@ -671,7 +684,7 @@ func setupOSBuildControllerForTestWithFailedBuild(ctx context.Context, t *testin
 	// The MachineOSBuild should be running.
 	kubeassert.MachineOSBuildIsRunning(mosb, "Expected the MachineOSBuild %s status to be running", mosb.Name)
 
-	return kubeclient, mcfgclient, imageclient, routeclient, mosc, mosb, mcp, kubeassert
+	return kubeclient, mcfgclient, imageclient, routeclient, pipelineoperatorclient, olmclient, tektonclient, mosc, mosb, mcp, kubeassert
 }
 
 func insertNewRenderedMachineConfigAndUpdatePool(ctx context.Context, t *testing.T, mcfgclient mcfgclientset.Interface, poolName, renderedName string) *mcfgv1.MachineConfigPool {

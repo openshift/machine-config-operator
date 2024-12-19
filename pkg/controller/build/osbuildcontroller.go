@@ -16,6 +16,9 @@ import (
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	routeclientset "github.com/openshift/client-go/route/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
+	olmclientset "github.com/operator-framework/operator-lifecycle-manager/pkg/api/client/clientset/versioned"
+	pipelineoperatorclientset "github.com/tektoncd/operator/pkg/client/clientset/versioned"
+	tektonclientset "github.com/tektoncd/pipeline/pkg/client/clientset/versioned"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
@@ -31,11 +34,14 @@ type OSBuildController struct {
 	*listers
 	*informers
 
-	eventRecorder record.EventRecorder
-	mcfgclient    mcfgclientset.Interface
-	kubeclient    clientset.Interface
-	imageclient   imagev1clientset.Interface
-	routeclient   routeclientset.Interface
+	eventRecorder          record.EventRecorder
+	mcfgclient             mcfgclientset.Interface
+	kubeclient             clientset.Interface
+	imageclient            imagev1clientset.Interface
+	routeclient            routeclientset.Interface
+	pipelineoperatorclient pipelineoperatorclientset.Interface
+	olmclient              olmclientset.Interface
+	tektonclient           tektonclientset.Interface
 
 	config    Config
 	execQueue *ctrlcommon.WrappedQueue
@@ -78,6 +84,9 @@ func NewOSBuildControllerFromControllerContextWithConfig(ctrlCtx *ctrlcommon.Con
 		ctrlCtx.ClientBuilder.KubeClientOrDie("machine-os-builder"),
 		ctrlCtx.ClientBuilder.ImageClientOrDie("machine-os-builder"),
 		ctrlCtx.ClientBuilder.RouteClientOrDie("machine-os-builder"),
+		ctrlCtx.ClientBuilder.PipelineOperatorClientOrDie("machine-os-builder"),
+		ctrlCtx.ClientBuilder.OLMClientOrDie("machine-os-builder"),
+		ctrlCtx.ClientBuilder.TektonClientOrDie("machine-os-builder"),
 	)
 }
 
@@ -87,6 +96,9 @@ func newOSBuildController(
 	kubeclient clientset.Interface,
 	imageclient imagev1clientset.Interface,
 	routeclient routeclientset.Interface,
+	pipelineoperatorclient pipelineoperatorclientset.Interface,
+	olmclient olmclientset.Interface,
+	tektonclient tektonclientset.Interface,
 ) *OSBuildController {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
@@ -95,13 +107,16 @@ func newOSBuildController(
 	informers := newInformers(mcfgclient, kubeclient)
 
 	ctrl := &OSBuildController{
-		kubeclient:    kubeclient,
-		mcfgclient:    mcfgclient,
-		imageclient:   imageclient,
-		routeclient:   routeclient,
-		informers:     informers,
-		listers:       informers.listers(),
-		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineosbuilder"}),
+		kubeclient:             kubeclient,
+		mcfgclient:             mcfgclient,
+		imageclient:            imageclient,
+		routeclient:            routeclient,
+		pipelineoperatorclient: pipelineoperatorclient,
+		olmclient:              olmclient,
+		tektonclient:           tektonclient,
+		informers:              informers,
+		listers:                informers.listers(),
+		eventRecorder:          eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineosbuilder"}),
 		execQueue: ctrlcommon.NewWrappedQueueWithOpts(ctrlcommon.WrappedQueueOpts{
 			Name:       "machineosbuilder",
 			MaxRetries: ctrlConfig.MaxRetries,
@@ -133,7 +148,7 @@ func newOSBuildController(
 		UpdateFunc: ctrl.updateMachineConfigPool,
 	})
 
-	ctrl.buildReconciler = newBuildReconciler(mcfgclient, kubeclient, imageclient, routeclient, ctrl.listers)
+	ctrl.buildReconciler = newBuildReconciler(mcfgclient, kubeclient, imageclient, routeclient, pipelineoperatorclient, olmclient, tektonclient, ctrl.listers)
 
 	return ctrl
 }
