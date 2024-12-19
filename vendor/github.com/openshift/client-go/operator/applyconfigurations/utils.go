@@ -302,6 +302,12 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &operatorv1.NodeStatusApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("OAuthAPIServerStatus"):
 		return &operatorv1.OAuthAPIServerStatusApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("OLM"):
+		return &operatorv1.OLMApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("OLMSpec"):
+		return &operatorv1.OLMSpecApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("OLMStatus"):
+		return &operatorv1.OLMStatusApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("OpenShiftAPIServer"):
 		return &operatorv1.OpenShiftAPIServerApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("OpenShiftAPIServerSpec"):
@@ -412,6 +418,12 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		// Group=operator.openshift.io, Version=v1alpha1
 	case v1alpha1.SchemeGroupVersion.WithKind("BackupJobReference"):
 		return &operatorv1alpha1.BackupJobReferenceApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("ClusterVersionOperator"):
+		return &operatorv1alpha1.ClusterVersionOperatorApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("ClusterVersionOperatorSpec"):
+		return &operatorv1alpha1.ClusterVersionOperatorSpecApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("ClusterVersionOperatorStatus"):
+		return &operatorv1alpha1.ClusterVersionOperatorStatusApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("EtcdBackup"):
 		return &operatorv1alpha1.EtcdBackupApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("EtcdBackupSpec"):

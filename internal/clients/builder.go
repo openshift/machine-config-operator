@@ -9,6 +9,9 @@ import (
 	mapiclientset "github.com/openshift/client-go/machine/clientset/versioned"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	operatorclientset "github.com/openshift/client-go/operator/clientset/versioned"
+	olmclientset "github.com/operator-framework/operator-lifecycle-manager/pkg/api/client/clientset/versioned"
+	pipelineoperatorclientset "github.com/tektoncd/operator/pkg/client/clientset/versioned"
+	tektonclientset "github.com/tektoncd/pipeline/pkg/client/clientset/versioned"
 	apiext "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -20,6 +23,18 @@ import (
 // with its embedded rest.Config.
 type Builder struct {
 	config *rest.Config
+}
+
+func (cb *Builder) TektonClientOrDie(name string) tektonclientset.Interface {
+	return tektonclientset.NewForConfigOrDie(rest.AddUserAgent(cb.config, name))
+}
+
+func (cb *Builder) OLMClientOrDie(name string) olmclientset.Interface {
+	return olmclientset.NewForConfigOrDie(rest.AddUserAgent(cb.config, name))
+}
+
+func (cb *Builder) PipelineOperatorClientOrDie(name string) pipelineoperatorclientset.Interface {
+	return pipelineoperatorclientset.NewForConfigOrDie(rest.AddUserAgent(cb.config, name))
 }
 
 // MachineConfigClientOrDie returns the kubernetes client interface for machine config.

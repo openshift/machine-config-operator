@@ -71,7 +71,7 @@ func GetMCConfigMapName(mosb *mcfgv1alpha1.MachineOSBuild) string {
 }
 
 // Computes the build job name.
-func GetBuildJobName(mosb *mcfgv1alpha1.MachineOSBuild) string {
+func GetBuildName(mosb *mcfgv1alpha1.MachineOSBuild) string {
 	return fmt.Sprintf("build-%s", getFieldFromMachineOSBuild(mosb))
 }
 

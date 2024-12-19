@@ -48,6 +48,7 @@ import (
 	mcopclientset "github.com/openshift/client-go/operator/clientset/versioned"
 	mcopinformersv1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1"
 	mcoplistersv1 "github.com/openshift/client-go/operator/listers/operator/v1"
+	"k8s.io/utils/clock"
 )
 
 const (
@@ -212,7 +213,7 @@ func New(
 			Name:       "machine-config-operator",
 			Namespace:  ctrlcommon.MCONamespace,
 			APIVersion: "apps/v1",
-		}),
+		}, clock.RealClock{}),
 		queue: workqueue.NewTypedRateLimitingQueueWithConfig(
 			workqueue.DefaultTypedControllerRateLimiter[string](),
 			workqueue.TypedRateLimitingQueueConfig[string]{Name: "machineconfigoperator"}),

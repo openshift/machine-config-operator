@@ -280,7 +280,7 @@ func (MachineOSContainerfile) SwaggerDoc() map[string]string {
 }
 
 var map_MachineOSImageBuilder = map[string]string{
-	"imageBuilderType": "imageBuilderType specifies the backend to be used to build the image. Valid options are: PodImageBuilder",
+	"imageBuilderType": "imageBuilderType specifies the backend to be used to build the image. Valid options are: PodImageBuilder and PipelineImageBuilder",
 }
 
 func (MachineOSImageBuilder) SwaggerDoc() map[string]string {

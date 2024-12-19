@@ -19,10 +19,10 @@ type builder struct {
 }
 
 // Constructs a new Builder object but does not perform validation.
-func newBuilder(obj metav1.Object) Builder {
+func newBuilder(obj metav1.Object, err error) (Builder, error) {
 	return &builder{
 		Object: obj,
-	}
+	}, err
 }
 
 // Constructs a new Builder object and ensures that it has all of the needed
@@ -34,7 +34,10 @@ func NewBuilder(obj metav1.Object) (Builder, error) {
 		return nil, fmt.Errorf("missing required labels: %s", sel.String())
 	}
 
-	b := newBuilder(obj)
+	b, err := newBuilder(obj, nil)
+	if err != nil {
+		return nil, err
+	}
 
 	if _, err := b.MachineOSConfig(); err != nil {
 		return nil, err

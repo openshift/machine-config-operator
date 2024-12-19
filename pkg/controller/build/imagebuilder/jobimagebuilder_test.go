@@ -38,7 +38,7 @@ func TestJobImageBuilder(t *testing.T) {
 
 	assert.NoError(t, jim.Start(ctx))
 
-	buildJobName := utils.GetBuildJobName(lobj.MachineOSBuild)
+	buildJobName := utils.GetBuildName(lobj.MachineOSBuild)
 
 	kubeassert.Now().JobExists(buildJobName)
 	assertObjectsAreCreatedByPreparer(ctx, t, kubeassert, jim.(*jobImageBuilder).buildrequest)
@@ -232,7 +232,7 @@ func TestJobImageBuilderCanCleanWithOnlyMachineOSBuild(t *testing.T) {
 
 	assert.NoError(t, jim.Start(ctx))
 
-	buildJobName := utils.GetBuildJobName(lobj.MachineOSBuild)
+	buildJobName := utils.GetBuildName(lobj.MachineOSBuild)
 
 	kubeassert.JobExists(buildJobName)
 	assertObjectsAreCreatedByPreparer(ctx, t, kubeassert, jim.(*jobImageBuilder).buildrequest)

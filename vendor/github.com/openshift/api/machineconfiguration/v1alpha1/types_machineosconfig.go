@@ -163,8 +163,8 @@ type BuildOutputs struct {
 type MachineOSImageBuilder struct {
 	// imageBuilderType specifies the backend to be used to build the image.
 	// +kubebuilder:default:=PodImageBuilder
-	// +kubebuilder:validation:Enum:=PodImageBuilder
-	// Valid options are: PodImageBuilder
+	// +kubebuilder:validation:Enum:=PodImageBuilder;PipelineImageBuilder
+	// Valid options are: PodImageBuilder and PipelineImageBuilder
 	ImageBuilderType MachineOSImageBuilderType `json:"imageBuilderType"`
 }
 
@@ -224,4 +224,7 @@ type MachineOSImageBuilderType string
 const (
 	// describes that the machine-os-builder will use a custom pod builder that uses buildah
 	PodBuilder MachineOSImageBuilderType = "PodImageBuilder"
+
+	// mosb will create an openshift-pipeline
+	PipelineBuilder MachineOSImageBuilderType = "PipelineImageBuilder"
 )

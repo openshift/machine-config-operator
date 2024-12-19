@@ -122,6 +122,7 @@ func NewNestedConfigObserver(
 	return factory.New().
 		ResyncEvery(time.Minute).
 		WithSync(c.sync).
+		WithControllerInstanceName(c.controllerInstanceName).
 		WithInformers(append(informers, listersToInformer(listers)...)...).
 		ToController(
 			"ConfigObserver", // don't change what is passed here unless you also remove the old FooDegraded condition
