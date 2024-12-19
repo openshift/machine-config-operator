@@ -682,6 +682,11 @@ func (optr *Operator) syncMachineConfigPools(config *renderConfig, _ *configv1.C
 		"manifests/master.machineconfigpool.yaml",
 		"manifests/worker.machineconfigpool.yaml",
 	}
+
+	if config.Infra.Status.ControlPlaneTopology == configv1.HighlyAvailableArbiterMode {
+		mcps = append(mcps, "manifests/arbiter.machineconfigpool.yaml")
+	}
+
 	for _, mcp := range mcps {
 		mcpBytes, err := renderAsset(config, mcp)
 		if err != nil {
@@ -778,6 +783,8 @@ func (optr *Operator) syncMachineConfigNodes(_ *renderConfig, _ *configv1.Cluste
 			pool = "worker"
 		} else if _, ok = node.Labels["node-role.kubernetes.io/master"]; ok {
 			pool = "master"
+		} else if _, ok = node.Labels["node-role.kubernetes.io/arbiter"]; ok {
+			pool = "arbiter"
 		}
 		newMCS := &v1alpha1.MachineConfigNode{
 			Spec: v1alpha1.MachineConfigNodeSpec{
