@@ -1280,7 +1280,7 @@ func TestUpdateStorageConfig(t *testing.T) {
 			return
 		}
 		if !reflect.DeepEqual(gotConf, test.want) {
-			t.Errorf("%s: failed. got %v, want %v", test.name, got, test.want)
+			t.Errorf("%s: updateStorageConfig failed. got %v, want %v", test.name, got, test.want)
 		}
 	}
 }
