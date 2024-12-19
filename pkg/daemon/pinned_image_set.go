@@ -49,7 +49,6 @@ import (
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/daemon/cri"
-	"github.com/openshift/machine-config-operator/pkg/helpers"
 	"github.com/openshift/machine-config-operator/pkg/upgrademonitor"
 )
 
@@ -211,7 +210,7 @@ func (p *PinnedImageSetManager) sync(key string) error {
 		return fmt.Errorf("failed to get node %q: %w", p.nodeName, err)
 	}
 
-	pools, _, err := helpers.GetPoolsForNode(p.mcpLister, node)
+	pools, _, err := ctrlcommon.GetPoolsForNode(p.mcpLister, node)
 	if err != nil {
 		return err
 	}
@@ -834,7 +833,7 @@ func (p *PinnedImageSetManager) addPinnedImageSet(obj interface{}) {
 		return
 	}
 
-	pools, _, err := helpers.GetPoolsForNode(p.mcpLister, node)
+	pools, _, err := ctrlcommon.GetPoolsForNode(p.mcpLister, node)
 	if err != nil {
 		klog.Errorf("error finding pools for node %s: %v", node.Name, err)
 		return
@@ -873,7 +872,7 @@ func (p *PinnedImageSetManager) deletePinnedImageSet(obj interface{}) {
 		return
 	}
 
-	pools, _, err := helpers.GetPoolsForNode(p.mcpLister, node)
+	pools, _, err := ctrlcommon.GetPoolsForNode(p.mcpLister, node)
 	if err != nil {
 		klog.Errorf("error finding pools for node %s: %v", node.Name, err)
 		return
@@ -927,7 +926,7 @@ func (p *PinnedImageSetManager) updatePinnedImageSet(oldObj, newObj interface{})
 		return
 	}
 
-	pools, _, err := helpers.GetPoolsForNode(p.mcpLister, node)
+	pools, _, err := ctrlcommon.GetPoolsForNode(p.mcpLister, node)
 	if err != nil {
 		klog.Errorf("error finding pools for node %s: %v", node.Name, err)
 		return
@@ -954,7 +953,7 @@ func (p *PinnedImageSetManager) handleNodeEvent(newObj interface{}) {
 		return
 	}
 
-	pools, _, err := helpers.GetPoolsForNode(p.mcpLister, newNode)
+	pools, _, err := ctrlcommon.GetPoolsForNode(p.mcpLister, newNode)
 	if err != nil {
 		klog.Errorf("error finding pools for node %s: %v", newNode.Name, err)
 		return

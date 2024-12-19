@@ -14,6 +14,7 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	clientset "k8s.io/client-go/kubernetes"
@@ -211,9 +212,9 @@ func (o *optsGetter) getOpts(ctx context.Context, mosb *mcfgv1alpha1.MachineOSBu
 		return nil, fmt.Errorf("could not retrieve machineconfig %s: %w", mosb.Spec.DesiredConfig.Name, err)
 	}
 
-	cc, err := o.mcfgclient.MachineconfigurationV1().ControllerConfigs().Get(ctx, ctrlcommon.ControllerConfigName, metav1.GetOptions{})
+	cc, err := o.mcfgclient.MachineconfigurationV1().ControllerConfigs().Get(ctx, commonconsts.ControllerConfigName, metav1.GetOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("could not retrieve controllerconfig %s: %w", ctrlcommon.ControllerConfigName, err)
+		return nil, fmt.Errorf("could not retrieve controllerconfig %s: %w", commonconsts.ControllerConfigName, err)
 	}
 
 	opts.Images = imagesConfig
@@ -231,7 +232,7 @@ func (o *optsGetter) getOpts(ctx context.Context, mosb *mcfgv1alpha1.MachineOSBu
 
 // Gets an image pull secret and validates that it is usable.
 func (o *optsGetter) getValidatedSecret(ctx context.Context, name string) (*corev1.Secret, error) {
-	secret, err := o.kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(ctx, name, metav1.GetOptions{})
+	secret, err := o.kubeclient.CoreV1().Secrets(commonconsts.MCONamespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("could not fetch secret %s: %w", name, err)
 	}
@@ -276,7 +277,7 @@ func (o *optsGetter) resolveEntitlements(ctx context.Context, mosc *mcfgv1alpha1
 // the secret is not found.
 func (o *optsGetter) getOptionalSecret(ctx context.Context, secretName string) (*corev1.Secret, error) {
 	// TODO: Consider an implementation that uses listers instead of API clients just to cut down on API server traffic.
-	optionalSecret, err := o.kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(ctx, secretName, metav1.GetOptions{})
+	optionalSecret, err := o.kubeclient.CoreV1().Secrets(commonconsts.MCONamespace).Get(ctx, secretName, metav1.GetOptions{})
 	if err == nil {
 		klog.Infof("Optional build secret %q found, will include in build", secretName)
 		return optionalSecret, nil
@@ -294,7 +295,7 @@ func (o *optsGetter) getOptionalSecret(ctx context.Context, secretName string) (
 // the ConfigMap is not found.
 func (o *optsGetter) getOptionalConfigMap(ctx context.Context, configmapName string) (*corev1.ConfigMap, error) {
 	// TODO: Consider an implementation that uses listers instead of API clients just to cut down on API server traffic.
-	optionalConfigMap, err := o.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(ctx, configmapName, metav1.GetOptions{})
+	optionalConfigMap, err := o.kubeclient.CoreV1().ConfigMaps(commonconsts.MCONamespace).Get(ctx, configmapName, metav1.GetOptions{})
 	if err == nil {
 		klog.Infof("Optional build ConfigMap %q found, will include in build", configmapName)
 		return optionalConfigMap, nil

@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	configv1 "github.com/openshift/api/config/v1"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
@@ -165,10 +165,10 @@ func TestReconcileSimpleContentAccessSecret(t *testing.T) {
 	masterPool := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 	workerPool := helpers.NewMachineConfigPool("worker", nil, helpers.MasterSelector, "v0")
 	infraPool := helpers.NewMachineConfigPool("infra", nil, helpers.MasterSelector, "v0")
-	entitlementSecret := helpers.NewOpaqueSecret(ctrlcommon.SimpleContentAccessSecretName, ctrlcommon.OpenshiftConfigManagedNamespace, "abc")
-	workerEntitlementSecret := helpers.NewOpaqueSecret(ctrlcommon.SimpleContentAccessSecretName+"-"+workerPool.Name, ctrlcommon.MCONamespace, "abc")
-	infraEntitlementSecret := helpers.NewOpaqueSecret(ctrlcommon.SimpleContentAccessSecretName+"-"+infraPool.Name, ctrlcommon.MCONamespace, "abc")
-	outOfDateInfraEntitlementSecret := helpers.NewOpaqueSecret(ctrlcommon.SimpleContentAccessSecretName+"-"+infraPool.Name, ctrlcommon.MCONamespace, "123")
+	entitlementSecret := helpers.NewOpaqueSecret(commonconsts.SimpleContentAccessSecretName, commonconsts.OpenshiftConfigManagedNamespace, "abc")
+	workerEntitlementSecret := helpers.NewOpaqueSecret(commonconsts.SimpleContentAccessSecretName+"-"+workerPool.Name, commonconsts.MCONamespace, "abc")
+	infraEntitlementSecret := helpers.NewOpaqueSecret(commonconsts.SimpleContentAccessSecretName+"-"+infraPool.Name, commonconsts.MCONamespace, "abc")
+	outOfDateInfraEntitlementSecret := helpers.NewOpaqueSecret(commonconsts.SimpleContentAccessSecretName+"-"+infraPool.Name, commonconsts.MCONamespace, "123")
 
 	cases := []struct {
 		name               string
@@ -226,18 +226,18 @@ func TestReconcileSimpleContentAccessSecret(t *testing.T) {
 			// Add secrets to informer and client
 			for _, secret := range tc.mcoSecrets {
 				mcoSecretInformer.Informer().GetIndexer().Add(secret)
-				_, err := kubeClient.CoreV1().Secrets(ctrlcommon.MCONamespace).Create(context.TODO(), secret, metav1.CreateOptions{})
+				_, err := kubeClient.CoreV1().Secrets(commonconsts.MCONamespace).Create(context.TODO(), secret, metav1.CreateOptions{})
 				assert.NoError(t, err)
 			}
 			for _, secret := range tc.ocManagedSecrets {
 				ocManagedSecretInformer.Informer().GetIndexer().Add(secret)
-				_, err := kubeClient.CoreV1().Secrets(ctrlcommon.OpenshiftConfigManagedNamespace).Create(context.TODO(), secret, metav1.CreateOptions{})
+				_, err := kubeClient.CoreV1().Secrets(commonconsts.OpenshiftConfigManagedNamespace).Create(context.TODO(), secret, metav1.CreateOptions{})
 				assert.NoError(t, err)
 			}
 
 			// Create MCO specific clients
 			mcfgClient := fakeclientmachineconfigv1.NewSimpleClientset()
-			mcfgInformerFactory := mcfginformers.NewFilteredSharedInformerFactory(mcfgClient, 0, ctrlcommon.MCONamespace, nil)
+			mcfgInformerFactory := mcfginformers.NewFilteredSharedInformerFactory(mcfgClient, 0, commonconsts.MCONamespace, nil)
 			mcpInformer := mcfgInformerFactory.Machineconfiguration().V1().MachineConfigPools()
 
 			// Add all pools to mcpInformer
@@ -256,7 +256,7 @@ func TestReconcileSimpleContentAccessSecret(t *testing.T) {
 			assert.NoError(t, err)
 
 			// Verify secrets in MCO namespace are as expected
-			secrets, err := kubeClient.CoreV1().Secrets(ctrlcommon.MCONamespace).List(context.TODO(), metav1.ListOptions{})
+			secrets, err := kubeClient.CoreV1().Secrets(commonconsts.MCONamespace).List(context.TODO(), metav1.ListOptions{})
 			assert.NoError(t, err)
 			assert.ElementsMatch(t, secrets.Items, tc.expectedMCOSecrets)
 		})

@@ -1,8 +1,9 @@
-package common
+package state
 
 import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 )
 
 // This is intended to provide a singular way to interrogate MachineConfigPool
@@ -20,14 +21,14 @@ func NewLayeredPoolState(pool *mcfgv1.MachineConfigPool) *LayeredPoolState {
 
 // Returns the OS image, if one is present.
 func (l *LayeredPoolState) GetOSImage() string {
-	osImage := l.pool.Annotations[ExperimentalNewestLayeredImageEquivalentConfigAnnotationKey]
+	osImage := l.pool.Annotations[commonconsts.ExperimentalNewestLayeredImageEquivalentConfigAnnotationKey]
 	return osImage
 }
 
 // Determines if a given MachineConfigPool has an available OS image. Returns
 // false if the annotation is missing or set to an empty string.
 func (l *LayeredPoolState) HasOSImage() bool {
-	val, ok := l.pool.Annotations[ExperimentalNewestLayeredImageEquivalentConfigAnnotationKey]
+	val, ok := l.pool.Annotations[commonconsts.ExperimentalNewestLayeredImageEquivalentConfigAnnotationKey]
 	return ok && val != ""
 }
 

@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/openshift/machine-config-operator/devex/internal/pkg/utils"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"golang.org/x/sync/errgroup"
 	corev1 "k8s.io/api/core/v1"
@@ -31,7 +31,7 @@ func extractAndInjectYumEpelRepos(cs *framework.ClientSet) error {
 		return createConfigMap(cs, &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "etc-yum-repos-d",
-				Namespace: ctrlcommon.MCONamespace,
+				Namespace: commonconsts.MCONamespace,
 			},
 			// Note: Even though the BuildController retrieves this ConfigMap, it only
 			// does so to determine whether or not it is present. It does not look at
@@ -51,7 +51,7 @@ func extractAndInjectYumEpelRepos(cs *framework.ClientSet) error {
 		return utils.CreateOrRecreateSecret(cs, &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "etc-pki-rpm-gpg",
-				Namespace: ctrlcommon.MCONamespace,
+				Namespace: commonconsts.MCONamespace,
 				Labels: map[string]string{
 					createdByOnClusterBuildsHelper: "",
 				},

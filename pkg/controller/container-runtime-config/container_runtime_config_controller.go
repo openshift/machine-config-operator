@@ -51,6 +51,7 @@ import (
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	apihelpers "github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	mtmpl "github.com/openshift/machine-config-operator/pkg/controller/template"
 	"github.com/openshift/machine-config-operator/pkg/version"
 )
@@ -646,7 +647,7 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 	}
 
 	// Get ControllerConfig
-	controllerConfig, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
+	controllerConfig, err := ctrl.ccLister.Get(commonconsts.ControllerConfigName)
 	if err != nil {
 		return fmt.Errorf("could not get ControllerConfig %w", err)
 	}
@@ -678,7 +679,7 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 		// If we have seen this generation and the sync didn't fail, then skip
 		if !isNotFound && cfg.Status.ObservedGeneration >= cfg.Generation && cfg.Status.Conditions[len(cfg.Status.Conditions)-1].Type == mcfgv1.ContainerRuntimeConfigSuccess {
 			// But we still need to compare the generated controller version because during an upgrade we need a new one
-			mcCtrlVersion := mc.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey]
+			mcCtrlVersion := mc.Annotations[commonconsts.GeneratedByControllerVersionAnnotationKey]
 			if mcCtrlVersion == version.Hash {
 				return nil
 			}
@@ -715,12 +716,12 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 				return ctrl.syncStatusOnly(cfg, err, "could not create MachineConfig from new Ignition config: %v", err)
 			}
 		}
-		_, ok := cfg.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
+		_, ok := cfg.GetAnnotations()[commonconsts.MCNameSuffixAnnotationKey]
 		arr := strings.Split(managedKey, "-")
 		// the first managed key value 99-poolname-generated-containerruntime does not have a suffix
 		// set "" as suffix annotation to the containerruntime config object
 		if _, err := strconv.Atoi(arr[len(arr)-1]); err != nil && !ok {
-			if err := ctrl.addAnnotation(cfg, ctrlcommon.MCNameSuffixAnnotationKey, ""); err != nil {
+			if err := ctrl.addAnnotation(cfg, commonconsts.MCNameSuffixAnnotationKey, ""); err != nil {
 				return ctrl.syncStatusOnly(cfg, err, "could not update annotation for containerruntimeConfig")
 			}
 		}
@@ -729,7 +730,7 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 		if len(arr) > 4 && !ok {
 			_, err := strconv.Atoi(arr[len(arr)-1])
 			if err == nil {
-				if err := ctrl.addAnnotation(cfg, ctrlcommon.MCNameSuffixAnnotationKey, arr[len(arr)-1]); err != nil {
+				if err := ctrl.addAnnotation(cfg, commonconsts.MCNameSuffixAnnotationKey, arr[len(arr)-1]); err != nil {
 					return ctrl.syncStatusOnly(cfg, err, "could not update annotation for containerRuntimeConfig")
 				}
 			}
@@ -743,7 +744,7 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 		mc.Spec.Config.Raw = rawCtrRuntimeConfigIgn
 
 		mc.SetAnnotations(map[string]string{
-			ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,
+			commonconsts.GeneratedByControllerVersionAnnotationKey: version.Hash,
 		})
 		oref := metav1.NewControllerRef(cfg, controllerKind)
 		mc.SetOwnerReferences([]metav1.OwnerReference{*oref})
@@ -788,7 +789,7 @@ func (ctrl *Controller) cleanUpDuplicatedMC() error {
 			continue
 		}
 		// delete the containerruntime mc if its degraded
-		if mc.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey] != version.Hash {
+		if mc.Annotations[commonconsts.GeneratedByControllerVersionAnnotationKey] != version.Hash {
 			if err := ctrl.client.MachineconfigurationV1().MachineConfigs().Delete(context.TODO(), mc.Name, metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
 				return fmt.Errorf("error deleting degraded containerruntime machine config %s: %w", mc.Name, err)
 			}
@@ -914,7 +915,7 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 	}
 
 	// Get ControllerConfig
-	controllerConfig, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
+	controllerConfig, err := ctrl.ccLister.Get(commonconsts.ControllerConfigName)
 	if err != nil {
 		return fmt.Errorf("could not get ControllerConfig %w", err)
 	}
@@ -974,7 +975,7 @@ func (ctrl *Controller) syncIgnitionConfig(managedKey string, ignFile *ign3types
 	if !isNotFound && equality.Semantic.DeepEqual(rawIgn, mc.Spec.Config.Raw) {
 		// if the configuration for the registries is equal, we still need to compare
 		// the generated controller version because during an upgrade we need a new one
-		mcCtrlVersion := mc.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey]
+		mcCtrlVersion := mc.Annotations[commonconsts.GeneratedByControllerVersionAnnotationKey]
 		if mcCtrlVersion == version.Hash {
 			return false, nil
 		}
@@ -988,7 +989,7 @@ func (ctrl *Controller) syncIgnitionConfig(managedKey string, ignFile *ign3types
 	}
 	mc.Spec.Config.Raw = rawIgn
 	mc.ObjectMeta.Annotations = map[string]string{
-		ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,
+		commonconsts.GeneratedByControllerVersionAnnotationKey: version.Hash,
 	}
 	mc.ObjectMeta.OwnerReferences = []metav1.OwnerReference{ownerRef}
 	// Create or Update, on conflict retry

@@ -18,7 +18,7 @@ import (
 	mcfglistersv1alpha1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1"
 
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 )
 
 // Holds and starts each of the infomrers used by the Build Controller and its subcontrollers.
@@ -79,7 +79,7 @@ func newInformers(mcfgclient mcfgclientset.Interface, kubeclient clientset.Inter
 	coreInformerFactory := coreinformers.NewSharedInformerFactoryWithOptions(
 		kubeclient,
 		0,
-		coreinformers.WithNamespace(ctrlcommon.MCONamespace),
+		coreinformers.WithNamespace(commonconsts.MCONamespace),
 		coreinformers.WithTweakListOptions(ephemeralBuildObjectsOpts),
 	)
 

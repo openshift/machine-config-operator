@@ -14,7 +14,8 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/controller/build/buildrequest"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/fixtures"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
+	commonstate "github.com/openshift/machine-config-operator/pkg/controller/common/state"
 )
 
 // These consts are just for testing purposed as Jobs don't have a phase field similar to pods
@@ -112,7 +113,7 @@ func TestJobImageBuilder(t *testing.T) {
 		obs := NewJobImageBuildObserver(kubeclient, mcfgclient, lobj.MachineOSBuild, lobj.MachineOSConfig)
 		assertObserverCanGetJobStatus(ctx, t, obs, jobStatus.jobPhase)
 
-		job, err := kubeclient.BatchV1().Jobs(ctrlcommon.MCONamespace).Get(ctx, buildJobName, metav1.GetOptions{})
+		job, err := kubeclient.BatchV1().Jobs(commonconsts.MCONamespace).Get(ctx, buildJobName, metav1.GetOptions{})
 		require.NoError(t, err)
 
 		builder, err := buildrequest.NewBuilder(job)
@@ -142,7 +143,7 @@ func assertMachineOSBuildStateMapsToCommonState(ctx context.Context, t *testing.
 	buildprogress, err := obs.Status(ctx)
 	assert.NoError(t, err)
 
-	mosbState := ctrlcommon.NewMachineOSBuildStateFromStatus(mosbStatus)
+	mosbState := commonstate.NewMachineOSBuildStateFromStatus(mosbStatus)
 
 	// These are states where the MachineOSBuild may transition from either these
 	// states or to a terminal state.

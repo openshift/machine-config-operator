@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	"github.com/stretchr/testify/require"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -40,19 +40,19 @@ func SetJobStatus(ctx context.Context, t *testing.T, kubeclient clientset.Interf
 func SetJobDeletionTimestamp(ctx context.Context, t *testing.T, kubeclient clientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild, timestamp *metav1.Time) {
 	jobName := fmt.Sprintf("build-%s", mosb.Name)
 
-	j, err := kubeclient.BatchV1().Jobs(ctrlcommon.MCONamespace).Get(ctx, jobName, metav1.GetOptions{})
+	j, err := kubeclient.BatchV1().Jobs(commonconsts.MCONamespace).Get(ctx, jobName, metav1.GetOptions{})
 	require.NoError(t, err)
 
 	j.SetDeletionTimestamp(timestamp)
 
-	_, err = kubeclient.BatchV1().Jobs(ctrlcommon.MCONamespace).UpdateStatus(ctx, j, metav1.UpdateOptions{})
+	_, err = kubeclient.BatchV1().Jobs(commonconsts.MCONamespace).UpdateStatus(ctx, j, metav1.UpdateOptions{})
 	require.NoError(t, err)
 }
 
 func setJobStatusFields(ctx context.Context, kubeclient clientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild, jobStatus JobStatus) error {
 	jobName := fmt.Sprintf("build-%s", mosb.Name)
 
-	j, err := kubeclient.BatchV1().Jobs(ctrlcommon.MCONamespace).Get(ctx, jobName, metav1.GetOptions{})
+	j, err := kubeclient.BatchV1().Jobs(commonconsts.MCONamespace).Get(ctx, jobName, metav1.GetOptions{})
 	if err != nil {
 		return err
 	}
@@ -63,7 +63,7 @@ func setJobStatusFields(ctx context.Context, kubeclient clientset.Interface, mos
 	if jobStatus.UncountedTerminatedPodsFailed != "" {
 		j.Status.UncountedTerminatedPods = &batchv1.UncountedTerminatedPods{Failed: []apitypes.UID{apitypes.UID(jobStatus.UncountedTerminatedPodsFailed)}}
 	}
-	_, err = kubeclient.BatchV1().Jobs(ctrlcommon.MCONamespace).UpdateStatus(ctx, j, metav1.UpdateOptions{})
+	_, err = kubeclient.BatchV1().Jobs(commonconsts.MCONamespace).UpdateStatus(ctx, j, metav1.UpdateOptions{})
 	return err
 }
 
@@ -77,14 +77,14 @@ func createDigestfileConfigMapWithDigest(ctx context.Context, kubeclient clients
 	cm := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      digestName,
-			Namespace: ctrlcommon.MCONamespace,
+			Namespace: commonconsts.MCONamespace,
 		},
 		Data: map[string]string{
 			"digest": digest,
 		},
 	}
 
-	_, err := kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Create(ctx, cm, metav1.CreateOptions{})
+	_, err := kubeclient.CoreV1().ConfigMaps(commonconsts.MCONamespace).Create(ctx, cm, metav1.CreateOptions{})
 	if err != nil && !k8serrors.IsAlreadyExists(err) {
 		return err
 	}
@@ -94,7 +94,7 @@ func createDigestfileConfigMapWithDigest(ctx context.Context, kubeclient clients
 
 func deleteDigestfileConfigMap(ctx context.Context, kubeclient clientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild) error {
 	digestName := fmt.Sprintf("digest-%s", mosb.Name)
-	err := kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Delete(ctx, digestName, metav1.DeleteOptions{})
+	err := kubeclient.CoreV1().ConfigMaps(commonconsts.MCONamespace).Delete(ctx, digestName, metav1.DeleteOptions{})
 	if err != nil && !k8serrors.IsNotFound(err) {
 		return err
 	}

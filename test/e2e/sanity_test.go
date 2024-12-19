@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 
 	"github.com/openshift/machine-config-operator/test/framework"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -14,7 +14,7 @@ import (
 func TestOperatorLabel(t *testing.T) {
 	cs := framework.NewClientSet("")
 
-	d, err := cs.DaemonSets(ctrlcommon.MCONamespace).Get(context.TODO(), "machine-config-daemon", metav1.GetOptions{})
+	d, err := cs.DaemonSets(commonconsts.MCONamespace).Get(context.TODO(), "machine-config-daemon", metav1.GetOptions{})
 	if err != nil {
 		t.Errorf("%#v", err)
 	}

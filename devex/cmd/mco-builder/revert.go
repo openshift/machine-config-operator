@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/openshift/machine-config-operator/devex/internal/pkg/rollout"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/spf13/cobra"
 	apierrs "k8s.io/apimachinery/pkg/api/errors"
@@ -26,7 +26,7 @@ func init() {
 func doRevert(_ *cobra.Command, _ []string) error {
 	cs := framework.NewClientSet("")
 
-	if err := cs.ImageStreams(ctrlcommon.MCONamespace).Delete(context.TODO(), imagestreamName, metav1.DeleteOptions{}); err != nil && !apierrs.IsNotFound(err) {
+	if err := cs.ImageStreams(commonconsts.MCONamespace).Delete(context.TODO(), imagestreamName, metav1.DeleteOptions{}); err != nil && !apierrs.IsNotFound(err) {
 		return fmt.Errorf("could not remove imagestream %s: %w", imagestreamName, err)
 	}
 
