@@ -666,6 +666,8 @@ func SupportedExtensions() map[string][]string {
 		"kernel-devel":         {"kernel-devel", "kernel-headers"},
 		"sandboxed-containers": {"kata-containers"},
 		"sysstat":              {"sysstat"},
+		"lvm2-lockd":           {"lvm2-lockd"},
+		"sanlock":              {"sanlock"},
 	}
 }
 
