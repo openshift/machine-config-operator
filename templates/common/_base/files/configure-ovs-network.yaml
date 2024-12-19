@@ -18,7 +18,7 @@ contents:
     NM_CONN_ETC_PATH="/etc/NetworkManager/system-connections"
     NM_CONN_RUN_PATH="/run/NetworkManager/system-connections"
 
-    # This is the path where NM is known to be configured to store user keyfiles 
+    # This is the path where NM is known to be configured to store user keyfiles
     NM_CONN_CONF_PATH="$NM_CONN_ETC_PATH"
 
     # This is where we want our keyfiles to finally reside. configure-ovs
@@ -146,7 +146,7 @@ contents:
         local new_name
         new_name=$(clone_slave_connection $conn_uuid)
 
-        mod_nm_conn "$new_name" connection.master "$new" connection.autoconnect-priority 100 connection.autoconnect no 
+        mod_nm_conn "$new_name" connection.master "$new" connection.autoconnect-priority 100 connection.autoconnect no
         echo "Replaced master $old with $new for slave profile $new_name"
       done
     }
@@ -292,8 +292,8 @@ contents:
         # br-ex has a different mac address than the bond which might be
         # troublesome on some platforms where the nic won't accept packets with
         # a different destination mac. But nobody has complained so far so go on
-        # with what we got. 
-        
+        # with what we got.
+
         # Do set it though for other link aggregation configurations where the
         # mac address would otherwise depend on enslave order for which we have
         # no control going forward.
@@ -390,6 +390,17 @@ contents:
             extra_if_brex_args+="ipv6.addr-gen-mode ${ipv6_addr_gen_mode} "
           fi
 
+          # check for static DNS address
+          ipv4_dns=$(nmcli --get-values ipv4.dns conn show ${old_conn})
+          if [ -n "ipv4_dns" ]; then
+            extra_if_brex_args+="ipv4.dns ${ipv4_dns} "
+          fi
+
+          ipv6_dns=$(nmcli --get-values ipv6.dns conn show ${old_conn})
+          if [ -n "ipv6_dns" ]; then
+            extra_if_brex_args+="ipv6.dns ${ipv6_dns} "
+          fi
+
           add_nm_conn "$ovs_interface" type ovs-interface slave-type ovs-port conn.interface "$bridge_name" master "$ovs_port_conn" \
             802-3-ethernet.mtu ${iface_mtu} 802-3-ethernet.cloned-mac-address ${iface_mac} \
             ipv4.method "${ipv4_method}" ipv4.route-metric "${bridge_metric}" \
@@ -420,10 +431,10 @@ contents:
     # Removes any previous ovs configuration
     remove_all_ovn_bridges() {
       echo "Reverting any previous OVS configuration"
-      
+
       remove_ovn_bridges br-ex phys0
       remove_ovn_bridges br-ex1 phys1
-      
+
       echo "OVS configuration successfully reverted"
     }
 
@@ -450,10 +461,10 @@ contents:
         # Only attempt to connect a disconnected device
         local connected_state=$(nmcli -g GENERAL.STATE device show "$dev" || echo "")
         if [[ "$connected_state" =~ "disconnected" ]]; then
-          # keep track if a profile by the same name as the device existed 
+          # keep track if a profile by the same name as the device existed
           # before we attempt activation
           local named_profile_existed=$([ -f "${NM_CONN_CONF_PATH}/${dev}" ] || [ -f "${NM_CONN_CONF_PATH}/${dev}.nmconnection" ] && echo "yes")
-          
+
           for i in {1..10}; do
               echo "Attempt $i to connect device $dev"
               nmcli device connect "$dev" && break
@@ -484,15 +495,15 @@ contents:
     rollback_nm() {
       phys0=$(get_bridge_physical_interface ovs-if-phys0)
       phys1=$(get_bridge_physical_interface ovs-if-phys1)
-      
+
       # Revert changes made by /usr/local/bin/configure-ovs.sh during SDN migration.
       remove_all_ovn_bridges
-      
+
       # reload profiles so that NM notices that some were removed
       reload_profiles_nm "$phys0" "$phys1"
     }
 
-    # Add a temporary deactivated connection profile 
+    # Add a temporary deactivated connection profile
     # First argument is the connection name folowed by arguments passed to
     # `nmcli connection add`
     add_nm_conn() {
@@ -500,7 +511,7 @@ contents:
       nmcli c add save no con-name "$@" connection.autoconnect no
     }
 
-    # Modify a temporary connection profile 
+    # Modify a temporary connection profile
     # First argument is the connection name followed by arguments passed to
     # `nmcli connection modify`
     mod_nm_conn() {
@@ -519,7 +530,7 @@ contents:
       nmcli c load "$dst_path"
     }
 
-    # Clone to a temporary connection profile 
+    # Clone to a temporary connection profile
     # First argument is the connection to clone, second argument is the clone name
     clone_nm_conn() {
       # clone as temporary so that it is generated in NM_CONN_RUN_PATH
@@ -558,7 +569,7 @@ contents:
         local is_slave=false
         if [ "$slave_type" = "team" ] || [ "$slave_type" = "bond" ]; then
           is_slave=true
-        fi 
+        fi
 
         # For slave interfaces, initialize the master interface to false if the key is not yet in the array
         local master_interface
@@ -826,7 +837,7 @@ contents:
     handle_exit() {
       e=$?
       tdir=$(mktemp -u -d -t "configure-ovs-$(date +%Y-%m-%d-%H-%M-%S)-XXXXXXXXXX")
-      
+
       if [ $e -eq 0 ]; then
         print_state
         # remove previous troubleshooting information
@@ -857,11 +868,11 @@ contents:
 
       exit $e
     }
-    
+
     # Setup a signal trap to rollback
     handle_termination() {
       echo "WARNING: configure-ovs has been requested to terminate, quitting..."
-      
+
       # by exiting with an error we will cleanup after ourselves in a
       # subsequent call to handle_exit
       exit 1
@@ -1027,7 +1038,7 @@ contents:
       elif [ "$1" == "OpenShiftSDN" ]; then
         # Revert changes made by /usr/local/bin/configure-ovs.sh during SDN migration.
         rollback_nm
-        
+
         # Remove bridges created by ovn-kubernetes
         ovs-vsctl --timeout=30 --if-exists del-br br-int -- --if-exists del-br br-local
       fi
@@ -1046,20 +1057,20 @@ contents:
       # sends the signals to all processes in the group by default so we expect
       # configure_ovs to get its own signals.
       trap 'echo "WARNING: termination requested, disabling retries"; RETRY=""' INT TERM
-      
-      # Run configure_ovs in a sub-shell. 
+
+      # Run configure_ovs in a sub-shell.
       ( configure_ovs "$@" )
       e=$?
 
       # Handle signals while we sleep
       trap 'handle_termination' INT TERM
-      
+
       # Exit if succesful and not configured to retry
       [ "$e" -eq 0 ] || [ -z "$RETRY" ] && exit "$e"
-      
+
       echo "configure-ovs failed, will retry after $RETRY"
       # flag that a retry has happened
       touch /tmp/configure-ovs-retry
       sleep "$RETRY"
-    
+
     done
