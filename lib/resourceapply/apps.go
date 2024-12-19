@@ -27,6 +27,10 @@ func IsApplyErrorRetriable(err error) bool {
 	if apierrors.IsConflict(err) {
 		return true
 	}
+	// Retry when the server takes too long to respond to the apply requests.
+	if apierrors.IsTimeout(err) {
+		return true
+	}
 	// Add any other errors to be added to the retry here.
 
 	klog.Infof("Skipping retry in Apply fn for error: %s", err)
