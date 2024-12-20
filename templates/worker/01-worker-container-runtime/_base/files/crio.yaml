@@ -50,7 +50,6 @@ contents:
     ]
     # Based on https://github.com/containers/crun/blob/27d7dd3a0/README.md?plain=1#L48
     container_min_memory = "512KiB"
-    default_annotations = {"run.oci.systemd.subgroup" = ""}
 
     [crio.runtime.workloads.openshift-builder]
     activation_annotation = "io.openshift.builder"
