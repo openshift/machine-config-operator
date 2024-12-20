@@ -205,22 +205,6 @@ func createSecret(t *testing.T, cs *framework.ClientSet, secret *corev1.Secret) 
 	})
 }
 
-// Copies the global pull secret from openshift-config/pull-secret into the MCO
-// namespace so that it can be used by the build processes.
-func copyGlobalPullSecret(t *testing.T, cs *framework.ClientSet) func() {
-	src := metav1.ObjectMeta{
-		Name:      "pull-secret",
-		Namespace: "openshift-config",
-	}
-
-	dst := metav1.ObjectMeta{
-		Name:      globalPullSecretCloneName,
-		Namespace: ctrlcommon.MCONamespace,
-	}
-
-	return cloneSecret(t, cs, src, dst)
-}
-
 // Computes the name of the currently-running MachineOSBuild given a MachineConfigPool and MachineOSConfig.
 func getMachineOSBuildNameForPool(cs *framework.ClientSet, poolName, moscName string) (string, error) {
 	mcp, err := cs.MachineconfigurationV1Interface.MachineConfigPools().Get(context.TODO(), poolName, metav1.GetOptions{})
@@ -861,6 +845,13 @@ func getImagePullspecForFailureTest(ctx context.Context, cs *framework.ClientSet
 	default:
 		return "", fmt.Errorf("unknown image reference spec %q", images.MachineConfigOperator)
 	}
+}
+
+func getBadContainerFileForFailureTest() []mcfgv1.MachineOSContainerfile {
+	return []mcfgv1.MachineOSContainerfile{{
+		ContainerfileArch: mcfgv1.NoArch,
+		Content:           "THIS IS A BAD CONTAINERFILE",
+	}}
 }
 
 // Talks to an image registry to get the digested image pullspec for the
