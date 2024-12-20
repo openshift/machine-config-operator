@@ -4,7 +4,7 @@ import (
 	"flag"
 	"os"
 
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	"github.com/spf13/cobra"
 	"k8s.io/component-base/cli"
 )
@@ -12,7 +12,7 @@ import (
 const (
 	internalRegistryHostname string = "image-registry.openshift-image-registry.svc:5000"
 	imagestreamName          string = "machine-config-operator"
-	imagestreamPullspec      string = internalRegistryHostname + "/" + ctrlcommon.MCONamespace + "/" + imagestreamName + ":latest"
+	imagestreamPullspec      string = internalRegistryHostname + "/" + commonconsts.MCONamespace + "/" + imagestreamName + ":latest"
 )
 
 var (

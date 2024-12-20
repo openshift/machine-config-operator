@@ -6,7 +6,7 @@ import (
 
 	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/fixtures"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -32,8 +32,8 @@ func TestBuildRequestOpts(t *testing.T) {
 			addlObjects: []runtime.Object{
 				&corev1.Secret{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      constants.EtcPkiEntitlementSecretName + "-" + ctrlcommon.MachineConfigPoolWorker,
-						Namespace: ctrlcommon.MCONamespace,
+						Name:      constants.EtcPkiEntitlementSecretName + "-" + commonconsts.MachineConfigPoolWorker,
+						Namespace: commonconsts.MCONamespace,
 					},
 				},
 			},
@@ -49,7 +49,7 @@ func TestBuildRequestOpts(t *testing.T) {
 				&corev1.ConfigMap{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      constants.EtcYumReposDConfigMapName,
-						Namespace: ctrlcommon.MCONamespace,
+						Namespace: commonconsts.MCONamespace,
 					},
 				},
 			},
@@ -65,7 +65,7 @@ func TestBuildRequestOpts(t *testing.T) {
 				&corev1.Secret{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      constants.EtcPkiRpmGpgSecretName,
-						Namespace: ctrlcommon.MCONamespace,
+						Namespace: commonconsts.MCONamespace,
 					},
 				},
 			},
@@ -81,19 +81,19 @@ func TestBuildRequestOpts(t *testing.T) {
 				&corev1.ConfigMap{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      constants.EtcYumReposDConfigMapName,
-						Namespace: ctrlcommon.MCONamespace,
+						Namespace: commonconsts.MCONamespace,
 					},
 				},
 				&corev1.Secret{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      constants.EtcPkiRpmGpgSecretName,
-						Namespace: ctrlcommon.MCONamespace,
+						Namespace: commonconsts.MCONamespace,
 					},
 				},
 				&corev1.Secret{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      constants.EtcPkiEntitlementSecretName + "-" + ctrlcommon.MachineConfigPoolWorker,
-						Namespace: ctrlcommon.MCONamespace,
+						Name:      constants.EtcPkiEntitlementSecretName + "-" + commonconsts.MachineConfigPoolWorker,
+						Namespace: commonconsts.MCONamespace,
 					},
 				},
 			},

@@ -12,7 +12,6 @@ import (
 	mcfgalphav1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 
-	pkghelpers "github.com/openshift/machine-config-operator/pkg/helpers"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -36,6 +35,8 @@ import (
 	informers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
 	"github.com/openshift/machine-config-operator/pkg/constants"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
+	state "github.com/openshift/machine-config-operator/pkg/controller/common/state"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/openshift/machine-config-operator/test/helpers"
@@ -306,7 +307,7 @@ func TestGetNodesForPool(t *testing.T) {
 		{
 			// Mixed cluster with both Windows and Linux worker nodes. Only Linux nodes should be managed by MCO
 			pool:     helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, machineConfigV0),
-			nodes:    append(newMixedNodeSet(3, map[string]string{"node-role/master": ""}, map[string]string{"node-role/worker": "", "node-role/infra": ""}), newNodeWithLabels("windowsNode", map[string]string{pkghelpers.OSLabel: "windows"})),
+			nodes:    append(newMixedNodeSet(3, map[string]string{"node-role/master": ""}, map[string]string{"node-role/worker": "", "node-role/infra": ""}), newNodeWithLabels("windowsNode", map[string]string{ctrlcommon.OSLabel: "windows"})),
 			expected: 3,
 			err:      false,
 		},
@@ -1013,7 +1014,7 @@ func TestUpdateCandidates(t *testing.T) {
 			}
 
 			// Not sure why this is suddenly required now...
-			f.ccLister = append(f.ccLister, newControllerConfig(ctrlcommon.ControllerConfigName, configv1.TopologyMode("")))
+			f.ccLister = append(f.ccLister, newControllerConfig(commonconsts.ControllerConfigName, configv1.TopologyMode("")))
 
 			f.nodeLister = append(f.nodeLister, test.node)
 			f.kubeobjects = append(f.kubeobjects, test.node)
@@ -1126,7 +1127,7 @@ func TestShouldMakeProgress(t *testing.T) {
 			t.Parallel()
 
 			f := newFixture(t)
-			cc := newControllerConfig(ctrlcommon.ControllerConfigName, configv1.TopologyMode(""))
+			cc := newControllerConfig(commonconsts.ControllerConfigName, configv1.TopologyMode(""))
 
 			if test.workerPool == nil {
 				test.workerPool = helpers.NewMachineConfigPoolBuilder("worker").WithNodeSelector(helpers.WorkerSelector).WithMachineConfig(machineConfigV1).MachineConfigPool()
@@ -1140,13 +1141,13 @@ func TestShouldMakeProgress(t *testing.T) {
 			mcp := test.infraPool
 
 			existingNodeBuilder := helpers.NewNodeBuilder("existingNodeAtDesiredConfig").WithEqualConfigs(machineConfigV1).WithLabels(map[string]string{"node-role/worker": "", "node-role/infra": ""})
-			lps := ctrlcommon.NewLayeredPoolState(mcp)
+			lps := state.NewLayeredPoolState(mcp)
 			if lps.HasOSImage() {
 				image := lps.GetOSImage()
 				existingNodeBuilder.WithDesiredImage(image).WithCurrentImage(image)
 			}
 
-			lps = ctrlcommon.NewLayeredPoolState(mcpWorker)
+			lps = state.NewLayeredPoolState(mcpWorker)
 			if lps.HasOSImage() {
 				image := lps.GetOSImage()
 				existingNodeBuilder.WithDesiredImage(image).WithCurrentImage(image)
@@ -1210,7 +1211,7 @@ func TestShouldMakeProgress(t *testing.T) {
 					t.Fatal(err)
 				}
 
-				lps := ctrlcommon.NewLayeredPoolState(mcp)
+				lps := state.NewLayeredPoolState(mcp)
 				if test.buildSuccess {
 					t.Logf("expecting that the node should get the desired image annotation, desired image is: %s", lps.GetOSImage())
 					expNode.Annotations[daemonconsts.DesiredImageAnnotationKey] = lps.GetOSImage()
@@ -1258,7 +1259,7 @@ func TestShouldMakeProgress(t *testing.T) {
 func TestEmptyCurrentMachineConfig(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
-	cc := newControllerConfig(ctrlcommon.ControllerConfigName, configv1.TopologyMode(""))
+	cc := newControllerConfig(commonconsts.ControllerConfigName, configv1.TopologyMode(""))
 	mcp := helpers.NewMachineConfigPool("test-cluster-master", nil, helpers.MasterSelector, "")
 	mcp.Spec.MaxUnavailable = intStrPtr(intstr.FromInt(1))
 
@@ -1271,7 +1272,7 @@ func TestEmptyCurrentMachineConfig(t *testing.T) {
 func TestPaused(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
-	cc := newControllerConfig(ctrlcommon.ControllerConfigName, configv1.TopologyMode(""))
+	cc := newControllerConfig(commonconsts.ControllerConfigName, configv1.TopologyMode(""))
 	mcp := helpers.NewMachineConfigPool("test-cluster-infra", nil, helpers.InfraSelector, machineConfigV1)
 	mcpWorker := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, machineConfigV1)
 	mcp.Spec.MaxUnavailable = intStrPtr(intstr.FromInt(1))
@@ -1303,7 +1304,7 @@ func TestPaused(t *testing.T) {
 func TestShouldUpdateStatusOnlyUpdated(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
-	cc := newControllerConfig(ctrlcommon.ControllerConfigName, configv1.TopologyMode(""))
+	cc := newControllerConfig(commonconsts.ControllerConfigName, configv1.TopologyMode(""))
 	mcp := helpers.NewMachineConfigPool("test-cluster-infra", nil, helpers.InfraSelector, machineConfigV1)
 	mcpWorker := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, machineConfigV1)
 	mcp.Spec.MaxUnavailable = intStrPtr(intstr.FromInt(1))
@@ -1335,7 +1336,7 @@ func TestShouldUpdateStatusOnlyUpdated(t *testing.T) {
 func TestShouldUpdateStatusOnlyNoProgress(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
-	cc := newControllerConfig(ctrlcommon.ControllerConfigName, configv1.TopologyMode(""))
+	cc := newControllerConfig(commonconsts.ControllerConfigName, configv1.TopologyMode(""))
 	mcp := helpers.NewMachineConfigPool("test-cluster-infra", nil, helpers.InfraSelector, machineConfigV1)
 	mcpWorker := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, machineConfigV1)
 	mcp.Spec.MaxUnavailable = intStrPtr(intstr.FromInt(1))
@@ -1366,7 +1367,7 @@ func TestShouldUpdateStatusOnlyNoProgress(t *testing.T) {
 
 func TestCertStatus(t *testing.T) {
 	f := newFixture(t)
-	cc := newControllerConfig(ctrlcommon.ControllerConfigName, configv1.TopologyMode(""))
+	cc := newControllerConfig(commonconsts.ControllerConfigName, configv1.TopologyMode(""))
 
 	cc.Status.ControllerCertificates = append(cc.Status.ControllerCertificates, mcfgv1.ControllerCertificate{
 		BundleFile: "KubeAPIServerServingCAData",
@@ -1405,7 +1406,7 @@ func TestCertStatus(t *testing.T) {
 func TestShouldDoNothing(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
-	cc := newControllerConfig(ctrlcommon.ControllerConfigName, configv1.TopologyMode(""))
+	cc := newControllerConfig(commonconsts.ControllerConfigName, configv1.TopologyMode(""))
 	mcp := helpers.NewMachineConfigPool("test-cluster-infra", nil, helpers.InfraSelector, machineConfigV1)
 	mcpWorker := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, machineConfigV1)
 	mcp.Spec.MaxUnavailable = intStrPtr(intstr.FromInt(1))
@@ -1495,7 +1496,7 @@ func TestSortNodeList(t *testing.T) {
 func TestControlPlaneTopology(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
-	cc := newControllerConfig(ctrlcommon.ControllerConfigName, configv1.SingleReplicaTopologyMode)
+	cc := newControllerConfig(commonconsts.ControllerConfigName, configv1.SingleReplicaTopologyMode)
 	mcp := helpers.NewMachineConfigPool("test-cluster-infra", nil, helpers.InfraSelector, machineConfigV1)
 	mcpWorker := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, machineConfigV1)
 	mcp.Spec.MaxUnavailable = intStrPtr(intstr.FromInt(1))

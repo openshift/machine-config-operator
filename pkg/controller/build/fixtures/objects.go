@@ -8,6 +8,7 @@ import (
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	testhelpers "github.com/openshift/machine-config-operator/test/helpers"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -125,7 +126,7 @@ func defaultKubeObjects() []runtime.Object {
 		&corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      finalImagePushSecretName,
-				Namespace: ctrlcommon.MCONamespace,
+				Namespace: commonconsts.MCONamespace,
 			},
 			Data: map[string][]byte{
 				corev1.DockerConfigKey: []byte(legacyPullSecret),
@@ -135,7 +136,7 @@ func defaultKubeObjects() []runtime.Object {
 		&corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      baseImagePullSecretName,
-				Namespace: ctrlcommon.MCONamespace,
+				Namespace: commonconsts.MCONamespace,
 			},
 			Data: map[string][]byte{
 				corev1.DockerConfigJsonKey: []byte(pullSecret),
@@ -145,7 +146,7 @@ func defaultKubeObjects() []runtime.Object {
 		&corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      currentImagePullSecretName,
-				Namespace: ctrlcommon.MCONamespace,
+				Namespace: commonconsts.MCONamespace,
 			},
 			Data: map[string][]byte{
 				corev1.DockerConfigJsonKey: []byte(pullSecret),
@@ -155,7 +156,7 @@ func defaultKubeObjects() []runtime.Object {
 		&corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "machine-config-operator",
-				Namespace: ctrlcommon.MCONamespace,
+				Namespace: commonconsts.MCONamespace,
 			},
 		},
 	}
@@ -190,8 +191,8 @@ func newMachineConfigsFromPool(mcp *mcfgv1.MachineConfigPool) []*mcfgv1.MachineC
 	out = append(out, testhelpers.NewMachineConfig(
 		mcp.Spec.Configuration.Name,
 		map[string]string{
-			ctrlcommon.GeneratedByControllerVersionAnnotationKey: "version-number",
-			"machineconfiguration.openshift.io/role":             mcp.Name,
+			commonconsts.GeneratedByControllerVersionAnnotationKey: "version-number",
+			"machineconfiguration.openshift.io/role":               mcp.Name,
 		},
 		"",
 		files))
@@ -203,8 +204,8 @@ func newMachineConfigsFromPool(mcp *mcfgv1.MachineConfigPool) []*mcfgv1.MachineC
 func getImagesConfigMap() *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      ctrlcommon.MachineConfigOperatorImagesConfigMapName,
-			Namespace: ctrlcommon.MCONamespace,
+			Name:      commonconsts.MachineConfigOperatorImagesConfigMapName,
+			Namespace: commonconsts.MCONamespace,
 		},
 		Data: map[string]string{
 			"images.json": `{"machineConfigOperator": "mco.image.pullspec"}`,
@@ -216,8 +217,8 @@ func getImagesConfigMap() *corev1.ConfigMap {
 func getOSImageURLConfigMap() *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      ctrlcommon.MachineConfigOSImageURLConfigMapName,
-			Namespace: ctrlcommon.MCONamespace,
+			Name:      commonconsts.MachineConfigOSImageURLConfigMapName,
+			Namespace: commonconsts.MCONamespace,
 		},
 		Data: map[string]string{
 			"baseOSContainerImage":           BaseOSContainerImage,

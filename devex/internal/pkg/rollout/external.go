@@ -8,7 +8,7 @@ import (
 	routeClient "github.com/openshift/client-go/route/clientset/versioned"
 	"github.com/openshift/machine-config-operator/devex/internal/pkg/errors"
 	"github.com/openshift/machine-config-operator/devex/internal/pkg/utils"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	"github.com/openshift/machine-config-operator/test/framework"
 	apierrs "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -65,7 +65,7 @@ func ExposeClusterImageRegistry(cs *framework.ClientSet) (string, error) {
 	}
 	klog.Infof("Patched %s", imageRegistryObject)
 
-	cmd := exec.Command("oc", "-n", ctrlcommon.MCONamespace, "policy", "add-role-to-group", "registry-viewer", "system:anonymous")
+	cmd := exec.Command("oc", "-n", commonconsts.MCONamespace, "policy", "add-role-to-group", "registry-viewer", "system:anonymous")
 	cmd.Env = utils.ToEnvVars(map[string]string{
 		"KUBECONFIG": kubeconfig,
 	})
@@ -108,7 +108,7 @@ func UnexposeClusterImageRegistry(cs *framework.ClientSet) error {
 	}
 	klog.Infof("Service for %s deleted", imageRegistryObject)
 
-	cmd := exec.Command("oc", "-n", ctrlcommon.MCONamespace, "policy", "remove-role-from-group", "registry-viewer", "system:anonymous")
+	cmd := exec.Command("oc", "-n", commonconsts.MCONamespace, "policy", "remove-role-from-group", "registry-viewer", "system:anonymous")
 	cmd.Env = utils.ToEnvVars(map[string]string{
 		"KUBECONFIG": kubeconfig,
 	})

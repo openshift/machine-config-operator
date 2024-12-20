@@ -17,7 +17,7 @@ import (
 	apierrs "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 )
 
 var (
@@ -73,7 +73,7 @@ func ReplaceMCOImage(cs *framework.ClientSet, pullspec string, forceRestart bool
 		return fmt.Errorf("could not scale cluster version operator down to zero: %w", err)
 	}
 
-	if err := setDeploymentReplicas(cs, mcoName, ctrlcommon.MCONamespace, 0); err != nil {
+	if err := setDeploymentReplicas(cs, mcoName, commonconsts.MCONamespace, 0); err != nil {
 		return fmt.Errorf("could not scale machine config operator down to zero: %w", err)
 	}
 
@@ -81,7 +81,7 @@ func ReplaceMCOImage(cs *framework.ClientSet, pullspec string, forceRestart bool
 		return err
 	}
 
-	if err := setDeploymentReplicas(cs, mcoName, ctrlcommon.MCONamespace, 1); err != nil {
+	if err := setDeploymentReplicas(cs, mcoName, commonconsts.MCONamespace, 1); err != nil {
 		return fmt.Errorf("could not scale machine config operator back up: %w", err)
 	}
 
@@ -115,7 +115,7 @@ func forceRestartMCO(cs *framework.ClientSet) error {
 }
 
 func forceRestartPodsForDeploymentOrDaemonset(cs *framework.ClientSet, name string) error {
-	podList, err := cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace).List(context.TODO(), metav1.ListOptions{
+	podList, err := cs.CoreV1Interface.Pods(commonconsts.MCONamespace).List(context.TODO(), metav1.ListOptions{
 		LabelSelector: fmt.Sprintf("k8s-app==%s", name),
 	})
 
@@ -130,7 +130,7 @@ func forceRestartPodsForDeploymentOrDaemonset(cs *framework.ClientSet, name stri
 	for _, pod := range podList.Items {
 		pod := pod
 		eg.Go(func() error {
-			if err := cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace).Delete(context.TODO(), pod.Name, metav1.DeleteOptions{}); err != nil {
+			if err := cs.CoreV1Interface.Pods(commonconsts.MCONamespace).Delete(context.TODO(), pod.Name, metav1.DeleteOptions{}); err != nil {
 				return fmt.Errorf("could not delete pod %s: %w", pod.Name, err)
 			}
 
@@ -216,7 +216,7 @@ func updateDaemonsets(cs *framework.ClientSet, pullspec string, forceRestart boo
 }
 
 func loadMCOImagesConfigMap(cs *framework.ClientSet) (*corev1.ConfigMap, map[string]string, error) {
-	cm, err := cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), mcoImagesConfigMap, metav1.GetOptions{})
+	cm, err := cs.CoreV1Interface.ConfigMaps(commonconsts.MCONamespace).Get(context.TODO(), mcoImagesConfigMap, metav1.GetOptions{})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -273,7 +273,7 @@ func updateMCOConfigMap(cs *framework.ClientSet, pullspec string) error {
 
 		cm.Data[mcoImagesJSON] = string(imagesBytes)
 
-		_, err = cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace).Update(context.TODO(), cm, metav1.UpdateOptions{})
+		_, err = cs.CoreV1Interface.ConfigMaps(commonconsts.MCONamespace).Update(context.TODO(), cm, metav1.UpdateOptions{})
 		return err
 	})
 
@@ -287,7 +287,7 @@ func updateMCOConfigMap(cs *framework.ClientSet, pullspec string) error {
 
 func updateDeployment(cs *framework.ClientSet, name, pullspec string) error {
 	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		deploy, err := cs.AppsV1Interface.Deployments(ctrlcommon.MCONamespace).Get(context.TODO(), name, metav1.GetOptions{})
+		deploy, err := cs.AppsV1Interface.Deployments(commonconsts.MCONamespace).Get(context.TODO(), name, metav1.GetOptions{})
 		if name == "machine-os-builder" && apierrs.IsNotFound(err) {
 			return nil
 		}
@@ -305,14 +305,14 @@ func updateDeployment(cs *framework.ClientSet, name, pullspec string) error {
 			deploy.Spec.Template.ObjectMeta.Annotations["kubectl.kubernetes.io/restartedAt"] = time.Now().Format(time.RFC3339)
 		}
 
-		_, err = cs.AppsV1Interface.Deployments(ctrlcommon.MCONamespace).Update(context.TODO(), deploy, metav1.UpdateOptions{})
+		_, err = cs.AppsV1Interface.Deployments(commonconsts.MCONamespace).Update(context.TODO(), deploy, metav1.UpdateOptions{})
 		return err
 	})
 }
 
 func updateDaemonset(cs *framework.ClientSet, name, pullspec string) error {
 	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		ds, err := cs.AppsV1Interface.DaemonSets(ctrlcommon.MCONamespace).Get(context.TODO(), name, metav1.GetOptions{})
+		ds, err := cs.AppsV1Interface.DaemonSets(commonconsts.MCONamespace).Get(context.TODO(), name, metav1.GetOptions{})
 		if err != nil {
 			return err
 		}
@@ -326,7 +326,7 @@ func updateDaemonset(cs *framework.ClientSet, name, pullspec string) error {
 			ds.Spec.Template.ObjectMeta.Annotations["kubectl.kubernetes.io/restartedAt"] = time.Now().Format(time.RFC3339)
 		}
 
-		_, err = cs.AppsV1Interface.DaemonSets(ctrlcommon.MCONamespace).Update(context.TODO(), ds, metav1.UpdateOptions{})
+		_, err = cs.AppsV1Interface.DaemonSets(commonconsts.MCONamespace).Update(context.TODO(), ds, metav1.UpdateOptions{})
 		return err
 	})
 }

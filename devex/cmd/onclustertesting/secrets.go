@@ -8,7 +8,7 @@ import (
 
 	"github.com/ghodss/yaml"
 	"github.com/openshift/machine-config-operator/devex/internal/pkg/utils"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	corev1 "k8s.io/api/core/v1"
@@ -29,7 +29,7 @@ func copyGlobalPullSecret(cs *framework.ClientSet) error {
 
 	dst := utils.SecretRef{
 		Name:      globalPullSecretCloneName,
-		Namespace: ctrlcommon.MCONamespace,
+		Namespace: commonconsts.MCONamespace,
 	}
 
 	labels := map[string]string{
@@ -49,7 +49,7 @@ func copyEtcPkiEntitlementSecret(cs *framework.ClientSet) error {
 
 	dst := utils.SecretRef{
 		Name:      name,
-		Namespace: ctrlcommon.MCONamespace,
+		Namespace: commonconsts.MCONamespace,
 	}
 
 	labels := map[string]string{
@@ -90,7 +90,7 @@ func loadSecretFromFile(pushSecretPath string) (*corev1.Secret, error) {
 		createdByOnClusterBuildsHelper: "",
 	}
 
-	secret.Namespace = ctrlcommon.MCONamespace
+	secret.Namespace = commonconsts.MCONamespace
 
 	return secret, nil
 }
@@ -106,54 +106,54 @@ func createSecretFromFile(cs *framework.ClientSet, path string) error {
 }
 
 func deleteSecret(cs *framework.ClientSet, name string) error {
-	err := cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace).Delete(context.TODO(), name, metav1.DeleteOptions{})
+	err := cs.CoreV1Interface.Secrets(commonconsts.MCONamespace).Delete(context.TODO(), name, metav1.DeleteOptions{})
 
 	if err != nil {
 		return fmt.Errorf("could not delete secret %s: %w", name, err)
 	}
 
-	klog.Infof("Deleted secret %q from namespace %q", name, ctrlcommon.MCONamespace)
+	klog.Infof("Deleted secret %q from namespace %q", name, commonconsts.MCONamespace)
 	return nil
 }
 
 func getBuilderPushSecretName(cs *framework.ClientSet) (string, error) {
-	secrets, err := cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace).List(context.TODO(), metav1.ListOptions{})
+	secrets, err := cs.CoreV1Interface.Secrets(commonconsts.MCONamespace).List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		return "", err
 	}
 
 	for _, secret := range secrets.Items {
 		if strings.HasPrefix(secret.Name, "builder-dockercfg") {
-			klog.Infof("Will use builder secret %q in namespace %q", secret.Name, ctrlcommon.MCONamespace)
+			klog.Infof("Will use builder secret %q in namespace %q", secret.Name, commonconsts.MCONamespace)
 			return secret.Name, nil
 		}
 	}
 
-	return "", fmt.Errorf("could not find matching secret name in namespace %s", ctrlcommon.MCONamespace)
+	return "", fmt.Errorf("could not find matching secret name in namespace %s", commonconsts.MCONamespace)
 }
 
 func getDefaultPullSecretName(cs *framework.ClientSet) (string, error) {
-	secrets, err := cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace).List(context.TODO(), metav1.ListOptions{})
+	secrets, err := cs.CoreV1Interface.Secrets(commonconsts.MCONamespace).List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		return "", err
 	}
 
 	for _, secret := range secrets.Items {
 		if strings.HasPrefix(secret.Name, "default-dockercfg") && !strings.Contains(secret.Name, "canonical") {
-			klog.Infof("Will use default secret %q in namespace %q", secret.Name, ctrlcommon.MCONamespace)
+			klog.Infof("Will use default secret %q in namespace %q", secret.Name, commonconsts.MCONamespace)
 			return secret.Name, nil
 		}
 	}
 
-	return "", fmt.Errorf("could not find matching secret name in namespace %s", ctrlcommon.MCONamespace)
+	return "", fmt.Errorf("could not find matching secret name in namespace %s", commonconsts.MCONamespace)
 }
 
 // TODO: Dedupe these funcs from BuildController helpers.
 func validateSecret(cs *framework.ClientSet, secretName string) error {
 	// Here we just validate the presence of the secret, and not its content
-	secret, err := cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace).Get(context.TODO(), secretName, metav1.GetOptions{})
+	secret, err := cs.CoreV1Interface.Secrets(commonconsts.MCONamespace).Get(context.TODO(), secretName, metav1.GetOptions{})
 	if err != nil && apierrs.IsNotFound(err) {
-		return fmt.Errorf("secret %q not found in namespace %q. Did you use the right secret name?", secretName, ctrlcommon.MCONamespace)
+		return fmt.Errorf("secret %q not found in namespace %q. Did you use the right secret name?", secretName, commonconsts.MCONamespace)
 	}
 
 	if err != nil {
@@ -200,7 +200,7 @@ func validateSecretsExist(cs *framework.ClientSet, names []string) error {
 		if err := validateSecret(cs, name); err != nil {
 			return err
 		}
-		klog.Infof("Secret %q exists in namespace %q", name, ctrlcommon.MCONamespace)
+		klog.Infof("Secret %q exists in namespace %q", name, commonconsts.MCONamespace)
 	}
 
 	return nil
@@ -210,11 +210,11 @@ func createLongLivedImagePushSecretForPool(ctx context.Context, cs *framework.Cl
 	opts := helpers.LongLivedSecretOpts{
 		ServiceAccount: metav1.ObjectMeta{
 			Name:      "builder",
-			Namespace: ctrlcommon.MCONamespace,
+			Namespace: commonconsts.MCONamespace,
 		},
 		Secret: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("ocl-%s-push-secret", poolName),
-			Namespace: ctrlcommon.MCONamespace,
+			Namespace: commonconsts.MCONamespace,
 		},
 		Lifetime: "24h",
 	}
