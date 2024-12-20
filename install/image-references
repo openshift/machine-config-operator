@@ -20,14 +20,14 @@ spec:
     from:
       kind: DockerImage
       name: placeholder.url.oc.will.replace.this.org/placeholdernamespace:kube-rbac-proxy
-  - name: rhel-coreos
+  - name: rhel-coreos-next
     from:
       kind: DockerImage
-      name: placeholder.url.oc.will.replace.this.org/placeholdernamespace:rhel-coreos
-  - name: rhel-coreos-extensions
+      name: placeholder.url.oc.will.replace.this.org/placeholdernamespace:rhel-coreos-next
+  - name: rhel-coreos-extensions-next
     from:
       kind: DockerImage
-      name: placeholder.url.oc.will.replace.this.org/placeholdernamespace:rhel-coreos-extensions
+      name: placeholder.url.oc.will.replace.this.org/placeholdernamespace:rhel-coreos-extensions-next
   - name: keepalived-ipfailover
     from:
       kind: DockerImage
