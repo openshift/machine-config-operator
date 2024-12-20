@@ -24,7 +24,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/openshift/machine-config-operator/pkg/controller/build/buildrequest"
-	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -109,8 +108,6 @@ func TestOnClusterLayeringOnOKD(t *testing.T) {
 
 // Tests that an on-cluster build can be performed with the Custom Pod Builder.
 func TestOnClusterLayering(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
 
 	runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
 		poolName: layeredMCPName,
@@ -118,6 +115,11 @@ func TestOnClusterLayering(t *testing.T) {
 			layeredMCPName: cowsayDockerfile,
 		},
 	})
+
+	/* Removing this portion of this test - update when https://issues.redhat.com/browse/OCPBUGS-46421 fixed.
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
 
 	t.Logf("Applying rebuild annotation (%q) to MachineOSConfig (%q) to cause a rebuild", constants.RebuildMachineOSConfigAnnotationKey, layeredMCPName)
 
@@ -132,6 +134,7 @@ func TestOnClusterLayering(t *testing.T) {
 	require.NoError(t, err)
 
 	waitForBuildToStartForPoolAndConfig(t, cs, layeredMCPName, layeredMCPName)
+	*/
 }
 
 // Tests that an on-cluster build can be performed and that the resulting image
@@ -313,75 +316,67 @@ func TestMachineConfigPoolChangeRestartsBuild(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// This test starts a build with an image that is known to fail because it does
-// not have the necessary binaries within it. After failure, it edits the
-// MachineOSConfig with the expectation that the failed build and its objects
-// will be deleted and a new build will start in its place.
+// This test starts a build with an image that is known to fail because it uses
+// an invalid containerfile. After failure, it edits the  MachineOSConfig
+// with the expectation that the failed build and its  will be deleted and a new
+// build will start in its place.
 func TestGracefulBuildFailureRecovery(t *testing.T) {
 
-	//TODO: Update this test to use a bad container file
-	/*
-		ctx, cancel := context.WithCancel(context.Background())
-		t.Cleanup(cancel)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
 
-		cs := framework.NewClientSet("")
+	cs := framework.NewClientSet("")
 
-		mosc := prepareForOnClusterLayeringTest(t, cs, onClusterLayeringTestOpts{
-			poolName: layeredMCPName,
-			customDockerfiles: map[string]string{
-				layeredMCPName: cowsayDockerfile,
-			},
-		})
+	mosc := prepareForOnClusterLayeringTest(t, cs, onClusterLayeringTestOpts{
+		poolName: layeredMCPName,
+		customDockerfiles: map[string]string{
+			layeredMCPName: cowsayDockerfile,
+		},
+	})
 
-		// Override the base OS container image to pull an invalid (and smaller)
-		// image that should produce a failure faster.
+	// Add a bad containerfile so that we can cause a build failure
+	t.Logf("Adding a bad containerfile for MachineOSConfig %s to cause a build failure", mosc.Name)
 
-		pullspec, err := getImagePullspecForFailureTest(ctx, cs)
-		require.NoError(t, err)
+	mosc.Spec.Containerfile = getBadContainerFileForFailureTest()
 
-		t.Logf("Overriding BaseImagePullspec for MachineOSConfig %s with %q to cause a build failure", mosc.Name, pullspec)
+	createMachineOSConfig(t, cs, mosc)
 
-		mosc.Spec.BuildInputs.BaseOSImagePullspec = pullspec
+	// Wait for the build to start.
+	firstMosb := waitForBuildToStartForPoolAndConfig(t, cs, layeredMCPName, mosc.Name)
 
-		createMachineOSConfig(t, cs, mosc)
+	t.Logf("Waiting for MachineOSBuild %s to fail", firstMosb.Name)
 
-		// Wait for the build to start.
-		firstMosb := waitForBuildToStartForPoolAndConfig(t, cs, layeredMCPName, mosc.Name)
+	// Wait for the build to fail.
+	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx)
+	kubeassert.Eventually().MachineOSBuildIsFailure(firstMosb)
 
-		t.Logf("Waiting for MachineOSBuild %s to fail", firstMosb.Name)
+	// Clear the overridden image pullspec.
+	apiMosc, err := cs.MachineconfigurationV1Interface.MachineOSConfigs().Get(ctx, mosc.Name, metav1.GetOptions{})
+	require.NoError(t, err)
 
-		// Wait for the build to fail.
-		kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx)
-		kubeassert.Eventually().MachineOSBuildIsFailure(firstMosb)
+	apiMosc.Spec.Containerfile = []mcfgv1.MachineOSContainerfile{}
 
-		// Clear the overridden image pullspec.
-		apiMosc, err := cs.MachineconfigurationV1Interface.MachineOSConfigs().Get(ctx, mosc.Name, metav1.GetOptions{})
-		require.NoError(t, err)
+	updated, err := cs.MachineconfigurationV1Interface.MachineOSConfigs().Update(ctx, apiMosc, metav1.UpdateOptions{})
+	require.NoError(t, err)
 
-		apiMosc.Spec.BaseOSImagePullspec = ""
+	t.Logf("Cleared out bad containerfile")
 
-		updated, err := cs.MachineconfigurationV1Interface.MachineOSConfigs().Update(ctx, apiMosc, metav1.UpdateOptions{})
-		require.NoError(t, err)
+	mcp, err := cs.MachineconfigurationV1Interface.MachineConfigPools().Get(ctx, layeredMCPName, metav1.GetOptions{})
+	require.NoError(t, err)
 
-		t.Logf("Cleared BaseImagePullspec to use default value")
+	// Compute the new MachineOSBuild image name.
+	moscChangeMosb := buildrequest.NewMachineOSBuildFromAPIOrDie(ctx, cs.GetKubeclient(), updated, mcp)
 
-		mcp, err := cs.MachineconfigurationV1Interface.MachineConfigPools().Get(ctx, layeredMCPName, metav1.GetOptions{})
-		require.NoError(t, err)
+	// Wait for the second build to start.
+	secondMosb := waitForBuildToStart(t, cs, moscChangeMosb)
 
-		// Compute the new MachineOSBuild image name.
-		moscChangeMosb := buildrequest.NewMachineOSBuildFromAPIOrDie(ctx, cs.GetKubeclient(), updated, mcp)
+	// Ensure that the first build is eventually cleaned up.
+	kubeassert.Eventually().MachineOSBuildDoesNotExist(firstMosb)
+	assertBuildObjectsAreDeleted(t, kubeassert.Eventually(), firstMosb)
 
-		// Wait for the second build to start.
-		secondMosb := waitForBuildToStart(t, cs, moscChangeMosb)
-
-		// Ensure that the first build is eventually cleaned up.
-		kubeassert.Eventually().MachineOSBuildDoesNotExist(firstMosb)
-		assertBuildObjectsAreDeleted(t, kubeassert.Eventually(), firstMosb)
-
-		// Ensure that the second build is still running.
-		kubeassert.MachineOSBuildExists(secondMosb)
-		assertBuildObjectsAreCreated(t, kubeassert, secondMosb)
-	*/
+	// Ensure that the second build is still running.
+	kubeassert.MachineOSBuildExists(secondMosb)
+	assertBuildObjectsAreCreated(t, kubeassert, secondMosb)
 
 }
 
@@ -811,13 +806,10 @@ func prepareForOnClusterLayeringTest(t *testing.T, cs *framework.ClientSet, test
 	})
 
 	imagestreamObjMeta := metav1.ObjectMeta{
-		Name:      "os-image",
-		Namespace: strings.ToLower(t.Name()),
+		Name: "os-image",
 	}
 
 	pushSecretName, finalPullspec, _ := setupImageStream(t, cs, imagestreamObjMeta)
-
-	copyGlobalPullSecret(t, cs)
 
 	if testOpts.targetNode != nil {
 		makeIdempotentAndRegister(t, helpers.CreatePoolWithNode(t, cs, testOpts.poolName, *testOpts.targetNode))
@@ -859,9 +851,6 @@ func prepareForOnClusterLayeringTest(t *testing.T, cs *framework.ClientSet, test
 		Spec: mcfgv1.MachineOSConfigSpec{
 			MachineConfigPool: mcfgv1.MachineConfigPoolReference{
 				Name: testOpts.poolName,
-			},
-			BaseImagePullSecret: &mcfgv1.ImageSecretObjectReference{
-				Name: globalPullSecretCloneName,
 			},
 			RenderedImagePushSecret: mcfgv1.ImageSecretObjectReference{
 				Name: pushSecretName,
