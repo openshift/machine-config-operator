@@ -2089,7 +2089,7 @@ spec:
                     type: string
                   connectTimeout:
                     description: |-
-                      ConnectTimeout defines the maximum time to wait for
+                      connectTimeout defines the maximum time to wait for
                       a connection attempt to a server/backend to succeed.
 
                       This field expects an unsigned duration string of decimal numbers, each with optional

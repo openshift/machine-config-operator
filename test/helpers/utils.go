@@ -24,11 +24,10 @@ import (
 
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	"github.com/davecgh/go-spew/spew"
-	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	machineClientv1beta1 "github.com/openshift/client-go/machine/clientset/versioned/typed/machine/v1beta1"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
@@ -1737,20 +1736,20 @@ func nodeListToSet(nodeList *corev1.NodeList) sets.Set[string] {
 	return nodes
 }
 
-func SetContainerfileContentsOnMachineOSConfig(ctx context.Context, t *testing.T, mcfgclient mcfgclientset.Interface, mosc *mcfgv1alpha1.MachineOSConfig, contents string) *mcfgv1alpha1.MachineOSConfig {
+func SetContainerfileContentsOnMachineOSConfig(ctx context.Context, t *testing.T, mcfgclient mcfgclientset.Interface, mosc *mcfgv1.MachineOSConfig, contents string) *mcfgv1.MachineOSConfig {
 	t.Helper()
 
-	apiMosc, err := mcfgclient.MachineconfigurationV1alpha1().MachineOSConfigs().Get(ctx, mosc.Name, metav1.GetOptions{})
+	apiMosc, err := mcfgclient.MachineconfigurationV1().MachineOSConfigs().Get(ctx, mosc.Name, metav1.GetOptions{})
 	require.NoError(t, err)
 
-	apiMosc.Spec.BuildInputs.Containerfile = []mcfgv1alpha1.MachineOSContainerfile{
+	apiMosc.Spec.Containerfile = []mcfgv1.MachineOSContainerfile{
 		{
-			ContainerfileArch: mcfgv1alpha1.NoArch,
+			ContainerfileArch: mcfgv1.NoArch,
 			Content:           contents,
 		},
 	}
 
-	apiMosc, err = mcfgclient.MachineconfigurationV1alpha1().MachineOSConfigs().Update(ctx, apiMosc, metav1.UpdateOptions{})
+	apiMosc, err = mcfgclient.MachineconfigurationV1().MachineOSConfigs().Update(ctx, apiMosc, metav1.UpdateOptions{})
 	require.NoError(t, err)
 
 	return apiMosc
