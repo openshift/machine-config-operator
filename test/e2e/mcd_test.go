@@ -332,7 +332,7 @@ func TestExtensions(t *testing.T) {
 			Config: runtime.RawExtension{
 				Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
 			},
-			Extensions: []string{"wasm", "ipsec", "usbguard", "kerberos", "kernel-devel", "sandboxed-containers", "sysstat"},
+			Extensions: []string{"wasm", "ipsec", "usbguard", "kerberos", "kernel-devel", "sandboxed-containers", "sysstat", "lvm2-lockd", "sanlock"},
 		},
 	}
 
@@ -357,12 +357,12 @@ func TestExtensions(t *testing.T) {
 	if isOKD {
 		// OKD does not support grouped extensions yet, so installing kernel-devel will not also pull in kernel-headers
 		// "sandboxed-containers" extension is not available on OKD
-		installedPackages = helpers.ExecCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-q", "crun-wasm", "libreswan", "usbguard", "kernel-devel", "sysstat")
+		installedPackages = helpers.ExecCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-q", "crun-wasm", "libreswan", "usbguard", "kernel-devel", "sysstat", "lvm2-lockd", "sanlock")
 		// "kerberos" extension is not available on OKD
 		expectedPackages = []string{"libreswan", "usbguard", "kernel-devel"}
 	} else {
-		installedPackages = helpers.ExecCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-q", "crun-wasm", "libreswan", "usbguard", "kernel-devel", "kernel-headers", "kata-containers", "krb5-workstation", "libkadm5", "sysstat")
-		expectedPackages = []string{"crun-wasm", "libreswan", "usbguard", "kernel-devel", "kernel-headers", "kata-containers", "krb5-workstation", "libkadm5", "sysstat"}
+		installedPackages = helpers.ExecCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-q", "crun-wasm", "libreswan", "usbguard", "kernel-devel", "kernel-headers", "kata-containers", "krb5-workstation", "libkadm5", "sysstat", "lvm2-lockd", "sanlock")
+		expectedPackages = []string{"crun-wasm", "libreswan", "usbguard", "kernel-devel", "kernel-headers", "kata-containers", "krb5-workstation", "libkadm5", "sysstat", "lvm2-lockd", "sanlock"}
 
 	}
 	for _, v := range expectedPackages {
