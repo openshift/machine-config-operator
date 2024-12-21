@@ -26,6 +26,12 @@ contents:
       mode http
       monitor-uri /haproxy_ready
       option dontlognull
+    listen monitor_check_http_url
+      bind :::9454 v4v6
+      mode http
+      monitor-uri /haproxy_monitor
+      monitor fail if { nbsrv(masters) lt 1 }
+      option dontlognull
     {{`{{- end }}`}}
     listen stats
       bind localhost:{{`{{ .LBConfig.StatPort }}`}}
