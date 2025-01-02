@@ -1,0 +1,45 @@
+mode: 0644
+path: "/etc/kubernetes/manifests/apiserver-watcher.yaml"
+contents:
+  inline: |
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      name: apiserver-watcher
+      namespace: openshift-kube-apiserver
+    spec:
+      containers:
+      - name: apiserver-watcher
+        image: "{{.Images.apiServerWatcherKey}}"
+        command:
+          - flock
+          - --verbose
+          - --exclusive
+          - --timeout=300
+          - /rootfs/run/cloud-routes/apiserver-watcher.lock
+          - apiserver-watcher
+        args:
+        - "run"
+        - "--health-check-url={{.Infra.Status.APIServerInternalURL}}/readyz"
+        resources:
+          requests:
+            cpu: 20m
+            memory: 50Mi
+        terminationMessagePolicy: FallbackToLogsOnError
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - mountPath: /rootfs
+          name: rootfs
+          mountPropagation: HostToContainer
+      hostNetwork: true
+      hostPID: true
+      priorityClassName: system-node-critical
+      tolerations:
+      - operator: "Exists"
+      restartPolicy: Always
+      volumes:
+      - name: rootfs
+        hostPath:
+          path: /
+
