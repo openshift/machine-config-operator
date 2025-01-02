@@ -70,7 +70,7 @@ spec:
                 type: object
               oidcProviders:
                 description: |-
-                  OIDCProviders are OIDC identity providers that can issue tokens
+                  oidcProviders are OIDC identity providers that can issue tokens
                   for this cluster
                   Can only be set if "Type" is set to "OIDC".
 
@@ -79,22 +79,22 @@ spec:
                   properties:
                     claimMappings:
                       description: |-
-                        ClaimMappings describes rules on how to transform information from an
+                        claimMappings describes rules on how to transform information from an
                         ID token into a cluster identity
                       properties:
                         groups:
                           description: |-
-                            Groups is a name of the claim that should be used to construct
+                            groups is a name of the claim that should be used to construct
                             groups for the cluster identity.
                             The referenced claim must use array of strings values.
                           properties:
                             claim:
-                              description: Claim is a JWT token claim to be used in
+                              description: claim is a JWT token claim to be used in
                                 the mapping
                               type: string
                             prefix:
                               description: |-
-                                Prefix is a string to prefix the value from the token in the result of the
+                                prefix is a string to prefix the value from the token in the result of the
                                 claim mapping.
 
                                 By default, no prefixing occurs.
@@ -108,13 +108,13 @@ spec:
                           type: object
                         username:
                           description: |-
-                            Username is a name of the claim that should be used to construct
+                            username is a name of the claim that should be used to construct
                             usernames for the cluster identity.
 
                             Default value: "sub"
                           properties:
                             claim:
-                              description: Claim is a JWT token claim to be used in
+                              description: claim is a JWT token claim to be used in
                                 the mapping
                               type: string
                             prefix:
@@ -127,7 +127,7 @@ spec:
                               type: object
                             prefixPolicy:
                               description: |-
-                                PrefixPolicy specifies how a prefix should apply.
+                                prefixPolicy specifies how a prefix should apply.
 
                                 By default, claims other than `email` will be prefixed with the issuer URL to
                                 prevent naming clashes with other plugins.
@@ -162,23 +162,23 @@ spec:
                               > 0) : !has(self.prefix)'
                       type: object
                     claimValidationRules:
-                      description: ClaimValidationRules are rules that are applied
+                      description: claimValidationRules are rules that are applied
                         to validate token claims to authenticate users.
                       items:
                         properties:
                           requiredClaim:
                             description: |-
-                              RequiredClaim allows configuring a required claim name and its expected
+                              requiredClaim allows configuring a required claim name and its expected
                               value
                             properties:
                               claim:
                                 description: |-
-                                  Claim is a name of a required claim. Only claims with string values are
+                                  claim is a name of a required claim. Only claims with string values are
                                   supported.
                                 minLength: 1
                                 type: string
                               requiredValue:
-                                description: RequiredValue is the required value for
+                                description: requiredValue is the required value for
                                   the claim.
                                 minLength: 1
                                 type: string
@@ -188,7 +188,7 @@ spec:
                             type: object
                           type:
                             default: RequiredClaim
-                            description: Type sets the type of the validation rule
+                            description: type sets the type of the validation rule
                             enum:
                             - RequiredClaim
                             type: string
@@ -196,11 +196,11 @@ spec:
                       type: array
                       x-kubernetes-list-type: atomic
                     issuer:
-                      description: Issuer describes atributes of the OIDC token issuer
+                      description: issuer describes atributes of the OIDC token issuer
                       properties:
                         audiences:
                           description: |-
-                            Audiences is an array of audiences that the token was issued for.
+                            audiences is an array of audiences that the token was issued for.
                             Valid tokens must include at least one of these values in their
                             "aud" claim.
                             Must be set to exactly one value.
@@ -236,23 +236,23 @@ spec:
                       - issuerURL
                       type: object
                     name:
-                      description: Name of the OIDC provider
+                      description: name of the OIDC provider
                       minLength: 1
                       type: string
                     oidcClients:
                       description: |-
-                        OIDCClients contains configuration for the platform's clients that
+                        oidcClients contains configuration for the platform's clients that
                         need to request tokens from the issuer
                       items:
                         properties:
                           clientID:
-                            description: ClientID is the identifier of the OIDC client
+                            description: clientID is the identifier of the OIDC client
                               from the OIDC provider
                             minLength: 1
                             type: string
                           clientSecret:
                             description: |-
-                              ClientSecret refers to a secret in the `openshift-config` namespace that
+                              clientSecret refers to a secret in the `openshift-config` namespace that
                               contains the client secret in the `clientSecret` key of the `.data` field
                             properties:
                               name:
@@ -264,20 +264,20 @@ spec:
                             type: object
                           componentName:
                             description: |-
-                              ComponentName is the name of the component that is supposed to consume this
+                              componentName is the name of the component that is supposed to consume this
                               client configuration
                             maxLength: 256
                             minLength: 1
                             type: string
                           componentNamespace:
                             description: |-
-                              ComponentNamespace is the namespace of the component that is supposed to consume this
+                              componentNamespace is the namespace of the component that is supposed to consume this
                               client configuration
                             maxLength: 63
                             minLength: 1
                             type: string
                           extraScopes:
-                            description: ExtraScopes is an optional set of scopes
+                            description: extraScopes is an optional set of scopes
                               to request tokens with.
                             items:
                               type: string
@@ -415,25 +415,25 @@ spec:
                 type: object
               oidcClients:
                 description: |-
-                  OIDCClients is where participating operators place the current OIDC client status
+                  oidcClients is where participating operators place the current OIDC client status
                   for OIDC clients that can be customized by the cluster-admin.
                 items:
                   properties:
                     componentName:
-                      description: ComponentName is the name of the component that
+                      description: componentName is the name of the component that
                         will consume a client configuration.
                       maxLength: 256
                       minLength: 1
                       type: string
                     componentNamespace:
-                      description: ComponentNamespace is the namespace of the component
+                      description: componentNamespace is the namespace of the component
                         that will consume a client configuration.
                       maxLength: 63
                       minLength: 1
                       type: string
                     conditions:
                       description: |-
-                        Conditions are used to communicate the state of the `oidcClients` entry.
+                        conditions are used to communicate the state of the `oidcClients` entry.
 
                         Supported conditions include Available, Degraded and Progressing.
 
@@ -501,7 +501,7 @@ spec:
                       x-kubernetes-list-type: map
                     consumingUsers:
                       description: |-
-                        ConsumingUsers is a slice of ServiceAccounts that need to have read
+                        consumingUsers is a slice of ServiceAccounts that need to have read
                         permission on the `clientSecret` secret.
                       items:
                         description: ConsumingUser is an alias for string which we
@@ -514,12 +514,12 @@ spec:
                       type: array
                       x-kubernetes-list-type: set
                     currentOIDCClients:
-                      description: CurrentOIDCClients is a list of clients that the
+                      description: currentOIDCClients is a list of clients that the
                         component is currently using.
                       items:
                         properties:
                           clientID:
-                            description: ClientID is the identifier of the OIDC client
+                            description: clientID is the identifier of the OIDC client
                               from the OIDC provider
                             minLength: 1
                             type: string
