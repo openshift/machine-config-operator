@@ -47,7 +47,7 @@ spec:
             properties:
               pvcName:
                 description: |-
-                  PVCName specifies the name of the PersistentVolumeClaim (PVC) which binds a PersistentVolume where the
+                  pvcName specifies the name of the PersistentVolumeClaim (PVC) which binds a PersistentVolume where the
                   etcd backup file would be saved
                   The PVC itself must always be created in the "openshift-etcd" namespace
                   If the PVC is left unspecified "" then the platform will choose a reasonable default location to save the backup.

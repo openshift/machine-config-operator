@@ -62,7 +62,7 @@ spec:
                   All the clients are expected to use the generated ConfigMap only.
                 properties:
                   key:
-                    description: Key allows pointing to a specific key/value inside
+                    description: key allows pointing to a specific key/value inside
                       of the configmap.  This is useful for logical file references.
                     type: string
                   name:
@@ -74,11 +74,11 @@ spec:
                   infrastructure provider.
                 properties:
                   alibabaCloud:
-                    description: AlibabaCloud contains settings specific to the Alibaba
+                    description: alibabaCloud contains settings specific to the Alibaba
                       Cloud infrastructure provider.
                     type: object
                   aws:
-                    description: AWS contains settings specific to the Amazon Web
+                    description: aws contains settings specific to the Amazon Web
                       Services infrastructure provider.
                     properties:
                       serviceEndpoints:
@@ -110,11 +110,11 @@ spec:
                         x-kubernetes-list-type: atomic
                     type: object
                   azure:
-                    description: Azure contains settings specific to the Azure infrastructure
+                    description: azure contains settings specific to the Azure infrastructure
                       provider.
                     type: object
                   baremetal:
-                    description: BareMetal contains settings specific to the BareMetal
+                    description: baremetal contains settings specific to the BareMetal
                       platform.
                     properties:
                       apiServerInternalIPs:
@@ -198,7 +198,7 @@ spec:
                     - message: ingressIPs list is required once set
                       rule: '!has(oldSelf.ingressIPs) || has(self.ingressIPs)'
                   equinixMetal:
-                    description: EquinixMetal contains settings specific to the Equinix
+                    description: equinixMetal contains settings specific to the Equinix
                       Metal infrastructure provider.
                     type: object
                   external:
@@ -209,7 +209,7 @@ spec:
                       platformName:
                         default: Unknown
                         description: |-
-                          PlatformName holds the arbitrary string representing the infrastructure provider name, expected to be set at the installation time.
+                          platformName holds the arbitrary string representing the infrastructure provider name, expected to be set at the installation time.
                           This field is solely for informational and reporting purposes and is not expected to be used for decision-making.
                         type: string
                         x-kubernetes-validations:
@@ -217,19 +217,19 @@ spec:
                           rule: oldSelf == 'Unknown' || self == oldSelf
                     type: object
                   gcp:
-                    description: GCP contains settings specific to the Google Cloud
+                    description: gcp contains settings specific to the Google Cloud
                       Platform infrastructure provider.
                     type: object
                   ibmcloud:
-                    description: IBMCloud contains settings specific to the IBMCloud
+                    description: ibmcloud contains settings specific to the IBMCloud
                       infrastructure provider.
                     type: object
                   kubevirt:
-                    description: Kubevirt contains settings specific to the kubevirt
+                    description: kubevirt contains settings specific to the kubevirt
                       infrastructure provider.
                     type: object
                   nutanix:
-                    description: Nutanix contains settings specific to the Nutanix
+                    description: nutanix contains settings specific to the Nutanix
                       infrastructure provider.
                     properties:
                       failureDomains:
@@ -288,6 +288,7 @@ spec:
                             subnets:
                               description: |-
                                 subnets holds a list of identifiers (one or more) of the cluster's network subnets
+                                If the feature gate NutanixMultiSubnets is enabled, up to 32 subnets may be configured.
                                 for the Machine's VM to connect to. The subnet identifiers (uuid or name) can be
                                 obtained from the Prism Central console or using the prism_central API.
                               items:
@@ -323,17 +324,19 @@ spec:
                                     is Name, and forbidden otherwise
                                   rule: 'has(self.type) && self.type == ''Name'' ?  has(self.name)
                                     : !has(self.name)'
-                              maxItems: 1
+                              maxItems: 32
                               minItems: 1
                               type: array
-                              x-kubernetes-list-map-keys:
-                              - type
-                              x-kubernetes-list-type: map
+                              x-kubernetes-list-type: atomic
+                              x-kubernetes-validations:
+                              - message: each subnet must be unique
+                                rule: self.all(x, self.exists_one(y, x == y))
                           required:
                           - cluster
                           - name
                           - subnets
                           type: object
+                        maxItems: 32
                         type: array
                         x-kubernetes-list-map-keys:
                         - name
@@ -416,7 +419,7 @@ spec:
                     - prismElements
                     type: object
                   openstack:
-                    description: OpenStack contains settings specific to the OpenStack
+                    description: openstack contains settings specific to the OpenStack
                       infrastructure provider.
                     properties:
                       apiServerInternalIPs:
@@ -500,11 +503,11 @@ spec:
                     - message: ingressIPs list is required once set
                       rule: '!has(oldSelf.ingressIPs) || has(self.ingressIPs)'
                   ovirt:
-                    description: Ovirt contains settings specific to the oVirt infrastructure
+                    description: ovirt contains settings specific to the oVirt infrastructure
                       provider.
                     type: object
                   powervs:
-                    description: PowerVS contains settings specific to the IBM Power
+                    description: powervs contains settings specific to the IBM Power
                       Systems Virtual Servers infrastructure provider.
                     properties:
                       serviceEndpoints:
@@ -523,7 +526,21 @@ spec:
                                 IAM - https://cloud.ibm.com/apidocs/iam-identity-token-api
                                 ResourceController - https://cloud.ibm.com/apidocs/resource-controller/resource-controller
                                 Power Cloud - https://cloud.ibm.com/apidocs/power-cloud
-                              pattern: ^[a-z0-9-]+$
+                              enum:
+                              - CIS
+                              - COS
+                              - COSConfig
+                              - DNSServices
+                              - GlobalCatalog
+                              - GlobalSearch
+                              - GlobalTagging
+                              - HyperProtect
+                              - IAM
+                              - KeyProtect
+                              - Power
+                              - ResourceController
+                              - ResourceManager
+                              - VPC
                               type: string
                             url:
                               description: |-
@@ -572,7 +589,7 @@ spec:
                     - External
                     type: string
                   vsphere:
-                    description: VSphere contains settings specific to the VSphere
+                    description: vsphere contains settings specific to the VSphere
                       infrastructure provider.
                     properties:
                       apiServerInternalIPs:
@@ -608,9 +625,9 @@ spec:
                           failureDomains contains the definition of region, zone and the vCenter topology.
                           If this is omitted failure domains (regions and zones) will not be used.
                         items:
-                          description: |-
-                            VSpherePlatformFailureDomainSpec holds the region and zone failure domain and
-                            the vCenter topology of that failure domain.
+                          description: VSpherePlatformFailureDomainSpec holds the
+                            region and zone failure domain and the vCenter topology
+                            of that failure domain.
                           properties:
                             name:
                               description: |-
@@ -627,6 +644,25 @@ spec:
                               maxLength: 80
                               minLength: 1
                               type: string
+                            regionAffinity:
+                              description: |-
+                                regionAffinity holds the type of region, Datacenter or ComputeCluster.
+                                When set to Datacenter, this means the region is a vCenter Datacenter as defined in topology.
+                                When set to ComputeCluster, this means the region is a vCenter Cluster as defined in topology.
+                              properties:
+                                type:
+                                  description: |-
+                                    type determines the vSphere object type for a region within this failure domain.
+                                    Available types are Datacenter and ComputeCluster.
+                                    When set to Datacenter, this means the vCenter Datacenter defined is the region.
+                                    When set to ComputeCluster, this means the vCenter cluster defined is the region.
+                                  enum:
+                                  - ComputeCluster
+                                  - Datacenter
+                                  type: string
+                              required:
+                              - type
+                              type: object
                             server:
                               anyOf:
                               - format: ipv4
@@ -638,7 +674,7 @@ spec:
                               minLength: 1
                               type: string
                             topology:
-                              description: Topology describes a given failure domain
+                              description: topology describes a given failure domain
                                 using vSphere constructs
                               properties:
                                 computeCluster:
@@ -727,6 +763,67 @@ spec:
                               maxLength: 80
                               minLength: 1
                               type: string
+                            zoneAffinity:
+                              description: |-
+                                zoneAffinity holds the type of the zone and the hostGroup which
+                                vmGroup and the hostGroup names in vCenter corresponds to
+                                a vm-host group of type Virtual Machine and Host respectively. Is also
+                                contains the vmHostRule which is an affinity vm-host rule in vCenter.
+                              properties:
+                                hostGroup:
+                                  description: |-
+                                    hostGroup holds the vmGroup and the hostGroup names in vCenter
+                                    corresponds to a vm-host group of type Virtual Machine and Host respectively. Is also
+                                    contains the vmHostRule which is an affinity vm-host rule in vCenter.
+                                  properties:
+                                    hostGroup:
+                                      description: |-
+                                        hostGroup is the name of the vm-host group of type host within vCenter for this failure domain.
+                                        hostGroup is limited to 80 characters.
+                                        This field is required when the VSphereFailureDomain ZoneType is HostGroup
+                                      maxLength: 80
+                                      minLength: 1
+                                      type: string
+                                    vmGroup:
+                                      description: |-
+                                        vmGroup is the name of the vm-host group of type virtual machine within vCenter for this failure domain.
+                                        vmGroup is limited to 80 characters.
+                                        This field is required when the VSphereFailureDomain ZoneType is HostGroup
+                                      maxLength: 80
+                                      minLength: 1
+                                      type: string
+                                    vmHostRule:
+                                      description: |-
+                                        vmHostRule is the name of the affinity vm-host rule within vCenter for this failure domain.
+                                        vmHostRule is limited to 80 characters.
+                                        This field is required when the VSphereFailureDomain ZoneType is HostGroup
+                                      maxLength: 80
+                                      minLength: 1
+                                      type: string
+                                  required:
+                                  - hostGroup
+                                  - vmGroup
+                                  - vmHostRule
+                                  type: object
+                                type:
+                                  description: |-
+                                    type determines the vSphere object type for a zone within this failure domain.
+                                    Available types are ComputeCluster and HostGroup.
+                                    When set to ComputeCluster, this means the vCenter cluster defined is the zone.
+                                    When set to HostGroup, hostGroup must be configured with hostGroup, vmGroup and vmHostRule and
+                                    this means the zone is defined by the grouping of those fields.
+                                  enum:
+                                  - HostGroup
+                                  - ComputeCluster
+                                  type: string
+                              required:
+                              - type
+                              type: object
+                              x-kubernetes-validations:
+                              - message: hostGroup is required when type is HostGroup,
+                                  and forbidden otherwise
+                                rule: 'has(self.type) && self.type == ''HostGroup''
+                                  ?  has(self.hostGroup) : !has(self.hostGroup)'
                           required:
                           - name
                           - region
@@ -734,6 +831,17 @@ spec:
                           - topology
                           - zone
                           type: object
+                          x-kubernetes-validations:
+                          - message: when zoneAffinity type is HostGroup, regionAffinity
+                              type must be ComputeCluster
+                            rule: 'has(self.zoneAffinity) && self.zoneAffinity.type
+                              == ''HostGroup'' ?  has(self.regionAffinity) && self.regionAffinity.type
+                              == ''ComputeCluster'' : true'
+                          - message: when zoneAffinity type is ComputeCluster, regionAffinity
+                              type must be Datacenter
+                            rule: 'has(self.zoneAffinity) && self.zoneAffinity.type
+                              == ''ComputeCluster'' ?  has(self.regionAffinity) &&
+                              self.regionAffinity.type == ''Datacenter'' : true'
                         type: array
                         x-kubernetes-list-map-keys:
                         - name
@@ -958,6 +1066,7 @@ spec:
                   its components are not visible within the cluster.
                 enum:
                 - HighlyAvailable
+                - HighlyAvailableArbiter
                 - SingleReplica
                 - External
                 type: string
@@ -1031,7 +1140,7 @@ spec:
                   infrastructure provider.
                 properties:
                   alibabaCloud:
-                    description: AlibabaCloud contains settings specific to the Alibaba
+                    description: alibabaCloud contains settings specific to the Alibaba
                       Cloud infrastructure provider.
                     properties:
                       region:
@@ -1074,7 +1183,7 @@ spec:
                     - region
                     type: object
                   aws:
-                    description: AWS contains settings specific to the Amazon Web
+                    description: aws contains settings specific to the Amazon Web
                       Services infrastructure provider.
                     properties:
                       cloudLoadBalancerConfig:
@@ -1219,7 +1328,7 @@ spec:
                         x-kubernetes-list-type: atomic
                       serviceEndpoints:
                         description: |-
-                          ServiceEndpoints list contains custom endpoints which will override default
+                          serviceEndpoints list contains custom endpoints which will override default
                           service endpoint of AWS Services.
                           There must be only one ServiceEndpoint for a service.
                         items:
@@ -1246,7 +1355,7 @@ spec:
                         x-kubernetes-list-type: atomic
                     type: object
                   azure:
-                    description: Azure contains settings specific to the Azure infrastructure
+                    description: azure contains settings specific to the Azure infrastructure
                       provider.
                     properties:
                       armEndpoint:
@@ -1319,7 +1428,7 @@ spec:
                       rule: '!has(oldSelf.resourceTags) && !has(self.resourceTags)
                         || has(oldSelf.resourceTags) && has(self.resourceTags)'
                   baremetal:
-                    description: BareMetal contains settings specific to the BareMetal
+                    description: baremetal contains settings specific to the BareMetal
                       platform.
                     properties:
                       apiServerInternalIP:
@@ -1429,7 +1538,7 @@ spec:
                         type: string
                     type: object
                   equinixMetal:
-                    description: EquinixMetal contains settings specific to the Equinix
+                    description: equinixMetal contains settings specific to the Equinix
                       Metal infrastructure provider.
                     properties:
                       apiServerInternalIP:
@@ -1446,7 +1555,7 @@ spec:
                         type: string
                     type: object
                   external:
-                    description: External contains settings specific to the generic
+                    description: external contains settings specific to the generic
                       External infrastructure provider.
                     properties:
                       cloudControllerManager:
@@ -1485,7 +1594,7 @@ spec:
                         once set
                       rule: has(self.cloudControllerManager) == has(oldSelf.cloudControllerManager)
                   gcp:
-                    description: GCP contains settings specific to the Google Cloud
+                    description: gcp contains settings specific to the Google Cloud
                       Platform infrastructure provider.
                     properties:
                       cloudLoadBalancerConfig:
@@ -1708,28 +1817,28 @@ spec:
                       rule: '!has(oldSelf.resourceTags) && !has(self.resourceTags)
                         || has(oldSelf.resourceTags) && has(self.resourceTags)'
                   ibmcloud:
-                    description: IBMCloud contains settings specific to the IBMCloud
+                    description: ibmcloud contains settings specific to the IBMCloud
                       infrastructure provider.
                     properties:
                       cisInstanceCRN:
                         description: |-
-                          CISInstanceCRN is the CRN of the Cloud Internet Services instance managing
+                          cisInstanceCRN is the CRN of the Cloud Internet Services instance managing
                           the DNS zone for the cluster's base domain
                         type: string
                       dnsInstanceCRN:
                         description: |-
-                          DNSInstanceCRN is the CRN of the DNS Services instance managing the DNS zone
+                          dnsInstanceCRN is the CRN of the DNS Services instance managing the DNS zone
                           for the cluster's base domain
                         type: string
                       location:
-                        description: Location is where the cluster has been deployed
+                        description: location is where the cluster has been deployed
                         type: string
                       providerType:
-                        description: ProviderType indicates the type of cluster that
+                        description: providerType indicates the type of cluster that
                           was created
                         type: string
                       resourceGroupName:
-                        description: ResourceGroupName is the Resource Group for new
+                        description: resourceGroupName is the Resource Group for new
                           IBMCloud resources created for the cluster.
                         type: string
                       serviceEndpoints:
@@ -1784,7 +1893,7 @@ spec:
                         x-kubernetes-list-type: map
                     type: object
                   kubevirt:
-                    description: Kubevirt contains settings specific to the kubevirt
+                    description: kubevirt contains settings specific to the kubevirt
                       infrastructure provider.
                     properties:
                       apiServerInternalIP:
@@ -1801,7 +1910,7 @@ spec:
                         type: string
                     type: object
                   nutanix:
-                    description: Nutanix contains settings specific to the Nutanix
+                    description: nutanix contains settings specific to the Nutanix
                       infrastructure provider.
                     properties:
                       apiServerInternalIP:
@@ -1885,7 +1994,7 @@ spec:
                         type: object
                     type: object
                   openstack:
-                    description: OpenStack contains settings specific to the OpenStack
+                    description: openstack contains settings specific to the OpenStack
                       infrastructure provider.
                     properties:
                       apiServerInternalIP:
@@ -2000,7 +2109,7 @@ spec:
                         type: string
                     type: object
                   ovirt:
-                    description: Ovirt contains settings specific to the oVirt infrastructure
+                    description: ovirt contains settings specific to the oVirt infrastructure
                       provider.
                     properties:
                       apiServerInternalIP:
@@ -2088,17 +2197,17 @@ spec:
                         type: string
                     type: object
                   powervs:
-                    description: PowerVS contains settings specific to the Power Systems
+                    description: powervs contains settings specific to the Power Systems
                       Virtual Servers infrastructure provider.
                     properties:
                       cisInstanceCRN:
                         description: |-
-                          CISInstanceCRN is the CRN of the Cloud Internet Services instance managing
+                          cisInstanceCRN is the CRN of the Cloud Internet Services instance managing
                           the DNS zone for the cluster's base domain
                         type: string
                       dnsInstanceCRN:
                         description: |-
-                          DNSInstanceCRN is the CRN of the DNS Services instance managing the DNS zone
+                          dnsInstanceCRN is the CRN of the DNS Services instance managing the DNS zone
                           for the cluster's base domain
                         type: string
                       region:
@@ -2134,7 +2243,21 @@ spec:
                                 IAM - https://cloud.ibm.com/apidocs/iam-identity-token-api
                                 ResourceController - https://cloud.ibm.com/apidocs/resource-controller/resource-controller
                                 Power Cloud - https://cloud.ibm.com/apidocs/power-cloud
-                              pattern: ^[a-z0-9-]+$
+                              enum:
+                              - CIS
+                              - COS
+                              - COSConfig
+                              - DNSServices
+                              - GlobalCatalog
+                              - GlobalSearch
+                              - GlobalTagging
+                              - HyperProtect
+                              - IAM
+                              - KeyProtect
+                              - Power
+                              - ResourceController
+                              - ResourceManager
+                              - VPC
                               type: string
                             url:
                               description: |-
@@ -2194,7 +2317,7 @@ spec:
                     - External
                     type: string
                   vsphere:
-                    description: VSphere contains settings specific to the VSphere
+                    description: vsphere contains settings specific to the VSphere
                       infrastructure provider.
                     properties:
                       apiServerInternalIP:
