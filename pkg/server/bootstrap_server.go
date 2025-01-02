@@ -62,7 +62,7 @@ func NewBootstrapServer(dir, kubeconfig string, ircerts []string) (Server, error
 const yamlExt = ".yaml"
 
 func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*runtime.RawExtension, error) {
-	if cr.machineConfigPool != "master" {
+	if cr.machineConfigPool != "master" && cr.machineConfigPool != "arbiter" {
 		return nil, fmt.Errorf("refusing to serve bootstrap configuration to pool %q", cr.machineConfigPool)
 	}
 	// 1. Read the Machine Config Pool object.

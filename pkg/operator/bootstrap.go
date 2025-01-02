@@ -155,7 +155,7 @@ func RenderBootstrap(
 		templatectrl.KubeRbacProxyKey:       imgs.KubeRbacProxy,
 	}
 
-	config := getRenderConfig("", string(filesData[kubeAPIServerServingCA]), spec, &imgs.RenderConfigImages, infra.Status.APIServerInternalURL, nil, []*mcfgv1alpha1.MachineOSConfig{}, nil)
+	config := getRenderConfig("", string(filesData[kubeAPIServerServingCA]), spec, &imgs.RenderConfigImages, infra, nil, []*mcfgv1alpha1.MachineOSConfig{}, nil)
 
 	manifests := []manifest{
 		{
@@ -180,6 +180,13 @@ func RenderBootstrap(
 			name:     "manifests/machineconfigserver/kube-apiserver-serving-ca-configmap.yaml",
 			filename: "manifests/kube-apiserver-serving-ca-configmap.yaml",
 		},
+	}
+
+	if infra.Status.ControlPlaneTopology == configv1.HighlyAvailableArbiterMode {
+		manifests = append(manifests, manifest{
+			name:     "manifests/arbiter.machineconfigpool.yaml",
+			filename: "bootstrap/manifests/arbiter.machineconfigpool.yaml",
+		})
 	}
 
 	manifests = appendManifestsByPlatform(manifests, *infra)

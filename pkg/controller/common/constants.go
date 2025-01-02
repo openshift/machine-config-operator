@@ -52,6 +52,9 @@ const (
 	// APIServerInstanceName is a singleton name for APIServer configuration
 	APIServerBootstrapFileLocation = "/etc/mcs/bootstrap/api-server/api-server.yaml"
 
+	// MachineConfigPoolArbiter is the MachineConfigPool name given to the arbiter
+	MachineConfigPoolArbiter = "arbiter"
+
 	// MachineConfigPoolMaster is the MachineConfigPool name given to the master
 	MachineConfigPoolMaster = "master"
 
