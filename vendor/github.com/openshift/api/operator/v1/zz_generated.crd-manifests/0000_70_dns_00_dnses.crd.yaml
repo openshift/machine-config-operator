@@ -365,7 +365,7 @@ spec:
                   policy:
                     default: Sequential
                     description: |-
-                      Policy is used to determine the order in which upstream servers are selected for querying.
+                      policy is used to determine the order in which upstream servers are selected for querying.
                       Any one of the following values may be specified:
 
                       * "Random" picks a random upstream server for each query.
@@ -466,7 +466,7 @@ spec:
                     default:
                     - type: SystemResolvConf
                     description: |-
-                      Upstreams is a list of resolvers to forward name queries for the "." domain.
+                      upstreams is a list of resolvers to forward name queries for the "." domain.
                       Each instance of CoreDNS performs health checking of Upstreams. When a healthy upstream
                       returns an error during the exchange, another resolver is tried from Upstreams. The
                       Upstreams are selected in the order specified in Policy.
@@ -505,13 +505,13 @@ spec:
                           - format: ipv4
                           - format: ipv6
                           description: |-
-                            Address must be defined when Type is set to Network. It will be ignored otherwise.
+                            address must be defined when Type is set to Network. It will be ignored otherwise.
                             It must be a valid ipv4 or ipv6 address.
                           type: string
                         port:
                           default: 53
                           description: |-
-                            Port may be defined when Type is set to Network. It will be ignored otherwise.
+                            port may be defined when Type is set to Network. It will be ignored otherwise.
                             Port must be between 65535
                           format: int32
                           maximum: 65535
@@ -519,7 +519,7 @@ spec:
                           type: integer
                         type:
                           description: |-
-                            Type defines whether this upstream contains an IP/IP:port resolver or the local /etc/resolv.conf.
+                            type defines whether this upstream contains an IP/IP:port resolver or the local /etc/resolv.conf.
                             Type accepts 2 possible values: SystemResolvConf or Network.
 
                             * When SystemResolvConf is used, the Upstream structure does not require any further fields to be defined:
