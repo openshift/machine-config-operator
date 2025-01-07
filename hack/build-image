@@ -41,6 +41,11 @@ else:
 
 print(f"HEAD commit: {gitrev}")
 args = [podman, 'build', '-t', imgname, '--no-cache', '.']
+# Check if AUTHFILE environment variable is set. Setting this allows the user to specify which file to use
+# for the authentication when building the image
+authfile = os.environ.get('AUTHFILE')
+if authfile:
+    args.extend(['--authfile', authfile])
 for k in openshift_keys:
     args.append(f'--label={k}=')
 args.extend([f'--label=vcs-ref={gitrev}', '--label=vcs-type=git', '--label=vcs-url='])
