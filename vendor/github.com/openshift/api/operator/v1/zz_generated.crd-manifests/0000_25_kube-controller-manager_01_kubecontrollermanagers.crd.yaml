@@ -234,6 +234,9 @@ spec:
                         successful deployment
                       format: int32
                       type: integer
+                      x-kubernetes-validations:
+                      - message: must only increase
+                        rule: self >= oldSelf
                     lastFailedCount:
                       description: lastFailedCount is how often the installer pod
                         of the last failed revision failed.
@@ -274,10 +277,18 @@ spec:
                   required:
                   - nodeName
                   type: object
+                  x-kubernetes-validations:
+                  - fieldPath: .currentRevision
+                    message: cannot be unset once set
+                    rule: has(self.currentRevision) || !has(oldSelf.currentRevision)
                 type: array
                 x-kubernetes-list-map-keys:
                 - nodeName
                 x-kubernetes-list-type: map
+                x-kubernetes-validations:
+                - message: no more than 1 node status may have a nonzero targetRevision
+                  rule: size(self.filter(status, status.?targetRevision.orValue(0)
+                    != 0)) <= 1
               observedGeneration:
                 description: observedGeneration is the last generation change you've
                   dealt with
