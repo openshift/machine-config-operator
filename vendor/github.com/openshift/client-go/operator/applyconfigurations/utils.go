@@ -302,6 +302,12 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &operatorv1.NodeStatusApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("OAuthAPIServerStatus"):
 		return &operatorv1.OAuthAPIServerStatusApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("OLM"):
+		return &operatorv1.OLMApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("OLMSpec"):
+		return &operatorv1.OLMSpecApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("OLMStatus"):
+		return &operatorv1.OLMStatusApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("OpenShiftAPIServer"):
 		return &operatorv1.OpenShiftAPIServerApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("OpenShiftAPIServerSpec"):
