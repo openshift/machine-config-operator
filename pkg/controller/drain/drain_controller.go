@@ -208,7 +208,7 @@ func (ctrl *Controller) handleNodeEvent(oldObj, newObj interface{}) {
 func (ctrl *Controller) enqueueAfter(node *corev1.Node, after time.Duration) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(node)
 	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("Couldn't get key for object %#v: %v", node, err))
+		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %v", node, err))
 		return
 	}
 
@@ -311,7 +311,7 @@ func (ctrl *Controller) syncNode(key string) error {
 		ctrl.logNode(node, "uncordoning")
 		// perform uncordon
 		if err := ctrl.cordonOrUncordonNode(false, node, drainer); err != nil {
-			nErr := upgrademonitor.GenerateAndApplyMachineConfigNodes(&upgrademonitor.Condition{State: v1alpha1.MachineConfigNodeUpdateComplete, Reason: string(v1alpha1.MachineConfigNodeUpdateUncordoned), Message: fmt.Sprintf("Failed to UnCordon Node as part of completing upgrade phase")},
+			nErr := upgrademonitor.GenerateAndApplyMachineConfigNodes(&upgrademonitor.Condition{State: v1alpha1.MachineConfigNodeUpdateComplete, Reason: string(v1alpha1.MachineConfigNodeUpdateUncordoned), Message: "Failed to Uncordon Node as part of completing upgrade phase"},
 				&upgrademonitor.Condition{State: v1alpha1.MachineConfigNodeUpdateUncordoned, Reason: fmt.Sprintf("%s%s", string(v1alpha1.MachineConfigNodeUpdateComplete), string(v1alpha1.MachineConfigNodeUpdateUncordoned)), Message: fmt.Sprintf("Error: Failed to UnCordon node. Error is: %s The node is reporting Unschedulable = %t", err.Error(), node.Spec.Unschedulable)},
 				metav1.ConditionUnknown,
 				metav1.ConditionUnknown,
@@ -326,7 +326,7 @@ func (ctrl *Controller) syncNode(key string) error {
 
 		}
 
-		err = upgrademonitor.GenerateAndApplyMachineConfigNodes(&upgrademonitor.Condition{State: v1alpha1.MachineConfigNodeUpdateComplete, Reason: string(v1alpha1.MachineConfigNodeUpdateUncordoned), Message: fmt.Sprintf("UnCordoned Node as part of completing upgrade phase")},
+		err = upgrademonitor.GenerateAndApplyMachineConfigNodes(&upgrademonitor.Condition{State: v1alpha1.MachineConfigNodeUpdateComplete, Reason: string(v1alpha1.MachineConfigNodeUpdateUncordoned), Message: "Uncordoned Node as part of completing upgrade phase"},
 			&upgrademonitor.Condition{State: v1alpha1.MachineConfigNodeUpdateUncordoned, Reason: fmt.Sprintf("%s%s", string(v1alpha1.MachineConfigNodeUpdateComplete), string(v1alpha1.MachineConfigNodeUpdateUncordoned)), Message: fmt.Sprintf("UnCordoned node. The node is reporting Unschedulable = %t", node.Spec.Unschedulable)},
 			metav1.ConditionTrue,
 			metav1.ConditionTrue,
@@ -376,10 +376,12 @@ func (ctrl *Controller) drainNode(node *corev1.Node, drainer *drain.Helper) erro
 			continue
 		}
 		isOngoingDrain = true
-		duration = time.Now().Sub(v)
+		duration = time.Since(v)
 		klog.Infof("Previous node drain found. Drain has been going on for %v hours", duration.Hours())
 		if duration > ctrl.cfg.DrainTimeoutDuration {
-			klog.Errorf("node %s: drain exceeded timeout: %v. Will continue to retry.", node.Name, ctrl.cfg.DrainTimeoutDuration)
+			logMessage := fmt.Sprintf("node %s: drain exceeded timeout: %v. Will continue to retry.", node.Name, ctrl.cfg.DrainTimeoutDuration)
+			klog.Error(logMessage)
+			ctrl.eventRecorder.Eventf(node, corev1.EventTypeWarning, "DrainFailed", logMessage)
 			ctrlcommon.MCCDrainErr.WithLabelValues(node.Name).Set(1)
 		}
 		break
@@ -389,7 +391,7 @@ func (ctrl *Controller) drainNode(node *corev1.Node, drainer *drain.Helper) erro
 		ctrl.logNode(node, "cordoning")
 		// perform cordon
 		if err := ctrl.cordonOrUncordonNode(true, node, drainer); err != nil {
-			Nerr := upgrademonitor.GenerateAndApplyMachineConfigNodes(&upgrademonitor.Condition{State: v1alpha1.MachineConfigNodeUpdateExecuted, Reason: string(v1alpha1.MachineConfigNodeUpdateCordoned), Message: fmt.Sprintf("Failed to Cordon Node as part of In progress update phase")},
+			Nerr := upgrademonitor.GenerateAndApplyMachineConfigNodes(&upgrademonitor.Condition{State: v1alpha1.MachineConfigNodeUpdateExecuted, Reason: string(v1alpha1.MachineConfigNodeUpdateCordoned), Message: "Failed to Cordon Node as part of In progress update phase"},
 				&upgrademonitor.Condition{State: v1alpha1.MachineConfigNodeUpdateCordoned, Reason: fmt.Sprintf("%s%s", string(v1alpha1.MachineConfigNodeUpdateExecuted), string(v1alpha1.MachineConfigNodeUpdateCordoned)), Message: fmt.Sprintf("Error: Failed to Cordon node. Error is %s, The node is reporting Unschedulable = %t", err.Error(), node.Spec.Unschedulable)},
 				metav1.ConditionUnknown,
 				metav1.ConditionUnknown,
@@ -403,7 +405,7 @@ func (ctrl *Controller) drainNode(node *corev1.Node, drainer *drain.Helper) erro
 			return fmt.Errorf("node %s: failed to cordon: %v", node.Name, err)
 		}
 		ctrl.ongoingDrains[node.Name] = time.Now()
-		err := upgrademonitor.GenerateAndApplyMachineConfigNodes(&upgrademonitor.Condition{State: v1alpha1.MachineConfigNodeUpdateExecuted, Reason: string(v1alpha1.MachineConfigNodeUpdateCordoned), Message: fmt.Sprintf("Cordoned Node as part of update executed phase")},
+		err := upgrademonitor.GenerateAndApplyMachineConfigNodes(&upgrademonitor.Condition{State: v1alpha1.MachineConfigNodeUpdateExecuted, Reason: string(v1alpha1.MachineConfigNodeUpdateCordoned), Message: "Cordoned Node as part of update executed phase"},
 			&upgrademonitor.Condition{State: v1alpha1.MachineConfigNodeUpdateCordoned, Reason: fmt.Sprintf("%s%s", string(v1alpha1.MachineConfigNodeUpdateExecuted), string(v1alpha1.MachineConfigNodeUpdateCordoned)), Message: fmt.Sprintf("Cordoned node. The node is reporting Unschedulable = %t", node.Spec.Unschedulable)},
 			metav1.ConditionUnknown,
 			metav1.ConditionTrue,
@@ -419,7 +421,7 @@ func (ctrl *Controller) drainNode(node *corev1.Node, drainer *drain.Helper) erro
 	// Attempt drain
 	ctrl.logNode(node, "initiating drain")
 	err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
-		&upgrademonitor.Condition{State: v1alpha1.MachineConfigNodeUpdateExecuted, Reason: string(v1alpha1.MachineConfigNodeUpdateDrained), Message: fmt.Sprintf("Draining Node as part of update executed phase")},
+		&upgrademonitor.Condition{State: v1alpha1.MachineConfigNodeUpdateExecuted, Reason: string(v1alpha1.MachineConfigNodeUpdateDrained), Message: "Draining Node as part of update executed phase"},
 		&upgrademonitor.Condition{State: v1alpha1.MachineConfigNodeUpdateDrained, Reason: fmt.Sprintf("%s%s", string(v1alpha1.MachineConfigNodeUpdateExecuted), string(v1alpha1.MachineConfigNodeUpdateDrained)), Message: fmt.Sprintf("Draining node. The drain will not be complete until desired drainer %s matches current drainer %s", node.Annotations[daemonconsts.DesiredDrainerAnnotationKey], node.Annotations[daemonconsts.LastAppliedDrainerAnnotationKey])},
 		metav1.ConditionUnknown,
 		metav1.ConditionUnknown,
@@ -436,8 +438,10 @@ func (ctrl *Controller) drainNode(node *corev1.Node, drainer *drain.Helper) erro
 		// Anywhere between instant (if a node change happened) or up to hours (if there are many nodes competing for resources)
 		// For now, let's say if a node has been trying for a set amount of time, we make it less prioritized.
 		if duration > ctrl.cfg.DrainRequeueFailingThreshold {
-			ctrl.logNode(node, "Drain failed. Drain has been failing for more than %v minutes. Waiting %v minutes then retrying. "+
+			logMessage := fmt.Sprintf("Drain failed. Drain has been failing for more than %v minutes. Waiting %v minutes then retrying. "+
 				"Error message from drain: %v", ctrl.cfg.DrainRequeueFailingThreshold.Minutes(), ctrl.cfg.DrainRequeueFailingDelay.Minutes(), err)
+			ctrl.logNode(node, "%s", logMessage)
+			ctrl.eventRecorder.Eventf(node, corev1.EventTypeWarning, "DrainThresholdExceeded", logMessage)
 			ctrl.enqueueAfter(node, ctrl.cfg.DrainRequeueFailingDelay)
 		} else {
 			ctrl.logNode(node, "Drain failed. Waiting %v minute then retrying. Error message from drain: %v",
@@ -446,7 +450,7 @@ func (ctrl *Controller) drainNode(node *corev1.Node, drainer *drain.Helper) erro
 		}
 
 		nErr := upgrademonitor.GenerateAndApplyMachineConfigNodes(
-			&upgrademonitor.Condition{State: v1alpha1.MachineConfigNodeUpdateExecuted, Reason: string(v1alpha1.MachineConfigNodeUpdateDrained), Message: fmt.Sprintf("Node Drain has not succeeded")},
+			&upgrademonitor.Condition{State: v1alpha1.MachineConfigNodeUpdateExecuted, Reason: string(v1alpha1.MachineConfigNodeUpdateDrained), Message: "Node Drain has not succeeded"},
 			&upgrademonitor.Condition{State: v1alpha1.MachineConfigNodeUpdateDrained, Reason: fmt.Sprintf("%s%s", string(v1alpha1.MachineConfigNodeUpdateExecuted), string(v1alpha1.MachineConfigNodeUpdateDrained)), Message: fmt.Sprintf("Error: Node Drain has not succeeded. Error is: %s The drain will not be complete until desired drainer %s matches current drainer %s", err.Error(), node.Annotations[daemonconsts.DesiredDrainerAnnotationKey], node.Annotations[daemonconsts.LastAppliedDrainerAnnotationKey])},
 			metav1.ConditionUnknown,
 			metav1.ConditionUnknown,
@@ -462,7 +466,7 @@ func (ctrl *Controller) drainNode(node *corev1.Node, drainer *drain.Helper) erro
 		return err
 	}
 	err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
-		&upgrademonitor.Condition{State: v1alpha1.MachineConfigNodeUpdateExecuted, Reason: string(v1alpha1.MachineConfigNodeUpdateDrained), Message: fmt.Sprintf("Drained Node as part of update executed phase")},
+		&upgrademonitor.Condition{State: v1alpha1.MachineConfigNodeUpdateExecuted, Reason: string(v1alpha1.MachineConfigNodeUpdateDrained), Message: "Drained Node as part of update executed phase"},
 		&upgrademonitor.Condition{State: v1alpha1.MachineConfigNodeUpdateDrained, Reason: fmt.Sprintf("%s%s", string(v1alpha1.MachineConfigNodeUpdateExecuted), string(v1alpha1.MachineConfigNodeUpdateDrained)), Message: fmt.Sprintf("Drained node. The drain is complete as the desired drainer matches current drainer: %s", node.Annotations[daemonconsts.DesiredDrainerAnnotationKey])},
 		metav1.ConditionUnknown,
 		metav1.ConditionTrue,
