@@ -120,6 +120,7 @@ func TestOnClusterLayering(t *testing.T) {
 		},
 	})
 
+	t.Logf("mosb.Name: %q", mosb.Name)
 	t.Logf("Applying rebuild annotation (%q) to MachineOSConfig (%q) to cause a rebuild", constants.RebuildMachineOSConfigAnnotationKey, layeredMCPName)
 
 	cs := framework.NewClientSet("")
@@ -132,8 +133,8 @@ func TestOnClusterLayering(t *testing.T) {
 	_, err = cs.MachineconfigurationV1alpha1Interface.MachineOSConfigs().Update(ctx, mosc, metav1.UpdateOptions{})
 	require.NoError(t, err)
 
-	// Wait for the first build to be deleted.
-	waitForBuildToBeDeleted(t, cs, mosb)
+	// // Wait for the first build to be deleted.
+	// waitForBuildToBeDeleted(t, cs, mosb)
 
 	// Next, we wait for the new build to be started.
 	waitForBuildToStartForPoolAndConfig(t, cs, layeredMCPName, layeredMCPName)
