@@ -601,6 +601,23 @@ func imagePolicyTestCRs() map[string]apicfgv1alpha1.ImagePolicy {
 				},
 			},
 		},
+		"test-cr3": {
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-cr3",
+				Namespace: "test-1-namespace",
+			},
+			Spec: apicfgv1alpha1.ImagePolicySpec{
+				Scopes: []apicfgv1alpha1.ImageScope{"test3.com"},
+				Policy: apicfgv1alpha1.Policy{
+					RootOfTrust: apicfgv1alpha1.PolicyRootOfTrust{
+						PolicyType: apicfgv1alpha1.PublicKeyRootOfTrust,
+						PublicKey: &apicfgv1alpha1.PublicKey{
+							KeyData: testKeyData,
+						},
+					},
+				},
+			},
+		},
 	}
 	return testImagePolicyCRs
 }
@@ -1726,6 +1743,7 @@ func TestUpdateNamespacedPolicyJSONs(t *testing.T) {
 	testImagePolicyCR0 := clusterImagePolicyTestCRs()["test-cr0"]
 	testImagePolicyCR1 := clusterImagePolicyTestCRs()["test-cr1"]
 	testImagePolicyCR2 := imagePolicyTestCRs()["test-cr0"]
+	testImagePolicyCR3 := imagePolicyTestCRs()["test-cr3"]
 
 	expectClusterPolicy := []byte(`
 			{
@@ -1825,7 +1843,7 @@ func TestUpdateNamespacedPolicyJSONs(t *testing.T) {
 				}
 			  }
 		`)
-	expectnamespacedPolicy := []byte(`
+	expectTestnamespacedPolicy := []byte(`
 		{
 			"default": [
 			  {
@@ -1942,11 +1960,129 @@ func TestUpdateNamespacedPolicyJSONs(t *testing.T) {
 		  }
 	`)
 
+	expectTest1namespacedPolicy := []byte(`
+		{
+			"default": [
+			  {
+				"type": "insecureAcceptAnything"
+			  }
+			],
+			"transports": {
+			  "atomic": {
+				"test0.com": [
+				  {
+					"type": "sigstoreSigned",
+					"fulcio": {
+					  "caData": "dGVzdC1jYS1kYXRhLWRhdGE=",
+					  "oidcIssuer": "https://OIDC.example.com",
+					  "subjectEmail": "test-user@example.com"
+					},
+					"rekorPublicKeyData": "dGVzdC1yZWtvci1rZXktZGF0YQ==",
+					"signedIdentity": {
+					  "type": "remapIdentity",
+					  "prefix": "test-remap-prefix",
+					  "signedPrefix": "test-remap-signed-prefix"
+					}
+				  },
+				  {
+					"type": "sigstoreSigned",
+					"keyData": "dGVzdC1rZXktZGF0YQ==",
+					"rekorPublicKeyData": "dGVzdC1yZWtvci1rZXktZGF0YQ==",
+					"signedIdentity": {
+					  "type": "remapIdentity",
+					  "prefix": "test-remap-prefix",
+					  "signedPrefix": "test-remap-signed-prefix"
+					}
+				  }
+				],
+				"test1.com": [
+				  {
+					"type": "sigstoreSigned",
+					"keyData": "dGVzdC1rZXktZGF0YQ==",
+					"rekorPublicKeyData": "dGVzdC1yZWtvci1rZXktZGF0YQ==",
+					"signedIdentity": {
+					  "type": "remapIdentity",
+					  "prefix": "test-remap-prefix",
+					  "signedPrefix": "test-remap-signed-prefix"
+					}
+				  }
+				],
+				"test3.com": [
+				  {
+					"type": "sigstoreSigned",
+					"keyData": "dGVzdC1rZXktZGF0YQ==",
+					"signedIdentity": {
+					  "type": "matchRepoDigestOrExact"
+					}
+				  }
+				]
+			  },
+			  "docker": {
+				"test0.com": [
+				  {
+					"type": "sigstoreSigned",
+					"fulcio": {
+					  "caData": "dGVzdC1jYS1kYXRhLWRhdGE=",
+					  "oidcIssuer": "https://OIDC.example.com",
+					  "subjectEmail": "test-user@example.com"
+					},
+					"rekorPublicKeyData": "dGVzdC1yZWtvci1rZXktZGF0YQ==",
+					"signedIdentity": {
+					  "type": "remapIdentity",
+					  "prefix": "test-remap-prefix",
+					  "signedPrefix": "test-remap-signed-prefix"
+					}
+				  },
+				  {
+					"type": "sigstoreSigned",
+					"keyData": "dGVzdC1rZXktZGF0YQ==",
+					"rekorPublicKeyData": "dGVzdC1yZWtvci1rZXktZGF0YQ==",
+					"signedIdentity": {
+					  "type": "remapIdentity",
+					  "prefix": "test-remap-prefix",
+					  "signedPrefix": "test-remap-signed-prefix"
+					}
+				  }
+				],
+				"test1.com": [
+				  {
+					"type": "sigstoreSigned",
+					"keyData": "dGVzdC1rZXktZGF0YQ==",
+					"rekorPublicKeyData": "dGVzdC1yZWtvci1rZXktZGF0YQ==",
+					"signedIdentity": {
+					  "type": "remapIdentity",
+					  "prefix": "test-remap-prefix",
+					  "signedPrefix": "test-remap-signed-prefix"
+					}
+				  }
+				],
+				"test3.com": [
+				  {
+					"type": "sigstoreSigned",
+					"keyData": "dGVzdC1rZXktZGF0YQ==",
+					"signedIdentity": {
+					  "type": "matchRepoDigestOrExact"
+					}
+				  }
+				]
+			  },
+			  "docker-daemon": {
+				"": [
+				  {
+					"type": "insecureAcceptAnything"
+				  }
+				]
+			  }
+			}
+		  }
+	`)
+
 	expectRet := map[string][]byte{
-		testImagePolicyCR2.ObjectMeta.Namespace: expectnamespacedPolicy,
+		testImagePolicyCR2.ObjectMeta.Namespace: expectTestnamespacedPolicy,
+		testImagePolicyCR3.ObjectMeta.Namespace: expectTest1namespacedPolicy,
 	}
 
-	clusterScopePolicies, scopeNamespacePolicies, err := getValidScopePolicies([]*apicfgv1alpha1.ClusterImagePolicy{&testImagePolicyCR0, &testImagePolicyCR1}, []*apicfgv1alpha1.ImagePolicy{&testImagePolicyCR2}, nil)
+	clusterScopePolicies, scopeNamespacePolicies, err := getValidScopePolicies([]*apicfgv1alpha1.ClusterImagePolicy{&testImagePolicyCR0, &testImagePolicyCR1}, []*apicfgv1alpha1.ImagePolicy{&testImagePolicyCR2, &testImagePolicyCR3}, nil)
 	require.NoError(t, err)
 
 	clusterOverridePolicyJSON, err := updatePolicyJSON(templatePolicyBytes, []string{}, []string{}, "release-reg.io/image/release", clusterScopePolicies)
