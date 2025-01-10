@@ -138,7 +138,7 @@ func runBootstrapCmd(_ *cobra.Command, _ []string) {
 		if err != nil {
 			klog.Warningf("Base OS container not found: %s", err)
 		}
-		bootstrapOpts.baseOSExtensionsContainerImage, err = findImage(imgstream, fmt.Sprintf("%s-extensions", baseOSContainerImageTag))
+		bootstrapOpts.baseOSExtensionsContainerImage, err = findImage(imgstream, "rhel-coreos-extensions-next")
 		if err != nil {
 			klog.Warningf("Base OS extensions container not found: %s", err)
 		}
