@@ -17,7 +17,7 @@ contents:
     default_env = [
         "NSS_SDB_USE_CACHE=no",
     ]
-    log_level = "info"
+    log_level = "debug"
     cgroup_manager = "systemd"
     default_sysctls = [
         "net.ipv4.ping_group_range=0 2147483647",
