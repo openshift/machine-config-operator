@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	"github.com/openshift/machine-config-operator/test/framework"
 
 	corev1 "k8s.io/api/core/v1"
@@ -21,9 +21,9 @@ func createConfigMap(cs *framework.ClientSet, cm *corev1.ConfigMap) error { //no
 		cm.Labels[createdByOnClusterBuildsHelper] = ""
 	}
 
-	_, err := cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace).Create(context.TODO(), cm, metav1.CreateOptions{})
+	_, err := cs.CoreV1Interface.ConfigMaps(commonconsts.MCONamespace).Create(context.TODO(), cm, metav1.CreateOptions{})
 	if err == nil {
-		klog.Infof("Created ConfigMap %q in namespace %q", cm.Name, ctrlcommon.MCONamespace)
+		klog.Infof("Created ConfigMap %q in namespace %q", cm.Name, commonconsts.MCONamespace)
 		return nil
 	}
 
@@ -31,7 +31,7 @@ func createConfigMap(cs *framework.ClientSet, cm *corev1.ConfigMap) error { //no
 		return err
 	}
 
-	configMap, err := cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), cm.Name, metav1.GetOptions{})
+	configMap, err := cs.CoreV1Interface.ConfigMaps(commonconsts.MCONamespace).Get(context.TODO(), cm.Name, metav1.GetOptions{})
 	if err != nil {
 		return err
 	}
@@ -43,7 +43,7 @@ func createConfigMap(cs *framework.ClientSet, cm *corev1.ConfigMap) error { //no
 
 	// Delete and recreate.
 	klog.Infof("ConfigMap %q was created by us, but could be out of date. Recreating...", cm.Name)
-	err = cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace).Delete(context.TODO(), cm.Name, metav1.DeleteOptions{})
+	err = cs.CoreV1Interface.ConfigMaps(commonconsts.MCONamespace).Delete(context.TODO(), cm.Name, metav1.DeleteOptions{})
 	if err != nil {
 		return err
 	}

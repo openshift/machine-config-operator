@@ -24,6 +24,7 @@ import (
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	commonconsts "github.com/openshift/machine-config-operator/pkg/controller/common/constants"
 	containerruntimeconfig "github.com/openshift/machine-config-operator/pkg/controller/container-runtime-config"
 	kubeletconfig "github.com/openshift/machine-config-operator/pkg/controller/kubelet-config"
 	"github.com/openshift/machine-config-operator/pkg/controller/render"
@@ -144,15 +145,15 @@ func (b *Bootstrap) Run(destDir string) error {
 			case *apicfgv1alpha1.ImagePolicy:
 				imagePolicies = append(imagePolicies, obj)
 			case *apicfgv1.FeatureGate:
-				if obj.GetName() == ctrlcommon.ClusterFeatureInstanceName {
+				if obj.GetName() == commonconsts.ClusterFeatureInstanceName {
 					featureGate = obj
 				}
 			case *apicfgv1.Node:
-				if obj.GetName() == ctrlcommon.ClusterNodeInstanceName {
+				if obj.GetName() == commonconsts.ClusterNodeInstanceName {
 					nodeConfig = obj
 				}
 			case *apicfgv1.APIServer:
-				if obj.GetName() == ctrlcommon.APIServerInstanceName {
+				if obj.GetName() == commonconsts.APIServerInstanceName {
 					apiServer = obj
 				}
 			default:
@@ -212,7 +213,7 @@ func (b *Bootstrap) Run(destDir string) error {
 	if nodeConfig == nil {
 		nodeConfig = &apicfgv1.Node{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: ctrlcommon.ClusterNodeInstanceName,
+				Name: commonconsts.ClusterNodeInstanceName,
 			},
 			Spec: apicfgv1.NodeSpec{},
 		}
