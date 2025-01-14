@@ -178,6 +178,25 @@ const (
 	asExpectedReason = "AsExpected"
 )
 
+// This function clears a prior CO degrade condition set by a sync function. If the CO is not
+// not degraded, or was degraded by another sync function, this will be a no-op.
+func (optr *Operator) clearDegradedStatus(co *configv1.ClusterOperator, syncFn string) (*configv1.ClusterOperator, error) {
+	if cov1helpers.IsStatusConditionFalse(co.Status.Conditions, configv1.OperatorDegraded) {
+		return co, nil
+	}
+	degradedStatusCondition := cov1helpers.FindStatusCondition(co.Status.Conditions, configv1.OperatorDegraded)
+	if degradedStatusCondition == nil {
+		return co, nil
+	}
+	if degradedStatusCondition.Reason != taskFailed(syncFn) {
+		return co, nil
+	}
+	newCO := co.DeepCopy()
+	// Clear the degraded by applying an empty sync error object
+	optr.syncDegradedStatus(newCO, syncError{})
+	return optr.updateClusterOperatorStatus(co, &newCO.Status, nil)
+}
+
 // syncDegradedStatus applies the new condition to the mco's ClusterOperator object.
 func (optr *Operator) syncDegradedStatus(co *configv1.ClusterOperator, ierr syncError) {
 
