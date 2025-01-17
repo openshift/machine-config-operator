@@ -28,7 +28,7 @@ contents: |
         --kubeconfig=/var/lib/kubelet/kubeconfig \
         --container-runtime-endpoint=/var/run/crio/crio.sock \
         --runtime-cgroups=/system.slice/crio.service \
-        --node-labels=node-role.kubernetes.io/control-plane,node-role.kubernetes.io/master,node.openshift.io/os_id=${ID} \
+        --node-labels=node-role.kubernetes.io/control-plane,node-role.kubernetes.io/master,node.openshift.io/os_id=${ID},${CUSTOM_KUBELET_LABELS} \
 {{- if or (eq .IPFamilies "DualStack") (eq .IPFamilies "DualStackIPv6Primary") }}
         --node-ip=${KUBELET_NODE_IPS} \
 {{- else}}
