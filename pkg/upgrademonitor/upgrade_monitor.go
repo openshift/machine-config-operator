@@ -324,8 +324,8 @@ func generateAndApplyMachineConfigNodes(
 	return nil
 }
 
-func isParentConditionChanged(old, new metav1.Condition) bool {
-	return old.Status != new.Status || old.Message != new.Message
+func isParentConditionChanged(old, newCondition metav1.Condition) bool {
+	return old.Status != newCondition.Status || old.Message != newCondition.Message
 }
 
 // isSingletonCondition checks if the condition is a singleton condition which means it will never have a child.

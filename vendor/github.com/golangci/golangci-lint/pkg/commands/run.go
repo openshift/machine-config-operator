@@ -28,7 +28,6 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/golangci/golangci-lint/internal/cache"
-	"github.com/golangci/golangci-lint/internal/pkgcache"
 	"github.com/golangci/golangci-lint/pkg/config"
 	"github.com/golangci/golangci-lint/pkg/exitcodes"
 	"github.com/golangci/golangci-lint/pkg/fsutils"
@@ -152,7 +151,7 @@ func (c *runCommand) persistentPreRunE(cmd *cobra.Command, args []string) error 
 		return err
 	}
 
-	c.log.Infof(c.buildInfo.String())
+	c.log.Infof("%s", c.buildInfo.String())
 
 	loader := config.NewLoader(c.log.Child(logutils.DebugKeyConfigReader), c.viper, cmd.Flags(), c.opts.LoaderOptions, c.cfg, args)
 
@@ -209,7 +208,7 @@ func (c *runCommand) preRunE(_ *cobra.Command, args []string) error {
 
 	sw := timeutils.NewStopwatch("pkgcache", c.log.Child(logutils.DebugKeyStopwatch))
 
-	pkgCache, err := pkgcache.NewCache(sw, c.log.Child(logutils.DebugKeyPkgCache))
+	pkgCache, err := cache.NewCache(sw, c.log.Child(logutils.DebugKeyPkgCache))
 	if err != nil {
 		return fmt.Errorf("failed to build packages cache: %w", err)
 	}
@@ -640,7 +639,7 @@ func initHashSalt(version string, cfg *config.Config) error {
 
 	b := bytes.NewBuffer(binSalt)
 	b.Write(configSalt)
-	cache.SetSalt(b.Bytes())
+	cache.SetSalt(b)
 	return nil
 }
 

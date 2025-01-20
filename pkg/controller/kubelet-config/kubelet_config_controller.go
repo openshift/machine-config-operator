@@ -271,11 +271,11 @@ func (ctrl *Controller) deleteAPIServer(obj interface{}) {
 	ctrl.filterAPIServer(apiServer)
 }
 
-func kubeletConfigTriggerObjectChange(old, new *mcfgv1.KubeletConfig) bool {
-	if old.DeletionTimestamp != new.DeletionTimestamp {
+func kubeletConfigTriggerObjectChange(old, newKubeletConfig *mcfgv1.KubeletConfig) bool {
+	if old.DeletionTimestamp != newKubeletConfig.DeletionTimestamp {
 		return true
 	}
-	if !reflect.DeepEqual(old.Spec, new.Spec) {
+	if !reflect.DeepEqual(old.Spec, newKubeletConfig.Spec) {
 		return true
 	}
 	return false

@@ -1270,6 +1270,10 @@ func getAllCandidateMachines(layered bool, config *mcfgv1.MachineOSConfig, build
 		return nil, 0
 	}
 	capacity -= failingThisConfig
+
+	if capacity < 0 {
+		return nil, 0
+	}
 	return nodes, uint(capacity)
 }
 

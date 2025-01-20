@@ -3,13 +3,13 @@
 package v1
 
 import (
-	"context"
+	context "context"
 	time "time"
 
-	machineconfigurationv1 "github.com/openshift/api/machineconfiguration/v1"
+	apimachineconfigurationv1 "github.com/openshift/api/machineconfiguration/v1"
 	versioned "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	internalinterfaces "github.com/openshift/client-go/machineconfiguration/informers/externalversions/internalinterfaces"
-	v1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
+	machineconfigurationv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -20,7 +20,7 @@ import (
 // MachineConfigPools.
 type MachineConfigPoolInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1.MachineConfigPoolLister
+	Lister() machineconfigurationv1.MachineConfigPoolLister
 }
 
 type machineConfigPoolInformer struct {
@@ -54,7 +54,7 @@ func NewFilteredMachineConfigPoolInformer(client versioned.Interface, resyncPeri
 				return client.MachineconfigurationV1().MachineConfigPools().Watch(context.TODO(), options)
 			},
 		},
-		&machineconfigurationv1.MachineConfigPool{},
+		&apimachineconfigurationv1.MachineConfigPool{},
 		resyncPeriod,
 		indexers,
 	)
@@ -65,9 +65,9 @@ func (f *machineConfigPoolInformer) defaultInformer(client versioned.Interface, 
 }
 
 func (f *machineConfigPoolInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&machineconfigurationv1.MachineConfigPool{}, f.defaultInformer)
+	return f.factory.InformerFor(&apimachineconfigurationv1.MachineConfigPool{}, f.defaultInformer)
 }
 
-func (f *machineConfigPoolInformer) Lister() v1.MachineConfigPoolLister {
-	return v1.NewMachineConfigPoolLister(f.Informer().GetIndexer())
+func (f *machineConfigPoolInformer) Lister() machineconfigurationv1.MachineConfigPoolLister {
+	return machineconfigurationv1.NewMachineConfigPoolLister(f.Informer().GetIndexer())
 }

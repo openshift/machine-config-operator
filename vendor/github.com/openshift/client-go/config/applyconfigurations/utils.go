@@ -82,10 +82,6 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &configv1.CloudLoadBalancerIPsApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("ClusterCondition"):
 		return &configv1.ClusterConditionApplyConfiguration{}
-	case v1.SchemeGroupVersion.WithKind("ClusterMonitoring"):
-		return &configv1.ClusterMonitoringApplyConfiguration{}
-	case v1.SchemeGroupVersion.WithKind("ClusterMonitoringSpec"):
-		return &configv1.ClusterMonitoringSpecApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("ClusterNetworkEntry"):
 		return &configv1.ClusterNetworkEntryApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("ClusterOperator"):
@@ -384,8 +380,6 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &configv1.UpdateApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("UpdateHistory"):
 		return &configv1.UpdateHistoryApplyConfiguration{}
-	case v1.SchemeGroupVersion.WithKind("UserDefinedMonitoring"):
-		return &configv1.UserDefinedMonitoringApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("UsernameClaimMapping"):
 		return &configv1.UsernameClaimMappingApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("UsernamePrefix"):
@@ -426,6 +420,10 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &configv1alpha1.ClusterImagePolicySpecApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("ClusterImagePolicyStatus"):
 		return &configv1alpha1.ClusterImagePolicyStatusApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("ClusterMonitoring"):
+		return &configv1alpha1.ClusterMonitoringApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("ClusterMonitoringSpec"):
+		return &configv1alpha1.ClusterMonitoringSpecApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("EtcdBackupSpec"):
 		return &configv1alpha1.EtcdBackupSpecApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("FulcioCAWithRekor"):
@@ -462,6 +460,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &configv1alpha1.RetentionPolicyApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("RetentionSizeConfig"):
 		return &configv1alpha1.RetentionSizeConfigApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("UserDefinedMonitoring"):
+		return &configv1alpha1.UserDefinedMonitoringApplyConfiguration{}
 
 	}
 	return nil
