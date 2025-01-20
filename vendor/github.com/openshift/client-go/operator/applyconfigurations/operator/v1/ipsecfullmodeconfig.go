@@ -3,13 +3,13 @@
 package v1
 
 import (
-	v1 "github.com/openshift/api/operator/v1"
+	operatorv1 "github.com/openshift/api/operator/v1"
 )
 
 // IPsecFullModeConfigApplyConfiguration represents a declarative configuration of the IPsecFullModeConfig type for use
 // with apply.
 type IPsecFullModeConfigApplyConfiguration struct {
-	Encapsulation *v1.Encapsulation `json:"encapsulation,omitempty"`
+	Encapsulation *operatorv1.Encapsulation `json:"encapsulation,omitempty"`
 }
 
 // IPsecFullModeConfigApplyConfiguration constructs a declarative configuration of the IPsecFullModeConfig type for use with
@@ -21,7 +21,7 @@ func IPsecFullModeConfig() *IPsecFullModeConfigApplyConfiguration {
 // WithEncapsulation sets the Encapsulation field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Encapsulation field is set to the value of the last call.
-func (b *IPsecFullModeConfigApplyConfiguration) WithEncapsulation(value v1.Encapsulation) *IPsecFullModeConfigApplyConfiguration {
+func (b *IPsecFullModeConfigApplyConfiguration) WithEncapsulation(value operatorv1.Encapsulation) *IPsecFullModeConfigApplyConfiguration {
 	b.Encapsulation = &value
 	return b
 }

@@ -3,10 +3,10 @@
 package v1
 
 import (
-	v1 "github.com/openshift/api/operator/v1"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/client-go/listers"
-	"k8s.io/client-go/tools/cache"
+	operatorv1 "github.com/openshift/api/operator/v1"
+	labels "k8s.io/apimachinery/pkg/labels"
+	listers "k8s.io/client-go/listers"
+	cache "k8s.io/client-go/tools/cache"
 )
 
 // AuthenticationLister helps list Authentications.
@@ -14,19 +14,19 @@ import (
 type AuthenticationLister interface {
 	// List lists all Authentications in the indexer.
 	// Objects returned here must be treated as read-only.
-	List(selector labels.Selector) (ret []*v1.Authentication, err error)
+	List(selector labels.Selector) (ret []*operatorv1.Authentication, err error)
 	// Get retrieves the Authentication from the index for a given name.
 	// Objects returned here must be treated as read-only.
-	Get(name string) (*v1.Authentication, error)
+	Get(name string) (*operatorv1.Authentication, error)
 	AuthenticationListerExpansion
 }
 
 // authenticationLister implements the AuthenticationLister interface.
 type authenticationLister struct {
-	listers.ResourceIndexer[*v1.Authentication]
+	listers.ResourceIndexer[*operatorv1.Authentication]
 }
 
 // NewAuthenticationLister returns a new AuthenticationLister.
 func NewAuthenticationLister(indexer cache.Indexer) AuthenticationLister {
-	return &authenticationLister{listers.New[*v1.Authentication](indexer, v1.Resource("authentication"))}
+	return &authenticationLister{listers.New[*operatorv1.Authentication](indexer, operatorv1.Resource("authentication"))}
 }

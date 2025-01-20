@@ -13,7 +13,7 @@ type FakeMachineV1 struct {
 }
 
 func (c *FakeMachineV1) ControlPlaneMachineSets(namespace string) v1.ControlPlaneMachineSetInterface {
-	return &FakeControlPlaneMachineSets{c, namespace}
+	return newFakeControlPlaneMachineSets(c, namespace)
 }
 
 // RESTClient returns a RESTClient that is used to communicate

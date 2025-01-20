@@ -3,10 +3,10 @@
 package v1
 
 import (
-	"context"
+	context "context"
 
-	v1 "github.com/openshift/api/machineconfiguration/v1"
-	machineconfigurationv1 "github.com/openshift/client-go/machineconfiguration/applyconfigurations/machineconfiguration/v1"
+	machineconfigurationv1 "github.com/openshift/api/machineconfiguration/v1"
+	applyconfigurationsmachineconfigurationv1 "github.com/openshift/client-go/machineconfiguration/applyconfigurations/machineconfiguration/v1"
 	scheme "github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	types "k8s.io/apimachinery/pkg/types"
@@ -22,36 +22,37 @@ type MachineOSBuildsGetter interface {
 
 // MachineOSBuildInterface has methods to work with MachineOSBuild resources.
 type MachineOSBuildInterface interface {
-	Create(ctx context.Context, machineOSBuild *v1.MachineOSBuild, opts metav1.CreateOptions) (*v1.MachineOSBuild, error)
-	Update(ctx context.Context, machineOSBuild *v1.MachineOSBuild, opts metav1.UpdateOptions) (*v1.MachineOSBuild, error)
+	Create(ctx context.Context, machineOSBuild *machineconfigurationv1.MachineOSBuild, opts metav1.CreateOptions) (*machineconfigurationv1.MachineOSBuild, error)
+	Update(ctx context.Context, machineOSBuild *machineconfigurationv1.MachineOSBuild, opts metav1.UpdateOptions) (*machineconfigurationv1.MachineOSBuild, error)
 	// Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-	UpdateStatus(ctx context.Context, machineOSBuild *v1.MachineOSBuild, opts metav1.UpdateOptions) (*v1.MachineOSBuild, error)
+	UpdateStatus(ctx context.Context, machineOSBuild *machineconfigurationv1.MachineOSBuild, opts metav1.UpdateOptions) (*machineconfigurationv1.MachineOSBuild, error)
 	Delete(ctx context.Context, name string, opts metav1.DeleteOptions) error
 	DeleteCollection(ctx context.Context, opts metav1.DeleteOptions, listOpts metav1.ListOptions) error
-	Get(ctx context.Context, name string, opts metav1.GetOptions) (*v1.MachineOSBuild, error)
-	List(ctx context.Context, opts metav1.ListOptions) (*v1.MachineOSBuildList, error)
+	Get(ctx context.Context, name string, opts metav1.GetOptions) (*machineconfigurationv1.MachineOSBuild, error)
+	List(ctx context.Context, opts metav1.ListOptions) (*machineconfigurationv1.MachineOSBuildList, error)
 	Watch(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error)
-	Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts metav1.PatchOptions, subresources ...string) (result *v1.MachineOSBuild, err error)
-	Apply(ctx context.Context, machineOSBuild *machineconfigurationv1.MachineOSBuildApplyConfiguration, opts metav1.ApplyOptions) (result *v1.MachineOSBuild, err error)
+	Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts metav1.PatchOptions, subresources ...string) (result *machineconfigurationv1.MachineOSBuild, err error)
+	Apply(ctx context.Context, machineOSBuild *applyconfigurationsmachineconfigurationv1.MachineOSBuildApplyConfiguration, opts metav1.ApplyOptions) (result *machineconfigurationv1.MachineOSBuild, err error)
 	// Add a +genclient:noStatus comment above the type to avoid generating ApplyStatus().
-	ApplyStatus(ctx context.Context, machineOSBuild *machineconfigurationv1.MachineOSBuildApplyConfiguration, opts metav1.ApplyOptions) (result *v1.MachineOSBuild, err error)
+	ApplyStatus(ctx context.Context, machineOSBuild *applyconfigurationsmachineconfigurationv1.MachineOSBuildApplyConfiguration, opts metav1.ApplyOptions) (result *machineconfigurationv1.MachineOSBuild, err error)
 	MachineOSBuildExpansion
 }
 
 // machineOSBuilds implements MachineOSBuildInterface
 type machineOSBuilds struct {
-	*gentype.ClientWithListAndApply[*v1.MachineOSBuild, *v1.MachineOSBuildList, *machineconfigurationv1.MachineOSBuildApplyConfiguration]
+	*gentype.ClientWithListAndApply[*machineconfigurationv1.MachineOSBuild, *machineconfigurationv1.MachineOSBuildList, *applyconfigurationsmachineconfigurationv1.MachineOSBuildApplyConfiguration]
 }
 
 // newMachineOSBuilds returns a MachineOSBuilds
 func newMachineOSBuilds(c *MachineconfigurationV1Client) *machineOSBuilds {
 	return &machineOSBuilds{
-		gentype.NewClientWithListAndApply[*v1.MachineOSBuild, *v1.MachineOSBuildList, *machineconfigurationv1.MachineOSBuildApplyConfiguration](
+		gentype.NewClientWithListAndApply[*machineconfigurationv1.MachineOSBuild, *machineconfigurationv1.MachineOSBuildList, *applyconfigurationsmachineconfigurationv1.MachineOSBuildApplyConfiguration](
 			"machineosbuilds",
 			c.RESTClient(),
 			scheme.ParameterCodec,
 			"",
-			func() *v1.MachineOSBuild { return &v1.MachineOSBuild{} },
-			func() *v1.MachineOSBuildList { return &v1.MachineOSBuildList{} }),
+			func() *machineconfigurationv1.MachineOSBuild { return &machineconfigurationv1.MachineOSBuild{} },
+			func() *machineconfigurationv1.MachineOSBuildList { return &machineconfigurationv1.MachineOSBuildList{} },
+		),
 	}
 }

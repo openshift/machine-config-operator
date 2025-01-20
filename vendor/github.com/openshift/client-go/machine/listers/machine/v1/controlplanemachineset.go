@@ -3,10 +3,10 @@
 package v1
 
 import (
-	v1 "github.com/openshift/api/machine/v1"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/client-go/listers"
-	"k8s.io/client-go/tools/cache"
+	machinev1 "github.com/openshift/api/machine/v1"
+	labels "k8s.io/apimachinery/pkg/labels"
+	listers "k8s.io/client-go/listers"
+	cache "k8s.io/client-go/tools/cache"
 )
 
 // ControlPlaneMachineSetLister helps list ControlPlaneMachineSets.
@@ -14,7 +14,7 @@ import (
 type ControlPlaneMachineSetLister interface {
 	// List lists all ControlPlaneMachineSets in the indexer.
 	// Objects returned here must be treated as read-only.
-	List(selector labels.Selector) (ret []*v1.ControlPlaneMachineSet, err error)
+	List(selector labels.Selector) (ret []*machinev1.ControlPlaneMachineSet, err error)
 	// ControlPlaneMachineSets returns an object that can list and get ControlPlaneMachineSets.
 	ControlPlaneMachineSets(namespace string) ControlPlaneMachineSetNamespaceLister
 	ControlPlaneMachineSetListerExpansion
@@ -22,17 +22,17 @@ type ControlPlaneMachineSetLister interface {
 
 // controlPlaneMachineSetLister implements the ControlPlaneMachineSetLister interface.
 type controlPlaneMachineSetLister struct {
-	listers.ResourceIndexer[*v1.ControlPlaneMachineSet]
+	listers.ResourceIndexer[*machinev1.ControlPlaneMachineSet]
 }
 
 // NewControlPlaneMachineSetLister returns a new ControlPlaneMachineSetLister.
 func NewControlPlaneMachineSetLister(indexer cache.Indexer) ControlPlaneMachineSetLister {
-	return &controlPlaneMachineSetLister{listers.New[*v1.ControlPlaneMachineSet](indexer, v1.Resource("controlplanemachineset"))}
+	return &controlPlaneMachineSetLister{listers.New[*machinev1.ControlPlaneMachineSet](indexer, machinev1.Resource("controlplanemachineset"))}
 }
 
 // ControlPlaneMachineSets returns an object that can list and get ControlPlaneMachineSets.
 func (s *controlPlaneMachineSetLister) ControlPlaneMachineSets(namespace string) ControlPlaneMachineSetNamespaceLister {
-	return controlPlaneMachineSetNamespaceLister{listers.NewNamespaced[*v1.ControlPlaneMachineSet](s.ResourceIndexer, namespace)}
+	return controlPlaneMachineSetNamespaceLister{listers.NewNamespaced[*machinev1.ControlPlaneMachineSet](s.ResourceIndexer, namespace)}
 }
 
 // ControlPlaneMachineSetNamespaceLister helps list and get ControlPlaneMachineSets.
@@ -40,15 +40,15 @@ func (s *controlPlaneMachineSetLister) ControlPlaneMachineSets(namespace string)
 type ControlPlaneMachineSetNamespaceLister interface {
 	// List lists all ControlPlaneMachineSets in the indexer for a given namespace.
 	// Objects returned here must be treated as read-only.
-	List(selector labels.Selector) (ret []*v1.ControlPlaneMachineSet, err error)
+	List(selector labels.Selector) (ret []*machinev1.ControlPlaneMachineSet, err error)
 	// Get retrieves the ControlPlaneMachineSet from the indexer for a given namespace and name.
 	// Objects returned here must be treated as read-only.
-	Get(name string) (*v1.ControlPlaneMachineSet, error)
+	Get(name string) (*machinev1.ControlPlaneMachineSet, error)
 	ControlPlaneMachineSetNamespaceListerExpansion
 }
 
 // controlPlaneMachineSetNamespaceLister implements the ControlPlaneMachineSetNamespaceLister
 // interface.
 type controlPlaneMachineSetNamespaceLister struct {
-	listers.ResourceIndexer[*v1.ControlPlaneMachineSet]
+	listers.ResourceIndexer[*machinev1.ControlPlaneMachineSet]
 }

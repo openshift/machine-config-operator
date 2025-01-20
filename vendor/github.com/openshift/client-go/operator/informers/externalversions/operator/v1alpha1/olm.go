@@ -3,13 +3,13 @@
 package v1alpha1
 
 import (
-	"context"
+	context "context"
 	time "time"
 
-	operatorv1alpha1 "github.com/openshift/api/operator/v1alpha1"
+	apioperatorv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	versioned "github.com/openshift/client-go/operator/clientset/versioned"
 	internalinterfaces "github.com/openshift/client-go/operator/informers/externalversions/internalinterfaces"
-	v1alpha1 "github.com/openshift/client-go/operator/listers/operator/v1alpha1"
+	operatorv1alpha1 "github.com/openshift/client-go/operator/listers/operator/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -20,7 +20,7 @@ import (
 // OLMs.
 type OLMInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1alpha1.OLMLister
+	Lister() operatorv1alpha1.OLMLister
 }
 
 type oLMInformer struct {
@@ -54,7 +54,7 @@ func NewFilteredOLMInformer(client versioned.Interface, resyncPeriod time.Durati
 				return client.OperatorV1alpha1().OLMs().Watch(context.TODO(), options)
 			},
 		},
-		&operatorv1alpha1.OLM{},
+		&apioperatorv1alpha1.OLM{},
 		resyncPeriod,
 		indexers,
 	)
@@ -65,9 +65,9 @@ func (f *oLMInformer) defaultInformer(client versioned.Interface, resyncPeriod t
 }
 
 func (f *oLMInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&operatorv1alpha1.OLM{}, f.defaultInformer)
+	return f.factory.InformerFor(&apioperatorv1alpha1.OLM{}, f.defaultInformer)
 }
 
-func (f *oLMInformer) Lister() v1alpha1.OLMLister {
-	return v1alpha1.NewOLMLister(f.Informer().GetIndexer())
+func (f *oLMInformer) Lister() operatorv1alpha1.OLMLister {
+	return operatorv1alpha1.NewOLMLister(f.Informer().GetIndexer())
 }

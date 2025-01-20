@@ -157,8 +157,8 @@ func (ctrl *Controller) addSecret(obj interface{}) {
 	ctrl.filterSecret(secret)
 }
 
-func (ctrl *Controller) updateSecret(_, new interface{}) {
-	secret := new.(*corev1.Secret)
+func (ctrl *Controller) updateSecret(_, newSecret interface{}) {
+	secret := newSecret.(*corev1.Secret)
 	klog.V(4).Infof("Update Secret %v", secret)
 	ctrl.filterSecret(secret)
 }

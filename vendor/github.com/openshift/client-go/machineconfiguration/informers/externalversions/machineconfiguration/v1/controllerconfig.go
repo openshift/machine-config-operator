@@ -3,13 +3,13 @@
 package v1
 
 import (
-	"context"
+	context "context"
 	time "time"
 
-	machineconfigurationv1 "github.com/openshift/api/machineconfiguration/v1"
+	apimachineconfigurationv1 "github.com/openshift/api/machineconfiguration/v1"
 	versioned "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	internalinterfaces "github.com/openshift/client-go/machineconfiguration/informers/externalversions/internalinterfaces"
-	v1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
+	machineconfigurationv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -20,7 +20,7 @@ import (
 // ControllerConfigs.
 type ControllerConfigInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1.ControllerConfigLister
+	Lister() machineconfigurationv1.ControllerConfigLister
 }
 
 type controllerConfigInformer struct {
@@ -54,7 +54,7 @@ func NewFilteredControllerConfigInformer(client versioned.Interface, resyncPerio
 				return client.MachineconfigurationV1().ControllerConfigs().Watch(context.TODO(), options)
 			},
 		},
-		&machineconfigurationv1.ControllerConfig{},
+		&apimachineconfigurationv1.ControllerConfig{},
 		resyncPeriod,
 		indexers,
 	)
@@ -65,9 +65,9 @@ func (f *controllerConfigInformer) defaultInformer(client versioned.Interface, r
 }
 
 func (f *controllerConfigInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&machineconfigurationv1.ControllerConfig{}, f.defaultInformer)
+	return f.factory.InformerFor(&apimachineconfigurationv1.ControllerConfig{}, f.defaultInformer)
 }
 
-func (f *controllerConfigInformer) Lister() v1.ControllerConfigLister {
-	return v1.NewControllerConfigLister(f.Informer().GetIndexer())
+func (f *controllerConfigInformer) Lister() machineconfigurationv1.ControllerConfigLister {
+	return machineconfigurationv1.NewControllerConfigLister(f.Informer().GetIndexer())
 }

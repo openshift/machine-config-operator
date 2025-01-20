@@ -20,6 +20,7 @@ import (
 	corelisterv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/clock"
 
 	configv1 "github.com/openshift/api/config/v1"
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
@@ -75,7 +76,7 @@ func New(
 	mcoConfigMapInfomer coreinformersv1.ConfigMapInformer,
 ) (*CertRotationController, error) {
 
-	recorder := events.NewLoggingEventRecorder(componentName)
+	recorder := events.NewLoggingEventRecorder(componentName, clock.RealClock{})
 
 	c := &CertRotationController{
 		kubeClient:          kubeClient,

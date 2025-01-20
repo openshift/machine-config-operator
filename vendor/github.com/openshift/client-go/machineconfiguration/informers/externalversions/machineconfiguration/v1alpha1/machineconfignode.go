@@ -3,13 +3,13 @@
 package v1alpha1
 
 import (
-	"context"
+	context "context"
 	time "time"
 
-	machineconfigurationv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+	apimachineconfigurationv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	versioned "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	internalinterfaces "github.com/openshift/client-go/machineconfiguration/informers/externalversions/internalinterfaces"
-	v1alpha1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1"
+	machineconfigurationv1alpha1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -20,7 +20,7 @@ import (
 // MachineConfigNodes.
 type MachineConfigNodeInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1alpha1.MachineConfigNodeLister
+	Lister() machineconfigurationv1alpha1.MachineConfigNodeLister
 }
 
 type machineConfigNodeInformer struct {
@@ -54,7 +54,7 @@ func NewFilteredMachineConfigNodeInformer(client versioned.Interface, resyncPeri
 				return client.MachineconfigurationV1alpha1().MachineConfigNodes().Watch(context.TODO(), options)
 			},
 		},
-		&machineconfigurationv1alpha1.MachineConfigNode{},
+		&apimachineconfigurationv1alpha1.MachineConfigNode{},
 		resyncPeriod,
 		indexers,
 	)
@@ -65,9 +65,9 @@ func (f *machineConfigNodeInformer) defaultInformer(client versioned.Interface, 
 }
 
 func (f *machineConfigNodeInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&machineconfigurationv1alpha1.MachineConfigNode{}, f.defaultInformer)
+	return f.factory.InformerFor(&apimachineconfigurationv1alpha1.MachineConfigNode{}, f.defaultInformer)
 }
 
-func (f *machineConfigNodeInformer) Lister() v1alpha1.MachineConfigNodeLister {
-	return v1alpha1.NewMachineConfigNodeLister(f.Informer().GetIndexer())
+func (f *machineConfigNodeInformer) Lister() machineconfigurationv1alpha1.MachineConfigNodeLister {
+	return machineconfigurationv1alpha1.NewMachineConfigNodeLister(f.Informer().GetIndexer())
 }

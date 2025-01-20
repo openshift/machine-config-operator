@@ -3,10 +3,10 @@
 package v1
 
 import (
-	v1 "github.com/openshift/api/operator/v1"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/client-go/listers"
-	"k8s.io/client-go/tools/cache"
+	operatorv1 "github.com/openshift/api/operator/v1"
+	labels "k8s.io/apimachinery/pkg/labels"
+	listers "k8s.io/client-go/listers"
+	cache "k8s.io/client-go/tools/cache"
 )
 
 // OLMLister helps list OLMs.
@@ -14,19 +14,19 @@ import (
 type OLMLister interface {
 	// List lists all OLMs in the indexer.
 	// Objects returned here must be treated as read-only.
-	List(selector labels.Selector) (ret []*v1.OLM, err error)
+	List(selector labels.Selector) (ret []*operatorv1.OLM, err error)
 	// Get retrieves the OLM from the index for a given name.
 	// Objects returned here must be treated as read-only.
-	Get(name string) (*v1.OLM, error)
+	Get(name string) (*operatorv1.OLM, error)
 	OLMListerExpansion
 }
 
 // oLMLister implements the OLMLister interface.
 type oLMLister struct {
-	listers.ResourceIndexer[*v1.OLM]
+	listers.ResourceIndexer[*operatorv1.OLM]
 }
 
 // NewOLMLister returns a new OLMLister.
 func NewOLMLister(indexer cache.Indexer) OLMLister {
-	return &oLMLister{listers.New[*v1.OLM](indexer, v1.Resource("olm"))}
+	return &oLMLister{listers.New[*operatorv1.OLM](indexer, operatorv1.Resource("olm"))}
 }
