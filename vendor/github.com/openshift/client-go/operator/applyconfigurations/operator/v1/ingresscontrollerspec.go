@@ -13,23 +13,24 @@ import (
 // IngressControllerSpecApplyConfiguration represents a declarative configuration of the IngressControllerSpec type for use
 // with apply.
 type IngressControllerSpecApplyConfiguration struct {
-	Domain                     *string                                           `json:"domain,omitempty"`
-	HttpErrorCodePages         *v1.ConfigMapNameReference                        `json:"httpErrorCodePages,omitempty"`
-	Replicas                   *int32                                            `json:"replicas,omitempty"`
-	EndpointPublishingStrategy *EndpointPublishingStrategyApplyConfiguration     `json:"endpointPublishingStrategy,omitempty"`
-	DefaultCertificate         *corev1.LocalObjectReference                      `json:"defaultCertificate,omitempty"`
-	NamespaceSelector          *metav1.LabelSelectorApplyConfiguration           `json:"namespaceSelector,omitempty"`
-	RouteSelector              *metav1.LabelSelectorApplyConfiguration           `json:"routeSelector,omitempty"`
-	NodePlacement              *NodePlacementApplyConfiguration                  `json:"nodePlacement,omitempty"`
-	TLSSecurityProfile         *v1.TLSSecurityProfile                            `json:"tlsSecurityProfile,omitempty"`
-	ClientTLS                  *ClientTLSApplyConfiguration                      `json:"clientTLS,omitempty"`
-	RouteAdmission             *RouteAdmissionPolicyApplyConfiguration           `json:"routeAdmission,omitempty"`
-	Logging                    *IngressControllerLoggingApplyConfiguration       `json:"logging,omitempty"`
-	HTTPHeaders                *IngressControllerHTTPHeadersApplyConfiguration   `json:"httpHeaders,omitempty"`
-	HTTPEmptyRequestsPolicy    *apioperatorv1.HTTPEmptyRequestsPolicy            `json:"httpEmptyRequestsPolicy,omitempty"`
-	TuningOptions              *IngressControllerTuningOptionsApplyConfiguration `json:"tuningOptions,omitempty"`
-	UnsupportedConfigOverrides *runtime.RawExtension                             `json:"unsupportedConfigOverrides,omitempty"`
-	HTTPCompression            *HTTPCompressionPolicyApplyConfiguration          `json:"httpCompression,omitempty"`
+	Domain                          *string                                                     `json:"domain,omitempty"`
+	HttpErrorCodePages              *v1.ConfigMapNameReference                                  `json:"httpErrorCodePages,omitempty"`
+	Replicas                        *int32                                                      `json:"replicas,omitempty"`
+	EndpointPublishingStrategy      *EndpointPublishingStrategyApplyConfiguration               `json:"endpointPublishingStrategy,omitempty"`
+	DefaultCertificate              *corev1.LocalObjectReference                                `json:"defaultCertificate,omitempty"`
+	NamespaceSelector               *metav1.LabelSelectorApplyConfiguration                     `json:"namespaceSelector,omitempty"`
+	RouteSelector                   *metav1.LabelSelectorApplyConfiguration                     `json:"routeSelector,omitempty"`
+	NodePlacement                   *NodePlacementApplyConfiguration                            `json:"nodePlacement,omitempty"`
+	TLSSecurityProfile              *v1.TLSSecurityProfile                                      `json:"tlsSecurityProfile,omitempty"`
+	ClientTLS                       *ClientTLSApplyConfiguration                                `json:"clientTLS,omitempty"`
+	RouteAdmission                  *RouteAdmissionPolicyApplyConfiguration                     `json:"routeAdmission,omitempty"`
+	Logging                         *IngressControllerLoggingApplyConfiguration                 `json:"logging,omitempty"`
+	HTTPHeaders                     *IngressControllerHTTPHeadersApplyConfiguration             `json:"httpHeaders,omitempty"`
+	HTTPEmptyRequestsPolicy         *apioperatorv1.HTTPEmptyRequestsPolicy                      `json:"httpEmptyRequestsPolicy,omitempty"`
+	TuningOptions                   *IngressControllerTuningOptionsApplyConfiguration           `json:"tuningOptions,omitempty"`
+	UnsupportedConfigOverrides      *runtime.RawExtension                                       `json:"unsupportedConfigOverrides,omitempty"`
+	HTTPCompression                 *HTTPCompressionPolicyApplyConfiguration                    `json:"httpCompression,omitempty"`
+	IdleConnectionTerminationPolicy *apioperatorv1.IngressControllerConnectionTerminationPolicy `json:"idleConnectionTerminationPolicy,omitempty"`
 }
 
 // IngressControllerSpecApplyConfiguration constructs a declarative configuration of the IngressControllerSpec type for use with
@@ -171,5 +172,13 @@ func (b *IngressControllerSpecApplyConfiguration) WithUnsupportedConfigOverrides
 // If called multiple times, the HTTPCompression field is set to the value of the last call.
 func (b *IngressControllerSpecApplyConfiguration) WithHTTPCompression(value *HTTPCompressionPolicyApplyConfiguration) *IngressControllerSpecApplyConfiguration {
 	b.HTTPCompression = value
+	return b
+}
+
+// WithIdleConnectionTerminationPolicy sets the IdleConnectionTerminationPolicy field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the IdleConnectionTerminationPolicy field is set to the value of the last call.
+func (b *IngressControllerSpecApplyConfiguration) WithIdleConnectionTerminationPolicy(value apioperatorv1.IngressControllerConnectionTerminationPolicy) *IngressControllerSpecApplyConfiguration {
+	b.IdleConnectionTerminationPolicy = &value
 	return b
 }

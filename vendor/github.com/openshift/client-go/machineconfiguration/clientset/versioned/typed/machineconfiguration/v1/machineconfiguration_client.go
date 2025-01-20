@@ -17,6 +17,8 @@ type MachineconfigurationV1Interface interface {
 	KubeletConfigsGetter
 	MachineConfigsGetter
 	MachineConfigPoolsGetter
+	MachineOSBuildsGetter
+	MachineOSConfigsGetter
 }
 
 // MachineconfigurationV1Client is used to interact with features provided by the machineconfiguration.openshift.io group.
@@ -42,6 +44,14 @@ func (c *MachineconfigurationV1Client) MachineConfigs() MachineConfigInterface {
 
 func (c *MachineconfigurationV1Client) MachineConfigPools() MachineConfigPoolInterface {
 	return newMachineConfigPools(c)
+}
+
+func (c *MachineconfigurationV1Client) MachineOSBuilds() MachineOSBuildInterface {
+	return newMachineOSBuilds(c)
+}
+
+func (c *MachineconfigurationV1Client) MachineOSConfigs() MachineOSConfigInterface {
+	return newMachineOSConfigs(c)
 }
 
 // NewForConfig creates a new MachineconfigurationV1Client for the given config.

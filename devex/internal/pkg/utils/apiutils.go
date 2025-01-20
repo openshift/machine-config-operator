@@ -66,7 +66,7 @@ func GetMachineOSConfigForPoolName(ctx context.Context, cs *framework.ClientSet,
 }
 
 func GetMachineOSBuildForPool(ctx context.Context, cs *framework.ClientSet, mcp *mcfgv1.MachineConfigPool) (*mcfgv1alpha1.MachineOSBuild, error) {
-	mosbList, err := cs.MachineOSBuilds().List(ctx, metav1.ListOptions{})
+	mosbList, err := cs.MachineconfigurationV1alpha1Interface.MachineOSBuilds().List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +82,7 @@ func GetMachineOSBuildForPool(ctx context.Context, cs *framework.ClientSet, mcp 
 }
 
 func GetMachineOSConfigForPool(ctx context.Context, cs *framework.ClientSet, mcp *mcfgv1.MachineConfigPool) (*mcfgv1alpha1.MachineOSConfig, error) {
-	moscList, err := cs.MachineOSConfigs().List(ctx, metav1.ListOptions{})
+	moscList, err := cs.MachineconfigurationV1alpha1Interface.MachineOSConfigs().List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, err
 	}
