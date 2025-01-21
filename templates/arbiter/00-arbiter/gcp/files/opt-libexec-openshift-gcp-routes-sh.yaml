@@ -1,0 +1,229 @@
+mode: 0755
+path: "/opt/libexec/openshift-gcp-routes.sh"
+contents:
+  inline: |
+    #!/bin/bash
+
+    # Update nftables rules based on google cloud load balancer VIPS
+    #
+    # This is needed because the GCP L3 load balancer doesn't actually do DNAT;
+    # the destination IP address is still the VIP. Normally, there is an agent that
+    # adds the vip to the local routing table, tricking the kernel in to thinking
+    # it's a local IP and allowing processes doing an accept(0.0.0.0) to receive
+    # the packets. Clever.
+    #
+    # We don't do that. Instead, we DNAT with conntrack. This is so we don't break
+    # existing connections when the vip is removed. This is useful for draining
+    # connections - take ourselves out of the vip, but service existing conns.
+    #
+    # Additionally, clients can write a file to /run/cloud-routes/$IP.down to force
+    # a VIP as down. This is useful for graceful shutdown / upgrade.
+
+    set -e
+
+    # the list of load balancer IPs that are assigned to this node
+    declare -A vips
+
+    curler() {
+      # if the curl succeeds, write the body to stdout for the caller
+      # to consume.
+      #
+      # if the curl fails, write the body to stderr so its in the
+      # logs, but do not write anything to stdout.  The loop that the
+      # curler call was feeding will bail with no results, and we'll
+      # come back in on the next loop and try again.
+      RESPONSE="$(curl --silent --show-error -L -H "Metadata-Flavor: Google" -w '\n%{response_code}' "http://metadata.google.internal/computeMetadata/v1/instance/${1}")" &&
+        RESPONSE_CODE="$(echo "${RESPONSE}" | tail -n 1)" &&
+        BODY="$(echo "${RESPONSE}" | head -n -1)" &&
+        if test 0 -eq "${RESPONSE_CODE}" -o 400 -le "${RESPONSE_CODE}"; then
+          printf "%s" "${BODY}" >&2
+        else
+          printf "%s" "${BODY}"
+        fi
+    }
+
+    TABLE_NAME="gcp-vips"
+    EXTERNAL_VIPS_CHAIN="external-vips"
+    LOCAL_VIPS_CHAIN="local-vips"
+    RUN_DIR="/run/cloud-routes"
+
+    # Set up base table and rules
+    initialize() {
+        nft -f - <<EOF
+            add table ip ${TABLE_NAME} { comment "apiserver loadbalancer routing helper"; }
+            add chain ip ${TABLE_NAME} ${EXTERNAL_VIPS_CHAIN} { type nat hook prerouting priority dstnat; comment "gcp LB vip DNAT for external clients"; }
+            add chain ip ${TABLE_NAME} ${LOCAL_VIPS_CHAIN} { type nat hook output priority dstnat; comment "gcp LB vip DNAT for local clients"; }
+
+            # If a connection for a VIP comes in while we have no rewrite rule for that VIP,
+            # we would think the VIP is an external host and so forward the connection back
+            # off the node. In the specific case of connections from the GCP LB health
+            # checkers to the VIP, this would result in a bad conntrack entry being created
+            # and then never deleted even after the VIP rule was installed, because the health
+            # checker only uses a small range of source ports, so newer health checks would
+            # keep refreshing the bad conntrack entry created by the first failed health
+            # check. As a result, we would end up persistently failing some percentage of
+            # health checks. See https://bugzilla.redhat.com/show_bug.cgi?id=1925698,
+            # https://bugzilla.redhat.com/show_bug.cgi?id=1930457.
+            #
+            # The fix here is a rule that drops health check probes if we notice that we're
+            # about to forward them off-node, which then prevents the bad conntrack entries
+            # from being created. The HealthCheck origin ip-ranges are documented:
+            # https://cloud.google.com/load-balancing/docs/health-check-concepts#ip-ranges
+            add chain ip ${TABLE_NAME} forward { type filter hook forward priority filter; comment "gcp HealthCheck traffic"; }
+            add rule ip ${TABLE_NAME} forward ip saddr 35.191.0.0/16 drop
+            add rule ip ${TABLE_NAME} forward ip saddr 130.211.0.0/22 drop
+    EOF
+
+        mkdir -p "${RUN_DIR}"
+    }
+
+    remove_stale_routes() {
+        ## find extra ovn routes
+        local ovnkContainerID=$(crictl ps --name ovnkube-controller | awk '{ print $1 }' | tail -n+2)
+        if [ -z "${ovnkContainerID}" ]; then
+            return
+        fi
+        echo "Found ovnkube-controller pod... ${ovnkContainerID}"
+        local routeVIPsV4=$(crictl exec -i ${ovnkContainerID} ovn-nbctl lr-policy-list ovn_cluster_router | grep "1010" | grep "ip4" | awk '$8{print $8}')
+        echo "Found v4route vips: ${routeVIPsV4}"
+        local host=$(hostname)
+        echo ${host}
+        for route_vip in ${routeVIPsV4}; do
+            if [[ ! -v vips[${route_vip}] ]] || [[ "${vips[${route_vip}]}" = down ]]; then
+                echo removing stale vip "${route_vip}" for local clients
+                echo "ovn-nbctl lr-policy-del ovn_cluster_router 1010 inport == rtos-${host} && ip4.dst == ${route_vip}"
+                crictl exec -i ${ovnkContainerID} ovn-nbctl lr-policy-del ovn_cluster_router 1010 "inport == \"rtos-${host}\" && ip4.dst == ${route_vip}" || true
+            fi
+        done
+    }
+
+    sync_rules() {
+        # Construct the VIP lists. (The nftables syntax allows a trailing comma.)
+        external_vips=""
+        local_vips=""
+        for vip in "${!vips[@]}"; do
+            external_vips="${vip}, ${external_vips}"
+            if [[ "${vips[${vip}]}" != down ]]; then
+                local_vips="${vip}, ${local_vips}"
+            fi
+        done
+
+        echo "synchronizing external VIPs to (${external_vips}), local VIPs to (${local_vips})"
+        {
+            echo "flush chain ip ${TABLE_NAME} ${EXTERNAL_VIPS_CHAIN}"
+            if [[ -n "${external_vips}" ]]; then
+                echo "add rule ip ${TABLE_NAME} ${EXTERNAL_VIPS_CHAIN} ip daddr { ${external_vips} } redirect"
+            fi
+            echo "flush chain ip ${TABLE_NAME} ${LOCAL_VIPS_CHAIN}"
+            if [[ -n "${local_vips}" ]]; then
+                echo "add rule ip ${TABLE_NAME} ${LOCAL_VIPS_CHAIN} ip daddr { ${local_vips} } redirect"
+            fi
+        } | nft -f -
+    }
+
+    add_routes() {
+        local ovnkContainerID=$(crictl ps --name ovnkube-controller | awk '{ print $1 }' | tail -n+2)
+        if [ -z "${ovnkContainerID}" ]; then
+            echo "OVN-Kubernetes is not running; no routes to add."
+            return
+        fi
+        echo "Found ovnkube-controller pod... ${ovnkContainerID}"
+        local ovnK8sMp0v4=$(ip -brief address show ovn-k8s-mp0 | awk '{print $3}' | awk -F/ '{print $1}')
+        echo "Found ovn-k8s-mp0 interface IP ${ovnK8sMp0v4}"
+        local host=$(hostname)
+        echo ${host}
+        for vip in "${!vips[@]}"; do
+            if [[ "${vips[${vip}]}" != down ]]; then
+                echo "ensuring route for ${vip} for internal clients"
+                local routes=$(crictl exec -i ${ovnkContainerID} ovn-nbctl lr-policy-list ovn_cluster_router | grep "1010" | grep "${vip}" | grep "${ovnK8sMp0v4}")
+                echo "OVNK Routes on ovn-cluster-router at 1010 priority: $routes"
+                if [[ "${routes}" == *"${vip}"* ]]; then
+                    echo "Route exists"
+                else
+                    echo "Route does not exist; creating it..."
+                    echo "ovn-nbctl lr-policy-add ovn_cluster_router 1010 inport == rtos-${host} && ip4.dst == ${vip} reroute ${ovnK8sMp0v4}"
+                    crictl exec -i ${ovnkContainerID} ovn-nbctl lr-policy-add ovn_cluster_router 1010 "inport == \"rtos-${host}\" && ip4.dst == ${vip}" reroute "${ovnK8sMp0v4}" || true
+                fi
+            fi
+        done
+    }
+
+    clear_rules() {
+        nft delete table ip "${TABLE_NAME}" || true
+    }
+
+    clear_routes() {
+        local ovnkContainerID=$(crictl ps --name ovnkube-controller | awk '{ print $1 }' | tail -n+2)
+        if [ -z "${ovnkContainerID}" ]; then
+            echo "OVN-Kubernetes is not running; no routes to remove."
+            return
+        fi
+        echo "Found ovnkube-controller pod... ${ovnkContainerID}"
+        echo "clearing all routes from ovn-cluster-router"
+        crictl exec -i ${ovnkContainerID} ovn-nbctl lr-policy-del ovn_cluster_router 1010 || true
+    }
+
+    # out parameter: vips
+    list_lb_ips() {
+        for k in "${!vips[@]}"; do
+            unset vips["${k}"]
+        done
+
+        local net_path="network-interfaces/"
+        for vif in $(curler ${net_path}); do
+            local hw_addr; hw_addr=$(curler "${net_path}${vif}mac")
+            local fwip_path; fwip_path="${net_path}${vif}forwarded-ips/"
+            for level in $(curler "${fwip_path}"); do
+                for fwip in $(curler "${fwip_path}${level}"); do
+                    if [[ -e "${RUN_DIR}/${fwip}.down" ]]; then
+                        echo "${fwip} is manually marked as down, skipping for internal clients..."
+                        vips[${fwip}]="down"
+                    else
+                        echo "Processing route for NIC ${vif}${hw_addr} for ${fwip}"
+                        vips[${fwip}]="${fwip}"
+                    fi
+                done
+            done
+        done
+    }
+
+    sleep_or_watch() {
+        if hash inotifywait &> /dev/null; then
+            inotifywait -t 30 -r "${RUN_DIR}" &> /dev/null || true
+        else
+            # no inotify, need to manually poll
+            for i in {0..5}; do
+                for vip in "${!vips[@]}"; do
+                    if [[ "${vips[${vip}]}" != down ]] && [[ -e "${RUN_DIR}/${vip}.down" ]]; then
+                        echo "new downfile detected"
+                        break 2
+                    elif [[ "${vips[${vip}]}" = down ]] && ! [[ -e "${RUN_DIR}/${vip}.down" ]]; then
+                        echo "downfile disappeared"
+                        break 2
+                    fi
+                done
+                sleep 1 # keep this small enough to not make gcp-routes slower than LBs on recovery
+            done
+        fi
+    }
+
+    case "$1" in
+      start)
+        initialize
+        while :; do
+          list_lb_ips
+          sync_rules
+          remove_stale_routes # needed for OVN-Kubernetes plugin's routingViaHost=false mode
+          add_routes # needed for OVN-Kubernetes plugin's routingViaHost=false mode
+          echo "done applying vip rules"
+          sleep_or_watch
+        done
+        ;;
+      cleanup)
+        clear_rules
+        clear_routes # needed for OVN-Kubernetes plugin's routingViaHost=false mode
+        ;;
+      *)
+        echo $"Usage: $0 {start|cleanup}"
+        exit 1
+    esac

@@ -47,6 +47,9 @@ const (
 	platformBase   = "_base"
 	platformOnPrem = "on-prem"
 	sno            = "sno"
+	masterRole     = "master"
+	workerRole     = "worker"
+	arbiterRole    = "arbiter"
 )
 
 // generateTemplateMachineConfigs returns MachineConfig objects from the templateDir and a config object
@@ -80,6 +83,11 @@ func generateTemplateMachineConfigs(config *RenderConfig, templateDir string) ([
 			continue
 		}
 
+		// Avoid creating resources for non arbiter deployments
+		if role == arbiterRole && !hasControlPlaneTopology(config, configv1.HighlyAvailableArbiterMode) {
+			continue
+		}
+
 		roleConfigs, err := GenerateMachineConfigsForRole(config, role, templateDir)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create MachineConfig for role %s: %w", role, err)
@@ -102,10 +110,10 @@ func generateTemplateMachineConfigs(config *RenderConfig, templateDir string) ([
 func GenerateMachineConfigsForRole(config *RenderConfig, role, templateDir string) ([]*mcfgv1.MachineConfig, error) {
 	rolePath := role
 	//nolint:goconst
-	if role != "worker" && role != "master" {
+	if role != workerRole && role != masterRole && role != arbiterRole {
 		// custom pools are only allowed to be worker's children
 		// and can reuse the worker templates
-		rolePath = "worker"
+		rolePath = workerRole
 	}
 
 	path := filepath.Join(templateDir, rolePath)
@@ -219,7 +227,7 @@ func getPaths(config *RenderConfig, platformString string) []string {
 	platformBasedPaths = append(platformBasedPaths, platformString)
 
 	// sno is specific case and it should override even specific platform files
-	if config.Infra.Status.ControlPlaneTopology == configv1.SingleReplicaTopologyMode {
+	if hasControlPlaneTopology(config, configv1.SingleReplicaTopologyMode) {
 		platformBasedPaths = append(platformBasedPaths, sno)
 	}
 
@@ -798,4 +806,13 @@ func cloudPlatformLoadBalancerIPState(cfg RenderConfig) LoadBalancerIPState {
 		}
 	}
 	return lbIPState
+}
+
+// hasControlPlaneTopology returns true if the topology matches the infra.controlPlaneTopology
+// checks to make sure RenderConfig and Infra are not nil.
+func hasControlPlaneTopology(r *RenderConfig, topo configv1.TopologyMode) bool {
+	if r == nil || r.Infra == nil {
+		return false
+	}
+	return r.Infra.Status.ControlPlaneTopology == topo
 }

@@ -22,6 +22,8 @@ spec:
             (object.spec.machineConfigSelector.matchLabels["machineconfiguration.openshift.io/role"] == "master")
             ||
             (object.spec.machineConfigSelector.matchLabels["machineconfiguration.openshift.io/role"] == "worker")
+            ||
+            (object.spec.machineConfigSelector.matchLabels["machineconfiguration.openshift.io/role"] == "arbiter")
           )
         )
         ||

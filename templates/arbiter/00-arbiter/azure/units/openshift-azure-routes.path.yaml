@@ -1,0 +1,13 @@
+name: openshift-azure-routes.path
+enabled: true
+contents: |
+  [Unit]
+  Description=Watch for downfile changes
+  Before=kubelet-dependencies.target
+
+  [Path]
+  PathChanged=/run/cloud-routes/
+  MakeDirectory=true
+
+  [Install]
+  RequiredBy=kubelet-dependencies.target

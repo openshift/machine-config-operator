@@ -641,9 +641,9 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 		}
 
 		// create renderConfig
-		optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra.Status.APIServerInternalURL, pointerConfigData, moscs, apiServer)
+		optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra, pointerConfigData, moscs, apiServer)
 	} else {
-		optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra.Status.APIServerInternalURL, pointerConfigData, nil, apiServer)
+		optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra, pointerConfigData, nil, apiServer)
 	}
 
 	return nil
@@ -682,6 +682,11 @@ func (optr *Operator) syncMachineConfigPools(config *renderConfig, _ *configv1.C
 		"manifests/master.machineconfigpool.yaml",
 		"manifests/worker.machineconfigpool.yaml",
 	}
+
+	if config.Infra.Status.ControlPlaneTopology == configv1.HighlyAvailableArbiterMode {
+		mcps = append(mcps, "manifests/arbiter.machineconfigpool.yaml")
+	}
+
 	for _, mcp := range mcps {
 		mcpBytes, err := renderAsset(config, mcp)
 		if err != nil {
@@ -778,6 +783,8 @@ func (optr *Operator) syncMachineConfigNodes(_ *renderConfig, _ *configv1.Cluste
 			pool = "worker"
 		} else if _, ok = node.Labels["node-role.kubernetes.io/master"]; ok {
 			pool = "master"
+		} else if _, ok = node.Labels["node-role.kubernetes.io/arbiter"]; ok {
+			pool = "arbiter"
 		}
 		newMCS := &v1alpha1.MachineConfigNode{
 			Spec: v1alpha1.MachineConfigNodeSpec{
@@ -2035,7 +2042,7 @@ func setGVK(obj runtime.Object, scheme *runtime.Scheme) error {
 	return nil
 }
 
-func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *ctrlcommon.RenderConfigImages, apiServerURL string, pointerConfigData []byte, moscs []*mcfgv1alpha1.MachineOSConfig, apiServer *configv1.APIServer) *renderConfig {
+func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *ctrlcommon.RenderConfigImages, infra *configv1.Infrastructure, pointerConfigData []byte, moscs []*mcfgv1alpha1.MachineOSConfig, apiServer *configv1.APIServer) *renderConfig {
 	tlsMinVersion, tlsCipherSuites := ctrlcommon.GetSecurityProfileCiphersFromAPIServer(apiServer)
 	return &renderConfig{
 		TargetNamespace:        tnamespace,
@@ -2044,8 +2051,9 @@ func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.C
 		ControllerConfig:       *ccSpec,
 		Images:                 imgs,
 		KubeAPIServerServingCA: kubeAPIServerServingCA,
-		APIServerURL:           apiServerURL,
+		APIServerURL:           infra.Status.APIServerInternalURL,
 		PointerConfig:          string(pointerConfigData),
+		Infra:                  *infra,
 		MachineOSConfigs:       moscs,
 		TLSMinVersion:          tlsMinVersion,
 		TLSCipherSuites:        tlsCipherSuites,

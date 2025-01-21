@@ -203,6 +203,7 @@ var (
 	configs = map[string]string{
 		"aws":                    "./test_data/controller_config_aws.yaml",
 		"baremetal":              "./test_data/controller_config_baremetal.yaml",
+		"baremetal-arbiter":      "./test_data/controller_config_baremetal_arbiter.yaml",
 		"gcp":                    "./test_data/controller_config_gcp.yaml",
 		"openstack":              "./test_data/controller_config_openstack.yaml",
 		"libvirt":                "./test_data/controller_config_libvirt.yaml",
@@ -281,7 +282,7 @@ func TestGenerateMachineConfigs(t *testing.T) {
 			if err != nil {
 				t.Errorf("Failed to parse Ignition config for %s, %s, error: %v", config, cfg.Name, err)
 			}
-			if role == "master" {
+			if role == masterRole {
 				if !foundPullSecretMaster {
 					foundPullSecretMaster = findIgnFile(ign.Storage.Files, "/var/lib/kubelet/config.json", t)
 				}
@@ -292,7 +293,7 @@ func TestGenerateMachineConfigs(t *testing.T) {
 					foundMTUMigrationMaster = findIgnFile(ign.Storage.Files, "/usr/local/bin/mtu-migration.sh", t)
 					foundMTUMigrationMaster = foundMTUMigrationMaster || findIgnFile(ign.Storage.Files, "/etc/systemd/system/mtu-migration.service", t)
 				}
-			} else if role == "worker" {
+			} else if role == workerRole {
 				if !foundPullSecretWorker {
 					foundPullSecretWorker = findIgnFile(ign.Storage.Files, "/var/lib/kubelet/config.json", t)
 				}
@@ -302,6 +303,18 @@ func TestGenerateMachineConfigs(t *testing.T) {
 				if !foundMTUMigrationWorker {
 					foundMTUMigrationWorker = findIgnFile(ign.Storage.Files, "/usr/local/bin/mtu-migration.sh", t)
 					foundMTUMigrationWorker = foundMTUMigrationWorker || findIgnFile(ign.Storage.Files, "/etc/systemd/system/mtu-migration.service", t)
+				}
+			} else if role == arbiterRole {
+				// arbiter role currently follows master output
+				if !foundPullSecretMaster {
+					foundPullSecretMaster = findIgnFile(ign.Storage.Files, "/var/lib/kubelet/config.json", t)
+				}
+				if !foundKubeletUnitMaster {
+					foundKubeletUnitMaster = findIgnUnit(ign.Systemd.Units, "kubelet.service", t)
+				}
+				if !foundMTUMigrationMaster {
+					foundMTUMigrationMaster = findIgnFile(ign.Storage.Files, "/usr/local/bin/mtu-migration.sh", t)
+					foundMTUMigrationMaster = foundMTUMigrationMaster || findIgnFile(ign.Storage.Files, "/etc/systemd/system/mtu-migration.service", t)
 				}
 			} else {
 				t.Fatalf("Unknown role %s", role)

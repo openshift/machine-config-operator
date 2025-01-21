@@ -1,0 +1,79 @@
+mode: 0644
+path: "/etc/kubernetes/manifests/criometricsproxy.yaml"
+contents:
+  inline: |-
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      name: kube-rbac-proxy-crio
+      namespace: openshift-machine-config-operator
+      annotations:
+        target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
+    spec:
+      volumes:
+      - name: etc-kube
+        hostPath:
+          path: "/etc/kubernetes"
+      - name: var-lib-kubelet
+        hostPath:
+          path: "/var/lib/kubelet"
+      hostNetwork: true
+      priorityClassName: system-cluster-critical
+      initContainers:
+      - name: setup
+        terminationMessagePolicy: FallbackToLogsOnError
+        image: {{.Images.kubeRbacProxyImage}}
+        imagePullPolicy: IfNotPresent
+        volumeMounts:
+        - name: var-lib-kubelet
+          mountPath: "/var"
+          mountPropagation: HostToContainer
+        command: ['/bin/bash', '-ec']
+        args:
+        - |
+          echo -n "Waiting for kubelet key and certificate to be available"
+          while [ -n "$(test -e /var/lib/kubelet/pki/kubelet-server-current.pem)" ] ; do
+            echo -n "."
+            sleep 1
+            (( tries += 1 ))
+            if [[ "${tries}" -gt 10 ]]; then
+              echo "Timed out waiting for kubelet key and cert."
+              exit 1
+            fi
+          done
+        securityContext:
+          privileged: true
+        resources:
+          requests:
+            memory: 50Mi
+            cpu: 5m
+      containers:
+      - name: kube-rbac-proxy-crio
+        image: {{.Images.kubeRbacProxyImage}}
+        securityContext:
+          privileged: true
+        ports:
+        - containerPort: 9637
+        args:
+        - --secure-listen-address=:9637
+        - --config-file=/etc/kubernetes/crio-metrics-proxy.cfg
+        - --client-ca-file=/etc/kubernetes/kubelet-ca.crt
+        - --logtostderr=true
+        - --kubeconfig=/var/lib/kubelet/kubeconfig
+        - --tls-cipher-suites={{join .TLSCipherSuites ","}} 
+        - --tls-min-version={{.TLSMinVersion}}
+        - --upstream=http://127.0.0.1:9537
+        - --tls-cert-file=/var/lib/kubelet/pki/kubelet-server-current.pem
+        - --tls-private-key-file=/var/lib/kubelet/pki/kubelet-server-current.pem
+        resources:
+          requests:
+            cpu: 20m
+            memory: 50Mi
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - name: etc-kube
+          mountPath: "/etc/kubernetes"
+          mountPropagation: HostToContainer
+        - name: var-lib-kubelet
+          mountPath: "/var/lib/kubelet"
+          mountPropagation: HostToContainer
