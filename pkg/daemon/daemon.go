@@ -2728,6 +2728,8 @@ func (dn *Daemon) getControlPlaneTopology() configv1.TopologyMode {
 		return configv1.SingleReplicaTopologyMode
 	case configv1.HighlyAvailableTopologyMode:
 		return configv1.HighlyAvailableTopologyMode
+	case configv1.HighlyAvailableArbiterMode:
+		return configv1.HighlyAvailableArbiterMode
 	default:
 		// for any unhandled case, default to HighlyAvailableTopologyMode
 		return configv1.HighlyAvailableTopologyMode

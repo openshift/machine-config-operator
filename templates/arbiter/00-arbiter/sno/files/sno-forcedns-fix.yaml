@@ -1,0 +1,12 @@
+mode: 0755
+path: "/etc/NetworkManager/dispatcher.d/forcedns-rhel9-fix"
+contents:
+  inline: |
+    #!/bin/bash
+    # this script was added as upgrade fix for assisted sno installation were forcedns dispatcher script misses shebang
+    filename="/etc/NetworkManager/dispatcher.d/forcedns"
+    if [ ! -f "$filename" ]; then
+      exit 0
+    fi
+    # in case there is no shebang run forcedns dispatcher script with /bin/bash
+    head -n1 "$filename" | grep -qx '#!/bin/bash' || /bin/bash "$filename" $1 $2
