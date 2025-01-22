@@ -1,0 +1,27 @@
+mode: 0755
+path: "/usr/local/bin/update-etc-hosts"
+contents:
+  inline: |
+    #!/bin/bash
+
+    {{ if and (cloudPlatformLBIPAvailable .) (gt (len (cloudPlatformAPIIntLoadBalancerIPs .)) 0) }}
+    apiIntLBIP={{ index (cloudPlatformAPIIntLoadBalancerIPs .) 0 }} {{ end }}
+    {{ if and (cloudPlatformLBIPAvailable .) (gt (len (cloudPlatformAPILoadBalancerIPs .)) 0) }}
+    apiLBIP={{ index (cloudPlatformAPILoadBalancerIPs .) 0 }}{{ end }}
+    {{ if and (cloudPlatformLBIPAvailable .) (eq (len (cloudPlatformAPILoadBalancerIPs .)) 0) }}
+    apiLBIP={{ index (cloudPlatformAPIIntLoadBalancerIPs .) 0 }}{{ end }}
+    apiServerURL={{ .Infra.Status.APIServerURL }}
+    apiServerIntURL={{ .Infra.Status.APIServerInternalURL }}
+    apiServerHostPort=${apiServerURL#*//}
+    apiServerIntHostPort=${apiServerIntURL#*//}
+    apiServerHostname=${apiServerHostPort%:*}
+    apiIntServerHostname=${apiServerIntHostPort%:*}
+    mkdir -p /etc/conf.d
+    etc_hosts_config_filename="/etc/conf.d/etc-hosts.conf"
+    echo "${apiLBIP}    ${apiServerHostname}" >> ${etc_hosts_config_filename}
+    echo "${apiIntLBIP}    ${apiIntServerHostname}" >> ${etc_hosts_config_filename}
+    if [ -f ${etc_hosts_config_filename} ]
+    then
+      cat /etc/conf.d/etc-hosts.conf >> /etc/hosts
+      echo "Done updating /etc/hosts"
+    fi

@@ -11,7 +11,6 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/sirupsen/logrus"
 	"k8s.io/klog/v2"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -782,16 +781,13 @@ func cloudPlatformIngressLoadBalancerIPs(cfg RenderConfig) (interface{}, error) 
 // cloudPlatformLBIPAvailable returns true when DNSType is set to `ClusterHosted`
 // and LB IPs are provided as part of `PlatformStatus`.
 func cloudPlatformLBIPAvailable(cfg RenderConfig) bool {
-	logrus.Infof("Inside cloudPlatformLBIPAvailable")
 	if cfg.Infra.Status.PlatformStatus != nil {
 		switch cfg.Infra.Status.PlatformStatus.Type {
 		case configv1.GCPPlatformType:
 			switch cloudPlatformLoadBalancerIPState(cfg) {
 			case availableLBIPState:
-				logrus.Infof("LB IPs available")
 				return true
 			default:
-				logrus.Infof("LB IPs not available")
 				return false
 			}
 		case configv1.AWSPlatformType:
