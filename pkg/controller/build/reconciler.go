@@ -127,6 +127,11 @@ func (b *buildReconciler) rebuildMachineOSConfig(ctx context.Context, mosc *mcfg
 		return ignoreErrIsNotFound(fmt.Errorf("cannot rebuild MachineOSConfig %q: %w", mosc.Name, err))
 	}
 
+	// delete the build objects before deleting the mosb
+	// this can e removed once we have proper owner references
+	if err := b.deleteBuilderForMachineOSBuild(ctx, mosb); err != nil {
+		return fmt.Errorf("could not delete builder for MachineOSBuild %q: %w", mosb.Name, err)
+	}
 	if err := b.deleteMachineOSBuild(ctx, mosb); err != nil {
 		return fmt.Errorf("could not delete MachineOSBuild %q for MachineOSConfig %q: %w", mosb.Name, mosc.Name, err)
 	}
