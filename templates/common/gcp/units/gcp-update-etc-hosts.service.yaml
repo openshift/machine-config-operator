@@ -1,0 +1,19 @@
+name: gcp-update-etc-hosts.service
+enabled: {{if and (eq .Infra.Status.PlatformStatus.Type "GCP") (.Infra.Status.PlatformStatus.GCP) (.Infra.Status.PlatformStatus.GCP.CloudLoadBalancerConfig) (eq .Infra.Status.PlatformStatus.GCP.CloudLoadBalancerConfig.DNSType "ClusterHosted") }}true{{else}}false{{end}}
+contents: |
+  [Unit]
+  Description=Update Default GCP /etc/hosts
+  # We don't need to do this on the firstboot
+  After=firstboot-osupdate.target
+  # Wait for NetworkManager to report it's online
+  After=NetworkManager-wait-online.service
+  # Run before kubelet
+  Before=kubelet-dependencies.target
+
+  [Service]
+  # Need oneshot to delay kubelet
+  Type=oneshot
+  ExecStart=/usr/local/bin/update-etc-hosts
+
+  [Install]
+  RequiredBy=kubelet-dependencies.target
