@@ -25,6 +25,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/openshift/machine-config-operator/pkg/controller/build/buildrequest"
+	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -107,15 +108,14 @@ func TestOnClusterLayeringOnOKD(t *testing.T) {
 // Tests that an on-cluster build can be performed with the Custom Pod Builder.
 func TestOnClusterLayering(t *testing.T) {
 
-	runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
+	_, mosb := runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
 		poolName: layeredMCPName,
 		customDockerfiles: map[string]string{
 			layeredMCPName: cowsayDockerfile,
 		},
 	})
 
-	/* Removing this portion of this test - update when https://issues.redhat.com/browse/OCPBUGS-46421 fixed.
-
+	// Test rebuild annotation works
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
@@ -126,19 +126,21 @@ func TestOnClusterLayering(t *testing.T) {
 	mosc, err := cs.MachineconfigurationV1Interface.MachineOSConfigs().Get(ctx, layeredMCPName, metav1.GetOptions{})
 	require.NoError(t, err)
 
-	mosc.Annotations[constants.RebuildMachineOSConfigAnnotationKey] = ""
+	helpers.SetRebuildAnnotationOnMachineOSConfig(ctx, t, cs.GetMcfgclient(), mosc)
 
-	_, err = cs.MachineconfigurationV1Interface.MachineOSConfigs().Update(ctx, mosc, metav1.UpdateOptions{})
-	require.NoError(t, err)
+	// Use the UID of the previous MOSB to ensure it is deleted as the rebuild will trigger a MOSB with the same name
+	t.Logf("Waiting for the previous MachineOSBuild with UID %q to be deleted", mosb.UID)
+	waitForMOSBToBeDeleted(t, cs, mosb)
 
-	waitForBuildToStartForPoolAndConfig(t, cs, layeredMCPName, layeredMCPName)
-	*/
+	// Wait for the build to start
+	waitForBuildToStartForPoolAndConfig(t, cs, layeredMCPName, mosc.Name)
+
 }
 
 // Tests that an on-cluster build can be performed and that the resulting image
 // is rolled out to an opted-in node.
 func TestOnClusterBuildRollsOutImage(t *testing.T) {
-	imagePullspec := runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
+	imagePullspec, _ := runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
 		poolName: layeredMCPName,
 		customDockerfiles: map[string]string{
 			layeredMCPName: cowsayDockerfile,
@@ -247,7 +249,6 @@ func TestMachineOSConfigChangeRestartsBuild(t *testing.T) {
 	waitForBuildToStart(t, cs, moscChangeMosb)
 
 	t.Logf("Waiting for initial MachineOSBuild %s to be deleted", firstMosb.Name)
-
 	// Wait for the first build to be deleted.
 	waitForBuildToBeDeleted(t, cs, firstMosb)
 
@@ -490,6 +491,54 @@ func TestDeletedTransientMachineOSBuildIsRecreated(t *testing.T) {
 	assert.NotEqual(t, firstJob.UID, secondJob.UID)
 }
 
+// This test verifies that if the rebuild annotation is added to a given MachineOSConfig, that
+// the build is restarted
+func TestRebuildAnnotationRestartsBuild(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	cs := framework.NewClientSet("")
+
+	mosc := prepareForOnClusterLayeringTest(t, cs, onClusterLayeringTestOpts{
+		poolName: layeredMCPName,
+		customDockerfiles: map[string]string{
+			layeredMCPName: cowsayDockerfile,
+		},
+	})
+
+	createMachineOSConfig(t, cs, mosc)
+
+	mcp, err := cs.MachineconfigurationV1Interface.MachineConfigPools().Get(ctx, layeredMCPName, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	mosb := buildrequest.NewMachineOSBuildFromAPIOrDie(ctx, cs.GetKubeclient(), mosc, mcp)
+
+	// First, we get a MachineOSBuild started as usual.
+	waitForBuildToStart(t, cs, mosb)
+
+	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx)
+	assertBuildObjectsAreCreated(t, kubeassert, mosb)
+
+	t.Logf("Initial build has started, delete the job to interrupt the build...")
+	// Delete the builder
+	err = cs.BatchV1Interface.Jobs(ctrlcommon.MCONamespace).Delete(ctx, utils.GetBuildJobName(mosb), metav1.DeleteOptions{})
+	require.NoError(t, err)
+
+	// Wait for the build to be interrupted.
+	waitForBuildToBeInterrupted(t, cs, mosb)
+
+	t.Logf("Add rebuild annotation to the MOSC...")
+	helpers.SetRebuildAnnotationOnMachineOSConfig(ctx, t, cs.GetMcfgclient(), mosc)
+
+	// Wait for the MOSB to be deleted
+	t.Logf("Waiting for MachineOSBuild with UID %s to be deleted", mosb.UID)
+	waitForMOSBToBeDeleted(t, cs, mosb)
+
+	t.Logf("Annotation is updated, waiting for new build %s to start", mosb.Name)
+	// Wait for the build to start.
+	waitForBuildToStart(t, cs, mosb)
+}
+
 func assertBuildObjectsAreCreated(t *testing.T, kubeassert *helpers.Assertions, mosb *mcfgv1.MachineOSBuild) {
 	t.Helper()
 
@@ -512,7 +561,7 @@ func assertBuildObjectsAreDeleted(t *testing.T, kubeassert *helpers.Assertions, 
 
 // Sets up and performs an on-cluster build for a given set of parameters.
 // Returns the built image pullspec for later consumption.
-func runOnClusterLayeringTest(t *testing.T, testOpts onClusterLayeringTestOpts) string {
+func runOnClusterLayeringTest(t *testing.T, testOpts onClusterLayeringTestOpts) (string, *mcfgv1.MachineOSBuild) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
@@ -594,7 +643,7 @@ func runOnClusterLayeringTest(t *testing.T, testOpts onClusterLayeringTestOpts) 
 
 	require.NoError(t, archiveBuildPodLogs(t, podLogsDirPath))
 
-	return string(finishedBuild.Status.DigestedImagePushSpec)
+	return string(finishedBuild.Status.DigestedImagePushSpec), startedBuild
 }
 
 func archiveBuildPodLogs(t *testing.T, podLogsDirPath string) error {
@@ -608,7 +657,7 @@ func archiveBuildPodLogs(t *testing.T, podLogsDirPath string) error {
 	cmd := exec.Command("mv", podLogsDirPath, archive.StagingDir())
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Logf(string(output))
+		t.Log(string(output))
 		return err
 	}
 
@@ -659,13 +708,14 @@ func waitForBuildToStart(t *testing.T, cs *framework.ClientSet, build *mcfgv1.Ma
 	t.Logf("MachineOSBuild %s created after %s", build.Name, time.Since(start))
 	kubeassert.Eventually().MachineOSBuildIsRunning(build)
 	t.Logf("MachineOSBuild %s running after %s", build.Name, time.Since(start))
-	// The Job reports running before the pod is fully up and running, so the mosb ends up in building status
-	// however, since we are streaming container logs we might hit a race where the container has not started yet
-	// so add a check to ensure that the pod is up an running also
-	kubeassert.Eventually().JobExists(utils.GetBuildJobName(build))
-	t.Logf("Build job %s created after %s", utils.GetBuildJobName(build), time.Since(start))
+
+	// Get the job for the MOSB created by comparing the job UID with the MOSB annotation
+	buildJobName, err := getJobForMOSB(ctx, cs, build)
+	require.NoError(t, err)
+	kubeassert.Eventually().JobExists(buildJobName)
+	t.Logf("Build job %s created after %s", buildJobName, time.Since(start))
 	// Get the pod created by the job
-	buildPod, err := getPodFromJob(context.TODO(), cs, utils.GetBuildJobName(build))
+	buildPod, err := getPodFromJob(ctx, cs, buildJobName)
 	require.NoError(t, err)
 	kubeassert.Eventually().PodIsRunning(buildPod.Name)
 	t.Logf("Build pod %s running after %s", buildPod.Name, time.Since(start))
@@ -677,6 +727,39 @@ func waitForBuildToStart(t *testing.T, cs *framework.ClientSet, build *mcfgv1.Ma
 	t.Logf("Build objects created after %s", time.Since(start))
 
 	return mosb
+}
+
+func waitForMOSBToBeDeleted(t *testing.T, cs *framework.ClientSet, mosb *mcfgv1.MachineOSBuild) {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*5)
+	defer cancel()
+
+	start := time.Now()
+	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx)
+
+	// Get the MOSB from the API to get the UID
+	mosb, err := cs.MachineconfigurationV1Interface.MachineOSBuilds().Get(context.Background(), mosb.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+	mosbUID := mosb.UID
+	t.Logf("Waiting for MachineOSBuild with UID %s to be deleted", mosbUID)
+
+	mosbs, err := cs.MachineconfigurationV1Interface.MachineOSBuilds().List(ctx, metav1.ListOptions{})
+	require.NoError(t, err)
+
+	mosbWithUIDFound := false
+	for _, mosb := range mosbs.Items {
+		if mosb.UID == mosbUID {
+			kubeassert.Eventually().MachineOSBuildDoesNotExist(&mosb)
+			t.Logf("MachineOSBuild with UID %s deleted after %s", mosbUID, time.Since(start))
+			mosbWithUIDFound = true
+			return
+		}
+	}
+
+	if !mosbWithUIDFound {
+		t.Logf("MachineOSBuild with UID %s not found, must have already been deleted", mosbUID)
+	}
 }
 
 // Waits for a MachineOSBuild to be deleted.
@@ -710,10 +793,30 @@ func waitForBuildToComplete(t *testing.T, cs *framework.ClientSet, startedBuild 
 	start := time.Now()
 
 	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx)
-	kubeassert.Eventually().MachineOSBuildIsSuccessful(startedBuild) //foo
+	kubeassert.Eventually().MachineOSBuildIsSuccessful(startedBuild)
 	t.Logf("MachineOSBuild %s successful after %s", startedBuild.Name, time.Since(start))
 	assertBuildObjectsAreDeleted(t, kubeassert.Eventually(), startedBuild)
 	t.Logf("Build objects deleted after %s", time.Since(start))
+
+	mosb, err := cs.MachineconfigurationV1Interface.MachineOSBuilds().Get(ctx, startedBuild.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	return mosb
+}
+
+func waitForBuildToBeInterrupted(t *testing.T, cs *framework.ClientSet, startedBuild *mcfgv1.MachineOSBuild) *mcfgv1.MachineOSBuild {
+	t.Helper()
+
+	t.Logf("Waiting for MachineOSBuild %s to be interrupted", startedBuild.Name)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*5)
+	defer cancel()
+
+	start := time.Now()
+
+	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx)
+	kubeassert.Eventually().MachineOSBuildIsInterrupted(startedBuild)
+	t.Logf("MachineOSBuild %s interrupted after %s", startedBuild.Name, time.Since(start))
 
 	mosb, err := cs.MachineconfigurationV1Interface.MachineOSBuilds().Get(ctx, startedBuild.Name, metav1.GetOptions{})
 	require.NoError(t, err)

@@ -47,6 +47,7 @@ func (c *cleanerImpl) Clean(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	mosbJobUIDAnnotation := c.mosb.GetAnnotations()[constants.JobUIDAnnotationKey]
 
 	selector, err := c.getSelectorForDeletion()
 	if err != nil {
@@ -64,7 +65,7 @@ func (c *cleanerImpl) Clean(ctx context.Context) error {
 	}
 
 	for _, configmap := range configmaps.Items {
-		if err := c.deleteConfigMap(ctx, configmap.Name, mosbName); err != nil {
+		if err := c.deleteConfigMap(ctx, configmap.Name, mosbName, mosbJobUIDAnnotation); err != nil {
 			return fmt.Errorf("could not delete ephemeral configmap %s: %w", configmap.Name, err)
 		}
 	}
@@ -78,7 +79,7 @@ func (c *cleanerImpl) Clean(ctx context.Context) error {
 	}
 
 	for _, secret := range secrets.Items {
-		if err := c.deleteSecret(ctx, secret.Name, mosbName); err != nil {
+		if err := c.deleteSecret(ctx, secret.Name, mosbName, mosbJobUIDAnnotation); err != nil {
 			return fmt.Errorf("could not delete ephemeral configmap %s: %w", secret.Name, err)
 		}
 	}
@@ -88,34 +89,60 @@ func (c *cleanerImpl) Clean(ctx context.Context) error {
 
 // Deletes a given ConfigMap and tolerates that it was not found so that if
 // this is called more than once, it will not error.
-func (c *cleanerImpl) deleteConfigMap(ctx context.Context, cmName, mosbName string) error {
-	err := c.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Delete(ctx, cmName, metav1.DeleteOptions{})
-	if err == nil {
-		klog.Infof("Deleted ephemeral ConfigMap %q for build %q", cmName, mosbName)
-		return nil
+func (c *cleanerImpl) deleteConfigMap(ctx context.Context, cmName, mosbName, mosbJobUIDAnnotation string) error {
+	cm, err := c.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(ctx, cmName, metav1.GetOptions{})
+	if err != nil {
+		return err
 	}
 
-	if k8serrors.IsNotFound(err) {
-		return nil
-	}
+	// Ensure that we delete the correct configmap for the Job we are cleaning up
+	if cm.OwnerReferences != nil {
+		for _, owner := range cm.OwnerReferences {
+			if string(owner.UID) == mosbJobUIDAnnotation {
+				err := c.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Delete(ctx, cmName, metav1.DeleteOptions{})
+				if err == nil {
+					klog.Infof("Deleted ephemeral ConfigMap %q for build %q", cmName, mosbName)
+					return nil
+				}
 
-	return err
+				if k8serrors.IsNotFound(err) {
+					return nil
+				}
+
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // Deletes a given Secret and tolerates that it was not found so that if
 // this is called more than once, it will not error.
-func (c *cleanerImpl) deleteSecret(ctx context.Context, secretName, mosbName string) error {
-	err := c.kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Delete(ctx, secretName, metav1.DeleteOptions{})
-	if err == nil {
-		klog.Infof("Deleted ephemeral secret %q for build %q", secretName, mosbName)
-		return nil
+func (c *cleanerImpl) deleteSecret(ctx context.Context, secretName, mosbName, mosbJobUIDAnnotation string) error {
+	secret, err := c.kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(ctx, secretName, metav1.GetOptions{})
+	if err != nil {
+		return err
 	}
 
-	if k8serrors.IsNotFound(err) {
-		return nil
-	}
+	// Ensure that we are deleting the correct secret for the Job we are cleaning up
+	if secret.OwnerReferences != nil {
+		for _, owner := range secret.OwnerReferences {
+			if string(owner.UID) == mosbJobUIDAnnotation {
+				err := c.kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Delete(ctx, secretName, metav1.DeleteOptions{})
+				if err == nil {
+					klog.Infof("Deleted ephemeral Secret %q for build %q", secretName, mosbName)
+					return nil
+				}
 
-	return err
+				if k8serrors.IsNotFound(err) {
+					return nil
+				}
+
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // Instantiates the selector to use for looking up ConfigMaps and Secrets to
