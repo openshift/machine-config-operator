@@ -10,6 +10,7 @@ import (
 
 	features "github.com/openshift/api/features"
 	mcfgalphav1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 
 	pkghelpers "github.com/openshift/machine-config-operator/pkg/helpers"
@@ -565,7 +566,7 @@ func TestMaxUnavailable(t *testing.T) {
 	}
 }
 
-func TestGetCandidateMachines(t *testing.T) {
+func (ctrl *Controller) TestGetCandidateMachines(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name     string
@@ -801,14 +802,14 @@ func TestGetCandidateMachines(t *testing.T) {
 			// TODO: Double check that mosb, mosc should be nil here and layered should be false
 			// NOTE: By doing this, we end up ignoring all the layered checks(only MCs diffs will be done to
 			// determine if a node is available and ready for an update). This will need to reworked.
-			got := getCandidateMachines(pool, nil, nil, test.nodes, test.progress, false)
+			got := ctrl.getCandidateMachines(pool, nil, nil, test.nodes, test.progress, false)
 			nodeNames := getNamesFromNodes(got)
 			assert.Equal(t, test.expected, nodeNames)
 
 			// TODO: Double check that mosb, mosc should be nil here and layered should be false
 			// NOTE: By doing this, we end up ignoring all the layered checks(only MCs diffs will be done to
 			// determine if a node is available and ready for an update). This will need to reworked.
-			allCandidates, capacity := getAllCandidateMachines(false, nil, nil, pool, test.nodes, test.progress)
+			allCandidates, capacity := ctrl.getAllCandidateMachines(false, nil, nil, pool, test.nodes, test.progress)
 			assert.Equal(t, test.capacity, capacity)
 			var otherCandidates []string
 			for i, node := range allCandidates {
@@ -1558,4 +1559,13 @@ func filterLastTransitionTime(obj runtime.Object) runtime.Object {
 		o.Status.Conditions[idx].LastTransitionTime = metav1.Time{}
 	}
 	return o
+}
+
+// getCandidateMachines returns the maximum subset of nodes which can be updated to the target config given availability constraints.
+func (ctrl *Controller) getCandidateMachines(pool *mcfgv1.MachineConfigPool, config *mcfgv1alpha1.MachineOSConfig, build *mcfgv1alpha1.MachineOSBuild, nodesInPool []*corev1.Node, maxUnavailable int, layered bool) []*corev1.Node {
+	nodes, capacity := ctrl.getAllCandidateMachines(layered, config, build, pool, nodesInPool, maxUnavailable)
+	if uint(len(nodes)) < capacity {
+		return nodes
+	}
+	return nodes[:capacity]
 }

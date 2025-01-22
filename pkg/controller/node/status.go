@@ -206,7 +206,7 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 		readyMachines = getReadyMachines(pool, nodes, mosc, mosb, l)
 		readyMachineCount = int32(len(readyMachines))
 
-		unavailableMachines = getUnavailableMachines(nodes, l)
+		unavailableMachines = ctrl.getUnavailableMachines(nodes, l)
 		unavailableMachineCount = int32(len(unavailableMachines))
 
 		degradedMachines = getDegradedMachines(nodes)
@@ -357,47 +357,53 @@ func isNodeManaged(node *corev1.Node) bool {
 
 // isNodeDone returns true if the current == desired and the MCD has marked done.
 func isNodeDone(node *corev1.Node, layered bool) bool {
-	klog.Infof("Checking if node %s is done: current=%s, desired=%s",
-		node.Name, node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey],
-		node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey])
-	if node.Annotations == nil {
-		return false
-	}
-	cconfig, ok := node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey]
-	if !ok || cconfig == "" {
-		return false
-	}
-	dconfig, ok := node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey]
-	if !ok || dconfig == "" {
+	// Quick debug logs
+	cconfig := node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey]
+	dconfig := node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey]
+	state := node.Annotations[daemonconsts.MachineConfigDaemonStateAnnotationKey]
+
+	klog.Infof("[isNodeDone] node=%s layered=%t cconfig=%q dconfig=%q state=%q",
+		node.Name, layered, cconfig, dconfig, state)
+
+	if cconfig == "" || dconfig == "" {
+		// If either is missing, we can’t consider the node done
+		klog.Infof("[isNodeDone] node=%s => cconfig or dconfig is empty => false", node.Name)
 		return false
 	}
 
 	if layered {
-		// The MachineConfig annotations are loaded on boot-up by the daemon which
-		// isn't currently done for the image annotations, so the comparisons here
-		// are a bit more nuanced.
-		cimage, cok := node.Annotations[daemonconsts.CurrentImageAnnotationKey]
-		dimage, dok := node.Annotations[daemonconsts.DesiredImageAnnotationKey]
+		// For layered pools, also compare currentImage & desiredImage
+		cimage := node.Annotations[daemonconsts.CurrentImageAnnotationKey]
+		dimage := node.Annotations[daemonconsts.DesiredImageAnnotationKey]
 
-		// If desired image is not set, but the pool is layered, this node can
-		// be considered ready for an update. This is the very first time node
-		// is being opted into layering.
-		if !dok {
+		// If desired image annotation doesn't exist, it can mean the node is being
+		// newly opted into layering. The MCO often treats this as “done” so that it can proceed.
+		if dimage == "" {
+			klog.Infof("[isNodeDone] node=%s => layered but no desiredImage => treat as done", node.Name)
 			return true
 		}
 
-		// If we're here, we know that a desired image annotation exists.
-		// If the current image annotation does not exist, it means that the node is
-		// not "done", as it is doing its very first update as a layered node.
-		if !cok {
+		// If current image is missing, we can’t consider it done
+		if cimage == "" {
+			klog.Infof("[isNodeDone] node=%s => layered but no currentImage => false", node.Name)
 			return false
 		}
-		// Current image annotation exists; compare with desired values to determine if the node is done
-		return cconfig == dconfig && cimage == dimage && isNodeMCDState(node, daemonconsts.MachineConfigDaemonStateDone)
 
+		// Return true if cconfig == dconfig, cimage == dimage, and state==Done
+		done := (cconfig == dconfig &&
+			cimage == dimage &&
+			isNodeMCDState(node, daemonconsts.MachineConfigDaemonStateDone))
+
+		klog.Infof("[isNodeDone] node=%s => layered done=%t", node.Name, done)
+		return done
 	}
 
-	return cconfig == dconfig && isNodeMCDState(node, daemonconsts.MachineConfigDaemonStateDone)
+	// Non-layered logic: just require current==desired && state=Done
+	done := (cconfig == dconfig &&
+		isNodeMCDState(node, daemonconsts.MachineConfigDaemonStateDone))
+
+	klog.Infof("[isNodeDone] node=%s => non-layered done=%t", node.Name, done)
+	return done
 }
 
 // isNodeDoneAt checks whether a node is fully updated to a targetConfig
@@ -493,21 +499,17 @@ func isNodeReady(node *corev1.Node) bool {
 
 // isNodeUnavailable is a helper function for getUnavailableMachines
 // See the docs of getUnavailableMachines for more info
-func isNodeUnavailable(node *corev1.Node, layered bool) bool {
+func (ctrl *Controller) isNodeUnavailable(node *corev1.Node, layered bool) bool {
 	// Unready nodes are unavailable
 	if !isNodeReady(node) {
 		klog.Infof("[isNodeUnavailable] Node %s is NOT ready => unavailable", node.Name)
 		return true
 	}
 
-	//debugging line
-	if isNodeMCDState(node, daemonconsts.MachineConfigDaemonStateWorking) {
-		klog.Infof("Node %s is unavailable: node is in MCD state=Working", node.Name)
-		return true
-	}
-
 	// If the node is working towards a new image/MC, it is not available
 	if isNodeDone(node, layered) {
+		klog.Infof("[isNodeUnavailable] Node %s is done, removing queued annotation", node.Name)
+		ctrl.removeQueuedAnnotation(node)
 		return false
 	}
 	// Now we know the node isn't ready - the current config must not
@@ -524,12 +526,15 @@ func isNodeUnavailable(node *corev1.Node, layered bool) bool {
 // node *may* go unschdedulable in the future, so we don't want to
 // potentially start another node update exceeding our maxUnavailable.
 // Somewhat the opposite of getReadyNodes().
-func getUnavailableMachines(nodes []*corev1.Node, layered bool) []*corev1.Node {
+func (ctrl *Controller) getUnavailableMachines(nodes []*corev1.Node, layered bool) []*corev1.Node {
 	var unavail []*corev1.Node
 	klog.Infof("getUnavailableMachines: checking %d nodes (layered=%t)", len(nodes), layered)
 	for _, node := range nodes {
-		if !isNodeReady(node) || isNodeMCDFailing(node) || isNodeQueuedForUpdate(node) {
+		if ctrl.isNodeUnavailable(node, layered) {
+			klog.Infof("Node %s marked as unavailable (getUnavailableMachines): layered=%v", node.Name, layered)
 			unavail = append(unavail, node)
+		} else {
+			klog.Infof("Node %s is available (getUnavailableMachines)", node.Name)
 		}
 	}
 	klog.Infof("Total unavailable nodes (getUnavailableMachines): %d", len(unavail))

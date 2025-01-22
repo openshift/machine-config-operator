@@ -407,7 +407,7 @@ func TestGetReadyMachines(t *testing.T) {
 	}
 }
 
-func TestGetUnavailableMachines(t *testing.T) {
+func (ctrl *Controller) TestGetUnavailableMachines(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name                 string
@@ -597,7 +597,7 @@ func TestGetUnavailableMachines(t *testing.T) {
 			}
 			// pool := pb.MachineConfigPool()
 
-			unavailableNodes := getUnavailableMachines(test.nodes, test.layeredPool)
+			unavailableNodes := ctrl.getUnavailableMachines(test.nodes, test.layeredPool)
 			assertExpectedNodes(t, test.unavail, unavailableNodes)
 		})
 	}
