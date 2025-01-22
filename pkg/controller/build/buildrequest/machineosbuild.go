@@ -198,6 +198,10 @@ func NewMachineOSBuild(opts MachineOSBuildOpts) (*mcfgv1.MachineOSBuild, error) 
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   mosbName,
 			Labels: utils.GetMachineOSBuildLabels(opts.MachineOSConfig, opts.MachineConfigPool),
+			// Set finalzer on MOSB to ensure all it dependents are deleted before the MOSB
+			Finalizers: []string{
+				metav1.FinalizerDeleteDependents,
+			},
 		},
 		Spec: mcfgv1.MachineOSBuildSpec{
 			RenderedImagePushSpec: mcfgv1.ImageTagFormat(taggedRef.String()),

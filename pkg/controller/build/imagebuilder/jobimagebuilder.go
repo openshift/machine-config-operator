@@ -9,6 +9,7 @@ import (
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/buildrequest"
+	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	batchv1 "k8s.io/api/batch/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -103,6 +104,20 @@ func (j *jobImageBuilder) start(ctx context.Context) (*batchv1.Job, error) {
 	if err == nil {
 		klog.Infof("Build job %q created for MachineOSBuild %q", bj.Name, mosbName)
 
+		// Set the job UID as an annotation in the MOSB
+		if j.mosb != nil {
+			annotations := j.mosb.GetAnnotations()
+			if annotations == nil {
+				annotations = make(map[string]string)
+			}
+			annotations[constants.JobUIDAnnotationKey] = string(bj.UID)
+			j.mosb.SetAnnotations(annotations)
+			// Update the MOSB with the new annotations
+			if _, err := j.mcfgclient.MachineconfigurationV1().MachineOSBuilds().Update(ctx, j.mosb, metav1.UpdateOptions{}); err != nil {
+				return nil, fmt.Errorf("could not update MachineOSBuild %s with job UID annotation: %w", mosbName, err)
+			}
+		}
+
 		// Set the owner reference of the configmaps and secrets created to be the Job
 		// Set blockOwnerDeletion and Controller to false as Job ownership doesn't work when set to true
 		oref := metav1.NewControllerRef(bj, batchv1.SchemeGroupVersion.WithKind("Job"))
@@ -191,20 +206,26 @@ func (j *jobImageBuilder) MachineOSBuildStatus(ctx context.Context) (mcfgv1.Mach
 // Gets the build job from either the provided builder (if present) or the API server.
 func (j *jobImageBuilder) getBuildJobFromBuilderOrAPI(ctx context.Context) (*batchv1.Job, error) {
 	if j.builder != nil {
-		klog.V(4).Infof("Using provided build job")
-
 		if err := j.validateBuilderType(j.builder); err != nil {
 			return nil, fmt.Errorf("could not get build job from builder: %w", err)
 		}
 
 		job := j.builder.GetObject().(*batchv1.Job)
-		return job, nil
+
+		// Ensure that the job UID matches the jobUID annotation in the MOSB so that
+		// we know that we are using the correct job to set the status of the MOSB
+		if j.mosb != nil {
+			if string(job.UID) == j.mosb.GetAnnotations()[constants.JobUIDAnnotationKey] {
+				klog.V(4).Infof("Using provided build job")
+				return job, nil
+			}
+		}
 	}
 
 	klog.V(4).Infof("Using build job from API")
 	job, err := j.getBuildJobStrict(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("could not get build pod from API: %w", err)
+		return nil, fmt.Errorf("could not get build job from API: %w", err)
 	}
 
 	return job, nil
