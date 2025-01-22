@@ -571,6 +571,41 @@ func getPodFromJob(ctx context.Context, cs *framework.ClientSet, jobName string)
 	return nil, fmt.Errorf("no pod found for job %s", jobName)
 }
 
+// getJobForMOSB returns the name of the job that was created for the given MOSB by comparing the job UID
+// to the UID stored in the MOSB annotation
+func getJobForMOSB(ctx context.Context, cs *framework.ClientSet, build *mcfgv1.MachineOSBuild) (string, error) {
+	jobName := ""
+	mosbJobUID := ""
+
+	for mosbJobUID == "" {
+		mosb, err := cs.MachineconfigurationV1Interface.MachineOSBuilds().Get(ctx, build.Name, metav1.GetOptions{})
+		if err != nil {
+			return jobName, fmt.Errorf("could not get MachineOSBuild %s: %w", build.Name, err)
+		}
+		if mosb.GetAnnotations()[constants.JobUIDAnnotationKey] != "" {
+			mosbJobUID = mosb.GetAnnotations()[constants.JobUIDAnnotationKey]
+			break
+		}
+		time.Sleep(1 * time.Second)
+	}
+
+	for jobName == "" {
+		jobs, err := cs.BatchV1Interface.Jobs(ctrlcommon.MCONamespace).List(ctx, metav1.ListOptions{})
+		if err != nil {
+			return jobName, fmt.Errorf("could not get list of jobs: %w", err)
+		}
+		for _, job := range jobs.Items {
+			fmt.Printf("Job name: %s, Job UID: %s, MOSB UID: %s", job.Name, string(job.UID), mosbJobUID)
+			if string(job.UID) == mosbJobUID {
+				jobName = job.Name
+				break
+			}
+		}
+		time.Sleep(1 * time.Second)
+	}
+	return jobName, nil
+}
+
 // Attaches a follower to each of the containers within a given pod in order to
 // stream their logs to disk for future debugging.
 func streamPodContainerLogsToFile(ctx context.Context, t *testing.T, cs *framework.ClientSet, pod *corev1.Pod, dirPath string) error {
