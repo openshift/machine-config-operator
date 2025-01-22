@@ -19,6 +19,7 @@ const (
 	MachineOSConfigNameAnnotationKey = "machineconfiguration.openshift.io/machine-os-config"
 	MachineOSConfigNameLabelKey      = MachineOSConfigNameAnnotationKey
 	MachineOSBuildNameLabelKey       = MachineOSBuildNameAnnotationKey
+	JobUIDAnnotationKey              = "machineconfiguration.openshift.io/job-uid"
 )
 
 // The MachineOSConfig will get updated with this annotation once a
