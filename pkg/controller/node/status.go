@@ -482,6 +482,28 @@ func isNodeReady(node *corev1.Node) bool {
 	return checkNodeReady(node) == nil
 }
 
+func isNodeQueued(node *corev1.Node) bool {
+	queued := node.Annotations[daemonconsts.UpdateQueuedAnnotation] == daemonconsts.UpdateQueuedAnnotationValue
+	klog.Infof("isNodeQueued: Node %s queued=%t", node.Name, queued)
+	return queued
+}
+
+func setNodeQueued(node *corev1.Node) {
+	if node.Annotations == nil {
+		node.Annotations = map[string]string{}
+	}
+	klog.Infof("setNodeQueued: Setting node %s as queued", node.Name)
+	node.Annotations[daemonconsts.UpdateQueuedAnnotation] = daemonconsts.UpdateQueuedAnnotationValue
+}
+
+func unsetNodeQueued(node *corev1.Node) {
+	if node.Annotations == nil {
+		return
+	}
+	klog.Infof("unsetNodeQueued: Removing queued annotation from node %s", node.Name)
+	delete(node.Annotations, daemonconsts.UpdateQueuedAnnotation)
+}
+
 // isNodeUnavailable is a helper function for getUnavailableMachines
 // See the docs of getUnavailableMachines for more info
 func isNodeUnavailable(node *corev1.Node, layered bool) bool {
@@ -508,19 +530,30 @@ func isNodeUnavailable(node *corev1.Node, layered bool) bool {
 // potentially start another node update exceeding our maxUnavailable.
 // Somewhat the opposite of getReadyNodes().
 func getUnavailableMachines(nodes []*corev1.Node, pool *mcfgv1.MachineConfigPool, layered bool, mosb *mcfgv1alpha1.MachineOSBuild) []*corev1.Node {
+	klog.Infof("getUnavailableMachines: Checking %d nodes for availability in pool %s", len(nodes), pool.Name)
 	var unavail []*corev1.Node
 	for _, node := range nodes {
+		if isNodeQueued(node) {
+			klog.Infof("getUnavailableMachines: Node %s is queued, counting as unavailable", node.Name)
+			unavail = append(unavail, node)
+			continue
+		}
+
+		// If there's a MOSB (layered scenario), handle that logic:
 		if mosb != nil {
 			mosbState := ctrlcommon.NewMachineOSBuildState(mosb)
-			// if node is unavail, desiredConfigs match, and the build is a success, then we are unavail.
-			// not sure on this one honestly
-			if layered && isNodeUnavailable(node, layered) && mosb.Spec.DesiredConfig.Name == pool.Spec.Configuration.Name && mosbState.IsBuildSuccess() {
+			if layered && isNodeUnavailable(node, layered) &&
+				mosb.Spec.DesiredConfig.Name == pool.Spec.Configuration.Name &&
+				mosbState.IsBuildSuccess() {
+				klog.Infof("getUnavailableMachines: Node %s is unavailable (layered + MOSB conditions).", node.Name)
 				unavail = append(unavail, node)
 			}
 		} else if isNodeUnavailable(node, layered) {
+			klog.Infof("getUnavailableMachines: Node %s is unavailable (traditional MCO logic).", node.Name)
 			unavail = append(unavail, node)
 		}
 	}
+	klog.Infof("getUnavailableMachines: Found %d unavailable nodes in pool %s", len(unavail), pool.Name)
 	return unavail
 }
 
