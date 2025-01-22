@@ -308,6 +308,8 @@ func cleanupEphemeralBuildObjects(t *testing.T, cs *framework.ClientSet) {
 	moscList, err := cs.MachineconfigurationV1Interface.MachineOSConfigs().List(context.TODO(), metav1.ListOptions{})
 	require.NoError(t, err)
 
+	kubeassert := helpers.AssertClientSet(t, cs).WithContext(context.TODO())
+
 	if len(secretList.Items) == 0 {
 		t.Logf("No build-time secrets to clean up")
 	}
@@ -335,34 +337,56 @@ func cleanupEphemeralBuildObjects(t *testing.T, cs *framework.ClientSet) {
 	for _, item := range secretList.Items {
 		t.Logf("Cleaning up build-time Secret %s", item.Name)
 		require.NoError(t, deleteObject(context.TODO(), t, &item, cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace)))
+		kubeassert.SecretDoesNotExist(item.Name)
 	}
 
 	for _, item := range cmList.Items {
 		t.Logf("Cleaning up ephemeral ConfigMap %q", item.Name)
 		require.NoError(t, deleteObject(context.TODO(), t, &item, cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace)))
+		kubeassert.ConfigMapDoesNotExist(item.Name)
 	}
 
 	for _, item := range jobList.Items {
+		jobUID := string(item.UID)
 		t.Logf("Cleaning up build job %q", item.Name)
 		bgDeletion := metav1.DeletePropagationBackground
 		require.NoError(t, deleteObjectWithOpts(context.TODO(), t, &item, cs.BatchV1Interface.Jobs(ctrlcommon.MCONamespace), metav1.DeleteOptions{
 			PropagationPolicy: &bgDeletion,
 		}))
+		kubeassert.JobDoesNotExist(item.Name)
+
+		// Delete any pods that were created by the job
+		pods, err := cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace).List(context.TODO(), metav1.ListOptions{
+			LabelSelector: "controller-uid=" + jobUID,
+		})
+		require.NoError(t, err)
+		for _, pod := range pods.Items {
+			require.NoError(t, deleteObject(context.TODO(), t, &pod, cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace)))
+			kubeassert.PodDoesNotExist(pod.Name)
+		}
 	}
 
 	for _, item := range podList.Items {
 		t.Logf("Cleaning up build pod %q", item.Name)
 		require.NoError(t, deleteObject(context.TODO(), t, &item, cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace)))
+		kubeassert.PodDoesNotExist(item.Name)
 	}
 
 	for _, item := range moscList.Items {
 		t.Logf("Cleaning up MachineOSConfig %q", item.Name)
 		require.NoError(t, deleteObject(context.TODO(), t, &item, cs.MachineconfigurationV1Interface.MachineOSConfigs()))
+		kubeassert.MachineOSConfigDoesNotExist(&item)
 	}
 
 	for _, item := range mosbList.Items {
 		t.Logf("Cleaning up MachineOSBuild %q", item.Name)
 		require.NoError(t, deleteObject(context.TODO(), t, &item, cs.MachineconfigurationV1Interface.MachineOSBuilds()))
+		kubeassert.MachineOSBuildDoesNotExist(&item)
+
+		// Also clean up the digest ConfigMap
+		t.Logf("Cleaning up ephemeral digest ConfigMap %q", utils.GetDigestConfigMapName(&item))
+		require.NoError(t, cleanupDigestConfigMap(t, cs, &item))
+		kubeassert.ConfigMapDoesNotExist(utils.GetDigestConfigMapName(&item))
 	}
 }
 
@@ -397,6 +421,18 @@ func deleteObjectWithOpts(ctx context.Context, t *testing.T, obj kubeObject, del
 		return nil
 	}
 
+	return err
+}
+
+func cleanupDigestConfigMap(t *testing.T, cs *framework.ClientSet, mosb *mcfgv1.MachineOSBuild) error {
+	cm, err := cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), utils.GetDigestConfigMapName(mosb), metav1.GetOptions{})
+	if err == nil {
+		return deleteObject(context.TODO(), t, cm, cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace))
+	}
+	if k8serrors.IsNotFound(err) {
+		t.Logf("%s already cleaned up", utils.GetDigestConfigMapName(mosb))
+		return nil
+	}
 	return err
 }
 
@@ -550,7 +586,7 @@ func getPodFromJob(ctx context.Context, cs *framework.ClientSet, jobName string)
 		return nil, fmt.Errorf("could not get job %s: %w", job, err)
 	}
 
-	podList, err := cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace).List(ctx, metav1.ListOptions{LabelSelector: fmt.Sprintf("job-name=%s", jobName)})
+	podList, err := cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace).List(ctx, metav1.ListOptions{LabelSelector: fmt.Sprintf("controller-uid=%s", job.UID)})
 	if err != nil {
 		return nil, fmt.Errorf("could not get pods with job label %s: %w", jobName, err)
 	}
@@ -569,6 +605,41 @@ func getPodFromJob(ctx context.Context, cs *framework.ClientSet, jobName string)
 		}
 	}
 	return nil, fmt.Errorf("no pod found for job %s", jobName)
+}
+
+// getJobForMOSB returns the name of the job that was created for the given MOSB by comparing the job UID
+// to the UID stored in the MOSB annotation
+func getJobForMOSB(ctx context.Context, cs *framework.ClientSet, build *mcfgv1.MachineOSBuild) (string, error) {
+	jobName := ""
+	mosbJobUID := ""
+
+	for mosbJobUID == "" {
+		mosb, err := cs.MachineconfigurationV1Interface.MachineOSBuilds().Get(ctx, build.Name, metav1.GetOptions{})
+		if err != nil {
+			return jobName, fmt.Errorf("could not get MachineOSBuild %s: %w", build.Name, err)
+		}
+		if mosb.GetAnnotations()[constants.JobUIDAnnotationKey] != "" {
+			mosbJobUID = mosb.GetAnnotations()[constants.JobUIDAnnotationKey]
+			break
+		}
+		time.Sleep(1 * time.Second)
+	}
+
+	for jobName == "" {
+		jobs, err := cs.BatchV1Interface.Jobs(ctrlcommon.MCONamespace).List(ctx, metav1.ListOptions{})
+		if err != nil {
+			return jobName, fmt.Errorf("could not get list of jobs: %w", err)
+		}
+		for _, job := range jobs.Items {
+			fmt.Printf("Job name: %s, Job UID: %s, MOSB UID: %s", job.Name, string(job.UID), mosbJobUID)
+			if string(job.UID) == mosbJobUID {
+				jobName = job.Name
+				break
+			}
+		}
+		time.Sleep(1 * time.Second)
+	}
+	return jobName, nil
 }
 
 // Attaches a follower to each of the containers within a given pod in order to

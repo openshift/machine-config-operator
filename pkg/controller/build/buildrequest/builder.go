@@ -83,3 +83,12 @@ func (b *builder) MachineConfigPool() (string, error) {
 func (b *builder) RenderedMachineConfig() (string, error) {
 	return utils.GetRequiredLabelValueFromObject(b, constants.RenderedMachineConfigLabelKey)
 }
+
+// Gets the UID of the Builder object.
+func (b *builder) BuilderUID() (string, error) {
+	uid := string(b.GetUID())
+	if uid == "" {
+		return uid, fmt.Errorf("object %s has no UID", b.GetName())
+	}
+	return uid, nil
+}

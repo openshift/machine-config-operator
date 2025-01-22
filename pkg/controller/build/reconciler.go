@@ -103,7 +103,7 @@ func (b *buildReconciler) updateMachineOSConfig(ctx context.Context, old, cur *m
 	// Whenever the MachineOSConfig spec has changed, create a new MachineOSBuild.
 	if !equality.Semantic.DeepEqual(old.Spec, cur.Spec) {
 		klog.Infof("Detected MachineOSConfig change for %s", cur.Name)
-		return b.createNewMachineOSBuildOrReuseExisting(ctx, cur)
+		return b.createNewMachineOSBuildOrReuseExisting(ctx, cur, false)
 	}
 
 	return b.syncMachineOSConfigs(ctx)
@@ -131,7 +131,7 @@ func (b *buildReconciler) rebuildMachineOSConfig(ctx context.Context, mosc *mcfg
 		return fmt.Errorf("could not delete MachineOSBuild %q for MachineOSConfig %q: %w", mosb.Name, mosc.Name, err)
 	}
 
-	if err := b.createNewMachineOSBuildOrReuseExisting(ctx, mosc); err != nil {
+	if err := b.createNewMachineOSBuildOrReuseExisting(ctx, mosc, true); err != nil {
 		return fmt.Errorf("could not create new MachineOSBuild for MachineOSConfig %q: %w", mosc.Name, err)
 	}
 
@@ -434,15 +434,49 @@ func (b *buildReconciler) createNewMachineOSBuildOrReuseExistingForPoolChange(ct
 		return err
 	}
 
-	if err := b.createNewMachineOSBuildOrReuseExisting(ctx, mosc.DeepCopy()); err != nil {
+	if err := b.createNewMachineOSBuildOrReuseExisting(ctx, mosc.DeepCopy(), false); err != nil {
 		return fmt.Errorf("could not create MachineOSBuild for MachineConfigPool %q change: %w", mcp.Name, err)
 	}
 
 	return nil
 }
 
+// Executes whenever a MachineOSConfig has the rebuild annotation and a new MachineOSBuild needs to be created.
+func (b *buildReconciler) createNewMachineOSBuildForRebuild(ctx context.Context, mosb *mcfgv1.MachineOSBuild, moscName string) error {
+	// Verify that the MOSB is actually deleted before we try to create a new one
+	// The deletion process may take some time and if we try to create a new MOSB with the same name, a clash may happen
+	childCtx, cancel := context.WithTimeout(ctx, time.Second*90)
+	defer cancel()
+	for {
+		_, err := b.mcfgclient.MachineconfigurationV1().MachineOSBuilds().Get(childCtx, mosb.Name, metav1.GetOptions{})
+		if err != nil && !k8serrors.IsNotFound(err) {
+			return fmt.Errorf("could not check if MachineOSBuild %s exists: %w", mosb.Name, err)
+		}
+		if k8serrors.IsNotFound(err) {
+			break
+		}
+		time.Sleep(1 * time.Second)
+	}
+
+	// Delete the digest configmap if it exists
+	// This is created by the wait-for-done container once the image has been built and pushed
+	// and stays around when the build is successful
+	err := b.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Delete(ctx, utils.GetDigestConfigMapName(mosb), metav1.DeleteOptions{})
+	if err != nil && !k8serrors.IsNotFound(err) {
+		return fmt.Errorf("could not delete digest configmap for MachineOSBuild %s: %w", mosb.Name, err)
+	}
+
+	// Now create the new MOSB
+	_, err = b.mcfgclient.MachineconfigurationV1().MachineOSBuilds().Create(ctx, mosb, metav1.CreateOptions{})
+	if err != nil {
+		return fmt.Errorf("could not create new MachineOSBuild from rebuild annotation for MachineOSConfig %q: %w", moscName, err)
+	}
+	klog.Infof("New MachineOSBuild created: %s", mosb.Name)
+	return nil
+}
+
 // Executes whenever a new MachineOSBuild is created.
-func (b *buildReconciler) createNewMachineOSBuildOrReuseExisting(ctx context.Context, mosc *mcfgv1.MachineOSConfig) error {
+func (b *buildReconciler) createNewMachineOSBuildOrReuseExisting(ctx context.Context, mosc *mcfgv1.MachineOSConfig, isRebuild bool) error {
 	mcp, err := b.machineConfigPoolLister.Get(mosc.Spec.MachineConfigPool.Name)
 	if err != nil {
 		return fmt.Errorf("could not get MachineConfigPool %s for MachineOSConfig %s: %w", mosc.Spec.MachineConfigPool.Name, mosc.Name, err)
@@ -480,6 +514,11 @@ func (b *buildReconciler) createNewMachineOSBuildOrReuseExisting(ctx context.Con
 		return fmt.Errorf("could not get MachineOSBuild: %w", err)
 	}
 
+	// If this is a rebuild based on the rebuild annotation, then we definitely need to create the MOSB again
+	if isRebuild {
+		return b.createNewMachineOSBuildForRebuild(ctx, mosb, mosc.Name)
+	}
+
 	// If err is nil, it means a MachineOSBuild with this name already exists.
 	// What likely happened is that a config change was rolled back to the
 	// previous state. Rather than performing another build, we should get the
@@ -489,7 +528,6 @@ func (b *buildReconciler) createNewMachineOSBuildOrReuseExisting(ctx context.Con
 		if err := b.reuseExistingMachineOSBuildIfPossible(ctx, mosc, existingMosb); err != nil {
 			return fmt.Errorf("could not reuse existing MachineOSBuild %q for MachineOSConfig %q: %w", existingMosb.Name, mosc.Name, err)
 		}
-
 		return nil
 	}
 
@@ -500,10 +538,7 @@ func (b *buildReconciler) createNewMachineOSBuildOrReuseExisting(ctx context.Con
 		if err != nil {
 			return fmt.Errorf("could not create new MachineOSBuild %q: %w", mosb.Name, err)
 		}
-
-		if err == nil {
-			klog.Infof("New MachineOSBuild created: %s", mosb.Name)
-		}
+		klog.Infof("New MachineOSBuild created: %s", mosb.Name)
 	}
 
 	return nil
@@ -995,7 +1030,7 @@ func (b *buildReconciler) syncMachineOSConfig(ctx context.Context, mosc *mcfgv1.
 		}
 
 		klog.Infof("No matching MachineOSBuild found for MachineOSConfig %q, will create one", mosc.Name)
-		if err := b.createNewMachineOSBuildOrReuseExisting(ctx, mosc); err != nil {
+		if err := b.createNewMachineOSBuildOrReuseExisting(ctx, mosc, false); err != nil {
 			return fmt.Errorf("could not create new or reuse existing MachineOSBuild for MachineOSConfig %q: %w", mosc.Name, err)
 		}
 
