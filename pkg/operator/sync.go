@@ -1682,7 +1682,7 @@ func (optr *Operator) syncRequiredMachineConfigPools(config *renderConfig, co *c
 
 			degraded := isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolDegraded)
 			if degraded {
-				lastErr = fmt.Errorf("error MachineConfigPool %s is not ready, retrying. Status: (pool degraded: %v total: %d, ready %d, updated: %d, unavailable: %d)", pool.Name, degraded, pool.Status.MachineCount, pool.Status.ReadyMachineCount, pool.Status.UpdatedMachineCount, pool.Status.UnavailableMachineCount)
+				lastErr = fmt.Errorf("error MachineConfigPool %s is not ready, retrying. Status: (pool degraded: %v total: %d, ready %d, updated: %d, unavailable: %d, reason: %s)", pool.Name, degraded, pool.Status.MachineCount, pool.Status.ReadyMachineCount, pool.Status.UpdatedMachineCount, pool.Status.UnavailableMachineCount, getPoolStatusConditionMessage(pool, mcfgv1.MachineConfigPoolDegraded))
 				klog.Errorf("Error syncing Required MachineConfigPools: %q", lastErr)
 				newCO := co.DeepCopy()
 				syncerr := optr.syncUpgradeableStatus(newCO)
@@ -2092,6 +2092,15 @@ func isPoolStatusConditionTrue(pool *mcfgv1.MachineConfigPool, conditionType mcf
 		}
 	}
 	return false
+}
+
+func getPoolStatusConditionMessage(pool *mcfgv1.MachineConfigPool, conditionType mcfgv1.MachineConfigPoolConditionType) string {
+	for _, condition := range pool.Status.Conditions {
+		if condition.Type == conditionType {
+			return condition.Message
+		}
+	}
+	return ""
 }
 
 // getImageRegistryPullSecrets fetches the image registry's pull secrets and merges them with the
