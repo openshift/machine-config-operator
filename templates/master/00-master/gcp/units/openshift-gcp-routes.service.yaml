@@ -1,5 +1,5 @@
 name: openshift-gcp-routes.service
-enabled: true
+enabled: {{if and (eq .Infra.Status.PlatformStatus.Type "GCP") (.Infra.Status.PlatformStatus.GCP) (.Infra.Status.PlatformStatus.GCP.CloudLoadBalancerConfig) (eq .Infra.Status.PlatformStatus.GCP.CloudLoadBalancerConfig.DNSType "ClusterHosted") }}false{{else}}true{{end}}
 contents: |
   [Unit]
   Description=Update GCP routes for forwarded IPs.
