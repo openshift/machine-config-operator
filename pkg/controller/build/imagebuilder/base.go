@@ -300,7 +300,7 @@ func (b *baseImageBuilder) getMachineOSBuildStatus(ctx context.Context, obj kube
 
 	out.Conditions = conditions
 	out.BuilderReference = &mcfgv1alpha1.MachineOSBuilderReference{
-		ImageBuilderType: mcfgv1alpha1.PodBuilder,
+		ImageBuilderType: b.mosc.Spec.BuildInputs.ImageBuilder.ImageBuilderType,
 		// TODO: Should we clear this whenever the build is complete?
 		PodImageBuilder: &mcfgv1alpha1.ObjectReference{
 			Name:      obj.GetName(),
@@ -384,7 +384,7 @@ func (b *baseImageBuilder) getMachineOSConfigName() (string, error) {
 // directly from the Builder object.
 func (b *baseImageBuilder) getBuilderName() string {
 	if b.mosb != nil {
-		return utils.GetBuildJobName(b.mosb)
+		return utils.GetBuildName(b.mosb)
 	}
 
 	return b.builder.GetObject().GetName()
@@ -401,6 +401,5 @@ func (b *baseImageBuilder) prepareForBuild(ctx context.Context) (buildrequest.Bu
 	}
 
 	b.buildrequest = br
-
-	return br.Builder(), nil
+	return br.Builder(b.kubeclient)
 }

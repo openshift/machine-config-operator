@@ -140,9 +140,10 @@ spec:
                         default: PodImageBuilder
                         description: |-
                           imageBuilderType specifies the backend to be used to build the image.
-                          Valid options are: PodImageBuilder
+                          Valid options are: PodImageBuilder and PipelineImageBuilder
                         enum:
                         - PodImageBuilder
+                        - PipelineImageBuilder
                         type: string
                     required:
                     - imageBuilderType
