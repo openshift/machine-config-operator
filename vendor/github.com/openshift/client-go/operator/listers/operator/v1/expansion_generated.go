@@ -70,6 +70,10 @@ type MachineConfigurationListerExpansion interface{}
 // NetworkLister.
 type NetworkListerExpansion interface{}
 
+// OLMListerExpansion allows custom methods to be added to
+// OLMLister.
+type OLMListerExpansion interface{}
+
 // OpenShiftAPIServerListerExpansion allows custom methods to be added to
 // OpenShiftAPIServerLister.
 type OpenShiftAPIServerListerExpansion interface{}
