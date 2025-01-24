@@ -441,8 +441,9 @@ func (optr *Operator) cfeEvalFailSwapOn() (bool, error) {
 	}
 	for _, kubeletConfig := range kubeletConfigs {
 		if kubeletConfig.Spec.KubeletConfig == nil || kubeletConfig.Spec.KubeletConfig.Raw == nil {
-			continue
+			return false, fmt.Errorf("DropInConfig cannot be nil")
 		}
+
 		decodedKC, err := kcc.DecodeKubeletConfig(kubeletConfig.Spec.KubeletConfig.Raw)
 		if err != nil {
 			klog.V(2).Infof("could not decode KubeletConfig: %v", err)
@@ -451,6 +452,7 @@ func (optr *Operator) cfeEvalFailSwapOn() (bool, error) {
 		if decodedKC.FailSwapOn != nil && !*decodedKC.FailSwapOn {
 			return true, nil
 		}
+
 	}
 	return false, nil
 }

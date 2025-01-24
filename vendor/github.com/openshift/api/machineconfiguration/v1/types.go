@@ -709,6 +709,7 @@ type KubeletConfigSpec struct {
 	// A nil selector will result in no pools being selected.
 	// +optional
 	MachineConfigPoolSelector *metav1.LabelSelector `json:"machineConfigPoolSelector,omitempty"`
+
 	// kubeletConfig fields are defined in kubernetes upstream. Please refer to the types defined in the version/commit used by
 	// OpenShift of the upstream kubernetes. It's important to note that, since the fields of the kubelet configuration are directly fetched from
 	// upstream the validation of those values is handled directly by the kubelet. Please refer to the upstream version of the relevant kubernetes
@@ -721,6 +722,27 @@ type KubeletConfigSpec struct {
 	// the maximum available minTLSVersion is VersionTLS12.
 	// +optional
 	TLSSecurityProfile *configv1.TLSSecurityProfile `json:"tlsSecurityProfile,omitempty"`
+
+	// dropInConfig allows users to define a drop-in configuration for Kubelet.
+	// +optional
+	DropInConfig *KubeletDropInDirConfigDetails `json:"dropInConfig,omitempty"`
+}
+
+// KubeletDropInDirConfigDetails defines the details for Kubelet drop-in configuration.
+type KubeletDropInDirConfigDetails struct {
+	// ConfigDirectory allows users to define a directory for Kubelet's drop-in configuration.
+	// This enables incremental configuration updates without modifying the main KubeletConfig.
+	// +required
+	ConfigDirectory string `json:"configDirectory"`
+
+	// ConfigFile defines a specific configuration file within the drop-in directory.
+	// +required
+	ConfigFile string `json:"configFile"`
+
+	// KubeletConfig fields are defined in Kubernetes upstream. This must be set if DropInConfigDirectory
+	// and DropInConfigFile are provided.
+	// +required
+	KubeletConfig runtime.RawExtension `json:"kubeletConfig"`
 }
 
 // KubeletConfigStatus defines the observed state of a KubeletConfig

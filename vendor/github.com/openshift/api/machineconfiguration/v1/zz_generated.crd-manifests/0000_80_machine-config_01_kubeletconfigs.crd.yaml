@@ -48,6 +48,30 @@ spec:
             properties:
               autoSizingReserved:
                 type: boolean
+              dropInConfig:
+                description: dropInConfig allows users to define a drop-in configuration
+                  for Kubelet.
+                properties:
+                  configDirectory:
+                    description: |-
+                      ConfigDirectory allows users to define a directory for Kubelet's drop-in configuration.
+                      This enables incremental configuration updates without modifying the main KubeletConfig.
+                    type: string
+                  configFile:
+                    description: ConfigFile defines a specific configuration file
+                      within the drop-in directory.
+                    type: string
+                  kubeletConfig:
+                    description: |-
+                      KubeletConfig fields are defined in Kubernetes upstream. This must be set if DropInConfigDirectory
+                      and DropInConfigFile are provided.
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                required:
+                - configDirectory
+                - configFile
+                - kubeletConfig
+                type: object
               kubeletConfig:
                 description: |-
                   kubeletConfig fields are defined in kubernetes upstream. Please refer to the types defined in the version/commit used by

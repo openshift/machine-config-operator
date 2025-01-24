@@ -608,7 +608,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			// Let's just pause for a bit here to let the renderer
 			// initialize them.
 			time.Sleep(updateDelay)
-			return fmt.Errorf("Pool %s is unconfigured, pausing %v for renderer to initialize", pool.Name, updateDelay)
+			return fmt.Errorf("pool %s is unconfigured, pausing %v for renderer to initialize", pool.Name, updateDelay)
 		}
 		role := pool.Name
 		// Get MachineConfig
@@ -645,7 +645,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			originalKubeConfig.TLSCipherSuites = observedCipherSuites
 		}
 
-		kubeletIgnition, logLevelIgnition, autoSizingReservedIgnition, err := generateKubeletIgnFiles(cfg, originalKubeConfig)
+		kubeletIgnition, logLevelIgnition, autoSizingReservedIgnition, dropInDirConfigIgnition, err := generateKubeletIgnFiles(cfg, originalKubeConfig)
 		if err != nil {
 			return ctrl.syncStatusOnly(cfg, err)
 		}
@@ -687,6 +687,9 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		}
 		if kubeletIgnition != nil {
 			tempIgnConfig.Storage.Files = append(tempIgnConfig.Storage.Files, *kubeletIgnition)
+		}
+		if dropInDirConfigIgnition != nil {
+			tempIgnConfig.Storage.Files = append(tempIgnConfig.Storage.Files, *dropInDirConfigIgnition)
 		}
 
 		rawIgn, err := json.Marshal(tempIgnConfig)
