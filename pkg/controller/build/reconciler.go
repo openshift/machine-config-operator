@@ -125,7 +125,7 @@ func (b *buildReconciler) updateMachineOSConfig(ctx context.Context, old, cur *m
 			// Check and install pipeline
 			err := checkAndInstallPipeline(ctx, b.kubeclient, b.pipelineoperatorclient, b.olmclient, b.tektonclient)
 			if err != nil {
-				return fmt.Errorf("error checking pipeline exists and installing")
+				return fmt.Errorf("error checking pipeline exists and installing: %v", err)
 			}
 		}
 
@@ -145,20 +145,22 @@ func checkAndInstallPipeline(ctx context.Context, kubeclient clientset.Interface
 	
 	// Ensure "openshift-pipelines" Namespace exists
 	_, err := kubeclient.CoreV1().Namespaces().Get(ctx, tektonNamespace, metav1.GetOptions{})
-	if err != nil && k8serrors.IsNotFound(err) {
-		namespaceDNE = true
-	}
 	if err != nil {
-		return err
+		if k8serrors.IsNotFound(err) {
+			namespaceDNE = true
+		} else {
+			return fmt.Errorf("openshift-pipelines namespace get error %v", err)
+		}
 	}
 
 	// Ensure TektonConfig exists
 	_, err = pipelineoperatorclient.OperatorV1alpha1().TektonConfigs().Get(ctx, tektonConfigName, metav1.GetOptions{})
-	if err != nil && k8serrors.IsNotFound(err) {
-		tektonconfigDNE = true
-	}
 	if err != nil {
-		return err
+		if k8serrors.IsNotFound(err) {
+			tektonconfigDNE = true
+		} else {
+			return err
+		}
 	}
 	if namespaceDNE || tektonconfigDNE {
 		// Define the Subscription resource
@@ -200,11 +202,12 @@ func checkAndInstallPipeline(ctx context.Context, kubeclient clientset.Interface
 
 	// Ensure Buildah Pipeline exists
 	_, err = tektonclient.TektonV1().Pipelines(ctrlcommon.MCONamespace).Get(context.Background(), tektonPipelineName, metav1.GetOptions{})
-	if err != nil && k8serrors.IsNotFound(err) {
-		tektonPipelineDNE = true
-	}
-	if err != nil {
-		return fmt.Errorf("Error getting Pipeline: %v", err)
+	if err != nil { 
+		if k8serrors.IsNotFound(err) {
+			tektonPipelineDNE = true
+		} else {
+			return fmt.Errorf("Error getting Pipeline: %v", err)
+		}
 	}
 
 	if tektonPipelineDNE {
@@ -343,7 +346,7 @@ func (b *buildReconciler) addMachineOSConfig(ctx context.Context, mosc *mcfgv1al
 		// Check and install pipeline
 		err := checkAndInstallPipeline(ctx, b.kubeclient, b.pipelineoperatorclient, b.olmclient, b.tektonclient)
 		if err != nil {
-			return fmt.Errorf("error checking pipeline exists and installing")
+			return fmt.Errorf("error checking pipeline exists and installing: %v", err)
 		}
 	}
 	return b.syncMachineOSConfig(ctx, mosc)
