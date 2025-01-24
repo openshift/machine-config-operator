@@ -73,6 +73,26 @@ var schemaYAML = typed.YAMLObject(`types:
     elementType:
       namedType: __untyped_deduced_
     elementRelationship: separable
+- name: com.github.openshift.api.machineconfiguration.v1.MachineOSBuild
+  scalar: untyped
+  list:
+    elementType:
+      namedType: __untyped_atomic_
+    elementRelationship: atomic
+  map:
+    elementType:
+      namedType: __untyped_deduced_
+    elementRelationship: separable
+- name: com.github.openshift.api.machineconfiguration.v1.MachineOSConfig
+  scalar: untyped
+  list:
+    elementType:
+      namedType: __untyped_atomic_
+    elementRelationship: atomic
+  map:
+    elementType:
+      namedType: __untyped_deduced_
+    elementRelationship: separable
 - name: com.github.openshift.api.machineconfiguration.v1alpha1.BuildInputs
   map:
     fields:

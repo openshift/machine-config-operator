@@ -83,7 +83,7 @@ func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
 	return err
 }
 
-//nolint:gocyclo
+//nolint:gocyclo,gosec
 func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfgalphav1.MachineConfigNode, cconfig *mcfgv1.ControllerConfig, pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node, mosc *mcfgalphav1.MachineOSConfig, mosb *mcfgv1alpha1.MachineOSBuild) mcfgv1.MachineConfigPoolStatus {
 	certExpirys := []mcfgv1.CertExpiry{}
 	if cconfig != nil {

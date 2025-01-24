@@ -44,15 +44,11 @@ PULL_BASE_SHA ?= master
 
 .PHONY: lint
 lint:
-	hack/golangci-lint.sh run --new-from-rev=${PULL_BASE_SHA}
+	hack/golangci-lint.sh run --new-from-rev=${PULL_BASE_SHA} ${EXTRA_ARGS}
 
-# While https://github.com/golangci/golangci-lint/issues/1779 is not fixed,
-# we need to run the fix separately from the lint command.
-# GolangCI-Lint will not actually run the fixer for us.
-# In the future we can remove this and have the linter auto-fix.
 .PHONY: lint-fix
-lint-fix:
-	hack/lint-fix.sh
+lint-fix: EXTRA_ARGS=--fix
+lint-fix: lint
 
 # Ignore the exit code of the fix lint, it will always error as there are unfixed issues
 # that cannot be fixed from historic commits.
