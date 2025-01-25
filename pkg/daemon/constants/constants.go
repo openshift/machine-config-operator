@@ -27,6 +27,11 @@ const (
 	DrainerStateDrain = "drain"
 	// DrainerStateUncordon is used for drainer annotation as a value to indicate needing an uncordon
 	DrainerStateUncordon = "uncordon"
+	// UpdateQueuedAnnotation is used to indicate that an update is queued for the machine
+	UpdateQueuedAnnotation = "machineconfiguration.openshift.io/update-queued"
+	// updateQueuedAnnotationValue is used to indicate that an update is queued for the machine
+	UpdateQueuedAnnotationValue = "true"
+
 	// ClusterControlPlaneTopologyAnnotationKey is set by the node controller by reading value from
 	// controllerConfig. MCD uses the annotation value to decide drain action on the node.
 	ClusterControlPlaneTopologyAnnotationKey = "machineconfiguration.openshift.io/controlPlaneTopology"
