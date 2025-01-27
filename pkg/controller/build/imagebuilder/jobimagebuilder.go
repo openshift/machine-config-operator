@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/buildrequest"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -22,7 +22,7 @@ type jobImageBuilder struct {
 	cleaner Cleaner
 }
 
-func newJobImageBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig, builder buildrequest.Builder) *jobImageBuilder {
+func newJobImageBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1.MachineOSBuild, mosc *mcfgv1.MachineOSConfig, builder buildrequest.Builder) *jobImageBuilder {
 	b, c := newBaseImageBuilderWithCleaner(kubeclient, mcfgclient, mosb, mosc, builder)
 	return &jobImageBuilder{
 		baseImageBuilder: b,
@@ -31,23 +31,23 @@ func newJobImageBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset
 }
 
 // Instantiates a ImageBuildObserver using the MachineOSBuild and MachineOSConfig objects.
-func NewJobImageBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig) ImageBuilder {
+func NewJobImageBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1.MachineOSBuild, mosc *mcfgv1.MachineOSConfig) ImageBuilder {
 	return newJobImageBuilder(kubeclient, mcfgclient, mosb, mosc, nil)
 }
 
 // Instantiates an ImageBuildObserver using the MachineOSBuild and MachineOSConfig objects.
-func NewJobImageBuildObserver(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig) ImageBuildObserver {
+func NewJobImageBuildObserver(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1.MachineOSBuild, mosc *mcfgv1.MachineOSConfig) ImageBuildObserver {
 	return newJobImageBuilder(kubeclient, mcfgclient, mosb, mosc, nil)
 }
 
 // Instantiates an ImageBuildObserver which infers the MachineOSBuild state
 // from the provided builder object
-func NewJobImageBuildObserverFromBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig, builder buildrequest.Builder) ImageBuildObserver {
+func NewJobImageBuildObserverFromBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1.MachineOSBuild, mosc *mcfgv1.MachineOSConfig, builder buildrequest.Builder) ImageBuildObserver {
 	return newJobImageBuilder(kubeclient, mcfgclient, mosb, mosc, builder)
 }
 
 // Instantiates a Cleaner using only the MachineOSBuild object.
-func NewJobImageBuildCleaner(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild) Cleaner {
+func NewJobImageBuildCleaner(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1.MachineOSBuild) Cleaner {
 	return newJobImageBuilder(kubeclient, mcfgclient, mosb, nil, nil)
 }
 
@@ -149,7 +149,7 @@ func (j *jobImageBuilder) Exists(ctx context.Context) (bool, error) {
 }
 
 // Gets the MachineOSBuildStatus for the currently running build.
-func (j *jobImageBuilder) MachineOSBuildStatus(ctx context.Context) (mcfgv1alpha1.MachineOSBuildStatus, error) {
+func (j *jobImageBuilder) MachineOSBuildStatus(ctx context.Context) (mcfgv1.MachineOSBuildStatus, error) {
 	status, err := j.machineOSBuildStatus(ctx)
 	if err != nil {
 		return status, j.addMachineOSBuildNameToError(fmt.Errorf("could not get MachineOSBuildStatus: %w", err))
@@ -180,7 +180,7 @@ func (j *jobImageBuilder) getBuildJobFromBuilderOrAPI(ctx context.Context) (*bat
 	return job, nil
 }
 
-func (j *jobImageBuilder) getStatus(ctx context.Context) (*batchv1.Job, mcfgv1alpha1.BuildProgress, []metav1.Condition, error) {
+func (j *jobImageBuilder) getStatus(ctx context.Context) (*batchv1.Job, mcfgv1.BuildProgress, []metav1.Condition, error) {
 	job, err := j.getBuildJobFromBuilderOrAPI(ctx)
 	if err != nil {
 		return nil, "", nil, err
@@ -193,22 +193,22 @@ func (j *jobImageBuilder) getStatus(ctx context.Context) (*batchv1.Job, mcfgv1al
 	return job, status, conditions, nil
 }
 
-func (j *jobImageBuilder) machineOSBuildStatus(ctx context.Context) (mcfgv1alpha1.MachineOSBuildStatus, error) {
+func (j *jobImageBuilder) machineOSBuildStatus(ctx context.Context) (mcfgv1.MachineOSBuildStatus, error) {
 	job, status, conditions, err := j.getStatus(ctx)
 	if err != nil {
-		return mcfgv1alpha1.MachineOSBuildStatus{}, err
+		return mcfgv1.MachineOSBuildStatus{}, err
 	}
 
 	buildStatus, err := j.getMachineOSBuildStatus(ctx, job, status, conditions)
 	if err != nil {
-		return mcfgv1alpha1.MachineOSBuildStatus{}, err
+		return mcfgv1.MachineOSBuildStatus{}, err
 	}
 
 	return buildStatus, nil
 }
 
 // Gets only the build progress field for a currently running build.
-func (j *jobImageBuilder) Status(ctx context.Context) (mcfgv1alpha1.BuildProgress, error) {
+func (j *jobImageBuilder) Status(ctx context.Context) (mcfgv1.BuildProgress, error) {
 	_, status, _, err := j.getStatus(ctx)
 	if err != nil {
 		return status, j.addMachineOSBuildNameToError(fmt.Errorf("could not get BuildProgress: %w", err))
@@ -217,26 +217,26 @@ func (j *jobImageBuilder) Status(ctx context.Context) (mcfgv1alpha1.BuildProgres
 	return status, nil
 }
 
-func (j *jobImageBuilder) mapJobStatusToBuildStatus(job *batchv1.Job) (mcfgv1alpha1.BuildProgress, []metav1.Condition) {
+func (j *jobImageBuilder) mapJobStatusToBuildStatus(job *batchv1.Job) (mcfgv1.BuildProgress, []metav1.Condition) {
 	// If the job is being deleted and it was not in either a successful or failed state
 	// then the MachineOSBuild should be considered "interrupted"
 	if job.DeletionTimestamp != nil && job.Status.Succeeded == 0 && job.Status.Failed == 0 {
-		return mcfgv1alpha1.MachineOSBuildInterrupted, j.interruptedConditions()
+		return mcfgv1.MachineOSBuildInterrupted, j.interruptedConditions()
 	}
 
 	if job.Status.Active == 0 && job.Status.Succeeded == 0 && job.Status.Failed == 0 && job.Status.UncountedTerminatedPods == nil {
-		return mcfgv1alpha1.MachineOSBuildPrepared, j.pendingConditions()
+		return mcfgv1.MachineOSBuildPrepared, j.pendingConditions()
 	}
 	// The build job is still running till it succeeds or maxes out it retries on failures
 	if job.Status.Active >= 0 && job.Status.Failed >= 0 && job.Status.Failed < 4 && job.Status.Succeeded == 0 {
-		return mcfgv1alpha1.MachineOSBuilding, j.runningConditions()
+		return mcfgv1.MachineOSBuilding, j.runningConditions()
 	}
 	if job.Status.Succeeded > 0 {
-		return mcfgv1alpha1.MachineOSBuildSucceeded, j.succeededConditions()
+		return mcfgv1.MachineOSBuildSucceeded, j.succeededConditions()
 	}
 	// Only return failed if there have been 4 pod failures as the backoffLimit is set to 3
 	if job.Status.Failed > 3 {
-		return mcfgv1alpha1.MachineOSBuildFailed, j.failedConditions()
+		return mcfgv1.MachineOSBuildFailed, j.failedConditions()
 
 	}
 

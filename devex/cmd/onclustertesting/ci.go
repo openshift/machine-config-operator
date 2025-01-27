@@ -142,11 +142,7 @@ func setupMoscForCI(cs *framework.ClientSet, opts opts, poolName string) error {
 		}
 	}
 
-	if err := waitForBuildToComplete(ctx, cs, poolName); err != nil {
-		return err
-	}
-
-	return nil
+	return waitForBuildToComplete(ctx, cs, poolName)
 }
 
 func waitForPoolsToComplete(cs *framework.ClientSet, pools []string) error {

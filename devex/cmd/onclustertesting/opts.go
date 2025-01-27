@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"k8s.io/klog/v2"
 )
 
@@ -80,7 +80,7 @@ func (o *opts) shouldCloneGlobalPullSecret() bool {
 	return isNoneSet(o.pullSecretName, o.pullSecretPath)
 }
 
-func (o *opts) toMachineOSConfig() (*mcfgv1alpha1.MachineOSConfig, error) {
+func (o *opts) toMachineOSConfig() (*mcfgv1.MachineOSConfig, error) {
 	pushSecretName, err := o.getPushSecretName()
 	if err != nil {
 		return nil, err

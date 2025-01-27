@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/buildrequest"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -22,13 +22,13 @@ import (
 // object knows how to destroy all of the objects that it creates. It does so
 // by using a specific label query.
 type preparerImpl struct {
-	mosb       *mcfgv1alpha1.MachineOSBuild
-	mosc       *mcfgv1alpha1.MachineOSConfig
+	mosb       *mcfgv1.MachineOSBuild
+	mosc       *mcfgv1.MachineOSConfig
 	kubeclient clientset.Interface
 	mcfgclient mcfgclientset.Interface
 }
 
-func NewPreparer(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig) Preparer {
+func NewPreparer(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1.MachineOSBuild, mosc *mcfgv1.MachineOSConfig) Preparer {
 	return &preparerImpl{
 		kubeclient: kubeclient,
 		mcfgclient: mcfgclient,

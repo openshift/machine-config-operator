@@ -210,6 +210,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &operatorv1.IPFIXConfigApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("IPsecConfig"):
 		return &operatorv1.IPsecConfigApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("IPsecFullModeConfig"):
+		return &operatorv1.IPsecFullModeConfigApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("IPv4GatewayConfig"):
 		return &operatorv1.IPv4GatewayConfigApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("IPv4OVNKubernetesConfig"):
@@ -418,6 +420,12 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		// Group=operator.openshift.io, Version=v1alpha1
 	case v1alpha1.SchemeGroupVersion.WithKind("BackupJobReference"):
 		return &operatorv1alpha1.BackupJobReferenceApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("ClusterVersionOperator"):
+		return &operatorv1alpha1.ClusterVersionOperatorApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("ClusterVersionOperatorSpec"):
+		return &operatorv1alpha1.ClusterVersionOperatorSpecApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("ClusterVersionOperatorStatus"):
+		return &operatorv1alpha1.ClusterVersionOperatorStatusApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("EtcdBackup"):
 		return &operatorv1alpha1.EtcdBackupApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("EtcdBackupSpec"):

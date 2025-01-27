@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/x509"
 	"encoding/base64"
-	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -28,14 +27,6 @@ import (
 )
 
 var ccRequeueDelay = 1 * time.Minute
-
-const (
-	// Where the OS image secrets are mounted into the MCD pod. Note: This is put
-	// under /run/secrets so that the PrepareNamespace function will include it
-	// when it bind-mounts /run/secrets to keep access to the MCD service
-	// account.
-	osImagePullSecretDir string = "/run/secrets/os-image-pull-secrets"
-)
 
 func (dn *Daemon) handleControllerConfigEvent(obj interface{}) {
 	controllerConfig := obj.(*mcfgv1.ControllerConfig)
@@ -137,7 +128,7 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 
 		// If the ControllerConfig version changed, we should sync our OS image
 		// pull secrets, since they could have changed.
-		if err := dn.syncOSImagePullSecrets(controllerConfig); err != nil {
+		if err := dn.syncInternalRegistryPullSecrets(controllerConfig); err != nil {
 			return err
 		}
 
@@ -349,16 +340,12 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 }
 
 // Syncs the OS image pull secrets to disk under
-// /etc/mco/internal-registry-pull-secret.json. Uses the internal image
-// registry as well as secrets mounted into the MCD pod under a specific path.
-// If the mounted secrets are not present, it will default to using solely the
-// contents of the ControllerConfig. This will run during the
-// certificate_writer sync loop as well as during an OS update. We may also
-// want to wire it up to fsnotify so that it runs whenever the mounted secrets
-// do. Because this can execute across multiple Goroutines, a Daemon-level
-// mutex (osImageMux) is used to ensure that only one call can execute at any
-// given time.
-func (dn *Daemon) syncOSImagePullSecrets(controllerConfig *mcfgv1.ControllerConfig) error {
+// /etc/mco/internal-registry-pull-secret.json using the contents of the
+// ControllerConfig. This will run during the certificate_writer sync loop
+// as well as during an OS update. Because this can execute across multiple
+// Goroutines, a Daemon-level mutex (osImageMux) is used to ensure that only
+// one call can execute at any given time.
+func (dn *Daemon) syncInternalRegistryPullSecrets(controllerConfig *mcfgv1.ControllerConfig) error {
 	dn.osImageMux.Lock()
 	defer dn.osImageMux.Unlock()
 
@@ -371,16 +358,11 @@ func (dn *Daemon) syncOSImagePullSecrets(controllerConfig *mcfgv1.ControllerConf
 		controllerConfig = cfg
 	}
 
-	merged, err := reconcileOSImageRegistryPullSecretData(dn.node, controllerConfig, osImagePullSecretDir)
-	if err != nil {
-		return fmt.Errorf("could not reconcile OS image registry pull secret data: %w", err)
-	}
-
-	if err := writeToDisk(map[string][]byte{imageRegistryAuthFile: merged}); err != nil {
+	if err := writeToDisk(map[string][]byte{internalRegistryAuthFile: controllerConfig.Spec.InternalRegistryPullSecret}); err != nil {
 		return fmt.Errorf("could not write image pull secret data to node filesystem: %w", err)
 	}
 
-	klog.V(4).Infof("Synced image registry secrets to node filesystem in %s", imageRegistryAuthFile)
+	klog.V(4).Infof("Synced image registry secrets to node filesystem in %s", internalRegistryAuthFile)
 
 	return nil
 }
@@ -424,165 +406,4 @@ func writeToDisk(pathToData map[string][]byte) error {
 		}
 	}
 	return nil
-}
-
-// Reconciles and merges the secrets provided by the ControllerConfig along
-// with any mounted image pull secrets that the MCO may have configured the MCD
-// to use in a layered OS image scenario.
-func reconcileOSImageRegistryPullSecretData(node *corev1.Node, controllerCfg *mcfgv1.ControllerConfig, secretDirPath string) ([]byte, error) {
-	// First, get all of the node-roles that this node might have so we can
-	// resolve them to MachineConfigPools.
-	nodeRoles := getNodeRoles(node)
-
-	// This isn't likely to happen, but a guard clause here is nice.
-	if len(nodeRoles) == 0 {
-		return nil, fmt.Errorf("node %s has no node-role.kubernetes.io label", node.Name)
-	}
-
-	// Next, we need to read the secret from disk, if we can find one.
-	mountedSecret, err := readMountedSecretByNodeRole(nodeRoles, secretDirPath)
-	if err != nil {
-		return nil, err
-	}
-
-	// If there are no mounted secrets, just use the internal image pull secrets
-	// as-is.
-	if mountedSecret == nil {
-		klog.V(4).Infof("Did not find a mounted secret")
-		return controllerCfg.Spec.InternalRegistryPullSecret, nil
-	}
-
-	// Next, we need to merge the secret we just found with the contents of the
-	// InternalImagePullSecret field on the ControllerConfig object, ensuring
-	// that the values from the mounted secret take precedent over any values
-	// provided by the InternalImagePullSecret field.
-	merged, err := mergeMountedSecretsWithControllerConfig(mountedSecret, controllerCfg)
-	if err != nil {
-		return nil, fmt.Errorf("could not merge on-disk secrets with ControllerConfig: %w", err)
-	}
-
-	return merged, nil
-}
-
-// This iterates through all of the node roles until it finds a secret that
-// matches. We do this because we have to mount all of the secrets for all of
-// the MachineOSConfigs into each MCD pod. Additionally, we want to support the
-// case where someone uses wither a .dockercfg or .dockerconfigjson style
-// secret. However, it is possible that a different MachineOSConfig can specify
-// a different image pull secret. And it is also possible that a node can
-// belong to two MachineConfigPools.
-func readMountedSecretByNodeRole(nodeRoles []string, secretDirPath string) ([]byte, error) {
-	// If this directory does not exist, it means that the MCD DaemonSet does not
-	// have the secrets mounted at all. In this case, just return an empty byte
-	// array.
-	_, err := os.Stat(secretDirPath)
-	if errors.Is(err, os.ErrNotExist) {
-		klog.V(4).Infof("Path %s does not exist", secretDirPath)
-		return nil, nil
-	}
-
-	if err != nil {
-		return nil, err
-	}
-
-	// Support both image secret types.
-	imagePullSecretKeys := []string{
-		corev1.DockerConfigJsonKey,
-		corev1.DockerConfigKey,
-	}
-
-	for _, key := range imagePullSecretKeys {
-		for _, nodeRole := range nodeRoles {
-			// This ends up being a concatenation of
-			// /run/secrets/os-image-pull-secrets/<poolname>/.dockerconfigjson or
-			// /run/secrets/os-image-pull-secrets/<poolname>/.dockercfg
-			path := filepath.Join(secretDirPath, nodeRole, key)
-
-			klog.V(4).Infof("Checking path %s for mounted image pull secret", path)
-
-			_, err := os.Stat(path)
-
-			// If the file exists, we've found it. Read it and stop here.
-			if err == nil {
-				klog.V(4).Infof("Found mounted image pull secret in %s", path)
-				return os.ReadFile(path)
-			}
-
-			// If the file does not exist, keep going until we find one that does or
-			// we've exhausted all options.
-			if errors.Is(err, os.ErrNotExist) {
-				continue
-			}
-
-			// If an unknown error has occurred, stop here and bail out.
-			if err != nil {
-				return nil, fmt.Errorf("unknown error while reading %s: %w", path, err)
-			}
-		}
-	}
-
-	// If we got this far, it means we've exhausted all of our node roles and our
-	// secret keys without finding a suitable image pull secret. The most likely
-	// reason is because the MachineConfigPool(s) this node belongs to does not
-	// have a MachineOSConfig associated with it, which means there is nothing to
-	// do here, except return nil.
-	return nil, nil
-}
-
-// Merges the mounted secret with the ones from the ControllerConfig, with the mounted ones taking priority.
-func mergeMountedSecretsWithControllerConfig(mountedSecret []byte, controllerCfg *mcfgv1.ControllerConfig) ([]byte, error) {
-	// Unmarshal the mounted secrets, converting to new-style secrets, if necessary.
-	mountedSecrets, err := ctrlcommon.ToDockerConfigJSON(mountedSecret)
-	if err != nil {
-		return nil, fmt.Errorf("could not parse mounted secret: %w", err)
-	}
-
-	// Unmarshal the ControllerConfig secrets, converting to new-style secrets, if necessary.
-	internalRegistryPullSecrets, err := ctrlcommon.ToDockerConfigJSON(controllerCfg.Spec.InternalRegistryPullSecret)
-	if err != nil {
-		return nil, fmt.Errorf("could not parse internal registry pull secret from ControllerConfig: %w", err)
-	}
-
-	out := &ctrlcommon.DockerConfigJSON{
-		Auths: ctrlcommon.DockerConfig{},
-	}
-
-	// Copy all of the secrets from the ControllerConfig.
-	for key, internalRegistryAuth := range internalRegistryPullSecrets.Auths {
-		out.Auths[key] = internalRegistryAuth
-	}
-
-	// Copy all of the secrets from the mounted secret, overwriting any secrets
-	// provided by ControllerConfig.
-	for key, mountedSecretAuth := range mountedSecrets.Auths {
-		if _, ok := out.Auths[key]; ok {
-			klog.V(4).Infof("Overriding image pull secret for %s with mounted secret", key)
-		}
-
-		out.Auths[key] = mountedSecretAuth
-	}
-
-	return json.Marshal(out)
-}
-
-// Iterates through all of the labels on a given node, searching for the
-// "node-role.kubernetes.io" label, and extracting the role name from the
-// label. It is possible for a single node to have more than one node-role
-// label, so we extract them all.
-func getNodeRoles(node *corev1.Node) []string {
-	if node.Labels == nil {
-		return []string{}
-	}
-
-	nodeRoleLabel := "node-role.kubernetes.io/"
-
-	out := []string{}
-
-	for key := range node.Labels {
-		if strings.Contains(key, nodeRoleLabel) {
-			out = append(out, strings.ReplaceAll(key, nodeRoleLabel, ""))
-		}
-	}
-
-	return out
 }

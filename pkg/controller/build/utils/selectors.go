@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -14,7 +13,7 @@ import (
 
 // Creates the labels for a given MachineOSBuild from the provided
 // MachineOSConfig and MachineConfigPool.
-func GetMachineOSBuildLabels(mosc *mcfgv1alpha1.MachineOSConfig, mcp *mcfgv1.MachineConfigPool) map[string]string {
+func GetMachineOSBuildLabels(mosc *mcfgv1.MachineOSConfig, mcp *mcfgv1.MachineConfigPool) map[string]string {
 	return map[string]string{
 		constants.TargetMachineConfigPoolLabelKey: mcp.Name,
 		constants.RenderedMachineConfigLabelKey:   mcp.Spec.Configuration.Name,
@@ -24,13 +23,13 @@ func GetMachineOSBuildLabels(mosc *mcfgv1alpha1.MachineOSConfig, mcp *mcfgv1.Mac
 
 // Creates a selector for a MachineOSBuild that matches the given
 // MachineOSConfig and MachineConfigPool.
-func MachineOSBuildSelector(mosc *mcfgv1alpha1.MachineOSConfig, mcp *mcfgv1.MachineConfigPool) labels.Selector {
+func MachineOSBuildSelector(mosc *mcfgv1.MachineOSConfig, mcp *mcfgv1.MachineConfigPool) labels.Selector {
 	return labels.SelectorFromSet(GetMachineOSBuildLabels(mosc, mcp))
 }
 
 // Creates a selector for all MachineOSBuilds which are associated with a given
 // MachineOSConfig.
-func MachineOSBuildForPoolSelector(mosc *mcfgv1alpha1.MachineOSConfig) labels.Selector {
+func MachineOSBuildForPoolSelector(mosc *mcfgv1.MachineOSConfig) labels.Selector {
 	return labels.SelectorFromSet(map[string]string{
 		constants.TargetMachineConfigPoolLabelKey: mosc.Spec.MachineConfigPool.Name,
 		constants.MachineOSConfigNameLabelKey:     mosc.Name,
@@ -60,13 +59,13 @@ func EphemeralBuildObjectSelector() labels.Selector {
 
 // Creates a selector for looking up a builder, configmap, or secret associated
 // with a given MachineOSBuild and MachineOSConfig.
-func EphemeralBuildObjectSelectorForSpecificBuild(mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig) (labels.Selector, error) {
+func EphemeralBuildObjectSelectorForSpecificBuild(mosb *mcfgv1.MachineOSBuild, mosc *mcfgv1.MachineOSConfig) (labels.Selector, error) {
 	selector := labelsToSelector([]string{
 		constants.EphemeralBuildObjectLabelKey,
 		constants.OnClusterLayeringLabelKey,
 	})
 
-	renderedMCReq, err := labels.NewRequirement(constants.RenderedMachineConfigLabelKey, selection.Equals, []string{mosb.Spec.DesiredConfig.Name})
+	renderedMCReq, err := labels.NewRequirement(constants.RenderedMachineConfigLabelKey, selection.Equals, []string{mosb.Spec.MachineConfig.Name})
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +95,7 @@ func EphemeralBuildObjectSelectorForSpecificBuild(mosb *mcfgv1alpha1.MachineOSBu
 
 // Fetches the MachineConfigPool name from either the MachineOSBuild or the
 // MachineOSConfig. For MachineOSBuilds, this value is found as a label.
-func getMachineConfigPoolNameFromMachineOSConfigOrMachineOSBuild(mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig) (string, error) {
+func getMachineConfigPoolNameFromMachineOSConfigOrMachineOSBuild(mosb *mcfgv1.MachineOSBuild, mosc *mcfgv1.MachineOSConfig) (string, error) {
 	if mosc != nil {
 		return mosc.Spec.MachineConfigPool.Name, nil
 	}
@@ -106,7 +105,7 @@ func getMachineConfigPoolNameFromMachineOSConfigOrMachineOSBuild(mosb *mcfgv1alp
 
 // Fetches the MachineOSBuild name from either the MachineOSBuild or the
 // MachineOSConfig. For MachineOSConfigs, this value is found as a label.
-func getMachineOSBuildNameFromMachineOSConfigOrMachineOSBuild(mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig) (string, error) {
+func getMachineOSBuildNameFromMachineOSConfigOrMachineOSBuild(mosb *mcfgv1.MachineOSBuild, mosc *mcfgv1.MachineOSConfig) (string, error) {
 	if mosb != nil {
 		return mosb.Name, nil
 	}
@@ -161,7 +160,7 @@ func IsObjectCreatedByBuildController(obj metav1.Object) bool {
 		return true
 	}
 
-	if _, ok := obj.(*mcfgv1alpha1.MachineOSBuild); ok {
+	if _, ok := obj.(*mcfgv1.MachineOSBuild); ok {
 		return true
 	}
 

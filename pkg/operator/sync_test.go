@@ -161,56 +161,73 @@ func withCABundle(caBundle string) kubeCloudConfigOption {
 	}
 }
 
-func TestReconcileSimpleContentAccessSecret(t *testing.T) {
+func TestMachineOSBuilderSecretReconciliation(t *testing.T) {
 	masterPool := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 	workerPool := helpers.NewMachineConfigPool("worker", nil, helpers.MasterSelector, "v0")
 	infraPool := helpers.NewMachineConfigPool("infra", nil, helpers.MasterSelector, "v0")
 	entitlementSecret := helpers.NewOpaqueSecret(ctrlcommon.SimpleContentAccessSecretName, ctrlcommon.OpenshiftConfigManagedNamespace, "abc")
-	workerEntitlementSecret := helpers.NewOpaqueSecret(ctrlcommon.SimpleContentAccessSecretName+"-"+workerPool.Name, ctrlcommon.MCONamespace, "abc")
-	infraEntitlementSecret := helpers.NewOpaqueSecret(ctrlcommon.SimpleContentAccessSecretName+"-"+infraPool.Name, ctrlcommon.MCONamespace, "abc")
-	outOfDateInfraEntitlementSecret := helpers.NewOpaqueSecret(ctrlcommon.SimpleContentAccessSecretName+"-"+infraPool.Name, ctrlcommon.MCONamespace, "123")
+	workerEntitlementSecret := helpers.NewOpaqueSecretWithOwnerPool(ctrlcommon.SimpleContentAccessSecretName+"-"+workerPool.Name, ctrlcommon.MCONamespace, "abc", *workerPool)
+	infraEntitlementSecret := helpers.NewOpaqueSecretWithOwnerPool(ctrlcommon.SimpleContentAccessSecretName+"-"+infraPool.Name, ctrlcommon.MCONamespace, "abc", *infraPool)
+	outOfDateInfraEntitlementSecret := helpers.NewOpaqueSecretWithOwnerPool(ctrlcommon.SimpleContentAccessSecretName+"-"+infraPool.Name, ctrlcommon.MCONamespace, "123", *infraPool)
+	globalPullSecret := helpers.NewDockerCfgJSONSecret(ctrlcommon.GlobalPullSecretName, ctrlcommon.OpenshiftConfigNamespace, "abc")
+	outOfDateGlobalPullSecretCopy := helpers.NewDockerCfgJSONSecret(ctrlcommon.GlobalPullSecretCopyName, ctrlcommon.MCONamespace, "123")
+	globalPullSecretCopy := helpers.NewDockerCfgJSONSecret(ctrlcommon.GlobalPullSecretCopyName, ctrlcommon.MCONamespace, "abc")
 
 	cases := []struct {
 		name               string
 		mcoSecrets         []*corev1.Secret
+		ocSecrets          []*corev1.Secret
 		ocManagedSecrets   []*corev1.Secret
 		expectedMCOSecrets []corev1.Secret
 		layeredMCPs        []*mcfgv1.MachineConfigPool
 	}{
 		{
 			name:               "no entitlement secret on cluster, with opted-in pool",
+			ocSecrets:          []*corev1.Secret{globalPullSecret.DeepCopy()},
 			ocManagedSecrets:   []*corev1.Secret{},
 			mcoSecrets:         []*corev1.Secret{},
-			expectedMCOSecrets: []corev1.Secret{},
 			layeredMCPs:        []*mcfgv1.MachineConfigPool{infraPool.DeepCopy()},
+			expectedMCOSecrets: []corev1.Secret{*globalPullSecretCopy.DeepCopy()},
 		},
 		{
 			name:               "entitlement secret on cluster, with opted-in pool",
+			ocSecrets:          []*corev1.Secret{globalPullSecret.DeepCopy()},
 			ocManagedSecrets:   []*corev1.Secret{entitlementSecret.DeepCopy()},
 			mcoSecrets:         []*corev1.Secret{},
 			layeredMCPs:        []*mcfgv1.MachineConfigPool{infraPool.DeepCopy()},
-			expectedMCOSecrets: []corev1.Secret{*infraEntitlementSecret.DeepCopy()},
+			expectedMCOSecrets: []corev1.Secret{*infraEntitlementSecret.DeepCopy(), *globalPullSecretCopy.DeepCopy()},
 		},
 		{
 			name:               "entitlement secret on cluster, with multiple opted-in pools",
+			ocSecrets:          []*corev1.Secret{globalPullSecret.DeepCopy()},
 			ocManagedSecrets:   []*corev1.Secret{entitlementSecret.DeepCopy()},
 			mcoSecrets:         []*corev1.Secret{},
 			layeredMCPs:        []*mcfgv1.MachineConfigPool{workerPool.DeepCopy(), infraPool.DeepCopy()},
-			expectedMCOSecrets: []corev1.Secret{*workerEntitlementSecret.DeepCopy(), *infraEntitlementSecret.DeepCopy()},
+			expectedMCOSecrets: []corev1.Secret{*workerEntitlementSecret.DeepCopy(), *infraEntitlementSecret.DeepCopy(), *globalPullSecretCopy.DeepCopy()},
 		},
 		{
-			name:               "entitlement and cloned secret on cluster, with no opted-in pools",
+			name:               "entitlement, cloned secret and global pull secret copy on cluster, with no opted-in pools",
+			ocSecrets:          []*corev1.Secret{globalPullSecret.DeepCopy()},
 			ocManagedSecrets:   []*corev1.Secret{entitlementSecret.DeepCopy()},
-			mcoSecrets:         []*corev1.Secret{infraEntitlementSecret.DeepCopy()},
+			mcoSecrets:         []*corev1.Secret{infraEntitlementSecret.DeepCopy(), globalPullSecretCopy.DeepCopy()},
 			layeredMCPs:        []*mcfgv1.MachineConfigPool{},
 			expectedMCOSecrets: []corev1.Secret{},
 		},
 		{
 			name:               "entitlement and cloned secret on cluster, with an outdated cloned secret",
+			ocSecrets:          []*corev1.Secret{globalPullSecret.DeepCopy()},
 			ocManagedSecrets:   []*corev1.Secret{entitlementSecret.DeepCopy()},
 			mcoSecrets:         []*corev1.Secret{outOfDateInfraEntitlementSecret.DeepCopy()},
 			layeredMCPs:        []*mcfgv1.MachineConfigPool{infraPool.DeepCopy()},
-			expectedMCOSecrets: []corev1.Secret{*infraEntitlementSecret.DeepCopy()},
+			expectedMCOSecrets: []corev1.Secret{*infraEntitlementSecret.DeepCopy(), *globalPullSecretCopy.DeepCopy()},
+		},
+		{
+			name:               "outdated global pull secret copy on cluster",
+			ocSecrets:          []*corev1.Secret{globalPullSecret.DeepCopy()},
+			ocManagedSecrets:   []*corev1.Secret{},
+			mcoSecrets:         []*corev1.Secret{outOfDateGlobalPullSecretCopy.DeepCopy()},
+			layeredMCPs:        []*mcfgv1.MachineConfigPool{infraPool.DeepCopy()},
+			expectedMCOSecrets: []corev1.Secret{*globalPullSecretCopy.DeepCopy()},
 		},
 	}
 	for _, tc := range cases {
@@ -222,6 +239,7 @@ func TestReconcileSimpleContentAccessSecret(t *testing.T) {
 			sharedInformerFactory := informers.NewSharedInformerFactory(kubeClient, 0)
 			mcoSecretInformer := sharedInformerFactory.Core().V1().Secrets()
 			ocManagedSecretInformer := sharedInformerFactory.Core().V1().Secrets()
+			ocSecretInformer := sharedInformerFactory.Core().V1().Secrets()
 
 			// Add secrets to informer and client
 			for _, secret := range tc.mcoSecrets {
@@ -232,6 +250,11 @@ func TestReconcileSimpleContentAccessSecret(t *testing.T) {
 			for _, secret := range tc.ocManagedSecrets {
 				ocManagedSecretInformer.Informer().GetIndexer().Add(secret)
 				_, err := kubeClient.CoreV1().Secrets(ctrlcommon.OpenshiftConfigManagedNamespace).Create(context.TODO(), secret, metav1.CreateOptions{})
+				assert.NoError(t, err)
+			}
+			for _, secret := range tc.ocSecrets {
+				ocSecretInformer.Informer().GetIndexer().Add(secret)
+				_, err := kubeClient.CoreV1().Secrets(ctrlcommon.OpenshiftConfigNamespace).Create(context.TODO(), secret, metav1.CreateOptions{})
 				assert.NoError(t, err)
 			}
 
@@ -250,9 +273,13 @@ func TestReconcileSimpleContentAccessSecret(t *testing.T) {
 				kubeClient:            kubeClient,
 				mcpLister:             mcpInformer.Lister(),
 				mcoSecretLister:       mcoSecretInformer.Lister(),
+				ocSecretLister:        ocSecretInformer.Lister(),
 				ocManagedSecretLister: ocManagedSecretInformer.Lister(),
 			}
 			err := optr.reconcileSimpleContentAccessSecrets(tc.layeredMCPs)
+			assert.NoError(t, err)
+
+			err = optr.reconcileGlobalPullSecretCopy(tc.layeredMCPs)
 			assert.NoError(t, err)
 
 			// Verify secrets in MCO namespace are as expected

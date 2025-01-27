@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/fixtures"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
@@ -130,25 +129,6 @@ func TestBuildRequest(t *testing.T) {
 				return opts
 			},
 		},
-		{
-			name: "MachineOSConfig-provided options override OSImageURLConfig defaults",
-			optsFunc: func() BuildRequestOpts {
-				opts := getBuildRequestOpts()
-				opts.MachineOSConfig.Spec.BuildInputs.BaseOSImagePullspec = "base-os-image-from-machineosconfig"
-				opts.MachineOSConfig.Spec.BuildInputs.BaseOSExtensionsImagePullspec = "base-ext-image-from-machineosconfig"
-				opts.MachineOSConfig.Spec.BuildInputs.ReleaseVersion = "release-version-from-machineosconfig"
-				opts.MachineConfig.Spec.Extensions = []string{"usbguard"}
-				return opts
-			},
-			expectedContainerfileContents: []string{
-				"FROM base-os-image-from-machineosconfig AS extract",
-				"FROM base-os-image-from-machineosconfig AS configs",
-				"RUN --mount=type=bind,from=base-ext-image-from-machineosconfig",
-				"extensions=\"usbguard\"",
-				"LABEL releaseversion=release-version-from-machineosconfig",
-			},
-			unexpectedContainerfileContents: expectedContents(),
-		},
 	}
 
 	for _, testCase := range testCases {
@@ -169,7 +149,7 @@ func TestBuildRequest(t *testing.T) {
 			if len(testCase.expectedContainerfileContents) == 0 {
 				testCase.expectedContainerfileContents = append(expectedContents(), []string{
 					machineConfigJSONFilename,
-					opts.MachineOSConfig.Spec.BuildInputs.Containerfile[0].Content,
+					opts.MachineOSConfig.Spec.Containerfile[0].Content,
 				}...)
 			}
 
@@ -321,7 +301,7 @@ RUN rpm-ostree install && \
 
 	layeredObjects := fixtures.NewObjectBuildersForTest("worker")
 	layeredObjects.MachineOSConfigBuilder.
-		WithContainerfile(mcfgv1alpha1.NoArch, containerfileContents)
+		WithContainerfile(mcfgv1.NoArch, containerfileContents)
 
 	layeredObjects.MachineOSBuildBuilder.
 		// Note: This is set statically so that the test suite is less brittle.

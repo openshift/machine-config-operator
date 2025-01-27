@@ -6,7 +6,6 @@ import (
 	"time"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	"github.com/openshift/machine-config-operator/test/framework"
@@ -272,9 +271,9 @@ func (a *Assertions) JobDoesNotExist(jobName string, msgAndArgs ...interface{}) 
 }
 
 // Asserts that a MachineOSConfig is created.
-func (a *Assertions) MachineOSConfigExists(mosb *mcfgv1alpha1.MachineOSConfig, msgAndArgs ...interface{}) {
+func (a *Assertions) MachineOSConfigExists(mosb *mcfgv1.MachineOSConfig, msgAndArgs ...interface{}) {
 	a.t.Helper()
-	stateFunc := func(_ *mcfgv1alpha1.MachineOSConfig, err error) (bool, error) {
+	stateFunc := func(_ *mcfgv1.MachineOSConfig, err error) (bool, error) {
 		return a.created(err)
 	}
 
@@ -282,9 +281,9 @@ func (a *Assertions) MachineOSConfigExists(mosb *mcfgv1alpha1.MachineOSConfig, m
 }
 
 // Asserts that a MachineOSConfig is deleted.
-func (a *Assertions) MachineOSConfigDoesNotExist(mosb *mcfgv1alpha1.MachineOSConfig, msgAndArgs ...interface{}) {
+func (a *Assertions) MachineOSConfigDoesNotExist(mosb *mcfgv1.MachineOSConfig, msgAndArgs ...interface{}) {
 	a.t.Helper()
-	stateFunc := func(_ *mcfgv1alpha1.MachineOSConfig, err error) (bool, error) {
+	stateFunc := func(_ *mcfgv1.MachineOSConfig, err error) (bool, error) {
 		return a.deleted(err)
 	}
 
@@ -292,29 +291,29 @@ func (a *Assertions) MachineOSConfigDoesNotExist(mosb *mcfgv1alpha1.MachineOSCon
 }
 
 // Asserts that a MachineOSBuild has failed.
-func (a *Assertions) MachineOSBuildIsFailure(mosb *mcfgv1alpha1.MachineOSBuild, msgAndArgs ...interface{}) {
-	a.machineOSBuildHasConditionTrue(mosb, mcfgv1alpha1.MachineOSBuildFailed, msgAndArgs...)
+func (a *Assertions) MachineOSBuildIsFailure(mosb *mcfgv1.MachineOSBuild, msgAndArgs ...interface{}) {
+	a.machineOSBuildHasConditionTrue(mosb, mcfgv1.MachineOSBuildFailed, msgAndArgs...)
 }
 
 // Asserts that a MachineOSBuild has succeeded.
-func (a *Assertions) MachineOSBuildIsSuccessful(mosb *mcfgv1alpha1.MachineOSBuild, msgAndArgs ...interface{}) {
-	a.machineOSBuildHasConditionTrue(mosb, mcfgv1alpha1.MachineOSBuildSucceeded, msgAndArgs...)
+func (a *Assertions) MachineOSBuildIsSuccessful(mosb *mcfgv1.MachineOSBuild, msgAndArgs ...interface{}) {
+	a.machineOSBuildHasConditionTrue(mosb, mcfgv1.MachineOSBuildSucceeded, msgAndArgs...)
 }
 
 // Asserts that a MachineOSBuild is running.
-func (a *Assertions) MachineOSBuildIsRunning(mosb *mcfgv1alpha1.MachineOSBuild, msgAndArgs ...interface{}) {
-	a.machineOSBuildHasConditionTrue(mosb, mcfgv1alpha1.MachineOSBuilding, msgAndArgs...)
+func (a *Assertions) MachineOSBuildIsRunning(mosb *mcfgv1.MachineOSBuild, msgAndArgs ...interface{}) {
+	a.machineOSBuildHasConditionTrue(mosb, mcfgv1.MachineOSBuilding, msgAndArgs...)
 }
 
 // Asserts that a MachineOSBuild is interrupted.
-func (a *Assertions) MachineOSBuildIsInterrupted(mosb *mcfgv1alpha1.MachineOSBuild, msgAndArgs ...interface{}) {
-	a.machineOSBuildHasConditionTrue(mosb, mcfgv1alpha1.MachineOSBuildInterrupted, msgAndArgs...)
+func (a *Assertions) MachineOSBuildIsInterrupted(mosb *mcfgv1.MachineOSBuild, msgAndArgs ...interface{}) {
+	a.machineOSBuildHasConditionTrue(mosb, mcfgv1.MachineOSBuildInterrupted, msgAndArgs...)
 }
 
 // Asserts that a MachineOSBuild is created.
-func (a *Assertions) MachineOSBuildExists(mosb *mcfgv1alpha1.MachineOSBuild, msgAndArgs ...interface{}) {
+func (a *Assertions) MachineOSBuildExists(mosb *mcfgv1.MachineOSBuild, msgAndArgs ...interface{}) {
 	a.t.Helper()
-	stateFunc := func(_ *mcfgv1alpha1.MachineOSBuild, err error) (bool, error) {
+	stateFunc := func(_ *mcfgv1.MachineOSBuild, err error) (bool, error) {
 		return a.created(err)
 	}
 
@@ -322,9 +321,9 @@ func (a *Assertions) MachineOSBuildExists(mosb *mcfgv1alpha1.MachineOSBuild, msg
 }
 
 // Asserts that a MachineOSBuild is deleted.
-func (a *Assertions) MachineOSBuildDoesNotExist(mosb *mcfgv1alpha1.MachineOSBuild, msgAndArgs ...interface{}) {
+func (a *Assertions) MachineOSBuildDoesNotExist(mosb *mcfgv1.MachineOSBuild, msgAndArgs ...interface{}) {
 	a.t.Helper()
-	stateFunc := func(_ *mcfgv1alpha1.MachineOSBuild, err error) (bool, error) {
+	stateFunc := func(_ *mcfgv1.MachineOSBuild, err error) (bool, error) {
 		return a.deleted(err)
 	}
 
@@ -396,14 +395,14 @@ func (a *Assertions) jobReachesState(jobName string, stateFunc func(*batchv1.Job
 }
 
 // Asserts that a MachineOSConfig reaches the desired state.
-func (a *Assertions) machineOSConfigReachesState(mosc *mcfgv1alpha1.MachineOSConfig, stateFunc func(*mcfgv1alpha1.MachineOSConfig, error) (bool, error), msgAndArgs ...interface{}) {
+func (a *Assertions) machineOSConfigReachesState(mosc *mcfgv1.MachineOSConfig, stateFunc func(*mcfgv1.MachineOSConfig, error) (bool, error), msgAndArgs ...interface{}) {
 	a.t.Helper()
 
 	ctx, cancel := a.getContextAndCancel()
 	defer cancel()
 
 	err := wait.PollUntilContextCancel(ctx, a.getPollInterval(), true, func(ctx context.Context) (bool, error) {
-		apiMosc, err := a.mcfgclient.MachineconfigurationV1alpha1().MachineOSConfigs().Get(ctx, mosc.Name, metav1.GetOptions{})
+		apiMosc, err := a.mcfgclient.MachineconfigurationV1().MachineOSConfigs().Get(ctx, mosc.Name, metav1.GetOptions{})
 		return a.handleStateFuncResult(stateFunc(apiMosc, err))
 	})
 
@@ -412,14 +411,14 @@ func (a *Assertions) machineOSConfigReachesState(mosc *mcfgv1alpha1.MachineOSCon
 }
 
 // Asserts that a MachineOSBuild reaches the desired state.
-func (a *Assertions) machineOSBuildReachesState(mosc *mcfgv1alpha1.MachineOSBuild, stateFunc func(*mcfgv1alpha1.MachineOSBuild, error) (bool, error), msgAndArgs ...interface{}) {
+func (a *Assertions) machineOSBuildReachesState(mosc *mcfgv1.MachineOSBuild, stateFunc func(*mcfgv1.MachineOSBuild, error) (bool, error), msgAndArgs ...interface{}) {
 	a.t.Helper()
 
 	ctx, cancel := a.getContextAndCancel()
 	defer cancel()
 
 	err := wait.PollUntilContextCancel(ctx, a.getPollInterval(), true, func(ctx context.Context) (bool, error) {
-		apiMosc, err := a.mcfgclient.MachineconfigurationV1alpha1().MachineOSBuilds().Get(ctx, mosc.Name, metav1.GetOptions{})
+		apiMosc, err := a.mcfgclient.MachineconfigurationV1().MachineOSBuilds().Get(ctx, mosc.Name, metav1.GetOptions{})
 		return a.handleStateFuncResult(stateFunc(apiMosc, err))
 	})
 
@@ -512,10 +511,10 @@ func (a *Assertions) getContextAndCancel() (context.Context, func()) {
 }
 
 // Determines if the MachineOSBuild has reached the desired state.
-func (a *Assertions) machineOSBuildHasConditionTrue(mosb *mcfgv1alpha1.MachineOSBuild, condition mcfgv1alpha1.BuildProgress, msgAndArgs ...interface{}) {
+func (a *Assertions) machineOSBuildHasConditionTrue(mosb *mcfgv1.MachineOSBuild, condition mcfgv1.BuildProgress, msgAndArgs ...interface{}) {
 	a.t.Helper()
 
-	stateFunc := func(apiMosb *mcfgv1alpha1.MachineOSBuild, err error) (bool, error) {
+	stateFunc := func(apiMosb *mcfgv1.MachineOSBuild, err error) (bool, error) {
 		if err != nil {
 			return false, err
 		}
