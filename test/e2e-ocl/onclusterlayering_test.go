@@ -113,13 +113,15 @@ func TestOnClusterLayering(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
+	_, mosb := runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
+		// runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
 		poolName: layeredMCPName,
 		customDockerfiles: map[string]string{
 			layeredMCPName: cowsayDockerfile,
 		},
 	})
 
+	t.Logf("mosb.Name: %q", mosb.Name)
 	t.Logf("Applying rebuild annotation (%q) to MachineOSConfig (%q) to cause a rebuild", constants.RebuildMachineOSConfigAnnotationKey, layeredMCPName)
 
 	cs := framework.NewClientSet("")
@@ -132,13 +134,17 @@ func TestOnClusterLayering(t *testing.T) {
 	_, err = cs.MachineconfigurationV1alpha1Interface.MachineOSConfigs().Update(ctx, mosc, metav1.UpdateOptions{})
 	require.NoError(t, err)
 
+	// Wait for the first build to be deleted.
+	waitForBuildToBeDeleted(t, cs, mosb)
+
 	waitForBuildToStartForPoolAndConfig(t, cs, layeredMCPName, layeredMCPName)
 }
 
 // Tests that an on-cluster build can be performed and that the resulting image
 // is rolled out to an opted-in node.
 func TestOnClusterBuildRollsOutImageWithExtensionsInstalled(t *testing.T) {
-	imagePullspec := runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
+	imagePullspec, _ := runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
+		// imagePullspec := runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
 		poolName: layeredMCPName,
 		customDockerfiles: map[string]string{
 			layeredMCPName: cowsayDockerfile,
@@ -733,7 +739,8 @@ func isMcdPodRunning(pod *corev1.Pod) bool {
 
 // Sets up and performs an on-cluster build for a given set of parameters.
 // Returns the built image pullspec for later consumption.
-func runOnClusterLayeringTest(t *testing.T, testOpts onClusterLayeringTestOpts) string {
+func runOnClusterLayeringTest(t *testing.T, testOpts onClusterLayeringTestOpts) (string, *mcfgv1alpha1.MachineOSBuild) {
+	// func runOnClusterLayeringTest(t *testing.T, testOpts onClusterLayeringTestOpts) string {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
@@ -815,7 +822,9 @@ func runOnClusterLayeringTest(t *testing.T, testOpts onClusterLayeringTestOpts) 
 
 	require.NoError(t, archiveBuildPodLogs(t, podLogsDirPath))
 
-	return finishedBuild.Status.FinalImagePushspec
+	// TODO: revisit this return
+	return finishedBuild.Status.FinalImagePushspec, finishedBuild
+	// return finishedBuild.Status.FinalImagePushspec
 }
 
 func archiveBuildPodLogs(t *testing.T, podLogsDirPath string) error {
