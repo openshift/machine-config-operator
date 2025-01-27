@@ -5,11 +5,12 @@ import (
 	"errors"
 	"fmt"
 
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/buildrequest"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	batchv1 "k8s.io/api/batch/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	clientset "k8s.io/client-go/kubernetes"
@@ -19,14 +20,14 @@ import (
 type baseImageBuilder struct {
 	kubeclient   clientset.Interface
 	mcfgclient   mcfgclientset.Interface
-	mosb         *mcfgv1alpha1.MachineOSBuild
-	mosc         *mcfgv1alpha1.MachineOSConfig
+	mosb         *mcfgv1.MachineOSBuild
+	mosc         *mcfgv1.MachineOSConfig
 	builder      buildrequest.Builder
 	buildrequest buildrequest.BuildRequest
 }
 
 // Constructs a baseImageBuilder, deep-copying objects as needed.
-func newBaseImageBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig, builder buildrequest.Builder) *baseImageBuilder {
+func newBaseImageBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1.MachineOSBuild, mosc *mcfgv1.MachineOSConfig, builder buildrequest.Builder) *baseImageBuilder {
 	b := &baseImageBuilder{
 		kubeclient: kubeclient,
 		mcfgclient: mcfgclient,
@@ -45,7 +46,7 @@ func newBaseImageBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientse
 }
 
 // Constructs a baseImageBuilder and also instantiates a Cleaner instance based upon the object state.
-func newBaseImageBuilderWithCleaner(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig, builder buildrequest.Builder) (*baseImageBuilder, Cleaner) {
+func newBaseImageBuilderWithCleaner(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1.MachineOSBuild, mosc *mcfgv1.MachineOSConfig, builder buildrequest.Builder) (*baseImageBuilder, Cleaner) {
 	b := newBaseImageBuilder(kubeclient, mcfgclient, mosb, mosc, builder)
 	return b, &cleanerImpl{
 		baseImageBuilder: b,
@@ -56,31 +57,31 @@ func newBaseImageBuilderWithCleaner(kubeclient clientset.Interface, mcfgclient m
 func (b *baseImageBuilder) succeededConditions() []metav1.Condition {
 	return []metav1.Condition{
 		{
-			Type:    string(mcfgv1alpha1.MachineOSBuildPrepared),
+			Type:    string(mcfgv1.MachineOSBuildPrepared),
 			Status:  metav1.ConditionFalse,
 			Reason:  "Prepared",
 			Message: "Build Prepared and Pending",
 		},
 		{
-			Type:    string(mcfgv1alpha1.MachineOSBuilding),
+			Type:    string(mcfgv1.MachineOSBuilding),
 			Status:  metav1.ConditionFalse,
 			Reason:  "Building",
 			Message: "Image Build In Progress",
 		},
 		{
-			Type:    string(mcfgv1alpha1.MachineOSBuildFailed),
+			Type:    string(mcfgv1.MachineOSBuildFailed),
 			Status:  metav1.ConditionFalse,
 			Reason:  "Failed",
 			Message: "Build Failed",
 		},
 		{
-			Type:    string(mcfgv1alpha1.MachineOSBuildInterrupted),
+			Type:    string(mcfgv1.MachineOSBuildInterrupted),
 			Status:  metav1.ConditionFalse,
 			Reason:  "Interrupted",
 			Message: "Build Interrupted",
 		},
 		{
-			Type:    string(mcfgv1alpha1.MachineOSBuildSucceeded),
+			Type:    string(mcfgv1.MachineOSBuildSucceeded),
 			Status:  metav1.ConditionTrue,
 			Reason:  "Ready",
 			Message: "Build Ready",
@@ -92,31 +93,31 @@ func (b *baseImageBuilder) succeededConditions() []metav1.Condition {
 func (b *baseImageBuilder) pendingConditions() []metav1.Condition {
 	return []metav1.Condition{
 		{
-			Type:    string(mcfgv1alpha1.MachineOSBuildPrepared),
+			Type:    string(mcfgv1.MachineOSBuildPrepared),
 			Status:  metav1.ConditionTrue,
 			Reason:  "Prepared",
 			Message: "Build Prepared and Pending",
 		},
 		{
-			Type:    string(mcfgv1alpha1.MachineOSBuilding),
+			Type:    string(mcfgv1.MachineOSBuilding),
 			Status:  metav1.ConditionFalse,
 			Reason:  "Building",
 			Message: "Image Build In Progress",
 		},
 		{
-			Type:    string(mcfgv1alpha1.MachineOSBuildFailed),
+			Type:    string(mcfgv1.MachineOSBuildFailed),
 			Status:  metav1.ConditionFalse,
 			Reason:  "Failed",
 			Message: "Build Failed",
 		},
 		{
-			Type:    string(mcfgv1alpha1.MachineOSBuildInterrupted),
+			Type:    string(mcfgv1.MachineOSBuildInterrupted),
 			Status:  metav1.ConditionFalse,
 			Reason:  "Interrupted",
 			Message: "Build Interrupted",
 		},
 		{
-			Type:    string(mcfgv1alpha1.MachineOSBuildSucceeded),
+			Type:    string(mcfgv1.MachineOSBuildSucceeded),
 			Status:  metav1.ConditionFalse,
 			Reason:  "Ready",
 			Message: "Build Ready",
@@ -128,31 +129,31 @@ func (b *baseImageBuilder) pendingConditions() []metav1.Condition {
 func (b *baseImageBuilder) runningConditions() []metav1.Condition {
 	return []metav1.Condition{
 		{
-			Type:    string(mcfgv1alpha1.MachineOSBuildPrepared),
+			Type:    string(mcfgv1.MachineOSBuildPrepared),
 			Status:  metav1.ConditionFalse,
 			Reason:  "Prepared",
 			Message: "Build Prepared and Pending",
 		},
 		{
-			Type:    string(mcfgv1alpha1.MachineOSBuilding),
+			Type:    string(mcfgv1.MachineOSBuilding),
 			Status:  metav1.ConditionTrue,
 			Reason:  "Building",
 			Message: "Image Build In Progress",
 		},
 		{
-			Type:    string(mcfgv1alpha1.MachineOSBuildFailed),
+			Type:    string(mcfgv1.MachineOSBuildFailed),
 			Status:  metav1.ConditionFalse,
 			Reason:  "Failed",
 			Message: "Build Failed",
 		},
 		{
-			Type:    string(mcfgv1alpha1.MachineOSBuildInterrupted),
+			Type:    string(mcfgv1.MachineOSBuildInterrupted),
 			Status:  metav1.ConditionFalse,
 			Reason:  "Interrupted",
 			Message: "Build Interrupted",
 		},
 		{
-			Type:    string(mcfgv1alpha1.MachineOSBuildSucceeded),
+			Type:    string(mcfgv1.MachineOSBuildSucceeded),
 			Status:  metav1.ConditionFalse,
 			Reason:  "Ready",
 			Message: "Build Ready",
@@ -164,31 +165,31 @@ func (b *baseImageBuilder) runningConditions() []metav1.Condition {
 func (b *baseImageBuilder) failedConditions() []metav1.Condition {
 	return []metav1.Condition{
 		{
-			Type:    string(mcfgv1alpha1.MachineOSBuildPrepared),
+			Type:    string(mcfgv1.MachineOSBuildPrepared),
 			Status:  metav1.ConditionFalse,
 			Reason:  "Prepared",
 			Message: "Build Prepared and Pending",
 		},
 		{
-			Type:    string(mcfgv1alpha1.MachineOSBuilding),
+			Type:    string(mcfgv1.MachineOSBuilding),
 			Status:  metav1.ConditionFalse,
 			Reason:  "Building",
 			Message: "Image Build In Progress",
 		},
 		{
-			Type:    string(mcfgv1alpha1.MachineOSBuildFailed),
+			Type:    string(mcfgv1.MachineOSBuildFailed),
 			Status:  metav1.ConditionTrue,
 			Reason:  "Failed",
 			Message: "Build Failed",
 		},
 		{
-			Type:    string(mcfgv1alpha1.MachineOSBuildInterrupted),
+			Type:    string(mcfgv1.MachineOSBuildInterrupted),
 			Status:  metav1.ConditionFalse,
 			Reason:  "Interrupted",
 			Message: "Build Interrupted",
 		},
 		{
-			Type:    string(mcfgv1alpha1.MachineOSBuildSucceeded),
+			Type:    string(mcfgv1.MachineOSBuildSucceeded),
 			Status:  metav1.ConditionFalse,
 			Reason:  "Ready",
 			Message: "Build Ready",
@@ -200,31 +201,31 @@ func (b *baseImageBuilder) failedConditions() []metav1.Condition {
 func (b *baseImageBuilder) interruptedConditions() []metav1.Condition {
 	return []metav1.Condition{
 		{
-			Type:    string(mcfgv1alpha1.MachineOSBuildPrepared),
+			Type:    string(mcfgv1.MachineOSBuildPrepared),
 			Status:  metav1.ConditionFalse,
 			Reason:  "Prepared",
 			Message: "Build Prepared and Pending",
 		},
 		{
-			Type:    string(mcfgv1alpha1.MachineOSBuilding),
+			Type:    string(mcfgv1.MachineOSBuilding),
 			Status:  metav1.ConditionFalse,
 			Reason:  "Building",
 			Message: "Image Build In Progress",
 		},
 		{
-			Type:    string(mcfgv1alpha1.MachineOSBuildFailed),
+			Type:    string(mcfgv1.MachineOSBuildFailed),
 			Status:  metav1.ConditionFalse,
 			Reason:  "Failed",
 			Message: "Build Failed",
 		},
 		{
-			Type:    string(mcfgv1alpha1.MachineOSBuildInterrupted),
+			Type:    string(mcfgv1.MachineOSBuildInterrupted),
 			Status:  metav1.ConditionTrue,
 			Reason:  "Interrupted",
 			Message: "Build Interrupted",
 		},
 		{
-			Type:    string(mcfgv1alpha1.MachineOSBuildSucceeded),
+			Type:    string(mcfgv1.MachineOSBuildSucceeded),
 			Status:  metav1.ConditionFalse,
 			Reason:  "Ready",
 			Message: "Build Ready",
@@ -236,31 +237,31 @@ func (b *baseImageBuilder) interruptedConditions() []metav1.Condition {
 func (b *baseImageBuilder) initialConditions() []metav1.Condition {
 	return []metav1.Condition{
 		{
-			Type:    string(mcfgv1alpha1.MachineOSBuildPrepared),
+			Type:    string(mcfgv1.MachineOSBuildPrepared),
 			Status:  metav1.ConditionFalse,
 			Reason:  "Prepared",
 			Message: "Build Prepared and Pending",
 		},
 		{
-			Type:    string(mcfgv1alpha1.MachineOSBuilding),
+			Type:    string(mcfgv1.MachineOSBuilding),
 			Status:  metav1.ConditionFalse,
 			Reason:  "Building",
 			Message: "Image Build In Progress",
 		},
 		{
-			Type:    string(mcfgv1alpha1.MachineOSBuildFailed),
+			Type:    string(mcfgv1.MachineOSBuildFailed),
 			Status:  metav1.ConditionFalse,
 			Reason:  "Failed",
 			Message: "Build Failed",
 		},
 		{
-			Type:    string(mcfgv1alpha1.MachineOSBuildInterrupted),
+			Type:    string(mcfgv1.MachineOSBuildInterrupted),
 			Status:  metav1.ConditionFalse,
 			Reason:  "Interrupted",
 			Message: "Build Interrupted",
 		},
 		{
-			Type:    string(mcfgv1alpha1.MachineOSBuildSucceeded),
+			Type:    string(mcfgv1.MachineOSBuildSucceeded),
 			Status:  metav1.ConditionFalse,
 			Reason:  "Ready",
 			Message: "Build Ready",
@@ -278,35 +279,35 @@ type kubeObject interface {
 // Computes the MachineOSBuild status given the build status as well as the
 // conditions. Also fetches the final image pullspec from the digestfile
 // ConfigMap.
-func (b *baseImageBuilder) getMachineOSBuildStatus(ctx context.Context, obj kubeObject, buildStatus mcfgv1alpha1.BuildProgress, conditions []metav1.Condition) (mcfgv1alpha1.MachineOSBuildStatus, error) {
+func (b *baseImageBuilder) getMachineOSBuildStatus(ctx context.Context, obj kubeObject, buildStatus mcfgv1.BuildProgress, conditions []metav1.Condition) (mcfgv1.MachineOSBuildStatus, error) {
 	now := metav1.Now()
 
-	out := mcfgv1alpha1.MachineOSBuildStatus{}
+	out := mcfgv1.MachineOSBuildStatus{}
 
 	out.BuildStart = &now
 
-	if buildStatus == mcfgv1alpha1.MachineOSBuildSucceeded || buildStatus == mcfgv1alpha1.MachineOSBuildFailed || buildStatus == mcfgv1alpha1.MachineOSBuildInterrupted {
+	if buildStatus == mcfgv1.MachineOSBuildSucceeded || buildStatus == mcfgv1.MachineOSBuildFailed || buildStatus == mcfgv1.MachineOSBuildInterrupted {
 		out.BuildEnd = &now
 	}
 
-	if buildStatus == mcfgv1alpha1.MachineOSBuildSucceeded {
+	if buildStatus == mcfgv1.MachineOSBuildSucceeded {
 		pullspec, err := b.getFinalImagePullspec(ctx)
 		if err != nil {
 			return out, err
 		}
 
-		out.FinalImagePushspec = pullspec
+		out.DigestedImagePushSpec = mcfgv1.ImageDigestFormat(pullspec)
 	}
 
 	out.Conditions = conditions
-	out.BuilderReference = &mcfgv1alpha1.MachineOSBuilderReference{
-		ImageBuilderType: mcfgv1alpha1.PodBuilder,
+	out.Builder = &mcfgv1.MachineOSBuilderReference{
+		ImageBuilderType: mcfgv1.JobBuilder,
 		// TODO: Should we clear this whenever the build is complete?
-		PodImageBuilder: &mcfgv1alpha1.ObjectReference{
+		Job: &mcfgv1.ObjectReference{
 			Name:      obj.GetName(),
-			Group:     obj.GroupVersionKind().Group,
+			Group:     batchv1.SchemeGroupVersion.Group,
 			Namespace: obj.GetNamespace(),
-			Resource:  obj.GetResourceVersion(),
+			Resource:  "jobs",
 		},
 	}
 
@@ -351,9 +352,9 @@ func (b *baseImageBuilder) getFinalImagePullspec(ctx context.Context) (string, e
 		return "", fmt.Errorf("could not get final image digest configmap %q: %w", name, err)
 	}
 
-	sha, err := utils.ParseImagePullspec(b.mosc.Spec.BuildInputs.RenderedImagePushspec, digestConfigMap.Data["digest"])
+	sha, err := utils.ParseImagePullspec(string(b.mosc.Spec.RenderedImagePushSpec), digestConfigMap.Data["digest"])
 	if err != nil {
-		return "", fmt.Errorf("could not create digested image pullspec from the pullspec %q and the digest %q: %w", b.mosc.Status.CurrentImagePullspec, digestConfigMap.Data["digest"], err)
+		return "", fmt.Errorf("could not create digested image pullspec from the pullspec %q and the digest %q: %w", b.mosc.Status.CurrentImagePullSpec, digestConfigMap.Data["digest"], err)
 	}
 
 	return sha, nil

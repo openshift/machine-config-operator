@@ -170,7 +170,7 @@ spec:
                     - resource
                     type: object
                   imageBuilderType:
-                    description: ImageBuilderType describes the image builder set
+                    description: imageBuilderType describes the image builder set
                       in the MachineOSConfig
                     type: string
                 required:

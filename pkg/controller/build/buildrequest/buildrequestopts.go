@@ -9,7 +9,6 @@ import (
 	"github.com/distribution/reference"
 	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
@@ -22,8 +21,8 @@ import (
 
 // Holds all of the options used to produce a BuildRequest.
 type BuildRequestOpts struct { //nolint:revive // This name is fine.
-	MachineOSConfig  *mcfgv1alpha1.MachineOSConfig
-	MachineOSBuild   *mcfgv1alpha1.MachineOSBuild
+	MachineOSConfig  *mcfgv1.MachineOSConfig
+	MachineOSBuild   *mcfgv1.MachineOSBuild
 	MachineConfig    *mcfgv1.MachineConfig
 	Images           *ctrlcommon.Images
 	OSImageURLConfig *ctrlcommon.OSImageURLConfig
@@ -31,6 +30,8 @@ type BuildRequestOpts struct { //nolint:revive // This name is fine.
 	BaseImagePullSecret  *corev1.Secret
 	FinalImagePushSecret *corev1.Secret
 
+	// Has user defined base image pull secret
+	hasUserDefinedBaseImagePullSecret bool
 	// Has /etc/pki/entitlement
 	HasEtcPkiEntitlementKeys bool
 	// Has /etc/yum.repos.d configs
@@ -44,36 +45,6 @@ type BuildRequestOpts struct { //nolint:revive // This name is fine.
 	AdditionalTrustBundle []byte
 }
 
-// Gets the extensions image pullspec from the MachineOSConfig if available.
-// Otherwise, it defaults to the value from the osimageurl ConfigMap.
-func (b BuildRequestOpts) getExtensionsImagePullspec() string {
-	if b.MachineOSConfig.Spec.BuildInputs.BaseOSExtensionsImagePullspec != "" {
-		return b.MachineOSConfig.Spec.BuildInputs.BaseOSExtensionsImagePullspec
-	}
-
-	return b.OSImageURLConfig.BaseOSExtensionsContainerImage
-}
-
-// Gets the base OS image pullspec from the MachineOSConfig if available.
-// Otherwise, it defaults to the value from the osimageurl ConfigMap.
-func (b BuildRequestOpts) getBaseOSImagePullspec() string {
-	if b.MachineOSConfig.Spec.BuildInputs.BaseOSImagePullspec != "" {
-		return b.MachineOSConfig.Spec.BuildInputs.BaseOSImagePullspec
-	}
-
-	return b.OSImageURLConfig.BaseOSContainerImage
-}
-
-// Gets the release version value from the MachineOSConfig if available.
-// Otherwise, it defaults to the value from the osimageurl ConfigMap.
-func (b BuildRequestOpts) getReleaseVersion() string {
-	if b.MachineOSConfig.Spec.BuildInputs.ReleaseVersion != "" {
-		return b.MachineOSConfig.Spec.BuildInputs.ReleaseVersion
-	}
-
-	return b.OSImageURLConfig.ReleaseVersion
-}
-
 // Gets the packages for the extensions from the MachineConfig, if available.
 func (b BuildRequestOpts) getExtensionsPackages() ([]string, error) {
 	if len(b.MachineConfig.Spec.Extensions) == 0 {
@@ -84,7 +55,7 @@ func (b BuildRequestOpts) getExtensionsPackages() ([]string, error) {
 }
 
 // Gets all of the image build request opts from the Kube API server.
-func newBuildRequestOptsFromAPI(ctx context.Context, kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig) (*BuildRequestOpts, error) {
+func newBuildRequestOptsFromAPI(ctx context.Context, kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1.MachineOSBuild, mosc *mcfgv1.MachineOSConfig) (*BuildRequestOpts, error) {
 	og := optsGetter{
 		kubeclient: kubeclient,
 		mcfgclient: mcfgclient,
@@ -134,45 +105,41 @@ type optsGetter struct {
 }
 
 // TODO: Deduplicate this.
-func (o *optsGetter) validateMachineOSConfig(mosc *mcfgv1alpha1.MachineOSConfig) error {
+func (o *optsGetter) validateMachineOSConfig(mosc *mcfgv1.MachineOSConfig) error {
 	if mosc == nil {
 		return fmt.Errorf("expected MachineOSConfig not to be nil")
 	}
 
-	if mosc.Spec.BuildInputs.BaseImagePullSecret.Name == "" {
-		return fmt.Errorf("baseImagePullSecret empty for MachineOSConfig %s", mosc.Name)
-	}
-
-	if mosc.Spec.BuildInputs.RenderedImagePushSecret.Name == "" {
+	if mosc.Spec.RenderedImagePushSecret.Name == "" {
 		return fmt.Errorf("renderedImagePushSecret empty for MachineOSConfig %s", mosc.Name)
 	}
 
-	if mosc.Spec.BuildInputs.RenderedImagePushspec == "" {
+	if mosc.Spec.RenderedImagePushSpec == "" {
 		return fmt.Errorf("renderedImagePushspec empty for MachineOSConfig %s", mosc.Name)
 	}
 
-	if _, err := reference.ParseNamed(mosc.Spec.BuildInputs.RenderedImagePushspec); err != nil {
-		return fmt.Errorf("invalid renderedImagePushspec for MachineOSConfig %s: %w", mosc.Name, err)
+	if _, err := reference.ParseNamed(string(mosc.Spec.RenderedImagePushSpec)); err != nil {
+		return fmt.Errorf("invalid renderedImagePushSpec for MachineOSConfig %s: %w", mosc.Name, err)
 	}
 
 	return nil
 }
 
 // Validates that the required fields on a MachineOSBuild are set before beginning the build.
-func (o *optsGetter) validateMachineOSBuild(mosb *mcfgv1alpha1.MachineOSBuild) error {
+func (o *optsGetter) validateMachineOSBuild(mosb *mcfgv1.MachineOSBuild) error {
 	if mosb == nil {
 		return fmt.Errorf("expected MachineOSBuild not to be nil")
 	}
 
-	if mosb.Spec.DesiredConfig.Name == "" {
-		return fmt.Errorf("desiredConfig.name empty for MachineOSBuild %s", mosb.Name)
+	if mosb.Spec.MachineConfig.Name == "" {
+		return fmt.Errorf("machineConfig.name empty for MachineOSBuild %s", mosb.Name)
 	}
 
 	return nil
 }
 
 // Gets the BuildRequestOpts after making API queries to get all of the necessary info required.
-func (o *optsGetter) getOpts(ctx context.Context, mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig) (*BuildRequestOpts, error) {
+func (o *optsGetter) getOpts(ctx context.Context, mosb *mcfgv1.MachineOSBuild, mosc *mcfgv1.MachineOSConfig) (*BuildRequestOpts, error) {
 	if err := o.validateMachineOSConfig(mosc); err != nil {
 		return nil, fmt.Errorf("could not validate MachineOSConfig: %w", err)
 	}
@@ -196,19 +163,30 @@ func (o *optsGetter) getOpts(ctx context.Context, mosb *mcfgv1alpha1.MachineOSBu
 		return nil, fmt.Errorf("could not get osImageURL config: %w", err)
 	}
 
-	baseImagePullSecret, err := o.getValidatedSecret(ctx, mosc.Spec.BuildInputs.BaseImagePullSecret.Name)
-	if err != nil {
-		return nil, fmt.Errorf("could not get base image pull secret %s: %w", mosc.Spec.BuildInputs.BaseImagePullSecret.Name, err)
+	var baseImagePullSecretName string
+	// Check if a base image pull secret was provided
+	opts.hasUserDefinedBaseImagePullSecret = mosc.Spec.BaseImagePullSecret != nil
+	if opts.hasUserDefinedBaseImagePullSecret {
+		baseImagePullSecretName = mosc.Spec.BaseImagePullSecret.Name
+	} else {
+		// If not provided, fall back to the global pull secret copy in the MCO namespace
+		klog.Infof("BaseImagePullSecret not defined for MachineOSConfig %s, falling back to global pull secret", mosc.Name)
+		baseImagePullSecretName = ctrlcommon.GlobalPullSecretCopyName
 	}
 
-	finalImagePushSecret, err := o.getValidatedSecret(ctx, mosc.Spec.BuildInputs.RenderedImagePushSecret.Name)
+	baseImagePullSecret, err := o.getValidatedSecret(ctx, baseImagePullSecretName)
 	if err != nil {
-		return nil, fmt.Errorf("could not get final image push secret %s: %w", mosc.Spec.BuildInputs.RenderedImagePushSecret.Name, err)
+		return nil, fmt.Errorf("could not get base image pull secret %s: %w", mosc.Spec.BaseImagePullSecret.Name, err)
 	}
 
-	mc, err := o.mcfgclient.MachineconfigurationV1().MachineConfigs().Get(ctx, mosb.Spec.DesiredConfig.Name, metav1.GetOptions{})
+	finalImagePushSecret, err := o.getValidatedSecret(ctx, mosc.Spec.RenderedImagePushSecret.Name)
 	if err != nil {
-		return nil, fmt.Errorf("could not retrieve machineconfig %s: %w", mosb.Spec.DesiredConfig.Name, err)
+		return nil, fmt.Errorf("could not get final image push secret %s: %w", mosc.Spec.RenderedImagePushSecret.Name, err)
+	}
+
+	mc, err := o.mcfgclient.MachineconfigurationV1().MachineConfigs().Get(ctx, mosb.Spec.MachineConfig.Name, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("could not retrieve machineconfig %s: %w", mosb.Spec.MachineConfig.Name, err)
 	}
 
 	cc, err := o.mcfgclient.MachineconfigurationV1().ControllerConfigs().Get(ctx, ctrlcommon.ControllerConfigName, metav1.GetOptions{})
@@ -245,7 +223,7 @@ func (o *optsGetter) getValidatedSecret(ctx context.Context, name string) (*core
 
 // Determines whether the build makes use of entitlements based upon the
 // presence (or lack thereof) of specific configmaps and secrets.
-func (o *optsGetter) resolveEntitlements(ctx context.Context, mosc *mcfgv1alpha1.MachineOSConfig) (*BuildRequestOpts, error) {
+func (o *optsGetter) resolveEntitlements(ctx context.Context, mosc *mcfgv1.MachineOSConfig) (*BuildRequestOpts, error) {
 	opts := &BuildRequestOpts{}
 
 	etcPkiEntitlements, err := o.getOptionalSecret(ctx, constants.EtcPkiEntitlementSecretName+"-"+mosc.Spec.MachineConfigPool.Name)

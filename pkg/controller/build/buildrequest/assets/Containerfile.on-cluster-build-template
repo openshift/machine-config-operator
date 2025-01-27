@@ -40,9 +40,8 @@ RUN ostree container commit
 COPY ./openshift-config-user-ca-bundle.crt /etc/pki/ca-trust/source/anchors/openshift-config-user-ca-bundle.crt
 RUN update-ca-trust
 
-LABEL machineconfig={{.MachineOSBuild.Spec.DesiredConfig.Name}}
+LABEL machineconfig={{.MachineOSBuild.Spec.MachineConfig.Name}}
 LABEL machineconfigpool={{.MachineOSConfig.Spec.MachineConfigPool.Name}}
-LABEL releaseversion={{.ReleaseVersion}}
 LABEL baseOSContainerImage={{.BaseOSImage}}
 
 {{if .UserContainerfile}}

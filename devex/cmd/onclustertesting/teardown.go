@@ -85,9 +85,5 @@ func mobTeardown(cs *framework.ClientSet, targetPool string) error {
 		return err
 	}
 
-	if err := deleteMachineOSConfigs(cs); err != nil {
-		return err
-	}
-
-	return nil
+	return deleteMachineOSConfigs(cs)
 }
