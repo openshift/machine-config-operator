@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
@@ -954,4 +955,103 @@ func TestSSHKeyAndPasswordForOSBuilder(t *testing.T) {
 		unlabelFunc()
 		mcCleanupFunc()
 	})
+}
+
+// This test starts a build and then immediately scales down the
+// machine-os-builder deployment until the underlying build job has completed.
+// The rationale behind this test is so that if the machine-os-builder pod gets
+// rescheduled onto a different node while a build is occurring that the
+// MachineOSBuild object will eventually be reconciled, even if the build
+// completed during the rescheduling operation.
+func TestControllerEventuallyReconciles(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	cs := framework.NewClientSet("")
+
+	poolName := layeredMCPName
+
+	mosc := prepareForOnClusterLayeringTest(t, cs, onClusterLayeringTestOpts{
+		poolName: poolName,
+		customDockerfiles: map[string]string{
+			layeredMCPName: cowsayDockerfile,
+		},
+	})
+
+	mcp, err := cs.MachineconfigurationV1Interface.MachineConfigPools().Get(ctx, poolName, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	mosb := buildrequest.NewMachineOSBuildFromAPIOrDie(ctx, cs.GetKubeclient(), mosc, mcp)
+
+	jobName := utils.GetBuildJobName(mosb)
+
+	createMachineOSConfig(t, cs, mosc)
+
+	// Wait for the MachineOSBuild to exist.
+	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx).Eventually()
+	kubeassert.MachineOSBuildExists(mosb)
+	kubeassert.JobExists(utils.GetBuildJobName(mosb))
+
+	t.Logf("MachineOSBuild %q exists, stopping machine-os-builder", mosb.Name)
+
+	// As soon as the MachineOSBuild exists, scale down the machine-os-builder
+	// deployment and any other deployments which may inadvertantly cause its
+	// replica count to increase. This is done to simulate the machine-os-builder
+	// pod being scheduled onto a different node.
+	restoreDeployments := scaleDownDeployments(t, cs)
+
+	// Wait for the job to start running.
+	waitForJobToReachCondition(ctx, t, cs, jobName, func(job *batchv1.Job) (bool, error) {
+		return job.Status.Active == 1, nil
+	})
+
+	t.Logf("Job %s has started running, starting machine-os-builder", jobName)
+
+	// Restore the deployments.
+	restoreDeployments()
+
+	// Ensure that the MachineOSBuild object eventually gets updated.
+	kubeassert.MachineOSBuildIsRunning(mosb)
+
+	t.Logf("MachineOSBuild %s is now running, stopping machine-os-builder", mosb.Name)
+
+	// Stop the deployments again.
+	restoreDeployments = scaleDownDeployments(t, cs)
+
+	// Wait for the job to complete.
+	waitForJobToReachCondition(ctx, t, cs, utils.GetBuildJobName(mosb), func(job *batchv1.Job) (bool, error) {
+		return job.Status.Succeeded == 1, nil
+	})
+
+	t.Logf("Job %q finished, starting machine-os-builder", jobName)
+
+	// Restore the deployments again.
+	restoreDeployments()
+
+	// At this point, the machine-os-builder is running, so we wait for the build
+	// itself to complete and be updated.
+	mosb = waitForBuildToComplete(t, cs, mosb)
+
+	// Wait until the MachineOSConfig gets the digested pullspec from the MachineOSBuild.
+	require.NoError(t, wait.PollImmediate(1*time.Second, 5*time.Minute, func() (bool, error) {
+		mosc, err := cs.MachineconfigurationV1Interface.MachineOSConfigs().Get(ctx, mosc.Name, metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+
+		return mosc.Status.CurrentImagePullSpec != "" && mosc.Status.CurrentImagePullSpec == mosb.Status.DigestedImagePushSpec, nil
+	}))
+}
+
+// Waits for a job object to reach a given state.
+// TOOD: Add this to the Asserts helper struct.
+func waitForJobToReachCondition(ctx context.Context, t *testing.T, cs *framework.ClientSet, jobName string, condFunc func(*batchv1.Job) (bool, error)) {
+	require.NoError(t, wait.PollImmediate(1*time.Second, 10*time.Minute, func() (bool, error) {
+		job, err := cs.BatchV1Interface.Jobs(ctrlcommon.MCONamespace).Get(ctx, jobName, metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+
+		return condFunc(job)
+	}))
 }

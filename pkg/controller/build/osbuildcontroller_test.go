@@ -11,6 +11,7 @@ import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	fakeclientmachineconfigv1 "github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
+	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/buildrequest"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/fixtures"
@@ -19,6 +20,7 @@ import (
 	testhelpers "github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	batchv1 "k8s.io/api/batch/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	clientset "k8s.io/client-go/kubernetes"
@@ -514,6 +516,108 @@ func TestOSBuildControllerBuildFailedDoesNotCascade(t *testing.T) {
 	require.NoError(t, err)
 	if !found(mosb, mosbList.Items) {
 		t.Errorf("Expected %v to be in the list %v", mosb.Name, mosbList.Items)
+	}
+}
+
+// This scenario tests the case where the controller restarts and a running job
+// completes before the reconcilation loop can run. To simulate that, this test
+// performs all of the setup steps and creates a successful Job before starting
+// the controller.
+func TestOSBuildControllerReconcilesAfterRestart(t *testing.T) {
+	mainCtx, mainCancel := context.WithTimeout(context.Background(), time.Second*5)
+	t.Cleanup(mainCancel)
+
+	testCases := []struct {
+		name       string
+		jobStatus  fixtures.JobStatus
+		conditions []metav1.Condition
+		assertions func(*testhelpers.Assertions, *mcfgv1.MachineOSBuild)
+	}{
+		{
+			name:       "Empty MOSB conditions -> Running",
+			jobStatus:  fixtures.JobStatus{Active: 1},
+			conditions: []metav1.Condition{},
+			assertions: func(kubeassert *testhelpers.Assertions, mosb *mcfgv1.MachineOSBuild) {
+				kubeassert.MachineOSBuildIsRunning(mosb)
+				kubeassert.JobExists(utils.GetBuildJobName(mosb))
+			},
+		},
+		{
+			name:       "Initial MOSB -> Running",
+			jobStatus:  fixtures.JobStatus{Active: 1},
+			conditions: apihelpers.MachineOSBuildInitialConditions(),
+			assertions: func(kubeassert *testhelpers.Assertions, mosb *mcfgv1.MachineOSBuild) {
+				kubeassert.MachineOSBuildIsRunning(mosb)
+				kubeassert.JobExists(utils.GetBuildJobName(mosb))
+			},
+		},
+		{
+			name:       "Running MOSB -> Succeeded",
+			jobStatus:  fixtures.JobStatus{Succeeded: 1},
+			conditions: apihelpers.MachineOSBuildRunningConditions(),
+			assertions: func(kubeassert *testhelpers.Assertions, mosb *mcfgv1.MachineOSBuild) {
+				kubeassert.MachineOSBuildIsSuccessful(mosb)
+				kubeassert.JobDoesNotExist(utils.GetBuildJobName(mosb))
+			},
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(mainCtx)
+			t.Cleanup(cancel)
+
+			poolName := "worker"
+
+			kubeclient, mcfgclient, lobj, kubeassert := fixtures.GetClientsForTest(t)
+
+			kubeassert = kubeassert.Eventually().WithContext(ctx).WithPollInterval(time.Millisecond)
+			mcp := lobj.MachineConfigPool
+			mosc := lobj.MachineOSConfig
+			mosc.Name = fmt.Sprintf("%s-os-config", poolName)
+
+			_, err := mcfgclient.MachineconfigurationV1().MachineOSConfigs().Create(ctx, mosc, metav1.CreateOptions{})
+			require.NoError(t, err)
+
+			mosb := buildrequest.NewMachineOSBuildFromAPIOrDie(ctx, kubeclient, mosc, mcp)
+			apiMosb, err := mcfgclient.MachineconfigurationV1().MachineOSBuilds().Create(ctx, mosb, metav1.CreateOptions{})
+			require.NoError(t, err)
+
+			// This represents the state of the MachineOSBuild before the build
+			// controller comes back up after a restart. A job that is in a terminal
+			// state will produce a different set of conditions which these conditions
+			// will be compared to.
+			apiMosb.Status.Conditions = testCase.conditions
+
+			_, err = mcfgclient.MachineconfigurationV1().MachineOSBuilds().UpdateStatus(ctx, apiMosb, metav1.UpdateOptions{})
+			require.NoError(t, err)
+
+			br, err := buildrequest.NewBuildRequestFromAPI(ctx, kubeclient, mcfgclient, apiMosb, mosc)
+			require.NoError(t, err)
+
+			buildJob := br.Builder().GetObject().(*batchv1.Job)
+
+			_, err = kubeclient.BatchV1().Jobs(ctrlcommon.MCONamespace).Create(ctx, buildJob, metav1.CreateOptions{})
+			require.NoError(t, err)
+
+			fixtures.SetJobStatus(ctx, t, kubeclient, mosb, testCase.jobStatus)
+
+			cfg := Config{
+				MaxRetries:  1,
+				UpdateDelay: 0,
+			}
+
+			ctrl := newOSBuildController(cfg, mcfgclient, kubeclient)
+
+			// Use a work queue which is tuned for testing.
+			ctrl.execQueue = ctrlcommon.NewWrappedQueueForTesting(t)
+
+			// Start the build controller
+			go ctrl.Run(ctx, 5)
+
+			kubeassert.MachineOSBuildExists(mosb)
+			testCase.assertions(kubeassert, mosb)
+		})
 	}
 }
 
