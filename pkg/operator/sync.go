@@ -13,7 +13,6 @@ import (
 	"net/url"
 	"os"
 	"reflect"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -37,7 +36,6 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	v1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	opv1 "github.com/openshift/api/operator/v1"
 
@@ -632,22 +630,7 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 		return err
 	}
 
-	isOnClusterBuildEnabled, err := optr.isOnClusterBuildFeatureGateEnabled()
-	if err != nil {
-		return err
-	}
-
-	if isOnClusterBuildEnabled {
-		moscs, err := optr.getAndValidateMachineOSConfigs()
-		if err != nil {
-			return err
-		}
-
-		// create renderConfig
-		optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra, pointerConfigData, moscs, apiServer)
-	} else {
-		optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra, pointerConfigData, nil, apiServer)
-	}
+	optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra, pointerConfigData, apiServer)
 
 	return nil
 }
@@ -733,7 +716,7 @@ func (optr *Operator) syncMachineConfigPools(config *renderConfig, _ *configv1.C
 
 		// Work around https://github.com/kubernetes/kubernetes/issues/3030 and https://github.com/kubernetes/kubernetes/issues/80609
 		pool.APIVersion = mcfgv1.GroupVersion.String()
-		pool.Kind = "MachineConfigPool"
+		pool.Kind = "MachineConfigPool" //nolint:goconst
 
 		p.ObjectMeta.OwnerReferences = []metav1.OwnerReference{
 			{
@@ -1268,6 +1251,11 @@ func (optr *Operator) reconcileMachineOSBuilder(mob *appsv1.Deployment) error {
 		return fmt.Errorf("could not reconcile etc-pki-entitlement secrets: %w", err)
 	}
 
+	// Create/Deletes the global pull secret copy in the MCO namespace, depending on layered pool count.
+	if err := optr.reconcileGlobalPullSecretCopy(layeredMCPs); err != nil {
+		return fmt.Errorf("could not reconcile global pull secret copy: %w", err)
+	}
+
 	// If we have opted-in pools and the Machine OS Builder deployment is either
 	// not running or doesn't have the correct replica count, scale it up.
 	correctReplicaCount := optr.hasCorrectReplicaCount(mob)
@@ -1427,10 +1415,26 @@ func (optr *Operator) reconcileSimpleContentAccessSecrets(layeredMCPs []*mcfgv1.
 		secretName := ctrlcommon.SimpleContentAccessSecretName + "-" + poolName
 
 		// Create a clone of simpleContentAccessSecret, modify it to be in the MCO namespace with the new name
+		currentPool, err := optr.mcpLister.Get(poolName)
+		if err != nil {
+			return err
+		}
+
+		// Work around https://github.com/kubernetes/kubernetes/issues/3030 and https://github.com/kubernetes/kubernetes/issues/80609
+		currentPool.APIVersion = mcfgv1.GroupVersion.String()
+		currentPool.Kind = "MachineConfigPool"
 		clonedSecret := &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      secretName,
 				Namespace: ctrlcommon.MCONamespace,
+				OwnerReferences: []metav1.OwnerReference{
+					{
+						APIVersion: currentPool.APIVersion,
+						Kind:       currentPool.Kind,
+						Name:       currentPool.ObjectMeta.Name,
+						UID:        currentPool.ObjectMeta.UID,
+					},
+				},
 			},
 			Data: simpleContentAccessSecret.Data,
 			Type: corev1.SecretTypeOpaque,
@@ -1453,6 +1457,57 @@ func (optr *Operator) reconcileSimpleContentAccessSecrets(layeredMCPs []*mcfgv1.
 			}
 			klog.Infof("updating %s", secretName)
 		}
+	}
+
+	return nil
+}
+
+func (optr *Operator) reconcileGlobalPullSecretCopy(layeredMCPs []*mcfgv1.MachineConfigPool) error {
+	secretCopyExists := true
+	currentSecretCopy, err := optr.mcoSecretLister.Secrets(ctrlcommon.MCONamespace).Get(ctrlcommon.GlobalPullSecretCopyName)
+	if apierrors.IsNotFound(err) {
+		secretCopyExists = false
+	} else if err != nil {
+		return err
+	}
+
+	if len(layeredMCPs) == 0 {
+		// If the secret copy doesn't exist, nothing to do here
+		if !secretCopyExists {
+			return nil
+		}
+		klog.Infof("deleting %s", ctrlcommon.GlobalPullSecretCopyName)
+		return optr.kubeClient.CoreV1().Secrets(ctrlcommon.MCONamespace).Delete(context.TODO(), ctrlcommon.GlobalPullSecretCopyName, metav1.DeleteOptions{})
+	}
+
+	// Atleast one pool is opted-in, let's create or update the copy if needed. First, grab the global pull secret.
+	globalPullSecret, err := optr.ocSecretLister.Secrets(ctrlcommon.OpenshiftConfigNamespace).Get("pull-secret")
+	if err != nil {
+		return fmt.Errorf("error fetching cluster pull secret: %w", err)
+	}
+
+	// Create a clone of clusterPullSecret, and modify it to be in the MCO namespace.
+	globalPullSecretCopy := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      ctrlcommon.GlobalPullSecretCopyName,
+			Namespace: ctrlcommon.MCONamespace,
+		},
+		Data: globalPullSecret.Data,
+		Type: corev1.SecretTypeDockerConfigJson,
+	}
+
+	// If the secret copy doesn't exist, create it.
+	if !secretCopyExists {
+		klog.Infof("creating %s", ctrlcommon.GlobalPullSecretCopyName)
+		_, err := optr.kubeClient.CoreV1().Secrets(ctrlcommon.MCONamespace).Create(context.TODO(), globalPullSecretCopy, metav1.CreateOptions{})
+		return err
+	}
+
+	// If it does exist, check if an update is required before making the update call.
+	if !reflect.DeepEqual(currentSecretCopy.Data, globalPullSecret.Data) {
+		klog.Infof("updating %s", ctrlcommon.GlobalPullSecretCopyName)
+		_, err := optr.kubeClient.CoreV1().Secrets(ctrlcommon.MCONamespace).Update(context.TODO(), globalPullSecretCopy, metav1.UpdateOptions{})
+		return err
 	}
 
 	return nil
@@ -1498,11 +1553,11 @@ func (optr *Operator) getLayeredMachineConfigPools() ([]*mcfgv1.MachineConfigPoo
 
 	if len(pools) == 0 {
 		moscPools := []*mcfgv1.MachineConfigPool{}
-		machineosconfigs, err := optr.client.MachineconfigurationV1alpha1().MachineOSConfigs().List(context.TODO(), metav1.ListOptions{})
+		machineosconfigs, err := optr.moscLister.List(labels.Everything())
 		if err != nil {
 			return []*mcfgv1.MachineConfigPool{}, err
 		}
-		for _, mosc := range machineosconfigs.Items {
+		for _, mosc := range machineosconfigs {
 			mcp, err := optr.mcpLister.Get(mosc.Spec.MachineConfigPool.Name)
 			if err != nil {
 				return []*mcfgv1.MachineConfigPool{}, err
@@ -2031,7 +2086,7 @@ func setGVK(obj runtime.Object, scheme *runtime.Scheme) error {
 	return nil
 }
 
-func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *ctrlcommon.RenderConfigImages, infra *configv1.Infrastructure, pointerConfigData []byte, moscs []*mcfgv1alpha1.MachineOSConfig, apiServer *configv1.APIServer) *renderConfig {
+func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *ctrlcommon.RenderConfigImages, infra *configv1.Infrastructure, pointerConfigData []byte, apiServer *configv1.APIServer) *renderConfig {
 	tlsMinVersion, tlsCipherSuites := ctrlcommon.GetSecurityProfileCiphersFromAPIServer(apiServer)
 	return &renderConfig{
 		TargetNamespace:        tnamespace,
@@ -2043,7 +2098,6 @@ func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.C
 		APIServerURL:           infra.Status.APIServerInternalURL,
 		PointerConfig:          string(pointerConfigData),
 		Infra:                  *infra,
-		MachineOSConfigs:       moscs,
 		TLSMinVersion:          tlsMinVersion,
 		TLSCipherSuites:        tlsCipherSuites,
 	}
@@ -2263,49 +2317,6 @@ func (optr *Operator) syncMachineConfiguration(_ *renderConfig, _ *configv1.Clus
 	}
 
 	return nil
-}
-
-// Gets MachineOSConfigs from the lister, assuming that the OnClusterBuild
-// FeatureGate is enabled. Will return nil if the FeatureGate is not enabled.
-func (optr *Operator) getMachineOSConfigs() ([]*mcfgv1alpha1.MachineOSConfig, error) {
-	isOnClusterBuildEnabled, err := optr.isOnClusterBuildFeatureGateEnabled()
-	if err != nil {
-		return nil, err
-	}
-
-	if !isOnClusterBuildEnabled {
-		return nil, nil
-	}
-
-	moscs, err := optr.moscLister.List(labels.Everything())
-	if err != nil {
-		return nil, err
-	}
-
-	sort.Slice(moscs, func(i, j int) bool { return moscs[i].Name < moscs[j].Name })
-	return moscs, nil
-}
-
-// Fetches and validates the MachineOSConfigs. For now, validation consists of
-// ensuring that the secrets the MachineOSConfig was configured with exist.
-func (optr *Operator) getAndValidateMachineOSConfigs() ([]*mcfgv1alpha1.MachineOSConfig, error) {
-	moscs, err := optr.getMachineOSConfigs()
-
-	if err != nil {
-		return nil, err
-	}
-
-	if moscs == nil {
-		return nil, nil
-	}
-
-	for _, mosc := range moscs {
-		if err := build.ValidateMachineOSConfigFromListers(optr.mcpLister, optr.mcoSecretLister, mosc); err != nil {
-			return nil, fmt.Errorf("invalid MachineOSConfig %s: %w", mosc.Name, err)
-		}
-	}
-
-	return moscs, nil
 }
 
 // Determines if the OnclusterBuild FeatureGate is enabled. Returns any errors encountered.

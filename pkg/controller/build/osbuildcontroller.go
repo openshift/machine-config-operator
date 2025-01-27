@@ -11,7 +11,6 @@ import (
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
@@ -216,22 +215,22 @@ func (ctrl *OSBuildController) enqueueFuncForObject(obj kubeObject, toRun func(c
 }
 
 func (ctrl *OSBuildController) addMachineOSBuild(cur interface{}) {
-	mosb := cur.(*mcfgv1alpha1.MachineOSBuild)
+	mosb := cur.(*mcfgv1.MachineOSBuild)
 	ctrl.enqueueFuncForObject(mosb, func(ctx context.Context) error {
 		return ctrl.buildReconciler.AddMachineOSBuild(ctx, mosb)
 	})
 }
 
 func (ctrl *OSBuildController) updateMachineOSBuild(old, cur interface{}) {
-	oldMOSB := old.(*mcfgv1alpha1.MachineOSBuild)
-	curMOSB := cur.(*mcfgv1alpha1.MachineOSBuild)
+	oldMOSB := old.(*mcfgv1.MachineOSBuild)
+	curMOSB := cur.(*mcfgv1.MachineOSBuild)
 	ctrl.enqueueFuncForObject(curMOSB, func(ctx context.Context) error {
 		return ctrl.buildReconciler.UpdateMachineOSBuild(ctx, oldMOSB, curMOSB)
 	})
 }
 
 func (ctrl *OSBuildController) deleteMachineOSBuild(cur interface{}) {
-	mosb := cur.(*mcfgv1alpha1.MachineOSBuild)
+	mosb := cur.(*mcfgv1.MachineOSBuild)
 	ctrl.enqueueFuncForObject(mosb, func(ctx context.Context) error {
 		return ctrl.buildReconciler.DeleteMachineOSBuild(ctx, mosb)
 	})
@@ -261,29 +260,29 @@ func (ctrl *OSBuildController) deleteJob(cur interface{}) {
 }
 
 func (ctrl *OSBuildController) addMachineOSConfig(newMOSC interface{}) {
-	m := newMOSC.(*mcfgv1alpha1.MachineOSConfig).DeepCopy()
+	m := newMOSC.(*mcfgv1.MachineOSConfig).DeepCopy()
 	ctrl.enqueueFuncForObject(m, func(ctx context.Context) error {
 		return ctrl.buildReconciler.AddMachineOSConfig(ctx, m)
 	})
 }
 
 func (ctrl *OSBuildController) updateMachineOSConfig(old, cur interface{}) {
-	oldMOSC := old.(*mcfgv1alpha1.MachineOSConfig).DeepCopy()
-	curMOSC := cur.(*mcfgv1alpha1.MachineOSConfig).DeepCopy()
+	oldMOSC := old.(*mcfgv1.MachineOSConfig).DeepCopy()
+	curMOSC := cur.(*mcfgv1.MachineOSConfig).DeepCopy()
 	ctrl.enqueueFuncForObject(curMOSC, func(ctx context.Context) error {
 		return ctrl.buildReconciler.UpdateMachineOSConfig(ctx, oldMOSC, curMOSC)
 	})
 }
 
 func (ctrl *OSBuildController) deleteMachineOSConfig(cur interface{}) {
-	mosc, ok := cur.(*mcfgv1alpha1.MachineOSConfig)
+	mosc, ok := cur.(*mcfgv1.MachineOSConfig)
 	if !ok {
 		tombstone, ok := cur.(cache.DeletedFinalStateUnknown)
 		if !ok {
 			utilruntime.HandleError(fmt.Errorf("Couldn't get object from tombstone %#v", cur))
 			return
 		}
-		mosc, ok = tombstone.Obj.(*mcfgv1alpha1.MachineOSConfig)
+		mosc, ok = tombstone.Obj.(*mcfgv1.MachineOSConfig)
 		if !ok {
 			utilruntime.HandleError(fmt.Errorf("Tombstone contained object that is not a MachineOSConfig %#v", cur))
 			return
