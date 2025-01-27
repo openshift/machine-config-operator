@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/fixtures"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/stretchr/testify/assert"
@@ -16,7 +15,7 @@ import (
 func TestValidateOnClusterBuildConfig(t *testing.T) {
 	t.Parallel()
 
-	newMosc := func() *mcfgv1alpha1.MachineOSConfig {
+	newMosc := func() *mcfgv1.MachineOSConfig {
 		lobj := fixtures.NewObjectsForTest("worker")
 		return lobj.MachineOSConfig
 	}
@@ -25,7 +24,7 @@ func TestValidateOnClusterBuildConfig(t *testing.T) {
 		name            string
 		errExpected     bool
 		secretsToDelete []string
-		mosc            func() *mcfgv1alpha1.MachineOSConfig
+		mosc            func() *mcfgv1.MachineOSConfig
 	}{
 		{
 			name: "happy path",
@@ -33,13 +32,13 @@ func TestValidateOnClusterBuildConfig(t *testing.T) {
 		},
 		{
 			name:            "missing secret",
-			secretsToDelete: []string{"current-image-pull-secret"},
+			secretsToDelete: []string{"final-image-push-secret"},
 			mosc:            newMosc,
 			errExpected:     true,
 		},
 		{
 			name: "missing MachineOSConfig",
-			mosc: func() *mcfgv1alpha1.MachineOSConfig {
+			mosc: func() *mcfgv1.MachineOSConfig {
 				mosc := newMosc()
 				mosc.Name = "other-machineosconfig"
 				mosc.Spec.MachineConfigPool.Name = "other-machineconfigpool"
@@ -49,9 +48,9 @@ func TestValidateOnClusterBuildConfig(t *testing.T) {
 		},
 		{
 			name: "malformed image pullspec",
-			mosc: func() *mcfgv1alpha1.MachineOSConfig {
+			mosc: func() *mcfgv1.MachineOSConfig {
 				mosc := newMosc()
-				mosc.Spec.BuildInputs.RenderedImagePushspec = "malformed-image-pullspec"
+				mosc.Spec.RenderedImagePushSpec = "malformed-image-pullspec"
 				return mosc
 			},
 			errExpected: true,
@@ -64,8 +63,7 @@ func TestValidateOnClusterBuildConfig(t *testing.T) {
 			t.Parallel()
 
 			kubeclient, mcfgclient, lobj, _ := fixtures.GetClientsForTest(t)
-
-			_, err := mcfgclient.MachineconfigurationV1alpha1().MachineOSConfigs().Create(context.TODO(), testCase.mosc(), metav1.CreateOptions{})
+			_, err := mcfgclient.MachineconfigurationV1().MachineOSConfigs().Create(context.TODO(), testCase.mosc(), metav1.CreateOptions{})
 			require.NoError(t, err)
 
 			for _, secret := range testCase.secretsToDelete {

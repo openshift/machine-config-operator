@@ -43,7 +43,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: Spec holds user-settable values for the proxy configuration
+            description: spec holds user-settable values for the proxy configuration
             properties:
               httpProxy:
                 description: httpProxy is the URL of the proxy for HTTP requests.  Empty

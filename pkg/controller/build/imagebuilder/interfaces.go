@@ -3,7 +3,7 @@ package imagebuilder
 import (
 	"context"
 
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/buildrequest"
 )
 
@@ -35,6 +35,6 @@ type Cleaner interface {
 // MachineOSBuildStatus object.
 type ImageBuildObserver interface {
 	Exists(context.Context) (bool, error)
-	Status(context.Context) (mcfgv1alpha1.BuildProgress, error)
-	MachineOSBuildStatus(context.Context) (mcfgv1alpha1.MachineOSBuildStatus, error)
+	Status(context.Context) (mcfgv1.BuildProgress, error)
+	MachineOSBuildStatus(context.Context) (mcfgv1.MachineOSBuildStatus, error)
 }

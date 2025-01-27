@@ -42,10 +42,6 @@ spec:
           - mountPath: /rootfs
             name: rootfs
             mountPropagation: HostToContainer
-          {{- range .MachineOSConfigs }}
-          - mountPath: /run/secrets/os-image-pull-secrets/{{ .Spec.MachineConfigPool.Name }}
-            name: {{ .Spec.BuildOutputs.CurrentImagePullSecret.Name }}
-          {{- end }}
         livenessProbe:
           initialDelaySeconds: 120
           periodSeconds: 30
@@ -116,11 +112,6 @@ spec:
         - configMap:
             name: kube-rbac-proxy
           name: mcd-auth-proxy-config
-        {{- range .MachineOSConfigs }}
-        - secret:
-            secretName: {{ .Spec.BuildOutputs.CurrentImagePullSecret.Name }}
-          name: {{ .Spec.BuildOutputs.CurrentImagePullSecret.Name }}
-        {{- end }}
       tolerations:
       # MCD needs to run everywhere. Tolerate all taints.
       - operator: Exists

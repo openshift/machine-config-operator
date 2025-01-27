@@ -260,7 +260,7 @@ spec:
                 type: object
               networkType:
                 description: |-
-                  NetworkType is the plugin that is to be deployed (e.g. OVNKubernetes).
+                  networkType is the plugin that is to be deployed (e.g. OVNKubernetes).
                   This should match a value that the cluster-network-operator understands,
                   or else no networking will be installed.
                   Currently supported values are:
@@ -318,7 +318,7 @@ spec:
                 type: array
                 x-kubernetes-list-type: atomic
               clusterNetworkMTU:
-                description: ClusterNetworkMTU is the MTU for inter-pod networking.
+                description: clusterNetworkMTU is the MTU for inter-pod networking.
                 type: integer
               conditions:
                 description: |-
@@ -383,37 +383,37 @@ spec:
                 - type
                 x-kubernetes-list-type: map
               migration:
-                description: Migration contains the cluster network migration configuration.
+                description: migration contains the cluster network migration configuration.
                 properties:
                   mtu:
-                    description: MTU is the MTU configuration that is being deployed.
+                    description: mtu is the MTU configuration that is being deployed.
                     properties:
                       machine:
-                        description: Machine contains MTU migration configuration
+                        description: machine contains MTU migration configuration
                           for the machine's uplink.
                         properties:
                           from:
-                            description: From is the MTU to migrate from.
+                            description: from is the MTU to migrate from.
                             format: int32
                             minimum: 0
                             type: integer
                           to:
-                            description: To is the MTU to migrate to.
+                            description: to is the MTU to migrate to.
                             format: int32
                             minimum: 0
                             type: integer
                         type: object
                       network:
-                        description: Network contains MTU migration configuration
+                        description: network contains MTU migration configuration
                           for the default network.
                         properties:
                           from:
-                            description: From is the MTU to migrate from.
+                            description: from is the MTU to migrate from.
                             format: int32
                             minimum: 0
                             type: integer
                           to:
-                            description: To is the MTU to migrate to.
+                            description: to is the MTU to migrate to.
                             format: int32
                             minimum: 0
                             type: integer
@@ -421,13 +421,13 @@ spec:
                     type: object
                   networkType:
                     description: |-
-                      NetworkType is the target plugin that is being deployed.
+                      networkType is the target plugin that is being deployed.
                       DEPRECATED: network type migration is no longer supported,
                       so this should always be unset.
                     type: string
                 type: object
               networkType:
-                description: NetworkType is the plugin that is deployed (e.g. OVNKubernetes).
+                description: networkType is the plugin that is deployed (e.g. OVNKubernetes).
                 type: string
               serviceNetwork:
                 description: |-

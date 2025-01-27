@@ -7,7 +7,6 @@ import (
 
 	"github.com/containers/image/v5/docker/reference"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
@@ -24,7 +23,7 @@ import (
 // ValidateOnClusterBuildConfig validates the existence of the MachineOSConfig and the required build inputs.
 func ValidateOnClusterBuildConfig(kubeclient clientset.Interface, mcfgclient versioned.Interface, layeredMCPs []*mcfgv1.MachineConfigPool) error {
 	// Validate the presence of the MachineOSConfig
-	machineOSConfigs, err := mcfgclient.MachineconfigurationV1alpha1().MachineOSConfigs().List(context.TODO(), metav1.ListOptions{})
+	machineOSConfigs, err := mcfgclient.MachineconfigurationV1().MachineOSConfigs().List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		return err
 	}
@@ -34,7 +33,7 @@ func ValidateOnClusterBuildConfig(kubeclient clientset.Interface, mcfgclient ver
 	}
 
 	moscForPoolExists := false
-	var moscForPool *mcfgv1alpha1.MachineOSConfig
+	var moscForPool *mcfgv1.MachineOSConfig
 	for _, pool := range layeredMCPs {
 		moscForPoolExists = false
 		for _, mosc := range machineOSConfigs.Items {
@@ -61,7 +60,7 @@ func ValidateOnClusterBuildConfig(kubeclient clientset.Interface, mcfgclient ver
 	return nil
 }
 
-func validateMachineOSConfig(mcpGetter func(string) (*mcfgv1.MachineConfigPool, error), secretGetter func(string) (*corev1.Secret, error), mosc *mcfgv1alpha1.MachineOSConfig) error {
+func validateMachineOSConfig(mcpGetter func(string) (*mcfgv1.MachineConfigPool, error), secretGetter func(string) (*corev1.Secret, error), mosc *mcfgv1.MachineOSConfig) error {
 	_, err := mcpGetter(mosc.Spec.MachineConfigPool.Name)
 	if err != nil && k8serrors.IsNotFound(err) {
 		return fmt.Errorf("no MachineConfigPool named %s exists for MachineOSConfig %s", mosc.Spec.MachineConfigPool.Name, mosc.Name)
@@ -72,9 +71,11 @@ func validateMachineOSConfig(mcpGetter func(string) (*mcfgv1.MachineConfigPool, 
 	}
 
 	secretFields := map[string]string{
-		mosc.Spec.BuildInputs.BaseImagePullSecret.Name:     "baseImagePullSecret",
-		mosc.Spec.BuildInputs.RenderedImagePushSecret.Name: "renderedImagePushSecret",
-		mosc.Spec.BuildOutputs.CurrentImagePullSecret.Name: "currentImagePullSecret",
+		mosc.Spec.RenderedImagePushSecret.Name: "renderedImagePushSecret",
+	}
+	// Add base image pull secret if it has been defined in the MOSC
+	if mosc.Spec.BaseImagePullSecret != nil {
+		secretFields[mosc.Spec.BaseImagePullSecret.Name] = "baseImagePullSecret"
 	}
 
 	for secretName, fieldName := range secretFields {
@@ -83,14 +84,14 @@ func validateMachineOSConfig(mcpGetter func(string) (*mcfgv1.MachineConfigPool, 
 		}
 	}
 
-	if _, err := reference.ParseNamed(mosc.Spec.BuildInputs.RenderedImagePushspec); err != nil {
-		return fmt.Errorf("could not validate renderdImagePushspec %s for MachineOSConfig %s: %w", mosc.Spec.BuildInputs.RenderedImagePushspec, mosc.Name, err)
+	if _, err := reference.ParseNamed(string(mosc.Spec.RenderedImagePushSpec)); err != nil {
+		return fmt.Errorf("could not validate renderdImagePushspec %s for MachineOSConfig %s: %w", string(mosc.Spec.RenderedImagePushSpec), mosc.Name, err)
 	}
 
 	return nil
 }
 
-func ValidateMachineOSConfigFromListers(mcpLister mcfglistersv1.MachineConfigPoolLister, secretLister corelisterv1.SecretLister, mosc *mcfgv1alpha1.MachineOSConfig) error {
+func ValidateMachineOSConfigFromListers(mcpLister mcfglistersv1.MachineConfigPoolLister, secretLister corelisterv1.SecretLister, mosc *mcfgv1.MachineOSConfig) error {
 	mcpGetter := func(name string) (*mcfgv1.MachineConfigPool, error) {
 		return mcpLister.Get(name)
 	}
@@ -102,7 +103,7 @@ func ValidateMachineOSConfigFromListers(mcpLister mcfglistersv1.MachineConfigPoo
 	return validateMachineOSConfig(mcpGetter, secretGetter, mosc)
 }
 
-func validateSecret(secretGetter func(string) (*corev1.Secret, error), mosc *mcfgv1alpha1.MachineOSConfig, secretName string) error {
+func validateSecret(secretGetter func(string) (*corev1.Secret, error), mosc *mcfgv1.MachineOSConfig, secretName string) error {
 	if secretName == "" {
 		return fmt.Errorf("no secret name provided")
 	}
@@ -123,7 +124,7 @@ func validateSecret(secretGetter func(string) (*corev1.Secret, error), mosc *mcf
 // Determines if a MachineOSBuild status update is needed. These are needed
 // primarily when we transition from the initial status -> transient state ->
 // terminal state.
-func isMachineOSBuildStatusUpdateNeeded(oldStatus, curStatus mcfgv1alpha1.MachineOSBuildStatus) (bool, string) {
+func isMachineOSBuildStatusUpdateNeeded(oldStatus, curStatus mcfgv1.MachineOSBuildStatus) (bool, string) {
 	oldState := ctrlcommon.NewMachineOSBuildStateFromStatus(oldStatus)
 	curState := ctrlcommon.NewMachineOSBuildStateFromStatus(curStatus)
 
@@ -182,7 +183,7 @@ func isMachineOSBuildStatusUpdateNeeded(oldStatus, curStatus mcfgv1alpha1.Machin
 }
 
 // Converts a list of MachineOSConfigs into a list of their names.
-func getMachineOSConfigNames(moscList []*mcfgv1alpha1.MachineOSConfig) []string {
+func getMachineOSConfigNames(moscList []*mcfgv1.MachineOSConfig) []string {
 	out := []string{}
 
 	for _, mosc := range moscList {
@@ -193,7 +194,7 @@ func getMachineOSConfigNames(moscList []*mcfgv1alpha1.MachineOSConfig) []string 
 }
 
 // Converts a list of MachineOSBuilds into a list of their names.
-func getMachineOSBuildNames(mosbList []*mcfgv1alpha1.MachineOSBuild) []string {
+func getMachineOSBuildNames(mosbList []*mcfgv1.MachineOSBuild) []string {
 	out := []string{}
 
 	for _, mosc := range mosbList {
@@ -205,7 +206,7 @@ func getMachineOSBuildNames(mosbList []*mcfgv1alpha1.MachineOSBuild) []string {
 
 // Determines if a MachineOSBuild is current for a given MachineOSConfig solely
 // by looking at the current build annotation on the MachineOSConfig.
-func isMachineOSBuildCurrentForMachineOSConfig(mosc *mcfgv1alpha1.MachineOSConfig, mosb *mcfgv1alpha1.MachineOSBuild) bool {
+func isMachineOSBuildCurrentForMachineOSConfig(mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild) bool {
 	// If we don't have the current build annotation, then we cannot even make this determination.
 	if !hasCurrentBuildAnnotation(mosc) {
 		return false
@@ -224,23 +225,22 @@ func isMachineOSBuildCurrentForMachineOSConfig(mosc *mcfgv1alpha1.MachineOSConfi
 // considering the current build annotation and the image pullspec. If the
 // MachineOSBuild has not (yet) set its final image pushspec, this will return
 // false.
-func isMachineOSBuildCurrentForMachineOSConfigWithPullspec(mosc *mcfgv1alpha1.MachineOSConfig, mosb *mcfgv1alpha1.MachineOSBuild) bool {
+func isMachineOSBuildCurrentForMachineOSConfigWithPullspec(mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild) bool {
 	// If the MachineOSConfig has the same final image pullspec as
 	// the MachineOSBuild and the MachineOSBuild's pushspec is populated, we know
 	// they're the same.
 	return isMachineOSBuildCurrentForMachineOSConfig(mosc, mosb) &&
-		mosc.Status.CurrentImagePullspec == mosb.Status.FinalImagePushspec &&
-		mosb.Status.FinalImagePushspec != ""
+		mosc.Status.CurrentImagePullSpec == mosb.Status.DigestedImagePushSpec
 }
 
 // Determines if a given MachineOSConfig has the current build annotation.
-func hasCurrentBuildAnnotation(mosc *mcfgv1alpha1.MachineOSConfig) bool {
+func hasCurrentBuildAnnotation(mosc *mcfgv1.MachineOSConfig) bool {
 	return metav1.HasAnnotation(mosc.ObjectMeta, constants.CurrentMachineOSBuildAnnotationKey) && mosc.Annotations[constants.CurrentMachineOSBuildAnnotationKey] != ""
 }
 
 // Determines if a given MachineOSConfig has the current build annotation and
 // it matches the name of the given MachineOSBuild.
-func isCurrentBuildAnnotationEqual(mosc *mcfgv1alpha1.MachineOSConfig, mosb *mcfgv1alpha1.MachineOSBuild) bool {
+func isCurrentBuildAnnotationEqual(mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild) bool {
 	if !hasCurrentBuildAnnotation(mosc) {
 		return false
 	}
@@ -249,7 +249,7 @@ func isCurrentBuildAnnotationEqual(mosc *mcfgv1alpha1.MachineOSConfig, mosb *mcf
 }
 
 // Determines if a given MachineOSConfig has the rebuild annotation.
-func hasRebuildAnnotation(mosc *mcfgv1alpha1.MachineOSConfig) bool {
+func hasRebuildAnnotation(mosc *mcfgv1.MachineOSConfig) bool {
 	return metav1.HasAnnotation(mosc.ObjectMeta, constants.RebuildMachineOSConfigAnnotationKey)
 }
 
