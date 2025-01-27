@@ -46,6 +46,8 @@ type fixture struct {
 	mcpLister []*mcfgv1.MachineConfigPool
 	mcLister  []*mcfgv1.MachineConfig
 	ccLister  []*mcfgv1.ControllerConfig
+	crcLister []*mcfgv1.ContainerRuntimeConfig
+	mckLister []*mcfgv1.KubeletConfig
 
 	actions []core.Action
 
@@ -65,11 +67,13 @@ func (f *fixture) newController() *Controller {
 	i := informers.NewSharedInformerFactory(f.client, noResyncPeriodFunc())
 
 	c := New(i.Machineconfiguration().V1().MachineConfigPools(), i.Machineconfiguration().V1().MachineConfigs(),
-		i.Machineconfiguration().V1().ControllerConfigs(), k8sfake.NewSimpleClientset(), f.client)
+		i.Machineconfiguration().V1().ControllerConfigs(), i.Machineconfiguration().V1().ContainerRuntimeConfigs(), i.Machineconfiguration().V1().KubeletConfigs(), k8sfake.NewSimpleClientset(), f.client)
 
 	c.mcpListerSynced = alwaysReady
 	c.mcListerSynced = alwaysReady
 	c.ccListerSynced = alwaysReady
+	c.crcListerSynced = alwaysReady
+	c.mckListerSynced = alwaysReady
 	c.eventRecorder = ctrlcommon.NamespacedEventRecorder(&record.FakeRecorder{})
 
 	stopCh := make(chan struct{})
@@ -89,6 +93,14 @@ func (f *fixture) newController() *Controller {
 
 	for _, m := range f.ccLister {
 		i.Machineconfiguration().V1().ControllerConfigs().Informer().GetIndexer().Add(m)
+	}
+
+	for _, m := range f.crcLister {
+		i.Machineconfiguration().V1().ContainerRuntimeConfigs().Informer().GetIndexer().Add(m)
+	}
+
+	for _, m := range f.mckLister {
+		i.Machineconfiguration().V1().KubeletConfigs().Informer().GetIndexer().Add(m)
 	}
 
 	return c
@@ -184,7 +196,11 @@ func filterInformerActions(actions []core.Action) []core.Action {
 				action.Matches("list", "controllerconfigs") ||
 				action.Matches("watch", "controllerconfigs") ||
 				action.Matches("list", "machineconfigs") ||
-				action.Matches("watch", "machineconfigs")) {
+				action.Matches("watch", "machineconfigs") ||
+				action.Matches("list", "kubeletconfigs") ||
+				action.Matches("watch", "kubeletconfigs") ||
+				action.Matches("list", "containerruntimeconfigs") ||
+				action.Matches("watch", "containerruntimeconfigs")) {
 			continue
 		}
 		ret = append(ret, action)
@@ -261,8 +277,12 @@ func TestCreatesGeneratedMachineConfig(t *testing.T) {
 		helpers.NewMachineConfig("05-extra-master", map[string]string{"node-role/master": ""}, "dummy://1", []ign3types.File{files[1]}),
 	}
 	cc := newControllerConfig(ctrlcommon.ControllerConfigName)
+	crc := &mcfgv1.ContainerRuntimeConfig{}
+	mck := &mcfgv1.KubeletConfig{}
 
 	f.ccLister = append(f.ccLister, cc)
+	f.crcLister = append(f.crcLister, crc)
+	f.mckLister = append(f.mckLister, mck)
 	f.mcpLister = append(f.mcpLister, mcp)
 	f.objects = append(f.objects, mcp)
 	f.mcLister = append(f.mcLister, mcs...)
@@ -342,8 +362,12 @@ func TestUpdatesGeneratedMachineConfig(t *testing.T) {
 	mcp.Spec.Configuration.Name = gmc.Name
 	mcp.Status.Configuration.Name = gmc.Name
 
-	f.ccLister = append(f.ccLister, cc)
+	crc := &mcfgv1.ContainerRuntimeConfig{}
+	mck := &mcfgv1.KubeletConfig{}
 
+	f.ccLister = append(f.ccLister, cc)
+	f.crcLister = append(f.crcLister, crc)
+	f.mckLister = append(f.mckLister, mck)
 	f.mcpLister = append(f.mcpLister, mcp)
 	f.objects = append(f.objects, mcp)
 	f.mcLister = append(f.mcLister, mcs...)
@@ -449,8 +473,12 @@ func TestDoNothing(t *testing.T) {
 	mcp.Spec.Configuration.Name = gmc.Name
 	mcp.Status.Configuration.Name = gmc.Name
 
-	f.ccLister = append(f.ccLister, cc)
+	crc := &mcfgv1.ContainerRuntimeConfig{}
+	mck := &mcfgv1.KubeletConfig{}
 
+	f.ccLister = append(f.ccLister, cc)
+	f.crcLister = append(f.crcLister, crc)
+	f.mckLister = append(f.mckLister, mck)
 	f.mcpLister = append(f.mcpLister, mcp)
 	f.objects = append(f.objects, mcp)
 	f.mcLister = append(f.mcLister, mcs...)
