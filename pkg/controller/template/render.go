@@ -11,6 +11,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/sirupsen/logrus"
 	"k8s.io/klog/v2"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -352,6 +353,7 @@ func renderTemplate(config RenderConfig, path string, b []byte) ([]byte, error) 
 	funcs["cloudPlatformAPIIntLoadBalancerIPs"] = cloudPlatformAPIIntLoadBalancerIPs
 	funcs["cloudPlatformAPILoadBalancerIPs"] = cloudPlatformAPILoadBalancerIPs
 	funcs["cloudPlatformIngressLoadBalancerIPs"] = cloudPlatformIngressLoadBalancerIPs
+	funcs["cloudPlatformLBIPAvailable"] = cloudPlatformLBIPAvailable
 	funcs["join"] = strings.Join
 	tmpl, err := template.New(path).Funcs(funcs).Parse(string(b))
 	if err != nil {
@@ -774,6 +776,36 @@ func cloudPlatformIngressLoadBalancerIPs(cfg RenderConfig) (interface{}, error) 
 		}
 	} else {
 		return nil, fmt.Errorf("")
+	}
+}
+
+// cloudPlatformLBIPAvailable returns true when DNSType is set to `ClusterHosted`
+// and LB IPs are provided as part of `PlatformStatus`.
+func cloudPlatformLBIPAvailable(cfg RenderConfig) bool {
+	logrus.Infof("Inside cloudPlatformLBIPAvailable")
+	if cfg.Infra.Status.PlatformStatus != nil {
+		switch cfg.Infra.Status.PlatformStatus.Type {
+		case configv1.GCPPlatformType:
+			switch cloudPlatformLoadBalancerIPState(cfg) {
+			case availableLBIPState:
+				logrus.Infof("LB IPs available")
+				return true
+			default:
+				logrus.Infof("LB IPs not available")
+				return false
+			}
+		case configv1.AWSPlatformType:
+			switch cloudPlatformLoadBalancerIPState(cfg) {
+			case availableLBIPState:
+				return true
+			default:
+				return false
+			}
+		default:
+			return false
+		}
+	} else {
+		return false
 	}
 }
 

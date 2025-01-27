@@ -80,6 +80,7 @@ func (a *assetRenderer) addTemplateFuncs() {
 	funcs["cloudPlatformAPIIntLoadBalancerIPs"] = cloudPlatformAPIIntLoadBalancerIPs
 	funcs["cloudPlatformAPILoadBalancerIPs"] = cloudPlatformAPILoadBalancerIPs
 	funcs["cloudPlatformIngressLoadBalancerIPs"] = cloudPlatformIngressLoadBalancerIPs
+	funcs["cloudPlatformLBIPAvailable"] = cloudPlatformLBIPAvailable
 	funcs["join"] = strings.Join
 
 	a.tmpl = a.tmpl.Funcs(funcs)
@@ -458,6 +459,33 @@ func cloudPlatformIngressLoadBalancerIPs(cfg mcfgv1.ControllerConfigSpec) (inter
 		}
 	} else {
 		return nil, fmt.Errorf("")
+	}
+}
+
+// cloudPlatformLBIPAvailable returns true when DNSType is set to `ClusterHosted`
+// and LB IPs are provided as part of `PlatformStatus`.
+func cloudPlatformLBIPAvailable(cfg mcfgv1.ControllerConfigSpec) bool {
+	if cfg.Infra.Status.PlatformStatus != nil {
+		switch cfg.Infra.Status.PlatformStatus.Type {
+		case configv1.GCPPlatformType:
+			switch cloudPlatformLoadBalancerIPState(cfg) {
+			case availableLBIPState:
+				return true
+			default:
+				return false
+			}
+		case configv1.AWSPlatformType:
+			switch cloudPlatformLoadBalancerIPState(cfg) {
+			case availableLBIPState:
+				return true
+			default:
+				return false
+			}
+		default:
+			return false
+		}
+	} else {
+		return false
 	}
 }
 
