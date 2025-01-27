@@ -141,9 +141,11 @@ func isMachineOSBuildStatusUpdateNeeded(oldStatus, curStatus mcfgv1.MachineOSBui
 		return true, fmt.Sprintf("transitioned from initial state -> transient state (%s)", curTransientState)
 	}
 
-	// From pending -> building.
+	// From pending -> building, but not building -> pending.
 	if oldState.IsInTransientState() && curState.IsInTransientState() && oldTransientState != curTransientState {
-		return true, fmt.Sprintf("transitioned from transient state (%s) -> transient state (%s)", oldTransientState, curTransientState)
+		reason := fmt.Sprintf("transitioned from transient state (%s) -> transient state (%s)", oldTransientState, curTransientState)
+		isValid := oldTransientState == mcfgv1.MachineOSBuildPrepared && curTransientState == mcfgv1.MachineOSBuilding
+		return isValid, reason
 	}
 
 	oldTerminalState := oldState.GetTerminalState()

@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -32,6 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	aggerrs "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/yaml"
 )
 
@@ -877,4 +879,94 @@ func resolveTaggedPullspecToDigestedPullspec(ctx context.Context, pullspec strin
 	}
 
 	return canonical.String(), nil
+}
+
+// TODO: Deduplicate this definition from machine-config-operator/devex/internal/pkg/rollout/rollout.go
+// Having "internal" in the module path prevents us from reusing it here since
+// it is internal to the devex directory.
+func setDeploymentReplicas(t *testing.T, cs *framework.ClientSet, deployment metav1.ObjectMeta, replicas int32) error {
+	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		t.Logf("Setting replicas for %s/%s to %d", deployment.Namespace, deployment.Name, replicas)
+		scale, err := cs.AppsV1Interface.Deployments(deployment.Namespace).GetScale(context.TODO(), deployment.Name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+
+		scale.Spec.Replicas = replicas
+
+		_, err = cs.AppsV1Interface.Deployments(deployment.Namespace).UpdateScale(context.TODO(), deployment.Name, scale, metav1.UpdateOptions{})
+		return err
+	})
+}
+
+// Scales down the machine-os-builder, machine-config-opreator, and
+// cluster-version-operator deployments. Registers and returns an idempotent
+// function that will scale the deployments back to their original values.
+func scaleDownDeployments(t *testing.T, cs *framework.ClientSet) func() {
+	deployments := []metav1.ObjectMeta{
+		// Scale down the cluster-version-operator since it could set the desired
+		// replicas for the MCO to 1.
+		{
+			Name:      "cluster-version-operator",
+			Namespace: "openshift-cluster-version",
+		},
+		// Scale down the machine-config-operator since it could set the desired
+		// replicas for the build controller to 1.
+		{
+			Name:      "machine-config-operator",
+			Namespace: ctrlcommon.MCONamespace,
+		},
+		// Scale down the machine-os-builder since we want to simulate its pod
+		// being rescheduled.
+		{
+			Name:      "machine-os-builder",
+			Namespace: ctrlcommon.MCONamespace,
+		},
+	}
+
+	restoreFuncs := []func(){}
+
+	for _, deployment := range deployments {
+		restoreFuncs = append(restoreFuncs, scaleDownDeployment(t, cs, deployment))
+	}
+
+	return helpers.MakeIdempotentAndRegister(t, func() {
+		// Restore the deployments in the reverse order by which we disabled them.
+		// Not really necessary, but we want to ensure that the machine-os-builder
+		// deployment starts back up as soon as possible.
+		slices.Reverse(restoreFuncs)
+
+		for _, restoreFunc := range restoreFuncs {
+			restoreFunc()
+		}
+	})
+}
+
+// Scales down a given deployment unless that deployment is already set to zero
+// replicas, in which case it no-ops. Registers and returns an idempotent
+// restoral function that will revert the deployment back to its original
+// setting.
+func scaleDownDeployment(t *testing.T, cs *framework.ClientSet, deployment metav1.ObjectMeta) func() {
+	ctx := context.TODO()
+
+	originalDeployment, err := cs.AppsV1Interface.Deployments(deployment.Namespace).Get(ctx, deployment.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	originalReplicas := *originalDeployment.Spec.Replicas
+
+	// We check if the original replica count is zero. This is because it is very
+	// common for a dev sandbox cluster to at least have the CVO disabled.
+	if originalReplicas == 0 {
+		t.Logf("Original replica count for deployment %s/%s set to 0, skipping scale down", deployment.Namespace, deployment.Name)
+
+		return helpers.MakeIdempotentAndRegister(t, func() {
+			t.Logf("Original replica count for deployment %s/%s set to 0, skipping restore", deployment.Namespace, deployment.Name)
+		})
+	}
+
+	require.NoError(t, setDeploymentReplicas(t, cs, deployment, 0))
+
+	return helpers.MakeIdempotentAndRegister(t, func() {
+		require.NoError(t, setDeploymentReplicas(t, cs, deployment, originalReplicas))
+	})
 }
