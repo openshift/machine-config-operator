@@ -41,16 +41,19 @@ spec:
     - "/etc/coredns"
     - "--cluster-config"
     - "/opt/openshift/manifests/cluster-config.yaml"
-  resources: {}
-  volumeMounts:
-  - name: kubeconfig
-    mountpath: "/etc/kubernetes/kubeconfig"
-  - name: resource-dir
-    mountpath: "/config"
-  - name: conf-dir
-    mountpath: "/etc/coredns"
-  - name: manifests
-    mountpath: "/opt/openshift/manifests"
+    resources: {}
+    volumeMounts:
+    - name: kubeconfig
+      mountPath: "/etc/kubernetes/kubeconfig"
+      mountPropagation: HostToContainer
+    - name: resource-dir
+      mountPath: "/config"
+      mountPropagation: HostToContainer
+    - name: conf-dir
+      mountPath: "/etc/coredns"
+    - name: manifests
+      mountPath: "/opt/openshift/manifests"
+      mountPropagation: HostToContainer
     imagePullPolicy: IfNotPresent
   containers:
   - name: coredns
