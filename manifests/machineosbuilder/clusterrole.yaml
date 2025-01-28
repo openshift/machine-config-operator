@@ -45,6 +45,21 @@ rules:
 - apiGroups: ["apps"]
   resources: ["daemonsets"]
   verbs: ["get"]
+- apiGroups: ["tekton.dev"]
+  resources: ["*"]
+  verbs: ["*"]
+- apiGroups: ["resolution.tekton.dev"]
+  resources: ["*"]
+  verbs: ["*"]
+- apiGroups: [""]
+  resources: ["namespaces"]
+  verbs: ["get"]
+- apiGroups: ["operator.tekton.dev"]
+  resources: ["*"]
+  verbs: ["*"]
+- apiGroups: ["operators.coreos.com"]
+  resources: ["*"]
+  verbs: ["*"]
 - apiGroups:
   - authentication.k8s.io
   resources:
