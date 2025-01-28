@@ -17,6 +17,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	authv1 "k8s.io/api/authentication/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
@@ -176,6 +177,31 @@ func (s *secretCreator) createToken(ctx context.Context) (string, error) {
 	resp, err := s.cs.CoreV1Interface.ServiceAccounts(s.ServiceAccount.Namespace).CreateToken(ctx, s.ServiceAccount.Name, req, metav1.CreateOptions{})
 	if err != nil {
 		return "", fmt.Errorf("could not create token for service account %q in namespace %q: %w", s.ServiceAccount.Name, s.ServiceAccount.Namespace, err)
+	}
+
+	// Bind the ServiceAccount to the "admin" Role in its namespace
+	rb := &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      fmt.Sprintf("%s-admin-binding", s.ServiceAccount.Name),
+			Namespace: s.ServiceAccount.Namespace,
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      s.ServiceAccount.Name,
+				Namespace: s.ServiceAccount.Namespace,
+			},
+		},
+		RoleRef: rbacv1.RoleRef{
+			Kind:     "Role", // OpenShift's namespaced admin role
+			Name:     "admin",
+			APIGroup: "rbac.authorization.k8s.io",
+		},
+	}
+
+	_, err = s.cs.RbacV1Interface.RoleBindings(s.ServiceAccount.Namespace).Create(ctx, rb, metav1.CreateOptions{})
+	if err != nil {
+		return "", fmt.Errorf("could not create RoleBinding for service account %q: %w", s.ServiceAccount.Name, err)
 	}
 
 	return resp.Status.Token, nil

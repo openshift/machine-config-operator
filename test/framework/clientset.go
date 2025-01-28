@@ -6,6 +6,7 @@ import (
 
 	clientbuildv1 "github.com/openshift/client-go/build/clientset/versioned/typed/build/v1"
 	clientconfigv1 "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
+	imagev1clientset "github.com/openshift/client-go/image/clientset/versioned"
 	clientimagev1 "github.com/openshift/client-go/image/clientset/versioned/typed/image/v1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	clientmachineconfigv1 "github.com/openshift/client-go/machineconfiguration/clientset/versioned/typed/machineconfiguration/v1"
@@ -17,6 +18,7 @@ import (
 	appsv1client "k8s.io/client-go/kubernetes/typed/apps/v1"
 	batchv1client "k8s.io/client-go/kubernetes/typed/batch/v1"
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
+	rbacv1 "k8s.io/client-go/kubernetes/typed/rbac/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog/v2"
@@ -32,11 +34,13 @@ type ClientSet struct {
 	clientoperatorsv1alpha1.OperatorV1alpha1Interface
 	clientbuildv1.BuildV1Interface
 	clientimagev1.ImageV1Interface
+	rbacv1.RbacV1Interface
 	clientmachineconfigv1alpha1.MachineconfigurationV1alpha1Interface
-	kubeconfig string
-	config     *rest.Config
-	kubeclient clientset.Interface
-	mcfgclient mcfgclientset.Interface
+	kubeconfig  string
+	config      *rest.Config
+	kubeclient  clientset.Interface
+	mcfgclient  mcfgclientset.Interface
+	imageclient imagev1clientset.Interface
 }
 
 // Returns a copy of the config so that additional clients may be instantiated
@@ -59,6 +63,10 @@ func (cs *ClientSet) GetKubeclient() clientset.Interface {
 
 func (cs *ClientSet) GetMcfgclient() mcfgclientset.Interface {
 	return cs.mcfgclient
+}
+
+func (cs *ClientSet) GetImageclient() imagev1clientset.Interface {
+	return cs.imageclient
 }
 
 // NewClientSet returns a *ClientBuilder with the given kubeconfig.
@@ -91,6 +99,7 @@ func NewClientSet(kubeconfig string) *ClientSet {
 func NewClientSetFromConfig(config *rest.Config) *ClientSet {
 	kubeclient := kubernetes.NewForConfigOrDie(config)
 	mcfgclient := mcfgclientset.NewForConfigOrDie(config)
+	imageclient := imagev1clientset.NewForConfigOrDie(config)
 
 	return &ClientSet{
 		CoreV1Interface:                       kubeclient.CoreV1(),
@@ -102,9 +111,11 @@ func NewClientSetFromConfig(config *rest.Config) *ClientSet {
 		OperatorV1alpha1Interface:             clientoperatorsv1alpha1.NewForConfigOrDie(config),
 		BuildV1Interface:                      clientbuildv1.NewForConfigOrDie(config),
 		ImageV1Interface:                      clientimagev1.NewForConfigOrDie(config),
+		RbacV1Interface:                       kubeclient.RbacV1(),
 		MachineconfigurationV1alpha1Interface: mcfgclient.MachineconfigurationV1alpha1(),
 		config:                                config,
 		kubeclient:                            kubeclient,
 		mcfgclient:                            mcfgclient,
+		imageclient:                           imageclient,
 	}
 }

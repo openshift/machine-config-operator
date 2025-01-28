@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	fakeclientimagev1 "github.com/openshift/client-go/image/clientset/versioned/fake"
 	fakeclientmachineconfigv1 "github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
 	testhelpers "github.com/openshift/machine-config-operator/test/helpers"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -14,7 +15,8 @@ import (
 func GetEmptyClientsForTest(t *testing.T) (*fakecorev1client.Clientset, *fakeclientmachineconfigv1.Clientset, *testhelpers.Assertions) {
 	kubeclient := fakecorev1client.NewSimpleClientset()
 	mcfgclient := fakeclientmachineconfigv1.NewSimpleClientset()
-	return kubeclient, mcfgclient, testhelpers.Assert(t, kubeclient, mcfgclient)
+	imageclient := fakeclientimagev1.NewSimpleClientset()
+	return kubeclient, mcfgclient, testhelpers.Assert(t, kubeclient, mcfgclient, imageclient)
 }
 
 // Gets the kubeclient and mcfgclients needed for a test with the default Kube
@@ -40,6 +42,7 @@ func GetClientsForTestWithAdditionalObjects(t *testing.T, addlKubeObjects, addlM
 
 	kubeclient := fakecorev1client.NewSimpleClientset(addlKubeObjects...)
 	mcfgclient := fakeclientmachineconfigv1.NewSimpleClientset(mcfgObjects...)
+	imageclient := fakeclientimagev1.NewSimpleClientset()
 
-	return kubeclient, mcfgclient, &obj, testhelpers.Assert(t, kubeclient, mcfgclient)
+	return kubeclient, mcfgclient, &obj, testhelpers.Assert(t, kubeclient, mcfgclient, imageclient)
 }

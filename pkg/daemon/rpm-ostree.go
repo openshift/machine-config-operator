@@ -47,7 +47,7 @@ func bug2111817Workaround() error {
 	dropin := `[Service]
 InaccessiblePaths=
 `
-	if err := writeFileAtomicallyWithDefaults(targetUnit, []byte(dropin)); err != nil {
+	if err := WriteFileAtomicallyWithDefaults(targetUnit, []byte(dropin)); err != nil {
 		return err
 	}
 	if err := runCmdSync("systemctl", "daemon-reload"); err != nil {

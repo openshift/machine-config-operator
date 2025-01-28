@@ -49,7 +49,7 @@ import (
 
 const (
 	// defaultDirectoryPermissions houses the default mode to use when no directory permissions are provided
-	defaultDirectoryPermissions os.FileMode = 0o755
+	DefaultDirectoryPermissions os.FileMode = 0o755
 	// defaultFilePermissions houses the default mode to use when no file permissions are provided
 	defaultFilePermissions os.FileMode = 0o644
 	// fipsFile is the file to check if FIPS is enabled
@@ -432,7 +432,7 @@ func (dn *Daemon) compareMachineConfig(oldConfig, newConfig *mcfgv1.MachineConfi
 // install extensions (additional packages).
 func addExtensionsRepo(extensionsImageContentDir string) error {
 	repoContent := "[coreos-extensions]\nenabled=1\nmetadata_expire=1m\nbaseurl=" + extensionsImageContentDir + "/usr/share/rpm-ostree/extensions/\ngpgcheck=0\nskip_if_unavailable=False\n"
-	return writeFileAtomicallyWithDefaults(extensionsRepo, []byte(repoContent))
+	return WriteFileAtomicallyWithDefaults(extensionsRepo, []byte(repoContent))
 }
 
 // podmanRemove kills and removes a container

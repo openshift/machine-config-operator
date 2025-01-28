@@ -128,7 +128,7 @@ func createOrigFile(fromPath, fpath string) error {
 		if makeErr := os.MkdirAll(filepath.Dir(noOrigFileStampName(fpath)), 0o755); makeErr != nil {
 			return fmt.Errorf("creating no orig parent dir: %w", makeErr)
 		}
-		return writeFileAtomicallyWithDefaults(noOrigFileStampName(fpath), nil)
+		return WriteFileAtomicallyWithDefaults(noOrigFileStampName(fpath), nil)
 	}
 
 	// https://bugzilla.redhat.com/show_bug.cgi?id=1970959
@@ -151,8 +151,8 @@ func createOrigFile(fromPath, fpath string) error {
 	return nil
 }
 
-func writeFileAtomicallyWithDefaults(fpath string, b []byte) error {
-	return writeFileAtomically(fpath, b, defaultDirectoryPermissions, defaultFilePermissions, -1, -1)
+func WriteFileAtomicallyWithDefaults(fpath string, b []byte) error {
+	return writeFileAtomically(fpath, b, DefaultDirectoryPermissions, defaultFilePermissions, -1, -1)
 }
 
 // writeFileAtomically uses the renameio package to provide atomic file writing, we can't use renameio.WriteFile
@@ -212,7 +212,7 @@ func writeDropins(u ign3types.Unit, systemdRoot string, isCoreOSVariant bool) er
 				return err
 			}
 		}
-		if err := writeFileAtomicallyWithDefaults(dpath, []byte(*u.Dropins[i].Contents)); err != nil {
+		if err := WriteFileAtomicallyWithDefaults(dpath, []byte(*u.Dropins[i].Contents)); err != nil {
 			return fmt.Errorf("failed to write systemd unit dropin %q: %w", u.Dropins[i].Name, err)
 		}
 
@@ -257,7 +257,7 @@ func writeFiles(files []ign3types.File, skipCertificateWrite bool) error {
 		if err := createOrigFile(file.Path, file.Path); err != nil {
 			return err
 		}
-		if err := writeFileAtomically(file.Path, decodedContents, defaultDirectoryPermissions, mode, uid, gid); err != nil {
+		if err := writeFileAtomically(file.Path, decodedContents, DefaultDirectoryPermissions, mode, uid, gid); err != nil {
 			return err
 		}
 	}
@@ -310,7 +310,7 @@ func writeUnit(u ign3types.Unit, systemdRoot string, isCoreOSVariant bool) error
 				return fmt.Errorf("disabling %s failed: %w (output: %s)", u.Name, err, string(disableOut))
 			}
 		}
-		if err := writeFileAtomicallyWithDefaults(fpath, []byte(*u.Contents)); err != nil {
+		if err := WriteFileAtomicallyWithDefaults(fpath, []byte(*u.Contents)); err != nil {
 			return fmt.Errorf("failed to write systemd unit %q: %w", u.Name, err)
 		}
 

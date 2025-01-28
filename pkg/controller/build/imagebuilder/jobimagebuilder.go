@@ -220,9 +220,10 @@ func (j *jobImageBuilder) getBuildJobFromBuilderOrAPI(ctx context.Context) (*bat
 	if err != nil {
 		return nil, fmt.Errorf("could not get build job from API: %w", err)
 	}
-	klog.V(4).Infof("Using build job from API %s", string(job.UID))
 
+	klog.V(4).Infof("Using build job from API %s", string(job.UID))
 	return job, nil
+
 }
 
 func (j *jobImageBuilder) getStatus(ctx context.Context) (*batchv1.Job, mcfgv1.BuildProgress, []metav1.Condition, error) {
@@ -278,9 +279,13 @@ func (j *jobImageBuilder) stop(ctx context.Context) error {
 	}
 
 	buildJob, err := j.getBuildJobFromBuilderOrAPI(ctx)
+	if k8serrors.IsNotFound(err) {
+		return nil
+	}
 	if err != nil {
 		return fmt.Errorf("could not get Job to stop build job: %w", err)
 	}
+
 	// Ensure that the job being deleted is for the MOSB we are currently reconciling
 	if !jobIsForMOSB(buildJob, j.mosb) {
 		klog.Infof("Build job %q with UID %s is not owned by MachineOSBuild %q, will not delete", buildJob.Name, buildJob.UID, mosbName)

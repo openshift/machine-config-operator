@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"os"
+	"time"
 
 	"github.com/openshift/machine-config-operator/cmd/common"
 	"github.com/openshift/machine-config-operator/internal/clients"
@@ -53,7 +54,9 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 	}
 
 	run := func(ctx context.Context) {
-		go common.SignalHandler(cancel)
+		// When shutting down, wait for 30 seconds before actually shutting down
+		// This will ensure that all the cleanup is done
+		go common.SignalHandlerWithDelay(cancel, 30*time.Second)
 
 		ctrlCtx := ctrlcommon.CreateControllerContext(ctx, cb)
 

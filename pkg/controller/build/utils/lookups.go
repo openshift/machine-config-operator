@@ -8,6 +8,7 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
+	corelistersv1 "k8s.io/client-go/listers/core/v1"
 )
 
 // Holds a group of listers used for resolving OCL objects to other OCL objects
@@ -17,6 +18,7 @@ type Listers struct {
 	MachineOSBuildLister    mcfglistersv1.MachineOSBuildLister
 	MachineOSConfigLister   mcfglistersv1.MachineOSConfigLister
 	MachineConfigPoolLister mcfglistersv1.MachineConfigPoolLister
+	NodeLister              corelistersv1.NodeLister
 }
 
 // Gets a MachineConfigPool after first ensuring that the lister is not nil.
