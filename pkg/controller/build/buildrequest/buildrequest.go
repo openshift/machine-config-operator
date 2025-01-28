@@ -14,7 +14,7 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	chelpers "github.com/openshift/machine-config-operator/pkg/controller/common"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
+	tektonv1beta1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -86,7 +86,7 @@ func (br buildRequestImpl) Builder(kubeclient clientset.Interface) (Builder, err
 	return newBuilder(br.podToJob(br.toBuildahPod()), nil)
 }
 
-func (br buildRequestImpl) createPipelineRun(kubeclient clientset.Interface) (*tektonv1.PipelineRun, error) {
+func (br buildRequestImpl) createPipelineRun(kubeclient clientset.Interface) (*tektonv1beta1.PipelineRun, error) {
 	// TODO(rsaini) create pipeline run object and return
 
 	containerfile, err := kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), br.getContainerfileConfigMapName(), metav1.GetOptions{})
@@ -94,7 +94,7 @@ func (br buildRequestImpl) createPipelineRun(kubeclient clientset.Interface) (*t
 		return nil, fmt.Errorf("could not get rendered containerfile: %w", err)
 	}
 
-	pipelineRun := &tektonv1.PipelineRun{
+	pipelineRun := &tektonv1beta1.PipelineRun{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "build-and-push-pipelinerun",
 			Namespace: ctrlcommon.MCONamespace,
@@ -111,7 +111,7 @@ func (br buildRequestImpl) createPipelineRun(kubeclient clientset.Interface) (*t
 				{Name: "buildContext", Value: tektonv1.ParamValue{StringVal: "$HOME/context"}},
 				{Name: "image", Value: tektonv1.ParamValue{StringVal: br.opts.OSImageURLConfig.BaseOSContainerImage}},
 			},
-			Workspaces: []tektonv1.WorkspaceBinding{
+			Workspaces: []tektonv1beta1.WorkspaceBinding{
 				{
 					Name: "source",
 					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
@@ -123,10 +123,10 @@ func (br buildRequestImpl) createPipelineRun(kubeclient clientset.Interface) (*t
 	}
 
 	if br.opts.Proxy != nil {
-		proxyParams := []tektonv1.Param{
-			{Name: "httpProxy", Value: tektonv1.ParamValue{StringVal: br.opts.Proxy.HTTPProxy}},
-			{Name: "httpsProxy", Value: tektonv1.ParamValue{StringVal: br.opts.Proxy.HTTPSProxy}},
-			{Name: "noProxy", Value: tektonv1.ParamValue{StringVal: br.opts.Proxy.NoProxy}},
+		proxyParams := []tektonv1beta1.Param{
+			{Name: "httpProxy", Value: tektonv1beta1.ParamValue{StringVal: br.opts.Proxy.HTTPProxy}},
+			{Name: "httpsProxy", Value: tektonv1beta1.ParamValue{StringVal: br.opts.Proxy.HTTPSProxy}},
+			{Name: "noProxy", Value: tektonv1beta1.ParamValue{StringVal: br.opts.Proxy.NoProxy}},
 		}
 		pipelineRun.Spec.Params = append(pipelineRun.Spec.Params, proxyParams...)
 	}
