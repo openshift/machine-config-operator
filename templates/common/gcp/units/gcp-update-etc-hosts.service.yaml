@@ -1,0 +1,39 @@
+name: gcp-update-etc-hosts.service
+enabled: {{if and (eq .Infra.Status.PlatformStatus.Type "GCP") (.Infra.Status.PlatformStatus.GCP) (.Infra.Status.PlatformStatus.GCP.CloudLoadBalancerConfig) (eq .Infra.Status.PlatformStatus.GCP.CloudLoadBalancerConfig.DNSType "ClusterHosted") }}true{{else}}false{{end}}
+contents: |
+  [Unit]
+  Description=Update Default GCP /etc/hosts
+  # We don't need to do this on the firstboot
+  After=firstboot-osupdate.target
+  # Wait for NetworkManager to report it's online
+  After=NetworkManager-wait-online.service
+  # Run before kubelet
+  Before=kubelet-dependencies.target
+
+  [Service]
+  # Need oneshot to delay kubelet
+  Type=oneshot
+  ExecStart=/bin/bash -c " \
+  {{ if and (cloudPlatformLBIPAvailable .) (gt (len (cloudPlatformAPIIntLoadBalancerIPs .)) 0) }} \
+  apiIntLBIPs={{ cloudPlatformAPIIntLoadBalancerIPs . }} \
+  {{ end }} \
+  {{ if and (cloudPlatformLBIPAvailable .) (gt (len (cloudPlatformAPILoadBalancerIPs .)) 0) }} \
+  apiLBIPs={{ cloudPlatformAPILoadBalancerIPs . }} \
+  {{ end }} \
+  if [ -z "$apiLBIPs" ]; then \
+    # apiLBIPs will not be set on private clusters
+    apiLBIPs=$apiIntLBIPs \
+  fi \
+  apiServerURL={{ .Infra.Status.APIServerURL }} \
+  apiServerIntURL={{ .Infra.Status.APIServerInternalURL }} \
+  mkdir -p /etc/conf.d \
+  cat <<EOF | tee /etc/conf.d/etc-hosts.conf \
+  # Added by OpenShift \
+  ${apiLBIPs[0]}    ${apiServerURL} \
+  ${apiIntLBIPs[0]}    ${apiServerIntURL} \
+  EOF \
+  # Update /etc/hosts \
+  /usr/local/bin/update-etc-hosts"
+
+  [Install]
+  RequiredBy=kubelet-dependencies.target
