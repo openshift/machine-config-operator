@@ -107,9 +107,6 @@ func (br buildRequestImpl) createPipelineRun(kubeclient clientset.Interface) (*t
 				{Name: "authfilePush", Value: tektonv1.ParamValue{StringVal: "/tmp/final-image-push-creds/config.json"}},
 				{Name: "tag", Value: tektonv1.ParamValue{StringVal: br.opts.MachineOSBuild.Spec.RenderedImagePushspec}},
 				{Name: "containerFile", Value: tektonv1.ParamValue{StringVal: containerfile.Data["Containerfile"]}},
-				{Name: "httpProxy", Value: tektonv1.ParamValue{StringVal: br.opts.Proxy.HTTPProxy}},
-				{Name: "httpsProxy", Value: tektonv1.ParamValue{StringVal: br.opts.Proxy.HTTPSProxy}},
-				{Name: "noProxy", Value: tektonv1.ParamValue{StringVal: br.opts.Proxy.NoProxy}},
 				{Name: "buildContext", Value: tektonv1.ParamValue{StringVal: "$HOME/context"}},
 				{Name: "image", Value: tektonv1.ParamValue{StringVal: br.opts.getBaseOSImagePullspec()}},
 			},
@@ -122,6 +119,15 @@ func (br buildRequestImpl) createPipelineRun(kubeclient clientset.Interface) (*t
 				},
 			},
 		},
+	}
+
+	if br.opts.Proxy != nil {
+		proxyParams := []tektonv1.Param{
+			{Name: "httpProxy", Value: tektonv1.ParamValue{StringVal: br.opts.Proxy.HTTPProxy}},
+			{Name: "httpsProxy", Value: tektonv1.ParamValue{StringVal: br.opts.Proxy.HTTPSProxy}},
+			{Name: "noProxy", Value: tektonv1.ParamValue{StringVal: br.opts.Proxy.NoProxy}},
+		}
+		pipelineRun.Spec.Params = append(pipelineRun.Spec.Params, proxyParams...)
 	}
 
 	return pipelineRun, nil
