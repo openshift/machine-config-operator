@@ -20,6 +20,7 @@ import (
 	"github.com/distribution/reference"
 	imagev1 "github.com/openshift/api/image/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/test/framework"
@@ -33,10 +34,6 @@ import (
 	aggerrs "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/yaml"
-)
-
-const (
-	clonedSecretLabelKey string = "machineconfiguration.openshift.io/cloned-secret"
 )
 
 func applyMC(t *testing.T, cs *framework.ClientSet, mc *mcfgv1.MachineConfig) func() {
@@ -696,34 +693,17 @@ func convertFilesFromContainerImageToBytesMap(t *testing.T, pullspec, containerF
 	return out
 }
 
-// Copy the entitlement certificates into the MCO namespace. If the secrets
-// cannot be found, calls t.Skip() to skip the test.
-//
-// Registers and returns a cleanup function to remove the certificate(s) after test completion.
-func copyEntitlementCerts(t *testing.T, cs *framework.ClientSet) func() {
-	src := metav1.ObjectMeta{
-		Name:      "etc-pki-entitlement",
-		Namespace: "openshift-config-managed",
-	}
+// Skips the test if the entitlement secret is not present.
+func skipIfEntitlementNotPresent(t *testing.T, cs *framework.ClientSet) {
 
-	dst := metav1.ObjectMeta{
-		Name:      src.Name,
-		Namespace: ctrlcommon.MCONamespace,
-	}
-
-	_, err := cs.CoreV1Interface.Secrets(src.Namespace).Get(context.TODO(), src.Name, metav1.GetOptions{})
-	if err == nil {
-		return cloneSecret(t, cs, src, dst)
-	}
-
+	_, err := cs.CoreV1Interface.Secrets(constants.EtcPkiEntitlementSecretName).Get(context.TODO(), ctrlcommon.OpenshiftConfigManagedNamespace, metav1.GetOptions{})
 	if k8serrors.IsNotFound(err) {
-		t.Logf("Secret %q not found in %q, skipping test", src.Name, src.Namespace)
+		t.Logf("Secret %q not found in %q, skipping test", constants.EtcPkiEntitlementSecretName, ctrlcommon.OpenshiftConfigManagedNamespace)
 		t.Skip()
-		return func() {}
+		return
 	}
-
-	t.Fatalf("could not get %q from %q: %s", src.Name, src.Namespace, err)
-	return func() {}
+	// No other errors are expected.
+	require.NoError(t, err)
 }
 
 // Uses the centos stream 9 container and extracts the contents of both the
@@ -765,34 +745,6 @@ func injectYumRepos(t *testing.T, cs *framework.ClientSet) func() {
 	return makeIdempotentAndRegister(t, func() {
 		configMapCleanupFunc()
 		secretCleanupFunc()
-	})
-}
-
-// Clones a given secret from a given namespace into the MCO namespace.
-// Registers and returns a cleanup function to delete the secret upon test
-// completion.
-func cloneSecret(t *testing.T, cs *framework.ClientSet, src, dst metav1.ObjectMeta) func() {
-	secret, err := cs.CoreV1Interface.Secrets(src.Namespace).Get(context.TODO(), src.Name, metav1.GetOptions{})
-	require.NoError(t, err)
-
-	secretCopy := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      dst.Name,
-			Namespace: dst.Namespace,
-			Labels: map[string]string{
-				clonedSecretLabelKey: "",
-			},
-		},
-		Data: secret.Data,
-		Type: secret.Type,
-	}
-
-	cleanup := createSecret(t, cs, secretCopy)
-	t.Logf("Cloned \"%s/%s\" to \"%s/%s\"", src.Namespace, src.Name, dst.Namespace, dst.Name)
-
-	return makeIdempotentAndRegister(t, func() {
-		cleanup()
-		t.Logf("Deleted cloned secret \"%s/%s\"", dst.Namespace, dst.Name)
 	})
 }
 

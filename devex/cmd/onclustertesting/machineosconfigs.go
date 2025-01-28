@@ -44,7 +44,7 @@ func newMachineOSConfig(opts moscOpts) *mcfgv1.MachineOSConfig {
 			},
 			RenderedImagePushSpec: mcfgv1.ImageTagFormat(opts.finalImagePullspec),
 			ImageBuilder: mcfgv1.MachineOSImageBuilder{
-				ImageBuilderType: mcfgv1.MachineOSImageBuilderType("PodImageBuilder"),
+				ImageBuilderType: mcfgv1.JobBuilder,
 			},
 			Containerfile: []mcfgv1.MachineOSContainerfile{
 				{

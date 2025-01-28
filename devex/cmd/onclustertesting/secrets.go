@@ -39,32 +39,6 @@ func copyGlobalPullSecret(cs *framework.ClientSet) error {
 	return utils.CloneSecretWithLabels(cs, src, dst, labels)
 }
 
-func copyEtcPkiEntitlementSecret(cs *framework.ClientSet) error {
-	name := "etc-pki-entitlement"
-
-	src := utils.SecretRef{
-		Name:      name,
-		Namespace: "openshift-config-managed",
-	}
-
-	dst := utils.SecretRef{
-		Name:      name,
-		Namespace: ctrlcommon.MCONamespace,
-	}
-
-	labels := map[string]string{
-		createdByOnClusterBuildsHelper: "",
-	}
-
-	err := utils.CloneSecretWithLabels(cs, src, dst, labels)
-	if apierrs.IsNotFound(err) {
-		klog.Warningf("Secret %s not found, cannot copy", src.String())
-		return nil
-	}
-
-	return fmt.Errorf("could not copy secret %s to %s: %w", src.String(), dst.String(), err)
-}
-
 func getSecretNameFromFile(path string) (string, error) {
 	secret, err := loadSecretFromFile(path)
 
