@@ -18,7 +18,7 @@ import (
 	olmv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	olmclientset "github.com/operator-framework/operator-lifecycle-manager/pkg/api/client/clientset/versioned"
 	pipelineoperatorclientset "github.com/tektoncd/operator/pkg/client/clientset/versioned"
-	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
+	tektonv1beta1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	tektonclientset "github.com/tektoncd/pipeline/pkg/client/clientset/versioned"
 	batchv1 "k8s.io/api/batch/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -185,8 +185,8 @@ func checkAndInstallPipeline(ctx context.Context, kubeclient clientset.Interface
 			return err
 		}
 	}
-	interval := 2 * time.Second
-	timeout := 10 * time.Second
+	interval := 1 * time.Minute
+	timeout := 20 * time.Minute
 	err = waitForTektonConfigReady(ctx, pipelineoperatorclient, tektonNamespace, tektonConfigName, interval, timeout)
 	if err != nil {
 		return err
@@ -212,42 +212,42 @@ func checkAndInstallPipeline(ctx context.Context, kubeclient clientset.Interface
 
 	if tektonPipelineDNE {
 		// TODO(rsaini) Define the pipeline "buildAndPush" here and create an API object here. Check if it already exists before
-		pipeline := &tektonv1.Pipeline{
+		pipeline := &tektonv1beta1.Pipeline{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      tektonPipelineName,
 				Namespace: ctrlcommon.MCONamespace,
 			},
-			Spec: tektonv1.PipelineSpec{
-				Params: []tektonv1.ParamSpec{
-					{Name: "logLevel", Type: tektonv1.ParamTypeString, Description: "log level"},
-					{Name: "storageDriver", Type: tektonv1.ParamTypeString, Description: "storage driver"},
-					{Name: "authfile", Type: tektonv1.ParamTypeString, Description: "authfile"},
-					{Name: "tag", Type: tektonv1.ParamTypeString, Description: "Image URL"},
-					{Name: "containerFile", Type: tektonv1.ParamTypeString, Description: "container file"},
-					{Name: "httpProxy", Type: tektonv1.ParamTypeString, Description: "proxy"},
-					{Name: "httpsProxy", Type: tektonv1.ParamTypeString, Description: "proxy"},
-					{Name: "noProxy", Type: tektonv1.ParamTypeString, Description: "proxy"},
-					{Name: "buildContext", Type: tektonv1.ParamTypeString, Description: "context"},
-					{Name: "image", Type: tektonv1.ParamTypeString, Description: "image"},
+			Spec: tektonv1beta1.PipelineSpec{
+				Params: []tektonv1beta1.ParamSpec{
+					{Name: "logLevel", Type: tektonv1beta1.ParamTypeString, Description: "log level"},
+					{Name: "storageDriver", Type: tektonv1beta1.ParamTypeString, Description: "storage driver"},
+					{Name: "authfile", Type: tektonv1beta1.ParamTypeString, Description: "authfile"},
+					{Name: "tag", Type: tektonv1beta1.ParamTypeString, Description: "Image URL"},
+					{Name: "containerFile", Type: tektonv1beta1.ParamTypeString, Description: "container file"},
+					{Name: "httpProxy", Type: tektonv1beta1.ParamTypeString, Description: "proxy"},
+					{Name: "httpsProxy", Type: tektonv1beta1.ParamTypeString, Description: "proxy"},
+					{Name: "noProxy", Type: tektonv1beta1.ParamTypeString, Description: "proxy"},
+					{Name: "buildContext", Type: tektonv1beta1.ParamTypeString, Description: "context"},
+					{Name: "image", Type: tektonv1beta1.ParamTypeString, Description: "image"},
 				},
-				Results: []tektonv1.PipelineResult{
-					{Name: "IMAGE_DIGEST", Description: "Digest of the image just built", Value: tektonv1.ResultValue{StringVal: "$(tasks.buildah-build.results.IMAGE_DIGEST)"}},
-					{Name: "IMAGE_URL", Description: "Image repository where the built image would be pushed to", Value: tektonv1.ResultValue{StringVal: "$(tasks.buildah-build.results.IMAGE_URL)"}},
+				Results: []tektonv1beta1.PipelineResult{
+					{Name: "IMAGE_DIGEST", Description: "Digest of the image just built", Value: tektonv1beta1.ResultValue{StringVal: "$(tasks.buildah-build.results.IMAGE_DIGEST)"}},
+					{Name: "IMAGE_URL", Description: "Image repository where the built image would be pushed to", Value: tektonv1beta1.ResultValue{StringVal: "$(tasks.buildah-build.results.IMAGE_URL)"}},
 				},
-				Workspaces: []tektonv1.PipelineWorkspaceDeclaration{
+				Workspaces: []tektonv1beta1.PipelineWorkspaceDeclaration{
 					{Name: "source"},
 				},
-				Tasks: []tektonv1.PipelineTask{
+				Tasks: []tektonv1beta1.PipelineTask{
 					{
 						Name: "prepare-environment",
-						TaskSpec: &tektonv1.EmbeddedTask{
-							TaskSpec: tektonv1.TaskSpec{
-								Workspaces: []tektonv1.WorkspaceDeclaration{
+						TaskSpec: &tektonv1beta1.EmbeddedTask{
+							TaskSpec: tektonv1beta1.TaskSpec{
+								Workspaces: []tektonv1beta1.WorkspaceDeclaration{
 									{
 										Name: "source",
 									},
 								},
-								Steps: []tektonv1.Step{
+								Steps: []tektonv1beta1.Step{
 									{
 										Name:  "setup-environment",
 										Image: "$(params.image)",
@@ -259,20 +259,20 @@ func checkAndInstallPipeline(ctx context.Context, kubeclient clientset.Interface
 					},
 					{
 						Name: "buildah-build",
-						TaskRef: &tektonv1.TaskRef{
+						TaskRef: &tektonv1beta1.TaskRef{
 							Name: "buildah",
-							Kind: tektonv1.ClusterTaskRefKind,
+							Kind: tektonv1beta1.ClusterTaskKind,
 						},
-						Params: []tektonv1.Param{
-							{Name: "IMAGE", Value: tektonv1.ParamValue{StringVal: "$(params.tag)"}},
-							{Name: "STORAGE_DRIVER", Value: tektonv1.ParamValue{StringVal: "$(params.storageDriver)"}},
-							{Name: "DOCKERFILE", Value: tektonv1.ParamValue{StringVal: "$(params.containerFile)"}},
-							{Name: "CONTEXT", Value: tektonv1.ParamValue{StringVal: "$(params.buildContext)"}},
-							{Name: "BUILD_EXTRA_ARGS", Value: tektonv1.ParamValue{StringVal: "--authfile=$(params.authfileBuild) --log-level=$(params.logLevel)"}},
-							{Name: "BUILD_ARGS", Value: tektonv1.ParamValue{ArrayVal: []string{"HTTP_PROXY=$(params.httpProxy)", "HTTPS_PROXY=$(params.httpsProxy)", "NO_PROXY=$(params.noProxy)"}}},
-							{Name: "PUSH_EXTRA_ARGS", Value: tektonv1.ParamValue{StringVal: "--authfile=$(params.authfilePush)"}},
+						Params: []tektonv1beta1.Param{
+							{Name: "IMAGE", Value: tektonv1beta1.ParamValue{StringVal: "$(params.tag)"}},
+							{Name: "STORAGE_DRIVER", Value: tektonv1beta1.ParamValue{StringVal: "$(params.storageDriver)"}},
+							{Name: "DOCKERFILE", Value: tektonv1beta1.ParamValue{StringVal: "$(params.containerFile)"}},
+							{Name: "CONTEXT", Value: tektonv1beta1.ParamValue{StringVal: "$(params.buildContext)"}},
+							{Name: "BUILD_EXTRA_ARGS", Value: tektonv1beta1.ParamValue{StringVal: "--authfile=$(params.authfileBuild) --log-level=$(params.logLevel)"}},
+							{Name: "BUILD_ARGS", Value: tektonv1beta1.ParamValue{ArrayVal: []string{"HTTP_PROXY=$(params.httpProxy)", "HTTPS_PROXY=$(params.httpsProxy)", "NO_PROXY=$(params.noProxy)"}}},
+							{Name: "PUSH_EXTRA_ARGS", Value: tektonv1beta1.ParamValue{StringVal: "--authfile=$(params.authfilePush)"}},
 						},
-						Workspaces: []tektonv1.WorkspacePipelineTaskBinding{
+						Workspaces: []tektonv1beta1.WorkspacePipelineTaskBinding{
 							{Name: "source", Workspace: "source"},
 						},
 					},
@@ -280,7 +280,7 @@ func checkAndInstallPipeline(ctx context.Context, kubeclient clientset.Interface
 			},
 		}
 
-		_, err = tektonclient.TektonV1().Pipelines(ctrlcommon.MCONamespace).Create(context.Background(), pipeline, metav1.CreateOptions{})
+		_, err = tektonclient.TektonV1beta1().Pipelines(ctrlcommon.MCONamespace).Create(context.Background(), pipeline, metav1.CreateOptions{})
 		if err != nil {
 			return fmt.Errorf("Error creating Pipeline: %v", err)
 		}

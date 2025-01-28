@@ -9,7 +9,7 @@ import (
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/buildrequest"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
+	tektonv1beta1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	tektonclientset "github.com/tektoncd/pipeline/pkg/client/clientset/versioned"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -84,7 +84,7 @@ func (p *pipelineImageBuilder) Start(ctx context.Context) error {
 	return nil
 }
 
-func (p *pipelineImageBuilder) start(ctx context.Context) (*tektonv1.PipelineRun, error) {
+func (p *pipelineImageBuilder) start(ctx context.Context) (*tektonv1beta1.PipelineRun, error) {
 	builder, err := p.prepareForBuild(ctx)
 	if err != nil {
 		return nil, err
@@ -99,9 +99,9 @@ func (p *pipelineImageBuilder) start(ctx context.Context) (*tektonv1.PipelineRun
 		return nil, err
 	}
 
-	buildPipelineRun := builder.GetObject().(*tektonv1.PipelineRun)
+	buildPipelineRun := builder.GetObject().(*tektonv1beta1.PipelineRun)
 
-	bp, err := p.tektonclient.TektonV1().PipelineRuns(ctrlcommon.MCONamespace).Create(ctx, buildPipelineRun, metav1.CreateOptions{})
+	bp, err := p.tektonclient.TektonV1beta1().PipelineRuns(ctrlcommon.MCONamespace).Create(ctx, buildPipelineRun, metav1.CreateOptions{})
 	if err == nil {
 		klog.Infof("Build PipelineRun %q created for MachineOSBuild %q", bp.Name, mosbName)
 		return bp, nil
@@ -115,16 +115,16 @@ func (p *pipelineImageBuilder) start(ctx context.Context) (*tektonv1.PipelineRun
 }
 
 // Gets the build job, returning any errors in the process.
-func (p *pipelineImageBuilder) getBuildPipelineStrict(ctx context.Context) (*tektonv1.PipelineRun, error) {
+func (p *pipelineImageBuilder) getBuildPipelineStrict(ctx context.Context) (*tektonv1beta1.PipelineRun, error) {
 	if p.getBuilderName() == "" {
 		return nil, fmt.Errorf("imagebuilder missing name for MachineOSBuild or builder")
 	}
 
-	return p.tektonclient.TektonV1().PipelineRuns(ctrlcommon.MCONamespace).Get(ctx, p.getBuilderName(), metav1.GetOptions{})
+	return p.tektonclient.TektonV1beta1().PipelineRuns(ctrlcommon.MCONamespace).Get(ctx, p.getBuilderName(), metav1.GetOptions{})
 }
 
 // Gets the build job but returns nil if it is not found.
-func (p *pipelineImageBuilder) getBuildPipeline(ctx context.Context) (*tektonv1.PipelineRun, error) {
+func (p *pipelineImageBuilder) getBuildPipeline(ctx context.Context) (*tektonv1beta1.PipelineRun, error) {
 	pipeline, err := p.getBuildPipelineStrict(ctx)
 	if err == nil {
 		return pipeline, nil
@@ -162,7 +162,7 @@ func (p *pipelineImageBuilder) MachineOSBuildStatus(ctx context.Context) (mcfgv1
 }
 
 // Gets the build pipeline from either the provided builder (if present) or the API server.
-func (p *pipelineImageBuilder) getBuildPipelineFromBuilderOrAPI(ctx context.Context) (*tektonv1.PipelineRun, error) {
+func (p *pipelineImageBuilder) getBuildPipelineFromBuilderOrAPI(ctx context.Context) (*tektonv1beta1.PipelineRun, error) {
 	if p.builder != nil {
 		klog.V(4).Infof("Using provided build pipeline run")
 
@@ -170,7 +170,7 @@ func (p *pipelineImageBuilder) getBuildPipelineFromBuilderOrAPI(ctx context.Cont
 			return nil, fmt.Errorf("could not get build pipeline run from builder: %w", err)
 		}
 
-		pipelineRun := p.builder.GetObject().(*tektonv1.PipelineRun)
+		pipelineRun := p.builder.GetObject().(*tektonv1beta1.PipelineRun)
 		return pipelineRun, nil
 	}
 
@@ -183,7 +183,7 @@ func (p *pipelineImageBuilder) getBuildPipelineFromBuilderOrAPI(ctx context.Cont
 	return pipelineRun, nil
 }
 
-func (p *pipelineImageBuilder) getStatus(ctx context.Context) (*tektonv1.PipelineRun, mcfgv1alpha1.BuildProgress, []metav1.Condition, error) {
+func (p *pipelineImageBuilder) getStatus(ctx context.Context) (*tektonv1beta1.PipelineRun, mcfgv1alpha1.BuildProgress, []metav1.Condition, error) {
 	pipelineRun, err := p.getBuildPipelineFromBuilderOrAPI(ctx)
 	if err != nil {
 		return nil, "", nil, err
@@ -220,7 +220,7 @@ func (p *pipelineImageBuilder) Status(ctx context.Context) (mcfgv1alpha1.BuildPr
 	return status, nil
 }
 
-func (p *pipelineImageBuilder) mapPipelineStatusToBuildStatus(pipelineRun *tektonv1.PipelineRun) (mcfgv1alpha1.BuildProgress, []metav1.Condition) {
+func (p *pipelineImageBuilder) mapPipelineStatusToBuildStatus(pipelineRun *tektonv1beta1.PipelineRun) (mcfgv1alpha1.BuildProgress, []metav1.Condition) {
 	// Check if the PipelineRun is being deleted and not yet succeeded or failed
 	if pipelineRun.DeletionTimestamp != nil && !pipelineRun.Status.GetCondition(apis.ConditionSucceeded).IsTrue() && !pipelineRun.Status.GetCondition(apis.ConditionSucceeded).IsFalse() {
 		return mcfgv1alpha1.MachineOSBuildInterrupted, p.interruptedConditions()
@@ -289,10 +289,10 @@ func (p *pipelineImageBuilder) Clean(ctx context.Context) error {
 
 // Validates that a builders' concrete type is a pipeline run.
 func (p *pipelineImageBuilder) validateBuilderType(builder buildrequest.Builder) error {
-	_, ok := builder.GetObject().(*tektonv1.PipelineRun)
+	_, ok := builder.GetObject().(*tektonv1beta1.PipelineRun)
 	if ok {
 		return nil
 	}
 
-	return fmt.Errorf("invalid type %T from builder, expected %T", p.builder, &tektonv1.PipelineRun{})
+	return fmt.Errorf("invalid type %T from builder, expected %T", p.builder, &tektonv1beta1.PipelineRun{})
 }
