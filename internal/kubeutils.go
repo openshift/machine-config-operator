@@ -22,7 +22,7 @@ import (
 // a retry is necessary.
 func UpdateNodeRetry(client corev1client.NodeInterface, lister corev1lister.NodeLister, nodeName string, f func(*corev1.Node)) (*corev1.Node, error) {
 	var node *corev1.Node
-	if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		n, err := lister.Get(nodeName)
 		if err != nil {
 			return err
@@ -54,7 +54,7 @@ func UpdateNodeRetry(client corev1client.NodeInterface, lister corev1lister.Node
 		return err
 	}); err != nil {
 		// may be conflict if max retries were hit
-		return nil, fmt.Errorf("unable to update node %q: %w", node, err)
+		return nil, fmt.Errorf("unable to update node %q: %w", nodeName, err)
 	}
 	return node, nil
 }
