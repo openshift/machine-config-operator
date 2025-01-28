@@ -26,7 +26,7 @@ func NewMachineOSConfigBuilder(name string) *MachineOSConfigBuilder {
 
 				Containerfile: []mcfgv1.MachineOSContainerfile{},
 				ImageBuilder: mcfgv1.MachineOSImageBuilder{
-					ImageBuilderType: mcfgv1.MachineOSImageBuilderType("PodImageBuilder"),
+					ImageBuilderType: mcfgv1.JobBuilder,
 				},
 				BaseImagePullSecret:     nil,
 				RenderedImagePushSecret: mcfgv1.ImageSecretObjectReference{},
