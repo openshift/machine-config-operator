@@ -164,6 +164,106 @@ func TestOnClusterBuildRollsOutImage(t *testing.T) {
 	assertNodeRevertsToNonLayered(t, cs, node)
 }
 
+func TestMissingImageIsRebuilt(t *testing.T) {
+	cs := framework.NewClientSet("")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx)
+
+	firstImagePullspec, firstMOSB := runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
+		poolName: layeredMCPName,
+		customDockerfiles: map[string]string{
+			layeredMCPName: cowsayDockerfile,
+		},
+	})
+
+	moscName := layeredMCPName
+	t.Logf("Waiting for MachineOSConfig %q to have a new pullspec", moscName)
+	waitForMOSCToGetNewPullspec(ctx, t, cs, moscName, firstImagePullspec)
+
+	// Create a MC to create another MOSB
+	testMC := newMachineConfig(InspectMC, layeredMCPName)
+	t.Logf("Creating MachineConfig %q", testMC.Name)
+	firstMC, err := cs.MachineConfigs().Create(ctx, testMC, metav1.CreateOptions{})
+	require.NoError(t, err)
+	t.Logf("Created MachineConfig %q", firstMC.Name)
+	kubeassert.MachineConfigExists(firstMC)
+
+	// Wait for the build to start
+	t.Logf("Waiting for 2nd build to start...")
+	secondMOSBName := waitForMOSCToUpdateCurrentMOSB(ctx, t, cs, moscName, firstMOSB.Name)
+	secondMOSB, err := cs.GetMcfgclient().MachineconfigurationV1().MachineOSBuilds().Get(ctx, secondMOSBName, metav1.GetOptions{})
+	require.NoError(t, err)
+	secondMOSB = waitForBuildToStart(t, cs, secondMOSB)
+	t.Logf("MachineOSBuild %q has started", secondMOSB.Name)
+	assertBuildJobIsAsExpected(t, cs, secondMOSB)
+
+	// Wait for the build to finish
+	t.Logf("Waiting for 2nd build completion...")
+	secondFinishedBuild := waitForBuildToComplete(t, cs, secondMOSB)
+	secondImagePullspec := string(secondFinishedBuild.Status.DigestedImagePushSpec)
+	t.Logf("MachineOSBuild %q has completed and produced image: %s", secondFinishedBuild.Name, secondImagePullspec)
+	waitForMOSCToGetNewPullspec(ctx, t, cs, moscName, secondImagePullspec)
+
+	// Delete the first image
+	t.Logf("Deleting image %q", firstImagePullspec)
+	istName := fmt.Sprintf("os-image:%s", firstMOSB.Name)
+	err = cs.ImageStreamTags(ctrlcommon.MCONamespace).Delete(ctx, istName, metav1.DeleteOptions{})
+	require.NoError(t, err)
+	kubeassert.ImageDoesNotExist(istName)
+	t.Logf("Deleted image %q", firstImagePullspec)
+	// Delete the MC
+	t.Logf("Deleting MachineConfig %q to retrigger build", firstMC.Name)
+	err = cs.MachineConfigs().Delete(ctx, firstMC.Name, metav1.DeleteOptions{})
+	require.NoError(t, err)
+	kubeassert.MachineConfigDoesNotExist(firstMC)
+	t.Logf("Deleted MachineConfig %q", firstMC.Name)
+
+	// Wait for the build to start
+	t.Logf("Waiting for 3rd build to start...")
+	thirdMOSBName := waitForMOSCToUpdateCurrentMOSB(ctx, t, cs, moscName, secondMOSB.Name)
+	thirdMOSB, err := cs.GetMcfgclient().MachineconfigurationV1().MachineOSBuilds().Get(ctx, thirdMOSBName, metav1.GetOptions{})
+	require.NoError(t, err)
+	thirdMOSB = waitForBuildToStart(t, cs, thirdMOSB)
+	t.Logf("MachineOSBuild %q has started", thirdMOSB.Name)
+	assertBuildJobIsAsExpected(t, cs, thirdMOSB)
+
+	// Wait for the build to finish
+	t.Logf("Waiting for 3rd build completion...")
+	thirdFinishedBuild := waitForBuildToComplete(t, cs, thirdMOSB)
+	thirdImagePullspec := string(thirdFinishedBuild.Status.DigestedImagePushSpec)
+	t.Logf("MachineOSBuild %q has completed and produced image: %s", thirdFinishedBuild.Name, thirdImagePullspec)
+	waitForMOSCToGetNewPullspec(ctx, t, cs, moscName, thirdImagePullspec)
+
+	// Apply the MC again
+	t.Logf("Applying MachineConfig %q", firstMC.Name)
+	secondMC, err := cs.MachineConfigs().Create(ctx, testMC, metav1.CreateOptions{})
+	require.NoError(t, err)
+	kubeassert.MachineConfigExists(secondMC)
+	t.Logf("Created MachineConfig %q", secondMC.Name)
+	t.Logf("Reusing previous MachineOSBuild %q that has produced image: %s", secondFinishedBuild.Name, secondImagePullspec)
+	waitForMOSCToGetNewPullspec(ctx, t, cs, moscName, secondImagePullspec)
+
+	// Delete the third MOSB and the image should be deleted also
+	t.Logf("Deleting MachineOSBuild %q", thirdMOSB.Name)
+	err = cs.MachineconfigurationV1Interface.MachineOSBuilds().Delete(ctx, thirdMOSB.Name, metav1.DeleteOptions{})
+	require.NoError(t, err)
+	kubeassert.MachineOSBuildDoesNotExist(thirdMOSB)
+	t.Logf("Deleted MachineOSBuild %q", thirdMOSB.Name)
+	isiName := fmt.Sprintf("os-image:%s", thirdMOSBName)
+	kubeassert.ImageDoesNotExist(isiName)
+	t.Logf("Image %q belonging to MachineOSBuild %q has been deleted", thirdImagePullspec, thirdMOSB.Name)
+
+	// Delete the MC for cleanup
+	t.Logf("Deleting MachineConfig %q for cleanup", firstMC.Name)
+	err = cs.MachineConfigs().Delete(ctx, firstMC.Name, metav1.DeleteOptions{})
+	require.NoError(t, err)
+	kubeassert.MachineConfigDoesNotExist(firstMC)
+	t.Logf("Deleted MachineConfig %q", firstMC.Name)
+}
+
 func assertNodeRevertsToNonLayered(t *testing.T, cs *framework.ClientSet, node corev1.Node) {
 	workerMCName := helpers.GetMcName(t, cs, "worker")
 	workerMC, err := cs.MachineConfigs().Get(context.TODO(), workerMCName, metav1.GetOptions{})
@@ -1117,6 +1217,32 @@ func TestControllerEventuallyReconciles(t *testing.T) {
 
 		return mosc.Status.CurrentImagePullSpec != "" && mosc.Status.CurrentImagePullSpec == mosb.Status.DigestedImagePushSpec, nil
 	}))
+}
+
+func waitForMOSCToGetNewPullspec(ctx context.Context, t *testing.T, cs *framework.ClientSet, moscName, pullspec string) {
+	require.NoError(t, wait.PollImmediate(1*time.Second, 5*time.Minute, func() (bool, error) {
+		mosc, err := cs.MachineconfigurationV1Interface.MachineOSConfigs().Get(ctx, moscName, metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+
+		return mosc.Status.CurrentImagePullSpec != "" && string(mosc.Status.CurrentImagePullSpec) == pullspec, nil
+	}))
+}
+
+func waitForMOSCToUpdateCurrentMOSB(ctx context.Context, t *testing.T, cs *framework.ClientSet, moscName, mosbName string) string {
+	var currentMOSB string
+	require.NoError(t, wait.PollImmediate(1*time.Second, 5*time.Minute, func() (bool, error) {
+		mosc, err := cs.MachineconfigurationV1Interface.MachineOSConfigs().Get(ctx, moscName, metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+
+		currentMOSB = mosc.GetAnnotations()[constants.CurrentMachineOSBuildAnnotationKey]
+		return currentMOSB != mosbName, nil
+
+	}))
+	return currentMOSB
 }
 
 // Waits for a job object to reach a given state.

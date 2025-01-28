@@ -15,11 +15,12 @@ const (
 
 // Annotations added to all ephemeral build objects BuildController creates.
 const (
-	MachineOSBuildNameAnnotationKey  = "machineconfiguration.openshift.io/machine-os-build"
-	MachineOSConfigNameAnnotationKey = "machineconfiguration.openshift.io/machine-os-config"
-	MachineOSConfigNameLabelKey      = MachineOSConfigNameAnnotationKey
-	MachineOSBuildNameLabelKey       = MachineOSBuildNameAnnotationKey
-	JobUIDAnnotationKey              = "machineconfiguration.openshift.io/job-uid"
+	MachineOSBuildNameAnnotationKey      = "machineconfiguration.openshift.io/machine-os-build"
+	MachineOSConfigNameAnnotationKey     = "machineconfiguration.openshift.io/machine-os-config"
+	MachineOSConfigNameLabelKey          = MachineOSConfigNameAnnotationKey
+	MachineOSBuildNameLabelKey           = MachineOSBuildNameAnnotationKey
+	JobUIDAnnotationKey                  = "machineconfiguration.openshift.io/job-uid"
+	RenderedImagePushSecretAnnotationKey = "machineconfiguration.openshift.io/rendered-image-push-secret"
 )
 
 // The MachineOSConfig will get updated with this annotation once a
