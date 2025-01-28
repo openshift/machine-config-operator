@@ -63,6 +63,7 @@ contents:
         fi
 
         if [[ "$STATUS" == "up" ]] && [[ $IFACE == "br-ex" ]]; then
+            /bin/mkdir -p /run/nodeip-configuration
             touch /run/nodeip-configuration/br-ex-up
         fi
       ;;
