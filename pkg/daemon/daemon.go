@@ -2734,7 +2734,7 @@ func (dn *Daemon) checkOS(osImageURL string) bool {
 
 	// TODO(jkyros): the header for this functions says "if the digests match"
 	// so I'm wondering if at one point this used to work this way....
-	inspection, _, err := imageInspect(osImageURL)
+	inspection, _, err := ImageInspect(osImageURL, "")
 	if err != nil {
 		klog.Warningf("Unable to check manifest for matching hash: %s", err)
 	} else if ostreeCommit, ok := inspection.Labels["ostree.commit"]; ok {

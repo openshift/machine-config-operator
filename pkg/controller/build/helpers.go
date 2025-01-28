@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/containers/image/v5/docker/reference"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
@@ -276,4 +277,15 @@ func ignoreErrIsNotFound(err error) error {
 
 	// If the error type somehow does not match k8serrors.StatusError, return it.
 	return err
+}
+
+// Extracts the namespace and name:tag from an image reference.
+func extractNSAndNameWithTag(imageRef string) (string, string, error) {
+	// Split the image reference to give an array of [registry, namespace, name:tag]
+	parts := strings.SplitN(imageRef, "/", 3)
+	if len(parts) < 3 {
+		return "", "", fmt.Errorf("invalid image reference: %s", imageRef)
+	}
+
+	return parts[1], parts[2], nil
 }
