@@ -1,0 +1,26 @@
+mode: 0755
+path: "/usr/local/bin/configure-dualstack.sh"
+contents:
+  inline: |
+    #!/bin/bash
+    set -x
+
+    ip a
+
+    old_conn=$(nmcli --fields UUID,DEVICE conn show --active | awk "/\s${iface}\s*\$/ {print \$1}")
+
+    nmcli --fields UUID,DEVICE conn show --active
+
+    if [[ -z "$old_conn" ]]; then
+      echo "ERROR: cannot find connection for interface: ${iface}"
+      exit 1
+    fi
+
+    echo "$old_conn"
+
+    sudo nmcli c modify "$old_conn" ipv4.may-fail no
+
+    sudo nmcli c modify "$old_conn" ipv6.may-fail no
+
+
+

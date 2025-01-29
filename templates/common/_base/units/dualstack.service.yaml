@@ -1,0 +1,14 @@
+name: dualstack.service
+enabled: true
+contents: |
+  [Unit]
+  Before=ovs-configuration.service
+
+  [Service]
+  Type=oneshot
+  ExecStart=/usr/local/bin/configure-dualstack.sh
+  StandardOutput=journal+console
+  StandardError=journal+console
+
+  [Install]
+  RequiredBy=ovs-configuration.service
