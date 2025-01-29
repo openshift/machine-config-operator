@@ -228,7 +228,8 @@ func checkAndInstallPipeline(ctx context.Context, kubeclient clientset.Interface
 				Params: []tektonv1beta1.ParamSpec{
 					tektonv1beta1.ParamSpec{Name: "logLevel", Type: tektonv1beta1.ParamTypeString, Description: "log level"},
 					tektonv1beta1.ParamSpec{Name: "storageDriver", Type: tektonv1beta1.ParamTypeString, Description: "storage driver"},
-					tektonv1beta1.ParamSpec{Name: "authfile", Type: tektonv1beta1.ParamTypeString, Description: "authfile"},
+					tektonv1beta1.ParamSpec{Name: "authfileBuild", Type: tektonv1beta1.ParamTypeString, Description: "authfileBuild"},
+					tektonv1beta1.ParamSpec{Name: "authfilePush", Type: tektonv1beta1.ParamTypeString, Description: "authfilePush"},
 					tektonv1beta1.ParamSpec{Name: "tag", Type: tektonv1beta1.ParamTypeString, Description: "Image URL"},
 					tektonv1beta1.ParamSpec{Name: "containerFile", Type: tektonv1beta1.ParamTypeString, Description: "container file"},
 					tektonv1beta1.ParamSpec{Name: "httpProxy", Type: tektonv1beta1.ParamTypeString, Description: "proxy"},
