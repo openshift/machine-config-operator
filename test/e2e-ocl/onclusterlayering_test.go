@@ -86,7 +86,7 @@ type onClusterLayeringTestOpts struct {
 	poolName string
 
 	// Use RHEL entitlements
-	useEtcPkiEntitlement bool
+	entitlementRequired bool
 
 	// Inject YUM repo information from a Centos 9 stream container
 	useYumRepos bool
@@ -211,9 +211,8 @@ func TestYumReposBuilds(t *testing.T) {
 	})
 }
 
-// Clones the etc-pki-entitlement certificate from the openshift-config-managed
-// namespace into the MCO namespace. Then performs an on-cluster layering build
-// which should consume the entitlement certificates.
+// Then performs an on-cluster layering build which should consume the
+// etc-pki-entitlement certificates.
 func TestEntitledBuilds(t *testing.T) {
 	skipOnOKD(t)
 
@@ -222,7 +221,7 @@ func TestEntitledBuilds(t *testing.T) {
 		customDockerfiles: map[string]string{
 			layeredMCPName: entitledDockerfile,
 		},
-		useEtcPkiEntitlement: true,
+		entitlementRequired: true,
 	})
 }
 
@@ -786,10 +785,10 @@ func assertBuildJobIsAsExpected(t *testing.T, cs *framework.ClientSet, mosb *mcf
 // Returns a MachineOSConfig object for the caller to create to begin the build
 // process.
 func prepareForOnClusterLayeringTest(t *testing.T, cs *framework.ClientSet, testOpts onClusterLayeringTestOpts) *mcfgv1.MachineOSConfig {
-	// If the test requires RHEL entitlements, clone them from
-	// "etc-pki-entitlement" in the "openshift-config-managed" namespace.
-	if testOpts.useEtcPkiEntitlement {
-		copyEntitlementCerts(t, cs)
+	// If the test requires RHEL entitlements, ensure they are present
+	// in the test cluster. If not found, the test is skipped.
+	if testOpts.entitlementRequired {
+		skipIfEntitlementNotPresent(t, cs)
 	}
 
 	// If the test requires /etc/yum.repos.d and /etc/pki/rpm-gpg, pull a Centos

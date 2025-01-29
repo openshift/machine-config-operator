@@ -55,7 +55,6 @@ func init() {
 	setupCmd.PersistentFlags().StringVar(&setupOpts.containerfilePath, "containerfile-path", "", "Optional Containerfile to inject for the build.")
 	setupCmd.PersistentFlags().BoolVar(&setupOpts.enableFeatureGate, "enable-feature-gate", false, "Enables the required featuregates if not already enabled.")
 	setupCmd.PersistentFlags().BoolVar(&setupOpts.injectYumRepos, "inject-yum-repos", false, fmt.Sprintf("Injects contents from the /etc/yum.repos.d and /etc/pki/rpm-gpg directories found in %s into the %s namespace.", yumReposContainerImagePullspec, ctrlcommon.MCONamespace))
-	setupCmd.PersistentFlags().BoolVar(&setupOpts.copyEtcPkiEntitlementSecret, "copy-etc-pki-entitlement-secret", false, fmt.Sprintf("Copies etc-pki-entitlement into the %s namespace, assuming it exists.", ctrlcommon.MCONamespace))
 
 	rootCmd.AddCommand(setupCmd)
 }
@@ -84,10 +83,6 @@ func runSetupCmd(setupOpts opts) error {
 		return fmt.Errorf("flags --push-secret-name and --push-secret-path cannot be combined")
 	}
 
-	if setupOpts.injectYumRepos && setupOpts.copyEtcPkiEntitlementSecret {
-		return fmt.Errorf("flags --inject-yum-repos and --copy-etc-pki-entitlement cannot be combined")
-	}
-
 	if err := utils.CheckForBinaries([]string{"oc"}); err != nil {
 		return err
 	}
@@ -99,15 +94,14 @@ func runSetupCmd(setupOpts opts) error {
 	}
 
 	return mobSetup(cs, opts{
-		pushSecretName:              setupOpts.pushSecretName,
-		pullSecretName:              setupOpts.pullSecretName,
-		pushSecretPath:              setupOpts.pushSecretPath,
-		pullSecretPath:              setupOpts.pullSecretPath,
-		finalImagePullspec:          setupOpts.finalImagePullspec,
-		containerfilePath:           setupOpts.containerfilePath,
-		poolName:                    setupOpts.poolName,
-		injectYumRepos:              setupOpts.injectYumRepos,
-		copyEtcPkiEntitlementSecret: setupOpts.copyEtcPkiEntitlementSecret,
+		pushSecretName:     setupOpts.pushSecretName,
+		pullSecretName:     setupOpts.pullSecretName,
+		pushSecretPath:     setupOpts.pushSecretPath,
+		pullSecretPath:     setupOpts.pullSecretPath,
+		finalImagePullspec: setupOpts.finalImagePullspec,
+		containerfilePath:  setupOpts.containerfilePath,
+		poolName:           setupOpts.poolName,
+		injectYumRepos:     setupOpts.injectYumRepos,
 	})
 }
 
@@ -116,10 +110,6 @@ func runInClusterRegistrySetupCmd(setupOpts opts) error {
 
 	if err := errIfNotSet(setupOpts.poolName, "pool"); err != nil {
 		return err
-	}
-
-	if setupOpts.injectYumRepos && setupOpts.copyEtcPkiEntitlementSecret {
-		return fmt.Errorf("flags --inject-yum-repos and --copy-etc-pki-entitlement cannot be combined")
 	}
 
 	cs := framework.NewClientSet("")
@@ -213,12 +203,6 @@ func createSecrets(cs *framework.ClientSet, opts opts) error {
 			return createSecretFromFile(cs, pullSecretPath)
 		})
 
-	}
-
-	if opts.copyEtcPkiEntitlementSecret {
-		eg.Go(func() error {
-			return copyEtcPkiEntitlementSecret(cs)
-		})
 	}
 
 	if opts.injectYumRepos {

@@ -21,10 +21,6 @@ const (
 func runCiSetupCmd(setupOpts opts) error {
 	utils.ParseFlags()
 
-	if setupOpts.injectYumRepos && setupOpts.copyEtcPkiEntitlementSecret {
-		return fmt.Errorf("flags --inject-yum-repos and --copy-etc-pki-entitlement cannot be combined")
-	}
-
 	if err := utils.CheckForBinaries([]string{"oc"}); err != nil {
 		return err
 	}
