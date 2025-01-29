@@ -491,6 +491,7 @@ func (paramValues *ParamValue) UnmarshalJSON(value []byte) error {
 
 // MarshalJSON implements the json.Marshaller interface.
 func (paramValues ParamValue) MarshalJSON() ([]byte, error) {
+	fmt.Println("paramValue is %q", paramValues)
 	switch paramValues.Type {
 	case ParamTypeString:
 		return json.Marshal(paramValues.StringVal)
