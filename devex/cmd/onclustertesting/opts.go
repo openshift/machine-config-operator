@@ -9,36 +9,34 @@ import (
 )
 
 type opts struct {
-	pushSecretName              string
-	pullSecretName              string
-	finalImagePullSecretName    string
-	pushSecretPath              string
-	pullSecretPath              string
-	finalImagePullspec          string
-	containerfilePath           string
-	containerfileContents       string
-	poolName                    string
-	injectYumRepos              bool
-	waitForBuildInfo            bool
-	copyEtcPkiEntitlementSecret bool
-	enableFeatureGate           bool
+	pushSecretName           string
+	pullSecretName           string
+	finalImagePullSecretName string
+	pushSecretPath           string
+	pullSecretPath           string
+	finalImagePullspec       string
+	containerfilePath        string
+	containerfileContents    string
+	poolName                 string
+	injectYumRepos           bool
+	waitForBuildInfo         bool
+	enableFeatureGate        bool
 }
 
 func (o *opts) deepCopy() opts {
 	return opts{
-		pushSecretName:              o.pushSecretName,
-		pullSecretName:              o.pullSecretName,
-		pushSecretPath:              o.pushSecretPath,
-		pullSecretPath:              o.pullSecretPath,
-		finalImagePullspec:          o.finalImagePullspec,
-		finalImagePullSecretName:    o.finalImagePullSecretName,
-		containerfilePath:           o.containerfilePath,
-		containerfileContents:       o.containerfileContents,
-		poolName:                    o.poolName,
-		injectYumRepos:              o.injectYumRepos,
-		waitForBuildInfo:            o.waitForBuildInfo,
-		copyEtcPkiEntitlementSecret: o.copyEtcPkiEntitlementSecret,
-		enableFeatureGate:           o.enableFeatureGate,
+		pushSecretName:           o.pushSecretName,
+		pullSecretName:           o.pullSecretName,
+		pushSecretPath:           o.pushSecretPath,
+		pullSecretPath:           o.pullSecretPath,
+		finalImagePullspec:       o.finalImagePullspec,
+		finalImagePullSecretName: o.finalImagePullSecretName,
+		containerfilePath:        o.containerfilePath,
+		containerfileContents:    o.containerfileContents,
+		poolName:                 o.poolName,
+		injectYumRepos:           o.injectYumRepos,
+		waitForBuildInfo:         o.waitForBuildInfo,
+		enableFeatureGate:        o.enableFeatureGate,
 	}
 }
 

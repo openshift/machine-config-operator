@@ -87,10 +87,8 @@ feature is implemented in OCL, this should no longer be a problem.
 ### RHEL entitlements
 
 If your cluster has the `etc-pki-entitlement` secret in the
-`openshift-config-managed` namespace, you can use the
-`--copy-etc-pki-entitlement-secret` flag with the `setup` command. This will
-clone the secret into the MCO namespace. This copy will be removed during the
-teardown process.
+`openshift-config-managed` namespace, the operator will automatically
+copy it into the MCO namespace, when a build is required.
 
 ### /etc/yum.repos.d and /etc/pki/rpm-gpg
 
