@@ -252,8 +252,8 @@ func checkAndInstallPipeline(ctx context.Context, kubeclient clientset.Interface
 					tektonv1beta1.ParamSpec{Name: "image", Type: tektonv1beta1.ParamTypeString, Description: "image"},
 				},
 				Results: []tektonv1beta1.PipelineResult{
-					tektonv1beta1.PipelineResult{Name: "IMAGE_DIGEST", Type: tektonv1beta1.ResultsTypeString, Description: "Digest of the image just built", Value: tektonv1beta1.ResultValue{StringVal: "$(tasks.buildah-build.results.IMAGE_DIGEST)"}},
-					tektonv1beta1.PipelineResult{Name: "IMAGE_URL", Type: tektonv1beta1.ResultsTypeString, Description: "Image repository where the built image would be pushed to", Value: tektonv1beta1.ResultValue{StringVal: "$(tasks.buildah-build.results.IMAGE_URL)"}},
+					tektonv1beta1.PipelineResult{Name: "IMAGE_DIGEST", Type: tektonv1beta1.ResultsTypeString, Description: "Digest of the image just built", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(tasks.buildah-build.results.IMAGE_DIGEST)"}},
+					tektonv1beta1.PipelineResult{Name: "IMAGE_URL", Type: tektonv1beta1.ResultsTypeString, Description: "Image repository where the built image would be pushed to", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(tasks.buildah-build.results.IMAGE_URL)"}},
 				},
 				Workspaces: []tektonv1beta1.PipelineWorkspaceDeclaration{
 					tektonv1beta1.PipelineWorkspaceDeclaration{Name: "source"},
