@@ -139,6 +139,7 @@ func checkAndInstallPipeline(ctx context.Context, kubeclient clientset.Interface
 	tektonNamespace := "openshift-pipelines"
 	operatorsNamespace := "openshift-operators"
 	tektonConfigName := "config"
+	subscriptionName := "openshift-pipelines-operator"
 	tektonPipelineName := "build-and-push-pipeline"
 	tektonClusterTaskName := "buildah"
 	var namespaceDNE, tektonconfigDNE, tektonPipelineDNE bool = false, false, false
@@ -159,7 +160,7 @@ func checkAndInstallPipeline(ctx context.Context, kubeclient clientset.Interface
 		if k8serrors.IsNotFound(err) {
 			tektonconfigDNE = true
 		} else {
-			return err
+			return fmt.Errorf("tektonConfig resource get error %v", err)
 		}
 	}
 	if namespaceDNE || tektonconfigDNE {
@@ -170,7 +171,7 @@ func checkAndInstallPipeline(ctx context.Context, kubeclient clientset.Interface
 				Kind:       "Subscription",
 			},
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      "openshift-pipelines-operator",
+				Name:      subscriptionName,
 				Namespace: "openshift-operators",
 			},
 			Spec: &olmv1alpha1.SubscriptionSpec{
@@ -182,7 +183,11 @@ func checkAndInstallPipeline(ctx context.Context, kubeclient clientset.Interface
 		}
 		_, err = olmclient.OperatorsV1alpha1().Subscriptions(operatorsNamespace).Create(ctx, subscription, metav1.CreateOptions{})
 		if err != nil {
-			return err
+			if k8serrors.IsAlreadyExists(err) {
+				klog.V(2).Infof("%v already exists", subscriptionName)
+			} else {
+				return fmt.Errorf("subscription resource create error %v", err)
+			}
 		}
 	}
 	interval := 1 * time.Minute
@@ -193,12 +198,14 @@ func checkAndInstallPipeline(ctx context.Context, kubeclient clientset.Interface
 	}
 	klog.V(2).Infof("TektonConfig is Ready!")
 
+	/*
 	// Ensure Buildah Task exists
 	// Potential problem: ClusterTasks don't exist in V1 API hence the Buildah task may need to be installed into MCO Namespace
 	_, err = tektonclient.TektonV1().Tasks(ctrlcommon.MCONamespace).Get(ctx, tektonClusterTaskName, metav1.GetOptions{})
 	if err != nil {
 		return fmt.Errorf("Error getting ClusterTask Buildah: %v", err)
 	}
+	*/
 
 	// Ensure Buildah Pipeline exists
 	_, err = tektonclient.TektonV1().Pipelines(ctrlcommon.MCONamespace).Get(context.Background(), tektonPipelineName, metav1.GetOptions{})
@@ -260,7 +267,7 @@ func checkAndInstallPipeline(ctx context.Context, kubeclient clientset.Interface
 					{
 						Name: "buildah-build",
 						TaskRef: &tektonv1beta1.TaskRef{
-							Name: "buildah",
+							Name: tektonClusterTaskName,
 							Kind: tektonv1beta1.ClusterTaskKind,
 						},
 						Params: []tektonv1beta1.Param{
@@ -292,13 +299,19 @@ func checkAndInstallPipeline(ctx context.Context, kubeclient clientset.Interface
 
 // waitForTektonConfigReady waits for the TektonConfig's Ready condition to become True.
 func waitForTektonConfigReady(ctx context.Context, client pipelineoperatorclientset.Interface, namespace, name string, interval, timeout time.Duration) error {
-	return wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+	klog.V(2).Infof("waitForTektonConfigReady tektonConfig does not exist yet")
+	return wait.PollUntilContextCancel(ctx, interval, true, func(ctx context.Context) (bool, error) {
 		// Fetch the TektonConfig resource
 		tektonConfig, err := client.OperatorV1alpha1().TektonConfigs().Get(ctx, name, metav1.GetOptions{})
-		if err != nil {
-			return false, fmt.Errorf("failed to fetch TektonConfig: %v", err)
+		if err != nil { 
+			if k8serrors.IsNotFound(err) {
+				klog.V(2).Infof("trying to read tektonconfig in waitForTektonConfigReady")
+				return false, nil
+			} else {
+				return false, fmt.Errorf("failed to fetch TektonConfig: %v", err)
+			}
 		}
-
+		klog.V(2).Infof("waitForTektonConfigReady tektonconfig exists now")
 		// Check if the Ready condition is True
 		readyCondition := tektonConfig.Status.GetCondition(apis.ConditionReady)
 		if readyCondition != nil && readyCondition.Status == "True" {
