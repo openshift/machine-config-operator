@@ -222,12 +222,13 @@ func checkAndInstallPipeline(ctx context.Context, kubeclient clientset.Interface
 	*/
 
 	// Ensure Buildah Pipeline exists
-	_, err = tektonclient.TektonV1().Pipelines(ctrlcommon.MCONamespace).Get(context.Background(), tektonPipelineName, metav1.GetOptions{})
-	if err != nil && k8serrors.IsNotFound(err) {
-		tektonPipelineDNE = true
-	}
+	_, err = tektonclient.TektonV1beta1().Pipelines(ctrlcommon.MCONamespace).Get(context.Background(), tektonPipelineName, metav1.GetOptions{})
 	if err != nil {
-		return fmt.Errorf("Error getting Pipeline: %v", err)
+		if k8serrors.IsNotFound(err) {
+			tektonPipelineDNE = true
+		} else {
+			return fmt.Errorf("Error getting Pipeline: %v", err)
+		}
 	}
 
 	if tektonPipelineDNE {
@@ -251,8 +252,8 @@ func checkAndInstallPipeline(ctx context.Context, kubeclient clientset.Interface
 					tektonv1beta1.ParamSpec{Name: "image", Type: tektonv1beta1.ParamTypeString, Description: "image"},
 				},
 				Results: []tektonv1beta1.PipelineResult{
-					tektonv1beta1.PipelineResult{Name: "IMAGE_DIGEST", Description: "Digest of the image just built", Value: tektonv1beta1.ResultValue{StringVal: "$(tasks.buildah-build.results.IMAGE_DIGEST)"}},
-					tektonv1beta1.PipelineResult{Name: "IMAGE_URL", Description: "Image repository where the built image would be pushed to", Value: tektonv1beta1.ResultValue{StringVal: "$(tasks.buildah-build.results.IMAGE_URL)"}},
+					tektonv1beta1.PipelineResult{Name: "IMAGE_DIGEST", Type: tektonv1beta1.ResultsTypeString, Description: "Digest of the image just built", Value: tektonv1beta1.ResultValue{StringVal: "$(tasks.buildah-build.results.IMAGE_DIGEST)"}},
+					tektonv1beta1.PipelineResult{Name: "IMAGE_URL", Type: tektonv1beta1.ResultsTypeString, Description: "Image repository where the built image would be pushed to", Value: tektonv1beta1.ResultValue{StringVal: "$(tasks.buildah-build.results.IMAGE_URL)"}},
 				},
 				Workspaces: []tektonv1beta1.PipelineWorkspaceDeclaration{
 					tektonv1beta1.PipelineWorkspaceDeclaration{Name: "source"},
@@ -289,7 +290,7 @@ func checkAndInstallPipeline(ctx context.Context, kubeclient clientset.Interface
 							tektonv1beta1.Param{Name: "DOCKERFILE", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(params.containerFile)"}},
 							tektonv1beta1.Param{Name: "CONTEXT", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(params.buildContext)"}},
 							tektonv1beta1.Param{Name: "BUILD_EXTRA_ARGS", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "--authfile=$(params.authfileBuild) --log-level=$(params.logLevel)"}},
-							tektonv1beta1.Param{Name: "BUILD_ARGS", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeArray, ArrayVal: []string{"HTTP_PROXY=$(params.httpProxy)", "HTTPS_PROXY=$(params.httpsProxy)", "NO_PROXY=$(params.noProxy)"}}},
+							tektonv1beta1.Param{Name: "BUILD_ARGS", Value: tektonv1beta1.ParamValue{Type: tektonv1beta1.ParamTypeArray, ArrayVal: []string{"HTTP_PROXY=$(params.httpProxy)", "HTTPS_PROXY=$(params.httpsProxy)", "NO_PROXY=$(params.noProxy)"}}},
 							tektonv1beta1.Param{Name: "PUSH_EXTRA_ARGS", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "--authfile=$(params.authfilePush)"}},
 						},
 						Workspaces: []tektonv1beta1.WorkspacePipelineTaskBinding{
