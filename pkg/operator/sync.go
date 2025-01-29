@@ -194,6 +194,11 @@ func (optr *Operator) syncAll(syncFuncs []syncFunc) error {
 			}
 			break
 		}
+		// If there was no sync error for this function, attempt to clear degrade
+		updatedCO, err = optr.clearDegradedStatus(updatedCO, sf.name)
+		if err != nil {
+			return fmt.Errorf("error clearing degraded status: %v", err)
+		}
 	}
 
 	optr.syncDegradedStatus(updatedCO, syncErr)
