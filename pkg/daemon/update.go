@@ -2685,7 +2685,6 @@ func (dn *Daemon) queueRevertKernelSwap() error {
 // updateLayeredOS updates the system OS to the one specified in newConfig
 func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 	newURL := config.Spec.OSImageURL
-
 	klog.Infof("Updating OS to layered image %q", newURL)
 
 	newEnough, err := dn.NodeUpdaterClient.IsNewEnoughForLayering()
