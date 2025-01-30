@@ -26,8 +26,8 @@ type pipelineImageBuilder struct {
 	cleaner      Cleaner
 }
 
-func newPipelineImageBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1.MachineOSBuild, mosc *mcfgv1.MachineOSConfig, builder buildrequest.Builder) *pipelineImageBuilder {
-	b, c := newBaseImageBuilderWithCleaner(kubeclient, mcfgclient, mosb, mosc, builder)
+func newPipelineImageBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, tektonclient tektonclientset.Interface, mosb *mcfgv1.MachineOSBuild, mosc *mcfgv1.MachineOSConfig, builder buildrequest.Builder) *pipelineImageBuilder {
+	b, c := newBaseImageBuilderWithCleaner(kubeclient, mcfgclient, tektonclient, mosb, mosc, builder)
 	return &pipelineImageBuilder{
 		baseImageBuilder: b,
 		cleaner:          c,
@@ -35,29 +35,29 @@ func newPipelineImageBuilder(kubeclient clientset.Interface, mcfgclient mcfgclie
 }
 
 // Instantiates a ImageBuildObserver using the MachineOSBuild and MachineOSConfig objects.
-func NewPipelineImageBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1.MachineOSBuild, mosc *mcfgv1.MachineOSConfig) ImageBuilder {
-	return newPipelineImageBuilder(kubeclient, mcfgclient, mosb, mosc, nil)
+func NewPipelineImageBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, tektonclient tektonclientset.Interface, mosb *mcfgv1.MachineOSBuild, mosc *mcfgv1.MachineOSConfig) ImageBuilder {
+	return newPipelineImageBuilder(kubeclient, mcfgclient, tektonclient, mosb, mosc, nil)
 }
 
 // Instantiates an ImageBuildObserver using the MachineOSBuild and MachineOSConfig objects.
-func NewPipelineImageBuildObserver(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1.MachineOSBuild, mosc *mcfgv1.MachineOSConfig) ImageBuildObserver {
-	return newPipelineImageBuilder(kubeclient, mcfgclient, mosb, mosc, nil)
+func NewPipelineImageBuildObserver(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, tektonclient tektonclientset.Interface, mosb *mcfgv1.MachineOSBuild, mosc *mcfgv1.MachineOSConfig) ImageBuildObserver {
+	return newPipelineImageBuilder(kubeclient, mcfgclient, tektonclient, mosb, mosc, nil)
 }
 
 // Instantiates an ImageBuildObserver which infers the MachineOSBuild state
 // from the provided builder object
-func NewPipelineImageBuildObserverFromBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1.MachineOSBuild, mosc *mcfgv1.MachineOSConfig, builder buildrequest.Builder) ImageBuildObserver {
-	return newPipelineImageBuilder(kubeclient, mcfgclient, mosb, mosc, builder)
+func NewPipelineImageBuildObserverFromBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, tektonclient tektonclientset.Interface, mosb *mcfgv1.MachineOSBuild, mosc *mcfgv1.MachineOSConfig, builder buildrequest.Builder) ImageBuildObserver {
+	return newPipelineImageBuilder(kubeclient, mcfgclient, tektonclient, mosb, mosc, builder)
 }
 
 // Instantiates a Cleaner using only the MachineOSBuild object.
-func NewPipelineImageBuildCleaner(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1.MachineOSBuild) Cleaner {
-	return newPipelineImageBuilder(kubeclient, mcfgclient, mosb, nil, nil)
+func NewPipelineImageBuildCleaner(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, tektonclient tektonclientset.Interface, mosb *mcfgv1.MachineOSBuild) Cleaner {
+	return newPipelineImageBuilder(kubeclient, mcfgclient, tektonclient, mosb, nil, nil)
 }
 
 // Instantiates a Cleaner using only the Builder object.
-func NewPipelineImageBuildCleanerFromBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, builder buildrequest.Builder) Cleaner {
-	return newPipelineImageBuilder(kubeclient, mcfgclient, nil, nil, builder)
+func NewPipelineImageBuildCleanerFromBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, tektonclient tektonclientset.Interface, builder buildrequest.Builder) Cleaner {
+	return newPipelineImageBuilder(kubeclient, mcfgclient, tektonclient, nil, nil, builder)
 }
 
 // Gets the build pipeline from the API server and wraps it in the Builder interface
