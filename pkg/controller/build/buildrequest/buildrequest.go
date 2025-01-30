@@ -101,14 +101,14 @@ func (br buildRequestImpl) createPipelineRun(kubeclient clientset.Interface) (*t
 		Spec: tektonv1beta1.PipelineRunSpec{
 			PipelineRef: &tektonv1beta1.PipelineRef{Name: "build-and-push-pipeline"},
 			Params: []tektonv1beta1.Param{
-				{Name: "logLevel", Value: tektonv1beta1.ParamValue{StringVal: "DEBUG"}},
-				{Name: "storageDriver", Value: tektonv1beta1.ParamValue{StringVal: "vfs"}},
-				{Name: "authfileBuild", Value: tektonv1beta1.ParamValue{StringVal: "/tmp/base-image-pull-creds/config.json"}},
-				{Name: "authfilePush", Value: tektonv1beta1.ParamValue{StringVal: "/tmp/final-image-push-creds/config.json"}},
-				{Name: "tag", Value: tektonv1beta1.ParamValue{StringVal: br.opts.MachineOSBuild.Spec.RenderedImagePushspec}},
-				{Name: "containerFile", Value: tektonv1beta1.ParamValue{StringVal: containerfile.Data["Containerfile"]}},
-				{Name: "buildContext", Value: tektonv1beta1.ParamValue{StringVal: "$HOME/context"}},
-				{Name: "image", Value: tektonv1beta1.ParamValue{StringVal: br.opts.getBaseOSImagePullspec()}},
+				{Name: "logLevel", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "DEBUG"}},
+				{Name: "storageDriver", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "vfs"}},
+				{Name: "authfileBuild", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "/tmp/base-image-pull-creds/config.json"}},
+				{Name: "authfilePush", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "/tmp/final-image-push-creds/config.json"}},
+				{Name: "tag", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: br.opts.MachineOSBuild.Spec.RenderedImagePushspec}},
+				{Name: "containerFile", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: containerfile.Data["Containerfile"]}},
+				{Name: "buildContext", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$HOME/context"}},
+				{Name: "image", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: br.opts.getBaseOSImagePullspec()}},
 			},
 			Workspaces: []tektonv1beta1.WorkspaceBinding{
 				{
@@ -123,9 +123,9 @@ func (br buildRequestImpl) createPipelineRun(kubeclient clientset.Interface) (*t
 
 	if br.opts.Proxy != nil {
 		proxyParams := []tektonv1beta1.Param{
-			{Name: "httpProxy", Value: tektonv1beta1.ParamValue{StringVal: br.opts.Proxy.HTTPProxy}},
-			{Name: "httpsProxy", Value: tektonv1beta1.ParamValue{StringVal: br.opts.Proxy.HTTPSProxy}},
-			{Name: "noProxy", Value: tektonv1beta1.ParamValue{StringVal: br.opts.Proxy.NoProxy}},
+			{Name: "httpProxy", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: br.opts.Proxy.HTTPProxy}},
+			{Name: "httpsProxy", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: br.opts.Proxy.HTTPSProxy}},
+			{Name: "noProxy", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: br.opts.Proxy.NoProxy}},
 		}
 		pipelineRun.Spec.Params = append(pipelineRun.Spec.Params, proxyParams...)
 	}
