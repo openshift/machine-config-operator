@@ -11,6 +11,7 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	tektonclientset "github.com/tektoncd/pipeline/pkg/client/clientset/versioned"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	clientset "k8s.io/client-go/kubernetes"
@@ -22,16 +23,18 @@ type baseImageBuilder struct {
 	mcfgclient   mcfgclientset.Interface
 	mosb         *mcfgv1.MachineOSBuild
 	mosc         *mcfgv1.MachineOSConfig
+	tektonclient tektonclientset.Interface
 	builder      buildrequest.Builder
 	buildrequest buildrequest.BuildRequest
 }
 
 // Constructs a baseImageBuilder, deep-copying objects as needed.
-func newBaseImageBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1.MachineOSBuild, mosc *mcfgv1.MachineOSConfig, builder buildrequest.Builder) *baseImageBuilder {
+func newBaseImageBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, tektonclient tektonclientset.Interface, mosb *mcfgv1.MachineOSBuild, mosc *mcfgv1.MachineOSConfig, builder buildrequest.Builder) *baseImageBuilder {
 	b := &baseImageBuilder{
-		kubeclient: kubeclient,
-		mcfgclient: mcfgclient,
-		builder:    builder,
+		kubeclient:   kubeclient,
+		mcfgclient:   mcfgclient,
+		tektonclient: tektonclient,
+		builder:      builder,
 	}
 
 	if mosb != nil {
@@ -46,8 +49,8 @@ func newBaseImageBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientse
 }
 
 // Constructs a baseImageBuilder and also instantiates a Cleaner instance based upon the object state.
-func newBaseImageBuilderWithCleaner(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1.MachineOSBuild, mosc *mcfgv1.MachineOSConfig, builder buildrequest.Builder) (*baseImageBuilder, Cleaner) {
-	b := newBaseImageBuilder(kubeclient, mcfgclient, mosb, mosc, builder)
+func newBaseImageBuilderWithCleaner(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, tektonclient tektonclientset.Interface, mosb *mcfgv1.MachineOSBuild, mosc *mcfgv1.MachineOSConfig, builder buildrequest.Builder) (*baseImageBuilder, Cleaner) {
+	b := newBaseImageBuilder(kubeclient, mcfgclient, tektonclient, mosb, mosc, builder)
 	return b, &cleanerImpl{
 		baseImageBuilder: b,
 	}
