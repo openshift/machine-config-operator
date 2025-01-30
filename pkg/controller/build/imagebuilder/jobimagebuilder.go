@@ -13,6 +13,7 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientset "k8s.io/client-go/kubernetes"
+	tektonclientset "github.com/tektoncd/pipeline/pkg/client/clientset/versioned"
 	"k8s.io/klog/v2"
 )
 
@@ -22,8 +23,8 @@ type jobImageBuilder struct {
 	cleaner Cleaner
 }
 
-func newJobImageBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig, builder buildrequest.Builder) *jobImageBuilder {
-	b, c := newBaseImageBuilderWithCleaner(kubeclient, mcfgclient, mosb, mosc, builder)
+func newJobImageBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, tektonclient tektonclientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig, builder buildrequest.Builder) *jobImageBuilder {
+	b, c := newBaseImageBuilderWithCleaner(kubeclient, mcfgclient, tektonclient, mosb, mosc, builder)
 	return &jobImageBuilder{
 		baseImageBuilder: b,
 		cleaner:          c,
@@ -31,29 +32,29 @@ func newJobImageBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset
 }
 
 // Instantiates a ImageBuildObserver using the MachineOSBuild and MachineOSConfig objects.
-func NewJobImageBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig) ImageBuilder {
-	return newJobImageBuilder(kubeclient, mcfgclient, mosb, mosc, nil)
+func NewJobImageBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, tektonclient tektonclientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig) ImageBuilder {
+	return newJobImageBuilder(kubeclient, mcfgclient, tektonclient, mosb, mosc, nil)
 }
 
 // Instantiates an ImageBuildObserver using the MachineOSBuild and MachineOSConfig objects.
-func NewJobImageBuildObserver(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig) ImageBuildObserver {
-	return newJobImageBuilder(kubeclient, mcfgclient, mosb, mosc, nil)
+func NewJobImageBuildObserver(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, tektonclient tektonclientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig) ImageBuildObserver {
+	return newJobImageBuilder(kubeclient, mcfgclient, tektonclient, mosb, mosc, nil)
 }
 
 // Instantiates an ImageBuildObserver which infers the MachineOSBuild state
 // from the provided builder object
-func NewJobImageBuildObserverFromBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig, builder buildrequest.Builder) ImageBuildObserver {
-	return newJobImageBuilder(kubeclient, mcfgclient, mosb, mosc, builder)
+func NewJobImageBuildObserverFromBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, tektonclient tektonclientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig, builder buildrequest.Builder) ImageBuildObserver {
+	return newJobImageBuilder(kubeclient, mcfgclient, tektonclient, mosb, mosc, builder)
 }
 
 // Instantiates a Cleaner using only the MachineOSBuild object.
-func NewJobImageBuildCleaner(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild) Cleaner {
-	return newJobImageBuilder(kubeclient, mcfgclient, mosb, nil, nil)
+func NewJobImageBuildCleaner(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, tektonclient tektonclientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild) Cleaner {
+	return newJobImageBuilder(kubeclient, mcfgclient, tektonclient, mosb, nil, nil)
 }
 
 // Instantiates a Cleaner using only the Builder object.
-func NewJobImageBuildCleanerFromBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, builder buildrequest.Builder) Cleaner {
-	return newJobImageBuilder(kubeclient, mcfgclient, nil, nil, builder)
+func NewJobImageBuildCleanerFromBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, tektonclient tektonclientset.Interface, builder buildrequest.Builder) Cleaner {
+	return newJobImageBuilder(kubeclient, mcfgclient, tektonclient, nil, nil, builder)
 }
 
 // Gets the build job from the API server and wraps it in the Builder interface

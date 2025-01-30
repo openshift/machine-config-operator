@@ -478,7 +478,7 @@ func (b *buildReconciler) updateMachineOSBuild(ctx context.Context, old, current
 	// final image pushspec onto the MachineOSConfig object.
 	if !oldState.IsBuildSuccess() && curState.IsBuildSuccess() {
 		klog.Infof("MachineOSBuild %s succeeded, cleaning up all ephemeral objects used for the build", current.Name)
-		if err := imagebuilder.NewJobImageBuilder(b.kubeclient, b.mcfgclient, current, mosc).Clean(ctx); err != nil {
+		if err := imagebuilder.NewJobImageBuilder(b.kubeclient, b.mcfgclient, b.tektonclient, current, mosc).Clean(ctx); err != nil {
 			return err
 		}
 
@@ -595,11 +595,11 @@ func (b *buildReconciler) startBuild(ctx context.Context, mosb *mcfgv1alpha1.Mac
 	switch mosc.Spec.BuildInputs.ImageBuilder.ImageBuilderType {
 	case mcfgv1alpha1.PodBuilder:
 		// Next, create our new MachineOSBuild.
-		if err := imagebuilder.NewJobImageBuilder(b.kubeclient, b.mcfgclient, mosb, mosc).Start(ctx); err != nil {
+		if err := imagebuilder.NewJobImageBuilder(b.kubeclient, b.mcfgclient, b.tektonclient, mosb, mosc).Start(ctx); err != nil {
 			return fmt.Errorf("imagebuilder could not start build for MachineOSBuild %q: %w", mosb.Name, err)
 		}
 	case mcfgv1alpha1.PipelineBuilder:
-		if err := imagebuilder.NewPipelineImageBuilder(b.kubeclient, b.mcfgclient, mosb, mosc).Start(ctx); err != nil {
+		if err := imagebuilder.NewPipelineImageBuilder(b.kubeclient, b.mcfgclient, b.tektonclient, mosb, mosc).Start(ctx); err != nil {
 			return fmt.Errorf("imagebuilder could not start build for MachineOSBuild %q: %w", mosb.Name, err)
 		}
 	default:
@@ -767,7 +767,7 @@ func (b *buildReconciler) getMachineOSBuildStatusForBuilder(ctx context.Context,
 		return mcfgv1alpha1.MachineOSBuildStatus{}, nil, fmt.Errorf("could not get MachineOSConfig or MachineOSBuild for builder: %w", err)
 	}
 
-	observer := imagebuilder.NewJobImageBuildObserverFromBuilder(b.kubeclient, b.mcfgclient, mosb, mosc, builder)
+	observer := imagebuilder.NewJobImageBuildObserverFromBuilder(b.kubeclient, b.mcfgclient, b.tektonclient, mosb, mosc, builder)
 
 	status, err := observer.MachineOSBuildStatus(ctx)
 	if err != nil {
@@ -940,7 +940,7 @@ func (b *buildReconciler) getMachineOSConfigForBuilder(builder buildrequest.Buil
 
 // Deletes the underlying build objects for a given MachineOSBuild.
 func (b *buildReconciler) deleteBuilderForMachineOSBuild(ctx context.Context, mosb *mcfgv1alpha1.MachineOSBuild) error {
-	if err := imagebuilder.NewJobImageBuildCleaner(b.kubeclient, b.mcfgclient, mosb).Clean(ctx); err != nil {
+	if err := imagebuilder.NewJobImageBuildCleaner(b.kubeclient, b.mcfgclient, b.tektonclient, mosb).Clean(ctx); err != nil {
 		return fmt.Errorf("could not clean build %s: %w", mosb.Name, err)
 	}
 
@@ -1129,7 +1129,7 @@ func (b *buildReconciler) syncMachineOSBuild(ctx context.Context, mosb *mcfgv1al
 				return ignoreErrIsNotFound(fmt.Errorf("could not sync MachineOSBuild %q: %w", mosb.Name, err))
 			}
 
-			observer := imagebuilder.NewJobImageBuildObserver(b.kubeclient, b.mcfgclient, mosb, mosc)
+			observer := imagebuilder.NewJobImageBuildObserver(b.kubeclient, b.mcfgclient, b.tektonclient, mosb, mosc)
 
 			exists, err := observer.Exists(ctx)
 			if err != nil {

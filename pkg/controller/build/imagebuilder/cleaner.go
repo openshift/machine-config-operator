@@ -14,6 +14,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	clientset "k8s.io/client-go/kubernetes"
+	tektonclientset "github.com/tektoncd/pipeline/pkg/client/clientset/versioned"
 	"k8s.io/klog/v2"
 )
 
@@ -26,18 +27,18 @@ type cleanerImpl struct {
 // Constructs an instance of the cleaner from the MachineOSBuild and
 // MachineOSConfig objects. It is possible that the MachineOSConfig can be nil,
 // which this tolerates.
-func newCleaner(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig) Cleaner {
+func newCleaner(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, tektonclient tektonclientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig) Cleaner {
 	return &cleanerImpl{
-		baseImageBuilder: newBaseImageBuilder(kubeclient, mcfgclient, mosb, mosc, nil),
+		baseImageBuilder: newBaseImageBuilder(kubeclient, mcfgclient, tektonclient, mosb, mosc, nil),
 	}
 }
 
 // Constructs an instance of the cleaner using a Builder object. This will
 // refer to fields on the Builder object to delete ephemeral build objects
 // instead of a MachineOSConfig or MachineOSBuild.
-func newCleanerFromBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, builder buildrequest.Builder) Cleaner {
+func newCleanerFromBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, tektonclient tektonclientset.Interface, builder buildrequest.Builder) Cleaner {
 	return &cleanerImpl{
-		baseImageBuilder: newBaseImageBuilder(kubeclient, mcfgclient, nil, nil, builder),
+		baseImageBuilder: newBaseImageBuilder(kubeclient, mcfgclient, tektonclient, nil, nil, builder),
 	}
 }
 
