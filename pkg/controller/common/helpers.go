@@ -609,7 +609,48 @@ func ValidateMachineConfig(cfg mcfgv1.MachineConfigSpec) error {
 			return err
 		}
 	}
+
+	// Validate MC extensions are in allowlist
+	if len(cfg.Extensions) > 0 {
+		if err := ValidateMachineConfigExtensions(cfg); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+// Validates that a given MachineConfig's extensions are supported.
+func ValidateMachineConfigExtensions(cfg mcfgv1.MachineConfigSpec) error {
+	return validateExtensions(cfg.Extensions)
+}
+func validateExtensions(exts []string) error {
+	supportedExtensions := SupportedExtensions()
+	invalidExts := []string{}
+	for _, ext := range exts {
+		if _, ok := supportedExtensions[ext]; !ok {
+			invalidExts = append(invalidExts, ext)
+		}
+	}
+	if len(invalidExts) != 0 {
+		return fmt.Errorf("invalid extensions found: %v", invalidExts)
+	}
+	return nil
+}
+
+// Returns list of extensions possible to install on a CoreOS based system.
+func SupportedExtensions() map[string][]string {
+	// In future when list of extensions grow, it will make
+	// more sense to populate it in a dynamic way.
+	// These are RHCOS supported extensions.
+	// Each extension keeps a list of packages required to get enabled on host.
+	return map[string][]string{
+		"wasm":                 {"crun-wasm"},
+		"ipsec":                {"NetworkManager-libreswan", "libreswan"},
+		"usbguard":             {"usbguard"},
+		"kerberos":             {"krb5-workstation", "libkadm5"},
+		"kernel-devel":         {"kernel-devel", "kernel-headers"},
+		"sandboxed-containers": {"kata-containers"},
+	}
 }
 
 // IgnParseWrapper parses rawIgn for both V2 and V3 ignition configs and returns
