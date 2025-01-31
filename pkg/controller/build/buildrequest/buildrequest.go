@@ -93,6 +93,17 @@ func (br buildRequestImpl) createPipelineRun(kubeclient clientset.Interface) (*t
 		return nil, fmt.Errorf("could not get rendered containerfile: %w", err)
 	}
 
+	machineconfig, err := kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), br.getMCConfigMapName(), metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("could not get rendered machineconfig: %w", err)
+	}
+
+	additionalTrustBundle, err := kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), br.getAdditionalTrustBundleConfigMapName(), metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("could not get rendered containerfile: %w", err)
+	}
+
+
 	pipelineRun := &tektonv1beta1.PipelineRun{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "build-and-push-pipelinerun",
@@ -108,6 +119,8 @@ func (br buildRequestImpl) createPipelineRun(kubeclient clientset.Interface) (*t
 				{Name: "authfilePush", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "/tmp/final-image-push-creds/config.json"}},
 				{Name: "tag", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: br.opts.MachineOSBuild.Spec.RenderedImagePushspec}},
 				{Name: "containerFile", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: containerfile.Data["Containerfile"]}},
+				{Name: "machineConfig", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: machineconfig.Data[machineConfigJSONFilename]}},
+				{Name: "additionalTrustBundle", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: string(additionalTrustBundle.BinaryData["openshift-config-user-ca-bundle.crt"])}},
 				{Name: "buildContext", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "/context"}},
 				{Name: "image", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: br.opts.getBaseOSImagePullspec()}},
 			},
