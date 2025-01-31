@@ -114,9 +114,12 @@ func (br buildRequestImpl) createPipelineRun(kubeclient clientset.Interface) (*t
 			Workspaces: []tektonv1beta1.WorkspaceBinding{
 				{
 					Name: "source",
+					EmptyDir: &corev1.EmptyDirVolumeSource{},
+					/*
 					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
 						ClaimName: "source-pvc",
 					},
+					*/
 				},
 			},
 		},
