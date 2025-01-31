@@ -108,7 +108,7 @@ func (br buildRequestImpl) createPipelineRun(kubeclient clientset.Interface) (*t
 				{Name: "authfilePush", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "/tmp/final-image-push-creds/config.json"}},
 				{Name: "tag", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: br.opts.MachineOSBuild.Spec.RenderedImagePushspec}},
 				{Name: "containerFile", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: containerfile.Data["Containerfile"]}},
-				{Name: "buildContext", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$HOME/context"}},
+				{Name: "buildContext", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "/context"}},
 				{Name: "image", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: br.opts.getBaseOSImagePullspec()}},
 			},
 			Workspaces: []tektonv1beta1.WorkspaceBinding{
