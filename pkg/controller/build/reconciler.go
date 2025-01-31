@@ -268,8 +268,14 @@ func checkAndInstallPipeline(ctx context.Context, kubeclient clientset.Interface
 					tektonv1beta1.PipelineTask{
 						Name: "buildah-build",
 						TaskRef: &tektonv1beta1.TaskRef{
-							Name: tektonClusterTaskName,
-							Kind: tektonv1beta1.ClusterTaskKind,
+							ResolverRef: tektonv1beta1.ResolverRef{
+								Resolver: "cluster",
+								Params: []tektonv1beta1.Param{
+									{Name: "name", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: tektonClusterTaskName}},
+									{Name: "namespace", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: tektonNamespace}},
+									{Name: "kind", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "task"}},
+								},
+							},
 						},
 						Params: []tektonv1beta1.Param{
 							tektonv1beta1.Param{Name: "IMAGE", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(params.tag)"}},
