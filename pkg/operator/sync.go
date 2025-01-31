@@ -104,6 +104,7 @@ const (
 	mobEventsRoleBindingTargetManifestPath          = "manifests/machineosbuilder/events-rolebinding-target.yaml"
 	mobClusterRoleBindingServiceAccountManifestPath = "manifests/machineosbuilder/clusterrolebinding-service-account.yaml"
 	mobClusterRolebindingAnyUIDManifestPath         = "manifests/machineosbuilder/clusterrolebinding-anyuid.yaml"
+	mobClusterRolebindingPipelinesSCCManifestPath   = "manifests/machineosbuilder/clusterrolebinding-pipelines-scc.yaml"
 	mobServiceAccountManifestPath                   = "manifests/machineosbuilder/sa.yaml"
 
 	// Machine Config Daemon manifest paths
@@ -1192,6 +1193,7 @@ func (optr *Operator) syncMachineOSBuilder(config *renderConfig, _ *configv1.Clu
 		clusterRoleBindings: []string{
 			mobClusterRoleBindingServiceAccountManifestPath,
 			mobClusterRolebindingAnyUIDManifestPath,
+			mobClusterRolebindingPipelinesSCCManifestPath,
 		},
 		serviceAccounts: []string{
 			mobServiceAccountManifestPath,
