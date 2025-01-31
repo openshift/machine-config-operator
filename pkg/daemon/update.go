@@ -1663,7 +1663,7 @@ func (dn *Daemon) generateExtensionsArgs(oldConfig, newConfig *mcfgv1.MachineCon
 	extArgs := []string{"update"}
 
 	if dn.os.IsEL() {
-		extensions := getSupportedExtensions()
+		extensions := ctrlcommon.SupportedExtensions()
 		for _, ext := range added {
 			for _, pkg := range extensions[ext] {
 				extArgs = append(extArgs, "--install", pkg)
@@ -1693,38 +1693,6 @@ func (dn *Daemon) generateExtensionsArgs(oldConfig, newConfig *mcfgv1.MachineCon
 	return extArgs
 }
 
-// Returns list of extensions possible to install on a CoreOS based system.
-func getSupportedExtensions() map[string][]string {
-	// In future when list of extensions grow, it will make
-	// more sense to populate it in a dynamic way.
-
-	// These are RHCOS supported extensions.
-	// Each extension keeps a list of packages required to get enabled on host.
-	return map[string][]string{
-		"wasm":                 {"crun-wasm"},
-		"ipsec":                {"NetworkManager-libreswan", "libreswan"},
-		"usbguard":             {"usbguard"},
-		"kerberos":             {"krb5-workstation", "libkadm5"},
-		"kernel-devel":         {"kernel-devel", "kernel-headers"},
-		"sandboxed-containers": {"kata-containers"},
-	}
-}
-
-func validateExtensions(exts []string) error {
-	supportedExtensions := getSupportedExtensions()
-	invalidExts := []string{}
-	for _, ext := range exts {
-		if _, ok := supportedExtensions[ext]; !ok {
-			invalidExts = append(invalidExts, ext)
-		}
-	}
-	if len(invalidExts) != 0 {
-		return fmt.Errorf("invalid extensions found: %v", invalidExts)
-	}
-	return nil
-
-}
-
 func (dn *CoreOSDaemon) applyExtensions(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 	extensionsEmpty := len(oldConfig.Spec.Extensions) == 0 && len(newConfig.Spec.Extensions) == 0
 	if (extensionsEmpty) ||
@@ -1733,7 +1701,7 @@ func (dn *CoreOSDaemon) applyExtensions(oldConfig, newConfig *mcfgv1.MachineConf
 	}
 
 	// Validate extensions allowlist on RHCOS nodes
-	if err := validateExtensions(newConfig.Spec.Extensions); err != nil && dn.os.IsEL() {
+	if err := ctrlcommon.ValidateMachineConfigExtensions(newConfig.Spec); err != nil && dn.os.IsEL() {
 		return err
 	}
 
