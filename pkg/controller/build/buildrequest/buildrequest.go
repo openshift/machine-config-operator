@@ -101,6 +101,7 @@ func (br buildRequestImpl) createPipelineRun(kubeclient clientset.Interface) (*t
 		},
 		Spec: tektonv1beta1.PipelineRunSpec{
 			PipelineRef: &tektonv1beta1.PipelineRef{Name: "build-and-push-pipeline"},
+			ServiceAccountName: "machine-os-builder",
 			Params: []tektonv1beta1.Param{
 				{Name: "logLevel", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "DEBUG"}},
 				{Name: "storageDriver", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "vfs"}},
