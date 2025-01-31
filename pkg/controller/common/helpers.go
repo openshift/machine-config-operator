@@ -529,7 +529,7 @@ func ValidateIgnition(ignconfig interface{}) error {
 // https://bugzilla.redhat.com/show_bug.cgi?id=2038240
 func validateIgn2FileModes(cfg ign2types.Config) error {
 	for _, file := range cfg.Storage.Files {
-		if file.Mode != nil && os.FileMode(*file.Mode) > os.ModePerm {
+		if file.Mode != nil && os.FileMode(*file.Mode) > os.ModePerm { //nolint:gosec
 			return fmt.Errorf("invalid mode %#o for %s, cannot exceed %#o", *file.Mode, file.Path, os.ModePerm)
 		}
 	}
@@ -541,7 +541,7 @@ func validateIgn2FileModes(cfg ign2types.Config) error {
 // https://bugzilla.redhat.com/show_bug.cgi?id=2038240
 func validateIgn3FileModes(cfg ign3types.Config) error {
 	for _, file := range cfg.Storage.Files {
-		if file.Mode != nil && os.FileMode(*file.Mode) > os.ModePerm {
+		if file.Mode != nil && os.FileMode(*file.Mode) > os.ModePerm { //nolint:gosec
 			return fmt.Errorf("invalid mode %#o for %s, cannot exceed %#o", *file.Mode, file.Path, os.ModePerm)
 		}
 	}

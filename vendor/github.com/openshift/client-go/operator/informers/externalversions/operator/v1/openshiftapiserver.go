@@ -3,13 +3,13 @@
 package v1
 
 import (
-	"context"
+	context "context"
 	time "time"
 
-	operatorv1 "github.com/openshift/api/operator/v1"
+	apioperatorv1 "github.com/openshift/api/operator/v1"
 	versioned "github.com/openshift/client-go/operator/clientset/versioned"
 	internalinterfaces "github.com/openshift/client-go/operator/informers/externalversions/internalinterfaces"
-	v1 "github.com/openshift/client-go/operator/listers/operator/v1"
+	operatorv1 "github.com/openshift/client-go/operator/listers/operator/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -20,7 +20,7 @@ import (
 // OpenShiftAPIServers.
 type OpenShiftAPIServerInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1.OpenShiftAPIServerLister
+	Lister() operatorv1.OpenShiftAPIServerLister
 }
 
 type openShiftAPIServerInformer struct {
@@ -54,7 +54,7 @@ func NewFilteredOpenShiftAPIServerInformer(client versioned.Interface, resyncPer
 				return client.OperatorV1().OpenShiftAPIServers().Watch(context.TODO(), options)
 			},
 		},
-		&operatorv1.OpenShiftAPIServer{},
+		&apioperatorv1.OpenShiftAPIServer{},
 		resyncPeriod,
 		indexers,
 	)
@@ -65,9 +65,9 @@ func (f *openShiftAPIServerInformer) defaultInformer(client versioned.Interface,
 }
 
 func (f *openShiftAPIServerInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&operatorv1.OpenShiftAPIServer{}, f.defaultInformer)
+	return f.factory.InformerFor(&apioperatorv1.OpenShiftAPIServer{}, f.defaultInformer)
 }
 
-func (f *openShiftAPIServerInformer) Lister() v1.OpenShiftAPIServerLister {
-	return v1.NewOpenShiftAPIServerLister(f.Informer().GetIndexer())
+func (f *openShiftAPIServerInformer) Lister() operatorv1.OpenShiftAPIServerLister {
+	return operatorv1.NewOpenShiftAPIServerLister(f.Informer().GetIndexer())
 }

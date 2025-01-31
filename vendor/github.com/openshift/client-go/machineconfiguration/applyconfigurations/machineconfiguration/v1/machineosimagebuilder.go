@@ -3,13 +3,13 @@
 package v1
 
 import (
-	v1 "github.com/openshift/api/machineconfiguration/v1"
+	machineconfigurationv1 "github.com/openshift/api/machineconfiguration/v1"
 )
 
 // MachineOSImageBuilderApplyConfiguration represents a declarative configuration of the MachineOSImageBuilder type for use
 // with apply.
 type MachineOSImageBuilderApplyConfiguration struct {
-	ImageBuilderType *v1.MachineOSImageBuilderType `json:"imageBuilderType,omitempty"`
+	ImageBuilderType *machineconfigurationv1.MachineOSImageBuilderType `json:"imageBuilderType,omitempty"`
 }
 
 // MachineOSImageBuilderApplyConfiguration constructs a declarative configuration of the MachineOSImageBuilder type for use with
@@ -21,7 +21,7 @@ func MachineOSImageBuilder() *MachineOSImageBuilderApplyConfiguration {
 // WithImageBuilderType sets the ImageBuilderType field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the ImageBuilderType field is set to the value of the last call.
-func (b *MachineOSImageBuilderApplyConfiguration) WithImageBuilderType(value v1.MachineOSImageBuilderType) *MachineOSImageBuilderApplyConfiguration {
+func (b *MachineOSImageBuilderApplyConfiguration) WithImageBuilderType(value machineconfigurationv1.MachineOSImageBuilderType) *MachineOSImageBuilderApplyConfiguration {
 	b.ImageBuilderType = &value
 	return b
 }

@@ -23,6 +23,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/clock"
 
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -97,7 +98,7 @@ func (optr *Operator) syncAvailableStatus(co *configv1.ClusterOperator) {
 		Reason:  asExpectedReason,
 	}
 
-	cov1helpers.SetStatusCondition(&co.Status.Conditions, coStatusCondition)
+	cov1helpers.SetStatusCondition(&co.Status.Conditions, coStatusCondition, clock.RealClock{})
 }
 
 // syncProgressingStatus applies the new condition to the mco's ClusterOperator object.
@@ -134,7 +135,7 @@ func (optr *Operator) syncProgressingStatus(co *configv1.ClusterOperator) {
 		coStatusCondition.Status = configv1.ConditionTrue
 	}
 
-	cov1helpers.SetStatusCondition(&co.Status.Conditions, coStatusCondition)
+	cov1helpers.SetStatusCondition(&co.Status.Conditions, coStatusCondition, clock.RealClock{})
 }
 
 // This function updates the Cluster Operator's status via an API call only if there is an actual
@@ -220,13 +221,13 @@ func (optr *Operator) syncDegradedStatus(co *configv1.ClusterOperator, ierr sync
 				Type:    configv1.OperatorProgressing,
 				Status:  configv1.ConditionTrue,
 				Message: fmt.Sprintf("Unable to apply %s", optrVersion),
-			})
+			}, clock.RealClock{})
 		} else {
 			cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{
 				Type:    configv1.OperatorProgressing,
 				Status:  configv1.ConditionFalse,
 				Message: fmt.Sprintf("Error while reconciling %s", optrVersion),
-			})
+			}, clock.RealClock{})
 		}
 	}
 
@@ -251,7 +252,7 @@ func (optr *Operator) syncDegradedStatus(co *configv1.ClusterOperator, ierr sync
 		optr.eventRecorder.Eventf(mcoObjectRef, corev1.EventTypeWarning, degradedReason, message)
 
 	}
-	cov1helpers.SetStatusCondition(&co.Status.Conditions, coDegradedCondition)
+	cov1helpers.SetStatusCondition(&co.Status.Conditions, coDegradedCondition, clock.RealClock{})
 }
 
 const (
@@ -312,13 +313,13 @@ func (optr *Operator) syncUpgradeableStatus(co *configv1.ClusterOperator) error 
 			klog.Errorf("Error checking version skew: %v, kubelet skew status: %v, status reason: %v, status message: %v", err, skewStatus, status.Reason, status.Message)
 			coStatusCondition.Reason = status.Reason
 			coStatusCondition.Message = status.Message
-			cov1helpers.SetStatusCondition(&co.Status.Conditions, coStatusCondition)
+			cov1helpers.SetStatusCondition(&co.Status.Conditions, coStatusCondition, clock.RealClock{})
 		}
 		switch skewStatus {
 		case skewUnchecked:
 			coStatusCondition.Reason = status.Reason
 			coStatusCondition.Message = status.Message
-			cov1helpers.SetStatusCondition(&co.Status.Conditions, coStatusCondition)
+			cov1helpers.SetStatusCondition(&co.Status.Conditions, coStatusCondition, clock.RealClock{})
 		case skewUnsupported:
 			coStatusCondition.Reason = status.Reason
 			coStatusCondition.Message = status.Message
@@ -330,15 +331,15 @@ func (optr *Operator) syncUpgradeableStatus(co *configv1.ClusterOperator) error 
 			}
 			klog.Infof("kubelet skew status: %v, status reason: %v", skewStatus, status.Reason)
 			optr.eventRecorder.Eventf(mcoObjectRef, corev1.EventTypeWarning, coStatusCondition.Reason, coStatusCondition.Message)
-			cov1helpers.SetStatusCondition(&co.Status.Conditions, coStatusCondition)
+			cov1helpers.SetStatusCondition(&co.Status.Conditions, coStatusCondition, clock.RealClock{})
 		case skewPresent:
 			coStatusCondition.Reason = status.Reason
 			coStatusCondition.Message = status.Message
 			klog.Infof("kubelet skew status: %v, status reason: %v", skewStatus, status.Reason)
-			cov1helpers.SetStatusCondition(&co.Status.Conditions, coStatusCondition)
+			cov1helpers.SetStatusCondition(&co.Status.Conditions, coStatusCondition, clock.RealClock{})
 		}
 	}
-	cov1helpers.SetStatusCondition(&co.Status.Conditions, coStatusCondition)
+	cov1helpers.SetStatusCondition(&co.Status.Conditions, coStatusCondition, clock.RealClock{})
 	return nil
 }
 
@@ -404,7 +405,7 @@ func (optr *Operator) syncClusterFleetEvaluation(co *configv1.ClusterOperator) e
 		Reason: reason,
 	}
 
-	cov1helpers.SetStatusCondition(&co.Status.Conditions, coStatusCondition)
+	cov1helpers.SetStatusCondition(&co.Status.Conditions, coStatusCondition, clock.RealClock{})
 	return nil
 }
 
@@ -666,19 +667,19 @@ func (optr *Operator) initializeClusterOperator() (*configv1.ClusterOperator, er
 	}
 	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{
 		Type: configv1.OperatorAvailable, Status: configv1.ConditionFalse,
-	})
+	}, clock.RealClock{})
 	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{
 		Type: configv1.OperatorProgressing, Status: configv1.ConditionFalse,
-	})
+	}, clock.RealClock{})
 	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{
 		Type: configv1.OperatorDegraded, Status: configv1.ConditionFalse,
-	})
+	}, clock.RealClock{})
 	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{
 		Type: configv1.OperatorUpgradeable, Status: configv1.ConditionUnknown, Reason: "NoData",
-	})
+	}, clock.RealClock{})
 	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{
 		Type: configv1.EvaluationConditionsDetected, Status: configv1.ConditionFalse, Reason: asExpectedReason,
-	})
+	}, clock.RealClock{})
 
 	// RelatedObjects are consumed by https://github.com/openshift/must-gather
 	co.Status.RelatedObjects = []configv1.ObjectReference{
