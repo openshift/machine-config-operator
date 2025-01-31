@@ -100,7 +100,7 @@ func (br buildRequestImpl) createPipelineRun(kubeclient clientset.Interface) (*t
 			Namespace: ctrlcommon.MCONamespace,
 		},
 		Spec: tektonv1beta1.PipelineRunSpec{
-			PipelineRef: &tektonv1beta1.PipelineRef{Name: "build-and-push-pipeline"},
+			PipelineRef:        &tektonv1beta1.PipelineRef{Name: "build-and-push-pipeline"},
 			ServiceAccountName: "machine-os-builder",
 			Params: []tektonv1beta1.Param{
 				{Name: "logLevel", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "DEBUG"}},
@@ -109,17 +109,17 @@ func (br buildRequestImpl) createPipelineRun(kubeclient clientset.Interface) (*t
 				{Name: "authfilePush", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "/tmp/final-image-push-creds/config.json"}},
 				{Name: "tag", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: string(br.opts.MachineOSBuild.Spec.RenderedImagePushSpec)}},
 				{Name: "containerFile", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: containerfile.Data["Containerfile"]}},
-				{Name: "buildContext", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$HOME/context"}},
+				{Name: "buildContext", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "/context"}},
 				{Name: "image", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: br.opts.OSImageURLConfig.BaseOSContainerImage}},
 			},
 			Workspaces: []tektonv1beta1.WorkspaceBinding{
 				{
-					Name: "source",
+					Name:     "source",
 					EmptyDir: &corev1.EmptyDirVolumeSource{},
 					/*
-					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-						ClaimName: "source-pvc",
-					},
+						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: "source-pvc",
+						},
 					*/
 				},
 			},
