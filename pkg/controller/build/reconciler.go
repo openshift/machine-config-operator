@@ -251,6 +251,8 @@ func checkAndInstallPipeline(ctx context.Context, kubeclient clientset.Interface
 					tektonv1beta1.ParamSpec{Name: "noProxy", Type: tektonv1beta1.ParamTypeString, Description: "noproxy", Default: &tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: ""}},
 					tektonv1beta1.ParamSpec{Name: "buildContext", Type: tektonv1beta1.ParamTypeString, Description: "context"},
 					tektonv1beta1.ParamSpec{Name: "image", Type: tektonv1beta1.ParamTypeString, Description: "image"},
+					tektonv1beta1.ParamSpec{Name: "machineConfig", Type: tektonv1beta1.ParamTypeString, Description: "machine config"},
+					tektonv1beta1.ParamSpec{Name: "additionalTrustBundle", Type: tektonv1beta1.ParamTypeString, Description: "additional trust bundle"},
 				},
 				Results: []tektonv1beta1.PipelineResult{
 					tektonv1beta1.PipelineResult{Name: "IMAGE_DIGEST", Type: tektonv1beta1.ResultsTypeString, Description: "Digest of the image just built", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(tasks.buildah-build.results.IMAGE_DIGEST)"}},
