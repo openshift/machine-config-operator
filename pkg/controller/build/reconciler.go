@@ -264,6 +264,9 @@ func checkAndInstallPipeline(ctx context.Context, kubeclient clientset.Interface
 								},
 							},
 						},
+						Workspaces: []tektonv1beta1.WorkspacePipelineTaskBinding{
+							tektonv1beta1.WorkspacePipelineTaskBinding{Name: "source", Workspace: "source"},
+						},
 					},
 					tektonv1beta1.PipelineTask{
 						Name: "buildah-build",
