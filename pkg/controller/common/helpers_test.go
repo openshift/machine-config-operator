@@ -793,3 +793,40 @@ func TestParseAndConvertGzippedConfig(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateMachineConfigExtensions(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		name        string
+		extensions  []string
+		errExpected bool
+	}{
+		{
+			name:       "Supported",
+			extensions: []string{"kerberos", "sandboxed-containers"},
+		},
+		{
+			name:        "Unsupported",
+			extensions:  []string{"unsupported1", "unsupported2"},
+			errExpected: true,
+		},
+	}
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			mcfgSpec := mcfgv1.MachineConfigSpec{
+				Extensions: testCase.extensions,
+			}
+			err := ValidateMachineConfigExtensions(mcfgSpec)
+			if testCase.errExpected {
+				assert.Error(t, err)
+				for _, ext := range testCase.extensions {
+					assert.Contains(t, err.Error(), ext)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}

@@ -2850,7 +2850,7 @@ func (dn *Daemon) getUnsupportedPackages() {
 	}
 
 	supportedPackages := make(map[string]bool)
-	for _, packages := range getSupportedExtensions() {
+	for _, packages := range ctrlcommon.SupportedExtensions() {
 		for _, pkg := range packages {
 			supportedPackages[pkg] = true
 		}
