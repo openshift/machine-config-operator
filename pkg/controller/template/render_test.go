@@ -216,6 +216,8 @@ var (
 		"nutanix":                "./test_data/controller_config_nutanix.yaml",
 		"network-forwarding-sdn": "./test_data/controller_config_forwarding_sdn.yaml",
 		"network-forwarding-ovn": "./test_data/controller_config_forwarding_ovn.yaml",
+		"gcp-custom-dns":         "./test_data/controller_config_gcp_custom_dns.yaml",
+		"gcp-platform-default":   "./test_data/controller_config_gcp_platform_default.yaml",
 	}
 )
 
