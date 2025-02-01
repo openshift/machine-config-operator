@@ -176,6 +176,26 @@ func (b *buildReconciler) deleteMachineOSConfig(ctx context.Context, mosc *mcfgv
 func (b *buildReconciler) AddJob(ctx context.Context, job *batchv1.Job) error {
 	return b.timeObjectOperation(job, addingVerb, func() error {
 		klog.Infof("Adding build job %q", job.Name)
+
+		status, mosb, err := b.getMachineOSBuildStatusForBuilder(ctx, job)
+		if err != nil {
+			return fmt.Errorf("could not get status for job %q: %w", job.Name, err)
+		}
+
+		state := ctrlcommon.NewMachineOSBuildStateFromStatus(status)
+		if !state.IsInInitialState() && !state.IsInTransientState() && state.IsInTerminalState() {
+			// If a job was added in a terminal state, it means that we missed a job
+			// object update that occurred when we weren't watching (i.e., if the
+			// machine-os-builder pod was restarting at the time that the job
+			// transitioned into a terminal state).
+			//
+			// In that situation, we should preemptively do a MachineOSBuild update with
+			// the jobs' status before doing anything else.
+			if err := b.updateMachineOSBuildWithStatus(ctx, job); err != nil {
+				return fmt.Errorf("could not update MachineOSBuild %q with status for job %q: %w", mosb.Name, job.Name, err)
+			}
+		}
+
 		return b.syncAll(ctx)
 	})
 }
