@@ -42,8 +42,6 @@ rules:
       - get
       - list
       - watch
-      - delete
-      - create
   - apiGroups:
       - config.openshift.io
     resources: 
@@ -63,9 +61,6 @@ rules:
       - machineosconfigs 
       - machineosconfigs/status
     verbs: 
-      - create
-      - update 
-      - patch 
       - get
   - apiGroups: 
       - machineconfiguration.openshift.io
@@ -73,7 +68,4 @@ rules:
       - machineosbuilds
       - machineosbuilds/status
     verbs: 
-      - create
-      - update 
-      - patch
       - get
