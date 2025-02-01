@@ -89,7 +89,7 @@ func checkMachineSet(infra *osconfigv1.Infrastructure, machineSet *machinev1beta
 	case osconfigv1.LibvirtPlatformType:
 		return reconcileLibvirt(machineSet, configMap, arch)
 	case osconfigv1.VSpherePlatformType:
-		return reconcileVSphere(machineSet, configMap, arch)
+		return reconcileVSphere(machineSet, infra, configMap, arch)
 	case osconfigv1.NutanixPlatformType:
 		return reconcileNutanix(machineSet, configMap, arch)
 	case osconfigv1.OvirtPlatformType:
@@ -192,9 +192,51 @@ func reconcileLibvirt(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap
 	return false, nil, nil
 }
 
-func reconcileVSphere(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
-	klog.Infof("Skipping machineset %s, unsupported platform type VSphere with %s arch", machineSet.Name, arch)
-	return false, nil, nil
+func reconcileVSphere(machineSet *machinev1beta1.MachineSet, infra *osconfigv1.Infrastructure, configMap *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
+	klog.Infof("Reconciling MAPI machineset %s on vSphere, with arch %s", machineSet.Name, arch)
+
+	// First, unmarshal the VSphere providerSpec
+	providerSpec := new(machinev1beta1.VSphereMachineProviderSpec)
+	if err := unmarshalProviderSpec(machineSet, providerSpec); err != nil {
+		return false, nil, err
+	}
+
+	// Next, unmarshal the configmap into a stream object
+	streamData := new(stream.Stream)
+	if err := unmarshalStreamDataConfigMap(configMap, streamData); err != nil {
+		return false, nil, err
+	}
+
+	newBootImg, err := createNewVMTemplate(streamData, providerSpec, infra, arch)
+	if err != nil {
+		return false, nil, err
+	}
+
+	patchRequired = false
+	newProviderSpec := providerSpec.DeepCopy()
+
+	currentBootImg := newProviderSpec.Template
+	if newBootImg != currentBootImg {
+		klog.Infof("New target boot image: %s", newBootImg)
+		klog.Infof("Current image: %s", currentBootImg)
+		patchRequired = true
+		newProviderSpec.Template = newBootImg
+	}
+
+	if newProviderSpec.UserDataSecret.Name != ManagedWorkerSecretName {
+		newProviderSpec.UserDataSecret.Name = ManagedWorkerSecretName
+		patchRequired = true
+	}
+
+	// If patch is required, marshal the new providerspec into the machineset
+	if patchRequired {
+		newMachineSet = machineSet.DeepCopy()
+		if err := marshalProviderSpec(newMachineSet, newProviderSpec); err != nil {
+			return false, nil, err
+		}
+	}
+
+	return patchRequired, newMachineSet, nil
 }
 
 func reconcileNutanix(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {

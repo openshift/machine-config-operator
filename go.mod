@@ -37,6 +37,7 @@ require (
 	github.com/spf13/pflag v1.0.6-0.20210604193023-d5e0c0615ace
 	github.com/stretchr/testify v1.9.0
 	github.com/vincent-petithory/dataurl v1.0.0
+	github.com/vmware/govmomi v0.45.1
 	golang.org/x/net v0.29.0
 	golang.org/x/time v0.7.0
 	google.golang.org/grpc v1.65.0
