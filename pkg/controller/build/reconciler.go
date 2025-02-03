@@ -196,7 +196,6 @@ func checkAndInstallPipeline(ctx context.Context, kubeclient clientset.Interface
 	if err != nil {
 		return err
 	}
-	klog.V(2).Infof("TektonConfig is Ready!")
 
 	/*
 	// Ensure Buildah Task exists
@@ -212,6 +211,7 @@ func checkAndInstallPipeline(ctx context.Context, kubeclient clientset.Interface
 	if err != nil { 
 		if k8serrors.IsNotFound(err) {
 			tektonPipelineDNE = true
+			klog.V(2).Infof("Buildah pipeline DNE, creating")
 		} else {
 			return fmt.Errorf("Error getting Pipeline: %v", err)
 		}
@@ -304,14 +304,12 @@ func checkAndInstallPipeline(ctx context.Context, kubeclient clientset.Interface
 			return fmt.Errorf("Error creating Pipeline: %v", err)
 		}
 	}
-	klog.V(2).Infof("Buildah Pipeline Ready!")
 
 	return nil
 }
 
 // waitForTektonConfigReady waits for the TektonConfig's Ready condition to become True.
 func waitForTektonConfigReady(ctx context.Context, client pipelineoperatorclientset.Interface, namespace, name string, interval, timeout time.Duration) error {
-	klog.V(2).Infof("waitForTektonConfigReady tektonConfig does not exist yet")
 	return wait.PollUntilContextCancel(ctx, interval, true, func(ctx context.Context) (bool, error) {
 		// Fetch the TektonConfig resource
 		tektonConfig, err := client.OperatorV1alpha1().TektonConfigs().Get(ctx, name, metav1.GetOptions{})
@@ -323,7 +321,6 @@ func waitForTektonConfigReady(ctx context.Context, client pipelineoperatorclient
 				return false, fmt.Errorf("failed to fetch TektonConfig: %v", err)
 			}
 		}
-		klog.V(2).Infof("waitForTektonConfigReady tektonconfig exists now")
 		// Check if the Ready condition is True
 		readyCondition := tektonConfig.Status.GetCondition(apis.ConditionReady)
 		if readyCondition != nil && readyCondition.Status == "True" {
