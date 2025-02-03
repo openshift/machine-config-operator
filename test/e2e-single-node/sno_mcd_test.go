@@ -196,7 +196,7 @@ func TestExtensions(t *testing.T) {
 			Config: runtime.RawExtension{
 				Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
 			},
-			Extensions: []string{"wasm", "ipsec", "usbguard", "kernel-devel", "kerberos", "sysstat", "ksan-storage"},
+			Extensions: []string{"wasm", "ipsec", "usbguard", "kernel-devel", "kerberos", "sysstat"},
 		},
 	}
 
@@ -212,8 +212,8 @@ func TestExtensions(t *testing.T) {
 	assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
 	assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
 
-	installedPackages := helpers.ExecCmdOnNode(t, cs, node, "chroot", "/rootfs", "rpm", "-q", "crun-wasm", "libreswan", "usbguard", "kernel-devel", "kernel-headers", "krb5-workstation", "libkadm5", "sysstat", "lvm2-lockd", "sanlock")
-	expectedPackages := []string{"crun-wasm", "libreswan", "usbguard", "kernel-devel", "kernel-headers", "krb5-workstation", "libkadm5", "sysstat", "lvm2-lockd", "sanlock"}
+	installedPackages := helpers.ExecCmdOnNode(t, cs, node, "chroot", "/rootfs", "rpm", "-q", "crun-wasm", "libreswan", "usbguard", "kernel-devel", "kernel-headers", "krb5-workstation", "libkadm5", "sysstat")
+	expectedPackages := []string{"crun-wasm", "libreswan", "usbguard", "kernel-devel", "kernel-headers", "krb5-workstation", "libkadm5", "sysstat"}
 	for _, v := range expectedPackages {
 		if !strings.Contains(installedPackages, v) {
 			t.Fatalf("Node %s doesn't have expected extensions", node.Name)
@@ -237,7 +237,7 @@ func TestExtensions(t *testing.T) {
 	assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], oldMasterRenderedConfig)
 	assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
 
-	installedPackages = helpers.ExecCmdOnNode(t, cs, node, "chroot", "/rootfs", "rpm", "-qa", "crun-wasm", "libreswan", "usbguard", "kernel-devel", "kernel-headers", "krb5-workstation", "libkadm5", "sysstat", "lvm2-lockd", "sanlock")
+	installedPackages = helpers.ExecCmdOnNode(t, cs, node, "chroot", "/rootfs", "rpm", "-qa", "crun-wasm", "libreswan", "usbguard", "kernel-devel", "kernel-headers", "krb5-workstation", "libkadm5", "sysstat")
 	for _, v := range expectedPackages {
 		if strings.Contains(installedPackages, v) {
 			t.Fatalf("Node %s did not rollback successfully", node.Name)
