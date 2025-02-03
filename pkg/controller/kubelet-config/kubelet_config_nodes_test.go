@@ -66,7 +66,7 @@ func TestNodeConfigDefault(t *testing.T) {
 
 			nodeConfig := createNewDefaultNodeconfig()
 			nodeConfig.Spec.WorkerLatencyProfile = osev1.DefaultUpdateDefaultReaction
-			nodeConfig.Spec.CgroupMode = osev1.CgroupModeDefault
+			nodeConfig.Spec.CgroupMode = osev1.CgroupModeV2
 			f.nodeLister = append(f.nodeLister, nodeConfig)
 			f.oseobjects = append(f.oseobjects, nodeConfig)
 
@@ -81,8 +81,8 @@ func TestNodeConfigDefault(t *testing.T) {
 
 func TestBootstrapNodeConfigDefault(t *testing.T) {
 	configNodeCgroupDefault := createNewDefaultNodeconfig()
-	configNodeCgroupV1 := createNewDefaultNodeconfigWithCgroup(osev1.CgroupModeV1)
 	configNodeCgroupV2 := createNewDefaultNodeconfigWithCgroup(osev1.CgroupModeV2)
+	configNodeCgroupV1 := createNewDefaultNodeconfigWithCgroup(osev1.CgroupMode("v1"))
 
 	expected := map[*osev1.Node]struct {
 		Name             string
@@ -99,11 +99,6 @@ func TestBootstrapNodeConfigDefault(t *testing.T) {
 			MasterKernelArgs: []string{"systemd.unified_cgroup_hierarchy=1", "cgroup_no_v1=\"all\"", "psi=0"},
 			WorkerKernelArgs: []string{"systemd.unified_cgroup_hierarchy=1", "cgroup_no_v1=\"all\"", "psi=0"},
 		},
-		configNodeCgroupV1: {
-			Name:             "Cgroupv1",
-			MasterKernelArgs: []string{"systemd.unified_cgroup_hierarchy=0", "systemd.legacy_systemd_cgroup_controller=1"},
-			WorkerKernelArgs: []string{"systemd.unified_cgroup_hierarchy=0", "systemd.legacy_systemd_cgroup_controller=1"},
-		},
 	}
 
 	for _, platform := range []configv1.PlatformType{configv1.AWSPlatformType, configv1.NonePlatformType, "unrecognized"} {
@@ -115,18 +110,22 @@ func TestBootstrapNodeConfigDefault(t *testing.T) {
 			mcps = append(mcps, mcp1)
 			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"Example"}, nil)
 
-			for _, configNode := range []*osev1.Node{configNodeCgroupDefault, configNodeCgroupV1, configNodeCgroupV2} {
+			for _, configNode := range []*osev1.Node{configNodeCgroupDefault, configNodeCgroupV2, configNodeCgroupV1} {
 				expect := expected[configNode]
 				t.Run(fmt.Sprintf("Testing %v", expect.Name), func(t *testing.T) {
 					mcs, err := RunNodeConfigBootstrap("../../../templates", fgAccess, cc, configNode, mcps, nil)
-					if err != nil {
-						t.Errorf("could not run node config bootstrap: %v", err)
+					if configNode == configNodeCgroupV1 {
+						require.Error(t, err)
+					} else {
+						if err != nil {
+							t.Errorf("could not run node config bootstrap: %v", err)
+						}
+						expectedCount := 2
+						if len(mcs) != expectedCount {
+							t.Errorf("expected %v machine configs generated with the default node config, got %d machine configs", expectedCount, len(mcs))
+						}
+						require.Equal(t, mcs[0].Spec.KernelArguments, expect.MasterKernelArgs)
 					}
-					expectedCount := 2
-					if len(mcs) != expectedCount {
-						t.Errorf("expected %v machine configs generated with the default node config, got %d machine configs", expectedCount, len(mcs))
-					}
-					require.Equal(t, mcs[0].Spec.KernelArguments, expect.MasterKernelArgs)
 				})
 			}
 		})
@@ -200,7 +199,7 @@ func TestNodeConfigCustom(t *testing.T) {
 			}
 
 			nodeConfig.Spec.WorkerLatencyProfile = osev1.DefaultUpdateDefaultReaction
-			nodeConfig.Spec.CgroupMode = osev1.CgroupModeDefault
+			nodeConfig.Spec.CgroupMode = osev1.CgroupModeV2
 			f.nodeLister = append(f.nodeLister, nodeConfig)
 			f.oseobjects = append(f.oseobjects, nodeConfig)
 

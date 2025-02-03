@@ -33,9 +33,6 @@ const (
 	managedFeaturesKeyPrefix      = "98"
 	managedKubeletConfigKeyPrefix = "99"
 	protectKernelDefaultsStr      = "\"protectKernelDefaults\":false"
-	cgroupsV1DeprecationMsg       = "cgroups v1 support will soon be deprecated in Openshift, consider switching to cgroups v2"
-	cgroupModeCondType            = "CGroupMode"
-	cgroupCondReason              = "CGroupModeV1"
 )
 
 func createNewKubeletDynamicSystemReservedIgnition(autoSystemReserved *bool, userDefinedSystemReserved map[string]string) *ign3types.File {
@@ -159,9 +156,6 @@ func updateMachineConfigwithCgroup(node *osev1.Node, mc *mcfgv1.MachineConfig) e
 		kernelArgsToAdd, kernelArgsToRemove, adjustedKernelArgs []string
 	)
 	switch node.Spec.CgroupMode {
-	case osev1.CgroupModeV1:
-		kernelArgsToAdd = append(kernelArgsToAdd, kernelArgsv1...)
-		kernelArgsToRemove = append(kernelArgsToRemove, kernelArgsv2...)
 	case osev1.CgroupModeV2, osev1.CgroupModeEmpty:
 		kernelArgsToAdd = append(kernelArgsToAdd, kernelArgsv2...)
 		kernelArgsToRemove = append(kernelArgsToRemove, kernelArgsv1...)
