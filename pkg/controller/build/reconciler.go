@@ -1140,6 +1140,15 @@ func (b *buildReconciler) syncMachineOSBuild(ctx context.Context, mosb *mcfgv1al
 				return ignoreErrIsNotFound(fmt.Errorf("could not sync MachineOSBuild %q: %w", mosb.Name, err))
 			}
 
+			if mosc.Spec.BuildInputs.ImageBuilder.ImageBuilderType == mcfgv1alpha1.PipelineBuilder {
+				// Check and install pipeline
+				err := checkAndInstallPipeline(ctx, b.kubeclient, b.pipelineoperatorclient, b.olmclient, b.tektonclient)
+				if err != nil {
+					return fmt.Errorf("error checking pipeline exists and installing: %v", err)
+				}
+			}
+
+
 			observer := imagebuilder.NewJobImageBuildObserver(b.kubeclient, b.mcfgclient, b.tektonclient, mosb, mosc)
 
 			exists, err := observer.Exists(ctx)
@@ -1196,6 +1205,15 @@ func (b *buildReconciler) syncMachineOSConfig(ctx context.Context, mosc *mcfgv1a
 		if err != nil {
 			return fmt.Errorf("could not list MachineOSBuilds for MachineOSConfig %q: %w", mosc.Name, err)
 		}
+
+		if mosc.Spec.BuildInputs.ImageBuilder.ImageBuilderType == mcfgv1alpha1.PipelineBuilder {
+			// Check and install pipeline
+			err := checkAndInstallPipeline(ctx, b.kubeclient, b.pipelineoperatorclient, b.olmclient, b.tektonclient)
+			if err != nil {
+				return fmt.Errorf("error checking pipeline exists and installing: %v", err)
+			}
+		}
+
 
 		klog.V(4).Infof("MachineOSConfig %q is associated with %d MachineOSBuilds %v", mosc.Name, len(mosbs), getMachineOSBuildNames(mosbs))
 
