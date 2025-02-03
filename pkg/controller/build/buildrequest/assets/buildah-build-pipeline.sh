@@ -18,6 +18,6 @@ build_context=$(params.buildContext)
 mkdir -p "$build_context/machineconfig"
 
 # Copy the Containerfile, Machineconfigs and Additional Trust Bundle from configmaps into our build context.
-echo $(params.containerFile) > "$build_context/Containerfile"
-echo $(params.machineConfig) > "$build_context/machineconfig/machineconfig.json.gz"
+echo "$(params.containerFile)" > "$build_context/Containerfile"
+echo "$(params.machineConfig)" > "$build_context/machineconfig/machineconfig.json.gz"
 cp /etc/pki/ca-trust/source/anchors/openshift-config-user-ca-bundle.crt "$build_context"
