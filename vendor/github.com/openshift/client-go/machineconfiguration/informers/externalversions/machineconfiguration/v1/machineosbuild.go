@@ -3,13 +3,13 @@
 package v1
 
 import (
-	"context"
+	context "context"
 	time "time"
 
-	machineconfigurationv1 "github.com/openshift/api/machineconfiguration/v1"
+	apimachineconfigurationv1 "github.com/openshift/api/machineconfiguration/v1"
 	versioned "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	internalinterfaces "github.com/openshift/client-go/machineconfiguration/informers/externalversions/internalinterfaces"
-	v1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
+	machineconfigurationv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -20,7 +20,7 @@ import (
 // MachineOSBuilds.
 type MachineOSBuildInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1.MachineOSBuildLister
+	Lister() machineconfigurationv1.MachineOSBuildLister
 }
 
 type machineOSBuildInformer struct {
@@ -54,7 +54,7 @@ func NewFilteredMachineOSBuildInformer(client versioned.Interface, resyncPeriod 
 				return client.MachineconfigurationV1().MachineOSBuilds().Watch(context.TODO(), options)
 			},
 		},
-		&machineconfigurationv1.MachineOSBuild{},
+		&apimachineconfigurationv1.MachineOSBuild{},
 		resyncPeriod,
 		indexers,
 	)
@@ -65,9 +65,9 @@ func (f *machineOSBuildInformer) defaultInformer(client versioned.Interface, res
 }
 
 func (f *machineOSBuildInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&machineconfigurationv1.MachineOSBuild{}, f.defaultInformer)
+	return f.factory.InformerFor(&apimachineconfigurationv1.MachineOSBuild{}, f.defaultInformer)
 }
 
-func (f *machineOSBuildInformer) Lister() v1.MachineOSBuildLister {
-	return v1.NewMachineOSBuildLister(f.Informer().GetIndexer())
+func (f *machineOSBuildInformer) Lister() machineconfigurationv1.MachineOSBuildLister {
+	return machineconfigurationv1.NewMachineOSBuildLister(f.Informer().GetIndexer())
 }
