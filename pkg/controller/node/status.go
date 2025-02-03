@@ -277,6 +277,21 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 		}
 	}
 
+	if mosc != nil && !pool.Spec.Paused {
+		// MOSC exists but MOSB doesn't exist yet -> change MCP to update
+		if mosb == nil {
+			updating := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionTrue, "", fmt.Sprintf("Pool is waiting for a new OS image build to start (mosc: %s)", mosc.Name))
+			apihelpers.SetMachineConfigPoolCondition(&status, *updating)
+		} else {
+			// Some cases we have an old MOSB object that still exists, we still update MCP
+			mosbState := ctrlcommon.NewMachineOSBuildState(mosb)
+			if mosbState.IsBuilding() || mosbState.IsBuildPrepared() {
+				updating := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionTrue, "", fmt.Sprintf("Pool is waiting for OS image build to complete (mosb: %s)", mosb.Name))
+				apihelpers.SetMachineConfigPoolCondition(&status, *updating)
+			}
+		}
+	}
+
 	var nodeDegraded bool
 	var nodeDegradedMessage string
 	for _, m := range degradedMachines {
