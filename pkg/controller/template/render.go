@@ -352,6 +352,7 @@ func renderTemplate(config RenderConfig, path string, b []byte) ([]byte, error) 
 	funcs["cloudPlatformAPIIntLoadBalancerIPs"] = cloudPlatformAPIIntLoadBalancerIPs
 	funcs["cloudPlatformAPILoadBalancerIPs"] = cloudPlatformAPILoadBalancerIPs
 	funcs["cloudPlatformIngressLoadBalancerIPs"] = cloudPlatformIngressLoadBalancerIPs
+	funcs["cloudPlatformLBIPAvailable"] = cloudPlatformLBIPAvailable
 	funcs["join"] = strings.Join
 	tmpl, err := template.New(path).Funcs(funcs).Parse(string(b))
 	if err != nil {
@@ -774,6 +775,33 @@ func cloudPlatformIngressLoadBalancerIPs(cfg RenderConfig) (interface{}, error) 
 		}
 	} else {
 		return nil, fmt.Errorf("")
+	}
+}
+
+// cloudPlatformLBIPAvailable returns true when DNSType is set to `ClusterHosted`
+// and LB IPs are provided as part of `PlatformStatus`.
+func cloudPlatformLBIPAvailable(cfg RenderConfig) bool {
+	if cfg.Infra.Status.PlatformStatus != nil {
+		switch cfg.Infra.Status.PlatformStatus.Type {
+		case configv1.GCPPlatformType:
+			switch cloudPlatformLoadBalancerIPState(cfg) {
+			case availableLBIPState:
+				return true
+			default:
+				return false
+			}
+		case configv1.AWSPlatformType:
+			switch cloudPlatformLoadBalancerIPState(cfg) {
+			case availableLBIPState:
+				return true
+			default:
+				return false
+			}
+		default:
+			return false
+		}
+	} else {
+		return false
 	}
 }
 
