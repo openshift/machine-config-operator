@@ -277,6 +277,27 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 		}
 	}
 
+	if mosb != nil {
+		succeededCondition := apihelpers.GetMachineOSBuildCondition(mosb.Status, mcfgv1.MachineOSBuildSucceeded)
+		failedCondition := apihelpers.GetMachineOSBuildCondition(mosb.Status, mcfgv1.MachineOSBuildFailed)
+
+		if (succeededCondition != nil && succeededCondition.Status == metav1.ConditionTrue) ||
+			(failedCondition != nil && failedCondition.Status == metav1.ConditionTrue) {
+			klog.Infof("MOSB build is complete (Succeeded or Failed). Not overriding MCP Updating condition.")
+		} else {
+			buildingCondition := apihelpers.GetMachineOSBuildCondition(mosb.Status, mcfgv1.MachineOSBuilding)
+			if buildingCondition != nil && buildingCondition.Status == metav1.ConditionTrue {
+				klog.Infof("MOSB indicates build is in progress. Overriding MCP Updating condition to true with message 'Building new OS image'")
+				supdating := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionTrue, "", "")
+				apihelpers.SetMachineConfigPoolCondition(&status, *supdating)
+			} else {
+				klog.Infof("MOSB build is neither complete nor actively building. Not overriding MCP Updating condition.")
+			}
+		}
+	} else {
+		klog.Infof("MOSB is nil. Skipping OS build condition check.")
+	}
+
 	var nodeDegraded bool
 	var nodeDegradedMessage string
 	for _, m := range degradedMachines {
