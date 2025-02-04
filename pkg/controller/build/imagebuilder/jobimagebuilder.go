@@ -11,11 +11,11 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/controller/build/buildrequest"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	tektonclientset "github.com/tektoncd/pipeline/pkg/client/clientset/versioned"
 	batchv1 "k8s.io/api/batch/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientset "k8s.io/client-go/kubernetes"
-	tektonclientset "github.com/tektoncd/pipeline/pkg/client/clientset/versioned"
 	"k8s.io/klog/v2"
 )
 

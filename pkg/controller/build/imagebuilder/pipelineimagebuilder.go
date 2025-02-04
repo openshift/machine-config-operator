@@ -264,7 +264,7 @@ func (p *pipelineImageBuilder) stop(ctx context.Context) error {
 	buildPipelineRunName := p.getBuilderName()
 
 	propagationPolicy := metav1.DeletePropagationForeground
-	err = p.tektonclient.TektonV1().PipelineRuns(ctrlcommon.MCONamespace).Delete(ctx, buildPipelineRunName, metav1.DeleteOptions{PropagationPolicy: &propagationPolicy})
+	err = p.tektonclient.TektonV1beta1().PipelineRuns(ctrlcommon.MCONamespace).Delete(ctx, buildPipelineRunName, metav1.DeleteOptions{PropagationPolicy: &propagationPolicy})
 	if err == nil {
 		klog.Infof("Deleted build pipeline %s for MachineOSBuild %s", buildPipelineRunName, mosbName)
 		return nil

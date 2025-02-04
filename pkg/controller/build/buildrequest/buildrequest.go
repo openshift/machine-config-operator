@@ -123,7 +123,7 @@ func (br buildRequestImpl) createPipelineRun(kubeclient clientset.Interface) (*t
 				{Name: "machineConfig", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: machineconfig.Data[machineConfigJSONFilename]}},
 				{Name: "additionalTrustBundle", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: string(additionalTrustBundle.BinaryData["openshift-config-user-ca-bundle.crt"])}},
 				{Name: "buildContextName", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "context"}},
-				{Name: "image", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: br.opts.OSImageURLConfig.BaseOSContainerImage}},
+				{Name: "podimage", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: br.opts.OSImageURLConfig.BaseOSContainerImage}},
 			},
 			Workspaces: []tektonv1beta1.WorkspaceBinding{
 				{
