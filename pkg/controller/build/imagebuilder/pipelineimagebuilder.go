@@ -21,7 +21,7 @@ import (
 // Implements ImageBuilder assuming that the underlying Builder is a Pipeline.
 type pipelineImageBuilder struct {
 	*baseImageBuilder
-	cleaner      Cleaner
+	cleaner Cleaner
 }
 
 func newPipelineImageBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, tektonclient tektonclientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig, builder buildrequest.Builder) *pipelineImageBuilder {
@@ -262,7 +262,7 @@ func (p *pipelineImageBuilder) stop(ctx context.Context) error {
 	buildPipelineRunName := p.getBuilderName()
 
 	propagationPolicy := metav1.DeletePropagationForeground
-	err = p.tektonclient.TektonV1().PipelineRuns(ctrlcommon.MCONamespace).Delete(ctx, buildPipelineRunName, metav1.DeleteOptions{PropagationPolicy: &propagationPolicy})
+	err = p.tektonclient.TektonV1beta1().PipelineRuns(ctrlcommon.MCONamespace).Delete(ctx, buildPipelineRunName, metav1.DeleteOptions{PropagationPolicy: &propagationPolicy})
 	if err == nil {
 		klog.Infof("Deleted build pipeline %s for MachineOSBuild %s", buildPipelineRunName, mosbName)
 		return nil

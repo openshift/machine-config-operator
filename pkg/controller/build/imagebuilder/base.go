@@ -7,10 +7,10 @@ import (
 
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
-	tektonclientset "github.com/tektoncd/pipeline/pkg/client/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/buildrequest"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	tektonclientset "github.com/tektoncd/pipeline/pkg/client/clientset/versioned"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	clientset "k8s.io/client-go/kubernetes"
@@ -30,10 +30,10 @@ type baseImageBuilder struct {
 // Constructs a baseImageBuilder, deep-copying objects as needed.
 func newBaseImageBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, tektonclient tektonclientset.Interface, mosb *mcfgv1alpha1.MachineOSBuild, mosc *mcfgv1alpha1.MachineOSConfig, builder buildrequest.Builder) *baseImageBuilder {
 	b := &baseImageBuilder{
-		kubeclient: kubeclient,
-		mcfgclient: mcfgclient,
+		kubeclient:   kubeclient,
+		mcfgclient:   mcfgclient,
 		tektonclient: tektonclient,
-		builder:    builder,
+		builder:      builder,
 	}
 
 	if mosb != nil {

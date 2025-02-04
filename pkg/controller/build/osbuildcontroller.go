@@ -38,7 +38,7 @@ type OSBuildController struct {
 	kubeclient             clientset.Interface
 	pipelineoperatorclient pipelineoperatorclientset.Interface
 	olmclient              olmclientset.Interface
-	tektonclient	       tektonclientset.Interface
+	tektonclient           tektonclientset.Interface
 
 	config    Config
 	execQueue *ctrlcommon.WrappedQueue
@@ -104,7 +104,7 @@ func newOSBuildController(
 		mcfgclient:             mcfgclient,
 		pipelineoperatorclient: pipelineoperatorclient,
 		olmclient:              olmclient,
-		tektonclient:		tektonclient,
+		tektonclient:           tektonclient,
 		informers:              informers,
 		listers:                informers.listers(),
 		eventRecorder:          eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineosbuilder"}),

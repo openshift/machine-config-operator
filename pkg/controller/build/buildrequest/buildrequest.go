@@ -103,14 +103,13 @@ func (br buildRequestImpl) createPipelineRun(kubeclient clientset.Interface) (*t
 		return nil, fmt.Errorf("could not get rendered containerfile: %w", err)
 	}
 
-
 	pipelineRun := &tektonv1beta1.PipelineRun{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "build-and-push-pipelinerun",
 			Namespace: ctrlcommon.MCONamespace,
 		},
 		Spec: tektonv1beta1.PipelineRunSpec{
-			PipelineRef: &tektonv1beta1.PipelineRef{Name: "build-and-push-pipeline"},
+			PipelineRef:        &tektonv1beta1.PipelineRef{Name: "build-and-push-pipeline"},
 			ServiceAccountName: "machine-os-builder",
 			Params: []tektonv1beta1.Param{
 				{Name: "logLevel", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "DEBUG"}},
@@ -123,17 +122,12 @@ func (br buildRequestImpl) createPipelineRun(kubeclient clientset.Interface) (*t
 				{Name: "machineConfig", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: machineconfig.Data[machineConfigJSONFilename]}},
 				{Name: "additionalTrustBundle", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: string(additionalTrustBundle.BinaryData["openshift-config-user-ca-bundle.crt"])}},
 				{Name: "buildContextName", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "context"}},
-				{Name: "image", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: br.opts.getBaseOSImagePullspec()}},
+				{Name: "podimage", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: br.opts.getBaseOSImagePullspec()}},
 			},
 			Workspaces: []tektonv1beta1.WorkspaceBinding{
 				{
-					Name: "source",
+					Name:     "source",
 					EmptyDir: &corev1.EmptyDirVolumeSource{},
-					/*
-					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-						ClaimName: "source-pvc",
-					},
-					*/
 				},
 			},
 		},
