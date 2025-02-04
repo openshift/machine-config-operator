@@ -21,7 +21,4 @@ mkdir -p "$build_context/machineconfig"
 echo "$(params.containerFileData)" > "$build_context/$(params.containerFileName)"
 echo "$(params.machineConfig)" > "$build_context/machineconfig/machineconfig.json.gz"
 
-echo "$(params.authfilePushData)" > "$build_context/$(params.authfilePush)"
-echo "$(params.authfileBuildData)" > "$build_context/$(params.authfileBuild)"
-
 cp /etc/pki/ca-trust/source/anchors/openshift-config-user-ca-bundle.crt "$build_context"
