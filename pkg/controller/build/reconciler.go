@@ -37,6 +37,7 @@ import (
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 	"knative.dev/pkg/apis"
+	corev1 "k8s.io/api/core/v1"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -232,6 +233,17 @@ func checkAndInstallPipeline(ctx context.Context, kubeclient clientset.Interface
 		task := existingBuildah.DeepCopy()
 		task.Name = "buildah-custom"
 		task.Namespace = ctrlcommon.MCONamespace
+		volumeMounts := []corev1.VolumeMount{
+			{
+				Name:      "base-image-pull-creds",
+				MountPath: "/tmp/base-image-pull-creds",
+			},
+			{
+				Name:      "final-image-push-creds",
+				MountPath: "/tmp/final-image-push-creds",
+			},
+		}
+		task.Spec.Steps[0].VolumeMounts = append(task.Spec.Steps[0].VolumeMounts, volumeMounts...) 
 		step := tektonv1beta1.Step{
 			Name:   "setup-environment",
 			Image:  "$(params.podimage)",
@@ -247,10 +259,43 @@ func checkAndInstallPipeline(ctx context.Context, kubeclient clientset.Interface
 			{Name: "additionalTrustBundle", Type: tektonv1beta1.ParamTypeString, Description: "trust bundle"},
 			{Name: "authfilePush", Type: tektonv1beta1.ParamTypeString, Description: "authfilePush"},
 			{Name: "authfileBuild", Type: tektonv1beta1.ParamTypeString, Description: "authfileBuild"},
-			{Name: "authfilePushData", Type: tektonv1beta1.ParamTypeString, Description: "authfilePush data"},
-			{Name: "authfileBuildData", Type: tektonv1beta1.ParamTypeString, Description: "authfileBuild data"},
 		}
 		task.Spec.Params = append(task.Spec.Params, params...)
+		volumes := []corev1.Volume{
+			{
+				// Provides the credentials needed to pull the base OS image.
+				Name: "base-image-pull-creds",
+				VolumeSource: corev1.VolumeSource{
+					Secret: &corev1.SecretVolumeSource{
+						SecretName: "$(params.authfileBuild)",
+						// SecretName: br.opts.MachineOSConfig.Spec.BuildInputs.BaseImagePullSecret.Name,
+						Items: []corev1.KeyToPath{
+							{
+								Key:  corev1.DockerConfigJsonKey,
+								Path: "config.json",
+							},
+						},
+					},
+				},
+			},
+			{
+				// Provides the credentials needed to push the final OS image.
+				Name: "final-image-push-creds",
+				VolumeSource: corev1.VolumeSource{
+					Secret: &corev1.SecretVolumeSource{
+						// SecretName: br.opts.MachineOSConfig.Spec.BuildInputs.RenderedImagePushSecret.Name,
+						SecretName: "$(params.authfilePush)",
+						Items: []corev1.KeyToPath{
+							{
+								Key:  corev1.DockerConfigJsonKey,
+								Path: "config.json",
+							},
+						},
+					},
+				},
+			},
+		}
+		task.Spec.Volumes = append(task.Spec.Volumes, volumes...)
 		task.ResourceVersion = ""
 		task.UID = ""
 		task.CreationTimestamp = metav1.Time{}
@@ -286,8 +331,6 @@ func checkAndInstallPipeline(ctx context.Context, kubeclient clientset.Interface
 					{Name: "storageDriver", Type: tektonv1beta1.ParamTypeString, Description: "storage driver"},
 					{Name: "authfileBuild", Type: tektonv1beta1.ParamTypeString, Description: "authfileBuild"},
 					{Name: "authfilePush", Type: tektonv1beta1.ParamTypeString, Description: "authfilePush"},
-					{Name: "authfileBuildData", Type: tektonv1beta1.ParamTypeString, Description: "authfileBuildData"},
-					{Name: "authfilePushData", Type: tektonv1beta1.ParamTypeString, Description: "authfilePushData"},
 					{Name: "tag", Type: tektonv1beta1.ParamTypeString, Description: "Image URL"},
 					{Name: "containerFileName", Type: tektonv1beta1.ParamTypeString, Description: "container file name"},
 					{Name: "containerFileData", Type: tektonv1beta1.ParamTypeString, Description: "container file data"},
@@ -318,17 +361,15 @@ func checkAndInstallPipeline(ctx context.Context, kubeclient clientset.Interface
 							{Name: "STORAGE_DRIVER", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(params.storageDriver)"}},
 							{Name: "DOCKERFILE", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(params.buildContextName)/$(params.containerFileName)"}},
 							{Name: "CONTEXT", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(workspaces.source.path)/$(params.buildContextName)"}},
-							{Name: "BUILD_EXTRA_ARGS", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "--authfile=$(workspaces.source.path)/$(params.buildContextName)/$(params.authfileBuild) --log-level=$(params.logLevel)"}},
+							{Name: "BUILD_EXTRA_ARGS", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "--authfile=/tmp/base-image-pull-creds/config.json --log-level=$(params.logLevel)"}},
 							{Name: "BUILD_ARGS", Value: tektonv1beta1.ParamValue{Type: tektonv1beta1.ParamTypeArray, ArrayVal: []string{"HTTP_PROXY=$(params.httpProxy)", "HTTPS_PROXY=$(params.httpsProxy)", "NO_PROXY=$(params.noProxy)"}}},
-							{Name: "PUSH_EXTRA_ARGS", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "--authfile=$(workspaces.source.path)/$(params.buildContextName)/$(params.authfilePush)"}},
+							{Name: "PUSH_EXTRA_ARGS", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "--authfile=/tmp/final-image-push-creds/config.json"}},
 							{Name: "containerFileName", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(params.containerFileName)"}},
 							{Name: "containerFileData", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(params.containerFileData)"}},
 							{Name: "buildContextName", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(params.buildContextName)"}},
 							{Name: "podimage", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(params.podimage)"}},
 							{Name: "machineConfig", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(params.machineConfig)"}},
 							{Name: "additionalTrustBundle", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(params.additionalTrustBundle)"}},
-							{Name: "authfileBuildData", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(params.authfileBuildData)"}},
-							{Name: "authfilePushData", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(params.authfilePushData)"}},
 							{Name: "authfileBuild", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(params.authfileBuild)"}},
 							{Name: "authfilePush", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(params.authfilePush)"}},
 						},
