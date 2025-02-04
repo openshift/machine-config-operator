@@ -176,6 +176,11 @@ func (b *buildReconciler) deleteMachineOSConfig(ctx context.Context, mosc *mcfgv
 func (b *buildReconciler) AddJob(ctx context.Context, job *batchv1.Job) error {
 	return b.timeObjectOperation(job, addingVerb, func() error {
 		klog.Infof("Adding build job %q", job.Name)
+
+		if err := b.updateMachineOSBuildWithStatus(ctx, job); err != nil {
+			return fmt.Errorf("could not update job status for %q: %w", job.Name, err)
+		}
+
 		return b.syncAll(ctx)
 	})
 }
