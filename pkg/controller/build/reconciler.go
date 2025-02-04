@@ -157,7 +157,7 @@ func checkAndInstallPipeline(ctx context.Context, kubeclient clientset.Interface
 	subscriptionName := "openshift-pipelines-operator"
 	tektonPipelineName := "build-and-push-pipeline"
 	tektonClusterTaskName := "buildah"
-	var namespaceDNE, tektonconfigDNE, tektonPipelineDNE bool = false, false, false
+	var namespaceDNE, tektonconfigDNE, tektonPipelineDNE, buildahTaskDNE bool = false, false, false, false
 
 	// Ensure "openshift-pipelines" Namespace exists
 	_, err := kubeclient.CoreV1().Namespaces().Get(ctx, tektonNamespace, metav1.GetOptions{})
@@ -211,14 +211,52 @@ func checkAndInstallPipeline(ctx context.Context, kubeclient clientset.Interface
 		return err
 	}
 
-	/*
-		// Ensure Buildah Task exists
-		// Potential problem: ClusterTasks don't exist in V1 API hence the Buildah task may need to be installed into MCO Namespace
-		_, err = tektonclient.TektonV1().Tasks(ctrlcommon.MCONamespace).Get(ctx, tektonClusterTaskName, metav1.GetOptions{})
-		if err != nil {
-			return fmt.Errorf("Error getting ClusterTask Buildah: %v", err)
+	// Ensure pre-built buildah task exists
+	existingBuildah, err := tektonclient.TektonV1beta1().Tasks(ctrlcommon.OpenshiftPipelinesNamespace).Get(ctx, tektonClusterTaskName, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("Error getting Buildah task: %v", err)
+	}
+
+	// Ensure custom Buildah Task exists
+	_, err = tektonclient.TektonV1beta1().Tasks(ctrlcommon.MCONamespace).Get(ctx, "buildah-custom", metav1.GetOptions{})
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			buildahTaskDNE = true
+			klog.V(2).Infof("Buildah task DNE, creating")
+		} else {
+			return fmt.Errorf("Error getting Buildah task: %v", err)
 		}
-	*/
+	}
+
+	if buildahTaskDNE {
+		task := existingBuildah.DeepCopy()
+		task.Name = "buildah-custom"
+		task.Namespace = ctrlcommon.MCONamespace
+		step := tektonv1beta1.Step{
+			Name:   "setup-environment",
+			Image:  "$(params.podimage)",
+			Script: buildahBuildPipelineScript,
+		}
+		task.Spec.Steps = append([]tektonv1beta1.Step{step}, task.Spec.Steps...)
+		params := []tektonv1beta1.ParamSpec{
+			{Name: "containerFileName", Type: tektonv1beta1.ParamTypeString, Description: "container file name"},
+			{Name: "containerFileData", Type: tektonv1beta1.ParamTypeString, Description: "container file data"},
+			{Name: "buildContextName", Type: tektonv1beta1.ParamTypeString, Description: "context"},
+			{Name: "podimage", Type: tektonv1beta1.ParamTypeString, Description: "image"},
+			{Name: "machineConfig", Type: tektonv1beta1.ParamTypeString, Description: "machine config"},
+			{Name: "additionalTrustBundle", Type: tektonv1beta1.ParamTypeString, Description: "trust bundle"},
+		}
+		task.Spec.Params = append(task.Spec.Params, params...)
+		task.ResourceVersion = ""
+		task.UID = ""
+		task.CreationTimestamp = metav1.Time{}
+		task.ManagedFields = nil
+		task.Generation = 0
+		_, err = tektonclient.TektonV1beta1().Tasks(ctrlcommon.MCONamespace).Create(context.Background(), task, metav1.CreateOptions{})
+		if err != nil {
+			return fmt.Errorf("Error creating task: %v", err)
+		}
+	}
 
 	// Ensure Buildah Pipeline exists
 	_, err = tektonclient.TektonV1beta1().Pipelines(ctrlcommon.MCONamespace).Get(context.Background(), tektonPipelineName, metav1.GetOptions{})
@@ -240,74 +278,52 @@ func checkAndInstallPipeline(ctx context.Context, kubeclient clientset.Interface
 			},
 			Spec: tektonv1beta1.PipelineSpec{
 				Params: []tektonv1beta1.ParamSpec{
-					tektonv1beta1.ParamSpec{Name: "logLevel", Type: tektonv1beta1.ParamTypeString, Description: "log level"},
-					tektonv1beta1.ParamSpec{Name: "storageDriver", Type: tektonv1beta1.ParamTypeString, Description: "storage driver"},
-					tektonv1beta1.ParamSpec{Name: "authfileBuild", Type: tektonv1beta1.ParamTypeString, Description: "authfileBuild"},
-					tektonv1beta1.ParamSpec{Name: "authfilePush", Type: tektonv1beta1.ParamTypeString, Description: "authfilePush"},
-					tektonv1beta1.ParamSpec{Name: "tag", Type: tektonv1beta1.ParamTypeString, Description: "Image URL"},
-					tektonv1beta1.ParamSpec{Name: "containerFileName", Type: tektonv1beta1.ParamTypeString, Description: "container file name"},
-					tektonv1beta1.ParamSpec{Name: "containerFileData", Type: tektonv1beta1.ParamTypeString, Description: "container file data"},
-					tektonv1beta1.ParamSpec{Name: "httpProxy", Type: tektonv1beta1.ParamTypeString, Description: "httpproxy", Default: &tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: ""}},
-					tektonv1beta1.ParamSpec{Name: "httpsProxy", Type: tektonv1beta1.ParamTypeString, Description: "httpsproxy", Default: &tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: ""}},
-					tektonv1beta1.ParamSpec{Name: "noProxy", Type: tektonv1beta1.ParamTypeString, Description: "noproxy", Default: &tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: ""}},
-					tektonv1beta1.ParamSpec{Name: "buildContextName", Type: tektonv1beta1.ParamTypeString, Description: "context"},
-					tektonv1beta1.ParamSpec{Name: "image", Type: tektonv1beta1.ParamTypeString, Description: "image"},
-					tektonv1beta1.ParamSpec{Name: "machineConfig", Type: tektonv1beta1.ParamTypeString, Description: "machine config"},
-					tektonv1beta1.ParamSpec{Name: "additionalTrustBundle", Type: tektonv1beta1.ParamTypeString, Description: "additional trust bundle"},
+					{Name: "logLevel", Type: tektonv1beta1.ParamTypeString, Description: "log level"},
+					{Name: "storageDriver", Type: tektonv1beta1.ParamTypeString, Description: "storage driver"},
+					{Name: "authfileBuild", Type: tektonv1beta1.ParamTypeString, Description: "authfileBuild"},
+					{Name: "authfilePush", Type: tektonv1beta1.ParamTypeString, Description: "authfilePush"},
+					{Name: "tag", Type: tektonv1beta1.ParamTypeString, Description: "Image URL"},
+					{Name: "containerFileName", Type: tektonv1beta1.ParamTypeString, Description: "container file name"},
+					{Name: "containerFileData", Type: tektonv1beta1.ParamTypeString, Description: "container file data"},
+					{Name: "httpProxy", Type: tektonv1beta1.ParamTypeString, Description: "httpproxy", Default: &tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: ""}},
+					{Name: "httpsProxy", Type: tektonv1beta1.ParamTypeString, Description: "httpsproxy", Default: &tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: ""}},
+					{Name: "noProxy", Type: tektonv1beta1.ParamTypeString, Description: "noproxy", Default: &tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: ""}},
+					{Name: "buildContextName", Type: tektonv1beta1.ParamTypeString, Description: "context"},
+					{Name: "podimage", Type: tektonv1beta1.ParamTypeString, Description: "image"},
+					{Name: "machineConfig", Type: tektonv1beta1.ParamTypeString, Description: "machine config"},
+					{Name: "additionalTrustBundle", Type: tektonv1beta1.ParamTypeString, Description: "additional trust bundle"},
 				},
 				Results: []tektonv1beta1.PipelineResult{
-					tektonv1beta1.PipelineResult{Name: "IMAGE_DIGEST", Type: tektonv1beta1.ResultsTypeString, Description: "Digest of the image just built", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(tasks.buildah-build.results.IMAGE_DIGEST)"}},
-					tektonv1beta1.PipelineResult{Name: "IMAGE_URL", Type: tektonv1beta1.ResultsTypeString, Description: "Image repository where the built image would be pushed to", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(tasks.buildah-build.results.IMAGE_URL)"}},
+					{Name: "IMAGE_DIGEST", Type: tektonv1beta1.ResultsTypeString, Description: "Digest of the image just built", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(tasks.buildah-build.results.IMAGE_DIGEST)"}},
+					{Name: "IMAGE_URL", Type: tektonv1beta1.ResultsTypeString, Description: "Image repository where the built image would be pushed to", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(tasks.buildah-build.results.IMAGE_URL)"}},
 				},
 				Workspaces: []tektonv1beta1.PipelineWorkspaceDeclaration{
-					tektonv1beta1.PipelineWorkspaceDeclaration{Name: "source"},
+					{Name: "source"},
 				},
 				Tasks: []tektonv1beta1.PipelineTask{
-					tektonv1beta1.PipelineTask{
-						Name: "prepare-environment",
-						TaskSpec: &tektonv1beta1.EmbeddedTask{
-							TaskSpec: tektonv1beta1.TaskSpec{
-								Workspaces: []tektonv1beta1.WorkspaceDeclaration{
-									tektonv1beta1.WorkspaceDeclaration{
-										Name: "source",
-									},
-								},
-								Steps: []tektonv1beta1.Step{
-									tektonv1beta1.Step{
-										Name:   "setup-environment",
-										Image:  "$(params.image)",
-										Script: buildahBuildPipelineScript,
-									},
-								},
-							},
-						},
-						Workspaces: []tektonv1beta1.WorkspacePipelineTaskBinding{
-							tektonv1beta1.WorkspacePipelineTaskBinding{Name: "source", Workspace: "source"},
-						},
-					},
-					tektonv1beta1.PipelineTask{
+					{
 						Name: "buildah-build",
 						TaskRef: &tektonv1beta1.TaskRef{
-							ResolverRef: tektonv1beta1.ResolverRef{
-								Resolver: "cluster",
-								Params: []tektonv1beta1.Param{
-									{Name: "name", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: tektonClusterTaskName}},
-									{Name: "namespace", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: tektonNamespace}},
-									{Name: "kind", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "task"}},
-								},
-							},
+							Name: "buildah-custom",
+							Kind: tektonv1beta1.NamespacedTaskKind,
 						},
 						Params: []tektonv1beta1.Param{
-							tektonv1beta1.Param{Name: "IMAGE", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(params.tag)"}},
-							tektonv1beta1.Param{Name: "STORAGE_DRIVER", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(params.storageDriver)"}},
-							tektonv1beta1.Param{Name: "DOCKERFILE", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(workspaces.source.path)/$(params.buildContextName)/$(params.containerFileName)"}},
-							tektonv1beta1.Param{Name: "CONTEXT", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(workspaces.source.path)/$(params.buildContextName)"}},
-							tektonv1beta1.Param{Name: "BUILD_EXTRA_ARGS", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "--authfile=$(params.authfileBuild) --log-level=$(params.logLevel)"}},
-							tektonv1beta1.Param{Name: "BUILD_ARGS", Value: tektonv1beta1.ParamValue{Type: tektonv1beta1.ParamTypeArray, ArrayVal: []string{"HTTP_PROXY=$(params.httpProxy)", "HTTPS_PROXY=$(params.httpsProxy)", "NO_PROXY=$(params.noProxy)"}}},
-							tektonv1beta1.Param{Name: "PUSH_EXTRA_ARGS", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "--authfile=$(params.authfilePush)"}},
+							{Name: "IMAGE", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(params.tag)"}},
+							{Name: "STORAGE_DRIVER", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(params.storageDriver)"}},
+							{Name: "DOCKERFILE", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(params.buildContextName)/$(params.containerFileName)"}},
+							{Name: "CONTEXT", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(workspaces.source.path)/$(params.buildContextName)"}},
+							{Name: "BUILD_EXTRA_ARGS", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "--authfile=$(params.authfileBuild) --log-level=$(params.logLevel)"}},
+							{Name: "BUILD_ARGS", Value: tektonv1beta1.ParamValue{Type: tektonv1beta1.ParamTypeArray, ArrayVal: []string{"HTTP_PROXY=$(params.httpProxy)", "HTTPS_PROXY=$(params.httpsProxy)", "NO_PROXY=$(params.noProxy)"}}},
+							{Name: "PUSH_EXTRA_ARGS", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "--authfile=$(params.authfilePush)"}},
+							{Name: "containerFileName", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(params.containerFileName)"}},
+							{Name: "containerFileData", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(params.containerFileData)"}},
+							{Name: "buildContextName", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(params.buildContextName)"}},
+							{Name: "podimage", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(params.podimage)"}},
+							{Name: "machineConfig", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(params.machineConfig)"}},
+							{Name: "additionalTrustBundle", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(params.additionalTrustBundle)"}},
 						},
 						Workspaces: []tektonv1beta1.WorkspacePipelineTaskBinding{
-							tektonv1beta1.WorkspacePipelineTaskBinding{Name: "source", Workspace: "source"},
+							{Name: "source", Workspace: "source"},
 						},
 					},
 				},
@@ -634,7 +650,7 @@ func (b *buildReconciler) startBuild(ctx context.Context, mosb *mcfgv1.MachineOS
 		if err := imagebuilder.NewJobImageBuilder(b.kubeclient, b.mcfgclient, b.tektonclient, mosb, mosc).Start(ctx); err != nil {
 			return fmt.Errorf("imagebuilder could not start build for MachineOSBuild %q: %w", mosb.Name, err)
 		}
-	case mcfgv1alpha1.PipelineBuilder:
+	case mcfgv1.PipelineBuilder:
 		if err := imagebuilder.NewPipelineImageBuilder(b.kubeclient, b.mcfgclient, b.tektonclient, mosb, mosc).Start(ctx); err != nil {
 			return fmt.Errorf("imagebuilder could not start build for MachineOSBuild %q: %w", mosb.Name, err)
 		}
@@ -1450,14 +1466,13 @@ func (b *buildReconciler) syncMachineOSBuild(ctx context.Context, mosb *mcfgv1.M
 				return ignoreErrIsNotFound(fmt.Errorf("could not sync MachineOSBuild %q: %w", mosb.Name, err))
 			}
 
-			if mosc.Spec.BuildInputs.ImageBuilder.ImageBuilderType == mcfgv1alpha1.PipelineBuilder {
+			if mosc.Spec.ImageBuilder.ImageBuilderType == mcfgv1.PipelineBuilder {
 				// Check and install pipeline
 				err := checkAndInstallPipeline(ctx, b.kubeclient, b.pipelineoperatorclient, b.olmclient, b.tektonclient)
 				if err != nil {
 					return fmt.Errorf("error checking pipeline exists and installing: %v", err)
 				}
 			}
-
 
 			observer := imagebuilder.NewJobImageBuildObserver(b.kubeclient, b.mcfgclient, b.tektonclient, mosb, mosc)
 
@@ -1516,14 +1531,13 @@ func (b *buildReconciler) syncMachineOSConfig(ctx context.Context, mosc *mcfgv1.
 			return fmt.Errorf("could not list MachineOSBuilds for MachineOSConfig %q: %w", mosc.Name, err)
 		}
 
-		if mosc.Spec.BuildInputs.ImageBuilder.ImageBuilderType == mcfgv1alpha1.PipelineBuilder {
+		if mosc.Spec.ImageBuilder.ImageBuilderType == mcfgv1.PipelineBuilder {
 			// Check and install pipeline
 			err := checkAndInstallPipeline(ctx, b.kubeclient, b.pipelineoperatorclient, b.olmclient, b.tektonclient)
 			if err != nil {
 				return fmt.Errorf("error checking pipeline exists and installing: %v", err)
 			}
 		}
-
 
 		klog.V(4).Infof("MachineOSConfig %q is associated with %d MachineOSBuilds %v", mosc.Name, len(mosbs), getMachineOSBuildNames(mosbs))
 
