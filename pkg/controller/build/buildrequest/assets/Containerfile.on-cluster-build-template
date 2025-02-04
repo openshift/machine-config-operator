@@ -33,7 +33,8 @@ skip_if_unavailable=False" > /etc/yum.repos.d/coreos-extensions.repo && \
     extensions="{{- range $index, $item := .ExtensionsPackages }}{{- if $index }} {{ end }}{{$item}}{{- end }}" && \
     echo "Installing extension packages: $extensions" && \
     rpm-ostree install $extensions && \
-    rm /etc/yum.repos.d/coreos-extensions.repo
+    rm /etc/yum.repos.d/coreos-extensions.repo && \
+    systemd-tmpfiles --create
 RUN ostree container commit
 {{end}}
 
