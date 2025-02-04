@@ -15,13 +15,17 @@ rules:
       - tokenreviews
       - subjectaccessreviews
     verbs:
-      - create
+      - get
+      - list
+      - watch
   - apiGroups:
       - authorization.k8s.io
     resources:
       - subjectaccessreviews
     verbs:
-      - create
+      - get
+      - list
+      - watch
   - apiGroups:
       - machineconfiguration.openshift.io
     resources:
@@ -29,21 +33,16 @@ rules:
       - controllerconfigs
       - kubeletconfigs
       - machineconfigpools
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - machineconfiguration.openshift.io
-    resources:
       - machineconfignodes
       - machineconfignodes/status
+      - machineosconfigs 
+      - machineosconfigs/status
+      - machineosbuilds
+      - machineosbuilds/status
     verbs:
       - get
       - list
       - watch
-      - delete
-      - create
   - apiGroups:
       - config.openshift.io
     resources: 
@@ -56,23 +55,3 @@ rules:
       - get
       - list
       - watch
-  - apiGroups: 
-      - machineconfiguration.openshift.io
-    resources: 
-      - machineosconfigs 
-      - machineosconfigs/status
-    verbs: 
-      - create
-      - update 
-      - patch 
-      - get
-  - apiGroups: 
-      - machineconfiguration.openshift.io
-    resources: 
-      - machineosbuilds
-      - machineosbuilds/status
-    verbs: 
-      - create
-      - update 
-      - patch
-      - get
