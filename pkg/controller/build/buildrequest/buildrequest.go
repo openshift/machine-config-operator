@@ -103,6 +103,37 @@ func (br buildRequestImpl) createPipelineRun(kubeclient clientset.Interface) (*t
 		return nil, fmt.Errorf("could not get rendered containerfile: %w", err)
 	}
 
+	baseImagePullCredsSecret, err := kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(context.TODO(), br.getBasePullSecretName(), metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("could not get baseImagePullCreds: %w", err)
+	}
+
+	baseImagekey, err := utils.GetPullSecretKey(baseImagePullCredsSecret)
+	if err != nil {
+		return nil, err
+	}
+
+	baseImagePullCreds, ok := baseImagePullCredsSecret.Data[baseImagekey]
+	if !ok {
+		return nil, fmt.Errorf("could not locate key %q in %s", baseImagekey, baseImagePullCredsSecret.Name)
+	}
+
+	finalImagePushCredsSecret, err := kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(context.TODO(), br.getFinalPushSecretName(), metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("could not get FinalPushSecretCreds: %w", err)
+	}
+
+	finalImagekey, err := utils.GetPullSecretKey(finalImagePushCredsSecret)
+	if err != nil {
+		return nil, err
+	}
+
+	finalImagePushCreds, ok := finalImagePushCredsSecret.Data[finalImagekey]
+	if !ok {
+		return nil, fmt.Errorf("could not locate key %q in %s", finalImagekey, finalImagePushCredsSecret.Name)
+	}
+
+
 	pipelineRun := &tektonv1beta1.PipelineRun{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "build-and-push-pipelinerun",
@@ -114,8 +145,10 @@ func (br buildRequestImpl) createPipelineRun(kubeclient clientset.Interface) (*t
 			Params: []tektonv1beta1.Param{
 				{Name: "logLevel", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "DEBUG"}},
 				{Name: "storageDriver", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "vfs"}},
-				{Name: "authfileBuild", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "/tmp/base-image-pull-creds/config.json"}},
-				{Name: "authfilePush", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "/tmp/final-image-push-creds/config.json"}},
+				{Name: "authfileBuild", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "base-image-pull-creds.json"}},
+				{Name: "authfilePush", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "final-image-push-creds.json"}},
+				{Name: "authfileBuildData", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: string(baseImagePullCreds)}},
+				{Name: "authfilePushData", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: string(finalImagePushCreds)}},
 				{Name: "tag", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: br.opts.MachineOSBuild.Spec.RenderedImagePushspec}},
 				{Name: "containerFileName", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "ContainerFile"}},
 				{Name: "containerFileData", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: containerfile.Data["Containerfile"]}},
