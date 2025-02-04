@@ -42,14 +42,15 @@ type RenderConfig struct {
 }
 
 const (
-	filesDir       = "files"
-	unitsDir       = "units"
-	platformBase   = "_base"
-	platformOnPrem = "on-prem"
-	sno            = "sno"
-	masterRole     = "master"
-	workerRole     = "worker"
-	arbiterRole    = "arbiter"
+	filesDir            = "files"
+	unitsDir            = "units"
+	platformBase        = "_base"
+	platformOnPrem      = "on-prem"
+	sno                 = "sno"
+	masterRole          = "master"
+	workerRole          = "worker"
+	arbiterRole         = "arbiter"
+	cloudPlatformAltDNS = "cloud-platform-alt-dns"
 )
 
 // generateTemplateMachineConfigs returns MachineConfig objects from the templateDir and a config object
@@ -220,6 +221,10 @@ func getPaths(config *RenderConfig, platformString string) []string {
 	platformBasedPaths := []string{platformBase}
 	if onPremPlatform(config.Infra.Status.PlatformStatus.Type) {
 		platformBasedPaths = append(platformBasedPaths, platformOnPrem)
+	}
+
+	if cloudPlatformLoadBalancerIPState(*config) == availableLBIPState {
+		platformBasedPaths = append(platformBasedPaths, cloudPlatformAltDNS)
 	}
 
 	// specific platform should be the last one in order
