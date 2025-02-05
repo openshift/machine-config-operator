@@ -105,10 +105,7 @@ func (br buildRequestImpl) createPipelineRun(kubeclient clientset.Interface) (*t
 	}
 
 	pipelineRun := &tektonv1beta1.PipelineRun{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "build-and-push-pipelinerun",
-			Namespace: ctrlcommon.MCONamespace,
-		},
+		ObjectMeta: br.getObjectMeta(br.getBuildName()),
 		Spec: tektonv1beta1.PipelineRunSpec{
 			PipelineRef:        &tektonv1beta1.PipelineRef{Name: "build-and-push-pipeline"},
 			ServiceAccountName: "machine-os-builder",
