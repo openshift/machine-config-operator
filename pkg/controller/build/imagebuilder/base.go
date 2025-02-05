@@ -21,9 +21,9 @@ import (
 type baseImageBuilder struct {
 	kubeclient   clientset.Interface
 	mcfgclient   mcfgclientset.Interface
+	tektonclient tektonclientset.Interface
 	mosb         *mcfgv1.MachineOSBuild
 	mosc         *mcfgv1.MachineOSConfig
-	tektonclient tektonclientset.Interface
 	builder      buildrequest.Builder
 	buildrequest buildrequest.BuildRequest
 }
@@ -139,19 +139,14 @@ func (b *baseImageBuilder) getDigestConfigMapName() (string, error) {
 
 // Gets the final image pullspec from the digestfile ConfigMap.
 func (b *baseImageBuilder) getFinalImagePullspec(ctx context.Context) (string, error) {
-	name, err := b.getDigestConfigMapName()
+	pipelineRun, err := b.tektonclient.TektonV1beta1().PipelineRuns(ctrlcommon.MCONamespace).Get(ctx, b.getBuilderName(), metav1.GetOptions{})
 	if err != nil {
-		return "", fmt.Errorf("could not get digest configmap name: %w", err)
+		return "", fmt.Errorf("could not get pipelineRun:", err)
 	}
 
-	digestConfigMap, err := b.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(ctx, name, metav1.GetOptions{})
+	sha, err := utils.ParseImagePullspec(string(b.mosc.Spec.RenderedImagePushSpec), pipelineRun.Status.PipelineResults[0].Value.StringVal)
 	if err != nil {
-		return "", fmt.Errorf("could not get final image digest configmap %q: %w", name, err)
-	}
-
-	sha, err := utils.ParseImagePullspec(string(b.mosc.Spec.RenderedImagePushSpec), digestConfigMap.Data["digest"])
-	if err != nil {
-		return "", fmt.Errorf("could not create digested image pullspec from the pullspec %q and the digest %q: %w", b.mosc.Status.CurrentImagePullSpec, digestConfigMap.Data["digest"], err)
+		return "", fmt.Errorf("could not create digested image pullspec from the pullspec %q and the digest %q: %w", b.mosc.Status.CurrentImagePullSpec, pipelineRun.Status.PipelineResults[0].Value.StringVal, err)
 	}
 
 	return sha, nil
