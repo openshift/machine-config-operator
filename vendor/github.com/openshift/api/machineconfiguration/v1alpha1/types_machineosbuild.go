@@ -109,7 +109,7 @@ type MachineOSBuildStatus struct {
 
 // MachineOSBuilderReference describes which ImageBuilder backend to use for this build/
 // +union
-// +kubebuilder:validation:XValidation:rule="has(self.imageBuilderType) && self.imageBuilderType == 'PodImageBuilder' ?  true : !has(self.buildPod)",message="buildPod is required when imageBuilderType is PodImageBuilder, and forbidden otherwise"
+// +kubebuilder:validation:XValidation:rule="has(self.imageBuilderType) && self.imageBuilderType == 'PodImageBuilder' ? has(self.buildPod) && !has(self.buildPipeline) : has(self.imageBuilderType) && self.imageBuilderType == 'PipelineImageBuilder' ? has(self.buildPipeline) && !has(self.buildPod) : !has(self.buildPod) && !has(self.buildPipeline)", message="buildPod is required when imageBuilderType is PodImageBuilder and forbidden otherwise. buildPipeline is required when imageBuilderType is PipelineImageBuilder and forbidden otherwise."
 type MachineOSBuilderReference struct {
 	// imageBuilderType describes the image builder set in the MachineOSConfig
 	// +unionDiscriminator
@@ -118,6 +118,10 @@ type MachineOSBuilderReference struct {
 	// relatedObjects is a list of objects that are related to the build process.
 	// +unionMember,optional
 	PodImageBuilder *ObjectReference `json:"buildPod,omitempty"`
+
+	// PipelineImageBuilder is used when ImageBuilderType is PipelineImageBuilder.
+	// +unionMember,optional
+	PipelineImageBuilder *ObjectReference `json:"buildPipeline,omitempty"`
 }
 
 // BuildProgess highlights some of the key phases of a build to be tracked in Conditions.

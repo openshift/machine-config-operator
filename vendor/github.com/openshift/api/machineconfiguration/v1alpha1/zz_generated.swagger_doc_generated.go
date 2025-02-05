@@ -150,6 +150,7 @@ var map_MachineOSBuilderReference = map[string]string{
 	"":                 "MachineOSBuilderReference describes which ImageBuilder backend to use for this build/",
 	"imageBuilderType": "imageBuilderType describes the image builder set in the MachineOSConfig",
 	"buildPod":         "relatedObjects is a list of objects that are related to the build process.",
+	"buildPipeline":    "PipelineImageBuilder is used when ImageBuilderType is PipelineImageBuilder.",
 }
 
 func (MachineOSBuilderReference) SwaggerDoc() map[string]string {

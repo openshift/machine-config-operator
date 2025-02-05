@@ -302,15 +302,32 @@ func (b *baseImageBuilder) getMachineOSBuildStatus(ctx context.Context, obj kube
 	}
 
 	out.Conditions = conditions
-	out.BuilderReference = &mcfgv1alpha1.MachineOSBuilderReference{
-		ImageBuilderType: b.mosc.Spec.BuildInputs.ImageBuilder.ImageBuilderType,
-		// TODO: Should we clear this whenever the build is complete?
-		PodImageBuilder: &mcfgv1alpha1.ObjectReference{
-			Name:      obj.GetName(),
-			Group:     obj.GroupVersionKind().Group,
-			Namespace: obj.GetNamespace(),
-			Resource:  obj.GetResourceVersion(),
-		},
+
+	switch b.mosc.Spec.BuildInputs.ImageBuilder.ImageBuilderType {
+	case mcfgv1alpha1.PodBuilder:
+		out.BuilderReference = &mcfgv1alpha1.MachineOSBuilderReference{
+			ImageBuilderType: b.mosc.Spec.BuildInputs.ImageBuilder.ImageBuilderType,
+			// TODO: Should we clear this whenever the build is complete?
+			PodImageBuilder: &mcfgv1alpha1.ObjectReference{
+				Name:      obj.GetName(),
+				Group:     obj.GroupVersionKind().Group,
+				Namespace: obj.GetNamespace(),
+				Resource:  obj.GetResourceVersion(),
+			},
+		}
+	case mcfgv1alpha1.PipelineBuilder:
+		out.BuilderReference = &mcfgv1alpha1.MachineOSBuilderReference{
+			ImageBuilderType: b.mosc.Spec.BuildInputs.ImageBuilder.ImageBuilderType,
+			// TODO: Should we clear this whenever the build is complete?
+			PipelineImageBuilder: &mcfgv1alpha1.ObjectReference{
+				Name:      obj.GetName(),
+				Group:     obj.GroupVersionKind().Group,
+				Namespace: obj.GetNamespace(),
+				Resource:  obj.GetResourceVersion(),
+			},
+		}
+	default:
+		return out, fmt.Errorf("ImageBuilderType: %s is not supported", b.mosc.Spec.BuildInputs.ImageBuilder.ImageBuilderType)
 	}
 
 	return out, nil

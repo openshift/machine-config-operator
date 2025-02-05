@@ -416,6 +416,11 @@ func (in *MachineOSBuilderReference) DeepCopyInto(out *MachineOSBuilderReference
 		*out = new(ObjectReference)
 		**out = **in
 	}
+	if in.PipelineImageBuilder != nil {
+		in, out := &in.PipelineImageBuilder, &out.PipelineImageBuilder
+		*out = new(ObjectReference)
+		**out = **in
+	}
 	return
 }
 

@@ -114,10 +114,8 @@ require (
 	github.com/gorilla/websocket v1.5.1 // indirect
 	github.com/gregjones/httpcache v0.0.0-20190611155906-901d90724c79 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.22.0 // indirect
-	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/jjti/go-spancheck v0.6.2 // indirect
 	github.com/karamaru-alpha/copyloopvar v1.1.0 // indirect
-	github.com/kelseyhightower/envconfig v1.4.0 // indirect
 	github.com/kkHAIKE/contextcheck v1.1.5 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/lasiar/canonicalheader v1.1.2 // indirect
@@ -367,6 +365,6 @@ require (
 )
 
 replace (
-	github.com/openshift/api => github.com/RishabhSaini/api v0.0.0-20250106233328-ce1aee56fcc7
+	github.com/openshift/api => github.com/RishabhSaini/api v0.0.0-20250205071540-979dba6a9367
 	k8s.io/kube-openapi => github.com/openshift/kube-openapi v0.0.0-20230816122517-ffc8f001abb0
 )

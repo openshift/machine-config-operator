@@ -797,10 +797,6 @@ github.com/hashicorp/go-multierror
 # github.com/hashicorp/go-version v1.7.0
 ## explicit
 github.com/hashicorp/go-version
-# github.com/hashicorp/golang-lru v1.0.2
-## explicit; go 1.12
-github.com/hashicorp/golang-lru
-github.com/hashicorp/golang-lru/simplelru
 # github.com/hashicorp/hcl v1.0.1-vault-5
 ## explicit; go 1.15
 github.com/hashicorp/hcl
@@ -845,9 +841,6 @@ github.com/julz/importas
 # github.com/karamaru-alpha/copyloopvar v1.1.0
 ## explicit; go 1.21
 github.com/karamaru-alpha/copyloopvar
-# github.com/kelseyhightower/envconfig v1.4.0
-## explicit
-github.com/kelseyhightower/envconfig
 # github.com/kisielk/errcheck v1.8.0
 ## explicit; go 1.18
 github.com/kisielk/errcheck/errcheck
@@ -1029,7 +1022,7 @@ github.com/opencontainers/image-spec/specs-go/v1
 # github.com/opencontainers/runtime-spec v1.2.0
 ## explicit
 github.com/opencontainers/runtime-spec/specs-go
-# github.com/openshift/api v3.9.0+incompatible => github.com/RishabhSaini/api v0.0.0-20250106233328-ce1aee56fcc7
+# github.com/openshift/api v3.9.0+incompatible => github.com/RishabhSaini/api v0.0.0-20250205071540-979dba6a9367
 ## explicit; go 1.22.0
 github.com/openshift/api
 github.com/openshift/api/annotations
@@ -1496,9 +1489,6 @@ github.com/tektoncd/pipeline/pkg/client/informers/externalversions/pipeline
 github.com/tektoncd/pipeline/pkg/client/informers/externalversions/pipeline/v1
 github.com/tektoncd/pipeline/pkg/client/informers/externalversions/pipeline/v1alpha1
 github.com/tektoncd/pipeline/pkg/client/informers/externalversions/pipeline/v1beta1
-github.com/tektoncd/pipeline/pkg/client/injection/client
-github.com/tektoncd/pipeline/pkg/client/injection/informers/factory
-github.com/tektoncd/pipeline/pkg/client/injection/informers/pipeline/v1beta1/pipelinerun
 github.com/tektoncd/pipeline/pkg/client/listers/pipeline/v1
 github.com/tektoncd/pipeline/pkg/client/listers/pipeline/v1alpha1
 github.com/tektoncd/pipeline/pkg/client/listers/pipeline/v1beta1
@@ -1677,7 +1667,6 @@ golang.org/x/net/html
 golang.org/x/net/html/atom
 golang.org/x/net/http/httpguts
 golang.org/x/net/http2
-golang.org/x/net/http2/h2c
 golang.org/x/net/http2/hpack
 golang.org/x/net/idna
 golang.org/x/net/internal/socks
@@ -2752,23 +2741,14 @@ knative.dev/pkg/apis/duck/ducktypes
 knative.dev/pkg/apis/duck/v1
 knative.dev/pkg/changeset
 knative.dev/pkg/configmap
-knative.dev/pkg/controller
-knative.dev/pkg/environment
-knative.dev/pkg/hash
-knative.dev/pkg/injection
 knative.dev/pkg/kmap
 knative.dev/pkg/kmeta
 knative.dev/pkg/kmp
-knative.dev/pkg/leaderelection
 knative.dev/pkg/logging
 knative.dev/pkg/logging/logkey
 knative.dev/pkg/metrics
 knative.dev/pkg/metrics/metricskey
-knative.dev/pkg/network
 knative.dev/pkg/ptr
-knative.dev/pkg/reconciler
-knative.dev/pkg/signals
-knative.dev/pkg/system
 knative.dev/pkg/tracker
 knative.dev/pkg/webhook/resourcesemantics
 # mvdan.cc/gofumpt v0.7.0
@@ -2912,5 +2892,5 @@ sigs.k8s.io/structured-merge-diff/v4/value
 sigs.k8s.io/yaml
 sigs.k8s.io/yaml/goyaml.v2
 sigs.k8s.io/yaml/goyaml.v3
-# github.com/openshift/api => github.com/RishabhSaini/api v0.0.0-20250106233328-ce1aee56fcc7
+# github.com/openshift/api => github.com/RishabhSaini/api v0.0.0-20250205071540-979dba6a9367
 # k8s.io/kube-openapi => github.com/openshift/kube-openapi v0.0.0-20230816122517-ffc8f001abb0
