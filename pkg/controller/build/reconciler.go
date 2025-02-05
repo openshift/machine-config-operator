@@ -877,7 +877,15 @@ func (b *buildReconciler) getMachineOSBuildStatusForBuilder(ctx context.Context,
 		return mcfgv1alpha1.MachineOSBuildStatus{}, nil, fmt.Errorf("could not get MachineOSConfig or MachineOSBuild for builder: %w", err)
 	}
 
-	observer := imagebuilder.NewJobImageBuildObserverFromBuilder(b.kubeclient, b.mcfgclient, b.tektonclient, mosb, mosc, builder)
+	var observer imagebuilder.ImageBuildObserver
+	switch mosc.Spec.BuildInputs.ImageBuilder.ImageBuilderType {
+	case mcfgv1alpha1.PodBuilder:
+		observer = imagebuilder.NewJobImageBuildObserverFromBuilder(b.kubeclient, b.mcfgclient, b.tektonclient, mosb, mosc, builder)
+	case mcfgv1alpha1.PipelineBuilder:
+		observer = imagebuilder.NewPipelineImageBuildObserverFromBuilder(b.kubeclient, b.mcfgclient, b.tektonclient, mosb, mosc, builder)
+	default:
+		return mcfgv1alpha1.MachineOSBuildStatus{}, nil, fmt.Errorf("ImageBuilderType: %s is not supported", mosc.Spec.BuildInputs.ImageBuilder.ImageBuilderType)
+	}
 
 	status, err := observer.MachineOSBuildStatus(ctx)
 	if err != nil {
