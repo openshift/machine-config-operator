@@ -1035,7 +1035,7 @@ func (b *buildReconciler) getMachineOSBuildStatusForBuilder(ctx context.Context,
 	case mcfgv1.PipelineBuilder:
 		observer = imagebuilder.NewPipelineImageBuildObserverFromBuilder(b.kubeclient, b.mcfgclient, b.tektonclient, mosb, mosc, builder)
 	default:
-		return mcfgv1.MachineOSBuildStatus{}, nil, fmt.Errorf("ImageBuilderType: %s is not supported", mosc.Spec.BuildInputs.ImageBuilder.ImageBuilderType)
+		return mcfgv1.MachineOSBuildStatus{}, nil, fmt.Errorf("ImageBuilderType: %s is not supported", mosc.Spec.ImageBuilder.ImageBuilderType)
 	}
 
 	status, err := observer.MachineOSBuildStatus(ctx)
@@ -1130,9 +1130,6 @@ func (b *buildReconciler) setStatusOnMachineOSBuildIfNeeded(ctx context.Context,
 		bs.Build.Status.BuildEnd = curStatus.BuildEnd
 	}
 
-	bs.Build.Status.Builder = curStatus.Builder
-	klog.Infof("****curStatus is: %+v", curStatus)
-	klog.Infof("****curStatus.Builder is: %+v", curStatus.Builder)
 	bs.Build.Status.Builder = curStatus.Builder
 
 	_, err = b.mcfgclient.MachineconfigurationV1().MachineOSBuilds().UpdateStatus(ctx, bs.Build, metav1.UpdateOptions{})

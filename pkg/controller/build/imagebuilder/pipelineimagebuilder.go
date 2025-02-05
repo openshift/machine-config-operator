@@ -223,24 +223,24 @@ func (p *pipelineImageBuilder) Status(ctx context.Context) (mcfgv1.BuildProgress
 
 func (p *pipelineImageBuilder) mapPipelineStatusToBuildStatus(pipelineRun *tektonv1beta1.PipelineRun) (mcfgv1.BuildProgress, []metav1.Condition) {
 	// Check if the PipelineRun is being deleted and not yet succeeded or failed
-	if pipelineRun.DeletionTimestamp != nil && !pipelineRun.Status.GetCondition(apis.ConditionSucceeded).IsTrue() && !pipelineRun.Status.GetCondition(apis.ConditionSucceeded).IsFalse() {
+	if (pipelineRun.DeletionTimestamp != nil && !pipelineRun.Status.GetCondition(apis.ConditionSucceeded).IsTrue() && !pipelineRun.Status.GetCondition(apis.ConditionSucceeded).IsFalse()) || pipelineRun.IsCancelled() {
 		return mcfgv1.MachineOSBuildInterrupted, apihelpers.MachineOSBuildInterruptedConditions()
 	}
 
-	if pipelineRun.Status.StartTime == nil && pipelineRun.Status.CompletionTime == nil {
+	if pipelineRun.IsPending() {
 		return mcfgv1.MachineOSBuildPrepared, apihelpers.MachineOSBuildPendingConditions()
+	}
+	// Check if the PipelineRun has succeeded
+	if pipelineRun.Status.GetCondition(apis.ConditionSucceeded).IsTrue() {
+		return mcfgv1.MachineOSBuildSucceeded, apihelpers.MachineOSBuildSucceededConditions()
+	}
+	// Check if the PipelineRun has failed
+	if pipelineRun.IsDone() && pipelineRun.Status.GetCondition(apis.ConditionSucceeded).IsFalse() {
+		return mcfgv1.MachineOSBuildFailed, apihelpers.MachineOSBuildFailedConditions()
 	}
 	// The build job is still running till it succeeds or maxes out it retries on failures
 	if pipelineRun.HasStarted() {
 		return mcfgv1.MachineOSBuilding, apihelpers.MachineOSBuildRunningConditions()
-	}
-	// Check if the PipelineRun has succeeded
-	if pipelineRun.IsDone() {
-		return mcfgv1.MachineOSBuildSucceeded, apihelpers.MachineOSBuildSucceededConditions()
-	}
-	// Check if the PipelineRun has failed
-	if pipelineRun.Status.GetCondition(apis.ConditionSucceeded).IsFalse() {
-		return mcfgv1.MachineOSBuildFailed, apihelpers.MachineOSBuildFailedConditions()
 	}
 
 	return "", apihelpers.MachineOSBuildInitialConditions()
