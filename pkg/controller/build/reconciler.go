@@ -989,8 +989,6 @@ func (b *buildReconciler) setStatusOnMachineOSBuildIfNeeded(ctx context.Context,
 		bs.Build.Status.BuildEnd = curStatus.BuildEnd
 	}
 
-	klog.Infof("****curStatus is: %+v", curStatus)
-	klog.Infof("****curStatus.BuilderReference is: %+v", curStatus.BuilderReference)
 	bs.Build.Status.BuilderReference = curStatus.BuilderReference
 
 	_, err = b.mcfgclient.MachineconfigurationV1alpha1().MachineOSBuilds().UpdateStatus(ctx, bs.Build, metav1.UpdateOptions{})
