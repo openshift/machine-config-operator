@@ -21,6 +21,7 @@ import (
 	tektonv1beta1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	tektonclientset "github.com/tektoncd/pipeline/pkg/client/clientset/versioned"
 	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
@@ -28,7 +29,6 @@ import (
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 	"knative.dev/pkg/apis"
-	corev1 "k8s.io/api/core/v1"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -55,6 +55,10 @@ type reconciler interface {
 	AddJob(context.Context, *batchv1.Job) error
 	UpdateJob(context.Context, *batchv1.Job, *batchv1.Job) error
 	DeleteJob(context.Context, *batchv1.Job) error
+
+	AddPipelineRun(context.Context, *tektonv1beta1.PipelineRun) error
+	UpdatePipelineRun(context.Context, *tektonv1beta1.PipelineRun, *tektonv1beta1.PipelineRun) error
+	DeletePipelineRun(context.Context, *tektonv1beta1.PipelineRun) error
 
 	UpdateMachineConfigPool(context.Context, *mcfgv1.MachineConfigPool, *mcfgv1.MachineConfigPool) error
 }
@@ -229,7 +233,7 @@ func checkAndInstallPipeline(ctx context.Context, kubeclient clientset.Interface
 				MountPath: "/tmp/final-image-push-creds",
 			},
 		}
-		task.Spec.Steps[0].VolumeMounts = append(task.Spec.Steps[0].VolumeMounts, volumeMounts...) 
+		task.Spec.Steps[0].VolumeMounts = append(task.Spec.Steps[0].VolumeMounts, volumeMounts...)
 		step := tektonv1beta1.Step{
 			Name:   "setup-environment",
 			Image:  "$(params.podimage)",
@@ -494,6 +498,36 @@ func (b *buildReconciler) DeleteJob(ctx context.Context, job *batchv1.Job) error
 			return err
 		}
 		klog.Infof("Job %q deleted", job.Name)
+		return b.syncAll(ctx)
+	})
+}
+
+// Executes whenever a new build PipelineRun is detected and updates the MachineOSBuild
+// with any status changes.
+func (b *buildReconciler) AddPipelineRun(ctx context.Context, pipelineRun *tektonv1beta1.PipelineRun) error {
+	return b.timeObjectOperation(pipelineRun, addingVerb, func() error {
+		klog.Infof("Adding build pipelineRun %q", pipelineRun.Name)
+		return b.syncAll(ctx)
+	})
+}
+
+// Executes whenever a build PipelineRun is updated
+func (b *buildReconciler) UpdatePipelineRun(ctx context.Context, oldPipelineRun, curPipelineRun *tektonv1beta1.PipelineRun) error {
+	return b.timeObjectOperation(curPipelineRun, updatingVerb, func() error {
+		return b.updateMachineOSBuildWithStatusIfNeeded(ctx, oldPipelineRun, curPipelineRun)
+	})
+}
+
+// Executes whenever a build PipelineRun is deleted
+func (b *buildReconciler) DeletePipelineRun(ctx context.Context, pipelineRun *tektonv1beta1.PipelineRun) error {
+	return b.timeObjectOperation(pipelineRun, deletingVerb, func() error {
+		// Set the DeletionTimestamp so that we can set the build status to interrupted
+		pipelineRun.SetDeletionTimestamp(&metav1.Time{Time: time.Now()})
+		err := b.updateMachineOSBuildWithStatus(ctx, pipelineRun)
+		if err != nil {
+			return err
+		}
+		klog.Infof("PipelineRun %q deleted", pipelineRun.Name)
 		return b.syncAll(ctx)
 	})
 }

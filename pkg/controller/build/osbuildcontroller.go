@@ -17,6 +17,7 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	olmclientset "github.com/operator-framework/operator-lifecycle-manager/pkg/api/client/clientset/versioned"
 	pipelineoperatorclientset "github.com/tektoncd/operator/pkg/client/clientset/versioned"
+	tektonv1beta1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	tektonclientset "github.com/tektoncd/pipeline/pkg/client/clientset/versioned"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -97,7 +98,7 @@ func newOSBuildController(
 	eventBroadcaster.StartLogging(klog.Infof)
 	eventBroadcaster.StartRecordingToSink(&coreclientsetv1.EventSinkImpl{Interface: kubeclient.CoreV1().Events("")})
 
-	informers := newInformers(mcfgclient, kubeclient)
+	informers := newInformers(mcfgclient, kubeclient, tektonclient)
 
 	ctrl := &OSBuildController{
 		kubeclient:             kubeclient,
@@ -132,6 +133,12 @@ func newOSBuildController(
 		AddFunc:    ctrl.addJob,
 		UpdateFunc: ctrl.updateJob,
 		DeleteFunc: ctrl.deleteJob,
+	})
+
+	ctrl.pipelineRunInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.addPipelineRun,
+		UpdateFunc: ctrl.updatePipelineRun,
+		DeleteFunc: ctrl.deletePipelineRun,
 	})
 
 	ctrl.machineConfigPoolInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -272,6 +279,29 @@ func (ctrl *OSBuildController) deleteJob(cur interface{}) {
 	job := cur.(*batchv1.Job)
 	ctrl.enqueueFuncForObject(job, func(ctx context.Context) error {
 		return ctrl.buildReconciler.DeleteJob(ctx, job)
+	})
+}
+
+func (ctrl *OSBuildController) addPipelineRun(cur interface{}) {
+	pipelineRun := cur.(*tektonv1beta1.PipelineRun)
+	ctrl.enqueueFuncForObject(pipelineRun, func(ctx context.Context) error {
+		return ctrl.buildReconciler.AddPipelineRun(ctx, pipelineRun)
+	})
+}
+
+func (ctrl *OSBuildController) updatePipelineRun(old, cur interface{}) {
+	oldPipelineRun := old.(*tektonv1beta1.PipelineRun)
+	curPipelineRun := cur.(*tektonv1beta1.PipelineRun)
+
+	ctrl.enqueueFuncForObject(curPipelineRun, func(ctx context.Context) error {
+		return ctrl.buildReconciler.UpdatePipelineRun(ctx, oldPipelineRun, curPipelineRun)
+	})
+}
+
+func (ctrl *OSBuildController) deletePipelineRun(cur interface{}) {
+	pipelineRun := cur.(*tektonv1beta1.PipelineRun)
+	ctrl.enqueueFuncForObject(pipelineRun, func(ctx context.Context) error {
+		return ctrl.buildReconciler.DeletePipelineRun(ctx, pipelineRun)
 	})
 }
 
