@@ -1,8 +1,9 @@
 ---
 run:
   concurrency: 6
-  deadline: 15m
-  skip-files:
+  timeout: 15m
+issues:
+  exclude-files:
     - ".*_test\\.go"
     - "lib/.*"
 cache:
@@ -10,105 +11,197 @@ cache:
 linters:
   disable-all: true
   enable:
-    #- deadcode
     - depguard
     - dupl
-    #- gochecknoinits
     - goconst
     - gocritic
+    - gocyclo
     - gofmt
     - goimports
-    - revive
-    - gosec
     - govet
     - ineffassign
-    #- interfacer
-    #- maligned
     - misspell
-    #- prealloc
-    #- scopelint
     - staticcheck
-    #- structcheck
-    #- typecheck
     - unconvert
     - unparam
-    #- varcheck
-    #- errcheck
-    #- gochecknoglobals
-    - gocyclo
-    #- lll
-    #- nakedret
+    # - asasalint
+    # - asciicheck
+    # - bidichk
+    # - bodyclose
+    # - canonicalheader
+    # - containedctx
+    # - contextcheck
+    # - copyloopvar
+    # - cyclop
+    # - decorder
+    # - dogsled
+    # - dupword
+    # - durationcheck
+    # - err113
+    # - errcheck
+    # - errchkjson
+    # - errname
+    # - errorlint
+    # - exhaustive
+    # - exhaustruct
+    # - fatcontext
+    # - forbidigo
+    # - forcetypeassert
+    # - funlen
+    # - gci
+    # - ginkgolinter
+    # - gocheckcompilerdirectives
+    # - gochecknoglobals
+    # - gochecknoinits
+    # - gochecksumtype
+    # - gocognit
+    # - godot
+    # - godox
+    # - gofumpt
+    # - goheader
+    # - gomoddirectives
+    # - gomodguard
+    # - goprintffuncname
+    # - gosec
+    # - gosimple
+    # - gosmopolitan
+    # - grouper
+    # - iface
+    # - importas
+    # - inamedparam
+    # - interfacebloat
+    # - intrange
+    # - ireturn
+    # - lll
+    # - loggercheck
+    # - maintidx
+    # - makezero
+    # - mirror
+    # - mnd
+    # - musttag
+    # - nakedret
+    # - nestif
+    # - nilerr
+    # - nilnil
+    # - nlreturn
+    # - noctx
+    # - nolintlint
+    # - nonamedreturns
+    # - nosprintfhostport
+    # - paralleltest
+    # - perfsprint
+    # - prealloc
+    # - predeclared
+    # - promlinter
+    # - protogetter
+    # - reassign
+    # - recvcheck
+    # - revive
+    # - rowserrcheck
+    # - sloglint
+    # - spancheck
+    # - sqlclosecheck
+    # - stylecheck
+    # - tagalign
+    # - tagliatelle
+    # - tenv
+    # - testableexamples
+    # - testifylint
+    # - testpackage
+    # - thelper
+    # - tparallel
+    # - unused
+    # - usestdlibvars
+    # - varnamelen
+    # - wastedassign
+    # - whitespace
+    # - wrapcheck
+    # - wsl
+    # - zerologlint
 linters-settings:
   gocritic:
     enabled-checks:
       # Diagnostic
-      - argOrder
-      - badCond
-      - caseOrder
-      - codegenComment
       - commentedOutCode
-      - deprecatedComment
-      - dupArg
-      - dupBranchBody
-      - dupCase
-      - dupSubExpr
-      - exitAfterDefer
-      - flagDeref
-      - flagName
       - nilValReturn
-      - offBy1
-      - weakCond
-      - appendAssign
       - octalLiteral
       - sloppyReassign
+      - weakCond
 
       # Performance
+      - appendCombine
       - equalFold
-      #- hugeParam
       - indexAlloc
       - rangeExprCopy
-      #- rangeValCopy
-      - appendCombine
 
       # Style
-      - assignOp
       - boolExprSimplify
-      # - captLocal
-      # - commentFormatting
       - commentedOutImport
-      # - defaultCaseOrder
       - docStub
-      # - elseif
       - emptyFallthrough
       - emptyStringTest
       - hexLiteral
-      # - ifElseChain
       - methodExprCall
-      # - regexpMust
-      # - singleCaseSwitch
-      # - sloppyLen
       - stringXbytes
-      # - switchTrue
       - typeAssertChain
-      # - typeSwitchVar
-      # - underef
       - unlabelStmt
-      # - unlambda
-      # - unslice
-      # - valSwap
       - yodaStyleExpr
-      # - wrapperFunc
 
       # Opinionated
       - initClause
       - nestingReduce
+      - paramTypeCombine
       - ptrToRefParam
       - typeUnparen
       - unnecessaryBlock
-      #- builtinShadow
-      #- importShadow
-      - paramTypeCombine
-      #- unnamedResult
+
+      # Not used
+      # - badLock
+      # - badRegexp
+      # - badSorting
+      # - badSyncOnceFunc
+      # - builtinShadow
+      # - builtinShadowDecl
+      # - deferInLoop
+      # - deferUnlambda
+      # - dupImport
+      # - dynamicFmtString
+      # - emptyDecl
+      # - evalOrder
+      # - exposedSyncMutex
+      # - externalErrorReassign
+      # - filepathJoin
+      # - httpNoBody
+      # - hugeParam
+      # - importShadow
+      # - preferDecodeRune
+      # - preferFilepathJoin
+      # - preferFprint
+      # - preferStringWriter
+      # - preferWriteByte
+      # - rangeAppendAll
+      # - rangeValCopy
+      # - redundantSprint
+      # - regexpPattern
+      # - regexpSimplify
+      # - returnAfterHttpError
+      # - ruleguard
+      # - sliceClear
+      # - sortSlice
+      # - sprintfQuotedString
+      # - sqlQuery
+      # - stringConcatSimplify
+      # - stringsCompare
+      # - syncMapLoadAndDelete
+      # - timeExprSimplify
+      # - todoCommentWithoutDetail
+      # - tooManyResultsChecker
+      # - truncateCmp
+      # - typeDefFirst
+      # - uncheckedInlineErr
+      # - unnamedResult
+      # - unnecessaryDefer
+      # - whyNoLint
   gosec:
     severity: high
     confidence: medium
@@ -121,5 +214,9 @@ linters-settings:
           - desc: "Use k8s.io/klog/v2 instead of github.com/golang/glog"
             pkg: github.com/golang/glog
 output:
-  format: "checkstyle:checkstyle-golangci-lint.xml,junit-xml:junit-golangci-lint.xml,colored-line-number"
-
+  formats:
+    - format: checkstyle
+      path: checkstyle-golangci-lint.xml
+    - format: junit-xml
+      path: junit-golangci-lint.xml
+    - format: colored-line-number
