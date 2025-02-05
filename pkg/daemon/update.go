@@ -989,16 +989,35 @@ func (dn *Daemon) updateOnClusterLayering(oldConfig, newConfig *mcfgv1.MachineCo
 	if mcDiff.revertFromOCL {
 		odc.currentImage = ""
 
-		// If we're reverting from OCL, finalize the process by writing the configs
-		// and revert systemd unit to disk.
+		// Finalizes the revert process by enabling a special systemd unit prior to
+		// rebooting the node.
 		//
-		// Unfortunately, the pattern of deferred functions checking for error
-		// conditions only works within a given function. We need a better way to
-		// handle the case where we encounter an error and want to undo everything
-		// that we did up until that point.
-		if err := dn.finalizeRevertToNonLayering(newConfig); err != nil {
-			return fmt.Errorf("could not finalize revert to non-OCL: %w", err)
+		// After we write the original factory image to the node, none of the files
+		// specified in the MachineConfig will be written due to how rpm-ostree handles
+		// file writes. Because those files are owned by the layered container image,
+		// they are not present after reboot; even if we were to write them to the node
+		// before rebooting. Consequently, after reverting back to the original image,
+		// the node will lose contact with the control plane and the easiest way to
+		// reestablish contact is to rebootstrap the node.
+		//
+		// By comparison, if we write a file that is _not_ owned by the layered
+		// container image, this file will persist after reboot. So what we do is write
+		// a special systemd unit that will rebootstrap the node upon reboot.
+		// Unfortunately, this will incur a second reboot during the rollback process,
+		// so there is room for improvement here.
+		if err := dn.enableRevertSystemdUnit(newConfig); err != nil {
+			return fmt.Errorf("could not enable revert systemd service: %w", err)
 		}
+
+		defer func() {
+			if retErr != nil {
+				if err := dn.disableRevertSystemdUnit(); err != nil {
+					errs := kubeErrs.NewAggregate([]error{err, retErr})
+					retErr = fmt.Errorf("error rolling back systemd unit %q on disk: %e", runtimeassets.RevertServiceName, errs)
+					return
+				}
+			}
+		}()
 	}
 
 	if err := dn.storeCurrentConfigOnDisk(odc); err != nil {
@@ -1018,69 +1037,6 @@ func (dn *Daemon) updateOnClusterLayering(oldConfig, newConfig *mcfgv1.MachineCo
 	}()
 
 	return dn.reboot(fmt.Sprintf("Node will reboot into image %s / MachineConfig %s", canonicalizeMachineConfigImage(newImage, newConfig).Spec.OSImageURL, newConfigName))
-}
-
-// Finalizes the revert process by enabling a special systemd unit prior to
-// rebooting the node.
-//
-// After we write the original factory image to the node, none of the files
-// specified in the MachineConfig will be written due to how rpm-ostree handles
-// file writes. Because those files are owned by the layered container image,
-// they are not present after reboot; even if we were to write them to the node
-// before rebooting. Consequently, after reverting back to the original image,
-// the node will lose contact with the control plane and the easiest way to
-// reestablish contact is to rebootstrap the node.
-//
-// By comparison, if we write a file that is _not_ owned by the layered
-// container image, this file will persist after reboot. So what we do is write
-// a special systemd unit that will rebootstrap the node upon reboot.
-// Unfortunately, this will incur a second reboot during the rollback process,
-// so there is room for improvement here.
-func (dn *Daemon) finalizeRevertToNonLayering(newConfig *mcfgv1.MachineConfig) (retErr error) {
-	// First, we write the new MachineConfig to a file. This is both the signal
-	// that the revert systemd unit should fire as well as the desired source of
-	// truth.
-	outBytes, err := json.Marshal(newConfig)
-	if err != nil {
-		return fmt.Errorf("could not marshal MachineConfig %q to JSON: %w", newConfig.Name, err)
-	}
-
-	if err := writeFileAtomicallyWithDefaults(runtimeassets.RevertServiceMachineConfigFile, outBytes); err != nil {
-		return fmt.Errorf("could not write MachineConfig %q to %q: %w", newConfig.Name, runtimeassets.RevertServiceMachineConfigFile, err)
-	}
-
-	klog.Infof("Wrote MachineConfig %q to %q", newConfig.Name, runtimeassets.RevertServiceMachineConfigFile)
-
-	defer func() {
-		if retErr != nil {
-			if err := os.RemoveAll(runtimeassets.RevertServiceMachineConfigFile); err != nil {
-				errs := kubeErrs.NewAggregate([]error{err, retErr})
-				retErr = fmt.Errorf("error rolling back %q on disk: %q", runtimeassets.RevertServiceMachineConfigFile, errs)
-				return
-			}
-		}
-	}()
-
-	// Next, we enable the revert systemd unit. This renders and writes the
-	// machine-config-daemon-revert.service systemd unit, clones it, and writes
-	// it to disk. The reason for doing it this way is because it will persist
-	// after the reboot since it was not written or mutated by the rpm-ostree
-	// process.
-	if err := dn.enableRevertSystemdUnit(); err != nil {
-		return err
-	}
-
-	defer func() {
-		if retErr != nil {
-			if err := dn.disableRevertSystemdUnit(); err != nil {
-				errs := kubeErrs.NewAggregate([]error{err, retErr})
-				retErr = fmt.Errorf("error rolling back systemd unit %q on disk: %e", runtimeassets.RevertServiceName, errs)
-				return
-			}
-		}
-	}()
-
-	return nil
 }
 
 // Update the node to the provided node configuration.
@@ -2987,22 +2943,26 @@ func (dn *Daemon) hasImageRegistryDrainOverrideConfigMap() (bool, error) {
 //
 // To enable the unit, we perform the following operations:
 // 1. Retrieve the ControllerConfig.
-// 2. Generate the Ignition config from the ControllerConfig.
-// 3. Writes the new systemd unit to disk and enables it.
-func (dn *Daemon) enableRevertSystemdUnit() error {
+// 2. Generate the Ignition config from the ControllerConfig and the supplied MachineConfig.
+// 3. Writes the new systemd unit and its needed files to disk and enable it.
+func (dn *Daemon) enableRevertSystemdUnit(newConfig *mcfgv1.MachineConfig) error {
 	ctrlcfg, err := dn.ccLister.Get(ctrlcommon.ControllerConfigName)
 	if err != nil {
 		return fmt.Errorf("could not get controllerconfig %s: %w", ctrlcommon.ControllerConfigName, err)
 	}
 
-	revertService, err := runtimeassets.NewRevertService(ctrlcfg)
+	rs, err := runtimeassets.NewRevertService(ctrlcfg, newConfig)
 	if err != nil {
 		return err
 	}
 
-	revertIgn, err := revertService.Ignition()
+	revertIgn, err := rs.Ignition()
 	if err != nil {
 		return fmt.Errorf("could not create %s: %w", runtimeassets.RevertServiceName, err)
+	}
+
+	if err := dn.writeFiles(revertIgn.Storage.Files, false); err != nil {
+		return fmt.Errorf("could not write files for %s: %w", runtimeassets.RevertServiceName, err)
 	}
 
 	if err := dn.writeUnits(revertIgn.Systemd.Units); err != nil {
@@ -3029,7 +2989,7 @@ func (dn *Daemon) disableRevertSystemdUnit() error {
 		return fmt.Errorf("could not determine if service %q exists: %w", runtimeassets.RevertServiceName, err)
 	}
 
-	// If the unit path does not exist, there is nothing left to do.
+	// If the unit path does not exist, there is nothing to do.
 	if !unitPathExists {
 		return nil
 	}
@@ -3043,6 +3003,7 @@ func (dn *Daemon) disableRevertSystemdUnit() error {
 	filesToRemove := []string{
 		unitPath,
 		runtimeassets.RevertServiceMachineConfigFile,
+		runtimeassets.RevertServiceProxyFile,
 	}
 
 	// systemd removes the unit file, but there is no harm in calling
