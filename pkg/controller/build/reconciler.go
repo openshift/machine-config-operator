@@ -588,8 +588,18 @@ func (b *buildReconciler) updateMachineOSBuild(ctx context.Context, old, current
 	// final image pushspec onto the MachineOSConfig object.
 	if !oldState.IsBuildSuccess() && curState.IsBuildSuccess() {
 		klog.Infof("MachineOSBuild %s succeeded, cleaning up all ephemeral objects used for the build", current.Name)
-		if err := imagebuilder.NewJobImageBuilder(b.kubeclient, b.mcfgclient, b.tektonclient, current, mosc).Clean(ctx); err != nil {
-			return err
+
+		switch mosc.Spec.BuildInputs.ImageBuilder.ImageBuilderType {
+		case mcfgv1alpha1.PodBuilder:
+			if err := imagebuilder.NewJobImageBuilder(b.kubeclient, b.mcfgclient, b.tektonclient, current, mosc).Clean(ctx); err != nil {
+				return err
+			}
+		case mcfgv1alpha1.PipelineBuilder:
+			if err := imagebuilder.NewPipelineImageBuilder(b.kubeclient, b.mcfgclient, b.tektonclient, current, mosc).Clean(ctx); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("ImageBuilderType: %s is not supported", mosc.Spec.BuildInputs.ImageBuilder.ImageBuilderType)
 		}
 
 		if err := b.updateMachineOSConfigStatus(ctx, mosc, current); err != nil {
@@ -1058,8 +1068,21 @@ func (b *buildReconciler) getMachineOSConfigForBuilder(builder buildrequest.Buil
 
 // Deletes the underlying build objects for a given MachineOSBuild.
 func (b *buildReconciler) deleteBuilderForMachineOSBuild(ctx context.Context, mosb *mcfgv1alpha1.MachineOSBuild) error {
-	if err := imagebuilder.NewJobImageBuildCleaner(b.kubeclient, b.mcfgclient, b.tektonclient, mosb).Clean(ctx); err != nil {
-		return fmt.Errorf("could not clean build %s: %w", mosb.Name, err)
+	mosc, err := utils.GetMachineOSConfigForMachineOSBuild(mosb, b.utilListers())
+	if err != nil {
+		return err
+	}
+	switch mosc.Spec.BuildInputs.ImageBuilder.ImageBuilderType {
+	case mcfgv1alpha1.PodBuilder:
+		if err := imagebuilder.NewJobImageBuildCleaner(b.kubeclient, b.mcfgclient, b.tektonclient, mosb).Clean(ctx); err != nil {
+			return fmt.Errorf("could not clean build %s: %w", mosb.Name, err)
+		}
+	case mcfgv1alpha1.PipelineBuilder:
+		if err := imagebuilder.NewPipelineImageBuildCleaner(b.kubeclient, b.mcfgclient, b.tektonclient, mosb).Clean(ctx); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("ImageBuilderType: %s is not supported", mosc.Spec.BuildInputs.ImageBuilder.ImageBuilderType)
 	}
 
 	return nil
@@ -1255,7 +1278,15 @@ func (b *buildReconciler) syncMachineOSBuild(ctx context.Context, mosb *mcfgv1al
 				}
 			}
 
-			observer := imagebuilder.NewJobImageBuildObserver(b.kubeclient, b.mcfgclient, b.tektonclient, mosb, mosc)
+			var observer imagebuilder.ImageBuildObserver
+			switch mosc.Spec.BuildInputs.ImageBuilder.ImageBuilderType {
+			case mcfgv1alpha1.PodBuilder:
+				observer = imagebuilder.NewJobImageBuildObserver(b.kubeclient, b.mcfgclient, b.tektonclient, mosb, mosc)
+			case mcfgv1alpha1.PipelineBuilder:
+				observer = imagebuilder.NewPipelineImageBuildObserver(b.kubeclient, b.mcfgclient, b.tektonclient, mosb, mosc)
+			default:
+				return fmt.Errorf("ImageBuilderType: %s is not supported", mosc.Spec.BuildInputs.ImageBuilder.ImageBuilderType)
+			}
 
 			exists, err := observer.Exists(ctx)
 			if err != nil {
