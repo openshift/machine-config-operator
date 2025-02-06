@@ -383,13 +383,13 @@ func isNodeDone(node *corev1.Node, layered bool) bool {
 		return false
 	}
 
-	if layered {
-		// The MachineConfig annotations are loaded on boot-up by the daemon which
-		// isn't currently done for the image annotations, so the comparisons here
-		// are a bit more nuanced.
-		cimage, cok := node.Annotations[daemonconsts.CurrentImageAnnotationKey]
-		dimage, dok := node.Annotations[daemonconsts.DesiredImageAnnotationKey]
+	// The MachineConfig annotations are loaded on boot-up by the daemon which
+	// isn't currently done for the image annotations, so the comparisons here
+	// are a bit more nuanced.
+	cimage, cok := node.Annotations[daemonconsts.CurrentImageAnnotationKey]
+	dimage, dok := node.Annotations[daemonconsts.DesiredImageAnnotationKey]
 
+	if layered {
 		// If desired image is not set, but the pool is layered, this node can
 		// be considered ready for an update. This is the very first time node
 		// is being opted into layering.
@@ -406,6 +406,15 @@ func isNodeDone(node *corev1.Node, layered bool) bool {
 		// Current image annotation exists; compare with desired values to determine if the node is done
 		return cconfig == dconfig && cimage == dimage && isNodeMCDState(node, daemonconsts.MachineConfigDaemonStateDone)
 
+	}
+
+	// If not in layered mode, we also need to consider the case when the node is rolling back
+	// from layered to non-layered. In those cases, cconfig==dconfig, but the node
+	// will still need to do an update back to dconfig's OSImageURL. We can detect a
+	// rolling back node by checking if the cimage stills exists but the dimage does not exist.
+	if cok && !dok {
+		// The node is not "done" in this case, as the current image annotation still exists.
+		return false
 	}
 
 	return cconfig == dconfig && isNodeMCDState(node, daemonconsts.MachineConfigDaemonStateDone)
