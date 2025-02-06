@@ -51,6 +51,7 @@ import (
 	mcoResourceRead "github.com/openshift/machine-config-operator/lib/resourceread"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
+	"github.com/openshift/machine-config-operator/pkg/helpers"
 	"github.com/openshift/machine-config-operator/pkg/upgrademonitor"
 
 	"github.com/openshift/machine-config-operator/pkg/daemon/osrelease"
@@ -99,6 +100,9 @@ type Daemon struct {
 
 	mcLister       mcfglistersv1.MachineConfigLister
 	mcListerSynced cache.InformerSynced
+
+	mcpLister       mcfglistersv1.MachineConfigPoolLister
+	mcpListerSynced cache.InformerSynced
 
 	ccLister       mcfglistersv1.ControllerConfigLister
 	ccListerSynced cache.InformerSynced
@@ -362,6 +366,7 @@ func (dn *Daemon) ClusterConnect(
 	mcInformer mcfginformersv1.MachineConfigInformer,
 	nodeInformer coreinformersv1.NodeInformer,
 	ccInformer mcfginformersv1.ControllerConfigInformer,
+	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
 	mcopClient mcopclientset.Interface,
 	kubeletHealthzEnabled bool,
 	kubeletHealthzEndpoint string,
@@ -396,6 +401,8 @@ func (dn *Daemon) ClusterConnect(
 	})
 	dn.ccLister = ccInformer.Lister()
 	dn.ccListerSynced = ccInformer.Informer().HasSynced
+	dn.mcpLister = mcpInformer.Lister()
+	dn.mcpListerSynced = mcpInformer.Informer().HasSynced
 
 	nw, err := newNodeWriter(dn.name, dn.stopCh)
 	if err != nil {
@@ -705,6 +712,14 @@ func (dn *Daemon) syncNode(key string) error {
 		return nil
 	}
 
+	// TODO: Potentially consolidate down defining of `primaryPool` & `pool`
+	primaryPool, err := helpers.GetPrimaryPoolForNode(dn.mcpLister, node)
+	if err != nil {
+		klog.Errorf("Error getting primary pool for node: %v", node.Name)
+		return err
+	}
+	var pool string = primaryPool.Name
+
 	if node.Annotations[constants.MachineConfigDaemonPostConfigAction] == constants.MachineConfigDaemonStateRebooting {
 		klog.Info("Detected Rebooting Annotation, applying MCN.")
 		err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
@@ -715,6 +730,7 @@ func (dn *Daemon) syncNode(key string) error {
 			node,
 			dn.mcfgClient,
 			dn.featureGatesAccessor,
+			pool,
 		)
 		if err != nil {
 			klog.Errorf("Error making MCN for Rebooted: %v", err)
@@ -790,6 +806,7 @@ func (dn *Daemon) syncNode(key string) error {
 			node,
 			dn.mcfgClient,
 			dn.featureGatesAccessor,
+			pool,
 		)
 		if err != nil {
 			klog.Errorf("Error making MCN for Resumed true: %v", err)
@@ -828,6 +845,7 @@ func (dn *Daemon) syncNode(key string) error {
 			dn.node,
 			dn.mcfgClient,
 			dn.featureGatesAccessor,
+			pool,
 		)
 		if err != nil {
 			klog.Errorf("Error making MCN for Updated false: %v", err)
@@ -852,6 +870,7 @@ func (dn *Daemon) syncNode(key string) error {
 			dn.node,
 			dn.mcfgClient,
 			dn.featureGatesAccessor,
+			pool,
 		)
 		if err != nil {
 			klog.Errorf("Error making MCN for Updated: %v", err)
@@ -1379,7 +1398,7 @@ func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error, errCh chan er
 	defer dn.ccQueue.ShutDown()
 	defer dn.preserveDaemonLogs()
 
-	if !cache.WaitForCacheSync(stopCh, dn.nodeListerSynced, dn.mcListerSynced, dn.ccListerSynced) {
+	if !cache.WaitForCacheSync(stopCh, dn.nodeListerSynced, dn.mcListerSynced, dn.ccListerSynced, dn.mcpListerSynced) {
 		return fmt.Errorf("failed to sync initial listers cache")
 	}
 
@@ -2300,6 +2319,15 @@ func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, bool, erro
 	if inDesiredConfig {
 		// Great, we've successfully rebooted for the desired config,
 		// let's mark it done!
+
+		// TODO: Potentially consolidate down defining of `primaryPool` & `pool`
+		primaryPool, err := helpers.GetPrimaryPoolForNode(dn.mcpLister, dn.node)
+		if err != nil {
+			klog.Errorf("Error getting primary pool for node: %v", dn.node.Name)
+			return missingODC, inDesiredConfig, err
+		}
+		var pool string = primaryPool.Name
+
 		err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
 			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeResumed, Reason: string(mcfgalphav1.MachineConfigNodeResumed), Message: fmt.Sprintf("In desired config %s. Resumed normal operations. Applying proper annotations.", state.currentConfig.Name)},
 			nil,
@@ -2308,6 +2336,7 @@ func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, bool, erro
 			dn.node,
 			dn.mcfgClient,
 			dn.featureGatesAccessor,
+			pool,
 		)
 		if err != nil {
 			klog.Errorf("Error making MCN for Resumed true: %v", err)
