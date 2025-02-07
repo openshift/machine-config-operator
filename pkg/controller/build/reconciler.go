@@ -43,6 +43,7 @@ type reconciler interface {
 	UpdateJob(context.Context, *batchv1.Job, *batchv1.Job) error
 	DeleteJob(context.Context, *batchv1.Job) error
 
+	AddMachineConfigPool(context.Context, *mcfgv1.MachineConfigPool) error
 	UpdateMachineConfigPool(context.Context, *mcfgv1.MachineConfigPool, *mcfgv1.MachineConfigPool) error
 }
 
@@ -197,6 +198,7 @@ func (b *buildReconciler) DeleteJob(ctx context.Context, job *batchv1.Job) error
 	return b.timeObjectOperation(job, deletingVerb, func() error {
 		// Set the DeletionTimestamp so that we can set the build status to interrupted
 		job.SetDeletionTimestamp(&metav1.Time{Time: time.Now()})
+
 		err := b.updateMachineOSBuildWithStatus(ctx, job)
 		if err != nil {
 			return err
@@ -336,7 +338,14 @@ func (b *buildReconciler) DeleteMachineOSBuild(ctx context.Context, mosb *mcfgv1
 	})
 }
 
-// Executes whenever a MachineConfigPool is updated .
+// Executes whenever a MachineConfigPool is added.
+func (b *buildReconciler) AddMachineConfigPool(ctx context.Context, mcp *mcfgv1.MachineConfigPool) error {
+	return b.timeObjectOperation(mcp, addingVerb, func() error {
+		return b.syncMachineConfigPools(ctx)
+	})
+}
+
+// Executes whenever a MachineConfigPool is updated.
 func (b *buildReconciler) UpdateMachineConfigPool(ctx context.Context, oldMCP, curMCP *mcfgv1.MachineConfigPool) error {
 	return b.timeObjectOperation(curMCP, updatingVerb, func() error {
 		return b.updateMachineConfigPool(ctx, oldMCP, curMCP)
@@ -355,6 +364,7 @@ func (b *buildReconciler) updateMachineConfigPool(ctx context.Context, oldMCP, c
 	}
 
 	// Not sure if we need to do this here yet or not.
+	// TODO: Determine if we should call b.syncMachineConfigPools() here or not.
 	return b.syncAll(ctx)
 }
 
@@ -825,9 +835,14 @@ func (b *buildReconciler) timeSyncOperation(name string, toRun func() error) err
 func (b *buildReconciler) syncAll(ctx context.Context) error {
 	err := b.timeSyncOperation("MachineOSConfigs and MachineOSBuilds", func() error {
 		if err := b.syncMachineOSConfigs(ctx); err != nil {
-			return err
+			return fmt.Errorf("could not sync MachineOSConfigs: %w", err)
 		}
-		return b.syncMachineOSBuilds(ctx)
+
+		if err := b.syncMachineOSBuilds(ctx); err != nil {
+			return fmt.Errorf("could not sync MachineOSBuilds: %w", err)
+		}
+
+		return nil
 	})
 
 	if err != nil {
@@ -981,5 +996,38 @@ func (b *buildReconciler) syncMachineOSConfig(ctx context.Context, mosc *mcfgv1.
 		}
 
 		return nil
+	})
+}
+
+// Syncs all existing and opted-in MachineConfigPools.
+func (b *buildReconciler) syncMachineConfigPools(ctx context.Context) error {
+	err := b.timeSyncOperation("MachineConfigPools", func() error {
+		mcps, err := b.machineConfigPoolLister.List(labels.Everything())
+		if err != nil {
+			return fmt.Errorf("could not list MachineConfigPools: %w", err)
+		}
+
+		for _, mcp := range mcps {
+			if err := b.syncMachineConfigPool(ctx, mcp); err != nil {
+				return fmt.Errorf("could not sync MachineConfigPool %q: %w", mcp.Name, err)
+			}
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return fmt.Errorf("could not sync MachineConfigPools: %w", err)
+	}
+
+	return nil
+}
+
+// Syncs a given MachineConfigPool by cross-checking it against known
+// MachineOSConfigs and MachineOSBuilds, which will create a new MachineOSBuild,
+// if needed.
+func (b *buildReconciler) syncMachineConfigPool(ctx context.Context, mcp *mcfgv1.MachineConfigPool) error {
+	return b.timeObjectOperation(mcp, syncingVerb, func() error {
+		return b.createNewMachineOSBuildOrReuseExistingForPoolChange(ctx, mcp)
 	})
 }
