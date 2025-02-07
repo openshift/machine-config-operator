@@ -519,11 +519,55 @@ func TestOSBuildControllerBuildFailedDoesNotCascade(t *testing.T) {
 	}
 }
 
+// This scenario tests the case where the controller restarts and a
+// MachineConfig change occurs while a build is already running, while it is
+// shutdown. To simulate that, this test shuts down the OSBuildController after
+// the initial job gets created, then it rolls a new MachineConfig, then
+// finally, it starts OSBuildController again and waits for it to reconcile.
+func TestOSBuildControllerReconcilesMachineConfigPoolsAfterRestart(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	t.Cleanup(cancel)
+
+	poolName := "worker"
+
+	// Gets an OSBuildController with a running job.
+	ctrlCtx, ctrlCtxCancel := context.WithCancel(ctx)
+	t.Cleanup(ctrlCtxCancel)
+	kubeclient, mcfgclient, mosc, firstMosb, mcp, kubeassert, _ := setupOSBuildControllerForTestWithRunningBuild(ctrlCtx, t, poolName)
+
+	// Stop the OSBuildController.
+	ctrlCtxCancel()
+
+	// Create a MachineConfigPool change.
+	mcp = insertNewRenderedMachineConfigAndUpdatePool(ctx, t, mcfgclient, poolName, "rendered-worker-2")
+
+	// Get the name of the second MachineOSBuild object.
+	secondMosb := buildrequest.NewMachineOSBuildFromAPIOrDie(ctx, kubeclient, mosc, mcp)
+
+	// Ensure that everything still exists.
+	kubeassert = kubeassert.Eventually().WithContext(ctx)
+	kubeassert.MachineOSBuildExists(firstMosb)
+	kubeassert.JobExists(utils.GetBuildJobName(firstMosb))
+
+	// Start OSBuildController (really, get a new instance backed by the same
+	// fakeclients as used above).
+	_, stop := startController(ctx, t, kubeclient, mcfgclient)
+	t.Cleanup(stop)
+
+	// Assert that the second MachineOSBuild and its job gets created.
+	kubeassert.MachineOSBuildExists(secondMosb)
+	kubeassert.JobExists(utils.GetBuildJobName(secondMosb))
+
+	// Assert that the first MachineOSBuild goes away.
+	kubeassert.MachineOSBuildDoesNotExist(firstMosb)
+	kubeassert.JobDoesNotExist(utils.GetBuildJobName(firstMosb))
+}
+
 // This scenario tests the case where the controller restarts and a running job
 // completes before the reconcilation loop can run. To simulate that, this test
 // performs all of the setup steps and creates a successful Job before starting
 // the controller.
-func TestOSBuildControllerReconcilesAfterRestart(t *testing.T) {
+func TestOSBuildControllerReconcilesJobsAfterRestart(t *testing.T) {
 	mainCtx, mainCancel := context.WithTimeout(context.Background(), time.Second*5)
 	t.Cleanup(mainCancel)
 
@@ -602,18 +646,9 @@ func TestOSBuildControllerReconcilesAfterRestart(t *testing.T) {
 
 			fixtures.SetJobStatus(ctx, t, kubeclient, mosb, testCase.jobStatus)
 
-			cfg := Config{
-				MaxRetries:  1,
-				UpdateDelay: 0,
-			}
-
-			ctrl := newOSBuildController(cfg, mcfgclient, kubeclient)
-
-			// Use a work queue which is tuned for testing.
-			ctrl.execQueue = ctrlcommon.NewWrappedQueueForTesting(t)
-
 			// Start the build controller
-			go ctrl.Run(ctx, 5)
+			_, stop := startController(ctx, t, kubeclient, mcfgclient)
+			t.Cleanup(stop)
 
 			kubeassert.MachineOSBuildExists(mosb)
 			testCase.assertions(kubeassert, mosb)
@@ -641,8 +676,13 @@ func assertBuildObjectsAreDeleted(ctx context.Context, t *testing.T, kubeassert 
 	kubeassert.SecretDoesNotExist(utils.GetFinalPushSecretName(mosb))
 }
 
-func setupOSBuildControllerForTest(ctx context.Context, t *testing.T) (*fakecorev1client.Clientset, *fakeclientmachineconfigv1.Clientset, *testhelpers.Assertions, *fixtures.ObjectsForTest, *OSBuildController) {
-	kubeclient, mcfgclient, lobj, kubeassert := fixtures.GetClientsForTest(t)
+// Creates a cancellable child context which is passed into the
+// OSBuildController instance. Returns the cancel function for the child
+// context as well as the OSBuildController instance. Useful for testing
+// scenarios where it might be desirable to start and stop the
+// OSBuildController.
+func startController(ctx context.Context, t *testing.T, kubeclient *fakecorev1client.Clientset, mcfgclient *fakeclientmachineconfigv1.Clientset) (*OSBuildController, func()) {
+	ctrlCtx, ctrlCtxCancel := context.WithCancel(ctx)
 
 	cfg := Config{
 		MaxRetries:  1,
@@ -654,7 +694,15 @@ func setupOSBuildControllerForTest(ctx context.Context, t *testing.T) (*fakecore
 	// Use a work queue which is tuned for testing.
 	ctrl.execQueue = ctrlcommon.NewWrappedQueueForTesting(t)
 
-	go ctrl.Run(ctx, 5)
+	go ctrl.Run(ctrlCtx, 5)
+
+	return ctrl, ctrlCtxCancel
+}
+
+func setupOSBuildControllerForTest(ctx context.Context, t *testing.T) (*fakecorev1client.Clientset, *fakeclientmachineconfigv1.Clientset, *testhelpers.Assertions, *fixtures.ObjectsForTest, *OSBuildController) {
+	kubeclient, mcfgclient, lobj, kubeassert := fixtures.GetClientsForTest(t)
+
+	ctrl, _ := startController(ctx, t, kubeclient, mcfgclient)
 
 	kubeassert = kubeassert.Eventually().WithContext(ctx).WithPollInterval(time.Millisecond)
 

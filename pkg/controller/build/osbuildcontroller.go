@@ -119,6 +119,7 @@ func newOSBuildController(
 	})
 
 	ctrl.machineConfigPoolInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.addMachineConfigPool,
 		UpdateFunc: ctrl.updateMachineConfigPool,
 	})
 
@@ -291,6 +292,13 @@ func (ctrl *OSBuildController) deleteMachineOSConfig(cur interface{}) {
 
 	ctrl.enqueueFuncForObject(mosc, func(ctx context.Context) error {
 		return ctrl.buildReconciler.DeleteMachineOSConfig(ctx, mosc)
+	})
+}
+
+func (ctrl *OSBuildController) addMachineConfigPool(newMCP interface{}) {
+	mcp := newMCP.(*mcfgv1.MachineConfigPool).DeepCopy()
+	ctrl.enqueueFuncForObject(mcp, func(ctx context.Context) error {
+		return ctrl.buildReconciler.AddMachineConfigPool(ctx, mcp)
 	})
 }
 
