@@ -2034,7 +2034,7 @@ func (dn *Daemon) workaroundOcpBugs33694() error {
 	}
 	for _, path := range stalePaths {
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("error deleting %s: %w", path, err)
+			return fmt.Errorf("error deleting %q: %w", path, err)
 		} else if err == nil {
 			klog.Infof("Removed stale symlink %q", path)
 		}
@@ -2104,7 +2104,7 @@ func (dn *Daemon) presetUnit(unit ign3types.Unit) error {
 	if err != nil {
 		return fmt.Errorf("error running preset on unit: %s", stdouterr)
 	}
-	klog.Infof("Preset systemd unit %s", unit.Name)
+	klog.Infof("Preset systemd unit %q", unit.Name)
 	return nil
 }
 
@@ -2553,7 +2553,7 @@ func (dn *Daemon) queueRevertKernelSwap() error {
 // updateLayeredOS updates the system OS to the one specified in newConfig
 func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 	newURL := config.Spec.OSImageURL
-	klog.Infof("Updating OS to layered image %s", newURL)
+	klog.Infof("Updating OS to layered image %q", newURL)
 	return dn.updateLayeredOSToPullspec(newURL)
 }
 
