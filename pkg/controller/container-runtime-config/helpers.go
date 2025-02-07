@@ -1133,12 +1133,11 @@ func updateNamespacedPolicyJSONs(clusterOverridePolicyJSON []byte, internalBlock
 	}
 
 	namespacedPolicyJSONs := make(map[string][]byte)
-	decoder := json.NewDecoder(bytes.NewBuffer(clusterOverridePolicyJSON))
 
 	for namespace, requirements := range namespacedPolicies {
 
 		policyObj := &signature.Policy{}
-		err := decoder.Decode(policyObj)
+		err := json.NewDecoder(bytes.NewBuffer(clusterOverridePolicyJSON)).Decode(policyObj)
 		if err != nil {
 			return nil, fmt.Errorf("error decoding policy json for namespaced policies: %w", err)
 		}

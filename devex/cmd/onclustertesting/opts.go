@@ -4,41 +4,39 @@ import (
 	"fmt"
 	"os"
 
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"k8s.io/klog/v2"
 )
 
 type opts struct {
-	pushSecretName              string
-	pullSecretName              string
-	finalImagePullSecretName    string
-	pushSecretPath              string
-	pullSecretPath              string
-	finalImagePullspec          string
-	containerfilePath           string
-	containerfileContents       string
-	poolName                    string
-	injectYumRepos              bool
-	waitForBuildInfo            bool
-	copyEtcPkiEntitlementSecret bool
-	enableFeatureGate           bool
+	pushSecretName           string
+	pullSecretName           string
+	finalImagePullSecretName string
+	pushSecretPath           string
+	pullSecretPath           string
+	finalImagePullspec       string
+	containerfilePath        string
+	containerfileContents    string
+	poolName                 string
+	injectYumRepos           bool
+	waitForBuildInfo         bool
+	enableFeatureGate        bool
 }
 
 func (o *opts) deepCopy() opts {
 	return opts{
-		pushSecretName:              o.pushSecretName,
-		pullSecretName:              o.pullSecretName,
-		pushSecretPath:              o.pushSecretPath,
-		pullSecretPath:              o.pullSecretPath,
-		finalImagePullspec:          o.finalImagePullspec,
-		finalImagePullSecretName:    o.finalImagePullSecretName,
-		containerfilePath:           o.containerfilePath,
-		containerfileContents:       o.containerfileContents,
-		poolName:                    o.poolName,
-		injectYumRepos:              o.injectYumRepos,
-		waitForBuildInfo:            o.waitForBuildInfo,
-		copyEtcPkiEntitlementSecret: o.copyEtcPkiEntitlementSecret,
-		enableFeatureGate:           o.enableFeatureGate,
+		pushSecretName:           o.pushSecretName,
+		pullSecretName:           o.pullSecretName,
+		pushSecretPath:           o.pushSecretPath,
+		pullSecretPath:           o.pullSecretPath,
+		finalImagePullspec:       o.finalImagePullspec,
+		finalImagePullSecretName: o.finalImagePullSecretName,
+		containerfilePath:        o.containerfilePath,
+		containerfileContents:    o.containerfileContents,
+		poolName:                 o.poolName,
+		injectYumRepos:           o.injectYumRepos,
+		waitForBuildInfo:         o.waitForBuildInfo,
+		enableFeatureGate:        o.enableFeatureGate,
 	}
 }
 
@@ -80,7 +78,7 @@ func (o *opts) shouldCloneGlobalPullSecret() bool {
 	return isNoneSet(o.pullSecretName, o.pullSecretPath)
 }
 
-func (o *opts) toMachineOSConfig() (*mcfgv1alpha1.MachineOSConfig, error) {
+func (o *opts) toMachineOSConfig() (*mcfgv1.MachineOSConfig, error) {
 	pushSecretName, err := o.getPushSecretName()
 	if err != nil {
 		return nil, err

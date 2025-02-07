@@ -59,7 +59,7 @@ contents:
                 {{end -}}
                 {{range onPremPlatformAPIServerInternalIPs . }}"{{.}}" {{end}} \
                 {{range onPremPlatformIngressIPs . }}"{{.}}" {{end}})"
-            DOMAINS="${IP4_DOMAINS} ${IP6_DOMAINS} {{.DNS.Spec.BaseDomain}}"
+            DOMAINS="${IP4_DOMAINS:-} ${IP6_DOMAINS:-} {{.DNS.Spec.BaseDomain}}"
             if [[ -n "$NAMESERVER_IP" ]]; then
                 KNICONFDONEPATH="/run/resolv-prepender-kni-conf-done"
                 if systemctl -q is-enabled systemd-resolved; then

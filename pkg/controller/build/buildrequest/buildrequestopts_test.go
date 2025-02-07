@@ -11,13 +11,16 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 )
 
 func TestBuildRequestOpts(t *testing.T) {
 	testCases := []struct {
-		name        string
-		addlObjects []runtime.Object
-		addlAsserts func(*testing.T, BuildRequestOpts)
+		name            string
+		addlObjects     []runtime.Object
+		addlObjectSetup func(*testing.T, *fixtures.ObjectsForTest)
+		addlAsserts     func(*testing.T, BuildRequestOpts)
 	}{
 		{
 			name: "no entitlement data",
@@ -25,6 +28,7 @@ func TestBuildRequestOpts(t *testing.T) {
 				assert.False(t, brOpts.HasEtcPkiRpmGpgKeys)
 				assert.False(t, brOpts.HasEtcYumReposDConfigs)
 				assert.False(t, brOpts.HasEtcPkiEntitlementKeys)
+				assert.False(t, brOpts.hasUserDefinedBaseImagePullSecret)
 			},
 		},
 		{
@@ -41,6 +45,7 @@ func TestBuildRequestOpts(t *testing.T) {
 				assert.False(t, brOpts.HasEtcPkiRpmGpgKeys)
 				assert.False(t, brOpts.HasEtcYumReposDConfigs)
 				assert.True(t, brOpts.HasEtcPkiEntitlementKeys)
+				assert.False(t, brOpts.hasUserDefinedBaseImagePullSecret)
 			},
 		},
 		{
@@ -57,6 +62,7 @@ func TestBuildRequestOpts(t *testing.T) {
 				assert.False(t, brOpts.HasEtcPkiRpmGpgKeys)
 				assert.True(t, brOpts.HasEtcYumReposDConfigs)
 				assert.False(t, brOpts.HasEtcPkiEntitlementKeys)
+				assert.False(t, brOpts.hasUserDefinedBaseImagePullSecret)
 			},
 		},
 		{
@@ -73,6 +79,7 @@ func TestBuildRequestOpts(t *testing.T) {
 				assert.True(t, brOpts.HasEtcPkiRpmGpgKeys)
 				assert.False(t, brOpts.HasEtcYumReposDConfigs)
 				assert.False(t, brOpts.HasEtcPkiEntitlementKeys)
+				assert.False(t, brOpts.hasUserDefinedBaseImagePullSecret)
 			},
 		},
 		{
@@ -101,6 +108,16 @@ func TestBuildRequestOpts(t *testing.T) {
 				assert.True(t, brOpts.HasEtcPkiRpmGpgKeys)
 				assert.True(t, brOpts.HasEtcYumReposDConfigs)
 				assert.True(t, brOpts.HasEtcPkiEntitlementKeys)
+				assert.False(t, brOpts.hasUserDefinedBaseImagePullSecret)
+			},
+		},
+		{
+			name: "with user defined base image pull secret",
+			addlObjectSetup: func(t *testing.T, lobj *fixtures.ObjectsForTest) {
+				lobj.MachineOSConfig.Spec.BaseImagePullSecret = &mcfgv1.ImageSecretObjectReference{Name: fixtures.BaseImagePullSecretName}
+			},
+			addlAsserts: func(t *testing.T, brOpts BuildRequestOpts) {
+				assert.True(t, brOpts.hasUserDefinedBaseImagePullSecret)
 			},
 		},
 	}
@@ -114,6 +131,10 @@ func TestBuildRequestOpts(t *testing.T) {
 			t.Cleanup(cancel)
 
 			kubeclient, mcfgclient, lobj, _ := fixtures.GetClientsForTestWithAdditionalObjects(t, testCase.addlObjects, []runtime.Object{})
+
+			if testCase.addlObjectSetup != nil {
+				testCase.addlObjectSetup(t, lobj)
+			}
 
 			brOpts, err := newBuildRequestOptsFromAPI(ctx, kubeclient, mcfgclient, lobj.MachineOSBuild, lobj.MachineOSConfig)
 			assert.NoError(t, err)
