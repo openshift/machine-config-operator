@@ -28,7 +28,7 @@ func TestMachineOSBuild(t *testing.T) {
 	}
 
 	// Some of the test cases expect the hash name to be the same. This is that hash value.
-	expectedCommonHashName := "worker-e945ec808b468c07f6a2cf1936c23a13"
+	expectedCommonHashName := "worker-55592464e51104dcc274a300565fec9e"
 
 	testCases := []struct {
 		name         string

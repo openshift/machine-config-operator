@@ -125,6 +125,7 @@ spec:
           annotations:
             summary: "Alerts the user when, for 15 minutes, a specific node is using more memory than is reserved"
             description: "System memory usage of {{ $value | humanize }} on {{ $labels.node }} exceeds 95% of the reservation. Reserved memory ensures system processes can function even when the node is fully allocated and protects against workload out of memory events impacting the proper functioning of the node. The default reservation is expected to be sufficient for most configurations and should be increased (https://docs.openshift.com/container-platform/latest/nodes/nodes/nodes-nodes-managing.html) when running nodes with high numbers of pods (either due to rate of change or at steady state)."
+            runbook_url: https://github.com/openshift/runbooks/blob/master/alerts/machine-config-operator/SystemMemoryExceedsReservation.md
     - name: high-overall-control-plane-memory
       rules:
         - alert: HighOverallControlPlaneMemory

@@ -1233,10 +1233,13 @@ func (ctrl *Controller) updateCandidateNode(mosc *mcfgv1.MachineOSConfig, mosb *
 func getAllCandidateMachines(layered bool, config *mcfgv1.MachineOSConfig, build *mcfgv1.MachineOSBuild, pool *mcfgv1.MachineConfigPool, nodesInPool []*corev1.Node, maxUnavailable int) ([]*corev1.Node, uint) {
 	unavail := getUnavailableMachines(nodesInPool, pool, layered, build)
 	if len(unavail) >= maxUnavailable {
-		klog.V(4).Infof("Pool %s: No nodes available for updates", pool.Name)
+		klog.V(4).Infof("getAllCandidateMachines: No capacity left for pool %s (unavail=%d >= maxUnavailable=%d)",
+			pool.Name, len(unavail), maxUnavailable)
 		return nil, 0
 	}
 	capacity := maxUnavailable - len(unavail)
+	klog.V(4).Infof("getAllCandidateMachines: Computed capacity=%d for pool %s", capacity, pool.Name)
+
 	failingThisConfig := 0
 	// We only look at nodes which aren't already targeting our desired config
 	var nodes []*corev1.Node
