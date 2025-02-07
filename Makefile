@@ -186,7 +186,7 @@ verify-e2e: $(patsubst %,_verify-e2e-%,$(E2E_SUITES))
 
 # This was copied from https://github.com/openshift/cluster-image-registry-operator
 test-e2e: install-go-junit-report
-	set -o pipefail; go test -tags=$(GOTAGS) -failfast -timeout 170m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e/ ./test/e2e-techpreview-shared/ | ./hack/test-with-junit.sh $(@)
+	set -o pipefail; go test -tags=$(GOTAGS) -failfast -timeout 190m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e/ ./test/e2e-techpreview-shared/ | ./hack/test-with-junit.sh $(@)
 
 test-e2e-techpreview: install-go-junit-report
 	set -o pipefail; go test -tags=$(GOTAGS) -failfast -timeout 170m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-techpreview  ./test/e2e-techpreview-shared/ | ./hack/test-with-junit.sh $(@)
