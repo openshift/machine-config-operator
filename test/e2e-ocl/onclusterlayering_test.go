@@ -538,7 +538,7 @@ func assertBuildObjectsAreDeleted(t *testing.T, kubeassert *helpers.Assertions, 
 
 // Sets up and performs an on-cluster build for a given set of parameters.
 // Returns the built image pullspec for later consumption.
-func runOnClusterLayeringTest(t *testing.T, testOpts onClusterLayeringTestOpts) (string, *mcfgv1alpha1.MachineOSBuild) {
+func runOnClusterLayeringTest(t *testing.T, testOpts onClusterLayeringTestOpts) (string, *mcfgv1.MachineOSBuild) {
 	// func runOnClusterLayeringTest(t *testing.T, testOpts onClusterLayeringTestOpts) string {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
