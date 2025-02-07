@@ -40,6 +40,8 @@ contents:
         - "/config"
         - "--out-dir"
         - "/etc/coredns"
+        - "--resolvconf-path"
+        - "/etc/resolv.conf"
         resources: {}
         volumeMounts:
         - name: kubeconfig
