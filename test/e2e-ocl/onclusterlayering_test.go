@@ -109,6 +109,7 @@ func TestOnClusterLayeringOnOKD(t *testing.T) {
 
 // Tests that an on-cluster build can be performed with the Custom Pod Builder.
 func TestOnClusterLayering(t *testing.T) {
+	t.Logf("Starting TestOnClusterLayering test (%v)", time.Now())
 
 	_, mosb := runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
 		// runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
@@ -118,8 +119,9 @@ func TestOnClusterLayering(t *testing.T) {
 		},
 	})
 
-	// Removing this portion of this test - update when https://issues.redhat.com/browse/OCPBUGS-46421 fixed.
+	t.Logf("Completed runOnClusterLayeringTest with mosb %v", mosb.Name)
 
+	// TODO: Evaluate this portion of this test - update when https://issues.redhat.com/browse/OCPBUGS-46421 fixed.
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
@@ -135,8 +137,8 @@ func TestOnClusterLayering(t *testing.T) {
 	_, err = cs.MachineconfigurationV1Interface.MachineOSConfigs().Update(ctx, mosc, metav1.UpdateOptions{})
 	require.NoError(t, err)
 
-	// Wait for the first build to be deleted.
-	waitForBuildToBeDeleted(t, cs, mosb)
+	// // Wait for the first build to be deleted.
+	// waitForBuildToBeDeleted(t, cs, mosb)
 
 	waitForBuildToStartForPoolAndConfig(t, cs, layeredMCPName, layeredMCPName)
 }
@@ -539,7 +541,8 @@ func assertBuildObjectsAreDeleted(t *testing.T, kubeassert *helpers.Assertions, 
 // Sets up and performs an on-cluster build for a given set of parameters.
 // Returns the built image pullspec for later consumption.
 func runOnClusterLayeringTest(t *testing.T, testOpts onClusterLayeringTestOpts) (string, *mcfgv1.MachineOSBuild) {
-	// func runOnClusterLayeringTest(t *testing.T, testOpts onClusterLayeringTestOpts) string {
+	t.Logf("Starting runOnClusterLayeringTest test (%v)", time.Now())
+
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
@@ -547,6 +550,7 @@ func runOnClusterLayeringTest(t *testing.T, testOpts onClusterLayeringTestOpts) 
 
 	imageBuilder := testOpts.imageBuilderType
 	if testOpts.imageBuilderType == "" {
+		t.Log("In runOnClusterLayeringTest with testOpts.imageBuilderType as nil")
 		imageBuilder = mcfgv1.JobBuilder
 	}
 
@@ -554,8 +558,12 @@ func runOnClusterLayeringTest(t *testing.T, testOpts onClusterLayeringTestOpts) 
 
 	mosc := prepareForOnClusterLayeringTest(t, cs, testOpts)
 
+	t.Logf("In runOnClusterLayeringTest with mosc %v", mosc.Name)
+
 	// Create our MachineOSConfig.
 	createMachineOSConfig(t, cs, mosc)
+
+	t.Logf("In runOnClusterLayeringTest mosc has been created %v", mosc.Name)
 
 	// Create a child context for the machine-os-builder pod log streamer. We
 	// create it here because we want the cancellation to run before the

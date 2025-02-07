@@ -47,6 +47,7 @@ func applyMC(t *testing.T, cs *framework.ClientSet, mc *mcfgv1.MachineConfig) fu
 }
 
 func createMachineOSConfig(t *testing.T, cs *framework.ClientSet, mosc *mcfgv1.MachineOSConfig) func() {
+	t.Logf("In createMachineOSConfig (%v)", time.Now())
 	helpers.SetMetadataOnObject(t, mosc)
 
 	_, err := cs.MachineconfigurationV1Interface.MachineOSConfigs().Create(context.TODO(), mosc, metav1.CreateOptions{})
