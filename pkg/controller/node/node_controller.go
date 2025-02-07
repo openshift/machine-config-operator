@@ -610,6 +610,7 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 		ctrl.logPoolNode(pool, curNode, "changed from pool %s", oldPool.Name)
 		// Let's also make sure the old pool node counts/status get updated
 		ctrl.enqueueMachineConfigPool(oldPool)
+		// Update the node's MCN to reference the new pool
 	} else if err != nil {
 		// getPrimaryPoolForNode may error due to multiple custom pools. In this scenario, let's
 		// queue all of them so that when the node attempts to exit from this error state, the MCP
