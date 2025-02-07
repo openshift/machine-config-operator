@@ -49,7 +49,7 @@ type ControllerContext struct {
 
 	NamespacedInformerFactory                           mcfginformers.SharedInformerFactory
 	InformerFactory                                     mcfginformers.SharedInformerFactory
-	TechPreviewInformerFactory                          mcfginformers.SharedInformerFactory
+	OCLInformerFactory                                  mcfginformers.SharedInformerFactory
 	KubeInformerFactory                                 informers.SharedInformerFactory
 	KubeNamespacedInformerFactory                       informers.SharedInformerFactory
 	OpenShiftConfigKubeNamespacedInformerFactory        informers.SharedInformerFactory
@@ -135,7 +135,7 @@ func CreateControllerContext(ctx context.Context, cb *clients.Builder) *Controll
 		ClientBuilder:                                       cb,
 		NamespacedInformerFactory:                           sharedNamespacedInformers,
 		InformerFactory:                                     sharedInformers,
-		TechPreviewInformerFactory:                          sharedTechPreviewInformers,
+		OCLInformerFactory:                                  sharedTechPreviewInformers,
 		KubeInformerFactory:                                 kubeSharedInformer,
 		KubeNamespacedInformerFactory:                       kubeNamespacedSharedInformer,
 		OpenShiftConfigKubeNamespacedInformerFactory:        openShiftConfigKubeNamespacedSharedInformer,
