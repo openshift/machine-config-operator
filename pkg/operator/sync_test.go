@@ -2,6 +2,7 @@ package operator
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -17,6 +18,13 @@ import (
 	fakeclientmachineconfigv1 "github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
 
 	mcfginformers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
+)
+
+const (
+	APIServerInternalURLPort = "https://api-int.my-test-cluster.installer.team.coreos.systems:6443"
+	APIServerInternalURL     = "api-int.my-test-cluster.installer.team.coreos.systems"
+	APIIntLBIP               = "10.10.10.10"
+	IgnSecurePort            = "22623"
 )
 
 func TestSyncCloudConfig(t *testing.T) {
@@ -286,6 +294,66 @@ func TestMachineOSBuilderSecretReconciliation(t *testing.T) {
 			secrets, err := kubeClient.CoreV1().Secrets(ctrlcommon.MCONamespace).List(context.TODO(), metav1.ListOptions{})
 			assert.NoError(t, err)
 			assert.ElementsMatch(t, secrets.Items, tc.expectedMCOSecrets)
+		})
+	}
+}
+
+func withAPIIntUrl() infraOption {
+	return func(infra *configv1.Infrastructure) {
+		infra.Status.APIServerInternalURL = APIServerInternalURLPort
+	}
+}
+
+func withCloudLoadBalancerConfig(platformType configv1.PlatformType) infraOption {
+	return func(infra *configv1.Infrastructure) {
+		apiIntLBIPs := []configv1.IP{}
+		apiIntLBIPs = append(apiIntLBIPs, configv1.IP(APIIntLBIP))
+		infra.Status.APIServerInternalURL = APIServerInternalURLPort
+
+		if infra.Status.PlatformStatus == nil {
+			infra.Status.PlatformStatus = &configv1.PlatformStatus{}
+		}
+		infra.Status.PlatformStatus.Type = platformType
+		switch platformType {
+		case configv1.GCPPlatformType:
+			infra.Status.PlatformStatus.GCP = &configv1.GCPPlatformStatus{}
+			infra.Status.PlatformStatus.GCP.CloudLoadBalancerConfig = &configv1.CloudLoadBalancerConfig{}
+			infra.Status.PlatformStatus.GCP.CloudLoadBalancerConfig.DNSType = "ClusterHosted"
+			infra.Status.PlatformStatus.GCP.CloudLoadBalancerConfig.ClusterHosted = &configv1.CloudLoadBalancerIPs{}
+			infra.Status.PlatformStatus.GCP.CloudLoadBalancerConfig.ClusterHosted.APIIntLoadBalancerIPs = apiIntLBIPs
+		}
+	}
+}
+
+func TestGetIgnitionHost(t *testing.T) {
+	cases := []struct {
+		name                 string
+		platformType         configv1.PlatformType
+		infra                *configv1.Infrastructure
+		expectError          bool
+		expectedIgnitionHost string
+	}{
+		{
+			name:                 "GCP with Cloud DNS",
+			platformType:         configv1.GCPPlatformType,
+			infra:                buildInfra(withPlatformType(configv1.GCPPlatformType), withAPIIntUrl()),
+			expectedIgnitionHost: fmt.Sprintf(APIServerInternalURL + ":" + IgnSecurePort),
+		},
+		{
+			name:                 "GCP with ClusterHosted DNS",
+			platformType:         configv1.GCPPlatformType,
+			infra:                buildInfra(withPlatformType(configv1.GCPPlatformType), withCloudLoadBalancerConfig(configv1.GCPPlatformType)),
+			expectedIgnitionHost: fmt.Sprintf(APIIntLBIP + ":" + IgnSecurePort),
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ignHost, err := getIgnitionHost(&tc.infra.Status)
+			if err != nil {
+				t.Fatalf("failed to get Ignition Host for worker pointer Ignition: %v", err)
+			}
+			assert.NoError(t, err)
+			assert.Equal(t, tc.expectedIgnitionHost, ignHost)
 		})
 	}
 }
