@@ -545,13 +545,13 @@ func (p *PinnedImageSetManager) updateStatusProgressing(pools []*mcfgv1.MachineC
 	imageSetSpec := getPinnedImageSetSpecForPools(pools)
 
 	// TODO: Potentially consolidate down defining of `primaryPool` & `pool`
-	// primaryPool, err := helpers.GetPrimaryPoolForNode(p.mcpLister, node)
-	// if err != nil {
-	// 	klog.Errorf("Error getting primary pool for node: %v", node.Name)
-	// 	return err
-	// }
-	// var pool string = primaryPool.Name
-	var pool string = "testing"
+	primaryPool, err := helpers.GetPrimaryPoolForNode(p.mcpLister, node)
+	if err != nil {
+		klog.Errorf("Error getting primary pool for node: %v", node.Name)
+		return err
+	}
+	var pool string = primaryPool.Name
+	// var pool string = "testing"
 
 	return upgrademonitor.UpdateMachineConfigNodeStatus(
 		&upgrademonitor.Condition{
@@ -585,13 +585,13 @@ func (p *PinnedImageSetManager) updateStatusProgressingComplete(pools []*mcfgv1.
 	imageSetSpec := getPinnedImageSetSpecForPools(pools)
 
 	// TODO: Potentially consolidate down defining of `primaryPool` & `pool`
-	// primaryPool, err := helpers.GetPrimaryPoolForNode(p.mcpLister, node)
-	// if err != nil {
-	// 	klog.Errorf("Error getting primary pool for node: %v", node.Name)
-	// 	return err
-	// }
-	// var pool string = primaryPool.Name
-	var pool string = "testing"
+	primaryPool, err := helpers.GetPrimaryPoolForNode(p.mcpLister, node)
+	if err != nil {
+		klog.Errorf("Error getting primary pool for node: %v", node.Name)
+		return err
+	}
+	var pool string = primaryPool.Name
+	// var pool string = "testing"
 
 	err = upgrademonitor.UpdateMachineConfigNodeStatus(
 		&upgrademonitor.Condition{
@@ -654,13 +654,13 @@ func (p *PinnedImageSetManager) updateStatusError(pools []*mcfgv1.MachineConfigP
 	}
 
 	// TODO: Potentially consolidate down defining of `primaryPool` & `pool`
-	// primaryPool, err := helpers.GetPrimaryPoolForNode(p.mcpLister, node)
-	// if err != nil {
-	// 	klog.Errorf("Error getting primary pool for node: %v", node.Name)
-	// 	return err
-	// }
-	// var pool string = primaryPool.Name
-	var pool string = "testing"
+	primaryPool, err := helpers.GetPrimaryPoolForNode(p.mcpLister, node)
+	if err != nil {
+		klog.Errorf("Error getting primary pool for node: %v", node.Name)
+		return err
+	}
+	var pool string = primaryPool.Name
+	// var pool string = "testing"
 
 	return upgrademonitor.UpdateMachineConfigNodeStatus(
 		&upgrademonitor.Condition{
