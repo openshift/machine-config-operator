@@ -15,7 +15,8 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
-	"github.com/openshift/machine-config-operator/pkg/helpers"
+
+	// "github.com/openshift/machine-config-operator/pkg/helpers"
 	"github.com/openshift/machine-config-operator/pkg/upgrademonitor"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -41,14 +42,16 @@ func (dn *Daemon) performDrain() error {
 	if !dn.drainRequired() {
 		logSystem("Drain not required, skipping")
 		// TODO: Potentially consolidate down defining of `primaryPool` & `pool`
-		primaryPool, err := helpers.GetPrimaryPoolForNode(dn.mcpLister, dn.node)
-		if err != nil {
-			klog.Errorf("Error getting primary pool for node: %v", dn.node.Name)
-			return err
-		}
-		var pool string = primaryPool.Name
+		// primaryPool, err := helpers.GetPrimaryPoolForNode(dn.mcpLister, dn.node)
+		// if err != nil {
+		// 	klog.Errorf("Error getting primary pool for node: %v", dn.node.Name)
+		// 	return err
+		// }
+		// var pool string = primaryPool.Name
+		var pool string = "testing"
 
-		err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
+		// err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
+		err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
 			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateExecuted, Reason: string(mcfgalphav1.MachineConfigNodeUpdateDrained), Message: "Node Drain Not required for this update."},
 			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateDrained, Reason: fmt.Sprintf("%s%s", string(mcfgalphav1.MachineConfigNodeUpdateExecuted), string(mcfgalphav1.MachineConfigNodeUpdateDrained)), Message: "Node Drain Not required for this update."},
 			metav1.ConditionUnknown,
