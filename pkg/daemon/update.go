@@ -44,7 +44,7 @@ import (
 	pivotutils "github.com/openshift/machine-config-operator/pkg/daemon/pivot/utils"
 	"github.com/openshift/machine-config-operator/pkg/daemon/runtimeassets"
 
-	// "github.com/openshift/machine-config-operator/pkg/helpers"
+	"github.com/openshift/machine-config-operator/pkg/helpers"
 	"github.com/openshift/machine-config-operator/pkg/upgrademonitor"
 )
 
@@ -126,16 +126,16 @@ func (dn *Daemon) executeReloadServiceNodeDisruptionAction(serviceName string, r
 	}
 
 	// TODO: Potentially consolidate down defining of `primaryPool` & `pool`
-	// primaryPool, err := helpers.GetPrimaryPoolForNode(dn.mcpLister, dn.node)
-	// if err != nil {
-	// 	klog.Errorf("Error getting primary pool for node: %v", dn.node.Name)
-	// 	return err
-	// }
-	// var pool string = primaryPool.Name
-	var pool string = "testing"
+	primaryPool, err := helpers.GetPrimaryPoolForNode(dn.mcpLister, dn.node)
+	if err != nil {
+		klog.Errorf("Error getting primary pool for node: %v", dn.node.Name)
+		return err
+	}
+	var pool string = primaryPool.Name
+	// var pool string = "testing"
 
 	// err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
-	err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
+	err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
 		&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdatePostActionComplete, Reason: string(mcfgalphav1.MachineConfigNodeUpdateReloaded), Message: fmt.Sprintf("Node has reloaded service %s", serviceName)},
 		&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateReloaded, Reason: fmt.Sprintf("%s%s", string(mcfgalphav1.MachineConfigNodeUpdatePostActionComplete), string(mcfgalphav1.MachineConfigNodeUpdateReloaded)), Message: fmt.Sprintf("Upgrade required a service %s reload. Completed this this as a post update action.", serviceName)},
 		metav1.ConditionTrue,
@@ -171,13 +171,13 @@ func (dn *Daemon) performPostConfigChangeNodeDisruptionAction(postConfigChangeAc
 		logSystem("Performing post config change action: %v for config %s", action.Type, configName)
 
 		// TODO: Potentially consolidate down defining of `primaryPool` & `pool`
-		// primaryPool, err := helpers.GetPrimaryPoolForNode(dn.mcpLister, dn.node)
-		// if err != nil {
-		// 	klog.Errorf("Error getting primary pool for node: %v", dn.node.Name)
-		// 	return err
-		// }
-		// var pool string = primaryPool.Name
-		var pool string = "testing"
+		primaryPool, err := helpers.GetPrimaryPoolForNode(dn.mcpLister, dn.node)
+		if err != nil {
+			klog.Errorf("Error getting primary pool for node: %v", dn.node.Name)
+			return err
+		}
+		var pool string = primaryPool.Name
+		// var pool string = "testing"
 
 		switch action.Type {
 		case opv1.RebootStatusAction:
@@ -278,13 +278,13 @@ func (dn *Daemon) performPostConfigChangeNodeDisruptionAction(postConfigChangeAc
 // If at any point an error occurs, we reboot the node so that node has correct configuration.
 func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string, configName string) error {
 	// TODO: Potentially consolidate down defining of `primaryPool` & `pool`
-	// primaryPool, err := helpers.GetPrimaryPoolForNode(dn.mcpLister, dn.node)
-	// if err != nil {
-	// 	klog.Errorf("Error getting primary pool for node: %v", dn.node.Name)
-	// 	return err
-	// }
-	// var pool string = primaryPool.Name
-	var pool string = "testing"
+	primaryPool, err := helpers.GetPrimaryPoolForNode(dn.mcpLister, dn.node)
+	if err != nil {
+		klog.Errorf("Error getting primary pool for node: %v", dn.node.Name)
+		return err
+	}
+	var pool string = primaryPool.Name
+	// var pool string = "testing"
 
 	if ctrlcommon.InSlice(postConfigChangeActionReboot, postConfigChangeActions) {
 		err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
@@ -1120,13 +1120,13 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	klog.Infof("Checking Reconcilable for config %v to %v", oldConfigName, newConfigName)
 
 	// TODO: Potentially consolidate down defining of `primaryPool` & `pool`
-	// primaryPool, err := helpers.GetPrimaryPoolForNode(dn.mcpLister, dn.node)
-	// if err != nil {
-	// 	klog.Errorf("Error getting primary pool for node: %v", dn.node.Name)
-	// 	return err
-	// }
-	// var pool string = primaryPool.Name
-	var pool string = "testing"
+	primaryPool, err := helpers.GetPrimaryPoolForNode(dn.mcpLister, dn.node)
+	if err != nil {
+		klog.Errorf("Error getting primary pool for node: %v", dn.node.Name)
+		return err
+	}
+	var pool string = primaryPool.Name
+	// var pool string = "testing"
 
 	// checking for reconcilability
 	// make sure we can actually reconcile this state
