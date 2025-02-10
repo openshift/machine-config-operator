@@ -1479,7 +1479,7 @@ func maxUnavailable(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) (int, 
 	}
 	maxunavail, err := intstrutil.GetScaledValueFromIntOrPercent(&intOrPercent, len(nodes), false)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("\"maxUnavailable\" %v", err)
 	}
 	if maxunavail == 0 {
 		maxunavail = 1
