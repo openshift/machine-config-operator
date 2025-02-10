@@ -12,6 +12,7 @@ import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/assert"
@@ -51,7 +52,8 @@ func TestIsNodeReady(t *testing.T) {
 
 	nodeNames := []string{}
 	for _, node := range nodeList.Items {
-		if isNodeReady(&node) {
+		lns := ctrlcommon.NewLayeredNodeState(&node)
+		if lns.IsNodeReady() {
 			nodeNames = append(nodeNames, node.Name)
 		}
 	}
@@ -145,7 +147,9 @@ func TestGetUpdatedMachines(t *testing.T) {
 		currentConfig string
 		currentImage  string
 		updated       []*corev1.Node
-		layeredPool   bool
+		layered       bool
+		mosc          *mcfgv1.MachineOSConfig
+		mosb          *mcfgv1.MachineOSBuild
 	}{{
 		name:          "no nodes",
 		nodes:         []*corev1.Node{},
@@ -190,6 +194,9 @@ func TestGetUpdatedMachines(t *testing.T) {
 		updated: []*corev1.Node{
 			newLayeredNode("node-1", machineConfigV1, machineConfigV1, imageV1, imageV1),
 		},
+		layered: true,
+		mosc:    helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).WithMachineConfigPool("pool-1").MachineOSConfig(),
+		mosb:    helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
 	}, {
 		name: "2 layered nodes updated, 1 updating MachineConfig",
 		nodes: []*corev1.Node{
@@ -203,6 +210,9 @@ func TestGetUpdatedMachines(t *testing.T) {
 			newLayeredNode("node-1", machineConfigV1, machineConfigV1, imageV1, imageV1),
 			newLayeredNode("node-2", machineConfigV1, machineConfigV1, imageV1, imageV1),
 		},
+		layered: true,
+		mosc:    helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).WithMachineConfigPool("pool-1").MachineOSConfig(),
+		mosb:    helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
 	}, {
 		name: "2 layered nodes updated, 1 updating image",
 		nodes: []*corev1.Node{
@@ -216,6 +226,9 @@ func TestGetUpdatedMachines(t *testing.T) {
 			newLayeredNode("node-1", machineConfigV1, machineConfigV1, imageV1, imageV1),
 			newLayeredNode("node-2", machineConfigV1, machineConfigV1, imageV1, imageV1),
 		},
+		layered: true,
+		mosc:    helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).WithMachineConfigPool("pool-1").MachineOSConfig(),
+		mosb:    helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
 	}, {
 		name: "2 layered nodes updated, 1 updating, but one updated node is NotReady",
 		nodes: []*corev1.Node{
@@ -229,6 +242,9 @@ func TestGetUpdatedMachines(t *testing.T) {
 			newLayeredNode("node-1", machineConfigV1, machineConfigV1, imageV1, imageV1),
 			newLayeredNodeWithReady("node-2", machineConfigV1, machineConfigV1, imageV1, imageV1, corev1.ConditionFalse),
 		},
+		layered: true,
+		mosc:    helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).WithMachineConfigPool("pool-1").MachineOSConfig(),
+		mosb:    helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
 	}, {
 		name: "Layered pool with unlayered nodes",
 		nodes: []*corev1.Node{
@@ -244,6 +260,21 @@ func TestGetUpdatedMachines(t *testing.T) {
 			newLayeredNode("node-1", machineConfigV1, machineConfigV1, imageV1, imageV1),
 			newLayeredNodeWithReady("node-2", machineConfigV1, machineConfigV1, imageV1, imageV1, corev1.ConditionTrue),
 		},
+		layered: true,
+		mosc:    helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).WithMachineConfigPool("pool-1").MachineOSConfig(),
+		mosb:    helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
+	}, {
+		name: "Layered pool with image not built",
+		nodes: []*corev1.Node{
+			newNode("node-0", machineConfigV1, machineConfigV1),
+			newNode("node-1", machineConfigV1, machineConfigV1),
+			newNode("node-2", machineConfigV1, machineConfigV1),
+		},
+		currentConfig: machineConfigV1,
+		updated:       nil,
+		layered:       true,
+		mosc:          helpers.NewMachineOSConfigBuilder("mosc-1").WithMachineConfigPool("pool-1").MachineOSConfig(),
+		mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
 	}, {
 		name: "Unlayered pool with 1 layered node",
 		nodes: []*corev1.Node{
@@ -267,22 +298,14 @@ func TestGetUpdatedMachines(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			poolBuilder := helpers.NewMachineConfigPoolBuilder("").WithMachineConfig(test.currentConfig)
-			if test.layeredPool {
-				poolBuilder.WithLayeringEnabled()
-			}
+			pool := helpers.NewMachineConfigPoolBuilder("pool-1").WithMachineConfig(test.currentConfig).MachineConfigPool()
 
-			if test.currentImage != "" {
-				poolBuilder.WithImage(test.currentImage)
-			}
-
-			pool := poolBuilder.MachineConfigPool()
-
-			updated := getUpdatedMachines(pool, test.nodes, nil, nil, test.layeredPool)
+			updated := getUpdatedMachines(pool, test.nodes, test.mosc, test.mosb, test.layered)
 			assertExpectedNodes(t, getNamesFromNodes(test.updated), updated)
 
 			// This is a much tighter assertion than the one I added. Not sure if
 			// it's strictly required or not, so I'll leave it for now.
+
 			if !reflect.DeepEqual(updated, test.updated) {
 				t.Fatalf("mismatch expected: %v got %v", test.updated, updated)
 			}
@@ -303,6 +326,8 @@ func TestGetReadyMachines(t *testing.T) {
 		currentImage  string
 		ready         []*corev1.Node
 		layered       bool
+		mosc          *mcfgv1.MachineOSConfig
+		mosb          *mcfgv1.MachineOSBuild
 	}{{
 		name:          "no nodes",
 		nodes:         []*corev1.Node{},
@@ -355,6 +380,8 @@ func TestGetReadyMachines(t *testing.T) {
 		currentImage:  imageV1,
 		ready:         []*corev1.Node{newLayeredNode("node-1", machineConfigV1, machineConfigV1, imageV1, imageV1)},
 		layered:       true,
+		mosc:          helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).MachineOSConfig(),
+		mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
 	}, {
 		name: "2 layered nodes updated, one node has layering mismatch",
 		nodes: []*corev1.Node{
@@ -368,6 +395,8 @@ func TestGetReadyMachines(t *testing.T) {
 			newLayeredNode("node-1", machineConfigV1, machineConfigV1, imageV1, imageV1),
 		},
 		layered: true,
+		mosc:    helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).MachineOSConfig(),
+		mosb:    helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
 	},
 		{
 			name: "2 nodes updated, one node has layering mismatch",
@@ -379,9 +408,24 @@ func TestGetReadyMachines(t *testing.T) {
 			},
 			currentConfig: machineConfigV1,
 			ready: []*corev1.Node{
-				newNode("node-1", machineConfigV1, machineConfigV1),
+				newLayeredNode("node-3", machineConfigV1, machineConfigV1, imageV1, imageV1),
 			},
 			layered: true,
+			mosc:    helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).MachineOSConfig(),
+			mosb:    helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
+		},
+		{
+			name: "Layered pool with image not built",
+			nodes: []*corev1.Node{
+				newNode("node-0", machineConfigV1, machineConfigV1),
+				newNode("node-1", machineConfigV1, machineConfigV1),
+				newNode("node-2", machineConfigV1, machineConfigV1),
+			},
+			currentConfig: machineConfigV1,
+			ready:         nil,
+			layered:       true,
+			mosc:          helpers.NewMachineOSConfigBuilder("mosc-1").WithMachineConfigPool("pool-1").MachineOSConfig(),
+			mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
 		},
 	}
 
@@ -390,16 +434,8 @@ func TestGetReadyMachines(t *testing.T) {
 
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-
-			// If we declare a current image for our pool, the pool must be layered.
-			poolBuilder := helpers.NewMachineConfigPoolBuilder("").WithMachineConfig(test.currentConfig)
-			if test.currentImage != "" {
-				poolBuilder.WithImage(test.currentImage)
-			}
-
-			pool := poolBuilder.MachineConfigPool()
-
-			ready := getReadyMachines(pool, test.nodes, nil, nil, test.layered)
+			pool := helpers.NewMachineConfigPoolBuilder("").WithMachineConfig(test.currentConfig).MachineConfigPool()
+			ready := getReadyMachines(pool, test.nodes, test.mosc, test.mosb, test.layered)
 			if !reflect.DeepEqual(ready, test.ready) {
 				t.Fatalf("mismatch expected: %v got %v", test.ready, ready)
 			}
@@ -410,11 +446,9 @@ func TestGetReadyMachines(t *testing.T) {
 func TestGetUnavailableMachines(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name                 string
-		nodes                []*corev1.Node
-		unavail              []string
-		layeredPool          bool
-		layeredPoolWithImage bool
+		name    string
+		nodes   []*corev1.Node
+		unavail []string
 	}{{
 		name:    "no nodes",
 		nodes:   []*corev1.Node{},
@@ -482,8 +516,7 @@ func TestGetUnavailableMachines(t *testing.T) {
 			helpers.NewNodeBuilder("node-1").WithEqualConfigsAndImages(machineConfigV1, imageV1).Node(),
 			helpers.NewNodeBuilder("node-2").WithEqualConfigsAndImages(machineConfigV1, imageV1).WithNodeNotReady().Node(),
 		},
-		unavail:              []string{"node-0", "node-2"},
-		layeredPoolWithImage: true,
+		unavail: []string{"node-0", "node-2"},
 	}, {
 		name: "Mismatched unlayered node and layered pool with image available",
 		nodes: []*corev1.Node{
@@ -493,8 +526,7 @@ func TestGetUnavailableMachines(t *testing.T) {
 			helpers.NewNodeBuilder("node-3").WithEqualConfigs(machineConfigV0).WithNodeNotReady().Node(),
 			helpers.NewNodeBuilder("node-4").WithEqualConfigs(machineConfigV0).WithNodeReady().Node(),
 		},
-		unavail:              []string{"node-0", "node-2", "node-3"},
-		layeredPoolWithImage: true,
+		unavail: []string{"node-0", "node-2", "node-3"},
 	}, {
 		name: "Mismatched unlayered node and layered pool with image unavailable",
 		nodes: []*corev1.Node{
@@ -504,8 +536,7 @@ func TestGetUnavailableMachines(t *testing.T) {
 			helpers.NewNodeBuilder("node-3").WithEqualConfigs(machineConfigV0).WithNodeNotReady().Node(),
 			helpers.NewNodeBuilder("node-4").WithEqualConfigsAndImages(machineConfigV0, imageV1).WithNodeReady().Node(),
 		},
-		unavail:     []string{"node-0", "node-2", "node-3"},
-		layeredPool: true,
+		unavail: []string{"node-0", "node-2", "node-3"},
 	}, {
 		name: "Mismatched layered node and unlayered pool",
 		nodes: []*corev1.Node{
@@ -541,8 +572,7 @@ func TestGetUnavailableMachines(t *testing.T) {
 				WithNodeReady().
 				Node(),
 		},
-		layeredPoolWithImage: true,
-		unavail:              []string{"node-2", "node-3"},
+		unavail: []string{"node-2", "node-3"},
 	}, {
 		// Targets https://issues.redhat.com/browse/OCPBUGS-24705.
 		name: "nodes with desiredImage annotation that have not yet started working should not be considered available",
@@ -573,9 +603,7 @@ func TestGetUnavailableMachines(t *testing.T) {
 				WithNodeReady().
 				Node(),
 		},
-		layeredPool:          true,
-		layeredPoolWithImage: true,
-		unavail:              []string{"node-2", "node-3"},
+		unavail: []string{"node-2", "node-3"},
 	},
 	}
 
@@ -587,18 +615,9 @@ func TestGetUnavailableMachines(t *testing.T) {
 
 			pb := helpers.NewMachineConfigPoolBuilder("")
 
-			if test.layeredPool {
-				pb.WithLayeringEnabled()
-			}
-
-			if test.layeredPoolWithImage {
-				pb.WithLayeringEnabled()
-				pb.WithImage(imageV1)
-			}
-
 			pool := pb.MachineConfigPool()
 
-			unavailableNodes := getUnavailableMachines(test.nodes, pool, test.layeredPool, nil)
+			unavailableNodes := getUnavailableMachines(test.nodes, pool)
 			assertExpectedNodes(t, test.unavail, unavailableNodes)
 		})
 	}
