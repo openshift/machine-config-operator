@@ -69,6 +69,17 @@ contents:
         fall 2
     }
 
+    {{- if and (eq .Infra.Status.PlatformStatus.Type "OpenStack") (or (eq .IPFamilies "DualStack") (eq .IPFamilies "DualStackIPv6Primary")) }}
+    vrrp_sync_group VG1 {
+        group {
+            {{`{{ range $i, $config := .Configs }}`}}
+            {{`{{ .Cluster.Name }}`}}_API_{{`{{$i}}`}}
+            {{`{{ .Cluster.Name }}`}}_INGRESS_{{`{{$i}}`}}
+            {{`{{ end }}`}}
+        }
+    }
+    {{- end}}
+
     {{`{{ range $i, $config := .Configs }}`}}
     {{`{{$nonVirtualIP := .NonVirtualIP}}`}}
 
