@@ -92,7 +92,7 @@ type onClusterLayeringTestOpts struct {
 	useYumRepos bool
 
 	// Add Extensions for testing
-	useExtensions bool
+	extensions []string
 }
 
 func TestOnClusterLayeringOnOKD(t *testing.T) {
@@ -145,7 +145,7 @@ func TestOnClusterBuildRollsOutImageWithExtensionsInstalled(t *testing.T) {
 		customDockerfiles: map[string]string{
 			layeredMCPName: cowsayDockerfile,
 		},
-		useExtensions: true,
+		extensions: []string{"usbguard"},
 	})
 
 	cs := framework.NewClientSet("")
@@ -817,7 +817,7 @@ func prepareForOnClusterLayeringTest(t *testing.T, cs *framework.ClientSet, test
 		makeIdempotentAndRegister(t, helpers.CreateMCP(t, cs, testOpts.poolName))
 	}
 
-	if testOpts.useExtensions {
+	if len(testOpts.extensions) != 0 {
 		extensionsMC := &mcfgv1.MachineConfig{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:   "99-extensions",
@@ -827,7 +827,7 @@ func prepareForOnClusterLayeringTest(t *testing.T, cs *framework.ClientSet, test
 				Config: runtime.RawExtension{
 					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
 				},
-				Extensions: []string{"usbguard"},
+				Extensions: testOpts.extensions,
 			},
 		}
 
