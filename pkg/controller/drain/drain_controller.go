@@ -14,7 +14,7 @@ import (
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 
-	// "github.com/openshift/machine-config-operator/pkg/helpers"
+	"github.com/openshift/machine-config-operator/pkg/helpers"
 	"github.com/openshift/machine-config-operator/pkg/upgrademonitor"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -319,13 +319,13 @@ func (ctrl *Controller) syncNode(key string) error {
 	}
 
 	// TODO: Potentially consolidate down defining of `primaryPool` & `pool`
-	// primaryPool, err := helpers.GetPrimaryPoolForNode(ctrl.mcpLister, node)
-	// if err != nil {
-	// 	klog.Errorf("Error getting primary pool for node: %v", node.Name)
-	// 	return err
-	// }
-	// var pool string = primaryPool.Name
-	var pool string = "testing"
+	primaryPool, err := helpers.GetPrimaryPoolForNode(ctrl.mcpLister, node)
+	if err != nil {
+		klog.Errorf("Error getting primary pool for node: %v", node.Name)
+		return err
+	}
+	var pool string = primaryPool.Name
+	// var pool string = "testing"
 
 	desiredVerb := strings.Split(desiredState, "-")[0]
 	switch desiredVerb {
@@ -412,13 +412,13 @@ func (ctrl *Controller) drainNode(node *corev1.Node, drainer *drain.Helper) erro
 	}
 
 	// TODO: Potentially consolidate down defining of `primaryPool` & `pool`
-	// primaryPool, err := helpers.GetPrimaryPoolForNode(ctrl.mcpLister, node)
-	// if err != nil {
-	// 	klog.Errorf("Error getting primary pool for node: %v", node.Name)
-	// 	return err
-	// }
-	// var pool string = primaryPool.Name
-	var pool string = "testing"
+	primaryPool, err := helpers.GetPrimaryPoolForNode(ctrl.mcpLister, node)
+	if err != nil {
+		klog.Errorf("Error getting primary pool for node: %v", node.Name)
+		return err
+	}
+	var pool string = primaryPool.Name
+	// var pool string = "testing"
 
 	if !isOngoingDrain {
 		ctrl.logNode(node, "cordoning")
@@ -455,7 +455,7 @@ func (ctrl *Controller) drainNode(node *corev1.Node, drainer *drain.Helper) erro
 
 	// Attempt drain
 	ctrl.logNode(node, "initiating drain")
-	err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
+	err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
 		&upgrademonitor.Condition{State: v1alpha1.MachineConfigNodeUpdateExecuted, Reason: string(v1alpha1.MachineConfigNodeUpdateDrained), Message: "Draining Node as part of update executed phase"},
 		&upgrademonitor.Condition{State: v1alpha1.MachineConfigNodeUpdateDrained, Reason: fmt.Sprintf("%s%s", string(v1alpha1.MachineConfigNodeUpdateExecuted), string(v1alpha1.MachineConfigNodeUpdateDrained)), Message: fmt.Sprintf("Draining node. The drain will not be complete until desired drainer %s matches current drainer %s", node.Annotations[daemonconsts.DesiredDrainerAnnotationKey], node.Annotations[daemonconsts.LastAppliedDrainerAnnotationKey])},
 		metav1.ConditionUnknown,
