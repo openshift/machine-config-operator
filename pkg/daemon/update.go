@@ -126,7 +126,7 @@ func (dn *Daemon) executeReloadServiceNodeDisruptionAction(serviceName string, r
 	}
 
 	// TODO: Potentially consolidate down defining of `primaryPool` & `pool`
-	// TODO: Update for clsuter install
+	// TODO: Update for cluster install
 	// primaryPool, err := helpers.GetPrimaryPoolForNode(dn.mcpLister, dn.node)
 	// if err != nil {
 	// 	klog.Errorf("Error getting primary pool for node: %v", dn.node.Name)
@@ -172,7 +172,7 @@ func (dn *Daemon) performPostConfigChangeNodeDisruptionAction(postConfigChangeAc
 		logSystem("Performing post config change action: %v for config %s", action.Type, configName)
 
 		// TODO: Potentially consolidate down defining of `primaryPool` & `pool`
-		// TODO: Update for clsuter install
+		// TODO: Update for cluster install
 		// primaryPool, err := helpers.GetPrimaryPoolForNode(dn.mcpLister, dn.node)
 		// if err != nil {
 		// 	klog.Errorf("Error getting primary pool for node: %v", dn.node.Name)
@@ -280,7 +280,7 @@ func (dn *Daemon) performPostConfigChangeNodeDisruptionAction(postConfigChangeAc
 // If at any point an error occurs, we reboot the node so that node has correct configuration.
 func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string, configName string) error {
 	// TODO: Potentially consolidate down defining of `primaryPool` & `pool`
-	// TODO: Update for clsuter install
+	// TODO: Update for cluster install
 	// primaryPool, err := helpers.GetPrimaryPoolForNode(dn.mcpLister, dn.node)
 	// if err != nil {
 	// 	klog.Errorf("Error getting primary pool for node: %v", dn.node.Name)
@@ -1123,7 +1123,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	klog.Infof("Checking Reconcilable for config %v to %v", oldConfigName, newConfigName)
 
 	// TODO: Potentially consolidate down defining of `primaryPool` & `pool`
-	// TODO: Update for clsuter install
+	// TODO: Update for cluster install
 	// primaryPool, err := helpers.GetPrimaryPoolForNode(dn.mcpLister, dn.node)
 	// if err != nil {
 	// 	klog.Errorf("Error getting primary pool for node: %v", dn.node.Name)
