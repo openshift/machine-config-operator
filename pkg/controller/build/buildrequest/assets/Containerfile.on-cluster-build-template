@@ -11,6 +11,9 @@ RUN mkdir -p /etc/machine-config-daemon && \
 	cat /tmp/machineconfig.json.gz | base64 -d | gunzip - > /etc/machine-config-daemon/currentconfig
 
 FROM {{.BaseOSImage}} AS configs
+RUN dnf install -y fuse-overlayfs && \
+    mkdir -p /etc/containers && \
+    echo -e "[storage]\ndriver = \"overlay\"\n\n[storage.options]\nmount_program = \"/usr/bin/fuse-overlayfs\"" > /etc/containers/storage.conf
 # Copy the extracted MachineConfig into the expected place in the image.
 COPY --from=extract /etc/machine-config-daemon/currentconfig /etc/machine-config-daemon/currentconfig
 # Do the ignition live-apply, extracting the Ignition config from the MachineConfig.
@@ -34,8 +37,34 @@ skip_if_unavailable=False" > /etc/yum.repos.d/coreos-extensions.repo && \
     echo "Installing extension packages: $extensions" && \
     rpm-ostree install $extensions && \
     rm /etc/yum.repos.d/coreos-extensions.repo && \
-    systemd-tmpfiles --create
-RUN ostree container commit
+    # Generate tmpfiles.d entries with logging
+    echo "=== Identifying layered packages ===" && \
+    layered_packages=$(rpm-ostree status --json | jq -r '.deployments[] | select(.booted | not) | .packages[]' | sort -u) && \
+    if [ -z "$layered_packages" ]; then \
+    echo "No layered packages found via rpm-ostree status; falling back to rpm -qa" && \
+    layered_packages=$(rpm -qa); \
+    fi && \
+    echo "Layered packages: $layered_packages" && \
+    for pkg in $layered_packages; do \
+        echo "Processing package: $pkg"; \
+        tmpfile="/usr/lib/tmpfiles.d/${pkg}.conf"; \
+        echo "Checking directories for: $pkg"; \
+        rpm -q -l "$pkg" | grep -E '^(/var|/run|/tmp).*/$' | while read dir; do \
+            dir=${dir%/}; \
+            echo "Found ephemeral directory: $dir"; \
+            echo "d $dir 0755 root root -"; \
+        done > "$tmpfile"; \
+        if [ -s "$tmpfile" ]; then \
+            echo "Created tmpfiles.d config for $pkg:"; \
+            cat "$tmpfile"; \
+        else \
+            echo "No ephemeral directories found for $pkg, removing empty file"; \
+            rm -f "$tmpfile"; \
+        fi; \
+    done && \
+    echo "=== Final tmpfiles.d configuration ===" && \
+    ls -l /usr/lib/tmpfiles.d/*.conf && \
+    ostree container commit && umount /tmp/mco-extensions/os-extensions-content || true
 {{end}}
 
 COPY ./openshift-config-user-ca-bundle.crt /etc/pki/ca-trust/source/anchors/openshift-config-user-ca-bundle.crt
