@@ -32,6 +32,15 @@ var buildahBuildScript string
 //go:embed assets/podman-build.sh
 var podmanBuildScript string
 
+//go:embed assets/inner-build-script.sh
+var innerBuildScript string
+
+//go:embed assets/install-extensions.sh
+var installExtensionsScript string
+
+//go:embed assets/coreos-extensions.repo
+var coreosExtensionsRepo string
+
 const (
 	// Filename for the machineconfig JSON tarball expected by the build job
 	machineConfigJSONFilename string = "machineconfig.json.gz"
@@ -136,19 +145,33 @@ func (br buildRequestImpl) canonicalizeSecret(name string, secret *corev1.Secret
 	return canonicalized, nil
 }
 
-// Renders our Containerfile and injects it into a ConfigMap for consumption by the image builder.
+// Renders our Containerfile and injects it and the supporting build scripts /
+// files into a ConfigMap for consumption by the image builder.
 func (br buildRequestImpl) containerfileToConfigMap() (*corev1.ConfigMap, error) {
 	containerfile, err := br.renderContainerfile()
 	if err != nil {
 		return nil, fmt.Errorf("could not get rendered containerfile: %w", err)
 	}
 
+	extPkgs, err := br.opts.getExtensionsPackages()
+	if err != nil {
+		return nil, err
+	}
+
+	data := map[string]string{
+		"Containerfile":         containerfile,
+		"inner-build-script.sh": innerBuildScript,
+	}
+
+	if len(extPkgs) != 0 {
+		data["install-extensions.sh"] = installExtensionsScript
+		data["coreos-extensions.repo"] = coreosExtensionsRepo
+	}
+
 	configmap := &corev1.ConfigMap{
 		TypeMeta:   metav1.TypeMeta{},
 		ObjectMeta: br.getObjectMeta(br.getContainerfileConfigMapName()),
-		Data: map[string]string{
-			"Containerfile": containerfile,
-		},
+		Data:       data,
 	}
 
 	return configmap, nil

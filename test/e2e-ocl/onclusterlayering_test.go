@@ -91,6 +91,9 @@ type onClusterLayeringTestOpts struct {
 
 	// Inject YUM repo information from a Centos 9 stream container
 	useYumRepos bool
+
+	// Add Extensions for testing
+	extensions []string
 }
 
 func TestOnClusterLayeringOnOKD(t *testing.T) {
@@ -143,6 +146,7 @@ func TestOnClusterBuildRollsOutImage(t *testing.T) {
 		customDockerfiles: map[string]string{
 			layeredMCPName: cowsayDockerfile,
 		},
+		extensions: []string{"usbguard"},
 	})
 
 	cs := framework.NewClientSet("")
@@ -793,6 +797,30 @@ func prepareForOnClusterLayeringTest(t *testing.T, cs *framework.ClientSet, test
 		makeIdempotentAndRegister(t, helpers.CreatePoolWithNode(t, cs, testOpts.poolName, *testOpts.targetNode))
 	} else {
 		makeIdempotentAndRegister(t, helpers.CreateMCP(t, cs, testOpts.poolName))
+	}
+
+	if len(testOpts.extensions) != 0 {
+		extensionsMC := &mcfgv1.MachineConfig{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   "99-extensions",
+				Labels: helpers.MCLabelForRole(testOpts.poolName),
+			},
+			Spec: mcfgv1.MachineConfigSpec{
+				Config: runtime.RawExtension{
+					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
+				},
+				Extensions: testOpts.extensions,
+			},
+		}
+
+		helpers.SetMetadataOnObject(t, extensionsMC)
+		// Apply the extensions MC
+		applyMC(t, cs, extensionsMC)
+
+		// Wait for rendered config to finish creating
+		renderedConfig, err := helpers.WaitForRenderedConfig(t, cs, testOpts.poolName, extensionsMC.Name)
+		require.NoError(t, err)
+		t.Logf("Finished rendering config %s", renderedConfig)
 	}
 
 	_, err := helpers.WaitForRenderedConfig(t, cs, testOpts.poolName, "00-worker")

@@ -1,7 +1,9 @@
 package buildrequest
 
 import (
+	"flag"
 	"fmt"
+	"strings"
 	"testing"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
@@ -17,8 +19,15 @@ import (
 )
 
 const (
-	mcoImagePullspec = "registry.hostname.com/org/repo@sha256:87980e0edfc86d01182f70c53527f74b5b01df00fe6d47668763d228d4de43a9"
+	mcoImagePullspec  = "registry.hostname.com/org/repo@sha256:87980e0edfc86d01182f70c53527f74b5b01df00fe6d47668763d228d4de43a9"
+	baseImagePullspec = "registry.hostname.com/org/repo@sha256:5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03"
+	extImagePullspec  = "registry.hostname.com/org/repo@sha256:e0fcb915febfed55c9161502bc48c887811deb4dfc5d5c7d015f367c73b9756e"
 )
+
+// Optional flag that will print the rendered Containerfile for each test case.
+// To use it, run the test suite like this:
+// $ go test -v . -print-containerfile
+var printContainerfile = flag.Bool("print-containerfile", false, "Print the rendered Containerfile")
 
 // Validates that if an invalid extension is provided that the ConfigMap
 // generation fails and the error contains the names of the invalid extensions.
@@ -42,13 +51,25 @@ func TestBuildRequestInvalidExtensions(t *testing.T) {
 func TestBuildRequest(t *testing.T) {
 	t.Parallel()
 
-	osImageURLConfig := fixtures.OSImageURLConfig()
-
 	expectedContents := func() []string {
 		return []string{
-			fmt.Sprintf("FROM %s AS extract", osImageURLConfig.BaseOSContainerImage),
-			fmt.Sprintf("FROM %s AS configs", osImageURLConfig.BaseOSContainerImage),
-			fmt.Sprintf("LABEL baseOSContainerImage=%s", osImageURLConfig.BaseOSContainerImage),
+			fmt.Sprintf("FROM %s AS extract", baseImagePullspec),
+			fmt.Sprintf("FROM %s AS configs", baseImagePullspec),
+			fmt.Sprintf("LABEL baseOSContainerImage=%s", baseImagePullspec),
+		}
+	}
+
+	expectedExtensionsContents := func(extPackages []string) []string {
+		return []string{
+			fmt.Sprintf("RUN --mount=type=bind,from=%s", extImagePullspec),
+			"--mount=type=bind,from=extract,source=/etc/yum.repos.d/coreos-extensions.repo,target=/etc/yum.repos.d/coreos-extensions.repo,bind-propagation=rshared,rw,z",
+			"--mount=type=bind,from=extract,source=/tmp/install-extensions.sh,target=/tmp/install-extensions.sh,bind-propagation=rshared,rw,z",
+			"COPY ./coreos-extensions.repo /etc/yum.repos.d/coreos-extensions.repo",
+			"COPY ./install-extensions.sh /tmp/install-extensions.sh",
+			"RUN chmod 0644 /etc/yum.repos.d/coreos-extensions.repo",
+			"chmod +x /tmp/install-extensions.sh",
+			fmt.Sprintf("LABEL extensionsImage=%s", extImagePullspec),
+			fmt.Sprintf("/tmp/install-extensions.sh %s", strings.Join(extPackages, " ")),
 		}
 	}
 
@@ -65,10 +86,8 @@ func TestBuildRequest(t *testing.T) {
 				opts.MachineConfig.Spec.Extensions = []string{"usbguard"}
 				return opts
 			},
-			expectedContainerfileContents: append(expectedContents(), []string{
-				fmt.Sprintf("RUN --mount=type=bind,from=%s", osImageURLConfig.BaseOSExtensionsContainerImage),
-				`extensions="usbguard"`,
-			}...),
+			expectedContainerfileContents: append(expectedContents(),
+				expectedExtensionsContents([]string{"usbguard"})...),
 		},
 		{
 			name: "With extensions image and resolved extensions packages",
@@ -77,10 +96,8 @@ func TestBuildRequest(t *testing.T) {
 				opts.MachineConfig.Spec.Extensions = []string{"kerberos", "usbguard"}
 				return opts
 			},
-			expectedContainerfileContents: append(expectedContents(), []string{
-				fmt.Sprintf("RUN --mount=type=bind,from=%s", osImageURLConfig.BaseOSExtensionsContainerImage),
-				`extensions="krb5-workstation libkadm5 usbguard"`,
-			}...),
+			expectedContainerfileContents: append(expectedContents(),
+				expectedExtensionsContents([]string{"krb5-workstation", "libkadm5", "usbguard"})...),
 		},
 		{
 			name: "Missing extensions image and extensions",
@@ -90,10 +107,7 @@ func TestBuildRequest(t *testing.T) {
 				opts.MachineConfig.Spec.Extensions = []string{"usbguard"}
 				return opts
 			},
-			unexpectedContainerfileContents: []string{
-				fmt.Sprintf("RUN --mount=type=bind,from=%s", osImageURLConfig.BaseOSContainerImage),
-				"extensions=\"usbguard\"",
-			},
+			unexpectedContainerfileContents: expectedExtensionsContents([]string{}),
 		},
 		{
 			name: "Has EtcPkiRpmGpgKeys",
@@ -144,7 +158,13 @@ func TestBuildRequest(t *testing.T) {
 
 			assert.Equal(t, opts, br.Opts())
 
+			assertContainerfileConfigMap(t, configmaps[0], opts)
+
 			containerfile := configmaps[0].Data["Containerfile"]
+
+			if printContainerfile != nil && *printContainerfile == true {
+				t.Log(containerfile)
+			}
 
 			if len(testCase.expectedContainerfileContents) == 0 {
 				testCase.expectedContainerfileContents = append(expectedContents(), []string{
@@ -166,7 +186,6 @@ func TestBuildRequest(t *testing.T) {
 			_, err = NewBuilder(buildJob)
 			assert.NoError(t, err)
 
-			assert.Equal(t, "containerfile-worker-afc35db0f874c9bfdc586e6ba39f1504", configmaps[0].Name)
 			assert.Equal(t, "mc-worker-afc35db0f874c9bfdc586e6ba39f1504", configmaps[1].Name)
 			assert.Equal(t, "build-worker-afc35db0f874c9bfdc586e6ba39f1504", buildJob.Name)
 
@@ -196,6 +215,25 @@ func TestBuildRequest(t *testing.T) {
 
 			assertBuildJobIsCorrect(t, buildJob, opts)
 		})
+	}
+}
+
+func assertContainerfileConfigMap(t *testing.T, configmap *corev1.ConfigMap, opts BuildRequestOpts) {
+	t.Helper()
+
+	assert.Equal(t, "containerfile-worker-afc35db0f874c9bfdc586e6ba39f1504", configmap.Name)
+	assert.Equal(t, configmap.Data["inner-build-script.sh"], innerBuildScript)
+
+	if opts.MachineConfig.Spec.Extensions != nil {
+		// If we have extensions, then we should expect the following keys / values to be present.
+		assert.Contains(t, configmap.Data, "install-extensions.sh")
+		assert.Contains(t, configmap.Data, "coreos-extensions.repo")
+		assert.Equal(t, configmap.Data["install-extensions.sh"], installExtensionsScript)
+		assert.Equal(t, configmap.Data["coreos-extensions.repo"], coreosExtensionsRepo)
+	} else {
+		// Otherwise, we should expect them not to be present.
+		assert.NotContains(t, configmap.Data, "install-extensions.sh")
+		assert.NotContains(t, configmap.Data, "coreos-extensions.repo")
 	}
 }
 
@@ -235,7 +273,7 @@ func assertBuildJobIsCorrect(t *testing.T, buildJob *batchv1.Job, opts BuildRequ
 	assert.Equal(t, buildJob.Spec.Template.Spec.Containers[0].Image, mcoImagePullspec)
 	expectedPullspecs := []string{
 		"base-os-image-from-machineosconfig",
-		fixtures.OSImageURLConfig().BaseOSContainerImage,
+		baseImagePullspec,
 	}
 
 	assert.Contains(t, expectedPullspecs, buildJob.Spec.Template.Spec.Containers[1].Image)
@@ -311,6 +349,11 @@ RUN rpm-ostree install && \
 	legacySecret := `{"registry.hostname.com": {"username": "user", "password": "s3kr1t", "auth": "s00pers3kr1t", "email": "user@hostname.com"}}`
 	newSecret := `{"auths":` + legacySecret + `}`
 
+	// Inject our own pullspecs for easier assertions.
+	osImageURLConfig := fixtures.OSImageURLConfig()
+	osImageURLConfig.BaseOSContainerImage = baseImagePullspec
+	osImageURLConfig.BaseOSExtensionsContainerImage = extImagePullspec
+
 	return BuildRequestOpts{
 		MachineConfig:   &mcfgv1.MachineConfig{},
 		MachineOSConfig: layeredObjects.MachineOSConfigBuilder.MachineOSConfig(),
@@ -320,7 +363,7 @@ RUN rpm-ostree install && \
 				MachineConfigOperator: mcoImagePullspec,
 			},
 		},
-		OSImageURLConfig: fixtures.OSImageURLConfig(),
+		OSImageURLConfig: osImageURLConfig,
 		BaseImagePullSecret: &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "base-image-pull-secret",
