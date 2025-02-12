@@ -37,12 +37,23 @@ skip_if_unavailable=False" > /etc/yum.repos.d/coreos-extensions.repo && \
     echo "Installing extension packages: $extensions" && \
     rpm-ostree install $extensions && \
     rm /etc/yum.repos.d/coreos-extensions.repo && \
-    # Explicitly create USBGuard tmpfiles.d configuration
-    echo "=== Creating required tmpfiles.d configurations ===" && \
-    (if rpm -q usbguard; then \
-        echo "d /var/log/usbguard 0755 root root -" > /usr/lib/tmpfiles.d/usbguard.conf && \
-        echo "Created USBGuard tmpfiles.d config"; \
-    fi) && \
+    echo "=== Processing tmpfiles.d configurations ===" && \
+    tmp_dir="/usr/lib/tmpfiles.d" && \
+    # Find all tmpfiles.d configs from installed packages
+    find $tmp_dir -name '*.conf' -print > /tmp/existing_tmpfiles.txt && \
+    # Generate missing configurations for known patterns
+    rpm -qa | while read pkg; do \
+        echo "Analyzing package: $pkg"; \
+        # Check for common directory patterns in package files
+        rpm -ql $pkg | grep -oP '^(/var|/run|/tmp)/.*/' | sort -u | while read dir; do \
+            dir=${dir%/}; \
+            conf_name=$(echo "$dir" | tr '/' '_')".conf"; \
+            if [ ! -f "$tmp_dir/$conf_name" ] && ! grep -q "$dir" /tmp/existing_tmpfiles.txt; then \
+                echo "d $dir 0755 root root -" > "$tmp_dir/$conf_name"; \
+                echo "Generated tmpfiles.d for $dir"; \
+            fi; \
+        done; \
+    done && \
     # Cleanup mount properly
     echo "=== Final tmpfiles.d configuration ===" && \
     ls -l /usr/lib/tmpfiles.d/*.conf && \
