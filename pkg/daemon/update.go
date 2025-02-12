@@ -43,8 +43,7 @@ import (
 	pivottypes "github.com/openshift/machine-config-operator/pkg/daemon/pivot/types"
 	pivotutils "github.com/openshift/machine-config-operator/pkg/daemon/pivot/utils"
 	"github.com/openshift/machine-config-operator/pkg/daemon/runtimeassets"
-
-	// "github.com/openshift/machine-config-operator/pkg/helpers"
+	"github.com/openshift/machine-config-operator/pkg/helpers"
 	"github.com/openshift/machine-config-operator/pkg/upgrademonitor"
 )
 
@@ -127,16 +126,16 @@ func (dn *Daemon) executeReloadServiceNodeDisruptionAction(serviceName string, r
 
 	// TODO: Potentially consolidate down defining of `primaryPool` & `pool`
 	// TODO: Update for cluster install
-	// primaryPool, err := helpers.GetPrimaryPoolForNode(dn.mcpLister, dn.node)
-	// if err != nil {
-	// 	klog.Errorf("Error getting primary pool for node: %v", dn.node.Name)
-	// 	return err
-	// }
-	// var pool string = primaryPool.Name
-	var pool string = "testing-update-1"
+	primaryPool, err := helpers.GetPrimaryPoolForNode(dn.mcpLister, dn.node)
+	if err != nil {
+		klog.Errorf("Error getting primary pool for node: %v", dn.node.Name)
+		return err
+	}
+	var pool string = primaryPool.Name
+	// var pool string = "testing-update-1"
 
 	// err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
-	err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
+	err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
 		&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdatePostActionComplete, Reason: string(mcfgalphav1.MachineConfigNodeUpdateReloaded), Message: fmt.Sprintf("Node has reloaded service %s", serviceName)},
 		&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateReloaded, Reason: fmt.Sprintf("%s%s", string(mcfgalphav1.MachineConfigNodeUpdatePostActionComplete), string(mcfgalphav1.MachineConfigNodeUpdateReloaded)), Message: fmt.Sprintf("Upgrade required a service %s reload. Completed this this as a post update action.", serviceName)},
 		metav1.ConditionTrue,
