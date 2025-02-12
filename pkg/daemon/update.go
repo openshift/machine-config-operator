@@ -133,7 +133,7 @@ func (dn *Daemon) executeReloadServiceNodeDisruptionAction(serviceName string, r
 	// 	return err
 	// }
 	// var pool string = primaryPool.Name
-	var pool string = "testing"
+	var pool string = "testing-update-1"
 
 	// err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
 	err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
@@ -179,7 +179,7 @@ func (dn *Daemon) performPostConfigChangeNodeDisruptionAction(postConfigChangeAc
 		// 	return err
 		// }
 		// var pool string = primaryPool.Name
-		var pool string = "testing"
+		var pool string = "testing-update-2"
 
 		switch action.Type {
 		case opv1.RebootStatusAction:
@@ -287,7 +287,7 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 	// 	return err
 	// }
 	// var pool string = primaryPool.Name
-	var pool string = "testing"
+	var pool string = "testing-update-3"
 
 	if ctrlcommon.InSlice(postConfigChangeActionReboot, postConfigChangeActions) {
 		err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
@@ -1130,7 +1130,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	// 	return err
 	// }
 	// var pool string = primaryPool.Name
-	var pool string = "testing"
+	var pool string = "testing-update-4"
 
 	// checking for reconcilability
 	// make sure we can actually reconcile this state

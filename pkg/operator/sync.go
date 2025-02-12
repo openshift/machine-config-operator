@@ -780,6 +780,7 @@ func (optr *Operator) syncMachineConfigNodes(_ *renderConfig, _ *configv1.Cluste
 		// }
 
 		// TODO: Potentially consolidate down defining of `primaryPool` & `pool`
+		// TODO: Update for cluster install
 		// primaryPool, err := helpers.GetPrimaryPoolForNode(optr.mcpLister, node)
 		// if err != nil {
 		// 	klog.Errorf("Error getting primary pool for node: %v", node.Name)
