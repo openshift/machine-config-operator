@@ -37,34 +37,17 @@ skip_if_unavailable=False" > /etc/yum.repos.d/coreos-extensions.repo && \
     echo "Installing extension packages: $extensions" && \
     rpm-ostree install $extensions && \
     rm /etc/yum.repos.d/coreos-extensions.repo && \
-    # Generate tmpfiles.d entries with logging
-    echo "=== Identifying layered packages ===" && \
-    layered_packages=$(rpm-ostree status --json | jq -r '.deployments[] | select(.booted | not) | .packages[]' | sort -u) && \
-    if [ -z "$layered_packages" ]; then \
-    echo "No layered packages found via rpm-ostree status; falling back to rpm -qa" && \
-    layered_packages=$(rpm -qa); \
-    fi && \
-    echo "Layered packages: $layered_packages" && \
-    for pkg in $layered_packages; do \
-        echo "Processing package: $pkg"; \
-        tmpfile="/usr/lib/tmpfiles.d/${pkg}.conf"; \
-        echo "Checking directories for: $pkg"; \
-        rpm -q -l "$pkg" | grep -E '^(/var|/run|/tmp).*/$' | while read dir; do \
-            dir=${dir%/}; \
-            echo "Found ephemeral directory: $dir"; \
-            echo "d $dir 0755 root root -"; \
-        done > "$tmpfile"; \
-        if [ -s "$tmpfile" ]; then \
-            echo "Created tmpfiles.d config for $pkg:"; \
-            cat "$tmpfile"; \
-        else \
-            echo "No ephemeral directories found for $pkg, removing empty file"; \
-            rm -f "$tmpfile"; \
-        fi; \
-    done && \
+    # Explicitly create USBGuard tmpfiles.d configuration
+    echo "=== Creating required tmpfiles.d configurations ===" && \
+    (if rpm -q usbguard; then \
+        echo "d /var/log/usbguard 0755 root root -" > /usr/lib/tmpfiles.d/usbguard.conf && \
+        echo "Created USBGuard tmpfiles.d config"; \
+    fi) && \
+    # Cleanup mount properly
     echo "=== Final tmpfiles.d configuration ===" && \
     ls -l /usr/lib/tmpfiles.d/*.conf && \
-    ostree container commit && umount /tmp/mco-extensions/os-extensions-content || true
+    ostree container commit && \
+    umount /tmp/mco-extensions/os-extensions-content || true
 {{end}}
 
 COPY ./openshift-config-user-ca-bundle.crt /etc/pki/ca-trust/source/anchors/openshift-config-user-ca-bundle.crt
