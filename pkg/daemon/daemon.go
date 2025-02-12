@@ -51,11 +51,9 @@ import (
 	mcoResourceRead "github.com/openshift/machine-config-operator/lib/resourceread"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
-
-	// "github.com/openshift/machine-config-operator/pkg/helpers"
-	"github.com/openshift/machine-config-operator/pkg/upgrademonitor"
-
 	"github.com/openshift/machine-config-operator/pkg/daemon/osrelease"
+	"github.com/openshift/machine-config-operator/pkg/helpers"
+	"github.com/openshift/machine-config-operator/pkg/upgrademonitor"
 )
 
 // Daemon is the dispatch point for the functions of the agent on the
@@ -714,13 +712,13 @@ func (dn *Daemon) syncNode(key string) error {
 	}
 
 	// TODO: Potentially consolidate down defining of `primaryPool` & `pool`
-	// primaryPool, err := helpers.GetPrimaryPoolForNode(dn.mcpLister, node)
-	// if err != nil {
-	// 	klog.Errorf("Error getting primary pool for node: %v", node.Name)
-	// 	return err
-	// }
-	// var pool string = primaryPool.Name
-	var pool string = "testing"
+	primaryPool, err := helpers.GetPrimaryPoolForNode(dn.mcpLister, node)
+	if err != nil {
+		klog.Errorf("Error getting primary pool for node: %v", node.Name)
+		return err
+	}
+	var pool string = primaryPool.Name
+	// var pool string = "testing"
 
 	if node.Annotations[constants.MachineConfigDaemonPostConfigAction] == constants.MachineConfigDaemonStateRebooting {
 		klog.Info("Detected Rebooting Annotation, applying MCN.")
@@ -2323,13 +2321,13 @@ func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, bool, erro
 		// let's mark it done!
 
 		// TODO: Potentially consolidate down defining of `primaryPool` & `pool`
-		// primaryPool, err := helpers.GetPrimaryPoolForNode(dn.mcpLister, dn.node)
-		// if err != nil {
-		// 	klog.Errorf("Error getting primary pool for node: %v", dn.node.Name)
-		// 	return missingODC, inDesiredConfig, err
-		// }
-		// var pool string = primaryPool.Name
-		var pool string = "testing"
+		primaryPool, err := helpers.GetPrimaryPoolForNode(dn.mcpLister, dn.node)
+		if err != nil {
+			klog.Errorf("Error getting primary pool for node: %v", dn.node.Name)
+			return missingODC, inDesiredConfig, err
+		}
+		var pool string = primaryPool.Name
+		// var pool string = "testing"
 
 		err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
 			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeResumed, Reason: string(mcfgalphav1.MachineConfigNodeResumed), Message: fmt.Sprintf("In desired config %s. Resumed normal operations. Applying proper annotations.", state.currentConfig.Name)},
