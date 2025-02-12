@@ -223,7 +223,7 @@ func (nw *clusterNodeWriter) SetUnreconcilable(err error) error {
 // SetDegraded logs the error and sets the state to Degraded.
 // Returns an error if it couldn't set the annotation.
 func (nw *clusterNodeWriter) SetDegraded(err error) error {
-	klog.Errorf("Marking Degraded due to: %v", err)
+	klog.Errorf("Marking Degraded due to: %q", err)
 	// truncatedErr caps error message at a reasonable length to limit the risk of hitting the total
 	// annotation size limit (256 kb) at any point
 	truncatedErr := fmt.Sprintf("%.2000s", err.Error())
