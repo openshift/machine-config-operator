@@ -169,7 +169,6 @@ func (dn *Daemon) performPostConfigChangeNodeDisruptionAction(postConfigChangeAc
 		logSystem("Performing post config change action: %v for config %s", action.Type, configName)
 
 		// TODO: Potentially consolidate down defining of `primaryPool` & `pool`
-		// TODO: Update for cluster install
 		primaryPool, err := helpers.GetPrimaryPoolForNode(dn.mcpLister, dn.node)
 		if err != nil {
 			klog.Errorf("Error getting primary pool for node: %v", dn.node.Name)
@@ -1121,13 +1120,13 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 
 	// TODO: Potentially consolidate down defining of `primaryPool` & `pool`
 	// TODO: Update for cluster install
-	// primaryPool, err := helpers.GetPrimaryPoolForNode(dn.mcpLister, dn.node)
-	// if err != nil {
-	// 	klog.Errorf("Error getting primary pool for node: %v", dn.node.Name)
-	// 	return err
-	// }
-	// var pool string = primaryPool.Name
-	var pool string = "testing-update-4"
+	primaryPool, err := helpers.GetPrimaryPoolForNode(dn.mcpLister, dn.node)
+	if err != nil {
+		klog.Errorf("Error getting primary pool for node: %v", dn.node.Name)
+		return err
+	}
+	var pool string = primaryPool.Name
+	// var pool string = "testing-update-4"
 
 	// checking for reconcilability
 	// make sure we can actually reconcile this state
