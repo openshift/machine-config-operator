@@ -37,6 +37,8 @@ contents:
         - "{{- range $index, $ip := cloudPlatformAPIIntLoadBalancerIPs .}}{{ if gt $index 0 }},{{end}}{{$ip}}{{end}}"
         - "--cloud-ingress-lb-ips"
         - "{{- range $index, $ip := cloudPlatformIngressLoadBalancerIPs .}}{{ if gt $index 0 }},{{end}}{{$ip}}{{end}}"
+        - "--platform-type"
+        - "{{platformType .}}"
         - "/config"
         - "--out-dir"
         - "/etc/coredns"
@@ -94,6 +96,8 @@ contents:
         - "{{- range $index, $ip := cloudPlatformAPIIntLoadBalancerIPs .}}{{ if gt $index 0 }},{{end}}{{$ip}}{{end}}"
         - "--cloud-ingress-lb-ips"
         - "{{- range $index, $ip := cloudPlatformIngressLoadBalancerIPs .}}{{ if gt $index 0 }},{{end}}{{$ip}}{{end}}"
+        - "--platform-type"
+        - "{{platformType .}}"
         resources:
           requests:
             cpu: 100m
