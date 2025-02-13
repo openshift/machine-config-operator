@@ -35,6 +35,7 @@ contents:
     drop_infra_ctr = true
 
     [crio.runtime.runtimes.runc]
+    runtime_root = "/run/runc"
     allowed_annotations = [
         "io.containers.trace-syscall",
         "io.kubernetes.cri-o.Devices",
