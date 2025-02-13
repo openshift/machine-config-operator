@@ -780,24 +780,10 @@ func (optr *Operator) syncMachineConfigNodes(_ *renderConfig, _ *configv1.Cluste
 		// }
 
 		// // TODO: Potentially consolidate down defining of `primaryPool` & `pool`
-		// // TODO: Update for cluster install
 		primaryPool, err := helpers.GetPrimaryPoolForNode(optr.mcpLister, node)
-		// var pool string = primaryPool.Name
 		if err != nil {
-			klog.Errorf("could not get primary pool for: %v, getting pool by default node label", node.Name)
+			klog.Errorf("could not get primary pool for: %v", node.Name)
 			return err
-			// // On cluster install use the default node label for determining node's mcp
-			// var ok bool
-			// if _, ok = node.Labels["node-role.kubernetes.io/worker"]; ok {
-			// 	pool = "worker-test"
-			// } else if _, ok = node.Labels["node-role.kubernetes.io/master"]; ok {
-			// 	pool = "master-test"
-			// } else if _, ok = node.Labels["node-role.kubernetes.io/arbiter"]; ok {
-			// 	pool = "arbiter-test"
-			// } else {
-			// 	klog.Errorf("could not get mcp for: %v", node.Name)
-			// 	return err
-			// }
 		}
 		var pool string = primaryPool.Name
 		// var pool string = "testing-sync"
