@@ -125,7 +125,6 @@ func (dn *Daemon) executeReloadServiceNodeDisruptionAction(serviceName string, r
 	}
 
 	// TODO: Potentially consolidate down defining of `primaryPool` & `pool`
-	// TODO: Update for cluster install
 	primaryPool, err := helpers.GetPrimaryPoolForNode(dn.mcpLister, dn.node)
 	if err != nil {
 		klog.Errorf("Error getting primary pool for node: %v", dn.node.Name)
@@ -171,13 +170,13 @@ func (dn *Daemon) performPostConfigChangeNodeDisruptionAction(postConfigChangeAc
 
 		// TODO: Potentially consolidate down defining of `primaryPool` & `pool`
 		// TODO: Update for cluster install
-		// primaryPool, err := helpers.GetPrimaryPoolForNode(dn.mcpLister, dn.node)
-		// if err != nil {
-		// 	klog.Errorf("Error getting primary pool for node: %v", dn.node.Name)
-		// 	return err
-		// }
-		// var pool string = primaryPool.Name
-		var pool string = "testing-update-2"
+		primaryPool, err := helpers.GetPrimaryPoolForNode(dn.mcpLister, dn.node)
+		if err != nil {
+			klog.Errorf("Error getting primary pool for node: %v", dn.node.Name)
+			return err
+		}
+		var pool string = primaryPool.Name
+		// var pool string = "testing-update-2"
 
 		switch action.Type {
 		case opv1.RebootStatusAction:
