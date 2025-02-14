@@ -23,8 +23,6 @@ RUN container="oci" exec -a ignition-apply /usr/lib/dracut/modules.d/30ignition/
 	ostree container commit
 # Install any extensions specified
 {{if and .ExtensionsImage .ExtensionsPackages}}
-# Mount the extensions image to use the content from it
-# and add the extensions repo to /etc/yum.repos.d/coreos-extensions.repo
 RUN --mount=type=bind,from={{.ExtensionsImage}},source=/,target=/tmp/mco-extensions/os-extensions-content,bind-propagation=rshared,rw,z \
     echo -e "[coreos-extensions]\n\
 enabled=1\n\
@@ -37,29 +35,28 @@ skip_if_unavailable=False" > /etc/yum.repos.d/coreos-extensions.repo && \
     echo "Installing extension packages: $extensions" && \
     rpm-ostree install $extensions && \
     rm /etc/yum.repos.d/coreos-extensions.repo && \
-    echo "=== Processing tmpfiles.d configurations ===" && \
+    # Generate tmpfiles.d entries from RPM verification
+    echo "============== Generating tmpfiles.d configurations ==============" && \
     tmp_dir="/usr/lib/tmpfiles.d" && \
-    # Find all tmpfiles.d configs from installed packages
-    find $tmp_dir -name '*.conf' -print > /tmp/existing_tmpfiles.txt && \
-    # Generate missing configurations for known patterns
-    rpm -qa | while read pkg; do \
-        echo "Analyzing package: $pkg"; \
-        # Check for common directory patterns in package files
-        rpm -ql $pkg | grep -oP '^(/var|/run|/tmp)/.*/' | sort -u | while read dir; do \
-            dir=${dir%/}; \
-            conf_name=$(echo "$dir" | tr '/' '_')".conf"; \
-            if [ ! -f "$tmp_dir/$conf_name" ] && ! grep -q "$dir" /tmp/existing_tmpfiles.txt; then \
-                echo "d $dir 0755 root root -" > "$tmp_dir/$conf_name"; \
-                echo "Generated tmpfiles.d for $dir"; \
-            fi; \
-        done; \
+    rpm -V $(rpm -qa) 2>&1 | awk '/missing/ && $NF ~ /^\/var\/lib/ {print $NF}' | \
+    while read dir; do \
+        conf_file="$tmp_dir/$(echo "$dir" | tr '/' '_').conf"; \
+        echo "d $dir 0755 root root -" > "$conf_file"; \
+        echo "Created tmpfiles.d entry for missing directory: $dir"; \
     done && \
-    # Cleanup mount properly
+    # Force include package-provided tmpfiles.d
+    rpm -qa | xargs rpm -ql | grep '/usr/lib/tmpfiles.d/.*\.conf' | \
+    while read conf; do \
+        cp "$conf" "$tmp_dir/"; \
+        echo "Copied package tmpfiles.d: $(basename $conf)"; \
+    done && \
+    # Final verification
     echo "=== Final tmpfiles.d configuration ===" && \
     ls -l /usr/lib/tmpfiles.d/*.conf && \
     ostree container commit && \
     umount /tmp/mco-extensions/os-extensions-content || true
 {{end}}
+
 
 COPY ./openshift-config-user-ca-bundle.crt /etc/pki/ca-trust/source/anchors/openshift-config-user-ca-bundle.crt
 RUN update-ca-trust
