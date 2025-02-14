@@ -124,14 +124,13 @@ func (dn *Daemon) executeReloadServiceNodeDisruptionAction(serviceName string, r
 		return fmt.Errorf("could not apply update: reloading %s configuration failed. Error: %w", serviceName, reloadErr)
 	}
 
-	// TODO: Potentially consolidate down defining of `primaryPool` & `pool`
+	// Get MCP associated with node
 	primaryPool, err := helpers.GetPrimaryPoolForNode(dn.mcpLister, dn.node)
 	if err != nil {
 		klog.Errorf("Error getting primary pool for node: %v", dn.node.Name)
 		return err
 	}
 	var pool string = primaryPool.Name
-	// var pool string = "testing-update-1"
 
 	err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
 		&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdatePostActionComplete, Reason: string(mcfgalphav1.MachineConfigNodeUpdateReloaded), Message: fmt.Sprintf("Node has reloaded service %s", serviceName)},
@@ -168,14 +167,13 @@ func (dn *Daemon) performPostConfigChangeNodeDisruptionAction(postConfigChangeAc
 
 		logSystem("Performing post config change action: %v for config %s", action.Type, configName)
 
-		// TODO: Potentially consolidate down defining of `primaryPool` & `pool`
+		// Get MCP associated with node
 		primaryPool, err := helpers.GetPrimaryPoolForNode(dn.mcpLister, dn.node)
 		if err != nil {
 			klog.Errorf("Error getting primary pool for node: %v", dn.node.Name)
 			return err
 		}
 		var pool string = primaryPool.Name
-		// var pool string = "testing-update-2"
 
 		switch action.Type {
 		case opv1.RebootStatusAction:
@@ -1121,11 +1119,14 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	// TODO: Potentially consolidate down defining of `primaryPool` & `pool`
 	// TODO: Update for cluster install
 	primaryPool, err := helpers.GetPrimaryPoolForNode(dn.mcpLister, dn.node)
+	var pool string
 	if err != nil {
 		klog.Errorf("Error getting primary pool for node: %v", dn.node.Name)
-		return err
+		// return err
+		pool = "testing-update-4"
+	} else {
+		pool = primaryPool.Name
 	}
-	var pool string = primaryPool.Name
 	// var pool string = "testing-update-4"
 
 	// checking for reconcilability
