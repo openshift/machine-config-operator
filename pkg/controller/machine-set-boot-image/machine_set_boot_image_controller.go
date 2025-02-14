@@ -117,6 +117,16 @@ func New(
 		eventRecorder: ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-machinesetbootimagecontroller"})),
 	}
 
+	ctrl.mcoCmLister = mcoCmInfomer.Lister()
+	ctrl.mapiMachineSetLister = mapiMachineSetInformer.Lister()
+	ctrl.infraLister = infraInformer.Lister()
+	ctrl.mcopLister = mcopInformer.Lister()
+
+	ctrl.mcoCmListerSynced = mcoCmInfomer.Informer().HasSynced
+	ctrl.mapiMachineSetListerSynced = mapiMachineSetInformer.Informer().HasSynced
+	ctrl.infraListerSynced = infraInformer.Informer().HasSynced
+	ctrl.mcopListerSynced = mcopInformer.Informer().HasSynced
+
 	mapiMachineSetInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.addMAPIMachineSet,
 		UpdateFunc: ctrl.updateMAPIMachineSet,
@@ -134,16 +144,6 @@ func New(
 		UpdateFunc: ctrl.updateMachineConfiguration,
 		DeleteFunc: ctrl.deleteMachineConfiguration,
 	})
-
-	ctrl.mcoCmLister = mcoCmInfomer.Lister()
-	ctrl.mapiMachineSetLister = mapiMachineSetInformer.Lister()
-	ctrl.infraLister = infraInformer.Lister()
-	ctrl.mcopLister = mcopInformer.Lister()
-
-	ctrl.mcoCmListerSynced = mcoCmInfomer.Informer().HasSynced
-	ctrl.mapiMachineSetListerSynced = mapiMachineSetInformer.Informer().HasSynced
-	ctrl.infraListerSynced = infraInformer.Informer().HasSynced
-	ctrl.mcopListerSynced = mcopInformer.Informer().HasSynced
 
 	ctrl.featureGateAccess = featureGateAccess
 
