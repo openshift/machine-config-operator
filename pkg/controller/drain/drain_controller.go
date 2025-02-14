@@ -13,7 +13,6 @@ import (
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
-
 	"github.com/openshift/machine-config-operator/pkg/helpers"
 	"github.com/openshift/machine-config-operator/pkg/upgrademonitor"
 
@@ -318,14 +317,13 @@ func (ctrl *Controller) syncNode(key string) error {
 		Ctx:    context.TODO(),
 	}
 
-	// TODO: Potentially consolidate down defining of `primaryPool` & `pool`
+	// Get MCP associated with node
 	primaryPool, err := helpers.GetPrimaryPoolForNode(ctrl.mcpLister, node)
 	if err != nil {
 		klog.Errorf("Error getting primary pool for node: %v", node.Name)
 		return err
 	}
 	var pool string = primaryPool.Name
-	// var pool string = "testing"
 
 	desiredVerb := strings.Split(desiredState, "-")[0]
 	switch desiredVerb {
@@ -411,14 +409,13 @@ func (ctrl *Controller) drainNode(node *corev1.Node, drainer *drain.Helper) erro
 		break
 	}
 
-	// TODO: Potentially consolidate down defining of `primaryPool` & `pool`
+	// Get MCP associated with node
 	primaryPool, err := helpers.GetPrimaryPoolForNode(ctrl.mcpLister, node)
 	if err != nil {
 		klog.Errorf("Error getting primary pool for node: %v", node.Name)
 		return err
 	}
 	var pool string = primaryPool.Name
-	// var pool string = "testing"
 
 	if !isOngoingDrain {
 		ctrl.logNode(node, "cordoning")

@@ -768,25 +768,14 @@ func (optr *Operator) syncMachineConfigNodes(_ *renderConfig, _ *configv1.Cluste
 		if node.Status.Phase == corev1.NodePending || node.Status.Phase == corev1.NodePhase("Provisioning") {
 			continue
 		}
-		// TODO: delete in cleanup; pools can be targeted by labels other than those starting with "node-role.kubernetes.io/""
-		// var pool string
-		// var ok bool
-		// if _, ok = node.Labels["node-role.kubernetes.io/worker"]; ok {
-		// 	pool = "worker"
-		// } else if _, ok = node.Labels["node-role.kubernetes.io/master"]; ok {
-		// 	pool = "master"
-		// } else if _, ok = node.Labels["node-role.kubernetes.io/arbiter"]; ok {
-		// 	pool = "arbiter"
-		// }
 
-		// // TODO: Potentially consolidate down defining of `primaryPool` & `pool`
+		// Get MCP associated with node
 		primaryPool, err := helpers.GetPrimaryPoolForNode(optr.mcpLister, node)
 		if err != nil {
 			klog.Errorf("could not get primary pool for: %v", node.Name)
 			return err
 		}
 		var pool string = primaryPool.Name
-		// var pool string = "testing-sync"
 
 		newMCS := &v1alpha1.MachineConfigNode{
 			Spec: v1alpha1.MachineConfigNodeSpec{
