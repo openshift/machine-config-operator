@@ -275,13 +275,13 @@ func (dn *Daemon) performPostConfigChangeNodeDisruptionAction(postConfigChangeAc
 func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string, configName string) error {
 	// TODO: Potentially consolidate down defining of `primaryPool` & `pool`
 	// TODO: Update for cluster install
-	primaryPool, err := helpers.GetPrimaryPoolForNode(dn.mcpLister, dn.node)
-	if err != nil {
-		klog.Errorf("Error getting primary pool for node: %v", dn.node.Name)
-		return err
-	}
-	var pool string = primaryPool.Name
-	// var pool string = "testing-update-3"
+	// primaryPool, err := helpers.GetPrimaryPoolForNode(dn.mcpLister, dn.node)
+	// if err != nil {
+	// 	klog.Errorf("Error getting primary pool for node: %v", dn.node.Name)
+	// 	return err
+	// }
+	// var pool string = primaryPool.Name
+	var pool string = "testing-update-3"
 
 	if ctrlcommon.InSlice(postConfigChangeActionReboot, postConfigChangeActions) {
 		err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
@@ -1134,6 +1134,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	diff, reconcilableError := reconcilable(oldConfig, newConfig)
 
 	if reconcilableError != nil {
+		pool = "test-update-1"
 		Nerr := upgrademonitor.GenerateAndApplyMachineConfigNodes(
 			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdatePrepared, Reason: string(mcfgalphav1.MachineConfigNodeUpdateCompatible), Message: fmt.Sprintf("Update Failed during the Checking for Compatibility phase")},
 			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateCompatible, Reason: fmt.Sprintf("%s%s", string(mcfgalphav1.MachineConfigNodeUpdatePrepared), string(mcfgalphav1.MachineConfigNodeUpdateCompatible)), Message: fmt.Sprintf("Error: MachineConfigs %v and %v are not compatible. Err: %s", oldConfigName, newConfigName, reconcilableError.Error())},
@@ -1181,6 +1182,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	}
 
 	if err != nil {
+		pool = "test-update-2"
 		Nerr := upgrademonitor.GenerateAndApplyMachineConfigNodes(
 			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdatePrepared, Reason: string(mcfgalphav1.MachineConfigNodeUpdateCompatible), Message: "Update Failed during the Checking for Compatibility phase."},
 			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateCompatible, Reason: fmt.Sprintf("%s%s", string(mcfgalphav1.MachineConfigNodeUpdatePrepared), string(mcfgalphav1.MachineConfigNodeUpdateCompatible)), Message: fmt.Sprintf("Error: MachineConfigs %v and %v are not available for update. Error calculating post config change actions: %s", oldConfigName, newConfigName, err.Error())},
@@ -1216,6 +1218,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 			return err
 		}
 	}
+	pool = "test-update-3"
 	err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
 		&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdatePrepared, Reason: string(mcfgalphav1.MachineConfigNodeUpdateCompatible), Message: "Update is Compatible."},
 		&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateCompatible, Reason: fmt.Sprintf("%s%s", string(mcfgalphav1.MachineConfigNodeUpdatePrepared), string(mcfgalphav1.MachineConfigNodeUpdateCompatible)), Message: fmt.Sprintf("Update Compatible. Post Cfg Actions %v: Drain Required: %t", actions, drain)},
@@ -1240,6 +1243,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	// 	}
 	// }
 
+	pool = "test-update-5"
 	err = upgrademonitor.GenerateAndApplyMachineConfigNodeSpec(dn.featureGatesAccessor, pool, dn.node, dn.mcfgClient)
 	if err != nil {
 		klog.Errorf("Error making MCN spec for Update Compatible: %v", err)
@@ -1250,6 +1254,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		}
 	} else {
 		klog.Info("Changes do not require drain, skipping.")
+		pool = "test-update-6"
 		err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
 			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateExecuted, Reason: string(mcfgalphav1.MachineConfigNodeUpdateDrained), Message: "Node Drain Not required for this update."},
 			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateDrained, Reason: fmt.Sprintf("%s%s", string(mcfgalphav1.MachineConfigNodeUpdateExecuted), string(mcfgalphav1.MachineConfigNodeUpdateDrained)), Message: "Node Drain Not required for this update."},
@@ -1278,6 +1283,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		updatesNeeded[0] = ""
 	}
 
+	pool = "test-update-7"
 	err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
 		&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateExecuted, Reason: string(mcfgalphav1.MachineConfigNodeUpdateFilesAndOS), Message: fmt.Sprintf("Updating the Files and OS on disk as a part of the in progress phase")},
 		&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateFilesAndOS, Reason: fmt.Sprintf("%s%s", string(mcfgalphav1.MachineConfigNodeUpdateExecuted), string(mcfgalphav1.MachineConfigNodeUpdateFilesAndOS)), Message: fmt.Sprintf("Applying files and new OS config to node. OS will %s need an update. SSH Keys will %s need an update", updatesNeeded[0], updatesNeeded[1])},
@@ -1391,6 +1397,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		}
 	}()
 
+	pool = "test-update-8"
 	err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
 		&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateExecuted, Reason: string(mcfgalphav1.MachineConfigNodeUpdateFilesAndOS), Message: fmt.Sprintf("Updated the Files and OS on disk as a part of the in progress phase")},
 		&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateFilesAndOS, Reason: fmt.Sprintf("%s%s", string(mcfgalphav1.MachineConfigNodeUpdateExecuted), string(mcfgalphav1.MachineConfigNodeUpdateFilesAndOS)), Message: fmt.Sprintf("Applied files and new OS config to node. OS did %s need an update. SSH Keys did %s need an update", updatesNeeded[0], updatesNeeded[1])},
