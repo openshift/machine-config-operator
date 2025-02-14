@@ -711,14 +711,13 @@ func (dn *Daemon) syncNode(key string) error {
 		return nil
 	}
 
-	// TODO: Potentially consolidate down defining of `primaryPool` & `pool`
+	// Get MCP associated with node
 	primaryPool, err := helpers.GetPrimaryPoolForNode(dn.mcpLister, node)
 	if err != nil {
 		klog.Errorf("Error getting primary pool for node: %v", node.Name)
 		return err
 	}
 	var pool string = primaryPool.Name
-	// var pool string = "testing"
 
 	if node.Annotations[constants.MachineConfigDaemonPostConfigAction] == constants.MachineConfigDaemonStateRebooting {
 		klog.Info("Detected Rebooting Annotation, applying MCN.")
@@ -2320,14 +2319,13 @@ func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, bool, erro
 		// Great, we've successfully rebooted for the desired config,
 		// let's mark it done!
 
-		// TODO: Potentially consolidate down defining of `primaryPool` & `pool`
+		// Get MCP associated with node
 		primaryPool, err := helpers.GetPrimaryPoolForNode(dn.mcpLister, dn.node)
 		if err != nil {
 			klog.Errorf("Error getting primary pool for node: %v", dn.node.Name)
 			return missingODC, inDesiredConfig, err
 		}
 		var pool string = primaryPool.Name
-		// var pool string = "testing"
 
 		err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
 			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeResumed, Reason: string(mcfgalphav1.MachineConfigNodeResumed), Message: fmt.Sprintf("In desired config %s. Resumed normal operations. Applying proper annotations.", state.currentConfig.Name)},
