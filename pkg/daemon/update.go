@@ -273,22 +273,21 @@ func (dn *Daemon) performPostConfigChangeNodeDisruptionAction(postConfigChangeAc
 // In the end uncordon node to schedule workload.
 // If at any point an error occurs, we reboot the node so that node has correct configuration.
 func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string, configName string) error {
-	// TODO: Potentially consolidate down defining of `primaryPool` & `pool`
+	// Get MCP associated with node
 	// TODO: Update for cluster install
-	primaryPool, err := helpers.GetPrimaryPoolForNode(dn.mcpLister, dn.node)
-	var pool string
-	if err != nil {
-		klog.Errorf("error getting primary pool for node: %v", dn.node.Name)
-		// return err
-		// pool = "unknown"
-	} else if primaryPool == nil {
-		// On first provisioning, the node may not have annoatations and, thus, will not be associated with a pool
-		klog.Infof("No primary pool is associated with node: %v", dn.node.Name)
-		pool = "unknown"
-	} else {
-		pool = primaryPool.Name
-	}
-	// var pool string = "testing-update-3"
+	// primaryPool, err := helpers.GetPrimaryPoolForNode(dn.mcpLister, dn.node)
+	// var pool string
+	// if err != nil {
+	// 	klog.Errorf("error getting primary pool for node: %v", dn.node.Name)
+	// 	return err
+	// } else if primaryPool == nil {
+	// 	// On first provisioning, the node may not have annoatations and, thus, will not be associated with a pool
+	// 	klog.Infof("No primary pool is associated with node: %v", dn.node.Name)
+	// 	pool = "unknown"
+	// } else {
+	// 	pool = primaryPool.Name
+	// }
+	var pool string = "testing-update-3"
 
 	if ctrlcommon.InSlice(postConfigChangeActionReboot, postConfigChangeActions) {
 		err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
@@ -1123,22 +1122,21 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 
 	klog.Infof("Checking Reconcilable for config %v to %v", oldConfigName, newConfigName)
 
-	// TODO: Potentially consolidate down defining of `primaryPool` & `pool`
+	// Get MCP associated with node
 	// TODO: Update for cluster install
-	primaryPool, err := helpers.GetPrimaryPoolForNode(dn.mcpLister, dn.node)
-	var pool string
-	if err != nil {
-		klog.Errorf("error getting primary pool for node: %v", dn.node.Name)
-		// return err
-		// pool = "unknown"
-	} else if primaryPool == nil {
-		// On first provisioning, the node may not have annoatations and, thus, will not be associated with a pool
-		klog.Infof("No primary pool is associated with node: %v", dn.node.Name)
-		pool = "unknown"
-	} else {
-		pool = primaryPool.Name
-	}
-	// var pool string = "testing-update-4"
+	// primaryPool, err := helpers.GetPrimaryPoolForNode(dn.mcpLister, dn.node)
+	// var pool string = "unknown"
+	// if err != nil {
+	// 	klog.Errorf("error getting primary pool for node: %v", dn.node.Name)
+	// 	return err
+	// } else if primaryPool == nil {
+	// 	// On first provisioning, the node may not have annoatations and, thus, will not be associated with a pool
+	// 	klog.Infof("No primary pool is associated with node: %v", dn.node.Name)
+	// 	// pool = "unknown"
+	// } else {
+	// 	pool = primaryPool.Name
+	// }
+	var pool string = "testing-update-4"
 
 	// checking for reconcilability
 	// make sure we can actually reconcile this state
