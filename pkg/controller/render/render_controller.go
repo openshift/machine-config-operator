@@ -504,6 +504,15 @@ func (ctrl *Controller) getRenderedMachineConfig(pool *mcfgv1.MachineConfigPool,
 	// The pool has a rendered MachineConfig, so we can do more advanced
 	// reconciliation as we generate it.
 	currentMC, err := ctrl.mcLister.Get(pool.Spec.Configuration.Name)
+
+	// Degenerate case: When the renderedMC that the MCP is currently pointing to is deleted
+	if apierrors.IsNotFound(err) {
+		generated, err := generateRenderedMachineConfig(pool, configs, cc)
+		if err != nil {
+			return nil, err
+		}
+		return generated, nil
+	}
 	if err != nil {
 		return nil, fmt.Errorf("could not get current MachineConfig %s for MachineConfigPool %s: %w", pool.Spec.Configuration.Name, pool.Name, err)
 	}
