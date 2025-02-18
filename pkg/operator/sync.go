@@ -770,12 +770,10 @@ func (optr *Operator) syncMachineConfigNodes(_ *renderConfig, _ *configv1.Cluste
 		}
 
 		// Get MCP associated with node
-		primaryPool, err := helpers.GetPrimaryPoolForNode(optr.mcpLister, node)
+		pool, err := helpers.GetPrimaryPoolNameForMCN(optr.mcpLister, node)
 		if err != nil {
-			klog.Errorf("could not get primary pool for: %v", node.Name)
 			return err
 		}
-		var pool string = primaryPool.Name
 
 		newMCS := &v1alpha1.MachineConfigNode{
 			Spec: v1alpha1.MachineConfigNodeSpec{

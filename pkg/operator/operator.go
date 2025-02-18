@@ -498,9 +498,9 @@ func (optr *Operator) sync(key string) error {
 		// for the sync funcs below
 		{"RenderConfig", optr.syncRenderConfig},
 		{"MachineConfiguration", optr.syncMachineConfiguration},
+		{"MachineConfigNode", optr.syncMachineConfigNodes},
 		{"MachineConfigPools", optr.syncMachineConfigPools},
 		{"MachineConfigDaemon", optr.syncMachineConfigDaemon},
-		{"MachineConfigNode", optr.syncMachineConfigNodes},
 		{"MachineConfigController", optr.syncMachineConfigController},
 		{"MachineConfigServer", optr.syncMachineConfigServer},
 		{"MachineOSBuilder", optr.syncMachineOSBuilder},
