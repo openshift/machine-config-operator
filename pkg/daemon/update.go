@@ -1127,10 +1127,10 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	var pool string = "unknown"
 	// check if `dn.node` is nil
 	if dn.node == nil {
-		klog.Errorf("node object is nil, setting associated MCP to unknown: %v", dn.node.Name)
+		klog.Error("node object is nil, setting associated MCP to unknown")
 		pool = "unknown-nil-dn-node"
 	} else if dn.node.ObjectMeta.Labels == nil {
-		klog.Errorf("node object has no labels, setting associated MCP to unknown: %v", dn.node.Name)
+		klog.Error("node object has no labels, setting associated MCP to unknown")
 		pool = "unknown-nil-dn-node-label"
 	} else {
 		primaryPool, err := helpers.GetPrimaryPoolForNode(dn.mcpLister, dn.node)
