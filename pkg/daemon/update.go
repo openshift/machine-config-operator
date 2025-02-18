@@ -1213,16 +1213,6 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	if err != nil {
 		klog.Errorf("Error making MCN for Update Compatible: %v", err)
 	}
-	// TODO: delete in cleanup; pools can be targeted by labels other than those starting with "node-role.kubernetes.io/""
-	// pool := ""
-	// var ok bool
-	// if dn.node != nil {
-	// 	if _, ok = dn.node.Labels["node-role.kubernetes.io/worker"]; ok {
-	// 		pool = "worker"
-	// 	} else if _, ok = dn.node.Labels["node-role.kubernetes.io/master"]; ok {
-	// 		pool = "master"
-	// 	}
-	// }
 
 	err = upgrademonitor.GenerateAndApplyMachineConfigNodeSpec(dn.featureGatesAccessor, pool, dn.node, dn.mcfgClient)
 	if err != nil {

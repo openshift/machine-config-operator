@@ -106,15 +106,6 @@ func generateAndApplyMachineConfigNodes(
 		return nil
 	}
 
-	// TODO: delete in cleanup; pools can be targeted by labels other than those starting with "node-role.kubernetes.io/""
-	// var pool string
-	// var ok bool
-	// if _, ok = node.Labels["node-role.kubernetes.io/worker"]; ok {
-	// 	pool = "worker"
-	// } else if _, ok = node.Labels["node-role.kubernetes.io/master"]; ok {
-	// 	pool = "master"
-	// }
-
 	// get the existing MCN, or if it DNE create one below
 	mcNode, needNewMCNode := createOrGetMachineConfigNode(mcfgClient, node)
 	newMCNode := mcNode.DeepCopy()

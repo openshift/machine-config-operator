@@ -268,9 +268,7 @@ func (ctrl *Controller) handleErr(err error, key string) {
 	ctrl.queue.AddAfter(key, 1*time.Minute)
 }
 
-// TODO: look into idea of passing poolname into this function to apply to mcn
 func (ctrl *Controller) syncNode(key string) error {
-	klog.Errorf("in syncNode with key: %v", key)
 	startTime := time.Now()
 	klog.V(4).Infof("Started syncing node %q (%v)", key, startTime)
 	defer func() {
