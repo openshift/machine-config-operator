@@ -69,6 +69,63 @@ contents:
         fall 2
     }
 
+    {{- if and (eq .Infra.Status.PlatformStatus.Type "OpenStack") (or (eq .IPFamilies "DualStack") (eq .IPFamilies "DualStackIPv6Primary")) }}
+    # When using dual-stack with OpenStack, both IPv4 and IPv6 share the same Neutron Port,
+    # causing OVN to assume both addresses belong to the same node, which may not always be the case.
+    # To address this, we ensure that the API VIPs remain grouped through state changes,
+    # the same goes for Ingress VIPs.
+    vrrp_sync_group VG_API {
+        group {
+            {{`{{ range $i, $config := .Configs }}`}}
+            {{`{{$nonVirtualIP := .NonVirtualIP}}`}}
+
+            {{`{{$participateInAPIVRRP := not .EnableUnicast}}`}}
+            {{`{{- if .EnableUnicast}}
+            {{- range .LBConfig.Backends}}
+            {{- if eq $nonVirtualIP .Address}}
+            {{$participateInAPIVRRP = true}}
+            {{- end}}
+            {{- end}}
+            {{- end}}`}}
+
+            {{`{{if $participateInAPIVRRP}}`}}
+            {{`{{ .Cluster.Name }}`}}_API_{{`{{$i}}`}}
+            {{`{{ end }}`}}
+            {{`{{ end }}`}}
+        }
+        track_script {
+            chk_ocp_lb
+            chk_ocp_both
+            chk_mcs
+        }
+    }
+
+    vrrp_sync_group VG_INGRESS {
+        group {
+            {{`{{ range $i, $config := .Configs }}`}}
+            {{`{{$nonVirtualIP := .NonVirtualIP}}`}}
+            {{`{{$participateInIngressVRRP := not .EnableUnicast}}`}}
+            {{`{{- if .EnableUnicast}}
+            {{- range .IngressConfig.Peers}}
+            {{- if eq $nonVirtualIP .}}
+            {{$participateInIngressVRRP = true}}
+            {{- end}}
+            {{- end}}
+            {{- end}}`}}
+
+            {{`{{if $participateInIngressVRRP}}`}}
+            {{`{{ .Cluster.Name }}`}}_INGRESS_{{`{{$i}}`}}
+            {{`{{ end }}`}}
+            {{`{{ end }}`}}
+        }
+        track_script {
+            chk_ingress
+            chk_ingress_ready
+            chk_default_ingress
+        }
+    }
+    {{- end}}
+
     {{`{{ range $i, $config := .Configs }}`}}
     {{`{{$nonVirtualIP := .NonVirtualIP}}`}}
 
@@ -105,11 +162,13 @@ contents:
         virtual_ipaddress {
             {{`{{ .Cluster.APIVIP }}`}}/{{`{{ .Cluster.VIPNetmask }}`}} label vip
         }
+        {{- if not (and (eq .Infra.Status.PlatformStatus.Type "OpenStack") (or (eq .IPFamilies "DualStack") (eq .IPFamilies "DualStackIPv6Primary"))) }}
         track_script {
             chk_ocp_lb
             chk_ocp_both
             chk_mcs
         }
+        {{- end}}
     }
     {{`{{end}}`}}
 
@@ -146,11 +205,13 @@ contents:
         virtual_ipaddress {
             {{`{{ .Cluster.IngressVIP }}`}}/{{`{{ .Cluster.VIPNetmask }}`}} label vip
         }
+        {{- if not (and (eq .Infra.Status.PlatformStatus.Type "OpenStack") (or (eq .IPFamilies "DualStack") (eq .IPFamilies "DualStackIPv6Primary"))) }}
         track_script {
             chk_ingress
             chk_ingress_ready
             chk_default_ingress
         }
+        {{- end}}
     }
     {{`{{ end }}`}}
     {{`{{ end }}`}}
