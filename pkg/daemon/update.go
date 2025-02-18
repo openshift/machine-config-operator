@@ -521,20 +521,26 @@ func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newC
 
 	// Only check the image type and execute OS changes if:
 	// - machineconfig changed
-	// - we're staying on a realtime kernel ( need to run rpm-ostree update )
-	// - we have extensions ( need to run rpm-ostree update )
+	// - we're staying on a realtime/64k kernel ( need to run rpm-ostree update )
+	// - we have a diff in extensions ( need to run rpm-ostree update )
 	// We have at least one customer that removes the pull secret from the cluster to "shrinkwrap" it for distribution and we want
 	// to make sure we don't break that use case, but realtime kernel update and extensions update always ran
 	// if they were in use, so we also need to preserve that behavior.
 	// https://issues.redhat.com/browse/OCPBUGS-4049
 	if mcDiff.osUpdate || mcDiff.extensions || mcDiff.kernelType || mcDiff.kargs ||
 		canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelTypeRealtime ||
-		canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelType64kPages ||
-		len(newConfig.Spec.Extensions) > 0 {
+		canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelType64kPages {
 
 		// Throw started/staged events only if there is any update required for the OS
 		if dn.nodeWriter != nil {
-			dn.nodeWriter.Eventf(corev1.EventTypeNormal, "OSUpdateStarted", mcDiff.osChangesString())
+			reason := mcDiff.osChangesString()
+			if reason == "" {
+				// osChangesString() can return empty in cases where the above diffs are false,
+				// but the node uses a non standard kernel, so let's make it a bit more
+				// informative in such cases
+				reason = fmt.Sprintf("Updating to a target config with %s kernel", canonicalizeKernelType(newConfig.Spec.KernelType))
+			}
+			dn.nodeWriter.Eventf(corev1.EventTypeNormal, "OSUpdateStarted", reason)
 		}
 
 		if err := dn.applyLayeredOSChanges(mcDiff, oldConfig, newConfig); err != nil {
