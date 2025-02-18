@@ -50,6 +50,33 @@ func GetNodesForPool(mcpLister v1.MachineConfigPoolLister, nodeLister corev1list
 	return nodes, nil
 }
 
+// GetPrimaryPoolNameForMCN gets the MCP pool name value that is used in a node's MachineConfigNode object.
+// When the node does not yet exist (is nil) or the node does not yet have annotations, the pool name will
+// temporarily be set to `unknown`. Once the node exists (is not nil) and the annotations are properly set,
+// the node will update again and the pool name will be updated.
+func GetPrimaryPoolNameForMCN(mcpLister v1.MachineConfigPoolLister, node *corev1.Node) (string, error) {
+	if node == nil {
+		klog.Error("node object is nil, setting associated MCP to unknown")
+		return "unknown", nil
+		// } else if node.ObjectMeta.Labels == nil {
+		// 	klog.Error("node object has no labels, setting associated MCP to unknown")
+		// 	return "unknown"
+	} else {
+		primaryPool, err := GetPrimaryPoolForNode(mcpLister, node)
+		if err != nil {
+			klog.Errorf("error getting primary pool for node: %v", node.Name)
+			// return "unknown"
+			return "", err
+		} else if primaryPool == nil {
+			// On first provisioning, the node may not have annoatations and, thus, will not be associated with a pool
+			klog.Infof("No primary pool is associated with node: %v", node.Name)
+			return "unknown", nil
+		} else {
+			return primaryPool.Name, nil
+		}
+	}
+}
+
 func GetPrimaryPoolForNode(mcpLister v1.MachineConfigPoolLister, node *corev1.Node) (*mcfgv1.MachineConfigPool, error) {
 	pools, _, err := GetPoolsForNode(mcpLister, node)
 	if err != nil {

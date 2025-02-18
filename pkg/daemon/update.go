@@ -1122,30 +1122,36 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 
 	klog.Infof("Checking Reconcilable for config %v to %v", oldConfigName, newConfigName)
 
-	// Get MCP associated with node
 	// TODO: Update for cluster install
-	var pool string = "unknown"
-	// check if `dn.node` is nil
-	if dn.node == nil {
-		klog.Error("node object is nil, setting associated MCP to unknown")
-		pool = "unknown-nil-dn-node"
-	} else if dn.node.ObjectMeta.Labels == nil {
-		klog.Error("node object has no labels, setting associated MCP to unknown")
-		pool = "unknown-nil-dn-node-label"
-	} else {
-		primaryPool, err := helpers.GetPrimaryPoolForNode(dn.mcpLister, dn.node)
-		if err != nil {
-			klog.Errorf("error getting primary pool for node: %v", dn.node.Name)
-			return err
-		} else if primaryPool == nil {
-			// On first provisioning, the node may not have annoatations and, thus, will not be associated with a pool
-			klog.Infof("No primary pool is associated with node: %v", dn.node.Name)
-			pool = "unknown-nil-nil"
-		} else {
-			pool = primaryPool.Name
-		}
-	}
+	// var pool string = "unknown"
+	// // Check if `dn.node` is nil & set MCN pool to a temporary value until the node exists
+	// if dn.node == nil {
+	// 	klog.Error("node object is nil, setting associated MCP to unknown")
+	// 	pool = "unknown-nil-dn-node"
+	// } else if dn.node.ObjectMeta.Labels == nil {
+	// 	klog.Error("node object has no labels, setting associated MCP to unknown")
+	// 	pool = "unknown-nil-dn-node-label"
+	// } else {
+	// 	primaryPool, err := helpers.GetPrimaryPoolForNode(dn.mcpLister, dn.node)
+	// 	if err != nil {
+	// 		klog.Errorf("error getting primary pool for node: %v", dn.node.Name)
+	// 		pool = "unknown-error"
+	// 		// return err
+	// 	} else if primaryPool == nil {
+	// 		// On first provisioning, the node may not have annoatations and, thus, will not be associated with a pool
+	// 		klog.Infof("No primary pool is associated with node: %v", dn.node.Name)
+	// 		pool = "unknown-nil-nil"
+	// 	} else {
+	// 		pool = primaryPool.Name
+	// 	}
+	// }
 	// var pool string = "testing-update-4"
+
+	// Get MCP associated with node
+	pool, err := helpers.GetPrimaryPoolNameForMCN(dn.mcpLister, dn.node)
+	if err != nil {
+		return err
+	}
 
 	// checking for reconcilability
 	// make sure we can actually reconcile this state
