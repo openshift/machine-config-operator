@@ -318,12 +318,10 @@ func (ctrl *Controller) syncNode(key string) error {
 	}
 
 	// Get MCP associated with node
-	primaryPool, err := helpers.GetPrimaryPoolForNode(ctrl.mcpLister, node)
+	pool, err := helpers.GetPrimaryPoolNameForMCN(ctrl.mcpLister, node)
 	if err != nil {
-		klog.Errorf("Error getting primary pool for node: %v", node.Name)
 		return err
 	}
-	var pool string = primaryPool.Name
 
 	desiredVerb := strings.Split(desiredState, "-")[0]
 	switch desiredVerb {
@@ -410,12 +408,10 @@ func (ctrl *Controller) drainNode(node *corev1.Node, drainer *drain.Helper) erro
 	}
 
 	// Get MCP associated with node
-	primaryPool, err := helpers.GetPrimaryPoolForNode(ctrl.mcpLister, node)
+	pool, err := helpers.GetPrimaryPoolNameForMCN(ctrl.mcpLister, node)
 	if err != nil {
-		klog.Errorf("Error getting primary pool for node: %v", node.Name)
 		return err
 	}
-	var pool string = primaryPool.Name
 
 	if !isOngoingDrain {
 		ctrl.logNode(node, "cordoning")

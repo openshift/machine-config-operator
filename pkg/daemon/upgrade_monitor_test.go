@@ -11,14 +11,13 @@ import (
 	"github.com/openshift/api/machineconfiguration/v1alpha1"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
 	informers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
+	mcopfake "github.com/openshift/client-go/operator/clientset/versioned/fake"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
+	"github.com/openshift/machine-config-operator/pkg/helpers"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	kubeinformers "k8s.io/client-go/informers"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
-
-	// "github.com/openshift/machine-config-operator/pkg/helpers"
-	mcopfake "github.com/openshift/client-go/operator/clientset/versioned/fake"
 )
 
 type upgradeMonitorTestCase struct {
@@ -154,13 +153,11 @@ func (tc upgradeMonitorTestCase) run(t *testing.T) {
 	}
 
 	for _, n := range f.nodeLister {
-		// TODO: Potentially consolidate down defining of `primaryPool` & `pool`
-		// primaryPool, err := helpers.GetPrimaryPoolForNode(d.mcpLister, n)
-		// if err != nil {
-		// 	f.t.Fatalf("Error getting primary pool for node: %v", n.Name)
-		// }
-		// var pool string = primaryPool.Name
-		var pool string = "testing"
+		// Get MCP associated with node
+		pool, err := helpers.GetPrimaryPoolNameForMCN(d.mcpLister, n)
+		if err != nil {
+			f.t.Fatalf("Error getting primary pool for node: %v", n.Name)
+		}
 
 		err = upgrademonitor.GenerateAndApplyMachineConfigNodes(tc.parentCondition, tc.childCondition, tc.parentStatus, tc.childStatus, n, d.mcfgClient, d.featureGatesAccessor, pool)
 		if err != nil {

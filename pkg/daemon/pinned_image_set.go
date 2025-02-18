@@ -545,12 +545,10 @@ func (p *PinnedImageSetManager) updateStatusProgressing(pools []*mcfgv1.MachineC
 	imageSetSpec := getPinnedImageSetSpecForPools(pools)
 
 	// Get MCP associated with node
-	primaryPool, err := helpers.GetPrimaryPoolForNode(p.mcpLister, node)
+	pool, err := helpers.GetPrimaryPoolNameForMCN(p.mcpLister, node)
 	if err != nil {
-		klog.Errorf("Error getting primary pool for node: %v", node.Name)
 		return err
 	}
-	var pool string = primaryPool.Name
 
 	return upgrademonitor.UpdateMachineConfigNodeStatus(
 		&upgrademonitor.Condition{
@@ -584,12 +582,10 @@ func (p *PinnedImageSetManager) updateStatusProgressingComplete(pools []*mcfgv1.
 	imageSetSpec := getPinnedImageSetSpecForPools(pools)
 
 	// Get MCP associated with node
-	primaryPool, err := helpers.GetPrimaryPoolForNode(p.mcpLister, node)
+	pool, err := helpers.GetPrimaryPoolNameForMCN(p.mcpLister, node)
 	if err != nil {
-		klog.Errorf("Error getting primary pool for node: %v", node.Name)
 		return err
 	}
-	var pool string = primaryPool.Name
 
 	err = upgrademonitor.UpdateMachineConfigNodeStatus(
 		&upgrademonitor.Condition{
@@ -652,12 +648,10 @@ func (p *PinnedImageSetManager) updateStatusError(pools []*mcfgv1.MachineConfigP
 	}
 
 	// Get MCP associated with node
-	primaryPool, err := helpers.GetPrimaryPoolForNode(p.mcpLister, node)
+	pool, err := helpers.GetPrimaryPoolNameForMCN(p.mcpLister, node)
 	if err != nil {
-		klog.Errorf("Error getting primary pool for node: %v", node.Name)
 		return err
 	}
-	var pool string = primaryPool.Name
 
 	return upgrademonitor.UpdateMachineConfigNodeStatus(
 		&upgrademonitor.Condition{

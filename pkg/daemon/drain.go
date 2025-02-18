@@ -41,13 +41,12 @@ func (dn *Daemon) performDrain() error {
 
 	if !dn.drainRequired() {
 		logSystem("Drain not required, skipping")
+
 		// Get MCP associated with node
-		primaryPool, err := helpers.GetPrimaryPoolForNode(dn.mcpLister, dn.node)
+		pool, err := helpers.GetPrimaryPoolNameForMCN(dn.mcpLister, dn.node)
 		if err != nil {
-			klog.Errorf("Error getting primary pool for node: %v", dn.node.Name)
 			return err
 		}
-		var pool string = primaryPool.Name
 
 		// err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
 		err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
