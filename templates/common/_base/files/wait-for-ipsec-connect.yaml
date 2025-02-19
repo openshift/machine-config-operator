@@ -28,6 +28,9 @@ contents:
       establishedsa=$(ipsec showstates | grep STATE_V2_ESTABLISHED_CHILD_SA | grep -o '"[^"]*"' | sed 's/"//g' | tr ' ' '\n' | sort | uniq | tr '\n' ' ')
       if [ "$desiredconn" == "$establishedsa" ]; then
         echo "IPsec SAs are established for desired connections"
+        # Noticed control plane nodes are still reestablishing child SAs (reason not found yet) again after around 15s, so just for test
+        # introducing sleep before break from loop.
+        sleep 20s
         break
       else
         echo "IPsec SAs are not established yet, waiting"
