@@ -75,6 +75,8 @@ const (
 	// LayeringEnabledPoolLabel is the label that enables the "layered" workflow path for a pool.
 	LayeringEnabledPoolLabel = "machineconfiguration.openshift.io/layering-enabled"
 
+	ContainerBuildAnnotationKey = "machineconfiguration.openshift.io/container-build"
+
 	RebuildPoolLabel = "machineconfiguration.openshift.io/rebuildImage"
 
 	// ExperimentalNewestLayeredImageEquivalentConfigAnnotationKey is the annotation that signifies which rendered config
