@@ -1396,3 +1396,47 @@ func GetCAsFromConfigMap(cm *corev1.ConfigMap, key string) ([]byte, error) {
 	}
 	return nil, fmt.Errorf("%s not found in %s/%s", key, cm.Namespace, cm.Name)
 }
+
+// Updated requiresRebuild function with unordered comparisons
+func RequiresRebuild(oldMC, newMC *mcfgv1.MachineConfig) (bool, bool) {
+	// If any of these fields change, we require an OCL build
+	if oldMC.Spec.OSImageURL != newMC.Spec.OSImageURL {
+		return true, false
+	}
+	if oldMC.Spec.KernelType != newMC.Spec.KernelType {
+		return true, false
+	}
+
+	// Compare extensions as unordered sets
+	if !unorderedEqual(oldMC.Spec.Extensions, newMC.Spec.Extensions) {
+		return true, false
+	}
+
+	if !unorderedEqual(oldMC.Spec.KernelArguments, newMC.Spec.KernelArguments) {
+		return true, false
+	}
+
+	// If we get here, no rebuild is needed, but check for live-apply
+	return false, !reflect.DeepEqual(oldMC.Spec.Config, newMC.Spec.Config)
+}
+
+// Add this new function to compare unordered extensions/kernel args
+func unorderedEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	m := make(map[string]int, len(a))
+	for _, v := range a {
+		m[v]++
+	}
+	for _, v := range b {
+		if _, ok := m[v]; !ok {
+			return false
+		}
+		m[v]--
+		if m[v] == 0 {
+			delete(m, v)
+		}
+	}
+	return len(m) == 0
+}

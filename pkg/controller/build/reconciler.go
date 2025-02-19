@@ -2,7 +2,9 @@ package build
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"strings"
 	"time"
 
@@ -80,16 +82,9 @@ func (b *buildReconciler) AddMachineOSConfig(ctx context.Context, mosc *mcfgv1.M
 	})
 }
 
-// Executes whenever an existing MachineOSConfig is updated.
-func (b *buildReconciler) UpdateMachineOSConfig(ctx context.Context, old, cur *mcfgv1.MachineOSConfig) error {
-	return b.timeObjectOperation(cur, updatingVerb, func() error {
-		return b.updateMachineOSConfig(ctx, old, cur)
-	})
-}
-
 // Executes whenever a MachineOSConfig is updated. If the build inputs have
 // changed, a new MachineOSBuild should be created.
-func (b *buildReconciler) updateMachineOSConfig(ctx context.Context, old, cur *mcfgv1.MachineOSConfig) error {
+func (b *buildReconciler) UpdateMachineOSConfig(ctx context.Context, old, cur *mcfgv1.MachineOSConfig) error {
 	// If we have gained the rebuild annotation, we should delete the current MachineOSBuild associated with this MachineOSConfig.
 	if !hasRebuildAnnotation(old) && hasRebuildAnnotation(cur) {
 		if err := b.rebuildMachineOSConfig(ctx, cur); err != nil {
@@ -342,15 +337,68 @@ func (b *buildReconciler) UpdateMachineConfigPool(ctx context.Context, oldMCP, c
 // Sepcifically, whenever a new rendered MachineConfig is applied, it will
 // create a new MachineOSBuild in response.
 func (b *buildReconciler) updateMachineConfigPool(ctx context.Context, oldMCP, curMCP *mcfgv1.MachineConfigPool) error {
-	if oldMCP.Spec.Configuration.Name != curMCP.Spec.Configuration.Name {
-		klog.Infof("Rendered config for pool %s changed from %s to %s", curMCP.Name, oldMCP.Spec.Configuration.Name, curMCP.Spec.Configuration.Name)
-		if err := b.createNewMachineOSBuildOrReuseExistingForPoolChange(ctx, curMCP); err != nil {
-			return fmt.Errorf("could not create or reuse existing MachineOSBuild for MachineConfigPool %q change: %w", curMCP.Name, err)
-		}
+	// Only proceed if the rendered configuration changed
+	if oldMCP.Spec.Configuration.Name == curMCP.Spec.Configuration.Name {
+		return nil
 	}
 
-	// Not sure if we need to do this here yet or not.
+	// Get current and desired MachineConfigs using direct client (since we don't have a MC lister)
+	currMC, err := b.mcfgclient.MachineconfigurationV1().MachineConfigs().Get(ctx, oldMCP.Spec.Configuration.Name, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("error getting current MachineConfig %s: %w", oldMCP.Spec.Configuration.Name, err)
+	}
+
+	desMC, err := b.mcfgclient.MachineconfigurationV1().MachineConfigs().Get(ctx, curMCP.Spec.Configuration.Name, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("error getting desired MachineConfig %s: %w", curMCP.Spec.Configuration.Name, err)
+	}
+
+	// Determine rebuild requirements using shared logic
+	needsBuild, _ := ctrlcommon.RequiresRebuild(currMC, desMC)
+
+	if needsBuild {
+		// Handle OCL build path with container-config
+		containerMC := generateContainerConfig(desMC)
+
+		// Create container config if not exists
+		if _, err := b.mcfgclient.MachineconfigurationV1().MachineConfigs().Create(
+			ctx, containerMC, metav1.CreateOptions{}); err != nil && !k8serrors.IsAlreadyExists(err) {
+			return fmt.Errorf("error creating container config: %w", err)
+		}
+
+		if curMCP.Spec.Configuration.Name != containerMC.Name {
+			updatedMCP := curMCP.DeepCopy()
+			updatedMCP.Spec.Configuration.Name = containerMC.Name
+			if _, err := b.mcfgclient.MachineconfigurationV1().MachineConfigPools().Update(
+				ctx, updatedMCP, metav1.UpdateOptions{}); err != nil {
+				return fmt.Errorf("error updating MCP: %w", err)
+			}
+		}
+
+		// Proceed with build creation
+		return b.createNewMachineOSBuildOrReuseExistingForPoolChange(ctx, curMCP)
+	}
+
+	// For non-OCL changes, let standard MCO update handle it
+	klog.Info("Changes compatible with standard update path, skipping OCL build")
 	return b.syncAll(ctx)
+}
+
+// Helper to generate container config
+func generateContainerConfig(baseMC *mcfgv1.MachineConfig) *mcfgv1.MachineConfig {
+	containerMC := baseMC.DeepCopy()
+	hash := computeConfigHash(containerMC.Spec)
+	containerMC.Name = fmt.Sprintf("container-config-%s", hash)
+	containerMC.Annotations["mco.openshift.io/container-build"] = "true"
+	return containerMC
+}
+
+// Hash function for config stability
+func computeConfigHash(spec mcfgv1.MachineConfigSpec) string {
+	hasher := fnv.New32a()
+	encoder := json.NewEncoder(hasher)
+	encoder.Encode(spec)
+	return fmt.Sprintf("%x", hasher.Sum32())
 }
 
 // Adds a MachineOSBuild.

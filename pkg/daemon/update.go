@@ -806,7 +806,7 @@ func (dn *Daemon) calculatePostConfigChangeNodeDisruptionAction(diff *machineCon
 // This function should be consolidated with dn.update() and dn.updateHypershift(). See: https://issues.redhat.com/browse/MCO-810 for further discussion.
 //
 //nolint:gocyclo
-func (dn *Daemon) updateOnClusterBuild(oldConfig, newConfig *mcfgv1.MachineConfig, oldImage, newImage string, skipCertificateWrite bool) (retErr error) {
+func (dn *Daemon) updateOnClusterLayering(oldConfig, newConfig *mcfgv1.MachineConfig, oldImage, newImage string, skipCertificateWrite bool) (retErr error) {
 	oldConfig = canonicalizeEmptyMC(oldConfig)
 
 	if dn.nodeWriter != nil {
@@ -1043,7 +1043,7 @@ func (dn *Daemon) finalizeRevertToNonLayering(newConfig *mcfgv1.MachineConfig) e
 
 // Update the node to the provided node configuration.
 // This function should be de-duped with dn.updateHypershift() and
-// dn.updateOnClusterBuild(). See: https://issues.redhat.com/browse/MCO-810 for
+// dn.updateOnClusterLayering(). See: https://issues.redhat.com/browse/MCO-810 for
 // discussion.
 //
 //nolint:gocyclo

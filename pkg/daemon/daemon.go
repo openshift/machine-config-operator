@@ -2542,9 +2542,17 @@ func (dn *Daemon) triggerUpdate(currentConfig, desiredConfig *mcfgv1.MachineConf
 	if err := dn.syncInternalRegistryPullSecrets(nil); err != nil {
 		return err
 	}
+	_, needsLiveApply := ctrlcommon.RequiresRebuild(currentConfig, desiredConfig)
 
 	// If both of the image annotations are empty, this is a regular MachineConfig update.
 	if desiredImage == "" && currentImage == "" {
+		if needsLiveApply {
+			klog.Info("Starting non-disruptive live-apply update")
+			return dn.liveApplyChanges(currentConfig, desiredConfig)
+		}
+
+		// Existing logic for disruptive updates
+		klog.Info("Starting disruptive MachineConfig update")
 		return dn.triggerUpdateWithMachineConfig(currentConfig, desiredConfig, true)
 	}
 
@@ -2553,7 +2561,7 @@ func (dn *Daemon) triggerUpdate(currentConfig, desiredConfig *mcfgv1.MachineConf
 	dn.stopConfigDriftMonitor()
 
 	klog.Infof("Performing layered OS update")
-	return dn.updateOnClusterBuild(currentConfig, desiredConfig, currentImage, desiredImage, true)
+	return dn.updateOnClusterLayering(currentConfig, desiredConfig, currentImage, desiredImage, true)
 }
 
 // triggerUpdateWithMachineConfig starts the update. It queries the cluster for
@@ -2587,6 +2595,22 @@ func (dn *Daemon) triggerUpdateWithMachineConfig(currentConfig, desiredConfig *m
 
 	// run the update process. this function doesn't currently return.
 	return dn.update(currentConfig, desiredConfig, skipCertificateWrite)
+}
+
+func (dn *Daemon) liveApplyChanges(oldConfig, newConfig *mcfgv1.MachineConfig) error {
+	err := dn.update(oldConfig, newConfig, true)
+	if err != nil {
+		return fmt.Errorf("live-apply failed: %w", err)
+	}
+
+	// Update current config on disk without triggering reboot
+	dn.storeCurrentConfigOnDisk(&onDiskConfig{
+		currentConfig: newConfig,
+		currentImage:  "", // Maintain empty for non-layered
+	})
+
+	klog.Info("Live-apply completed without node disruption")
+	return nil
 }
 
 // validateKernelArguments checks that the current boot has all arguments specified
