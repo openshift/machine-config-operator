@@ -2543,8 +2543,11 @@ func (dn *Daemon) triggerUpdate(currentConfig, desiredConfig *mcfgv1.MachineConf
 		return err
 	}
 
-	// If both of the image annotations are empty, this is a regular MachineConfig update.
+	// If both of the image annotations are empty, this is a regular MachineConfig update
 	if desiredImage == "" && currentImage == "" {
+		if ctrlcommon.CanBeInPlaceApplied(currentConfig, desiredConfig) {
+			return dn.inPlaceApplyChanges(currentConfig, desiredConfig, currentImage)
+		}
 		return dn.triggerUpdateWithMachineConfig(currentConfig, desiredConfig, true)
 	}
 
@@ -2587,6 +2590,25 @@ func (dn *Daemon) triggerUpdateWithMachineConfig(currentConfig, desiredConfig *m
 
 	// run the update process. this function doesn't currently return.
 	return dn.update(currentConfig, desiredConfig, skipCertificateWrite)
+}
+
+func (dn *Daemon) inPlaceApplyChanges(oldConfig, newConfig *mcfgv1.MachineConfig, currentImage string) error {
+	// Canonicalize configurations with current OCL image
+	oldCanonical := canonicalizeMachineConfigImage(currentImage, oldConfig)
+	newCanonical := canonicalizeMachineConfigImage(currentImage, newConfig)
+
+	err := dn.update(oldCanonical, newCanonical, true)
+	if err != nil {
+		return fmt.Errorf("in-place apply failed: %w", err)
+	}
+
+	dn.storeCurrentConfigOnDisk(&onDiskConfig{
+		currentConfig: newCanonical, // Store canonicalized config
+		currentImage:  currentImage,
+	})
+
+	klog.Info("In-place update completed without node disruption")
+	return nil
 }
 
 // validateKernelArguments checks that the current boot has all arguments specified

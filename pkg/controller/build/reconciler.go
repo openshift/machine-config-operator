@@ -20,6 +20,7 @@ import (
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 
+	"github.com/openshift/machine-config-operator/pkg/version"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -103,7 +104,16 @@ func (b *buildReconciler) updateMachineOSConfig(ctx context.Context, old, cur *m
 	// Whenever the MachineOSConfig spec has changed, create a new MachineOSBuild.
 	if !equality.Semantic.DeepEqual(old.Spec, cur.Spec) {
 		klog.Infof("Detected MachineOSConfig change for %s", cur.Name)
-		return b.createNewMachineOSBuildOrReuseExisting(ctx, cur)
+
+		// This could be a potential problem for future Day 0 operations, but it's fine here for now.
+		if cur.Spec.MachineConfigPool.Name == "" {
+			return fmt.Errorf("MachineOSConfig %s has empty MachineConfigPool.Name", cur.Name)
+		}
+
+		if err := b.createNewMachineOSBuildOrReuseExisting(ctx, cur); err != nil {
+			return fmt.Errorf("failed to create/reuse build for MOSC %q: %w", cur.Name, err)
+		}
+		return nil
 	}
 
 	return b.syncMachineOSConfigs(ctx)
@@ -356,16 +366,90 @@ func (b *buildReconciler) UpdateMachineConfigPool(ctx context.Context, oldMCP, c
 // Sepcifically, whenever a new rendered MachineConfig is applied, it will
 // create a new MachineOSBuild in response.
 func (b *buildReconciler) updateMachineConfigPool(ctx context.Context, oldMCP, curMCP *mcfgv1.MachineConfigPool) error {
-	if oldMCP.Spec.Configuration.Name != curMCP.Spec.Configuration.Name {
-		klog.Infof("Rendered config for pool %s changed from %s to %s", curMCP.Name, oldMCP.Spec.Configuration.Name, curMCP.Spec.Configuration.Name)
-		if err := b.createNewMachineOSBuildOrReuseExistingForPoolChange(ctx, curMCP); err != nil {
-			return fmt.Errorf("could not create or reuse existing MachineOSBuild for MachineConfigPool %q change: %w", curMCP.Name, err)
-		}
+	// Only proceed if the rendered configuration changed
+	if oldMCP.Spec.Configuration.Name == curMCP.Spec.Configuration.Name {
+		return nil
 	}
 
-	// Not sure if we need to do this here yet or not.
-	// TODO: Determine if we should call b.syncMachineConfigPools() here or not.
+	// Get current and desired MachineConfigs
+	currMC, err := b.machineConfigLister.Get(oldMCP.Spec.Configuration.Name)
+	if err != nil {
+		return fmt.Errorf("error getting current MachineConfig %s: %w", oldMCP.Spec.Configuration.Name, err)
+	}
+
+	desMC, err := b.machineConfigLister.Get(curMCP.Spec.Configuration.Name)
+	if err != nil {
+		return fmt.Errorf("error getting desired MachineConfig %s: %w", curMCP.Spec.Configuration.Name, err)
+	}
+
+	// Determine rebuild requirements using shared logic
+	needsBuild := ctrlcommon.RequiresRebuild(currMC, desMC)
+
+	if needsBuild {
+		// Get the MachineOSConfig for this MCP
+		if _, err := b.machineOSConfigLister.Get(curMCP.Name); err != nil {
+			if k8serrors.IsNotFound(err) {
+				klog.Warningf("No MachineOSConfig found for pool %s, skipping OCL build", curMCP.Name)
+				return nil
+			}
+			return fmt.Errorf("error checking for MachineOSConfig: %w", err)
+		}
+
+		// Proceed with build creation
+		return b.createNewMachineOSBuildOrReuseExistingForPoolChange(ctx, curMCP)
+	}
+	// Otherwise, no build is required and we skip
+	klog.Infof("MachineConfig %s to %s changes do not require a build, skipping", oldMCP.Name, curMCP.Name)
 	return b.syncAll(ctx)
+}
+
+// Helper to generate and manage container configs for both MCP and MOSC updates
+func (b *buildReconciler) prepareContainerConfig(ctx context.Context, desiredMC *mcfgv1.MachineConfig, owner *mcfgv1.MachineOSConfig, mcpName string) (string, error) {
+	// Get controller config (common requirement)
+	cc, err := b.controllerConfigLister.Get(ctrlcommon.ControllerConfigName)
+	if err != nil {
+		return "", fmt.Errorf("error getting controller config: %w", err)
+	}
+
+	// Generate container config (shared logic)
+	containerMC, err := ctrlcommon.GenerateContainerConfig(desiredMC, cc, mcpName)
+	if err != nil {
+		return "", fmt.Errorf("error generating container config: %w", err)
+	}
+
+	// Set owner reference (standard pattern)
+	oref := metav1.NewControllerRef(owner, mcfgv1.SchemeGroupVersion.WithKind("MachineOSConfig"))
+	containerMC.SetOwnerReferences([]metav1.OwnerReference{*oref})
+
+	// Create if not exists
+	if _, err := b.mcfgclient.MachineconfigurationV1().MachineConfigs().Create(
+		ctx, containerMC, metav1.CreateOptions{}); err != nil && !k8serrors.IsAlreadyExists(err) {
+		return "", fmt.Errorf("error creating container config: %w", err)
+	}
+
+	return containerMC.Name, nil
+}
+
+func (b *buildReconciler) prepareContainerConfigForMOSC(ctx context.Context, mosc *mcfgv1.MachineOSConfig, mcpName string) (string, error) {
+	// Get associated MachineConfigPool
+	mcp, err := b.machineConfigPoolLister.Get(mosc.Spec.MachineConfigPool.Name)
+	if err != nil {
+		return "", fmt.Errorf("error getting pool: %w", err)
+	}
+
+	// Check if the pool has a valid rendered configuration
+	if mcp.Spec.Configuration.Name == "" {
+		return "", fmt.Errorf("MachineConfigPool %s has no rendered configuration", mcp.Name)
+	}
+
+	// Get desired MachineConfig from pool
+	desMC, err := b.machineConfigLister.Get(mcp.Spec.Configuration.Name)
+	if err != nil {
+		return "", fmt.Errorf("error getting desired MC: %w", err)
+	}
+
+	// Reuse existing container config logic
+	return b.prepareContainerConfig(ctx, desMC, mosc, mcpName)
 }
 
 // Adds a MachineOSBuild.
@@ -470,6 +554,21 @@ func (b *buildReconciler) createNewMachineOSBuildOrReuseExisting(ctx context.Con
 	if err != nil {
 		return fmt.Errorf("could not instantiate new MachineOSBuild: %w", err)
 	}
+
+	var containerName string
+	if mcp.Spec.Configuration.Name != "" {
+		containerName, err = b.prepareContainerConfigForMOSC(ctx, mosc, mcp.Name)
+		if err != nil {
+			return fmt.Errorf("error preparing container config: %w", err)
+		}
+		metav1.SetMetaDataAnnotation(&mosb.ObjectMeta, "mco.openshift.io/container-config", containerName)
+	} else {
+		klog.Warningf("No rendered config for pool %s - skipping container config", mcp.Name)
+	}
+
+	// Add container-config annotation
+	metav1.SetMetaDataAnnotation(&mosb.ObjectMeta, ctrlcommon.GeneratedByControllerVersionAnnotationKey, version.Hash)
+	metav1.SetMetaDataAnnotation(&mosb.ObjectMeta, ctrlcommon.ReleaseImageVersionAnnotationKey, osImageURLs.ReleaseVersion)
 
 	// Set owner reference of the machineOSBuild to the machineOSConfig that created this
 	oref := metav1.NewControllerRef(mosc, mcfgv1.SchemeGroupVersion.WithKind("MachineOSConfig"))
