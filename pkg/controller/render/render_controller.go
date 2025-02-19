@@ -451,6 +451,17 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	if err != nil {
 		return err
 	}
+
+	filteredMcs := make([]*mcfgv1.MachineConfig, 0, len(mcs))
+	for _, mc := range mcs {
+		// Only skip container-build configs
+		if _, ok := mc.Annotations[ctrlcommon.ContainerBuildAnnotationKey]; ok {
+			continue
+		}
+		filteredMcs = append(filteredMcs, mc)
+	}
+	mcs = filteredMcs
+
 	sort.SliceStable(mcs, func(i, j int) bool { return mcs[i].Name < mcs[j].Name })
 
 	if len(mcs) == 0 {
