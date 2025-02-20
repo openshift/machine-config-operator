@@ -58,7 +58,8 @@ contents:
             umount "${tmp_mount}" && rmdir "${tmp_mount}"
             exit 1
         fi
-
+        # Remove trailing period from the hostname. REF: OCPBUGS-45459.
+        hostname="${hostname%.}"
         echo "KUBELET_NODE_NAME=${hostname}" > ${NODEENV}
         umount "${tmp_mount}" && rmdir "${tmp_mount}"
     else
@@ -87,7 +88,8 @@ contents:
                 sleep 5
                 continue
             fi
-
+            # Remove trailing period from the hostname. REF: OCPBUGS-45459.
+            hostname="${hostname%.}"
             echo "KUBELET_NODE_NAME=${hostname}" > ${NODEENV}
             break
         done
