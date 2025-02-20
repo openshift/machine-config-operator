@@ -3,10 +3,10 @@
 package v1
 
 import (
-	v1 "github.com/openshift/api/operator/v1"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/client-go/listers"
-	"k8s.io/client-go/tools/cache"
+	operatorv1 "github.com/openshift/api/operator/v1"
+	labels "k8s.io/apimachinery/pkg/labels"
+	listers "k8s.io/client-go/listers"
+	cache "k8s.io/client-go/tools/cache"
 )
 
 // EtcdLister helps list Etcds.
@@ -14,19 +14,19 @@ import (
 type EtcdLister interface {
 	// List lists all Etcds in the indexer.
 	// Objects returned here must be treated as read-only.
-	List(selector labels.Selector) (ret []*v1.Etcd, err error)
+	List(selector labels.Selector) (ret []*operatorv1.Etcd, err error)
 	// Get retrieves the Etcd from the index for a given name.
 	// Objects returned here must be treated as read-only.
-	Get(name string) (*v1.Etcd, error)
+	Get(name string) (*operatorv1.Etcd, error)
 	EtcdListerExpansion
 }
 
 // etcdLister implements the EtcdLister interface.
 type etcdLister struct {
-	listers.ResourceIndexer[*v1.Etcd]
+	listers.ResourceIndexer[*operatorv1.Etcd]
 }
 
 // NewEtcdLister returns a new EtcdLister.
 func NewEtcdLister(indexer cache.Indexer) EtcdLister {
-	return &etcdLister{listers.New[*v1.Etcd](indexer, v1.Resource("etcd"))}
+	return &etcdLister{listers.New[*operatorv1.Etcd](indexer, operatorv1.Resource("etcd"))}
 }
