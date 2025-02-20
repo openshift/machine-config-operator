@@ -512,7 +512,7 @@ func removePendingDeployment() error {
 // applyOSChanges extracts the OS image and adds coreos-extensions repo if we have either OS update or package layering to perform
 func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
 	// We previously did not emit this event when kargs changed, so we still don't
-	if mcDiff.osUpdate || mcDiff.extensions || mcDiff.kernelType {
+	if mcDiff.osUpdate || mcDiff.extensions || mcDiff.kernelType || mcDiff.oclEnabled {
 		// We emitted this event before, so keep it
 		if dn.nodeWriter != nil {
 			dn.nodeWriter.Eventf(corev1.EventTypeNormal, "InClusterUpgrade", fmt.Sprintf("Updating from oscontainer %s", newConfig.Spec.OSImageURL))
@@ -523,11 +523,12 @@ func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newC
 	// - machineconfig changed
 	// - we're staying on a realtime kernel ( need to run rpm-ostree update )
 	// - we have extensions ( need to run rpm-ostree update )
+	// - OCL is enabled ( need to run rpm-ostree update )
 	// We have at least one customer that removes the pull secret from the cluster to "shrinkwrap" it for distribution and we want
 	// to make sure we don't break that use case, but realtime kernel update and extensions update always ran
 	// if they were in use, so we also need to preserve that behavior.
 	// https://issues.redhat.com/browse/OCPBUGS-4049
-	if mcDiff.osUpdate || mcDiff.extensions || mcDiff.kernelType || mcDiff.kargs ||
+	if mcDiff.osUpdate || mcDiff.extensions || mcDiff.kernelType || mcDiff.kargs || mcDiff.oclEnabled ||
 		canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelTypeRealtime ||
 		canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelType64kPages ||
 		len(newConfig.Spec.Extensions) > 0 {
@@ -806,8 +807,13 @@ func (dn *Daemon) calculatePostConfigChangeNodeDisruptionAction(diff *machineCon
 // This function should be consolidated with dn.update() and dn.updateHypershift(). See: https://issues.redhat.com/browse/MCO-810 for further discussion.
 //
 //nolint:gocyclo
-func (dn *Daemon) updateOnClusterBuild(oldConfig, newConfig *mcfgv1.MachineConfig, oldImage, newImage string, skipCertificateWrite bool) (retErr error) {
+func (dn *Daemon) updateOnClusterLayering(oldConfig, newConfig *mcfgv1.MachineConfig, oldImage, newImage string, skipCertificateWrite bool) (retErr error) {
 	oldConfig = canonicalizeEmptyMC(oldConfig)
+
+	mcDiff, err := newMachineConfigDiffFromLayered(oldConfig, newConfig, oldImage, newImage)
+	if err != nil {
+		return fmt.Errorf("could not get layered diff from MachineConfig(s) %q / %q and images %q / %q: %w", oldConfig.Name, newConfig.Name, oldImage, newImage, err)
+	}
 
 	if dn.nodeWriter != nil {
 		state, err := getNodeAnnotationExt(dn.node, constants.MachineConfigDaemonStateAnnotationKey, true)
@@ -840,7 +846,7 @@ func (dn *Daemon) updateOnClusterBuild(oldConfig, newConfig *mcfgv1.MachineConfi
 		return fmt.Errorf("parsing new Ignition config failed: %w", err)
 	}
 
-	klog.Infof("Checking Reconcilable for config %v to %v", oldConfigName, newConfigName)
+	klog.Infof("Checking Reconcilable for config %s to %s", oldConfigName, newConfigName)
 
 	// Make sure we can actually reconcile this state. In the future, this check should be moved to the BuildController and performed prior to the build occurring. This addresses the following bugs:
 	// - https://issues.redhat.com/browse/OCPBUGS-18670
@@ -856,41 +862,48 @@ func (dn *Daemon) updateOnClusterBuild(oldConfig, newConfig *mcfgv1.MachineConfi
 		return &unreconcilableErr{wrappedErr}
 	}
 
-	if oldImage == newImage && newImage != "" {
-		if oldImage == "" {
-			logSystem("Starting transition to %q", newImage)
-		} else {
-			logSystem("Starting transition from %q to %q", oldImage, newImage)
-		}
-	}
-
 	if err := dn.performDrain(); err != nil {
 		return err
 	}
 
-	// If the new image pullspec is already on disk, do not attempt to re-apply
-	// it. rpm-ostree will throw an error as a result.
-	// See: https://issues.redhat.com/browse/OCPBUGS-18414.
-	if oldImage != newImage {
-		// If the new image field is empty, set it to the OS image URL value
-		// provided by the MachineConfig to do a rollback.
-		if newImage == "" {
-			klog.Infof("%s empty, reverting to osImageURL %s from MachineConfig %s", constants.DesiredImageAnnotationKey, newConfig.Spec.OSImageURL, newConfig.Name)
-			newImage = newConfig.Spec.OSImageURL
-		}
-		if err := dn.updateLayeredOSToPullspec(newImage); err != nil {
-			return err
-		}
-	} else {
-		klog.Infof("Image pullspecs equal, skipping rpm-ostree rebase")
+	if mcDiff.revertFromOCL {
+		klog.Infof("%s empty, reverting to osImageURL %s from MachineConfig %s", constants.DesiredImageAnnotationKey, newConfig.Spec.OSImageURL, newConfig.Name)
 	}
 
-	// If the new OS image equals the OS image URL value, this means we're in a
-	// revert-from-layering situation. This also means we can return early after
-	// taking a different path.
-	if newImage == newConfig.Spec.OSImageURL {
-		return dn.finalizeRevertToNonLayering(newConfig)
+	if !dn.os.IsCoreOSVariant() {
+		return fmt.Errorf("on-cluster layering on non-CoreOS nodes is not supported")
 	}
+
+	// We have a separate path for OS images and MachineConfigs because we needed
+	// a way to handle the case where a node was either opting into or opting out
+	// of OCL. If either the oldImage or newImage is empty, this has a special
+	// meaning for OCL depending on which one is empty:
+	// - If oldImage is empty, this means that we are transitioning into OCL operation.
+	// - If newImage is empty, this means that we are transitioning out of OCL operation.
+	//
+	// The code paths that apply an OS image to the node do not handle the case
+	// where the image is empty. So here, we "canoncalize" the OSImageURL field
+	// on both the oldConfig and newConfig. These copies are only used for the OS
+	// update itself and should not be used for anything else.
+	oldConfigCopy := canonicalizeMachineConfigImage(oldImage, oldConfig)
+	newConfigCopy := canonicalizeMachineConfigImage(newImage, newConfig)
+
+	klog.Infof("Old MachineConfig %s / Image %s -> New MachineConfig %s / Image %s", oldConfigName, oldConfigCopy.Spec.OSImageURL, newConfigName, newConfigCopy.Spec.OSImageURL)
+
+	coreOSDaemon := CoreOSDaemon{dn}
+	if err := coreOSDaemon.applyOSChanges(*mcDiff, oldConfigCopy, newConfigCopy); err != nil {
+		return err
+	}
+
+	defer func() {
+		if retErr != nil {
+			if err := coreOSDaemon.applyOSChanges(*mcDiff, newConfigCopy, oldConfigCopy); err != nil {
+				errs := kubeErrs.NewAggregate([]error{err, retErr})
+				retErr = fmt.Errorf("error rolling back changes to OS: %w", errs)
+				return
+			}
+		}
+	}()
 
 	// update files on disk that need updating
 	if err := dn.updateFiles(oldIgnConfig, newIgnConfig, skipCertificateWrite); err != nil {
@@ -949,14 +962,6 @@ func (dn *Daemon) updateOnClusterBuild(oldConfig, newConfig *mcfgv1.MachineConfi
 		}
 	}()
 
-	// Update the kernal args if there is a difference
-	if diff.kargs && dn.os.IsCoreOSVariant() {
-		coreOSDaemon := CoreOSDaemon{dn}
-		if err := coreOSDaemon.updateKernelArguments(oldConfig.Spec.KernelArguments, newConfig.Spec.KernelArguments); err != nil {
-			return err
-		}
-	}
-
 	// Ideally we would want to update kernelArguments only via MachineConfigs.
 	// We are keeping this to maintain compatibility and OKD requirement.
 	if err := UpdateTuningArgs(KernelTuningFile, CmdLineFile); err != nil {
@@ -966,6 +971,40 @@ func (dn *Daemon) updateOnClusterBuild(oldConfig, newConfig *mcfgv1.MachineConfi
 	odc := &onDiskConfig{
 		currentImage:  newImage,
 		currentConfig: newConfig,
+	}
+
+	if mcDiff.revertFromOCL {
+		odc.currentImage = ""
+
+		// Finalizes the revert process by enabling a special systemd unit prior to
+		// rebooting the node.
+		//
+		// After we write the original factory image to the node, none of the files
+		// specified in the MachineConfig will be written due to how rpm-ostree handles
+		// file writes. Because those files are owned by the layered container image,
+		// they are not present after reboot; even if we were to write them to the node
+		// before rebooting. Consequently, after reverting back to the original image,
+		// the node will lose contact with the control plane and the easiest way to
+		// reestablish contact is to rebootstrap the node.
+		//
+		// By comparison, if we write a file that is _not_ owned by the layered
+		// container image, this file will persist after reboot. So what we do is write
+		// a special systemd unit that will rebootstrap the node upon reboot.
+		// Unfortunately, this will incur a second reboot during the rollback process,
+		// so there is room for improvement here.
+		if err := dn.enableRevertSystemdUnit(newConfig); err != nil {
+			return fmt.Errorf("could not enable revert systemd service: %w", err)
+		}
+
+		defer func() {
+			if retErr != nil {
+				if err := dn.disableRevertSystemdUnit(); err != nil {
+					errs := kubeErrs.NewAggregate([]error{err, retErr})
+					retErr = fmt.Errorf("error rolling back systemd unit %q on disk: %e", runtimeassets.RevertServiceName, errs)
+					return
+				}
+			}
+		}()
 	}
 
 	if err := dn.storeCurrentConfigOnDisk(odc); err != nil {
@@ -984,66 +1023,12 @@ func (dn *Daemon) updateOnClusterBuild(oldConfig, newConfig *mcfgv1.MachineConfi
 		}
 	}()
 
-	return dn.reboot(fmt.Sprintf("Node will reboot into image %s / MachineConfig %s", newImage, newConfigName))
-}
-
-// Finalizes the revert process by enabling a special systemd unit prior to
-// rebooting the node.
-//
-// After we write the original factory image to the node, none of the files
-// specified in the MachineConfig will be written due to how rpm-ostree handles
-// file writes. Because those files are owned by the layered container image,
-// they are not present after reboot; even if we were to write them to the node
-// before rebooting. Consequently, after reverting back to the original image,
-// the node will lose contact with the control plane and the easiest way to
-// reestablish contact is to rebootstrap the node.
-//
-// By comparison, if we write a file that is _not_ owned by the layered
-// container image, this file will persist after reboot. So what we do is write
-// a special systemd unit that will rebootstrap the node upon reboot.
-// Unfortunately, this will incur a second reboot during the rollback process,
-// so there is room for improvement here.
-func (dn *Daemon) finalizeRevertToNonLayering(newConfig *mcfgv1.MachineConfig) error {
-	// First, we write the new MachineConfig to a file. This is both the signal
-	// that the revert systemd unit should fire as well as the desired source of
-	// truth.
-	outBytes, err := json.Marshal(newConfig)
-	if err != nil {
-		return fmt.Errorf("could not marshal MachineConfig %q to JSON: %w", newConfig.Name, err)
-	}
-
-	if err := writeFileAtomicallyWithDefaults(runtimeassets.RevertServiceMachineConfigFile, outBytes); err != nil {
-		return fmt.Errorf("could not write MachineConfig %q to %q: %w", newConfig.Name, runtimeassets.RevertServiceMachineConfigFile, err)
-	}
-
-	klog.Infof("Wrote MachineConfig %q to %q", newConfig.Name, runtimeassets.RevertServiceMachineConfigFile)
-
-	// Next, we enable the revert systemd unit. This renders and writes the
-	// machine-config-daemon-revert.service systemd unit, clones it, and writes
-	// it to disk. The reason for doing it this way is because it will persist
-	// after the reboot since it was not written or mutated by the rpm-ostree
-	// process.
-	if err := dn.enableRevertSystemdUnit(); err != nil {
-		return err
-	}
-
-	// Clear the current image field so that after reboot, the node will clear
-	// the currentImage annotation.
-	odc := &onDiskConfig{
-		currentImage:  "",
-		currentConfig: newConfig,
-	}
-
-	if err := dn.storeCurrentConfigOnDisk(odc); err != nil {
-		return err
-	}
-
-	return dn.reboot(fmt.Sprintf("Node will reboot into image %s / MachineConfig %s", newConfig.Spec.OSImageURL, newConfig.Name))
+	return dn.reboot(fmt.Sprintf("Node will reboot into image %s / MachineConfig %s", canonicalizeMachineConfigImage(newImage, newConfig).Spec.OSImageURL, newConfigName))
 }
 
 // Update the node to the provided node configuration.
 // This function should be de-duped with dn.updateHypershift() and
-// dn.updateOnClusterBuild(). See: https://issues.redhat.com/browse/MCO-810 for
+// dn.updateOnClusterLayering(). See: https://issues.redhat.com/browse/MCO-810 for
 // discussion.
 //
 //nolint:gocyclo
@@ -1448,14 +1433,16 @@ func (dn *Daemon) removeRollback() error {
 // and the MCO would just operate on that.  For now we're just doing this to get
 // improved logging.
 type machineConfigDiff struct {
-	osUpdate   bool
-	kargs      bool
-	fips       bool
-	passwd     bool
-	files      bool
-	units      bool
-	kernelType bool
-	extensions bool
+	osUpdate      bool
+	kargs         bool
+	fips          bool
+	passwd        bool
+	files         bool
+	units         bool
+	kernelType    bool
+	extensions    bool
+	oclEnabled    bool
+	revertFromOCL bool
 }
 
 // isEmpty returns true if the machineConfigDiff has no changes, or
@@ -1524,6 +1511,19 @@ func newMachineConfigDiff(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineC
 		kernelType: canonicalizeKernelType(oldConfig.Spec.KernelType) != canonicalizeKernelType(newConfig.Spec.KernelType),
 		extensions: !(extensionsEmpty || reflect.DeepEqual(oldConfig.Spec.Extensions, newConfig.Spec.Extensions)),
 	}, nil
+}
+
+func newMachineConfigDiffFromLayered(oldConfig, newConfig *mcfgv1.MachineConfig, oldImage, newImage string) (*machineConfigDiff, error) {
+	mcDiff, err := newMachineConfigDiff(oldConfig, newConfig)
+	if err != nil {
+		return mcDiff, err
+	}
+
+	mcDiff.oclEnabled = true
+	// If the new OS image is empty, that means we are in a revert-from-OCL situation.
+	mcDiff.revertFromOCL = newImage == ""
+	mcDiff.osUpdate = oldImage != newImage || forceFileExists()
+	return mcDiff, nil
 }
 
 // reconcilable checks the configs to make sure that the only changes requested
@@ -2628,10 +2628,7 @@ func (dn *Daemon) queueRevertKernelSwap() error {
 func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 	newURL := config.Spec.OSImageURL
 	klog.Infof("Updating OS to layered image %q", newURL)
-	return dn.updateLayeredOSToPullspec(newURL)
-}
 
-func (dn *Daemon) updateLayeredOSToPullspec(newURL string) error {
 	newEnough, err := dn.NodeUpdaterClient.IsNewEnoughForLayering()
 	if err != nil {
 		return err
@@ -2921,22 +2918,26 @@ func (dn *Daemon) hasImageRegistryDrainOverrideConfigMap() (bool, error) {
 //
 // To enable the unit, we perform the following operations:
 // 1. Retrieve the ControllerConfig.
-// 2. Generate the Ignition config from the ControllerConfig.
-// 3. Writes the new systemd unit to disk and enables it.
-func (dn *Daemon) enableRevertSystemdUnit() error {
+// 2. Generate the Ignition config from the ControllerConfig and the supplied MachineConfig.
+// 3. Writes the new systemd unit and its needed files to disk and enable it.
+func (dn *Daemon) enableRevertSystemdUnit(newConfig *mcfgv1.MachineConfig) error {
 	ctrlcfg, err := dn.ccLister.Get(ctrlcommon.ControllerConfigName)
 	if err != nil {
 		return fmt.Errorf("could not get controllerconfig %s: %w", ctrlcommon.ControllerConfigName, err)
 	}
 
-	revertService, err := runtimeassets.NewRevertService(ctrlcfg)
+	rs, err := runtimeassets.NewRevertService(ctrlcfg, newConfig)
 	if err != nil {
 		return err
 	}
 
-	revertIgn, err := revertService.Ignition()
+	revertIgn, err := rs.Ignition()
 	if err != nil {
 		return fmt.Errorf("could not create %s: %w", runtimeassets.RevertServiceName, err)
+	}
+
+	if err := dn.writeFiles(revertIgn.Storage.Files, false); err != nil {
+		return fmt.Errorf("could not write files for %s: %w", runtimeassets.RevertServiceName, err)
 	}
 
 	if err := dn.writeUnits(revertIgn.Systemd.Units); err != nil {
@@ -2963,7 +2964,7 @@ func (dn *Daemon) disableRevertSystemdUnit() error {
 		return fmt.Errorf("could not determine if service %q exists: %w", runtimeassets.RevertServiceName, err)
 	}
 
-	// If the unit path does not exist, there is nothing left to do.
+	// If the unit path does not exist, there is nothing to do.
 	if !unitPathExists {
 		return nil
 	}
@@ -2977,6 +2978,7 @@ func (dn *Daemon) disableRevertSystemdUnit() error {
 	filesToRemove := []string{
 		unitPath,
 		runtimeassets.RevertServiceMachineConfigFile,
+		runtimeassets.RevertServiceProxyFile,
 	}
 
 	// systemd removes the unit file, but there is no harm in calling
@@ -2988,4 +2990,20 @@ func (dn *Daemon) disableRevertSystemdUnit() error {
 	}
 
 	return nil
+}
+
+// If the provided image is empty, then the OSImageURL value on the
+// MachineConfig should take precedence. Otherwise, if the provided image is
+// set, then it should take precedence over the OSImageURL value. This is only
+// used for OCL OS updates and should not be used for anything else.
+func canonicalizeMachineConfigImage(img string, mc *mcfgv1.MachineConfig) *mcfgv1.MachineConfig {
+	copied := mc.DeepCopy()
+
+	if img == "" {
+		return copied
+	}
+
+	copied.Spec.OSImageURL = img
+
+	return copied
 }
