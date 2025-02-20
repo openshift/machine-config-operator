@@ -968,13 +968,6 @@ func (dn *Daemon) updateOnClusterLayering(oldConfig, newConfig *mcfgv1.MachineCo
 		}
 	}()
 
-	// Update the kernal args if there is a difference
-	if diff.kargs && dn.os.IsCoreOSVariant() {
-		if err := coreOSDaemon.updateKernelArguments(oldConfig.Spec.KernelArguments, newConfig.Spec.KernelArguments); err != nil {
-			return err
-		}
-	}
-
 	// Ideally we would want to update kernelArguments only via MachineConfigs.
 	// We are keeping this to maintain compatibility and OKD requirement.
 	if err := UpdateTuningArgs(KernelTuningFile, CmdLineFile); err != nil {
@@ -2823,16 +2816,12 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 	if mcDiff.osUpdate && dn.bootedOSImageURL == newConfig.Spec.OSImageURL {
 		klog.Infof("Already in desired image %s", newConfig.Spec.OSImageURL)
 		mcDiff.osUpdate = false
-		// If OCL is enabled, return early here since there is nothing else to do.
-		if mcDiff.oclEnabled {
-			return nil
-		}
 	}
 
 	var osExtensionsContentDir string
 	var err error
+	if newConfig.Spec.BaseOSExtensionsContainerImage != "" && (mcDiff.osUpdate || mcDiff.extensions || mcDiff.kernelType) {
 
-	if newConfig.Spec.BaseOSExtensionsContainerImage != "" && (mcDiff.osUpdate || mcDiff.extensions || mcDiff.kernelType) && !mcDiff.oclEnabled {
 		// TODO(jkyros): the original intent was that we use the extensions container as a service, but that currently results
 		// in a lot of complexity due to boostrap and firstboot where the service isn't easily available, so for now we are going
 		// to extract them to disk like we did previously.
@@ -2870,19 +2859,17 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 		}
 	}()
 
-	if !mcDiff.oclEnabled {
-		// If we have an OS update *or* a kernel type change, then we must undo the kernel swap
-		// enablement.
-		if mcDiff.osUpdate || mcDiff.kernelType {
-			if err := dn.queueRevertKernelSwap(); err != nil {
-				mcdPivotErr.Inc()
-				return err
-			}
+	// If we have an OS update *or* a kernel type change, then we must undo the kernel swap
+	// enablement.
+	if mcDiff.osUpdate || mcDiff.kernelType {
+		if err := dn.queueRevertKernelSwap(); err != nil {
+			mcdPivotErr.Inc()
+			return err
 		}
 	}
 
 	// Update OS
-	if mcDiff.osUpdate || mcDiff.oclEnabled {
+	if mcDiff.osUpdate {
 		if err := dn.updateLayeredOS(newConfig); err != nil {
 			mcdPivotErr.Inc()
 			return err
@@ -2899,11 +2886,6 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 
 	// if we're here, we've successfully pivoted, or pivoting wasn't necessary, so we reset the error gauge
 	mcdPivotErr.Set(0)
-
-	// If on-cluster layering is enabled, we can skip the rest of this process.
-	if mcDiff.oclEnabled {
-		return nil
-	}
 
 	if mcDiff.kargs {
 		if err := dn.updateKernelArguments(oldConfig.Spec.KernelArguments, newConfig.Spec.KernelArguments); err != nil {
