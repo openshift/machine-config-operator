@@ -278,6 +278,15 @@ func (optr *Operator) syncUpgradeableStatus(co *configv1.ClusterOperator) error 
 		Status: configv1.ConditionTrue,
 		Reason: asExpectedReason,
 	}
+	configNode, err := optr.configClient.ConfigV1().Nodes().Get(context.Background(), ctrlcommon.ClusterNodeInstanceName, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	if configNode.Spec.CgroupMode == configv1.CgroupModeV1 {
+		coStatusCondition.Status = configv1.ConditionFalse
+		coStatusCondition.Reason = "ClusterOnCgroupV1"
+		coStatusCondition.Message = "Cluster is using cgroup v1 and is not upgradable. Please update the `CgroupMode` in the `nodes.config.openshift.io` object to 'v2'. Once upgraded, the cluster cannot be changed back to cgroup v1"
+	}
 
 	var updating, degraded, interrupted bool
 	for _, pool := range pools {
@@ -436,14 +445,6 @@ func (optr *Operator) generateClusterFleetEvaluations() ([]string, error) {
 		evaluations = append(evaluations, "runc: transition to default crun")
 	}
 
-	enabled, err = optr.cfeEvalCgroupsV1()
-	if err != nil {
-		return evaluations, err
-	}
-	if enabled {
-		evaluations = append(evaluations, "cgroupsv1: support has been deprecated in favor of cgroupsv2")
-	}
-
 	sort.Strings(evaluations)
 
 	return evaluations, nil
@@ -492,21 +493,6 @@ func (optr *Operator) cfeEvalRunc() (bool, error) {
 		}
 	}
 	return false, nil
-}
-
-func (optr *Operator) cfeEvalCgroupsV1() (bool, error) {
-	// check for nil so we do not have to mock within tests
-	if optr.nodeClusterLister == nil {
-		return false, nil
-	}
-	nodeClusterConfig, err := optr.nodeClusterLister.Get(ctrlcommon.ClusterNodeInstanceName)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			return false, nil
-		}
-		return false, err
-	}
-	return nodeClusterConfig.Spec.CgroupMode == configv1.CgroupModeV1, nil
 }
 
 // isKubeletSkewSupported checks the version skew of kube-apiserver and node kubelet version.
