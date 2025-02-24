@@ -63,4 +63,24 @@ spec:
   - name: health
     port: 8798
     protocol: TCP
-
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kube-rbac-proxy
+  namespace: openshift-machine-config-operator
+  labels:
+    k8s-app: kube-rbac-proxy
+  annotations:
+    include.release.openshift.io/ibm-cloud-managed: "true"
+    include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-developer: "true"
+    service.beta.openshift.io/serving-cert-secret-name: proxy-tls
+spec:
+  type: ClusterIP
+  selector:
+    k8s-app: kube-rbac-proxy
+  ports:
+  - name: secureListen
+    port: 9637
+    protocol: TCP
