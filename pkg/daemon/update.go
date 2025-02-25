@@ -1792,6 +1792,7 @@ func (dn *CoreOSDaemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig)
 	// We support Kernel update only on RHCOS and SCOS nodes
 	if !dn.os.IsEL() {
 		klog.Info("updating kernel on non-RHCOS nodes is not supported")
+		klog.Infof("Detected osrelease \n %+q", dn.os)
 		return nil
 	}
 
