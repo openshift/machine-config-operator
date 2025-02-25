@@ -850,6 +850,11 @@ func TestGetPackagesForSupportedExtensions(t *testing.T) {
 			errExpected: true,
 		},
 		{
+			name:             "Supported single multi-package extension",
+			extensions:       []string{"two-node-ha"},
+			expectedPackages: []string{"pacemaker", "pcs", "fence-agents-all"},
+		},
+		{
 			name:             "Supported single package extension",
 			extensions:       []string{"wasm"},
 			expectedPackages: []string{"crun-wasm"},
