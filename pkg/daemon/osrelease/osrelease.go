@@ -91,8 +91,12 @@ func (os OperatingSystem) BaseVersionMajor() string {
 
 // IsEL is true if the OS is an Enterprise Linux variant of CoreOS
 // i.e. RHEL CoreOS (RHCOS) or CentOS Stream CoreOS (SCOS)
+//
+// In 4.19, os-release content has been changed as part of
+// https://github.com/openshift/enhancements/blob/master/enhancements/rhcos/split-rhcos-into-layers.md
+// Additional info here: https://github.com/openshift/enhancements/pull/1755
 func (os OperatingSystem) IsEL() bool {
-	return os.id == rhcos || os.id == scos
+	return os.id == rhcos || os.id == scos || (os.id == rhel && os.variantID == coreos)
 }
 
 // IsEL8 is true if the OS is RHCOS 8 or SCOS 8
