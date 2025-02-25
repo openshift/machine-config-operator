@@ -3,13 +3,13 @@
 package v1
 
 import (
-	"context"
+	context "context"
 	time "time"
 
-	operatorv1 "github.com/openshift/api/operator/v1"
+	apioperatorv1 "github.com/openshift/api/operator/v1"
 	versioned "github.com/openshift/client-go/operator/clientset/versioned"
 	internalinterfaces "github.com/openshift/client-go/operator/informers/externalversions/internalinterfaces"
-	v1 "github.com/openshift/client-go/operator/listers/operator/v1"
+	operatorv1 "github.com/openshift/client-go/operator/listers/operator/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -20,7 +20,7 @@ import (
 // OpenShiftControllerManagers.
 type OpenShiftControllerManagerInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1.OpenShiftControllerManagerLister
+	Lister() operatorv1.OpenShiftControllerManagerLister
 }
 
 type openShiftControllerManagerInformer struct {
@@ -54,7 +54,7 @@ func NewFilteredOpenShiftControllerManagerInformer(client versioned.Interface, r
 				return client.OperatorV1().OpenShiftControllerManagers().Watch(context.TODO(), options)
 			},
 		},
-		&operatorv1.OpenShiftControllerManager{},
+		&apioperatorv1.OpenShiftControllerManager{},
 		resyncPeriod,
 		indexers,
 	)
@@ -65,9 +65,9 @@ func (f *openShiftControllerManagerInformer) defaultInformer(client versioned.In
 }
 
 func (f *openShiftControllerManagerInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&operatorv1.OpenShiftControllerManager{}, f.defaultInformer)
+	return f.factory.InformerFor(&apioperatorv1.OpenShiftControllerManager{}, f.defaultInformer)
 }
 
-func (f *openShiftControllerManagerInformer) Lister() v1.OpenShiftControllerManagerLister {
-	return v1.NewOpenShiftControllerManagerLister(f.Informer().GetIndexer())
+func (f *openShiftControllerManagerInformer) Lister() operatorv1.OpenShiftControllerManagerLister {
+	return operatorv1.NewOpenShiftControllerManagerLister(f.Informer().GetIndexer())
 }

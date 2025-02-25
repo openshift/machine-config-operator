@@ -4,13 +4,13 @@ package v1
 
 import (
 	machineconfigurationv1 "github.com/openshift/api/machineconfiguration/v1"
-	v1 "k8s.io/client-go/applyconfigurations/meta/v1"
+	metav1 "k8s.io/client-go/applyconfigurations/meta/v1"
 )
 
 // MachineOSConfigStatusApplyConfiguration represents a declarative configuration of the MachineOSConfigStatus type for use
 // with apply.
 type MachineOSConfigStatusApplyConfiguration struct {
-	Conditions           []v1.ConditionApplyConfiguration          `json:"conditions,omitempty"`
+	Conditions           []metav1.ConditionApplyConfiguration      `json:"conditions,omitempty"`
 	ObservedGeneration   *int64                                    `json:"observedGeneration,omitempty"`
 	CurrentImagePullSpec *machineconfigurationv1.ImageDigestFormat `json:"currentImagePullSpec,omitempty"`
 	MachineOSBuild       *ObjectReferenceApplyConfiguration        `json:"machineOSBuild,omitempty"`
@@ -25,7 +25,7 @@ func MachineOSConfigStatus() *MachineOSConfigStatusApplyConfiguration {
 // WithConditions adds the given value to the Conditions field in the declarative configuration
 // and returns the receiver, so that objects can be build by chaining "With" function invocations.
 // If called multiple times, values provided by each call will be appended to the Conditions field.
-func (b *MachineOSConfigStatusApplyConfiguration) WithConditions(values ...*v1.ConditionApplyConfiguration) *MachineOSConfigStatusApplyConfiguration {
+func (b *MachineOSConfigStatusApplyConfiguration) WithConditions(values ...*metav1.ConditionApplyConfiguration) *MachineOSConfigStatusApplyConfiguration {
 	for i := range values {
 		if values[i] == nil {
 			panic("nil value passed to WithConditions")

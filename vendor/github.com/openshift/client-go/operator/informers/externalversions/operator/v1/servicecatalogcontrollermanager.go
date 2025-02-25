@@ -3,13 +3,13 @@
 package v1
 
 import (
-	"context"
+	context "context"
 	time "time"
 
-	operatorv1 "github.com/openshift/api/operator/v1"
+	apioperatorv1 "github.com/openshift/api/operator/v1"
 	versioned "github.com/openshift/client-go/operator/clientset/versioned"
 	internalinterfaces "github.com/openshift/client-go/operator/informers/externalversions/internalinterfaces"
-	v1 "github.com/openshift/client-go/operator/listers/operator/v1"
+	operatorv1 "github.com/openshift/client-go/operator/listers/operator/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -20,7 +20,7 @@ import (
 // ServiceCatalogControllerManagers.
 type ServiceCatalogControllerManagerInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1.ServiceCatalogControllerManagerLister
+	Lister() operatorv1.ServiceCatalogControllerManagerLister
 }
 
 type serviceCatalogControllerManagerInformer struct {
@@ -54,7 +54,7 @@ func NewFilteredServiceCatalogControllerManagerInformer(client versioned.Interfa
 				return client.OperatorV1().ServiceCatalogControllerManagers().Watch(context.TODO(), options)
 			},
 		},
-		&operatorv1.ServiceCatalogControllerManager{},
+		&apioperatorv1.ServiceCatalogControllerManager{},
 		resyncPeriod,
 		indexers,
 	)
@@ -65,9 +65,9 @@ func (f *serviceCatalogControllerManagerInformer) defaultInformer(client version
 }
 
 func (f *serviceCatalogControllerManagerInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&operatorv1.ServiceCatalogControllerManager{}, f.defaultInformer)
+	return f.factory.InformerFor(&apioperatorv1.ServiceCatalogControllerManager{}, f.defaultInformer)
 }
 
-func (f *serviceCatalogControllerManagerInformer) Lister() v1.ServiceCatalogControllerManagerLister {
-	return v1.NewServiceCatalogControllerManagerLister(f.Informer().GetIndexer())
+func (f *serviceCatalogControllerManagerInformer) Lister() operatorv1.ServiceCatalogControllerManagerLister {
+	return operatorv1.NewServiceCatalogControllerManagerLister(f.Informer().GetIndexer())
 }
