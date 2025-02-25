@@ -3,6 +3,7 @@ package build
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -14,7 +15,6 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	batchv1 "k8s.io/api/batch/v1"
-	"k8s.io/apimachinery/pkg/api/equality"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	clientset "k8s.io/client-go/kubernetes"
@@ -81,30 +81,50 @@ func (b *buildReconciler) AddMachineOSConfig(ctx context.Context, mosc *mcfgv1.M
 }
 
 // Executes whenever an existing MachineOSConfig is updated.
-func (b *buildReconciler) UpdateMachineOSConfig(ctx context.Context, old, cur *mcfgv1.MachineOSConfig) error {
-	return b.timeObjectOperation(cur, updatingVerb, func() error {
-		return b.updateMachineOSConfig(ctx, old, cur)
-	})
-}
-
-// Executes whenever a MachineOSConfig is updated. If the build inputs have
-// changed, a new MachineOSBuild should be created.
 func (b *buildReconciler) updateMachineOSConfig(ctx context.Context, old, cur *mcfgv1.MachineOSConfig) error {
-	// If we have gained the rebuild annotation, we should delete the current MachineOSBuild associated with this MachineOSConfig.
+	// If rebuild annotation is added, trigger a full rebuild
 	if !hasRebuildAnnotation(old) && hasRebuildAnnotation(cur) {
 		if err := b.rebuildMachineOSConfig(ctx, cur); err != nil {
 			return fmt.Errorf("could not rebuild MachineOSConfig %q: %w", cur.Name, err)
 		}
-
 		return nil
 	}
 
-	// Whenever the MachineOSConfig spec has changed, create a new MachineOSBuild.
-	if !equality.Semantic.DeepEqual(old.Spec, cur.Spec) {
-		klog.Infof("Detected MachineOSConfig change for %s", cur.Name)
+	// Get the current and desired MachineConfigs
+	mcp, err := utils.GetMachineConfigPoolForMachineOSConfig(cur, b.utilListers())
+	if err != nil {
+		klog.Errorf("Error fetching MachineConfigPool for MachineOSConfig %s: %v", cur.Name, err)
+		return err
+	}
+
+	currentConfig := mcp.Status.Configuration.Name
+	desiredConfig := mcp.Spec.Configuration.Name
+
+	curr, err := b.mcfgclient.MachineconfigurationV1().MachineConfigs().Get(ctx, currentConfig, metav1.GetOptions{})
+	if err != nil {
+		klog.Errorf("Error fetching current MachineConfig %s: %v", currentConfig, err)
+		return err
+	}
+	klog.Infof("Successfully fetched current MachineConfig: %s (ResourceVersion: %s, UID: %s)",
+		currentConfig, curr.ResourceVersion, curr.UID)
+
+	des, err := b.mcfgclient.MachineconfigurationV1().MachineConfigs().Get(ctx, desiredConfig, metav1.GetOptions{})
+	if err != nil {
+		klog.Errorf("Error fetching desired MachineConfig %s: %v", desiredConfig, err)
+		return err
+	}
+	klog.Infof("Successfully fetched desired MachineConfig: %s (ResourceVersion: %s, UID: %s)",
+		desiredConfig, des.ResourceVersion, des.UID)
+
+	// Determine if we need to trigger an OCL build or just live apply
+	needsBuild, _ := requiresRebuild(curr, des)
+
+	if needsBuild {
+		klog.Infof("MachineConfig update detected, triggering MachineOSBuild for %s", cur.Name)
 		return b.createNewMachineOSBuildOrReuseExisting(ctx, cur)
 	}
 
+	// No changes needed
 	return b.syncMachineOSConfigs(ctx)
 }
 
@@ -977,4 +997,22 @@ func (b *buildReconciler) syncMachineOSConfig(ctx context.Context, mosc *mcfgv1.
 
 		return nil
 	})
+}
+func requiresRebuild(oldMC, newMC *mcfgv1.MachineConfig) (bool, bool) {
+	// If any of these fields change, we require an OCL build
+	if oldMC.Spec.OSImageURL != newMC.Spec.OSImageURL {
+		return true, false
+	}
+	if oldMC.Spec.KernelType != newMC.Spec.KernelType {
+		return true, false
+	}
+	if !reflect.DeepEqual(oldMC.Spec.Extensions, newMC.Spec.Extensions) {
+		return true, false
+	}
+	if !reflect.DeepEqual(oldMC.Spec.KernelArguments, newMC.Spec.KernelArguments) {
+		return true, false
+	}
+
+	// If we get here, no rebuild is needed, but we DO need a live apply
+	return false, true
 }
