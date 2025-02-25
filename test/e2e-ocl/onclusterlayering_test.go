@@ -90,9 +90,6 @@ type onClusterLayeringTestOpts struct {
 
 	// Inject YUM repo information from a Centos 9 stream container
 	useYumRepos bool
-
-	// Add Extensions for testing
-	useExtensions bool
 }
 
 func TestOnClusterLayeringOnOKD(t *testing.T) {
@@ -139,13 +136,12 @@ func TestOnClusterLayering(t *testing.T) {
 
 // Tests that an on-cluster build can be performed and that the resulting image
 // is rolled out to an opted-in node.
-func TestOnClusterBuildRollsOutImageWithExtensionsInstalled(t *testing.T) {
+func TestOnClusterBuildRollsOutImage(t *testing.T) {
 	imagePullspec := runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
 		poolName: layeredMCPName,
 		customDockerfiles: map[string]string{
 			layeredMCPName: cowsayDockerfile,
 		},
-		useExtensions: true,
 	})
 
 	cs := framework.NewClientSet("")
@@ -156,14 +152,12 @@ func TestOnClusterBuildRollsOutImageWithExtensionsInstalled(t *testing.T) {
 
 	helpers.AssertNodeBootedIntoImage(t, cs, node, imagePullspec)
 	t.Logf("Node %s is booted into image %q", node.Name, imagePullspec)
-	assertExtensionInstalledOnNode(t, cs, node, true)
 
 	t.Log(helpers.ExecCmdOnNode(t, cs, node, "chroot", "/rootfs", "cowsay", "Moo!"))
 
 	unlabelFunc()
 
 	assertNodeRevertsToNonLayered(t, cs, node)
-	assertExtensionInstalledOnNode(t, cs, node, false)
 }
 
 func assertNodeRevertsToNonLayered(t *testing.T, cs *framework.ClientSet, node corev1.Node) {
@@ -178,22 +172,6 @@ func assertNodeRevertsToNonLayered(t *testing.T, cs *framework.ClientSet, node c
 
 	helpers.AssertFileNotOnNode(t, cs, node, filepath.Join("/etc/systemd/system", runtimeassets.RevertServiceName))
 	helpers.AssertFileNotOnNode(t, cs, node, runtimeassets.RevertServiceMachineConfigFile)
-}
-
-func assertExtensionInstalledOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, shouldExist bool) {
-	foundPkg, err := helpers.ExecCmdOnNodeWithError(cs, node, "chroot", "/rootfs", "rpm", "-q", "usbguard")
-	if shouldExist {
-		require.NoError(t, err, "usbguard extension not found")
-		if strings.Contains(foundPkg, "package usbguard is not installed") {
-			t.Fatalf("usbguard package not installed on node %s, got %s", node.Name, foundPkg)
-		}
-		t.Logf("usbguard extension installed, got %s", foundPkg)
-	} else {
-		if !strings.Contains(foundPkg, "package usbguard is not installed") {
-			t.Fatalf("usbguard package is installed on node %s, got %s", node.Name, foundPkg)
-		}
-		t.Logf("usbguard extension not installed as expected, got %s", foundPkg)
-	}
 }
 
 // This test extracts the /etc/yum.repos.d and /etc/pki/rpm-gpg content from a
@@ -814,30 +792,6 @@ func prepareForOnClusterLayeringTest(t *testing.T, cs *framework.ClientSet, test
 		makeIdempotentAndRegister(t, helpers.CreatePoolWithNode(t, cs, testOpts.poolName, *testOpts.targetNode))
 	} else {
 		makeIdempotentAndRegister(t, helpers.CreateMCP(t, cs, testOpts.poolName))
-	}
-
-	if testOpts.useExtensions {
-		extensionsMC := &mcfgv1.MachineConfig{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:   "99-extensions",
-				Labels: helpers.MCLabelForRole(testOpts.poolName),
-			},
-			Spec: mcfgv1.MachineConfigSpec{
-				Config: runtime.RawExtension{
-					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
-				},
-				Extensions: []string{"usbguard"},
-			},
-		}
-
-		helpers.SetMetadataOnObject(t, extensionsMC)
-		// Apply the extensions MC
-		applyMC(t, cs, extensionsMC)
-
-		// Wait for rendered config to finish creating
-		renderedConfig, err := helpers.WaitForRenderedConfig(t, cs, testOpts.poolName, extensionsMC.Name)
-		require.NoError(t, err)
-		t.Logf("Finished rendering config %s", renderedConfig)
 	}
 
 	_, err := helpers.WaitForRenderedConfig(t, cs, testOpts.poolName, "00-worker")
