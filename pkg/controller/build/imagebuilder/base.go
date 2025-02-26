@@ -53,222 +53,6 @@ func newBaseImageBuilderWithCleaner(kubeclient clientset.Interface, mcfgclient m
 	}
 }
 
-// Represents the successful conditions for a MachineOSBuild.
-func (b *baseImageBuilder) succeededConditions() []metav1.Condition {
-	return []metav1.Condition{
-		{
-			Type:    string(mcfgv1.MachineOSBuildPrepared),
-			Status:  metav1.ConditionFalse,
-			Reason:  "Prepared",
-			Message: "Build Prepared and Pending",
-		},
-		{
-			Type:    string(mcfgv1.MachineOSBuilding),
-			Status:  metav1.ConditionFalse,
-			Reason:  "Building",
-			Message: "Image Build In Progress",
-		},
-		{
-			Type:    string(mcfgv1.MachineOSBuildFailed),
-			Status:  metav1.ConditionFalse,
-			Reason:  "Failed",
-			Message: "Build Failed",
-		},
-		{
-			Type:    string(mcfgv1.MachineOSBuildInterrupted),
-			Status:  metav1.ConditionFalse,
-			Reason:  "Interrupted",
-			Message: "Build Interrupted",
-		},
-		{
-			Type:    string(mcfgv1.MachineOSBuildSucceeded),
-			Status:  metav1.ConditionTrue,
-			Reason:  "Ready",
-			Message: "Build Ready",
-		},
-	}
-}
-
-// Represents the pending conditions for a MachineOSBuild.
-func (b *baseImageBuilder) pendingConditions() []metav1.Condition {
-	return []metav1.Condition{
-		{
-			Type:    string(mcfgv1.MachineOSBuildPrepared),
-			Status:  metav1.ConditionTrue,
-			Reason:  "Prepared",
-			Message: "Build Prepared and Pending",
-		},
-		{
-			Type:    string(mcfgv1.MachineOSBuilding),
-			Status:  metav1.ConditionFalse,
-			Reason:  "Building",
-			Message: "Image Build In Progress",
-		},
-		{
-			Type:    string(mcfgv1.MachineOSBuildFailed),
-			Status:  metav1.ConditionFalse,
-			Reason:  "Failed",
-			Message: "Build Failed",
-		},
-		{
-			Type:    string(mcfgv1.MachineOSBuildInterrupted),
-			Status:  metav1.ConditionFalse,
-			Reason:  "Interrupted",
-			Message: "Build Interrupted",
-		},
-		{
-			Type:    string(mcfgv1.MachineOSBuildSucceeded),
-			Status:  metav1.ConditionFalse,
-			Reason:  "Ready",
-			Message: "Build Ready",
-		},
-	}
-}
-
-// Represents the running conditions for a MachineOSBuild.
-func (b *baseImageBuilder) runningConditions() []metav1.Condition {
-	return []metav1.Condition{
-		{
-			Type:    string(mcfgv1.MachineOSBuildPrepared),
-			Status:  metav1.ConditionFalse,
-			Reason:  "Prepared",
-			Message: "Build Prepared and Pending",
-		},
-		{
-			Type:    string(mcfgv1.MachineOSBuilding),
-			Status:  metav1.ConditionTrue,
-			Reason:  "Building",
-			Message: "Image Build In Progress",
-		},
-		{
-			Type:    string(mcfgv1.MachineOSBuildFailed),
-			Status:  metav1.ConditionFalse,
-			Reason:  "Failed",
-			Message: "Build Failed",
-		},
-		{
-			Type:    string(mcfgv1.MachineOSBuildInterrupted),
-			Status:  metav1.ConditionFalse,
-			Reason:  "Interrupted",
-			Message: "Build Interrupted",
-		},
-		{
-			Type:    string(mcfgv1.MachineOSBuildSucceeded),
-			Status:  metav1.ConditionFalse,
-			Reason:  "Ready",
-			Message: "Build Ready",
-		},
-	}
-}
-
-// Represents the failure conditions for a MachineOSBuild.
-func (b *baseImageBuilder) failedConditions() []metav1.Condition {
-	return []metav1.Condition{
-		{
-			Type:    string(mcfgv1.MachineOSBuildPrepared),
-			Status:  metav1.ConditionFalse,
-			Reason:  "Prepared",
-			Message: "Build Prepared and Pending",
-		},
-		{
-			Type:    string(mcfgv1.MachineOSBuilding),
-			Status:  metav1.ConditionFalse,
-			Reason:  "Building",
-			Message: "Image Build In Progress",
-		},
-		{
-			Type:    string(mcfgv1.MachineOSBuildFailed),
-			Status:  metav1.ConditionTrue,
-			Reason:  "Failed",
-			Message: "Build Failed",
-		},
-		{
-			Type:    string(mcfgv1.MachineOSBuildInterrupted),
-			Status:  metav1.ConditionFalse,
-			Reason:  "Interrupted",
-			Message: "Build Interrupted",
-		},
-		{
-			Type:    string(mcfgv1.MachineOSBuildSucceeded),
-			Status:  metav1.ConditionFalse,
-			Reason:  "Ready",
-			Message: "Build Ready",
-		},
-	}
-}
-
-// Represents the interrupted conditions for a MachineOSBuild.
-func (b *baseImageBuilder) interruptedConditions() []metav1.Condition {
-	return []metav1.Condition{
-		{
-			Type:    string(mcfgv1.MachineOSBuildPrepared),
-			Status:  metav1.ConditionFalse,
-			Reason:  "Prepared",
-			Message: "Build Prepared and Pending",
-		},
-		{
-			Type:    string(mcfgv1.MachineOSBuilding),
-			Status:  metav1.ConditionFalse,
-			Reason:  "Building",
-			Message: "Image Build In Progress",
-		},
-		{
-			Type:    string(mcfgv1.MachineOSBuildFailed),
-			Status:  metav1.ConditionFalse,
-			Reason:  "Failed",
-			Message: "Build Failed",
-		},
-		{
-			Type:    string(mcfgv1.MachineOSBuildInterrupted),
-			Status:  metav1.ConditionTrue,
-			Reason:  "Interrupted",
-			Message: "Build Interrupted",
-		},
-		{
-			Type:    string(mcfgv1.MachineOSBuildSucceeded),
-			Status:  metav1.ConditionFalse,
-			Reason:  "Ready",
-			Message: "Build Ready",
-		},
-	}
-}
-
-// Represents the initial MachineOSBuild state (all conditions false).
-func (b *baseImageBuilder) initialConditions() []metav1.Condition {
-	return []metav1.Condition{
-		{
-			Type:    string(mcfgv1.MachineOSBuildPrepared),
-			Status:  metav1.ConditionFalse,
-			Reason:  "Prepared",
-			Message: "Build Prepared and Pending",
-		},
-		{
-			Type:    string(mcfgv1.MachineOSBuilding),
-			Status:  metav1.ConditionFalse,
-			Reason:  "Building",
-			Message: "Image Build In Progress",
-		},
-		{
-			Type:    string(mcfgv1.MachineOSBuildFailed),
-			Status:  metav1.ConditionFalse,
-			Reason:  "Failed",
-			Message: "Build Failed",
-		},
-		{
-			Type:    string(mcfgv1.MachineOSBuildInterrupted),
-			Status:  metav1.ConditionFalse,
-			Reason:  "Interrupted",
-			Message: "Build Interrupted",
-		},
-		{
-			Type:    string(mcfgv1.MachineOSBuildSucceeded),
-			Status:  metav1.ConditionFalse,
-			Reason:  "Ready",
-			Message: "Build Ready",
-		},
-	}
-}
-
 // Represents a builder object that has a GroupVersionKind method on it; which
 // anything that has metav1.TypeMeta instance included should have..
 type kubeObject interface {
@@ -288,6 +72,16 @@ func (b *baseImageBuilder) getMachineOSBuildStatus(ctx context.Context, obj kube
 
 	if buildStatus == mcfgv1.MachineOSBuildSucceeded || buildStatus == mcfgv1.MachineOSBuildFailed || buildStatus == mcfgv1.MachineOSBuildInterrupted {
 		out.BuildEnd = &now
+	}
+
+	// In this scenario, the build is in a terminal state, but we don't know
+	// when it started since the machine-os-builder pod may have been offline.
+	// In this case, we should get the creation timestamp from the builder
+	// object and use that as the start time instead of now since the buildEnd
+	// must be after the buildStart time.
+	if out.BuildStart == &now && out.BuildEnd == &now {
+		jobCreationTimestamp := obj.GetCreationTimestamp()
+		out.BuildStart = &jobCreationTimestamp
 	}
 
 	if buildStatus == mcfgv1.MachineOSBuildSucceeded {

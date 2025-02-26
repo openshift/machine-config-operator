@@ -211,6 +211,8 @@ func assertObserverCanGetJobStatus(ctx context.Context, t *testing.T, obs ImageB
 
 	assert.NotNil(t, mosbStatus.Builder)
 
+	assert.NotNil(t, mosbStatus.BuildStart)
+
 	if jobPhase == jobSucceeded {
 		assert.NotNil(t, mosbStatus.BuildEnd)
 		assert.Equal(t, "registry.hostname.com/org/repo@sha256:e1992921cba73d9e74e46142eca5946df8a895bfd4419fc8b5c6422d5e7192e6", string(mosbStatus.DigestedImagePushSpec))
@@ -242,4 +244,40 @@ func TestJobImageBuilderCanCleanWithOnlyMachineOSBuild(t *testing.T) {
 
 	kubeassert.JobDoesNotExist(buildJobName)
 	assertObjectsAreRemovedByCleaner(ctx, t, kubeassert, jim.(*jobImageBuilder).buildrequest)
+}
+
+func TestJobImageBuilderSetsBuildStartAndEndTimestamp(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	t.Cleanup(cancel)
+
+	kubeclient, mcfgclient, lobj, kubeassert := fixtures.GetClientsForTest(t)
+	kubeassert = kubeassert.WithContext(ctx)
+
+	jim := NewJobImageBuilder(kubeclient, mcfgclient, lobj.MachineOSBuild, lobj.MachineOSConfig)
+
+	assert.NoError(t, jim.Start(ctx))
+
+	job, err := kubeclient.BatchV1().Jobs(ctrlcommon.MCONamespace).Get(ctx, utils.GetBuildJobName(lobj.MachineOSBuild), metav1.GetOptions{})
+	require.NoError(t, err)
+
+	// Set -60 seconds so that we can get a time that is one minute before the current time.
+	jobStartTime := time.Now().Add(time.Second * -60)
+	job.SetCreationTimestamp(metav1.NewTime(jobStartTime))
+
+	_, err = kubeclient.BatchV1().Jobs(ctrlcommon.MCONamespace).Update(ctx, job, metav1.UpdateOptions{})
+	require.NoError(t, err)
+
+	fixtures.SetJobStatus(ctx, t, kubeclient, lobj.MachineOSBuild, fixtures.JobStatus{Succeeded: 1})
+
+	status, err := jim.MachineOSBuildStatus(ctx)
+	require.NoError(t, err)
+
+	assert.NotNil(t, status.BuildStart)
+	assert.NotNil(t, status.BuildEnd)
+
+	assert.True(t, status.BuildStart.Before(status.BuildEnd))
+	assert.GreaterOrEqual(t, status.BuildEnd.Time.Sub(status.BuildStart.Time), time.Second*60)
+	assert.Equal(t, status.BuildStart.Time, jobStartTime)
 }
