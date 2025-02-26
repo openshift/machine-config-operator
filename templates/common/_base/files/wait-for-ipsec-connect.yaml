@@ -9,7 +9,10 @@ contents:
       exit 0
     fi
 
-    #
+    if ! grep -q "plutodebug=base" /etc/ipsec.d/openshift.conf; then
+      sed -i '/^.*config setup.*$/a\    plutodebug=base' /etc/ipsec.d/openshift.conf
+    fi
+
     if ! grep -q "auto=start" /etc/ipsec.d/openshift.conf; then
       sed -i '/^.*conn ovn.*$/a\    auto=start' /etc/ipsec.d/openshift.conf
     fi
