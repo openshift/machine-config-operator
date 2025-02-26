@@ -60,6 +60,23 @@ func ValidateOnClusterBuildConfig(kubeclient clientset.Interface, mcfgclient ver
 	return nil
 }
 
+// GetMachineOSConfigForPool finds the MachineOSConfig for a specific MachineConfigPool.
+func GetMachineOSConfigForPool(mcfgclient versioned.Interface, mcps []*mcfgv1.MachineConfigPool) (*mcfgv1.MachineOSConfig, error) {
+	machineOSConfigs, err := mcfgclient.MachineconfigurationV1().MachineOSConfigs().List(context.TODO(), metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	for _, pool := range mcps {
+		for _, mosc := range machineOSConfigs.Items {
+			if mosc.Spec.MachineConfigPool.Name == pool.Name {
+				return &mosc, nil
+			}
+		}
+	}
+	return nil, errors.New("MachineOSConfig for pools not found")
+}
+
 func validateMachineOSConfig(mcpGetter func(string) (*mcfgv1.MachineConfigPool, error), secretGetter func(string) (*corev1.Secret, error), mosc *mcfgv1.MachineOSConfig) error {
 	_, err := mcpGetter(mosc.Spec.MachineConfigPool.Name)
 	if err != nil && k8serrors.IsNotFound(err) {

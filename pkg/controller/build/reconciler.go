@@ -471,6 +471,10 @@ func (b *buildReconciler) createNewMachineOSBuildOrReuseExisting(ctx context.Con
 		return fmt.Errorf("could not instantiate new MachineOSBuild: %w", err)
 	}
 
+	// Set owner reference of the machineOSBuild to the machineOSConfig that created this
+	oref := metav1.NewControllerRef(mosc, mcfgv1.SchemeGroupVersion.WithKind("MachineOSConfig"))
+	mosb.SetOwnerReferences([]metav1.OwnerReference{*oref})
+
 	existingMosb, err := b.machineOSBuildLister.Get(mosb.Name)
 	if err != nil && !k8serrors.IsNotFound(err) {
 		return fmt.Errorf("could not get MachineOSBuild: %w", err)
@@ -994,6 +998,14 @@ func (b *buildReconciler) syncMachineOSConfig(ctx context.Context, mosc *mcfgv1.
 		if err := b.createNewMachineOSBuildOrReuseExisting(ctx, mosc); err != nil {
 			return fmt.Errorf("could not create new or reuse existing MachineOSBuild for MachineOSConfig %q: %w", mosc.Name, err)
 		}
+
+		pool, err := b.mcfgclient.MachineconfigurationV1().MachineConfigPools().Get(ctx, mosc.Spec.MachineConfigPool.Name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		// Set the owner ref of the mosc to the pool
+		oref := metav1.NewControllerRef(pool, mcfgv1.SchemeGroupVersion.WithKind("MachineConfigPool"))
+		mosc.SetOwnerReferences([]metav1.OwnerReference{*oref})
 
 		return nil
 	})
