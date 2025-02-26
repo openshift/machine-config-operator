@@ -14,10 +14,9 @@ import (
 	"io"
 	"os"
 	"sync"
+	_ "unsafe" // for go:linkname hack
 
-	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -36,20 +35,13 @@ func assert(p bool, msg string) {
 
 //// AST utilities
 
-func unparen(e ast.Expr) ast.Expr { return astutil.Unparen(e) }
+func unparen(e ast.Expr) ast.Expr { return ast.Unparen(e) }
 
 // isBlankIdent returns true iff e is an Ident with name "_".
 // They have no associated types.Object, and thus no type.
 func isBlankIdent(e ast.Expr) bool {
 	id, ok := e.(*ast.Ident)
 	return ok && id.Name == "_"
-}
-
-// rangePosition is the position to give for the `range` token in a RangeStmt.
-var rangePosition = func(rng *ast.RangeStmt) token.Pos {
-	// Before 1.20, this is unreachable.
-	// rng.For is a close, but incorrect position.
-	return rng.For
 }
 
 //// Type utilities.  Some of these belong in go/types.
@@ -268,7 +260,7 @@ func instanceArgs(info *types.Info, id *ast.Ident) []types.Type {
 	return targs
 }
 
-// Mapping of a type T to a canonical instance C s.t. types.Indentical(T, C).
+// Mapping of a type T to a canonical instance C s.t. types.Identical(T, C).
 // Thread-safe.
 type canonizer struct {
 	mu    sync.Mutex
@@ -295,7 +287,7 @@ func (c *canonizer) List(ts []types.Type) *typeList {
 		// Is there some top level alias?
 		var found bool
 		for _, t := range ts {
-			if _, ok := t.(*aliases.Alias); ok {
+			if _, ok := t.(*types.Alias); ok {
 				found = true
 				break
 			}
@@ -306,7 +298,7 @@ func (c *canonizer) List(ts []types.Type) *typeList {
 
 		cp := make([]types.Type, len(ts)) // copy with top level aliases removed.
 		for i, t := range ts {
-			cp[i] = aliases.Unalias(t)
+			cp[i] = types.Unalias(t)
 		}
 		return cp
 	}
@@ -323,7 +315,7 @@ func (c *canonizer) List(ts []types.Type) *typeList {
 // For performance, reasons the canonical instance is order-dependent,
 // and may contain deeply nested aliases.
 func (c *canonizer) Type(T types.Type) types.Type {
-	T = aliases.Unalias(T) // remove the top level alias.
+	T = types.Unalias(T) // remove the top level alias.
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -403,10 +395,10 @@ func (m *typeListMap) hash(ts []types.Type) uint32 {
 // instantiateMethod instantiates m with targs and returns a canonical representative for this method.
 func (canon *canonizer) instantiateMethod(m *types.Func, targs []types.Type, ctxt *types.Context) *types.Func {
 	recv := recvType(m)
-	if p, ok := aliases.Unalias(recv).(*types.Pointer); ok {
+	if p, ok := types.Unalias(recv).(*types.Pointer); ok {
 		recv = p.Elem()
 	}
-	named := aliases.Unalias(recv).(*types.Named)
+	named := types.Unalias(recv).(*types.Named)
 	inst, err := types.Instantiate(ctxt, named.Origin(), targs, false)
 	if err != nil {
 		panic(err)
@@ -417,14 +409,6 @@ func (canon *canonizer) instantiateMethod(m *types.Func, targs []types.Type, ctx
 }
 
 // Exposed to ssautil using the linkname hack.
+//
+//go:linkname isSyntactic golang.org/x/tools/go/ssa.isSyntactic
 func isSyntactic(pkg *Package) bool { return pkg.syntax }
-
-// mapValues returns a new unordered array of map values.
-func mapValues[K comparable, V any](m map[K]V) []V {
-	vals := make([]V, 0, len(m))
-	for _, fn := range m {
-		vals = append(vals, fn)
-	}
-	return vals
-
-}

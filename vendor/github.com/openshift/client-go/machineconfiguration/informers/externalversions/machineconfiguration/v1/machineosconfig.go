@@ -3,13 +3,13 @@
 package v1
 
 import (
-	"context"
+	context "context"
 	time "time"
 
-	machineconfigurationv1 "github.com/openshift/api/machineconfiguration/v1"
+	apimachineconfigurationv1 "github.com/openshift/api/machineconfiguration/v1"
 	versioned "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	internalinterfaces "github.com/openshift/client-go/machineconfiguration/informers/externalversions/internalinterfaces"
-	v1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
+	machineconfigurationv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -20,7 +20,7 @@ import (
 // MachineOSConfigs.
 type MachineOSConfigInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1.MachineOSConfigLister
+	Lister() machineconfigurationv1.MachineOSConfigLister
 }
 
 type machineOSConfigInformer struct {
@@ -54,7 +54,7 @@ func NewFilteredMachineOSConfigInformer(client versioned.Interface, resyncPeriod
 				return client.MachineconfigurationV1().MachineOSConfigs().Watch(context.TODO(), options)
 			},
 		},
-		&machineconfigurationv1.MachineOSConfig{},
+		&apimachineconfigurationv1.MachineOSConfig{},
 		resyncPeriod,
 		indexers,
 	)
@@ -65,9 +65,9 @@ func (f *machineOSConfigInformer) defaultInformer(client versioned.Interface, re
 }
 
 func (f *machineOSConfigInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&machineconfigurationv1.MachineOSConfig{}, f.defaultInformer)
+	return f.factory.InformerFor(&apimachineconfigurationv1.MachineOSConfig{}, f.defaultInformer)
 }
 
-func (f *machineOSConfigInformer) Lister() v1.MachineOSConfigLister {
-	return v1.NewMachineOSConfigLister(f.Informer().GetIndexer())
+func (f *machineOSConfigInformer) Lister() machineconfigurationv1.MachineOSConfigLister {
+	return machineconfigurationv1.NewMachineOSConfigLister(f.Informer().GetIndexer())
 }
