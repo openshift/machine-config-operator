@@ -78,3 +78,219 @@ func IsMachineOSBuildConditionPresentAndEqual(conditions []metav1.Condition, con
 	}
 	return false
 }
+
+// Represents the successful conditions for a MachineOSBuild.
+func MachineOSBuildSucceededConditions() []metav1.Condition {
+	return []metav1.Condition{
+		{
+			Type:    string(mcfgv1.MachineOSBuildPrepared),
+			Status:  metav1.ConditionFalse,
+			Reason:  "Prepared",
+			Message: "Build Prepared and Pending",
+		},
+		{
+			Type:    string(mcfgv1.MachineOSBuilding),
+			Status:  metav1.ConditionFalse,
+			Reason:  "Building",
+			Message: "Image Build In Progress",
+		},
+		{
+			Type:    string(mcfgv1.MachineOSBuildFailed),
+			Status:  metav1.ConditionFalse,
+			Reason:  "Failed",
+			Message: "Build Failed",
+		},
+		{
+			Type:    string(mcfgv1.MachineOSBuildInterrupted),
+			Status:  metav1.ConditionFalse,
+			Reason:  "Interrupted",
+			Message: "Build Interrupted",
+		},
+		{
+			Type:    string(mcfgv1.MachineOSBuildSucceeded),
+			Status:  metav1.ConditionTrue,
+			Reason:  "Ready",
+			Message: "Build Ready",
+		},
+	}
+}
+
+// Represents the pending conditions for a MachineOSBuild.
+func MachineOSBuildPendingConditions() []metav1.Condition {
+	return []metav1.Condition{
+		{
+			Type:    string(mcfgv1.MachineOSBuildPrepared),
+			Status:  metav1.ConditionTrue,
+			Reason:  "Prepared",
+			Message: "Build Prepared and Pending",
+		},
+		{
+			Type:    string(mcfgv1.MachineOSBuilding),
+			Status:  metav1.ConditionFalse,
+			Reason:  "Building",
+			Message: "Image Build In Progress",
+		},
+		{
+			Type:    string(mcfgv1.MachineOSBuildFailed),
+			Status:  metav1.ConditionFalse,
+			Reason:  "Failed",
+			Message: "Build Failed",
+		},
+		{
+			Type:    string(mcfgv1.MachineOSBuildInterrupted),
+			Status:  metav1.ConditionFalse,
+			Reason:  "Interrupted",
+			Message: "Build Interrupted",
+		},
+		{
+			Type:    string(mcfgv1.MachineOSBuildSucceeded),
+			Status:  metav1.ConditionFalse,
+			Reason:  "Ready",
+			Message: "Build Ready",
+		},
+	}
+}
+
+// Represents the running conditions for a MachineOSBuild.
+func MachineOSBuildRunningConditions() []metav1.Condition {
+	return []metav1.Condition{
+		{
+			Type:    string(mcfgv1.MachineOSBuildPrepared),
+			Status:  metav1.ConditionFalse,
+			Reason:  "Prepared",
+			Message: "Build Prepared and Pending",
+		},
+		{
+			Type:    string(mcfgv1.MachineOSBuilding),
+			Status:  metav1.ConditionTrue,
+			Reason:  "Building",
+			Message: "Image Build In Progress",
+		},
+		{
+			Type:    string(mcfgv1.MachineOSBuildFailed),
+			Status:  metav1.ConditionFalse,
+			Reason:  "Failed",
+			Message: "Build Failed",
+		},
+		{
+			Type:    string(mcfgv1.MachineOSBuildInterrupted),
+			Status:  metav1.ConditionFalse,
+			Reason:  "Interrupted",
+			Message: "Build Interrupted",
+		},
+		{
+			Type:    string(mcfgv1.MachineOSBuildSucceeded),
+			Status:  metav1.ConditionFalse,
+			Reason:  "Ready",
+			Message: "Build Ready",
+		},
+	}
+}
+
+// Represents the failure conditions for a MachineOSBuild.
+func MachineOSBuildFailedConditions() []metav1.Condition {
+	return []metav1.Condition{
+		{
+			Type:    string(mcfgv1.MachineOSBuildPrepared),
+			Status:  metav1.ConditionFalse,
+			Reason:  "Prepared",
+			Message: "Build Prepared and Pending",
+		},
+		{
+			Type:    string(mcfgv1.MachineOSBuilding),
+			Status:  metav1.ConditionFalse,
+			Reason:  "Building",
+			Message: "Image Build In Progress",
+		},
+		{
+			Type:    string(mcfgv1.MachineOSBuildFailed),
+			Status:  metav1.ConditionTrue,
+			Reason:  "Failed",
+			Message: "Build Failed",
+		},
+		{
+			Type:    string(mcfgv1.MachineOSBuildInterrupted),
+			Status:  metav1.ConditionFalse,
+			Reason:  "Interrupted",
+			Message: "Build Interrupted",
+		},
+		{
+			Type:    string(mcfgv1.MachineOSBuildSucceeded),
+			Status:  metav1.ConditionFalse,
+			Reason:  "Ready",
+			Message: "Build Ready",
+		},
+	}
+}
+
+// Represents the interrupted conditions for a MachineOSBuild.
+func MachineOSBuildInterruptedConditions() []metav1.Condition {
+	return []metav1.Condition{
+		{
+			Type:    string(mcfgv1.MachineOSBuildPrepared),
+			Status:  metav1.ConditionFalse,
+			Reason:  "Prepared",
+			Message: "Build Prepared and Pending",
+		},
+		{
+			Type:    string(mcfgv1.MachineOSBuilding),
+			Status:  metav1.ConditionFalse,
+			Reason:  "Building",
+			Message: "Image Build In Progress",
+		},
+		{
+			Type:    string(mcfgv1.MachineOSBuildFailed),
+			Status:  metav1.ConditionFalse,
+			Reason:  "Failed",
+			Message: "Build Failed",
+		},
+		{
+			Type:    string(mcfgv1.MachineOSBuildInterrupted),
+			Status:  metav1.ConditionTrue,
+			Reason:  "Interrupted",
+			Message: "Build Interrupted",
+		},
+		{
+			Type:    string(mcfgv1.MachineOSBuildSucceeded),
+			Status:  metav1.ConditionFalse,
+			Reason:  "Ready",
+			Message: "Build Ready",
+		},
+	}
+}
+
+// Represents the initial MachineOSBuild state (all conditions false).
+func MachineOSBuildInitialConditions() []metav1.Condition {
+	return []metav1.Condition{
+		{
+			Type:    string(mcfgv1.MachineOSBuildPrepared),
+			Status:  metav1.ConditionFalse,
+			Reason:  "Prepared",
+			Message: "Build Prepared and Pending",
+		},
+		{
+			Type:    string(mcfgv1.MachineOSBuilding),
+			Status:  metav1.ConditionFalse,
+			Reason:  "Building",
+			Message: "Image Build In Progress",
+		},
+		{
+			Type:    string(mcfgv1.MachineOSBuildFailed),
+			Status:  metav1.ConditionFalse,
+			Reason:  "Failed",
+			Message: "Build Failed",
+		},
+		{
+			Type:    string(mcfgv1.MachineOSBuildInterrupted),
+			Status:  metav1.ConditionFalse,
+			Reason:  "Interrupted",
+			Message: "Build Interrupted",
+		},
+		{
+			Type:    string(mcfgv1.MachineOSBuildSucceeded),
+			Status:  metav1.ConditionFalse,
+			Reason:  "Ready",
+			Message: "Build Ready",
+		},
+	}
+}
