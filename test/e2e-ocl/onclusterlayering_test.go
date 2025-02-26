@@ -490,6 +490,53 @@ func TestDeletedTransientMachineOSBuildIsRecreated(t *testing.T) {
 	assert.NotEqual(t, firstJob.UID, secondJob.UID)
 }
 
+// This test verifies that if the rebuild annotation is added to a given MachineOSConfig, that
+// the build is restarted
+func TestRebuildAnnotationRestartsBuild(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	cs := framework.NewClientSet("")
+
+	mosc := prepareForOnClusterLayeringTest(t, cs, onClusterLayeringTestOpts{
+		poolName: layeredMCPName,
+		customDockerfiles: map[string]string{
+			layeredMCPName: cowsayDockerfile,
+		},
+	})
+
+	createMachineOSConfig(t, cs, mosc)
+
+	mcp, err := cs.MachineconfigurationV1Interface.MachineConfigPools().Get(ctx, layeredMCPName, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	mosb := buildrequest.NewMachineOSBuildFromAPIOrDie(ctx, cs.GetKubeclient(), mosc, mcp)
+
+	// First, we get a MachineOSBuild started as usual.
+	waitForBuildToStart(t, cs, mosb)
+
+	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx)
+	assertBuildObjectsAreCreated(t, kubeassert, mosb)
+
+	t.Logf("Initial build has started, delete the job to interrupt the build...")
+	// Delete the builder
+	err = cs.BatchV1Interface.Jobs(ctrlcommon.MCONamespace).Delete(ctx, utils.GetBuildJobName(mosb), metav1.DeleteOptions{})
+	require.NoError(t, err)
+
+	// Wait for the build to be interrupted.
+	waitForBuildToBeInterrupted(t, cs, mosb)
+
+	t.Logf("Add rebuild annotation to the MOSC...")
+	_ = helpers.SetRebuildAnnotationOnMachineOSConfig(ctx, t, cs.GetMcfgclient(), mosc)
+
+	t.Logf("Annotation is updated, waiting for new build %s to start", mosb.Name)
+	// Wait for the build to start.
+	waitForBuildToStart(t, cs, mosb)
+	// Ensure the mosb exists
+	_, err = cs.MachineconfigurationV1alpha1Interface.MachineOSBuilds().Get(context.TODO(), mosb.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+}
+
 func assertBuildObjectsAreCreated(t *testing.T, kubeassert *helpers.Assertions, mosb *mcfgv1.MachineOSBuild) {
 	t.Helper()
 
@@ -710,10 +757,30 @@ func waitForBuildToComplete(t *testing.T, cs *framework.ClientSet, startedBuild 
 	start := time.Now()
 
 	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx)
-	kubeassert.Eventually().MachineOSBuildIsSuccessful(startedBuild) //foo
+	kubeassert.Eventually().MachineOSBuildIsSuccessful(startedBuild)
 	t.Logf("MachineOSBuild %s successful after %s", startedBuild.Name, time.Since(start))
 	assertBuildObjectsAreDeleted(t, kubeassert.Eventually(), startedBuild)
 	t.Logf("Build objects deleted after %s", time.Since(start))
+
+	mosb, err := cs.MachineconfigurationV1Interface.MachineOSBuilds().Get(ctx, startedBuild.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	return mosb
+}
+
+func waitForBuildToBeInterrupted(t *testing.T, cs *framework.ClientSet, startedBuild *mcfgv1.MachineOSBuild) *mcfgv1.MachineOSBuild {
+	t.Helper()
+
+	t.Logf("Waiting for MachineOSBuild %s to complete", startedBuild.Name)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*20)
+	defer cancel()
+
+	start := time.Now()
+
+	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx)
+	kubeassert.Eventually().MachineOSBuildIsInterrupted(startedBuild)
+	t.Logf("MachineOSBuild %s interrupted after %s", startedBuild.Name, time.Since(start))
 
 	mosb, err := cs.MachineconfigurationV1Interface.MachineOSBuilds().Get(ctx, startedBuild.Name, metav1.GetOptions{})
 	require.NoError(t, err)
