@@ -2,9 +2,11 @@ package build
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/fixtures"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/stretchr/testify/assert"
@@ -78,5 +80,121 @@ func TestValidateOnClusterBuildConfig(t *testing.T) {
 				assert.NoError(t, err)
 			}
 		})
+	}
+}
+
+// This test validates that we have correctly identified if the MachineOSBuild
+// should be updated based upon comparing the old and current status of the
+// MachineOSBuild. It is worth noting that the current MachineOSBuild status
+// can come from the imagebuilder.MachineOSBuildStatus() method which maps the
+// current job state to the MachineOSBuild state.
+func TestIsMachineOSBuildStatusUpdateNeeded(t *testing.T) {
+	t.Parallel()
+
+	initialConditions := func() map[mcfgv1.BuildProgress][]metav1.Condition {
+		return map[mcfgv1.BuildProgress][]metav1.Condition{
+			// This value is not part of the OCL API and is here solely for testing purposes.
+			"Initial": apihelpers.MachineOSBuildInitialConditions(),
+		}
+	}
+
+	testCases := []struct {
+		name     string
+		old      map[mcfgv1.BuildProgress][]metav1.Condition
+		current  map[mcfgv1.BuildProgress][]metav1.Condition
+		expected bool
+	}{
+		// These are valid state transitions. In other words, when one of these
+		// state transitions is identified, the MachineOSBuild status object should
+		// be updated.
+		{
+			name:     "Initial -> Terminal",
+			old:      initialConditions(),
+			current:  ctrlcommon.MachineOSBuildTerminalStates(),
+			expected: true,
+		},
+		{
+			name:     "Initial -> Transient",
+			old:      initialConditions(),
+			current:  ctrlcommon.MachineOSBuildTransientStates(),
+			expected: true,
+		},
+		{
+			name:     "Transient -> Terminal",
+			old:      ctrlcommon.MachineOSBuildTransientStates(),
+			current:  ctrlcommon.MachineOSBuildTerminalStates(),
+			expected: true,
+		},
+		{
+			name: "Pending -> Running",
+			old: map[mcfgv1.BuildProgress][]metav1.Condition{
+				mcfgv1.MachineOSBuildPrepared: ctrlcommon.MachineOSBuildTransientStates()[mcfgv1.MachineOSBuildPrepared],
+			},
+			current: map[mcfgv1.BuildProgress][]metav1.Condition{
+				mcfgv1.MachineOSBuilding: ctrlcommon.MachineOSBuildTransientStates()[mcfgv1.MachineOSBuilding],
+			},
+			expected: true,
+		},
+		// These are invalid state transitions. In other words, when one of these
+		// state transitions is observed, the MachineOSBuild object should not be
+		// updated because they are invalid and make no sense.
+		{
+			name:     "Terminal -> Initial",
+			old:      ctrlcommon.MachineOSBuildTerminalStates(),
+			current:  initialConditions(),
+			expected: false,
+		},
+		{
+			name:     "Transient -> Initial",
+			old:      ctrlcommon.MachineOSBuildTransientStates(),
+			current:  initialConditions(),
+			expected: false,
+		},
+		{
+			name:     "Initial -> Initial",
+			old:      initialConditions(),
+			current:  initialConditions(),
+			expected: false,
+		},
+		{
+			name:     "Terminal -> Terminal",
+			old:      ctrlcommon.MachineOSBuildTerminalStates(),
+			current:  ctrlcommon.MachineOSBuildTerminalStates(),
+			expected: false,
+		},
+		{
+			name: "Running -> Pending",
+			old: map[mcfgv1.BuildProgress][]metav1.Condition{
+				mcfgv1.MachineOSBuilding: ctrlcommon.MachineOSBuildTransientStates()[mcfgv1.MachineOSBuilding],
+			},
+			current: map[mcfgv1.BuildProgress][]metav1.Condition{
+				mcfgv1.MachineOSBuildPrepared: ctrlcommon.MachineOSBuildTransientStates()[mcfgv1.MachineOSBuildPrepared],
+			},
+			expected: false,
+		},
+	}
+
+	for _, testCase := range testCases {
+		for oldName, old := range testCase.old {
+			for currentName, current := range testCase.current {
+				t.Run(fmt.Sprintf("%s: %s -> %s", testCase.name, oldName, currentName), func(t *testing.T) {
+					oldStatus := mcfgv1.MachineOSBuildStatus{
+						Conditions: old,
+					}
+
+					curStatus := mcfgv1.MachineOSBuildStatus{
+						Conditions: current,
+					}
+
+					result, reason := isMachineOSBuildStatusUpdateNeeded(oldStatus, curStatus)
+
+					if testCase.expected {
+						assert.True(t, result, reason)
+					} else {
+						assert.False(t, result, reason)
+					}
+				})
+			}
+		}
 	}
 }
