@@ -121,12 +121,7 @@ func (b *MachineOSBuildState) IsInTransientState() bool {
 
 // Gets the transient state, if any is set. Otherwise, returns an empty string.
 func (b *MachineOSBuildState) GetTransientState() mcfgv1.BuildProgress {
-	transientStates := []mcfgv1.BuildProgress{
-		mcfgv1.MachineOSBuilding,
-		mcfgv1.MachineOSBuildPrepared,
-	}
-
-	for _, transientState := range transientStates {
+	for transientState := range MachineOSBuildTransientStates() {
 		if apihelpers.IsMachineOSBuildConditionTrue(b.Build.Status.Conditions, transientState) {
 			return transientState
 		}
@@ -137,13 +132,7 @@ func (b *MachineOSBuildState) GetTransientState() mcfgv1.BuildProgress {
 
 // Gets the current terminal state, if any is set. Otherwise, returns an empty string.
 func (b *MachineOSBuildState) GetTerminalState() mcfgv1.BuildProgress {
-	terminalStates := []mcfgv1.BuildProgress{
-		mcfgv1.MachineOSBuildSucceeded,
-		mcfgv1.MachineOSBuildFailed,
-		mcfgv1.MachineOSBuildInterrupted,
-	}
-
-	for _, terminalState := range terminalStates {
+	for terminalState := range MachineOSBuildTerminalStates() {
 		if apihelpers.IsMachineOSBuildConditionTrue(b.Build.Status.Conditions, terminalState) {
 			return terminalState
 		}
@@ -178,6 +167,27 @@ func (b *MachineOSBuildState) SetBuildConditions(conditions []metav1.Condition) 
 
 		mosbCondition := apihelpers.NewMachineOSBuildCondition(condition.Type, condition.Status, condition.Reason, condition.Message)
 		apihelpers.SetMachineOSBuildCondition(&b.Build.Status, *mosbCondition)
+	}
+}
+
+// Returns a map of the buildprogress states to their expected conditions for
+// transient states. That is, the MachineOSBuild is expected to transition from
+// one state to another.
+func MachineOSBuildTransientStates() map[mcfgv1.BuildProgress][]metav1.Condition {
+	return map[mcfgv1.BuildProgress][]metav1.Condition{
+		mcfgv1.MachineOSBuilding:      apihelpers.MachineOSBuildRunningConditions(),
+		mcfgv1.MachineOSBuildPrepared: apihelpers.MachineOSBuildPendingConditions(),
+	}
+}
+
+// Returns a map of the buildprogress states to their expected conditions for
+// terminal states; meaning that the MachineOSBuild cannot transition from one
+// state to another.
+func MachineOSBuildTerminalStates() map[mcfgv1.BuildProgress][]metav1.Condition {
+	return map[mcfgv1.BuildProgress][]metav1.Condition{
+		mcfgv1.MachineOSBuildSucceeded:   apihelpers.MachineOSBuildSucceededConditions(),
+		mcfgv1.MachineOSBuildFailed:      apihelpers.MachineOSBuildFailedConditions(),
+		mcfgv1.MachineOSBuildInterrupted: apihelpers.MachineOSBuildInterruptedConditions(),
 	}
 }
 
