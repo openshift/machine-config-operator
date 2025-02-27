@@ -90,9 +90,6 @@ const (
 	// Labels and Annotations required for determining architecture of a machineset
 	MachineSetArchAnnotationKey = "capacity.cluster-autoscaler.kubernetes.io/labels"
 	ArchLabelKey                = "kubernetes.io/arch="
-
-	// Name of managed worker secret
-	ManagedWorkerSecretName = "worker-user-data-managed"
 )
 
 // New returns a new machine-set-boot-image controller.
