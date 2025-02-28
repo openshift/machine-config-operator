@@ -1048,8 +1048,8 @@ github.com/openshift/api/template
 github.com/openshift/api/template/v1
 github.com/openshift/api/user
 github.com/openshift/api/user/v1
-# github.com/openshift/client-go v0.0.0-20250106104058-89709a455e2a
-## explicit; go 1.22.0
+# github.com/openshift/client-go v0.0.0-20250131180035-f7ec47e2d87a
+## explicit; go 1.23.0
 github.com/openshift/client-go/build/applyconfigurations/build/v1
 github.com/openshift/client-go/build/applyconfigurations/internal
 github.com/openshift/client-go/build/clientset/versioned
@@ -2298,8 +2298,8 @@ k8s.io/client-go/util/keyutil
 k8s.io/client-go/util/retry
 k8s.io/client-go/util/watchlist
 k8s.io/client-go/util/workqueue
-# k8s.io/code-generator v0.31.1
-## explicit; go 1.22.0
+# k8s.io/code-generator v0.32.1
+## explicit; go 1.23.0
 k8s.io/code-generator
 k8s.io/code-generator/cmd/applyconfiguration-gen
 k8s.io/code-generator/cmd/applyconfiguration-gen/args
