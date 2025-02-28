@@ -662,9 +662,13 @@ func getIgnitionHost(infraStatus *configv1.InfrastructureStatus) (string, error)
 					ignitionHost = net.JoinHostPort(infraStatus.PlatformStatus.VSphere.APIServerInternalIPs[0], securePortStr)
 				}
 			}
+		case configv1.GCPPlatformType:
+			if infraStatus.PlatformStatus.GCP != nil && infraStatus.PlatformStatus.GCP.CloudLoadBalancerConfig != nil && infraStatus.PlatformStatus.GCP.CloudLoadBalancerConfig.DNSType == configv1.ClusterHostedDNSType {
+				apiIntLBIP := infraStatus.PlatformStatus.GCP.CloudLoadBalancerConfig.ClusterHosted.APIIntLoadBalancerIPs[0]
+				ignitionHost = net.JoinHostPort(string(apiIntLBIP), securePortStr)
+			}
 		}
 	}
-
 	return ignitionHost, nil
 }
 
