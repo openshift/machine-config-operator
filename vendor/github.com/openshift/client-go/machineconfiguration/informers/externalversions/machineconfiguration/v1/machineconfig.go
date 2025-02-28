@@ -3,13 +3,13 @@
 package v1
 
 import (
-	"context"
+	context "context"
 	time "time"
 
-	machineconfigurationv1 "github.com/openshift/api/machineconfiguration/v1"
+	apimachineconfigurationv1 "github.com/openshift/api/machineconfiguration/v1"
 	versioned "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	internalinterfaces "github.com/openshift/client-go/machineconfiguration/informers/externalversions/internalinterfaces"
-	v1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
+	machineconfigurationv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -20,7 +20,7 @@ import (
 // MachineConfigs.
 type MachineConfigInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1.MachineConfigLister
+	Lister() machineconfigurationv1.MachineConfigLister
 }
 
 type machineConfigInformer struct {
@@ -54,7 +54,7 @@ func NewFilteredMachineConfigInformer(client versioned.Interface, resyncPeriod t
 				return client.MachineconfigurationV1().MachineConfigs().Watch(context.TODO(), options)
 			},
 		},
-		&machineconfigurationv1.MachineConfig{},
+		&apimachineconfigurationv1.MachineConfig{},
 		resyncPeriod,
 		indexers,
 	)
@@ -65,9 +65,9 @@ func (f *machineConfigInformer) defaultInformer(client versioned.Interface, resy
 }
 
 func (f *machineConfigInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&machineconfigurationv1.MachineConfig{}, f.defaultInformer)
+	return f.factory.InformerFor(&apimachineconfigurationv1.MachineConfig{}, f.defaultInformer)
 }
 
-func (f *machineConfigInformer) Lister() v1.MachineConfigLister {
-	return v1.NewMachineConfigLister(f.Informer().GetIndexer())
+func (f *machineConfigInformer) Lister() machineconfigurationv1.MachineConfigLister {
+	return machineconfigurationv1.NewMachineConfigLister(f.Informer().GetIndexer())
 }

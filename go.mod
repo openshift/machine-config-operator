@@ -2,8 +2,6 @@ module github.com/openshift/machine-config-operator
 
 go 1.23.0
 
-toolchain go1.23.2
-
 require (
 	github.com/BurntSushi/toml v1.4.0
 	github.com/InVisionApp/go-health v2.1.0+incompatible
@@ -31,7 +29,7 @@ require (
 	github.com/imdario/mergo v0.3.16
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/openshift/api v0.0.0-20250227152946-1ee1ef831100
-	github.com/openshift/client-go v0.0.0-20250106104058-89709a455e2a
+	github.com/openshift/client-go v0.0.0-20250131180035-f7ec47e2d87a
 	github.com/openshift/library-go v0.0.0-20241022210936-abb8c75b88dc
 	github.com/openshift/runtime-utils v0.0.0-20230921210328-7bdb5b9c177b
 	github.com/prometheus/client_golang v1.20.5
@@ -46,7 +44,7 @@ require (
 	k8s.io/apiextensions-apiserver v0.31.1
 	k8s.io/apimachinery v0.32.2
 	k8s.io/client-go v0.32.2
-	k8s.io/code-generator v0.31.1
+	k8s.io/code-generator v0.32.1
 	k8s.io/component-base v0.31.1
 	k8s.io/cri-api v0.31.1
 	k8s.io/kubectl v0.31.1

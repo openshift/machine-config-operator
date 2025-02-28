@@ -3,13 +3,13 @@
 package v1
 
 import (
-	"context"
+	context "context"
 	time "time"
 
-	operatorv1 "github.com/openshift/api/operator/v1"
+	apioperatorv1 "github.com/openshift/api/operator/v1"
 	versioned "github.com/openshift/client-go/operator/clientset/versioned"
 	internalinterfaces "github.com/openshift/client-go/operator/informers/externalversions/internalinterfaces"
-	v1 "github.com/openshift/client-go/operator/listers/operator/v1"
+	operatorv1 "github.com/openshift/client-go/operator/listers/operator/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -20,7 +20,7 @@ import (
 // Configs.
 type ConfigInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1.ConfigLister
+	Lister() operatorv1.ConfigLister
 }
 
 type configInformer struct {
@@ -54,7 +54,7 @@ func NewFilteredConfigInformer(client versioned.Interface, resyncPeriod time.Dur
 				return client.OperatorV1().Configs().Watch(context.TODO(), options)
 			},
 		},
-		&operatorv1.Config{},
+		&apioperatorv1.Config{},
 		resyncPeriod,
 		indexers,
 	)
@@ -65,9 +65,9 @@ func (f *configInformer) defaultInformer(client versioned.Interface, resyncPerio
 }
 
 func (f *configInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&operatorv1.Config{}, f.defaultInformer)
+	return f.factory.InformerFor(&apioperatorv1.Config{}, f.defaultInformer)
 }
 
-func (f *configInformer) Lister() v1.ConfigLister {
-	return v1.NewConfigLister(f.Informer().GetIndexer())
+func (f *configInformer) Lister() operatorv1.ConfigLister {
+	return operatorv1.NewConfigLister(f.Informer().GetIndexer())
 }
