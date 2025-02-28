@@ -431,6 +431,44 @@ func (c *CertRotationController) reconcileSecret(secret corev1.Secret) error {
 		return fmt.Errorf("failed to unmarshal decoded user-data to json (secret %s): %w, skipping secret", secret.Name, err)
 	}
 
+	// Attempt to upgrade stub to spec 3 if the current stub is spec 2
+	// If an error is encountered, it'll be logged and the existing
+	// spec 2 stub will be used for rotation
+	versionPath := []string{ignFieldIgnition, "version"}
+	version, _, err := unstructured.NestedString(userDataIgn.(map[string]interface{}), versionPath...)
+	if err != nil {
+		return fmt.Errorf("failed to find version field in ignition (secret %s): %w", secret.Name, err)
+	}
+	if version != ctrlcommon.InternalMCOIgnitionVersion {
+		klog.Infof("Out of date version=%s stub Ignition detected in %s, attempting upgrade", version, secret.Name)
+		userDataIgnUpgraded, err := ctrlcommon.ParseAndConvertConfig(userData)
+		if err != nil {
+			klog.Infof("error upgrading ignition stub: %v", err)
+		} else {
+			klog.Infof("ignition stub upgrade to %s successful", userDataIgnUpgraded.Ignition.Version)
+			// This isn't pretty but to keep the existing code untouched,
+			// a marshal/unmarshal chain is needed
+			userDataIgnUpgradedBytes, err := json.Marshal(userDataIgnUpgraded)
+			if err != nil {
+				klog.Errorf("upgraded Ignition stub could not be marshaled: %v", err)
+			}
+			err = json.Unmarshal(userDataIgnUpgradedBytes, &userDataIgn)
+			if err != nil {
+				klog.Errorf("upgraded Ignition stub could not be unmarshaled: %v", err)
+				// Restore userDataIgn back to original just in case. No errors
+				// are expected here as this has been successfully done earlier
+				json.Unmarshal(userData, &userDataIgn)
+			} else {
+				// Do some book keeping if an Ignition upgrade took place
+				if secret.Labels == nil {
+					secret.Annotations = make(map[string]string)
+				}
+				secret.Annotations["machineconfiguration.openshift.io/stub-ignition-upgraded-to"] = userDataIgnUpgraded.Ignition.Version
+				secret.Annotations["machineconfiguration.openshift.io/stub-ignition-upgraded-at"] = metav1.Now().Format(time.RFC3339)
+			}
+		}
+	}
+
 	// Check if a content update to security.tls.certificateAuthorities is required
 	ignCAPath := []string{ignFieldIgnition, "security", "tls", "certificateAuthorities"}
 	caSlice, isSlice, err := unstructured.NestedFieldNoCopy(userDataIgn.(map[string]interface{}), ignCAPath...)

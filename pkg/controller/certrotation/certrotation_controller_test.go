@@ -2,6 +2,7 @@ package certrotationcontroller
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/openshift/library-go/pkg/operator/certrotation"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
@@ -115,39 +117,51 @@ func (f *fixture) verifyUserDataSecretUpdateCount(expectedCount int) {
 
 func TestMCSCARotation(t *testing.T) {
 	tests := []struct {
-		name                      string
-		forceRotation             bool
-		machineObjects            []runtime.Object
-		maoSecrets                []runtime.Object
-		expectedSecretUpdateCount int
+		name                        string
+		forceRotation               bool
+		machineObjects              []runtime.Object
+		maoSecrets                  []runtime.Object
+		expectedSecretUpdateCount   int
+		expectedStubIgnitionVersion string
 	}{
 		{
-			name:                      "Creation and no rotation expected",
-			maoSecrets:                []runtime.Object{getGoodMAOSecret("test-user-data")},
-			machineObjects:            []runtime.Object{getMachineSet("test-machine")},
-			forceRotation:             false,
-			expectedSecretUpdateCount: 1,
+			name:                        "Creation and no rotation expected",
+			maoSecrets:                  []runtime.Object{getGoodMAOSecret("test-user-data")},
+			machineObjects:              []runtime.Object{getMachineSet("test-machine")},
+			forceRotation:               false,
+			expectedSecretUpdateCount:   1,
+			expectedStubIgnitionVersion: "3.4.0",
 		},
 		{
-			name:                      "Creation and rotation expected",
-			maoSecrets:                []runtime.Object{getGoodMAOSecret("test-user-data")},
-			machineObjects:            []runtime.Object{getMachineSet("test-machine")},
-			forceRotation:             true,
-			expectedSecretUpdateCount: 2,
+			name:                        "user-data secret in spec 2 format, rotation not expected but ignition upgrade to spec 3 expected",
+			maoSecrets:                  []runtime.Object{getOldMAOSecret("test-user-data")},
+			machineObjects:              []runtime.Object{getMachineSet("test-machine")},
+			forceRotation:               false,
+			expectedSecretUpdateCount:   1,
+			expectedStubIgnitionVersion: "3.4.0",
+		},
+		{
+			name:                        "user-data secret in spec 2 format, rotation and ignition upgrade to spec 3 expected",
+			maoSecrets:                  []runtime.Object{getOldMAOSecret("test-user-data")},
+			machineObjects:              []runtime.Object{getMachineSet("test-machine")},
+			forceRotation:               true,
+			expectedSecretUpdateCount:   2,
+			expectedStubIgnitionVersion: "3.4.0",
 		},
 		{
 			name:                      "user-data secret in bad format, no user data update expected",
-			maoSecrets:                []runtime.Object{getBadMAOSecret("bad-user-data")},
+			maoSecrets:                []runtime.Object{getBadMAOSecret("test-user-data")},
 			machineObjects:            []runtime.Object{getMachineSet("test-machine")},
 			forceRotation:             false,
 			expectedSecretUpdateCount: 0,
 		},
 		{
-			name:                      "no machine-api objects, no user data update expected",
-			maoSecrets:                []runtime.Object{getGoodMAOSecret("test-user-data")},
-			machineObjects:            []runtime.Object{},
-			forceRotation:             false,
-			expectedSecretUpdateCount: 0,
+			name:                        "no machine-api objects, no user data update expected",
+			maoSecrets:                  []runtime.Object{getGoodMAOSecret("test-user-data")},
+			machineObjects:              []runtime.Object{},
+			forceRotation:               false,
+			expectedSecretUpdateCount:   0,
+			expectedStubIgnitionVersion: "3.2.0",
 		},
 	}
 
@@ -182,6 +196,19 @@ func TestMCSCARotation(t *testing.T) {
 			f.runController()
 
 			f.verifyUserDataSecretUpdateCount(test.expectedSecretUpdateCount)
+
+			if test.expectedStubIgnitionVersion != "" {
+				secret, err := f.kubeClient.CoreV1().Secrets(ctrlcommon.MachineAPINamespace).Get(context.TODO(), "test-user-data", metav1.GetOptions{})
+				require.NoError(t, err)
+				userData := secret.Data[userDataKey]
+				var userDataIgn interface{}
+				err = json.Unmarshal(userData, &userDataIgn)
+				require.NoError(t, err)
+				versionPath := []string{ignFieldIgnition, "version"}
+				version, _, err := unstructured.NestedString(userDataIgn.(map[string]interface{}), versionPath...)
+				require.NoError(t, err)
+				require.Equal(t, test.expectedStubIgnitionVersion, version)
+			}
 
 		})
 	}
