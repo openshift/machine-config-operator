@@ -100,6 +100,9 @@ const (
 	// MCOReleaseImageVersionKey is the key for indexing the MCO release version stored in the bootimages configmap
 	MCOReleaseImageVersionKey = "MCOReleaseImageVersion"
 
+	// MCOReleaseImageVersionKey is the key for indexing the OCP release version stored in the bootimages configmap
+	OCPReleaseVersionKey = "releaseVersion"
+
 	// MCOOperatorKnobsObjectName is the name of the global MachineConfiguration "knobs" object that the MCO watches.
 	MCOOperatorKnobsObjectName = "cluster"
 
