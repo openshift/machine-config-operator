@@ -22,6 +22,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/informers"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/clock"
 )
 
 const (
@@ -120,7 +121,7 @@ func CreateControllerContext(ctx context.Context, cb *clients.Builder) *Controll
 		klog.Warningf("unable to get owner reference (falling back to namespace): %v", err)
 	}
 
-	recorder := events.NewKubeRecorder(kubeClient.CoreV1().Events(MCONamespace), "machine-config-operator", controllerRef)
+	recorder := events.NewKubeRecorder(kubeClient.CoreV1().Events(MCONamespace), "machine-config-operator", controllerRef, clock.RealClock{})
 
 	// By default, this will exit(0) the process if the featuregates ever change to a different set of values.
 	featureGateAccessor := featuregates.NewFeatureGateAccess(
