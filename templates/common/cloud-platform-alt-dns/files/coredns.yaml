@@ -13,6 +13,7 @@ contents:
         app: cloud-platform-infra-coredns
       annotations:
         target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
+        openshift.io/required-scc: privileged
     spec:
       volumes:
       - name: resource-dir
@@ -37,9 +38,13 @@ contents:
         - "{{- range $index, $ip := cloudPlatformAPIIntLoadBalancerIPs .}}{{ if gt $index 0 }},{{end}}{{$ip}}{{end}}"
         - "--cloud-ingress-lb-ips"
         - "{{- range $index, $ip := cloudPlatformIngressLoadBalancerIPs .}}{{ if gt $index 0 }},{{end}}{{$ip}}{{end}}"
+        - "--platform-type"
+        - "{{platformType .}}"
         - "/config"
         - "--out-dir"
         - "/etc/coredns"
+        - "--resolvconf-path"
+        - "/etc/resolv.conf"
         resources: {}
         volumeMounts:
         - name: kubeconfig
@@ -92,6 +97,8 @@ contents:
         - "{{- range $index, $ip := cloudPlatformAPIIntLoadBalancerIPs .}}{{ if gt $index 0 }},{{end}}{{$ip}}{{end}}"
         - "--cloud-ingress-lb-ips"
         - "{{- range $index, $ip := cloudPlatformIngressLoadBalancerIPs .}}{{ if gt $index 0 }},{{end}}{{$ip}}{{end}}"
+        - "--platform-type"
+        - "{{platformType .}}"
         resources:
           requests:
             cpu: 100m

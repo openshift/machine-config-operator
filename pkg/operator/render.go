@@ -78,6 +78,7 @@ func (a *assetRenderer) addTemplateFuncs() {
 	funcs["cloudPlatformAPIIntLoadBalancerIPs"] = cloudPlatformAPIIntLoadBalancerIPs
 	funcs["cloudPlatformAPILoadBalancerIPs"] = cloudPlatformAPILoadBalancerIPs
 	funcs["cloudPlatformIngressLoadBalancerIPs"] = cloudPlatformIngressLoadBalancerIPs
+	funcs["platformType"] = platformType
 	funcs["join"] = strings.Join
 
 	a.tmpl = a.tmpl.Funcs(funcs)
@@ -488,4 +489,13 @@ func cloudPlatformLoadBalancerIPState(cfg mcfgv1.ControllerConfigSpec) LoadBalan
 		}
 	}
 	return lbIPState
+}
+
+// platformType provides the platform name that can be used to determine
+// platform specific acions to take.
+func platformType(cfg mcfgv1.ControllerConfigSpec) (interface{}, error) {
+	if cfg.Infra.Status.PlatformStatus != nil {
+		return cfg.Infra.Status.PlatformStatus.Type, nil
+	}
+	return "", fmt.Errorf("could not determine platform type")
 }
