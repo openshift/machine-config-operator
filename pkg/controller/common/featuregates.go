@@ -55,6 +55,7 @@ func GetEnabledDisabledFeatures(features featuregates.FeatureGate) ([]string, []
 // Current valid feature gate and platform combinations:
 // GCP -> FeatureGateManagedBootImages
 // AWS -> FeatureGateManagedBootImagesAWS
+// vSphere -> FeatureGateManagedBootImagesvSphere
 func IsBootImageControllerRequired(ctx *ControllerContext) bool {
 	configClient := ctx.ClientBuilder.ConfigClientOrDie("ensure-boot-image-infra-client")
 	infra, err := configClient.ConfigV1().Infrastructures().Get(context.TODO(), "cluster", metav1.GetOptions{})
@@ -76,6 +77,8 @@ func IsBootImageControllerRequired(ctx *ControllerContext) bool {
 		return fg.Enabled(features.FeatureGateManagedBootImagesAWS)
 	case configv1.GCPPlatformType:
 		return fg.Enabled(features.FeatureGateManagedBootImages)
+	case configv1.VSpherePlatformType:
+		return fg.Enabled(features.FeatureGateManagedBootImagesvSphere)
 	}
 	return false
 }
