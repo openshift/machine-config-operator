@@ -78,7 +78,7 @@ func IsBootImageControllerRequired(ctx *ControllerContext) bool {
 	case configv1.GCPPlatformType:
 		return fg.Enabled(features.FeatureGateManagedBootImages)
 	case configv1.VSpherePlatformType:
-		return fg.Enabled(features.FeatureGateManagedBootImagesvSphere)
+		return fg.Enabled(features.FeatureGateManagedBootImages)
 	}
 	return false
 }
