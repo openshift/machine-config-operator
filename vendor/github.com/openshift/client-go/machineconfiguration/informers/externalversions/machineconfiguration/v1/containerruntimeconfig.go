@@ -3,13 +3,13 @@
 package v1
 
 import (
-	"context"
+	context "context"
 	time "time"
 
-	machineconfigurationv1 "github.com/openshift/api/machineconfiguration/v1"
+	apimachineconfigurationv1 "github.com/openshift/api/machineconfiguration/v1"
 	versioned "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	internalinterfaces "github.com/openshift/client-go/machineconfiguration/informers/externalversions/internalinterfaces"
-	v1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
+	machineconfigurationv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -20,7 +20,7 @@ import (
 // ContainerRuntimeConfigs.
 type ContainerRuntimeConfigInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1.ContainerRuntimeConfigLister
+	Lister() machineconfigurationv1.ContainerRuntimeConfigLister
 }
 
 type containerRuntimeConfigInformer struct {
@@ -54,7 +54,7 @@ func NewFilteredContainerRuntimeConfigInformer(client versioned.Interface, resyn
 				return client.MachineconfigurationV1().ContainerRuntimeConfigs().Watch(context.TODO(), options)
 			},
 		},
-		&machineconfigurationv1.ContainerRuntimeConfig{},
+		&apimachineconfigurationv1.ContainerRuntimeConfig{},
 		resyncPeriod,
 		indexers,
 	)
@@ -65,9 +65,9 @@ func (f *containerRuntimeConfigInformer) defaultInformer(client versioned.Interf
 }
 
 func (f *containerRuntimeConfigInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&machineconfigurationv1.ContainerRuntimeConfig{}, f.defaultInformer)
+	return f.factory.InformerFor(&apimachineconfigurationv1.ContainerRuntimeConfig{}, f.defaultInformer)
 }
 
-func (f *containerRuntimeConfigInformer) Lister() v1.ContainerRuntimeConfigLister {
-	return v1.NewContainerRuntimeConfigLister(f.Informer().GetIndexer())
+func (f *containerRuntimeConfigInformer) Lister() machineconfigurationv1.ContainerRuntimeConfigLister {
+	return machineconfigurationv1.NewContainerRuntimeConfigLister(f.Informer().GetIndexer())
 }
