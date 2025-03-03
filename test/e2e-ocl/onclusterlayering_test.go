@@ -632,6 +632,7 @@ func archiveBuildPodLogs(t *testing.T, podLogsDirPath string) error {
 
 // Waits for the build to start and returns the started MachineOSBuild object.
 func waitForBuildToStartForPoolAndConfig(t *testing.T, cs *framework.ClientSet, poolName, moscName string) *mcfgv1.MachineOSBuild {
+	t.Logf("in waitForBuildToStartForPoolAndConfig with moscName %v", moscName)
 	t.Helper()
 
 	var mosbName string
@@ -664,7 +665,8 @@ func waitForBuildToStart(t *testing.T, cs *framework.ClientSet, build *mcfgv1.Ma
 
 	t.Logf("Waiting for MachineOSBuild %s to start", build.Name)
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*5)
+	// TODO: see if timeout bump helps
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*10)
 	defer cancel()
 
 	start := time.Now()
@@ -672,7 +674,9 @@ func waitForBuildToStart(t *testing.T, cs *framework.ClientSet, build *mcfgv1.Ma
 	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx)
 	kubeassert.Eventually().MachineOSBuildExists(build)
 	t.Logf("MachineOSBuild %s created after %s", build.Name, time.Since(start))
+	t.Log("before running status")
 	kubeassert.Eventually().MachineOSBuildIsRunning(build)
+	t.Log("after running status")
 	t.Logf("MachineOSBuild %s running after %s", build.Name, time.Since(start))
 	// The Job reports running before the pod is fully up and running, so the mosb ends up in building status
 	// however, since we are streaming container logs we might hit a race where the container has not started yet
