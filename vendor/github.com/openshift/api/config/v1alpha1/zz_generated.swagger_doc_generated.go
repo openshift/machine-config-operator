@@ -118,6 +118,53 @@ func (ClusterImagePolicyStatus) SwaggerDoc() map[string]string {
 	return map_ClusterImagePolicyStatus
 }
 
+var map_ClusterMonitoring = map[string]string{
+	"":         "ClusterMonitoring is the Custom Resource object which holds the current status of Cluster Monitoring Operator. CMO is a central component of the monitoring stack.\n\nCompatibility level 4: No compatibility is provided, the API can change at any point for any reason. These capabilities should not be used by applications needing long term support. ClusterMonitoring is the Schema for the Cluster Monitoring Operators API",
+	"metadata": "metadata is the standard object metadata.",
+	"spec":     "spec holds user configuration for the Cluster Monitoring Operator",
+	"status":   "status holds observed values from the cluster. They may not be overridden.",
+}
+
+func (ClusterMonitoring) SwaggerDoc() map[string]string {
+	return map_ClusterMonitoring
+}
+
+var map_ClusterMonitoringList = map[string]string{
+	"":         "Compatibility level 4: No compatibility is provided, the API can change at any point for any reason. These capabilities should not be used by applications needing long term support.",
+	"metadata": "metadata is the standard list metadata.",
+	"items":    "items is a list of ClusterMonitoring",
+}
+
+func (ClusterMonitoringList) SwaggerDoc() map[string]string {
+	return map_ClusterMonitoringList
+}
+
+var map_ClusterMonitoringSpec = map[string]string{
+	"":            "ClusterMonitoringSpec defines the desired state of Cluster Monitoring Operator",
+	"userDefined": "userDefined set the deployment mode for user-defined monitoring in addition to the default platform monitoring.",
+}
+
+func (ClusterMonitoringSpec) SwaggerDoc() map[string]string {
+	return map_ClusterMonitoringSpec
+}
+
+var map_ClusterMonitoringStatus = map[string]string{
+	"": "MonitoringOperatorStatus defines the observed state of MonitoringOperator",
+}
+
+func (ClusterMonitoringStatus) SwaggerDoc() map[string]string {
+	return map_ClusterMonitoringStatus
+}
+
+var map_UserDefinedMonitoring = map[string]string{
+	"":     "UserDefinedMonitoring config for user-defined projects.",
+	"mode": "mode defines the different configurations of UserDefinedMonitoring Valid values are Disabled and NamespaceIsolated Disabled disables monitoring for user-defined projects. This restricts the default monitoring stack, installed in the openshift-monitoring project, to monitor only platform namespaces, which prevents any custom monitoring configurations or resources from being applied to user-defined namespaces. NamespaceIsolated enables monitoring for user-defined projects with namespace-scoped tenancy. This ensures that metrics, alerts, and monitoring data are isolated at the namespace level.",
+}
+
+func (UserDefinedMonitoring) SwaggerDoc() map[string]string {
+	return map_UserDefinedMonitoring
+}
+
 var map_FulcioCAWithRekor = map[string]string{
 	"":              "FulcioCAWithRekor defines the root of trust based on the Fulcio certificate and the Rekor public key.",
 	"fulcioCAData":  "fulcioCAData contains inline base64-encoded data for the PEM format fulcio CA. fulcioCAData must be at most 8192 characters.",
@@ -165,6 +212,27 @@ var map_ImagePolicyStatus = map[string]string{
 
 func (ImagePolicyStatus) SwaggerDoc() map[string]string {
 	return map_ImagePolicyStatus
+}
+
+var map_PKI = map[string]string{
+	"":                      "PKI defines the root of trust based on Root CA(s) and corresponding intermediate certificates.",
+	"caRootsData":           "caRootsData contains base64-encoded data of a certificate bundle PEM file, which contains one or more CA roots in the PEM format. The total length of the data must not exceed 8192 characters. ",
+	"caIntermediatesData":   "caIntermediatesData contains base64-encoded data of a certificate bundle PEM file, which contains one or more intermediate certificates in the PEM format. The total length of the data must not exceed 8192 characters. caIntermediatesData requires caRootsData to be set. ",
+	"pkiCertificateSubject": "pkiCertificateSubject defines the requirements imposed on the subject to which the certificate was issued.",
+}
+
+func (PKI) SwaggerDoc() map[string]string {
+	return map_PKI
+}
+
+var map_PKICertificateSubject = map[string]string{
+	"":         "PKICertificateSubject defines the requirements imposed on the subject to which the certificate was issued.",
+	"email":    "email specifies the expected email address imposed on the subject to which the certificate was issued, and must match the email address listed in the Subject Alternative Name (SAN) field of the certificate. The email should be a valid email address and at most 320 characters in length.",
+	"hostname": "hostname specifies the expected hostname imposed on the subject to which the certificate was issued, and it must match the hostname listed in the Subject Alternative Name (SAN) DNS field of the certificate. The hostname should be a valid dns 1123 subdomain name, optionally prefixed by '*.', and at most 253 characters in length. It should consist only of lowercase alphanumeric characters, hyphens, periods and the optional preceding asterisk.",
+}
+
+func (PKICertificateSubject) SwaggerDoc() map[string]string {
+	return map_PKICertificateSubject
 }
 
 var map_Policy = map[string]string{
@@ -217,9 +285,10 @@ func (PolicyMatchRemapIdentity) SwaggerDoc() map[string]string {
 
 var map_PolicyRootOfTrust = map[string]string{
 	"":                  "PolicyRootOfTrust defines the root of trust based on the selected policyType.",
-	"policyType":        "policyType serves as the union's discriminator. Users are required to assign a value to this field, choosing one of the policy types that define the root of trust. \"PublicKey\" indicates that the policy relies on a sigstore publicKey and may optionally use a Rekor verification. \"FulcioCAWithRekor\" indicates that the policy is based on the Fulcio certification and incorporates a Rekor verification.",
+	"policyType":        "policyType serves as the union's discriminator. Users are required to assign a value to this field, choosing one of the policy types that define the root of trust. \"PublicKey\" indicates that the policy relies on a sigstore publicKey and may optionally use a Rekor verification. \"FulcioCAWithRekor\" indicates that the policy is based on the Fulcio certification and incorporates a Rekor verification. \"PKI\" is a DevPreview feature that indicates that the policy is based on the certificates from Bring Your Own Public Key Infrastructure (BYOPKI). This value is enabled by turning on the SigstoreImageVerificationPKI feature gate.",
 	"publicKey":         "publicKey defines the root of trust based on a sigstore public key.",
 	"fulcioCAWithRekor": "fulcioCAWithRekor defines the root of trust based on the Fulcio certificate and the Rekor public key. For more information about Fulcio and Rekor, please refer to the document at: https://github.com/sigstore/fulcio and https://github.com/sigstore/rekor",
+	"pki":               "pki defines the root of trust based on Bring Your Own Public Key Infrastructure (BYOPKI) Root CA(s) and corresponding intermediate certificates.",
 }
 
 func (PolicyRootOfTrust) SwaggerDoc() map[string]string {

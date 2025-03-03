@@ -3,13 +3,13 @@
 package v1
 
 import (
-	"context"
+	context "context"
 	time "time"
 
-	machineconfigurationv1 "github.com/openshift/api/machineconfiguration/v1"
+	apimachineconfigurationv1 "github.com/openshift/api/machineconfiguration/v1"
 	versioned "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	internalinterfaces "github.com/openshift/client-go/machineconfiguration/informers/externalversions/internalinterfaces"
-	v1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
+	machineconfigurationv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -20,7 +20,7 @@ import (
 // KubeletConfigs.
 type KubeletConfigInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1.KubeletConfigLister
+	Lister() machineconfigurationv1.KubeletConfigLister
 }
 
 type kubeletConfigInformer struct {
@@ -54,7 +54,7 @@ func NewFilteredKubeletConfigInformer(client versioned.Interface, resyncPeriod t
 				return client.MachineconfigurationV1().KubeletConfigs().Watch(context.TODO(), options)
 			},
 		},
-		&machineconfigurationv1.KubeletConfig{},
+		&apimachineconfigurationv1.KubeletConfig{},
 		resyncPeriod,
 		indexers,
 	)
@@ -65,9 +65,9 @@ func (f *kubeletConfigInformer) defaultInformer(client versioned.Interface, resy
 }
 
 func (f *kubeletConfigInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&machineconfigurationv1.KubeletConfig{}, f.defaultInformer)
+	return f.factory.InformerFor(&apimachineconfigurationv1.KubeletConfig{}, f.defaultInformer)
 }
 
-func (f *kubeletConfigInformer) Lister() v1.KubeletConfigLister {
-	return v1.NewKubeletConfigLister(f.Informer().GetIndexer())
+func (f *kubeletConfigInformer) Lister() machineconfigurationv1.KubeletConfigLister {
+	return machineconfigurationv1.NewKubeletConfigLister(f.Informer().GetIndexer())
 }

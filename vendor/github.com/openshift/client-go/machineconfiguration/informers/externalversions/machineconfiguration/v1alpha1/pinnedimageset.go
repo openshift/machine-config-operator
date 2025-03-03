@@ -3,13 +3,13 @@
 package v1alpha1
 
 import (
-	"context"
+	context "context"
 	time "time"
 
-	machineconfigurationv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+	apimachineconfigurationv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	versioned "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	internalinterfaces "github.com/openshift/client-go/machineconfiguration/informers/externalversions/internalinterfaces"
-	v1alpha1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1"
+	machineconfigurationv1alpha1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -20,7 +20,7 @@ import (
 // PinnedImageSets.
 type PinnedImageSetInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1alpha1.PinnedImageSetLister
+	Lister() machineconfigurationv1alpha1.PinnedImageSetLister
 }
 
 type pinnedImageSetInformer struct {
@@ -54,7 +54,7 @@ func NewFilteredPinnedImageSetInformer(client versioned.Interface, resyncPeriod 
 				return client.MachineconfigurationV1alpha1().PinnedImageSets().Watch(context.TODO(), options)
 			},
 		},
-		&machineconfigurationv1alpha1.PinnedImageSet{},
+		&apimachineconfigurationv1alpha1.PinnedImageSet{},
 		resyncPeriod,
 		indexers,
 	)
@@ -65,9 +65,9 @@ func (f *pinnedImageSetInformer) defaultInformer(client versioned.Interface, res
 }
 
 func (f *pinnedImageSetInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&machineconfigurationv1alpha1.PinnedImageSet{}, f.defaultInformer)
+	return f.factory.InformerFor(&apimachineconfigurationv1alpha1.PinnedImageSet{}, f.defaultInformer)
 }
 
-func (f *pinnedImageSetInformer) Lister() v1alpha1.PinnedImageSetLister {
-	return v1alpha1.NewPinnedImageSetLister(f.Informer().GetIndexer())
+func (f *pinnedImageSetInformer) Lister() machineconfigurationv1alpha1.PinnedImageSetLister {
+	return machineconfigurationv1alpha1.NewPinnedImageSetLister(f.Informer().GetIndexer())
 }
