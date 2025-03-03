@@ -135,8 +135,8 @@ func TestOnClusterLayering(t *testing.T) {
 	_, err = cs.MachineconfigurationV1Interface.MachineOSConfigs().Update(ctx, mosc, metav1.UpdateOptions{})
 	require.NoError(t, err)
 
-	// // Wait for the first build to be deleted.
-	// waitForBuildToBeDeleted(t, cs, mosb)
+	// Wait for the first build to be deleted.
+	waitForBuildToBeDeleted(t, cs, mosb)
 
 	waitForBuildToStartForPoolAndConfig(t, cs, layeredMCPName, layeredMCPName)
 }
