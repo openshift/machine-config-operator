@@ -521,20 +521,26 @@ func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newC
 
 	// Only check the image type and execute OS changes if:
 	// - machineconfig changed
-	// - we're staying on a realtime kernel ( need to run rpm-ostree update )
-	// - we have extensions ( need to run rpm-ostree update )
+	// - we're staying on a realtime/64k kernel ( need to run rpm-ostree update )
+	// - we have a diff in extensions ( need to run rpm-ostree update )
 	// We have at least one customer that removes the pull secret from the cluster to "shrinkwrap" it for distribution and we want
 	// to make sure we don't break that use case, but realtime kernel update and extensions update always ran
 	// if they were in use, so we also need to preserve that behavior.
 	// https://issues.redhat.com/browse/OCPBUGS-4049
 	if mcDiff.osUpdate || mcDiff.extensions || mcDiff.kernelType || mcDiff.kargs ||
 		canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelTypeRealtime ||
-		canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelType64kPages ||
-		len(newConfig.Spec.Extensions) > 0 {
+		canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelType64kPages {
 
 		// Throw started/staged events only if there is any update required for the OS
 		if dn.nodeWriter != nil {
-			dn.nodeWriter.Eventf(corev1.EventTypeNormal, "OSUpdateStarted", mcDiff.osChangesString())
+			reason := mcDiff.osChangesString()
+			if reason == "" {
+				// osChangesString() can return empty in cases where the above diffs are false,
+				// but the node uses a non standard kernel, so let's make it a bit more
+				// informative in such cases
+				reason = fmt.Sprintf("Updating to a target config with %s kernel", canonicalizeKernelType(newConfig.Spec.KernelType))
+			}
+			dn.nodeWriter.Eventf(corev1.EventTypeNormal, "OSUpdateStarted", reason)
 		}
 
 		if err := dn.applyLayeredOSChanges(mcDiff, oldConfig, newConfig); err != nil {
@@ -1786,6 +1792,7 @@ func (dn *CoreOSDaemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig)
 	// We support Kernel update only on RHCOS and SCOS nodes
 	if !dn.os.IsEL() {
 		klog.Info("updating kernel on non-RHCOS nodes is not supported")
+		klog.Infof("Detected osrelease \n %+q", dn.os)
 		return nil
 	}
 
@@ -2104,7 +2111,7 @@ func (dn *Daemon) workaroundOcpBugs33694() error {
 	}
 	for _, path := range stalePaths {
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("error deleting %s: %w", path, err)
+			return fmt.Errorf("error deleting %q: %w", path, err)
 		} else if err == nil {
 			klog.Infof("Removed stale symlink %q", path)
 		}
@@ -2174,7 +2181,7 @@ func (dn *Daemon) presetUnit(unit ign3types.Unit) error {
 	if err != nil {
 		return fmt.Errorf("error running preset on unit: %s", stdouterr)
 	}
-	klog.Infof("Preset systemd unit %s", unit.Name)
+	klog.Infof("Preset systemd unit %q", unit.Name)
 	return nil
 }
 
@@ -2627,7 +2634,7 @@ func (dn *Daemon) queueRevertKernelSwap() error {
 // updateLayeredOS updates the system OS to the one specified in newConfig
 func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 	newURL := config.Spec.OSImageURL
-	klog.Infof("Updating OS to layered image %s", newURL)
+	klog.Infof("Updating OS to layered image %q", newURL)
 	return dn.updateLayeredOSToPullspec(newURL)
 }
 

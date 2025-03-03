@@ -7,6 +7,7 @@ import (
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
+	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/buildrequest"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	batchv1 "k8s.io/api/batch/v1"
@@ -101,6 +102,35 @@ func (j *jobImageBuilder) start(ctx context.Context) (*batchv1.Job, error) {
 	bj, err := j.kubeclient.BatchV1().Jobs(ctrlcommon.MCONamespace).Create(ctx, buildJob, metav1.CreateOptions{})
 	if err == nil {
 		klog.Infof("Build job %q created for MachineOSBuild %q", bj.Name, mosbName)
+
+		// Set the owner reference of the configmaps and secrets created to be the Job
+		// Set blockOwnerDeletion and Controller to false as Job ownership doesn't work when set to true
+		oref := metav1.NewControllerRef(bj, batchv1.SchemeGroupVersion.WithKind("Job"))
+		falseBool := false
+		oref.BlockOwnerDeletion = &falseBool
+		oref.Controller = &falseBool
+
+		cms, err := j.buildrequest.ConfigMaps()
+		if err != nil {
+			return nil, err
+		}
+		for _, cm := range cms {
+			cm.SetOwnerReferences([]metav1.OwnerReference{*oref})
+			if _, err := j.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Update(ctx, cm, metav1.UpdateOptions{}); err != nil {
+				return nil, err
+			}
+		}
+
+		secrets, err := j.buildrequest.Secrets()
+		if err != nil {
+			return nil, err
+		}
+		for _, secret := range secrets {
+			secret.SetOwnerReferences([]metav1.OwnerReference{*oref})
+			if _, err := j.kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Update(ctx, secret, metav1.UpdateOptions{}); err != nil {
+				return nil, err
+			}
+		}
 		return bj, nil
 	}
 
@@ -221,26 +251,26 @@ func (j *jobImageBuilder) mapJobStatusToBuildStatus(job *batchv1.Job) (mcfgv1.Bu
 	// If the job is being deleted and it was not in either a successful or failed state
 	// then the MachineOSBuild should be considered "interrupted"
 	if job.DeletionTimestamp != nil && job.Status.Succeeded == 0 && job.Status.Failed == 0 {
-		return mcfgv1.MachineOSBuildInterrupted, j.interruptedConditions()
+		return mcfgv1.MachineOSBuildInterrupted, apihelpers.MachineOSBuildInterruptedConditions()
 	}
 
 	if job.Status.Active == 0 && job.Status.Succeeded == 0 && job.Status.Failed == 0 && job.Status.UncountedTerminatedPods == nil {
-		return mcfgv1.MachineOSBuildPrepared, j.pendingConditions()
+		return mcfgv1.MachineOSBuildPrepared, apihelpers.MachineOSBuildPendingConditions()
 	}
 	// The build job is still running till it succeeds or maxes out it retries on failures
 	if job.Status.Active >= 0 && job.Status.Failed >= 0 && job.Status.Failed < 4 && job.Status.Succeeded == 0 {
-		return mcfgv1.MachineOSBuilding, j.runningConditions()
+		return mcfgv1.MachineOSBuilding, apihelpers.MachineOSBuildRunningConditions()
 	}
 	if job.Status.Succeeded > 0 {
-		return mcfgv1.MachineOSBuildSucceeded, j.succeededConditions()
+		return mcfgv1.MachineOSBuildSucceeded, apihelpers.MachineOSBuildSucceededConditions()
 	}
 	// Only return failed if there have been 4 pod failures as the backoffLimit is set to 3
 	if job.Status.Failed > 3 {
-		return mcfgv1.MachineOSBuildFailed, j.failedConditions()
+		return mcfgv1.MachineOSBuildFailed, apihelpers.MachineOSBuildFailedConditions()
 
 	}
 
-	return "", j.initialConditions()
+	return "", apihelpers.MachineOSBuildInitialConditions()
 }
 
 // Stops the running build by deleting the build job.

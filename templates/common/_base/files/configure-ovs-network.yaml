@@ -76,6 +76,10 @@ contents:
       update_nm_conn_files_base "${NM_CONN_SET_PATH}" "${1}" "${2}"
     }
 
+    update_nm_conn_etc_files() {
+      update_nm_conn_files_base "${NM_CONN_ETC_PATH}" "${1}" "${2}"
+    }
+
     # Move and reload keyfiles at their final destination
     set_nm_conn_files() {
       if [ "$NM_CONN_RUN_PATH" != "$NM_CONN_SET_PATH" ]; then
@@ -219,13 +223,13 @@ contents:
       # find default port to add to bridge
       if ! nmcli connection show "$default_port_name" &> /dev/null; then
         ovs-vsctl --timeout=30 --if-exists del-port "$bridge_name" ${iface}
-        add_nm_conn "$default_port_name" type ovs-port conn.interface ${iface} master "$bridge_name" slave-type ovs-bridge \
+        add_nm_conn "$default_port_name" type ovs-port conn.interface ${iface} slave-type ovs-bridge master "$bridge_name" \
         connection.autoconnect-slaves 1
       fi
 
       if ! nmcli connection show "$ovs_port" &> /dev/null; then
         ovs-vsctl --timeout=30 --if-exists del-port "$bridge_name" "$bridge_name"
-        add_nm_conn "$ovs_port" type ovs-port conn.interface "$bridge_name" master "$bridge_name" slave-type ovs-bridge
+        add_nm_conn "$ovs_port" type ovs-port conn.interface "$bridge_name" slave-type ovs-bridge master "$bridge_name"
       fi
 
       extra_phys_args=()
@@ -410,6 +414,9 @@ contents:
       update_nm_conn_run_files ${bridge_name} ${port_name}
       rm_nm_conn_files
       update_nm_conn_set_files ${bridge_name} ${port_name}
+      rm_nm_conn_files
+      # Shouldn't be necessary, workaround for https://issues.redhat.com/browse/OCPBUGS-41489
+      update_nm_conn_etc_files ${bridge_name} ${port_name}
       rm_nm_conn_files
 
       # NetworkManager will not remove ${bridge_name} if it has the patch port created by ovn-kubernetes
