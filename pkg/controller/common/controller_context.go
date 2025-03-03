@@ -10,6 +10,7 @@ import (
 	mcfginformers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
 
 	operatorinformers "github.com/openshift/client-go/operator/informers/externalversions"
+	imageinformer "github.com/openshift/client-go/image/informers/externalversions"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/library-go/pkg/operator/events"
 	"github.com/openshift/machine-config-operator/internal/clients"
@@ -60,6 +61,7 @@ type ControllerContext struct {
 	OperatorInformerFactory                             operatorinformers.SharedInformerFactory
 	KubeMAOSharedInformer                               informers.SharedInformerFactory
 	MachineInformerFactory                              machineinformersv1beta1.SharedInformerFactory
+	ImageInformerFactory				    imageinformer.SharedInformerFactory
 
 	FeatureGateAccess featuregates.FeatureGateAccess
 
