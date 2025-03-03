@@ -1080,6 +1080,11 @@ github.com/openshift/client-go/image/applyconfigurations/internal
 github.com/openshift/client-go/image/clientset/versioned
 github.com/openshift/client-go/image/clientset/versioned/scheme
 github.com/openshift/client-go/image/clientset/versioned/typed/image/v1
+github.com/openshift/client-go/image/informers/externalversions
+github.com/openshift/client-go/image/informers/externalversions/image
+github.com/openshift/client-go/image/informers/externalversions/image/v1
+github.com/openshift/client-go/image/informers/externalversions/internalinterfaces
+github.com/openshift/client-go/image/listers/image/v1
 github.com/openshift/client-go/machine/applyconfigurations
 github.com/openshift/client-go/machine/applyconfigurations/internal
 github.com/openshift/client-go/machine/applyconfigurations/machine/v1
