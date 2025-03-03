@@ -3,13 +3,13 @@
 package v1
 
 import (
-	"context"
+	context "context"
 	time "time"
 
-	operatorv1 "github.com/openshift/api/operator/v1"
+	apioperatorv1 "github.com/openshift/api/operator/v1"
 	versioned "github.com/openshift/client-go/operator/clientset/versioned"
 	internalinterfaces "github.com/openshift/client-go/operator/informers/externalversions/internalinterfaces"
-	v1 "github.com/openshift/client-go/operator/listers/operator/v1"
+	operatorv1 "github.com/openshift/client-go/operator/listers/operator/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -20,7 +20,7 @@ import (
 // IngressControllers.
 type IngressControllerInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1.IngressControllerLister
+	Lister() operatorv1.IngressControllerLister
 }
 
 type ingressControllerInformer struct {
@@ -55,7 +55,7 @@ func NewFilteredIngressControllerInformer(client versioned.Interface, namespace 
 				return client.OperatorV1().IngressControllers(namespace).Watch(context.TODO(), options)
 			},
 		},
-		&operatorv1.IngressController{},
+		&apioperatorv1.IngressController{},
 		resyncPeriod,
 		indexers,
 	)
@@ -66,9 +66,9 @@ func (f *ingressControllerInformer) defaultInformer(client versioned.Interface, 
 }
 
 func (f *ingressControllerInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&operatorv1.IngressController{}, f.defaultInformer)
+	return f.factory.InformerFor(&apioperatorv1.IngressController{}, f.defaultInformer)
 }
 
-func (f *ingressControllerInformer) Lister() v1.IngressControllerLister {
-	return v1.NewIngressControllerLister(f.Informer().GetIndexer())
+func (f *ingressControllerInformer) Lister() operatorv1.IngressControllerLister {
+	return operatorv1.NewIngressControllerLister(f.Informer().GetIndexer())
 }

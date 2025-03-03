@@ -6,7 +6,9 @@ linters-settings:
       settings:
         linters:
           enable:
+          - "maxlength"
           - "nobools"
+          - "statussubresource"
         lintersConfig:
           conditions:
             isFirstField: Warn
