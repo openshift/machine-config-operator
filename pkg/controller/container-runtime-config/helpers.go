@@ -876,6 +876,23 @@ func policyItemFromSpec(policy apicfgv1alpha1.Policy) (signature.PolicyRequireme
 			return nil, err
 		}
 		signedOptions = append(signedOptions, signature.PRSigstoreSignedWithFulcio(prSigstoreSignedFulcio), signature.PRSigstoreSignedWithRekorPublicKeyData(policy.RootOfTrust.FulcioCAWithRekor.RekorKeyData))
+	case apicfgv1alpha1.PKIRootOfTrust:
+		pkiOptions := []signature.PRSigstoreSignedPKIOption{}
+		pkiOptions = append(pkiOptions, signature.PRSigstoreSignedPKIWithCARootsData(policy.RootOfTrust.PKI.CertificateAuthorityRootsData))
+		if len(policy.RootOfTrust.PKI.CertificateAuthorityIntermediatesData) > 0 {
+			pkiOptions = append(pkiOptions, signature.PRSigstoreSignedPKIWithCAIntermediatesData(policy.RootOfTrust.PKI.CertificateAuthorityIntermediatesData))
+		}
+		if policy.RootOfTrust.PKI.PKICertificateSubject.Email != "" {
+			pkiOptions = append(pkiOptions, signature.PRSigstoreSignedPKIWithSubjectEmail(policy.RootOfTrust.PKI.PKICertificateSubject.Email))
+		}
+		if policy.RootOfTrust.PKI.PKICertificateSubject.Hostname != "" {
+			pkiOptions = append(pkiOptions, signature.PRSigstoreSignedPKIWithSubjectHostname(policy.RootOfTrust.PKI.PKICertificateSubject.Hostname))
+		}
+		prSigstoreSignedPKI, err := signature.NewPRSigstoreSignedPKI(pkiOptions...)
+		if err != nil {
+			return nil, err
+		}
+		signedOptions = append(signedOptions, signature.PRSigstoreSignedWithPKI(prSigstoreSignedPKI))
 	}
 
 	switch policy.SignedIdentity.MatchPolicy {
@@ -1162,7 +1179,7 @@ func updateNamespacedPolicyJSONs(clusterOverridePolicyJSON []byte, internalBlock
 			policyObj.Transports["atomic"][scope] = append(policyObj.Transports["atomic"][scope], requirement...)
 		}
 
-		data, err := json.MarshalIndent(policyObj, "", " ")
+		data, err := json.MarshalIndent(policyObj, "", "  ")
 		if err != nil {
 			return nil, fmt.Errorf("error marshalling policy json for namespaced policies: %w", err)
 		}
