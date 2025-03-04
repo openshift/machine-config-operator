@@ -89,6 +89,7 @@ spec:
           annotations:
             summary: "Alerts the user that a node failed to reboot one or more times over a span of 5 minutes."
             description: "Reboot failed on {{ $labels.node }} , update may be blocked. For more details:  oc logs -f -n {{ $labels.namespace }} {{ $labels.pod }} -c machine-config-daemon "
+            runbook_url: https://github.com/openshift/runbooks/blob/master/alerts/machine-config-operator/MachineConfigDaemonRebootError.md 
     - name: mcd-pivot-error
       rules:
         - alert: MCDPivotError
