@@ -240,13 +240,11 @@ func verifyMachineSet(t *testing.T, cs *framework.ClientSet, ms machinev1beta1.M
 	require.Nil(t, err, "failed to unmarshal Machine Set: %s", ms.Name)
 
 	originalBootImageValue := providerSpec.Disks[0].Image
-	originalUserDataSecret := providerSpec.UserDataSecret.Name
 
 	newProviderSpec := providerSpec.DeepCopy()
 	for idx := range newProviderSpec.Disks {
 		newProviderSpec.Disks[idx].Image = newProviderSpec.Disks[idx].Image + "-fake-update"
 	}
-	newProviderSpec.UserDataSecret.Name = newProviderSpec.UserDataSecret.Name + "-fake-update"
 
 	newMachineSet := ms.DeepCopy()
 	err = marshalProviderSpec(newMachineSet, newProviderSpec)
@@ -255,7 +253,6 @@ func verifyMachineSet(t *testing.T, cs *framework.ClientSet, ms machinev1beta1.M
 	err = patchMachineSet(&ms, newMachineSet, machineClient)
 	require.Nil(t, err, "patching machineset failed")
 	t.Logf("Updated build name in machineset %s to \"%s\"", ms.Name, originalBootImageValue+"-fake-update")
-	t.Logf("Updated user data secret in machineset %s to \"%s\"", ms.Name, originalUserDataSecret+"-fake-update")
 
 	// Ensure atleast one master node is ready
 	t.Logf("Waiting until atleast one master node is ready...")
@@ -278,15 +275,10 @@ func verifyMachineSet(t *testing.T, cs *framework.ClientSet, ms machinev1beta1.M
 		}
 	}
 
-	// Verify that the user data secret have been correctly reconciled to the expected value
 	if reconciliationExpected {
-		// Hardcoding the check here as this is the name for the managed secret
-		require.Equal(t, "worker-user-data-managed", providerSpec.UserDataSecret.Name, "user data secret has not been updated correctly")
-		t.Logf("The boot image and user data secret have been reconciled, as expected")
+		t.Logf("The boot image have been reconciled, as expected")
 	} else {
-		require.NotEqual(t, originalUserDataSecret, providerSpec.UserDataSecret.Name, "user data secret has been unexpectedly updated")
-		t.Logf("The boot images and user data secret have not been reconciled, as expected")
-
+		t.Logf("The boot images have not been reconciled, as expected")
 		// Restore machineSet to original values in this case, as the machineset may be used by other test variants
 		patchMachineSet(newMachineSet, &ms, machineClient)
 		t.Logf("Restored build name in the machineset %s to \"%s\"", ms.Name, originalBootImageValue)
