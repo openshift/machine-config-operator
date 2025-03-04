@@ -246,7 +246,7 @@ func writeFiles(files []ign3types.File, skipCertificateWrite bool) error {
 
 		mode := defaultFilePermissions
 		if file.Mode != nil {
-			mode = os.FileMode(*file.Mode)
+			mode = os.FileMode(*file.Mode) //nolint:gosec
 		}
 
 		// set chown if file information is provided

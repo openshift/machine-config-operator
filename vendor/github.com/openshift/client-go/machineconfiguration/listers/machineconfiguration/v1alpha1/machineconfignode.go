@@ -3,10 +3,10 @@
 package v1alpha1
 
 import (
-	v1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/client-go/listers"
-	"k8s.io/client-go/tools/cache"
+	machineconfigurationv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+	labels "k8s.io/apimachinery/pkg/labels"
+	listers "k8s.io/client-go/listers"
+	cache "k8s.io/client-go/tools/cache"
 )
 
 // MachineConfigNodeLister helps list MachineConfigNodes.
@@ -14,19 +14,19 @@ import (
 type MachineConfigNodeLister interface {
 	// List lists all MachineConfigNodes in the indexer.
 	// Objects returned here must be treated as read-only.
-	List(selector labels.Selector) (ret []*v1alpha1.MachineConfigNode, err error)
+	List(selector labels.Selector) (ret []*machineconfigurationv1alpha1.MachineConfigNode, err error)
 	// Get retrieves the MachineConfigNode from the index for a given name.
 	// Objects returned here must be treated as read-only.
-	Get(name string) (*v1alpha1.MachineConfigNode, error)
+	Get(name string) (*machineconfigurationv1alpha1.MachineConfigNode, error)
 	MachineConfigNodeListerExpansion
 }
 
 // machineConfigNodeLister implements the MachineConfigNodeLister interface.
 type machineConfigNodeLister struct {
-	listers.ResourceIndexer[*v1alpha1.MachineConfigNode]
+	listers.ResourceIndexer[*machineconfigurationv1alpha1.MachineConfigNode]
 }
 
 // NewMachineConfigNodeLister returns a new MachineConfigNodeLister.
 func NewMachineConfigNodeLister(indexer cache.Indexer) MachineConfigNodeLister {
-	return &machineConfigNodeLister{listers.New[*v1alpha1.MachineConfigNode](indexer, v1alpha1.Resource("machineconfignode"))}
+	return &machineConfigNodeLister{listers.New[*machineconfigurationv1alpha1.MachineConfigNode](indexer, machineconfigurationv1alpha1.Resource("machineconfignode"))}
 }

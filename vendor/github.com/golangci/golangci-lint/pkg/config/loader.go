@@ -14,6 +14,7 @@ import (
 
 	"github.com/golangci/golangci-lint/pkg/exitcodes"
 	"github.com/golangci/golangci-lint/pkg/fsutils"
+	"github.com/golangci/golangci-lint/pkg/goutil"
 	"github.com/golangci/golangci-lint/pkg/logutils"
 )
 
@@ -73,6 +74,11 @@ func (l *Loader) Load(opts LoadOptions) error {
 	}
 
 	l.handleGoVersion()
+
+	err = goutil.CheckGoVersion(l.cfg.Run.Go)
+	if err != nil {
+		return err
+	}
 
 	err = l.handleEnableOnlyOption()
 	if err != nil {
@@ -290,20 +296,11 @@ func (l *Loader) handleGoVersion() {
 		l.cfg.LintersSettings.Gofumpt.LangVersion = l.cfg.Run.Go
 	}
 
-	trimmedGoVersion := trimGoVersion(l.cfg.Run.Go)
+	trimmedGoVersion := goutil.TrimGoVersion(l.cfg.Run.Go)
+
+	l.cfg.LintersSettings.Revive.Go = trimmedGoVersion
 
 	l.cfg.LintersSettings.Gocritic.Go = trimmedGoVersion
-
-	// staticcheck related linters.
-	if l.cfg.LintersSettings.Staticcheck.GoVersion == "" {
-		l.cfg.LintersSettings.Staticcheck.GoVersion = trimmedGoVersion
-	}
-	if l.cfg.LintersSettings.Gosimple.GoVersion == "" {
-		l.cfg.LintersSettings.Gosimple.GoVersion = trimmedGoVersion
-	}
-	if l.cfg.LintersSettings.Stylecheck.GoVersion == "" {
-		l.cfg.LintersSettings.Stylecheck.GoVersion = trimmedGoVersion
-	}
 
 	os.Setenv("GOSECGOVERSION", l.cfg.Run.Go)
 }
@@ -405,12 +402,6 @@ func (l *Loader) handleLinterOptionDeprecations() {
 		l.log.Warnf("The configuration option `linters.godot.check-all` is deprecated, please use `linters.godot.scope: all`.")
 	}
 
-	// Deprecated since v1.44.0.
-	if len(l.cfg.LintersSettings.Gomnd.Settings) > 0 {
-		l.log.Warnf("The configuration option `linters.gomnd.settings` is deprecated. Please use the options " +
-			"`linters.gomnd.checks`,`linters.gomnd.ignored-numbers`,`linters.gomnd.ignored-files`,`linters.gomnd.ignored-functions`.")
-	}
-
 	// Deprecated since v1.47.0
 	if l.cfg.LintersSettings.Gofumpt.LangVersion != "" {
 		l.log.Warnf("The configuration option `linters.gofumpt.lang-version` is deprecated, please use global `run.go`.")
@@ -429,6 +420,11 @@ func (l *Loader) handleLinterOptionDeprecations() {
 	// Deprecated since v1.47.0
 	if l.cfg.LintersSettings.Stylecheck.GoVersion != "" {
 		l.log.Warnf("The configuration option `linters.stylecheck.go` is deprecated, please use global `run.go`.")
+	}
+
+	// Deprecated since v1.60.0
+	if !l.cfg.LintersSettings.Unused.ExportedIsUsed {
+		l.log.Warnf("The configuration option `linters.unused.exported-is-used` is deprecated.")
 	}
 
 	// Deprecated since v1.58.0

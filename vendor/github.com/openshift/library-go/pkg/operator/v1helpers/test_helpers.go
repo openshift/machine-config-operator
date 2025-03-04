@@ -264,11 +264,11 @@ func (n *fakeNodeLister) Get(name string) (*corev1.Node, error) {
 }
 
 // NewFakeOperatorClient returns a fake operator client suitable to use in static pod controller unit tests.
-func NewFakeOperatorClient(spec *operatorv1.OperatorSpec, status *operatorv1.OperatorStatus, triggerErr func(rv string, status *operatorv1.OperatorStatus) error) OperatorClientWithFinalizers {
+func NewFakeOperatorClient(spec *operatorv1.OperatorSpec, status *operatorv1.OperatorStatus, triggerErr func(rv string, status *operatorv1.OperatorStatus) error) *fakeOperatorClient {
 	return NewFakeOperatorClientWithObjectMeta(nil, spec, status, triggerErr)
 }
 
-func NewFakeOperatorClientWithObjectMeta(meta *metav1.ObjectMeta, spec *operatorv1.OperatorSpec, status *operatorv1.OperatorStatus, triggerErr func(rv string, status *operatorv1.OperatorStatus) error) OperatorClientWithFinalizers {
+func NewFakeOperatorClientWithObjectMeta(meta *metav1.ObjectMeta, spec *operatorv1.OperatorSpec, status *operatorv1.OperatorStatus, triggerErr func(rv string, status *operatorv1.OperatorStatus) error) *fakeOperatorClient {
 	return &fakeOperatorClient{
 		fakeOperatorSpec:         spec,
 		fakeOperatorStatus:       status,
@@ -284,6 +284,8 @@ type fakeOperatorClient struct {
 	fakeObjectMeta           *metav1.ObjectMeta
 	resourceVersion          string
 	triggerStatusUpdateError func(rv string, status *operatorv1.OperatorStatus) error
+
+	patchedOperatorStatus *jsonpatch.PatchSet
 }
 
 func (c *fakeOperatorClient) Informer() cache.SharedIndexInformer {
@@ -347,7 +349,15 @@ func (c *fakeOperatorClient) ApplyOperatorStatus(ctx context.Context, fieldManag
 }
 
 func (c *fakeOperatorClient) PatchOperatorStatus(ctx context.Context, jsonPatch *jsonpatch.PatchSet) (err error) {
+	if c.triggerStatusUpdateError != nil {
+		return c.triggerStatusUpdateError("", nil)
+	}
+	c.patchedOperatorStatus = jsonPatch
 	return nil
+}
+
+func (c *fakeOperatorClient) GetPatchedOperatorStatus() *jsonpatch.PatchSet {
+	return c.patchedOperatorStatus
 }
 
 func (c *fakeOperatorClient) EnsureFinalizer(ctx context.Context, finalizer string) error {

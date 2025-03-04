@@ -9,6 +9,7 @@ import (
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 
 	"k8s.io/klog/v2"
+	"k8s.io/utils/clock"
 
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -212,7 +213,7 @@ func New(
 			Name:       "machine-config-operator",
 			Namespace:  ctrlcommon.MCONamespace,
 			APIVersion: "apps/v1",
-		}),
+		}, clock.RealClock{}),
 		queue: workqueue.NewTypedRateLimitingQueueWithConfig(
 			workqueue.DefaultTypedControllerRateLimiter[string](),
 			workqueue.TypedRateLimitingQueueConfig[string]{Name: "machineconfigoperator"}),
@@ -439,8 +440,8 @@ func (optr *Operator) eventHandler() cache.ResourceEventHandler {
 		AddFunc: func(obj interface{}) {
 			optr.enqueue(obj)
 		},
-		UpdateFunc: func(_, new interface{}) {
-			optr.enqueue(new)
+		UpdateFunc: func(_, newObj interface{}) {
+			optr.enqueue(newObj)
 		},
 		DeleteFunc: func(obj interface{}) {
 			optr.enqueue(obj)

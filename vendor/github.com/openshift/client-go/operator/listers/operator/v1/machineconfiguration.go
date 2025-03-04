@@ -3,10 +3,10 @@
 package v1
 
 import (
-	v1 "github.com/openshift/api/operator/v1"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/client-go/listers"
-	"k8s.io/client-go/tools/cache"
+	operatorv1 "github.com/openshift/api/operator/v1"
+	labels "k8s.io/apimachinery/pkg/labels"
+	listers "k8s.io/client-go/listers"
+	cache "k8s.io/client-go/tools/cache"
 )
 
 // MachineConfigurationLister helps list MachineConfigurations.
@@ -14,19 +14,19 @@ import (
 type MachineConfigurationLister interface {
 	// List lists all MachineConfigurations in the indexer.
 	// Objects returned here must be treated as read-only.
-	List(selector labels.Selector) (ret []*v1.MachineConfiguration, err error)
+	List(selector labels.Selector) (ret []*operatorv1.MachineConfiguration, err error)
 	// Get retrieves the MachineConfiguration from the index for a given name.
 	// Objects returned here must be treated as read-only.
-	Get(name string) (*v1.MachineConfiguration, error)
+	Get(name string) (*operatorv1.MachineConfiguration, error)
 	MachineConfigurationListerExpansion
 }
 
 // machineConfigurationLister implements the MachineConfigurationLister interface.
 type machineConfigurationLister struct {
-	listers.ResourceIndexer[*v1.MachineConfiguration]
+	listers.ResourceIndexer[*operatorv1.MachineConfiguration]
 }
 
 // NewMachineConfigurationLister returns a new MachineConfigurationLister.
 func NewMachineConfigurationLister(indexer cache.Indexer) MachineConfigurationLister {
-	return &machineConfigurationLister{listers.New[*v1.MachineConfiguration](indexer, v1.Resource("machineconfiguration"))}
+	return &machineConfigurationLister{listers.New[*operatorv1.MachineConfiguration](indexer, operatorv1.Resource("machineconfiguration"))}
 }
