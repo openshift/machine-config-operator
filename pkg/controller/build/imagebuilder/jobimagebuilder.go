@@ -101,6 +101,35 @@ func (j *jobImageBuilder) start(ctx context.Context) (*batchv1.Job, error) {
 	bj, err := j.kubeclient.BatchV1().Jobs(ctrlcommon.MCONamespace).Create(ctx, buildJob, metav1.CreateOptions{})
 	if err == nil {
 		klog.Infof("Build job %q created for MachineOSBuild %q", bj.Name, mosbName)
+
+		// Set the owner reference of the configmaps and secrets created to be the Job
+		// Set blockOwnerDeletion and Controller to false as Job ownership doesn't work when set to true
+		oref := metav1.NewControllerRef(bj, batchv1.SchemeGroupVersion.WithKind("Job"))
+		falseBool := false
+		oref.BlockOwnerDeletion = &falseBool
+		oref.Controller = &falseBool
+
+		cms, err := j.buildrequest.ConfigMaps()
+		if err != nil {
+			return nil, err
+		}
+		for _, cm := range cms {
+			cm.SetOwnerReferences([]metav1.OwnerReference{*oref})
+			if _, err := j.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Update(ctx, cm, metav1.UpdateOptions{}); err != nil {
+				return nil, err
+			}
+		}
+
+		secrets, err := j.buildrequest.Secrets()
+		if err != nil {
+			return nil, err
+		}
+		for _, secret := range secrets {
+			secret.SetOwnerReferences([]metav1.OwnerReference{*oref})
+			if _, err := j.kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Update(ctx, secret, metav1.UpdateOptions{}); err != nil {
+				return nil, err
+			}
+		}
 		return bj, nil
 	}
 
