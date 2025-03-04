@@ -3,10 +3,10 @@
 package v1
 
 import (
-	v1 "github.com/openshift/api/operator/v1"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/client-go/listers"
-	"k8s.io/client-go/tools/cache"
+	operatorv1 "github.com/openshift/api/operator/v1"
+	labels "k8s.io/apimachinery/pkg/labels"
+	listers "k8s.io/client-go/listers"
+	cache "k8s.io/client-go/tools/cache"
 )
 
 // KubeSchedulerLister helps list KubeSchedulers.
@@ -14,19 +14,19 @@ import (
 type KubeSchedulerLister interface {
 	// List lists all KubeSchedulers in the indexer.
 	// Objects returned here must be treated as read-only.
-	List(selector labels.Selector) (ret []*v1.KubeScheduler, err error)
+	List(selector labels.Selector) (ret []*operatorv1.KubeScheduler, err error)
 	// Get retrieves the KubeScheduler from the index for a given name.
 	// Objects returned here must be treated as read-only.
-	Get(name string) (*v1.KubeScheduler, error)
+	Get(name string) (*operatorv1.KubeScheduler, error)
 	KubeSchedulerListerExpansion
 }
 
 // kubeSchedulerLister implements the KubeSchedulerLister interface.
 type kubeSchedulerLister struct {
-	listers.ResourceIndexer[*v1.KubeScheduler]
+	listers.ResourceIndexer[*operatorv1.KubeScheduler]
 }
 
 // NewKubeSchedulerLister returns a new KubeSchedulerLister.
 func NewKubeSchedulerLister(indexer cache.Indexer) KubeSchedulerLister {
-	return &kubeSchedulerLister{listers.New[*v1.KubeScheduler](indexer, v1.Resource("kubescheduler"))}
+	return &kubeSchedulerLister{listers.New[*operatorv1.KubeScheduler](indexer, operatorv1.Resource("kubescheduler"))}
 }

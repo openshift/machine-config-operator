@@ -3,10 +3,10 @@
 package v1
 
 import (
-	v1 "github.com/openshift/api/machineconfiguration/v1"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/client-go/listers"
-	"k8s.io/client-go/tools/cache"
+	machineconfigurationv1 "github.com/openshift/api/machineconfiguration/v1"
+	labels "k8s.io/apimachinery/pkg/labels"
+	listers "k8s.io/client-go/listers"
+	cache "k8s.io/client-go/tools/cache"
 )
 
 // ControllerConfigLister helps list ControllerConfigs.
@@ -14,19 +14,19 @@ import (
 type ControllerConfigLister interface {
 	// List lists all ControllerConfigs in the indexer.
 	// Objects returned here must be treated as read-only.
-	List(selector labels.Selector) (ret []*v1.ControllerConfig, err error)
+	List(selector labels.Selector) (ret []*machineconfigurationv1.ControllerConfig, err error)
 	// Get retrieves the ControllerConfig from the index for a given name.
 	// Objects returned here must be treated as read-only.
-	Get(name string) (*v1.ControllerConfig, error)
+	Get(name string) (*machineconfigurationv1.ControllerConfig, error)
 	ControllerConfigListerExpansion
 }
 
 // controllerConfigLister implements the ControllerConfigLister interface.
 type controllerConfigLister struct {
-	listers.ResourceIndexer[*v1.ControllerConfig]
+	listers.ResourceIndexer[*machineconfigurationv1.ControllerConfig]
 }
 
 // NewControllerConfigLister returns a new ControllerConfigLister.
 func NewControllerConfigLister(indexer cache.Indexer) ControllerConfigLister {
-	return &controllerConfigLister{listers.New[*v1.ControllerConfig](indexer, v1.Resource("controllerconfig"))}
+	return &controllerConfigLister{listers.New[*machineconfigurationv1.ControllerConfig](indexer, machineconfigurationv1.Resource("controllerconfig"))}
 }

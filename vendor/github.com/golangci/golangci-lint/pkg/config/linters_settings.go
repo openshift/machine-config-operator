@@ -47,6 +47,9 @@ var defaultLintersSettings = LintersSettings{
 		Sections:      []string{"standard", "default"},
 		SkipGenerated: true,
 	},
+	GoChecksumType: GoChecksumTypeSettings{
+		DefaultSignifiesExhaustive: true,
+	},
 	Gocognit: GocognitSettings{
 		MinComplexity: 30,
 	},
@@ -216,6 +219,7 @@ type LintersSettings struct {
 	Gci             GciSettings
 	GinkgoLinter    GinkgoLinterSettings
 	Gocognit        GocognitSettings
+	GoChecksumType  GoChecksumTypeSettings
 	Goconst         GoConstSettings
 	Gocritic        GoCriticSettings
 	Gocyclo         GoCycloSettings
@@ -225,7 +229,6 @@ type LintersSettings struct {
 	Gofumpt         GofumptSettings
 	Goheader        GoHeaderSettings
 	Goimports       GoImportsSettings
-	Gomnd           GoMndSettings
 	GoModDirectives GoModDirectivesSettings
 	Gomodguard      GoModGuardSettings
 	Gosec           GoSecSettings
@@ -233,6 +236,7 @@ type LintersSettings struct {
 	Gosmopolitan    GosmopolitanSettings
 	Govet           GovetSettings
 	Grouper         GrouperSettings
+	Iface           IfaceSettings
 	ImportAs        ImportAsSettings
 	Inamedparam     INamedParamSettings
 	InterfaceBloat  InterfaceBloatSettings
@@ -465,6 +469,7 @@ type GciSettings struct {
 	Sections      []string `mapstructure:"sections"`
 	SkipGenerated bool     `mapstructure:"skip-generated"`
 	CustomOrder   bool     `mapstructure:"custom-order"`
+	NoLexOrder    bool     `mapstructure:"no-lex-order"`
 
 	// Deprecated: use Sections instead.
 	LocalPrefixes string `mapstructure:"local-prefixes"`
@@ -482,6 +487,11 @@ type GinkgoLinterSettings struct {
 	ForceExpectTo              bool `mapstructure:"force-expect-to"`
 	ValidateAsyncIntervals     bool `mapstructure:"validate-async-intervals"`
 	ForbidSpecPollution        bool `mapstructure:"forbid-spec-pollution"`
+	ForceSucceedForFuncs       bool `mapstructure:"force-succeed"`
+}
+
+type GoChecksumTypeSettings struct {
+	DefaultSignifiesExhaustive bool `mapstructure:"default-signifies-exhaustive"`
 }
 
 type GocognitSettings struct {
@@ -557,14 +567,6 @@ type GoHeaderSettings struct {
 
 type GoImportsSettings struct {
 	LocalPrefixes string `mapstructure:"local-prefixes"`
-}
-
-// Deprecated: use MndSettings.
-type GoMndSettings struct {
-	MndSettings `mapstructure:",squash"`
-
-	// Deprecated: use root level settings instead.
-	Settings map[string]map[string]any
 }
 
 type GoModDirectivesSettings struct {
@@ -647,6 +649,11 @@ type GrouperSettings struct {
 	VarRequireGrouping        bool `mapstructure:"var-require-grouping"`
 }
 
+type IfaceSettings struct {
+	Enable   []string                  `mapstructure:"enable"`
+	Settings map[string]map[string]any `mapstructure:"settings"`
+}
+
 type ImportAsSettings struct {
 	Alias          []ImportAsAlias
 	NoUnaliased    bool `mapstructure:"no-unaliased"`
@@ -716,7 +723,7 @@ type MustTagSettings struct {
 }
 
 type NakedretSettings struct {
-	MaxFuncLines int `mapstructure:"max-func-lines"`
+	MaxFuncLines uint `mapstructure:"max-func-lines"`
 }
 
 type NestifSettings struct {
@@ -724,7 +731,8 @@ type NestifSettings struct {
 }
 
 type NilNilSettings struct {
-	CheckedTypes []string `mapstructure:"checked-types"`
+	DetectOpposite bool     `mapstructure:"detect-opposite"`
+	CheckedTypes   []string `mapstructure:"checked-types"`
 }
 
 type NlreturnSettings struct {
@@ -791,8 +799,9 @@ type ReassignSettings struct {
 }
 
 type ReviveSettings struct {
-	MaxOpenFiles          int  `mapstructure:"max-open-files"`
-	IgnoreGeneratedHeader bool `mapstructure:"ignore-generated-header"`
+	Go                    string `mapstructure:"-"`
+	MaxOpenFiles          int    `mapstructure:"max-open-files"`
+	IgnoreGeneratedHeader bool   `mapstructure:"ignore-generated-header"`
 	Confidence            float64
 	Severity              string
 	EnableAllRules        bool `mapstructure:"enable-all-rules"`
@@ -879,6 +888,11 @@ type TestifylintSettings struct {
 		ExpVarPattern string `mapstructure:"pattern"`
 	} `mapstructure:"expected-actual"`
 
+	Formatter struct {
+		CheckFormatString *bool `mapstructure:"check-format-string"`
+		RequireFFuncs     bool  `mapstructure:"require-f-funcs"`
+	} `mapstructure:"formatter"`
+
 	GoRequire struct {
 		IgnoreHTTPHandlers bool `mapstructure:"ignore-http-handlers"`
 	} `mapstructure:"go-require"`
@@ -942,7 +956,7 @@ type UnparamSettings struct {
 type UnusedSettings struct {
 	FieldWritesAreUses     bool `mapstructure:"field-writes-are-uses"`
 	PostStatementsAreReads bool `mapstructure:"post-statements-are-reads"`
-	ExportedIsUsed         bool `mapstructure:"exported-is-used"`
+	ExportedIsUsed         bool `mapstructure:"exported-is-used"` // Deprecated
 	ExportedFieldsAreUsed  bool `mapstructure:"exported-fields-are-used"`
 	ParametersAreUsed      bool `mapstructure:"parameters-are-used"`
 	LocalVariablesAreUsed  bool `mapstructure:"local-variables-are-used"`

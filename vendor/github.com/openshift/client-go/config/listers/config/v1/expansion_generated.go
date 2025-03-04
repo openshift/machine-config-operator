@@ -14,10 +14,6 @@ type AuthenticationListerExpansion interface{}
 // BuildLister.
 type BuildListerExpansion interface{}
 
-// ClusterMonitoringListerExpansion allows custom methods to be added to
-// ClusterMonitoringLister.
-type ClusterMonitoringListerExpansion interface{}
-
 // ClusterOperatorListerExpansion allows custom methods to be added to
 // ClusterOperatorLister.
 type ClusterOperatorListerExpansion interface{}

@@ -192,11 +192,11 @@ func (ctrl *Controller) updatePinnedImageSet(old, cur interface{}) {
 	}
 }
 
-func triggerPinnedImageSetChange(old, new *mcfgv1alpha1.PinnedImageSet) bool {
-	if old.DeletionTimestamp != new.DeletionTimestamp {
+func triggerPinnedImageSetChange(old, newPinnedImageSet *mcfgv1alpha1.PinnedImageSet) bool {
+	if old.DeletionTimestamp != newPinnedImageSet.DeletionTimestamp {
 		return true
 	}
-	if !reflect.DeepEqual(old, new) {
+	if !reflect.DeepEqual(old, newPinnedImageSet) {
 		return true
 	}
 	return false

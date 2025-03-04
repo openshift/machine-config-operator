@@ -3,10 +3,10 @@
 package v1
 
 import (
-	v1 "github.com/openshift/api/machineconfiguration/v1"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/client-go/listers"
-	"k8s.io/client-go/tools/cache"
+	machineconfigurationv1 "github.com/openshift/api/machineconfiguration/v1"
+	labels "k8s.io/apimachinery/pkg/labels"
+	listers "k8s.io/client-go/listers"
+	cache "k8s.io/client-go/tools/cache"
 )
 
 // MachineOSConfigLister helps list MachineOSConfigs.
@@ -14,19 +14,19 @@ import (
 type MachineOSConfigLister interface {
 	// List lists all MachineOSConfigs in the indexer.
 	// Objects returned here must be treated as read-only.
-	List(selector labels.Selector) (ret []*v1.MachineOSConfig, err error)
+	List(selector labels.Selector) (ret []*machineconfigurationv1.MachineOSConfig, err error)
 	// Get retrieves the MachineOSConfig from the index for a given name.
 	// Objects returned here must be treated as read-only.
-	Get(name string) (*v1.MachineOSConfig, error)
+	Get(name string) (*machineconfigurationv1.MachineOSConfig, error)
 	MachineOSConfigListerExpansion
 }
 
 // machineOSConfigLister implements the MachineOSConfigLister interface.
 type machineOSConfigLister struct {
-	listers.ResourceIndexer[*v1.MachineOSConfig]
+	listers.ResourceIndexer[*machineconfigurationv1.MachineOSConfig]
 }
 
 // NewMachineOSConfigLister returns a new MachineOSConfigLister.
 func NewMachineOSConfigLister(indexer cache.Indexer) MachineOSConfigLister {
-	return &machineOSConfigLister{listers.New[*v1.MachineOSConfig](indexer, v1.Resource("machineosconfig"))}
+	return &machineOSConfigLister{listers.New[*machineconfigurationv1.MachineOSConfig](indexer, machineconfigurationv1.Resource("machineosconfig"))}
 }

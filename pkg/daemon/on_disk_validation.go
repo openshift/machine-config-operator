@@ -190,7 +190,7 @@ func checkV3Files(files []ign3types.File) error {
 		}
 		mode := defaultFilePermissions
 		if f.Mode != nil {
-			mode = os.FileMode(*f.Mode)
+			mode = os.FileMode(*f.Mode) //nolint:gosec
 		}
 		contents, err := ctrlcommon.DecodeIgnitionFileContents(f.Contents.Source, f.Contents.Compression)
 		if err != nil {
@@ -217,7 +217,7 @@ func checkV2Files(files []ign2types.File) error {
 		}
 		mode := defaultFilePermissions
 		if f.Mode != nil {
-			mode = os.FileMode(*f.Mode)
+			mode = os.FileMode(*f.Mode) //nolint:gosec
 		}
 		contents, err := ctrlcommon.DecodeIgnitionFileContents(&f.Contents.Source, &f.Contents.Compression)
 		if err != nil {

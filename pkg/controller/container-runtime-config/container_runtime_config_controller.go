@@ -257,11 +257,11 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	<-stopCh
 }
 
-func ctrConfigTriggerObjectChange(old, new *mcfgv1.ContainerRuntimeConfig) bool {
-	if old.DeletionTimestamp != new.DeletionTimestamp {
+func ctrConfigTriggerObjectChange(old, newCRC *mcfgv1.ContainerRuntimeConfig) bool {
+	if old.DeletionTimestamp != newCRC.DeletionTimestamp {
 		return true
 	}
-	if !reflect.DeepEqual(old.Spec, new.Spec) {
+	if !reflect.DeepEqual(old.Spec, newCRC.Spec) {
 		return true
 	}
 	return false

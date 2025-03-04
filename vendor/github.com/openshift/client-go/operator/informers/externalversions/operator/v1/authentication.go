@@ -3,13 +3,13 @@
 package v1
 
 import (
-	"context"
+	context "context"
 	time "time"
 
-	operatorv1 "github.com/openshift/api/operator/v1"
+	apioperatorv1 "github.com/openshift/api/operator/v1"
 	versioned "github.com/openshift/client-go/operator/clientset/versioned"
 	internalinterfaces "github.com/openshift/client-go/operator/informers/externalversions/internalinterfaces"
-	v1 "github.com/openshift/client-go/operator/listers/operator/v1"
+	operatorv1 "github.com/openshift/client-go/operator/listers/operator/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -20,7 +20,7 @@ import (
 // Authentications.
 type AuthenticationInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1.AuthenticationLister
+	Lister() operatorv1.AuthenticationLister
 }
 
 type authenticationInformer struct {
@@ -54,7 +54,7 @@ func NewFilteredAuthenticationInformer(client versioned.Interface, resyncPeriod 
 				return client.OperatorV1().Authentications().Watch(context.TODO(), options)
 			},
 		},
-		&operatorv1.Authentication{},
+		&apioperatorv1.Authentication{},
 		resyncPeriod,
 		indexers,
 	)
@@ -65,9 +65,9 @@ func (f *authenticationInformer) defaultInformer(client versioned.Interface, res
 }
 
 func (f *authenticationInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&operatorv1.Authentication{}, f.defaultInformer)
+	return f.factory.InformerFor(&apioperatorv1.Authentication{}, f.defaultInformer)
 }
 
-func (f *authenticationInformer) Lister() v1.AuthenticationLister {
-	return v1.NewAuthenticationLister(f.Informer().GetIndexer())
+func (f *authenticationInformer) Lister() operatorv1.AuthenticationLister {
+	return operatorv1.NewAuthenticationLister(f.Informer().GetIndexer())
 }

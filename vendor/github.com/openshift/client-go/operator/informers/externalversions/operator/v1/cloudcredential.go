@@ -3,13 +3,13 @@
 package v1
 
 import (
-	"context"
+	context "context"
 	time "time"
 
-	operatorv1 "github.com/openshift/api/operator/v1"
+	apioperatorv1 "github.com/openshift/api/operator/v1"
 	versioned "github.com/openshift/client-go/operator/clientset/versioned"
 	internalinterfaces "github.com/openshift/client-go/operator/informers/externalversions/internalinterfaces"
-	v1 "github.com/openshift/client-go/operator/listers/operator/v1"
+	operatorv1 "github.com/openshift/client-go/operator/listers/operator/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -20,7 +20,7 @@ import (
 // CloudCredentials.
 type CloudCredentialInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1.CloudCredentialLister
+	Lister() operatorv1.CloudCredentialLister
 }
 
 type cloudCredentialInformer struct {
@@ -54,7 +54,7 @@ func NewFilteredCloudCredentialInformer(client versioned.Interface, resyncPeriod
 				return client.OperatorV1().CloudCredentials().Watch(context.TODO(), options)
 			},
 		},
-		&operatorv1.CloudCredential{},
+		&apioperatorv1.CloudCredential{},
 		resyncPeriod,
 		indexers,
 	)
@@ -65,9 +65,9 @@ func (f *cloudCredentialInformer) defaultInformer(client versioned.Interface, re
 }
 
 func (f *cloudCredentialInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&operatorv1.CloudCredential{}, f.defaultInformer)
+	return f.factory.InformerFor(&apioperatorv1.CloudCredential{}, f.defaultInformer)
 }
 
-func (f *cloudCredentialInformer) Lister() v1.CloudCredentialLister {
-	return v1.NewCloudCredentialLister(f.Informer().GetIndexer())
+func (f *cloudCredentialInformer) Lister() operatorv1.CloudCredentialLister {
+	return operatorv1.NewCloudCredentialLister(f.Informer().GetIndexer())
 }

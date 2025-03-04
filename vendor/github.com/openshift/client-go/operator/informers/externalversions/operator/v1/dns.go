@@ -3,13 +3,13 @@
 package v1
 
 import (
-	"context"
+	context "context"
 	time "time"
 
-	operatorv1 "github.com/openshift/api/operator/v1"
+	apioperatorv1 "github.com/openshift/api/operator/v1"
 	versioned "github.com/openshift/client-go/operator/clientset/versioned"
 	internalinterfaces "github.com/openshift/client-go/operator/informers/externalversions/internalinterfaces"
-	v1 "github.com/openshift/client-go/operator/listers/operator/v1"
+	operatorv1 "github.com/openshift/client-go/operator/listers/operator/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -20,7 +20,7 @@ import (
 // DNSes.
 type DNSInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1.DNSLister
+	Lister() operatorv1.DNSLister
 }
 
 type dNSInformer struct {
@@ -54,7 +54,7 @@ func NewFilteredDNSInformer(client versioned.Interface, resyncPeriod time.Durati
 				return client.OperatorV1().DNSes().Watch(context.TODO(), options)
 			},
 		},
-		&operatorv1.DNS{},
+		&apioperatorv1.DNS{},
 		resyncPeriod,
 		indexers,
 	)
@@ -65,9 +65,9 @@ func (f *dNSInformer) defaultInformer(client versioned.Interface, resyncPeriod t
 }
 
 func (f *dNSInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&operatorv1.DNS{}, f.defaultInformer)
+	return f.factory.InformerFor(&apioperatorv1.DNS{}, f.defaultInformer)
 }
 
-func (f *dNSInformer) Lister() v1.DNSLister {
-	return v1.NewDNSLister(f.Informer().GetIndexer())
+func (f *dNSInformer) Lister() operatorv1.DNSLister {
+	return operatorv1.NewDNSLister(f.Informer().GetIndexer())
 }
