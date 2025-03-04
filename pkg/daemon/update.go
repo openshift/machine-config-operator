@@ -2652,19 +2652,15 @@ func (dn *Daemon) updateLayeredOSToPullspec(newURL string) error {
 	}
 
 	isOsImagePresent := false
+	isPinnedImagesEnabled, err := dn.isFeatureGateEnabled(features.FeatureGatePinnedImages)
+	if err != nil {
+		return err
+	}
 
-	// not set during firstboot
-	if dn.featureGatesAccessor != nil {
-		fg, err := dn.featureGatesAccessor.CurrentFeatureGates()
+	if isPinnedImagesEnabled {
+		isOsImagePresent, err = isImagePresent(newURL)
 		if err != nil {
 			return err
-		}
-
-		if fg.Enabled(features.FeatureGatePinnedImages) {
-			isOsImagePresent, err = isImagePresent(newURL)
-			if err != nil {
-				return err
-			}
 		}
 	}
 

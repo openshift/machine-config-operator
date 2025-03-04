@@ -43,6 +43,7 @@ import (
 	"k8s.io/client-go/util/workqueue"
 
 	configv1 "github.com/openshift/api/config/v1"
+	features "github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgalphav1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
@@ -2705,20 +2706,55 @@ func (dn *Daemon) checkOS(osImageURL string) bool {
 		klog.Infof(`Not booted into a CoreOS variant, ignoring target OSImageURL %s`, osImageURL)
 		return true
 	}
-
-	// TODO(jkyros): the header for this functions says "if the digests match"
-	// so I'm wondering if at one point this used to work this way....
-	inspection, _, err := imageInspect(osImageURL)
+	
+	isPinnedImagesEnabled, err := dn.isFeatureGateEnabled(features.FeatureGatePinnedImages)
 	if err != nil {
-		klog.Warningf("Unable to check manifest for matching hash: %s", err)
-	} else if ostreeCommit, ok := inspection.Labels["ostree.commit"]; ok {
-		if ostreeCommit == dn.bootedOSCommit {
-			klog.Infof("We are technically in the right image even if the URL doesn't match (%s == %s)", ostreeCommit, osImageURL)
-			return true
+		klog.Warning(err)
+	}
+
+	isOsImagePresent := false
+	if isPinnedImagesEnabled {
+		isOsImagePresent, err = isImagePresent(osImageURL)
+		if err != nil {
+			klog.Warning(err)
+		}
+	}
+
+	// See https://github.com/openshift/machine-config-operator/pull/3821 for
+	// why we can rely on rpm-ostree directly. In the future the inspection
+	// code below could be removed based on the success of pinned images
+	// validation.
+	if !isOsImagePresent {
+		// TODO(jkyros): the header for this functions says "if the digests match"
+		// so I'm wondering if at one point this used to work this way....
+		inspection, _, err := imageInspect(osImageURL)
+		if err != nil {
+			klog.Warningf("Unable to check manifest for matching hash: %s", err)
+		} else if ostreeCommit, ok := inspection.Labels["ostree.commit"]; ok {
+			if ostreeCommit == dn.bootedOSCommit {
+				klog.Infof("We are technically in the right image even if the URL doesn't match (%s == %s)", ostreeCommit, osImageURL)
+				return true
+			}
 		}
 	}
 
 	return dn.bootedOSImageURL == osImageURL
+}
+
+func (dn *Daemon) isFeatureGateEnabled(name configv1.FeatureGateName) (bool, error) {
+	// not set during firstboot
+	if dn.featureGatesAccessor != nil {
+		fg, err := dn.featureGatesAccessor.CurrentFeatureGates()
+		if err != nil {
+			return false, fmt.Errorf("failed to get feature gates: %w", err)
+		}
+
+		if fg.Enabled(name) {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
 
 // Close closes all the connections the node agent has open for it's lifetime
