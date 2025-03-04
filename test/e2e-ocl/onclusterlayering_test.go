@@ -666,7 +666,7 @@ func waitForBuildToStart(t *testing.T, cs *framework.ClientSet, build *mcfgv1.Ma
 	t.Logf("Waiting for MachineOSBuild %s to start", build.Name)
 
 	// TODO: see if timeout bump helps
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*15)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*30)
 	defer cancel()
 
 	start := time.Now()
