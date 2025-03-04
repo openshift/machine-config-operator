@@ -1,3 +1,6 @@
+//go:build !containers_image_fulcio_stub
+// +build !containers_image_fulcio_stub
+
 package signature
 
 import (
@@ -7,12 +10,12 @@ import (
 	"encoding/asn1"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/containers/image/v5/signature/internal"
 	"github.com/sigstore/fulcio/pkg/certificate"
 	"github.com/sigstore/sigstore/pkg/cryptoutils"
-	"golang.org/x/exp/slices"
 )
 
 // fulcioTrustRoot contains policy allow validating Fulcio-issued certificates.
@@ -105,19 +108,10 @@ func (f *fulcioTrustRoot) verifyFulcioCertificateAtTime(relevantTime time.Time, 
 		}
 	}
 
-	untrustedLeafCerts, err := cryptoutils.UnmarshalCertificatesFromPEM(untrustedCertificateBytes)
+	untrustedCertificate, err := parseLeafCertFromPEM(untrustedCertificateBytes)
 	if err != nil {
-		return nil, internal.NewInvalidSignatureError(fmt.Sprintf("parsing leaf certificate: %v", err))
+		return nil, err
 	}
-	switch len(untrustedLeafCerts) {
-	case 0:
-		return nil, internal.NewInvalidSignatureError("no certificate found in signature certificate data")
-	case 1:
-		break // OK
-	default:
-		return nil, internal.NewInvalidSignatureError("unexpected multiple certificates present in signature certificate data")
-	}
-	untrustedCertificate := untrustedLeafCerts[0]
 
 	// Go rejects Subject Alternative Name that has no DNSNames, EmailAddresses, IPAddresses and URIs;
 	// we match SAN ourselves, so override that.
@@ -175,7 +169,7 @@ func (f *fulcioTrustRoot) verifyFulcioCertificateAtTime(relevantTime time.Time, 
 
 	// == Validate the OIDC subject
 	if !slices.Contains(untrustedCertificate.EmailAddresses, f.subjectEmail) {
-		return nil, internal.NewInvalidSignatureError(fmt.Sprintf("Required email %s not found (got %#v)",
+		return nil, internal.NewInvalidSignatureError(fmt.Sprintf("Required email %q not found (got %q)",
 			f.subjectEmail,
 			untrustedCertificate.EmailAddresses))
 	}
@@ -192,10 +186,25 @@ func (f *fulcioTrustRoot) verifyFulcioCertificateAtTime(relevantTime time.Time, 
 	return untrustedCertificate.PublicKey, nil
 }
 
-func verifyRekorFulcio(rekorPublicKey *ecdsa.PublicKey, fulcioTrustRoot *fulcioTrustRoot, untrustedRekorSET []byte,
+func parseLeafCertFromPEM(untrustedCertificateBytes []byte) (*x509.Certificate, error) {
+	untrustedLeafCerts, err := cryptoutils.UnmarshalCertificatesFromPEM(untrustedCertificateBytes)
+	if err != nil {
+		return nil, internal.NewInvalidSignatureError(fmt.Sprintf("parsing leaf certificate: %v", err))
+	}
+	switch len(untrustedLeafCerts) {
+	case 0:
+		return nil, internal.NewInvalidSignatureError("no certificate found in signature certificate data")
+	case 1: // OK
+		return untrustedLeafCerts[0], nil
+	default:
+		return nil, internal.NewInvalidSignatureError("unexpected multiple certificates present in signature certificate data")
+	}
+}
+
+func verifyRekorFulcio(rekorPublicKeys []*ecdsa.PublicKey, fulcioTrustRoot *fulcioTrustRoot, untrustedRekorSET []byte,
 	untrustedCertificateBytes []byte, untrustedIntermediateChainBytes []byte, untrustedBase64Signature string,
 	untrustedPayloadBytes []byte) (crypto.PublicKey, error) {
-	rekorSETTime, err := internal.VerifyRekorSET(rekorPublicKey, untrustedRekorSET, untrustedCertificateBytes,
+	rekorSETTime, err := internal.VerifyRekorSET(rekorPublicKeys, untrustedRekorSET, untrustedCertificateBytes,
 		untrustedBase64Signature, untrustedPayloadBytes)
 	if err != nil {
 		return nil, err

@@ -252,8 +252,9 @@ spec:
                     of a particular node managed by this operator.
                   properties:
                     currentRevision:
-                      description: currentRevision is the generation of the most recently
-                        successful deployment
+                      description: |-
+                        currentRevision is the generation of the most recently successful deployment.
+                        Can not be set on creation of a nodeStatus. Updates must only increase the value.
                       format: int32
                       type: integer
                       x-kubernetes-validations:
@@ -292,8 +293,9 @@ spec:
                       description: nodeName is the name of the node
                       type: string
                     targetRevision:
-                      description: targetRevision is the generation of the deployment
-                        we're trying to apply
+                      description: |-
+                        targetRevision is the generation of the deployment we're trying to apply.
+                        Can not be set on creation of a nodeStatus.
                       format: int32
                       type: integer
                   required:
@@ -303,6 +305,14 @@ spec:
                   - fieldPath: .currentRevision
                     message: cannot be unset once set
                     rule: has(self.currentRevision) || !has(oldSelf.currentRevision)
+                  - fieldPath: .currentRevision
+                    message: currentRevision can not be set on creation of a nodeStatus
+                    optionalOldSelf: true
+                    rule: oldSelf.hasValue() || !has(self.currentRevision)
+                  - fieldPath: .targetRevision
+                    message: targetRevision can not be set on creation of a nodeStatus
+                    optionalOldSelf: true
+                    rule: oldSelf.hasValue() || !has(self.targetRevision)
                 type: array
                 x-kubernetes-list-map-keys:
                 - nodeName
