@@ -476,6 +476,10 @@ func (ctrl *Controller) syncStatusOnly(cfg *mcfgv1.KubeletConfig, err error, arg
 		if getErr != nil {
 			return getErr
 		}
+		// Update the observedGeneration
+		if newcfg.GetGeneration() != newcfg.Status.ObservedGeneration {
+			newcfg.Status.ObservedGeneration = newcfg.GetGeneration()
+		}
 		// Keeps a list of three status to avoid a long list of same statuses,
 		// only append a status if it is the first status
 		// or if the status message is different from the message of the last status recorded
@@ -567,11 +571,6 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		return nil
 	}
 
-	// If we have seen this generation then skip
-	if cfg.Status.ObservedGeneration >= cfg.Generation {
-		return nil
-	}
-
 	// Validate the KubeletConfig CR
 	if err := validateUserKubeletConfig(cfg); err != nil {
 		return ctrl.syncStatusOnly(cfg, newForgetError(err))
@@ -621,7 +620,14 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			return ctrl.syncStatusOnly(cfg, err, "could not find MachineConfig: %v", managedKey)
 		}
 		isNotFound := macherrors.IsNotFound(err)
-
+		// If we have seen this generation and the sync didn't fail, then skip
+		if !isNotFound && cfg.Status.ObservedGeneration >= cfg.Generation && cfg.Status.Conditions[len(cfg.Status.Conditions)-1].Type == mcfgv1.KubeletConfigSuccess {
+			// But we still need to compare the generated controller version because during an upgrade we need a new one
+			mcCtrlVersion := mc.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey]
+			if mcCtrlVersion == version.Hash {
+				return nil
+			}
+		}
 		// Generate the original KubeletConfig
 		cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
 		if err != nil {
