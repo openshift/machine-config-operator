@@ -2472,7 +2472,7 @@ func (dn *Daemon) triggerUpdate(currentConfig, desiredConfig *mcfgv1.MachineConf
 	dn.stopConfigDriftMonitor()
 
 	klog.Infof("Performing layered OS update")
-	return dn.updateOnClusterBuild(currentConfig, desiredConfig, currentImage, desiredImage, true)
+	return dn.updateOnClusterLayering(currentConfig, desiredConfig, currentImage, desiredImage, true)
 }
 
 // triggerUpdateWithMachineConfig starts the update. It queries the cluster for
