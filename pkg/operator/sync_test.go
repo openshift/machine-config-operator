@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	configv1 "github.com/openshift/api/config/v1"
+	features "github.com/openshift/api/features"
+	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/assert"
@@ -12,11 +14,19 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes/fake"
+	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/tools/record"
+	"k8s.io/klog/v2"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	opv1 "github.com/openshift/api/operator/v1"
+	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
 	fakeclientmachineconfigv1 "github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
+	mcplister "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 
 	mcfginformers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
+	fakemcopclientset "github.com/openshift/client-go/operator/clientset/versioned/fake"
+	mcoplistersv1 "github.com/openshift/client-go/operator/listers/operator/v1"
 )
 
 func TestSyncCloudConfig(t *testing.T) {
@@ -288,4 +298,100 @@ func TestMachineOSBuilderSecretReconciliation(t *testing.T) {
 			assert.ElementsMatch(t, secrets.Items, tc.expectedMCOSecrets)
 		})
 	}
+}
+
+func TestSyncMachineConfiguration(t *testing.T) {
+	cases := []struct {
+		name                      string
+		mcop                      *opv1.MachineConfiguration
+		infra                     *configv1.Infrastructure
+		expectedManagedBootImages opv1.ManagedBootImages
+		annotationExpected        bool
+	}{
+		{
+			name:                      "AWS platform, opt-in expected",
+			infra:                     buildInfra(withPlatformType(configv1.AWSPlatformType)),
+			mcop:                      buildMachineConfigurationWithBootImageUpdateDisabled(),
+			annotationExpected:        true,
+			expectedManagedBootImages: getManagedBootImagesWithUpdateEnabled(),
+		},
+		{
+			name:                      "AWS platform, existing config, no opt-in expected",
+			infra:                     buildInfra(withPlatformType(configv1.AWSPlatformType)),
+			mcop:                      buildMachineConfigurationWithBootImageUpdateEnabled(),
+			annotationExpected:        false,
+			expectedManagedBootImages: getManagedBootImagesWithUpdateEnabled(),
+		},
+		{
+			name:                      "GCP platform, opt-in expected",
+			infra:                     buildInfra(withPlatformType(configv1.GCPPlatformType)),
+			mcop:                      buildMachineConfigurationWithBootImageUpdateDisabled(),
+			annotationExpected:        true,
+			expectedManagedBootImages: getManagedBootImagesWithUpdateEnabled(),
+		},
+		{
+			name:                      "GCP platform, existing config, no opt-in expected",
+			infra:                     buildInfra(withPlatformType(configv1.GCPPlatformType)),
+			mcop:                      buildMachineConfigurationWithBootImageUpdateEnabled(),
+			annotationExpected:        false,
+			expectedManagedBootImages: getManagedBootImagesWithUpdateEnabled(),
+		},
+		{
+			name:                      "Azure platform, no opt-in expected",
+			infra:                     buildInfra(withPlatformType(configv1.AzurePlatformType)),
+			mcop:                      buildMachineConfigurationWithBootImageUpdateDisabled(),
+			annotationExpected:        false,
+			expectedManagedBootImages: getManagedBootImagesWithUpdateDisabled(),
+		},
+		{
+			name:                      "vsphere platform, no opt-in expected",
+			infra:                     buildInfra(withPlatformType(configv1.VSpherePlatformType)),
+			mcop:                      buildMachineConfigurationWithBootImageUpdateDisabled(),
+			annotationExpected:        false,
+			expectedManagedBootImages: getManagedBootImagesWithUpdateDisabled(),
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			infraIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+			infraIndexer.Add(tc.infra)
+			mcopIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+			mcopIndexer.Add(tc.mcop)
+			mcpIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+			optr := &Operator{
+				eventRecorder: &record.FakeRecorder{},
+				fgAccessor: featuregates.NewHardcodedFeatureGateAccess(
+					[]configv1.FeatureGateName{features.FeatureGateManagedBootImages, features.FeatureGateNodeDisruptionPolicy}, []configv1.FeatureGateName{},
+				),
+				infraLister: configlistersv1.NewInfrastructureLister(infraIndexer),
+				mcopLister:  mcoplistersv1.NewMachineConfigurationLister(mcopIndexer),
+				mcopClient:  fakemcopclientset.NewSimpleClientset(tc.mcop),
+				mcpLister:   mcplister.NewMachineConfigPoolLister(mcpIndexer),
+			}
+			err := optr.syncMachineConfiguration(nil, nil)
+			assert.NoError(t, err)
+			mcop, err := optr.mcopClient.OperatorV1().MachineConfigurations().Get(context.TODO(), "cluster", metav1.GetOptions{})
+			assert.NoError(t, err)
+			_, hasAnno := mcop.Annotations[ctrlcommon.BootImageOptedInAnnotation]
+			assert.Equal(t, tc.annotationExpected, hasAnno)
+			assert.Equal(t, mcop.Spec.ManagedBootImages, tc.expectedManagedBootImages)
+			klog.Infof("%v", mcop)
+		})
+	}
+}
+
+func buildMachineConfigurationWithBootImageUpdateDisabled() *opv1.MachineConfiguration {
+	return &opv1.MachineConfiguration{Spec: opv1.MachineConfigurationSpec{ManagedBootImages: getManagedBootImagesWithUpdateDisabled()}, ObjectMeta: metav1.ObjectMeta{Name: "cluster"}}
+}
+
+func buildMachineConfigurationWithBootImageUpdateEnabled() *opv1.MachineConfiguration {
+	return &opv1.MachineConfiguration{Spec: opv1.MachineConfigurationSpec{ManagedBootImages: getManagedBootImagesWithUpdateEnabled()}, ObjectMeta: metav1.ObjectMeta{Name: "cluster"}}
+}
+
+func getManagedBootImagesWithUpdateEnabled() opv1.ManagedBootImages {
+	return opv1.ManagedBootImages{MachineManagers: []opv1.MachineManager{{Resource: opv1.MachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}}}}
+}
+
+func getManagedBootImagesWithUpdateDisabled() opv1.ManagedBootImages {
+	return opv1.ManagedBootImages{}
 }

@@ -50,19 +50,23 @@ func TestBootImageReconciliationonSingleMachineSet(t *testing.T) {
 	machineConfigurationClient := mcopclientset.NewForConfigOrDie(cs.GetRestConfig())
 	labelSelector := metav1.AddLabelToSelector(&metav1.LabelSelector{}, "test", "fake-update-on")
 	applyLabelSelector := applymetav1.LabelSelector().WithMatchLabels(labelSelector.MatchLabels)
+	mcop, err := machineConfigurationClient.OperatorV1().MachineConfigurations().Get(context.TODO(), "cluster", metav1.GetOptions{})
+	require.NoError(t, err, "failed to grab machineconfiguration object")
+	// The applyConfiguration should preserve existing annotations
+	p := mcoac.MachineConfiguration("cluster").
+		WithAnnotations(mcop.Annotations).
+		WithSpec(mcoac.MachineConfigurationSpec().
+			WithManagementState("Managed").
+			WithManagedBootImages(mcoac.ManagedBootImages().
+				WithMachineManagers(mcoac.MachineManager().
+					WithAPIGroup(opv1.MachineAPI).
+					WithResource(opv1.MachineSets).
+					WithSelection(mcoac.MachineManagerSelector().
+						WithMode(opv1.Partial).
+						WithPartial(mcoac.PartialSelector().
+							WithMachineResourceSelector(applyLabelSelector))))))
 
-	p := mcoac.MachineConfiguration("cluster").WithSpec(mcoac.MachineConfigurationSpec().
-		WithManagementState("Managed").
-		WithManagedBootImages(mcoac.ManagedBootImages().
-			WithMachineManagers(mcoac.MachineManager().
-				WithAPIGroup(opv1.MachineAPI).
-				WithResource(opv1.MachineSets).
-				WithSelection(mcoac.MachineManagerSelector().
-					WithMode(opv1.Partial).
-					WithPartial(mcoac.PartialSelector().
-						WithMachineResourceSelector(applyLabelSelector))))))
-
-	_, err := machineConfigurationClient.OperatorV1().MachineConfigurations().Apply(context.TODO(), p, metav1.ApplyOptions{FieldManager: "machine-config-operator"})
+	_, err = machineConfigurationClient.OperatorV1().MachineConfigurations().Apply(context.TODO(), p, metav1.ApplyOptions{FieldManager: "machine-config-operator"})
 	require.Nil(t, err, "updating machineconfiguration boot image knob failed")
 	t.Logf("Updated machine configuration knob to target one machineset for boot image updates")
 
@@ -107,8 +111,20 @@ func TestBootImageReconciliationonAllMachineSets(t *testing.T) {
 
 	// Update the machineconfiguration object to opt-in all machinesets
 	machineConfigurationClient := mcopclientset.NewForConfigOrDie(cs.GetRestConfig())
-	p := mcoac.MachineConfiguration("cluster").WithSpec(mcoac.MachineConfigurationSpec().WithManagementState("Managed").WithManagedBootImages(mcoac.ManagedBootImages().WithMachineManagers(mcoac.MachineManager().WithAPIGroup(opv1.MachineAPI).WithResource(opv1.MachineSets).WithSelection(mcoac.MachineManagerSelector().WithMode(opv1.All)))))
-	_, err := machineConfigurationClient.OperatorV1().MachineConfigurations().Apply(context.TODO(), p, metav1.ApplyOptions{FieldManager: "machine-config-operator"})
+	mcop, err := machineConfigurationClient.OperatorV1().MachineConfigurations().Get(context.TODO(), "cluster", metav1.GetOptions{})
+	require.NoError(t, err, "failed to grab machineconfiguration object")
+	// The applyConfiguration should preserve existing annotations
+	p := mcoac.MachineConfiguration("cluster").
+		WithAnnotations(mcop.Annotations).
+		WithSpec(mcoac.MachineConfigurationSpec().
+			WithManagementState("Managed").
+			WithManagedBootImages(mcoac.ManagedBootImages().
+				WithMachineManagers(mcoac.MachineManager().
+					WithAPIGroup(opv1.MachineAPI).
+					WithResource(opv1.MachineSets).
+					WithSelection(mcoac.MachineManagerSelector().
+						WithMode(opv1.All)))))
+	_, err = machineConfigurationClient.OperatorV1().MachineConfigurations().Apply(context.TODO(), p, metav1.ApplyOptions{FieldManager: "machine-config-operator"})
 	require.Nil(t, err, "updating machineconfiguration boot image knob failed")
 	t.Logf("Updated machine configuration knob to target all machinesets for boot image updates")
 
@@ -135,8 +151,15 @@ func TestBootImageReconciliationonNoMachineSets(t *testing.T) {
 
 	// Update the machineconfiguration object to opt-in no machinesets
 	machineConfigurationClient := mcopclientset.NewForConfigOrDie(cs.GetRestConfig())
-	p := mcoac.MachineConfiguration("cluster").WithSpec(mcoac.MachineConfigurationSpec().WithManagementState("Managed").WithManagedBootImages(nil))
-	_, err := machineConfigurationClient.OperatorV1().MachineConfigurations().Apply(context.TODO(), p, metav1.ApplyOptions{FieldManager: "machine-config-operator"})
+	mcop, err := machineConfigurationClient.OperatorV1().MachineConfigurations().Get(context.TODO(), "cluster", metav1.GetOptions{})
+	require.NoError(t, err, "failed to grab machineconfiguration object")
+	// The applyConfiguration should preserve annotations as the operator will opt the cluster back in if the annotations don't exist
+	p := mcoac.MachineConfiguration("cluster").
+		WithAnnotations(mcop.Annotations).
+		WithSpec(mcoac.MachineConfigurationSpec().
+			WithManagementState("Managed").
+			WithManagedBootImages(nil))
+	_, err = machineConfigurationClient.OperatorV1().MachineConfigurations().Apply(context.TODO(), p, metav1.ApplyOptions{FieldManager: "machine-config-operator"})
 	require.Nil(t, err, "updating machineconfiguration boot image knob failed")
 	t.Logf("Updated machine configuration knob to target no machinesets for boot image updates")
 
@@ -164,8 +187,20 @@ func TestBootImageDegradeCondition(t *testing.T) {
 
 	// Update the machineconfiguration object to opt-in all machinesets
 	machineConfigurationClient := mcopclientset.NewForConfigOrDie(cs.GetRestConfig())
-	p := mcoac.MachineConfiguration("cluster").WithSpec(mcoac.MachineConfigurationSpec().WithManagementState("Managed").WithManagedBootImages(mcoac.ManagedBootImages().WithMachineManagers(mcoac.MachineManager().WithAPIGroup(opv1.MachineAPI).WithResource(opv1.MachineSets).WithSelection(mcoac.MachineManagerSelector().WithMode(opv1.All)))))
-	_, err := machineConfigurationClient.OperatorV1().MachineConfigurations().Apply(context.TODO(), p, metav1.ApplyOptions{FieldManager: "machine-config-operator"})
+	mcop, err := machineConfigurationClient.OperatorV1().MachineConfigurations().Get(context.TODO(), "cluster", metav1.GetOptions{})
+	require.NoError(t, err, "failed to grab machineconfiguration object")
+	// The applyConfiguration should preserve existing annotations
+	p := mcoac.MachineConfiguration("cluster").
+		WithAnnotations(mcop.Annotations).
+		WithSpec(mcoac.MachineConfigurationSpec().
+			WithManagementState("Managed").
+			WithManagedBootImages(mcoac.ManagedBootImages().
+				WithMachineManagers(mcoac.MachineManager().
+					WithAPIGroup(opv1.MachineAPI).
+					WithResource(opv1.MachineSets).
+					WithSelection(mcoac.MachineManagerSelector().
+						WithMode(opv1.All)))))
+	_, err = machineConfigurationClient.OperatorV1().MachineConfigurations().Apply(context.TODO(), p, metav1.ApplyOptions{FieldManager: "machine-config-operator"})
 	require.Nil(t, err, "updating machineconfiguration boot image knob failed")
 	t.Logf("Updated machine configuration knob to target all machinesets for boot image updates")
 

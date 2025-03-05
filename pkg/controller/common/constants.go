@@ -103,6 +103,9 @@ const (
 	// MCOOperatorKnobsObjectName is the name of the global MachineConfiguration "knobs" object that the MCO watches.
 	MCOOperatorKnobsObjectName = "cluster"
 
+	// MCOOperatorKnobsObjectName is the name of the global MachineConfiguration "knobs" object that the MCO watches.
+	BootImageOptedInAnnotation = "machineconfiguration.openshift.io/boot-image-opted-in-at"
+
 	ServiceCARotateAnnotation = "machineconfiguration.openshift.io/service-ca-rotate"
 
 	ServiceCARotateTrue  = "true"
