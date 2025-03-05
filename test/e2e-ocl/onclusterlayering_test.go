@@ -25,6 +25,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/openshift/machine-config-operator/pkg/controller/build/buildrequest"
+	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -106,15 +107,12 @@ func TestOnClusterLayeringOnOKD(t *testing.T) {
 
 // Tests that an on-cluster build can be performed with the Custom Pod Builder.
 func TestOnClusterLayering(t *testing.T) {
-
-	runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
+	_, mosb := runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
 		poolName: layeredMCPName,
 		customDockerfiles: map[string]string{
 			layeredMCPName: cowsayDockerfile,
 		},
 	})
-
-	/* Removing this portion of this test - update when https://issues.redhat.com/browse/OCPBUGS-46421 fixed.
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -131,14 +129,16 @@ func TestOnClusterLayering(t *testing.T) {
 	_, err = cs.MachineconfigurationV1Interface.MachineOSConfigs().Update(ctx, mosc, metav1.UpdateOptions{})
 	require.NoError(t, err)
 
+	// Wait for the first build to be deleted.
+	waitForBuildToBeDeleted(t, cs, mosb)
+
 	waitForBuildToStartForPoolAndConfig(t, cs, layeredMCPName, layeredMCPName)
-	*/
 }
 
 // Tests that an on-cluster build can be performed and that the resulting image
 // is rolled out to an opted-in node.
 func TestOnClusterBuildRollsOutImage(t *testing.T) {
-	imagePullspec := runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
+	imagePullspec, _ := runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
 		poolName: layeredMCPName,
 		customDockerfiles: map[string]string{
 			layeredMCPName: cowsayDockerfile,
@@ -512,7 +512,7 @@ func assertBuildObjectsAreDeleted(t *testing.T, kubeassert *helpers.Assertions, 
 
 // Sets up and performs an on-cluster build for a given set of parameters.
 // Returns the built image pullspec for later consumption.
-func runOnClusterLayeringTest(t *testing.T, testOpts onClusterLayeringTestOpts) string {
+func runOnClusterLayeringTest(t *testing.T, testOpts onClusterLayeringTestOpts) (string, *mcfgv1.MachineOSBuild) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
@@ -594,7 +594,8 @@ func runOnClusterLayeringTest(t *testing.T, testOpts onClusterLayeringTestOpts) 
 
 	require.NoError(t, archiveBuildPodLogs(t, podLogsDirPath))
 
-	return string(finishedBuild.Status.DigestedImagePushSpec)
+	// TODO: revisit this return if deleting mosb does not help stablize `TestOnClusterLayering`
+	return string(finishedBuild.Status.DigestedImagePushSpec), finishedBuild
 }
 
 func archiveBuildPodLogs(t *testing.T, podLogsDirPath string) error {
@@ -649,7 +650,8 @@ func waitForBuildToStart(t *testing.T, cs *framework.ClientSet, build *mcfgv1.Ma
 
 	t.Logf("Waiting for MachineOSBuild %s to start", build.Name)
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*5)
+	// TODO: see if timeout bump helps
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*30)
 	defer cancel()
 
 	start := time.Now()
