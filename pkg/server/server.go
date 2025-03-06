@@ -10,7 +10,7 @@ import (
 	"github.com/clarketm/json"
 	"github.com/coreos/go-semver/semver"
 	ign2types "github.com/coreos/ignition/config/v2_2/types"
-	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	"github.com/vincent-petithory/dataurl"
 	"k8s.io/apimachinery/pkg/runtime"
 
