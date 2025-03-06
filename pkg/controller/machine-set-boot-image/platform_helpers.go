@@ -5,22 +5,68 @@ import (
 
 	"github.com/coreos/stream-metadata-go/stream"
 	corev1 "k8s.io/api/core/v1"
+	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 
 	osconfigv1 "github.com/openshift/api/config/v1"
 	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
 )
 
+// This function calls the appropriate reconcile function based on the infra type
+// On success, it will return a bool indicating if a patch is required, and an updated
+// machineset object if any. It will return an error if any of the above steps fail.
+func checkMachineSet(infra *osconfigv1.Infrastructure, machineSet *machinev1beta1.MachineSet, configMap *corev1.ConfigMap, arch string, secretClient clientset.Interface) (bool, *machinev1beta1.MachineSet, error) {
+	switch infra.Status.PlatformStatus.Type {
+	case osconfigv1.AWSPlatformType:
+		return reconcileAWS(machineSet, configMap, arch, secretClient)
+	case osconfigv1.AzurePlatformType:
+		return reconcileAzure(machineSet, configMap, arch)
+	case osconfigv1.BareMetalPlatformType:
+		return reconcileBareMetal(machineSet, configMap, arch)
+	case osconfigv1.OpenStackPlatformType:
+		return reconcileOpenStack(machineSet, configMap, arch)
+	case osconfigv1.EquinixMetalPlatformType:
+		return reconcileEquinixMetal(machineSet, configMap, arch)
+	case osconfigv1.GCPPlatformType:
+		return reconcileGCP(machineSet, configMap, arch, secretClient)
+	case osconfigv1.KubevirtPlatformType:
+		return reconcileKubevirt(machineSet, configMap, arch)
+	case osconfigv1.IBMCloudPlatformType:
+		return reconcileIBMCCloud(machineSet, configMap, arch)
+	case osconfigv1.LibvirtPlatformType:
+		return reconcileLibvirt(machineSet, configMap, arch)
+	case osconfigv1.VSpherePlatformType:
+		return reconcileVSphere(machineSet, configMap, arch)
+	case osconfigv1.NutanixPlatformType:
+		return reconcileNutanix(machineSet, configMap, arch)
+	case osconfigv1.OvirtPlatformType:
+		return reconcileOvirt(machineSet, configMap, arch)
+	case osconfigv1.ExternalPlatformType:
+		return reconcileExternal(machineSet, configMap, arch)
+	case osconfigv1.PowerVSPlatformType:
+		return reconcilePowerVS(machineSet, configMap, arch)
+	case osconfigv1.NonePlatformType:
+		return reconcileNone(machineSet, configMap, arch)
+	default:
+		return unmarshalToFindPlatform(machineSet, configMap, arch)
+	}
+}
+
 // GCP reconciliation function. Key points:
 // -GCP images aren't region specific
 // -GCPMachineProviderSpec.Disk(s) stores actual bootimage URL
 // -identical for x86_64/amd64 and aarch64/arm64
-func reconcileGCP(machineSet *machinev1beta1.MachineSet, configMap *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
+func reconcileGCP(machineSet *machinev1beta1.MachineSet, configMap *corev1.ConfigMap, arch string, secretClient clientset.Interface) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
 	klog.Infof("Reconciling MAPI machineset %s on GCP, with arch %s", machineSet.Name, arch)
 
 	// First, unmarshal the GCP providerSpec
 	providerSpec := new(machinev1beta1.GCPMachineProviderSpec)
 	if err := unmarshalProviderSpec(machineSet, providerSpec); err != nil {
+		return false, nil, err
+	}
+
+	// Ensure the ignition stub is the minimum acceptable spec required for boot image updates
+	if err := upgradeStubIgnitionIfRequired(providerSpec.UserDataSecret.Name, secretClient); err != nil {
 		return false, nil, err
 	}
 
@@ -58,52 +104,18 @@ func reconcileGCP(machineSet *machinev1beta1.MachineSet, configMap *corev1.Confi
 	return patchRequired, newMachineSet, nil
 }
 
-// This function calls the appropriate reconcile function based on the infra type
-// On success, it will return a bool indicating if a patch is required, and an updated
-// machineset object if any. It will return an error if any of the above steps fail.
-func checkMachineSet(infra *osconfigv1.Infrastructure, machineSet *machinev1beta1.MachineSet, configMap *corev1.ConfigMap, arch string) (bool, *machinev1beta1.MachineSet, error) {
-	switch infra.Status.PlatformStatus.Type {
-	case osconfigv1.AWSPlatformType:
-		return reconcileAWS(machineSet, configMap, arch)
-	case osconfigv1.AzurePlatformType:
-		return reconcileAzure(machineSet, configMap, arch)
-	case osconfigv1.BareMetalPlatformType:
-		return reconcileBareMetal(machineSet, configMap, arch)
-	case osconfigv1.OpenStackPlatformType:
-		return reconcileOpenStack(machineSet, configMap, arch)
-	case osconfigv1.EquinixMetalPlatformType:
-		return reconcileEquinixMetal(machineSet, configMap, arch)
-	case osconfigv1.GCPPlatformType:
-		return reconcileGCP(machineSet, configMap, arch)
-	case osconfigv1.KubevirtPlatformType:
-		return reconcileKubevirt(machineSet, configMap, arch)
-	case osconfigv1.IBMCloudPlatformType:
-		return reconcileIBMCCloud(machineSet, configMap, arch)
-	case osconfigv1.LibvirtPlatformType:
-		return reconcileLibvirt(machineSet, configMap, arch)
-	case osconfigv1.VSpherePlatformType:
-		return reconcileVSphere(machineSet, configMap, arch)
-	case osconfigv1.NutanixPlatformType:
-		return reconcileNutanix(machineSet, configMap, arch)
-	case osconfigv1.OvirtPlatformType:
-		return reconcileOvirt(machineSet, configMap, arch)
-	case osconfigv1.ExternalPlatformType:
-		return reconcileExternal(machineSet, configMap, arch)
-	case osconfigv1.PowerVSPlatformType:
-		return reconcilePowerVS(machineSet, configMap, arch)
-	case osconfigv1.NonePlatformType:
-		return reconcileNone(machineSet, configMap, arch)
-	default:
-		return unmarshalToFindPlatform(machineSet, configMap, arch)
-	}
-}
+func reconcileAWS(machineSet *machinev1beta1.MachineSet, configMap *corev1.ConfigMap, arch string, secretClient clientset.Interface) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
 
-func reconcileAWS(machineSet *machinev1beta1.MachineSet, configMap *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
 	klog.Infof("Reconciling MAPI machineset %s on AWS, with arch %s", machineSet.Name, arch)
 
 	// First, unmarshal the AWS providerSpec
 	providerSpec := new(machinev1beta1.AWSMachineProviderConfig)
 	if err := unmarshalProviderSpec(machineSet, providerSpec); err != nil {
+		return false, nil, err
+	}
+
+	// Ensure the ignition stub is the minimum acceptable spec required for boot image updates
+	if err := upgradeStubIgnitionIfRequired(providerSpec.UserDataSecret.Name, secretClient); err != nil {
 		return false, nil, err
 	}
 

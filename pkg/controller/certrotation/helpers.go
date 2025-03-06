@@ -21,7 +21,7 @@ func isUserDataSecret(secret corev1.Secret) bool {
 	// These secrets don't really have a label or not, so the determining factor is if they:
 	// 1. have a userData field
 	// 2. is an ignition config
-	userData, exists := secret.Data[userDataKey]
+	userData, exists := secret.Data[ctrlcommon.UserDataKey]
 	if !exists {
 		return false
 	}
@@ -32,7 +32,7 @@ func isUserDataSecret(secret corev1.Secret) bool {
 		return false
 	}
 
-	_, isIgn, err := unstructured.NestedMap(userDataIgn.(map[string]interface{}), ignFieldIgnition)
+	_, isIgn, err := unstructured.NestedMap(userDataIgn.(map[string]interface{}), ctrlcommon.IgnFieldIgnition)
 	if !isIgn || err != nil {
 		// Didn't find ignition in user-data, warn but continue
 		klog.Infof("Unable to find ignition in user-data, skipping secret %s\n", secret.Name)
