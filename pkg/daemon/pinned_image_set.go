@@ -45,12 +45,16 @@ import (
 	mcfginformersv1alpha1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1alpha1"
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	mcfglistersv1alpha1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1"
+	imageclientset "github.com/openshift/client-go/image/clientset/versioned"
+	imageinformersv1 "github.com/openshift/client-go/image/informers/externalversions/image/v1"
+	imagelistersv1 "github.com/openshift/client-go/image/listers/image/v1"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/daemon/cri"
 	"github.com/openshift/machine-config-operator/pkg/helpers"
 	"github.com/openshift/machine-config-operator/pkg/upgrademonitor"
+	"k8s.io/apimachinery/pkg/labels"
 )
 
 const (
@@ -96,11 +100,16 @@ type PinnedImageSetManager struct {
 	mcpLister mcfglistersv1.MachineConfigPoolLister
 	mcpSynced cache.InformerSynced
 
+	imageLister imagelistersv1.ImageStreamLister
+	imageSynced cache.InformerSynced 
+
 	mcfgClient mcfgclientset.Interface
 
 	prefetchCh chan prefetch
 
 	criClient *cri.Client
+
+	imageClient imageclientset.Interface
 
 	// minimum storage available after prefetching
 	minStorageAvailableBytes resource.Quantity
@@ -136,9 +145,11 @@ func NewPinnedImageSetManager(
 	nodeName string,
 	criClient *cri.Client,
 	mcfgClient mcfgclientset.Interface,
+	imageClient imageclientset.Interface,
 	imageSetInformer mcfginformersv1alpha1.PinnedImageSetInformer,
 	nodeInformer coreinformersv1.NodeInformer,
 	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
+	imageInformer imageinformersv1.ImageStreamInformer,
 	minStorageAvailableBytes resource.Quantity,
 	runtimeEndpoint,
 	authFilePath,
@@ -160,6 +171,7 @@ func NewPinnedImageSetManager(
 			workqueue.TypedRateLimitingQueueConfig[string]{Name: "pinned-image-set-manager"}),
 		prefetchCh: make(chan prefetch, defaultPrefetchWorkers*2),
 		criClient:  criClient,
+		imageClient: imageClient,
 		backoff: wait.Backoff{
 			Steps:    maxRetries,
 			Duration: retryDuration,
@@ -179,6 +191,9 @@ func NewPinnedImageSetManager(
 
 	p.mcpLister = mcpInformer.Lister()
 	p.mcpSynced = mcpInformer.Informer().HasSynced
+
+	p.imageLister = imageInformer.Lister()
+	p.imageSynced = imageInformer.Informer().HasSynced
 
 	// this must be done after the enqueueMachineConfigPool is configured to
 	// avoid panics when the event handler is called.
@@ -206,6 +221,34 @@ func NewPinnedImageSetManager(
 
 func (p *PinnedImageSetManager) sync(key string) error {
 	klog.V(4).Infof("Syncing MachineConfigPool %q", key)
+	
+	if disconnectedNoRegistryCase{
+		klog.V(4).Infof("In a disconnected environment with no access to internal image registry and PIS enabled")
+		imgstreams, err := p.imageLister.List(labels.Everything())
+		if err != nil {
+			return fmt.Errorf("unable to list image streams: %s", err)
+		}
+
+		for _, is := range imgstreams {
+			klog.V(4).Infof("Disabling pulling images from any registry for ImageStream: %q", is.Name)
+			isN := is.DeepCopy()
+			isAllReferencesAlreadyTrue := true
+			for _, tag := range isN.Spec.Tags {
+				if !tag.Reference {
+					isAllReferencesAlreadyTrue = false
+				}
+				tag.Reference = true
+			}
+			if isAllReferencesAlreadyTrue {
+				continue
+			}
+			_, err := p.imageClient.ImageV1().ImageStreams("openshift").Update(context.TODO(), isN, metav1.UpdateOptions{})
+			if err != nil {
+				return err
+			}
+		}
+	}
+
 	node, err := p.getNodeWithRetry(p.nodeName)
 	if err != nil {
 		return fmt.Errorf("failed to get node %q: %w", p.nodeName, err)
