@@ -83,10 +83,10 @@ const (
 
 	// InternalMCOIgnitionVersion is the ignition version that the MCO converts everything to internally. The intent here is that
 	// we should be able to update this constant when we bump the internal ignition version instead of having to hunt down all of
-	// the version references and figure out "was this supposed to be explicitly 3.4.0 or just the default version which happens
-	// to be 3.4.0 currently". Ideally if you find an explicit "3.4.0", it's supposed to be "3.4.0" version. If it's this constant,
+	// the version references and figure out "was this supposed to be explicitly 3.5.0 or just the default version which happens
+	// to be 3.5.0 currently". Ideally if you find an explicit "3.5.0", it's supposed to be "3.5.0" version. If it's this constant,
 	// it's supposed to be the internal default version.
-	InternalMCOIgnitionVersion = "3.4.0"
+	InternalMCOIgnitionVersion = "3.5.0"
 
 	// This is the minimum acceptable ignition spec required for boot image updates. This should be updated to be in line with the above.
 	MinimumAcceptableStubIgnitionSpec = "3"
