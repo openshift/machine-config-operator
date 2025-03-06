@@ -11,6 +11,9 @@ RUN mkdir -p /etc/machine-config-daemon && \
 	cat /tmp/machineconfig.json.gz | base64 -d | gunzip - > /etc/machine-config-daemon/currentconfig
 
 FROM {{.BaseOSImage}} AS configs
+RUN dnf install -y fuse-overlayfs && \
+    mkdir -p /etc/containers && \
+    echo -e "[storage]\ndriver = \"overlay\"\n\n[storage.options]\nmount_program = \"/usr/bin/fuse-overlayfs\"" > /etc/containers/storage.conf
 # Copy the extracted MachineConfig into the expected place in the image.
 COPY --from=extract /etc/machine-config-daemon/currentconfig /etc/machine-config-daemon/currentconfig
 # Do the ignition live-apply, extracting the Ignition config from the MachineConfig.
