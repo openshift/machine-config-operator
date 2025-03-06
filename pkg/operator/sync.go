@@ -2272,7 +2272,9 @@ func (optr *Operator) syncMachineConfiguration(_ *renderConfig, _ *configv1.Clus
 			klog.Info("MachineConfiguration object doesn't exist; a new one will be created")
 			// Using server-side apply here as the NodeDisruption API has a rule technicality which prevents apply using a template manifest like the MCO typically does
 			// [spec.nodeDisruptionPolicy.sshkey.actions: Required value, <nil>: Invalid value: "null"]
-			p := mcoac.MachineConfiguration(ctrlcommon.MCOOperatorKnobsObjectName).WithSpec(mcoac.MachineConfigurationSpec().WithManagementState("Managed"))
+			p := mcoac.MachineConfiguration(ctrlcommon.MCOOperatorKnobsObjectName).
+				WithSpec(mcoac.MachineConfigurationSpec().
+					WithManagementState("Managed"))
 			_, err := optr.mcopClient.OperatorV1().MachineConfigurations().Apply(context.TODO(), p, metav1.ApplyOptions{FieldManager: "machine-config-operator"})
 			if err != nil {
 				klog.Infof("applying mco object failed: %s", err)
@@ -2306,7 +2308,6 @@ func (optr *Operator) syncMachineConfiguration(_ *renderConfig, _ *configv1.Clus
 			mcop, err = optr.mcopClient.OperatorV1().MachineConfigurations().UpdateStatus(context.TODO(), mcop, metav1.UpdateOptions{})
 			if err != nil {
 				klog.Errorf("MachineConfiguration status apply failed: %v", err)
-				return nil
 			}
 		}
 	}
@@ -2318,6 +2319,38 @@ func (optr *Operator) syncMachineConfiguration(_ *renderConfig, _ *configv1.Clus
 		// Ensure boot images configmap stamp
 		if err := optr.stampBootImagesConfigMap(); err != nil {
 			klog.Errorf("Failed to stamp bootimages configmap: %v", err)
+		}
+
+		isDefaultOnPlatform, err := optr.isDefaultOnBootImageUpdatePlatform()
+		if err != nil {
+			klog.Errorf("failed to determine plaform type, cluster will not be opted in for boot image updates by default")
+		}
+
+		if isDefaultOnPlatform {
+			_, hasAnno := mcop.Annotations[ctrlcommon.BootImageOptedInAnnotation]
+			// Only update if no machine managers are currently defined
+			if !hasAnno && mcop.Spec.ManagedBootImages.MachineManagers == nil {
+				klog.Infof("No boot image configuration detected, attempting to opt-in cluster")
+				// Set a timestamp annotation for bookkeeping
+				metav1.SetMetaDataAnnotation(&mcop.ObjectMeta, ctrlcommon.BootImageOptedInAnnotation, metav1.Now().Format(time.RFC3339))
+				// This is ugly, but for reasons mentioned earlier, this has to be done via ApplyConfiguration
+				mcopApplyConfig := mcoac.MachineConfiguration("cluster").
+					WithAnnotations(mcop.Annotations).
+					WithSpec(mcoac.MachineConfigurationSpec().
+						WithManagementState("Managed").
+						WithManagedBootImages(mcoac.ManagedBootImages().
+							WithMachineManagers(mcoac.MachineManager().
+								WithAPIGroup(opv1.MachineAPI).
+								WithResource(opv1.MachineSets).
+								WithSelection(mcoac.MachineManagerSelector().
+									WithMode(opv1.All)))))
+				mcop, err = optr.mcopClient.OperatorV1().MachineConfigurations().Apply(context.TODO(), mcopApplyConfig, metav1.ApplyOptions{FieldManager: "machine-config-operator"})
+				if err != nil {
+					klog.Errorf("failed to opt-in cluster for boot image updates: %v", err)
+				} else {
+					klog.Infof("Cluster has been successfully opted in for boot image updates.")
+				}
+			}
 		}
 
 		for _, condition := range mcop.Status.Conditions {
@@ -2339,4 +2372,15 @@ func (optr *Operator) isOnClusterBuildFeatureGateEnabled() (bool, error) {
 	}
 
 	return fg.Enabled(features.FeatureGateOnClusterBuild), nil
+}
+
+// Determines if this cluster is on a platform that opts in for boot images by default
+func (optr *Operator) isDefaultOnBootImageUpdatePlatform() (bool, error) {
+	infra, err := optr.infraLister.Get("cluster")
+	if err != nil {
+		klog.Errorf("Could not get infra: %v", err)
+		return false, err
+	}
+	defaultOnPlatforms := sets.New(configv1.GCPPlatformType, configv1.AWSPlatformType)
+	return defaultOnPlatforms.Has(infra.Status.PlatformStatus.Type), nil
 }
