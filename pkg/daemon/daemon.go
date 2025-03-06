@@ -24,7 +24,7 @@ import (
 	mcopclientset "github.com/openshift/client-go/operator/clientset/versioned"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 
-	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/renameio"
 	"golang.org/x/time/rate"

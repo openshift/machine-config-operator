@@ -7,8 +7,8 @@ import (
 
 	"github.com/clarketm/json"
 	ign2types "github.com/coreos/ignition/config/v2_2/types"
-	ign3 "github.com/coreos/ignition/v2/config/v3_4"
-	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
+	ign3 "github.com/coreos/ignition/v2/config/v3_5"
+	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	validate3 "github.com/coreos/ignition/v2/config/validate"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -140,7 +140,7 @@ func TestConvertIgnition2to3(t *testing.T) {
 	isValid := ValidateIgnition(testIgn2Config)
 	require.Nil(t, isValid)
 
-	convertedIgn, err := convertIgnition22to34(testIgn2Config)
+	convertedIgn, err := convertIgnition22to35(testIgn2Config)
 	require.Nil(t, err)
 	assert.IsType(t, ign3types.Config{}, convertedIgn)
 	isValid3 := ValidateIgnition(convertedIgn)
@@ -156,7 +156,7 @@ func TestConvertIgnition3to2(t *testing.T) {
 	isValid := ValidateIgnition(testIgn3Config)
 	require.Nil(t, isValid)
 
-	convertedIgn, err := convertIgnition34to22(testIgn3Config)
+	convertedIgn, err := convertIgnition35to22(testIgn3Config)
 	require.Nil(t, err)
 	assert.IsType(t, ign2types.Config{}, convertedIgn)
 	isValid2 := ValidateIgnition(convertedIgn)

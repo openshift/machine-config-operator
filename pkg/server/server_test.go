@@ -13,8 +13,8 @@ import (
 
 	"github.com/coreos/go-semver/semver"
 	ign2 "github.com/coreos/ignition/config/v2_2"
-	ign3 "github.com/coreos/ignition/v2/config/v3_4"
-	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
+	ign3 "github.com/coreos/ignition/v2/config/v3_5"
+	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	yaml "github.com/ghodss/yaml"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
