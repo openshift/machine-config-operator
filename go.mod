@@ -16,9 +16,9 @@ require (
 	github.com/containers/storage v1.57.1
 	github.com/coreos/fcct v0.5.0
 	github.com/coreos/go-semver v0.3.1
-	github.com/coreos/ign-converter v0.0.0-20230417193809-cee89ea7d8ff
+	github.com/coreos/ign-converter v0.0.0-20241125185625-2f773079ca81
 	github.com/coreos/ignition v0.35.0
-	github.com/coreos/ignition/v2 v2.15.0
+	github.com/coreos/ignition/v2 v2.20.0
 	github.com/coreos/rpmostree-client-go v0.0.0-20230914135003-fae0786302f7
 	github.com/coreos/stream-metadata-go v0.4.3
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
