@@ -75,7 +75,9 @@ func TestEncapsulated(t *testing.T) {
 	assert.Equal(t, mcIgnCfg.Storage.Files[0].Path, "/etc/coreos/update.conf")
 	assert.Equal(t, mcIgnCfg.Storage.Files[1].Path, daemonconsts.MachineConfigEncapsulatedPath)
 
-	vers := []*semver.Version{semver.New("3.4.0"), semver.New("3.3.0"), semver.New("3.2.0"), semver.New("3.1.0"), semver.New("2.2.0")}
+	vers := []*semver.Version{
+		semver.New("3.5.0"), semver.New("3.4.0"), semver.New("3.3.0"),
+		semver.New("3.2.0"), semver.New("3.1.0"), semver.New("2.2.0")}
 	t.Logf("vers: %v\n", vers)
 	for _, v := range vers {
 		major := v.Slice()[0]
@@ -102,7 +104,7 @@ func TestEncapsulated(t *testing.T) {
 		err = json.Unmarshal(encapData, &mc)
 		assert.Nil(t, err)
 		// TODO(jkyros): the encap only supplies what the current internal version is, and 3.1 was able to parse a 3.2 config
-		// because it's weird so we should probably revisit whether it's okay if the encap is now supplying 3.4
+		// because it's weird so we should probably revisit whether it's okay if the encap is now supplying 3.5
 		if major == 3 {
 			_, _, err := ign3.Parse(mc.Spec.Config.Raw)
 			assert.Nil(t, err)
