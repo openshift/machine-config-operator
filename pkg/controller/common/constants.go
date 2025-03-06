@@ -88,6 +88,9 @@ const (
 	// it's supposed to be the internal default version.
 	InternalMCOIgnitionVersion = "3.4.0"
 
+	// This is the minimum acceptable ignition spec required for boot image updates. This should be updated to be in line with the above.
+	MinimumAcceptableStubIgnitionSpec = "3"
+
 	// MachineConfigRoleLabel is the role on MachineConfigs, used to select for pools
 	MachineConfigRoleLabel = "machineconfiguration.openshift.io/role"
 
@@ -122,6 +125,18 @@ const (
 
 	// This is the label applied to *-user-data-managed secrets
 	MachineConfigServerCAManagedByConfigMapKey = "machineconfiguration.openshift.io/managed-ca-bundle-derived-from-configmap"
+
+	// This is used to key in to the user-data secret
+	UserDataKey = "userData"
+
+	// ign* are for the user-data ignition fields
+	IgnFieldIgnition = "ignition"
+	IgnFieldSource   = "source"
+	IgnFieldVersion  = "version"
+
+	// Stub Ignition upgrade related annotation keys
+	StubIgnitionVersionAnnotation   = "machineconfiguration.openshift.io/stub-ignition-upgraded-to"
+	StubIgnitionTimestampAnnotation = "machineconfiguration.openshift.io/stub-ignition-upgraded-at"
 )
 
 // Commonly-used MCO ConfigMap names
