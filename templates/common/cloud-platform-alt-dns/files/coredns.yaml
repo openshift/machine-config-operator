@@ -25,6 +25,9 @@ contents:
       - name: conf-dir
         hostPath:
           path: "/etc/coredns"
+      - name: nm-resolv
+        hostPath:
+          path: "/var/run/NetworkManager"
       initContainers:
       - name: render-config-coredns
         image: {{ .Images.baremetalRuntimeCfgImage }}
@@ -44,7 +47,7 @@ contents:
         - "--out-dir"
         - "/etc/coredns"
         - "--resolvconf-path"
-        - "/etc/resolv.conf"
+        - "/var/run/NetworkManager/resolv.conf"
         resources: {}
         volumeMounts:
         - name: kubeconfig
@@ -55,6 +58,9 @@ contents:
           mountPropagation: HostToContainer
         - name: conf-dir
           mountPath: "/etc/coredns"
+          mountPropagation: HostToContainer
+        - name: nm-resolv
+          mountPath: "/var/run/NetworkManager"
           mountPropagation: HostToContainer
         imagePullPolicy: IfNotPresent
         terminationMessagePolicy: FallbackToLogsOnError
@@ -114,6 +120,9 @@ contents:
         - name: conf-dir
           mountPath: "/etc/coredns"
           mountPropagation: HostToContainer
+        - name: nm-resolv
+          mountPath: "/var/run/NetworkManager"
+          mountPropagation: HostToContainer 
         imagePullPolicy: IfNotPresent        
       hostNetwork: true
       tolerations:
