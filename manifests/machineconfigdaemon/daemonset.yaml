@@ -95,8 +95,6 @@ spec:
           name: proxy-tls
         - mountPath: /etc/kube-rbac-proxy
           name: mcd-auth-proxy-config
-      hostNetwork: true
-      hostPID: true
       serviceAccountName: machine-config-daemon
       terminationGracePeriodSeconds: 600
       nodeSelector:
