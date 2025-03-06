@@ -20,7 +20,7 @@ func TestMCNScopeSadPath(t *testing.T) {
 
 	// Attempt to patch the MCN owned by targetNode from nodeUnderTest's MCD. This should fail.
 	// This oc command effectively use the service account of the nodeUnderTest's MCD pod, which should only be able to edit nodeUnderTest's MCN.
-	cmdOutput, err := helpers.ExecCmdOnNodeWithError(cs, nodeUnderTest, "chroot", "/rootfs", "oc", "patch", "machineconfignodes", targetNode.Name, "--type=merge", "-p", "{\"spec\":{\"configVersion\":{\"desired\":\"rendered-worker-test\"}}}")
+	cmdOutput, err := helpers.ExecCmdOnNodeWithError(t, cs, nodeUnderTest, "chroot", "/rootfs", "oc", "patch", "machineconfignodes", targetNode.Name, "--type=merge", "-p", "{\"spec\":{\"configVersion\":{\"desired\":\"rendered-worker-test\"}}}")
 	require.Error(t, err, "No errors found during failure path :%v", err)
 	require.Contains(t, cmdOutput, "updates to MCN "+targetNode.Name+" can only be done from the MCN's owner node")
 }

@@ -556,7 +556,7 @@ func WaitForCADataToAppear(t *testing.T, cs *framework.ClientSet) error {
 		nodes, err := GetNodesByRole(cs, "worker")
 		require.Nil(t, err)
 		for _, cert := range controllerConfig.Spec.ImageRegistryBundleUserData {
-			foundCA, _ := ExecCmdOnNodeWithError(cs, nodes[0], "ls", canonicalizeNodeFilePath(filepath.Join("/etc/docker/certs.d", cert.File)))
+			foundCA, _ := ExecCmdOnNodeWithError(t, cs, nodes[0], "ls", canonicalizeNodeFilePath(filepath.Join("/etc/docker/certs.d", cert.File)))
 			if strings.Contains(foundCA, "ca.crt") {
 				return true, nil
 			}
@@ -803,7 +803,7 @@ func AssertFileOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, p
 
 	path = canonicalizeNodeFilePath(path)
 
-	out, err := ExecCmdOnNodeWithError(cs, node, "stat", path)
+	out, err := ExecCmdOnNodeWithError(t, cs, node, "stat", path)
 
 	return assert.NoError(t, err, "expected to find file %s on %s, got:\n%s\nError: %s", path, node.Name, out, err)
 }
@@ -814,7 +814,7 @@ func AssertFileNotOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node
 
 	path = canonicalizeNodeFilePath(path)
 
-	out, err := ExecCmdOnNodeWithError(cs, node, "stat", path)
+	out, err := ExecCmdOnNodeWithError(t, cs, node, "stat", path)
 
 	return assert.Error(t, err, "expected not to find file %s on %s, got:\n%s", path, node.Name, out) &&
 		assert.Contains(t, out, "No such file or directory", "expected command output to contain 'No such file or directory', got: %s", out)
@@ -826,7 +826,7 @@ func GetFileContentOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Nod
 
 	path = canonicalizeNodeFilePath(path)
 
-	out, err := ExecCmdOnNodeWithError(cs, node, "cat", path)
+	out, err := ExecCmdOnNodeWithError(t, cs, node, "cat", path)
 	assert.NoError(t, err, "expected to find file %s on %s, got:\n%s", path, node.Name, out)
 	return out
 }
@@ -932,11 +932,13 @@ func AssertNodeNotBootedIntoImage(t *testing.T, cs *framework.ClientSet, node co
 // ExecCmdOnNodeWithError behaves like ExecCmdOnNode, with the exception that
 // any errors are returned to the caller for inspection. This allows one to
 // execute a command that is expected to fail; e.g., stat /nonexistant/file.
-func ExecCmdOnNodeWithError(cs *framework.ClientSet, node corev1.Node, subArgs ...string) (string, error) {
+func ExecCmdOnNodeWithError(t *testing.T, cs *framework.ClientSet, node corev1.Node, subArgs ...string) (string, error) {
 	cmd, err := execCmdOnNode(cs, node, subArgs...)
 	if err != nil {
 		return "", err
 	}
+
+	t.Logf("command %s", cmd)
 
 	out, err := cmd.CombinedOutput()
 	return string(out), err
@@ -1597,7 +1599,7 @@ func CollectDebugInfoFromNode(t *testing.T, cs *framework.ClientSet, node *corev
 	require.NoError(t, err)
 
 	execCmdWithErr := func(cmd ...string) string {
-		output, err := ExecCmdOnNodeWithError(cs, *node, cmd...)
+		output, err := ExecCmdOnNodeWithError(t, cs, *node, cmd...)
 		if err != nil {
 			t.Logf("could not execute command: %s", strings.Join(cmd, " "))
 		}
@@ -1609,7 +1611,7 @@ func CollectDebugInfoFromNode(t *testing.T, cs *framework.ClientSet, node *corev
 	}
 
 	catFileWithErr := func(name string) (string, error) {
-		return ExecCmdOnNodeWithError(cs, *node, "cat", filepath.Join("/rootfs", name))
+		return ExecCmdOnNodeWithError(t, cs, *node, "cat", filepath.Join("/rootfs", name))
 	}
 
 	runCmd := func(cmd []string) string {
