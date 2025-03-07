@@ -161,6 +161,7 @@ func (f *fixture) newController() *Daemon {
 		i.Machineconfiguration().V1().MachineConfigs(),
 		k8sI.Core().V1().Nodes(),
 		i.Machineconfiguration().V1().ControllerConfigs(),
+		i.Machineconfiguration().V1().MachineConfigPools(),
 		f.oclient,
 		false,
 		"",
@@ -169,6 +170,7 @@ func (f *fixture) newController() *Daemon {
 
 	d.mcListerSynced = alwaysReady
 	d.nodeListerSynced = alwaysReady
+	d.mcpListerSynced = alwaysReady
 
 	stopCh := make(chan struct{})
 	defer close(stopCh)

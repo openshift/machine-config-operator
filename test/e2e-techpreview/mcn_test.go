@@ -2,12 +2,15 @@ package e2e_techpreview_test
 
 import (
 	"bytes"
+	"context"
 	"os/exec"
 	"testing"
 
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/require"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestMCNScopeSadPath(t *testing.T) {
@@ -52,4 +55,38 @@ func TestMCNScopeHappyPath(t *testing.T) {
 	// Attempt to patch the MCN owned by nodeUnderTest from nodeUnderTest's MCD. This should succeed.
 	// This oc command effectively use the service account of the nodeUnderTest's MCD pod, which should only be able to edit nodeUnderTest's MCN.
 	helpers.ExecCmdOnNode(t, cs, nodeUnderTest, "chroot", "/rootfs", "oc", "patch", "machineconfignodes", nodeUnderTest.Name, "--type=merge", "-p", "{\"spec\":{\"configVersion\":{\"desired\":\"rendered-worker-test\"}}}")
+}
+
+// `TestMCNPoolNameDefault` checks that the MCP name is correctly populated in a node's MCN object for default MCPs
+func TestMCNPoolNameDefault(t *testing.T) {
+
+	cs := framework.NewClientSet("")
+
+	// Grab a random node from each default pool
+	workerNode := helpers.GetRandomNode(t, cs, "worker")
+	masterNode := helpers.GetRandomNode(t, cs, "master")
+
+	// Test that MCN pool name value matches MCP association
+	workerNodeMCN, workerErr := cs.MachineconfigurationV1alpha1Interface.MachineConfigNodes().Get(context.TODO(), workerNode.Name, metav1.GetOptions{})
+	require.Equal(t, "worker", workerNodeMCN.Spec.Pool.Name)
+	require.NoError(t, workerErr)
+	masterNodeMCN, masterErr := cs.MachineconfigurationV1alpha1Interface.MachineConfigNodes().Get(context.TODO(), masterNode.Name, metav1.GetOptions{})
+	require.Equal(t, "master", masterNodeMCN.Spec.Pool.Name)
+	require.NoError(t, masterErr)
+}
+
+// `TestMCNPoolNameCustom` checks that the MCP name is correctly populated in a node's MCN object for custom MCPs
+func TestMCNPoolNameCustom(t *testing.T) {
+
+	cs := framework.NewClientSet("")
+
+	// Create a custom MCP and assign a worker node to it
+	customMCPName := "infra"
+	customNode := helpers.GetRandomNode(t, cs, "worker")
+	helpers.CreatePoolWithNode(t, cs, customMCPName, customNode)
+
+	// Test that MCN pool name value matches MCP association
+	customNodeMCN, customErr := cs.MachineconfigurationV1alpha1Interface.MachineConfigNodes().Get(context.TODO(), customNode.Name, metav1.GetOptions{})
+	require.Equal(t, customMCPName, customNodeMCN.Spec.Pool.Name)
+	require.NoError(t, customErr)
 }
