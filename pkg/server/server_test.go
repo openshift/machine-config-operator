@@ -13,8 +13,8 @@ import (
 
 	"github.com/coreos/go-semver/semver"
 	ign2 "github.com/coreos/ignition/config/v2_2"
-	ign3 "github.com/coreos/ignition/v2/config/v3_4"
-	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
+	ign3 "github.com/coreos/ignition/v2/config/v3_5"
+	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	yaml "github.com/ghodss/yaml"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -75,7 +75,7 @@ func TestEncapsulated(t *testing.T) {
 	assert.Equal(t, mcIgnCfg.Storage.Files[0].Path, "/etc/coreos/update.conf")
 	assert.Equal(t, mcIgnCfg.Storage.Files[1].Path, daemonconsts.MachineConfigEncapsulatedPath)
 
-	vers := []*semver.Version{semver.New("3.4.0"), semver.New("3.3.0"), semver.New("3.2.0"), semver.New("3.1.0"), semver.New("2.2.0")}
+	vers := []*semver.Version{semver.New("3.5.0"), semver.New("3.4.0"), semver.New("3.3.0"), semver.New("3.2.0"), semver.New("3.1.0"), semver.New("2.2.0")}
 	t.Logf("vers: %v\n", vers)
 	for _, v := range vers {
 		major := v.Slice()[0]

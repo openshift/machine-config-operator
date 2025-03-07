@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	"github.com/google/renameio"
 	"k8s.io/klog/v2"
 
