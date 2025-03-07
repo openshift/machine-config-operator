@@ -1,0 +1,43 @@
+mode: 0755
+path: "/usr/local/bin/ipsec-connect-wait.sh"
+contents:
+  inline: |
+    #!/bin/bash
+    set -x
+
+    if [ ! -e "/etc/ipsec.d/openshift.conf" ]; then
+      exit 0
+    fi
+
+    #
+    if ! grep -q "auto=start" /etc/ipsec.d/openshift.conf; then
+      sed -i '/^.*conn ovn.*$/a\    auto=start' /etc/ipsec.d/openshift.conf
+    fi
+
+    cat /etc/ipsec.d/openshift.conf
+
+    chroot /proc/1/root ipsec restart
+
+    timeout=180
+    elapsed=0
+    desiredconn=""
+    establishedsa=""
+
+    while [[ $elapsed -lt $timeout ]]; do
+      desiredconn=$(grep -E '^\s*conn\s+' /etc/ipsec.d/openshift.conf | grep -v '%default' | awk '{print $2}' | tr ' ' '\n' | sort | tr '\n' ' ')
+      establishedsa=$(ipsec showstates | grep STATE_V2_ESTABLISHED_CHILD_SA | grep -o '"[^"]*"' | sed 's/"//g' | tr ' ' '\n' | sort | uniq | tr '\n' ' ')
+      if [ "$desiredconn" == "$establishedsa" ]; then
+        echo "IPsec SAs are established for desired connections"
+        break
+      else
+        echo "IPsec SAs are not established yet, waiting"
+        sleep 2s
+        fi
+      elapsed=$((elapsed + 2))
+    done
+
+    if [[ $elapsed -ge $timeout ]]; then
+        echo "Timed out waiting, some connections are not established, desired conns $desiredconn, established conns $establishedsa"
+    fi
+
+    ipsec status
