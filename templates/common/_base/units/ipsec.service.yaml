@@ -4,3 +4,4 @@ dropins:
     contents: |
       [Unit]
       After=ovs-configuration.service
+      Before=crio.service
