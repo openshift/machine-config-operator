@@ -13,7 +13,9 @@ import (
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/require"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/jsonmergepatch"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -30,6 +32,7 @@ import (
 	cov1helpers "github.com/openshift/library-go/pkg/config/clusteroperator/v1helpers"
 
 	mcoac "github.com/openshift/client-go/operator/applyconfigurations/operator/v1"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	applymetav1 "k8s.io/client-go/applyconfigurations/meta/v1"
 )
 
@@ -233,6 +236,91 @@ func TestBootImageDegradeCondition(t *testing.T) {
 	t.Logf("Succesfully verified that the operator is no longer degraded")
 }
 
+func TestStubIgnitionUpgrade(t *testing.T) {
+
+	cs := framework.NewClientSet("")
+
+	// Check if the cluster is running on GCP platform
+	if !verifyGCPPlatform(t, cs) {
+		return
+	}
+	testStubSecretName := "test-user-data"
+	machineClient := machineClientv1beta1.NewForConfigOrDie(cs.GetRestConfig())
+	// Create a 2.2 stub secret in the test cluster
+	_, err := cs.CoreV1Interface.Secrets(ctrlcommon.MachineAPINamespace).Create(context.TODO(), getOldMAOSecret(testStubSecretName), metav1.CreateOptions{})
+	require.Nil(t, err, "create test secret failed")
+	t.Logf("Created test stub secret")
+	// Update the machineconfiguration object to opt-in all machinesets
+	machineConfigurationClient := mcopclientset.NewForConfigOrDie(cs.GetRestConfig())
+	p := mcoac.MachineConfiguration("cluster").
+		WithSpec(mcoac.MachineConfigurationSpec().
+			WithManagementState("Managed").
+			WithManagedBootImages(mcoac.ManagedBootImages().
+				WithMachineManagers(mcoac.MachineManager().
+					WithAPIGroup(opv1.MachineAPI).
+					WithResource(opv1.MachineSets).
+					WithSelection(mcoac.MachineManagerSelector().
+						WithMode(opv1.All)))))
+	_, err = machineConfigurationClient.OperatorV1().MachineConfigurations().Apply(context.TODO(), p, metav1.ApplyOptions{FieldManager: "machine-config-operator"})
+
+	require.Nil(t, err, "updating machineconfiguration boot image knob failed")
+
+	t.Logf("Updated machine configuration knob to target all machinesets for boot image updates")
+
+	// Pick a random machineset to test
+	machineSetUnderTest := getRandomMachineSet(t, machineClient)
+	t.Logf("MachineSet under test: %s", machineSetUnderTest.Name)
+
+	// Update machineset to point to 2.2 stub
+	providerSpec := new(machinev1beta1.GCPMachineProviderSpec)
+	err = unmarshalProviderSpec(&machineSetUnderTest, providerSpec)
+	require.Nil(t, err, "failed to unmarshal Machine Set: %s", machineSetUnderTest.Name)
+
+	newProviderSpec := providerSpec.DeepCopy()
+	newProviderSpec.UserDataSecret.Name = testStubSecretName
+	newMachineSet := machineSetUnderTest.DeepCopy()
+	err = marshalProviderSpec(newMachineSet, newProviderSpec)
+	require.Nil(t, err, "failed to marshal new Provider Spec object")
+
+	err = patchMachineSet(&machineSetUnderTest, newMachineSet, machineClient)
+	require.Nil(t, err, "patching machineset for test secret failed")
+
+	// Ensure atleast one master node is ready
+	t.Logf("Waiting until atleast one master node is ready...")
+	helpers.WaitForOneMasterNodeToBeReady(t, cs)
+	t.Logf("Updated MachineSet %s with stub secret", machineSetUnderTest.Name)
+
+	// Check if secret got upgraded to spec 3
+	secret, err := cs.CoreV1Interface.Secrets(ctrlcommon.MachineAPINamespace).Get(context.TODO(), testStubSecretName, metav1.GetOptions{})
+	require.Nil(t, err, "get test secret failed")
+	userData := secret.Data[ctrlcommon.UserDataKey]
+	var userDataIgn interface{}
+	err = json.Unmarshal(userData, &userDataIgn)
+	require.Nil(t, err, "failed to unmarshal decoded user-data to json (secret %s): %wt", secret.Name, err)
+	versionPath := []string{ctrlcommon.IgnFieldIgnition, ctrlcommon.IgnFieldVersion}
+	version, _, err := unstructured.NestedString(userDataIgn.(map[string]any), versionPath...)
+	require.Nil(t, err, "failed to find version field in ignition (user data secret %s): %w", secret.Name, err)
+	require.Equal(t, strings.HasPrefix(version, ctrlcommon.MinimumAcceptableStubIgnitionSpec), true, "Upgraded stub ignition doesn't have the correct version")
+	t.Logf("Test stub secret was upgraded correctly")
+
+	// Restore machineset to original providerSpec
+	machineSetUnderTestUpdated, err := machineClient.MachineSets("openshift-machine-api").Get(context.TODO(), machineSetUnderTest.Name, metav1.GetOptions{})
+	require.Nil(t, err, "failed to re-fetch machineset under test")
+	newMachineSet = machineSetUnderTestUpdated.DeepCopy()
+	err = marshalProviderSpec(newMachineSet, providerSpec)
+	require.Nil(t, err, "failed to marshal new Provider Spec object during restoration")
+	err = patchMachineSet(machineSetUnderTestUpdated, newMachineSet, machineClient)
+	require.Nil(t, err, "patching machineset during restoration failed")
+
+	t.Logf("Restored MachineSet %s to original values", machineSetUnderTest.Name)
+
+	// Delete test secret
+	err = cs.CoreV1Interface.Secrets(ctrlcommon.MachineAPINamespace).Delete(context.TODO(), testStubSecretName, metav1.DeleteOptions{})
+	require.Nil(t, err, "delete test secret failed")
+	t.Logf("Test stub secret %s deleted", testStubSecretName)
+
+}
+
 // This function verifies if the boot image values of the MachineSet are in an expected state
 func verifyMachineSet(t *testing.T, cs *framework.ClientSet, ms machinev1beta1.MachineSet, machineClient *machineClientv1beta1.MachineV1beta1Client, reconciliationExpected bool) {
 	providerSpec := new(machinev1beta1.GCPMachineProviderSpec)
@@ -240,13 +328,11 @@ func verifyMachineSet(t *testing.T, cs *framework.ClientSet, ms machinev1beta1.M
 	require.Nil(t, err, "failed to unmarshal Machine Set: %s", ms.Name)
 
 	originalBootImageValue := providerSpec.Disks[0].Image
-	originalUserDataSecret := providerSpec.UserDataSecret.Name
 
 	newProviderSpec := providerSpec.DeepCopy()
 	for idx := range newProviderSpec.Disks {
 		newProviderSpec.Disks[idx].Image = newProviderSpec.Disks[idx].Image + "-fake-update"
 	}
-	newProviderSpec.UserDataSecret.Name = newProviderSpec.UserDataSecret.Name + "-fake-update"
 
 	newMachineSet := ms.DeepCopy()
 	err = marshalProviderSpec(newMachineSet, newProviderSpec)
@@ -255,7 +341,6 @@ func verifyMachineSet(t *testing.T, cs *framework.ClientSet, ms machinev1beta1.M
 	err = patchMachineSet(&ms, newMachineSet, machineClient)
 	require.Nil(t, err, "patching machineset failed")
 	t.Logf("Updated build name in machineset %s to \"%s\"", ms.Name, originalBootImageValue+"-fake-update")
-	t.Logf("Updated user data secret in machineset %s to \"%s\"", ms.Name, originalUserDataSecret+"-fake-update")
 
 	// Ensure atleast one master node is ready
 	t.Logf("Waiting until atleast one master node is ready...")
@@ -278,15 +363,10 @@ func verifyMachineSet(t *testing.T, cs *framework.ClientSet, ms machinev1beta1.M
 		}
 	}
 
-	// Verify that the user data secret have been correctly reconciled to the expected value
 	if reconciliationExpected {
-		// Hardcoding the check here as this is the name for the managed secret
-		require.Equal(t, "worker-user-data-managed", providerSpec.UserDataSecret.Name, "user data secret has not been updated correctly")
-		t.Logf("The boot image and user data secret have been reconciled, as expected")
+		t.Logf("The boot image have been reconciled, as expected")
 	} else {
-		require.NotEqual(t, originalUserDataSecret, providerSpec.UserDataSecret.Name, "user data secret has been unexpectedly updated")
-		t.Logf("The boot images and user data secret have not been reconciled, as expected")
-
+		t.Logf("The boot images have not been reconciled, as expected")
 		// Restore machineSet to original values in this case, as the machineset may be used by other test variants
 		patchMachineSet(newMachineSet, &ms, machineClient)
 		t.Logf("Restored build name in the machineset %s to \"%s\"", ms.Name, originalBootImageValue)
@@ -366,4 +446,15 @@ func patchMachineSet(oldMachineSet, newMachineSet *machinev1beta1.MachineSet, ma
 		return fmt.Errorf("unable to patch new machineset: %w", err)
 	}
 	return nil
+}
+
+// This is a spec 2 stub generated by the installer, in older versions of OCP(<4.6)
+func getOldMAOSecret(name string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: ctrlcommon.MachineAPINamespace,
+		},
+		Data: map[string][]byte{"disableTemplating": []byte("true"), "userData": []byte(`{"ignition":{"config":{"append":[{"source":"https://test-cluster-api:22623/config/worker"}]},"security":{"tls":{"certificateAuthorities":[{"source":"data:text/plain;charset=utf-8;base64,LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tClJPT1QgQ0EgREFUQQotLS0tLUVORCBDRVJUSUZJQ0FURS0tLS0tCg=="}]}},"version":"2.2.0"}}`)},
+	}
 }

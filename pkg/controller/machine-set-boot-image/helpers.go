@@ -1,9 +1,11 @@
 package machineset
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	archtranslater "github.com/coreos/stream-metadata-go/arch"
 	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
@@ -11,11 +13,15 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 	kruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
+	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/yaml"
+
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 )
 
 // TODO - unmarshal the providerspec into each ProviderSpec type until it succeeds,
@@ -108,4 +114,46 @@ func getArchFromMachineSet(machineset *machinev1beta1.MachineSet) (arch string, 
 	// return the architecture of the node running this pod, which will always be a control plane node.
 	klog.Infof("Defaulting to control plane architecture")
 	return archtranslater.CurrentRpmArch(), nil
+}
+
+// Upgrades the Ignition stub enclosed in referenced secret if required
+func upgradeStubIgnitionIfRequired(secretName string, secretClient clientset.Interface) error {
+	secret, err := secretClient.CoreV1().Secrets(ctrlcommon.MachineAPINamespace).Get(context.TODO(), secretName, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("error grabbing user data secret referenced in machineset: %w", err)
+	}
+	userData := secret.Data[ctrlcommon.UserDataKey]
+	var userDataIgn interface{}
+	if err := json.Unmarshal(userData, &userDataIgn); err != nil {
+		return fmt.Errorf("failed to unmarshal decoded user-data to json (secret %s): %wt", secret.Name, err)
+	}
+	versionPath := []string{ctrlcommon.IgnFieldIgnition, ctrlcommon.IgnFieldVersion}
+	version, _, err := unstructured.NestedString(userDataIgn.(map[string]any), versionPath...)
+	if err != nil {
+		return fmt.Errorf("failed to find version field in ignition (user data secret %s): %w", secret.Name, err)
+	}
+	// If stub is not spec 3, attempt an upgrade. If an upgrade isn't possible, return an error.
+	if !strings.HasPrefix(version, ctrlcommon.MinimumAcceptableStubIgnitionSpec) {
+		klog.Infof("Out of date version=%s stub Ignition detected in %s, attempting upgrade", version, secret.Name)
+		userDataIgnUpgraded, err := ctrlcommon.ParseAndConvertConfig(userData)
+		if err != nil {
+			return fmt.Errorf("converting ignition stub failed: %v", err)
+		}
+		klog.Infof("ignition stub upgrade to %s successful", userDataIgnUpgraded.Ignition.Version)
+		// Annotate the secret if an Ignition upgrade took place
+		metav1.SetMetaDataAnnotation(&secret.ObjectMeta, ctrlcommon.StubIgnitionVersionAnnotation, userDataIgnUpgraded.Ignition.Version)
+		metav1.SetMetaDataAnnotation(&secret.ObjectMeta, ctrlcommon.StubIgnitionTimestampAnnotation, metav1.Now().Format(time.RFC3339))
+
+		updatedIgnition, err := json.Marshal(userDataIgnUpgraded)
+		if err != nil {
+			return fmt.Errorf("failed to marshal updated ignition back to json (secret %s): %w", secret.Name, err)
+		}
+		secret.Data[ctrlcommon.UserDataKey] = updatedIgnition
+		_, err = secretClient.CoreV1().Secrets(ctrlcommon.MachineAPINamespace).Update(context.TODO(), secret, metav1.UpdateOptions{})
+		if err != nil {
+			return fmt.Errorf("could not update secret %s: %w", secret.Name, err)
+		}
+
+	}
+	return nil
 }
