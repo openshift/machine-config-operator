@@ -11,13 +11,13 @@ import (
 	"github.com/openshift/api/machineconfiguration/v1alpha1"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
 	informers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
+	mcopfake "github.com/openshift/client-go/operator/clientset/versioned/fake"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
+	"github.com/openshift/machine-config-operator/pkg/helpers"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	kubeinformers "k8s.io/client-go/informers"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
-
-	mcopfake "github.com/openshift/client-go/operator/clientset/versioned/fake"
 )
 
 type upgradeMonitorTestCase struct {
@@ -128,6 +128,7 @@ func (tc upgradeMonitorTestCase) run(t *testing.T) {
 		i.Machineconfiguration().V1().MachineConfigs(),
 		k8sI.Core().V1().Nodes(),
 		i.Machineconfiguration().V1().ControllerConfigs(),
+		i.Machineconfiguration().V1().MachineConfigPools(),
 		f.oclient,
 		false,
 		"",
@@ -136,6 +137,7 @@ func (tc upgradeMonitorTestCase) run(t *testing.T) {
 
 	d.mcListerSynced = alwaysReady
 	d.nodeListerSynced = alwaysReady
+	d.mcpListerSynced = alwaysReady
 
 	i.Start(stopCh)
 	i.WaitForCacheSync(stopCh)
@@ -151,7 +153,13 @@ func (tc upgradeMonitorTestCase) run(t *testing.T) {
 	}
 
 	for _, n := range f.nodeLister {
-		err = upgrademonitor.GenerateAndApplyMachineConfigNodes(tc.parentCondition, tc.childCondition, tc.parentStatus, tc.childStatus, n, d.mcfgClient, d.featureGatesAccessor)
+		// Get MCP associated with node
+		pool, err := helpers.GetPrimaryPoolNameForMCN(d.mcpLister, n)
+		if err != nil {
+			f.t.Fatalf("Error getting primary pool for node: %v", n.Name)
+		}
+
+		err = upgrademonitor.GenerateAndApplyMachineConfigNodes(tc.parentCondition, tc.childCondition, tc.parentStatus, tc.childStatus, n, d.mcfgClient, d.featureGatesAccessor, pool)
 		if err != nil {
 			f.t.Fatalf("Could not generate and apply MCN %v", err)
 		}

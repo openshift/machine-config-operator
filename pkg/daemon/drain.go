@@ -15,6 +15,8 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
+
+	"github.com/openshift/machine-config-operator/pkg/helpers"
 	"github.com/openshift/machine-config-operator/pkg/upgrademonitor"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -39,7 +41,14 @@ func (dn *Daemon) performDrain() error {
 
 	if !dn.drainRequired() {
 		logSystem("Drain not required, skipping")
-		err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
+
+		// Get MCP associated with node
+		pool, err := helpers.GetPrimaryPoolNameForMCN(dn.mcpLister, dn.node)
+		if err != nil {
+			return err
+		}
+
+		err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
 			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateExecuted, Reason: string(mcfgalphav1.MachineConfigNodeUpdateDrained), Message: "Node Drain Not required for this update."},
 			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateDrained, Reason: fmt.Sprintf("%s%s", string(mcfgalphav1.MachineConfigNodeUpdateExecuted), string(mcfgalphav1.MachineConfigNodeUpdateDrained)), Message: "Node Drain Not required for this update."},
 			metav1.ConditionUnknown,
@@ -47,6 +56,7 @@ func (dn *Daemon) performDrain() error {
 			dn.node,
 			dn.mcfgClient,
 			dn.featureGatesAccessor,
+			pool,
 		)
 		if err != nil {
 			klog.Errorf("Error making MCN for Drain not required: %v", err)
