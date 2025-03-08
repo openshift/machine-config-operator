@@ -57,6 +57,7 @@ are kept outside the object package.
 package govmomi
 
 import (
+	"fmt"
 	"context"
 	"net/url"
 
@@ -79,7 +80,7 @@ func NewClient(ctx context.Context, u *url.URL, insecure bool) (*Client, error) 
 	soapClient := soap.NewClient(u, insecure)
 	vimClient, err := vim25.NewClient(ctx, soapClient)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed in vim25.NewClient: %w", err)
 	}
 
 	c := &Client{
