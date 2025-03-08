@@ -311,7 +311,7 @@ func getClientsFromServerURL(ctx context.Context, server string) (*govmomi.Clien
 
 	client, err := govmomi.NewClient(ctx, vcenterURL, true)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("failed in govmomi.NewClient: %w", err )
 	}
 
 	restClient := rest.NewClient(client.Client)
@@ -321,7 +321,7 @@ func getClientsFromServerURL(ctx context.Context, server string) (*govmomi.Clien
 		if logoutErr != nil {
 			err = logoutErr
 		}
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("failed in restClient.Login %w", err)
 	}
 
 	tagManager := tags.NewManager(restClient)
@@ -354,7 +354,7 @@ func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1
 
 		client, tagManager, err := getClientsFromServerURL(ctx, vcenter.Server)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("failed in getClientsFromServerURL: %w", err)
 		}
 
 		finder := find.NewFinder(client.Client, false)
