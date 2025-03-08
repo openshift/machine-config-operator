@@ -14877,7 +14877,7 @@ func RetrieveServiceContent(ctx context.Context, r soap.RoundTripper, req *types
 	reqBody.Req = req
 
 	if err := r.RoundTrip(ctx, &reqBody, &resBody); err != nil {
-		return nil, fmt.Errorf("failed in RoundTrip(ctx, &%w, &%w)", reqBody, resBody, err)
+		return nil, fmt.Errorf("failed in RoundTrip(ctx, &%w, &%w): %w", reqBody, resBody, err)
 	}
 
 	return resBody.Res, nil

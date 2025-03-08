@@ -304,14 +304,12 @@ func createNewVMTemplateWithNameForFailureDomain(ctx context.Context, providerSp
 }
 
 func getClientsFromServerURL(ctx context.Context, server, username, password string) (*govmomi.Client, *tags.Manager, error) {
-	vcenterURL, err := url.Parse(server)
-	if err != nil {
-		return nil, nil, err
+	vcenterURL := &url.URL{
+		Scheme: "https",
+		Host:   server,
+		Path:   "/sdk",
+		User:   url.UserPassword(username, password),
 	}
-
-	vcenterURL.Scheme = "https"
-	vcenterURL.User = url.UserPassword(username, password)
-
 	client, err := govmomi.NewClient(ctx, vcenterURL, true)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed in govmomi.NewClient(%w): %w", vcenterURL, err)
