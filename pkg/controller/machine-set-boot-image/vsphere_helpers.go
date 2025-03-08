@@ -352,7 +352,7 @@ func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1
 			continue
 		}
 
-		client, tagManager, err := getClientsFromServerURL(ctx, vcenter.Server)
+		client, tagManager, err := getClientsFromServerURL(ctx, fmt.Sprintf("https://%s", vcenter.Server))
 		if err != nil {
 			return "", fmt.Errorf("failed in getClientsFromServerURL: %w", err)
 		}
