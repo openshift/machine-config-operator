@@ -23,11 +23,11 @@ import (
 	"github.com/vmware/govmomi/vim25/types"
 
 	"github.com/coreos/stream-metadata-go/stream"
-	"k8s.io/klog/v2"
-	"k8s.io/utils/ptr"
-
 	osconfigv1 "github.com/openshift/api/config/v1"
 	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/klog/v2"
+	"k8s.io/utils/ptr"
 )
 
 func checkOvaSecureBoot(ovfEnvelope *ovf.Envelope) bool {
@@ -329,7 +329,7 @@ func getClientsFromServerURL(ctx context.Context, server string) (*govmomi.Clien
 	return client, tagManager, nil
 }
 
-func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1.VSphereMachineProviderSpec, infra *osconfigv1.Infrastructure, arch string) (string, error) {
+func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1.VSphereMachineProviderSpec, infra *osconfigv1.Infrastructure, arch string, credsSc *corev1.Secret) (string, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -352,7 +352,9 @@ func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1
 			continue
 		}
 
-		client, tagManager, err := getClientsFromServerURL(ctx, fmt.Sprintf("https://%s", vcenter.Server))
+		username := credsSc.Data[fmt.Sprintf("%s.username", vcenter.Server)]
+		password := credsSc.Data[fmt.Sprintf("%s.password", vcenter.Server)]
+		client, tagManager, err := getClientsFromServerURL(ctx, fmt.Sprintf("https://%s:%s@%s", username, password, vcenter.Server))
 		if err != nil {
 			return "", fmt.Errorf("failed in getClientsFromServerURL: %w", err)
 		}

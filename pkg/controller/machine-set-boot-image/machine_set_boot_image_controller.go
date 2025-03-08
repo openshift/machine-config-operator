@@ -50,11 +50,13 @@ type Controller struct {
 	eventRecorder record.EventRecorder
 
 	mcoCmLister          corelisterv1.ConfigMapLister
+	mcoSecretLister      corelisterv1.SecretLister
 	mapiMachineSetLister machinelisters.MachineSetLister
 	infraLister          configlistersv1.InfrastructureLister
 	mcopLister           mcoplistersv1.MachineConfigurationLister
 
 	mcoCmListerSynced          cache.InformerSynced
+	mcoSecretListerSynced      cache.InformerSynced
 	mapiMachineSetListerSynced cache.InformerSynced
 	infraListerSynced          cache.InformerSynced
 	mcopListerSynced           cache.InformerSynced
@@ -100,6 +102,7 @@ func New(
 	kubeClient clientset.Interface,
 	machineClient machineclientset.Interface,
 	mcoCmInfomer coreinformersv1.ConfigMapInformer,
+	mcoSecretInformer coreinformersv1.SecretInformer,
 	mapiMachineSetInformer mapimachineinformers.MachineSetInformer,
 	infraInformer configinformersv1.InfrastructureInformer,
 	mcopClient mcopclientset.Interface,
@@ -118,11 +121,13 @@ func New(
 	}
 
 	ctrl.mcoCmLister = mcoCmInfomer.Lister()
+
 	ctrl.mapiMachineSetLister = mapiMachineSetInformer.Lister()
 	ctrl.infraLister = infraInformer.Lister()
 	ctrl.mcopLister = mcopInformer.Lister()
-
+	ctrl.mcoSecretLister = mcoSecretInformer.Lister()
 	ctrl.mcoCmListerSynced = mcoCmInfomer.Informer().HasSynced
+	ctrl.mcoSecretListerSynced = mcoSecretInformer.Informer().HasSynced
 	ctrl.mapiMachineSetListerSynced = mapiMachineSetInformer.Informer().HasSynced
 	ctrl.infraListerSynced = infraInformer.Informer().HasSynced
 	ctrl.mcopListerSynced = mcopInformer.Informer().HasSynced
@@ -154,7 +159,7 @@ func New(
 func (ctrl *Controller) Run(stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.mcoCmListerSynced, ctrl.mapiMachineSetListerSynced, ctrl.infraListerSynced, ctrl.mcopListerSynced) {
+	if !cache.WaitForCacheSync(stopCh, ctrl.mcoCmListerSynced, ctrl.mcoSecretListerSynced, ctrl.mapiMachineSetListerSynced, ctrl.infraListerSynced, ctrl.mcopListerSynced) {
 		return
 	}
 
@@ -458,7 +463,7 @@ func (ctrl *Controller) syncMAPIMachineSet(machineSet *machinev1beta1.MachineSet
 	// The current hash and version check should be enough to skate by for now, but fixing this would be additional safety - djoshy
 
 	// Check if the this MachineSet requires an update
-	patchRequired, newMachineSet, err := checkMachineSet(infra, machineSet, configMap, arch)
+	patchRequired, newMachineSet, err := checkMachineSet(infra, machineSet, configMap, arch, ctrl.mcoSecretLister)
 	if err != nil {
 		return fmt.Errorf("failed to reconcile machineset %s, err: %w", machineSet.Name, err)
 	}

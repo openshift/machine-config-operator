@@ -5,6 +5,7 @@ import (
 
 	"github.com/coreos/stream-metadata-go/stream"
 	corev1 "k8s.io/api/core/v1"
+	corelisterv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
 
 	osconfigv1 "github.com/openshift/api/config/v1"
@@ -68,7 +69,7 @@ func reconcileGCP(machineSet *machinev1beta1.MachineSet, configMap *corev1.Confi
 // This function calls the appropriate reconcile function based on the infra type
 // On success, it will return a bool indicating if a patch is required, and an updated
 // machineset object if any. It will return an error if any of the above steps fail.
-func checkMachineSet(infra *osconfigv1.Infrastructure, machineSet *machinev1beta1.MachineSet, configMap *corev1.ConfigMap, arch string) (bool, *machinev1beta1.MachineSet, error) {
+func checkMachineSet(infra *osconfigv1.Infrastructure, machineSet *machinev1beta1.MachineSet, configMap *corev1.ConfigMap, arch string, mcoScLister corelisterv1.SecretLister) (bool, *machinev1beta1.MachineSet, error) {
 	switch infra.Status.PlatformStatus.Type {
 	case osconfigv1.AWSPlatformType:
 		return reconcileAWS(machineSet, configMap, arch)
@@ -89,7 +90,7 @@ func checkMachineSet(infra *osconfigv1.Infrastructure, machineSet *machinev1beta
 	case osconfigv1.LibvirtPlatformType:
 		return reconcileLibvirt(machineSet, configMap, arch)
 	case osconfigv1.VSpherePlatformType:
-		return reconcileVSphere(machineSet, infra, configMap, arch)
+		return reconcileVSphere(machineSet, infra, configMap, arch, mcoScLister)
 	case osconfigv1.NutanixPlatformType:
 		return reconcileNutanix(machineSet, configMap, arch)
 	case osconfigv1.OvirtPlatformType:
@@ -192,7 +193,7 @@ func reconcileLibvirt(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap
 	return false, nil, nil
 }
 
-func reconcileVSphere(machineSet *machinev1beta1.MachineSet, infra *osconfigv1.Infrastructure, configMap *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
+func reconcileVSphere(machineSet *machinev1beta1.MachineSet, infra *osconfigv1.Infrastructure, configMap *corev1.ConfigMap, arch string, mcoScLister corelisterv1.SecretLister) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
 	klog.Infof("Reconciling MAPI machineset %s on vSphere, with arch %s", machineSet.Name, arch)
 
 	// First, unmarshal the VSphere providerSpec
@@ -207,7 +208,12 @@ func reconcileVSphere(machineSet *machinev1beta1.MachineSet, infra *osconfigv1.I
 		return false, nil, err
 	}
 
-	newBootImg, err := createNewVMTemplate(streamData, providerSpec, infra, arch)
+	// Fetch the creds configmap
+	credsSc, err := mcoScLister.Secrets("kube-system").Get("vsphere-creds")
+	if credsSc == nil || err != nil {
+		return false, nil, fmt.Errorf("failed to fetch vsphere-creds Secret during machineset sync: %w", err)
+	}
+	newBootImg, err := createNewVMTemplate(streamData, providerSpec, infra, arch, credsSc)
 	if err != nil {
 		return false, nil, err
 	}
