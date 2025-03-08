@@ -18,7 +18,7 @@ package methods
 
 import (
 	"context"
-
+	"fmt"
 	"github.com/vmware/govmomi/vim25/soap"
 	"github.com/vmware/govmomi/vim25/types"
 )
@@ -14877,7 +14877,7 @@ func RetrieveServiceContent(ctx context.Context, r soap.RoundTripper, req *types
 	reqBody.Req = req
 
 	if err := r.RoundTrip(ctx, &reqBody, &resBody); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed in RoundTrip(ctx, &%w, &%w)", reqBody, resBody, err)
 	}
 
 	return resBody.Res, nil

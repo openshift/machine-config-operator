@@ -20,7 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
-
+	"fmt"
 	"github.com/vmware/govmomi/vim25/methods"
 	"github.com/vmware/govmomi/vim25/soap"
 	"github.com/vmware/govmomi/vim25/types"
@@ -78,7 +78,7 @@ func NewClient(ctx context.Context, rt soap.RoundTripper) (*Client, error) {
 	var err error
 	c.ServiceContent, err = methods.GetServiceContent(ctx, rt)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed in methods.GetServiceContent(ctx, %w): %w", rt, err)
 	}
 
 	return &c, nil

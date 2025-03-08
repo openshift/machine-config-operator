@@ -19,7 +19,7 @@ package methods
 import (
 	"context"
 	"time"
-
+	"fmt"
 	"github.com/vmware/govmomi/vim25/soap"
 	"github.com/vmware/govmomi/vim25/types"
 )
@@ -37,7 +37,7 @@ func GetServiceContent(ctx context.Context, r soap.RoundTripper) (types.ServiceC
 
 	res, err := RetrieveServiceContent(ctx, r, &req)
 	if err != nil {
-		return types.ServiceContent{}, err
+		return types.ServiceContent{}, fmt.Errorf("failed in RetrieveServiceContent(ctx, &%w, %w): ", r, req, err)
 	}
 
 	return res.Returnval, nil
