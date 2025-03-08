@@ -303,15 +303,18 @@ func createNewVMTemplateWithNameForFailureDomain(ctx context.Context, providerSp
 	return nil
 }
 
-func getClientsFromServerURL(ctx context.Context, server string) (*govmomi.Client, *tags.Manager, error) {
+func getClientsFromServerURL(ctx context.Context, server, username, password string) (*govmomi.Client, *tags.Manager, error) {
 	vcenterURL, err := url.Parse(server)
 	if err != nil {
 		return nil, nil, err
 	}
 
+	vcenterURL.Scheme = "https"
+	vcenterURL.User = url.UserPassword(username, password)
+
 	client, err := govmomi.NewClient(ctx, vcenterURL, true)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed in govmomi.NewClient(%s): %w", server, err)
+		return nil, nil, fmt.Errorf("failed in govmomi.NewClient(%w): %w", vcenterURL, err)
 	}
 
 	restClient := rest.NewClient(client.Client)
@@ -352,9 +355,9 @@ func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1
 			continue
 		}
 
-		username := credsSc.Data[fmt.Sprintf("%s.username", vcenter.Server)]
-		password := credsSc.Data[fmt.Sprintf("%s.password", vcenter.Server)]
-		client, tagManager, err := getClientsFromServerURL(ctx, fmt.Sprintf("https://%s:%s@%s", username, password, vcenter.Server))
+		username := string(credsSc.Data[fmt.Sprintf("%s.username", vcenter.Server)])
+		password := string(credsSc.Data[fmt.Sprintf("%s.password", vcenter.Server)])
+		client, tagManager, err := getClientsFromServerURL(ctx, vcenter.Server, username, password)
 		if err != nil {
 			return "", fmt.Errorf("failed in getClientsFromServerURL: %w", err)
 		}
