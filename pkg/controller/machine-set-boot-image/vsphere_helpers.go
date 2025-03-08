@@ -340,7 +340,7 @@ func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1
 	}
 
 	klog.Infof("Downloading %s\n", ova.Location)
-	ovaPath, err := ova.Download(".")
+	ovaPath, err := ova.Download("/tmp")
 	if err != nil {
 		return "", fmt.Errorf("Failed to download %s: %w", ova.Location, err)
 	}
