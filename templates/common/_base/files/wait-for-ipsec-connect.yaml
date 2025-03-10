@@ -9,14 +9,7 @@ contents:
       exit 0
     fi
 
-    #
-    if ! grep -q "auto=start" /etc/ipsec.d/openshift.conf; then
-      sed -i '/^.*conn ovn.*$/a\    auto=start' /etc/ipsec.d/openshift.conf
-    fi
-
     cat /etc/ipsec.d/openshift.conf
-
-    chroot /proc/1/root ipsec restart
 
     timeout=180
     elapsed=0
