@@ -9,20 +9,25 @@ contents:
       exit 0
     fi
 
-    # Modify existing IPsec out connection entries with "auto=start"
-    # option and restart ipsec systemd service. This helps to
-    # establish IKE SAs for the existing IPsec connections with
-    # peer nodes. This option will be deleted from connections
-    # once ovs-monitor-ipsec process spinned up on the node by
-    # ovn-ipsec-host pod, but still it won't reestablish IKE SAs
-    # again with peer nodes, so it shouldn't be a problem.
-    # We are updating only out connections with "auto=start" to
-    # avoid cross stream issue with Libreswan 5.2.
-    # The in connections use default auto=route parameter.
-    if ! grep -q "auto=start" /etc/ipsec.d/openshift.conf; then
-      sed -i '/^.*conn ovn.*-out-1$/a\    auto=start' /etc/ipsec.d/openshift.conf
+    ovsipsecsvc="openvswitch-ipsec.service"
+    if ! systemctl is-active --quiet $ovsipsecsvc; then
+      echo "$ovsipsecsvc is not running, so make pluto to establish IKE SAs"
+
+      # Modify existing IPsec out connection entries with "auto=start"
+      # option and restart ipsec systemd service. This helps to
+      # establish IKE SAs for the existing IPsec connections with
+      # peer nodes. This option will be deleted from connections
+      # once ovs-monitor-ipsec process spinned up on the node by
+      # ovn-ipsec-host pod, but still it won't reestablish IKE SAs
+      # again with peer nodes, so it shouldn't be a problem.
+      # We are updating only out connections with "auto=start" to
+      # avoid cross stream issue with Libreswan 5.2.
+      # The in connections use default auto=route parameter.
+      if ! grep -q "auto=start" /etc/ipsec.d/openshift.conf; then
+        sed -i '/^.*conn ovn.*-out-1$/a\    auto=start' /etc/ipsec.d/openshift.conf
+      fi
+      chroot /proc/1/root ipsec restart
     fi
-    chroot /proc/1/root ipsec restart
 
     # Wait for upto 60s to get IPsec SAs to establish with peer nodes.
     timeout=60
@@ -30,7 +35,7 @@ contents:
     desiredconn=""
     establishedsa=""
     while [[ $elapsed -lt $timeout ]]; do
-      desiredconn=$(grep -E '^\s*conn\s+' /etc/ipsec.d/openshift.conf | grep -v '%default' | awk '{print $2}' | tr ' ' '\n' | sort | tr '\n' ' ')
+      desiredconn=$(ovs-vsctl --columns=name find interface type=geneve options:remote_name!='""' | awk -F': ' '/name/ {print $2}' | sort | awk '{print $0"-in-1", $0"-out-1"}' | tr '\n' ' ')
       establishedsa=$(ipsec showstates | grep ESTABLISHED_CHILD_SA | grep -o '"[^"]*"' | sed 's/"//g' | tr ' ' '\n' | sort | uniq | tr '\n' ' ')
       if [ "$desiredconn" == "$establishedsa" ]; then
         echo "IPsec SAs are established for desired connections after ${elapsed}s"

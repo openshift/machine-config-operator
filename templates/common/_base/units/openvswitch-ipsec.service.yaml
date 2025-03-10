@@ -1,0 +1,7 @@
+name: openvswitch-ipsec.service
+dropins:
+  - name: 01-after-pluto-start.conf
+    contents: |
+      [Unit]
+      After=ipsec.service
+      Before=crio.service
