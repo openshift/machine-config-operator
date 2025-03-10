@@ -244,7 +244,7 @@ func createNewVMTemplateWithNameForFailureDomain(ctx context.Context, providerSp
 		return fmt.Errorf("failed to import vapp: %w", err)
 	}
 
-	info, err := lease.Wait(ctx, spec.FileItem)
+	info, err := lease.Wait(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("failed to lease wait: %w", err)
 	}
