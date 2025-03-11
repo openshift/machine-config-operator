@@ -507,7 +507,7 @@ func SupportedExtensions() map[string][]string {
 	return map[string][]string{
 		"two-node-ha":          {"pacemaker", "pcs", "fence-agents-all"},
 		"wasm":                 {"crun-wasm"},
-		"ipsec":                {"NetworkManager-libreswan", "libreswan"},
+		"ipsec":                {"NetworkManager-libreswan", "libreswan", "openvswitch3.5-ipsec"},
 		"usbguard":             {"usbguard"},
 		"kerberos":             {"krb5-workstation", "libkadm5"},
 		"kernel-devel":         {"kernel-devel", "kernel-headers"},

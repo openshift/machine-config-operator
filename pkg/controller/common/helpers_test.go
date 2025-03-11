@@ -975,7 +975,7 @@ func TestGetPackagesForSupportedExtensions(t *testing.T) {
 		{
 			name:             "Supported multiple multi-package extensions",
 			extensions:       []string{"ipsec", "kerberos"},
-			expectedPackages: []string{"NetworkManager-libreswan", "libreswan", "krb5-workstation", "libkadm5"},
+			expectedPackages: []string{"NetworkManager-libreswan", "libreswan", "openvswitch3.5-ipsec", "krb5-workstation", "libkadm5"},
 		},
 	}
 
