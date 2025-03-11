@@ -146,18 +146,35 @@ func upload(ctx context.Context, archive *importer.TapeArchive, lease *nfc.Lease
 	return lease.Upload(ctx, item, f, opts)
 }
 
-func createNewVMTemplateWithNameForFailureDomain(ctx context.Context, providerSpec *machinev1beta1.VSphereMachineProviderSpec, failureDomain osconfigv1.VSpherePlatformFailureDomainSpec, finder *find.Finder, client *govmomi.Client, tagManager *tags.Manager, name, ovaPath, infraID string) error {
-
-	datacenter, err := finder.Datacenter(ctx, failureDomain.Topology.Datacenter)
-	if err != nil {
-		return fmt.Errorf("failed to find datacenter: %w", err)
-	}
-
-	finder = finder.SetDatacenter(datacenter)
-
+func findAllRequiredResources(ctx context.Context, finder *find.Finder, providerSpec *machinev1beta1.VSphereMachineProviderSpec, failureDomain osconfigv1.VSpherePlatformFailureDomainSpec) (*object.Folder, *object.ClusterComputeResource, *object.ResourcePool, object.NetworkReference, *object.Datastore, error) {
 	folder, err := finder.Folder(ctx, providerSpec.Workspace.Folder)
 	if err != nil {
-		return fmt.Errorf("failed to find folder: %w", err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("failed to find folder: %w", err)
+	}
+	cluster, err := finder.ClusterComputeResource(ctx, failureDomain.Topology.ComputeCluster)
+	if err != nil {
+		return nil, nil, nil, nil, nil, fmt.Errorf("failed to find compute cluster: %w", err)
+	}
+	resourcePool, err := finder.ResourcePool(ctx, providerSpec.Workspace.ResourcePool)
+	if err != nil {
+		return nil, nil, nil, nil, nil, fmt.Errorf("failed to find resource pool: %w", err)
+	}
+	networkPath := path.Join(cluster.InventoryPath, failureDomain.Topology.Networks[0])
+	networkRef, err := finder.Network(ctx, networkPath)
+	if err != nil {
+		return nil, nil, nil, nil, nil, fmt.Errorf("failed to find network: %w", err)
+	}
+	datastore, err := finder.Datastore(ctx, providerSpec.Workspace.Datastore)
+	if err != nil {
+		return nil, nil, nil, nil, nil, fmt.Errorf("failed to find datastore: %w", err)
+	}
+	return folder, cluster, resourcePool, networkRef, datastore, nil
+}
+
+func createNewVMTemplateWithNameForFailureDomain(ctx context.Context, providerSpec *machinev1beta1.VSphereMachineProviderSpec, failureDomain osconfigv1.VSpherePlatformFailureDomainSpec, finder *find.Finder, client *govmomi.Client, tagManager *tags.Manager, name, ovaPath, infraID string) error {
+	folder, cluster, resourcePool, networkRef, datastore, err := findAllRequiredResources(ctx, finder, providerSpec, failureDomain)
+	if err != nil {
+		return err
 	}
 
 	// OVF Descriptor
@@ -183,34 +200,12 @@ func createNewVMTemplateWithNameForFailureDomain(ctx context.Context, providerSp
 		return fmt.Errorf("expected the OVA to only have a single network adapter")
 	}
 
-	cluster, err := finder.ClusterComputeResource(ctx, failureDomain.Topology.ComputeCluster)
-	if err != nil {
-		return fmt.Errorf("failed to find compute cluster: %w", err)
-	}
-
 	clusterHostSystems, err := cluster.Hosts(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get cluster hosts: %w", err)
 	}
-
 	if len(clusterHostSystems) == 0 {
 		return fmt.Errorf("the vCenter cluster %s has no ESXi nodes", failureDomain.Topology.ComputeCluster)
-	}
-
-	resourcePool, err := finder.ResourcePool(ctx, providerSpec.Workspace.ResourcePool)
-	if err != nil {
-		return fmt.Errorf("failed to find resource pool: %w", err)
-	}
-
-	networkPath := path.Join(cluster.InventoryPath, failureDomain.Topology.Networks[0])
-
-	networkRef, err := finder.Network(ctx, networkPath)
-	if err != nil {
-		return fmt.Errorf("failed to find network: %w", err)
-	}
-	datastore, err := finder.Datastore(ctx, providerSpec.Workspace.Datastore)
-	if err != nil {
-		return fmt.Errorf("failed to find datastore: %w", err)
 	}
 
 	// Create mapping between OVF and the network object
@@ -259,7 +254,6 @@ func createNewVMTemplateWithNameForFailureDomain(ctx context.Context, providerSp
 			return fmt.Errorf("finder had error: %w", err)
 		}
 	}
-
 	if existingvm != nil {
 		klog.Infof("VM Template with name %s already exists", name)
 		destroyTask, err := existingvm.Destroy(ctx)
@@ -397,6 +391,13 @@ func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1
 			}
 			infraID := infra.Status.InfrastructureName
 			name = fmt.Sprintf("%s-rhcos-%s-%s-%s", infraID, failureDomain.Region, failureDomain.Zone, release)
+
+			datacenter, err := finder.Datacenter(ctx, failureDomain.Topology.Datacenter)
+			if err != nil {
+				return "", fmt.Errorf("failed to find datacenter: %w", err)
+			}
+			finder = finder.SetDatacenter(datacenter)
+
 			err = createNewVMTemplateWithNameForFailureDomain(ctx, providerSpec, failureDomain, finder, client, tagManager, name, ovaPath, infraID)
 			if err != nil {
 				return "", err
