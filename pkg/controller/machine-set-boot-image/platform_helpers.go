@@ -230,7 +230,16 @@ func reconcileVSphere(machineSet *machinev1beta1.MachineSet, infra *osconfigv1.I
 		if credsSc == nil || err != nil {
 			return false, nil, fmt.Errorf("failed to fetch vsphere-creds Secret during machineset sync: %w", err)
 		}
-		newBootImg, err := createNewVMTemplate(streamData, providerSpec, infra, credsSc, arch, artifacts.Release)
+		// Fetch the original install config
+		installConfigCm, err := kubeClient.CoreV1().ConfigMaps("kube-system").Get(context.TODO(), "cluster-config-v1", metav1.GetOptions{})
+		if installConfigCm == nil || err != nil {
+			return false, nil, fmt.Errorf("failed to fetch cluster-config-v1 ConfigMap during machineset sync: %w", err)
+		}
+		diskType, err := getDiskTypeFromInstallConfigMap(installConfigCm)
+		if err != nil {
+			return false, nil, fmt.Errorf("failed to extract diskType from InstallConfig configmap: %w", err)
+		}
+		newBootImg, err := createNewVMTemplate(streamData, providerSpec, infra, credsSc, arch, artifacts.Release, diskType)
 		if err != nil {
 			return false, nil, err
 		}

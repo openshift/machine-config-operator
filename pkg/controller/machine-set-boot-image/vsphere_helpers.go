@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 
+	"github.com/ghodss/yaml"
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/nfc"
@@ -171,7 +172,57 @@ func findAllRequiredResources(ctx context.Context, finder *find.Finder, provider
 	return folder, cluster, resourcePool, networkRef, datastore, nil
 }
 
-func createNewVMTemplateWithNameForFailureDomain(ctx context.Context, providerSpec *machinev1beta1.VSphereMachineProviderSpec, failureDomain osconfigv1.VSpherePlatformFailureDomainSpec, finder *find.Finder, client *govmomi.Client, tagManager *tags.Manager, name, ovaPath, infraID string) error {
+func getDiskTypeFromInstallConfigMap(installConfigCm *corev1.ConfigMap) (string, error) {
+	configStruct := make(map[string]interface{})
+	err := yaml.Unmarshal([]byte(installConfigCm.Data["install-config"]), &configStruct)
+	if err != nil {
+		return "", fmt.Errorf("Failed to unmarshal confimap cluster-config-v1 data: <%s>", installConfigCm.Data["install-config"])
+	}
+	platform, ok := configStruct["platform"].(map[string]interface{})
+	if !ok {
+		return "", fmt.Errorf("invalid or missing platform key in cluster-config-v1")
+	}
+	vsphere, ok := platform["vsphere"].(map[string]interface{})
+	if !ok {
+		return "", fmt.Errorf("invalid or missing vsphere key in  platform in cluster-config-v1")
+	}
+	diskType, ok := vsphere["diskType"].(string)
+	if !ok {
+		return "", nil
+	}
+	return diskType, nil
+}
+
+func getCISP(ovfEnvelope *ovf.Envelope, networkRef object.NetworkReference, name, diskType string) (types.OvfCreateImportSpecParams, error) {
+	// Create mapping between OVF and the network object
+	// found by Name
+	networkMappings := []types.OvfNetworkMapping{{
+		Name:    ovfEnvelope.Network.Networks[0].Name,
+		Network: networkRef.Reference(),
+	}}
+
+	// This is a very minimal spec for importing an OVF.
+	cisp := types.OvfCreateImportSpecParams{
+		EntityName:     name,
+		NetworkMapping: networkMappings,
+	}
+
+	switch diskType {
+	case "":
+		// Disk provisioning type will be set according to the default storage policy of vsphere.
+	case "thin":
+		cisp.DiskProvisioning = string(types.OvfCreateImportSpecParamsDiskProvisioningTypeThin)
+	case "thick":
+		cisp.DiskProvisioning = string(types.OvfCreateImportSpecParamsDiskProvisioningTypeThick)
+	case "eagerZeroedThick":
+		cisp.DiskProvisioning = string(types.OvfCreateImportSpecParamsDiskProvisioningTypeEagerZeroedThick)
+	default:
+		return types.OvfCreateImportSpecParams{}, fmt.Errorf("disk provisioning type %q is not supported", diskType)
+	}
+	return cisp, nil
+}
+
+func createNewVMTemplateWithNameForFailureDomain(ctx context.Context, providerSpec *machinev1beta1.VSphereMachineProviderSpec, failureDomain osconfigv1.VSpherePlatformFailureDomainSpec, finder *find.Finder, client *govmomi.Client, tagManager *tags.Manager, name, ovaPath, infraID, diskType string) error {
 	folder, cluster, resourcePool, networkRef, datastore, err := findAllRequiredResources(ctx, finder, providerSpec, failureDomain)
 	if err != nil {
 		return err
@@ -208,18 +259,9 @@ func createNewVMTemplateWithNameForFailureDomain(ctx context.Context, providerSp
 		return fmt.Errorf("the vCenter cluster %s has no ESXi nodes", failureDomain.Topology.ComputeCluster)
 	}
 
-	// Create mapping between OVF and the network object
-	// found by Name
-	networkMappings := []types.OvfNetworkMapping{{
-		Name:    ovfEnvelope.Network.Networks[0].Name,
-		Network: networkRef.Reference(),
-	}}
-
-	// This is a very minimal spec for importing an OVF.
-	cisp := types.OvfCreateImportSpecParams{
-		EntityName:       name,
-		NetworkMapping:   networkMappings,
-		DiskProvisioning: string(types.OvfCreateImportSpecParamsDiskProvisioningTypeThin),
+	cisp, err := getCISP(ovfEnvelope, networkRef, name, diskType)
+	if err != nil {
+		return fmt.Errorf("failed to get CISP: %w", err)
 	}
 
 	m := ovf.NewManager(client.Client)
@@ -353,7 +395,7 @@ func getClientsFromServerURL(ctx context.Context, server, username, password str
 	return client, tagManager, nil
 }
 
-func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1.VSphereMachineProviderSpec, infra *osconfigv1.Infrastructure, credsSc *corev1.Secret, arch, release string) (string, error) {
+func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1.VSphereMachineProviderSpec, infra *osconfigv1.Infrastructure, credsSc *corev1.Secret, arch, release, diskType string) (string, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -398,7 +440,7 @@ func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1
 			}
 			finder = finder.SetDatacenter(datacenter)
 
-			err = createNewVMTemplateWithNameForFailureDomain(ctx, providerSpec, failureDomain, finder, client, tagManager, name, ovaPath, infraID)
+			err = createNewVMTemplateWithNameForFailureDomain(ctx, providerSpec, failureDomain, finder, client, tagManager, name, ovaPath, infraID, diskType)
 			if err != nil {
 				return "", err
 			}
