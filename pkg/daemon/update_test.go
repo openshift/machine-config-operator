@@ -858,7 +858,7 @@ func TestGenerateExtensionsArgs(t *testing.T) {
 			name:         "no extensions installed, install multiple extensions",
 			installedSet: sets.New[string](),
 			extensions:   []string{"sysstat", "ipsec"},
-			expected:     []string{constants.RPMOSTreeInstallArg, "NetworkManager-libreswan", constants.RPMOSTreeInstallArg, "sysstat", constants.RPMOSTreeInstallArg, "libreswan"},
+			expected:     []string{constants.RPMOSTreeInstallArg, "NetworkManager-libreswan", constants.RPMOSTreeInstallArg, "sysstat", constants.RPMOSTreeInstallArg, "libreswan", constants.RPMOSTreeInstallArg, "openvswitch3.5-ipsec"},
 		},
 		{
 			name:         "sysstat already installed, require sysstat",
@@ -874,15 +874,15 @@ func TestGenerateExtensionsArgs(t *testing.T) {
 		},
 		{
 			name:         "sysstat and ipsec installed, only sysstat required",
-			installedSet: sets.New("sysstat", "NetworkManager-libreswan", "libreswan"),
+			installedSet: sets.New("sysstat", "NetworkManager-libreswan", "libreswan", "openvswitch3.5-ipsec"),
 			extensions:   []string{"sysstat"},
-			expected:     []string{constants.RPMOSTreeUninstallArg, "NetworkManager-libreswan", constants.RPMOSTreeUninstallArg, "libreswan"},
+			expected:     []string{constants.RPMOSTreeUninstallArg, "NetworkManager-libreswan", constants.RPMOSTreeUninstallArg, "libreswan", constants.RPMOSTreeUninstallArg, "openvswitch3.5-ipsec"},
 		},
 		{
 			name:         "some packages installed, switch to different extension",
 			installedSet: sets.New("sysstat"),
 			extensions:   []string{"ipsec"},
-			expected:     []string{constants.RPMOSTreeInstallArg, "NetworkManager-libreswan", constants.RPMOSTreeInstallArg, "libreswan", constants.RPMOSTreeUninstallArg, "sysstat"},
+			expected:     []string{constants.RPMOSTreeInstallArg, "NetworkManager-libreswan", constants.RPMOSTreeInstallArg, "libreswan", constants.RPMOSTreeInstallArg, "openvswitch3.5-ipsec", constants.RPMOSTreeUninstallArg, "sysstat"},
 		},
 		{
 			name:         "complex scenario with two-node-ha",
@@ -900,7 +900,7 @@ func TestGenerateExtensionsArgs(t *testing.T) {
 			name:         "all supported extensions",
 			installedSet: sets.New[string](),
 			extensions:   []string{"two-node-ha", "ipsec", "usbguard", "kerberos", "kernel-devel", "sandboxed-containers", "sysstat"},
-			expected:     []string{constants.RPMOSTreeInstallArg, "NetworkManager-libreswan", constants.RPMOSTreeInstallArg, "fence-agents-all", constants.RPMOSTreeInstallArg, "kata-containers", constants.RPMOSTreeInstallArg, "kernel-devel", constants.RPMOSTreeInstallArg, "kernel-headers", constants.RPMOSTreeInstallArg, "krb5-workstation", constants.RPMOSTreeInstallArg, "libkadm5", constants.RPMOSTreeInstallArg, "libreswan", constants.RPMOSTreeInstallArg, "pacemaker", constants.RPMOSTreeInstallArg, "pcs", constants.RPMOSTreeInstallArg, "sysstat", constants.RPMOSTreeInstallArg, "usbguard"},
+			expected:     []string{constants.RPMOSTreeInstallArg, "NetworkManager-libreswan", constants.RPMOSTreeInstallArg, "fence-agents-all", constants.RPMOSTreeInstallArg, "kata-containers", constants.RPMOSTreeInstallArg, "kernel-devel", constants.RPMOSTreeInstallArg, "kernel-headers", constants.RPMOSTreeInstallArg, "krb5-workstation", constants.RPMOSTreeInstallArg, "libkadm5", constants.RPMOSTreeInstallArg, "libreswan", constants.RPMOSTreeInstallArg, "openvswitch3.5-ipsec", constants.RPMOSTreeInstallArg, "pacemaker", constants.RPMOSTreeInstallArg, "pcs", constants.RPMOSTreeInstallArg, "sysstat", constants.RPMOSTreeInstallArg, "usbguard"},
 		},
 	}
 
