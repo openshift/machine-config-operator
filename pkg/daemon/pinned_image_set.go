@@ -301,7 +301,7 @@ func (p *PinnedImageSetManager) syncMachineConfigPool(ctx context.Context, pool 
 		if err != nil {
 			return fmt.Errorf("failed to get PinnedImageSet %q: %w", ref.Name, err)
 		}
-		klog.Infof("Reconciling pinned image set: %s: generation: %d", ref.Name, imageSet.GetGeneration())
+		klog.Infof("Reconciling pinned image set: %s: generation: %d, pool: %v", ref.Name, imageSet.GetGeneration(), pool.Name)
 
 		// verify storage per image set
 		if err := p.checkNodeAllocatableStorage(ctx, imageSet); err != nil {
