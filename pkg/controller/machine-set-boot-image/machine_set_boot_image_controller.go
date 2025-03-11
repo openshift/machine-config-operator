@@ -458,7 +458,7 @@ func (ctrl *Controller) syncMAPIMachineSet(machineSet *machinev1beta1.MachineSet
 	// The current hash and version check should be enough to skate by for now, but fixing this would be additional safety - djoshy
 
 	// Check if the this MachineSet requires an update
-	patchRequired, newMachineSet, err := checkMachineSet(infra, machineSet, configMap, arch)
+	patchRequired, newMachineSet, err := checkMachineSet(infra, machineSet, configMap, arch, ctrl.kubeClient)
 	if err != nil {
 		return fmt.Errorf("failed to reconcile machineset %s, err: %w", machineSet.Name, err)
 	}
