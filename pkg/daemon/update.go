@@ -2044,7 +2044,7 @@ func (dn *Daemon) workaroundOcpBugs33694() error {
 	}
 	for _, path := range stalePaths {
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("error deleting %s: %w", path, err)
+			return fmt.Errorf("error deleting %q: %w", path, err)
 		} else if err == nil {
 			klog.Infof("Removed stale symlink %q", path)
 		}
@@ -2114,7 +2114,7 @@ func (dn *Daemon) presetUnit(unit ign3types.Unit) error {
 	if err != nil {
 		return fmt.Errorf("error running preset on unit: %s", stdouterr)
 	}
-	klog.Infof("Preset systemd unit %s", unit.Name)
+	klog.Infof("Preset systemd unit %q", unit.Name)
 	return nil
 }
 
@@ -2178,7 +2178,7 @@ func (dn *Daemon) writeFiles(files []ign3types.File, skipCertificateWrite bool) 
 // Ensures that both the SSH root directory (/home/core/.ssh) as well as any
 // subdirectories are created with the correct (0700) permissions.
 func createSSHKeyDir(authKeyDir string) error {
-	klog.Infof("Creating missing SSH key dir at %s", authKeyDir)
+	klog.Infof("Creating missing SSH key dir at %q", authKeyDir)
 
 	mkdir := func(dir string) error {
 		return exec.Command("runuser", "-u", constants.CoreUserName, "--", "mkdir", "-m", "0700", "-p", dir).Run()
@@ -2563,7 +2563,7 @@ func (dn *Daemon) queueRevertKernelSwap() error {
 // updateLayeredOS updates the system OS to the one specified in newConfig
 func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 	newURL := config.Spec.OSImageURL
-	klog.Infof("Updating OS to layered image %s", newURL)
+	klog.Infof("Updating OS to layered image %q", newURL)
 	return dn.updateLayeredOSToPullspec(newURL)
 }
 
@@ -2606,6 +2606,7 @@ func runCmdSync(cmdName string, args ...string) error {
 // Log a message to the systemd journal as well as our stdout
 func logSystem(format string, a ...interface{}) {
 	message := fmt.Sprintf(format, a...)
+	message = fmt.Sprintf("%q", message)
 	klog.Info(message)
 	// Since we're chrooted into the host rootfs with /run mounted,
 	// we can just talk to the journald socket.  Doing this as a
