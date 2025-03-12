@@ -2270,7 +2270,9 @@ func (optr *Operator) syncMachineConfiguration(_ *renderConfig, _ *configv1.Clus
 			klog.Info("MachineConfiguration object doesn't exist; a new one will be created")
 			// Using server-side apply here as the NodeDisruption API has a rule technicality which prevents apply using a template manifest like the MCO typically does
 			// [spec.nodeDisruptionPolicy.sshkey.actions: Required value, <nil>: Invalid value: "null"]
-			p := mcoac.MachineConfiguration(ctrlcommon.MCOOperatorKnobsObjectName).WithSpec(mcoac.MachineConfigurationSpec().WithManagementState("Managed"))
+			p := mcoac.MachineConfiguration(ctrlcommon.MCOOperatorKnobsObjectName).
+				WithSpec(mcoac.MachineConfigurationSpec().
+					WithManagementState("Managed"))
 			_, err := optr.mcopClient.OperatorV1().MachineConfigurations().Apply(context.TODO(), p, metav1.ApplyOptions{FieldManager: "machine-config-operator"})
 			if err != nil {
 				klog.Infof("applying mco object failed: %s", err)
