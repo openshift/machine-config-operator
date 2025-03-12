@@ -471,6 +471,7 @@ func clusterImagePolicyTestCRs() map[string]apicfgv1alpha1.ClusterImagePolicy {
 	testFulcioData, _ := b64.StdEncoding.DecodeString("dGVzdC1jYS1kYXRhLWRhdGE=")
 	testRekorKeyData, _ := b64.StdEncoding.DecodeString("dGVzdC1yZWtvci1rZXktZGF0YQ==")
 	testKeyData, _ := b64.StdEncoding.DecodeString("dGVzdC1rZXktZGF0YQ==")
+	testCertsData, _ := b64.StdEncoding.DecodeString("LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJBVEE9Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0=")
 
 	testClusterImagePolicyCRs := map[string]apicfgv1alpha1.ClusterImagePolicy{
 		"test-cr0": {
@@ -542,12 +543,34 @@ func clusterImagePolicyTestCRs() map[string]apicfgv1alpha1.ClusterImagePolicy {
 				},
 			},
 		},
+		"test-cr3": {
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "test-cr3",
+			},
+			Spec: apicfgv1alpha1.ClusterImagePolicySpec{
+				Scopes: []apicfgv1alpha1.ImageScope{"test3.com/ns/repo"},
+				Policy: apicfgv1alpha1.Policy{
+					RootOfTrust: apicfgv1alpha1.PolicyRootOfTrust{
+						PolicyType: apicfgv1alpha1.PKIRootOfTrust,
+						PKI: &apicfgv1alpha1.PKI{
+							CertificateAuthorityRootsData:         testCertsData,
+							CertificateAuthorityIntermediatesData: testCertsData,
+							PKICertificateSubject: apicfgv1alpha1.PKICertificateSubject{
+								Email:    "test-user@example.com",
+								Hostname: "my-host.example.com",
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 	return testClusterImagePolicyCRs
 }
 
 func imagePolicyTestCRs() map[string]apicfgv1alpha1.ImagePolicy {
 	testKeyData, _ := b64.StdEncoding.DecodeString("dGVzdC1rZXktZGF0YQ==")
+	testCertsData, _ := b64.StdEncoding.DecodeString("LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJBVEE9Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0=")
 
 	testImagePolicyCRs := map[string]apicfgv1alpha1.ImagePolicy{
 		"test-cr0": {
@@ -613,6 +636,28 @@ func imagePolicyTestCRs() map[string]apicfgv1alpha1.ImagePolicy {
 						PolicyType: apicfgv1alpha1.PublicKeyRootOfTrust,
 						PublicKey: &apicfgv1alpha1.PublicKey{
 							KeyData: testKeyData,
+						},
+					},
+				},
+			},
+		},
+		"test-cr4": {
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-cr4",
+				Namespace: "testnamespace",
+			},
+			Spec: apicfgv1alpha1.ImagePolicySpec{
+				Scopes: []apicfgv1alpha1.ImageScope{"test4.com/ns-policy/repo"},
+				Policy: apicfgv1alpha1.Policy{
+					RootOfTrust: apicfgv1alpha1.PolicyRootOfTrust{
+						PolicyType: apicfgv1alpha1.PKIRootOfTrust,
+						PKI: &apicfgv1alpha1.PKI{
+							CertificateAuthorityRootsData:         testCertsData,
+							CertificateAuthorityIntermediatesData: testCertsData,
+							PKICertificateSubject: apicfgv1alpha1.PKICertificateSubject{
+								Email:    "test-user@example.com",
+								Hostname: "my-host.example.com",
+							},
 						},
 					},
 				},
@@ -1526,6 +1571,7 @@ func TestGenerateSigstoreRegistriesConfig(t *testing.T) {
 func TestGeneratePolicyJSON(t *testing.T) {
 
 	testImagePolicyCR0 := clusterImagePolicyTestCRs()["test-cr0"]
+	testImagePolicyCR3 := clusterImagePolicyTestCRs()["test-cr3"]
 
 	expectClusterPolicy := []byte(`
 		{
@@ -1551,6 +1597,22 @@ func TestGeneratePolicyJSON(t *testing.T) {
 						  "signedPrefix": "test-remap-signed-prefix"
 						}
 					  }
+					],
+					"test3.com/ns/repo": [
+                      {
+					    "type": "sigstoreSigned",
+                        "pki": {
+						  "caRootsData": "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJBVEE9Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0=",
+						  "caIntermediatesData": "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJBVEE9Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0=",
+						  "caIntermediatesPath": "",
+					      "caRootsPath": "", 
+						  "subjectEmail": "test-user@example.com",
+						  "subjectHostname": "my-host.example.com"
+						},
+						"signedIdentity": {
+						  "type": "matchRepoDigestOrExact"
+						}
+					  }
 					]
 				  },	
 			  "docker": {
@@ -1569,7 +1631,23 @@ func TestGeneratePolicyJSON(t *testing.T) {
 					  "signedPrefix": "test-remap-signed-prefix"
 					}
 				  }
-				]
+				],
+				"test3.com/ns/repo": [
+                  {
+					"type": "sigstoreSigned",
+					"pki": {
+					  "caRootsData": "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJBVEE9Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0=",
+					  "caIntermediatesData": "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJBVEE9Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0=",
+					  "caIntermediatesPath": "",
+					  "caRootsPath": "", 
+					  "subjectEmail": "test-user@example.com",
+					  "subjectHostname": "my-host.example.com"
+					},
+					"signedIdentity": {
+					  "type": "matchRepoDigestOrExact"
+					}
+				   }
+				]				
 			  },
 			  "docker-daemon": {
 				"": [
@@ -1582,7 +1660,7 @@ func TestGeneratePolicyJSON(t *testing.T) {
 		  }
 	`)
 
-	clusterScopePolicies, _, err := getValidScopePolicies([]*apicfgv1alpha1.ClusterImagePolicy{&testImagePolicyCR0}, nil, nil)
+	clusterScopePolicies, _, err := getValidScopePolicies([]*apicfgv1alpha1.ClusterImagePolicy{&testImagePolicyCR0, &testImagePolicyCR3}, nil, nil)
 	require.NoError(t, err)
 
 	templateConfig := signature.Policy{
@@ -1744,6 +1822,7 @@ func TestUpdateNamespacedPolicyJSONs(t *testing.T) {
 	testImagePolicyCR1 := clusterImagePolicyTestCRs()["test-cr1"]
 	testImagePolicyCR2 := imagePolicyTestCRs()["test-cr0"]
 	testImagePolicyCR3 := imagePolicyTestCRs()["test-cr3"]
+	testImagePolicyCR4 := imagePolicyTestCRs()["test-cr4"]
 
 	expectClusterPolicy := []byte(`
 			{
@@ -1898,6 +1977,22 @@ func TestUpdateNamespacedPolicyJSONs(t *testing.T) {
 					  "type": "matchRepoDigestOrExact"
 					}
 				  }
+				],
+                "test4.com/ns-policy/repo": [
+                  {
+					"type": "sigstoreSigned",
+					"pki": {
+					  "caRootsData": "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJBVEE9Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0=",
+					  "caIntermediatesData": "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJBVEE9Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0=",
+					  "caIntermediatesPath": "",
+					  "caRootsPath": "", 
+					  "subjectEmail": "test-user@example.com",
+					  "subjectHostname": "my-host.example.com"
+					},
+					"signedIdentity": {
+					  "type": "matchRepoDigestOrExact"
+					}
+				   }
 				]
 			  },
 			  "docker": {
@@ -1947,6 +2042,22 @@ func TestUpdateNamespacedPolicyJSONs(t *testing.T) {
 					  "type": "matchRepoDigestOrExact"
 					}
 				  }
+				],
+                "test4.com/ns-policy/repo": [
+                  {
+					"type": "sigstoreSigned",
+					"pki": {
+					  "caRootsData": "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJBVEE9Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0=",
+					  "caIntermediatesData": "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJBVEE9Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0=",
+					  "caIntermediatesPath": "",
+					  "caRootsPath": "", 
+					  "subjectEmail": "test-user@example.com",
+					  "subjectHostname": "my-host.example.com"
+					},
+					"signedIdentity": {
+					  "type": "matchRepoDigestOrExact"
+					}
+				   }
 				]
 			  },
 			  "docker-daemon": {
@@ -2082,7 +2193,7 @@ func TestUpdateNamespacedPolicyJSONs(t *testing.T) {
 		testImagePolicyCR3.ObjectMeta.Namespace: expectTest1namespacedPolicy,
 	}
 
-	clusterScopePolicies, scopeNamespacePolicies, err := getValidScopePolicies([]*apicfgv1alpha1.ClusterImagePolicy{&testImagePolicyCR0, &testImagePolicyCR1}, []*apicfgv1alpha1.ImagePolicy{&testImagePolicyCR2, &testImagePolicyCR3}, nil)
+	clusterScopePolicies, scopeNamespacePolicies, err := getValidScopePolicies([]*apicfgv1alpha1.ClusterImagePolicy{&testImagePolicyCR0, &testImagePolicyCR1}, []*apicfgv1alpha1.ImagePolicy{&testImagePolicyCR2, &testImagePolicyCR3, &testImagePolicyCR4}, nil)
 	require.NoError(t, err)
 
 	clusterOverridePolicyJSON, err := updatePolicyJSON(templatePolicyBytes, []string{}, []string{}, "release-reg.io/image/release", clusterScopePolicies)
