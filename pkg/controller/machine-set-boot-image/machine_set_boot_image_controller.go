@@ -395,7 +395,8 @@ func (ctrl *Controller) syncMAPIMachineSet(machineSet *machinev1beta1.MachineSet
 	// If the machineset has an owner reference, exit and report error. This means
 	// that the machineset may be managed by another workflow and should not be reconciled.
 	if len(machineSet.GetOwnerReferences()) != 0 {
-		return fmt.Errorf("unexpected OwnerReference: %v. Please remove this machineset from boot image management to avoid errors", machineSet.GetOwnerReferences()[0].Kind+"/"+machineSet.GetOwnerReferences()[0].Name)
+		klog.Infof("machineset %s has OwnerReference: %v, skipping boot image update", machineSet.GetOwnerReferences()[0].Kind+"/"+machineSet.GetOwnerReferences()[0].Name, machineSet.Name)
+		return nil
 	}
 
 	// Fetch the architecture type of this machineset

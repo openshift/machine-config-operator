@@ -170,6 +170,7 @@ func TestBootImageReconciliationonNoMachineSets(t *testing.T) {
 }
 
 func TestBootImageDegradeCondition(t *testing.T) {
+	t.Skip("Temporarily skipping this test until boot image skew enforcement is implemented")
 
 	cs := framework.NewClientSet("")
 
