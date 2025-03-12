@@ -280,6 +280,15 @@ func (optr *Operator) syncUpgradeableStatus(co *configv1.ClusterOperator) error 
 		Reason: asExpectedReason,
 	}
 
+	configNode, err := optr.nodeClusterLister.Get(ctrlcommon.ClusterNodeInstanceName)
+	if err != nil {
+		return err
+	}
+	if configNode.Spec.CgroupMode == configv1.CgroupModeV1 {
+		coStatusCondition.Status = configv1.ConditionFalse
+		coStatusCondition.Reason = "ClusterOnCgroupV1"
+		coStatusCondition.Message = "Cluster is using deprecated cgroup v1 and is not upgradable. Please update the `CgroupMode` in the `nodes.config.openshift.io` object to 'v2'. Once upgraded, the cluster cannot be changed back to cgroup v1"
+	}
 	var updating, degraded, interrupted bool
 	for _, pool := range pools {
 		// collect updating status but continue to check each pool to see if any pool is degraded
