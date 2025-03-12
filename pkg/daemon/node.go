@@ -64,6 +64,9 @@ func getNodeAnnotation(node *corev1.Node, k string) (string, error) {
 
 // getNodeAnnotationExt is like getNodeAnnotation, but allows one to customize ENOENT handling
 func getNodeAnnotationExt(node *corev1.Node, k string, allowNoent bool) (string, error) {
+	if node == nil || node.Annotations == nil {
+		return "", fmt.Errorf("node object is nil")
+	}
 	v, ok := node.Annotations[k]
 	if !ok {
 		if !allowNoent {
