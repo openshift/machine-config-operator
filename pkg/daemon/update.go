@@ -1151,6 +1151,18 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	oldConfigName := oldConfig.GetName()
 	newConfigName := newConfig.GetName()
 
+	// Add the desired config version to the MCN
+	// 	get MCP associated with node
+	pool, err := helpers.GetPrimaryPoolNameForMCN(dn.mcpLister, dn.node)
+	if err != nil {
+		return err
+	}
+	//  update the MCN spec
+	specErr := upgrademonitor.GenerateAndApplyMachineConfigNodeSpec(dn.featureGatesAccessor, pool, dn.node, dn.mcfgClient)
+	if specErr != nil {
+		return fmt.Errorf("error updating MCN spec for node %s: %w", dn.node.Name, specErr)
+	}
+
 	oldIgnConfig, err := ctrlcommon.ParseAndConvertConfig(oldConfig.Spec.Config.Raw)
 	if err != nil {
 		return fmt.Errorf("parsing old Ignition config failed: %w", err)
@@ -1160,13 +1172,14 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		return fmt.Errorf("parsing new Ignition config failed: %w", err)
 	}
 
-	// Get MCP associated with node
-	pool, err := helpers.GetPrimaryPoolNameForMCN(dn.mcpLister, dn.node)
-	if err != nil {
-		return err
-	}
+	// // Get MCP associated with node
+	// pool, err := helpers.GetPrimaryPoolNameForMCN(dn.mcpLister, dn.node)
+	// if err != nil {
+	// 	return err
+	// }
 
-	klog.Infof("Checking Reconcilable for config %v to %v", oldConfigName, newConfigName)
+	// TODO: change back to info level log
+	klog.Errorf("Checking Reconcilable for config %v to %v", oldConfigName, newConfigName)
 	// checking for reconcilability
 	// make sure we can actually reconcile this state
 	diff, reconcilableError := reconcilable(oldConfig, newConfig)
@@ -1268,10 +1281,12 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		klog.Errorf("Error making MCN for Update Compatible: %v", err)
 	}
 
+	// TODO: Probably remove the spec update here since nothing should have changed during the compatibility check phase
 	err = upgrademonitor.GenerateAndApplyMachineConfigNodeSpec(dn.featureGatesAccessor, pool, dn.node, dn.mcfgClient)
 	if err != nil {
 		klog.Errorf("Error making MCN spec for Update Compatible: %v", err)
 	}
+
 	if drain {
 		if err := dn.performDrain(); err != nil {
 			return err

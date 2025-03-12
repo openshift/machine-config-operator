@@ -20,6 +20,7 @@ import (
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 )
 
+// TODO: move to common const
 const NotYetSet = "NotYetSet"
 
 type Condition struct {
@@ -364,6 +365,7 @@ func GenerateAndApplyMachineConfigNodeSpec(fgAccessor featuregates.FeatureGateAc
 	newMCNode.Spec.ConfigVersion = mcfgalphav1.MachineConfigNodeSpecMachineConfigVersion{
 		Desired: node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey],
 	}
+	klog.Errorf("newMCNode.Spec.ConfigVersion being set to: %v", newMCNode.Spec.ConfigVersion)
 	// Set desired config to NotYetSet if the annotation is empty to satisfy API validation
 	if newMCNode.Spec.ConfigVersion.Desired == "" {
 		newMCNode.Spec.ConfigVersion.Desired = NotYetSet
@@ -394,6 +396,7 @@ func GenerateAndApplyMachineConfigNodeSpec(fgAccessor featuregates.FeatureGateAc
 		}
 	}
 	return nil
+	// TODO: for testing add a diff print somewhere in this function between the old MCN spec and the new one to see what changed
 }
 
 // createOrGetMachineConfigNode gets the named MCN or returns a boolean indicating we need to create one
