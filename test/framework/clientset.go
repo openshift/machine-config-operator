@@ -39,9 +39,10 @@ type ClientSet struct {
 	mcfgclient mcfgclientset.Interface
 }
 
-// Allows the instantiation of additional clients with the same config.
+// Returns a copy of the config so that additional clients may be instantiated
+// from it. By making a copy, callers are free to modify the config as needed.
 func (cs *ClientSet) GetRestConfig() *rest.Config {
-	return cs.config
+	return rest.CopyConfig(cs.config)
 }
 
 func (cs *ClientSet) GetKubeconfig() (string, error) {
