@@ -14,7 +14,6 @@ import (
 	mcopclientset "github.com/openshift/client-go/operator/clientset/versioned"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	kubeErrs "k8s.io/apimachinery/pkg/util/errors"
@@ -287,8 +286,8 @@ func (ctrl *Controller) updateMachineConfiguration(oldMC, newMC interface{}) {
 		return
 	}
 
-	// Only take action if the there is an actual change in the MachineConfiguration's ManagedBootImages knob
-	if reflect.DeepEqual(oldMachineConfiguration.Spec.ManagedBootImages, newMachineConfiguration.Spec.ManagedBootImages) {
+	// Only take action if the there is an actual change in the MachineConfiguration's ManagedBootImagesStatus
+	if reflect.DeepEqual(oldMachineConfiguration.Status.ManagedBootImagesStatus, newMachineConfiguration.Status.ManagedBootImagesStatus) {
 		return
 	}
 
@@ -322,21 +321,31 @@ func (ctrl *Controller) syncMAPIMachineSets(reason string) {
 	ctrl.mapiSyncMutex.Lock()
 	defer ctrl.mapiSyncMutex.Unlock()
 
-	// Grab the global operator knobs
-	mcop, err := ctrl.mcopLister.Get(ctrlcommon.MCOOperatorKnobsObjectName)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			// This typically means the cache for the knobs lister is empty; don't error on this. If this
-			// object doesn't exist, something else has gone wrong in the operator's syncMachineConfiguration loop
-			klog.Infof("MachineConfiguration knobs was not found, so no MAPI machinesets will be enqueued.")
-		} else {
-			klog.Errorf("failed to fetch MachineConfiguration knobs while enqueueing MAPI MachineSets %v", err)
-			ctrl.updateConditions(reason, fmt.Errorf("failed to fetch MachineConfiguration knobs while enqueueing MAPI MachineSets %v", err), opv1.MachineConfigurationBootImageUpdateDegraded)
+	var mcop *opv1.MachineConfiguration
+	var pollError error
+	// Wait for mcop.Status to populate, otherwise error out. This shouldn't take very long
+	// as this is done by the operator sync loop.
+	if err := wait.PollUntilContextTimeout(context.TODO(), 5*time.Second, 2*time.Minute, true, func(_ context.Context) (bool, error) {
+		mcop, pollError = ctrl.mcopLister.Get(ctrlcommon.MCOOperatorKnobsObjectName)
+		if pollError != nil {
+			klog.Errorf("MachineConfiguration/cluster has not been created yet")
+			return false, nil
 		}
+
+		// Ensure status.ObservedGeneration matches the last generation of MachineConfiguration
+		if mcop.Generation != mcop.Status.ObservedGeneration {
+			klog.Errorf("MachineConfiguration.Status is not up to date.")
+			pollError = fmt.Errorf("MachineConfiguration.Status is not up to date")
+			return false, nil
+		}
+		return true, nil
+	}); err != nil {
+		klog.Errorf("MachineConfiguration was not ready: %v", pollError)
+		ctrl.updateConditions(reason, fmt.Errorf("MachineConfiguration was not ready:  while enqueueing MAPI MachineSets %v", err), opv1.MachineConfigurationBootImageUpdateDegraded)
 		return
 	}
 
-	machineManagerFound, machineResourceSelector, err := getMachineResourceSelectorFromMachineManagers(mcop.Spec.ManagedBootImages.MachineManagers, opv1.MachineAPI, opv1.MachineSets)
+	machineManagerFound, machineResourceSelector, err := getMachineResourceSelectorFromMachineManagers(mcop.Status.ManagedBootImagesStatus.MachineManagers, opv1.MachineAPI, opv1.MachineSets)
 	if err != nil {
 		klog.Errorf("failed to create a machineset selector while enqueueing MAPI machineset %v", err)
 		ctrl.updateConditions(reason, fmt.Errorf("failed to create a machineset selector while enqueueing MAPI machineset %v", err), opv1.MachineConfigurationBootImageUpdateDegraded)
