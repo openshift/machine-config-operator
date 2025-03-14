@@ -109,6 +109,9 @@ const (
 	// MCOOperatorKnobsObjectName is the name of the global MachineConfiguration "knobs" object that the MCO watches.
 	MCOOperatorKnobsObjectName = "cluster"
 
+	// BootImageOptedInAnnotation is used for book keeping when the MCO applies a default boot image configuration
+	BootImageOptedInAnnotation = "machineconfiguration.openshift.io/boot-image-updates-opted-in-at"
+
 	ServiceCARotateAnnotation = "machineconfiguration.openshift.io/service-ca-rotate"
 
 	ServiceCARotateTrue  = "true"
