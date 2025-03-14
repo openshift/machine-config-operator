@@ -13,7 +13,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog/v2"
-	"k8s.io/utils/ptr"
 )
 
 // ApplyMachineConfig applies the required machineconfig to the cluster.
@@ -27,9 +26,9 @@ func ApplyMachineConfig(client mcfgclientv1.MachineConfigsGetter, required *mcfg
 		return nil, false, err
 	}
 
-	modified := ptr.To(false)
-	mcoResourceMerge.EnsureMachineConfig(modified, existing, *required)
-	if !*modified {
+	modified := false
+	mcoResourceMerge.EnsureMachineConfig(&modified, existing, *required)
+	if !modified {
 		return existing, false, nil
 	}
 
@@ -48,9 +47,9 @@ func ApplyMachineConfigPool(client mcfgclientv1.MachineConfigPoolsGetter, requir
 		return nil, false, err
 	}
 
-	modified := ptr.To(false)
-	mcoResourceMerge.EnsureMachineConfigPool(modified, existing, *required)
-	if !*modified {
+	modified := false
+	mcoResourceMerge.EnsureMachineConfigPool(&modified, existing, *required)
+	if !modified {
 		return existing, false, nil
 	}
 
@@ -69,9 +68,9 @@ func ApplyMachineConfigNode(client mcfgclientalphav1.MachineConfigNodesGetter, r
 		return nil, false, err
 	}
 
-	modified := ptr.To(false)
-	mcoResourceMerge.EnsureMachineConfigNode(modified, existing, *required)
-	if !*modified {
+	modified := false
+	mcoResourceMerge.EnsureMachineConfigNode(&modified, existing, *required)
+	if !modified {
 		return existing, false, nil
 	}
 
@@ -96,9 +95,9 @@ func ApplyControllerConfig(client mcfgclientv1.ControllerConfigsGetter, required
 		return nil, false, err
 	}
 
-	modified := ptr.To(false)
-	mcoResourceMerge.EnsureControllerConfig(modified, existing, *required)
-	if !*modified {
+	modified := false
+	mcoResourceMerge.EnsureControllerConfig(&modified, existing, *required)
+	if !modified {
 		klog.V(4).Info("No updates required for the ControllerConfig")
 		return existing, false, nil
 	}
