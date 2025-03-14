@@ -2284,46 +2284,53 @@ func (optr *Operator) syncMachineConfiguration(_ *renderConfig, _ *configv1.Clus
 		return fmt.Errorf("grabbing MachineConfiguration/%s CR failed: %v", ctrlcommon.MCOOperatorKnobsObjectName, err)
 	}
 
+	// Ensure boot images configmap is stamped
+	if err := optr.stampBootImagesConfigMap(); err != nil {
+		klog.Errorf("Failed to stamp bootimages configmap: %v", err)
+	}
+
+	// Merges the cluster's default node disruption policies with the user defined policies, if any.
+	newMachineConfigurationStatus := mcop.Status.DeepCopy()
+	newMachineConfigurationStatus.NodeDisruptionPolicyStatus = opv1.NodeDisruptionPolicyStatus{
+		ClusterPolicies: apihelpers.MergeClusterPolicies(mcop.Spec.NodeDisruptionPolicy),
+	}
+
 	fg, err := optr.fgAccessor.CurrentFeatureGates()
 	if err != nil {
 		klog.Errorf("Could not get fg: %v", err)
 		return err
 	}
 
-	// If FeatureGateNodeDisruptionPolicy feature gate is not enabled, no updates will need to be done for the MachineConfiguration object.
-	if fg.Enabled(features.FeatureGateNodeDisruptionPolicy) {
-		// Merges the cluster's default node disruption policies with the user defined policies, if any.
-		newMachineConfigurationStatus := mcop.Status.DeepCopy()
-		newMachineConfigurationStatus.NodeDisruptionPolicyStatus = opv1.NodeDisruptionPolicyStatus{
-			ClusterPolicies: apihelpers.MergeClusterPolicies(mcop.Spec.NodeDisruptionPolicy),
-		}
-		newMachineConfigurationStatus.ObservedGeneration = mcop.GetGeneration()
-
-		// Check if any changes are required in the Status before making the API call.
-		if !reflect.DeepEqual(mcop.Status, *newMachineConfigurationStatus) {
-			klog.Infof("Updating MachineConfiguration status")
-			mcop.Status = *newMachineConfigurationStatus
-			mcop, err = optr.mcopClient.OperatorV1().MachineConfigurations().UpdateStatus(context.TODO(), mcop, metav1.UpdateOptions{})
-			if err != nil {
-				klog.Errorf("MachineConfiguration status apply failed: %v", err)
-				return nil
-			}
-		}
+	infra, err := optr.infraLister.Get("cluster")
+	if err != nil {
+		klog.Errorf("Could not get infra: %v", err)
+		return err
 	}
 
-	// If FeatureGateManagedBootImages is enabled, check for opv1.MachineConfigurationBootImageUpdateDegraded condition being true
-	// and degrade operator if necessary
-	if fg.Enabled(features.FeatureGateManagedBootImages) {
-
-		// Ensure boot images configmap stamp
-		if err := optr.stampBootImagesConfigMap(); err != nil {
-			klog.Errorf("Failed to stamp bootimages configmap: %v", err)
+	// Populate the default boot images configuration in the status, if the cluster is on a
+	// boot image updates supported platform
+	if ctrlcommon.CheckBootImagePlatform(infra, fg) {
+		// Mirror the spec if it is defined, i.e. admin has an opinion
+		if mcop.Spec.ManagedBootImages.MachineManagers != nil {
+			newMachineConfigurationStatus.ManagedBootImagesStatus = *mcop.Spec.ManagedBootImages.DeepCopy()
 		}
 
 		for _, condition := range mcop.Status.Conditions {
 			if condition.Type == opv1.MachineConfigurationBootImageUpdateDegraded && condition.Status == metav1.ConditionTrue {
 				return errors.New("bootimage update failed: " + condition.Message)
 			}
+		}
+	}
+
+	newMachineConfigurationStatus.ObservedGeneration = mcop.GetGeneration()
+	// Check if any changes are required in the Status before making the API call.
+	if !reflect.DeepEqual(mcop.Status, *newMachineConfigurationStatus) {
+		klog.Infof("Updating MachineConfiguration status %v", newMachineConfigurationStatus)
+		mcop.Status = *newMachineConfigurationStatus
+		_, err = optr.mcopClient.OperatorV1().MachineConfigurations().UpdateStatus(context.TODO(), mcop, metav1.UpdateOptions{})
+		if err != nil {
+			// TODO: let's not return an error on a failed status apply for now
+			klog.Errorf("MachineConfiguration status apply failed: %v", err)
 		}
 	}
 

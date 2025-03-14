@@ -69,6 +69,9 @@ func TestBootImageReconciliationonSingleMachineSet(t *testing.T) {
 	require.Nil(t, err, "updating machineconfiguration boot image knob failed")
 	t.Logf("Updated machine configuration knob to target one machineset for boot image updates")
 
+	err = waitForMachineConfigurationStatusUpdate(t, cs)
+	require.NoError(t, err, "timeout waiting for MachineConfigurationStatus")
+
 	// Pick a random machineset to test
 	machineSetUnderTest := getRandomMachineSet(t, machineClient)
 	t.Logf("MachineSet under test: %s", machineSetUnderTest.Name)
@@ -123,6 +126,9 @@ func TestBootImageReconciliationonAllMachineSets(t *testing.T) {
 	require.Nil(t, err, "updating machineconfiguration boot image knob failed")
 	t.Logf("Updated machine configuration knob to target all machinesets for boot image updates")
 
+	err = waitForMachineConfigurationStatusUpdate(t, cs)
+	require.NoError(t, err, "timeout waiting for MachineConfigurationStatus")
+
 	machineSets, err := machineClient.MachineSets("openshift-machine-api").List(context.TODO(), metav1.ListOptions{})
 	require.NoError(t, err, "failed to grab machineset list")
 
@@ -158,6 +164,9 @@ func TestBootImageReconciliationonNoMachineSets(t *testing.T) {
 	_, err := machineConfigurationClient.OperatorV1().MachineConfigurations().Apply(context.TODO(), p, metav1.ApplyOptions{FieldManager: "machine-config-operator"})
 	require.Nil(t, err, "updating machineconfiguration boot image knob failed")
 	t.Logf("Updated machine configuration knob to target no machinesets for boot image updates")
+
+	err = waitForMachineConfigurationStatusUpdate(t, cs)
+	require.NoError(t, err, "timeout waiting for MachineConfigurationStatus")
 
 	machineSets, err := machineClient.MachineSets("openshift-machine-api").List(context.TODO(), metav1.ListOptions{})
 	require.NoError(t, err, "failed to grab machineset list")
@@ -196,6 +205,8 @@ func TestBootImageDegradeCondition(t *testing.T) {
 	_, err := machineConfigurationClient.OperatorV1().MachineConfigurations().Apply(context.TODO(), p, metav1.ApplyOptions{FieldManager: "machine-config-operator"})
 	require.Nil(t, err, "updating machineconfiguration boot image knob failed")
 	t.Logf("Updated machine configuration knob to target all machinesets for boot image updates")
+	err = waitForMachineConfigurationStatusUpdate(t, cs)
+	require.NoError(t, err, "timeout waiting for MachineConfigurationStatus")
 
 	// Pick a random machineset to test
 	machineSetUnderTest := getRandomMachineSet(t, machineClient)
@@ -291,6 +302,9 @@ func TestStubIgnitionUpgrade(t *testing.T) {
 	require.Nil(t, err, "updating machineconfiguration boot image knob failed")
 
 	t.Logf("Updated machine configuration knob to target all machinesets for boot image updates")
+
+	err = waitForMachineConfigurationStatusUpdate(t, cs)
+	require.NoError(t, err, "timeout waiting for MachineConfigurationStatus")
 
 	// Pick a random machineset to test
 	machineSetUnderTest := getRandomMachineSet(t, machineClient)
@@ -482,4 +496,33 @@ func getOldMAOSecret(name string) *corev1.Secret {
 		},
 		Data: map[string][]byte{"disableTemplating": []byte("true"), "userData": []byte(`{"ignition":{"config":{"append":[{"source":"https://test-cluster-api:22623/config/worker"}]},"security":{"tls":{"certificateAuthorities":[{"source":"data:text/plain;charset=utf-8;base64,LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tClJPT1QgQ0EgREFUQQotLS0tLUVORCBDRVJUSUZJQ0FURS0tLS0tCg=="}]}},"version":"2.2.0"}}`)},
 	}
+}
+
+// waitForMachineConfigurationStatus waits until the MCO syncs the operator status to the latest spec
+func waitForMachineConfigurationStatusUpdate(t *testing.T, cs *framework.ClientSet) error {
+
+	startTime := time.Now()
+
+	mcopClient := mcopclientset.NewForConfigOrDie(cs.GetRestConfig())
+	// Wait for mcop.Status to populate, otherwise error out. This shouldn't take very long
+	// as this is done by the operator sync loop.
+	if err := wait.PollUntilContextTimeout(context.TODO(), 2*time.Second, 2*time.Minute, false, func(_ context.Context) (bool, error) {
+		mcop, pollError := mcopClient.OperatorV1().MachineConfigurations().Get(context.TODO(), "cluster", metav1.GetOptions{})
+		if pollError != nil {
+			t.Logf("MachineConfiguration/cluster has not been created yet")
+			return false, nil
+		}
+
+		// Ensure status.ObservedGeneration matches the last generation of MachineConfiguration
+		if mcop.Generation != mcop.Status.ObservedGeneration {
+			t.Logf("MachineConfiguration.Status is not up to date.")
+			return false, nil
+		}
+		return true, nil
+	}); err != nil {
+		return fmt.Errorf("MachineConfiguration was not ready: (waited %s): %w", time.Since(startTime), err)
+	}
+
+	t.Logf("MachineConfiguration is ready (waited %v)", time.Since(startTime))
+	return nil
 }
