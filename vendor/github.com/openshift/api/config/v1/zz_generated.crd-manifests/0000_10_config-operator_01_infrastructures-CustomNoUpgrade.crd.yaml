@@ -223,6 +223,68 @@ spec:
                   ibmcloud:
                     description: ibmcloud contains settings specific to the IBMCloud
                       infrastructure provider.
+                    properties:
+                      serviceEndpoints:
+                        description: |-
+                          serviceEndpoints is a list of custom endpoints which will override the default
+                          service endpoints of an IBM service. These endpoints are used by components
+                          within the cluster when trying to reach the IBM Cloud Services that have been
+                          overriden. The CCCMO reads in the IBMCloudPlatformSpec and validates each
+                          endpoint is resolvable. Once validated, the cloud config and IBMCloudPlatformStatus
+                          are updated to reflect the same custom endpoints.
+                          A maximum of 13 service endpoints overrides are supported.
+                        items:
+                          description: |-
+                            IBMCloudServiceEndpoint stores the configuration of a custom url to
+                            override existing defaults of IBM Cloud Services.
+                          properties:
+                            name:
+                              description: |-
+                                name is the name of the IBM Cloud service.
+                                Possible values are: CIS, COS, COSConfig, DNSServices, GlobalCatalog, GlobalSearch, GlobalTagging, HyperProtect, IAM, KeyProtect, ResourceController, ResourceManager, or VPC.
+                                For example, the IBM Cloud Private IAM service could be configured with the
+                                service `name` of `IAM` and `url` of `https://private.iam.cloud.ibm.com`
+                                Whereas the IBM Cloud Private VPC service for US South (Dallas) could be configured
+                                with the service `name` of `VPC` and `url` of `https://us.south.private.iaas.cloud.ibm.com`
+                              enum:
+                              - CIS
+                              - COS
+                              - COSConfig
+                              - DNSServices
+                              - GlobalCatalog
+                              - GlobalSearch
+                              - GlobalTagging
+                              - HyperProtect
+                              - IAM
+                              - KeyProtect
+                              - ResourceController
+                              - ResourceManager
+                              - VPC
+                              type: string
+                            url:
+                              description: |-
+                                url is fully qualified URI with scheme https, that overrides the default generated
+                                endpoint for a client.
+                                This must be provided and cannot be empty. The path must follow the pattern
+                                /v[0,9]+ or /api/v[0,9]+
+                              maxLength: 300
+                              type: string
+                              x-kubernetes-validations:
+                              - message: url must use https scheme
+                                rule: url(self).getScheme() == "https"
+                              - message: url path must match /v[0,9]+ or /api/v[0,9]+
+                                rule: matches((url(self).getEscapedPath()), '^/(api/)?v[0-9]+/{0,1}$')
+                              - message: url must be a valid absolute URL
+                                rule: isURL(self)
+                          required:
+                          - name
+                          - url
+                          type: object
+                        maxItems: 13
+                        type: array
+                        x-kubernetes-list-map-keys:
+                        - name
+                        x-kubernetes-list-type: map
                     type: object
                   kubevirt:
                     description: kubevirt contains settings specific to the kubevirt
@@ -1068,6 +1130,7 @@ spec:
                 - HighlyAvailable
                 - HighlyAvailableArbiter
                 - SingleReplica
+                - DualReplica
                 - External
                 type: string
               cpuPartitioning:
@@ -1305,20 +1368,35 @@ spec:
                             created for the cluster.
                           properties:
                             key:
-                              description: key is the key of the tag
+                              description: |-
+                                key sets the key of the AWS resource tag key-value pair. Key is required when defining an AWS resource tag.
+                                Key should consist of between 1 and 128 characters, and may
+                                contain only the set of alphanumeric characters, space (' '), '_', '.', '/', '=', '+', '-', ':', and '@'.
                               maxLength: 128
                               minLength: 1
-                              pattern: ^[0-9A-Za-z_.:/=+-@]+$
                               type: string
+                              x-kubernetes-validations:
+                              - message: invalid AWS resource tag key. The string
+                                  can contain only the set of alphanumeric characters,
+                                  space (' '), '_', '.', '/', '=', '+', '-', ':',
+                                  '@'
+                                rule: self.matches('^[0-9A-Za-z_.:/=+-@ ]+$')
                             value:
                               description: |-
-                                value is the value of the tag.
+                                value sets the value of the AWS resource tag key-value pair. Value is required when defining an AWS resource tag.
+                                Value should consist of between 1 and 256 characters, and may
+                                contain only the set of alphanumeric characters, space (' '), '_', '.', '/', '=', '+', '-', ':', and '@'.
                                 Some AWS service do not support empty values. Since tags are added to resources in many services, the
                                 length of the tag value must meet the requirements of all services.
                               maxLength: 256
                               minLength: 1
-                              pattern: ^[0-9A-Za-z_.:/=+-@]+$
                               type: string
+                              x-kubernetes-validations:
+                              - message: invalid AWS resource tag value. The string
+                                  can contain only the set of alphanumeric characters,
+                                  space (' '), '_', '.', '/', '=', '+', '-', ':',
+                                  '@'
+                                rule: self.matches('^[0-9A-Za-z_.:/=+-@ ]+$')
                           required:
                           - key
                           - value
@@ -1808,6 +1886,72 @@ spec:
                         - message: resourceTags are immutable and may only be configured
                             during installation
                           rule: self.all(x, x in oldSelf) && oldSelf.all(x, x in self)
+                      serviceEndpoints:
+                        description: |-
+                          serviceEndpoints specifies endpoints that override the default endpoints
+                          used when creating clients to interact with GCP services.
+                          When not specified, the default endpoint for the GCP region will be used.
+                          Only 1 endpoint override is permitted for each GCP service.
+                          The maximum number of endpoint overrides allowed is 9.
+                        items:
+                          description: |-
+                            GCPServiceEndpoint store the configuration of a custom url to
+                            override existing defaults of GCP Services.
+                          properties:
+                            name:
+                              description: |-
+                                name is the name of the GCP service whose endpoint is being overridden.
+                                This must be provided and cannot be empty.
+
+                                Allowed values are Compute, Container, CloudResourceManager, DNS, File, IAM, ServiceUsage,
+                                Storage, and TagManager.
+
+                                As an example, when setting the name to Compute all requests made by the caller to the GCP Compute
+                                Service will be directed to the endpoint specified in the url field.
+                              enum:
+                              - Compute
+                              - Container
+                              - CloudResourceManager
+                              - DNS
+                              - File
+                              - IAM
+                              - ServiceUsage
+                              - Storage
+                              - TagManager
+                              type: string
+                            url:
+                              description: |-
+                                url is a fully qualified URI that overrides the default endpoint for a client using the GCP service specified
+                                in the name field.
+                                url is required, must use the scheme https, must not be more than 253 characters in length,
+                                and must be a valid URL according to Go's net/url package (https://pkg.go.dev/net/url#URL)
+
+                                An example of a valid endpoint that overrides the Compute Service: "https://compute-myendpoint1.p.googleapis.com"
+                              maxLength: 253
+                              type: string
+                              x-kubernetes-validations:
+                              - message: must be a valid URL
+                                rule: isURL(self)
+                              - message: scheme must be https
+                                rule: 'isURL(self) ? (url(self).getScheme() == "https")
+                                  : true'
+                              - message: url must consist only of a scheme and domain.
+                                  The url path must be empty.
+                                rule: url(self).getEscapedPath() == "" || url(self).getEscapedPath()
+                                  == "/"
+                          required:
+                          - name
+                          - url
+                          type: object
+                        maxItems: 9
+                        type: array
+                        x-kubernetes-list-map-keys:
+                        - name
+                        x-kubernetes-list-type: map
+                        x-kubernetes-validations:
+                        - message: only 1 endpoint override is permitted per GCP service
+                            name
+                          rule: self.all(x, self.exists_one(y, x.name == y.name))
                     type: object
                     x-kubernetes-validations:
                     - message: resourceLabels may only be configured during installation
@@ -1844,8 +1988,11 @@ spec:
                       serviceEndpoints:
                         description: |-
                           serviceEndpoints is a list of custom endpoints which will override the default
-                          service endpoints of an IBM Cloud service. These endpoints are consumed by
-                          components within the cluster to reach the respective IBM Cloud Services.
+                          service endpoints of an IBM service. These endpoints are used by components
+                          within the cluster when trying to reach the IBM Cloud Services that have been
+                          overriden. The CCCMO reads in the IBMCloudPlatformSpec and validates each
+                          endpoint is resolvable. Once validated, the cloud config and IBMCloudPlatformStatus
+                          are updated to reflect the same custom endpoints.
                         items:
                           description: |-
                             IBMCloudServiceEndpoint stores the configuration of a custom url to
@@ -1878,7 +2025,9 @@ spec:
                               description: |-
                                 url is fully qualified URI with scheme https, that overrides the default generated
                                 endpoint for a client.
-                                This must be provided and cannot be empty.
+                                This must be provided and cannot be empty. The path must follow the pattern
+                                /v[0,9]+ or /api/v[0,9]+
+                              maxLength: 300
                               type: string
                               x-kubernetes-validations:
                               - message: url must be a valid absolute URL
@@ -1887,6 +2036,7 @@ spec:
                           - name
                           - url
                           type: object
+                        maxItems: 13
                         type: array
                         x-kubernetes-list-map-keys:
                         - name
