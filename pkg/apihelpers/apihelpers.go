@@ -486,3 +486,18 @@ func CheckNodeDisruptionActionsForTargetActions(actions []opv1.NodeDisruptionPol
 
 	return currentActions.HasAny(targetActions...)
 }
+
+// Returns a MachineConfiguration object with the cluster opted into boot image updates.
+func GetManagedBootImagesWithUpdateEnabled() opv1.ManagedBootImages {
+	return opv1.ManagedBootImages{MachineManagers: []opv1.MachineManager{{Resource: opv1.MachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}}}}
+}
+
+// Returns a MachineConfiguration object with the cluster opted out of boot image updates.
+func GetManagedBootImagesWithUpdateDisabled() opv1.ManagedBootImages {
+	return opv1.ManagedBootImages{MachineManagers: []opv1.MachineManager{{Resource: opv1.MachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.None}}}}
+}
+
+// Returns a MachineConfiguration object with an empty configuration; to be used in testing a situation where admin has no opinion.
+func GetManagedBootImagesWithNoConfiguration() opv1.ManagedBootImages {
+	return opv1.ManagedBootImages{}
+}
