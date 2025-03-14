@@ -478,3 +478,15 @@ func CheckNodeDisruptionActionsForTargetActions(actions []opv1.NodeDisruptionPol
 
 	return currentActions.HasAny(targetActions...)
 }
+
+func GetManagedBootImagesWithUpdateEnabled() opv1.ManagedBootImages {
+	return opv1.ManagedBootImages{MachineManagers: []opv1.MachineManager{{Resource: opv1.MachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}}}}
+}
+
+func GetManagedBootImagesWithUpdateDisabled() opv1.ManagedBootImages {
+	return opv1.ManagedBootImages{MachineManagers: []opv1.MachineManager{{Resource: opv1.MachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.None}}}}
+}
+
+func GetManagedBootImagesWithNoConfiguration() opv1.ManagedBootImages {
+	return opv1.ManagedBootImages{}
+}

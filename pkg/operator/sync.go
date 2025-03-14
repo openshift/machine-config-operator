@@ -2309,12 +2309,29 @@ func (optr *Operator) syncMachineConfiguration(_ *renderConfig, _ *configv1.Clus
 		return err
 	}
 
+	defaultOptInEvent := false
 	// Populate the default boot images configuration in the status, if the cluster is on a
 	// boot image updates supported platform
 	if ctrlcommon.CheckBootImagePlatform(infra, fg) {
 		// Mirror the spec if it is defined, i.e. admin has an opinion
 		if mcop.Spec.ManagedBootImages.MachineManagers != nil {
 			newMachineConfigurationStatus.ManagedBootImagesStatus = *mcop.Spec.ManagedBootImages.DeepCopy()
+		} else {
+			// Admin has no opinion, so use the MCO defined default, which is platform dependant
+			isDefaultOnPlatform, err := optr.isDefaultOnBootImageUpdatePlatform()
+			if err != nil {
+				klog.Errorf("failed to determine platform type, cluster will not be opted in for boot image updates by default")
+			}
+			if isDefaultOnPlatform {
+				// A default opt-in can happen in a two ways:
+				// - Cluster is being installed on a release that opts the cluster in (ManagedBootImagesStatus is not defined)
+				// - Cluster is opted out and is being upgraded to a release that opts the cluster in (ManagedBootImagesStatus is currently disabled)
+				defaultOptInEvent = (mcop.Status.ManagedBootImagesStatus.MachineManagers == nil) ||
+					reflect.DeepEqual(mcop.Status.ManagedBootImagesStatus, apihelpers.GetManagedBootImagesWithUpdateDisabled())
+				newMachineConfigurationStatus.ManagedBootImagesStatus = apihelpers.GetManagedBootImagesWithUpdateEnabled()
+			} else {
+				newMachineConfigurationStatus.ManagedBootImagesStatus = apihelpers.GetManagedBootImagesWithUpdateDisabled()
+			}
 		}
 
 		for _, condition := range mcop.Status.Conditions {
@@ -2331,8 +2348,16 @@ func (optr *Operator) syncMachineConfiguration(_ *renderConfig, _ *configv1.Clus
 		mcop.Status = *newMachineConfigurationStatus
 		_, err = optr.mcopClient.OperatorV1().MachineConfigurations().UpdateStatus(context.TODO(), mcop, metav1.UpdateOptions{})
 		if err != nil {
-			// TODO: let's not return an error on a failed status apply for now
-			klog.Errorf("MachineConfiguration status apply failed: %v", err)
+			return err
+		}
+		if defaultOptInEvent {
+			klog.Infof("No boot image configuration detected, default boot image configuration was applied")
+			annoPatch := fmt.Sprintf(`{"metadata": {"annotations": {"%s": "%s"}}}`, ctrlcommon.BootImageOptedInAnnotation, metav1.Now().Format(time.RFC3339))
+			_, err = optr.mcopClient.OperatorV1().MachineConfigurations().Patch(context.TODO(), ctrlcommon.MCOOperatorKnobsObjectName, types.MergePatchType, []byte(annoPatch), metav1.PatchOptions{})
+			if err != nil {
+				// Let's not return an error on this for the moment
+				klog.Errorf("MachineConfiguration opt-in annotation apply failed: %v", err)
+			}
 		}
 	}
 
@@ -2348,4 +2373,15 @@ func (optr *Operator) isOnClusterBuildFeatureGateEnabled() (bool, error) {
 	}
 
 	return fg.Enabled(features.FeatureGateOnClusterBuild), nil
+}
+
+// Determines if this cluster is on a platform that opts in for boot images by default
+func (optr *Operator) isDefaultOnBootImageUpdatePlatform() (bool, error) {
+	infra, err := optr.infraLister.Get("cluster")
+	if err != nil {
+		klog.Errorf("Could not get infra: %v", err)
+		return false, err
+	}
+	defaultOnPlatforms := sets.New(configv1.GCPPlatformType, configv1.AWSPlatformType)
+	return defaultOnPlatforms.Has(infra.Status.PlatformStatus.Type), nil
 }
