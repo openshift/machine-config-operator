@@ -43,6 +43,7 @@ import (
 	pivottypes "github.com/openshift/machine-config-operator/pkg/daemon/pivot/types"
 	pivotutils "github.com/openshift/machine-config-operator/pkg/daemon/pivot/utils"
 	"github.com/openshift/machine-config-operator/pkg/daemon/runtimeassets"
+	"github.com/openshift/machine-config-operator/pkg/helpers"
 	"github.com/openshift/machine-config-operator/pkg/upgrademonitor"
 )
 
@@ -123,7 +124,13 @@ func (dn *Daemon) executeReloadServiceNodeDisruptionAction(serviceName string, r
 		return fmt.Errorf("could not apply update: reloading %s configuration failed. Error: %w", serviceName, reloadErr)
 	}
 
-	err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
+	// Get MCP associated with node
+	pool, err := helpers.GetPrimaryPoolNameForMCN(dn.mcpLister, dn.node)
+	if err != nil {
+		return err
+	}
+
+	err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
 		&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdatePostActionComplete, Reason: string(mcfgalphav1.MachineConfigNodeUpdateReloaded), Message: fmt.Sprintf("Node has reloaded service %s", serviceName)},
 		&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateReloaded, Reason: fmt.Sprintf("%s%s", string(mcfgalphav1.MachineConfigNodeUpdatePostActionComplete), string(mcfgalphav1.MachineConfigNodeUpdateReloaded)), Message: fmt.Sprintf("Upgrade required a service %s reload. Completed this this as a post update action.", serviceName)},
 		metav1.ConditionTrue,
@@ -131,6 +138,7 @@ func (dn *Daemon) executeReloadServiceNodeDisruptionAction(serviceName string, r
 		dn.node,
 		dn.mcfgClient,
 		dn.featureGatesAccessor,
+		pool,
 	)
 	if err != nil {
 		klog.Errorf("Error making MCN for Reloading success: %v", err)
@@ -157,6 +165,12 @@ func (dn *Daemon) performPostConfigChangeNodeDisruptionAction(postConfigChangeAc
 
 		logSystem("Performing post config change action: %v for config %s", action.Type, configName)
 
+		// Get MCP associated with node
+		pool, err := helpers.GetPrimaryPoolNameForMCN(dn.mcpLister, dn.node)
+		if err != nil {
+			return err
+		}
+
 		switch action.Type {
 		case opv1.RebootStatusAction:
 			err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
@@ -167,6 +181,7 @@ func (dn *Daemon) performPostConfigChangeNodeDisruptionAction(postConfigChangeAc
 				dn.node,
 				dn.mcfgClient,
 				dn.featureGatesAccessor,
+				pool,
 			)
 			if err != nil {
 				klog.Errorf("Error making MCN for rebooting: %v", err)
@@ -186,6 +201,7 @@ func (dn *Daemon) performPostConfigChangeNodeDisruptionAction(postConfigChangeAc
 				dn.node,
 				dn.mcfgClient,
 				dn.featureGatesAccessor,
+				pool,
 			)
 			if err != nil {
 				klog.Errorf("Error making MCN for no post config change action: %v", err)
@@ -253,6 +269,12 @@ func (dn *Daemon) performPostConfigChangeNodeDisruptionAction(postConfigChangeAc
 // In the end uncordon node to schedule workload.
 // If at any point an error occurs, we reboot the node so that node has correct configuration.
 func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string, configName string) error {
+	// Get MCP associated with node
+	pool, err := helpers.GetPrimaryPoolNameForMCN(dn.mcpLister, dn.node)
+	if err != nil {
+		return err
+	}
+
 	if ctrlcommon.InSlice(postConfigChangeActionReboot, postConfigChangeActions) {
 		err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
 			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdatePostActionComplete, Reason: string(mcfgalphav1.MachineConfigNodeUpdateRebooted), Message: fmt.Sprintf("Node will reboot into config %s", configName)},
@@ -262,6 +284,7 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 			dn.node,
 			dn.mcfgClient,
 			dn.featureGatesAccessor,
+			pool,
 		)
 		if err != nil {
 			klog.Errorf("Error making MCN for rebooting: %v", err)
@@ -282,6 +305,7 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 			dn.node,
 			dn.mcfgClient,
 			dn.featureGatesAccessor,
+			pool,
 		)
 		if err != nil {
 			klog.Errorf("Error making MCN for no post config change action: %v", err)
@@ -307,6 +331,7 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 			dn.node,
 			dn.mcfgClient,
 			dn.featureGatesAccessor,
+			pool,
 		)
 		if err != nil {
 			klog.Errorf("Error making MCN for Reloading success: %v", err)
@@ -843,6 +868,18 @@ func (dn *Daemon) updateOnClusterLayering(oldConfig, newConfig *mcfgv1.MachineCo
 	oldConfigName := oldConfig.GetName()
 	newConfigName := newConfig.GetName()
 
+	// Add the desired config version to the MCN
+	// 	get MCP associated with node
+	pool, err := helpers.GetPrimaryPoolNameForMCN(dn.mcpLister, dn.node)
+	if err != nil {
+		return err
+	}
+	//  update the MCN spec
+	err = upgrademonitor.GenerateAndApplyMachineConfigNodeSpec(dn.featureGatesAccessor, pool, dn.node, dn.mcfgClient)
+	if err != nil {
+		return fmt.Errorf("error updating MCN spec for node %s: %w", dn.node.Name, err)
+	}
+
 	oldIgnConfig, err := ctrlcommon.ParseAndConvertConfig(oldConfig.Spec.Config.Raw)
 	if err != nil {
 		return fmt.Errorf("parsing old Ignition config failed: %w", err)
@@ -1114,6 +1151,18 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	oldConfigName := oldConfig.GetName()
 	newConfigName := newConfig.GetName()
 
+	// Add the desired config version to the MCN
+	// 	get MCP associated with node
+	pool, err := helpers.GetPrimaryPoolNameForMCN(dn.mcpLister, dn.node)
+	if err != nil {
+		return err
+	}
+	//  update the MCN spec
+	specErr := upgrademonitor.GenerateAndApplyMachineConfigNodeSpec(dn.featureGatesAccessor, pool, dn.node, dn.mcfgClient)
+	if specErr != nil {
+		return fmt.Errorf("error updating MCN spec for node %s: %w", dn.node.Name, specErr)
+	}
+
 	oldIgnConfig, err := ctrlcommon.ParseAndConvertConfig(oldConfig.Spec.Config.Raw)
 	if err != nil {
 		return fmt.Errorf("parsing old Ignition config failed: %w", err)
@@ -1123,8 +1172,14 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		return fmt.Errorf("parsing new Ignition config failed: %w", err)
 	}
 
-	klog.Infof("Checking Reconcilable for config %v to %v", oldConfigName, newConfigName)
+	// // Get MCP associated with node
+	// pool, err := helpers.GetPrimaryPoolNameForMCN(dn.mcpLister, dn.node)
+	// if err != nil {
+	// 	return err
+	// }
 
+	// TODO: change back to info level log
+	klog.Errorf("Checking Reconcilable for config %v to %v", oldConfigName, newConfigName)
 	// checking for reconcilability
 	// make sure we can actually reconcile this state
 	diff, reconcilableError := reconcilable(oldConfig, newConfig)
@@ -1138,6 +1193,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 			dn.node,
 			dn.mcfgClient,
 			dn.featureGatesAccessor,
+			pool,
 		)
 		if Nerr != nil {
 			klog.Errorf("Error making MCN for Preparing update failed: %v", err)
@@ -1184,6 +1240,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 			dn.node,
 			dn.mcfgClient,
 			dn.featureGatesAccessor,
+			pool,
 		)
 		if Nerr != nil {
 			klog.Errorf("Error making MCN for Preparing update failed: %v", err)
@@ -1218,24 +1275,18 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		dn.node,
 		dn.mcfgClient,
 		dn.featureGatesAccessor,
+		pool,
 	)
 	if err != nil {
 		klog.Errorf("Error making MCN for Update Compatible: %v", err)
 	}
-	pool := ""
-	var ok bool
-	if dn.node != nil {
-		if _, ok = dn.node.Labels["node-role.kubernetes.io/worker"]; ok {
-			pool = "worker"
-		} else if _, ok = dn.node.Labels["node-role.kubernetes.io/master"]; ok {
-			pool = "master"
-		}
-	}
 
+	// TODO: Probably remove the spec update here since nothing should have changed during the compatibility check phase
 	err = upgrademonitor.GenerateAndApplyMachineConfigNodeSpec(dn.featureGatesAccessor, pool, dn.node, dn.mcfgClient)
 	if err != nil {
 		klog.Errorf("Error making MCN spec for Update Compatible: %v", err)
 	}
+
 	if drain {
 		if err := dn.performDrain(); err != nil {
 			return err
@@ -1250,6 +1301,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 			dn.node,
 			dn.mcfgClient,
 			dn.featureGatesAccessor,
+			pool,
 		)
 		if err != nil {
 			klog.Errorf("Error making MCN for Drain not required: %v", err)
@@ -1277,6 +1329,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		dn.node,
 		dn.mcfgClient,
 		dn.featureGatesAccessor,
+		pool,
 	)
 	if err != nil {
 		klog.Errorf("Error making MCN for Updating Files and OS: %v", err)
@@ -1389,6 +1442,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		dn.node,
 		dn.mcfgClient,
 		dn.featureGatesAccessor,
+		pool,
 	)
 	if err != nil {
 		klog.Errorf("Error making MCN for Updated Files and OS: %v", err)

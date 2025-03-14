@@ -20,6 +20,7 @@ import (
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 )
 
+// TODO: move to common const
 const NotYetSet = "NotYetSet"
 
 type Condition struct {
@@ -28,10 +29,11 @@ type Condition struct {
 	Message string
 }
 
-// GenerateAndApplyMachineConfigNodes takes a parent and child conditions and applies them to the given node's MachineConfigNode object
-// there are a few stipulations. 1) if the parent and child condition exactly match their currently applied statuses, no new MCN is generated
+// GenerateAndApplyMachineConfigNodes takes a parent and child condition and applies them to the given node's MachineConfigNode object
+// there are a few stipulations:
+// 1) if the parent and child condition exactly match their currently applied statuses, no new MCN is generated
 // 2) the desiredConfig in the MCN Status will only be set once the update is proven to be compatible. Meanwhile the desired and current config in the spec react to live changes of state on the Node
-// 3) None of this will be executed unless the TechPreviewNoUpgrade featuregate is applied.
+// 3) none of this will be executed unless the TechPreviewNoUpgrade featuregate is applied. //TODO (ijanssen): Remove comment once feature gate is graduated to default.
 func GenerateAndApplyMachineConfigNodes(
 	parentCondition,
 	childCondition *Condition,
@@ -40,8 +42,9 @@ func GenerateAndApplyMachineConfigNodes(
 	node *corev1.Node,
 	mcfgClient mcfgclientset.Interface,
 	fgAccessor featuregates.FeatureGateAccess,
+	pool string,
 ) error {
-	return generateAndApplyMachineConfigNodes(parentCondition, childCondition, parentStatus, childStatus, node, mcfgClient, nil, nil, fgAccessor)
+	return generateAndApplyMachineConfigNodes(parentCondition, childCondition, parentStatus, childStatus, node, mcfgClient, nil, nil, fgAccessor, pool)
 }
 
 func UpdateMachineConfigNodeStatus(
@@ -54,8 +57,9 @@ func UpdateMachineConfigNodeStatus(
 	imageSetApplyConfig []*machineconfigurationalphav1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration,
 	imageSetSpec []mcfgalphav1.MachineConfigNodeSpecPinnedImageSet,
 	fgAccessor featuregates.FeatureGateAccess,
+	pool string,
 ) error {
-	return generateAndApplyMachineConfigNodes(parentCondition, childCondition, parentStatus, childStatus, node, mcfgClient, imageSetApplyConfig, imageSetSpec, fgAccessor)
+	return generateAndApplyMachineConfigNodes(parentCondition, childCondition, parentStatus, childStatus, node, mcfgClient, imageSetApplyConfig, imageSetSpec, fgAccessor, pool)
 }
 
 // Helper function to convert metav1.Condition to ConditionApplyConfiguration
@@ -89,6 +93,7 @@ func generateAndApplyMachineConfigNodes(
 	imageSetApplyConfig []*machineconfigurationalphav1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration,
 	imageSetSpec []mcfgalphav1.MachineConfigNodeSpecPinnedImageSet,
 	fgAccessor featuregates.FeatureGateAccess,
+	pool string,
 ) error {
 	if fgAccessor == nil || node == nil || parentCondition == nil || mcfgClient == nil {
 		return nil
@@ -100,14 +105,6 @@ func generateAndApplyMachineConfigNodes(
 	}
 	if fg == nil || !fg.Enabled(features.FeatureGateMachineConfigNodes) {
 		return nil
-	}
-
-	var pool string
-	var ok bool
-	if _, ok = node.Labels["node-role.kubernetes.io/worker"]; ok {
-		pool = "worker"
-	} else if _, ok = node.Labels["node-role.kubernetes.io/master"]; ok {
-		pool = "master"
 	}
 
 	// get the existing MCN, or if it DNE create one below
@@ -368,6 +365,7 @@ func GenerateAndApplyMachineConfigNodeSpec(fgAccessor featuregates.FeatureGateAc
 	newMCNode.Spec.ConfigVersion = mcfgalphav1.MachineConfigNodeSpecMachineConfigVersion{
 		Desired: node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey],
 	}
+	klog.Errorf("newMCNode.Spec.ConfigVersion being set to: %v", newMCNode.Spec.ConfigVersion)
 	// Set desired config to NotYetSet if the annotation is empty to satisfy API validation
 	if newMCNode.Spec.ConfigVersion.Desired == "" {
 		newMCNode.Spec.ConfigVersion.Desired = NotYetSet
@@ -398,6 +396,7 @@ func GenerateAndApplyMachineConfigNodeSpec(fgAccessor featuregates.FeatureGateAc
 		}
 	}
 	return nil
+	// TODO: for testing add a diff print somewhere in this function between the old MCN spec and the new one to see what changed
 }
 
 // createOrGetMachineConfigNode gets the named MCN or returns a boolean indicating we need to create one

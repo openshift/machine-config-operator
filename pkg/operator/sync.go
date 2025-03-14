@@ -292,7 +292,7 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 	if optr.inClusterBringup {
 		klog.V(4).Info("Starting inClusterBringup informers cache sync")
 		// sync now our own informers after having installed the CRDs
-		if !cache.WaitForCacheSync(optr.stopCh, optr.ccListerSynced) {
+		if !cache.WaitForCacheSync(optr.stopCh, optr.ccListerSynced, optr.mcpListerSynced) {
 			return fmt.Errorf("failed to sync caches for informers")
 		}
 		klog.V(4).Info("Finished inClusterBringup informers cache sync")
@@ -768,15 +768,13 @@ func (optr *Operator) syncMachineConfigNodes(_ *renderConfig, _ *configv1.Cluste
 		if node.Status.Phase == corev1.NodePending || node.Status.Phase == corev1.NodePhase("Provisioning") {
 			continue
 		}
-		var pool string
-		var ok bool
-		if _, ok = node.Labels["node-role.kubernetes.io/worker"]; ok {
-			pool = "worker"
-		} else if _, ok = node.Labels["node-role.kubernetes.io/master"]; ok {
-			pool = "master"
-		} else if _, ok = node.Labels["node-role.kubernetes.io/arbiter"]; ok {
-			pool = "arbiter"
+
+		// Get MCP associated with node
+		pool, err := helpers.GetPrimaryPoolNameForMCN(optr.mcpLister, node)
+		if err != nil {
+			return err
 		}
+
 		newMCS := &v1alpha1.MachineConfigNode{
 			Spec: v1alpha1.MachineConfigNodeSpec{
 				Node: v1alpha1.MCOObjectReference{
