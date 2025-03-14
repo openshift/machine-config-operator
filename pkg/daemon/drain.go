@@ -320,9 +320,6 @@ func searchRegistryMirror(loc string, mirrors []sysregistriesv2.Endpoint) (bool,
 }
 
 func allDigestOnlyMirror(reg sysregistriesv2.Registry) bool {
-	if len(reg.Mirrors) == 0 {
-		return reg.MirrorByDigestOnly
-	}
 	for _, m := range reg.Mirrors {
 		if m.PullFromMirror != sysregistriesv2.MirrorByDigestOnly {
 			return false
