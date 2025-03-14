@@ -16,9 +16,9 @@ require (
 	github.com/containers/storage v1.51.0
 	github.com/coreos/fcct v0.5.0
 	github.com/coreos/go-semver v0.3.1
-	github.com/coreos/ign-converter v0.0.0-20230417193809-cee89ea7d8ff
+	github.com/coreos/ign-converter v0.0.0-20241125185625-2f773079ca81
 	github.com/coreos/ignition v0.35.0
-	github.com/coreos/ignition/v2 v2.15.0
+	github.com/coreos/ignition/v2 v2.20.0
 	github.com/coreos/rpmostree-client-go v0.0.0-20230914135003-fae0786302f7
 	github.com/coreos/stream-metadata-go v0.4.3
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
@@ -70,7 +70,7 @@ require (
 	github.com/alecthomas/go-check-sumtype v0.3.1 // indirect
 	github.com/alexkohler/nakedret/v2 v2.0.5 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
-	github.com/aws/aws-sdk-go v1.45.20 // indirect
+	github.com/aws/aws-sdk-go v1.55.5 // indirect
 	github.com/bombsimon/wsl/v4 v4.5.0 // indirect
 	github.com/butuzov/mirror v1.3.0 // indirect
 	github.com/catenacyber/perfsprint v0.7.1 // indirect
