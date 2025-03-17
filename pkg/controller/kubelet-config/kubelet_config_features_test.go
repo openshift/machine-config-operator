@@ -44,18 +44,17 @@ func TestFeatureGateDrift(t *testing.T) {
 			fgAccess := featuregates.NewHardcodedFeatureGateAccess(features.Spec.FeatureGateSelection.CustomNoUpgrade.Enabled, features.Spec.FeatureGateSelection.CustomNoUpgrade.Disabled)
 			ctrl := f.newController(fgAccess)
 
+			featureGates, err := generateFeatureMap(ctrl.featureGateAccess, openshiftOnlyFeatureGates...)
+			require.NoError(t, err)
+
 			// Generate kubelet config with feature gates applied
-			kubeletConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, "master", fgAccess, nil)
+			kubeletConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, "master", featureGates, nil)
 			require.NoError(t, err)
 
 			t.Logf("Generated Kubelet Config Feature Gates: %v", kubeletConfig.FeatureGates)
 
-			defaultFeatureGates, err := generateFeatureMap(fgAccess)
-			require.NoError(t, err)
-			t.Logf("Expected Feature Gates: %v", *defaultFeatureGates)
-
-			if !reflect.DeepEqual(kubeletConfig.FeatureGates, *defaultFeatureGates) {
-				t.Errorf("Generated kubelet configuration feature gates do not match expected feature gates: generated=%v, expected=%v", kubeletConfig.FeatureGates, *defaultFeatureGates)
+			if !reflect.DeepEqual(kubeletConfig.FeatureGates, featureGates) {
+				t.Errorf("Generated kubelet configuration feature gates do not match expected feature gates: generated=%v, expected=%v", kubeletConfig.FeatureGates, featureGates)
 			}
 		})
 	}
@@ -227,7 +226,7 @@ func TestBootstrapFeaturesCustomNoUpgrade(t *testing.T) {
 				if err != nil {
 					t.Errorf("could not generate defaultFeatureGates: %v", err)
 				}
-				if reflect.DeepEqual(originalKubeConfig.FeatureGates, *defaultFeatureGates) {
+				if reflect.DeepEqual(originalKubeConfig.FeatureGates, defaultFeatureGates) {
 					t.Errorf("template FeatureGates should not match default openshift/api FeatureGates: (default=%v)", defaultFeatureGates)
 				}
 				if !originalKubeConfig.FeatureGates["CSIMigration"] {
