@@ -112,6 +112,16 @@ type FeatureGateStatus struct {
 	// +listType=map
 	// +listMapKey=version
 	FeatureGates []FeatureGateDetails `json:"featureGates"`
+
+	// renderedMinimumComponentVersions are the component versions that the feature gate list of this status were rendered from.
+	// Currently, the only supported component is Kubelet, and setting a required minimum kubelet component will set the
+	// minimumKubeletVersion field in the nodes.config.openshift.io CRD.
+	// +kubebuilder:validation:MaxItems:=1
+	// +listType=map
+	// +listMapKey=component
+	// +openshift:enable:FeatureGate=MinimumKubeletVersion
+	// +optional
+	RenderedMinimumComponentVersions []RequiredMinimumComponentVersion `json:"renderedMinimumComponentVersions,omitempty"`
 }
 
 type FeatureGateDetails struct {
@@ -131,10 +141,44 @@ type FeatureGateAttributes struct {
 	// +required
 	Name FeatureGateName `json:"name"`
 
+	// requiredMinimumComponentVersions is a list of component/version pairs that declares the is the lowest version the given
+	// component may be in this cluster.
+	// Currently, the only supported component is Kubelet, and setting a required minimum kubelet component will set the
+	// minimumKubeletVersion field in the nodes.config.openshift.io CRD.
+	// +kubebuilder:validation:MaxItems:=1
+	// +listType=map
+	// +listMapKey=component
+	// +openshift:enable:FeatureGate=MinimumKubeletVersion
+	// +optional
+	RequiredMinimumComponentVersions []RequiredMinimumComponentVersion `json:"requiredMinimumComponentVersions,omitempty"`
+
 	// possible (probable?) future additions include
 	// 1. support level (Stable, ServiceDeliveryOnly, TechPreview, DevPreview)
 	// 2. description
 }
+
+// RequiredMinimumComponentVersion is a pair of Component and Version that specifies the required minimum Version of the given Component
+// to enable this feature.
+type RequiredMinimumComponentVersion struct {
+	// component is the entity whose version must be above a certain version.
+	// +required
+	Component RequiredMinimumComponent `json:"component"`
+	// version is the minimum version the given component may be in this cluster.
+	// version must be in semver format (x.y.z) and must consist only of numbers and periods (.).
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[0-9]*.[0-9]*.[0-9]*$')",message="minmumKubeletVersion must be in a semver compatible format of x.y.z, or empty"
+	// +kubebuilder:validation:MaxLength:=8
+	// +required
+	Version string `json:"version"`
+}
+
+// RequiredMinimumComponent is a type defining a component that can have a minimum version declared.
+// Currently, the only supported value is "Kubelet".
+// +kubebuilder:validation:Enum:=Kubelet
+type RequiredMinimumComponent string
+
+// RequiredMinimumComponentKubelet can be used to define the required minimum version for kubelets.
+// It will be compared against the "minimumKubeletVersion" field in the nodes.config.openshift.io object.
+var RequiredMinimumComponentKubelet RequiredMinimumComponent = "Kubelet"
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
