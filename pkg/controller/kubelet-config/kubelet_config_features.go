@@ -99,7 +99,12 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 			}
 		}
 
-		rawCfgIgn, err := generateKubeConfigIgnFromFeatures(cc, ctrl.templatesDir, role, ctrl.featureGateAccess, nodeConfig, apiServer)
+		featureGates, err := generateFeatureMap(ctrl.featureGateAccess, openshiftOnlyFeatureGates...)
+		if err != nil {
+			return fmt.Errorf("could not generate features map: %w", err)
+		}
+
+		rawCfgIgn, err := generateKubeConfigIgnFromFeatures(cc, ctrl.templatesDir, role, featureGates, nodeConfig, apiServer)
 		if err != nil {
 			return err
 		}
@@ -174,8 +179,9 @@ func (ctrl *Controller) deleteFeature(obj interface{}) {
 // generateFeatureMap returns a map of enabled/disabled feature gate selection with exclusion list
 //
 //nolint:gocritic
-func generateFeatureMap(featuregateAccess featuregates.FeatureGateAccess, exclusions ...osev1.FeatureGateName) (*map[string]bool, error) {
+func generateFeatureMap(featuregateAccess featuregates.FeatureGateAccess, exclusions ...osev1.FeatureGateName) (map[string]bool, error) {
 	rv := make(map[string]bool)
+
 	if !featuregateAccess.AreInitialFeatureGatesObserved() {
 		return nil, fmt.Errorf("initial feature gates are not observed")
 	}
@@ -197,11 +203,11 @@ func generateFeatureMap(featuregateAccess featuregates.FeatureGateAccess, exclus
 	for _, excluded := range exclusions {
 		delete(rv, string(excluded))
 	}
-	return &rv, nil
+	return rv, nil
 }
 
-func generateKubeConfigIgnFromFeatures(cc *mcfgv1.ControllerConfig, templatesDir, role string, featureGateAccess featuregates.FeatureGateAccess, nodeConfig *osev1.Node, apiServer *osev1.APIServer) ([]byte, error) {
-	originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, templatesDir, role, featureGateAccess, apiServer)
+func generateKubeConfigIgnFromFeatures(cc *mcfgv1.ControllerConfig, templatesDir, role string, featureGates map[string]bool, nodeConfig *osev1.Node, apiServer *osev1.APIServer) ([]byte, error) {
+	originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, templatesDir, role, featureGates, apiServer)
 	if err != nil {
 		return nil, err
 	}
@@ -227,12 +233,17 @@ func generateKubeConfigIgnFromFeatures(cc *mcfgv1.ControllerConfig, templatesDir
 func RunFeatureGateBootstrap(templateDir string, featureGateAccess featuregates.FeatureGateAccess, nodeConfig *osev1.Node, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool, apiServer *osev1.APIServer) ([]*mcfgv1.MachineConfig, error) {
 	machineConfigs := []*mcfgv1.MachineConfig{}
 
+	featureGates, err := generateFeatureMap(featureGateAccess, openshiftOnlyFeatureGates...)
+	if err != nil {
+		return nil, fmt.Errorf("could not generate features map: %w", err)
+	}
+
 	for _, pool := range mcpPools {
 		role := pool.Name
 		if nodeConfig == nil {
 			nodeConfig = createNewDefaultNodeconfig()
 		}
-		rawCfgIgn, err := generateKubeConfigIgnFromFeatures(controllerConfig, templateDir, role, featureGateAccess, nodeConfig, apiServer)
+		rawCfgIgn, err := generateKubeConfigIgnFromFeatures(controllerConfig, templateDir, role, featureGates, nodeConfig, apiServer)
 		if err != nil {
 			return nil, err
 		}
