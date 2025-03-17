@@ -26,6 +26,12 @@ func RunKubeletBootstrap(templateDir string, kubeletConfigs []*mcfgv1.KubeletCon
 	if nodeConfig == nil {
 		nodeConfig = createNewDefaultNodeconfig()
 	}
+
+	featureGates, err := generateFeatureMap(featureGateAccess, openshiftOnlyFeatureGates...)
+	if err != nil {
+		return nil, fmt.Errorf("could not generate features map: %w", err)
+	}
+
 	for _, kubeletConfig := range kubeletConfigs {
 		// use selector since label matching part of a KubeletConfig is not handled during the bootstrap
 		selector, err := metav1.LabelSelectorAsSelector(kubeletConfig.Spec.MachineConfigPoolSelector)
@@ -41,7 +47,7 @@ func RunKubeletBootstrap(templateDir string, kubeletConfigs []*mcfgv1.KubeletCon
 			}
 			role := pool.Name
 
-			originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(controllerConfig, templateDir, role, featureGateAccess, apiServer)
+			originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(controllerConfig, templateDir, role, featureGates, apiServer)
 			if err != nil {
 				return nil, err
 			}
