@@ -420,7 +420,7 @@ func (ctrl *Controller) handleFeatureErr(err error, key string) {
 
 // generateOriginalKubeletConfigWithFeatureGates generates a KubeletConfig and ensure the correct feature gates are set
 // based on the given FeatureGate.
-func generateOriginalKubeletConfigWithFeatureGates(cc *mcfgv1.ControllerConfig, templatesDir, role string, featureGateAccess featuregates.FeatureGateAccess, apiServer *configv1.APIServer) (*kubeletconfigv1beta1.KubeletConfiguration, error) {
+func generateOriginalKubeletConfigWithFeatureGates(cc *mcfgv1.ControllerConfig, templatesDir, role string, featureGates map[string]bool, apiServer *configv1.APIServer) (*kubeletconfigv1beta1.KubeletConfiguration, error) {
 	originalKubeletIgn, err := generateOriginalKubeletConfigIgn(cc, templatesDir, role, apiServer)
 	if err != nil {
 		return nil, fmt.Errorf("could not generate the original Kubelet config ignition: %w", err)
@@ -435,11 +435,6 @@ func generateOriginalKubeletConfigWithFeatureGates(cc *mcfgv1.ControllerConfig, 
 	originalKubeConfig, err := DecodeKubeletConfig(contents)
 	if err != nil {
 		return nil, fmt.Errorf("could not deserialize the Kubelet source: %w", err)
-	}
-
-	featureGates, err := generateFeatureMap(featureGateAccess, openshiftOnlyFeatureGates...)
-	if err != nil {
-		return nil, fmt.Errorf("could not generate features map: %w", err)
 	}
 
 	// Merge in Feature Gates.
@@ -634,7 +629,12 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			return fmt.Errorf("could not get ControllerConfig %w", err)
 		}
 
-		originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, role, ctrl.featureGateAccess, apiServer)
+		featureGates, err := generateFeatureMap(ctrl.featureGateAccess, openshiftOnlyFeatureGates...)
+		if err != nil {
+			return fmt.Errorf("could not generate features map: %w", err)
+		}
+
+		originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, role, featureGates, apiServer)
 		if err != nil {
 			return ctrl.syncStatusOnly(cfg, err, "could not get original kubelet config: %v", err)
 		}

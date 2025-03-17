@@ -94,6 +94,11 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 		return fmt.Errorf("could not get the TLSSecurityProfile from %v: %v", ctrlcommon.APIServerInstanceName, err)
 	}
 
+	featureGates, err := generateFeatureMap(ctrl.featureGateAccess, openshiftOnlyFeatureGates...)
+	if err != nil {
+		return fmt.Errorf("could not generate features map: %w", err)
+	}
+
 	for _, pool := range mcpPools {
 		role := pool.Name
 		// Get MachineConfig
@@ -113,7 +118,7 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 				return err
 			}
 		}
-		originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, role, ctrl.featureGateAccess, apiServer)
+		originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, role, featureGates, apiServer)
 		if err != nil {
 			return err
 		}
@@ -279,6 +284,11 @@ func RunNodeConfigBootstrap(templateDir string, featureGateAccess featuregates.F
 
 	configs := []*mcfgv1.MachineConfig{}
 
+	featureGates, err := generateFeatureMap(featureGateAccess, openshiftOnlyFeatureGates...)
+	if err != nil {
+		return nil, fmt.Errorf("could not generate features map: %w", err)
+	}
+
 	for _, pool := range mcpPools {
 		role := pool.Name
 		// Get MachineConfig
@@ -291,7 +301,7 @@ func RunNodeConfigBootstrap(templateDir string, featureGateAccess featuregates.F
 		if err != nil {
 			return nil, err
 		}
-		originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cconfig, templateDir, role, featureGateAccess, apiServer)
+		originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cconfig, templateDir, role, featureGates, apiServer)
 		if err != nil {
 			return nil, err
 		}
