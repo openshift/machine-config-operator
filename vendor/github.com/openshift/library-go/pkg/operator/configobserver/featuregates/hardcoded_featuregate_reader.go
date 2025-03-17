@@ -62,7 +62,8 @@ func (c *hardcodedFeatureGateAccess) AreInitialFeatureGatesObserved() bool {
 }
 
 func (c *hardcodedFeatureGateAccess) CurrentFeatureGates() (FeatureGate, error) {
-	return NewFeatureGate(c.enabled, c.disabled), c.readErr
+	// TODO FIXME not hardcoded
+	return NewFeatureGate(c.enabled, c.disabled, nil), c.readErr
 }
 
 // NewHardcodedFeatureGateAccessFromFeatureGate returns a FeatureGateAccess that is static and initialised from

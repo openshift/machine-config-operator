@@ -198,7 +198,8 @@ featuregates.config.openshift.io:
   CRDName: featuregates.config.openshift.io
   Capability: ""
   Category: ""
-  FeatureGates: []
+  FeatureGates:
+  - MinimumKubeletVersion
   FilenameOperatorName: config-operator
   FilenameOperatorOrdering: "01"
   FilenameRunLevel: "0000_10"

@@ -677,6 +677,7 @@ var (
 						productScope(kubernetes).
 						enhancementPR("https://github.com/kubernetes/enhancements/issues/127").
 						enableIn(configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
+						enableInDefaultWhenRequiredMinimumComponentVersion(configv1.MinimumComponentKubelet, "1.30.0").
 						mustRegister()
 
 	FeatureGateUserNamespacesPodSecurityStandards = newFeatureGate("UserNamespacesPodSecurityStandards").
@@ -685,6 +686,7 @@ var (
 							productScope(kubernetes).
 							enhancementPR("https://github.com/kubernetes/enhancements/issues/127").
 							enableIn(configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
+							enableInDefaultWhenRequiredMinimumComponentVersion(configv1.MinimumComponentKubelet, "1.30.0").
 							mustRegister()
 
 	FeatureGateProcMountType = newFeatureGate("ProcMountType").
@@ -693,6 +695,7 @@ var (
 					productScope(kubernetes).
 					enhancementPR("https://github.com/kubernetes/enhancements/issues/4265").
 					enableIn(configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
+					enableInDefaultWhenRequiredMinimumComponentVersion(configv1.MinimumComponentKubelet, "1.30.0").
 					mustRegister()
 
 	FeatureGateVSphereMultiNetworks = newFeatureGate("VSphereMultiNetworks").
