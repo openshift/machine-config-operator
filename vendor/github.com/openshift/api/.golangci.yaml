@@ -23,3 +23,5 @@ issues:
   # Want to make sure that those adding new fields have an
   # opportunity to fix them when running the linter locally.
   max-issues-per-linter: 1000
+  exclude-dirs:
+    - features/

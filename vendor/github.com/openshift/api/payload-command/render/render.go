@@ -3,17 +3,18 @@ package render
 import (
 	"flag"
 	"fmt"
-	"github.com/openshift/api/features"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
+	"github.com/blang/semver/v4"
+	configv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/api/features"
+	assets "github.com/openshift/api/payload-command/render/renderassets"
+
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
-
-	configv1 "github.com/openshift/api/config/v1"
-	assets "github.com/openshift/api/payload-command/render/renderassets"
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
@@ -66,6 +67,32 @@ func (o *RenderOpts) Run() error {
 	if err != nil {
 		return fmt.Errorf("problem with featuregate manifests: %w", err)
 	}
+
+	nodeConfigManifests, err := nodeConfigManifests([]string{o.RenderedManifestInputFilename})
+	if err != nil {
+		return fmt.Errorf("problem with node config manifests: %w", err)
+	}
+	var minimumKubeletVersion *semver.Version
+	for _, manifest := range nodeConfigManifests {
+		uncastObj, err := manifest.GetDecodedObj()
+		if err != nil {
+			return fmt.Errorf("error decoding FeatureGate: %w", err)
+		}
+		nodeConfig := &configv1.Node{}
+		err = runtime.DefaultUnstructuredConverter.FromUnstructured(uncastObj.(*unstructured.Unstructured).Object, nodeConfig)
+		if err != nil {
+			return fmt.Errorf("error converting NodeConfig: %w", err)
+		}
+		// TODO FIXME: how do we handle multiple?
+		if nodeConfig.Spec.MinimumKubeletVersion != "" {
+			v, err := semver.Parse(nodeConfig.Spec.MinimumKubeletVersion)
+			if err != nil {
+				return fmt.Errorf("failed to parse provided minimum kubelet version: %w", err)
+			}
+			minimumKubeletVersion = &v
+		}
+	}
+
 	clusterProfileAnnotationName := fmt.Sprintf("include.release.openshift.io/%s", o.UnprefixedClusterProfile)
 
 	for _, featureGateFile := range featureGateFiles {
@@ -109,7 +136,8 @@ func (o *RenderOpts) Run() error {
 		if err != nil {
 			return fmt.Errorf("unable to resolve featureGateStatus: %w", err)
 		}
-		currentDetails := FeaturesGateDetailsFromFeatureSets(featureGateStatus, o.PayloadVersion)
+		currentDetails := FeaturesGateDetailsFromFeatureSets(featureGateStatus, o.PayloadVersion, minimumKubeletVersion, featureGates.Spec.FeatureSet)
+
 		featureGates.Status.FeatureGates = []configv1.FeatureGateDetails{*currentDetails}
 
 		featureGateOutBytes := writeFeatureGateV1OrDie(featureGates)
@@ -227,6 +255,27 @@ func clusterProfilesFrom(annotations map[string]string) sets.Set[string] {
 }
 
 func featureGateManifests(renderedManifestInputFilenames []string) (assets.RenderedManifests, error) {
+	inputManifests, err := loadManifests(renderedManifestInputFilenames)
+	if err != nil {
+		return nil, err
+	}
+	featureGates := inputManifests.ListManifestOfType(configv1.GroupVersion.WithKind("FeatureGate"))
+	if len(featureGates) == 0 {
+		return nil, fmt.Errorf("no FeatureGates found in manfest dir: %v", renderedManifestInputFilenames)
+	}
+
+	return featureGates, nil
+}
+
+func nodeConfigManifests(renderedManifestInputFilenames []string) (assets.RenderedManifests, error) {
+	inputManifests, err := loadManifests(renderedManifestInputFilenames)
+	if err != nil {
+		return nil, err
+	}
+	return inputManifests.ListManifestOfType(configv1.GroupVersion.WithKind("Node")), nil
+}
+
+func loadManifests(renderedManifestInputFilenames []string) (assets.RenderedManifests, error) {
 	if len(renderedManifestInputFilenames) == 0 {
 		return nil, fmt.Errorf("cannot return FeatureGate without rendered manifests")
 	}
@@ -244,23 +293,72 @@ func featureGateManifests(renderedManifestInputFilenames []string) (assets.Rende
 			})
 		}
 	}
-	featureGates := inputManifests.ListManifestOfType(configv1.GroupVersion.WithKind("FeatureGate"))
-	if len(featureGates) == 0 {
-		return nil, fmt.Errorf("no FeatureGates found in manfest dir: %v", renderedManifestInputFilenames)
-	}
-
-	return featureGates, nil
+	return inputManifests, nil
 }
 
-func FeaturesGateDetailsFromFeatureSets(featureGateStatus *features.FeatureGateEnabledDisabled, currentVersion string) *configv1.FeatureGateDetails {
+func FeaturesGateDetailsFromFeatureSets(featureGateStatus *features.FeatureGateEnabledDisabled, currentVersion string, minimumKubeletVersion *semver.Version, featureSet configv1.FeatureSet) *configv1.FeatureGateDetails {
 	currentDetails := configv1.FeatureGateDetails{
 		Version: currentVersion,
 	}
+	skippedForVersion := map[configv1.FeatureGateName]bool{}
 	for _, gateName := range featureGateStatus.Enabled {
-		currentDetails.Enabled = append(currentDetails.Enabled, *gateName.FeatureGateAttributes.DeepCopy())
+		// Skip adding if we have a RequiredMinimumComponentVersion, as we'll handle that below
+		if len(gateName.FeatureGateAttributes.RequiredMinimumComponentVersions) != 0 && featureSet == configv1.Default {
+			skippedForVersion[gateName.FeatureGateAttributes.Name] = false
+		} else {
+			currentDetails.Enabled = append(currentDetails.Enabled, *gateName.FeatureGateAttributes.DeepCopy())
+		}
 	}
 	for _, gateName := range featureGateStatus.Disabled {
-		currentDetails.Disabled = append(currentDetails.Disabled, *gateName.FeatureGateAttributes.DeepCopy())
+		// Skip adding if we have a RequiredMinimumComponentVersion, as we'll handle that below
+		if len(gateName.FeatureGateAttributes.RequiredMinimumComponentVersions) != 0 && featureSet == configv1.Default {
+			skippedForVersion[gateName.FeatureGateAttributes.Name] = false
+		} else {
+			currentDetails.Disabled = append(currentDetails.Disabled, *gateName.FeatureGateAttributes.DeepCopy())
+		}
+	}
+
+	if minimumKubeletVersion != nil {
+		for versionStr, attrs := range featureGateStatus.EnabledGivenMinimumVersion[configv1.MinimumComponentKubelet] {
+			gateVersion, err := semver.Parse(versionStr)
+			if err != nil {
+				// Programming error, as these are built into the binary in features/feature.go
+				panic(err)
+			}
+			if minimumKubeletVersion.LTE(gateVersion) {
+				for _, attr := range attrs {
+					currentDetails.Enabled = append(currentDetails.Enabled, attr)
+					skippedForVersion[attr.Name] = true
+				}
+			} else {
+				for _, attr := range attrs {
+					currentDetails.Disabled = append(currentDetails.Disabled, attr)
+					skippedForVersion[attr.Name] = true
+				}
+			}
+		}
+	} else {
+		for _, attrs := range featureGateStatus.EnabledGivenMinimumVersion[configv1.MinimumComponentKubelet] {
+			for _, attr := range attrs {
+				currentDetails.Disabled = append(currentDetails.Disabled, attr)
+				skippedForVersion[attr.Name] = true
+			}
+		}
+	}
+
+	for name, missed := range skippedForVersion {
+		if !missed {
+			// Programming error: a gate was registered as skipped but not addressed
+			panic(fmt.Errorf("Missed feature gate name %s when constructing featureGateStatus", name))
+		}
+	}
+	if minimumKubeletVersion != nil {
+		currentDetails.RenderedMinimumComponentVersions = []configv1.MinimumComponentVersion{
+			{
+				Component: configv1.MinimumComponentKubelet,
+				Version:   minimumKubeletVersion.String(),
+			},
+		}
 	}
 
 	// sort for stability
