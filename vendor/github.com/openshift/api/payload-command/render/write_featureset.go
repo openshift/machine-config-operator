@@ -3,13 +3,14 @@ package render
 import (
 	"flag"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/api/features"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"os"
-	"path/filepath"
-	"strings"
 )
 
 var (
@@ -61,7 +62,7 @@ func (o *WriteFeatureSets) Run() error {
 					newLegacyFeatureGates.Insert(string(curr.FeatureGateAttributes.Name))
 				}
 			}
-			currentDetails := FeaturesGateDetailsFromFeatureSets(featureGateStatuses, o.PayloadVersion)
+			currentDetails := FeaturesGateDetailsFromFeatureSets(featureGateStatuses, o.PayloadVersion, nil, featureSetName)
 
 			featureGateInstance := &configv1.FeatureGate{
 				ObjectMeta: metav1.ObjectMeta{

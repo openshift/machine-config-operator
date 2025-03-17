@@ -194,7 +194,6 @@ require (
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/emicklei/go-restful/v3 v3.12.1 // indirect
 	github.com/ettle/strcase v0.2.0 // indirect
-	github.com/evanphx/json-patch v5.6.0+incompatible // indirect
 	github.com/evanphx/json-patch/v5 v5.9.11 // indirect
 	github.com/fatih/color v1.18.0 // indirect
 	github.com/fatih/structtag v1.2.0 // indirect
@@ -349,4 +348,8 @@ require (
 	sigs.k8s.io/yaml v1.4.0
 )
 
-replace k8s.io/kube-openapi => github.com/openshift/kube-openapi v0.0.0-20230816122517-ffc8f001abb0
+replace (
+	github.com/openshift/api => github.com/haircommander/api v0.0.0-20250326145233-4e692eb778c9
+	github.com/openshift/library-go => github.com/haircommander/library-go v0.0.0-20250320175542-74e1e32dfa76
+	k8s.io/kube-openapi => github.com/openshift/kube-openapi v0.0.0-20230816122517-ffc8f001abb0
+)
