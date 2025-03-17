@@ -113,13 +113,13 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	poolName := path.Base(r.URL.Path)
 	useragent := r.Header.Get("User-Agent")
 	acceptHeader := r.Header.Get("Accept")
-	klog.Infof("Pool %s requested by address:%q User-Agent:%q Accept-Header: %q", poolName, r.RemoteAddr, useragent, acceptHeader)
+	klog.Infof("Pool %q requested by address:%q User-Agent:%q Accept-Header: %q", poolName, r.RemoteAddr, useragent, acceptHeader)
 
 	reqConfigVer, err := detectSpecVersionFromAcceptHeader(acceptHeader)
 	if err != nil {
 		w.Header().Set("Content-Length", "0")
 		w.WriteHeader(http.StatusBadRequest)
-		klog.Error(err)
+		klog.Error(err.Error())
 		return
 	}
 
@@ -132,7 +132,7 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		w.Header().Set("Content-Length", "0")
 		w.WriteHeader(http.StatusInternalServerError)
-		klog.Errorf("couldn't get config for req: %v, error: %v", cr, err)
+		klog.Errorf("couldn't get config for req: %+v, error: %v", cr, err)
 		return
 	}
 	if conf == nil {
