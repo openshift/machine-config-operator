@@ -326,35 +326,43 @@ func IsControllerConfigCompleted(ccName string, ccGetter func(string) (*mcfgv1.C
 }
 
 // AreMCGeneratingSubControllersCompleted checks whether all MC producing sub-controllers are completed
-func AreMCGeneratingSubControllersCompleted(crcLister func(labels.Selector) ([]*mcfgv1.ContainerRuntimeConfig, error), mckLister func(labels.Selector) ([]*mcfgv1.KubeletConfig, error), selector labels.Selector) error {
+func AreMCGeneratingSubControllersCompletedForPool(crcLister func(labels.Selector) ([]*mcfgv1.ContainerRuntimeConfig, error), mckLister func(labels.Selector) ([]*mcfgv1.KubeletConfig, error), poolLabels map[string]string) error {
 
-	containerConfigs, err := crcLister(selector)
+	containerConfigs, err := crcLister(labels.Everything())
 	if err != nil {
 		return err
 	}
 	for _, crc := range containerConfigs {
-		if crc.Generation != crc.Status.ObservedGeneration {
-			return fmt.Errorf("status for ContainerRuntimeConfig %s is being reported for %d, expecting it for %d", crc.ObjectMeta.Name, crc.Status.ObservedGeneration, crc.Generation)
+		selector, err := metav1.LabelSelectorAsSelector(crc.Spec.MachineConfigPoolSelector)
+		if err != nil {
+			return fmt.Errorf("invalid label selector: %w", err)
 		}
+		if selector.Matches(labels.Set(poolLabels)) {
+			if crc.Generation != crc.Status.ObservedGeneration {
+				return fmt.Errorf("status for ContainerRuntimeConfig %s is being reported for %d, expecting it for %d", crc.ObjectMeta.Name, crc.Status.ObservedGeneration, crc.Generation)
+			}
 
-		for _, condition := range crc.Status.Conditions {
-			if condition.Type != mcfgv1.ContainerRuntimeConfigSuccess {
+			if crc.Status.Conditions[len(crc.Status.Conditions)-1].Type != mcfgv1.ContainerRuntimeConfigSuccess {
 				return fmt.Errorf("ContainerRuntimeConfig has not completed")
 			}
 		}
 	}
 
-	kubeletConfigs, err := mckLister(selector)
+	kubeletConfigs, err := mckLister(labels.Everything())
 	if err != nil {
 		return err
 	}
 	for _, mck := range kubeletConfigs {
-		if mck.Generation != mck.Status.ObservedGeneration {
-			return fmt.Errorf("status for KubeletConfig %s is being reported for %d, expecting it for %d", mck.ObjectMeta.Name, mck.Status.ObservedGeneration, mck.Generation)
+		selector, err := metav1.LabelSelectorAsSelector(mck.Spec.MachineConfigPoolSelector)
+		if err != nil {
+			return fmt.Errorf("invalid label selector: %w", err)
 		}
+		if selector.Matches(labels.Set(poolLabels)) {
+			if mck.Generation != mck.Status.ObservedGeneration {
+				return fmt.Errorf("status for KubeletConfig %s is being reported for %d, expecting it for %d", mck.ObjectMeta.Name, mck.Status.ObservedGeneration, mck.Generation)
+			}
 
-		for _, condition := range mck.Status.Conditions {
-			if condition.Type != mcfgv1.KubeletConfigSuccess {
+			if mck.Status.Conditions[len(mck.Status.Conditions)-1].Type != mcfgv1.KubeletConfigSuccess {
 				return fmt.Errorf("KubeletConfig has not completed")
 			}
 		}
