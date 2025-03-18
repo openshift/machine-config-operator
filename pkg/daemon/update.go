@@ -837,6 +837,18 @@ func (dn *Daemon) updateOnClusterBuild(oldConfig, newConfig *mcfgv1.MachineConfi
 	oldConfigName := oldConfig.GetName()
 	newConfigName := newConfig.GetName()
 
+	// Add the desired config version to the MCN
+	// 	get MCP associated with node
+	pool, err := helpers.GetPrimaryPoolNameForMCN(dn.mcpLister, dn.node)
+	if err != nil {
+		return err
+	}
+	//  update the MCN spec
+	err = upgrademonitor.GenerateAndApplyMachineConfigNodeSpec(dn.featureGatesAccessor, pool, dn.node, dn.mcfgClient)
+	if err != nil {
+		return fmt.Errorf("error updating MCN spec for node %s: %w", dn.node.Name, err)
+	}
+
 	oldIgnConfig, err := ctrlcommon.ParseAndConvertConfig(oldConfig.Spec.Config.Raw)
 	if err != nil {
 		return fmt.Errorf("parsing old Ignition config failed: %w", err)
