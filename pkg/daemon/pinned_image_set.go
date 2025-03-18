@@ -544,6 +544,12 @@ func (p *PinnedImageSetManager) updateStatusProgressing(pools []*mcfgv1.MachineC
 	}
 	imageSetSpec := getPinnedImageSetSpecForPools(pools)
 
+	// Get MCP associated with node
+	pool, err := helpers.GetPrimaryPoolNameForMCN(p.mcpLister, node)
+	if err != nil {
+		return err
+	}
+
 	return upgrademonitor.UpdateMachineConfigNodeStatus(
 		&upgrademonitor.Condition{
 			State:   mcfgv1alpha1.MachineConfigNodePinnedImageSetsProgressing,
@@ -558,6 +564,7 @@ func (p *PinnedImageSetManager) updateStatusProgressing(pools []*mcfgv1.MachineC
 		applyCfg,
 		imageSetSpec,
 		p.featureGatesAccessor,
+		pool,
 	)
 }
 
@@ -574,6 +581,12 @@ func (p *PinnedImageSetManager) updateStatusProgressingComplete(pools []*mcfgv1.
 	}
 	imageSetSpec := getPinnedImageSetSpecForPools(pools)
 
+	// Get MCP associated with node
+	pool, err := helpers.GetPrimaryPoolNameForMCN(p.mcpLister, node)
+	if err != nil {
+		return err
+	}
+
 	err = upgrademonitor.UpdateMachineConfigNodeStatus(
 		&upgrademonitor.Condition{
 			State:   mcfgv1alpha1.MachineConfigNodePinnedImageSetsProgressing,
@@ -588,6 +601,7 @@ func (p *PinnedImageSetManager) updateStatusProgressingComplete(pools []*mcfgv1.
 		applyCfg,
 		imageSetSpec,
 		p.featureGatesAccessor,
+		pool,
 	)
 	if err != nil {
 		klog.Errorf("Failed to updated machine config node: %v", err)
@@ -608,6 +622,7 @@ func (p *PinnedImageSetManager) updateStatusProgressingComplete(pools []*mcfgv1.
 		nil,
 		nil,
 		p.featureGatesAccessor,
+		pool,
 	)
 }
 
@@ -632,6 +647,12 @@ func (p *PinnedImageSetManager) updateStatusError(pools []*mcfgv1.MachineConfigP
 		errMsg = statusErr.Error()
 	}
 
+	// Get MCP associated with node
+	pool, err := helpers.GetPrimaryPoolNameForMCN(p.mcpLister, node)
+	if err != nil {
+		return err
+	}
+
 	return upgrademonitor.UpdateMachineConfigNodeStatus(
 		&upgrademonitor.Condition{
 			State:   mcfgv1alpha1.MachineConfigNodePinnedImageSetsDegraded,
@@ -646,6 +667,7 @@ func (p *PinnedImageSetManager) updateStatusError(pools []*mcfgv1.MachineConfigP
 		applyCfg,
 		imageSetSpec,
 		p.featureGatesAccessor,
+		pool,
 	)
 }
 
