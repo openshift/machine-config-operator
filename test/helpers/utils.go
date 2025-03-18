@@ -259,7 +259,7 @@ func WaitForPoolComplete(t *testing.T, cs *framework.ClientSet, pool, target str
 	startTime := time.Now()
 	ctx := context.TODO()
 
-	if err := wait.PollUntilContextTimeout(ctx, 2*time.Second, 20*time.Minute, false, func(ctx context.Context) (bool, error) {
+	if err := wait.PollUntilContextTimeout(ctx, 2*time.Second, 25*time.Minute, false, func(ctx context.Context) (bool, error) {
 		mcp, err := cs.MachineConfigPools().Get(ctx, pool, metav1.GetOptions{})
 		if err != nil {
 			return false, err

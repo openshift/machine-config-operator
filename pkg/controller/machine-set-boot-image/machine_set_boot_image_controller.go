@@ -90,9 +90,6 @@ const (
 	// Labels and Annotations required for determining architecture of a machineset
 	MachineSetArchAnnotationKey = "capacity.cluster-autoscaler.kubernetes.io/labels"
 	ArchLabelKey                = "kubernetes.io/arch="
-
-	// Name of managed worker secret
-	ManagedWorkerSecretName = "worker-user-data-managed"
 )
 
 // New returns a new machine-set-boot-image controller.
@@ -437,13 +434,13 @@ func (ctrl *Controller) syncMAPIMachineSet(machineSet *machinev1beta1.MachineSet
 			pollError = fmt.Errorf("mismatch between MCO hash version stored in configmap and current MCO version; sync will exit to wait for the MCO upgrade to complete")
 			return false, nil
 		}
-		releaseVersionFromCM, releaseVersionFound := configMap.Data[ctrlcommon.MCOReleaseImageVersionKey]
+		releaseVersionFromCM, releaseVersionFound := configMap.Data[ctrlcommon.OCPReleaseVersionKey]
 		if !releaseVersionFound {
-			pollError = fmt.Errorf("failed to find mco release version in %s configmap, sync will exit to wait for the MCO upgrade to complete", ctrlcommon.BootImagesConfigMapName)
+			pollError = fmt.Errorf("failed to find OCP release version in %s configmap, sync will exit to wait for the MCO upgrade to complete", ctrlcommon.BootImagesConfigMapName)
 			return false, nil
 		}
 		if releaseVersionFromCM != operatorversion.ReleaseVersion {
-			pollError = fmt.Errorf("mismatch between MCO release version stored in configmap and current MCO release version; sync will exit to wait for the MCO upgrade to complete")
+			pollError = fmt.Errorf("mismatch between OCP release version stored in configmap and current MCO release version; sync will exit to wait for the MCO upgrade to complete")
 			return false, nil
 		}
 		return true, nil
@@ -453,12 +450,8 @@ func (ctrl *Controller) syncMAPIMachineSet(machineSet *machinev1beta1.MachineSet
 		return fmt.Errorf("timed out waiting for coreos-bootimages config map: %v", pollError)
 	}
 
-	// TODO: Also check against the release version stored in the configmap under releaseVersion. This is currently broken as the version
-	// stored is "0.0.1-snapshot" and does not reflect the correct value. Tracked in this bug https://issues.redhat.com/browse/OCPBUGS-19824
-	// The current hash and version check should be enough to skate by for now, but fixing this would be additional safety - djoshy
-
 	// Check if the this MachineSet requires an update
-	patchRequired, newMachineSet, err := checkMachineSet(infra, machineSet, configMap, arch)
+	patchRequired, newMachineSet, err := checkMachineSet(infra, machineSet, configMap, arch, ctrl.kubeClient)
 	if err != nil {
 		return fmt.Errorf("failed to reconcile machineset %s, err: %w", machineSet.Name, err)
 	}

@@ -301,7 +301,7 @@ func (p *PinnedImageSetManager) syncMachineConfigPool(ctx context.Context, pool 
 		if err != nil {
 			return fmt.Errorf("failed to get PinnedImageSet %q: %w", ref.Name, err)
 		}
-		klog.Infof("Reconciling pinned image set: %s: generation: %d", ref.Name, imageSet.GetGeneration())
+		klog.Infof("Reconciling pinned image set: %s: generation: %d, pool: %v", ref.Name, imageSet.GetGeneration(), pool.Name)
 
 		// verify storage per image set
 		if err := p.checkNodeAllocatableStorage(ctx, imageSet); err != nil {
@@ -691,6 +691,7 @@ func (p *PinnedImageSetManager) getPinnedImageSetApplyConfigsForPools(pools []*m
 	return applyConfigs, nil
 }
 
+//nolint:gosec
 func (p *PinnedImageSetManager) createApplyConfigForImageSet(imageSet *mcfgv1alpha1.PinnedImageSet, isCompleted bool, statusErr error) *machineconfigurationalphav1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration {
 	imageSetConfig := machineconfigurationalphav1.MachineConfigNodeStatusPinnedImageSet().
 		WithName(imageSet.Name).
@@ -1394,21 +1395,21 @@ type imageInfo struct {
 	Pulled bool
 }
 
-func triggerPinnedImageSetChange(old, new *mcfgv1alpha1.PinnedImageSet) bool {
-	if old.DeletionTimestamp != new.DeletionTimestamp {
+func triggerPinnedImageSetChange(old, newPinnedImageSet *mcfgv1alpha1.PinnedImageSet) bool {
+	if old.DeletionTimestamp != newPinnedImageSet.DeletionTimestamp {
 		return true
 	}
-	if !reflect.DeepEqual(old.Spec, new.Spec) {
+	if !reflect.DeepEqual(old.Spec, newPinnedImageSet.Spec) {
 		return true
 	}
 	return false
 }
 
-func triggerMachineConfigPoolChange(old, new *mcfgv1.MachineConfigPool) bool {
-	if old.DeletionTimestamp != new.DeletionTimestamp {
+func triggerMachineConfigPoolChange(old, newMCP *mcfgv1.MachineConfigPool) bool {
+	if old.DeletionTimestamp != newMCP.DeletionTimestamp {
 		return true
 	}
-	if !reflect.DeepEqual(old.Spec.PinnedImageSets, new.Spec.PinnedImageSets) {
+	if !reflect.DeepEqual(old.Spec.PinnedImageSets, newMCP.Spec.PinnedImageSets) {
 		return true
 	}
 	return false

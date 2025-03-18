@@ -3,10 +3,10 @@
 package v1
 
 import (
-	v1 "github.com/openshift/api/operator/v1"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/client-go/listers"
-	"k8s.io/client-go/tools/cache"
+	operatorv1 "github.com/openshift/api/operator/v1"
+	labels "k8s.io/apimachinery/pkg/labels"
+	listers "k8s.io/client-go/listers"
+	cache "k8s.io/client-go/tools/cache"
 )
 
 // ServiceCALister helps list ServiceCAs.
@@ -14,19 +14,19 @@ import (
 type ServiceCALister interface {
 	// List lists all ServiceCAs in the indexer.
 	// Objects returned here must be treated as read-only.
-	List(selector labels.Selector) (ret []*v1.ServiceCA, err error)
+	List(selector labels.Selector) (ret []*operatorv1.ServiceCA, err error)
 	// Get retrieves the ServiceCA from the index for a given name.
 	// Objects returned here must be treated as read-only.
-	Get(name string) (*v1.ServiceCA, error)
+	Get(name string) (*operatorv1.ServiceCA, error)
 	ServiceCAListerExpansion
 }
 
 // serviceCALister implements the ServiceCALister interface.
 type serviceCALister struct {
-	listers.ResourceIndexer[*v1.ServiceCA]
+	listers.ResourceIndexer[*operatorv1.ServiceCA]
 }
 
 // NewServiceCALister returns a new ServiceCALister.
 func NewServiceCALister(indexer cache.Indexer) ServiceCALister {
-	return &serviceCALister{listers.New[*v1.ServiceCA](indexer, v1.Resource("serviceca"))}
+	return &serviceCALister{listers.New[*operatorv1.ServiceCA](indexer, operatorv1.Resource("serviceca"))}
 }

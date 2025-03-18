@@ -20,6 +20,7 @@ import (
 	corelisterv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/clock"
 
 	configv1 "github.com/openshift/api/config/v1"
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
@@ -39,13 +40,6 @@ const (
 	mcsCARefresh     = 8 * oneYear
 	mcsTLSKeyExpiry  = mcsCAExpiry
 	mcsTLSKeyRefresh = mcsCARefresh
-
-	// This is used to key in to the user-data secret
-	userDataKey = "userData"
-
-	// ign* are for the user-data ignition fields
-	ignFieldIgnition = "ignition"
-	ignFieldSource   = "source"
 )
 
 type CertRotationController struct {
@@ -75,7 +69,7 @@ func New(
 	mcoConfigMapInfomer coreinformersv1.ConfigMapInformer,
 ) (*CertRotationController, error) {
 
-	recorder := events.NewLoggingEventRecorder(componentName)
+	recorder := events.NewLoggingEventRecorder(componentName, clock.RealClock{})
 
 	c := &CertRotationController{
 		kubeClient:          kubeClient,
@@ -425,14 +419,14 @@ func (c *CertRotationController) reconcileSecret(secret corev1.Secret) error {
 	}
 
 	// Extract user data field from *-user-data secret
-	userData := secret.Data[userDataKey]
+	userData := secret.Data[ctrlcommon.UserDataKey]
 	var userDataIgn interface{}
 	if err := json.Unmarshal(userData, &userDataIgn); err != nil {
 		return fmt.Errorf("failed to unmarshal decoded user-data to json (secret %s): %w, skipping secret", secret.Name, err)
 	}
 
 	// Check if a content update to security.tls.certificateAuthorities is required
-	ignCAPath := []string{ignFieldIgnition, "security", "tls", "certificateAuthorities"}
+	ignCAPath := []string{ctrlcommon.IgnFieldIgnition, "security", "tls", "certificateAuthorities"}
 	caSlice, isSlice, err := unstructured.NestedFieldNoCopy(userDataIgn.(map[string]interface{}), ignCAPath...)
 	if !isSlice || err != nil {
 		return fmt.Errorf("failed to find certificateauthorities field in ignition (secret %s): %w", secret.Name, err)
@@ -440,7 +434,7 @@ func (c *CertRotationController) reconcileSecret(secret corev1.Secret) error {
 	if len(caSlice.([]interface{})) > 1 {
 		return fmt.Errorf("additional CAs detected, cannot modify automatically. Aborting")
 	}
-	caSlice.([]interface{})[0].(map[string]interface{})[ignFieldSource] = dataurl.EncodeBytes(caData)
+	caSlice.([]interface{})[0].(map[string]interface{})[ctrlcommon.IgnFieldSource] = dataurl.EncodeBytes(caData)
 
 	updatedIgnition, err := json.Marshal(userDataIgn)
 	if err != nil {
@@ -453,7 +447,7 @@ func (c *CertRotationController) reconcileSecret(secret corev1.Secret) error {
 	}
 
 	// If an update is required, apply the new ignition content and update the secret
-	secret.Data[userDataKey] = updatedIgnition
+	secret.Data[ctrlcommon.UserDataKey] = updatedIgnition
 	_, err = c.kubeClient.CoreV1().Secrets(ctrlcommon.MachineAPINamespace).Update(context.TODO(), &secret, metav1.UpdateOptions{})
 	if err != nil {
 		return fmt.Errorf("could not update secret %s: %w", secret.Name, err)

@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
@@ -90,9 +91,6 @@ type onClusterLayeringTestOpts struct {
 
 	// Inject YUM repo information from a Centos 9 stream container
 	useYumRepos bool
-
-	// Add Extensions for testing
-	useExtensions bool
 }
 
 func TestOnClusterLayeringOnOKD(t *testing.T) {
@@ -139,13 +137,12 @@ func TestOnClusterLayering(t *testing.T) {
 
 // Tests that an on-cluster build can be performed and that the resulting image
 // is rolled out to an opted-in node.
-func TestOnClusterBuildRollsOutImageWithExtensionsInstalled(t *testing.T) {
+func TestOnClusterBuildRollsOutImage(t *testing.T) {
 	imagePullspec := runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
 		poolName: layeredMCPName,
 		customDockerfiles: map[string]string{
 			layeredMCPName: cowsayDockerfile,
 		},
-		useExtensions: true,
 	})
 
 	cs := framework.NewClientSet("")
@@ -156,14 +153,12 @@ func TestOnClusterBuildRollsOutImageWithExtensionsInstalled(t *testing.T) {
 
 	helpers.AssertNodeBootedIntoImage(t, cs, node, imagePullspec)
 	t.Logf("Node %s is booted into image %q", node.Name, imagePullspec)
-	assertExtensionInstalledOnNode(t, cs, node, true)
 
 	t.Log(helpers.ExecCmdOnNode(t, cs, node, "chroot", "/rootfs", "cowsay", "Moo!"))
 
 	unlabelFunc()
 
 	assertNodeRevertsToNonLayered(t, cs, node)
-	assertExtensionInstalledOnNode(t, cs, node, false)
 }
 
 func assertNodeRevertsToNonLayered(t *testing.T, cs *framework.ClientSet, node corev1.Node) {
@@ -178,22 +173,6 @@ func assertNodeRevertsToNonLayered(t *testing.T, cs *framework.ClientSet, node c
 
 	helpers.AssertFileNotOnNode(t, cs, node, filepath.Join("/etc/systemd/system", runtimeassets.RevertServiceName))
 	helpers.AssertFileNotOnNode(t, cs, node, runtimeassets.RevertServiceMachineConfigFile)
-}
-
-func assertExtensionInstalledOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, shouldExist bool) {
-	foundPkg, err := helpers.ExecCmdOnNodeWithError(cs, node, "chroot", "/rootfs", "rpm", "-q", "usbguard")
-	if shouldExist {
-		require.NoError(t, err, "usbguard extension not found")
-		if strings.Contains(foundPkg, "package usbguard is not installed") {
-			t.Fatalf("usbguard package not installed on node %s, got %s", node.Name, foundPkg)
-		}
-		t.Logf("usbguard extension installed, got %s", foundPkg)
-	} else {
-		if !strings.Contains(foundPkg, "package usbguard is not installed") {
-			t.Fatalf("usbguard package is installed on node %s, got %s", node.Name, foundPkg)
-		}
-		t.Logf("usbguard extension not installed as expected, got %s", foundPkg)
-	}
 }
 
 // This test extracts the /etc/yum.repos.d and /etc/pki/rpm-gpg content from a
@@ -816,30 +795,6 @@ func prepareForOnClusterLayeringTest(t *testing.T, cs *framework.ClientSet, test
 		makeIdempotentAndRegister(t, helpers.CreateMCP(t, cs, testOpts.poolName))
 	}
 
-	if testOpts.useExtensions {
-		extensionsMC := &mcfgv1.MachineConfig{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:   "99-extensions",
-				Labels: helpers.MCLabelForRole(testOpts.poolName),
-			},
-			Spec: mcfgv1.MachineConfigSpec{
-				Config: runtime.RawExtension{
-					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
-				},
-				Extensions: []string{"usbguard"},
-			},
-		}
-
-		helpers.SetMetadataOnObject(t, extensionsMC)
-		// Apply the extensions MC
-		applyMC(t, cs, extensionsMC)
-
-		// Wait for rendered config to finish creating
-		renderedConfig, err := helpers.WaitForRenderedConfig(t, cs, testOpts.poolName, extensionsMC.Name)
-		require.NoError(t, err)
-		t.Logf("Finished rendering config %s", renderedConfig)
-	}
-
 	_, err := helpers.WaitForRenderedConfig(t, cs, testOpts.poolName, "00-worker")
 	require.NoError(t, err)
 
@@ -953,4 +908,103 @@ func TestSSHKeyAndPasswordForOSBuilder(t *testing.T) {
 		unlabelFunc()
 		mcCleanupFunc()
 	})
+}
+
+// This test starts a build and then immediately scales down the
+// machine-os-builder deployment until the underlying build job has completed.
+// The rationale behind this test is so that if the machine-os-builder pod gets
+// rescheduled onto a different node while a build is occurring that the
+// MachineOSBuild object will eventually be reconciled, even if the build
+// completed during the rescheduling operation.
+func TestControllerEventuallyReconciles(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	cs := framework.NewClientSet("")
+
+	poolName := layeredMCPName
+
+	mosc := prepareForOnClusterLayeringTest(t, cs, onClusterLayeringTestOpts{
+		poolName: poolName,
+		customDockerfiles: map[string]string{
+			layeredMCPName: cowsayDockerfile,
+		},
+	})
+
+	mcp, err := cs.MachineconfigurationV1Interface.MachineConfigPools().Get(ctx, poolName, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	mosb := buildrequest.NewMachineOSBuildFromAPIOrDie(ctx, cs.GetKubeclient(), mosc, mcp)
+
+	jobName := utils.GetBuildJobName(mosb)
+
+	createMachineOSConfig(t, cs, mosc)
+
+	// Wait for the MachineOSBuild to exist.
+	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx).Eventually()
+	kubeassert.MachineOSBuildExists(mosb)
+	kubeassert.JobExists(utils.GetBuildJobName(mosb))
+
+	t.Logf("MachineOSBuild %q exists, stopping machine-os-builder", mosb.Name)
+
+	// As soon as the MachineOSBuild exists, scale down the machine-os-builder
+	// deployment and any other deployments which may inadvertantly cause its
+	// replica count to increase. This is done to simulate the machine-os-builder
+	// pod being scheduled onto a different node.
+	restoreDeployments := scaleDownDeployments(t, cs)
+
+	// Wait for the job to start running.
+	waitForJobToReachCondition(ctx, t, cs, jobName, func(job *batchv1.Job) (bool, error) {
+		return job.Status.Active == 1, nil
+	})
+
+	t.Logf("Job %s has started running, starting machine-os-builder", jobName)
+
+	// Restore the deployments.
+	restoreDeployments()
+
+	// Ensure that the MachineOSBuild object eventually gets updated.
+	kubeassert.MachineOSBuildIsRunning(mosb)
+
+	t.Logf("MachineOSBuild %s is now running, stopping machine-os-builder", mosb.Name)
+
+	// Stop the deployments again.
+	restoreDeployments = scaleDownDeployments(t, cs)
+
+	// Wait for the job to complete.
+	waitForJobToReachCondition(ctx, t, cs, utils.GetBuildJobName(mosb), func(job *batchv1.Job) (bool, error) {
+		return job.Status.Succeeded == 1, nil
+	})
+
+	t.Logf("Job %q finished, starting machine-os-builder", jobName)
+
+	// Restore the deployments again.
+	restoreDeployments()
+
+	// At this point, the machine-os-builder is running, so we wait for the build
+	// itself to complete and be updated.
+	mosb = waitForBuildToComplete(t, cs, mosb)
+
+	// Wait until the MachineOSConfig gets the digested pullspec from the MachineOSBuild.
+	require.NoError(t, wait.PollImmediate(1*time.Second, 5*time.Minute, func() (bool, error) {
+		mosc, err := cs.MachineconfigurationV1Interface.MachineOSConfigs().Get(ctx, mosc.Name, metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+
+		return mosc.Status.CurrentImagePullSpec != "" && mosc.Status.CurrentImagePullSpec == mosb.Status.DigestedImagePushSpec, nil
+	}))
+}
+
+// Waits for a job object to reach a given state.
+// TOOD: Add this to the Asserts helper struct.
+func waitForJobToReachCondition(ctx context.Context, t *testing.T, cs *framework.ClientSet, jobName string, condFunc func(*batchv1.Job) (bool, error)) {
+	require.NoError(t, wait.PollImmediate(1*time.Second, 10*time.Minute, func() (bool, error) {
+		job, err := cs.BatchV1Interface.Jobs(ctrlcommon.MCONamespace).Get(ctx, jobName, metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+
+		return condFunc(job)
+	}))
 }

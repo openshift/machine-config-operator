@@ -3,10 +3,10 @@
 package v1
 
 import (
-	v1 "github.com/openshift/api/operator/v1"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/client-go/listers"
-	"k8s.io/client-go/tools/cache"
+	operatorv1 "github.com/openshift/api/operator/v1"
+	labels "k8s.io/apimachinery/pkg/labels"
+	listers "k8s.io/client-go/listers"
+	cache "k8s.io/client-go/tools/cache"
 )
 
 // IngressControllerLister helps list IngressControllers.
@@ -14,7 +14,7 @@ import (
 type IngressControllerLister interface {
 	// List lists all IngressControllers in the indexer.
 	// Objects returned here must be treated as read-only.
-	List(selector labels.Selector) (ret []*v1.IngressController, err error)
+	List(selector labels.Selector) (ret []*operatorv1.IngressController, err error)
 	// IngressControllers returns an object that can list and get IngressControllers.
 	IngressControllers(namespace string) IngressControllerNamespaceLister
 	IngressControllerListerExpansion
@@ -22,17 +22,17 @@ type IngressControllerLister interface {
 
 // ingressControllerLister implements the IngressControllerLister interface.
 type ingressControllerLister struct {
-	listers.ResourceIndexer[*v1.IngressController]
+	listers.ResourceIndexer[*operatorv1.IngressController]
 }
 
 // NewIngressControllerLister returns a new IngressControllerLister.
 func NewIngressControllerLister(indexer cache.Indexer) IngressControllerLister {
-	return &ingressControllerLister{listers.New[*v1.IngressController](indexer, v1.Resource("ingresscontroller"))}
+	return &ingressControllerLister{listers.New[*operatorv1.IngressController](indexer, operatorv1.Resource("ingresscontroller"))}
 }
 
 // IngressControllers returns an object that can list and get IngressControllers.
 func (s *ingressControllerLister) IngressControllers(namespace string) IngressControllerNamespaceLister {
-	return ingressControllerNamespaceLister{listers.NewNamespaced[*v1.IngressController](s.ResourceIndexer, namespace)}
+	return ingressControllerNamespaceLister{listers.NewNamespaced[*operatorv1.IngressController](s.ResourceIndexer, namespace)}
 }
 
 // IngressControllerNamespaceLister helps list and get IngressControllers.
@@ -40,15 +40,15 @@ func (s *ingressControllerLister) IngressControllers(namespace string) IngressCo
 type IngressControllerNamespaceLister interface {
 	// List lists all IngressControllers in the indexer for a given namespace.
 	// Objects returned here must be treated as read-only.
-	List(selector labels.Selector) (ret []*v1.IngressController, err error)
+	List(selector labels.Selector) (ret []*operatorv1.IngressController, err error)
 	// Get retrieves the IngressController from the indexer for a given namespace and name.
 	// Objects returned here must be treated as read-only.
-	Get(name string) (*v1.IngressController, error)
+	Get(name string) (*operatorv1.IngressController, error)
 	IngressControllerNamespaceListerExpansion
 }
 
 // ingressControllerNamespaceLister implements the IngressControllerNamespaceLister
 // interface.
 type ingressControllerNamespaceLister struct {
-	listers.ResourceIndexer[*v1.IngressController]
+	listers.ResourceIndexer[*operatorv1.IngressController]
 }

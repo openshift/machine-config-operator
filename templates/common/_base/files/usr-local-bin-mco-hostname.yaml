@@ -3,6 +3,8 @@ path: "/usr/local/bin/mco-hostname"
 contents:
   inline: |
     #!/bin/bash
+    set -euo pipefail
+
     # First, we need to wait until DHCP finishes and the node has a non-`localhost`
     # hostname before `kubelet.service` starts.
     # That's the `--wait` argument as used by `node-valid-hostname.service`.
@@ -57,9 +59,27 @@ contents:
         exit 0
     }
 
+    set_openstack_hostname() {
+        # Read metadata written by afterburn service
+        . /run/metadata/afterburn
+
+        # node-valid-hostname sets persistent hostname from /proc/sys/kernel/hostname
+        echo "$AFTERBURN_OPENSTACK_HOSTNAME" > /proc/sys/kernel/hostname
+    }
+
+    set_powervs_hostname() {
+        # Read metadata written by afterburn service
+        . /run/metadata/afterburn
+
+        # node-valid-hostname sets persistent hostname from /proc/sys/kernel/hostname
+        echo "$AFTERBURN_POWERVS_LOCAL_HOSTNAME" > /proc/sys/kernel/hostname
+    }
+
     arg=${1}; shift;
     case "${arg}" in
         --wait) wait_localhost;;
         --gcp) set_gcp_hostname;;
+        --openstack) set_openstack_hostname;;
+        --powervs) set_powervs_hostname;;
         *) echo "Unhandled arg $arg"; exit 1
     esac

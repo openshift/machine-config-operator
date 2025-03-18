@@ -364,7 +364,7 @@ To use host binaries, run `chroot /host`
 Pod IP: 10.0.147.70
 If you don't see a command prompt, try pressing enter.
 sh-4.2# chroot /host
-sh-4.4# /sbin/iptables -D OPENSHIFT-BLOCK-OUTPUT 1
+sh-4.4# /sbin/iptables -nL FORWARD --line-numbers | grep -E '2262[34]' | awk '{print $1}' | xargs -n 1 echo | tac | xargs -n 1 /sbin/iptables -D FORWARD
 sh-4.4# curl -k https://<api-server-url>:22623/config/worker
 ...
 sh-4.4# curl -H "Accept: application/vnd.coreos.ignition+json; version=3.2.0" -k https://<api-server-url>/config/worker

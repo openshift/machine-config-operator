@@ -273,6 +273,8 @@ func (e *ErrMissingMachineConfig) MissingMachineConfig() string {
 // https://kubernetes.io/docs/concepts/architecture/nodes/#graceful-node-shutdown
 func rebootCommand(rationale string) *exec.Cmd {
 	return exec.Command("systemd-run", "--unit", "machine-config-daemon-reboot",
+		// we need this until we have https://github.com/ostreedev/ostree/pull/3389
+		"-p", "Requires=ostree-finalize-staged.service", "-p", "After=ostree-finalize-staged.service",
 		"--description", fmt.Sprintf("machine-config-daemon: %s", rationale), "/bin/sh", "-c", "systemctl reboot")
 }
 
@@ -2577,7 +2579,7 @@ func (dn *Daemon) triggerUpdate(currentConfig, desiredConfig *mcfgv1.MachineConf
 	dn.stopConfigDriftMonitor()
 
 	klog.Infof("Performing layered OS update")
-	return dn.updateOnClusterBuild(currentConfig, desiredConfig, currentImage, desiredImage, true)
+	return dn.updateOnClusterLayering(currentConfig, desiredConfig, currentImage, desiredImage, true)
 }
 
 // triggerUpdateWithMachineConfig starts the update. It queries the cluster for

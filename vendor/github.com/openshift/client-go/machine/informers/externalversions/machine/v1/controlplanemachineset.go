@@ -3,13 +3,13 @@
 package v1
 
 import (
-	"context"
+	context "context"
 	time "time"
 
-	machinev1 "github.com/openshift/api/machine/v1"
+	apimachinev1 "github.com/openshift/api/machine/v1"
 	versioned "github.com/openshift/client-go/machine/clientset/versioned"
 	internalinterfaces "github.com/openshift/client-go/machine/informers/externalversions/internalinterfaces"
-	v1 "github.com/openshift/client-go/machine/listers/machine/v1"
+	machinev1 "github.com/openshift/client-go/machine/listers/machine/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -20,7 +20,7 @@ import (
 // ControlPlaneMachineSets.
 type ControlPlaneMachineSetInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1.ControlPlaneMachineSetLister
+	Lister() machinev1.ControlPlaneMachineSetLister
 }
 
 type controlPlaneMachineSetInformer struct {
@@ -55,7 +55,7 @@ func NewFilteredControlPlaneMachineSetInformer(client versioned.Interface, names
 				return client.MachineV1().ControlPlaneMachineSets(namespace).Watch(context.TODO(), options)
 			},
 		},
-		&machinev1.ControlPlaneMachineSet{},
+		&apimachinev1.ControlPlaneMachineSet{},
 		resyncPeriod,
 		indexers,
 	)
@@ -66,9 +66,9 @@ func (f *controlPlaneMachineSetInformer) defaultInformer(client versioned.Interf
 }
 
 func (f *controlPlaneMachineSetInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&machinev1.ControlPlaneMachineSet{}, f.defaultInformer)
+	return f.factory.InformerFor(&apimachinev1.ControlPlaneMachineSet{}, f.defaultInformer)
 }
 
-func (f *controlPlaneMachineSetInformer) Lister() v1.ControlPlaneMachineSetLister {
-	return v1.NewControlPlaneMachineSetLister(f.Informer().GetIndexer())
+func (f *controlPlaneMachineSetInformer) Lister() machinev1.ControlPlaneMachineSetLister {
+	return machinev1.NewControlPlaneMachineSetLister(f.Informer().GetIndexer())
 }

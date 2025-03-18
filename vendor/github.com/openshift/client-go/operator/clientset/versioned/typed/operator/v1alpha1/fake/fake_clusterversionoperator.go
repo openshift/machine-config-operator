@@ -3,168 +3,35 @@
 package fake
 
 import (
-	"context"
-	json "encoding/json"
-	"fmt"
-
 	v1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	operatorv1alpha1 "github.com/openshift/client-go/operator/applyconfigurations/operator/v1alpha1"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	labels "k8s.io/apimachinery/pkg/labels"
-	types "k8s.io/apimachinery/pkg/types"
-	watch "k8s.io/apimachinery/pkg/watch"
-	testing "k8s.io/client-go/testing"
+	typedoperatorv1alpha1 "github.com/openshift/client-go/operator/clientset/versioned/typed/operator/v1alpha1"
+	gentype "k8s.io/client-go/gentype"
 )
 
-// FakeClusterVersionOperators implements ClusterVersionOperatorInterface
-type FakeClusterVersionOperators struct {
+// fakeClusterVersionOperators implements ClusterVersionOperatorInterface
+type fakeClusterVersionOperators struct {
+	*gentype.FakeClientWithListAndApply[*v1alpha1.ClusterVersionOperator, *v1alpha1.ClusterVersionOperatorList, *operatorv1alpha1.ClusterVersionOperatorApplyConfiguration]
 	Fake *FakeOperatorV1alpha1
 }
 
-var clusterversionoperatorsResource = v1alpha1.SchemeGroupVersion.WithResource("clusterversionoperators")
-
-var clusterversionoperatorsKind = v1alpha1.SchemeGroupVersion.WithKind("ClusterVersionOperator")
-
-// Get takes name of the clusterVersionOperator, and returns the corresponding clusterVersionOperator object, and an error if there is any.
-func (c *FakeClusterVersionOperators) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.ClusterVersionOperator, err error) {
-	emptyResult := &v1alpha1.ClusterVersionOperator{}
-	obj, err := c.Fake.
-		Invokes(testing.NewRootGetActionWithOptions(clusterversionoperatorsResource, name, options), emptyResult)
-	if obj == nil {
-		return emptyResult, err
+func newFakeClusterVersionOperators(fake *FakeOperatorV1alpha1) typedoperatorv1alpha1.ClusterVersionOperatorInterface {
+	return &fakeClusterVersionOperators{
+		gentype.NewFakeClientWithListAndApply[*v1alpha1.ClusterVersionOperator, *v1alpha1.ClusterVersionOperatorList, *operatorv1alpha1.ClusterVersionOperatorApplyConfiguration](
+			fake.Fake,
+			"",
+			v1alpha1.SchemeGroupVersion.WithResource("clusterversionoperators"),
+			v1alpha1.SchemeGroupVersion.WithKind("ClusterVersionOperator"),
+			func() *v1alpha1.ClusterVersionOperator { return &v1alpha1.ClusterVersionOperator{} },
+			func() *v1alpha1.ClusterVersionOperatorList { return &v1alpha1.ClusterVersionOperatorList{} },
+			func(dst, src *v1alpha1.ClusterVersionOperatorList) { dst.ListMeta = src.ListMeta },
+			func(list *v1alpha1.ClusterVersionOperatorList) []*v1alpha1.ClusterVersionOperator {
+				return gentype.ToPointerSlice(list.Items)
+			},
+			func(list *v1alpha1.ClusterVersionOperatorList, items []*v1alpha1.ClusterVersionOperator) {
+				list.Items = gentype.FromPointerSlice(items)
+			},
+		),
+		fake,
 	}
-	return obj.(*v1alpha1.ClusterVersionOperator), err
-}
-
-// List takes label and field selectors, and returns the list of ClusterVersionOperators that match those selectors.
-func (c *FakeClusterVersionOperators) List(ctx context.Context, opts v1.ListOptions) (result *v1alpha1.ClusterVersionOperatorList, err error) {
-	emptyResult := &v1alpha1.ClusterVersionOperatorList{}
-	obj, err := c.Fake.
-		Invokes(testing.NewRootListActionWithOptions(clusterversionoperatorsResource, clusterversionoperatorsKind, opts), emptyResult)
-	if obj == nil {
-		return emptyResult, err
-	}
-
-	label, _, _ := testing.ExtractFromListOptions(opts)
-	if label == nil {
-		label = labels.Everything()
-	}
-	list := &v1alpha1.ClusterVersionOperatorList{ListMeta: obj.(*v1alpha1.ClusterVersionOperatorList).ListMeta}
-	for _, item := range obj.(*v1alpha1.ClusterVersionOperatorList).Items {
-		if label.Matches(labels.Set(item.Labels)) {
-			list.Items = append(list.Items, item)
-		}
-	}
-	return list, err
-}
-
-// Watch returns a watch.Interface that watches the requested clusterVersionOperators.
-func (c *FakeClusterVersionOperators) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
-	return c.Fake.
-		InvokesWatch(testing.NewRootWatchActionWithOptions(clusterversionoperatorsResource, opts))
-}
-
-// Create takes the representation of a clusterVersionOperator and creates it.  Returns the server's representation of the clusterVersionOperator, and an error, if there is any.
-func (c *FakeClusterVersionOperators) Create(ctx context.Context, clusterVersionOperator *v1alpha1.ClusterVersionOperator, opts v1.CreateOptions) (result *v1alpha1.ClusterVersionOperator, err error) {
-	emptyResult := &v1alpha1.ClusterVersionOperator{}
-	obj, err := c.Fake.
-		Invokes(testing.NewRootCreateActionWithOptions(clusterversionoperatorsResource, clusterVersionOperator, opts), emptyResult)
-	if obj == nil {
-		return emptyResult, err
-	}
-	return obj.(*v1alpha1.ClusterVersionOperator), err
-}
-
-// Update takes the representation of a clusterVersionOperator and updates it. Returns the server's representation of the clusterVersionOperator, and an error, if there is any.
-func (c *FakeClusterVersionOperators) Update(ctx context.Context, clusterVersionOperator *v1alpha1.ClusterVersionOperator, opts v1.UpdateOptions) (result *v1alpha1.ClusterVersionOperator, err error) {
-	emptyResult := &v1alpha1.ClusterVersionOperator{}
-	obj, err := c.Fake.
-		Invokes(testing.NewRootUpdateActionWithOptions(clusterversionoperatorsResource, clusterVersionOperator, opts), emptyResult)
-	if obj == nil {
-		return emptyResult, err
-	}
-	return obj.(*v1alpha1.ClusterVersionOperator), err
-}
-
-// UpdateStatus was generated because the type contains a Status member.
-// Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-func (c *FakeClusterVersionOperators) UpdateStatus(ctx context.Context, clusterVersionOperator *v1alpha1.ClusterVersionOperator, opts v1.UpdateOptions) (result *v1alpha1.ClusterVersionOperator, err error) {
-	emptyResult := &v1alpha1.ClusterVersionOperator{}
-	obj, err := c.Fake.
-		Invokes(testing.NewRootUpdateSubresourceActionWithOptions(clusterversionoperatorsResource, "status", clusterVersionOperator, opts), emptyResult)
-	if obj == nil {
-		return emptyResult, err
-	}
-	return obj.(*v1alpha1.ClusterVersionOperator), err
-}
-
-// Delete takes name of the clusterVersionOperator and deletes it. Returns an error if one occurs.
-func (c *FakeClusterVersionOperators) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
-	_, err := c.Fake.
-		Invokes(testing.NewRootDeleteActionWithOptions(clusterversionoperatorsResource, name, opts), &v1alpha1.ClusterVersionOperator{})
-	return err
-}
-
-// DeleteCollection deletes a collection of objects.
-func (c *FakeClusterVersionOperators) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
-	action := testing.NewRootDeleteCollectionActionWithOptions(clusterversionoperatorsResource, opts, listOpts)
-
-	_, err := c.Fake.Invokes(action, &v1alpha1.ClusterVersionOperatorList{})
-	return err
-}
-
-// Patch applies the patch and returns the patched clusterVersionOperator.
-func (c *FakeClusterVersionOperators) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1alpha1.ClusterVersionOperator, err error) {
-	emptyResult := &v1alpha1.ClusterVersionOperator{}
-	obj, err := c.Fake.
-		Invokes(testing.NewRootPatchSubresourceActionWithOptions(clusterversionoperatorsResource, name, pt, data, opts, subresources...), emptyResult)
-	if obj == nil {
-		return emptyResult, err
-	}
-	return obj.(*v1alpha1.ClusterVersionOperator), err
-}
-
-// Apply takes the given apply declarative configuration, applies it and returns the applied clusterVersionOperator.
-func (c *FakeClusterVersionOperators) Apply(ctx context.Context, clusterVersionOperator *operatorv1alpha1.ClusterVersionOperatorApplyConfiguration, opts v1.ApplyOptions) (result *v1alpha1.ClusterVersionOperator, err error) {
-	if clusterVersionOperator == nil {
-		return nil, fmt.Errorf("clusterVersionOperator provided to Apply must not be nil")
-	}
-	data, err := json.Marshal(clusterVersionOperator)
-	if err != nil {
-		return nil, err
-	}
-	name := clusterVersionOperator.Name
-	if name == nil {
-		return nil, fmt.Errorf("clusterVersionOperator.Name must be provided to Apply")
-	}
-	emptyResult := &v1alpha1.ClusterVersionOperator{}
-	obj, err := c.Fake.
-		Invokes(testing.NewRootPatchSubresourceActionWithOptions(clusterversionoperatorsResource, *name, types.ApplyPatchType, data, opts.ToPatchOptions()), emptyResult)
-	if obj == nil {
-		return emptyResult, err
-	}
-	return obj.(*v1alpha1.ClusterVersionOperator), err
-}
-
-// ApplyStatus was generated because the type contains a Status member.
-// Add a +genclient:noStatus comment above the type to avoid generating ApplyStatus().
-func (c *FakeClusterVersionOperators) ApplyStatus(ctx context.Context, clusterVersionOperator *operatorv1alpha1.ClusterVersionOperatorApplyConfiguration, opts v1.ApplyOptions) (result *v1alpha1.ClusterVersionOperator, err error) {
-	if clusterVersionOperator == nil {
-		return nil, fmt.Errorf("clusterVersionOperator provided to Apply must not be nil")
-	}
-	data, err := json.Marshal(clusterVersionOperator)
-	if err != nil {
-		return nil, err
-	}
-	name := clusterVersionOperator.Name
-	if name == nil {
-		return nil, fmt.Errorf("clusterVersionOperator.Name must be provided to Apply")
-	}
-	emptyResult := &v1alpha1.ClusterVersionOperator{}
-	obj, err := c.Fake.
-		Invokes(testing.NewRootPatchSubresourceActionWithOptions(clusterversionoperatorsResource, *name, types.ApplyPatchType, data, opts.ToPatchOptions(), "status"), emptyResult)
-	if obj == nil {
-		return emptyResult, err
-	}
-	return obj.(*v1alpha1.ClusterVersionOperator), err
 }
