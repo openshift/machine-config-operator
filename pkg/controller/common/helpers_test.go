@@ -259,8 +259,6 @@ func TestMergeMachineConfigs(t *testing.T) {
 	cconfig.Spec.OSImageURL = "testURL"
 	cconfig.Spec.BaseOSContainerImage = "newformatURL"
 	fips := true
-	kargs := []string{"testKarg", "kargFromIgnitionDowngrade"}
-	extensions := []string{"testExtensions"}
 
 	// Test that a singular base config that sets FIPS also sets other defaults correctly
 	machineConfigFIPS := &mcfgv1.MachineConfig{
@@ -313,13 +311,31 @@ func TestMergeMachineConfigs(t *testing.T) {
 			OSImageURL: "overriddenURL",
 		},
 	}
-	machineConfigKernelArgs := &mcfgv1.MachineConfig{
+	machineConfigKernelArgs1 := &mcfgv1.MachineConfig{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:   "kargs",
+			Name:   "kargs1",
 			Labels: map[string]string{MachineConfigRoleLabel: MachineConfigPoolWorker},
 		},
 		Spec: mcfgv1.MachineConfigSpec{
-			KernelArguments: kargs,
+			KernelArguments: []string{"karg-c"},
+		},
+	}
+	machineConfigKernelArgs2 := &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "kargs2",
+			Labels: map[string]string{MachineConfigRoleLabel: MachineConfigPoolWorker},
+		},
+		Spec: mcfgv1.MachineConfigSpec{
+			KernelArguments: []string{"karg-c", "karg-b"},
+		},
+	}
+	machineConfigKernelArgs3 := &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "kargs3",
+			Labels: map[string]string{MachineConfigRoleLabel: MachineConfigPoolWorker},
+		},
+		Spec: mcfgv1.MachineConfigSpec{
+			KernelArguments: []string{"karg-c", "karg-b", "karg-a"},
 		},
 	}
 	machineConfigKernelType := &mcfgv1.MachineConfig{
@@ -331,16 +347,33 @@ func TestMergeMachineConfigs(t *testing.T) {
 			KernelType: KernelTypeRealtime,
 		},
 	}
-	machineConfigExtensions := &mcfgv1.MachineConfig{
+	machineConfigExtensions1 := &mcfgv1.MachineConfig{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:   "extension",
+			Name:   "extension1",
 			Labels: map[string]string{MachineConfigRoleLabel: MachineConfigPoolWorker},
 		},
 		Spec: mcfgv1.MachineConfigSpec{
-			Extensions: extensions,
+			Extensions: []string{"ext-c"},
 		},
 	}
-
+	machineConfigExtensions2 := &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "extension2",
+			Labels: map[string]string{MachineConfigRoleLabel: MachineConfigPoolWorker},
+		},
+		Spec: mcfgv1.MachineConfigSpec{
+			Extensions: []string{"ext-c", "ext-b"},
+		},
+	}
+	machineConfigExtensions3 := &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "extension3",
+			Labels: map[string]string{MachineConfigRoleLabel: MachineConfigPoolWorker},
+		},
+		Spec: mcfgv1.MachineConfigSpec{
+			Extensions: []string{"ext-c", "ext-b", "ext-a"},
+		},
+	}
 	machineConfigIgnSSHUser := helpers.CreateMachineConfigFromIgnitionWithMetadata(ign3types.Config{
 		Ignition: ign3types.Ignition{
 			Version: ign3types.MaxVersion.String(),
@@ -384,9 +417,13 @@ func TestMergeMachineConfigs(t *testing.T) {
 	// Now merge all of the above
 	inMachineConfigs = []*mcfgv1.MachineConfig{
 		machineConfigOSImageURL,
-		machineConfigKernelArgs,
+		machineConfigKernelArgs1,
+		machineConfigKernelArgs2,
+		machineConfigKernelArgs3,
 		machineConfigKernelType,
-		machineConfigExtensions,
+		machineConfigExtensions3,
+		machineConfigExtensions2,
+		machineConfigExtensions1,
 		machineConfigIgn,
 		machineConfigFIPS,
 		machineConfigIgnPasswdHashUser,
@@ -400,7 +437,7 @@ func TestMergeMachineConfigs(t *testing.T) {
 	expectedMachineConfig = &mcfgv1.MachineConfig{
 		Spec: mcfgv1.MachineConfigSpec{
 			OSImageURL:      "overriddenURL",
-			KernelArguments: kargs,
+			KernelArguments: []string{"karg-c", "karg-c", "karg-b", "karg-c", "karg-b", "karg-a"},
 			Config: runtime.RawExtension{
 				Raw: helpers.MarshalOrDie(ign3types.Config{
 					Ignition: ign3types.Ignition{
@@ -415,7 +452,7 @@ func TestMergeMachineConfigs(t *testing.T) {
 			},
 			FIPS:       true,
 			KernelType: KernelTypeRealtime,
-			Extensions: extensions,
+			Extensions: []string{"ext-c", "ext-c", "ext-b", "ext-c", "ext-b", "ext-a"},
 		},
 	}
 	assert.Equal(t, *mergedMachineConfig, *expectedMachineConfig)

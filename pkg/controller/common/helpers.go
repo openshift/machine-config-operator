@@ -585,16 +585,6 @@ func DecodeIgnitionFileContents(source, compression *string) ([]byte, error) {
 	return contentsBytes, nil
 }
 
-// InSlice search for an element in slice and return true if found, otherwise return false
-func InSlice(elem string, slice []string) bool {
-	for _, k := range slice {
-		if k == elem {
-			return true
-		}
-	}
-	return false
-}
-
 // ValidateMachineConfig validates that given MachineConfig Spec is valid.
 func ValidateMachineConfig(cfg mcfgv1.MachineConfigSpec) error {
 	if !(cfg.KernelType == "" || cfg.KernelType == KernelTypeDefault || cfg.KernelType == KernelTypeRealtime || cfg.KernelType == KernelType64kPages) {
