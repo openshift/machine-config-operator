@@ -2907,10 +2907,6 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 	if mcDiff.osUpdate && dn.bootedOSImageURL == newConfig.Spec.OSImageURL {
 		klog.Infof("Already in desired image %s", newConfig.Spec.OSImageURL)
 		mcDiff.osUpdate = false
-		// If OCL is enabled, return early here since there is nothing else to do.
-		if mcDiff.oclEnabled {
-			return nil
-		}
 	}
 
 	var osExtensionsContentDir string
@@ -2966,7 +2962,7 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 	}
 
 	// Update OS
-	if mcDiff.osUpdate || mcDiff.oclEnabled {
+	if mcDiff.osUpdate {
 		if err := dn.updateLayeredOS(newConfig); err != nil {
 			mcdPivotErr.Inc()
 			return err
@@ -2984,15 +2980,15 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 	// if we're here, we've successfully pivoted, or pivoting wasn't necessary, so we reset the error gauge
 	mcdPivotErr.Set(0)
 
-	// If on-cluster layering is enabled, we can skip the rest of this process.
-	if mcDiff.oclEnabled {
-		return nil
-	}
-
 	if mcDiff.kargs {
 		if err := dn.updateKernelArguments(oldConfig.Spec.KernelArguments, newConfig.Spec.KernelArguments); err != nil {
 			return err
 		}
+	}
+
+	// If on-cluster layering is enabled, we can skip the rest of this process.
+	if mcDiff.oclEnabled {
+		return nil
 	}
 
 	// Switch to real time kernel
