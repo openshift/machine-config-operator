@@ -45,6 +45,10 @@ func (c *MachineOSConfigState) GetOSImage() string {
 	return osImage
 }
 
+func (c *MachineOSConfigState) MachineOSBuildIsCurrent(mosb *mcfgv1.MachineOSBuild) bool {
+	return mosb.Status.DigestedImagePushSpec == c.Config.Status.CurrentImagePullSpec
+}
+
 // Determines if a given MachineConfigPool has an available OS image. Returns
 // false if the annotation is missing or set to an empty string.
 func (c *MachineOSConfigState) HasOSImage() bool {
