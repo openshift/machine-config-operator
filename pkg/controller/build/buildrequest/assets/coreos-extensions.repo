@@ -1,0 +1,6 @@
+[coreos-extensions]
+enabled=1
+metadata_expire=1m
+baseurl=/tmp/mco-extensions/os-extensions-content/usr/share/rpm-ostree/extensions/
+gpgcheck=0
+skip_if_unavailable=False
