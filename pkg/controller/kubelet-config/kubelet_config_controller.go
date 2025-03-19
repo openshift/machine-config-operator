@@ -42,6 +42,7 @@ import (
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
+	"github.com/openshift/machine-config-operator/pkg/constants"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	mtmpl "github.com/openshift/machine-config-operator/pkg/controller/template"
 	"github.com/openshift/machine-config-operator/pkg/version"
@@ -420,7 +421,7 @@ func (ctrl *Controller) handleFeatureErr(err error, key string) {
 
 // generateOriginalKubeletConfigWithFeatureGates generates a KubeletConfig and ensure the correct feature gates are set
 // based on the given FeatureGate.
-func generateOriginalKubeletConfigWithFeatureGates(cc *mcfgv1.ControllerConfig, templatesDir, role string, featureGateAccess featuregates.FeatureGateAccess, apiServer *configv1.APIServer) (*kubeletconfigv1beta1.KubeletConfiguration, error) {
+func generateOriginalKubeletConfigWithFeatureGates(cc *mcfgv1.ControllerConfig, templatesDir, role string, featureGates map[string]bool, apiServer *configv1.APIServer) (*kubeletconfigv1beta1.KubeletConfiguration, error) {
 	originalKubeletIgn, err := generateOriginalKubeletConfigIgn(cc, templatesDir, role, apiServer)
 	if err != nil {
 		return nil, fmt.Errorf("could not generate the original Kubelet config ignition: %w", err)
@@ -435,11 +436,6 @@ func generateOriginalKubeletConfigWithFeatureGates(cc *mcfgv1.ControllerConfig, 
 	originalKubeConfig, err := DecodeKubeletConfig(contents)
 	if err != nil {
 		return nil, fmt.Errorf("could not deserialize the Kubelet source: %w", err)
-	}
-
-	featureGates, err := generateFeatureMap(featureGateAccess, openshiftOnlyFeatureGates...)
-	if err != nil {
-		return nil, fmt.Errorf("could not generate features map: %w", err)
 	}
 
 	// Merge in Feature Gates.
@@ -533,7 +529,7 @@ func (ctrl *Controller) addAnnotation(cfg *mcfgv1.KubeletConfig, annotationKey, 
 // This function is not meant to be invoked concurrently with the same key.
 //
 //nolint:gocyclo
-func (ctrl *Controller) syncKubeletConfig(key string) error {
+func (ctrl *Controller) syncKubeletConfig(key string) (retErr error) {
 	startTime := time.Now()
 	klog.V(4).Infof("Started syncing kubeletconfig %q (%v)", key, startTime)
 	defer func() {
@@ -600,6 +596,13 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		return ctrl.syncStatusOnly(cfg, err, "could not get the TLSSecurityProfile from %v: %v", ctrlcommon.APIServerInstanceName, err)
 	}
 
+	updatedPools := []string{}
+
+	featureGates, renderedVersions, err := generateFeatureMap(ctrl.featureGateAccess, openshiftOnlyFeatureGates...)
+	if err != nil {
+		return fmt.Errorf("could not generate features map: %w", err)
+	}
+
 	for _, pool := range mcpPools {
 		if pool.Spec.Configuration.Name == "" {
 			updateDelay := 5 * time.Second
@@ -634,7 +637,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			return fmt.Errorf("could not get ControllerConfig %w", err)
 		}
 
-		originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, role, ctrl.featureGateAccess, apiServer)
+		originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, role, featureGates, apiServer)
 		if err != nil {
 			return ctrl.syncStatusOnly(cfg, err, "could not get original kubelet config: %v", err)
 		}
@@ -725,11 +728,63 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		}
 		klog.Infof("Applied KubeletConfig %v on MachineConfigPool %v", key, pool.Name)
 		ctrlcommon.UpdateStateMetric(ctrlcommon.MCCSubControllerState, "machine-config-controller-kubelet-config", "Sync Kubelet Config", pool.Name)
+		updatedPools = append(updatedPools, pool.Name)
 	}
+	go ctrl.writebackMinimumKubeletVersionIfAppropriate(updatedPools, renderedVersions, nodeConfig, func() ([]*mcfgv1.MachineConfigPool, error) {
+		return ctrl.getPoolsForKubeletConfig(cfg)
+	})
 	if err := ctrl.cleanUpDuplicatedMC(managedKubeletConfigKeyPrefix); err != nil {
 		return err
 	}
 	return ctrl.syncStatusOnly(cfg, nil)
+}
+
+func (ctrl *Controller) writebackMinimumKubeletVersionIfAppropriate(updatedPools []string, renderedVersions []configv1.RequiredMinimumComponentVersion, node *osev1.Node, poolGetter func() ([]*mcfgv1.MachineConfigPool, error)) {
+	renderedKubeletVersion := ""
+	for _, cv := range renderedVersions {
+		if cv.Component == configv1.RequiredMinimumComponentKubelet {
+			renderedKubeletVersion = cv.Version
+		}
+	}
+	if node.Spec.MinimumKubeletVersion == node.Status.MinimumKubeletVersion ||
+		node.Status.MinimumKubeletVersion == renderedKubeletVersion ||
+		node.Spec.MinimumKubeletVersion != renderedKubeletVersion {
+		klog.InfoS("Skipping writeback to nodes.config.Status.MinimumKubeletVersion because situation not correct",
+			"nodes.config.Spec.MinimumKubeletVerison", node.Spec.MinimumKubeletVersion,
+			"nodes.config.Status.MinimumKubeletVerison", node.Status.MinimumKubeletVersion,
+			"renderedKubeletVersion", renderedKubeletVersion)
+		return
+	}
+
+	poolsUpdated := map[string]bool{}
+	for _, poolName := range updatedPools {
+		poolsUpdated[poolName] = false
+	}
+	// This featuregate rollout was done as a result of a new minimum kubelet version rolling out, which means we need to wait for at least one
+	// node in each MCP to finish updating before we set the spec.
+	if err := wait.ExponentialBackoff(constants.NodeUpdateBackoff, func() (bool, error) {
+		// no do-while :(
+		mcps, err := poolGetter()
+		if err != nil {
+			return true, err
+		}
+		allUpdated := true
+		for _, mcp := range mcps {
+			if mcp.Status.UpdatedMachineCount > 0 {
+				poolsUpdated[mcp.Name] = true
+			} else if _, updated := poolsUpdated[mcp.Name]; !updated {
+				allUpdated = false
+			}
+		}
+		return allUpdated, nil
+	}); err != nil {
+		klog.Errorf("Failed to update rendered kubelet version: %v", err)
+	}
+
+	node.Status.MinimumKubeletVersion = renderedKubeletVersion
+	if _, err := ctrl.configClient.ConfigV1().Nodes().Update(context.TODO(), node, metav1.UpdateOptions{}); err != nil {
+		klog.Errorf("Failed to update node object for rendered kubelet version: %v", err)
+	}
 }
 
 // cleanUpDuplicatedMC removes the MC of non-updated GeneratedByControllerVersionKey if its name contains 'generated-kubelet'.

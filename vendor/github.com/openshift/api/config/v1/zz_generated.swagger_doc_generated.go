@@ -698,7 +698,7 @@ func (ClusterVersionList) SwaggerDoc() map[string]string {
 var map_ClusterVersionSpec = map[string]string{
 	"":                "ClusterVersionSpec is the desired version state of the cluster. It includes the version the cluster should be at, how the cluster is identified, and where the cluster should look for version updates.",
 	"clusterID":       "clusterID uniquely identifies this cluster. This is expected to be an RFC4122 UUID value (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx in hexadecimal values). This is a required field.",
-	"desiredUpdate":   "desiredUpdate is an optional field that indicates the desired value of the cluster version. Setting this value will trigger an upgrade (if the current version does not match the desired version). The set of recommended update values is listed as part of available updates in status, and setting values outside that range may cause the upgrade to fail.\n\nSome of the fields are inter-related with restrictions and meanings described here. 1. image is specified, version is specified, architecture is specified. API validation error. 2. image is specified, version is specified, architecture is not specified. You should not do this. version is silently ignored and image is used. 3. image is specified, version is not specified, architecture is specified. API validation error. 4. image is specified, version is not specified, architecture is not specified. image is used. 5. image is not specified, version is specified, architecture is specified. version and desired architecture are used to select an image. 6. image is not specified, version is specified, architecture is not specified. version and current architecture are used to select an image. 7. image is not specified, version is not specified, architecture is specified. API validation error. 8. image is not specified, version is not specified, architecture is not specified. API validation error.\n\nIf an upgrade fails the operator will halt and report status about the failing component. Setting the desired update value back to the previous version will cause a rollback to be attempted. Not all rollbacks will succeed.",
+	"desiredUpdate":   "desiredUpdate is an optional field that indicates the desired value of the cluster version. Setting this value will trigger an upgrade (if the current version does not match the desired version). The set of recommended update values is listed as part of available updates in status, and setting values outside that range may cause the upgrade to fail.\n\nSome of the fields are inter-related with restrictions and meanings described here. 1. image is specified, version is specified, architecture is specified. API validation error. 2. image is specified, version is specified, architecture is not specified. The version extracted from the referenced image must match the specified version. 3. image is specified, version is not specified, architecture is specified. API validation error. 4. image is specified, version is not specified, architecture is not specified. image is used. 5. image is not specified, version is specified, architecture is specified. version and desired architecture are used to select an image. 6. image is not specified, version is specified, architecture is not specified. version and current architecture are used to select an image. 7. image is not specified, version is not specified, architecture is specified. API validation error. 8. image is not specified, version is not specified, architecture is not specified. API validation error.\n\nIf an upgrade fails the operator will halt and report status about the failing component. Setting the desired update value back to the previous version will cause a rollback to be attempted. Not all rollbacks will succeed.",
 	"upstream":        "upstream may be used to specify the preferred update server. By default it will use the appropriate update server for the cluster and region.",
 	"channel":         "channel is an identifier for explicitly requesting that a non-default set of updates be applied to this cluster. The default channel will be contain stable updates that are appropriate for production clusters.",
 	"capabilities":    "capabilities configures the installation of optional, core cluster components.  A null value here is identical to an empty object; see the child properties for default semantics.",
@@ -797,8 +797,8 @@ func (SignatureStore) SwaggerDoc() map[string]string {
 var map_Update = map[string]string{
 	"":             "Update represents an administrator update request.",
 	"architecture": "architecture is an optional field that indicates the desired value of the cluster architecture. In this context cluster architecture means either a single architecture or a multi architecture. architecture can only be set to Multi thereby only allowing updates from single to multi architecture. If architecture is set, image cannot be set and version must be set. Valid values are 'Multi' and empty.",
-	"version":      "version is a semantic version identifying the update version. version is ignored if image is specified and required if architecture is specified.",
-	"image":        "image is a container image location that contains the update. image should be used when the desired version does not exist in availableUpdates or history. When image is set, version is ignored. When image is set, version should be empty. When image is set, architecture cannot be specified.",
+	"version":      "version is a semantic version identifying the update version. version is required if architecture is specified. If both version and image are set, the version extracted from the referenced image must match the specified version.",
+	"image":        "image is a container image location that contains the update. image should be used when the desired version does not exist in availableUpdates or history. When image is set, architecture cannot be specified. If both version and image are set, the version extracted from the referenced image must match the specified version.",
 	"force":        "force allows an administrator to update to an image that has failed verification or upgradeable checks. This option should only be used when the authenticity of the provided image has been verified out of band because the provided image will run with full administrative access to the cluster. Do not use this flag with images that comes from unknown or potentially malicious sources.",
 }
 
@@ -948,7 +948,8 @@ func (FeatureGate) SwaggerDoc() map[string]string {
 }
 
 var map_FeatureGateAttributes = map[string]string{
-	"name": "name is the name of the FeatureGate.",
+	"name":                             "name is the name of the FeatureGate.",
+	"requiredMinimumComponentVersions": "requiredMinimumComponentVersions is a list of component/version pairs that declares the is the lowest version the given component may be in this cluster. Currently, the only supported component is Kubelet, and setting a required minimum kubelet component will set the minimumKubeletVersion field in the nodes.config.openshift.io CRD.",
 }
 
 func (FeatureGateAttributes) SwaggerDoc() map[string]string {
@@ -984,12 +985,23 @@ func (FeatureGateSelection) SwaggerDoc() map[string]string {
 }
 
 var map_FeatureGateStatus = map[string]string{
-	"conditions":   "conditions represent the observations of the current state. Known .status.conditions.type are: \"DeterminationDegraded\"",
-	"featureGates": "featureGates contains a list of enabled and disabled featureGates that are keyed by payloadVersion. Operators other than the CVO and cluster-config-operator, must read the .status.featureGates, locate the version they are managing, find the enabled/disabled featuregates and make the operand and operator match. The enabled/disabled values for a particular version may change during the life of the cluster as various .spec.featureSet values are selected. Operators may choose to restart their processes to pick up these changes, but remembering past enable/disable lists is beyond the scope of this API and is the responsibility of individual operators. Only featureGates with .version in the ClusterVersion.status will be present in this list.",
+	"conditions":                       "conditions represent the observations of the current state. Known .status.conditions.type are: \"DeterminationDegraded\"",
+	"featureGates":                     "featureGates contains a list of enabled and disabled featureGates that are keyed by payloadVersion. Operators other than the CVO and cluster-config-operator, must read the .status.featureGates, locate the version they are managing, find the enabled/disabled featuregates and make the operand and operator match. The enabled/disabled values for a particular version may change during the life of the cluster as various .spec.featureSet values are selected. Operators may choose to restart their processes to pick up these changes, but remembering past enable/disable lists is beyond the scope of this API and is the responsibility of individual operators. Only featureGates with .version in the ClusterVersion.status will be present in this list.",
+	"renderedMinimumComponentVersions": "renderedMinimumComponentVersions are the component versions that the feature gate list of this status were rendered from. Currently, the only supported component is Kubelet, and setting a required minimum kubelet component will set the minimumKubeletVersion field in the nodes.config.openshift.io CRD.",
 }
 
 func (FeatureGateStatus) SwaggerDoc() map[string]string {
 	return map_FeatureGateStatus
+}
+
+var map_RequiredMinimumComponentVersion = map[string]string{
+	"":          "RequiredMinimumComponentVersion is a pair of Component and Version that specifies the required minimum Version of the given Component to enable this feature.",
+	"component": "component is the entity whose version must be above a certain version.",
+	"version":   "version is the minimum version the given component may be in this cluster. version must be in semver format (x.y.z) and must consist only of numbers and periods (.).",
+}
+
+func (RequiredMinimumComponentVersion) SwaggerDoc() map[string]string {
+	return map_RequiredMinimumComponentVersion
 }
 
 var map_Image = map[string]string{
@@ -1198,8 +1210,8 @@ func (AWSPlatformStatus) SwaggerDoc() map[string]string {
 
 var map_AWSResourceTag = map[string]string{
 	"":      "AWSResourceTag is a tag to apply to AWS resources created for the cluster.",
-	"key":   "key is the key of the tag",
-	"value": "value is the value of the tag. Some AWS service do not support empty values. Since tags are added to resources in many services, the length of the tag value must meet the requirements of all services.",
+	"key":   "key sets the key of the AWS resource tag key-value pair. Key is required when defining an AWS resource tag. Key should consist of between 1 and 128 characters, and may contain only the set of alphanumeric characters, space (' '), '_', '.', '/', '=', '+', '-', ':', and '@'.",
+	"value": "value sets the value of the AWS resource tag key-value pair. Value is required when defining an AWS resource tag. Value should consist of between 1 and 256 characters, and may contain only the set of alphanumeric characters, space (' '), '_', '.', '/', '=', '+', '-', ':', and '@'. Some AWS service do not support empty values. Since tags are added to resources in many services, the length of the tag value must meet the requirements of all services.",
 }
 
 func (AWSResourceTag) SwaggerDoc() map[string]string {
@@ -1392,6 +1404,7 @@ var map_GCPPlatformStatus = map[string]string{
 	"resourceLabels":          "resourceLabels is a list of additional labels to apply to GCP resources created for the cluster. See https://cloud.google.com/compute/docs/labeling-resources for information on labeling GCP resources. GCP supports a maximum of 64 labels per resource. OpenShift reserves 32 labels for internal use, allowing 32 labels for user configuration.",
 	"resourceTags":            "resourceTags is a list of additional tags to apply to GCP resources created for the cluster. See https://cloud.google.com/resource-manager/docs/tags/tags-overview for information on tagging GCP resources. GCP supports a maximum of 50 tags per resource.",
 	"cloudLoadBalancerConfig": "cloudLoadBalancerConfig holds configuration related to DNS and cloud load balancers. It allows configuration of in-cluster DNS as an alternative to the platform default DNS implementation. When using the ClusterHosted DNS type, Load Balancer IP addresses must be provided for the API and internal API load balancers as well as the ingress load balancer.",
+	"serviceEndpoints":        "serviceEndpoints specifies endpoints that override the default endpoints used when creating clients to interact with GCP services. When not specified, the default endpoint for the GCP region will be used. Only 1 endpoint override is permitted for each GCP service. The maximum number of endpoint overrides allowed is 9.",
 }
 
 func (GCPPlatformStatus) SwaggerDoc() map[string]string {
@@ -1419,8 +1432,19 @@ func (GCPResourceTag) SwaggerDoc() map[string]string {
 	return map_GCPResourceTag
 }
 
+var map_GCPServiceEndpoint = map[string]string{
+	"":     "GCPServiceEndpoint store the configuration of a custom url to override existing defaults of GCP Services.",
+	"name": "name is the name of the GCP service whose endpoint is being overridden. This must be provided and cannot be empty.\n\nAllowed values are Compute, Container, CloudResourceManager, DNS, File, IAM, ServiceUsage, Storage, and TagManager.\n\nAs an example, when setting the name to Compute all requests made by the caller to the GCP Compute Service will be directed to the endpoint specified in the url field.",
+	"url":  "url is a fully qualified URI that overrides the default endpoint for a client using the GCP service specified in the name field. url is required, must use the scheme https, must not be more than 253 characters in length, and must be a valid URL according to Go's net/url package (https://pkg.go.dev/net/url#URL)\n\nAn example of a valid endpoint that overrides the Compute Service: \"https://compute-myendpoint1.p.googleapis.com\"",
+}
+
+func (GCPServiceEndpoint) SwaggerDoc() map[string]string {
+	return map_GCPServiceEndpoint
+}
+
 var map_IBMCloudPlatformSpec = map[string]string{
-	"": "IBMCloudPlatformSpec holds the desired state of the IBMCloud infrastructure provider. This only includes fields that can be modified in the cluster.",
+	"":                 "IBMCloudPlatformSpec holds the desired state of the IBMCloud infrastructure provider. This only includes fields that can be modified in the cluster.",
+	"serviceEndpoints": "serviceEndpoints is a list of custom endpoints which will override the default service endpoints of an IBM service. These endpoints are used by components within the cluster when trying to reach the IBM Cloud Services that have been overriden. The CCCMO reads in the IBMCloudPlatformSpec and validates each endpoint is resolvable. Once validated, the cloud config and IBMCloudPlatformStatus are updated to reflect the same custom endpoints. A maximum of 13 service endpoints overrides are supported.",
 }
 
 func (IBMCloudPlatformSpec) SwaggerDoc() map[string]string {
@@ -1434,7 +1458,7 @@ var map_IBMCloudPlatformStatus = map[string]string{
 	"providerType":      "providerType indicates the type of cluster that was created",
 	"cisInstanceCRN":    "cisInstanceCRN is the CRN of the Cloud Internet Services instance managing the DNS zone for the cluster's base domain",
 	"dnsInstanceCRN":    "dnsInstanceCRN is the CRN of the DNS Services instance managing the DNS zone for the cluster's base domain",
-	"serviceEndpoints":  "serviceEndpoints is a list of custom endpoints which will override the default service endpoints of an IBM Cloud service. These endpoints are consumed by components within the cluster to reach the respective IBM Cloud Services.",
+	"serviceEndpoints":  "serviceEndpoints is a list of custom endpoints which will override the default service endpoints of an IBM service. These endpoints are used by components within the cluster when trying to reach the IBM Cloud Services that have been overriden. The CCCMO reads in the IBMCloudPlatformSpec and validates each endpoint is resolvable. Once validated, the cloud config and IBMCloudPlatformStatus are updated to reflect the same custom endpoints.",
 }
 
 func (IBMCloudPlatformStatus) SwaggerDoc() map[string]string {
@@ -1444,7 +1468,7 @@ func (IBMCloudPlatformStatus) SwaggerDoc() map[string]string {
 var map_IBMCloudServiceEndpoint = map[string]string{
 	"":     "IBMCloudServiceEndpoint stores the configuration of a custom url to override existing defaults of IBM Cloud Services.",
 	"name": "name is the name of the IBM Cloud service. Possible values are: CIS, COS, COSConfig, DNSServices, GlobalCatalog, GlobalSearch, GlobalTagging, HyperProtect, IAM, KeyProtect, ResourceController, ResourceManager, or VPC. For example, the IBM Cloud Private IAM service could be configured with the service `name` of `IAM` and `url` of `https://private.iam.cloud.ibm.com` Whereas the IBM Cloud Private VPC service for US South (Dallas) could be configured with the service `name` of `VPC` and `url` of `https://us.south.private.iaas.cloud.ibm.com`",
-	"url":  "url is fully qualified URI with scheme https, that overrides the default generated endpoint for a client. This must be provided and cannot be empty.",
+	"url":  "url is fully qualified URI with scheme https, that overrides the default generated endpoint for a client. This must be provided and cannot be empty. The path must follow the pattern /v[0,9]+ or /api/v[0,9]+",
 }
 
 func (IBMCloudServiceEndpoint) SwaggerDoc() map[string]string {
@@ -2131,7 +2155,8 @@ func (NodeSpec) SwaggerDoc() map[string]string {
 }
 
 var map_NodeStatus = map[string]string{
-	"conditions": "conditions contain the details and the current state of the nodes.config object",
+	"conditions":            "conditions contain the details and the current state of the nodes.config object",
+	"minimumKubeletVersion": "minimumKubeletVersion is the lowest version of a kubelet that can join the cluster. Specifically, the apiserver will deny most authorization requests of kubelets that are older than the specified version, only allowing the kubelet to get and update its node object, and perform subjectaccessreviews. This means any kubelet that attempts to join the cluster will not be able to run any assigned workloads, and will eventually be marked as not ready. Its max length is 8, so maximum version allowed is either \"9.999.99\" or \"99.99.99\". Since the kubelet reports the version of the kubernetes release, not Openshift, this field references the underlying kubernetes version this version of Openshift is based off of. In other words: if an admin wishes to ensure no nodes run an older version than Openshift 4.17, then they should set the minimumKubeletVersion to 1.30.0. When comparing versions, the kubelet's version is stripped of any contents outside of major.minor.patch version. Thus, a kubelet with version \"1.0.0-ec.0\" will be compatible with minimumKubeletVersion \"1.0.0\" or earlier. This status field is used to reflect the actualized minimum kubelet version, which can be interpreted from the FeatureGateStatus.RenderedMinimumComponentVersion when Component == Kubelet, after that FeatureGateStatus finishes rolling out to all kubelets.",
 }
 
 func (NodeStatus) SwaggerDoc() map[string]string {
