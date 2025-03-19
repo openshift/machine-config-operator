@@ -690,6 +690,14 @@ func TestOperatorSyncStatus(t *testing.T) {
 		configMapIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
 		optr.mcoCmLister = corelisterv1.NewConfigMapLister(configMapIndexer)
 
+		configNode := &configv1.Node{
+			ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.ClusterNodeInstanceName},
+			Spec:       configv1.NodeSpec{},
+		}
+		configNodeIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+		optr.nodeClusterLister = configlistersv1.NewNodeLister(configNodeIndexer)
+		configNodeIndexer.Add(configNode)
+
 		for j, sync := range testCase.syncs {
 			optr.inClusterBringup = sync.inClusterBringUp
 			if sync.nextVersion != "" {
@@ -755,6 +763,14 @@ func TestInClusterBringUpStayOnErr(t *testing.T) {
 			},
 		},
 	}
+
+	configNode := &configv1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.ClusterNodeInstanceName},
+		Spec:       configv1.NodeSpec{},
+	}
+	configNodeIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	optr.nodeClusterLister = configlistersv1.NewNodeLister(configNodeIndexer)
+	configNodeIndexer.Add(configNode)
 	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorAvailable, Status: configv1.ConditionFalse})
 	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorProgressing, Status: configv1.ConditionFalse})
 	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorDegraded, Status: configv1.ConditionFalse})
@@ -821,6 +837,13 @@ func TestKubeletSkewUnSupported(t *testing.T) {
 	})
 
 	co := &configv1.ClusterOperator{}
+	configNode := &configv1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.ClusterNodeInstanceName},
+		Spec:       configv1.NodeSpec{},
+	}
+	configNodeIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	optr.nodeClusterLister = configlistersv1.NewNodeLister(configNodeIndexer)
+	configNodeIndexer.Add(configNode)
 	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorAvailable, Status: configv1.ConditionFalse})
 	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorProgressing, Status: configv1.ConditionFalse})
 	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorDegraded, Status: configv1.ConditionFalse})
@@ -920,6 +943,13 @@ func TestCustomPoolKubeletSkewUnSupported(t *testing.T) {
 	})
 
 	co := &configv1.ClusterOperator{}
+	configNode := &configv1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.ClusterNodeInstanceName},
+		Spec:       configv1.NodeSpec{},
+	}
+	configNodeIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	optr.nodeClusterLister = configlistersv1.NewNodeLister(configNodeIndexer)
+	configNodeIndexer.Add(configNode)
 	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorAvailable, Status: configv1.ConditionFalse})
 	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorProgressing, Status: configv1.ConditionFalse})
 	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorDegraded, Status: configv1.ConditionFalse})
@@ -1017,6 +1047,13 @@ func TestKubeletSkewSupported(t *testing.T) {
 	})
 
 	co := &configv1.ClusterOperator{}
+	configNode := &configv1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.ClusterNodeInstanceName},
+		Spec:       configv1.NodeSpec{},
+	}
+	configNodeIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	optr.nodeClusterLister = configlistersv1.NewNodeLister(configNodeIndexer)
+	configNodeIndexer.Add(configNode)
 	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorAvailable, Status: configv1.ConditionFalse})
 	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorProgressing, Status: configv1.ConditionFalse})
 	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorDegraded, Status: configv1.ConditionFalse})

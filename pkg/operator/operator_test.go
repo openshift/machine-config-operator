@@ -10,6 +10,7 @@ import (
 	fakeconfigclientset "github.com/openshift/client-go/config/clientset/versioned/fake"
 	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
@@ -69,6 +70,14 @@ func TestMetrics(t *testing.T) {
 	optr.clusterOperatorLister = configlistersv1.NewClusterOperatorLister(operatorIndexer)
 	operatorIndexer.Add(co)
 	operatorIndexer.Add(kasOperator)
+
+	configNode := &configv1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.ClusterNodeInstanceName},
+		Spec:       configv1.NodeSpec{},
+	}
+	configNodeIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	optr.nodeClusterLister = configlistersv1.NewNodeLister(configNodeIndexer)
+	configNodeIndexer.Add(configNode)
 
 	optr.configClient = fakeconfigclientset.NewSimpleClientset(co, kasOperator)
 	err := optr.syncAll([]syncFunc{
