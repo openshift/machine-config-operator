@@ -44,7 +44,7 @@ func TestFeatureGateDrift(t *testing.T) {
 			fgAccess := featuregates.NewHardcodedFeatureGateAccess(features.Spec.FeatureGateSelection.CustomNoUpgrade.Enabled, features.Spec.FeatureGateSelection.CustomNoUpgrade.Disabled)
 			ctrl := f.newController(fgAccess)
 
-			featureGates, err := generateFeatureMap(ctrl.featureGateAccess, openshiftOnlyFeatureGates...)
+			featureGates, _, err := generateFeatureMap(ctrl.featureGateAccess, openshiftOnlyFeatureGates...)
 			require.NoError(t, err)
 
 			// Generate kubelet config with feature gates applied
@@ -222,7 +222,7 @@ func TestBootstrapFeaturesCustomNoUpgrade(t *testing.T) {
 				}
 
 				fgAccess := featuregates.NewHardcodedFeatureGateAccess(features.Spec.FeatureGateSelection.CustomNoUpgrade.Enabled, features.Spec.FeatureGateSelection.CustomNoUpgrade.Disabled)
-				defaultFeatureGates, err := generateFeatureMap(fgAccess)
+				defaultFeatureGates, _, err := generateFeatureMap(fgAccess)
 				if err != nil {
 					t.Errorf("could not generate defaultFeatureGates: %v", err)
 				}

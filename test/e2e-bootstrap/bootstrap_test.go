@@ -590,7 +590,7 @@ func ensureFeatureGate(t *testing.T, clientSet *framework.ClientSet, objs ...run
 	featureGateStatus, err := features.FeatureSets(features.ClusterProfileName(SelfManaged), currentFeatureSet)
 
 	require.NoError(t, err)
-	currentDetails := featuregatescontroller.FeaturesGateDetailsFromFeatureSets(featureGateStatus, controllerConfig.Spec.ReleaseImage)
+	currentDetails := featuregatescontroller.FeaturesGateDetailsFromFeatureSets(featureGateStatus, controllerConfig.Spec.ReleaseImage, nil, currentFeatureSet)
 
 	rawDetails := *currentDetails
 	rawDetails.Version = version.ReleaseVersion
