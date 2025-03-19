@@ -94,7 +94,8 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 		return fmt.Errorf("could not get the TLSSecurityProfile from %v: %v", ctrlcommon.APIServerInstanceName, err)
 	}
 
-	featureGates, err := generateFeatureMap(ctrl.featureGateAccess, openshiftOnlyFeatureGates...)
+	// renderedVersions will be handled in syncFeatureHandler below
+	featureGates, _, err := generateFeatureMap(ctrl.featureGateAccess, openshiftOnlyFeatureGates...)
 	if err != nil {
 		return fmt.Errorf("could not generate features map: %w", err)
 	}
@@ -284,7 +285,8 @@ func RunNodeConfigBootstrap(templateDir string, featureGateAccess featuregates.F
 
 	configs := []*mcfgv1.MachineConfig{}
 
-	featureGates, err := generateFeatureMap(featureGateAccess, openshiftOnlyFeatureGates...)
+	// Ignoring rendered versions here.
+	featureGates, _, err := generateFeatureMap(featureGateAccess, openshiftOnlyFeatureGates...)
 	if err != nil {
 		return nil, fmt.Errorf("could not generate features map: %w", err)
 	}

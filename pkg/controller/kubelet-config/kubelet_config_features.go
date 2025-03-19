@@ -17,6 +17,7 @@ import (
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 
+	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/version"
@@ -73,14 +74,20 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 		return fmt.Errorf("could not get the TLSSecurityProfile from %v: %v", ctrlcommon.APIServerInstanceName, err)
 	}
 
+	featureGates, renderedVersions, err := generateFeatureMap(ctrl.featureGateAccess, openshiftOnlyFeatureGates...)
+	if err != nil {
+		return fmt.Errorf("could not generate features map: %w", err)
+	}
+	// Fetch the Node Config object
+	nodeConfig, err := ctrl.nodeConfigLister.Get(ctrlcommon.ClusterNodeInstanceName)
+	if errors.IsNotFound(err) {
+		nodeConfig = createNewDefaultNodeconfig()
+	}
+
+	updatedPools := map[string]int64{}
+
 	for _, pool := range mcpPools {
-		var nodeConfig *osev1.Node
 		role := pool.Name
-		// Fetch the Node Config object
-		nodeConfig, err = ctrl.nodeConfigLister.Get(ctrlcommon.ClusterNodeInstanceName)
-		if errors.IsNotFound(err) {
-			nodeConfig = createNewDefaultNodeconfig()
-		}
 		// Get MachineConfig
 		managedKey, err := getManagedFeaturesKey(pool, ctrl.client)
 		if err != nil {
@@ -97,11 +104,6 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 			if err != nil {
 				return err
 			}
-		}
-
-		featureGates, err := generateFeatureMap(ctrl.featureGateAccess, openshiftOnlyFeatureGates...)
-		if err != nil {
-			return fmt.Errorf("could not generate features map: %w", err)
 		}
 
 		rawCfgIgn, err := generateKubeConfigIgnFromFeatures(cc, ctrl.templatesDir, role, featureGates, nodeConfig, apiServer)
@@ -130,9 +132,12 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 		}
 		klog.Infof("Applied FeatureSet %v on MachineConfigPool %v", key, pool.Name)
 		ctrlcommon.UpdateStateMetric(ctrlcommon.MCCSubControllerState, "machine-config-controller-kubelet-config", "Sync FeatureSet", pool.Name)
+		updatedPools[pool.Name] = pool.Status.ObservedGeneration
 	}
+	go ctrl.writebackMinimumKubeletVersionIfAppropriate(updatedPools, renderedVersions, nodeConfig, func() ([]*mcfgv1.MachineConfigPool, error) {
+		return ctrl.mcpLister.List(labels.Everything())
+	})
 	return ctrl.cleanUpDuplicatedMC(managedFeaturesKeyPrefix)
-
 }
 
 func (ctrl *Controller) enqueueFeature(feat *osev1.FeatureGate) {
@@ -179,16 +184,16 @@ func (ctrl *Controller) deleteFeature(obj interface{}) {
 // generateFeatureMap returns a map of enabled/disabled feature gate selection with exclusion list
 //
 //nolint:gocritic
-func generateFeatureMap(featuregateAccess featuregates.FeatureGateAccess, exclusions ...osev1.FeatureGateName) (map[string]bool, error) {
+func generateFeatureMap(featuregateAccess featuregates.FeatureGateAccess, exclusions ...osev1.FeatureGateName) (map[string]bool, []configv1.MinimumComponentVersion, error) {
 	rv := make(map[string]bool)
 
 	if !featuregateAccess.AreInitialFeatureGatesObserved() {
-		return nil, fmt.Errorf("initial feature gates are not observed")
+		return nil, nil, fmt.Errorf("initial feature gates are not observed")
 	}
 
 	features, err := featuregateAccess.CurrentFeatureGates()
 	if err != nil {
-		return nil, fmt.Errorf("could not get current feature gates: %w", err)
+		return nil, nil, fmt.Errorf("could not get current feature gates: %w", err)
 	}
 
 	for _, feat := range features.KnownFeatures() {
@@ -203,7 +208,7 @@ func generateFeatureMap(featuregateAccess featuregates.FeatureGateAccess, exclus
 	for _, excluded := range exclusions {
 		delete(rv, string(excluded))
 	}
-	return rv, nil
+	return rv, features.RenderedMinimumComponentVersions(), nil
 }
 
 func generateKubeConfigIgnFromFeatures(cc *mcfgv1.ControllerConfig, templatesDir, role string, featureGates map[string]bool, nodeConfig *osev1.Node, apiServer *osev1.APIServer) ([]byte, error) {
@@ -233,7 +238,8 @@ func generateKubeConfigIgnFromFeatures(cc *mcfgv1.ControllerConfig, templatesDir
 func RunFeatureGateBootstrap(templateDir string, featureGateAccess featuregates.FeatureGateAccess, nodeConfig *osev1.Node, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool, apiServer *osev1.APIServer) ([]*mcfgv1.MachineConfig, error) {
 	machineConfigs := []*mcfgv1.MachineConfig{}
 
-	featureGates, err := generateFeatureMap(featureGateAccess, openshiftOnlyFeatureGates...)
+	// TODO FIXME: do we need rendered versions here?
+	featureGates, _, err := generateFeatureMap(featureGateAccess, openshiftOnlyFeatureGates...)
 	if err != nil {
 		return nil, fmt.Errorf("could not generate features map: %w", err)
 	}
