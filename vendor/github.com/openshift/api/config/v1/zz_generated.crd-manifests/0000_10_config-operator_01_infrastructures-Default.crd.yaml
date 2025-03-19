@@ -1185,20 +1185,35 @@ spec:
                             created for the cluster.
                           properties:
                             key:
-                              description: key is the key of the tag
+                              description: |-
+                                key sets the key of the AWS resource tag key-value pair. Key is required when defining an AWS resource tag.
+                                Key should consist of between 1 and 128 characters, and may
+                                contain only the set of alphanumeric characters, space (' '), '_', '.', '/', '=', '+', '-', ':', and '@'.
                               maxLength: 128
                               minLength: 1
-                              pattern: ^[0-9A-Za-z_.:/=+-@]+$
                               type: string
+                              x-kubernetes-validations:
+                              - message: invalid AWS resource tag key. The string
+                                  can contain only the set of alphanumeric characters,
+                                  space (' '), '_', '.', '/', '=', '+', '-', ':',
+                                  '@'
+                                rule: self.matches('^[0-9A-Za-z_.:/=+-@ ]+$')
                             value:
                               description: |-
-                                value is the value of the tag.
+                                value sets the value of the AWS resource tag key-value pair. Value is required when defining an AWS resource tag.
+                                Value should consist of between 1 and 256 characters, and may
+                                contain only the set of alphanumeric characters, space (' '), '_', '.', '/', '=', '+', '-', ':', and '@'.
                                 Some AWS service do not support empty values. Since tags are added to resources in many services, the
                                 length of the tag value must meet the requirements of all services.
                               maxLength: 256
                               minLength: 1
-                              pattern: ^[0-9A-Za-z_.:/=+-@]+$
                               type: string
+                              x-kubernetes-validations:
+                              - message: invalid AWS resource tag value. The string
+                                  can contain only the set of alphanumeric characters,
+                                  space (' '), '_', '.', '/', '=', '+', '-', ':',
+                                  '@'
+                                rule: self.matches('^[0-9A-Za-z_.:/=+-@ ]+$')
                           required:
                           - key
                           - value
@@ -1620,8 +1635,11 @@ spec:
                       serviceEndpoints:
                         description: |-
                           serviceEndpoints is a list of custom endpoints which will override the default
-                          service endpoints of an IBM Cloud service. These endpoints are consumed by
-                          components within the cluster to reach the respective IBM Cloud Services.
+                          service endpoints of an IBM service. These endpoints are used by components
+                          within the cluster when trying to reach the IBM Cloud Services that have been
+                          overriden. The CCCMO reads in the IBMCloudPlatformSpec and validates each
+                          endpoint is resolvable. Once validated, the cloud config and IBMCloudPlatformStatus
+                          are updated to reflect the same custom endpoints.
                         items:
                           description: |-
                             IBMCloudServiceEndpoint stores the configuration of a custom url to
@@ -1654,7 +1672,9 @@ spec:
                               description: |-
                                 url is fully qualified URI with scheme https, that overrides the default generated
                                 endpoint for a client.
-                                This must be provided and cannot be empty.
+                                This must be provided and cannot be empty. The path must follow the pattern
+                                /v[0,9]+ or /api/v[0,9]+
+                              maxLength: 300
                               type: string
                               x-kubernetes-validations:
                               - message: url must be a valid absolute URL
