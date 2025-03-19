@@ -132,7 +132,7 @@ func (dn *Daemon) executeReloadServiceNodeDisruptionAction(serviceName string, r
 
 	err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
 		&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdatePostActionComplete, Reason: string(mcfgalphav1.MachineConfigNodeUpdateReloaded), Message: fmt.Sprintf("Node has reloaded service %s", serviceName)},
-		&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateReloaded, Reason: fmt.Sprintf("%s%s", string(mcfgalphav1.MachineConfigNodeUpdatePostActionComplete), string(mcfgalphav1.MachineConfigNodeUpdateReloaded)), Message: fmt.Sprintf("Upgrade required a service %s reload. Completed this this as a post update action.", serviceName)},
+		&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateReloaded, Reason: fmt.Sprintf("%s%s", string(mcfgalphav1.MachineConfigNodeUpdatePostActionComplete), string(mcfgalphav1.MachineConfigNodeUpdateReloaded)), Message: fmt.Sprintf("Upgrade required a service %s reload. Completed this as a post update action.", serviceName)},
 		metav1.ConditionTrue,
 		metav1.ConditionTrue,
 		dn.node,
