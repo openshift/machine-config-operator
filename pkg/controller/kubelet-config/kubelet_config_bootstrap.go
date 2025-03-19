@@ -27,7 +27,8 @@ func RunKubeletBootstrap(templateDir string, kubeletConfigs []*mcfgv1.KubeletCon
 		nodeConfig = createNewDefaultNodeconfig()
 	}
 
-	featureGates, err := generateFeatureMap(featureGateAccess, openshiftOnlyFeatureGates...)
+	// TODO FIXME: ignoring min kubelet version writeback for now
+	featureGates, _, err := generateFeatureMap(featureGateAccess, openshiftOnlyFeatureGates...)
 	if err != nil {
 		return nil, fmt.Errorf("could not generate features map: %w", err)
 	}
