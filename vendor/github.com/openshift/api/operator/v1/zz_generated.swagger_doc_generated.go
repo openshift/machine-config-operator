@@ -561,6 +561,7 @@ var map_VSphereCSIDriverConfigSpec = map[string]string{
 	"globalMaxSnapshotsPerBlockVolume": "globalMaxSnapshotsPerBlockVolume is a global configuration parameter that applies to volumes on all kinds of datastores. If omitted, the platform chooses a default, which is subject to change over time, currently that default is 3. Snapshots can not be disabled using this parameter. Increasing number of snapshots above 3 can have negative impact on performance, for more details see: https://kb.vmware.com/s/article/1025279 Volume snapshot documentation: https://docs.vmware.com/en/VMware-vSphere-Container-Storage-Plug-in/3.0/vmware-vsphere-csp-getting-started/GUID-E0B41C69-7EEB-450F-A73D-5FD2FF39E891.html",
 	"granularMaxSnapshotsPerBlockVolumeInVSAN": "granularMaxSnapshotsPerBlockVolumeInVSAN is a granular configuration parameter on vSAN datastore only. It overrides GlobalMaxSnapshotsPerBlockVolume if set, while it falls back to the global constraint if unset. Snapshots for VSAN can not be disabled using this parameter.",
 	"granularMaxSnapshotsPerBlockVolumeInVVOL": "granularMaxSnapshotsPerBlockVolumeInVVOL is a granular configuration parameter on Virtual Volumes datastore only. It overrides GlobalMaxSnapshotsPerBlockVolume if set, while it falls back to the global constraint if unset. Snapshots for VVOL can not be disabled using this parameter.",
+	"maxAllowedBlockVolumesPerNode":            "maxAllowedBlockVolumesPerNode is an optional configuration parameter that allows setting a custom value for the limit of the number of PersistentVolumes attached to a node. In vSphere version 7 this limit was set to 59 by default, however in vSphere version 8 this limit was increased to 255. Before increasing this value above 59 the cluster administrator needs to ensure that every node forming the cluster is updated to ESXi version 8 or higher and that all nodes are running the same version. The limit must be between 1 and 255, which matches the vSphere version 8 maximum. When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time. The current default is 59, which matches the limit for vSphere version 7.",
 }
 
 func (VSphereCSIDriverConfigSpec) SwaggerDoc() map[string]string {
@@ -1359,7 +1360,7 @@ func (MachineConfigurationList) SwaggerDoc() map[string]string {
 }
 
 var map_MachineConfigurationSpec = map[string]string{
-	"managedBootImages":    "managedBootImages allows configuration for the management of boot images for machine resources within the cluster. This configuration allows users to select resources that should be updated to the latest boot images during cluster upgrades, ensuring that new machines always boot with the current cluster version's boot image. When omitted, no boot images will be updated.",
+	"managedBootImages":    "managedBootImages allows configuration for the management of boot images for machine resources within the cluster. This configuration allows users to select resources that should be updated to the latest boot images during cluster upgrades, ensuring that new machines always boot with the current cluster version's boot image. When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time. The default for each machine manager mode is All for GCP and AWS platforms, and None for all other platforms.",
 	"nodeDisruptionPolicy": "nodeDisruptionPolicy allows an admin to set granular node disruption actions for MachineConfig-based updates, such as drains, service reloads, etc. Specifying this will allow for less downtime when doing small configuration updates to the cluster. This configuration has no effect on cluster upgrades which will still incur node disruption where required.",
 }
 
@@ -1371,6 +1372,7 @@ var map_MachineConfigurationStatus = map[string]string{
 	"observedGeneration":         "observedGeneration is the last generation change you've dealt with",
 	"conditions":                 "conditions is a list of conditions and their status",
 	"nodeDisruptionPolicyStatus": "nodeDisruptionPolicyStatus status reflects what the latest cluster-validated policies are, and will be used by the Machine Config Daemon during future node updates.",
+	"managedBootImagesStatus":    "managedBootImagesStatus reflects what the latest cluster-validated boot image configuration is and will be used by Machine Config Controller while performing boot image updates.",
 }
 
 func (MachineConfigurationStatus) SwaggerDoc() map[string]string {
@@ -1389,7 +1391,7 @@ func (MachineManager) SwaggerDoc() map[string]string {
 }
 
 var map_MachineManagerSelector = map[string]string{
-	"mode":    "mode determines how machine managers will be selected for updates. Valid values are All and Partial. All means that every resource matched by the machine manager will be updated. Partial requires specified selector(s) and allows customisation of which resources matched by the machine manager will be updated.",
+	"mode":    "mode determines how machine managers will be selected for updates. Valid values are All and Partial. All means that every resource matched by the machine manager will be updated. Partial requires specified selector(s) and allows customisation of which resources matched by the machine manager will be updated. None means that every resource matched by the machine manager will not be updated.",
 	"partial": "partial provides label selector(s) that can be used to match machine management resources. Only permitted when mode is set to \"Partial\".",
 }
 

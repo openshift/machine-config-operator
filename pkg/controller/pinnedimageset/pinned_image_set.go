@@ -21,13 +21,10 @@ import (
 	"k8s.io/klog/v2"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
-	mcfginformersv1alpha1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1alpha1"
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
-	mcfglistersv1alpha1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 )
@@ -55,7 +52,7 @@ type Controller struct {
 	mcpLister       mcfglistersv1.MachineConfigPoolLister
 	mcpListerSynced cache.InformerSynced
 
-	imageSetLister mcfglistersv1alpha1.PinnedImageSetLister
+	imageSetLister mcfglistersv1.PinnedImageSetLister
 	imageSetSynced cache.InformerSynced
 
 	queue workqueue.TypedRateLimitingInterface[string]
@@ -63,7 +60,7 @@ type Controller struct {
 
 // New returns a new pinned image set controller.
 func New(
-	imageSetInformer mcfginformersv1alpha1.PinnedImageSetInformer,
+	imageSetInformer mcfginformersv1.PinnedImageSetInformer,
 	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
@@ -156,7 +153,7 @@ func (ctrl *Controller) deleteMachineConfigPool(obj interface{}) {
 }
 
 func (ctrl *Controller) addPinnedImageSet(obj interface{}) {
-	imageSet := obj.(*mcfgv1alpha1.PinnedImageSet)
+	imageSet := obj.(*mcfgv1.PinnedImageSet)
 	if imageSet.DeletionTimestamp != nil {
 		ctrl.deletePinnedImageSet(imageSet)
 		return
@@ -175,8 +172,8 @@ func (ctrl *Controller) addPinnedImageSet(obj interface{}) {
 }
 
 func (ctrl *Controller) updatePinnedImageSet(old, cur interface{}) {
-	oldImageSet := old.(*mcfgv1alpha1.PinnedImageSet)
-	newImageSet := cur.(*mcfgv1alpha1.PinnedImageSet)
+	oldImageSet := old.(*mcfgv1.PinnedImageSet)
+	newImageSet := cur.(*mcfgv1.PinnedImageSet)
 
 	pools, err := ctrl.getPoolsForPinnedImageSet(newImageSet)
 	if err != nil {
@@ -192,7 +189,7 @@ func (ctrl *Controller) updatePinnedImageSet(old, cur interface{}) {
 	}
 }
 
-func triggerPinnedImageSetChange(old, newPinnedImageSet *mcfgv1alpha1.PinnedImageSet) bool {
+func triggerPinnedImageSetChange(old, newPinnedImageSet *mcfgv1.PinnedImageSet) bool {
 	if old.DeletionTimestamp != newPinnedImageSet.DeletionTimestamp {
 		return true
 	}
@@ -203,14 +200,14 @@ func triggerPinnedImageSetChange(old, newPinnedImageSet *mcfgv1alpha1.PinnedImag
 }
 
 func (ctrl *Controller) deletePinnedImageSet(obj interface{}) {
-	imageSet, ok := obj.(*mcfgv1alpha1.PinnedImageSet)
+	imageSet, ok := obj.(*mcfgv1.PinnedImageSet)
 	if !ok {
 		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
 		if !ok {
 			utilruntime.HandleError(fmt.Errorf("failed to get object from tombstone %#v", obj))
 			return
 		}
-		imageSet, ok = tombstone.Obj.(*mcfgv1alpha1.PinnedImageSet)
+		imageSet, ok = tombstone.Obj.(*mcfgv1.PinnedImageSet)
 		if !ok {
 			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not a PinnedImageSet %#v", obj))
 			return
@@ -229,7 +226,7 @@ func (ctrl *Controller) deletePinnedImageSet(obj interface{}) {
 	}
 }
 
-func (ctrl *Controller) getPoolsForPinnedImageSet(imageSet *mcfgv1alpha1.PinnedImageSet) ([]*mcfgv1.MachineConfigPool, error) {
+func (ctrl *Controller) getPoolsForPinnedImageSet(imageSet *mcfgv1.PinnedImageSet) ([]*mcfgv1.MachineConfigPool, error) {
 	pList, err := ctrl.mcpLister.List(labels.Everything())
 	if err != nil {
 		return nil, err
@@ -378,7 +375,7 @@ func (ctrl *Controller) syncFailingStatus(pool *mcfgv1.MachineConfigPool, err er
 	return err
 }
 
-func (ctrl *Controller) syncPinnedImageSets(pool *mcfgv1.MachineConfigPool, imageSets []*mcfgv1alpha1.PinnedImageSet) error {
+func (ctrl *Controller) syncPinnedImageSets(pool *mcfgv1.MachineConfigPool, imageSets []*mcfgv1.PinnedImageSet) error {
 	pinnedImageSetRefs := make([]mcfgv1.PinnedImageSetRef, 0, len(imageSets))
 	for _, imageSet := range imageSets {
 		pinnedImageSetRefs = append(pinnedImageSetRefs, mcfgv1.PinnedImageSetRef{
