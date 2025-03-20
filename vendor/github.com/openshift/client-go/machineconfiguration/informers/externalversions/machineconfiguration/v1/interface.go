@@ -22,6 +22,8 @@ type Interface interface {
 	MachineOSBuilds() MachineOSBuildInformer
 	// MachineOSConfigs returns a MachineOSConfigInformer.
 	MachineOSConfigs() MachineOSConfigInformer
+	// PinnedImageSets returns a PinnedImageSetInformer.
+	PinnedImageSets() PinnedImageSetInformer
 }
 
 type version struct {
@@ -68,4 +70,9 @@ func (v *version) MachineOSBuilds() MachineOSBuildInformer {
 // MachineOSConfigs returns a MachineOSConfigInformer.
 func (v *version) MachineOSConfigs() MachineOSConfigInformer {
 	return &machineOSConfigInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
+}
+
+// PinnedImageSets returns a PinnedImageSetInformer.
+func (v *version) PinnedImageSets() PinnedImageSetInformer {
+	return &pinnedImageSetInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }

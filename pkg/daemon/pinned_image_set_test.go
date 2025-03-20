@@ -27,7 +27,6 @@ import (
 	apitest "k8s.io/cri-api/pkg/apis/testing"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	fakemco "github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
 	mcfginformers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
 	"github.com/openshift/machine-config-operator/pkg/daemon/cri"
@@ -183,14 +182,14 @@ func TestPrefetchImageSets(t *testing.T) {
 			},
 			wantValidTarget: true,
 			imageSets: []runtime.Object{
-				&mcfgv1alpha1.PinnedImageSet{
+				&mcfgv1.PinnedImageSet{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "fake-pinned-images",
 					},
-					Spec: mcfgv1alpha1.PinnedImageSetSpec{
-						PinnedImages: []mcfgv1alpha1.PinnedImageRef{
+					Spec: mcfgv1.PinnedImageSetSpec{
+						PinnedImages: []mcfgv1.PinnedImageRef{
 							{
-								Name: availableImage,
+								Name: mcfgv1.ImageDigestFormat(availableImage),
 							},
 						},
 					},
@@ -210,14 +209,14 @@ func TestPrefetchImageSets(t *testing.T) {
 			},
 			wantValidTarget: true,
 			imageSets: []runtime.Object{
-				&mcfgv1alpha1.PinnedImageSet{
+				&mcfgv1.PinnedImageSet{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "fake-pinned-images",
 					},
-					Spec: mcfgv1alpha1.PinnedImageSetSpec{
-						PinnedImages: []mcfgv1alpha1.PinnedImageRef{
+					Spec: mcfgv1.PinnedImageSetSpec{
+						PinnedImages: []mcfgv1.PinnedImageRef{
 							{
-								Name: slowImage,
+								Name: mcfgv1.ImageDigestFormat(slowImage),
 							},
 						},
 					},
@@ -237,14 +236,14 @@ func TestPrefetchImageSets(t *testing.T) {
 			},
 			wantValidTarget: true,
 			imageSets: []runtime.Object{
-				&mcfgv1alpha1.PinnedImageSet{
+				&mcfgv1.PinnedImageSet{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "fake-pinned-images",
 					},
-					Spec: mcfgv1alpha1.PinnedImageSetSpec{
-						PinnedImages: []mcfgv1alpha1.PinnedImageRef{
+					Spec: mcfgv1.PinnedImageSetSpec{
+						PinnedImages: []mcfgv1.PinnedImageRef{
 							{
-								Name: availableImage,
+								Name: mcfgv1.ImageDigestFormat(availableImage),
 							},
 						},
 					},
@@ -264,14 +263,14 @@ func TestPrefetchImageSets(t *testing.T) {
 			},
 			wantValidTarget: true,
 			imageSets: []runtime.Object{
-				&mcfgv1alpha1.PinnedImageSet{
+				&mcfgv1.PinnedImageSet{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "fake-pinned-images",
 					},
-					Spec: mcfgv1alpha1.PinnedImageSetSpec{
-						PinnedImages: []mcfgv1alpha1.PinnedImageRef{
+					Spec: mcfgv1.PinnedImageSetSpec{
+						PinnedImages: []mcfgv1.PinnedImageRef{
 							{
-								Name: availableImage,
+								Name: mcfgv1.ImageDigestFormat(availableImage),
 							},
 						},
 					},
@@ -291,7 +290,7 @@ func TestPrefetchImageSets(t *testing.T) {
 			},
 			wantValidTarget: true,
 			imageSets: []runtime.Object{
-				&mcfgv1alpha1.PinnedImageSet{
+				&mcfgv1.PinnedImageSet{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "fake-pinned-images",
 					},
@@ -312,7 +311,7 @@ func TestPrefetchImageSets(t *testing.T) {
 			sharedInformers := mcfginformers.NewSharedInformerFactory(fakeMCOClient, noResyncPeriodFunc())
 			informerFactory := informers.NewSharedInformerFactory(fakeClient, noResyncPeriodFunc())
 			mcpInformer := sharedInformers.Machineconfiguration().V1().MachineConfigPools()
-			imageSetInformer := sharedInformers.Machineconfiguration().V1alpha1().PinnedImageSets()
+			imageSetInformer := sharedInformers.Machineconfiguration().V1().PinnedImageSets()
 			nodeInformer := informerFactory.Core().V1().Nodes()
 
 			informerFactory.Start(ctx.Done())
@@ -373,9 +372,9 @@ func TestPrefetchImageSets(t *testing.T) {
 				cache: newImageCache(256),
 			}
 
-			imageSets := make([]*mcfgv1alpha1.PinnedImageSet, len(tt.imageSets))
+			imageSets := make([]*mcfgv1.PinnedImageSet, len(tt.imageSets))
 			for i, obj := range tt.imageSets {
-				imageSet, ok := obj.(*mcfgv1alpha1.PinnedImageSet)
+				imageSet, ok := obj.(*mcfgv1.PinnedImageSet)
 				require.True(ok)
 				imageSets[i] = imageSet
 			}
@@ -406,7 +405,7 @@ func TestPinnedImageSetAddEventHandlers(t *testing.T) {
 		name               string
 		nodes              []runtime.Object
 		machineConfigPools []runtime.Object
-		currentImageSet    *mcfgv1alpha1.PinnedImageSet
+		currentImageSet    *mcfgv1.PinnedImageSet
 		wantCacheElements  int
 	}{
 		{
@@ -484,7 +483,7 @@ func TestCheckNodeAllocatableStorage(t *testing.T) {
 	tests := []struct {
 		name           string
 		node           runtime.Object
-		pinnedImageSet *mcfgv1alpha1.PinnedImageSet
+		pinnedImageSet *mcfgv1.PinnedImageSet
 		// uncompressed is x 2
 		imagesSizeCompressed        string
 		minFreeStorageAfterPrefetch string
@@ -580,16 +579,16 @@ func TestEnsureCrioPinnedImagesConfigFile(t *testing.T) {
 	require.ErrorIs(err, os.ErrPermission) // this error is from atomic writer attempting to write.
 }
 
-func fakePinnedImageSet(name, image string, labels map[string]string) *mcfgv1alpha1.PinnedImageSet {
-	return &mcfgv1alpha1.PinnedImageSet{
+func fakePinnedImageSet(name, image string, labels map[string]string) *mcfgv1.PinnedImageSet {
+	return &mcfgv1.PinnedImageSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   name,
 			Labels: labels,
 		},
-		Spec: mcfgv1alpha1.PinnedImageSetSpec{
-			PinnedImages: []mcfgv1alpha1.PinnedImageRef{
+		Spec: mcfgv1.PinnedImageSetSpec{
+			PinnedImages: []mcfgv1.PinnedImageRef{
 				{
-					Name: image,
+					Name: mcfgv1.ImageDigestFormat(image),
 				},
 			},
 		},
@@ -608,15 +607,15 @@ var (
 	slowImage = "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
 )
 
-func generateImageSetSpec(imageName string, count int) mcfgv1alpha1.PinnedImageSetSpec {
-	pinnedImages := make([]mcfgv1alpha1.PinnedImageRef, count)
+func generateImageSetSpec(imageName string, count int) mcfgv1.PinnedImageSetSpec {
+	pinnedImages := make([]mcfgv1.PinnedImageRef, count)
 	for i := 0; i < count; i++ {
-		pinnedImages[i] = mcfgv1alpha1.PinnedImageRef{
-			Name: imageName,
+		pinnedImages[i] = mcfgv1.PinnedImageRef{
+			Name: mcfgv1.ImageDigestFormat(imageName),
 		}
 	}
 
-	return mcfgv1alpha1.PinnedImageSetSpec{
+	return mcfgv1.PinnedImageSetSpec{
 		PinnedImages: pinnedImages,
 	}
 }

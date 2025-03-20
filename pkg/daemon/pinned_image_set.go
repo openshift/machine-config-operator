@@ -42,9 +42,7 @@ import (
 	machineconfigurationalphav1 "github.com/openshift/client-go/machineconfiguration/applyconfigurations/machineconfiguration/v1alpha1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
-	mcfginformersv1alpha1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1alpha1"
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
-	mcfglistersv1alpha1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
@@ -87,7 +85,7 @@ type PinnedImageSetManager struct {
 	// nodeName is the name of the node.
 	nodeName string
 
-	imageSetLister mcfglistersv1alpha1.PinnedImageSetLister
+	imageSetLister mcfglistersv1.PinnedImageSetLister
 	imageSetSynced cache.InformerSynced
 
 	nodeLister       corev1lister.NodeLister
@@ -136,7 +134,7 @@ func NewPinnedImageSetManager(
 	nodeName string,
 	criClient *cri.Client,
 	mcfgClient mcfgclientset.Interface,
-	imageSetInformer mcfginformersv1alpha1.PinnedImageSetInformer,
+	imageSetInformer mcfginformersv1.PinnedImageSetInformer,
 	nodeInformer coreinformersv1.NodeInformer,
 	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
 	minStorageAvailableBytes resource.Quantity,
@@ -248,7 +246,7 @@ func (p *PinnedImageSetManager) sync(key string) error {
 }
 
 func (p *PinnedImageSetManager) syncMachineConfigPools(ctx context.Context, pools []*mcfgv1.MachineConfigPool) error {
-	images := make([]mcfgv1alpha1.PinnedImageRef, 0, 100)
+	images := make([]mcfgv1.PinnedImageRef, 0, 100)
 	for _, pool := range pools {
 		if err := p.syncMachineConfigPool(ctx, pool); err != nil {
 			return err
@@ -295,7 +293,7 @@ func (p *PinnedImageSetManager) syncMachineConfigPool(ctx context.Context, pool 
 	if pool.Spec.PinnedImageSets == nil {
 		return nil
 	}
-	imageSets := make([]*mcfgv1alpha1.PinnedImageSet, 0, len(pool.Spec.PinnedImageSets))
+	imageSets := make([]*mcfgv1.PinnedImageSet, 0, len(pool.Spec.PinnedImageSets))
 	for _, ref := range pool.Spec.PinnedImageSets {
 		imageSet, err := p.imageSetLister.Get(ref.Name)
 		if err != nil {
@@ -315,7 +313,7 @@ func (p *PinnedImageSetManager) syncMachineConfigPool(ctx context.Context, pool 
 	return p.prefetchImageSets(ctx, imageSets...)
 }
 
-func (p *PinnedImageSetManager) checkNodeAllocatableStorage(ctx context.Context, imageSet *mcfgv1alpha1.PinnedImageSet) error {
+func (p *PinnedImageSetManager) checkNodeAllocatableStorage(ctx context.Context, imageSet *mcfgv1.PinnedImageSet) error {
 	node, err := p.nodeLister.Get(p.nodeName)
 	if err != nil {
 		return fmt.Errorf("failed to get node %q: %w", p.nodeName, err)
@@ -340,7 +338,7 @@ func (p *PinnedImageSetManager) checkNodeAllocatableStorage(ctx context.Context,
 }
 
 // prefetchImageSets schedules the prefetching of images for the given image sets and waits for completion.
-func (p *PinnedImageSetManager) prefetchImageSets(ctx context.Context, imageSets ...*mcfgv1alpha1.PinnedImageSet) error {
+func (p *PinnedImageSetManager) prefetchImageSets(ctx context.Context, imageSets ...*mcfgv1.PinnedImageSet) error {
 	registryAuth, err := newRegistryAuth(p.authFilePath, p.registryCfgPath)
 	if err != nil {
 		return err
@@ -354,9 +352,9 @@ func (p *PinnedImageSetManager) prefetchImageSets(ctx context.Context, imageSets
 			continue
 		}
 
-		cachedImage, ok := p.cache.Get(string(imageSet.UID))
+		cachedImage, ok := p.cache.Get(strings.TrimSpace(string(imageSet.UID)))
 		if ok {
-			cachedImageSet := cachedImage.(mcfgv1alpha1.PinnedImageSet)
+			cachedImageSet := cachedImage.(mcfgv1.PinnedImageSet)
 			if imageSet.Generation == cachedImageSet.Generation {
 				klog.V(4).Infof("Skipping prefetch for image set %q, generation %d already complete", imageSet.Name, imageSet.Generation)
 				continue
@@ -375,14 +373,14 @@ func (p *PinnedImageSetManager) prefetchImageSets(ctx context.Context, imageSets
 	for _, imageSet := range imageSets {
 		imageSetCache := imageSet.DeepCopy()
 		imageSetCache.Spec.PinnedImages = nil
-		p.cache.Add(string(imageSet.UID), *imageSet)
+		p.cache.Add(strings.TrimSpace(string(imageSet.UID)), *imageSet)
 	}
 
 	return nil
 }
 
 // scheduleWork schedules the prefetch work for the images and collects the first error encountered.
-func (p *PinnedImageSetManager) scheduleWork(ctx context.Context, prefetchCh chan prefetch, registryAuth *registryAuth, prefetchImages []mcfgv1alpha1.PinnedImageRef, monitor *prefetchMonitor) error {
+func (p *PinnedImageSetManager) scheduleWork(ctx context.Context, prefetchCh chan prefetch, registryAuth *registryAuth, prefetchImages []mcfgv1.PinnedImageRef, monitor *prefetchMonitor) error {
 	totalImages := len(prefetchImages)
 	updateIncrement := totalImages / 4
 	if updateIncrement == 0 {
@@ -397,7 +395,7 @@ func (p *PinnedImageSetManager) scheduleWork(ctx context.Context, prefetchCh cha
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			image := imageRef.Name
+			image := strings.TrimSpace(string(imageRef.Name))
 
 			// check cache if image is pulled
 			// this is an optimization to speedup prefetching after requeue
@@ -432,11 +430,11 @@ func (p *PinnedImageSetManager) scheduleWork(ctx context.Context, prefetchCh cha
 	return nil
 }
 
-func (p *PinnedImageSetManager) checkImagePayloadStorage(ctx context.Context, images []mcfgv1alpha1.PinnedImageRef, capacity int64) error {
+func (p *PinnedImageSetManager) checkImagePayloadStorage(ctx context.Context, images []mcfgv1.PinnedImageRef, capacity int64) error {
 	// calculate total required storage for all images.
 	requiredStorage := int64(0)
 	for _, image := range images {
-		imageName := image.Name
+		imageName := strings.TrimSpace(string(image.Name))
 
 		// check cache if image is pulled
 		if value, found := p.cache.Get(imageName); found {
@@ -604,7 +602,7 @@ func (p *PinnedImageSetManager) updateStatusProgressingComplete(pools []*mcfgv1.
 		pool,
 	)
 	if err != nil {
-		klog.Errorf("Failed to updated machine config node: %v", err)
+		klog.Errorf("Failed to update machine config node: %v", err)
 	}
 
 	// reset any degraded status
@@ -692,13 +690,13 @@ func (p *PinnedImageSetManager) getPinnedImageSetApplyConfigsForPools(pools []*m
 }
 
 //nolint:gosec
-func (p *PinnedImageSetManager) createApplyConfigForImageSet(imageSet *mcfgv1alpha1.PinnedImageSet, isCompleted bool, statusErr error) *machineconfigurationalphav1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration {
+func (p *PinnedImageSetManager) createApplyConfigForImageSet(imageSet *mcfgv1.PinnedImageSet, isCompleted bool, statusErr error) *machineconfigurationalphav1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration {
 	imageSetConfig := machineconfigurationalphav1.MachineConfigNodeStatusPinnedImageSet().
 		WithName(imageSet.Name).
 		WithDesiredGeneration(int32(imageSet.GetGeneration()))
 
-	if cachedImage, ok := p.cache.Get(string(imageSet.UID)); ok {
-		cachedImageSet := cachedImage.(mcfgv1alpha1.PinnedImageSet)
+	if cachedImage, ok := p.cache.Get(strings.TrimSpace(string(imageSet.UID))); ok {
+		cachedImageSet := cachedImage.(mcfgv1.PinnedImageSet)
 		if imageSet.Generation == cachedImageSet.Generation {
 			// return cached value
 			imageSetConfig.CurrentGeneration = ptr.To(int32(imageSet.GetGeneration()))
@@ -782,17 +780,17 @@ func (p *PinnedImageSetManager) prefetchWorker(ctx context.Context) {
 		}
 		task.monitor.Done()
 
-		cachedImage, ok := p.cache.Get(task.image)
+		cachedImage, ok := p.cache.Get(strings.TrimSpace(task.image))
 		if ok {
 			imageInfo, ok := cachedImage.(imageInfo)
 			if !ok {
 				klog.Warningf("corrupted cache entry for image %q, deleting", task.image)
-				p.cache.Remove(task.image)
+				p.cache.Remove(strings.TrimSpace(task.image))
 			}
 			imageInfo.Pulled = true
-			p.cache.Add(task.image, imageInfo)
+			p.cache.Add(strings.TrimSpace(task.image), imageInfo)
 		} else {
-			p.cache.Add(task.image, imageInfo{Name: task.image, Pulled: true})
+			p.cache.Add(strings.TrimSpace(task.image), imageInfo{Name: task.image, Pulled: true})
 		}
 
 		// throttle prefetching to avoid overloading the file system
@@ -845,7 +843,7 @@ func (p *PinnedImageSetManager) Run(workers int, stopCh <-chan struct{}) {
 }
 
 func (p *PinnedImageSetManager) addPinnedImageSet(obj interface{}) {
-	imageSet := obj.(*mcfgv1alpha1.PinnedImageSet)
+	imageSet := obj.(*mcfgv1.PinnedImageSet)
 	if imageSet.DeletionTimestamp != nil {
 		p.deletePinnedImageSet(imageSet)
 		return
@@ -876,14 +874,14 @@ func (p *PinnedImageSetManager) addPinnedImageSet(obj interface{}) {
 }
 
 func (p *PinnedImageSetManager) deletePinnedImageSet(obj interface{}) {
-	imageSet, ok := obj.(*mcfgv1alpha1.PinnedImageSet)
+	imageSet, ok := obj.(*mcfgv1.PinnedImageSet)
 	if !ok {
 		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
 		if !ok {
 			utilruntime.HandleError(fmt.Errorf("couldn't get object from tombstone %#v", obj))
 			return
 		}
-		imageSet, ok = tombstone.Obj.(*mcfgv1alpha1.PinnedImageSet)
+		imageSet, ok = tombstone.Obj.(*mcfgv1.PinnedImageSet)
 		if !ok {
 			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not a PinnedImageSet %#v", obj))
 			return
@@ -936,8 +934,8 @@ func (p *PinnedImageSetManager) getNodeWithRetry(nodeName string) (*corev1.Node,
 }
 
 func (p *PinnedImageSetManager) updatePinnedImageSet(oldObj, newObj interface{}) {
-	oldImageSet := oldObj.(*mcfgv1alpha1.PinnedImageSet)
-	newImageSet := newObj.(*mcfgv1alpha1.PinnedImageSet)
+	oldImageSet := oldObj.(*mcfgv1.PinnedImageSet)
+	newImageSet := newObj.(*mcfgv1.PinnedImageSet)
 
 	imageSet, err := p.imageSetLister.Get(newImageSet.Name)
 	if apierrors.IsNotFound(err) {
@@ -1238,18 +1236,18 @@ func isErrNoSpace(err error) bool {
 	return false
 }
 
-func uniqueSortedImageNames(images []mcfgv1alpha1.PinnedImageRef) []string {
+func uniqueSortedImageNames(images []mcfgv1.PinnedImageRef) []string {
 	seen := make(map[string]struct{})
 	var unique []string
 
 	for _, image := range images {
-		if _, ok := seen[image.Name]; !ok {
-			trimmedName := strings.TrimSpace(image.Name)
+		if _, ok := seen[string(image.Name)]; !ok {
+			trimmedName := strings.TrimSpace(string(image.Name))
 			if trimmedName == "" {
 				continue
 			}
-			seen[image.Name] = struct{}{}
-			unique = append(unique, image.Name)
+			seen[string(image.Name)] = struct{}{}
+			unique = append(unique, string(image.Name))
 		}
 	}
 
@@ -1395,7 +1393,7 @@ type imageInfo struct {
 	Pulled bool
 }
 
-func triggerPinnedImageSetChange(old, newPinnedImageSet *mcfgv1alpha1.PinnedImageSet) bool {
+func triggerPinnedImageSetChange(old, newPinnedImageSet *mcfgv1.PinnedImageSet) bool {
 	if old.DeletionTimestamp != newPinnedImageSet.DeletionTimestamp {
 		return true
 	}
