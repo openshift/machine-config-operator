@@ -19,7 +19,7 @@ import (
 	signature "github.com/containers/image/v5/signature"
 	"github.com/containers/image/v5/types"
 	storageconfig "github.com/containers/storage/pkg/config"
-	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	"github.com/ghodss/yaml"
 	"github.com/opencontainers/go-digest"
 	apicfgv1 "github.com/openshift/api/config/v1"
