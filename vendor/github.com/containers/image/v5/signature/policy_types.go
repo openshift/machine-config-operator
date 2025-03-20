@@ -74,7 +74,7 @@ type prSignedBy struct {
 
 	// KeyPath is a pathname to a local file containing the trusted key(s). Exactly one of KeyPath, KeyPaths and KeyData must be specified.
 	KeyPath string `json:"keyPath,omitempty"`
-	// KeyPaths if a set of pathnames to local files containing the trusted key(s). Exactly one of KeyPath, KeyPaths and KeyData must be specified.
+	// KeyPaths is a set of pathnames to local files containing the trusted key(s). Exactly one of KeyPath, KeyPaths and KeyData must be specified.
 	KeyPaths []string `json:"keyPaths,omitempty"`
 	// KeyData contains the trusted key(s), base64-encoded. Exactly one of KeyPath, KeyPaths and KeyData must be specified.
 	KeyData []byte `json:"keyData,omitempty"`
@@ -111,24 +111,38 @@ type prSignedBaseLayer struct {
 type prSigstoreSigned struct {
 	prCommon
 
-	// KeyPath is a pathname to a local file containing the trusted key. Exactly one of KeyPath, KeyData, Fulcio must be specified.
+	// KeyPath is a pathname to a local file containing the trusted key. Exactly one of KeyPath, KeyPaths, KeyData, KeyDatas, Fulcio, and PKI must be specified.
 	KeyPath string `json:"keyPath,omitempty"`
-	// KeyData contains the trusted key, base64-encoded. Exactly one of KeyPath, KeyData, Fulcio must be specified.
+	// KeyPaths is a set of pathnames to local files containing the trusted key(s). Exactly one of KeyPath, KeyPaths, KeyData, KeyDatas, Fulcio, and PKI must be specified.
+	KeyPaths []string `json:"keyPaths,omitempty"`
+	// KeyData contains the trusted key, base64-encoded. Exactly one of KeyPath, KeyPaths, KeyData, KeyDatas, Fulcio, and PKI must be specified.
 	KeyData []byte `json:"keyData,omitempty"`
-	// FIXME: Multiple public keys?
+	// KeyDatas is a set of trusted keys, base64-encoded. Exactly one of KeyPath, KeyPaths, KeyData, KeyDatas, Fulcio, and PKI must be specified.
+	KeyDatas [][]byte `json:"keyDatas,omitempty"`
 
-	// Fulcio specifies which Fulcio-generated certificates are accepted. Exactly one of KeyPath, KeyData, Fulcio must be specified.
+	// Fulcio specifies which Fulcio-generated certificates are accepted. Exactly one of KeyPath, KeyPaths, KeyData, KeyDatas, Fulcio, and PKI must be specified.
 	// If Fulcio is specified, one of RekorPublicKeyPath or RekorPublicKeyData must be specified as well.
 	Fulcio PRSigstoreSignedFulcio `json:"fulcio,omitempty"`
 
 	// RekorPublicKeyPath is a pathname to local file containing a public key of a Rekor server which must record acceptable signatures.
-	// If Fulcio is used, one of RekorPublicKeyPath or RekorPublicKeyData must be specified as well; otherwise it is optional
-	// (and Rekor inclusion is not required if a Rekor public key is not specified).
+	// If Fulcio is used, one of RekorPublicKeyPath, RekorPublicKeyPaths, RekorPublicKeyData and RekorPublicKeyDatas must be specified as well;
+	// otherwise it is optional (and Rekor inclusion is not required if a Rekor public key is not specified).
 	RekorPublicKeyPath string `json:"rekorPublicKeyPath,omitempty"`
+	// RekorPublicKeyPaths is a set of pathnames to local files, each containing a public key of a Rekor server. One of the keys must record acceptable signatures.
+	// If Fulcio is used, one of RekorPublicKeyPath, RekorPublicKeyPaths, RekorPublicKeyData and RekorPublicKeyDatas must be specified as well;
+	// otherwise it is optional (and Rekor inclusion is not required if a Rekor public key is not specified).
+	RekorPublicKeyPaths []string `json:"rekorPublicKeyPaths,omitempty"`
 	// RekorPublicKeyPath contain a base64-encoded public key of a Rekor server which must record acceptable signatures.
-	// If Fulcio is used, one of RekorPublicKeyPath or RekorPublicKeyData must be specified as well; otherwise it is optional
-	// (and Rekor inclusion is not required if a Rekor public key is not specified).
+	// If Fulcio is used, one of RekorPublicKeyPath, RekorPublicKeyPaths, RekorPublicKeyData and RekorPublicKeyDatas must be specified as well;
+	// otherwise it is optional (and Rekor inclusion is not required if a Rekor public key is not specified).
 	RekorPublicKeyData []byte `json:"rekorPublicKeyData,omitempty"`
+	// RekorPublicKeyDatas each contain a base64-encoded public key of a Rekor server. One of the keys must record acceptable signatures.
+	// If Fulcio is used, one of RekorPublicKeyPath, RekorPublicKeyPaths, RekorPublicKeyData and RekorPublicKeyDatas must be specified as well;
+	// otherwise it is optional (and Rekor inclusion is not required if a Rekor public key is not specified).
+	RekorPublicKeyDatas [][]byte `json:"rekorPublicKeyDatas,omitempty"`
+
+	// PKI specifies which PKI-generated certificates are accepted. Exactly one of KeyPath, KeyPaths, KeyData, KeyDatas, Fulcio, and PKI must be specified.
+	PKI PRSigstoreSignedPKI `json:"pki,omitempty"`
 
 	// SignedIdentity specifies what image identity the signature must be claiming about the image.
 	// Defaults to "matchRepoDigestOrExact" if not specified.
@@ -154,6 +168,30 @@ type prSigstoreSignedFulcio struct {
 	OIDCIssuer string `json:"oidcIssuer,omitempty"`
 	// SubjectEmail specifies the expected email address of the authenticated OIDC identity, recorded by Fulcio into the generated certificates.
 	SubjectEmail string `json:"subjectEmail,omitempty"`
+}
+
+// PRSigstoreSignedPKI contains PKI configuration options for a "sigstoreSigned" PolicyRequirement.
+type PRSigstoreSignedPKI interface {
+	// prepareTrustRoot creates a pkiTrustRoot from the input data.
+	// (This also prevents external implementations of this interface, ensuring that prSigstoreSignedPKI is the only one.)
+	prepareTrustRoot() (*pkiTrustRoot, error)
+}
+
+// prSigstoreSignedPKI contains non-fulcio certificate PKI configuration options for prSigstoreSigned
+type prSigstoreSignedPKI struct {
+	// CARootsPath a path to a file containing accepted CA root certificates, in PEM format. Exactly one of CARootsPath and CARootsData must be specified.
+	CARootsPath string `json:"caRootsPath"`
+	// CARootsData contains accepted CA root certificates in PEM format, all of that base64-encoded. Exactly one of CARootsPath and CARootsData must be specified.
+	CARootsData []byte `json:"caRootsData"`
+	// CAIntermediatesPath a path to a file containing accepted CA intermediate certificates, in PEM format. Only one of CAIntermediatesPath or CAIntermediatesData can be specified, not both.
+	CAIntermediatesPath string `json:"caIntermediatesPath"`
+	// CAIntermediatesData contains accepted CA intermediate certificates in PEM format, all of that base64-encoded. Only one of CAIntermediatesPath or CAIntermediatesData can be specified, not both.
+	CAIntermediatesData []byte `json:"caIntermediatesData"`
+
+	// SubjectEmail specifies the expected email address imposed on the subject to which the certificate was issued. At least one of SubjectEmail and SubjectHostname must be specified.
+	SubjectEmail string `json:"subjectEmail"`
+	// SubjectHostname specifies the expected hostname imposed on the subject to which the certificate was issued. At least one of SubjectEmail and SubjectHostname must be specified.
+	SubjectHostname string `json:"subjectHostname"`
 }
 
 // PolicyReferenceMatch specifies a set of image identities accepted in PolicyRequirement.
