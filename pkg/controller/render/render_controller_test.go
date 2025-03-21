@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/clarketm/json"
+	ign2types "github.com/coreos/ignition/config/v2_2/types"
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/stretchr/testify/assert"
@@ -598,4 +599,319 @@ func TestGenerateMachineConfigValidation(t *testing.T) {
 	gmc, err := generateAndValidateRenderedMachineConfig(currentMC, mcp, mcs, cc)
 	assert.Error(t, err)
 	assert.Nil(t, gmc)
+}
+
+func TestGenerateRenderedMachineConfig(t *testing.T) {
+	// Test that all other configs can also be set properly
+
+	// we previously prevented OSImageURL from being overridden via
+	// machineconfig, but now that we're doing layering, we want to
+	// give that functionality back, so make sure we can override it
+	machineConfigOSImageURL := &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "osimageurl",
+			Labels: map[string]string{ctrlcommon.MachineConfigRoleLabel: ctrlcommon.MachineConfigPoolWorker},
+		},
+		Spec: mcfgv1.MachineConfigSpec{
+			OSImageURL: "overriddenURL",
+		},
+	}
+	machineConfigKernelArgs1 := &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "kargs1",
+			Labels: map[string]string{ctrlcommon.MachineConfigRoleLabel: ctrlcommon.MachineConfigPoolWorker},
+		},
+		Spec: mcfgv1.MachineConfigSpec{
+			KernelArguments: []string{"karg-c"},
+		},
+	}
+	machineConfigKernelArgs2 := &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "kargs2",
+			Labels: map[string]string{ctrlcommon.MachineConfigRoleLabel: ctrlcommon.MachineConfigPoolWorker},
+		},
+		Spec: mcfgv1.MachineConfigSpec{
+			KernelArguments: []string{"karg-c", "karg-b"},
+		},
+	}
+	machineConfigKernelArgs3 := &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "kargs3",
+			Labels: map[string]string{ctrlcommon.MachineConfigRoleLabel: ctrlcommon.MachineConfigPoolWorker},
+		},
+		Spec: mcfgv1.MachineConfigSpec{
+			KernelArguments: []string{"karg-c", "karg-b", "karg-a"},
+		},
+	}
+	machineConfigKernelType := &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "kerneltype",
+			Labels: map[string]string{ctrlcommon.MachineConfigRoleLabel: ctrlcommon.MachineConfigPoolWorker},
+		},
+		Spec: mcfgv1.MachineConfigSpec{
+			KernelType: ctrlcommon.KernelTypeRealtime,
+		},
+	}
+	machineConfigExtensions1 := &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "extension1",
+			Labels: map[string]string{ctrlcommon.MachineConfigRoleLabel: ctrlcommon.MachineConfigPoolWorker},
+		},
+		Spec: mcfgv1.MachineConfigSpec{
+			Extensions: []string{"ext-c"},
+		},
+	}
+	machineConfigExtensions2 := &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "extension2",
+			Labels: map[string]string{ctrlcommon.MachineConfigRoleLabel: ctrlcommon.MachineConfigPoolWorker},
+		},
+		Spec: mcfgv1.MachineConfigSpec{
+			Extensions: []string{"ext-c", "ext-b"},
+		},
+	}
+	machineConfigExtensions3 := &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "extension3",
+			Labels: map[string]string{ctrlcommon.MachineConfigRoleLabel: ctrlcommon.MachineConfigPoolWorker},
+		},
+		Spec: mcfgv1.MachineConfigSpec{
+			Extensions: []string{"ext-c", "ext-b", "ext-a"},
+		},
+	}
+	machineConfigIgnSSHUser := helpers.CreateMachineConfigFromIgnitionWithMetadata(ign3types.Config{
+		Ignition: ign3types.Ignition{
+			Version: ign3types.MaxVersion.String(),
+		},
+		Passwd: ign3types.Passwd{
+			Users: []ign3types.PasswdUser{
+				{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"1234"}},
+			},
+		},
+	}, "ssh", ctrlcommon.MachineConfigPoolWorker)
+
+	machineConfigIgnPasswdHashUser := helpers.CreateMachineConfigFromIgnitionWithMetadata(ign3types.Config{
+		Ignition: ign3types.Ignition{
+			Version: ign3types.MaxVersion.String(),
+		},
+		Passwd: ign3types.Passwd{
+			Users: []ign3types.PasswdUser{
+				{Name: "core", PasswordHash: helpers.StrToPtr("testpass")},
+			},
+		},
+	}, "passwd", ctrlcommon.MachineConfigPoolWorker)
+
+	// we added some v3 specific logic for kargs, make sure we didn't break the v2 path
+	machineConfigIgnV2Merge := helpers.CreateMachineConfigFromIgnitionWithMetadata(ign2types.Config{
+		Ignition: ign2types.Ignition{
+			Version: ign2types.MaxVersion.String(),
+		},
+	}, "v2", ctrlcommon.MachineConfigPoolWorker)
+
+	machineConfigIgn := helpers.CreateMachineConfigFromIgnitionWithMetadata(ign3types.Config{
+		Ignition: ign3types.Ignition{
+			Version: ign3types.MaxVersion.String(),
+		},
+		Passwd: ign3types.Passwd{
+			Users: []ign3types.PasswdUser{
+				{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"5678"}},
+			},
+		},
+	}, "ssh", ctrlcommon.MachineConfigPoolWorker)
+
+	machineConfigFIPS := &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "fips",
+			Labels: map[string]string{ctrlcommon.MachineConfigRoleLabel: ctrlcommon.MachineConfigPoolWorker},
+		},
+		Spec: mcfgv1.MachineConfigSpec{
+			FIPS: true,
+		},
+	}
+
+	emptyIgnConfig := runtime.RawExtension{
+		Raw: helpers.MarshalOrDie(ign3types.Config{
+			Ignition: ign3types.Ignition{
+				Version: ign3types.MaxVersion.String(),
+			},
+		}),
+	}
+
+	expectedMachineConfig := &mcfgv1.MachineConfig{
+		Spec: mcfgv1.MachineConfigSpec{
+			OSImageURL:      "overriddenURL",
+			KernelArguments: []string{"karg-c", "karg-c", "karg-b", "karg-c", "karg-b", "karg-a"},
+			Config: runtime.RawExtension{
+				Raw: helpers.MarshalOrDie(ign3types.Config{
+					Ignition: ign3types.Ignition{
+						Version: ign3types.MaxVersion.String(),
+					},
+					Passwd: ign3types.Passwd{
+						Users: []ign3types.PasswdUser{
+							{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"5678", "1234"}, PasswordHash: helpers.StrToPtr("testpass")},
+						},
+					},
+				}),
+			},
+			FIPS:       true,
+			KernelType: ctrlcommon.KernelTypeRealtime,
+			Extensions: []string{"ext-c", "ext-c", "ext-b", "ext-c", "ext-b", "ext-a"},
+		},
+	}
+
+	testCases := []struct {
+		name                 string
+		inMachineConfigs     []*mcfgv1.MachineConfig
+		expectedName         string
+		expectedSpec         mcfgv1.MachineConfigSpec
+		osImageURLOverridden bool
+	}{
+		{
+			name: "Original order",
+			inMachineConfigs: []*mcfgv1.MachineConfig{
+				machineConfigOSImageURL,
+				machineConfigKernelArgs1,
+				machineConfigKernelArgs2,
+				machineConfigKernelArgs3,
+				machineConfigKernelType,
+				machineConfigExtensions3,
+				machineConfigExtensions2,
+				machineConfigExtensions1,
+				machineConfigIgn,
+				machineConfigFIPS,
+				machineConfigIgnPasswdHashUser,
+				machineConfigIgnSSHUser,
+				machineConfigIgnV2Merge,
+			},
+			expectedName:         "rendered-worker-b2628b52cbb66afc4bec5443cc1eebb6",
+			expectedSpec:         expectedMachineConfig.Spec,
+			osImageURLOverridden: true,
+		},
+		{
+			name: "Alternate order",
+			inMachineConfigs: []*mcfgv1.MachineConfig{
+				machineConfigExtensions1,
+				machineConfigExtensions2,
+				machineConfigExtensions3,
+				machineConfigFIPS,
+				machineConfigIgn,
+				machineConfigIgnPasswdHashUser,
+				machineConfigIgnSSHUser,
+				machineConfigIgnV2Merge,
+				machineConfigKernelArgs1,
+				machineConfigKernelArgs2,
+				machineConfigKernelArgs3,
+				machineConfigKernelType,
+				machineConfigOSImageURL,
+			},
+			expectedName:         "rendered-worker-b2628b52cbb66afc4bec5443cc1eebb6",
+			expectedSpec:         expectedMachineConfig.Spec,
+			osImageURLOverridden: true,
+		},
+		{
+			name: "Extensions",
+			inMachineConfigs: []*mcfgv1.MachineConfig{
+				machineConfigExtensions1,
+				machineConfigExtensions2,
+				machineConfigExtensions3,
+			},
+			expectedName: "rendered-worker-6468e56eb6d08372f691081a036faacb",
+			expectedSpec: mcfgv1.MachineConfigSpec{
+				Config:          emptyIgnConfig,
+				Extensions:      []string{"ext-c", "ext-c", "ext-b", "ext-c", "ext-b", "ext-a"},
+				KernelType:      ctrlcommon.KernelTypeDefault,
+				KernelArguments: []string{},
+			},
+		},
+		{
+			name: "Extensions order does not matter",
+			inMachineConfigs: []*mcfgv1.MachineConfig{
+				machineConfigExtensions3,
+				machineConfigExtensions2,
+				machineConfigExtensions1,
+			},
+			expectedName: "rendered-worker-6468e56eb6d08372f691081a036faacb",
+			expectedSpec: mcfgv1.MachineConfigSpec{
+				Config:          emptyIgnConfig,
+				Extensions:      []string{"ext-c", "ext-c", "ext-b", "ext-c", "ext-b", "ext-a"},
+				KernelType:      ctrlcommon.KernelTypeDefault,
+				KernelArguments: []string{},
+			},
+		},
+		{
+			name: "Kernel arguments",
+			inMachineConfigs: []*mcfgv1.MachineConfig{
+				machineConfigKernelArgs1,
+				machineConfigKernelArgs2,
+				machineConfigKernelArgs3,
+			},
+			expectedName: "rendered-worker-8b51f835df4c664d9d06ccf3d1be7412",
+			expectedSpec: mcfgv1.MachineConfigSpec{
+				Config:          emptyIgnConfig,
+				KernelType:      ctrlcommon.KernelTypeDefault,
+				KernelArguments: []string{"karg-c", "karg-c", "karg-b", "karg-c", "karg-b", "karg-a"},
+				Extensions:      []string{},
+			},
+		},
+		{
+			name: "Kernel arguments order does not matter",
+			inMachineConfigs: []*mcfgv1.MachineConfig{
+				machineConfigKernelArgs3,
+				machineConfigKernelArgs2,
+				machineConfigKernelArgs1,
+			},
+			expectedName: "rendered-worker-8b51f835df4c664d9d06ccf3d1be7412",
+			expectedSpec: mcfgv1.MachineConfigSpec{
+				Config:          emptyIgnConfig,
+				KernelType:      ctrlcommon.KernelTypeDefault,
+				KernelArguments: []string{"karg-c", "karg-c", "karg-b", "karg-c", "karg-b", "karg-a"},
+				Extensions:      []string{},
+			},
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			cconfig := newControllerConfig("controller-config")
+			cconfig.Spec.OSImageURL = "testURL"
+			cconfig.Spec.BaseOSContainerImage = "newformatURL"
+
+			mcp := helpers.NewMachineConfigPool(ctrlcommon.MachineConfigPoolWorker, helpers.WorkerSelector, nil, "")
+
+			expectedMachineConfig := &mcfgv1.MachineConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						ctrlcommon.GeneratedByControllerVersionAnnotationKey: "was-not-built-properly",
+						ctrlcommon.ReleaseImageVersionAnnotationKey:          "",
+					},
+					OwnerReferences: []metav1.OwnerReference{
+						{
+							APIVersion:         "machineconfiguration.openshift.io/v1",
+							Kind:               "MachineConfigPool",
+							Name:               "worker",
+							UID:                mcp.UID,
+							Controller:         helpers.BoolToPtr(true),
+							BlockOwnerDeletion: helpers.BoolToPtr(true),
+						},
+					},
+				},
+				Spec: testCase.expectedSpec,
+			}
+
+			if testCase.osImageURLOverridden {
+				metav1.SetMetaDataAnnotation(&expectedMachineConfig.ObjectMeta, ctrlcommon.OSImageURLOverriddenKey, "true")
+			} else {
+				expectedMachineConfig.Spec.OSImageURL = cconfig.Spec.BaseOSContainerImage
+			}
+
+			renderedMachineConfig, err := generateRenderedMachineConfig(mcp, testCase.inMachineConfigs, cconfig)
+			require.NoError(t, err)
+
+			assert.Equal(t, renderedMachineConfig.Name, testCase.expectedName)
+
+			expectedMachineConfig.Name = renderedMachineConfig.Name
+
+			assert.Equal(t, *renderedMachineConfig, *expectedMachineConfig)
+		})
+	}
 }
