@@ -186,20 +186,20 @@ verify-e2e: $(patsubst %,_verify-e2e-%,$(E2E_SUITES))
 
 # This was copied from https://github.com/openshift/cluster-image-registry-operator
 test-e2e: install-go-junit-report
-	set -o pipefail; go test -tags=$(GOTAGS) -failfast -timeout 190m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e/ ./test/e2e-techpreview-shared/ | ./hack/test-with-junit.sh $(@)
+	set -o pipefail; go test -tags=$(GOTAGS) -failfast -timeout 190m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e/ ./test/e2e-techpreview-shared/
 
 test-e2e-techpreview: install-go-junit-report
-	set -o pipefail; go test -tags=$(GOTAGS) -failfast -timeout 170m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-techpreview  ./test/e2e-techpreview-shared/ | ./hack/test-with-junit.sh $(@)
+	set -o pipefail; go test -tags=$(GOTAGS) -failfast -timeout 170m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-techpreview  ./test/e2e-techpreview-shared/
 
 test-e2e-single-node: install-go-junit-report
-	set -o pipefail; go test -tags=$(GOTAGS) -failfast -timeout 120m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-single-node/ | ./hack/test-with-junit.sh $(@)
+	set -o pipefail; go test -tags=$(GOTAGS) -failfast -timeout 120m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-single-node/
 
 test-e2e-ocl: install-go-junit-report
-	set -o pipefail; go test -tags=$(GOTAGS) -failfast -timeout 120m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-ocl/ | ./hack/test-with-junit.sh $(@)
+	set -o pipefail; go test -tags=$(GOTAGS) -failfast -timeout 120m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-ocl/
 
 bootstrap-e2e: install-go-junit-report install-setup-envtest
 	@echo "Setting up KUBEBUILDER_ASSETS"
 	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --index https://raw.githubusercontent.com/openshift/api/master/envtest-releases.yaml --bin-dir $(PROJECT_DIR)/bin -p path)" && \
 	echo "KUBEBUILDER_ASSETS=$$KUBEBUILDER_ASSETS" && \
 	set -o pipefail && \
-	KUBEBUILDER_ASSETS=$$KUBEBUILDER_ASSETS go test -tags=$(GOTAGS) -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-bootstrap/ | ./hack/test-with-junit.sh $(@)
+	KUBEBUILDER_ASSETS=$$KUBEBUILDER_ASSETS go test -tags=$(GOTAGS) -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-bootstrap/ 
