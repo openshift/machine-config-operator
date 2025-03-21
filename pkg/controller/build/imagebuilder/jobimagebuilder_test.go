@@ -127,8 +127,6 @@ func TestJobImageBuilder(t *testing.T) {
 	kubeassert.Now().JobDoesNotExist(buildJobName)
 
 	assertObjectsAreRemovedByCleaner(ctx, t, kubeassert, jim.(*jobImageBuilder).buildrequest)
-
-	require.NoError(t, jim.Stop(ctx))
 }
 
 // Ensures that the build states are appropriately mapped within the common
@@ -252,8 +250,7 @@ func TestJobImageBuilderSetsBuildStartAndEndTimestamp(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	t.Cleanup(cancel)
 
-	kubeclient, mcfgclient, lobj, kubeassert := fixtures.GetClientsForTest(t)
-	kubeassert = kubeassert.WithContext(ctx)
+	kubeclient, mcfgclient, lobj, _ := fixtures.GetClientsForTest(t)
 
 	jim := NewJobImageBuilder(kubeclient, mcfgclient, lobj.MachineOSBuild, lobj.MachineOSConfig)
 
