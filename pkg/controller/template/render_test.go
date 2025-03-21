@@ -216,6 +216,8 @@ var (
 		"nutanix":                "./test_data/controller_config_nutanix.yaml",
 		"network-forwarding-sdn": "./test_data/controller_config_forwarding_sdn.yaml",
 		"network-forwarding-ovn": "./test_data/controller_config_forwarding_ovn.yaml",
+		"gcp-custom-dns":         "./test_data/controller_config_gcp_custom_dns.yaml",
+		"gcp-default-dns":        "./test_data/controller_config_gcp_default_dns.yaml",
 	}
 )
 
@@ -359,6 +361,11 @@ func TestGenerateMachineConfigs(t *testing.T) {
 }
 
 func TestGetPaths(t *testing.T) {
+	APIIntLBIP := configv1.IP("10.10.10.4")
+	APILBIP := configv1.IP("196.78.125.4")
+	IngressLBIP1 := configv1.IP("196.78.125.5")
+	IngressLBIP2 := configv1.IP("10.10.10.5")
+
 	cases := []struct {
 		platform configv1.PlatformType
 		topology configv1.TopologyMode
@@ -372,6 +379,11 @@ func TestGetPaths(t *testing.T) {
 		res:      []string{strings.ToLower(string(configv1.BareMetalPlatformType)), "on-prem"},
 		topology: configv1.HighlyAvailableTopologyMode,
 	}, {
+		platform: configv1.GCPPlatformType,
+		res:      []string{strings.ToLower(string(configv1.GCPPlatformType))},
+		topology: configv1.HighlyAvailableTopologyMode,
+	}, {
+
 		platform: configv1.NonePlatformType,
 		res:      []string{strings.ToLower(string(configv1.NonePlatformType)), sno},
 		topology: configv1.SingleReplicaTopologyMode,
@@ -391,6 +403,38 @@ func TestGetPaths(t *testing.T) {
 						},
 					},
 				},
+			}
+			if c.platform == configv1.GCPPlatformType {
+				config = &mcfgv1.ControllerConfig{
+					Spec: mcfgv1.ControllerConfigSpec{
+						Infra: &configv1.Infrastructure{
+							Status: configv1.InfrastructureStatus{
+								Platform: c.platform,
+								PlatformStatus: &configv1.PlatformStatus{
+									Type: c.platform,
+									GCP: &configv1.GCPPlatformStatus{
+										CloudLoadBalancerConfig: &configv1.CloudLoadBalancerConfig{
+											DNSType: configv1.ClusterHostedDNSType,
+											ClusterHosted: &configv1.CloudLoadBalancerIPs{
+												APIIntLoadBalancerIPs: []configv1.IP{
+													APIIntLBIP,
+												},
+												APILoadBalancerIPs: []configv1.IP{
+													APILBIP,
+												},
+												IngressLoadBalancerIPs: []configv1.IP{
+													IngressLBIP1,
+													IngressLBIP2,
+												},
+											},
+										},
+									},
+								},
+								ControlPlaneTopology: c.topology,
+							},
+						},
+					},
+				}
 			}
 			c.res = append(c.res, platformBase)
 
