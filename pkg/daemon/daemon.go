@@ -2615,6 +2615,21 @@ func (dn *Daemon) triggerUpdateWithMachineConfig(currentConfig, desiredConfig *m
 	return dn.update(currentConfig, desiredConfig, skipCertificateWrite)
 }
 
+func (dn *Daemon) inPlaceApplyChanges(oldConfig, newConfig *mcfgv1.MachineConfig, currentImage string) error {
+	err := dn.update(oldConfig, newConfig, true)
+	if err != nil {
+		return fmt.Errorf("in-place apply failed: %w", err)
+	}
+
+	dn.storeCurrentConfigOnDisk(&onDiskConfig{
+		currentConfig: newConfig,
+		currentImage:  currentImage,
+	})
+
+	klog.Info("In-place update completed without node disruption")
+	return nil
+}
+
 // validateKernelArguments checks that the current boot has all arguments specified
 // in the target machineconfig.
 func (dn *CoreOSDaemon) validateKernelArguments(currentConfig *mcfgv1.MachineConfig) error {
