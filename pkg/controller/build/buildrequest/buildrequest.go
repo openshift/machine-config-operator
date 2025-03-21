@@ -250,12 +250,15 @@ func (br buildRequestImpl) renderContainerfile() (string, error) {
 // podToJob creates a Job with the spec of the given Pod
 func (br buildRequestImpl) podToJob(pod *corev1.Pod) *batchv1.Job {
 	// Set the backoffLimit to 3 so the job will retry 4 times before reporting a failure
-	var backoffLimit int32 = 3
+	var backoffLimit int32 = constants.JobMaxRetries
+
 	// Set completion to 1 so that as soon as the pod has completed successfully the job is
 	// considered a success
-	var completions int32 = 1
+	var completions int32 = constants.JobCompletions
+
 	// Set the owner ref of the job to the MOSB
 	oref := metav1.NewControllerRef(br.opts.MachineOSBuild, mcfgv1.SchemeGroupVersion.WithKind("MachineOSBuild"))
+
 	return &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            pod.ObjectMeta.Name,
