@@ -635,8 +635,10 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 	}
 
 	var changed bool
-	oldReadyErr := checkNodeReady(oldNode)
-	newReadyErr := checkNodeReady(curNode)
+	oldLNS := ctrlcommon.NewLayeredNodeState(oldNode)
+	curLNS := ctrlcommon.NewLayeredNodeState(curNode)
+	oldReadyErr := oldLNS.CheckNodeReady()
+	newReadyErr := curLNS.CheckNodeReady()
 
 	oldReady := getErrorString(oldReadyErr)
 	newReady := getErrorString(newReadyErr)
@@ -652,7 +654,7 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 
 	// Specifically log when a node has completed an update so the MCC logs are a useful central aggregate of state changes
 	if oldNode.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey] != oldNode.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] &&
-		isNodeDone(curNode, false) {
+		curLNS.IsNodeDone() {
 		ctrl.logPoolNode(pool, curNode, "Completed update to %s", curNode.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey])
 		changed = true
 	} else {
@@ -1092,12 +1094,14 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	ctx := context.TODO()
 	for _, node := range nodes {
 		// All the nodes that need to be upgraded should have `NodeUpdateInProgressTaint` so that they're less likely
-		// to be chosen during the scheduling cycle.
+		// to be chosen during the scheduling cycle. This includes nodes which are:
+		// (i) In a Pool being updated to a new MC or image
+		// (ii) In a Pool that is being opted out of layering
 		hasInProgressTaint := checkIfNodeHasInProgressTaint(node)
 
 		lns := ctrlcommon.NewLayeredNodeState(node)
 
-		if lns.IsDesiredEqualToPool(pool, layered) {
+		if (!layered && lns.IsDesiredMachineConfigEqualToPool(pool) && !lns.AreImageAnnotationsPresentOnNode()) || (layered && lns.IsDesiredEqualToBuild(mosc, mosb)) {
 			if hasInProgressTaint {
 				if err := ctrl.removeUpdateInProgressTaint(ctx, node.Name); err != nil {
 					err = fmt.Errorf("failed removing %s taint for node %s: %w", constants.NodeUpdateInProgressTaint.Key, node.Name, err)
@@ -1200,7 +1204,7 @@ func (ctrl *Controller) setClusterConfigAnnotation(nodes []*corev1.Node) error {
 
 // updateCandidateNode needs to understand MOSB
 // specifically, the LayeredNodeState probably needs to understand mosb
-func (ctrl *Controller) updateCandidateNode(mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild, nodeName string, pool *mcfgv1.MachineConfigPool) error {
+func (ctrl *Controller) updateCandidateNode(mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild, nodeName string, pool *mcfgv1.MachineConfigPool, layered bool) error {
 	return clientretry.RetryOnConflict(constants.NodeUpdateBackoff, func() error {
 		oldNode, err := ctrl.kubeClient.CoreV1().Nodes().Get(context.TODO(), nodeName, metav1.GetOptions{})
 		if err != nil {
@@ -1212,30 +1216,9 @@ func (ctrl *Controller) updateCandidateNode(mosc *mcfgv1.MachineOSConfig, mosb *
 		}
 
 		lns := ctrlcommon.NewLayeredNodeState(oldNode)
-		layered, err := ctrl.isLayeredPool(mosc, mosb)
-		if err != nil {
-			return fmt.Errorf("Failed to determine whether pool %s opts in to OCL due to an error: %s", pool.Name, err)
-		}
-		if mosb == nil {
-			if lns.IsDesiredEqualToPool(pool, layered) {
-				// If the node's desired annotations match the pool, return directly without updating the node.
-				klog.V(4).Infof("Pool %s: node %s: no update is needed", pool.Name, nodeName)
-				return nil
-
-			}
-			lns.SetDesiredStateFromPool(layered, pool)
-
+		if !layered {
+			lns.SetDesiredStateFromPool(pool)
 		} else {
-			if lns.IsDesiredEqualToBuild(mosc, mosb) {
-				// If the node's desired annotations match the pool, return directly without updating the node.
-				klog.V(4).Infof("Pool %s: node %s: no update is needed", pool.Name, nodeName)
-				return nil
-			}
-			// ensure this is happening. it might not be.
-			// we need to ensure the node controller is triggered at all the same times
-			// when using this new system
-			// we know the mosc+mosb can trigger one another and cause a build, but if the node controller
-			// can't set this anno, and subsequently cannot trigger the daemon to update, we need to rework.
 			lns.SetDesiredStateFromMachineOSConfig(mosc, mosb)
 		}
 
@@ -1246,6 +1229,12 @@ func (ctrl *Controller) updateCandidateNode(mosc *mcfgv1.MachineOSConfig, mosb *
 			return err
 		}
 
+		// Don't make a patch call if no update is needed.
+		if reflect.DeepEqual(newData, oldData) {
+			return nil
+		}
+
+		klog.V(4).Infof("Pool %s: layered=%v node %s update is needed", pool.Name, layered, nodeName)
 		patchBytes, err := strategicpatch.CreateTwoWayMergePatch(oldData, newData, corev1.Node{})
 		if err != nil {
 			return fmt.Errorf("failed to create patch for node %q: %w", nodeName, err)
@@ -1258,7 +1247,7 @@ func (ctrl *Controller) updateCandidateNode(mosc *mcfgv1.MachineOSConfig, mosb *
 // getAllCandidateMachines returns all possible nodes which can be updated to the target config, along with a maximum
 // capacity.  It is the reponsibility of the caller to choose a subset of the nodes given the capacity.
 func getAllCandidateMachines(layered bool, config *mcfgv1.MachineOSConfig, build *mcfgv1.MachineOSBuild, pool *mcfgv1.MachineConfigPool, nodesInPool []*corev1.Node, maxUnavailable int) ([]*corev1.Node, uint) {
-	unavail := getUnavailableMachines(nodesInPool, pool, layered, build)
+	unavail := getUnavailableMachines(nodesInPool, pool)
 	if len(unavail) >= maxUnavailable {
 		klog.V(4).Infof("getAllCandidateMachines: No capacity left for pool %s (unavail=%d >= maxUnavailable=%d)",
 			pool.Name, len(unavail), maxUnavailable)
@@ -1272,26 +1261,18 @@ func getAllCandidateMachines(layered bool, config *mcfgv1.MachineOSConfig, build
 	var nodes []*corev1.Node
 	for _, node := range nodesInPool {
 		lns := ctrlcommon.NewLayeredNodeState(node)
-		if !layered {
-			if lns.IsDesiredEqualToPool(pool, layered) {
-				if isNodeMCDFailing(node) {
-					failingThisConfig++
-				}
-				continue
+		if !lns.CheckNodeCandidacyForUpdate(layered, pool, config, build) {
+			if lns.IsNodeMCDFailing() {
+				failingThisConfig++
 			}
-		} else {
-			if lns.IsDesiredEqualToBuild(config, build) {
-				// If the node's desired annotations match the pool, return directly without updating the node.
-				klog.V(4).Infof("Pool %s: layered node %s: no update is needed", pool.Name, node.Name)
-				continue
-			}
+			continue
 		}
 		// Ignore nodes that are currently mid-update or unscheduled
-		if !isNodeReady(node) {
+		if !lns.IsNodeReady() {
 			klog.V(4).Infof("node %s skipped during candidate selection as it is currently unscheduled", node.Name)
 			continue
 		}
-		klog.V(4).Infof("Pool %s: selected candidate node %s", pool.Name, node.Name)
+		klog.Infof("Pool %s: selected candidate node %s", pool.Name, node.Name)
 		nodes = append(nodes, node)
 	}
 	// Nodes which are failing to target this config also count against
@@ -1306,15 +1287,6 @@ func getAllCandidateMachines(layered bool, config *mcfgv1.MachineOSConfig, build
 		return nil, 0
 	}
 	return nodes, uint(capacity)
-}
-
-// getCandidateMachines returns the maximum subset of nodes which can be updated to the target config given availability constraints.
-func getCandidateMachines(pool *mcfgv1.MachineConfigPool, config *mcfgv1.MachineOSConfig, build *mcfgv1.MachineOSBuild, nodesInPool []*corev1.Node, maxUnavailable int, layered bool) []*corev1.Node {
-	nodes, capacity := getAllCandidateMachines(layered, config, build, pool, nodesInPool, maxUnavailable)
-	if uint(len(nodes)) < capacity {
-		return nodes
-	}
-	return nodes[:capacity]
 }
 
 // getOperatorPodNodeName fetches the name of the current node running the machine-config-operator pod
@@ -1392,7 +1364,7 @@ func (ctrl *Controller) setDesiredAnnotations(layered bool, mosc *mcfgv1.Machine
 		klog.Infof("Continuing to sync layered MachineConfigPool %s", pool.Name)
 	}
 	for _, node := range candidates {
-		if err := ctrl.updateCandidateNode(mosc, mosb, node.Name, pool); err != nil {
+		if err := ctrl.updateCandidateNode(mosc, mosb, node.Name, pool, layered); err != nil {
 			return fmt.Errorf("setting desired %s for node %s: %w", pool.Spec.Configuration.Name, node.Name, err)
 		}
 	}
