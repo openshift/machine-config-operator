@@ -47,6 +47,7 @@ const (
 	platformBase   = "_base"
 	platformOnPrem = "on-prem"
 	sno            = "sno"
+	dualReplica    = "dual-replica"
 	masterRole     = "master"
 	workerRole     = "worker"
 	arbiterRole    = "arbiter"
@@ -229,6 +230,10 @@ func getPaths(config *RenderConfig, platformString string) []string {
 	// sno is specific case and it should override even specific platform files
 	if hasControlPlaneTopology(config, configv1.SingleReplicaTopologyMode) {
 		platformBasedPaths = append(platformBasedPaths, sno)
+	}
+
+	if hasControlPlaneTopology(config, configv1.DualReplicaTopologyMode) {
+		platformBasedPaths = append(platformBasedPaths, dualReplica)
 	}
 
 	return platformBasedPaths

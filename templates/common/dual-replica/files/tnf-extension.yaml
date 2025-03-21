@@ -1,0 +1,9 @@
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  labels:
+    machineconfiguration.openshift.io/role: master
+  name: two-node-ha-extension
+spec:
+  extensions:
+    - two-node-ha
