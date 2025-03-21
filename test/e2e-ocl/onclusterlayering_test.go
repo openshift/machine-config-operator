@@ -25,6 +25,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/openshift/machine-config-operator/pkg/controller/build/buildrequest"
+	"github.com/openshift/machine-config-operator/pkg/controller/build/imagebuilder"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -954,9 +955,7 @@ func TestControllerEventuallyReconciles(t *testing.T) {
 	restoreDeployments := scaleDownDeployments(t, cs)
 
 	// Wait for the job to start running.
-	waitForJobToReachCondition(ctx, t, cs, jobName, func(job *batchv1.Job) (bool, error) {
-		return job.Status.Active == 1, nil
-	})
+	waitForJobToReachMOSBCondition(ctx, t, cs, utils.GetBuildJobName(mosb), mcfgv1.MachineOSBuilding)
 
 	t.Logf("Job %s has started running, starting machine-os-builder", jobName)
 
@@ -972,9 +971,7 @@ func TestControllerEventuallyReconciles(t *testing.T) {
 	restoreDeployments = scaleDownDeployments(t, cs)
 
 	// Wait for the job to complete.
-	waitForJobToReachCondition(ctx, t, cs, utils.GetBuildJobName(mosb), func(job *batchv1.Job) (bool, error) {
-		return job.Status.Succeeded == 1, nil
-	})
+	waitForJobToReachMOSBCondition(ctx, t, cs, utils.GetBuildJobName(mosb), mcfgv1.MachineOSBuildSucceeded)
 
 	t.Logf("Job %q finished, starting machine-os-builder", jobName)
 
@@ -1007,4 +1004,16 @@ func waitForJobToReachCondition(ctx context.Context, t *testing.T, cs *framework
 
 		return condFunc(job)
 	}))
+}
+
+// Waits for a job object to be mapped to a given MachineOSBuild state. Will always fail the test if the job reaches a failed state unexpectedly.
+func waitForJobToReachMOSBCondition(ctx context.Context, t *testing.T, cs *framework.ClientSet, jobName string, expectedCondition mcfgv1.BuildProgress) {
+	waitForJobToReachCondition(ctx, t, cs, jobName, func(job *batchv1.Job) (bool, error) {
+		buildprogress, _ := imagebuilder.MapJobStatusToBuildStatus(job)
+		if buildprogress == mcfgv1.MachineOSBuildFailed && expectedCondition != mcfgv1.MachineOSBuildFailed {
+			return false, fmt.Errorf("job %q failed unexpectedly", jobName)
+		}
+
+		return expectedCondition == buildprogress, nil
+	})
 }
