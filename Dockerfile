@@ -9,6 +9,8 @@ ENV GOCACHE="/go/rhel9/.cache"
 ENV GOMODCACHE="/go/rhel9/pkg/mod"
 RUN --mount=type=cache,target=/go/rhel9/.cache,z \
     --mount=type=cache,target=/go/rhel9/pkg/mod,z \
+    chmod +x ./hack/test-private-repo-cloning.sh && \
+    ./hack/test-private-repo-cloning.sh && \
     make install DESTDIR=./instroot-rhel9 && tar -C instroot-rhel9 -cf instroot-rhel9.tar .
 
 # Add a RHEL 8 builder to compile the RHEL 8 compatible binaries
