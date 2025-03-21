@@ -57,26 +57,6 @@ func (m *MachineConfigPoolBuilder) WithMachineConfig(mc string) *MachineConfigPo
 	return m
 }
 
-func (m *MachineConfigPoolBuilder) WithLayeringEnabled() *MachineConfigPoolBuilder {
-	// TODO(zzlotnik): Fix circular import which will not allow us to import the
-	// annotation / label key constants from pkg/controller/common/constants.go.
-	return m.WithLabels(map[string]string{
-		"machineconfiguration.openshift.io/layering-enabled": "",
-	})
-}
-
-func (m *MachineConfigPoolBuilder) WithImage(image string) *MachineConfigPoolBuilder {
-	if image != "" {
-		// TODO(zzlotnik): Fix circular import which will not allow us to import the
-		// annotation / label key constants from pkg/controller/common/constants.go.
-		m.WithAnnotations(map[string]string{
-			"machineconfiguration.openshift.io/newestImageEquivalentConfig": image,
-		})
-	}
-
-	return m.WithLayeringEnabled()
-}
-
 func (m *MachineConfigPoolBuilder) WithAnnotations(annos map[string]string) *MachineConfigPoolBuilder {
 	if m.annos == nil {
 		m.annos = map[string]string{}
@@ -112,33 +92,6 @@ func (m *MachineConfigPoolBuilder) WithChildConfigs(names []string) *MachineConf
 			Kind: "MachineConfig",
 		})
 	}
-
-	return m
-}
-
-func (m *MachineConfigPoolBuilder) isBuildConditionType(condType mcfgv1.MachineConfigPoolConditionType) bool {
-	buildConditionTypes := map[mcfgv1.MachineConfigPoolConditionType]struct{}{
-		mcfgv1.MachineConfigPoolBuildPending: {},
-		mcfgv1.MachineConfigPoolBuilding:     {},
-		mcfgv1.MachineConfigPoolBuildSuccess: {},
-		mcfgv1.MachineConfigPoolBuildFailed:  {},
-	}
-
-	_, ok := buildConditionTypes[condType]
-	return ok
-}
-
-func (m *MachineConfigPoolBuilder) WithCondition(condType mcfgv1.MachineConfigPoolConditionType, status corev1.ConditionStatus, reason, message string) *MachineConfigPoolBuilder {
-	if m.conditions == nil {
-		m.conditions = []*mcfgv1.MachineConfigPoolCondition{}
-	}
-
-	if m.isBuildConditionType(condType) {
-		m.WithLayeringEnabled()
-	}
-
-	condition := apihelpers.NewMachineConfigPoolCondition(condType, status, reason, message)
-	m.conditions = append(m.conditions, condition)
 
 	return m
 }

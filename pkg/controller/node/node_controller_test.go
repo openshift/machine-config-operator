@@ -91,7 +91,7 @@ func newFixtureWithFeatureGates(t *testing.T, enabled, disabled []configv1.Featu
 }
 
 func newFixture(t *testing.T) *fixture {
-	return newFixtureWithFeatureGates(t, []configv1.FeatureGateName{features.FeatureGatePinnedImages}, []configv1.FeatureGateName{})
+	return newFixtureWithFeatureGates(t, []configv1.FeatureGateName{features.FeatureGatePinnedImages, features.FeatureGateOnClusterBuild}, []configv1.FeatureGateName{})
 }
 
 func (f *fixture) newControllerWithStopChan(stopCh <-chan struct{}) *Controller {
@@ -189,6 +189,9 @@ func (f *fixture) runController(pool string, expectError bool) {
 
 	if len(f.kubeactions) > len(k8sActions) {
 		f.t.Errorf("%d additional expected actions:%+v", len(f.kubeactions)-len(k8sActions), f.kubeactions[len(k8sActions):])
+		f.t.Log(k8sActions)
+		f.t.Log("------")
+		f.t.Log(f.kubeactions)
 	}
 }
 
@@ -573,6 +576,8 @@ func TestGetCandidateMachines(t *testing.T) {
 		name     string
 		nodes    []*corev1.Node
 		progress int
+		mosc     *mcfgv1.MachineOSConfig
+		mosb     *mcfgv1.MachineOSBuild
 
 		expected []string
 		// otherCandidates is nodes that *could* be updated but we chose not to
@@ -580,7 +585,7 @@ func TestGetCandidateMachines(t *testing.T) {
 		// capacity is the maximum number of nodes we could update
 		capacity uint
 
-		layeredPool bool
+		layered bool
 	}{{
 		name:     "no progress - capacity 1",
 		progress: 1,
@@ -730,7 +735,9 @@ func TestGetCandidateMachines(t *testing.T) {
 		expected:        []string{"node-4"},
 		otherCandidates: []string{"node-5", "node-6"},
 		capacity:        1,
-		layeredPool:     true,
+		layered:         true,
+		mosc:            helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).MachineOSConfig(),
+		mosb:            helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
 	}, {
 		// Targets https://issues.redhat.com/browse/OCPBUGS-24705.
 		name:     "Node has received desiredImage annotation but MCD has not yet started working",
@@ -754,10 +761,12 @@ func TestGetCandidateMachines(t *testing.T) {
 				WithMCDState(daemonconsts.MachineConfigDaemonStateDone).
 				Node(),
 		},
-		expected:        []string{"node-1"},
-		otherCandidates: []string{"node-2"},
-		capacity:        1,
-		layeredPool:     true,
+		expected:        nil,
+		otherCandidates: nil,
+		capacity:        0,
+		layered:         true,
+		mosc:            helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).MachineOSConfig(),
+		mosb:            helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
 	}, {
 		// Targets https://issues.redhat.com/browse/OCPBUGS-24705.
 		name:     "Node has received desiredImage annotation and the MCD has started working",
@@ -784,7 +793,62 @@ func TestGetCandidateMachines(t *testing.T) {
 		expected:        nil,
 		otherCandidates: nil,
 		capacity:        0,
-		layeredPool:     true,
+		layered:         true,
+		mosc:            helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).MachineOSConfig(),
+		mosb:            helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
+	}, {
+		// Targets https://issues.redhat.com//browse/OCPBUGS-43552.
+		name:     "Node is rolling back from layered mode but MCD has not yet started working",
+		progress: 1,
+		nodes: []*corev1.Node{
+			// Need to set WithNodeReady() on all nodes to avoid short-circuiting.
+			helpers.NewNodeBuilder("node-0").WithEqualConfigs(machineConfigV1).
+				WithCurrentImage(imageV1).
+				WithNodeReady().
+				WithMCDState(daemonconsts.MachineConfigDaemonStateDone).
+				Node(),
+			helpers.NewNodeBuilder("node-1").
+				WithEqualConfigs(machineConfigV1).
+				WithNodeReady().
+				WithMCDState(daemonconsts.MachineConfigDaemonStateDone).
+				Node(),
+			helpers.NewNodeBuilder("node-2").
+				WithEqualConfigs(machineConfigV1).
+				WithNodeReady().
+				WithMCDState(daemonconsts.MachineConfigDaemonStateDone).
+				Node(),
+		},
+		expected:        nil,
+		otherCandidates: nil,
+		capacity:        0,
+		layered:         false,
+	}, {
+		// Targets https://issues.redhat.com//browse/OCPBUGS-43552.
+		name:     "Node is rolling back from layered mode and the MCD has started working",
+		progress: 1,
+		nodes: []*corev1.Node{
+			// Need to set WithNodeReady() on all nodes to avoid short-circuiting.
+			helpers.NewNodeBuilder("node-0").
+				WithEqualConfigs(machineConfigV1).
+				WithCurrentImage(imageV1).
+				WithNodeReady().
+				WithMCDState(daemonconsts.MachineConfigDaemonStateWorking).
+				Node(),
+			helpers.NewNodeBuilder("node-1").
+				WithEqualConfigs(machineConfigV1).
+				WithNodeReady().
+				WithMCDState(daemonconsts.MachineConfigDaemonStateDone).
+				Node(),
+			helpers.NewNodeBuilder("node-2").
+				WithEqualConfigs(machineConfigV1).
+				WithNodeReady().
+				WithMCDState(daemonconsts.MachineConfigDaemonStateDone).
+				Node(),
+		},
+		expected:        nil,
+		otherCandidates: nil,
+		capacity:        0,
+		layered:         false,
 	},
 	}
 
@@ -793,33 +857,25 @@ func TestGetCandidateMachines(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			pb := helpers.NewMachineConfigPoolBuilder("").WithMachineConfig(machineConfigV1)
-			if test.layeredPool {
-				pb.WithImage(imageV1)
-			}
+			pool := helpers.NewMachineConfigPoolBuilder("").WithMachineConfig(machineConfigV1).MachineConfigPool()
 
-			pool := pb.MachineConfigPool()
-
-			// TODO: Double check that mosb, mosc should be nil here and layered should be false
-			// NOTE: By doing this, we end up ignoring all the layered checks(only MCs diffs will be done to
-			// determine if a node is available and ready for an update). This will need to reworked.
-			got := getCandidateMachines(pool, nil, nil, test.nodes, test.progress, false)
-			nodeNames := getNamesFromNodes(got)
-			assert.Equal(t, test.expected, nodeNames)
-
-			// TODO: Double check that mosb, mosc should be nil here and layered should be false
-			// NOTE: By doing this, we end up ignoring all the layered checks(only MCs diffs will be done to
-			// determine if a node is available and ready for an update). This will need to reworked.
-			allCandidates, capacity := getAllCandidateMachines(false, nil, nil, pool, test.nodes, test.progress)
+			allCandidates, capacity := getAllCandidateMachines(test.layered, test.mosc, test.mosb, pool, test.nodes, test.progress)
 			assert.Equal(t, test.capacity, capacity)
-			var otherCandidates []string
-			for i, node := range allCandidates {
-				if i < len(nodeNames) {
-					assert.Equal(t, node.Name, nodeNames[i])
-				} else {
-					otherCandidates = append(otherCandidates, node.Name)
-				}
+
+			var candidates, currentCandidates, otherCandidates []string
+
+			candidates = getNamesFromNodes(allCandidates)
+
+			// Divide candidates list by capacity if there are more candidates than capacity count
+			if capacity < uint(len(allCandidates)) {
+				currentCandidates = candidates[:capacity]
+				otherCandidates = candidates[capacity:]
+			} else {
+				currentCandidates = candidates
+				otherCandidates = nil
 			}
+
+			assert.Equal(t, test.expected, currentCandidates)
 			assert.Equal(t, test.otherCandidates, otherCandidates)
 		})
 	}
@@ -890,6 +946,9 @@ func TestUpdateCandidates(t *testing.T) {
 		node       *corev1.Node
 		pool       *mcfgv1.MachineConfigPool
 		extraannos map[string]string
+		mosc       *mcfgv1.MachineOSConfig
+		mosb       *mcfgv1.MachineOSBuild
+		layered    bool
 
 		verify    func([]core.Action, *testing.T)
 		verifyAPI func(*testing.T, *k8sfake.Clientset)
@@ -958,9 +1017,12 @@ func TestUpdateCandidates(t *testing.T) {
 			}
 		},
 	}, {
-		name: "MachineConfig and OS image change together",
-		node: helpers.NewNodeBuilder("node-0").WithEqualConfigsAndImages(machineConfigV0, imageV0).Node(),
-		pool: helpers.NewMachineConfigPoolBuilder("").WithMachineConfig(machineConfigV1).WithImage(imageV1).MachineConfigPool(),
+		name:    "MachineConfig and OS image change together",
+		node:    helpers.NewNodeBuilder("node-0").WithEqualConfigsAndImages(machineConfigV0, imageV0).Node(),
+		pool:    helpers.NewMachineConfigPoolBuilder("layered-1").WithMachineConfig(machineConfigV1).MachineConfigPool(),
+		mosc:    helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).WithMachineConfigPool("layered-1").MachineOSConfig(),
+		mosb:    helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).WithMachineOSConfig("mosc-1").MachineOSBuild(),
+		layered: true,
 		verifyAPI: func(t *testing.T, client *k8sfake.Clientset) {
 			assertNodeHasAnnotations(t, client, "node-0", map[string]string{
 				daemonconsts.DesiredMachineConfigAnnotationKey: machineConfigV1,
@@ -968,9 +1030,12 @@ func TestUpdateCandidates(t *testing.T) {
 			})
 		},
 	}, {
-		name: "only the OS changes",
-		node: helpers.NewNodeBuilder("node-0").WithEqualConfigs(machineConfigV1).WithImages(imageV0, imageV1).Node(),
-		pool: helpers.NewMachineConfigPoolBuilder("").WithMachineConfig(machineConfigV1).WithImage(imageV1).MachineConfigPool(),
+		name:    "only the OS changes",
+		node:    helpers.NewNodeBuilder("node-0").WithEqualConfigs(machineConfigV1).WithImages(imageV0, imageV1).Node(),
+		pool:    helpers.NewMachineConfigPoolBuilder("layered-1").WithMachineConfig(machineConfigV1).MachineConfigPool(),
+		mosc:    helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).WithMachineConfigPool("layered-1").MachineOSConfig(),
+		mosb:    helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).WithMachineOSConfig("mosc-1").MachineOSBuild(),
+		layered: true,
 		verifyAPI: func(t *testing.T, client *k8sfake.Clientset) {
 			assertNodeHasAnnotations(t, client, "node-0", map[string]string{
 				daemonconsts.DesiredImageAnnotationKey:         imageV1,
@@ -1019,12 +1084,20 @@ func TestUpdateCandidates(t *testing.T) {
 
 			f.nodeLister = append(f.nodeLister, test.node)
 			f.kubeobjects = append(f.kubeobjects, test.node)
-			f.objects = append(f.objects, test.pool)
+
+			if test.pool != nil {
+				f.objects = append(f.objects, test.pool)
+			}
+			if test.mosc != nil {
+				f.objects = append(f.objects, test.mosc)
+			}
+			if test.mosb != nil {
+				f.objects = append(f.objects, test.mosb)
+			}
 
 			c := f.newController()
 
-			// TODO: Add additional test cases to handle layered workflows.
-			err := c.setDesiredAnnotations(false, nil, nil, test.pool, []*corev1.Node{test.node})
+			err := c.setDesiredAnnotations(test.layered, test.mosc, test.mosb, test.pool, []*corev1.Node{test.node})
 			if !assert.Nil(t, err) {
 				return
 			}
@@ -1054,6 +1127,8 @@ func TestShouldMakeProgress(t *testing.T) {
 		node        *corev1.Node
 		workerPool  *mcfgv1.MachineConfigPool
 		infraPool   *mcfgv1.MachineConfigPool
+		mosc        *mcfgv1.MachineOSConfig
+		mosb        *mcfgv1.MachineOSBuild
 
 		workerPoolBuilder       *helpers.MachineConfigPoolBuilder
 		infraPoolBuilder        *helpers.MachineConfigPoolBuilder
@@ -1093,25 +1168,21 @@ func TestShouldMakeProgress(t *testing.T) {
 		{
 			description:           "node not at desired image, will not proceed because image is still building",
 			node:                  helpers.NewNodeBuilder("layered-node").WithEqualConfigsAndImages(machineConfigV1, imageV0).WithLabels(map[string]string{"node-role/worker": "", "node-role/infra": ""}).Node(),
-			workerPool:            helpers.NewMachineConfigPoolBuilder("worker").WithNodeSelector(helpers.WorkerSelector).WithMachineConfig(machineConfigV1).WithCondition(mcfgv1.MachineConfigPoolBuilding, corev1.ConditionTrue, "", "").MachineConfigPool(),
-			infraPool:             helpers.NewMachineConfigPoolBuilder("test-cluster-infra").WithNodeSelector(helpers.InfraSelector).WithMachineConfig(machineConfigV1).WithMaxUnavailable(1).WithCondition(mcfgv1.MachineConfigPoolBuilding, corev1.ConditionTrue, "", "").MachineConfigPool(),
+			workerPool:            helpers.NewMachineConfigPoolBuilder("worker").WithNodeSelector(helpers.WorkerSelector).WithMachineConfig(machineConfigV1).MachineConfigPool(),
+			infraPool:             helpers.NewMachineConfigPoolBuilder("test-cluster-infra").WithNodeSelector(helpers.InfraSelector).WithMachineConfig(machineConfigV1).WithMaxUnavailable(1).MachineConfigPool(),
+			mosc:                  helpers.NewMachineOSConfigBuilder("mosc-1").WithMachineConfigPool("test-cluster-infra").MachineOSConfig(),
+			mosb:                  helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).WithMachineOSConfig("mosc-1").MachineOSBuild(),
+			expectAnnotationPatch: false,
+			expectTaintsAddPatch:  false,
+		},
+		{
+			description:           "node not at desired image, should proceed because image is built and populated",
+			node:                  helpers.NewNodeBuilder("layered-node").WithEqualConfigsAndImages(machineConfigV1, imageV0).WithLabels(map[string]string{"node-role/worker": "", "node-role/infra": ""}).Node(),
+			workerPool:            helpers.NewMachineConfigPoolBuilder("worker").WithNodeSelector(helpers.WorkerSelector).WithMachineConfig(machineConfigV1).MachineConfigPool(),
+			infraPool:             helpers.NewMachineConfigPoolBuilder("test-cluster-infra").WithNodeSelector(helpers.InfraSelector).WithMachineConfig(machineConfigV1).WithMaxUnavailable(1).MachineConfigPool(),
+			mosc:                  helpers.NewMachineOSConfigBuilder("mosc-1").WithMachineConfigPool("test-cluster-infra").WithCurrentImagePullspec(imageV1).MachineOSConfig(),
+			mosb:                  helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).WithMachineOSConfig("mosc-1").WithDigestedImagePushspec(imageV1).WithSuccessfulBuild().MachineOSBuild(),
 			expectAnnotationPatch: true,
-			expectTaintsAddPatch:  true,
-		},
-		{
-			description:           "node not at desired image, will not proceed because image is built but yet not populated",
-			node:                  helpers.NewNodeBuilder("layered-node").WithEqualConfigsAndImages(machineConfigV1, imageV0).WithLabels(map[string]string{"node-role/worker": "", "node-role/infra": ""}).Node(),
-			workerPool:            helpers.NewMachineConfigPoolBuilder("worker").WithNodeSelector(helpers.WorkerSelector).WithMachineConfig(machineConfigV1).WithCondition(mcfgv1.MachineConfigPoolBuildSuccess, corev1.ConditionTrue, "", "").MachineConfigPool(),
-			infraPool:             helpers.NewMachineConfigPoolBuilder("test-cluster-infra").WithNodeSelector(helpers.InfraSelector).WithMachineConfig(machineConfigV1).WithMaxUnavailable(1).WithCondition(mcfgv1.MachineConfigPoolBuildSuccess, corev1.ConditionTrue, "", "").MachineConfigPool(),
-			expectAnnotationPatch: true, // the test is now expecting a get and patch action for some reason
-			expectTaintsAddPatch:  true,
-		},
-		{
-			description:           "node not at desired image, should proceed because image is built and populated", // failing
-			node:                  helpers.NewNodeBuilder("layered-node").WithEqualConfigsAndImages(machineConfigV1, imageV0).WithLabels(map[string]string{"node-role/worker": "", "node-role/infra": ""}).Node(),
-			workerPool:            helpers.NewMachineConfigPoolBuilder("worker").WithNodeSelector(helpers.WorkerSelector).WithMachineConfig(machineConfigV1).WithCondition(mcfgv1.MachineConfigPoolBuildSuccess, corev1.ConditionTrue, "", "").WithImage(imageV1).MachineConfigPool(),
-			infraPool:             helpers.NewMachineConfigPoolBuilder("test-cluster-infra").WithNodeSelector(helpers.InfraSelector).WithMachineConfig(machineConfigV1).WithMaxUnavailable(1).WithCondition(mcfgv1.MachineConfigPoolBuildSuccess, corev1.ConditionTrue, "", "").WithImage(imageV1).MachineConfigPool(),
-			expectAnnotationPatch: true, // the test is now expecting a get and patch action for some reason
 			expectTaintsAddPatch:  true,
 			buildSuccess:          true,
 		},
@@ -1143,16 +1214,12 @@ func TestShouldMakeProgress(t *testing.T) {
 			mcp := test.infraPool
 
 			existingNodeBuilder := helpers.NewNodeBuilder("existingNodeAtDesiredConfig").WithEqualConfigs(machineConfigV1).WithLabels(map[string]string{"node-role/worker": "", "node-role/infra": ""})
-			lps := ctrlcommon.NewLayeredPoolState(mcp)
-			if lps.HasOSImage() {
-				image := lps.GetOSImage()
-				existingNodeBuilder.WithDesiredImage(image).WithCurrentImage(image)
-			}
+			if test.mosc != nil {
+				moscs := ctrlcommon.NewMachineOSConfigState(test.mosc)
+				if moscs.HasOSImage() {
+					existingNodeBuilder.WithImages(moscs.GetOSImage(), moscs.GetOSImage())
+				}
 
-			lps = ctrlcommon.NewLayeredPoolState(mcpWorker)
-			if lps.HasOSImage() {
-				image := lps.GetOSImage()
-				existingNodeBuilder.WithDesiredImage(image).WithCurrentImage(image)
 			}
 
 			nodes := []*corev1.Node{
@@ -1164,6 +1231,12 @@ func TestShouldMakeProgress(t *testing.T) {
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp, mcpWorker)
 			f.objects = append(f.objects, mcp, mcpWorker)
+			if test.mosc != nil {
+				f.objects = append(f.objects, test.mosc)
+			}
+			if test.mosb != nil {
+				f.objects = append(f.objects, test.mosb)
+			}
 			f.nodeLister = append(f.nodeLister, test.node)
 			for idx := range nodes {
 				f.kubeobjects = append(f.kubeobjects, nodes[idx])
@@ -1212,11 +1285,10 @@ func TestShouldMakeProgress(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-
-				lps := ctrlcommon.NewLayeredPoolState(mcp)
 				if test.buildSuccess {
-					t.Logf("expecting that the node should get the desired image annotation, desired image is: %s", lps.GetOSImage())
-					expNode.Annotations[daemonconsts.DesiredImageAnnotationKey] = lps.GetOSImage()
+					moscs := ctrlcommon.NewMachineOSConfigState(test.mosc)
+					t.Logf("expecting that the node should get the desired image annotation, desired image is: %s", moscs.GetOSImage())
+					expNode.Annotations[daemonconsts.DesiredImageAnnotationKey] = moscs.GetOSImage()
 				} else if nodes[1].Annotations[daemonconsts.DesiredImageAnnotationKey] != "" {
 					delete(expNode.Annotations, daemonconsts.DesiredImageAnnotationKey)
 				}
@@ -1240,7 +1312,7 @@ func TestShouldMakeProgress(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			expStatus := c.calculateStatus(fg, []*mcfgv1.MachineConfigNode{}, cc, mcp, nodes, nil, nil)
+			expStatus := c.calculateStatus(fg, []*mcfgv1.MachineConfigNode{}, cc, mcp, nodes, test.mosc, test.mosb)
 			expMcp := mcp.DeepCopy()
 			expMcp.Status = expStatus
 			f.expectUpdateMachineConfigPoolStatus(expMcp)
