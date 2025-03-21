@@ -915,7 +915,7 @@ func (ctrl *Controller) GetConfigAndBuild(pool *mcfgv1.MachineConfigPool) (*mcfg
 
 	for _, build := range buildList.Items {
 		if build.Spec.MachineOSConfig.Name == ourConfig.Name {
-			if build.Spec.MachineConfig.Name == pool.Spec.Configuration.Name {
+			if build.Spec.MachineConfig.Name == pool.Spec.Configuration.Name && ourConfig.Status.CurrentImagePullSpec == build.Status.DigestedImagePushSpec {
 				ourBuild = &build
 				break
 			}
