@@ -159,7 +159,7 @@ func generateAndApplyMachineConfigNodes(
 					metav1.Condition{
 						Type:               string(condType),
 						Message:            fmt.Sprintf("This node has not yet entered the %s phase", string(condType)),
-						Reason:             "NotYetOccured",
+						Reason:             "NotYetOccurred",
 						LastTransitionTime: metav1.Now(),
 						Status:             metav1.ConditionFalse,
 					})
