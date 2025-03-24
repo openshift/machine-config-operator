@@ -197,5 +197,5 @@ func (b *baseImageBuilder) prepareForBuild(ctx context.Context) (buildrequest.Bu
 
 	b.buildrequest = br
 
-	return br.Builder(), nil
+	return br.Builder()
 }

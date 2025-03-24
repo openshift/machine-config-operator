@@ -37,6 +37,13 @@ const (
 	machineConfigJSONFilename string = "machineconfig.json.gz"
 )
 
+const (
+	// The name of the container responsible for running Buildah.
+	imageBuildContainerName string = "image-build"
+	// the name of the container responsible for waiting for the build to finish.
+	waitForDoneContainerName string = "wait-for-done"
+)
+
 // Represents the request to build a layered OS image.
 type buildRequestImpl struct {
 	opts              BuildRequestOpts
@@ -76,8 +83,13 @@ func (br buildRequestImpl) Opts() BuildRequestOpts {
 }
 
 // Creates the Build Job object.
-func (br buildRequestImpl) Builder() Builder {
-	return newBuilder(br.podToJob(br.toBuildahPod()))
+func (br buildRequestImpl) Builder() (Builder, error) {
+	pod, err := br.toBuildahPod()
+	if err != nil {
+		return nil, err
+	}
+
+	return newBuilder(br.podToJob(pod)), nil
 }
 
 // Takes the configured secrets and creates an ephemeral clone of them, canonicalizing them, if needed.
@@ -284,13 +296,19 @@ func (br buildRequestImpl) podToJob(pod *corev1.Pod) *batchv1.Job {
 // context enabled to allow us to use UID 1000, which maps to the UID within
 // the official Buildah image.
 // nolint:dupl // I don't want to deduplicate this yet since there are still some unknowns.
-func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
+func (br buildRequestImpl) toBuildahPod() (*corev1.Pod, error) {
+	resourceReqs, err := getResourceRequirements(br.opts.MachineOSConfig)
+	if err != nil {
+		return nil, fmt.Errorf("could not get resource requests for build job %s: %w", br.getBuildName(), err)
+	}
+
 	var httpProxy, httpsProxy, noProxy string
 	if br.opts.Proxy != nil {
 		httpProxy = br.opts.Proxy.HTTPProxy
 		httpsProxy = br.opts.Proxy.HTTPSProxy
 		noProxy = br.opts.Proxy.NoProxy
 	}
+
 	env := []corev1.EnvVar{
 		// How many times the build / push steps should be retried. In the future,
 		// this should be wired up to the MachineOSConfig or other higher-level
@@ -505,11 +523,11 @@ func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
 			Containers: []corev1.Container{
 				{
 					// This container performs the image build / push process.
-					Name:            "image-build",
+					Name:            imageBuildContainerName,
 					Image:           br.opts.Images.MachineConfigOperator,
 					Env:             env,
 					Command:         append(command, buildahBuildScript),
-					ImagePullPolicy: corev1.PullAlways,
+					Resources:       *resourceReqs.builder,
 					SecurityContext: securityContext,
 					// Only attach the buildah-cache volume mount to the buildah container.
 					VolumeMounts: append(volumeMounts, corev1.VolumeMount{
@@ -523,11 +541,14 @@ func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
 					// the base OS image (which contains the "oc" binary) to create a
 					// ConfigMap from the digestfile that Buildah creates, which allows
 					// us to avoid parsing log files.
-					Name:            "wait-for-done",
-					Command:         append(command, waitScript),
-					Image:           br.opts.OSImageURLConfig.BaseOSContainerImage,
-					Env:             env,
-					ImagePullPolicy: corev1.PullAlways,
+					Name:    waitForDoneContainerName,
+					Command: append(command, waitScript),
+					Image:   br.opts.OSImageURLConfig.BaseOSContainerImage,
+					Env:     env,
+					// This should only use the default resource constraints since this
+					// container waits before invoking an oc command. In other words, it
+					// does not take much resources to run this container.
+					Resources:       *resourceReqs.defaults,
 					SecurityContext: securityContext,
 					VolumeMounts:    volumeMounts,
 				},
@@ -535,7 +556,7 @@ func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
 			ServiceAccountName: "machine-os-builder",
 			Volumes:            volumes,
 		},
-	}
+	}, nil
 }
 
 // Populates the labels map for all objects created by imageBuildRequest

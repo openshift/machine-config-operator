@@ -7,7 +7,7 @@ import (
 
 type BuildRequest interface {
 	Opts() BuildRequestOpts
-	Builder() Builder
+	Builder() (Builder, error)
 	Secrets() ([]*corev1.Secret, error)
 	ConfigMaps() ([]*corev1.ConfigMap, error)
 }
