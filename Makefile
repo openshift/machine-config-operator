@@ -199,7 +199,7 @@ test-e2e-ocl: install-go-junit-report
 
 bootstrap-e2e: install-go-junit-report install-setup-envtest
 	@echo "Setting up KUBEBUILDER_ASSETS"
-	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --index https://raw.githubusercontent.com/openshift/api/master/envtest-releases.yaml --bin-dir $(PROJECT_DIR)/bin -p path)" && \
+	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --index https://raw.githubusercontent.com/openshift/api/main/envtest-releases.yaml --bin-dir $(PROJECT_DIR)/bin -p path)" && \
 	echo "KUBEBUILDER_ASSETS=$$KUBEBUILDER_ASSETS" && \
 	set -o pipefail && \
 	KUBEBUILDER_ASSETS=$$KUBEBUILDER_ASSETS go test -tags=$(GOTAGS) -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-bootstrap/ | ./hack/test-with-junit.sh $(@)
