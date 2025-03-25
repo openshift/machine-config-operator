@@ -1,0 +1,44 @@
+mode: 0755
+path: "/usr/local/bin/ipsec-connect-wait.sh"
+contents:
+  inline: |
+    #!/bin/bash
+    set -x
+
+    if [ ! -e "/etc/ipsec.d/openshift.conf" ]; then
+      exit 0
+    fi
+
+    # Modify existing IPsec connection entries with "auto=start"
+    # option and restart ipsec systemd service. This helps to
+    # establish IKE SAs for the existing IPsec connections with
+    # peer nodes. This option will be deleted from connections
+    # once ovs-monitor-ipsec process spinned up on the node by
+    # ovn-ipsec-host pod, but still it won't reestablish IKE SAs
+    # again with peer nodes, so it shouldn't be a problem.
+    if ! grep -q "auto=start" /etc/ipsec.d/openshift.conf; then
+      sed -i '/^.*conn ovn.*$/a\    auto=start' /etc/ipsec.d/openshift.conf
+    fi
+    chroot /proc/1/root ipsec restart
+
+    # Wait for upto 60s to get IPsec SAs to establish with peer nodes.
+    timeout=60
+    elapsed=0
+    desiredconn=""
+    establishedsa=""
+    while [[ $elapsed -lt $timeout ]]; do
+      desiredconn=$(grep -E '^\s*conn\s+' /etc/ipsec.d/openshift.conf | grep -v '%default' | awk '{print $2}' | tr ' ' '\n' | sort | tr '\n' ' ')
+      establishedsa=$(ipsec showstates | grep STATE_V2_ESTABLISHED_CHILD_SA | grep -o '"[^"]*"' | sed 's/"//g' | tr ' ' '\n' | sort | uniq | tr '\n' ' ')
+      if [ "$desiredconn" == "$establishedsa" ]; then
+        echo "IPsec SAs are established for desired connections after ${elapsed}s"
+        break
+      else
+        echo "IPsec SAs are not established yet, total waited time ${elapsed}s"
+        sleep 2s
+      fi
+      elapsed=$((elapsed + 2))
+    done
+
+    if [[ $elapsed -ge $timeout ]]; then
+        echo "Timed out waiting, some connections are not established, desired conns $desiredconn, established conns $establishedsa"
+    fi
