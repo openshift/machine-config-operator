@@ -146,12 +146,10 @@ func generateAndApplyMachineConfigNodes(
 		mcfgalphav1.MachineConfigNodeUpdatePostActionComplete,
 		mcfgalphav1.MachineConfigNodeUpdateComplete,
 		mcfgalphav1.MachineConfigNodeResumed,
-		mcfgalphav1.MachineConfigNodeUpdateCompatible,
 		mcfgalphav1.MachineConfigNodeUpdateDrained,
 		mcfgalphav1.MachineConfigNodeUpdateFilesAndOS,
 		mcfgalphav1.MachineConfigNodeUpdateCordoned,
 		mcfgalphav1.MachineConfigNodeUpdateRebooted,
-		mcfgalphav1.MachineConfigNodeUpdateReloaded,
 		mcfgalphav1.MachineConfigNodeUpdated,
 		mcfgalphav1.MachineConfigNodeUpdateUncordoned,
 	}
