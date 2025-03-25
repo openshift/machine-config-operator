@@ -708,7 +708,7 @@ func (p *PinnedImageSetManager) createApplyConfigForImageSet(imageSet *mcfgv1alp
 
 	if statusErr != nil {
 		imageSetConfig.LastFailedGeneration = ptr.To(int32(imageSet.GetGeneration()))
-		imageSetConfig.LastFailedGenerationErrors = []string{statusErr.Error()}
+		imageSetConfig.LastFailedGenerationError = statusErr.Error()
 	} else if isCompleted {
 		// only set the current generation if prefetch is complete
 		imageSetConfig.CurrentGeneration = ptr.To(int32(imageSet.GetGeneration()))
