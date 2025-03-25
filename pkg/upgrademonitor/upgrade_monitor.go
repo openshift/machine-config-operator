@@ -20,7 +20,7 @@ import (
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 )
 
-const NotYetSet = "NotYetSet"
+const NotYetSet = "not-yet-set"
 
 type Condition struct {
 	State   mcfgalphav1.StateProgress
