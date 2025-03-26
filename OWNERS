@@ -8,6 +8,7 @@ approvers:
   - umohnani8
   - LorbusChris
   - RishabhSaini
+  - isabella-janssen
 reviewers:
   - djoshy
   - dkhater-redhat
@@ -16,5 +17,6 @@ reviewers:
   - umohnani8
   - LorbusChris
   - RishabhSaini
+  - isabella-janssen
 
 component: "Machine Config Operator"
