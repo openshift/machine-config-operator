@@ -1,4 +1,4 @@
-name: afterburn-hostname.service
+name: powervs-hostname.service
 enabled: true
 contents: |
   [Unit]
@@ -9,10 +9,13 @@ contents: |
   After=NetworkManager-wait-online.service
   # Run before hostname checks
   Before=node-valid-hostname.service
+  # We require afterburn to have run first
+  Requires=afterburn.service
+  After=afterburn.service
 
   [Service]
-  ExecStart=/usr/bin/afterburn --provider powervs --hostname=/etc/hostname
   Type=oneshot
+  ExecStart=/usr/local/bin/mco-hostname --powervs
 
   [Install]
-  WantedBy=network-online.target
+  WantedBy=node-valid-hostname.service
