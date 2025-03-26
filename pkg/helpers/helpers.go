@@ -8,6 +8,7 @@ import (
 	v1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/osrelease"
+	"github.com/openshift/machine-config-operator/pkg/upgrademonitor"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	corev1listers "k8s.io/client-go/listers/core/v1"
@@ -52,13 +53,14 @@ func GetNodesForPool(mcpLister v1.MachineConfigPoolLister, nodeLister corev1list
 
 // GetPrimaryPoolNameForMCN gets the MCP pool name value that is used in a node's MachineConfigNode object.
 // When the node does not yet exist (is nil) or the node does not yet have annotations, the pool name will
-// temporarily be set to `unknown`. Once the node exists (is not nil) and the annotations are properly set,
-// the node will update again and the pool name will be updated.
+// temporarily be set to `not-yet-set` (the default not yet set placeholder value for upgrade monitor
+// functions). Once the node exists (is not nil) and the annotations are properly set, the node will update
+// again and the pool name will be updated.
 func GetPrimaryPoolNameForMCN(mcpLister v1.MachineConfigPoolLister, node *corev1.Node) (string, error) {
 	// Handle case of nil node
 	if node == nil {
 		klog.Error("node object is nil, setting associated MCP to unknown")
-		return "unknown", nil
+		return upgrademonitor.NotYetSet, nil
 	}
 
 	// Use `GetPrimaryPoolForNode` to get primary MCP associated with node
@@ -70,7 +72,7 @@ func GetPrimaryPoolNameForMCN(mcpLister v1.MachineConfigPoolLister, node *corev1
 		// On first provisioning, the node may not have annoatations and, thus, will not be associated with a pool.
 		// In this case, the pool value will be set to a temporary dummy value.
 		klog.Infof("No primary pool is associated with node: %v", node.Name)
-		return "unknown", nil
+		return upgrademonitor.NotYetSet, nil
 	}
 	return primaryPool.Name, nil
 }
