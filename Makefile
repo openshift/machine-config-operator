@@ -1,5 +1,5 @@
 MCO_COMPONENTS = daemon controller server operator
-EXTRA_COMPONENTS = apiserver-watcher machine-os-builder
+EXTRA_COMPONENTS = apiserver-watcher machine-os-builder machine-config-operator-ext-test
 ALL_COMPONENTS = $(patsubst %,machine-config-%,$(MCO_COMPONENTS)) $(EXTRA_COMPONENTS)
 PREFIX ?= /usr
 GO111MODULE?=on
