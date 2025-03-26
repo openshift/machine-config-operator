@@ -235,7 +235,7 @@ func isMachineOSBuildCurrentForMachineOSConfigWithPullspec(mosc *mcfgv1alpha1.Ma
 
 // Determines if a given MachineOSConfig has the current build annotation.
 func hasCurrentBuildAnnotation(mosc *mcfgv1alpha1.MachineOSConfig) bool {
-	return metav1.HasAnnotation(mosc.ObjectMeta, constants.CurrentMachineOSBuildAnnotationKey)
+	return metav1.HasAnnotation(mosc.ObjectMeta, constants.CurrentMachineOSBuildAnnotationKey) && mosc.Annotations[constants.CurrentMachineOSBuildAnnotationKey] != ""
 }
 
 // Determines if a given MachineOSConfig has the current build annotation and
@@ -246,6 +246,11 @@ func isCurrentBuildAnnotationEqual(mosc *mcfgv1alpha1.MachineOSConfig, mosb *mcf
 	}
 
 	return mosc.Annotations[constants.CurrentMachineOSBuildAnnotationKey] == mosb.Name
+}
+
+// Determines if a given MachineOSConfig has the rebuild annotation.
+func hasRebuildAnnotation(mosc *mcfgv1alpha1.MachineOSConfig) bool {
+	return metav1.HasAnnotation(mosc.ObjectMeta, constants.RebuildMachineOSConfigAnnotationKey)
 }
 
 // Looks at the error chain for the given error and determines if the error
