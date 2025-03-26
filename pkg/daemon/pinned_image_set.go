@@ -639,14 +639,6 @@ func (p *PinnedImageSetManager) updateStatusError(pools []*mcfgv1.MachineConfigP
 	}
 	imageSetSpec := getPinnedImageSetSpecForPools(pools)
 
-	var errMsg string
-	if isErrNoSpace(statusErr) {
-		// degrade the pool if there is no space
-		errMsg = fmt.Sprintf("%s %v", degradeMessagePrefix, statusErr)
-	} else {
-		errMsg = statusErr.Error()
-	}
-
 	// Get MCP associated with node
 	pool, err := helpers.GetPrimaryPoolNameForMCN(p.mcpLister, node)
 	if err != nil {
@@ -657,7 +649,7 @@ func (p *PinnedImageSetManager) updateStatusError(pools []*mcfgv1.MachineConfigP
 		&upgrademonitor.Condition{
 			State:   mcfgv1alpha1.MachineConfigNodePinnedImageSetsDegraded,
 			Reason:  "PrefetchFailed",
-			Message: errMsg,
+			Message: "One or more PinnedImageSet is experiencing an error. See PinnedImageSet list for more details",
 		},
 		nil,
 		metav1.ConditionTrue,
