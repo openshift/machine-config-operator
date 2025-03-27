@@ -152,13 +152,23 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
-	// we know we're at 3.4 in code.. serve directly, parsing is expensive...
+	// we know we're at 3.5 in code... serve directly, parsing is expensive...
 	// we're doing it during an HTTP request, and most notably before we write the HTTP headers
 	var serveConf *runtime.RawExtension
 
 	switch {
-	case reqConfigVer.Equal(*semver.New("3.4.0")):
+	case reqConfigVer.Equal(*semver.New("3.5.0")):
 		serveConf = conf
+
+	case reqConfigVer.Equal(*semver.New("3.4.0")):
+		converted34, err := ctrlcommon.ConvertRawExtIgnitionToV3_4(conf)
+		if err != nil {
+			w.Header().Set("Content-Length", "0")
+			w.WriteHeader(http.StatusInternalServerError)
+			klog.Errorf("couldn't convert config for req: %v, error: %v", cr, err)
+			return
+		}
+		serveConf = &converted34
 
 	case reqConfigVer.Equal(*semver.New("3.3.0")):
 		converted33, err := ctrlcommon.ConvertRawExtIgnitionToV3_3(conf)
@@ -319,6 +329,7 @@ func detectSpecVersionFromAcceptHeader(acceptHeader string) (*semver.Version, er
 	v3_2 := semver.New("3.2.0")
 	v3_3 := semver.New("3.3.0")
 	v3_4 := semver.New("3.4.0")
+	v3_5 := semver.New("3.5.0")
 
 	var ignVersionError error
 	headers, err := parseAcceptHeader(acceptHeader)
@@ -330,7 +341,9 @@ func detectSpecVersionFromAcceptHeader(acceptHeader string) (*semver.Version, er
 	for _, header := range headers {
 		if header.MIMESubtype == "vnd.coreos.ignition+json" && header.SemVer != nil {
 			switch {
-			case !header.SemVer.LessThan(*v3_4) && header.SemVer.LessThan(*semver.New("4.0.0")):
+			case !header.SemVer.LessThan(*v3_5) && header.SemVer.LessThan(*semver.New("4.0.0")):
+				return v3_5, nil
+			case !header.SemVer.LessThan(*v3_4) && header.SemVer.LessThan(*v3_5):
 				return v3_4, nil
 			case !header.SemVer.LessThan(*v3_3) && header.SemVer.LessThan(*v3_4):
 				return v3_3, nil

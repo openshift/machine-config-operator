@@ -7,8 +7,8 @@ import (
 
 	"github.com/clarketm/json"
 	ign2types "github.com/coreos/ignition/config/v2_2/types"
-	ign3 "github.com/coreos/ignition/v2/config/v3_4"
-	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
+	ign3 "github.com/coreos/ignition/v2/config/v3_5"
+	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	validate3 "github.com/coreos/ignition/v2/config/validate"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -140,7 +140,7 @@ func TestConvertIgnition2to3(t *testing.T) {
 	isValid := ValidateIgnition(testIgn2Config)
 	require.Nil(t, isValid)
 
-	convertedIgn, err := convertIgnition22to34(testIgn2Config)
+	convertedIgn, err := convertIgnition22to35(testIgn2Config)
 	require.Nil(t, err)
 	assert.IsType(t, ign3types.Config{}, convertedIgn)
 	isValid3 := ValidateIgnition(convertedIgn)
@@ -152,11 +152,11 @@ func TestConvertIgnition3to2(t *testing.T) {
 	testIgn3Config := ign3types.Config{}
 	tempUser := ign3types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"5678", "abc"}}
 	testIgn3Config.Passwd.Users = []ign3types.PasswdUser{tempUser}
-	testIgn3Config.Ignition.Version = "3.4.0"
+	testIgn3Config.Ignition.Version = InternalMCOIgnitionVersion
 	isValid := ValidateIgnition(testIgn3Config)
 	require.Nil(t, isValid)
 
-	convertedIgn, err := convertIgnition34to22(testIgn3Config)
+	convertedIgn, err := convertIgnition35to22(testIgn3Config)
 	require.Nil(t, err)
 	assert.IsType(t, ign2types.Config{}, convertedIgn)
 	isValid2 := ValidateIgnition(convertedIgn)
@@ -236,6 +236,16 @@ func TestParseAndConvert(t *testing.T) {
 
 	// Make a valid Ign 3.4 cfg
 	testIgn3Config.Ignition.Version = "3.4.0"
+	// turn it into a raw []byte
+	rawIgn = helpers.MarshalOrDie(testIgn3Config)
+	// check that it was parsed successfully back to the default version
+	convertedIgn, err = ParseAndConvertConfig(rawIgn)
+	require.Nil(t, err)
+	testIgn3Config.Ignition.Version = InternalMCOIgnitionVersion
+	assert.Equal(t, testIgn3Config, convertedIgn)
+
+	// Make a valid Ign 3.5 cfg
+	testIgn3Config.Ignition.Version = "3.5.0"
 	// turn it into a raw []byte
 	rawIgn = helpers.MarshalOrDie(testIgn3Config)
 	// check that it was parsed successfully back to the default version

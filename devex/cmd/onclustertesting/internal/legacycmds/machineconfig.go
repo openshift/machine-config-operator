@@ -10,7 +10,7 @@ import (
 	"github.com/openshift/machine-config-operator/devex/internal/pkg/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 
-	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/openshift/machine-config-operator/test/helpers"

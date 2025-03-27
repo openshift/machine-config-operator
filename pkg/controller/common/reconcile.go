@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"reflect"
 
-	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"k8s.io/klog/v2"
