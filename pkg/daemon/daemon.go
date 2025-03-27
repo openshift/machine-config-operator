@@ -2538,25 +2538,15 @@ func (dn *Daemon) completeUpdate(desiredConfigName string) error {
 }
 
 func (dn *Daemon) triggerUpdate(currentConfig, desiredConfig *mcfgv1.MachineConfig, currentImage, desiredImage string) error {
-	// Before we do any updates, ensure that the image pull secrets that rpm-ostree uses are up-to-date.
 	if err := dn.syncInternalRegistryPullSecrets(nil); err != nil {
 		return err
 	}
 
-	// If both of the image annotations are empty, this is a regular MachineConfig update
-	if desiredImage == "" && currentImage == "" {
-		if ctrlcommon.CanBeInPlaceApplied(currentConfig, desiredConfig) {
-			return dn.inPlaceApplyChanges(currentConfig, desiredConfig, currentImage)
-		}
-		return dn.triggerUpdateWithMachineConfig(currentConfig, desiredConfig, true)
-	}
+	// Canonicalize configurations with current/desired images
+	canonicalOld := canonicalizeMachineConfigImage(currentImage, currentConfig)
+	canonicalNew := canonicalizeMachineConfigImage(desiredImage, desiredConfig)
 
-	// Shut down the Config Drift Monitor since we'll be performing an update
-	// and the config will "drift" while the update is occurring.
-	dn.stopConfigDriftMonitor()
-
-	klog.Infof("Performing layered OS update")
-	return dn.updateOnClusterLayering(currentConfig, desiredConfig, currentImage, desiredImage, true)
+	return dn.update(canonicalOld, canonicalNew, true)
 }
 
 // triggerUpdateWithMachineConfig starts the update. It queries the cluster for
@@ -2590,25 +2580,6 @@ func (dn *Daemon) triggerUpdateWithMachineConfig(currentConfig, desiredConfig *m
 
 	// run the update process. this function doesn't currently return.
 	return dn.update(currentConfig, desiredConfig, skipCertificateWrite)
-}
-
-func (dn *Daemon) inPlaceApplyChanges(oldConfig, newConfig *mcfgv1.MachineConfig, currentImage string) error {
-	// Canonicalize configurations with current OCL image
-	oldCanonical := canonicalizeMachineConfigImage(currentImage, oldConfig)
-	newCanonical := canonicalizeMachineConfigImage(currentImage, newConfig)
-
-	err := dn.update(oldCanonical, newCanonical, true)
-	if err != nil {
-		return fmt.Errorf("in-place apply failed: %w", err)
-	}
-
-	dn.storeCurrentConfigOnDisk(&onDiskConfig{
-		currentConfig: newCanonical, // Store canonicalized config
-		currentImage:  currentImage,
-	})
-
-	klog.Info("In-place update completed without node disruption")
-	return nil
 }
 
 // validateKernelArguments checks that the current boot has all arguments specified
