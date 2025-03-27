@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/clarketm/json"
-	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

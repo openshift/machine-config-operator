@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/util/diff"

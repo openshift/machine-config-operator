@@ -8,7 +8,7 @@ import (
 	"sync"
 
 	ign2types "github.com/coreos/ignition/config/v2_2/types"
-	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	"github.com/fsnotify/fsnotify"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
