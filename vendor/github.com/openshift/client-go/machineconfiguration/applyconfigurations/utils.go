@@ -94,8 +94,14 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &machineconfigurationv1.NetworkInfoApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("ObjectReference"):
 		return &machineconfigurationv1.ObjectReferenceApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("PinnedImageRef"):
+		return &machineconfigurationv1.PinnedImageRefApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("PinnedImageSet"):
+		return &machineconfigurationv1.PinnedImageSetApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("PinnedImageSetRef"):
 		return &machineconfigurationv1.PinnedImageSetRefApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("PinnedImageSetSpec"):
+		return &machineconfigurationv1.PinnedImageSetSpecApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("PoolSynchronizerStatus"):
 		return &machineconfigurationv1.PoolSynchronizerStatusApplyConfiguration{}
 

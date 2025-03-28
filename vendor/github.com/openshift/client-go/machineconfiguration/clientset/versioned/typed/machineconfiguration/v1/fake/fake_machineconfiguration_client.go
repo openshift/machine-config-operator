@@ -40,6 +40,10 @@ func (c *FakeMachineconfigurationV1) MachineOSConfigs() v1.MachineOSConfigInterf
 	return newFakeMachineOSConfigs(c)
 }
 
+func (c *FakeMachineconfigurationV1) PinnedImageSets() v1.PinnedImageSetInterface {
+	return newFakePinnedImageSets(c)
+}
+
 // RESTClient returns a RESTClient that is used to communicate
 // with API server by this client implementation.
 func (c *FakeMachineconfigurationV1) RESTClient() rest.Interface {
