@@ -25,6 +25,7 @@ import (
 type informers struct {
 	controllerConfigInformer  mcfginformersv1.ControllerConfigInformer
 	machineConfigPoolInformer mcfginformersv1.MachineConfigPoolInformer
+	machineConfigInformer     mcfginformersv1.MachineConfigInformer
 	jobInformer               batchinformersv1.JobInformer
 	machineOSBuildInformer    mcfginformersv1.MachineOSBuildInformer
 	machineOSConfigInformer   mcfginformersv1.MachineOSConfigInformer
@@ -46,6 +47,7 @@ func (i *informers) listers() *listers {
 		machineOSBuildLister:    i.machineOSBuildInformer.Lister(),
 		machineOSConfigLister:   i.machineOSConfigInformer.Lister(),
 		machineConfigPoolLister: i.machineConfigPoolInformer.Lister(),
+		machineConfigLister:     i.machineConfigInformer.Lister(),
 		jobLister:               i.jobInformer.Lister(),
 		controllerConfigLister:  i.controllerConfigInformer.Lister(),
 		nodeLister:              i.nodeInformer.Lister(),
@@ -57,6 +59,7 @@ type listers struct {
 	machineOSBuildLister    mcfglistersv1.MachineOSBuildLister
 	machineOSConfigLister   mcfglistersv1.MachineOSConfigLister
 	machineConfigPoolLister mcfglistersv1.MachineConfigPoolLister
+	machineConfigLister     mcfglistersv1.MachineConfigLister
 	jobLister               batchlisterv1.JobLister
 	controllerConfigLister  mcfglistersv1.ControllerConfigLister
 	nodeLister              corelistersv1.NodeLister
@@ -91,6 +94,7 @@ func newInformers(mcfgclient mcfgclientset.Interface, kubeclient clientset.Inter
 	controllerConfigInformer := mcoInformerFactory.Machineconfiguration().V1().ControllerConfigs()
 	machineConfigPoolInformer := mcoInformerFactory.Machineconfiguration().V1().MachineConfigPools()
 	machineOSBuildInformer := mcoInformerFactory.Machineconfiguration().V1().MachineOSBuilds()
+	machineConfigInformer := mcoInformerFactory.Machineconfiguration().V1().MachineConfigs()
 	machineOSConfigInformer := mcoInformerFactory.Machineconfiguration().V1().MachineOSConfigs()
 	jobInformer := coreInformerFactory.Batch().V1().Jobs()
 	nodeInformer := coreInformerFactoryNodes.Core().V1().Nodes()
@@ -100,6 +104,7 @@ func newInformers(mcfgclient mcfgclientset.Interface, kubeclient clientset.Inter
 		machineConfigPoolInformer: machineConfigPoolInformer,
 		machineOSBuildInformer:    machineOSBuildInformer,
 		machineOSConfigInformer:   machineOSConfigInformer,
+		machineConfigInformer:     machineConfigInformer,
 		jobInformer:               jobInformer,
 		nodeInformer:              nodeInformer,
 		toStart: []interface{ Start(<-chan struct{}) }{
