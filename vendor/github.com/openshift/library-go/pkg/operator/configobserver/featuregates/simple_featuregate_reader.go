@@ -50,8 +50,9 @@ type FeatureGateAccess interface {
 }
 
 type Features struct {
-	Enabled  []configv1.FeatureGateName
-	Disabled []configv1.FeatureGateName
+	Enabled                          []configv1.FeatureGateName
+	Disabled                         []configv1.FeatureGateName
+	RenderedMinimumComponentVersions []configv1.MinimumComponentVersion
 }
 
 type FeatureChange struct {
@@ -263,10 +264,12 @@ func (c *defaultFeatureGateAccess) CurrentFeatureGates() (FeatureGate, error) {
 	}
 	retEnabled := make([]configv1.FeatureGateName, len(c.currentFeatures.Enabled))
 	retDisabled := make([]configv1.FeatureGateName, len(c.currentFeatures.Disabled))
+	retRenderedMinimumComponentVersions := make([]configv1.MinimumComponentVersion, len(c.currentFeatures.RenderedMinimumComponentVersions))
 	copy(retEnabled, c.currentFeatures.Enabled)
 	copy(retDisabled, c.currentFeatures.Disabled)
+	copy(retRenderedMinimumComponentVersions, c.currentFeatures.RenderedMinimumComponentVersions)
 
-	return NewFeatureGate(retEnabled, retDisabled), nil
+	return NewFeatureGate(retEnabled, retDisabled, retRenderedMinimumComponentVersions), nil
 }
 
 func (c *defaultFeatureGateAccess) runWorker(ctx context.Context) {
@@ -308,6 +311,11 @@ func featuresFromFeatureGate(featureGate *configv1.FeatureGate, desiredVersion s
 			features.Disabled = append(features.Disabled, disabled.Name)
 		}
 		break
+		features.RenderedMinimumComponentVersions = make([]configv1.MinimumComponentVersion, 0, len(featureGateValues.RenderedMinimumComponentVersions))
+		for _, cv := range featureGateValues.RenderedMinimumComponentVersions {
+			features.RenderedMinimumComponentVersions = append(features.RenderedMinimumComponentVersions, cv)
+		}
+
 	}
 
 	if !found {
