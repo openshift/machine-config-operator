@@ -1178,17 +1178,13 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	// At this point, we write the now expected to be "current" config to /etc.
 	// When we reboot, we'll find this file and validate that we're in this state,
 	// and that completes an update.
-	odc := &onDiskConfig{
-		currentConfig: newConfig,
-	}
-
-	if err := dn.storeCurrentConfigOnDisk(odc); err != nil {
+	if err := dn.storeCurrentConfigOnDisk(newOnDiskConfigFromMachineConfig(newConfig)); err != nil {
 		return err
 	}
+
 	defer func() {
 		if retErr != nil {
-			odc.currentConfig = oldConfig
-			if err := dn.storeCurrentConfigOnDisk(odc); err != nil {
+			if err := dn.storeCurrentConfigOnDisk(newOnDiskConfigFromMachineConfig(oldConfig)); err != nil {
 				errs := kubeErrs.NewAggregate([]error{err, retErr})
 				retErr = fmt.Errorf("error rolling back current config on disk: %w", errs)
 				return
@@ -1367,16 +1363,17 @@ func newMachineConfigDiff(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineC
 		return nil, fmt.Errorf("parsing new Ignition config failed with error: %w", err)
 	}
 
-	oldImage := oldConfig.Annotations[constants.DesiredImageAnnotationKey]
-	newImage := newConfig.Annotations[constants.DesiredImageAnnotationKey]
-
 	// Both nil and empty slices are of zero length,
 	// consider them as equal while comparing KernelArguments in both MachineConfigs
 	kargsEmpty := len(oldConfig.Spec.KernelArguments) == 0 && len(newConfig.Spec.KernelArguments) == 0
 	extensionsEmpty := len(oldConfig.Spec.Extensions) == 0 && len(newConfig.Spec.Extensions) == 0
 
 	force := forceFileExists()
-	return &machineConfigDiff{
+
+	_, oldOCLImage := extractOCLImageFromMachineConfig(oldConfig)
+	_, newOCLImage := extractOCLImageFromMachineConfig(newConfig)
+
+	diff := &machineConfigDiff{
 		osUpdate:   oldConfig.Spec.OSImageURL != newConfig.Spec.OSImageURL || force,
 		kargs:      !(kargsEmpty || reflect.DeepEqual(oldConfig.Spec.KernelArguments, newConfig.Spec.KernelArguments)),
 		fips:       oldConfig.Spec.FIPS != newConfig.Spec.FIPS,
@@ -1385,23 +1382,17 @@ func newMachineConfigDiff(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineC
 		units:      !reflect.DeepEqual(oldIgn.Systemd.Units, newIgn.Systemd.Units),
 		kernelType: canonicalizeKernelType(oldConfig.Spec.KernelType) != canonicalizeKernelType(newConfig.Spec.KernelType),
 		extensions: !(extensionsEmpty || reflect.DeepEqual(oldConfig.Spec.Extensions, newConfig.Spec.Extensions)),
-
-		oclEnabled:    newImage != "",
-		revertFromOCL: oldImage != "" && newImage == "",
-	}, nil
-}
-
-func newMachineConfigDiffFromLayered(oldConfig, newConfig *mcfgv1.MachineConfig, oldImage, newImage string) (*machineConfigDiff, error) {
-	mcDiff, err := newMachineConfigDiff(oldConfig, newConfig)
-	if err != nil {
-		return mcDiff, err
+		oclEnabled: (oldOCLImage != "" || newOCLImage != "") || (oldOCLImage != "" && newOCLImage != ""),
 	}
 
-	mcDiff.oclEnabled = true
-	// If the new OS image is empty, that means we are in a revert-from-OCL situation.
-	mcDiff.revertFromOCL = newImage == ""
-	mcDiff.osUpdate = oldImage != newImage || forceFileExists()
-	return mcDiff, nil
+	if !diff.oclEnabled {
+		return diff, nil
+	}
+
+	// If OCL is enabled, compute OS update and revertFromOCL separately.
+	diff.osUpdate = oldOCLImage != newOCLImage || force
+	diff.revertFromOCL = newOCLImage == ""
+	return diff, nil
 }
 
 // reconcilable checks the configs to make sure that the only changes requested
@@ -2876,20 +2867,4 @@ func (dn *Daemon) disableRevertSystemdUnit() error {
 	}
 
 	return nil
-}
-
-// If the provided image is empty, then the OSImageURL value on the
-// MachineConfig should take precedence. Otherwise, if the provided image is
-// set, then it should take precedence over the OSImageURL value. This is only
-// used for OCL OS updates and should not be used for anything else.
-func canonicalizeMachineConfigImage(img string, mc *mcfgv1.MachineConfig) *mcfgv1.MachineConfig {
-	copied := mc.DeepCopy()
-
-	if img == "" {
-		return copied
-	}
-
-	copied.Spec.OSImageURL = img
-
-	return copied
 }
