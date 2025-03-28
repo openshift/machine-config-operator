@@ -146,12 +146,10 @@ func generateAndApplyMachineConfigNodes(
 		mcfgalphav1.MachineConfigNodeUpdatePostActionComplete,
 		mcfgalphav1.MachineConfigNodeUpdateComplete,
 		mcfgalphav1.MachineConfigNodeResumed,
-		mcfgalphav1.MachineConfigNodeUpdateCompatible,
 		mcfgalphav1.MachineConfigNodeUpdateDrained,
 		mcfgalphav1.MachineConfigNodeUpdateFilesAndOS,
 		mcfgalphav1.MachineConfigNodeUpdateCordoned,
 		mcfgalphav1.MachineConfigNodeUpdateRebooted,
-		mcfgalphav1.MachineConfigNodeUpdateReloaded,
 		mcfgalphav1.MachineConfigNodeUpdated,
 		mcfgalphav1.MachineConfigNodeUpdateUncordoned,
 	}
@@ -271,11 +269,11 @@ func generateAndApplyMachineConfigNodes(
 			if imageSetApplyConfig == nil {
 				for _, imageSet := range newMCNode.Status.PinnedImageSets {
 					statusApplyConfig = statusApplyConfig.WithPinnedImageSets(&machineconfigurationalphav1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration{
-						DesiredGeneration:          ptr.To(imageSet.DesiredGeneration),
-						CurrentGeneration:          ptr.To(imageSet.CurrentGeneration),
-						Name:                       ptr.To(imageSet.Name),
-						LastFailedGeneration:       ptr.To(imageSet.LastFailedGeneration),
-						LastFailedGenerationErrors: imageSet.LastFailedGenerationErrors,
+						DesiredGeneration: ptr.To(imageSet.DesiredGeneration),
+						CurrentGeneration: ptr.To(imageSet.CurrentGeneration),
+						Name:              ptr.To(imageSet.Name),
+						// LastFailedGeneration:      ptr.To(imageSet.LastFailedGeneration),
+						// LastFailedGenerationError: imageSet.LastFailedGenerationError,
 					})
 				}
 			} else if len(imageSetApplyConfig) > 0 {
