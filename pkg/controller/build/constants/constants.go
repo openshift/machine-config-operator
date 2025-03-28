@@ -63,3 +63,9 @@ const (
 	EtcYumReposDAnnotationKey      = entitlementsAnnotationKeyBase + EtcYumReposDConfigMapName
 	EtcPkiRpmGpgAnnotationKey      = entitlementsAnnotationKeyBase + EtcPkiRpmGpgSecretName
 )
+
+// batchv1.Job configuration
+const (
+	JobMaxRetries  int32 = 3
+	JobCompletions int32 = 1
+)
