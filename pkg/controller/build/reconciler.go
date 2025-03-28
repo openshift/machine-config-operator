@@ -13,6 +13,7 @@ import (
 	imagev1clientset "github.com/openshift/client-go/image/clientset/versioned"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	routeclientset "github.com/openshift/client-go/route/clientset/versioned"
+	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/buildrequest"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/imagebuilder"
@@ -373,13 +374,11 @@ func (b *buildReconciler) UpdateMachineConfigPool(ctx context.Context, oldMCP, c
 func (b *buildReconciler) updateMachineConfigPool(ctx context.Context, oldMCP, curMCP *mcfgv1.MachineConfigPool) error {
 	if oldMCP.Spec.Configuration.Name != curMCP.Spec.Configuration.Name {
 		klog.Infof("Rendered config for pool %s changed from %s to %s", curMCP.Name, oldMCP.Spec.Configuration.Name, curMCP.Spec.Configuration.Name)
-		if err := b.createNewMachineOSBuildOrReuseExistingForPoolChange(ctx, curMCP); err != nil {
+		if err := b.reconcilePoolChange(ctx, curMCP); err != nil {
 			return fmt.Errorf("could not create or reuse existing MachineOSBuild for MachineConfigPool %q change: %w", curMCP.Name, err)
 		}
 	}
 
-	// Not sure if we need to do this here yet or not.
-	// TODO: Determine if we should call b.syncMachineConfigPools() here or not.
 	return b.syncAll(ctx)
 }
 
@@ -556,7 +555,7 @@ func (b *buildReconciler) createNewMachineOSBuildOrReuseExisting(ctx context.Con
 	// In this situation, we've determined that the MachineOSBuild does not
 	// exist, so we need to create it.
 	if k8serrors.IsNotFound(err) {
-		_, err := b.mcfgclient.MachineconfigurationV1().MachineOSBuilds().Create(ctx, mosb, metav1.CreateOptions{})
+		mosb, err := b.mcfgclient.MachineconfigurationV1().MachineOSBuilds().Create(ctx, mosb, metav1.CreateOptions{})
 		if err != nil && !k8serrors.IsAlreadyExists(err) {
 			return fmt.Errorf("could not create new MachineOSBuild %q: %w", mosb.Name, err)
 		}
@@ -1188,9 +1187,32 @@ func (b *buildReconciler) syncMachineOSBuild(ctx context.Context, mosb *mcfgv1.M
 			return fmt.Errorf("could not get MachineConfigPool from MachineOSBuild %q: %w", mosb.Name, err)
 		}
 
-		// An mosb which had previously been forgotten by the queue and is no longer desired by the mcp should not build
 		if mosb.ObjectMeta.Labels[constants.RenderedMachineConfigLabelKey] != mcp.Spec.Configuration.Name {
 			klog.Infof("The MachineOSBuild %q which builds the rendered Machine Config %q is no longer desired by the MCP %q", mosb.Name, mosb.ObjectMeta.Labels[constants.RenderedMachineConfigLabelKey], mosb.ObjectMeta.Labels[constants.TargetMachineConfigPoolLabelKey])
+			return nil
+		}
+
+		oldMCName := mcp.Status.Configuration.Name
+		newMCName := mcp.Spec.Configuration.Name
+
+		oldRendered, err := b.machineConfigLister.Get(oldMCName)
+		if err != nil {
+			return err
+		}
+		newRendered, err := b.machineConfigLister.Get(newMCName)
+		if err != nil {
+			return err
+		}
+
+		old := mcp.DeepCopy()
+		old.Spec.Configuration.Name = mcp.Status.Configuration.Name
+
+		needsImageRebuild, err := b.reconcileImageRebuild(old, mcp)
+		if err != nil {
+			return err
+		}
+		if oldRendered != newRendered && !needsImageRebuild {
+			klog.Infof("MachineOSBuild %q: only layering changes → skipping image build", mosb.Name)
 			return nil
 		}
 
@@ -1328,6 +1350,129 @@ func (b *buildReconciler) syncMachineConfigPools(ctx context.Context) error {
 // if needed.
 func (b *buildReconciler) syncMachineConfigPool(ctx context.Context, mcp *mcfgv1.MachineConfigPool) error {
 	return b.timeObjectOperation(mcp, syncingVerb, func() error {
-		return b.createNewMachineOSBuildOrReuseExistingForPoolChange(ctx, mcp)
+		return b.reconcilePoolChange(ctx, mcp)
 	})
+}
+
+func (b *buildReconciler) reconcilePoolChange(ctx context.Context, mcp *mcfgv1.MachineConfigPool) error {
+
+	mosc, err := utils.GetMachineOSConfigForMachineConfigPool(mcp, b.utilListers())
+	if err != nil {
+		// Not opted in yet, so nothing for us to do.
+		klog.Infof("buildReconciler: no MachineOSConfig for pool %q, skipping", mcp.Name)
+		return nil
+	}
+
+	oldRendered := mcp.Status.Configuration.Name
+	newRendered := mcp.Spec.Configuration.Name
+
+	// old pool
+	old := mcp.DeepCopy()
+	old.Spec.Configuration.Name = mcp.Status.Configuration.Name
+	firstOptIn := mosc.Annotations[constants.CurrentMachineOSBuildAnnotationKey]
+	if firstOptIn == "" {
+		return fmt.Errorf("no current build annotation on MachineOSConfig %q", mosc.Name)
+	}
+
+	needsImageRebuild, err := b.reconcileImageRebuild(old, mcp)
+	if err != nil {
+		return err
+	}
+
+	if (oldRendered != newRendered && needsImageRebuild) || firstOptIn == "" {
+		klog.Infof("pool %q: detected extension/kernel/OSImageURL change → will rebuild image", mcp.Name)
+	} else if oldRendered != newRendered && !needsImageRebuild {
+		klog.Infof("pool %q: only layering changes → reusing existing image", mcp.Name)
+		prevPullSpec := mosc.Status.CurrentImagePullSpec
+		oldMOSB, err := utils.GetMachineOSBuildForImagePullspec(string(prevPullSpec), b.utilListers())
+		if err != nil {
+			return fmt.Errorf("failed to look up MachineOSBuild for pull-spec %q: %w", prevPullSpec, err)
+		}
+		return b.reuseImageForNewMOSB(ctx, mosc, oldMOSB)
+	}
+
+	return b.createNewMachineOSBuildOrReuseExisting(ctx, mosc, needsImageRebuild)
+
+}
+
+// reuseImageForNewMOSB creates a new MOSB (for the new rendered-MC name)
+// but populates its status from oldMosb so that no build actually runs.
+func (b *buildReconciler) reuseImageForNewMOSB(ctx context.Context, mosc *mcfgv1.MachineOSConfig, oldMosb *mcfgv1.MachineOSBuild,
+) error {
+	// Look up the MCP
+	mcp, err := b.machineConfigPoolLister.Get(mosc.Spec.MachineConfigPool.Name)
+	if err != nil {
+		return err
+	}
+
+	// Build the new MOSB object
+	osImageURLs, err := ctrlcommon.GetOSImageURLConfig(ctx, b.kubeclient)
+	if err != nil {
+		return err
+	}
+	newMosb, err := buildrequest.NewMachineOSBuild(
+		buildrequest.MachineOSBuildOpts{
+			MachineOSConfig:   mosc,
+			MachineConfigPool: mcp,
+			OSImageURLConfig:  osImageURLs,
+		})
+	if err != nil {
+		return err
+	}
+	newMosb.SetOwnerReferences([]metav1.OwnerReference{
+		*metav1.NewControllerRef(mosc, mcfgv1.SchemeGroupVersion.WithKind("MachineOSConfig")),
+	})
+
+	// Create it if not already there
+	_, err = b.machineOSBuildLister.Get(newMosb.Name)
+	if k8serrors.IsNotFound(err) {
+		if newMosb, err = b.mcfgclient.
+			MachineconfigurationV1().
+			MachineOSBuilds().
+			Create(ctx, newMosb, metav1.CreateOptions{}); err != nil {
+			return err
+		}
+	} else if err != nil {
+		return err
+	}
+
+	// Change its status so it’s “Succeeded” with the old image
+	toUpdate, err := b.getMachineOSBuildForUpdate(newMosb)
+	if err != nil {
+		return err
+	}
+	oldStatus := toUpdate.Status
+
+	toUpdate.Status.DigestedImagePushSpec = oldMosb.Status.DigestedImagePushSpec
+
+	for _, c := range apihelpers.MachineOSBuildSucceededConditions() {
+		apihelpers.SetMachineOSBuildCondition(&toUpdate.Status, c)
+	}
+
+	if err := b.setStatusOnMachineOSBuildIfNeeded(ctx, toUpdate, oldStatus, toUpdate.Status); err != nil {
+		return err
+	}
+
+	// re-point the MC to the NEW build
+	return b.updateMachineOSConfigStatus(ctx, mosc, toUpdate)
+}
+
+// reconcilePoolChange returns (annotateRebuild bool, reuseOnly bool, err error)
+func (b *buildReconciler) reconcileImageRebuild(oldMCP, curMCP *mcfgv1.MachineConfigPool) (bool, error) {
+
+	curr, err := b.machineConfigLister.Get(oldMCP.Spec.Configuration.Name)
+	if err != nil {
+		return false, err
+	}
+	des, err := b.machineConfigLister.Get(curMCP.Spec.Configuration.Name)
+	if err != nil {
+		return false, err
+	}
+
+	needsImageRebuild := ctrlcommon.RequiresRebuild(curr, des)
+	if needsImageRebuild {
+		return true, nil
+	}
+
+	return false, nil
 }
