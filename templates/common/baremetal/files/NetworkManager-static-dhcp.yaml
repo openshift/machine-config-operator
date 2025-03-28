@@ -29,6 +29,8 @@ contents:
 
     TYPE=$(nmcli --get-values connection.type connection show "$CONNECTION_ID")
 
+    nmcli_args=()
+
     # Modifying the default connection id directly doesn't do what we want.
     # If we see that, then we need to create a new connection.
     if [ "$CONNECTION_ID" == "Wired Connection" ]
@@ -40,8 +42,11 @@ contents:
         STATIC_INT_NAME=inf-lease-to-static
     else
         STATIC_INT_NAME="$CONNECTION_ID"
+
+        # OVN-Kubernetes configuration is rolled back and generated on every boot again.
+        nmcli_args+=(--temporary)
     fi
-    nmcli con mod "$STATIC_INT_NAME" \
+    nmcli con mod "${nmcli_args[@]}" "$STATIC_INT_NAME" \
       conn.interface "$1" \
       connection.autoconnect yes \
       ipv4.addresses "$CIDR" \
@@ -50,13 +55,13 @@ contents:
       ipv4.dns "$IP4_NAMESERVERS"
 
     if [ -n "$IP4_DOMAINS" ]; then
-        nmcli con mod "$STATIC_INT_NAME" ipv4.dns-search "$IP4_DOMAINS"
+        nmcli con mod "${nmcli_args[@]}" "$STATIC_INT_NAME" ipv4.dns-search "$IP4_DOMAINS"
     fi
     plus=''
     for i in $(seq 0 $(($IP4_NUM_ROUTES-1)) )
     do
         varname="IP4_ROUTE_$i"
-        nmcli con mod "$STATIC_INT_NAME" ${plus}ipv4.routes "${!varname}"
+        nmcli con mod "${nmcli_args[@]}" "$STATIC_INT_NAME" ${plus}ipv4.routes "${!varname}"
         plus='+'
     done
 
