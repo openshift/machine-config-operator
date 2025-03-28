@@ -28,7 +28,7 @@ contents:
     establishedsa=""
     while [[ $elapsed -lt $timeout ]]; do
       desiredconn=$(grep -E '^\s*conn\s+' /etc/ipsec.d/openshift.conf | grep -v '%default' | awk '{print $2}' | tr ' ' '\n' | sort | tr '\n' ' ')
-      establishedsa=$(ipsec showstates | grep STATE_V2_ESTABLISHED_CHILD_SA | grep -o '"[^"]*"' | sed 's/"//g' | tr ' ' '\n' | sort | uniq | tr '\n' ' ')
+      establishedsa=$(ipsec showstates | grep ESTABLISHED_CHILD_SA | grep -o '"[^"]*"' | sed 's/"//g' | tr ' ' '\n' | sort | uniq | tr '\n' ' ')
       if [ "$desiredconn" == "$establishedsa" ]; then
         echo "IPsec SAs are established for desired connections after ${elapsed}s"
         break
