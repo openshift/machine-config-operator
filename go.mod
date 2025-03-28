@@ -39,6 +39,7 @@ require (
 	github.com/spf13/pflag v1.0.6
 	github.com/stretchr/testify v1.10.0
 	github.com/vincent-petithory/dataurl v1.0.0
+	github.com/vmware/govmomi v0.45.1
 	golang.org/x/net v0.34.0
 	golang.org/x/time v0.9.0
 	google.golang.org/grpc v1.69.4
@@ -349,4 +350,7 @@ require (
 	sigs.k8s.io/yaml v1.4.0
 )
 
-replace k8s.io/kube-openapi => github.com/openshift/kube-openapi v0.0.0-20230816122517-ffc8f001abb0
+replace (
+	github.com/openshift/api => github.com/RishabhSaini/api v0.0.0-20250301155730-463b93196fdb
+	k8s.io/kube-openapi => github.com/openshift/kube-openapi v0.0.0-20230816122517-ffc8f001abb0
+)
