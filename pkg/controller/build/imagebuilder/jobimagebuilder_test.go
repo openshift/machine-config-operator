@@ -12,6 +12,7 @@ import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/buildrequest"
+	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/fixtures"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -100,7 +101,7 @@ func TestJobImageBuilder(t *testing.T) {
 			js: fixtures.JobStatus{
 				Active:    0,
 				Succeeded: 0,
-				Failed:    4,
+				Failed:    constants.JobMaxRetries + 1,
 			},
 		},
 	}
