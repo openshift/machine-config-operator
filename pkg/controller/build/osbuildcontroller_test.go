@@ -639,7 +639,10 @@ func TestOSBuildControllerReconcilesJobsAfterRestart(t *testing.T) {
 			br, err := buildrequest.NewBuildRequestFromAPI(ctx, kubeclient, mcfgclient, apiMosb, mosc)
 			require.NoError(t, err)
 
-			buildJob := br.Builder().GetObject().(*batchv1.Job)
+			builder, err := br.Builder()
+			require.NoError(t, err)
+
+			buildJob := builder.GetObject().(*batchv1.Job)
 
 			_, err = kubeclient.BatchV1().Jobs(ctrlcommon.MCONamespace).Create(ctx, buildJob, metav1.CreateOptions{})
 			require.NoError(t, err)

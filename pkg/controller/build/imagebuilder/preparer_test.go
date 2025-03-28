@@ -60,7 +60,10 @@ func TestPreparer(t *testing.T) {
 	// c3 uses the Builder object from the BuildRequest instead so that we can
 	// ensure that ephemeral build objects will be removed even if only the Builder object
 	// is available.
-	c3 := newCleanerFromBuilder(kubeclient, mcfgclient, br3.Builder())
+
+	build, err := br3.Builder()
+	require.NoError(t, err)
+	c3 := newCleanerFromBuilder(kubeclient, mcfgclient, build)
 
 	// Cleanup the ephemeral objects from the first MachineOSBuild.
 	assert.NoError(t, c1.Clean(ctx))

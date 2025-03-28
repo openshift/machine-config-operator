@@ -161,7 +161,10 @@ func TestBuildRequest(t *testing.T) {
 				assert.NotContains(t, containerfile, content)
 			}
 
-			buildJob := br.Builder().GetObject().(*batchv1.Job)
+			builder, err := br.Builder()
+			assert.NoError(t, err)
+
+			buildJob := builder.GetObject().(*batchv1.Job)
 
 			_, err = NewBuilder(buildJob)
 			assert.NoError(t, err)
