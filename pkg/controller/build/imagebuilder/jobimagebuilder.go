@@ -9,6 +9,7 @@ import (
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/buildrequest"
+	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	batchv1 "k8s.io/api/batch/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -216,7 +217,7 @@ func (j *jobImageBuilder) getStatus(ctx context.Context) (*batchv1.Job, mcfgv1.B
 		return nil, "", nil, err
 	}
 
-	status, conditions := j.mapJobStatusToBuildStatus(job)
+	status, conditions := MapJobStatusToBuildStatus(job)
 
 	klog.Infof("Build job %q status %+v mapped to MachineOSBuild progress %q", job.Name, job.Status, status)
 
@@ -245,32 +246,6 @@ func (j *jobImageBuilder) Status(ctx context.Context) (mcfgv1.BuildProgress, err
 	}
 
 	return status, nil
-}
-
-func (j *jobImageBuilder) mapJobStatusToBuildStatus(job *batchv1.Job) (mcfgv1.BuildProgress, []metav1.Condition) {
-	// If the job is being deleted and it was not in either a successful or failed state
-	// then the MachineOSBuild should be considered "interrupted"
-	if job.DeletionTimestamp != nil && job.Status.Succeeded == 0 && job.Status.Failed == 0 {
-		return mcfgv1.MachineOSBuildInterrupted, apihelpers.MachineOSBuildInterruptedConditions()
-	}
-
-	if job.Status.Active == 0 && job.Status.Succeeded == 0 && job.Status.Failed == 0 && job.Status.UncountedTerminatedPods == nil {
-		return mcfgv1.MachineOSBuildPrepared, apihelpers.MachineOSBuildPendingConditions()
-	}
-	// The build job is still running till it succeeds or maxes out it retries on failures
-	if job.Status.Active >= 0 && job.Status.Failed >= 0 && job.Status.Failed < 4 && job.Status.Succeeded == 0 {
-		return mcfgv1.MachineOSBuilding, apihelpers.MachineOSBuildRunningConditions()
-	}
-	if job.Status.Succeeded > 0 {
-		return mcfgv1.MachineOSBuildSucceeded, apihelpers.MachineOSBuildSucceededConditions()
-	}
-	// Only return failed if there have been 4 pod failures as the backoffLimit is set to 3
-	if job.Status.Failed > 3 {
-		return mcfgv1.MachineOSBuildFailed, apihelpers.MachineOSBuildFailedConditions()
-
-	}
-
-	return "", apihelpers.MachineOSBuildInitialConditions()
 }
 
 // Stops the running build by deleting the build job.
@@ -323,4 +298,31 @@ func (j *jobImageBuilder) validateBuilderType(builder buildrequest.Builder) erro
 	}
 
 	return fmt.Errorf("invalid type %T from builder, expected %T", j.builder, &batchv1.Job{})
+}
+
+// Maps a given batchv1.Job to a given MachineOSBuild status. Exported so that it can be used in e2e tests.
+func MapJobStatusToBuildStatus(job *batchv1.Job) (mcfgv1.BuildProgress, []metav1.Condition) {
+	// If the job is being deleted and it was not in either a successful or failed state
+	// then the MachineOSBuild should be considered "interrupted"
+	if job.DeletionTimestamp != nil && job.Status.Succeeded == 0 && job.Status.Failed == 0 {
+		return mcfgv1.MachineOSBuildInterrupted, apihelpers.MachineOSBuildInterruptedConditions()
+	}
+
+	if job.Status.Active == 0 && job.Status.Succeeded == 0 && job.Status.Failed == 0 && job.Status.UncountedTerminatedPods == nil {
+		return mcfgv1.MachineOSBuildPrepared, apihelpers.MachineOSBuildPendingConditions()
+	}
+	// The build job is still running till it succeeds or maxes out it retries on failures
+	if job.Status.Active >= 0 && job.Status.Failed >= 0 && job.Status.Failed < constants.JobMaxRetries+1 && job.Status.Succeeded == 0 {
+		return mcfgv1.MachineOSBuilding, apihelpers.MachineOSBuildRunningConditions()
+	}
+	if job.Status.Succeeded > 0 {
+		return mcfgv1.MachineOSBuildSucceeded, apihelpers.MachineOSBuildSucceededConditions()
+	}
+	// Only return failed if there have been 4 pod failures as the backoffLimit is set to 3
+	if job.Status.Failed > constants.JobMaxRetries {
+		return mcfgv1.MachineOSBuildFailed, apihelpers.MachineOSBuildFailedConditions()
+
+	}
+
+	return "", apihelpers.MachineOSBuildInitialConditions()
 }
