@@ -851,6 +851,13 @@ func newMachineConfig(name, pool string) *mcfgv1.MachineConfig {
 	return helpers.NewMachineConfig(name, helpers.MCLabelForRole(pool), "", []ign3types.File{file})
 }
 
+// newMachineConfigWithExtensions returns the same base MC, but adds the given extensions to trigger an image rebuild
+func newMachineConfigTriggersImageRebuild(name, pool string, exts []string) *mcfgv1.MachineConfig {
+	mc := newMachineConfig(name, pool)
+	mc.Spec.Extensions = append(mc.Spec.Extensions, exts...)
+	return mc
+}
+
 // Gets an override image pullspec for TestGracefulBuildFailureRecovery. We
 // override this option to produce a faster test failure since the image we
 // select will both be smaller than the OS image as well as not contain the

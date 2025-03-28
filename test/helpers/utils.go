@@ -901,8 +901,18 @@ func getRPMOStreeStatusForNode(cs *framework.ClientSet, node corev1.Node) (*rpmo
 
 // Gets the currently booted rpmostree deployment for a given node.
 func getBootedRPMOstreeDeployment(cs *framework.ClientSet, node corev1.Node) (*rpmostreeclient.Deployment, error) {
-	status, err := getRPMOStreeStatusForNode(cs, node)
-	if err != nil {
+	var status *rpmostreeclient.Status
+
+	backoff := wait.Backoff{Duration: 10 * time.Second, Steps: 36} // ~6 min
+	// retry until rpm-ostree status succeeds
+	if err := wait.ExponentialBackoff(backoff, func() (bool, error) {
+		var err error
+		status, err = getRPMOStreeStatusForNode(cs, node)
+		if err != nil {
+			return false, nil
+		}
+		return true, nil
+	}); err != nil {
 		return nil, fmt.Errorf("could not get rpm-ostree status for node %s: %w", node.Name, err)
 	}
 

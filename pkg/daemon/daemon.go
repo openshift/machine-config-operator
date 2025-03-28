@@ -2572,50 +2572,69 @@ func (dn *Daemon) triggerUpdate(currentConfig, desiredConfig *mcfgv1.MachineConf
 		return err
 	}
 
-	// If both of the image annotations are empty, this is a regular MachineConfig update.
-	if desiredImage == "" && currentImage == "" {
-		return dn.triggerUpdateWithMachineConfig(currentConfig, desiredConfig, true)
+	// This may only be necessary on the `dn.triggerUpdateWithMachineConfig()`
+	// path, but it shouldn't cause problems here.
+	currentConfig, desiredConfig, err := dn.getCurrentAndDesiredConfigsIfNotSet(currentConfig, desiredConfig)
+	if err != nil {
+		return err
 	}
+
+	oldConfig := embedOCLImageInMachineConfig(currentImage, currentConfig)
+	newConfig := embedOCLImageInMachineConfig(desiredImage, desiredConfig)
 
 	// Shut down the Config Drift Monitor since we'll be performing an update
 	// and the config will "drift" while the update is occurring.
 	dn.stopConfigDriftMonitor()
 
-	klog.Infof("Performing layered OS update")
-	return dn.updateOnClusterLayering(currentConfig, desiredConfig, currentImage, desiredImage, true)
+	klog.Infof("Triggering layered OS update")
+	return dn.update(oldConfig, newConfig, true, false)
 }
 
-// triggerUpdateWithMachineConfig starts the update. It queries the cluster for
-// the current and desired config if they weren't passed.
-func (dn *Daemon) triggerUpdateWithMachineConfig(currentConfig, desiredConfig *mcfgv1.MachineConfig, skipCertificateWrite bool) error {
-	if currentConfig == nil {
-		ccAnnotation, err := getNodeAnnotation(dn.node, constants.CurrentMachineConfigAnnotationKey)
-		if err != nil {
-			return err
-		}
-		currentConfig, err = dn.mcLister.Get(ccAnnotation)
-		if err != nil {
-			return maybeAddMachineConfigInfo(ccAnnotation, err)
-		}
+// We might be able to drop this method entirely since I'm not sure if it's actually needed.
+func (dn *Daemon) triggerUpdateWithMachineConfig(currentConfig, desiredConfig *mcfgv1.MachineConfig, _ bool) error {
+	return dn.triggerUpdate(currentConfig, desiredConfig, "", "")
+}
+
+// Queries the cluster for the current and desired configs if they are not set.
+func (dn *Daemon) getCurrentAndDesiredConfigsIfNotSet(currentConfig, desiredConfig *mcfgv1.MachineConfig) (*mcfgv1.MachineConfig, *mcfgv1.MachineConfig, error) {
+	if currentConfig != nil && desiredConfig != nil {
+		return currentConfig, desiredConfig, nil
 	}
 
-	if desiredConfig == nil {
-		dcAnnotation, err := getNodeAnnotation(dn.node, constants.DesiredMachineConfigAnnotationKey)
-		if err != nil {
-			return err
-		}
-		desiredConfig, err = dn.mcLister.Get(dcAnnotation)
-		if err != nil {
-			return maybeAddMachineConfigInfo(dcAnnotation, err)
-		}
+	var err error
+	currentConfig, err = dn.getMachineConfigFromClusterIfNotSet(currentConfig, constants.CurrentMachineConfigAnnotationKey)
+	if err != nil {
+		return nil, nil, fmt.Errorf("cannot retrieve current MachineConfig from cluster: %w", err)
 	}
 
-	// Shut down the Config Drift Monitor since we'll be performing an update
-	// and the config will "drift" while the update is occurring.
-	dn.stopConfigDriftMonitor()
+	desiredConfig, err = dn.getMachineConfigFromClusterIfNotSet(desiredConfig, constants.DesiredMachineConfigAnnotationKey)
+	if err != nil {
+		return nil, nil, fmt.Errorf("cannot retrieve desired MachineConfig from cluster: %w", err)
+	}
 
-	// run the update process. this function doesn't currently return.
-	return dn.update(currentConfig, desiredConfig, skipCertificateWrite, false)
+	return currentConfig, desiredConfig, nil
+}
+
+// Queries the cluster for the given MachineConfig annotation, if not set.
+func (dn *Daemon) getMachineConfigFromClusterIfNotSet(mc *mcfgv1.MachineConfig, anno string) (*mcfgv1.MachineConfig, error) {
+	if mc != nil {
+		return mc, nil
+	}
+
+	if anno == "" {
+		return nil, fmt.Errorf("machineconfig is nil and annotation was not provided")
+	}
+
+	ccAnnotation, err := getNodeAnnotation(dn.node, anno)
+	if err != nil {
+		return nil, err
+	}
+	mc, err = dn.mcLister.Get(ccAnnotation)
+	if err != nil {
+		return nil, maybeAddMachineConfigInfo(ccAnnotation, err)
+	}
+
+	return mc, nil
 }
 
 // validateKernelArguments checks that the current boot has all arguments specified
