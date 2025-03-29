@@ -16,6 +16,7 @@ import (
 const (
 	BaseImagePullSecretName  string = "base-image-pull-secret"
 	finalImagePushSecretName string = "final-image-push-secret"
+	JobUID                   string = "bfc35cd0f874c9bfdc586e6ba39f1896"
 )
 
 // Provides consistently instantiated objects for use in a given test.
@@ -100,6 +101,9 @@ func NewObjectBuildersForTest(poolName string) ObjectBuildersForTest {
 			constants.TargetMachineConfigPoolLabelKey: poolName,
 			constants.RenderedMachineConfigLabelKey:   renderedConfigName,
 			constants.MachineOSConfigNameLabelKey:     moscName,
+		}).
+		WithAnnotations(map[string]string{
+			constants.JobUIDAnnotationKey: JobUID,
 		})
 
 	return ObjectBuildersForTest{
