@@ -10,7 +10,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
 
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	fakemco "github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
 	mcfginformers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
 	"github.com/openshift/machine-config-operator/test/helpers"
@@ -66,7 +65,7 @@ func TestSyncHandler(t *testing.T) {
 			fakeMCOClient := fakemco.NewSimpleClientset(tt.machineConfigPool)
 			sharedInformers := mcfginformers.NewSharedInformerFactory(fakeMCOClient, noResyncPeriodFunc())
 			mcpInformer := sharedInformers.Machineconfiguration().V1().MachineConfigPools()
-			imageSetInformer := sharedInformers.Machineconfiguration().V1alpha1().PinnedImageSets()
+			imageSetInformer := sharedInformers.Machineconfiguration().V1().PinnedImageSets()
 
 			sharedInformers.Start(ctx.Done())
 			sharedInformers.WaitForCacheSync(ctx.Done())
@@ -93,16 +92,16 @@ func TestSyncHandler(t *testing.T) {
 	}
 }
 
-func fakePinnedImageSet(name, image string, labels map[string]string) *mcfgv1alpha1.PinnedImageSet {
-	return &mcfgv1alpha1.PinnedImageSet{
+func fakePinnedImageSet(name, image string, labels map[string]string) *mcfgv1.PinnedImageSet {
+	return &mcfgv1.PinnedImageSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   name,
 			Labels: labels,
 		},
-		Spec: mcfgv1alpha1.PinnedImageSetSpec{
-			PinnedImages: []mcfgv1alpha1.PinnedImageRef{
+		Spec: mcfgv1.PinnedImageSetSpec{
+			PinnedImages: []mcfgv1.PinnedImageRef{
 				{
-					Name: image,
+					Name: mcfgv1.ImageDigestFormat(image),
 				},
 			},
 		},

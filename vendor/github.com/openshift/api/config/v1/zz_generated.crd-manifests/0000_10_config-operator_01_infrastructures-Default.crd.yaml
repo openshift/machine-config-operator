@@ -1635,8 +1635,11 @@ spec:
                       serviceEndpoints:
                         description: |-
                           serviceEndpoints is a list of custom endpoints which will override the default
-                          service endpoints of an IBM Cloud service. These endpoints are consumed by
-                          components within the cluster to reach the respective IBM Cloud Services.
+                          service endpoints of an IBM service. These endpoints are used by components
+                          within the cluster when trying to reach the IBM Cloud Services that have been
+                          overriden. The CCCMO reads in the IBMCloudPlatformSpec and validates each
+                          endpoint is resolvable. Once validated, the cloud config and IBMCloudPlatformStatus
+                          are updated to reflect the same custom endpoints.
                         items:
                           description: |-
                             IBMCloudServiceEndpoint stores the configuration of a custom url to
@@ -1669,7 +1672,9 @@ spec:
                               description: |-
                                 url is fully qualified URI with scheme https, that overrides the default generated
                                 endpoint for a client.
-                                This must be provided and cannot be empty.
+                                This must be provided and cannot be empty. The path must follow the pattern
+                                /v[0,9]+ or /api/v[0,9]+
+                              maxLength: 300
                               type: string
                               x-kubernetes-validations:
                               - message: url must be a valid absolute URL
