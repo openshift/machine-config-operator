@@ -119,7 +119,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			klog.Infof("FeatureGates initialized: enabled=%v  disabled=%v", enabled, disabled)
 			if fg.Enabled(features.FeatureGatePinnedImages) && fg.Enabled(features.FeatureGateMachineConfigNodes) {
 				pinnedImageSet := pinnedimageset.New(
-					ctrlctx.InformerFactory.Machineconfiguration().V1alpha1().PinnedImageSets(),
+					ctrlctx.InformerFactory.Machineconfiguration().V1().PinnedImageSets(),
 					ctrlctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
 					ctrlctx.ClientBuilder.KubeClientOrDie("pinned-image-set-controller"),
 					ctrlctx.ClientBuilder.MachineConfigClientOrDie("pinned-image-set-controller"),

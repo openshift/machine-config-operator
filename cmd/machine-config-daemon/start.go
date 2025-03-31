@@ -225,7 +225,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 					startOpts.nodeName,
 					criClient,
 					ctrlctx.ClientBuilder.MachineConfigClientOrDie(componentName),
-					ctrlctx.InformerFactory.Machineconfiguration().V1alpha1().PinnedImageSets(),
+					ctrlctx.InformerFactory.Machineconfiguration().V1().PinnedImageSets(),
 					ctrlctx.KubeInformerFactory.Core().V1().Nodes(),
 					ctrlctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
 					resource.MustParse(constants.MinFreeStorageAfterPrefetch),
