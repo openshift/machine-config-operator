@@ -427,6 +427,10 @@ func (b *buildReconciler) prepareContainerConfig(ctx context.Context, desiredMC 
 		return "", fmt.Errorf("error creating container config: %w", err)
 	}
 
+	if err := ctrlcommon.ValidateContainerConfig(containerMC); err != nil {
+		return "", fmt.Errorf("invalid container config: %w", err)
+	}
+
 	return containerMC.Name, nil
 }
 
@@ -543,32 +547,45 @@ func (b *buildReconciler) createNewMachineOSBuildOrReuseExisting(ctx context.Con
 		return fmt.Errorf("could not get OSImageURLConfig: %w", err)
 	}
 
+	// var containerName string
+	// if mcp.Spec.Configuration.Name != "" {
+	// 	containerName, err = b.prepareContainerConfigForMOSC(ctx, mosc, mcp.Name)
+	// 	if err != nil {
+	// 		return fmt.Errorf("error preparing container config: %w", err)
+	// 	}
+	// } else {
+	// 	klog.Warningf("No rendered config for pool %s - skipping container config", mcp.Name)
+	// }
+
+	// Generate container config
+	containerName, err := b.prepareContainerConfigForMOSC(ctx, mosc, mcp.Name)
+	if err != nil {
+		return fmt.Errorf("error preparing container config: %w", err)
+	}
+
+	// Get container MC object
+	containerMC, err := b.machineConfigLister.Get(containerName)
+	if err != nil {
+		return fmt.Errorf("error getting container MC %s: %w", containerName, err)
+	}
+
 	// Construct a new MachineOSBuild object which has the hashed name attached
 	// to it.
 	mosb, err := buildrequest.NewMachineOSBuild(buildrequest.MachineOSBuildOpts{
 		MachineOSConfig:   mosc,
 		MachineConfigPool: mcp,
 		OSImageURLConfig:  osImageURLs,
+		MachineConfig:     containerMC,
 	})
 
 	if err != nil {
 		return fmt.Errorf("could not instantiate new MachineOSBuild: %w", err)
 	}
 
-	var containerName string
-	if mcp.Spec.Configuration.Name != "" {
-		containerName, err = b.prepareContainerConfigForMOSC(ctx, mosc, mcp.Name)
-		if err != nil {
-			return fmt.Errorf("error preparing container config: %w", err)
-		}
-		metav1.SetMetaDataAnnotation(&mosb.ObjectMeta, "mco.openshift.io/container-config", containerName)
-	} else {
-		klog.Warningf("No rendered config for pool %s - skipping container config", mcp.Name)
-	}
-
 	// Add container-config annotation
 	metav1.SetMetaDataAnnotation(&mosb.ObjectMeta, ctrlcommon.GeneratedByControllerVersionAnnotationKey, version.Hash)
 	metav1.SetMetaDataAnnotation(&mosb.ObjectMeta, ctrlcommon.ReleaseImageVersionAnnotationKey, osImageURLs.ReleaseVersion)
+	metav1.SetMetaDataAnnotation(&mosb.ObjectMeta, ctrlcommon.ContainerConfigAnnotation, containerName)
 
 	// Set owner reference of the machineOSBuild to the machineOSConfig that created this
 	oref := metav1.NewControllerRef(mosc, mcfgv1.SchemeGroupVersion.WithKind("MachineOSConfig"))

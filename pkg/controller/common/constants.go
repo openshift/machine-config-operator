@@ -72,11 +72,16 @@ const (
 	// MachineConfigPoolWorker is the MachineConfigPool name given to the worker
 	MachineConfigPoolWorker = "worker"
 
-	// LayeringEnabledPoolLabel is the label that enables the "layered" workflow path for a pool.
+	// LayeringEnabledPoolLabel is the label that enables the "layered" workflow path for a pool
 	LayeringEnabledPoolLabel = "machineconfiguration.openshift.io/layering-enabled"
 
+	// ContainerBuildAnnotationKey is used to mark MachineConfigs created for container builds
 	ContainerBuildAnnotationKey = "machineconfiguration.openshift.io/container-build"
 
+	// ContainerConfigAnnotation is used to mark MachineConfigs created by container builds
+	ContainerConfigAnnotation = "machineconfiguration.openshift.io/container-config"
+
+	// Triggers pool-wide image rebuilds
 	RebuildPoolLabel = "machineconfiguration.openshift.io/rebuildImage"
 
 	// ExperimentalNewestLayeredImageEquivalentConfigAnnotationKey is the annotation that signifies which rendered config

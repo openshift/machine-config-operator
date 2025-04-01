@@ -43,11 +43,12 @@ type fixture struct {
 
 	client *fake.Clientset
 
-	mcpLister []*mcfgv1.MachineConfigPool
-	mcLister  []*mcfgv1.MachineConfig
-	ccLister  []*mcfgv1.ControllerConfig
-	crcLister []*mcfgv1.ContainerRuntimeConfig
-	mckLister []*mcfgv1.KubeletConfig
+	mcpLister  []*mcfgv1.MachineConfigPool
+	mcLister   []*mcfgv1.MachineConfig
+	ccLister   []*mcfgv1.ControllerConfig
+	crcLister  []*mcfgv1.ContainerRuntimeConfig
+	mckLister  []*mcfgv1.KubeletConfig
+	moscLister []*mcfgv1.MachineOSConfig
 
 	actions []core.Action
 
@@ -101,6 +102,10 @@ func (f *fixture) newController() *Controller {
 
 	for _, m := range f.mckLister {
 		i.Machineconfiguration().V1().KubeletConfigs().Informer().GetIndexer().Add(m)
+	}
+
+	for _, m := range f.moscLister {
+		i.Machineconfiguration().V1().MachineOSConfigs().Informer().GetIndexer().Add(m)
 	}
 
 	return c
