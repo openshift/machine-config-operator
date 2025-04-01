@@ -188,10 +188,15 @@ func (ctrl *Controller) addMachineConfig(obj interface{}) {
 		return
 	}
 
+	if err := ctrlcommon.ValidateContainerConfig(mc); err != nil {
+		klog.V(4).Infof("Container-config passes validation")
+		return
+	}
+
 	controllerRef := metav1.GetControllerOf(mc)
 	if controllerRef != nil {
 		if pool := ctrl.resolveControllerRef(controllerRef); pool != nil {
-			klog.V(4).Infof("MachineConfig %s added", mc.Name)
+			klog.Infof("MachineConfig %s added", mc.Name)
 			ctrl.enqueueMachineConfigPool(pool)
 			return
 		}
@@ -203,7 +208,7 @@ func (ctrl *Controller) addMachineConfig(obj interface{}) {
 		return
 	}
 
-	klog.V(4).Infof("MachineConfig %s added", mc.Name)
+	klog.Infof("MachineConfig %s added", mc.Name)
 	for _, p := range pools {
 		ctrl.enqueueMachineConfigPool(p)
 	}
@@ -212,6 +217,14 @@ func (ctrl *Controller) addMachineConfig(obj interface{}) {
 func (ctrl *Controller) updateMachineConfig(old, cur interface{}) {
 	oldMC := old.(*mcfgv1.MachineConfig)
 	curMC := cur.(*mcfgv1.MachineConfig)
+
+	errOld := ctrlcommon.ValidateContainerConfig(oldMC)
+	errNew := ctrlcommon.ValidateContainerConfig(curMC)
+
+	if errOld == nil && errNew == nil {
+		klog.Infof("Skipping update for container-config: both old MC %q and new MC %q are managed by a MachineOSConfig", oldMC.Name, curMC.Name)
+		return
+	}
 
 	curControllerRef := metav1.GetControllerOf(curMC)
 	oldControllerRef := metav1.GetControllerOf(oldMC)
@@ -257,6 +270,11 @@ func (ctrl *Controller) deleteMachineConfig(obj interface{}) {
 		}
 	}
 
+	if err := ctrlcommon.ValidateContainerConfig(mc); err != nil {
+		klog.Infof("isContainerConfig falls through")
+		return
+	}
+
 	controllerRef := metav1.GetControllerOf(mc)
 	if controllerRef != nil {
 		if pool := ctrl.resolveControllerRef(controllerRef); pool != nil {
@@ -276,6 +294,27 @@ func (ctrl *Controller) deleteMachineConfig(obj interface{}) {
 	for _, p := range pools {
 		ctrl.enqueueMachineConfigPool(p)
 	}
+}
+
+// resolveControllerRefOrAnnotation resolves the controller reference to a MCP
+func (ctrl *Controller) resolveControllerRefOrAnnotation(config *mcfgv1.MachineConfig) *mcfgv1.MachineConfigPool {
+	// First check for pool name annotation
+	if poolName, ok := config.Annotations[ctrlcommon.MachineConfigRoleLabel]; ok {
+		pool, err := ctrl.mcpLister.Get(poolName)
+		if err == nil {
+			klog.Infof("Resolved pool %s via annotation for config %s", poolName, config.Name)
+			return pool
+		}
+		klog.Warningf("Annotation references missing pool %s for config %s", poolName, config.Name)
+	}
+
+	controllerRef := metav1.GetControllerOf(config)
+	if controllerRef == nil {
+		klog.Infof("No controller ref or annotation found for config %s", config.Name)
+		return nil
+	}
+
+	return ctrl.resolveControllerRef(controllerRef)
 }
 
 func (ctrl *Controller) resolveControllerRef(controllerRef *metav1.OwnerReference) *mcfgv1.MachineConfigPool {
@@ -457,10 +496,13 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 
 	filteredMcs := make([]*mcfgv1.MachineConfig, 0, len(mcs))
 	for _, mc := range mcs {
-		// Only skip container-build configs
+
 		if _, ok := mc.Annotations[ctrlcommon.ContainerBuildAnnotationKey]; ok {
-			continue
+			if err := ctrlcommon.ValidateContainerConfig(mc); err == nil {
+				continue
+			}
 		}
+
 		filteredMcs = append(filteredMcs, mc)
 	}
 	mcs = filteredMcs

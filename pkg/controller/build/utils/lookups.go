@@ -6,7 +6,9 @@ import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+
 	"k8s.io/apimachinery/pkg/labels"
 )
 
@@ -146,13 +148,13 @@ func GetMachineOSConfigForMachineOSBuild(mosb *mcfgv1.MachineOSBuild, listers *L
 }
 
 // Gets the MachineOSBuild for a given MachineConfigPool.
-func GetMachineOSBuildForMachineConfigPool(mcp *mcfgv1.MachineConfigPool, listers *Listers) (*mcfgv1.MachineOSBuild, error) {
+func GetMachineOSBuildForMachineConfigPool(mcp *mcfgv1.MachineConfigPool, listers *Listers, mc *mcfgv1.MachineConfig) (*mcfgv1.MachineOSBuild, error) {
 	mosc, err := GetMachineOSConfigForMachineConfigPool(mcp, listers)
 	if err != nil {
 		return nil, err
 	}
 
-	return getMachineOSBuildForMachineConfigPoolAndMachineOSConfig(mcp, mosc, listers)
+	return getMachineOSBuildForMachineConfigPoolAndMachineOSConfig(mcp, mosc, listers, mc)
 }
 
 // Gets the MachineOSBuild which matches a given image pullspec.
@@ -177,13 +179,13 @@ func GetMachineOSBuildForImagePullspec(pullspec string, listers *Listers) (*mcfg
 }
 
 // Gets both the MachineOSConfig and the MachineOSBuild for a given MachineConfigPool.
-func GetMachineOSConfigAndMachineOSBuildForMachineConfigPool(mcp *mcfgv1.MachineConfigPool, listers *Listers) (*mcfgv1.MachineOSConfig, *mcfgv1.MachineOSBuild, error) {
+func GetMachineOSConfigAndMachineOSBuildForMachineConfigPool(mcp *mcfgv1.MachineConfigPool, listers *Listers, mc *mcfgv1.MachineConfig) (*mcfgv1.MachineOSConfig, *mcfgv1.MachineOSBuild, error) {
 	mosc, err := GetMachineOSConfigForMachineConfigPoolStrict(mcp, listers)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	mosb, err := getMachineOSBuildForMachineConfigPoolAndMachineOSConfig(mcp, mosc, listers)
+	mosb, err := getMachineOSBuildForMachineConfigPoolAndMachineOSConfig(mcp, mosc, listers, mc)
 	if err != nil {
 		return mosc, nil, err
 	}
@@ -192,8 +194,12 @@ func GetMachineOSConfigAndMachineOSBuildForMachineConfigPool(mcp *mcfgv1.Machine
 }
 
 // Gets the MachineOSBuild that belongs to the given MachineConfigPool and MachineOSConfig. Ensures that only a single MachineOSBuild is returned.
-func getMachineOSBuildForMachineConfigPoolAndMachineOSConfig(mcp *mcfgv1.MachineConfigPool, mosc *mcfgv1.MachineOSConfig, listers *Listers) (*mcfgv1.MachineOSBuild, error) {
-	sel := MachineOSBuildSelector(mosc, mcp)
+func getMachineOSBuildForMachineConfigPoolAndMachineOSConfig(mcp *mcfgv1.MachineConfigPool, mosc *mcfgv1.MachineOSConfig, listers *Listers, mc *mcfgv1.MachineConfig) (*mcfgv1.MachineOSBuild, error) {
+	if err := ctrlcommon.ValidateContainerConfig(mc); err != nil {
+		return nil, fmt.Errorf("invalid machineconfig %s: %w", mc.Name, err)
+	}
+
+	sel := MachineOSBuildSelector(mosc, mcp, mc)
 
 	mosbList, err := listers.listMachineOSBuilds(sel)
 	if err != nil {

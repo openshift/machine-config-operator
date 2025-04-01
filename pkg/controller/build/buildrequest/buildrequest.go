@@ -156,6 +156,11 @@ func (br buildRequestImpl) containerfileToConfigMap() (*corev1.ConfigMap, error)
 
 // Stuffs a given MachineConfig into a ConfigMap, gzipping and base64-encoding it.
 func (br buildRequestImpl) machineconfigToConfigMap(mc *mcfgv1.MachineConfig) (*corev1.ConfigMap, error) {
+
+	if err := ctrlcommon.ValidateContainerConfig(mc); err != nil {
+		return nil, fmt.Errorf("invalid container-config: %w", err)
+	}
+
 	out, err := json.Marshal(mc)
 	if err != nil {
 		return nil, fmt.Errorf("could not encode MachineConfig %s: %w", mc.Name, err)

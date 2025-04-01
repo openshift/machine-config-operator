@@ -34,6 +34,7 @@ type MachineOSBuildOpts struct {
 	MachineOSConfig   *mcfgv1.MachineOSConfig
 	MachineConfigPool *mcfgv1.MachineConfigPool
 	OSImageURLConfig  *ctrlcommon.OSImageURLConfig
+	MachineConfig     *mcfgv1.MachineConfig
 }
 
 // Validates that the required options are provided.
@@ -51,7 +52,11 @@ func (m *MachineOSBuildOpts) validateForHash() error {
 	}
 
 	if m.OSImageURLConfig == nil {
-		return fmt.Errorf("misssing OSImageURLConfig")
+		return fmt.Errorf("missing OSImageURLConfig")
+	}
+
+	if m.MachineConfig == nil {
+		return fmt.Errorf("missing MachineConfig")
 	}
 
 	return nil
@@ -71,6 +76,8 @@ func (m *MachineOSBuildOpts) objectsForHash() []interface{} {
 		m.MachineOSConfig.Spec,
 		// The complete OSImageURLConfig object.
 		m.OSImageURLConfig,
+		// The MachineConfig Spec field.
+		m.MachineConfig.Spec,
 	}
 
 	return out
@@ -119,19 +126,28 @@ func (m *MachineOSBuildOpts) getHashedName() (string, error) {
 
 // Constructs the MachineOSBuildOpts by retrieving the OSImageURLConfig from
 // the API server.
-func NewMachineOSBuildOpts(ctx context.Context, kubeclient clientset.Interface, mosc *mcfgv1.MachineOSConfig, mcp *mcfgv1.MachineConfigPool) (MachineOSBuildOpts, error) {
+func NewMachineOSBuildOpts(ctx context.Context, kubeclient clientset.Interface, mosc *mcfgv1.MachineOSConfig, mcp *mcfgv1.MachineConfigPool, mc *mcfgv1.MachineConfig) (MachineOSBuildOpts, error) {
 	// TODO: Consider an implementation that uses listers instead of API clients
 	// just to cut down on API server traffic.
+
 	osImageURLs, err := ctrlcommon.GetOSImageURLConfig(ctx, kubeclient)
 	if err != nil {
 		return MachineOSBuildOpts{}, fmt.Errorf("could not get OSImageURLConfig: %w", err)
 	}
 
-	return MachineOSBuildOpts{
+	opts := MachineOSBuildOpts{
 		MachineOSConfig:   mosc,
 		MachineConfigPool: mcp,
 		OSImageURLConfig:  osImageURLs,
-	}, nil
+		MachineConfig:     mc,
+	}
+
+	if err := ctrlcommon.ValidateContainerConfig(mc); err != nil {
+		return MachineOSBuildOpts{}, fmt.Errorf("invalid container config: %w", err)
+	}
+
+	return opts, nil
+
 }
 
 // Constructs a new MachineOSBuild object or panics trying. Useful for testing
@@ -148,8 +164,8 @@ func NewMachineOSBuildOrDie(opts MachineOSBuildOpts) *mcfgv1.MachineOSBuild {
 
 // Retrieves the MachineOSBuildOpts from the API and constructs a new
 // MachineOSBuild object or panics trying. Useful for testing scenarios.
-func NewMachineOSBuildFromAPIOrDie(ctx context.Context, kubeclient clientset.Interface, mosc *mcfgv1.MachineOSConfig, mcp *mcfgv1.MachineConfigPool) *mcfgv1.MachineOSBuild {
-	mosb, err := NewMachineOSBuildFromAPI(ctx, kubeclient, mosc, mcp)
+func NewMachineOSBuildFromAPIOrDie(ctx context.Context, kubeclient clientset.Interface, mosc *mcfgv1.MachineOSConfig, mcp *mcfgv1.MachineConfigPool, mc *mcfgv1.MachineConfig) *mcfgv1.MachineOSBuild {
+	mosb, err := NewMachineOSBuildFromAPI(ctx, kubeclient, mosc, mcp, mc)
 
 	if err != nil {
 		panic(err)
@@ -160,8 +176,8 @@ func NewMachineOSBuildFromAPIOrDie(ctx context.Context, kubeclient clientset.Int
 
 // Retrieves the MachineOSBuildOpts from the API and constructs a new
 // MachineOSBuild object.
-func NewMachineOSBuildFromAPI(ctx context.Context, kubeclient clientset.Interface, mosc *mcfgv1.MachineOSConfig, mcp *mcfgv1.MachineConfigPool) (*mcfgv1.MachineOSBuild, error) {
-	opts, err := NewMachineOSBuildOpts(ctx, kubeclient, mosc, mcp)
+func NewMachineOSBuildFromAPI(ctx context.Context, kubeclient clientset.Interface, mosc *mcfgv1.MachineOSConfig, mcp *mcfgv1.MachineConfigPool, mc *mcfgv1.MachineConfig) (*mcfgv1.MachineOSBuild, error) {
+	opts, err := NewMachineOSBuildOpts(ctx, kubeclient, mosc, mcp, mc)
 
 	if err != nil {
 		return nil, fmt.Errorf("could not get MachineOSBuildOpts: %w", err)
@@ -197,16 +213,12 @@ func NewMachineOSBuild(opts MachineOSBuildOpts) (*mcfgv1.MachineOSBuild, error) 
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   mosbName,
-			Labels: utils.GetMachineOSBuildLabels(opts.MachineOSConfig, opts.MachineConfigPool),
-			// Set finalzer on MOSB to ensure all it dependents are deleted before the MOSB
-			Finalizers: []string{
-				metav1.FinalizerDeleteDependents,
-			},
+			Labels: utils.GetMachineOSBuildLabels(opts.MachineOSConfig, opts.MachineConfigPool, opts.MachineConfig),
 		},
 		Spec: mcfgv1.MachineOSBuildSpec{
 			RenderedImagePushSpec: mcfgv1.ImageTagFormat(taggedRef.String()),
 			MachineConfig: mcfgv1.MachineConfigReference{
-				Name: opts.MachineConfigPool.Spec.Configuration.Name,
+				Name: opts.MachineConfig.Name,
 			},
 			MachineOSConfig: mcfgv1.MachineOSConfigReference{
 				Name: opts.MachineOSConfig.Name,

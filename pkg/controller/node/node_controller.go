@@ -914,6 +914,7 @@ func (ctrl *Controller) getConfigAndBuild(pool *mcfgv1.MachineConfigPool) (*mcfg
 	// reduce the impact on the API server.
 	var ourConfig *mcfgv1.MachineOSConfig
 	var ourBuild *mcfgv1.MachineOSBuild
+
 	configList, err := ctrl.client.MachineconfigurationV1().MachineOSConfigs().List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		return nil, nil, err
@@ -936,15 +937,45 @@ func (ctrl *Controller) getConfigAndBuild(pool *mcfgv1.MachineConfigPool) (*mcfg
 		return nil, nil, err
 	}
 
+	containerMCName, err := ctrl.generateAndValidateContainerConfig(pool)
+	if err != nil {
+		return nil, nil, fmt.Errorf("container config validation failed: %w", err)
+	}
+
 	for _, build := range buildList.Items {
 		build := build
-		if build.Spec.MachineOSConfig.Name == ourConfig.Name && build.Spec.MachineConfig.Name == pool.Spec.Configuration.Name {
+		if build.Spec.MachineOSConfig.Name == ourConfig.Name && build.Spec.MachineConfig.Name == containerMCName {
 			ourBuild = &build
 			break
 		}
 	}
 
 	return ourConfig, ourBuild, nil
+}
+
+func (ctrl *Controller) generateAndValidateContainerConfig(pool *mcfgv1.MachineConfigPool) (string, error) {
+	// Get current rendered MachineConfig
+	renderedMC, err := ctrl.mcLister.Get(pool.Spec.Configuration.Name)
+	if err != nil {
+		return "", fmt.Errorf("error getting rendered MC %s: %w", pool.Spec.Configuration.Name, err)
+	}
+
+	// Get controller config
+	cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
+	if err != nil {
+		return "", fmt.Errorf("could not get ControllerConfig: %w", err)
+	}
+
+	// Generate container config
+	containerMCTemplate, err := ctrlcommon.GenerateContainerConfig(renderedMC, cc, pool.Name)
+	if err != nil {
+		return "", fmt.Errorf("failed to generate container config: %w", err)
+	}
+	containerMCName := containerMCTemplate.Name
+
+	klog.V(4).Infof("Container config name is %s", containerMCName)
+
+	return containerMCName, nil
 }
 
 func (ctrl *Controller) canLayeredPoolContinue(pool *mcfgv1.MachineConfigPool, mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild) (string, bool, error) {
@@ -990,9 +1021,6 @@ func (ctrl *Controller) canLayeredPoolContinue(pool *mcfgv1.MachineConfigPool, m
 	}
 }
 
-// syncMachineConfigPool will sync the machineconfig pool with the given key.
-// This function is not meant to be invoked concurrently with the same key.
-//
 //nolint:gocyclo
 func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	startTime := time.Now()
@@ -1258,6 +1286,11 @@ func (ctrl *Controller) updateCandidateNode(mosc *mcfgv1.MachineOSConfig, mosb *
 // getAllCandidateMachines returns all possible nodes which can be updated to the target config, along with a maximum
 // capacity.  It is the reponsibility of the caller to choose a subset of the nodes given the capacity.
 func getAllCandidateMachines(layered bool, config *mcfgv1.MachineOSConfig, build *mcfgv1.MachineOSBuild, pool *mcfgv1.MachineConfigPool, nodesInPool []*corev1.Node, maxUnavailable int) ([]*corev1.Node, uint) {
+	if layered && (config == nil || build == nil) {
+		klog.Warningf("Layered pool %s has nil config (%v) or build (%v)", pool.Name, config, build)
+		return nil, 0
+	}
+
 	unavail := getUnavailableMachines(nodesInPool, pool, layered, build)
 	if len(unavail) >= maxUnavailable {
 		klog.V(4).Infof("getAllCandidateMachines: No capacity left for pool %s (unavail=%d >= maxUnavailable=%d)",

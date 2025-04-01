@@ -11,6 +11,7 @@ const (
 	EphemeralBuildObjectLabelKey    = "machineconfiguration.openshift.io/ephemeral-build-object"
 	RenderedMachineConfigLabelKey   = "machineconfiguration.openshift.io/rendered-machine-config"
 	TargetMachineConfigPoolLabelKey = "machineconfiguration.openshift.io/target-machine-config-pool"
+	ContainerConfigNameLabelKey     = "machineconfiguration.openshift.io/container-config"
 )
 
 // Annotations added to all ephemeral build objects BuildController creates.
