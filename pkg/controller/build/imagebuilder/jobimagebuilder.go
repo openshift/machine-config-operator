@@ -104,6 +104,16 @@ func (j *jobImageBuilder) start(ctx context.Context) (*batchv1.Job, error) {
 	if err == nil {
 		klog.Infof("Build job %q created for MachineOSBuild %q", bj.Name, mosbName)
 
+		// Set the job UID as an annotation in the MOSB
+		if j.mosb != nil {
+			metav1.SetMetaDataAnnotation(&j.mosb.ObjectMeta, constants.JobUIDAnnotationKey, string(bj.UID))
+			// Update the MOSB with the new annotations
+			_, err := j.mcfgclient.MachineconfigurationV1().MachineOSBuilds().Update(ctx, j.mosb, metav1.UpdateOptions{})
+			if err != nil && !k8serrors.IsNotFound(err) {
+				return nil, fmt.Errorf("could not update MachineOSBuild %s with job UID annotation: %w", mosbName, err)
+			}
+		}
+
 		// Set the owner reference of the configmaps and secrets created to be the Job
 		// Set blockOwnerDeletion and Controller to false as Job ownership doesn't work when set to true
 		oref := metav1.NewControllerRef(bj, batchv1.SchemeGroupVersion.WithKind("Job"))
@@ -192,21 +202,25 @@ func (j *jobImageBuilder) MachineOSBuildStatus(ctx context.Context) (mcfgv1.Mach
 // Gets the build job from either the provided builder (if present) or the API server.
 func (j *jobImageBuilder) getBuildJobFromBuilderOrAPI(ctx context.Context) (*batchv1.Job, error) {
 	if j.builder != nil {
-		klog.V(4).Infof("Using provided build job")
-
 		if err := j.validateBuilderType(j.builder); err != nil {
 			return nil, fmt.Errorf("could not get build job from builder: %w", err)
 		}
 
 		job := j.builder.GetObject().(*batchv1.Job)
-		return job, nil
+
+		// Ensure that the job UID matches the jobUID annotation in the MOSB so that
+		// we know that we are using the correct job to set the status of the MOSB
+		if jobIsForMOSB(job, j.mosb) {
+			klog.V(4).Infof("Using provided build job %s", string(job.UID))
+			return job, nil
+		}
 	}
 
-	klog.V(4).Infof("Using build job from API")
 	job, err := j.getBuildJobStrict(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("could not get build pod from API: %w", err)
+		return nil, fmt.Errorf("could not get build job from API: %w", err)
 	}
+	klog.V(4).Infof("Using build job from API %s", string(job.UID))
 
 	return job, nil
 }
@@ -260,15 +274,22 @@ func (j *jobImageBuilder) Stop(ctx context.Context) error {
 func (j *jobImageBuilder) stop(ctx context.Context) error {
 	mosbName, err := j.getMachineOSBuildName()
 	if err != nil {
-		return fmt.Errorf("could not stop build job: %w", err)
+		return fmt.Errorf("could not get MachineOSBuild name to stop build job: %w", err)
 	}
 
-	buildJobName := j.getBuilderName()
-
+	buildJob, err := j.getBuildJobFromBuilderOrAPI(ctx)
+	if err != nil {
+		return fmt.Errorf("could not get Job to stop build job: %w", err)
+	}
+	// Ensure that the job being deleted is for the MOSB we are currently reconciling
+	if !jobIsForMOSB(buildJob, j.mosb) {
+		klog.Infof("Build job %q with UID %s is not owned by MachineOSBuild %q, will not delete", buildJob.Name, buildJob.UID, mosbName)
+		return nil
+	}
 	propagationPolicy := metav1.DeletePropagationForeground
-	err = j.kubeclient.BatchV1().Jobs(ctrlcommon.MCONamespace).Delete(ctx, buildJobName, metav1.DeleteOptions{PropagationPolicy: &propagationPolicy})
+	err = j.kubeclient.BatchV1().Jobs(ctrlcommon.MCONamespace).Delete(ctx, buildJob.Name, metav1.DeleteOptions{PropagationPolicy: &propagationPolicy})
 	if err == nil {
-		klog.Infof("Deleted build job %s for MachineOSBuild %s", buildJobName, mosbName)
+		klog.Infof("Deleted build job %s for MachineOSBuild %s", buildJob.Name, mosbName)
 		return nil
 	}
 
@@ -276,7 +297,7 @@ func (j *jobImageBuilder) stop(ctx context.Context) error {
 		return nil
 	}
 
-	return fmt.Errorf("could not delete build job %s for MachineOSBuild %s", buildJobName, mosbName)
+	return fmt.Errorf("could not delete build job %s for MachineOSBuild %s", buildJob.Name, mosbName)
 }
 
 // Stops the running build by calling Stop() and also removes all of the
@@ -325,4 +346,17 @@ func MapJobStatusToBuildStatus(job *batchv1.Job) (mcfgv1.BuildProgress, []metav1
 	}
 
 	return "", apihelpers.MachineOSBuildInitialConditions()
+}
+
+// Returns true if the provided job UID matches the job UID annotation in the provided MachineOSBuild
+func jobIsForMOSB(job *batchv1.Job, mosb *mcfgv1.MachineOSBuild) bool {
+	if mosb == nil {
+		return false
+	}
+
+	if string(job.UID) != mosb.GetAnnotations()[constants.JobUIDAnnotationKey] {
+		return false
+	}
+
+	return true
 }

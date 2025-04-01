@@ -330,6 +330,66 @@ func (a *Assertions) MachineOSBuildDoesNotExist(mosb *mcfgv1.MachineOSBuild, msg
 	a.machineOSBuildReachesState(mosb, stateFunc, msgAndArgs...)
 }
 
+// Asserts that a pod has an owner set
+func (a *Assertions) PodHasOwnerSet(podName string, msgAndArgs ...interface{}) {
+	a.t.Helper()
+
+	ctx, cancel := a.getContextAndCancel()
+	defer cancel()
+
+	err := wait.PollUntilContextCancel(ctx, a.getPollInterval(), true, func(ctx context.Context) (bool, error) {
+		pod, err := a.kubeclient.CoreV1().Pods(mcoNamespace).Get(ctx, podName, metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+
+		return len(pod.OwnerReferences) > 0, nil
+	})
+
+	msgAndArgs = prefixMsgAndArgs(fmt.Sprintf("Pod %s did not have owner set", podName), msgAndArgs)
+	require.NoError(a.t, err, msgAndArgs...)
+}
+
+// Asserts that a secret has an owner set
+func (a *Assertions) SecretHasOwnerSet(secretName string, msgAndArgs ...interface{}) {
+	a.t.Helper()
+
+	ctx, cancel := a.getContextAndCancel()
+	defer cancel()
+
+	err := wait.PollUntilContextCancel(ctx, a.getPollInterval(), true, func(ctx context.Context) (bool, error) {
+		secret, err := a.kubeclient.CoreV1().Secrets(mcoNamespace).Get(ctx, secretName, metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+
+		return len(secret.OwnerReferences) > 0, nil
+	})
+
+	msgAndArgs = prefixMsgAndArgs(fmt.Sprintf("Secret %s did not have owner set", secretName), msgAndArgs)
+	require.NoError(a.t, err, msgAndArgs...)
+}
+
+// Asserts that a configmap has an owner set
+func (a *Assertions) ConfigMapHasOwnerSet(cmName string, msgAndArgs ...interface{}) {
+	a.t.Helper()
+
+	ctx, cancel := a.getContextAndCancel()
+	defer cancel()
+
+	err := wait.PollUntilContextCancel(ctx, a.getPollInterval(), true, func(ctx context.Context) (bool, error) {
+		cm, err := a.kubeclient.CoreV1().ConfigMaps(mcoNamespace).Get(ctx, cmName, metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+
+		return len(cm.OwnerReferences) > 0, nil
+	})
+
+	msgAndArgs = prefixMsgAndArgs(fmt.Sprintf("ConfigMap %s did not have owner set", cmName), msgAndArgs)
+	require.NoError(a.t, err, msgAndArgs...)
+}
+
 // Asserts that a Secret reaches the desired state.
 func (a *Assertions) secretReachesState(name string, stateFunc func(*corev1.Secret, error) (bool, error), msgAndArgs ...interface{}) {
 	a.t.Helper()
