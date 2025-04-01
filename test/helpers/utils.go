@@ -30,6 +30,7 @@ import (
 	"github.com/davecgh/go-spew/spew"
 	machineClientv1beta1 "github.com/openshift/client-go/machine/clientset/versioned/typed/machine/v1beta1"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
+	buildConstants "github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/daemon/osrelease"
 	"github.com/openshift/machine-config-operator/test/framework"
@@ -1753,4 +1754,16 @@ func SetContainerfileContentsOnMachineOSConfig(ctx context.Context, t *testing.T
 	require.NoError(t, err)
 
 	return apiMosc
+}
+
+func SetRebuildAnnotationOnMachineOSConfig(ctx context.Context, t *testing.T, mcfgclient mcfgclientset.Interface, mosc *mcfgv1.MachineOSConfig) {
+	t.Helper()
+
+	apiMosc, err := mcfgclient.MachineconfigurationV1().MachineOSConfigs().Get(ctx, mosc.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	apiMosc.Annotations[buildConstants.RebuildMachineOSConfigAnnotationKey] = ""
+
+	_, err = mcfgclient.MachineconfigurationV1().MachineOSConfigs().Update(ctx, apiMosc, metav1.UpdateOptions{})
+	require.NoError(t, err)
 }

@@ -19,6 +19,7 @@ type Builder interface {
 	MachineOSBuild() (string, error)
 	MachineConfigPool() (string, error)
 	RenderedMachineConfig() (string, error)
+	BuilderUID() (string, error)
 	GetObject() metav1.Object
 	metav1.Object
 }

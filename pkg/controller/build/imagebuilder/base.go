@@ -8,6 +8,7 @@ import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/buildrequest"
+	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	batchv1 "k8s.io/api/batch/v1"
@@ -171,7 +172,17 @@ func (b *baseImageBuilder) getMachineOSConfigName() (string, error) {
 		return b.mosc.Name, nil
 	}
 
-	return b.builder.MachineOSBuild()
+	return b.builder.MachineOSConfig()
+}
+
+// Gets the UID of the builder by either checking the MOSB annotation or
+// getting it directly from the Builder object.
+func (b *baseImageBuilder) getBuilderUID() (string, error) {
+	if b.mosb != nil {
+		return b.mosb.GetAnnotations()[constants.JobUIDAnnotationKey], nil
+	}
+
+	return b.builder.BuilderUID()
 }
 
 // Gets the name of the builder execution unit by
