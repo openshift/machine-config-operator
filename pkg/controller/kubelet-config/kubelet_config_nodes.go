@@ -10,7 +10,6 @@ import (
 	osev1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
-	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	corev1 "k8s.io/api/core/v1"
@@ -78,12 +77,6 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 		return err
 	}
 
-	if nodeConfig.Spec.CgroupMode == osev1.CgroupModeV1 {
-		klog.Warningf(cgroupsV1DeprecationMsg)
-		if err := ctrl.syncNodeConfigStatus(nodeConfig); err != nil {
-			return err
-		}
-	}
 	// Fetch the controllerconfig
 	cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
 	if err != nil {
@@ -192,24 +185,6 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 		}
 	}
 	return nil
-}
-
-func (ctrl *Controller) syncNodeConfigStatus(cfg *osev1.Node) error {
-	statusUpdateErr := retry.RetryOnConflict(updateBackoff, func() error {
-		newStatusCondition := apihelpers.NewCondition(cgroupModeCondType, metav1.ConditionTrue, cgroupCondReason, cgroupsV1DeprecationMsg)
-		if len(cfg.Status.Conditions) == 0 || newStatusCondition.Message != cfg.Status.Conditions[len(cfg.Status.Conditions)-1].Message {
-			cfg.Status.Conditions = append(cfg.Status.Conditions, *newStatusCondition)
-		} else if cfg.Status.Conditions[len(cfg.Status.Conditions)-1].Message == newStatusCondition.Message {
-			cfg.Status.Conditions[len(cfg.Status.Conditions)-1] = *newStatusCondition
-		}
-		_, updateErr := ctrl.configClient.ConfigV1().Nodes().UpdateStatus(context.TODO(), cfg, metav1.UpdateOptions{})
-		return updateErr
-	})
-	// If an error occurred in updating the status, log it
-	if statusUpdateErr != nil {
-		klog.Warningf("Unable to update the node config status: %v", statusUpdateErr)
-	}
-	return statusUpdateErr
 }
 
 func (ctrl *Controller) enqueueNodeConfig(nodeConfig *osev1.Node) {
