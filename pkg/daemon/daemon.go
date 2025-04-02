@@ -722,10 +722,10 @@ func (dn *Daemon) syncNode(key string) error {
 	if node.Annotations[constants.MachineConfigDaemonPostConfigAction] == constants.MachineConfigDaemonStateRebooting {
 		klog.Info("Detected Rebooting Annotation, applying MCN.")
 		err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
-			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdatePostActionComplete, Reason: string(mcfgalphav1.MachineConfigNodeUpdateRebooted), Message: "Node has rebooted"},
-			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateRebooted, Reason: fmt.Sprintf("%s%s", string(mcfgalphav1.MachineConfigNodeUpdatePostActionComplete), string(mcfgalphav1.MachineConfigNodeUpdateRebooted)), Message: "Upgrade required a reboot. Completed this as the post update action."},
+			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateRebooted, Reason: string(mcfgalphav1.MachineConfigNodeUpdateRebooted), Message: "Node has rebooted"},
+			nil,
 			metav1.ConditionTrue,
-			metav1.ConditionTrue,
+			metav1.ConditionFalse,
 			node,
 			dn.mcfgClient,
 			dn.featureGatesAccessor,

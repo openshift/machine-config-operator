@@ -631,14 +631,6 @@ func (p *PinnedImageSetManager) updateStatusError(pools []*mcfgv1.MachineConfigP
 		return fmt.Errorf("failed to get image set apply configs: %w", err)
 	}
 
-	var errMsg string
-	if isErrNoSpace(statusErr) {
-		// degrade the pool if there is no space
-		errMsg = fmt.Sprintf("%s %v", degradeMessagePrefix, statusErr)
-	} else {
-		errMsg = statusErr.Error()
-	}
-
 	// Get MCP associated with node
 	pool, err := helpers.GetPrimaryPoolNameForMCN(p.mcpLister, node)
 	if err != nil {
@@ -649,7 +641,7 @@ func (p *PinnedImageSetManager) updateStatusError(pools []*mcfgv1.MachineConfigP
 		&upgrademonitor.Condition{
 			State:   mcfgv1alpha1.MachineConfigNodePinnedImageSetsDegraded,
 			Reason:  "PrefetchFailed",
-			Message: errMsg,
+			Message: "One or more PinnedImageSet is experiencing an error. See PinnedImageSet list for more details",
 		},
 		nil,
 		metav1.ConditionTrue,
@@ -699,7 +691,7 @@ func (p *PinnedImageSetManager) createApplyConfigForImageSet(imageSet *mcfgv1.Pi
 
 	if statusErr != nil {
 		imageSetConfig.LastFailedGeneration = ptr.To(int32(imageSet.GetGeneration()))
-		imageSetConfig.LastFailedGenerationErrors = []string{statusErr.Error()}
+		imageSetConfig.LastFailedGenerationError = ptr.To(statusErr.Error())
 	} else if isCompleted {
 		// only set the current generation if prefetch is complete
 		imageSetConfig.CurrentGeneration = ptr.To(int32(imageSet.GetGeneration()))
@@ -1166,19 +1158,6 @@ func (p *PinnedImageSetManager) getImageSize(ctx context.Context, imageName, aut
 	}
 
 	return totalSize, nil
-}
-
-// getPinnedImageSetSpecForPools returns a list of MachineConfigNodeSpecPinnedImageSet for the given pools.
-func getPinnedImageSetSpecForPools(pools []*mcfgv1.MachineConfigPool) []mcfgv1alpha1.MachineConfigNodeSpecPinnedImageSet {
-	var mcnPinnedImageSetSpec []mcfgv1alpha1.MachineConfigNodeSpecPinnedImageSet
-	for _, pool := range pools {
-		for _, imageSets := range pool.Spec.PinnedImageSets {
-			mcnPinnedImageSetSpec = append(mcnPinnedImageSetSpec, mcfgv1alpha1.MachineConfigNodeSpecPinnedImageSet{
-				Name: imageSets.Name,
-			})
-		}
-	}
-	return mcnPinnedImageSetSpec
 }
 
 // ensurePullImage first checks if the image exists locally and then will attempt to pull
