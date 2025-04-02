@@ -2,7 +2,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    api-approved.openshift.io: https://github.com/openshift/api/pull/1596
+    api-approved.openshift.io: https://github.com/openshift/api/pull/2201
     api.openshift.io/merged-by-featuregates: "true"
     include.release.openshift.io/ibm-cloud-managed: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
@@ -52,10 +52,6 @@ spec:
       name: Resumed
       priority: 1
       type: string
-    - jsonPath: .status.conditions[?(@.type=="UpdateCompatible")].status
-      name: UpdateCompatible
-      priority: 1
-      type: string
     - jsonPath: .status.conditions[?(@.type=="AppliedFilesAndOS")].status
       name: UpdatedFilesAndOS
       priority: 1
@@ -70,10 +66,6 @@ spec:
       type: string
     - jsonPath: .status.conditions[?(@.type=="RebootedNode")].status
       name: RebootedNode
-      priority: 1
-      type: string
-    - jsonPath: .status.conditions[?(@.type=="ReloadedCRIO")].status
-      name: ReloadedCRIO
       priority: 1
       type: string
     - jsonPath: .status.conditions[?(@.type=="Uncordoned")].status
@@ -110,7 +102,7 @@ spec:
               configVersion:
                 description: |-
                   configVersion holds the desired config version for the node targeted by this machine config node resource.
-                  The desired version represents the machine config the node will attempt to update to. This gets set before the machine config operator validates
+                  The desired version represents the machine config the node will attempt to update to and gets set before the machine config operator validates
                   the new machine config against the current machine config.
                 properties:
                   desired:
@@ -119,12 +111,16 @@ spec:
                       This value is set when the machine config pool generates a new version of its rendered configuration.
                       When this value is changed, the machine config daemon starts the node upgrade process.
                       This value gets set in the machine config node spec once the machine config has been targeted for upgrade and before it is validated.
-                      Must be a lowercase RFC-1123 hostname (https://tools.ietf.org/html/rfc1123)
-                      It may consist of only alphanumeric characters, hyphens (-) and periods (.)
-                      and must be at most 253 characters in length.
+                      Must be a lowercase RFC-1123 subdomain name (https://tools.ietf.org/html/rfc1123) consisting
+                      of only lowercase alphanumeric characters, hyphens (-), and periods (.), and must start and end
+                      with an alphanumeric character, and be at most 253 characters in length.
                     maxLength: 253
-                    pattern: ^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])(\.([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9]))*$
                     type: string
+                    x-kubernetes-validations:
+                    - message: a lowercase RFC 1123 subdomain must consist of lower
+                        case alphanumeric characters, '-' or '.', and must start and
+                        end with an alphanumeric character.
+                      rule: '!format.dns1123Subdomain().validate(self).hasValue()'
                 required:
                 - desired
                 type: object
@@ -134,30 +130,42 @@ spec:
                 properties:
                   name:
                     description: |-
-                      name is the object name.
-                      Must be a lowercase RFC-1123 hostname (https://tools.ietf.org/html/rfc1123)
-                      It may consist of only alphanumeric characters, hyphens (-) and periods (.)
-                      and must be at most 253 characters in length.
+                      name is the name of the object being referenced. For example, this can represent a machine
+                      config pool or node name.
+                      Must be a lowercase RFC-1123 subdomain name (https://tools.ietf.org/html/rfc1123) consisting
+                      of only lowercase alphanumeric characters, hyphens (-), and periods (.), and must start and end
+                      with an alphanumeric character, and be at most 253 characters in length.
                     maxLength: 253
-                    pattern: ^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])(\.([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9]))*$
                     type: string
+                    x-kubernetes-validations:
+                    - message: a lowercase RFC 1123 subdomain must consist of lower
+                        case alphanumeric characters, '-' or '.', and must start and
+                        end with an alphanumeric character.
+                      rule: '!format.dns1123Subdomain().validate(self).hasValue()'
                 required:
                 - name
                 type: object
               pinnedImageSets:
-                description: pinnedImageSets holds the desired pinned image sets that
-                  this node should pin and pull.
+                description: pinnedImageSets is a user defined value that holds the
+                  names of the desired image sets that the node should pull and pin.
                 items:
+                  description: |-
+                    MachineConfigNodeSpecPinnedImageSet holds information on the desired pinned image sets that the current observed machine config node
+                    should pin and pull.
                   properties:
                     name:
                       description: |-
                         name is the name of the pinned image set.
-                        Must be a lowercase RFC-1123 hostname (https://tools.ietf.org/html/rfc1123)
-                        It may consist of only alphanumeric characters, hyphens (-) and periods (.)
-                        and must be at most 253 characters in length.
+                        Must be a lowercase RFC-1123 subdomain name (https://tools.ietf.org/html/rfc1123) consisting
+                        of only lowercase alphanumeric characters, hyphens (-), and periods (.), and must start and end
+                        with an alphanumeric character, and be at most 253 characters in length.
                       maxLength: 253
-                      pattern: ^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])(\.([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9]))*$
                       type: string
+                      x-kubernetes-validations:
+                      - message: a lowercase RFC 1123 subdomain must consist of lower
+                          case alphanumeric characters, '-' or '.', and must start
+                          and end with an alphanumeric character.
+                        rule: '!format.dns1123Subdomain().validate(self).hasValue()'
                   required:
                   - name
                   type: object
@@ -173,13 +181,18 @@ spec:
                 properties:
                   name:
                     description: |-
-                      name is the object name.
-                      Must be a lowercase RFC-1123 hostname (https://tools.ietf.org/html/rfc1123)
-                      It may consist of only alphanumeric characters, hyphens (-) and periods (.)
-                      and must be at most 253 characters in length.
+                      name is the name of the object being referenced. For example, this can represent a machine
+                      config pool or node name.
+                      Must be a lowercase RFC-1123 subdomain name (https://tools.ietf.org/html/rfc1123) consisting
+                      of only lowercase alphanumeric characters, hyphens (-), and periods (.), and must start and end
+                      with an alphanumeric character, and be at most 253 characters in length.
                     maxLength: 253
-                    pattern: ^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])(\.([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9]))*$
                     type: string
+                    x-kubernetes-validations:
+                    - message: a lowercase RFC 1123 subdomain must consist of lower
+                        case alphanumeric characters, '-' or '.', and must start and
+                        end with an alphanumeric character.
+                      rule: '!format.dns1123Subdomain().validate(self).hasValue()'
                 required:
                 - name
                 type: object
@@ -249,68 +262,86 @@ spec:
                   - status
                   - type
                   type: object
+                maxItems: 20
                 type: array
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
               configVersion:
-                description: |-
-                  configVersion describes the current and desired machine config for this node.
-                  The current version represents the current machine config for the node and is updated after a successful update.
-                  The desired version represents the machine config the node will attempt to update to.
-                  This desired machine config has been compared to the current machine config and has been validated by the machine config operator as one that is valid and that exists.
+                description: configVersion describes the current and desired machine
+                  config version for this node.
                 properties:
                   current:
                     description: |-
                       current is the name of the machine config currently in use on the node.
                       This value is updated once the machine config daemon has completed the update of the configuration for the node.
                       This value should match the desired version unless an upgrade is in progress.
-                      Must be a lowercase RFC-1123 hostname (https://tools.ietf.org/html/rfc1123)
-                      It may consist of only alphanumeric characters, hyphens (-) and periods (.)
-                      and must be at most 253 characters in length.
+                      Must be a lowercase RFC-1123 subdomain name (https://tools.ietf.org/html/rfc1123) consisting
+                      of only lowercase alphanumeric characters, hyphens (-), and periods (.), and must start and end
+                      with an alphanumeric character, and be at most 253 characters in length.
                     maxLength: 253
-                    pattern: ^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])(\.([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9]))*$
                     type: string
+                    x-kubernetes-validations:
+                    - message: a lowercase RFC 1123 subdomain must consist of lower
+                        case alphanumeric characters, '-' or '.', and must start and
+                        end with an alphanumeric character.
+                      rule: '!format.dns1123Subdomain().validate(self).hasValue()'
                   desired:
                     description: |-
                       desired is the MachineConfig the node wants to upgrade to.
                       This value gets set in the machine config node status once the machine config has been validated
                       against the current machine config.
-                      Must be a lowercase RFC-1123 hostname (https://tools.ietf.org/html/rfc1123)
-                      It may consist of only alphanumeric characters, hyphens (-) and periods (.)
-                      and must be at most 253 characters in length.
+                      Must be a lowercase RFC-1123 subdomain name (https://tools.ietf.org/html/rfc1123) consisting
+                      of only lowercase alphanumeric characters, hyphens (-), and periods (.), and must start and end
+                      with an alphanumeric character, and be at most 253 characters in length.
                     maxLength: 253
-                    pattern: ^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])(\.([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9]))*$
                     type: string
+                    x-kubernetes-validations:
+                    - message: a lowercase RFC 1123 subdomain must consist of lower
+                        case alphanumeric characters, '-' or '.', and must start and
+                        end with an alphanumeric character.
+                      rule: '!format.dns1123Subdomain().validate(self).hasValue()'
                 required:
                 - desired
                 type: object
               observedGeneration:
                 description: |-
-                  observedGeneration represents the generation observed by the controller.
+                  observedGeneration represents the generation of the MachineConfigNode object observed by the Machine Config Operator's controller.
                   This field is updated when the controller observes a change to the desiredConfig in the configVersion of the machine config node spec.
                 format: int64
+                minimum: 0
                 type: integer
+                x-kubernetes-validations:
+                - message: observedGeneration must not decrease
+                  rule: self >= oldSelf
               pinnedImageSets:
-                description: |-
-                  pinnedImageSets describes the current and desired pinned image sets for this node.
-                  The current version is the generation of the pinned image set that has most recently been successfully pulled and pinned on this node.
-                  The desired version is the generation of the pinned image set that is targeted to be pulled and pinned on this node.
+                description: pinnedImageSets describes the current and desired pinned
+                  image sets for this node.
                 items:
+                  description: MachineConfigNodeStatusPinnedImageSet holds information
+                    about the current, desired, and failed pinned image sets for the
+                    observed machine config node.
                   properties:
                     currentGeneration:
                       description: currentGeneration is the generation of the pinned
                         image set that has most recently been successfully pulled
                         and pinned on this node.
                       format: int32
+                      minimum: 0
                       type: integer
+                      x-kubernetes-validations:
+                      - message: currentGeneration must not decrease
+                        rule: self >= oldSelf
                     desiredGeneration:
-                      description: desiredGeneration version is the generation of
-                        the pinned image set that is targeted to be pulled and pinned
-                        on this node.
+                      description: desiredGeneration is the generation of the pinned
+                        image set that is targeted to be pulled and pinned on this
+                        node.
                       format: int32
                       minimum: 0
                       type: integer
+                      x-kubernetes-validations:
+                      - message: desiredGeneration must not decrease
+                        rule: self >= oldSelf
                     lastFailedGeneration:
                       description: lastFailedGeneration is the generation of the most
                         recent pinned image set that failed to be pulled and pinned
@@ -318,22 +349,28 @@ spec:
                       format: int32
                       minimum: 0
                       type: integer
-                    lastFailedGenerationErrors:
-                      description: lastFailedGenerationErrors is a list of errors
-                        why the lastFailed generation failed to be pulled and pinned.
-                      items:
-                        type: string
-                      maxItems: 10
-                      type: array
+                      x-kubernetes-validations:
+                      - message: lastFailedGeneration must not decrease
+                        rule: self >= oldSelf
+                    lastFailedGenerationError:
+                      description: |-
+                        lastFailedGenerationError is the error explaining why the desired images failed to be pulled and pinned.
+                        The error is an empty string if the image pull and pin is successful.
+                      maxLength: 32768
+                      type: string
                     name:
                       description: |-
                         name is the name of the pinned image set.
-                        Must be a lowercase RFC-1123 hostname (https://tools.ietf.org/html/rfc1123)
-                        It may consist of only alphanumeric characters, hyphens (-) and periods (.)
-                        and must be at most 253 characters in length.
+                        Must be a lowercase RFC-1123 subdomain name (https://tools.ietf.org/html/rfc1123) consisting
+                        of only lowercase alphanumeric characters, hyphens (-), and periods (.), and must start and end
+                        with an alphanumeric character, and be at most 253 characters in length.
                       maxLength: 253
-                      pattern: ^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])(\.([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9]))*$
                       type: string
+                      x-kubernetes-validations:
+                      - message: a lowercase RFC 1123 subdomain must consist of lower
+                          case alphanumeric characters, '-' or '.', and must start
+                          and end with an alphanumeric character.
+                        rule: '!format.dns1123Subdomain().validate(self).hasValue()'
                   required:
                   - name
                   type: object
@@ -342,13 +379,14 @@ spec:
                       current generation
                     rule: 'has(self.desiredGeneration) && has(self.currentGeneration)
                       ? self.desiredGeneration >= self.currentGeneration : true'
-                  - message: desired generation must be greater than last failed generation
+                  - message: desired generation must be greater than or equal to the
+                      last failed generation
                     rule: 'has(self.lastFailedGeneration) && has(self.desiredGeneration)
                       ? self.desiredGeneration >= self.lastFailedGeneration : true'
-                  - message: desired generation must be defined if last failed generation
-                      is defined
-                    rule: 'has(self.lastFailedGeneration) ? has(self.desiredGeneration):
-                      true'
+                  - message: last failed generation error must be defined on image
+                      pull and pin failure
+                    rule: 'has(self.lastFailedGeneration) ? has(self.lastFailedGenerationError)
+                      : true'
                 maxItems: 100
                 type: array
                 x-kubernetes-list-map-keys:
@@ -356,7 +394,6 @@ spec:
                 x-kubernetes-list-type: map
             required:
             - configVersion
-            - observedGeneration
             type: object
         required:
         - spec
