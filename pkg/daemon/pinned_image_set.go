@@ -540,7 +540,6 @@ func (p *PinnedImageSetManager) updateStatusProgressing(pools []*mcfgv1.MachineC
 	if err != nil {
 		return fmt.Errorf("failed to get image set apply configs: %w", err)
 	}
-	imageSetSpec := getPinnedImageSetSpecForPools(pools)
 
 	// Get MCP associated with node
 	pool, err := helpers.GetPrimaryPoolNameForMCN(p.mcpLister, node)
@@ -560,7 +559,6 @@ func (p *PinnedImageSetManager) updateStatusProgressing(pools []*mcfgv1.MachineC
 		node,
 		p.mcfgClient,
 		applyCfg,
-		imageSetSpec,
 		p.featureGatesAccessor,
 		pool,
 	)
@@ -577,7 +575,6 @@ func (p *PinnedImageSetManager) updateStatusProgressingComplete(pools []*mcfgv1.
 	if err != nil {
 		return fmt.Errorf("failed to get image set apply configs: %w", err)
 	}
-	imageSetSpec := getPinnedImageSetSpecForPools(pools)
 
 	// Get MCP associated with node
 	pool, err := helpers.GetPrimaryPoolNameForMCN(p.mcpLister, node)
@@ -597,7 +594,6 @@ func (p *PinnedImageSetManager) updateStatusProgressingComplete(pools []*mcfgv1.
 		node,
 		p.mcfgClient,
 		applyCfg,
-		imageSetSpec,
 		p.featureGatesAccessor,
 		pool,
 	)
@@ -618,7 +614,6 @@ func (p *PinnedImageSetManager) updateStatusProgressingComplete(pools []*mcfgv1.
 		node,
 		p.mcfgClient,
 		nil,
-		nil,
 		p.featureGatesAccessor,
 		pool,
 	)
@@ -635,7 +630,6 @@ func (p *PinnedImageSetManager) updateStatusError(pools []*mcfgv1.MachineConfigP
 	if err != nil {
 		return fmt.Errorf("failed to get image set apply configs: %w", err)
 	}
-	imageSetSpec := getPinnedImageSetSpecForPools(pools)
 
 	var errMsg string
 	if isErrNoSpace(statusErr) {
@@ -663,7 +657,6 @@ func (p *PinnedImageSetManager) updateStatusError(pools []*mcfgv1.MachineConfigP
 		node,
 		p.mcfgClient,
 		applyCfg,
-		imageSetSpec,
 		p.featureGatesAccessor,
 		pool,
 	)

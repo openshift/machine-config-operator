@@ -43,7 +43,7 @@ func GenerateAndApplyMachineConfigNodes(
 	fgAccessor featuregates.FeatureGateAccess,
 	pool string,
 ) error {
-	return generateAndApplyMachineConfigNodes(parentCondition, childCondition, parentStatus, childStatus, node, mcfgClient, nil, nil, fgAccessor, pool)
+	return generateAndApplyMachineConfigNodes(parentCondition, childCondition, parentStatus, childStatus, node, mcfgClient, nil, fgAccessor, pool)
 }
 
 func UpdateMachineConfigNodeStatus(
@@ -54,11 +54,10 @@ func UpdateMachineConfigNodeStatus(
 	node *corev1.Node,
 	mcfgClient mcfgclientset.Interface,
 	imageSetApplyConfig []*machineconfigurationalphav1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration,
-	imageSetSpec []mcfgalphav1.MachineConfigNodeSpecPinnedImageSet,
 	fgAccessor featuregates.FeatureGateAccess,
 	pool string,
 ) error {
-	return generateAndApplyMachineConfigNodes(parentCondition, childCondition, parentStatus, childStatus, node, mcfgClient, imageSetApplyConfig, imageSetSpec, fgAccessor, pool)
+	return generateAndApplyMachineConfigNodes(parentCondition, childCondition, parentStatus, childStatus, node, mcfgClient, imageSetApplyConfig, fgAccessor, pool)
 }
 
 // Helper function to convert metav1.Condition to ConditionApplyConfiguration
@@ -90,7 +89,6 @@ func generateAndApplyMachineConfigNodes(
 	node *corev1.Node,
 	mcfgClient mcfgclientset.Interface,
 	imageSetApplyConfig []*machineconfigurationalphav1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration,
-	imageSetSpec []mcfgalphav1.MachineConfigNodeSpecPinnedImageSet,
 	fgAccessor featuregates.FeatureGateAccess,
 	pool string,
 ) error {
@@ -300,9 +298,6 @@ func generateAndApplyMachineConfigNodes(
 		newMCNode.Name = node.Name
 		newMCNode.Spec.Pool = mcfgalphav1.MCOObjectReference{Name: pool}
 		newMCNode.Spec.Node = mcfgalphav1.MCOObjectReference{Name: node.Name}
-		if imageSetSpec != nil {
-			newMCNode.Spec.PinnedImageSets = imageSetSpec
-		}
 
 		_, err := mcfgClient.MachineconfigurationV1alpha1().MachineConfigNodes().Create(context.TODO(), newMCNode, metav1.CreateOptions{})
 		if err != nil {
