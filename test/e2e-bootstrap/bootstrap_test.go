@@ -225,7 +225,7 @@ metadata:
   name: cluster
 spec:
   workerLatencyProfile: MediumUpdateAverageReaction
-  cgroupMode: "v1"`),
+  cgroupMode: "v2"`),
 				[]byte(`apiVersion: machineconfiguration.openshift.io/v1
 kind: KubeletConfig
 metadata:
