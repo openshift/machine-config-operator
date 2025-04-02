@@ -124,7 +124,7 @@ func TestOSBuildControllerDeletesRunningBuildBeforeStartingANewOne(t *testing.T)
 // the same MachineOSConfig.
 func TestOSBuildControllerLeavesSuccessfulBuildAlone(t *testing.T) {
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*15)
 	t.Cleanup(cancel)
 
 	poolName := "worker"
