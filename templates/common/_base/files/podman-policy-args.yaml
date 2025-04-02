@@ -1,0 +1,23 @@
+mode: 0755
+path: "/etc/machine-config-daemon/generate_podman_policy_args.sh"
+contents:
+  inline: |
+    #!/bin/bash
+    
+    # Extract Podman version and determine the signature policy
+    /usr/bin/podman -v | /bin/awk '{
+        split($3, version, "-");
+        clean_version = version[1];
+    
+        split(clean_version, current, /\./);
+        split("4.4.1", target, /\./);
+    
+        for (i = 1; i <= 3; i++) {
+            if ((current[i] + 0) < (target[i] + 0)) {
+                print "--signature-policy /etc/machine-config-daemon/policy-for-old-podman.json";
+                exit;
+            } else if ((current[i] + 0) > (target[i] + 0)) {
+                exit;
+            }
+        }
+    }' > /tmp/podman_policy_args
