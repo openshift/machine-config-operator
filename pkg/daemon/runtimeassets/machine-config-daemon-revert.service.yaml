@@ -21,8 +21,10 @@ contents: |
   # Run this via podman because we want to use the nmstatectl binary in our container
   ExecStart=/usr/bin/podman run --authfile=/var/lib/kubelet/config.json --rm --privileged --net=host -v /:/rootfs  --entrypoint machine-config-daemon '{{ .MCOImage }}' firstboot-complete-machineconfig --persist-nics --machineconfig-file {{ .RevertServiceMachineConfigFile }}
   ExecStart=/usr/bin/podman run --authfile=/var/lib/kubelet/config.json --rm --privileged --pid=host --net=host -v /:/rootfs  --entrypoint machine-config-daemon '{{ .MCOImage }}' firstboot-complete-machineconfig --machineconfig-file {{ .RevertServiceMachineConfigFile }}
+  ExecStartPost=rm {{ .RevertServiceMachineConfigFile }}
   {{if .Proxy -}}
-  EnvironmentFile=/etc/mco/proxy.env
+  EnvironmentFile={{ .ProxyFile }}
+  ExecStartPost=rm {{ .ProxyFile }}
   {{end -}}
 
   [Install]
