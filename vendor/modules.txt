@@ -1064,7 +1064,7 @@ github.com/openshift/api/template
 github.com/openshift/api/template/v1
 github.com/openshift/api/user
 github.com/openshift/api/user/v1
-# github.com/openshift/client-go v0.0.0-20250324153519-f0faeb0f2f2e
+# github.com/openshift/client-go v0.0.0-20250402181141-b3bad3b645f2
 ## explicit; go 1.23.0
 github.com/openshift/client-go/build/applyconfigurations/build/v1
 github.com/openshift/client-go/build/applyconfigurations/internal
