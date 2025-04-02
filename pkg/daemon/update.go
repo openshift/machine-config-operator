@@ -131,10 +131,10 @@ func (dn *Daemon) executeReloadServiceNodeDisruptionAction(serviceName string, r
 	}
 
 	err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
-		&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdatePostActionComplete, Reason: string(mcfgalphav1.MachineConfigNodeUpdateReloaded), Message: fmt.Sprintf("Node has reloaded service %s", serviceName)},
-		&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateReloaded, Reason: fmt.Sprintf("%s%s", string(mcfgalphav1.MachineConfigNodeUpdatePostActionComplete), string(mcfgalphav1.MachineConfigNodeUpdateReloaded)), Message: fmt.Sprintf("Upgrade required a service %s reload. Completed this as a post update action.", serviceName)},
+		&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdatePostActionComplete, Reason: string(mcfgalphav1.MachineConfigNodeUpdatePostActionComplete), Message: fmt.Sprintf("Node has reloaded service %s", serviceName)},
+		nil,
 		metav1.ConditionTrue,
-		metav1.ConditionTrue,
+		metav1.ConditionFalse,
 		dn.node,
 		dn.mcfgClient,
 		dn.featureGatesAccessor,
@@ -174,10 +174,10 @@ func (dn *Daemon) performPostConfigChangeNodeDisruptionAction(postConfigChangeAc
 		switch action.Type {
 		case opv1.RebootStatusAction:
 			err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
-				&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdatePostActionComplete, Reason: string(mcfgalphav1.MachineConfigNodeUpdateRebooted), Message: fmt.Sprintf("Node will reboot into config %s", configName)},
-				&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateRebooted, Reason: fmt.Sprintf("%s%s", string(mcfgalphav1.MachineConfigNodeUpdatePostActionComplete), string(mcfgalphav1.MachineConfigNodeUpdateRebooted)), Message: "Upgrade requires a reboot. Currently doing this as the post update action."},
+				&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateRebooted, Reason: string(mcfgalphav1.MachineConfigNodeUpdateRebooted), Message: "Upgrade requires a reboot."},
+				nil,
 				metav1.ConditionUnknown,
-				metav1.ConditionUnknown,
+				metav1.ConditionFalse,
 				dn.node,
 				dn.mcfgClient,
 				dn.featureGatesAccessor,
@@ -277,10 +277,10 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 
 	if ctrlcommon.InSlice(postConfigChangeActionReboot, postConfigChangeActions) {
 		err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
-			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdatePostActionComplete, Reason: string(mcfgalphav1.MachineConfigNodeUpdateRebooted), Message: fmt.Sprintf("Node will reboot into config %s", configName)},
-			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateRebooted, Reason: fmt.Sprintf("%s%s", string(mcfgalphav1.MachineConfigNodeUpdatePostActionComplete), string(mcfgalphav1.MachineConfigNodeUpdateRebooted)), Message: "Upgrade requires a reboot. Currently doing this as the post update action."},
+			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateRebooted, Reason: string(mcfgalphav1.MachineConfigNodeUpdateRebooted), Message: "Upgrade requires a reboot."},
+			nil,
 			metav1.ConditionUnknown,
-			metav1.ConditionUnknown,
+			metav1.ConditionFalse,
 			dn.node,
 			dn.mcfgClient,
 			dn.featureGatesAccessor,
@@ -324,10 +324,10 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 		}
 
 		err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
-			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdatePostActionComplete, Reason: string(mcfgalphav1.MachineConfigNodeUpdateReloaded), Message: "Node has reloaded CRIO"},
-			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateReloaded, Reason: fmt.Sprintf("%s%s", string(mcfgalphav1.MachineConfigNodeUpdatePostActionComplete), string(mcfgalphav1.MachineConfigNodeUpdateReloaded)), Message: "Upgrade required a CRIO reload. Completed this this as the post update action."},
+			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdatePostActionComplete, Reason: string(mcfgalphav1.MachineConfigNodeUpdatePostActionComplete), Message: "Node has reloaded CRIO"},
+			nil,
 			metav1.ConditionTrue,
-			metav1.ConditionTrue,
+			metav1.ConditionFalse,
 			dn.node,
 			dn.mcfgClient,
 			dn.featureGatesAccessor,
@@ -1173,10 +1173,10 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 
 	if reconcilableError != nil {
 		Nerr := upgrademonitor.GenerateAndApplyMachineConfigNodes(
-			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdatePrepared, Reason: string(mcfgalphav1.MachineConfigNodeUpdateCompatible), Message: fmt.Sprintf("Update Failed during the Checking for Compatibility phase")},
-			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateCompatible, Reason: fmt.Sprintf("%s%s", string(mcfgalphav1.MachineConfigNodeUpdatePrepared), string(mcfgalphav1.MachineConfigNodeUpdateCompatible)), Message: fmt.Sprintf("Error: MachineConfigs %v and %v are not compatible. Err: %s", oldConfigName, newConfigName, reconcilableError.Error())},
+			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdatePrepared, Reason: string(mcfgalphav1.MachineConfigNodeUpdatePrepared), Message: fmt.Sprintf("Update Failed compatibility validation. MachineConfigs %v and %v are not compatible. Err: %s", oldConfigName, newConfigName, reconcilableError.Error())},
+			nil,
 			metav1.ConditionUnknown,
-			metav1.ConditionUnknown,
+			metav1.ConditionFalse,
 			dn.node,
 			dn.mcfgClient,
 			dn.featureGatesAccessor,
@@ -1220,10 +1220,10 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 
 	if err != nil {
 		Nerr := upgrademonitor.GenerateAndApplyMachineConfigNodes(
-			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdatePrepared, Reason: string(mcfgalphav1.MachineConfigNodeUpdateCompatible), Message: "Update Failed during the Checking for Compatibility phase."},
-			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateCompatible, Reason: fmt.Sprintf("%s%s", string(mcfgalphav1.MachineConfigNodeUpdatePrepared), string(mcfgalphav1.MachineConfigNodeUpdateCompatible)), Message: fmt.Sprintf("Error: MachineConfigs %v and %v are not available for update. Error calculating post config change actions: %s", oldConfigName, newConfigName, err.Error())},
+			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdatePrepared, Reason: string(mcfgalphav1.MachineConfigNodeUpdatePrepared), Message: fmt.Sprintf("Update Failed compatibility validation. MachineConfigs %v and %v are not available for update. Error calculating post config change actions: %s", oldConfigName, newConfigName, err.Error())},
+			nil,
 			metav1.ConditionUnknown,
-			metav1.ConditionUnknown,
+			metav1.ConditionFalse,
 			dn.node,
 			dn.mcfgClient,
 			dn.featureGatesAccessor,
@@ -1255,10 +1255,10 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		}
 	}
 	err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
-		&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdatePrepared, Reason: string(mcfgalphav1.MachineConfigNodeUpdateCompatible), Message: "Update is Compatible."},
-		&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateCompatible, Reason: fmt.Sprintf("%s%s", string(mcfgalphav1.MachineConfigNodeUpdatePrepared), string(mcfgalphav1.MachineConfigNodeUpdateCompatible)), Message: fmt.Sprintf("Update Compatible. Post Cfg Actions %v: Drain Required: %t", actions, drain)},
+		&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdatePrepared, Reason: string(mcfgalphav1.MachineConfigNodeUpdatePrepared), Message: fmt.Sprintf("Update Compatible. Post Cfg Actions: %v Drain Required: %t", actions, drain)},
+		nil,
 		metav1.ConditionTrue,
-		metav1.ConditionTrue,
+		metav1.ConditionFalse,
 		dn.node,
 		dn.mcfgClient,
 		dn.featureGatesAccessor,
