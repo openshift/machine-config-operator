@@ -12,12 +12,14 @@ import (
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
+	chelpers "github.com/openshift/machine-config-operator/pkg/controller/common"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	clientset "k8s.io/client-go/kubernetes"
+	"k8s.io/klog/v2"
 )
 
 //go:embed assets/Containerfile.on-cluster-build-template
@@ -117,7 +119,28 @@ func (br buildRequestImpl) ConfigMaps() ([]*corev1.ConfigMap, error) {
 
 	additionaltrustbundle := br.additionaltrustbundleToConfigMap()
 
-	return []*corev1.ConfigMap{containerfile, machineconfig, additionaltrustbundle}, nil
+	etcPolicy, err := br.etcPolicyToConfigMap(br.opts.MachineConfig)
+	if err != nil {
+		return nil, fmt.Errorf("could not convert etc/containers registries files into ConfigMap %q: %w", br.getEtcPolicyConfigMapName(), err)
+	}
+	etcRegistries, err := br.etcRegistriesToConfigMap(br.opts.MachineConfig)
+	if err != nil {
+		return nil, fmt.Errorf("could not convert registries.conf files into ConfigMap %q: %w", br.getEtcRegistriesConfigMapName(), err)
+	}
+
+	configMaps := []*corev1.ConfigMap{containerfile, machineconfig, additionaltrustbundle}
+	if etcPolicy != nil {
+		configMaps = append(configMaps, etcPolicy)
+	} else {
+		klog.Warningf("/etc/containers/policy.json file not found in MachineConfig %q, could not create ConfigMap %q", br.opts.MachineConfig.Name, br.getEtcPolicyConfigMapName())
+	}
+	if etcRegistries != nil {
+		configMaps = append(configMaps, etcRegistries)
+	} else {
+		klog.Warningf("/etc/containers/registries.conf file not found in MachineConfig %q, could not create ConfigMap %q", br.opts.MachineConfig.Name, br.getEtcRegistriesConfigMapName())
+	}
+
+	return configMaps, nil
 }
 
 func (br buildRequestImpl) canonicalizeSecret(name string, secret *corev1.Secret) (*corev1.Secret, error) {
@@ -196,6 +219,76 @@ func (br buildRequestImpl) additionaltrustbundleToConfigMap() *corev1.ConfigMap 
 	}
 
 	return configmap
+}
+
+func (br buildRequestImpl) etcPolicyToConfigMap(mc *mcfgv1.MachineConfig) (*corev1.ConfigMap, error) {
+	// Build the ConfigMap data
+	configMapData, err := br.ignitionFileToConfigMapData(mc, "/etc/containers/policy.json", "/etc/containers/")
+	if err != nil {
+		return nil, err
+	}
+	if len(configMapData) == 0 {
+		return nil, nil
+	}
+
+	// Create the ConfigMap
+	configmap := &corev1.ConfigMap{
+		TypeMeta:   metav1.TypeMeta{},
+		ObjectMeta: br.getObjectMeta(br.getEtcPolicyConfigMapName()),
+		Data:       configMapData,
+	}
+	return configmap, nil
+}
+
+func (br buildRequestImpl) etcRegistriesToConfigMap(mc *mcfgv1.MachineConfig) (*corev1.ConfigMap, error) {
+	// Build the ConfigMap data
+	configMapData, err := br.ignitionFileToConfigMapData(mc, "/etc/containers/registries.conf", "/etc/containers/")
+	if err != nil {
+		return nil, err
+	}
+	if len(configMapData) == 0 {
+		return nil, nil
+	}
+
+	// Create the ConfigMap
+	configmap := &corev1.ConfigMap{
+		TypeMeta:   metav1.TypeMeta{},
+		ObjectMeta: br.getObjectMeta(br.getEtcRegistriesConfigMapName()),
+		Data:       configMapData,
+	}
+	return configmap, nil
+}
+
+func (br buildRequestImpl) ignitionFileToConfigMapData(mc *mcfgv1.MachineConfig, filePath, prefixToTrim string) (map[string]string, error) {
+	if len(mc.Spec.Config.Raw) == 0 {
+		return nil, nil
+	}
+	// Build the ConfigMap data
+	ignCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
+	if err != nil {
+		return nil, fmt.Errorf("parsing rendered MC Ignition config failed with error: %w", err)
+	}
+
+	for _, file := range ignCfg.Storage.Files {
+		if file.Path != filePath {
+			continue
+		}
+		if file.Contents.Source == nil {
+			return nil, fmt.Errorf("nil source for %s", file.Path)
+		}
+
+		// Extract and decode the encoded data
+		decodedData, err := chelpers.DecodeIgnitionFileContents(file.Contents.Source, file.Contents.Compression)
+		if err != nil {
+			return nil, fmt.Errorf("error decoding %s: %v", file.Path, err)
+		}
+
+		// Key in the configmap is the path without the prefix
+		fileKey := strings.TrimPrefix(file.Path, prefixToTrim)
+		return map[string]string{fileKey: string(decodedData)}, nil
+	}
+	klog.Infof("Could not find %s in MachineConfig %s, skipping configmap creation....", filePath, mc.Name)
+	return nil, nil
 }
 
 // Renders our Containerfile template.
@@ -365,6 +458,16 @@ func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
 			MountPath: "/tmp/containerfile",
 		},
 		{
+			Name:      "etc-policy",
+			MountPath: "/etc/containers/policy.json",
+			SubPath:   "policy.json",
+		},
+		{
+			Name:      "etc-registries",
+			MountPath: "/etc/containers/registries.conf",
+			SubPath:   "registries.conf",
+		},
+		{
 			Name:      "additional-trust-bundle",
 			MountPath: "/etc/pki/ca-trust/source/anchors",
 		},
@@ -382,6 +485,7 @@ func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
 		},
 	}
 
+	boolTrue := true
 	volumes := []corev1.Volume{
 		{
 			// Provides the rendered Containerfile.
@@ -414,6 +518,30 @@ func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
 					LocalObjectReference: corev1.LocalObjectReference{
 						Name: br.getAdditionalTrustBundleConfigMapName(),
 					},
+				},
+			},
+		},
+		{
+			// Provides the /etc/containers/policy.json content from the node
+			Name: "etc-policy",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: br.getEtcPolicyConfigMapName(),
+					},
+					Optional: &boolTrue,
+				},
+			},
+		},
+		{
+			// Provides the /etc/containers/registries.conf content from the node
+			Name: "etc-registries",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: br.getEtcRegistriesConfigMapName(),
+					},
+					Optional: &boolTrue,
 				},
 			},
 		},
@@ -600,6 +728,14 @@ func (br buildRequestImpl) getContainerfileConfigMapName() string {
 // Computes the MachineConfig ConfigMap name based upon the MachineConfigPool name.
 func (br buildRequestImpl) getMCConfigMapName() string {
 	return utils.GetMCConfigMapName(br.opts.MachineOSBuild)
+}
+
+func (br buildRequestImpl) getEtcPolicyConfigMapName() string {
+	return utils.GetEtcPolicyConfigMapName(br.opts.MachineOSBuild)
+}
+
+func (br buildRequestImpl) getEtcRegistriesConfigMapName() string {
+	return utils.GetEtcRegistriesConfigMapName(br.opts.MachineOSBuild)
 }
 
 // Computes the build name based upon the MachineConfigPool name.
