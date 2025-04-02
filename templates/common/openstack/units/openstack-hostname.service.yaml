@@ -1,4 +1,4 @@
-name: afterburn-hostname.service
+name: openstack-hostname.service
 enabled: true
 contents: |
   [Unit]
@@ -9,6 +9,9 @@ contents: |
   After=NetworkManager-wait-online.service
   # Run before hostname checks
   Before=node-valid-hostname.service
+  # We require afterburn to have run first
+  Requires=afterburn.service
+  After=afterburn.service
 
   [Service]
   # Would prefer to do Restart=on-failure instead of this bash retry loop, but
@@ -16,7 +19,7 @@ contents: |
   # available in systemd v244 and higher.
   ExecStart=/bin/bash -c " \
   until \
-  /usr/local/bin/openstack-afterburn-hostname; \
+  /usr/local/bin/mco-hostname --openstack; \
   do \
   sleep 10; \
   done"
@@ -26,4 +29,4 @@ contents: |
   RemainAfterExit=true
 
   [Install]
-  WantedBy=network-online.target
+  WantedBy=node-valid-hostname.service
