@@ -1149,7 +1149,7 @@ func (ctrl *Controller) determineContainerRuntimeForFinalRuntimeConfig(pool *mcf
 		for _, finalizer := range finalizers {
 			mcName := finalizer
 			mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), mcName, metav1.GetOptions{})
-			if err != nil {
+			if err != nil && !errors.IsNotFound(err) {
 				return "", fmt.Errorf("error getting MachineConfig %s: %w", mcName, err)
 			}
 			machineConfigs = append(machineConfigs, mc)
