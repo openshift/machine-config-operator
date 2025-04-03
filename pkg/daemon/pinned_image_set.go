@@ -218,17 +218,23 @@ func (p *PinnedImageSetManager) sync(key string) error {
 		return nil
 	}
 
+	primaryPool, err := helpers.GetPrimaryPoolForNode(p.mcpLister, node)
+	if err != nil {
+		klog.Errorf("error getting primary pool for node: %v", node.Name)
+		return err
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), p.prefetchTimeout)
 	// cancel any currently running tasks in the worker pool
 	p.resetWorkload(cancel)
-	if err := p.updateStatusProgressing(pools); err != nil {
+	if err := p.updateStatusProgressing([]*mcfgv1.MachineConfigPool{primaryPool}); err != nil {
 		klog.Errorf("failed to update status: %v", err)
 	}
 
 	if err := p.syncMachineConfigPools(ctx, pools); err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			ctxErr := fmt.Errorf("%w: %v", errRequeueAfterTimeout, p.prefetchTimeout)
-			if err := p.updateStatusError(pools, ctxErr); err != nil {
+			if err := p.updateStatusError([]*mcfgv1.MachineConfigPool{primaryPool}, ctxErr); err != nil {
 				klog.Errorf("failed to update status: %v", err)
 			}
 			klog.Info(ctxErr)
@@ -236,13 +242,13 @@ func (p *PinnedImageSetManager) sync(key string) error {
 		}
 
 		klog.Error(err)
-		if err := p.updateStatusError(pools, err); err != nil {
+		if err := p.updateStatusError([]*mcfgv1.MachineConfigPool{primaryPool}, err); err != nil {
 			klog.Errorf("failed to update status: %v", err)
 		}
 		return err
 	}
 
-	return p.updateStatusProgressingComplete(pools, "All pinned image sets complete")
+	return p.updateStatusProgressingComplete([]*mcfgv1.MachineConfigPool{primaryPool}, "All pinned image sets complete")
 }
 
 func (p *PinnedImageSetManager) syncMachineConfigPools(ctx context.Context, pools []*mcfgv1.MachineConfigPool) error {
