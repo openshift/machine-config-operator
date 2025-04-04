@@ -49,7 +49,6 @@ spec:
               cgroupMode:
                 description: cgroupMode determines the cgroups version on the node
                 enum:
-                - v1
                 - v2
                 - ""
                 type: string
