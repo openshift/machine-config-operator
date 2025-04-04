@@ -6,6 +6,7 @@ import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog/v2"
 )
 
@@ -25,10 +26,14 @@ func NewLayeredNodeState(n *corev1.Node) *LayeredNodeState {
 	return &LayeredNodeState{node: n}
 }
 
-// Augements the isNodeDoneAt() check with determining if the current / desired
-// image annotations match the pools' values.
-func (l *LayeredNodeState) IsDoneAt(mcp *mcfgv1.MachineConfigPool, layered bool) bool {
-	return isNodeDoneAt(l.node, mcp) && l.isDesiredImageEqualToPool(mcp, layered) && l.isCurrentImageEqualToPool(mcp, layered)
+// Checks if the node is done "working" and that the node is targeting is MachineConfig
+// determined by the pool. If in layered mode, the image annotations are also checked
+// checked against the OCL objects.
+func (l *LayeredNodeState) IsDone(mcp *mcfgv1.MachineConfigPool, layered bool, mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild) bool {
+	if layered {
+		return l.IsNodeDone() && l.IsDesiredMachineConfigEqualToPool(mcp) && l.IsDesiredEqualToBuild(mosc, mosb)
+	}
+	return l.IsNodeDone() && l.IsDesiredMachineConfigEqualToPool(mcp)
 }
 
 // The original behavior of getUnavailableMachines is: getUnavailableMachines
@@ -38,30 +43,41 @@ func (l *LayeredNodeState) IsDoneAt(mcp *mcfgv1.MachineConfigPool, layered bool)
 // potentially start another node update exceeding our maxUnavailable. Somewhat
 // the opposite of getReadyNodes().
 //
-// This augments this check by determining if the desired iamge annotation is
-// equal to what the pool expects.
-func (l *LayeredNodeState) IsUnavailable(mcp *mcfgv1.MachineConfigPool, layered bool) bool {
-	return isNodeUnavailable(l.node) && l.isDesiredImageEqualToPool(mcp, layered)
+// This augments this check by determining if the current and desired image
+// annotations are transitioning to / from a layered state or transitioning
+// from one image to another.
+func (l *LayeredNodeState) IsUnavailableForUpdate() bool {
+	// Unready nodes are unavailable
+	if !l.IsNodeReady() {
+		return true
+	}
+	// Nodes that are still working towards an MC/image is not done and is unavailable
+	if l.IsNodeDone() {
+		return false
+	}
+	// Now we know the node isn't ready - the current config must not
+	// equal target.  We want to further filter down on the MCD state.
+	// If a MCD is in a terminal (failing) state then we can safely retarget it.
+	// to a different config.  Or to say it another way, a node is unavailable
+	// if the MCD is working, or hasn't started work but the configs differ.
+	return !l.IsNodeMCDFailing()
 }
 
-// Checks that the desired machineconfig and image annotations equal the ones
-// specified by the pool.
-func (l *LayeredNodeState) IsDesiredEqualToPool(mcp *mcfgv1.MachineConfigPool, layered bool) bool {
-	return l.isDesiredMachineConfigEqualToPool(mcp) && l.isDesiredImageEqualToPool(mcp, layered)
-}
-
+// Compares the images specified by the MachineOSConfig to the one specified by the
+// node's desired image annotation and compares the MachineConfig specified by the
+// MachineOSBuild to the one specified by the node's desired MachineConfig annotation.
 func (l *LayeredNodeState) IsDesiredEqualToBuild(mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild) bool {
-	return l.isDesiredImageEqualToBuild(mosc) && l.isDesiredMachineConfigEqualToBuild(mosb)
+	return (mosc != nil && l.isDesiredImageEqualToMachineOSConfig(mosc)) && (mosb != nil && l.isDesiredMachineConfigEqualToBuild(mosb))
 }
 
-func (l *LayeredNodeState) isDesiredImageEqualToBuild(mosc *mcfgv1.MachineOSConfig) bool {
-	return l.isImageAnnotationEqualToBuild(daemonconsts.DesiredImageAnnotationKey, mosc)
+// Compares the desired image annotation on the node against the CurrentImagePullSpec
+// specified by the MachineOSConfig object.
+func (l *LayeredNodeState) isDesiredImageEqualToMachineOSConfig(mosc *mcfgv1.MachineOSConfig) bool {
+	return l.isImageAnnotationEqualToMachineOSConfig(daemonconsts.DesiredImageAnnotationKey, mosc)
 }
 
-func (l *LayeredNodeState) IsCurrentImageEqualToBuild(mosc *mcfgv1.MachineOSConfig) bool {
-	return l.isImageAnnotationEqualToBuild(daemonconsts.CurrentImageAnnotationKey, mosc)
-}
-
+// Compares the MachineConfig specified by the MachineConfigPool to the MachineConfig
+// specified by the node's desired MachineConfig annotation.
 func (l *LayeredNodeState) isDesiredMachineConfigEqualToBuild(mosb *mcfgv1.MachineOSBuild) bool {
 	return l.node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] == mosb.Spec.MachineConfig.Name
 
@@ -69,105 +85,81 @@ func (l *LayeredNodeState) isDesiredMachineConfigEqualToBuild(mosb *mcfgv1.Machi
 
 // Compares the MachineConfig specified by the MachineConfigPool to the one
 // specified by the node's desired MachineConfig annotation.
-func (l *LayeredNodeState) isDesiredMachineConfigEqualToPool(mcp *mcfgv1.MachineConfigPool) bool {
+func (l *LayeredNodeState) IsCurrentMachineConfigEqualToPool(mcp *mcfgv1.MachineConfigPool) bool {
+	return l.node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey] == mcp.Spec.Configuration.Name
+}
+
+// Compares the MachineConfig specified by the MachineConfigPool to the one
+// specified by the node's desired MachineConfig annotation.
+func (l *LayeredNodeState) IsDesiredMachineConfigEqualToPool(mcp *mcfgv1.MachineConfigPool) bool {
 	return l.node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] == mcp.Spec.Configuration.Name
 }
 
-// Determines if the nodes desired image is equal to the expected value from
-// the MachineConfigPool.
-func (l *LayeredNodeState) isDesiredImageEqualToPool(mcp *mcfgv1.MachineConfigPool, layered bool) bool {
-	return l.isImageAnnotationEqualToPool(daemonconsts.DesiredImageAnnotationKey, mcp, layered)
+// Checks if both the current and desired image annotation are present on the node.
+func (l *LayeredNodeState) AreImageAnnotationsPresentOnNode() bool {
+	return l.IsDesiredImageAnnotationPresentOnNode() && l.IsCurrentImageAnnotationPresentOnNode()
 }
 
-// Determines if the nodes current image is equal to the expected value from
-// the MachineConfigPool.
-func (l *LayeredNodeState) isCurrentImageEqualToPool(mcp *mcfgv1.MachineConfigPool, layered bool) bool {
-	return l.isImageAnnotationEqualToPool(daemonconsts.CurrentImageAnnotationKey, mcp, layered)
+// Checks if the desired image annotation is present on the node.
+func (l *LayeredNodeState) IsDesiredImageAnnotationPresentOnNode() bool {
+	return metav1.HasAnnotation(l.Node().ObjectMeta, daemonconsts.DesiredImageAnnotationKey)
 }
 
-// Determines if a nodes' image annotation is equal to the expected value from
-// the MachineConfigPool. If the pool is layered, this value should equal the
-// OS image value, if the value is available. If the pool is not layered, then
-// any image annotations should not be present on the node.
-func (l *LayeredNodeState) isImageAnnotationEqualToPool(anno string, mcp *mcfgv1.MachineConfigPool, layered bool) bool {
-	lps := NewLayeredPoolState(mcp)
-
-	val, ok := l.node.Annotations[anno]
-	if layered {
-		klog.V(4).Infof("Pool %s is layered pool, check isImageAnnotationEqualToPool ", mcp.Name)
-	}
-
-	if lps.HasOSImage() {
-		// If the pool is layered and has an OS image, check that it equals the
-		// node annotations' value.
-		return lps.GetOSImage() == val
-	}
-
-	// If the pool is not layered, this annotation should not exist.
-	return val == "" || !ok
+// Checks if the current image annotation is present on the node.
+func (l *LayeredNodeState) IsCurrentImageAnnotationPresentOnNode() bool {
+	return metav1.HasAnnotation(l.Node().ObjectMeta, daemonconsts.CurrentImageAnnotationKey)
 }
 
-func (l *LayeredNodeState) isImageAnnotationEqualToBuild(anno string, mosc *mcfgv1.MachineOSConfig) bool {
-	mosbs := NewMachineOSConfigState(mosc)
+// Compares the CurrentImagePullSpec specified by the MachineOSConfig object against the
+// image specified by the annotation passed in.
+func (l *LayeredNodeState) isImageAnnotationEqualToMachineOSConfig(anno string, mosc *mcfgv1.MachineOSConfig) bool {
+	moscs := NewMachineOSConfigState(mosc)
 
 	val, ok := l.node.Annotations[anno]
 
-	if mosbs.HasOSImage() {
-		// If the pool is layered and has an OS image, check that it equals the
-		// node annotations' value.
-		return mosbs.GetOSImage() == val
+	// If a layered node does not have an image annotation and has a valid MOSC, then the image is being built
+	if val == "" || !ok {
+		return false
 	}
 
-	// If the pool is not layered, this annotation should not exist.
-	return val == "" || !ok
+	if moscs.HasOSImage() {
+		// If the MOSC image has an image, the image annotation on the node can be directly compared.
+		return moscs.GetOSImage() == val
+	}
+
+	// If the MOSC does not have an image, but the node has an older image annotation, the image is still likely
+	// being built.
+	return false
 }
 
-// Sets the desired annotations from the MachineConfigPool, according to the
-// following rules:
-//
-// 1. The desired MachineConfig annotation will always be set to match the one
-// specified in the MachineConfigPool.
-// 2. If the pool is layered and has the OS image available, it will set the
-// desired image annotation.
-// 3. If the pool is not layered and does not have the OS image available, it
-// will remove the desired image annotation.
+// Sets the desired MachineConfig annotations from the MachineConfigPool.
+// Deletes any desired image annotations if they exist.
 //
 // Note: This will create a deep copy of the node object first to avoid
 // mutating any underlying caches.
-func (l *LayeredNodeState) SetDesiredStateFromPool(layered bool, mcp *mcfgv1.MachineConfigPool) {
+func (l *LayeredNodeState) SetDesiredStateFromPool(mcp *mcfgv1.MachineConfigPool) {
 	node := l.Node()
-	if node.Annotations == nil {
-		node.Annotations = map[string]string{}
-	}
 
-	node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] = mcp.Spec.Configuration.Name
-
-	lps := NewLayeredPoolState(mcp)
-
-	if layered {
-		klog.V(4).Infof("Pool %s is layered pool, check isImageAnnotationEqualToPool ", mcp.Name)
-	}
-
-	if lps.HasOSImage() {
-		node.Annotations[daemonconsts.DesiredImageAnnotationKey] = lps.GetOSImage()
-	} else {
-		delete(node.Annotations, daemonconsts.DesiredImageAnnotationKey)
-	}
+	metav1.SetMetaDataAnnotation(&node.ObjectMeta, daemonconsts.DesiredMachineConfigAnnotationKey, mcp.Spec.Configuration.Name)
+	delete(node.Annotations, daemonconsts.DesiredImageAnnotationKey)
 
 	l.node = node
 }
 
+// Sets the desired MachineConfig & image annotations from the MachineOSBuild and
+// MachineOSConfig objects.
+//
+// Note: This will create a deep copy of the node object first to avoid
+// mutating any underlying caches.
+
 func (l *LayeredNodeState) SetDesiredStateFromMachineOSConfig(mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild) {
 	node := l.Node()
-	if node.Annotations == nil {
-		node.Annotations = map[string]string{}
-	}
 
-	node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] = mosb.Spec.MachineConfig.Name
+	metav1.SetMetaDataAnnotation(&node.ObjectMeta, daemonconsts.DesiredMachineConfigAnnotationKey, mosb.Spec.MachineConfig.Name)
+
 	moscs := NewMachineOSConfigState(mosc)
-
 	if moscs.HasOSImage() {
-		node.Annotations[daemonconsts.DesiredImageAnnotationKey] = moscs.GetOSImage()
+		metav1.SetMetaDataAnnotation(&node.ObjectMeta, daemonconsts.DesiredImageAnnotationKey, moscs.GetOSImage())
 	} else {
 		delete(node.Annotations, daemonconsts.DesiredImageAnnotationKey)
 	}
@@ -180,25 +172,21 @@ func (l *LayeredNodeState) Node() *corev1.Node {
 	return l.node.DeepCopy()
 }
 
-// All functions below this line were copy / pasted from
-// pkg/controller/node/status.go. A future cleanup effort will integrate these
-// more seamlessly into the above struct.
-
 // isNodeDone returns true if the current == desired and the MCD has marked done.
-func isNodeDone(node *corev1.Node) bool {
-	if node.Annotations == nil {
+func (l *LayeredNodeState) IsNodeDone() bool {
+	if l.node.Annotations == nil {
 		return false
 	}
 
-	if !isNodeConfigDone(node) {
+	if !l.isNodeConfigDone() {
 		return false
 	}
 
-	if !isNodeImageDone(node) {
+	if !l.isNodeImageDone() {
 		return false
 	}
 
-	if !isNodeMCDState(node, daemonconsts.MachineConfigDaemonStateDone) {
+	if !l.isNodeMCDState(daemonconsts.MachineConfigDaemonStateDone) {
 		return false
 	}
 
@@ -207,13 +195,13 @@ func isNodeDone(node *corev1.Node) bool {
 
 // Determines if a node's configuration is done based upon the presence and
 // equality of the current / desired config annotations.
-func isNodeConfigDone(node *corev1.Node) bool {
-	cconfig, ok := node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey]
+func (l *LayeredNodeState) isNodeConfigDone() bool {
+	cconfig, ok := l.node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey]
 	if !ok || cconfig == "" {
 		return false
 	}
 
-	dconfig, ok := node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey]
+	dconfig, ok := l.node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey]
 	if !ok || dconfig == "" {
 		return false
 	}
@@ -227,22 +215,25 @@ func isNodeConfigDone(node *corev1.Node) bool {
 // these annotations into consideration. Only when one (or both) of these
 // annotations is present should we take them into consideration.
 // them into consideration.
-func isNodeImageDone(node *corev1.Node) bool {
-	desired, desiredOK := node.Annotations[daemonconsts.DesiredImageAnnotationKey]
-	current, currentOK := node.Annotations[daemonconsts.CurrentImageAnnotationKey]
+func (l *LayeredNodeState) isNodeImageDone() bool {
+	desired, desiredOK := l.node.Annotations[daemonconsts.DesiredImageAnnotationKey]
+	current, currentOK := l.node.Annotations[daemonconsts.CurrentImageAnnotationKey]
 
 	// If neither annotation exists, we are "done" because there are no image
-	// annotations to consider.
+	// annotations to consider. This means that the  node is currently not in
+	// layered mode.
 	if !desiredOK && !currentOK {
 		return true
 	}
 
-	// If the desired annotation is empty, we are not "done" yet.
+	// If the desired annotation is empty, we are not "done" yet. This would happen
+	// if the node was rolling back to non layered mode.
 	if desired == "" {
 		return false
 	}
 
-	// If the current annotation is empty, we are not "done" yet.
+	// If the current annotation is empty, we are not "done" yet. This would happen
+	// is node is updating an image for the first time.
 	if current == "" {
 		return false
 	}
@@ -251,33 +242,9 @@ func isNodeImageDone(node *corev1.Node) bool {
 	return desired == current
 }
 
-// isNodeDoneAt checks whether a node is fully updated to a targetConfig
-func isNodeDoneAt(node *corev1.Node, pool *mcfgv1.MachineConfigPool) bool {
-	return isNodeDone(node) && node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey] == pool.Spec.Configuration.Name
-}
-
-// isNodeUnavailable is a helper function for getUnavailableMachines
-// See the docs of getUnavailableMachines for more info
-func isNodeUnavailable(node *corev1.Node) bool {
-	// Unready nodes are unavailable
-	if !isNodeReady(node) {
-		return true
-	}
-	// Ready nodes are not unavailable
-	if isNodeDone(node) {
-		return false
-	}
-	// Now we know the node isn't ready - the current config must not
-	// equal target.  We want to further filter down on the MCD state.
-	// If a MCD is in a terminal (failing) state then we can safely retarget it.
-	// to a different config.  Or to say it another way, a node is unavailable
-	// if the MCD is working, or hasn't started work but the configs differ.
-	return !isNodeMCDFailing(node)
-}
-
 // isNodeMCDState checks the MCD state against the state parameter
-func isNodeMCDState(node *corev1.Node, state string) bool {
-	dstate, ok := node.Annotations[daemonconsts.MachineConfigDaemonStateAnnotationKey]
+func (l *LayeredNodeState) isNodeMCDState(state string) bool {
+	dstate, ok := l.node.Annotations[daemonconsts.MachineConfigDaemonStateAnnotationKey]
 	if !ok || dstate == "" {
 		return false
 	}
@@ -285,39 +252,70 @@ func isNodeMCDState(node *corev1.Node, state string) bool {
 	return dstate == state
 }
 
-func checkNodeReady(node *corev1.Node) error {
-	for i := range node.Status.Conditions {
-		cond := &node.Status.Conditions[i]
+// CheckNodeReady() returns any errors that may prevent the node
+// from being scheduled for workloads.
+func (l *LayeredNodeState) CheckNodeReady() error {
+	for i := range l.node.Status.Conditions {
+		cond := &l.node.Status.Conditions[i]
 		// We consider the node for scheduling only when its:
 		// - NodeReady condition status is ConditionTrue,
 		// - NodeDiskPressure condition status is ConditionFalse,
 		// - NodeNetworkUnavailable condition status is ConditionFalse.
 		if cond.Type == corev1.NodeReady && cond.Status != corev1.ConditionTrue {
-			return fmt.Errorf("node %s is reporting NotReady=%v", node.Name, cond.Status)
+			return fmt.Errorf("node %s is reporting NotReady=%v", l.node.Name, cond.Status)
 		}
 		if cond.Type == corev1.NodeDiskPressure && cond.Status != corev1.ConditionFalse {
-			return fmt.Errorf("node %s is reporting OutOfDisk=%v", node.Name, cond.Status)
+			return fmt.Errorf("node %s is reporting OutOfDisk=%v", l.node.Name, cond.Status)
 		}
 		if cond.Type == corev1.NodeNetworkUnavailable && cond.Status != corev1.ConditionFalse {
-			return fmt.Errorf("node %s is reporting NetworkUnavailable=%v", node.Name, cond.Status)
+			return fmt.Errorf("node %s is reporting NetworkUnavailable=%v", l.node.Name, cond.Status)
 		}
 	}
 	// Ignore nodes that are marked unschedulable
-	if node.Spec.Unschedulable {
-		return fmt.Errorf("node %s is reporting Unschedulable", node.Name)
+	if l.node.Spec.Unschedulable {
+		return fmt.Errorf("node %s is reporting Unschedulable", l.node.Name)
 	}
 	return nil
 }
 
-func isNodeReady(node *corev1.Node) bool {
-	return checkNodeReady(node) == nil
+// IsNodeReady() checks if the node is ready to be scheduled for workloads.
+func (l *LayeredNodeState) IsNodeReady() bool {
+	return l.CheckNodeReady() == nil
 }
 
 // isNodeMCDFailing checks if the MCD has unsuccessfully applied an update
-func isNodeMCDFailing(node *corev1.Node) bool {
-	if node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey] == node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] {
+func (l *LayeredNodeState) IsNodeMCDFailing() bool {
+	if l.node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey] == l.node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] {
 		return false
 	}
-	return isNodeMCDState(node, daemonconsts.MachineConfigDaemonStateDegraded) ||
-		isNodeMCDState(node, daemonconsts.MachineConfigDaemonStateUnreconcilable)
+	return l.isNodeMCDState(daemonconsts.MachineConfigDaemonStateDegraded) ||
+		l.isNodeMCDState(daemonconsts.MachineConfigDaemonStateUnreconcilable)
+}
+
+// CheckNodeCandidacyForUpdate checks if the node is a candidate for an update
+func (l *LayeredNodeState) CheckNodeCandidacyForUpdate(layered bool, pool *mcfgv1.MachineConfigPool, mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild) bool {
+	if layered {
+		// If the node's desired annotations match the ones described by the MachineOSConfig
+		// and MachineOSBuild objects, then the node is not a candidate.
+		if l.IsDesiredEqualToBuild(mosc, mosb) {
+			klog.V(4).Infof("Pool %s: layered node %s: no update is needed", pool.Name, l.node.Name)
+			return false
+		}
+		return true
+	}
+	// In non layered mode, the node is not a candidate if its desired config
+	// matches the one described by its pool in most cases.
+	if l.IsDesiredMachineConfigEqualToPool(pool) {
+		// The only exception is when the desired image annotation is present
+		// on a non layered node, which means that this node is being
+		// opted out of layering. This would make it a candidate for an update.
+		if l.IsDesiredImageAnnotationPresentOnNode() {
+			klog.V(4).Infof("Pool %s: non-layered node %s: rollback update is needed", pool.Name, l.node.Name)
+			return true
+		}
+		klog.V(4).Infof("Pool %s: non-layered node %s: no update is needed", pool.Name, l.node.Name)
+		return false
+	}
+
+	return true
 }
