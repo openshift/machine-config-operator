@@ -3,10 +3,12 @@ package template
 import (
 	"bytes"
 	"fmt"
+	"maps"
 	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"text/template"
@@ -44,9 +46,11 @@ type RenderConfig struct {
 const (
 	filesDir       = "files"
 	unitsDir       = "units"
+	extensionsDir  = "extensions"
 	platformBase   = "_base"
 	platformOnPrem = "on-prem"
 	sno            = "sno"
+	tnf            = "two-node-with-fencing"
 	masterRole     = "master"
 	workerRole     = "worker"
 	arbiterRole    = "arbiter"
@@ -231,6 +235,10 @@ func getPaths(config *RenderConfig, platformString string) []string {
 		platformBasedPaths = append(platformBasedPaths, sno)
 	}
 
+	if hasControlPlaneTopology(config, configv1.DualReplicaTopologyMode) {
+		platformBasedPaths = append(platformBasedPaths, tnf)
+	}
+
 	return platformBasedPaths
 }
 
@@ -272,6 +280,8 @@ func generateMachineConfigForName(config *RenderConfig, role, name, templateDir,
 
 	files := map[string]string{}
 	units := map[string]string{}
+	extensions := map[string]string{}
+
 	// walk all role dirs, with later ones taking precedence
 	for _, platformDir := range platformDirs {
 		p := filepath.Join(platformDir, filesDir)
@@ -292,6 +302,17 @@ func generateMachineConfigForName(config *RenderConfig, role, name, templateDir,
 		}
 		if exists {
 			if err := filterTemplates(units, p, config); err != nil {
+				return nil, err
+			}
+		}
+
+		p = filepath.Join(platformDir, extensionsDir)
+		exists, err = existsDir(p)
+		if err != nil {
+			return nil, err
+		}
+		if exists {
+			if err := filterTemplates(extensions, p, config); err != nil {
 				return nil, err
 			}
 		}
@@ -322,6 +343,8 @@ func generateMachineConfigForName(config *RenderConfig, role, name, templateDir,
 	if err != nil {
 		return nil, fmt.Errorf("error creating MachineConfig from Ignition config: %w", err)
 	}
+
+	mcfg.Spec.Extensions = append(mcfg.Spec.Extensions, slices.Sorted(maps.Keys(extensions))...)
 
 	// TODO(jkyros): you might think you can remove this since we override later when we merge
 	// config, but resourcemerge doesn't blank this field out once it's populated
