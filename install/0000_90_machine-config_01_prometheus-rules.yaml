@@ -189,6 +189,7 @@ spec:
               Moreover, OOM kill is expected which negatively influences the pod scheduling.
               If this happens on container level, the descheduler will not be able to detect it, as it works on the pod level.
               To fix this, increase memory of the affected node of control plane nodes.
+            runbook_url: https://github.com/openshift/runbooks/blob/master/alerts/machine-config-operator/ExtremelyHighIndividualControlPlaneMemory.md
     - name: mcd-missing-mc
       rules:
         - alert: MissingMachineConfig
