@@ -10,7 +10,7 @@ contents: |
   [Service]
   Type=notify
   ExecStartPre=/bin/mkdir --parents /etc/kubernetes/manifests
-  ExecStartPre=-/usr/sbin/restorecon /usr/local/bin/kubenswrapper /usr/bin/kubensenter
+  ExecStartPre=-/usr/sbin/restorecon -ri /var/lib/kubelet/pod-resources /usr/local/bin/kubenswrapper /usr/bin/kubensenter
 {{- if eq .IPFamilies "IPv6"}}
   Environment="KUBELET_NODE_IP=::"
 {{- else}}
