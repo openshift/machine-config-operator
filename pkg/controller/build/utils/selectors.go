@@ -13,18 +13,18 @@ import (
 
 // Creates the labels for a given MachineOSBuild from the provided
 // MachineOSConfig and MachineConfigPool.
-func GetMachineOSBuildLabels(mosc *mcfgv1.MachineOSConfig, mcp *mcfgv1.MachineConfigPool) map[string]string {
+func GetMachineOSBuildLabels(mosc *mcfgv1.MachineOSConfig, mcp *mcfgv1.MachineConfigPool, mc *mcfgv1.MachineConfig) map[string]string {
 	return map[string]string{
 		constants.TargetMachineConfigPoolLabelKey: mcp.Name,
-		constants.RenderedMachineConfigLabelKey:   mcp.Spec.Configuration.Name,
+		constants.ContainerConfigNameLabelKey:     mc.Name,
 		constants.MachineOSConfigNameLabelKey:     mosc.Name,
 	}
 }
 
 // Creates a selector for a MachineOSBuild that matches the given
 // MachineOSConfig and MachineConfigPool.
-func MachineOSBuildSelector(mosc *mcfgv1.MachineOSConfig, mcp *mcfgv1.MachineConfigPool) labels.Selector {
-	return labels.SelectorFromSet(GetMachineOSBuildLabels(mosc, mcp))
+func MachineOSBuildSelector(mosc *mcfgv1.MachineOSConfig, mcp *mcfgv1.MachineConfigPool, mc *mcfgv1.MachineConfig) labels.Selector {
+	return labels.SelectorFromSet(GetMachineOSBuildLabels(mosc, mcp, mc))
 }
 
 // Creates a selector for all MachineOSBuilds which are associated with a given

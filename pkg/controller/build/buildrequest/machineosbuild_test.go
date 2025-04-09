@@ -126,8 +126,8 @@ func TestMachineOSBuild(t *testing.T) {
 			assert.Equal(t, testCase.opts.MachineConfigPool.Spec.Configuration.Name, mosb.Spec.MachineConfig.Name)
 			assert.NotNil(t, mosb.Status.BuildStart)
 
-			assert.True(t, utils.MachineOSBuildSelector(testCase.opts.MachineOSConfig, testCase.opts.MachineConfigPool).Matches(labels.Set(mosb.Labels)))
-			assert.Equal(t, utils.GetMachineOSBuildLabels(testCase.opts.MachineOSConfig, testCase.opts.MachineConfigPool), mosb.Labels)
+			assert.True(t, utils.MachineOSBuildSelector(testCase.opts.MachineOSConfig, testCase.opts.MachineConfigPool, testCase.opts.MachineConfig).Matches(labels.Set(mosb.Labels)))
+			assert.Equal(t, utils.GetMachineOSBuildLabels(testCase.opts.MachineOSConfig, testCase.opts.MachineConfigPool, testCase.opts.MachineConfig), mosb.Labels)
 		})
 	}
 }

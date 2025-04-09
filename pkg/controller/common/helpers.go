@@ -21,6 +21,7 @@ import (
 	"text/template"
 
 	"github.com/clarketm/json"
+
 	fcctbase "github.com/coreos/fcct/base/v0_1"
 	"github.com/coreos/ign-converter/translate/v23tov30"
 	"github.com/coreos/ign-converter/translate/v32tov22"
@@ -1461,4 +1462,17 @@ func GetCAsFromConfigMap(cm *corev1.ConfigMap, key string) ([]byte, error) {
 		return raw, nil
 	}
 	return nil, fmt.Errorf("%s not found in %s/%s", key, cm.Namespace, cm.Name)
+}
+
+// Determines if an on-cluster layering rebuild is required for the changes
+func RequiresRebuild(oldMC, newMC *mcfgv1.MachineConfig) bool {
+	return oldMC.Spec.OSImageURL != newMC.Spec.OSImageURL ||
+		oldMC.Spec.KernelType != newMC.Spec.KernelType ||
+		!reflect.DeepEqual(oldMC.Spec.Extensions, newMC.Spec.Extensions) ||
+		!reflect.DeepEqual(oldMC.Spec.KernelArguments, newMC.Spec.KernelArguments)
+}
+
+// Determines if changes can be safely applied without node disruption
+func CanBeInPlaceApplied(oldMC, newMC *mcfgv1.MachineConfig) bool {
+	return !RequiresRebuild(oldMC, newMC)
 }
