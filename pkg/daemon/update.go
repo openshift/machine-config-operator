@@ -874,6 +874,11 @@ func (dn *Daemon) updateOnClusterLayering(oldConfig, newConfig *mcfgv1.MachineCo
 	if err != nil {
 		return err
 	}
+
+	defer func() {
+		dn.reportMachineNodeDegradeStatus(retErr, pool)
+	}()
+
 	//  update the MCN spec
 	err = upgrademonitor.GenerateAndApplyMachineConfigNodeSpec(dn.featureGatesAccessor, pool, dn.node, dn.mcfgClient)
 	if err != nil {
@@ -1165,6 +1170,10 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	if err != nil {
 		return err
 	}
+
+	defer func() {
+		dn.reportMachineNodeDegradeStatus(retErr, pool)
+	}()
 
 	klog.Infof("Checking Reconcilable for config %v to %v", oldConfigName, newConfigName)
 	// checking for reconcilability
@@ -3110,4 +3119,34 @@ func canonicalizeMachineConfigImage(img string, mc *mcfgv1.MachineConfig) *mcfgv
 	copied.Spec.OSImageURL = img
 
 	return copied
+}
+
+func (dn *Daemon) reportMachineNodeDegradeStatus(err error, pool string) {
+	if dn.node == nil {
+		return
+	}
+	condition := &upgrademonitor.Condition{
+		State:  mcfgalphav1.MachineConfigNodeNodeDegraded,
+		Reason: string(mcfgalphav1.MachineConfigNodeNodeDegraded),
+	}
+	status := metav1.ConditionFalse
+	if err == nil {
+		condition.Message = fmt.Sprintf("Node %s upgrade succeeded", dn.node.GetName())
+	} else {
+		condition.Message = fmt.Sprintf("Node %s upgrade failure. %v", dn.node.GetName(), err)
+		status = metav1.ConditionTrue
+	}
+
+	if applyErr := upgrademonitor.GenerateAndApplyMachineConfigNodes(
+		condition,
+		nil,
+		status,
+		metav1.ConditionFalse,
+		dn.node,
+		dn.mcfgClient,
+		dn.featureGatesAccessor,
+		pool,
+	); applyErr != nil {
+		klog.Errorf("Error updating MCN degraded status condition %v", applyErr)
+	}
 }

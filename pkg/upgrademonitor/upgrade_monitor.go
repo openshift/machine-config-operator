@@ -150,6 +150,7 @@ func generateAndApplyMachineConfigNodes(
 		mcfgalphav1.MachineConfigNodeUpdateRebooted,
 		mcfgalphav1.MachineConfigNodeUpdated,
 		mcfgalphav1.MachineConfigNodeUpdateUncordoned,
+		mcfgalphav1.MachineConfigNodeNodeDegraded,
 	}
 	allConditionTypes = append(allConditionTypes, singletonConditionTypes...)
 
