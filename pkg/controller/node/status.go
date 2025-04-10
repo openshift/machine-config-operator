@@ -174,6 +174,7 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 					case mcfgv1alpha1.MachineConfigNodeResumed:
 						updatingMachines = append(updatedMachines, ourNode) //nolint:gocritic
 						readyMachines = append(readyMachines, ourNode)
+					// Note (ijanssen): `MachineConfigNodeUpdateCompatible` was removed with MCO-1543. This case will need to be replaced/removed when working on MCO-1228.
 					case mcfgv1alpha1.MachineConfigNodeUpdateCompatible:
 						updatingMachines = append(updatedMachines, ourNode) //nolint:gocritic
 					case mcfgv1alpha1.MachineConfigNodeUpdateDrained:
