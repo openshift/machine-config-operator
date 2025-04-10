@@ -72,6 +72,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &operatorv1.ClusterNetworkEntryApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("Config"):
 		return &operatorv1.ConfigApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("ConfigMapFileReference"):
+		return &operatorv1.ConfigMapFileReferenceApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("ConfigSpec"):
 		return &operatorv1.ConfigSpecApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("ConfigStatus"):
@@ -136,6 +138,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &operatorv1.ExportNetworkFlowsApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("FeaturesMigration"):
 		return &operatorv1.FeaturesMigrationApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("FileReferenceSource"):
+		return &operatorv1.FileReferenceSourceApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("ForwardPlugin"):
 		return &operatorv1.ForwardPluginApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("GatewayConfig"):
@@ -248,6 +252,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &operatorv1.LoadBalancerStrategyApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("LoggingDestination"):
 		return &operatorv1.LoggingDestinationApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("Logo"):
+		return &operatorv1.LogoApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("MachineConfiguration"):
 		return &operatorv1.MachineConfigurationApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("MachineConfigurationSpec"):
@@ -410,6 +416,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &operatorv1.StorageStatusApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("SyslogLoggingDestinationParameters"):
 		return &operatorv1.SyslogLoggingDestinationParametersApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("Theme"):
+		return &operatorv1.ThemeApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("Upstream"):
 		return &operatorv1.UpstreamApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("UpstreamResolvers"):
