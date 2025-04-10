@@ -42,7 +42,7 @@ func TestConfigDriftMonitor(t *testing.T) {
 
 	overwriteFile := func(path string) error {
 		tmpPath := filepath.Join(filepath.Dir(path), "overwritten")
-		if err := writeFileAtomicallyWithDefaults(tmpPath, []byte("notthecontents")); err != nil {
+		if err := WriteFileAtomicallyWithDefaults(tmpPath, []byte("notthecontents")); err != nil {
 			return err
 		}
 

@@ -2,7 +2,10 @@ package build
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -13,7 +16,12 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/controller/build/imagebuilder"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/controller/template"
+	"github.com/openshift/machine-config-operator/pkg/daemon"
+	daemonconstants "github.com/openshift/machine-config-operator/pkg/daemon/constants"
+	"github.com/openshift/machine-config-operator/pkg/helpers"
 	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
@@ -525,17 +533,24 @@ func (b *buildReconciler) createNewMachineOSBuildOrReuseExisting(ctx context.Con
 	// previously built image pullspec and adjust the MachineOSConfig to use that
 	// image instead.
 	if err == nil && existingMosb != nil {
-		if err := b.reuseExistingMachineOSBuildIfPossible(ctx, mosc, existingMosb); err != nil {
+		imageNeedsRebuild, err := b.reuseExistingMachineOSBuildIfPossible(ctx, mosc, existingMosb)
+		if err != nil {
 			return fmt.Errorf("could not reuse existing MachineOSBuild %q for MachineOSConfig %q: %w", existingMosb.Name, mosc.Name, err)
 		}
-		return nil
+
+		// If we didn't need to rebuild, we're done
+		if !imageNeedsRebuild {
+			return nil
+		} else {
+			return b.createNewMachineOSBuildForRebuild(ctx, mosb, mosc.Name)
+		}
 	}
 
 	// In this situation, we've determined that the MachineOSBuild does not
 	// exist, so we need to create it.
 	if k8serrors.IsNotFound(err) {
 		_, err := b.mcfgclient.MachineconfigurationV1().MachineOSBuilds().Create(ctx, mosb, metav1.CreateOptions{})
-		if err != nil {
+		if err != nil && !k8serrors.IsAlreadyExists(err) {
 			return fmt.Errorf("could not create new MachineOSBuild %q: %w", mosb.Name, err)
 		}
 		klog.Infof("New MachineOSBuild created: %s", mosb.Name)
@@ -544,16 +559,94 @@ func (b *buildReconciler) createNewMachineOSBuildOrReuseExisting(ctx context.Con
 	return nil
 }
 
+// getCerts created the certs directory and returns the path to the certs directory
+func (b *buildReconciler) getCerts(ctx context.Context) (string, error) {
+	imageCAFilePath := "/etc/docker/certs.d"
+
+	err := os.MkdirAll(imageCAFilePath, daemon.DefaultDirectoryPermissions)
+	if err != nil {
+		return imageCAFilePath, fmt.Errorf("could not create certs dir: %w", err)
+	}
+	controllerConfigs, err := b.listers.controllerConfigLister.List(labels.Everything())
+	if err != nil {
+		return imageCAFilePath, fmt.Errorf("could not list ControllerConfigs: %w", err)
+	}
+	if len(controllerConfigs) == 0 {
+		return imageCAFilePath, fmt.Errorf("no ControllerConfigs found")
+	}
+	cc := controllerConfigs[0]
+	template.UpdateControllerConfigCerts(cc)
+
+	// Copy the certs to /etc/docker/certs.d directory
+	for _, CA := range cc.Spec.ImageRegistryBundleData {
+		caFile := strings.ReplaceAll(CA.File, "..", ":")
+		if err := os.MkdirAll(filepath.Join(imageCAFilePath, caFile), daemon.DefaultDirectoryPermissions); err != nil {
+			return imageCAFilePath, err
+		}
+		if err := daemon.WriteFileAtomicallyWithDefaults(filepath.Join(imageCAFilePath, caFile, "ca.crt"), CA.Data); err != nil {
+			return imageCAFilePath, err
+		}
+	}
+
+	for _, CA := range cc.Spec.ImageRegistryBundleUserData {
+		caFile := strings.ReplaceAll(CA.File, "..", ":")
+		if err := os.MkdirAll(filepath.Join(imageCAFilePath, caFile), daemon.DefaultDirectoryPermissions); err != nil {
+			return imageCAFilePath, err
+		}
+		if err := daemon.WriteFileAtomicallyWithDefaults(filepath.Join(imageCAFilePath, caFile, "ca.crt"), CA.Data); err != nil {
+			return imageCAFilePath, err
+		}
+	}
+
+	return imageCAFilePath, nil
+}
+
 // Determines if a preexising MachineOSBuild can be reused and if possible, does it.
-func (b *buildReconciler) reuseExistingMachineOSBuildIfPossible(ctx context.Context, mosc *mcfgv1.MachineOSConfig, existingMosb *mcfgv1.MachineOSBuild) error {
+func (b *buildReconciler) reuseExistingMachineOSBuildIfPossible(ctx context.Context, mosc *mcfgv1.MachineOSConfig, existingMosb *mcfgv1.MachineOSBuild) (bool, error) {
 	existingMosbState := ctrlcommon.NewMachineOSBuildState(existingMosb)
 
 	canBeReused := false
-
+	imageNeedsRebuild := false
 	// If the existing build is a success and has the image pushspec set, it can be reused.
 	if existingMosbState.IsBuildSuccess() && existingMosb.Status.DigestedImagePushSpec != "" {
-		klog.Infof("Existing MachineOSBuild %q found, reusing image %q by assigning to MachineOSConfig %q", existingMosb.Name, existingMosb.Status.DigestedImagePushSpec, mosc.Name)
-		canBeReused = true
+		klog.Infof("Existing MachineOSBuild %q found, checking if image %q still exists", existingMosb.Name, existingMosb.Status.DigestedImagePushSpec)
+		// Get the certs
+		certsPath, err := b.getCerts(ctx)
+		if err != nil {
+			klog.Warningf("Could not get certs: %v", err)
+		}
+		fmt.Println("----certsPath-------", certsPath)
+		defer os.RemoveAll(certsPath)
+
+		// Get the auth file
+		authfilePath, err := b.getAuthFilePath(existingMosb, mosc.Name)
+		if err != nil {
+			klog.Warningf("Could not get auth file path: %v", err)
+		}
+		fmt.Println("----authfilePath----", authfilePath)
+		defer os.RemoveAll(authfilePath)
+
+		image := existingMosb.Spec.RenderedImagePushSpec
+		fmt.Println("-----image----", image)
+		fmt.Println("-----digest push spec----", existingMosb.Status.DigestedImagePushSpec)
+		inspect, _, err := daemon.ImageInspect(string(image), authfilePath)
+		fmt.Println("-----inspect errr----", err)
+		fmt.Println("-----inspect----", inspect)
+		if inspect != nil && err == nil {
+			klog.Infof("Existing MachineOSBuild %q found, reusing image %q by assigning to MachineOSConfig %q", existingMosb.Name, image, mosc.Name)
+			canBeReused = true
+		} else {
+			klog.Infof("Existing MachineOSBuild image %q no longer exists, skipping reuse. Got error: %v", image, err)
+			imageNeedsRebuild = true
+
+			// Delete the MOSB so that we can rebuild and since the image associated with it doesn't exist anymore
+			klog.Infof("Deleting MachineOSBuild %q so we can rebuild it to create a new image", existingMosb.Name)
+			err := b.mcfgclient.MachineconfigurationV1().MachineOSBuilds().Delete(ctx, existingMosb.Name, metav1.DeleteOptions{})
+			if err != nil && !k8serrors.IsNotFound(err) {
+				return imageNeedsRebuild, fmt.Errorf("could not delete MachineOSBuild %q: %w", existingMosb.Name, err)
+			}
+			return imageNeedsRebuild, nil
+		}
 	}
 
 	// If the existing build is in a transient state, it can be reused.
@@ -565,16 +658,16 @@ func (b *buildReconciler) reuseExistingMachineOSBuildIfPossible(ctx context.Cont
 	if canBeReused {
 		// Stop any other running builds.
 		if err := b.deleteOtherBuildsForMachineOSConfig(ctx, existingMosb, mosc); err != nil {
-			return fmt.Errorf("could not delete running builds for MachineOSConfig %q after reusing existing MachineOSBuild %q: %w", mosc.Name, existingMosb.Name, err)
+			return canBeReused, fmt.Errorf("could not delete running builds for MachineOSConfig %q after reusing existing MachineOSBuild %q: %w", mosc.Name, existingMosb.Name, err)
 		}
 
 		// Update the MachineOSConfig to use the preexisting MachineOSBuild.
 		if err := b.updateMachineOSConfigStatus(ctx, mosc, existingMosb); err != nil {
-			return fmt.Errorf("could not update MachineOSConfig %q status to reuse preexisting MachineOSBuild %q: %w", mosc.Name, existingMosb.Name, err)
+			return canBeReused, fmt.Errorf("could not update MachineOSConfig %q status to reuse preexisting MachineOSBuild %q: %w", mosc.Name, existingMosb.Name, err)
 		}
 	}
 
-	return nil
+	return imageNeedsRebuild, nil
 }
 
 // Gets the MachineOSBuild status from the provided metav1.Object which can be
@@ -766,7 +859,22 @@ func (b *buildReconciler) deleteBuilderForMachineOSBuild(ctx context.Context, mo
 	if err := imagebuilder.NewJobImageBuildCleaner(b.kubeclient, b.mcfgclient, mosb).Clean(ctx); err != nil {
 		return fmt.Errorf("could not clean build %s: %w", mosb.Name, err)
 	}
-
+	// Delete the image associated with the MOSB first
+	moscName, err := utils.GetRequiredLabelValueFromObject(mosb, constants.MachineOSConfigNameLabelKey)
+	if err != nil {
+		klog.Warningf("could not get MachineOSConfig name for MachineOSBuild %s: %v, cannot delete image", mosb.Name, err)
+		return nil
+	}
+	if err := b.deleteMOSBImage(mosb, moscName); err != nil {
+		klog.Warningf("could not delete image for MachineOSBuild %s: %v", mosb.Name, err)
+	}
+	// Delete the digest configmap if it exists
+	// This is created by the wait-for-done container once the image has been built and pushed
+	// and stays around when the build is successful
+	err = b.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Delete(ctx, utils.GetDigestConfigMapName(mosb), metav1.DeleteOptions{})
+	if err != nil && !k8serrors.IsNotFound(err) {
+		return fmt.Errorf("could not delete digest configmap for MachineOSBuild %s for MachineOSConfig %s: %w", mosb.Name, moscName, err)
+	}
 	return nil
 }
 
@@ -775,6 +883,18 @@ func (b *buildReconciler) deleteMachineOSBuild(ctx context.Context, mosb *mcfgv1
 	moscName, err := utils.GetRequiredLabelValueFromObject(mosb, constants.MachineOSConfigNameLabelKey)
 	if err != nil {
 		moscName = "<unknown MachineOSConfig>"
+	}
+	// Delete the image associated with the MOSB first
+	if err := b.deleteMOSBImage(mosb, moscName); err != nil {
+		klog.Warningf("could not delete image for MachineOSBuild %s for MachineOSConfig %s: %v", mosb.Name, moscName, err)
+	}
+
+	// Delete the digest configmap if it exists
+	// This is created by the wait-for-done container once the image has been built and pushed
+	// and stays around when the build is successful
+	err = b.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Delete(ctx, utils.GetDigestConfigMapName(mosb), metav1.DeleteOptions{})
+	if err != nil && !k8serrors.IsNotFound(err) {
+		return fmt.Errorf("could not delete digest configmap for MachineOSBuild %s for MachineOSConfig %s: %w", mosb.Name, moscName, err)
 	}
 
 	err = b.mcfgclient.MachineconfigurationV1().MachineOSBuilds().Delete(ctx, mosb.Name, metav1.DeleteOptions{})
@@ -789,6 +909,84 @@ func (b *buildReconciler) deleteMachineOSBuild(ctx context.Context, mosb *mcfgv1
 	}
 
 	return fmt.Errorf("could not delete MachineOSBuild %s for MachineOSConfig %s: %w", mosb.Name, moscName, err)
+}
+
+func (b *buildReconciler) getAuthFilePath(mosb *mcfgv1.MachineOSBuild, moscName string) (string, error) {
+	pushSecret := mosb.GetAnnotations()[constants.RenderedImagePushSecretAnnotationKey]
+	secret, err := b.kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(context.TODO(), pushSecret, metav1.GetOptions{})
+	if err != nil {
+		return "", fmt.Errorf("could not get rendered push secret for MachineOSConfig %q: %w", moscName, err)
+	}
+	if secret.Type != corev1.SecretTypeDockerConfigJson {
+		return "", fmt.Errorf("rendered push secret for MachineOSConfig %q is not of type %q, cannot delete image", moscName, corev1.SecretTypeDockerConfigJson)
+	}
+	var authConfig map[string]interface{}
+	data, ok := secret.Data[corev1.DockerConfigJsonKey]
+	if !ok {
+		return "", fmt.Errorf("rendered push secret for MachineOSConfig %q does not have key %q, cannot delete image", moscName, corev1.DockerConfigJsonKey)
+	}
+	if err := json.Unmarshal(data, &authConfig); err != nil {
+		return "", fmt.Errorf("could not unmarshal rendered push secret for MachineOSConfig %q: %w, cannot delete image", moscName, err)
+	}
+	// Create a temp auth.json file
+	authFile, err := os.CreateTemp("", "auth-*.json")
+	if err != nil {
+		return "", fmt.Errorf("could not create temp file for rendered push secret for MachineOSConfig %q: %w, cannot delete image", moscName, err)
+	}
+	if err := os.WriteFile(authFile.Name(), data, 0o644); err != nil {
+		return "", fmt.Errorf("could not write temp auth file for rendered push secret for MachineOSConfig %q: %w, cannot delete image", moscName, err)
+	}
+	return authFile.Name(), nil
+}
+
+func (b *buildReconciler) deleteMOSBImage(mosb *mcfgv1.MachineOSBuild, moscName string) error {
+	moscExists := true
+	_, err := b.listers.machineOSConfigLister.Get(moscName)
+	if k8serrors.IsNotFound(err) {
+		moscExists = false
+	} else if err != nil {
+		return fmt.Errorf("could not get MachineOSConfig for MachineOSBuild %q: %w", mosb.Name, err)
+	}
+
+	if moscExists {
+		pool, err := b.listers.machineConfigPoolLister.Get(mosb.ObjectMeta.Labels[constants.TargetMachineConfigPoolLabelKey])
+		if err != nil {
+			return fmt.Errorf("could not get MachineConfigPool from MachineOSBuild %q: %w", mosb.Name, err)
+		}
+
+		nodes, err := helpers.GetNodesForPool(b.listers.machineConfigPoolLister, b.listers.nodeLister, pool)
+		if err != nil {
+			return fmt.Errorf("could not get nodes for MachineConfigPool %q: %w", pool.Name, err)
+		}
+
+		for _, node := range nodes {
+			if node.GetAnnotations()[daemonconstants.CurrentImageAnnotationKey] == string(mosb.Status.DigestedImagePushSpec) ||
+				node.GetAnnotations()[daemonconstants.DesiredImageAnnotationKey] == string(mosb.Status.DigestedImagePushSpec) {
+				// the image we are trying to delete is currently on a node or desired by a node
+				klog.Warningf("Image %s is currently applied on a node or desired by a node, will not delete", string(mosb.Status.DigestedImagePushSpec))
+				return nil
+			}
+		}
+	}
+
+	// Create the authfile for the rendered push secret
+	authFile, err := b.getAuthFilePath(mosb, moscName)
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(authFile)
+	// Create the certs directory to be used by skopeo
+	certsPath, err := b.getCerts(context.TODO())
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(certsPath)
+
+	if err := daemon.DeleteImage(string(mosb.Status.DigestedImagePushSpec), authFile); err != nil {
+		return fmt.Errorf("could not delete image %s from registry for MachineOSBuild %s: %w", string(mosb.Status.DigestedImagePushSpec), mosb.Name, err)
+	}
+	klog.Infof("Deleted image %s from registry for MachineOSBuild %s", string(mosb.Status.DigestedImagePushSpec), mosb.Name)
+	return nil
 }
 
 // Finds and deletes any other running builds for a given MachineOSConfig.

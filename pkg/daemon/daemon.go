@@ -1170,7 +1170,7 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 	}
 
 	// write new config to disk, used for future updates
-	err = writeFileAtomicallyWithDefaults(hypershiftCurrentConfigPath, desiredConfigBytes)
+	err = WriteFileAtomicallyWithDefaults(hypershiftCurrentConfigPath, desiredConfigBytes)
 	if err != nil {
 		return fmt.Errorf("cannot store new config to disk: %w", err)
 	}
@@ -1931,7 +1931,7 @@ func (dn *Daemon) createBootstrapMachineConfigDiffFile(oldConfig, newConfig *mcf
 	diffResult := fmt.Sprintf("Bootstrap generated MC %s vs In-cluster generated MC %s diffs:\nGranular diff:\n %+v \nRaw diff:\n%s\n", oldConfig.Name, newConfig.Name, mcDiff, cmp.Diff(oldConfig.Spec, newConfig.Spec))
 
 	klog.Error(diffResult)
-	if err := writeFileAtomicallyWithDefaults(bootstrapConfigDiffPath, []byte(diffResult)); err != nil {
+	if err := WriteFileAtomicallyWithDefaults(bootstrapConfigDiffPath, []byte(diffResult)); err != nil {
 		klog.Errorf("failed to write bootstrap MachineConfig diff to %s: %v", bootstrapConfigDiffPath, err)
 	} else {
 		klog.Infof("bootstrap MachineConfig diff written to %s", bootstrapConfigDiffPath)
@@ -1947,11 +1947,11 @@ func (dn *Daemon) storeCurrentConfigOnDisk(odc *onDiskConfig) error {
 		return err
 	}
 
-	if err := writeFileAtomicallyWithDefaults(dn.currentConfigPath, mcJSON); err != nil {
+	if err := WriteFileAtomicallyWithDefaults(dn.currentConfigPath, mcJSON); err != nil {
 		return err
 	}
 
-	return writeFileAtomicallyWithDefaults(dn.currentImagePath, []byte(odc.currentImage))
+	return WriteFileAtomicallyWithDefaults(dn.currentImagePath, []byte(odc.currentImage))
 }
 
 // https://bugzilla.redhat.com/show_bug.cgi?id=1842906
@@ -2734,7 +2734,7 @@ func (dn *Daemon) checkOS(osImageURL string) bool {
 
 	// TODO(jkyros): the header for this functions says "if the digests match"
 	// so I'm wondering if at one point this used to work this way....
-	inspection, _, err := imageInspect(osImageURL)
+	inspection, _, err := ImageInspect(osImageURL, "")
 	if err != nil {
 		klog.Warningf("Unable to check manifest for matching hash: %s", err)
 	} else if ostreeCommit, ok := inspection.Labels["ostree.commit"]; ok {

@@ -258,20 +258,20 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 
 			for _, CA := range controllerConfig.Spec.ImageRegistryBundleData {
 				caFile := strings.ReplaceAll(CA.File, "..", ":")
-				if err := os.MkdirAll(filepath.Join(imageCAFilePath, caFile), defaultDirectoryPermissions); err != nil {
+				if err := os.MkdirAll(filepath.Join(imageCAFilePath, caFile), DefaultDirectoryPermissions); err != nil {
 					return err
 				}
-				if err := writeFileAtomicallyWithDefaults(filepath.Join(imageCAFilePath, caFile, "ca.crt"), CA.Data); err != nil {
+				if err := WriteFileAtomicallyWithDefaults(filepath.Join(imageCAFilePath, caFile, "ca.crt"), CA.Data); err != nil {
 					return err
 				}
 			}
 
 			for _, CA := range controllerConfig.Spec.ImageRegistryBundleUserData {
 				caFile := strings.ReplaceAll(CA.File, "..", ":")
-				if err := os.MkdirAll(filepath.Join(imageCAFilePath, caFile), defaultDirectoryPermissions); err != nil {
+				if err := os.MkdirAll(filepath.Join(imageCAFilePath, caFile), DefaultDirectoryPermissions); err != nil {
 					return err
 				}
-				if err := writeFileAtomicallyWithDefaults(filepath.Join(imageCAFilePath, caFile, "ca.crt"), CA.Data); err != nil {
+				if err := WriteFileAtomicallyWithDefaults(filepath.Join(imageCAFilePath, caFile, "ca.crt"), CA.Data); err != nil {
 					return err
 				}
 			}
@@ -391,7 +391,7 @@ func writeToDisk(pathToData map[string][]byte) error {
 			var mode os.FileMode
 			Dinfo, err := os.Stat(filepath.Dir(bundle))
 			if err != nil {
-				mode = defaultDirectoryPermissions
+				mode = DefaultDirectoryPermissions
 			} else {
 				mode = Dinfo.Mode()
 			}
@@ -400,7 +400,7 @@ func writeToDisk(pathToData map[string][]byte) error {
 				return err
 			}
 		} else {
-			if err := writeFileAtomicallyWithDefaults(bundle, data); err != nil {
+			if err := WriteFileAtomicallyWithDefaults(bundle, data); err != nil {
 				return err
 			}
 		}
