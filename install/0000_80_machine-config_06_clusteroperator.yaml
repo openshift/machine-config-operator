@@ -10,7 +10,7 @@ spec: {}
 status:
   versions:
     - name: operator
-      version: "4.19.0-ec.2"
+      version: "0.0.1-snapshot"
     - name: operator-image
       version: placeholder.url.oc.will.replace.this.org/placeholdernamespace:machine-config-operator
   relatedObjects:
