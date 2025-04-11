@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"k8s.io/apimachinery/pkg/labels"
 	"os"
 	"os/exec"
 	"os/user"
@@ -1275,6 +1276,8 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	if err != nil {
 		klog.Errorf("Error making MCN for Updating Files and OS: %v", err)
 	}
+
+	dn.updateTwoNodesTopologyInfo()
 
 	// update files on disk that need updating
 	if err := dn.updateFiles(oldIgnConfig, newIgnConfig, skipCertificateWrite); err != nil {
@@ -3070,4 +3073,60 @@ func canonicalizeMachineConfigImage(img string, mc *mcfgv1.MachineConfig) *mcfgv
 	copied.Spec.OSImageURL = img
 
 	return copied
+}
+
+func (dn *Daemon) updateTwoNodesTopologyInfo() {
+	if dn.node == nil || dn.nodeLister == nil || dn.ccLister == nil {
+		return
+	}
+
+	ctrlcfg, err := dn.ccLister.Get(ctrlcommon.ControllerConfigName)
+	if err != nil {
+		klog.Errorf("could not get controllerconfig %s: %w", ctrlcommon.ControllerConfigName, err)
+		return
+	}
+	if ctrlcfg.Spec.Infra == nil { //|| ctrlcfg.Spec.Infra.Status.ControlPlaneTopology != configv1.DualReplicaTopologyMode {
+		return
+	}
+
+	nodes, err := dn.nodeLister.List(labels.Everything())
+	if err != nil {
+		klog.Errorf("An error ocurred listing nodes for 2 nodes OCP metadata preparation %v", err)
+	}
+	if len(nodes) != 2 {
+		klog.Errorf("Unexpected node count, %d, for 2 nodes OCP metadata preparation", len(nodes))
+		return
+	}
+
+	pairNode := nodes[0]
+	if pairNode.Name == dn.node.Name {
+		pairNode = nodes[1]
+	}
+
+	var addr string
+	for _, addrInfo := range pairNode.Status.Addresses {
+		if addrInfo.Type == corev1.NodeInternalIP && addrInfo.Address != "" {
+			addr = addrInfo.Address
+			break
+		}
+	}
+	if addr == "" {
+		klog.Errorf("Cannot determine the internal IP address of %s node", pairNode.Name)
+		return
+	}
+	uid, err := lookupUID(constants.CoreUserName)
+	if err != nil {
+		klog.Errorf("Error fetching the core user UID", err)
+		return
+	}
+
+	gid, err := lookupGID(constants.CoreGroupName)
+	if err != nil {
+		klog.Errorf("Error fetching the core group GID", err)
+		return
+	}
+
+	if err := writeFileAtomically("/etc/machine-config-daemon/pacemaker-pair-ip", []byte(addr), os.FileMode(0o755), os.FileMode(0o644), uid, gid); err != nil {
+		klog.Errorf("Cannot determine the internal IP address of %s node", pairNode.Name)
+	}
 }
