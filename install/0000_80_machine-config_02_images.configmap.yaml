@@ -10,7 +10,7 @@ metadata:
 data:
   images.json: >
     {
-      "releaseVersion": "0.0.1-snapshot",
+      "releaseVersion": "4.19.0-ec.2",
       "machineConfigOperator": "placeholder.url.oc.will.replace.this.org/placeholdernamespace:machine-config-operator",
       "infraImage": "placeholder.url.oc.will.replace.this.org/placeholdernamespace:pod",
       "keepalivedImage": "placeholder.url.oc.will.replace.this.org/placeholdernamespace:keepalived-ipfailover",
