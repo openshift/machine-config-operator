@@ -12,6 +12,7 @@ import (
 	mcfgalphav1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 
+	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	pkghelpers "github.com/openshift/machine-config-operator/pkg/helpers"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -78,18 +79,20 @@ type fixture struct {
 	fgAccess         featuregates.FeatureGateAccess
 }
 
-func newFixture(t *testing.T) *fixture {
+func newFixtureWithFeatureGates(t *testing.T, enabled, disabled []configv1.FeatureGateName) *fixture {
 	f := &fixture{}
 	f.t = t
 	f.objects = []runtime.Object{}
 	f.kubeobjects = []runtime.Object{}
 	f.fgAccess = featuregates.NewHardcodedFeatureGateAccess(
-		[]configv1.FeatureGateName{
-			features.FeatureGatePinnedImages,
-		},
-		[]configv1.FeatureGateName{},
+		enabled,
+		disabled,
 	)
 	return f
+}
+
+func newFixture(t *testing.T) *fixture {
+	return newFixtureWithFeatureGates(t, []configv1.FeatureGateName{features.FeatureGatePinnedImages}, []configv1.FeatureGateName{})
 }
 
 func (f *fixture) newControllerWithStopChan(stopCh <-chan struct{}) *Controller {
@@ -1021,7 +1024,8 @@ func TestUpdateCandidates(t *testing.T) {
 
 			c := f.newController()
 
-			err := c.setDesiredAnnotations(test.pool, []*corev1.Node{test.node})
+			// TODO: Add additional test cases to handle layered workflows.
+			err := c.setDesiredAnnotations(false, nil, nil, test.pool, []*corev1.Node{test.node})
 			if !assert.Nil(t, err) {
 				return
 			}
@@ -1526,6 +1530,168 @@ func TestControlPlaneTopology(t *testing.T) {
 	}
 
 	f.run(getKey(mcp, t))
+}
+
+// Checks that the layered pool can / should continue. This is based upon the
+// results of querying the API for the MachineOSConfig and MachineOSBuild.
+func TestCanLayeredPoolContinue(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name        string
+		mosc        *mcfgv1.MachineOSConfig
+		mosb        *mcfgv1.MachineOSBuild
+		expected    bool
+		errExpected bool
+	}{
+		{
+			name: "No MOSC or MOSB",
+		},
+		{
+			name: "With MOSC no MOSB",
+			mosc: &mcfgv1.MachineOSConfig{},
+		},
+		{
+			name:        "With MOSB no MOSC",
+			mosb:        &mcfgv1.MachineOSBuild{},
+			errExpected: true,
+		},
+		{
+			name: "MOSC and MOSB",
+			mosc: &mcfgv1.MachineOSConfig{},
+			mosb: &mcfgv1.MachineOSBuild{},
+		},
+		{
+			name: "MOSC has image, but MOSB has different image",
+			mosc: &mcfgv1.MachineOSConfig{
+				Status: mcfgv1.MachineOSConfigStatus{
+					CurrentImagePullSpec: "image-pullspec",
+				},
+			},
+			mosb: &mcfgv1.MachineOSBuild{
+				Status: mcfgv1.MachineOSBuildStatus{
+					DigestedImagePushSpec: "other-pullspec",
+					Conditions:            apihelpers.MachineOSBuildSucceededConditions(),
+				},
+			},
+		},
+		{
+			name: "MOSC has image, and MOSB does too",
+			mosc: &mcfgv1.MachineOSConfig{
+				Status: mcfgv1.MachineOSConfigStatus{
+					CurrentImagePullSpec: "image-pullspec",
+				},
+			},
+			mosb: &mcfgv1.MachineOSBuild{
+				Status: mcfgv1.MachineOSBuildStatus{
+					DigestedImagePushSpec: "image-pullspec",
+					Conditions:            apihelpers.MachineOSBuildSucceededConditions(),
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "MOSB pending",
+			mosc: &mcfgv1.MachineOSConfig{},
+			mosb: &mcfgv1.MachineOSBuild{
+				Status: mcfgv1.MachineOSBuildStatus{
+					Conditions: apihelpers.MachineOSBuildPendingConditions(),
+				},
+			},
+		},
+		{
+			name: "MOSB building",
+			mosc: &mcfgv1.MachineOSConfig{
+				Status: mcfgv1.MachineOSConfigStatus{
+					CurrentImagePullSpec: "image-pullspec",
+				},
+			},
+			mosb: &mcfgv1.MachineOSBuild{
+				Status: mcfgv1.MachineOSBuildStatus{
+					Conditions: apihelpers.MachineOSBuildRunningConditions(),
+				},
+			},
+		},
+		{
+			name: "MOSB failure",
+			mosc: &mcfgv1.MachineOSConfig{
+				Status: mcfgv1.MachineOSConfigStatus{
+					CurrentImagePullSpec: "image-pullspec",
+				},
+			},
+			mosb: &mcfgv1.MachineOSBuild{
+				Status: mcfgv1.MachineOSBuildStatus{
+					Conditions: apihelpers.MachineOSBuildFailedConditions(),
+				},
+			},
+			errExpected: true,
+		},
+	}
+
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFixture(t)
+			c := f.newController()
+
+			reason, canContinue, err := c.canLayeredContinue(testCase.mosc, testCase.mosb)
+			t.Log(reason)
+			if testCase.errExpected {
+				assert.Error(t, err)
+				return
+			}
+
+			assert.NoError(t, err)
+			assert.Equal(t, testCase.expected, canContinue)
+			assert.Equal(t, testCase.expected, canContinue, c.isConfigOrBuildPresent(testCase.mosc, testCase.mosb))
+		})
+	}
+}
+
+// Normally, I wouldn't bother to test trivial methods like this, but these
+// primarily exist to make the NodecControllers assumptions about layering
+// explicit.
+func TestIsConfigAndOrBuildPresent(t *testing.T) {
+	testCases := []struct {
+		name        string
+		mosc        *mcfgv1.MachineOSConfig
+		mosb        *mcfgv1.MachineOSBuild
+		orExpected  bool
+		andExpected bool
+	}{
+		{
+			name: "Both nil",
+		},
+		{
+			name:       "Only MachineOSConfig",
+			mosc:       &mcfgv1.MachineOSConfig{},
+			orExpected: true,
+		},
+		{
+			name:       "Only MachineOSBuild",
+			mosb:       &mcfgv1.MachineOSBuild{},
+			orExpected: true,
+		},
+		{
+			name:        "Both",
+			mosc:        &mcfgv1.MachineOSConfig{},
+			mosb:        &mcfgv1.MachineOSBuild{},
+			orExpected:  true,
+			andExpected: true,
+		},
+	}
+
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			c := newFixture(t).newController()
+			assert.Equal(t, testCase.orExpected, c.isConfigOrBuildPresent(testCase.mosc, testCase.mosb))
+			assert.Equal(t, testCase.andExpected, c.isConfigAndBuildPresent(testCase.mosc, testCase.mosb))
+		})
+	}
 }
 
 // adds annotation to the node
