@@ -37,7 +37,9 @@ contents:
         - "/bin/bash"
         - "-c"
         - |
-          /usr/bin/curl -o /dev/null -kLfs https://api-int.{{ .DNS.Spec.BaseDomain }}:6443/healthz
+          while ! /usr/bin/curl -o /dev/null -kLfs https://api-int.{{ .DNS.Spec.BaseDomain }}:6443/healthz; do
+            sleep 5
+          done
         resources: {}
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
