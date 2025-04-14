@@ -1,12 +1,14 @@
 package common
 
 import (
+	"github.com/coreos/go-semver/semver"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/clarketm/json"
 	ign2types "github.com/coreos/ignition/config/v2_2/types"
+	ign3utils "github.com/coreos/ignition/v2/config/util"
 	ign3 "github.com/coreos/ignition/v2/config/v3_5"
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	validate3 "github.com/coreos/ignition/v2/config/validate"
@@ -130,37 +132,132 @@ func TestValidateIgnition(t *testing.T) {
 	require.NotNil(t, isValid3)
 }
 
-func TestConvertIgnition2to3(t *testing.T) {
-	// Make a new Ign spec v2 config
-	testIgn2Config := ign2types.Config{}
-
-	tempUser := ign2types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign2types.SSHAuthorizedKey{"5678", "abc"}}
-	testIgn2Config.Passwd.Users = []ign2types.PasswdUser{tempUser}
-	testIgn2Config.Ignition.Version = "2.2.0"
-	isValid := ValidateIgnition(testIgn2Config)
-	require.Nil(t, isValid)
-
-	convertedIgn, err := convertIgnition22to35(testIgn2Config)
-	require.Nil(t, err)
-	assert.IsType(t, ign3types.Config{}, convertedIgn)
-	isValid3 := ValidateIgnition(convertedIgn)
-	require.Nil(t, isValid3)
+// TestIgnitionConverterGetSupportedMinorVersions tests that the Ignition converter properly returns
+// the expected supported minor versions in a sorted slice of strings
+func TestIgnitionConverterGetSupportedMinorVersions(t *testing.T) {
+	converter := newIgnitionConverter(buildConverterList())
+	supported := []string{"2.2", "3.0", "3.1", "3.2", "3.3", "3.4", "3.5"}
+	assert.Equal(t, supported, converter.GetSupportedMinorVersions())
 }
 
-func TestConvertIgnition3to2(t *testing.T) {
-	// Make a new Ign3 config
-	testIgn3Config := ign3types.Config{}
-	tempUser := ign3types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"5678", "abc"}}
-	testIgn3Config.Passwd.Users = []ign3types.PasswdUser{tempUser}
-	testIgn3Config.Ignition.Version = InternalMCOIgnitionVersion
-	isValid := ValidateIgnition(testIgn3Config)
-	require.Nil(t, isValid)
+// TestIgnitionConverterGetSupportedMinorVersion
+func TestIgnitionConverterGetSupportedMinorVersion(t *testing.T) {
+	converter := newIgnitionConverter(buildConverterList())
+	v350 := semver.New("3.5.0")
+	v352 := semver.New("3.5.2")
+	matchingVersion, err := converter.GetSupportedMinorVersion(*v350)
+	assert.NoError(t, err)
+	assert.True(t, matchingVersion.Equal(*v350))
 
-	convertedIgn, err := convertIgnition35to22(testIgn3Config)
-	require.Nil(t, err)
-	assert.IsType(t, ign2types.Config{}, convertedIgn)
-	isValid2 := ValidateIgnition(convertedIgn)
-	require.Nil(t, isValid2)
+	matchingMinorVersion, err := converter.GetSupportedMinorVersion(*v352)
+	assert.NoError(t, err)
+	assert.True(t, matchingMinorVersion.Equal(*v350))
+
+	_, err = converter.GetSupportedMinorVersion(*semver.New("7.7.7"))
+	assert.ErrorIs(t, err, errIgnitionConverterUnknownVersion)
+}
+
+// TestIgnitionConverterConvert tests that the Ignition converter is able to handle the expected
+// conversions and that is able to handle error conditions
+func TestIgnitionConverterConvert(t *testing.T) {
+	ign3Config := ign3types.Config{
+		Ignition: ign3types.Ignition{Version: ign3types.MaxVersion.String()},
+		Passwd: ign3types.Passwd{
+			Users: []ign3types.PasswdUser{
+				{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"5678", "abc"}},
+			},
+		},
+	}
+
+	ign2Config := ign2types.Config{
+		Ignition: ign2types.Ignition{Version: ign2types.MaxVersion.String()},
+		Passwd: ign2types.Passwd{
+			Users: []ign2types.PasswdUser{
+				{Name: "core", SSHAuthorizedKeys: []ign2types.SSHAuthorizedKey{"5678", "abc"}},
+			},
+		},
+	}
+
+	converter := newIgnitionConverter(buildConverterList())
+	tests := []struct {
+		name          string
+		inputConfig   any
+		inputVersion  string
+		outputVersion string
+		err           error
+	}{
+		{
+			name:          "Conversion from 2.2 to 3.5",
+			inputConfig:   ign2Config,
+			inputVersion:  "2.2.0",
+			outputVersion: "3.5.0",
+		},
+		{
+			name:          "Conversion from 3.5 to 2.2",
+			inputConfig:   ign3Config,
+			inputVersion:  "3.5.0",
+			outputVersion: "2.2.0",
+		},
+		{
+			name:          "Conversion from 3.5 to 3.4",
+			inputConfig:   ign3Config,
+			inputVersion:  "3.5.0",
+			outputVersion: "3.4.0",
+		},
+		{
+			name:          "Conversion from 3.5 to 3.3",
+			inputConfig:   ign3Config,
+			inputVersion:  "3.5.0",
+			outputVersion: "3.3.0",
+		},
+		{
+			name:          "Conversion from 3.5 to 3.2",
+			inputConfig:   ign3Config,
+			inputVersion:  "3.5.0",
+			outputVersion: "3.2.0",
+		},
+		{
+			name:          "Conversion from 3.5 to 3.1",
+			inputConfig:   ign3Config,
+			inputVersion:  "3.5.0",
+			outputVersion: "3.1.0",
+		},
+		{
+			name:          "Conversion wrong source version",
+			inputConfig:   ign2Config,
+			inputVersion:  "3.5.0",
+			outputVersion: "3.1.0",
+			err:           errIgnitionConverterWrongSourceType,
+		}, {
+			name:          "Conversion not supported",
+			inputConfig:   ign3Config,
+			inputVersion:  "3.1.0",
+			outputVersion: "3.5.0",
+			err:           errIgnitionConverterUnsupportedConversion,
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			result, err := converter.Convert(testCase.inputConfig, *semver.New(testCase.inputVersion), *semver.New(testCase.outputVersion))
+			if testCase.err == nil {
+				if testCase.outputVersion == testCase.inputVersion {
+					assert.Equal(t, testCase.inputConfig, result)
+				} else {
+					serialized, err := json.Marshal(result)
+					assert.NoError(t, err)
+					// Note: Despite 2.2 uses a different type the version field can be fetched using the v3 functions
+					version, report, err := ign3utils.GetConfigVersion(serialized)
+					assert.NoError(t, err)
+					assert.False(t, report.IsFatal())
+					assert.Equal(t, testCase.outputVersion, version.String())
+				}
+			} else {
+				assert.ErrorIs(t, err, testCase.err)
+			}
+
+		})
+	}
 }
 
 func TestParseAndConvert(t *testing.T) {
