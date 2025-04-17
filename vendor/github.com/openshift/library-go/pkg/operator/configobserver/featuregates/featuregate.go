@@ -14,17 +14,22 @@ type FeatureGate interface {
 	Enabled(key configv1.FeatureGateName) bool
 	// KnownFeatures returns a slice of strings describing the FeatureGate's known features.
 	KnownFeatures() []configv1.FeatureGateName
+	// RenderedMinimumComponentVersion returns the minimum component version that caused this set of features
+	// to be generated.
+	RenderedMinimumComponentVersions() []configv1.MinimumComponentVersion
 }
 
 type featureGate struct {
-	enabled  []configv1.FeatureGateName
-	disabled []configv1.FeatureGateName
+	enabled         []configv1.FeatureGateName
+	disabled        []configv1.FeatureGateName
+	renderedVersion []configv1.MinimumComponentVersion
 }
 
-func NewFeatureGate(enabled, disabled []configv1.FeatureGateName) FeatureGate {
+func NewFeatureGate(enabled, disabled []configv1.FeatureGateName, renderedVersion []configv1.MinimumComponentVersion) FeatureGate {
 	return &featureGate{
-		enabled:  enabled,
-		disabled: disabled,
+		enabled:         enabled,
+		disabled:        disabled,
+		renderedVersion: renderedVersion,
 	}
 }
 
@@ -45,4 +50,8 @@ func (f *featureGate) KnownFeatures() []configv1.FeatureGateName {
 	allKnown = append(allKnown, f.disabled...)
 
 	return allKnown
+}
+
+func (f *featureGate) RenderedMinimumComponentVersions() []configv1.MinimumComponentVersion {
+	return f.renderedVersion
 }
