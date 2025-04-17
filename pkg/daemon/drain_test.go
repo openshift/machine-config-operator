@@ -365,18 +365,18 @@ location = "mirror.com/repo/test-img-14"
 			expectedAction: false,
 		},
 		{
-			// skip drain: only new registry added with pull-from-mirror=digest-only
+			// skip drain: new registry and mirror added with pull-from-mirror=digest-only
 			actions:        []string{postConfigChangeActionReloadCrio},
 			oldConfig:      machineConfigs["mc3"],
 			newConfig:      machineConfigs["mc1"],
 			expectedAction: false,
 		},
 		{
-			// perform drain: only new registry added with mirror-by-digest-only set to false
+			// skip drain: only new registry added with mirror-by-digest-only set to false
 			actions:        []string{postConfigChangeActionReloadCrio},
 			oldConfig:      machineConfigs["mc5"],
 			newConfig:      machineConfigs["mc6"],
-			expectedAction: true,
+			expectedAction: false,
 		},
 		{
 			// perform drain: one or more registry has been removed
@@ -403,6 +403,13 @@ location = "mirror.com/repo/test-img-14"
 			// perform drain: only new mirrors got added to the registry with mirror-by-digest-only set to false for registry
 			actions:        []string{postConfigChangeActionReloadCrio},
 			oldConfig:      machineConfigs["mc6"],
+			newConfig:      machineConfigs["mc7"],
+			expectedAction: true,
+		},
+		{
+			// perform drain: new registry and mirrors added without pull-from-mirror=digest-only
+			actions:        []string{postConfigChangeActionReloadCrio},
+			oldConfig:      machineConfigs["mc4"],
 			newConfig:      machineConfigs["mc7"],
 			expectedAction: true,
 		},
