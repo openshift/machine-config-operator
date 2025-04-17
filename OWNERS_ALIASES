@@ -9,6 +9,13 @@ aliases:
     - bfournie
     - cybertron
     - mkowalski
+  edge-enablement-reviewers:
+     - jerpeter1
+     - eggfoobar
+     - jeff-roche
+     - suleymanakbas91
+     - qJkee
+     - jaypoulz
   openstack-approvers:
     - EmilienM
     - mandre
