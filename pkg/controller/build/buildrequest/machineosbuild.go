@@ -9,6 +9,7 @@ import (
 	"github.com/distribution/reference"
 	"github.com/ghodss/yaml"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -201,6 +202,9 @@ func NewMachineOSBuild(opts MachineOSBuildOpts) (*mcfgv1.MachineOSBuild, error) 
 			// Set finalzer on MOSB to ensure all it dependents are deleted before the MOSB
 			Finalizers: []string{
 				metav1.FinalizerDeleteDependents,
+			},
+			Annotations: map[string]string{
+				constants.RenderedImagePushSecretAnnotationKey: opts.MachineOSConfig.Spec.RenderedImagePushSecret.Name,
 			},
 		},
 		Spec: mcfgv1.MachineOSBuildSpec{
