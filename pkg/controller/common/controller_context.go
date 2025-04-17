@@ -6,10 +6,11 @@ import (
 	"time"
 
 	configinformers "github.com/openshift/client-go/config/informers/externalversions"
+	imageinformers "github.com/openshift/client-go/image/informers/externalversions"
 	machineinformersv1beta1 "github.com/openshift/client-go/machine/informers/externalversions"
 	mcfginformers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
-
 	operatorinformers "github.com/openshift/client-go/operator/informers/externalversions"
+	routeinformers "github.com/openshift/client-go/route/informers/externalversions"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/library-go/pkg/operator/events"
 	"github.com/openshift/machine-config-operator/internal/clients"
@@ -60,6 +61,8 @@ type ControllerContext struct {
 	OperatorInformerFactory                             operatorinformers.SharedInformerFactory
 	KubeMAOSharedInformer                               informers.SharedInformerFactory
 	MachineInformerFactory                              machineinformersv1beta1.SharedInformerFactory
+	ImageInformerFactory                                imageinformers.SharedInformerFactory
+	RouteInformerFactory                                routeinformers.SharedInformerFactory
 
 	FeatureGateAccess featuregates.FeatureGateAccess
 
@@ -76,6 +79,8 @@ type ControllerContext struct {
 func CreateControllerContext(ctx context.Context, cb *clients.Builder) *ControllerContext {
 	client := cb.MachineConfigClientOrDie("machine-config-shared-informer")
 	kubeClient := cb.KubeClientOrDie("kube-shared-informer")
+	imageClient := cb.ImageClientOrDie("image-shared-informer")
+	routeClient := cb.RouteClientOrDie("route-shared-informer")
 	apiExtClient := cb.APIExtClientOrDie("apiext-shared-informer")
 	configClient := cb.ConfigClientOrDie("config-shared-informer")
 	operatorClient := cb.OperatorClientOrDie("operator-shared-informer")
@@ -96,6 +101,8 @@ func CreateControllerContext(ctx context.Context, cb *clients.Builder) *Controll
 	)
 	// this is needed to listen for changes in MAO user data secrets to re-apply the ones we define in the MCO (since we manage them)
 	kubeMAOSharedInformer := informers.NewFilteredSharedInformerFactory(kubeClient, resyncPeriod()(), "openshift-machine-api", nil)
+	imageSharedInformer := imageinformers.NewSharedInformerFactory(imageClient, resyncPeriod()())
+	routeSharedInformer := routeinformers.NewSharedInformerFactory(routeClient, resyncPeriod()())
 
 	// filter out CRDs that do not have the MCO label
 	assignFilterLabels := func(opts *metav1.ListOptions) {
@@ -150,5 +157,7 @@ func CreateControllerContext(ctx context.Context, cb *clients.Builder) *Controll
 		ResyncPeriod:                                        resyncPeriod(),
 		KubeMAOSharedInformer:                               kubeMAOSharedInformer,
 		FeatureGateAccess:                                   featureGateAccessor,
+		ImageInformerFactory:                                imageSharedInformer,
+		RouteInformerFactory:                                routeSharedInformer,
 	}
 }

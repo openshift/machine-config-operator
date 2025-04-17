@@ -6,9 +6,9 @@ import (
 	"strings"
 
 	"github.com/containers/common/pkg/retry"
-	"github.com/containers/image/v5/docker"
 	"github.com/containers/image/v5/image"
 	"github.com/containers/image/v5/manifest"
+	"github.com/containers/image/v5/transports"
 	"github.com/containers/image/v5/types"
 	digest "github.com/opencontainers/go-digest"
 )
@@ -18,21 +18,40 @@ const (
 	cmdRetriesCount = 2
 )
 
-// newDockerImageSource creates an image source for an image reference.
-// The caller must call .Close() on the returned ImageSource.
-func newDockerImageSource(ctx context.Context, sys *types.SystemContext, name string) (types.ImageSource, error) {
-	var imageName string
-	if !strings.HasPrefix(name, "//") {
-		imageName = "//" + name
-	} else {
-		imageName = name
+func parseImageName(imgName string) (types.ImageReference, error) {
+	// Keep this in sync with TransportFromImageName!
+	transportName, withinTransport, valid := strings.Cut(imgName, ":")
+	if !valid {
+		return nil, fmt.Errorf(`invalid image name "%s", expected colon-separated transport:reference`, imgName)
 	}
-	ref, err := docker.ParseReference(imageName)
-	if err != nil {
-		return nil, err
+	transport := transports.Get(transportName)
+	if transport == nil {
+		return nil, fmt.Errorf(`invalid image name "%s", unknown transport "%s"`, imgName, transportName)
+	}
+	return transport.ParseReference(withinTransport)
+}
+
+//nolint:unparam
+func DeleteImage(imageName, authFilePath string) error {
+	imageName = "docker://" + imageName
+	retryOpts := retry.RetryOptions{
+		MaxRetry: cmdRetriesCount,
 	}
 
-	return ref.NewImageSource(ctx, sys)
+	ctx := context.Background()
+	sys := &types.SystemContext{AuthFilePath: authFilePath}
+
+	ref, err := parseImageName(imageName)
+	if err != nil {
+		return err
+	}
+
+	if err := retry.IfNecessary(ctx, func() error {
+		return ref.DeleteImage(ctx, sys)
+	}, &retryOpts); err != nil {
+		return err
+	}
+	return nil
 }
 
 // This function has been inspired from upstream skopeo inspect, see https://github.com/containers/skopeo/blob/master/cmd/skopeo/inspect.go
@@ -41,7 +60,7 @@ func newDockerImageSource(ctx context.Context, sys *types.SystemContext, name st
 // to know what the error is by using the libraries directly :)
 //
 //nolint:unparam
-func imageInspect(imageName string) (*types.ImageInspectInfo, *digest.Digest, error) {
+func ImageInspect(imageName, authfile string) (*types.ImageInspectInfo, *digest.Digest, error) {
 	var (
 		src        types.ImageSource
 		imgInspect *types.ImageInspectInfo
@@ -51,26 +70,36 @@ func imageInspect(imageName string) (*types.ImageInspectInfo, *digest.Digest, er
 	retryOpts := retry.RetryOptions{
 		MaxRetry: cmdRetriesCount,
 	}
+	imageName = "docker://" + imageName
 
 	ctx := context.Background()
-	sys := &types.SystemContext{AuthFilePath: ostreeAuthFile}
+	authfilePath := ostreeAuthFile
+	if authfile != "" {
+		authfilePath = authfile
+	}
+	sys := &types.SystemContext{AuthFilePath: authfilePath}
+
+	ref, err := parseImageName(imageName)
+	if err != nil {
+		return nil, nil, fmt.Errorf("error parsing image name %q: %w", imageName, err)
+	}
 
 	// retry.IfNecessary takes into account whether the error is "retryable"
 	// so we don't keep looping on errors that will never resolve
 	if err := retry.RetryIfNecessary(ctx, func() error {
-		src, err = newDockerImageSource(ctx, sys, imageName)
+		src, err = ref.NewImageSource(ctx, sys)
 		return err
 	}, &retryOpts); err != nil {
-		return nil, nil, fmt.Errorf("error parsing image name %q: %w", imageName, err)
+		return nil, nil, fmt.Errorf("error getting image source %q: %w", imageName, err)
 	}
 
 	var rawManifest []byte
-	if err := retry.RetryIfNecessary(ctx, func() error {
-		rawManifest, _, err = src.GetManifest(ctx, nil)
-
+	unparsedInstance := image.UnparsedInstance(src, nil)
+	if err := retry.IfNecessary(ctx, func() error {
+		rawManifest, _, err = unparsedInstance.Manifest(ctx)
 		return err
 	}, &retryOpts); err != nil {
-		return nil, nil, fmt.Errorf("error retrieving image manifest %q: %w", imageName, err)
+		return nil, nil, fmt.Errorf("error retrieving manifest for image: %w", err)
 	}
 
 	// get the digest here because it's not part of the image inspection
@@ -81,7 +110,7 @@ func imageInspect(imageName string) (*types.ImageInspectInfo, *digest.Digest, er
 
 	defer src.Close()
 
-	img, err := image.FromUnparsedImage(ctx, sys, image.UnparsedInstance(src, nil))
+	img, err := image.FromUnparsedImage(ctx, sys, unparsedInstance)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error parsing manifest for image %q: %w", imageName, err)
 	}

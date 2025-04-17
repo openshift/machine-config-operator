@@ -64,7 +64,7 @@ func TestValidateOnClusterBuildConfig(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			kubeclient, mcfgclient, lobj, _ := fixtures.GetClientsForTest(t)
+			kubeclient, mcfgclient, _, _, lobj, _ := fixtures.GetClientsForTest(t)
 			_, err := mcfgclient.MachineconfigurationV1().MachineOSConfigs().Create(context.TODO(), testCase.mosc(), metav1.CreateOptions{})
 			require.NoError(t, err)
 

@@ -130,7 +130,7 @@ func TestBuildRequestOpts(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			t.Cleanup(cancel)
 
-			kubeclient, mcfgclient, lobj, _ := fixtures.GetClientsForTestWithAdditionalObjects(t, testCase.addlObjects, []runtime.Object{})
+			kubeclient, mcfgclient, _, _, lobj, _ := fixtures.GetClientsForTestWithAdditionalObjects(t, testCase.addlObjects, []runtime.Object{})
 
 			if testCase.addlObjectSetup != nil {
 				testCase.addlObjectSetup(t, lobj)
