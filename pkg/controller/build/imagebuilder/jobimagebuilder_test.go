@@ -33,7 +33,7 @@ func TestJobImageBuilder(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	t.Cleanup(cancel)
 
-	kubeclient, mcfgclient, lobj, kubeassert := fixtures.GetClientsForTest(t)
+	kubeclient, mcfgclient, _, _, lobj, kubeassert := fixtures.GetClientsForTest(t)
 	kubeassert = kubeassert.WithContext(ctx)
 
 	jim := NewJobImageBuilder(kubeclient, mcfgclient, lobj.MachineOSBuild, lobj.MachineOSConfig)
@@ -227,7 +227,7 @@ func TestJobImageBuilderCanCleanWithOnlyMachineOSBuild(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	t.Cleanup(cancel)
 
-	kubeclient, mcfgclient, lobj, kubeassert := fixtures.GetClientsForTest(t)
+	kubeclient, mcfgclient, _, _, lobj, kubeassert := fixtures.GetClientsForTest(t)
 	kubeassert = kubeassert.WithContext(ctx)
 
 	jim := NewJobImageBuilder(kubeclient, mcfgclient, lobj.MachineOSBuild, lobj.MachineOSConfig)
@@ -260,7 +260,7 @@ func TestJobImageBuilderSetsBuildStartAndEndTimestamp(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	t.Cleanup(cancel)
 
-	kubeclient, mcfgclient, lobj, _ := fixtures.GetClientsForTest(t)
+	kubeclient, mcfgclient, _, _, lobj, _ := fixtures.GetClientsForTest(t)
 
 	jim := NewJobImageBuilder(kubeclient, mcfgclient, lobj.MachineOSBuild, lobj.MachineOSConfig)
 

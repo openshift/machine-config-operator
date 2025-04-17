@@ -11,8 +11,10 @@ import (
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	imagev1clientset "github.com/openshift/client-go/image/clientset/versioned"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
+	routeclientset "github.com/openshift/client-go/route/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -32,6 +34,8 @@ type OSBuildController struct {
 	eventRecorder record.EventRecorder
 	mcfgclient    mcfgclientset.Interface
 	kubeclient    clientset.Interface
+	imageclient   imagev1clientset.Interface
+	routeclient   routeclientset.Interface
 
 	config    Config
 	execQueue *ctrlcommon.WrappedQueue
@@ -72,6 +76,8 @@ func NewOSBuildControllerFromControllerContextWithConfig(ctrlCtx *ctrlcommon.Con
 		cfg,
 		ctrlCtx.ClientBuilder.MachineConfigClientOrDie("machine-os-builder"),
 		ctrlCtx.ClientBuilder.KubeClientOrDie("machine-os-builder"),
+		ctrlCtx.ClientBuilder.ImageClientOrDie("machine-os-builder"),
+		ctrlCtx.ClientBuilder.RouteClientOrDie("machine-os-builder"),
 	)
 }
 
@@ -79,6 +85,8 @@ func newOSBuildController(
 	ctrlConfig Config,
 	mcfgclient mcfgclientset.Interface,
 	kubeclient clientset.Interface,
+	imageclient imagev1clientset.Interface,
+	routeclient routeclientset.Interface,
 ) *OSBuildController {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
@@ -89,6 +97,8 @@ func newOSBuildController(
 	ctrl := &OSBuildController{
 		kubeclient:    kubeclient,
 		mcfgclient:    mcfgclient,
+		imageclient:   imageclient,
+		routeclient:   routeclient,
 		informers:     informers,
 		listers:       informers.listers(),
 		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineosbuilder"}),
@@ -123,7 +133,7 @@ func newOSBuildController(
 		UpdateFunc: ctrl.updateMachineConfigPool,
 	})
 
-	ctrl.buildReconciler = newBuildReconciler(mcfgclient, kubeclient, ctrl.listers)
+	ctrl.buildReconciler = newBuildReconciler(mcfgclient, kubeclient, imageclient, routeclient, ctrl.listers)
 
 	return ctrl
 }

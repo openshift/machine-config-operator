@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	fakeclientimagev1 "github.com/openshift/client-go/image/clientset/versioned/fake"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	fakeclientmachineconfigv1 "github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
 	"github.com/stretchr/testify/assert"
@@ -306,7 +307,8 @@ func getAssertionsForTest() (*Assertions, *mockTesting, clientset.Interface, mcf
 	mock := &mockTesting{}
 	kubeclient := fakecorev1client.NewSimpleClientset()
 	mcfgclient := fakeclientmachineconfigv1.NewSimpleClientset()
-	a := Assert(mock, kubeclient, mcfgclient)
+	imageclient := fakeclientimagev1.NewSimpleClientset()
+	a := Assert(mock, kubeclient, mcfgclient, imageclient)
 
 	return a, mock, kubeclient, mcfgclient
 }
@@ -314,5 +316,6 @@ func getAssertionsForTest() (*Assertions, *mockTesting, clientset.Interface, mcf
 func getAssertionsForTestWithRealT(t *testing.T) (*Assertions, clientset.Interface, mcfgclientset.Interface) {
 	kubeclient := fakecorev1client.NewSimpleClientset()
 	mcfgclient := fakeclientmachineconfigv1.NewSimpleClientset()
-	return Assert(t, kubeclient, mcfgclient), kubeclient, mcfgclient
+	imageclient := fakeclientimagev1.NewSimpleClientset()
+	return Assert(t, kubeclient, mcfgclient, imageclient), kubeclient, mcfgclient
 }

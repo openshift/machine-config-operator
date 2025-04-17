@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"time"
 
+	imagev1 "github.com/openshift/api/image/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	imagev1clientset "github.com/openshift/client-go/image/clientset/versioned"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	"github.com/openshift/machine-config-operator/test/framework"
@@ -39,6 +41,8 @@ type Assertions struct {
 	kubeclient clientset.Interface
 	// Mcfgclient; may be real or fake.
 	mcfgclient mcfgclientset.Interface
+	// imageclient; may be real or fake.
+	imageclient imagev1clientset.Interface
 	// The context to use for all API requests.
 	ctx context.Context
 	// Should we poll for results or use the first result we get.
@@ -62,20 +66,21 @@ type TestingT interface {
 
 // Instantiates the Assertions struct using a ClientSet object.
 func AssertClientSet(t TestingT, cs *framework.ClientSet) *Assertions {
-	return Assert(t, cs.GetKubeclient(), cs.GetMcfgclient())
+	return Assert(t, cs.GetKubeclient(), cs.GetMcfgclient(), cs.GetImageclient())
 }
 
 // Instantiates the Assertions struct using the provided clients.
-func Assert(t TestingT, kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface) *Assertions {
-	return newAssertions(t, kubeclient, mcfgclient)
+func Assert(t TestingT, kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, imageclient imagev1clientset.Interface) *Assertions {
+	return newAssertions(t, kubeclient, mcfgclient, imageclient)
 }
 
 // Constructs an Assertions struct with initialized but zeroed values.
-func newAssertions(t TestingT, kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface) *Assertions {
+func newAssertions(t TestingT, kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, imageclient imagev1clientset.Interface) *Assertions {
 	return &Assertions{
 		t:           t,
 		kubeclient:  kubeclient,
 		mcfgclient:  mcfgclient,
+		imageclient: imageclient,
 		poll:        false,
 		keepCount:   false,
 		pollCount:   0,
@@ -85,15 +90,15 @@ func newAssertions(t TestingT, kubeclient clientset.Interface, mcfgclient mcfgcl
 }
 
 // Constructs an Assertions struct with initialized but zeroed values and a context.
-func newAssertionsWithContext(ctx context.Context, t TestingT, kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface) *Assertions {
-	a := newAssertions(t, kubeclient, mcfgclient)
+func newAssertionsWithContext(ctx context.Context, t TestingT, kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, imageclient imagev1clientset.Interface) *Assertions {
+	a := newAssertions(t, kubeclient, mcfgclient, imageclient)
 	a.ctx = ctx
 	return a
 }
 
 // Returns a deep copy of the Assertion struct with zeroed polling values.
 func (a *Assertions) deepcopy() *Assertions {
-	return newAssertionsWithContext(a.ctx, a.t, a.kubeclient, a.mcfgclient)
+	return newAssertionsWithContext(a.ctx, a.t, a.kubeclient, a.mcfgclient, a.imageclient)
 }
 
 // Returns a deep copy of the Assertion struct while preserving values related to polling.
@@ -350,6 +355,36 @@ func (a *Assertions) PodHasOwnerSet(podName string, msgAndArgs ...interface{}) {
 	require.NoError(a.t, err, msgAndArgs...)
 }
 
+// Asserts that an ImageStreamTag is deleted.
+func (a *Assertions) ImageDoesNotExist(imageName string, msgAndArgs ...interface{}) {
+	a.t.Helper()
+	stateFunc := func(_ *imagev1.ImageStreamTag, err error) (bool, error) {
+		return a.deleted(err)
+	}
+
+	a.imageStreamTagReachesState(imageName, stateFunc, msgAndArgs...)
+}
+
+// Asserts that a MachineConfig is created.
+func (a *Assertions) MachineConfigExists(mc *mcfgv1.MachineConfig, msgAndArgs ...interface{}) {
+	a.t.Helper()
+	stateFunc := func(_ *mcfgv1.MachineConfig, err error) (bool, error) {
+		return a.created(err)
+	}
+
+	a.machineConfigReachesState(mc, stateFunc, msgAndArgs...)
+}
+
+// Asserts that a MachineConfig is deleted.
+func (a *Assertions) MachineConfigDoesNotExist(mc *mcfgv1.MachineConfig, msgAndArgs ...interface{}) {
+	a.t.Helper()
+	stateFunc := func(_ *mcfgv1.MachineConfig, err error) (bool, error) {
+		return a.deleted(err)
+	}
+
+	a.machineConfigReachesState(mc, stateFunc, msgAndArgs...)
+}
+
 // Asserts that a secret has an owner set
 func (a *Assertions) SecretHasOwnerSet(secretName string, msgAndArgs ...interface{}) {
 	a.t.Helper()
@@ -483,6 +518,38 @@ func (a *Assertions) machineOSBuildReachesState(mosc *mcfgv1.MachineOSBuild, sta
 	})
 
 	msgAndArgs = prefixMsgAndArgs(fmt.Sprintf("MachineOSBuild %s did not reach specified state", mosc.Name), msgAndArgs)
+	require.NoError(a.t, err, msgAndArgs...)
+}
+
+// Asserts that a MachineConfig reaches the desired state.
+func (a *Assertions) machineConfigReachesState(mc *mcfgv1.MachineConfig, stateFunc func(*mcfgv1.MachineConfig, error) (bool, error), msgAndArgs ...interface{}) {
+	a.t.Helper()
+
+	ctx, cancel := a.getContextAndCancel()
+	defer cancel()
+
+	err := wait.PollUntilContextCancel(ctx, a.getPollInterval(), true, func(ctx context.Context) (bool, error) {
+		apiMC, err := a.mcfgclient.MachineconfigurationV1().MachineConfigs().Get(ctx, mc.Name, metav1.GetOptions{})
+		return a.handleStateFuncResult(stateFunc(apiMC, err))
+	})
+
+	msgAndArgs = prefixMsgAndArgs(fmt.Sprintf("MachineConfig %s did not reach specified state", mc.Name), msgAndArgs)
+	require.NoError(a.t, err, msgAndArgs...)
+}
+
+// Asserts that a ImageStreamTag reaches the desired state.
+func (a *Assertions) imageStreamTagReachesState(imageName string, stateFunc func(*imagev1.ImageStreamTag, error) (bool, error), msgAndArgs ...interface{}) {
+	a.t.Helper()
+
+	ctx, cancel := a.getContextAndCancel()
+	defer cancel()
+
+	err := wait.PollUntilContextCancel(ctx, a.getPollInterval(), true, func(ctx context.Context) (bool, error) {
+		apiIST, err := a.imageclient.ImageV1().ImageStreamTags(mcoNamespace).Get(ctx, imageName, metav1.GetOptions{})
+		return a.handleStateFuncResult(stateFunc(apiIST, err))
+	})
+
+	msgAndArgs = prefixMsgAndArgs(fmt.Sprintf("ImageStreamTag %s did not reach specified state", imageName), msgAndArgs)
 	require.NoError(a.t, err, msgAndArgs...)
 }
 
