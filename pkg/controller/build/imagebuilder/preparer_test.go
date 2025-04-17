@@ -30,7 +30,7 @@ func TestPreparer(t *testing.T) {
 	obj3 := fixtures.NewObjectsForTest("third-worker")
 
 	addlObjects := append(obj2.ToRuntimeObjects(), obj3.ToRuntimeObjects()...)
-	kubeclient, mcfgclient, _, kubeassert := fixtures.GetClientsForTestWithAdditionalObjects(t, []runtime.Object{}, addlObjects)
+	kubeclient, mcfgclient, _, _, _, kubeassert := fixtures.GetClientsForTestWithAdditionalObjects(t, []runtime.Object{}, addlObjects)
 	kubeassert = kubeassert.WithContext(ctx).Now()
 
 	// Create three preparers assigned to their own MachineOSBuild though sharing

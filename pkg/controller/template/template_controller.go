@@ -486,7 +486,7 @@ func (ctrl *Controller) handleErr(err error, key string) {
 }
 
 // updateControllerConfigCerts parses the raw cert data and places key information about the certs into the controllerconfig status
-func updateControllerConfigCerts(config *mcfgv1.ControllerConfig) bool {
+func UpdateControllerConfigCerts(config *mcfgv1.ControllerConfig) bool {
 	modified := false
 	names := []string{
 		"KubeAPIServerServingCAData", "CloudProviderCAData", "RootCAData", "AdditionalTrustBundle",
@@ -606,7 +606,7 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 		}
 	}
 
-	modified := updateControllerConfigCerts(cfg)
+	modified := UpdateControllerConfigCerts(cfg)
 
 	if modified {
 		if err := ctrl.syncCertificateStatus(cfg); err != nil {

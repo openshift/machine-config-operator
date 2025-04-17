@@ -38,6 +38,10 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
+var (
+	InspectMC = "inspect-mc"
+)
+
 func applyMC(t *testing.T, cs *framework.ClientSet, mc *mcfgv1.MachineConfig) func() {
 	cleanupFunc := helpers.ApplyMC(t, cs, mc)
 	t.Logf("Created new MachineConfig %q", mc.Name)
@@ -388,6 +392,14 @@ func cleanupEphemeralBuildObjects(t *testing.T, cs *framework.ClientSet) {
 		require.NoError(t, cleanupDigestConfigMap(t, cs, &item))
 		kubeassert.ConfigMapDoesNotExist(utils.GetDigestConfigMapName(&item))
 	}
+
+	// Clean up inspect MC if it exists
+	machineConfig, err := cs.MachineConfigs().Get(context.TODO(), InspectMC, metav1.GetOptions{})
+	if err == nil {
+		t.Logf("Cleaning up MachineConfig %q", InspectMC)
+		require.NoError(t, deleteObject(context.TODO(), t, machineConfig, cs.MachineConfigs()))
+		kubeassert.MachineConfigDoesNotExist(machineConfig)
+	}
 }
 
 type deleter interface {
@@ -631,7 +643,6 @@ func getJobForMOSB(ctx context.Context, cs *framework.ClientSet, build *mcfgv1.M
 			return jobName, fmt.Errorf("could not get list of jobs: %w", err)
 		}
 		for _, job := range jobs.Items {
-			fmt.Printf("Job name: %s, Job UID: %s, MOSB UID: %s", job.Name, string(job.UID), mosbJobUID)
 			if string(job.UID) == mosbJobUID {
 				jobName = job.Name
 				break

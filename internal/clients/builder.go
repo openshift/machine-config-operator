@@ -9,6 +9,7 @@ import (
 	mapiclientset "github.com/openshift/client-go/machine/clientset/versioned"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	operatorclientset "github.com/openshift/client-go/operator/clientset/versioned"
+	routeclientset "github.com/openshift/client-go/route/clientset/versioned"
 	apiext "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -65,6 +66,10 @@ func (cb *Builder) BuildClientOrDie(name string) buildclientset.Interface {
 
 func (cb *Builder) ImageClientOrDie(name string) imageclientset.Interface {
 	return imageclientset.NewForConfigOrDie(rest.AddUserAgent(cb.config, name))
+}
+
+func (cb *Builder) RouteClientOrDie(name string) routeclientset.Interface {
+	return routeclientset.NewForConfigOrDie(rest.AddUserAgent(cb.config, name))
 }
 
 // MachineClientOrDie returns the machine api client interface for machine api objects.
