@@ -1,0 +1,17 @@
+name: ha-00-directories.service
+enabled: true
+contents: |
+  [Unit]
+  Description=Create Directories and Log Files for PCS and Corosync
+  After=network.target
+  
+  [Service]
+  Type=oneshot
+  ExecStartPre=/bin/mount -o remount,rw /var/
+  ExecStart=/bin/mkdir -p /var/lib/pcsd /var/lib/corosync /var/log/pcsd /var/log/cluster
+  ExecStartPost=/bin/touch /var/log/pcsd/pcsd.log /var/log/cluster/corosync.log
+  ExecStartPost=/bin/chmod 0644 /var/log/pcsd/pcsd.log /var/log/cluster/corosync.log
+  RemainAfterExit=yes
+  
+  [Install]
+  WantedBy=multi-user.target

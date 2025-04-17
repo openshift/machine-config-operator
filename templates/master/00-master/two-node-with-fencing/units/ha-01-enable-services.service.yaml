@@ -1,0 +1,15 @@
+name: ha-01-enable-services.service
+enabled: true
+contents: |
+  [Unit]
+  Description=Enable and start PCSd
+  After=ha-00-directories.service
+  
+  [Service]
+  Type=oneshot
+  ExecStart=/bin/systemctl enable pcsd.service
+  ExecStartPost=/bin/systemctl start pcsd.service
+  RemainAfterExit=yes
+  
+  [Install]
+  WantedBy=multi-user.target
