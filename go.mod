@@ -350,3 +350,5 @@ require (
 )
 
 replace k8s.io/kube-openapi => github.com/openshift/kube-openapi v0.0.0-20230816122517-ffc8f001abb0
+
+replace github.com/openshift/api => github.com/isabella-janssen/openshift-api v0.0.0-20250411191959-5fafc7d5a3cb
