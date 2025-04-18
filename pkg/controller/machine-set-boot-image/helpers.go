@@ -84,11 +84,14 @@ func getMachineResourceSelectorFromMachineManagers(machineManagers []opv1.Machin
 	}
 	for _, machineManager := range machineManagers {
 		if machineManager.APIGroup == apiGroup && machineManager.Resource == resource {
-			if machineManager.Selection.Mode == opv1.Partial {
+			switch machineManager.Selection.Mode {
+			case opv1.Partial:
 				selector, err := metav1.LabelSelectorAsSelector(machineManager.Selection.Partial.MachineResourceSelector)
 				return true, selector, err
-			} else if machineManager.Selection.Mode == opv1.All {
+			case opv1.All:
 				return true, labels.Everything(), nil
+			case opv1.None:
+				return true, labels.Nothing(), nil
 			}
 		}
 	}
