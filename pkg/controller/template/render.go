@@ -44,16 +44,17 @@ type RenderConfig struct {
 }
 
 const (
-	filesDir       = "files"
-	unitsDir       = "units"
-	extensionsDir  = "extensions"
-	platformBase   = "_base"
-	platformOnPrem = "on-prem"
-	sno            = "sno"
-	tnf            = "two-node-with-fencing"
-	masterRole     = "master"
-	workerRole     = "worker"
-	arbiterRole    = "arbiter"
+	filesDir            = "files"
+	unitsDir            = "units"
+	extensionsDir       = "extensions"
+	platformBase        = "_base"
+	platformOnPrem      = "on-prem"
+	sno                 = "sno"
+	tnf                 = "two-node-with-fencing"
+	masterRole          = "master"
+	workerRole          = "worker"
+	arbiterRole         = "arbiter"
+	cloudPlatformAltDNS = "cloud-platform-alt-dns"
 )
 
 // generateTemplateMachineConfigs returns MachineConfig objects from the templateDir and a config object
@@ -226,6 +227,12 @@ func getPaths(config *RenderConfig, platformString string) []string {
 		platformBasedPaths = append(platformBasedPaths, platformOnPrem)
 	}
 
+	// If this is a cloud platform with DNSType set to `ClusterHosted` with
+	// LB IPs provided, include path for their CoreDNS files
+	if cloudPlatformLoadBalancerIPState(*config) == availableLBIPState {
+		platformBasedPaths = append(platformBasedPaths, cloudPlatformAltDNS)
+	}
+
 	// specific platform should be the last one in order
 	// to override on-prem files in case needed
 	platformBasedPaths = append(platformBasedPaths, platformString)
@@ -375,6 +382,7 @@ func renderTemplate(config RenderConfig, path string, b []byte) ([]byte, error) 
 	funcs["cloudPlatformAPIIntLoadBalancerIPs"] = cloudPlatformAPIIntLoadBalancerIPs
 	funcs["cloudPlatformAPILoadBalancerIPs"] = cloudPlatformAPILoadBalancerIPs
 	funcs["cloudPlatformIngressLoadBalancerIPs"] = cloudPlatformIngressLoadBalancerIPs
+	funcs["platformType"] = platformType
 	funcs["join"] = strings.Join
 	tmpl, err := template.New(path).Funcs(funcs).Parse(string(b))
 	if err != nil {
@@ -838,4 +846,13 @@ func hasControlPlaneTopology(r *RenderConfig, topo configv1.TopologyMode) bool {
 		return false
 	}
 	return r.Infra.Status.ControlPlaneTopology == topo
+}
+
+// platformType provides the platform name that can be used to determine
+// platform specific acions to take.
+func platformType(cfg RenderConfig) (interface{}, error) {
+	if cfg.Infra.Status.PlatformStatus != nil {
+		return cfg.Infra.Status.PlatformStatus.Type, nil
+	}
+	return "", fmt.Errorf("could not determine platform type")
 }
