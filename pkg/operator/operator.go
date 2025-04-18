@@ -44,7 +44,6 @@ import (
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
 
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
-	mcfglistersalphav1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1"
 
 	mcopclientset "github.com/openshift/client-go/operator/clientset/versioned"
 	mcopinformersv1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1"
@@ -85,7 +84,7 @@ type Operator struct {
 	imgLister             configlistersv1.ImageLister
 	crdLister             apiextlistersv1.CustomResourceDefinitionLister
 	mcpLister             mcfglistersv1.MachineConfigPoolLister
-	msLister              mcfglistersalphav1.MachineConfigNodeLister
+	msLister              mcfglistersv1.MachineConfigNodeLister
 	ccLister              mcfglistersv1.ControllerConfigLister
 	mcLister              mcfglistersv1.MachineConfigLister
 	deployLister          appslisterv1.DeploymentLister

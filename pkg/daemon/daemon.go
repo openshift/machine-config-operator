@@ -44,7 +44,6 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	mcfgalphav1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 
@@ -722,7 +721,7 @@ func (dn *Daemon) syncNode(key string) error {
 	if node.Annotations[constants.MachineConfigDaemonPostConfigAction] == constants.MachineConfigDaemonStateRebooting {
 		klog.Info("Detected Rebooting Annotation, applying MCN.")
 		err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
-			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateRebooted, Reason: string(mcfgalphav1.MachineConfigNodeUpdateRebooted), Message: "Node has rebooted"},
+			&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdateRebooted, Reason: string(mcfgv1.MachineConfigNodeUpdateRebooted), Message: "Node has rebooted"},
 			nil,
 			metav1.ConditionTrue,
 			metav1.ConditionFalse,
@@ -798,7 +797,7 @@ func (dn *Daemon) syncNode(key string) error {
 		dn.booting = false
 
 		err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
-			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeResumed, Reason: string(mcfgalphav1.MachineConfigNodeResumed), Message: fmt.Sprintf("In desired config %s. Resumed normal operations.", node.Annotations[constants.CurrentMachineConfigAnnotationKey])},
+			&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeResumed, Reason: string(mcfgv1.MachineConfigNodeResumed), Message: fmt.Sprintf("In desired config %s. Resumed normal operations.", node.Annotations[constants.CurrentMachineConfigAnnotationKey])},
 			nil,
 			metav1.ConditionTrue,
 			metav1.ConditionFalse,
@@ -837,7 +836,7 @@ func (dn *Daemon) syncNode(key string) error {
 
 	if ufc != nil {
 		err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
-			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdated, Reason: string(mcfgalphav1.MachineConfigNodeUpdated), Message: fmt.Sprintf("Node %s needs an update", dn.node.GetName())},
+			&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdated, Reason: string(mcfgv1.MachineConfigNodeUpdated), Message: fmt.Sprintf("Node %s needs an update", dn.node.GetName())},
 			nil,
 			metav1.ConditionFalse,
 			metav1.ConditionFalse,
@@ -862,7 +861,7 @@ func (dn *Daemon) syncNode(key string) error {
 		}
 	} else {
 		err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
-			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdated, Reason: string(mcfgalphav1.MachineConfigNodeUpdated), Message: fmt.Sprintf("Node %s Updated", dn.node.GetName())},
+			&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdated, Reason: string(mcfgv1.MachineConfigNodeUpdated), Message: fmt.Sprintf("Node %s Updated", dn.node.GetName())},
 			nil,
 			metav1.ConditionTrue,
 			metav1.ConditionFalse,
@@ -2326,7 +2325,7 @@ func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, bool, erro
 		}
 
 		err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
-			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeResumed, Reason: string(mcfgalphav1.MachineConfigNodeResumed), Message: fmt.Sprintf("In desired config %s. Resumed normal operations. Applying proper annotations.", state.currentConfig.Name)},
+			&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeResumed, Reason: string(mcfgv1.MachineConfigNodeResumed), Message: fmt.Sprintf("In desired config %s. Resumed normal operations. Applying proper annotations.", state.currentConfig.Name)},
 			nil,
 			metav1.ConditionTrue,
 			metav1.ConditionFalse,

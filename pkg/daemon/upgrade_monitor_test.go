@@ -8,7 +8,7 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/upgrademonitor"
 
 	features "github.com/openshift/api/features"
-	"github.com/openshift/api/machineconfiguration/v1alpha1"
+	v1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
 	informers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
 	mcopfake "github.com/openshift/client-go/operator/clientset/versioned/fake"
@@ -36,7 +36,7 @@ func TestUpgradeMonitor(t *testing.T) {
 			name: "testUpdated",
 			err:  false,
 			parentCondition: &upgrademonitor.Condition{
-				State:   v1alpha1.MachineConfigNodeUpdated,
+				State:   v1.MachineConfigNodeUpdated,
 				Reason:  "Updated",
 				Message: "Node Updated",
 			},
@@ -45,7 +45,7 @@ func TestUpgradeMonitor(t *testing.T) {
 			childStatus:    metav1.ConditionFalse,
 			expectedConditions: []metav1.Condition{
 				{
-					Type:               string(v1alpha1.MachineConfigNodeUpdated),
+					Type:               string(v1.MachineConfigNodeUpdated),
 					Message:            "Node Updated",
 					Reason:             "Updated",
 					LastTransitionTime: metav1.Now(),
@@ -57,12 +57,12 @@ func TestUpgradeMonitor(t *testing.T) {
 			name: "testUpdating",
 			err:  false,
 			parentCondition: &upgrademonitor.Condition{
-				State:   v1alpha1.MachineConfigNodeUpdateExecuted,
+				State:   v1.MachineConfigNodeUpdateExecuted,
 				Reason:  "Updating",
 				Message: "Node Updating",
 			},
 			childCondition: &upgrademonitor.Condition{
-				State:   v1alpha1.MachineConfigNodeUpdateFilesAndOS,
+				State:   v1.MachineConfigNodeUpdateFilesAndOS,
 				Reason:  "FilesAndOS",
 				Message: "Applied Files and OS",
 			},
@@ -70,14 +70,14 @@ func TestUpgradeMonitor(t *testing.T) {
 			childStatus:  metav1.ConditionTrue,
 			expectedConditions: []metav1.Condition{
 				{
-					Type:               string(v1alpha1.MachineConfigNodeUpdateExecuted),
+					Type:               string(v1.MachineConfigNodeUpdateExecuted),
 					Message:            "Node Updating",
 					Reason:             "Updating",
 					LastTransitionTime: metav1.Now(),
 					Status:             metav1.ConditionUnknown,
 				},
 				{
-					Type:               string(v1alpha1.MachineConfigNodeUpdateFilesAndOS),
+					Type:               string(v1.MachineConfigNodeUpdateFilesAndOS),
 					Message:            "Applied new Files and OS",
 					Reason:             "FilesAndOS",
 					LastTransitionTime: metav1.Now(),
@@ -164,7 +164,7 @@ func (tc upgradeMonitorTestCase) run(t *testing.T) {
 			f.t.Fatalf("Could not generate and apply MCN %v", err)
 		}
 
-		mcn, err := d.mcfgClient.MachineconfigurationV1alpha1().MachineConfigNodes().Get(context.TODO(), n.Name, metav1.GetOptions{})
+		mcn, err := d.mcfgClient.MachineconfigurationV1().MachineConfigNodes().Get(context.TODO(), n.Name, metav1.GetOptions{})
 		if err != nil {
 			f.t.Fatalf("can't bring up daemon: %v", err)
 		}

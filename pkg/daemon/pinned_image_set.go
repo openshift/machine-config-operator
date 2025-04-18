@@ -38,8 +38,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
-	machineconfigurationalphav1 "github.com/openshift/client-go/machineconfiguration/applyconfigurations/machineconfiguration/v1alpha1"
+	machineconfigurationv1 "github.com/openshift/client-go/machineconfiguration/applyconfigurations/machineconfiguration/v1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
@@ -555,7 +554,7 @@ func (p *PinnedImageSetManager) updateStatusProgressing(pools []*mcfgv1.MachineC
 
 	return upgrademonitor.UpdateMachineConfigNodeStatus(
 		&upgrademonitor.Condition{
-			State:   mcfgv1alpha1.MachineConfigNodePinnedImageSetsProgressing,
+			State:   mcfgv1.MachineConfigNodePinnedImageSetsProgressing,
 			Reason:  "ImagePrefetch",
 			Message: fmt.Sprintf("node is prefetching images: %s", node.Name),
 		},
@@ -590,7 +589,7 @@ func (p *PinnedImageSetManager) updateStatusProgressingComplete(pools []*mcfgv1.
 
 	err = upgrademonitor.UpdateMachineConfigNodeStatus(
 		&upgrademonitor.Condition{
-			State:   mcfgv1alpha1.MachineConfigNodePinnedImageSetsProgressing,
+			State:   mcfgv1.MachineConfigNodePinnedImageSetsProgressing,
 			Reason:  "AsExpected",
 			Message: message,
 		},
@@ -610,7 +609,7 @@ func (p *PinnedImageSetManager) updateStatusProgressingComplete(pools []*mcfgv1.
 	// reset any degraded status
 	return upgrademonitor.UpdateMachineConfigNodeStatus(
 		&upgrademonitor.Condition{
-			State:   mcfgv1alpha1.MachineConfigNodePinnedImageSetsDegraded,
+			State:   mcfgv1.MachineConfigNodePinnedImageSetsDegraded,
 			Reason:  "AsExpected",
 			Message: "All is good",
 		},
@@ -645,7 +644,7 @@ func (p *PinnedImageSetManager) updateStatusError(pools []*mcfgv1.MachineConfigP
 
 	return upgrademonitor.UpdateMachineConfigNodeStatus(
 		&upgrademonitor.Condition{
-			State:   mcfgv1alpha1.MachineConfigNodePinnedImageSetsDegraded,
+			State:   mcfgv1.MachineConfigNodePinnedImageSetsDegraded,
 			Reason:  "PrefetchFailed",
 			Message: "One or more PinnedImageSet is experiencing an error. See PinnedImageSet list for more details",
 		},
@@ -661,8 +660,8 @@ func (p *PinnedImageSetManager) updateStatusError(pools []*mcfgv1.MachineConfigP
 }
 
 // getPinnedImageSetApplyConfigsForPools returns a list of MachineConfigNodeStatusPinnedImageSetApplyConfiguration for the given pools.
-func (p *PinnedImageSetManager) getPinnedImageSetApplyConfigsForPools(pools []*mcfgv1.MachineConfigPool, isCompleted bool, statusErr error) ([]*machineconfigurationalphav1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration, error) {
-	applyConfigs := make([]*machineconfigurationalphav1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration, 0)
+func (p *PinnedImageSetManager) getPinnedImageSetApplyConfigsForPools(pools []*mcfgv1.MachineConfigPool, isCompleted bool, statusErr error) ([]*machineconfigurationv1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration, error) {
+	applyConfigs := make([]*machineconfigurationv1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration, 0)
 	for _, pool := range pools {
 		for _, imageSets := range pool.Spec.PinnedImageSets {
 			imageSet, err := p.imageSetLister.Get(imageSets.Name)
@@ -681,8 +680,8 @@ func (p *PinnedImageSetManager) getPinnedImageSetApplyConfigsForPools(pools []*m
 }
 
 //nolint:gosec
-func (p *PinnedImageSetManager) createApplyConfigForImageSet(imageSet *mcfgv1.PinnedImageSet, isCompleted bool, statusErr error) *machineconfigurationalphav1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration {
-	imageSetConfig := machineconfigurationalphav1.MachineConfigNodeStatusPinnedImageSet().
+func (p *PinnedImageSetManager) createApplyConfigForImageSet(imageSet *mcfgv1.PinnedImageSet, isCompleted bool, statusErr error) *machineconfigurationv1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration {
+	imageSetConfig := machineconfigurationv1.MachineConfigNodeStatusPinnedImageSet().
 		WithName(imageSet.Name).
 		WithDesiredGeneration(int32(imageSet.GetGeneration()))
 

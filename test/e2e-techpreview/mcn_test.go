@@ -67,10 +67,10 @@ func TestMCNPoolNameDefault(t *testing.T) {
 	masterNode := helpers.GetRandomNode(t, cs, "master")
 
 	// Test that MCN pool name value matches MCP association
-	workerNodeMCN, workerErr := cs.MachineconfigurationV1alpha1Interface.MachineConfigNodes().Get(context.TODO(), workerNode.Name, metav1.GetOptions{})
+	workerNodeMCN, workerErr := cs.MachineconfigurationV1Interface.MachineConfigNodes().Get(context.TODO(), workerNode.Name, metav1.GetOptions{})
 	require.Equal(t, "worker", workerNodeMCN.Spec.Pool.Name)
 	require.NoError(t, workerErr)
-	masterNodeMCN, masterErr := cs.MachineconfigurationV1alpha1Interface.MachineConfigNodes().Get(context.TODO(), masterNode.Name, metav1.GetOptions{})
+	masterNodeMCN, masterErr := cs.MachineconfigurationV1Interface.MachineConfigNodes().Get(context.TODO(), masterNode.Name, metav1.GetOptions{})
 	require.Equal(t, "master", masterNodeMCN.Spec.Pool.Name)
 	require.NoError(t, masterErr)
 }
@@ -86,7 +86,7 @@ func TestMCNPoolNameCustom(t *testing.T) {
 	helpers.CreatePoolWithNode(t, cs, customMCPName, customNode)
 
 	// Test that MCN pool name value matches MCP association
-	customNodeMCN, customErr := cs.MachineconfigurationV1alpha1Interface.MachineConfigNodes().Get(context.TODO(), customNode.Name, metav1.GetOptions{})
+	customNodeMCN, customErr := cs.MachineconfigurationV1Interface.MachineConfigNodes().Get(context.TODO(), customNode.Name, metav1.GetOptions{})
 	require.Equal(t, customMCPName, customNodeMCN.Spec.Pool.Name)
 	require.NoError(t, customErr)
 }
