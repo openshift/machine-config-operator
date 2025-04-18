@@ -36,7 +36,6 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	v1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	opv1 "github.com/openshift/api/operator/v1"
 
 	features "github.com/openshift/api/features"
@@ -760,7 +759,7 @@ func (optr *Operator) syncMachineConfigNodes(_ *renderConfig, _ *configv1.Cluste
 		nodeMap[node.Name] = node
 	}
 
-	mcns, err := optr.client.MachineconfigurationV1alpha1().MachineConfigNodes().List(context.TODO(), metav1.ListOptions{})
+	mcns, err := optr.client.MachineconfigurationV1().MachineConfigNodes().List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		return err
 	}
@@ -775,21 +774,21 @@ func (optr *Operator) syncMachineConfigNodes(_ *renderConfig, _ *configv1.Cluste
 			return err
 		}
 
-		newMCS := &v1alpha1.MachineConfigNode{
-			Spec: v1alpha1.MachineConfigNodeSpec{
-				Node: v1alpha1.MCOObjectReference{
+		newMCS := &mcfgv1.MachineConfigNode{
+			Spec: mcfgv1.MachineConfigNodeSpec{
+				Node: mcfgv1.MCOObjectReference{
 					Name: node.Name,
 				},
-				Pool: v1alpha1.MCOObjectReference{
+				Pool: mcfgv1.MCOObjectReference{
 					Name: pool,
 				},
-				ConfigVersion: v1alpha1.MachineConfigNodeSpecMachineConfigVersion{
+				ConfigVersion: mcfgv1.MachineConfigNodeSpecMachineConfigVersion{
 					Desired: upgrademonitor.NotYetSet,
 				},
 			},
 			TypeMeta: metav1.TypeMeta{
 				Kind:       "MachineConfigNode",
-				APIVersion: "machineconfiguration.openshift.io/v1alpha1",
+				APIVersion: "machineconfiguration.openshift.io/v1",
 			},
 			ObjectMeta: metav1.ObjectMeta{
 				Name: node.Name,
@@ -809,7 +808,7 @@ func (optr *Operator) syncMachineConfigNodes(_ *renderConfig, _ *configv1.Cluste
 			return err
 		}
 		p := mcoResourceRead.ReadMachineConfigNodeV1OrDie(mcsBytes)
-		mcn, _, err := mcoResourceApply.ApplyMachineConfigNode(optr.client.MachineconfigurationV1alpha1(), p)
+		mcn, _, err := mcoResourceApply.ApplyMachineConfigNode(optr.client.MachineconfigurationV1(), p)
 		if err != nil {
 			return err
 		}
@@ -826,7 +825,7 @@ func (optr *Operator) syncMachineConfigNodes(_ *renderConfig, _ *configv1.Cluste
 		for _, mcn := range mcns.Items {
 			if _, ok := nodeMap[mcn.Name]; !ok {
 				klog.Infof("Node %s has been removed, deleting associated MCN", mcn.Name)
-				optr.client.MachineconfigurationV1alpha1().MachineConfigNodes().Delete(context.TODO(), mcn.Name, metav1.DeleteOptions{})
+				optr.client.MachineconfigurationV1().MachineConfigNodes().Delete(context.TODO(), mcn.Name, metav1.DeleteOptions{})
 			}
 		}
 	}

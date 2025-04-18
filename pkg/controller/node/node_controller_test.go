@@ -9,7 +9,6 @@ import (
 	"time"
 
 	features "github.com/openshift/api/features"
-	mcfgalphav1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
@@ -1241,7 +1240,7 @@ func TestShouldMakeProgress(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			expStatus := c.calculateStatus(fg, []*mcfgalphav1.MachineConfigNode{}, cc, mcp, nodes, nil, nil)
+			expStatus := c.calculateStatus(fg, []*mcfgv1.MachineConfigNode{}, cc, mcp, nodes, nil, nil)
 			expMcp := mcp.DeepCopy()
 			expMcp.Status = expStatus
 			f.expectUpdateMachineConfigPoolStatus(expMcp)
@@ -1297,7 +1296,7 @@ func TestPaused(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	expStatus := c.calculateStatus(fg, []*mcfgalphav1.MachineConfigNode{}, cc, mcp, nodes, nil, nil)
+	expStatus := c.calculateStatus(fg, []*mcfgv1.MachineConfigNode{}, cc, mcp, nodes, nil, nil)
 	expMcp := mcp.DeepCopy()
 	expMcp.Status = expStatus
 	f.expectUpdateMachineConfigPoolStatus(expMcp)
@@ -1328,7 +1327,7 @@ func TestShouldUpdateStatusOnlyUpdated(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	expStatus := c.calculateStatus(fg, []*mcfgalphav1.MachineConfigNode{}, cc, mcp, nodes, nil, nil)
+	expStatus := c.calculateStatus(fg, []*mcfgv1.MachineConfigNode{}, cc, mcp, nodes, nil, nil)
 	expMcp := mcp.DeepCopy()
 	expMcp.Status = expStatus
 	f.expectUpdateMachineConfigPoolStatus(expMcp)
@@ -1360,7 +1359,7 @@ func TestShouldUpdateStatusOnlyNoProgress(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	expStatus := c.calculateStatus(fg, []*mcfgalphav1.MachineConfigNode{}, cc, mcp, nodes, nil, nil)
+	expStatus := c.calculateStatus(fg, []*mcfgv1.MachineConfigNode{}, cc, mcp, nodes, nil, nil)
 	expMcp := mcp.DeepCopy()
 	expMcp.Status = expStatus
 	f.expectUpdateMachineConfigPoolStatus(expMcp)
@@ -1397,7 +1396,7 @@ func TestCertStatus(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	expStatus := c.calculateStatus(fg, []*mcfgalphav1.MachineConfigNode{}, cc, mcp, nodes, nil, nil)
+	expStatus := c.calculateStatus(fg, []*mcfgv1.MachineConfigNode{}, cc, mcp, nodes, nil, nil)
 	expMcp := mcp.DeepCopy()
 	expMcp.Status = expStatus
 
@@ -1422,7 +1421,7 @@ func TestShouldDoNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := f.newController()
-	status := c.calculateStatus(fg, []*mcfgalphav1.MachineConfigNode{}, cc, mcp, nodes, nil, nil)
+	status := c.calculateStatus(fg, []*mcfgv1.MachineConfigNode{}, cc, mcp, nodes, nil, nil)
 	mcp.Status = status
 
 	f.ccLister = append(f.ccLister, cc)
@@ -1518,7 +1517,7 @@ func TestControlPlaneTopology(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := f.newController()
-	status := c.calculateStatus(fg, []*mcfgalphav1.MachineConfigNode{}, cc, mcp, nodes, nil, nil)
+	status := c.calculateStatus(fg, []*mcfgv1.MachineConfigNode{}, cc, mcp, nodes, nil, nil)
 	mcp.Status = status
 
 	f.ccLister = append(f.ccLister, cc)
