@@ -2270,7 +2270,9 @@ func (optr *Operator) syncMachineConfiguration(_ *renderConfig, _ *configv1.Clus
 			klog.Info("MachineConfiguration object doesn't exist; a new one will be created")
 			// Using server-side apply here as the NodeDisruption API has a rule technicality which prevents apply using a template manifest like the MCO typically does
 			// [spec.nodeDisruptionPolicy.sshkey.actions: Required value, <nil>: Invalid value: "null"]
-			p := mcoac.MachineConfiguration(ctrlcommon.MCOOperatorKnobsObjectName).WithSpec(mcoac.MachineConfigurationSpec().WithManagementState("Managed"))
+			p := mcoac.MachineConfiguration(ctrlcommon.MCOOperatorKnobsObjectName).
+				WithSpec(mcoac.MachineConfigurationSpec().
+					WithManagementState("Managed"))
 			_, err := optr.mcopClient.OperatorV1().MachineConfigurations().Apply(context.TODO(), p, metav1.ApplyOptions{FieldManager: "machine-config-operator"})
 			if err != nil {
 				klog.Infof("applying mco object failed: %s", err)
@@ -2282,46 +2284,78 @@ func (optr *Operator) syncMachineConfiguration(_ *renderConfig, _ *configv1.Clus
 		return fmt.Errorf("grabbing MachineConfiguration/%s CR failed: %v", ctrlcommon.MCOOperatorKnobsObjectName, err)
 	}
 
+	// Ensure boot images configmap is stamped
+	if err := optr.stampBootImagesConfigMap(); err != nil {
+		klog.Errorf("Failed to stamp bootimages configmap: %v", err)
+	}
+
+	// Merges the cluster's default node disruption policies with the user defined policies, if any.
+	newMachineConfigurationStatus := mcop.Status.DeepCopy()
+	newMachineConfigurationStatus.NodeDisruptionPolicyStatus = opv1.NodeDisruptionPolicyStatus{
+		ClusterPolicies: apihelpers.MergeClusterPolicies(mcop.Spec.NodeDisruptionPolicy),
+	}
+
 	fg, err := optr.fgAccessor.CurrentFeatureGates()
 	if err != nil {
 		klog.Errorf("Could not get fg: %v", err)
 		return err
 	}
 
-	// If FeatureGateNodeDisruptionPolicy feature gate is not enabled, no updates will need to be done for the MachineConfiguration object.
-	if fg.Enabled(features.FeatureGateNodeDisruptionPolicy) {
-		// Merges the cluster's default node disruption policies with the user defined policies, if any.
-		newMachineConfigurationStatus := mcop.Status.DeepCopy()
-		newMachineConfigurationStatus.NodeDisruptionPolicyStatus = opv1.NodeDisruptionPolicyStatus{
-			ClusterPolicies: apihelpers.MergeClusterPolicies(mcop.Spec.NodeDisruptionPolicy),
-		}
-		newMachineConfigurationStatus.ObservedGeneration = mcop.GetGeneration()
+	infra, err := optr.infraLister.Get("cluster")
+	if err != nil {
+		klog.Errorf("Could not get infra: %v", err)
+		return err
+	}
 
-		// Check if any changes are required in the Status before making the API call.
-		if !reflect.DeepEqual(mcop.Status, *newMachineConfigurationStatus) {
-			klog.Infof("Updating MachineConfiguration status")
-			mcop.Status = *newMachineConfigurationStatus
-			mcop, err = optr.mcopClient.OperatorV1().MachineConfigurations().UpdateStatus(context.TODO(), mcop, metav1.UpdateOptions{})
+	defaultOptInEvent := false
+	// Populate the default boot images configuration in the status, if the cluster is on a
+	// boot image updates supported platform
+	if ctrlcommon.CheckBootImagePlatform(infra, fg) {
+		// Mirror the spec if it is defined, i.e. admin has an opinion
+		if mcop.Spec.ManagedBootImages.MachineManagers != nil {
+			newMachineConfigurationStatus.ManagedBootImagesStatus = *mcop.Spec.ManagedBootImages.DeepCopy()
+		} else {
+			// Admin has no opinion, so use the MCO defined default, which is platform dependant
+			isDefaultOnPlatform, err := optr.isDefaultOnBootImageUpdatePlatform()
 			if err != nil {
-				klog.Errorf("MachineConfiguration status apply failed: %v", err)
-				return nil
+				klog.Errorf("failed to determine platform type, cluster will not be opted in for boot image updates by default")
+			}
+			if isDefaultOnPlatform {
+				// A default opt-in can happen in two ways:
+				// - Cluster is being installed on a release that opts the cluster in (ManagedBootImagesStatus is not defined)
+				// - Cluster is opted out and is being upgraded to a release that opts the cluster in (ManagedBootImagesStatus is currently disabled)
+				defaultOptInEvent = (mcop.Status.ManagedBootImagesStatus.MachineManagers == nil) ||
+					reflect.DeepEqual(mcop.Status.ManagedBootImagesStatus, apihelpers.GetManagedBootImagesWithUpdateDisabled())
+				newMachineConfigurationStatus.ManagedBootImagesStatus = apihelpers.GetManagedBootImagesWithUpdateEnabled()
+			} else {
+				newMachineConfigurationStatus.ManagedBootImagesStatus = apihelpers.GetManagedBootImagesWithUpdateDisabled()
 			}
 		}
 	}
 
-	// If FeatureGateManagedBootImages is enabled, check for opv1.MachineConfigurationBootImageUpdateDegraded condition being true
-	// and degrade operator if necessary
-	if fg.Enabled(features.FeatureGateManagedBootImages) {
-
-		// Ensure boot images configmap stamp
-		if err := optr.stampBootImagesConfigMap(); err != nil {
-			klog.Errorf("Failed to stamp bootimages configmap: %v", err)
-		}
-
-		for _, condition := range mcop.Status.Conditions {
-			if condition.Type == opv1.MachineConfigurationBootImageUpdateDegraded && condition.Status == metav1.ConditionTrue {
-				return errors.New("bootimage update failed: " + condition.Message)
+	newMachineConfigurationStatus.ObservedGeneration = mcop.GetGeneration()
+	// Check if any changes are required in the Status before making the API call.
+	if !reflect.DeepEqual(mcop.Status, *newMachineConfigurationStatus) {
+		klog.Infof("Updating MachineConfiguration status %v", newMachineConfigurationStatus)
+		if defaultOptInEvent {
+			klog.Infof("No boot image configuration detected, default boot image configuration was applied")
+			annoPatch := fmt.Sprintf(`{"metadata": {"annotations": {"%s": "%s"}}}`, ctrlcommon.BootImageOptedInAnnotation, metav1.Now().Format(time.RFC3339))
+			mcop, err = optr.mcopClient.OperatorV1().MachineConfigurations().Patch(context.TODO(), ctrlcommon.MCOOperatorKnobsObjectName, types.MergePatchType, []byte(annoPatch), metav1.PatchOptions{})
+			if err != nil {
+				return fmt.Errorf("failed to apply MachineConfiguration bootimage updates opt-in annotation : %v", err)
 			}
+		}
+		mcop.Status = *newMachineConfigurationStatus
+		_, err = optr.mcopClient.OperatorV1().MachineConfigurations().UpdateStatus(context.TODO(), mcop, metav1.UpdateOptions{})
+		if err != nil {
+			return err
+		}
+	}
+
+	// Always check for conditions last, so MachineConfiguration Status updates are never blocked
+	for _, condition := range mcop.Status.Conditions {
+		if condition.Type == opv1.MachineConfigurationBootImageUpdateDegraded && condition.Status == metav1.ConditionTrue {
+			return errors.New("bootimage update failed: " + condition.Message)
 		}
 	}
 
@@ -2337,4 +2371,15 @@ func (optr *Operator) isOnClusterBuildFeatureGateEnabled() (bool, error) {
 	}
 
 	return fg.Enabled(features.FeatureGateOnClusterBuild), nil
+}
+
+// Determines if this cluster is on a platform that opts in for boot images by default
+func (optr *Operator) isDefaultOnBootImageUpdatePlatform() (bool, error) {
+	infra, err := optr.infraLister.Get("cluster")
+	if err != nil {
+		klog.Errorf("Could not get infra: %v", err)
+		return false, err
+	}
+	defaultOnPlatforms := sets.New(configv1.GCPPlatformType, configv1.AWSPlatformType)
+	return defaultOnPlatforms.Has(infra.Status.PlatformStatus.Type), nil
 }

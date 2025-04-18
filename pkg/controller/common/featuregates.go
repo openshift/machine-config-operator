@@ -52,9 +52,6 @@ func GetEnabledDisabledFeatures(features featuregates.FeatureGate) ([]string, []
 // IsBootImageControllerRequired checks that the currently enabled feature gates and
 // the platform of the cluster requires a boot image controller. If any errors are
 // encountered, it will log them and return false.
-// Current valid feature gate and platform combinations:
-// GCP -> FeatureGateManagedBootImages
-// AWS -> FeatureGateManagedBootImagesAWS
 func IsBootImageControllerRequired(ctx *ControllerContext) bool {
 	configClient := ctx.ClientBuilder.ConfigClientOrDie("ensure-boot-image-infra-client")
 	infra, err := configClient.ConfigV1().Infrastructures().Get(context.TODO(), "cluster", metav1.GetOptions{})
@@ -71,6 +68,13 @@ func IsBootImageControllerRequired(ctx *ControllerContext) bool {
 		klog.Errorf("unable to get features for boot image controller startup: %v", err)
 		return false
 	}
+	return CheckBootImagePlatform(infra, fg)
+}
+
+// Current valid feature gate and platform combinations:
+// GCP -> FeatureGateManagedBootImages
+// AWS -> FeatureGateManagedBootImagesAWS
+func CheckBootImagePlatform(infra *configv1.Infrastructure, fg featuregates.FeatureGate) bool {
 	switch infra.Status.PlatformStatus.Type {
 	case configv1.AWSPlatformType:
 		return fg.Enabled(features.FeatureGateManagedBootImagesAWS)
