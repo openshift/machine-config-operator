@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	features "github.com/openshift/api/features"
-	mcfgalphav1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 
 	apicfgv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
@@ -961,7 +960,7 @@ func TestCalculateStatus(t *testing.T) {
 			}
 			f := newFixture(t)
 			c := f.newController()
-			status := c.calculateStatus(fg, []*mcfgalphav1.MachineConfigNode{}, nil, pool, test.nodes, nil, nil)
+			status := c.calculateStatus(fg, []*mcfgv1.MachineConfigNode{}, nil, pool, test.nodes, nil, nil)
 			test.verify(status, t)
 		})
 	}

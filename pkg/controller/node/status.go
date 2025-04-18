@@ -12,11 +12,9 @@ import (
 
 	features "github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	helpers "github.com/openshift/machine-config-operator/pkg/helpers"
 )
@@ -32,7 +30,7 @@ func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
 		return err
 	}
 
-	machineConfigStates := []*mcfgv1alpha1.MachineConfigNode{}
+	machineConfigStates := []*mcfgv1.MachineConfigNode{}
 	fg, err := ctrl.fgAcessor.CurrentFeatureGates()
 	list := fg.KnownFeatures()
 	mcnExists := false
@@ -45,7 +43,7 @@ func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
 		klog.Errorf("Could not get FG: %v", err)
 	} else if mcnExists && fg.Enabled(features.FeatureGateMachineConfigNodes) {
 		for _, node := range nodes {
-			ms, err := ctrl.client.MachineconfigurationV1alpha1().MachineConfigNodes().Get(context.TODO(), node.Name, metav1.GetOptions{})
+			ms, err := ctrl.client.MachineconfigurationV1().MachineConfigNodes().Get(context.TODO(), node.Name, metav1.GetOptions{})
 			if err != nil {
 				klog.Errorf("Could not find our MachineConfigNode for node. %s: %v", node.Name, err)
 				continue
@@ -81,7 +79,7 @@ func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
 }
 
 //nolint:gocyclo,gosec
-func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfgv1alpha1.MachineConfigNode, cconfig *mcfgv1.ControllerConfig, pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node, mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild) mcfgv1.MachineConfigPoolStatus {
+func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfgv1.MachineConfigNode, cconfig *mcfgv1.ControllerConfig, pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node, mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild) mcfgv1.MachineConfigPoolStatus {
 	certExpirys := []mcfgv1.CertExpiry{}
 	if cconfig != nil {
 		for _, cert := range cconfig.Status.ControllerCertificates {
@@ -140,7 +138,7 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 				degradedMachines = append(degradedMachines, ourNode)
 				// populate the degradedReasons from the MachineConfigNodePinnedImageSetsDegraded condition
 				if fg.Enabled(features.FeatureGatePinnedImages) {
-					if mcfgv1alpha1.StateProgress(cond.Type) == mcfgv1alpha1.MachineConfigNodePinnedImageSetsDegraded && cond.Status == metav1.ConditionTrue {
+					if mcfgv1.StateProgress(cond.Type) == mcfgv1.MachineConfigNodePinnedImageSetsDegraded && cond.Status == metav1.ConditionTrue {
 						degradedReasons = append(degradedReasons, fmt.Sprintf("Node %s is reporting: %q", ourNode.Name, cond.Message))
 					}
 				}
@@ -164,28 +162,28 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 
 				if cond.Status == metav1.ConditionUnknown {
 					// This switch case will cause a node to be double counted, maybe use a hash for node count
-					switch mcfgv1alpha1.StateProgress(cond.Type) {
-					case mcfgv1alpha1.MachineConfigNodeUpdatePrepared:
+					switch mcfgv1.StateProgress(cond.Type) {
+					case mcfgv1.MachineConfigNodeUpdatePrepared:
 						updatingMachines = append(updatedMachines, ourNode) //nolint:gocritic
-					case mcfgv1alpha1.MachineConfigNodeUpdateExecuted:
+					case mcfgv1.MachineConfigNodeUpdateExecuted:
 						updatingMachines = append(updatingMachines, ourNode)
-					case mcfgv1alpha1.MachineConfigNodeUpdatePostActionComplete:
+					case mcfgv1.MachineConfigNodeUpdatePostActionComplete:
 						updatingMachines = append(updatingMachines, ourNode)
-					case mcfgv1alpha1.MachineConfigNodeUpdateComplete:
+					case mcfgv1.MachineConfigNodeUpdateComplete:
 						updatingMachines = append(updatingMachines, ourNode)
-					case mcfgv1alpha1.MachineConfigNodeResumed:
+					case mcfgv1.MachineConfigNodeResumed:
 						updatingMachines = append(updatedMachines, ourNode) //nolint:gocritic
 						readyMachines = append(readyMachines, ourNode)
 					// Note (ijanssen): `MachineConfigNodeUpdateCompatible` was removed with MCO-1543. This case will need to be replaced/removed when working on MCO-1228.
-					case mcfgv1alpha1.MachineConfigNodeUpdateCompatible:
+					case mcfgv1.MachineConfigNodeUpdateCompatible:
 						updatingMachines = append(updatedMachines, ourNode) //nolint:gocritic
-					case mcfgv1alpha1.MachineConfigNodeUpdateDrained:
+					case mcfgv1.MachineConfigNodeUpdateDrained:
 						unavailableMachines = append(unavailableMachines, ourNode)
 						updatingMachines = append(updatingMachines, ourNode)
-					case mcfgv1alpha1.MachineConfigNodeUpdateCordoned:
+					case mcfgv1.MachineConfigNodeUpdateCordoned:
 						unavailableMachines = append(unavailableMachines, ourNode)
 						updatingMachines = append(updatingMachines, ourNode)
-					case mcfgv1alpha1.MachineConfigNodeUpdated:
+					case mcfgv1.MachineConfigNodeUpdated:
 						updatedMachines = append(updatedMachines, ourNode)
 						readyMachines = append(readyMachines, ourNode)
 					}
@@ -298,7 +296,7 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 	var nodeDegraded bool
 	var nodeDegradedMessage string
 	for _, m := range degradedMachines {
-		klog.Infof("Degraded Machine: %v and Degraded Reason: %v", m.Name, m.Annotations[constants.MachineConfigDaemonReasonAnnotationKey])
+		klog.Infof("Degraded Machine: %v and Degraded Reason: %v", m.Name, m.Annotations[daemonconsts.MachineConfigDaemonReasonAnnotationKey])
 	}
 	if degradedMachineCount > 0 {
 		nodeDegraded = true
@@ -335,7 +333,7 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 	return status
 }
 
-func isPinnedImageSetNodeUpdating(mcs *mcfgv1alpha1.MachineConfigNode) bool {
+func isPinnedImageSetNodeUpdating(mcs *mcfgv1.MachineConfigNode) bool {
 	var updating int32
 	for _, set := range mcs.Status.PinnedImageSets {
 		if set.CurrentGeneration != set.DesiredGeneration {
@@ -621,7 +619,7 @@ func (p *poolSynchronizer) GetStatus(sType mcfgv1.PoolSynchronizerType) *mcfgv1.
 }
 
 // isPinnedImageSetNodeUpdated checks if the pinned image sets are updated for the node.
-func isPinnedImageSetsUpdated(mcn *mcfgv1alpha1.MachineConfigNode) bool {
+func isPinnedImageSetsUpdated(mcn *mcfgv1.MachineConfigNode) bool {
 	updated := 0
 	for _, set := range mcn.Status.PinnedImageSets {
 		if set.DesiredGeneration > 0 && set.CurrentGeneration == set.DesiredGeneration {
