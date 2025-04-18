@@ -15,7 +15,6 @@ import (
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	helpers "github.com/openshift/machine-config-operator/pkg/helpers"
 )
@@ -163,7 +162,7 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 
 				if cond.Status == metav1.ConditionUnknown {
 					// This switch case will cause a node to be double counted, maybe use a hash for node count
-					switch mcfgv1alpha1.StateProgress(cond.Type) {
+					switch mcfgv1.StateProgress(cond.Type) {
 					case mcfgv1.MachineConfigNodeUpdatePrepared:
 						updatingMachines = append(updatedMachines, ourNode) //nolint:gocritic
 					case mcfgv1.MachineConfigNodeUpdateExecuted:
@@ -297,7 +296,7 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 	var nodeDegraded bool
 	var nodeDegradedMessage string
 	for _, m := range degradedMachines {
-		klog.Infof("Degraded Machine: %v and Degraded Reason: %v", m.Name, m.Annotations[constants.MachineConfigDaemonReasonAnnotationKey])
+		klog.Infof("Degraded Machine: %v and Degraded Reason: %v", m.Name, m.Annotations[daemonconsts.MachineConfigDaemonReasonAnnotationKey])
 	}
 	if degradedMachineCount > 0 {
 		nodeDegraded = true

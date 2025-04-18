@@ -413,15 +413,3 @@ type ApplyCallback struct {
 	StatusConfigFn      func(applyConfig *machineconfigurationv1.MachineConfigNodeStatusApplyConfiguration)
 	MachineConfigNodeFn func(*mcfgv1.MachineConfigNode)
 }
-
-func applyStatusConfig(cfg *machineconfigurationv1.MachineConfigNodeStatusApplyConfiguration, applyCallback ...*ApplyCallback) {
-	for _, apply := range applyCallback {
-		apply.StatusConfigFn(cfg)
-	}
-}
-
-func applyMachineConfigNode(mcn *mcfgv1.MachineConfigNode, applyCallback ...*ApplyCallback) {
-	for _, apply := range applyCallback {
-		apply.MachineConfigNodeFn(mcn)
-	}
-}
