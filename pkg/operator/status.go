@@ -286,7 +286,7 @@ func (optr *Operator) syncUpgradeableStatus(co *configv1.ClusterOperator) error 
 	if configNode.Spec.CgroupMode == configv1.CgroupModeV1 {
 		coStatusCondition.Status = configv1.ConditionFalse
 		coStatusCondition.Reason = "ClusterOnCgroupV1"
-		coStatusCondition.Message = "Cluster is using deprecated cgroup v1, which is removed in 4.19.  Please update the `CgroupMode` in the `nodes.config.openshift.io` object to 'v2'. This can be changed back to 'v1' while on 4.18, but must be 'v2' before you update to 4.19.  Once updated to 4.19, cgroup v1 is no longer an option"
+		coStatusCondition.Message = "Cluster is using deprecated cgroup v1, which is removed in 4.19.  Please update the 'cgroupMode' in the 'cluster' object of nodes.config.openshift.io resource type to 'v2'. This can be changed back to 'v1' while on 4.18, but must be 'v2' before you update to 4.19.  Once updated to 4.19, cgroup v1 is no longer an option. Please refer to https://docs.redhat.com/en/documentation/openshift_container_platform/4.18/html-single/nodes/index#nodes-clusters-cgroups-2_nodes-cluster-cgroups-2"
 	}
 	var updating, degraded, interrupted bool
 	for _, pool := range pools {
