@@ -13,6 +13,7 @@ contents:
         app: cloud-platform-infra-coredns
       annotations:
         target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
+        openshift.io/required-scc: privileged
     spec:
       volumes:
       - name: resource-dir
@@ -24,6 +25,9 @@ contents:
       - name: conf-dir
         hostPath:
           path: "/etc/coredns"
+      - name: nm-resolv
+        hostPath:
+          path: "/var/run/NetworkManager"
       initContainers:
       - name: render-config-coredns
         image: {{ .Images.baremetalRuntimeCfgImage }}
@@ -37,9 +41,13 @@ contents:
         - "{{- range $index, $ip := cloudPlatformAPIIntLoadBalancerIPs .}}{{ if gt $index 0 }},{{end}}{{$ip}}{{end}}"
         - "--cloud-ingress-lb-ips"
         - "{{- range $index, $ip := cloudPlatformIngressLoadBalancerIPs .}}{{ if gt $index 0 }},{{end}}{{$ip}}{{end}}"
+        - "--platform"
+        - "{{platformType .}}"
         - "/config"
         - "--out-dir"
         - "/etc/coredns"
+        - "--resolvconf-path"
+        - "/etc/resolv.conf"
         resources: {}
         volumeMounts:
         - name: kubeconfig
@@ -92,6 +100,8 @@ contents:
         - "{{- range $index, $ip := cloudPlatformAPIIntLoadBalancerIPs .}}{{ if gt $index 0 }},{{end}}{{$ip}}{{end}}"
         - "--cloud-ingress-lb-ips"
         - "{{- range $index, $ip := cloudPlatformIngressLoadBalancerIPs .}}{{ if gt $index 0 }},{{end}}{{$ip}}{{end}}"
+        - "--platform"
+        - "{{platformType .}}"
         resources:
           requests:
             cpu: 100m
@@ -107,6 +117,9 @@ contents:
         - name: conf-dir
           mountPath: "/etc/coredns"
           mountPropagation: HostToContainer
+        - name: nm-resolv
+          mountPath: "/var/run/NetworkManager"
+          mountPropagation: HostToContainer 
         imagePullPolicy: IfNotPresent        
       hostNetwork: true
       tolerations:

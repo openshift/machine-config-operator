@@ -23,12 +23,12 @@ contents:
         }
         template IN {{`{{ .Cluster.CloudLBRecordType }}`}} {{ .DNS.Spec.BaseDomain }} {
             match ^api.{{ .DNS.Spec.BaseDomain }}
-            answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ if gt (len (cloudPlatformAPILoadBalancerIPs .)) 0 }}{{ index (cloudPlatformAPILoadBalancerIPs) 0 }}{{ end }}"
+            answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ if gt (len (cloudPlatformAPILoadBalancerIPs .)) 0 }}{{ index (cloudPlatformAPILoadBalancerIPs .) 0 }}{{ end }}"
             fallthrough
         }
         template IN {{`{{ .Cluster.CloudLBEmptyType }}`}} {{ .DNS.Spec.BaseDomain }} {
             match ^api.{{ .DNS.Spec.BaseDomain }}
-            {{ if gt (len (cloudPlatformAPILoadBalancerIPs .)) 1 }}answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ index (cloudPlatformAPILoadBalancerIPs) 1 }}"{{ end }}
+            {{ if gt (len (cloudPlatformAPILoadBalancerIPs .)) 1 }}answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ index (cloudPlatformAPILoadBalancerIPs .) 1 }}"{{ end }}
             fallthrough
         }
         template IN {{`{{ .Cluster.CloudLBRecordType }}`}} {{ .DNS.Spec.BaseDomain }} {
