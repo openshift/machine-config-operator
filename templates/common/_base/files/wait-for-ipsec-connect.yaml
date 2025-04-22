@@ -42,3 +42,7 @@ contents:
     if [[ $elapsed -ge $timeout ]]; then
         echo "Timed out waiting, some connections are not established, desired conns $desiredconn, established conns $establishedsa"
     fi
+
+    ipsec status
+    ip xfrm state
+    ip xfrm policy
