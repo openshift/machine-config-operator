@@ -329,7 +329,7 @@ func (j *jobImageBuilder) validateBuilderType(builder buildrequest.Builder) erro
 func MapJobStatusToBuildStatus(job *batchv1.Job) (mcfgv1.BuildProgress, []metav1.Condition) {
 	// If the job is being deleted and it was not in either a successful or failed state
 	// then the MachineOSBuild should be considered "interrupted"
-	if job.DeletionTimestamp != nil && job.Status.Succeeded == 0 && job.Status.Failed == 0 {
+	if job.DeletionTimestamp != nil && job.Status.Succeeded == 0 && job.Status.Failed < constants.JobMaxRetries+1 {
 		return mcfgv1.MachineOSBuildInterrupted, apihelpers.MachineOSBuildInterruptedConditions()
 	}
 
