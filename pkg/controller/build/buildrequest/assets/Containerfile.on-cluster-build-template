@@ -22,7 +22,7 @@ RUN container="oci" exec -a ignition-apply /usr/lib/dracut/modules.d/30ignition/
 {{if and .ExtensionsImage .ExtensionsPackages}}
 # Mount the extensions image to use the content from it
 # and add the extensions repo to /etc/yum.repos.d/coreos-extensions.repo
-RUN --mount=type=bind,from={{.ExtensionsImage}},source=/,target=/tmp/mco-extensions/os-extensions-content,bind-propagation=rshared,rw,z \
+RUN --mount=type=bind,from={{.ExtensionsImage}},source=/,target=/tmp/mco-extensions/os-extensions-content,bind-propagation=rshared,z \
     echo -e "[coreos-extensions]\n\
 enabled=1\n\
 metadata_expire=1m\n\
