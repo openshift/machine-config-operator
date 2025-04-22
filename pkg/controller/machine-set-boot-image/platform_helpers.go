@@ -130,7 +130,14 @@ func reconcileAWS(machineSet *machinev1beta1.MachineSet, configMap *corev1.Confi
 	// Use the GetAwsRegionImage function to find the correct AMI for the region and architecture
 	awsRegionImage, err := streamData.GetAwsRegionImage(arch, region)
 	if err != nil {
-		return false, nil, fmt.Errorf("failed to get AMI for region %s: %v", region, err)
+		// On error, attempt to default to us-east-1 region instead
+		// This mirrors the installer approach:
+		// https://github.com/openshift/installer/blob/08aa270e20db77b237306b3f3700d6b2ad654abc/pkg/asset/rhcos/image.go#L99-L103
+		klog.Infof("failed to get AMI for region %s: %v", region, err)
+		if awsRegionImage, err = streamData.GetAwsRegionImage(arch, "us-east-1"); err != nil {
+			return false, nil, fmt.Errorf("failed to get default AMI for region %s: %v", region, err)
+		}
+		klog.Infof("Using AMI for region us-east-1 %s", awsRegionImage.Image)
 	}
 
 	newami := awsRegionImage.Image
@@ -139,12 +146,23 @@ func reconcileAWS(machineSet *machinev1beta1.MachineSet, configMap *corev1.Confi
 
 	patchRequired = false
 	newProviderSpec := providerSpec.DeepCopy()
-	currentAMI := *newProviderSpec.AMI.ID
+
+	// AMIs can be defined via filters, which is the case for OKD. In such cases,
+	// ID will be nil for the very first update, and a default value will need to
+	// be populated
+	currentAMI := "undefined AMI ID"
+	if newProviderSpec.AMI.ID != nil {
+		currentAMI = *newProviderSpec.AMI.ID
+	}
 	if newami != currentAMI {
 		klog.Infof("New target boot image: %s: %s", region, newami)
 		klog.Infof("Current image: %s: %s", region, currentAMI)
 		patchRequired = true
-		newProviderSpec.AMI.ID = &newami
+		// Only one of ID, ARN or Filters in the AMI may be specified, so define
+		// a new AMI object with only an ID field.
+		newProviderSpec.AMI = machinev1beta1.AWSResourceReference{
+			ID: &newami,
+		}
 	}
 
 	if patchRequired {
