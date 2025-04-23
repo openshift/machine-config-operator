@@ -353,3 +353,5 @@ replace k8s.io/kube-openapi => github.com/openshift/kube-openapi v0.0.0-20230816
 
 // The following replace commands are in place to allow the simultaneous merge of the API & MCO for making use of the V1 MCN API
 replace github.com/openshift/api => github.com/isabella-janssen/openshift-api v0.0.0-20250423163652-3d76f1835b2c
+
+replace github.com/openshift/client-go => github.com/isabella-janssen/openshift-client-go v0.0.0-20250423165717-b84d4e80502c
