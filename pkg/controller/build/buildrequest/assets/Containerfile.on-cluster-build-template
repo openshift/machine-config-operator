@@ -37,6 +37,12 @@ skip_if_unavailable=False" > /etc/yum.repos.d/coreos-extensions.repo && \
 RUN ostree container commit
 {{end}}
 
+# Hardcoded tmpfiles configuration for usbguard and ipsec.
+# Eventually when https://github.com/USBGuard/usbguard/pull/652 is backported to RHEL, we will be able to remove the usbguard patch
+# For now, libreswan (ipsec) patch will live here until we find a better alternative
+RUN test ! -f /usr/lib/tmpfiles.d/usbguard.conf || rm /usr/lib/tmpfiles.d/usbguard.conf
+RUN echo -e "d /var/log/usbguard 0755 root root -\nd /var/lib/ipsec 0700 root root -\nd /var/lib/ipsec/nss 0700 root root -" > /usr/lib/tmpfiles.d/usbguard_ipsec.conf
+
 COPY ./openshift-config-user-ca-bundle.crt /etc/pki/ca-trust/source/anchors/openshift-config-user-ca-bundle.crt
 RUN update-ca-trust
 
