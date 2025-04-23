@@ -16,6 +16,8 @@ type Interface interface {
 	KubeletConfigs() KubeletConfigInformer
 	// MachineConfigs returns a MachineConfigInformer.
 	MachineConfigs() MachineConfigInformer
+	// MachineConfigNodes returns a MachineConfigNodeInformer.
+	MachineConfigNodes() MachineConfigNodeInformer
 	// MachineConfigPools returns a MachineConfigPoolInformer.
 	MachineConfigPools() MachineConfigPoolInformer
 	// MachineOSBuilds returns a MachineOSBuildInformer.
@@ -55,6 +57,11 @@ func (v *version) KubeletConfigs() KubeletConfigInformer {
 // MachineConfigs returns a MachineConfigInformer.
 func (v *version) MachineConfigs() MachineConfigInformer {
 	return &machineConfigInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
+}
+
+// MachineConfigNodes returns a MachineConfigNodeInformer.
+func (v *version) MachineConfigNodes() MachineConfigNodeInformer {
+	return &machineConfigNodeInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
 // MachineConfigPools returns a MachineConfigPoolInformer.
