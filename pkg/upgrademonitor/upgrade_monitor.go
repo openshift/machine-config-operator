@@ -267,21 +267,18 @@ func generateAndApplyMachineConfigNodes(
 		if fg.Enabled(features.FeatureGatePinnedImages) {
 			if imageSetApplyConfig == nil {
 				for _, imageSet := range newMCNode.Status.PinnedImageSets {
-					if imageSet.LastFailedGeneration != 0 { // only set `LastFailedGeneration` value when it is a non-default (non-0) value
-						statusApplyConfig = statusApplyConfig.WithPinnedImageSets(&machineconfigurationalphav1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration{
-							DesiredGeneration:         ptr.To(imageSet.DesiredGeneration),
-							CurrentGeneration:         ptr.To(imageSet.CurrentGeneration),
-							Name:                      ptr.To(imageSet.Name),
-							LastFailedGeneration:      ptr.To(imageSet.LastFailedGeneration),
-							LastFailedGenerationError: ptr.To(imageSet.LastFailedGenerationError),
-						})
-					} else {
-						statusApplyConfig = statusApplyConfig.WithPinnedImageSets(&machineconfigurationalphav1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration{
-							DesiredGeneration: ptr.To(imageSet.DesiredGeneration),
-							CurrentGeneration: ptr.To(imageSet.CurrentGeneration),
-							Name:              ptr.To(imageSet.Name),
-						})
+					pisApplyConfig := &machineconfigurationalphav1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration{
+						DesiredGeneration: ptr.To(imageSet.DesiredGeneration),
+						CurrentGeneration: ptr.To(imageSet.CurrentGeneration),
+						Name:              ptr.To(imageSet.Name),
 					}
+					// Only set `LastFailedGeneration` value when it is a non-default (non-0) value
+					if imageSet.LastFailedGeneration != 0 {
+						pisApplyConfig.LastFailedGeneration = ptr.To(imageSet.LastFailedGeneration)
+						pisApplyConfig.LastFailedGenerationError = ptr.To(imageSet.LastFailedGenerationError)
+					}
+
+					statusApplyConfig = statusApplyConfig.WithPinnedImageSets(pisApplyConfig)
 				}
 			} else if len(imageSetApplyConfig) > 0 {
 				statusApplyConfig = statusApplyConfig.WithPinnedImageSets(imageSetApplyConfig...)
