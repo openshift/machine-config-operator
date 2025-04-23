@@ -54,6 +54,18 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &machineconfigurationv1.KubeletConfigStatusApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("MachineConfig"):
 		return &machineconfigurationv1.MachineConfigApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("MachineConfigNode"):
+		return &machineconfigurationv1.MachineConfigNodeApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("MachineConfigNodeSpec"):
+		return &machineconfigurationv1.MachineConfigNodeSpecApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("MachineConfigNodeSpecMachineConfigVersion"):
+		return &machineconfigurationv1.MachineConfigNodeSpecMachineConfigVersionApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("MachineConfigNodeStatus"):
+		return &machineconfigurationv1.MachineConfigNodeStatusApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("MachineConfigNodeStatusMachineConfigVersion"):
+		return &machineconfigurationv1.MachineConfigNodeStatusMachineConfigVersionApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("MachineConfigNodeStatusPinnedImageSet"):
+		return &machineconfigurationv1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("MachineConfigPool"):
 		return &machineconfigurationv1.MachineConfigPoolApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("MachineConfigPoolCondition"):
@@ -90,6 +102,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &machineconfigurationv1.MachineOSContainerfileApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("MachineOSImageBuilder"):
 		return &machineconfigurationv1.MachineOSImageBuilderApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("MCOObjectReference"):
+		return &machineconfigurationv1.MCOObjectReferenceApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("NetworkInfo"):
 		return &machineconfigurationv1.NetworkInfoApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("ObjectReference"):

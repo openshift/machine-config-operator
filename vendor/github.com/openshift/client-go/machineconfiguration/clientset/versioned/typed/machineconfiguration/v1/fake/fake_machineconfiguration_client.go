@@ -28,6 +28,10 @@ func (c *FakeMachineconfigurationV1) MachineConfigs() v1.MachineConfigInterface 
 	return newFakeMachineConfigs(c)
 }
 
+func (c *FakeMachineconfigurationV1) MachineConfigNodes() v1.MachineConfigNodeInterface {
+	return newFakeMachineConfigNodes(c)
+}
+
 func (c *FakeMachineconfigurationV1) MachineConfigPools() v1.MachineConfigPoolInterface {
 	return newFakeMachineConfigPools(c)
 }
