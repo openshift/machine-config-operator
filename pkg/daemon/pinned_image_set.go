@@ -1134,7 +1134,7 @@ func (p *PinnedImageSetManager) handleErr(err error, key string) {
 func (p *PinnedImageSetManager) getImageSize(ctx context.Context, imageName, authFilePath string) (int64, error) {
 	args := []string{
 		"manifest",
-		"--log-level", "error", // suppress warn log output
+		"--log-level", "debug", // debug for testing
 		"inspect",
 		"--authfile", authFilePath,
 		imageName,
@@ -1145,7 +1145,7 @@ func (p *PinnedImageSetManager) getImageSize(ctx context.Context, imageName, aut
 		return 0, errNotFound
 	}
 	if err != nil {
-		return 0, fmt.Errorf("failed to execute podman manifest inspect for %q: %w", imageName, err)
+		return 0, fmt.Errorf("failed to execute podman manifest inspect for %q: Output:%s  Error:%w", imageName, output, err)
 	}
 
 	var manifest ocispec.Manifest
