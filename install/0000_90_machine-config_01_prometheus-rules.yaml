@@ -157,6 +157,7 @@ spec:
               Given three control plane nodes, the overall memory utilization may only be about 2/3 of all available capacity.
               This is because if a single control plane node fails, the kube-apiserver and etcd may be slow to respond.
               To fix this, increase memory of the control plane nodes.
+            runbook_url: https://github.com/openshift/runbooks/blob/master/alerts/machine-config-operator/HighOverallControlPlaneMemory.md
     - name: extremely-high-individual-control-plane-memory
       rules:
         - alert: ExtremelyHighIndividualControlPlaneMemory
