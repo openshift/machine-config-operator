@@ -34,7 +34,7 @@ const (
 	// https://github.com/openshift/api/pull/1774
 	// https://github.com/openshift/api/blob/master/tools/publish-kubebuilder-tools/README.md#using-the-archives
 	// https://groups.google.com/a/redhat.com/g/aos-devel/c/JXtIlYlFbDA
-	k8sVersion string = "1.31.1"
+	k8sVersion string = "1.32.1"
 )
 
 // This is needed because both setup-envtest and the kubebuilder tools assume
