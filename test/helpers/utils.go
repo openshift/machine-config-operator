@@ -64,7 +64,13 @@ const (
 	UsedByE2ETestLabelKey string = UsedByE2ETestAnnoKey
 
 	machineAPINamespace string = "openshift-machine-api"
+	// Default Ignition compression for files, no compression
+	IgnitionFileCompressionDefault IgnitionFileCompression = ""
+	// Ignition gzip compression
+	IgnitionFileCompressionGzip IgnitionFileCompression = "gzip"
 )
+
+type IgnitionFileCompression string
 
 type CleanupFuncs struct {
 	funcs []func()
@@ -1038,7 +1044,7 @@ func CreateGzippedIgn3File(path, content string, mode int) (ign3types.File, erro
 	}
 
 	ign3File = CreateEncodedIgn3File(path, buf.String(), mode)
-	ign3File.Contents.Compression = StrToPtr("gzip")
+	ign3File.Contents.Compression = StrToPtr(string(IgnitionFileCompressionGzip))
 
 	return ign3File, nil
 }
@@ -1047,15 +1053,23 @@ func CreateGzippedIgn3File(path, content string, mode int) (ign3types.File, erro
 // https://datatracker.ietf.org/doc/html/rfc2397
 func CreateEncodedIgn3File(path, content string, mode int) ign3types.File {
 	encoded := dataurl.EncodeBytes([]byte(content))
-
-	return CreateIgn3File(path, encoded, mode)
+	return CreateUncompressedIgn3File(path, encoded, mode)
 }
 
-func CreateIgn3File(path, content string, mode int) ign3types.File {
+func CreateUncompressedIgn3File(path, content string, mode int) ign3types.File {
+	return CreateIgn3File(path, content, mode, IgnitionFileCompressionDefault)
+}
+
+func CreateIgn3File(path, content string, mode int, compression IgnitionFileCompression) ign3types.File {
+	var compressionPtr *string
+	if compression == IgnitionFileCompressionGzip {
+		compressionPtr = StrToPtr(string(IgnitionFileCompressionGzip))
+	}
 	return ign3types.File{
 		FileEmbedded1: ign3types.FileEmbedded1{
 			Contents: ign3types.Resource{
-				Source: &content,
+				Source:      &content,
+				Compression: compressionPtr,
 			},
 			Mode: &mode,
 		},
