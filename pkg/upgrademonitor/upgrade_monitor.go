@@ -5,14 +5,14 @@ import (
 	"fmt"
 
 	features "github.com/openshift/api/features"
-	machineconfigurationalphav1 "github.com/openshift/client-go/machineconfiguration/applyconfigurations/machineconfiguration/v1alpha1"
+	machineconfigurationv1 "github.com/openshift/client-go/machineconfiguration/applyconfigurations/machineconfiguration/v1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/utils/ptr"
 
-	mcfgalphav1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	applyconfigurationsmeta "k8s.io/client-go/applyconfigurations/meta/v1"
 	"k8s.io/klog/v2"
@@ -23,7 +23,7 @@ import (
 const NotYetSet = "not-yet-set"
 
 type Condition struct {
-	State   mcfgalphav1.StateProgress
+	State   mcfgv1.StateProgress
 	Reason  string
 	Message string
 }
@@ -53,7 +53,7 @@ func UpdateMachineConfigNodeStatus(
 	childStatus metav1.ConditionStatus,
 	node *corev1.Node,
 	mcfgClient mcfgclientset.Interface,
-	imageSetApplyConfig []*machineconfigurationalphav1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration,
+	imageSetApplyConfig []*machineconfigurationv1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration,
 	fgAccessor featuregates.FeatureGateAccess,
 	pool string,
 ) error {
@@ -88,7 +88,7 @@ func generateAndApplyMachineConfigNodes(
 	childStatus metav1.ConditionStatus,
 	node *corev1.Node,
 	mcfgClient mcfgclientset.Interface,
-	imageSetApplyConfig []*machineconfigurationalphav1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration,
+	imageSetApplyConfig []*machineconfigurationv1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration,
 	fgAccessor featuregates.FeatureGateAccess,
 	pool string,
 ) error {
@@ -126,31 +126,31 @@ func generateAndApplyMachineConfigNodes(
 
 	}
 	reset := false
-	if newParentCondition.Type == string(mcfgalphav1.MachineConfigNodeUpdated) {
+	if newParentCondition.Type == string(mcfgv1.MachineConfigNodeUpdated) {
 		reset = true
 	}
 
 	// singleton conditions are conditions that should only have one instance (no children) in the MCN status.
-	var singletonConditionTypes []mcfgalphav1.StateProgress
+	var singletonConditionTypes []mcfgv1.StateProgress
 	if fg.Enabled(features.FeatureGatePinnedImages) {
-		singletonConditionTypes = append(singletonConditionTypes, mcfgalphav1.MachineConfigNodePinnedImageSetsDegraded, mcfgalphav1.MachineConfigNodePinnedImageSetsProgressing)
+		singletonConditionTypes = append(singletonConditionTypes, mcfgv1.MachineConfigNodePinnedImageSetsDegraded, mcfgv1.MachineConfigNodePinnedImageSetsProgressing)
 	}
 
 	// we use this array to see if the MCN has all of its conditions set
 	// if not we set a sane default
-	allConditionTypes := []mcfgalphav1.StateProgress{
-		mcfgalphav1.MachineConfigNodeUpdatePrepared,
-		mcfgalphav1.MachineConfigNodeUpdateExecuted,
-		mcfgalphav1.MachineConfigNodeUpdatePostActionComplete,
-		mcfgalphav1.MachineConfigNodeUpdateComplete,
-		mcfgalphav1.MachineConfigNodeResumed,
-		mcfgalphav1.MachineConfigNodeUpdateDrained,
-		mcfgalphav1.MachineConfigNodeUpdateFilesAndOS,
-		mcfgalphav1.MachineConfigNodeUpdateCordoned,
-		mcfgalphav1.MachineConfigNodeUpdateRebooted,
-		mcfgalphav1.MachineConfigNodeUpdated,
-		mcfgalphav1.MachineConfigNodeUpdateUncordoned,
-		mcfgalphav1.MachineConfigNodeNodeDegraded,
+	allConditionTypes := []mcfgv1.StateProgress{
+		mcfgv1.MachineConfigNodeUpdatePrepared,
+		mcfgv1.MachineConfigNodeUpdateExecuted,
+		mcfgv1.MachineConfigNodeUpdatePostActionComplete,
+		mcfgv1.MachineConfigNodeUpdateComplete,
+		mcfgv1.MachineConfigNodeResumed,
+		mcfgv1.MachineConfigNodeUpdateDrained,
+		mcfgv1.MachineConfigNodeUpdateFilesAndOS,
+		mcfgv1.MachineConfigNodeUpdateCordoned,
+		mcfgv1.MachineConfigNodeUpdateRebooted,
+		mcfgv1.MachineConfigNodeUpdated,
+		mcfgv1.MachineConfigNodeUpdateUncordoned,
+		mcfgv1.MachineConfigNodeNodeDegraded,
 	}
 	allConditionTypes = append(allConditionTypes, singletonConditionTypes...)
 
@@ -165,7 +165,7 @@ func generateAndApplyMachineConfigNodes(
 			found := false
 			for _, cond := range newMCNode.Status.Conditions {
 				// if this is one of our two conditions, do not nullify this
-				if condType == mcfgalphav1.StateProgress(cond.Type) {
+				if condType == mcfgv1.StateProgress(cond.Type) {
 					found = true
 				}
 			}
@@ -190,13 +190,13 @@ func generateAndApplyMachineConfigNodes(
 		// also set all other ones to false and update last transition time.
 		for i, condition := range newMCNode.Status.Conditions {
 			switch {
-			case condition.Type == string(mcfgalphav1.MachineConfigNodeUpdated) && condition.Status == metav1.ConditionTrue && condition.Type != newParentCondition.Type:
+			case condition.Type == string(mcfgv1.MachineConfigNodeUpdated) && condition.Status == metav1.ConditionTrue && condition.Type != newParentCondition.Type:
 				// if this happens, it is because we manually updated the MCO.
 				// so, if we get a parent state == unknown or true or ANYTHING and updated also == true but it isn't the parent, set updated == false
 				newC := metav1.Condition{
-					Type:               string(mcfgalphav1.MachineConfigNodeUpdated),
+					Type:               string(mcfgv1.MachineConfigNodeUpdated),
 					Message:            "This node is not updated, sensed disruption via a manual update.",
-					Reason:             string(mcfgalphav1.MachineConfigNodeUpdated),
+					Reason:             string(mcfgv1.MachineConfigNodeUpdated),
 					LastTransitionTime: metav1.Now(),
 					Status:             metav1.ConditionFalse,
 				}
@@ -233,32 +233,33 @@ func generateAndApplyMachineConfigNodes(
 		}
 	}
 
-	// for now, keep spec and status aligned
-	if node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey] != "" {
-		newMCNode.Status.ConfigVersion = mcfgalphav1.MachineConfigNodeStatusMachineConfigVersion{
-			Desired: newMCNode.Status.ConfigVersion.Desired,
-			Current: node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey],
+	// Set desired version in MCN.Status.ConfigVersion
+	desiredAnnotation := NotYetSet
+	// 	if the update is compatible, we can set the desired to the one being used in the update,
+	// 	otherwise continue using the placeholder value
+	if newParentCondition.Type == string(mcfgv1.MachineConfigNodeUpdatePrepared) && newParentCondition.Status == metav1.ConditionTrue || newParentCondition.Type != string(mcfgv1.MachineConfigNodeUpdatePrepared) && node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] != "" {
+		desiredAnnotation = node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey]
+	}
+	if newMCNode.Status.ConfigVersion == nil {
+		newMCNode.Status.ConfigVersion = &mcfgv1.MachineConfigNodeStatusMachineConfigVersion{
+			Desired: desiredAnnotation,
 		}
 	} else {
-		newMCNode.Status.ConfigVersion = mcfgalphav1.MachineConfigNodeStatusMachineConfigVersion{
-			Desired: newMCNode.Status.ConfigVersion.Desired,
-		}
+		newMCNode.Status.ConfigVersion.Desired = desiredAnnotation
 	}
-	// if the update is compatible, we can set the desired to the one being used in the update
-	// this happens either if we get prepared == true OR literally any other parent condition, since if we get past prepared, then the desiredConfig is correct.
-	if newParentCondition.Type == string(mcfgalphav1.MachineConfigNodeUpdatePrepared) && newParentCondition.Status == metav1.ConditionTrue || newParentCondition.Type != string(mcfgalphav1.MachineConfigNodeUpdatePrepared) && node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] != "" {
-		newMCNode.Status.ConfigVersion.Desired = node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey]
-	} else if newMCNode.Status.ConfigVersion.Desired == "" {
-		newMCNode.Status.ConfigVersion.Desired = NotYetSet
+
+	// Set current version in MCN.Status.ConfigVersion if node annotation exists
+	if node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey] != "" {
+		newMCNode.Status.ConfigVersion.Current = node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey]
 	}
 
 	// if we do not need a new MCN, generate the apply configurations for this object
 	if !needNewMCNode {
-		statusconfigVersionApplyConfig := machineconfigurationalphav1.MachineConfigNodeStatusMachineConfigVersion().WithDesired(newMCNode.Status.ConfigVersion.Desired)
+		statusconfigVersionApplyConfig := machineconfigurationv1.MachineConfigNodeStatusMachineConfigVersion().WithDesired(newMCNode.Status.ConfigVersion.Desired)
 		if node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey] != "" {
 			statusconfigVersionApplyConfig = statusconfigVersionApplyConfig.WithCurrent(newMCNode.Status.ConfigVersion.Current)
 		}
-		statusApplyConfig := machineconfigurationalphav1.MachineConfigNodeStatus().
+		statusApplyConfig := machineconfigurationv1.MachineConfigNodeStatus().
 			// WithConditions(newMCNode.Status.Conditions...).
 			WithConditions(convertConditionsToApplyConfigurations(newMCNode.Status.Conditions)...).
 			WithObservedGeneration(newMCNode.Generation + 1).
@@ -267,7 +268,7 @@ func generateAndApplyMachineConfigNodes(
 		if fg.Enabled(features.FeatureGatePinnedImages) {
 			if imageSetApplyConfig == nil {
 				for _, imageSet := range newMCNode.Status.PinnedImageSets {
-					pisApplyConfig := &machineconfigurationalphav1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration{
+					pisApplyConfig := &machineconfigurationv1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration{
 						DesiredGeneration: ptr.To(imageSet.DesiredGeneration),
 						CurrentGeneration: ptr.To(imageSet.CurrentGeneration),
 						Name:              ptr.To(imageSet.Name),
@@ -285,25 +286,25 @@ func generateAndApplyMachineConfigNodes(
 			}
 		}
 
-		mcnodeApplyConfig := machineconfigurationalphav1.MachineConfigNode(newMCNode.Name).WithStatus(statusApplyConfig)
-		_, err := mcfgClient.MachineconfigurationV1alpha1().MachineConfigNodes().ApplyStatus(context.TODO(), mcnodeApplyConfig, metav1.ApplyOptions{FieldManager: "machine-config-operator", Force: true})
+		mcnodeApplyConfig := machineconfigurationv1.MachineConfigNode(newMCNode.Name).WithStatus(statusApplyConfig)
+		_, err := mcfgClient.MachineconfigurationV1().MachineConfigNodes().ApplyStatus(context.TODO(), mcnodeApplyConfig, metav1.ApplyOptions{FieldManager: "machine-config-operator", Force: true})
 		if err != nil {
 			klog.Errorf("Error applying MCN status: %v", err)
 			return err
 		}
 	} else if node.Status.Phase != corev1.NodePending && node.Status.Phase != corev1.NodePhase("Provisioning") {
 		// there are cases where we get here before the MCO has settled and applied all of the MCnodes.
-		newMCNode.Spec.ConfigVersion = mcfgalphav1.MachineConfigNodeSpecMachineConfigVersion{
+		newMCNode.Spec.ConfigVersion = mcfgv1.MachineConfigNodeSpecMachineConfigVersion{
 			Desired: node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey],
 		}
 		if newMCNode.Spec.ConfigVersion.Desired == "" {
 			newMCNode.Spec.ConfigVersion.Desired = NotYetSet
 		}
 		newMCNode.Name = node.Name
-		newMCNode.Spec.Pool = mcfgalphav1.MCOObjectReference{Name: pool}
-		newMCNode.Spec.Node = mcfgalphav1.MCOObjectReference{Name: node.Name}
+		newMCNode.Spec.Pool = mcfgv1.MCOObjectReference{Name: pool}
+		newMCNode.Spec.Node = mcfgv1.MCOObjectReference{Name: node.Name}
 
-		_, err := mcfgClient.MachineconfigurationV1alpha1().MachineConfigNodes().Create(context.TODO(), newMCNode, metav1.CreateOptions{})
+		_, err := mcfgClient.MachineconfigurationV1().MachineConfigNodes().Create(context.TODO(), newMCNode, metav1.CreateOptions{})
 		if err != nil {
 			klog.Errorf("Error creating MCN: %v", err)
 			return err
@@ -324,7 +325,7 @@ func isParentConditionChanged(old, newCondition metav1.Condition) bool {
 }
 
 // isSingletonCondition checks if the condition is a singleton condition which means it will never have a child.
-func isSingletonCondition(singletonConditionTypes []mcfgalphav1.StateProgress, conditionType string) bool {
+func isSingletonCondition(singletonConditionTypes []mcfgv1.StateProgress, conditionType string) bool {
 	for _, cond := range singletonConditionTypes {
 		if conditionType == string(cond) {
 			return true
@@ -360,7 +361,7 @@ func GenerateAndApplyMachineConfigNodeSpec(fgAccessor featuregates.FeatureGateAc
 		},
 	}
 
-	newMCNode.Spec.ConfigVersion = mcfgalphav1.MachineConfigNodeSpecMachineConfigVersion{
+	newMCNode.Spec.ConfigVersion = mcfgv1.MachineConfigNodeSpecMachineConfigVersion{
 		Desired: node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey],
 	}
 	// Set desired config to NotYetSet if the annotation is empty to satisfy API validation
@@ -368,25 +369,25 @@ func GenerateAndApplyMachineConfigNodeSpec(fgAccessor featuregates.FeatureGateAc
 		newMCNode.Spec.ConfigVersion.Desired = NotYetSet
 	}
 
-	newMCNode.Spec.Pool = mcfgalphav1.MCOObjectReference{
+	newMCNode.Spec.Pool = mcfgv1.MCOObjectReference{
 		Name: pool,
 	}
-	newMCNode.Spec.Node = mcfgalphav1.MCOObjectReference{
+	newMCNode.Spec.Node = mcfgv1.MCOObjectReference{
 		Name: node.Name,
 	}
 	if !needNewMCNode {
-		nodeRefApplyConfig := machineconfigurationalphav1.MCOObjectReference().WithName(newMCNode.Spec.Node.Name)
-		poolRefApplyConfig := machineconfigurationalphav1.MCOObjectReference().WithName(newMCNode.Spec.Pool.Name)
-		specconfigVersionApplyConfig := machineconfigurationalphav1.MachineConfigNodeSpecMachineConfigVersion().WithDesired(newMCNode.Spec.ConfigVersion.Desired)
-		specApplyConfig := machineconfigurationalphav1.MachineConfigNodeSpec().WithNode(nodeRefApplyConfig).WithPool(poolRefApplyConfig).WithConfigVersion(specconfigVersionApplyConfig)
-		mcnodeApplyConfig := machineconfigurationalphav1.MachineConfigNode(newMCNode.Name).WithSpec(specApplyConfig)
-		_, err := mcfgClient.MachineconfigurationV1alpha1().MachineConfigNodes().Apply(context.TODO(), mcnodeApplyConfig, metav1.ApplyOptions{FieldManager: "machine-config-operator", Force: true})
+		nodeRefApplyConfig := machineconfigurationv1.MCOObjectReference().WithName(newMCNode.Spec.Node.Name)
+		poolRefApplyConfig := machineconfigurationv1.MCOObjectReference().WithName(newMCNode.Spec.Pool.Name)
+		specconfigVersionApplyConfig := machineconfigurationv1.MachineConfigNodeSpecMachineConfigVersion().WithDesired(newMCNode.Spec.ConfigVersion.Desired)
+		specApplyConfig := machineconfigurationv1.MachineConfigNodeSpec().WithNode(nodeRefApplyConfig).WithPool(poolRefApplyConfig).WithConfigVersion(specconfigVersionApplyConfig)
+		mcnodeApplyConfig := machineconfigurationv1.MachineConfigNode(newMCNode.Name).WithSpec(specApplyConfig)
+		_, err := mcfgClient.MachineconfigurationV1().MachineConfigNodes().Apply(context.TODO(), mcnodeApplyConfig, metav1.ApplyOptions{FieldManager: "machine-config-operator", Force: true})
 		if err != nil {
 			klog.Errorf("Error applying MCN Spec: %v", err)
 			return err
 		}
 	} else {
-		_, err := mcfgClient.MachineconfigurationV1alpha1().MachineConfigNodes().Create(context.TODO(), newMCNode, metav1.CreateOptions{})
+		_, err := mcfgClient.MachineconfigurationV1().MachineConfigNodes().Create(context.TODO(), newMCNode, metav1.CreateOptions{})
 		if err != nil {
 			klog.Errorf("Error creating MCN: %v", err)
 			return err
@@ -396,8 +397,8 @@ func GenerateAndApplyMachineConfigNodeSpec(fgAccessor featuregates.FeatureGateAc
 }
 
 // createOrGetMachineConfigNode gets the named MCN or returns a boolean indicating we need to create one
-func createOrGetMachineConfigNode(mcfgClient mcfgclientset.Interface, node *corev1.Node) (*mcfgalphav1.MachineConfigNode, bool) {
-	mcNode, err := mcfgClient.MachineconfigurationV1alpha1().MachineConfigNodes().Get(context.TODO(), node.Name, metav1.GetOptions{})
+func createOrGetMachineConfigNode(mcfgClient mcfgclientset.Interface, node *corev1.Node) (*mcfgv1.MachineConfigNode, bool) {
+	mcNode, err := mcfgClient.MachineconfigurationV1().MachineConfigNodes().Get(context.TODO(), node.Name, metav1.GetOptions{})
 	if mcNode.Name == "" || (err != nil && apierrors.IsNotFound(err)) {
 		klog.Errorf("error getting existing MCN: %v", err)
 		return mcNode, true
@@ -407,18 +408,6 @@ func createOrGetMachineConfigNode(mcfgClient mcfgclientset.Interface, node *core
 }
 
 type ApplyCallback struct {
-	StatusConfigFn      func(applyConfig *machineconfigurationalphav1.MachineConfigNodeStatusApplyConfiguration)
-	MachineConfigNodeFn func(*mcfgalphav1.MachineConfigNode)
-}
-
-func applyStatusConfig(cfg *machineconfigurationalphav1.MachineConfigNodeStatusApplyConfiguration, applyCallback ...*ApplyCallback) {
-	for _, apply := range applyCallback {
-		apply.StatusConfigFn(cfg)
-	}
-}
-
-func applyMachineConfigNode(mcn *mcfgalphav1.MachineConfigNode, applyCallback ...*ApplyCallback) {
-	for _, apply := range applyCallback {
-		apply.MachineConfigNodeFn(mcn)
-	}
+	StatusConfigFn      func(applyConfig *machineconfigurationv1.MachineConfigNodeStatusApplyConfiguration)
+	MachineConfigNodeFn func(*mcfgv1.MachineConfigNode)
 }

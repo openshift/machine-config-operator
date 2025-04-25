@@ -5,9 +5,8 @@ import (
 	"fmt"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	opv1 "github.com/openshift/api/operator/v1"
-
 	mcfgalphav1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+	opv1 "github.com/openshift/api/operator/v1"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
@@ -18,7 +17,6 @@ var (
 	mcfgCodecs = serializer.NewCodecFactory(mcfgScheme)
 
 	mcfgAlphaScheme = runtime.NewScheme()
-	mcfgAlphaCodecs = serializer.NewCodecFactory(mcfgAlphaScheme)
 
 	opv1Scheme = runtime.NewScheme()
 	opv1Codec  = serializer.NewCodecFactory(opv1Scheme)
@@ -77,12 +75,12 @@ func ReadMachineConfigPoolV1OrDie(objBytes []byte) *mcfgv1.MachineConfigPool {
 }
 
 // ReadMachineConfigPoolV1OrDie reads MachineConfigPool object from bytes. Panics on error.
-func ReadMachineConfigNodeV1OrDie(objBytes []byte) *mcfgalphav1.MachineConfigNode {
-	requiredObj, err := runtime.Decode(mcfgAlphaCodecs.UniversalDecoder(mcfgalphav1.SchemeGroupVersion), objBytes)
+func ReadMachineConfigNodeV1OrDie(objBytes []byte) *mcfgv1.MachineConfigNode {
+	requiredObj, err := runtime.Decode(mcfgCodecs.UniversalDecoder(mcfgv1.SchemeGroupVersion), objBytes)
 	if err != nil {
 		panic(err)
 	}
-	return requiredObj.(*mcfgalphav1.MachineConfigNode)
+	return requiredObj.(*mcfgv1.MachineConfigNode)
 }
 
 // ReadControllerConfigV1OrDie reads ControllerConfig object from bytes. Panics on error.

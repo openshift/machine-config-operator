@@ -46,6 +46,8 @@ func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Machineconfiguration().V1().KubeletConfigs().Informer()}, nil
 	case v1.SchemeGroupVersion.WithResource("machineconfigs"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Machineconfiguration().V1().MachineConfigs().Informer()}, nil
+	case v1.SchemeGroupVersion.WithResource("machineconfignodes"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Machineconfiguration().V1().MachineConfigNodes().Informer()}, nil
 	case v1.SchemeGroupVersion.WithResource("machineconfigpools"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Machineconfiguration().V1().MachineConfigPools().Informer()}, nil
 	case v1.SchemeGroupVersion.WithResource("machineosbuilds"):
