@@ -25,7 +25,7 @@ contents:
     serializeImagePulls: false
     staticPodPath: /etc/kubernetes/manifests
     systemCgroups: /system.slice
-    nodeStatusUpdateFrequency: 10s
+    nodeStatusUpdateFrequency: 60s
     nodeStatusReportFrequency: 5m
     serverTLSBootstrap: true
     tlsMinVersion: {{.TLSMinVersion}}
