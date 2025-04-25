@@ -294,7 +294,7 @@ require (
 	github.com/securego/gosec/v2 v2.21.4 // indirect
 	github.com/shazow/go-diff v0.0.0-20160112020656-b6b7b6733b8c // indirect
 	github.com/sigstore/sigstore v1.8.12 // indirect
-	github.com/sirupsen/logrus v1.9.3
+	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/sivchari/containedctx v1.0.3 // indirect
 	github.com/sivchari/tenv v1.12.1 // indirect
 	github.com/sonatard/noctx v0.1.0 // indirect
@@ -350,3 +350,8 @@ require (
 )
 
 replace k8s.io/kube-openapi => github.com/openshift/kube-openapi v0.0.0-20230816122517-ffc8f001abb0
+
+// The following replace commands are in place to allow the simultaneous merge of the API & MCO for making use of the V1 MCN API
+replace github.com/openshift/api => github.com/isabella-janssen/openshift-api v0.0.0-20250423163652-3d76f1835b2c
+
+replace github.com/openshift/client-go => github.com/isabella-janssen/openshift-client-go v0.0.0-20250423165717-b84d4e80502c

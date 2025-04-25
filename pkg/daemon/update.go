@@ -32,7 +32,6 @@ import (
 
 	features "github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	mcfgalphav1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 
 	opv1 "github.com/openshift/api/operator/v1"
@@ -131,7 +130,7 @@ func (dn *Daemon) executeReloadServiceNodeDisruptionAction(serviceName string, r
 	}
 
 	err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
-		&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdatePostActionComplete, Reason: string(mcfgalphav1.MachineConfigNodeUpdatePostActionComplete), Message: fmt.Sprintf("Node has reloaded service %s", serviceName)},
+		&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdatePostActionComplete, Reason: string(mcfgv1.MachineConfigNodeUpdatePostActionComplete), Message: fmt.Sprintf("Node has reloaded service %s", serviceName)},
 		nil,
 		metav1.ConditionTrue,
 		metav1.ConditionFalse,
@@ -174,7 +173,7 @@ func (dn *Daemon) performPostConfigChangeNodeDisruptionAction(postConfigChangeAc
 		switch action.Type {
 		case opv1.RebootStatusAction:
 			err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
-				&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateRebooted, Reason: string(mcfgalphav1.MachineConfigNodeUpdateRebooted), Message: "Upgrade requires a reboot."},
+				&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdateRebooted, Reason: string(mcfgv1.MachineConfigNodeUpdateRebooted), Message: "Upgrade requires a reboot."},
 				nil,
 				metav1.ConditionUnknown,
 				metav1.ConditionFalse,
@@ -194,7 +193,7 @@ func (dn *Daemon) performPostConfigChangeNodeDisruptionAction(postConfigChangeAc
 				dn.nodeWriter.Eventf(corev1.EventTypeNormal, "SkipReboot", "Config changes do not require reboot.")
 			}
 			err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
-				&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdatePostActionComplete, Reason: "None", Message: "Changes do not require a reboot"},
+				&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdatePostActionComplete, Reason: "None", Message: "Changes do not require a reboot"},
 				nil,
 				metav1.ConditionTrue,
 				metav1.ConditionFalse,
@@ -277,7 +276,7 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 
 	if ctrlcommon.InSlice(postConfigChangeActionReboot, postConfigChangeActions) {
 		err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
-			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateRebooted, Reason: string(mcfgalphav1.MachineConfigNodeUpdateRebooted), Message: "Upgrade requires a reboot."},
+			&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdateRebooted, Reason: string(mcfgv1.MachineConfigNodeUpdateRebooted), Message: "Upgrade requires a reboot."},
 			nil,
 			metav1.ConditionUnknown,
 			metav1.ConditionFalse,
@@ -298,7 +297,7 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 			dn.nodeWriter.Eventf(corev1.EventTypeNormal, "SkipReboot", "Config changes do not require reboot.")
 		}
 		err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
-			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdatePostActionComplete, Reason: "None", Message: fmt.Sprintf("Changes do not require a reboot")},
+			&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdatePostActionComplete, Reason: "None", Message: fmt.Sprintf("Changes do not require a reboot")},
 			nil,
 			metav1.ConditionTrue,
 			metav1.ConditionFalse,
@@ -324,7 +323,7 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 		}
 
 		err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
-			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdatePostActionComplete, Reason: string(mcfgalphav1.MachineConfigNodeUpdatePostActionComplete), Message: "Node has reloaded CRIO"},
+			&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdatePostActionComplete, Reason: string(mcfgv1.MachineConfigNodeUpdatePostActionComplete), Message: "Node has reloaded CRIO"},
 			nil,
 			metav1.ConditionTrue,
 			metav1.ConditionFalse,
@@ -1140,7 +1139,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 
 	if reconcilableError != nil {
 		Nerr := upgrademonitor.GenerateAndApplyMachineConfigNodes(
-			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdatePrepared, Reason: string(mcfgalphav1.MachineConfigNodeUpdatePrepared), Message: fmt.Sprintf("Update Failed compatibility validation. MachineConfigs %v and %v are not compatible. Err: %s", oldConfigName, newConfigName, reconcilableError.Error())},
+			&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdatePrepared, Reason: string(mcfgv1.MachineConfigNodeUpdatePrepared), Message: fmt.Sprintf("Update Failed compatibility validation. MachineConfigs %v and %v are not compatible. Err: %s", oldConfigName, newConfigName, reconcilableError.Error())},
 			nil,
 			metav1.ConditionUnknown,
 			metav1.ConditionFalse,
@@ -1187,7 +1186,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 
 	if err != nil {
 		Nerr := upgrademonitor.GenerateAndApplyMachineConfigNodes(
-			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdatePrepared, Reason: string(mcfgalphav1.MachineConfigNodeUpdatePrepared), Message: fmt.Sprintf("Update Failed compatibility validation. MachineConfigs %v and %v are not available for update. Error calculating post config change actions: %s", oldConfigName, newConfigName, err.Error())},
+			&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdatePrepared, Reason: string(mcfgv1.MachineConfigNodeUpdatePrepared), Message: fmt.Sprintf("Update Failed compatibility validation. MachineConfigs %v and %v are not available for update. Error calculating post config change actions: %s", oldConfigName, newConfigName, err.Error())},
 			nil,
 			metav1.ConditionUnknown,
 			metav1.ConditionFalse,
@@ -1222,7 +1221,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		}
 	}
 	err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
-		&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdatePrepared, Reason: string(mcfgalphav1.MachineConfigNodeUpdatePrepared), Message: fmt.Sprintf("Update Compatible. Post Cfg Actions: %v Drain Required: %t", actions, drain)},
+		&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdatePrepared, Reason: string(mcfgv1.MachineConfigNodeUpdatePrepared), Message: fmt.Sprintf("Update Compatible. Post Cfg Actions: %v Drain Required: %t", actions, drain)},
 		nil,
 		metav1.ConditionTrue,
 		metav1.ConditionFalse,
@@ -1246,8 +1245,8 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	} else {
 		klog.Info("Changes do not require drain, skipping.")
 		err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
-			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateExecuted, Reason: string(mcfgalphav1.MachineConfigNodeUpdateDrained), Message: "Node Drain Not required for this update."},
-			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateDrained, Reason: fmt.Sprintf("%s%s", string(mcfgalphav1.MachineConfigNodeUpdateExecuted), string(mcfgalphav1.MachineConfigNodeUpdateDrained)), Message: "Node Drain Not required for this update."},
+			&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdateExecuted, Reason: string(mcfgv1.MachineConfigNodeUpdateDrained), Message: "Node Drain Not required for this update."},
+			&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdateDrained, Reason: fmt.Sprintf("%s%s", string(mcfgv1.MachineConfigNodeUpdateExecuted), string(mcfgv1.MachineConfigNodeUpdateDrained)), Message: "Node Drain Not required for this update."},
 			metav1.ConditionUnknown,
 			metav1.ConditionFalse,
 			dn.node,
@@ -1274,8 +1273,8 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	}
 
 	err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
-		&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateExecuted, Reason: string(mcfgalphav1.MachineConfigNodeUpdateFilesAndOS), Message: fmt.Sprintf("Updating the Files and OS on disk as a part of the in progress phase")},
-		&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateFilesAndOS, Reason: fmt.Sprintf("%s%s", string(mcfgalphav1.MachineConfigNodeUpdateExecuted), string(mcfgalphav1.MachineConfigNodeUpdateFilesAndOS)), Message: fmt.Sprintf("Applying files and new OS config to node. OS will %s need an update. SSH Keys will %s need an update", updatesNeeded[0], updatesNeeded[1])},
+		&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdateExecuted, Reason: string(mcfgv1.MachineConfigNodeUpdateFilesAndOS), Message: fmt.Sprintf("Updating the Files and OS on disk as a part of the in progress phase")},
+		&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdateFilesAndOS, Reason: fmt.Sprintf("%s%s", string(mcfgv1.MachineConfigNodeUpdateExecuted), string(mcfgv1.MachineConfigNodeUpdateFilesAndOS)), Message: fmt.Sprintf("Applying files and new OS config to node. OS will %s need an update. SSH Keys will %s need an update", updatesNeeded[0], updatesNeeded[1])},
 		metav1.ConditionUnknown,
 		metav1.ConditionUnknown,
 		dn.node,
@@ -1387,8 +1386,8 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	}()
 
 	err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
-		&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateExecuted, Reason: string(mcfgalphav1.MachineConfigNodeUpdateFilesAndOS), Message: fmt.Sprintf("Updated the Files and OS on disk as a part of the in progress phase")},
-		&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateFilesAndOS, Reason: fmt.Sprintf("%s%s", string(mcfgalphav1.MachineConfigNodeUpdateExecuted), string(mcfgalphav1.MachineConfigNodeUpdateFilesAndOS)), Message: fmt.Sprintf("Applied files and new OS config to node. OS did %s need an update. SSH Keys did %s need an update", updatesNeeded[0], updatesNeeded[1])},
+		&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdateExecuted, Reason: string(mcfgv1.MachineConfigNodeUpdateFilesAndOS), Message: fmt.Sprintf("Updated the Files and OS on disk as a part of the in progress phase")},
+		&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdateFilesAndOS, Reason: fmt.Sprintf("%s%s", string(mcfgv1.MachineConfigNodeUpdateExecuted), string(mcfgv1.MachineConfigNodeUpdateFilesAndOS)), Message: fmt.Sprintf("Applied files and new OS config to node. OS did %s need an update. SSH Keys did %s need an update", updatesNeeded[0], updatesNeeded[1])},
 		metav1.ConditionTrue,
 		metav1.ConditionTrue,
 		dn.node,
@@ -3080,7 +3079,7 @@ func canonicalizeMachineConfigImage(img string, mc *mcfgv1.MachineConfig) *mcfgv
 }
 
 // reportMachineNodeDegradeStatus Given the final error, and the used pool, of a node update the
-// method sets the [mcfgalphav1.MachineConfigNodeNodeDegraded] condition status in the status of the MCN.
+// method sets the [mcfgv1.MachineConfigNodeNodeDegraded] condition status in the status of the MCN.
 // If the error is not nil the condition status is set to [metav1.ConditionTrue] and the condition
 // message is formatted accordingly to include the error message. The condition is otherwise set to
 // [metav1.ConditionFalse].
@@ -3089,8 +3088,8 @@ func (dn *Daemon) reportMachineNodeDegradeStatus(err error, pool string) {
 		return
 	}
 	condition := &upgrademonitor.Condition{
-		State:  mcfgalphav1.MachineConfigNodeNodeDegraded,
-		Reason: string(mcfgalphav1.MachineConfigNodeNodeDegraded),
+		State:  mcfgv1.MachineConfigNodeNodeDegraded,
+		Reason: string(mcfgv1.MachineConfigNodeNodeDegraded),
 	}
 	status := metav1.ConditionFalse
 	if err == nil {
