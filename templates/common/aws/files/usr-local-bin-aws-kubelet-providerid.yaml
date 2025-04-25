@@ -5,10 +5,10 @@ contents:
     #!/bin/bash
     set -e -o pipefail
 
-    NODECONF=/etc/systemd/system/kubelet.service.d/20-aws-providerid.conf
+    NODEENV=/etc/kubernetes/node.env
 
-    if [ -e "${NODECONF}" ]; then
-        echo "Not replacing existing ${NODECONF}"
+    if [ -e "${NODEENV}" ] && grep -Fq "KUBELET_PROVIDERID" ${NODEENV}; then
+        echo "Not replacing existing ${NODEENV}"
         exit 0
     fi
 
@@ -34,7 +34,14 @@ contents:
     # set KUBELET_PROVIDERID to be a fully qualified AWS instace provider id.
     # This new variable is later used to populate the kubelet's `provider-id` flag, later set on the Node .spec
     # and used by the cloud controller manager's node controller to retrieve the Node's backing instance.
-    cat > "${NODECONF}" <<EOF
-    [Service]
-    Environment="KUBELET_PROVIDERID=aws:///${AVAILABILITY_ZONE}/${INSTANCE_ID}"
+    cat >> "${NODEENV}" <<EOF
+    KUBELET_PROVIDERID=aws:///${AVAILABILITY_ZONE}/${INSTANCE_ID}
     EOF
+
+    # Remove the legacy node conf once we've written out the new file
+    LEGACY_NODECONF=NODECONF=/etc/systemd/system/kubelet.service.d/20-aws-providerid.conf
+
+    if [ -e "${LEGACY_NODECONF}" ]; then
+        rm -f ${LEGACY_NODECONF}
+        echo "Removed legacy ${LEGACY_NODECONF}"
+    fi
