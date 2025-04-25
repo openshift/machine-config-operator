@@ -245,19 +245,19 @@ func generateAndApplyMachineConfigNodes(
 			Desired: desiredAnnotation,
 		}
 	} else {
-		(*newMCNode.Status.ConfigVersion).Desired = desiredAnnotation
+		newMCNode.Status.ConfigVersion.Desired = desiredAnnotation
 	}
 
 	// Set current version in MCN.Status.ConfigVersion if node annotation exists
 	if node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey] != "" {
-		(*newMCNode.Status.ConfigVersion).Current = node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey]
+		newMCNode.Status.ConfigVersion.Current = node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey]
 	}
 
 	// if we do not need a new MCN, generate the apply configurations for this object
 	if !needNewMCNode {
-		statusconfigVersionApplyConfig := machineconfigurationv1.MachineConfigNodeStatusMachineConfigVersion().WithDesired((*newMCNode.Status.ConfigVersion).Desired)
+		statusconfigVersionApplyConfig := machineconfigurationv1.MachineConfigNodeStatusMachineConfigVersion().WithDesired(newMCNode.Status.ConfigVersion.Desired)
 		if node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey] != "" {
-			statusconfigVersionApplyConfig = statusconfigVersionApplyConfig.WithCurrent((*newMCNode.Status.ConfigVersion).Current)
+			statusconfigVersionApplyConfig = statusconfigVersionApplyConfig.WithCurrent(newMCNode.Status.ConfigVersion.Current)
 		}
 		statusApplyConfig := machineconfigurationv1.MachineConfigNodeStatus().
 			// WithConditions(newMCNode.Status.Conditions...).
