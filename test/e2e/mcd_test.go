@@ -956,7 +956,7 @@ func createMCToAddFileForRole(name, role, filename, data string) *mcfgv1.Machine
 	mcadd := helpers.CreateMC(fmt.Sprintf("%s-%s", name, uuid.NewUUID()), role)
 
 	ignConfig := ctrlcommon.NewIgnConfig()
-	ignFile := helpers.CreateIgn3File(filename, "data:,"+data, 420)
+	ignFile := helpers.CreateUncompressedIgn3File(filename, "data:,"+data, 420)
 	ignConfig.Storage.Files = append(ignConfig.Storage.Files, ignFile)
 	rawIgnConfig := helpers.MarshalOrDie(ignConfig)
 	mcadd.Spec.Config.Raw = rawIgnConfig

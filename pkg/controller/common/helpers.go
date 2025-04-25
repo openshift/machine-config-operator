@@ -127,13 +127,28 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.Contro
 	}
 
 	for idx := 1; idx < len(configs); idx++ {
-		if configs[idx].Spec.Config.Raw != nil {
-			mergedIgn, err := ParseAndConvertConfig(configs[idx].Spec.Config.Raw)
-			if err != nil {
-				return nil, err
-			}
-			outIgn = ign3.Merge(outIgn, mergedIgn)
+		if configs[idx].Spec.Config.Raw == nil {
+			continue
 		}
+
+		mergedIgn, err := ParseAndConvertConfig(configs[idx].Spec.Config.Raw)
+		if err != nil {
+			return nil, err
+		}
+
+		// Ignition merge does not merge the compression field and the content together,
+		// leading to mismatches between the value of the compression and the content.
+		// This is specially notorious when this loop merges a content with the gzip compression
+		// set for a file and the next iteration overrides the file content but without compression.
+		// The merge output will have the proper content set but, as both fields are mapped separately,
+		// but the compression will be the one from previous merges.
+		// To avoid that behavior this logic makes all files have the compression field, if not set, set to empty.
+		// The empty value will always override the last compression algorithm set in previous merges. After the
+		// merge is done we can safely set the "empty" compression algorithms back to nil.
+		// See https://github.com/coreos/butane/issues/332
+		ignitionMergeSetFilesDefaultCompression(&mergedIgn)
+		outIgn = ign3.Merge(outIgn, mergedIgn)
+		ignitionMergeUnsetFilesDefaultCompression(&outIgn)
 	}
 
 	// For file entries without a default overwrite, set it to true
@@ -214,6 +229,26 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.Contro
 			Extensions: extensions,
 		},
 	}, nil
+}
+
+// ignitionMergeSetFilesDefaultCompression sets compression of all files that has no compression to the empty string
+func ignitionMergeSetFilesDefaultCompression(config *ign3types.Config) {
+	for fileIdx := range config.Storage.Files {
+		fileContent := &config.Storage.Files[fileIdx].FileEmbedded1.Contents
+		if fileContent.Compression == nil {
+			fileContent.Compression = strToPtr("")
+		}
+	}
+}
+
+// ignitionMergeUnsetFilesDefaultCompression sets compression of all files that has an empty compression to nil
+func ignitionMergeUnsetFilesDefaultCompression(config *ign3types.Config) {
+	for fileIdx := range config.Storage.Files {
+		fileContent := &config.Storage.Files[fileIdx].FileEmbedded1.Contents
+		if fileContent.Compression != nil && *fileContent.Compression == "" {
+			fileContent.Compression = nil
+		}
+	}
 }
 
 // PointerConfig generates the stub ignition for the machine to boot properly
