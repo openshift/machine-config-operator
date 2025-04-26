@@ -88,7 +88,9 @@ const (
 
 	// Labels and Annotations required for determining architecture of a machineset
 	MachineSetArchAnnotationKey = "capacity.cluster-autoscaler.kubernetes.io/labels"
-	ArchLabelKey                = "kubernetes.io/arch="
+
+	ArchLabelKey = "kubernetes.io/arch="
+	OSLabelKey   = "machine.openshift.io/os-id"
 )
 
 // New returns a new machine-set-boot-image controller.
@@ -406,6 +408,13 @@ func (ctrl *Controller) syncMAPIMachineSet(machineSet *machinev1beta1.MachineSet
 	if len(machineSet.GetOwnerReferences()) != 0 {
 		klog.Infof("machineset %s has OwnerReference: %v, skipping boot image update", machineSet.GetOwnerReferences()[0].Kind+"/"+machineSet.GetOwnerReferences()[0].Name, machineSet.Name)
 		return nil
+	}
+
+	if os, ok := machineSet.Spec.Template.Labels[OSLabelKey]; ok {
+		if os == "Windows" {
+			klog.Infof("machineset %s has a windows os label, skipping boot image update", machineSet.Name)
+			return nil
+		}
 	}
 
 	// Fetch the architecture type of this machineset
