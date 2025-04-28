@@ -153,16 +153,18 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 	if startOpts.hypershiftDesiredConfigMap != "" {
 		// This is a hypershift-mode daemon
 		ctx := ctrlcommon.CreateControllerContext(ctx, cb)
+		nodeScopedInformer, nodeScopedInformerStartFunc := ctrlcommon.NewScopedNodeInformerFromClientBuilder(cb, startOpts.nodeName)
 		err := dn.HypershiftConnect(
 			startOpts.nodeName,
 			kubeClient,
-			ctx.KubeInformerFactory.Core().V1().Nodes(),
+			nodeScopedInformer,
 			startOpts.hypershiftDesiredConfigMap,
 		)
 		if err != nil {
 			ctrlcommon.WriteTerminationError(err)
 		}
 
+		nodeScopedInformerStartFunc(stopCh)
 		ctx.KubeInformerFactory.Start(stopCh)
 		close(ctx.InformersStarted)
 
@@ -177,6 +179,8 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 
 	ctrlctx := ctrlcommon.CreateControllerContext(ctx, cb)
 
+	nodeScopedInformer, nodeScopedInformerStartFunc := ctrlcommon.NewScopedNodeInformerFromClientBuilder(cb, startOpts.nodeName)
+
 	// create the daemon instance. this also initializes kube client items
 	// which need to come from the container and not the chroot.
 	err = dn.ClusterConnect(
@@ -184,7 +188,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		kubeClient,
 		ctrlctx.ClientBuilder.MachineConfigClientOrDie(componentName),
 		ctrlctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
-		ctrlctx.KubeInformerFactory.Core().V1().Nodes(),
+		nodeScopedInformer,
 		ctrlctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
 		ctrlctx.ClientBuilder.OperatorClientOrDie(componentName),
 		startOpts.kubeletHealthzEnabled,
@@ -201,6 +205,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 	ctrlctx.KubeNamespacedInformerFactory.Start(stopCh)
 	ctrlctx.InformerFactory.Start(stopCh)
 	ctrlctx.OperatorInformerFactory.Start(stopCh)
+	nodeScopedInformerStartFunc(ctrlctx.Stop)
 	close(ctrlctx.InformersStarted)
 
 	select {
@@ -225,7 +230,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 					criClient,
 					ctrlctx.ClientBuilder.MachineConfigClientOrDie(componentName),
 					ctrlctx.InformerFactory.Machineconfiguration().V1alpha1().PinnedImageSets(),
-					ctrlctx.KubeInformerFactory.Core().V1().Nodes(),
+					nodeScopedInformer,
 					ctrlctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
 					resource.MustParse(constants.MinFreeStorageAfterPrefetch),
 					constants.DefaultCRIOSocketPath,
