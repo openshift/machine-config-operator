@@ -73,10 +73,11 @@ const (
 )
 
 var (
-	errInsufficientStorage = errors.New("storage available is less than minimum required")
-	errFailedToPullImage   = errors.New("failed to pull image")
-	errNotFound            = errors.New("not found")
-	errRequeueAfterTimeout = errors.New("requeue: prefetching images incomplete after timeout")
+	errInsufficientStorage     = errors.New("storage available is less than minimum required")
+	errFailedToPullImage       = errors.New("failed to pull image")
+	errFailedToManifestInspect = errors.New("failed to execute podman manifest inspect")
+	errNotFound                = errors.New("not found")
+	errRequeueAfterTimeout     = errors.New("requeue: prefetching images incomplete after timeout")
 )
 
 // PinnedImageSetManager manages the prefetching of images.
@@ -1139,12 +1140,27 @@ func (p *PinnedImageSetManager) getImageSize(ctx context.Context, imageName, aut
 		imageName,
 	}
 
-	output, err := exec.CommandContext(ctx, "podman", args...).CombinedOutput()
-	if err != nil && strings.Contains(err.Error(), "manifest unknown") {
-		return 0, errNotFound
-	}
+	var lastErr error
+	tries := 0
+	var output []byte
+	err := wait.PollUntilContextCancel(ctx, 2*time.Second, true, func(ctx context.Context) (bool, error) {
+		tries++
+
+		output, err := exec.CommandContext(ctx, "podman", args...).CombinedOutput()
+		lastErr = err
+		if err != nil && strings.Contains(err.Error(), "manifest unknown") {
+			return true, errNotFound
+		}
+		if err != nil {
+			klog.Infof("%v %q: Output:%s  Error:%v", errFailedToManifestInspect, imageName, output, err)
+			return false, nil
+		}
+
+		return true, nil
+	})
+	// this is only an error if ctx has error or limits are exceeded
 	if err != nil {
-		return 0, fmt.Errorf("failed to execute podman manifest inspect for %q: Output:%s  Error:%w", imageName, output, err)
+		return 0, fmt.Errorf("%w %q (%d tries): %w: %w", errFailedToManifestInspect, imageName, tries, err, lastErr)
 	}
 
 	var manifest ocispec.Manifest
