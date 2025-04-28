@@ -22,6 +22,8 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/informers"
+	corev1informers "k8s.io/client-go/informers/core/v1"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/clock"
 )
@@ -161,4 +163,29 @@ func CreateControllerContext(ctx context.Context, cb *clients.Builder) *Controll
 		ImageInformerFactory:                                imageSharedInformer,
 		RouteInformerFactory:                                routeSharedInformer,
 	}
+}
+
+// Creates a NodeInformer that is bound to a single node. This is for use by
+// the MCD to ensure that the MCD only receives watch events for the node that
+// it is running on as opposed to all cluster nodes. Doing this helps resude
+// the load on the apiserver. Because the filters are applied to *all*
+// informers constructed by the informer factory, we want to ensure that this
+// factory is only used to construct a NodeInformer.
+//
+// Consequently, this will only return the NodeInformer instance as well as a
+// start function from the SharedInformerFactory to enforce that.
+func NewScopedNodeInformer(kubeclient kubernetes.Interface, nodeName string) (corev1informers.NodeInformer, func(<-chan struct{})) {
+	sif := informers.NewSharedInformerFactoryWithOptions(
+		kubeclient,
+		resyncPeriod()(),
+		informers.WithTweakListOptions(func(opts *metav1.ListOptions) {
+			opts.FieldSelector = fields.OneTermEqualSelector("metadata.name", nodeName).String()
+		}),
+	)
+
+	return sif.Core().V1().Nodes(), sif.Start
+}
+
+func NewScopedNodeInformerFromClientBuilder(cb *clients.Builder, nodeName string) (corev1informers.NodeInformer, func(<-chan struct{})) {
+	return NewScopedNodeInformer(cb.KubeClientOrDie("node-scoped-informer"), nodeName)
 }
