@@ -33,6 +33,15 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/controller/machine-set-boot-image/cache"
 )
 
+type VsphereResources struct {
+	folder       *object.Folder
+	cluster      *object.ClusterComputeResource
+	resourcePool *object.ResourcePool
+	networkRef   object.NetworkReference
+	datastore    *object.Datastore
+	existingVM   *object.VirtualMachine
+}
+
 func checkOvaSecureBoot(ovfEnvelope *ovf.Envelope) bool {
 	if ovfEnvelope.VirtualSystem != nil {
 		for _, vh := range ovfEnvelope.VirtualSystem.VirtualHardware {
@@ -149,29 +158,39 @@ func upload(ctx context.Context, archive *importer.TapeArchive, lease *nfc.Lease
 	return lease.Upload(ctx, item, f, opts)
 }
 
-func findAllRequiredResources(ctx context.Context, finder *find.Finder, providerSpec *machinev1beta1.VSphereMachineProviderSpec, failureDomain osconfigv1.VSpherePlatformFailureDomainSpec) (*object.Folder, *object.ClusterComputeResource, *object.ResourcePool, object.NetworkReference, *object.Datastore, error) {
+func findAllRequiredResources(ctx context.Context, finder *find.Finder, providerSpec *machinev1beta1.VSphereMachineProviderSpec, failureDomain osconfigv1.VSpherePlatformFailureDomainSpec, name string) (*VsphereResources, error) {
+	vr := VsphereResources{}
 	folder, err := finder.Folder(ctx, providerSpec.Workspace.Folder)
 	if err != nil {
-		return nil, nil, nil, nil, nil, fmt.Errorf("failed to find folder: %w", err)
+		return nil, fmt.Errorf("failed to find folder: %w", err)
 	}
-	cluster, err := finder.ClusterComputeResource(ctx, failureDomain.Topology.ComputeCluster)
+	vr.folder = folder
+	vr.cluster, err = finder.ClusterComputeResource(ctx, failureDomain.Topology.ComputeCluster)
 	if err != nil {
-		return nil, nil, nil, nil, nil, fmt.Errorf("failed to find compute cluster: %w", err)
+		return nil, fmt.Errorf("failed to find compute cluster: %w", err)
 	}
-	resourcePool, err := finder.ResourcePool(ctx, providerSpec.Workspace.ResourcePool)
+	vr.resourcePool, err = finder.ResourcePool(ctx, providerSpec.Workspace.ResourcePool)
 	if err != nil {
-		return nil, nil, nil, nil, nil, fmt.Errorf("failed to find resource pool: %w", err)
+		return nil, fmt.Errorf("failed to find resource pool: %w", err)
 	}
-	networkPath := path.Join(cluster.InventoryPath, failureDomain.Topology.Networks[0])
-	networkRef, err := finder.Network(ctx, networkPath)
+	networkPath := path.Join(vr.cluster.InventoryPath, failureDomain.Topology.Networks[0])
+	vr.networkRef, err = finder.Network(ctx, networkPath)
 	if err != nil {
-		return nil, nil, nil, nil, nil, fmt.Errorf("failed to find network: %w", err)
+		return nil, fmt.Errorf("failed to find network: %w", err)
 	}
-	datastore, err := finder.Datastore(ctx, providerSpec.Workspace.Datastore)
+	vr.datastore, err = finder.Datastore(ctx, providerSpec.Workspace.Datastore)
 	if err != nil {
-		return nil, nil, nil, nil, nil, fmt.Errorf("failed to find datastore: %w", err)
+		return nil, fmt.Errorf("failed to find datastore: %w", err)
 	}
-	return folder, cluster, resourcePool, networkRef, datastore, nil
+	vr.existingVM, err = finder.VirtualMachine(ctx, name)
+	if err != nil {
+		if _, ok := err.(*find.NotFoundError); ok {
+			klog.Infof("VM Template with name %s does not already exists", name)
+		} else {
+			return nil, fmt.Errorf("finder had error: %w", err)
+		}
+	}
+	return &vr, nil
 }
 
 func getDiskTypeFromInstallConfigMap(installConfigCm *corev1.ConfigMap) (string, error) {
@@ -225,7 +244,7 @@ func getCISP(ovfEnvelope *ovf.Envelope, networkRef object.NetworkReference, name
 }
 
 func createNewVMTemplateWithNameForFailureDomain(ctx context.Context, providerSpec *machinev1beta1.VSphereMachineProviderSpec, failureDomain osconfigv1.VSpherePlatformFailureDomainSpec, finder *find.Finder, client *govmomi.Client, tagManager *tags.Manager, name, ovaPath, infraID, diskType string) error {
-	folder, cluster, resourcePool, networkRef, datastore, err := findAllRequiredResources(ctx, finder, providerSpec, failureDomain)
+	vr, err := findAllRequiredResources(ctx, finder, providerSpec, failureDomain, name)
 	if err != nil {
 		return err
 	}
@@ -253,7 +272,7 @@ func createNewVMTemplateWithNameForFailureDomain(ctx context.Context, providerSp
 		return fmt.Errorf("expected the OVA to only have a single network adapter")
 	}
 
-	clusterHostSystems, err := cluster.Hosts(ctx)
+	clusterHostSystems, err := vr.cluster.Hosts(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get cluster hosts: %w", err)
 	}
@@ -261,7 +280,7 @@ func createNewVMTemplateWithNameForFailureDomain(ctx context.Context, providerSp
 		return fmt.Errorf("the vCenter cluster %s has no ESXi nodes", failureDomain.Topology.ComputeCluster)
 	}
 
-	cisp, err := getCISP(ovfEnvelope, networkRef, name, diskType)
+	cisp, err := getCISP(ovfEnvelope, vr.networkRef, name, diskType)
 	if err != nil {
 		return fmt.Errorf("failed to get CISP: %w", err)
 	}
@@ -269,8 +288,8 @@ func createNewVMTemplateWithNameForFailureDomain(ctx context.Context, providerSp
 	m := ovf.NewManager(client.Client)
 	spec, err := m.CreateImportSpec(ctx,
 		string(ovfDescriptor),
-		resourcePool.Reference(),
-		datastore.Reference(),
+		vr.resourcePool.Reference(),
+		vr.datastore.Reference(),
 		cisp)
 
 	if err != nil {
@@ -280,22 +299,14 @@ func createNewVMTemplateWithNameForFailureDomain(ctx context.Context, providerSp
 		return errors.New(spec.Error[0].LocalizedMessage)
 	}
 
-	hostSystem, err := findAvailableHostSystems(ctx, clusterHostSystems, networkRef, datastore)
+	hostSystem, err := findAvailableHostSystems(ctx, clusterHostSystems, vr.networkRef, vr.datastore)
 	if err != nil {
 		return fmt.Errorf("failed to find available host system: %w", err)
 	}
 
-	existingvm, err := finder.VirtualMachine(ctx, name)
-	if err != nil {
-		if _, ok := err.(*find.NotFoundError); ok {
-			klog.Infof("VM Template with name %s does not already exists", name)
-		} else {
-			return fmt.Errorf("finder had error: %w", err)
-		}
-	}
-	if existingvm != nil {
+	if vr.existingVM != nil {
 		klog.Infof("VM Template with name %s already exists", name)
-		destroyTask, err := existingvm.Destroy(ctx)
+		destroyTask, err := vr.existingVM.Destroy(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to initiate destroy existing VM: %w", err)
 		}
@@ -306,7 +317,7 @@ func createNewVMTemplateWithNameForFailureDomain(ctx context.Context, providerSp
 		klog.Infof("VM %s successfully destroyed", name)
 	}
 
-	lease, err := resourcePool.ImportVApp(ctx, spec.ImportSpec, folder, hostSystem)
+	lease, err := vr.resourcePool.ImportVApp(ctx, spec.ImportSpec, vr.folder, hostSystem)
 	if err != nil {
 		return fmt.Errorf("failed to import vapp: %w", err)
 	}
