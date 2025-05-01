@@ -601,14 +601,6 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 	}
 
 	for _, pool := range mcpPools {
-		if pool.Spec.Configuration.Name == "" {
-			updateDelay := 5 * time.Second
-			// Previously we spammed the logs about empty pools.
-			// Let's just pause for a bit here to let the renderer
-			// initialize them.
-			time.Sleep(updateDelay)
-			return fmt.Errorf("Pool %s is unconfigured, pausing %v for renderer to initialize", pool.Name, updateDelay)
-		}
 		role := pool.Name
 		// Get MachineConfig
 		managedKey, err := getManagedKubeletConfigKey(pool, ctrl.client, cfg)
