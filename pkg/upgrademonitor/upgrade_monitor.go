@@ -364,6 +364,7 @@ func GenerateAndApplyMachineConfigNodeSpec(fgAccessor featuregates.FeatureGateAc
 		},
 	}
 
+	klog.Errorf("newMCNode.Spec.ConfigVersion.Desired: %v", newMCNode.Spec.ConfigVersion.Desired)
 	klog.Errorf("node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey]: %v", node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey])
 	newMCNode.Spec.ConfigVersion = mcfgv1.MachineConfigNodeSpecMachineConfigVersion{
 		Desired: node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey],
