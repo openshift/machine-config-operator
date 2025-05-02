@@ -2337,7 +2337,11 @@ func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, bool, erro
 		if err != nil {
 			klog.Errorf("Error making MCN for Resumed true: %v", err)
 		}
-		klog.Infof("Completing update to target %s", state.getCurrentName())
+		if state.currentConfig.GetName() == state.desiredConfig.GetName() {
+			klog.Infof("System state unchanged: %s", state.getCurrentName())
+		} else {
+			klog.Infof("Completing update to target %s", state.getCurrentName())
+		}
 		if err := dn.completeUpdate(state.currentConfig.GetName()); err != nil {
 			UpdateStateMetric(mcdUpdateState, "", err.Error())
 			return missingODC, inDesiredConfig, err
