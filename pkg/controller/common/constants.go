@@ -42,6 +42,8 @@ const (
 
 	// MasterLabel defines the label associated with master node. The master taint uses the same label as taint's key
 	MasterLabel = "node-role.kubernetes.io/master"
+	// WorkerLabel defines the label associated with worker node.
+	WorkerLabel = "node-role.kubernetes.io/worker"
 
 	// MCNameSuffixAnnotationKey is used to keep track of the machine config name associated with a CR
 	MCNameSuffixAnnotationKey = "machineconfiguration.openshift.io/mc-name-suffix"
