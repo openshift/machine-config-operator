@@ -1,8 +1,8 @@
-name: gcp-update-dns.service
-enabled: {{if and (eq .Infra.Status.PlatformStatus.Type "GCP") (.Infra.Status.PlatformStatus.GCP) (.Infra.Status.PlatformStatus.GCP.CloudLoadBalancerConfig) (eq .Infra.Status.PlatformStatus.GCP.CloudLoadBalancerConfig.DNSType "ClusterHosted") }}true{{else}}false{{end}}
+name: aws-update-dns.service
+enabled: {{if and (eq .Infra.Status.PlatformStatus.Type "AWS") (.Infra.Status.PlatformStatus.AWS) (.Infra.Status.PlatformStatus.AWS.CloudLoadBalancerConfig) (eq .Infra.Status.PlatformStatus.AWS.CloudLoadBalancerConfig.DNSType "ClusterHosted") }}true{{else}}false{{end}}
 contents: |
   [Unit]
-  Description=Update Default GCP Resolver
+  Description=Update Default AWS Resolver
   # We don't need to do this on the firstboot
   After=firstboot-osupdate.target
   # Wait for NetworkManager to report it's online
