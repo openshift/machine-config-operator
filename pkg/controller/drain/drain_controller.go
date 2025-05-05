@@ -10,7 +10,6 @@ import (
 	v1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
-	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/helpers"
@@ -109,7 +108,7 @@ type Controller struct {
 
 	cfg Config
 
-	featureGatesAccessor featuregates.FeatureGateAccess
+	fgHandler ctrlcommon.FeatureGatesHandler
 }
 
 // New returns a new node controller.
@@ -119,7 +118,7 @@ func New(
 	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
-	fgAccessor featuregates.FeatureGateAccess,
+	fgHandler ctrlcommon.FeatureGatesHandler,
 ) *Controller {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
@@ -132,8 +131,8 @@ func New(
 		queue: workqueue.NewTypedRateLimitingQueueWithConfig(
 			workqueue.DefaultTypedControllerRateLimiter[string](),
 			workqueue.TypedRateLimitingQueueConfig[string]{Name: "machineconfigcontroller-draincontroller"}),
-		cfg:                  cfg,
-		featureGatesAccessor: fgAccessor,
+		cfg:       cfg,
+		fgHandler: fgHandler,
 	}
 
 	nodeInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -333,7 +332,7 @@ func (ctrl *Controller) syncNode(key string) error {
 				metav1.ConditionUnknown,
 				node,
 				ctrl.client,
-				ctrl.featureGatesAccessor,
+				ctrl.fgHandler,
 				pool,
 			)
 			if nErr != nil {
@@ -349,7 +348,7 @@ func (ctrl *Controller) syncNode(key string) error {
 			metav1.ConditionTrue,
 			node,
 			ctrl.client,
-			ctrl.featureGatesAccessor,
+			ctrl.fgHandler,
 			pool,
 		)
 		if err != nil {
@@ -421,7 +420,7 @@ func (ctrl *Controller) drainNode(node *corev1.Node, drainer *drain.Helper) erro
 				metav1.ConditionUnknown,
 				node,
 				ctrl.client,
-				ctrl.featureGatesAccessor,
+				ctrl.fgHandler,
 				pool,
 			)
 			if Nerr != nil {
@@ -436,7 +435,7 @@ func (ctrl *Controller) drainNode(node *corev1.Node, drainer *drain.Helper) erro
 			metav1.ConditionTrue,
 			node,
 			ctrl.client,
-			ctrl.featureGatesAccessor,
+			ctrl.fgHandler,
 			pool,
 		)
 		if err != nil {
@@ -453,7 +452,7 @@ func (ctrl *Controller) drainNode(node *corev1.Node, drainer *drain.Helper) erro
 		metav1.ConditionUnknown,
 		node,
 		ctrl.client,
-		ctrl.featureGatesAccessor,
+		ctrl.fgHandler,
 		pool,
 	)
 	if err != nil {
@@ -483,7 +482,7 @@ func (ctrl *Controller) drainNode(node *corev1.Node, drainer *drain.Helper) erro
 			metav1.ConditionUnknown,
 			node,
 			ctrl.client,
-			ctrl.featureGatesAccessor,
+			ctrl.fgHandler,
 			pool,
 		)
 		if nErr != nil {
@@ -500,7 +499,7 @@ func (ctrl *Controller) drainNode(node *corev1.Node, drainer *drain.Helper) erro
 		metav1.ConditionTrue,
 		node,
 		ctrl.client,
-		ctrl.featureGatesAccessor,
+		ctrl.fgHandler,
 		pool,
 	)
 	if err != nil {

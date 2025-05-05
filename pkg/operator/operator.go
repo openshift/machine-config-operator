@@ -6,8 +6,6 @@ import (
 	"time"
 
 	opv1 "github.com/openshift/api/operator/v1"
-	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
-
 	"k8s.io/klog/v2"
 	"k8s.io/utils/clock"
 
@@ -147,7 +145,7 @@ type Operator struct {
 
 	renderConfig *renderConfig
 
-	fgAccessor featuregates.FeatureGateAccess
+	fgHandler ctrlcommon.FeatureGatesHandler
 
 	ctrlctx *ctrlcommon.ControllerContext
 }
@@ -185,7 +183,7 @@ func New(
 	clusterOperatorInformer configinformersv1.ClusterOperatorInformer,
 	mcopClient mcopclientset.Interface,
 	mcopInformer mcopinformersv1.MachineConfigurationInformer,
-	fgAccess featuregates.FeatureGateAccess,
+	fgHandler ctrlcommon.FeatureGatesHandler,
 	mckInformer mcfginformersv1.KubeletConfigInformer,
 	crcInformer mcfginformersv1.ContainerRuntimeConfigInformer,
 	nodeClusterInformer configinformersv1.NodeInformer,
@@ -216,8 +214,8 @@ func New(
 		queue: workqueue.NewTypedRateLimitingQueueWithConfig(
 			workqueue.DefaultTypedControllerRateLimiter[string](),
 			workqueue.TypedRateLimitingQueueConfig[string]{Name: "machineconfigoperator"}),
-		fgAccessor: fgAccess,
-		ctrlctx:    ctrlctx,
+		fgHandler: fgHandler,
+		ctrlctx:   ctrlctx,
 	}
 
 	err := corev1.AddToScheme(scheme.Scheme)
@@ -373,12 +371,7 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 		optr.nodeClusterListerSynced,
 	}
 
-	isOCBEnabled, err := optr.isOnClusterBuildFeatureGateEnabled()
-	if err != nil {
-		klog.Errorf("could not determine if on-cluster layering is enabled: %s", err)
-	}
-
-	if isOCBEnabled {
+	if optr.isOnClusterBuildFeatureGateEnabled() {
 		klog.Infof("On-cluster layering featuregate enabled, starting MachineOSConfig informer")
 		moscInformer := optr.ctrlctx.InformerFactory.Machineconfiguration().V1().MachineOSConfigs()
 		optr.moscLister = moscInformer.Lister()
