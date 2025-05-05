@@ -8,7 +8,6 @@ import (
 	"sort"
 	"time"
 
-	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	helpers "github.com/openshift/machine-config-operator/pkg/helpers"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -104,7 +103,7 @@ type Controller struct {
 
 	queue workqueue.TypedRateLimitingInterface[string]
 
-	fgAcessor featuregates.FeatureGateAccess
+	fgHandler ctrlcommon.FeatureGatesHandler
 
 	// updateDelay is a pause to deal with churn in MachineConfigs; see
 	// https://github.com/openshift/machine-config-operator/issues/301
@@ -121,7 +120,7 @@ func New(
 	schedulerInformer cligoinformersv1.SchedulerInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
-	fgAccessor featuregates.FeatureGateAccess,
+	fgHandler ctrlcommon.FeatureGatesHandler,
 ) *Controller {
 	return newController(
 		ccInformer,
@@ -134,7 +133,7 @@ func New(
 		kubeClient,
 		mcfgClient,
 		defaultUpdateDelay,
-		fgAccessor,
+		fgHandler,
 	)
 }
 
@@ -149,7 +148,7 @@ func NewWithCustomUpdateDelay(
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
 	updateDelay time.Duration,
-	fgAccessor featuregates.FeatureGateAccess,
+	fgHandler ctrlcommon.FeatureGatesHandler,
 ) *Controller {
 	return newController(
 		ccInformer,
@@ -162,7 +161,7 @@ func NewWithCustomUpdateDelay(
 		kubeClient,
 		mcfgClient,
 		updateDelay,
-		fgAccessor,
+		fgHandler,
 	)
 }
 
@@ -178,7 +177,7 @@ func newController(
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
 	updateDelay time.Duration,
-	fgAccessor featuregates.FeatureGateAccess,
+	fgHandler ctrlcommon.FeatureGatesHandler,
 ) *Controller {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
@@ -192,7 +191,7 @@ func newController(
 			workqueue.DefaultTypedControllerRateLimiter[string](),
 			workqueue.TypedRateLimitingQueueConfig[string]{Name: "machineconfigcontroller-nodecontroller"}),
 		updateDelay: updateDelay,
-		fgAcessor:   fgAccessor,
+		fgHandler:   fgHandler,
 	}
 	moscInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.addMachineOSConfig,
@@ -709,13 +708,7 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 		return
 	}
 
-	fg, err := ctrl.fgAcessor.CurrentFeatureGates()
-	if err != nil {
-		klog.Errorf("error getting feature gates: %v", err)
-		return
-	}
-
-	if fg.Enabled(features.FeatureGatePinnedImages) {
+	if ctrl.fgHandler.Enabled(features.FeatureGatePinnedImages) {
 		for _, pool := range pools {
 			if isPinnedImageSetsInProgressForPool(pool) {
 				changed = true
@@ -901,12 +894,7 @@ func (ctrl *Controller) getConfigAndBuildAndLayeredStatus(pool *mcfgv1.MachineCo
 		return nil, nil, false, err
 	}
 
-	isLayered, err := ctrl.isLayeredPool(mosc, mosb)
-	if err != nil {
-		return nil, nil, false, fmt.Errorf("failed to check layered status: %w", err)
-	}
-
-	return mosc, mosb, isLayered, nil
+	return mosc, mosb, ctrl.isLayeredPool(mosc, mosb), nil
 }
 
 func (ctrl *Controller) getConfigAndBuild(pool *mcfgv1.MachineConfigPool) (*mcfgv1.MachineOSConfig, *mcfgv1.MachineOSBuild, error) {
@@ -1496,12 +1484,8 @@ func getErrorString(err error) string {
 	return ""
 }
 
-func (ctrl *Controller) isLayeredPool(mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild) (bool, error) {
-	fg, err := ctrl.fgAcessor.CurrentFeatureGates()
-	if err != nil {
-		return false, err
-	}
-	return ctrl.isConfigOrBuildPresent(mosc, mosb) && fg.Enabled(features.FeatureGateOnClusterBuild), nil
+func (ctrl *Controller) isLayeredPool(mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild) bool {
+	return ctrl.isConfigOrBuildPresent(mosc, mosb) && ctrl.fgHandler.Enabled(features.FeatureGateOnClusterBuild)
 }
 
 func (ctrl *Controller) isConfigOrBuildPresent(mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild) bool {

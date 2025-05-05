@@ -67,7 +67,7 @@ type ControllerContext struct {
 	ImageInformerFactory                                imageinformers.SharedInformerFactory
 	RouteInformerFactory                                routeinformers.SharedInformerFactory
 
-	FeatureGateAccess featuregates.FeatureGateAccess
+	FeatureGatesHandler FeatureGatesHandler
 
 	AvailableResources map[schema.GroupVersionResource]bool
 
@@ -138,7 +138,6 @@ func CreateControllerContext(ctx context.Context, cb *clients.Builder) *Controll
 		configSharedInformer.Config().V1().ClusterVersions(), configSharedInformer.Config().V1().FeatureGates(),
 		recorder,
 	)
-
 	go featureGateAccessor.Run(ctx)
 
 	return &ControllerContext{
@@ -159,7 +158,7 @@ func CreateControllerContext(ctx context.Context, cb *clients.Builder) *Controll
 		InformersStarted:                                    make(chan struct{}),
 		ResyncPeriod:                                        resyncPeriod(),
 		KubeMAOSharedInformer:                               kubeMAOSharedInformer,
-		FeatureGateAccess:                                   featureGateAccessor,
+		FeatureGatesHandler:                                 NewFeatureGatesAccessHandler(featureGateAccessor),
 		ImageInformerFactory:                                imageSharedInformer,
 		RouteInformerFactory:                                routeSharedInformer,
 	}

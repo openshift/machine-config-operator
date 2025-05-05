@@ -4,10 +4,11 @@ import (
 	"context"
 	"fmt"
 
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+
 	features "github.com/openshift/api/features"
 	machineconfigurationv1 "github.com/openshift/client-go/machineconfiguration/applyconfigurations/machineconfiguration/v1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
-	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/utils/ptr"
@@ -40,10 +41,10 @@ func GenerateAndApplyMachineConfigNodes(
 	childStatus metav1.ConditionStatus,
 	node *corev1.Node,
 	mcfgClient mcfgclientset.Interface,
-	fgAccessor featuregates.FeatureGateAccess,
+	fgHandler ctrlcommon.FeatureGatesHandler,
 	pool string,
 ) error {
-	return generateAndApplyMachineConfigNodes(parentCondition, childCondition, parentStatus, childStatus, node, mcfgClient, nil, fgAccessor, pool)
+	return generateAndApplyMachineConfigNodes(parentCondition, childCondition, parentStatus, childStatus, node, mcfgClient, nil, fgHandler, pool)
 }
 
 func UpdateMachineConfigNodeStatus(
@@ -54,10 +55,10 @@ func UpdateMachineConfigNodeStatus(
 	node *corev1.Node,
 	mcfgClient mcfgclientset.Interface,
 	imageSetApplyConfig []*machineconfigurationv1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration,
-	fgAccessor featuregates.FeatureGateAccess,
+	fgHandler ctrlcommon.FeatureGatesHandler,
 	pool string,
 ) error {
-	return generateAndApplyMachineConfigNodes(parentCondition, childCondition, parentStatus, childStatus, node, mcfgClient, imageSetApplyConfig, fgAccessor, pool)
+	return generateAndApplyMachineConfigNodes(parentCondition, childCondition, parentStatus, childStatus, node, mcfgClient, imageSetApplyConfig, fgHandler, pool)
 }
 
 // Helper function to convert metav1.Condition to ConditionApplyConfiguration
@@ -89,18 +90,14 @@ func generateAndApplyMachineConfigNodes(
 	node *corev1.Node,
 	mcfgClient mcfgclientset.Interface,
 	imageSetApplyConfig []*machineconfigurationv1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration,
-	fgAccessor featuregates.FeatureGateAccess,
+	fgHandler ctrlcommon.FeatureGatesHandler,
 	pool string,
 ) error {
-	if fgAccessor == nil || node == nil || parentCondition == nil || mcfgClient == nil {
+	if fgHandler == nil || node == nil || parentCondition == nil || mcfgClient == nil {
 		return nil
 	}
-	fg, err := fgAccessor.CurrentFeatureGates()
-	if err != nil {
-		klog.Errorf("Could not get fg: %v", err)
-		return err
-	}
-	if fg == nil || !fg.Enabled(features.FeatureGateMachineConfigNodes) {
+
+	if !fgHandler.Enabled(features.FeatureGateMachineConfigNodes) {
 		return nil
 	}
 
@@ -132,7 +129,7 @@ func generateAndApplyMachineConfigNodes(
 
 	// singleton conditions are conditions that should only have one instance (no children) in the MCN status.
 	var singletonConditionTypes []mcfgv1.StateProgress
-	if fg.Enabled(features.FeatureGatePinnedImages) {
+	if fgHandler.Enabled(features.FeatureGatePinnedImages) {
 		singletonConditionTypes = append(singletonConditionTypes, mcfgv1.MachineConfigNodePinnedImageSetsDegraded, mcfgv1.MachineConfigNodePinnedImageSetsProgressing)
 	}
 
@@ -265,7 +262,7 @@ func generateAndApplyMachineConfigNodes(
 			WithObservedGeneration(newMCNode.Generation + 1).
 			WithConfigVersion(statusconfigVersionApplyConfig)
 
-		if fg.Enabled(features.FeatureGatePinnedImages) {
+		if fgHandler.Enabled(features.FeatureGatePinnedImages) {
 			if imageSetApplyConfig == nil {
 				for _, imageSet := range newMCNode.Status.PinnedImageSets {
 					// By default, a PinnedImageSet reference must include the name of the PIS and the desired generation
@@ -316,7 +313,7 @@ func generateAndApplyMachineConfigNodes(
 	}
 	// if this is the first time we are applying the MCN and the node is ready, set the config version probably
 	if node.Status.Phase != corev1.NodePending && node.Status.Phase != corev1.NodePhase("Provisioning") && newMCNode.Spec.ConfigVersion.Desired == "NotYetSet" {
-		err = GenerateAndApplyMachineConfigNodeSpec(fgAccessor, pool, node, mcfgClient)
+		err := GenerateAndApplyMachineConfigNodeSpec(fgHandler, pool, node, mcfgClient)
 		if err != nil {
 			klog.Errorf("Error making MCN spec for Update Compatible: %v", err)
 		}
@@ -339,16 +336,12 @@ func isSingletonCondition(singletonConditionTypes []mcfgv1.StateProgress, condit
 }
 
 // GenerateAndApplyMachineConfigNodeSpec generates and applies a new MCN spec based off the node state
-func GenerateAndApplyMachineConfigNodeSpec(fgAccessor featuregates.FeatureGateAccess, pool string, node *corev1.Node, mcfgClient mcfgclientset.Interface) error {
-	if fgAccessor == nil || node == nil {
+func GenerateAndApplyMachineConfigNodeSpec(fgHandler ctrlcommon.FeatureGatesHandler, pool string, node *corev1.Node, mcfgClient mcfgclientset.Interface) error {
+	if fgHandler == nil || node == nil {
 		return nil
 	}
-	fg, err := fgAccessor.CurrentFeatureGates()
-	if err != nil {
-		klog.Errorf("Could not get fg: %v", err)
-		return err
-	}
-	if fg == nil || !fg.Enabled(features.FeatureGateMachineConfigNodes) {
+
+	if !fgHandler.Enabled(features.FeatureGateMachineConfigNodes) {
 		klog.Infof("MCN Featuregate is not enabled. Please enable the TechPreviewNoUpgrade featureset to use MachineConfigNodes")
 		return nil
 	}

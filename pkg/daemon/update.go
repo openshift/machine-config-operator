@@ -136,7 +136,7 @@ func (dn *Daemon) executeReloadServiceNodeDisruptionAction(serviceName string, r
 		metav1.ConditionFalse,
 		dn.node,
 		dn.mcfgClient,
-		dn.featureGatesAccessor,
+		dn.fgHandler,
 		pool,
 	)
 	if err != nil {
@@ -179,7 +179,7 @@ func (dn *Daemon) performPostConfigChangeNodeDisruptionAction(postConfigChangeAc
 				metav1.ConditionFalse,
 				dn.node,
 				dn.mcfgClient,
-				dn.featureGatesAccessor,
+				dn.fgHandler,
 				pool,
 			)
 			if err != nil {
@@ -199,7 +199,7 @@ func (dn *Daemon) performPostConfigChangeNodeDisruptionAction(postConfigChangeAc
 				metav1.ConditionFalse,
 				dn.node,
 				dn.mcfgClient,
-				dn.featureGatesAccessor,
+				dn.fgHandler,
 				pool,
 			)
 			if err != nil {
@@ -282,7 +282,7 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 			metav1.ConditionFalse,
 			dn.node,
 			dn.mcfgClient,
-			dn.featureGatesAccessor,
+			dn.fgHandler,
 			pool,
 		)
 		if err != nil {
@@ -303,7 +303,7 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 			metav1.ConditionFalse,
 			dn.node,
 			dn.mcfgClient,
-			dn.featureGatesAccessor,
+			dn.fgHandler,
 			pool,
 		)
 		if err != nil {
@@ -329,7 +329,7 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 			metav1.ConditionFalse,
 			dn.node,
 			dn.mcfgClient,
-			dn.featureGatesAccessor,
+			dn.fgHandler,
 			pool,
 		)
 		if err != nil {
@@ -990,7 +990,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 			metav1.ConditionFalse,
 			dn.node,
 			dn.mcfgClient,
-			dn.featureGatesAccessor,
+			dn.fgHandler,
 			pool,
 		)
 		if Nerr != nil {
@@ -1026,7 +1026,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 			metav1.ConditionFalse,
 			dn.node,
 			dn.mcfgClient,
-			dn.featureGatesAccessor,
+			dn.fgHandler,
 			pool,
 		)
 		if Nerr != nil {
@@ -1062,14 +1062,14 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		metav1.ConditionFalse,
 		dn.node,
 		dn.mcfgClient,
-		dn.featureGatesAccessor,
+		dn.fgHandler,
 		pool,
 	)
 	if err != nil {
 		klog.Errorf("Error making MCN for Update Compatible: %v", err)
 	}
 
-	err = upgrademonitor.GenerateAndApplyMachineConfigNodeSpec(dn.featureGatesAccessor, pool, dn.node, dn.mcfgClient)
+	err = upgrademonitor.GenerateAndApplyMachineConfigNodeSpec(dn.fgHandler, pool, dn.node, dn.mcfgClient)
 	if err != nil {
 		klog.Errorf("Error making MCN spec for Update Compatible: %v", err)
 	}
@@ -1086,7 +1086,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 			metav1.ConditionFalse,
 			dn.node,
 			dn.mcfgClient,
-			dn.featureGatesAccessor,
+			dn.fgHandler,
 			pool,
 		)
 		if err != nil {
@@ -1114,7 +1114,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		metav1.ConditionUnknown,
 		dn.node,
 		dn.mcfgClient,
-		dn.featureGatesAccessor,
+		dn.fgHandler,
 		pool,
 	)
 	if err != nil {
@@ -1236,7 +1236,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		metav1.ConditionTrue,
 		dn.node,
 		dn.mcfgClient,
-		dn.featureGatesAccessor,
+		dn.fgHandler,
 		pool,
 	)
 	if err != nil {
@@ -2565,17 +2565,10 @@ func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 	isOsImagePresent := false
 
 	// not set during firstboot
-	if dn.featureGatesAccessor != nil {
-		fg, err := dn.featureGatesAccessor.CurrentFeatureGates()
+	if dn.fgHandler != nil && dn.fgHandler.Enabled(features.FeatureGatePinnedImages) {
+		isOsImagePresent, err = isImagePresent(newURL)
 		if err != nil {
 			return err
-		}
-
-		if fg.Enabled(features.FeatureGatePinnedImages) {
-			isOsImagePresent, err = isImagePresent(newURL)
-			if err != nil {
-				return err
-			}
 		}
 	}
 
@@ -2964,7 +2957,7 @@ func (dn *Daemon) reportMachineNodeDegradeStatus(err error, pool string) {
 		metav1.ConditionFalse,
 		dn.node,
 		dn.mcfgClient,
-		dn.featureGatesAccessor,
+		dn.fgHandler,
 		pool,
 	); applyErr != nil {
 		klog.Errorf("Error updating MCN degraded status condition %v", applyErr)

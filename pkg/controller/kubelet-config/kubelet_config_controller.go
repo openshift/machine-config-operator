@@ -40,7 +40,6 @@ import (
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
-	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	mtmpl "github.com/openshift/machine-config-operator/pkg/controller/template"
@@ -101,7 +100,7 @@ type Controller struct {
 	featureQueue    workqueue.TypedRateLimitingInterface[string]
 	nodeConfigQueue workqueue.TypedRateLimitingInterface[string]
 
-	featureGateAccess featuregates.FeatureGateAccess
+	fgHandler ctrlcommon.FeatureGatesHandler
 }
 
 // New returns a new kubelet config controller
@@ -116,7 +115,7 @@ func New(
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
 	configclient configclientset.Interface,
-	fgAccess featuregates.FeatureGateAccess,
+	fgHandler ctrlcommon.FeatureGatesHandler,
 ) *Controller {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
@@ -136,7 +135,7 @@ func New(
 		nodeConfigQueue: workqueue.NewTypedRateLimitingQueueWithConfig(
 			workqueue.DefaultTypedControllerRateLimiter[string](),
 			workqueue.TypedRateLimitingQueueConfig[string]{Name: "machineconfigcontroller-nodeConfigcontroller"}),
-		featureGateAccess: fgAccess,
+		fgHandler: fgHandler,
 	}
 
 	mkuInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -420,7 +419,7 @@ func (ctrl *Controller) handleFeatureErr(err error, key string) {
 
 // generateOriginalKubeletConfigWithFeatureGates generates a KubeletConfig and ensure the correct feature gates are set
 // based on the given FeatureGate.
-func generateOriginalKubeletConfigWithFeatureGates(cc *mcfgv1.ControllerConfig, templatesDir, role string, featureGateAccess featuregates.FeatureGateAccess, apiServer *configv1.APIServer) (*kubeletconfigv1beta1.KubeletConfiguration, error) {
+func generateOriginalKubeletConfigWithFeatureGates(cc *mcfgv1.ControllerConfig, templatesDir, role string, fgHandler ctrlcommon.FeatureGatesHandler, apiServer *configv1.APIServer) (*kubeletconfigv1beta1.KubeletConfiguration, error) {
 	originalKubeletIgn, err := generateOriginalKubeletConfigIgn(cc, templatesDir, role, apiServer)
 	if err != nil {
 		return nil, fmt.Errorf("could not generate the original Kubelet config ignition: %w", err)
@@ -437,10 +436,8 @@ func generateOriginalKubeletConfigWithFeatureGates(cc *mcfgv1.ControllerConfig, 
 		return nil, fmt.Errorf("could not deserialize the Kubelet source: %w", err)
 	}
 
-	featureGates, err := generateFeatureMap(featureGateAccess, openshiftOnlyFeatureGates...)
-	if err != nil {
-		return nil, fmt.Errorf("could not generate features map: %w", err)
-	}
+	// todo map pointer
+	featureGates := generateFeatureMap(fgHandler, openshiftOnlyFeatureGates...)
 
 	// Merge in Feature Gates.
 	// If they are the same, this will be a no-op
@@ -626,7 +623,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			return fmt.Errorf("could not get ControllerConfig %w", err)
 		}
 
-		originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, role, ctrl.featureGateAccess, apiServer)
+		originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, role, ctrl.fgHandler, apiServer)
 		if err != nil {
 			return ctrl.syncStatusOnly(cfg, err, "could not get original kubelet config: %v", err)
 		}

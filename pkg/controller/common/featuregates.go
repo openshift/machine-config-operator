@@ -134,43 +134,6 @@ func (h *FeatureGatesHandlerImpl) Connect(ctx context.Context) error {
 	}
 }
 
-func WaitForFeatureGatesReady(ctx context.Context, featureGateAccess featuregates.FeatureGateAccess) error {
-	timeout := time.After(1 * time.Minute)
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-timeout:
-			return fmt.Errorf("timed out waiting for FeatureGates to be ready")
-		default:
-			features, err := featureGateAccess.CurrentFeatureGates()
-			if err == nil {
-				enabled, disabled := GetEnabledDisabledFeatures(features)
-				klog.Infof("FeatureGates initialized: enabled=%v, disabled=%v", enabled, disabled)
-				return nil
-			}
-			klog.Infof("Waiting for FeatureGates to be ready...")
-			time.Sleep(1 * time.Second)
-		}
-	}
-}
-
-// getEnabledDisabledFeatures extracts enabled and disabled features from the feature gate.
-func GetEnabledDisabledFeatures(features featuregates.FeatureGate) ([]string, []string) {
-	var enabled []string
-	var disabled []string
-
-	for _, feature := range features.KnownFeatures() {
-		if features.Enabled(feature) {
-			enabled = append(enabled, string(feature))
-		} else {
-			disabled = append(disabled, string(feature))
-		}
-	}
-
-	return enabled, disabled
-}
-
 // IsBootImageControllerRequired checks that the currently enabled feature gates and
 // the platform of the cluster requires a boot image controller. If any errors are
 // encountered, it will log them and return false.
@@ -185,23 +148,18 @@ func IsBootImageControllerRequired(ctx *ControllerContext) bool {
 		klog.Errorf("unable to get infra.Status.PlatformStatus for boot image controller startup: %v", err)
 		return false
 	}
-	fg, err := ctx.FeatureGateAccess.CurrentFeatureGates()
-	if err != nil {
-		klog.Errorf("unable to get features for boot image controller startup: %v", err)
-		return false
-	}
-	return CheckBootImagePlatform(infra, fg)
+	return CheckBootImagePlatform(infra, ctx.FeatureGatesHandler)
 }
 
 // Current valid feature gate and platform combinations:
 // GCP -> FeatureGateManagedBootImages
 // AWS -> FeatureGateManagedBootImagesAWS
-func CheckBootImagePlatform(infra *configv1.Infrastructure, fg featuregates.FeatureGate) bool {
+func CheckBootImagePlatform(infra *configv1.Infrastructure, fgHandler FeatureGatesHandler) bool {
 	switch infra.Status.PlatformStatus.Type {
 	case configv1.AWSPlatformType:
-		return fg.Enabled(features.FeatureGateManagedBootImagesAWS)
+		return fgHandler.Enabled(features.FeatureGateManagedBootImagesAWS)
 	case configv1.GCPPlatformType:
-		return fg.Enabled(features.FeatureGateManagedBootImages)
+		return fgHandler.Enabled(features.FeatureGateManagedBootImages)
 	}
 	return false
 }
