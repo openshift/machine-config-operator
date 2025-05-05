@@ -6,7 +6,6 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	features "github.com/openshift/api/features"
-	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/test/helpers"
@@ -374,7 +373,7 @@ func TestSyncMachineConfiguration(t *testing.T) {
 			mcpIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
 			optr := &Operator{
 				eventRecorder: &record.FakeRecorder{},
-				fgAccessor: featuregates.NewHardcodedFeatureGateAccess(
+				fgHandler: ctrlcommon.NewFeatureGatesHardcodedHandler(
 					[]configv1.FeatureGateName{features.FeatureGateManagedBootImages, features.FeatureGateManagedBootImagesAWS}, []configv1.FeatureGateName{},
 				),
 				infraLister: configlistersv1.NewInfrastructureLister(infraIndexer),

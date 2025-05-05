@@ -40,7 +40,6 @@ import (
 	informers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
 	fakeoperatorclient "github.com/openshift/client-go/operator/clientset/versioned/fake"
 	operatorinformer "github.com/openshift/client-go/operator/informers/externalversions"
-	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/version"
@@ -81,7 +80,7 @@ type fixture struct {
 	actions               []core.Action
 	skipActionsValidation bool
 
-	fgAccess featuregates.FeatureGateAccess
+	fgHandler ctrlcommon.FeatureGatesHandler
 
 	objects         []runtime.Object
 	imgObjects      []runtime.Object
@@ -92,7 +91,7 @@ func newFixture(t *testing.T) *fixture {
 	f := &fixture{}
 	f.t = t
 	f.objects = []runtime.Object{}
-	f.fgAccess = featuregates.NewHardcodedFeatureGateAccess(
+	f.fgHandler = ctrlcommon.NewFeatureGatesHardcodedHandler(
 		[]apicfgv1.FeatureGateName{features.FeatureGateSigstoreImageVerification},
 		[]apicfgv1.FeatureGateName{},
 	)
@@ -275,7 +274,7 @@ func (f *fixture) newController() *Controller {
 		oi.Operator().V1alpha1().ImageContentSourcePolicies(),
 		ci.Config().V1().ClusterVersions(),
 		k8sfake.NewSimpleClientset(), f.client, f.imgClient,
-		f.fgAccess,
+		f.fgHandler,
 	)
 
 	c.mcpListerSynced = alwaysReady
@@ -1288,9 +1287,9 @@ func TestRunImageBootstrap(t *testing.T) {
 				// both registries.conf and policy.json as blocked
 				imgCfg := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"insecure-reg-1.io", "insecure-reg-2.io"}, BlockedRegistries: []string{"blocked-reg.io", "release-reg.io"}, ContainerRuntimeSearchRegistries: []string{"search-reg.io"}})
 				// set FeatureGateSigstoreImageVerification enabled for testing
-				fgAccess := featuregates.NewHardcodedFeatureGateAccess([]apicfgv1.FeatureGateName{features.FeatureGateSigstoreImageVerification}, []apicfgv1.FeatureGateName{})
+				fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler([]apicfgv1.FeatureGateName{features.FeatureGateSigstoreImageVerification}, []apicfgv1.FeatureGateName{})
 
-				mcs, err := RunImageBootstrap("../../../templates", cc, pools, tc.icspRules, tc.idmsRules, tc.itmsRules, imgCfg, tc.clusterImagePolicies, tc.imagePolicies, fgAccess)
+				mcs, err := RunImageBootstrap("../../../templates", cc, pools, tc.icspRules, tc.idmsRules, tc.itmsRules, imgCfg, tc.clusterImagePolicies, tc.imagePolicies, fgHandler)
 				require.NoError(t, err)
 
 				require.Len(t, mcs, len(pools))

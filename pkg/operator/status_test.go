@@ -26,7 +26,6 @@ import (
 	fakeconfigclientset "github.com/openshift/client-go/config/clientset/versioned/fake"
 	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
 	cov1helpers "github.com/openshift/library-go/pkg/config/clusteroperator/v1helpers"
-	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/test/helpers"
 )
@@ -193,19 +192,14 @@ func TestIsMachineConfigPoolConfigurationValid(t *testing.T) {
 				source = append(source, corev1.ObjectReference{Name: s})
 			}
 
-			fgAccess := featuregates.NewHardcodedFeatureGateAccess(
+			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler(
 				[]apicfgv1.FeatureGateName{
 					features.FeatureGateMachineConfigNodes,
 					features.FeatureGatePinnedImages,
 				},
 				[]apicfgv1.FeatureGateName{},
 			)
-			fg, err := fgAccess.CurrentFeatureGates()
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			err = isMachineConfigPoolConfigurationValid(fg, &mcfgv1.MachineConfigPool{
+			err := isMachineConfigPoolConfigurationValid(fgHandler, &mcfgv1.MachineConfigPool{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "dummy-pool",
 				},
@@ -642,7 +636,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 	} {
 		optr := &Operator{
 			eventRecorder: &record.FakeRecorder{},
-			fgAccessor: featuregates.NewHardcodedFeatureGateAccess(
+			fgHandler: ctrlcommon.NewFeatureGatesHardcodedHandler(
 				[]configv1.FeatureGateName{features.FeatureGatePinnedImages}, []configv1.FeatureGateName{},
 			),
 		}
@@ -732,7 +726,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 func TestInClusterBringUpStayOnErr(t *testing.T) {
 	optr := &Operator{
 		eventRecorder: &record.FakeRecorder{},
-		fgAccessor: featuregates.NewHardcodedFeatureGateAccess(
+		fgHandler: ctrlcommon.NewFeatureGatesHardcodedHandler(
 			[]configv1.FeatureGateName{features.FeatureGatePinnedImages}, []configv1.FeatureGateName{},
 		),
 	}
