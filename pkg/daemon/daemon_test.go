@@ -165,7 +165,7 @@ func (f *fixture) newController() *Daemon {
 		f.oclient,
 		false,
 		"",
-		d.featureGatesAccessor,
+		d.fgHandler,
 	)
 
 	d.mcListerSynced = alwaysReady

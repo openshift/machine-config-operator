@@ -22,7 +22,6 @@ import (
 
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	mcopclientset "github.com/openshift/client-go/operator/clientset/versioned"
-	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	"github.com/google/go-cmp/cmp"
@@ -113,7 +112,7 @@ type Daemon struct {
 
 	nodeWriter NodeWriter
 
-	featureGatesAccessor featuregates.FeatureGateAccess
+	fgHandler ctrlcommon.FeatureGatesHandler
 
 	// channel used by callbacks to signal Run() of an error
 	exitCh chan<- error
@@ -370,7 +369,7 @@ func (dn *Daemon) ClusterConnect(
 	mcopClient mcopclientset.Interface,
 	kubeletHealthzEnabled bool,
 	kubeletHealthzEndpoint string,
-	featureGatesAccessor featuregates.FeatureGateAccess,
+	fgHandler ctrlcommon.FeatureGatesHandler,
 ) error {
 	dn.name = name
 	dn.kubeClient = kubeClient
@@ -417,7 +416,7 @@ func (dn *Daemon) ClusterConnect(
 	dn.kubeletHealthzEnabled = kubeletHealthzEnabled
 	dn.kubeletHealthzEndpoint = kubeletHealthzEndpoint
 
-	dn.featureGatesAccessor = featureGatesAccessor
+	dn.fgHandler = fgHandler
 
 	return nil
 }
@@ -727,7 +726,7 @@ func (dn *Daemon) syncNode(key string) error {
 			metav1.ConditionFalse,
 			node,
 			dn.mcfgClient,
-			dn.featureGatesAccessor,
+			dn.fgHandler,
 			pool,
 		)
 		if err != nil {
@@ -803,7 +802,7 @@ func (dn *Daemon) syncNode(key string) error {
 			metav1.ConditionFalse,
 			node,
 			dn.mcfgClient,
-			dn.featureGatesAccessor,
+			dn.fgHandler,
 			pool,
 		)
 		if err != nil {
@@ -842,7 +841,7 @@ func (dn *Daemon) syncNode(key string) error {
 			metav1.ConditionFalse,
 			dn.node,
 			dn.mcfgClient,
-			dn.featureGatesAccessor,
+			dn.fgHandler,
 			pool,
 		)
 		if err != nil {
@@ -867,7 +866,7 @@ func (dn *Daemon) syncNode(key string) error {
 			metav1.ConditionFalse,
 			dn.node,
 			dn.mcfgClient,
-			dn.featureGatesAccessor,
+			dn.fgHandler,
 			pool,
 		)
 		if err != nil {
@@ -2331,7 +2330,7 @@ func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, bool, erro
 			metav1.ConditionFalse,
 			dn.node,
 			dn.mcfgClient,
-			dn.featureGatesAccessor,
+			dn.fgHandler,
 			pool,
 		)
 		if err != nil {

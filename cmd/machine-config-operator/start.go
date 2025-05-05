@@ -3,8 +3,8 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"os"
-	"time"
 
 	"github.com/openshift/machine-config-operator/cmd/common"
 	"github.com/openshift/machine-config-operator/internal/clients"
@@ -100,7 +100,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			ctrlctx.ConfigInformerFactory.Config().V1().ClusterOperators(),
 			ctrlctx.ClientBuilder.OperatorClientOrDie(componentName),
 			ctrlctx.OperatorInformerFactory.Operator().V1().MachineConfigurations(),
-			ctrlctx.FeatureGateAccess,
+			ctrlctx.FeatureGatesHandler,
 			ctrlctx.InformerFactory.Machineconfiguration().V1().KubeletConfigs(),
 			ctrlctx.InformerFactory.Machineconfiguration().V1().ContainerRuntimeConfigs(),
 			ctrlctx.ConfigInformerFactory.Config().V1().Nodes(),
@@ -122,16 +122,8 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 
 		close(ctrlctx.InformersStarted)
 
-		select {
-		case <-ctrlctx.FeatureGateAccess.InitialFeatureGatesObserved():
-			featureGates, err := ctrlctx.FeatureGateAccess.CurrentFeatureGates()
-			if err != nil {
-				klog.Fatalf("Could not get FG: %v", err)
-			} else {
-				klog.Infof("FeatureGates initialized: knownFeatureGates=%v", featureGates.KnownFeatures())
-			}
-		case <-time.After(1 * time.Minute):
-			klog.Fatalf("Could not get FG, timed out: %v", err)
+		if fgErr := ctrlctx.FeatureGatesHandler.Connect(ctx); fgErr != nil {
+			klog.Fatal(fmt.Errorf("failed to connect to feature gates %w", fgErr))
 		}
 
 		go controller.Run(2, ctrlctx.Stop)
