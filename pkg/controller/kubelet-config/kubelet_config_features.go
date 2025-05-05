@@ -8,7 +8,6 @@ import (
 
 	"github.com/clarketm/json"
 	osev1 "github.com/openshift/api/config/v1"
-	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -99,7 +98,7 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 			}
 		}
 
-		rawCfgIgn, err := generateKubeConfigIgnFromFeatures(cc, ctrl.templatesDir, role, ctrl.featureGateAccess, nodeConfig, apiServer)
+		rawCfgIgn, err := generateKubeConfigIgnFromFeatures(cc, ctrl.templatesDir, role, ctrl.fgHandler, nodeConfig, apiServer)
 		if err != nil {
 			return err
 		}
@@ -174,19 +173,10 @@ func (ctrl *Controller) deleteFeature(obj interface{}) {
 // generateFeatureMap returns a map of enabled/disabled feature gate selection with exclusion list
 //
 //nolint:gocritic
-func generateFeatureMap(featuregateAccess featuregates.FeatureGateAccess, exclusions ...osev1.FeatureGateName) (*map[string]bool, error) {
+func generateFeatureMap(fgHandler ctrlcommon.FeatureGatesHandler, exclusions ...osev1.FeatureGateName) *map[string]bool {
 	rv := make(map[string]bool)
-	if !featuregateAccess.AreInitialFeatureGatesObserved() {
-		return nil, fmt.Errorf("initial feature gates are not observed")
-	}
-
-	features, err := featuregateAccess.CurrentFeatureGates()
-	if err != nil {
-		return nil, fmt.Errorf("could not get current feature gates: %w", err)
-	}
-
-	for _, feat := range features.KnownFeatures() {
-		if features.Enabled(feat) {
+	for _, feat := range fgHandler.KnownFeatures() {
+		if fgHandler.Enabled(feat) {
 			rv[string(feat)] = true
 		} else {
 			rv[string(feat)] = false
@@ -197,11 +187,11 @@ func generateFeatureMap(featuregateAccess featuregates.FeatureGateAccess, exclus
 	for _, excluded := range exclusions {
 		delete(rv, string(excluded))
 	}
-	return &rv, nil
+	return &rv
 }
 
-func generateKubeConfigIgnFromFeatures(cc *mcfgv1.ControllerConfig, templatesDir, role string, featureGateAccess featuregates.FeatureGateAccess, nodeConfig *osev1.Node, apiServer *osev1.APIServer) ([]byte, error) {
-	originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, templatesDir, role, featureGateAccess, apiServer)
+func generateKubeConfigIgnFromFeatures(cc *mcfgv1.ControllerConfig, templatesDir, role string, fgHandler ctrlcommon.FeatureGatesHandler, nodeConfig *osev1.Node, apiServer *osev1.APIServer) ([]byte, error) {
+	originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, templatesDir, role, fgHandler, apiServer)
 	if err != nil {
 		return nil, err
 	}
@@ -224,7 +214,7 @@ func generateKubeConfigIgnFromFeatures(cc *mcfgv1.ControllerConfig, templatesDir
 	return rawCfgIgn, nil
 }
 
-func RunFeatureGateBootstrap(templateDir string, featureGateAccess featuregates.FeatureGateAccess, nodeConfig *osev1.Node, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool, apiServer *osev1.APIServer) ([]*mcfgv1.MachineConfig, error) {
+func RunFeatureGateBootstrap(templateDir string, fgHandler ctrlcommon.FeatureGatesHandler, nodeConfig *osev1.Node, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool, apiServer *osev1.APIServer) ([]*mcfgv1.MachineConfig, error) {
 	machineConfigs := []*mcfgv1.MachineConfig{}
 
 	for _, pool := range mcpPools {
@@ -232,7 +222,7 @@ func RunFeatureGateBootstrap(templateDir string, featureGateAccess featuregates.
 		if nodeConfig == nil {
 			nodeConfig = createNewDefaultNodeconfig()
 		}
-		rawCfgIgn, err := generateKubeConfigIgnFromFeatures(controllerConfig, templateDir, role, featureGateAccess, nodeConfig, apiServer)
+		rawCfgIgn, err := generateKubeConfigIgnFromFeatures(controllerConfig, templateDir, role, fgHandler, nodeConfig, apiServer)
 		if err != nil {
 			return nil, err
 		}
