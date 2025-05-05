@@ -73,7 +73,7 @@ contents:
       - name: keepalived
         securityContext:
           capabilities:
-            add: ["NET_ADMIN", "NET_RAW"]
+            add: ["NET_ADMIN", "NET_RAW", "SYS_CHROOT"]
         image: {{.Images.keepalivedImage}}
         env:
           - name: NSS_SDB_USE_CACHE
