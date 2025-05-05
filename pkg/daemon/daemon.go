@@ -77,9 +77,6 @@ type Daemon struct {
 	// bootedOSImageURL is the currently booted URL of the operating system
 	bootedOSImageURL string
 
-	// bootedOScommit is the commit hash of the currently booted operating system
-	bootedOSCommit string
-
 	// previousFinalizationFailure caches a failure of ostree-finalize-staged.service
 	// we may have seen from the previous boot.
 	previousFinalizationFailure string
@@ -347,7 +344,6 @@ func New(
 		os:                     hostos,
 		NodeUpdaterClient:      nodeUpdaterClient,
 		bootedOSImageURL:       osImageURL,
-		bootedOSCommit:         osCommit,
 		bootID:                 bootID,
 		exitCh:                 exitCh,
 		currentConfigPath:      currentConfigPath,
@@ -2657,7 +2653,7 @@ func (dn *Daemon) validateOnDiskStateImpl(currentConfig *mcfgv1.MachineConfig, i
 	// Be sure we're booted into the OS we expect
 	osMatch := dn.checkOS(imageToCheck)
 	if !osMatch {
-		return fmt.Errorf("expected target osImageURL %q, have %q (%q)", imageToCheck, dn.bootedOSImageURL, dn.bootedOSCommit)
+		return fmt.Errorf("expected target osImageURL %q, have %q", imageToCheck, dn.bootedOSImageURL)
 	}
 
 	if dn.os.IsCoreOSVariant() {
@@ -2735,16 +2731,9 @@ func (dn *Daemon) checkOS(osImageURL string) bool {
 		return true
 	}
 
-	// TODO(jkyros): the header for this functions says "if the digests match"
-	// so I'm wondering if at one point this used to work this way....
-	inspection, _, err := ImageInspect(osImageURL, "")
-	if err != nil {
-		klog.Warningf("Unable to check manifest for matching hash: %s", err)
-	} else if ostreeCommit, ok := inspection.Labels["ostree.commit"]; ok {
-		if ostreeCommit == dn.bootedOSCommit {
-			klog.Infof("We are technically in the right image even if the URL doesn't match (%s == %s)", ostreeCommit, osImageURL)
-			return true
-		}
+	if !strings.Contains(osImageURL, "sha256:") {
+		// This is for info gathering purposes
+		klog.Warningf("osImageURL %q is not a digest; using a digest is recommended", osImageURL)
 	}
 
 	return dn.bootedOSImageURL == osImageURL

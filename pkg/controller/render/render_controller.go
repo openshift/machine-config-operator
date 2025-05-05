@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strings"
 	"time"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
@@ -644,6 +645,10 @@ func generateRenderedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mc
 	// the operator shouldn't stop the rest of the upgrade from progressing/completing.
 	if merged.Spec.OSImageURL != ctrlcommon.GetDefaultBaseImageContainer(&cconfig.Spec) {
 		merged.Annotations[ctrlcommon.OSImageURLOverriddenKey] = "true"
+		// Log a warning if the osImageURL is set using a tag instead of a digest
+		if !strings.Contains(merged.Spec.OSImageURL, "sha256:") {
+			klog.Warningf("OSImageURL %q for MachineConfig %s is set using a tag instead of a digest. It is highly recommended to use a digest", merged.Spec.OSImageURL, merged.Name)
+		}
 	}
 
 	return merged, nil
