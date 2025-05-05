@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"time"
 
 	features "github.com/openshift/api/features"
 	"github.com/openshift/machine-config-operator/cmd/common"
@@ -82,7 +81,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			ctrlctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
 			ctrlctx.ClientBuilder.KubeClientOrDie("node-update-controller"),
 			ctrlctx.ClientBuilder.MachineConfigClientOrDie("node-update-controller"),
-			ctrlctx.FeatureGateAccess,
+			ctrlctx.FeatureGatesHandler,
 		)
 
 		certrotationcontroller, err := certrotationcontroller.New(
@@ -108,56 +107,46 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 
 		close(ctrlctx.InformersStarted)
 
-		select {
-		case <-ctrlctx.FeatureGateAccess.InitialFeatureGatesObserved():
-			fg, err := ctrlctx.FeatureGateAccess.CurrentFeatureGates()
-			if err != nil {
-				klog.Fatalf("unable to get initial features: %v", err)
-			}
+		if fgErr := ctrlctx.FeatureGatesHandler.Connect(ctx); fgErr != nil {
+			klog.Fatal(fmt.Errorf("failed to connect to feature gates %w", fgErr))
+		}
 
-			enabled, disabled := ctrlcommon.GetEnabledDisabledFeatures(fg)
-			klog.Infof("FeatureGates initialized: enabled=%v  disabled=%v", enabled, disabled)
-			if fg.Enabled(features.FeatureGatePinnedImages) && fg.Enabled(features.FeatureGateMachineConfigNodes) {
-				pinnedImageSet := pinnedimageset.New(
-					ctrlctx.InformerFactory.Machineconfiguration().V1().PinnedImageSets(),
-					ctrlctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
-					ctrlctx.ClientBuilder.KubeClientOrDie("pinned-image-set-controller"),
-					ctrlctx.ClientBuilder.MachineConfigClientOrDie("pinned-image-set-controller"),
-				)
+		if ctrlctx.FeatureGatesHandler.Enabled(features.FeatureGatePinnedImages) && ctrlctx.FeatureGatesHandler.Enabled(features.FeatureGateMachineConfigNodes) {
+			pinnedImageSet := pinnedimageset.New(
+				ctrlctx.InformerFactory.Machineconfiguration().V1().PinnedImageSets(),
+				ctrlctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
+				ctrlctx.ClientBuilder.KubeClientOrDie("pinned-image-set-controller"),
+				ctrlctx.ClientBuilder.MachineConfigClientOrDie("pinned-image-set-controller"),
+			)
 
-				go pinnedImageSet.Run(2, ctrlctx.Stop)
-				// start the informers again to enable feature gated types.
-				// see comments in SharedInformerFactory interface.
-				ctrlctx.InformerFactory.Start(ctrlctx.Stop)
-			}
+			go pinnedImageSet.Run(2, ctrlctx.Stop)
+			// start the informers again to enable feature gated types.
+			// see comments in SharedInformerFactory interface.
+			ctrlctx.InformerFactory.Start(ctrlctx.Stop)
+		}
 
-			if ctrlcommon.IsBootImageControllerRequired(ctrlctx) {
-				machineSetBootImage := machinesetbootimage.New(
-					ctrlctx.ClientBuilder.KubeClientOrDie("machine-set-boot-image-controller"),
-					ctrlctx.ClientBuilder.MachineClientOrDie("machine-set-boot-image-controller"),
-					ctrlctx.KubeNamespacedInformerFactory.Core().V1().ConfigMaps(),
-					ctrlctx.MachineInformerFactory.Machine().V1beta1().MachineSets(),
-					ctrlctx.ConfigInformerFactory.Config().V1().Infrastructures(),
-					ctrlctx.ClientBuilder.OperatorClientOrDie(componentName),
-					ctrlctx.OperatorInformerFactory.Operator().V1().MachineConfigurations(),
-					ctrlctx.FeatureGateAccess,
-				)
-				go machineSetBootImage.Run(ctrlctx.Stop)
-				// start the informers again to enable feature gated types.
-				// see comments in SharedInformerFactory interface.
-				ctrlctx.KubeNamespacedInformerFactory.Start(ctrlctx.Stop)
-				ctrlctx.MachineInformerFactory.Start(ctrlctx.Stop)
-				ctrlctx.ConfigInformerFactory.Start(ctrlctx.Stop)
-				ctrlctx.OperatorInformerFactory.Start(ctrlctx.Stop)
-			}
+		if ctrlcommon.IsBootImageControllerRequired(ctrlctx) {
+			machineSetBootImage := machinesetbootimage.New(
+				ctrlctx.ClientBuilder.KubeClientOrDie("machine-set-boot-image-controller"),
+				ctrlctx.ClientBuilder.MachineClientOrDie("machine-set-boot-image-controller"),
+				ctrlctx.KubeNamespacedInformerFactory.Core().V1().ConfigMaps(),
+				ctrlctx.MachineInformerFactory.Machine().V1beta1().MachineSets(),
+				ctrlctx.ConfigInformerFactory.Config().V1().Infrastructures(),
+				ctrlctx.ClientBuilder.OperatorClientOrDie(componentName),
+				ctrlctx.OperatorInformerFactory.Operator().V1().MachineConfigurations(),
+				ctrlctx.FeatureGatesHandler,
+			)
+			go machineSetBootImage.Run(ctrlctx.Stop)
+			// start the informers again to enable feature gated types.
+			// see comments in SharedInformerFactory interface.
+			ctrlctx.KubeNamespacedInformerFactory.Start(ctrlctx.Stop)
+			ctrlctx.MachineInformerFactory.Start(ctrlctx.Stop)
+			ctrlctx.ConfigInformerFactory.Start(ctrlctx.Stop)
+			ctrlctx.OperatorInformerFactory.Start(ctrlctx.Stop)
+		}
 
-			if fg.Enabled(features.FeatureGateOnClusterBuild) {
-				ctrlctx.OCLInformerFactory.Start(ctrlctx.Stop)
-			}
-
-		case <-time.After(1 * time.Minute):
-			klog.Errorf("timed out waiting for FeatureGate detection")
-			os.Exit(1)
+		if ctrlctx.FeatureGatesHandler.Enabled(features.FeatureGateOnClusterBuild) {
+			ctrlctx.OCLInformerFactory.Start(ctrlctx.Stop)
 		}
 
 		for _, c := range controllers {
@@ -215,7 +204,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.ClientBuilder.KubeClientOrDie("kubelet-config-controller"),
 			ctx.ClientBuilder.MachineConfigClientOrDie("kubelet-config-controller"),
 			ctx.ClientBuilder.ConfigClientOrDie("kubelet-config-controller"),
-			ctx.FeatureGateAccess,
+			ctx.FeatureGatesHandler,
 		),
 		containerruntimeconfig.New(
 			rootOpts.templates,
@@ -231,7 +220,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.ClientBuilder.KubeClientOrDie("container-runtime-config-controller"),
 			ctx.ClientBuilder.MachineConfigClientOrDie("container-runtime-config-controller"),
 			ctx.ClientBuilder.ConfigClientOrDie("container-runtime-config-controller"),
-			ctx.FeatureGateAccess,
+			ctx.FeatureGatesHandler,
 		),
 		// The renderer creates "rendered" MCs from the MC fragments generated by
 		// the above sub-controllers, which are then consumed by the node controller
@@ -255,7 +244,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.ConfigInformerFactory.Config().V1().Schedulers(),
 			ctx.ClientBuilder.KubeClientOrDie("node-update-controller"),
 			ctx.ClientBuilder.MachineConfigClientOrDie("node-update-controller"),
-			ctx.FeatureGateAccess,
+			ctx.FeatureGatesHandler,
 		),
 	)
 
