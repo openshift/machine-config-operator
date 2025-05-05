@@ -336,10 +336,10 @@ func isSingletonCondition(singletonConditionTypes []mcfgv1.StateProgress, condit
 
 // GenerateAndApplyMachineConfigNodeSpec generates and applies a new MCN spec based off the node state
 func GenerateAndApplyMachineConfigNodeSpec(fgAccessor featuregates.FeatureGateAccess, pool string, node *corev1.Node, mcfgClient mcfgclientset.Interface) error {
-	klog.Errorf("in GenerateAndApplyMachineConfigNodeSpec with node: %v", node.Name)
 	if fgAccessor == nil || node == nil {
 		return nil
 	}
+	klog.Errorf("in GenerateAndApplyMachineConfigNodeSpec with node: %v", node.Name)
 	fg, err := fgAccessor.CurrentFeatureGates()
 	if err != nil {
 		klog.Errorf("Could not get fg: %v", err)
