@@ -749,12 +749,11 @@ func (dn *Daemon) syncNode(key string) error {
 	}
 
 	// Sync our OS image pull secrets here. This will account for any changes to
-	// either the mounted secrets (which can change without a pod restart) or the
-	// ControllerConfig.
+	// the ControllerConfig.
 	//
 	// I'm not sure if this needs to be done right here or as frequently as this,
 	// but it shouldn't cause too much impact.
-	if err := dn.syncOSImagePullSecrets(nil); err != nil {
+	if err := dn.syncInternalRegistryPullSecrets(nil); err != nil {
 		return err
 	}
 
@@ -2463,7 +2462,7 @@ func (dn *Daemon) completeUpdate(desiredConfigName string) error {
 
 func (dn *Daemon) triggerUpdate(currentConfig, desiredConfig *mcfgv1.MachineConfig, currentImage, desiredImage string) error {
 	// Before we do any updates, ensure that the image pull secrets that rpm-ostree uses are up-to-date.
-	if err := dn.syncOSImagePullSecrets(nil); err != nil {
+	if err := dn.syncInternalRegistryPullSecrets(nil); err != nil {
 		return err
 	}
 
@@ -2477,7 +2476,7 @@ func (dn *Daemon) triggerUpdate(currentConfig, desiredConfig *mcfgv1.MachineConf
 	dn.stopConfigDriftMonitor()
 
 	klog.Infof("Performing layered OS update")
-	return dn.updateOnClusterBuild(currentConfig, desiredConfig, currentImage, desiredImage, true)
+	return dn.updateOnClusterLayering(currentConfig, desiredConfig, currentImage, desiredImage, true)
 }
 
 // triggerUpdateWithMachineConfig starts the update. It queries the cluster for
@@ -2632,7 +2631,7 @@ func (dn *Daemon) checkOS(osImageURL string) bool {
 
 	// TODO(jkyros): the header for this functions says "if the digests match"
 	// so I'm wondering if at one point this used to work this way....
-	inspection, _, err := imageInspect(osImageURL)
+	inspection, _, err := ImageInspect(osImageURL, "")
 	if err != nil {
 		klog.Warningf("Unable to check manifest for matching hash: %s", err)
 	} else if ostreeCommit, ok := inspection.Labels["ostree.commit"]; ok {

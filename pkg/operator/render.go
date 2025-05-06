@@ -16,7 +16,6 @@ import (
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	"github.com/openshift/machine-config-operator/manifests"
 	"github.com/openshift/machine-config-operator/pkg/constants"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
@@ -42,7 +41,6 @@ type renderConfig struct {
 	Infra                  configv1.Infrastructure
 	Constants              map[string]string
 	PointerConfig          string
-	MachineOSConfigs       []*mcfgv1alpha1.MachineOSConfig
 	TLSMinVersion          string
 	TLSCipherSuites        []string
 }

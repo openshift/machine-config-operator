@@ -141,7 +141,7 @@ spec:
                       SVG format preferred
                     properties:
                       key:
-                        description: Key allows pointing to a specific key/value inside
+                        description: key allows pointing to a specific key/value inside
                           of the configmap.  This is useful for logical file references.
                         type: string
                       name:
@@ -164,7 +164,7 @@ spec:
                           properties:
                             id:
                               description: |-
-                                ID is an identifier used in the URL to enable deep linking in console.
+                                id is an identifier used in the URL to enable deep linking in console.
                                 ID is required and must have 1-32 URL safe (A-Z, a-z, 0-9, - and _) characters.
                               maxLength: 32
                               minLength: 1
@@ -184,7 +184,7 @@ spec:
                                 properties:
                                   id:
                                     description: |-
-                                      ID is an identifier used in the URL to enable deep linking in console.
+                                      id is an identifier used in the URL to enable deep linking in console.
                                       ID is required and must have 1-32 URL safe (A-Z, a-z, 0-9, - and _) characters.
                                     maxLength: 32
                                     minLength: 1
