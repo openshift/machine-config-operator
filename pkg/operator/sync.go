@@ -235,6 +235,10 @@ func (optr *Operator) syncAll(syncFuncs []syncFunc) error {
 		return fmt.Errorf("error syncing metrics: %w", err)
 	}
 
+	if err := optr.syncAdminAckConfigMap(); err != nil {
+		return fmt.Errorf("error syncing admin ack configmap: %w", err)
+	}
+
 	if optr.inClusterBringup && syncErr.err == nil {
 		klog.Infof("Initialization complete")
 		optr.inClusterBringup = false
