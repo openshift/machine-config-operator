@@ -22,7 +22,7 @@ contents:
         exit 0
     fi
 
-    if [ -e "${NODEENV}" ]; then
+    if [ -e "${NODEENV}" ] && grep -Fq "KUBELET_NODE_NAME" ${NODEENV}; then
         echo "Not replacing existing ${NODEENV}"
         exit 0
     fi
@@ -54,6 +54,6 @@ contents:
 
     # For compatibility with the AWS in-tree provider
     # Set node name to be instance FQDN instead of the default hostname
-    cat > "${NODEENV}" <<EOF
+    cat >> "${NODEENV}" <<EOF
     KUBELET_NODE_NAME=${HOSTNAME}
     EOF
