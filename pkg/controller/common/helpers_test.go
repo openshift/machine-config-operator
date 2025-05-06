@@ -444,7 +444,7 @@ func TestMergeMachineConfigs(t *testing.T) {
 		},
 		Storage: ign3types.Storage{
 			Files: []ign3types.File{
-				helpers.CreateIgn3File(filePath1, testDataOld, mode),
+				helpers.CreateUncompressedIgn3File(filePath1, testDataOld, mode),
 			},
 		},
 	}, "aaa", MachineConfigPoolWorker)
@@ -454,18 +454,19 @@ func TestMergeMachineConfigs(t *testing.T) {
 		},
 		Storage: ign3types.Storage{
 			Files: []ign3types.File{
-				helpers.CreateIgn3File(filePath1, testDataNew, mode),
+				helpers.CreateUncompressedIgn3File(filePath1, testDataNew, mode),
 			},
 		},
 	}, "bbb", MachineConfigPoolWorker)
+
+	filePath2Gzipped, err := helpers.CreateGzippedIgn3File(filePath2, testDataOld, mode)
+	require.Nil(t, err)
 	machineConfigWorker3 := helpers.CreateMachineConfigFromIgnitionWithMetadata(ign3types.Config{
 		Ignition: ign3types.Ignition{
 			Version: ign3types.MaxVersion.String(),
 		},
 		Storage: ign3types.Storage{
-			Files: []ign3types.File{
-				helpers.CreateIgn3File(filePath2, testDataOld, mode),
-			},
+			Files: []ign3types.File{filePath2Gzipped},
 		},
 	}, "ddd", MachineConfigPoolWorker)
 	machineConfigInfra := helpers.CreateMachineConfigFromIgnitionWithMetadata(ign3types.Config{
@@ -474,7 +475,7 @@ func TestMergeMachineConfigs(t *testing.T) {
 		},
 		Storage: ign3types.Storage{
 			Files: []ign3types.File{
-				helpers.CreateIgn3File(filePath2, testDataNew, mode),
+				helpers.CreateUncompressedIgn3File(filePath2, testDataNew, mode),
 			},
 		},
 	}, "ccc", "infra")
@@ -790,7 +791,7 @@ func TestParseAndConvertGzippedConfig(t *testing.T) {
 		},
 		Storage: ign3types.Storage{
 			Files: []ign3types.File{
-				helpers.CreateIgn3File("/etc/hello-worker", "data:,hello%20world%0A", 420),
+				helpers.CreateUncompressedIgn3File("/etc/hello-worker", "data:,hello%20world%0A", 420),
 			},
 		},
 	}

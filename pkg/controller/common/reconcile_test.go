@@ -149,7 +149,7 @@ func TestIsRenderedConfigReconcilable(t *testing.T) {
 	oldConfig = helpers.CreateMachineConfigFromIgnition(NewIgnConfig())
 	newIgnCfg = NewIgnConfig()
 	newIgnCfg.Storage.Files = []ign3types.File{
-		helpers.CreateIgn3File(constants.MachineConfigDaemonForceFile, "", 644),
+		helpers.CreateUncompressedIgn3File(constants.MachineConfigDaemonForceFile, "", 644),
 	}
 
 	checkIrreconcilableResults(t, "forcefile", isReconcilable)
