@@ -17,10 +17,10 @@ import (
 
 const (
 	BootImageAWSGCPKey = "ack-4.18-boot-image-opt-out-in-4.19"
-	BootImageAWSGCPMsg = "GCP or AWS platform with no boot image configuration detected. OCP will automatically opt-in all GCP and AWS clusters that currently do not a boot image configuration in 4.19. Please add a configuration to disable boot image updates if this is not desired. See [insert-doc-link] "
+	BootImageAWSGCPMsg = "This cluster is GCP or AWS but lacks a boot image configuration. OCP will automatically opt this cluster into boot image management in 4.19. Please add a configuration to disable boot image updates if this is not desired. See https://docs.redhat.com/en/documentation/openshift_container_platform/4.18/html/machine_configuration/mco-update-boot-images#mco-update-boot-images-disable_machine-configs-configure for more details."
 
 	AArch64BootImageKey = "ack-4.18-aarch64-bootloader-4.19"
-	AArch64BootImageMsg = "aarch64 nodes detected. Please ensure boot image are updated by following the KCS:(insertlink) prior to upgrading to 4.19."
+	AArch64BootImageMsg = "This cluster has at least one aarch64 node. Please ensure boot images are not too old by following KCS https://access.redhat.com/solutions/7119697 prior to upgrading to 4.19."
 
 	AdminAckGatesConfigMapName = "admin-gates"
 )
