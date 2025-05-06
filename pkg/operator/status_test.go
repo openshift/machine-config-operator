@@ -697,6 +697,21 @@ func TestOperatorSyncStatus(t *testing.T) {
 		optr.nodeClusterLister = configlistersv1.NewNodeLister(configNodeIndexer)
 		configNodeIndexer.Add(configNode)
 
+		managedConfigMapIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+		optr.ocManagedConfigMapLister = corelisterv1.NewConfigMapLister(managedConfigMapIndexer)
+		managedConfigMapIndexer.Add(&corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Name: "admin-gates", Namespace: "openshift-config-managed"},
+		})
+
+		infraIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+		optr.infraLister = configlistersv1.NewInfrastructureLister(infraIndexer)
+		infraIndexer.Add(&configv1.Infrastructure{
+			ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+			Status: configv1.InfrastructureStatus{
+				PlatformStatus: &configv1.PlatformStatus{},
+			},
+		})
+
 		for j, sync := range testCase.syncs {
 			optr.inClusterBringup = sync.inClusterBringUp
 			if sync.nextVersion != "" {
@@ -783,6 +798,21 @@ func TestInClusterBringUpStayOnErr(t *testing.T) {
 
 	configMapIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
 	optr.mcoCmLister = corelisterv1.NewConfigMapLister(configMapIndexer)
+
+	managedConfigMapIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	optr.ocManagedConfigMapLister = corelisterv1.NewConfigMapLister(managedConfigMapIndexer)
+	managedConfigMapIndexer.Add(&corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: "admin-gates", Namespace: "openshift-config-managed"},
+	})
+
+	infraIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	optr.infraLister = configlistersv1.NewInfrastructureLister(infraIndexer)
+	infraIndexer.Add(&configv1.Infrastructure{
+		ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+		Status: configv1.InfrastructureStatus{
+			PlatformStatus: &configv1.PlatformStatus{},
+		},
+	})
 
 	fn1 := func(config *renderConfig, co *configv1.ClusterOperator) error {
 		return errors.New("mocked fn1")
