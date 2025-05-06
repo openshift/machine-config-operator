@@ -206,7 +206,7 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 		readyMachines = getReadyMachines(pool, nodes, mosc, mosb, l)
 		readyMachineCount = int32(len(readyMachines))
 
-		unavailableMachines = getUnavailableMachines(nodes, pool, l, mosb)
+		unavailableMachines = getUnavailableMachines(nodes, pool)
 		unavailableMachineCount = int32(len(unavailableMachines))
 
 		degradedMachines = getDegradedMachines(nodes)
@@ -375,81 +375,6 @@ func isNodeManaged(node *corev1.Node) bool {
 	return true
 }
 
-// isNodeDone returns true if the current == desired and the MCD has marked done.
-func isNodeDone(node *corev1.Node, layered bool) bool {
-	if node.Annotations == nil {
-		return false
-	}
-	cconfig, ok := node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey]
-	if !ok || cconfig == "" {
-		return false
-	}
-	dconfig, ok := node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey]
-	if !ok || dconfig == "" {
-		return false
-	}
-
-	// The MachineConfig annotations are loaded on boot-up by the daemon which
-	// isn't currently done for the image annotations, so the comparisons here
-	// are a bit more nuanced.
-	cimage, cok := node.Annotations[daemonconsts.CurrentImageAnnotationKey]
-	dimage, dok := node.Annotations[daemonconsts.DesiredImageAnnotationKey]
-
-	if layered {
-		// If desired image is not set, but the pool is layered, this node can
-		// be considered ready for an update. This is the very first time node
-		// is being opted into layering.
-		if !dok {
-			return true
-		}
-
-		// If we're here, we know that a desired image annotation exists.
-		// If the current image annotation does not exist, it means that the node is
-		// not "done", as it is doing its very first update as a layered node.
-		if !cok {
-			return false
-		}
-		// Current image annotation exists; compare with desired values to determine if the node is done
-		return cconfig == dconfig && cimage == dimage && isNodeMCDState(node, daemonconsts.MachineConfigDaemonStateDone)
-
-	}
-
-	// If not in layered mode, we also need to consider the case when the node is rolling back
-	// from layered to non-layered. In those cases, cconfig==dconfig, but the node
-	// will still need to do an update back to dconfig's OSImageURL. We can detect a
-	// rolling back node by checking if the cimage stills exists but the dimage does not exist.
-	if cok && !dok {
-		// The node is not "done" in this case, as the current image annotation still exists.
-		return false
-	}
-
-	return cconfig == dconfig && isNodeMCDState(node, daemonconsts.MachineConfigDaemonStateDone)
-}
-
-// isNodeDoneAt checks whether a node is fully updated to a targetConfig
-func isNodeDoneAt(node *corev1.Node, pool *mcfgv1.MachineConfigPool, layered bool) bool {
-	return isNodeDone(node, layered) && node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey] == pool.Spec.Configuration.Name
-}
-
-// isNodeMCDState checks the MCD state against the state parameter
-func isNodeMCDState(node *corev1.Node, state string) bool {
-	dstate, ok := node.Annotations[daemonconsts.MachineConfigDaemonStateAnnotationKey]
-	if !ok || dstate == "" {
-		return false
-	}
-
-	return dstate == state
-}
-
-// isNodeMCDFailing checks if the MCD has unsuccessfully applied an update
-func isNodeMCDFailing(node *corev1.Node) bool {
-	if node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey] == node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] {
-		return false
-	}
-	return isNodeMCDState(node, daemonconsts.MachineConfigDaemonStateDegraded) ||
-		isNodeMCDState(node, daemonconsts.MachineConfigDaemonStateUnreconcilable)
-}
-
 // getUpdatedMachines filters the provided nodes to return the nodes whose
 // current config matches the desired config, which also matches the target config,
 // and the "done" flag is set.
@@ -457,13 +382,7 @@ func getUpdatedMachines(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node, mo
 	var updated []*corev1.Node
 	for _, node := range nodes {
 		lns := ctrlcommon.NewLayeredNodeState(node)
-		if mosb != nil && mosc != nil {
-			mosbState := ctrlcommon.NewMachineOSBuildState(mosb)
-			// It seems like pool image annotations are no longer being used, so node specific checks were required here
-			if layered && mosbState.IsBuildSuccess() && mosb.Spec.MachineConfig.Name == pool.Spec.Configuration.Name && isNodeDoneAt(node, pool, layered) && lns.IsCurrentImageEqualToBuild(mosc) {
-				updated = append(updated, node)
-			}
-		} else if lns.IsDoneAt(pool, layered) {
+		if lns.IsDone(pool, layered, mosc, mosb) {
 			updated = append(updated, node)
 		}
 	}
@@ -476,58 +395,12 @@ func getReadyMachines(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node, mosc
 	updated := getUpdatedMachines(pool, nodes, mosc, mosb, layered)
 	var ready []*corev1.Node
 	for _, node := range updated {
-		if isNodeReady(node) {
+		lns := ctrlcommon.NewLayeredNodeState(node)
+		if lns.IsNodeReady() {
 			ready = append(ready, node)
 		}
 	}
 	return ready
-}
-
-func checkNodeReady(node *corev1.Node) error {
-	for i := range node.Status.Conditions {
-		cond := &node.Status.Conditions[i]
-		// We consider the node for scheduling only when its:
-		// - NodeReady condition status is ConditionTrue,
-		// - NodeDiskPressure condition status is ConditionFalse,
-		// - NodeNetworkUnavailable condition status is ConditionFalse.
-		if cond.Type == corev1.NodeReady && cond.Status != corev1.ConditionTrue {
-			return fmt.Errorf("node %s is reporting NotReady=%v", node.Name, cond.Status)
-		}
-		if cond.Type == corev1.NodeDiskPressure && cond.Status != corev1.ConditionFalse {
-			return fmt.Errorf("node %s is reporting OutOfDisk=%v", node.Name, cond.Status)
-		}
-		if cond.Type == corev1.NodeNetworkUnavailable && cond.Status != corev1.ConditionFalse {
-			return fmt.Errorf("node %s is reporting NetworkUnavailable=%v", node.Name, cond.Status)
-		}
-	}
-	// Ignore nodes that are marked unschedulable
-	if node.Spec.Unschedulable {
-		return fmt.Errorf("node %s is reporting Unschedulable", node.Name)
-	}
-	return nil
-}
-
-func isNodeReady(node *corev1.Node) bool {
-	return checkNodeReady(node) == nil
-}
-
-// isNodeUnavailable is a helper function for getUnavailableMachines
-// See the docs of getUnavailableMachines for more info
-func isNodeUnavailable(node *corev1.Node, layered bool) bool {
-	// Unready nodes are unavailable
-	if !isNodeReady(node) {
-		return true
-	}
-	// If the node is working towards a new image/MC, it is not available
-	if isNodeDone(node, layered) {
-		return false
-	}
-	// Now we know the node isn't ready - the current config must not
-	// equal target.  We want to further filter down on the MCD state.
-	// If a MCD is in a terminal (failing) state then we can safely retarget it.
-	// to a different config.  Or to say it another way, a node is unavailable
-	// if the MCD is working, or hasn't started work but the configs differ.
-	return !isNodeMCDFailing(node)
 }
 
 // getUnavailableMachines returns the set of nodes which are
@@ -536,20 +409,16 @@ func isNodeUnavailable(node *corev1.Node, layered bool) bool {
 // node *may* go unschedulable in the future, so we don't want to
 // potentially start another node update exceeding our maxUnavailable.
 // Somewhat the opposite of getReadyNodes().
-func getUnavailableMachines(nodes []*corev1.Node, pool *mcfgv1.MachineConfigPool, layered bool, mosb *mcfgv1.MachineOSBuild) []*corev1.Node {
+func getUnavailableMachines(nodes []*corev1.Node, pool *mcfgv1.MachineConfigPool) []*corev1.Node {
 	var unavail []*corev1.Node
 	for _, node := range nodes {
-		if mosb != nil {
-			mosbState := ctrlcommon.NewMachineOSBuildState(mosb)
-			// if node is unavail, desiredConfigs match, and the build is a success, then we are unavail.
-			// not sure on this one honestly
-			if layered && isNodeUnavailable(node, layered) && mosb.Spec.MachineConfig.Name == pool.Spec.Configuration.Name && mosbState.IsBuildSuccess() {
-				unavail = append(unavail, node)
-			}
-		} else if isNodeUnavailable(node, layered) {
+		lns := ctrlcommon.NewLayeredNodeState(node)
+		if lns.IsUnavailableForUpdate() {
 			unavail = append(unavail, node)
+			klog.V(4).Infof("getUnavailableMachines: Found unavailable node %s in pool %s", node.Name, pool.Name)
 		}
 	}
+	klog.V(4).Infof("getUnavailableMachines: Found %d unavailable in pool %s", len(unavail), pool.Name)
 	return unavail
 }
 
