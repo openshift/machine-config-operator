@@ -30,6 +30,7 @@ contents: |
     until \
     /usr/bin/podman run --rm \
     --authfile /var/lib/kubelet/config.json \
+    --env 'ENABLE_NODEIP_DEBUG=true' \
     --net=host \
     --security-opt label=disable \
     --volume /etc/systemd/system:/etc/systemd/system \
