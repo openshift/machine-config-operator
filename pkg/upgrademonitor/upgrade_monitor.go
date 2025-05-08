@@ -401,6 +401,21 @@ func createOrGetMachineConfigNode(mcfgClient mcfgclientset.Interface, node *core
 	mcNode, err := mcfgClient.MachineconfigurationV1().MachineConfigNodes().Get(context.TODO(), node.Name, metav1.GetOptions{})
 	if mcNode.Name == "" || (err != nil && apierrors.IsNotFound(err)) {
 		klog.Errorf("error getting existing MCN: %v", err)
+		// TODO: remove post debugging
+		klog.Errorf("mcNode.Name == '' conditional: %v", mcNode.Name == "")
+		klog.Errorf("err != nil conditional: %v", err != nil)
+		if err != nil {
+			klog.Errorf("apierrors.IsNotFound(err): %v", apierrors.IsNotFound(err))
+		}
+		mcnAll, allErr := mcfgClient.MachineconfigurationV1().MachineConfigNodes().List(context.TODO(), metav1.ListOptions{})
+		if allErr != nil {
+			klog.Errorf("error getting all MCN: %v", err)
+		}
+		klog.Errorf("# of MCN: %v", len(mcnAll.Items))
+		for _, mcn := range mcnAll.Items {
+			klog.Errorf("mcn: %v", mcn)
+		}
+		// TODO: remove post debugging ^
 		return mcNode, true
 	}
 
