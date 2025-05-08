@@ -9,7 +9,27 @@ contents:
       exit 0
     fi
 
+    # If openshift.conf text is present on the /etc/sysconfig/openvswitch,
+    # then it means ovn-ipsec-host pod already did necessary configuration
+    # for openvswitch-ipsec systemd service and using it for establishing
+    # OVN IPsec connections. So enable and start the service right away.
     ovsipsecsvc="openvswitch-ipsec.service"
+    if grep -q "openshift.conf" /etc/sysconfig/openvswitch; then
+      systemctl enable --now $ovsipsecsvc
+      counter=0
+      until [ -r /var/run/openvswitch/ovs-monitor-ipsec.pid ]; do
+        counter=$((counter+1))
+        sleep 1
+        if [ $counter -gt 300 ]; then
+          echo "$ovsipsecsvc service has not started after $counter seconds"
+          exit 1
+        fi
+      done
+    fi
+
+    # When node is not already running with openvswitch-ipsec systemd
+    # service, then explicitly load the OVN IPsec connections to
+    # establish IKE SAs.
     if ! systemctl is-active --quiet $ovsipsecsvc; then
       echo "$ovsipsecsvc is not running, so make pluto to establish IKE SAs"
 
