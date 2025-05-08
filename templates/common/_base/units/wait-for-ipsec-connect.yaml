@@ -3,7 +3,7 @@ enabled: true
 contents: |
   [Unit]
   Description=Ensure IKE SA established for existing IPsec connections.
-  After=ipsec.service openvswitch-ipsec.service
+  After=ipsec.service
   Before=kubelet-dependencies.target node-valid-hostname.service
 
   [Service]

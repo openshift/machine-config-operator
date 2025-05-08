@@ -9,7 +9,29 @@ contents:
       exit 0
     fi
 
+    # If "openshift.conf" is referenced in /etc/sysconfig/openvswitch,
+    # the ovn-ipsec-host pod has already configured the openvswitch-ipsec
+    # systemd service for establishing OVN IPsec connections.
+    # However, the machine-config-daemon pod may reset this service to
+    # a disabled state, causing it not to start after a node reboot.
+    # To handle this scenario, enable and start the service here as well.
     ovsipsecsvc="openvswitch-ipsec.service"
+    if grep -q "openshift.conf" /etc/sysconfig/openvswitch; then
+      systemctl enable --now $ovsipsecsvc
+      counter=0
+      until [ -r /var/run/openvswitch/ovs-monitor-ipsec.pid ]; do
+        counter=$((counter+1))
+        sleep 1
+        if [ $counter -gt 300 ]; then
+          echo "$ovsipsecsvc service has not started after $counter seconds"
+          exit 1
+        fi
+      done
+    fi
+
+    # When node is not already running with openvswitch-ipsec systemd
+    # service, then explicitly load the OVN IPsec connections to
+    # establish IKE SAs.
     if ! systemctl is-active --quiet $ovsipsecsvc; then
       echo "$ovsipsecsvc is not running, so make pluto to establish IKE SAs"
 
