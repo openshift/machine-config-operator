@@ -1,6 +1,7 @@
 package machineset
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -61,6 +62,7 @@ type Controller struct {
 	mapiStats                  MachineResourceStats
 	capiMachineSetStats        MachineResourceStats
 	capiMachineDeploymentStats MachineResourceStats
+	mapiBootImageState         map[string]BootImageState
 	conditionMutex             sync.Mutex
 	mapiSyncMutex              sync.Mutex
 
@@ -72,6 +74,13 @@ type MachineResourceStats struct {
 	inProgress   int
 	erroredCount int
 	totalCount   int
+}
+
+// State structure uses for detecting hot loops. Reset when cluster is opted
+// out of boot image updates.
+type BootImageState struct {
+	value        []byte
+	hotLoopCount int
 }
 
 // Helper function that checks if all resources have been evaluated
@@ -91,6 +100,9 @@ const (
 
 	ArchLabelKey = "kubernetes.io/arch="
 	OSLabelKey   = "machine.openshift.io/os-id"
+
+	// Threshold for hot loop detection
+	HotLoopLimit = 3
 )
 
 // New returns a new machine-set-boot-image controller.
@@ -144,6 +156,8 @@ func New(
 	})
 
 	ctrl.featureGateAccess = featureGateAccess
+
+	ctrl.mapiBootImageState = map[string]BootImageState{}
 
 	return ctrl
 }
@@ -355,6 +369,11 @@ func (ctrl *Controller) syncMAPIMachineSets(reason string) {
 	}
 	if !machineManagerFound {
 		klog.V(4).Infof("No MAPI machineset manager was found, so no MAPI machinesets will be enrolled.")
+		// clear out MAPI boot image history
+		for k := range ctrl.mapiBootImageState {
+			delete(ctrl.mapiBootImageState, k)
+		}
+
 	}
 
 	mapiMachineSets, err := ctrl.mapiMachineSetLister.List(machineResourceSelector)
@@ -367,6 +386,10 @@ func (ctrl *Controller) syncMAPIMachineSets(reason string) {
 	// If no machine resources were enrolled; exit the enqueue process without errors.
 	if len(mapiMachineSets) == 0 {
 		klog.Infof("No MAPI machinesets were enrolled, so no MAPI machinesets will be enqueued.")
+		// clear out MAPI boot image history
+		for k := range ctrl.mapiBootImageState {
+			delete(ctrl.mapiBootImageState, k)
+		}
 	}
 
 	// Reset stats before initiating reconciliation loop
@@ -477,11 +500,42 @@ func (ctrl *Controller) syncMAPIMachineSet(machineSet *machinev1beta1.MachineSet
 
 	// Patch the machineset if required
 	if patchRequired {
+		// First, check if we're hot looping
+		if ctrl.checkMAPIMachineSetHotLoop(newMachineSet) {
+			return fmt.Errorf("refusing to reconcile machineset %s, hot loop detected. Please opt-out of boot image updates, adjust your machine provisioning workflow to prevent hot loops and opt back in to resume boot image updates", machineSet.Name)
+		}
 		klog.Infof("Patching MAPI machineset %s", machineSet.Name)
 		return ctrl.patchMachineSet(machineSet, newMachineSet)
 	}
 	klog.Infof("No patching required for MAPI machineset %s", machineSet.Name)
 	return nil
+}
+
+// Checks against a local store of boot image updates to detect hot looping
+func (ctrl *Controller) checkMAPIMachineSetHotLoop(machineSet *machinev1beta1.MachineSet) bool {
+	bis, ok := ctrl.mapiBootImageState[machineSet.Name]
+	if !ok {
+		// If the machineset doesn't currently have a record, create a new one.
+		ctrl.mapiBootImageState[machineSet.Name] = BootImageState{
+			value:        machineSet.Spec.Template.Spec.ProviderSpec.Value.Raw,
+			hotLoopCount: 1,
+		}
+	} else {
+		hotLoopCount := 1
+		// If the controller is updating to a value that was previously updated to, increase the hot loop counter
+		if bytes.Equal(bis.value, machineSet.Spec.Template.Spec.ProviderSpec.Value.Raw) {
+			hotLoopCount = (bis.hotLoopCount) + 1
+		}
+		// Return an error and degrade if the hot loop counter is above threshold
+		if hotLoopCount > HotLoopLimit {
+			return true
+		}
+		ctrl.mapiBootImageState[machineSet.Name] = BootImageState{
+			value:        machineSet.Spec.Template.Spec.ProviderSpec.Value.Raw,
+			hotLoopCount: hotLoopCount,
+		}
+	}
+	return false
 }
 
 // This function patches the machineset object using the machineClient
