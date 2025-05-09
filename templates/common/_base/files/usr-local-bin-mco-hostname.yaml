@@ -20,9 +20,15 @@ contents:
         do
             sleep 1
         done
-        echo "node identified as $(</proc/sys/kernel/hostname)"
+
+        # Some cloud platforms may assign a hostname with a trailing dot.
+        # However, tools like `hostnamectl` (used by systemd) do not allow trailing dots,
+        # so we strip the trailing dot before applying the hostname.
+        HOSTNAME="$(</proc/sys/kernel/hostname)"
+        CLEAN_HOSTNAME="${HOSTNAME%.}" 
+        echo "node identified as $CLEAN_HOSTNAME"
         echo "saving hostname to prevent NetworkManager from ever unsetting it"
-        hostnamectl set-hostname --static --transient $(</proc/sys/kernel/hostname)
+        hostnamectl set-hostname --static --transient "$CLEAN_HOSTNAME"
         exit 0
     }
 
