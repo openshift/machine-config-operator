@@ -443,11 +443,8 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		return err
 	}
 
-	// If the Pool is unconfigured, let it generate the renderedMC before waiting. This prevents a deadlock between render controller and kubelet config controller.
-	if pool.Spec.Configuration.Name != "" {
-		if err := apihelpers.AreMCGeneratingSubControllersCompletedForPool(ctrl.crcLister.List, ctrl.mckLister.List, pool.Labels); err != nil {
-			return err
-		}
+	if err := apihelpers.AreMCGeneratingSubControllersCompletedForPool(ctrl.crcLister.List, ctrl.mckLister.List, pool.Labels); err != nil {
+		return err
 	}
 
 	mcs, err := ctrl.mcLister.List(selector)
