@@ -50,7 +50,7 @@ p0     9s
 
 ## Validation and Troubleshooting
 The machine-config-controller logs will show the error message if the ClusterImagePolicy and Image CR has conflicting configurations. Controller will fail to roll out the CR. 
-- if blocked registries configured by Image CR exist, the clusterimagepolicy scopes must not equal to or nested under blockedRegistries
+- if blocked registries configured by Image CR exist, the clusterimagepolicy scopes must not equal to or nested under blockedRegistries.
 - if allowed registries configured by Image CR exist, the clusterimagepolicy scopes nested under the allowedRegistries
 For example, the below error message is shown when the ClusterImagePolicy and blockedRegistries of Image CR has conflicting configurations.
 
