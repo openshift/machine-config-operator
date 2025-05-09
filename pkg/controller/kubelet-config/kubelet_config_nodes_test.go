@@ -14,7 +14,6 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	osev1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/test/helpers"
 )
@@ -26,8 +25,8 @@ func TestOriginalKubeletConfigDefaultNodeConfig(t *testing.T) {
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			f.ccLister = append(f.ccLister, cc)
 
-			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"Example"}, nil)
-			ctrl := f.newController(fgAccess)
+			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler([]osev1.FeatureGateName{"Example"}, nil)
+			ctrl := f.newController(fgHandler)
 
 			kubeletConfig, err := generateOriginalKubeletConfigIgn(cc, ctrl.templatesDir, "master", nil)
 			if err != nil {
@@ -49,8 +48,8 @@ func TestNodeConfigDefault(t *testing.T) {
 	for _, platform := range []configv1.PlatformType{configv1.AWSPlatformType, configv1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
-			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"Example"}, nil)
-			f.newController(fgAccess)
+			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler([]osev1.FeatureGateName{"Example"}, nil)
+			f.newController(fgHandler)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
@@ -108,12 +107,12 @@ func TestBootstrapNodeConfigDefault(t *testing.T) {
 			mcp1 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			mcps := []*mcfgv1.MachineConfigPool{mcp}
 			mcps = append(mcps, mcp1)
-			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"Example"}, nil)
+			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler([]osev1.FeatureGateName{"Example"}, nil)
 
 			for _, configNode := range []*osev1.Node{configNodeCgroupDefault, configNodeCgroupV2, configNodeCgroupV1} {
 				expect := expected[configNode]
 				t.Run(fmt.Sprintf("Testing %v", expect.Name), func(t *testing.T) {
-					mcs, err := RunNodeConfigBootstrap("../../../templates", fgAccess, cc, configNode, mcps, nil)
+					mcs, err := RunNodeConfigBootstrap("../../../templates", fgHandler, cc, configNode, mcps, nil)
 					if configNode == configNodeCgroupV1 {
 						require.Error(t, err)
 					} else {
@@ -167,8 +166,8 @@ func TestNodeConfigCustom(t *testing.T) {
 					},
 				},
 			}
-			fgAccess := featuregates.NewHardcodedFeatureGateAccess(features.Spec.FeatureGateSelection.CustomNoUpgrade.Enabled, features.Spec.FeatureGateSelection.CustomNoUpgrade.Disabled)
-			f.newController(fgAccess)
+			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler(features.Spec.FeatureGateSelection.CustomNoUpgrade.Enabled, features.Spec.FeatureGateSelection.CustomNoUpgrade.Disabled)
+			f.newController(fgHandler)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
@@ -203,7 +202,7 @@ func TestNodeConfigCustom(t *testing.T) {
 			f.nodeLister = append(f.nodeLister, nodeConfig)
 			f.oseobjects = append(f.oseobjects, nodeConfig)
 
-			c := f.newController(fgAccess)
+			c := f.newController(fgHandler)
 
 			mcCustom, err := c.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), mcs1, metav1.CreateOptions{})
 			require.NoError(t, err)
