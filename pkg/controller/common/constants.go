@@ -42,7 +42,10 @@ const (
 	// KernelType64kPages denominates the 64k pages kernel
 	KernelType64kPages = "64k-pages"
 
-	// MasterLabel defines the label associated with master node. The master taint uses the same label as taint's key
+	// ControlPlaneLabel defines the label associated with control plane nodes. The control plane taint uses the same label as taint's key
+	ControlPlaneLabel = "node-role.kubernetes.io/control-plane"
+
+	// MasterLabel defines the label associated with master nodes. The master taint uses the same label as taint's key
 	MasterLabel = "node-role.kubernetes.io/master"
 
 	// MCNameSuffixAnnotationKey is used to keep track of the machine config name associated with a CR
