@@ -39,6 +39,7 @@ require (
 	github.com/spf13/pflag v1.0.6
 	github.com/stretchr/testify v1.10.0
 	github.com/vincent-petithory/dataurl v1.0.0
+	github.com/vmware/govmomi v0.45.1
 	golang.org/x/net v0.37.0
 	golang.org/x/time v0.9.0
 	google.golang.org/grpc v1.69.4
@@ -274,7 +275,7 @@ require (
 	github.com/opencontainers/image-spec v1.1.0
 	github.com/opencontainers/runtime-spec v1.2.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.3 // indirect
-	github.com/pkg/errors v0.9.1 // indirect
+	github.com/pkg/errors v0.9.1
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/polyfloyd/go-errorlint v1.7.0 // indirect
 	github.com/proglottis/gpgme v0.1.4 // indirect
@@ -327,7 +328,7 @@ require (
 	golang.org/x/mod v0.22.0 // indirect
 	golang.org/x/oauth2 v0.25.0 // indirect
 	golang.org/x/sync v0.12.0
-	golang.org/x/sys v0.31.0 // indirect
+	golang.org/x/sys v0.31.0
 	golang.org/x/term v0.30.0 // indirect
 	golang.org/x/text v0.23.0 // indirect
 	golang.org/x/tools v0.29.0 // indirect
@@ -349,4 +350,7 @@ require (
 	sigs.k8s.io/yaml v1.4.0
 )
 
-replace k8s.io/kube-openapi => github.com/openshift/kube-openapi v0.0.0-20230816122517-ffc8f001abb0
+replace (
+	github.com/openshift/api => github.com/RishabhSaini/api v0.0.0-20250429163918-5b8cbf7ea164
+	k8s.io/kube-openapi => github.com/openshift/kube-openapi v0.0.0-20230816122517-ffc8f001abb0
+)
