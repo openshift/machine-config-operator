@@ -114,6 +114,7 @@ spec:
           annotations:
             summary: "This keeps track of Kubelet health failures, and tallies them. The warning is triggered if 2 or more failures occur."
             description: "Kubelet health failure threshold reached"
+            runbook_url: https://github.com/openshift/runbooks/blob/master/alerts/machine-config-operator/KubeletHealthState.md
     - name: system-memory-exceeds-reservation
       rules:
         - alert: SystemMemoryExceedsReservation
