@@ -343,6 +343,7 @@ func GenerateAndApplyMachineConfigNodeSpec(fgAccessor featuregates.FeatureGateAc
 	if fgAccessor == nil || node == nil {
 		return nil
 	}
+	klog.Errorf("in GenerateAndApplyMachineConfigNodeSpec with node: %v", node.Name)
 	fg, err := fgAccessor.CurrentFeatureGates()
 	if err != nil {
 		klog.Errorf("Could not get fg: %v", err)
@@ -354,6 +355,8 @@ func GenerateAndApplyMachineConfigNodeSpec(fgAccessor featuregates.FeatureGateAc
 	}
 	// get the existing MCN, or if it DNE create one below
 	mcNode, needNewMCNode := createOrGetMachineConfigNode(mcfgClient, node)
+	klog.Errorf("mcNode: %v", mcNode)
+	klog.Errorf("needNewMCNode: %v", needNewMCNode)
 	newMCNode := mcNode.DeepCopy()
 	// set the spec config version
 	newMCNode.ObjectMeta.OwnerReferences = []metav1.OwnerReference{
@@ -365,6 +368,8 @@ func GenerateAndApplyMachineConfigNodeSpec(fgAccessor featuregates.FeatureGateAc
 		},
 	}
 
+	klog.Errorf("newMCNode.Spec.ConfigVersion.Desired: %v", newMCNode.Spec.ConfigVersion.Desired)
+	klog.Errorf("node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey]: %v", node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey])
 	newMCNode.Spec.ConfigVersion = mcfgv1.MachineConfigNodeSpecMachineConfigVersion{
 		Desired: node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey],
 	}
