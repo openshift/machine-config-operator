@@ -19,6 +19,28 @@ func EnsureConfigMap(modified *bool, existing *corev1.ConfigMap, required corev1
 func ensurePodTemplateSpec(modified *bool, existing *corev1.PodTemplateSpec, required corev1.PodTemplateSpec) {
 	resourcemerge.EnsureObjectMeta(modified, &existing.ObjectMeta, required.ObjectMeta)
 
+	// The default values from k8s seem to be set after the resource is created, so set those in the new spec
+	// we are comparing with to ensure we don't get false positives
+	for i := range required.Spec.Containers {
+		ctr := &required.Spec.Containers[i]
+		// Set the default termination message path if not set
+		// this ensures that when we do a DeepEqual we do not get false positives
+		if ctr.TerminationMessagePath == "" {
+			ctr.TerminationMessagePath = corev1.TerminationMessagePathDefault
+		}
+
+		// Set the default image pull policy if not set
+		// this ensures that when we do a DeepEqual we do not get false positives
+		if ctr.ImagePullPolicy == "" {
+			for _, ectr := range existing.Spec.Containers {
+				if ectr.Name == ctr.Name {
+					ctr.ImagePullPolicy = ectr.ImagePullPolicy
+					break
+				}
+			}
+		}
+	}
+
 	ensurePodSpec(modified, &existing.Spec, required.Spec)
 }
 
