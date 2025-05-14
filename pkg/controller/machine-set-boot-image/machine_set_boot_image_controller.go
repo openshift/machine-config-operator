@@ -452,44 +452,31 @@ func (ctrl *Controller) syncMAPIMachineSet(machineSet *machinev1beta1.MachineSet
 		return fmt.Errorf("failed to fetch infra object during machineset sync: %w", err)
 	}
 
-	// Wait until the MCO hash version stored in the configmap matches the current MCO
-	// version. This is done by the operator when a master node successfully updates to a new image. This is
+	// Fetch the bootimage configmap & ensure it has been stamped by the operator. This is done by
+	// the operator when a master node successfully updates to a new image. This is
 	// to prevent machinesets from being updated before the operator itself has updated.
-	// Could return an error(and cause degrade) immediately here, but seems excessive. Waiting with a timeout
-	// is a bit more graceful.
-	var configMap *corev1.ConfigMap
-	var pollError error
-	klog.Infof("Waiting until coreos-bootimages config map has been stamped by the current version hash (%s) of the operator", operatorversion.Hash)
-	if err = wait.PollUntilContextTimeout(context.TODO(), 1*time.Minute, 15*time.Minute, true, func(_ context.Context) (bool, error) {
-		// Fetch the bootimage configmap
-		configMap, err = ctrl.mcoCmLister.ConfigMaps(ctrlcommon.MCONamespace).Get(ctrlcommon.BootImagesConfigMapName)
-		if configMap == nil || err != nil {
-			pollError = fmt.Errorf("failed to fetch coreos-bootimages config map during machineset sync: %w", err)
-			return false, nil
-		}
-		versionHashFromCM, versionHashFound := configMap.Data[ctrlcommon.MCOVersionHashKey]
-		if !versionHashFound {
-			pollError = fmt.Errorf("failed to find mco version hash in %s configmap, sync will exit to wait for the MCO upgrade to complete", ctrlcommon.BootImagesConfigMapName)
-			return false, nil
-		}
-		if versionHashFromCM != operatorversion.Hash {
-			pollError = fmt.Errorf("mismatch between MCO hash version stored in configmap and current MCO version; sync will exit to wait for the MCO upgrade to complete")
-			return false, nil
-		}
-		releaseVersionFromCM, releaseVersionFound := configMap.Data[ctrlcommon.OCPReleaseVersionKey]
-		if !releaseVersionFound {
-			pollError = fmt.Errorf("failed to find OCP release version in %s configmap, sync will exit to wait for the MCO upgrade to complete", ctrlcommon.BootImagesConfigMapName)
-			return false, nil
-		}
-		if releaseVersionFromCM != operatorversion.ReleaseVersion {
-			pollError = fmt.Errorf("mismatch between OCP release version stored in configmap and current MCO release version; sync will exit to wait for the MCO upgrade to complete")
-			return false, nil
-		}
-		return true, nil
-
-	}); err != nil {
-		klog.Errorf("Timed out waiting for coreos-bootimages config map: %v", pollError)
-		return fmt.Errorf("timed out waiting for coreos-bootimages config map: %v", pollError)
+	// If it hasn't been updated, exit and wait for a resync.
+	configMap, err := ctrl.mcoCmLister.ConfigMaps(ctrlcommon.MCONamespace).Get(ctrlcommon.BootImagesConfigMapName)
+	if err != nil {
+		return fmt.Errorf("failed to fetch coreos-bootimages config map during machineset sync: %w", err)
+	}
+	versionHashFromCM, versionHashFound := configMap.Data[ctrlcommon.MCOVersionHashKey]
+	if !versionHashFound {
+		klog.Infof("failed to find mco version hash in %s configmap, sync will exit to wait for the MCO upgrade to complete", ctrlcommon.BootImagesConfigMapName)
+		return nil
+	}
+	if versionHashFromCM != operatorversion.Hash {
+		klog.Infof("mismatch between MCO hash version stored in configmap and current MCO version; sync will exit to wait for the MCO upgrade to complete")
+		return nil
+	}
+	releaseVersionFromCM, releaseVersionFound := configMap.Data[ctrlcommon.OCPReleaseVersionKey]
+	if !releaseVersionFound {
+		klog.Infof("failed to find OCP release version in %s configmap, sync will exit to wait for the MCO upgrade to complete", ctrlcommon.BootImagesConfigMapName)
+		return nil
+	}
+	if releaseVersionFromCM != operatorversion.ReleaseVersion {
+		klog.Infof("mismatch between OCP release version stored in configmap and current MCO release version; sync will exit to wait for the MCO upgrade to complete")
+		return nil
 	}
 
 	// Check if the this MachineSet requires an update
