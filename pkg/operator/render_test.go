@@ -7,7 +7,6 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 
 	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
 	mcfgv1resourceread "github.com/openshift/machine-config-operator/lib/resourceread"
@@ -259,7 +258,6 @@ func TestRenderAsset(t *testing.T) {
 			// Test that machineconfigdaemon DaemonSets are rendered correctly with proxy config
 			Path: "manifests/machineconfigdaemon/daemonset.yaml",
 			RenderConfig: &renderConfig{
-				MachineOSConfigs: nil,
 				TargetNamespace:  "testing-namespace",
 				ReleaseVersion:   "4.8.0-rc.0",
 				Images: &ctrlcommon.RenderConfigImages{
@@ -280,12 +278,6 @@ func TestRenderAsset(t *testing.T) {
 				"- name: NO_PROXY\n            value: \"*\"", // Ensure the * is quoted: "*": https://bugzilla.redhat.com/show_bug.cgi?id=1947066
 				"--payload-version=4.8.0-rc.0",
 			},
-			NotFindExpected: []string{
-				"- mountPath: /run/pool-1/secret-1\n            name: secret-1",
-				"- mountPath: /run/pool-2/secret-2\n            name: secret-2",
-				"- secret:\n            secretName: secret-1\n          name: secret-1",
-				"- secret:\n            secretName: secret-2\n          name: secret-2",
-			},
 		},
 		{
 			// Bad path, will cause asset error
@@ -303,50 +295,6 @@ func TestRenderAsset(t *testing.T) {
 			},
 			FindExpected: []string{
 				"--payload-version=4.8.0-rc.0",
-			},
-		},
-		// Tests that the MCD DaemonSet gets MachineOSConfig secrets mounted into it.
-		{
-			Path: "manifests/machineconfigdaemon/daemonset.yaml",
-			RenderConfig: &renderConfig{
-				TargetNamespace: "testing-namespace",
-				ReleaseVersion:  "4.16.0-rc.1",
-				Images: &ctrlcommon.RenderConfigImages{
-					MachineConfigOperator: "mco-operator-image",
-					KubeRbacProxy:         "kube-rbac-proxy-image",
-				},
-				MachineOSConfigs: []*mcfgv1alpha1.MachineOSConfig{
-					{
-						Spec: mcfgv1alpha1.MachineOSConfigSpec{
-							MachineConfigPool: mcfgv1alpha1.MachineConfigPoolReference{
-								Name: "pool-1",
-							},
-							BuildOutputs: mcfgv1alpha1.BuildOutputs{
-								CurrentImagePullSecret: mcfgv1alpha1.ImageSecretObjectReference{
-									Name: "secret-1",
-								},
-							},
-						},
-					},
-					{
-						Spec: mcfgv1alpha1.MachineOSConfigSpec{
-							MachineConfigPool: mcfgv1alpha1.MachineConfigPoolReference{
-								Name: "pool-2",
-							},
-							BuildOutputs: mcfgv1alpha1.BuildOutputs{
-								CurrentImagePullSecret: mcfgv1alpha1.ImageSecretObjectReference{
-									Name: "secret-2",
-								},
-							},
-						},
-					},
-				},
-			},
-			FindExpected: []string{
-				"- mountPath: /run/secrets/os-image-pull-secrets/pool-1\n            name: secret-1",
-				"- mountPath: /run/secrets/os-image-pull-secrets/pool-2\n            name: secret-2",
-				"- secret:\n            secretName: secret-1\n          name: secret-1",
-				"- secret:\n            secretName: secret-2\n          name: secret-2",
 			},
 		},
 	}

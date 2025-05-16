@@ -51,23 +51,23 @@ spec:
                 properties:
                   pvcName:
                     description: |-
-                      PVCName specifies the name of the PersistentVolumeClaim (PVC) which binds a PersistentVolume where the
+                      pvcName specifies the name of the PersistentVolumeClaim (PVC) which binds a PersistentVolume where the
                       etcd backup files would be saved
                       The PVC itself must always be created in the "openshift-etcd" namespace
                       If the PVC is left unspecified "" then the platform will choose a reasonable default location to save the backup.
                       In the future this would be backups saved across the control-plane master nodes.
                     type: string
                   retentionPolicy:
-                    description: RetentionPolicy defines the retention policy for
+                    description: retentionPolicy defines the retention policy for
                       retaining and deleting existing backups.
                     properties:
                       retentionNumber:
-                        description: RetentionNumber configures the retention policy
+                        description: retentionNumber configures the retention policy
                           based on the number of backups
                         properties:
                           maxNumberOfBackups:
                             description: |-
-                              MaxNumberOfBackups defines the maximum number of backups to retain.
+                              maxNumberOfBackups defines the maximum number of backups to retain.
                               If the existing number of backups saved is equal to MaxNumberOfBackups then
                               the oldest backup will be removed before a new backup is initiated.
                             minimum: 1
@@ -76,12 +76,12 @@ spec:
                         - maxNumberOfBackups
                         type: object
                       retentionSize:
-                        description: RetentionSize configures the retention policy
+                        description: retentionSize configures the retention policy
                           based on the size of backups
                         properties:
                           maxSizeOfBackupsGb:
                             description: |-
-                              MaxSizeOfBackupsGb defines the total size in GB of backups to retain.
+                              maxSizeOfBackupsGb defines the total size in GB of backups to retain.
                               If the current total size backups exceeds MaxSizeOfBackupsGb then
                               the oldest backup will be removed before a new backup is initiated.
                             minimum: 1
@@ -99,7 +99,7 @@ spec:
                           - RetentionNumber
                           - RetentionSize
                         description: |-
-                          RetentionType sets the type of retention policy.
+                          retentionType sets the type of retention policy.
                           Currently, the only valid policies are retention by number of backups (RetentionNumber), by the size of backups (RetentionSize). More policies or types may be added in the future.
                           Empty string means no opinion and the platform is left to choose a reasonable default which is subject to change without notice.
                           The current default is RetentionNumber with 15 backups kept.
@@ -109,7 +109,7 @@ spec:
                     type: object
                   schedule:
                     description: |-
-                      Schedule defines the recurring backup schedule in Cron format
+                      schedule defines the recurring backup schedule in Cron format
                       every 2 hours: 0 */2 * * *
                       every day at 3am: 0 3 * * *
                       Empty string means no opinion and the platform is left to choose a reasonable default which is subject to change without notice.

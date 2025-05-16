@@ -170,7 +170,7 @@ func getFilesToIgnore() sets.Set[string] {
 	return sets.New[string](
 		caBundleFilePath,
 		cloudCABundleFilePath,
-		imageRegistryAuthFile,
+		internalRegistryAuthFile,
 	)
 }
 

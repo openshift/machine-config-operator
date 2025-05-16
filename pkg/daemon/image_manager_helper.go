@@ -28,7 +28,7 @@ const (
 	// Pull secret.  Written by the machine-config-operator
 	kubeletAuthFile = "/var/lib/kubelet/config.json"
 	// Internal Registry Pull secret + Global Pull secret.  Written by the machine-config-operator.
-	imageRegistryAuthFile = "/etc/mco/internal-registry-pull-secret.json"
+	internalRegistryAuthFile = "/etc/mco/internal-registry-pull-secret.json"
 )
 
 type imageSystem string
@@ -126,7 +126,7 @@ func useMergedPullSecrets(system imageSystem) error {
 	}
 
 	// check if merged secret file exists
-	if _, err := os.Stat(imageRegistryAuthFile); err != nil {
+	if _, err := os.Stat(internalRegistryAuthFile); err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
@@ -134,7 +134,7 @@ func useMergedPullSecrets(system imageSystem) error {
 		return linkAuthFile(system, kubeletAuthFile)
 	}
 	// Check that merged secret file is valid JSON
-	if file, err := os.ReadFile(imageRegistryAuthFile); err != nil {
+	if file, err := os.ReadFile(internalRegistryAuthFile); err != nil {
 		klog.Errorf("Merged secret file could not be read; defaulting to cluster pull secret %v", err)
 		return linkAuthFile(system, kubeletAuthFile)
 	} else if !json.Valid(file) {
@@ -142,7 +142,7 @@ func useMergedPullSecrets(system imageSystem) error {
 		return linkAuthFile(system, kubeletAuthFile)
 	}
 
-	return linkAuthFile(system, imageRegistryAuthFile)
+	return linkAuthFile(system, internalRegistryAuthFile)
 }
 
 func validateImageSystem(imgSys imageSystem) error {

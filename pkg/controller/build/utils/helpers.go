@@ -6,7 +6,6 @@ import (
 	"github.com/distribution/reference"
 	"github.com/opencontainers/go-digest"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -19,7 +18,7 @@ func GetKindForObject(obj runtime.Object) (string, error) {
 	corev1.AddToScheme(s)
 	batchv1.AddToScheme(s)
 	mcfgv1.AddToScheme(s)
-	mcfgv1alpha1.AddToScheme(s)
+	mcfgv1.AddToScheme(s)
 
 	gvks, _, err := s.ObjectKinds(obj)
 	if err != nil {
@@ -56,41 +55,49 @@ func parseImagePullspecWithDigest(pullspec string, imageDigest digest.Digest) (s
 }
 
 // Computes the AdditionalTrustBundle ConfigMap name based upon the MachineConfigPool name.
-func GetAdditionalTrustBundleConfigMapName(mosb *mcfgv1alpha1.MachineOSBuild) string {
+func GetAdditionalTrustBundleConfigMapName(mosb *mcfgv1.MachineOSBuild) string {
 	return fmt.Sprintf("additionaltrustbundle-%s", getFieldFromMachineOSBuild(mosb))
 }
 
 // Computes the Containerfile ConfigMap name.
-func GetContainerfileConfigMapName(mosb *mcfgv1alpha1.MachineOSBuild) string {
+func GetContainerfileConfigMapName(mosb *mcfgv1.MachineOSBuild) string {
 	return fmt.Sprintf("containerfile-%s", getFieldFromMachineOSBuild(mosb))
 }
 
 // Computes the MachineConfig ConfigMap name.
-func GetMCConfigMapName(mosb *mcfgv1alpha1.MachineOSBuild) string {
+func GetMCConfigMapName(mosb *mcfgv1.MachineOSBuild) string {
 	return fmt.Sprintf("mc-%s", getFieldFromMachineOSBuild(mosb))
 }
 
+func GetEtcPolicyConfigMapName(mosb *mcfgv1.MachineOSBuild) string {
+	return fmt.Sprintf("etc-policy-%s", getFieldFromMachineOSBuild(mosb))
+}
+
+func GetEtcRegistriesConfigMapName(mosb *mcfgv1.MachineOSBuild) string {
+	return fmt.Sprintf("etc-registries-%s", getFieldFromMachineOSBuild(mosb))
+}
+
 // Computes the build job name.
-func GetBuildJobName(mosb *mcfgv1alpha1.MachineOSBuild) string {
+func GetBuildJobName(mosb *mcfgv1.MachineOSBuild) string {
 	return fmt.Sprintf("build-%s", getFieldFromMachineOSBuild(mosb))
 }
 
 // Computes the digest configmap name.
-func GetDigestConfigMapName(mosb *mcfgv1alpha1.MachineOSBuild) string {
+func GetDigestConfigMapName(mosb *mcfgv1.MachineOSBuild) string {
 	return fmt.Sprintf("digest-%s", getFieldFromMachineOSBuild(mosb))
 }
 
 // Computes the base image pull secret name.
-func GetBasePullSecretName(mosb *mcfgv1alpha1.MachineOSBuild) string {
+func GetBasePullSecretName(mosb *mcfgv1.MachineOSBuild) string {
 	return fmt.Sprintf("base-%s", getFieldFromMachineOSBuild(mosb))
 }
 
 // Computes the final image push secret name.
-func GetFinalPushSecretName(mosb *mcfgv1alpha1.MachineOSBuild) string {
+func GetFinalPushSecretName(mosb *mcfgv1.MachineOSBuild) string {
 	return fmt.Sprintf("final-%s", getFieldFromMachineOSBuild(mosb))
 }
 
-func getFieldFromMachineOSBuild(mosb *mcfgv1alpha1.MachineOSBuild) string {
+func getFieldFromMachineOSBuild(mosb *mcfgv1.MachineOSBuild) string {
 	return mosb.Name
 }
 
