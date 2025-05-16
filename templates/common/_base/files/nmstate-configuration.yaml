@@ -36,5 +36,8 @@ contents:
       exit 1
     fi
 
+    # Handle the case where we're migrating from configure-ovs
+    ovs-vsctl --timeout=30 --if-exists del-br br-ex
+
     cp "$src_path/$config_file" /etc/nmstate
     touch /etc/nmstate/openshift/applied
