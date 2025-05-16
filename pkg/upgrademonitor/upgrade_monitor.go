@@ -268,10 +268,14 @@ func generateAndApplyMachineConfigNodes(
 		if fg.Enabled(features.FeatureGatePinnedImages) {
 			if imageSetApplyConfig == nil {
 				for _, imageSet := range newMCNode.Status.PinnedImageSets {
+					// By default, a PinnedImageSet reference must include the name of the PIS and the desired generation
 					pisApplyConfig := &machineconfigurationv1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration{
 						DesiredGeneration: ptr.To(imageSet.DesiredGeneration),
-						CurrentGeneration: ptr.To(imageSet.CurrentGeneration),
 						Name:              ptr.To(imageSet.Name),
+					}
+					// Only set `CurrentGeneration` value when we are currently on a valid generation (imageSet.CurrentGeneration value is non-0)
+					if imageSet.CurrentGeneration != 0 {
+						pisApplyConfig.CurrentGeneration = ptr.To(imageSet.CurrentGeneration)
 					}
 					// Only set `LastFailedGeneration` value when it is a non-default (non-0) value
 					if imageSet.LastFailedGeneration != 0 {
