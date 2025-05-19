@@ -34,6 +34,7 @@ import (
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 
+	"github.com/openshift/api/annotations"
 	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	opv1 "github.com/openshift/api/operator/v1"
@@ -402,7 +403,7 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 		return err
 	}
 	cmAnnotations := make(map[string]string)
-	cmAnnotations["openshift.io/description"] = "Created and managed by the machine-config-operator"
+	cmAnnotations[annotations.OpenShiftComponent] = "Machine Config Operator"
 	if err != nil && apierrors.IsNotFound(err) {
 		klog.Infof("creating merged-trusted-image-registry-ca")
 		_, err = optr.kubeClient.CoreV1().ConfigMaps("openshift-config-managed").Create(
