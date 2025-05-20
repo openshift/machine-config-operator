@@ -665,12 +665,16 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 			daemonconsts.DesiredImageAnnotationKey,
 		}
 
+		klog.Errorf("in updateNode with curNode: %v", curNode.Name)
+
 		for _, anno := range annos {
+			klog.Errorf("in updateNode anno loop for anno: %v", anno)
 			if !hasNodeAnnotationChanged(oldNode, curNode, anno) {
 				continue
 			}
 
 			newValue, ok := curNode.Annotations[anno]
+			klog.Errorf("in updateNode anno loop for anno: %v ned to update to new value: %v", anno, newValue)
 
 			var changedMsg string
 			var controlPlaneChangedMsg string
