@@ -21,6 +21,9 @@ import (
 	corelisterv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+
+	opv1 "github.com/openshift/api/operator/v1"
+	mcoplistersv1 "github.com/openshift/client-go/operator/listers/operator/v1"
 )
 
 func TestMetrics(t *testing.T) {
@@ -78,6 +81,27 @@ func TestMetrics(t *testing.T) {
 	configNodeIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
 	optr.nodeClusterLister = configlistersv1.NewNodeLister(configNodeIndexer)
 	configNodeIndexer.Add(configNode)
+
+	managedConfigMapIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	optr.ocManagedConfigMapLister = corelisterv1.NewConfigMapLister(managedConfigMapIndexer)
+	managedConfigMapIndexer.Add(&corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: "admin-gates", Namespace: "openshift-config-managed"},
+	})
+
+	infraIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	optr.infraLister = configlistersv1.NewInfrastructureLister(infraIndexer)
+	infraIndexer.Add(&configv1.Infrastructure{
+		ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+		Status: configv1.InfrastructureStatus{
+			PlatformStatus: &configv1.PlatformStatus{},
+		},
+	})
+
+	mcopIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	optr.mcopLister = mcoplistersv1.NewMachineConfigurationLister(mcopIndexer)
+	mcopIndexer.Add(&opv1.MachineConfiguration{
+		ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+	})
 
 	optr.configClient = fakeconfigclientset.NewSimpleClientset(co, kasOperator)
 	err := optr.syncAll([]syncFunc{
