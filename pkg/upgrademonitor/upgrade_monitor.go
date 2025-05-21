@@ -412,6 +412,10 @@ func createOrGetMachineConfigNode(mcfgClient mcfgclientset.Interface, node *core
 	return mcNode, false
 }
 
+func CreateOrGetMachineConfigNode(mcfgClient mcfgclientset.Interface, node *corev1.Node) (*mcfgv1.MachineConfigNode, bool) {
+	return createOrGetMachineConfigNode(mcfgClient, node)
+}
+
 type ApplyCallback struct {
 	StatusConfigFn      func(applyConfig *machineconfigurationv1.MachineConfigNodeStatusApplyConfiguration)
 	MachineConfigNodeFn func(*mcfgv1.MachineConfigNode)

@@ -1088,17 +1088,22 @@ func (dn *Daemon) updateOnClusterLayering(oldConfig, newConfig *mcfgv1.MachineCo
 //
 //nolint:gocyclo
 func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertificateWrite bool) (retErr error) {
-	// // Add the desired config version to the MCN
-	// // 	get MCP associated with node
-	// pool, err := helpers.GetPrimaryPoolNameForMCN(dn.mcpLister, dn.node)
-	// if err != nil {
-	// 	return err
-	// }
-	// //  update the MCN spec
-	// specErr := upgrademonitor.GenerateAndApplyMachineConfigNodeSpec(dn.featureGatesAccessor, pool, dn.node, dn.mcfgClient)
-	// if specErr != nil {
-	// 	return fmt.Errorf("error updating MCN spec for node %s: %w", dn.node.Name, specErr)
-	// }
+	// Add the desired config version to the MCN
+	// 	get MCP associated with node
+	pool, err := helpers.GetPrimaryPoolNameForMCN(dn.mcpLister, dn.node)
+	if err != nil {
+		return err
+	}
+	//  update the MCN spec
+	specErr := upgrademonitor.GenerateAndApplyMachineConfigNodeSpec(dn.featureGatesAccessor, pool, dn.node, dn.mcfgClient)
+	if specErr != nil {
+		return fmt.Errorf("error updating MCN spec for node %s: %w", dn.node.Name, specErr)
+	}
+
+	// TODO: remove post testing
+	mcn, needNewMCN := upgrademonitor.CreateOrGetMachineConfigNode(dn.mcfgClient, dn.node)
+	klog.Errorf("mcn: %v", mcn)
+	klog.Errorf("needNewMCN: %v", needNewMCN)
 
 	oldConfig = canonicalizeEmptyMC(oldConfig)
 
@@ -1121,11 +1126,11 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		dn.CancelSIGTERM()
 	}()
 
-	// Get MCP associated with node
-	pool, err := helpers.GetPrimaryPoolNameForMCN(dn.mcpLister, dn.node)
-	if err != nil {
-		return err
-	}
+	// // Get MCP associated with node
+	// pool, err := helpers.GetPrimaryPoolNameForMCN(dn.mcpLister, dn.node)
+	// if err != nil {
+	// 	return err
+	// }
 
 	// Update the MCN's NodeNodeDegraded condition with the update result
 	defer func() {
@@ -1246,10 +1251,10 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		klog.Errorf("Error making MCN for Update Compatible: %v", err)
 	}
 
-	err = upgrademonitor.GenerateAndApplyMachineConfigNodeSpec(dn.featureGatesAccessor, pool, dn.node, dn.mcfgClient)
-	if err != nil {
-		klog.Errorf("Error making MCN spec for Update Compatible: %v", err)
-	}
+	// err = upgrademonitor.GenerateAndApplyMachineConfigNodeSpec(dn.featureGatesAccessor, pool, dn.node, dn.mcfgClient)
+	// if err != nil {
+	// 	klog.Errorf("Error making MCN spec for Update Compatible: %v", err)
+	// }
 	if drain {
 		if err := dn.performDrain(); err != nil {
 			return err
