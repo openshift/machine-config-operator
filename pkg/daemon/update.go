@@ -2798,7 +2798,7 @@ func (dn *Daemon) reboot(rationale string) error {
 	// We're not returning the error from the reboot command as it can be terminated by
 	// the system itself with signal: terminated. We can't catch the subprocess termination signal
 	// either, we just have one for the MCD itself.
-	rebootCmd := rebootCommand(rationale)
+	rebootCmd := rebootCommand(rationale, dn.os.IsCoreOSVariant())
 	if err := rebootCmd.Run(); err != nil {
 		logSystem("failed to run reboot: %v", err)
 		mcdRebootErr.Inc()
