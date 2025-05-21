@@ -4,5 +4,5 @@ contents: |
   Description=Dependencies necessary to run kubelet
   Documentation=https://github.com/openshift/machine-config-operator/
   Requires=basic.target network-online.target
-  Wants=NetworkManager-wait-online.service crio-wipe.service
+  Wants=NetworkManager-wait-online.service
   Wants=rpc-statd.service chrony-wait.service
