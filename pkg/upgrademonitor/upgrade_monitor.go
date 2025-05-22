@@ -351,7 +351,7 @@ func GenerateAndApplyMachineConfigNodeSpec(fgAccessor featuregates.FeatureGateAc
 	}
 	// get the existing MCN, or if it DNE create one below
 	mcNode, needNewMCNode := createOrGetMachineConfigNode(mcfgClient, node)
-	klog.Errorf("mcNode: %v", mcNode)
+	// klog.Errorf("mcNode: %v", mcNode)
 	klog.Errorf("needNewMCNode: %v", needNewMCNode)
 	newMCNode := mcNode.DeepCopy()
 	// set the spec config version
@@ -381,6 +381,7 @@ func GenerateAndApplyMachineConfigNodeSpec(fgAccessor featuregates.FeatureGateAc
 		Name: node.Name,
 	}
 	if !needNewMCNode {
+		klog.Errorf("in !needNewMCNode conditional")
 		nodeRefApplyConfig := machineconfigurationv1.MCOObjectReference().WithName(newMCNode.Spec.Node.Name)
 		poolRefApplyConfig := machineconfigurationv1.MCOObjectReference().WithName(newMCNode.Spec.Pool.Name)
 		specconfigVersionApplyConfig := machineconfigurationv1.MachineConfigNodeSpecMachineConfigVersion().WithDesired(newMCNode.Spec.ConfigVersion.Desired)
@@ -392,12 +393,19 @@ func GenerateAndApplyMachineConfigNodeSpec(fgAccessor featuregates.FeatureGateAc
 			return err
 		}
 	} else {
+		klog.Errorf("in else conditional, creating mcn")
 		_, err := mcfgClient.MachineconfigurationV1().MachineConfigNodes().Create(context.TODO(), newMCNode, metav1.CreateOptions{})
 		if err != nil {
 			klog.Errorf("Error creating MCN: %v", err)
 			return err
 		}
 	}
+
+	// TODO: remove post debugging
+	// get the existing MCN, or if it DNE create one below
+	updatedMCN, _ := createOrGetMachineConfigNode(mcfgClient, node)
+	klog.Errorf("updatedMCN.Name: %v", updatedMCN.Name)
+	klog.Errorf("updatedMCN.Spec.ConfigVersion.Desired: %v", updatedMCN.Spec.ConfigVersion.Desired)
 	return nil
 }
 
