@@ -1,7 +1,7 @@
 package apihelpers
 
 import (
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -17,7 +17,7 @@ func NewMachineOSConfigCondition(condType string, status metav1.ConditionStatus,
 	}
 }
 
-func GetMachineOSConfigCondition(status mcfgv1alpha1.MachineOSConfigStatus, condType string) *metav1.Condition {
+func GetMachineOSConfigCondition(status mcfgv1.MachineOSConfigStatus, condType string) *metav1.Condition {
 	// in case of sync errors, return the last condition that matches, not the first
 	// this exists for redundancy and potential race conditions.
 	var LatestState *metav1.Condition
@@ -32,7 +32,7 @@ func GetMachineOSConfigCondition(status mcfgv1alpha1.MachineOSConfigStatus, cond
 
 // SetMachineOSConfigCondition updates the MachineOSConfig to include the provided condition. If the condition that
 // we are about to add already exists and has the same status and reason then we are not going to update.
-func SetMachineOSConfigCondition(status *mcfgv1alpha1.MachineOSConfigStatus, condition metav1.Condition) {
+func SetMachineOSConfigCondition(status *mcfgv1.MachineOSConfigStatus, condition metav1.Condition) {
 	currentCond := GetMachineOSConfigCondition(*status, condition.Type)
 	if currentCond != nil && currentCond.Status == condition.Status && currentCond.Reason == condition.Reason && currentCond.Message == condition.Message {
 		return
@@ -49,7 +49,7 @@ func SetMachineOSConfigCondition(status *mcfgv1alpha1.MachineOSConfigStatus, con
 }
 
 // RemoveMachineOSConfigCondition removes the MachineOSConfig condition with the provided type.
-func RemoveMachineOSConfigCondition(status *mcfgv1alpha1.MachineOSConfigStatus, condType string) {
+func RemoveMachineOSConfigCondition(status *mcfgv1.MachineOSConfigStatus, condType string) {
 	status.Conditions = filterOutMachineOSConfigCondition(status.Conditions, condType)
 }
 

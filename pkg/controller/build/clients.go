@@ -13,9 +13,9 @@ import (
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	mcfginformers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
-	mcfginformersv1alpha1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1alpha1"
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
-	mcfglistersv1alpha1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1"
+	coreinformersv1 "k8s.io/client-go/informers/core/v1"
+	corelistersv1 "k8s.io/client-go/listers/core/v1"
 
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -26,8 +26,9 @@ type informers struct {
 	controllerConfigInformer  mcfginformersv1.ControllerConfigInformer
 	machineConfigPoolInformer mcfginformersv1.MachineConfigPoolInformer
 	jobInformer               batchinformersv1.JobInformer
-	machineOSBuildInformer    mcfginformersv1alpha1.MachineOSBuildInformer
-	machineOSConfigInformer   mcfginformersv1alpha1.MachineOSConfigInformer
+	machineOSBuildInformer    mcfginformersv1.MachineOSBuildInformer
+	machineOSConfigInformer   mcfginformersv1.MachineOSConfigInformer
+	nodeInformer              coreinformersv1.NodeInformer
 	toStart                   []interface{ Start(<-chan struct{}) }
 	hasSynced                 []cache.InformerSynced
 }
@@ -47,16 +48,18 @@ func (i *informers) listers() *listers {
 		machineConfigPoolLister: i.machineConfigPoolInformer.Lister(),
 		jobLister:               i.jobInformer.Lister(),
 		controllerConfigLister:  i.controllerConfigInformer.Lister(),
+		nodeLister:              i.nodeInformer.Lister(),
 	}
 }
 
 // Holds all of the required listers so that they can be passed around and reused.
 type listers struct {
-	machineOSBuildLister    mcfglistersv1alpha1.MachineOSBuildLister
-	machineOSConfigLister   mcfglistersv1alpha1.MachineOSConfigLister
+	machineOSBuildLister    mcfglistersv1.MachineOSBuildLister
+	machineOSConfigLister   mcfglistersv1.MachineOSConfigLister
 	machineConfigPoolLister mcfglistersv1.MachineConfigPoolLister
 	jobLister               batchlisterv1.JobLister
 	controllerConfigLister  mcfglistersv1.ControllerConfigLister
+	nodeLister              corelistersv1.NodeLister
 }
 
 func (l *listers) utilListers() *utils.Listers {
@@ -64,6 +67,7 @@ func (l *listers) utilListers() *utils.Listers {
 		MachineOSBuildLister:    l.machineOSBuildLister,
 		MachineOSConfigLister:   l.machineOSConfigLister,
 		MachineConfigPoolLister: l.machineConfigPoolLister,
+		NodeLister:              l.nodeLister,
 	}
 }
 
@@ -82,12 +86,14 @@ func newInformers(mcfgclient mcfgclientset.Interface, kubeclient clientset.Inter
 		coreinformers.WithNamespace(ctrlcommon.MCONamespace),
 		coreinformers.WithTweakListOptions(ephemeralBuildObjectsOpts),
 	)
+	coreInformerFactoryNodes := coreinformers.NewSharedInformerFactory(kubeclient, 0)
 
 	controllerConfigInformer := mcoInformerFactory.Machineconfiguration().V1().ControllerConfigs()
 	machineConfigPoolInformer := mcoInformerFactory.Machineconfiguration().V1().MachineConfigPools()
-	machineOSBuildInformer := mcoInformerFactory.Machineconfiguration().V1alpha1().MachineOSBuilds()
-	machineOSConfigInformer := mcoInformerFactory.Machineconfiguration().V1alpha1().MachineOSConfigs()
+	machineOSBuildInformer := mcoInformerFactory.Machineconfiguration().V1().MachineOSBuilds()
+	machineOSConfigInformer := mcoInformerFactory.Machineconfiguration().V1().MachineOSConfigs()
 	jobInformer := coreInformerFactory.Batch().V1().Jobs()
+	nodeInformer := coreInformerFactoryNodes.Core().V1().Nodes()
 
 	return &informers{
 		controllerConfigInformer:  controllerConfigInformer,
@@ -95,9 +101,11 @@ func newInformers(mcfgclient mcfgclientset.Interface, kubeclient clientset.Inter
 		machineOSBuildInformer:    machineOSBuildInformer,
 		machineOSConfigInformer:   machineOSConfigInformer,
 		jobInformer:               jobInformer,
+		nodeInformer:              nodeInformer,
 		toStart: []interface{ Start(<-chan struct{}) }{
 			mcoInformerFactory,
 			coreInformerFactory,
+			coreInformerFactoryNodes,
 		},
 		hasSynced: []cache.InformerSynced{
 			controllerConfigInformer.Informer().HasSynced,
@@ -105,6 +113,7 @@ func newInformers(mcfgclient mcfgclientset.Interface, kubeclient clientset.Inter
 			jobInformer.Informer().HasSynced,
 			machineOSBuildInformer.Informer().HasSynced,
 			machineOSConfigInformer.Informer().HasSynced,
+			nodeInformer.Informer().HasSynced,
 		},
 	}
 }
