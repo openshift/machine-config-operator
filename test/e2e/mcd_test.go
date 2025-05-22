@@ -902,6 +902,11 @@ func TestFirstBootHasSSHKeys(t *testing.T) {
 
 	sshKeyFile := "/home/core/.ssh/authorized_keys.d/ignition"
 
+	out1 := helpers.ExecCmdOnNode(t, cs, *newNode, "ls", "-ltr", "/rootfs/home/core/.ssh")
+	t.Logf("## Content of /rootfs/home/core/.ssh: %s", out1)
+	out2 := helpers.ExecCmdOnNode(t, cs, *newNode, "ls", "-ltr", "/rootfs/home/core/.ssh/authorized_keys.d")
+	t.Logf("## Content of /rootfs/home/core/.ssh/authorized_keys.d: %s", out2)
+
 	// Now that the new node is ready, ensure that the SSH key file is populated.
 	out := helpers.ExecCmdOnNode(t, cs, *newNode, "cat", filepath.Join("/rootfs", sshKeyFile))
 	t.Logf("Got ssh key file data: %s", out)
