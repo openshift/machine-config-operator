@@ -372,7 +372,7 @@ func TestOSBuildControllerBuildFailedDoesNotCascade(t *testing.T) {
 	}
 
 	// This faultyMC represents an older Machine config that passed through API validation checks but if a MOSB (name oldMOSB) were to be built, it would fail to start a job. Hence over here a MC is added but the MCP is not targetting this MCP.
-	insertNewRenderedMachineConfig(ctx, t, mcfgclient, poolName, faultyMC)
+	insertNewRenderedMachineConfig(ctx, t, mcfgclient, poolName, faultyMC, fixtures.OSImageURL)
 	now := metav1.Now()
 	oldMosb := &mcfgv1.MachineOSBuild{
 		TypeMeta: metav1.TypeMeta{
@@ -678,7 +678,7 @@ func insertNewRenderedMachineConfigAndUpdatePool(ctx context.Context, t *testing
 	mcp, err := mcfgclient.MachineconfigurationV1().MachineConfigPools().Get(ctx, poolName, metav1.GetOptions{})
 	require.NoError(t, err)
 
-	insertNewRenderedMachineConfig(ctx, t, mcfgclient, poolName, renderedName)
+	insertNewRenderedMachineConfig(ctx, t, mcfgclient, poolName, renderedName, fixtures.OSImageURL)
 
 	mcp.Spec.Configuration.Name = renderedName
 
@@ -688,7 +688,37 @@ func insertNewRenderedMachineConfigAndUpdatePool(ctx context.Context, t *testing
 	return mcp
 }
 
-func insertNewRenderedMachineConfig(ctx context.Context, t *testing.T, mcfgclient mcfgclientset.Interface, poolName, renderedName string) {
+func insertNewRenderedMachineConfig(ctx context.Context, t *testing.T, mcfgclient mcfgclientset.Interface, poolName, renderedName string, osImageURL string) {
+	filename := filepath.Join("/etc", poolName, renderedName)
+
+	file := ctrlcommon.NewIgnFile(filename, renderedName)
+	mc := testhelpers.NewMachineConfig(
+		renderedName,
+		map[string]string{
+			ctrlcommon.GeneratedByControllerVersionAnnotationKey: "version-number",
+			"machineconfiguration.openshift.io/role":             poolName,
+		},
+		osImageURL,
+		[]ign3types.File{file})
+	_, err := mcfgclient.MachineconfigurationV1().MachineConfigs().Create(ctx, mc, metav1.CreateOptions{})
+	require.NoError(t, err)
+}
+
+func insertNewRenderedMachineConfigWithoutImageChangeAndUpdatePool(ctx context.Context, t *testing.T, mcfgclient mcfgclientset.Interface, poolName, renderedName string) *mcfgv1.MachineConfigPool {
+	mcp, err := mcfgclient.MachineconfigurationV1().MachineConfigPools().Get(ctx, poolName, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	insertNewRenderedMachineConfigWithoutImageChange(ctx, t, mcfgclient, poolName, renderedName)
+
+	mcp.Spec.Configuration.Name = renderedName
+
+	mcp, err = mcfgclient.MachineconfigurationV1().MachineConfigPools().Update(ctx, mcp, metav1.UpdateOptions{})
+	require.NoError(t, err)
+
+	return mcp
+}
+
+func insertNewRenderedMachineConfigWithoutImageChange(ctx context.Context, t *testing.T, mcfgclient mcfgclientset.Interface, poolName, renderedName string) {
 	filename := filepath.Join("/etc", poolName, renderedName)
 
 	file := ctrlcommon.NewIgnFile(filename, renderedName)
@@ -755,4 +785,37 @@ func assertMachineOSConfigGetsCurrentBuildAnnotation(ctx context.Context, t *tes
 	})
 
 	require.NoError(t, err)
+}
+
+// Test that when the MCP’s rendered-MC name changes but the two MCs only differ
+// by on-cluster layering, no Build Job is created.
+func TestOSBuildControllerSkipsBuildForLayerOnlyChanges(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	t.Cleanup(cancel)
+	poolName := "worker"
+
+	_, mcfgclient, _, _, mosc, firstMosb, mcp, kubeassert := setupOSBuildControllerForTestWithSuccessfulBuild(ctx, t, poolName)
+	isMachineOSBuildReachedExpectedCount(ctx, t, mcfgclient, mosc, 1)
+
+	assertMachineOSConfigGetsCurrentBuildAnnotation(ctx, t, mcfgclient, mosc, firstMosb)
+
+	isMachineOSBuildReachedExpectedCount(ctx, t, mcfgclient, mosc, 1)
+
+	insertNewRenderedMachineConfigWithoutImageChangeAndUpdatePool(ctx, t, mcfgclient, mcp.Name, "rendered-worker-layer-only")
+
+	// Give the controller a moment to (not) kick off a build
+	time.Sleep(200 * time.Millisecond)
+
+	mosbList, err := mcfgclient.MachineconfigurationV1().
+		MachineOSBuilds().
+		List(ctx, metav1.ListOptions{LabelSelector: utils.MachineOSBuildForPoolSelector(mosc).String()})
+	require.NoError(t, err)
+	require.Len(t, mosbList.Items, 2, "expected a new MOSB to be created for layering-only change")
+	assert.Equal(t, firstMosb.Name, mosbList.Items[0].Name, "first MOSB should remain unchanged")
+
+	layerOnlyMosb := mosbList.Items[1]
+
+	jobName := utils.GetBuildJobName(&layerOnlyMosb)
+
+	kubeassert.JobDoesNotExist(jobName, "layering-only MOSB should not spawn a build Job")
 }

@@ -903,7 +903,7 @@ func (ctrl *Controller) getConfigAndBuildAndLayeredStatus(pool *mcfgv1.MachineCo
 
 	isLayered, err := ctrl.isLayeredPool(mosc, mosb)
 	if err != nil {
-		return nil, nil, false, fmt.Errorf("Failed to determine whether pool %s opts in to OCL due to an error: %s", pool.Name, err)
+		return nil, nil, false, fmt.Errorf("failed to check layered status: %w", err)
 	}
 
 	return mosc, mosb, isLayered, nil
@@ -950,9 +950,8 @@ func (ctrl *Controller) getConfigAndBuild(pool *mcfgv1.MachineConfigPool) (*mcfg
 }
 
 func (ctrl *Controller) canLayeredContinue(mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild) (string, bool, error) {
-	// This is an edgecase which we should ideally never hit. However, it is
-	// better to anticipate it and have an error message ready vs. the
-	// alternative.
+
+	klog.Infof("Can Layered continue?")
 	if mosc == nil && mosb != nil {
 		msg := fmt.Sprintf("orphaned MachineOSBuild %q found, but MachineOSConfig %q not found", mosb.Name, mosb.Labels[buildconstants.MachineOSConfigNameLabelKey])
 		return msg, false, fmt.Errorf("%s", msg)
@@ -970,6 +969,8 @@ func (ctrl *Controller) canLayeredContinue(mosc *mcfgv1.MachineOSConfig, mosb *m
 
 	if !hasImage {
 		return "Desired image not set in MachineOSConfig", false, nil
+	} else if hasImage {
+		klog.Infof("pullspec is %s", pullspec)
 	}
 
 	switch {
@@ -1052,6 +1053,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	}
 
 	if layered {
+		klog.Infof("Continuing updates for layered pool %s", pool.Name)
 		reason, canApplyUpdates, err := ctrl.canLayeredContinue(mosc, mosb)
 		if err != nil {
 			klog.Infof("Layered pool %s encountered an error: %s", pool.Name, err)
@@ -1064,11 +1066,10 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 			return ctrl.syncStatusOnly(pool)
 		}
 
-		klog.V(4).Infof("Continuing updates for layered pool %s", pool.Name)
-	} else {
-		klog.V(4).Infof("Pool %s is not layered", pool.Name)
+		klog.Infof("Continuing updates for layered pool %s", pool.Name)
 	}
 
+	klog.Info("getting nodes for pool")
 	nodes, err := ctrl.getNodesForPool(pool)
 	if err != nil {
 		if syncErr := ctrl.syncStatusOnly(pool); syncErr != nil {
@@ -1078,6 +1079,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		return err
 	}
 
+	klog.Info("maxunavailable check")
 	maxunavail, err := maxUnavailable(pool, nodes)
 	if err != nil {
 		if syncErr := ctrl.syncStatusOnly(pool); syncErr != nil {
@@ -1117,6 +1119,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 			}
 		}
 	}
+	klog.Info("get all candidate machines")
 	candidates, capacity := getAllCandidateMachines(layered, mosc, mosb, pool, nodes, maxunavail)
 	if len(candidates) > 0 {
 		zones := make(map[string]bool)
@@ -1134,6 +1137,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 			}
 			return err
 		}
+		klog.Info("updating state metric")
 		ctrlcommon.UpdateStateMetric(ctrlcommon.MCCSubControllerState, "machine-config-controller-node", "Sync Machine Config Pool", pool.Name)
 	}
 	return ctrl.syncStatusOnly(pool)
@@ -1360,9 +1364,11 @@ func (ctrl *Controller) setDesiredAnnotations(layered bool, mosc *mcfgv1.Machine
 
 	if layered {
 		eventName = "SetDesiredConfigAndOSImage"
-		updateName = fmt.Sprintf("%s / Image: %s", updateName, ctrlcommon.NewMachineOSConfigState(mosc).GetOSImage())
-		klog.Infof("Continuing to sync layered MachineConfigPool %s", pool.Name)
+		moscImage := ctrlcommon.NewMachineOSConfigState(mosc).GetOSImage()
+		updateName = fmt.Sprintf("%s / Image: %s", updateName, moscImage)
+		klog.Infof("Continuing to sync layered MachineConfigPool %s with %s", pool.Name, moscImage)
 	}
+
 	for _, node := range candidates {
 		if err := ctrl.updateCandidateNode(mosc, mosb, node.Name, pool, layered); err != nil {
 			return fmt.Errorf("setting desired %s for node %s: %w", pool.Spec.Configuration.Name, node.Name, err)
