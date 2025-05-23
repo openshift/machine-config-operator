@@ -343,8 +343,9 @@ func (ctrl *Controller) makeMasterNodeUnSchedulable(node *corev1.Node) error {
 		}
 		if !hasMasterTaint {
 			newTaints := node.Spec.Taints
+			controlPlaneUnSchedulableTaint := corev1.Taint{Key: ctrlcommon.ControlPlaneLabel, Effect: corev1.TaintEffectNoSchedule}
 			masterUnSchedulableTaint := corev1.Taint{Key: ctrlcommon.MasterLabel, Effect: corev1.TaintEffectNoSchedule}
-			newTaints = append(newTaints, masterUnSchedulableTaint)
+			newTaints = append(newTaints, controlPlaneUnSchedulableTaint, masterUnSchedulableTaint)
 			node.Spec.Taints = newTaints
 		}
 	})
@@ -364,9 +365,12 @@ func (ctrl *Controller) makeMasterNodeSchedulable(node *corev1.Node) error {
 			newLabels[WorkerLabel] = ""
 		}
 		node.Labels = newLabels
-		// Remove master taint
+		// Remove control-plane and master taints
 		newTaints := []corev1.Taint{}
 		for _, t := range node.Spec.Taints {
+			if t.Key == ctrlcommon.ControlPlaneLabel && t.Effect == corev1.TaintEffectNoSchedule {
+				continue
+			}
 			if t.Key == ctrlcommon.MasterLabel && t.Effect == corev1.TaintEffectNoSchedule {
 				continue
 			}
