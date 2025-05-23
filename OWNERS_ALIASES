@@ -17,15 +17,15 @@ aliases:
      - qJkee
      - jaypoulz
   openstack-approvers:
-    - EmilienM
+    - dkokkino
+    - gryf
     - mandre
-    - mdbooth
     - pierreprinetti
     - stephenfin
   openstack-reviewers:
-    - EmilienM
+    - dkokkino
+    - gryf
     - mandre
-    - mdbooth
     - pierreprinetti
     - stephenfin
   ovirt-approvers:
