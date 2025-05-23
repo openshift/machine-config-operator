@@ -24,8 +24,8 @@ contents:
     fi
     chroot /proc/1/root ipsec restart
 
-    # Wait for upto 60s to get IPsec SAs to establish with peer nodes.
-    timeout=60
+    # Wait for upto 180s to get IPsec SAs to establish with peer nodes.
+    timeout=180
     elapsed=0
     desiredconn=""
     establishedsa=""
