@@ -28,8 +28,8 @@ require (
 	github.com/google/renameio v0.1.0
 	github.com/imdario/mergo v0.3.16
 	github.com/opencontainers/go-digest v1.0.0
-	github.com/openshift/api v0.0.0-20241106222702-2429e35d6633
-	github.com/openshift/client-go v0.0.0-20241001162912-da6d55e4611f
+	github.com/openshift/api v0.0.0-20250102185430-d6d8306a24ec
+	github.com/openshift/client-go v0.0.0-20250106104058-89709a455e2a
 	github.com/openshift/library-go v0.0.0-20241022210936-abb8c75b88dc
 	github.com/openshift/runtime-utils v0.0.0-20230921210328-7bdb5b9c177b
 	github.com/prometheus/client_golang v1.20.4
@@ -122,6 +122,7 @@ require (
 	github.com/sagikazarmark/slog-shim v0.1.0 // indirect
 	github.com/santhosh-tekuri/jsonschema/v5 v5.3.1 // indirect
 	github.com/secure-systems-lab/go-securesystemslib v0.7.0 // indirect
+	github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3 // indirect
 	github.com/sigstore/fulcio v1.4.3 // indirect
 	github.com/sigstore/rekor v1.2.2 // indirect
 	github.com/sourcegraph/conc v0.3.0 // indirect
@@ -288,7 +289,7 @@ require (
 	github.com/securego/gosec/v2 v2.20.1-0.20240525090044-5f0084eb01a9 // indirect
 	github.com/shazow/go-diff v0.0.0-20160112020656-b6b7b6733b8c // indirect
 	github.com/sigstore/sigstore v1.7.5 // indirect
-	github.com/sirupsen/logrus v1.9.3 // indirect
+	github.com/sirupsen/logrus v1.9.3
 	github.com/sivchari/containedctx v1.0.3 // indirect
 	github.com/sivchari/tenv v1.7.1 // indirect
 	github.com/sonatard/noctx v0.0.2 // indirect

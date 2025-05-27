@@ -94,6 +94,7 @@ spec:
                       - CloudCredential
                       - Ingress
                       - CloudControllerManager
+                      - OperatorLifecycleManagerV1
                       type: string
                     type: array
                     x-kubernetes-list-type: atomic
@@ -193,10 +194,10 @@ spec:
                 x-kubernetes-validations:
                 - message: cannot set both Architecture and Image
                   rule: 'has(self.architecture) && has(self.image) ? (self.architecture
-                    == '''' || self.image == '''') : true'
+                    == "" || self.image == "") : true'
                 - message: Version must be set if Architecture is set
-                  rule: 'has(self.architecture) && self.architecture != '''' ? self.version
-                    != '''' : true'
+                  rule: 'has(self.architecture) && self.architecture != "" ? self.version
+                    != "" : true'
               overrides:
                 description: |-
                   overrides is list of overides for components that are managed by
@@ -327,6 +328,7 @@ spec:
                       - CloudCredential
                       - Ingress
                       - CloudControllerManager
+                      - OperatorLifecycleManagerV1
                       type: string
                     type: array
                     x-kubernetes-list-type: atomic
@@ -353,6 +355,7 @@ spec:
                       - CloudCredential
                       - Ingress
                       - CloudControllerManager
+                      - OperatorLifecycleManagerV1
                       type: string
                     type: array
                     x-kubernetes-list-type: atomic
@@ -498,12 +501,12 @@ spec:
                                 fail to evaluate.
                               properties:
                                 promql:
-                                  description: promQL represents a cluster condition
+                                  description: promql represents a cluster condition
                                     based on PromQL.
                                   properties:
                                     promql:
                                       description: |-
-                                        PromQL is a PromQL query classifying clusters. This query
+                                        promql is a PromQL query classifying clusters. This query
                                         query should return a 1 in the match case and a 0 in the
                                         does-not-match case. Queries which return no time
                                         series, or which return values besides 0 or 1, are

@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"math/rand"
 	"os"
 	"os/exec"
@@ -25,14 +24,13 @@ import (
 
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	"github.com/davecgh/go-spew/spew"
-	configv1 "github.com/openshift/api/config/v1"
-	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	machineClientv1beta1 "github.com/openshift/client-go/machine/clientset/versioned/typed/machine/v1beta1"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
+	buildConstants "github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/daemon/osrelease"
 	"github.com/openshift/machine-config-operator/test/framework"
@@ -96,19 +94,6 @@ func ApplyMC(t *testing.T, cs *framework.ClientSet, mc *mcfgv1.MachineConfig) fu
 
 	return func() {
 		require.Nil(t, cs.MachineConfigs().Delete(context.TODO(), mc.Name, metav1.DeleteOptions{}))
-	}
-}
-
-// Ensures that a given cleanup function only runs once; even if called
-// multiple times.
-func MakeIdempotent(f func()) func() {
-	hasRun := false
-
-	return func() {
-		if !hasRun {
-			f()
-			hasRun = true
-		}
 	}
 }
 
@@ -1470,46 +1455,6 @@ func setDeletionAnnotationOnMachineForNode(ctx context.Context, cs *framework.Cl
 	return err
 }
 
-// MustHaveFeatureGatesEnabled fatally exits the test if any feature gate in requiredFeatureGates is not enabled.
-func MustHaveFeatureGatesEnabled(requiredFeatureGates ...configv1.FeatureGateName) {
-	cs := framework.NewClientSet("")
-	if err := validateFeatureGatesEnabled(cs, requiredFeatureGates...); err != nil {
-		log.Fatalln(err)
-	}
-	log.Printf("All required featuregates %v present!", requiredFeatureGates)
-}
-
-// Validates if feature gates listed in requiredFeatureGates are enabled.
-func validateFeatureGatesEnabled(cs *framework.ClientSet, requiredFeatureGates ...configv1.FeatureGateName) error {
-	currentFeatureGates, err := cs.ConfigV1Interface.FeatureGates().Get(context.TODO(), "cluster", metav1.GetOptions{})
-	if err != nil {
-		return fmt.Errorf("failed to fetch feature gates: %w", err)
-	}
-
-	// This uses the new Go generics to construct a typed set of
-	// FeatureGateNames. Under the hood, sets are map[T]struct{}{} where
-	// only the keys matter and one cannot have duplicate keys. Perfect for our use-case!
-	enabledFeatures := sets.New[configv1.FeatureGateName]()
-
-	// Load all of the feature gate names into our set. Duplicates will be
-	// automatically be ignored.
-	for _, currentFeatureGateDetails := range currentFeatureGates.Status.FeatureGates {
-		for _, enabled := range currentFeatureGateDetails.Enabled {
-			enabledFeatures.Insert(enabled.Name)
-		}
-	}
-
-	// If we have all of the required feature gates, we're done!
-	if enabledFeatures.HasAll(requiredFeatureGates...) {
-		return nil
-	}
-
-	// If we don't, lets diff against what we have vs. what we want and return that information.
-	requiredFeatures := sets.New[configv1.FeatureGateName](requiredFeatureGates...)
-	disabledRequiredFeatures := requiredFeatures.Difference(enabledFeatures)
-	return fmt.Errorf("missing required FeatureGate(s): %v, have: %v", sets.List(disabledRequiredFeatures), sets.List(enabledFeatures))
-}
-
 // Writes a file to a given node. Returns an idempotent cleanup function.
 func WriteFileToNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, filename, contents string) func() {
 	t.Helper()
@@ -1792,21 +1737,33 @@ func nodeListToSet(nodeList *corev1.NodeList) sets.Set[string] {
 	return nodes
 }
 
-func SetContainerfileContentsOnMachineOSConfig(ctx context.Context, t *testing.T, mcfgclient mcfgclientset.Interface, mosc *mcfgv1alpha1.MachineOSConfig, contents string) *mcfgv1alpha1.MachineOSConfig {
+func SetContainerfileContentsOnMachineOSConfig(ctx context.Context, t *testing.T, mcfgclient mcfgclientset.Interface, mosc *mcfgv1.MachineOSConfig, contents string) *mcfgv1.MachineOSConfig {
 	t.Helper()
 
-	apiMosc, err := mcfgclient.MachineconfigurationV1alpha1().MachineOSConfigs().Get(ctx, mosc.Name, metav1.GetOptions{})
+	apiMosc, err := mcfgclient.MachineconfigurationV1().MachineOSConfigs().Get(ctx, mosc.Name, metav1.GetOptions{})
 	require.NoError(t, err)
 
-	apiMosc.Spec.BuildInputs.Containerfile = []mcfgv1alpha1.MachineOSContainerfile{
+	apiMosc.Spec.Containerfile = []mcfgv1.MachineOSContainerfile{
 		{
-			ContainerfileArch: mcfgv1alpha1.NoArch,
+			ContainerfileArch: mcfgv1.NoArch,
 			Content:           contents,
 		},
 	}
 
-	apiMosc, err = mcfgclient.MachineconfigurationV1alpha1().MachineOSConfigs().Update(ctx, apiMosc, metav1.UpdateOptions{})
+	apiMosc, err = mcfgclient.MachineconfigurationV1().MachineOSConfigs().Update(ctx, apiMosc, metav1.UpdateOptions{})
 	require.NoError(t, err)
 
 	return apiMosc
+}
+
+func SetRebuildAnnotationOnMachineOSConfig(ctx context.Context, t *testing.T, mcfgclient mcfgclientset.Interface, mosc *mcfgv1.MachineOSConfig) {
+	t.Helper()
+
+	apiMosc, err := mcfgclient.MachineconfigurationV1().MachineOSConfigs().Get(ctx, mosc.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	apiMosc.Annotations[buildConstants.RebuildMachineOSConfigAnnotationKey] = ""
+
+	_, err = mcfgclient.MachineconfigurationV1().MachineOSConfigs().Update(ctx, apiMosc, metav1.UpdateOptions{})
+	require.NoError(t, err)
 }

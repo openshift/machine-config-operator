@@ -185,11 +185,11 @@ spec:
                 - message: must only increase
                   rule: self >= oldSelf
               oauthAPIServer:
-                description: OAuthAPIServer holds status specific only to oauth-apiserver
+                description: oauthAPIServer holds status specific only to oauth-apiserver
                 properties:
                   latestAvailableRevision:
                     description: |-
-                      LatestAvailableRevision is the latest revision used as suffix of revisioned
+                      latestAvailableRevision is the latest revision used as suffix of revisioned
                       secrets like encryption-config. A new revision causes a new deployment of pods.
                     format: int32
                     minimum: 0

@@ -5,7 +5,6 @@ import (
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	testhelpers "github.com/openshift/machine-config-operator/test/helpers"
@@ -15,17 +14,17 @@ import (
 )
 
 const (
-	baseImagePullSecretName    string = "base-image-pull-secret"
-	finalImagePushSecretName   string = "final-image-push-secret"
-	currentImagePullSecretName string = "current-image-pull-secret"
+	BaseImagePullSecretName  string = "base-image-pull-secret"
+	finalImagePushSecretName string = "final-image-push-secret"
+	JobUID                   string = "bfc35cd0f874c9bfdc586e6ba39f1896"
 )
 
 // Provides consistently instantiated objects for use in a given test.
 type ObjectsForTest struct {
 	MachineConfigPool *mcfgv1.MachineConfigPool
 	MachineConfigs    []*mcfgv1.MachineConfig
-	MachineOSConfig   *mcfgv1alpha1.MachineOSConfig
-	MachineOSBuild    *mcfgv1alpha1.MachineOSBuild
+	MachineOSConfig   *mcfgv1.MachineOSConfig
+	MachineOSBuild    *mcfgv1.MachineOSBuild
 }
 
 // Provides the builders to create consistently instantiated objects for use in
@@ -88,11 +87,9 @@ func NewObjectBuildersForTest(poolName string) ObjectBuildersForTest {
 
 	moscBuilder := testhelpers.NewMachineOSConfigBuilder(moscName).
 		WithMachineConfigPool(poolName).
-		WithBaseImagePullSecret(baseImagePullSecretName).
 		WithRenderedImagePushSecret(finalImagePushSecretName).
-		WithCurrentImagePullSecret(currentImagePullSecretName).
-		WithRenderedImagePushspec("registry.hostname.com/org/repo:latest").
-		WithContainerfile(mcfgv1alpha1.NoArch, "FROM configs AS final\n\nRUN echo 'hi' > /etc/hi")
+		WithRenderedImagePushSpec("registry.hostname.com/org/repo:latest").
+		WithContainerfile(mcfgv1.NoArch, "FROM configs AS final\n\nRUN echo 'hi' > /etc/hi")
 
 	mcpBuilder := testhelpers.NewMachineConfigPoolBuilder(poolName).
 		WithChildConfigs(getChildConfigs(poolName, 5)).
@@ -104,6 +101,9 @@ func NewObjectBuildersForTest(poolName string) ObjectBuildersForTest {
 			constants.TargetMachineConfigPoolLabelKey: poolName,
 			constants.RenderedMachineConfigLabelKey:   renderedConfigName,
 			constants.MachineOSConfigNameLabelKey:     moscName,
+		}).
+		WithAnnotations(map[string]string{
+			constants.JobUIDAnnotationKey: JobUID,
 		})
 
 	return ObjectBuildersForTest{
@@ -134,7 +134,7 @@ func defaultKubeObjects() []runtime.Object {
 		},
 		&corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      baseImagePullSecretName,
+				Name:      BaseImagePullSecretName,
 				Namespace: ctrlcommon.MCONamespace,
 			},
 			Data: map[string][]byte{
@@ -144,7 +144,7 @@ func defaultKubeObjects() []runtime.Object {
 		},
 		&corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      currentImagePullSecretName,
+				Name:      ctrlcommon.GlobalPullSecretCopyName,
 				Namespace: ctrlcommon.MCONamespace,
 			},
 			Data: map[string][]byte{
@@ -246,7 +246,7 @@ func OSImageURLConfig() *ctrlcommon.OSImageURLConfig {
 	}
 }
 
-func GetExpectedFinalImagePullspecForMachineOSBuild(mosb *mcfgv1alpha1.MachineOSBuild) string {
+func GetExpectedFinalImagePullspecForMachineOSBuild(mosb *mcfgv1.MachineOSBuild) string {
 	digest := getDigest(mosb.Name)
 	return "registry.hostname.com/org/repo@" + digest
 }

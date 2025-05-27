@@ -12,6 +12,10 @@ type FakeOperatorV1alpha1 struct {
 	*testing.Fake
 }
 
+func (c *FakeOperatorV1alpha1) ClusterVersionOperators() v1alpha1.ClusterVersionOperatorInterface {
+	return &FakeClusterVersionOperators{c}
+}
+
 func (c *FakeOperatorV1alpha1) EtcdBackups() v1alpha1.EtcdBackupInterface {
 	return &FakeEtcdBackups{c}
 }

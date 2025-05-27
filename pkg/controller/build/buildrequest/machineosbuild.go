@@ -9,7 +9,7 @@ import (
 	"github.com/distribution/reference"
 	"github.com/ghodss/yaml"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -32,7 +32,7 @@ var (
 // Holds the objects that are used to construct a MachineOSBuild with a hashed
 // name.
 type MachineOSBuildOpts struct {
-	MachineOSConfig   *mcfgv1alpha1.MachineOSConfig
+	MachineOSConfig   *mcfgv1.MachineOSConfig
 	MachineConfigPool *mcfgv1.MachineConfigPool
 	OSImageURLConfig  *ctrlcommon.OSImageURLConfig
 }
@@ -58,25 +58,8 @@ func (m *MachineOSBuildOpts) validateForHash() error {
 	return nil
 }
 
-// Makes a deep-copy of the MachineOSConfig and clears the data from it that
-// can come from either the MachineOSConfig or from the OSImageURLConfig
-// object. We do this to stabilize the hashing of the name so that whether the
-// value comes from the MachineOSConfig or the OSImageURLConfig, the hash will
-// be same, provided that the value is the same.
-func (m *MachineOSBuildOpts) getMachineOSConfigForHashing() *mcfgv1alpha1.MachineOSConfig {
-	moscCopy := m.MachineOSConfig.DeepCopy()
-	moscCopy.Spec.BuildInputs.BaseOSImagePullspec = ""
-	moscCopy.Spec.BuildInputs.BaseOSExtensionsImagePullspec = ""
-	moscCopy.Spec.BuildInputs.ReleaseVersion = ""
-	return moscCopy
-}
-
 // Creates a list of objects that are consumed by the SHA256 hash.
 func (m *MachineOSBuildOpts) objectsForHash() []interface{} {
-	o := BuildRequestOpts{
-		MachineOSConfig:  m.MachineOSConfig,
-		OSImageURLConfig: m.OSImageURLConfig,
-	}
 
 	// The objects considered for hashing described inline:
 	out := []interface{}{
@@ -85,20 +68,10 @@ func (m *MachineOSBuildOpts) objectsForHash() []interface{} {
 		// the individual MachineConfigs that went into that rendered
 		// MachineConfig.
 		m.MachineConfigPool.Spec.Configuration,
-		// The deep-copy of the MachineOSConfig with the multisource data fields
-		// removed for stability.
-		m.getMachineOSConfigForHashing().Spec,
+		// The MachineOSConfig Spec field.
+		m.MachineOSConfig.Spec,
 		// The complete OSImageURLConfig object.
 		m.OSImageURLConfig,
-		// The OS image extensions pullspec from either the MachineOSConfig or the
-		// OSImageURLConfig.
-		o.getExtensionsImagePullspec(),
-		// The base OS image pullspec from either the MachineOSConfig or the
-		// OSImageURLConfig.
-		o.getBaseOSImagePullspec(),
-		// The release version from either the MachineOSConfig or the
-		// OSImageURLConfig.
-		o.getReleaseVersion(),
 	}
 
 	return out
@@ -147,7 +120,7 @@ func (m *MachineOSBuildOpts) getHashedName() (string, error) {
 
 // Constructs the MachineOSBuildOpts by retrieving the OSImageURLConfig from
 // the API server.
-func NewMachineOSBuildOpts(ctx context.Context, kubeclient clientset.Interface, mosc *mcfgv1alpha1.MachineOSConfig, mcp *mcfgv1.MachineConfigPool) (MachineOSBuildOpts, error) {
+func NewMachineOSBuildOpts(ctx context.Context, kubeclient clientset.Interface, mosc *mcfgv1.MachineOSConfig, mcp *mcfgv1.MachineConfigPool) (MachineOSBuildOpts, error) {
 	// TODO: Consider an implementation that uses listers instead of API clients
 	// just to cut down on API server traffic.
 	osImageURLs, err := ctrlcommon.GetOSImageURLConfig(ctx, kubeclient)
@@ -164,7 +137,7 @@ func NewMachineOSBuildOpts(ctx context.Context, kubeclient clientset.Interface, 
 
 // Constructs a new MachineOSBuild object or panics trying. Useful for testing
 // scenarios.
-func NewMachineOSBuildOrDie(opts MachineOSBuildOpts) *mcfgv1alpha1.MachineOSBuild {
+func NewMachineOSBuildOrDie(opts MachineOSBuildOpts) *mcfgv1.MachineOSBuild {
 	mosb, err := NewMachineOSBuild(opts)
 
 	if err != nil {
@@ -176,7 +149,7 @@ func NewMachineOSBuildOrDie(opts MachineOSBuildOpts) *mcfgv1alpha1.MachineOSBuil
 
 // Retrieves the MachineOSBuildOpts from the API and constructs a new
 // MachineOSBuild object or panics trying. Useful for testing scenarios.
-func NewMachineOSBuildFromAPIOrDie(ctx context.Context, kubeclient clientset.Interface, mosc *mcfgv1alpha1.MachineOSConfig, mcp *mcfgv1.MachineConfigPool) *mcfgv1alpha1.MachineOSBuild {
+func NewMachineOSBuildFromAPIOrDie(ctx context.Context, kubeclient clientset.Interface, mosc *mcfgv1.MachineOSConfig, mcp *mcfgv1.MachineConfigPool) *mcfgv1.MachineOSBuild {
 	mosb, err := NewMachineOSBuildFromAPI(ctx, kubeclient, mosc, mcp)
 
 	if err != nil {
@@ -188,7 +161,7 @@ func NewMachineOSBuildFromAPIOrDie(ctx context.Context, kubeclient clientset.Int
 
 // Retrieves the MachineOSBuildOpts from the API and constructs a new
 // MachineOSBuild object.
-func NewMachineOSBuildFromAPI(ctx context.Context, kubeclient clientset.Interface, mosc *mcfgv1alpha1.MachineOSConfig, mcp *mcfgv1.MachineConfigPool) (*mcfgv1alpha1.MachineOSBuild, error) {
+func NewMachineOSBuildFromAPI(ctx context.Context, kubeclient clientset.Interface, mosc *mcfgv1.MachineOSConfig, mcp *mcfgv1.MachineConfigPool) (*mcfgv1.MachineOSBuild, error) {
 	opts, err := NewMachineOSBuildOpts(ctx, kubeclient, mosc, mcp)
 
 	if err != nil {
@@ -200,7 +173,7 @@ func NewMachineOSBuildFromAPI(ctx context.Context, kubeclient clientset.Interfac
 
 // Constructs a new MachineOSBuild object with all of the labels, the tagged
 // image pushpsec, and a hashed name.
-func NewMachineOSBuild(opts MachineOSBuildOpts) (*mcfgv1alpha1.MachineOSBuild, error) {
+func NewMachineOSBuild(opts MachineOSBuildOpts) (*mcfgv1.MachineOSBuild, error) {
 	mosbName, err := opts.getHashedNameWithConfig()
 	if err != nil {
 		return nil, fmt.Errorf("could not get hashed name for MachineOSBuild: %w", err)
@@ -208,7 +181,7 @@ func NewMachineOSBuild(opts MachineOSBuildOpts) (*mcfgv1alpha1.MachineOSBuild, e
 
 	now := metav1.Now()
 
-	namedRef, err := reference.ParseNamed(opts.MachineOSConfig.Spec.BuildInputs.RenderedImagePushspec)
+	namedRef, err := reference.ParseNamed(string(opts.MachineOSConfig.Spec.RenderedImagePushSpec))
 	if err != nil {
 		return nil, err
 	}
@@ -218,27 +191,32 @@ func NewMachineOSBuild(opts MachineOSBuildOpts) (*mcfgv1alpha1.MachineOSBuild, e
 		return nil, err
 	}
 
-	mosb := &mcfgv1alpha1.MachineOSBuild{
+	mosb := &mcfgv1.MachineOSBuild{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "MachineOSBuild",
-			APIVersion: "machineconfiguration.openshift.io/v1alpha1",
+			APIVersion: "machineconfiguration.openshift.io/v1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   mosbName,
 			Labels: utils.GetMachineOSBuildLabels(opts.MachineOSConfig, opts.MachineConfigPool),
+			// Set finalzer on MOSB to ensure all it dependents are deleted before the MOSB
+			Finalizers: []string{
+				metav1.FinalizerDeleteDependents,
+			},
+			Annotations: map[string]string{
+				constants.RenderedImagePushSecretAnnotationKey: opts.MachineOSConfig.Spec.RenderedImagePushSecret.Name,
+			},
 		},
-		Spec: mcfgv1alpha1.MachineOSBuildSpec{
-			RenderedImagePushspec: taggedRef.String(),
-			Version:               1,
-			ConfigGeneration:      1,
-			DesiredConfig: mcfgv1alpha1.RenderedMachineConfigReference{
+		Spec: mcfgv1.MachineOSBuildSpec{
+			RenderedImagePushSpec: mcfgv1.ImageTagFormat(taggedRef.String()),
+			MachineConfig: mcfgv1.MachineConfigReference{
 				Name: opts.MachineConfigPool.Spec.Configuration.Name,
 			},
-			MachineOSConfig: mcfgv1alpha1.MachineOSConfigReference{
+			MachineOSConfig: mcfgv1.MachineOSConfigReference{
 				Name: opts.MachineOSConfig.Name,
 			},
 		},
-		Status: mcfgv1alpha1.MachineOSBuildStatus{
+		Status: mcfgv1.MachineOSBuildStatus{
 			BuildStart: &now,
 		},
 	}

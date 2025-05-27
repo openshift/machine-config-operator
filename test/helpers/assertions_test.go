@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	fakeclientimagev1 "github.com/openshift/client-go/image/clientset/versioned/fake"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	fakeclientmachineconfigv1 "github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
 	"github.com/stretchr/testify/assert"
@@ -13,9 +14,11 @@ import (
 )
 
 type mockTesting struct {
+	failed          bool
 	isFailNowCalled bool
 	isHelperCalled  bool
 	isErrorfCalled  bool
+	cleanupFunc     func()
 	errorfFormat    string
 	errorfArgs      []interface{}
 }
@@ -26,8 +29,10 @@ func (m *mockTesting) Errorf(format string, args ...interface{}) {
 	m.errorfArgs = args
 }
 
-func (m *mockTesting) Helper()  { m.isHelperCalled = true }
-func (m *mockTesting) FailNow() { m.isFailNowCalled = true }
+func (m *mockTesting) Helper()          { m.isHelperCalled = true }
+func (m *mockTesting) FailNow()         { m.isFailNowCalled = true }
+func (m *mockTesting) Cleanup(f func()) { m.cleanupFunc = f }
+func (m *mockTesting) Failed() bool     { return m.failed }
 
 // For now, this test will primarily concern itself with whether the various
 // objects on the Assertion struct are set correctly. This is because failed
@@ -302,7 +307,8 @@ func getAssertionsForTest() (*Assertions, *mockTesting, clientset.Interface, mcf
 	mock := &mockTesting{}
 	kubeclient := fakecorev1client.NewSimpleClientset()
 	mcfgclient := fakeclientmachineconfigv1.NewSimpleClientset()
-	a := Assert(mock, kubeclient, mcfgclient)
+	imageclient := fakeclientimagev1.NewSimpleClientset()
+	a := Assert(mock, kubeclient, mcfgclient, imageclient)
 
 	return a, mock, kubeclient, mcfgclient
 }
@@ -310,5 +316,6 @@ func getAssertionsForTest() (*Assertions, *mockTesting, clientset.Interface, mcf
 func getAssertionsForTestWithRealT(t *testing.T) (*Assertions, clientset.Interface, mcfgclientset.Interface) {
 	kubeclient := fakecorev1client.NewSimpleClientset()
 	mcfgclient := fakeclientmachineconfigv1.NewSimpleClientset()
-	return Assert(t, kubeclient, mcfgclient), kubeclient, mcfgclient
+	imageclient := fakeclientimagev1.NewSimpleClientset()
+	return Assert(t, kubeclient, mcfgclient, imageclient), kubeclient, mcfgclient
 }

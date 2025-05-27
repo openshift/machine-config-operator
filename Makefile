@@ -1,6 +1,10 @@
+E2E_ROOT_DIR = ./test
+E2E_SUITES = $(notdir $(wildcard $(E2E_ROOT_DIR)/e2e*))
+
 MCO_COMPONENTS = daemon controller server operator
 EXTRA_COMPONENTS = apiserver-watcher machine-os-builder
 ALL_COMPONENTS = $(patsubst %,machine-config-%,$(MCO_COMPONENTS)) $(EXTRA_COMPONENTS)
+ALL_COMPONENTS_PATHS = $(patsubst %,cmd/%,$(ALL_COMPONENTS))
 PREFIX ?= /usr
 GO111MODULE?=on
 PROJECT_DIR := $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))
@@ -36,9 +40,17 @@ clean:
 
 # Build machine configs. Intended to be called via another target.
 # Example:
-#    make _build-machine-config-operator
-_build-%:
-	WHAT=$* hack/build-go.sh
+#    make _build-component-machine-config-operator
+_build-component-%:
+	WHAT_PATH=cmd/$* WHAT=$(basename $*) hack/build-go.sh
+
+# Build the helpers under devex/cmd.
+_build-helper-%:
+	WHAT_PATH=devex/cmd/$* WHAT=$(basename $*) hack/build-go.sh
+
+# Verify that an e2e test is valid Golang by doing a trial compilation.
+_verify-e2e-%:
+	go test -c -tags=$(GOTAGS) -o _output/$* ./test/$*/...
 
 # Use podman to build the image.
 image:
@@ -98,28 +110,67 @@ endif
 
 install-tools: install-golangci-lint install-go-junit-report install-setup-envtest
 
-# Run verification steps
+# Runs golangci-lint
+lint: install-tools
+	./hack/golangci-lint.sh $(GOTAGS)
+
+# Verifies templates.
+verify-templates:
+	hack/verify-templates.sh
+
+# Verifies devex helpers
+verify-helpers:
+	# Conditionally tries to build the helper binaries in CI.
+	hack/verify-helpers.sh
+
+# Runs all verification steps
 # Example:
 #    make verify
-verify: install-tools
-	./hack/golangci-lint.sh $(GOTAGS)
-	hack/verify-templates.sh
+verify: install-tools verify-e2e lint verify-templates verify-helpers
+
+HELPERS_DIR := devex/cmd
+HELPER_BINARIES := $(notdir $(wildcard $(HELPERS_DIR)/*))
+
+.PHONY: helpers
+helpers: $(patsubst %,_build-helper-%,$(HELPER_BINARIES))
 
 # Template for defining build targets for binaries.
 define target_template =
  .PHONY: $(1)
- $(1): _build-$(1)
+ $(1): _build-component-$(1)
 endef
 # Create a target for each component
 $(foreach C, $(EXTRA_COMPONENTS), $(eval $(call target_template,$(C))))
 $(foreach C, $(MCO_COMPONENTS), $(eval $(call target_template,$(patsubst %,machine-config-%,$(C)))))
 
-.PHONY: binaries install
+# Template for defining build targets for helper binaries.
+define helper_target_template =
+ .PHONY: $(1)
+ $(1): _build-helper-$(1)
+endef
+# Create a target for each component
+$(foreach C, $(HELPER_BINARIES), $(eval $(call helper_target_template,$(C))))
+
+define verify_e2e_target_template =
+ .PHONY: $(1)
+ $(1): _verify-e2e-$(1)
+endef
+# Create a target for each e2e suite
+$(foreach C, $(E2E_SUITES), $(eval $(call verify_e2e_target_template,$(C))))
+
+
+.PHONY: binaries helpers install
 
 # Build all binaries:
 # Example:
 #    make binaries
-binaries: $(patsubst %,_build-%,$(ALL_COMPONENTS))
+binaries: $(patsubst %,_build-component-%,$(ALL_COMPONENTS))
+
+# Installs the helper binaries from devex/cmd.
+install-helpers: helpers
+	for helper in $(HELPER_BINARIES); do \
+		install -D -m 0755 _output/linux/$(GOARCH)/$${helper} $(DESTDIR)$(PREFIX)/bin/$${helper}; \
+	done
 
 install: binaries
 	for component in $(ALL_COMPONENTS); do \
@@ -130,6 +181,9 @@ Dockerfile.rhel7: Dockerfile Makefile
 	(echo '# THIS FILE IS GENERATED FROM '$<' DO NOT EDIT' && \
 	 sed -e s,org/openshift/release,org/ocp/builder, -e s,/openshift/origin-v4.0:base,/ocp/4.0:base, < $<) > $@.tmp && mv $@.tmp $@
 
+# Validates that all of the e2e test suites are valid Golang by performing a test compilation.
+verify-e2e: $(patsubst %,_verify-e2e-%,$(E2E_SUITES))
+
 # This was copied from https://github.com/openshift/cluster-image-registry-operator
 test-e2e: install-go-junit-report
 	set -o pipefail; go test -tags=$(GOTAGS) -failfast -timeout 170m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e/ ./test/e2e-techpreview-shared/ | ./hack/test-with-junit.sh $(@)
@@ -139,6 +193,9 @@ test-e2e-techpreview: install-go-junit-report
 
 test-e2e-single-node: install-go-junit-report
 	set -o pipefail; go test -tags=$(GOTAGS) -failfast -timeout 120m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-single-node/ | ./hack/test-with-junit.sh $(@)
+
+test-e2e-ocl: install-go-junit-report
+	set -o pipefail; go test -tags=$(GOTAGS) -failfast -timeout 120m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-ocl/ | ./hack/test-with-junit.sh $(@)
 
 bootstrap-e2e: install-go-junit-report install-setup-envtest
 	@echo "Setting up KUBEBUILDER_ASSETS"

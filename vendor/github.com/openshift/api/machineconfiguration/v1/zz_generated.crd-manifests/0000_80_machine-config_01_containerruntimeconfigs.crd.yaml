@@ -46,11 +46,11 @@ spec:
           metadata:
             type: object
           spec:
-            description: ContainerRuntimeConfigSpec defines the desired state of ContainerRuntimeConfig
+            description: spec contains the desired container runtime configuration.
             properties:
               containerRuntimeConfig:
-                description: ContainerRuntimeConfiguration defines the tuneables of
-                  the container runtime
+                description: containerRuntimeConfig defines the tuneables of the container
+                  runtime.
                 properties:
                   defaultRuntime:
                     description: defaultRuntime is the name of the OCI runtime to
@@ -88,7 +88,7 @@ spec:
                 type: object
               machineConfigPoolSelector:
                 description: |-
-                  MachineConfigPoolSelector selects which pools the ContainerRuntimeConfig shoud apply to.
+                  machineConfigPoolSelector selects which pools the ContainerRuntimeConfig shoud apply to.
                   A nil selector will result in no pools being selected.
                 properties:
                   matchExpressions:
@@ -138,8 +138,8 @@ spec:
             - containerRuntimeConfig
             type: object
           status:
-            description: ContainerRuntimeConfigStatus defines the observed state of
-              a ContainerRuntimeConfig
+            description: status contains observed information about the container
+              runtime configuration.
             properties:
               conditions:
                 description: conditions represents the latest available observations

@@ -2,7 +2,6 @@ package common
 
 import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -13,28 +12,28 @@ import (
 // single and consistent interface for that purpose. In this current state, we
 // do not perform any mutations.
 type MachineOSBuildState struct {
-	Build *mcfgv1alpha1.MachineOSBuild
+	Build *mcfgv1.MachineOSBuild
 }
 
 type MachineOSConfigState struct {
-	Config *mcfgv1alpha1.MachineOSConfig
+	Config *mcfgv1.MachineOSConfig
 }
 
-func NewMachineOSConfigState(mosc *mcfgv1alpha1.MachineOSConfig) *MachineOSConfigState {
+func NewMachineOSConfigState(mosc *mcfgv1.MachineOSConfig) *MachineOSConfigState {
 	return &MachineOSConfigState{
 		Config: mosc,
 	}
 }
 
-func NewMachineOSBuildState(mosb *mcfgv1alpha1.MachineOSBuild) *MachineOSBuildState {
+func NewMachineOSBuildState(mosb *mcfgv1.MachineOSBuild) *MachineOSBuildState {
 	return &MachineOSBuildState{
 		Build: mosb,
 	}
 }
 
-func NewMachineOSBuildStateFromStatus(status mcfgv1alpha1.MachineOSBuildStatus) *MachineOSBuildState {
+func NewMachineOSBuildStateFromStatus(status mcfgv1.MachineOSBuildStatus) *MachineOSBuildState {
 	return &MachineOSBuildState{
-		Build: &mcfgv1alpha1.MachineOSBuild{
+		Build: &mcfgv1.MachineOSBuild{
 			Status: status,
 		},
 	}
@@ -42,21 +41,25 @@ func NewMachineOSBuildStateFromStatus(status mcfgv1alpha1.MachineOSBuildStatus) 
 
 // Returns the OS image, if one is present.
 func (c *MachineOSConfigState) GetOSImage() string {
-	osImage := c.Config.Status.CurrentImagePullspec
+	osImage := string(c.Config.Status.CurrentImagePullSpec)
 	return osImage
+}
+
+func (c *MachineOSConfigState) MachineOSBuildIsCurrent(mosb *mcfgv1.MachineOSBuild) bool {
+	return mosb.Status.DigestedImagePushSpec == c.Config.Status.CurrentImagePullSpec
 }
 
 // Determines if a given MachineConfigPool has an available OS image. Returns
 // false if the annotation is missing or set to an empty string.
 func (c *MachineOSConfigState) HasOSImage() bool {
-	val := c.Config.Status.CurrentImagePullspec
+	val := string(c.Config.Status.CurrentImagePullSpec)
 	return val != ""
 }
 
 // Clears the image pullspec annotation.
 func (c *MachineOSConfigState) ClearImagePullspec() {
-	c.Config.Spec.BuildInputs.RenderedImagePushspec = ""
-	c.Config.Status.CurrentImagePullspec = ""
+	c.Config.Spec.RenderedImagePushSpec = ""
+	c.Config.Status.CurrentImagePullSpec = ""
 }
 
 // Clears all build object conditions.
@@ -66,32 +69,32 @@ func (b *MachineOSBuildState) ClearAllBuildConditions() {
 
 // Determines if an OS image build is a success.
 func (b *MachineOSBuildState) IsBuildSuccess() bool {
-	return apihelpers.IsMachineOSBuildConditionTrue(b.Build.Status.Conditions, mcfgv1alpha1.MachineOSBuildSucceeded)
+	return apihelpers.IsMachineOSBuildConditionTrue(b.Build.Status.Conditions, mcfgv1.MachineOSBuildSucceeded)
 }
 
 // Determines if an OS image build is pending.
 func (b *MachineOSBuildState) IsBuildPending() bool {
-	return apihelpers.IsMachineOSBuildConditionTrue(b.Build.Status.Conditions, mcfgv1alpha1.MachineOSBuilding)
+	return apihelpers.IsMachineOSBuildConditionTrue(b.Build.Status.Conditions, mcfgv1.MachineOSBuilding)
 }
 
 // Determines if an OS image build is prepared.
 func (b *MachineOSBuildState) IsBuildPrepared() bool {
-	return apihelpers.IsMachineOSBuildConditionTrue(b.Build.Status.Conditions, mcfgv1alpha1.MachineOSBuildPrepared)
+	return apihelpers.IsMachineOSBuildConditionTrue(b.Build.Status.Conditions, mcfgv1.MachineOSBuildPrepared)
 }
 
 // Determines if an OS image build is in progress.
 func (b *MachineOSBuildState) IsBuilding() bool {
-	return apihelpers.IsMachineOSBuildConditionTrue(b.Build.Status.Conditions, mcfgv1alpha1.MachineOSBuilding)
+	return apihelpers.IsMachineOSBuildConditionTrue(b.Build.Status.Conditions, mcfgv1.MachineOSBuilding)
 }
 
 // Determines if an OS image build has failed.
 func (b *MachineOSBuildState) IsBuildFailure() bool {
-	return apihelpers.IsMachineOSBuildConditionTrue(b.Build.Status.Conditions, mcfgv1alpha1.MachineOSBuildFailed)
+	return apihelpers.IsMachineOSBuildConditionTrue(b.Build.Status.Conditions, mcfgv1.MachineOSBuildFailed)
 }
 
 // Determines if an OS image build has failed.
 func (b *MachineOSBuildState) IsBuildInterrupted() bool {
-	return apihelpers.IsMachineOSBuildConditionTrue(b.Build.Status.Conditions, mcfgv1alpha1.MachineOSBuildInterrupted)
+	return apihelpers.IsMachineOSBuildConditionTrue(b.Build.Status.Conditions, mcfgv1.MachineOSBuildInterrupted)
 }
 
 // Determines if an OS image build has build conditions set on it.
@@ -121,13 +124,8 @@ func (b *MachineOSBuildState) IsInTransientState() bool {
 }
 
 // Gets the transient state, if any is set. Otherwise, returns an empty string.
-func (b *MachineOSBuildState) GetTransientState() mcfgv1alpha1.BuildProgress {
-	transientStates := []mcfgv1alpha1.BuildProgress{
-		mcfgv1alpha1.MachineOSBuilding,
-		mcfgv1alpha1.MachineOSBuildPrepared,
-	}
-
-	for _, transientState := range transientStates {
+func (b *MachineOSBuildState) GetTransientState() mcfgv1.BuildProgress {
+	for transientState := range MachineOSBuildTransientStates() {
 		if apihelpers.IsMachineOSBuildConditionTrue(b.Build.Status.Conditions, transientState) {
 			return transientState
 		}
@@ -137,14 +135,8 @@ func (b *MachineOSBuildState) GetTransientState() mcfgv1alpha1.BuildProgress {
 }
 
 // Gets the current terminal state, if any is set. Otherwise, returns an empty string.
-func (b *MachineOSBuildState) GetTerminalState() mcfgv1alpha1.BuildProgress {
-	terminalStates := []mcfgv1alpha1.BuildProgress{
-		mcfgv1alpha1.MachineOSBuildSucceeded,
-		mcfgv1alpha1.MachineOSBuildFailed,
-		mcfgv1alpha1.MachineOSBuildInterrupted,
-	}
-
-	for _, terminalState := range terminalStates {
+func (b *MachineOSBuildState) GetTerminalState() mcfgv1.BuildProgress {
+	for terminalState := range MachineOSBuildTerminalStates() {
 		if apihelpers.IsMachineOSBuildConditionTrue(b.Build.Status.Conditions, terminalState) {
 			return terminalState
 		}
@@ -154,9 +146,9 @@ func (b *MachineOSBuildState) GetTerminalState() mcfgv1alpha1.BuildProgress {
 }
 
 func (b *MachineOSBuildState) IsAnyDegraded() bool {
-	condTypes := []mcfgv1alpha1.BuildProgress{
-		mcfgv1alpha1.MachineOSBuildFailed,
-		mcfgv1alpha1.MachineOSBuildInterrupted,
+	condTypes := []mcfgv1.BuildProgress{
+		mcfgv1.MachineOSBuildFailed,
+		mcfgv1.MachineOSBuildInterrupted,
 	}
 
 	for _, condType := range condTypes {
@@ -172,13 +164,34 @@ func (b *MachineOSBuildState) IsAnyDegraded() bool {
 func (b *MachineOSBuildState) SetBuildConditions(conditions []metav1.Condition) {
 	for _, condition := range conditions {
 		condition := condition
-		currentCondition := apihelpers.GetMachineOSBuildCondition(b.Build.Status, mcfgv1alpha1.BuildProgress(condition.Type))
+		currentCondition := apihelpers.GetMachineOSBuildCondition(b.Build.Status, mcfgv1.BuildProgress(condition.Type))
 		if currentCondition != nil && isConditionEqual(*currentCondition, condition) {
 			continue
 		}
 
 		mosbCondition := apihelpers.NewMachineOSBuildCondition(condition.Type, condition.Status, condition.Reason, condition.Message)
 		apihelpers.SetMachineOSBuildCondition(&b.Build.Status, *mosbCondition)
+	}
+}
+
+// Returns a map of the buildprogress states to their expected conditions for
+// transient states. That is, the MachineOSBuild is expected to transition from
+// one state to another.
+func MachineOSBuildTransientStates() map[mcfgv1.BuildProgress][]metav1.Condition {
+	return map[mcfgv1.BuildProgress][]metav1.Condition{
+		mcfgv1.MachineOSBuilding:      apihelpers.MachineOSBuildRunningConditions(),
+		mcfgv1.MachineOSBuildPrepared: apihelpers.MachineOSBuildPendingConditions(),
+	}
+}
+
+// Returns a map of the buildprogress states to their expected conditions for
+// terminal states; meaning that the MachineOSBuild cannot transition from one
+// state to another.
+func MachineOSBuildTerminalStates() map[mcfgv1.BuildProgress][]metav1.Condition {
+	return map[mcfgv1.BuildProgress][]metav1.Condition{
+		mcfgv1.MachineOSBuildSucceeded:   apihelpers.MachineOSBuildSucceededConditions(),
+		mcfgv1.MachineOSBuildFailed:      apihelpers.MachineOSBuildFailedConditions(),
+		mcfgv1.MachineOSBuildInterrupted: apihelpers.MachineOSBuildInterruptedConditions(),
 	}
 }
 
@@ -211,13 +224,13 @@ func clearAllBuildConditions(inConditions []metav1.Condition) []metav1.Condition
 	return conditions
 }
 
-func getMachineConfigBuildConditions() []mcfgv1alpha1.BuildProgress {
-	return []mcfgv1alpha1.BuildProgress{
-		mcfgv1alpha1.MachineOSBuildFailed,
-		mcfgv1alpha1.MachineOSBuildInterrupted,
-		mcfgv1alpha1.MachineOSBuildPrepared,
-		mcfgv1alpha1.MachineOSBuildSucceeded,
-		mcfgv1alpha1.MachineOSBuilding,
+func getMachineConfigBuildConditions() []mcfgv1.BuildProgress {
+	return []mcfgv1.BuildProgress{
+		mcfgv1.MachineOSBuildFailed,
+		mcfgv1.MachineOSBuildInterrupted,
+		mcfgv1.MachineOSBuildPrepared,
+		mcfgv1.MachineOSBuildSucceeded,
+		mcfgv1.MachineOSBuilding,
 	}
 }
 
@@ -242,13 +255,13 @@ func IsPoolConfigChange(oldPool, curPool *mcfgv1.MachineConfigPool) bool {
 	return oldPool.Spec.Configuration.Name != curPool.Spec.Configuration.Name
 }
 
-func HasBuildObjectForCurrentMachineConfig(pool *mcfgv1.MachineConfigPool, mosb *mcfgv1alpha1.MachineOSBuild) bool {
-	return pool.Spec.Configuration.Name == mosb.Spec.DesiredConfig.Name
+func HasBuildObjectForCurrentMachineConfig(pool *mcfgv1.MachineConfigPool, mosb *mcfgv1.MachineOSBuild) bool {
+	return pool.Spec.Configuration.Name == mosb.Spec.MachineConfig.Name
 }
 
 // Determines if we should do a build based upon the state of our
 // MachineConfigPool, the presence of a build pod, etc.
-func BuildDueToPoolChange(oldPool, curPool *mcfgv1.MachineConfigPool, moscNew *mcfgv1alpha1.MachineOSConfig, mosbNew *mcfgv1alpha1.MachineOSBuild) bool {
+func BuildDueToPoolChange(oldPool, curPool *mcfgv1.MachineConfigPool, moscNew *mcfgv1.MachineOSConfig, mosbNew *mcfgv1.MachineOSBuild) bool {
 
 	moscState := NewMachineOSConfigState(moscNew)
 	mosbState := NewMachineOSBuildState(mosbNew)
@@ -286,6 +299,6 @@ func canPoolBuild(pool *mcfgv1.MachineConfigPool, moscNewState *MachineOSConfigS
 	return true
 }
 
-func IsLayeredPool(mosc *mcfgv1alpha1.MachineOSConfig, mosb *mcfgv1alpha1.MachineOSBuild) bool {
+func IsLayeredPool(mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild) bool {
 	return (mosc != nil || mosb != nil)
 }

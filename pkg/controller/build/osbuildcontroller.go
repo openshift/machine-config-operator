@@ -11,9 +11,10 @@ import (
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+	imagev1clientset "github.com/openshift/client-go/image/clientset/versioned"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
+	routeclientset "github.com/openshift/client-go/route/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -33,6 +34,8 @@ type OSBuildController struct {
 	eventRecorder record.EventRecorder
 	mcfgclient    mcfgclientset.Interface
 	kubeclient    clientset.Interface
+	imageclient   imagev1clientset.Interface
+	routeclient   routeclientset.Interface
 
 	config    Config
 	execQueue *ctrlcommon.WrappedQueue
@@ -73,6 +76,8 @@ func NewOSBuildControllerFromControllerContextWithConfig(ctrlCtx *ctrlcommon.Con
 		cfg,
 		ctrlCtx.ClientBuilder.MachineConfigClientOrDie("machine-os-builder"),
 		ctrlCtx.ClientBuilder.KubeClientOrDie("machine-os-builder"),
+		ctrlCtx.ClientBuilder.ImageClientOrDie("machine-os-builder"),
+		ctrlCtx.ClientBuilder.RouteClientOrDie("machine-os-builder"),
 	)
 }
 
@@ -80,6 +85,8 @@ func newOSBuildController(
 	ctrlConfig Config,
 	mcfgclient mcfgclientset.Interface,
 	kubeclient clientset.Interface,
+	imageclient imagev1clientset.Interface,
+	routeclient routeclientset.Interface,
 ) *OSBuildController {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
@@ -90,6 +97,8 @@ func newOSBuildController(
 	ctrl := &OSBuildController{
 		kubeclient:    kubeclient,
 		mcfgclient:    mcfgclient,
+		imageclient:   imageclient,
+		routeclient:   routeclient,
 		informers:     informers,
 		listers:       informers.listers(),
 		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineosbuilder"}),
@@ -120,10 +129,11 @@ func newOSBuildController(
 	})
 
 	ctrl.machineConfigPoolInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.addMachineConfigPool,
 		UpdateFunc: ctrl.updateMachineConfigPool,
 	})
 
-	ctrl.buildReconciler = newBuildReconciler(mcfgclient, kubeclient, ctrl.listers)
+	ctrl.buildReconciler = newBuildReconciler(mcfgclient, kubeclient, imageclient, routeclient, ctrl.listers)
 
 	return ctrl
 }
@@ -216,22 +226,22 @@ func (ctrl *OSBuildController) enqueueFuncForObject(obj kubeObject, toRun func(c
 }
 
 func (ctrl *OSBuildController) addMachineOSBuild(cur interface{}) {
-	mosb := cur.(*mcfgv1alpha1.MachineOSBuild)
+	mosb := cur.(*mcfgv1.MachineOSBuild)
 	ctrl.enqueueFuncForObject(mosb, func(ctx context.Context) error {
 		return ctrl.buildReconciler.AddMachineOSBuild(ctx, mosb)
 	})
 }
 
 func (ctrl *OSBuildController) updateMachineOSBuild(old, cur interface{}) {
-	oldMOSB := old.(*mcfgv1alpha1.MachineOSBuild)
-	curMOSB := cur.(*mcfgv1alpha1.MachineOSBuild)
+	oldMOSB := old.(*mcfgv1.MachineOSBuild)
+	curMOSB := cur.(*mcfgv1.MachineOSBuild)
 	ctrl.enqueueFuncForObject(curMOSB, func(ctx context.Context) error {
 		return ctrl.buildReconciler.UpdateMachineOSBuild(ctx, oldMOSB, curMOSB)
 	})
 }
 
 func (ctrl *OSBuildController) deleteMachineOSBuild(cur interface{}) {
-	mosb := cur.(*mcfgv1alpha1.MachineOSBuild)
+	mosb := cur.(*mcfgv1.MachineOSBuild)
 	ctrl.enqueueFuncForObject(mosb, func(ctx context.Context) error {
 		return ctrl.buildReconciler.DeleteMachineOSBuild(ctx, mosb)
 	})
@@ -261,29 +271,29 @@ func (ctrl *OSBuildController) deleteJob(cur interface{}) {
 }
 
 func (ctrl *OSBuildController) addMachineOSConfig(newMOSC interface{}) {
-	m := newMOSC.(*mcfgv1alpha1.MachineOSConfig).DeepCopy()
+	m := newMOSC.(*mcfgv1.MachineOSConfig).DeepCopy()
 	ctrl.enqueueFuncForObject(m, func(ctx context.Context) error {
 		return ctrl.buildReconciler.AddMachineOSConfig(ctx, m)
 	})
 }
 
 func (ctrl *OSBuildController) updateMachineOSConfig(old, cur interface{}) {
-	oldMOSC := old.(*mcfgv1alpha1.MachineOSConfig).DeepCopy()
-	curMOSC := cur.(*mcfgv1alpha1.MachineOSConfig).DeepCopy()
+	oldMOSC := old.(*mcfgv1.MachineOSConfig).DeepCopy()
+	curMOSC := cur.(*mcfgv1.MachineOSConfig).DeepCopy()
 	ctrl.enqueueFuncForObject(curMOSC, func(ctx context.Context) error {
 		return ctrl.buildReconciler.UpdateMachineOSConfig(ctx, oldMOSC, curMOSC)
 	})
 }
 
 func (ctrl *OSBuildController) deleteMachineOSConfig(cur interface{}) {
-	mosc, ok := cur.(*mcfgv1alpha1.MachineOSConfig)
+	mosc, ok := cur.(*mcfgv1.MachineOSConfig)
 	if !ok {
 		tombstone, ok := cur.(cache.DeletedFinalStateUnknown)
 		if !ok {
 			utilruntime.HandleError(fmt.Errorf("Couldn't get object from tombstone %#v", cur))
 			return
 		}
-		mosc, ok = tombstone.Obj.(*mcfgv1alpha1.MachineOSConfig)
+		mosc, ok = tombstone.Obj.(*mcfgv1.MachineOSConfig)
 		if !ok {
 			utilruntime.HandleError(fmt.Errorf("Tombstone contained object that is not a MachineOSConfig %#v", cur))
 			return
@@ -292,6 +302,13 @@ func (ctrl *OSBuildController) deleteMachineOSConfig(cur interface{}) {
 
 	ctrl.enqueueFuncForObject(mosc, func(ctx context.Context) error {
 		return ctrl.buildReconciler.DeleteMachineOSConfig(ctx, mosc)
+	})
+}
+
+func (ctrl *OSBuildController) addMachineConfigPool(newMCP interface{}) {
+	mcp := newMCP.(*mcfgv1.MachineConfigPool).DeepCopy()
+	ctrl.enqueueFuncForObject(mcp, func(ctx context.Context) error {
+		return ctrl.buildReconciler.AddMachineConfigPool(ctx, mcp)
 	})
 }
 

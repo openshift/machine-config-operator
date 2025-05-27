@@ -4,21 +4,21 @@ import (
 	"fmt"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
-	mcfglistersv1alpha1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
+	corelistersv1 "k8s.io/client-go/listers/core/v1"
 )
 
 // Holds a group of listers used for resolving OCL objects to other OCL objects
 // and to MachineConfigPools.
 type Listers struct {
 	// TODO: Consider adding full mcfgclients too.
-	MachineOSBuildLister    mcfglistersv1alpha1.MachineOSBuildLister
-	MachineOSConfigLister   mcfglistersv1alpha1.MachineOSConfigLister
+	MachineOSBuildLister    mcfglistersv1.MachineOSBuildLister
+	MachineOSConfigLister   mcfglistersv1.MachineOSConfigLister
 	MachineConfigPoolLister mcfglistersv1.MachineConfigPoolLister
+	NodeLister              corelistersv1.NodeLister
 }
 
 // Gets a MachineConfigPool after first ensuring that the lister is not nil.
@@ -41,7 +41,7 @@ func (l *Listers) listMachineConfigPools(sel labels.Selector) ([]*mcfgv1.Machine
 }
 
 // Gets a MachineOSConfig after first ensuring that the lister is not nil.
-func (l *Listers) getMachineOSConfig(name string) (*mcfgv1alpha1.MachineOSConfig, error) {
+func (l *Listers) getMachineOSConfig(name string) (*mcfgv1.MachineOSConfig, error) {
 	if l.MachineOSConfigLister == nil {
 		return nil, fmt.Errorf("required MachineOSConfigLister is nil")
 	}
@@ -51,7 +51,7 @@ func (l *Listers) getMachineOSConfig(name string) (*mcfgv1alpha1.MachineOSConfig
 
 // Lists all MachineOSConfigs matching the given selector after first
 // ensuring that the lister is not nil.
-func (l *Listers) listMachineOSConfigs(sel labels.Selector) ([]*mcfgv1alpha1.MachineOSConfig, error) {
+func (l *Listers) listMachineOSConfigs(sel labels.Selector) ([]*mcfgv1.MachineOSConfig, error) {
 	if l.MachineOSConfigLister == nil {
 		return nil, fmt.Errorf("required MachineOSConfigLister is nil")
 	}
@@ -60,7 +60,7 @@ func (l *Listers) listMachineOSConfigs(sel labels.Selector) ([]*mcfgv1alpha1.Mac
 }
 
 // Gets a MachineOSBuild after first ensuring that the lister is not nil.
-func (l *Listers) getMachineOSBuild(name string) (*mcfgv1alpha1.MachineOSBuild, error) {
+func (l *Listers) getMachineOSBuild(name string) (*mcfgv1.MachineOSBuild, error) {
 	if l.MachineOSBuildLister == nil {
 		return nil, fmt.Errorf("required MachineOSBuildLister is nil")
 	}
@@ -70,7 +70,7 @@ func (l *Listers) getMachineOSBuild(name string) (*mcfgv1alpha1.MachineOSBuild, 
 
 // Lists all MachineOSBuilds matching the given selector after first
 // ensuring that the lister is not nil.
-func (l *Listers) listMachineOSBuilds(sel labels.Selector) ([]*mcfgv1alpha1.MachineOSBuild, error) {
+func (l *Listers) listMachineOSBuilds(sel labels.Selector) ([]*mcfgv1.MachineOSBuild, error) {
 	if l.MachineOSBuildLister == nil {
 		return nil, fmt.Errorf("required MachineOSBuildLister is nil")
 	}
@@ -81,7 +81,7 @@ func (l *Listers) listMachineOSBuilds(sel labels.Selector) ([]*mcfgv1alpha1.Mach
 // Gets the first MachineOSConfig found for a given MachineConfigPool. Use
 // GetMachineOSConfigForMachineConfigPoolStrict() if one wants to ensure that
 // only a single MachineOSConfig is found for a MachineConfigPool.
-func GetMachineOSConfigForMachineConfigPool(mcp *mcfgv1.MachineConfigPool, listers *Listers) (*mcfgv1alpha1.MachineOSConfig, error) {
+func GetMachineOSConfigForMachineConfigPool(mcp *mcfgv1.MachineConfigPool, listers *Listers) (*mcfgv1.MachineOSConfig, error) {
 	moscList, err := listers.listMachineOSConfigs(labels.Everything())
 	if err != nil {
 		return nil, fmt.Errorf("could not list MachineOSConfigs: %w", err)
@@ -93,7 +93,7 @@ func GetMachineOSConfigForMachineConfigPool(mcp *mcfgv1.MachineConfigPool, liste
 		}
 	}
 
-	errNotFound := k8serrors.NewNotFound(mcfgv1alpha1.GroupVersion.WithResource("machineosconfigs").GroupResource(), "")
+	errNotFound := k8serrors.NewNotFound(mcfgv1.GroupVersion.WithResource("machineosconfigs").GroupResource(), "")
 	return nil, fmt.Errorf("could not find MachineOSConfig for MachineConfigPool %q: %w", mcp.Name, errNotFound)
 }
 
@@ -101,13 +101,13 @@ func GetMachineOSConfigForMachineConfigPool(mcp *mcfgv1.MachineConfigPool, liste
 // GetMachineOSConfigForMachineConfigPool(), this version will return an error
 // if more than one MachineOSConfig is found associated with a given
 // MachineConfigPool.
-func GetMachineOSConfigForMachineConfigPoolStrict(mcp *mcfgv1.MachineConfigPool, listers *Listers) (*mcfgv1alpha1.MachineOSConfig, error) {
+func GetMachineOSConfigForMachineConfigPoolStrict(mcp *mcfgv1.MachineConfigPool, listers *Listers) (*mcfgv1.MachineOSConfig, error) {
 	moscList, err := listers.listMachineOSConfigs(labels.Everything())
 	if err != nil {
 		return nil, fmt.Errorf("could not list MachineOSConfigs: %w", err)
 	}
 
-	found := &mcfgv1alpha1.MachineOSConfig{}
+	found := &mcfgv1.MachineOSConfig{}
 	others := []string{}
 
 	for _, mosc := range moscList {
@@ -121,7 +121,7 @@ func GetMachineOSConfigForMachineConfigPoolStrict(mcp *mcfgv1.MachineConfigPool,
 	}
 
 	if found == nil {
-		errNotFound := k8serrors.NewNotFound(mcfgv1alpha1.GroupVersion.WithResource("machineosconfigs").GroupResource(), "")
+		errNotFound := k8serrors.NewNotFound(mcfgv1.GroupVersion.WithResource("machineosconfigs").GroupResource(), "")
 		return nil, fmt.Errorf("could not find MachineOSConfig for MachineConfigPool %q: %w", mcp.Name, errNotFound)
 	}
 
@@ -133,7 +133,7 @@ func GetMachineOSConfigForMachineConfigPoolStrict(mcp *mcfgv1.MachineConfigPool,
 }
 
 // Gets the MachineOSConfig for a given MachineOSBuild.
-func GetMachineOSConfigForMachineOSBuild(mosb *mcfgv1alpha1.MachineOSBuild, listers *Listers) (*mcfgv1alpha1.MachineOSConfig, error) {
+func GetMachineOSConfigForMachineOSBuild(mosb *mcfgv1.MachineOSBuild, listers *Listers) (*mcfgv1.MachineOSConfig, error) {
 	moscName, err := GetRequiredLabelValueFromObject(mosb, constants.MachineOSConfigNameLabelKey)
 	if err != nil {
 		return nil, fmt.Errorf("could not identify MachineOSConfig for MachineOSBuild %q: %w", mosb.Name, err)
@@ -148,7 +148,7 @@ func GetMachineOSConfigForMachineOSBuild(mosb *mcfgv1alpha1.MachineOSBuild, list
 }
 
 // Gets the MachineOSBuild for a given MachineConfigPool.
-func GetMachineOSBuildForMachineConfigPool(mcp *mcfgv1.MachineConfigPool, listers *Listers) (*mcfgv1alpha1.MachineOSBuild, error) {
+func GetMachineOSBuildForMachineConfigPool(mcp *mcfgv1.MachineConfigPool, listers *Listers) (*mcfgv1.MachineOSBuild, error) {
 	mosc, err := GetMachineOSConfigForMachineConfigPool(mcp, listers)
 	if err != nil {
 		return nil, err
@@ -158,7 +158,7 @@ func GetMachineOSBuildForMachineConfigPool(mcp *mcfgv1.MachineConfigPool, lister
 }
 
 // Gets the MachineOSBuild which matches a given image pullspec.
-func GetMachineOSBuildForImagePullspec(pullspec string, listers *Listers) (*mcfgv1alpha1.MachineOSBuild, error) {
+func GetMachineOSBuildForImagePullspec(pullspec string, listers *Listers) (*mcfgv1.MachineOSBuild, error) {
 	if pullspec == "" {
 		return nil, fmt.Errorf("required pullspec empty")
 	}
@@ -169,17 +169,17 @@ func GetMachineOSBuildForImagePullspec(pullspec string, listers *Listers) (*mcfg
 	}
 
 	for _, mosb := range mosbList {
-		if mosb.Status.FinalImagePushspec == pullspec {
+		if string(mosb.Status.DigestedImagePushSpec) == pullspec {
 			return mosb, nil
 		}
 	}
 
-	errNotFound := k8serrors.NewNotFound(mcfgv1alpha1.GroupVersion.WithResource("machineosbuilds").GroupResource(), "")
+	errNotFound := k8serrors.NewNotFound(mcfgv1.GroupVersion.WithResource("machineosbuilds").GroupResource(), "")
 	return nil, fmt.Errorf("could not find MachineOSBuild with image pullspec %q: %w", pullspec, errNotFound)
 }
 
 // Gets both the MachineOSConfig and the MachineOSBuild for a given MachineConfigPool.
-func GetMachineOSConfigAndMachineOSBuildForMachineConfigPool(mcp *mcfgv1.MachineConfigPool, listers *Listers) (*mcfgv1alpha1.MachineOSConfig, *mcfgv1alpha1.MachineOSBuild, error) {
+func GetMachineOSConfigAndMachineOSBuildForMachineConfigPool(mcp *mcfgv1.MachineConfigPool, listers *Listers) (*mcfgv1.MachineOSConfig, *mcfgv1.MachineOSBuild, error) {
 	mosc, err := GetMachineOSConfigForMachineConfigPoolStrict(mcp, listers)
 	if err != nil {
 		return nil, nil, err
@@ -194,7 +194,7 @@ func GetMachineOSConfigAndMachineOSBuildForMachineConfigPool(mcp *mcfgv1.Machine
 }
 
 // Gets the MachineOSBuild that belongs to the given MachineConfigPool and MachineOSConfig. Ensures that only a single MachineOSBuild is returned.
-func getMachineOSBuildForMachineConfigPoolAndMachineOSConfig(mcp *mcfgv1.MachineConfigPool, mosc *mcfgv1alpha1.MachineOSConfig, listers *Listers) (*mcfgv1alpha1.MachineOSBuild, error) {
+func getMachineOSBuildForMachineConfigPoolAndMachineOSConfig(mcp *mcfgv1.MachineConfigPool, mosc *mcfgv1.MachineOSConfig, listers *Listers) (*mcfgv1.MachineOSBuild, error) {
 	sel := MachineOSBuildSelector(mosc, mcp)
 
 	mosbList, err := listers.listMachineOSBuilds(sel)
@@ -207,7 +207,7 @@ func getMachineOSBuildForMachineConfigPoolAndMachineOSConfig(mcp *mcfgv1.Machine
 	}
 
 	if len(mosbList) == 0 {
-		errNotFound := k8serrors.NewNotFound(mcfgv1alpha1.GroupVersion.WithResource("machineosbuilds").GroupResource(), "")
+		errNotFound := k8serrors.NewNotFound(mcfgv1.GroupVersion.WithResource("machineosbuilds").GroupResource(), "")
 		return nil, fmt.Errorf("could not find MachineOSBuilds for MachineConfigPool %q and MachineOSConfig %q: %w", mcp.Name, mosc.Name, errNotFound)
 	}
 
@@ -221,7 +221,7 @@ func getMachineOSBuildForMachineConfigPoolAndMachineOSConfig(mcp *mcfgv1.Machine
 }
 
 // Gets the MachineConfigPool for a given MachineOSBuild.
-func GetMachineConfigPoolForMachineOSBuild(mosb *mcfgv1alpha1.MachineOSBuild, listers *Listers) (*mcfgv1.MachineConfigPool, error) {
+func GetMachineConfigPoolForMachineOSBuild(mosb *mcfgv1.MachineOSBuild, listers *Listers) (*mcfgv1.MachineConfigPool, error) {
 	mcpName, err := GetRequiredLabelValueFromObject(mosb, constants.TargetMachineConfigPoolLabelKey)
 	if err != nil {
 		return nil, fmt.Errorf("could not identify MachineConfigPool from MachineOSBuild %q: %w", mosb.Name, err)
@@ -236,7 +236,7 @@ func GetMachineConfigPoolForMachineOSBuild(mosb *mcfgv1alpha1.MachineOSBuild, li
 }
 
 // Gets the MachineConfigPool for a given MachineOSConfig.
-func GetMachineConfigPoolForMachineOSConfig(mosc *mcfgv1alpha1.MachineOSConfig, listers *Listers) (*mcfgv1.MachineConfigPool, error) {
+func GetMachineConfigPoolForMachineOSConfig(mosc *mcfgv1.MachineOSConfig, listers *Listers) (*mcfgv1.MachineConfigPool, error) {
 	mcp, err := listers.getMachineConfigPool(mosc.Spec.MachineConfigPool.Name)
 	if err != nil {
 		return nil, fmt.Errorf("could not get MachineConfigPool %q for MachineOSConfig %q: %w", mosc.Spec.MachineConfigPool.Name, mosc.Name, err)
