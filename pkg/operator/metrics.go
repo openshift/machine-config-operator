@@ -45,13 +45,6 @@ var (
 			Name: "mco_unavailable_machine_count",
 			Help: "total number of unavailable machines in specified pool",
 		}, []string{"pool"})
-	// mcoImageRegistryDrainOverrideConfigmapExists tracks the presence of the image registry drain override configmap
-	mcoImageRegistryDrainOverrideConfigmapExists = prometheus.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "mco_image_registry_drain_override_exists",
-			Help: "tracks presence of the image registry drain override configmap",
-		},
-	)
 )
 
 func RegisterMCOMetrics() error {
@@ -61,7 +54,6 @@ func RegisterMCOMetrics() error {
 		mcoUpdatedMachineCount,
 		mcoDegradedMachineCount,
 		mcoUnavailableMachineCount,
-		mcoImageRegistryDrainOverrideConfigmapExists,
 	})
 
 	if err != nil {
