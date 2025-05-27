@@ -128,17 +128,13 @@ func (dn *Daemon) performDrain() error {
 }
 
 // isDrainRequiredForNodeDisruptionActions determines whether node drain is required or not to apply config changes for this set of NodeDisruptionActions
-func isDrainRequiredForNodeDisruptionActions(actions []opv1.NodeDisruptionPolicyStatusAction, oldIgnConfig, newIgnConfig ign3types.Config, overrideImageRegistryDrain bool) (bool, error) {
+func isDrainRequiredForNodeDisruptionActions(actions []opv1.NodeDisruptionPolicyStatusAction, oldIgnConfig, newIgnConfig ign3types.Config) (bool, error) {
 	klog.Infof("Checking drain required for node disruption actions")
 	if apihelpers.CheckNodeDisruptionActionsForTargetActions(actions, opv1.RebootStatusAction, opv1.DrainStatusAction) {
 		// We definitely want to perform drain for these cases
 		return true, nil
 	} else if apihelpers.CheckNodeDisruptionActionsForTargetActions(actions, opv1.SpecialStatusAction) {
 		// This is a specially reserved action for "/etc/containers/registries.conf" and for this action, drain may or may not be necessary
-		if overrideImageRegistryDrain {
-			klog.Warningf("Drain was skipped for this image registry update due to the configmap %s being present. This may not be a safe change", constants.ImageRegistryDrainOverrideConfigmap)
-			return false, nil
-		}
 		isSafe, err := isSafeContainerRegistryConfChanges(oldIgnConfig, newIgnConfig)
 		if err != nil {
 			return false, err
@@ -150,7 +146,7 @@ func isDrainRequiredForNodeDisruptionActions(actions []opv1.NodeDisruptionPolicy
 }
 
 // isDrainRequired determines whether node drain is required or not to apply config changes.
-func isDrainRequired(actions, diffFileSet []string, oldIgnConfig, newIgnConfig ign3types.Config, overrideImageRegistryDrain bool) (bool, error) {
+func isDrainRequired(actions, diffFileSet []string, oldIgnConfig, newIgnConfig ign3types.Config) (bool, error) {
 	switch {
 	case ctrlcommon.InSlice(postConfigChangeActionReboot, actions):
 		// Node is going to reboot, we definitely want to perform drain
@@ -158,10 +154,6 @@ func isDrainRequired(actions, diffFileSet []string, oldIgnConfig, newIgnConfig i
 	case ctrlcommon.InSlice(postConfigChangeActionReloadCrio, actions), ctrlcommon.InSlice(postConfigChangeActionRestartCrio, actions):
 		// Drain may or may not be necessary in case of container registry config changes.
 		if ctrlcommon.InSlice(constants.ContainerRegistryConfPath, diffFileSet) {
-			if overrideImageRegistryDrain {
-				klog.Warningf("Drain was skipped for this image registry update due to the configmap %s being present. This may not be a safe change", constants.ImageRegistryDrainOverrideConfigmap)
-				return false, nil
-			}
 			isSafe, err := isSafeContainerRegistryConfChanges(oldIgnConfig, newIgnConfig)
 			if err != nil {
 				return false, err
