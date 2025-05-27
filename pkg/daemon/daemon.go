@@ -1139,7 +1139,7 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 	}
 
 	// Check and perform node drain if required
-	drain, err := isDrainRequired(actions, diffFileSet, oldIgnConfig, newIgnConfig, false)
+	drain, err := isDrainRequired(actions, diffFileSet, oldIgnConfig, newIgnConfig)
 	if err != nil {
 		return err
 	}
