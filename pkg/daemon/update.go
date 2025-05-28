@@ -2266,10 +2266,14 @@ func (dn *Daemon) writeUnits(units []ign3types.Unit) error {
 		// to not go through.
 
 		if u.Enabled != nil {
-			if *u.Enabled {
-				enabledUnits = append(enabledUnits, u.Name)
-			} else {
-				disabledUnits = append(disabledUnits, u.Name)
+			// Only when a unit has contents should we attempt to enable or disable it.
+			// See: https://issues.redhat.com/browse/OCPBUGS-56648
+			if unitHasContent(u) {
+				if *u.Enabled {
+					enabledUnits = append(enabledUnits, u.Name)
+				} else {
+					disabledUnits = append(disabledUnits, u.Name)
+				}
 			}
 		} else {
 			if err := dn.presetUnit(u); err != nil {
