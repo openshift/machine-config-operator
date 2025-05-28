@@ -290,7 +290,8 @@ func writeUnit(u ign3types.Unit, systemdRoot string, isCoreOSVariant bool) error
 		return nil
 	}
 
-	if u.Contents != nil && *u.Contents != "" {
+	switch {
+	case unitHasContent(u):
 		klog.Infof("Writing systemd unit %q", u.Name)
 		if _, err := os.Stat(withUsrPath(fpath)); err == nil &&
 			isCoreOSVariant {
@@ -315,7 +316,7 @@ func writeUnit(u ign3types.Unit, systemdRoot string, isCoreOSVariant bool) error
 		}
 
 		klog.V(2).Infof("Successfully wrote systemd unit %q: ", u.Name)
-	} else if u.Mask != nil && !*u.Mask {
+	case u.Mask != nil && !*u.Mask:
 		// if mask is explicitly set to false, make sure to remove a previous mask
 		// see https://bugzilla.redhat.com/show_bug.cgi?id=1966445
 		// Note that this does not catch all cleanup cases; for example, if the previous machine config specified
@@ -325,9 +326,18 @@ func writeUnit(u ign3types.Unit, systemdRoot string, isCoreOSVariant bool) error
 		if err := os.RemoveAll(fpath); err != nil {
 			return fmt.Errorf("failed to cleanup %s: %w", fpath, err)
 		}
+	default:
+		klog.Infof("Unit %q has no content, skipping write", u.Name)
 	}
 
 	return nil
+}
+
+// Determines if a systemd unit has contents by first checking whether the
+// contents field is nil and then checking if the contents field is an empty
+// string.
+func unitHasContent(u ign3types.Unit) bool {
+	return u.Contents != nil && *u.Contents != ""
 }
 
 // writeUnits writes systemd units and their dropins to disk
