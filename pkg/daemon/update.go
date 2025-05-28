@@ -2119,10 +2119,20 @@ func (dn *Daemon) writeUnits(units []ign3types.Unit) error {
 		// to not go through.
 
 		if u.Enabled != nil {
-			if *u.Enabled {
-				enabledUnits = append(enabledUnits, u.Name)
+			// Only when a unit has contents should we attempt to enable or disable it.
+			// See: https://issues.redhat.com/browse/OCPBUGS-56648
+			if unitHasContent(u) {
+				if *u.Enabled {
+					enabledUnits = append(enabledUnits, u.Name)
+				} else {
+					disabledUnits = append(disabledUnits, u.Name)
+				}
 			} else {
-				disabledUnits = append(disabledUnits, u.Name)
+				action := "disable"
+				if *u.Enabled {
+					action = "enable"
+				}
+				klog.Infof("Could not %s unit %q, because it has no contents, skipping", action, u.Name)
 			}
 		} else {
 			if err := dn.presetUnit(u); err != nil {
