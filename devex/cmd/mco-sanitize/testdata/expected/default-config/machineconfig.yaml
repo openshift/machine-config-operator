@@ -1,0 +1,22 @@
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+    name: test-machine-config
+spec:
+    config:
+        storage:
+            files:
+                - contents:
+                    _REDACTED: This field has been redacted
+                    length: 19
+                  path: /etc/secret.conf
+                - contents:
+                    _REDACTED: This field has been redacted
+                    length: 18
+                  path: /etc/public.conf
+        systemd:
+            units:
+                - contents:
+                    _REDACTED: This field has been redacted
+                    length: 58
+                  name: test.service
