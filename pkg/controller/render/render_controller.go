@@ -2,10 +2,10 @@ package render
 
 import (
 	"context"
-	goerrs "errors"
 	"fmt"
 	"reflect"
 	"sort"
+	"strings"
 	"time"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
@@ -665,8 +665,33 @@ func generateAndValidateRenderedMachineConfig(currentMC *mcfgv1.MachineConfig, p
 
 	klog.V(4).Infof("Considering generated MachineConfig %q", generated.Name)
 
-	if err := ctrlcommon.IsRenderedConfigReconcilable(currentMC, generated); err != nil {
-		return nil, goerrs.Join(err, ctrlcommon.IsComponentConfigsReconcilable(currentMC, configs))
+	if fullErr := ctrlcommon.IsRenderedConfigReconcilable(currentMC, generated); fullErr != nil {
+		fullMsg := fullErr.Error()
+
+		// trying to match error reason suffix
+		for _, cfg := range configs {
+			singleErr := ctrlcommon.IsComponentConfigsReconcilable(
+				currentMC, []*mcfgv1.MachineConfig{cfg},
+			)
+			if singleErr == nil {
+				continue
+			}
+			singleMsg := singleErr.Error()
+
+			// split off prefix
+			parts := strings.SplitN(singleMsg, ": ", 2)
+			if len(parts) == 2 {
+				reason := parts[1]
+				if strings.Contains(fullMsg, reason) {
+					klog.V(4).Infof("match found for base %q on reason %q", cfg.Name, reason)
+					return nil, fmt.Errorf("reconciliation failed between current config %q and base config %q: %s", currentMC.Name, cfg.Name, reason)
+				}
+			}
+		}
+
+		// fallback
+		compErr := ctrlcommon.IsComponentConfigsReconcilable(currentMC, configs)
+		return nil, fmt.Errorf("render reconciliation error: %v; component errors: %v", fullErr, compErr)
 	}
 
 	klog.V(4).Infof("Rendered MachineConfig %q is reconcilable against %q", generated.Name, currentMC.Name)
