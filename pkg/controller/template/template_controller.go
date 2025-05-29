@@ -310,8 +310,20 @@ func (ctrl *Controller) addControllerConfig(obj interface{}) {
 func (ctrl *Controller) updateControllerConfig(old, cur interface{}) {
 	oldCfg := old.(*mcfgv1.ControllerConfig)
 	curCfg := cur.(*mcfgv1.ControllerConfig)
-	klog.V(4).Infof("Updating ControllerConfig %s", oldCfg.Name)
-	ctrl.enqueueControllerConfig(curCfg)
+	if controllerConfigTriggerObjectChange(oldCfg, curCfg) {
+		klog.V(4).Infof("Updating ControllerConfig %s", oldCfg.Name)
+		ctrl.enqueueControllerConfig(curCfg)
+	}
+}
+
+func controllerConfigTriggerObjectChange(oldControllerConfig, newControllerConfig *mcfgv1.ControllerConfig) bool {
+	if oldControllerConfig.DeletionTimestamp != newControllerConfig.DeletionTimestamp {
+		return true
+	}
+	if !reflect.DeepEqual(oldControllerConfig.Spec, newControllerConfig.Spec) {
+		return true
+	}
+	return false
 }
 
 func (ctrl *Controller) deleteControllerConfig(obj interface{}) {
@@ -352,17 +364,26 @@ func (ctrl *Controller) addMachineConfig(obj interface{}) {
 	// No adopting.
 }
 
-func (ctrl *Controller) updateMachineConfig(_, cur interface{}) {
+func (ctrl *Controller) updateMachineConfig(old, cur interface{}) {
+	oldMC := old.(*mcfgv1.MachineConfig)
 	curMC := cur.(*mcfgv1.MachineConfig)
 
-	if controllerRef := metav1.GetControllerOf(curMC); controllerRef != nil {
-		cfg := ctrl.resolveControllerRef(controllerRef)
-		if cfg == nil {
-			return
-		}
-		klog.V(4).Infof("MachineConfig %s updated", curMC.Name)
-		ctrl.enqueueControllerConfig(cfg)
+	curControllerRef := metav1.GetControllerOf(curMC)
+	oldControllerRef := metav1.GetControllerOf(oldMC)
+	controllerRefChanged := !reflect.DeepEqual(curControllerRef, oldControllerRef)
+	if controllerRefChanged && oldControllerRef != nil {
+		klog.Errorf("machineconfig has changed controller, not allowed.")
 		return
+	}
+
+	if curControllerRef != nil {
+		if cfg := ctrl.resolveControllerRef(curControllerRef); cfg != nil {
+			if !reflect.DeepEqual(oldMC.Spec, curMC.Spec) {
+				klog.V(4).Infof("MachineConfig %s updated", curMC.Name)
+				ctrl.enqueueControllerConfig(cfg)
+				return
+			}
+		}
 	}
 
 	// No adopting.
