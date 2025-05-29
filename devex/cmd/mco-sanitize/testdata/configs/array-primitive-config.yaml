@@ -1,0 +1,11 @@
+redact:
+  - apiVersion: v1
+    kind: ConfigMap
+    paths:
+      # Redact entire arrays of sensitive primitive values
+      - data.apiKeys
+      - data.passwords
+      # Redact specific array elements by index
+      - data.databases.1          # Second database connection (redis)
+      - data.servers.1            # Second server (postgres connection)
+      # Note: data.endpoints and publicSetting are left untouched
