@@ -370,7 +370,9 @@ func verifyMachineSet(t *testing.T, cs *framework.ClientSet, ms machinev1beta1.M
 
 	newProviderSpec := providerSpec.DeepCopy()
 	for idx := range newProviderSpec.Disks {
-		newProviderSpec.Disks[idx].Image = newProviderSpec.Disks[idx].Image + "-fake-update"
+		if newProviderSpec.Disks[idx].Boot {
+			newProviderSpec.Disks[idx].Image = newProviderSpec.Disks[idx].Image + "-fake-update"
+		}
 	}
 
 	newMachineSet := ms.DeepCopy()
