@@ -280,13 +280,8 @@ func (optr *Operator) syncUpgradeableStatus(co *configv1.ClusterOperator) error 
 		coStatusCondition.Reason = "ClusterOnCgroupV1"
 		coStatusCondition.Message = "Cluster is using deprecated cgroup v1, which is removed in 4.19.  Please update the 'cgroupMode' in the 'cluster' object of nodes.config.openshift.io resource type to 'v2'. This can be changed back to 'v1' while on 4.18, but must be 'v2' before you update to 4.19.  Once updated to 4.19, cgroup v1 is no longer an option. Please refer to https://docs.redhat.com/en/documentation/openshift_container_platform/4.18/html-single/nodes/index#nodes-clusters-cgroups-2_nodes-cluster-cgroups-2"
 	}
-	var updating, degraded, interrupted bool
+	var degraded, interrupted bool
 	for _, pool := range pools {
-		// collect updating status but continue to check each pool to see if any pool is degraded
-		if isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolUpdating) {
-			updating = true
-		}
-
 		interrupted = isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolBuildInterrupted)
 
 		degraded = isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolDegraded)
@@ -304,13 +299,6 @@ func (optr *Operator) syncUpgradeableStatus(co *configv1.ClusterOperator) error 
 			coStatusCondition.Message = "One or more machine config pools' builds have been interrupted, please see `oc get mcp` for further details and resolve before upgrading"
 			break
 		}
-	}
-	// this should no longer trigger when adding a node to a pool. It should only trigger if the node actually has to go through an upgrade
-	// updating and degraded can occur together, in that case defer to the degraded Reason that is already set above
-	if updating && !degraded && !interrupted {
-		coStatusCondition.Status = configv1.ConditionFalse
-		coStatusCondition.Reason = "PoolUpdating"
-		coStatusCondition.Message = "One or more machine config pools are updating, please see `oc get mcp` for further details"
 	}
 
 	// don't overwrite status if already grumpy
