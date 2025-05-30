@@ -183,8 +183,7 @@ func TestMissingImageIsRebuilt(t *testing.T) {
 	t.Logf("Waiting for MachineOSConfig %q to have a new pullspec", moscName)
 	waitForMOSCToGetNewPullspec(ctx, t, cs, moscName, firstImagePullspec)
 
-	// Create a MC to create another MOSB
-	testMC := newMachineConfig(InspectMC, layeredMCPName)
+	testMC := newMachineConfigTriggersImageRebuild(InspectMC, layeredMCPName, []string{"usbguard"})
 	t.Logf("Creating MachineConfig %q", testMC.Name)
 	firstMC, err := cs.MachineConfigs().Create(ctx, testMC, metav1.CreateOptions{})
 	require.NoError(t, err)
@@ -220,6 +219,12 @@ func TestMissingImageIsRebuilt(t *testing.T) {
 	require.NoError(t, err)
 	kubeassert.MachineConfigDoesNotExist(firstMC)
 	t.Logf("Deleted MachineConfig %q", firstMC.Name)
+
+	triggerMC := newMachineConfigTriggersImageRebuild(InspectMC, layeredMCPName, []string{"ipsec"})
+	t.Logf("Creating MachineConfig %q to trigger 3rd build", triggerMC.Name)
+	thirdMC, err := cs.MachineConfigs().Create(ctx, triggerMC, metav1.CreateOptions{})
+	require.NoError(t, err)
+	kubeassert.MachineConfigExists(thirdMC)
 
 	// Wait for the build to start
 	t.Logf("Waiting for 3rd build to start...")
