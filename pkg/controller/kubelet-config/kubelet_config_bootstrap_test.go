@@ -12,7 +12,6 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	osev1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/test/helpers"
 )
@@ -77,8 +76,8 @@ func TestRunKubeletBootstrap(t *testing.T) {
 				},
 			}
 
-			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"Example"}, nil)
-			mcs, err := RunKubeletBootstrap("../../../templates", cfgs, cc, fgAccess, nil, pools, nil)
+			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler([]osev1.FeatureGateName{"Example"}, nil)
+			mcs, err := RunKubeletBootstrap("../../../templates", cfgs, cc, fgHandler, nil, pools, nil)
 			require.NoError(t, err)
 			require.Len(t, mcs, len(cfgs))
 
@@ -202,8 +201,8 @@ func TestAddKubeletCfgAfterBootstrapKubeletCfg(t *testing.T) {
 	for _, platform := range []configv1.PlatformType{configv1.AWSPlatformType, configv1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
-			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"Example"}, nil)
-			f.newController(fgAccess)
+			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler([]osev1.FeatureGateName{"Example"}, nil)
+			f.newController(fgHandler)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			pools := []*mcfgv1.MachineConfigPool{
@@ -217,7 +216,7 @@ func TestAddKubeletCfgAfterBootstrapKubeletCfg(t *testing.T) {
 			f.mckLister = append(f.mckLister, kc)
 			f.objects = append(f.objects, kc)
 
-			mcs, err := RunKubeletBootstrap("../../../templates", []*mcfgv1.KubeletConfig{kc}, cc, fgAccess, nil, pools, nil)
+			mcs, err := RunKubeletBootstrap("../../../templates", []*mcfgv1.KubeletConfig{kc}, cc, fgHandler, nil, pools, nil)
 			require.NoError(t, err)
 			require.Len(t, mcs, 1)
 
@@ -226,14 +225,14 @@ func TestAddKubeletCfgAfterBootstrapKubeletCfg(t *testing.T) {
 
 			f.mckLister = append(f.mckLister, kc1)
 			f.objects = append(f.objects, kc1)
-			c := f.newController(fgAccess)
+			c := f.newController(fgHandler)
 			err = c.syncHandler(getKey(kc1, t))
 			if err != nil {
 				t.Errorf("syncHandler returned: %v", err)
 			}
 
 			// resync kc and check the managedKey
-			c = f.newController(fgAccess)
+			c = f.newController(fgHandler)
 			err = c.syncHandler(getKey(kc, t))
 			if err != nil {
 				t.Errorf("syncHandler returned: %v", err)

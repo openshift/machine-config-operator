@@ -32,8 +32,6 @@ import (
 
 	features "github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
-
 	opv1 "github.com/openshift/api/operator/v1"
 
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
@@ -136,7 +134,7 @@ func (dn *Daemon) executeReloadServiceNodeDisruptionAction(serviceName string, r
 		metav1.ConditionFalse,
 		dn.node,
 		dn.mcfgClient,
-		dn.featureGatesAccessor,
+		dn.fgHandler,
 		pool,
 	)
 	if err != nil {
@@ -179,7 +177,7 @@ func (dn *Daemon) performPostConfigChangeNodeDisruptionAction(postConfigChangeAc
 				metav1.ConditionFalse,
 				dn.node,
 				dn.mcfgClient,
-				dn.featureGatesAccessor,
+				dn.fgHandler,
 				pool,
 			)
 			if err != nil {
@@ -199,7 +197,7 @@ func (dn *Daemon) performPostConfigChangeNodeDisruptionAction(postConfigChangeAc
 				metav1.ConditionFalse,
 				dn.node,
 				dn.mcfgClient,
-				dn.featureGatesAccessor,
+				dn.fgHandler,
 				pool,
 			)
 			if err != nil {
@@ -282,7 +280,7 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 			metav1.ConditionFalse,
 			dn.node,
 			dn.mcfgClient,
-			dn.featureGatesAccessor,
+			dn.fgHandler,
 			pool,
 		)
 		if err != nil {
@@ -303,7 +301,7 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 			metav1.ConditionFalse,
 			dn.node,
 			dn.mcfgClient,
-			dn.featureGatesAccessor,
+			dn.fgHandler,
 			pool,
 		)
 		if err != nil {
@@ -329,7 +327,7 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 			metav1.ConditionFalse,
 			dn.node,
 			dn.mcfgClient,
-			dn.featureGatesAccessor,
+			dn.fgHandler,
 			pool,
 		)
 		if err != nil {
@@ -880,7 +878,7 @@ func (dn *Daemon) updateOnClusterLayering(oldConfig, newConfig *mcfgv1.MachineCo
 	}()
 
 	//  update the MCN spec
-	err = upgrademonitor.GenerateAndApplyMachineConfigNodeSpec(dn.featureGatesAccessor, pool, dn.node, dn.mcfgClient)
+	err = upgrademonitor.GenerateAndApplyMachineConfigNodeSpec(dn.fgHandler, pool, dn.node, dn.mcfgClient)
 	if err != nil {
 		return fmt.Errorf("error updating MCN spec for node %s: %w", dn.node.Name, err)
 	}
@@ -1145,7 +1143,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 			metav1.ConditionFalse,
 			dn.node,
 			dn.mcfgClient,
-			dn.featureGatesAccessor,
+			dn.fgHandler,
 			pool,
 		)
 		if Nerr != nil {
@@ -1163,22 +1161,10 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	diffFileSet := ctrlcommon.CalculateConfigFileDiffs(&oldIgnConfig, &newIgnConfig)
 	diffUnitSet := ctrlcommon.CalculateConfigUnitDiffs(&oldIgnConfig, &newIgnConfig)
 
-	var fg featuregates.FeatureGate
-
-	// This check is needed as featureGatesAccessor is not present during first boot. During firstboot
-	// the daemon will always do a reboot and NodeDisruptionPolicies are not active.
-	if dn.featureGatesAccessor != nil {
-		fg, err = dn.featureGatesAccessor.CurrentFeatureGates()
-		if err != nil {
-			klog.Errorf("Could not get fg: %v", err)
-			return err
-		}
-	}
-
 	var nodeDisruptionActions []opv1.NodeDisruptionPolicyStatusAction
 	var actions []string
 	// If FeatureGateNodeDisruptionPolicy is set, calculate NodeDisruptionPolicy based actions for this MC diff
-	if fg != nil && fg.Enabled(features.FeatureGateNodeDisruptionPolicy) {
+	if dn.fgHandler != nil && dn.fgHandler.Enabled(features.FeatureGateNodeDisruptionPolicy) {
 		nodeDisruptionActions, err = dn.calculatePostConfigChangeNodeDisruptionAction(diff, diffFileSet, diffUnitSet)
 	} else {
 		actions, err = calculatePostConfigChangeAction(diff, diffFileSet)
@@ -1192,7 +1178,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 			metav1.ConditionFalse,
 			dn.node,
 			dn.mcfgClient,
-			dn.featureGatesAccessor,
+			dn.fgHandler,
 			pool,
 		)
 		if Nerr != nil {
@@ -1206,7 +1192,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	if err != nil {
 		return err
 	}
-	if fg != nil && fg.Enabled(features.FeatureGateNodeDisruptionPolicy) {
+	if dn.fgHandler != nil && dn.fgHandler.Enabled(features.FeatureGateNodeDisruptionPolicy) {
 		// Check actions list and perform node drain if required
 		drain, err = isDrainRequiredForNodeDisruptionActions(nodeDisruptionActions, oldIgnConfig, newIgnConfig, crioOverrideConfigmapExists)
 		if err != nil {
@@ -1227,14 +1213,14 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		metav1.ConditionFalse,
 		dn.node,
 		dn.mcfgClient,
-		dn.featureGatesAccessor,
+		dn.fgHandler,
 		pool,
 	)
 	if err != nil {
 		klog.Errorf("Error making MCN for Update Compatible: %v", err)
 	}
 
-	err = upgrademonitor.GenerateAndApplyMachineConfigNodeSpec(dn.featureGatesAccessor, pool, dn.node, dn.mcfgClient)
+	err = upgrademonitor.GenerateAndApplyMachineConfigNodeSpec(dn.fgHandler, pool, dn.node, dn.mcfgClient)
 	if err != nil {
 		klog.Errorf("Error making MCN spec for Update Compatible: %v", err)
 	}
@@ -1251,7 +1237,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 			metav1.ConditionFalse,
 			dn.node,
 			dn.mcfgClient,
-			dn.featureGatesAccessor,
+			dn.fgHandler,
 			pool,
 		)
 		if err != nil {
@@ -1279,7 +1265,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		metav1.ConditionUnknown,
 		dn.node,
 		dn.mcfgClient,
-		dn.featureGatesAccessor,
+		dn.fgHandler,
 		pool,
 	)
 	if err != nil {
@@ -1392,14 +1378,14 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		metav1.ConditionTrue,
 		dn.node,
 		dn.mcfgClient,
-		dn.featureGatesAccessor,
+		dn.fgHandler,
 		pool,
 	)
 	if err != nil {
 		klog.Errorf("Error making MCN for Updated Files and OS: %v", err)
 	}
 
-	if fg != nil && fg.Enabled(features.FeatureGateNodeDisruptionPolicy) {
+	if dn.fgHandler != nil && dn.fgHandler.Enabled(features.FeatureGateNodeDisruptionPolicy) {
 		return dn.performPostConfigChangeNodeDisruptionAction(nodeDisruptionActions, newConfig.GetName())
 	}
 	// If we're here, FeatureGateNodeDisruptionPolicy is off/errored, so perform legacy action
@@ -2707,13 +2693,8 @@ func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 	isOsImagePresent := false
 
 	// not set during firstboot
-	if dn.featureGatesAccessor != nil {
-		fg, err := dn.featureGatesAccessor.CurrentFeatureGates()
-		if err != nil {
-			return err
-		}
-
-		if fg.Enabled(features.FeatureGatePinnedImages) {
+	if dn.fgHandler != nil {
+		if dn.fgHandler.Enabled(features.FeatureGatePinnedImages) {
 			isOsImagePresent, err = isImagePresent(newURL)
 			if err != nil {
 				return err
@@ -3106,7 +3087,7 @@ func (dn *Daemon) reportMachineNodeDegradeStatus(err error, pool string) {
 		metav1.ConditionFalse,
 		dn.node,
 		dn.mcfgClient,
-		dn.featureGatesAccessor,
+		dn.fgHandler,
 		pool,
 	); applyErr != nil {
 		klog.Errorf("Error updating MCN degraded status condition %v", applyErr)
