@@ -8,6 +8,7 @@ import (
 
 	"k8s.io/client-go/tools/cache"
 
+	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -85,16 +86,10 @@ func newNodeWriter(nodeName string, stopCh <-chan struct{}) (NodeWriter, error) 
 	}
 
 	klog.Infof("NodeWriter initialized with credentials from %s", nodeWriterKubeconfigPath)
-	// This informer needs to use the a different service account than the rest
-	// of the MCD, which is bound to the machine-config-daemon service account.
-	// Consequently, it must use a different informer factory than the parent
-	// informer factory. However, we can instantiate both that informer factory
-	// and the node informer in the same way that we instantiate the MCD
-	// informer.
-	informer, startFunc := ctrlcommon.NewScopedNodeInformer(kubeClient, nodeName)
-	nodeInformer := informer.Informer()
-	nodeLister := informer.Lister()
-	nodeListerSynced := nodeInformer.HasSynced
+	informer := informers.NewSharedInformerFactory(kubeClient, ctrlcommon.DefaultResyncPeriod()())
+	nodeInformer := informer.Core().V1().Nodes()
+	nodeLister := nodeInformer.Lister()
+	nodeListerSynced := nodeInformer.Informer().HasSynced
 
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.V(2).Infof)
@@ -110,12 +105,12 @@ func newNodeWriter(nodeName string, stopCh <-chan struct{}) (NodeWriter, error) 
 		kubeClient:       kubeClient,
 	}
 
-	nodeInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+	nodeInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    nw.handleNodeWriterEvent,
 		UpdateFunc: func(_, newObj interface{}) { nw.handleNodeWriterEvent(newObj) },
 	})
 
-	startFunc(stopCh)
+	informer.Start(stopCh)
 
 	return nw, nil
 }
