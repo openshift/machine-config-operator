@@ -403,6 +403,16 @@ contents:
           if [ -n "$ipv6_dns" ]; then
             extra_if_brex_args+="ipv6.dns ${ipv6_dns} "
           fi
+    
+          # check for auto-dns
+          ipv4_auto_dns=$(nmcli --get-values ipv4.ignore-auto-dns conn show ${old_conn})
+          if [ -n "$ipv4_auto_dns" ]; then
+            extra_if_brex_args+="ipv4.ignore-auto-dns ${ipv4_auto_dns} "
+          fi
+          ipv6_auto_dns=$(nmcli --get-values ipv6.ignore-auto-dns conn show ${old_conn})
+          if [ -n "$ipv6_auto_dns" ]; then
+            extra_if_brex_args+="ipv6.ignore-auto-dns ${ipv6_auto_dns} "
+          fi
 
           add_nm_conn "$ovs_interface" type ovs-interface slave-type ovs-port conn.interface "$bridge_name" master "$ovs_port_conn" \
             802-3-ethernet.mtu ${iface_mtu} 802-3-ethernet.cloned-mac-address ${iface_mac} \
