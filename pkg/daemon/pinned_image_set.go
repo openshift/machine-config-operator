@@ -646,7 +646,7 @@ func (p *PinnedImageSetManager) updateStatusError(pools []*mcfgv1.MachineConfigP
 		&upgrademonitor.Condition{
 			State:   mcfgv1.MachineConfigNodePinnedImageSetsDegraded,
 			Reason:  "PrefetchFailed",
-			Message: "One or more PinnedImageSet is experiencing an error. See PinnedImageSet list for more details",
+			Message: "One or more PinnedImageSet is experiencing an error. See PinnedImageSet list for more details.",
 		},
 		nil,
 		metav1.ConditionTrue,
