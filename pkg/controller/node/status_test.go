@@ -9,7 +9,6 @@ import (
 
 	apicfgv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
@@ -966,20 +965,15 @@ func TestCalculateStatus(t *testing.T) {
 					Paused:        test.paused,
 				},
 			}
-			fgAccess := featuregates.NewHardcodedFeatureGateAccess(
+			f := newFixtureWithFeatureGates(t,
 				[]apicfgv1.FeatureGateName{
 					features.FeatureGateMachineConfigNodes,
 					features.FeatureGatePinnedImages,
 				},
 				[]apicfgv1.FeatureGateName{},
 			)
-			fg, err := fgAccess.CurrentFeatureGates()
-			if err != nil {
-				t.Fatal(err)
-			}
-			f := newFixture(t)
 			c := f.newController()
-			status := c.calculateStatus(fg, []*mcfgv1.MachineConfigNode{}, nil, pool, test.nodes, nil, nil)
+			status := c.calculateStatus([]*mcfgv1.MachineConfigNode{}, nil, pool, test.nodes, nil, nil)
 			test.verify(status, t)
 		})
 	}
