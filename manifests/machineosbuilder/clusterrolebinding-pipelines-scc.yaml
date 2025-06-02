@@ -1,12 +1,12 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: machine-os-builder-pipelines-scc
+  name: system:openshift:scc:pipelines-scc
 roleRef:
-  name: "system:openshift:scc:pipelines-scc"
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
+  name: system:openshift:scc:pipelines-scc
 subjects:
-  - name: machine-os-builder
-    kind: ServiceAccount
-    namespace: "{{.TargetNamespace}}"
+- kind: ServiceAccount
+  name: machine-os-builder
+  namespace: "{{.TargetNamespace}}"
