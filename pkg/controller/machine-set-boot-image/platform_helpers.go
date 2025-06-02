@@ -40,7 +40,7 @@ func reconcileGCP(machineSet *machinev1beta1.MachineSet, configMap *corev1.Confi
 	patchRequired = false
 	newProviderSpec := providerSpec.DeepCopy()
 	for idx, disk := range newProviderSpec.Disks {
-		if newBootImage != disk.Image {
+		if newBootImage != disk.Image && disk.Boot {
 			klog.Infof("New target boot image: %s", newBootImage)
 			klog.Infof("Current image: %s", disk.Image)
 			patchRequired = true
