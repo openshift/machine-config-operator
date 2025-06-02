@@ -32,7 +32,6 @@ import (
 
 	features "github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 
 	opv1 "github.com/openshift/api/operator/v1"
 
@@ -1087,7 +1086,7 @@ func (dn *Daemon) updateOnClusterLayering(oldConfig, newConfig *mcfgv1.MachineCo
 // discussion.
 //
 //nolint:gocyclo
-func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertificateWrite bool) (retErr error) {
+func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertificateWrite, firstBoot bool) (retErr error) {
 	oldConfig = canonicalizeEmptyMC(oldConfig)
 
 	if dn.nodeWriter != nil {
@@ -1163,25 +1162,14 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	diffFileSet := ctrlcommon.CalculateConfigFileDiffs(&oldIgnConfig, &newIgnConfig)
 	diffUnitSet := ctrlcommon.CalculateConfigUnitDiffs(&oldIgnConfig, &newIgnConfig)
 
-	var fg featuregates.FeatureGate
-
-	// This check is needed as featureGatesAccessor is not present during first boot. During firstboot
-	// the daemon will always do a reboot and NodeDisruptionPolicies are not active.
-	if dn.featureGatesAccessor != nil {
-		fg, err = dn.featureGatesAccessor.CurrentFeatureGates()
-		if err != nil {
-			klog.Errorf("Could not get fg: %v", err)
-			return err
-		}
-	}
-
 	var nodeDisruptionActions []opv1.NodeDisruptionPolicyStatusAction
 	var actions []string
-	// If FeatureGateNodeDisruptionPolicy is set, calculate NodeDisruptionPolicy based actions for this MC diff
-	if fg != nil && fg.Enabled(features.FeatureGateNodeDisruptionPolicy) {
+	// Node Disruption Policies cannot be used during firstboot as API is not accessible.
+	if !firstBoot {
 		nodeDisruptionActions, err = dn.calculatePostConfigChangeNodeDisruptionAction(diff, diffFileSet, diffUnitSet)
 	} else {
 		actions, err = calculatePostConfigChangeAction(diff, diffFileSet)
+		klog.Infof("Skipping node disruption polciies as node is executing first boot.")
 	}
 
 	if err != nil {
@@ -1206,7 +1194,8 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	if err != nil {
 		return err
 	}
-	if fg != nil && fg.Enabled(features.FeatureGateNodeDisruptionPolicy) {
+	// Node Disruption Policies cannot be used during firstboot as API is not accessible.
+	if !firstBoot {
 		// Check actions list and perform node drain if required
 		drain, err = isDrainRequiredForNodeDisruptionActions(nodeDisruptionActions, oldIgnConfig, newIgnConfig, crioOverrideConfigmapExists)
 		if err != nil {
@@ -1398,11 +1387,11 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	if err != nil {
 		klog.Errorf("Error making MCN for Updated Files and OS: %v", err)
 	}
-
-	if fg != nil && fg.Enabled(features.FeatureGateNodeDisruptionPolicy) {
+	// Node Disruption Policies cannot be used during firstboot as API is not accessible.
+	if !firstBoot {
 		return dn.performPostConfigChangeNodeDisruptionAction(nodeDisruptionActions, newConfig.GetName())
 	}
-	// If we're here, FeatureGateNodeDisruptionPolicy is off/errored, so perform legacy action
+	// If we're here, node disruption policies can't be used, so perform legacy action
 	return dn.performPostConfigChangeAction(actions, newConfig.GetName())
 }
 
