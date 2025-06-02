@@ -122,7 +122,7 @@ type MachineOSBuildStatus struct {
 
 // MachineOSBuilderReference describes which ImageBuilder backend to use for this build
 // +union
-// +kubebuilder:validation:XValidation:rule="has(self.imageBuilderType) && self.imageBuilderType == 'Job' ?  has(self.job) : !has(self.job)",message="job is required when imageBuilderType is Job, and forbidden otherwise"
+// +kubebuilder:validation:XValidation:rule="has(self.imageBuilderType) && self.imageBuilderType == 'PodImageBuilder' ? has(self.buildPod) && !has(self.buildPipeline) : has(self.imageBuilderType) && self.imageBuilderType == 'PipelineImageBuilder' ? has(self.buildPipeline) && !has(self.buildPod) : !has(self.buildPod) && !has(self.buildPipeline)", message="buildPod is required when imageBuilderType is PodImageBuilder and forbidden otherwise. buildPipeline is required when imageBuilderType is PipelineImageBuilder and forbidden otherwise."
 type MachineOSBuilderReference struct {
 	// imageBuilderType describes the type of image builder used to build this image.
 	// Valid values are Job only.
@@ -136,6 +136,10 @@ type MachineOSBuilderReference struct {
 	// +unionMember
 	// +optional
 	Job *ObjectReference `json:"job,omitempty"`
+
+	// PipelineImageBuilder is used when ImageBuilderType is PipelineImageBuilder.
+	// +unionMember,optional
+	PipelineImageBuilder *ObjectReference `json:"buildPipeline,omitempty"`
 }
 
 // BuildProgess highlights some of the key phases of a build to be tracked in Conditions.
@@ -179,10 +183,10 @@ type ObjectReference struct {
 	Group string `json:"group"`
 	// resource of the referent.
 	// This value should consist of at most 63 characters, and of only lowercase alphanumeric characters and hyphens,
-	// and should start and end with an alphanumeric character.
+	// and should start with an alphabetic character and end with an alphanumeric character.
 	// Example: "deployments", "deploymentconfigs", "pods", etc.
 	// +required
-	// +kubebuilder:validation:XValidation:rule=`!format.dns1123Label().validate(self).hasValue()`,message="the value must consist of only lowercase alphanumeric characters and hyphens"
+	// +kubebuilder:validation:XValidation:rule=`!format.dns1035Label().validate(self).hasValue()`,message="a DNS-1035 label must consist of lower case alphanumeric characters or '-', start with an alphabetic character, and end with an alphanumeric character"
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=63
 	Resource string `json:"resource"`

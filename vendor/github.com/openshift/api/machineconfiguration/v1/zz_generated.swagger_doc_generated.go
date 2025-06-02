@@ -512,6 +512,7 @@ var map_MachineOSBuilderReference = map[string]string{
 	"":                 "MachineOSBuilderReference describes which ImageBuilder backend to use for this build",
 	"imageBuilderType": "imageBuilderType describes the type of image builder used to build this image. Valid values are Job only. When set to Job, a pod based builder, using buildah, is launched to build the specified image.",
 	"job":              "job is a reference to the job object that is managing the image build. This is required if the imageBuilderType is Job, and forbidden otherwise.",
+	"buildPipeline":    "PipelineImageBuilder is used when ImageBuilderType is PipelineImageBuilder.",
 }
 
 func (MachineOSBuilderReference) SwaggerDoc() map[string]string {
@@ -530,7 +531,7 @@ func (MachineOSConfigReference) SwaggerDoc() map[string]string {
 var map_ObjectReference = map[string]string{
 	"":          "ObjectReference contains enough information to let you inspect or modify the referred object.",
 	"group":     "group of the referent. The name must contain only lowercase alphanumeric characters, '-' or '.' and start/end with an alphanumeric character. Example: \"\", \"apps\", \"build.openshift.io\", etc.",
-	"resource":  "resource of the referent. This value should consist of at most 63 characters, and of only lowercase alphanumeric characters and hyphens, and should start and end with an alphanumeric character. Example: \"deployments\", \"deploymentconfigs\", \"pods\", etc.",
+	"resource":  "resource of the referent. This value should consist of at most 63 characters, and of only lowercase alphanumeric characters and hyphens, and should start with an alphabetic character and end with an alphanumeric character. Example: \"deployments\", \"deploymentconfigs\", \"pods\", etc.",
 	"namespace": "namespace of the referent. This value should consist of at most 63 characters, and of only lowercase alphanumeric characters and hyphens, and should start and end with an alphanumeric character.",
 	"name":      "name of the referent. The name must contain only lowercase alphanumeric characters, '-' or '.' and start/end with an alphanumeric character.",
 }
