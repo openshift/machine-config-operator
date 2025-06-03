@@ -25,6 +25,11 @@ func (in *BuildInputs) DeepCopyInto(out *BuildInputs) {
 		*out = make([]MachineOSContainerfile, len(*in))
 		copy(*out, *in)
 	}
+	if in.PostBuildTasks != nil {
+		in, out := &in.PostBuildTasks, &out.PostBuildTasks
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	return
 }
 

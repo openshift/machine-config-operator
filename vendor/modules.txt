@@ -1022,7 +1022,7 @@ github.com/opencontainers/image-spec/specs-go/v1
 # github.com/opencontainers/runtime-spec v1.2.0
 ## explicit
 github.com/opencontainers/runtime-spec/specs-go
-# github.com/openshift/api v3.9.0+incompatible => github.com/RishabhSaini/api v0.0.0-20250205071540-979dba6a9367
+# github.com/openshift/api v3.9.0+incompatible => github.com/RishabhSaini/api v0.0.0-20250603125050-3b1efb64e123
 ## explicit; go 1.22.0
 github.com/openshift/api
 github.com/openshift/api/annotations
@@ -2892,5 +2892,5 @@ sigs.k8s.io/structured-merge-diff/v4/value
 sigs.k8s.io/yaml
 sigs.k8s.io/yaml/goyaml.v2
 sigs.k8s.io/yaml/goyaml.v3
-# github.com/openshift/api => github.com/RishabhSaini/api v0.0.0-20250205071540-979dba6a9367
+# github.com/openshift/api => github.com/RishabhSaini/api v0.0.0-20250603125050-3b1efb64e123
 # k8s.io/kube-openapi => github.com/openshift/kube-openapi v0.0.0-20230816122517-ffc8f001abb0

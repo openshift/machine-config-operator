@@ -128,7 +128,7 @@ func (b *buildReconciler) updateMachineOSConfig(ctx context.Context, old, cur *m
 
 		if cur.Spec.BuildInputs.ImageBuilder.ImageBuilderType == mcfgv1alpha1.PipelineBuilder {
 			// Check and install pipeline
-			err := checkAndInstallPipeline(ctx, b.kubeclient, b.pipelineoperatorclient, b.olmclient, b.tektonclient)
+			err := checkAndInstallPipeline(ctx, b.kubeclient, b.pipelineoperatorclient, b.olmclient, b.tektonclient, cur.Spec.BuildInputs.PostBuildTasks)
 			if err != nil {
 				return fmt.Errorf("error checking pipeline exists and installing: %v", err)
 			}
@@ -140,7 +140,7 @@ func (b *buildReconciler) updateMachineOSConfig(ctx context.Context, old, cur *m
 	return b.syncMachineOSConfigs(ctx)
 }
 
-func checkAndInstallPipeline(ctx context.Context, kubeclient clientset.Interface, pipelineoperatorclient pipelineoperatorclientset.Interface, olmclient olmclientset.Interface, tektonclient tektonclientset.Interface) error {
+func checkAndInstallPipeline(ctx context.Context, kubeclient clientset.Interface, pipelineoperatorclient pipelineoperatorclientset.Interface, olmclient olmclientset.Interface, tektonclient tektonclientset.Interface, postBuildTasks []string) error {
 	tektonNamespace := "openshift-pipelines"
 	operatorsNamespace := "openshift-operators"
 	tektonConfigName := "config"
@@ -371,6 +371,23 @@ func checkAndInstallPipeline(ctx context.Context, kubeclient clientset.Interface
 			},
 		}
 
+		for _, taskName := range postBuildTasks {
+		    newTask := tektonv1beta1.PipelineTask{
+			Name:    taskName,
+			TaskRef: &tektonv1beta1.TaskRef{
+				Name: taskName,
+				Kind: tektonv1beta1.NamespacedTaskKind,
+			},
+
+			RunAfter: []string{"buildah-build"},
+
+			Params: []tektonv1beta1.Param{
+				{Name: "podimage", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(tasks.buildah-build.results.IMAGE_URL)"}},
+			},
+		    }
+		    pipeline.Spec.Tasks = append(pipeline.Spec.Tasks, newTask)
+		}
+
 		_, err = tektonclient.TektonV1beta1().Pipelines(ctrlcommon.MCONamespace).Create(context.Background(), pipeline, metav1.CreateOptions{})
 		if err != nil {
 			return fmt.Errorf("Error creating Pipeline: %v", err)
@@ -438,7 +455,7 @@ func (b *buildReconciler) rebuildMachineOSConfig(ctx context.Context, mosc *mcfg
 func (b *buildReconciler) addMachineOSConfig(ctx context.Context, mosc *mcfgv1alpha1.MachineOSConfig) error {
 	if mosc.Spec.BuildInputs.ImageBuilder.ImageBuilderType == mcfgv1alpha1.PipelineBuilder {
 		// Check and install pipeline
-		err := checkAndInstallPipeline(ctx, b.kubeclient, b.pipelineoperatorclient, b.olmclient, b.tektonclient)
+		err := checkAndInstallPipeline(ctx, b.kubeclient, b.pipelineoperatorclient, b.olmclient, b.tektonclient, mosc.Spec.BuildInputs.PostBuildTasks)
 		if err != nil {
 			return fmt.Errorf("error checking pipeline exists and installing: %v", err)
 		}
@@ -1272,7 +1289,7 @@ func (b *buildReconciler) syncMachineOSBuild(ctx context.Context, mosb *mcfgv1al
 
 			if mosc.Spec.BuildInputs.ImageBuilder.ImageBuilderType == mcfgv1alpha1.PipelineBuilder {
 				// Check and install pipeline
-				err := checkAndInstallPipeline(ctx, b.kubeclient, b.pipelineoperatorclient, b.olmclient, b.tektonclient)
+				err := checkAndInstallPipeline(ctx, b.kubeclient, b.pipelineoperatorclient, b.olmclient, b.tektonclient, mosc.Spec.BuildInputs.PostBuildTasks)
 				if err != nil {
 					return fmt.Errorf("error checking pipeline exists and installing: %v", err)
 				}
@@ -1345,7 +1362,7 @@ func (b *buildReconciler) syncMachineOSConfig(ctx context.Context, mosc *mcfgv1a
 
 		if mosc.Spec.BuildInputs.ImageBuilder.ImageBuilderType == mcfgv1alpha1.PipelineBuilder {
 			// Check and install pipeline
-			err := checkAndInstallPipeline(ctx, b.kubeclient, b.pipelineoperatorclient, b.olmclient, b.tektonclient)
+			err := checkAndInstallPipeline(ctx, b.kubeclient, b.pipelineoperatorclient, b.olmclient, b.tektonclient, mosc.Spec.BuildInputs.PostBuildTasks)
 			if err != nil {
 				return fmt.Errorf("error checking pipeline exists and installing: %v", err)
 			}

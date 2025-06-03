@@ -148,6 +148,17 @@ spec:
                     required:
                     - imageBuilderType
                     type: object
+                  postBuildTasks:
+                    description: postBuildTasks references tekton tasks to run post
+                      os image build
+                    items:
+                      type: string
+                    maxItems: 7
+                    minItems: 0
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - tektonTasks
+                    x-kubernetes-list-type: map
                   releaseVersion:
                     description: |-
                       releaseVersion is associated with the base OS Image. This is the version of Openshift that the Base Image is associated with.
