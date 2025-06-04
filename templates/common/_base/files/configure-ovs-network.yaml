@@ -257,7 +257,8 @@ contents:
       elif [ "$(nmcli --get-values connection.type conn show ${old_conn})" == "bond" ]; then
         iface_type=bond
         # check bond options
-        bond_opts=$(nmcli --get-values bond.options conn show ${old_conn})
+        # --escape no to prevent \: in output 
+        bond_opts=$(nmcli --escape no --get-values bond.options conn show ${old_conn})
         if [ -n "$bond_opts" ]; then
           extra_phys_args+=( bond.options "${bond_opts}" )
           MODE_REGEX="(^|,)mode=active-backup(,|$)"
@@ -269,7 +270,8 @@ contents:
       elif [ "$(nmcli --get-values connection.type conn show ${old_conn})" == "team" ]; then
         iface_type=team
         # check team config options
-        team_config_opts=$(nmcli --get-values team.config -e no conn show ${old_conn})
+        # --escape no to prevent \: in output 
+        team_config_opts=$(nmcli --escape no --get-values team.config -e no conn show ${old_conn})
         if [ -n "$team_config_opts" ]; then
           # team.config is json, remove spaces to avoid problems later on
           extra_phys_args+=( team.config "${team_config_opts//[[:space:]]/}" )
@@ -324,8 +326,8 @@ contents:
       ipv4_method=$(nmcli -g ipv4.method conn show "$old_conn")
       ipv6_method=$(nmcli -g ipv6.method conn show "$old_conn")
 
-      ipv4_addresses=$(nmcli -g ipv4.addresses conn show "$old_conn")
-      ipv6_addresses=$(nmcli -g ipv6.addresses conn show "$old_conn")
+      ipv4_addresses=$(nmcli --escape no --get-values ipv4.addresses conn show "$old_conn")
+      ipv6_addresses=$(nmcli --escape no --get-values ipv6.addresses conn show "$old_conn")
 
       # Warn about an invalid MTU that will most likely fail in one way or
       # another
@@ -379,37 +381,44 @@ contents:
           fi
 
           # check for dhcp client ids
-          dhcp_client_id=$(nmcli --get-values ipv4.dhcp-client-id conn show ${old_conn})
+          # --escape no to prevent \: in output
+          dhcp_client_id=$(nmcli --escape no --get-values ipv4.dhcp-client-id conn show ${old_conn})
           if [ -n "$dhcp_client_id" ]; then
             extra_if_brex_args+="ipv4.dhcp-client-id ${dhcp_client_id} "
           fi
 
-          dhcp6_client_id=$(nmcli --get-values ipv6.dhcp-duid conn show ${old_conn})
+          # --escape no to prevent \: in output
+          dhcp6_client_id=$(nmcli --escape no --get-values ipv6.dhcp-duid conn show ${old_conn})
           if [ -n "$dhcp6_client_id" ]; then
             extra_if_brex_args+="ipv6.dhcp-duid ${dhcp6_client_id} "
           fi
 
-          ipv6_addr_gen_mode=$(nmcli --get-values ipv6.addr-gen-mode conn show ${old_conn})
+          # --escape no to prevent \: in output
+          ipv6_addr_gen_mode=$(nmcli --escape no --get-values ipv6.addr-gen-mode conn show ${old_conn})
           if [ -n "$ipv6_addr_gen_mode" ]; then
             extra_if_brex_args+="ipv6.addr-gen-mode ${ipv6_addr_gen_mode} "
           fi
 
           # check for static DNS address
-          ipv4_dns=$(nmcli --get-values ipv4.dns conn show ${old_conn})
+          # --escape no to prevent \: in output
+          ipv4_dns=$(nmcli --escape no --get-values ipv4.dns conn show ${old_conn})
           if [ -n "$ipv4_dns" ]; then
             extra_if_brex_args+="ipv4.dns ${ipv4_dns} "
           fi
-          ipv6_dns=$(nmcli --get-values ipv6.dns conn show ${old_conn})
+          # --escape no to prevent \: in output
+          ipv6_dns=$(nmcli --escape no --get-values ipv6.dns conn show ${old_conn})
           if [ -n "$ipv6_dns" ]; then
             extra_if_brex_args+="ipv6.dns ${ipv6_dns} "
           fi
     
           # check for auto-dns
-          ipv4_auto_dns=$(nmcli --get-values ipv4.ignore-auto-dns conn show ${old_conn})
+          # --escape no to prevent \: in output 
+          ipv4_auto_dns=$(nmcli --escape no --get-values ipv4.ignore-auto-dns conn show ${old_conn})
           if [ -n "$ipv4_auto_dns" ]; then
             extra_if_brex_args+="ipv4.ignore-auto-dns ${ipv4_auto_dns} "
           fi
-          ipv6_auto_dns=$(nmcli --get-values ipv6.ignore-auto-dns conn show ${old_conn})
+          # --escape no to prevent \: in output 
+          ipv6_auto_dns=$(nmcli --escape no --get-values ipv6.ignore-auto-dns conn show ${old_conn})
           if [ -n "$ipv6_auto_dns" ]; then
             extra_if_brex_args+="ipv6.ignore-auto-dns ${ipv6_auto_dns} "
           fi
