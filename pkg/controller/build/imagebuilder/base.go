@@ -11,7 +11,7 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	batchv1 "k8s.io/api/batch/v1"
+	tektonclientset "github.com/tektoncd/pipeline/pkg/client/clientset/versioned"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	clientset "k8s.io/client-go/kubernetes"
@@ -21,6 +21,7 @@ import (
 type baseImageBuilder struct {
 	kubeclient   clientset.Interface
 	mcfgclient   mcfgclientset.Interface
+	tektonclient tektonclientset.Interface
 	mosb         *mcfgv1.MachineOSBuild
 	mosc         *mcfgv1.MachineOSConfig
 	builder      buildrequest.Builder
@@ -28,11 +29,12 @@ type baseImageBuilder struct {
 }
 
 // Constructs a baseImageBuilder, deep-copying objects as needed.
-func newBaseImageBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1.MachineOSBuild, mosc *mcfgv1.MachineOSConfig, builder buildrequest.Builder) *baseImageBuilder {
+func newBaseImageBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, tektonclient tektonclientset.Interface, mosb *mcfgv1.MachineOSBuild, mosc *mcfgv1.MachineOSConfig, builder buildrequest.Builder) *baseImageBuilder {
 	b := &baseImageBuilder{
-		kubeclient: kubeclient,
-		mcfgclient: mcfgclient,
-		builder:    builder,
+		kubeclient:   kubeclient,
+		mcfgclient:   mcfgclient,
+		tektonclient: tektonclient,
+		builder:      builder,
 	}
 
 	if mosb != nil {
@@ -47,8 +49,8 @@ func newBaseImageBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientse
 }
 
 // Constructs a baseImageBuilder and also instantiates a Cleaner instance based upon the object state.
-func newBaseImageBuilderWithCleaner(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1.MachineOSBuild, mosc *mcfgv1.MachineOSConfig, builder buildrequest.Builder) (*baseImageBuilder, Cleaner) {
-	b := newBaseImageBuilder(kubeclient, mcfgclient, mosb, mosc, builder)
+func newBaseImageBuilderWithCleaner(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, tektonclient tektonclientset.Interface, mosb *mcfgv1.MachineOSBuild, mosc *mcfgv1.MachineOSConfig, builder buildrequest.Builder) (*baseImageBuilder, Cleaner) {
+	b := newBaseImageBuilder(kubeclient, mcfgclient, tektonclient, mosb, mosc, builder)
 	return b, &cleanerImpl{
 		baseImageBuilder: b,
 	}
@@ -95,15 +97,32 @@ func (b *baseImageBuilder) getMachineOSBuildStatus(ctx context.Context, obj kube
 	}
 
 	out.Conditions = conditions
-	out.Builder = &mcfgv1.MachineOSBuilderReference{
-		ImageBuilderType: mcfgv1.JobBuilder,
-		// TODO: Should we clear this whenever the build is complete?
-		Job: &mcfgv1.ObjectReference{
-			Name:      obj.GetName(),
-			Group:     batchv1.SchemeGroupVersion.Group,
-			Namespace: obj.GetNamespace(),
-			Resource:  "jobs",
-		},
+
+	switch b.mosc.Spec.ImageBuilder.ImageBuilderType {
+	case mcfgv1.JobBuilder:
+		out.Builder = &mcfgv1.MachineOSBuilderReference{
+			ImageBuilderType: b.mosc.Spec.ImageBuilder.ImageBuilderType,
+			// TODO: Should we clear this whenever the build is complete?
+			Job: &mcfgv1.ObjectReference{
+				Name:      obj.GetName(),
+				Group:     obj.GroupVersionKind().Group,
+				Namespace: obj.GetNamespace(),
+				Resource:  obj.GetResourceVersion(),
+			},
+		}
+	case mcfgv1.PipelineBuilder:
+		out.Builder = &mcfgv1.MachineOSBuilderReference{
+			ImageBuilderType: b.mosc.Spec.ImageBuilder.ImageBuilderType,
+			// TODO: Should we clear this whenever the build is complete?
+			PipelineImageBuilder: &mcfgv1.ObjectReference{
+				Name:      obj.GetName(),
+				Group:     obj.GroupVersionKind().Group,
+				Namespace: obj.GetNamespace(),
+				Resource:  obj.GetResourceVersion(),
+			},
+		}
+	default:
+		return out, fmt.Errorf("ImageBuilderType: %s is not supported", b.mosc.Spec.ImageBuilder.ImageBuilderType)
 	}
 
 	return out, nil
@@ -137,19 +156,14 @@ func (b *baseImageBuilder) getDigestConfigMapName() (string, error) {
 
 // Gets the final image pullspec from the digestfile ConfigMap.
 func (b *baseImageBuilder) getFinalImagePullspec(ctx context.Context) (string, error) {
-	name, err := b.getDigestConfigMapName()
+	pipelineRun, err := b.tektonclient.TektonV1beta1().PipelineRuns(ctrlcommon.MCONamespace).Get(ctx, b.getBuilderName(), metav1.GetOptions{})
 	if err != nil {
-		return "", fmt.Errorf("could not get digest configmap name: %w", err)
+		return "", fmt.Errorf("could not get pipelineRun:", err)
 	}
 
-	digestConfigMap, err := b.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(ctx, name, metav1.GetOptions{})
+	sha, err := utils.ParseImagePullspec(string(b.mosc.Spec.RenderedImagePushSpec), pipelineRun.Status.PipelineResults[0].Value.StringVal)
 	if err != nil {
-		return "", fmt.Errorf("could not get final image digest configmap %q: %w", name, err)
-	}
-
-	sha, err := utils.ParseImagePullspec(string(b.mosc.Spec.RenderedImagePushSpec), digestConfigMap.Data["digest"])
-	if err != nil {
-		return "", fmt.Errorf("could not create digested image pullspec from the pullspec %q and the digest %q: %w", b.mosc.Status.CurrentImagePullSpec, digestConfigMap.Data["digest"], err)
+		return "", fmt.Errorf("could not create digested image pullspec from the pullspec %q and the digest %q: %w", b.mosc.Status.CurrentImagePullspec, pipelineRun.Status.PipelineResults[0].Value.StringVal, err)
 	}
 
 	return sha, nil
@@ -190,7 +204,7 @@ func (b *baseImageBuilder) getBuilderUID() (string, error) {
 // directly from the Builder object.
 func (b *baseImageBuilder) getBuilderName() string {
 	if b.mosb != nil {
-		return utils.GetBuildJobName(b.mosb)
+		return utils.GetBuildName(b.mosb)
 	}
 
 	return b.builder.GetObject().GetName()
@@ -207,6 +221,5 @@ func (b *baseImageBuilder) prepareForBuild(ctx context.Context) (buildrequest.Bu
 	}
 
 	b.buildrequest = br
-
-	return br.Builder(), nil
+	return br.Builder(b.kubeclient)
 }
