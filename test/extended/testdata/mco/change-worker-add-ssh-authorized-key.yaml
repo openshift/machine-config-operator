@@ -1,0 +1,24 @@
+apiVersion: template.openshift.io/v1
+kind: Template
+metadata:
+  name: add-ssh-auth-key
+objects:
+  - kind: MachineConfig
+    apiVersion: machineconfiguration.openshift.io/v1
+    metadata:
+      labels:
+        machineconfiguration.openshift.io/role: "${POOL}"
+      name: "${NAME}"
+    spec:
+      config:
+        ignition:
+          version: 3.2.0
+        passwd:
+          users:
+          - name: core
+            sshAuthorizedKeys:
+            - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDPmGf/sfIYog1KaHj50H0vaDRITn4Wa8RN9bgc2jj6SejvxhAWZVc4BrRst6BdhGr34IowkZmz76ba9jfa4nGm2HNd+CGqf6KmUhwPjF9oJNjy3z5zT2i903OZii35MUnJl056YXgKYpN96WAD5LVOKop/+7Soxq4PW8TtVZeSpHiPNI28XiIdyqGLzJerhlgPLZBsNO0JcVH1DYLd/c4fh5GDLutszZH/dzAX5RmvN1P/cHie+BnkbgNx91NbrOLTrV5m3nY2End5uGDl8zhaGQ2BX2TmnMqWyxYkYuzNmQFprHMNCCpqLshFGRvCFZGpc6L/72mlpcJubzBF0t5Z
+              mco_test@redhat.com
+parameters:
+  - name: NAME
+  - name: POOL
