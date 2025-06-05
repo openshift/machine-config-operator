@@ -79,7 +79,7 @@ func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
 }
 
 //nolint:gocyclo,gosec
-func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfgv1.MachineConfigNode, cconfig *mcfgv1.ControllerConfig, pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node, mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild) mcfgv1.MachineConfigPoolStatus {
+func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcns []*mcfgv1.MachineConfigNode, cconfig *mcfgv1.ControllerConfig, pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node, mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild) mcfgv1.MachineConfigPoolStatus {
 	certExpirys := []mcfgv1.CertExpiry{}
 	if cconfig != nil {
 		for _, cert := range cconfig.Status.ControllerCertificates {
@@ -105,6 +105,7 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 	var degradedMachines, readyMachines, updatedMachines, unavailableMachines, updatingMachines []*corev1.Node
 	degradedReasons := []string{}
 
+	// Get MCP statuses from MCNs
 	// if we represent updating properly here, we will also represent updating properly in the CO
 	// so this solves the cordoning RFE and the upgradeable RFE
 	// updating == updatePrepared, updateExecuted, updatedComplete, postAction, cordoning, draining
@@ -113,35 +114,61 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 	// unavailable == draining, cordoned
 	// degraded == if the condition.Reason == error
 	// this ensures that a MCP only enters Upgradeable==False if the node actually needs to upgrade to the new MC
-	for _, state := range mcs {
+	for _, mcn := range mcns {
 		var ourNode *corev1.Node
 		for _, n := range nodes {
-			if state.Name == n.Name {
+			if mcn.Name == n.Name {
 				ourNode = n
 				break
 			}
 		}
+		// Handle error finding node associated with MCN
 		if ourNode == nil {
-			klog.Errorf("Could not find specified node %s", state.Name)
+			klog.Errorf("Could not find specified node %s", mcn.Name)
 		}
-		if len(state.Status.Conditions) == 0 {
+		// Handle case when MCN does not yet have conditions (it is not ready)
+		if len(mcn.Status.Conditions) == 0 {
 			// not ready yet
+			klog.Infof("MCN %s does not yet have conditions set", mcn.Name)
 			break
 		}
+		// Populate PIS condition in MCP, if applicable
 		if fg.Enabled(features.FeatureGatePinnedImages) {
-			if isPinnedImageSetsUpdated(state) {
+			if isPinnedImageSetsUpdated(mcn) {
 				poolSynchronizer.SetUpdated(mcfgv1.PinnedImageSets)
 			}
 		}
-		for _, cond := range state.Status.Conditions {
-			if strings.Contains(cond.Message, "Error:") {
+		// TODO: consider pulling this out of MCN GA for now (comment out until 4.20?)
+		for _, cond := range mcn.Status.Conditions {
+			// TODO: update this conditional
+			// 	- with MCN GA we now have node degrade condition set there
+			// 	- does `MachineConfigNodePinnedImageSetsDegraded` follow the "Error:" substring rule?
+			// 	- should we set an MCP degraded because a PIS is degraded?
+			// if strings.Contains(cond.Message, "Error:") {
+			// Add degraded node and reason from MCN condition if "NodeDegraded" status is "True"
+			if mcfgv1.StateProgress(cond.Type) == mcfgv1.MachineConfigNodeNodeDegraded && cond.Status == metav1.ConditionTrue {
 				degradedMachines = append(degradedMachines, ourNode)
-				// populate the degradedReasons from the MachineConfigNodePinnedImageSetsDegraded condition
-				if fg.Enabled(features.FeatureGatePinnedImages) {
-					if mcfgv1.StateProgress(cond.Type) == mcfgv1.MachineConfigNodePinnedImageSetsDegraded && cond.Status == metav1.ConditionTrue {
-						degradedReasons = append(degradedReasons, fmt.Sprintf("Node %s is reporting: %q", ourNode.Name, cond.Message))
-					}
+				degradedReasons = append(degradedReasons, cond.Message)
+				// TODO: Pull this out??
+				// // populate the degradedReasons from the MachineConfigNodePinnedImageSetsDegraded condition
+				// if fg.Enabled(features.FeatureGatePinnedImages) {
+				// 	if mcfgv1.StateProgress(cond.Type) == mcfgv1.MachineConfigNodePinnedImageSetsDegraded && cond.Status == metav1.ConditionTrue {
+				// 		degradedReasons = append(degradedReasons, fmt.Sprintf("Node %s is reporting: %q", ourNode.Name, cond.Message))
+				// 	}
+				// }
+				// Consider a break
+				continue
+			}
+			// TODO: understand if we actually want a degrade here since PIS is somewhat detached from the node update process
+			// TODO: test if this will double count the `NodeDegraded` condition? If so, do an else if.
+			// Add degraded node and reason from MCN condition if "PinnedImageSetsDegraded" status is "True"
+			if fg.Enabled(features.FeatureGatePinnedImages) {
+				degradedMachines = append(degradedMachines, ourNode)
+				degradedReasons = append(degradedReasons, cond.Message)
+				if mcfgv1.StateProgress(cond.Type) == mcfgv1.MachineConfigNodePinnedImageSetsDegraded && cond.Status == metav1.ConditionTrue {
+					degradedReasons = append(degradedReasons, fmt.Sprintf("Node %s is reporting: %q", ourNode.Name, cond.Message))
 				}
+				// TODO: consider a `break` here instead? since the PIS does not trigger updating of the node in any way
 				continue
 			}
 			/*
