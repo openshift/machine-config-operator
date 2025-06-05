@@ -362,7 +362,7 @@ func TestSyncMachineConfiguration(t *testing.T) {
 			infra:                           buildInfra(withPlatformType(configv1.VSpherePlatformType)),
 			mcop:                            buildMachineConfigurationWithNoBootImageConfiguration(),
 			annotationExpected:              false,
-			expectedManagedBootImagesStatus: apihelpers.GetManagedBootImagesWithNoConfiguration(),
+			expectedManagedBootImagesStatus: apihelpers.GetManagedBootImagesWithUpdateDisabled(),
 		},
 	}
 	for _, tc := range cases {
