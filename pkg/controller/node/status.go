@@ -126,6 +126,8 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcns []*mcf
 		if ourNode == nil {
 			klog.Errorf("Could not find specified node %s", mcn.Name)
 		}
+		// TODO: remove post debugging
+		klog.Errorf("In loop for MCN '%v' and 'ourNode' '%v'.", mcn.Name, ourNode.Name)
 		// Handle case when MCN does not yet have conditions (it is not ready)
 		if len(mcn.Status.Conditions) == 0 {
 			// not ready yet
@@ -134,12 +136,15 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcns []*mcf
 		}
 		// Populate PIS condition in MCP, if applicable
 		if fg.Enabled(features.FeatureGatePinnedImages) {
+			// TODO: check if this is needed here or if it can be pulled into the conditional below?
 			if isPinnedImageSetsUpdated(mcn) {
 				poolSynchronizer.SetUpdated(mcfgv1.PinnedImageSets)
 			}
 		}
 		// TODO: consider pulling this out of MCN GA for now (comment out until 4.20?)
 		for _, cond := range mcn.Status.Conditions {
+			// TODO: remove post debugging
+			klog.Errorf("In loop for mcn '%v' mcn condition '%v' with status '%v'.", mcn.Name, cond.Type, cond.Status)
 			// TODO: update this conditional
 			// 	- with MCN GA we now have node degrade condition set there
 			// 	- does `MachineConfigNodePinnedImageSetsDegraded` follow the "Error:" substring rule?
@@ -156,20 +161,18 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcns []*mcf
 				// 		degradedReasons = append(degradedReasons, fmt.Sprintf("Node %s is reporting: %q", ourNode.Name, cond.Message))
 				// 	}
 				// }
-				// Consider a break
+				// Consider a break instead
 				continue
 			}
-			// TODO: understand if we actually want a degrade here since PIS is somewhat detached from the node update process
 			// TODO: test if this will double count the `NodeDegraded` condition? If so, do an else if.
 			// Add degraded node and reason from MCN condition if "PinnedImageSetsDegraded" status is "True"
 			if fg.Enabled(features.FeatureGatePinnedImages) {
-				degradedMachines = append(degradedMachines, ourNode)
-				degradedReasons = append(degradedReasons, cond.Message)
 				if mcfgv1.StateProgress(cond.Type) == mcfgv1.MachineConfigNodePinnedImageSetsDegraded && cond.Status == metav1.ConditionTrue {
+					degradedMachines = append(degradedMachines, ourNode)
 					degradedReasons = append(degradedReasons, fmt.Sprintf("Node %s is reporting: %q", ourNode.Name, cond.Message))
 				}
 				// TODO: consider a `break` here instead? since the PIS does not trigger updating of the node in any way
-				continue
+				break
 			}
 			/*
 				// TODO: (djoshy) Rework this block to use MCN conditions correctly. See: https://issues.redhat.com/browse/MCO-1228
@@ -277,10 +280,12 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcns []*mcf
 	conditions := pool.Status.Conditions
 	status.Conditions = append(status.Conditions, conditions...)
 
+	// TODO: somewhere here add PIS degraded condition?
+	// TODO: make sure node degrade is not set when PIS is degraded? only overally degraded
+
 	allUpdated := updatedMachineCount == machineCount &&
 		readyMachineCount == machineCount &&
 		unavailableMachineCount == 0
-
 	if allUpdated {
 		//TODO: update api to only have one condition regarding status of update.
 		updatedMsg := fmt.Sprintf("All nodes are updated with %s", getPoolUpdateLine(pool, mosc, l))
@@ -360,15 +365,16 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcns []*mcf
 	return status
 }
 
-func isPinnedImageSetNodeUpdating(mcs *mcfgv1.MachineConfigNode) bool {
-	var updating int32
-	for _, set := range mcs.Status.PinnedImageSets {
-		if set.CurrentGeneration != set.DesiredGeneration {
-			updating++
-		}
-	}
-	return updating > 0
-}
+// TODO: remove unused function?
+// func isPinnedImageSetNodeUpdating(mcs *mcfgv1.MachineConfigNode) bool {
+// 	var updating int32
+// 	for _, set := range mcs.Status.PinnedImageSets {
+// 		if set.CurrentGeneration != set.DesiredGeneration {
+// 			updating++
+// 		}
+// 	}
+// 	return updating > 0
+// }
 
 func getPoolUpdateLine(pool *mcfgv1.MachineConfigPool, mosc *mcfgv1.MachineOSConfig, layered bool) string {
 	targetConfig := pool.Spec.Configuration.Name
