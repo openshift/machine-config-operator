@@ -26,7 +26,7 @@ func getClusterNicknameFromConfig(clientCfg *restclient.Config) (string, error) 
 	hostPort := netutil.CanonicalAddr(u)
 
 	// we need a character other than "." to avoid conflicts with.  replace with '-'
-	return strings.Replace(hostPort, ".", "-", -1), nil
+	return strings.ReplaceAll(hostPort, ".", "-"), nil
 }
 
 // getUserNicknameFromConfig returns "username(as known by the server)/getClusterNicknameFromConfig".  This allows tab completion for switching users to
@@ -53,20 +53,21 @@ func getUserPartOfNickname(clientCfg *restclient.Config) (string, error) {
 
 	var username string
 	selfSubjectReview, err := authClient.SelfSubjectReviews().Create(context.Background(), &kauthnv1.SelfSubjectReview{}, metav1.CreateOptions{})
-	if kerrors.IsNotFound(err) || kerrors.IsForbidden(err) {
+
+	switch {
+	case kerrors.IsNotFound(err) || kerrors.IsForbidden(err):
 		// if we're talking to kube (or likely talking to kube), take a best guess consistent with login
 		switch {
-		case len(clientCfg.BearerToken) > 0:
+		case clientCfg.BearerToken != "":
 			username = clientCfg.BearerToken
-		case len(clientCfg.Username) > 0:
+		case clientCfg.Username != "":
 			username = clientCfg.Username
 		}
-	} else if err != nil {
+	case err != nil:
 		return "", err
-	} else {
+	default:
 		username = selfSubjectReview.Status.UserInfo.Username
 	}
-
 	return username, nil
 }
 
@@ -110,11 +111,11 @@ func createConfig(namespace string, clientCfg *restclient.Config) (*clientcmdapi
 	credentials.Token = clientCfg.BearerToken
 	credentials.Exec = clientCfg.ExecProvider
 	credentials.ClientCertificate = clientCfg.TLSClientConfig.CertFile
-	if len(credentials.ClientCertificate) == 0 {
+	if credentials.ClientCertificate == "" {
 		credentials.ClientCertificateData = clientCfg.TLSClientConfig.CertData
 	}
 	credentials.ClientKey = clientCfg.TLSClientConfig.KeyFile
-	if len(credentials.ClientKey) == 0 {
+	if credentials.ClientKey == "" {
 		credentials.ClientKeyData = clientCfg.TLSClientConfig.KeyData
 	}
 	config.AuthInfos[userNick] = credentials
@@ -122,7 +123,7 @@ func createConfig(namespace string, clientCfg *restclient.Config) (*clientcmdapi
 	cluster := clientcmdapi.NewCluster()
 	cluster.Server = clientCfg.Host
 	cluster.CertificateAuthority = clientCfg.CAFile
-	if len(cluster.CertificateAuthority) == 0 {
+	if cluster.CertificateAuthority == "" {
 		cluster.CertificateAuthorityData = clientCfg.CAData
 	}
 	cluster.InsecureSkipTLSVerify = clientCfg.Insecure

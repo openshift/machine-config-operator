@@ -11,7 +11,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"math/rand"
+	"math/rand/v2"
 	"net"
 	"net/http"
 	"net/url"
@@ -187,10 +187,9 @@ func (c *CLI) ChangeUserForKeycloakExtOIDC() *CLI {
 	testUsers := re.FindAllStringSubmatch(keycloakTestUsers, -1)
 	usersTotal := len(testUsers)
 	var username, password string
-	err := wait.PollUntilContextTimeout(context.Background(), 2*time.Second, 30*time.Second, true, func(ctx context.Context) (bool, error) {
+	err := wait.PollUntilContextTimeout(context.Background(), 2*time.Second, 30*time.Second, true, func(_ context.Context) (bool, error) {
 		// Pick a random user for current running case to use
-		rand.Seed(time.Now().UnixMilli())
-		userIndex := rand.Intn(usersTotal)
+		userIndex := rand.N(usersTotal)
 		username = testUsers[userIndex][1]
 		o.Expect(username).NotTo(o.BeEmpty())
 		password = testUsers[userIndex][2]
@@ -267,16 +266,16 @@ func (c *CLI) ChangeUserForKeycloakExtOIDC() *CLI {
 	s := sha256.New()
 	e := gob.NewEncoder(s)
 	if err := e.Encode(&key); err != nil {
-		FatalErr(fmt.Sprintf("could not encode the key: %w", err))
+		FatalErr(fmt.Errorf("could not encode the key: %w", err))
 	}
 	tokenCacheFile := hex.EncodeToString(s.Sum(nil))
 	tokenCacheDir, err := os.MkdirTemp("", username)
 	c.AddPathsToDelete(tokenCacheDir)
 	o.Expect(err).NotTo(o.HaveOccurred())
-	err = os.Mkdir(tokenCacheDir+"/oc", 0700)
+	err = os.Mkdir(tokenCacheDir+"/oc", 0o700)
 	o.Expect(err).NotTo(o.HaveOccurred())
 	// The tokenCacheDir dir only includes a small file. So we don't clean it given no easy way
-	err = os.WriteFile(filepath.Join(tokenCacheDir, "oc", tokenCacheFile), []byte(tokenCache), 0600)
+	err = os.WriteFile(filepath.Join(tokenCacheDir, "oc", tokenCacheFile), []byte(tokenCache), 0o600)
 	o.Expect(err).NotTo(o.HaveOccurred())
 
 	clientConfig := c.GetClientConfigForExtOIDCUser(tokenCacheDir)
@@ -414,7 +413,7 @@ func (c CLI) WithKubectl() *CLI {
 func (c CLI) AsGuestKubeconf() *CLI {
 	c.asGuestKubeconf = true
 	c.withoutNamespace = true // if you want to use guest cluster config to opeate guest cluster, you have to set
-	//withoutNamespace as true (like calling WithoutNamespace), so you can not get ns of
+	// withoutNamespace as true (like calling WithoutNamespace), so you can not get ns of
 	// management cluster, and you have to set ns of guest cluster in Args.
 	return &c
 }
@@ -636,11 +635,11 @@ func (c *CLI) CreateProject() string {
 // TeardownProject removes projects created by this test.
 func (c *CLI) TeardownProject() {
 	e2e.TestContext.DumpLogsOnFailure = os.Getenv("DUMP_EVENTS_ON_FAILURE") != "false"
-	if len(c.Namespace()) > 0 && g.CurrentSpecReport().Failed() && e2e.TestContext.DumpLogsOnFailure {
+	if c.Namespace() != "" && g.CurrentSpecReport().Failed() && e2e.TestContext.DumpLogsOnFailure {
 		e2edebug.DumpAllNamespaceInfo(context.TODO(), c.kubeFramework.ClientSet, c.Namespace())
 	}
 
-	if len(c.configPath) > 0 {
+	if c.configPath != "" {
 		os.Remove(c.configPath)
 	}
 
@@ -961,13 +960,13 @@ func (c *CLI) Output() (string, error) {
 	}
 	out, err := cmd.CombinedOutput()
 	trimmed := strings.TrimSpace(string(out))
-	switch err.(type) {
+	switch val := err.(type) {
 	case nil:
 		c.stdout = bytes.NewBuffer(out)
 		return trimmed, nil
 	case *exec.ExitError:
 		e2e.Logf("Error running %v:\n%s", cmd, trimmed)
-		return trimmed, &ExitError{ExitError: err.(*exec.ExitError), Cmd: c.execPath + " " + strings.Join(c.finalArgs, " "), StdErr: trimmed}
+		return trimmed, &ExitError{ExitError: val, Cmd: c.execPath + " " + strings.Join(c.finalArgs, " "), StdErr: trimmed}
 	default:
 		FatalErr(fmt.Errorf("unable to execute %q: %v", c.execPath, err))
 		// unreachable code
@@ -986,7 +985,7 @@ func (c *CLI) Outputs() (string, string, error) {
 	if c.showInfo {
 		e2e.Logf("Running '%s %s'", c.execPath, strings.Join(c.finalArgs, " "))
 	}
-	//out, err := cmd.CombinedOutput()
+
 	var stdErrBuff, stdOutBuff bytes.Buffer
 	cmd.Stdout = &stdOutBuff
 	cmd.Stderr = &stdErrBuff
@@ -996,14 +995,14 @@ func (c *CLI) Outputs() (string, string, error) {
 	stdErrBytes := stdErrBuff.Bytes()
 	stdOut := strings.TrimSpace(string(stdOutBytes))
 	stdErr := strings.TrimSpace(string(stdErrBytes))
-	switch err.(type) {
+	switch val := err.(type) {
 	case nil:
 		c.stdout = bytes.NewBuffer(stdOutBytes)
 		c.stderr = bytes.NewBuffer(stdErrBytes)
 		return stdOut, stdErr, nil
 	case *exec.ExitError:
 		e2e.Logf("Error running %v:\nStdOut>\n%s\nStdErr>\n%s\n", cmd, stdOut, stdErr)
-		return stdOut, stdErr, &ExitError{ExitError: err.(*exec.ExitError), Cmd: c.execPath + " " + strings.Join(c.finalArgs, " "), StdErr: stdErr}
+		return stdOut, stdErr, &ExitError{ExitError: val, Cmd: c.execPath + " " + strings.Join(c.finalArgs, " "), StdErr: stdErr}
 	default:
 		FatalErr(fmt.Errorf("unable to execute %q: %v", c.execPath, err))
 		// unreachable code
@@ -1059,7 +1058,7 @@ func (c *CLI) OutputToFile(filename string) (string, error) {
 		return "", err
 	}
 	path := filepath.Join(e2e.TestContext.OutputDir, c.Namespace()+"-"+filename)
-	return path, os.WriteFile(path, []byte(content), 0644)
+	return path, os.WriteFile(path, []byte(content), 0o644)
 }
 
 // OutputsToFiles executes the command and store the stdout in one file and stderr in another one
@@ -1076,11 +1075,11 @@ func (c *CLI) OutputsToFiles(fileName string) (string, string, error) {
 	stdoutPath := filepath.Join(e2e.TestContext.OutputDir, c.Namespace()+"-"+stdoutFilename)
 	stderrPath := filepath.Join(e2e.TestContext.OutputDir, c.Namespace()+"-"+stderrFilename)
 
-	if err := os.WriteFile(stdoutPath, []byte(stdout), 0644); err != nil {
+	if err := os.WriteFile(stdoutPath, []byte(stdout), 0o644); err != nil {
 		return "", "", err
 	}
 
-	if err := os.WriteFile(stderrPath, []byte(stderr), 0644); err != nil {
+	if err := os.WriteFile(stderrPath, []byte(stderr), 0o644); err != nil {
 		return stdoutPath, "", err
 	}
 
@@ -1232,7 +1231,7 @@ func GenerateOAuthTokenPair() (privToken, pubToken string) {
 	const sha256Prefix = "sha256~"
 	randomToken := base64.RawURLEncoding.EncodeToString(uuid.NewRandom())
 	hashed := sha256.Sum256([]byte(randomToken))
-	return sha256Prefix + string(randomToken), sha256Prefix + base64.RawURLEncoding.EncodeToString(hashed[:])
+	return sha256Prefix + randomToken, sha256Prefix + base64.RawURLEncoding.EncodeToString(hashed[:])
 }
 
 // turnOffRateLimiting reduces the chance that a flaky test can be written while using this package
@@ -1274,7 +1273,7 @@ func (c *CLI) WaitForAccessDenied(review *kubeauthorizationv1.SelfSubjectAccessR
 }
 
 func waitForAccess(c kubernetes.Interface, allowed bool, review *kubeauthorizationv1.SelfSubjectAccessReview) error {
-	return wait.Poll(time.Second, time.Minute, func() (bool, error) {
+	return wait.PollUntilContextTimeout(context.Background(), time.Second, time.Minute, false, func(_ context.Context) (bool, error) {
 		response, err := c.AuthorizationV1().SelfSubjectAccessReviews().Create(context.Background(), review, metav1.CreateOptions{})
 		if err != nil {
 			return false, err
@@ -1314,7 +1313,7 @@ func defaultClientTransport(rt http.RoundTripper) http.RoundTripper {
 		Timeout:   30 * time.Second,
 		KeepAlive: 30 * time.Second,
 	}
-	transport.Dial = dialer.Dial
+	transport.DialContext = dialer.DialContext
 	// Hold open more internal idle connections
 	// TODO: this should be configured by the caller, not in this method.
 	transport.MaxIdleConnsPerHost = 100
@@ -1333,13 +1332,13 @@ func (c *CLI) SilentOutput() (string, error) {
 	}
 	out, err := cmd.CombinedOutput()
 	trimmed := strings.TrimSpace(string(out))
-	switch err.(type) {
+	switch val := err.(type) {
 	case nil:
 		c.stdout = bytes.NewBuffer(out)
 		return trimmed, nil
 	case *exec.ExitError:
 		e2e.Logf("Error running %v", cmd)
-		return trimmed, &ExitError{ExitError: err.(*exec.ExitError), Cmd: c.execPath + " " + strings.Join(c.finalArgs, " "), StdErr: trimmed}
+		return trimmed, &ExitError{ExitError: val, Cmd: c.execPath + " " + strings.Join(c.finalArgs, " "), StdErr: trimmed}
 	default:
 		FatalErr(fmt.Errorf("unable to execute %q: %v", c.execPath, err))
 		return "", nil

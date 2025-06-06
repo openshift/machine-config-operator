@@ -1,6 +1,7 @@
 package util
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -221,7 +222,7 @@ func GetSAToken(oc *CLI) (string, error) {
 func (mo *Monitor) InstantQueryWithRetry(queryParams MonitorInstantQueryParams, timeDurationSec int) string {
 	var res string
 	var err error
-	err = wait.Poll(time.Duration(timeDurationSec/5)*time.Second, time.Duration(timeDurationSec)*time.Second, func() (bool, error) {
+	err = wait.PollUntilContextTimeout(context.Background(), time.Duration(timeDurationSec/5)*time.Second, time.Duration(timeDurationSec)*time.Second, false, func(_ context.Context) (bool, error) {
 		res, err = mo.InstantQuery(queryParams)
 		if err != nil {
 			e2e.Logf("Error sending InstantQuery: %v", err)
@@ -259,7 +260,7 @@ type ContainerMemoryRSSType struct {
 }
 
 // ExtractSpecifiedValueFromMetricData4MemRSS extracts the value of the container_memory_rss metric from the result of a Prometheus query
-func ExtractSpecifiedValueFromMetricData4MemRSS(oc *CLI, metricResult string) (string, int) {
+func ExtractSpecifiedValueFromMetricData4MemRSS(_ *CLI, metricResult string) (string, int) {
 	var ramMetricsInfo ContainerMemoryRSSType
 	jsonErr := json.Unmarshal([]byte(metricResult), &ramMetricsInfo)
 	o.Expect(jsonErr).NotTo(o.HaveOccurred())

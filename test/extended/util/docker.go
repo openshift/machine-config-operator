@@ -15,13 +15,13 @@ func ListImages() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	returnIds := make([]string, 0)
+	returnIDs := make([]string, 0)
 	for _, image := range imageList {
 		for _, tag := range image.RepoTags {
-			returnIds = append(returnIds, tag)
+			returnIDs = append(returnIDs, tag)
 		}
 	}
-	return returnIds, nil
+	return returnIDs, nil
 }
 
 type MissingTagError struct {
@@ -68,10 +68,9 @@ func GetImageIDForTags(comps []string) ([]string, error) {
 
 	if len(missingTags) == 0 {
 		return returnTags, nil
-	} else {
-		mte := MissingTagError{
-			Tags: missingTags,
-		}
-		return returnTags, mte
 	}
+	mte := MissingTagError{
+		Tags: missingTags,
+	}
+	return returnTags, mte
 }

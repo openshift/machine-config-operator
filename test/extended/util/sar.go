@@ -13,7 +13,7 @@ import (
 )
 
 func WaitForSelfSAR(interval, timeout time.Duration, c kclientset.Interface, selfSAR authorizationapiv1.SelfSubjectAccessReviewSpec) error {
-	err := wait.PollImmediate(interval, timeout, func() (bool, error) {
+	err := wait.PollUntilContextTimeout(context.Background(), interval, timeout, true, func(_ context.Context) (bool, error) {
 		res, err := c.AuthorizationV1().SelfSubjectAccessReviews().Create(context.Background(),
 			&authorizationapiv1.SelfSubjectAccessReview{
 				Spec: selfSAR,

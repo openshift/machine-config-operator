@@ -45,13 +45,11 @@ func GetUserCAToFile(oc *CLI, filename string) (err error) {
 		"user-ca-bundle", "-o", "jsonpath={.data.ca-bundle\\.crt}").Output()
 	if err != nil {
 		return fmt.Errorf("failed to acquire user ca bundle from configmap: %v", err)
-	} else {
-		err = os.WriteFile(filename, []byte(cert), 0644)
-		if err != nil {
-			return fmt.Errorf("failed to dump cert to file: %v", err)
-		}
-		return
 	}
+	if err = os.WriteFile(filename, []byte(cert), 0o644); err != nil {
+		return fmt.Errorf("failed to dump cert to file: %v", err)
+	}
+	return nil
 }
 
 // GetClusterVersion returns the cluster version as string value (Ex: 4.8) and cluster build (Ex: 4.8.0-0.nightly-2021-09-28-165247)
@@ -124,9 +122,9 @@ func SkipNoCapabilities(oc *CLI, capability string) {
 	o.Expect(err).NotTo(o.HaveOccurred())
 
 	hasCapability := func(capabilities []configv1.ClusterVersionCapability, checked string) bool {
-		cap := configv1.ClusterVersionCapability(checked)
-		for _, capability := range capabilities {
-			if capability == cap {
+		checkedCap := configv1.ClusterVersionCapability(checked)
+		for _, tmpCap := range capabilities {
+			if tmpCap == checkedCap {
 				return true
 			}
 		}
@@ -273,7 +271,7 @@ func IsSTSCluster(oc *CLI) bool {
 func IsWorkloadIdentityCluster(oc *CLI) bool {
 	serviceAccountIssuer, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("authentication", "cluster", "-o=jsonpath={.spec.serviceAccountIssuer}").Output()
 	o.Expect(err).ShouldNot(o.HaveOccurred(), "Failed to get serviceAccountIssuer")
-	return len(serviceAccountIssuer) > 0
+	return serviceAccountIssuer != ""
 }
 
 // GetOIDCProvider returns the OIDC provider for current cluster
@@ -405,7 +403,7 @@ func SkipOnProxyCluster(oc *CLI) {
 	o.Expect(err).NotTo(o.HaveOccurred())
 	httpsProxy, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("proxy/cluster", "-o=jsonpath={.spec.httpsProxy}").Output()
 	o.Expect(err).NotTo(o.HaveOccurred())
-	if len(httpProxy) != 0 || len(httpsProxy) != 0 {
+	if httpProxy != "" || httpsProxy != "" {
 		g.Skip("Skip for proxy platform")
 	}
 }

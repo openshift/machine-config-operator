@@ -60,7 +60,7 @@ func InitStandardFlags() {
 	e2e.RegisterClusterFlags(flag.CommandLine)
 
 	// replaced by a bare import above.
-	//e2e.RegisterStorageFlags()
+	// e2e.RegisterStorageFlags()
 }
 
 func InitTest(dryRun bool) error {
@@ -105,7 +105,7 @@ func InitTest(dryRun bool) error {
 
 func AnnotateTestSuite() {
 	// qe take different method to select case, so no need to annotate it.
-	waitErr := wait.Poll(3*time.Second, 30*time.Second, func() (bool, error) {
+	waitErr := wait.PollUntilContextTimeout(context.Background(), 3*time.Second, 30*time.Second, false, func(_ context.Context) (bool, error) {
 		out, err := kubectlCmd("get", "node").CombinedOutput()
 		if err != nil && strings.Contains(string(out), "Service Unavailable") {
 			e2e.Logf("Fail to get the cluster:%v, error: %v, try again", string(out), err)
@@ -141,7 +141,7 @@ func PreDetermineExternalOIDCCluster() (bool, error) {
 
 	var auth *configv1.Authentication
 	var errAuth error
-	err = wait.PollImmediate(3*time.Second, 9*time.Second, func() (bool, error) {
+	err = wait.PollUntilContextTimeout(context.Background(), 3*time.Second, 9*time.Second, true, func(_ context.Context) (bool, error) {
 		auth, errAuth = client.ConfigV1().Authentications().Get(context.Background(), "cluster", metav1.GetOptions{})
 		if errAuth != nil {
 			e2e.Logf("auth err: %v", errAuth)
@@ -247,21 +247,19 @@ func kubectlCmd(args ...string) *exec.Cmd {
 			defaultArgs = append(defaultArgs, "--"+clientcmd.FlagContext+"="+TestContext.KubeContext)
 		}
 
-	} else {
-		if TestContext.CertDir != "" {
-			defaultArgs = append(defaultArgs,
-				fmt.Sprintf("--certificate-authority=%s", filepath.Join(TestContext.CertDir, "ca.crt")),
-				fmt.Sprintf("--client-certificate=%s", filepath.Join(TestContext.CertDir, "kubecfg.crt")),
-				fmt.Sprintf("--client-key=%s", filepath.Join(TestContext.CertDir, "kubecfg.key")))
-		}
+	} else if TestContext.CertDir != "" {
+		defaultArgs = append(defaultArgs,
+			fmt.Sprintf("--certificate-authority=%s", filepath.Join(TestContext.CertDir, "ca.crt")),
+			fmt.Sprintf("--client-certificate=%s", filepath.Join(TestContext.CertDir, "kubecfg.crt")),
+			fmt.Sprintf("--client-key=%s", filepath.Join(TestContext.CertDir, "kubecfg.key")))
 	}
 	kubectlArgs := append(defaultArgs, args...)
 
-	//We allow users to specify path to kubectl, so you can test either "kubectl" or "cluster/kubectl.sh"
-	//and so on.
+	// We allow users to specify path to kubectl, so you can test either "kubectl" or "cluster/kubectl.sh"
+	// and so on.
 	cmd := exec.Command(TestContext.KubectlPath, kubectlArgs...)
 
-	//caller will invoke this and wait on it.
+	// caller will invoke this and wait on it.
 	return cmd
 }
 
@@ -330,7 +328,7 @@ type ginkgoTestRenamer struct {
 	excludedTestsFilter *regexp.Regexp
 }
 
-func (r *ginkgoTestRenamer) maybeRenameTest(name string, node types.TestSpec) {
+func (r *ginkgoTestRenamer) maybeRenameTest(name string, _ types.TestSpec) {
 	labels := ""
 	for {
 		count := 0
@@ -393,7 +391,7 @@ func (r *ginkgoTestRenamer) maybeRenameTest(name string, node types.TestSpec) {
 // ProwGCPSetup makes sure certain required env vars are available in the case
 // that extended tests are invoked directly via calls to ginkgo/extended.test
 func InitDefaultEnvironmentVariables() {
-	if ad := os.Getenv("ARTIFACT_DIR"); len(strings.TrimSpace(ad)) == 0 {
+	if ad := os.Getenv("ARTIFACT_DIR"); strings.TrimSpace(ad) == "" {
 		os.Setenv("ARTIFACT_DIR", filepath.Join(os.TempDir(), "artifacts"))
 	}
 }
@@ -507,7 +505,7 @@ func checkSyntheticInput() {
 }
 
 // checkSuiteSkips ensures Origin/Kubernetes synthetic skip labels are applied
-// DEPRECATED: remove in a future release
+// Deprecated: remove in a future release
 func checkSuiteSkips() {
 	suiteConfig, _ := ginkgo.GinkgoConfiguration()
 	switch {
@@ -572,9 +570,9 @@ func addE2EServiceAccountsToSCC(securityClient securityv1client.Interface, names
 	}
 }
 
-func isE2ENamespace(ns string) bool {
+func isE2ENamespace(_ string) bool {
 	return true
-	//return strings.HasPrefix(ns, "e2e-") ||
+	// return strings.HasPrefix(ns, "e2e-") ||
 	//	strings.HasPrefix(ns, "aggregator-") ||
 	//	strings.HasPrefix(ns, "csi-") ||
 	//	strings.HasPrefix(ns, "deployment-") ||

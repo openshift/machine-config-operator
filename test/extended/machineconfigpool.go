@@ -625,7 +625,6 @@ func (mcp *MachineConfigPool) GetCordonedNodes() []Node {
 
 		return len(allUpdatingNodes) > 0, nil
 	})
-
 	exutil.AssertWaitPollNoErr(err, fmt.Sprintf("Could not get the list of updating nodes on mcp %s", mcp.GetName()))
 
 	return allUpdatingNodes
@@ -678,7 +677,6 @@ func (mcp MachineConfigPool) WaitForNotDegradedStatus() error {
 		}
 		return false, nil
 	})
-
 	if err != nil {
 		logger.Errorf("MCP: %s .Error waiting for not degraded status: %s", mcp.GetName(), err)
 	}
@@ -717,7 +715,6 @@ func (mcp MachineConfigPool) waitForConditionStatus(condition, status string, ti
 		}
 		return false, nil
 	})
-
 	if err != nil {
 		logger.Errorf("MCP: %s .Error waiting for %s status: %s", mcp.GetName(), condition, err)
 	}
@@ -744,7 +741,6 @@ func (mcp MachineConfigPool) WaitForMachineCount(expectedMachineCount int, timeT
 		logger.Infof("Expected machine count %d. Reported machine count %d", expectedMachineCount, mCount)
 		return false, nil
 	})
-
 	if err != nil {
 		logger.Errorf("MCP: %s .Error waiting for %d machine count: %s", mcp.GetName(), expectedMachineCount, err)
 	}
@@ -808,7 +804,6 @@ func (mcp *MachineConfigPool) waitForComplete() {
 			}
 		}
 	}
-
 	if err != nil {
 		exutil.ArchiveMustGatherFile(mcp.GetOC(), extractJournalLogs)
 		DebugDegradedStatus(mcp)
@@ -916,7 +911,6 @@ func (mcp *MachineConfigPool) waitForPinComplete(timeToWait time.Duration) error
 		logger.Infof("Pool %s successfully pinned the images! Complete!", mcp.GetName())
 		return true, nil
 	})
-
 	if err != nil {
 		logger.Infof("Pinned images operation is not completed on mcp %s", mcp.name)
 	}

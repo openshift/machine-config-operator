@@ -1,6 +1,7 @@
 package util
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
 	"os"
@@ -54,9 +55,9 @@ func CreateNsResourceFromTemplate(oc *CLI, namespace string, parameters ...strin
 	resourceFromTemplate(oc, true, false, namespace, parameters...)
 }
 
-func resourceFromTemplate(oc *CLI, create bool, returnError bool, namespace string, parameters ...string) error {
+func resourceFromTemplate(oc *CLI, create, returnError bool, namespace string, parameters ...string) error {
 	var configFile string
-	err := wait.Poll(3*time.Second, 15*time.Second, func() (bool, error) {
+	err := wait.PollUntilContextTimeout(context.Background(), 3*time.Second, 15*time.Second, false, func(_ context.Context) (bool, error) {
 		fileName := GetRandomString() + "config.json"
 		stdout, _, err := oc.AsAdmin().Run("process").Args(parameters...).OutputsToFiles(fileName)
 		if err != nil {
@@ -111,7 +112,7 @@ func GetRandomString() string {
 // ApplyResourceFromTemplateWithNonAdminUser to as normal user to create resource from template
 func ApplyResourceFromTemplateWithNonAdminUser(oc *CLI, parameters ...string) error {
 	var configFile string
-	err := wait.Poll(3*time.Second, 15*time.Second, func() (bool, error) {
+	err := wait.PollUntilContextTimeout(context.Background(), 3*time.Second, 15*time.Second, false, func(_ context.Context) (bool, error) {
 		output, err := oc.Run("process").Args(parameters...).OutputToFile(GetRandomString() + "config.json")
 		if err != nil {
 			e2e.Logf("the err:%v, and try next round", err)
@@ -130,7 +131,7 @@ func ApplyResourceFromTemplateWithNonAdminUser(oc *CLI, parameters ...string) er
 func ProcessTemplate(oc *CLI, parameters ...string) string {
 	var configFile string
 
-	err := wait.Poll(3*time.Second, 15*time.Second, func() (bool, error) {
+	err := wait.PollUntilContextTimeout(context.Background(), 3*time.Second, 15*time.Second, false, func(_ context.Context) (bool, error) {
 		output, err := oc.Run("process").Args(parameters...).OutputToFile(GetRandomString() + "config.json")
 		if err != nil {
 			e2e.Logf("the err:%v, and try next round", err)
@@ -165,6 +166,6 @@ func ParameterizedTemplateByReplaceToFile(oc *CLI, parameters ...string) string 
 	templateContentJSON, convertErr := yaml.YAMLToJSON([]byte(templateContentStr))
 	o.Expect(convertErr).NotTo(o.HaveOccurred())
 	configFile := filepath.Join(e2e.TestContext.OutputDir, oc.Namespace()+"-"+GetRandomString()+"config.json")
-	o.Expect(os.WriteFile(configFile, pretty.Pretty(templateContentJSON), 0644)).ShouldNot(o.HaveOccurred())
+	o.Expect(os.WriteFile(configFile, pretty.Pretty(templateContentJSON), 0o644)).ShouldNot(o.HaveOccurred())
 	return configFile
 }

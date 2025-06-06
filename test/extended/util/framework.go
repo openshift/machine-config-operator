@@ -4,8 +4,9 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net"
 	"os"
 	"path"
@@ -24,7 +25,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	kapiv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/apitesting"
-	"k8s.io/apimachinery/pkg/api/errors"
 	kapierrs "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -69,10 +69,10 @@ func WaitForInternalRegistryHostname(oc *CLI) (string, error) {
 	foundOCMLogs := false
 	isOCMProgressing := true
 	podLogs := map[string]string{}
-	err := wait.Poll(2*time.Second, 2*time.Minute, func() (bool, error) {
+	err := wait.PollUntilContextTimeout(context.Background(), 2*time.Second, 2*time.Minute, false, func(_ context.Context) (bool, error) {
 		imageConfig, err := oc.AsAdmin().AdminConfigClient().ConfigV1().Images().Get(context.Background(), "cluster", metav1.GetOptions{})
 		if err != nil {
-			if errors.IsNotFound(err) {
+			if kapierrs.IsNotFound(err) {
 				e2e.Logf("Image config object not found")
 				return false, nil
 			}
@@ -84,7 +84,7 @@ func WaitForInternalRegistryHostname(oc *CLI) (string, error) {
 			return false, nil
 		}
 		registryHostname = imageConfig.Status.InternalRegistryHostname
-		if len(registryHostname) == 0 {
+		if registryHostname == "" {
 			e2e.Logf("Internal Registry Hostname is not set in image config object")
 			return false, nil
 		}
@@ -93,7 +93,7 @@ func WaitForInternalRegistryHostname(oc *CLI) (string, error) {
 		// the image config's internal registry hostname
 		ocm, err := oc.AdminOperatorClient().OperatorV1().OpenShiftControllerManagers().Get(context.Background(), "cluster", metav1.GetOptions{})
 		if err != nil {
-			if errors.IsNotFound(err) {
+			if kapierrs.IsNotFound(err) {
 				return false, nil
 			}
 			return false, err
@@ -117,7 +117,7 @@ func WaitForInternalRegistryHostname(oc *CLI) (string, error) {
 		// and that the build controller was started after that observation
 		pods, err := oc.AdminKubeClient().CoreV1().Pods("openshift-controller-manager").List(context.Background(), metav1.ListOptions{})
 		if err != nil {
-			if errors.IsNotFound(err) {
+			if kapierrs.IsNotFound(err) {
 				return false, nil
 			}
 			return false, err
@@ -126,7 +126,7 @@ func WaitForInternalRegistryHostname(oc *CLI) (string, error) {
 			req := oc.AdminKubeClient().CoreV1().Pods("openshift-controller-manager").GetLogs(pod.Name, &corev1.PodLogOptions{})
 			readCloser, err := req.Stream(context.Background())
 			if err == nil {
-				b, err := ioutil.ReadAll(readCloser)
+				b, err := io.ReadAll(readCloser)
 				if err == nil {
 					podLog := string(b)
 					podLogs[pod.Name] = podLog
@@ -180,8 +180,8 @@ func WaitForInternalRegistryHostname(oc *CLI) (string, error) {
 			e2e.Logf("pod %s logs:\n%s", podName, podLog)
 		}
 	}
-	if err == wait.ErrWaitTimeout {
-		return "", fmt.Errorf("Timed out waiting for internal registry hostname to be published")
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "", fmt.Errorf("timed out waiting for internal registry hostname to be published")
 	}
 	if err != nil {
 		return "", err
@@ -292,7 +292,7 @@ func WaitForOpenShiftNamespaceImageStreams(oc *CLI) error {
 	// that is getting sorted out, the longer time will help there as well
 	e2e.Logf("Scanning openshift ImageStreams \n")
 	success := false
-	wait.Poll(10*time.Second, 150*time.Second, func() (bool, error) {
+	_ = wait.PollUntilContextTimeout(context.Background(), 10*time.Second, 150*time.Second, false, func(_ context.Context) (bool, error) {
 		success = scan()
 		return success, nil
 	})
@@ -523,7 +523,7 @@ func DumpConfigMapStates(oc *CLI) {
 func GetMasterThreadDump(oc *CLI) {
 	out, err := oc.AsAdmin().Run("get").Args("--raw", "/debug/pprof/goroutine?debug=2").Output()
 	if err == nil {
-		e2e.Logf("\n\n Master thread stack dump:\n\n%s\n\n", string(out))
+		e2e.Logf("\n\n Master thread stack dump:\n\n%s\n\n", out)
 		return
 	}
 	e2e.Logf("\n\n got error on oc get --raw /debug/pprof/goroutine?godebug=2: %v\n\n", err)
@@ -538,74 +538,26 @@ func PreTestDump() {
 func ExamineDiskUsage() {
 	// disabling this for now, easier to do it here than everywhere that's calling it.
 	return
-	/*
-				out, err := exec.Command("/bin/df", "-m").Output()
-				if err == nil {
-					e2e.Logf("\n\n df -m output: %s\n\n", string(out))
-				} else {
-					e2e.Logf("\n\n got error on df %v\n\n", err)
-				}
-		                DumpDockerInfo()
-	*/
 }
 
 // ExaminePodDiskUsage will dump df/du output on registry pod; leveraging this as part of diagnosing
 // the registry's disk filling up during external tests on jenkins
-func ExaminePodDiskUsage(oc *CLI) {
+func ExaminePodDiskUsage(_ *CLI) {
 	// disabling this for now, easier to do it here than everywhere that's calling it.
 	return
-	/*
-		out, err := oc.Run("get").Args("pods", "-o", "json", "-n", "default", "--config", KubeConfigPath()).Output()
-		var podName string
-		if err == nil {
-			b := []byte(out)
-			var list kapiv1.PodList
-			err = json.Unmarshal(b, &list)
-			if err == nil {
-				for _, pod := range list.Items {
-					e2e.Logf("\n\n looking at pod %s \n\n", pod.ObjectMeta.Name)
-					if strings.Contains(pod.ObjectMeta.Name, "docker-registry-") && !strings.Contains(pod.ObjectMeta.Name, "deploy") {
-						podName = pod.ObjectMeta.Name
-						break
-					}
-				}
-			} else {
-				e2e.Logf("\n\n got json unmarshal err: %v\n\n", err)
-			}
-		} else {
-			e2e.Logf("\n\n  got error on get pods: %v\n\n", err)
-		}
-		if len(podName) == 0 {
-			e2e.Logf("Unable to determine registry pod name, so we can't examine its disk usage.")
-			return
-		}
-
-		out, err = oc.Run("exec").Args("-n", "default", podName, "df", "--config", KubeConfigPath()).Output()
-		if err == nil {
-			e2e.Logf("\n\n df from registry pod: \n%s\n\n", out)
-		} else {
-			e2e.Logf("\n\n got error on reg pod df: %v\n", err)
-		}
-		out, err = oc.Run("exec").Args("-n", "default", podName, "du", "/registry", "--config", KubeConfigPath()).Output()
-		if err == nil {
-			e2e.Logf("\n\n du from registry pod: \n%s\n\n", out)
-		} else {
-			e2e.Logf("\n\n got error on reg pod du: %v\n", err)
-		}
-	*/
 }
 
 // VarSubOnFile reads in srcFile, finds instances of ${key} from the map
 // and replaces them with their associated values.
-func VarSubOnFile(srcFile string, destFile string, vars map[string]string) error {
-	srcData, err := ioutil.ReadFile(srcFile)
+func VarSubOnFile(srcFile, destFile string, vars map[string]string) error {
+	srcData, err := os.ReadFile(srcFile)
 	if err == nil {
 		srcString := string(srcData)
 		for k, v := range vars {
 			k = "${" + k + "}"
-			srcString = strings.Replace(srcString, k, v, -1) // -1 means unlimited replacements
+			srcString = strings.ReplaceAll(srcString, k, v)
 		}
-		err = ioutil.WriteFile(destFile, []byte(srcString), 0644)
+		err = os.WriteFile(destFile, []byte(srcString), 0o644)
 	}
 	return err
 }
@@ -667,11 +619,6 @@ func (t *BuildResult) DumpLogs() {
 	e2e.Logf("\n\n*****************************************\n")
 	e2e.Logf("Dumping Build Result: %#v\n", *t)
 
-	if t == nil {
-		e2e.Logf("No build result available!\n\n")
-		return
-	}
-
 	desc, err := t.Oc.Run("describe").Args(t.BuildPath).Output()
 
 	e2e.Logf("\n** Build Description:\n")
@@ -693,14 +640,6 @@ func (t *BuildResult) DumpLogs() {
 	e2e.Logf("\n\n")
 
 	t.dumpRegistryLogs()
-
-	// if we suspect that we are filling up the registry file system, call ExamineDiskUsage / ExaminePodDiskUsage
-	// also see if manipulations of the quota around /mnt/openshift-xfs-vol-dir exist in the extended test set up scripts
-	/*
-		ExamineDiskUsage()
-		ExaminePodDiskUsage(t.oc)
-		e2e.Logf( "\n\n")
-	*/
 }
 
 func (t *BuildResult) dumpRegistryLogs() {
@@ -900,20 +839,20 @@ func WaitForABuild(c buildv1clienttyped.BuildInterface, name string, isOK, isFai
 	}
 
 	// wait 2 minutes for build to exist
-	err := wait.Poll(1*time.Second, 2*time.Minute, func() (bool, error) {
+	err := wait.PollUntilContextTimeout(context.Background(), 1*time.Second, 2*time.Minute, false, func(_ context.Context) (bool, error) {
 		if _, err := c.Get(context.Background(), name, metav1.GetOptions{}); err != nil {
 			return false, nil
 		}
 		return true, nil
 	})
-	if err == wait.ErrWaitTimeout {
+	if errors.Is(err, context.DeadlineExceeded) {
 		return fmt.Errorf("Timed out waiting for build %q to be created", name)
 	}
 	if err != nil {
 		return err
 	}
 	// wait longer for the build to run to completion
-	err = wait.Poll(5*time.Second, 10*time.Minute, func() (bool, error) {
+	err = wait.PollUntilContextTimeout(context.Background(), 5*time.Second, 10*time.Minute, false, func(_ context.Context) (bool, error) {
 		list, err := c.List(context.Background(), metav1.ListOptions{FieldSelector: fields.Set{"metadata.name": name}.AsSelector().String()})
 		if err != nil {
 			e2e.Logf("error listing builds: %v", err)
@@ -935,7 +874,7 @@ func WaitForABuild(c buildv1clienttyped.BuildInterface, name string, isOK, isFai
 	if err != nil {
 		e2e.Logf("WaitForABuild returning with error: %v", err)
 	}
-	if err == wait.ErrWaitTimeout {
+	if errors.Is(err, context.DeadlineExceeded) {
 		return fmt.Errorf("Timed out waiting for build %q to complete", name)
 	}
 	return err
@@ -962,13 +901,13 @@ func WaitForServiceAccount(c corev1client.ServiceAccountInterface, name string, 
 	countOutput := -1
 	// add Logf for better debug, but it will possible generate many logs because of 100 millisecond
 	// so, add countOutput so that it output log every 100 times (10s)
-	waitFn := func() (bool, error) {
+	waitFn := func(_ context.Context) (bool, error) {
 		countOutput++
 		sc, err := c.Get(context.Background(), name, metav1.GetOptions{})
 		if err != nil {
 			// If we can't access the service accounts, let's wait till the controller
 			// create it.
-			if errors.IsNotFound(err) || errors.IsForbidden(err) {
+			if kapierrs.IsNotFound(err) || kapierrs.IsForbidden(err) {
 				if countOutput%100 == 0 {
 					e2e.Logf("Waiting for service account %q to be available: %v (will retry) ...", name, err)
 				}
@@ -992,7 +931,7 @@ func WaitForServiceAccount(c corev1client.ServiceAccountInterface, name string, 
 		}
 		return false, nil
 	}
-	return wait.Poll(time.Duration(100*time.Millisecond), 3*time.Minute, waitFn)
+	return wait.PollUntilContextTimeout(context.Background(), 100*time.Millisecond, 3*time.Minute, false, waitFn)
 }
 
 // WaitForAnImageStream waits for an ImageStream to fulfill the isOK function
@@ -1063,7 +1002,7 @@ func TimedWaitForAnImageStreamTag(oc *CLI, namespace, name, tag string, waitTime
 				}
 				return true
 			},
-			func(is *imagev1.ImageStream) bool {
+			func(_ *imagev1.ImageStream) bool {
 				return time.Now().After(start.Add(waitTimeout))
 			})
 		c <- err
@@ -1096,7 +1035,7 @@ func WaitForDeploymentConfig(kc kubernetes.Interface, dcClient appsv1clienttyped
 	var dc *appsv1.DeploymentConfig
 
 	start := time.Now()
-	err := wait.Poll(time.Second, 15*time.Minute, func() (done bool, err error) {
+	err := wait.PollUntilContextTimeout(context.Background(), time.Second, 15*time.Minute, false, func(_ context.Context) (done bool, err error) {
 		dc, err = dcClient.DeploymentConfigs(namespace).Get(context.Background(), name, metav1.GetOptions{})
 		if err != nil {
 			return false, err
@@ -1104,11 +1043,11 @@ func WaitForDeploymentConfig(kc kubernetes.Interface, dcClient appsv1clienttyped
 
 		// TODO re-enable this check once @mfojtik introduces a test that ensures we'll only ever get
 		// exactly one deployment triggered.
-		/*
-			if dc.Status.LatestVersion > version {
-				return false, fmt.Errorf("latestVersion %d passed %d", dc.Status.LatestVersion, version)
-			}
-		*/
+		//
+		//	if dc.Status.LatestVersion > version {
+		//		return false, fmt.Errorf("latestVersion %d passed %d", dc.Status.LatestVersion, version)
+		//	}
+		//
 		if dc.Status.LatestVersion < version {
 			return false, nil
 		}
@@ -1257,7 +1196,7 @@ func GetPodNamesByFilter(c corev1client.PodInterface, label labels.Selector, pre
 }
 
 func WaitForAJob(c batchv1client.JobInterface, name string, timeout time.Duration) error {
-	return wait.Poll(1*time.Second, timeout, func() (bool, error) {
+	return wait.PollUntilContextTimeout(context.Background(), 1*time.Second, timeout, false, func(_ context.Context) (bool, error) {
 		j, e := c.Get(context.Background(), name, metav1.GetOptions{})
 		if e != nil {
 			return true, e
@@ -1277,7 +1216,7 @@ func WaitForAJob(c batchv1client.JobInterface, name string, timeout time.Duratio
 // satisfy the predicate are found
 func WaitForPods(c corev1client.PodInterface, label labels.Selector, predicate func(kapiv1.Pod) bool, count int, timeout time.Duration) ([]string, error) {
 	var podNames []string
-	err := wait.Poll(1*time.Second, timeout, func() (bool, error) {
+	err := wait.PollUntilContextTimeout(context.Background(), 1*time.Second, timeout, false, func(_ context.Context) (bool, error) {
 		p, e := GetPodNamesByFilter(c, label, predicate)
 		if e != nil {
 			return true, e
@@ -1316,13 +1255,13 @@ func CheckPodIsReady(pod kapiv1.Pod) bool {
 }
 
 // CheckPodNoOp always returns true
-func CheckPodNoOp(pod kapiv1.Pod) bool {
+func CheckPodNoOp(_ kapiv1.Pod) bool {
 	return true
 }
 
 // WaitUntilPodIsGone waits until the named Pod will disappear
 func WaitUntilPodIsGone(c corev1client.PodInterface, podName string, timeout time.Duration) error {
-	return wait.Poll(1*time.Second, timeout, func() (bool, error) {
+	return wait.PollUntilContextTimeout(context.Background(), 1*time.Second, timeout, false, func(_ context.Context) (bool, error) {
 		_, err := c.Get(context.Background(), podName, metav1.GetOptions{})
 		if err != nil {
 			if strings.Contains(err.Error(), "not found") {
@@ -1410,7 +1349,7 @@ func FixturePath(elem ...string) string {
 		panic(fmt.Sprintf("Fixtures must be in test/extended/testdata or examples not %s", path.Join(elem...)))
 	}
 	fixtureDirLock.Do(func() {
-		dir, err := ioutil.TempDir("", "fixture-testdata-dir")
+		dir, err := os.MkdirTemp("", "fixture-testdata-dir")
 		if err != nil {
 			panic(err)
 		}
@@ -1422,19 +1361,19 @@ func FixturePath(elem ...string) string {
 		if err := testdata.RestoreAssets(fixtureDir, relativePath); err != nil {
 			panic(err)
 		}
-		if err := filepath.Walk(fullPath, func(path string, info os.FileInfo, err error) error {
-			if err := os.Chmod(path, 0640); err != nil {
+		if err := filepath.Walk(fullPath, func(path string, _ os.FileInfo, _ error) error {
+			if err := os.Chmod(path, 0o640); err != nil {
 				return err
 			}
 			if stat, err := os.Lstat(path); err == nil && stat.IsDir() {
-				return os.Chmod(path, 0755)
+				return os.Chmod(path, 0o755)
 			}
 			return nil
 		}); err != nil {
 			panic(err)
 		}
 	} else {
-		if err := os.Chmod(fullPath, 0640); err != nil {
+		if err := os.Chmod(fullPath, 0o640); err != nil {
 			panic(err)
 		}
 	}
@@ -1462,9 +1401,9 @@ func FetchURL(oc *CLI, url string, retryTimeout time.Duration) (string, error) {
 	}
 
 	var response string
-	waitFn := func() (bool, error) {
+	waitFn := func(_ context.Context) (bool, error) {
 		e2e.Logf("Waiting up to %v to wget %s", retryTimeout, url)
-		//cmd := fmt.Sprintf("wget -T 30 -O- %s", url)
+
 		cmd := fmt.Sprintf("curl -vvv %s", url)
 		response, err = e2eoutput.RunHostCmd(execPod.Namespace, execPod.Name, cmd)
 		if err != nil {
@@ -1478,8 +1417,8 @@ func FetchURL(oc *CLI, url string, retryTimeout time.Duration) (string, error) {
 		}
 		return true, nil
 	}
-	pollErr := wait.Poll(time.Duration(1*time.Second), retryTimeout, waitFn)
-	if pollErr == wait.ErrWaitTimeout {
+	pollErr := wait.PollUntilContextTimeout(context.Background(), 1*time.Second, retryTimeout, false, waitFn)
+	if errors.Is(pollErr, context.DeadlineExceeded) {
 		return "", fmt.Errorf("Timed out while fetching url %q", url)
 	}
 	if pollErr != nil {
@@ -1544,9 +1483,8 @@ func WaitForEndpoint(c kclientset.Interface, ns, name string) error {
 		if len(endpoint.Subsets) == 0 || len(endpoint.Subsets[0].Addresses) == 0 {
 			e2e.Logf("Endpoint %s/%s is not ready yet", ns, name)
 			continue
-		} else {
-			return nil
 		}
+		return nil
 	}
 	return fmt.Errorf("Failed to get endpoints for %s/%s", ns, name)
 }
@@ -1573,7 +1511,7 @@ func CreateExecPodOrFail(client corev1client.CoreV1Interface, ns, name string) s
 	execPod := pod.NewExecPodSpec(ns, name, false)
 	created, err := client.Pods(ns).Create(context.Background(), execPod, metav1.CreateOptions{})
 	o.Expect(err).NotTo(o.HaveOccurred())
-	err = wait.PollImmediate(e2e.Poll, 5*time.Minute, func() (bool, error) {
+	err = wait.PollUntilContextTimeout(context.Background(), e2e.Poll, 5*time.Minute, true, func(_ context.Context) (bool, error) {
 		retrievedPod, err := client.Pods(execPod.Namespace).Get(context.Background(), created.Name, metav1.GetOptions{})
 		if err != nil {
 			return false, nil
@@ -1589,7 +1527,7 @@ func CreateExecPodOrFail(client corev1client.CoreV1Interface, ns, name string) s
 func CheckForBuildEvent(client corev1client.CoreV1Interface, build *buildv1.Build, reason, message string) {
 	scheme, _ := apitesting.SchemeForOrDie(buildv1.Install)
 	var expectedEvent *kapiv1.Event
-	err := wait.PollImmediate(e2e.Poll, 1*time.Minute, func() (bool, error) {
+	err := wait.PollUntilContextTimeout(context.Background(), e2e.Poll, 1*time.Minute, true, func(_ context.Context) (bool, error) {
 		events, err := client.Events(build.Namespace).Search(scheme, build)
 		if err != nil {
 			return false, err
@@ -1608,13 +1546,13 @@ func CheckForBuildEvent(client corev1client.CoreV1Interface, build *buildv1.Buil
 	o.ExpectWithOffset(1, expectedEvent.Message).To(o.Equal(fmt.Sprintf(message, build.Namespace, build.Name)))
 }
 
-type podExecutor struct {
+type PodExecutor struct {
 	client  *CLI
 	podName string
 }
 
 // NewPodExecutor returns an executor capable of running commands in a Pod.
-func NewPodExecutor(oc *CLI, name, image string) (*podExecutor, error) {
+func NewPodExecutor(oc *CLI, name, image string) (*PodExecutor, error) {
 	out, err := oc.Run("run").Args(name, "--labels", "name="+name, "--image", image, "--restart", "Never", "--command", "--", "/bin/bash", "-c", "sleep infinity").Output()
 	if err != nil {
 		return nil, fmt.Errorf("error: %v\n(%s)", err, out)
@@ -1623,15 +1561,15 @@ func NewPodExecutor(oc *CLI, name, image string) (*podExecutor, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &podExecutor{client: oc, podName: name}, nil
+	return &PodExecutor{client: oc, podName: name}, nil
 }
 
 // Exec executes a single command or a bash script in the running pod. It returns the
 // command output and error if the command finished with non-zero status code or the
 // command took longer then 3 minutes to run.
-func (r *podExecutor) Exec(script string) (string, error) {
+func (r *PodExecutor) Exec(script string) (string, error) {
 	var out string
-	waitErr := wait.PollImmediate(1*time.Second, 3*time.Minute, func() (bool, error) {
+	waitErr := wait.PollUntilContextTimeout(context.Background(), 1*time.Second, 3*time.Minute, true, func(_ context.Context) (bool, error) {
 		var err error
 		out, err = r.client.Run("exec").Args(r.podName, "--", "/bin/bash", "-c", script).Output()
 		return true, err
@@ -1639,7 +1577,7 @@ func (r *podExecutor) Exec(script string) (string, error) {
 	return out, waitErr
 }
 
-func (r *podExecutor) CopyFromHost(local, remote string) error {
+func (r *PodExecutor) CopyFromHost(local, remote string) error {
 	_, err := r.client.Run("cp").Args(local, fmt.Sprintf("%s:%s", r.podName, remote)).Output()
 	return err
 }
@@ -1667,7 +1605,7 @@ func RunOneShotCommandPod(
 	}
 
 	// Wait for command completion.
-	err = wait.PollImmediate(1*time.Second, timeout, func() (done bool, err error) {
+	err = wait.PollUntilContextTimeout(context.Background(), 1*time.Second, timeout, true, func(_ context.Context) (done bool, err error) {
 		cmdPod, getErr := oc.AdminKubeClient().CoreV1().Pods(oc.Namespace()).Get(context.Background(), pod.Name, v1.GetOptions{})
 		if getErr != nil {
 			e2e.Logf("failed to get pod %q: %v", pod.Name, err)
@@ -1684,12 +1622,12 @@ func RunOneShotCommandPod(
 	}
 
 	// Gather pod log output
-	err = wait.PollImmediate(1*time.Second, timeout, func() (done bool, err error) {
+	err = wait.PollUntilContextTimeout(context.Background(), 1*time.Second, timeout, true, func(_ context.Context) (done bool, err error) {
 		logs, logErr := getPodLogs(oc, pod)
 		if logErr != nil {
 			return false, logErr
 		}
-		if len(logs) == 0 {
+		if logs == "" {
 			return false, nil
 		}
 		output = logs
@@ -1719,7 +1657,7 @@ func getPodLogs(oc *CLI, pod *corev1.Pod) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	logs, err := ioutil.ReadAll(reader)
+	logs, err := io.ReadAll(reader)
 	if err != nil {
 		return "", err
 	}
@@ -1763,7 +1701,7 @@ func WaitForUserBeAuthorized(oc *CLI, user, verb, resource string) error {
 			User: user,
 		},
 	}
-	return wait.PollImmediate(1*time.Second, 1*time.Minute, func() (bool, error) {
+	return wait.PollUntilContextTimeout(context.Background(), 1*time.Second, 1*time.Minute, true, func(_ context.Context) (bool, error) {
 		e2e.Logf("Waiting for user '%v' to be authorized to %v the %v resource", user, verb, resource)
 		resp, err := oc.AdminKubeClient().AuthorizationV1().SubjectAccessReviews().Create(context.Background(), sar, metav1.CreateOptions{})
 		if err == nil && resp != nil && resp.Status.Allowed {
@@ -1790,25 +1728,25 @@ func GetRouterPodTemplate(oc *CLI) (*corev1.PodTemplateSpec, string, error) {
 		if err == nil {
 			return dc.Spec.Template, ns, nil
 		}
-		if !errors.IsNotFound(err) {
+		if !kapierrs.IsNotFound(err) {
 			return nil, "", err
 		}
 		deploy, err := k8sappsclient.Deployments(ns).Get(context.Background(), "router", metav1.GetOptions{})
 		if err == nil {
 			return &deploy.Spec.Template, ns, nil
 		}
-		if !errors.IsNotFound(err) {
+		if !kapierrs.IsNotFound(err) {
 			return nil, "", err
 		}
 		deploy, err = k8sappsclient.Deployments(ns).Get(context.Background(), "router-default", metav1.GetOptions{})
 		if err == nil {
 			return &deploy.Spec.Template, ns, nil
 		}
-		if !errors.IsNotFound(err) {
+		if !kapierrs.IsNotFound(err) {
 			return nil, "", err
 		}
 	}
-	return nil, "", errors.NewNotFound(schema.GroupResource{Group: "apps.openshift.io", Resource: "deploymentconfigs"}, "router")
+	return nil, "", kapierrs.NewNotFound(schema.GroupResource{Group: "apps.openshift.io", Resource: "deploymentconfigs"}, "router")
 }
 
 // FindImageFormatString returns a format string for components on the cluster. It returns false
@@ -1820,7 +1758,7 @@ func FindImageFormatString(oc *CLI) (string, bool) {
 	template, _, err := GetRouterPodTemplate(oc)
 	if err == nil {
 		if strings.Contains(template.Spec.Containers[0].Image, "haproxy-router") {
-			return strings.Replace(template.Spec.Containers[0].Image, "haproxy-router", "${component}", -1), true
+			return strings.ReplaceAll(template.Spec.Containers[0].Image, "haproxy-router", "${component}"), true
 		}
 	}
 	// in openshift 4.0, no image format can be calculated on cluster
@@ -1839,7 +1777,7 @@ func FindCLIImage(oc *CLI) (string, bool) {
 	}
 
 	format, ok := FindImageFormatString(oc)
-	return strings.Replace(format, "${component}", "cli", -1), ok
+	return strings.ReplaceAll(format, "${component}", "cli"), ok
 }
 
 func FindRouterImage(oc *CLI) (string, error) {

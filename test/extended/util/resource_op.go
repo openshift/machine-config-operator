@@ -13,7 +13,7 @@ import (
 )
 
 // DeleteLabelsFromSpecificResource deletes the custom labels from the specific resource
-func DeleteLabelsFromSpecificResource(oc *CLI, resourceKindAndName string, resourceNamespace string, labelNames ...string) (string, error) {
+func DeleteLabelsFromSpecificResource(oc *CLI, resourceKindAndName, resourceNamespace string, labelNames ...string) (string, error) {
 	var cargs []string
 	if resourceNamespace != "" {
 		cargs = append(cargs, "-n", resourceNamespace)
@@ -24,7 +24,7 @@ func DeleteLabelsFromSpecificResource(oc *CLI, resourceKindAndName string, resou
 }
 
 // AddLabelsToSpecificResource adds the custom labels to the specific resource
-func AddLabelsToSpecificResource(oc *CLI, resourceKindAndName string, resourceNamespace string, labels ...string) (string, error) {
+func AddLabelsToSpecificResource(oc *CLI, resourceKindAndName, resourceNamespace string, labels ...string) (string, error) {
 	var cargs []string
 	if resourceNamespace != "" {
 		cargs = append(cargs, "-n", resourceNamespace)
@@ -36,7 +36,7 @@ func AddLabelsToSpecificResource(oc *CLI, resourceKindAndName string, resourceNa
 }
 
 // GetResourceSpecificLabelValue gets the specified label value from the resource and label name
-func GetResourceSpecificLabelValue(oc *CLI, resourceKindAndName string, resourceNamespace string, labelName string) (string, error) {
+func GetResourceSpecificLabelValue(oc *CLI, resourceKindAndName, resourceNamespace, labelName string) (string, error) {
 	var cargs []string
 	if resourceNamespace != "" {
 		cargs = append(cargs, "-n", resourceNamespace)
@@ -58,7 +58,7 @@ func AddAnnotationsToSpecificResource(oc *CLI, resourceKindAndName, resourceName
 }
 
 // RemoveAnnotationFromSpecificResource removes the specified annotation from the resource
-func RemoveAnnotationFromSpecificResource(oc *CLI, resourceKindAndName, resourceNamespace string, annotationName string) (string, error) {
+func RemoveAnnotationFromSpecificResource(oc *CLI, resourceKindAndName, resourceNamespace, annotationName string) (string, error) {
 	var cargs []string
 	if resourceNamespace != "" {
 		cargs = append(cargs, "-n", resourceNamespace)
@@ -175,7 +175,7 @@ func GetFieldWithJsonpath(oc *CLI, interval, timeout time.Duration, immediately,
 	if !usingJsonpath {
 		return "", fmt.Errorf("you do not use jsonpath to get field")
 	}
-	errWait := wait.PollUntilContextTimeout(context.TODO(), interval, timeout, immediately, func(ctx context.Context) (bool, error) {
+	errWait := wait.PollUntilContextTimeout(context.TODO(), interval, timeout, immediately, func(_ context.Context) (bool, error) {
 		result, err = ocAction(oc, "get", asAdmin, withoutNamespace, parameters...)
 		if err != nil || (!allowEmpty && strings.TrimSpace(result) == "") {
 			e2e.Logf("output is %v, error is %v, and try next", result, err)
@@ -205,7 +205,7 @@ func CheckAppearance(oc *CLI, interval, timeout time.Duration, immediately, asAd
 	if !appear {
 		parameters = append(parameters, "--ignore-not-found")
 	}
-	err := wait.PollUntilContextTimeout(context.TODO(), interval, timeout, immediately, func(ctx context.Context) (bool, error) {
+	err := wait.PollUntilContextTimeout(context.TODO(), interval, timeout, immediately, func(_ context.Context) (bool, error) {
 		output, err := ocAction(oc, "get", asAdmin, withoutNamespace, parameters...)
 		if err != nil {
 			e2e.Logf("the get error is %v, and try next", err)
@@ -223,8 +223,8 @@ func CheckAppearance(oc *CLI, interval, timeout time.Duration, immediately, asAd
 	return err == nil
 }
 
-// CleanupResource cleanup one resouce and check if it is not found.
-// interval and timeout is the inveterl and timeout of Poll to check if it is not found
+// CleanupResource cleanup one resource and check if it is not found.
+// interval and timeout is the interval and timeout of Poll to check if it is not found
 // asAdmin means oc.AsAdmin() or not
 // withoutNamespace means oc.WithoutNamespace() or not.
 // for example, cleanup cluster level resource
@@ -239,7 +239,7 @@ func CleanupResource(oc *CLI, interval, timeout time.Duration, asAdmin, withoutN
 	}
 	o.Expect(err).NotTo(o.HaveOccurred())
 
-	err = wait.PollUntilContextTimeout(context.TODO(), interval, timeout, false, func(ctx context.Context) (bool, error) {
+	err = wait.PollUntilContextTimeout(context.TODO(), interval, timeout, false, func(_ context.Context) (bool, error) {
 		output, err := ocAction(oc, "get", asAdmin, withoutNamespace, parameters...)
 		if err != nil && (strings.Contains(output, "NotFound") || strings.Contains(output, "No resources found")) {
 			e2e.Logf("the resource is delete successfully")
@@ -270,17 +270,17 @@ func ocAction(oc *CLI, action string, asAdmin, withoutNamespace bool, parameters
 // WaitForResourceUpdate waits for the resourceVersion of a resource to be updated
 func WaitForResourceUpdate(ctx context.Context, oc *CLI, interval, timeout time.Duration, kindAndName, namespace, oldResourceVersion string) error {
 	args := []string{kindAndName}
-	if len(namespace) > 0 {
+	if namespace != "" {
 		args = append(args, "-n", namespace)
 	}
 	args = append(args, "-o=jsonpath={.metadata.resourceVersion}")
-	return wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (done bool, err error) {
+	return wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(_ context.Context) (done bool, err error) {
 		resourceVersion, _, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(args...).Outputs()
 		if err != nil {
 			e2e.Logf("Error getting current resourceVersion: %v", err)
 			return false, nil
 		}
-		if len(resourceVersion) == 0 {
+		if resourceVersion == "" {
 			return false, errors.New("obtained empty resourceVersion")
 		}
 		if resourceVersion == oldResourceVersion {

@@ -1,6 +1,8 @@
 package util
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -21,11 +23,12 @@ func AssertWaitPollNoErr(e error, msg string) {
 		return
 	}
 	var err error
-	if strings.Compare(e.Error(), "timed out waiting for the condition") == 0 || strings.Compare(e.Error(), "context deadline exceeded") == 0 {
+	if errors.Is(e, context.DeadlineExceeded) ||
+		strings.Compare(e.Error(), "timed out waiting for the condition") == 0 ||
+		strings.Compare(e.Error(), "context deadline exceeded") == 0 {
 		err = fmt.Errorf("case: %v\nerror: %s", g.CurrentSpecReport().FullText(), msg)
 	} else {
 		err = fmt.Errorf("case: %v\nerror: %s", g.CurrentSpecReport().FullText(), e.Error())
 	}
 	o.Expect(err).NotTo(o.HaveOccurred())
-
 }

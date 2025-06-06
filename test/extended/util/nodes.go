@@ -21,7 +21,7 @@ func GetFirstLinuxWorkerNode(oc *CLI) (string, error) {
 		err        error
 	)
 	workerNode, err = getFirstNodeByOsID(oc, "worker", "rhcos")
-	if len(workerNode) == 0 {
+	if workerNode == "" {
 		workerNode, err = getFirstNodeByOsID(oc, "worker", "rhel")
 	}
 	return workerNode, err
@@ -32,9 +32,9 @@ func GetAllNodesbyOSType(oc *CLI, ostype string) ([]string, error) {
 	var nodesArray []string
 	nodes, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("node", "-l", "kubernetes.io/os="+ostype, "-o", "jsonpath='{.items[*].metadata.name}'").Output()
 	nodesStr := strings.Trim(nodes, "'")
-	//If split an empty string to string array, the default length string array is 1
-	//So need to check if string is empty.
-	if len(nodesStr) == 0 {
+	// If split an empty string to string array, the default length string array is 1
+	// So need to check if string is empty.
+	if nodesStr == "" {
 		return nodesArray, err
 	}
 	nodesArray = strings.Split(nodesStr, " ")
@@ -89,7 +89,7 @@ func DebugNodeRetryWithOptionsAndChroot(oc *CLI, nodeName string, options []stri
 	var stdErr string
 	var stdOut string
 	var err error
-	errWait := wait.Poll(3*time.Second, 30*time.Second, func() (bool, error) {
+	errWait := wait.PollUntilContextTimeout(context.Background(), 3*time.Second, 30*time.Second, false, func(_ context.Context) (bool, error) {
 		stdOut, stdErr, err = debugNode(oc, nodeName, options, true, true, cmd...)
 		if err != nil {
 			return false, nil
@@ -103,7 +103,7 @@ func DebugNodeRetryWithOptionsAndChroot(oc *CLI, nodeName string, options []stri
 // DebugNodeWithOptionsAndChrootWithoutRecoverNsLabel launches debug container using chroot and with options e.g. --image
 // WithoutRecoverNsLabel which will not recover the labels that added for debug node container adapt the podSecurity changed on 4.12+ test clusters
 // "security.openshift.io/scc.podSecurityLabelSync=false" And "pod-security.kubernetes.io/enforce=privileged"
-func DebugNodeWithOptionsAndChrootWithoutRecoverNsLabel(oc *CLI, nodeName string, options []string, cmd ...string) (stdOut string, stdErr string, err error) {
+func DebugNodeWithOptionsAndChrootWithoutRecoverNsLabel(oc *CLI, nodeName string, options []string, cmd ...string) (stdOut, stdErr string, err error) {
 	return debugNode(oc, nodeName, options, true, false, cmd...)
 }
 
@@ -113,7 +113,7 @@ func DebugNode(oc *CLI, nodeName string, cmd ...string) (string, error) {
 	return strings.Join([]string{stdOut, stdErr}, "\n"), err
 }
 
-func debugNode(oc *CLI, nodeName string, cmdOptions []string, needChroot bool, recoverNsLabels bool, cmd ...string) (stdOut string, stdErr string, err error) {
+func debugNode(oc *CLI, nodeName string, cmdOptions []string, needChroot, recoverNsLabels bool, cmd ...string) (stdOut, stdErr string, err error) {
 	var (
 		debugNodeNamespace string
 		isNsPrivileged     bool
@@ -176,12 +176,12 @@ func debugNode(oc *CLI, nodeName string, cmdOptions []string, needChroot bool, r
 }
 
 // DeleteLabelFromNode delete the custom label from the node
-func DeleteLabelFromNode(oc *CLI, node string, label string) (string, error) {
+func DeleteLabelFromNode(oc *CLI, node, label string) (string, error) {
 	return oc.AsAdmin().WithoutNamespace().Run("label").Args("node", node, label+"-").Output()
 }
 
 // AddLabelToNode add the custom label to the node
-func AddLabelToNode(oc *CLI, node string, label string, value string) (string, error) {
+func AddLabelToNode(oc *CLI, node, label, value string) (string, error) {
 	return oc.AsAdmin().WithoutNamespace().Run("label").Args("node", node, label+"="+value).Output()
 }
 
@@ -196,7 +196,7 @@ func GetFirstRhelWorkerNode(oc *CLI) (string, error) {
 }
 
 // getFirstNodeByOsID returns the cluster node by role and os id
-func getFirstNodeByOsID(oc *CLI, role string, osID string) (string, error) {
+func getFirstNodeByOsID(oc *CLI, role, osID string) (string, error) {
 	nodes, err := GetClusterNodesBy(oc, role)
 	for _, node := range nodes {
 		stdout, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("node/"+node, "-o", "jsonpath=\"{.metadata.labels.node\\.openshift\\.io/os_id}\"").Output()
@@ -220,7 +220,7 @@ func GetClusterNodesByRoleInHostedCluster(oc *CLI, role string) ([]string, error
 }
 
 // getFirstNodeByOsIDInHostedCluster returns the cluster node by role and os id
-func getFirstNodeByOsIDInHostedCluster(oc *CLI, role string, osID string) (string, error) {
+func getFirstNodeByOsIDInHostedCluster(oc *CLI, role, osID string) (string, error) {
 	nodes, err := GetClusterNodesByRoleInHostedCluster(oc, role)
 	for _, node := range nodes {
 		stdout, err := oc.AsAdmin().AsGuestKubeconf().Run("get").Args("node/"+node, "-o", "jsonpath=\"{.metadata.labels.node\\.openshift\\.io/os_id}\"").Output()
@@ -238,7 +238,7 @@ func GetFirstLinuxWorkerNodeInHostedCluster(oc *CLI) (string, error) {
 		err        error
 	)
 	workerNode, err = getFirstNodeByOsIDInHostedCluster(oc, "worker", "rhcos")
-	if len(workerNode) == 0 {
+	if workerNode == "" {
 		workerNode, err = getFirstNodeByOsIDInHostedCluster(oc, "worker", "rhel")
 	}
 	return workerNode, err
@@ -363,11 +363,11 @@ func GetRemainingResourcesNodesMap(oc *CLI, nodes []v1.Node) map[string]NodeReso
 }
 
 // getNodesByRoleAndOsID returns list of nodes by role and OS ID
-func getNodesByRoleAndOsID(oc *CLI, role string, osID string) ([]string, error) {
+func getNodesByRoleAndOsID(oc *CLI, role, osID string) ([]string, error) {
 	var nodesList []string
 	nodes, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("node", "-l", "node-role.kubernetes.io/"+role+",node.openshift.io/os_id="+osID, "-o", "jsonpath='{.items[*].metadata.name}'").Output()
 	nodes = strings.Trim(nodes, "'")
-	if len(nodes) != 0 {
+	if nodes != "" {
 		nodesList = strings.Split(nodes, " ")
 	}
 	return nodesList, err
@@ -432,7 +432,7 @@ func DebugNodeRetryWithOptionsAndChrootWithStdErr(oc *CLI, nodeName string, opti
 	var stdErr string
 	var stdOut string
 	var err error
-	errWait := wait.Poll(3*time.Second, 30*time.Second, func() (bool, error) {
+	errWait := wait.PollUntilContextTimeout(context.Background(), 3*time.Second, 30*time.Second, false, func(_ context.Context) (bool, error) {
 		stdOut, stdErr, err = debugNode(oc, nodeName, options, true, true, cmd...)
 		if err != nil {
 			return false, nil

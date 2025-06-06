@@ -10,7 +10,7 @@ import (
 )
 
 // DuplicateFileToPath copies the file at srcPath to destPath.
-func DuplicateFileToPath(srcPath string, destPath string) {
+func DuplicateFileToPath(srcPath, destPath string) {
 	var destFile, srcFile *os.File
 	var err error
 
@@ -34,7 +34,7 @@ func DuplicateFileToPath(srcPath string, destPath string) {
 
 // DuplicateFileToTemp creates a temporary duplicate of the file at srcPath using destPattern for naming,
 // returning the path of the duplicate.
-func DuplicateFileToTemp(srcPath string, destPrefix string) string {
+func DuplicateFileToTemp(srcPath, destPrefix string) string {
 	destFile, err := os.CreateTemp(os.TempDir(), destPrefix)
 	o.Expect(err).NotTo(o.HaveOccurred(), "Failed to create temporary file")
 	o.Expect(destFile.Close()).NotTo(o.HaveOccurred(), "Failed to close temporary file")
@@ -45,7 +45,7 @@ func DuplicateFileToTemp(srcPath string, destPrefix string) string {
 }
 
 // MoveFileToPath attempts to move a file from srcPath to destPath.
-func MoveFileToPath(srcPath string, destPath string) {
+func MoveFileToPath(srcPath, destPath string) {
 	switch err := os.Rename(srcPath, destPath); {
 	case err == nil:
 		return

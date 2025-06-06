@@ -19,7 +19,7 @@ import (
 // WaitForNoPodsAvailable waits until there are no pods in the
 // given namespace
 func WaitForNoPodsAvailable(oc *CLI) error {
-	return wait.Poll(200*time.Millisecond, 3*time.Minute, func() (bool, error) {
+	return wait.PollUntilContextTimeout(context.Background(), 200*time.Millisecond, 3*time.Minute, false, func(_ context.Context) (bool, error) {
 		pods, err := oc.KubeClient().CoreV1().Pods(oc.Namespace()).List(context.Background(), metav1.ListOptions{})
 		if err != nil {
 			return false, err
@@ -69,14 +69,16 @@ func CreateCentosExecPodOrFail(client kubernetes.Interface, ns, generateName str
 }
 
 // If no container is provided (empty string "") it will default to the first container
-func remoteShPod(oc *CLI, namespace string, podName string, needBash bool, needChroot bool, container string, cmd ...string) (string, error) {
+func remoteShPod(oc *CLI, namespace, podName string, needBash, needChroot bool, container string, cmd ...string) (string, error) {
 	var cargs []string
 	var containerArgs []string
-	if needBash {
+
+	switch {
+	case needBash:
 		cargs = []string{"-n", namespace, podName, "bash", "-c"}
-	} else if needChroot {
+	case needChroot:
 		cargs = []string{"-n", namespace, podName, "chroot", "/rootfs"}
-	} else {
+	default:
 		cargs = []string{"-n", namespace, podName}
 	}
 
@@ -92,35 +94,35 @@ func remoteShPod(oc *CLI, namespace string, podName string, needBash bool, needC
 }
 
 // RemoteShContainer creates a remote shell of the given container inside the pod
-func RemoteShContainer(oc *CLI, namespace string, podName string, container string, cmd ...string) (string, error) {
+func RemoteShContainer(oc *CLI, namespace, podName, container string, cmd ...string) (string, error) {
 	return remoteShPod(oc, namespace, podName, false, false, container, cmd...)
 }
 
 // RemoteShPod creates a remote shell of the pod
-func RemoteShPod(oc *CLI, namespace string, podName string, cmd ...string) (string, error) {
+func RemoteShPod(oc *CLI, namespace, podName string, cmd ...string) (string, error) {
 	return remoteShPod(oc, namespace, podName, false, false, "", cmd...)
 }
 
 // RemoteShPodWithChroot creates a remote shell of the pod with chroot
-func RemoteShPodWithChroot(oc *CLI, namespace string, podName string, cmd ...string) (string, error) {
+func RemoteShPodWithChroot(oc *CLI, namespace, podName string, cmd ...string) (string, error) {
 	return remoteShPod(oc, namespace, podName, false, true, "", cmd...)
 }
 
 // RemoteShPodWithBash creates a remote shell of the pod with bash
-func RemoteShPodWithBash(oc *CLI, namespace string, podName string, cmd ...string) (string, error) {
+func RemoteShPodWithBash(oc *CLI, namespace, podName string, cmd ...string) (string, error) {
 	return remoteShPod(oc, namespace, podName, true, false, "", cmd...)
 }
 
 // RemoteShPodWithBashSpecifyContainer creates a remote shell of the pod with bash specifying container name
-func RemoteShPodWithBashSpecifyContainer(oc *CLI, namespace string, podName string, containerName string, cmd ...string) (string, error) {
+func RemoteShPodWithBashSpecifyContainer(oc *CLI, namespace, podName, containerName string, cmd ...string) (string, error) {
 	return remoteShPod(oc, namespace, podName, true, false, containerName, cmd...)
 }
 
 // WaitAndGetSpecificPodLogs wait and return the pod logs by the specific filter
-func WaitAndGetSpecificPodLogs(oc *CLI, namespace string, container string, podName string, filter string) (string, error) {
+func WaitAndGetSpecificPodLogs(oc *CLI, namespace, container, podName, filter string) (string, error) {
 	logs, err := GetSpecificPodLogs(oc, namespace, container, podName, filter)
 	if err != nil {
-		waitErr := wait.Poll(20*time.Second, 10*time.Minute, func() (bool, error) {
+		waitErr := wait.PollUntilContextTimeout(context.Background(), 20*time.Second, 10*time.Minute, false, func(_ context.Context) (bool, error) {
 			logs, err = GetSpecificPodLogs(oc, namespace, container, podName, filter)
 			if err != nil {
 				e2e.Logf("the err:%v, and try next round", err)
@@ -163,8 +165,8 @@ func (pod *Pod) Delete(oc *CLI) error {
 }
 
 // AssertPodToBeReady poll pod status to determine it is ready
-func AssertPodToBeReady(oc *CLI, podName string, namespace string) {
-	err := wait.Poll(10*time.Second, 3*time.Minute, func() (bool, error) {
+func AssertPodToBeReady(oc *CLI, podName, namespace string) {
+	err := wait.PollUntilContextTimeout(context.Background(), 10*time.Second, 3*time.Minute, false, func(_ context.Context) (bool, error) {
 		stdout, err := oc.AsAdmin().Run("get").Args("pod", podName, "-n", namespace, "-o", "jsonpath='{.status.conditions[?(@.type==\"Ready\")].status}'").Output()
 		if err != nil {
 			e2e.Logf("the err:%v, and try next round", err)
@@ -180,14 +182,14 @@ func AssertPodToBeReady(oc *CLI, podName string, namespace string) {
 }
 
 // GetSpecificPodLogs returns the pod logs by the specific filter
-func GetSpecificPodLogs(oc *CLI, namespace string, container string, podName string, filter string) (string, error) {
+func GetSpecificPodLogs(oc *CLI, namespace, container, podName, filter string) (string, error) {
 	return GetSpecificPodLogsCombinedOrNot(oc, namespace, container, podName, filter, false)
 }
 
 // GetSpecificPodLogsCombinedOrNot returns the pod logs by the specific filter with combining stderr or not
-func GetSpecificPodLogsCombinedOrNot(oc *CLI, namespace string, container string, podName string, filter string, combined bool) (string, error) {
+func GetSpecificPodLogsCombinedOrNot(oc *CLI, namespace, container, podName, filter string, combined bool) (string, error) {
 	var cargs []string
-	if len(container) > 0 {
+	if container != "" {
 		cargs = []string{"-n", namespace, "-c", container, podName}
 	} else {
 		cargs = []string{"-n", namespace, podName}
@@ -198,7 +200,7 @@ func GetSpecificPodLogsCombinedOrNot(oc *CLI, namespace string, container string
 		return podLogs, err
 	}
 	var filterCmd = ""
-	if len(filter) > 0 {
+	if filter != "" {
 		filterCmd = " | grep -i " + filter
 	}
 	var filteredLogs []byte
@@ -218,7 +220,7 @@ func GetAllPods(oc *CLI, namespace string) ([]string, error) {
 }
 
 // GetPodName returns the pod name
-func GetPodName(oc *CLI, namespace string, podLabel string, node string) (string, error) {
+func GetPodName(oc *CLI, namespace, podLabel, node string) (string, error) {
 	args := []string{"pods", "-n", namespace, "-l", podLabel,
 		"--field-selector", "spec.nodeName=" + node, "-o", "jsonpath='{..metadata.name}'"}
 	daemonPod, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(args...).Output()
@@ -226,19 +228,19 @@ func GetPodName(oc *CLI, namespace string, podLabel string, node string) (string
 }
 
 // GetPodNodeName returns the name of the node the given pod is running on
-func GetPodNodeName(oc *CLI, namespace string, podName string) (string, error) {
+func GetPodNodeName(oc *CLI, namespace, podName string) (string, error) {
 	return oc.AsAdmin().WithoutNamespace().Run("get").Args("pod", podName, "-n", namespace, "-o=jsonpath={.spec.nodeName}").Output()
 }
 
 // LabelPod labels a given pod with a given label in a given namespace
-func LabelPod(oc *CLI, namespace string, podName string, label string) error {
+func LabelPod(oc *CLI, namespace, podName, label string) error {
 	return oc.AsAdmin().WithoutNamespace().Run("label").Args("-n", namespace, "pod", podName, label).Execute()
 }
 
 // GetAllPodsWithLabel get array of all pods for a given namespace and label
-func GetAllPodsWithLabel(oc *CLI, namespace string, label string) ([]string, error) {
+func GetAllPodsWithLabel(oc *CLI, namespace, label string) ([]string, error) {
 	pods, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("pods", "-n", namespace, "-l", label).Template("{{range .items}}{{.metadata.name}}{{\" \"}}{{end}}").Output()
-	if len(pods) == 0 {
+	if pods == "" {
 		return []string{}, err
 	}
 	return strings.Split(pods, " "), err
@@ -247,7 +249,7 @@ func GetAllPodsWithLabel(oc *CLI, namespace string, label string) ([]string, err
 // AssertAllPodsToBeReadyWithPollerParams assert all pods in NS are in ready state until timeout in a given namespace
 // Pros: allow user to customize poller parameters
 func AssertAllPodsToBeReadyWithPollerParams(oc *CLI, namespace string, interval, timeout time.Duration) {
-	err := wait.Poll(interval, timeout, func() (bool, error) {
+	err := wait.PollUntilContextTimeout(context.Background(), interval, timeout, false, func(_ context.Context) (bool, error) {
 
 		// get the status flag for all pods
 		// except the ones which are in Complete Status.
@@ -272,7 +274,7 @@ func AssertAllPodsToBeReady(oc *CLI, namespace string) {
 }
 
 // GetPodNameInHostedCluster returns the pod name in hosted cluster of hypershift
-func GetPodNameInHostedCluster(oc *CLI, namespace string, podLabel string, node string) (string, error) {
+func GetPodNameInHostedCluster(oc *CLI, namespace, podLabel, node string) (string, error) {
 	args := []string{"pods", "-n", namespace, "-l", podLabel,
 		"--field-selector", "spec.nodeName=" + node, "-o", "jsonpath='{..metadata.name}'"}
 	daemonPod, err := oc.AsAdmin().AsGuestKubeconf().Run("get").Args(args...).Output()

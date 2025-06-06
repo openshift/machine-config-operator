@@ -103,7 +103,7 @@ func main() {
 }
 
 func injectFrameworkInit(command *cobra.Command) *cobra.Command {
-	command.PreRunE = func(cmd *cobra.Command, args []string) error {
+	command.PreRunE = func(_ *cobra.Command, _ []string) error {
 		if err := exutil.InitTest(false); err != nil {
 			return err
 		}

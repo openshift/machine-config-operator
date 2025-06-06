@@ -219,7 +219,7 @@ func (c *PodmanCLI) RemoveImage(imageIndex string) (bool, error) {
 	return true, nil
 }
 
-func (c *PodmanCLI) ContainerCreate(imageName string, containerName string, entrypoint string, openStdin bool) (string, error) {
+func (c *PodmanCLI) ContainerCreate(imageName, containerName, entrypoint string, openStdin bool) (string, error) {
 	interactiveStr := "--interactive=false"
 	if openStdin {
 		interactiveStr = "--interactive=true"
@@ -278,7 +278,7 @@ func (c *PodmanCLI) ExecBackgroud(id string, commands []string) (string, error) 
 	return output, nil
 }
 
-func (c *PodmanCLI) CopyFile(id string, src string, target string) error {
+func (c *PodmanCLI) CopyFile(id, src, target string) error {
 	_, err := c.Run("cp").Args(src, id+":"+target).Output()
 	if err != nil {
 		e2e.Logf("run podman cp failed")
