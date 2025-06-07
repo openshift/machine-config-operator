@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/vincent-petithory/dataurl"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 )
 
@@ -825,6 +826,92 @@ func TestFindClosestFilePolicyPathMatch(t *testing.T) {
 			if !reflect.DeepEqual(test.expectedActionsFound, actionsFound) {
 				t.Errorf("Failed calculating node disruption file policy action: expected: %v but result is: %v.", test.expectedActionsFound, actionsFound)
 			}
+		})
+	}
+}
+
+func TestGenerateExtensionsArgs(t *testing.T) {
+	tests := []struct {
+		name         string
+		installedSet sets.Set[string]
+		extensions   []string
+		expected     []string
+	}{
+		{
+			name:         "no extensions installed, no extensions required",
+			installedSet: sets.New[string](),
+			extensions:   []string{},
+			expected:     []string{},
+		},
+		{
+			name:         "no extensions installed, install wasm",
+			installedSet: sets.New[string](),
+			extensions:   []string{"wasm"},
+			expected:     []string{"--install", "crun-wasm"},
+		},
+		{
+			name:         "no extensions installed, install multiple extensions",
+			installedSet: sets.New[string](),
+			extensions:   []string{"wasm", "ipsec"},
+			expected:     []string{"--install", "NetworkManager-libreswan", "--install", "crun-wasm", "--install", "libreswan"},
+		},
+		{
+			name:         "wasm already installed, require wasm",
+			installedSet: sets.New("crun-wasm"),
+			extensions:   []string{"wasm"},
+			expected:     []string{},
+		},
+		{
+			name:         "wasm installed, no extensions required",
+			installedSet: sets.New("crun-wasm"),
+			extensions:   []string{},
+			expected:     []string{"--uninstall", "crun-wasm"},
+		},
+		{
+			name:         "wasm and ipsec installed, only wasm required",
+			installedSet: sets.New("crun-wasm", "NetworkManager-libreswan", "libreswan"),
+			extensions:   []string{"wasm"},
+			expected:     []string{"--uninstall", "NetworkManager-libreswan", "--uninstall", "libreswan"},
+		},
+		{
+			name:         "some packages installed, switch to different extension",
+			installedSet: sets.New("crun-wasm"),
+			extensions:   []string{"ipsec"},
+			expected:     []string{"--install", "NetworkManager-libreswan", "--install", "libreswan", "--uninstall", "crun-wasm"},
+		},
+		{
+			name:         "complex scenario with two-node-ha",
+			installedSet: sets.New("pacemaker", "crun-wasm"),
+			extensions:   []string{"two-node-ha", "usbguard"},
+			expected:     []string{"--install", "fence-agents-all", "--install", "pcs", "--install", "usbguard", "--uninstall", "crun-wasm"},
+		},
+		{
+			name:         "non-extension packages installed should not be uninstalled",
+			installedSet: sets.New("random-package", "another-package"),
+			extensions:   []string{"wasm"},
+			expected:     []string{"--install", "crun-wasm"},
+		},
+		{
+			name:         "all supported extensions",
+			installedSet: sets.New[string](),
+			extensions:   []string{"two-node-ha", "wasm", "ipsec", "usbguard", "kerberos", "kernel-devel", "sandboxed-containers", "sysstat"},
+			expected:     []string{"--install", "NetworkManager-libreswan", "--install", "crun-wasm", "--install", "fence-agents-all", "--install", "kata-containers", "--install", "kernel-devel", "--install", "kernel-headers", "--install", "krb5-workstation", "--install", "libkadm5", "--install", "libreswan", "--install", "pacemaker", "--install", "pcs", "--install", "sysstat", "--install", "usbguard"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create MachineConfig with the test extensions
+			newConfig := &mcfgv1.MachineConfig{
+				Spec: mcfgv1.MachineConfigSpec{
+					Extensions: tt.extensions,
+				},
+			}
+
+			result := generateExtensionsArgs(tt.installedSet, newConfig)
+
+			// Sort both slices for comparison since order of packages within install/uninstall groups may vary
+			assert.ElementsMatch(t, tt.expected, result, "generateExtensionsArgs result mismatch")
 		})
 	}
 }
