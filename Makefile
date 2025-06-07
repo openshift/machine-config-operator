@@ -27,6 +27,10 @@ export GOLANGCI_LINT_CACHE=$(shell echo $${GOLANGCI_LINT_CACHE:-$$GOPATH/cache})
 
 GOTAGS = "containers_image_openpgp exclude_graphdriver_devicemapper exclude_graphdriver_btrfs containers_image_ostree_stub"
 
+# Include the library makefile
+include $(addprefix ./, bindata.mk)
+$(call add-bindata,testdata,test/extended/testdata/...,testextended,testdata,./test/extended/testdata/bindata.go)
+
 all: binaries
 
 .PHONY: clean test test-unit test-e2e verify update install-tools
