@@ -203,7 +203,7 @@ contents:
           fi
           api_vips={{- range $index, $ip := onPremPlatformAPIServerInternalIPs . }}{{ if gt $index 0 }},{{end}}{{$ip}}{{end}}
           ingress_vips={{- range $index, $ip := onPremPlatformIngressIPs . }}{{ if gt $index 0 }},{{end}}{{$ip}}{{end}}
-          dynkeepalived /var/lib/kubelet/kubeconfig /config/keepalived.conf.tmpl /etc/keepalived/keepalived.conf --api-vips "${api_vips}" --ingress-vips "${ingress_vips}"
+          dynkeepalived /var/lib/kubelet/kubeconfig /config/keepalived.conf.tmpl /etc/keepalived/keepalived.conf --api-vips "${api_vips}" --ingress-vips "${ingress_vips}" --control-plane-topology {{ .Infra.Status.ControlPlaneTopology }}
         resources:
           requests:
             cpu: 100m
