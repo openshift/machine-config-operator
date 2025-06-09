@@ -2,22 +2,16 @@ package extended
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
-
-	exutil "github.com/openshift/machine-config-operator/test/extended/util"
-	"github.com/openshift/machine-config-operator/test/extended/util/architecture"
-	logger "github.com/openshift/machine-config-operator/test/extended/util/logext"
-	e2e "k8s.io/kubernetes/test/e2e/framework"
 
 	g "github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
-	"github.com/tidwall/gjson"
+	exutil "github.com/openshift/machine-config-operator/test/extended/util"
+	logger "github.com/openshift/machine-config-operator/test/extended/util/logext"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
@@ -127,20 +121,6 @@ func (mcp *MachineConfigPool) GetMaxUnavailableInt() (int, error) {
 	}
 
 	return maxUnavailableInt, nil
-}
-
-// SetMaxUnavailable sets the value for maxUnavailable
-func (mcp *MachineConfigPool) SetMaxUnavailable(maxUnavailable int) {
-	logger.Infof("patch mcp %v, change spec.maxUnavailable to %d", mcp.name, maxUnavailable)
-	err := mcp.Patch("merge", fmt.Sprintf(`{"spec":{"maxUnavailable": %d}}`, maxUnavailable))
-	o.Expect(err).NotTo(o.HaveOccurred())
-}
-
-// RemoveMaxUnavailable removes spec.maxUnavailable attribute from the pool config
-func (mcp *MachineConfigPool) RemoveMaxUnavailable() {
-	logger.Infof("patch mcp %v, removing spec.maxUnavailable", mcp.name)
-	err := mcp.Patch("json", `[{ "op": "remove", "path": "/spec/maxUnavailable" }]`)
-	o.Expect(err).NotTo(o.HaveOccurred())
 }
 
 func (mcp *MachineConfigPool) getConfigNameOfSpec() (string, error) {
@@ -322,85 +302,6 @@ func (mcp *MachineConfigPool) SetWaitingTimeForExtensionsChange() {
 	mcp.MinutesWaitingPerNode = DefaultMinutesWaitingPerNode + ExtensionsChangeIncWait
 }
 
-// SetDefaultWaitingTime restore the default waiting time that the MCP will wait for the update to be executed
-func (mcp *MachineConfigPool) SetDefaultWaitingTime() {
-	mcp.MinutesWaitingPerNode = DefaultMinutesWaitingPerNode
-}
-
-// GetInternalIgnitionConfigURL return the internal URL used by the nodes in this pool to get the ignition config
-func (mcp *MachineConfigPool) GetInternalIgnitionConfigURL(secure bool) (string, error) {
-	var (
-		// SecurePort is the tls secured port to serve ignition configs
-		// InsecurePort is the port to serve ignition configs w/o tls
-		port     = IgnitionSecurePort
-		protocol = "https"
-	)
-	internalAPIServerURI, err := GetAPIServerInternalURI(mcp.oc)
-	if err != nil {
-		return "", err
-	}
-	if !secure {
-		port = IgnitionInsecurePort
-		protocol = "http"
-	}
-
-	return fmt.Sprintf("%s://%s:%d/config/%s", protocol, internalAPIServerURI, port, mcp.GetName()), nil
-}
-
-// GetMCSIgnitionConfig returns the ignition config that the MCS is serving for this pool
-func (mcp *MachineConfigPool) GetMCSIgnitionConfig(secure bool, ignitionVersion string) (string, error) {
-	var (
-		// SecurePort is the tls secured port to serve ignition configs
-		// InsecurePort is the port to serve ignition configs w/o tls
-		port = IgnitionSecurePort
-	)
-	if !secure {
-		port = IgnitionInsecurePort
-	}
-
-	url, err := mcp.GetInternalIgnitionConfigURL(secure)
-	if err != nil {
-		return "", err
-	}
-
-	// We will request the config from a master node
-	mMcp := NewMachineConfigPool(mcp.oc.AsAdmin(), MachineConfigPoolMaster)
-	masters, err := mMcp.GetNodes()
-	if err != nil {
-		return "", err
-	}
-	master := masters[0]
-
-	logger.Infof("Remove the IPV4 iptables rules that block the ignition config")
-	removedRules, err := master.RemoveIPTablesRulesByRegexp(fmt.Sprintf("%d", port))
-	defer master.ExecIPTables(removedRules)
-	if err != nil {
-		return "", err
-	}
-
-	logger.Infof("Remove the IPV6 ip6tables rules that block the ignition config")
-	removed6Rules, err := master.RemoveIP6TablesRulesByRegexp(fmt.Sprintf("%d", port))
-	defer master.ExecIP6Tables(removed6Rules)
-	if err != nil {
-		return "", err
-	}
-
-	cmd := []string{"curl", "-s"}
-	if secure {
-		cmd = append(cmd, "-k")
-	}
-	if ignitionVersion != "" {
-		cmd = append(cmd, []string{"-H", fmt.Sprintf("Accept:application/vnd.coreos.ignition+json;version=%s", ignitionVersion)}...)
-	}
-	cmd = append(cmd, url)
-
-	stdout, stderr, err := master.DebugNodeWithChrootStd(cmd...)
-	if err != nil {
-		return stdout + stderr, err
-	}
-	return stdout, nil
-}
-
 // getSelectedNodes returns a list with the nodes that match the .spec.nodeSelector.matchLabels criteria plus the provided extraLabels
 func (mcp *MachineConfigPool) getSelectedNodes(extraLabels string) ([]Node, error) {
 	mcp.oc.NotShowInfo()
@@ -460,54 +361,10 @@ func (mcp *MachineConfigPool) GetNodes() ([]Node, error) {
 	return mcp.GetNodesByLabel("")
 }
 
-// GetNodesWithoutArchitecture returns a list of nodes that belong to this pool and do NOT use the given architectures
-func (mcp *MachineConfigPool) GetNodesWithoutArchitecture(arch architecture.Architecture, archs ...architecture.Architecture) ([]Node, error) {
-	archsList := arch.String()
-	for _, itemArch := range archs {
-		archsList = archsList + "," + itemArch.String()
-	}
-	return mcp.GetNodesByLabel(fmt.Sprintf(`%s notin (%s)`, architecture.NodeArchitectureLabel, archsList))
-}
-
-// GetNodesWithoutArchitectureOrFail returns a list of nodes that belong to this pool and do NOT use the given architectures. It fails the test if any error happens
-func (mcp *MachineConfigPool) GetNodesWithoutArchitectureOrFail(arch architecture.Architecture, archs ...architecture.Architecture) []Node {
-	nodes, err := mcp.GetNodesWithoutArchitecture(arch)
-	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "In MCP %s. Cannot get the nodes NOT using architectures %s", mcp.GetName(), append(archs, arch))
-	return nodes
-}
-
-// GetNodesByArchitecture returns a list of nodes that belong to this pool and use the given architecture
-func (mcp *MachineConfigPool) GetNodesByArchitecture(arch architecture.Architecture, archs ...architecture.Architecture) ([]Node, error) {
-	archsList := arch.String()
-	for _, itemArch := range archs {
-		archsList = archsList + "," + itemArch.String()
-	}
-	return mcp.GetNodesByLabel(fmt.Sprintf(`%s in (%s)`, architecture.NodeArchitectureLabel, archsList))
-}
-
-// GetNodesByArchitecture returns a list of nodes that belong to this pool and use the given architecture. It fails the test if any error happens
-func (mcp *MachineConfigPool) GetNodesByArchitectureOrFail(arch architecture.Architecture, archs ...architecture.Architecture) []Node {
-	nodes, err := mcp.GetNodesByArchitecture(arch)
-	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "In MCP %s. Cannot get the nodes using architectures %s", mcp.GetName(), append(archs, arch))
-	return nodes
-}
-
 // GetNodesOrFail returns a list with the nodes that belong to the machine config pool and fail the test if any error happened
 func (mcp *MachineConfigPool) GetNodesOrFail() []Node {
 	ns, err := mcp.GetNodes()
 	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Cannot get the nodes in %s MCP", mcp.GetName())
-	return ns
-}
-
-// GetCoreOsNodes returns a list with the CoreOs nodes that belong to the machine config pool
-func (mcp *MachineConfigPool) GetCoreOsNodes() ([]Node, error) {
-	return mcp.GetNodesByLabel("node.openshift.io/os_id=rhel")
-}
-
-// GetCoreOsNodesOrFail returns a list with the coreos nodes that belong to the machine config pool and fail the test if any error happened
-func (mcp *MachineConfigPool) GetCoreOsNodesOrFail() []Node {
-	ns, err := mcp.GetCoreOsNodes()
-	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Cannot get the coreOS nodes in %s MCP", mcp.GetName())
 	return ns
 }
 
@@ -538,136 +395,12 @@ func (mcp *MachineConfigPool) GetSortedNodesOrFail() []Node {
 	return nodes
 }
 
-// GetSortedUpdatedNodes returns the list of the UpdatedNodes sorted by the time when they started to be updated.
-// If maxUnavailable>0, then the function will fail if more that maxUpdatingNodes are being updated at the same time
-func (mcp *MachineConfigPool) GetSortedUpdatedNodes(maxUnavailable int) []Node {
-	timeToWait := mcp.estimateWaitDuration()
-	logger.Infof("Waiting %s in pool %s for all nodes to start updating.", timeToWait, mcp.name)
-
-	poolNodes, errget := mcp.GetNodes()
-	o.Expect(errget).NotTo(o.HaveOccurred(), fmt.Sprintf("Cannot get nodes in pool %s", mcp.GetName()))
-
-	pendingNodes := poolNodes
-	updatedNodes := []Node{}
-	immediate := false
-	err := wait.PollUntilContextTimeout(context.TODO(), 20*time.Second, timeToWait, immediate, func(_ context.Context) (bool, error) {
-		// If there are degraded machines, stop polling, directly fail
-		degradedstdout, degradederr := mcp.getDegradedMachineCount()
-		if degradederr != nil {
-			logger.Errorf("the err:%v, and try next round", degradederr)
-			return false, nil
-		}
-
-		if degradedstdout != 0 {
-			logger.Errorf("Degraded MC:\n%s", mcp.PrettyString())
-			exutil.AssertWaitPollNoErr(fmt.Errorf("Degraded machines"), fmt.Sprintf("mcp %s has degraded %d machines", mcp.name, degradedstdout))
-		}
-
-		// Check that there aren't more thatn maxUpdatingNodes updating at the same time
-		if maxUnavailable > 0 {
-			totalUpdating := 0
-			for _, node := range poolNodes {
-				if node.IsUpdating() {
-					totalUpdating++
-				}
-			}
-			if totalUpdating > maxUnavailable {
-				// print nodes for debug
-				mcp.oc.Run("get").Args("nodes").Execute()
-				exutil.AssertWaitPollNoErr(fmt.Errorf("maxUnavailable Not Honored. Pool %s, error: %d nodes were updating at the same time. Only %d nodes should be updating at the same time", mcp.GetName(), totalUpdating, maxUnavailable), "")
-			}
-		}
-
-		remainingNodes := []Node{}
-		for _, node := range pendingNodes {
-			if node.IsUpdating() {
-				logger.Infof("Node %s is UPDATING", node.GetName())
-				updatedNodes = append(updatedNodes, node)
-			} else {
-				remainingNodes = append(remainingNodes, node)
-			}
-		}
-
-		if len(remainingNodes) == 0 {
-			logger.Infof("All nodes have started to be updated on mcp %s", mcp.name)
-			return true, nil
-
-		}
-		logger.Infof(" %d remaining nodes", len(remainingNodes))
-		pendingNodes = remainingNodes
-		return false, nil
-	})
-
-	exutil.AssertWaitPollNoErr(err, fmt.Sprintf("Could not get the list of updated nodes on mcp %s", mcp.name))
-	return updatedNodes
-}
-
-// GetCordonedNodes get cordoned nodes (if maxUnavailable > 1 ) otherwise return the 1st cordoned node
-func (mcp *MachineConfigPool) GetCordonedNodes() []Node {
-
-	// requirement is: when pool is in updating state, get the updating node list
-	o.Expect(mcp.WaitForUpdatingStatus()).NotTo(o.HaveOccurred(), "Waiting for Updating status change failed")
-	// polling all nodes in this pool and check whether all cordoned nodes (SchedulingDisabled)
-	var allUpdatingNodes []Node
-	err := wait.PollUntilContextTimeout(context.TODO(), 5*time.Second, 10*time.Minute, true, func(_ context.Context) (bool, error) {
-		nodes, nerr := mcp.GetNodes()
-		if nerr != nil {
-			return false, fmt.Errorf("Get all linux node failed, will try again in next run %v", nerr)
-		}
-		for _, node := range nodes {
-			schedulable, serr := node.IsSchedulable()
-			if serr != nil {
-				logger.Errorf("Checking node is schedulable failed %v", serr)
-				continue
-			}
-			if !schedulable {
-				allUpdatingNodes = append(allUpdatingNodes, node)
-			}
-		}
-
-		return len(allUpdatingNodes) > 0, nil
-	})
-	exutil.AssertWaitPollNoErr(err, fmt.Sprintf("Could not get the list of updating nodes on mcp %s", mcp.GetName()))
-
-	return allUpdatingNodes
-}
-
-// GetUnreconcilableNodes get all nodes that value of annotation machineconfiguration.openshift.io/state is Unreconcilable
-func (mcp *MachineConfigPool) GetUnreconcilableNodes() ([]Node, error) {
-
-	allUnreconcilableNodes := []Node{}
-	allNodes, err := mcp.GetNodes()
-	if err != nil {
-		return nil, err
-	}
-
-	for _, n := range allNodes {
-		state := n.GetAnnotationOrFail(NodeAnnotationState)
-		if state == "Unreconcilable" {
-			allUnreconcilableNodes = append(allUnreconcilableNodes, n)
-		}
-	}
-
-	return allUnreconcilableNodes, nil
-}
-
-// GetUnreconcilableNodesOrFail get all nodes that value of annotation machineconfiguration.openshift.io/state is Unreconcilable
-// fail the test if any error occurred
-func (mcp *MachineConfigPool) GetUnreconcilableNodesOrFail() []Node {
-
-	allUnreconcilableNodes, err := mcp.GetUnreconcilableNodes()
-	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Cannot get the unreconcilable nodes in %s MCP", mcp.GetName())
-
-	return allUnreconcilableNodes
-}
-
 // WaitForNotDegradedStatus waits until MCP is not degraded, if the condition times out the returned error is != nil
 func (mcp MachineConfigPool) WaitForNotDegradedStatus() error {
 	timeToWait := mcp.estimateWaitDuration()
 	logger.Infof("Waiting %s for MCP %s status to be not degraded.", timeToWait, mcp.name)
 
-	immediate := false
-	err := wait.PollUntilContextTimeout(context.TODO(), 1*time.Minute, timeToWait, immediate, func(_ context.Context) (bool, error) {
+	err := wait.PollUntilContextTimeout(context.TODO(), 1*time.Minute, timeToWait, false, func(_ context.Context) (bool, error) {
 		stdout, err := mcp.GetDegradedStatus()
 		if err != nil {
 			logger.Errorf("the err:%v, and try next round", err)
@@ -729,8 +462,7 @@ func (mcp MachineConfigPool) waitForConditionStatus(condition, status string, ti
 func (mcp MachineConfigPool) WaitForMachineCount(expectedMachineCount int, timeToWait time.Duration) error {
 	logger.Infof("Waiting %s for MCP %s to report %d machine count.", timeToWait, mcp.GetName(), expectedMachineCount)
 
-	immediate := true
-	err := wait.PollUntilContextTimeout(context.TODO(), 30*time.Second, timeToWait, immediate, func(_ context.Context) (bool, error) {
+	err := wait.PollUntilContextTimeout(context.TODO(), 30*time.Second, timeToWait, true, func(_ context.Context) (bool, error) {
 		mCount, err := mcp.getMachineCount()
 		if err != nil {
 			logger.Errorf("the err:%v, and try next round", err)
@@ -790,8 +522,7 @@ func (mcp *MachineConfigPool) waitForComplete() {
 		return false, nil
 	}
 
-	immediate := false
-	err := wait.PollUntilContextTimeout(context.TODO(), 1*time.Minute, timeToWait, immediate, waitFunc)
+	err := wait.PollUntilContextTimeout(context.TODO(), 1*time.Minute, timeToWait, false, waitFunc)
 	if err != nil && !strings.Contains(err.Error(), "degraded") {
 		mccLogs, logErr := NewController(mcp.GetOC()).GetLogs()
 		if logErr != nil {
@@ -801,8 +532,7 @@ func (mcp *MachineConfigPool) waitForComplete() {
 			if strings.Contains(mccLatestLogs, "error when evicting") {
 				logger.Infof("Some pods are taking too long to be evicted:\n%s", mccLatestLogs)
 				logger.Infof("Waiting for MCP %s another round! %s", mcp.name, timeToWait)
-				immediate = true
-				err = wait.PollUntilContextTimeout(context.TODO(), 1*time.Minute, timeToWait, immediate, waitFunc)
+				err = wait.PollUntilContextTimeout(context.TODO(), 1*time.Minute, timeToWait, true, waitFunc)
 			}
 		}
 	}
@@ -812,186 +542,6 @@ func (mcp *MachineConfigPool) waitForComplete() {
 	}
 
 	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), fmt.Sprintf("mc operation is not completed on mcp %s: %s", mcp.name, err))
-}
-
-// GetPoolSynchronizersStatusByType return the PoolsynchronizesStatus matching the give type
-func (mcp *MachineConfigPool) GetPoolSynchronizersStatusByType(pType string) (string, error) {
-	return mcp.Get(`{.status.poolSynchronizersStatus[?(@.poolSynchronizerType=="` + pType + `")]}`)
-}
-
-// IsPinnedImagesComplete returns if the MCP is reporting that there is no pinnedimages operation in progress
-func (mcp *MachineConfigPool) IsPinnedImagesComplete() (bool, error) {
-
-	pinnedStatus, err := mcp.GetPoolSynchronizersStatusByType("PinnedImageSets")
-	if err != nil {
-		return false, err
-	}
-
-	logger.Infof("Pinned status: %s", pinnedStatus)
-
-	mcpMachineCount, err := mcp.Get(`{.status.machineCount}`)
-	if err != nil {
-		return false, err
-	}
-
-	if mcpMachineCount == "" {
-		return false, fmt.Errorf("status.machineCount is empty in mcp %s", mcp.GetName())
-	}
-
-	pinnedMachineCount := gjson.Get(pinnedStatus, "machineCount").String()
-	if pinnedMachineCount == "" {
-		return false, fmt.Errorf("pinned status machineCount is empty in mcp %s", mcp.GetName())
-	}
-
-	pinnedUnavailableMachineCount := gjson.Get(pinnedStatus, "unavailableMachineCount").String()
-	if pinnedUnavailableMachineCount == "" {
-		return false, fmt.Errorf("pinned status unavailableMachineCount is empty in mcp %s", mcp.GetName())
-	}
-
-	updatedMachineCount := gjson.Get(pinnedStatus, "updatedMachineCount").String()
-	if updatedMachineCount == "" {
-		return false, fmt.Errorf("pinned status updatedMachineCount is empty in mcp %s", mcp.GetName())
-	}
-
-	return mcpMachineCount == pinnedMachineCount && updatedMachineCount == pinnedMachineCount && pinnedUnavailableMachineCount == "0", nil
-}
-
-func (mcp *MachineConfigPool) allNodesReportingPinnedSuccess() (bool, error) {
-	allNodes, err := mcp.GetNodes()
-	if err != nil {
-		return false, err
-	}
-
-	if len(allNodes) == 0 {
-		logger.Infof("Warning, pool %s has no nodes!! We consider all nodes as correctly pinned", mcp.GetName())
-	}
-
-	for _, node := range allNodes {
-		nodeMCN := node.GetMachineConfigNode()
-		if nodeMCN.IsPinnedImageSetsDegraded() {
-			logger.Infof("Node %s is pinned degraded. Condition:\n%s", node.GetName(), nodeMCN.GetConditionByType("PinnedImageSetsDegraded"))
-			return false, nil
-		}
-
-		if nodeMCN.IsPinnedImageSetsProgressing() {
-			return false, nil
-		}
-	}
-
-	return true, nil
-}
-
-// waitForPinComplete waits until all images are pinned in the MCP. It fails the test case if the images are not pinned
-func (mcp *MachineConfigPool) waitForPinComplete(timeToWait time.Duration) error {
-	logger.Infof("Waiting %s for MCP %s to complete pinned images.", timeToWait, mcp.name)
-
-	immediate := false
-	err := wait.PollUntilContextTimeout(context.TODO(), 1*time.Minute, timeToWait, immediate, func(_ context.Context) (bool, error) {
-		pinnedComplete, err := mcp.IsPinnedImagesComplete()
-		if err != nil {
-
-			logger.Infof("Error getting pinned complete: %s", err)
-			return false, err
-		}
-
-		if !pinnedComplete {
-			logger.Infof("Waiting for PinnedImageSets poolSynchronizersStatus status to repot success")
-			return false, nil
-		}
-
-		allNodesComplete, err := mcp.allNodesReportingPinnedSuccess()
-		if err != nil {
-			logger.Infof("Error getting if all nodes finished")
-			return false, err
-		}
-
-		if !allNodesComplete {
-			logger.Infof("Waiting for all nodes to report pinned images success")
-			return false, nil
-		}
-
-		logger.Infof("Pool %s successfully pinned the images! Complete!", mcp.GetName())
-		return true, nil
-	})
-	if err != nil {
-		logger.Infof("Pinned images operation is not completed on mcp %s", mcp.name)
-	}
-	return err
-}
-
-// waitForPinApplied waits until MCP reports that it has started to pin images, and then waits until all images are pinned. It fails the test case if the images are not pinned
-// Because everything is cached in the pinnedimageset controller, it can happen that if the images are already pinned, the status change is too fast and we can miss it
-// This is a problem when we execute test cases that have been previously executed. In order to use this method we need to make sure that the pinned images are not present in the nodes
-// or the test will become unstable.
-func (mcp *MachineConfigPool) waitForPinApplied(timeToWait time.Duration) error {
-	logger.Infof("Waiting %s for MCP %s to apply pinned images.", timeToWait, mcp.name)
-
-	immediate := true
-	pinnedStarted := false
-	err := wait.PollUntilContextTimeout(context.TODO(), 1*time.Minute, timeToWait, immediate, func(_ context.Context) (bool, error) {
-		pinnedComplete, err := mcp.IsPinnedImagesComplete()
-		if err != nil {
-			logger.Infof("Error getting pinned complete: %s", err)
-			return false, err
-		}
-		if !pinnedStarted && !pinnedComplete {
-			pinnedStarted = true
-			logger.Infof("Pool %s has started to pin images", mcp.GetName())
-		}
-
-		if pinnedStarted {
-			if !pinnedComplete {
-				logger.Infof("Waiting for PinnedImageSets poolSynchronizersStatus status to repot success")
-				return false, nil
-			}
-
-			allNodesComplete, err := mcp.allNodesReportingPinnedSuccess()
-			if err != nil {
-				logger.Infof("Error getting if all nodes finished")
-				return false, err
-			}
-			if !allNodesComplete {
-				logger.Infof("Waiting for all nodes to report pinned images success")
-				return false, nil
-			}
-
-			logger.Infof("Pool %s successfully pinned the images! Complete!", mcp.GetName())
-			return true, nil
-		}
-
-		logger.Infof("Pool %s has not started to pin images yet", mcp.GetName())
-		return false, nil
-	})
-	if err != nil {
-		logger.Infof("Pinned images operation is not applied on mcp %s", mcp.name)
-	}
-	return err
-}
-
-// GetReportedOsImageOverrideValue returns the value of the os_image_url_override prometheus metric for this pool
-func (mcp *MachineConfigPool) GetReportedOsImageOverrideValue() (string, error) {
-	query := fmt.Sprintf(`os_image_url_override{pool="%s"}`, strings.ToLower(mcp.GetName()))
-
-	mon, err := exutil.NewMonitor(mcp.oc.AsAdmin())
-	if err != nil {
-		return "", err
-	}
-
-	osImageOverride, err := mon.SimpleQuery(query)
-	if err != nil {
-		return "", err
-	}
-
-	jsonOsImageOverride := JSON(osImageOverride)
-	status := jsonOsImageOverride.Get("status").ToString()
-	if status != "success" {
-		return "", fmt.Errorf("Query %s execution failed: %s", query, osImageOverride)
-	}
-
-	logger.Infof("%s metric is:%s", query, osImageOverride)
-
-	metricValue := JSON(osImageOverride).Get("data").Get("result").Item(0).Get("value").Item(1).ToString()
-	return metricValue, nil
 }
 
 // RecoverFromDegraded updates the current and desired machine configs so that the pool can recover from degraded state once the offending MC is deleted
@@ -1024,29 +574,6 @@ func (mcp *MachineConfigPool) RecoverFromDegraded() error {
 	}
 
 	return nil
-}
-
-// IsRealTimeKernel returns true if the pool is using a realtime kernel
-func (mcp *MachineConfigPool) IsRealTimeKernel() (bool, error) {
-	nodes, err := mcp.GetNodes()
-	if err != nil {
-		logger.Errorf("Error getting the nodes in pool %s", mcp.GetName())
-		return false, err
-	}
-
-	return nodes[0].IsRealTimeKernel()
-}
-
-// GetConfiguredMachineConfig return the MachineConfig currently configured in the pool
-func (mcp *MachineConfigPool) GetConfiguredMachineConfig() (*MachineConfig, error) {
-	currentMcName, err := mcp.Get("{.status.configuration.name}")
-	if err != nil {
-		logger.Errorf("Error getting the currently configured MC in pool %s: %s", mcp.GetName(), err)
-		return nil, err
-	}
-
-	logger.Debugf("The currently configured MC in pool %s is: %s", mcp.GetName(), currentMcName)
-	return NewMachineConfig(mcp.oc, currentMcName, mcp.GetName()), nil
 }
 
 // SanityCheck returns an error if the MCP is Degraded or Updating.
@@ -1091,166 +618,6 @@ func (mcp *MachineConfigPool) SanityCheck() error {
 	return nil
 }
 
-// GetCertsExpiry returns the information about the certificates trackec by the MCP
-func (mcp *MachineConfigPool) GetCertsExpiry() ([]CertExpiry, error) {
-	expiryString, err := mcp.Get(`{.status.certExpirys}`)
-	if err != nil {
-		return nil, err
-	}
-
-	var certsExp []CertExpiry
-
-	jsonerr := json.Unmarshal([]byte(expiryString), &certsExp)
-
-	if jsonerr != nil {
-		return nil, jsonerr
-	}
-
-	return certsExp, nil
-}
-
-// GetArchitectures returns the list of architectures that the nodes in this pool are using
-func (mcp *MachineConfigPool) GetArchitectures() ([]architecture.Architecture, error) {
-	archs := []architecture.Architecture{}
-	nodes, err := mcp.GetNodes()
-	if err != nil {
-		return archs, err
-	}
-
-	for _, node := range nodes {
-		archs = append(archs, node.GetArchitectureOrFail())
-	}
-
-	return archs, nil
-}
-
-// GetArchitecturesOrFail returns the list of architectures that the nodes in this pool are using, if there is any error it fails the test
-func (mcp *MachineConfigPool) GetArchitecturesOrFail() []architecture.Architecture {
-	archs, err := mcp.GetArchitectures()
-	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Error getting the architectures used by nodes in MCP %s", mcp.GetName())
-	return archs
-}
-
-// AllNodesUseArch return true if all the nodes in the pool has the given architecture
-func (mcp *MachineConfigPool) AllNodesUseArch(arch architecture.Architecture) bool {
-	for _, currentArch := range mcp.GetArchitecturesOrFail() {
-		if arch != currentArch {
-			return false
-		}
-	}
-	return true
-}
-
-// CaptureAllNodeLogsBeforeRestart will poll the logs of every node in the pool until thy are restarted and will return them once all nodes have been restarted
-func (mcp *MachineConfigPool) CaptureAllNodeLogsBeforeRestart() (map[string]string, error) {
-
-	type nodeLogs struct {
-		nodeName string
-		nodeLogs string
-		err      error
-	}
-
-	returnMap := map[string]string{}
-	c := make(chan nodeLogs)
-	var wg sync.WaitGroup
-
-	timeToWait := mcp.estimateWaitDuration()
-
-	logger.Infof("Waiting %s until all nodes nodes %s MCP are restarted and their logs are captured before restart", timeToWait.String(), mcp.GetName())
-
-	nodes, err := mcp.GetNodes()
-	if err != nil {
-		return nil, err
-	}
-
-	for _, item := range nodes {
-		node := item
-		wg.Add(1)
-		go func() {
-			defer g.GinkgoRecover()
-			defer wg.Done()
-
-			logger.Infof("Capturing node %s logs until restart", node.GetName())
-			logs, err := node.CaptureMCDaemonLogsUntilRestartWithTimeout(timeToWait.String())
-			if err != nil {
-				logger.Errorf("Error while tring to capture the MCD lgos in node %s before restart", node.GetName())
-			} else {
-				logger.Infof("Captured MCD logs before node %s was rebooted", node.GetName())
-			}
-
-			c <- nodeLogs{nodeName: node.GetName(), nodeLogs: logs, err: err}
-		}()
-	}
-
-	// We are using a 0 size channel, so every previous channel call will be locked on "c <- nodeLogs" if we directly call wg.Wait because noone is already reading
-	// One solution is to wait inside a goroutine and close the channel once every node has reported his log
-	// Another solution could be to use a channel with a size = len(nodes) like `c := make(chan nodeLogs, len(nodes))` so that all tasks can write in the channel without being locked
-	go func() {
-		defer g.GinkgoRecover()
-
-		logger.Infof("Waiting for all pre-reboot logs to be collected")
-		wg.Wait()
-		logger.Infof("All logs collected. Closing the channel")
-		close(c)
-	}()
-
-	// Here we read from the channel and unlock the "c <- nodeLogs" instruction. If we call wg.Wait before this point, tasks will be locked there forever
-	for nl := range c {
-		if nl.err != nil {
-			return nil, err
-		}
-		returnMap[nl.nodeName] = nl.nodeLogs
-	}
-
-	return returnMap, nil
-}
-
-// GetPinnedImageSets returns a list with the nodes that match the .spec.nodeSelector.matchLabels criteria plus the provided extraLabels
-func (mcp *MachineConfigPool) GetPinnedImageSets() ([]PinnedImageSet, error) {
-	mcp.oc.NotShowInfo()
-	defer mcp.oc.SetShowInfo()
-
-	labelsString, err := mcp.Get(`{.spec.machineConfigSelector.matchLabels}`)
-	if err != nil {
-		return nil, err
-	}
-
-	if labelsString == "" {
-		return nil, fmt.Errorf("No machineConfigSelector found in %s", mcp)
-	}
-
-	labels := gjson.Parse(labelsString)
-
-	requiredLabel := ""
-	labels.ForEach(func(key, value gjson.Result) bool {
-		requiredLabel += fmt.Sprintf("%s=%s,", key.String(), value.String())
-		return true // keep iterating
-	})
-
-	if requiredLabel == "" {
-		return nil, fmt.Errorf("No labels matcher could be built for %s", mcp)
-	}
-	// remove the last comma
-	requiredLabel = strings.TrimSuffix(requiredLabel, ",")
-
-	pisList := NewPinnedImageSetList(mcp.oc)
-	pisList.ByLabel(requiredLabel)
-
-	return pisList.GetAll()
-}
-
-// Reboot reboot all nodes in the pool by using command "oc adm reboot-machine-config-pool mcp/POOLNAME"
-func (mcp *MachineConfigPool) Reboot() error {
-	logger.Infof("Rebooting nodes in pool %s", mcp.GetName())
-	return mcp.oc.WithoutNamespace().Run("adm").Args("reboot-machine-config-pool", "mcp/"+mcp.GetName()).Execute()
-}
-
-// WaitForRebooted wait for the "Reboot" method to actually reboot all nodes by using command "oc adm wait-for-node-reboot nodes -l node-role.kubernetes.io/POOLNAME"
-func (mcp *MachineConfigPool) WaitForRebooted() error {
-	logger.Infof("Waiting for nodes in pool %s to be rebooted", mcp.GetName())
-	return mcp.oc.WithoutNamespace().Run("adm").Args("wait-for-node-reboot", "nodes", "-l", "node-role.kubernetes.io/"+mcp.GetName()).Execute()
-}
-
 // GetMOSC returns the MachineOSConfig resource for this pool
 func (mcp MachineConfigPool) GetMOSC() (*MachineOSConfig, error) {
 	moscList := NewMachineOSConfigList(mcp.GetOC())
@@ -1270,31 +637,6 @@ func (mcp MachineConfigPool) GetMOSC() (*MachineOSConfig, error) {
 	return &(moscs[0]), nil
 }
 
-// IsOCL returns true if the pool is using On Cluster Layering functionality
-func (mcp MachineConfigPool) IsOCL() (bool, error) {
-	isOCLEnabled, err := IsFeaturegateEnabled(mcp.GetOC(), "OnClusterBuild")
-	if err != nil {
-		return false, err
-	}
-	if !isOCLEnabled {
-		logger.Infof("IS pool %s OCL: false", mcp.GetName())
-		return false, nil
-	}
-
-	mosc, err := mcp.GetMOSC()
-	if err != nil {
-		return false, err
-	}
-	isOCL := mosc != nil
-	logger.Infof("IS pool %s OCL: %t", mcp.GetName(), isOCL)
-	return isOCL, err
-}
-
-// GetLatestMachineOSBuild returns the latest MachineOSBuild created for this MCP
-func (mcp *MachineConfigPool) GetLatestMachineOSBuildOrFail() *MachineOSBuild {
-	return NewMachineOSBuild(mcp.oc, fmt.Sprintf("%s-%s-builder", mcp.GetName(), mcp.getConfigNameOfSpecOrFail()))
-}
-
 // GetAll returns a []MachineConfigPool list with all existing machine config pools sorted by creation time
 func (mcpl *MachineConfigPoolList) GetAll() ([]MachineConfigPool, error) {
 	mcpl.ResourceList.SortByTimestamp()
@@ -1309,13 +651,6 @@ func (mcpl *MachineConfigPoolList) GetAll() ([]MachineConfigPool, error) {
 	}
 
 	return allMCPs, nil
-}
-
-// GetAllOrFail returns a []MachineConfigPool list with all existing machine config pools sorted by creation time, if any error happens it fails the test
-func (mcpl *MachineConfigPoolList) GetAllOrFail() []MachineConfigPool {
-	mcps, err := mcpl.GetAll()
-	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Error getting the list of existing MCP in the cluster")
-	return mcps
 }
 
 // waitForComplete waits until all MCP in the list are updated
@@ -1335,86 +670,6 @@ func (mcpl *MachineConfigPoolList) waitForComplete() {
 			mcp.waitForComplete()
 		}
 	}
-}
-
-// GetCompactCompatiblePool returns worker pool if the cluster is not compact/SNO. Else it will return master pool or custom pool if worker pool is empty.
-// Current logic:
-// If worker pool has nodes, we return worker pool
-// Else if worker pool is empty
-//
-//		If custom pools exist
-//			If any custom pool has nodes, we return the custom pool
-//	     	Else (all custom pools are empty) we are in a Compact/SNO cluster with extra empty custom pools, we return master
-//		Else (worker pool is empty and there is no custom pool) we are in a Compact/SNO cluster, we return master
-func GetCompactCompatiblePool(oc *exutil.CLI) *MachineConfigPool {
-	var (
-		wMcp    = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolWorker)
-		mMcp    = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolMaster)
-		mcpList = NewMachineConfigPoolList(oc)
-	)
-
-	mcpList.PrintDebugCommand()
-
-	if IsCompactOrSNOCluster(oc) {
-		return mMcp
-	}
-
-	if !wMcp.IsEmpty() {
-		return wMcp
-	}
-
-	// The cluster is not Compact/SNO but the the worker pool is empty. All nodes have been moved to one or several custom pool
-	for _, mcp := range mcpList.GetAllOrFail() {
-		if mcp.IsCustom() && !mcp.IsEmpty() { // All worker pools were moved to cutom pools
-			logger.Infof("Worker pool is empty, but there is a custom pool with nodes. Proposing %s MCP for testing", mcp.GetName())
-			return &mcp
-		}
-	}
-
-	e2e.Failf("Something went wrong. There is no suitable pool to execute the test case")
-	return nil
-}
-
-// GetCoreOsCompatiblePool returns worker pool if it has CoreOs nodes. If there is no CoreOs node in the worker pool, then it returns master pool.
-func GetCoreOsCompatiblePool(oc *exutil.CLI) *MachineConfigPool {
-	var (
-		wMcp = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolWorker)
-		mMcp = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolMaster)
-	)
-
-	if len(wMcp.GetCoreOsNodesOrFail()) == 0 {
-		logger.Infof("No CoreOs nodes in the worker pool. Using master pool for testing")
-		return mMcp
-	}
-
-	return wMcp
-}
-
-// CreateCustomMCPByLabel Creates a new custom MCP using the nodes in the worker pool with the given label. If numNodes < 0, we will add all existing nodes to the custom pool
-// If numNodes == 0, no node will be added to the new custom pool.
-func CreateCustomMCPByLabel(oc *exutil.CLI, name, label string, numNodes int) (*MachineConfigPool, error) {
-	wMcp := NewMachineConfigPool(oc, MachineConfigPoolWorker)
-	nodes, err := wMcp.GetNodesByLabel(label)
-	if err != nil {
-		logger.Errorf("Could not get the nodes with %s label", label)
-		return nil, err
-	}
-
-	if len(nodes) < numNodes {
-		return nil, fmt.Errorf("The worker MCP only has %d nodes, it is not possible to take %d nodes from worker pool to create a custom pool",
-			len(nodes), numNodes)
-	}
-
-	customMcpNodes := []Node{}
-	for i, item := range nodes {
-		n := item
-		if numNodes > 0 && i >= numNodes {
-			break
-		}
-		customMcpNodes = append(customMcpNodes, n)
-	}
-
-	return CreateCustomMCPByNodes(oc, name, customMcpNodes)
 }
 
 // CreateCustomMCP create a new custom MCP with the given name and the given number of nodes
@@ -1471,154 +726,6 @@ func CreateCustomMCPByNodes(oc *exutil.CLI, name string, nodes []Node) (*Machine
 	return customMcp, nil
 }
 
-// DeleteCustomMCP deletes a custom MCP properly unlabeling the nodes first
-func DeleteCustomMCP(oc *exutil.CLI, name string) error {
-	mcp := NewMachineConfigPool(oc, name)
-	if !mcp.Exists() {
-		logger.Infof("MCP %s does not exist. No need to remove it", mcp.GetName())
-		return nil
-	}
-
-	exutil.By(fmt.Sprintf("Removing custom MCP %s", name))
-
-	nodes, err := mcp.GetNodes()
-	if err != nil {
-		logger.Errorf("Could not get the nodes that belong to MCP %s: %s", mcp.GetName(), err)
-		return err
-	}
-
-	label := fmt.Sprintf("node-role.kubernetes.io/%s", mcp.GetName())
-	for _, node := range nodes {
-		logger.Infof("Removing pool label from node %s", node.GetName())
-		err := node.RemoveLabel(label)
-		if err != nil {
-			logger.Errorf("Could not remove the role label from node %s: %s", node.GetName(), err)
-			return err
-		}
-	}
-
-	for _, node := range nodes {
-		err := node.WaitForLabelRemoved(label)
-		if err != nil {
-			logger.Errorf("The label %s was not removed from node %s", label, node.GetName())
-		}
-	}
-
-	err = mcp.WaitForMachineCount(0, 5*time.Minute)
-	if err != nil {
-		logger.Errorf("The %s MCP already contains nodes, it cannot be deleted: %s", mcp.GetName(), err)
-		return err
-	}
-
-	// Wait for worker MCP to be updated before removing the custom pool
-	// in order to make sure that no node has any annotation pointing to resources that depend on the custom pool that we want to delete
-	wMcp := NewMachineConfigPool(oc, MachineConfigPoolWorker)
-	err = wMcp.WaitForUpdatedStatus()
-	if err != nil {
-		logger.Errorf("The worker MCP was not ready after removing the custom pool: %s", err)
-		wMcp.PrintDebugCommand()
-		return err
-	}
-
-	err = mcp.Delete()
-	if err != nil {
-		logger.Errorf("The %s MCP could not be deleted: %s", mcp.GetName(), err)
-		return err
-	}
-
-	logger.Infof("OK!\n")
-	return nil
-}
-
-// GetPoolAndNodesForArchitectureOrFail returns a MCP in this order of priority:
-// 1) The master pool if it is a arm64 compact/SNO cluster.
-// 2) A custom pool with 1 arm node in it if there are arm nodes in the worker pool.
-// 3) Any existing custom MCP with all nodes using arm64
-// 4) The master pools if the master pool is arm64
-func GetPoolAndNodesForArchitectureOrFail(oc *exutil.CLI, createMCPName string, arch architecture.Architecture, numNodes int) (*MachineConfigPool, []Node) {
-	var (
-		wMcp                  = NewMachineConfigPool(oc, MachineConfigPoolWorker)
-		mMcp                  = NewMachineConfigPool(oc, MachineConfigPoolMaster)
-		masterHasTheRightArch = mMcp.AllNodesUseArch(arch)
-		mcpList               = NewMachineConfigPoolList(oc)
-	)
-
-	mcpList.PrintDebugCommand()
-
-	if masterHasTheRightArch && IsCompactOrSNOCluster(oc) {
-		return mMcp, mMcp.GetNodesOrFail()
-	}
-
-	// we check if there is an already existing pool with all its nodes using the requested architecture
-	for _, pool := range mcpList.GetAllOrFail() {
-		if !pool.IsCustom() {
-			continue
-		}
-
-		// If there isn't a node with the requested architecture in the worker pool,
-		// but there is a custom pool where all nodes have this architecture
-		if !pool.IsEmpty() && pool.AllNodesUseArch(arch) {
-			logger.Infof("Using the predefined MCP %s", pool.GetName())
-			return &pool, pool.GetNodesOrFail()
-		}
-		logger.Infof("The predefined %s MCP exists, but it is not suitable for testing", pool.GetName())
-	}
-
-	// If there are nodes with the rewquested architecture in the worker pool we build our own custom MCP
-	if len(wMcp.GetNodesByArchitectureOrFail(arch)) > 0 {
-		var err error
-
-		mcp, err := CreateCustomMCPByLabel(oc.AsAdmin(), createMCPName, fmt.Sprintf(`%s=%s`, architecture.NodeArchitectureLabel, arch), numNodes)
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the custom pool for infrastructure %s", architecture.ARM64)
-		return mcp, mcp.GetNodesOrFail()
-
-	}
-
-	// If we are in a HA cluster but worker nor custom pools meet the achitecture conditions for the test
-	// we return the master pool if it is using the right architecture
-	if masterHasTheRightArch {
-		logger.Infof("The cluster is not a Compact/SNO cluster and there are no %s worker nodes available for testing. We will use the master pool.", arch)
-		return mMcp, mMcp.GetNodesOrFail()
-	}
-
-	e2e.Failf("Something went wrong. There is no suitable pool to execute the test case using architecture %s", arch)
-	return nil, nil
-}
-
-// GetPoolAndNodesForNoArchitectureOrFail returns a MCP in this order of priority:
-// 1) The master pool if it is a arm64 compact/SNO cluster.
-// 2) First pool that is not master and contains any node NOT using the given architecture
-func GetPoolWithArchDifferentFromOrFail(oc *exutil.CLI, arch architecture.Architecture) *MachineConfigPool {
-	var (
-		mcpList = NewMachineConfigPoolList(oc)
-		mMcp    = NewMachineConfigPool(oc, MachineConfigPoolMaster)
-	)
-
-	mcpList.PrintDebugCommand()
-
-	// we check if there is an already existing pool with all its nodes using the requested architecture
-	for _, pool := range mcpList.GetAllOrFail() {
-		if pool.IsMaster() {
-			continue
-		}
-
-		// If there isn't a node with the requested architecture in the worker pool,
-		// but there is a custom pool where all nodes have this architecture
-		if !pool.IsEmpty() && len(pool.GetNodesWithoutArchitectureOrFail(arch)) > 0 {
-			logger.Infof("Using pool %s", pool.GetName())
-			return &pool
-		}
-	}
-
-	// It includes compact and SNO
-	if len(mMcp.GetNodesWithoutArchitectureOrFail(arch)) > 0 {
-		return mMcp
-	}
-
-	e2e.Failf("Something went wrong. There is no suitable pool to execute the test case. There is no pool with nodes using  an architecture different from %s", arch)
-	return nil
-}
-
 // DebugDegradedStatus prints the necessary information to debug why a MCP became degraded
 func DebugDegradedStatus(mcp *MachineConfigPool) {
 	var (
@@ -1663,10 +770,4 @@ func DebugDegradedStatus(mcp *MachineConfigPool) {
 	}
 	logger.Infof("Last %d lines of MCC:\n%s", maxMCCLines, GetLastNLines(mccLogs, maxMCCLines))
 	logger.Infof("END DEBUG")
-}
-
-// MoveNodeToAnotherCustomPool modify the role labels in the node so that it is moved from one custom pool to another custom pool in a way that he never belongs to both custom pools at the same time, which is forbidden
-func MoveNodeToAnotherCustomPool(node *Node, origMCP, destMCP string) error {
-	return node.Patch("json",
-		fmt.Sprintf(`[{"op":"remove", "path": "/metadata/labels/node-role.kubernetes.io~1%s"},{"op": "add", "path":"/metadata/labels/node-role.kubernetes.io~1%s", "value": ""}]`, origMCP, destMCP))
 }

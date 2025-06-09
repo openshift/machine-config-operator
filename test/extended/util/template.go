@@ -5,37 +5,13 @@ import (
 	"crypto/rand"
 	"fmt"
 	"math/big"
-	"os"
-	"path/filepath"
-	"strings"
 	"time"
 
 	o "github.com/onsi/gomega"
 
-	"github.com/ghodss/yaml"
-	"github.com/tidwall/pretty"
 	"k8s.io/apimachinery/pkg/util/wait"
 	e2e "k8s.io/kubernetes/test/e2e/framework"
 )
-
-// ApplyClusterResourceFromTemplateWithError apply the changes to the cluster resource and return error if happned.
-// For ex: ApplyClusterResourceFromTemplateWithError(oc, "--ignore-unknown-parameters=true", "-f", "TEMPLATE LOCATION")
-func ApplyClusterResourceFromTemplateWithError(oc *CLI, parameters ...string) error {
-	return resourceFromTemplate(oc, false, true, "", parameters...)
-}
-
-// ApplyClusterResourceFromTemplate apply the changes to the cluster resource.
-// For ex: ApplyClusterResourceFromTemplate(oc, "--ignore-unknown-parameters=true", "-f", "TEMPLATE LOCATION")
-func ApplyClusterResourceFromTemplate(oc *CLI, parameters ...string) {
-	resourceFromTemplate(oc, false, false, "", parameters...)
-}
-
-// ApplyNsResourceFromTemplate apply changes to the ns resource.
-// No need to add a namespace parameter in the template file as it can be provided as a function argument.
-// For ex: ApplyNsResourceFromTemplate(oc, "NAMESPACE", "--ignore-unknown-parameters=true", "-f", "TEMPLATE LOCATION")
-func ApplyNsResourceFromTemplate(oc *CLI, namespace string, parameters ...string) {
-	resourceFromTemplate(oc, false, false, namespace, parameters...)
-}
 
 // CreateClusterResourceFromTemplateWithError create resource from the template and return error if happened.
 // For ex: CreateClusterResourceFromTemplateWithError(oc, "--ignore-unknown-parameters=true", "-f", "TEMPLATE LOCATION")
@@ -109,65 +85,4 @@ func GetRandomString() string {
 		buffer[index] = chars[randGen.Int64()]
 	}
 	return string(buffer)
-}
-
-// ApplyResourceFromTemplateWithNonAdminUser to as normal user to create resource from template
-func ApplyResourceFromTemplateWithNonAdminUser(oc *CLI, parameters ...string) error {
-	var configFile string
-	err := wait.PollUntilContextTimeout(context.Background(), 3*time.Second, 15*time.Second, false, func(_ context.Context) (bool, error) {
-		output, err := oc.Run("process").Args(parameters...).OutputToFile(GetRandomString() + "config.json")
-		if err != nil {
-			e2e.Logf("the err:%v, and try next round", err)
-			return false, nil
-		}
-		configFile = output
-		return true, nil
-	})
-	AssertWaitPollNoErr(err, fmt.Sprintf("fail to process %v", parameters))
-
-	e2e.Logf("the file of resource is %s", configFile)
-	return oc.WithoutNamespace().Run("apply").Args("-f", configFile).Execute()
-}
-
-// ProcessTemplate process template given file path and parameters
-func ProcessTemplate(oc *CLI, parameters ...string) string {
-	var configFile string
-
-	err := wait.PollUntilContextTimeout(context.Background(), 3*time.Second, 15*time.Second, false, func(_ context.Context) (bool, error) {
-		output, err := oc.Run("process").Args(parameters...).OutputToFile(GetRandomString() + "config.json")
-		if err != nil {
-			e2e.Logf("the err:%v, and try next round", err)
-			return false, nil
-		}
-		configFile = output
-		return true, nil
-	})
-
-	AssertWaitPollNoErr(err, fmt.Sprintf("fail to process %v", parameters))
-	e2e.Logf("the file of resource is %s", configFile)
-	return configFile
-}
-
-// ParameterizedTemplateByReplaceToFile parameterize template to new file
-func ParameterizedTemplateByReplaceToFile(oc *CLI, parameters ...string) string {
-	isParameterExist, pIndex := StringsSliceElementsHasPrefix(parameters, "-f", true)
-	o.Expect(isParameterExist).Should(o.BeTrue())
-	templateFileName := parameters[pIndex+1]
-	templateContentByte, readFileErr := os.ReadFile(templateFileName)
-	o.Expect(readFileErr).ShouldNot(o.HaveOccurred())
-	templateContentStr := string(templateContentByte)
-	isParameterExist, pIndex = StringsSliceElementsHasPrefix(parameters, "-p", true)
-	o.Expect(isParameterExist).Should(o.BeTrue())
-	for i := pIndex + 1; i < len(parameters); i++ {
-		if strings.Contains(parameters[i], "=") {
-			tempSlice := strings.Split(parameters[i], "=")
-			o.Expect(tempSlice).Should(o.HaveLen(2))
-			templateContentStr = strings.ReplaceAll(templateContentStr, "${"+tempSlice[0]+"}", tempSlice[1])
-		}
-	}
-	templateContentJSON, convertErr := yaml.YAMLToJSON([]byte(templateContentStr))
-	o.Expect(convertErr).NotTo(o.HaveOccurred())
-	configFile := filepath.Join(e2e.TestContext.OutputDir, oc.Namespace()+"-"+GetRandomString()+"config.json")
-	o.Expect(os.WriteFile(configFile, pretty.Pretty(templateContentJSON), 0o644)).ShouldNot(o.HaveOccurred())
-	return configFile
 }

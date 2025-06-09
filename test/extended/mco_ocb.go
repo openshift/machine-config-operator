@@ -9,7 +9,7 @@ import (
 	logger "github.com/openshift/machine-config-operator/test/extended/util/logext"
 )
 
-var _ = g.Describe("[sig-mco] MCO ocb", func() {
+var _ = g.Describe("[Suite:openshift/machine-config-operator/disruptive][sig-mco] MCO ocb", func() {
 	defer g.GinkgoRecover()
 
 	var (
@@ -22,7 +22,7 @@ var _ = g.Describe("[sig-mco] MCO ocb", func() {
 		skipTestIfOCBIsEnabled(oc)
 	})
 
-	g.It("Author:sregidor-NonPreRelease-High-73494-[P1] OCB Wiring up Productionalized Build Controller. New 4.16 OCB API [Disruptive]", func() {
+	g.It("Author:sregidor-NonPreRelease-High-73494-OCB Wiring up Productionalized Build Controller. New 4.16 OCB API", func() {
 		var (
 			infraMcpName = "infra"
 			moscName     = "tc-73494-infra"
@@ -54,7 +54,7 @@ var _ = g.Describe("[sig-mco] MCO ocb", func() {
 
 	})
 
-	g.It("Author:sregidor-NonPreRelease-Medium-73599-[P2] OCB Validate MachineOSConfig. New 41.6 OCB API [Disruptive]", func() {
+	g.It("Author:sregidor-NonPreRelease-Medium-73599-OCB Validate MachineOSConfig. New 41.6 OCB API", func() {
 		var (
 			infraMcpName = "infra"
 			moscName     = "tc-73599-infra"

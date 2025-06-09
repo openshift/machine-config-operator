@@ -12,7 +12,7 @@ import (
 	o "github.com/onsi/gomega"
 )
 
-var _ = g.Describe("[sig-mco] MCO Layering", func() {
+var _ = g.Describe("[Suite:openshift/machine-config-operator/disruptive][sig-mco] MCO Layering", func() {
 	defer g.GinkgoRecover()
 
 	var (
@@ -34,7 +34,7 @@ var _ = g.Describe("[sig-mco] MCO Layering", func() {
 		logger.Infof("test dir %s is cleaned up", tmpdir)
 	})
 
-	g.It("Author:sregidor-ConnectedOnly-NonPreRelease-Longduration-Medium-54052-[P2] Not bootable layered osImage provided[Disruptive]", func() {
+	g.It("Author:sregidor-ConnectedOnly-NonPreRelease-Longduration-Medium-54052-Not bootable layered osImage provided", func() {
 		var (
 			nonBootableImage = "quay.io/openshifttest/hello-openshift:1.2.0"
 			layeringMcName   = "not-bootable-image-tc54052"
@@ -45,7 +45,7 @@ var _ = g.Describe("[sig-mco] MCO Layering", func() {
 
 		checkInvalidOsImagesDegradedStatus(oc.AsAdmin(), nonBootableImage, layeringMcName, expectedNDMessage, expectedNDReason)
 	})
-	g.It("Author:sregidor-NonPreRelease-Longduration-Medium-54054-Not pullable layered osImage provided[Disruptive]", func() {
+	g.It("Author:sregidor-NonPreRelease-Longduration-Medium-54054-Not pullable layered osImage provided", func() {
 		var (
 			nonPullableImage  = "quay.io/openshifttest/tc54054fakeimage:latest"
 			layeringMcName    = "not-pullable-image-tc54054"
@@ -56,7 +56,7 @@ var _ = g.Describe("[sig-mco] MCO Layering", func() {
 
 		checkInvalidOsImagesDegradedStatus(oc.AsAdmin(), nonPullableImage, layeringMcName, expectedNDMessage, expectedNDReason)
 	})
-	g.It("Author:sregidor-NonPreRelease-Medium-54049-[P2] Verify base images in the release image", func() {
+	g.It("Author:sregidor-NonPreRelease-Medium-54049-Verify base images in the release image", func() {
 		var (
 			oldMachineConfigOsImage = "machine-os-content"
 			coreExtensions          = "rhel-coreos-extensions"

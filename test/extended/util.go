@@ -6,9 +6,9 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -21,8 +21,11 @@ import (
 	e2e "k8s.io/kubernetes/test/e2e/framework"
 )
 
-// fixturePathCache to store fixture path mapping, key: dir name under testdata, value: fixture path
-var fixturePathCache = make(map[string]string)
+// fixturesPath stores a local copy of the embedded resources
+var (
+	fixturesPath    = ""
+	fixtureInitLock sync.Once
+)
 
 // PodDisruptionBudget struct is used to handle PodDisruptionBudget resources in OCP
 type PodDisruptionBudget struct {
@@ -91,18 +94,12 @@ func (icsp *ImageContentSourcePolicy) delete(oc *exutil.CLI) {
 // because exutil.FixturePath will copy all test files to fixture path (tmp dir with prefix fixture-testdata-dir)
 // this operation is very expensive, we don't want to call it for every case
 func generateTemplateAbsolutePath(fileName string) string {
-	mcoDirName := "mco"
-	mcoBaseDir := ""
-	if mcoBaseDir = fixturePathCache[mcoDirName]; mcoBaseDir == "" {
+	fixtureInitLock.Do(func() {
 		logger.Infof("mco fixture dir is not initialized, start to create")
-		mcoBaseDir = exutil.FixturePath("testdata", mcoDirName)
-		fixturePathCache[mcoDirName] = mcoBaseDir
-		logger.Infof("mco fixture dir is initialized: %s", mcoBaseDir)
-	} else {
-		mcoBaseDir = fixturePathCache[mcoDirName]
-		logger.Debugf("mco fixture dir found in cache: %s", mcoBaseDir)
-	}
-	return filepath.Join(mcoBaseDir, fileName)
+		fixturesPath = exutil.FixturePath(".")
+		logger.Infof("mco fixture dir is initialized: %s", fixturesPath)
+	})
+	return filepath.Join(fixturesPath, fileName)
 }
 
 func sortNodeList(nodes []Node) []Node {
@@ -214,51 +211,6 @@ func createTmpDir() string {
 	return tmpdir
 }
 
-// getEnabledFeatureGates get enabled featuregates list
-func getEnabledFeatureGates(oc *exutil.CLI) ([]string, error) {
-	enabledFeatureGates, err := NewResource(oc.AsAdmin(), "featuregate", "cluster").Get(`{.status.featureGates[0].enabled[*].name}`)
-	if err != nil {
-		return nil, err
-	}
-
-	return strings.Split(enabledFeatureGates, " "), nil
-}
-
-// IsFeaturegateEnabled check whether a featuregate is in enabled or not
-func IsFeaturegateEnabled(oc *exutil.CLI, featuregate string) (bool, error) {
-	enabledFeatureGates, err := getEnabledFeatureGates(oc)
-	if err != nil {
-		return false, err
-	}
-	for _, f := range enabledFeatureGates {
-		if f == featuregate {
-			return true, nil
-		}
-	}
-	return false, nil
-}
-
-// GetInternalIgnitionConfigURL return the API server internal uri without any port and without the protocol
-func GetAPIServerInternalURI(oc *exutil.CLI) (string, error) {
-	infra := NewResource(oc, "infrastructure", "cluster")
-	apiServerInternalURI, err := infra.Get(`{.status.apiServerInternalURI}`)
-	if err != nil {
-		return "", err
-	}
-
-	return regexp.MustCompile(`^https*:\/\/(.*):\d+$`).ReplaceAllString(strings.TrimSpace(apiServerInternalURI), `$1`), nil
-}
-
-// IsCompactOrSNOCluster returns true if the current cluster is a Compact cluster or a SNO cluster
-func IsCompactOrSNOCluster(oc *exutil.CLI) bool {
-	var (
-		wMcp    = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolWorker)
-		mcpList = NewMachineConfigPoolList(oc.AsAdmin())
-	)
-
-	return wMcp.IsEmpty() && len(mcpList.GetAllOrFail()) == 2
-}
-
 func IsTrue(s string) bool {
 	return strings.EqualFold(s, TrueString)
 }
@@ -339,89 +291,6 @@ func GetLastNLines(s string, n int) string {
 		return strings.Join(lines[lenLines-n:], "\n")
 	}
 	return strings.Join(lines, "\n")
-}
-
-// splitCommandString splits a string taking into account double quotes and single quotes, unscaping the quotes if necessary
-// Example. Split this:
-//
-//	command "with \"escaped\" double quotes" and 'with \'escaped\' single quotes' and simple params
-//
-// Result:
-// - command
-// - with "escaped" double quotes
-// - and
-// - with 'escaped' single quotes
-// - and
-// - simple
-// - params
-func splitCommandString(strCommand string) []string {
-	command := []string{}
-	insideDoubleQuote := false
-	insideSingleQuote := false
-
-	isSingleQuote := func(b byte) bool {
-		return b == '\'' && !insideDoubleQuote
-	}
-
-	isDoubleQuote := func(b byte) bool {
-		return b == '"' && !insideSingleQuote
-	}
-
-	arg := []byte{}
-	for _, char := range []byte(strings.TrimSpace(strCommand)) {
-		if isDoubleQuote(char) {
-
-			// skip the first character of the quote
-			if !insideDoubleQuote {
-				insideDoubleQuote = true
-				continue
-			}
-			// we are inside a quote
-			// if the new double quote is scaped we unscape it and continue inside a quote
-			if arg[len(arg)-1] == '\\' {
-				arg[len(arg)-1] = '"'
-				continue
-			}
-
-			// If there is no scaped char the we get out of the quote state ignoring the last character of the quote
-			insideDoubleQuote = false
-			continue
-
-		}
-
-		if isSingleQuote(char) {
-			// skip the first character of the quote
-			if !insideSingleQuote {
-				insideSingleQuote = true
-				continue
-			}
-			// we are inside a quote
-			// if the new single quote is scaped we unscape it and continue inside a quote
-			if arg[len(arg)-1] == '\\' {
-				arg[len(arg)-1] = '\''
-				continue
-			}
-
-			// If there is no scaped char the we get out of the quote state ignoring the last character of the quote
-			insideSingleQuote = false
-			continue
-
-		}
-
-		if char == ' ' && !insideDoubleQuote && !insideSingleQuote {
-			command = append(command, string(arg))
-			arg = []byte{}
-			continue
-		}
-
-		arg = append(arg, char)
-	}
-	if len(arg) > 0 {
-		command = append(command, string(arg))
-	}
-
-	return command
-
 }
 
 // GetClonedResourceJSONString takes the json data of a given resource and clone it using a new name and namespace, removing unnecessary fields

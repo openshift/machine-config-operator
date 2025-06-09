@@ -3,8 +3,11 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/openshift-eng/openshift-tests-extension/pkg/cmd"
+	v "github.com/openshift-eng/openshift-tests-extension/pkg/version"
+	"github.com/openshift/machine-config-operator/pkg/version"
 	exutil "github.com/openshift/machine-config-operator/test/extended/util"
 	e2e "k8s.io/kubernetes/test/e2e/framework"
 
@@ -18,48 +21,19 @@ import (
 func main() {
 	// Extension registry
 	registry := e.NewRegistry()
+	setVersion()
 
 	// You can declare multiple extensions, but most people will probably only need to create one.
-	ext := e.NewExtension("openshift", "payload", "mco-tests")
-
-	// add smoke test suite to do health check
-	ext.AddSuite(e.Suite{
-		Name: "mco/smoke-test",
-		Qualifiers: []string{
-			`name.contains("health check")`,
-		},
-	})
-
-	// all level0 test cases
-	ext.AddSuite(e.Suite{
-		Name: "mco/level0",
-		Parents: []string{
-			"openshift/disruptive",
-		},
-		Qualifiers: []string{
-			`name.contains("LEVEL0")`,
-		},
-	})
-
-	// critical test cases
-	ext.AddSuite(e.Suite{
-		Name: "mco/critical",
-		Parents: []string{
-			"openshift/disruptive",
-		},
-		Qualifiers: []string{
-			`name.contains("-Critical-")`,
-		},
-	})
+	ext := e.NewExtension("openshift", "payload", "machine-config-operator")
 
 	// all test cases
 	ext.AddSuite(e.Suite{
-		Name: "mco/full",
+		Name: "openshift/machine-config-operator/disruptive",
 		Parents: []string{
 			"openshift/disruptive",
 		},
 		Qualifiers: []string{
-			`name.contains("sig-mco")`,
+			`name.contains("[Suite:openshift/machine-config-operator/disruptive")`,
 		},
 	})
 
@@ -94,5 +68,16 @@ func main() {
 		return root.Execute()
 	}(); err != nil {
 		os.Exit(1)
+	}
+}
+
+func setVersion() {
+	v.CommitFromGit = version.Hash
+	v.BuildDate = version.Date
+	const dirtyTreeState = "dirty"
+	if !strings.Contains(strings.ToLower(version.Raw), dirtyTreeState) {
+		v.GitTreeState = "clean"
+	} else {
+		v.GitTreeState = dirtyTreeState
 	}
 }

@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	g "github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
 	exutil "github.com/openshift/machine-config-operator/test/extended/util"
 	logger "github.com/openshift/machine-config-operator/test/extended/util/logext"
@@ -319,16 +318,6 @@ func (mosc MachineOSConfig) GetCurrentMachineOSBuild() (*MachineOSBuild, error) 
 	return NewMachineOSBuild(mosc.GetOC(), mosbName), nil
 }
 
-// SetRenderedImagePushspec patches the MOSC resource in order to configure a new renderedImagePushspec
-func (mosc MachineOSConfig) SetRenderedImagePushspec(rips string) error {
-	return mosc.Patch("json", `[{"op": "replace", "path": "/spec/renderedImagePushSpec", "value":  "`+rips+`"}]`)
-}
-
-// GetRenderedImagePushspec returns the current valude of renderedImagePushspec
-func (mosc MachineOSConfig) GetRenderedImagePushspec() (string, error) {
-	return mosc.Get(`{.spec.renderedImagePushSpec}`)
-}
-
 // SetContainerfiles sets the container files used by this MOSC
 func (mosc MachineOSConfig) SetContainerfiles(containerFiles []ContainerFile) error {
 	containerFilesBytes, err := json.Marshal(containerFiles)
@@ -348,11 +337,6 @@ func (mosc MachineOSConfig) RemoveContainerfiles() error {
 // GetStatusCurrentImagePullSpec returns the current image pull spec that is applied and reported in the status
 func (mosc MachineOSConfig) GetStatusCurrentImagePullSpec() (string, error) {
 	return mosc.Get(`{.status.currentImagePullSpec}`)
-}
-
-// Rebuild forces a rebuild of the current image
-func (mosc MachineOSConfig) Rebuild() error {
-	return mosc.Patch("json", `[{"op": "add", "path": "/metadata/annotations/machineconfiguration.openshift.io~1rebuild", "value":""}]`)
 }
 
 // GetAll returns a []MachineOSConfig list with all existing pinnedimageset sorted by creation timestamp
@@ -465,10 +449,4 @@ func CanUseInternalRegistryToStoreOSImage(oc *exutil.CLI) bool {
 	storageConfig := registryConfig.GetOrFail(`{.spec.storage.emptyDir}`)
 
 	return storageConfig == ""
-}
-
-func SkipTestIfCannotUseInternalRegistry(oc *exutil.CLI) {
-	if !CanUseInternalRegistryToStoreOSImage(oc) {
-		g.Skip("The internal registry cannot be used to store the osImage in this cluster. Skipping test case")
-	}
 }
