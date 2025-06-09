@@ -58,11 +58,6 @@ func Infof(format string, v ...interface{}) {
 	logger.log.Info().Msgf(format, v...)
 }
 
-// Info log info level message
-func Info(message string) {
-	logger.log.Info().Msg(message)
-}
-
 // Debugf log debug level message
 func Debugf(format string, v ...interface{}) {
 	logger.log.Debug().Msgf(format, v...)
@@ -71,11 +66,6 @@ func Debugf(format string, v ...interface{}) {
 // Errorf log error level message
 func Errorf(format string, v ...interface{}) {
 	logger.log.Error().Msgf(format, v...)
-}
-
-// Error log error level message
-func Error(message string) {
-	logger.log.Error().Msg(message)
 }
 
 // Warnf log warning level message

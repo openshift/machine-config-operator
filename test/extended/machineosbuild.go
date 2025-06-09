@@ -83,10 +83,3 @@ func (mosbl *MachineOSBuildList) GetAll() ([]MachineOSBuild, error) {
 
 	return all, nil
 }
-
-// GetAllOrFail returns a []MachineOSBuild list with all existing pinnedimageset sorted by creation time, if any error happens it fails the test
-func (mosbl *MachineOSBuildList) GetAllOrFail() []MachineOSBuild {
-	all, err := mosbl.GetAll()
-	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Error getting the list of existing MachineOSBuild in the cluster")
-	return all
-}

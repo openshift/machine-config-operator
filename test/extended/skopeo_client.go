@@ -2,14 +2,13 @@ package extended
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"strings"
 
-	container "github.com/openshift/machine-config-operator/test/extended/util/container"
 	logger "github.com/openshift/machine-config-operator/test/extended/util/logext"
+	e2e "k8s.io/kubernetes/test/e2e/framework"
 )
 
 // SkopeoCLI provides function to run the docker command
@@ -27,6 +26,12 @@ type SkopeoCLI struct {
 	UnsetProxy      bool
 	env             []string
 	authFile        string
+}
+
+type ExitError struct {
+	Cmd    string
+	StdErr string
+	*exec.ExitError
 }
 
 // NewSkopeoCLI initialize the docker cli framework
@@ -94,9 +99,9 @@ func (c *SkopeoCLI) Output() (string, error) {
 		c.stdout = bytes.NewBuffer(out)
 		c.stderr = bytes.NewBuffer(e.Stderr)
 		logger.Errorf("Error running %v:\nSTDOUT:%s\nSTDERR:%s", cmd, trimmed, string(e.Stderr))
-		return trimmed, &container.ExitError{ExitError: e, Cmd: c.execPath + " " + strings.Join(c.finalArgs, " "), StdErr: trimmed}
+		return trimmed, &ExitError{ExitError: e, Cmd: c.execPath + " " + strings.Join(c.finalArgs, " "), StdErr: trimmed}
 	default:
-		container.FatalErr(fmt.Errorf("unable to execute %q: %v", c.execPath, err))
+		e2e.Failf("unable to execute %q: %v", c.execPath, err)
 		return "", nil
 	}
 }
