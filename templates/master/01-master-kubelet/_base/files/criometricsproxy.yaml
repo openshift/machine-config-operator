@@ -75,6 +75,8 @@ contents:
         - name: etc-kube
           mountPath: "/etc/kubernetes"
           mountPropagation: HostToContainer
+          readOnly: true
         - name: var-lib-kubelet
           mountPath: "/var/lib/kubelet"
           mountPropagation: HostToContainer
+          readOnly: true
