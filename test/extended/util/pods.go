@@ -4,139 +4,12 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
-	"slices"
 	"strings"
 	"time"
 
-	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	kutilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/kubernetes"
 	e2e "k8s.io/kubernetes/test/e2e/framework"
-	"k8s.io/kubernetes/test/e2e/framework/pod"
 )
-
-// WaitForNoPodsAvailable waits until there are no pods in the
-// given namespace
-func WaitForNoPodsAvailable(oc *CLI) error {
-	return wait.PollUntilContextTimeout(context.Background(), 200*time.Millisecond, 3*time.Minute, false, func(_ context.Context) (bool, error) {
-		pods, err := oc.KubeClient().CoreV1().Pods(oc.Namespace()).List(context.Background(), metav1.ListOptions{})
-		if err != nil {
-			return false, err
-		}
-
-		return len(pods.Items) == 0, nil
-	})
-}
-
-// RemovePodsWithPrefixes deletes pods whose name begins with the
-// supplied prefixes
-func RemovePodsWithPrefixes(oc *CLI, prefixes ...string) error {
-	e2e.Logf("Removing pods from namespace %s with prefix(es): %v", oc.Namespace(), prefixes)
-	pods, err := oc.AdminKubeClient().CoreV1().Pods(oc.Namespace()).List(context.Background(), metav1.ListOptions{})
-	if err != nil {
-		return err
-	}
-	errs := []error{}
-	for _, prefix := range prefixes {
-		for _, pod := range pods.Items {
-			if strings.HasPrefix(pod.Name, prefix) {
-				if err := oc.AdminKubeClient().CoreV1().Pods(oc.Namespace()).Delete(context.Background(), pod.Name, metav1.DeleteOptions{}); err != nil {
-					e2e.Logf("unable to remove pod %s/%s", oc.Namespace(), pod.Name)
-					errs = append(errs, err)
-				}
-			}
-		}
-	}
-	if len(errs) > 0 {
-		return kutilerrors.NewAggregate(errs)
-	}
-	return nil
-}
-
-// CreateCentosExecPodOrFail creates a centos:7 pause pod used as a vessel for kubectl exec commands.
-// Pod name is uniquely generated.
-func CreateCentosExecPodOrFail(client kubernetes.Interface, ns, generateName string, tweak func(*v1.Pod)) *v1.Pod {
-	return pod.CreateExecPodOrFail(context.TODO(), client, ns, generateName, func(pod *v1.Pod) {
-		pod.Spec.Containers[0].Image = "centos:7"
-		pod.Spec.Containers[0].Command = []string{"sh", "-c", "trap exit TERM; while true; do sleep 5; done"}
-		pod.Spec.Containers[0].Args = nil
-
-		if tweak != nil {
-			tweak(pod)
-		}
-	})
-}
-
-// If no container is provided (empty string "") it will default to the first container
-func remoteShPod(oc *CLI, namespace, podName string, needBash, needChroot bool, container string, cmd ...string) (string, error) {
-	var cargs []string
-
-	switch {
-	case needBash:
-		cargs = []string{"-n", namespace, podName, "bash", "-c"}
-	case needChroot:
-		cargs = []string{"-n", namespace, podName, "chroot", "/rootfs"}
-	default:
-		cargs = []string{"-n", namespace, podName}
-	}
-
-	var containerArgs []string
-	if container != "" {
-		containerArgs = []string{"-c", container}
-	} else {
-		containerArgs = []string{}
-	}
-
-	allArgs := slices.Concat(containerArgs, cargs, cmd)
-	return oc.AsAdmin().WithoutNamespace().Run("rsh").Args(allArgs...).Output()
-}
-
-// RemoteShContainer creates a remote shell of the given container inside the pod
-func RemoteShContainer(oc *CLI, namespace, podName, container string, cmd ...string) (string, error) {
-	return remoteShPod(oc, namespace, podName, false, false, container, cmd...)
-}
-
-// RemoteShPod creates a remote shell of the pod
-func RemoteShPod(oc *CLI, namespace, podName string, cmd ...string) (string, error) {
-	return remoteShPod(oc, namespace, podName, false, false, "", cmd...)
-}
-
-// RemoteShPodWithChroot creates a remote shell of the pod with chroot
-func RemoteShPodWithChroot(oc *CLI, namespace, podName string, cmd ...string) (string, error) {
-	return remoteShPod(oc, namespace, podName, false, true, "", cmd...)
-}
-
-// RemoteShPodWithBash creates a remote shell of the pod with bash
-func RemoteShPodWithBash(oc *CLI, namespace, podName string, cmd ...string) (string, error) {
-	return remoteShPod(oc, namespace, podName, true, false, "", cmd...)
-}
-
-// RemoteShPodWithBashSpecifyContainer creates a remote shell of the pod with bash specifying container name
-func RemoteShPodWithBashSpecifyContainer(oc *CLI, namespace, podName, containerName string, cmd ...string) (string, error) {
-	return remoteShPod(oc, namespace, podName, true, false, containerName, cmd...)
-}
-
-// WaitAndGetSpecificPodLogs wait and return the pod logs by the specific filter
-func WaitAndGetSpecificPodLogs(oc *CLI, namespace, container, podName, filter string) (string, error) {
-	logs, err := GetSpecificPodLogs(oc, namespace, container, podName, filter)
-	if err != nil {
-		waitErr := wait.PollUntilContextTimeout(context.Background(), 20*time.Second, 10*time.Minute, false, func(_ context.Context) (bool, error) {
-			logs, err = GetSpecificPodLogs(oc, namespace, container, podName, filter)
-			if err != nil {
-				e2e.Logf("the err:%v, and try next round", err)
-				return false, nil
-			}
-			if logs != "" {
-				return true, nil
-			}
-			return false, nil
-		})
-		AssertWaitPollNoErr(waitErr, fmt.Sprintf("Pod logs does not contain %s", filter))
-	}
-	return logs, nil
-}
 
 // Pod Parameters can be used to set the template parameters except PodName as PodName can be provided using pod.Name
 type Pod struct {
@@ -213,37 +86,12 @@ func GetSpecificPodLogsCombinedOrNot(oc *CLI, namespace, container, podName, fil
 	return string(filteredLogs), errCmd
 }
 
-// GetAllPods returns a list of the names of all pods in the cluster in a given namespace
-func GetAllPods(oc *CLI, namespace string) ([]string, error) {
-	pods, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("pods", "-n", namespace, "-o", "jsonpath='{.items[*].metadata.name}'").Output()
-	return strings.Split(strings.Trim(pods, "'"), " "), err
-}
-
 // GetPodName returns the pod name
 func GetPodName(oc *CLI, namespace, podLabel, node string) (string, error) {
 	args := []string{"pods", "-n", namespace, "-l", podLabel,
 		"--field-selector", "spec.nodeName=" + node, "-o", "jsonpath='{..metadata.name}'"}
 	daemonPod, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(args...).Output()
 	return strings.ReplaceAll(daemonPod, "'", ""), err
-}
-
-// GetPodNodeName returns the name of the node the given pod is running on
-func GetPodNodeName(oc *CLI, namespace, podName string) (string, error) {
-	return oc.AsAdmin().WithoutNamespace().Run("get").Args("pod", podName, "-n", namespace, "-o=jsonpath={.spec.nodeName}").Output()
-}
-
-// LabelPod labels a given pod with a given label in a given namespace
-func LabelPod(oc *CLI, namespace, podName, label string) error {
-	return oc.AsAdmin().WithoutNamespace().Run("label").Args("-n", namespace, "pod", podName, label).Execute()
-}
-
-// GetAllPodsWithLabel get array of all pods for a given namespace and label
-func GetAllPodsWithLabel(oc *CLI, namespace, label string) ([]string, error) {
-	pods, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("pods", "-n", namespace, "-l", label).Template("{{range .items}}{{.metadata.name}}{{\" \"}}{{end}}").Output()
-	if pods == "" {
-		return []string{}, err
-	}
-	return strings.Split(pods, " "), err
 }
 
 // AssertAllPodsToBeReadyWithPollerParams assert all pods in NS are in ready state until timeout in a given namespace
@@ -271,12 +119,4 @@ func AssertAllPodsToBeReadyWithPollerParams(oc *CLI, namespace string, interval,
 // AssertAllPodsToBeReady assert all pods in NS are in ready state until timeout in a given namespace
 func AssertAllPodsToBeReady(oc *CLI, namespace string) {
 	AssertAllPodsToBeReadyWithPollerParams(oc, namespace, 10*time.Second, 4*time.Minute)
-}
-
-// GetPodNameInHostedCluster returns the pod name in hosted cluster of hypershift
-func GetPodNameInHostedCluster(oc *CLI, namespace, podLabel, node string) (string, error) {
-	args := []string{"pods", "-n", namespace, "-l", podLabel,
-		"--field-selector", "spec.nodeName=" + node, "-o", "jsonpath='{..metadata.name}'"}
-	daemonPod, err := oc.AsAdmin().AsGuestKubeconf().Run("get").Args(args...).Output()
-	return strings.ReplaceAll(daemonPod, "'", ""), err
 }

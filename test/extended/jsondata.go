@@ -7,7 +7,6 @@ import (
 
 	logger "github.com/openshift/machine-config-operator/test/extended/util/logext"
 
-	"k8s.io/client-go/util/jsonpath"
 	e2e "k8s.io/kubernetes/test/e2e/framework"
 )
 
@@ -90,57 +89,8 @@ func (jd *JSONData) String() string {
 	return result
 }
 
-// DeleteSafe deletes a key in a map json node
-func (jd *JSONData) DeleteSafe(key string) error {
-	if jd.data == nil {
-		return fmt.Errorf("Data does not exist. It is empty: %v", jd.data)
-	}
-
-	mapData, ok := jd.data.(map[string]interface{})
-	if !ok {
-		return fmt.Errorf("Data is not a map: %v", jd.data)
-	}
-
-	delete(mapData, key)
-
-	return nil
-}
-
-// Delete deletes the a key in a map json node
-func (jd *JSONData) Delete(key string) {
-	err := jd.DeleteSafe(key)
-	if err != nil {
-		e2e.Failf("Could not DELETE key [%s] from json data [%s]. Error: %v", key, jd.data, err)
-	}
-}
-
-// PutSafe set the value of a key in a map json node
-func (jd *JSONData) PutSafe(key string, value interface{}) error {
-	if jd.data == nil {
-		return fmt.Errorf("Data does not exist. It is empty: %v", jd.data)
-	}
-
-	mapData, ok := jd.data.(map[string]interface{})
-	if !ok {
-		return fmt.Errorf("Data is not a map: %v", jd.data)
-	}
-
-	mapData[key] = value
-
-	return nil
-}
-
-// Put sets the value of a key in a map json node
-func (jd *JSONData) Put(key, value string) {
-	err := jd.PutSafe(key, value)
-	if err != nil {
-		e2e.Failf("Could not PUT key [%s] value [%s] in json data [%s]. Error: %v", key, value, jd.data, err)
-	}
-
-}
-
 // GetSafe returns the value of a key in the data and an error
-func (jd JSONData) GetSafe(key string) (*JSONData, error) {
+func (jd *JSONData) GetSafe(key string) (*JSONData, error) {
 	if jd.data == nil {
 		return nil, fmt.Errorf("Data does not exist. It is empty: %v", jd.data)
 	}
@@ -157,7 +107,7 @@ func (jd JSONData) GetSafe(key string) (*JSONData, error) {
 }
 
 // ItemSafe returns the value of a given item in a list and an error
-func (jd JSONData) ItemSafe(index int) (*JSONData, error) {
+func (jd *JSONData) ItemSafe(index int) (*JSONData, error) {
 	if jd.data == nil {
 		return nil, fmt.Errorf("Data does not exist. It is empty: %v", jd.data)
 	}
@@ -170,7 +120,7 @@ func (jd JSONData) ItemSafe(index int) (*JSONData, error) {
 }
 
 // Get returns the value of a key in the data, in case of error the returned value is nil
-func (jd JSONData) Get(key string) *JSONData {
+func (jd *JSONData) Get(key string) *JSONData {
 	value, err := jd.GetSafe(key)
 	if err != nil {
 		e2e.Failf("Could not get key [%s]. Error: %v", key, err)
@@ -179,18 +129,8 @@ func (jd JSONData) Get(key string) *JSONData {
 	return value
 }
 
-// Item returns the value of a given item in a list, in case of error the returned value is nil
-func (jd JSONData) Item(index int) *JSONData {
-	value, err := jd.ItemSafe(index)
-	if err != nil {
-		e2e.Failf("Could not get item [%d]. Error: %v", index, err)
-	}
-
-	return value
-}
-
 // Items returns all values in a list as JSONData structs.
-func (jd JSONData) Items() []*JSONData {
+func (jd *JSONData) Items() []*JSONData {
 	if jd.data == nil {
 		e2e.Failf("Data does not exist. It is empty: %v", jd.data)
 	}
@@ -206,53 +146,4 @@ func (jd JSONData) Items() []*JSONData {
 	}
 
 	return ret
-}
-
-// GetRawValue will return the jsonPath output as it is, without any kind of flattening or property transformation
-func (jd *JSONData) GetRawValue(jsonPath string) ([]interface{}, error) {
-	j := jsonpath.New("parser: " + jsonPath)
-
-	if err := j.Parse(jsonPath); err != nil {
-		return nil, err
-	}
-
-	fullResults, err := j.FindResults(jd.data)
-	if err != nil {
-		return nil, err
-	}
-
-	returnResults := make([]interface{}, 0, len(fullResults))
-	for _, result := range fullResults {
-
-		res := make([]interface{}, 0, len(result))
-		for i := range result {
-			res = append(res, result[i].Interface())
-		}
-		returnResults = append(returnResults, res)
-	}
-
-	return returnResults, nil
-}
-
-// GetJSONPath will return a flattened list of JSONData structs with the values matching the jsonpath expression
-func (jd *JSONData) GetJSONPath(jsonPath string) ([]JSONData, error) {
-	allResults, err := jd.GetRawValue(jsonPath)
-	if err != nil {
-		return nil, err
-	}
-
-	flatResults := flattenResults(allResults)
-	return flatResults, err
-}
-
-func flattenResults(allExpresults []interface{}) []JSONData {
-	flatResults := []JSONData{}
-	for i := range allExpresults {
-		var expression = allExpresults[i].([]interface{})
-		for _, result := range expression {
-			flatResults = append(flatResults, JSONData{result})
-		}
-	}
-
-	return flatResults
 }
