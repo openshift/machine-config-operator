@@ -9,7 +9,7 @@ import (
 	logger "github.com/openshift/machine-config-operator/test/extended/util/logext"
 )
 
-var _ = g.Describe("[sig-mco] MCO ocb", func() {
+var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive][OCPFeatureGate:OnClusterBuild] MCO ocb", func() {
 	defer g.GinkgoRecover()
 
 	var (
@@ -22,7 +22,7 @@ var _ = g.Describe("[sig-mco] MCO ocb", func() {
 		skipTestIfOCBIsEnabled(oc)
 	})
 
-	g.It("Author:sregidor-NonPreRelease-High-73494-[P1] OCB Wiring up Productionalized Build Controller. New 4.16 OCB API [Disruptive]", func() {
+	g.It("Author:sregidor-NonPreRelease-High-73494-OCB Wiring up Productionalized Build Controller. New 4.16 OCB API", func() {
 		var (
 			infraMcpName = "infra"
 			moscName     = "tc-73494-infra"
@@ -54,7 +54,7 @@ var _ = g.Describe("[sig-mco] MCO ocb", func() {
 
 	})
 
-	g.It("Author:sregidor-NonPreRelease-Medium-73599-[P2] OCB Validate MachineOSConfig. New 41.6 OCB API [Disruptive]", func() {
+	g.It("Author:sregidor-NonPreRelease-Medium-73599-OCB Validate MachineOSConfig. New 41.6 OCB API", func() {
 		var (
 			infraMcpName = "infra"
 			moscName     = "tc-73599-infra"
@@ -108,7 +108,7 @@ var _ = g.Describe("[sig-mco] MCO ocb", func() {
 		logger.Infof("OK!")
 	})
 
-	g.It("Author:sregidor-ConnectedOnly-Longduration-NonPreRelease-Critical-73496-[P1] OCB use custom Containerfile. New 4.16 OCB API[Disruptive]", func() {
+	g.It("Author:sregidor-ConnectedOnly-Longduration-NonPreRelease-Critical-73496-[P1] OCB use custom Containerfile. New 4.16 OCB API", func() {
 		var (
 			mcp = GetCompactCompatiblePool(oc.AsAdmin())
 
@@ -147,7 +147,7 @@ var _ = g.Describe("[sig-mco] MCO ocb", func() {
 		testContainerFile([]ContainerFile{{Content: containerFileContent}}, MachineConfigNamespace, mcp, checkers, false)
 	})
 
-	g.It("Author:sregidor-Longduration-NonPreRelease-High-77781-OCB Rebuild a successful build [Disruptive]", func() {
+	g.It("Author:sregidor-Longduration-NonPreRelease-High-77781-OCB Rebuild a successful build", func() {
 
 		var (
 			mcp      = GetCompactCompatiblePool(oc.AsAdmin())
@@ -170,7 +170,7 @@ var _ = g.Describe("[sig-mco] MCO ocb", func() {
 		logger.Infof("OK!\n")
 	})
 
-	g.It("Author:sregidor-Longduration-NonPreRelease-High-77782-[P2] OCB Rebuild an interrupted build [Disruptive]", func() {
+	g.It("Author:sregidor-Longduration-NonPreRelease-High-77782-[P2] OCB Rebuild an interrupted build", func() {
 
 		var (
 			mcp      = GetCompactCompatiblePool(oc.AsAdmin())

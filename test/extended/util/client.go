@@ -4,23 +4,15 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
-	"crypto/tls"
 	"encoding/base64"
-	"encoding/gob"
-	"encoding/hex"
 	"fmt"
 	"io"
-	"math/big"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
-	"runtime/debug"
 	"slices"
 	"strings"
 	"time"
@@ -28,10 +20,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 
+	"github.com/google/uuid"
 	g "github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
-	"github.com/pborman/uuid"
-	"github.com/tidwall/gjson"
 	crdv1 "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/typed/apiextensions/v1"
 
 	e2edebug "k8s.io/kubernetes/test/e2e/framework/debug"
@@ -44,7 +35,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/apiserver/pkg/storage/names"
 	memory "k8s.io/client-go/discovery/cached"
@@ -53,7 +43,6 @@ import (
 	"k8s.io/client-go/restmapper"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
-	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	watchtools "k8s.io/client-go/tools/watch"
 	"k8s.io/client-go/util/flowcontrol"
 	e2e "k8s.io/kubernetes/test/e2e/framework"
@@ -85,7 +74,7 @@ type CLI struct {
 	configPath         string
 	guestConfigPath    string
 	adminConfigPath    string
-	username           string
+	user               string
 	globalArgs         []string
 	commandArgs        []string
 	finalArgs          []string
@@ -116,17 +105,11 @@ type resourceRef struct {
 func NewCLI(project, adminConfigPath string) *CLI {
 	client := &CLI{}
 
-	// must be registered before
-	// - framework initialization which registers other Ginkgo setup nodes
-	// - project setup which requires an OCP cluster
-	g.BeforeEach(func() { SkipOnOpenShiftNess(true) })
-
 	// must be registered before the e2e framework aftereach
 	g.AfterEach(client.TeardownProject)
 
 	client.kubeFramework = e2e.NewDefaultFramework(project)
 	client.kubeFramework.SkipNamespaceCreation = true
-	client.username = "admin"
 	client.execPath = "oc"
 	client.showInfo = true
 	client.adminConfigPath = adminConfigPath
@@ -142,10 +125,13 @@ func (c *CLI) KubeFramework() *e2e.Framework {
 	return c.kubeFramework
 }
 
-// Username returns the name of currently logged user. If there is no user assigned
+// User returns the name of currently logged user. If there is no user assigned
 // for the current session, it returns 'admin'.
-func (c *CLI) Username() string {
-	return c.username
+func (c *CLI) User() string {
+	if c.user == "" {
+		return "admin"
+	}
+	return c.user
 }
 
 // AsAdmin changes current config file path to the admin config.
@@ -161,147 +147,20 @@ func (c *CLI) ChangeUser(name string) *CLI {
 
 	kubeConfig, err := createConfig(c.Namespace(), clientConfig)
 	if err != nil {
-		FatalErr(err)
+		e2e.Failf("failure creating kubeconfig for user %s. %v", name, err)
 	}
 
 	f, err := os.CreateTemp("", "configfile")
 	if err != nil {
-		FatalErr(err)
+		e2e.Failf("failure creating temporal kubeconfig file for user %s. %v", name, err)
 	}
 	c.configPath = f.Name()
 	err = clientcmd.WriteToFile(*kubeConfig, c.configPath)
 	if err != nil {
-		FatalErr(err)
+		e2e.Failf("failure writing temporal kubeconfig file for user %s. %v", name, err)
 	}
 
-	c.username = name
-	e2e.Logf("configPath is now %q", c.configPath)
-	return c
-}
-
-// ChangeUserForKeycloakExtOIDC changes the user of current CLI session for an Keycloak external OIDC cluster
-func (c *CLI) ChangeUserForKeycloakExtOIDC() *CLI {
-	// IsKeycloakExtOIDCCluster() should be already called to ensure the KEYCLOAK_* env vars passed from Prow CI jobs exist
-	keycloakIssuer := os.Getenv("KEYCLOAK_ISSUER")
-	keycloakTestUsers := os.Getenv("KEYCLOAK_TEST_USERS")
-	// KEYCLOAK_TEST_USERS has format like "user1:password1,user2:password2,...,usern:passwordn" and n (i.e. 50) is enough for parallel running cases
-	re := regexp.MustCompile(`([^:,]+):([^,]+)`)
-	testUsers := re.FindAllStringSubmatch(keycloakTestUsers, -1)
-	randGen, err := rand.Int(rand.Reader, big.NewInt(int64(len(testUsers))))
-	o.Expect(err).NotTo(o.HaveOccurred())
-	var username, password string
-	err = wait.PollUntilContextTimeout(context.Background(), 2*time.Second, 30*time.Second, true, func(_ context.Context) (bool, error) {
-		// Pick a random user for current running case to use
-		userIndex := randGen.Int64()
-		username = testUsers[userIndex][1]
-		o.Expect(username).NotTo(o.BeEmpty())
-		password = testUsers[userIndex][2]
-		o.Expect(password).NotTo(o.BeEmpty())
-		// We assume the "keycloak" namespace exists in CI jobs that use Keycloak external oidc
-		_, err := c.AsAdmin().WithoutNamespace().Run("create").Args("cm", username+"-being-used", "--from-literal=any=any", "-n", "keycloak").Output()
-		if err != nil {
-			e2e.Logf("Failed to create the configmap '%s-being-used': %v. Retrying ...", username, err)
-			return false, nil
-		}
-		e2e.Logf("Random test user for use: '%s'. Marked it being used via a configmap '%s-being-used'.", username, username)
-		c.AddExplicitResourceToDelete(corev1.SchemeGroupVersion.WithResource("configmaps"), "keycloak", username+"-being-used")
-		return true, nil
-	})
-	AssertWaitPollNoErr(err, "Failed to pick a random user for current running case to use")
-
-	proxy := ""
-	var proxyURL *url.URL
-	if os.Getenv("http_proxy") != "" {
-		proxy = os.Getenv("http_proxy")
-	} else if os.Getenv("https_proxy") != "" {
-		proxy = os.Getenv("https_proxy")
-	}
-
-	if proxy != "" {
-		proxyURL, err = url.Parse(proxy)
-		o.Expect(err).NotTo(o.HaveOccurred())
-	} else {
-		proxyURL = nil
-	}
-
-	httpClient := &http.Client{
-		Transport: &http.Transport{
-			Proxy: http.ProxyURL(proxyURL),
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true, // #nosec G402
-			},
-		},
-	}
-	requestURL := keycloakIssuer + "/protocol/openid-connect/token"
-	oidcClientID := os.Getenv("KEYCLOAK_CLI_CLIENT_ID")
-	o.Expect(oidcClientID).NotTo(o.BeEmpty())
-	formData := url.Values{
-		"client_id":  []string{oidcClientID},
-		"grant_type": []string{"password"},
-		"password":   []string{password},
-		"scope":      []string{"openid email profile"},
-		"username":   []string{username},
-	}
-
-	response, err := httpClient.PostForm(requestURL, formData)
-	o.Expect(err).NotTo(o.HaveOccurred())
-	defer response.Body.Close()
-	o.Expect(response.StatusCode).To(o.Equal(http.StatusOK))
-
-	body, err := io.ReadAll(response.Body)
-	o.Expect(err).NotTo(o.HaveOccurred())
-	responseStr := string(body)
-	idToken := gjson.Get(responseStr, "id_token").String()
-	o.Expect(idToken).NotTo(o.BeEmpty())
-	refreshToken := gjson.Get(responseStr, "refresh_token").String()
-	o.Expect(refreshToken).NotTo(o.BeEmpty())
-	tokenCache := fmt.Sprintf(`{"id_token":"%s","refresh_token":"%s"}`, idToken, refreshToken)
-	// The CI job that uses Keycloak external OIDC already sets Keycloak token lifetime proper to run case.
-
-	// "type Key" is copied from https://github.com/openshift/oc/blob/master/pkg/cli/gettoken/tokencache/tokencache.go
-	// We must keep the def of "type Key" as exactly same as original oc repo so that EncodeToString generates correct output
-	type Key struct {
-		IssuerURL string
-		ClientID  string
-	}
-
-	key := Key{IssuerURL: keycloakIssuer, ClientID: oidcClientID}
-	s := sha256.New()
-	e := gob.NewEncoder(s)
-	if err := e.Encode(&key); err != nil {
-		FatalErr(fmt.Errorf("could not encode the key: %w", err))
-	}
-	tokenCacheFile := hex.EncodeToString(s.Sum(nil))
-	tokenCacheDir, err := os.MkdirTemp("", username)
-	c.AddPathsToDelete(tokenCacheDir)
-	o.Expect(err).NotTo(o.HaveOccurred())
-	err = os.Mkdir(tokenCacheDir+"/oc", 0o700)
-	o.Expect(err).NotTo(o.HaveOccurred())
-	// The tokenCacheDir dir only includes a small file. So we don't clean it given no easy way
-	err = os.WriteFile(filepath.Join(tokenCacheDir, "oc", tokenCacheFile), []byte(tokenCache), 0o600)
-	o.Expect(err).NotTo(o.HaveOccurred())
-
-	clientConfig := c.GetClientConfigForExtOIDCUser(tokenCacheDir)
-	kubeConfig, err := createConfig(c.Namespace(), clientConfig)
-	if err != nil {
-		FatalErr(err)
-	}
-
-	f, err := os.CreateTemp("", "configfile")
-	if err != nil {
-		FatalErr(err)
-	}
-	c.configPath = f.Name()
-	err = clientcmd.WriteToFile(*kubeConfig, c.configPath)
-	if err != nil {
-		FatalErr(err)
-	}
-
-	usernameWhoAmI, err := getUserPartOfNickname(clientConfig)
-	if err != nil {
-		FatalErr(err)
-	}
-	c.username = usernameWhoAmI
+	c.user = name
 	e2e.Logf("configPath is now %q", c.configPath)
 	return c
 }
@@ -428,32 +287,11 @@ func (c *CLI) SetupProject() {
 	newNamespace := names.SimpleNameGenerator.GenerateName(fmt.Sprintf("e2e-test-%s-", c.kubeFramework.BaseName))
 	c.SetNamespace(newNamespace)
 
-	isExternalOIDCCluster, err := IsExternalOIDCCluster(c)
-	o.Expect(err).NotTo(o.HaveOccurred())
-
-	// The user.openshift.io and oauth.openshift.io APIs are unavailable on external OIDC clusters by design.
-	// We will create and switch to a temporary user for non-external-oidc clusters only.
-	//
-	// For all cluster types, a temporary KUBECONFIG file will be created (with c.configPath points to it).
-	// This file will be deleted when calling TeardownProject().
-	if isExternalOIDCCluster {
-		if IsKeycloakExtOIDCCluster() {
-			c.ChangeUserForKeycloakExtOIDC()
-			e2e.Logf("Detected external OIDC cluster using Keycloak as the provider. The user is now %q", c.Username())
-		} else {
-			// The external oidc provider is Microsoft Entra ID
-			// Clear username to avoid manipulation to users (e.g. oc adm policy ...)
-			c.username = ""
-			c.SetKubeconf(DuplicateFileToTemp(c.adminConfigPath, ""))
-			e2e.Logf("External OIDC cluster detected, keep using the current user")
-		}
-	} else {
-		c.ChangeUser(fmt.Sprintf("%s-user", newNamespace))
-		e2e.Logf("The user is now %q", c.Username())
-	}
+	c.ChangeUser(fmt.Sprintf("%s-user", newNamespace))
+	e2e.Logf("The user is now %q", c.User())
 
 	e2e.Logf("Creating project %q", newNamespace)
-	_, err = c.ProjectClient().ProjectV1().ProjectRequests().Create(context.Background(), &projectv1.ProjectRequest{
+	_, err := c.ProjectClient().ProjectV1().ProjectRequests().Create(context.Background(), &projectv1.ProjectRequest{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: newNamespace,
 		},
@@ -566,75 +404,6 @@ func (c *CLI) SetupProject() {
 	e2e.Logf("Project %q has been fully provisioned.", newNamespace)
 }
 
-// CreateNamespaceUDN creates a new namespace with required user defined network label during creation time only
-// required for testing networking UDN features on 4.17z+
-func (c *CLI) CreateNamespaceUDN() {
-	newNamespace := names.SimpleNameGenerator.GenerateName(fmt.Sprintf("e2e-test-udn-%s-", c.kubeFramework.BaseName))
-	c.SetNamespace(newNamespace)
-	labelKey := "k8s.ovn.org/primary-user-defined-network"
-	labelValue := "null"
-	e2e.Logf("Creating project %q", newNamespace)
-	namespace := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:   newNamespace,
-			Labels: map[string]string{labelKey: labelValue},
-		},
-	}
-	// Create the namespace
-	_, err := c.AdminKubeClient().CoreV1().Namespaces().Create(context.TODO(), namespace, metav1.CreateOptions{})
-	o.Expect(err).NotTo(o.HaveOccurred())
-	c.kubeFramework.AddNamespacesToDelete(&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: newNamespace}})
-	e2e.Logf("Namespace %q has been created successfully.", newNamespace)
-}
-
-// CreateSpecificNamespaceUDN creates an UDN namespace with pre-defined name, and the namespace requires user defined network label during creation time only
-// required for testing networking UDN features on 4.17z+
-// Important Note:  the namespace created by this function will not be automatically deleted, user need to explicitly delete the namespace after test is done
-func (c *CLI) CreateSpecificNamespaceUDN(ns string) {
-	c.SetNamespace(ns)
-	labelKey := "k8s.ovn.org/primary-user-defined-network"
-	labelValue := "null"
-	e2e.Logf("Creating a pre-defined project %q with label for UDN", ns)
-	namespace := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:   ns,
-			Labels: map[string]string{labelKey: labelValue},
-		},
-	}
-	// Create the namespace
-	_, err := c.AdminKubeClient().CoreV1().Namespaces().Create(context.TODO(), namespace, metav1.CreateOptions{})
-	o.Expect(err).NotTo(o.HaveOccurred())
-	e2e.Logf("Namespace %q has been created successfully.", ns)
-}
-
-// CreateProject creates a new project and assign a random user to the project.
-// All resources will be then created within this project.
-// TODO this should be removed.  It's only used by image tests.
-func (c *CLI) CreateProject() string {
-	newNamespace := names.SimpleNameGenerator.GenerateName(fmt.Sprintf("e2e-test-%s-", c.kubeFramework.BaseName))
-	e2e.Logf("Creating project %q", newNamespace)
-	_, err := c.ProjectClient().ProjectV1().ProjectRequests().Create(context.Background(), &projectv1.ProjectRequest{
-		ObjectMeta: metav1.ObjectMeta{Name: newNamespace},
-	}, metav1.CreateOptions{})
-	o.Expect(err).NotTo(o.HaveOccurred())
-
-	actualNs, err := c.AdminKubeClient().CoreV1().Namespaces().Get(context.Background(), newNamespace, metav1.GetOptions{})
-	o.Expect(err).NotTo(o.HaveOccurred())
-	c.kubeFramework.AddNamespacesToDelete(actualNs)
-
-	e2e.Logf("Waiting on permissions in project %q ...", newNamespace)
-	err = WaitForSelfSAR(1*time.Second, 60*time.Second, c.KubeClient(), kubeauthorizationv1.SelfSubjectAccessReviewSpec{
-		ResourceAttributes: &kubeauthorizationv1.ResourceAttributes{
-			Namespace: newNamespace,
-			Verb:      "create",
-			Group:     "",
-			Resource:  "pods",
-		},
-	})
-	o.Expect(err).NotTo(o.HaveOccurred())
-	return newNamespace
-}
-
 // TeardownProject removes projects created by this test.
 func (c *CLI) TeardownProject() {
 	e2e.TestContext.DumpLogsOnFailure = os.Getenv("DUMP_EVENTS_ON_FAILURE") != "false"
@@ -666,7 +435,7 @@ func (c *CLI) CreateNamespace(ctx context.Context, labels map[string]string) (*c
 func (c *CLI) MustCreateNamespace(ctx context.Context, labels map[string]string) *corev1.Namespace {
 	ns, err := c.CreateNamespace(ctx, labels)
 	if err != nil {
-		FatalErr(fmt.Sprintf("failed to create namespace: %v", err))
+		e2e.Failf("failed to create namespace: %v", err)
 	}
 	return ns
 }
@@ -833,29 +602,17 @@ func (c *CLI) AdminDynamicClient() dynamic.Interface {
 
 // UserConfig method
 func (c *CLI) UserConfig() *rest.Config {
-	clientConfig, err := getClientConfig(c.configPath)
-	if err != nil {
-		FatalErr(err)
-	}
-	return clientConfig
+	return mustGetClientConfig(c.configPath)
 }
 
 // AdminConfig method
 func (c *CLI) AdminConfig() *rest.Config {
-	clientConfig, err := getClientConfig(c.adminConfigPath)
-	if err != nil {
-		FatalErr(err)
-	}
-	return clientConfig
+	return mustGetClientConfig(c.adminConfigPath)
 }
 
 // GuestConfig method
 func (c *CLI) GuestConfig() *rest.Config {
-	clientConfig, err := getClientConfig(c.guestConfigPath)
-	if err != nil {
-		FatalErr(err)
-	}
-	return clientConfig
+	return mustGetClientConfig(c.guestConfigPath)
 }
 
 // Namespace returns the name of the namespace used in the current test case.
@@ -891,7 +648,7 @@ func (c *CLI) Run(commands ...string) *CLI {
 		configPath:      c.configPath,
 		showInfo:        c.showInfo,
 		guestConfigPath: c.guestConfigPath,
-		username:        c.username,
+		user:            c.user,
 		globalArgs:      commands,
 	}
 	if !c.withoutKubeconf {
@@ -899,14 +656,14 @@ func (c *CLI) Run(commands ...string) *CLI {
 			if c.guestConfigPath != "" {
 				nc.globalArgs = append([]string{fmt.Sprintf("--kubeconfig=%s", c.guestConfigPath)}, nc.globalArgs...)
 			} else {
-				FatalErr("want to use guest cluster kubeconfig, but it is not set, so please use oc.SetGuestKubeconf to set it firstly")
+				e2e.Failf("want to use guest cluster kubeconfig, but it is not set, so please use oc.SetGuestKubeconf to set it firstly")
 			}
 		} else {
 			nc.globalArgs = append([]string{fmt.Sprintf("--kubeconfig=%s", c.configPath)}, nc.globalArgs...)
 		}
 	}
 	if c.asGuestKubeconf && !c.withoutNamespace {
-		FatalErr("you are doing something in ns of guest cluster, please use WithoutNamespace and set ns in Args, for example, oc.AsGuestKubeconf().WithoutNamespace().Run(\"get\").Args(\"pods\", \"-n\", \"guestclusterns\").Output()")
+		e2e.Failf("you are doing something in ns of guest cluster, please use WithoutNamespace and set ns in Args, for example, oc.AsGuestKubeconf().WithoutNamespace().Run(\"get\").Args(\"pods\", \"-n\", \"guestclusterns\").Output()")
 	}
 	if !c.withoutNamespace {
 		nc.globalArgs = append([]string{fmt.Sprintf("--namespace=%s", c.Namespace())}, nc.globalArgs...)
@@ -919,7 +676,7 @@ func (c *CLI) Run(commands ...string) *CLI {
 // This is equivalent of running "oc get foo -o template --template='{{ .spec }}'"
 func (c *CLI) Template(t string) *CLI {
 	if c.verb != "get" {
-		FatalErr("Cannot use Template() for non-get verbs.")
+		e2e.Failf("Cannot use Template() for non-get verbs. %s", c.verb)
 	}
 	templateArgs := []string{"--output=template", fmt.Sprintf("--template=%s", t)}
 	c.finalArgs = slices.Concat(c.globalArgs, c.commandArgs, templateArgs)
@@ -970,7 +727,7 @@ func (c *CLI) Output() (string, error) {
 		e2e.Logf("Error running %v:\n%s", cmd, trimmed)
 		return trimmed, &ExitError{ExitError: val, Cmd: c.execPath + " " + strings.Join(c.finalArgs, " "), StdErr: trimmed}
 	default:
-		FatalErr(fmt.Errorf("unable to execute %q: %v", c.execPath, err))
+		e2e.Failf("unable to execute %q: %v", c.execPath, err)
 		// unreachable code
 		return "", nil
 	}
@@ -1006,7 +763,7 @@ func (c *CLI) Outputs() (string, string, error) {
 		e2e.Logf("Error running %v:\nStdOut>\n%s\nStdErr>\n%s\n", cmd, stdOut, stdErr)
 		return stdOut, stdErr, &ExitError{ExitError: val, Cmd: c.execPath + " " + strings.Join(c.finalArgs, " "), StdErr: stdErr}
 	default:
-		FatalErr(fmt.Errorf("unable to execute %q: %v", c.execPath, err))
+		e2e.Failf("unable to execute %q: %v", c.execPath, err)
 		// unreachable code
 		return "", "", nil
 	}
@@ -1099,13 +856,6 @@ func (c *CLI) Execute() error {
 	return err
 }
 
-// FatalErr exits the test in case a fatal error has occurred.
-func FatalErr(msg interface{}) {
-	// the path that leads to this being called isn't always clear...
-	fmt.Fprintln(g.GinkgoWriter, string(debug.Stack()))
-	e2e.Failf("%v", msg)
-}
-
 // AddExplicitResourceToDelete method
 func (c *CLI) AddExplicitResourceToDelete(resource schema.GroupVersionResource, namespace, name string) {
 	c.resourcesToDelete = append(c.resourcesToDelete, resourceRef{Resource: resource, Namespace: namespace, Name: name})
@@ -1127,7 +877,7 @@ func (c *CLI) CreateUser(prefix string) *userv1.User {
 		ObjectMeta: metav1.ObjectMeta{GenerateName: prefix + c.Namespace()},
 	}, metav1.CreateOptions{})
 	if err != nil {
-		FatalErr(err)
+		e2e.Failf("failure creating user %v", err)
 	}
 	c.AddResourceToDelete(userv1.GroupVersion.WithResource("users"), user)
 
@@ -1140,14 +890,14 @@ func (c *CLI) GetClientConfigForUser(username string) *rest.Config {
 
 	user, err := userClient.UserV1().Users().Get(context.Background(), username, metav1.GetOptions{})
 	if err != nil && !apierrors.IsNotFound(err) {
-		FatalErr(err)
+		e2e.Failf("failure fetching User %s. %v", username, err)
 	}
 	if err != nil {
 		user, err = userClient.UserV1().Users().Create(context.Background(), &userv1.User{
 			ObjectMeta: metav1.ObjectMeta{Name: username},
 		}, metav1.CreateOptions{})
 		if err != nil {
-			FatalErr(err)
+			e2e.Failf("failure creating User %s. %v", username, err)
 		}
 		c.AddResourceToDelete(userv1.GroupVersion.WithResource("users"), user)
 	}
@@ -1159,7 +909,7 @@ func (c *CLI) GetClientConfigForUser(username string) *rest.Config {
 		GrantMethod: oauthv1.GrantHandlerAuto,
 	}, metav1.CreateOptions{})
 	if err != nil && !apierrors.IsAlreadyExists(err) {
-		FatalErr(err)
+		e2e.Failf("failure creating OAuthClient %v", err)
 	}
 	if oauthClientObj != nil {
 		c.AddExplicitResourceToDelete(oauthv1.GroupVersion.WithResource("oauthclients"), "", oauthClientName)
@@ -1176,51 +926,12 @@ func (c *CLI) GetClientConfigForUser(username string) *rest.Config {
 	}, metav1.CreateOptions{})
 
 	if err != nil {
-		FatalErr(err)
+		e2e.Failf("failure creating access token %v", err)
 	}
 	c.AddResourceToDelete(oauthv1.GroupVersion.WithResource("oauthaccesstokens"), token)
 
 	userClientConfig := rest.AnonymousClientConfig(turnOffRateLimiting(rest.CopyConfig(c.AdminConfig())))
 	userClientConfig.BearerToken = privToken
-
-	return userClientConfig
-}
-
-// GetClientConfigForExtOIDCUser gets a client config for an external OIDC cluster
-func (c *CLI) GetClientConfigForExtOIDCUser(tokenCacheDir string) *rest.Config {
-	userClientConfig := rest.AnonymousClientConfig(turnOffRateLimiting(rest.CopyConfig(c.AdminConfig())))
-	var oidcIssuerURL, oidcClientID, oidcCertCAPath string
-	if IsKeycloakExtOIDCCluster() {
-		oidcIssuerURL = os.Getenv("KEYCLOAK_ISSUER")
-		oidcClientID = os.Getenv("KEYCLOAK_CLI_CLIENT_ID")
-	} else {
-		e2e.Failf("Currently the GetClientConfigForExtOIDCUser func only supports limited external OIDC providers.")
-	}
-	oidcCertCAPath = filepath.Join(os.Getenv("SHARED_DIR"), "oidcProviders-ca.crt")
-	args := []string{
-		"get-token",
-		fmt.Sprintf("--issuer-url=%s", oidcIssuerURL),
-		fmt.Sprintf("--client-id=%s", oidcClientID),
-		"--extra-scopes=email,profile",
-		"--callback-address=127.0.0.1:8080",
-	}
-	if _, err := os.Stat(oidcCertCAPath); err == nil {
-		args = append(args, fmt.Sprintf("--certificate-authority=%s", oidcCertCAPath))
-	}
-	userClientConfig.ExecProvider = &clientcmdapi.ExecConfig{
-		APIVersion: "client.authentication.k8s.io/v1",
-		Command:    "oc",
-		Args:       args,
-		// We can't use os.Setenv("KUBECACHEDIR", tokenCacheDir), so we use "ExecEnvVar" that ensures each
-		// single user has unique cache path to avoid the parallel running users mess up the same cache path,
-		// because the cache file name is decided by the issuer URL & client ID provided in CLI
-		Env: []clientcmdapi.ExecEnvVar{
-			{Name: "KUBECACHEDIR", Value: tokenCacheDir},
-		},
-		InstallHint:        "Please be sure that oc is defined in $PATH to be executed as credentials exec plugin",
-		InteractiveMode:    clientcmdapi.IfAvailableExecInteractiveMode,
-		ProvideClusterInfo: false,
-	}
 
 	return userClientConfig
 }
@@ -1231,7 +942,8 @@ func (c *CLI) GetClientConfigForExtOIDCUser(tokenCacheDir string) *rest.Config {
 // the database.
 func GenerateOAuthTokenPair() (privToken, pubToken string) {
 	const sha256Prefix = "sha256~"
-	randomToken := base64.RawURLEncoding.EncodeToString(uuid.NewRandom())
+
+	randomToken := base64.RawURLEncoding.EncodeToString([]byte(uuid.NewString()))
 	hashed := sha256.Sum256([]byte(randomToken))
 	return sha256Prefix + randomToken, sha256Prefix + base64.RawURLEncoding.EncodeToString(hashed[:])
 }
@@ -1248,58 +960,21 @@ func turnOffRateLimiting(config *rest.Config) *rest.Config {
 	return &configCopy
 }
 
-// WaitForAccessAllowed method
-func (c *CLI) WaitForAccessAllowed(review *kubeauthorizationv1.SelfSubjectAccessReview, user string) error {
-	if user == "system:anonymous" {
-		return waitForAccess(kubernetes.NewForConfigOrDie(rest.AnonymousClientConfig(c.AdminConfig())), true, review)
-	}
-
-	kubeClient, err := kubernetes.NewForConfig(c.GetClientConfigForUser(user))
-	if err != nil {
-		FatalErr(err)
-	}
-	return waitForAccess(kubeClient, true, review)
-}
-
-// WaitForAccessDenied method
-func (c *CLI) WaitForAccessDenied(review *kubeauthorizationv1.SelfSubjectAccessReview, user string) error {
-	if user == "system:anonymous" {
-		return waitForAccess(kubernetes.NewForConfigOrDie(rest.AnonymousClientConfig(c.AdminConfig())), false, review)
-	}
-
-	kubeClient, err := kubernetes.NewForConfig(c.GetClientConfigForUser(user))
-	if err != nil {
-		FatalErr(err)
-	}
-	return waitForAccess(kubeClient, false, review)
-}
-
-func waitForAccess(c kubernetes.Interface, allowed bool, review *kubeauthorizationv1.SelfSubjectAccessReview) error {
-	return wait.PollUntilContextTimeout(context.Background(), time.Second, time.Minute, false, func(_ context.Context) (bool, error) {
-		response, err := c.AuthorizationV1().SelfSubjectAccessReviews().Create(context.Background(), review, metav1.CreateOptions{})
-		if err != nil {
-			return false, err
-		}
-		return response.Status.Allowed == allowed, nil
-	})
-}
-
-func getClientConfig(kubeConfigFile string) (*rest.Config, error) {
+func mustGetClientConfig(kubeConfigFile string) *rest.Config {
 	kubeConfigBytes, err := os.ReadFile(kubeConfigFile)
 	if err != nil {
-		return nil, err
+		e2e.Failf("failure reading kubeconfig file %s. %v", kubeConfigFile, err)
 	}
 	kubeConfig, err := clientcmd.NewClientConfigFromBytes(kubeConfigBytes)
 	if err != nil {
-		return nil, err
+		e2e.Failf("failure converting kubeconfig file %s to ClientConfig. %v", kubeConfigFile, err)
 	}
 	clientConfig, err := kubeConfig.ClientConfig()
 	if err != nil {
-		return nil, err
+		e2e.Failf("failure fetching ClientConfig. %v", err)
 	}
 	clientConfig.WrapTransport = defaultClientTransport
-
-	return clientConfig, nil
+	return clientConfig
 }
 
 // defaultClientTransport sets defaults for a client Transport that are suitable
@@ -1342,7 +1017,7 @@ func (c *CLI) SilentOutput() (string, error) {
 		e2e.Logf("Error running %v", cmd)
 		return trimmed, &ExitError{ExitError: val, Cmd: c.execPath + " " + strings.Join(c.finalArgs, " "), StdErr: trimmed}
 	default:
-		FatalErr(fmt.Errorf("unable to execute %q: %v", c.execPath, err))
+		e2e.Failf("unable to execute %q: %v", c.execPath, err)
 		return "", nil
 	}
 }
