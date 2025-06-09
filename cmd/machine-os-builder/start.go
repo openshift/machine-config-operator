@@ -54,8 +54,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		klog.Fatalln(err)
 	}
 
-	// Signals that the controller shutdown is complete.
-	shutdownChan := make(chan struct{})
+	var shutdownChan <-chan struct{}
 
 	run := func(ctx context.Context) {
 		go common.SignalHandler(cancel)
@@ -63,12 +62,14 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		ctrlCtx := ctrlcommon.CreateControllerContext(ctx, cb)
 
 		ctrl := build.NewOSBuildControllerFromControllerContext(ctrlCtx)
+
+		// Wire up our shutdown channel.
+		shutdownChan = ctrl.ShutdownChan()
+
 		// This method blocks the current goroutine until the controller is shut
 		// down. This means that we can perform a post-shutdown action after
 		// shutdown has completed.
 		ctrl.Run(ctx, 3)
-		// Closing this channel signals that the controller shutdown is complete.
-		close(shutdownChan)
 	}
 
 	leaderElectionCfg := common.GetLeaderElectionConfig(cb.GetBuilderConfig())
@@ -83,8 +84,8 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			OnStartedLeading: run,
 			OnStoppedLeading: func() {
 				// Block this function until the controller shutdown is complete to
-				// give the controller time to perform cleanups, etc. before releasing
-				// its lease.
+				// ensure that the controller both has enough time to finish its
+				// cleanup as well as to terminate its lease.
 				<-shutdownChan
 				klog.Infof("Stopped leading; machine-os-builder terminating.")
 				os.Exit(0)

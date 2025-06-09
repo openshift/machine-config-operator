@@ -580,18 +580,39 @@ func startController(ctx context.Context, t *testing.T, kubeclient *fakecorev1cl
 	ctrlCtx, ctrlCtxCancel := context.WithCancel(ctx)
 
 	cfg := Config{
-		MaxRetries:  1,
-		UpdateDelay: 0,
+		MaxRetries:           1,
+		UpdateDelay:          0,
+		MaxShutdownDelay:     time.Millisecond,
+		ShutdownPollInterval: time.Nanosecond,
 	}
 
 	ctrl := newOSBuildController(cfg, mcfgclient, kubeclient, imageclient, routeclient)
 
+	// Ensure that the test is blocked until the controller shutdown is complete.
+	// It is worth mentioning that there may be logs from the
+	// shutdownDelayHandler which suggest that objects are not deleted. This is
+	// fine for these tests because one of the benefits of using FakeClients is
+	// that you can just throw them away between tests.
+	cancelFunc := func() {
+		ctrlCtxCancel()
+		<-ctrl.shutdownChan
+	}
+
+	// Instantiate a shutdownhandler for testing purposes. See function for
+	// details.
+	ctrl.shutdownDelayHandler = newTestShutdownDelayHandler(ctrlCtx, cancelFunc, t, ctrl.listers)
+
+	t.Cleanup(cancelFunc)
+
 	// Use a work queue which is tuned for testing.
 	ctrl.execQueue = ctrlcommon.NewWrappedQueueForTesting(t)
 
-	go ctrl.Run(ctrlCtx, 5)
+	go func() {
+		// Start the controller in a spearate goroutine.
+		ctrl.Run(ctrlCtx, 5)
+	}()
 
-	return ctrl, ctrlCtxCancel
+	return ctrl, cancelFunc
 }
 
 func setupOSBuildControllerForTest(ctx context.Context, t *testing.T) (*fakecorev1client.Clientset, *fakeclientmachineconfigv1.Clientset, *fakeclientimagev1.Clientset, *fakeclientroutev1.Clientset, *testhelpers.Assertions, *fixtures.ObjectsForTest, *OSBuildController) {

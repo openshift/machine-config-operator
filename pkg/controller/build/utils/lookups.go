@@ -244,3 +244,16 @@ func GetMachineConfigPoolForMachineOSConfig(mosc *mcfgv1.MachineOSConfig, lister
 
 	return mcp, nil
 }
+
+func GetMachineOSBuildsForMachineOSConfig(mosc *mcfgv1.MachineOSConfig, listers *Listers) ([]*mcfgv1.MachineOSBuild, error) {
+	mosc, err := listers.getMachineOSConfig(mosc.Name)
+	if err != nil {
+		return nil, err
+	}
+
+	sel := labels.SelectorFromSet(map[string]string{
+		constants.MachineOSConfigNameLabelKey: mosc.Name,
+	})
+
+	return listers.listMachineOSBuilds(sel)
+}
