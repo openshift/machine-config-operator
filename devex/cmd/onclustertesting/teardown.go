@@ -12,8 +12,9 @@ import (
 )
 
 type teardownOpts struct {
-	poolName string
-	dir      string
+	poolName           string
+	dir                string
+	deleteBuildObjects bool
 }
 
 func init() {
@@ -30,6 +31,7 @@ func init() {
 
 	teardownCmd.PersistentFlags().StringVar(&teardownOpts.poolName, "pool", defaultLayeredPoolName, "Pool name to teardown")
 	teardownCmd.PersistentFlags().StringVar(&teardownOpts.dir, "dir", "", "Dir to store extract build objects")
+	teardownCmd.PersistentFlags().BoolVar(&teardownOpts.deleteBuildObjects, "delete-build-objects", false, "Delete the build objects created by the machine-os-build controller")
 
 	rootCmd.AddCommand(teardownCmd)
 }
@@ -41,10 +43,12 @@ func runTeardownCmd(opts teardownOpts) error {
 		klog.Fatalln("No pool name provided!")
 	}
 
-	return mobTeardown(framework.NewClientSet(""), opts.poolName)
+	return mobTeardown(framework.NewClientSet(""), opts)
 }
 
-func mobTeardown(cs *framework.ClientSet, targetPool string) error {
+func mobTeardown(cs *framework.ClientSet, opts teardownOpts) error {
+	targetPool := opts.poolName
+
 	mcp, err := cs.MachineConfigPools().Get(context.TODO(), targetPool, metav1.GetOptions{})
 	if err != nil && !apierrs.IsNotFound(err) {
 		return err
@@ -67,8 +71,14 @@ func mobTeardown(cs *framework.ClientSet, targetPool string) error {
 		mcp = nil
 	}
 
-	if err := deleteBuildObjects(cs); err != nil {
-		return err
+	if opts.deleteBuildObjects {
+		if err := cleanupBuildObjects(cs); err != nil {
+			return err
+		}
+
+		if err := deleteMachineOSBuilds(cs); err != nil {
+			return err
+		}
 	}
 
 	if mcp != nil {
@@ -77,11 +87,11 @@ func mobTeardown(cs *framework.ClientSet, targetPool string) error {
 		}
 	}
 
-	if err := deleteAllPoolsWithOurLabel(cs); err != nil {
+	if err := cleanupOurObjects(cs); err != nil {
 		return err
 	}
 
-	if err := deleteMachineOSBuilds(cs); err != nil {
+	if err := deleteAllPoolsWithOurLabel(cs); err != nil {
 		return err
 	}
 
