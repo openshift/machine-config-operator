@@ -362,7 +362,7 @@ func TestSyncMachineConfiguration(t *testing.T) {
 			infra:                           buildInfra(withPlatformType(configv1.VSpherePlatformType)),
 			mcop:                            buildMachineConfigurationWithNoBootImageConfiguration(),
 			annotationExpected:              false,
-			expectedManagedBootImagesStatus: apihelpers.GetManagedBootImagesWithNoConfiguration(),
+			expectedManagedBootImagesStatus: apihelpers.GetManagedBootImagesWithUpdateDisabled(),
 		},
 	}
 	for _, tc := range cases {
@@ -375,7 +375,7 @@ func TestSyncMachineConfiguration(t *testing.T) {
 			optr := &Operator{
 				eventRecorder: &record.FakeRecorder{},
 				fgAccessor: featuregates.NewHardcodedFeatureGateAccess(
-					[]configv1.FeatureGateName{features.FeatureGateManagedBootImages, features.FeatureGateManagedBootImagesAWS, features.FeatureGateNodeDisruptionPolicy}, []configv1.FeatureGateName{},
+					[]configv1.FeatureGateName{features.FeatureGateManagedBootImages, features.FeatureGateManagedBootImagesAWS, features.FeatureGateManagedBootImagesvSphere, features.FeatureGateNodeDisruptionPolicy}, []configv1.FeatureGateName{},
 				),
 				infraLister: configlistersv1.NewInfrastructureLister(infraIndexer),
 				mcopLister:  mcoplistersv1.NewMachineConfigurationLister(mcopIndexer),
