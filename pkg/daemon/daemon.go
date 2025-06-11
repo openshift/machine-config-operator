@@ -1304,7 +1304,7 @@ func (dn *Daemon) RunFirstbootCompleteMachineconfig(machineConfigFile string) er
 	// This "false" is a compatibility for IBM's use case, where they are using the MCD to write the full configuration instead of just
 	// the encapsulated config. This shouldn't affect normal OCP operations, but will allow anyone using this code to write configs to
 	// still get the kubelet cert
-	err = dn.update(oldConfig, &mc, false)
+	err = dn.update(oldConfig, &mc, false, true)
 	if err != nil {
 		return err
 	}
@@ -2403,7 +2403,7 @@ func (dn *Daemon) runOnceFromMachineConfig(machineConfig mcfgv1.MachineConfig, c
 	}
 	if contentFrom == onceFromLocalConfig {
 		// Execute update without hitting the cluster
-		return dn.update(nil, &machineConfig, false)
+		return dn.update(nil, &machineConfig, false, true)
 	}
 	// Otherwise return an error as the input format is unsupported
 	return fmt.Errorf("%v is not a path nor url; can not run once", contentFrom)
@@ -2615,7 +2615,7 @@ func (dn *Daemon) triggerUpdateWithMachineConfig(currentConfig, desiredConfig *m
 	dn.stopConfigDriftMonitor()
 
 	// run the update process. this function doesn't currently return.
-	return dn.update(currentConfig, desiredConfig, skipCertificateWrite)
+	return dn.update(currentConfig, desiredConfig, skipCertificateWrite, false)
 }
 
 // validateKernelArguments checks that the current boot has all arguments specified
