@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/onsi/ginkgo/v2"
+	"github.com/openshift/machine-config-operator/test/extended/util/provider"
 	kapiv1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrs "k8s.io/apimachinery/pkg/api/errors"
@@ -42,6 +43,10 @@ func InitTest(dryRun bool) error {
 	InitDefaultEnvironmentVariables()
 	// interpret synthetic input in `--ginkgo.focus` and/or `--ginkgo.skip`
 	ginkgo.BeforeEach(checkSyntheticInput)
+
+	if err := provider.InitializeProvider(TestContext); err != nil {
+		return err
+	}
 
 	TestContext.DeleteNamespace = os.Getenv("DELETE_NAMESPACE") != "false"
 	TestContext.VerifyServiceAccount = true
