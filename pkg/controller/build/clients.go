@@ -3,6 +3,10 @@ package build
 import (
 	"context"
 
+	tektonclientset "github.com/tektoncd/pipeline/pkg/client/clientset/versioned"
+	pipelinerunsharedinformers "github.com/tektoncd/pipeline/pkg/client/informers/externalversions"
+	pipelineruninformerv1beta1 "github.com/tektoncd/pipeline/pkg/client/informers/externalversions/pipeline/v1beta1"
+	pipelinerunlisterv1beta1 "github.com/tektoncd/pipeline/pkg/client/listers/pipeline/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	coreinformers "k8s.io/client-go/informers"
 	batchinformersv1 "k8s.io/client-go/informers/batch/v1"
@@ -26,6 +30,7 @@ type informers struct {
 	controllerConfigInformer  mcfginformersv1.ControllerConfigInformer
 	machineConfigPoolInformer mcfginformersv1.MachineConfigPoolInformer
 	jobInformer               batchinformersv1.JobInformer
+	pipelineRunInformer       pipelineruninformerv1beta1.PipelineRunInformer
 	machineOSBuildInformer    mcfginformersv1.MachineOSBuildInformer
 	machineOSConfigInformer   mcfginformersv1.MachineOSConfigInformer
 	nodeInformer              coreinformersv1.NodeInformer
@@ -47,6 +52,7 @@ func (i *informers) listers() *listers {
 		machineOSConfigLister:   i.machineOSConfigInformer.Lister(),
 		machineConfigPoolLister: i.machineConfigPoolInformer.Lister(),
 		jobLister:               i.jobInformer.Lister(),
+		pipelineRunLister:       i.pipelineRunInformer.Lister(),
 		controllerConfigLister:  i.controllerConfigInformer.Lister(),
 		nodeLister:              i.nodeInformer.Lister(),
 	}
@@ -58,6 +64,7 @@ type listers struct {
 	machineOSConfigLister   mcfglistersv1.MachineOSConfigLister
 	machineConfigPoolLister mcfglistersv1.MachineConfigPoolLister
 	jobLister               batchlisterv1.JobLister
+	pipelineRunLister       pipelinerunlisterv1beta1.PipelineRunLister
 	controllerConfigLister  mcfglistersv1.ControllerConfigLister
 	nodeLister              corelistersv1.NodeLister
 }
@@ -72,7 +79,7 @@ func (l *listers) utilListers() *utils.Listers {
 }
 
 // Creates new informer instances from a given Clients(set).
-func newInformers(mcfgclient mcfgclientset.Interface, kubeclient clientset.Interface) *informers {
+func newInformers(mcfgclient mcfgclientset.Interface, kubeclient clientset.Interface, tektonclient tektonclientset.Interface) *informers {
 	// Filters build objects for the core informer.
 	ephemeralBuildObjectsOpts := func(opts *metav1.ListOptions) {
 		opts.LabelSelector = utils.EphemeralBuildObjectSelector().String()
@@ -88,12 +95,20 @@ func newInformers(mcfgclient mcfgclientset.Interface, kubeclient clientset.Inter
 	)
 	coreInformerFactoryNodes := coreinformers.NewSharedInformerFactory(kubeclient, 0)
 
+	pipelineRunInformerFactory := pipelinerunsharedinformers.NewSharedInformerFactoryWithOptions(
+		tektonclient,
+		0,
+		pipelinerunsharedinformers.WithNamespace(ctrlcommon.MCONamespace),
+		pipelinerunsharedinformers.WithTweakListOptions(ephemeralBuildObjectsOpts),
+	)
+
 	controllerConfigInformer := mcoInformerFactory.Machineconfiguration().V1().ControllerConfigs()
 	machineConfigPoolInformer := mcoInformerFactory.Machineconfiguration().V1().MachineConfigPools()
 	machineOSBuildInformer := mcoInformerFactory.Machineconfiguration().V1().MachineOSBuilds()
 	machineOSConfigInformer := mcoInformerFactory.Machineconfiguration().V1().MachineOSConfigs()
 	jobInformer := coreInformerFactory.Batch().V1().Jobs()
 	nodeInformer := coreInformerFactoryNodes.Core().V1().Nodes()
+	pipelineRunInformer := pipelineRunInformerFactory.Tekton().V1beta1().PipelineRuns()
 
 	return &informers{
 		controllerConfigInformer:  controllerConfigInformer,
@@ -101,16 +116,19 @@ func newInformers(mcfgclient mcfgclientset.Interface, kubeclient clientset.Inter
 		machineOSBuildInformer:    machineOSBuildInformer,
 		machineOSConfigInformer:   machineOSConfigInformer,
 		jobInformer:               jobInformer,
+		pipelineRunInformer:       pipelineRunInformer,
 		nodeInformer:              nodeInformer,
 		toStart: []interface{ Start(<-chan struct{}) }{
 			mcoInformerFactory,
 			coreInformerFactory,
+			pipelineRunInformerFactory,
 			coreInformerFactoryNodes,
 		},
 		hasSynced: []cache.InformerSynced{
 			controllerConfigInformer.Informer().HasSynced,
 			machineConfigPoolInformer.Informer().HasSynced,
 			jobInformer.Informer().HasSynced,
+			pipelineRunInformer.Informer().HasSynced,
 			machineOSBuildInformer.Informer().HasSynced,
 			machineOSConfigInformer.Informer().HasSynced,
 			nodeInformer.Informer().HasSynced,
