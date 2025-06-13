@@ -144,4 +144,9 @@ const (
 	// ImageRegistryDrainOverrideConfigmap is the name of the Configmap a user can apply to force all
 	// image registry changes to not drain
 	ImageRegistryDrainOverrideConfigmap = "image-registry-override-drain"
+
+	// rpm-ostree command arguments
+	RPMOSTreeUpdateArg    = "update"
+	RPMOSTreeInstallArg   = "--install"
+	RPMOSTreeUninstallArg = "--uninstall"
 )
