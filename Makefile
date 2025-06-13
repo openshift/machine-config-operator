@@ -2,8 +2,9 @@ E2E_ROOT_DIR = ./test
 E2E_SUITES = $(notdir $(wildcard $(E2E_ROOT_DIR)/e2e*))
 
 MCO_COMPONENTS = daemon controller server operator
-EXTRA_COMPONENTS = apiserver-watcher machine-os-builder
-ALL_COMPONENTS = $(patsubst %,machine-config-%,$(MCO_COMPONENTS)) $(EXTRA_COMPONENTS)
+EXTRA_COMPONENTS = apiserver-watcher machine-os-builder machine-config-tests-ext
+TEST_COMPONENTS = machine-config-tests-ext
+ALL_COMPONENTS = $(patsubst %,machine-config-%,$(MCO_COMPONENTS)) $(EXTRA_COMPONENTS) $(TEST_COMPONENTS)
 ALL_COMPONENTS_PATHS = $(patsubst %,cmd/%,$(ALL_COMPONENTS))
 PREFIX ?= /usr
 GO111MODULE?=on
@@ -175,7 +176,8 @@ install-helpers: helpers
 install: binaries
 	for component in $(ALL_COMPONENTS); do \
 	  install -D -m 0755 _output/linux/$(GOARCH)/$${component} $(DESTDIR)$(PREFIX)/bin/$${component}; \
-	done
+	done; \
+	gzip $(DESTDIR)$(PREFIX)/bin/machine-config-tests-ext
 
 Dockerfile.rhel7: Dockerfile Makefile
 	(echo '# THIS FILE IS GENERATED FROM '$<' DO NOT EDIT' && \
