@@ -343,6 +343,7 @@ func GenerateAndApplyMachineConfigNodeSpec(fgAccessor featuregates.FeatureGateAc
 	if fgAccessor == nil || node == nil {
 		return nil
 	}
+	klog.Errorf("in GenerateAndApplyMachineConfigNodeSpec with node: %v", node.Name)
 	fg, err := fgAccessor.CurrentFeatureGates()
 	if err != nil {
 		klog.Errorf("Could not get fg: %v", err)
@@ -354,6 +355,8 @@ func GenerateAndApplyMachineConfigNodeSpec(fgAccessor featuregates.FeatureGateAc
 	}
 	// get the existing MCN, or if it DNE create one below
 	mcNode, needNewMCNode := createOrGetMachineConfigNode(mcfgClient, node)
+	// klog.Errorf("mcNode: %v", mcNode)
+	klog.Errorf("needNewMCNode: %v", needNewMCNode)
 	newMCNode := mcNode.DeepCopy()
 	// set the spec config version
 	newMCNode.ObjectMeta.OwnerReferences = []metav1.OwnerReference{
@@ -365,6 +368,8 @@ func GenerateAndApplyMachineConfigNodeSpec(fgAccessor featuregates.FeatureGateAc
 		},
 	}
 
+	klog.Errorf("newMCNode.Spec.ConfigVersion.Desired: %v", newMCNode.Spec.ConfigVersion.Desired)
+	klog.Errorf("node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey]: %v", node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey])
 	newMCNode.Spec.ConfigVersion = mcfgv1.MachineConfigNodeSpecMachineConfigVersion{
 		Desired: node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey],
 	}
@@ -380,6 +385,7 @@ func GenerateAndApplyMachineConfigNodeSpec(fgAccessor featuregates.FeatureGateAc
 		Name: node.Name,
 	}
 	if !needNewMCNode {
+		klog.Errorf("in !needNewMCNode conditional")
 		nodeRefApplyConfig := machineconfigurationv1.MCOObjectReference().WithName(newMCNode.Spec.Node.Name)
 		poolRefApplyConfig := machineconfigurationv1.MCOObjectReference().WithName(newMCNode.Spec.Pool.Name)
 		specconfigVersionApplyConfig := machineconfigurationv1.MachineConfigNodeSpecMachineConfigVersion().WithDesired(newMCNode.Spec.ConfigVersion.Desired)
@@ -391,12 +397,19 @@ func GenerateAndApplyMachineConfigNodeSpec(fgAccessor featuregates.FeatureGateAc
 			return err
 		}
 	} else {
+		klog.Errorf("in else conditional, creating mcn")
 		_, err := mcfgClient.MachineconfigurationV1().MachineConfigNodes().Create(context.TODO(), newMCNode, metav1.CreateOptions{})
 		if err != nil {
 			klog.Errorf("Error creating MCN: %v", err)
 			return err
 		}
 	}
+
+	// TODO: remove post debugging
+	// get the existing MCN, or if it DNE create one below
+	updatedMCN, _ := createOrGetMachineConfigNode(mcfgClient, node)
+	klog.Errorf("updatedMCN.Name: %v", updatedMCN.Name)
+	klog.Errorf("updatedMCN.Spec.ConfigVersion.Desired: %v", updatedMCN.Spec.ConfigVersion.Desired)
 	return nil
 }
 
@@ -409,6 +422,10 @@ func createOrGetMachineConfigNode(mcfgClient mcfgclientset.Interface, node *core
 	}
 
 	return mcNode, false
+}
+
+func CreateOrGetMachineConfigNode(mcfgClient mcfgclientset.Interface, node *corev1.Node) (*mcfgv1.MachineConfigNode, bool) {
+	return createOrGetMachineConfigNode(mcfgClient, node)
 }
 
 type ApplyCallback struct {
