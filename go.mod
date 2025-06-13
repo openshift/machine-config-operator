@@ -7,7 +7,7 @@ toolchain go1.23.5
 require (
 	github.com/BurntSushi/toml v1.4.1-0.20240526193622-a339e1f7089c
 	github.com/InVisionApp/go-health v2.1.0+incompatible
-	github.com/apparentlymart/go-cidr v1.0.0
+	github.com/apparentlymart/go-cidr v1.1.0
 	github.com/ashcrow/osrelease v0.0.0-20180626175927-9b292693c55c
 	github.com/clarketm/json v1.17.1
 	github.com/containers/common v0.57.1
@@ -67,6 +67,8 @@ require (
 	github.com/MakeNowJust/heredoc v1.0.0 // indirect
 	github.com/Masterminds/semver/v3 v3.3.0 // indirect
 	github.com/OpenPeeDeeP/depguard/v2 v2.2.0 // indirect
+	github.com/PaesslerAG/gval v1.0.0 // indirect
+	github.com/PaesslerAG/jsonpath v0.1.1 // indirect
 	github.com/alecthomas/go-check-sumtype v0.3.1 // indirect
 	github.com/alexkohler/nakedret/v2 v2.0.5 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
@@ -100,8 +102,10 @@ require (
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
 	github.com/gorilla/websocket v1.5.0 // indirect
 	github.com/gregjones/httpcache v0.0.0-20190611155906-901d90724c79 // indirect
+	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/jjti/go-spancheck v0.6.4 // indirect
 	github.com/karamaru-alpha/copyloopvar v1.1.0 // indirect
+	github.com/kdomanski/iso9660 v0.2.1 // indirect
 	github.com/kkHAIKE/contextcheck v1.1.5 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/lasiar/canonicalheader v1.1.2 // indirect
@@ -109,6 +113,8 @@ require (
 	github.com/liggitt/tabwriter v0.0.0-20181228230101-89fcab3d43de // indirect
 	github.com/macabu/inamedparam v0.1.3 // indirect
 	github.com/maratori/testableexamples v1.0.0 // indirect
+	github.com/metal3-io/baremetal-operator/apis v0.4.0 // indirect
+	github.com/metal3-io/baremetal-operator/pkg/hardwareutils v0.4.0 // indirect
 	github.com/mitchellh/go-wordwrap v1.0.1 // indirect
 	github.com/moby/spdystream v0.5.0 // indirect
 	github.com/moby/sys/capability v0.4.0 // indirect
@@ -117,8 +123,8 @@ require (
 	github.com/monochromegane/go-gitignore v0.0.0-20200626010858-205db1a8cc00 // indirect
 	github.com/mxk/go-flowrate v0.0.0-20140419014527-cca7078d478f // indirect
 	github.com/nunnatsa/ginkgolinter v0.18.0 // indirect
+	github.com/nutanix-cloud-native/prism-go-client v0.3.4 // indirect
 	github.com/oklog/ulid v1.3.1 // indirect
-	github.com/onsi/ginkgo v1.16.5 // indirect
 	github.com/onsi/ginkgo/v2 v2.22.1 // indirect
 	github.com/onsi/gomega v1.36.2 // indirect
 	github.com/peterbourgon/diskv v2.0.1+incompatible // indirect
@@ -147,6 +153,7 @@ require (
 	go.opentelemetry.io/otel v1.31.0 // indirect
 	go.opentelemetry.io/otel/trace v1.31.0 // indirect
 	go.uber.org/automaxprocs v1.6.0 // indirect
+	gomodules.xyz/jsonpatch/v2 v2.4.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250102185135-69823020774d // indirect
 	gopkg.in/DATA-DOG/go-sqlmock.v1 v1.3.0 // indirect
 	gopkg.in/evanphx/json-patch.v4 v4.12.0 // indirect
@@ -194,7 +201,7 @@ require (
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/emicklei/go-restful/v3 v3.12.1 // indirect
 	github.com/ettle/strcase v0.2.0 // indirect
-	github.com/evanphx/json-patch v5.6.0+incompatible // indirect
+	github.com/evanphx/json-patch v5.9.0+incompatible // indirect
 	github.com/evanphx/json-patch/v5 v5.9.11 // indirect
 	github.com/fatih/color v1.18.0 // indirect
 	github.com/fatih/structtag v1.2.0 // indirect
@@ -273,6 +280,7 @@ require (
 	github.com/olekukonko/tablewriter v0.0.5 // indirect
 	github.com/opencontainers/image-spec v1.1.0
 	github.com/opencontainers/runtime-spec v1.2.0 // indirect
+	github.com/openshift/installer v1.4.17
 	github.com/pelletier/go-toml/v2 v2.2.3 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
