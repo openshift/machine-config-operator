@@ -18,12 +18,14 @@ import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	opv1 "github.com/openshift/api/operator/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/daemon/osrelease"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/vincent-petithory/dataurl"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 )
 
@@ -825,6 +827,92 @@ func TestFindClosestFilePolicyPathMatch(t *testing.T) {
 			if !reflect.DeepEqual(test.expectedActionsFound, actionsFound) {
 				t.Errorf("Failed calculating node disruption file policy action: expected: %v but result is: %v.", test.expectedActionsFound, actionsFound)
 			}
+		})
+	}
+}
+
+func TestGenerateExtensionsArgs(t *testing.T) {
+	tests := []struct {
+		name         string
+		installedSet sets.Set[string]
+		extensions   []string
+		expected     []string
+	}{
+		{
+			name:         "no extensions installed, no extensions required",
+			installedSet: sets.New[string](),
+			extensions:   []string{},
+			expected:     []string{},
+		},
+		{
+			name:         "no extensions installed, install wasm",
+			installedSet: sets.New[string](),
+			extensions:   []string{"wasm"},
+			expected:     []string{constants.RPMOSTreeInstallArg, "crun-wasm"},
+		},
+		{
+			name:         "no extensions installed, install multiple extensions",
+			installedSet: sets.New[string](),
+			extensions:   []string{"wasm", "ipsec"},
+			expected:     []string{constants.RPMOSTreeInstallArg, "NetworkManager-libreswan", constants.RPMOSTreeInstallArg, "crun-wasm", constants.RPMOSTreeInstallArg, "libreswan"},
+		},
+		{
+			name:         "wasm already installed, require wasm",
+			installedSet: sets.New("crun-wasm"),
+			extensions:   []string{"wasm"},
+			expected:     []string{},
+		},
+		{
+			name:         "wasm installed, no extensions required",
+			installedSet: sets.New("crun-wasm"),
+			extensions:   []string{},
+			expected:     []string{constants.RPMOSTreeUninstallArg, "crun-wasm"},
+		},
+		{
+			name:         "wasm and ipsec installed, only wasm required",
+			installedSet: sets.New("crun-wasm", "NetworkManager-libreswan", "libreswan"),
+			extensions:   []string{"wasm"},
+			expected:     []string{constants.RPMOSTreeUninstallArg, "NetworkManager-libreswan", constants.RPMOSTreeUninstallArg, "libreswan"},
+		},
+		{
+			name:         "some packages installed, switch to different extension",
+			installedSet: sets.New("crun-wasm"),
+			extensions:   []string{"ipsec"},
+			expected:     []string{constants.RPMOSTreeInstallArg, "NetworkManager-libreswan", constants.RPMOSTreeInstallArg, "libreswan", constants.RPMOSTreeUninstallArg, "crun-wasm"},
+		},
+		{
+			name:         "complex scenario with two-node-ha",
+			installedSet: sets.New("pacemaker", "crun-wasm"),
+			extensions:   []string{"two-node-ha", "usbguard"},
+			expected:     []string{constants.RPMOSTreeInstallArg, "fence-agents-all", constants.RPMOSTreeInstallArg, "pcs", constants.RPMOSTreeInstallArg, "usbguard", constants.RPMOSTreeUninstallArg, "crun-wasm"},
+		},
+		{
+			name:         "non-extension packages installed should not be uninstalled",
+			installedSet: sets.New("random-package", "another-package"),
+			extensions:   []string{"wasm"},
+			expected:     []string{constants.RPMOSTreeInstallArg, "crun-wasm"},
+		},
+		{
+			name:         "all supported extensions",
+			installedSet: sets.New[string](),
+			extensions:   []string{"two-node-ha", "wasm", "ipsec", "usbguard", "kerberos", "kernel-devel", "sandboxed-containers", "sysstat"},
+			expected:     []string{constants.RPMOSTreeInstallArg, "NetworkManager-libreswan", constants.RPMOSTreeInstallArg, "crun-wasm", constants.RPMOSTreeInstallArg, "fence-agents-all", constants.RPMOSTreeInstallArg, "kata-containers", constants.RPMOSTreeInstallArg, "kernel-devel", constants.RPMOSTreeInstallArg, "kernel-headers", constants.RPMOSTreeInstallArg, "krb5-workstation", constants.RPMOSTreeInstallArg, "libkadm5", constants.RPMOSTreeInstallArg, "libreswan", constants.RPMOSTreeInstallArg, "pacemaker", constants.RPMOSTreeInstallArg, "pcs", constants.RPMOSTreeInstallArg, "sysstat", constants.RPMOSTreeInstallArg, "usbguard"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create MachineConfig with the test extensions
+			newConfig := &mcfgv1.MachineConfig{
+				Spec: mcfgv1.MachineConfigSpec{
+					Extensions: tt.extensions,
+				},
+			}
+
+			result := generateExtensionsArgs(tt.installedSet, newConfig)
+
+			// Sort both slices for comparison since order of packages within install/uninstall groups may vary
+			assert.ElementsMatch(t, tt.expected, result, "generateExtensionsArgs result mismatch")
 		})
 	}
 }
