@@ -15,6 +15,11 @@ import (
 
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/klog/v2"
+
+	"github.com/ghodss/yaml"
+	installertypes "github.com/openshift/installer/pkg/types"
+	"github.com/openshift/installer/pkg/types/aws"
+	"github.com/openshift/installer/pkg/types/gcp"
 )
 
 const (
@@ -218,4 +223,61 @@ func IsCoreOSNode(node *corev1.Node) bool {
 		}
 	}
 	return false
+}
+
+// CheckCustomBootImageInInstallConfig unmarshals the configmap and determines
+// if the install config has any custom images defined for the default opt-in
+// platforms
+func CheckCustomBootImageInInstallConfig(installConfigCm *corev1.ConfigMap) (bool, error) {
+	var installConfig *installertypes.InstallConfig
+	err := yaml.Unmarshal([]byte(installConfigCm.Data["install-config"]), &installConfig)
+	if err != nil {
+		return false, fmt.Errorf("failed to unmarshal configmap cluster-config-v1 data: <%s>", installConfigCm.Data["install-config"])
+	}
+
+	var wImg bool
+	switch installConfig.Platform.Name() {
+	case aws.Name:
+		_, wImg = awsBootImages(installConfig)
+	case gcp.Name:
+		_, wImg = gcpBootImages(installConfig)
+	default:
+		// We do not need to consider other platforms, because default boot image management has not been enabled yet.
+		return false, nil
+	}
+
+	// Ignore control plane changes until MCO-1007 is completed.
+	return wImg, nil
+}
+
+// awsBootImages detects if any boot images are set for the AWS platform's InstallConfig
+func awsBootImages(ic *installertypes.InstallConfig) (cpImg, wImg bool) {
+	if dmp := ic.AWS.DefaultMachinePlatform; dmp != nil && dmp.AMIID != "" {
+		return true, true
+	}
+
+	if cp := ic.ControlPlane; cp != nil && cp.Platform.AWS != nil && cp.Platform.AWS.AMIID != "" {
+		cpImg = true
+	}
+
+	if w := ic.Compute; len(w) > 0 && w[0].Platform.AWS != nil && w[0].Platform.AWS.AMIID != "" {
+		wImg = true
+	}
+	return
+}
+
+// gcpBootImages detects if any boot images are set for the GCP platform's InstallConfig
+func gcpBootImages(ic *installertypes.InstallConfig) (cpImg, wImg bool) {
+	if dmp := ic.GCP.DefaultMachinePlatform; dmp != nil && dmp.OSImage != nil {
+		return true, true
+	}
+
+	if cp := ic.ControlPlane; cp != nil && cp.Platform.GCP != nil && cp.Platform.GCP.OSImage != nil {
+		cpImg = true
+	}
+
+	if w := ic.Compute; len(w) > 0 && w[0].Platform.GCP != nil && w[0].Platform.GCP.OSImage != nil {
+		wImg = true
+	}
+	return
 }

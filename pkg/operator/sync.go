@@ -2379,6 +2379,22 @@ func (optr *Operator) isOnClusterBuildFeatureGateEnabled() (bool, error) {
 
 // Determines if this cluster is on a platform that opts in for boot images by default
 func (optr *Operator) isDefaultOnBootImageUpdatePlatform() (bool, error) {
+	// Check if installConfig defined a custom AMI/GCP image(marketplace).
+	// In that case, the MCO should not opt-in the cluster to boot image management
+	installConfigCm, err := optr.clusterCmLister.ConfigMaps("kube-system").Get(ctrlcommon.InstallConfigCMName)
+	if err != nil {
+		// For now, just log and don't degrade the cluster
+		klog.Errorf("Could not get %s configmap with error: %v", ctrlcommon.InstallConfigCMName, err)
+		return false, nil
+	}
+	// Check configmap for custom boot image creation
+	if customImagePresent, err := helpers.CheckCustomBootImageInInstallConfig(installConfigCm); err != nil {
+		klog.Errorf("Could not process configmap %s with error: %v", ctrlcommon.InstallConfigCMName, err)
+		return false, err
+	} else if customImagePresent {
+		klog.V(4).Info("Custom boot images have been defined in install-config, default opt-in will not take place.")
+		return false, nil
+	}
 	infra, err := optr.infraLister.Get("cluster")
 	if err != nil {
 		klog.Errorf("Could not get infra: %v", err)
