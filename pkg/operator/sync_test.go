@@ -23,6 +23,7 @@ import (
 	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
 	fakeclientmachineconfigv1 "github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
 	mcplister "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
+	corelisterv1 "k8s.io/client-go/listers/core/v1"
 
 	mcfginformers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
 	fakemcopclientset "github.com/openshift/client-go/operator/clientset/versioned/fake"
@@ -305,6 +306,7 @@ func TestSyncMachineConfiguration(t *testing.T) {
 		name                            string
 		mcop                            *opv1.MachineConfiguration
 		infra                           *configv1.Infrastructure
+		installConfigCM                 *corev1.ConfigMap
 		expectedManagedBootImagesStatus opv1.ManagedBootImages
 		annotationExpected              bool
 	}{
@@ -312,6 +314,7 @@ func TestSyncMachineConfiguration(t *testing.T) {
 			name:                            "AWS platform, no existing config, opt-in expected",
 			infra:                           buildInfra(withPlatformType(configv1.AWSPlatformType)),
 			mcop:                            buildMachineConfigurationWithNoBootImageConfiguration(),
+			installConfigCM:                 buildAWSInstallConfigWithoutCustomBootImage(),
 			annotationExpected:              true,
 			expectedManagedBootImagesStatus: apihelpers.GetManagedBootImagesWithUpdateEnabled(),
 		},
@@ -319,6 +322,7 @@ func TestSyncMachineConfiguration(t *testing.T) {
 			name:                            "AWS platform, existing enabled config, no opt-in expected",
 			infra:                           buildInfra(withPlatformType(configv1.AWSPlatformType)),
 			mcop:                            buildMachineConfigurationWithBootImageUpdateEnabled(),
+			installConfigCM:                 buildAWSInstallConfigWithoutCustomBootImage(),
 			annotationExpected:              false,
 			expectedManagedBootImagesStatus: apihelpers.GetManagedBootImagesWithUpdateEnabled(),
 		},
@@ -326,13 +330,39 @@ func TestSyncMachineConfiguration(t *testing.T) {
 			name:                            "AWS platform, existing disabled config, no opt-in expected",
 			infra:                           buildInfra(withPlatformType(configv1.AWSPlatformType)),
 			mcop:                            buildMachineConfigurationWithBootImageUpdateDisabled(),
+			installConfigCM:                 buildAWSInstallConfigWithoutCustomBootImage(),
 			annotationExpected:              false,
 			expectedManagedBootImagesStatus: apihelpers.GetManagedBootImagesWithUpdateDisabled(),
+		},
+		{
+			name:                            "AWS platform, custom boot image in install config, no opt-in expected",
+			infra:                           buildInfra(withPlatformType(configv1.AWSPlatformType)),
+			mcop:                            buildMachineConfigurationWithNoBootImageConfiguration(),
+			installConfigCM:                 buildAWSInstallConfigWithCustomBootImage(),
+			annotationExpected:              false,
+			expectedManagedBootImagesStatus: apihelpers.GetManagedBootImagesWithUpdateDisabled(),
+		},
+		{
+			name:                            "AWS platform, custom compute boot image in install config, no opt-in expected",
+			infra:                           buildInfra(withPlatformType(configv1.AWSPlatformType)),
+			mcop:                            buildMachineConfigurationWithNoBootImageConfiguration(),
+			installConfigCM:                 buildAWSInstallConfigWithComputeCustomBootImage(),
+			annotationExpected:              false,
+			expectedManagedBootImagesStatus: apihelpers.GetManagedBootImagesWithUpdateDisabled(),
+		},
+		{
+			name:                            "AWS platform, custom controlplane boot image in install config, opt-in expected (controlplane images ignored)",
+			infra:                           buildInfra(withPlatformType(configv1.AWSPlatformType)),
+			mcop:                            buildMachineConfigurationWithNoBootImageConfiguration(),
+			installConfigCM:                 buildAWSInstallConfigWithControlPlaneCustomBootImage(),
+			annotationExpected:              true,
+			expectedManagedBootImagesStatus: apihelpers.GetManagedBootImagesWithUpdateEnabled(),
 		},
 		{
 			name:                            "GCP platform, no existing config, opt-in expected",
 			infra:                           buildInfra(withPlatformType(configv1.GCPPlatformType)),
 			mcop:                            buildMachineConfigurationWithNoBootImageConfiguration(),
+			installConfigCM:                 buildGCPInstallConfigWithoutCustomBootImage(),
 			annotationExpected:              true,
 			expectedManagedBootImagesStatus: apihelpers.GetManagedBootImagesWithUpdateEnabled(),
 		},
@@ -340,6 +370,7 @@ func TestSyncMachineConfiguration(t *testing.T) {
 			name:                            "GCP platform, existing enabled config, no opt-in expected",
 			infra:                           buildInfra(withPlatformType(configv1.GCPPlatformType)),
 			mcop:                            buildMachineConfigurationWithBootImageUpdateEnabled(),
+			installConfigCM:                 buildGCPInstallConfigWithoutCustomBootImage(),
 			annotationExpected:              false,
 			expectedManagedBootImagesStatus: apihelpers.GetManagedBootImagesWithUpdateEnabled(),
 		},
@@ -347,13 +378,39 @@ func TestSyncMachineConfiguration(t *testing.T) {
 			name:                            "GCP platform, existing disabled config, no opt-in expected",
 			infra:                           buildInfra(withPlatformType(configv1.GCPPlatformType)),
 			mcop:                            buildMachineConfigurationWithBootImageUpdateDisabled(),
+			installConfigCM:                 buildGCPInstallConfigWithoutCustomBootImage(),
 			annotationExpected:              false,
 			expectedManagedBootImagesStatus: apihelpers.GetManagedBootImagesWithUpdateDisabled(),
+		},
+		{
+			name:                            "GCP platform, custom boot image in install config, no opt-in expected",
+			infra:                           buildInfra(withPlatformType(configv1.GCPPlatformType)),
+			mcop:                            buildMachineConfigurationWithNoBootImageConfiguration(),
+			installConfigCM:                 buildGCPInstallConfigWithCustomBootImage(),
+			annotationExpected:              false,
+			expectedManagedBootImagesStatus: apihelpers.GetManagedBootImagesWithUpdateDisabled(),
+		},
+		{
+			name:                            "GCP platform, custom compute boot image in install config, no opt-in expected",
+			infra:                           buildInfra(withPlatformType(configv1.GCPPlatformType)),
+			mcop:                            buildMachineConfigurationWithNoBootImageConfiguration(),
+			installConfigCM:                 buildGCPInstallConfigWithComputeCustomBootImage(),
+			annotationExpected:              false,
+			expectedManagedBootImagesStatus: apihelpers.GetManagedBootImagesWithUpdateDisabled(),
+		},
+		{
+			name:                            "GCP platform, custom controlplane boot image in install config, opt-in expected (controlplane images ignored)",
+			infra:                           buildInfra(withPlatformType(configv1.GCPPlatformType)),
+			mcop:                            buildMachineConfigurationWithNoBootImageConfiguration(),
+			installConfigCM:                 buildGCPInstallConfigWithControlPlaneCustomBootImage(),
+			annotationExpected:              true,
+			expectedManagedBootImagesStatus: apihelpers.GetManagedBootImagesWithUpdateEnabled(),
 		},
 		{
 			name:                            "Azure platform, no existing config, no opt-in expected",
 			infra:                           buildInfra(withPlatformType(configv1.AzurePlatformType)),
 			mcop:                            buildMachineConfigurationWithNoBootImageConfiguration(),
+			installConfigCM:                 buildAzureInstallConfigWithoutCustomBootImage(),
 			annotationExpected:              false,
 			expectedManagedBootImagesStatus: apihelpers.GetManagedBootImagesWithNoConfiguration(),
 		},
@@ -361,6 +418,7 @@ func TestSyncMachineConfiguration(t *testing.T) {
 			name:                            "vsphere platform, no existing config, no opt-in expected",
 			infra:                           buildInfra(withPlatformType(configv1.VSpherePlatformType)),
 			mcop:                            buildMachineConfigurationWithNoBootImageConfiguration(),
+			installConfigCM:                 buildVSphereInstallConfigWithoutCustomBootImage(),
 			annotationExpected:              false,
 			expectedManagedBootImagesStatus: apihelpers.GetManagedBootImagesWithNoConfiguration(),
 		},
@@ -372,15 +430,19 @@ func TestSyncMachineConfiguration(t *testing.T) {
 			mcopIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
 			mcopIndexer.Add(tc.mcop)
 			mcpIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+			cmIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+			cmIndexer.Add(tc.installConfigCM)
+
 			optr := &Operator{
 				eventRecorder: &record.FakeRecorder{},
 				fgAccessor: featuregates.NewHardcodedFeatureGateAccess(
 					[]configv1.FeatureGateName{features.FeatureGateManagedBootImages, features.FeatureGateManagedBootImagesAWS}, []configv1.FeatureGateName{},
 				),
-				infraLister: configlistersv1.NewInfrastructureLister(infraIndexer),
-				mcopLister:  mcoplistersv1.NewMachineConfigurationLister(mcopIndexer),
-				mcopClient:  fakemcopclientset.NewSimpleClientset(tc.mcop),
-				mcpLister:   mcplister.NewMachineConfigPoolLister(mcpIndexer),
+				infraLister:     configlistersv1.NewInfrastructureLister(infraIndexer),
+				mcopLister:      mcoplistersv1.NewMachineConfigurationLister(mcopIndexer),
+				mcopClient:      fakemcopclientset.NewSimpleClientset(tc.mcop),
+				mcpLister:       mcplister.NewMachineConfigPoolLister(mcpIndexer),
+				clusterCmLister: corelisterv1.NewConfigMapLister(cmIndexer),
 			}
 			err := optr.syncMachineConfiguration(nil, nil)
 			assert.NoError(t, err)
@@ -403,4 +465,145 @@ func buildMachineConfigurationWithBootImageUpdateEnabled() *opv1.MachineConfigur
 
 func buildMachineConfigurationWithNoBootImageConfiguration() *opv1.MachineConfiguration {
 	return &opv1.MachineConfiguration{Spec: opv1.MachineConfigurationSpec{ManagedBootImages: apihelpers.GetManagedBootImagesWithNoConfiguration()}, ObjectMeta: metav1.ObjectMeta{Name: "cluster"}}
+}
+
+func buildInstallConfigCM(installConfigYAML string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      ctrlcommon.InstallConfigCMName,
+			Namespace: "kube-system",
+		},
+		Data: map[string]string{
+			"install-config": installConfigYAML,
+		},
+	}
+}
+
+func buildGCPInstallConfigWithCustomBootImage() *corev1.ConfigMap {
+	installConfigYAML := `
+platform:
+  gcp:
+    region: us-central1
+    projectID: my-project
+    defaultMachinePlatform:
+      osImage:
+        project: my-project
+        name: custom-rhcos-image
+`
+	return buildInstallConfigCM(installConfigYAML)
+}
+
+func buildAWSInstallConfigWithCustomBootImage() *corev1.ConfigMap {
+	installConfigYAML := `
+platform:
+  aws:
+    region: us-east-1
+    defaultMachinePlatform:
+      amiID: ami-123456789abcdef0
+`
+	return buildInstallConfigCM(installConfigYAML)
+}
+
+func buildGCPInstallConfigWithoutCustomBootImage() *corev1.ConfigMap {
+	installConfigYAML := `
+platform:
+  gcp:
+    region: us-central1
+    projectID: my-project
+`
+	return buildInstallConfigCM(installConfigYAML)
+}
+
+func buildAWSInstallConfigWithoutCustomBootImage() *corev1.ConfigMap {
+	installConfigYAML := `
+platform:
+  aws:
+    region: us-east-1
+`
+	return buildInstallConfigCM(installConfigYAML)
+}
+
+func buildAWSInstallConfigWithComputeCustomBootImage() *corev1.ConfigMap {
+	installConfigYAML := `
+platform:
+  aws:
+    region: us-east-1
+compute:
+- name: worker
+  platform:
+    aws:
+      amiID: ami-987654321fedcba0
+`
+	return buildInstallConfigCM(installConfigYAML)
+}
+
+func buildGCPInstallConfigWithComputeCustomBootImage() *corev1.ConfigMap {
+	installConfigYAML := `
+platform:
+  gcp:
+    region: us-central1
+    projectID: my-project
+compute:
+- name: worker
+  platform:
+    gcp:
+      osImage:
+        project: my-project
+        name: custom-worker-rhcos-image
+`
+	return buildInstallConfigCM(installConfigYAML)
+}
+
+func buildAWSInstallConfigWithControlPlaneCustomBootImage() *corev1.ConfigMap {
+	installConfigYAML := `
+platform:
+  aws:
+    region: us-east-1
+controlPlane:
+  name: master
+  platform:
+    aws:
+      amiID: ami-abcdef0123456789
+`
+	return buildInstallConfigCM(installConfigYAML)
+}
+
+func buildGCPInstallConfigWithControlPlaneCustomBootImage() *corev1.ConfigMap {
+	installConfigYAML := `
+platform:
+  gcp:
+    region: us-central1
+    projectID: my-project
+controlPlane:
+  name: master
+  platform:
+    gcp:
+      osImage:
+        project: my-project
+        name: custom-master-rhcos-image
+`
+	return buildInstallConfigCM(installConfigYAML)
+}
+
+func buildVSphereInstallConfigWithoutCustomBootImage() *corev1.ConfigMap {
+	installConfigYAML := `
+platform:
+  vsphere:
+    vcenter: vcenter.example.com
+    datacenter: datacenter1
+    cluster: cluster1
+    datastore: datastore1
+    network: network1
+`
+	return buildInstallConfigCM(installConfigYAML)
+}
+
+func buildAzureInstallConfigWithoutCustomBootImage() *corev1.ConfigMap {
+	installConfigYAML := `
+platform:
+  azure:
+    region: eastus
+    resourceGroupName: openshift-cluster-rg
+`
+	return buildInstallConfigCM(installConfigYAML)
 }

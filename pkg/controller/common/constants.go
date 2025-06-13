@@ -120,6 +120,9 @@ const (
 	// This is where the installer generated MCS CA bundle was formally stored. This configmap is in the "kube-system" namespace.
 	RootCAConfigMapName = "root-ca"
 
+	// This is where the InstallConfig from installation is stored. This configmap is in the "kube-system" namespace.
+	InstallConfigCMName = "cluster-config-v1"
+
 	// This is the name of the configmap bundle and secret where the rotated MCS CA will be stored, in the MCO namespace.
 	MachineConfigServerCAName = "machine-config-server-ca"
 
