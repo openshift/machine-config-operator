@@ -2,6 +2,7 @@ package machineset
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/coreos/stream-metadata-go/stream"
 	corev1 "k8s.io/api/core/v1"
@@ -86,12 +87,20 @@ func reconcileGCP(machineSet *machinev1beta1.MachineSet, configMap *corev1.Confi
 	patchRequired = false
 	newProviderSpec := providerSpec.DeepCopy()
 	for idx, disk := range newProviderSpec.Disks {
-		if newBootImage != disk.Image && disk.Boot {
-			klog.Infof("New target boot image: %s", newBootImage)
-			klog.Infof("Current image: %s", disk.Image)
-			patchRequired = true
-			newProviderSpec.Disks[idx].Image = newBootImage
+		if !disk.Boot {
+			continue
 		}
+		if newBootImage == disk.Image {
+			continue
+		}
+		klog.Infof("New target boot image: %s", newBootImage)
+		klog.Infof("Current image: %s", disk.Image)
+		// Return an error if image does not start with "projects/rhcos-cloud/global/images"
+		if !strings.HasPrefix(disk.Image, "projects/rhcos-cloud/global/images") {
+			return false, nil, fmt.Errorf("current boot image %s is unknown, boot image management is not supported on this cluster. Please disable this feature to remove the degrade", disk.Image)
+		}
+		patchRequired = true
+		newProviderSpec.Disks[idx].Image = newBootImage
 	}
 
 	// If patch is required, marshal the new providerspec into the machineset
@@ -147,14 +156,19 @@ func reconcileAWS(machineSet *machinev1beta1.MachineSet, configMap *corev1.Confi
 	patchRequired = false
 	newProviderSpec := providerSpec.DeepCopy()
 
-	// AMIs can be defined via filters, which is the case for OKD. In such cases,
-	// ID will be nil for the very first update, and a default value will need to
-	// be populated
-	currentAMI := "undefined AMI ID"
-	if newProviderSpec.AMI.ID != nil {
-		currentAMI = *newProviderSpec.AMI.ID
+	// If the MachineSet does not use an AMI ID, this is unsupported, return an erorr
+	if newProviderSpec.AMI.ID == nil {
+		return false, nil, fmt.Errorf("current AMI.ID is undefined, boot image management is not supported on this cluster. Please disable this feature to remove the degrade")
 	}
+
+	currentAMI := *newProviderSpec.AMI.ID
+
 	if newami != currentAMI {
+		// Validate that we're allowed to update from the current AMI
+		if !AllowedAMIs.Has(currentAMI) {
+			return false, nil, fmt.Errorf("current AMI %s is unknown, boot image management is not supported on this cluster. Please disable this feature to remove the degrade", currentAMI)
+		}
+
 		klog.Infof("New target boot image: %s: %s", region, newami)
 		klog.Infof("Current image: %s: %s", region, currentAMI)
 		patchRequired = true
