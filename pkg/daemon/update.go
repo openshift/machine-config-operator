@@ -26,6 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	kubeErrs "k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
@@ -1765,67 +1766,66 @@ func (dn *CoreOSDaemon) updateKernelArguments(oldKernelArguments, newKernelArgum
 	return runRpmOstree(args...)
 }
 
-func (dn *Daemon) generateExtensionsArgs(oldConfig, newConfig *mcfgv1.MachineConfig) []string {
-	removed := []string{}
-	added := []string{}
-
-	oldExt := make(map[string]bool)
-	for _, ext := range oldConfig.Spec.Extensions {
-		oldExt[ext] = true
+// getCurrentlyInstalledPackages returns the list of currently installed extension packages
+func (dn *Daemon) getCurrentlyInstalledPackages() (sets.Set[string], error) {
+	status, err := dn.NodeUpdaterClient.Peel().QueryStatus()
+	if err != nil {
+		return nil, fmt.Errorf("failed to query rpm-ostree status: %w", err)
 	}
-	newExt := make(map[string]bool)
+
+	bootedDeployment, err := status.GetBootedDeployment()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get booted deployment: %w", err)
+	}
+
+	return sets.New(bootedDeployment.RequestedPackages...), nil
+}
+
+// generateExtensionsArgs generates extension arguments for rpm-ostree, based on the target config
+// and currently installed extension packages.
+func generateExtensionsArgs(installedSet sets.Set[string], newConfig *mcfgv1.MachineConfig) []string {
+
+	// Get packages that should be installed based on new config
+	supportedExtensions := ctrlcommon.SupportedExtensions()
+	requiredSet := sets.New[string]()
+
 	for _, ext := range newConfig.Spec.Extensions {
-		newExt[ext] = true
-	}
-
-	for ext := range oldExt {
-		if !newExt[ext] {
-			removed = append(removed, ext)
-		}
-	}
-	for ext := range newExt {
-		if !oldExt[ext] {
-			added = append(added, ext)
+		if packages, exists := supportedExtensions[ext]; exists {
+			requiredSet.Insert(packages...)
 		}
 	}
 
-	// Supported extensions has package list info that is required
-	// to enable an extension
+	var extArgs []string
 
-	extArgs := []string{"update"}
-
-	if dn.os.IsEL() {
-		extensions := ctrlcommon.SupportedExtensions()
-		for _, ext := range added {
-			for _, pkg := range extensions[ext] {
-				extArgs = append(extArgs, "--install", pkg)
-			}
-		}
-		for _, ext := range removed {
-			for _, pkg := range extensions[ext] {
-				extArgs = append(extArgs, "--uninstall", pkg)
-			}
-		}
+	// Find packages to install: required but not currently installed
+	toInstall := requiredSet.Difference(installedSet)
+	for _, pkg := range sets.List(toInstall) {
+		extArgs = append(extArgs, constants.RPMOSTreeInstallArg, pkg)
 	}
 
-	// FCOS does one to one mapping of extension to package to be installed on FCOS node.
-	// This is needed as OKD layers additional packages on top of official FCOS shipped,
-	// See https://github.com/openshift/release/blob/959c2954344438c4eed3ec7f52a5e099e8335516/ci-operator/jobs/openshift/release/openshift-release-release-4.7-periodics.yaml#L586
-	// TODO: Once the package list has been stabilized, we can make use of the group and add
-	// all the packages required to enable OKD as a single extension.
-	if dn.os.IsFCOS() {
-		for _, ext := range added {
-			extArgs = append(extArgs, "--install", ext)
-		}
-		for _, ext := range removed {
-			extArgs = append(extArgs, "--uninstall", ext)
-		}
+	// Build set of all extension packages that can be managed, since
+	// we only want to remove packages that the MCO manages.
+	allExtensionSet := sets.New[string]()
+	for _, packages := range supportedExtensions {
+		allExtensionSet.Insert(packages...)
+	}
+
+	// Find packages to uninstall: currently installed extension packages that are not required
+	managedInstalled := installedSet.Intersection(allExtensionSet)
+	toUninstall := managedInstalled.Difference(requiredSet)
+	for _, pkg := range sets.List(toUninstall) {
+		extArgs = append(extArgs, constants.RPMOSTreeUninstallArg, pkg)
 	}
 
 	return extArgs
 }
 
 func (dn *CoreOSDaemon) applyExtensions(oldConfig, newConfig *mcfgv1.MachineConfig) error {
+	// Take no action if we're not an RHCOS node
+	if !dn.os.IsEL() {
+		return nil
+	}
+
 	extensionsEmpty := len(oldConfig.Spec.Extensions) == 0 && len(newConfig.Spec.Extensions) == 0
 	if (extensionsEmpty) ||
 		(reflect.DeepEqual(oldConfig.Spec.Extensions, newConfig.Spec.Extensions) && oldConfig.Spec.OSImageURL == newConfig.Spec.OSImageURL) {
@@ -1833,12 +1833,26 @@ func (dn *CoreOSDaemon) applyExtensions(oldConfig, newConfig *mcfgv1.MachineConf
 	}
 
 	// Validate extensions allowlist on RHCOS nodes
-	if err := ctrlcommon.ValidateMachineConfigExtensions(newConfig.Spec); err != nil && dn.os.IsEL() {
+	if err := ctrlcommon.ValidateMachineConfigExtensions(newConfig.Spec); err != nil {
 		return err
 	}
 
-	args := dn.generateExtensionsArgs(oldConfig, newConfig)
-	klog.Infof("Applying extensions : %+q", args)
+	// Get currently installed packages from rpm-ostree status
+	installedSet, err := dn.getCurrentlyInstalledPackages()
+	if err != nil {
+		return err
+	}
+
+	// Generate arguments based on current extension packages and the target config's extensions
+	args := generateExtensionsArgs(installedSet, newConfig)
+	if len(args) == 0 {
+		logSystem("No extension updates required")
+		return nil
+	}
+
+	// Add "update" to the start of argument list
+	args = append([]string{constants.RPMOSTreeUpdateArg}, args...)
+	logSystem("Applying extensions : %+q", args)
 	return runRpmOstree(args...)
 }
 
@@ -1884,7 +1898,7 @@ func (dn *CoreOSDaemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig)
 		args := []string{"override", "remove"}
 		args = append(args, defaultKernel...)
 		for _, pkg := range realtimeKernel {
-			args = append(args, "--install", pkg)
+			args = append(args, constants.RPMOSTreeInstallArg, pkg)
 		}
 
 		return runRpmOstree(args...)
@@ -1893,7 +1907,7 @@ func (dn *CoreOSDaemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig)
 		args := []string{"override", "remove"}
 		args = append(args, defaultKernel...)
 		for _, pkg := range hugePagesKernel {
-			args = append(args, "--install", pkg)
+			args = append(args, constants.RPMOSTreeInstallArg, pkg)
 		}
 
 		return runRpmOstree(args...)
@@ -2673,7 +2687,7 @@ func (dn *Daemon) queueRevertKernelSwap() error {
 		args := []string{"override", "reset"}
 		args = append(args, kernelOverrides...)
 		for _, pkg := range kernelExtLayers {
-			args = append(args, "--uninstall", pkg)
+			args = append(args, constants.RPMOSTreeUninstallArg, pkg)
 		}
 		if err := runRpmOstree(args...); err != nil {
 			return err
