@@ -11,8 +11,6 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	osev1 "github.com/openshift/api/config/v1"
-	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
-
 	"github.com/stretchr/testify/require"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
@@ -41,16 +39,16 @@ func TestFeatureGateDrift(t *testing.T) {
 					},
 				},
 			}
-			fgAccess := featuregates.NewHardcodedFeatureGateAccess(features.Spec.FeatureGateSelection.CustomNoUpgrade.Enabled, features.Spec.FeatureGateSelection.CustomNoUpgrade.Disabled)
-			ctrl := f.newController(fgAccess)
+			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler(features.Spec.FeatureGateSelection.CustomNoUpgrade.Enabled, features.Spec.FeatureGateSelection.CustomNoUpgrade.Disabled)
+			ctrl := f.newController(fgHandler)
 
 			// Generate kubelet config with feature gates applied
-			kubeletConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, "master", fgAccess, nil)
+			kubeletConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, "master", fgHandler, nil)
 			require.NoError(t, err)
 
 			t.Logf("Generated Kubelet Config Feature Gates: %v", kubeletConfig.FeatureGates)
 
-			defaultFeatureGates, err := generateFeatureMap(fgAccess)
+			defaultFeatureGates := generateFeatureMap(fgHandler)
 			require.NoError(t, err)
 			t.Logf("Expected Feature Gates: %v", *defaultFeatureGates)
 
@@ -65,8 +63,8 @@ func TestFeaturesDefault(t *testing.T) {
 	for _, platform := range []configv1.PlatformType{configv1.AWSPlatformType, configv1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
-			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"CSIMigration"}, nil)
-			f.newController(fgAccess)
+			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler([]osev1.FeatureGateName{"CSIMigration"}, nil)
+			f.newController(fgHandler)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
@@ -100,7 +98,7 @@ func TestFeaturesDefault(t *testing.T) {
 			f.expectGetMachineConfigAction(mcs2)
 			f.expectCreateMachineConfigAction(mcs2)
 
-			f.runFeature(getKeyFromFeatureGate(features, t), fgAccess)
+			f.runFeature(getKeyFromFeatureGate(features, t), fgHandler)
 		})
 	}
 }
@@ -121,10 +119,10 @@ func TestFeaturesCustomNoUpgrade(t *testing.T) {
 					},
 				},
 			}
-			fgAccess := featuregates.NewHardcodedFeatureGateAccess(features.Spec.FeatureGateSelection.CustomNoUpgrade.Enabled, features.Spec.FeatureGateSelection.CustomNoUpgrade.Disabled)
+			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler(features.Spec.FeatureGateSelection.CustomNoUpgrade.Enabled, features.Spec.FeatureGateSelection.CustomNoUpgrade.Disabled)
 
 			f := newFixture(t)
-			f.newController(fgAccess)
+			f.newController(fgHandler)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
@@ -155,7 +153,7 @@ func TestFeaturesCustomNoUpgrade(t *testing.T) {
 			f.expectGetMachineConfigAction(mcs2Deprecated)
 			f.expectGetMachineConfigAction(mcs2)
 			f.expectCreateMachineConfigAction(mcs2)
-			f.runFeature(getKeyFromFeatureGate(features, t), fgAccess)
+			f.runFeature(getKeyFromFeatureGate(features, t), fgHandler)
 		})
 	}
 }
@@ -168,9 +166,9 @@ func TestBootstrapFeaturesDefault(t *testing.T) {
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			mcps := []*mcfgv1.MachineConfigPool{mcp, mcp2}
 
-			fgAccess := featuregates.NewHardcodedFeatureGateAccess(nil, nil)
+			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler(nil, nil)
 
-			mcs, err := RunFeatureGateBootstrap("../../../templates", fgAccess, nil, cc, mcps, nil)
+			mcs, err := RunFeatureGateBootstrap("../../../templates", fgHandler, nil, cc, mcps, nil)
 			if err != nil {
 				t.Errorf("could not run feature gate bootstrap: %v", err)
 			}
@@ -189,9 +187,9 @@ func TestBootstrapFeaturesCustomNoUpgrade(t *testing.T) {
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			mcps := []*mcfgv1.MachineConfigPool{mcp, mcp2}
 
-			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"CSIMigration"}, nil)
+			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler([]osev1.FeatureGateName{"CSIMigration"}, nil)
 
-			mcs, err := RunFeatureGateBootstrap("../../../templates", fgAccess, nil, cc, mcps, nil)
+			mcs, err := RunFeatureGateBootstrap("../../../templates", fgHandler, nil, cc, mcps, nil)
 			if err != nil {
 				t.Errorf("could not run feature gate bootstrap: %v", err)
 			}
@@ -222,8 +220,8 @@ func TestBootstrapFeaturesCustomNoUpgrade(t *testing.T) {
 					},
 				}
 
-				fgAccess := featuregates.NewHardcodedFeatureGateAccess(features.Spec.FeatureGateSelection.CustomNoUpgrade.Enabled, features.Spec.FeatureGateSelection.CustomNoUpgrade.Disabled)
-				defaultFeatureGates, err := generateFeatureMap(fgAccess)
+				fgHandler = ctrlcommon.NewFeatureGatesHardcodedHandler(features.Spec.FeatureGateSelection.CustomNoUpgrade.Enabled, features.Spec.FeatureGateSelection.CustomNoUpgrade.Disabled)
+				defaultFeatureGates := generateFeatureMap(fgHandler)
 				if err != nil {
 					t.Errorf("could not generate defaultFeatureGates: %v", err)
 				}
@@ -255,10 +253,10 @@ func TestFeaturesCustomNoUpgradeRemoveUnmanagedMC(t *testing.T) {
 				},
 			}
 
-			fgAccess := featuregates.NewHardcodedFeatureGateAccess(features.Spec.FeatureGateSelection.CustomNoUpgrade.Enabled, features.Spec.FeatureGateSelection.CustomNoUpgrade.Disabled)
+			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler(features.Spec.FeatureGateSelection.CustomNoUpgrade.Enabled, features.Spec.FeatureGateSelection.CustomNoUpgrade.Disabled)
 
 			f := newFixture(t)
-			f.newController(fgAccess)
+			f.newController(fgHandler)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
@@ -286,9 +284,9 @@ func TestFeaturesCustomNoUpgradeRemoveUnmanagedMC(t *testing.T) {
 			f.mcpLister = append(f.mcpLister, mcp2)
 
 			f.featLister = append(f.featLister, features)
-			c := f.newController(fgAccess)
+			c := f.newController(fgHandler)
 
-			c.featureGateAccess = featuregates.NewHardcodedFeatureGateAccess(features.Spec.FeatureGateSelection.CustomNoUpgrade.Enabled, features.Spec.FeatureGateSelection.CustomNoUpgrade.Disabled)
+			c.fgHandler = ctrlcommon.NewFeatureGatesHardcodedHandler(features.Spec.FeatureGateSelection.CustomNoUpgrade.Enabled, features.Spec.FeatureGateSelection.CustomNoUpgrade.Disabled)
 
 			mcCustom, err := c.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), mcs3, metav1.CreateOptions{})
 			require.NoError(t, err)

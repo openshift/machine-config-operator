@@ -4,14 +4,16 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"net/url"
 	"os"
 	"time"
 
+	"github.com/openshift/api/features"
+
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/client-go/tools/clientcmd"
 
-	features "github.com/openshift/api/features"
 	"github.com/openshift/machine-config-operator/internal/clients"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon"
@@ -194,7 +196,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		ctrlctx.ClientBuilder.OperatorClientOrDie(componentName),
 		startOpts.kubeletHealthzEnabled,
 		startOpts.kubeletHealthzEndpoint,
-		ctrlctx.FeatureGateAccess,
+		ctrlctx.FeatureGatesHandler,
 	)
 	if err != nil {
 		klog.Fatalf("Failed to initialize: %v", err)
@@ -209,46 +211,38 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 	nodeScopedInformerStartFunc(ctrlctx.Stop)
 	close(ctrlctx.InformersStarted)
 
-	select {
-	case <-ctrlctx.FeatureGateAccess.InitialFeatureGatesObserved():
-		// ok to start the rest of the informers now that we have observed the initial feature gates
+	if fgErr := ctrlctx.FeatureGatesHandler.Connect(ctx); fgErr != nil {
+		klog.Fatal(fmt.Errorf("failed to connect to feature gates %w", fgErr))
+	}
 
-		featureGates, err := ctrlctx.FeatureGateAccess.CurrentFeatureGates()
+	// ok to start the rest of the informers now that we have observed the initial feature gates
+	if ctrlctx.FeatureGatesHandler.Enabled(features.FeatureGatePinnedImages) && ctrlctx.FeatureGatesHandler.Enabled(features.FeatureGateMachineConfigNodes) {
+		klog.Infof("Feature enabled: %s", features.FeatureGatePinnedImages)
+		criClient, err := cri.NewClient(ctx, constants.DefaultCRIOSocketPath)
 		if err != nil {
-			klog.Fatalf("Could not get FG: %v", err)
-		} else {
-			klog.Infof("FeatureGates initialized: knownFeatureGates=%v", featureGates.KnownFeatures())
-			if featureGates.Enabled(features.FeatureGatePinnedImages) && featureGates.Enabled(features.FeatureGateMachineConfigNodes) {
-				klog.Infof("Feature enabled: %s", features.FeatureGatePinnedImages)
-				criClient, err := cri.NewClient(ctx, constants.DefaultCRIOSocketPath)
-				if err != nil {
-					klog.Fatalf("Failed to initialize CRI client: %v", err)
-				}
-
-				prefetchTimeout := 2 * time.Minute
-				pinnedImageSetManager := daemon.NewPinnedImageSetManager(
-					startOpts.nodeName,
-					criClient,
-					ctrlctx.ClientBuilder.MachineConfigClientOrDie(componentName),
-					ctrlctx.InformerFactory.Machineconfiguration().V1().PinnedImageSets(),
-					nodeScopedInformer,
-					ctrlctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
-					resource.MustParse(constants.MinFreeStorageAfterPrefetch),
-					constants.DefaultCRIOSocketPath,
-					constants.KubeletAuthFile,
-					constants.ContainerRegistryConfPath,
-					prefetchTimeout,
-					ctrlctx.FeatureGateAccess,
-				)
-
-				go pinnedImageSetManager.Run(2, stopCh)
-				// start the informers for the pinned image set again after the feature gate is enabled this is allowed.
-				// see comments in SharedInformerFactory interface.
-				ctrlctx.InformerFactory.Start(stopCh)
-			}
+			klog.Fatalf("Failed to initialize CRI client: %v", err)
 		}
-	case <-time.After(1 * time.Minute):
-		klog.Fatalf("Could not get FG, timed out: %v", err)
+
+		prefetchTimeout := 2 * time.Minute
+		pinnedImageSetManager := daemon.NewPinnedImageSetManager(
+			startOpts.nodeName,
+			criClient,
+			ctrlctx.ClientBuilder.MachineConfigClientOrDie(componentName),
+			ctrlctx.InformerFactory.Machineconfiguration().V1().PinnedImageSets(),
+			nodeScopedInformer,
+			ctrlctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
+			resource.MustParse(constants.MinFreeStorageAfterPrefetch),
+			constants.DefaultCRIOSocketPath,
+			constants.KubeletAuthFile,
+			constants.ContainerRegistryConfPath,
+			prefetchTimeout,
+			ctrlctx.FeatureGatesHandler,
+		)
+
+		go pinnedImageSetManager.Run(2, stopCh)
+		// start the informers for the pinned image set again after the feature gate is enabled this is allowed.
+		// see comments in SharedInformerFactory interface.
+		ctrlctx.InformerFactory.Start(stopCh)
 	}
 
 	if err := dn.Run(stopCh, exitCh, errCh); err != nil {
