@@ -173,6 +173,71 @@ func TestMachineConfigDiff(t *testing.T) {
 			assert.True(t, diff.passwd)
 		})
 	}
+
+	oclTestCases := []struct {
+		name          string
+		oldMC         *mcfgv1.MachineConfig
+		newMC         *mcfgv1.MachineConfig
+		oclEnabled    bool
+		revertFromOCL bool
+		osUpdate      bool
+	}{
+		{
+			name:  "Empty MCs",
+			oldMC: canonicalizeEmptyMC(nil),
+			newMC: canonicalizeEmptyMC(nil),
+		},
+		{
+			name:  "Non-OCL MCs",
+			oldMC: newConfig,
+			newMC: newConfig,
+		},
+		{
+			name:     "Non-OCL OS update",
+			oldMC:    oldConfig,
+			newMC:    newConfig,
+			osUpdate: true,
+		},
+		{
+			name:       "OCL enabled no OS update",
+			oldMC:      embedOCLImageInMachineConfig("image-pullspec", oldConfig),
+			newMC:      embedOCLImageInMachineConfig("image-pullspec", oldConfig),
+			oclEnabled: true,
+		},
+		{
+			name:       "OCL enabled with OS update",
+			oldMC:      embedOCLImageInMachineConfig("image-pullspec", oldConfig),
+			newMC:      embedOCLImageInMachineConfig("other-pullspec", oldConfig),
+			oclEnabled: true,
+			osUpdate:   true,
+		},
+		{
+			name:       "OCL enabled but not rolled out yet",
+			oldMC:      newConfig,
+			newMC:      embedOCLImageInMachineConfig("image-pullspec", newConfig),
+			osUpdate:   true,
+			oclEnabled: true,
+		},
+		{
+			name:          "Revert to non-OCL",
+			oldMC:         embedOCLImageInMachineConfig("image-pullspec", newConfig),
+			newMC:         newConfig,
+			osUpdate:      true,
+			revertFromOCL: true,
+			oclEnabled:    true,
+		},
+	}
+
+	for _, testCase := range oclTestCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			diff, err := newMachineConfigDiff(testCase.oldMC, testCase.newMC)
+			assert.NoError(t, err)
+
+			assert.Equal(t, testCase.oclEnabled, diff.oclEnabled, "OCL enabled mismatch")
+			assert.Equal(t, testCase.revertFromOCL, diff.revertFromOCL, "Revert from OCL mismatch")
+			assert.Equal(t, testCase.osUpdate, diff.osUpdate, "OS Update mismatch")
+		})
+	}
 }
 
 func newTestIgnitionFile(i uint) ign3types.File {
