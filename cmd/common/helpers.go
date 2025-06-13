@@ -4,7 +4,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/openshift/machine-config-operator/internal/clients"
 	corev1 "k8s.io/api/core/v1"
@@ -93,26 +92,6 @@ func SignalHandler(runCancel context.CancelFunc) {
 	sig := <-ch
 	klog.Infof("Shutting down due to: %s", sig)
 	// if we're shutting down, cancel the context so everything else will stop
-	runCancel()
-	klog.Infof("Context cancelled")
-	sig = <-ch
-	klog.Fatalf("Received shutdown signal twice, exiting: %s", sig)
-
-}
-
-func SignalHandlerWithDelay(runCancel context.CancelFunc, delay time.Duration) {
-	// make a signal handling channel for os signals
-	ch := make(chan os.Signal, 1)
-	// stop listening for signals when we leave this function
-	defer func() { signal.Stop(ch) }()
-	// catch SIGINT and SIGTERM
-	signal.Notify(ch, os.Interrupt, syscall.SIGTERM)
-	sig := <-ch
-	klog.Infof("Received shutdown signal: %s. Delaying shutdown...", sig)
-	// Wait for the delay
-	time.Sleep(delay)
-	// if we're shutting down, cancel the context so everything else will stop
-	klog.Infof("Shutting down after delay %s", delay)
 	runCancel()
 	klog.Infof("Context cancelled")
 	sig = <-ch
