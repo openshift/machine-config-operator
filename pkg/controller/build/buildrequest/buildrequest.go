@@ -625,6 +625,8 @@ func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
 		volumes = append(volumes, opts.volumeForSecret(constants.EtcPkiRpmGpgSecretName))
 	}
 
+	var terminationGracePeriodSeconds int64 = 10
+
 	return &corev1.Pod{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "v1",
@@ -663,8 +665,9 @@ func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
 					VolumeMounts:    volumeMounts,
 				},
 			},
-			ServiceAccountName: "machine-os-builder",
-			Volumes:            volumes,
+			ServiceAccountName:            "machine-os-builder",
+			Volumes:                       volumes,
+			TerminationGracePeriodSeconds: &terminationGracePeriodSeconds,
 		},
 	}
 }
