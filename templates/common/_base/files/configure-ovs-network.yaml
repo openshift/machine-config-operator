@@ -9,6 +9,8 @@ contents:
       echo "Skipping configure-ovs due to manual network configuration"
       exit 0
     fi
+    # clear any config to connect to OVN DBs, if it exists
+    ovs-vsctl set Open_vSwitch . external_ids:ovn-remote=" "
 
     # This file is not needed anymore in 4.7+, but when rolling back to 4.6
     # the ovs pod needs it to know ovs is running on the host.
