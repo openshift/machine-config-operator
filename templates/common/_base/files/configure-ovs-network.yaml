@@ -9,6 +9,12 @@ contents:
       echo "Skipping configure-ovs due to manual network configuration"
       exit 0
     fi
+    # Clear ovn-remote config to connect to OVN DBs.
+    # ovnkube controller will set it on startup.
+    # May remove when https://issues.redhat.com/browse/FDP-1537 is availabe
+    # However it may also be a good idea to leave this because we don't want
+    # ovn-controller syncing to a stale OVN southbound database.
+    ovs-vsctl set Open_vSwitch . external_ids:ovn-remote=" "
 
     # This file is not needed anymore in 4.7+, but when rolling back to 4.6
     # the ovs pod needs it to know ovs is running on the host.
