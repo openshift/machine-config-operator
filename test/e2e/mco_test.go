@@ -33,14 +33,20 @@ func TestClusterOperatorRelatedObjects(t *testing.T) {
 	if len(co.Status.RelatedObjects) == 0 {
 		t.Error("expected RelatedObjects to be populated but it was not")
 	}
-	var foundNS bool
+	var foundNS, foundOperatorConfig bool
 	for _, ro := range co.Status.RelatedObjects {
 		if ro.Resource == "namespaces" && ro.Name == ctrlcommon.MCONamespace {
 			foundNS = true
 		}
+		if ro.Resource == "machineconfigurations" {
+			foundOperatorConfig = true
+		}
 	}
 	if !foundNS {
 		t.Error("ClusterOperator.RelatedObjects should contain the MCO namespace")
+	}
+	if !foundOperatorConfig {
+		t.Error("ClusterOperator.RelatedObjects should contain the MCO operator knob object")
 	}
 }
 
