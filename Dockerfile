@@ -26,6 +26,24 @@ RUN --mount=type=cache,target=/go/rhel8/.cache,z \
 FROM registry.ci.openshift.org/ocp/builder:rhel-9-enterprise-base-multi-openshift-4.18
 ARG TAGS=""
 COPY install /manifests
+
+# ------- DEBUG BLOCK  -------
+#  - prints current repo files
+#  - attempts a small metadata download with curl (10-s timeout, verbose)
+#  - shows dnf repoinfo and nmstate availability *before* the real install line
+RUN set -euxo pipefail && \
+    echo "### DEBUG: repo files present in image" && \
+    ls -l /etc/yum.repos.d && \
+    echo "### DEBUG: curl test for repomd.xml on internal mirror" && \
+    curl -vvv --connect-timeout 10 --max-time 20 \
+      http://base-4-20-rhel9.ocp.svc/rhel-9-baseos/repodata/repomd.xml \
+      -o /tmp/repomd.xml || true && \
+    echo "### DEBUG: dnf repoinfo (no metadata cached yet)" && \
+    dnf -v repoinfo || true && \
+    echo "### DEBUG: dnf list nmstate before makecache" && \
+    dnf -v --showduplicates list nmstate || true
+# ------- END DEBUG BLOCK -------
+
 RUN --mount=type=cache,target=/var/cache/dnf,z \
     if [ "${TAGS}" = "fcos" ]; then \
     # comment out non-base/extensions image-references entirely for fcos
