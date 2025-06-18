@@ -11,11 +11,6 @@ contents:
       rm -rf /etc/cno/mtu-migration
     fi
 
-    if [ -e /etc/nmstate/openshift/applied ]; then
-      echo "Configuration already applied, exiting"
-      exit 0
-    fi
-
     src_path="/etc/nmstate/openshift"
     dst_path="/etc/nmstate"
     hostname=$(hostname -s)
@@ -30,6 +25,15 @@ contents:
       echo "No configuration found at $src_path/$host_file or $src_path/$cluster_file"
       exit 0
     fi
+    
+    if [ -e "$src_path/applied" ]; then
+      sha_applied=$(sha256sum "$src_path/applied" | awk '{print $1}')
+      sha_config=$(sha256sum "$src_path/$config_file" | awk '{print $1}')
+      if ["$sha_applied"=="$sha_config"]; then
+        echo "Configuration already applied, exiting"
+        exit 0
+      fi
+    fi
 
     if [ -e "$dst_path/$config_file" ]; then
       echo "ERROR: File $dst_path/$config_file exists. Refusing to overwrite."
@@ -37,4 +41,4 @@ contents:
     fi
 
     cp "$src_path/$config_file" /etc/nmstate
-    touch /etc/nmstate/openshift/applied
+    cp "$src_path/$config_file" "$src_path/applied"
