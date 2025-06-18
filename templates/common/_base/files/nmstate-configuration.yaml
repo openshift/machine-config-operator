@@ -35,10 +35,5 @@ contents:
       fi
     fi
 
-    if [ -e "$dst_path/$config_file" ]; then
-      echo "ERROR: File $dst_path/$config_file exists. Refusing to overwrite."
-      exit 1
-    fi
-
     cp "$src_path/$config_file" /etc/nmstate
     cp "$src_path/$config_file" "$src_path/applied"
