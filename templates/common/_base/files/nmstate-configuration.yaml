@@ -35,11 +35,6 @@ contents:
       fi
     fi
 
-    if [ -e "$dst_path/$config_file" ]; then
-      echo "ERROR: File $dst_path/$config_file exists. Refusing to overwrite."
-      exit 1
-    fi
-
     # Handle the case where we're migrating from configure-ovs
     ovs-vsctl --timeout=30 --if-exists del-br br-ex
 
