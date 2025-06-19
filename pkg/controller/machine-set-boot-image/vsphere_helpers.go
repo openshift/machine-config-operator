@@ -443,7 +443,7 @@ func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1
 				continue
 			}
 			infraID := infra.Status.InfrastructureName
-			name = fmt.Sprintf("%s-rhcos-%s-%s-%s", infraID, failureDomain.Region, failureDomain.Zone, release)
+			name = fmt.Sprintf("%s-rhcos-%s-%s", infraID, failureDomain.Name, release)
 
 			datacenter, err := finder.Datacenter(ctx, failureDomain.Topology.Datacenter)
 			if err != nil {
