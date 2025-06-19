@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"os"
-	"time"
 
 	"github.com/openshift/machine-config-operator/cmd/common"
 	"github.com/openshift/machine-config-operator/internal/clients"
@@ -48,23 +47,29 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 	// This is the 'main' context that we thread through the build controller context and
 	// the leader elections. Cancelling this is "stop everything, we are shutting down".
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	cb, err := clients.NewBuilder("")
 	if err != nil {
 		klog.Fatalln(err)
 	}
 
+	var shutdownChan <-chan struct{}
+
 	run := func(ctx context.Context) {
-		// When shutting down, wait for 30 seconds before actually shutting down
-		// This will ensure that all the cleanup is done
-		go common.SignalHandlerWithDelay(cancel, 30*time.Second)
+		go common.SignalHandler(cancel)
 
 		ctrlCtx := ctrlcommon.CreateControllerContext(ctx, cb)
 
 		ctrl := build.NewOSBuildControllerFromControllerContext(ctrlCtx)
-		ctrl.Run(ctx, 3)
 
-		<-ctx.Done()
-		cancel()
+		// Wire up our shutdown channel.
+		shutdownChan = ctrl.ShutdownChan()
+
+		// This method blocks the current goroutine until the controller is shut
+		// down. This means that we can perform a post-shutdown action after
+		// shutdown has completed.
+		ctrl.Run(ctx, 3)
 	}
 
 	leaderElectionCfg := common.GetLeaderElectionConfig(cb.GetBuilderConfig())
@@ -78,6 +83,10 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: run,
 			OnStoppedLeading: func() {
+				// Block this function until the controller shutdown is complete to
+				// ensure that the controller both has enough time to finish its
+				// cleanup as well as to terminate its lease.
+				<-shutdownChan
 				klog.Infof("Stopped leading; machine-os-builder terminating.")
 				os.Exit(0)
 			},
