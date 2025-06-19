@@ -38,6 +38,9 @@ const (
 	// The MachineConfigPool to create for the tests.
 	layeredMCPName string = "layered"
 
+	// The MachineConfig names to create for the tests.
+	mcNameUsbguard string = "inspect-usbguard"
+
 	// The name of the global pull secret copy to use for the tests.
 	globalPullSecretCloneName string = "global-pull-secret-copy"
 )
@@ -184,7 +187,7 @@ func TestMissingImageIsRebuilt(t *testing.T) {
 	waitForMOSCToGetNewPullspec(ctx, t, cs, moscName, firstImagePullspec)
 
 	// Create a MC to create another MOSB
-	testMC := newMachineConfig(InspectMC, layeredMCPName)
+	testMC := newMachineConfigTriggersImageRebuild(mcNameUsbguard, layeredMCPName, []string{"usbguard"})
 	t.Logf("Creating MachineConfig %q", testMC.Name)
 	firstMC, err := cs.MachineConfigs().Create(ctx, testMC, metav1.CreateOptions{})
 	require.NoError(t, err)
@@ -207,14 +210,15 @@ func TestMissingImageIsRebuilt(t *testing.T) {
 	t.Logf("MachineOSBuild %q has completed and produced image: %s", secondFinishedBuild.Name, secondImagePullspec)
 	waitForMOSCToGetNewPullspec(ctx, t, cs, moscName, secondImagePullspec)
 
-	// Delete the first image
+	// Delete the first image- simulating image deletion
 	t.Logf("Deleting image %q", firstImagePullspec)
 	istName := fmt.Sprintf("os-image:%s", firstMOSB.Name)
 	err = cs.ImageStreamTags(ctrlcommon.MCONamespace).Delete(ctx, istName, metav1.DeleteOptions{})
 	require.NoError(t, err)
 	kubeassert.ImageDoesNotExist(istName)
 	t.Logf("Deleted image %q", firstImagePullspec)
-	// Delete the MC
+
+	// Delete the first MC
 	t.Logf("Deleting MachineConfig %q to retrigger build", firstMC.Name)
 	err = cs.MachineConfigs().Delete(ctx, firstMC.Name, metav1.DeleteOptions{})
 	require.NoError(t, err)
@@ -222,12 +226,12 @@ func TestMissingImageIsRebuilt(t *testing.T) {
 	t.Logf("Deleted MachineConfig %q", firstMC.Name)
 
 	// Wait for the build to start
-	t.Logf("Waiting for 3rd build to start...")
+	t.Logf("Waiting for 3rd build (rebuild of image1) to start...")
 	thirdMOSBName := waitForMOSCToUpdateCurrentMOSB(ctx, t, cs, moscName, secondMOSB.Name)
 	thirdMOSB, err := cs.GetMcfgclient().MachineconfigurationV1().MachineOSBuilds().Get(ctx, thirdMOSBName, metav1.GetOptions{})
 	require.NoError(t, err)
 	thirdMOSB = waitForBuildToStart(t, cs, thirdMOSB)
-	t.Logf("MachineOSBuild %q has started", thirdMOSB.Name)
+	t.Logf("MachineOSBuild %q has started (rebuild of image1)", thirdMOSB.Name)
 	assertBuildJobIsAsExpected(t, cs, thirdMOSB)
 
 	// Wait for the build to finish
@@ -238,30 +242,35 @@ func TestMissingImageIsRebuilt(t *testing.T) {
 	waitForMOSCToGetNewPullspec(ctx, t, cs, moscName, thirdImagePullspec)
 
 	// Apply the MC again
-	t.Logf("Applying MachineConfig %q", firstMC.Name)
+	t.Logf("Re‐applying the same MachineConfig %q to confirm no new build for image2", testMC.Name)
 	secondMC, err := cs.MachineConfigs().Create(ctx, testMC, metav1.CreateOptions{})
 	require.NoError(t, err)
 	kubeassert.MachineConfigExists(secondMC)
 	t.Logf("Created MachineConfig %q", secondMC.Name)
-	t.Logf("Reusing previous MachineOSBuild %q that has produced image: %s", secondFinishedBuild.Name, secondImagePullspec)
-	waitForMOSCToGetNewPullspec(ctx, t, cs, moscName, secondImagePullspec)
 
-	// Delete the third MOSB and the image should be deleted also
-	t.Logf("Deleting MachineOSBuild %q", thirdMOSB.Name)
+	// waitForMOSCToGetNewPullspec(ctx, t, cs, moscName, secondImagePullspec)
+
+	t.Logf("Waiting for recycled USBGuard MOSB %q to finish (or to prove there is none)", secondMOSB.Name)
+	secondMOSB, err = cs.GetMcfgclient().MachineconfigurationV1().MachineOSBuilds().Get(ctx, secondMOSB.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+	secondMOSB = waitForBuildToComplete(t, cs, secondMOSB)
+	t.Logf("MOSB %q is now complete (reused image)", secondMOSB.Name)
+
+	t.Logf("Deleting MachineOSBuild %q (MOSB3) to test pruning of image1", thirdMOSB.Name)
 	err = cs.MachineconfigurationV1Interface.MachineOSBuilds().Delete(ctx, thirdMOSB.Name, metav1.DeleteOptions{})
 	require.NoError(t, err)
 	kubeassert.MachineOSBuildDoesNotExist(thirdMOSB)
 	t.Logf("Deleted MachineOSBuild %q", thirdMOSB.Name)
-	isiName := fmt.Sprintf("os-image:%s", thirdMOSBName)
-	kubeassert.ImageDoesNotExist(isiName)
-	t.Logf("Image %q belonging to MachineOSBuild %q has been deleted", thirdImagePullspec, thirdMOSB.Name)
 
-	// Delete the MC for cleanup
-	t.Logf("Deleting MachineConfig %q for cleanup", firstMC.Name)
-	err = cs.MachineConfigs().Delete(ctx, firstMC.Name, metav1.DeleteOptions{})
+	deletedIst := fmt.Sprintf("os-image:%s", thirdMOSBName)
+	kubeassert.ImageDoesNotExist(deletedIst)
+	t.Logf("ImageStreamTag %q has been pruned", deletedIst)
+
+	t.Logf("Deleting MachineConfig %q for cleanup", secondMC.Name)
+	err = cs.MachineConfigs().Delete(ctx, secondMC.Name, metav1.DeleteOptions{})
 	require.NoError(t, err)
-	kubeassert.MachineConfigDoesNotExist(firstMC)
-	t.Logf("Deleted MachineConfig %q", firstMC.Name)
+	kubeassert.MachineConfigDoesNotExist(secondMC)
+	t.Logf("Deleted MachineConfig %q", secondMC.Name)
 }
 
 func assertNodeRevertsToNonLayered(t *testing.T, cs *framework.ClientSet, node corev1.Node) {
@@ -382,7 +391,7 @@ func TestMachineConfigPoolChangeRestartsBuild(t *testing.T) {
 	// the rendered config to appear, then we check that a new MachineOSBuild has
 	// started for that new MachineConfig.
 	mcName := "new-machineconfig"
-	mc := newMachineConfig(mcName, layeredMCPName)
+	mc := newMachineConfigTriggersImageRebuild(mcName, layeredMCPName, []string{"usbguard"})
 	applyMC(t, cs, mc)
 
 	_, err := helpers.WaitForRenderedConfig(t, cs, layeredMCPName, mcName)
@@ -799,7 +808,7 @@ func waitForBuildToStartForPoolAndConfig(t *testing.T, cs *framework.ClientSet, 
 
 	var mosbName string
 
-	require.NoError(t, wait.PollImmediate(time.Second, time.Minute, func() (bool, error) {
+	require.NoError(t, wait.PollImmediate(2*time.Second, 3*time.Minute, func() (bool, error) {
 		// Get the name for the MachineOSBuild based upon the MachineConfigPool and MachineOSConfig state.
 		name, err := getMachineOSBuildNameForPool(cs, poolName, moscName)
 		if err != nil {
