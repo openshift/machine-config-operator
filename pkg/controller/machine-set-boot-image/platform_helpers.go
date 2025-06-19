@@ -216,6 +216,11 @@ func reconcileLibvirt(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap
 func reconcileVSphere(machineSet *machinev1beta1.MachineSet, infra *osconfigv1.Infrastructure, configMap *corev1.ConfigMap, arch string, secretClient clientset.Interface) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
 	klog.Infof("Reconciling MAPI machineset %s on vSphere, with arch %s", machineSet.Name, arch)
 
+	if infra.Spec.PlatformSpec.VSphere == nil {
+		klog.Warningf("Reconcile skipped: VSphere field is nil in PlatformSpec %s", infra.Spec.PlatformSpec)
+		return false, nil, nil
+	}
+
 	// First, unmarshal the VSphere providerSpec
 	providerSpec := new(machinev1beta1.VSphereMachineProviderSpec)
 	if err := unmarshalProviderSpec(machineSet, providerSpec); err != nil {
