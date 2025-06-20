@@ -843,6 +843,25 @@ func (dn *Daemon) updateOnClusterLayering(oldConfig, newConfig *mcfgv1.MachineCo
 	oldConfigName := oldConfig.GetName()
 	newConfigName := newConfig.GetName()
 
+	// Add the desired config version to the MCN
+	// 	get MCP associated with node. Note that in 4.18 and prior only default worker
+	// 	& master node roles/MCPs are supported in MCN, thus the hard-coded label checks
+	// 	for determining MCP association.
+	pool := ""
+	var ok bool
+	if dn.node != nil {
+		if _, ok = dn.node.Labels[ctrlcommon.MasterLabel]; ok {
+			pool = "master"
+		} else if _, ok = dn.node.Labels[ctrlcommon.WorkerLabel]; ok {
+			pool = "worker"
+		}
+	}
+	//  update the MCN spec
+	mcnErr := upgrademonitor.GenerateAndApplyMachineConfigNodeSpec(dn.featureGatesAccessor, pool, dn.node, dn.mcfgClient)
+	if mcnErr != nil {
+		return fmt.Errorf("error updating MCN spec for node %s: %w", dn.node.Name, mcnErr)
+	}
+
 	oldIgnConfig, err := ctrlcommon.ParseAndConvertConfig(oldConfig.Spec.Config.Raw)
 	if err != nil {
 		return fmt.Errorf("parsing old Ignition config failed: %w", err)
