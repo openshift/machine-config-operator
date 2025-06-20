@@ -444,6 +444,9 @@ func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1
 			}
 			infraID := infra.Status.InfrastructureName
 			name = fmt.Sprintf("%s-rhcos-%s-%s", infraID, failureDomain.Name, release)
+			if len(name) > 80 {
+				return "", fmt.Errorf("Length of VM template name `%s` exceeds the permitted limit of 80 characters", name)
+			}
 
 			datacenter, err := finder.Datacenter(ctx, failureDomain.Topology.Datacenter)
 			if err != nil {
