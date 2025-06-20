@@ -232,7 +232,7 @@ func reconcileVSphere(machineSet *machinev1beta1.MachineSet, infra *osconfigv1.I
 	klog.Infof("Reconciling MAPI machineset %s on vSphere, with arch %s", machineSet.Name, arch)
 
 	if infra.Spec.PlatformSpec.VSphere == nil {
-		klog.Warningf("Reconcile skipped: VSphere field is nil in PlatformSpec %s", infra.Spec.PlatformSpec)
+		klog.Warningf("Reconcile skipped: VSphere field is nil in PlatformSpec %v", infra.Spec.PlatformSpec)
 		return false, nil, nil
 	}
 
