@@ -46,10 +46,10 @@ var (
 
 	FeatureGateServiceAccountTokenNodeBinding = newFeatureGate("ServiceAccountTokenNodeBinding").
 							reportProblemsToJiraComponent("apiserver-auth").
-							contactPerson("stlaz").
+							contactPerson("ibihim").
 							productScope(kubernetes).
 							enhancementPR("https://github.com/kubernetes/enhancements/issues/4193").
-							enableIn(configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
+							enableIn(configv1.Default, configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
 							mustRegister()
 
 	FeatureGateValidatingAdmissionPolicy = newFeatureGate("ValidatingAdmissionPolicy").
@@ -219,14 +219,6 @@ var (
 					enableIn(configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
 					mustRegister()
 
-	FeatureGateVSphereMultiVCenters = newFeatureGate("VSphereMultiVCenters").
-					reportProblemsToJiraComponent("splat").
-					contactPerson("vr4manta").
-					productScope(ocpSpecific).
-					enhancementPR(legacyFeatureGateWithoutEnhancement).
-					enableIn(configv1.Default, configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
-					mustRegister()
-
 	FeatureGateRouteExternalCertificate = newFeatureGate("RouteExternalCertificate").
 						reportProblemsToJiraComponent("router").
 						contactPerson("chiragkyal").
@@ -393,6 +385,14 @@ var (
 					enableIn(configv1.Default, configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
 					mustRegister()
 
+	FeatureGateManagedBootImagesvSphere = newFeatureGate("ManagedBootImagesvSphere").
+					reportProblemsToJiraComponent("MachineConfigOperator").
+					contactPerson("rsaini").
+					productScope(ocpSpecific).
+					enhancementPR("https://github.com/openshift/enhancements/pull/1496").
+					enableIn(configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
+					mustRegister()
+
 	FeatureGateDisableKubeletCloudCredentialProviders = newFeatureGate("DisableKubeletCloudCredentialProviders").
 								reportProblemsToJiraComponent("cloud-provider").
 								contactPerson("jspeed").
@@ -538,6 +538,14 @@ var (
 							enhancementPR("https://github.com/openshift/enhancements/pull/1768").
 							enableForClusterProfile(SelfManaged, configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
 							mustRegister()
+
+	FeatureGateNewOLMOwnSingleNamespace = newFeatureGate("NewOLMOwnSingleNamespace").
+				reportProblemsToJiraComponent("olm").
+				contactPerson("nschieder").
+				productScope(ocpSpecific).
+				enhancementPR("https://github.com/openshift/enhancements/pull/1774").
+				enableForClusterProfile(SelfManaged, configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
+				mustRegister()
 
 	FeatureGateInsightsOnDemandDataGather = newFeatureGate("InsightsOnDemandDataGather").
 						reportProblemsToJiraComponent("insights").
@@ -827,4 +835,12 @@ var (
 									enhancementPR("https://github.com/openshift/enhancements/pull/1748").
 									enableIn(configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
 									mustRegister()
+
+	FeatureGateAzureMultiDisk = newFeatureGate("AzureMultiDisk").
+					reportProblemsToJiraComponent("splat").
+					contactPerson("jcpowermac").
+					productScope(ocpSpecific).
+					enhancementPR("https://github.com/openshift/enhancements/pull/1779").
+					enableIn(configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
+					mustRegister()
 )
