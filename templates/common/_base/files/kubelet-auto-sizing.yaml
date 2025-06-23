@@ -89,6 +89,10 @@ contents:
                 recommended_systemreserved_cpu=$base_allocation_fraction
             fi
         fi
+
+        # Enforce minimum threshold of 0.5 CPU
+        recommended_systemreserved_cpu=$(awk -v val="$recommended_systemreserved_cpu" 'BEGIN {if (val < 0.5) print 0.5; else print val}')
+
         echo "SYSTEM_RESERVED_CPU=${recommended_systemreserved_cpu}">> ${NODE_SIZES_ENV}
     }
     function dynamic_ephemeral_sizing {
@@ -121,8 +125,8 @@ contents:
     function dynamic_node_sizing {
         rm -f ${NODE_SIZES_ENV}
         dynamic_memory_sizing
-        dynamic_cpu_sizing $2
-        set_es $1
+        dynamic_cpu_sizing $1
+        set_es $2
         #dynamic_ephemeral_sizing
         #dynamic_pid_sizing
     }
@@ -140,7 +144,7 @@ contents:
     fi
     new_version=$(jq .version $NODE_AUTO_SIZING_VERSION_FILE)
     if [ $1 == "true" ]; then
-        dynamic_node_sizing $4 $new_version
+        dynamic_node_sizing $new_version $4
     elif [ $1 == "false" ]; then
         static_node_sizing $2 $3 $4
     else

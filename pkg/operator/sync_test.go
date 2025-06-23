@@ -375,7 +375,7 @@ func TestSyncMachineConfiguration(t *testing.T) {
 			optr := &Operator{
 				eventRecorder: &record.FakeRecorder{},
 				fgAccessor: featuregates.NewHardcodedFeatureGateAccess(
-					[]configv1.FeatureGateName{features.FeatureGateManagedBootImages, features.FeatureGateManagedBootImagesAWS, features.FeatureGateNodeDisruptionPolicy}, []configv1.FeatureGateName{},
+					[]configv1.FeatureGateName{features.FeatureGateManagedBootImages, features.FeatureGateManagedBootImagesAWS}, []configv1.FeatureGateName{},
 				),
 				infraLister: configlistersv1.NewInfrastructureLister(infraIndexer),
 				mcopLister:  mcoplistersv1.NewMachineConfigurationLister(mcopIndexer),

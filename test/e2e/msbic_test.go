@@ -317,6 +317,13 @@ func TestStubIgnitionUpgrade(t *testing.T) {
 
 	newProviderSpec := providerSpec.DeepCopy()
 	newProviderSpec.UserDataSecret.Name = testStubSecretName
+	// Set a fake boot image value so a machineset update is required
+	for idx := range newProviderSpec.Disks {
+		if newProviderSpec.Disks[idx].Boot {
+			newProviderSpec.Disks[idx].Image = newProviderSpec.Disks[idx].Image + "-fake-update"
+		}
+	}
+
 	newMachineSet := machineSetUnderTest.DeepCopy()
 	err = marshalProviderSpec(newMachineSet, newProviderSpec)
 	require.Nil(t, err, "failed to marshal new Provider Spec object")
@@ -370,7 +377,9 @@ func verifyMachineSet(t *testing.T, cs *framework.ClientSet, ms machinev1beta1.M
 
 	newProviderSpec := providerSpec.DeepCopy()
 	for idx := range newProviderSpec.Disks {
-		newProviderSpec.Disks[idx].Image = newProviderSpec.Disks[idx].Image + "-fake-update"
+		if newProviderSpec.Disks[idx].Boot {
+			newProviderSpec.Disks[idx].Image = newProviderSpec.Disks[idx].Image + "-fake-update"
+		}
 	}
 
 	newMachineSet := ms.DeepCopy()
