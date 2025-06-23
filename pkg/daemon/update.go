@@ -26,13 +26,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	kubeErrs "k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
 
 	features "github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 
 	opv1 "github.com/openshift/api/operator/v1"
 
@@ -829,256 +829,67 @@ func (dn *Daemon) calculatePostConfigChangeNodeDisruptionAction(diff *machineCon
 
 }
 
-// This is another update function implementation for the special case of
-// on-cluster built images. It is necessary to perform certain steps
-// post-reboot since rpm-ostree will not write contents to the /home/core
-// directory nor certain portions of the /etc directory.
+// Finalizes the revert process by enabling a special systemd unit prior to
+// rebooting the node.
 //
-// This function should be consolidated with dn.update() and dn.updateHypershift(). See: https://issues.redhat.com/browse/MCO-810 for further discussion.
+// After we write the original factory image to the node, none of the files
+// specified in the MachineConfig will be written due to how rpm-ostree handles
+// file writes. Because those files are owned by the layered container image,
+// they are not present after reboot; even if we were to write them to the node
+// before rebooting. Consequently, after reverting back to the original image,
+// the node will lose contact with the control plane and the easiest way to
+// reestablish contact is to rebootstrap the node.
 //
-//nolint:gocyclo
-func (dn *Daemon) updateOnClusterLayering(oldConfig, newConfig *mcfgv1.MachineConfig, oldImage, newImage string, skipCertificateWrite bool) (retErr error) {
-	oldConfig = canonicalizeEmptyMC(oldConfig)
-
-	mcDiff, err := newMachineConfigDiffFromLayered(oldConfig, newConfig, oldImage, newImage)
+// By comparison, if we write a file that is _not_ owned by the layered
+// container image, this file will persist after reboot. So what we do is write
+// a special systemd unit that will rebootstrap the node upon reboot.
+// Unfortunately, this will incur a second reboot during the rollback process,
+// so there is room for improvement here.
+func (dn *Daemon) finalizeRevertToNonLayering(newConfig *mcfgv1.MachineConfig) (retErr error) {
+	// First, we write the new MachineConfig to a file. This is both the signal
+	// that the revert systemd unit should fire as well as the desired source of
+	// truth.
+	outBytes, err := json.Marshal(newConfig)
 	if err != nil {
-		return fmt.Errorf("could not get layered diff from MachineConfig(s) %q / %q and images %q / %q: %w", oldConfig.Name, newConfig.Name, oldImage, newImage, err)
+		return fmt.Errorf("could not marshal MachineConfig %q to JSON: %w", newConfig.Name, err)
 	}
 
-	if dn.nodeWriter != nil {
-		state, err := getNodeAnnotationExt(dn.node, constants.MachineConfigDaemonStateAnnotationKey, true)
-		if err != nil {
-			return err
-		}
-		if state != constants.MachineConfigDaemonStateDegraded && state != constants.MachineConfigDaemonStateUnreconcilable {
-			if err := dn.nodeWriter.SetWorking(); err != nil {
-				return fmt.Errorf("error setting node's state to Working: %w", err)
-			}
-		}
+	if err := writeFileAtomicallyWithDefaults(runtimeassets.RevertServiceMachineConfigFile, outBytes); err != nil {
+		return fmt.Errorf("could not write MachineConfig %q to %q: %w", newConfig.Name, runtimeassets.RevertServiceMachineConfigFile, err)
 	}
 
-	dn.catchIgnoreSIGTERM()
-	defer func() {
-		// now that we do rebootless updates, we need to turn off our SIGTERM protection
-		// regardless of how we leave the "update loop"
-		dn.CancelSIGTERM()
-	}()
-
-	oldConfigName := oldConfig.GetName()
-	newConfigName := newConfig.GetName()
-
-	// Add the desired config version to the MCN
-	// 	get MCP associated with node
-	pool, err := helpers.GetPrimaryPoolNameForMCN(dn.mcpLister, dn.node)
-	if err != nil {
-		return err
-	}
-
-	// Update the MCN's NodeNodeDegraded condition with the update result
-	defer func() {
-		dn.reportMachineNodeDegradeStatus(retErr, pool)
-	}()
-
-	//  update the MCN spec
-	err = upgrademonitor.GenerateAndApplyMachineConfigNodeSpec(dn.featureGatesAccessor, pool, dn.node, dn.mcfgClient)
-	if err != nil {
-		return fmt.Errorf("error updating MCN spec for node %s: %w", dn.node.Name, err)
-	}
-
-	oldIgnConfig, err := ctrlcommon.ParseAndConvertConfig(oldConfig.Spec.Config.Raw)
-	if err != nil {
-		return fmt.Errorf("parsing old Ignition config failed: %w", err)
-	}
-	newIgnConfig, err := ctrlcommon.ParseAndConvertConfig(newConfig.Spec.Config.Raw)
-	if err != nil {
-		return fmt.Errorf("parsing new Ignition config failed: %w", err)
-	}
-
-	klog.Infof("Checking Reconcilable for config %s to %s", oldConfigName, newConfigName)
-
-	// Make sure we can actually reconcile this state. In the future, this check should be moved to the BuildController and performed prior to the build occurring. This addresses the following bugs:
-	// - https://issues.redhat.com/browse/OCPBUGS-18670
-	// - https://issues.redhat.com/browse/OCPBUGS-18535
-	// -
-	diff, reconcilableError := reconcilable(oldConfig, newConfig)
-
-	if reconcilableError != nil {
-		wrappedErr := fmt.Errorf("can't reconcile config %s with %s: %w", oldConfigName, newConfigName, reconcilableError)
-		if dn.nodeWriter != nil {
-			dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedToReconcile", wrappedErr.Error())
-		}
-		return &unreconcilableErr{wrappedErr}
-	}
-
-	if err := dn.performDrain(); err != nil {
-		return err
-	}
-
-	if mcDiff.revertFromOCL {
-		klog.Infof("%s empty, reverting to osImageURL %s from MachineConfig %s", constants.DesiredImageAnnotationKey, newConfig.Spec.OSImageURL, newConfig.Name)
-	}
-
-	if !dn.os.IsCoreOSVariant() {
-		return fmt.Errorf("on-cluster layering on non-CoreOS nodes is not supported")
-	}
-
-	// We have a separate path for OS images and MachineConfigs because we needed
-	// a way to handle the case where a node was either opting into or opting out
-	// of OCL. If either the oldImage or newImage is empty, this has a special
-	// meaning for OCL depending on which one is empty:
-	// - If oldImage is empty, this means that we are transitioning into OCL operation.
-	// - If newImage is empty, this means that we are transitioning out of OCL operation.
-	//
-	// The code paths that apply an OS image to the node do not handle the case
-	// where the image is empty. So here, we "canoncalize" the OSImageURL field
-	// on both the oldConfig and newConfig. These copies are only used for the OS
-	// update itself and should not be used for anything else.
-	oldConfigCopy := canonicalizeMachineConfigImage(oldImage, oldConfig)
-	newConfigCopy := canonicalizeMachineConfigImage(newImage, newConfig)
-
-	klog.Infof("Old MachineConfig %s / Image %s -> New MachineConfig %s / Image %s", oldConfigName, oldConfigCopy.Spec.OSImageURL, newConfigName, newConfigCopy.Spec.OSImageURL)
-
-	coreOSDaemon := CoreOSDaemon{dn}
-	if err := coreOSDaemon.applyOSChanges(*mcDiff, oldConfigCopy, newConfigCopy); err != nil {
-		return err
-	}
+	klog.Infof("Wrote MachineConfig %q to %q", newConfig.Name, runtimeassets.RevertServiceMachineConfigFile)
 
 	defer func() {
 		if retErr != nil {
-			if err := coreOSDaemon.applyOSChanges(*mcDiff, newConfigCopy, oldConfigCopy); err != nil {
+			if err := os.RemoveAll(runtimeassets.RevertServiceMachineConfigFile); err != nil {
 				errs := kubeErrs.NewAggregate([]error{err, retErr})
-				retErr = fmt.Errorf("error rolling back changes to OS: %w", errs)
+				retErr = fmt.Errorf("error rolling back %q on disk: %q", runtimeassets.RevertServiceMachineConfigFile, errs)
 				return
 			}
 		}
 	}()
 
-	// update files on disk that need updating
-	if err := dn.updateFiles(oldIgnConfig, newIgnConfig, skipCertificateWrite); err != nil {
+	// Next, we enable the revert systemd unit. This renders and writes the
+	// machine-config-daemon-revert.service systemd unit, clones it, and writes
+	// it to disk. The reason for doing it this way is because it will persist
+	// after the reboot since it was not written or mutated by the rpm-ostree
+	// process.
+	if err := dn.enableRevertSystemdUnit(newConfig); err != nil {
 		return err
 	}
 
 	defer func() {
 		if retErr != nil {
-			if err := dn.updateFiles(newIgnConfig, oldIgnConfig, skipCertificateWrite); err != nil {
+			if err := dn.disableRevertSystemdUnit(); err != nil {
 				errs := kubeErrs.NewAggregate([]error{err, retErr})
-				retErr = fmt.Errorf("error rolling back files writes: %w", errs)
+				retErr = fmt.Errorf("error rolling back systemd unit %q on disk: %e", runtimeassets.RevertServiceName, errs)
 				return
 			}
 		}
 	}()
 
-	// update file permissions
-	if err := dn.updateKubeConfigPermission(); err != nil {
-		return err
-	}
-
-	// only update passwd if it has changed (do not nullify)
-	// we do not need to include SetPasswordHash in this, since only updateSSHKeys has issues on firstboot.
-	// For on-cluster builds, this needs to be performed here instead of during
-	// the image build process. This is bceause rpm-ostree will not touch files
-	// in /home/core. See: https://issues.redhat.com/browse/OCPBUGS-18458
-	if diff.passwd {
-		if err := dn.updateSSHKeys(newIgnConfig.Passwd.Users, oldIgnConfig.Passwd.Users); err != nil {
-			return err
-		}
-
-		defer func() {
-			if retErr != nil {
-				if err := dn.updateSSHKeys(newIgnConfig.Passwd.Users, oldIgnConfig.Passwd.Users); err != nil {
-					errs := kubeErrs.NewAggregate([]error{err, retErr})
-					retErr = fmt.Errorf("error rolling back SSH keys updates: %w", errs)
-					return
-				}
-			}
-		}()
-	}
-
-	// Set password hash
-	// See: https://issues.redhat.com/browse/OCPBUGS-18456
-	if err := dn.SetPasswordHash(newIgnConfig.Passwd.Users, oldIgnConfig.Passwd.Users); err != nil {
-		return err
-	}
-
-	defer func() {
-		if retErr != nil {
-			if err := dn.SetPasswordHash(newIgnConfig.Passwd.Users, oldIgnConfig.Passwd.Users); err != nil {
-				errs := kubeErrs.NewAggregate([]error{err, retErr})
-				retErr = fmt.Errorf("error rolling back password hash updates: %w", errs)
-				return
-			}
-		}
-	}()
-
-	// Update the kernal args if there is a difference
-	if diff.kargs && dn.os.IsCoreOSVariant() {
-		if err := coreOSDaemon.updateKernelArguments(oldConfig.Spec.KernelArguments, newConfig.Spec.KernelArguments); err != nil {
-			return err
-		}
-	}
-
-	// Ideally we would want to update kernelArguments only via MachineConfigs.
-	// We are keeping this to maintain compatibility and OKD requirement.
-	if err := UpdateTuningArgs(KernelTuningFile, CmdLineFile); err != nil {
-		return err
-	}
-
-	odc := &onDiskConfig{
-		currentImage:  newImage,
-		currentConfig: newConfig,
-	}
-
-	if mcDiff.revertFromOCL {
-		odc.currentImage = ""
-
-		// Finalizes the revert process by enabling a special systemd unit prior to
-		// rebooting the node.
-		//
-		// After we write the original factory image to the node, none of the files
-		// specified in the MachineConfig will be written due to how rpm-ostree handles
-		// file writes. Because those files are owned by the layered container image,
-		// they are not present after reboot; even if we were to write them to the node
-		// before rebooting. Consequently, after reverting back to the original image,
-		// the node will lose contact with the control plane and the easiest way to
-		// reestablish contact is to rebootstrap the node.
-		//
-		// By comparison, if we write a file that is _not_ owned by the layered
-		// container image, this file will persist after reboot. So what we do is write
-		// a special systemd unit that will rebootstrap the node upon reboot.
-		// Unfortunately, this will incur a second reboot during the rollback process,
-		// so there is room for improvement here.
-		if err := dn.enableRevertSystemdUnit(newConfig); err != nil {
-			return fmt.Errorf("could not enable revert systemd service: %w", err)
-		}
-
-		defer func() {
-			if retErr != nil {
-				if err := dn.disableRevertSystemdUnit(); err != nil {
-					errs := kubeErrs.NewAggregate([]error{err, retErr})
-					retErr = fmt.Errorf("error rolling back systemd unit %q on disk: %e", runtimeassets.RevertServiceName, errs)
-					return
-				}
-			}
-		}()
-	}
-
-	if err := dn.storeCurrentConfigOnDisk(odc); err != nil {
-		return err
-	}
-
-	defer func() {
-		if retErr != nil {
-			odc.currentConfig = oldConfig
-			odc.currentImage = oldImage
-			if err := dn.storeCurrentConfigOnDisk(odc); err != nil {
-				errs := kubeErrs.NewAggregate([]error{err, retErr})
-				retErr = fmt.Errorf("error rolling back current config on disk: %w", errs)
-				return
-			}
-		}
-	}()
-
-	return dn.reboot(fmt.Sprintf("Node will reboot into image %s / MachineConfig %s", canonicalizeMachineConfigImage(newImage, newConfig).Spec.OSImageURL, newConfigName))
+	return nil
 }
 
 // Update the node to the provided node configuration.
@@ -1087,8 +898,42 @@ func (dn *Daemon) updateOnClusterLayering(oldConfig, newConfig *mcfgv1.MachineCo
 // discussion.
 //
 //nolint:gocyclo
-func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertificateWrite bool) (retErr error) {
+func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertificateWrite, firstBoot bool) (retErr error) {
 	oldConfig = canonicalizeEmptyMC(oldConfig)
+
+	mcDiff, err := newMachineConfigDiff(oldConfig, newConfig)
+	if err != nil {
+		return fmt.Errorf("could not calculate config diff: %w", err)
+	}
+
+	if mcDiff.oclEnabled {
+		// Check if any OCL-specific changes are present
+		oclChange := ctrlcommon.RequiresRebuild(oldConfig, newConfig)
+		if !oclChange {
+			klog.Info("OCL enabled but no OCL-specific changes detected - applying non-OCL update")
+			mcDiff.oclEnabled = false
+		}
+	}
+
+	if mcDiff.revertFromOCL {
+		klog.Info("Initiating OCL revert process")
+		if err := dn.finalizeRevertToNonLayering(newConfig); err != nil {
+			return fmt.Errorf("failed to prepare OCL revert: %w", err)
+		}
+
+		// Cleanup revert artifacts if update fails before completion
+		defer func() {
+			if retErr != nil {
+				klog.Info("Rolling back OCL revert setup due to error")
+				if err := os.Remove(runtimeassets.RevertServiceMachineConfigFile); err != nil && !os.IsNotExist(err) {
+					klog.Warningf("Error cleaning revert config: %v", err)
+				}
+				if err := dn.disableRevertSystemdUnit(); err != nil {
+					klog.Warningf("Error disabling revert service: %v", err)
+				}
+			}
+		}()
+	}
 
 	if dn.nodeWriter != nil {
 		state, err := getNodeAnnotationExt(dn.node, constants.MachineConfigDaemonStateAnnotationKey, true)
@@ -1163,25 +1008,14 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	diffFileSet := ctrlcommon.CalculateConfigFileDiffs(&oldIgnConfig, &newIgnConfig)
 	diffUnitSet := ctrlcommon.CalculateConfigUnitDiffs(&oldIgnConfig, &newIgnConfig)
 
-	var fg featuregates.FeatureGate
-
-	// This check is needed as featureGatesAccessor is not present during first boot. During firstboot
-	// the daemon will always do a reboot and NodeDisruptionPolicies are not active.
-	if dn.featureGatesAccessor != nil {
-		fg, err = dn.featureGatesAccessor.CurrentFeatureGates()
-		if err != nil {
-			klog.Errorf("Could not get fg: %v", err)
-			return err
-		}
-	}
-
 	var nodeDisruptionActions []opv1.NodeDisruptionPolicyStatusAction
 	var actions []string
-	// If FeatureGateNodeDisruptionPolicy is set, calculate NodeDisruptionPolicy based actions for this MC diff
-	if fg != nil && fg.Enabled(features.FeatureGateNodeDisruptionPolicy) {
+	// Node Disruption Policies cannot be used during firstboot as API is not accessible.
+	if !firstBoot {
 		nodeDisruptionActions, err = dn.calculatePostConfigChangeNodeDisruptionAction(diff, diffFileSet, diffUnitSet)
 	} else {
 		actions, err = calculatePostConfigChangeAction(diff, diffFileSet)
+		klog.Infof("Skipping node disruption polciies as node is executing first boot.")
 	}
 
 	if err != nil {
@@ -1206,7 +1040,8 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	if err != nil {
 		return err
 	}
-	if fg != nil && fg.Enabled(features.FeatureGateNodeDisruptionPolicy) {
+	// Node Disruption Policies cannot be used during firstboot as API is not accessible.
+	if !firstBoot {
 		// Check actions list and perform node drain if required
 		drain, err = isDrainRequiredForNodeDisruptionActions(nodeDisruptionActions, oldIgnConfig, newIgnConfig, crioOverrideConfigmapExists)
 		if err != nil {
@@ -1309,6 +1144,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	// only update passwd if it has changed (do not nullify)
 	// we do not need to include SetPasswordHash in this, since only updateSSHKeys has issues on firstboot.
 	if diff.passwd {
+		klog.Info("setting passwd")
 		if err := dn.updateSSHKeys(newIgnConfig.Passwd.Users, oldIgnConfig.Passwd.Users); err != nil {
 			return err
 		}
@@ -1341,6 +1177,11 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 
 	if dn.os.IsCoreOSVariant() {
 		coreOSDaemon := CoreOSDaemon{dn}
+
+		if mcDiff.revertFromOCL {
+			klog.Info("Applying OCL revert-specific OS changes")
+		}
+
 		if err := coreOSDaemon.applyOSChanges(*diff, oldConfig, newConfig); err != nil {
 			return err
 		}
@@ -1367,17 +1208,20 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	// At this point, we write the now expected to be "current" config to /etc.
 	// When we reboot, we'll find this file and validate that we're in this state,
 	// and that completes an update.
-	odc := &onDiskConfig{
-		currentConfig: newConfig,
-	}
+	newOdc := newOnDiskConfigFromMachineConfig(newConfig)
 
-	if err := dn.storeCurrentConfigOnDisk(odc); err != nil {
+	klog.Infof("update: about to store CURRENT on-disk config: MC=%q, Spec.OSImageURL=%q, extracted-image=%q",
+		newConfig.GetName(), newConfig.Spec.OSImageURL, newOdc.currentImage)
+	if err := dn.storeCurrentConfigOnDisk(newOnDiskConfigFromMachineConfig(newConfig)); err != nil {
 		return err
 	}
+
 	defer func() {
 		if retErr != nil {
-			odc.currentConfig = oldConfig
-			if err := dn.storeCurrentConfigOnDisk(odc); err != nil {
+			oldOdc := newOnDiskConfigFromMachineConfig(oldConfig)
+			klog.Infof("update: rollback — restoring CURRENT on-disk config: MC=%q, Spec.OSImageURL=%q, extracted-image=%q",
+				oldConfig.GetName(), oldConfig.Spec.OSImageURL, oldOdc.currentImage)
+			if err := dn.storeCurrentConfigOnDisk(newOnDiskConfigFromMachineConfig(oldConfig)); err != nil {
 				errs := kubeErrs.NewAggregate([]error{err, retErr})
 				retErr = fmt.Errorf("error rolling back current config on disk: %w", errs)
 				return
@@ -1398,11 +1242,11 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	if err != nil {
 		klog.Errorf("Error making MCN for Updated Files and OS: %v", err)
 	}
-
-	if fg != nil && fg.Enabled(features.FeatureGateNodeDisruptionPolicy) {
+	// Node Disruption Policies cannot be used during firstboot as API is not accessible.
+	if !firstBoot {
 		return dn.performPostConfigChangeNodeDisruptionAction(nodeDisruptionActions, newConfig.GetName())
 	}
-	// If we're here, FeatureGateNodeDisruptionPolicy is off/errored, so perform legacy action
+	// If we're here, node disruption policies can't be used, so perform legacy action
 	return dn.performPostConfigChangeAction(actions, newConfig.GetName())
 }
 
@@ -1563,7 +1407,11 @@ func newMachineConfigDiff(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineC
 	extensionsEmpty := len(oldConfig.Spec.Extensions) == 0 && len(newConfig.Spec.Extensions) == 0
 
 	force := forceFileExists()
-	return &machineConfigDiff{
+
+	_, oldOCLImage := extractOCLImageFromMachineConfig(oldConfig)
+	_, newOCLImage := extractOCLImageFromMachineConfig(newConfig)
+
+	diff := &machineConfigDiff{
 		osUpdate:   oldConfig.Spec.OSImageURL != newConfig.Spec.OSImageURL || force,
 		kargs:      !(kargsEmpty || reflect.DeepEqual(oldConfig.Spec.KernelArguments, newConfig.Spec.KernelArguments)),
 		fips:       oldConfig.Spec.FIPS != newConfig.Spec.FIPS,
@@ -1572,20 +1420,17 @@ func newMachineConfigDiff(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineC
 		units:      !reflect.DeepEqual(oldIgn.Systemd.Units, newIgn.Systemd.Units),
 		kernelType: canonicalizeKernelType(oldConfig.Spec.KernelType) != canonicalizeKernelType(newConfig.Spec.KernelType),
 		extensions: !(extensionsEmpty || reflect.DeepEqual(oldConfig.Spec.Extensions, newConfig.Spec.Extensions)),
-	}, nil
-}
-
-func newMachineConfigDiffFromLayered(oldConfig, newConfig *mcfgv1.MachineConfig, oldImage, newImage string) (*machineConfigDiff, error) {
-	mcDiff, err := newMachineConfigDiff(oldConfig, newConfig)
-	if err != nil {
-		return mcDiff, err
+		oclEnabled: (oldOCLImage != "" || newOCLImage != "") || (oldOCLImage != "" && newOCLImage != ""),
 	}
 
-	mcDiff.oclEnabled = true
-	// If the new OS image is empty, that means we are in a revert-from-OCL situation.
-	mcDiff.revertFromOCL = newImage == ""
-	mcDiff.osUpdate = oldImage != newImage || forceFileExists()
-	return mcDiff, nil
+	if !diff.oclEnabled {
+		return diff, nil
+	}
+
+	// If OCL is enabled, compute OS update and revertFromOCL separately.
+	diff.osUpdate = oldOCLImage != newOCLImage || force
+	diff.revertFromOCL = newOCLImage == ""
+	return diff, nil
 }
 
 // reconcilable checks the configs to make sure that the only changes requested
@@ -1765,67 +1610,66 @@ func (dn *CoreOSDaemon) updateKernelArguments(oldKernelArguments, newKernelArgum
 	return runRpmOstree(args...)
 }
 
-func (dn *Daemon) generateExtensionsArgs(oldConfig, newConfig *mcfgv1.MachineConfig) []string {
-	removed := []string{}
-	added := []string{}
-
-	oldExt := make(map[string]bool)
-	for _, ext := range oldConfig.Spec.Extensions {
-		oldExt[ext] = true
+// getCurrentlyInstalledPackages returns the list of currently installed extension packages
+func (dn *Daemon) getCurrentlyInstalledPackages() (sets.Set[string], error) {
+	status, err := dn.NodeUpdaterClient.Peel().QueryStatus()
+	if err != nil {
+		return nil, fmt.Errorf("failed to query rpm-ostree status: %w", err)
 	}
-	newExt := make(map[string]bool)
+
+	bootedDeployment, err := status.GetBootedDeployment()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get booted deployment: %w", err)
+	}
+
+	return sets.New(bootedDeployment.RequestedPackages...), nil
+}
+
+// generateExtensionsArgs generates extension arguments for rpm-ostree, based on the target config
+// and currently installed extension packages.
+func generateExtensionsArgs(installedSet sets.Set[string], newConfig *mcfgv1.MachineConfig) []string {
+
+	// Get packages that should be installed based on new config
+	supportedExtensions := ctrlcommon.SupportedExtensions()
+	requiredSet := sets.New[string]()
+
 	for _, ext := range newConfig.Spec.Extensions {
-		newExt[ext] = true
-	}
-
-	for ext := range oldExt {
-		if !newExt[ext] {
-			removed = append(removed, ext)
-		}
-	}
-	for ext := range newExt {
-		if !oldExt[ext] {
-			added = append(added, ext)
+		if packages, exists := supportedExtensions[ext]; exists {
+			requiredSet.Insert(packages...)
 		}
 	}
 
-	// Supported extensions has package list info that is required
-	// to enable an extension
+	var extArgs []string
 
-	extArgs := []string{"update"}
-
-	if dn.os.IsEL() {
-		extensions := ctrlcommon.SupportedExtensions()
-		for _, ext := range added {
-			for _, pkg := range extensions[ext] {
-				extArgs = append(extArgs, "--install", pkg)
-			}
-		}
-		for _, ext := range removed {
-			for _, pkg := range extensions[ext] {
-				extArgs = append(extArgs, "--uninstall", pkg)
-			}
-		}
+	// Find packages to install: required but not currently installed
+	toInstall := requiredSet.Difference(installedSet)
+	for _, pkg := range sets.List(toInstall) {
+		extArgs = append(extArgs, constants.RPMOSTreeInstallArg, pkg)
 	}
 
-	// FCOS does one to one mapping of extension to package to be installed on FCOS node.
-	// This is needed as OKD layers additional packages on top of official FCOS shipped,
-	// See https://github.com/openshift/release/blob/959c2954344438c4eed3ec7f52a5e099e8335516/ci-operator/jobs/openshift/release/openshift-release-release-4.7-periodics.yaml#L586
-	// TODO: Once the package list has been stabilized, we can make use of the group and add
-	// all the packages required to enable OKD as a single extension.
-	if dn.os.IsFCOS() {
-		for _, ext := range added {
-			extArgs = append(extArgs, "--install", ext)
-		}
-		for _, ext := range removed {
-			extArgs = append(extArgs, "--uninstall", ext)
-		}
+	// Build set of all extension packages that can be managed, since
+	// we only want to remove packages that the MCO manages.
+	allExtensionSet := sets.New[string]()
+	for _, packages := range supportedExtensions {
+		allExtensionSet.Insert(packages...)
+	}
+
+	// Find packages to uninstall: currently installed extension packages that are not required
+	managedInstalled := installedSet.Intersection(allExtensionSet)
+	toUninstall := managedInstalled.Difference(requiredSet)
+	for _, pkg := range sets.List(toUninstall) {
+		extArgs = append(extArgs, constants.RPMOSTreeUninstallArg, pkg)
 	}
 
 	return extArgs
 }
 
 func (dn *CoreOSDaemon) applyExtensions(oldConfig, newConfig *mcfgv1.MachineConfig) error {
+	// Take no action if we're not an RHCOS node
+	if !dn.os.IsEL() {
+		return nil
+	}
+
 	extensionsEmpty := len(oldConfig.Spec.Extensions) == 0 && len(newConfig.Spec.Extensions) == 0
 	if (extensionsEmpty) ||
 		(reflect.DeepEqual(oldConfig.Spec.Extensions, newConfig.Spec.Extensions) && oldConfig.Spec.OSImageURL == newConfig.Spec.OSImageURL) {
@@ -1833,12 +1677,26 @@ func (dn *CoreOSDaemon) applyExtensions(oldConfig, newConfig *mcfgv1.MachineConf
 	}
 
 	// Validate extensions allowlist on RHCOS nodes
-	if err := ctrlcommon.ValidateMachineConfigExtensions(newConfig.Spec); err != nil && dn.os.IsEL() {
+	if err := ctrlcommon.ValidateMachineConfigExtensions(newConfig.Spec); err != nil {
 		return err
 	}
 
-	args := dn.generateExtensionsArgs(oldConfig, newConfig)
-	klog.Infof("Applying extensions : %+q", args)
+	// Get currently installed packages from rpm-ostree status
+	installedSet, err := dn.getCurrentlyInstalledPackages()
+	if err != nil {
+		return err
+	}
+
+	// Generate arguments based on current extension packages and the target config's extensions
+	args := generateExtensionsArgs(installedSet, newConfig)
+	if len(args) == 0 {
+		logSystem("No extension updates required")
+		return nil
+	}
+
+	// Add "update" to the start of argument list
+	args = append([]string{constants.RPMOSTreeUpdateArg}, args...)
+	logSystem("Applying extensions : %+q", args)
 	return runRpmOstree(args...)
 }
 
@@ -1884,7 +1742,7 @@ func (dn *CoreOSDaemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig)
 		args := []string{"override", "remove"}
 		args = append(args, defaultKernel...)
 		for _, pkg := range realtimeKernel {
-			args = append(args, "--install", pkg)
+			args = append(args, constants.RPMOSTreeInstallArg, pkg)
 		}
 
 		return runRpmOstree(args...)
@@ -1893,7 +1751,7 @@ func (dn *CoreOSDaemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig)
 		args := []string{"override", "remove"}
 		args = append(args, defaultKernel...)
 		for _, pkg := range hugePagesKernel {
-			args = append(args, "--install", pkg)
+			args = append(args, constants.RPMOSTreeInstallArg, pkg)
 		}
 
 		return runRpmOstree(args...)
@@ -2673,7 +2531,7 @@ func (dn *Daemon) queueRevertKernelSwap() error {
 		args := []string{"override", "reset"}
 		args = append(args, kernelOverrides...)
 		for _, pkg := range kernelExtLayers {
-			args = append(args, "--uninstall", pkg)
+			args = append(args, constants.RPMOSTreeUninstallArg, pkg)
 		}
 		if err := runRpmOstree(args...); err != nil {
 			return err
@@ -2852,7 +2710,7 @@ func (dn *Daemon) reboot(rationale string) error {
 	// We're not returning the error from the reboot command as it can be terminated by
 	// the system itself with signal: terminated. We can't catch the subprocess termination signal
 	// either, we just have one for the MCD itself.
-	rebootCmd := rebootCommand(rationale)
+	rebootCmd := rebootCommand(rationale, dn.os.IsCoreOSVariant())
 	if err := rebootCmd.Run(); err != nil {
 		logSystem("failed to run reboot: %v", err)
 		mcdRebootErr.Inc()
