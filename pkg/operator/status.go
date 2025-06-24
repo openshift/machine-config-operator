@@ -27,7 +27,6 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	kcc "github.com/openshift/machine-config-operator/pkg/controller/kubelet-config"
-	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/helpers"
 )
 
@@ -333,19 +332,6 @@ func (optr *Operator) syncMetrics() error {
 		mcoDegradedMachineCount.WithLabelValues(pool.Name).Set(float64(pool.Status.DegradedMachineCount))
 		mcoUnavailableMachineCount.WithLabelValues(pool.Name).Set(float64(pool.Status.UnavailableMachineCount))
 	}
-
-	// Attempt to fetch image-registry-override-drain configmap
-	_, err = optr.mcoCmLister.ConfigMaps(ctrlcommon.MCONamespace).Get(daemonconsts.ImageRegistryDrainOverrideConfigmap)
-	if err != nil && !apierrors.IsNotFound(err) {
-		return fmt.Errorf("error fetching configmap %s during metrics sync", daemonconsts.ImageRegistryDrainOverrideConfigmap)
-	}
-	// If the configmap is present, fire an alert warning admin of deprecation
-	if apierrors.IsNotFound(err) {
-		mcoImageRegistryDrainOverrideConfigmapExists.Set(0)
-	} else {
-		mcoImageRegistryDrainOverrideConfigmapExists.Set(1)
-	}
-
 	return nil
 }
 
