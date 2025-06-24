@@ -219,44 +219,18 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 				- Default degrade
 					- MachineConfigPoolDegraded
 			*/
-			// Handle the non-degraded conditions
-			// TODO: understand if there is value in checking all conditionals or just `MachineConfigNodeUpdated` & `MachineConfigNodeUpdatePrepared`
 			// TODO: add this behind the status reporting feature gate for initial implementation
-			if cond.Status != metav1.ConditionFalse {
-				switch mcfgv1.StateProgress(cond.Type) {
-				case mcfgv1.MachineConfigNodeUpdated:
-					updatedMachines = append(updatedMachines, ourNode)
-				case mcfgv1.MachineConfigNodeUpdatePrepared:
-					updatingMachines = append(updatingMachines, ourNode)
-				case mcfgv1.MachineConfigNodeUpdateExecuted:
-					updatingMachines = append(updatingMachines, ourNode)
-				case mcfgv1.MachineConfigNodeUpdatePostActionComplete:
-					updatingMachines = append(updatingMachines, ourNode)
-				case mcfgv1.MachineConfigNodeUpdateComplete:
-					updatingMachines = append(updatingMachines, ourNode)
-				case mcfgv1.MachineConfigNodeResumed:
-					updatingMachines = append(updatingMachines, ourNode)
-				case mcfgv1.MachineConfigNodeUpdateDrained:
-					updatingMachines = append(updatingMachines, ourNode)
-				case mcfgv1.MachineConfigNodeUpdateFilesAndOS:
-					updatingMachines = append(updatingMachines, ourNode)
-				/*
-					// TODO: introduce after completion of MCO-1675
-					case mcfgv1.MachineConfigNodeAppliedOSImage:
-						updatingMachines = append(updatingMachines, ourNode)
-					case mcfgv1.MachineConfigNodeAppliedFiles:
-						updatingMachines = append(updatingMachines, ourNode)
-					case mcfgv1.MachineConfigNodeImagePulledFromRegistry:
-						updatingMachines = append(updatingMachines, ourNode)
-				*/
-				case mcfgv1.MachineConfigNodeUpdateCordoned:
-					updatingMachines = append(updatingMachines, ourNode)
-				case mcfgv1.MachineConfigNodeUpdateUncordoned:
-					updatingMachines = append(updatingMachines, ourNode)
-				case mcfgv1.MachineConfigNodeUpdateRebooted:
-					updatingMachines = append(updatingMachines, ourNode)
-				}
+			// Handle case when the node is updated
+			if mcfgv1.StateProgress(cond.Type) == mcfgv1.MachineConfigNodeUpdated && cond.Status == metav1.ConditionTrue {
+				updatedMachines = append(updatedMachines, ourNode)
+				// TODO: understand if a node is always "ready" when it is updated
+				// readyMachines = append(readyMachines, ourNode)
 				break
+			}
+			// Handle the cases when a node is updating
+			if cond.Status != metav1.ConditionFalse && mcfgv1.StateProgress(cond.Type) != mcfgv1.MachineConfigNodePinnedImageSetsProgressing {
+				updatingMachines = append(updatingMachines, ourNode)
+				// TODO: figure out how to distinguish ready & unavailible machines; probably need the switch case here? maybe define a bool for ready/not ready? figure out what the source of tuth conditionals are (ex: uncordoned, cordoned, etc)?
 			}
 
 			/*
