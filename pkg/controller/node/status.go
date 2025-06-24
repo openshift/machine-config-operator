@@ -219,6 +219,45 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 				- Default degrade
 					- MachineConfigPoolDegraded
 			*/
+			// Handle the non-degraded conditions
+			// TODO: understand if there is value in checking all conditionals or just `MachineConfigNodeUpdated` & `MachineConfigNodeUpdatePrepared`
+			// TODO: add this behind the status reporting feature gate for initial implementation
+			if cond.Status != metav1.ConditionFalse {
+				switch mcfgv1.StateProgress(cond.Type) {
+				case mcfgv1.MachineConfigNodeUpdated:
+					updatedMachines = append(updatedMachines, ourNode)
+				case mcfgv1.MachineConfigNodeUpdatePrepared:
+					updatingMachines = append(updatingMachines, ourNode)
+				case mcfgv1.MachineConfigNodeUpdateExecuted:
+					updatingMachines = append(updatingMachines, ourNode)
+				case mcfgv1.MachineConfigNodeUpdatePostActionComplete:
+					updatingMachines = append(updatingMachines, ourNode)
+				case mcfgv1.MachineConfigNodeUpdateComplete:
+					updatingMachines = append(updatingMachines, ourNode)
+				case mcfgv1.MachineConfigNodeResumed:
+					updatingMachines = append(updatingMachines, ourNode)
+				case mcfgv1.MachineConfigNodeUpdateDrained:
+					updatingMachines = append(updatingMachines, ourNode)
+				case mcfgv1.MachineConfigNodeUpdateFilesAndOS:
+					updatingMachines = append(updatingMachines, ourNode)
+				/*
+					// TODO: introduce after completion of MCO-1675
+					case mcfgv1.MachineConfigNodeAppliedOSImage:
+						updatingMachines = append(updatingMachines, ourNode)
+					case mcfgv1.MachineConfigNodeAppliedFiles:
+						updatingMachines = append(updatingMachines, ourNode)
+					case mcfgv1.MachineConfigNodeImagePulledFromRegistry:
+						updatingMachines = append(updatingMachines, ourNode)
+				*/
+				case mcfgv1.MachineConfigNodeUpdateCordoned:
+					updatingMachines = append(updatingMachines, ourNode)
+				case mcfgv1.MachineConfigNodeUpdateUncordoned:
+					updatingMachines = append(updatingMachines, ourNode)
+				case mcfgv1.MachineConfigNodeUpdateRebooted:
+					updatingMachines = append(updatingMachines, ourNode)
+				}
+				break
+			}
 
 			/*
 				// TODO: (djoshy) Rework this block to use MCN conditions correctly. See: https://issues.redhat.com/browse/MCO-1228
@@ -273,20 +312,37 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 	updatingMachineCount := int32(len(updatingMachines))
 	readyMachineCount := int32(len(readyMachines))
 
-	// this is # 1 priority, get the upgrade states actually reporting
-	if degradedMachineCount+readyMachineCount+unavailableMachineCount+updatingMachineCount != int32(len(nodes)) {
+	// // this is # 1 priority, get the upgrade states actually reporting
+	// if degradedMachineCount+readyMachineCount+unavailableMachineCount+updatingMachineCount != int32(len(nodes)) {
 
+	// 	updatedMachines = getUpdatedMachines(pool, nodes, mosc, mosb, l)
+	// 	updatedMachineCount = int32(len(updatedMachines))
+
+	// 	readyMachines = getReadyMachines(pool, nodes, mosc, mosb, l)
+	// 	readyMachineCount = int32(len(readyMachines))
+
+	// 	unavailableMachines = getUnavailableMachines(nodes, pool)
+	// 	unavailableMachineCount = int32(len(unavailableMachines))
+
+	// 	degradedMachines = getDegradedMachines(nodes)
+	// 	degradedMachineCount = int32(len(degradedMachines))
+	// }
+
+	// TODO (ijanssen): once we are comfortable with the implementation, we can probably remove this check
+	// TODO: add check for ready/unavailible machine count
+	// TODO: understand why `updatingMachineCount` is never used
+	if degradedMachineCount+updatingMachineCount+updatedMachineCount != int32(len(nodes)) {
 		updatedMachines = getUpdatedMachines(pool, nodes, mosc, mosb, l)
 		updatedMachineCount = int32(len(updatedMachines))
 
-		readyMachines = getReadyMachines(pool, nodes, mosc, mosb, l)
-		readyMachineCount = int32(len(readyMachines))
-
-		unavailableMachines = getUnavailableMachines(nodes, pool)
-		unavailableMachineCount = int32(len(unavailableMachines))
-
 		degradedMachines = getDegradedMachines(nodes)
 		degradedMachineCount = int32(len(degradedMachines))
+
+		// readyMachines = getReadyMachines(pool, nodes, mosc, mosb, l)
+		// readyMachineCount = int32(len(readyMachines))
+
+		// unavailableMachines = getUnavailableMachines(nodes, pool)
+		// unavailableMachineCount = int32(len(unavailableMachines))
 	}
 
 	for _, n := range degradedMachines {
