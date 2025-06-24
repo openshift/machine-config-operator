@@ -141,10 +141,6 @@ const (
 	// changes to this path. Note that other files added to the parent directory will not be handled specially
 	GPGNoRebootPath = "/etc/machine-config-daemon/no-reboot/containers-gpg.pub"
 
-	// ImageRegistryDrainOverrideConfigmap is the name of the Configmap a user can apply to force all
-	// image registry changes to not drain
-	ImageRegistryDrainOverrideConfigmap = "image-registry-override-drain"
-
 	// rpm-ostree command arguments
 	RPMOSTreeUpdateArg    = "update"
 	RPMOSTreeInstallArg   = "--install"

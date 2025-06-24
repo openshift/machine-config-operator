@@ -22,7 +22,6 @@ import (
 	"github.com/coreos/go-semver/semver"
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	kubeErrs "k8s.io/apimachinery/pkg/util/errors"
@@ -1036,21 +1035,17 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	}
 
 	var drain bool
-	crioOverrideConfigmapExists, err := dn.hasImageRegistryDrainOverrideConfigMap()
-	if err != nil {
-		return err
-	}
 	// Node Disruption Policies cannot be used during firstboot as API is not accessible.
 	if !firstBoot {
 		// Check actions list and perform node drain if required
-		drain, err = isDrainRequiredForNodeDisruptionActions(nodeDisruptionActions, oldIgnConfig, newIgnConfig, crioOverrideConfigmapExists)
+		drain, err = isDrainRequiredForNodeDisruptionActions(nodeDisruptionActions, oldIgnConfig, newIgnConfig)
 		if err != nil {
 			return err
 		}
 		klog.Infof("Drain calculated for node disruption: %v for config %s", drain, newConfigName)
 	} else {
 		// Check and perform node drain if required
-		drain, err = isDrainRequired(actions, diffFileSet, oldIgnConfig, newIgnConfig, crioOverrideConfigmapExists)
+		drain, err = isDrainRequired(actions, diffFileSet, oldIgnConfig, newIgnConfig)
 		if err != nil {
 			return err
 		}
@@ -2823,23 +2818,6 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 
 	// Apply extensions
 	return dn.applyExtensions(oldConfig, newConfig)
-}
-
-func (dn *Daemon) hasImageRegistryDrainOverrideConfigMap() (bool, error) {
-	if dn.kubeClient == nil {
-		return false, nil
-	}
-
-	_, err := dn.kubeClient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), constants.ImageRegistryDrainOverrideConfigmap, metav1.GetOptions{})
-	if err == nil {
-		return true, nil
-	}
-
-	if apierrors.IsNotFound(err) {
-		return false, nil
-	}
-
-	return false, fmt.Errorf("Error fetching image registry drain override configmap: %w", err)
 }
 
 // Enables the revert layering systemd unit.
