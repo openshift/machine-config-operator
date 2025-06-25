@@ -10,6 +10,7 @@ import (
 
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	helpers "github.com/openshift/machine-config-operator/pkg/helpers"
+	"github.com/openshift/machine-config-operator/pkg/upgrademonitor"
 
 	configv1 "github.com/openshift/api/config/v1"
 	features "github.com/openshift/api/features"
@@ -679,6 +680,13 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 			if ok {
 				changedMsg = fmt.Sprintf("changed annotation %s = %s", anno, newValue)
 				controlPlaneChangedMsg = fmt.Sprintf("Node %s now has %s=%s", curNode.Name, anno, newValue)
+				// If the desired annotation has changed, update the value in the associated MCN
+				if anno == daemonconsts.DesiredMachineConfigAnnotationKey {
+					err = upgrademonitor.GenerateAndApplyMachineConfigNodeSpec(ctrl.fgAcessor, pool.Name, curNode, ctrl.client)
+					if err != nil {
+						klog.Errorf("error updating MCN spec for node %s: %v", curNode.Name, err)
+					}
+				}
 			} else {
 				changedMsg = fmt.Sprintf("lost annotation %s", anno)
 				controlPlaneChangedMsg = fmt.Sprintf("Node %s no longer has %s", curNode.Name, anno)
