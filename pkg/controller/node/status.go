@@ -224,13 +224,15 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 			if mcfgv1.StateProgress(cond.Type) == mcfgv1.MachineConfigNodeUpdated && cond.Status == metav1.ConditionTrue {
 				updatedMachines = append(updatedMachines, ourNode)
 				// TODO: understand if a node is always "ready" when it is updated
-				// readyMachines = append(readyMachines, ourNode)
+				readyMachines = append(readyMachines, ourNode)
 				break
 			}
 			// Handle the cases when a node is updating
 			if cond.Status != metav1.ConditionFalse && mcfgv1.StateProgress(cond.Type) != mcfgv1.MachineConfigNodePinnedImageSetsProgressing {
 				updatingMachines = append(updatingMachines, ourNode)
 				// TODO: figure out how to distinguish ready & unavailible machines; probably need the switch case here? maybe define a bool for ready/not ready? figure out what the source of tuth conditionals are (ex: uncordoned, cordoned, etc)?
+				unavailableMachines = append(unavailableMachines, ourNode)
+				break
 			}
 
 			/*
