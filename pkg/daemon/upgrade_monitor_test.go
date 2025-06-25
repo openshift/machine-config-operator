@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"testing"
 
 	apicfgv1 "github.com/openshift/api/config/v1"
@@ -12,7 +13,6 @@ import (
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
 	informers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
 	mcopfake "github.com/openshift/client-go/operator/clientset/versioned/fake"
-	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/machine-config-operator/pkg/helpers"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -108,7 +108,7 @@ func (tc upgradeMonitorTestCase) run(t *testing.T) {
 	f.kubeclient = k8sfake.NewSimpleClientset(f.kubeobjects...)
 
 	f.oclient = mcopfake.NewSimpleClientset(f.objects...)
-	fgAccess := featuregates.NewHardcodedFeatureGateAccess(
+	fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler(
 		[]apicfgv1.FeatureGateName{
 			features.FeatureGateMachineConfigNodes,
 		},
@@ -132,7 +132,7 @@ func (tc upgradeMonitorTestCase) run(t *testing.T) {
 		f.oclient,
 		false,
 		"",
-		fgAccess,
+		fgHandler,
 	)
 
 	d.mcListerSynced = alwaysReady
@@ -159,7 +159,7 @@ func (tc upgradeMonitorTestCase) run(t *testing.T) {
 			f.t.Fatalf("Error getting primary pool for node: %v", n.Name)
 		}
 
-		err = upgrademonitor.GenerateAndApplyMachineConfigNodes(tc.parentCondition, tc.childCondition, tc.parentStatus, tc.childStatus, n, d.mcfgClient, d.featureGatesAccessor, pool)
+		err = upgrademonitor.GenerateAndApplyMachineConfigNodes(tc.parentCondition, tc.childCondition, tc.parentStatus, tc.childStatus, n, d.mcfgClient, d.fgHandler, pool)
 		if err != nil {
 			f.t.Fatalf("Could not generate and apply MCN %v", err)
 		}
