@@ -25,6 +25,10 @@ var (
 	// Hash is the git hash we've built the MCO with
 	Hash = "was-not-built-properly"
 
+	// Date of the binary
+	// Injected at build time
+	Date = "was-not-built-properly"
+
 	// String is the human-friendly representation of the version.
 	String = fmt.Sprintf("MachineConfigOperator %s", Raw)
 

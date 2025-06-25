@@ -27,8 +27,9 @@ if [ -z ${VERSION_OVERRIDE+a} ]; then
 fi
 
 HASH=${SOURCE_GIT_COMMIT:-$(git rev-parse --verify 'HEAD^{commit}')}
+BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
 
-GLDFLAGS+="-X ${REPO}/pkg/version.Raw=${VERSION_OVERRIDE} -X ${REPO}/pkg/version.Hash=${HASH}"
+GLDFLAGS+="-X ${REPO}/pkg/version.Raw=${VERSION_OVERRIDE} -X ${REPO}/pkg/version.Hash=${HASH} -X ${REPO}/pkg/version.Date=${BUILD_DATE}"
 
 if [ -z ${BIN_PATH+a} ]; then
 	export BIN_PATH=_output/${GOOS}/${GOARCH}
