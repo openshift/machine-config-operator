@@ -22,6 +22,11 @@ contents:
     if ! grep -q "auto=start" /etc/ipsec.d/openshift.conf; then
       sed -i '/^.*conn ovn.*-out-1$/a\    auto=start' /etc/ipsec.d/openshift.conf
     fi
+    /usr/libexec/ipsec/addconn --config /etc/ipsec.conf --checkconfig
+    # Check kernel modules
+    /usr/libexec/ipsec/_stackmanager start
+    # Check nss database status
+    /usr/sbin/ipsec --checknss
     chroot /proc/1/root ipsec restart
 
     # Wait for upto 60s to get IPsec SAs to establish with peer nodes.
@@ -45,3 +50,7 @@ contents:
     if [[ $elapsed -ge $timeout ]]; then
         echo "Timed out waiting, some connections are not established, desired conns $desiredconn, established conns $establishedsa"
     fi
+
+    cat /etc/ipsec.conf
+    ip xfrm state
+    ip xfrm policy
