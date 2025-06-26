@@ -151,74 +151,7 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 				}
 				break
 			}
-			/*
-				MCO-1228 Planning
-				-----------------
-				MCN conditions (existing):
-				- MachineConfigNodeUpdatePrepared
-				- MachineConfigNodeUpdateExecuted
-				- MachineConfigNodeUpdatePostActionComplete
-				- MachineConfigNodeUpdateComplete
-				- MachineConfigNodeUpdated
-				- MachineConfigNodeResumed
-				- MachineConfigNodeUpdateDrained
-				- MachineConfigNodeUpdateFilesAndOS
-				- MachineConfigNodeUpdateCordoned
-				- MachineConfigNodeUpdateUncordoned
-				- MachineConfigNodeUpdateRebooted
-				- MachineConfigNodeNodeDegraded
-				- MachineConfigNodePinnedImageSetsProgressing
-				- MachineConfigNodePinnedImageSetsDegraded
 
-				MCN conditions (coming with MCO-1675):
-				- MachineConfigNodeAppliedOSImage
-				- MachineConfigNodeAppliedFiles
-				- MachineConfigNodeImagePulledFromRegistry
-
-				Association to machine counts:
-				- degradedMachines
-					- MachineConfigNodePinnedImageSetsDegraded = true
-					- MachineConfigNodeNodeDegraded = true
-				- updatedMachines
-					- MachineConfigNodeUpdated = true
-				- updatingMachines
-					- MachineConfigNodeUpdatePrepared = true
-					- MachineConfigNodeUpdateExecuted = unknown, true
-					- MachineConfigNodeUpdatePostActionComplete = unknown, true
-					- MachineConfigNodeUpdateComplete = unknown, true
-					- MachineConfigNodeResumed = true
-					- MachineConfigNodeUpdateDrained = unknown, true
-					- MachineConfigNodeUpdateFilesAndOS = unknown, true
-					- (coming soon) MachineConfigNodeAppliedOSImage = unknown, true
-					- (coming soon) MachineConfigNodeAppliedFiles = unknown, true
-					- (coming soon) MachineConfigNodeImagePulledFromRegistry = true
-					- MachineConfigNodeUpdateCordoned = unknown, true
-					- MachineConfigNodeUpdateUncordoned = unknown, true
-					- MachineConfigNodeUpdateRebooted = unknown, true
-				TODO: understnat unavailible & ready machines better
-				unavailableMachines
-				readyMachines
-
-				Count rules:
-				unavailableMachines + readyMachines = # of nodes
-				updatedMachines + updatingMachines + degradedMachines = # of nodes // TODO: check this
-
-				Association to MCP statuses:
-				- In scope of MCN update
-					- MachineConfigPoolUpdating
-					- MachineConfigPoolNodeDegraded
-					- MachineConfigPoolPinnedImageSetsDegraded
-				- Out of scope of MCN update
-					- MachineConfigPoolBuildPending
-					- MachineConfigPoolBuilding
-					- MachineConfigPoolBuildSuccess
-					- MachineConfigPoolBuildFailed
-					- MachineConfigPoolBuildInterrupted
-					- MachineConfigPoolRenderDegraded
-					- MachineConfigPoolSynchronizerDegraded
-				- Default degrade
-					- MachineConfigPoolDegraded
-			*/
 			// TODO: add this behind the status reporting feature gate for initial implementation
 			// Handle case when the node is updated
 			if mcfgv1.StateProgress(cond.Type) == mcfgv1.MachineConfigNodeUpdated && cond.Status == metav1.ConditionTrue {
