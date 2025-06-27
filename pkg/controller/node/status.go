@@ -174,30 +174,29 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 	unavailableMachineCount := int32(len(unavailableMachines))
 	updatingMachineCount := int32(len(updatingMachines))
 	readyMachineCount := int32(len(readyMachines))
+	totalMachineCount := int32(len(nodes))
 
 	// TODO (ijanssen): once we are comfortable with the implementation, we can probably remove this check
 	// TODO: understand why `updatingMachineCount` is never used
 	// TODO: understand if a machine can be considered updating & degraded?
-	if degradedMachineCount+updatingMachineCount+updatedMachineCount != int32(len(nodes)) {
-		klog.Errorf("MCN did not properly populate updated & degraded MCP counts, reverting to use standard conditions")
+	// In a standard update case, the total number of machines should equal the sum of the updating and updated nodes.
+	// However, when one or more machines is degraded, the non-degraded machines will not be condidered updated or
+	// updating, so the different machine statuses will not total the number of nodes.
+	if updatedMachineCount+updatingMachineCount != totalMachineCount && degradedMachineCount != 0 {
+		klog.Errorf("MCN did not properly populate MCP counts, reverting to use standard conditions")
 		updatedMachines = getUpdatedMachines(pool, nodes, mosc, mosb, l)
 		updatedMachineCount = int32(len(updatedMachines))
 
 		degradedMachines = getDegradedMachines(nodes)
 		degradedMachineCount = int32(len(degradedMachines))
-	} else { // TODO: remove post debugging
-		klog.Errorf("MCN properly populated updated & degraded MCP counts!")
-	}
-	// TODO: potentially add into previous check if that makes sense
-	if readyMachineCount+unavailableMachineCount != int32(len(nodes)) {
-		klog.Errorf("MCN did not properly populate ready & unavailible MCP counts, reverting to use standard conditions")
+
 		readyMachines = getReadyMachines(pool, nodes, mosc, mosb, l)
 		readyMachineCount = int32(len(readyMachines))
 
 		unavailableMachines = getUnavailableMachines(nodes, pool)
 		unavailableMachineCount = int32(len(unavailableMachines))
 	} else { // TODO: remove post debugging
-		klog.Errorf("MCN properly populated ready & unavailible MCP counts!")
+		klog.Errorf("MCN properly populated MCP counts!")
 	}
 
 	for _, n := range degradedMachines {
