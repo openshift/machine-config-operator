@@ -153,18 +153,19 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 			}
 
 			// TODO: add this behind the status reporting feature gate for initial implementation
+			// TODO: see if we want to considered nodeResumed updated like initial implementation
 			// Handle case when the node is updated
 			if mcfgv1.StateProgress(cond.Type) == mcfgv1.MachineConfigNodeUpdated && cond.Status == metav1.ConditionTrue {
 				updatedMachines = append(updatedMachines, ourNode)
-				// TODO: understand if a node is always "ready" when it is updated
-				readyMachines = append(readyMachines, ourNode)
+				// // TODO: understand if a node is always "ready" when it is updated
+				// readyMachines = append(readyMachines, ourNode)
 				break
 			}
 			// Handle the cases when a node is updating
 			if cond.Status != metav1.ConditionFalse && mcfgv1.StateProgress(cond.Type) != mcfgv1.MachineConfigNodePinnedImageSetsProgressing {
 				updatingMachines = append(updatingMachines, ourNode)
-				// TODO: figure out how to distinguish ready & unavailible machines; probably need the switch case here? maybe define a bool for ready/not ready? figure out what the source of tuth conditionals are (ex: uncordoned, cordoned, etc)?
-				unavailableMachines = append(unavailableMachines, ourNode)
+				// // TODO: figure out how to distinguish ready & unavailible machines; probably need the switch case here? maybe define a bool for ready/not ready? figure out what the source of tuth conditionals are (ex: uncordoned, cordoned, etc)?
+				// unavailableMachines = append(unavailableMachines, ourNode)
 				break
 			}
 		}
@@ -182,6 +183,7 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 	// In a standard update case, the total number of machines should equal the sum of the updating and updated nodes.
 	// However, when one or more machines is degraded, the non-degraded machines will not be condidered updated or
 	// updating, so the different machine statuses will not total the number of nodes.
+	// TODO: add a ready/unavailible check if needed
 	if updatedMachineCount+updatingMachineCount != totalMachineCount && degradedMachineCount != 0 {
 		klog.Errorf("MCN did not properly populate MCP counts, reverting to use standard conditions")
 		updatedMachines = getUpdatedMachines(pool, nodes, mosc, mosb, l)
