@@ -56,6 +56,8 @@ import (
 const (
 	// WorkerLabel defines the label associated with worker node.
 	WorkerLabel = "node-role.kubernetes.io/worker"
+	// ControlPlaneLabel defines the label associated with master/control-plane node.
+	ControlPlaneLabel = "node-role.kubernetes.io/control-plane"
 
 	// maxRetries is the number of times a machineconfig pool will be retried before it is dropped out of the queue.
 	// With the current rate-limiter in use (5ms*2^(maxRetries-1)) the following numbers represent the times
@@ -321,7 +323,21 @@ func (ctrl *Controller) makeMastersUnSchedulable(currentMasters []*corev1.Node) 
 		}
 	}
 	return errs
+}
 
+// updateMasterNodeControlPlaneLabel ensures the control-plane label is on a node
+func (ctrl *Controller) updateMasterNodeControlPlaneLabel(node *corev1.Node) error {
+	// If the control plane label is already set then no-op.
+	if _, hasControlPlaneLabel := node.Labels[ControlPlaneLabel]; hasControlPlaneLabel {
+		return nil
+	}
+	_, err := internal.UpdateNodeRetry(ctrl.kubeClient.CoreV1().Nodes(), ctrl.nodeLister, node.Name, func(node *corev1.Node) {
+		node.Labels[ControlPlaneLabel] = ""
+	})
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // makeMasterNodeUnSchedulable makes master node unschedulable by removing worker label and adding `NoSchedule`
@@ -497,8 +513,16 @@ func (ctrl *Controller) isMaster(node *corev1.Node) bool {
 	return master
 }
 
-// Given a master Node, ensure it reflects the current mastersSchedulable setting
+// Given a master Node, ensure it reflects the current mastersSchedulable
+// setting and make sure the control-plane label is set.
 func (ctrl *Controller) reconcileMaster(node *corev1.Node) {
+	err := ctrl.updateMasterNodeControlPlaneLabel(node)
+	if err != nil {
+		err = fmt.Errorf("failed adding the control-plane label to master Node: %w", err)
+		klog.Error(err)
+		return
+	}
+
 	mastersSchedulable, err := ctrl.getMastersSchedulable()
 	if err != nil {
 		err = fmt.Errorf("getting scheduler config failed: %w", err)
