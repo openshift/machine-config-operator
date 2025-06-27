@@ -439,7 +439,18 @@ func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1
 		finder := find.NewFinder(client.Client, false)
 
 		for _, failureDomain := range infra.Spec.PlatformSpec.VSphere.FailureDomains {
-			if failureDomain.Server != vcenter.Server {
+			vmGroup := ""
+			if failureDomain.ZoneAffinity != nil {
+				if failureDomain.ZoneAffinity.HostGroup != nil {
+					if failureDomain.ZoneAffinity.HostGroup.VMGroup != "" {
+						vmGroup = failureDomain.ZoneAffinity.HostGroup.VMGroup
+					}
+				}
+			}
+			if providerSpec.Workspace.Datastore != failureDomain.Topology.Datastore &&
+				vcenter.Server != failureDomain.Server &&
+				providerSpec.Workspace.VMGroup != vmGroup &&
+				path.Clean(providerSpec.Workspace.ResourcePool) == path.Clean(failureDomain.Topology.ResourcePool) {
 				continue
 			}
 			infraID := infra.Status.InfrastructureName
