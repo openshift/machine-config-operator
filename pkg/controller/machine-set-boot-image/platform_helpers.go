@@ -263,34 +263,30 @@ func reconcileVSphere(machineSet *machinev1beta1.MachineSet, infra *osconfigv1.I
 		return false, nil, fmt.Errorf("%s: artifact '%s' not found", streamData.FormatPrefix(arch), "vmware")
 	}
 
-	patchRequired = false
 	newProviderSpec := providerSpec.DeepCopy()
 
-	if !strings.Contains(providerSpec.Template, artifacts.Release) {
-		// Fetch the creds configmap
-		credsSc, err := secretClient.CoreV1().Secrets("kube-system").Get(context.TODO(), "vsphere-creds", metav1.GetOptions{})
-		if err != nil {
-			return false, nil, fmt.Errorf("failed to fetch vsphere-creds Secret during machineset sync: %w", err)
-		}
-		// Fetch the original install config
-		installConfigCm, err := secretClient.CoreV1().ConfigMaps("kube-system").Get(context.TODO(), "cluster-config-v1", metav1.GetOptions{})
-		if err != nil {
-			return false, nil, fmt.Errorf("failed to fetch cluster-config-v1 ConfigMap during machineset sync: %w", err)
-		}
-		diskType, err := getDiskTypeFromInstallConfigMap(installConfigCm)
-		if err != nil {
-			return false, nil, fmt.Errorf("failed to extract diskType from InstallConfig configmap: %w", err)
-		}
-		newBootImg, err := createNewVMTemplate(streamData, providerSpec, infra, credsSc, arch, artifacts.Release, diskType)
-		if err != nil {
-			return false, nil, err
-		}
-		newProviderSpec.Template = newBootImg
-		patchRequired = true
+	// Fetch the creds configmap
+	credsSc, err := secretClient.CoreV1().Secrets("kube-system").Get(context.TODO(), "vsphere-creds", metav1.GetOptions{})
+	if err != nil {
+		return false, nil, fmt.Errorf("failed to fetch vsphere-creds Secret during machineset sync: %w", err)
+	}
+	// Fetch the original install config
+	installConfigCm, err := secretClient.CoreV1().ConfigMaps("kube-system").Get(context.TODO(), "cluster-config-v1", metav1.GetOptions{})
+	if err != nil {
+		return false, nil, fmt.Errorf("failed to fetch cluster-config-v1 ConfigMap during machineset sync: %w", err)
+	}
+	diskType, err := getDiskTypeFromInstallConfigMap(installConfigCm)
+	if err != nil {
+		return false, nil, fmt.Errorf("failed to extract diskType from InstallConfig configmap: %w", err)
+	}
+	newBootImg, patchRequired, err := createNewVMTemplate(streamData, providerSpec, infra, credsSc, arch, artifacts.Release, diskType)
+	if err != nil {
+		return false, nil, err
 	}
 
 	// If patch is required, marshal the new providerspec into the machineset
 	if patchRequired {
+		newProviderSpec.Template = newBootImg
 		newMachineSet = machineSet.DeepCopy()
 		if err := marshalProviderSpec(newMachineSet, newProviderSpec); err != nil {
 			return false, nil, err

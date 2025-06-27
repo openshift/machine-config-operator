@@ -408,20 +408,9 @@ func getClientsFromServerURL(ctx context.Context, server, username, password str
 	return client, tagManager, nil
 }
 
-func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1.VSphereMachineProviderSpec, infra *osconfigv1.Infrastructure, credsSc *corev1.Secret, arch, release, diskType string) (string, error) {
+func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1.VSphereMachineProviderSpec, infra *osconfigv1.Infrastructure, credsSc *corev1.Secret, arch, release, diskType string) (string, bool, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
-	// Find and download the relevant OVA file
-	ova, err := streamData.QueryDisk(arch, "vmware", "ova")
-	if err != nil {
-		return "", err
-	}
-
-	ovaPath, err := cache.DownloadOva(ova)
-	if err != nil {
-		return "", fmt.Errorf("Failed to download %s: %w", ova.Location, err)
-	}
 
 	var name string
 	for _, vcenter := range infra.Spec.PlatformSpec.VSphere.VCenters {
@@ -433,7 +422,7 @@ func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1
 		password := string(credsSc.Data[fmt.Sprintf("%s.password", vcenter.Server)])
 		client, tagManager, err := getClientsFromServerURL(ctx, vcenter.Server, username, password)
 		if err != nil {
-			return "", fmt.Errorf("failed in getClientsFromServerURL: %w", err)
+			return "", false, fmt.Errorf("failed in getClientsFromServerURL: %w", err)
 		}
 
 		finder := find.NewFinder(client.Client, false)
@@ -454,23 +443,63 @@ func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1
 				continue
 			}
 			infraID := infra.Status.InfrastructureName
-			name = fmt.Sprintf("%s-rhcos-%s-%s", infraID, failureDomain.Name, release)
-			if len(name) > 80 {
-				return "", fmt.Errorf("Length of VM template name `%s` exceeds the permitted limit of 80 characters", name)
-			}
 
 			datacenter, err := finder.Datacenter(ctx, failureDomain.Topology.Datacenter)
 			if err != nil {
-				return "", fmt.Errorf("failed to find datacenter: %w", err)
+				return "", false, fmt.Errorf("failed to find datacenter: %w", err)
 			}
 			finder = finder.SetDatacenter(datacenter)
 
-			err = createNewVMTemplateWithNameForFailureDomain(ctx, providerSpec, failureDomain, finder, client, tagManager, name, ovaPath, infraID, diskType)
+			existingTemplateVM, err := finder.VirtualMachine(ctx, providerSpec.Template)
 			if err != nil {
-				return "", err
+				return "", false, fmt.Errorf("finder had error: %w", err)
+			}
+
+			var vmMo mo.VirtualMachine
+			err = existingTemplateVM.Properties(ctx, existingTemplateVM.Reference(), nil, &vmMo)
+			if err != nil {
+				return "", false, fmt.Errorf("Unable to extract properties from existing Template VM: %w", err)
+			}
+
+			if vmMo.Summary.Config.Product != nil {
+				templateProductVersion := vmMo.Summary.Config.Product.Version
+				if templateProductVersion == "" {
+					return "", false, fmt.Errorf("unable to determine RHCOS version of virtual machine: %s", providerSpec.Template)
+				}
+
+				if templateProductVersion != release {
+					klog.Infof("Existing RHCOS v%s does not match current RHCOS v%s. Starting reconciliation process.", templateProductVersion, release)
+
+					// Find and download the relevant OVA file
+					ova, err := streamData.QueryDisk(arch, "vmware", "ova")
+					if err != nil {
+						return "", false, err
+					}
+
+					ovaPath, err := cache.DownloadOva(ova)
+					if err != nil {
+						return "", false, fmt.Errorf("Failed to download %s: %w", ova.Location, err)
+					}
+
+					name = fmt.Sprintf("%s-rhcos-%s", infraID, failureDomain.Name)
+					if len(name) > 80 {
+						return "", false, fmt.Errorf("Length of VM template name `%s` exceeds the permitted limit of 80 characters", name)
+					}
+
+					err = createNewVMTemplateWithNameForFailureDomain(ctx, providerSpec, failureDomain, finder, client, tagManager, name, ovaPath, infraID, diskType)
+					if err != nil {
+						return "", false, err
+					}
+					return name, true, nil
+				}
+
+				klog.Infof("Existing RHCOS v%s does match current RHCOS v%s. Skipping reconciliation process.", templateProductVersion, release)
+
+			} else {
+				return "", false, fmt.Errorf("unable to determine RHCOS version of virtual machine: %s", providerSpec.Template)
 			}
 		}
 	}
 
-	return name, nil
+	return "", false, nil
 }
