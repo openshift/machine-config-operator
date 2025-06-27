@@ -7,6 +7,9 @@ import (
 	"slices"
 
 	e2e "k8s.io/kubernetes/test/e2e/framework"
+
+	// Include cloud providers at vendor time
+	_ "k8s.io/kubernetes/test/e2e"
 )
 
 const (
