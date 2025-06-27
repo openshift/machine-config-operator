@@ -1177,7 +1177,6 @@ github.com/opencontainers/runc/libcontainer/utils
 # github.com/opencontainers/runtime-spec v1.2.0
 ## explicit
 github.com/opencontainers/runtime-spec/specs-go
-<<<<<<< HEAD
 # github.com/opencontainers/selinux v1.11.1
 ## explicit; go 1.19
 github.com/opencontainers/selinux/go-selinux
@@ -1198,10 +1197,7 @@ github.com/openshift-eng/openshift-tests-extension/pkg/flags
 github.com/openshift-eng/openshift-tests-extension/pkg/ginkgo
 github.com/openshift-eng/openshift-tests-extension/pkg/util/sets
 github.com/openshift-eng/openshift-tests-extension/pkg/version
-# github.com/openshift/api v0.0.0-20250425163235-9b80d67473bc
-=======
 # github.com/openshift/api v0.0.0-20250507083537-f1581277fdec
->>>>>>> af479943c (platform_helpers: Add support for vSphere)
 ## explicit; go 1.23.0
 github.com/openshift/api
 github.com/openshift/api/annotations
