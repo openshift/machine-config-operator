@@ -926,7 +926,7 @@ func CalculateConfigFileDiffs(oldIgnConfig, newIgnConfig *ign3types.Config) []st
 // that are different between them
 //
 //nolint:dupl
-func CalculateConfigUnitDiffs(oldIgnConfig, newIgnConfig *ign3types.Config) []string {
+func CalculateConfigUnitDiffs(oldIgnConfig, newIgnConfig *ign3types.Config) ([]string, []ign3types.Unit) {
 	// Go through the units and see what is new or different
 	oldUnitSet := make(map[string]ign3types.Unit)
 	for _, u := range oldIgnConfig.Systemd.Units {
@@ -946,16 +946,19 @@ func CalculateConfigUnitDiffs(oldIgnConfig, newIgnConfig *ign3types.Config) []st
 		}
 	}
 
+	addedOrChangedUnits := []ign3types.Unit{}
 	// Now check if any units were added/changed
 	for name, newUnit := range newUnitSet {
 		oldUnit, ok := oldUnitSet[name]
 		if !ok {
 			diffUnitSet = append(diffUnitSet, name)
+			addedOrChangedUnits = append(addedOrChangedUnits, newUnit)
 		} else if !reflect.DeepEqual(oldUnit, newUnit) {
 			diffUnitSet = append(diffUnitSet, name)
+			addedOrChangedUnits = append(addedOrChangedUnits, newUnit)
 		}
 	}
-	return diffUnitSet
+	return diffUnitSet, addedOrChangedUnits
 }
 
 // NewIgnFile returns a simple ignition3 file from just path and file contents.
