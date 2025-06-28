@@ -718,7 +718,7 @@ spec:
                                     /<datacenter>/network/<portgroup>.
                                   items:
                                     type: string
-                                  maxItems: 1
+                                  maxItems: 10
                                   minItems: 1
                                   type: array
                                   x-kubernetes-list-type: atomic
