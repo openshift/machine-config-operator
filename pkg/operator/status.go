@@ -63,6 +63,7 @@ func (optr *Operator) syncRelatedObjects(co *configv1.ClusterOperator) {
 		{Group: "machineconfiguration.openshift.io", Resource: "kubeletconfigs"},
 		{Group: "machineconfiguration.openshift.io", Resource: "containerruntimeconfigs"},
 		{Group: "machineconfiguration.openshift.io", Resource: "machineconfigs"},
+		{Group: "operator.openshift.io", Resource: "machineconfigurations"},
 		// gathered because the machineconfigs created container bootstrap credentials and node configuration that gets reflected via the API and is needed for debugging
 		{Group: "", Resource: "nodes"},
 		// Gathered for the on-prem services running in static pods.
@@ -591,6 +592,7 @@ func (optr *Operator) initializeClusterOperator() (*configv1.ClusterOperator, er
 		{Group: "machineconfiguration.openshift.io", Resource: "machineconfigpools", Name: "master"},
 		{Group: "machineconfiguration.openshift.io", Resource: "machineconfigpools", Name: "worker"},
 		{Group: "machineconfiguration.openshift.io", Resource: "controllerconfigs", Name: "machine-config-controller"},
+		{Group: "operator.openshift.io", Resource: "machineconfigurations"},
 	}
 	// During an installation we report the RELEASE_VERSION as soon as the component is created.
 	// For both normal runs and upgrades, this code isn't hit and we get the right version every
