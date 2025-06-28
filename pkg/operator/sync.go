@@ -1276,14 +1276,10 @@ func (optr *Operator) reconcileMachineOSBuilder(mob *appsv1.Deployment) error {
 
 	// If we have opted-in pools and the Machine OS Builder deployment is either
 	// not running or doesn't have the correct replica count, scale it up.
-	correctReplicaCount := optr.hasCorrectReplicaCount(mob)
-	if len(layeredMCPs) != 0 && (!isRunning || !correctReplicaCount) {
-		if !correctReplicaCount {
-			klog.Infof("Adjusting Machine OS Builder pod replica count because MachineConfigPool(s) opted into layering")
-			return optr.updateMachineOSBuilderDeployment(mob, 1, layeredMCPs)
-		}
-		klog.Infof("Starting Machine OS Builder pod because MachineConfigPool(s) opted into layering")
-		return optr.startMachineOSBuilderDeployment(mob, layeredMCPs)
+	// This also validates the deployment config
+	if len(layeredMCPs) != 0 {
+		klog.Infof("Starting or Updating Machine OS Builder pod because MachineConfigPool(s) opted into layering")
+		return optr.startOrUpdateMachineOSBuilderDeployment(mob, 1, layeredMCPs)
 	}
 
 	// If we do not have opted-in pools and the Machine OS Builder deployment is
@@ -1293,10 +1289,6 @@ func (optr *Operator) reconcileMachineOSBuilder(mob *appsv1.Deployment) error {
 		return optr.stopMachineOSBuilderDeployment(mob.Name)
 	}
 
-	// if we are in ocb, but for some reason we dont need to do an update to the deployment, we still need to validate config
-	if len(layeredMCPs) != 0 {
-		return build.ValidateOnClusterBuildConfig(optr.kubeClient, optr.client, layeredMCPs)
-	}
 	return nil
 }
 
@@ -1330,16 +1322,9 @@ func (optr *Operator) stopMachineOSBuilderDeployment(name string) error {
 	return optr.kubeClient.AppsV1().Deployments(ctrlcommon.MCONamespace).Delete(context.TODO(), name, metav1.DeleteOptions{})
 }
 
-// Determines if the Machine OS Builder has the correct replica count.
-func (optr *Operator) hasCorrectReplicaCount(mob *appsv1.Deployment) bool {
-	apiMob, err := optr.deployLister.Deployments(ctrlcommon.MCONamespace).Get(mob.Name)
-	if err == nil && *apiMob.Spec.Replicas == 1 {
-		return true
-	}
-	return false
-}
-
-func (optr *Operator) updateMachineOSBuilderDeployment(mob *appsv1.Deployment, replicas int32, layeredMCPs []*mcfgv1.MachineConfigPool) error {
+// startOrUpdateMachineOSBuilderDeployment starts or updates the Machine OS Builder Deployment based on
+// the replica count
+func (optr *Operator) startOrUpdateMachineOSBuilderDeployment(mob *appsv1.Deployment, replicas int32, layeredMCPs []*mcfgv1.MachineConfigPool) error {
 	if err := build.ValidateOnClusterBuildConfig(optr.kubeClient, optr.client, layeredMCPs); err != nil {
 		return fmt.Errorf("could not update Machine OS Builder deployment: %w", err)
 	}
@@ -1349,18 +1334,28 @@ func (optr *Operator) updateMachineOSBuilderDeployment(mob *appsv1.Deployment, r
 		return fmt.Errorf("could not apply Machine OS Builder deployment: %w", err)
 	}
 
-	scale := &autoscalingv1.Scale{
-		ObjectMeta: mob.ObjectMeta,
-		Spec: autoscalingv1.ScaleSpec{
-			Replicas: replicas,
-		},
-	}
-
-	_, err = optr.kubeClient.AppsV1().Deployments(ctrlcommon.MCONamespace).UpdateScale(context.TODO(), mob.Name, scale, metav1.UpdateOptions{})
+	// Fetch current scale to determine if we need to update
+	currentScale, err := optr.kubeClient.AppsV1().Deployments(ctrlcommon.MCONamespace).GetScale(context.TODO(), mob.Name, metav1.GetOptions{})
 	if err != nil {
-		return fmt.Errorf("could not scale Machine OS Builder: %w", err)
+		return fmt.Errorf("could not get current scale for Machine OS Builder: %w", err)
 	}
 
+	// Update if replicas is not what we want
+	if currentScale.Spec.Replicas != replicas {
+		scale := &autoscalingv1.Scale{
+			ObjectMeta: mob.ObjectMeta,
+			Spec: autoscalingv1.ScaleSpec{
+				Replicas: replicas,
+			},
+		}
+
+		_, err = optr.kubeClient.AppsV1().Deployments(ctrlcommon.MCONamespace).UpdateScale(context.TODO(), mob.Name, scale, metav1.UpdateOptions{})
+		if err != nil {
+			return fmt.Errorf("could not scale Machine OS Builder: %w", err)
+		}
+	}
+
+	// Wait for rollout if spec was updated
 	if updated {
 		if err := optr.waitForDeploymentRollout(mob); err != nil {
 			return fmt.Errorf("could not wait for Machine OS Builder deployment rollout: %w", err)
@@ -1526,27 +1521,6 @@ func (optr *Operator) reconcileGlobalPullSecretCopy(layeredMCPs []*mcfgv1.Machin
 		klog.Infof("updating %s", ctrlcommon.GlobalPullSecretCopyName)
 		_, err := optr.kubeClient.CoreV1().Secrets(ctrlcommon.MCONamespace).Update(context.TODO(), globalPullSecretCopy, metav1.UpdateOptions{})
 		return err
-	}
-
-	return nil
-}
-
-// Updates the Machine OS Builder Deployment, creating it if it does not exist.
-func (optr *Operator) startMachineOSBuilderDeployment(mob *appsv1.Deployment, layeredMCPs []*mcfgv1.MachineConfigPool) error {
-	if err := build.ValidateOnClusterBuildConfig(optr.kubeClient, optr.client, layeredMCPs); err != nil {
-		return fmt.Errorf("could not start Machine OS Builder: %w", err)
-	}
-
-	// start machine os builder deployment
-	_, updated, err := mcoResourceApply.ApplyDeployment(optr.kubeClient.AppsV1(), mob)
-	if err != nil {
-		return fmt.Errorf("could not apply Machine OS Builder deployment: %w", err)
-	}
-
-	if updated {
-		if err := optr.waitForDeploymentRollout(mob); err != nil {
-			return fmt.Errorf("could not wait for Machine OS Builder deployment rollout: %w", err)
-		}
 	}
 
 	return nil
