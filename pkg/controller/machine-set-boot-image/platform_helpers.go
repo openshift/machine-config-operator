@@ -2,6 +2,7 @@ package machineset
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/coreos/stream-metadata-go/stream"
 	corev1 "k8s.io/api/core/v1"
@@ -40,12 +41,23 @@ func reconcileGCP(machineSet *machinev1beta1.MachineSet, configMap *corev1.Confi
 	patchRequired = false
 	newProviderSpec := providerSpec.DeepCopy()
 	for idx, disk := range newProviderSpec.Disks {
-		if newBootImage != disk.Image && disk.Boot {
-			klog.Infof("New target boot image: %s", newBootImage)
-			klog.Infof("Current image: %s", disk.Image)
-			patchRequired = true
-			newProviderSpec.Disks[idx].Image = newBootImage
+		// Do not update non-boot disks
+		if !disk.Boot {
+			continue
 		}
+		// Nothing to update on a match
+		if newBootImage == disk.Image {
+			continue
+		}
+		klog.Infof("New target boot image: %s", newBootImage)
+		klog.Infof("Current image: %s", disk.Image)
+		// If image does not start with "projects/rhcos-cloud/global/images", this is a custom boot image.
+		if !strings.HasPrefix(disk.Image, "projects/rhcos-cloud/global/images") {
+			klog.Infof("current boot image %s is unknown, skipping update of MachineSet %s", disk.Image, machineSet.Name)
+			return false, nil, nil
+		}
+		patchRequired = true
+		newProviderSpec.Disks[idx].Image = newBootImage
 	}
 
 	// For now, hardcode to the managed worker secret, until Custom Pool Booting is implemented. When that happens, this will have to
@@ -125,14 +137,9 @@ func reconcileAWS(machineSet *machinev1beta1.MachineSet, configMap *corev1.Confi
 	// Use the GetAwsRegionImage function to find the correct AMI for the region and architecture
 	awsRegionImage, err := streamData.GetAwsRegionImage(arch, region)
 	if err != nil {
-		// On error, attempt to default to us-east-1 region instead
-		// This mirrors the installer approach:
-		// https://github.com/openshift/installer/blob/08aa270e20db77b237306b3f3700d6b2ad654abc/pkg/asset/rhcos/image.go#L99-L103
-		klog.Infof("failed to get AMI for region %s: %v", region, err)
-		if awsRegionImage, err = streamData.GetAwsRegionImage(arch, "us-east-1"); err != nil {
-			return false, nil, fmt.Errorf("failed to get default AMI for region %s: %v", region, err)
-		}
-		klog.Infof("Using AMI for region us-east-1 %s", awsRegionImage.Image)
+		// On a region not found error, log and skip this MachineSet
+		klog.Infof("failed to get AMI for region %s: %v, skipping update of MachineSet %s", region, err, machineSet.Name)
+		return false, nil, nil
 	}
 
 	newami := awsRegionImage.Image
@@ -142,14 +149,23 @@ func reconcileAWS(machineSet *machinev1beta1.MachineSet, configMap *corev1.Confi
 	patchRequired = false
 	newProviderSpec := providerSpec.DeepCopy()
 
-	// AMIs can be defined via filters, which is the case for OKD. In such cases,
-	// ID will be nil for the very first update, and a default value will need to
-	// be populated
-	currentAMI := "undefined AMI ID"
-	if newProviderSpec.AMI.ID != nil {
-		currentAMI = *newProviderSpec.AMI.ID
+	// If the MachineSet does not use an AMI ID, this is unsupported, log and skip the MachineSet
+	// This happens when the installer has copied an AMI at install-time
+	// Related bug: https://issues.redhat.com/browse/OCPBUGS-57506
+	if newProviderSpec.AMI.ID == nil {
+		klog.Infof("current AMI.ID is undefined, skipping update of MachineSet %s", machineSet.Name)
+		return false, nil, nil
 	}
+
+	currentAMI := *newProviderSpec.AMI.ID
+
 	if newami != currentAMI {
+		// Validate that we're allowed to update from the current AMI
+		if !AllowedAMIs.Has(currentAMI) {
+			klog.Infof("current AMI %s is unknown, skipping update of MachineSet %s", currentAMI, machineSet.Name)
+			return false, nil, nil
+		}
+
 		klog.Infof("New target boot image: %s: %s", region, newami)
 		klog.Infof("Current image: %s: %s", region, currentAMI)
 		patchRequired = true
