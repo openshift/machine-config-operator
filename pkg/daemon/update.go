@@ -1064,10 +1064,6 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		klog.Errorf("Error making MCN for Update Compatible: %v", err)
 	}
 
-	err = upgrademonitor.GenerateAndApplyMachineConfigNodeSpec(dn.featureGatesAccessor, pool, dn.node, dn.mcfgClient)
-	if err != nil {
-		klog.Errorf("Error making MCN spec for Update Compatible: %v", err)
-	}
 	if drain {
 		if err := dn.performDrain(); err != nil {
 			return err
