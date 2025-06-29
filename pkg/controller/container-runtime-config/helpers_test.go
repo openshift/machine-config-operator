@@ -15,7 +15,6 @@ import (
 	"github.com/containers/image/v5/types"
 	storageconfig "github.com/containers/storage/pkg/config"
 	apicfgv1 "github.com/openshift/api/config/v1"
-	apicfgv1alpha1 "github.com/openshift/api/config/v1alpha1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	"github.com/stretchr/testify/assert"
@@ -467,34 +466,34 @@ func TestUpdateRegistriesConfig(t *testing.T) {
 	}
 }
 
-func clusterImagePolicyTestCRs() map[string]apicfgv1alpha1.ClusterImagePolicy {
+func clusterImagePolicyTestCRs() map[string]apicfgv1.ClusterImagePolicy {
 	testFulcioData, _ := b64.StdEncoding.DecodeString("dGVzdC1jYS1kYXRhLWRhdGE=")
 	testRekorKeyData, _ := b64.StdEncoding.DecodeString("dGVzdC1yZWtvci1rZXktZGF0YQ==")
 	testKeyData, _ := b64.StdEncoding.DecodeString("dGVzdC1rZXktZGF0YQ==")
 	testCertsData, _ := b64.StdEncoding.DecodeString("LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJBVEE9Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0=")
 
-	testClusterImagePolicyCRs := map[string]apicfgv1alpha1.ClusterImagePolicy{
+	testClusterImagePolicyCRs := map[string]apicfgv1.ClusterImagePolicy{
 		"test-cr0": {
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "test-cr0",
 			},
-			Spec: apicfgv1alpha1.ClusterImagePolicySpec{
-				Scopes: []apicfgv1alpha1.ImageScope{"test0.com"},
-				Policy: apicfgv1alpha1.Policy{
-					RootOfTrust: apicfgv1alpha1.PolicyRootOfTrust{
-						PolicyType: apicfgv1alpha1.FulcioCAWithRekorRootOfTrust,
-						FulcioCAWithRekor: &apicfgv1alpha1.FulcioCAWithRekor{
+			Spec: apicfgv1.ClusterImagePolicySpec{
+				Scopes: []apicfgv1.ImageScope{"test0.com"},
+				Policy: apicfgv1.Policy{
+					RootOfTrust: apicfgv1.PolicyRootOfTrust{
+						PolicyType: apicfgv1.FulcioCAWithRekorRootOfTrust,
+						FulcioCAWithRekor: &apicfgv1.FulcioCAWithRekor{
 							FulcioCAData: testFulcioData,
 							RekorKeyData: testRekorKeyData,
-							FulcioSubject: apicfgv1alpha1.PolicyFulcioSubject{
+							FulcioSubject: apicfgv1.PolicyFulcioSubject{
 								OIDCIssuer:  "https://OIDC.example.com",
 								SignedEmail: "test-user@example.com",
 							},
 						},
 					},
-					SignedIdentity: apicfgv1alpha1.PolicyIdentity{
-						MatchPolicy: apicfgv1alpha1.IdentityMatchPolicyRemapIdentity,
-						PolicyMatchRemapIdentity: &apicfgv1alpha1.PolicyMatchRemapIdentity{
+					SignedIdentity: &apicfgv1.PolicyIdentity{
+						MatchPolicy: apicfgv1.IdentityMatchPolicyRemapIdentity,
+						PolicyMatchRemapIdentity: &apicfgv1.PolicyMatchRemapIdentity{
 							Prefix:       "test-remap-prefix",
 							SignedPrefix: "test-remap-signed-prefix",
 						},
@@ -506,19 +505,19 @@ func clusterImagePolicyTestCRs() map[string]apicfgv1alpha1.ClusterImagePolicy {
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "test-cr1",
 			},
-			Spec: apicfgv1alpha1.ClusterImagePolicySpec{
-				Scopes: []apicfgv1alpha1.ImageScope{"test0.com", "test1.com"},
-				Policy: apicfgv1alpha1.Policy{
-					RootOfTrust: apicfgv1alpha1.PolicyRootOfTrust{
-						PolicyType: apicfgv1alpha1.PublicKeyRootOfTrust,
-						PublicKey: &apicfgv1alpha1.PublicKey{
+			Spec: apicfgv1.ClusterImagePolicySpec{
+				Scopes: []apicfgv1.ImageScope{"test0.com", "test1.com"},
+				Policy: apicfgv1.Policy{
+					RootOfTrust: apicfgv1.PolicyRootOfTrust{
+						PolicyType: apicfgv1.PublicKeyRootOfTrust,
+						PublicKey: &apicfgv1.PublicKey{
 							KeyData:      testKeyData,
 							RekorKeyData: testRekorKeyData,
 						},
 					},
-					SignedIdentity: apicfgv1alpha1.PolicyIdentity{
-						MatchPolicy: apicfgv1alpha1.IdentityMatchPolicyRemapIdentity,
-						PolicyMatchRemapIdentity: &apicfgv1alpha1.PolicyMatchRemapIdentity{
+					SignedIdentity: &apicfgv1.PolicyIdentity{
+						MatchPolicy: apicfgv1.IdentityMatchPolicyRemapIdentity,
+						PolicyMatchRemapIdentity: &apicfgv1.PolicyMatchRemapIdentity{
 							Prefix:       "test-remap-prefix",
 							SignedPrefix: "test-remap-signed-prefix",
 						},
@@ -530,12 +529,12 @@ func clusterImagePolicyTestCRs() map[string]apicfgv1alpha1.ClusterImagePolicy {
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "test-cr2",
 			},
-			Spec: apicfgv1alpha1.ClusterImagePolicySpec{
-				Scopes: []apicfgv1alpha1.ImageScope{"a.com/a1/a2", "a.com/a1/a2@sha256:0000000000000000000000000000000000000000000000000000000000000000", "*.example.com", "policy.scope", "foo.example.com/ns/repo"},
-				Policy: apicfgv1alpha1.Policy{
-					RootOfTrust: apicfgv1alpha1.PolicyRootOfTrust{
-						PolicyType: apicfgv1alpha1.PublicKeyRootOfTrust,
-						PublicKey: &apicfgv1alpha1.PublicKey{
+			Spec: apicfgv1.ClusterImagePolicySpec{
+				Scopes: []apicfgv1.ImageScope{"a.com/a1/a2", "a.com/a1/a2@sha256:0000000000000000000000000000000000000000000000000000000000000000", "*.example.com", "policy.scope", "foo.example.com/ns/repo"},
+				Policy: apicfgv1.Policy{
+					RootOfTrust: apicfgv1.PolicyRootOfTrust{
+						PolicyType: apicfgv1.PublicKeyRootOfTrust,
+						PublicKey: &apicfgv1.PublicKey{
 							KeyData:      testKeyData,
 							RekorKeyData: testRekorKeyData,
 						},
@@ -547,15 +546,15 @@ func clusterImagePolicyTestCRs() map[string]apicfgv1alpha1.ClusterImagePolicy {
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "test-cr3",
 			},
-			Spec: apicfgv1alpha1.ClusterImagePolicySpec{
-				Scopes: []apicfgv1alpha1.ImageScope{"test3.com/ns/repo"},
-				Policy: apicfgv1alpha1.Policy{
-					RootOfTrust: apicfgv1alpha1.PolicyRootOfTrust{
-						PolicyType: apicfgv1alpha1.PKIRootOfTrust,
-						PKI: &apicfgv1alpha1.PKI{
+			Spec: apicfgv1.ClusterImagePolicySpec{
+				Scopes: []apicfgv1.ImageScope{"test3.com/ns/repo"},
+				Policy: apicfgv1.Policy{
+					RootOfTrust: apicfgv1.PolicyRootOfTrust{
+						PolicyType: apicfgv1.PKIRootOfTrust,
+						PKI: &apicfgv1.PKI{
 							CertificateAuthorityRootsData:         testCertsData,
 							CertificateAuthorityIntermediatesData: testCertsData,
-							PKICertificateSubject: apicfgv1alpha1.PKICertificateSubject{
+							PKICertificateSubject: apicfgv1.PKICertificateSubject{
 								Email:    "test-user@example.com",
 								Hostname: "my-host.example.com",
 							},
@@ -568,22 +567,22 @@ func clusterImagePolicyTestCRs() map[string]apicfgv1alpha1.ClusterImagePolicy {
 	return testClusterImagePolicyCRs
 }
 
-func imagePolicyTestCRs() map[string]apicfgv1alpha1.ImagePolicy {
+func imagePolicyTestCRs() map[string]apicfgv1.ImagePolicy {
 	testKeyData, _ := b64.StdEncoding.DecodeString("dGVzdC1rZXktZGF0YQ==")
 	testCertsData, _ := b64.StdEncoding.DecodeString("LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJBVEE9Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0=")
 
-	testImagePolicyCRs := map[string]apicfgv1alpha1.ImagePolicy{
+	testImagePolicyCRs := map[string]apicfgv1.ImagePolicy{
 		"test-cr0": {
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-cr0",
 				Namespace: "testnamespace",
 			},
-			Spec: apicfgv1alpha1.ImagePolicySpec{
-				Scopes: []apicfgv1alpha1.ImageScope{"test0.com", "test2.com"},
-				Policy: apicfgv1alpha1.Policy{
-					RootOfTrust: apicfgv1alpha1.PolicyRootOfTrust{
-						PolicyType: apicfgv1alpha1.PublicKeyRootOfTrust,
-						PublicKey: &apicfgv1alpha1.PublicKey{
+			Spec: apicfgv1.ImagePolicySpec{
+				Scopes: []apicfgv1.ImageScope{"test0.com", "test2.com"},
+				Policy: apicfgv1.Policy{
+					RootOfTrust: apicfgv1.PolicyRootOfTrust{
+						PolicyType: apicfgv1.PublicKeyRootOfTrust,
+						PublicKey: &apicfgv1.PublicKey{
 							KeyData: testKeyData,
 						},
 					},
@@ -595,12 +594,12 @@ func imagePolicyTestCRs() map[string]apicfgv1alpha1.ImagePolicy {
 				Name:      "test-cr1",
 				Namespace: "testnamespace",
 			},
-			Spec: apicfgv1alpha1.ImagePolicySpec{
-				Scopes: []apicfgv1alpha1.ImageScope{"a.com/a1/a2", "a.com/a1/a2@sha256:0000000000000000000000000000000000000000000000000000000000000000", "*.example.com", "policy.scope", "foo.example.com/ns/repo"},
-				Policy: apicfgv1alpha1.Policy{
-					RootOfTrust: apicfgv1alpha1.PolicyRootOfTrust{
-						PolicyType: apicfgv1alpha1.PublicKeyRootOfTrust,
-						PublicKey: &apicfgv1alpha1.PublicKey{
+			Spec: apicfgv1.ImagePolicySpec{
+				Scopes: []apicfgv1.ImageScope{"a.com/a1/a2", "a.com/a1/a2@sha256:0000000000000000000000000000000000000000000000000000000000000000", "*.example.com", "policy.scope", "foo.example.com/ns/repo"},
+				Policy: apicfgv1.Policy{
+					RootOfTrust: apicfgv1.PolicyRootOfTrust{
+						PolicyType: apicfgv1.PublicKeyRootOfTrust,
+						PublicKey: &apicfgv1.PublicKey{
 							KeyData: testKeyData,
 						},
 					},
@@ -612,12 +611,12 @@ func imagePolicyTestCRs() map[string]apicfgv1alpha1.ImagePolicy {
 				Name:      "test-cr0",
 				Namespace: "testnamespace",
 			},
-			Spec: apicfgv1alpha1.ImagePolicySpec{
-				Scopes: []apicfgv1alpha1.ImageScope{"test2.com"},
-				Policy: apicfgv1alpha1.Policy{
-					RootOfTrust: apicfgv1alpha1.PolicyRootOfTrust{
-						PolicyType: apicfgv1alpha1.PublicKeyRootOfTrust,
-						PublicKey: &apicfgv1alpha1.PublicKey{
+			Spec: apicfgv1.ImagePolicySpec{
+				Scopes: []apicfgv1.ImageScope{"test2.com"},
+				Policy: apicfgv1.Policy{
+					RootOfTrust: apicfgv1.PolicyRootOfTrust{
+						PolicyType: apicfgv1.PublicKeyRootOfTrust,
+						PublicKey: &apicfgv1.PublicKey{
 							KeyData: testKeyData,
 						},
 					},
@@ -629,12 +628,12 @@ func imagePolicyTestCRs() map[string]apicfgv1alpha1.ImagePolicy {
 				Name:      "test-cr3",
 				Namespace: "test-1-namespace",
 			},
-			Spec: apicfgv1alpha1.ImagePolicySpec{
-				Scopes: []apicfgv1alpha1.ImageScope{"test3.com"},
-				Policy: apicfgv1alpha1.Policy{
-					RootOfTrust: apicfgv1alpha1.PolicyRootOfTrust{
-						PolicyType: apicfgv1alpha1.PublicKeyRootOfTrust,
-						PublicKey: &apicfgv1alpha1.PublicKey{
+			Spec: apicfgv1.ImagePolicySpec{
+				Scopes: []apicfgv1.ImageScope{"test3.com"},
+				Policy: apicfgv1.Policy{
+					RootOfTrust: apicfgv1.PolicyRootOfTrust{
+						PolicyType: apicfgv1.PublicKeyRootOfTrust,
+						PublicKey: &apicfgv1.PublicKey{
 							KeyData: testKeyData,
 						},
 					},
@@ -646,15 +645,15 @@ func imagePolicyTestCRs() map[string]apicfgv1alpha1.ImagePolicy {
 				Name:      "test-cr4",
 				Namespace: "testnamespace",
 			},
-			Spec: apicfgv1alpha1.ImagePolicySpec{
-				Scopes: []apicfgv1alpha1.ImageScope{"test4.com/ns-policy/repo"},
-				Policy: apicfgv1alpha1.Policy{
-					RootOfTrust: apicfgv1alpha1.PolicyRootOfTrust{
-						PolicyType: apicfgv1alpha1.PKIRootOfTrust,
-						PKI: &apicfgv1alpha1.PKI{
+			Spec: apicfgv1.ImagePolicySpec{
+				Scopes: []apicfgv1.ImageScope{"test4.com/ns-policy/repo"},
+				Policy: apicfgv1.Policy{
+					RootOfTrust: apicfgv1.PolicyRootOfTrust{
+						PolicyType: apicfgv1.PKIRootOfTrust,
+						PKI: &apicfgv1.PKI{
 							CertificateAuthorityRootsData:         testCertsData,
 							CertificateAuthorityIntermediatesData: testCertsData,
-							PKICertificateSubject: apicfgv1alpha1.PKICertificateSubject{
+							PKICertificateSubject: apicfgv1.PKICertificateSubject{
 								Email:    "test-user@example.com",
 								Hostname: "my-host.example.com",
 							},
@@ -688,7 +687,7 @@ func TestUpdatePolicyJSON(t *testing.T) {
 	tests := []struct {
 		name               string
 		allowed, blocked   []string
-		clusterimagepolicy *apicfgv1alpha1.ClusterImagePolicy
+		clusterimagepolicy *apicfgv1.ClusterImagePolicy
 		errorExpected      bool
 		want               signature.Policy
 	}{
@@ -867,7 +866,7 @@ func TestUpdatePolicyJSON(t *testing.T) {
 			)
 
 			if tt.clusterimagepolicy != nil {
-				clusterImagePolicies, _, policyerr = getValidScopePolicies([]*apicfgv1alpha1.ClusterImagePolicy{tt.clusterimagepolicy}, nil, nil)
+				clusterImagePolicies, _, policyerr = getValidScopePolicies([]*apicfgv1.ClusterImagePolicy{tt.clusterimagepolicy}, nil, nil)
 				require.NoError(t, policyerr)
 			}
 			got, err := updatePolicyJSON(templateBytes, tt.blocked, tt.allowed, "release-reg.io/image/release", clusterImagePolicies)
@@ -1350,8 +1349,8 @@ func TestUpdateStorageConfig(t *testing.T) {
 func TestGetValidScopePolicies(t *testing.T) {
 	type testcase struct {
 		name                   string
-		clusterImagePolicyCRs  []*apicfgv1alpha1.ClusterImagePolicy
-		imagePolicyCRs         []*apicfgv1alpha1.ImagePolicy
+		clusterImagePolicyCRs  []*apicfgv1.ClusterImagePolicy
+		imagePolicyCRs         []*apicfgv1.ImagePolicy
 		expectedScopePolicies  map[string]signature.PolicyRequirements
 		expectedScopeNamespace map[string]map[string]signature.PolicyRequirements
 		errorExpected          bool
@@ -1371,7 +1370,7 @@ func TestGetValidScopePolicies(t *testing.T) {
 	tests := []testcase{
 		{
 			name:                  "cluster CRs contain the same scope",
-			clusterImagePolicyCRs: []*apicfgv1alpha1.ClusterImagePolicy{&clusterTestCR0, &clusterTestCR1},
+			clusterImagePolicyCRs: []*apicfgv1.ClusterImagePolicy{&clusterTestCR0, &clusterTestCR1},
 			expectedScopePolicies: map[string]signature.PolicyRequirements{
 				"test0.com": {clusterPolicyreq0, clusterPolicyreq1},
 				"test1.com": {clusterPolicyreq1},
@@ -1381,8 +1380,8 @@ func TestGetValidScopePolicies(t *testing.T) {
 		},
 		{
 			name:                  "cluster and namespace CRs contains the same scope",
-			clusterImagePolicyCRs: []*apicfgv1alpha1.ClusterImagePolicy{&clusterTestCR0, &clusterTestCR1},
-			imagePolicyCRs:        []*apicfgv1alpha1.ImagePolicy{&imgPolicyTestCR0},
+			clusterImagePolicyCRs: []*apicfgv1.ClusterImagePolicy{&clusterTestCR0, &clusterTestCR1},
+			imagePolicyCRs:        []*apicfgv1.ImagePolicy{&imgPolicyTestCR0},
 			expectedScopePolicies: map[string]signature.PolicyRequirements{
 				"test0.com": {clusterPolicyreq0, clusterPolicyreq1},
 				"test1.com": {clusterPolicyreq1},
@@ -1418,14 +1417,14 @@ func TestGenerateSigstoreRegistriesConfig(t *testing.T) {
 	testClusterImagePolicyCR2 := clusterImagePolicyTestCRs()["test-cr2"]
 	testImagePolicyCR1 := imagePolicyTestCRs()["test-cr1"]
 
-	clusterScopePolicies, _, err := getValidScopePolicies([]*apicfgv1alpha1.ClusterImagePolicy{&testClusterImagePolicyCR2}, nil, nil)
+	clusterScopePolicies, _, err := getValidScopePolicies([]*apicfgv1.ClusterImagePolicy{&testClusterImagePolicyCR2}, nil, nil)
 	require.NoError(t, err)
 
-	_, scopeNamespacePolicies, err := getValidScopePolicies(nil, []*apicfgv1alpha1.ImagePolicy{&testImagePolicyCR1}, nil)
+	_, scopeNamespacePolicies, err := getValidScopePolicies(nil, []*apicfgv1.ImagePolicy{&testImagePolicyCR1}, nil)
 	require.NoError(t, err)
 
 	testImagePolicyCR0 := imagePolicyTestCRs()["test-cr0"]
-	niMirrorClusterScopePolicies, noMirrorScopeNamespacePolicies, err := getValidScopePolicies([]*apicfgv1alpha1.ClusterImagePolicy{&testClusterImagePolicyCR2}, []*apicfgv1alpha1.ImagePolicy{&testImagePolicyCR0}, nil)
+	niMirrorClusterScopePolicies, noMirrorScopeNamespacePolicies, err := getValidScopePolicies([]*apicfgv1.ClusterImagePolicy{&testClusterImagePolicyCR2}, []*apicfgv1.ImagePolicy{&testImagePolicyCR0}, nil)
 	require.NoError(t, err)
 
 	type testcase struct {
@@ -1660,7 +1659,7 @@ func TestGeneratePolicyJSON(t *testing.T) {
 		  }
 	`)
 
-	clusterScopePolicies, _, err := getValidScopePolicies([]*apicfgv1alpha1.ClusterImagePolicy{&testImagePolicyCR0, &testImagePolicyCR3}, nil, nil)
+	clusterScopePolicies, _, err := getValidScopePolicies([]*apicfgv1.ClusterImagePolicy{&testImagePolicyCR0, &testImagePolicyCR3}, nil, nil)
 	require.NoError(t, err)
 
 	templateConfig := signature.Policy{
@@ -2193,7 +2192,7 @@ func TestUpdateNamespacedPolicyJSONs(t *testing.T) {
 		testImagePolicyCR3.ObjectMeta.Namespace: expectTest1namespacedPolicy,
 	}
 
-	clusterScopePolicies, scopeNamespacePolicies, err := getValidScopePolicies([]*apicfgv1alpha1.ClusterImagePolicy{&testImagePolicyCR0, &testImagePolicyCR1}, []*apicfgv1alpha1.ImagePolicy{&testImagePolicyCR2, &testImagePolicyCR3, &testImagePolicyCR4}, nil)
+	clusterScopePolicies, scopeNamespacePolicies, err := getValidScopePolicies([]*apicfgv1.ClusterImagePolicy{&testImagePolicyCR0, &testImagePolicyCR1}, []*apicfgv1.ImagePolicy{&testImagePolicyCR2, &testImagePolicyCR3, &testImagePolicyCR4}, nil)
 	require.NoError(t, err)
 
 	clusterOverridePolicyJSON, err := updatePolicyJSON(templatePolicyBytes, []string{}, []string{}, "release-reg.io/image/release", clusterScopePolicies)
