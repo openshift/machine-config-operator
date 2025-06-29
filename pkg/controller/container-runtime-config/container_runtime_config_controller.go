@@ -12,14 +12,12 @@ import (
 	signature "github.com/containers/image/v5/signature"
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	apicfgv1 "github.com/openshift/api/config/v1"
-	apicfgv1alpha1 "github.com/openshift/api/config/v1alpha1"
 	features "github.com/openshift/api/features"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
 	configinformers "github.com/openshift/client-go/config/informers/externalversions"
 	cligoinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
 	cligolistersv1 "github.com/openshift/client-go/config/listers/config/v1"
-	cligolistersv1alpha1 "github.com/openshift/client-go/config/listers/config/v1alpha1"
 	runtimeutils "github.com/openshift/runtime-utils/pkg/registries"
 
 	operatorinformersv1alpha1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1alpha1"
@@ -107,10 +105,10 @@ type Controller struct {
 	itmsListerSynced cache.InformerSynced
 
 	configInformerFactory          configinformers.SharedInformerFactory
-	clusterImagePolicyLister       cligolistersv1alpha1.ClusterImagePolicyLister
+	clusterImagePolicyLister       cligolistersv1.ClusterImagePolicyLister
 	clusterImagePolicyListerSynced cache.InformerSynced
 
-	imagePolicyLister       cligolistersv1alpha1.ImagePolicyLister
+	imagePolicyLister       cligolistersv1.ImagePolicyLister
 	imagePolicyListerSynced cache.InformerSynced
 	addedPolicyObservers    bool
 
@@ -320,7 +318,7 @@ func (ctrl *Controller) addImagePolicyObservers() {
 		UpdateFunc: ctrl.clusterImagePolicyUpdated,
 		DeleteFunc: ctrl.clusterImagePolicyDeleted,
 	})
-	ctrl.clusterImagePolicyLister = ctrl.configInformerFactory.Config().V1alpha1().ClusterImagePolicies().Lister()
+	ctrl.clusterImagePolicyLister = ctrl.configInformerFactory.Config().V1().ClusterImagePolicies().Lister()
 	ctrl.clusterImagePolicyListerSynced = ctrl.configInformerFactory.Config().V1alpha1().ClusterImagePolicies().Informer().HasSynced
 
 	ctrl.configInformerFactory.Config().V1alpha1().ImagePolicies().Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -328,7 +326,7 @@ func (ctrl *Controller) addImagePolicyObservers() {
 		UpdateFunc: ctrl.imagePolicyUpdated,
 		DeleteFunc: ctrl.imagePolicyDeleted,
 	})
-	ctrl.imagePolicyLister = ctrl.configInformerFactory.Config().V1alpha1().ImagePolicies().Lister()
+	ctrl.imagePolicyLister = ctrl.configInformerFactory.Config().V1().ImagePolicies().Lister()
 	ctrl.imagePolicyListerSynced = ctrl.configInformerFactory.Config().V1alpha1().ImagePolicies().Informer().HasSynced
 }
 
@@ -866,9 +864,9 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 	var (
 		registriesBlocked, policyBlocked, allowedRegs []string
 		releaseImage                                  string
-		clusterImagePolicies                          []*apicfgv1alpha1.ClusterImagePolicy
+		clusterImagePolicies                          []*apicfgv1.ClusterImagePolicy
 		clusterScopePolicies                          map[string]signature.PolicyRequirements
-		imagePolicies                                 []*apicfgv1alpha1.ImagePolicy
+		imagePolicies                                 []*apicfgv1.ImagePolicy
 		scopeNamespacePolicies                        map[string]map[string]signature.PolicyRequirements
 	)
 
@@ -876,14 +874,14 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 		// Find all ClusterImagePolicy objects
 		clusterImagePolicies, err = ctrl.clusterImagePolicyLister.List(labels.Everything())
 		if err != nil && errors.IsNotFound(err) {
-			clusterImagePolicies = []*apicfgv1alpha1.ClusterImagePolicy{}
+			clusterImagePolicies = []*apicfgv1.ClusterImagePolicy{}
 		} else if err != nil {
 			return nil
 		}
 		// Find all ImagePolicy objects
 		imagePolicies, err = ctrl.imagePolicyLister.List(labels.Everything())
 		if err != nil && errors.IsNotFound(err) {
-			imagePolicies = []*apicfgv1alpha1.ImagePolicy{}
+			imagePolicies = []*apicfgv1.ImagePolicy{}
 		} else if err != nil {
 			return nil
 		}
@@ -1068,7 +1066,7 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 
 // getValidScopePolicies returns a map[scope]policyRequirement from ClusterImagePolicy, a map[scope][namespace]policyRequirement from ImagePolicy CRs.
 // It skips ImagePolicy scopes that conflict with ClusterImagePolicy scopes and logs the conflicting scopes in the ImagePolicy Status.
-func getValidScopePolicies(clusterImagePolicies []*apicfgv1alpha1.ClusterImagePolicy, imagePolicies []*apicfgv1alpha1.ImagePolicy, ctrl *Controller) (map[string]signature.PolicyRequirements, map[string]map[string]signature.PolicyRequirements, error) {
+func getValidScopePolicies(clusterImagePolicies []*apicfgv1.ClusterImagePolicy, imagePolicies []*apicfgv1.ImagePolicy, ctrl *Controller) (map[string]signature.PolicyRequirements, map[string]map[string]signature.PolicyRequirements, error) {
 	clusterScopePolicies := make(map[string]signature.PolicyRequirements)
 	namespacePolicies := make(map[string]map[string]signature.PolicyRequirements)
 
@@ -1110,7 +1108,7 @@ func getValidScopePolicies(clusterImagePolicies []*apicfgv1alpha1.ClusterImagePo
 			if len(conflictScopes) > 0 {
 				msg := fmt.Sprintf("has conflicting scope(s) %q that equal to or nest inside existing clusterimagepolicy, only policy from clusterimagepolicy scope(s) will be applied", conflictScopes)
 				klog.V(2).Info(msg)
-				ctrl.syncImagePolicyStatusOnly(namespace, imagePolicy.ObjectMeta.Name, apicfgv1alpha1.ImagePolicyPending, reasonConflictScopes, msg, metav1.ConditionFalse)
+				ctrl.syncImagePolicyStatusOnly(namespace, imagePolicy.ObjectMeta.Name, apicfgv1.ImagePolicyPending, reasonConflictScopes, msg, metav1.ConditionFalse)
 			}
 		}
 	}
@@ -1141,7 +1139,7 @@ func (ctrl *Controller) syncImagePolicyStatusOnly(namespace, imagepolicy, condit
 // RunImageBootstrap generates MachineConfig objects for mcpPools that would have been generated by syncImageConfig,
 // except that mcfgv1.Image is not available.
 func RunImageBootstrap(templateDir string, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy,
-	idmsRules []*apicfgv1.ImageDigestMirrorSet, itmsRules []*apicfgv1.ImageTagMirrorSet, imgCfg *apicfgv1.Image, clusterImagePolicies []*apicfgv1alpha1.ClusterImagePolicy, imagePolicies []*apicfgv1alpha1.ImagePolicy,
+	idmsRules []*apicfgv1.ImageDigestMirrorSet, itmsRules []*apicfgv1.ImageTagMirrorSet, imgCfg *apicfgv1.Image, clusterImagePolicies []*apicfgv1.ClusterImagePolicy, imagePolicies []*apicfgv1.ImagePolicy,
 	fgHandler ctrlcommon.FeatureGatesHandler) ([]*mcfgv1.MachineConfig, error) {
 
 	var (
