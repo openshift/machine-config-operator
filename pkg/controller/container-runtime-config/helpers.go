@@ -23,7 +23,6 @@ import (
 	"github.com/ghodss/yaml"
 	"github.com/opencontainers/go-digest"
 	apicfgv1 "github.com/openshift/api/config/v1"
-	apicfgv1alpha1 "github.com/openshift/api/config/v1alpha1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	"github.com/openshift/runtime-utils/pkg/registries"
 	runtimeutils "github.com/openshift/runtime-utils/pkg/registries"
@@ -852,7 +851,7 @@ func ownerReferenceImageConfig(imageConfig *apicfgv1.Image) metav1.OwnerReferenc
 	}
 }
 
-func policyItemFromSpec(policy apicfgv1alpha1.Policy) (signature.PolicyRequirement, error) {
+func policyItemFromSpec(policy apicfgv1.Policy) (signature.PolicyRequirement, error) {
 	var (
 		sigstorePolicyRequirement signature.PolicyRequirement
 		signedIdentity            signature.PolicyReferenceMatch
@@ -860,12 +859,12 @@ func policyItemFromSpec(policy apicfgv1alpha1.Policy) (signature.PolicyRequireme
 		err                       error
 	)
 	switch policy.RootOfTrust.PolicyType {
-	case apicfgv1alpha1.PublicKeyRootOfTrust:
+	case apicfgv1.PublicKeyRootOfTrust:
 		signedOptions = append(signedOptions, signature.PRSigstoreSignedWithKeyData(policy.RootOfTrust.PublicKey.KeyData))
 		if len(policy.RootOfTrust.PublicKey.RekorKeyData) > 0 {
 			signedOptions = append(signedOptions, signature.PRSigstoreSignedWithRekorPublicKeyData(policy.RootOfTrust.PublicKey.RekorKeyData))
 		}
-	case apicfgv1alpha1.FulcioCAWithRekorRootOfTrust:
+	case apicfgv1.FulcioCAWithRekorRootOfTrust:
 		fulcioOptions := []signature.PRSigstoreSignedFulcioOption{}
 		fulcioOptions = append(fulcioOptions, signature.PRSigstoreSignedFulcioWithCAData(policy.RootOfTrust.FulcioCAWithRekor.FulcioCAData),
 			signature.PRSigstoreSignedFulcioWithOIDCIssuer(policy.RootOfTrust.FulcioCAWithRekor.FulcioSubject.OIDCIssuer),
@@ -876,7 +875,7 @@ func policyItemFromSpec(policy apicfgv1alpha1.Policy) (signature.PolicyRequireme
 			return nil, err
 		}
 		signedOptions = append(signedOptions, signature.PRSigstoreSignedWithFulcio(prSigstoreSignedFulcio), signature.PRSigstoreSignedWithRekorPublicKeyData(policy.RootOfTrust.FulcioCAWithRekor.RekorKeyData))
-	case apicfgv1alpha1.PKIRootOfTrust:
+	case apicfgv1.PKIRootOfTrust:
 		pkiOptions := []signature.PRSigstoreSignedPKIOption{}
 		pkiOptions = append(pkiOptions, signature.PRSigstoreSignedPKIWithCARootsData(policy.RootOfTrust.PKI.CertificateAuthorityRootsData))
 		if len(policy.RootOfTrust.PKI.CertificateAuthorityIntermediatesData) > 0 {
@@ -895,27 +894,30 @@ func policyItemFromSpec(policy apicfgv1alpha1.Policy) (signature.PolicyRequireme
 		signedOptions = append(signedOptions, signature.PRSigstoreSignedWithPKI(prSigstoreSignedPKI))
 	}
 
-	switch policy.SignedIdentity.MatchPolicy {
-	case apicfgv1alpha1.IdentityMatchPolicyRemapIdentity:
-		identity, err := signature.NewPRMRemapIdentity(string(policy.SignedIdentity.PolicyMatchRemapIdentity.Prefix), string(policy.SignedIdentity.PolicyMatchRemapIdentity.SignedPrefix))
-		if err != nil {
-			return nil, fmt.Errorf("error getting signedIdentity for %s: %v", apicfgv1alpha1.IdentityMatchPolicyRemapIdentity, err)
+	if policy.SignedIdentity != nil {
+		switch policy.SignedIdentity.MatchPolicy {
+		case apicfgv1.IdentityMatchPolicyRemapIdentity:
+			identity, err := signature.NewPRMRemapIdentity(string(policy.SignedIdentity.PolicyMatchRemapIdentity.Prefix), string(policy.SignedIdentity.PolicyMatchRemapIdentity.SignedPrefix))
+			if err != nil {
+				return nil, fmt.Errorf("error getting signedIdentity for %s: %v", apicfgv1.IdentityMatchPolicyRemapIdentity, err)
+			}
+			signedIdentity = identity
+		case apicfgv1.IdentityMatchPolicyExactRepository:
+			identity, err := signature.NewPRMExactRepository(string(policy.SignedIdentity.PolicyMatchExactRepository.Repository))
+			if err != nil {
+				return nil, fmt.Errorf("error getting signedIdentity for %s: %v", apicfgv1.IdentityMatchPolicyExactRepository, err)
+			}
+			signedIdentity = identity
+		case apicfgv1.IdentityMatchPolicyMatchRepository:
+			signedIdentity = signature.NewPRMMatchRepository()
+		case apicfgv1.IdentityMatchPolicyMatchRepoDigestOrExact:
+			signedIdentity = signature.NewPRMMatchRepoDigestOrExact()
+		default:
+			return nil, fmt.Errorf("unknown signedIdentity match policy: %s", policy.SignedIdentity.MatchPolicy)
 		}
-		signedIdentity = identity
-	case apicfgv1alpha1.IdentityMatchPolicyExactRepository:
-		identity, err := signature.NewPRMExactRepository(string(policy.SignedIdentity.PolicyMatchExactRepository.Repository))
-		if err != nil {
-			return nil, fmt.Errorf("error getting signedIdentity for %s: %v", apicfgv1alpha1.IdentityMatchPolicyExactRepository, err)
-		}
-		signedIdentity = identity
-	case apicfgv1alpha1.IdentityMatchPolicyMatchRepository:
-		signedIdentity = signature.NewPRMMatchRepository()
-	case apicfgv1alpha1.IdentityMatchPolicyMatchRepoDigestOrExact, "":
+	} else {
 		signedIdentity = signature.NewPRMMatchRepoDigestOrExact()
-	default:
-		return nil, fmt.Errorf("unknown signedIdentity match policy: %s", policy.SignedIdentity.MatchPolicy)
 	}
-
 	signedOptions = append(signedOptions, signature.PRSigstoreSignedWithSignedIdentity(signedIdentity))
 
 	if sigstorePolicyRequirement, err = signature.NewPRSigstoreSigned(signedOptions...); err != nil {

@@ -30,7 +30,6 @@ import (
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	apicfgv1 "github.com/openshift/api/config/v1"
-	apicfgv1alpha1 "github.com/openshift/api/config/v1alpha1"
 	features "github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
@@ -74,8 +73,8 @@ type fixture struct {
 	icspLister               []*apioperatorsv1alpha1.ImageContentSourcePolicy
 	idmsLister               []*apicfgv1.ImageDigestMirrorSet
 	itmsLister               []*apicfgv1.ImageTagMirrorSet
-	clusterImagePolicyLister []*apicfgv1alpha1.ClusterImagePolicy
-	imagePolicyLister        []*apicfgv1alpha1.ImagePolicy
+	clusterImagePolicyLister []*apicfgv1.ClusterImagePolicy
+	imagePolicyLister        []*apicfgv1.ImagePolicy
 
 	actions               []core.Action
 	skipActionsValidation bool
@@ -211,20 +210,20 @@ func newClusterVersionConfig(name, desiredImage string) *apicfgv1.ClusterVersion
 	}
 }
 
-func newClusterImagePolicyWithPublicKey(name string, scopes []string, keyData []byte) *apicfgv1alpha1.ClusterImagePolicy {
-	imgScopes := []apicfgv1alpha1.ImageScope{}
+func newClusterImagePolicyWithPublicKey(name string, scopes []string, keyData []byte) *apicfgv1.ClusterImagePolicy {
+	imgScopes := []apicfgv1.ImageScope{}
 	for _, scope := range scopes {
-		imgScopes = append(imgScopes, apicfgv1alpha1.ImageScope(scope))
+		imgScopes = append(imgScopes, apicfgv1.ImageScope(scope))
 	}
-	return &apicfgv1alpha1.ClusterImagePolicy{
-		TypeMeta:   metav1.TypeMeta{APIVersion: apicfgv1alpha1.SchemeGroupVersion.String()},
+	return &apicfgv1.ClusterImagePolicy{
+		TypeMeta:   metav1.TypeMeta{APIVersion: apicfgv1.SchemeGroupVersion.String()},
 		ObjectMeta: metav1.ObjectMeta{Name: name, UID: types.UID(utilrand.String(5)), Generation: 1},
-		Spec: apicfgv1alpha1.ClusterImagePolicySpec{
+		Spec: apicfgv1.ClusterImagePolicySpec{
 			Scopes: imgScopes,
-			Policy: apicfgv1alpha1.Policy{
-				RootOfTrust: apicfgv1alpha1.PolicyRootOfTrust{
-					PolicyType: apicfgv1alpha1.PublicKeyRootOfTrust,
-					PublicKey: &apicfgv1alpha1.PublicKey{
+			Policy: apicfgv1.Policy{
+				RootOfTrust: apicfgv1.PolicyRootOfTrust{
+					PolicyType: apicfgv1.PublicKeyRootOfTrust,
+					PublicKey: &apicfgv1.PublicKey{
 						KeyData: keyData,
 					},
 				},
@@ -233,20 +232,20 @@ func newClusterImagePolicyWithPublicKey(name string, scopes []string, keyData []
 	}
 }
 
-func newImagePolicyWithPublicKey(name, namespace string, scopes []string, keyData []byte) *apicfgv1alpha1.ImagePolicy {
-	imgScopes := []apicfgv1alpha1.ImageScope{}
+func newImagePolicyWithPublicKey(name, namespace string, scopes []string, keyData []byte) *apicfgv1.ImagePolicy {
+	imgScopes := []apicfgv1.ImageScope{}
 	for _, scope := range scopes {
-		imgScopes = append(imgScopes, apicfgv1alpha1.ImageScope(scope))
+		imgScopes = append(imgScopes, apicfgv1.ImageScope(scope))
 	}
-	return &apicfgv1alpha1.ImagePolicy{
-		TypeMeta:   metav1.TypeMeta{APIVersion: apicfgv1alpha1.SchemeGroupVersion.String()},
+	return &apicfgv1.ImagePolicy{
+		TypeMeta:   metav1.TypeMeta{APIVersion: apicfgv1.SchemeGroupVersion.String()},
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace, UID: types.UID(utilrand.String(5)), Generation: 1},
-		Spec: apicfgv1alpha1.ImagePolicySpec{
+		Spec: apicfgv1.ImagePolicySpec{
 			Scopes: imgScopes,
-			Policy: apicfgv1alpha1.Policy{
-				RootOfTrust: apicfgv1alpha1.PolicyRootOfTrust{
-					PolicyType: apicfgv1alpha1.PublicKeyRootOfTrust,
-					PublicKey: &apicfgv1alpha1.PublicKey{
+			Policy: apicfgv1.Policy{
+				RootOfTrust: apicfgv1.PolicyRootOfTrust{
+					PolicyType: apicfgv1.PublicKeyRootOfTrust,
+					PublicKey: &apicfgv1.PublicKey{
 						KeyData: keyData,
 					},
 				},
@@ -323,10 +322,10 @@ func (f *fixture) newController() *Controller {
 		ci.Config().V1().ImageTagMirrorSets().Informer().GetIndexer().Add(c)
 	}
 	for _, c := range f.clusterImagePolicyLister {
-		ci.Config().V1alpha1().ClusterImagePolicies().Informer().GetIndexer().Add(c)
+		ci.Config().V1().ClusterImagePolicies().Informer().GetIndexer().Add(c)
 	}
 	for _, c := range f.imagePolicyLister {
-		ci.Config().V1alpha1().ImagePolicies().Informer().GetIndexer().Add(c)
+		ci.Config().V1().ImagePolicies().Informer().GetIndexer().Add(c)
 	}
 
 	return c
@@ -473,7 +472,7 @@ type registriesConfigAndPolicyVerifyOptions struct {
 	numberOfImagePolicyNamespaces       int
 }
 
-func (f *fixture) verifyRegistriesConfigAndPolicyJSONContents(t *testing.T, mcName string, imgcfg *apicfgv1.Image, icsp *apioperatorsv1alpha1.ImageContentSourcePolicy, idms *apicfgv1.ImageDigestMirrorSet, itms *apicfgv1.ImageTagMirrorSet, clusterImagePolicy *apicfgv1alpha1.ClusterImagePolicy, imagePolicy *apicfgv1alpha1.ImagePolicy, releaseImageReg string, opts registriesConfigAndPolicyVerifyOptions) {
+func (f *fixture) verifyRegistriesConfigAndPolicyJSONContents(t *testing.T, mcName string, imgcfg *apicfgv1.Image, icsp *apioperatorsv1alpha1.ImageContentSourcePolicy, idms *apicfgv1.ImageDigestMirrorSet, itms *apicfgv1.ImageTagMirrorSet, clusterImagePolicy *apicfgv1.ClusterImagePolicy, imagePolicy *apicfgv1.ImagePolicy, releaseImageReg string, opts registriesConfigAndPolicyVerifyOptions) {
 	icsps := []*apioperatorsv1alpha1.ImageContentSourcePolicy{}
 	if icsp != nil {
 		icsps = append(icsps, icsp)
@@ -486,11 +485,11 @@ func (f *fixture) verifyRegistriesConfigAndPolicyJSONContents(t *testing.T, mcNa
 	if itms != nil {
 		itmss = append(itmss, itms)
 	}
-	clusterImagePolicies := []*apicfgv1alpha1.ClusterImagePolicy{}
+	clusterImagePolicies := []*apicfgv1.ClusterImagePolicy{}
 	if clusterImagePolicy != nil {
 		clusterImagePolicies = append(clusterImagePolicies, clusterImagePolicy)
 	}
-	imagePolicies := []*apicfgv1alpha1.ImagePolicy{}
+	imagePolicies := []*apicfgv1.ImagePolicy{}
 	if imagePolicy != nil {
 		imagePolicies = append(imagePolicies, imagePolicy)
 	}
@@ -499,7 +498,7 @@ func (f *fixture) verifyRegistriesConfigAndPolicyJSONContents(t *testing.T, mcNa
 	verifyRegistriesConfigAndPolicyJSONContents(t, updatedMC, mcName, imgcfg, icsps, idmss, itmss, clusterImagePolicies, imagePolicies, releaseImageReg, opts)
 }
 
-func verifyRegistriesConfigAndPolicyJSONContents(t *testing.T, mc *mcfgv1.MachineConfig, mcName string, imgcfg *apicfgv1.Image, icsps []*apioperatorsv1alpha1.ImageContentSourcePolicy, idmss []*apicfgv1.ImageDigestMirrorSet, itmss []*apicfgv1.ImageTagMirrorSet, clusterImagePolicies []*apicfgv1alpha1.ClusterImagePolicy, imagePolicies []*apicfgv1alpha1.ImagePolicy, releaseImageReg string, opts registriesConfigAndPolicyVerifyOptions) {
+func verifyRegistriesConfigAndPolicyJSONContents(t *testing.T, mc *mcfgv1.MachineConfig, mcName string, imgcfg *apicfgv1.Image, icsps []*apioperatorsv1alpha1.ImageContentSourcePolicy, idmss []*apicfgv1.ImageDigestMirrorSet, itmss []*apicfgv1.ImageTagMirrorSet, clusterImagePolicies []*apicfgv1.ClusterImagePolicy, imagePolicies []*apicfgv1.ImagePolicy, releaseImageReg string, opts registriesConfigAndPolicyVerifyOptions) {
 	// This is not testing updateRegistriesConfig, which has its own tests; this verifies the created object contains the expected
 	// configuration file.
 	// First get the valid blocked registries to ensure we don't block the registry where the release image is from
@@ -1237,8 +1236,8 @@ func TestRunImageBootstrap(t *testing.T) {
 			icspRules             []*apioperatorsv1alpha1.ImageContentSourcePolicy
 			idmsRules             []*apicfgv1.ImageDigestMirrorSet
 			itmsRules             []*apicfgv1.ImageTagMirrorSet
-			clusterImagePolicies  []*apicfgv1alpha1.ClusterImagePolicy
-			imagePolicies         []*apicfgv1alpha1.ImagePolicy
+			clusterImagePolicies  []*apicfgv1.ClusterImagePolicy
+			imagePolicies         []*apicfgv1.ImagePolicy
 			imagePolicyNamespaces int
 		}{
 			{
@@ -1267,10 +1266,10 @@ func TestRunImageBootstrap(t *testing.T) {
 				},
 			},
 			{
-				clusterImagePolicies: []*apicfgv1alpha1.ClusterImagePolicy{
+				clusterImagePolicies: []*apicfgv1.ClusterImagePolicy{
 					&testClusterImagePolicy,
 				},
-				imagePolicies: []*apicfgv1alpha1.ImagePolicy{
+				imagePolicies: []*apicfgv1.ImagePolicy{
 					&testImagePolicy,
 				},
 				imagePolicyNamespaces: 1,
