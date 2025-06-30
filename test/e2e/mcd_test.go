@@ -2,7 +2,6 @@ package e2e_test
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -29,6 +28,7 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
+	"github.com/openshift/machine-config-operator/pkg/secrets"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/openshift/machine-config-operator/test/helpers"
 )
@@ -1051,8 +1051,8 @@ func setupForInternalImageRegistryPullSecretTest(t *testing.T, cs *framework.Cli
 	serviceAccountName := "machine-os-puller"
 	secretName := strings.ReplaceAll(imageRegistryHostname, ".", "-")
 
-	auths := map[string]ctrlcommon.DockerConfigEntry{
-		imageRegistryHostname: ctrlcommon.DockerConfigEntry{
+	auths := secrets.DockerConfig{
+		imageRegistryHostname: secrets.DockerConfigEntry{
 			Username: "user",
 			Password: "secret",
 			Email:    "user@hostname.com",
@@ -1060,19 +1060,14 @@ func setupForInternalImageRegistryPullSecretTest(t *testing.T, cs *framework.Cli
 		},
 	}
 
-	authBytes, err := json.Marshal(auths)
+	is, err := secrets.NewImageRegistrySecret(auths)
 	require.NoError(t, err)
 
-	newSecret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      secretName,
-			Namespace: ctrlcommon.MCONamespace,
-		},
-		Type: corev1.SecretTypeDockercfg,
-		Data: map[string][]byte{
-			corev1.DockerConfigKey: authBytes,
-		},
-	}
+	newSecret, err := is.K8sSecret(corev1.SecretTypeDockercfg)
+	require.NoError(t, err)
+
+	newSecret.Name = secretName
+	newSecret.Namespace = ctrlcommon.MCONamespace
 
 	_, err = cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace).Create(context.TODO(), newSecret, metav1.CreateOptions{})
 	require.NoError(t, err)

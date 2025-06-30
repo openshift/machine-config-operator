@@ -7,7 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/containers/image/v5/types"
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
+	"github.com/opencontainers/go-digest"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	fakeclientimagev1 "github.com/openshift/client-go/image/clientset/versioned/fake"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
@@ -23,12 +25,26 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	clientset "k8s.io/client-go/kubernetes"
 
 	fakecorev1client "k8s.io/client-go/kubernetes/fake"
 )
+
+// Provides a fake imagepruner implementation. Currently, we are not validating
+// that this is called under certain scenarios because doing so would be very
+// difficult with the test suite in its current form.
+type fakeImagePruner struct{}
+
+func (f *fakeImagePruner) InspectImage(ctx context.Context, _ string, _ *corev1.Secret, _ *mcfgv1.ControllerConfig) (*types.ImageInspectInfo, *digest.Digest, error) {
+	return &types.ImageInspectInfo{}, nil, nil
+}
+
+func (f *fakeImagePruner) DeleteImage(ctx context.Context, _ string, _ *corev1.Secret, _ *mcfgv1.ControllerConfig) error {
+	return nil
+}
 
 // TODO: Remove this and deal with the resulting parameter explosion in the test suite.
 type clients struct {
@@ -586,7 +602,7 @@ func startController(ctx context.Context, t *testing.T, kubeclient *fakecorev1cl
 		ShutdownPollInterval: time.Nanosecond,
 	}
 
-	ctrl := newOSBuildController(cfg, mcfgclient, kubeclient, imageclient, routeclient)
+	ctrl := newOSBuildController(cfg, mcfgclient, kubeclient, imageclient, routeclient, &fakeImagePruner{})
 
 	// Ensure that the test is blocked until the controller shutdown is complete.
 	// It is worth mentioning that there may be logs from the
