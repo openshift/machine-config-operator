@@ -39,5 +39,8 @@ contents:
     # Handle the case where we're migrating from configure-ovs
     ovs-vsctl --timeout=30 --if-exists del-br br-ex
 
+    # Handle the case where we're migrating from OpenShift SDN
+    ovs-vsctl --timeout=30 --if-exists del-br br0
+
     cp "$src_path/$config_file" /etc/nmstate
     touch /etc/nmstate/openshift/applied
