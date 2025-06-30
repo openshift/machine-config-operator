@@ -1674,6 +1674,9 @@ func TestGeneratePolicyJSON(t *testing.T) {
 
 	baseData, err := updatePolicyJSON(templateBytes, []string{}, []string{}, "release-reg.io/image/release", clusterScopePolicies)
 	require.NoError(t, err)
+
+	require.NoError(t, os.WriteFile("expected.json", expectClusterPolicy, 0o755))
+	require.NoError(t, os.WriteFile("actual.json", baseData, 0o755))
 	require.JSONEq(t, string(expectClusterPolicy), string(baseData))
 
 }
