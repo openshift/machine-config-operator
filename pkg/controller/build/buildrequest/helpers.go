@@ -7,18 +7,15 @@ import (
 	"fmt"
 	"io"
 
-	corev1 "k8s.io/api/core/v1"
-
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	"github.com/containers/image/v5/docker"
 	"github.com/distribution/reference"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
-	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/secrets"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// Compresses and base-64 encodes a given byte array. Ideal for loading an
+// compressAndEncode compresses and base-64 encodes a given byte array. Ideal for loading an
 // arbitrary byte array into a ConfigMap or Secret.
 func compressAndEncode(payload []byte) (*bytes.Buffer, error) {
 	out := bytes.NewBuffer(nil)
@@ -45,7 +42,7 @@ func compressAndEncode(payload []byte) (*bytes.Buffer, error) {
 	return out, err
 }
 
-// Compresses a given io.Reader to a given io.Writer
+// compress compresses a given io.Reader to a given io.Writer.
 func compress(r io.Reader, w io.Writer) error {
 	gz, err := gzip.NewWriterLevel(w, gzip.BestCompression)
 	if err != nil {
@@ -65,34 +62,14 @@ func compress(r io.Reader, w io.Writer) error {
 	return nil
 }
 
-// Performs the above operation upon a given secret, potentially creating a new
-// secret for insertion with the suffix '-canonical' on its name and a label
-// indicating that we've canonicalized it.
+// canonicalizePullSecret creates a new image registry secret for insertion with the suffix
+// '-canonical' on its name and a label indicating that we've canonicalized it.
 func canonicalizePullSecret(secret *corev1.Secret) (*corev1.Secret, error) {
-	secret = secret.DeepCopy()
-
-	key, err := utils.GetPullSecretKey(secret)
+	k8sSecret, err := secrets.NormalizeDockerConfigJSONSecret(secret.DeepCopy())
 	if err != nil {
 		return nil, err
 	}
 
-	secretBytes, ok := secret.Data[key]
-	if !ok {
-		return nil, fmt.Errorf("could not locate key %q in %s", key, secret.Name)
-	}
-
-	canonicalizedSecretBytes, _, err := ctrlcommon.ConvertSecretToDockerconfigJSON(secretBytes)
-	if err != nil {
-		return nil, err
-	}
-
-	return newCanonicalSecret(secret, canonicalizedSecretBytes), nil
-}
-
-// Creates a new canonicalized secret with the appropriate suffix, labels, etc.
-// Does *not* validate whether the inputted secret bytes are in the correct
-// format.
-func newCanonicalSecret(secret *corev1.Secret, secretBytes []byte) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("%s-canonical", secret.Name),
@@ -104,12 +81,13 @@ func newCanonicalSecret(secret *corev1.Secret, secretBytes []byte) *corev1.Secre
 			},
 		},
 		Data: map[string][]byte{
-			corev1.DockerConfigJsonKey: secretBytes,
+			corev1.DockerConfigJsonKey: k8sSecret.Data[corev1.DockerConfigJsonKey],
 		},
 		Type: corev1.SecretTypeDockerConfigJson,
-	}
+	}, nil
 }
 
+// validateImageHasDigestedPullspec validates if the given pullspec has a SHA256 digest.
 func validateImageHasDigestedPullspec(pullspec string) error {
 	tagged, err := docker.ParseReference("//" + pullspec)
 	if err != nil {
