@@ -104,6 +104,9 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 
 	var degradedMachines, readyMachines, updatedMachines, unavailableMachines, updatingMachines []*corev1.Node
 	degradedReasons := []string{}
+	pisIsEnabled := fg.Enabled(features.FeatureGatePinnedImages)
+	imageModeReprotingIsEnabled := fg.Enabled(features.FeatureGateImageModeStatusReporting)
+	pinnedImageSetsDegraded := false
 
 	// if we represent updating properly here, we will also represent updating properly in the CO
 	// so this solves the cordoning RFE and the upgradeable RFE
@@ -128,67 +131,47 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 			// not ready yet
 			break
 		}
-		if fg.Enabled(features.FeatureGatePinnedImages) {
+		if pisIsEnabled {
 			if isPinnedImageSetsUpdated(state) {
 				poolSynchronizer.SetUpdated(mcfgv1.PinnedImageSets)
 			}
 		}
 		for _, cond := range state.Status.Conditions {
-			if strings.Contains(cond.Message, "Error:") {
+			// populate the degradedReasons from the MachineConfigNodeNodeDegraded condition
+			if mcfgv1.StateProgress(cond.Type) == mcfgv1.MachineConfigNodeNodeDegraded && cond.Status == metav1.ConditionTrue {
 				degradedMachines = append(degradedMachines, ourNode)
-				// populate the degradedReasons from the MachineConfigNodePinnedImageSetsDegraded condition
-				if fg.Enabled(features.FeatureGatePinnedImages) {
-					if mcfgv1.StateProgress(cond.Type) == mcfgv1.MachineConfigNodePinnedImageSetsDegraded && cond.Status == metav1.ConditionTrue {
-						degradedReasons = append(degradedReasons, fmt.Sprintf("Node %s is reporting: %q", ourNode.Name, cond.Message))
-					}
-				}
-				continue
+				degradedReasons = append(degradedReasons, fmt.Sprintf("Node %s is reporting: %q", ourNode.Name, cond.Message))
+				break
 			}
-			/*
-				// TODO: (djoshy) Rework this block to use MCN conditions correctly. See: https://issues.redhat.com/browse/MCO-1228
-
-				// Specifically, the main concerns for the following block are:
-				// (i) Why are only unknown conditions being evaluated? Shouldn't True/False conditions be used?
-				// (ii) Multiple conditions can be unknown at the same time, resulting in certain machines being double counted
-
-				// Some background:
-				// The MCN conditions are used to feed MCP statuses if the machine counts add up correctly to the total node count.
-				// If this check fails, node conditions are used to determine machine counts. The MCN counts calculated in this block
-				// seem incorrect most of the time, so the controller almost always defaults to using the node condition based counts.
-				// On occasion, the MCN counts cause a false positive in aformentioned check, resulting in invalid values for the MCP
-				// statuses. Commenting out this block will force the controller to always use node condition based counts to feed the
-				// MCP status.
-
-
-				if cond.Status == metav1.ConditionUnknown {
-					// This switch case will cause a node to be double counted, maybe use a hash for node count
-					switch mcfgv1.StateProgress(cond.Type) {
-					case mcfgv1.MachineConfigNodeUpdatePrepared:
-						updatingMachines = append(updatedMachines, ourNode) //nolint:gocritic
-					case mcfgv1.MachineConfigNodeUpdateExecuted:
-						updatingMachines = append(updatingMachines, ourNode)
-					case mcfgv1.MachineConfigNodeUpdatePostActionComplete:
-						updatingMachines = append(updatingMachines, ourNode)
-					case mcfgv1.MachineConfigNodeUpdateComplete:
-						updatingMachines = append(updatingMachines, ourNode)
-					case mcfgv1.MachineConfigNodeResumed:
-						updatingMachines = append(updatedMachines, ourNode) //nolint:gocritic
-						readyMachines = append(readyMachines, ourNode)
-					// Note (ijanssen): `MachineConfigNodeUpdateCompatible` was removed with MCO-1543. This case will need to be replaced/removed when working on MCO-1228.
-					case mcfgv1.MachineConfigNodeUpdateCompatible:
-						updatingMachines = append(updatedMachines, ourNode) //nolint:gocritic
-					case mcfgv1.MachineConfigNodeUpdateDrained:
-						unavailableMachines = append(unavailableMachines, ourNode)
-						updatingMachines = append(updatingMachines, ourNode)
-					case mcfgv1.MachineConfigNodeUpdateCordoned:
-						unavailableMachines = append(unavailableMachines, ourNode)
-						updatingMachines = append(updatingMachines, ourNode)
-					case mcfgv1.MachineConfigNodeUpdated:
-						updatedMachines = append(updatedMachines, ourNode)
-						readyMachines = append(readyMachines, ourNode)
-					}
+			// populate the degradedReasons from the MachineConfigNodePinnedImageSetsDegraded condition
+			if pisIsEnabled && mcfgv1.StateProgress(cond.Type) == mcfgv1.MachineConfigNodePinnedImageSetsDegraded && cond.Status == metav1.ConditionTrue {
+				degradedMachines = append(degradedMachines, ourNode)
+				degradedReasons = append(degradedReasons, fmt.Sprintf("Node %s references an invalid PinnedImageSet. See the node's MachineConfigNode resource for details.", ourNode.Name))
+				if mcfgv1.StateProgress(cond.Type) == mcfgv1.MachineConfigNodePinnedImageSetsDegraded {
+					pinnedImageSetsDegraded = true
 				}
-			*/
+				break
+			}
+
+			// If the ImageModeStatusReporting feature gate is enabled, the updating, updated, ready, and
+			// unavailible machine counts in the MCP status should be populated from the MCN conditions
+			if imageModeReprotingIsEnabled {
+				// TODO: see if we want to considered nodeResumed updated like initial implementation
+				// Handle case when the node is updated
+				if mcfgv1.StateProgress(cond.Type) == mcfgv1.MachineConfigNodeUpdated && cond.Status == metav1.ConditionTrue {
+					updatedMachines = append(updatedMachines, ourNode)
+					// // TODO: understand if a node is always "ready" when it is updated
+					// readyMachines = append(readyMachines, ourNode)
+					break
+				}
+				// Handle the cases when a node is updating
+				if cond.Status != metav1.ConditionFalse && mcfgv1.StateProgress(cond.Type) != mcfgv1.MachineConfigNodePinnedImageSetsProgressing {
+					updatingMachines = append(updatingMachines, ourNode)
+					// // TODO: figure out how to distinguish ready & unavailible machines; probably need the switch case here? maybe define a bool for ready/not ready? figure out what the source of tuth conditionals are (ex: uncordoned, cordoned, etc)?
+					// unavailableMachines = append(unavailableMachines, ourNode)
+					break
+				}
+			}
 		}
 	}
 	degradedMachineCount := int32(len(degradedMachines))
@@ -196,21 +179,30 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 	unavailableMachineCount := int32(len(unavailableMachines))
 	updatingMachineCount := int32(len(updatingMachines))
 	readyMachineCount := int32(len(readyMachines))
+	totalMachineCount := int32(len(nodes))
 
-	// this is # 1 priority, get the upgrade states actually reporting
-	if degradedMachineCount+readyMachineCount+unavailableMachineCount+updatingMachineCount != int32(len(nodes)) {
-
+	// TODO (ijanssen): once we are comfortable with the implementation, we can probably remove this check
+	// TODO: understand why `updatingMachineCount` is never used
+	// TODO: understand if a machine can be considered updating & degraded?
+	// In a standard update case, the total number of machines should equal the sum of the updating and updated nodes.
+	// However, when one or more machines is degraded, the non-degraded machines will not be condidered updated or
+	// updating, so the different machine statuses will not total the number of nodes.
+	// TODO: add a ready/unavailible check if needed
+	if updatedMachineCount+updatingMachineCount != totalMachineCount && degradedMachineCount != 0 {
+		klog.Errorf("MCN did not properly populate MCP counts, reverting to use standard conditions")
 		updatedMachines = getUpdatedMachines(pool, nodes, mosc, mosb, l)
 		updatedMachineCount = int32(len(updatedMachines))
+
+		degradedMachines = getDegradedMachines(nodes)
+		degradedMachineCount = int32(len(degradedMachines))
 
 		readyMachines = getReadyMachines(pool, nodes, mosc, mosb, l)
 		readyMachineCount = int32(len(readyMachines))
 
 		unavailableMachines = getUnavailableMachines(nodes, pool)
 		unavailableMachineCount = int32(len(unavailableMachines))
-
-		degradedMachines = getDegradedMachines(nodes)
-		degradedMachineCount = int32(len(degradedMachines))
+	} else { // TODO: remove post debugging
+		klog.Errorf("MCN properly populated MCP counts!")
 	}
 
 	for _, n := range degradedMachines {
@@ -231,7 +223,7 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 	}
 
 	// update synchronizer status for pinned image sets
-	if fg.Enabled(features.FeatureGatePinnedImages) {
+	if pisIsEnabled {
 		syncStatus := poolSynchronizer.GetStatus(mcfgv1.PinnedImageSets)
 		status.PoolSynchronizersStatus = []mcfgv1.PoolSynchronizerStatus{
 			{
@@ -272,7 +264,7 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 		if pool.Spec.Paused {
 			supdating := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionFalse, "", fmt.Sprintf("Pool is paused; will not update to %s", getPoolUpdateLine(pool, mosc, l)))
 			apihelpers.SetMachineConfigPoolCondition(&status, *supdating)
-		} else {
+		} else if !pinnedImageSetsDegraded { // note that when the PinnedImageSet is degraded, the `Updating` status should not be updated
 			supdating := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionTrue, "", fmt.Sprintf("All nodes are updating to %s", getPoolUpdateLine(pool, mosc, l)))
 			apihelpers.SetMachineConfigPoolCondition(&status, *supdating)
 		}
@@ -303,6 +295,10 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 		sdegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolNodeDegraded, corev1.ConditionTrue, fmt.Sprintf("%d nodes are reporting degraded status on sync", len(degradedMachines)), strings.Join(degradedReasons, ", "))
 		nodeDegradedMessage = sdegraded.Message
 		apihelpers.SetMachineConfigPoolCondition(&status, *sdegraded)
+		if pinnedImageSetsDegraded {
+			sdegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolPinnedImageSetsDegraded, corev1.ConditionTrue, "one or more pinned image set is reporting degraded", strings.Join(degradedReasons, ", "))
+			apihelpers.SetMachineConfigPoolCondition(&status, *sdegraded)
+		}
 	} else {
 		sdegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolNodeDegraded, corev1.ConditionFalse, "", "")
 		apihelpers.SetMachineConfigPoolCondition(&status, *sdegraded)
@@ -311,12 +307,6 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 	// here we now set the MCP Degraded field, the node_controller is the one making the call right now
 	// but we might have a dedicated controller or control loop somewhere else that understands how to
 	// set Degraded. For now, the node_controller understand NodeDegraded & RenderDegraded = Degraded.
-
-	pinnedImageSetsDegraded := false
-	if fg.Enabled(features.FeatureGatePinnedImages) {
-		pinnedImageSetsDegraded = apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolPinnedImageSetsDegraded)
-	}
-
 	renderDegraded := apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolRenderDegraded)
 	if nodeDegraded || renderDegraded || pinnedImageSetsDegraded {
 		sdegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolDegraded, corev1.ConditionTrue, "", "")
@@ -331,16 +321,6 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 	}
 
 	return status
-}
-
-func isPinnedImageSetNodeUpdating(mcs *mcfgv1.MachineConfigNode) bool {
-	var updating int32
-	for _, set := range mcs.Status.PinnedImageSets {
-		if set.CurrentGeneration != set.DesiredGeneration {
-			updating++
-		}
-	}
-	return updating > 0
 }
 
 func getPoolUpdateLine(pool *mcfgv1.MachineConfigPool, mosc *mcfgv1.MachineOSConfig, layered bool) string {
