@@ -105,6 +105,7 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 	var degradedMachines, readyMachines, updatedMachines, unavailableMachines, updatingMachines []*corev1.Node
 	degradedReasons := []string{}
 	pisIsEnabled := fg.Enabled(features.FeatureGatePinnedImages)
+	imageModeReprotingIsEnabled := fg.Enabled(features.FeatureGateImageModeStatusReporting)
 	pinnedImageSetsDegraded := false
 
 	// if we represent updating properly here, we will also represent updating properly in the CO
@@ -152,21 +153,24 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 				break
 			}
 
-			// TODO: add this behind the status reporting feature gate for initial implementation
-			// TODO: see if we want to considered nodeResumed updated like initial implementation
-			// Handle case when the node is updated
-			if mcfgv1.StateProgress(cond.Type) == mcfgv1.MachineConfigNodeUpdated && cond.Status == metav1.ConditionTrue {
-				updatedMachines = append(updatedMachines, ourNode)
-				// // TODO: understand if a node is always "ready" when it is updated
-				// readyMachines = append(readyMachines, ourNode)
-				break
-			}
-			// Handle the cases when a node is updating
-			if cond.Status != metav1.ConditionFalse && mcfgv1.StateProgress(cond.Type) != mcfgv1.MachineConfigNodePinnedImageSetsProgressing {
-				updatingMachines = append(updatingMachines, ourNode)
-				// // TODO: figure out how to distinguish ready & unavailible machines; probably need the switch case here? maybe define a bool for ready/not ready? figure out what the source of tuth conditionals are (ex: uncordoned, cordoned, etc)?
-				// unavailableMachines = append(unavailableMachines, ourNode)
-				break
+			// If the ImageModeStatusReporting feature gate is enabled, the updating, updated, ready, and
+			// unavailible machine counts in the MCP status should be populated from the MCN conditions
+			if imageModeReprotingIsEnabled {
+				// TODO: see if we want to considered nodeResumed updated like initial implementation
+				// Handle case when the node is updated
+				if mcfgv1.StateProgress(cond.Type) == mcfgv1.MachineConfigNodeUpdated && cond.Status == metav1.ConditionTrue {
+					updatedMachines = append(updatedMachines, ourNode)
+					// // TODO: understand if a node is always "ready" when it is updated
+					// readyMachines = append(readyMachines, ourNode)
+					break
+				}
+				// Handle the cases when a node is updating
+				if cond.Status != metav1.ConditionFalse && mcfgv1.StateProgress(cond.Type) != mcfgv1.MachineConfigNodePinnedImageSetsProgressing {
+					updatingMachines = append(updatingMachines, ourNode)
+					// // TODO: figure out how to distinguish ready & unavailible machines; probably need the switch case here? maybe define a bool for ready/not ready? figure out what the source of tuth conditionals are (ex: uncordoned, cordoned, etc)?
+					// unavailableMachines = append(unavailableMachines, ourNode)
+					break
+				}
 			}
 		}
 	}
