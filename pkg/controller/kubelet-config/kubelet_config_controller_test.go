@@ -3,6 +3,8 @@ package kubeletconfig
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -23,7 +25,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 	kubeletconfigv1beta1 "k8s.io/kubelet/config/v1beta1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	osev1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
@@ -168,13 +170,31 @@ func newKubeletConfig(name string, kubeconf *kubeletconfigv1beta1.KubeletConfigu
 		panic(err)
 	}
 
+	tempDir := os.TempDir()
+	kubeletConfDir := filepath.Join(tempDir, "kubelet.conf.d")
+	var logLevel int32 = 2
+
 	return &mcfgv1.KubeletConfig{
-		TypeMeta:   metav1.TypeMeta{APIVersion: mcfgv1.SchemeGroupVersion.String()},
-		ObjectMeta: metav1.ObjectMeta{Name: name, UID: types.UID(utilrand.String(5)), Generation: 1, CreationTimestamp: metav1.Now()},
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: mcfgv1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              name,
+			UID:               types.UID(utilrand.String(5)),
+			Generation:        1,
+			CreationTimestamp: metav1.Now(),
+		},
 		Spec: mcfgv1.KubeletConfigSpec{
-			LogLevel: pointer.Int32Ptr(2),
+			LogLevel: ptr.To(logLevel),
 			KubeletConfig: &runtime.RawExtension{
 				Raw: kcRaw,
+			},
+			DropInConfig: &mcfgv1.KubeletDropInDirConfigDetails{
+				ConfigDirectory: kubeletConfDir,
+				ConfigFile:      "10-kubelet.conf",
+				KubeletConfig: runtime.RawExtension{
+					Raw: []byte(`{"maxPods": 20}`),
+				},
 			},
 			MachineConfigPoolSelector: selector,
 		},
@@ -542,6 +562,59 @@ func TestKubeletConfigAutoSizingReserved(t *testing.T) {
 	}
 }
 
+func TestKubeletConfigDropInDirectory(t *testing.T) {
+	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
+		t.Run(string(platform), func(t *testing.T) {
+			f := newFixture(t)
+			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"Example"}, nil)
+			f.newController(fgAccess)
+
+			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
+			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
+			tempDir := os.TempDir()
+			kubeletConfDir := filepath.Join(tempDir, "kubelet.conf.d")
+
+			kc1 := &mcfgv1.KubeletConfig{
+				TypeMeta:   metav1.TypeMeta{APIVersion: mcfgv1.SchemeGroupVersion.String()},
+				ObjectMeta: metav1.ObjectMeta{Name: "kubelet-dropin", UID: types.UID(utilrand.String(5)), Generation: 1},
+				Spec: mcfgv1.KubeletConfigSpec{
+					DropInConfig: &mcfgv1.KubeletDropInDirConfigDetails{
+						ConfigDirectory: kubeletConfDir,
+						ConfigFile:      "10-kubelet.conf",
+						KubeletConfig: runtime.RawExtension{
+							Raw: []byte(`{"maxPods": 20}`),
+						},
+					},
+					KubeletConfig:             &runtime.RawExtension{},
+					MachineConfigPoolSelector: metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""),
+				},
+				Status: mcfgv1.KubeletConfigStatus{},
+			}
+			kubeletConfigKey, _ := getManagedKubeletConfigKey(mcp, f.client, kc1)
+			mcs := helpers.NewMachineConfig(kubeletConfigKey, map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{{}})
+			mcsDeprecated := mcs.DeepCopy()
+			mcsDeprecated.Name = getManagedKubeletConfigKeyDeprecated(mcp)
+
+			f.ccLister = append(f.ccLister, cc)
+			f.mcpLister = append(f.mcpLister, mcp)
+			f.mcpLister = append(f.mcpLister, mcp2)
+			f.mckLister = append(f.mckLister, kc1)
+			f.objects = append(f.objects, kc1)
+
+			f.expectGetMachineConfigAction(mcs)
+			f.expectGetMachineConfigAction(mcsDeprecated)
+			f.expectGetMachineConfigAction(mcs)
+			f.expectUpdateKubeletConfigRoot(kc1)
+			f.expectCreateMachineConfigAction(mcs)
+			f.expectPatchKubeletConfig(kc1, kcfgPatchBytes)
+			f.expectUpdateKubeletConfig(kc1)
+
+			f.run(getKey(kc1, t))
+		})
+	}
+}
+
 func TestKubeletConfiglogFile(t *testing.T) {
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
@@ -552,11 +625,12 @@ func TestKubeletConfiglogFile(t *testing.T) {
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
+			var logLevel int32 = 5
 			kc1 := &mcfgv1.KubeletConfig{
 				TypeMeta:   metav1.TypeMeta{APIVersion: mcfgv1.SchemeGroupVersion.String()},
 				ObjectMeta: metav1.ObjectMeta{Name: "kubulet-log", UID: types.UID(utilrand.String(5)), Generation: 1},
 				Spec: mcfgv1.KubeletConfigSpec{
-					LogLevel:                  pointer.Int32Ptr(5),
+					LogLevel:                  ptr.To(logLevel),
 					MachineConfigPoolSelector: metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""),
 				},
 				Status: mcfgv1.KubeletConfigStatus{},
@@ -631,6 +705,7 @@ func TestKubeletConfigUpdates(t *testing.T) {
 
 			// Modify config
 			kcUpdate := kc1.DeepCopy()
+			// Decode the KubeletConfig from the DropInConfig
 			kcDecoded, err := DecodeKubeletConfig(kcUpdate.Spec.KubeletConfig.Raw)
 			if err != nil {
 				t.Errorf("KubeletConfig could not be unmarshalled")
@@ -640,6 +715,7 @@ func TestKubeletConfigUpdates(t *testing.T) {
 			if err != nil {
 				t.Errorf("KubeletConfig could not be marshalled")
 			}
+			// Update the Raw field of the first DropInConfig
 			kcUpdate.Spec.KubeletConfig.Raw = kcRaw
 
 			f.ccLister = append(f.ccLister, cc)

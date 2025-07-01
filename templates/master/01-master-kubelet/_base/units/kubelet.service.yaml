@@ -24,6 +24,7 @@ contents: |
   ExecStart=/usr/local/bin/kubenswrapper \
       /usr/bin/kubelet \
         --config=/etc/kubernetes/kubelet.conf \
+        --config-dir=${KUBELET_CONFIG_DROPIN_DIR} \
         --bootstrap-kubeconfig=/etc/kubernetes/kubeconfig \
         --kubeconfig=/var/lib/kubelet/kubeconfig \
         --container-runtime-endpoint=/var/run/crio/crio.sock \
