@@ -10,6 +10,7 @@ import (
 
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	helpers "github.com/openshift/machine-config-operator/pkg/helpers"
+	"github.com/openshift/machine-config-operator/pkg/upgrademonitor"
 
 	configv1 "github.com/openshift/api/config/v1"
 	features "github.com/openshift/api/features"
@@ -1233,14 +1234,21 @@ func (ctrl *Controller) updateCandidateNode(mosc *mcfgv1.MachineOSConfig, mosb *
 		}
 
 		lns := ctrlcommon.NewLayeredNodeState(oldNode)
+		desiredConfig := upgrademonitor.NotYetSet
 		if !layered {
 			lns.SetDesiredStateFromPool(pool)
+			desiredConfig = pool.Spec.Configuration.Name
 		} else {
 			lns.SetDesiredStateFromMachineOSConfig(mosc, mosb)
+			desiredConfig = mosb.Spec.MachineConfig.Name
+		}
+		// Update the desired config version in the node's MCN
+		err = upgrademonitor.GenerateAndApplyMachineConfigNodeSpec(ctrl.fgAcessor, pool.Name, desiredConfig, oldNode, ctrl.client)
+		if err != nil {
+			klog.Errorf("error updating MCN spec for node %s: %v", oldNode.Name, err)
 		}
 
 		// Set the desired state to match the pool.
-
 		newData, err := json.Marshal(lns.Node())
 		if err != nil {
 			return err

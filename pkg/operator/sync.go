@@ -774,7 +774,7 @@ func (optr *Operator) syncMachineConfigNodes(_ *renderConfig, _ *configv1.Cluste
 		}
 
 		// Get MCP associated with node
-		pool, err := helpers.GetPrimaryPoolNameForMCN(optr.mcpLister, node)
+		mcpName, mcpDesiredConfig, err := helpers.GetPrimaryPoolDetailsForMCN(optr.mcpLister, node)
 		if err != nil {
 			return err
 		}
@@ -785,7 +785,7 @@ func (optr *Operator) syncMachineConfigNodes(_ *renderConfig, _ *configv1.Cluste
 					Name: node.Name,
 				},
 				Pool: mcfgv1.MCOObjectReference{
-					Name: pool,
+					Name: mcpName,
 				},
 				ConfigVersion: mcfgv1.MachineConfigNodeSpecMachineConfigVersion{
 					Desired: upgrademonitor.NotYetSet,
@@ -819,7 +819,7 @@ func (optr *Operator) syncMachineConfigNodes(_ *renderConfig, _ *configv1.Cluste
 		}
 		// if this is the first time we are applying the MCN and the node is ready, set the config version probably
 		if mcn.Spec.ConfigVersion.Desired == upgrademonitor.NotYetSet {
-			err = upgrademonitor.GenerateAndApplyMachineConfigNodeSpec(optr.fgAccessor, pool, node, optr.client)
+			err = upgrademonitor.GenerateAndApplyMachineConfigNodeSpec(optr.fgAccessor, mcpName, mcpDesiredConfig, node, optr.client)
 			if err != nil {
 				klog.Errorf("Error making MCN spec for Update Compatible: %v", err)
 			}
