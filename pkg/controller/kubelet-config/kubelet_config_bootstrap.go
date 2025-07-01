@@ -56,7 +56,7 @@ func RunKubeletBootstrap(templateDir string, kubeletConfigs []*mcfgv1.KubeletCon
 				originalKubeConfig.TLSCipherSuites = observedCipherSuites
 			}
 
-			kubeletIgnition, logLevelIgnition, autoSizingReservedIgnition, err := generateKubeletIgnFiles(kubeletConfig, originalKubeConfig)
+			kubeletIgnition, logLevelIgnition, autoSizingReservedIgnition, dropInDirConfigIgnition, err := generateKubeletIgnFiles(kubeletConfig, originalKubeConfig)
 			if err != nil {
 				return nil, err
 			}
@@ -70,6 +70,9 @@ func RunKubeletBootstrap(templateDir string, kubeletConfigs []*mcfgv1.KubeletCon
 			}
 			if kubeletIgnition != nil {
 				tempIgnConfig.Storage.Files = append(tempIgnConfig.Storage.Files, *kubeletIgnition)
+			}
+			if dropInDirConfigIgnition != nil {
+				tempIgnConfig.Storage.Files = append(tempIgnConfig.Storage.Files, *dropInDirConfigIgnition)
 			}
 
 			rawIgn, err := json.Marshal(tempIgnConfig)
