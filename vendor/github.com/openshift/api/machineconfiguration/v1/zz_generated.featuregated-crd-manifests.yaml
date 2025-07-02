@@ -117,6 +117,7 @@ machineconfignodes.machineconfiguration.openshift.io:
   Capability: ""
   Category: ""
   FeatureGates:
+  - ImageModeStatusReporting
   - MachineConfigNodes
   FilenameOperatorName: machine-config
   FilenameOperatorOrdering: "01"
@@ -160,8 +161,12 @@ machineconfignodes.machineconfiguration.openshift.io:
     name: Resumed
     priority: 1
     type: string
-  - jsonPath: .status.conditions[?(@.type=="AppliedFilesAndOS")].status
-    name: UpdatedFilesAndOS
+  - jsonPath: .status.conditions[?(@.type=="AppliedOSImage")].status
+    name: UpdatedOSImage
+    priority: 1
+    type: string
+  - jsonPath: .status.conditions[?(@.type=="AppliedFiles")].status
+    name: UpdatedFiles
     priority: 1
     type: string
   - jsonPath: .status.conditions[?(@.type=="Cordoned")].status
@@ -178,6 +183,10 @@ machineconfignodes.machineconfiguration.openshift.io:
     type: string
   - jsonPath: .status.conditions[?(@.type=="Uncordoned")].status
     name: UncordonedNode
+    priority: 1
+    type: string
+  - jsonPath: .status.conditions[?(@.type=="ImagePulledFromRegistry")].status
+    name: ImagePulledFromRegistry
     priority: 1
     type: string
   Scope: Cluster
