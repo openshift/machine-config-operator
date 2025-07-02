@@ -55,7 +55,7 @@ func (dn *Daemon) performDrain() error {
 			metav1.ConditionFalse,
 			dn.node,
 			dn.mcfgClient,
-			dn.featureGatesAccessor,
+			dn.fgHandler,
 			pool,
 		)
 		if err != nil {

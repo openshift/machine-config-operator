@@ -25,7 +25,6 @@ import (
 	operatorinformersv1alpha1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1alpha1"
 
 	operatorlistersv1alpha1 "github.com/openshift/client-go/operator/listers/operator/v1alpha1"
-	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -121,7 +120,7 @@ type Controller struct {
 	clusterVersionLister       cligolistersv1.ClusterVersionLister
 	clusterVersionListerSynced cache.InformerSynced
 
-	featureGateAccess featuregates.FeatureGateAccess
+	fgHandler ctrlcommon.FeatureGatesHandler
 
 	queue    workqueue.TypedRateLimitingInterface[string]
 	imgQueue workqueue.TypedRateLimitingInterface[string]
@@ -142,7 +141,7 @@ func New(
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
 	configClient configclientset.Interface,
-	featureGateAccess featuregates.FeatureGateAccess,
+	fgHandler ctrlcommon.FeatureGatesHandler,
 ) *Controller {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
@@ -217,7 +216,7 @@ func New(
 	ctrl.clusterVersionLister = clusterVersionInformer.Lister()
 	ctrl.clusterVersionListerSynced = clusterVersionInformer.Informer().HasSynced
 
-	ctrl.featureGateAccess = featureGateAccess
+	ctrl.fgHandler = fgHandler
 
 	ctrl.configInformerFactory = configInformerFactory
 
@@ -358,12 +357,7 @@ func (ctrl *Controller) imagePolicyDeleted(_ interface{}) {
 }
 
 func (ctrl *Controller) sigstoreAPIEnabled() bool {
-	featureGates, err := ctrl.featureGateAccess.CurrentFeatureGates()
-	if err != nil {
-		klog.Infof("error getting current featuregates: %v", err)
-		return false
-	}
-	return featureGates.Enabled(features.FeatureGateSigstoreImageVerification)
+	return ctrl.fgHandler.Enabled(features.FeatureGateSigstoreImageVerification)
 }
 
 func (ctrl *Controller) updateContainerRuntimeConfig(oldObj, newObj interface{}) {
@@ -1148,7 +1142,7 @@ func (ctrl *Controller) syncImagePolicyStatusOnly(namespace, imagepolicy, condit
 // except that mcfgv1.Image is not available.
 func RunImageBootstrap(templateDir string, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy,
 	idmsRules []*apicfgv1.ImageDigestMirrorSet, itmsRules []*apicfgv1.ImageTagMirrorSet, imgCfg *apicfgv1.Image, clusterImagePolicies []*apicfgv1alpha1.ClusterImagePolicy, imagePolicies []*apicfgv1alpha1.ImagePolicy,
-	featureGateAccess featuregates.FeatureGateAccess) ([]*mcfgv1.MachineConfig, error) {
+	fgHandler ctrlcommon.FeatureGatesHandler) ([]*mcfgv1.MachineConfig, error) {
 
 	var (
 		insecureRegs, registriesBlocked, policyBlocked, allowedRegs, searchRegs []string
@@ -1157,12 +1151,7 @@ func RunImageBootstrap(templateDir string, controllerConfig *mcfgv1.ControllerCo
 
 	clusterScopePolicies := map[string]signature.PolicyRequirements{}
 	scopeNamespacePolicies := map[string]map[string]signature.PolicyRequirements{}
-	featureGates, err := featureGateAccess.CurrentFeatureGates()
-	if err != nil {
-		return nil, err
-	}
-	sigstoreAPIEnabled := featureGates.Enabled(features.FeatureGateSigstoreImageVerification)
-	if sigstoreAPIEnabled {
+	if fgHandler.Enabled(features.FeatureGateSigstoreImageVerification) {
 		if clusterScopePolicies, scopeNamespacePolicies, err = getValidScopePolicies(clusterImagePolicies, imagePolicies, nil); err != nil {
 			return nil, err
 		}
