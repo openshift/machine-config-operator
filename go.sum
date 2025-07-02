@@ -483,6 +483,8 @@ github.com/mxk/go-flowrate v0.0.0-20140419014527-cca7078d478f h1:y5//uYreIhSUg3J
 github.com/mxk/go-flowrate v0.0.0-20140419014527-cca7078d478f/go.mod h1:ZdcZmHo+o7JKHSa8/e818NopupXU1YMK5fe1lsApnBw=
 github.com/nakabonne/nestif v0.3.1 h1:wm28nZjhQY5HyYPx+weN3Q65k6ilSBxDb8v5S81B81U=
 github.com/nakabonne/nestif v0.3.1/go.mod h1:9EtoZochLn5iUprVDmDjqGKPofoUEBL8U4Ngq6aY7OE=
+github.com/naseerahkani/client-go v0.0.0-20250702153039-3fb0bcdfe344 h1:F3b00R8BHTLsRFwdnFqsq2qbmBNo/wb7NlW2yuvUmk4=
+github.com/naseerahkani/client-go v0.0.0-20250702153039-3fb0bcdfe344/go.mod h1:Cce4FUvlkzzMnElVNAk2VDn/g6H48DyK96ZYcaU9GdY=
 github.com/nishanths/exhaustive v0.12.0 h1:vIY9sALmw6T/yxiASewa4TQcFsVYZQQRUQJhKRf3Swg=
 github.com/nishanths/exhaustive v0.12.0/go.mod h1:mEZ95wPIZW+x8kC4TgC+9YCUgiST7ecevsVDTgc2obs=
 github.com/nishanths/predeclared v0.2.2 h1:V2EPdZPliZymNAn79T8RkNApBjMmVKh5XRpLm/w98Vk=
@@ -513,10 +515,8 @@ github.com/opencontainers/image-spec v1.1.0 h1:8SG7/vwALn54lVB/0yZ/MMwhFrPYtpEHQ
 github.com/opencontainers/image-spec v1.1.0/go.mod h1:W4s4sFTMaBeK1BQLXbG4AdM2szdn85PY75RI83NrTrM=
 github.com/opencontainers/runtime-spec v1.2.0 h1:z97+pHb3uELt/yiAWD691HNHQIF07bE7dzrbT927iTk=
 github.com/opencontainers/runtime-spec v1.2.0/go.mod h1:jwyrGlmzljRJv/Fgzds9SsS/C5hL+LL3ko9hs6T5lQ0=
-github.com/openshift/api v0.0.0-20250425163235-9b80d67473bc h1:BGKjHtYzBweOSu1UwTnNqtPbJZ4VzOTqVFlUDpP+6U8=
-github.com/openshift/api v0.0.0-20250425163235-9b80d67473bc/go.mod h1:yk60tHAmHhtVpJQo3TwVYq2zpuP70iJIFDCmeKMIzPw=
-github.com/openshift/client-go v0.0.0-20250425165505-5f55ff6979a1 h1:2HPG58V07TrrSGBviNPd0PY42vYHPPCIEwj/pb9nUlY=
-github.com/openshift/client-go v0.0.0-20250425165505-5f55ff6979a1/go.mod h1:kH5mjMfcHCF0tEnxwvNJTLMnlbrEt3Ua+vMVGvBOK5w=
+github.com/openshift/api v0.0.0-20250620092249-a8cbc218cd2c h1:0Np840IRyzpvHLWxcE1AZ8sttVZe+a3Y6QBS3Ge+umA=
+github.com/openshift/api v0.0.0-20250620092249-a8cbc218cd2c/go.mod h1:yk60tHAmHhtVpJQo3TwVYq2zpuP70iJIFDCmeKMIzPw=
 github.com/openshift/kube-openapi v0.0.0-20230816122517-ffc8f001abb0 h1:GPlAy197Jkr+D0T2FNWanamraTdzS/r9ZkT29lxvHaA=
 github.com/openshift/kube-openapi v0.0.0-20230816122517-ffc8f001abb0/go.mod h1:wZK2AVp1uHCp4VamDVgBP2COHZjqD1T68Rf0CM3YjSM=
 github.com/openshift/library-go v0.0.0-20250129210218-fe56c2cf5d70 h1:VLj8CU9q009xlMuR4wNcqDX4lVa2Ji3u/iYnBLHtQUc=
