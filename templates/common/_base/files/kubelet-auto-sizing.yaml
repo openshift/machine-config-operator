@@ -89,6 +89,10 @@ contents:
                 recommended_systemreserved_cpu=$base_allocation_fraction
             fi
         fi
+
+        # Enforce minimum threshold of 0.5 CPU
+        recommended_systemreserved_cpu=$(awk -v val="$recommended_systemreserved_cpu" 'BEGIN {if (val < 0.5) print 0.5; else print val}')
+
         echo "SYSTEM_RESERVED_CPU=${recommended_systemreserved_cpu}">> ${NODE_SIZES_ENV}
     }
     function dynamic_ephemeral_sizing {
