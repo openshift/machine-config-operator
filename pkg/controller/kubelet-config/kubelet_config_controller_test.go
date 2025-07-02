@@ -26,11 +26,9 @@ import (
 	"k8s.io/utils/pointer"
 
 	osev1 "github.com/openshift/api/config/v1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	oseconfigfake "github.com/openshift/client-go/config/clientset/versioned/fake"
 	oseinformersv1 "github.com/openshift/client-go/config/informers/externalversions"
-	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
-
-	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
 	informers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -184,15 +182,15 @@ func newKubeletConfig(name string, kubeconf *kubeletconfigv1beta1.KubeletConfigu
 	}
 }
 
-func (f *fixture) newController(fgAccess featuregates.FeatureGateAccess) *Controller {
+func (f *fixture) newController(fgHandler ctrlcommon.FeatureGatesHandler) *Controller {
 	f.client = fake.NewSimpleClientset(f.objects...)
 	f.oseclient = oseconfigfake.NewSimpleClientset(f.oseobjects...)
 
 	i := informers.NewSharedInformerFactory(f.client, 0)
 	featinformer := oseinformersv1.NewSharedInformerFactory(f.oseclient, 0)
 
-	if fgAccess == nil {
-		fgAccess = featuregates.NewHardcodedFeatureGateAccess(nil, nil)
+	if fgHandler == nil {
+		fgHandler = ctrlcommon.NewFeatureGatesHardcodedHandler(nil, nil)
 	}
 
 	c := New(templateDir,
@@ -205,7 +203,7 @@ func (f *fixture) newController(fgAccess featuregates.FeatureGateAccess) *Contro
 		k8sfake.NewSimpleClientset(),
 		f.client,
 		f.oseclient,
-		fgAccess,
+		fgHandler,
 	)
 	c.mcpListerSynced = alwaysReady
 	c.mckListerSynced = alwaysReady
@@ -246,8 +244,8 @@ func (f *fixture) run(mcpname string) {
 	f.runController(mcpname, false)
 }
 
-func (f *fixture) runFeature(featname string, fgAccess featuregates.FeatureGateAccess) {
-	f.runFeatureController(featname, false, fgAccess)
+func (f *fixture) runFeature(featname string, fgHandler ctrlcommon.FeatureGatesHandler) {
+	f.runFeatureController(featname, false, fgHandler)
 }
 
 func (f *fixture) runNode(nodename string) {
@@ -271,8 +269,8 @@ func (f *fixture) runController(mcpname string, expectError bool) {
 	f.validateActions()
 }
 
-func (f *fixture) runFeatureController(featname string, expectError bool, fgAccess featuregates.FeatureGateAccess) {
-	c := f.newController(fgAccess)
+func (f *fixture) runFeatureController(featname string, expectError bool, fgHandler ctrlcommon.FeatureGatesHandler) {
+	c := f.newController(fgHandler)
 
 	err := c.syncFeatureHandler(featname)
 	if !expectError && err != nil {
@@ -419,8 +417,8 @@ func TestKubeletConfigCreate(t *testing.T) {
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
-			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"Example"}, nil)
-			f.newController(fgAccess)
+			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler([]osev1.FeatureGateName{"Example"}, nil)
+			f.newController(fgHandler)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
@@ -454,8 +452,8 @@ func TestKubeletConfigMultiCreate(t *testing.T) {
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
-			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"Example"}, nil)
-			f.newController(fgAccess)
+			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler([]osev1.FeatureGateName{"Example"}, nil)
+			f.newController(fgHandler)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			f.ccLister = append(f.ccLister, cc)
@@ -504,8 +502,8 @@ func TestKubeletConfigAutoSizingReserved(t *testing.T) {
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
-			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"Example"}, nil)
-			f.newController(fgAccess)
+			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler([]osev1.FeatureGateName{"Example"}, nil)
+			f.newController(fgHandler)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
@@ -548,8 +546,8 @@ func TestKubeletConfiglogFile(t *testing.T) {
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
-			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"Example"}, nil)
-			f.newController(fgAccess)
+			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler([]osev1.FeatureGateName{"Example"}, nil)
+			f.newController(fgHandler)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
@@ -591,8 +589,8 @@ func TestKubeletConfigUpdates(t *testing.T) {
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
-			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"Example"}, nil)
-			f.newController(fgAccess)
+			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler([]osev1.FeatureGateName{"Example"}, nil)
+			f.newController(fgHandler)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
@@ -617,7 +615,7 @@ func TestKubeletConfigUpdates(t *testing.T) {
 			f.expectPatchKubeletConfig(kc1, kcfgPatchBytes)
 			f.expectUpdateKubeletConfig(kc1)
 
-			c := f.newController(fgAccess)
+			c := f.newController(fgHandler)
 			stopCh := make(chan struct{})
 
 			err := c.syncHandler(getKey(kc1, t))
@@ -650,7 +648,7 @@ func TestKubeletConfigUpdates(t *testing.T) {
 			f.mckLister = append(f.mckLister, kc1)
 			f.objects = append(f.objects, mcs, kcUpdate) // MachineConfig exists
 
-			c = f.newController(fgAccess)
+			c = f.newController(fgHandler)
 			stopCh = make(chan struct{})
 
 			klog.Info("Applying update")
@@ -748,8 +746,8 @@ func TestKubeletFeatureExists(t *testing.T) {
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "Unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
-			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"Example"}, nil)
-			f.newController(fgAccess)
+			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler([]osev1.FeatureGateName{"Example"}, nil)
+			f.newController(fgHandler)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
@@ -892,8 +890,8 @@ func TestKubeletConfigResync(t *testing.T) {
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
-			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"Example"}, nil)
-			f.newController(fgAccess)
+			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler([]osev1.FeatureGateName{"Example"}, nil)
+			f.newController(fgHandler)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
@@ -912,7 +910,7 @@ func TestKubeletConfigResync(t *testing.T) {
 			f.mckLister = append(f.mckLister, kc1)
 			f.objects = append(f.objects, kc1)
 
-			c := f.newController(fgAccess)
+			c := f.newController(fgHandler)
 			err := c.syncHandler(getKey(kc1, t))
 			if err != nil {
 				t.Errorf("syncHandler returned: %v", err)
@@ -921,7 +919,7 @@ func TestKubeletConfigResync(t *testing.T) {
 			f.mckLister = append(f.mckLister, kc2)
 			f.objects = append(f.objects, kc2)
 
-			c = f.newController(fgAccess)
+			c = f.newController(fgHandler)
 			err = c.syncHandler(getKey(kc2, t))
 			if err != nil {
 				t.Errorf("syncHandler returned: %v", err)
@@ -934,7 +932,7 @@ func TestKubeletConfigResync(t *testing.T) {
 			require.Equal(t, "", val)
 
 			// resync kc1 and kc2
-			c = f.newController(fgAccess)
+			c = f.newController(fgHandler)
 			err = c.syncHandler(getKey(kc1, t))
 			if err != nil {
 				t.Errorf("syncHandler returned: %v", err)
@@ -942,7 +940,7 @@ func TestKubeletConfigResync(t *testing.T) {
 			val = kc1.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
 			require.Equal(t, "", val)
 
-			c = f.newController(fgAccess)
+			c = f.newController(fgHandler)
 			err = c.syncHandler(getKey(kc2, t))
 			if err != nil {
 				t.Errorf("syncHandler returned: %v", err)
@@ -957,8 +955,8 @@ func TestAddAnnotationExistingKubeletConfig(t *testing.T) {
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
-			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"Example"}, nil)
-			f.newController(fgAccess)
+			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler([]osev1.FeatureGateName{"Example"}, nil)
+			f.newController(fgHandler)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
@@ -994,7 +992,7 @@ func TestAddAnnotationExistingKubeletConfig(t *testing.T) {
 			f.expectPatchKubeletConfig(kc, []byte("{}"))
 			f.expectUpdateKubeletConfig(kc)
 
-			c := f.newController(fgAccess)
+			c := f.newController(fgHandler)
 			err := c.syncHandler(getKey(kc, t))
 			if err != nil {
 				t.Errorf("syncHandler returned: %v", err)
@@ -1024,8 +1022,8 @@ func TestCleanUpDuplicatedMC(t *testing.T) {
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
-			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"Example"}, nil)
-			f.newController(fgAccess)
+			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler([]osev1.FeatureGateName{"Example"}, nil)
+			f.newController(fgHandler)
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			f.ccLister = append(f.ccLister, cc)
@@ -1041,7 +1039,7 @@ func TestCleanUpDuplicatedMC(t *testing.T) {
 			f.mckLister = append(f.mckLister, kc1)
 			f.objects = append(f.objects, kc1)
 
-			ctrl := f.newController(fgAccess)
+			ctrl := f.newController(fgHandler)
 
 			// machineconfig with wrong version needs to be removed
 			machineConfigDegrade := mcfgv1.MachineConfig{
@@ -1158,8 +1156,8 @@ func TestKubeletConfigTLSRender(t *testing.T) {
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, osev1.AWSPlatformType)
 			f.ccLister = append(f.ccLister, cc)
 
-			fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"Example"}, nil)
-			ctrl := f.newController(fgAccess)
+			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler([]osev1.FeatureGateName{"Example"}, nil)
+			ctrl := f.newController(fgHandler)
 
 			kubeletConfig, err := generateOriginalKubeletConfigIgn(cc, ctrl.templatesDir, "master", testCase.apiserver)
 			if err != nil {
@@ -1192,8 +1190,8 @@ func TestKubeletConfigTLSRender(t *testing.T) {
 func TestKubeletConfigTLSOverride(t *testing.T) {
 
 	f := newFixture(t)
-	fgAccess := featuregates.NewHardcodedFeatureGateAccess([]osev1.FeatureGateName{"Example"}, nil)
-	f.newController(fgAccess)
+	fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler([]osev1.FeatureGateName{"Example"}, nil)
+	f.newController(fgHandler)
 	cc := newControllerConfig(ctrlcommon.ControllerConfigName, osev1.AWSPlatformType)
 	mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 	f.apiserverLister = []*osev1.APIServer{
@@ -1216,7 +1214,7 @@ func TestKubeletConfigTLSOverride(t *testing.T) {
 	f.mckLister = append(f.mckLister, userDefinedKC)
 	f.objects = append(f.objects, userDefinedKC)
 
-	ctrl := f.newController(fgAccess)
+	ctrl := f.newController(fgHandler)
 
 	if err := ctrl.syncHandler(getKey(userDefinedKC, t)); err != nil {
 		t.Errorf("syncHandler returned: %v", err)

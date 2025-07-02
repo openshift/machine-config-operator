@@ -746,12 +746,7 @@ func (optr *Operator) syncMachineConfigPools(config *renderConfig, _ *configv1.C
 
 // we need to mimic this
 func (optr *Operator) syncMachineConfigNodes(_ *renderConfig, _ *configv1.ClusterOperator) error {
-	fg, err := optr.fgAccessor.CurrentFeatureGates()
-	if err != nil {
-		klog.Errorf("Could not get fg: %v", err)
-		return err
-	}
-	if !fg.Enabled(features.FeatureGateMachineConfigNodes) {
+	if !optr.fgHandler.Enabled(features.FeatureGateMachineConfigNodes) {
 		return nil
 	}
 	nodes, err := optr.nodeLister.List(labels.Everything())
@@ -819,7 +814,7 @@ func (optr *Operator) syncMachineConfigNodes(_ *renderConfig, _ *configv1.Cluste
 		}
 		// if this is the first time we are applying the MCN and the node is ready, set the config version probably
 		if mcn.Spec.ConfigVersion.Desired == upgrademonitor.NotYetSet {
-			err = upgrademonitor.GenerateAndApplyMachineConfigNodeSpec(optr.fgAccessor, pool, node, optr.client)
+			err = upgrademonitor.GenerateAndApplyMachineConfigNodeSpec(optr.fgHandler, pool, node, optr.client)
 			if err != nil {
 				klog.Errorf("Error making MCN spec for Update Compatible: %v", err)
 			}
@@ -924,14 +919,6 @@ func (optr *Operator) applyManifests(config *renderConfig, paths manifestPaths) 
 			if err != nil {
 				return err
 			}
-		}
-		fg, err := optr.fgAccessor.CurrentFeatureGates()
-		if err != nil {
-			return fmt.Errorf("could not get feature gates: %w", err)
-		}
-
-		if fg == nil {
-			return fmt.Errorf("received nil feature gates")
 		}
 
 		// These new apply functions have a resource cache in case there are duplicate CRs
@@ -1218,18 +1205,8 @@ func (optr *Operator) syncMachineOSBuilder(config *renderConfig, _ *configv1.Clu
 // Determines if the Machine OS Builder deployment is in the correct state
 // based upon whether we have opted-in pools or not.
 func (optr *Operator) reconcileMachineOSBuilder(mob *appsv1.Deployment) error {
-	// Access current feature gates
-	fg, err := optr.fgAccessor.CurrentFeatureGates()
-	if err != nil {
-		return fmt.Errorf("could not get feature gates: %w", err)
-	}
-
-	if fg == nil {
-		return fmt.Errorf("received nil feature gates")
-	}
-
 	// Check if OnClusterBuild feature gate is enabled
-	if !fg.Enabled(features.FeatureGateOnClusterBuild) {
+	if !optr.fgHandler.Enabled(features.FeatureGateOnClusterBuild) {
 		return nil
 	}
 
@@ -1656,15 +1633,6 @@ func (optr *Operator) syncMachineConfigServer(config *renderConfig, _ *configv1.
 func (optr *Operator) syncRequiredMachineConfigPools(config *renderConfig, co *configv1.ClusterOperator) error {
 	var lastErr error
 
-	fg, err := optr.fgAccessor.CurrentFeatureGates()
-	if err != nil {
-		return fmt.Errorf("could not get feature gates: %w", err)
-	}
-
-	if fg == nil {
-		return fmt.Errorf("received nil feature gates")
-	}
-
 	ctx := context.TODO()
 
 	// Calculate total timeout for "required"(aka master) nodes in the pool.
@@ -1745,7 +1713,7 @@ func (optr *Operator) syncRequiredMachineConfigPools(config *renderConfig, co *c
 				}
 				releaseVersion, _ := optr.vStore.Get("operator")
 
-				if err := isMachineConfigPoolConfigurationValid(fg, pool, version.Hash, releaseVersion, opURL, optr.mcLister.Get); err != nil {
+				if err := isMachineConfigPoolConfigurationValid(optr.fgHandler, pool, version.Hash, releaseVersion, opURL, optr.mcLister.Get); err != nil {
 					lastErr = fmt.Errorf("MachineConfigPool %s has not progressed to latest configuration: %w, retrying", pool.Name, err)
 					newCO := co.DeepCopy()
 					syncerr := optr.syncUpgradeableStatus(newCO)
@@ -2273,12 +2241,6 @@ func (optr *Operator) syncMachineConfiguration(_ *renderConfig, _ *configv1.Clus
 		ClusterPolicies: apihelpers.MergeClusterPolicies(mcop.Spec.NodeDisruptionPolicy),
 	}
 
-	fg, err := optr.fgAccessor.CurrentFeatureGates()
-	if err != nil {
-		klog.Errorf("Could not get fg: %v", err)
-		return err
-	}
-
 	infra, err := optr.infraLister.Get("cluster")
 	if err != nil {
 		klog.Errorf("Could not get infra: %v", err)
@@ -2288,7 +2250,7 @@ func (optr *Operator) syncMachineConfiguration(_ *renderConfig, _ *configv1.Clus
 	defaultOptInEvent := false
 	// Populate the default boot images configuration in the status, if the cluster is on a
 	// boot image updates supported platform
-	if ctrlcommon.CheckBootImagePlatform(infra, fg) {
+	if ctrlcommon.CheckBootImagePlatform(infra, optr.fgHandler) {
 		// Mirror the spec if it is defined, i.e. admin has an opinion
 		if mcop.Spec.ManagedBootImages.MachineManagers != nil {
 			newMachineConfigurationStatus.ManagedBootImagesStatus = *mcop.Spec.ManagedBootImages.DeepCopy()
@@ -2340,15 +2302,9 @@ func (optr *Operator) syncMachineConfiguration(_ *renderConfig, _ *configv1.Clus
 	return nil
 }
 
-// Determines if the OnclusterBuild FeatureGate is enabled. Returns any errors encountered.
-func (optr *Operator) isOnClusterBuildFeatureGateEnabled() (bool, error) {
-	fg, err := optr.fgAccessor.CurrentFeatureGates()
-	if err != nil {
-		klog.Errorf("Could not get fg: %v", err)
-		return false, err
-	}
-
-	return fg.Enabled(features.FeatureGateOnClusterBuild), nil
+// Determines if the OnclusterBuild FeatureGate is enabled.
+func (optr *Operator) isOnClusterBuildFeatureGateEnabled() bool {
+	return optr.fgHandler.Enabled(features.FeatureGateOnClusterBuild)
 }
 
 // Determines if this cluster is on a platform that opts in for boot images by default

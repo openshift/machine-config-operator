@@ -12,7 +12,6 @@ import (
 
 	features "github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
@@ -31,17 +30,7 @@ func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
 	}
 
 	machineConfigStates := []*mcfgv1.MachineConfigNode{}
-	fg, err := ctrl.fgAcessor.CurrentFeatureGates()
-	list := fg.KnownFeatures()
-	mcnExists := false
-	for _, feature := range list {
-		if feature == features.FeatureGateMachineConfigNodes {
-			mcnExists = true
-		}
-	}
-	if err != nil {
-		klog.Errorf("Could not get FG: %v", err)
-	} else if mcnExists && fg.Enabled(features.FeatureGateMachineConfigNodes) {
+	if ctrl.fgHandler.Enabled(features.FeatureGateMachineConfigNodes) {
 		for _, node := range nodes {
 			ms, err := ctrl.client.MachineconfigurationV1().MachineConfigNodes().Get(context.TODO(), node.Name, metav1.GetOptions{})
 			if err != nil {
@@ -57,7 +46,7 @@ func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
 		return fmt.Errorf("could get MachineOSConfig or MachineOSBuild: %w", err)
 	}
 
-	newStatus := ctrl.calculateStatus(fg, machineConfigStates, cc, pool, nodes, mosc, mosb)
+	newStatus := ctrl.calculateStatus(machineConfigStates, cc, pool, nodes, mosc, mosb)
 	if equality.Semantic.DeepEqual(pool.Status, newStatus) {
 		return nil
 	}
@@ -79,7 +68,7 @@ func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
 }
 
 //nolint:gocyclo,gosec
-func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfgv1.MachineConfigNode, cconfig *mcfgv1.ControllerConfig, pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node, mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild) mcfgv1.MachineConfigPoolStatus {
+func (ctrl *Controller) calculateStatus(mcs []*mcfgv1.MachineConfigNode, cconfig *mcfgv1.ControllerConfig, pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node, mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild) mcfgv1.MachineConfigPoolStatus {
 	certExpirys := []mcfgv1.CertExpiry{}
 	if cconfig != nil {
 		for _, cert := range cconfig.Status.ControllerCertificates {
@@ -96,11 +85,7 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 	machineCount := int32(len(nodes))
 	poolSynchronizer := newPoolSynchronizer(machineCount)
 
-	l, err := ctrl.isLayeredPool(mosc, mosb)
-	if err != nil {
-		// TODO: Handle this error better.
-		klog.Warningf("Error when checking isLayeredPool: %s", err)
-	}
+	isLayeredPool := ctrl.isLayeredPool(mosc, mosb)
 
 	var degradedMachines, readyMachines, updatedMachines, unavailableMachines, updatingMachines []*corev1.Node
 	degradedReasons := []string{}
@@ -128,7 +113,7 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 			// not ready yet
 			break
 		}
-		if fg.Enabled(features.FeatureGatePinnedImages) {
+		if ctrl.fgHandler.Enabled(features.FeatureGatePinnedImages) {
 			if isPinnedImageSetsUpdated(state) {
 				poolSynchronizer.SetUpdated(mcfgv1.PinnedImageSets)
 			}
@@ -137,7 +122,7 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 			if strings.Contains(cond.Message, "Error:") {
 				degradedMachines = append(degradedMachines, ourNode)
 				// populate the degradedReasons from the MachineConfigNodePinnedImageSetsDegraded condition
-				if fg.Enabled(features.FeatureGatePinnedImages) {
+				if ctrl.fgHandler.Enabled(features.FeatureGatePinnedImages) {
 					if mcfgv1.StateProgress(cond.Type) == mcfgv1.MachineConfigNodePinnedImageSetsDegraded && cond.Status == metav1.ConditionTrue {
 						degradedReasons = append(degradedReasons, fmt.Sprintf("Node %s is reporting: %q", ourNode.Name, cond.Message))
 					}
@@ -200,10 +185,10 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 	// this is # 1 priority, get the upgrade states actually reporting
 	if degradedMachineCount+readyMachineCount+unavailableMachineCount+updatingMachineCount != int32(len(nodes)) {
 
-		updatedMachines = getUpdatedMachines(pool, nodes, mosc, mosb, l)
+		updatedMachines = getUpdatedMachines(pool, nodes, mosc, mosb, isLayeredPool)
 		updatedMachineCount = int32(len(updatedMachines))
 
-		readyMachines = getReadyMachines(pool, nodes, mosc, mosb, l)
+		readyMachines = getReadyMachines(pool, nodes, mosc, mosb, isLayeredPool)
 		readyMachineCount = int32(len(readyMachines))
 
 		unavailableMachines = getUnavailableMachines(nodes, pool)
@@ -231,7 +216,7 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 	}
 
 	// update synchronizer status for pinned image sets
-	if fg.Enabled(features.FeatureGatePinnedImages) {
+	if ctrl.fgHandler.Enabled(features.FeatureGatePinnedImages) {
 		syncStatus := poolSynchronizer.GetStatus(mcfgv1.PinnedImageSets)
 		status.PoolSynchronizersStatus = []mcfgv1.PoolSynchronizerStatus{
 			{
@@ -256,7 +241,7 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 
 	if allUpdated {
 		//TODO: update api to only have one condition regarding status of update.
-		updatedMsg := fmt.Sprintf("All nodes are updated with %s", getPoolUpdateLine(pool, mosc, l))
+		updatedMsg := fmt.Sprintf("All nodes are updated with %s", getPoolUpdateLine(pool, mosc, isLayeredPool))
 		supdated := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdated, corev1.ConditionTrue, "", updatedMsg)
 		apihelpers.SetMachineConfigPoolCondition(&status, *supdated)
 
@@ -270,10 +255,10 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 		supdated := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdated, corev1.ConditionFalse, "", "")
 		apihelpers.SetMachineConfigPoolCondition(&status, *supdated)
 		if pool.Spec.Paused {
-			supdating := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionFalse, "", fmt.Sprintf("Pool is paused; will not update to %s", getPoolUpdateLine(pool, mosc, l)))
+			supdating := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionFalse, "", fmt.Sprintf("Pool is paused; will not update to %s", getPoolUpdateLine(pool, mosc, isLayeredPool)))
 			apihelpers.SetMachineConfigPoolCondition(&status, *supdating)
 		} else {
-			supdating := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionTrue, "", fmt.Sprintf("All nodes are updating to %s", getPoolUpdateLine(pool, mosc, l)))
+			supdating := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionTrue, "", fmt.Sprintf("All nodes are updating to %s", getPoolUpdateLine(pool, mosc, isLayeredPool)))
 			apihelpers.SetMachineConfigPoolCondition(&status, *supdating)
 		}
 	}
@@ -313,7 +298,7 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 	// set Degraded. For now, the node_controller understand NodeDegraded & RenderDegraded = Degraded.
 
 	pinnedImageSetsDegraded := false
-	if fg.Enabled(features.FeatureGatePinnedImages) {
+	if ctrl.fgHandler.Enabled(features.FeatureGatePinnedImages) {
 		pinnedImageSetsDegraded = apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolPinnedImageSetsDegraded)
 	}
 

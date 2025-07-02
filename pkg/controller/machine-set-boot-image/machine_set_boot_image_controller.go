@@ -13,7 +13,6 @@ import (
 	configinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
 	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
 	mcopclientset "github.com/openshift/client-go/operator/clientset/versioned"
-	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -66,7 +65,7 @@ type Controller struct {
 	conditionMutex             sync.Mutex
 	mapiSyncMutex              sync.Mutex
 
-	featureGateAccess featuregates.FeatureGateAccess
+	fgHandler ctrlcommon.FeatureGatesHandler
 }
 
 // Stats structure for local bookkeeping of machine resources
@@ -114,7 +113,7 @@ func New(
 	infraInformer configinformersv1.InfrastructureInformer,
 	mcopClient mcopclientset.Interface,
 	mcopInformer mcopinformersv1.MachineConfigurationInformer,
-	featureGateAccess featuregates.FeatureGateAccess,
+	fgHandler ctrlcommon.FeatureGatesHandler,
 ) *Controller {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
@@ -155,7 +154,7 @@ func New(
 		DeleteFunc: ctrl.deleteMachineConfiguration,
 	})
 
-	ctrl.featureGateAccess = featureGateAccess
+	ctrl.fgHandler = fgHandler
 
 	ctrl.mapiBootImageState = map[string]BootImageState{}
 

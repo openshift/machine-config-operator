@@ -22,7 +22,6 @@ import (
 	apicfgv1alpha1 "github.com/openshift/api/config/v1alpha1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
-	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	containerruntimeconfig "github.com/openshift/machine-config-operator/pkg/controller/container-runtime-config"
 	kubeletconfig "github.com/openshift/machine-config-operator/pkg/controller/kubelet-config"
@@ -170,9 +169,9 @@ func (b *Bootstrap) Run(destDir string) error {
 		return fmt.Errorf("error: no featuregate found in dir: %q", b.manifestDir)
 	}
 
-	fgAccess, err := featuregates.NewHardcodedFeatureGateAccessFromFeatureGate(featureGate, version.ReleaseVersion)
+	fgHandler, err := ctrlcommon.NewFeatureGatesCRHandlerImpl(featureGate, version.ReleaseVersion)
 	if err != nil {
-		return fmt.Errorf("error creating feature gate access: %w", err)
+		return fmt.Errorf("error creating feature gates handler: %w", err)
 	}
 
 	iconfigs, err := template.RunBootstrap(b.templatesDir, cconfig, psraw, apiServer)
@@ -183,7 +182,7 @@ func (b *Bootstrap) Run(destDir string) error {
 
 	configs = append(configs, iconfigs...)
 
-	rconfigs, err := containerruntimeconfig.RunImageBootstrap(b.templatesDir, cconfig, pools, icspRules, idmsRules, itmsRules, imgCfg, clusterImagePolicies, imagePolicies, fgAccess)
+	rconfigs, err := containerruntimeconfig.RunImageBootstrap(b.templatesDir, cconfig, pools, icspRules, idmsRules, itmsRules, imgCfg, clusterImagePolicies, imagePolicies, fgHandler)
 	if err != nil {
 		return err
 	}
@@ -201,7 +200,7 @@ func (b *Bootstrap) Run(destDir string) error {
 	klog.Infof("Successfully generated MachineConfigs from containerruntime.")
 
 	if featureGate != nil {
-		featureConfigs, err := kubeletconfig.RunFeatureGateBootstrap(b.templatesDir, fgAccess, nodeConfig, cconfig, pools, apiServer)
+		featureConfigs, err := kubeletconfig.RunFeatureGateBootstrap(b.templatesDir, fgHandler, nodeConfig, cconfig, pools, apiServer)
 		if err != nil {
 			return err
 		}
@@ -218,7 +217,7 @@ func (b *Bootstrap) Run(destDir string) error {
 		}
 	}
 	if nodeConfig != nil {
-		nodeConfigs, err := kubeletconfig.RunNodeConfigBootstrap(b.templatesDir, fgAccess, cconfig, nodeConfig, pools, apiServer)
+		nodeConfigs, err := kubeletconfig.RunNodeConfigBootstrap(b.templatesDir, fgHandler, cconfig, nodeConfig, pools, apiServer)
 		if err != nil {
 			return err
 		}
@@ -227,7 +226,7 @@ func (b *Bootstrap) Run(destDir string) error {
 	klog.Infof("Successfully generated MachineConfigs from node.Configs.")
 
 	if len(kconfigs) > 0 {
-		kconfigs, err := kubeletconfig.RunKubeletBootstrap(b.templatesDir, kconfigs, cconfig, fgAccess, nodeConfig, pools, apiServer)
+		kconfigs, err := kubeletconfig.RunKubeletBootstrap(b.templatesDir, kconfigs, cconfig, fgHandler, nodeConfig, pools, apiServer)
 		if err != nil {
 			return err
 		}

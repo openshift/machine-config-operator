@@ -42,7 +42,6 @@ import (
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
-	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/daemon/cri"
@@ -118,7 +117,7 @@ type PinnedImageSetManager struct {
 	syncHandler              func(string) error
 	enqueueMachineConfigPool func(*mcfgv1.MachineConfigPool)
 	queue                    workqueue.TypedRateLimitingInterface[string]
-	featureGatesAccessor     featuregates.FeatureGateAccess
+	fgHandler                ctrlcommon.FeatureGatesHandler
 
 	// mutex protects cancelFn
 	mu       sync.Mutex
@@ -141,7 +140,7 @@ func NewPinnedImageSetManager(
 	authFilePath,
 	registryCfgPath string,
 	prefetchTimeout time.Duration,
-	featureGatesAccessor featuregates.FeatureGateAccess,
+	fgHandler ctrlcommon.FeatureGatesHandler,
 ) *PinnedImageSetManager {
 	p := &PinnedImageSetManager{
 		nodeName:                 nodeName,
@@ -151,7 +150,7 @@ func NewPinnedImageSetManager(
 		registryCfgPath:          registryCfgPath,
 		prefetchTimeout:          prefetchTimeout,
 		minStorageAvailableBytes: minStorageAvailableBytes,
-		featureGatesAccessor:     featureGatesAccessor,
+		fgHandler:                fgHandler,
 		queue: workqueue.NewTypedRateLimitingQueueWithConfig[string](
 			workqueue.DefaultTypedControllerRateLimiter[string](),
 			workqueue.TypedRateLimitingQueueConfig[string]{Name: "pinned-image-set-manager"}),
@@ -564,7 +563,7 @@ func (p *PinnedImageSetManager) updateStatusProgressing(pools []*mcfgv1.MachineC
 		node,
 		p.mcfgClient,
 		applyCfg,
-		p.featureGatesAccessor,
+		p.fgHandler,
 		pool,
 	)
 }
@@ -599,7 +598,7 @@ func (p *PinnedImageSetManager) updateStatusProgressingComplete(pools []*mcfgv1.
 		node,
 		p.mcfgClient,
 		applyCfg,
-		p.featureGatesAccessor,
+		p.fgHandler,
 		pool,
 	)
 	if err != nil {
@@ -619,7 +618,7 @@ func (p *PinnedImageSetManager) updateStatusProgressingComplete(pools []*mcfgv1.
 		node,
 		p.mcfgClient,
 		nil,
-		p.featureGatesAccessor,
+		p.fgHandler,
 		pool,
 	)
 }
@@ -654,7 +653,7 @@ func (p *PinnedImageSetManager) updateStatusError(pools []*mcfgv1.MachineConfigP
 		node,
 		p.mcfgClient,
 		applyCfg,
-		p.featureGatesAccessor,
+		p.fgHandler,
 		pool,
 	)
 }
