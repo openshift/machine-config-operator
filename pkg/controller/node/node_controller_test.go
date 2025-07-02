@@ -95,7 +95,7 @@ func newFixtureWithFeatureGates(t *testing.T, enabled, disabled []configv1.Featu
 }
 
 func newFixture(t *testing.T) *fixture {
-	return newFixtureWithFeatureGates(t, []configv1.FeatureGateName{features.FeatureGatePinnedImages, features.FeatureGateOnClusterBuild}, []configv1.FeatureGateName{})
+	return newFixtureWithFeatureGates(t, []configv1.FeatureGateName{features.FeatureGateMachineConfigNodes, features.FeatureGatePinnedImages, features.FeatureGateOnClusterBuild}, []configv1.FeatureGateName{})
 }
 
 func (f *fixture) newControllerWithStopChan(stopCh <-chan struct{}) *Controller {
@@ -144,16 +144,8 @@ func (f *fixture) newController() *Controller {
 	return f.newControllerWithStopChan(stopCh)
 }
 
-func (f *fixture) newControllerWithContext(ctx context.Context) *Controller {
-	return f.newControllerWithStopChan(ctx.Done())
-}
-
 func (f *fixture) run(pool string) {
 	f.runController(pool, false)
-}
-
-func (f *fixture) runExpectError(pool string) {
-	f.runController(pool, true)
 }
 
 func (f *fixture) runController(pool string, expectError bool) {
@@ -264,7 +256,9 @@ func filterInformerActions(actions []core.Action) []core.Action {
 				action.Matches("list", "machineosbuilds") ||
 				action.Matches("watch", "machineosbuilds") ||
 				action.Matches("list", "machineosconfigs") ||
-				action.Matches("watch", "machineosconfigs")) {
+				action.Matches("watch", "machineosconfigs") ||
+				action.Matches("get", "machineconfignodes") ||
+				action.Matches("create", "machineconfignodes")) {
 			continue
 		}
 		ret = append(ret, action)
@@ -1150,7 +1144,7 @@ func TestShouldMakeProgress(t *testing.T) {
 			expectTaintsAddPatch:  false,
 		},
 		{
-			description:           "node not at desired config, patch on annotation and taints", // failing
+			description:           "node not at desired config, patch on annotation and taints",
 			node:                  newNodeWithLabel("nodeNeedingUpdates", machineConfigV0, machineConfigV0, map[string]string{"node-role/worker": "", "node-role/infra": ""}),
 			expectAnnotationPatch: true,
 			expectTaintsAddPatch:  true,
@@ -1439,9 +1433,11 @@ func TestCertStatus(t *testing.T) {
 	mcp := helpers.NewMachineConfigPool("test-cluster-infra", nil, helpers.InfraSelector, "v1")
 	mcpWorker := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v1")
 	mcp.Spec.MaxUnavailable = intStrPtr(intstr.FromInt(1))
+	nodeName0 := "node-0"
+	nodeName1 := "node-1"
 	nodes := []*corev1.Node{
-		newNodeWithLabel("node-0", "v1", "v1", map[string]string{"node-role/worker": "", "node-role/infra": ""}),
-		newNodeWithLabel("node-1", "v1", "v1", map[string]string{"node-role/worker": "", "node-role/infra": ""}),
+		newNodeWithLabel(nodeName0, "v1", "v1", map[string]string{"node-role/worker": "", "node-role/infra": ""}),
+		newNodeWithLabel(nodeName1, "v1", "v1", map[string]string{"node-role/worker": "", "node-role/infra": ""}),
 	}
 
 	f.ccLister = append(f.ccLister, cc)
