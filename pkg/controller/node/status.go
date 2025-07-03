@@ -89,6 +89,8 @@ func (ctrl *Controller) calculateStatus(mcs []*mcfgv1.MachineConfigNode, cconfig
 
 	var degradedMachines, readyMachines, updatedMachines, unavailableMachines, updatingMachines []*corev1.Node
 	degradedReasons := []string{}
+	pisIsEnabled := ctrl.fgHandler.Enabled(features.FeatureGatePinnedImages)
+	pinnedImageSetsDegraded := false
 
 	// if we represent updating properly here, we will also represent updating properly in the CO
 	// so this solves the cordoning RFE and the upgradeable RFE
@@ -113,22 +115,35 @@ func (ctrl *Controller) calculateStatus(mcs []*mcfgv1.MachineConfigNode, cconfig
 			// not ready yet
 			break
 		}
-		if ctrl.fgHandler.Enabled(features.FeatureGatePinnedImages) {
+		if pisIsEnabled {
 			if isPinnedImageSetsUpdated(state) {
 				poolSynchronizer.SetUpdated(mcfgv1.PinnedImageSets)
 			}
 		}
 		for _, cond := range state.Status.Conditions {
-			if strings.Contains(cond.Message, "Error:") {
+			// populate the degradedReasons from the MachineConfigNodeNodeDegraded condition
+			if mcfgv1.StateProgress(cond.Type) == mcfgv1.MachineConfigNodeNodeDegraded && cond.Status == metav1.ConditionTrue {
 				degradedMachines = append(degradedMachines, ourNode)
-				// populate the degradedReasons from the MachineConfigNodePinnedImageSetsDegraded condition
-				if ctrl.fgHandler.Enabled(features.FeatureGatePinnedImages) {
-					if mcfgv1.StateProgress(cond.Type) == mcfgv1.MachineConfigNodePinnedImageSetsDegraded && cond.Status == metav1.ConditionTrue {
-						degradedReasons = append(degradedReasons, fmt.Sprintf("Node %s is reporting: %q", ourNode.Name, cond.Message))
-					}
-				}
-				continue
+				degradedReasons = append(degradedReasons, fmt.Sprintf("Node %s is reporting: %q", ourNode.Name, cond.Message))
+				break
 			}
+			/*
+				// TODO (ijanssen): This section of code should be implemented as part of OCPBUGS-57177 after OCPBUGS-32745 is addressed.
+				// 	In the current state of the code, the `MachineConfigNodePinnedImageSetsDegraded` condition is wrongly being set to True`
+				// 	even when no unintended functionality is occurring, such as many images taking more than 2 minutes to fetch. Thus, it is
+				//  not wise to degrade an MCP on a PIS degrade while the PIS degrade is not acting as intended. OCPBUGS-57177 has
+				// 	been marked as blocked by OCPBUGS-32745 in Jira, but once the degrade condition is stablilized, this code block should
+				// 	cover the fix for OCPBUGS-57177.
+					// populate the degradedReasons from the MachineConfigNodePinnedImageSetsDegraded condition
+					if pisIsEnabled && mcfgv1.StateProgress(cond.Type) == mcfgv1.MachineConfigNodePinnedImageSetsDegraded && cond.Status == metav1.ConditionTrue {
+						degradedMachines = append(degradedMachines, ourNode)
+						degradedReasons = append(degradedReasons, fmt.Sprintf("Node %s references an invalid PinnedImageSet. See the node's MachineConfigNode resource for details.", ourNode.Name))
+						if mcfgv1.StateProgress(cond.Type) == mcfgv1.MachineConfigNodePinnedImageSetsDegraded {
+							pinnedImageSetsDegraded = true
+						}
+						break
+					}
+			*/
 			/*
 				// TODO: (djoshy) Rework this block to use MCN conditions correctly. See: https://issues.redhat.com/browse/MCO-1228
 
@@ -216,7 +231,7 @@ func (ctrl *Controller) calculateStatus(mcs []*mcfgv1.MachineConfigNode, cconfig
 	}
 
 	// update synchronizer status for pinned image sets
-	if ctrl.fgHandler.Enabled(features.FeatureGatePinnedImages) {
+	if pisIsEnabled {
 		syncStatus := poolSynchronizer.GetStatus(mcfgv1.PinnedImageSets)
 		status.PoolSynchronizersStatus = []mcfgv1.PoolSynchronizerStatus{
 			{
@@ -257,7 +272,7 @@ func (ctrl *Controller) calculateStatus(mcs []*mcfgv1.MachineConfigNode, cconfig
 		if pool.Spec.Paused {
 			supdating := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionFalse, "", fmt.Sprintf("Pool is paused; will not update to %s", getPoolUpdateLine(pool, mosc, isLayeredPool)))
 			apihelpers.SetMachineConfigPoolCondition(&status, *supdating)
-		} else {
+		} else if !pinnedImageSetsDegraded { // note that when the PinnedImageSet is degraded, the `Updating` status should not be updated
 			supdating := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionTrue, "", fmt.Sprintf("All nodes are updating to %s", getPoolUpdateLine(pool, mosc, isLayeredPool)))
 			apihelpers.SetMachineConfigPoolCondition(&status, *supdating)
 		}
@@ -288,6 +303,10 @@ func (ctrl *Controller) calculateStatus(mcs []*mcfgv1.MachineConfigNode, cconfig
 		sdegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolNodeDegraded, corev1.ConditionTrue, fmt.Sprintf("%d nodes are reporting degraded status on sync", len(degradedMachines)), strings.Join(degradedReasons, ", "))
 		nodeDegradedMessage = sdegraded.Message
 		apihelpers.SetMachineConfigPoolCondition(&status, *sdegraded)
+		if pinnedImageSetsDegraded {
+			sdegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolPinnedImageSetsDegraded, corev1.ConditionTrue, "one or more pinned image set is reporting degraded", strings.Join(degradedReasons, ", "))
+			apihelpers.SetMachineConfigPoolCondition(&status, *sdegraded)
+		}
 	} else {
 		sdegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolNodeDegraded, corev1.ConditionFalse, "", "")
 		apihelpers.SetMachineConfigPoolCondition(&status, *sdegraded)
@@ -296,12 +315,6 @@ func (ctrl *Controller) calculateStatus(mcs []*mcfgv1.MachineConfigNode, cconfig
 	// here we now set the MCP Degraded field, the node_controller is the one making the call right now
 	// but we might have a dedicated controller or control loop somewhere else that understands how to
 	// set Degraded. For now, the node_controller understand NodeDegraded & RenderDegraded = Degraded.
-
-	pinnedImageSetsDegraded := false
-	if ctrl.fgHandler.Enabled(features.FeatureGatePinnedImages) {
-		pinnedImageSetsDegraded = apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolPinnedImageSetsDegraded)
-	}
-
 	renderDegraded := apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolRenderDegraded)
 	if nodeDegraded || renderDegraded || pinnedImageSetsDegraded {
 		sdegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolDegraded, corev1.ConditionTrue, "", "")
@@ -316,16 +329,6 @@ func (ctrl *Controller) calculateStatus(mcs []*mcfgv1.MachineConfigNode, cconfig
 	}
 
 	return status
-}
-
-func isPinnedImageSetNodeUpdating(mcs *mcfgv1.MachineConfigNode) bool {
-	var updating int32
-	for _, set := range mcs.Status.PinnedImageSets {
-		if set.CurrentGeneration != set.DesiredGeneration {
-			updating++
-		}
-	}
-	return updating > 0
 }
 
 func getPoolUpdateLine(pool *mcfgv1.MachineConfigPool, mosc *mcfgv1.MachineOSConfig, layered bool) string {
