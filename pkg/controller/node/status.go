@@ -157,11 +157,15 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 			// unavailible machine counts in the MCP status should be populated from the MCN conditions
 			if imageModeReprotingIsEnabled {
 				// TODO: see if we want to considered nodeResumed updated like initial implementation
-				// Handle case when the node is updated
+				// Handle case when the node is updated. A node is considered "updated" once the desired
+				// and current config versions and current and desired images are equal. Since this rule
+				// is only met in the MCN when the "Updated" status is true, that is the only condition
+				// to check for an updated machine.
 				if mcfgv1.StateProgress(cond.Type) == mcfgv1.MachineConfigNodeUpdated && cond.Status == metav1.ConditionTrue {
 					updatedMachines = append(updatedMachines, ourNode)
 					// // TODO: understand if a node is always "ready" when it is updated
-					// readyMachines = append(readyMachines, ourNode)
+					// If a machine is updated, it is also considered "ready"
+					readyMachines = append(readyMachines, ourNode)
 					break
 				}
 				// Handle the cases when a node is updating
