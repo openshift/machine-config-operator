@@ -12,7 +12,6 @@ import (
 	signature "github.com/containers/image/v5/signature"
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	apicfgv1 "github.com/openshift/api/config/v1"
-	apicfgv1alpha1 "github.com/openshift/api/config/v1alpha1"
 	features "github.com/openshift/api/features"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
@@ -1109,7 +1108,7 @@ func getValidScopePolicies(clusterImagePolicies []*apicfgv1.ClusterImagePolicy, 
 			if len(conflictScopes) > 0 {
 				msg := fmt.Sprintf("has conflicting scope(s) %q that equal to or nest inside existing clusterimagepolicy, only policy from clusterimagepolicy scope(s) will be applied", conflictScopes)
 				klog.V(2).Info(msg)
-				ctrl.syncImagePolicyStatusOnly(namespace, imagePolicy.ObjectMeta.Name, apicfgv1alpha1.ImagePolicyPending, reasonConflictScopes, msg, metav1.ConditionFalse)
+				ctrl.syncImagePolicyStatusOnly(namespace, imagePolicy.ObjectMeta.Name, apicfgv1.ImagePolicyPending, reasonConflictScopes, msg, metav1.ConditionFalse)
 			}
 		}
 	}

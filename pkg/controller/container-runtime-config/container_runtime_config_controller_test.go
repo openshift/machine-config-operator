@@ -30,7 +30,6 @@ import (
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	apicfgv1 "github.com/openshift/api/config/v1"
-	apicfgv1alpha1 "github.com/openshift/api/config/v1alpha1"
 	features "github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
@@ -217,7 +216,7 @@ func newClusterImagePolicyWithPublicKey(name string, scopes []string, keyData []
 		imgScopes = append(imgScopes, apicfgv1.ImageScope(scope))
 	}
 	return &apicfgv1.ClusterImagePolicy{
-		TypeMeta:   metav1.TypeMeta{APIVersion: apicfgv1alpha1.SchemeGroupVersion.String()},
+		TypeMeta:   metav1.TypeMeta{APIVersion: apicfgv1.SchemeGroupVersion.String()},
 		ObjectMeta: metav1.ObjectMeta{Name: name, UID: types.UID(utilrand.String(5)), Generation: 1},
 		Spec: apicfgv1.ClusterImagePolicySpec{
 			Scopes: imgScopes,
@@ -239,7 +238,7 @@ func newImagePolicyWithPublicKey(name, namespace string, scopes []string, keyDat
 		imgScopes = append(imgScopes, apicfgv1.ImageScope(scope))
 	}
 	return &apicfgv1.ImagePolicy{
-		TypeMeta:   metav1.TypeMeta{APIVersion: apicfgv1alpha1.SchemeGroupVersion.String()},
+		TypeMeta:   metav1.TypeMeta{APIVersion: apicfgv1.SchemeGroupVersion.String()},
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace, UID: types.UID(utilrand.String(5)), Generation: 1},
 		Spec: apicfgv1.ImagePolicySpec{
 			Scopes: imgScopes,

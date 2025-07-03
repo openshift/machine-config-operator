@@ -23,7 +23,6 @@ import (
 	"github.com/ghodss/yaml"
 	"github.com/opencontainers/go-digest"
 	apicfgv1 "github.com/openshift/api/config/v1"
-	apicfgv1alpha1 "github.com/openshift/api/config/v1alpha1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	"github.com/openshift/runtime-utils/pkg/registries"
 	runtimeutils "github.com/openshift/runtime-utils/pkg/registries"
@@ -900,13 +899,13 @@ func policyItemFromSpec(policy apicfgv1.Policy) (signature.PolicyRequirement, er
 		case apicfgv1.IdentityMatchPolicyRemapIdentity:
 			identity, err := signature.NewPRMRemapIdentity(string(policy.SignedIdentity.PolicyMatchRemapIdentity.Prefix), string(policy.SignedIdentity.PolicyMatchRemapIdentity.SignedPrefix))
 			if err != nil {
-				return nil, fmt.Errorf("error getting signedIdentity for %s: %v", apicfgv1alpha1.IdentityMatchPolicyRemapIdentity, err)
+				return nil, fmt.Errorf("error getting signedIdentity for %s: %v", apicfgv1.IdentityMatchPolicyRemapIdentity, err)
 			}
 			signedIdentity = identity
 		case apicfgv1.IdentityMatchPolicyExactRepository:
 			identity, err := signature.NewPRMExactRepository(string(policy.SignedIdentity.PolicyMatchExactRepository.Repository))
 			if err != nil {
-				return nil, fmt.Errorf("error getting signedIdentity for %s: %v", apicfgv1alpha1.IdentityMatchPolicyExactRepository, err)
+				return nil, fmt.Errorf("error getting signedIdentity for %s: %v", apicfgv1.IdentityMatchPolicyExactRepository, err)
 			}
 			signedIdentity = identity
 		case apicfgv1.IdentityMatchPolicyMatchRepository:
