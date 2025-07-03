@@ -154,12 +154,15 @@ func IsBootImageControllerRequired(ctx *ControllerContext) bool {
 // Current valid feature gate and platform combinations:
 // GCP -> FeatureGateManagedBootImages
 // AWS -> FeatureGateManagedBootImagesAWS
+// vSphere -> FeatureGateManagedBootImagesvSphere
 func CheckBootImagePlatform(infra *configv1.Infrastructure, fgHandler FeatureGatesHandler) bool {
 	switch infra.Status.PlatformStatus.Type {
 	case configv1.AWSPlatformType:
 		return fgHandler.Enabled(features.FeatureGateManagedBootImagesAWS)
 	case configv1.GCPPlatformType:
 		return fgHandler.Enabled(features.FeatureGateManagedBootImages)
+	case configv1.VSpherePlatformType:
+		return fgHandler.Enabled(features.FeatureGateManagedBootImagesvSphere)
 	}
 	return false
 }
