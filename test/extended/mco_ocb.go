@@ -22,10 +22,10 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		skipTestIfOCBIsEnabled(oc)
 	})
 
-	g.It("PolarionID:73494-A valid MachineOSConfig leads to a successful MachineOSBuild and cleanup of its associated resources", func() {
+	g.It("PolarionID:83141-A valid MachineOSConfig leads to a successful MachineOSBuild and cleanup of its associated resources", func() {
 		var (
 			infraMcpName = "infra"
-			moscName     = "tc-73494-infra"
+			moscName     = fmt.Sprintf("tc-%s-infra", GetCurrentTestPolarionIDNumber())
 		)
 
 		exutil.By("Create custom infra MCP")
@@ -54,10 +54,10 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 	})
 
-	g.It("PolarionID:73599-A MachineOSConfig fails to apply or degrades if invalid inputs are given", func() {
+	g.It("PolarionID:83138-A MachineOSConfig fails to apply or degrades if invalid inputs are given", func() {
 		var (
 			infraMcpName = "infra"
-			moscName     = "tc-73599-infra"
+			moscName     = fmt.Sprintf("tc-%s-infra", GetCurrentTestPolarionIDNumber())
 			pushSpec     = fmt.Sprintf("%s/openshift-machine-config-operator/ocb-%s-image:latest", InternalRegistrySvcURL, infraMcpName)
 			pullSecret   = NewSecret(oc.AsAdmin(), "openshift-config", "pull-secret")
 
@@ -108,7 +108,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		logger.Infof("OK!")
 	})
 
-	g.It("PolarionID:73496-A MachineOSConfig with custom containerfile definition can be successfully applied", func() {
+	g.It("PolarionID:83140-A MachineOSConfig with custom containerfile definition can be successfully applied", func() {
 		var (
 			mcp = GetCompactCompatiblePool(oc.AsAdmin())
 
