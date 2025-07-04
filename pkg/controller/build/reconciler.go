@@ -459,6 +459,14 @@ func (b *buildReconciler) createNewMachineOSBuildOrReuseExistingForPoolChange(ct
 func (b *buildReconciler) createNewMachineOSBuildForRebuild(ctx context.Context, mosb *mcfgv1.MachineOSBuild, moscName string) error {
 	// Verify that the MOSB is actually deleted before we try to create a new one
 	// The deletion process may take some time and if we try to create a new MOSB with the same name, a clash may happen
+
+	// First delete any existing MOSB with exactly this name
+	if err := b.mcfgclient.MachineconfigurationV1().
+		MachineOSBuilds().
+		Delete(ctx, mosb.Name, metav1.DeleteOptions{}); err != nil && !k8serrors.IsNotFound(err) {
+		return fmt.Errorf("could not delete existing MOSB %q: %w", mosb.Name, err)
+	}
+
 	childCtx, cancel := context.WithTimeout(ctx, time.Second*90)
 	defer cancel()
 	for {
@@ -530,12 +538,6 @@ func (b *buildReconciler) createNewMachineOSBuildOrReuseExisting(ctx context.Con
 
 	// If this is a rebuild based on the rebuild annotation, then we definitely need to create the MOSB again
 	if isRebuild {
-		if existingMosb != nil {
-			if err := b.mcfgclient.MachineconfigurationV1().
-				MachineOSBuilds().Delete(ctx, existingMosb.Name, metav1.DeleteOptions{}); err != nil && !k8serrors.IsNotFound(err) {
-				return fmt.Errorf("could not delete existing MOSB %q: %w", existingMosb.Name, err)
-			}
-		}
 		return b.createNewMachineOSBuildForRebuild(ctx, mosb, mosc.Name)
 	}
 
