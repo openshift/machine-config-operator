@@ -20,6 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubeletconfigv1beta1 "k8s.io/kubelet/config/v1beta1"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -27,7 +28,6 @@ const (
 )
 
 func TestKubeletConfigDefaultUpdateFreq(t *testing.T) {
-	autoSizing := false
 	resources := make(map[string]string)
 	matchLabels := make(map[string]string)
 	matchLabels["pools.operator.machineconfiguration.openshift.io/infra"] = ""
@@ -38,7 +38,14 @@ func TestKubeletConfigDefaultUpdateFreq(t *testing.T) {
 	kc1 := &mcfgv1.KubeletConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-100"},
 		Spec: mcfgv1.KubeletConfigSpec{
-			AutoSizingReserved: &autoSizing,
+			AutoSizingReserved: ptr.To(false),
+			DropInConfig: &mcfgv1.KubeletDropInDirConfigDetails{
+				ConfigDirectory: "/etc/kubernetes/kubelet.conf.d",
+				ConfigFile:      "10-kubelet.conf",
+				KubeletConfig: runtime.RawExtension{
+					Raw: []byte(`{"maxPods": 20}`),
+				},
+			},
 			KubeletConfig: &runtime.RawExtension{
 				Raw: kcRaw1,
 			}, MachineConfigPoolSelector: &metav1.LabelSelector{MatchLabels: matchLabels},
@@ -50,11 +57,17 @@ func TestKubeletConfigDefaultUpdateFreq(t *testing.T) {
 func TestKubeletConfigMaxPods(t *testing.T) {
 	kcRaw1, err := kcfg.EncodeKubeletConfig(&kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, kubeletconfigv1beta1.SchemeGroupVersion, runtime.ContentTypeJSON)
 	require.Nil(t, err, "failed to encode kubelet config")
-	autoNodeSizing := true
 	kc1 := &mcfgv1.KubeletConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-101"},
 		Spec: mcfgv1.KubeletConfigSpec{
-			AutoSizingReserved: &autoNodeSizing,
+			AutoSizingReserved: ptr.To(true),
+			DropInConfig: &mcfgv1.KubeletDropInDirConfigDetails{
+				ConfigDirectory: "/etc/kubernetes/kubelet.conf.d",
+				ConfigFile:      "10-kubelet.conf",
+				KubeletConfig: runtime.RawExtension{
+					Raw: []byte(`{"maxPods": 20}`),
+				},
+			},
 			KubeletConfig: &runtime.RawExtension{
 				Raw: kcRaw1,
 			},
@@ -65,6 +78,13 @@ func TestKubeletConfigMaxPods(t *testing.T) {
 	kc2 := &mcfgv1.KubeletConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-200"},
 		Spec: mcfgv1.KubeletConfigSpec{
+			DropInConfig: &mcfgv1.KubeletDropInDirConfigDetails{
+				ConfigDirectory: "/etc/kubernetes/kubelet.conf.d",
+				ConfigFile:      "10-kubelet.conf",
+				KubeletConfig: runtime.RawExtension{
+					Raw: []byte(`{"maxPods": 20}`),
+				},
+			},
 			KubeletConfig: &runtime.RawExtension{
 				Raw: kcRaw2,
 			},
@@ -237,6 +257,13 @@ func createKcWithConfig(t *testing.T, cs *framework.ClientSet, name, key string,
 		AutoSizingReserved: config.AutoSizingReserved,
 		MachineConfigPoolSelector: &metav1.LabelSelector{
 			MatchLabels: make(map[string]string),
+		},
+		DropInConfig: &mcfgv1.KubeletDropInDirConfigDetails{
+			ConfigDirectory: config.DropInConfig.ConfigDirectory,
+			ConfigFile:      config.DropInConfig.ConfigFile,
+			KubeletConfig: runtime.RawExtension{
+				Raw: []byte(`{"maxPods": 20}`),
+			},
 		},
 		KubeletConfig: config.KubeletConfig,
 	}

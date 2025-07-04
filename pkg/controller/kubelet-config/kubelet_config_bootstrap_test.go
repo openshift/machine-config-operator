@@ -2,6 +2,8 @@ package kubeletconfig
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -32,14 +34,22 @@ func TestRunKubeletBootstrap(t *testing.T) {
 			if err != nil {
 				panic(err)
 			}
+			tempDir := t.TempDir()
+			kubeletConfDir := filepath.Join(tempDir, "kubelet.conf.d")
+			err = os.Mkdir(kubeletConfDir, 0755)
+			require.NoError(t, err, "Failed to create kubelet.conf.d directory")
 			// kubeletconfigs for master, worker， custom pool respectively
 			expectedMCNames := []string{"99-master-generated-kubelet", "99-worker-generated-kubelet", "99-custom-generated-kubelet"}
 			cfgs := []*mcfgv1.KubeletConfig{
 				{
 					ObjectMeta: metav1.ObjectMeta{Name: "kcfg-master"},
 					Spec: mcfgv1.KubeletConfigSpec{
-						KubeletConfig: &runtime.RawExtension{
-							Raw: kcRaw,
+						DropInConfig: &mcfgv1.KubeletDropInDirConfigDetails{
+							ConfigDirectory: kubeletConfDir,
+							ConfigFile:      "10-kubelet.conf",
+							KubeletConfig: runtime.RawExtension{
+								Raw: kcRaw,
+							},
 						},
 						MachineConfigPoolSelector: &metav1.LabelSelector{
 							MatchLabels: map[string]string{
@@ -51,8 +61,12 @@ func TestRunKubeletBootstrap(t *testing.T) {
 				{
 					ObjectMeta: metav1.ObjectMeta{Name: "kcfg-worker"},
 					Spec: mcfgv1.KubeletConfigSpec{
-						KubeletConfig: &runtime.RawExtension{
-							Raw: kcRaw,
+						DropInConfig: &mcfgv1.KubeletDropInDirConfigDetails{
+							ConfigDirectory: kubeletConfDir,
+							ConfigFile:      "10-kubelet.conf",
+							KubeletConfig: runtime.RawExtension{
+								Raw: kcRaw,
+							},
 						},
 						MachineConfigPoolSelector: &metav1.LabelSelector{
 							MatchLabels: map[string]string{
@@ -64,8 +78,12 @@ func TestRunKubeletBootstrap(t *testing.T) {
 				{
 					ObjectMeta: metav1.ObjectMeta{Name: "kcfg-custom", Labels: map[string]string{"node-role/custom": ""}},
 					Spec: mcfgv1.KubeletConfigSpec{
-						KubeletConfig: &runtime.RawExtension{
-							Raw: kcRaw,
+						DropInConfig: &mcfgv1.KubeletDropInDirConfigDetails{
+							ConfigDirectory: kubeletConfDir,
+							ConfigFile:      "10-kubelet.conf",
+							KubeletConfig: runtime.RawExtension{
+								Raw: kcRaw,
+							},
 						},
 						MachineConfigPoolSelector: &metav1.LabelSelector{
 							MatchLabels: map[string]string{
@@ -105,7 +123,10 @@ func TestGenerateDefaultManagedKeyKubelet(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-
+	tempDir := t.TempDir()
+	kubeletConfDir := filepath.Join(tempDir, "kubelet.conf.d")
+	err = os.Mkdir(kubeletConfDir, 0755)
+	require.NoError(t, err, "Failed to create kubelet.conf.d directory")
 	// valid case, only 1 kubeletconfig per pool
 	managedKeyExist := make(map[string]bool)
 	for _, tc := range []struct {
@@ -117,8 +138,12 @@ func TestGenerateDefaultManagedKeyKubelet(t *testing.T) {
 			&mcfgv1.KubeletConfig{
 				ObjectMeta: metav1.ObjectMeta{Name: "kcfg-default"},
 				Spec: mcfgv1.KubeletConfigSpec{
-					KubeletConfig: &runtime.RawExtension{
-						Raw: kcRaw,
+					DropInConfig: &mcfgv1.KubeletDropInDirConfigDetails{
+						ConfigDirectory: kubeletConfDir,
+						ConfigFile:      "10-kubelet.conf",
+						KubeletConfig: runtime.RawExtension{
+							Raw: kcRaw,
+						},
 					},
 				},
 			},
@@ -129,8 +154,12 @@ func TestGenerateDefaultManagedKeyKubelet(t *testing.T) {
 			&mcfgv1.KubeletConfig{
 				ObjectMeta: metav1.ObjectMeta{Name: "kcfg-default"},
 				Spec: mcfgv1.KubeletConfigSpec{
-					KubeletConfig: &runtime.RawExtension{
-						Raw: kcRaw,
+					DropInConfig: &mcfgv1.KubeletDropInDirConfigDetails{
+						ConfigDirectory: kubeletConfDir,
+						ConfigFile:      "10-kubelet.conf",
+						KubeletConfig: runtime.RawExtension{
+							Raw: kcRaw,
+						},
 					},
 				},
 			},
@@ -155,8 +184,12 @@ func TestGenerateDefaultManagedKeyKubelet(t *testing.T) {
 			&mcfgv1.KubeletConfig{
 				ObjectMeta: metav1.ObjectMeta{Name: "kcfg-default"},
 				Spec: mcfgv1.KubeletConfigSpec{
-					KubeletConfig: &runtime.RawExtension{
-						Raw: kcRaw,
+					DropInConfig: &mcfgv1.KubeletDropInDirConfigDetails{
+						ConfigDirectory: kubeletConfDir,
+						ConfigFile:      "10-kubelet.conf",
+						KubeletConfig: runtime.RawExtension{
+							Raw: kcRaw,
+						},
 					},
 				},
 			},
@@ -168,8 +201,12 @@ func TestGenerateDefaultManagedKeyKubelet(t *testing.T) {
 			&mcfgv1.KubeletConfig{
 				ObjectMeta: metav1.ObjectMeta{Name: "kcfg-default"},
 				Spec: mcfgv1.KubeletConfigSpec{
-					KubeletConfig: &runtime.RawExtension{
-						Raw: kcRaw,
+					DropInConfig: &mcfgv1.KubeletDropInDirConfigDetails{
+						ConfigDirectory: kubeletConfDir,
+						ConfigFile:      "10-kubelet.conf",
+						KubeletConfig: runtime.RawExtension{
+							Raw: kcRaw,
+						},
 					},
 				},
 			},
@@ -181,8 +218,12 @@ func TestGenerateDefaultManagedKeyKubelet(t *testing.T) {
 			&mcfgv1.KubeletConfig{
 				ObjectMeta: metav1.ObjectMeta{Name: "kcfg-1"},
 				Spec: mcfgv1.KubeletConfigSpec{
-					KubeletConfig: &runtime.RawExtension{
-						Raw: kcRaw,
+					DropInConfig: &mcfgv1.KubeletDropInDirConfigDetails{
+						ConfigDirectory: kubeletConfDir,
+						ConfigFile:      "10-kubelet.conf",
+						KubeletConfig: runtime.RawExtension{
+							Raw: kcRaw,
+						},
 					},
 				},
 			},
