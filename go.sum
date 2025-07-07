@@ -45,6 +45,10 @@ github.com/NYTimes/gziphandler v1.1.1 h1:ZUDjpQae29j0ryrS0u/B8HZfJBtBQHjqw2rQ2cq
 github.com/NYTimes/gziphandler v1.1.1/go.mod h1:n/CVRwUEOgIxrgPvAQhUUr9oeUtvrhMomdKFjzJNB0c=
 github.com/OpenPeeDeeP/depguard/v2 v2.2.0 h1:vDfG60vDtIuf0MEOhmLlLLSzqaRM8EMcgJPdp74zmpA=
 github.com/OpenPeeDeeP/depguard/v2 v2.2.0/go.mod h1:CIzddKRvLBC4Au5aYP/i3nyaWQ+ClszLIuVocRiCYFQ=
+github.com/QiWang19/api v0.0.0-20250707203242-f4f32f321ffa h1:2n7trzbD0VrJnZtLdsF6ditMsd1KrUYyFiLSUeaYM+E=
+github.com/QiWang19/api v0.0.0-20250707203242-f4f32f321ffa/go.mod h1:yk60tHAmHhtVpJQo3TwVYq2zpuP70iJIFDCmeKMIzPw=
+github.com/QiWang19/client-go v0.0.0-20250707202054-a83cf6776d72 h1:87ulUUA6lx0RKKKmzHsEjaTos2e6HdrkkZCdFxqx8ZA=
+github.com/QiWang19/client-go v0.0.0-20250707202054-a83cf6776d72/go.mod h1:rgNDShBtHedf8VMM+hpJtjqK1iJml1AC/cMABNC8L8M=
 github.com/ajeddeloh/go-json v0.0.0-20170920214419-6a2fe990e083/go.mod h1:otnto4/Icqn88WCcM4bhIJNSgsh9VLBuspyyCfvof9c=
 github.com/ajeddeloh/go-json v0.0.0-20200220154158-5ae607161559 h1:4SPQljF/GJ8Q+QlCWMWxRBepub4DresnOm4eI2ebFGc=
 github.com/ajeddeloh/go-json v0.0.0-20200220154158-5ae607161559/go.mod h1:otnto4/Icqn88WCcM4bhIJNSgsh9VLBuspyyCfvof9c=
@@ -589,10 +593,6 @@ github.com/opencontainers/selinux v1.11.1 h1:nHFvthhM0qY8/m+vfhJylliSshm8G1jJ2jD
 github.com/opencontainers/selinux v1.11.1/go.mod h1:E5dMC3VPuVvVHDYmi78qvhJp8+M586T4DlDRYpFkyec=
 github.com/openshift-eng/openshift-tests-extension v0.0.0-20250702172817-97309544869d h1:nlVcuw7cyXIYMtQn97y/CMq1yoovvLnc2AFqi15DgXA=
 github.com/openshift-eng/openshift-tests-extension v0.0.0-20250702172817-97309544869d/go.mod h1:6gkP5f2HL0meusT0Aim8icAspcD1cG055xxBZ9yC68M=
-github.com/openshift/api v0.0.0-20250620092249-a8cbc218cd2c h1:0Np840IRyzpvHLWxcE1AZ8sttVZe+a3Y6QBS3Ge+umA=
-github.com/openshift/api v0.0.0-20250620092249-a8cbc218cd2c/go.mod h1:yk60tHAmHhtVpJQo3TwVYq2zpuP70iJIFDCmeKMIzPw=
-github.com/openshift/client-go v0.0.0-20250623095455-7b2007868c76 h1:tH4ZSE+YLzV6B8gsXCz/VDdWnkBo7TDST+fhGExWFig=
-github.com/openshift/client-go v0.0.0-20250623095455-7b2007868c76/go.mod h1:XdbrTCqQWLe1qJ/LgU5jcqJ2OX3VbhtZzgDjzlcbyzA=
 github.com/openshift/kubernetes v1.30.1-0.20250131233843-55625722a4b8 h1:iw1eJproBABuSVMzEhvANn/mjObdh2gp4Ls5WIIDde8=
 github.com/openshift/kubernetes v1.30.1-0.20250131233843-55625722a4b8/go.mod h1:4RS9VRpotH97uAid5TwHVizd4eCyQKUE/c0ufd6cATk=
 github.com/openshift/kubernetes/staging/src/k8s.io/api v0.0.0-20250131233843-55625722a4b8 h1:i+jqeyuJMXTBmnZVgQZ6XMFaW97vPxAePfF0VHS4ThI=

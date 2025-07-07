@@ -451,3 +451,7 @@ replace (
 // The cadvisor version used in k8s v1.32.1 (v0.51.0) relies on code present on this version
 // This can be removed once it's no longer used in o/k
 replace github.com/containerd/errdefs => github.com/containerd/errdefs v0.1.0
+
+replace github.com/openshift/api => github.com/QiWang19/api v0.0.0-20250707203242-f4f32f321ffa
+
+replace github.com/openshift/client-go => github.com/QiWang19/client-go v0.0.0-20250707202054-a83cf6776d72

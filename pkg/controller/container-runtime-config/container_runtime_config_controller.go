@@ -313,21 +313,21 @@ func (ctrl *Controller) itmsConfDeleted(_ interface{}) {
 }
 
 func (ctrl *Controller) addImagePolicyObservers() {
-	ctrl.configInformerFactory.Config().V1alpha1().ClusterImagePolicies().Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+	ctrl.configInformerFactory.Config().V1().ClusterImagePolicies().Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.clusterImagePolicyAdded,
 		UpdateFunc: ctrl.clusterImagePolicyUpdated,
 		DeleteFunc: ctrl.clusterImagePolicyDeleted,
 	})
 	ctrl.clusterImagePolicyLister = ctrl.configInformerFactory.Config().V1().ClusterImagePolicies().Lister()
-	ctrl.clusterImagePolicyListerSynced = ctrl.configInformerFactory.Config().V1alpha1().ClusterImagePolicies().Informer().HasSynced
+	ctrl.clusterImagePolicyListerSynced = ctrl.configInformerFactory.Config().V1().ClusterImagePolicies().Informer().HasSynced
 
-	ctrl.configInformerFactory.Config().V1alpha1().ImagePolicies().Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+	ctrl.configInformerFactory.Config().V1().ImagePolicies().Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.imagePolicyAdded,
 		UpdateFunc: ctrl.imagePolicyUpdated,
 		DeleteFunc: ctrl.imagePolicyDeleted,
 	})
 	ctrl.imagePolicyLister = ctrl.configInformerFactory.Config().V1().ImagePolicies().Lister()
-	ctrl.imagePolicyListerSynced = ctrl.configInformerFactory.Config().V1alpha1().ImagePolicies().Informer().HasSynced
+	ctrl.imagePolicyListerSynced = ctrl.configInformerFactory.Config().V1().ImagePolicies().Informer().HasSynced
 }
 
 func (ctrl *Controller) clusterImagePolicyAdded(_ interface{}) {
@@ -1118,7 +1118,7 @@ func getValidScopePolicies(clusterImagePolicies []*apicfgv1.ClusterImagePolicy, 
 
 func (ctrl *Controller) syncImagePolicyStatusOnly(namespace, imagepolicy, conditionType, reason, msg string, status metav1.ConditionStatus) {
 	statusUpdateErr := retry.RetryOnConflict(updateBackoff, func() error {
-		newImagePolicy, err := ctrl.configClient.ConfigV1alpha1().ImagePolicies(namespace).Get(context.TODO(), imagepolicy, metav1.GetOptions{})
+		newImagePolicy, err := ctrl.configClient.ConfigV1().ImagePolicies(namespace).Get(context.TODO(), imagepolicy, metav1.GetOptions{})
 		if err != nil {
 			return err
 		}
@@ -1128,7 +1128,7 @@ func (ctrl *Controller) syncImagePolicyStatusOnly(namespace, imagepolicy, condit
 			newCondition.ObservedGeneration = newImagePolicy.GetGeneration()
 		}
 		newImagePolicy.Status.Conditions = []metav1.Condition{*newCondition}
-		_, updateErr := ctrl.configClient.ConfigV1alpha1().ImagePolicies(namespace).UpdateStatus(context.TODO(), newImagePolicy, metav1.UpdateOptions{})
+		_, updateErr := ctrl.configClient.ConfigV1().ImagePolicies(namespace).UpdateStatus(context.TODO(), newImagePolicy, metav1.UpdateOptions{})
 		return updateErr
 	})
 	if statusUpdateErr != nil {
