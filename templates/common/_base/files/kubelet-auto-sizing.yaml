@@ -72,6 +72,9 @@ contents:
         if (($total_cpu >= 0)); then # 0.25% of any cores above 4 cores
             recommended_systemreserved_cpu=$(echo $recommended_systemreserved_cpu $(echo $total_cpu 0.0025 | awk '{print $1 * $2}') | awk '{print $1 + $2}')
         fi
+
+         # Enforce minimum threshold of 0.5 CPU
+        recommended_systemreserved_cpu=$(awk -v val="$recommended_systemreserved_cpu" 'BEGIN {if (val < 0.5) print 0.5; else print val}')
         echo "SYSTEM_RESERVED_CPU=${recommended_systemreserved_cpu}">> ${NODE_SIZES_ENV}
     }
     function dynamic_ephemeral_sizing {
