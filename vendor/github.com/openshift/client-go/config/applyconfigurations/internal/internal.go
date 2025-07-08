@@ -133,6 +133,7 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: type
       type:
         scalar: string
+      default: ""
     unions:
     - discriminator: type
 - name: com.github.openshift.api.config.v1.AWSKMSConfig
@@ -266,6 +267,7 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: profile
       type:
         scalar: string
+      default: ""
 - name: com.github.openshift.api.config.v1.Authentication
   map:
     fields:
@@ -1918,7 +1920,6 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: infrastructureTopology
       type:
         scalar: string
-      default: ""
     - name: platform
       type:
         scalar: string
@@ -4329,6 +4330,7 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: maxNumberOfBackups
       type:
         scalar: numeric
+      default: 0
 - name: com.github.openshift.api.config.v1alpha1.RetentionPolicy
   map:
     fields:
@@ -4355,6 +4357,7 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: maxSizeOfBackupsGb
       type:
         scalar: numeric
+      default: 0
 - name: com.github.openshift.api.config.v1alpha1.Storage
   map:
     fields:
