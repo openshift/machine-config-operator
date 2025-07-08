@@ -212,4 +212,7 @@ type MachineOSImageBuilderType string
 const (
 	// describes that the machine-os-builder will use a Job to spin up a custom pod builder that uses buildah
 	JobBuilder MachineOSImageBuilderType = "Job"
+
+	// describes that the machine-os-builder will create an openshift-pipeline
+	PipelineBuilder MachineOSImageBuilderType = "PipelineImageBuilder"
 )
