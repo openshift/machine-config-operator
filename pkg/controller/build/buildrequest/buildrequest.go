@@ -25,8 +25,8 @@ import (
 //go:embed assets/Containerfile.on-cluster-build-template
 var containerfileTemplate string
 
-//go:embed assets/wait.sh
-var waitScript string
+//go:embed assets/create-digest-cm.sh
+var digestCMScript string
 
 //go:embed assets/buildah-build.sh
 var buildahBuildScript string
@@ -635,7 +635,9 @@ func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
 		ObjectMeta: br.getObjectMeta(br.getBuildName()),
 		Spec: corev1.PodSpec{
 			RestartPolicy: corev1.RestartPolicyNever,
-			Containers: []corev1.Container{
+			// Run the build process in an init container so that we can report accurate
+			// status if the build process is successful but the configmap creation container fails
+			InitContainers: []corev1.Container{
 				{
 					// This container performs the image build / push process.
 					Name:            "image-build",
@@ -650,14 +652,16 @@ func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
 						MountPath: "/home/build/.local/share/containers",
 					}),
 				},
+			},
+			Containers: []corev1.Container{
 				{
-					// This container waits for the aforementioned container to finish
+					// This container waits for the init container doing the build to finish
 					// building so we can get the final image SHA. We do this by using
 					// the base OS image (which contains the "oc" binary) to create a
 					// ConfigMap from the digestfile that Buildah creates, which allows
 					// us to avoid parsing log files.
-					Name:            "wait-for-done",
-					Command:         append(command, waitScript),
+					Name:            "create-digest-configmap",
+					Command:         append(command, digestCMScript),
 					Image:           br.opts.OSImageURLConfig.BaseOSContainerImage,
 					Env:             env,
 					ImagePullPolicy: corev1.PullAlways,
