@@ -658,6 +658,17 @@ func getJobForMOSB(ctx context.Context, cs *framework.ClientSet, build *mcfgv1.M
 func streamPodContainerLogsToFile(ctx context.Context, t *testing.T, cs *framework.ClientSet, pod *corev1.Pod, dirPath string) error {
 	errGroup, egCtx := errgroup.WithContext(ctx)
 
+	// Stream logs from init containers
+	for _, container := range pod.Spec.InitContainers {
+		container := container
+		pod := pod.DeepCopy()
+
+		errGroup.Go(func() error {
+			return streamContainerLogToFile(egCtx, t, cs, pod, container, dirPath)
+		})
+	}
+
+	// Stream logs from regular containers
 	for _, container := range pod.Spec.Containers {
 		container := container
 		pod := pod.DeepCopy()
@@ -680,31 +691,44 @@ func streamPodContainerLogsToFile(ctx context.Context, t *testing.T, cs *framewo
 
 // Streams the logs for a given container to a file.
 func streamContainerLogToFile(ctx context.Context, t *testing.T, cs *framework.ClientSet, pod *corev1.Pod, container corev1.Container, dirPath string) error {
-	logger, err := cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace).GetLogs(pod.Name, &corev1.PodLogOptions{
-		Container: container.Name,
-		Follow:    true,
-	}).Stream(ctx)
+	// Wait for the container to be ready to stream logs
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			logger, err := cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace).GetLogs(pod.Name, &corev1.PodLogOptions{
+				Container: container.Name,
+				Follow:    true,
+			}).Stream(ctx)
 
-	if err != nil {
-		return fmt.Errorf("could not get logs for container %s in pod %s: %w", container.Name, pod.Name, err)
+			if err != nil {
+				// If the container is waiting to start (e.g., PodInitializing), wait and retry
+				if strings.Contains(err.Error(), "waiting to start") || strings.Contains(err.Error(), "PodInitializing") {
+					time.Sleep(2 * time.Second)
+					continue
+				}
+				return fmt.Errorf("could not get logs for container %s in pod %s: %w", container.Name, pod.Name, err)
+			}
+			defer logger.Close()
+
+			filename := filepath.Join(dirPath, fmt.Sprintf("%s-%s-%s.log", t.Name(), pod.Name, container.Name))
+
+			file, err := os.Create(filename)
+			if err != nil {
+				return err
+			}
+
+			defer file.Close()
+
+			t.Logf("Streaming pod (%s) container (%s) logs to %s", pod.Name, container.Name, filename)
+			if _, err := io.Copy(file, logger); err != nil {
+				return fmt.Errorf("could not write pod logs to %s: %w", filename, err)
+			}
+
+			return nil
+		}
 	}
-	defer logger.Close()
-
-	filename := filepath.Join(dirPath, fmt.Sprintf("%s-%s-%s.log", t.Name(), pod.Name, container.Name))
-
-	file, err := os.Create(filename)
-	if err != nil {
-		return err
-	}
-
-	defer file.Close()
-
-	t.Logf("Streaming pod (%s) container (%s) logs to %s", pod.Name, container.Name, filename)
-	if _, err := io.Copy(file, logger); err != nil {
-		return fmt.Errorf("could not write pod logs to %s: %w", filename, err)
-	}
-
-	return nil
 }
 
 // Skips a given test if it is detected that the cluster is running OKD. We

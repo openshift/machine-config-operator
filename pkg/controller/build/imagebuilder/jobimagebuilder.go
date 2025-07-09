@@ -12,6 +12,7 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientset "k8s.io/client-go/kubernetes"
@@ -340,13 +341,31 @@ func MapJobStatusToBuildStatus(job *batchv1.Job) (mcfgv1.BuildProgress, []metav1
 	if job.Status.Active >= 0 && job.Status.Failed >= 0 && job.Status.Failed < constants.JobMaxRetries+1 && job.Status.Succeeded == 0 {
 		return mcfgv1.MachineOSBuilding, apihelpers.MachineOSBuildRunningConditions()
 	}
+
+	// For jobs with init containers, we need to verify that the job actually completed successfully
+	// Job.Status.Succeeded > 0 only indicates that at least one pod succeeded, but with init containers,
+	// a pod can be marked as succeeded even if regular containers fail after init containers succeed.
+	// We need to check the job's actual completion condition.
 	if job.Status.Succeeded > 0 {
-		return mcfgv1.MachineOSBuildSucceeded, apihelpers.MachineOSBuildSucceededConditions()
+		if len(job.Status.Conditions) == 0 {
+			return mcfgv1.MachineOSBuildSucceeded, apihelpers.MachineOSBuildSucceededConditions()
+		}
+		// Check if the job has the "Complete" condition set to true
+		for _, condition := range job.Status.Conditions {
+			if condition.Type == batchv1.JobComplete && condition.Status == corev1.ConditionTrue {
+				return mcfgv1.MachineOSBuildSucceeded, apihelpers.MachineOSBuildSucceededConditions()
+			}
+			if condition.Type == batchv1.JobFailed && condition.Status == corev1.ConditionTrue {
+				return mcfgv1.MachineOSBuildFailed, apihelpers.MachineOSBuildFailedConditions()
+			}
+		}
+		// If we have succeeded pods but no completion condition, we're still building
+		return mcfgv1.MachineOSBuilding, apihelpers.MachineOSBuildRunningConditions()
 	}
+
 	// Only return failed if there have been 4 pod failures as the backoffLimit is set to 3
 	if job.Status.Failed > constants.JobMaxRetries {
 		return mcfgv1.MachineOSBuildFailed, apihelpers.MachineOSBuildFailedConditions()
-
 	}
 
 	return "", apihelpers.MachineOSBuildInitialConditions()
