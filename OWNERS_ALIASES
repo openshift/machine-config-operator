@@ -8,6 +8,7 @@ aliases:
   baremetal-reviewers:
     - bfournie
     - cybertron
+    - emy
     - mkowalski
   edge-enablement-reviewers:
      - jerpeter1
