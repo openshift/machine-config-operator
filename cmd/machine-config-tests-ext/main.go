@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/openshift-eng/openshift-tests-extension/pkg/cmd"
 	v "github.com/openshift-eng/openshift-tests-extension/pkg/version"
@@ -27,6 +28,7 @@ func main() {
 	ext := e.NewExtension("openshift", "payload", "machine-config-operator")
 
 	// all test cases
+	defaultTimeout := 120 * time.Minute
 	ext.AddSuite(e.Suite{
 		Name: "openshift/machine-config-operator/disruptive",
 		Parents: []string{
@@ -35,6 +37,8 @@ func main() {
 		Qualifiers: []string{
 			`name.contains("[Suite:openshift/machine-config-operator/disruptive")`,
 		},
+		ClusterStability: e.ClusterStabilityDisruptive,
+		TestTimeout:      &defaultTimeout,
 	})
 
 	// If using Ginkgo, build test specs automatically
