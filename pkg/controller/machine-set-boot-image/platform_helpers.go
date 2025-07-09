@@ -1,11 +1,13 @@
 package machineset
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
 	"github.com/coreos/stream-metadata-go/stream"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 
@@ -37,7 +39,7 @@ func checkMachineSet(infra *osconfigv1.Infrastructure, machineSet *machinev1beta
 	case osconfigv1.LibvirtPlatformType:
 		return reconcileLibvirt(machineSet, configMap, arch)
 	case osconfigv1.VSpherePlatformType:
-		return reconcileVSphere(machineSet, configMap, arch)
+		return reconcileVSphere(machineSet, infra, configMap, arch, secretClient)
 	case osconfigv1.NutanixPlatformType:
 		return reconcileNutanix(machineSet, configMap, arch)
 	case osconfigv1.OvirtPlatformType:
@@ -226,9 +228,64 @@ func reconcileLibvirt(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap
 	return false, nil, nil
 }
 
-func reconcileVSphere(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
-	klog.Infof("Skipping machineset %s, unsupported platform type VSphere with %s arch", machineSet.Name, arch)
-	return false, nil, nil
+func reconcileVSphere(machineSet *machinev1beta1.MachineSet, infra *osconfigv1.Infrastructure, configMap *corev1.ConfigMap, arch string, secretClient clientset.Interface) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
+	klog.Infof("Reconciling MAPI machineset %s on vSphere, with arch %s", machineSet.Name, arch)
+
+	if infra.Spec.PlatformSpec.VSphere == nil {
+		klog.Warningf("Reconcile skipped: VSphere field is nil in PlatformSpec %v", infra.Spec.PlatformSpec)
+		return false, nil, nil
+	}
+
+	// First, unmarshal the VSphere providerSpec
+	providerSpec := new(machinev1beta1.VSphereMachineProviderSpec)
+	if err := unmarshalProviderSpec(machineSet, providerSpec); err != nil {
+		return false, nil, err
+	}
+
+	// Next, unmarshal the configmap into a stream object
+	streamData := new(stream.Stream)
+	if err := unmarshalStreamDataConfigMap(configMap, streamData); err != nil {
+		return false, nil, err
+	}
+
+	streamArch, err := streamData.GetArchitecture(arch)
+	if err != nil {
+		return false, nil, err
+	}
+
+	artifacts := streamArch.Artifacts["vmware"]
+	if artifacts.Release == "" {
+		return false, nil, fmt.Errorf("%s: artifact '%s' not found", streamData.FormatPrefix(arch), "vmware")
+	}
+
+	newProviderSpec := providerSpec.DeepCopy()
+
+	// Fetch the creds configmap
+	credsSc, err := secretClient.CoreV1().Secrets("kube-system").Get(context.TODO(), "vsphere-creds", metav1.GetOptions{})
+	if err != nil {
+		return false, nil, fmt.Errorf("failed to fetch vsphere-creds Secret during machineset sync: %w", err)
+	}
+
+	newBootImg, patchRequired, err := createNewVMTemplate(streamData, providerSpec, infra, credsSc, arch, artifacts.Release)
+	if err != nil {
+		return false, nil, err
+	}
+
+	// If patch is required, marshal the new providerspec into the machineset
+	if patchRequired {
+		// Ensure the ignition stub is the minimum acceptable spec required for boot image updates
+		if err := upgradeStubIgnitionIfRequired(providerSpec.UserDataSecret.Name, secretClient); err != nil {
+			return false, nil, err
+		}
+
+		newProviderSpec.Template = newBootImg
+		newMachineSet = machineSet.DeepCopy()
+		if err := marshalProviderSpec(newMachineSet, newProviderSpec); err != nil {
+			return false, nil, err
+		}
+	}
+
+	return patchRequired, newMachineSet, nil
 }
 
 func reconcileNutanix(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
