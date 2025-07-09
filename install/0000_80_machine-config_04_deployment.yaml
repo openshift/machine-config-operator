@@ -30,7 +30,7 @@ spec:
         args:
         - "start"
         - "--images-json=/etc/mco/images/images.json"
-        - "--payload-version=0.0.1-snapshot"
+        - "--payload-version=4.18.19"
         - "--operator-image=placeholder.url.oc.will.replace.this.org/placeholdernamespace:machine-config-operator"
         resources:
           requests:
@@ -38,7 +38,7 @@ spec:
             memory: 50Mi
         env:
           - name: RELEASE_VERSION
-            value: "0.0.1-snapshot"
+            value: "4.18.19"
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - name: images
