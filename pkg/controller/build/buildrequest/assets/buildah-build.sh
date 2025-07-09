@@ -31,25 +31,6 @@ export HTTP_PROXY="${HTTP_PROXY:-}"
 export HTTPS_PROXY="${HTTPS_PROXY:-}"
 export NO_PROXY="${NO_PROXY:-}"
 
-# Retry a command up to a specific number of times until it exits successfully.
-# Adapted from https://gist.github.com/sj26/88e1c6584397bb7c13bd11108a579746
-function retry {
-  local count=0
-
-  until "$@"; do
-    exit=$?
-    count=$((count + 1))
-    if [ $count -lt $MAX_RETRIES ]; then
-      echo "Retry $count/$MAX_RETRIES exited $exit, retrying..."
-    else
-      echo "Retry $count/$MAX_RETRIES exited $exit, no more retries left."
-	  echo $exit > /tmp/done/errorfile
-      return $exit
-    fi
-  done
-  return 0
-}
-
 # Copy the Containerfile, Machineconfigs and Additional Trust Bundle from configmaps into our build context.
 cp /tmp/containerfile/Containerfile "$build_context"
 cp /tmp/machineconfig/machineconfig.json.gz "$build_context/machineconfig/"
@@ -109,10 +90,10 @@ if [[ -n "$ETC_PKI_RPM_GPG_MOUNTPOINT" ]] && [[ -d "$ETC_PKI_RPM_GPG_MOUNTPOINT"
 fi
 
 # Build our image.
-retry buildah bud "${build_args[@]}" "$build_context"
+buildah bud "${build_args[@]}" "$build_context"
 
 # Push our built image.
-retry buildah push \
+buildah push \
 	--storage-driver vfs \
 	--authfile="$FINAL_IMAGE_PUSH_CREDS" \
 	--digestfile="/tmp/done/digestfile" \

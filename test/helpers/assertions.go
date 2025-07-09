@@ -230,6 +230,34 @@ func (a *Assertions) PodIsRunning(podName string, msgAndArgs ...interface{}) {
 		return pod.Status.Phase == corev1.PodRunning
 	}
 
+	isPodInitContainersRunning := func(pod *corev1.Pod) bool {
+		if pod == nil {
+			return false
+		}
+
+		// Check if any init containers are currently running
+		for _, ctr := range pod.Status.InitContainerStatuses {
+			if ctr.State.Running != nil {
+				return true
+			}
+		}
+		return false
+	}
+
+	areInitContainersComplete := func(pod *corev1.Pod) bool {
+		if pod == nil || len(pod.Status.InitContainerStatuses) == 0 {
+			return true // No init containers means they're "complete"
+		}
+
+		// All init containers must be terminated with exit code 0
+		for _, ctr := range pod.Status.InitContainerStatuses {
+			if ctr.State.Terminated == nil || ctr.State.Terminated.ExitCode != 0 {
+				return false
+			}
+		}
+		return true
+	}
+
 	isPodContainersRunning := func(pod *corev1.Pod) bool {
 		if pod == nil {
 			return false
@@ -245,7 +273,10 @@ func (a *Assertions) PodIsRunning(podName string, msgAndArgs ...interface{}) {
 		if a.poll {
 			exists, err := a.created(err)
 			if exists && err == nil {
-				return isPodRunning(pod) && isPodContainersRunning(pod), nil
+				// Pod is considered "running" if:
+				// 1. Init containers are currently running, OR
+				// 2. Init containers have completed successfully AND regular containers are running
+				return isPodInitContainersRunning(pod) || (areInitContainersComplete(pod) && isPodRunning(pod) && isPodContainersRunning(pod)), nil
 			}
 			return exists, err
 		}
