@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 
 	ign2types "github.com/coreos/ignition/config/v2_2/types"
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
@@ -101,7 +103,17 @@ func checkV3Unit(unit ign3types.Unit, systemdPath string) error {
 		return nil
 	}
 
-	return checkFileContentsAndMode(path, []byte(*unit.Contents), defaultFilePermissions)
+	err := checkFileContentsAndMode(path, []byte(*unit.Contents), defaultFilePermissions)
+	if err != nil {
+		return err
+	}
+
+	err = checkUnitEnabled(unit.Name, unit.Enabled)
+	if err != nil {
+		return err
+	}
+
+	return err
 }
 
 // checkV3Units validates the contents of all the units in the
@@ -228,6 +240,27 @@ func checkV2Files(files []ign2types.File) error {
 		}
 		checkedFiles[f.Path] = true
 	}
+	return nil
+}
+
+// checkUnitEnabled checks whether a systemd unit is enabled as expected.
+func checkUnitEnabled(name string, expectedEnabled *bool) error {
+	if expectedEnabled == nil {
+		return nil
+	}
+	cmd := exec.Command("systemctl", "is-enabled", name)
+	outBytes, err := cmd.CombinedOutput()
+	out := strings.TrimSpace(string(outBytes))
+
+	if err != nil {
+		return fmt.Errorf("failed to check if unit %q is enabled: %v (output: %q)", name, err, out)
+	}
+
+	isEnabled := (out == "enabled")
+	if isEnabled != *expectedEnabled {
+		return fmt.Errorf("unit %q expected enabled=%t, but systemd reports %q", name, *expectedEnabled, out)
+	}
+
 	return nil
 }
 
