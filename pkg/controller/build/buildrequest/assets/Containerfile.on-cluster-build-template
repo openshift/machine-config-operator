@@ -37,6 +37,13 @@ skip_if_unavailable=False" > /etc/yum.repos.d/coreos-extensions.repo && \
 RUN ostree container commit
 {{end}}
 
+{{if and .KernelDefaultPackages .KernelPackages}}
+	kernelDefaultPkgs="{{- range $index, $item := .KernelDefaultPackages }}{{- if $index }} {{ end }}{{$item}}{{- end }}" && \
+	installKernelPkgs="{{- range $index, $item := .KernelPackages }}{{- if $index }} {{ end }}--install {{$item}}{{- end }}" && \	
+	rpm-ostree override remove $kernelDefaultPkgs $installKernelPkgs
+RUN ostree container commit
+{{end}}
+
 # Hardcoded tmpfiles configuration for usbguard and ipsec.
 # Eventually when https://github.com/USBGuard/usbguard/pull/652 is backported to RHEL, we will be able to remove the usbguard patch
 # For now, libreswan (ipsec) patch will live here until we find a better alternative
