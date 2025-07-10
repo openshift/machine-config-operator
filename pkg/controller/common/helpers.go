@@ -477,6 +477,18 @@ func validateExtensions(exts []string) error {
 	return nil
 }
 
+func GetPackagesForSupportedKernelType(kernelType string) (string, map[string][]string, error) {
+	kernelPackages := map[string][]string{
+		KernelTypeDefault:  {"kernel", "kernel-core", "kernel-modules", "kernel-modules-core", "kernel-modules-extra"},
+		KernelTypeRealtime: {"kernel-rt-core", "kernel-rt-modules", "kernel-rt-modules-extra", "kernel-rt-kvm"},
+		KernelType64kPages: {"kernel-64k-core", "kernel-64k-modules", "kernel-64k-modules-core", "kernel-64k-modules-extra"},
+	}
+	if _, ok := kernelPackages[kernelType]; ok {
+		return kernelType, kernelPackages, nil
+	}
+	return "", nil, fmt.Errorf("Unhandled kernel type %s", kernelType)
+}
+
 // Resolves a list of supported extensions to the individual packages required
 // for each of those extensions. Returns an error is any of the supplied
 // extensions is invalid.
