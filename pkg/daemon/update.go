@@ -2803,7 +2803,7 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 	}
 
 	// Switch to real time kernel
-	if mcDiff.osUpdate || mcDiff.kernelType {
+	if !mcDiff.oclEnabled && (mcDiff.osUpdate || mcDiff.kernelType) {
 		if err := dn.switchKernel(oldConfig, newConfig); err != nil {
 			return err
 		}
