@@ -640,7 +640,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			originalKubeConfig.TLSCipherSuites = observedCipherSuites
 		}
 
-		kubeletIgnition, logLevelIgnition, autoSizingReservedIgnition, err := generateKubeletIgnFiles(cfg, originalKubeConfig)
+		kubeletIgnition, logLevelIgnition, autoSizingReservedIgnition, dropInDirConfigIgnition, err := generateKubeletIgnFiles(cfg, originalKubeConfig)
 		if err != nil {
 			return ctrl.syncStatusOnly(cfg, err)
 		}
@@ -682,6 +682,9 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		}
 		if kubeletIgnition != nil {
 			tempIgnConfig.Storage.Files = append(tempIgnConfig.Storage.Files, *kubeletIgnition)
+		}
+		if dropInDirConfigIgnition != nil {
+			tempIgnConfig.Storage.Files = append(tempIgnConfig.Storage.Files, *dropInDirConfigIgnition)
 		}
 
 		rawIgn, err := json.Marshal(tempIgnConfig)

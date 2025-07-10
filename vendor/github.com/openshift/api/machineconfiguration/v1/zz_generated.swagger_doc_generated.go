@@ -218,6 +218,7 @@ var map_KubeletConfigSpec = map[string]string{
 	"machineConfigPoolSelector": "machineConfigPoolSelector selects which pools the KubeletConfig shoud apply to. A nil selector will result in no pools being selected.",
 	"kubeletConfig":             "kubeletConfig fields are defined in kubernetes upstream. Please refer to the types defined in the version/commit used by OpenShift of the upstream kubernetes. It's important to note that, since the fields of the kubelet configuration are directly fetched from upstream the validation of those values is handled directly by the kubelet. Please refer to the upstream version of the relevant kubernetes for the valid values of these fields. Invalid values of the kubelet configuration fields may render cluster nodes unusable.",
 	"tlsSecurityProfile":        "If unset, the default is based on the apiservers.config.openshift.io/cluster resource. Note that only Old and Intermediate profiles are currently supported, and the maximum available minTLSVersion is VersionTLS12.",
+	"dropInConfig":              "dropInConfig allows users to define a drop-in configuration for Kubelet.",
 }
 
 func (KubeletConfigSpec) SwaggerDoc() map[string]string {
@@ -232,6 +233,17 @@ var map_KubeletConfigStatus = map[string]string{
 
 func (KubeletConfigStatus) SwaggerDoc() map[string]string {
 	return map_KubeletConfigStatus
+}
+
+var map_KubeletDropInDirConfigDetails = map[string]string{
+	"":                "KubeletDropInDirConfigDetails defines the details for Kubelet drop-in configuration.",
+	"configDirectory": "ConfigDirectory allows users to define a directory for Kubelet's drop-in configuration. This enables incremental configuration updates without modifying the main KubeletConfig.",
+	"configFile":      "ConfigFile defines a specific configuration file within the drop-in directory.",
+	"kubeletConfig":   "KubeletConfig fields are defined in Kubernetes upstream. This must be set if DropInConfigDirectory and DropInConfigFile are provided.",
+}
+
+func (KubeletDropInDirConfigDetails) SwaggerDoc() map[string]string {
+	return map_KubeletDropInDirConfigDetails
 }
 
 var map_MachineConfig = map[string]string{
