@@ -30,6 +30,8 @@ type informers struct {
 	machineOSBuildInformer    mcfginformersv1.MachineOSBuildInformer
 	machineOSConfigInformer   mcfginformersv1.MachineOSConfigInformer
 	nodeInformer              coreinformersv1.NodeInformer
+	configmapInformer         coreinformersv1.ConfigMapInformer
+	secretInformer            coreinformersv1.SecretInformer
 	toStart                   []interface{ Start(<-chan struct{}) }
 	hasSynced                 []cache.InformerSynced
 }
@@ -51,6 +53,8 @@ func (i *informers) listers() *listers {
 		jobLister:               i.jobInformer.Lister(),
 		controllerConfigLister:  i.controllerConfigInformer.Lister(),
 		nodeLister:              i.nodeInformer.Lister(),
+		configmapLister:         i.configmapInformer.Lister(),
+		secretLister:            i.secretInformer.Lister(),
 	}
 }
 
@@ -63,6 +67,8 @@ type listers struct {
 	jobLister               batchlisterv1.JobLister
 	controllerConfigLister  mcfglistersv1.ControllerConfigLister
 	nodeLister              corelistersv1.NodeLister
+	configmapLister         corelistersv1.ConfigMapLister
+	secretLister            corelistersv1.SecretLister
 }
 
 func (l *listers) utilListers() *utils.Listers {
@@ -98,6 +104,8 @@ func newInformers(mcfgclient mcfgclientset.Interface, kubeclient clientset.Inter
 	machineOSConfigInformer := mcoInformerFactory.Machineconfiguration().V1().MachineOSConfigs()
 	jobInformer := coreInformerFactory.Batch().V1().Jobs()
 	nodeInformer := coreInformerFactoryNodes.Core().V1().Nodes()
+	configmapInformer := coreInformerFactory.Core().V1().ConfigMaps()
+	secretInformer := coreInformerFactory.Core().V1().Secrets()
 
 	return &informers{
 		controllerConfigInformer:  controllerConfigInformer,
@@ -107,6 +115,8 @@ func newInformers(mcfgclient mcfgclientset.Interface, kubeclient clientset.Inter
 		machineConfigInformer:     machineConfigInformer,
 		jobInformer:               jobInformer,
 		nodeInformer:              nodeInformer,
+		configmapInformer:         configmapInformer,
+		secretInformer:            secretInformer,
 		toStart: []interface{ Start(<-chan struct{}) }{
 			mcoInformerFactory,
 			coreInformerFactory,
@@ -119,6 +129,8 @@ func newInformers(mcfgclient mcfgclientset.Interface, kubeclient clientset.Inter
 			machineOSBuildInformer.Informer().HasSynced,
 			machineOSConfigInformer.Informer().HasSynced,
 			nodeInformer.Informer().HasSynced,
+			configmapInformer.Informer().HasSynced,
+			secretInformer.Informer().HasSynced,
 		},
 	}
 }

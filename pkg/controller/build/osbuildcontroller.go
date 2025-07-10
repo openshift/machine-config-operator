@@ -42,6 +42,14 @@ type OSBuildController struct {
 	ctx       context.Context
 
 	buildReconciler reconciler
+
+	// Handles determining whether a delay is needed for controller shut down and
+	// polls until pending objects, if any, are deleted or until the context it
+	// is invoked with is canceled.
+	shutdownDelayHandler *shutdownDelayHandler
+
+	// This channel is primarily used for testing purposes to ensure that
+	shutdownChan chan struct{}
 }
 
 type Config struct {
@@ -57,13 +65,18 @@ type Config struct {
 	// 5ms, 10ms, 20ms, 40ms, 80ms, 160ms, 320ms, 640ms, 1.3s, 2.6s, 5.1s, 10.2s, 20.4s, 41s, 82s
 	// Default: 5
 	MaxRetries int
+
+	MaxShutdownDelay     time.Duration
+	ShutdownPollInterval time.Duration
 }
 
 // Creates a Config with sensible production defaults.
 func defaultConfig() Config {
 	return Config{
-		MaxRetries:  5,
-		UpdateDelay: time.Second * 5,
+		MaxRetries:           5,
+		UpdateDelay:          time.Second * 5,
+		MaxShutdownDelay:     time.Second * 10,
+		ShutdownPollInterval: time.Millisecond * 100,
 	}
 }
 
@@ -134,30 +147,64 @@ func newOSBuildController(
 	})
 
 	ctrl.buildReconciler = newBuildReconciler(mcfgclient, kubeclient, imageclient, routeclient, ctrl.listers)
+	ctrl.shutdownDelayHandler = newShutdownDelayHandler(ctrl.listers)
+	ctrl.shutdownChan = make(chan struct{})
 
 	return ctrl
 }
 
+func (ctrl *OSBuildController) shutdownController() {
+	// Time box the controller shutdown delay process to ten seconds. This is
+	// approximately how long it takes the kubelet to send a SIGKILL to a
+	// process that it has already sent a SIGTERM to.
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), ctrl.config.MaxShutdownDelay)
+	defer shutdownCancel()
+
+	klog.Infof("Determining if a shutdown delay up to %s is required", ctrl.config.MaxShutdownDelay)
+
+	if err := ctrl.shutdownDelayHandler.handleShutdown(shutdownCtx, ctrl.config.ShutdownPollInterval); err != nil {
+		klog.Warningf("Error occurred during graceful shutdown: %s. Some objects may be orphaned as a result.", err)
+	}
+
+	// Shut down the work queue.
+	ctrl.execQueue.ShutDown()
+
+	// Handle any crashes.
+	utilruntime.HandleCrash()
+
+	klog.Infof("OSBuildController has shut down")
+	close(ctrl.shutdownChan)
+}
+
+// Returns a channel that can be used to determine whether the controller
+// shutdown is complete.
+func (ctrl *OSBuildController) ShutdownChan() <-chan struct{} {
+	return ctrl.shutdownChan
+}
+
 func (ctrl *OSBuildController) Run(parentCtx context.Context, workers int) {
 	klog.Infof("Starting OSBuildController")
-	defer klog.Infof("Shutting down OSBuildController")
 
-	ctx, cancel := context.WithCancel(parentCtx)
-	defer utilruntime.HandleCrash()
-	defer ctrl.execQueue.ShutDown()
-	defer cancel()
+	// The main controller context. We purposely do not inherit from the parent
+	// context because we need to control the shutdown process.
+	ctrlCtx, ctrlCancel := context.WithCancel(context.Background())
+	defer func() {
+		klog.Infof("Shutting down OSBuildController")
+		ctrl.shutdownController()
+		ctrlCancel()
+	}()
 
-	ctrl.ctx = ctx
+	ctrl.ctx = ctrlCtx
 
-	ctrl.informers.start(ctx)
+	ctrl.informers.start(ctrlCtx)
 
-	if !cache.WaitForCacheSync(ctx.Done(), ctrl.hasSynced...) {
+	if !cache.WaitForCacheSync(ctrlCtx.Done(), ctrl.hasSynced...) {
 		return
 	}
 
-	ctrl.execQueue.Start(ctx, workers)
+	ctrl.execQueue.Start(ctrlCtx, workers)
 
-	<-ctx.Done()
+	<-parentCtx.Done()
 }
 
 type kubeObject interface {
