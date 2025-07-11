@@ -70,7 +70,6 @@ contents:
     network_dir = "/etc/kubernetes/cni/net.d/"
     plugin_dirs = [
         "/var/lib/cni/bin",
-        "/usr/libexec/cni",
     ]
 
     [crio.metrics]
