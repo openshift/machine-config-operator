@@ -34,8 +34,9 @@ extensions="{{- range $index, $item := .ExtensionsPackages }}{{- if $index }} {{
 echo "Installing extension packages: $extensions" && \
 rpm-ostree install $extensions{{end}}{{if and .KernelDefaultPackages .KernelPackages}} && \
 kernelDefaultPkgs="{{- range $index, $item := .KernelDefaultPackages }}{{- if $index }} {{ end }}{{$item}}{{- end }}" && \
-installKernelPkgs="{{- range $index, $item := .KernelPackages }}{{- if $index }} {{ end }}--install {{$item}}{{- end }}" && \	
-rpm-ostree override remove $kernelDefaultPkgs $installKernelPkgs {{end}} && \
+installKernelPkgs="{{- range $index, $item := .KernelPackages }}{{- if $index }} {{ end }}{{$item}}{{- end }}" && \	
+rpm-ostree install $installKernelPkgs && \
+rpm-ostree override remove $kernelDefaultPkgs{{end}} && \
 rm /etc/yum.repos.d/coreos-extensions.repo
 RUN ostree container commit
 {{end}}
