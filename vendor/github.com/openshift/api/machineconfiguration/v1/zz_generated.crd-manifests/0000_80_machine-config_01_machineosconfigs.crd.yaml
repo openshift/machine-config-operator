@@ -6,7 +6,6 @@ metadata:
     api.openshift.io/merged-by-featuregates: "true"
     include.release.openshift.io/ibm-cloud-managed: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
-    release.openshift.io/feature-set: CustomNoUpgrade
   labels:
     openshift.io/operator-managed: ""
   name: machineosconfigs.machineconfiguration.openshift.io
@@ -63,7 +62,7 @@ spec:
                     - message: a lowercase RFC 1123 subdomain must consist of lower
                         case alphanumeric characters, '-' or '.', and must start and
                         end with an alphanumeric character.
-                      rule: '!format.dns1123Subdomain().validate(self).hasValue()'
+                      rule: self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$')
                 required:
                 - name
                 type: object
@@ -141,7 +140,7 @@ spec:
                     - message: a lowercase RFC 1123 subdomain must consist of lower
                         case alphanumeric characters, '-' or '.', and must start and
                         end with an alphanumeric character.
-                      rule: '!format.dns1123Subdomain().validate(self).hasValue()'
+                      rule: self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$')
                 required:
                 - name
                 type: object
@@ -164,7 +163,7 @@ spec:
                     - message: a lowercase RFC 1123 subdomain must consist of lower
                         case alphanumeric characters, '-' or '.', and must start and
                         end with an alphanumeric character.
-                      rule: '!format.dns1123Subdomain().validate(self).hasValue()'
+                      rule: self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$')
                 required:
                 - name
                 type: object
@@ -289,7 +288,7 @@ spec:
                     - message: a lowercase RFC 1123 subdomain must consist of lower
                         case alphanumeric characters, '-' or '.', and must start and
                         end with an alphanumeric character.
-                      rule: '!format.dns1123Subdomain().validate(self).hasValue()'
+                      rule: self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$')
                   name:
                     description: |-
                       name of the referent.
@@ -301,7 +300,7 @@ spec:
                     - message: a lowercase RFC 1123 subdomain must consist of lower
                         case alphanumeric characters, '-' or '.', and must start and
                         end with an alphanumeric character.
-                      rule: '!format.dns1123Subdomain().validate(self).hasValue()'
+                      rule: self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$')
                   namespace:
                     description: |-
                       namespace of the referent.
@@ -313,20 +312,21 @@ spec:
                     x-kubernetes-validations:
                     - message: the value must consist of only lowercase alphanumeric
                         characters and hyphens
-                      rule: '!format.dns1123Label().validate(self).hasValue()'
+                      rule: self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')
                   resource:
                     description: |-
                       resource of the referent.
                       This value should consist of at most 63 characters, and of only lowercase alphanumeric characters and hyphens,
-                      and should start and end with an alphanumeric character.
+                      and should start with an alphabetic character and end with an alphanumeric character.
                       Example: "deployments", "deploymentconfigs", "pods", etc.
                     maxLength: 63
                     minLength: 1
                     type: string
                     x-kubernetes-validations:
-                    - message: the value must consist of only lowercase alphanumeric
-                        characters and hyphens
-                      rule: '!format.dns1123Label().validate(self).hasValue()'
+                    - message: a DNS-1035 label must consist of lower case alphanumeric
+                        characters or '-', start with an alphabetic character, and
+                        end with an alphanumeric character
+                      rule: self.matches('^[a-z]([-a-z0-9]*[a-z0-9])?$')
                 required:
                 - group
                 - name

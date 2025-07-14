@@ -47,7 +47,7 @@ spec:
             description: spec holds user settable values for configuration
             properties:
               cgroupMode:
-                description: cgroupMode determines the cgroups version on the node
+                description: CgroupMode determines the cgroups version on the node
                 enum:
                 - v1
                 - v2
@@ -55,7 +55,7 @@ spec:
                 type: string
               workerLatencyProfile:
                 description: |-
-                  workerLatencyProfile determins the how fast the kubelet is updating
+                  WorkerLatencyProfile determins the how fast the kubelet is updating
                   the status and corresponding reaction of the cluster
                 enum:
                 - Default

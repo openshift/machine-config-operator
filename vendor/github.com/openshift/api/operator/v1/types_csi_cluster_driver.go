@@ -36,6 +36,7 @@ type ClusterCSIDriver struct {
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	// spec holds user settable values for configuration
+	// +kubebuilder:validation:Required
 	// +required
 	Spec ClusterCSIDriverSpec `json:"spec"`
 
@@ -94,7 +95,7 @@ const (
 // ClusterCSIDriverSpec is the desired behavior of CSI driver operator
 type ClusterCSIDriverSpec struct {
 	OperatorSpec `json:",inline"`
-	// storageClassState determines if CSI operator should create and manage storage classes.
+	// StorageClassState determines if CSI operator should create and manage storage classes.
 	// If this field value is empty or Managed - CSI operator will continuously reconcile
 	// storage class and create if necessary.
 	// If this field value is Unmanaged - CSI operator will not reconcile any previously created
@@ -134,7 +135,7 @@ type CSIDriverConfigSpec struct {
 	// driverConfig is being applied to.
 	// Valid values are: AWS, Azure, GCP, IBMCloud, vSphere and omitted.
 	// Consumers should treat unknown values as a NO-OP.
-	// +required
+	// +kubebuilder:validation:Required
 	// +unionDiscriminator
 	DriverType CSIDriverType `json:"driverType"`
 
@@ -154,7 +155,7 @@ type CSIDriverConfigSpec struct {
 	// +optional
 	IBMCloud *IBMCloudCSIDriverConfigSpec `json:"ibmcloud,omitempty"`
 
-	// vSphere is used to configure the vsphere CSI driver.
+	// vsphere is used to configure the vsphere CSI driver.
 	// +optional
 	VSphere *VSphereCSIDriverConfigSpec `json:"vSphere,omitempty"`
 }
@@ -197,7 +198,7 @@ type AWSEFSVolumeMetrics struct {
 	// RecursiveWalk means the AWS EFS CSI Driver will recursively scan volumes to collect metrics.
 	// This process may result in high CPU and memory usage, depending on the volume size.
 	// +unionDiscriminator
-	// +required
+	// +kubebuilder:validation:Required
 	State AWSEFSVolumeMetricsState `json:"state"`
 
 	// recursiveWalk provides additional configuration for collecting volume metrics in the AWS EFS CSI Driver
@@ -239,7 +240,7 @@ type AzureDiskEncryptionSet struct {
 	// 5. The second, third, and fourth groups should be 4 characters long.
 	// 6. The fifth group should be 12 characters long.
 	// An Example SubscrionID: f2007bbf-f802-4a47-9336-cf7c6b89b378
-	// +required
+	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MaxLength:=36
 	// +kubebuilder:validation:Pattern:=`^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$`
 	SubscriptionID string `json:"subscriptionID"`
@@ -249,7 +250,7 @@ type AzureDiskEncryptionSet struct {
 	// underscores (_), parentheses, hyphens and periods.
 	// The value should not end in a period and be at most 90 characters in
 	// length.
-	// +required
+	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MaxLength:=90
 	// +kubebuilder:validation:Pattern:=`^[\w\.\-\(\)]*[\w\-\(\)]$`
 	ResourceGroup string `json:"resourceGroup"`
@@ -257,7 +258,7 @@ type AzureDiskEncryptionSet struct {
 	// name is the name of the disk encryption set that will be set on the default storage class.
 	// The value should consist of only alphanumberic characters,
 	// underscores (_), hyphens, and be at most 80 characters in length.
-	// +required
+	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MaxLength:=80
 	// +kubebuilder:validation:Pattern:=`^[a-zA-Z0-9\_-]+$`
 	Name string `json:"name"`
@@ -280,7 +281,7 @@ type GCPKMSKeyReference struct {
 	// +kubebuilder:validation:Pattern:=`^[a-zA-Z0-9\_-]+$`
 	// +kubebuilder:validation:MinLength:=1
 	// +kubebuilder:validation:MaxLength:=63
-	// +required
+	// +kubebuilder:validation:Required
 	Name string `json:"name"`
 
 	// keyRing is the name of the KMS Key Ring which the KMS Key belongs to.
@@ -290,7 +291,7 @@ type GCPKMSKeyReference struct {
 	// +kubebuilder:validation:Pattern:=`^[a-zA-Z0-9\_-]+$`
 	// +kubebuilder:validation:MinLength:=1
 	// +kubebuilder:validation:MaxLength:=63
-	// +required
+	// +kubebuilder:validation:Required
 	KeyRing string `json:"keyRing"`
 
 	// projectID is the ID of the Project in which the KMS Key Ring exists.
@@ -299,7 +300,7 @@ type GCPKMSKeyReference struct {
 	// +kubebuilder:validation:Pattern:=`^[a-z][a-z0-9-]+[a-z0-9]$`
 	// +kubebuilder:validation:MinLength:=6
 	// +kubebuilder:validation:MaxLength:=30
-	// +required
+	// +kubebuilder:validation:Required
 	ProjectID string `json:"projectID"`
 
 	// location is the GCP location in which the Key Ring exists.
@@ -322,7 +323,7 @@ type GCPCSIDriverConfigSpec struct {
 type IBMCloudCSIDriverConfigSpec struct {
 	// encryptionKeyCRN is the IBM Cloud CRN of the customer-managed root key to use
 	// for disk encryption of volumes for the default storage classes.
-	// +required
+	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MaxLength:=154
 	// +kubebuilder:validation:MinLength:=144
 	// +kubebuilder:validation:Pattern:=`^crn:v[0-9]+:bluemix:(public|private):(kms|hs-crypto):[a-z-]+:a/[0-9a-f]+:[0-9a-f-]{36}:key:[0-9a-f-]{36}$`

@@ -46,12 +46,12 @@ spec:
           metadata:
             type: object
           spec:
-            description: spec holds user-settable values for the build controller
+            description: Spec holds user-settable values for the build controller
               configuration
             properties:
               additionalTrustedCA:
                 description: |-
-                  additionalTrustedCA is a reference to a ConfigMap containing additional CAs that
+                  AdditionalTrustedCA is a reference to a ConfigMap containing additional CAs that
                   should be trusted for image pushes and pulls during builds.
                   The namespace for this config map is openshift-config.
 
@@ -66,11 +66,11 @@ spec:
                 - name
                 type: object
               buildDefaults:
-                description: buildDefaults controls the default information for Builds
+                description: BuildDefaults controls the default information for Builds
                 properties:
                   defaultProxy:
                     description: |-
-                      defaultProxy contains the default proxy settings for all build operations, including image pull/push
+                      DefaultProxy contains the default proxy settings for all build operations, including image pull/push
                       and source download.
 
                       Values can be overrode by setting the `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY` environment variables
@@ -132,7 +132,7 @@ spec:
                     type: object
                   env:
                     description: |-
-                      env is a set of default environment variables that will be applied to the
+                      Env is a set of default environment variables that will be applied to the
                       build if the specified variables do not exist on the build
                     items:
                       description: EnvVar represents an environment variable present
@@ -254,7 +254,7 @@ spec:
                     type: array
                   gitProxy:
                     description: |-
-                      gitProxy contains the proxy settings for git operations only. If set, this will override
+                      GitProxy contains the proxy settings for git operations only. If set, this will override
                       any Proxy settings for all git commands, such as git clone.
 
                       Values that are not set here will be inherited from DefaultProxy.
@@ -315,22 +315,22 @@ spec:
                     type: object
                   imageLabels:
                     description: |-
-                      imageLabels is a list of docker labels that are applied to the resulting image.
+                      ImageLabels is a list of docker labels that are applied to the resulting image.
                       User can override a default label by providing a label with the same name in their
                       Build/BuildConfig.
                     items:
                       properties:
                         name:
-                          description: name defines the name of the label. It must
+                          description: Name defines the name of the label. It must
                             have non-zero length.
                           type: string
                         value:
-                          description: value defines the literal value of the label.
+                          description: Value defines the literal value of the label.
                           type: string
                       type: object
                     type: array
                   resources:
-                    description: resources defines resource requirements to execute
+                    description: Resources defines resource requirements to execute
                       the build.
                     properties:
                       claims:
@@ -391,40 +391,40 @@ spec:
                     type: object
                 type: object
               buildOverrides:
-                description: buildOverrides controls override settings for builds
+                description: BuildOverrides controls override settings for builds
                 properties:
                   forcePull:
                     description: |-
-                      forcePull overrides, if set, the equivalent value in the builds,
+                      ForcePull overrides, if set, the equivalent value in the builds,
                       i.e. false disables force pull for all builds,
                       true enables force pull for all builds,
                       independently of what each build specifies itself
                     type: boolean
                   imageLabels:
                     description: |-
-                      imageLabels is a list of docker labels that are applied to the resulting image.
+                      ImageLabels is a list of docker labels that are applied to the resulting image.
                       If user provided a label in their Build/BuildConfig with the same name as one in this
                       list, the user's label will be overwritten.
                     items:
                       properties:
                         name:
-                          description: name defines the name of the label. It must
+                          description: Name defines the name of the label. It must
                             have non-zero length.
                           type: string
                         value:
-                          description: value defines the literal value of the label.
+                          description: Value defines the literal value of the label.
                           type: string
                       type: object
                     type: array
                   nodeSelector:
                     additionalProperties:
                       type: string
-                    description: nodeSelector is a selector which must be true for
+                    description: NodeSelector is a selector which must be true for
                       the build pod to fit on a node
                     type: object
                   tolerations:
                     description: |-
-                      tolerations is a list of Tolerations that will override any existing
+                      Tolerations is a list of Tolerations that will override any existing
                       tolerations set on a build pod.
                     items:
                       description: |-

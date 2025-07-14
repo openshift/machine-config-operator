@@ -24,7 +24,7 @@ type ClusterImagePolicy struct {
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	// spec contains the configuration for the cluster image policy.
-	// +required
+	// +kubebuilder:validation:Required
 	Spec ClusterImagePolicySpec `json:"spec"`
 	// status contains the observed state of the resource.
 	// +optional
@@ -44,13 +44,13 @@ type ClusterImagePolicySpec struct {
 	// If a scope is configured in both the ClusterImagePolicy and the ImagePolicy, or if the scope in ImagePolicy is nested under one of the scopes from the ClusterImagePolicy, only the policy from the ClusterImagePolicy will be applied.
 	// For additional details about the format, please refer to the document explaining the docker transport field,
 	// which can be found at: https://github.com/containers/image/blob/main/docs/containers-policy.json.5.md#docker
-	// +required
+	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MaxItems=256
 	// +listType=set
 	Scopes []ImageScope `json:"scopes"`
 	// policy contains configuration to allow scopes to be verified, and defines how
 	// images not matching the verification policy will be treated.
-	// +required
+	// +kubebuilder:validation:Required
 	Policy Policy `json:"policy"`
 }
 

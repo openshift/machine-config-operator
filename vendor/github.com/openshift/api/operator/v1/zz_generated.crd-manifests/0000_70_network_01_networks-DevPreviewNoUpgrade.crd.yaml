@@ -72,51 +72,51 @@ spec:
                         NetworkAttachmentDefinition CRD
                       type: string
                     simpleMacvlanConfig:
-                      description: simpleMacvlanConfig configures the macvlan interface
+                      description: SimpleMacvlanConfig configures the macvlan interface
                         in case of type:NetworkTypeSimpleMacvlan
                       properties:
                         ipamConfig:
-                          description: ipamConfig configures IPAM module will be used
+                          description: IPAMConfig configures IPAM module will be used
                             for IP Address Management (IPAM).
                           properties:
                             staticIPAMConfig:
-                              description: staticIPAMConfig configures the static
+                              description: StaticIPAMConfig configures the static
                                 IP address in case of type:IPAMTypeStatic
                               properties:
                                 addresses:
-                                  description: addresses configures IP address for
+                                  description: Addresses configures IP address for
                                     the interface
                                   items:
                                     description: StaticIPAMAddresses provides IP address
                                       and Gateway for static IPAM addresses
                                     properties:
                                       address:
-                                        description: address is the IP address in
+                                        description: Address is the IP address in
                                           CIDR format
                                         type: string
                                       gateway:
-                                        description: gateway is IP inside of subnet
+                                        description: Gateway is IP inside of subnet
                                           to designate as the gateway
                                         type: string
                                     type: object
                                   type: array
                                   x-kubernetes-list-type: atomic
                                 dns:
-                                  description: dns configures DNS for the interface
+                                  description: DNS configures DNS for the interface
                                   properties:
                                     domain:
-                                      description: domain configures the domainname
+                                      description: Domain configures the domainname
                                         the local domain used for short hostname lookups
                                       type: string
                                     nameservers:
-                                      description: nameservers points DNS servers
+                                      description: Nameservers points DNS servers
                                         for IP lookup
                                       items:
                                         type: string
                                       type: array
                                       x-kubernetes-list-type: atomic
                                     search:
-                                      description: search configures priority ordered
+                                      description: Search configures priority ordered
                                         search domains for short hostname lookups
                                       items:
                                         type: string
@@ -124,19 +124,19 @@ spec:
                                       x-kubernetes-list-type: atomic
                                   type: object
                                 routes:
-                                  description: routes configures IP routes for the
+                                  description: Routes configures IP routes for the
                                     interface
                                   items:
                                     description: StaticIPAMRoutes provides Destination/Gateway
                                       pairs for static IPAM routes
                                     properties:
                                       destination:
-                                        description: destination points the IP route
+                                        description: Destination points the IP route
                                           destination
                                         type: string
                                       gateway:
                                         description: |-
-                                          gateway is the route's next-hop IP address
+                                          Gateway is the route's next-hop IP address
                                           If unset, a default gateway is assumed (as determined by the CNI plugin).
                                         type: string
                                     type: object
@@ -145,7 +145,7 @@ spec:
                               type: object
                             type:
                               description: |-
-                                type is the type of IPAM module will be used for IP Address Management(IPAM).
+                                Type is the type of IPAM module will be used for IP Address Management(IPAM).
                                 The supported values are IPAMTypeDHCP, IPAMTypeStatic
                               type: string
                           type: object
@@ -238,7 +238,7 @@ spec:
                 properties:
                   openshiftSDNConfig:
                     description: |-
-                      openshiftSDNConfig was previously used to configure the openshift-sdn plugin.
+                      openShiftSDNConfig was previously used to configure the openshift-sdn plugin.
                       DEPRECATED: OpenShift SDN is no longer supported.
                     properties:
                       enableUnidling:
@@ -297,7 +297,7 @@ spec:
                         properties:
                           ipForwarding:
                             description: |-
-                              ipForwarding controls IP forwarding for all traffic on OVN-Kubernetes managed interfaces (such as br-ex).
+                              IPForwarding controls IP forwarding for all traffic on OVN-Kubernetes managed interfaces (such as br-ex).
                               By default this is set to Restricted, and Kubernetes related traffic is still forwarded appropriately, but other
                               IP traffic will not be routed by the OCP node. If there is a desire to allow the host to forward traffic across
                               OVN-Kubernetes managed interfaces, then set this field to "Global".
@@ -361,7 +361,7 @@ spec:
                           routingViaHost:
                             default: false
                             description: |-
-                              routingViaHost allows pod egress traffic to exit via the ovn-k8s-mp0 management port
+                              RoutingViaHost allows pod egress traffic to exit via the ovn-k8s-mp0 management port
                               into the host before sending it out. If this is not set, traffic will always egress directly
                               from OVN to outside without touching the host stack. Setting this to true means hardware
                               offload will not be supported. Default is false if GatewayConfig is specified.
@@ -376,11 +376,11 @@ spec:
                         type: integer
                       hybridOverlayConfig:
                         description: |-
-                          hybridOverlayConfig configures an additional overlay network for peers that are
+                          HybridOverlayConfig configures an additional overlay network for peers that are
                           not using OVN.
                         properties:
                           hybridClusterNetwork:
-                            description: hybridClusterNetwork defines a network space
+                            description: HybridClusterNetwork defines a network space
                               given to nodes on an additional overlay network.
                             items:
                               description: |-
@@ -400,7 +400,7 @@ spec:
                             x-kubernetes-list-type: atomic
                           hybridOverlayVXLANPort:
                             description: |-
-                              hybridOverlayVXLANPort defines the VXLAN port number to be used by the additional overlay network.
+                              HybridOverlayVXLANPort defines the VXLAN port number to be used by the additional overlay network.
                               Default is 4789
                             format: int32
                             type: integer
@@ -424,15 +424,13 @@ spec:
                                   encapsulation option to configure libreswan on how inter-pod traffic across nodes
                                   are encapsulated to handle NAT traversal. When configured it uses UDP port 4500
                                   for the encapsulation.
-                                  Valid values are Always, Never, Auto and omitted.
+                                  Valid values are Always, Auto and omitted.
                                   Always means enable UDP encapsulation regardless of whether NAT is detected.
-                                  Disable means never enable UDP encapsulation even if NAT is present.
                                   Auto means enable UDP encapsulation based on the detection of NAT.
                                   When omitted, this means no opinion and the platform is left to choose a reasonable
                                   default, which is subject to change over time. The current default is Auto.
                                 enum:
                                 - Always
-                                - Never
                                 - Auto
                                 type: string
                             type: object
