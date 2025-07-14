@@ -35,6 +35,7 @@ contents: |
     --prefer-ipv6 \
     {{end -}}
     --retry-on-failure \
+    ${NODEIP_HINT:-} \
     {{ range onPremPlatformAPIServerInternalIPs . }}{{.}} {{end}} \
     {{ range onPremPlatformIngressIPs . }}{{.}} {{end}}; \
     do \
@@ -48,6 +49,7 @@ contents: |
   ExecStartPost=+/usr/local/bin/configure-ip-forwarding.sh
   StandardOutput=journal+console
   StandardError=journal+console
+  EnvironmentFile=-/etc/default/nodeip-configuration
 
   [Install]
   RequiredBy=kubelet-dependencies.target
