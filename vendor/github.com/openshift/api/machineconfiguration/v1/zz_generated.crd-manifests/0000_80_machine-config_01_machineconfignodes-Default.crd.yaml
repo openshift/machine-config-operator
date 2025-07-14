@@ -52,12 +52,8 @@ spec:
       name: Resumed
       priority: 1
       type: string
-    - jsonPath: .status.conditions[?(@.type=="AppliedOSImage")].status
-      name: UpdatedOSImage
-      priority: 1
-      type: string
-    - jsonPath: .status.conditions[?(@.type=="AppliedFiles")].status
-      name: UpdatedFiles
+    - jsonPath: .status.conditions[?(@.type=="AppliedFilesAndOS")].status
+      name: UpdatedFilesAndOS
       priority: 1
       type: string
     - jsonPath: .status.conditions[?(@.type=="Cordoned")].status
@@ -74,10 +70,6 @@ spec:
       type: string
     - jsonPath: .status.conditions[?(@.type=="Uncordoned")].status
       name: UncordonedNode
-      priority: 1
-      type: string
-    - jsonPath: .status.conditions[?(@.type=="ImagePulledFromRegistry")].status
-      name: ImagePulledFromRegistry
       priority: 1
       type: string
     name: v1
@@ -189,7 +181,7 @@ spec:
                   conditions represent the observations of a machine config node's current state. Valid types are:
                   UpdatePrepared, UpdateExecuted, UpdatePostActionComplete, UpdateComplete, Updated, Resumed,
                   Drained, AppliedFilesAndOS, Cordoned, Uncordoned, RebootedNode, NodeDegraded, PinnedImageSetsProgressing,
-                  , and PinnedImageSetsDegraded.
+                  and PinnedImageSetsDegraded.
                   The following types are only available when the ImageModeStatusReporting feature gate is enabled: ImagePulledFromRegistry,
                   AppliedOSImage, AppliedFiles
                 items:

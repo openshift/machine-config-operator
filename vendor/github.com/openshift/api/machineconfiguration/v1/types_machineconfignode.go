@@ -22,13 +22,11 @@ import (
 // +kubebuilder:printcolumn:name="UpdatePostActionComplete",type="string",JSONPath=.status.conditions[?(@.type=="UpdatePostActionComplete")].status,priority=1
 // +kubebuilder:printcolumn:name="UpdateComplete",type="string",JSONPath=.status.conditions[?(@.type=="UpdateComplete")].status,priority=1
 // +kubebuilder:printcolumn:name="Resumed",type="string",JSONPath=.status.conditions[?(@.type=="Resumed")].status,priority=1
-// +kubebuilder:printcolumn:name="UpdatedOSImage",type="string",JSONPath=.status.conditions[?(@.type=="AppliedOSImage")].status,priority=1
-// +kubebuilder:printcolumn:name="UpdatedFiles",type="string",JSONPath=.status.conditions[?(@.type=="AppliedFiles")].status,priority=1
+// +kubebuilder:printcolumn:name="UpdatedFilesAndOS",type="string",JSONPath=.status.conditions[?(@.type=="AppliedFilesAndOS")].status,priority=1
 // +kubebuilder:printcolumn:name="CordonedNode",type="string",JSONPath=.status.conditions[?(@.type=="Cordoned")].status,priority=1
 // +kubebuilder:printcolumn:name="DrainedNode",type="string",JSONPath=.status.conditions[?(@.type=="Drained")].status,priority=1
 // +kubebuilder:printcolumn:name="RebootedNode",type="string",JSONPath=.status.conditions[?(@.type=="RebootedNode")].status,priority=1
 // +kubebuilder:printcolumn:name="UncordonedNode",type="string",JSONPath=.status.conditions[?(@.type=="Uncordoned")].status,priority=1
-// +kubebuilder:printcolumn:name="ImagePulledFromRegistry",type="string",JSONPath=.status.conditions[?(@.type=="ImagePulledFromRegistry")].status,priority=1
 // +kubebuilder:metadata:labels=openshift.io/operator-managed=
 
 // MachineConfigNode describes the health of the Machines on the system
@@ -114,7 +112,7 @@ type MachineConfigNodeStatus struct {
 	// conditions represent the observations of a machine config node's current state. Valid types are:
 	// UpdatePrepared, UpdateExecuted, UpdatePostActionComplete, UpdateComplete, Updated, Resumed,
 	// Drained, AppliedFilesAndOS, Cordoned, Uncordoned, RebootedNode, NodeDegraded, PinnedImageSetsProgressing,
-	// , and PinnedImageSetsDegraded.
+	// and PinnedImageSetsDegraded.
 	// The following types are only available when the ImageModeStatusReporting feature gate is enabled: ImagePulledFromRegistry,
 	// AppliedOSImage, AppliedFiles
 	// +listType=map
@@ -134,7 +132,7 @@ type MachineConfigNodeStatus struct {
 	// configImage describes the current and desired image for this node.
 	// +openshift:enable:FeatureGate=ImageModeStatusReporting
 	// +optional
-	ConfigImage *MachineConfigNodeStatusConfigImage `json:"configImage,omitempty"`
+	ConfigImage MachineConfigNodeStatusConfigImage `json:"configImage"`
 	// pinnedImageSets describes the current and desired pinned image sets for this node.
 	// +listType=map
 	// +listMapKey=name
@@ -229,11 +227,12 @@ type MachineConfigNodeSpecMachineConfigVersion struct {
 // annotation on the target node, which is set by the Machine Config Pool controller
 // to signal the desired image pullspec for the node to update to.
 type MachineConfigNodeSpecConfigImage struct {
-	// desiredImage is the fully-qualified pullspec of the image that the Machine
-	// Config Operator (MCO) intends to apply to the node.
-	// Required field that can be at most 253 characters in length.
-	// +kubebuilder:validation:MaxLength:=253
-	// +required
+	// desiredImage is the  fully qualified image pull spec of the image that the Machine
+	// Config Operator (MCO) intends to apply to the node. This field is optional.
+	// The length of the field must be between 1 to 447 characters.
+	// +kubebuilder:validation:MaxLength=447
+	// +kubebuilder:validation:XValidation:rule="self.matches('^([a-zA-Z0-9-]+\\\\.)+[a-zA-Z0-9-]+(:[0-9]{2,5})?(/[a-zA-Z0-9-_]{1,61})*/[a-zA-Z0-9-_.]+:[a-zA-Z0-9._-]+$') || self.matches('^[^.]+\\\\.[^.]+\\\\.svc:\\\\d+\\\\/[^\\\\/]+\\\\/[^\\\\/]+:[^\\\\/]+$')",message="the OCI Image name should follow the host[:port][/namespace]/name format, resembling a valid URL without the scheme. Or it must be a valid .svc followed by a port, repository, image name, and tag."
+	// +optional
 	DesiredImage string `json:"desiredImage"`
 }
 
@@ -242,20 +241,22 @@ type MachineConfigNodeSpecConfigImage struct {
 // currently applied. This allows for monitoring the progress of the layering
 // rollout.
 type MachineConfigNodeStatusConfigImage struct {
-	// currentImage is the fully-qualified pullspec of the image that is
+	// currentImage is the  fully qualified image pull spec of the image that is
 	// currently applied to the node.
 	// This field is optional because when image-mode is first enabled on a
 	// node, there is no currentImage because the node has not yet applied
 	// the updated image. Only after the updated image is applied will the
 	// currentImage be populated.
-	// This field can be at most 253 characters in length.
-	// +kubebuilder:validation:MaxLength:=253
+	// The length of the field must be between 1 to 447 characters.
+	// +kubebuilder:validation:MaxLength=447
+	// +kubebuilder:validation:XValidation:rule="self.matches('^([a-zA-Z0-9-]+\\\\.)+[a-zA-Z0-9-]+(:[0-9]{2,5})?(/[a-zA-Z0-9-_]{1,61})*/[a-zA-Z0-9-_.]+:[a-zA-Z0-9._-]+$') || self.matches('^[^.]+\\\\.[^.]+\\\\.svc:\\\\d+\\\\/[^\\\\/]+\\\\/[^\\\\/]+:[^\\\\/]+$')",message="the OCI Image name should follow the host[:port][/namespace]/name format, resembling a valid URL without the scheme. Or it must be a valid .svc followed by a port, repository, image name, and tag."
 	// +optional
-	CurrentImage string `json:"currentImage,omitempty"`
+	CurrentImage string `json:"currentImage"`
 	// desiredImage is a mirror of the desired image from the Spec. When the
-	// current and desired image are not equal, the node is in an updating phase.
-	// Optional field that can be at most 253 characters in length.
-	// +kubebuilder:validation:MaxLength:=253
+	// current and desired image are not equal, the node is in an updating phase. This field is optional.
+	// The length of the field must be between 1 to 447 characters.
+	// +kubebuilder:validation:MaxLength=447
+	// +kubebuilder:validation:XValidation:rule="self.matches('^([a-zA-Z0-9-]+\\\\.)+[a-zA-Z0-9-]+(:[0-9]{2,5})?(/[a-zA-Z0-9-_]{1,61})*/[a-zA-Z0-9-_.]+:[a-zA-Z0-9._-]+$') || self.matches('^[^.]+\\\\.[^.]+\\\\.svc:\\\\d+\\\\/[^\\\\/]+\\\\/[^\\\\/]+:[^\\\\/]+$')",message="the OCI Image name should follow the host[:port][/namespace]/name format, resembling a valid URL without the scheme. Or it must be a valid .svc followed by a port, repository, image name, and tag."
 	// +optional
 	DesiredImage string `json:"desiredImage"`
 }
@@ -283,8 +284,8 @@ const (
 	MachineConfigNodeUpdateFiles StateProgress = "AppliedFiles"
 	// MachineConfigNodeUpdateOS describes the part of the in progress phase where the OS config changes
 	MachineConfigNodeUpdateOS StateProgress = "AppliedOSImage"
-	// MachineConfigNodeUpdateOS describes the part of the in progress phase where the nodes files and OS config change
-	MachineConfigNodeAppliedFilesAndOS StateProgress = "AppliedFilesAndOS"
+	// MachineConfigNodeUpdateFilesAndOS describes the part of the in progress phase where the nodes files and OS config change
+	MachineConfigNodeUpdateFilesAndOS StateProgress = "AppliedFilesAndOS"
 	// MachineConfigNodeImagePulledFromRegistry describes the part of the in progress phase where the update image is pulled from the registry
 	MachineConfigNodeImagePulledFromRegistry StateProgress = "ImagePulledFromRegistry"
 	// MachineConfigNodeUpdateCordoned describes the part of the in progress phase where the node cordons

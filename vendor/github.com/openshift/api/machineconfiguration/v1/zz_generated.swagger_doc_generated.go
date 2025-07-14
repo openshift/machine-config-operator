@@ -412,7 +412,7 @@ func (MachineConfigNodeSpec) SwaggerDoc() map[string]string {
 
 var map_MachineConfigNodeSpecConfigImage = map[string]string{
 	"":             "MachineConfigNodeSpecConfigImage holds the desired image for the node. This structure is populated from the `machineconfiguration.openshift.io/desiredImage` annotation on the target node, which is set by the Machine Config Pool controller to signal the desired image pullspec for the node to update to.",
-	"desiredImage": "desiredImage is the fully-qualified pullspec of the image that the Machine Config Operator (MCO) intends to apply to the node. Required field that can be at most 253 characters in length.",
+	"desiredImage": "desiredImage is the  fully qualified image pull spec of the image that the Machine Config Operator (MCO) intends to apply to the node. This field is optional. The length of the field must be between 1 to 447 characters.",
 }
 
 func (MachineConfigNodeSpecConfigImage) SwaggerDoc() map[string]string {
@@ -430,7 +430,7 @@ func (MachineConfigNodeSpecMachineConfigVersion) SwaggerDoc() map[string]string 
 
 var map_MachineConfigNodeStatus = map[string]string{
 	"":                   "MachineConfigNodeStatus holds the reported information on a particular machine config node.",
-	"conditions":         "conditions represent the observations of a machine config node's current state. Valid types are: UpdatePrepared, UpdateExecuted, UpdatePostActionComplete, UpdateComplete, Updated, Resumed, Drained, AppliedFilesAndOS, Cordoned, Uncordoned, RebootedNode, NodeDegraded, PinnedImageSetsProgressing, , and PinnedImageSetsDegraded. The following types are only available when the ImageModeStatusReporting feature gate is enabled: ImagePulledFromRegistry, AppliedOSImage, AppliedFiles",
+	"conditions":         "conditions represent the observations of a machine config node's current state. Valid types are: UpdatePrepared, UpdateExecuted, UpdatePostActionComplete, UpdateComplete, Updated, Resumed, Drained, AppliedFilesAndOS, Cordoned, Uncordoned, RebootedNode, NodeDegraded, PinnedImageSetsProgressing, and PinnedImageSetsDegraded. The following types are only available when the ImageModeStatusReporting feature gate is enabled: ImagePulledFromRegistry, AppliedOSImage, AppliedFiles",
 	"observedGeneration": "observedGeneration represents the generation of the MachineConfigNode object observed by the Machine Config Operator's controller. This field is updated when the controller observes a change to the desiredConfig in the configVersion of the machine config node spec.",
 	"configVersion":      "configVersion describes the current and desired machine config version for this node.",
 	"configImage":        "configImage describes the current and desired image for this node.",
@@ -443,8 +443,8 @@ func (MachineConfigNodeStatus) SwaggerDoc() map[string]string {
 
 var map_MachineConfigNodeStatusConfigImage = map[string]string{
 	"":             "MachineConfigNodeStatusConfigImage holds the observed state of the image on the node, including both the image targeted for an update and the image currently applied. This allows for monitoring the progress of the layering rollout.",
-	"currentImage": "currentImage is the fully-qualified pullspec of the image that is currently applied to the node. This field is optional because when image-mode is first enabled on a node, there is no currentImage because the node has not yet applied the updated image. Only after the updated image is applied will the currentImage be populated. This field can be at most 253 characters in length.",
-	"desiredImage": "desiredImage is a mirror of the desired image from the Spec. When the current and desired image are not equal, the node is in an updating phase. Optional field that can be at most 253 characters in length.",
+	"currentImage": "currentImage is the  fully qualified image pull spec of the image that is currently applied to the node. This field is optional because when image-mode is first enabled on a node, there is no currentImage because the node has not yet applied the updated image. Only after the updated image is applied will the currentImage be populated. The length of the field must be between 1 to 447 characters.",
+	"desiredImage": "desiredImage is a mirror of the desired image from the Spec. When the current and desired image are not equal, the node is in an updating phase. This field is optional. The length of the field must be between 1 to 447 characters.",
 }
 
 func (MachineConfigNodeStatusConfigImage) SwaggerDoc() map[string]string {

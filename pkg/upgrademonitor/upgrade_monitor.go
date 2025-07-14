@@ -145,12 +145,14 @@ func generateAndApplyMachineConfigNodes(
 		mcfgv1.MachineConfigNodeUpdateComplete,
 		mcfgv1.MachineConfigNodeResumed,
 		mcfgv1.MachineConfigNodeUpdateDrained,
-		mcfgv1.MachineConfigNodeUpdateFilesAndOS,
+		mcfgv1.MachineConfigNodeUpdateFiles,
+		mcfgv1.MachineConfigNodeUpdateOS,
 		mcfgv1.MachineConfigNodeUpdateCordoned,
 		mcfgv1.MachineConfigNodeUpdateRebooted,
 		mcfgv1.MachineConfigNodeUpdated,
 		mcfgv1.MachineConfigNodeUpdateUncordoned,
 		mcfgv1.MachineConfigNodeNodeDegraded,
+		mcfgv1.MachineConfigNodeImagePulledFromRegistry,
 	}
 	allConditionTypes = append(allConditionTypes, singletonConditionTypes...)
 
@@ -395,6 +397,16 @@ func GenerateAndApplyMachineConfigNodeSpec(fgAccessor featuregates.FeatureGateAc
 		if err != nil {
 			klog.Errorf("Error creating MCN: %v", err)
 			return err
+		}
+	}
+
+	if fg.Enabled(features.FeatureGateImageModeStatusReporting) {
+		newMCNode.Spec.ConfigImage = mcfgv1.MachineConfigNodeSpecConfigImage{
+			DesiredImage: node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey],
+		}
+
+		if newMCNode.Spec.ConfigImage.DesiredImage == "" {
+			// since it's required now, this would probably error out?
 		}
 	}
 	return nil

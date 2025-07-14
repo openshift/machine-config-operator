@@ -790,6 +790,10 @@ func (optr *Operator) syncMachineConfigNodes(_ *renderConfig, _ *configv1.Cluste
 				ConfigVersion: mcfgv1.MachineConfigNodeSpecMachineConfigVersion{
 					Desired: upgrademonitor.NotYetSet,
 				},
+				// leaving this empty because configImage and all the fields are optional
+				ConfigImage: mcfgv1.MachineConfigNodeSpecConfigImage{
+					DesiredImage: "",
+				},
 			},
 			TypeMeta: metav1.TypeMeta{
 				Kind:       "MachineConfigNode",
@@ -824,6 +828,8 @@ func (optr *Operator) syncMachineConfigNodes(_ *renderConfig, _ *configv1.Cluste
 				klog.Errorf("Error making MCN spec for Update Compatible: %v", err)
 			}
 		}
+
+		//CHECK: are you checking anything for configImage if it's empty?
 
 	}
 	if mcns != nil {

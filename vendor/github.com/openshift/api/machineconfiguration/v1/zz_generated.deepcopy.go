@@ -793,11 +793,7 @@ func (in *MachineConfigNodeStatus) DeepCopyInto(out *MachineConfigNodeStatus) {
 		*out = new(MachineConfigNodeStatusMachineConfigVersion)
 		**out = **in
 	}
-	if in.ConfigImage != nil {
-		in, out := &in.ConfigImage, &out.ConfigImage
-		*out = new(MachineConfigNodeStatusConfigImage)
-		**out = **in
-	}
+	out.ConfigImage = in.ConfigImage
 	if in.PinnedImageSets != nil {
 		in, out := &in.PinnedImageSets, &out.PinnedImageSets
 		*out = make([]MachineConfigNodeStatusPinnedImageSet, len(*in))
