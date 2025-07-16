@@ -979,6 +979,8 @@ func GetManagedKey(pool *mcfgv1.MachineConfigPool, client mcfgclientset.Interfac
 	if err != nil {
 		return "", err
 	}
+
+	klog.Infof("Deleting MC with deprecated key:%s", deprecatedKey)
 	err = client.MachineconfigurationV1().MachineConfigs().Delete(context.TODO(), deprecatedKey, metav1.DeleteOptions{})
 	return managedKey, err
 }
