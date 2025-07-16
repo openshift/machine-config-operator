@@ -29,7 +29,7 @@ func main() {
 
 	// all test cases
 	defaultTimeout := 120 * time.Minute
-	ext.AddSuite(e.Suite{
+	ext.AddGlobalSuite(e.Suite{
 		Name: "openshift/machine-config-operator/disruptive",
 		Parents: []string{
 			"openshift/disruptive",
