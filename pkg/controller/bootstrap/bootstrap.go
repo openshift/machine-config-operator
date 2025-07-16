@@ -87,8 +87,8 @@ func (b *Bootstrap) Run(destDir string) error {
 		icspRules            []*apioperatorsv1alpha1.ImageContentSourcePolicy
 		idmsRules            []*apicfgv1.ImageDigestMirrorSet
 		itmsRules            []*apicfgv1.ImageTagMirrorSet
-		clusterImagePolicies []*apicfgv1alpha1.ClusterImagePolicy
-		imagePolicies        []*apicfgv1alpha1.ImagePolicy
+		clusterImagePolicies []*apicfgv1.ClusterImagePolicy
+		imagePolicies        []*apicfgv1.ImagePolicy
 		imgCfg               *apicfgv1.Image
 		apiServer            *apicfgv1.APIServer
 	)
@@ -138,9 +138,9 @@ func (b *Bootstrap) Run(destDir string) error {
 				itmsRules = append(itmsRules, obj)
 			case *apicfgv1.Image:
 				imgCfg = obj
-			case *apicfgv1alpha1.ClusterImagePolicy:
+			case *apicfgv1.ClusterImagePolicy:
 				clusterImagePolicies = append(clusterImagePolicies, obj)
-			case *apicfgv1alpha1.ImagePolicy:
+			case *apicfgv1.ImagePolicy:
 				imagePolicies = append(imagePolicies, obj)
 			case *apicfgv1.FeatureGate:
 				if obj.GetName() == ctrlcommon.ClusterFeatureInstanceName {
