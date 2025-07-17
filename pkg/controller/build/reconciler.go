@@ -2,13 +2,13 @@ package build
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/containers/image/v5/types"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	imagev1clientset "github.com/openshift/client-go/image/clientset/versioned"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
@@ -17,10 +17,10 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/controller/build/buildrequest"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/imagebuilder"
+	"github.com/openshift/machine-config-operator/pkg/controller/build/imagepruner"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/controller/template"
-	"github.com/openshift/machine-config-operator/pkg/daemon"
 	daemonconstants "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/helpers"
 	batchv1 "k8s.io/api/batch/v1"
@@ -67,21 +67,23 @@ type buildReconciler struct {
 	kubeclient  clientset.Interface
 	imageclient imagev1clientset.Interface
 	routeclient routeclientset.Interface
+	imagepruner imagepruner.ImagePruner
 	*listers
 }
 
 // Instantiates a new reconciler instance. This returns an interface to
 // disallow access to its private methods.
-func newBuildReconciler(mcfgclient mcfgclientset.Interface, kubeclient clientset.Interface, imageclient imagev1clientset.Interface, routeclient routeclientset.Interface, l *listers) reconciler {
-	return newBuildReconcilerAsStruct(mcfgclient, kubeclient, imageclient, routeclient, l)
+func newBuildReconciler(mcfgclient mcfgclientset.Interface, kubeclient clientset.Interface, imageclient imagev1clientset.Interface, routeclient routeclientset.Interface, l *listers, imagepruner imagepruner.ImagePruner) reconciler {
+	return newBuildReconcilerAsStruct(mcfgclient, kubeclient, imageclient, routeclient, l, imagepruner)
 }
 
-func newBuildReconcilerAsStruct(mcfgclient mcfgclientset.Interface, kubeclient clientset.Interface, imageclient imagev1clientset.Interface, routeclient routeclientset.Interface, l *listers) *buildReconciler {
+func newBuildReconcilerAsStruct(mcfgclient mcfgclientset.Interface, kubeclient clientset.Interface, imageclient imagev1clientset.Interface, routeclient routeclientset.Interface, l *listers, imagepruner imagepruner.ImagePruner) *buildReconciler {
 	return &buildReconciler{
 		mcfgclient:  mcfgclient,
 		kubeclient:  kubeclient,
 		imageclient: imageclient,
 		routeclient: routeclient,
+		imagepruner: imagepruner,
 		listers:     l,
 	}
 }
@@ -624,21 +626,9 @@ func (b *buildReconciler) reuseExistingMachineOSBuildIfPossible(ctx context.Cont
 	// If the existing build is a success and has the image pushspec set, it can be reused.
 	if existingMosbState.IsBuildSuccess() && existingMosb.Status.DigestedImagePushSpec != "" {
 		klog.Infof("Existing MachineOSBuild %q found, checking if image %q still exists", existingMosb.Name, existingMosb.Status.DigestedImagePushSpec)
-		// Get the certs
-		if err := b.getCerts(); err != nil {
-			klog.Warningf("Could not get certs: %v", err)
-		}
-		defer os.RemoveAll(certsDir)
-
-		// Get the auth file
-		authfilePath, err := b.getAuthFilePath(existingMosb, mosc.Name)
-		if err != nil {
-			klog.Warningf("Could not get auth file path: %v", err)
-		}
-		defer os.RemoveAll(authfilePath)
 
 		image := string(existingMosb.Spec.RenderedImagePushSpec)
-		inspect, _, err := daemon.ImageInspect(image, authfilePath)
+		inspect, err := b.inspectImage(ctx, image, existingMosb)
 		if inspect != nil && err == nil {
 			klog.Infof("Existing MachineOSBuild %q found, reusing image %q by assigning to MachineOSConfig %q", existingMosb.Name, image, mosc.Name)
 			canBeReused = true
@@ -872,8 +862,8 @@ func (b *buildReconciler) deleteBuilderForMachineOSBuild(ctx context.Context, mo
 		klog.Warningf("could not get MachineOSConfig name for MachineOSBuild %s: %v, cannot delete image", mosb.Name, err)
 		return nil
 	}
-	if err := b.deleteMOSBImage(mosb, moscName); err != nil {
-		klog.Warningf("could not delete image for MachineOSBuild %s: %v", mosb.Name, err)
+	if err := b.deleteMOSBImage(ctx, mosb, moscName); err != nil {
+		return err
 	}
 	// Delete the digest configmap if it exists
 	// This is created by the wait-for-done container once the image has been built and pushed
@@ -892,8 +882,8 @@ func (b *buildReconciler) deleteMachineOSBuild(ctx context.Context, mosb *mcfgv1
 		moscName = "<unknown MachineOSConfig>"
 	}
 	// Delete the image associated with the MOSB first
-	if err := b.deleteMOSBImage(mosb, moscName); err != nil {
-		klog.Warningf("could not delete image for MachineOSBuild %s for MachineOSConfig %s: %v", mosb.Name, moscName, err)
+	if err := b.deleteMOSBImage(ctx, mosb, moscName); err != nil {
+		return err
 	}
 
 	// Delete the digest configmap if it exists
@@ -918,35 +908,7 @@ func (b *buildReconciler) deleteMachineOSBuild(ctx context.Context, mosb *mcfgv1
 	return fmt.Errorf("could not delete MachineOSBuild %s for MachineOSConfig %s: %w", mosb.Name, moscName, err)
 }
 
-func (b *buildReconciler) getAuthFilePath(mosb *mcfgv1.MachineOSBuild, moscName string) (string, error) {
-	pushSecret := mosb.GetAnnotations()[constants.RenderedImagePushSecretAnnotationKey]
-	secret, err := b.kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(context.TODO(), pushSecret, metav1.GetOptions{})
-	if err != nil {
-		return "", fmt.Errorf("could not get rendered push secret for MachineOSConfig %q: %w", moscName, err)
-	}
-	if secret.Type != corev1.SecretTypeDockerConfigJson {
-		return "", fmt.Errorf("rendered push secret for MachineOSConfig %q is not of type %q, cannot delete image", moscName, corev1.SecretTypeDockerConfigJson)
-	}
-	var authConfig map[string]interface{}
-	data, ok := secret.Data[corev1.DockerConfigJsonKey]
-	if !ok {
-		return "", fmt.Errorf("rendered push secret for MachineOSConfig %q does not have key %q, cannot delete image", moscName, corev1.DockerConfigJsonKey)
-	}
-	if err := json.Unmarshal(data, &authConfig); err != nil {
-		return "", fmt.Errorf("could not unmarshal rendered push secret for MachineOSConfig %q: %w, cannot delete image", moscName, err)
-	}
-	// Create a temp auth.json file
-	authFile, err := os.CreateTemp("", "auth-*.json")
-	if err != nil {
-		return "", fmt.Errorf("could not create temp file for rendered push secret for MachineOSConfig %q: %w, cannot delete image", moscName, err)
-	}
-	if err := os.WriteFile(authFile.Name(), data, 0o644); err != nil {
-		return "", fmt.Errorf("could not write temp auth file for rendered push secret for MachineOSConfig %q: %w, cannot delete image", moscName, err)
-	}
-	return authFile.Name(), nil
-}
-
-func (b *buildReconciler) deleteMOSBImage(mosb *mcfgv1.MachineOSBuild, moscName string) error {
+func (b *buildReconciler) deleteMOSBImage(ctx context.Context, mosb *mcfgv1.MachineOSBuild, moscName string) error {
 	moscExists := true
 	_, err := b.listers.machineOSConfigLister.Get(moscName)
 	if k8serrors.IsNotFound(err) {
@@ -995,22 +957,20 @@ func (b *buildReconciler) deleteMOSBImage(mosb *mcfgv1.MachineOSBuild, moscName 
 	}
 
 	klog.Infof("Deleting image %s from external registry using skopeo for MachineOSBuild %s", image, mosb.Name)
-	// Create the authfile for the rendered push secret
-	authFile, err := b.getAuthFilePath(mosb, moscName)
-	if err != nil {
-		return err
+	if err := b.deleteImage(ctx, image, mosb); err != nil {
+		wrappedErr := fmt.Errorf("could not delete image for MachineOSBuild %s for MachineOSConfig %s: %w", mosb.Name, moscName, err)
+		// If the image cannot be deleted because it either does not exist or one's
+		// creds do not have the necessary permissions, then we should ignore the
+		// error and continue.
+		if imagepruner.IsTolerableDeleteErr(err) {
+			klog.Warning(wrappedErr.Error())
+		} else {
+			return wrappedErr
+		}
+	} else {
+		klog.Infof("Deleted image %s from registry for MachineOSBuild %s", image, mosb.Name)
 	}
-	defer os.RemoveAll(authFile)
-	// Create the certs directory to be used by skopeo
-	if err := b.getCerts(); err != nil {
-		return err
-	}
-	defer os.RemoveAll(certsDir)
 
-	if err := daemon.DeleteImage(image, authFile); err != nil {
-		return fmt.Errorf("could not delete image %s from registry for MachineOSBuild %s: %w", image, mosb.Name, err)
-	}
-	klog.Infof("Deleted image %s from registry for MachineOSBuild %s", image, mosb.Name)
 	return nil
 }
 
@@ -1454,19 +1414,13 @@ func (b *buildReconciler) reuseImageForNewMOSB(ctx context.Context, mosc *mcfgv1
 		return err
 	}
 
-	image := oldMosb.Status.DigestedImagePushSpec
-	if err := b.getCerts(); err != nil {
-		klog.Warningf("Could not get certs for image-inspect: %v", err)
-	}
-	defer os.RemoveAll(certsDir)
+	image := string(oldMosb.Status.DigestedImagePushSpec)
 
-	authfile, err := b.getAuthFilePath(oldMosb, mosc.Name)
+	inspect, err := b.inspectImage(ctx, image, newMosb)
 	if err != nil {
-		klog.Warningf("Could not get auth file for image-inspect: %v", err)
+		return err
 	}
-	defer os.RemoveAll(authfile)
 
-	inspect, _, err := daemon.ImageInspect(string(image), authfile)
 	if inspect != nil && err == nil {
 		klog.V(4).Infof("Existing MachineOSBuild %q found, reusing image %q by assigning to MachineOSConfig %q", newMosb.Name, image, mosc.Name)
 	} else {
@@ -1495,6 +1449,52 @@ func (b *buildReconciler) reuseImageForNewMOSB(ctx context.Context, mosc *mcfgv1
 	}
 
 	return b.updateMachineOSConfigStatus(ctx, mosc, toUpdate)
+}
+
+// getObjectsForImagePruner retrieves the secret for the MachineOSBuild and the ControllerConfig for use by the imagepruner.
+func (b *buildReconciler) getObjectsForImagePruner(mosb *mcfgv1.MachineOSBuild) (*corev1.Secret, *mcfgv1.ControllerConfig, error) {
+	secretName := mosb.Annotations[constants.RenderedImagePushSecretAnnotationKey]
+
+	if secretName == "" {
+		return nil, nil, fmt.Errorf("MachineOSBuild %s missing annotation %s", mosb.Name, constants.RenderedImagePushSecretAnnotationKey)
+	}
+
+	secret, err := b.kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(context.TODO(), secretName, metav1.GetOptions{})
+	if err != nil {
+		return nil, nil, fmt.Errorf("could not get rendered push secret %s: %w", secretName, err)
+	}
+
+	controllerConfigs, err := b.listers.controllerConfigLister.List(labels.Everything())
+	if err != nil {
+		return nil, nil, fmt.Errorf("could not list ControllerConfigs: %w", err)
+	}
+
+	if len(controllerConfigs) == 0 {
+		return nil, nil, fmt.Errorf("no ControllerConfigs found")
+	}
+
+	return secret.DeepCopy(), controllerConfigs[0].DeepCopy(), nil
+}
+
+// inspectImage retrieves the necessary objects and calls InspectImage on the imagepruner.
+func (b *buildReconciler) inspectImage(ctx context.Context, pullspec string, mosb *mcfgv1.MachineOSBuild) (*types.ImageInspectInfo, error) {
+	secret, cc, err := b.getObjectsForImagePruner(mosb)
+	if err != nil {
+		return nil, err
+	}
+
+	info, _, err := b.imagepruner.InspectImage(ctx, pullspec, secret, cc)
+	return info, err
+}
+
+// deleteImage retrieves the necessary objects and calls DeleteImage on the imagepruner.
+func (b *buildReconciler) deleteImage(ctx context.Context, pullspec string, mosb *mcfgv1.MachineOSBuild) error {
+	secret, cc, err := b.getObjectsForImagePruner(mosb)
+	if err != nil {
+		return err
+	}
+
+	return b.imagepruner.DeleteImage(ctx, pullspec, secret, cc)
 }
 
 // reconcileImageRebuild calls RequiresRebuild to see if an MC changes the kernel args, ext, or osimageurl.
