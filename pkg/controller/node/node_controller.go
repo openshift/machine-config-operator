@@ -723,6 +723,15 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 		}
 	}
 
+	if fg.Enabled(features.FeatureGateImageModeStatusReporting) {
+		// check if second part of conditional is necessary
+		if oldNode.Annotations[daemonconsts.CurrentImageAnnotationKey] != oldNode.Annotations[daemonconsts.DesiredImageAnnotationKey] && curLNS.IsNodeDone() {
+			ctrl.logPoolNode(pool, curNode, "Completed update to %s", curNode.Annotations[daemonconsts.DesiredImageAnnotationKey])
+			changed = true
+		}
+
+	}
+
 	if !changed {
 		return
 	}

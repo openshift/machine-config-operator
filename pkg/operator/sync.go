@@ -790,10 +790,6 @@ func (optr *Operator) syncMachineConfigNodes(_ *renderConfig, _ *configv1.Cluste
 				ConfigVersion: mcfgv1.MachineConfigNodeSpecMachineConfigVersion{
 					Desired: upgrademonitor.NotYetSet,
 				},
-				// leaving this empty because configImage and all the fields are optional
-				ConfigImage: mcfgv1.MachineConfigNodeSpecConfigImage{
-					DesiredImage: "",
-				},
 			},
 			TypeMeta: metav1.TypeMeta{
 				Kind:       "MachineConfigNode",
@@ -811,6 +807,14 @@ func (optr *Operator) syncMachineConfigNodes(_ *renderConfig, _ *configv1.Cluste
 				},
 			},
 		}
+
+		//Add: check if image mode status reporting fg is enables and if yes, use 821-826 as a guideline for configImage initialization
+		if fg.Enabled(features.FeatureGateImageModeStatusReporting) {
+			newMCS.Spec.ConfigImage = mcfgv1.MachineConfigNodeSpecConfigImage{
+				DesiredImage: node.Annotations[daemonconsts.DesiredImageAnnotationKey],
+			}
+		}
+
 		mcsBytes, err := json.Marshal(newMCS)
 		if err != nil {
 			klog.Errorf("error rendering asset for MachineConfigNode %v", err)
@@ -821,6 +825,7 @@ func (optr *Operator) syncMachineConfigNodes(_ *renderConfig, _ *configv1.Cluste
 		if err != nil {
 			return err
 		}
+
 		// if this is the first time we are applying the MCN and the node is ready, set the config version probably
 		if mcn.Spec.ConfigVersion.Desired == upgrademonitor.NotYetSet {
 			err = upgrademonitor.GenerateAndApplyMachineConfigNodeSpec(optr.fgAccessor, pool, node, optr.client)
@@ -829,9 +834,17 @@ func (optr *Operator) syncMachineConfigNodes(_ *renderConfig, _ *configv1.Cluste
 			}
 		}
 
-		//CHECK: are you checking anything for configImage if it's empty?
+		if fg.Enabled(features.FeatureGateImageModeStatusReporting) {
+			if mcn.Spec.ConfigImage.DesiredImage == upgrademonitor.NotYetSet {
+				err = upgrademonitor.GenerateAndApplyMachineConfigNodeSpec(optr.fgAccessor, pool, node, optr.client)
+				if err != nil {
+					klog.Errorf("Error making MCN spec for Update Compatible: %v", err)
+				}
+			}
+		}
 
 	}
+
 	if mcns != nil {
 		for _, mcn := range mcns.Items {
 			if _, ok := nodeMap[mcn.Name]; !ok {

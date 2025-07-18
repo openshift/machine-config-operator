@@ -222,7 +222,11 @@ func generateAndApplyMachineConfigNodes(
 
 			case condition.Status != metav1.ConditionFalse && reset:
 				condition.Status = metav1.ConditionFalse
+				// ASK: does this message change if OCL is used
 				condition.Message = fmt.Sprintf("Action during update to %s: %s", newMCNode.Spec.ConfigVersion.Desired, condition.Message)
+				if fg.Enabled(features.FeatureGateImageModeStatusReporting) {
+					condition.Message = fmt.Sprintf("")
+				}
 				condition.LastTransitionTime = metav1.Now()
 			}
 			condition.DeepCopyInto(&newMCNode.Status.Conditions[i])
@@ -249,7 +253,6 @@ func generateAndApplyMachineConfigNodes(
 	} else {
 		newMCNode.Status.ConfigVersion.Desired = desiredAnnotation
 	}
-
 	// Set current version in MCN.Status.ConfigVersion if node annotation exists
 	if node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey] != "" {
 		newMCNode.Status.ConfigVersion.Current = node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey]
@@ -292,6 +295,14 @@ func generateAndApplyMachineConfigNodes(
 			}
 		}
 
+		if fg.Enabled(features.FeatureGateImageModeStatusReporting) {
+			statusConfigImageApplyImage := machineconfigurationv1.MachineConfigNodeStatusMachineConfigImage().WithDesired(newMCNode.Status.ConfigImage)
+			if node.Annotations[daemonconsts.CurrentImageAnnotationKey] != "" {
+				statusConfigImageApplyImage = statusConfigImageApplyImage.WithCurrent(newMCNode.Status.ConfigImage.CurrentImage)
+			}
+
+		}
+
 		mcnodeApplyConfig := machineconfigurationv1.MachineConfigNode(newMCNode.Name).WithStatus(statusApplyConfig)
 		_, err := mcfgClient.MachineconfigurationV1().MachineConfigNodes().ApplyStatus(context.TODO(), mcnodeApplyConfig, metav1.ApplyOptions{FieldManager: "machine-config-operator", Force: true})
 		if err != nil {
@@ -305,6 +316,17 @@ func generateAndApplyMachineConfigNodes(
 		}
 		if newMCNode.Spec.ConfigVersion.Desired == "" {
 			newMCNode.Spec.ConfigVersion.Desired = NotYetSet
+		}
+
+		if fg.Enabled(features.FeatureGateImageModeStatusReporting) {
+			newMCNode.Spec.ConfigImage = mcfgv1.MachineConfigNodeSpecMachineConfigImage{
+				Desired: node.Annotations[daemonconsts.DesiredImageAnnotationKey],
+			}
+
+			if newMCNode.Spec.ConfigImage.DesiredImage == "" {
+				newMCNode.Spec.ConfigImage.DesiredImage = ""
+			}
+
 		}
 		newMCNode.Name = node.Name
 		newMCNode.Spec.Pool = mcfgv1.MCOObjectReference{Name: pool}
@@ -381,11 +403,23 @@ func GenerateAndApplyMachineConfigNodeSpec(fgAccessor featuregates.FeatureGateAc
 	newMCNode.Spec.Node = mcfgv1.MCOObjectReference{
 		Name: node.Name,
 	}
+
+	if fg.Enabled(features.FeatureGateImageModeStatusReporting) {
+		newMCNode.Spec.ConfigImage = mcfgv1.MachineConfigNodeSpecConfigImage{
+			DesiredImage: node.Annotations[daemonconsts.DesiredImageAnnotationKey],
+		}
+		// check if it should be empty
+		if newMCNode.Spec.ConfigImage.DesiredImage == "" {
+			newMCNode.Spec.ConfigVersion.Desired = NotYetSet
+		}
+	}
+
 	if !needNewMCNode {
 		nodeRefApplyConfig := machineconfigurationv1.MCOObjectReference().WithName(newMCNode.Spec.Node.Name)
 		poolRefApplyConfig := machineconfigurationv1.MCOObjectReference().WithName(newMCNode.Spec.Pool.Name)
 		specconfigVersionApplyConfig := machineconfigurationv1.MachineConfigNodeSpecMachineConfigVersion().WithDesired(newMCNode.Spec.ConfigVersion.Desired)
-		specApplyConfig := machineconfigurationv1.MachineConfigNodeSpec().WithNode(nodeRefApplyConfig).WithPool(poolRefApplyConfig).WithConfigVersion(specconfigVersionApplyConfig)
+		specConfigImageApplyConfig := machineconfigurationv1.MachineConfigNodeSpecConfigImage().WithDesired(newMCNode.Spec.ConfigImage.DesiredImage)
+		specApplyConfig := machineconfigurationv1.MachineConfigNodeSpec().WithNode(nodeRefApplyConfig).WithPool(poolRefApplyConfig).WithConfigVersion(specconfigVersionApplyConfig).WithConfigImage(specConfigImageApplyConfig)
 		mcnodeApplyConfig := machineconfigurationv1.MachineConfigNode(newMCNode.Name).WithSpec(specApplyConfig)
 		_, err := mcfgClient.MachineconfigurationV1().MachineConfigNodes().Apply(context.TODO(), mcnodeApplyConfig, metav1.ApplyOptions{FieldManager: "machine-config-operator", Force: true})
 		if err != nil {
@@ -400,15 +434,6 @@ func GenerateAndApplyMachineConfigNodeSpec(fgAccessor featuregates.FeatureGateAc
 		}
 	}
 
-	if fg.Enabled(features.FeatureGateImageModeStatusReporting) {
-		newMCNode.Spec.ConfigImage = mcfgv1.MachineConfigNodeSpecConfigImage{
-			DesiredImage: node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey],
-		}
-
-		if newMCNode.Spec.ConfigImage.DesiredImage == "" {
-			// since it's required now, this would probably error out?
-		}
-	}
 	return nil
 }
 
