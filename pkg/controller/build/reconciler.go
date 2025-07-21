@@ -459,6 +459,14 @@ func (b *buildReconciler) createNewMachineOSBuildOrReuseExistingForPoolChange(ct
 func (b *buildReconciler) createNewMachineOSBuildForRebuild(ctx context.Context, mosb *mcfgv1.MachineOSBuild, moscName string) error {
 	// Verify that the MOSB is actually deleted before we try to create a new one
 	// The deletion process may take some time and if we try to create a new MOSB with the same name, a clash may happen
+
+	// First delete any existing MOSB with exactly this name
+	if err := b.mcfgclient.MachineconfigurationV1().
+		MachineOSBuilds().
+		Delete(ctx, mosb.Name, metav1.DeleteOptions{}); err != nil && !k8serrors.IsNotFound(err) {
+		return fmt.Errorf("could not delete existing MOSB %q: %w", mosb.Name, err)
+	}
+
 	childCtx, cancel := context.WithTimeout(ctx, time.Second*90)
 	defer cancel()
 	for {
@@ -528,14 +536,7 @@ func (b *buildReconciler) createNewMachineOSBuildOrReuseExisting(ctx context.Con
 		return fmt.Errorf("could not get MachineOSBuild: %w", err)
 	}
 
-	// If this is a rebuild based on the rebuild annotation, then we definitely need to create the MOSB again
 	if isRebuild {
-		if existingMosb != nil {
-			if err := b.mcfgclient.MachineconfigurationV1().
-				MachineOSBuilds().Delete(ctx, existingMosb.Name, metav1.DeleteOptions{}); err != nil && !k8serrors.IsNotFound(err) {
-				return fmt.Errorf("could not delete existing MOSB %q: %w", existingMosb.Name, err)
-			}
-		}
 		return b.createNewMachineOSBuildForRebuild(ctx, mosb, mosc.Name)
 	}
 
@@ -1391,12 +1392,44 @@ func (b *buildReconciler) reconcilePoolChange(ctx context.Context, mcp *mcfgv1.M
 		return err
 	}
 
-	// todo (dkhater): see if `oldRendered != newRendered` is a necessary change.
-	// to be looked at when we rework the sync functions
+	// This is our trigger point
 	if (oldRendered != newRendered && needsImageRebuild) || firstOptIn == "" {
-		if needsImageRebuild {
-			klog.Infof("pool %q: detected extension/kernel/kargs/OSImageURL change → will rebuild image", mcp.Name)
+		klog.Infof("pool %q: rendered config changed and requires an image rebuild. Verifying if a valid build already exists...", mcp.Name)
+
+		osImageURLs, _ := ctrlcommon.GetOSImageURLConfig(ctx, b.kubeclient)
+		targetMosb, err := buildrequest.NewMachineOSBuild(buildrequest.MachineOSBuildOpts{
+			MachineOSConfig:   mosc,
+			MachineConfigPool: mcp,
+			OSImageURLConfig:  osImageURLs,
+		})
+		if err != nil {
+			return fmt.Errorf("could not generate name for target MOSB: %w", err)
 		}
+
+		// Now, check if a MOSB with that name already exists.
+		existingMosb, err := b.machineOSBuildLister.Get(targetMosb.Name)
+		if err == nil {
+			// A MOSB for our target config was found. Check its status
+			mosbState := ctrlcommon.NewMachineOSBuildState(existingMosb)
+
+			if mosbState.IsInTransientState() {
+				klog.Infof("pool %q: MOSB (%s) is in a transient state. Please allow time for MOSB to finish updating.", mcp.Name, existingMosb.Name)
+				return nil
+			}
+
+			// if MOSB state is successful, this can mean one of two things:
+			// 1. Applied MC triggered a MOSB build through `needsImageRebuild`, and it completed, but we are waiting for spec == status in the node update
+			// 2. Current MOSB state is successful, and a deleted MC triggered a MOSB build through `needsImageRebuild`.
+			if mosbState.IsBuildSuccess() {
+				klog.Infof("pool %q: Found successful build for target. Reusing image.", mcp.Name)
+				return b.reuseImageForNewMOSB(ctx, mosc, existingMosb)
+			}
+
+		} else if !k8serrors.IsNotFound(err) {
+			// An actual error occurred (not just "not found"). Return the error.
+			return fmt.Errorf("could not get target MOSB %s: %w", targetMosb.Name, err)
+		}
+
 	} else if oldRendered != newRendered && !needsImageRebuild {
 		klog.Infof("pool %q: No new image needs to be created, reusing last MOSB", mcp.Name)
 		prevPullSpec := mosc.Status.CurrentImagePullSpec
@@ -1407,6 +1440,7 @@ func (b *buildReconciler) reconcilePoolChange(ctx context.Context, mcp *mcfgv1.M
 		return b.reuseImageForNewMOSB(ctx, mosc, oldMOSB)
 	}
 
+	klog.Infof("pool %q: detected extension/kernel/kargs/OSImageURL change → will rebuild image", mcp.Name)
 	return b.createNewMachineOSBuildOrReuseExisting(ctx, mosc, needsImageRebuild)
 
 }
