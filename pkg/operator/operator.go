@@ -97,6 +97,7 @@ type Operator struct {
 	dnsLister             configlistersv1.DNSLister
 	mcoSALister           corelisterv1.ServiceAccountLister
 	mcoSecretLister       corelisterv1.SecretLister
+	ocCmLister            corelisterv1.ConfigMapLister
 	ocSecretLister        corelisterv1.SecretLister
 	ocManagedSecretLister corelisterv1.SecretLister
 	clusterOperatorLister configlistersv1.ClusterOperatorLister
@@ -128,6 +129,7 @@ type Operator struct {
 	imgListerSynced                  cache.InformerSynced
 	mcoSAListerSynced                cache.InformerSynced
 	mcoSecretListerSynced            cache.InformerSynced
+	ocCmListerSynced                 cache.InformerSynced
 	ocSecretListerSynced             cache.InformerSynced
 	ocManagedSecretListerSynced      cache.InformerSynced
 	clusterOperatorListerSynced      cache.InformerSynced
@@ -178,6 +180,7 @@ func New(
 	imgInformer configinformersv1.ImageInformer,
 	mcoSAInformer coreinformersv1.ServiceAccountInformer,
 	mcoSecretInformer coreinformersv1.SecretInformer,
+	ocCmInformer coreinformersv1.ConfigMapInformer,
 	ocSecretInformer coreinformersv1.SecretInformer,
 	ocManagedSecretInformer coreinformersv1.SecretInformer,
 	clusterOperatorInformer configinformersv1.ClusterOperatorInformer,
@@ -249,6 +252,7 @@ func New(
 		mcoSAInformer.Informer(),
 		mcoSecretInformer.Informer(),
 		ocSecretInformer.Informer(),
+		ocCmInformer.Informer(),
 		ocManagedSecretInformer.Informer(),
 		mcopInformer.Informer(),
 		mckInformer.Informer(),
@@ -304,6 +308,8 @@ func New(
 	optr.mcoSAListerSynced = mcoSAInformer.Informer().HasSynced
 	optr.mcoSecretLister = mcoSecretInformer.Lister()
 	optr.mcoSecretListerSynced = mcoSecretInformer.Informer().HasSynced
+	optr.ocCmLister = ocCmInformer.Lister()
+	optr.ocCmListerSynced = ocCmInformer.Informer().HasSynced
 	optr.ocSecretLister = ocSecretInformer.Lister()
 	optr.ocSecretListerSynced = ocSecretInformer.Informer().HasSynced
 	optr.ocManagedSecretLister = ocManagedSecretInformer.Lister()
@@ -362,6 +368,7 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 		optr.imgListerSynced,
 		optr.mcoSAListerSynced,
 		optr.mcoSecretListerSynced,
+		optr.ocCmListerSynced,
 		optr.ocSecretListerSynced,
 		optr.ocManagedSecretListerSynced,
 		optr.clusterOperatorListerSynced,

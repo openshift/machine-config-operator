@@ -336,7 +336,7 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 	}
 	imgRegistryUsrData := []mcfgv1.ImageRegistryBundle{}
 	if cfg.Spec.AdditionalTrustedCA.Name != "" {
-		cm, err := optr.clusterCmLister.ConfigMaps("openshift-config").Get(cfg.Spec.AdditionalTrustedCA.Name)
+		cm, err := optr.ocCmLister.ConfigMaps(ctrlcommon.OpenshiftConfigNamespace).Get(cfg.Spec.AdditionalTrustedCA.Name)
 		if err != nil {
 			klog.Warningf("could not find configmap specified in image.config.openshift.io/cluster with the name %s", cfg.Spec.AdditionalTrustedCA.Name)
 		} else {
@@ -576,26 +576,26 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 	var trustBundle []byte
 	certPool := x509.NewCertPool()
 	// this is the generic trusted bundle for things like self-signed registries.
-	additionalTrustBundle, err := optr.getCAsFromConfigMap("openshift-config", "user-ca-bundle", "ca-bundle.crt")
+	additionalTrustBundle, err := optr.getCAsFromConfigMap(ctrlcommon.OpenshiftConfigNamespace, "user-ca-bundle", "ca-bundle.crt")
 	if err != nil && !apierrors.IsNotFound(err) {
 		return err
 	}
 	if len(additionalTrustBundle) > 0 {
 		if !certPool.AppendCertsFromPEM(additionalTrustBundle) {
-			return fmt.Errorf("configmap %s/%s doesn't have a valid PEM bundle", "openshift-config", "user-ca-bundle")
+			return fmt.Errorf("configmap %s/%s doesn't have a valid PEM bundle", ctrlcommon.OpenshiftConfigNamespace, "user-ca-bundle")
 		}
 		trustBundle = append(trustBundle, additionalTrustBundle...)
 	}
 
 	// this is the trusted bundle specific for proxy things and can differ from the generic one above.
 	if proxy != nil && proxy.Spec.TrustedCA.Name != "" && proxy.Spec.TrustedCA.Name != "user-ca-bundle" {
-		proxyTrustBundle, err := optr.getCAsFromConfigMap("openshift-config", proxy.Spec.TrustedCA.Name, "ca-bundle.crt")
+		proxyTrustBundle, err := optr.getCAsFromConfigMap(ctrlcommon.OpenshiftConfigNamespace, proxy.Spec.TrustedCA.Name, "ca-bundle.crt")
 		if err != nil {
 			return err
 		}
 		if len(proxyTrustBundle) > 0 {
 			if !certPool.AppendCertsFromPEM(proxyTrustBundle) {
-				return fmt.Errorf("configmap %s/%s doesn't have a valid PEM bundle", "openshift-config", proxy.Spec.TrustedCA.Name)
+				return fmt.Errorf("configmap %s/%s doesn't have a valid PEM bundle", ctrlcommon.OpenshiftConfigNamespace, proxy.Spec.TrustedCA.Name)
 			}
 			trustBundle = append(trustBundle, proxyTrustBundle...)
 		}
@@ -610,7 +610,7 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 	spec.RootCAData = machineConfigServerCABundle
 	spec.ImageRegistryBundleData = imgRegistryData
 	spec.ImageRegistryBundleUserData = imgRegistryUsrData
-	spec.PullSecret = &corev1.ObjectReference{Namespace: "openshift-config", Name: "pull-secret"}
+	spec.PullSecret = &corev1.ObjectReference{Namespace: ctrlcommon.OpenshiftConfigNamespace, Name: "pull-secret"}
 	spec.InternalRegistryPullSecret = internalRegistryPullSecret
 	spec.BaseOSContainerImage = imgs.BaseOSContainerImage
 	spec.BaseOSExtensionsContainerImage = imgs.BaseOSExtensionsContainerImage
@@ -2146,7 +2146,7 @@ func (optr *Operator) getImageRegistryPullSecrets() ([]byte, error) {
 	}
 
 	// Fetch the cluster pull secret
-	clusterPullSecret, err := optr.ocSecretLister.Secrets("openshift-config").Get("pull-secret")
+	clusterPullSecret, err := optr.ocSecretLister.Secrets(ctrlcommon.OpenshiftConfigNamespace).Get("pull-secret")
 	if err != nil {
 		return nil, fmt.Errorf("error fetching cluster pull secret: %w", err)
 	}
