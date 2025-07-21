@@ -22,34 +22,10 @@ func checkMachineSet(infra *osconfigv1.Infrastructure, machineSet *machinev1beta
 	switch infra.Status.PlatformStatus.Type {
 	case osconfigv1.AWSPlatformType:
 		return reconcileAWS(machineSet, configMap, arch, secretClient)
-	case osconfigv1.AzurePlatformType:
-		return reconcileAzure(machineSet, configMap, arch)
-	case osconfigv1.BareMetalPlatformType:
-		return reconcileBareMetal(machineSet, configMap, arch)
-	case osconfigv1.OpenStackPlatformType:
-		return reconcileOpenStack(machineSet, configMap, arch)
-	case osconfigv1.EquinixMetalPlatformType:
-		return reconcileEquinixMetal(machineSet, configMap, arch)
 	case osconfigv1.GCPPlatformType:
 		return reconcileGCP(machineSet, configMap, arch, secretClient)
-	case osconfigv1.KubevirtPlatformType:
-		return reconcileKubevirt(machineSet, configMap, arch)
-	case osconfigv1.IBMCloudPlatformType:
-		return reconcileIBMCCloud(machineSet, configMap, arch)
-	case osconfigv1.LibvirtPlatformType:
-		return reconcileLibvirt(machineSet, configMap, arch)
 	case osconfigv1.VSpherePlatformType:
 		return reconcileVSphere(machineSet, infra, configMap, arch, secretClient)
-	case osconfigv1.NutanixPlatformType:
-		return reconcileNutanix(machineSet, configMap, arch)
-	case osconfigv1.OvirtPlatformType:
-		return reconcileOvirt(machineSet, configMap, arch)
-	case osconfigv1.ExternalPlatformType:
-		return reconcileExternal(machineSet, configMap, arch)
-	case osconfigv1.PowerVSPlatformType:
-		return reconcilePowerVS(machineSet, configMap, arch)
-	case osconfigv1.NonePlatformType:
-		return reconcileNone(machineSet, configMap, arch)
 	default:
 		return unmarshalToFindPlatform(machineSet, configMap, arch)
 	}
@@ -193,41 +169,6 @@ func reconcileAWS(machineSet *machinev1beta1.MachineSet, configMap *corev1.Confi
 	return patchRequired, newMachineSet, nil
 }
 
-func reconcileAzure(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
-	klog.Infof("Skipping machineset %s, unsupported platform type Azure with %s arch", machineSet.Name, arch)
-	return false, nil, nil
-}
-
-func reconcileBareMetal(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
-	klog.Infof("Skipping machineset %s, unsupported platform type BareMetal with %s arch", machineSet.Name, arch)
-	return false, nil, nil
-}
-
-func reconcileOpenStack(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
-	klog.Infof("Skipping machineset %s, unsupported platform type OpenStack with %s arch", machineSet.Name, arch)
-	return false, nil, nil
-}
-
-func reconcileEquinixMetal(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
-	klog.Infof("Skipping machineset %s, unsupported platform type EquinixMetal with %s arch", machineSet.Name, arch)
-	return false, nil, nil
-}
-
-func reconcileKubevirt(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
-	klog.Infof("Skipping machineset %s, unsupported platform type Kubevirt with %s arch", machineSet.Name, arch)
-	return false, nil, nil
-}
-
-func reconcileIBMCCloud(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
-	klog.Infof("Skipping machineset %s, unsupported platform type IBMCCloud with %s arch", machineSet.Name, arch)
-	return false, nil, nil
-}
-
-func reconcileLibvirt(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
-	klog.Infof("Skipping machineset %s, unsupported platform type Libvirt with %s arch", machineSet.Name, arch)
-	return false, nil, nil
-}
-
 func reconcileVSphere(machineSet *machinev1beta1.MachineSet, infra *osconfigv1.Infrastructure, configMap *corev1.ConfigMap, arch string, secretClient clientset.Interface) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
 	klog.Infof("Reconciling MAPI machineset %s on vSphere, with arch %s", machineSet.Name, arch)
 
@@ -286,29 +227,4 @@ func reconcileVSphere(machineSet *machinev1beta1.MachineSet, infra *osconfigv1.I
 	}
 
 	return patchRequired, newMachineSet, nil
-}
-
-func reconcileNutanix(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
-	klog.Infof("Skipping machineset %s, unsupported platform type Nutanix with %s arch", machineSet.Name, arch)
-	return false, nil, nil
-}
-
-func reconcileOvirt(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
-	klog.Infof("Skipping machineset %s, unsupported platform type Ovirt with %s arch", machineSet.Name, arch)
-	return false, nil, nil
-}
-
-func reconcilePowerVS(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
-	klog.Infof("Skipping machineset %s, unsupported platform type PowerVS with %s arch", machineSet.Name, arch)
-	return false, nil, nil
-}
-
-func reconcileExternal(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
-	klog.Infof("Skipping machineset %s, unsupported platform type External with %s arch", machineSet.Name, arch)
-	return false, nil, nil
-}
-
-func reconcileNone(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
-	klog.Infof("Skipping machineset %s, unsupported platform type None with %s arch", machineSet.Name, arch)
-	return false, nil, nil
 }
