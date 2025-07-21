@@ -22,14 +22,6 @@ import (
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 )
 
-// TODO - unmarshal the providerspec into each ProviderSpec type until it succeeds,
-// and then call the appropriate reconcile function. This is needed for multi platform
-// support
-func unmarshalToFindPlatform(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
-	klog.Infof("Skipping machineset %s, unknown platform type with %s arch", machineSet.Name, arch)
-	return false, nil, nil
-}
-
 // This function unmarshals the machineset's provider spec into
 // a ProviderSpec object. Returns an error if providerSpec field is nil,
 // or the unmarshal fails
