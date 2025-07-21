@@ -22,6 +22,8 @@ func checkMachineSet(infra *osconfigv1.Infrastructure, machineSet *machinev1beta
 	switch infra.Status.PlatformStatus.Type {
 	case osconfigv1.AWSPlatformType:
 		return reconcilePlatform(machineSet, infra, configMap, arch, secretClient, reconcileAWSProviderSpec)
+	case osconfigv1.AzurePlatformType:
+		return reconcilePlatform(machineSet, infra, configMap, arch, secretClient, reconcileAzureProviderSpec)
 	case osconfigv1.GCPPlatformType:
 		return reconcilePlatform(machineSet, infra, configMap, arch, secretClient, reconcileGCPProviderSpec)
 	case osconfigv1.VSpherePlatformType:
@@ -215,4 +217,74 @@ func reconcileVSphereProviderSpec(streamData *stream.Stream, arch string, infra 
 	}
 
 	return patchRequired, newProviderSpec, nil
+}
+
+// reconcileAzureProviderSpec reconciles the Azure provider spec by updating AMIs
+// Returns whether a patch is required, the updated provider spec, and any error
+func reconcileAzureProviderSpec(streamData *stream.Stream, arch string, infra *osconfigv1.Infrastructure, providerSpec *machinev1beta1.AzureMachineProviderSpec, machineSetName string, secretClient clientset.Interface) (bool, *machinev1beta1.AzureMachineProviderSpec, error) {
+
+	if providerSpec.Image.Type == machinev1beta1.AzureImageTypeMarketplaceWithPlan {
+		// TODO: see https://issues.redhat.com/browse/MCO-1790
+		klog.Infof("Skipping machineset %s, paid marketplace images cannot be updated via boot image updates", machineSetName)
+		return false, nil, nil
+	}
+
+	if arch == "ppc64le" || arch == "s390x" {
+		klog.Infof("Skipping machineset %s, machinesets with arch %s cannot be updated via boot image updates", machineSetName, arch)
+		return false, nil, nil
+	}
+
+	currentImage := providerSpec.Image
+	// Machinesets that have a non empty resourceID are provisioned via an image that was
+	// uploaded at install-time. For these cases, the MCO will transition them to unpaid
+	// marketplace images. As part of https://issues.redhat.com//browse/CORS-3652, standard installs
+	// will also begin to use the unpaid marketplace images or ARO images.
+	usesLegacyImageUpload := (currentImage.ResourceID != "")
+
+	// TODO: For unpaid marketplace images, there are 3 variants: ARM, hyperGenV1 & hyperGenV2. This determination
+	// can be done from the existing image information, and then used to pick from the stream data.
+	// Using a hardcoded image for now; this can be simplified once the marketplace streams are available in the configmap
+	newAzureImage := machinev1beta1.Image{
+		Offer:      "aro4",
+		Publisher:  "azureopenshift",
+		ResourceID: "",
+		SKU:        "419-v2",
+		Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
+		Version:    "419.6.20250523",
+	}
+
+	if arch == "aarch64" {
+		newAzureImage.SKU = "419-arm"
+	} else {
+		var usesHyperVGen2 bool
+		if usesLegacyImageUpload {
+			usesHyperVGen2 = strings.Contains(currentImage.ResourceID, "gen2")
+		} else {
+			usesHyperVGen2 = strings.Contains(currentImage.SKU, "v2")
+		}
+
+		if !usesHyperVGen2 {
+			newAzureImage.SKU = "419"
+		}
+	}
+
+	// If the current image matches, nothing to do here
+	// TODO: Update this to match all fields in Image once marketplace support lands
+	if currentImage.Version == newAzureImage.Version {
+		return false, nil, nil
+	}
+
+	klog.Infof("Current boot image version: %s", currentImage.Version)
+	klog.Infof("New target boot image version: %s", newAzureImage.Version)
+
+	// Update the machine set with the new image
+	newProviderSpec := providerSpec.DeepCopy()
+	newProviderSpec.Image = newAzureImage
+
+	// Ensure the ignition stub is the minimum acceptable spec required for boot image updates
+	if err := upgradeStubIgnitionIfRequired(providerSpec.UserDataSecret.Name, secretClient); err != nil {
+		return false, nil, err
+	}
+
+	return true, newProviderSpec, nil
 }
